@@ -8,7 +8,7 @@ use crate::{
     fs::{
         file::{
             FileLike,
-            file_table::{FileDesc, get_file_fast},
+            file_table::{RawFileDesc, get_file_fast},
         },
         vfs::{
             path::{AT_FDCWD, FsPath, Path},
@@ -71,7 +71,7 @@ pub fn sys_lsetxattr(
 }
 
 pub fn sys_fsetxattr(
-    fd: FileDesc,
+    raw_fd: RawFileDesc,
     name_ptr: Vaddr,
     value_ptr: Vaddr,
     value_len: usize,
@@ -79,7 +79,7 @@ pub fn sys_fsetxattr(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     let user_space = ctx.user_space();
     setxattr(

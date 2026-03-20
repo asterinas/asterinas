@@ -9,7 +9,7 @@ use crate::{
     events::{EpollCtl, EpollEvent, EpollFile, EpollFlags, IoEvents},
     fs::file::{
         CreationFlags,
-        file_table::{FdFlags, FileDesc, get_file_fast},
+        file_table::{FdFlags, RawFileDesc, get_file_fast},
     },
     prelude::*,
     process::{posix_thread::ContextPthreadAdminApi, signal::sig_mask::SigMask},
@@ -45,13 +45,13 @@ pub fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let epoll_file: Arc<EpollFile> = EpollFile::new();
     let file_table = ctx.thread_local.borrow_file_table();
     let fd = file_table.unwrap().write().insert(epoll_file, fd_flags);
-    Ok(SyscallReturn::Return(fd as _))
+    Ok(SyscallReturn::Return(fd.into()))
 }
 
 pub fn sys_epoll_ctl(
-    epfd: FileDesc,
+    epfd: RawFileDesc,
     op: i32,
-    fd: FileDesc,
+    fd: RawFileDesc,
     event_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
@@ -64,6 +64,7 @@ pub fn sys_epoll_ctl(
     const EPOLL_CTL_DEL: i32 = 2;
     const EPOLL_CTL_MOD: i32 = 3;
 
+    let fd = fd.try_into()?;
     let cmd = match op {
         EPOLL_CTL_ADD => {
             let c_epoll_event = ctx.user_space().read_val::<c_epoll_event>(event_addr)?;
@@ -82,7 +83,7 @@ pub fn sys_epoll_ctl(
     };
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, epfd).into_owned();
+    let file = get_file_fast!(&mut file_table, epfd.try_into()?).into_owned();
     // Drop `file_table` as `EpollFile::control` also performs `borrow_file_table_mut()`.
     drop(file_table);
 
@@ -95,7 +96,7 @@ pub fn sys_epoll_ctl(
 }
 
 fn do_epoll_pwait2(
-    epfd: FileDesc,
+    epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout: Option<Duration>,
@@ -120,7 +121,7 @@ fn do_epoll_pwait2(
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, epfd);
+    let file = get_file_fast!(&mut file_table, epfd.try_into()?);
     let epoll_file = file
         .downcast_ref::<EpollFile>()
         .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
@@ -154,7 +155,7 @@ fn do_epoll_pwait2(
 }
 
 pub fn sys_epoll_wait(
-    epfd: FileDesc,
+    epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout: i32,
@@ -177,7 +178,7 @@ pub fn sys_epoll_wait(
 }
 
 pub fn sys_epoll_pwait(
-    epfd: FileDesc,
+    epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout: i32,
@@ -210,7 +211,7 @@ pub fn sys_epoll_pwait(
 }
 
 pub fn sys_epoll_pwait2(
-    epfd: FileDesc,
+    epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout_addr: Vaddr,

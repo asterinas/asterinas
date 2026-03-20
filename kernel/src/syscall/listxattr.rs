@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     fs::{
-        file::file_table::{FileDesc, get_file_fast},
+        file::file_table::{RawFileDesc, get_file_fast},
         vfs::xattr::{XATTR_LIST_MAX_LEN, XattrNamespace},
     },
     prelude::*,
@@ -55,13 +55,13 @@ pub fn sys_llistxattr(
 }
 
 pub fn sys_flistxattr(
-    fd: FileDesc,
+    raw_fd: RawFileDesc,
     list_ptr: Vaddr, // The given list is used to place xattr (null-terminated) names.
     list_len: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     let user_space = ctx.user_space();
     let len = listxattr(

@@ -12,7 +12,7 @@
 
 use crate::{
     fs::{
-        file::{FileLike, InodeHandle, file_table::FileDesc},
+        file::{FileLike, InodeHandle, file_table::RawFileDesc},
         pseudofs::{NsCommonOps, NsFile},
         vfs::path::MountNamespace,
     },
@@ -25,7 +25,7 @@ use crate::{
     syscall::SyscallReturn,
 };
 
-pub fn sys_setns(fd: FileDesc, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_setns(fd: RawFileDesc, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let ns_type_flags = CloneFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid `setns` flags"))?;
     debug!("setns flags = {:?}", ns_type_flags);
@@ -33,7 +33,7 @@ pub fn sys_setns(fd: FileDesc, flags: u32, ctx: &Context) -> Result<SyscallRetur
     let file = {
         let file_table = ctx.thread_local.borrow_file_table();
         let file_table_locked = file_table.unwrap().read();
-        file_table_locked.get_file(fd)?.clone()
+        file_table_locked.get_file(fd.try_into()?)?.clone()
     };
 
     let new_ns_proxy = if let Some(pid_file) = file.downcast_ref::<PidFile>() {

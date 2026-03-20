@@ -8,7 +8,11 @@ use ostd::sync::RwMutexUpgradeableGuard;
 use super::TidDirOps;
 use crate::{
     fs::{
-        file::{AccessMode, FileLike, chmod, file_table::FileDesc, mkmod},
+        file::{
+            AccessMode, FileLike, chmod,
+            file_table::{FileDesc, RawFileDesc},
+            mkmod,
+        },
         procfs::template::{
             DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFile, ProcFileBuilder, ProcSym,
             ProcSymBuilder, SymOps,
@@ -49,9 +53,10 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
     // spin lock but the cached entries are protected by a mutex.
 
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
-        let Ok(file_desc) = name.parse::<FileDesc>() else {
+        let Ok(raw_fd) = name.parse::<RawFileDesc>() else {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid FD");
         };
+        let fd = raw_fd.try_into()?;
 
         let mut cached_children = dir.cached_children().write();
 
@@ -59,19 +64,14 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let access_mode = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(file) = file_table.read().get_file(file_desc)
+            && let Ok(file) = file_table.read().get_file(fd)
         {
             file.access_mode()
         } else {
             return_errno_with_message!(Errno::ENOENT, "the file does not exist");
         };
 
-        let child = T::new_inode(
-            self.dir.clone(),
-            file_desc,
-            access_mode,
-            dir.this_weak().clone(),
-        );
+        let child = T::new_inode(self.dir.clone(), fd, access_mode, dir.this_weak().clone());
         // The old entry is likely outdated given that `lookup_child` is called. Race conditions
         // may occur, but caching the file descriptor (which aligns with the Linux implementation)
         // is inherently racy, so preventing race conditions is not very meaningful.
@@ -117,7 +117,7 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
 
         // Add new entries.
         for (file_desc, file) in file_table.fds_and_files() {
-            cached_children.put_entry_if_not_found(&file_desc.to_string(), || {
+            cached_children.put_entry_if_not_found(&file_desc.raw_fd().to_string(), || {
                 T::new_inode(
                     self.dir.clone(),
                     file_desc,

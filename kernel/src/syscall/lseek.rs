@@ -4,13 +4,21 @@ use super::SyscallReturn;
 use crate::{
     fs::file::{
         SeekFrom,
-        file_table::{FileDesc, get_file_fast},
+        file_table::{RawFileDesc, get_file_fast},
     },
     prelude::*,
 };
 
-pub fn sys_lseek(fd: FileDesc, offset: isize, whence: u32, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}, offset = {}, whence = {}", fd, offset, whence);
+pub fn sys_lseek(
+    raw_fd: RawFileDesc,
+    offset: isize,
+    whence: u32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    debug!(
+        "raw_fd = {}, offset = {}, whence = {}",
+        raw_fd, offset, whence
+    );
 
     let seek_from = match SeekType::try_from(whence)? {
         SeekType::SEEK_SET => SeekFrom::Start(offset.cast_unsigned()),
@@ -19,7 +27,7 @@ pub fn sys_lseek(fd: FileDesc, offset: isize, whence: u32, ctx: &Context) -> Res
     };
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     let offset = file.seek(seek_from)?;
     Ok(SyscallReturn::Return(offset as _))

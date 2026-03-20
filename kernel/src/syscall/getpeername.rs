@@ -2,13 +2,13 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     util::net::write_socket_addr_to_user,
 };
 
 pub fn sys_getpeername(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     addr: Vaddr,
     addrlen_ptr: Vaddr,
     ctx: &Context,
@@ -16,7 +16,13 @@ pub fn sys_getpeername(
     debug!("sockfd = {sockfd}, addr = 0x{addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd);
+    let file = get_file_fast!(
+        &mut file_table,
+        sockfd
+            .cast_unsigned()
+            .try_into()
+            .map_err(|_| Errno::EBADF)?
+    );
     let socket = file.as_socket_or_err()?;
 
     let peer_addr = socket.peer_addr()?;

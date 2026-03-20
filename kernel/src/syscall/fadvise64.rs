@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{fs::file::file_table::get_file_fast, prelude::*};
+use crate::{
+    fs::file::file_table::{RawFileDesc, get_file_fast},
+    prelude::*,
+};
 
 #[repr(i32)]
 #[derive(Debug, TryFromInt)]
@@ -15,7 +18,7 @@ enum FadviseBehavior {
 }
 
 pub fn sys_fadvise64(
-    fd: i32,
+    raw_fd: RawFileDesc,
     offset: usize,
     len: usize,
     advice: i32,
@@ -25,12 +28,12 @@ pub fn sys_fadvise64(
         .map_err(|_| Error::with_message(Errno::EINVAL, "invalid fadvise behavior:"))?;
 
     debug!(
-        "fd={}, offset={}, len={}, behavior={:?}",
-        fd, offset, len, behavior
+        "raw_fd={}, offset={}, len={}, behavior={:?}",
+        raw_fd, offset, len, behavior
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let _file = get_file_fast!(&mut file_table, fd);
+    let _file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     match behavior {
         FadviseBehavior::Normal => {

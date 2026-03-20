@@ -7,7 +7,7 @@ use crate::{
     fs::{
         file::{
             FileLike, StatusFlags,
-            file_table::{FdFlags, FileDesc, WithFileTable, get_file_fast},
+            file_table::{FdFlags, FileDesc, RawFileDesc, WithFileTable, get_file_fast},
         },
         ramfs::memfd::{FileSeals, MemfdInodeHandle},
         vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
@@ -16,9 +16,10 @@ use crate::{
     process::{Pid, process_table},
 };
 
-pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fcntl(raw_fd: RawFileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+    let fd = FileDesc::try_from(raw_fd)?;
     let fcntl_cmd = FcntlCmd::try_from(cmd)?;
-    debug!("fd = {}, cmd = {:?}, arg = {}", fd, fcntl_cmd, arg);
+    debug!("fd = {}, cmd = {:?}, arg = {}", fd.raw_fd(), fcntl_cmd, arg);
     match fcntl_cmd {
         FcntlCmd::F_DUPFD => handle_dupfd(fd, arg, FdFlags::empty(), ctx),
         FcntlCmd::F_DUPFD_CLOEXEC => handle_dupfd(fd, arg, FdFlags::CLOEXEC, ctx),
@@ -41,11 +42,12 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<Sysc
 
 fn handle_dupfd(fd: FileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result<SyscallReturn> {
     let file_table = ctx.thread_local.borrow_file_table();
-    let new_fd = file_table
-        .unwrap()
-        .write()
-        .dup_ceil(fd, arg as FileDesc, flags)?;
-    Ok(SyscallReturn::Return(new_fd as _))
+    let new_fd = file_table.unwrap().write().dup_ceil(
+        fd,
+        arg.try_into().map_err(|_| Errno::EINVAL)?,
+        flags,
+    )?;
+    Ok(SyscallReturn::Return(new_fd.into()))
 }
 
 fn handle_getfd(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {

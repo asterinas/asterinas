@@ -2,13 +2,13 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     util::net::read_socket_addr_from_user,
 };
 
 pub fn sys_bind(
-    sockfd: FileDesc,
+    sockfd: RawFileDesc,
     sockaddr_ptr: Vaddr,
     addrlen: u32,
     ctx: &Context,
@@ -17,7 +17,7 @@ pub fn sys_bind(
     debug!("sockfd = {sockfd}, socket_addr = {socket_addr:?}");
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd);
+    let file = get_file_fast!(&mut file_table, sockfd.try_into()?);
     let socket = file.as_socket_or_err()?;
 
     socket.bind(socket_addr)?;

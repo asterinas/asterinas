@@ -3,17 +3,17 @@
 use super::SyscallReturn;
 use crate::{
     fs::file::{
-        file_table::{FileDesc, get_file_fast},
+        file_table::{RawFileDesc, get_file_fast},
         flock::{FlockItem, FlockType},
     },
     prelude::*,
 };
 
-pub fn sys_flock(fd: FileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("flock: fd: {}, ops: {:?}", fd, ops);
+pub fn sys_flock(raw_fd: RawFileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn> {
+    debug!("flock: raw_fd: {}, ops: {:?}", raw_fd, ops);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let inode_file = file.as_inode_handle_or_err()?;
     let ops: FlockOps = FlockOps::from_i32(ops)?;
     if ops.contains(FlockOps::LOCK_UN) {
