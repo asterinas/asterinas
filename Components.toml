@@ -10,6 +10,7 @@ kernel = { name = "aster-kernel" }
 logger = { name = "aster-logger" }
 mlsdisk = { name = "aster-mlsdisk" }
 network = { name = "aster-network" }
+nvme = { name = "aster-nvme" }
 pci = { name = "aster-pci" }
 softirq = { name = "aster-softirq" }
 systree = { name = "aster-systree" }
