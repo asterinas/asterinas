@@ -1,6 +1,10 @@
 EpollTest.CycleOfOneDisallowed
 EpollTest.CycleOfThreeDisallowed
 EpollTest.RegularFiles
+# `EpollPwait2Timeout` expects `epoll_pwait2()` not to return before the
+# requested timeout expires. Our current timeout mechanism is jiffies-based
+# and does not provide the required resolution.
+EpollTest.EpollPwait2Timeout
 # `UnblockWithSignal` contains races. Better not to enable it.
 # See https://github.com/asterinas/asterinas/pull/1035 for details.
 EpollTest.UnblockWithSignal
