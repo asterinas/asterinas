@@ -119,7 +119,7 @@ fn set_session_and_group(process: &Arc<Process>) {
     process.set_new_session(&mut process.process_group.lock(), &mut pid_table);
 
     // Add the new process to the global table
-    pid_table.insert_process(process.pid(), process.clone());
+    pid_table.insert_process(process.pid(), process);
 }
 
 /// Creates the init task from the given executable file.
