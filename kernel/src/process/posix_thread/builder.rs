@@ -8,6 +8,7 @@ use ostd::{
     sync::RwArc,
     task::Task,
 };
+use spin::Once;
 
 use super::{PosixThread, ThreadLocal, thread_table};
 use crate::{
@@ -187,6 +188,8 @@ impl PosixThreadBuilder {
                     ns_proxy: Mutex::new(Some(ns_proxy.clone())),
                     timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
                     default_timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
+                    tracee_status: Once::new(),
+                    tracees: Once::new(),
                 }
             };
 
