@@ -66,7 +66,7 @@ pub struct Tty<D> {
     index: u32,
     driver: D,
     ldisc: SpinLock<LineDiscipline, LocalIrqDisabled>,
-    job_control: JobControl,
+    job_control: Arc<JobControl>,
     pollee: Pollee,
     tty_flags: TtyFlags,
     weak_self: Weak<Self>,
@@ -78,7 +78,7 @@ impl<D> Tty<D> {
             index,
             driver,
             ldisc: SpinLock::new(LineDiscipline::new()),
-            job_control: JobControl::new(),
+            job_control: Arc::new(JobControl::new()),
             pollee: Pollee::new(),
             tty_flags: TtyFlags::new(),
             weak_self: weak_ref.clone(),
@@ -310,8 +310,8 @@ impl<D: TtyDriver> Tty<D> {
 }
 
 impl<D: TtyDriver> Terminal for Tty<D> {
-    fn job_control(&self) -> &JobControl {
-        &self.job_control
+    fn job_control(&self) -> Arc<JobControl> {
+        self.job_control.clone()
     }
 }
 
