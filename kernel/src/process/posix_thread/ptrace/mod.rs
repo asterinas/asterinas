@@ -12,11 +12,14 @@ use ostd::{arch::cpu::context::UserContext, sync::Waiter};
 use super::{AsPosixThread, PosixThread};
 use crate::{
     prelude::*,
-    process::signal::{
-        PauseReason,
-        c_types::siginfo_t,
-        constants::{SIGCHLD, SIGKILL, SIGTRAP},
-        signals::{Signal, user::UserSignal},
+    process::{
+        CloneArgs, CloneFlags,
+        signal::{
+            PauseReason,
+            c_types::siginfo_t,
+            constants::{SIGCHLD, SIGKILL, SIGTRAP},
+            signals::{Signal, user::UserSignal},
+        },
     },
     thread::{Thread, Tid},
 };
@@ -87,6 +90,13 @@ impl PosixThread {
         if let Some(status) = self.tracee_status.get() {
             status.ptrace_may_stop_on(event, ctx, user_ctx)
         }
+    }
+
+    /// Returns whether a clone-family ptrace event would be required for `clone_args`.
+    pub(in crate::process) fn needs_ptrace_clone_stop(&self, clone_args: &CloneArgs) -> bool {
+        self.tracee_status
+            .get()
+            .is_some_and(|status| status.needs_clone_stop(clone_args))
     }
 
     /// Gets and clears the ptrace-stop status changes for the `wait` syscall.
@@ -403,6 +413,25 @@ impl TraceeStatus {
         }
 
         PtraceStopResult::Continued
+    }
+
+    fn needs_clone_stop(&self, clone_args: &CloneArgs) -> bool {
+        let state = self.state.lock();
+        if state.tracer().is_none() {
+            return false;
+        }
+        let options = state.options;
+
+        if clone_args.flags.contains(CloneFlags::CLONE_VFORK) {
+            return options.contains(PtraceOptions::PTRACE_O_TRACEVFORK)
+                || options.contains(PtraceOptions::PTRACE_O_TRACEVFORKDONE);
+        }
+
+        if clone_args.exit_signal == Some(SIGCHLD) {
+            return options.contains(PtraceOptions::PTRACE_O_TRACEFORK);
+        }
+
+        options.contains(PtraceOptions::PTRACE_O_TRACECLONE)
     }
 
     fn is_ptrace_stopped(&self) -> bool {
