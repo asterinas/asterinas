@@ -15,7 +15,7 @@ use crate::{
     process::signal::{
         PauseReason,
         c_types::siginfo_t,
-        constants::SIGCHLD,
+        constants::{SIGCHLD, SIGKILL},
         sig_num::SigNum,
         signals::{Signal, user::UserSignal},
     },
@@ -50,6 +50,7 @@ impl PosixThread {
     }
 
     /// Detaches the tracer of this thread.
+    #[expect(dead_code)]
     pub fn detach_tracer(&self) {
         if let Some(status) = self.tracee_status.get() {
             status.detach_tracer();
@@ -220,6 +221,28 @@ impl PosixThread {
             .and_then(|tracees| tracees.lock().get(&tid).cloned())
             .ok_or_else(|| Error::with_message(Errno::ESRCH, "no such tracee"))
     }
+
+    /// Clears all tracees of this tracer on exit.
+    pub(in crate::process) fn clear_tracees(&self, ctx: &Context) {
+        let Some(tracees) = self.tracees() else {
+            return;
+        };
+
+        let tracees = tracees.lock();
+        for (_, tracee) in tracees.iter() {
+            let tracee = tracee.as_posix_thread().unwrap();
+            let Some(status) = tracee.tracee_status.get() else {
+                continue;
+            };
+
+            let should_exitkill = status.detach_tracer();
+            if should_exitkill {
+                tracee.enqueue_signal(Box::new(UserSignal::new_kill(SIGKILL, ctx)));
+            } else {
+                tracee.wake_signalled_waker();
+            }
+        }
+    }
 }
 
 pub(super) struct TraceeStatus {
@@ -249,7 +272,10 @@ impl TraceeStatus {
         Ok(())
     }
 
-    fn detach_tracer(&self) {
+    /// Detaches the tracer of this thread.
+    ///
+    /// Returns whether the `PTRACE_O_EXITKILL` option is set.
+    fn detach_tracer(&self) -> bool {
         // Hold the lock first to avoid race conditions.
         let mut state = self.state.lock();
 
@@ -263,6 +289,8 @@ impl TraceeStatus {
             }
         }
         self.is_stopped.store(false, Ordering::Relaxed);
+
+        state.options.contains(PtraceOptions::PTRACE_O_EXITKILL)
     }
 
     fn ptrace_stop(

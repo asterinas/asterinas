@@ -236,7 +236,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FORK = 57              => sys_fork(args[..0], &user_ctx);
     SYS_VFORK = 58             => sys_vfork(args[..0], &user_ctx);
     SYS_EXECVE = 59            => sys_execve(args[..3], &mut user_ctx);
-    SYS_EXIT = 60              => sys_exit(args[..1]);
+    SYS_EXIT = 60              => sys_exit(args[..1], &mut user_ctx);
     SYS_WAIT4 = 61             => sys_wait4(args[..4]);
     SYS_KILL = 62              => sys_kill(args[..2]);
     SYS_UNAME = 63             => sys_uname(args[..1]);
@@ -351,7 +351,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_TIMER_DELETE = 226     => sys_timer_delete(args[..1]);
     SYS_CLOCK_GETTIME = 228    => sys_clock_gettime(args[..2]);
     SYS_CLOCK_NANOSLEEP = 230  => sys_clock_nanosleep(args[..4]);
-    SYS_EXIT_GROUP = 231       => sys_exit_group(args[..1]);
+    SYS_EXIT_GROUP = 231       => sys_exit_group(args[..1], &mut user_ctx);
     SYS_EPOLL_WAIT = 232       => sys_epoll_wait(args[..4]);
     SYS_EPOLL_CTL = 233        => sys_epoll_ctl(args[..4]);
     SYS_TGKILL = 234           => sys_tgkill(args[..3]);
