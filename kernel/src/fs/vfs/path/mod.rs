@@ -136,17 +136,17 @@ impl Path {
             return_errno_with_message!(Errno::EEXIST, "the file already exists");
         }
 
-        if inode_type == InodeType::SymLink
-            && creation_flags.contains(CreationFlags::O_NOFOLLOW)
-            && !status_flags.contains(StatusFlags::O_PATH)
-        {
-            return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
-        }
         if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
             return_errno_with_message!(
                 Errno::ENOTDIR,
                 "O_DIRECTORY is specified but the file is not a directory"
             );
+        }
+        if inode_type == InodeType::SymLink
+            && creation_flags.contains(CreationFlags::O_NOFOLLOW)
+            && !status_flags.contains(StatusFlags::O_PATH)
+        {
+            return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
         }
 
         if inode_type.is_regular_file()

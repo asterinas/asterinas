@@ -41,6 +41,7 @@ pub fn sys_openat(
             &fs_path,
             flags,
             InodeMode::from_bits_truncate(mask_mode),
+            path.ends_with('/'),
         )
         .map_err(|err| match err.error() {
             Errno::EINTR => Error::new(Errno::ERESTARTSYS),
@@ -79,6 +80,7 @@ fn do_open(
     fs_path: &FsPath,
     flags: u32,
     mode: InodeMode,
+    path_ends_with_slash: bool,
 ) -> Result<Arc<dyn FileLike>> {
     let open_args = OpenArgs::from_flags_and_mode(flags, mode)?;
 
@@ -92,14 +94,37 @@ fn do_open(
         );
     }
 
-    let lookup_res = if open_args.follow_tail_link() {
-        path_resolver.lookup_unresolved(fs_path)?
-    } else {
-        path_resolver.lookup_unresolved_no_follow(fs_path)?
+    let lookup_res = {
+        let lookup_result = if open_args.follow_tail_link() {
+            path_resolver.lookup_unresolved(fs_path)
+        } else {
+            path_resolver.lookup_unresolved_no_follow(fs_path)
+        };
+
+        match lookup_result {
+            Ok(res) => res,
+            Err(err)
+                if open_args.creation_flags.contains(CreationFlags::O_CREAT)
+                    && path_ends_with_slash
+                    && matches!(err.error(), Errno::ENOTDIR | Errno::ELOOP) =>
+            {
+                return_errno_with_message!(Errno::EISDIR, "O_CREAT on a path ending with '/'");
+            }
+            Err(err) => return Err(err),
+        }
     };
 
     let file_handle: Arc<dyn FileLike> = match lookup_res {
-        LookupResult::Resolved(path) => Arc::new(path.open(open_args)?),
+        LookupResult::Resolved(path) => {
+            if open_args.creation_flags.contains(CreationFlags::O_CREAT)
+                && open_args.creation_flags.contains(CreationFlags::O_EXCL)
+                && !path_ends_with_slash
+                && path.type_() == InodeType::Dir
+            {
+                return_errno_with_message!(Errno::EEXIST, "the file already exists");
+            }
+            Arc::new(path.open(open_args)?)
+        }
         LookupResult::AtParent(result) => {
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT)
                 || open_args.status_flags.contains(StatusFlags::O_PATH)
