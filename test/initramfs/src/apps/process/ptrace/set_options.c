@@ -2,6 +2,7 @@
 
 #define _GNU_SOURCE
 
+#include <sched.h>
 #include <signal.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
@@ -75,3 +76,76 @@ FN_TEST(ptrace_trace_exit)
 	CLEANUP_CHILD();
 }
 END_TEST()
+
+// TODO: Support clone-family ptrace events and remove this guard.
+#ifndef __asterinas__
+
+#define CLEANUP_GRAND_CHILD(notify_sig)                       \
+	pid_t grand_child = eventmsg;                         \
+	TEST_RES(waitpid(grand_child, &status, 0),            \
+		 _ret == grand_child && WIFSTOPPED(status) && \
+			 WSTOPSIG(status) == SIGSTOP);        \
+	TEST_SUCC(ptrace(PTRACE_CONT, grand_child, 0, 0));    \
+	TEST_RES(waitpid(grand_child, &status, 0),            \
+		 _ret == grand_child && WIFEXITED(status) &&  \
+			 WEXITSTATUS(status) == 0);           \
+                                                              \
+	CHECK(ptrace(PTRACE_CONT, pid, 0, 0));                \
+	TEST_RES(waitpid(pid, &status, 0),                    \
+		 _ret == pid && WIFSTOPPED(status) &&         \
+			 WSTOPSIG(status) == (notify_sig));
+
+static void tracee_fork(void)
+{
+	CHECK(fork());
+	_exit(0);
+}
+
+FN_TEST(ptrace_trace_fork)
+{
+	PTRACE_SETOPTIONS_TEST(FORK, tracee_fork);
+
+	CLEANUP_GRAND_CHILD(SIGCHLD);
+	CLEANUP_CHILD();
+}
+END_TEST()
+
+static void tracee_vfork(void)
+{
+	CHECK(vfork());
+	_exit(0);
+}
+
+FN_TEST(ptrace_trace_vfork)
+{
+	PTRACE_SETOPTIONS_TEST(VFORK, tracee_vfork);
+
+	CLEANUP_GRAND_CHILD(SIGCHLD);
+	CLEANUP_CHILD();
+}
+END_TEST()
+
+static int clone_child_fn(void *arg)
+{
+	_exit(0);
+}
+
+static void tracee_clone(void)
+{
+#define STACK_SIZE (1 << 20)
+	static char child_stack[STACK_SIZE];
+	CHECK(clone(clone_child_fn, child_stack + STACK_SIZE, SIGUSR1, NULL));
+#undef STACK_SIZE
+	_exit(0);
+}
+
+FN_TEST(ptrace_trace_clone)
+{
+	PTRACE_SETOPTIONS_TEST(CLONE, tracee_clone);
+
+	CLEANUP_GRAND_CHILD(SIGUSR1);
+	CLEANUP_CHILD();
+}
+END_TEST()
+
+#endif
