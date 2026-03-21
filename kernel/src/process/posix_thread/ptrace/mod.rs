@@ -6,8 +6,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use hashbrown::HashMap;
 #[cfg(target_arch = "x86_64")]
-use ostd::arch::cpu::context::{GeneralRegs, UserContext, c_user_regs_struct};
-use ostd::sync::Waiter;
+use ostd::arch::cpu::context::{GeneralRegs, c_user_regs_struct};
+use ostd::{arch::cpu::context::UserContext, sync::Waiter};
 
 use super::{AsPosixThread, PosixThread};
 use crate::{
@@ -26,6 +26,7 @@ mod util;
 
 pub use util::PtraceContRequest;
 pub(in crate::process) use util::PtraceStopResult;
+use util::StopSigInfo;
 
 impl PosixThread {
     /// Returns whether this thread may be a tracee.
@@ -67,15 +68,10 @@ impl PosixThread {
         &self,
         signal: Box<dyn Signal>,
         ctx: &Context,
-        #[cfg(target_arch = "x86_64")] user_ctx: &mut UserContext,
+        user_ctx: &mut UserContext,
     ) -> PtraceStopResult {
         if let Some(status) = self.tracee_status.get() {
-            status.ptrace_stop(
-                signal,
-                ctx,
-                #[cfg(target_arch = "x86_64")]
-                user_ctx,
-            )
+            status.ptrace_stop(signal, ctx, user_ctx)
         } else {
             PtraceStopResult::NotTraced(signal)
         }
@@ -236,8 +232,7 @@ impl TraceeStatus {
         let mut state = self.state.lock();
 
         state.tracer = Weak::new();
-        state.unwaited_siginfo = None;
-        state.siginfo = None;
+        state.siginfo.clear();
         #[cfg(target_arch = "x86_64")]
         {
             if let Some(regs) = state.general_regs.as_mut() {
@@ -251,8 +246,11 @@ impl TraceeStatus {
         &self,
         signal: Box<dyn Signal>,
         ctx: &Context,
-        #[cfg(target_arch = "x86_64")] user_ctx: &mut UserContext,
+        user_ctx: &mut UserContext,
     ) -> PtraceStopResult {
+        #[cfg(not(target_arch = "x86_64"))]
+        let _ = user_ctx;
+
         // Hold the lock first to avoid race conditions.
         let mut state = self.state.lock();
 
@@ -262,8 +260,7 @@ impl TraceeStatus {
 
         debug_assert!(!self.is_ptrace_stopped());
 
-        state.unwaited_siginfo = Some(signal.to_info());
-        state.siginfo = Some(signal.to_info());
+        state.siginfo.stop(signal.to_info());
         #[cfg(target_arch = "x86_64")]
         {
             state.general_regs = Some(*user_ctx.general_regs());
@@ -302,7 +299,7 @@ impl TraceeStatus {
         self.is_stopped.load(Ordering::Relaxed)
     }
 
-    fn check_ptrace_stopped(&self) -> Result<()> {
+    fn check_ptrace_stopped(&self, _state_guard: &MutexGuard<'_, TraceeState>) -> Result<()> {
         if self.is_ptrace_stopped() {
             Ok(())
         } else {
@@ -313,7 +310,7 @@ impl TraceeStatus {
     fn wait(&self) -> Option<SigNum> {
         let mut state = self.state.lock();
 
-        if let Some(siginfo) = state.unwaited_siginfo.take() {
+        if let Some(siginfo) = state.siginfo.wait() {
             let sig_num = (siginfo.si_signo as u8).try_into().unwrap();
             Some(sig_num)
         } else {
@@ -324,11 +321,10 @@ impl TraceeStatus {
     fn resume(&self, request: PtraceContRequest) -> Result<()> {
         // Hold the lock first to avoid race conditions.
         let mut state = self.state.lock();
-        self.check_ptrace_stopped()?;
+        self.check_ptrace_stopped(&state)?;
         debug!("resuming from ptrace-stop by request: {:?}", request);
 
-        state.unwaited_siginfo = None;
-        state.siginfo = None;
+        state.siginfo.clear();
         #[cfg(target_arch = "x86_64")]
         {
             let regs = state.general_regs.as_mut().unwrap();
@@ -343,7 +339,7 @@ impl TraceeStatus {
     fn get_regs(&self) -> Result<c_user_regs_struct> {
         // Hold the lock first to avoid race conditions.
         let state = self.state.lock();
-        self.check_ptrace_stopped()?;
+        self.check_ptrace_stopped(&state)?;
 
         Ok(state.general_regs.unwrap().into())
     }
@@ -352,7 +348,7 @@ impl TraceeStatus {
     fn set_regs(&self, regs: c_user_regs_struct) -> Result<()> {
         // Hold the lock first to avoid race conditions.
         let mut state = self.state.lock();
-        self.check_ptrace_stopped()?;
+        self.check_ptrace_stopped(&state)?;
 
         macro_rules! set_regs_from_user_regs {
             ($old_regs:ident, $regs:ident, [ $field:ident, $($meta:tt)+ ]) => {
@@ -372,7 +368,7 @@ impl TraceeStatus {
     fn peek_user(&self, offset: usize) -> Result<usize> {
         // Hold the lock first to avoid race conditions.
         let state = self.state.lock();
-        self.check_ptrace_stopped()?;
+        self.check_ptrace_stopped(&state)?;
         util::check_user_offset(offset)?;
 
         macro_rules! read_user_reg_by_offset {
@@ -392,7 +388,7 @@ impl TraceeStatus {
     fn poke_user(&self, offset: usize, value: usize) -> Result<()> {
         // Hold the lock first to avoid race conditions.
         let mut state = self.state.lock();
-        self.check_ptrace_stopped()?;
+        self.check_ptrace_stopped(&state)?;
         util::check_user_offset(offset)?;
 
         macro_rules! write_user_reg_by_offset {
@@ -414,22 +410,18 @@ impl TraceeStatus {
     fn get_siginfo(&self) -> Result<siginfo_t> {
         // Hold the lock first to avoid race conditions.
         let state = self.state.lock();
-        self.check_ptrace_stopped()?;
+        self.check_ptrace_stopped(&state)?;
 
-        Ok(state.siginfo.unwrap())
+        Ok(state.siginfo.get().unwrap())
     }
 }
 
 struct TraceeState {
     tracer: Weak<Thread>,
-    /// The siginfo of the signal that stopped the tracee and has not yet been waited on.
-    unwaited_siginfo: Option<siginfo_t>,
     /// The siginfo of the signal that stopped the tracee.
-    ///
-    /// This is needed to support `PTRACE_GETSIGINFO`.
-    siginfo: Option<siginfo_t>,
-    #[cfg(target_arch = "x86_64")]
+    siginfo: StopSigInfo,
     /// The general-purpose registers of the tracee at the time of ptrace-stop.
+    #[cfg(target_arch = "x86_64")]
     general_regs: Option<GeneralRegs>,
 }
 
@@ -437,8 +429,7 @@ impl TraceeState {
     fn new() -> Self {
         Self {
             tracer: Weak::new(),
-            unwaited_siginfo: None,
-            siginfo: None,
+            siginfo: StopSigInfo::default(),
             #[cfg(target_arch = "x86_64")]
             general_regs: None,
         }

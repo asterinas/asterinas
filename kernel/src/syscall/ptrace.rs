@@ -189,7 +189,7 @@ enum PtraceRequest {
     PTRACE_SYSEMU_SINGLESTEP = 32,
     /// Set ptrace filter options.
     PTRACE_SETOPTIONS = 0x4200,
-    /// Get siginfo for process.
+    /// Get the siginfo of the last ptrace-stop.
     PTRACE_GETSIGINFO = 0x4202,
     /// Get register content.
     PTRACE_GETREGSET = 0x4204,
