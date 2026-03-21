@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{mm::VmIo, task::Task};
+use ostd::{arch::cpu::context::UserContext, mm::VmIo, task::Task};
 
 use super::{
     AsPosixThread, AsThreadLocal, ThreadLocal,
@@ -25,8 +25,8 @@ use crate::{
 /// # Panics
 ///
 /// If the current thread is not a POSIX thread, this method will panic.
-pub fn do_exit(term_status: TermStatus) {
-    exit_internal(term_status, false);
+pub fn do_exit(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContext) {
+    exit_internal(term_status, false, ctx, user_ctx);
 }
 
 /// Kills all threads and exits the current POSIX process.
@@ -34,12 +34,17 @@ pub fn do_exit(term_status: TermStatus) {
 /// # Panics
 ///
 /// If the current thread is not a POSIX thread, this method will panic.
-pub fn do_exit_group(term_status: TermStatus) {
-    exit_internal(term_status, true);
+pub fn do_exit_group(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContext) {
+    exit_internal(term_status, true, ctx, user_ctx);
 }
 
 /// Exits the current POSIX thread or process.
-fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
+fn exit_internal(
+    term_status: TermStatus,
+    is_exiting_group: bool,
+    ctx: &Context,
+    user_ctx: &mut UserContext,
+) {
     let exit_code = term_status.as_u32();
 
     let current_task = Task::current().unwrap();
@@ -76,7 +81,7 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
         tasks.remove_exited(&current_task, posix_thread.tid())
     };
 
-    posix_thread.clear_tracees();
+    posix_thread.clear_tracees(ctx);
 
     if let Some(tracer) = posix_thread.tracer() {
         let tracer = tracer.as_posix_thread().unwrap();
