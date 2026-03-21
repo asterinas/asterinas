@@ -1,3 +1,9 @@
+<!--
+To promote a "single source of truth", the content of `README.md` is also included in `lib.rs`
+as the crate-level documentation. So when writing this README, bear in mind that its content
+should be recognized correctly by both a Markdown renderer and the rustdoc tool.
+-->
+
 # Asterinas OSTD
 
 Asterinas OSTD is a Rust OS framework that facilitates the development of and innovation in OS kernels written in Rust.
@@ -19,3 +25,7 @@ Asterinas OSTD offers the following key values.
 ## OSTD APIs
 
 See [API docs](https://asterinas.github.io/api-docs).
+
+## License
+
+This project is licensed under MPL-2.0.
