@@ -2,10 +2,18 @@
 
 //! This module implements the [`EligibilityQueue`] used in the EEVDF scheduler.
 
-use alloc::boxed::Box;
-use core::{cmp, mem};
+use alloc::vec::Vec;
+use core::cmp;
 
 /// Eligibility check: (ρ - ρₘᵢₙ)W ≤ Φ
+///
+/// The subtraction is non-negative (callers guarantee `vruntime >= min_vruntime`).
+/// The product fits in `i64` because lag clamping at reschedule time (see
+/// `FairClassRq::pick_next`) constrains the per-CPU vruntime spread to
+/// O(`lag_limit_clocks` · `WEIGHT_0` / `w_min`), and `total_weight` is bounded
+/// by the per-CPU task count times `w_max`. With current constants
+/// (`base_slice` = 0.7 ms, tick = 1 ms, `w_min` ≈ 15, `w_max` ≈ 89K) and 1000
+/// tasks per CPU, the worst-case product is ~10¹⁷ — roughly 1% of `i64::MAX`.
 fn is_eligible(
     vruntime: i64,
     min_vruntime: i64,
@@ -48,6 +56,10 @@ impl<T> PartialOrd for TaskData<T> {
         Some(self.cmp(other))
     }
 }
+/// `PartialEq` compares by `id` alone, while `Ord` compares by
+/// `(vdeadline, id)`. This is consistent in practice because IDs are
+/// assigned from a monotonic counter in `FairClassRq::enqueue`,
+/// so equal IDs imply equal vdeadlines.
 impl<T> PartialEq for TaskData<T> {
     fn eq(&self, other: &Self) -> bool {
         self.id.eq(&other.id)
@@ -55,27 +67,45 @@ impl<T> PartialEq for TaskData<T> {
 }
 impl<T> Eq for TaskData<T> {}
 
-/// The [`EligibilityQueue`] is a balanced binary search tree in which tasks are
-/// ordered by their virtual deadlines.
+/// Sentinel value representing a null/absent node.
+const NIL: u32 = u32::MAX;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Color {
+    Red,
+    Black,
+}
+
+struct Node<T> {
+    data: TaskData<T>,
+    color: Color,
+    parent: u32,
+    left: u32,
+    right: u32,
+    min_vruntime: i64,
+}
+
+/// The [`EligibilityQueue`] is a red-black tree augmented with min-vruntime
+/// tracking, in which tasks are ordered by their virtual deadlines.
 ///
-/// This data structure currently behaves as an AVL tree but an RB tree is likely
-/// better.
-pub(super) enum EligibilityQueue<T> {
-    Node {
-        data: TaskData<T>,
-        min_vruntime: i64,
-        height: i8,
-        left: Box<Self>,
-        right: Box<Self>,
-    },
-    Leaf,
+/// All tree operations are iterative to avoid deep stack usage in the kernel.
+pub(super) struct EligibilityQueue<T> {
+    nodes: Vec<Option<Node<T>>>,
+    root: u32,
+    free_list: Vec<u32>,
+    len: usize,
 }
 
 impl<T> core::fmt::Debug for EligibilityQueue<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Leaf => write!(f, "Tree::Leaf"),
-            Self::Node { data, .. } => write!(f, "Tree::Node[id={}]", data.id),
+        if self.root == NIL {
+            write!(f, "EligibilityQueue::Empty")
+        } else {
+            write!(
+                f,
+                "EligibilityQueue[root_id={}]",
+                self.node(self.root).data.id
+            )
         }
     }
 }
@@ -83,45 +113,66 @@ impl<T> core::fmt::Debug for EligibilityQueue<T> {
 impl<T> EligibilityQueue<T> {
     /// Returns an empty queue.
     pub(super) fn new() -> Self {
-        Self::Leaf
+        Self {
+            nodes: Vec::new(),
+            root: NIL,
+            free_list: Vec::new(),
+            len: 0,
+        }
     }
 
-    /// Whether the queue is empty or not.
-    pub(super) fn is_empty(&self) -> bool {
-        self.is_leaf()
+    /// Returns the number of tasks in the queue.
+    pub(super) fn len(&self) -> usize {
+        self.len
     }
 
     /// Pushes a new [`TaskData`] to the queue.
     pub(super) fn push(&mut self, new: TaskData<T>) {
-        match self {
-            Self::Leaf => {
-                let min_vruntime = new.vruntime;
-                *self = Self::Node {
-                    data: new,
-                    min_vruntime,
-                    height: 0,
-                    left: Box::new(Self::new()),
-                    right: Box::new(Self::new()),
+        let mut parent = NIL;
+        let mut curr = self.root;
+        let mut go_left = true;
+
+        while curr != NIL {
+            parent = curr;
+            match new.cmp(&self.node(curr).data) {
+                cmp::Ordering::Equal => {
+                    self.node_mut(curr).data = new;
+                    self.update_min_vruntime_to_root(curr);
+                    return;
                 }
-            }
-            Self::Node {
-                data, left, right, ..
-            } => {
-                match new.cmp(data) {
-                    cmp::Ordering::Equal => *data = new,
-                    cmp::Ordering::Less => left.push(new),
-                    cmp::Ordering::Greater => right.push(new),
+                cmp::Ordering::Less => {
+                    go_left = true;
+                    curr = self.node(curr).left;
                 }
-                self.update_and_rebalance();
+                cmp::Ordering::Greater => {
+                    go_left = false;
+                    curr = self.node(curr).right;
+                }
             }
         }
+
+        let z = self.alloc_node(new, Color::Red);
+        self.node_mut(z).parent = parent;
+
+        if parent == NIL {
+            self.root = z;
+        } else if go_left {
+            self.node_mut(parent).left = z;
+        } else {
+            self.node_mut(parent).right = z;
+        }
+
+        self.update_min_vruntime_to_root(z);
+        self.insert_fixup(z);
+        self.len += 1;
     }
 
     /// Returns the minimum vruntime in the queue, if any.
     pub(super) fn min_vruntime(&self) -> Option<i64> {
-        match self {
-            Self::Leaf => None,
-            Self::Node { min_vruntime, .. } => Some(*min_vruntime),
+        if self.root == NIL {
+            None
+        } else {
+            Some(self.node(self.root).min_vruntime)
         }
     }
 
@@ -134,279 +185,448 @@ impl<T> EligibilityQueue<T> {
         total_weight: i64,
         weighted_vruntime_offsets: i64,
     ) -> Option<TaskData<T>> {
-        match self {
-            Self::Leaf => None,
-            Self::Node {
-                data, left, right, ..
-            } => {
-                if left.has_eligible_task(
-                    global_min_vruntime,
-                    total_weight,
-                    weighted_vruntime_offsets,
-                ) {
-                    let res =
-                        left.pop(global_min_vruntime, total_weight, weighted_vruntime_offsets);
-                    if res.is_some() {
-                        self.update_and_rebalance();
-                    }
-                    return res;
-                }
+        if self.root == NIL {
+            return None;
+        }
 
-                if is_eligible(
-                    data.vruntime,
-                    global_min_vruntime,
-                    total_weight,
-                    weighted_vruntime_offsets,
-                ) {
-                    // Take ownership of this node so we can move its children around.
-                    let node = mem::replace(self, Self::Leaf);
-                    let Self::Node {
-                        data: task_data,
-                        left,
-                        mut right,
-                        ..
-                    } = node
-                    else {
-                        unreachable!();
-                    };
-
-                    // Case: no left child -> replace this node with right subtree.
-                    if left.is_leaf() {
-                        *self = *right;
-                        if !self.is_leaf() {
-                            self.update_and_rebalance();
-                        }
-                        return Some(task_data);
-                    }
-
-                    // Case: no right child -> replace this node with left subtree.
-                    if right.is_leaf() {
-                        *self = *left;
-                        if !self.is_leaf() {
-                            self.update_and_rebalance();
-                        }
-                        return Some(task_data);
-                    }
-
-                    // Case: two children -> replace with in-order successor (min of right).
-                    let successor = right.pop_min().unwrap();
-                    *self = Self::Node {
-                        data: successor,
-                        min_vruntime: 0, // Fixed by `update_and_rebalance`.
-                        height: 0,
-                        left,
-                        right,
-                    };
-                    self.update_and_rebalance();
-                    return Some(task_data);
-                }
-
-                if right.has_eligible_task(
-                    global_min_vruntime,
-                    total_weight,
-                    weighted_vruntime_offsets,
-                ) {
-                    let res =
-                        right.pop(global_min_vruntime, total_weight, weighted_vruntime_offsets);
-                    if res.is_some() {
-                        self.update_and_rebalance();
-                    }
-                    return res;
-                }
-
-                let res = self.pop_min();
-                if res.is_some() {
-                    self.update_and_rebalance();
-                }
-                res
+        if is_eligible(
+            self.node(self.root).min_vruntime,
+            global_min_vruntime,
+            total_weight,
+            weighted_vruntime_offsets,
+        ) {
+            let idx = self.find_first_eligible(
+                global_min_vruntime,
+                total_weight,
+                weighted_vruntime_offsets,
+            );
+            if idx != NIL {
+                return Some(self.delete_node(idx));
             }
         }
+
+        // Fallback: pop the task with the earliest virtual deadline.
+        let min_idx = self.tree_minimum(self.root);
+        Some(self.delete_node(min_idx))
     }
 
     /// Returns the minimum between the given `vruntime` and the minimum vruntime
     /// in the queue. If the queue is empty, just returns `vruntime`.
     pub(super) fn min_vruntime_against(&self, vruntime: i64) -> i64 {
-        match self {
-            Self::Leaf => vruntime,
-            Self::Node { min_vruntime, .. } => vruntime.min(*min_vruntime),
+        if self.root == NIL {
+            vruntime
+        } else {
+            vruntime.min(self.node(self.root).min_vruntime)
         }
     }
 
-    fn has_eligible_task(
+    // -- High-level internal operations --
+
+    /// Finds the first eligible node by in-order traversal (earliest vdeadline),
+    /// using the augmented `min_vruntime` to prune ineligible subtrees.
+    fn find_first_eligible(
         &self,
         global_min_vruntime: i64,
         total_weight: i64,
         weighted_vruntime_offsets: i64,
-    ) -> bool {
-        match self {
-            Self::Leaf => false,
-            Self::Node { min_vruntime, .. } => is_eligible(
-                *min_vruntime,
+    ) -> u32 {
+        let mut curr = self.root;
+        while curr != NIL {
+            let left = self.node(curr).left;
+            if left != NIL
+                && is_eligible(
+                    self.node(left).min_vruntime,
+                    global_min_vruntime,
+                    total_weight,
+                    weighted_vruntime_offsets,
+                )
+            {
+                curr = left;
+                continue;
+            }
+
+            if is_eligible(
+                self.node(curr).data.vruntime,
                 global_min_vruntime,
                 total_weight,
                 weighted_vruntime_offsets,
-            ),
+            ) {
+                return curr;
+            }
+
+            let right = self.node(curr).right;
+            if right != NIL
+                && is_eligible(
+                    self.node(right).min_vruntime,
+                    global_min_vruntime,
+                    total_weight,
+                    weighted_vruntime_offsets,
+                )
+            {
+                curr = right;
+                continue;
+            }
+
+            break;
         }
+        NIL
     }
 
-    fn pop_min(&mut self) -> Option<TaskData<T>> {
-        match self {
-            Self::Leaf => None,
-            Self::Node { left, .. } => {
-                if left.is_leaf() {
-                    let old_self = mem::replace(self, Self::Leaf);
-                    if let Self::Node { data, right, .. } = old_self {
-                        *self = *right;
-                        return Some(data);
-                    }
-                    None
+    /// Removes node `z` from the tree and returns its data.
+    fn delete_node(&mut self, z: u32) -> TaskData<T> {
+        let zl = self.node(z).left;
+        let zr = self.node(z).right;
+        let z_color = self.node(z).color;
+
+        let y_orig_color;
+        let x;
+        let x_parent;
+        let mut y_moved = NIL;
+
+        if zl == NIL {
+            y_orig_color = z_color;
+            x = zr;
+            x_parent = self.node(z).parent;
+            self.transplant(z, zr);
+        } else if zr == NIL {
+            y_orig_color = z_color;
+            x = zl;
+            x_parent = self.node(z).parent;
+            self.transplant(z, zl);
+        } else {
+            // Two children: replace z with its in-order successor.
+            let y = self.tree_minimum(zr);
+            y_orig_color = self.node(y).color;
+            x = self.node(y).right;
+
+            if self.node(y).parent == z {
+                x_parent = y;
+            } else {
+                x_parent = self.node(y).parent;
+                self.transplant(y, x);
+                self.node_mut(y).right = zr;
+                self.node_mut(zr).parent = y;
+            }
+
+            self.transplant(z, y);
+            self.node_mut(y).left = zl;
+            self.node_mut(zl).parent = y;
+            self.node_mut(y).color = z_color;
+            y_moved = y;
+        }
+
+        if y_orig_color == Color::Black {
+            self.delete_fixup(x, x_parent);
+        }
+
+        // Restore the augmented min_vruntime from all affected paths to root.
+        if x_parent != NIL {
+            self.update_min_vruntime_to_root(x_parent);
+        }
+        if y_moved != NIL {
+            self.update_min_vruntime_to_root(y_moved);
+        }
+
+        self.len -= 1;
+        self.free_node(z)
+    }
+
+    // -- Red-black tree balancing --
+
+    fn insert_fixup(&mut self, mut z: u32) {
+        while z != self.root && self.color_of(self.parent_of(z)) == Color::Red {
+            let p = self.parent_of(z);
+            let gp = self.parent_of(p);
+
+            if p == self.left_of(gp) {
+                let uncle = self.right_of(gp);
+                if self.color_of(uncle) == Color::Red {
+                    self.set_color(p, Color::Black);
+                    self.set_color(uncle, Color::Black);
+                    self.set_color(gp, Color::Red);
+                    z = gp;
                 } else {
-                    let result = left.pop_min();
-                    self.update_and_rebalance();
-                    result
+                    if z == self.right_of(p) {
+                        z = p;
+                        self.rotate_left(z);
+                    }
+                    let p = self.parent_of(z);
+                    let gp = self.parent_of(p);
+                    self.set_color(p, Color::Black);
+                    self.set_color(gp, Color::Red);
+                    self.rotate_right(gp);
+                }
+            } else {
+                let uncle = self.left_of(gp);
+                if self.color_of(uncle) == Color::Red {
+                    self.set_color(p, Color::Black);
+                    self.set_color(uncle, Color::Black);
+                    self.set_color(gp, Color::Red);
+                    z = gp;
+                } else {
+                    if z == self.left_of(p) {
+                        z = p;
+                        self.rotate_right(z);
+                    }
+                    let p = self.parent_of(z);
+                    let gp = self.parent_of(p);
+                    self.set_color(p, Color::Black);
+                    self.set_color(gp, Color::Red);
+                    self.rotate_left(gp);
                 }
             }
         }
+        self.set_color(self.root, Color::Black);
     }
 
-    fn is_leaf(&self) -> bool {
-        matches!(self, Self::Leaf)
+    fn delete_fixup(&mut self, mut x: u32, mut x_parent: u32) {
+        while x != self.root && self.color_of(x) == Color::Black {
+            let x_is_left = if x != NIL {
+                x == self.node(x_parent).left
+            } else {
+                // When x is NIL, the sibling is always non-NIL (RB invariant),
+                // so the NIL side is whichever child slot is empty.
+                self.node(x_parent).left == NIL
+            };
+
+            if x_is_left {
+                let mut w = self.node(x_parent).right;
+
+                if self.color_of(w) == Color::Red {
+                    self.set_color(w, Color::Black);
+                    self.set_color(x_parent, Color::Red);
+                    self.rotate_left(x_parent);
+                    w = self.node(x_parent).right;
+                }
+
+                if self.color_of(self.left_of(w)) == Color::Black
+                    && self.color_of(self.right_of(w)) == Color::Black
+                {
+                    self.set_color(w, Color::Red);
+                    x = x_parent;
+                    x_parent = self.parent_of(x);
+                } else {
+                    if self.color_of(self.right_of(w)) == Color::Black {
+                        self.set_color(self.left_of(w), Color::Black);
+                        self.set_color(w, Color::Red);
+                        self.rotate_right(w);
+                        w = self.node(x_parent).right;
+                    }
+                    self.set_color(w, self.color_of(x_parent));
+                    self.set_color(x_parent, Color::Black);
+                    self.set_color(self.right_of(w), Color::Black);
+                    self.rotate_left(x_parent);
+                    x = self.root;
+                    x_parent = NIL;
+                }
+            } else {
+                let mut w = self.node(x_parent).left;
+
+                if self.color_of(w) == Color::Red {
+                    self.set_color(w, Color::Black);
+                    self.set_color(x_parent, Color::Red);
+                    self.rotate_right(x_parent);
+                    w = self.node(x_parent).left;
+                }
+
+                if self.color_of(self.right_of(w)) == Color::Black
+                    && self.color_of(self.left_of(w)) == Color::Black
+                {
+                    self.set_color(w, Color::Red);
+                    x = x_parent;
+                    x_parent = self.parent_of(x);
+                } else {
+                    if self.color_of(self.left_of(w)) == Color::Black {
+                        self.set_color(self.right_of(w), Color::Black);
+                        self.set_color(w, Color::Red);
+                        self.rotate_left(w);
+                        w = self.node(x_parent).left;
+                    }
+                    self.set_color(w, self.color_of(x_parent));
+                    self.set_color(x_parent, Color::Black);
+                    self.set_color(self.left_of(w), Color::Black);
+                    self.rotate_right(x_parent);
+                    x = self.root;
+                    x_parent = NIL;
+                }
+            }
+        }
+        if x != NIL {
+            self.set_color(x, Color::Black);
+        }
     }
 
-    fn update(&mut self) {
-        if let Self::Node {
+    fn rotate_left(&mut self, x: u32) {
+        let y = self.node(x).right;
+        let yl = self.node(y).left;
+        let xp = self.node(x).parent;
+
+        self.node_mut(x).right = yl;
+        if yl != NIL {
+            self.node_mut(yl).parent = x;
+        }
+
+        self.node_mut(y).parent = xp;
+        if xp == NIL {
+            self.root = y;
+        } else if x == self.node(xp).left {
+            self.node_mut(xp).left = y;
+        } else {
+            self.node_mut(xp).right = y;
+        }
+
+        self.node_mut(y).left = x;
+        self.node_mut(x).parent = y;
+
+        self.recompute_min_vruntime(x);
+        self.recompute_min_vruntime(y);
+    }
+
+    fn rotate_right(&mut self, y: u32) {
+        let x = self.node(y).left;
+        let xr = self.node(x).right;
+        let yp = self.node(y).parent;
+
+        self.node_mut(y).left = xr;
+        if xr != NIL {
+            self.node_mut(xr).parent = y;
+        }
+
+        self.node_mut(x).parent = yp;
+        if yp == NIL {
+            self.root = x;
+        } else if y == self.node(yp).left {
+            self.node_mut(yp).left = x;
+        } else {
+            self.node_mut(yp).right = x;
+        }
+
+        self.node_mut(x).right = y;
+        self.node_mut(y).parent = x;
+
+        self.recompute_min_vruntime(y);
+        self.recompute_min_vruntime(x);
+    }
+
+    /// Replaces the subtree rooted at `u` with the subtree rooted at `v`.
+    fn transplant(&mut self, u: u32, v: u32) {
+        let up = self.node(u).parent;
+        if up == NIL {
+            self.root = v;
+        } else if u == self.node(up).left {
+            self.node_mut(up).left = v;
+        } else {
+            self.node_mut(up).right = v;
+        }
+        if v != NIL {
+            self.node_mut(v).parent = up;
+        }
+    }
+
+    // -- Arena and node accessors --
+
+    fn tree_minimum(&self, mut idx: u32) -> u32 {
+        while self.node(idx).left != NIL {
+            idx = self.node(idx).left;
+        }
+        idx
+    }
+
+    fn alloc_node(&mut self, data: TaskData<T>, color: Color) -> u32 {
+        let min_vruntime = data.vruntime;
+        let node = Node {
             data,
-            height,
+            color,
+            parent: NIL,
+            left: NIL,
+            right: NIL,
             min_vruntime,
-            left,
-            right,
-        } = self
-        {
-            *height = 1 + left.height().max(right.height());
-            *min_vruntime = right.min_vruntime_against(left.min_vruntime_against(data.vruntime));
+        };
+        if let Some(idx) = self.free_list.pop() {
+            self.nodes[idx as usize] = Some(node);
+            idx
+        } else {
+            let idx = self.nodes.len() as u32;
+            self.nodes.push(Some(node));
+            idx
         }
     }
 
-    fn height(&self) -> i8 {
-        match self {
-            Self::Leaf => -1,
-            Self::Node { height, .. } => *height,
+    fn free_node(&mut self, idx: u32) -> TaskData<T> {
+        let node = self.nodes[idx as usize]
+            .take()
+            .expect("freeing absent node");
+        self.free_list.push(idx);
+        node.data
+    }
+
+    fn node(&self, idx: u32) -> &Node<T> {
+        self.nodes[idx as usize]
+            .as_ref()
+            .expect("accessing absent node")
+    }
+
+    fn node_mut(&mut self, idx: u32) -> &mut Node<T> {
+        self.nodes[idx as usize]
+            .as_mut()
+            .expect("accessing absent node")
+    }
+
+    fn color_of(&self, idx: u32) -> Color {
+        if idx == NIL {
+            Color::Black
+        } else {
+            self.node(idx).color
         }
     }
 
-    fn balance_factor(&self) -> i8 {
-        match self {
-            Self::Leaf => 0,
-            Self::Node { left, right, .. } => left.height() - right.height(),
+    fn set_color(&mut self, idx: u32, color: Color) {
+        if idx != NIL {
+            self.node_mut(idx).color = color;
         }
     }
 
-    fn rotate_left(&mut self) {
-        if let Self::Node { right, .. } = self {
-            let right_node = mem::replace(right, Box::new(Self::Leaf));
-            if let Self::Node {
-                data: rdata,
-                min_vruntime: rmin_vruntime,
-                height: rheight,
-                left: rleft,
-                right: rright,
-            } = *right_node
-            {
-                let old = mem::replace(self, Self::Leaf);
-                if let Self::Node {
-                    data,
-                    min_vruntime,
-                    height,
-                    left,
-                    right: _,
-                } = old
-                {
-                    *self = Self::Node {
-                        data: rdata,
-                        min_vruntime: rmin_vruntime,
-                        height: rheight,
-                        left: Box::new(Self::Node {
-                            data,
-                            min_vruntime,
-                            height,
-                            left,
-                            right: rleft,
-                        }),
-                        right: rright,
-                    };
-                }
-            }
+    fn parent_of(&self, idx: u32) -> u32 {
+        if idx == NIL {
+            NIL
+        } else {
+            self.node(idx).parent
         }
-        if let Self::Node { left, right, .. } = self {
-            left.update();
-            right.update();
-        }
-        self.update();
     }
 
-    fn rotate_right(&mut self) {
-        if let Self::Node { left, .. } = self {
-            let left_node = mem::replace(left, Box::new(Self::Leaf));
-            if let Self::Node {
-                data: ldata,
-                min_vruntime: lmin_vruntime,
-                height: lheight,
-                left: lleft,
-                right: lright,
-            } = *left_node
-            {
-                let old = mem::replace(self, Self::Leaf);
-                if let Self::Node {
-                    data,
-                    min_vruntime,
-                    height,
-                    left: _,
-                    right,
-                } = old
-                {
-                    *self = Self::Node {
-                        data: ldata,
-                        min_vruntime: lmin_vruntime,
-                        height: lheight,
-                        left: lleft,
-                        right: Box::new(Self::Node {
-                            data,
-                            min_vruntime,
-                            height,
-                            left: lright,
-                            right,
-                        }),
-                    };
-                }
-            }
-        }
-        if let Self::Node { left, right, .. } = self {
-            left.update();
-            right.update();
-        }
-        self.update();
+    fn left_of(&self, idx: u32) -> u32 {
+        if idx == NIL { NIL } else { self.node(idx).left }
     }
 
-    fn update_and_rebalance(&mut self) {
-        self.update();
+    fn right_of(&self, idx: u32) -> u32 {
+        if idx == NIL {
+            NIL
+        } else {
+            self.node(idx).right
+        }
+    }
 
-        let bf = self.balance_factor();
-        if bf > 1 {
-            let Self::Node { left, .. } = self else {
-                return;
-            };
-            if left.balance_factor() < 0 {
-                left.rotate_left();
-            }
-            self.rotate_right();
-        } else if bf < -1 {
-            let Self::Node { right, .. } = self else {
-                return;
-            };
-            if right.balance_factor() > 0 {
-                right.rotate_right();
-            }
-            self.rotate_left();
+    fn recompute_min_vruntime(&mut self, idx: u32) {
+        if idx == NIL {
+            return;
+        }
+        let left = self.node(idx).left;
+        let right = self.node(idx).right;
+        let mut min_v = self.node(idx).data.vruntime;
+        if left != NIL {
+            min_v = min_v.min(self.node(left).min_vruntime);
+        }
+        if right != NIL {
+            min_v = min_v.min(self.node(right).min_vruntime);
+        }
+        self.node_mut(idx).min_vruntime = min_v;
+    }
+
+    /// Walks from `idx` to the root, recomputing `min_vruntime` at every node.
+    fn update_min_vruntime_to_root(&mut self, mut idx: u32) {
+        while idx != NIL {
+            self.recompute_min_vruntime(idx);
+            idx = self.node(idx).parent;
         }
     }
 }
@@ -417,7 +637,6 @@ mod tests {
 
     use super::*;
 
-    // Helper function to create a simple task
     fn create_task(id: u64, vdeadline: i64, weight: i64, vruntime: i64) -> TaskData<u64> {
         TaskData {
             task: id,
@@ -429,48 +648,110 @@ mod tests {
         }
     }
 
-    // Helper to verify tree invariants
-    fn verify_tree_invariants<T>(queue: &EligibilityQueue<T>) -> (i8, i64) {
-        match queue {
-            EligibilityQueue::Leaf => (-1, i64::MAX),
-            EligibilityQueue::Node {
-                data,
-                min_vruntime,
-                height,
-                left,
-                right,
-            } => {
-                let (left_height, left_min) = verify_tree_invariants(left);
-                let (right_height, right_min) = verify_tree_invariants(right);
+    /// Pops the earliest-deadline task, ignoring eligibility.
+    ///
+    /// Equivalent to `pop` with parameters that make every task eligible:
+    /// `(vruntime - 0) * 0 = 0 <= 0` is always true.
+    fn pop_earliest(queue: &mut EligibilityQueue<u64>) -> Option<TaskData<u64>> {
+        queue.pop(0, 0, 0)
+    }
 
-                // Check height calculation
-                let expected_height = 1 + left_height.max(right_height);
-                assert_eq!(*height, expected_height, "Height calculation incorrect");
-
-                // Check min_vruntime calculation
-                let expected_min = data.vruntime.min(left_min).min(right_min);
-                assert_eq!(
-                    *min_vruntime, expected_min,
-                    "min_vruntime calculation incorrect"
-                );
-
-                // Check balance factor
-                let balance_factor = left_height - right_height;
-                assert!(
-                    balance_factor.abs() <= 1,
-                    "Tree is not balanced, balance factor: {}",
-                    balance_factor
-                );
-
-                (*height, *min_vruntime)
-            }
+    /// Recursively verifies red-black tree invariants and returns the black
+    /// height of the subtree rooted at `idx`.
+    fn verify_subtree<T>(queue: &EligibilityQueue<T>, idx: u32) -> u32 {
+        if idx == NIL {
+            return 1;
         }
+
+        let node = queue.node(idx);
+        let left = node.left;
+        let right = node.right;
+
+        // Check parent pointers.
+        if left != NIL {
+            assert_eq!(queue.node(left).parent, idx, "Left child's parent mismatch");
+        }
+        if right != NIL {
+            assert_eq!(
+                queue.node(right).parent,
+                idx,
+                "Right child's parent mismatch"
+            );
+        }
+
+        // Red nodes must have black children.
+        if node.color == Color::Red {
+            assert_eq!(
+                queue.color_of(left),
+                Color::Black,
+                "Red node has red left child"
+            );
+            assert_eq!(
+                queue.color_of(right),
+                Color::Black,
+                "Red node has red right child"
+            );
+        }
+
+        // Check BST ordering.
+        if left != NIL {
+            assert!(
+                queue.node(left).data < node.data,
+                "BST ordering violated on left"
+            );
+        }
+        if right != NIL {
+            assert!(
+                node.data < queue.node(right).data,
+                "BST ordering violated on right"
+            );
+        }
+
+        // Check min_vruntime augmentation.
+        let mut expected_min = node.data.vruntime;
+        if left != NIL {
+            expected_min = expected_min.min(queue.node(left).min_vruntime);
+        }
+        if right != NIL {
+            expected_min = expected_min.min(queue.node(right).min_vruntime);
+        }
+        assert_eq!(
+            node.min_vruntime, expected_min,
+            "min_vruntime calculation incorrect"
+        );
+
+        // Check black-height balance.
+        let left_bh = verify_subtree(queue, left);
+        let right_bh = verify_subtree(queue, right);
+        assert_eq!(
+            left_bh, right_bh,
+            "Black height mismatch: left={}, right={}",
+            left_bh, right_bh
+        );
+
+        left_bh + if node.color == Color::Black { 1 } else { 0 }
+    }
+
+    fn verify_tree_invariants<T>(queue: &EligibilityQueue<T>) {
+        if queue.root != NIL {
+            assert_eq!(
+                queue.node(queue.root).color,
+                Color::Black,
+                "Root must be black"
+            );
+            assert_eq!(
+                queue.node(queue.root).parent,
+                NIL,
+                "Root's parent must be NIL"
+            );
+        }
+        verify_subtree(queue, queue.root);
     }
 
     #[ktest]
     fn empty_tree() {
         let queue: EligibilityQueue<&str> = EligibilityQueue::new();
-        assert!(queue.is_empty());
+        assert!(queue.len() == 0);
         assert!(queue.min_vruntime().is_none());
 
         verify_tree_invariants(&queue);
@@ -482,7 +763,7 @@ mod tests {
         let task = create_task(1, 100, 10, 50);
 
         queue.push(task);
-        assert!(!queue.is_empty());
+        assert!(queue.len() != 0);
         assert_eq!(queue.min_vruntime(), Some(50));
 
         verify_tree_invariants(&queue);
@@ -497,7 +778,7 @@ mod tests {
             queue.push(create_task(i as u64, i * 10, 10, i * 5));
         }
 
-        assert!(!queue.is_empty());
+        assert!(queue.len() != 0);
         verify_tree_invariants(&queue);
     }
 
@@ -510,7 +791,7 @@ mod tests {
             queue.push(create_task(i as u64, i * 10, 10, i * 5));
         }
 
-        assert!(!queue.is_empty());
+        assert!(queue.len() != 0);
         verify_tree_invariants(&queue);
     }
 
@@ -530,32 +811,32 @@ mod tests {
             queue.push(task);
         }
 
-        assert!(!queue.is_empty());
+        assert!(queue.len() != 0);
         verify_tree_invariants(&queue);
     }
 
     #[ktest]
-    fn pop_min_basic() {
+    fn pop_earliest_basic() {
         let mut queue = EligibilityQueue::new();
 
         queue.push(create_task(2, 20, 10, 10));
         queue.push(create_task(1, 10, 10, 5));
         queue.push(create_task(3, 30, 10, 15));
 
-        let min_task = queue.pop_min();
+        let min_task = pop_earliest(&mut queue);
         assert_eq!(min_task.unwrap().id, 1);
 
         verify_tree_invariants(&queue);
 
-        let second_min = queue.pop_min();
+        let second_min = pop_earliest(&mut queue);
         assert_eq!(second_min.unwrap().id, 2);
 
         verify_tree_invariants(&queue);
 
-        let third_min = queue.pop_min();
+        let third_min = pop_earliest(&mut queue);
         assert_eq!(third_min.unwrap().id, 3);
 
-        assert!(queue.is_empty());
+        assert!(queue.len() == 0);
     }
 
     #[ktest]
@@ -632,7 +913,7 @@ mod tests {
         let task = queue.pop(0, total_weight, weighted_vruntime_offsets);
         assert_eq!(task.unwrap().id, 2);
 
-        assert!(queue.is_empty());
+        assert!(queue.len() == 0);
     }
 
     #[ktest]
@@ -718,36 +999,33 @@ mod tests {
     }
 
     #[ktest]
-    fn avl_rotation_cases() {
-        // Test left rotation (right heavy)
+    fn rotation_cases() {
+        // Test insertion patterns that trigger rotations.
         let mut queue = EligibilityQueue::new();
         queue.push(create_task(1, 10, 10, 10));
         queue.push(create_task(2, 20, 10, 20));
-        queue.push(create_task(3, 30, 10, 30)); // Should trigger left rotation
+        queue.push(create_task(3, 30, 10, 30));
 
         verify_tree_invariants(&queue);
 
-        // Test right rotation (left heavy)
         let mut queue = EligibilityQueue::new();
         queue.push(create_task(3, 30, 10, 30));
         queue.push(create_task(2, 20, 10, 20));
-        queue.push(create_task(1, 10, 10, 10)); // Should trigger right rotation
+        queue.push(create_task(1, 10, 10, 10));
 
         verify_tree_invariants(&queue);
 
-        // Test left-right rotation
         let mut queue = EligibilityQueue::new();
         queue.push(create_task(3, 30, 10, 30));
         queue.push(create_task(1, 10, 10, 10));
-        queue.push(create_task(2, 20, 10, 20)); // Should trigger left-right rotation
+        queue.push(create_task(2, 20, 10, 20));
 
         verify_tree_invariants(&queue);
 
-        // Test right-left rotation
         let mut queue = EligibilityQueue::new();
         queue.push(create_task(1, 10, 10, 10));
         queue.push(create_task(3, 30, 10, 30));
-        queue.push(create_task(2, 20, 10, 20)); // Should trigger right-left rotation
+        queue.push(create_task(2, 20, 10, 20));
 
         verify_tree_invariants(&queue);
     }
@@ -804,14 +1082,14 @@ mod tests {
         // Pop all tasks and verify order
         let mut last_vdeadline = -1;
         for _ in 0..COUNT {
-            let task = queue.pop_min().expect("Should have tasks remaining");
+            let task = pop_earliest(&mut queue).expect("Should have tasks remaining");
             assert!(task.vdeadline >= last_vdeadline);
             last_vdeadline = task.vdeadline;
 
             verify_tree_invariants(&queue);
         }
 
-        assert!(queue.is_empty());
+        assert!(queue.len() == 0);
     }
 
     #[ktest]
@@ -880,13 +1158,354 @@ mod tests {
         // Pop remaining in correct order
         let expected_order = [4, 1, 3, 5];
         for &expected_id in &expected_order {
-            let task = queue.pop_min().expect("Should have task");
+            let task = pop_earliest(&mut queue).expect("Should have task");
             assert_eq!(task.id, expected_id);
-            if !queue.is_empty() {
+            if queue.len() != 0 {
                 verify_tree_invariants(&queue);
             }
         }
 
-        assert!(queue.is_empty());
+        assert!(queue.len() == 0);
+    }
+
+    #[ktest]
+    fn min_vruntime_after_pop() {
+        let mut queue = EligibilityQueue::new();
+
+        // Task 3 has the minimum vruntime (10).
+        queue.push(create_task(1, 10, 10, 50));
+        queue.push(create_task(2, 20, 10, 10));
+        queue.push(create_task(3, 30, 10, 30));
+
+        assert_eq!(queue.min_vruntime(), Some(10));
+
+        // Pop task 2 (vr=10) by making only it eligible.
+        // (vr - 0) * 30 ≤ offset: task 2 → 300, task 1 → 1500, task 3 → 900.
+        let task = queue.pop(0, 30, 300);
+        assert_eq!(task.unwrap().id, 2);
+
+        // After removing task 2 (vr=10), min should be 30 (task 3).
+        assert_eq!(queue.min_vruntime(), Some(30));
+        verify_tree_invariants(&queue);
+
+        // Pop task 1 (the leftmost by vdeadline).
+        let task = pop_earliest(&mut queue).unwrap();
+        assert_eq!(task.id, 1);
+        assert_eq!(queue.min_vruntime(), Some(30));
+        verify_tree_invariants(&queue);
+
+        // Pop the last task.
+        let task = pop_earliest(&mut queue).unwrap();
+        assert_eq!(task.id, 3);
+        assert_eq!(queue.min_vruntime(), None);
+    }
+
+    #[ktest]
+    fn min_vruntime_against_method() {
+        let mut queue: EligibilityQueue<u64> = EligibilityQueue::new();
+
+        // Empty queue: returns the argument unchanged.
+        assert_eq!(queue.min_vruntime_against(100), 100);
+        assert_eq!(queue.min_vruntime_against(-50), -50);
+
+        // Non-empty: returns the min of argument and queue's min_vruntime.
+        queue.push(create_task(1, 10, 10, 40));
+        assert_eq!(queue.min_vruntime_against(50), 40);
+        assert_eq!(queue.min_vruntime_against(30), 30);
+        assert_eq!(queue.min_vruntime_against(40), 40);
+    }
+
+    #[ktest]
+    fn delete_two_children_non_direct_successor() {
+        let mut queue = EligibilityQueue::new();
+
+        // Build tree:
+        //       20(B)
+        //      / \
+        //    10(B) 30(B)
+        //          / \
+        //        25(R) 35(R)
+        //
+        // Deleting node 20 triggers the two-children case where the in-order
+        // successor (25) is not 20's direct right child (30).
+        queue.push(create_task(20, 20, 10, 5));
+        queue.push(create_task(10, 10, 10, 1000));
+        queue.push(create_task(30, 30, 10, 1000));
+        queue.push(create_task(25, 25, 10, 1000));
+        queue.push(create_task(35, 35, 10, 1000));
+
+        verify_tree_invariants(&queue);
+
+        // Pop node 20 via eligibility: only node 20 (vr=5) is eligible.
+        // (vr - 0) * 50 ≤ 250: node 20 → 250 ✓, all others → ≥50000 ✗
+        let task = queue.pop(0, 50, 250);
+        assert_eq!(task.unwrap().id, 20);
+        verify_tree_invariants(&queue);
+
+        // Remaining nodes in vdeadline order.
+        for expected_id in [10, 25, 30, 35] {
+            assert_eq!(pop_earliest(&mut queue).unwrap().id, expected_id);
+        }
+        assert!(queue.len() == 0);
+    }
+
+    #[ktest]
+    fn negative_vruntimes() {
+        let mut queue = EligibilityQueue::new();
+
+        queue.push(create_task(1, 10, 10, -100));
+        queue.push(create_task(2, 20, 10, -50));
+        queue.push(create_task(3, 30, 10, 25));
+
+        assert_eq!(queue.min_vruntime(), Some(-100));
+        verify_tree_invariants(&queue);
+
+        // global_min = -100. Eligibility: (vr - (-100)) * 30 ≤ 500
+        // Task 1: 0 ≤ 500 ✓, Task 2: 1500 > 500 ✗, Task 3: 3750 > 500 ✗
+        let task = queue.pop(-100, 30, 500);
+        assert_eq!(task.unwrap().id, 1);
+
+        assert_eq!(queue.min_vruntime(), Some(-50));
+        verify_tree_invariants(&queue);
+
+        // Both remaining eligible with generous offset.
+        let task = queue.pop(-50, 20, 100_000);
+        assert_eq!(task.unwrap().id, 2);
+        assert_eq!(queue.min_vruntime(), Some(25));
+    }
+
+    #[ktest]
+    fn free_list_reuse() {
+        let mut queue = EligibilityQueue::new();
+
+        for i in 0..10u64 {
+            queue.push(create_task(i, i as i64, 10, i as i64));
+        }
+        let arena_size = queue.nodes.len();
+        assert_eq!(arena_size, 10);
+
+        // Pop all.
+        while pop_earliest(&mut queue).is_some() {}
+        assert!(queue.len() == 0);
+
+        // Arena hasn't shrunk, but free list has all slots.
+        assert_eq!(queue.nodes.len(), arena_size);
+        assert_eq!(queue.free_list.len(), arena_size);
+
+        // Push again — should reuse freed slots, not grow the arena.
+        for i in 10..20u64 {
+            queue.push(create_task(i, i as i64, 10, i as i64));
+        }
+        assert_eq!(queue.nodes.len(), arena_size);
+        assert!(queue.free_list.is_empty());
+        verify_tree_invariants(&queue);
+    }
+
+    #[ktest]
+    fn upsert_replaces_data() {
+        let mut queue = EligibilityQueue::new();
+
+        queue.push(create_task(1, 10, 10, 100));
+        queue.push(create_task(2, 20, 10, 200));
+        queue.push(create_task(3, 30, 10, 300));
+
+        assert_eq!(queue.min_vruntime(), Some(100));
+
+        // Push with the same (vdeadline=20, id=2) but different vruntime.
+        queue.push(create_task(2, 20, 10, 50));
+
+        assert_eq!(queue.min_vruntime(), Some(50));
+        verify_tree_invariants(&queue);
+
+        // Pop all — the replacement should be present.
+        let t1 = pop_earliest(&mut queue).unwrap();
+        assert_eq!((t1.id, t1.vruntime), (1, 100));
+        let t2 = pop_earliest(&mut queue).unwrap();
+        assert_eq!((t2.id, t2.vruntime), (2, 50));
+        let t3 = pop_earliest(&mut queue).unwrap();
+        assert_eq!((t3.id, t3.vruntime), (3, 300));
+    }
+
+    #[ktest]
+    fn eligibility_tie_breaking_by_id() {
+        let mut queue = EligibilityQueue::new();
+
+        // Same vdeadline, different IDs. Ord breaks ties by id.
+        queue.push(create_task(3, 100, 10, 20));
+        queue.push(create_task(1, 100, 10, 10));
+        queue.push(create_task(2, 100, 10, 15));
+
+        verify_tree_invariants(&queue);
+
+        // All eligible — should return smallest id first.
+        assert_eq!(queue.pop(0, 30, 100_000).unwrap().id, 1);
+        assert_eq!(queue.pop(0, 20, 100_000).unwrap().id, 2);
+        assert_eq!(queue.pop(0, 10, 100_000).unwrap().id, 3);
+    }
+
+    #[ktest]
+    fn single_element_eligible_pop() {
+        let mut queue = EligibilityQueue::new();
+
+        queue.push(create_task(1, 10, 10, 50));
+
+        let task = queue.pop(0, 10, 1000);
+        assert_eq!(task.unwrap().id, 1);
+
+        assert!(queue.len() == 0);
+        assert_eq!(queue.min_vruntime(), None);
+    }
+
+    #[ktest]
+    fn delete_internal_nodes() {
+        let mut queue = EligibilityQueue::new();
+
+        // 15 nodes with distinct vruntimes scattered across the tree.
+        // vruntime ordering: 14(5), 12(10), 10(25), 8(50), 5(100),
+        //                    4(200), 3(300), 2(400), 1(500), 6(600),
+        //                    7(700), 9(800), 11(900), 13(950), 15(1000)
+        let tasks = [
+            create_task(1, 10, 10, 500),
+            create_task(2, 20, 10, 400),
+            create_task(3, 30, 10, 300),
+            create_task(4, 40, 10, 200),
+            create_task(5, 50, 10, 100),
+            create_task(6, 60, 10, 600),
+            create_task(7, 70, 10, 700),
+            create_task(8, 80, 10, 50),
+            create_task(9, 90, 10, 800),
+            create_task(10, 100, 10, 25),
+            create_task(11, 110, 10, 900),
+            create_task(12, 120, 10, 10),
+            create_task(13, 130, 10, 950),
+            create_task(14, 140, 10, 5),
+            create_task(15, 150, 10, 1000),
+        ];
+        for task in tasks {
+            queue.push(task);
+        }
+        verify_tree_invariants(&queue);
+
+        // Pop nodes scattered through the tree by targeting specific
+        // vruntimes via eligibility: (vr - 0) * total_weight ≤ offset.
+
+        // Pop id=14 (vr=5): total=150, need offset ≥ 750; next vr=10 → 1500
+        assert_eq!(queue.pop(0, 150, 750).unwrap().id, 14);
+        verify_tree_invariants(&queue);
+
+        // Pop id=12 (vr=10): total=140, offset=1400; next vr=25 → 3500
+        assert_eq!(queue.pop(0, 140, 1400).unwrap().id, 12);
+        verify_tree_invariants(&queue);
+
+        // Pop id=10 (vr=25): total=130, offset=3250; next vr=50 → 6500
+        assert_eq!(queue.pop(0, 130, 3250).unwrap().id, 10);
+        verify_tree_invariants(&queue);
+
+        // Pop id=8 (vr=50): total=120, offset=6000; next vr=100 → 12000
+        assert_eq!(queue.pop(0, 120, 6000).unwrap().id, 8);
+        verify_tree_invariants(&queue);
+
+        // Pop id=5 (vr=100): total=110, offset=11000; next vr=200 → 22000
+        assert_eq!(queue.pop(0, 110, 11000).unwrap().id, 5);
+        verify_tree_invariants(&queue);
+
+        // Pop the remaining 10 by vdeadline order.
+        for expected_id in [1, 2, 3, 4, 6, 7, 9, 11, 13, 15] {
+            assert_eq!(pop_earliest(&mut queue).unwrap().id, expected_id);
+            if queue.len() != 0 {
+                verify_tree_invariants(&queue);
+            }
+        }
+        assert!(queue.len() == 0);
+    }
+
+    #[ktest]
+    fn min_vruntime_maintained_through_operations() {
+        let mut queue = EligibilityQueue::new();
+
+        // Insert with vruntimes that don't follow vdeadline order.
+        let vruntimes = [50i64, 30, 70, 10, 90, 20, 80];
+        for (i, &vr) in vruntimes.iter().enumerate() {
+            queue.push(create_task(i as u64, (i as i64 + 1) * 10, 10, vr));
+            let expected_min = vruntimes[..=i].iter().copied().min().unwrap();
+            assert_eq!(queue.min_vruntime(), Some(expected_min));
+            verify_tree_invariants(&queue);
+        }
+
+        // Pop by vdeadline and track the evolving minimum vruntime.
+        // Remaining vruntimes after each pop:
+        //   pop id=0 (vr=50): {30, 70, 10, 90, 20, 80} → min 10
+        //   pop id=1 (vr=30): {70, 10, 90, 20, 80}     → min 10
+        //   pop id=2 (vr=70): {10, 90, 20, 80}          → min 10
+        //   pop id=3 (vr=10): {90, 20, 80}              → min 20
+        //   pop id=4 (vr=90): {20, 80}                  → min 20
+        //   pop id=5 (vr=20): {80}                      → min 80
+        let expected_mins = [10, 10, 10, 20, 20, 80];
+        for &expected_min in &expected_mins {
+            pop_earliest(&mut queue);
+            assert_eq!(queue.min_vruntime(), Some(expected_min));
+            verify_tree_invariants(&queue);
+        }
+
+        pop_earliest(&mut queue);
+        assert_eq!(queue.min_vruntime(), None);
+    }
+
+    #[ktest]
+    fn stress_pop_with_mixed_eligibility() {
+        let mut queue = EligibilityQueue::new();
+        const COUNT: usize = 200;
+
+        for i in 0..COUNT {
+            // Scatter vruntimes: every 3rd task has a low vruntime (eligible).
+            let vruntime = if i % 3 == 0 {
+                (i as i64) * 2
+            } else {
+                1000 + i as i64
+            };
+            queue.push(create_task(i as u64, (i * 10) as i64, 10, vruntime));
+        }
+        verify_tree_invariants(&queue);
+
+        let mut popped = 0;
+        while queue.len() != 0 {
+            let remaining = COUNT - popped;
+            let total_weight = (remaining * 10) as i64;
+            let _ = queue.pop(0, total_weight, 50_000);
+            popped += 1;
+            verify_tree_invariants(&queue);
+        }
+        assert_eq!(popped, COUNT);
+    }
+
+    #[ktest]
+    fn push_pop_interleave() {
+        let mut queue = EligibilityQueue::new();
+
+        // Rapidly alternate push/pop at small tree sizes.
+        for round in 0..50u64 {
+            queue.push(create_task(
+                round * 2,
+                (round * 2) as i64 * 10,
+                10,
+                (round * 2) as i64,
+            ));
+            queue.push(create_task(
+                round * 2 + 1,
+                (round * 2 + 1) as i64 * 10,
+                10,
+                (round * 2 + 1) as i64,
+            ));
+            verify_tree_invariants(&queue);
+
+            pop_earliest(&mut queue);
+            verify_tree_invariants(&queue);
+        }
+
+        // Drain remaining.
+        while pop_earliest(&mut queue).is_some() {
+            verify_tree_invariants(&queue);
+        }
+        assert!(queue.len() == 0);
     }
 }

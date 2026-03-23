@@ -318,7 +318,6 @@ pub(super) struct FairClassRq {
     #[expect(unused)]
     cpu: CpuId,
     queue: EligibilityQueue<Arc<Task>>,
-    queue_len: usize,
     queued_weight: i64,
     weighted_vruntime_offsets: i64,
     current_task_data: Option<TaskData<Arc<Task>>>,
@@ -337,7 +336,6 @@ impl FairClassRq {
         Self {
             cpu,
             queue: EligibilityQueue::new(),
-            queue_len: 0,
             queued_weight: 0,
             weighted_vruntime_offsets: 0,
             current_task_data: None,
@@ -440,7 +438,6 @@ impl SchedClassRq for FairClassRq {
             is_exiting: false,
         });
 
-        self.queue_len += 1;
         self.queued_weight += weight;
     }
 
@@ -508,7 +505,6 @@ impl SchedClassRq for FairClassRq {
             is_exiting,
         });
 
-        self.queue_len -= 1;
         self.queued_weight -= weight;
 
         Some(task)
@@ -575,10 +571,6 @@ impl SchedClassRq for FairClassRq {
     }
 
     fn len(&self) -> usize {
-        self.queue_len
-    }
-
-    fn is_empty(&self) -> bool {
-        self.queue.is_empty()
+        self.queue.len()
     }
 }
