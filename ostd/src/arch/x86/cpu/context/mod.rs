@@ -604,7 +604,13 @@ impl XSaveArea {
         // Set the initial values for the FPU context. Refer to Intel SDM, Table 11-1:
         // "IA-32 and Intel® 64 Processor States Following Power-up, Reset, or INIT (Contd.)".
         xsave_area.fxsave_area.control = 0x037F;
-        xsave_area.fxsave_area.tag = 0xFFFF;
+        // Refer to Intel SDM, Volume 1, Section "x87 State". In the FXSAVE/XSAVE image the
+        // `tag` field contains an abridged x87 Tag Word (FTW) — a compact (8-bit) encoding
+        // used in saved/restore images. In this format, a bit value of 0 indicates the
+        // corresponding x87 register is empty (this is the inverse of the legacy 16-bit
+        // tag-word semantics). The `fninit` instruction clears all x87 registers, so the
+        // abridged tag must be initialized to 0 to represent an empty register set.
+        xsave_area.fxsave_area.tag = 0;
         xsave_area.fxsave_area.mxcsr = 0x1F80;
         xsave_area.features = features;
 
@@ -619,7 +625,8 @@ impl XSaveArea {
 struct FxSaveArea {
     control: u16,         // x87 FPU Control Word
     status: u16,          // x87 FPU Status Word
-    tag: u16,             // x87 FPU Tag Word
+    tag: u8,              // x87 FPU Tag Byte (abridged format)
+    reserved1: u8,        // Reserved
     op: u16,              // x87 FPU Last Instruction Opcode
     ip: u32,              // x87 FPU Instruction Pointer Offset
     cs: u32,              // x87 FPU Instruction Pointer Selector
@@ -630,7 +637,7 @@ struct FxSaveArea {
     st_space: [u32; 32], // x87 FPU or MMX technology registers (ST0-ST7 or MM0-MM7, 128 bits per field)
     xmm_space: [u32; 64], // XMM registers (XMM0-XMM15, 128 bits per field)
     padding: [u32; 12],  // Padding
-    reserved: [u32; 12], // Software reserved
+    reserved2: [u32; 12], // Software reserved
 }
 
 /// The XSTATE features (user & supervisor) supported by the processor.
