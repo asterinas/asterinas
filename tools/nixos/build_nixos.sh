@@ -25,7 +25,7 @@ popd
 mkdir -p ${ASTERINAS_DIR}/target/nixos
 if [ ! -e ${ASTER_IMAGE_PATH} ]; then
     echo "Creating image at ${ASTER_IMAGE_PATH} of size ${NIXOS_DISK_SIZE_IN_MB}MB......"
-    dd if=/dev/zero of=${ASTER_IMAGE_PATH} bs=1M count=${NIXOS_DISK_SIZE_IN_MB}
+    fallocate -l ${NIXOS_DISK_SIZE_IN_MB}M ${ASTER_IMAGE_PATH}
     echo "Image created successfully!"
 fi
 
