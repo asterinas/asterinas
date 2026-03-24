@@ -234,6 +234,16 @@ impl CloneArgs {
             );
         }
 
+        // TODO: Support clone-family ptrace events and remove this check.
+        if !clone_flags.contains(CloneFlags::CLONE_UNTRACED)
+            && ctx.posix_thread.needs_ptrace_clone_stop(self)
+        {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "ptrace clone events are not supported currently"
+            );
+        }
+
         Ok(())
     }
 }

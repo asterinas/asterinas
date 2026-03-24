@@ -18,7 +18,8 @@ use crate::{
     process::{
         ContextUnshareAdminApi, Credentials, Process,
         posix_thread::{
-            ContextPthreadAdminApi, ThreadLocal, ThreadName, sigkill_other_threads, thread_table,
+            ContextPthreadAdminApi, ThreadLocal, ThreadName, ptrace::PtraceEvent,
+            sigkill_other_threads, thread_table,
         },
         process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, ProcessVm},
         program_loader::{ProgramToLoad, elf::ElfLoadInfo},
@@ -77,6 +78,8 @@ pub fn do_execve(
     sigkill_other_threads(ctx.task, &task_set);
     drop(task_set);
 
+    let former_tid = ctx.posix_thread.tid();
+
     // After this point, failures in subsequent operations are fatal: the process
     // state may be left inconsistent and it can never return to user mode.
 
@@ -89,7 +92,10 @@ pub fn do_execve(
         &elf_load_info,
     );
 
-    if res.is_err() {
+    if res.is_ok() {
+        ctx.posix_thread
+            .ptrace_may_stop_on(PtraceEvent::Exec(former_tid), ctx, user_context);
+    } else {
         ctx.posix_thread
             .enqueue_signal(Box::new(KernelSignal::new(SIGKILL)));
     }
