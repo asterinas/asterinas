@@ -12,7 +12,7 @@
 
 #define YAMA_SCOPE_NO_ATTACH 3
 
-static int read_yama_scope(void)
+static inline __attribute__((unused)) int read_yama_scope(void)
 {
 	int fd = CHECK(open("/proc/sys/kernel/yama/ptrace_scope", O_RDONLY));
 	char buf[32] = { 0 };
@@ -22,7 +22,7 @@ static int read_yama_scope(void)
 	return atoi(buf);
 }
 
-static void write_yama_scope(int scope)
+static inline __attribute__((unused)) void write_yama_scope(int scope)
 {
 	int fd = CHECK(open("/proc/sys/kernel/yama/ptrace_scope", O_RDWR));
 	char buf[32] = { 0 };
