@@ -19,17 +19,19 @@ use crate::{
 };
 
 /// Creates a pair of connected pipe file handles with the default capacity.
-pub fn new_file_pair() -> Result<(Arc<InodeHandle>, Arc<InodeHandle>)> {
+pub fn new_file_pair(status_flags: StatusFlags) -> Result<(Arc<InodeHandle>, Arc<InodeHandle>)> {
     let pipe_inode = Arc::new(AnonPipeInode::new());
     let path = PipeFs::new_path(pipe_inode);
 
-    let reader = InodeHandle::new_unchecked_access(
-        path.clone(),
-        AccessMode::O_RDONLY,
-        StatusFlags::empty(),
-    )?;
+    // Remove `O_DIRECT` for the reader, which conforms to the Linux behavior:
+    // the writer's status flags decide whether the pipe is in "packet" mode.
+    let reader_status_flags = status_flags & StatusFlags::O_NONBLOCK;
+    let writer_status_flags = status_flags & (StatusFlags::O_NONBLOCK | StatusFlags::O_DIRECT);
+
+    let reader =
+        InodeHandle::new_unchecked_access(path.clone(), AccessMode::O_RDONLY, reader_status_flags)?;
     let writer =
-        InodeHandle::new_unchecked_access(path, AccessMode::O_WRONLY, StatusFlags::empty())?;
+        InodeHandle::new_unchecked_access(path, AccessMode::O_WRONLY, writer_status_flags)?;
 
     Ok((Arc::new(reader), Arc::new(writer)))
 }
