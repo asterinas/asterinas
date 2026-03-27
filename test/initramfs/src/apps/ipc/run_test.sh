@@ -5,6 +5,7 @@
 set -e
 
 ./pipe/pipe_err
+./pipe/process_pipe_available
 ./pipe/short_rw
 
 ./shm/posix_shm
