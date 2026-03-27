@@ -171,6 +171,23 @@ impl VmMapping {
         }
     }
 
+    /// Returns the shared futex backing identity for the address if available.
+    pub(crate) fn futex_backing(&self, addr: Vaddr) -> Option<(usize, usize)> {
+        if !self.is_shared {
+            return None;
+        }
+
+        let mapped_vmo = match &self.mapped_mem {
+            MappedMemory::Vmo(mapped_vmo) => mapped_vmo,
+            _ => return None,
+        };
+
+        let object_id = Arc::as_ptr(mapped_vmo.vmo()) as usize;
+        let offset = mapped_vmo.offset() + (addr - self.map_to_addr);
+
+        Some((object_id, offset))
+    }
+
     /// Returns whether this mapping can be expanded.
     ///
     /// Device mappings cannot be expanded as they represent fixed-size MMIO
