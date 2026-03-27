@@ -23,7 +23,10 @@ use crate::{
             signals::user::{UserSignal, UserSignalKind},
         },
     },
-    util::ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+    util::{
+        ioctl::{RawIoctl, dispatch_ioctl},
+        ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+    },
 };
 
 /// A handle for a pipe that implements `FileIo`.
@@ -52,6 +55,10 @@ impl PipeHandle {
         debug_assert!(self.access_mode.is_writable());
 
         self.inner.writer.try_write(reader)
+    }
+
+    fn bytes_to_read(&self) -> usize {
+        self.inner.reader.buffer_len()
     }
 }
 
@@ -136,6 +143,20 @@ impl FileIo for PipeHandle {
 
     fn is_offset_aware(&self) -> bool {
         false
+    }
+
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        use crate::util::ioctl::common_defs::GetNumBytesToRead;
+
+        dispatch_ioctl!(match raw_ioctl {
+            cmd @ GetNumBytesToRead => {
+                let bytes_to_read = self.bytes_to_read() as i32;
+
+                cmd.write(&bytes_to_read)?;
+                Ok(0)
+            }
+            _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+        })
     }
 }
 
@@ -384,6 +405,10 @@ impl PipeReader {
         };
 
         self.state.read_with(read)
+    }
+
+    fn buffer_len(&self) -> usize {
+        self.consumer.lock().len()
     }
 
     fn peer_shutdown(&self) {
