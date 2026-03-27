@@ -463,6 +463,8 @@ check: initramfs $(CARGO_OSDK)
 		# Run clippy on each crate with and without the test configuration. \
 		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo clippy --no-deps) || exit 1; \
 		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo clippy --tests --no-deps) || exit 1; \
+		# Run klint on each crate with and without the test configuration. \
+		(cd $$dir && RUSTC="klint-asterinas" RUSTFLAGS="-Dwarnings" cargo check) || exit 1; \
 	done
 	@for dir in $(OSDK_CRATES); do \
 		echo "Checking $$dir"; \
@@ -472,6 +474,8 @@ check: initramfs $(CARGO_OSDK)
 		# Run clippy on each crate with and without the ktest configuration. \
 		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo osdk clippy -- --no-deps) || exit 1; \
 		(cd $$dir && RUSTFLAGS="-Dwarnings" cargo osdk clippy --ktests -- --no-deps) || exit 1; \
+		# Run klint on each crate with and without the ktest configuration. \
+		(cd $$dir && RUSTC="klint-asterinas" RUSTFLAGS="-Dwarnings" cargo osdk check) || exit 1; \
 	done
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)
