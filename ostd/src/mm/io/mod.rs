@@ -229,28 +229,19 @@ pub trait VmIoOnce {
     fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()>;
 }
 
-/// A marker type used for _fallible_ memory,
-/// where memory access _might_ trigger page faults.
-///
-/// The most prominent example of fallible memory is user virtual memory.
-///
-/// By definition, infallible memory is a subset of fallible memory.
-/// As a consequence, any code that intends to work with fallible memory
-/// should work for both user virtual memory and kernel virtual memory.
-///
-/// [`VmReader`] and [`VmWriter`] types use this marker type
-/// to indicate the property of the underlying memory.
+/// A marker type used for [`VmReader`] and [`VmWriter`],
+/// representing whether reads or writes on the underlying memory region are fallible.
 pub enum Fallible {}
 
-/// A marker type used for _infallible_ memory,
-/// where memory access is valid and won't trigger page faults.
-///
-/// The most prominent example of infallible memory is kernel virtual memory
-/// (at least for the part where Rust code and data reside).
-///
-/// [`VmReader`] and [`VmWriter`] types use this marker type
-/// to indicate the property of the underlying memory.
+/// A marker type used for [`VmReader`] and [`VmWriter`],
+/// representing whether reads or writes on the underlying memory region are infallible.
 pub enum Infallible {}
+
+/// A marker type used for I/O memory regions.
+///
+/// Implementations may dispatch between CVM-safe and non-CVM paths
+/// at runtime.
+pub enum Io {}
 
 /// Fallible memory read from a `VmWriter`.
 pub trait FallibleVmRead<F> {
@@ -930,6 +921,28 @@ impl<Fallibility> VmWriter<'_, Fallibility> {
         self.cursor = self.cursor.wrapping_add(nbytes);
 
         self
+    }
+
+    /// Creates a clone of this writer, requiring exclusive access.
+    ///
+    /// This method is analogous to [`Clone::clone`], but takes `&mut self`
+    /// instead of `&self`. The `&mut self` receiver is necessary because
+    /// `VmWriter` cannot safely implement `Clone`:
+    /// the underlying buffer may be a mutable slice,
+    /// and two concurrent writers would violate Rust's aliasing rules.
+    ///
+    /// The returned writer has the same cursor position and limit as `self`.
+    /// Because it borrows `self` mutably,
+    /// the original writer cannot be used until the returned writer is dropped.
+    ///
+    /// Note that writes through the returned writer
+    /// do **not** advance the cursor of the original writer.
+    pub fn clone_exclusive(&mut self) -> VmWriter<'_, Fallibility> {
+        VmWriter {
+            cursor: self.cursor,
+            end: self.end,
+            phantom: PhantomData,
+        }
     }
 }
 
