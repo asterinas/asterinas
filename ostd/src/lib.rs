@@ -104,6 +104,11 @@ unsafe fn init() {
     // SAFETY: This function is called only once on the BSP.
     unsafe { mm::kspace::activate_kernel_page_table() };
 
+    #[cfg(target_arch = "x86_64")]
+    arch::if_tdx_enabled!({
+        mm::frame::unaccepted::remap_table_ptr_after_paging();
+    });
+
     sync::init();
 
     boot::init_after_heap();
