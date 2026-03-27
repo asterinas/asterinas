@@ -34,6 +34,7 @@ members = [
     "kernel/comps/logger",
     "kernel/comps/mlsdisk",
     "kernel/comps/network",
+    "kernel/comps/nvme",
     "kernel/comps/pci",
     "kernel/comps/softirq",
     "kernel/comps/systree",
@@ -105,6 +106,7 @@ aster-input = { path = "kernel/comps/input" }
 aster-logger = { path = "kernel/comps/logger" }
 aster-mlsdisk = { path = "kernel/comps/mlsdisk" }
 aster-network = { path = "kernel/comps/network" }
+aster-nvme = { path = "kernel/comps/nvme" }
 aster-pci = { path = "kernel/comps/pci" }
 aster-softirq = { path = "kernel/comps/softirq" }
 aster-systree = { path = "kernel/comps/systree" }
