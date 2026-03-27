@@ -171,6 +171,28 @@ impl VmMapping {
         }
     }
 
+    /// Returns the shared futex backing identity for the address if available.
+    pub fn futex_backing(&self, addr: Vaddr) -> Result<Option<(Weak<Vmo>, usize)>> {
+        if !self.is_shared {
+            return Ok(None);
+        }
+
+        let mapped_vmo = match &self.mapped_mem {
+            MappedMemory::Vmo(mapped_vmo) => mapped_vmo,
+            MappedMemory::Anonymous => return Ok(None),
+            MappedMemory::Device => {
+                return_errno_with_message!(
+                    Errno::EFAULT,
+                    "shared futexes on device mappings are not supported"
+                );
+            }
+        };
+
+        let offset = mapped_vmo.offset() + (addr - self.map_to_addr);
+
+        Ok(Some((Arc::downgrade(mapped_vmo.vmo()), offset)))
+    }
+
     /// Returns whether this mapping can be expanded.
     ///
     /// Device mappings cannot be expanded as they represent fixed-size MMIO
