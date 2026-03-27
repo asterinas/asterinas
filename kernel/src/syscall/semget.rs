@@ -6,7 +6,7 @@ use crate::{
         IpcFlags,
         semaphore::system_v::{
             PermissionMode,
-            sem_set::{SEMMNI, SEMMSL, check_sem, create_sem_set, create_sem_set_with_id},
+            sem_set::{SEMMNI, SEMMSL},
         },
     },
     prelude::*,
@@ -14,10 +14,10 @@ use crate::{
 
 pub fn sys_semget(key: i32, nsems: i32, semflags: i32, ctx: &Context) -> Result<SyscallReturn> {
     if nsems < 0 || nsems as usize > SEMMSL {
-        return_errno!(Errno::EINVAL);
+        return_errno_with_message!(Errno::EINVAL, "invalid nsems value");
     }
     if key < 0 {
-        return_errno!(Errno::EINVAL);
+        return_errno_with_message!(Errno::EINVAL, "semaphore key must not be negative");
     }
 
     let flags = IpcFlags::from_bits_truncate(semflags as u32);
@@ -30,26 +30,32 @@ pub fn sys_semget(key: i32, nsems: i32, semflags: i32, ctx: &Context) -> Result<
         key, nsems, semflags
     );
 
+    let ns_proxy = ctx.thread_local.borrow_ns_proxy();
+    let ipc_ns = ns_proxy.unwrap().ipc_ns();
+
     // Create a new semaphore set directly
     const IPC_NEW: i32 = 0;
     if key == IPC_NEW || (key as usize > SEMMNI && flags.contains(IpcFlags::IPC_CREAT)) {
         if nsems == 0 {
-            return_errno!(Errno::EINVAL);
+            return_errno_with_message!(Errno::EINVAL, "nsems must not be zero when creating");
         }
         return Ok(SyscallReturn::Return(
-            create_sem_set(nsems, mode, credentials)? as isize,
+            ipc_ns.create_sem_set(nsems, mode, credentials)? as isize,
         ));
     }
 
     // Get a semaphore set, and create if necessary
-    match check_sem(
+    match ipc_ns.check_sem(
         key,
         Some(nsems),
         PermissionMode::ALTER | PermissionMode::READ,
     ) {
         Ok(_) => {
             if flags.contains(IpcFlags::IPC_CREAT | IpcFlags::IPC_EXCL) {
-                return_errno!(Errno::EEXIST);
+                return_errno_with_message!(
+                    Errno::EEXIST,
+                    "semaphore set already exists with IPC_EXCL"
+                );
             }
         }
         Err(err) => {
@@ -58,10 +64,10 @@ pub fn sys_semget(key: i32, nsems: i32, semflags: i32, ctx: &Context) -> Result<
                 return Err(err);
             }
             if nsems == 0 {
-                return_errno!(Errno::EINVAL);
+                return_errno_with_message!(Errno::EINVAL, "nsems must not be zero when creating");
             }
 
-            create_sem_set_with_id(key, nsems, mode, credentials)?
+            ipc_ns.create_sem_set_with_key(key, nsems, mode, credentials)?
         }
     };
 
