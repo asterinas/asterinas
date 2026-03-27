@@ -4,8 +4,7 @@ use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
 use aster_pci::{
-    PciDeviceId, bus::PciDevice, capability::CapabilityData, cfg_space::Bar,
-    common_device::PciCommonDevice,
+    PciDeviceId, bus::PciDevice, cfg_space::BarAccess, common_device::PciCommonDevice,
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::{info, warn};
@@ -133,15 +132,13 @@ impl VirtioTransport for VirtioPciModernTransport {
         let io_mem = self
             .device_cfg
             .memory_bar()
-            .as_ref()
             .unwrap()
-            .io_mem()
             .slice(offset..offset + length);
 
         Some(io_mem)
     }
 
-    fn device_config_bar(&self) -> Option<(Bar, usize)> {
+    fn device_config_bar(&self) -> Option<(BarAccess, usize)> {
         None
     }
 
@@ -267,7 +264,7 @@ impl VirtioTransport for VirtioPciModernTransport {
 impl VirtioPciModernTransport {
     #[expect(clippy::result_large_err)]
     pub(super) fn new(
-        common_device: PciCommonDevice,
+        mut common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
         let device_id = common_device.device_id().device_id;
         let device_type_value = if device_id <= 0x1040 {
@@ -286,49 +283,38 @@ impl VirtioPciModernTransport {
 
         info!("[Virtio]: Found device:{:?}", device_type);
 
-        let mut msix = None;
         let mut notify = None;
         let mut common_cfg = None;
         let mut device_cfg = None;
-        for cap in common_device.capabilities().iter() {
-            match cap.capability_data() {
-                CapabilityData::Vndr(vendor) => {
-                    let data = VirtioPciCapabilityData::new(common_device.bar_manager(), *vendor);
-                    match data.typ() {
-                        VirtioPciCpabilityType::CommonCfg => {
-                            common_cfg = Some(VirtioPciCommonCfg::new(&data));
-                        }
-                        VirtioPciCpabilityType::NotifyCfg => {
-                            notify = Some(VirtioPciNotify {
-                                offset_multiplier: data.option_value().unwrap(),
-                                offset: data.offset(),
-                                io_memory: data.memory_bar().as_ref().unwrap().io_mem().clone(),
-                            });
-                        }
-                        VirtioPciCpabilityType::IsrCfg => {}
-                        VirtioPciCpabilityType::DeviceCfg => {
-                            device_cfg = Some(data);
-                        }
-                        VirtioPciCpabilityType::PciCfg => {}
-                    }
+        let (vndr_caps, bar_manager) = common_device.iter_vndr_capability_with_bar_manager();
+        for vndr_cap in vndr_caps {
+            let data = VirtioPciCapabilityData::new(bar_manager, vndr_cap);
+            match data.typ() {
+                VirtioPciCpabilityType::CommonCfg => {
+                    common_cfg = Some(VirtioPciCommonCfg::new(&data));
                 }
-                CapabilityData::Msix(data) => {
-                    msix = Some(data.clone());
+                VirtioPciCpabilityType::NotifyCfg => {
+                    notify = Some(VirtioPciNotify {
+                        offset_multiplier: data.option_value().unwrap(),
+                        offset: data.offset(),
+                        io_memory: data.memory_bar().unwrap().clone(),
+                    });
                 }
-                CapabilityData::Unknown(id) => {
-                    panic!("unknown capability: {}", id)
+                VirtioPciCpabilityType::IsrCfg => {}
+                VirtioPciCpabilityType::DeviceCfg => {
+                    device_cfg = Some(data);
                 }
-                _ => {
-                    panic!("PCI Virtio device should not have other type of capability")
-                }
+                VirtioPciCpabilityType::PciCfg => {}
             }
         }
-        // TODO: Support interrupt without MSI-X
-        let msix = msix.unwrap();
         let notify = notify.unwrap();
         let common_cfg = common_cfg.unwrap();
         let device_cfg = device_cfg.unwrap();
+
+        // TODO: Support interrupt without MSI-X.
+        let msix = common_device.acquire_msix_capability().unwrap().unwrap();
         let msix_manager = VirtioMsixManager::new(msix);
+
         Ok(Self {
             common_device,
             common_cfg,

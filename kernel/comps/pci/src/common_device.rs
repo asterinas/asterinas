@@ -2,16 +2,12 @@
 
 //! PCI device common definitions or functions.
 
-use alloc::vec::Vec;
+use ostd::Result;
 
-use super::{
-    capability::Capability,
-    cfg_space::{AddrLen, Bar, Command, Status},
-    device_info::PciDeviceId,
-};
 use crate::{
-    cfg_space::{PciBridgeCfgOffset, PciCommonCfgOffset},
-    device_info::PciDeviceLocation,
+    capability::{RawCapabilities, msix::CapabilityMsixData, vendor::CapabilityVndrData},
+    cfg_space::{AddrLen, Bar, Command, PciBridgeCfgOffset, PciCommonCfgOffset, Status},
+    device_info::{PciDeviceId, PciDeviceLocation},
 };
 
 /// PCI common device.
@@ -23,7 +19,7 @@ pub struct PciCommonDevice {
     location: PciDeviceLocation,
     header_type: PciHeaderType,
     bar_manager: BarManager,
-    capabilities: Vec<Capability>,
+    capabilities: RawCapabilities,
 }
 
 impl PciCommonDevice {
@@ -37,14 +33,14 @@ impl PciCommonDevice {
         &self.location
     }
 
-    /// Returns the PCI Base Address Register (BAR) manager.
+    /// Returns a reference to the PCI Base Address Register (BAR) manager.
     pub fn bar_manager(&self) -> &BarManager {
         &self.bar_manager
     }
 
-    /// Returns the PCI capabilities.
-    pub fn capabilities(&self) -> &Vec<Capability> {
-        &self.capabilities
+    /// Returns a mutable reference to the PCI Base Address Register (BAR) manager.
+    pub fn bar_manager_mut(&mut self) -> &mut BarManager {
+        &mut self.bar_manager
     }
 
     /// Returns the PCI device type.
@@ -73,20 +69,41 @@ impl PciCommonDevice {
         Status::from_bits_truncate(self.location.read16(PciCommonCfgOffset::Status as u16))
     }
 
+    /// Acquires necessary resources to build the MSI-X capability data, if the capability exists.
+    ///
+    /// Note that the MSI-X capability data occupies some memory BARs. Therefore, it will fail if
+    /// the necessary resources are not available.
+    pub fn acquire_msix_capability(&mut self) -> Result<Option<CapabilityMsixData>> {
+        self.capabilities
+            .acquire_msix_data(&self.location, &mut self.bar_manager)
+    }
+
+    /// Gets access to the vendor-specific capability data.
+    pub fn iter_vndr_capability(&self) -> impl Iterator<Item = CapabilityVndrData> {
+        self.capabilities.iter_vndr_data(&self.location)
+    }
+
+    /// Gets access to the vendor-specific capability data with a mutable reference to the BAR
+    /// manager.
+    pub fn iter_vndr_capability_with_bar_manager(
+        &mut self,
+    ) -> (impl Iterator<Item = CapabilityVndrData>, &mut BarManager) {
+        (
+            self.capabilities.iter_vndr_data(&self.location),
+            &mut self.bar_manager,
+        )
+    }
+
     pub(super) fn new(location: PciDeviceLocation) -> Option<Self> {
         if location.read16(0) == 0xFFFF {
             // No device.
             return None;
         }
 
-        let capabilities = Vec::new();
         let device_id = PciDeviceId::new(location);
-        let bar_manager = BarManager {
-            bars: [const { None }; 6],
-        };
+
         let mut header_type =
             PciHeaderType::try_from_raw(location.read8(PciCommonCfgOffset::HeaderType as u16))?;
-
         if let PciDeviceType::PciToPciBridge(primary_bus, secondary_bus, subordinate_bus) =
             &mut header_type.device_type
         {
@@ -94,6 +111,11 @@ impl PciCommonDevice {
             *secondary_bus = location.read8(PciBridgeCfgOffset::SecondaryBusNumber as u16);
             *subordinate_bus = location.read8(PciBridgeCfgOffset::SubordinateBusNumber as u16);
         }
+
+        let bar_manager = BarManager {
+            bars: [const { None }; 6],
+        };
+        let capabilities = RawCapabilities::default();
 
         let mut device = Self {
             device_id,
@@ -111,7 +133,7 @@ impl PciCommonDevice {
         device.bar_manager = BarManager::new(device.header_type.device_type(), location);
         device.write_command(command_val | (Command::MEMORY_SPACE | Command::IO_SPACE));
 
-        device.capabilities = Capability::device_capabilities(&mut device);
+        device.capabilities = RawCapabilities::parse(&device);
 
         Some(device)
     }
@@ -190,9 +212,14 @@ pub struct BarManager {
 }
 
 impl BarManager {
-    /// Gains access to the BAR space and returns None if that BAR is absent.
-    pub fn bar(&self, idx: u8) -> &Option<Bar> {
-        &self.bars[idx as usize]
+    /// Gains access to the BAR space and returns `None` if that BAR is absent.
+    pub fn bar(&self, idx: u8) -> Option<&Bar> {
+        self.bars[idx as usize].as_ref()
+    }
+
+    /// Gains mutable access to the BAR space and returns `None` if that BAR is absent.
+    pub fn bar_mut(&mut self, idx: u8) -> Option<&mut Bar> {
+        self.bars[idx as usize].as_mut()
     }
 
     /// Parses the BAR space by PCI device location.
