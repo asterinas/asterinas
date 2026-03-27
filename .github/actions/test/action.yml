@@ -62,7 +62,7 @@ runs:
         fi
         # Install the Asterinas version of klint.
         if [[ "${{ matrix.id }}" == "lint" ]]; then
-          cargo install klint-asterinas --git https://github.com/os-checker/klint-asterinas --rev d492a41
+          cargo install klint-asterinas --git https://github.com/os-checker/klint-asterinas --rev 24d0bff
         fi
         
     - name: Run basic tests
