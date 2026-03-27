@@ -5,6 +5,8 @@ mod keysym;
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
+use aster_console::mode::{KeyboardMode, KeyboardModeFlags};
+
 /// Initializes the key symbol mapping table and keyboard event handler.
 pub(super) fn init_in_first_process() {
     keysym::init_in_first_process();
@@ -94,26 +96,61 @@ impl ModifierKeysState {
     }
 }
 
-/// State of lock keys (Caps Lock, Num Lock, Scroll Lock).
-#[derive(Debug)]
-struct LockKeysState {
-    inner: AtomicU8,
+/// The keyboard state for each virtual terminal.
+pub(super) struct VtKeyboard {
+    lock_key_flags: LockKeyFlags,
+    mode: KeyboardMode,
+    mode_flags: KeyboardModeFlags,
 }
 
-impl LockKeysState {
-    const fn new() -> Self {
+impl Default for VtKeyboard {
+    fn default() -> Self {
         Self {
-            inner: AtomicU8::new(0),
+            lock_key_flags: LockKeyFlags::empty(),
+            mode: KeyboardMode::Unicode,
+            // Linux default: REPEAT | META
+            // Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/drivers/tty/vt/keyboard.c#L56>
+            mode_flags: KeyboardModeFlags::REPEAT | KeyboardModeFlags::META,
         }
+    }
+}
+
+impl VtKeyboard {
+    /// Returns the current lock key flags.
+    fn lock_key_flags(&self) -> LockKeyFlags {
+        self.lock_key_flags
     }
 
     /// Toggles the given lock keys.
-    fn toggle(&self, keys: LockKeyFlags) {
-        self.inner.fetch_xor(keys.bits(), Ordering::Relaxed);
+    fn toggle_lock_keys(&mut self, keys: LockKeyFlags) {
+        self.lock_key_flags.toggle(keys);
     }
 
-    /// Returns the currently enabled lock keys.
-    fn flags(&self) -> LockKeyFlags {
-        LockKeyFlags::from_bits_truncate(self.inner.load(Ordering::Relaxed))
+    /// Returns the current keyboard mode.
+    pub(super) fn mode(&self) -> KeyboardMode {
+        self.mode
+    }
+
+    /// Sets the keyboard mode.
+    ///
+    /// Returns `true` if the mode is successfully set; or `false` if the mode is
+    /// not supported.
+    pub(super) fn set_mode(&mut self, mode: KeyboardMode) -> bool {
+        match mode {
+            // TODO: Add support for Raw mode.
+            KeyboardMode::Raw => false,
+            KeyboardMode::Xlate
+            | KeyboardMode::MediumRaw
+            | KeyboardMode::Unicode
+            | KeyboardMode::Off => {
+                self.mode = mode;
+                true
+            }
+        }
+    }
+
+    /// Returns the current keyboard mode flags.
+    pub(super) fn mode_flags(&self) -> KeyboardModeFlags {
+        self.mode_flags
     }
 }

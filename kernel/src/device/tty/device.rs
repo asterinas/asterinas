@@ -9,16 +9,12 @@
 use device_id::{DeviceId, MajorId, MinorId};
 use spin::Once;
 
+use super::vt::active_vt;
 use crate::{
     device::{
         Device, DeviceType,
         registry::char,
-        tty::{
-            Tty,
-            hvc::hvc0_device,
-            serial::serial0_device,
-            vt::{VtDriver, tty1_device},
-        },
+        tty::{Tty, hvc::hvc0_device, serial::serial0_device, vt::VtDriver},
     },
     fs::file::FileIo,
     prelude::*,
@@ -30,9 +26,8 @@ use crate::{
 pub struct Tty0Device;
 
 impl Tty0Device {
-    fn active_vt(&self) -> &Arc<Tty<VtDriver>> {
-        // Currently there is only one virtual terminal `tty1`.
-        tty1_device()
+    fn active_vt(&self) -> Arc<Tty<VtDriver>> {
+        active_vt()
     }
 }
 
@@ -55,7 +50,7 @@ impl Device for Tty0Device {
 }
 
 impl Terminal for Tty0Device {
-    fn job_control(&self) -> &JobControl {
+    fn job_control(&self) -> Arc<JobControl> {
         self.active_vt().job_control()
     }
 }
