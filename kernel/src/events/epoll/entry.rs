@@ -37,7 +37,7 @@ pub(super) struct Entry {
 impl Display for Entry {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let inner = self.inner.lock();
-        write!(f, "tfd: {:8} ", self.key.fd)?;
+        write!(f, "tfd: {:8} ", self.key.fd.raw_fd())?;
         write!(f, "events: {:8x} ", inner.event.events.bits())?;
         write!(f, "data: {:16x}", inner.event.user_data)
     }

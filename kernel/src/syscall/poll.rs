@@ -9,7 +9,7 @@ use crate::{
     events::IoEvents,
     fs::file::{
         FileLike,
-        file_table::{FileDesc, FileTable},
+        file_table::{FileTable, RawFileDesc},
     },
     prelude::*,
     process::{ResourceType, signal::Poller},
@@ -144,7 +144,7 @@ impl<'a> PollFiles<'a> {
             .map(|poll_fd| {
                 poll_fd
                     .fd()
-                    .and_then(|fd| file_table.get_file(fd).ok().cloned())
+                    .and_then(|raw_fd| file_table.get_file(raw_fd.try_into().ok()?).ok().cloned())
             })
             .collect();
         Self {
@@ -215,7 +215,7 @@ impl PollFiles<'_> {
         match &self.files {
             CowFiles::Borrowed(table) => self.poll_fds[index]
                 .fd()
-                .and_then(|fd| table.get_file(fd).ok())
+                .and_then(|fd| table.get_file(fd.try_into().ok()?).ok())
                 .map(Arc::as_ref),
             CowFiles::Owned(files) => files[index].as_deref(),
         }
@@ -233,13 +233,13 @@ struct c_pollfd {
 
 #[derive(Debug, Clone)]
 pub struct PollFd {
-    fd: Option<FileDesc>,
+    fd: Option<RawFileDesc>,
     events: IoEvents,
     revents: Cell<IoEvents>,
 }
 
 impl PollFd {
-    pub fn new(fd: Option<FileDesc>, events: IoEvents) -> Self {
+    pub fn new(fd: Option<RawFileDesc>, events: IoEvents) -> Self {
         let revents = Cell::new(IoEvents::empty());
         Self {
             fd,
@@ -248,7 +248,7 @@ impl PollFd {
         }
     }
 
-    pub fn fd(&self) -> Option<FileDesc> {
+    pub fn fd(&self) -> Option<RawFileDesc> {
         self.fd
     }
 
@@ -264,7 +264,7 @@ impl PollFd {
 impl From<c_pollfd> for PollFd {
     fn from(raw: c_pollfd) -> Self {
         let fd = if raw.fd >= 0 {
-            Some(raw.fd as FileDesc)
+            Some(raw.fd as RawFileDesc)
         } else {
             None
         };

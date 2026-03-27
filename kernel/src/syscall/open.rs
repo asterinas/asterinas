@@ -7,7 +7,7 @@ use crate::{
         file::{
             AccessMode, CreationFlags, FileLike, InodeHandle, InodeMode, InodeType, OpenArgs,
             StatusFlags,
-            file_table::{FdFlags, FileDesc},
+            file_table::{FdFlags, RawFileDesc},
         },
         vfs::path::{AT_FDCWD, FsPath, LookupResult, PathResolver},
     },
@@ -16,7 +16,7 @@ use crate::{
 };
 
 pub fn sys_openat(
-    dirfd: FileDesc,
+    dirfd: RawFileDesc,
     path_addr: Vaddr,
     flags: u32,
     mode: u16,
@@ -61,7 +61,7 @@ pub fn sys_openat(
     };
     let file_like: Arc<dyn FileLike> = file_handle;
     fs::vfs::notify::on_open(&file_like);
-    Ok(SyscallReturn::Return(fd as _))
+    Ok(SyscallReturn::Return(fd.into()))
 }
 
 pub fn sys_open(path_addr: Vaddr, flags: u32, mode: u16, ctx: &Context) -> Result<SyscallReturn> {

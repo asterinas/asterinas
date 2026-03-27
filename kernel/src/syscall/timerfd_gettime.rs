@@ -4,13 +4,13 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::FileDesc,
+    fs::file::file_table::RawFileDesc,
     prelude::*,
     time::{itimerspec_t, timerfd::TimerfdFile, timespec_t},
 };
 
 pub fn sys_timerfd_gettime(
-    fd: FileDesc,
+    raw_fd: RawFileDesc,
     itimerspec_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
@@ -20,7 +20,7 @@ pub fn sys_timerfd_gettime(
 
     let file_table = ctx.thread_local.borrow_file_table();
     let file_table_locked = file_table.unwrap().read();
-    let timerfd_file = file_table_locked.get_file(fd as _)?;
+    let timerfd_file = file_table_locked.get_file(raw_fd.try_into()?)?;
     let timerfd_file = timerfd_file
         .downcast_ref::<TimerfdFile>()
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "the fd is not a timerfd"))?;

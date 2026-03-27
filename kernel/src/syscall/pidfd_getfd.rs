@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    fs::file::file_table::{FdFlags, FileDesc, get_file_fast},
+    fs::file::file_table::{FdFlags, RawFileDesc, get_file_fast},
     prelude::*,
     process::{
         PidFile,
@@ -11,8 +11,8 @@ use crate::{
 };
 
 pub fn sys_pidfd_getfd(
-    pidfd: FileDesc,
-    targetfd: FileDesc,
+    pidfd: RawFileDesc,
+    targetfd: RawFileDesc,
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
@@ -26,7 +26,7 @@ pub fn sys_pidfd_getfd(
     );
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, pidfd);
+    let file = get_file_fast!(&mut file_table, pidfd.try_into()?);
     let Some(pid_file) = file.downcast_ref::<PidFile>() else {
         return_errno_with_message!(Errno::EBADF, "the file is not a PID file");
     };
@@ -51,7 +51,7 @@ pub fn sys_pidfd_getfd(
         .as_ref()
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process has exited"))?
         .read()
-        .get_file(targetfd)?
+        .get_file(targetfd.try_into()?)?
         .clone();
 
     // Duplicate the file descriptor into the caller's file descriptor table.
@@ -60,5 +60,5 @@ pub fn sys_pidfd_getfd(
         file_table_locked.insert(target_file, FdFlags::CLOEXEC)
     };
 
-    Ok(SyscallReturn::Return(new_fd as _))
+    Ok(SyscallReturn::Return(new_fd.into()))
 }

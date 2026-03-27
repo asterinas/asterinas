@@ -198,11 +198,11 @@ impl<T: NsCommonOps> FileIo for NsFile<T> {
                     );
                 }
 
-                open_ns_as_file(user_ns)
+                open_ns_as_file(user_ns).map(|fd| fd.into())
             }
             _cmd @ GetParent => {
                 let parent = self.ns.parent()?;
-                open_ns_as_file(parent)
+                open_ns_as_file(parent).map(|fd| fd.into())
             }
             _cmd @ GetType => {
                 let clone_flags = CloneFlags::from(T::TYPE);

@@ -2,7 +2,7 @@
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
-use aster_util::slot_vec::SlotVec;
+use aster_util::{ranged_integer::RangedU32, slot_vec::SlotVec};
 
 use super::{StatusFlags, file_handle::FileLike};
 use crate::{
@@ -15,7 +15,89 @@ use crate::{
     },
 };
 
-pub type FileDesc = i32;
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct FileDesc(RangedU32<0, { i32::MAX as _ }>);
+pub type RawFileDesc = i32;
+
+impl FileDesc {
+    pub fn raw_fd(self) -> RawFileDesc {
+        self.0.get() as _
+    }
+}
+
+impl From<FileDesc> for RawFileDesc {
+    fn from(value: FileDesc) -> Self {
+        value.raw_fd()
+    }
+}
+
+impl From<FileDesc> for isize {
+    fn from(value: FileDesc) -> Self {
+        value.raw_fd() as _
+    }
+}
+
+impl From<FileDesc> for u32 {
+    fn from(value: FileDesc) -> Self {
+        value.0.get()
+    }
+}
+
+impl From<FileDesc> for u64 {
+    fn from(value: FileDesc) -> Self {
+        value.0.get() as _
+    }
+}
+
+impl From<FileDesc> for usize {
+    fn from(value: FileDesc) -> Self {
+        value.0.get() as _
+    }
+}
+
+impl From<u16> for FileDesc {
+    fn from(value: u16) -> Self {
+        Self(RangedU32::new(value as _))
+    }
+}
+
+impl TryFrom<RawFileDesc> for FileDesc {
+    type Error = Error;
+
+    fn try_from(value: RawFileDesc) -> Result<Self> {
+        Ok(Self(
+            RangedU32::try_from(value as u32).map_err(|_| Errno::EBADF)?,
+        ))
+    }
+}
+
+impl TryFrom<u32> for FileDesc {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self> {
+        Ok(Self(RangedU32::try_from(value).map_err(|_| Errno::EBADF)?))
+    }
+}
+
+impl TryFrom<u64> for FileDesc {
+    type Error = Error;
+
+    fn try_from(value: u64) -> Result<Self> {
+        Ok(Self(
+            RangedU32::try_from(value as u32).map_err(|_| Errno::EBADF)?,
+        ))
+    }
+}
+
+impl TryFrom<usize> for FileDesc {
+    type Error = Error;
+
+    fn try_from(value: usize) -> Result<Self> {
+        Ok(Self(
+            RangedU32::try_from(value as u32).map_err(|_| Errno::EBADF)?,
+        ))
+    }
+}
 
 #[derive(Clone)]
 pub struct FileTable {
@@ -45,7 +127,7 @@ impl FileTable {
 
         // Get the lowest-numbered available fd equal to or greater than `ceil_fd`.
         let get_min_free_fd = || -> usize {
-            let ceil_fd = ceil_fd as usize;
+            let ceil_fd = ceil_fd.into();
             if self.table.get(ceil_fd).is_none() {
                 return ceil_fd;
             }
@@ -60,7 +142,7 @@ impl FileTable {
 
         let min_free_fd = get_min_free_fd();
         self.table.put_at(min_free_fd, entry);
-        Ok(min_free_fd as FileDesc)
+        min_free_fd.try_into()
     }
 
     /// Duplicates `fd` onto the exact descriptor number `new_fd`.
@@ -72,14 +154,14 @@ impl FileTable {
     ) -> Result<Option<Arc<dyn FileLike>>> {
         let entry = self.duplicate_entry(fd, flags)?;
         let closed_file = self.close_file(new_fd);
-        self.table.put_at(new_fd as usize, entry);
+        self.table.put_at(new_fd.into(), entry);
         Ok(closed_file)
     }
 
     fn duplicate_entry(&self, fd: FileDesc, flags: FdFlags) -> Result<FileTableEntry> {
         let file = self
             .table
-            .get(fd as usize)
+            .get(fd.into())
             .map(|entry| entry.file.clone())
             .ok_or(Error::with_message(Errno::EBADF, "fd does not exist"))?;
         Ok(FileTableEntry::new(file, flags))
@@ -87,11 +169,12 @@ impl FileTable {
 
     pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {
         let entry = FileTableEntry::new(item, flags);
-        self.table.put(entry) as FileDesc
+        // Resource limits guarantee the table never exceeds `i32::MAX` entries.
+        self.table.put(entry).try_into().unwrap()
     }
 
     pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
-        let removed_entry = self.table.remove(fd as usize)?;
+        let removed_entry = self.table.remove(fd.into())?;
         // POSIX record locks are process-associated and Linux drops them when any fd for the inode is
         // closed by that process, even if duplicated descriptors still exist.
         //
@@ -116,7 +199,8 @@ impl FileTable {
             .idxes_and_items()
             .filter_map(|(idx, entry)| {
                 if should_close(entry) {
-                    Some(idx as FileDesc)
+                    // Resource limits guarantee the table never exceeds `i32::MAX` entries.
+                    Some(idx.try_into().unwrap())
                 } else {
                     None
                 }
@@ -132,27 +216,28 @@ impl FileTable {
 
     pub fn get_file(&self, fd: FileDesc) -> Result<&Arc<dyn FileLike>> {
         self.table
-            .get(fd as usize)
+            .get(fd.into())
             .map(|entry| entry.file())
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
     pub fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
         self.table
-            .get(fd as usize)
+            .get(fd.into())
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
     pub fn get_entry_mut(&mut self, fd: FileDesc) -> Result<&mut FileTableEntry> {
         self.table
-            .get_mut(fd as usize)
+            .get_mut(fd.into())
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
     pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {
+        // Resource limits guarantee the table never exceeds `i32::MAX` entries.
         self.table
             .idxes_and_items()
-            .map(|(idx, entry)| (idx as FileDesc, entry.file()))
+            .map(|(idx, entry)| (idx.try_into().unwrap(), entry.file()))
     }
 }
 

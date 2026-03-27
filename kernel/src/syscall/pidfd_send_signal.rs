@@ -3,7 +3,7 @@
 use ostd::mm::VmIo;
 
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     process::{
         Pgid, Pid, PidFile, kill, kill_group,
@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub fn sys_pidfd_send_signal(
-    pidfd: FileDesc,
+    pidfd: RawFileDesc,
     sig_num: u64,
     info_ptr: Vaddr,
     flags: u32,
@@ -85,7 +85,7 @@ fn read_siginfo_from_user(info_ptr: Vaddr, sig_num: SigNum, ctx: &Context) -> Re
 }
 
 fn get_target_from_pidfd(
-    pidfd: FileDesc,
+    pidfd: RawFileDesc,
     flags: PidfdSendSignalFlags,
     ctx: &Context,
 ) -> Result<SignalTarget> {
@@ -114,7 +114,7 @@ fn get_target_from_pidfd(
         },
         _ => {
             let mut file_table = ctx.thread_local.borrow_file_table_mut();
-            let file = get_file_fast!(&mut file_table, pidfd);
+            let file = get_file_fast!(&mut file_table, pidfd.try_into()?);
 
             // FIXME: On Linux, a pidfd can be also obtained by opening a `/proc/pid` directory.
             // Reference: <https://man7.org/linux/man-pages/man2/pidfd_send_signal.2.html>

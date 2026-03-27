@@ -9,7 +9,7 @@ use crate::{
     fs::{
         file::{
             InodeType, Permission,
-            file_table::{FileDesc, get_file_fast},
+            file_table::{FileDesc, RawFileDesc, get_file_fast},
         },
         utils::{NAME_MAX, PATH_MAX, SYMLINKS_MAX},
         vfs::{inode::SymbolicLink, path::MountNamespace},
@@ -22,7 +22,7 @@ use crate::{
 };
 
 /// The file descriptor of the current working directory.
-pub const AT_FDCWD: FileDesc = -100;
+pub const AT_FDCWD: RawFileDesc = -100;
 
 /// A resolver for [`Path`]s.
 ///
@@ -735,13 +735,14 @@ impl<'a> FsPath<'a> {
     ///
     /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]), an error will be
     /// returned.
-    pub fn from_fd(dirfd: FileDesc) -> Result<Self> {
-        let fs_path_inner = if dirfd >= 0 {
-            FsPathInner::Fd(dirfd)
-        } else if dirfd == AT_FDCWD {
+    pub fn from_fd(dirfd: RawFileDesc) -> Result<Self> {
+        let fs_path_inner = if dirfd == AT_FDCWD {
             FsPathInner::Cwd
         } else {
-            return_errno_with_message!(Errno::EBADF, "the dirfd is invalid");
+            FsPathInner::Fd(
+                FileDesc::try_from(dirfd)
+                    .map_err(|_| Error::with_message(Errno::EBADF, "the dirfd is invalid"))?,
+            )
         };
 
         Ok(Self {
@@ -753,7 +754,7 @@ impl<'a> FsPath<'a> {
     ///
     /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]) or the path is empty
     /// or too long, an error will be returned.
-    pub fn from_fd_and_path(dirfd: FileDesc, path: &'a str) -> Result<Self> {
+    pub fn from_fd_and_path(dirfd: RawFileDesc, path: &'a str) -> Result<Self> {
         if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "the path is empty")
         }
@@ -763,12 +764,14 @@ impl<'a> FsPath<'a> {
 
         let fs_path_inner = if path.starts_with('/') {
             FsPathInner::Absolute(path)
-        } else if dirfd >= 0 {
-            FsPathInner::FdRelative(dirfd, path)
         } else if dirfd == AT_FDCWD {
             FsPathInner::CwdRelative(path)
         } else {
-            return_errno_with_message!(Errno::EBADF, "the dirfd is invalid");
+            FsPathInner::FdRelative(
+                FileDesc::try_from(dirfd)
+                    .map_err(|_| Error::with_message(Errno::EBADF, "the dirfd is invalid"))?,
+                path,
+            )
         };
 
         Ok(Self {

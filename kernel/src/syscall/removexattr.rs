@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     fs,
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -32,9 +32,13 @@ pub fn sys_lremovexattr(path_ptr: Vaddr, name_ptr: Vaddr, ctx: &Context) -> Resu
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fremovexattr(fd: FileDesc, name_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fremovexattr(
+    raw_fd: RawFileDesc,
+    name_ptr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     let user_space = ctx.user_space();
     removexattr(XattrFileCtx::FileHandle(file), name_ptr, &user_space, ctx)?;

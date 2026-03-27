@@ -2,15 +2,15 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
 };
 
-pub fn sys_listen(sockfd: FileDesc, backlog: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_listen(sockfd: RawFileDesc, backlog: i32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("sockfd = {sockfd}, backlog = {backlog}");
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd);
+    let file = get_file_fast!(&mut file_table, sockfd.try_into()?);
     let socket = file.as_socket_or_err()?;
 
     socket.listen(backlog as usize)?;

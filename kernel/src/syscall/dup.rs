@@ -2,27 +2,27 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FdFlags, FileDesc, get_file_fast},
+    fs::file::file_table::{FdFlags, FileDesc, RawFileDesc, get_file_fast},
     prelude::*,
     process::ResourceType,
 };
 
-pub fn sys_dup(old_fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}", old_fd);
 
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
-    let new_fd = file_table_locked.dup_ceil(old_fd, 0, FdFlags::empty())?;
+    let new_fd = file_table_locked.dup_ceil(old_fd.try_into()?, 0.into(), FdFlags::empty())?;
 
-    Ok(SyscallReturn::Return(new_fd as _))
+    Ok(SyscallReturn::Return(new_fd.into()))
 }
 
-pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_dup2(old_fd: RawFileDesc, new_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 
     if old_fd == new_fd {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
-        let _file = get_file_fast!(&mut file_table, old_fd);
+        let _file = get_file_fast!(&mut file_table, old_fd.try_into()?);
         return Ok(SyscallReturn::Return(new_fd as _));
     }
 
@@ -30,8 +30,8 @@ pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc, ctx: &Context) -> Result<Sys
 }
 
 pub fn sys_dup3(
-    old_fd: FileDesc,
-    new_fd: FileDesc,
+    old_fd: RawFileDesc,
+    new_fd: RawFileDesc,
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
@@ -47,16 +47,19 @@ pub fn sys_dup3(
 }
 
 fn do_dup3(
-    old_fd: FileDesc,
-    new_fd: FileDesc,
+    old_fd: RawFileDesc,
+    new_fd: RawFileDesc,
     flags: FdFlags,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
+    let old_fd = FileDesc::try_from(old_fd)?;
+    let new_fd = FileDesc::try_from(new_fd)?;
+
     if old_fd == new_fd {
         return_errno!(Errno::EINVAL);
     }
 
-    if new_fd.cast_unsigned() as u64
+    if u64::from(new_fd)
         >= ctx
             .process
             .resource_limits()
@@ -73,5 +76,5 @@ fn do_dup3(
     };
     drop(replaced_file);
 
-    Ok(SyscallReturn::Return(new_fd as _))
+    Ok(SyscallReturn::Return(new_fd.into()))
 }

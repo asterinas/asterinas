@@ -2,25 +2,25 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FileDesc, get_file_fast},
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
 };
 
-pub fn sys_fsync(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}", fd);
+pub fn sys_fsync(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+    debug!("raw_fd = {}", raw_fd);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let path = file.as_inode_handle_or_err()?.path();
     path.sync_all()?;
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fdatasync(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}", fd);
+pub fn sys_fdatasync(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+    debug!("raw_fd = {}", raw_fd);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let path = file.as_inode_handle_or_err()?.path();
     path.sync_data()?;
     Ok(SyscallReturn::Return(0))

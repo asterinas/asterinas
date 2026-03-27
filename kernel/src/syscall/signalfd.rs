@@ -20,7 +20,7 @@ use crate::{
     fs::{
         file::{
             CreationFlags, FileLike, StatusFlags,
-            file_table::{FdFlags, FileDesc, get_file_fast},
+            file_table::{FdFlags, RawFileDesc, get_file_fast},
         },
         pseudofs::AnonInodeFs,
         vfs::path::Path,
@@ -39,7 +39,7 @@ use crate::{
 
 /// Creates a new signalfd or updates an existing one according to the given mask
 pub fn sys_signalfd(
-    fd: FileDesc,
+    fd: RawFileDesc,
     mask_ptr: Vaddr,
     sizemask: usize,
     ctx: &Context,
@@ -49,7 +49,7 @@ pub fn sys_signalfd(
 
 /// Creates a new signalfd or updates an existing one according to the given mask and flags
 pub fn sys_signalfd4(
-    fd: FileDesc,
+    raw_fd: RawFileDesc,
     mask_ptr: Vaddr,
     sizemask: usize,
     flags: i32,
@@ -57,7 +57,7 @@ pub fn sys_signalfd4(
 ) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, mask = {:x}, sizemask = {}, flags = {}",
-        fd, mask_ptr, sizemask, flags
+        raw_fd, mask_ptr, sizemask, flags
     );
 
     if sizemask != size_of::<SigMask>() {
@@ -79,10 +79,10 @@ pub fn sys_signalfd4(
 
     let non_blocking = flags.contains(SignalFileFlags::O_NONBLOCK);
 
-    let new_fd = if fd == -1 {
+    let new_fd = if raw_fd == -1 {
         create_new_signalfd(ctx, mask, non_blocking, fd_flags)?
     } else {
-        update_existing_signalfd(ctx, fd, mask, non_blocking)?
+        update_existing_signalfd(ctx, raw_fd, mask, non_blocking)?
     };
 
     Ok(SyscallReturn::Return(new_fd as _))
@@ -93,7 +93,7 @@ fn create_new_signalfd(
     mask: SigMask,
     non_blocking: bool,
     fd_flags: FdFlags,
-) -> Result<FileDesc> {
+) -> Result<RawFileDesc> {
     let signal_file = {
         let atomic_mask = AtomicSigMask::new(mask);
         Arc::new(SignalFile::new(atomic_mask, non_blocking))
@@ -101,17 +101,17 @@ fn create_new_signalfd(
 
     let file_table = ctx.thread_local.borrow_file_table();
     let fd = file_table.unwrap().write().insert(signal_file, fd_flags);
-    Ok(fd)
+    Ok(fd.into())
 }
 
 fn update_existing_signalfd(
     ctx: &Context,
-    fd: FileDesc,
+    raw_fd: RawFileDesc,
     new_mask: SigMask,
     non_blocking: bool,
-) -> Result<FileDesc> {
+) -> Result<RawFileDesc> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let signal_file = file
         .downcast_ref::<SignalFile>()
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "File descriptor is not a signalfd"))?;
@@ -120,7 +120,7 @@ fn update_existing_signalfd(
         signal_file.update_signal_mask(new_mask)?;
     }
     signal_file.set_non_blocking(non_blocking);
-    Ok(fd)
+    Ok(raw_fd)
 }
 
 bitflags! {
