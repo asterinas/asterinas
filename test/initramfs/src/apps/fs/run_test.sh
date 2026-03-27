@@ -121,4 +121,6 @@ echo "All mount bind file test passed."
 ./pseudofs/pseudo_inode
 ./pseudofs/pseudo_mount
 
+./group_perm/group_perm
+./open_dir/open_dir
 ./symlink/symlink
