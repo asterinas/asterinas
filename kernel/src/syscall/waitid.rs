@@ -9,7 +9,9 @@ use crate::{
         ProcessFilter, WaitOptions, WaitStatus, do_wait,
         signal::{
             c_types::siginfo_t,
-            constants::{CLD_CONTINUED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, SIGCHLD, SIGCONT},
+            constants::{
+                CLD_CONTINUED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, CLD_TRAPPED, SIGCHLD, SIGCONT,
+            },
         },
     },
 };
@@ -67,7 +69,7 @@ pub fn sys_waitid(
 }
 
 fn calculate_si_code_and_si_status(wait_status: &WaitStatus) -> (i32, i32) {
-    // TODO: Add supports for `CLD_DUMPED` and `CLD_TRAPPED`.
+    // TODO: Add supports for `CLD_DUMPED`.
     match wait_status {
         WaitStatus::Zombie(process) => {
             const NORMAL_EXIT_MASK: u32 = 0xff;
@@ -84,5 +86,7 @@ fn calculate_si_code_and_si_status(wait_status: &WaitStatus) -> (i32, i32) {
         }
         WaitStatus::Stop(_process, signum) => (CLD_STOPPED, signum.as_u8() as i32),
         WaitStatus::Continue(_) => (CLD_CONTINUED, SIGCONT.as_u8() as i32),
+        // TODO: Add `PTRACE_EVENT_*` flags into `si_status`.
+        WaitStatus::PtraceStop(_, signum) => (CLD_TRAPPED, signum.as_u8() as i32),
     }
 }

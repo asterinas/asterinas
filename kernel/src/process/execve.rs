@@ -24,8 +24,8 @@ use crate::{
         program_loader::{ProgramToLoad, elf::ElfLoadInfo},
         signal::{
             HandlePendingSignal, PauseReason, SigStack,
-            constants::{SIGCHLD, SIGKILL},
-            signals::kernel::KernelSignal,
+            constants::{SIGCHLD, SIGKILL, SIGTRAP},
+            signals::{kernel::KernelSignal, user::UserSignal},
         },
     },
     vm::vmar::Vmar,
@@ -92,6 +92,17 @@ pub fn do_execve(
     if res.is_err() {
         ctx.posix_thread
             .enqueue_signal(Box::new(KernelSignal::new(SIGKILL)));
+    } else {
+        // If the PTRACE_O_TRACEEXEC option is not in effect, all successful
+        // calls to execve(2) by the traced process will cause it to be sent
+        // a SIGTRAP signal, giving the parent a chance to gain control
+        // before the new program begins execution.
+        //
+        // Reference: <https://man7.org/linux/man-pages/man2/ptrace.2.html>
+        if ctx.posix_thread.tracer().is_some() {
+            ctx.posix_thread
+                .enqueue_signal(Box::new(UserSignal::new_kill(SIGTRAP, ctx)));
+        }
     }
 
     ctx.process.tasks().lock().finish_execve();
