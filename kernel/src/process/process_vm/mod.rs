@@ -164,7 +164,26 @@ pub struct ProcessVmarGuard<'a> {
 // NOTE: Upgrading the `Weak<Vmar>` in the snapshot is not permitted,
 // as this will cause the `Vmar` to be dropped in the wrong context,
 // and break the reference count used in `CurrentUserSpace::is_vmar_shared`.
+#[derive(Debug, Clone)]
 pub struct VmarSnapshot(Weak<Vmar>);
+
+impl VmarSnapshot {
+    /// Returns the raw identity pointer of the captured `Vmar`.
+    pub fn as_ptr(&self) -> *const Vmar {
+        Weak::as_ptr(&self.0)
+    }
+
+    /// Returns whether two snapshots refer to the same `Vmar`.
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl From<Weak<Vmar>> for VmarSnapshot {
+    fn from(snapshot: Weak<Vmar>) -> Self {
+        Self(snapshot)
+    }
+}
 
 impl<'a> ProcessVmarGuard<'a> {
     /// Creates a new VMAR guard from the mutex guard.

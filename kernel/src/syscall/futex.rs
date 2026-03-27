@@ -8,8 +8,8 @@ use crate::{
     current_userspace,
     prelude::*,
     process::posix_thread::futex::{
-        FutexFlags, FutexOp, futex_op_and_flags_from_u32, futex_requeue, futex_wait,
-        futex_wait_bitset, futex_wake, futex_wake_bitset, futex_wake_op,
+        FutexFlags, FutexOp, FutexVisibility, futex_op_and_flags_from_u32, futex_requeue,
+        futex_wait, futex_wait_bitset, futex_wake, futex_wake_bitset, futex_wake_op,
     },
     syscall::SyscallReturn,
     time::{
@@ -79,15 +79,11 @@ pub fn sys_futex(
         )))
     };
 
-    let pid = if futex_flags.contains(FutexFlags::FUTEX_PRIVATE) {
-        Some(ctx.process.pid())
-    } else {
-        None
-    };
+    let visibility = FutexVisibility::from(futex_flags);
     let res = match futex_op {
         FutexOp::FUTEX_WAIT => {
             let timeout = get_futex_timeout(utime_addr)?;
-            futex_wait(futex_addr as _, futex_val as _, timeout, ctx, pid).map(|_| 0)
+            futex_wait(futex_addr as _, futex_val as _, timeout, ctx, visibility).map(|_| 0)
         }
         FutexOp::FUTEX_WAIT_BITSET => {
             let timeout = get_futex_timeout(utime_addr)?;
@@ -97,17 +93,17 @@ pub fn sys_futex(
                 timeout,
                 bitset as _,
                 ctx,
-                pid,
+                visibility,
             )
             .map(|_| 0)
         }
         FutexOp::FUTEX_WAKE => {
             let max_count = futex_val_to_max_count(futex_val);
-            futex_wake(futex_addr as _, max_count, pid)
+            futex_wake(futex_addr as _, max_count, visibility)
         }
         FutexOp::FUTEX_WAKE_BITSET => {
             let max_count = futex_val_to_max_count(futex_val);
-            futex_wake_bitset(futex_addr as _, max_count, bitset as _, pid)
+            futex_wake_bitset(futex_addr as _, max_count, bitset as _, visibility)
         }
         FutexOp::FUTEX_REQUEUE => {
             let max_nwakes = futex_val_to_max_count(futex_val);
@@ -119,7 +115,8 @@ pub fn sys_futex(
                 max_nwakes,
                 max_nrequeues,
                 futex_new_addr as _,
-                pid,
+                ctx,
+                visibility,
             )
         }
         FutexOp::FUTEX_WAKE_OP => {
@@ -132,7 +129,7 @@ pub fn sys_futex(
                 futex_val_to_max_count(futex_val_2),
                 bitset,
                 ctx,
-                pid,
+                visibility,
             )
         }
         _ => {

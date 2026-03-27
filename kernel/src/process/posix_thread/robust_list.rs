@@ -4,7 +4,12 @@
 
 use ostd::{mm::VmIo, task::Task};
 
-use crate::{current_userspace, prelude::*, process::posix_thread::futex::futex_wake, thread::Tid};
+use crate::{
+    current_userspace,
+    prelude::*,
+    process::posix_thread::futex::{FutexVisibility, futex_wake},
+    thread::Tid,
+};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
@@ -158,7 +163,7 @@ pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
                 // Wake up one waiter and break out from the loop.
                 if new_val & FUTEX_WAITERS != 0 {
                     debug!("wake the robust futex at {:#x}", futex_addr);
-                    futex_wake(futex_addr, 1, None)?;
+                    futex_wake(futex_addr, 1, FutexVisibility::Shared)?;
                 }
                 break;
             }

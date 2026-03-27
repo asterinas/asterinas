@@ -13,7 +13,7 @@ use ostd::{
 use crate::{
     prelude::*,
     process::{
-        Process,
+        Process, VmarSnapshot,
         posix_thread::{PosixThread, ThreadLocal},
     },
     thread::Thread,
@@ -84,6 +84,11 @@ impl<'a> CurrentUserSpace<'a> {
     /// This method will panic if the current process has cleared its `Vmar`.
     pub fn vmar(&self) -> &Vmar {
         self.0.as_ref().unwrap()
+    }
+
+    /// Takes a snapshot of the current VMAR identity.
+    pub fn vmar_snapshot(&self) -> VmarSnapshot {
+        VmarSnapshot::from(Arc::downgrade(self.0.as_ref().unwrap()))
     }
 
     /// Returns whether the VMAR is shared with other processes or threads.
