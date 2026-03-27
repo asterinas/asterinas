@@ -328,7 +328,7 @@ impl OverlayInode {
             .read_at(offset, writer, status_flags)
     }
 
-    /// Returns the children objects in a unified view.
+    /// Gets the children objects in a unified view.
     /// The object from the upper layer with the same name will mask the lower ones.
     pub fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         if self.type_ != InodeType::Dir {
@@ -341,7 +341,16 @@ impl OverlayInode {
             visitor.visit(name, *ino, *type_, *offset)?;
         }
 
-        Ok(overlay_dir_visitor.cur_offset())
+        // Return the offset increment that advances the caller from the starting `offset`
+        // to one past the last visited dirent offset. Note: this is not guaranteed to be
+        // equal to the number of entries visited, since offsets may encode layer bits.
+        if let Some(off) = overlay_dir_visitor.cur_offset() {
+            off.checked_sub(offset)
+                .and_then(|v| v.checked_add(1))
+                .ok_or(Error::new(Errno::EOVERFLOW))
+        } else {
+            Ok(0)
+        }
     }
 
     /// Deletes the target file by creating a "whiteout" file from the upper layer.
@@ -1005,9 +1014,12 @@ struct OverlayDirVisitor {
 
 impl DirentVisitor for OverlayDirVisitor {
     fn visit(&mut self, name: &str, fs_ino: u64, type_: InodeType, fs_offset: usize) -> Result<()> {
-        if self.whiteout_only_mode && name.starts_with(WHITEOUT_PREFIX) {
-            self.dir_set
-                .insert(name[WHITEOUT_PREFIX_SIZE..].to_string());
+        if self.whiteout_only_mode {
+            if name.starts_with(WHITEOUT_PREFIX) {
+                self.dir_set
+                    .insert(name[WHITEOUT_PREFIX_SIZE..].to_string());
+            }
+            // We only want to collect the whiteout files in `whiteout_only_mode`, so directly return.
             return Ok(());
         }
 
@@ -1063,11 +1075,8 @@ impl OverlayDirVisitor {
         !self.whiteout_set.is_empty()
     }
 
-    pub fn cur_offset(&self) -> usize {
-        self.dir_map
-            .last_key_value()
-            .map(|(off, _)| *off)
-            .unwrap_or(0)
+    fn cur_offset(&self) -> Option<usize> {
+        self.dir_map.last_key_value().map(|(off, _)| *off)
     }
 
     fn set_cur_layer(&mut self, layer: LayerIdx) {
@@ -1465,6 +1474,72 @@ mod tests {
         )
         .unwrap();
         assert_eq!(xattr_value.as_slice(), "f2_xattr_value".as_bytes());
+    }
+
+    #[ktest]
+    fn resuming_readdir_should_not_produce_duplicates() {
+        crate::time::clocks::init_for_ktest();
+        crate::fs::vfs::init();
+
+        let mode = InodeMode::all();
+        let root = Path::new_fs_root(new_dummy_mount());
+
+        let upper = {
+            let dir = root.new_fs_child("upper", InodeType::Dir, mode).unwrap();
+            // whiteout for "deleted"
+            dir.new_fs_child(".wh.deleted", InodeType::File, mode)
+                .unwrap();
+            // a normal file that should appear exactly once
+            dir.new_fs_child("normal_file", InodeType::File, mode)
+                .unwrap();
+            dir
+        };
+
+        let lower = {
+            let r = Path::new_fs_root(new_dummy_mount());
+            // this file is whited-out by upper, should NOT appear
+            r.new_fs_child("deleted", InodeType::File, mode).unwrap();
+            // this file only lives in lower, should appear once
+            r.new_fs_child("another_file", InodeType::File, mode)
+                .unwrap();
+            r
+        };
+
+        let work = root.new_fs_child("work", InodeType::Dir, mode).unwrap();
+        let fs = OverlayFs::new(upper, vec![lower], work).unwrap();
+        let root_inode = fs.root_inode();
+
+        // Simulate multiple batched getdents calls: each call passes the accumulated
+        // offset (sum of all previous return values) as the starting offset, mimicking
+        // how inode_handle::readdir accumulates `*offset += read_cnt`.
+        let mut all_names = Vec::<String>::new();
+        let mut offset = 0usize;
+        loop {
+            let mut batch = Vec::<String>::new();
+            let read_cnt = root_inode.readdir_at(offset, &mut batch).unwrap();
+            all_names.extend(batch);
+            if read_cnt == 0 {
+                break;
+            }
+            offset += read_cnt;
+        }
+
+        assert!(
+            !all_names.contains(&"deleted".to_string()),
+            "whited-out file 'deleted' should not appear"
+        );
+
+        let normal_total = all_names.iter().filter(|n| *n == "normal_file").count();
+        assert_eq!(
+            normal_total, 1,
+            "normal_file should appear exactly once, got {normal_total}"
+        );
+
+        let another_total = all_names.iter().filter(|n| *n == "another_file").count();
+        assert_eq!(
+            another_total, 1,
+            "another_file should appear exactly once, got {another_total}"
+        );
     }
 
     #[ktest]
