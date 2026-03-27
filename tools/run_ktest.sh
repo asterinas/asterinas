@@ -62,30 +62,25 @@ parse_args() {
 }
 
 run_ktest() {
-    local failed=0
+    trap 'rm -rf "${PROJECT_ROOT}/target/osdk/"*' EXIT
 
     for dir in "${CRATES[@]}"; do
         echo "[ktest] Testing $dir"
 
         if ! (cd "${PROJECT_ROOT}/${dir}" && cargo osdk test "${CARGO_OSDK_TEST_ARGS[@]}"); then
             echo "ERROR: Testing $dir failed"
-            failed=1
+            exit 1
         elif ! tail --lines 10 "${PROJECT_ROOT}/qemu.log" 2>/dev/null \
                 | grep -q "^\[ktest runner\] All crates tested."; then
             echo "ERROR: Test verification failed for $dir"
-            failed=1
+            exit 1
         fi
 
         # Remove artifacts to save disk space (useful for CI runners).
         rm -rf "${PROJECT_ROOT}/target/osdk/"*
     done
 
-    if [[ $failed -ne 0 ]]; then
-        echo "SUMMARY: Some kernel-mode unit tests failed"
-        exit 1
-    else
-        echo "SUMMARY: All kernel-mode unit tests passed"
-    fi
+    echo "SUMMARY: All kernel-mode unit tests passed"
 }
 
 parse_args "$@"
