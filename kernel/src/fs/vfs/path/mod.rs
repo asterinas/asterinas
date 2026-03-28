@@ -111,6 +111,26 @@ impl Path {
         let status_flags = &open_args.status_flags;
 
         if creation_flags.contains(CreationFlags::O_CREAT)
+            && creation_flags.contains(CreationFlags::O_DIRECTORY)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "O_CREAT and O_DIRECTORY cannot be specified together"
+            );
+        }
+
+        if creation_flags.contains(CreationFlags::O_CREAT) && inode_type == InodeType::Dir {
+            return_errno_with_message!(Errno::EISDIR, "O_CREAT on a directory");
+        }
+
+        if inode_type == InodeType::Dir
+            && open_args.access_mode.is_writable()
+            && !status_flags.contains(StatusFlags::O_PATH)
+        {
+            return_errno_with_message!(Errno::EISDIR, "cannot open directory with write access");
+        }
+
+        if creation_flags.contains(CreationFlags::O_CREAT)
             && creation_flags.contains(CreationFlags::O_EXCL)
         {
             return_errno_with_message!(Errno::EEXIST, "the file already exists");
