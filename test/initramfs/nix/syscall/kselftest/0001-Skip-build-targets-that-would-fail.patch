@@ -1,0 +1,37 @@
+From 5335f115936c018c2670d6c76689a365bb7e624e Mon Sep 17 00:00:00 2001
+From: Qingsong Chen <changxian.cqs@antgroup.com>
+Date: Thu, 5 Mar 2026 07:28:58 +0000
+Subject: [PATCH] Skip build targets that would fail
+
+---
+ tools/testing/selftests/cgroup/Makefile | 1 -
+ tools/testing/selftests/net/Makefile    | 1 -
+ 2 files changed, 2 deletions(-)
+
+diff --git a/tools/testing/selftests/cgroup/Makefile b/tools/testing/selftests/cgroup/Makefile
+index e01584c2189a..12dd4eeb46ce 100644
+--- a/tools/testing/selftests/cgroup/Makefile
++++ b/tools/testing/selftests/cgroup/Makefile
+@@ -14,7 +14,6 @@ TEST_GEN_PROGS += test_freezer
+ TEST_GEN_PROGS += test_hugetlb_memcg
+ TEST_GEN_PROGS += test_kill
+ TEST_GEN_PROGS += test_kmem
+-TEST_GEN_PROGS += test_memcontrol
+ TEST_GEN_PROGS += test_pids
+ TEST_GEN_PROGS += test_zswap
+ 
+diff --git a/tools/testing/selftests/net/Makefile b/tools/testing/selftests/net/Makefile
+index b5127e968108..1c8f6aeb3b93 100644
+--- a/tools/testing/selftests/net/Makefile
++++ b/tools/testing/selftests/net/Makefile
+@@ -203,7 +203,6 @@ YNL_GEN_PROGS := netlink-dumps
+ TEST_GEN_FILES += $(YNL_GEN_FILES)
+ TEST_GEN_PROGS += $(YNL_GEN_PROGS)
+ 
+-TEST_GEN_FILES += $(patsubst %.c,%.o,$(wildcard *.bpf.c))
+ 
+ TEST_INCLUDES := forwarding/lib.sh
+ 
+-- 
+2.43.0
+

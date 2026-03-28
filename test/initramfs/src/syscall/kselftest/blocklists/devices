@@ -1,0 +1,2 @@
+devices/error_logs:test_device_error_logs.py
+devices/probe:test_discoverable_devices.py

@@ -1,0 +1,3 @@
+vDSO:vdso_test_abi
+vDSO:vdso_test_correctness
+vDSO:vdso_test_getrandom
