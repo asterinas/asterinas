@@ -41,9 +41,10 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Gets a reference to the child.
     pub(in crate::mm) fn to_ref(&self) -> PteStateRef<'rcu, C> {
         // SAFETY:
-        //  - The child pointed to by the PTE outlives the reference, since
-        //    either PTs and mapped items outlive `'rcu`.
-        //  - The level matches the current node.
+        //  - The PTE was read from the node, which contains valid PTEs;
+        //  - the child pointed to by the PTE outlives the reference, since
+        //    either PTs and mapped items outlive `'rcu`;
+        //  - the level matches the current node.
         unsafe { PteStateRef::from_pte(&self.pte, self.node.level()) }
     }
 
@@ -209,8 +210,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ///
     /// The caller must ensure that the index is within the bounds of the node.
     pub(super) unsafe fn new_at(guard: &'a mut PageTableGuard<'rcu, C>, idx: usize) -> Self {
-        // SAFETY: The index is within the bound.
-        let pte = unsafe { guard.read_pte(idx) };
+        let pte = guard.read_pte(idx);
         Self {
             pte,
             idx,
