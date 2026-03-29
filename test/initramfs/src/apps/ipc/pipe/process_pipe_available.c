@@ -20,8 +20,9 @@
 FN_TEST(process_pipe_available_probe)
 {
 	int fildes[2];
-	char buf[4] = { 0 };
 	struct stat stat_buf;
+	int pending = -1;
+	char buf[4] = { 0 };
 
 	TEST_SUCC(pipe(fildes));
 
@@ -37,7 +38,6 @@ FN_TEST(process_pipe_available_probe)
 
 	TEST_RES(fstat(fildes[0], &stat_buf), S_ISFIFO(stat_buf.st_mode));
 
-	int pending = -1;
 	TEST_RES(ioctl(fildes[0], FIONREAD, &pending), pending == 3);
 	TEST_ERRNO(lseek(fildes[0], 0, SEEK_CUR), ESPIPE);
 
