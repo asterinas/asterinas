@@ -601,11 +601,11 @@ impl XSaveArea {
         };
 
         let mut xsave_area = Self::new_zeroed();
-        // Set the initial values for the FPU context. Refer to Intel SDM, Table 11-1:
+        // Set the initial values for the FPU context. Refer to Intel SDM, Table 10-1:
         // "IA-32 and Intel® 64 Processor States Following Power-up, Reset, or INIT (Contd.)".
         xsave_area.fxsave_area.control = 0x037F;
         // Refer to Intel SDM, Volume 1, Section "x87 State". In the FXSAVE/XSAVE image the
-        // `tag` field contains an abridged x87 Tag Word (FTW) — a compact (8-bit) encoding
+        // `tag` field contains an abridged x87 Tag Word (FTW) - a compact (8-bit) encoding
         // used in saved/restore images. In this format, a bit value of 0 indicates the
         // corresponding x87 register is empty (this is the inverse of the legacy 16-bit
         // tag-word semantics). The `fninit` instruction clears all x87 registers, so the
@@ -636,8 +636,8 @@ struct FxSaveArea {
     mxcsr_mask: u32,      // MXCSR Mask
     st_space: [u32; 32], // x87 FPU or MMX technology registers (ST0-ST7 or MM0-MM7, 128 bits per field)
     xmm_space: [u32; 64], // XMM registers (XMM0-XMM15, 128 bits per field)
-    padding: [u32; 12],  // Padding
-    reserved2: [u32; 12], // Software reserved
+    reserved2: [u32; 12], // Reserved
+    reserved3: [u32; 12], // Software reserved
 }
 
 /// The XSTATE features (user & supervisor) supported by the processor.
