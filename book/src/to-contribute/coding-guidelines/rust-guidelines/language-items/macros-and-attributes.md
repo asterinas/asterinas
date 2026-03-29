@@ -1,5 +1,31 @@
 # Macros and Attributes
 
+### Use `#[expect(dead_code)]` with restraint (`expect-dead-code`) {#expect-dead-code}
+
+In general, dead code should be avoided because
+_(i)_ it introduces unnecessary maintenance overhead, and
+_(ii)_ its correctness can only be guaranteed
+by manual and error-prone review.
+
+Dead code is acceptable only when all of these hold:
+
+1. A _concrete case_ will be implemented in the future
+   that turns the dead code into used code.
+2. The semantics are _clear_ enough,
+   even without the use case.
+3. The dead code is _simple_ enough
+   that both the committer and the reviewer
+   can be confident it is correct without testing.
+4. It serves as a counterpart to existing non-dead code.
+
+For example, it is fine to add ABI constants
+that are unused because the corresponding feature
+is partially implemented.
+
+See also:
+[Rust Reference: Diagnostic attributes](https://doc.rust-lang.org/reference/attributes/diagnostics.html)
+and rustc [`unfulfilled_lint_expectations`](https://doc.rust-lang.org/rustc/lints/listing/warn-by-default.html#unfulfilled-lint-expectations).
+
 ### Suppress lints at the narrowest scope (`narrow-lint-suppression`) {#narrow-lint-suppression}
 
 When suppressing lints,
@@ -42,32 +68,6 @@ enum SomeEnum {
 See also:
 [Clippy `allow_attributes`](https://rust-lang.github.io/rust-clippy/master/#allow_attributes),
 [Clippy `allow_attributes_without_reason`](https://rust-lang.github.io/rust-clippy/master/#allow_attributes_without_reason),
-and rustc [`unfulfilled_lint_expectations`](https://doc.rust-lang.org/rustc/lints/listing/warn-by-default.html#unfulfilled-lint-expectations).
-
-### Use `#[expect(dead_code)]` with restraint (`expect-dead-code`) {#expect-dead-code}
-
-In general, dead code should be avoided because
-_(i)_ it introduces unnecessary maintenance overhead, and
-_(ii)_ its correctness can only be guaranteed
-by manual and error-prone review.
-
-Dead code is acceptable only when all of these hold:
-
-1. A _concrete case_ will be implemented in the future
-   that turns the dead code into used code.
-2. The semantics are _clear_ enough,
-   even without the use case.
-3. The dead code is _simple_ enough
-   that both the committer and the reviewer
-   can be confident it is correct without testing.
-4. It serves as a counterpart to existing non-dead code.
-
-For example, it is fine to add ABI constants
-that are unused because the corresponding feature
-is partially implemented.
-
-See also:
-[Rust Reference: Diagnostic attributes](https://doc.rust-lang.org/reference/attributes/diagnostics.html)
 and rustc [`unfulfilled_lint_expectations`](https://doc.rust-lang.org/rustc/lints/listing/warn-by-default.html#unfulfilled-lint-expectations).
 
 ### Prefer functions over macros (`macros-as-last-resort`) {#macros-as-last-resort}
