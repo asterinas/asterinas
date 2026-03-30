@@ -107,6 +107,7 @@ pub struct InitStack {
     /// Before initialization, `pos` points to `initial_top`.
     /// After initialization, `pos` points to the top of the process stack.
     pos: AtomicUsize,
+    auxv_range: SpinLock<Range<Vaddr>>,
     argv_range: SpinLock<Range<Vaddr>>,
     envp_range: SpinLock<Range<Vaddr>>,
 }
@@ -117,6 +118,7 @@ impl Clone for InitStack {
             initial_top: self.initial_top,
             max_size: self.max_size,
             pos: AtomicUsize::new(self.pos.load(Ordering::Relaxed)),
+            auxv_range: SpinLock::new(self.auxv_range.lock().clone()),
             argv_range: SpinLock::new(self.argv_range.lock().clone()),
             envp_range: SpinLock::new(self.envp_range.lock().clone()),
         }
@@ -145,6 +147,7 @@ impl InitStack {
             initial_top,
             max_size,
             pos: AtomicUsize::new(initial_top),
+            auxv_range: SpinLock::new(0..0),
             argv_range: SpinLock::new(0..0),
             envp_range: SpinLock::new(0..0),
         }
@@ -191,8 +194,9 @@ impl InitStack {
             auxvec,
             map_addr: self.initial_top - self.max_size,
         };
-        let (argv_range, envp_range) = writer.write()?;
+        let (auxv_range, argv_range, envp_range) = writer.write()?;
 
+        *self.auxv_range.lock() = auxv_range;
         *self.argv_range.lock() = argv_range;
         *self.envp_range.lock() = envp_range;
 
@@ -207,6 +211,7 @@ impl InitStack {
 
         InitStackReader {
             vmar,
+            auxv_range: self.auxv_range.lock().clone(),
             argv_range: self.argv_range.lock().clone(),
             envp_range: self.envp_range.lock().clone(),
         }
@@ -239,8 +244,8 @@ struct InitStackWriter<'a> {
 impl InitStackWriter<'_> {
     /// Writes the content to the init stack.
     ///
-    /// Returns the range of argv and envp in the init stack.
-    fn write(mut self) -> Result<(Range<Vaddr>, Range<Vaddr>)> {
+    /// Returns the range of auxv, argv and envp in the init stack.
+    fn write(mut self) -> Result<(Range<Vaddr>, Range<Vaddr>, Range<Vaddr>)> {
         // FIXME: Some OSes may put the first page of the executable file here
         // for interpreting ELF headers.
 
@@ -262,7 +267,9 @@ impl InitStackWriter<'_> {
         self.auxvec.set(AuxKey::AT_RANDOM, random_value_pointer);
 
         self.adjust_stack_alignment(&envp_pointers, &argv_pointers)?;
+        let auxv_end = self.pos();
         self.write_aux_vec()?;
+        let auxv_start = self.pos();
         self.write_envp_pointers(envp_pointers)?;
         self.write_argv_pointers(argv_pointers)?;
 
@@ -273,7 +280,11 @@ impl InitStackWriter<'_> {
         // Ensure the stack top is 16-byte aligned.
         debug_assert_eq!(self.pos() & !0xf, self.pos());
 
-        Ok((argv_start..argv_end, envp_start..envp_end))
+        Ok((
+            auxv_start..auxv_end,
+            argv_start..argv_end,
+            envp_start..envp_end,
+        ))
     }
 
     fn write_envp_strings(&self) -> Result<Vec<u64>> {
@@ -402,32 +413,39 @@ fn generate_random_for_aux_vec() -> [u8; 16] {
 /// A reader to parse the content of an `InitStack`.
 pub struct InitStackReader<'a> {
     vmar: &'a Vmar,
+    auxv_range: Range<Vaddr>,
     argv_range: Range<Vaddr>,
     envp_range: Range<Vaddr>,
 }
 
 impl InitStackReader<'_> {
+    /// Reads auxv at the `offset` from the process init stack.
+    pub fn auxv(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.read_range(offset, writer, &self.auxv_range)
+    }
+
     /// Reads argv at the `offset` from the process init stack.
     pub fn argv(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        if offset >= self.argv_range.end - self.argv_range.start {
-            return Ok(0);
-        }
-
-        let read_at = self.argv_range.start + offset;
-        writer.limit(self.argv_range.end - read_at);
-        let bytes_read = self.vmar.read_alien(read_at, writer)?;
-
-        Ok(bytes_read)
+        self.read_range(offset, writer, &self.argv_range)
     }
 
     /// Reads envp at the `offset` from the process init stack.
     pub fn envp(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        if offset >= self.envp_range.end - self.envp_range.start {
+        self.read_range(offset, writer, &self.envp_range)
+    }
+
+    fn read_range(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        range: &Range<Vaddr>,
+    ) -> Result<usize> {
+        if offset >= range.end - range.start {
             return Ok(0);
         }
 
-        let read_at = self.envp_range.start + offset;
-        writer.limit(self.envp_range.end - read_at);
+        let read_at = range.start + offset;
+        writer.limit(range.end - read_at);
         let bytes_read = self.vmar.read_alien(read_at, writer)?;
 
         Ok(bytes_read)

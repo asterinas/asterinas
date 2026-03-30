@@ -10,12 +10,12 @@ use crate::{
         file::mkmod,
         procfs::{
             pid::task::{
-                cgroup::CgroupFileOps, cmdline::CmdlineFileOps, comm::CommFileOps,
-                environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps, gid_map::GidMapFileOps,
-                maps::MapsFileOps, mem::MemFileOps, mountinfo::MountInfoFileOps,
-                mounts::MountsFileOps, mountstats::MountStatsFileOps, ns::NsDirOps,
-                oom_score_adj::OomScoreAdjFileOps, stat::StatFileOps, status::StatusFileOps,
-                uid_map::UidMapFileOps,
+                auxv::AuxvFileOps, cgroup::CgroupFileOps, cmdline::CmdlineFileOps,
+                comm::CommFileOps, environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps,
+                gid_map::GidMapFileOps, maps::MapsFileOps, mem::MemFileOps,
+                mountinfo::MountInfoFileOps, mounts::MountsFileOps, mountstats::MountStatsFileOps,
+                ns::NsDirOps, oom_score_adj::OomScoreAdjFileOps, stat::StatFileOps,
+                status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
                 DirOps, ProcDir, ProcDirBuilder, lookup_child_from_table,
@@ -30,6 +30,7 @@ use crate::{
     thread::{AsThread, Thread, Tid},
 };
 
+mod auxv;
 mod cgroup;
 mod cmdline;
 mod comm;
@@ -106,6 +107,7 @@ impl TidDirOps {
         &'static str,
         fn(&TidDirOps, Weak<dyn Inode>) -> Arc<dyn Inode>,
     )] = &[
+        ("auxv", AuxvFileOps::new_inode),
         ("cgroup", CgroupFileOps::new_inode),
         ("cmdline", CmdlineFileOps::new_inode),
         ("comm", CommFileOps::new_inode),
