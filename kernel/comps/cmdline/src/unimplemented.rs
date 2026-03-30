@@ -50,5 +50,7 @@ define_unimplemented_param!(
     "panic",
     "nr_cpus",
     "selinux",
-    "initrd"
+    "initrd",
+    "noreplace_smp",
+    "initcall_debug"
 );
