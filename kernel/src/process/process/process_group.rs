@@ -2,7 +2,7 @@
 
 use alloc::collections::btree_map::Values;
 
-use super::{Pgid, Pid, Process, Session};
+use super::{BOOTSTRAP_PGID, BOOTSTRAP_SID, Pgid, Pid, Process, Session};
 use crate::{prelude::*, process::signal::signals::Signal};
 
 /// A process group.
@@ -27,16 +27,30 @@ impl ProcessGroup {
     ///
     /// The caller needs to ensure that the process does not belong to other process group.
     pub(super) fn new(process: &Arc<Process>, session: Arc<Session>) -> Arc<Self> {
-        let pid = process.pid();
+        Self::new_with(process.pid(), process, session)
+    }
 
+    /// Creates the bootstrap process group for the init process.
+    ///
+    /// The caller needs to ensure that the process is the init process,
+    /// the process does not belong to other process group, and
+    /// the session is the bootstrap session.
+    pub(super) fn new_bootstrap(process: &Arc<Process>, session: Arc<Session>) -> Arc<Self> {
+        debug_assert!(process.is_init_process());
+        debug_assert_eq!(session.sid(), BOOTSTRAP_SID);
+
+        Self::new_with(BOOTSTRAP_PGID, process, session)
+    }
+
+    fn new_with(pgid: Pgid, process: &Arc<Process>, session: Arc<Session>) -> Arc<Self> {
         let inner = {
             let mut processes = BTreeMap::new();
-            processes.insert(pid, Arc::downgrade(process));
+            processes.insert(process.pid(), Arc::downgrade(process));
             Inner { processes }
         };
 
         Arc::new(ProcessGroup {
-            pgid: pid,
+            pgid,
             session,
             inner: Mutex::new(inner),
         })

@@ -52,16 +52,23 @@ pub use process_group::ProcessGroup;
 pub use session::Session;
 pub use terminal::Terminal;
 
-/// Process id.
+/// Process ID.
 pub type Pid = u32;
+
 define_atomic_version_of_integer_like_type!(Pid, {
     #[derive(Debug)]
     pub struct AtomicPid(AtomicU32);
 });
-/// Process group id.
+
+/// Process group ID.
 pub type Pgid = u32;
-/// Session Id.
+/// Session ID.
 pub type Sid = u32;
+
+/// The process group ID for process group created by [`ProcessGroup::new_bootstrap`].
+const BOOTSTRAP_PGID: Pgid = 0;
+/// The session ID for the session created by [`Session::new_bootstrap_pair`].
+const BOOTSTRAP_SID: Sid = 0;
 
 pub type ExitCode = u32;
 
