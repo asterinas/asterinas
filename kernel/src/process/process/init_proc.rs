@@ -4,7 +4,7 @@
 
 use ostd::{arch::cpu::context::UserContext, task::Task, user::UserContextApi};
 
-use super::Process;
+use super::{Process, Session};
 use crate::{
     fs::{
         thread_info::ThreadFsInfo,
@@ -39,7 +39,14 @@ pub fn spawn_init_process(
         create_default_init_process(argv, envp)?
     };
 
-    set_session_and_group(&process);
+    // Linux starts the init process without placing it in a process group or session.
+    // It joins one only after userspace first calls `setsid()`.
+    //
+    // Asterinas instead requires every process to belong to both a process group and
+    // a session. The init process is therefore placed in a bootstrap process group
+    // and session with PGID and SID set to zero. This preserves the same user-visible
+    // behavior.
+    set_bootstrap_session_and_group(&process);
 
     process.run();
 
@@ -111,12 +118,15 @@ fn create_init_process(
     Ok(init_proc)
 }
 
-fn set_session_and_group(process: &Arc<Process>) {
+fn set_bootstrap_session_and_group(process: &Arc<Process>) {
     // Locking order: PID table -> process group
     let mut pid_table = pid_table::pid_table_mut();
 
-    // Create a new process group and session for the process
-    process.set_new_session(&mut process.process_group.lock(), &mut pid_table);
+    // Add the process to the bootstrap process group and session
+    let (session, process_group) = Session::new_bootstrap_pair(process);
+    pid_table.insert_session(session.sid(), &session);
+    pid_table.insert_process_group(process_group.pgid(), &process_group);
+    *process.process_group.lock() = Some(process_group);
 
     // Add the new process to the global table
     pid_table.insert_process(process.pid(), process);
