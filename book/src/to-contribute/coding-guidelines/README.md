@@ -70,6 +70,7 @@ you are welcome to fix the code to match the guidelines.
 | Rust | Deny unsafe code in `kernel/` | [`deny-unsafe-kernel`](rust-guidelines/language-items/unsafety.md#deny-unsafe-kernel) |
 | Rust | Reason about safety at the module boundary | [`module-boundary-safety`](rust-guidelines/language-items/unsafety.md#module-boundary-safety) |
 | Rust | Default to the narrowest visibility | [`narrow-visibility`](rust-guidelines/language-items/modules-and-crates.md#narrow-visibility) |
+| Rust | Qualify function calls with the parent module | [`qualified-fn-imports`](rust-guidelines/language-items/modules-and-crates.md#qualified-fn-imports) |
 | Rust | Use workspace dependencies | [`workspace-deps`](rust-guidelines/language-items/modules-and-crates.md#workspace-deps) |
 | Rust | Suppress lints at the narrowest scope | [`narrow-lint-suppression`](rust-guidelines/language-items/macros-and-attributes.md#narrow-lint-suppression) |
 | Rust | Use `#[expect(dead_code)]` with restraint | [`expect-dead-code`](rust-guidelines/language-items/macros-and-attributes.md#expect-dead-code) |

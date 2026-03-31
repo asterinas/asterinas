@@ -84,6 +84,9 @@ Below is a condensed summary of the most important rules.
     Only `ostd/` may contain unsafe code.
 - **Modules:** Default to `pub(super)` or `pub(crate)`;
   use `pub` only when truly needed.
+  Import free functions and statics via parent module
+  (`use std::mem;` then `mem::replace()`),
+  not directly (`use std::mem::replace;` then `replace()`).
   Always use `workspace.dependencies`.
 - **Error handling:** Propagate errors with `?`.
   Do not `.unwrap()` where failure is possible.
