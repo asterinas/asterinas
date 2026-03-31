@@ -1,13 +1,15 @@
-# TODO: Support `F_SETPIPE_SZ/F_GETPIPE_SZ` for `fcntl` syscall.
+# TODO: Support `F_SETPIPE_SZ`/`F_GETPIPE_SZ` for `fcntl` syscall.
 Pipes/PipeTest.*/smallbuffer
-Pipes/PipeTest.BlockWriteClosed/*
 Pipes/PipeTest.BlockPartialWriteClosed/*
-Pipes/PipeTest.Streaming/*
-Pipes/PipeTest.SizeChange*
-# TODO: Support seek operation on pipe files.
-Pipes/PipeTest.Seek/*
-Pipes/PipeTest.OffsetCalls/*
-# TODO: Support `O_LARGEFILE` flag.
-Pipes/PipeTest.Flags/*
-# TODO: Support ioctl for pipe files.
+Pipes/PipeTest.BlockWriteClosed/*
 Pipes/PipeTest.FionRead/*
+Pipes/PipeTest.SizeChange*
+Pipes/PipeTest.Streaming/*
+
+# TODO: Fail with `ESPIPE` instead of `EBADF`
+# when calling `preadv` (`pwritev`) on a pipe writer (reader).
+Pipes/PipeTest.OffsetCalls/*
+
+# TODO: Report `O_LARGEFILE` flag for named pipes.
+Pipes/PipeTest.Flags/namedblocking
+Pipes/PipeTest.Flags/namednonblocking
