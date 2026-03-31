@@ -361,6 +361,128 @@ END_TEST()
 
 /* -------------------------------------------------------------------------- */
 
+#define BIND_MOUNT_PATH_TEMPLATE "/tmp/test_%s_ns"
+
+#define VERIFY_BIND_MOUNTED_NS(ns_file, expected_ns_type, bind_mount_path)     \
+	do {                                                                   \
+		int nsfd = TEST_SUCC(open(bind_mount_path, O_RDONLY));         \
+                                                                               \
+		TEST_RES(ioctl(nsfd, NS_GET_NSTYPE),                           \
+			 _ret == (expected_ns_type));                          \
+                                                                               \
+		if (strcmp((ns_file), "user") == 0) {                          \
+			TEST_ERRNO(ioctl(nsfd, NS_GET_USERNS), EPERM);         \
+			TEST_ERRNO(ioctl(nsfd, NS_GET_OWNER_UID, 0), EFAULT);  \
+                                                                               \
+			uid_t uid;                                             \
+			TEST_SUCC(ioctl(nsfd, NS_GET_OWNER_UID, &uid));        \
+		} else {                                                       \
+			int userns_fd = TEST_SUCC(ioctl(nsfd, NS_GET_USERNS)); \
+			TEST_SUCC(close(userns_fd));                           \
+                                                                               \
+			TEST_ERRNO(ioctl(nsfd, NS_GET_OWNER_UID, NULL),        \
+				   EINVAL);                                    \
+		}                                                              \
+                                                                               \
+		TEST_SUCC(close(nsfd));                                        \
+	} while (0)
+
+/*
+ * Verify that supported namespace files can be bind-mounted and queried via
+ * nsfs ioctls.
+ */
+FN_TEST(bind_mount_ns)
+{
+	char proc_ns_path[PATH_MAX];
+	char bind_mount_path[PATH_MAX];
+
+	for (size_t i = 0; i < ns_count; i++) {
+		snprintf(bind_mount_path, sizeof(bind_mount_path),
+			 BIND_MOUNT_PATH_TEMPLATE, ns_files[i]);
+
+		/* Ensure the mount-point file exists. */
+		int tmp_fd = TEST_SUCC(open(
+			bind_mount_path, O_CREAT | O_WRONLY | O_TRUNC, 0444));
+		TEST_SUCC(close(tmp_fd));
+
+		snprintf(proc_ns_path, sizeof(proc_ns_path), "/proc/self/ns/%s",
+			 ns_files[i]);
+
+		TEST_SUCC(mount(proc_ns_path, bind_mount_path, NULL, MS_BIND,
+				NULL));
+
+		VERIFY_BIND_MOUNTED_NS(ns_files[i], clone_flags[i],
+				       bind_mount_path);
+		TEST_SUCC(umount(bind_mount_path));
+
+		TEST_SUCC(unlink(bind_mount_path));
+	}
+}
+END_TEST()
+
+/*
+ * Verify bind-mounting behaviour for mount namespace files.
+ *
+ * Bind-mounting the current or an older mount namespace file should fail with
+ * EINVAL, and bind-mounting a newer mount namespace file should succeed.
+ */
+FN_TEST(bind_mount_mnt_ns)
+{
+	char proc_ns_path[PATH_MAX];
+	char bind_mount_path[PATH_MAX];
+	int status;
+
+	snprintf(bind_mount_path, sizeof(bind_mount_path),
+		 BIND_MOUNT_PATH_TEMPLATE, "mnt");
+
+	int tmp_fd = TEST_SUCC(
+		open(bind_mount_path, O_CREAT | O_WRONLY | O_TRUNC, 0444));
+	TEST_SUCC(close(tmp_fd));
+
+	TEST_ERRNO(mount("/proc/self/ns/mnt", bind_mount_path, NULL, MS_BIND,
+			 NULL),
+		   EINVAL);
+
+	struct clone_args args = {
+		.flags = CLONE_NEWNS,
+		.exit_signal = SIGCHLD,
+	};
+	pid_t child = TEST_SUCC(sys_clone3(&args));
+
+	if (child == 0) {
+		while (1)
+			sleep(1000);
+		_exit(1);
+	}
+
+	pid_t older_ns_child = TEST_SUCC(sys_clone3(&args));
+
+	if (older_ns_child == 0) {
+		snprintf(proc_ns_path, sizeof(proc_ns_path), "/proc/%d/ns/mnt",
+			 getppid());
+		CHECK_WITH(mount(proc_ns_path, bind_mount_path, NULL, MS_BIND,
+				 NULL),
+			   _ret < 0 && errno == EINVAL);
+		_exit(0);
+	}
+
+	TEST_RES(waitpid(older_ns_child, &status, 0),
+		 _ret == older_ns_child && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == 0);
+
+	snprintf(proc_ns_path, sizeof(proc_ns_path), "/proc/%d/ns/mnt", child);
+	TEST_SUCC(mount(proc_ns_path, bind_mount_path, NULL, MS_BIND, NULL));
+	VERIFY_BIND_MOUNTED_NS("mnt", CLONE_NEWNS, bind_mount_path);
+	TEST_SUCC(umount(bind_mount_path));
+
+	TEST_SUCC(kill(child, SIGKILL));
+	TEST_RES(waitpid(child, &status, 0),
+		 _ret == child && WIFSIGNALED(status) &&
+			 WTERMSIG(status) == SIGKILL);
+
+	TEST_SUCC(unlink(bind_mount_path));
+}
+END_TEST()
 #define BIND_MOUNT_PATH "/tmp/test_uts_ns"
 
 /*
@@ -373,10 +495,9 @@ END_TEST()
  * exit, then verifies that ioctl(2) still works (the bind mount keeps
  * the namespace alive). Finally the mount is cleaned up.
  *
- * On Asterinas, bind-mounting namespace files is not yet supported, 
- * so we only verify that the mount(2) call fails with EINVAL. 
- * See the discussion at
- * <https://github.com/asterinas/asterinas/pull/2966#discussion_r2870191714>.
+ * The bind mount should keep the namespace alive even after the creating
+ * process exits, so the mounted path must continue to behave like an `nsfs`
+ * file until it is unmounted.
  */
 FN_TEST(bind_mount_ns_lifetime)
 {
@@ -403,11 +524,6 @@ FN_TEST(bind_mount_ns_lifetime)
 	/* 2. Bind-mount /proc/<child>/ns/uts to BIND_MOUNT_PATH. */
 	snprintf(proc_ns_path, sizeof(proc_ns_path), "/proc/%d/ns/uts", child);
 
-#ifdef __asterinas__
-	/* Asterinas does not yet support bind-mounting namespace files. */
-	TEST_ERRNO(mount(proc_ns_path, BIND_MOUNT_PATH, NULL, MS_BIND, NULL),
-		   EINVAL);
-#else
 	TEST_SUCC(mount(proc_ns_path, BIND_MOUNT_PATH, NULL, MS_BIND, NULL));
 
 	/* 3. Verify ioctl works on the bind-mounted path while the child is alive. */
@@ -416,7 +532,6 @@ FN_TEST(bind_mount_ns_lifetime)
 	int userns_fd = TEST_SUCC(ioctl(nsfd, NS_GET_USERNS));
 	TEST_SUCC(close(userns_fd));
 	TEST_SUCC(close(nsfd));
-#endif
 
 	/* 4. Kill the child and wait for it to exit. */
 	TEST_SUCC(kill(child, SIGKILL));
@@ -425,7 +540,6 @@ FN_TEST(bind_mount_ns_lifetime)
 		 _ret == child && WIFSIGNALED(status) &&
 			 WTERMSIG(status) == SIGKILL);
 
-#ifndef __asterinas__
 	/* 5. Verify ioctl still works after the child has exited.
 	 *    The bind mount keeps the namespace alive. */
 	nsfd = TEST_SUCC(open(BIND_MOUNT_PATH, O_RDONLY));
@@ -436,11 +550,66 @@ FN_TEST(bind_mount_ns_lifetime)
 
 	/* 6. Clean up: unmount and remove the mount point. */
 	TEST_SUCC(umount(BIND_MOUNT_PATH));
-#endif
 	TEST_SUCC(unlink(BIND_MOUNT_PATH));
 }
 END_TEST()
 
+/*
+ * Verify that mount namespace file bind mounts are not copied into a cloned
+ * mount namespace.
+ */
+FN_TEST(clone_newns_skips_bind_mounted_mnt_ns)
+{
+	char proc_ns_path[PATH_MAX];
+	char bind_mount_path[PATH_MAX];
+
+	snprintf(bind_mount_path, sizeof(bind_mount_path),
+		 BIND_MOUNT_PATH_TEMPLATE, "mnt_clone");
+
+	int tmp_fd = TEST_SUCC(
+		open(bind_mount_path, O_CREAT | O_WRONLY | O_TRUNC, 0444));
+	TEST_SUCC(close(tmp_fd));
+
+	struct clone_args args = {
+		.flags = CLONE_NEWNS,
+		.exit_signal = SIGCHLD,
+	};
+	pid_t holder = TEST_SUCC(sys_clone3(&args));
+
+	if (holder == 0) {
+		while (1)
+			sleep(1000);
+		_exit(1);
+	}
+
+	snprintf(proc_ns_path, sizeof(proc_ns_path), "/proc/%d/ns/mnt", holder);
+	TEST_SUCC(mount(proc_ns_path, bind_mount_path, NULL, MS_BIND, NULL));
+
+	pid_t inspector = TEST_SUCC(fork());
+
+	if (inspector == 0) {
+		CHECK(unshare(CLONE_NEWNS));
+
+		int nsfd = CHECK(open(bind_mount_path, O_RDONLY));
+		CHECK_WITH(ioctl(nsfd, NS_GET_NSTYPE),
+			   _ret < 0 && errno == ENOTTY);
+		CHECK(close(nsfd));
+		_exit(0);
+	}
+
+	int status;
+	TEST_RES(waitpid(inspector, &status, 0),
+		 _ret == inspector && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == 0);
+
+	TEST_SUCC(umount(bind_mount_path));
+	TEST_SUCC(kill(holder, SIGKILL));
+	TEST_RES(waitpid(holder, &status, 0),
+		 _ret == holder && WIFSIGNALED(status) &&
+			 WTERMSIG(status) == SIGKILL);
+	TEST_SUCC(unlink(bind_mount_path));
+}
+END_TEST()
 /* -------------------------------------------------------------------------- */
 
 /*
