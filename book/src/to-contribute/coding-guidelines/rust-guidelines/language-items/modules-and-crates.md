@@ -23,6 +23,52 @@ See also:
 PR [#2951](https://github.com/asterinas/asterinas/pull/2951)
 and [#2605](https://github.com/asterinas/asterinas/pull/2605#discussion_r2720506912).
 
+### Qualify function calls with the parent module (`qualified-fn-imports`) {#qualified-fn-imports}
+
+When importing a free function or a static/constant
+from another module,
+import the **parent module** and access the item
+through it (`module::function()`, `module::CONSTANT`).
+Do not import free functions or statics directly by name.
+
+This convention is recommended by
+[*The Rust Programming Language*](https://doc.rust-lang.org/book/ch07-04-bringing-paths-into-scope-with-the-use-keyword.html)
+and followed by the Rust compiler codebase.
+It serves two purposes:
+
+1. The call site makes it clear
+   that an imported item is being used,
+   not a local one.
+2. The module name provides context
+   that complements the item name.
+
+```rust
+// Good — module-qualified function call
+use ostd::irq;
+
+let guard = irq::disable_local();
+
+// Good — module-qualified static access
+use ostd::mm::kspace;
+
+let base = kspace::LINEAR_MAPPING_BASE_VADDR;
+
+// Bad — bare function name; unclear origin at call site
+use ostd::irq::disable_local;
+
+let guard = disable_local();
+
+// Bad — bare static name; could be mistaken for a local constant
+use ostd::mm::kspace::LINEAR_MAPPING_BASE_VADDR;
+
+let base = LINEAR_MAPPING_BASE_VADDR;
+```
+
+This rule applies to **free functions and statics/constants**.
+Types, traits, and enum variants
+should still be imported directly by name,
+following the standard Rust convention.
+
 ### Use workspace dependencies (`workspace-deps`) {#workspace-deps}
 
 Always declare shared dependencies
