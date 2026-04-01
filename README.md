@@ -104,6 +104,7 @@ A **development platform** is where you build and test Asterinas
 | Development Platform |
 | -------------------- |
 | x86-64               |
+| ARM64                |
 
 A **deployment platform** is a CPU architecture
 that Asterinas can run on as an OS kernel.
@@ -141,7 +142,7 @@ Asterinas NixOS is _not_ an official NixOS project and has _no_ affiliation with
 
 Follow the steps below to get Asterinas up and running.
 
-1. Download the latest source code on an x86-64 Linux machine:
+1. Download the latest source code on an x86-64 (or ARM64) Linux machine:
 
     ```bash
     git clone https://github.com/asterinas/asterinas

@@ -36,6 +36,7 @@ A **development platform** is where you build and test Asterinas
 | Development Platform |
 | -------------------- |
 | x86-64               |
+| ARM64                |
 
 A **deployment platform** is a CPU architecture
 that Asterinas can run on as an OS kernel.
@@ -47,6 +48,7 @@ that Asterinas can run on as an OS kernel.
 | RISC-V 64           | Tier 2 |
 | LoongArch 64        | Tier 3 |
 
+Tier definitions:
 - **Tier 1:** Fully supported and tested.
   CI runs the full test suite on every PR.
 - **Tier 2:** Actively developed with basic functionality working.
@@ -60,7 +62,7 @@ that Asterinas can run on as an OS kernel.
 
 ## Getting Started
 
-Get yourself an x86-64 Linux machine with Docker installed.
+Get yourself an x86-64 (or ARM64) Linux machine with Docker installed.
 Follow the three simple steps below to get Asterinas up and running.
 
 <!-- REMINDER: Be careful when editing the first two steps
