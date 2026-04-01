@@ -28,39 +28,33 @@ we are steadfastly progressing towards our goal.
 
 ## Supported CPU Architectures
 
-Asterinas targets modern, 64-bit platforms only.
+Asterinas distinguishes between _development platforms_ and _deployment platforms_:
+- A **development platform** is where you build and test Asterinas
+  (i.e., the host machine running the Docker-based development environment).
+- A **deployment platform** is a CPU architecture that Asterinas can run on as an OS kernel.
 
-A **development platform** is where you build and test Asterinas
-(i.e., the host machine running the Docker-based development environment).
+|   CPU Architecture  | As Development Platform | As Deployment Platform |
+| ------------------- | ----------------------- | ---------------------- |
+| x86-64              | Yes                     | Yes (Tier-1)           |
+| x86-64 (Intel TDX)  | N/A                     | Yes (Tier 2)           |
+| ARM64               | Yes                     | No                     |
+| RISC-V              | No                      | Yes (Tier-2)           |
+| LoongArch           | No                      | Yes (Tier-3)           |
 
-| Development Platform |
-| -------------------- |
-| x86-64               |
-
-A **deployment platform** is a CPU architecture
-that Asterinas can run on as an OS kernel.
-
-| Deployment Platform | Tier   |
-| ------------------- | ------ |
-| x86-64              | Tier 1 |
-| x86-64 (Intel TDX)  | Tier 2 |
-| RISC-V 64           | Tier 2 |
-| LoongArch 64        | Tier 3 |
-
-- **Tier 1:** Fully supported and tested.
-  CI runs the full test suite on every PR.
-- **Tier 2:** Actively developed with basic functionality working.
-  CI runs build checks and basic tests on a regular basis
-  (per PR for RISC-V and nightly for Intel TDX),
+The deployment platform tiers are defined as follows:
+- **Tier-1**: Fully supported and tested.
+  CI pipelines run the full test suite on every PR.
+  This is the recommended platform for production use.
+- **Tier-2**: Actively developed with basic functionality working.
+  CI pipelines run build checks and basic tests on every PR,
   but the full test suite is not yet covered.
-- **Tier 3:** Early-stage or experimental.
+- **Tier-3**: Early-stage or experimental support.
   The kernel can boot and perform basic operations,
-  but CI coverage is limited and
-  may not include automated runtime tests for every pull request.
+  but the architecture is not regularly tested in CI.
 
 ## Getting Started
 
-Get yourself an x86-64 Linux machine with Docker installed.
+Get yourself an x86-64/ARM64 Linux machine with Docker installed.
 Follow the three simple steps below to get Asterinas up and running.
 
 <!-- REMINDER: Be careful when editing the first two steps
