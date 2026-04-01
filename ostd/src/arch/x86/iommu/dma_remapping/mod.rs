@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub use context_table::RootTable;
-use log::{info, warn};
 pub use second_stage::IommuPtConfig;
 use spin::Once;
 
 use super::IommuError;
 use crate::{
     arch::iommu::registers::{CapabilitySagaw, IOMMU_REGS},
+    info,
     mm::{Daddr, PageTable},
     prelude::Paddr,
     sync::{LocalIrqDisabled, SpinLock},
+    warn,
 };
 
 mod context_table;

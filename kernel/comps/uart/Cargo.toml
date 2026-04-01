@@ -9,7 +9,6 @@ edition.workspace = true
 aster-console.workspace = true
 component.workspace = true
 inherit-methods-macro.workspace = true
-log.workspace = true
 ostd.workspace = true
 spin.workspace = true
 

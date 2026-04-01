@@ -16,7 +16,6 @@ use command::GlobalCommand;
 use extended_cap::ExtendedCapability;
 pub use extended_cap::ExtendedCapabilityFlags;
 use invalidation::InvalidationRegisters;
-use log::debug;
 use spin::Once;
 use status::GlobalStatus;
 use volatile::{
@@ -39,6 +38,7 @@ use crate::{
         },
         kernel::acpi::dmar::{Dmar, Remapping},
     },
+    debug,
     io::IoMemAllocatorBuilder,
     mm::{PAGE_SIZE, paddr_to_vaddr},
     sync::{LocalIrqDisabled, SpinLock},

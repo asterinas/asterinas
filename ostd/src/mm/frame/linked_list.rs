@@ -207,7 +207,7 @@ where
         if self.list_id == 0 {
             let id = LIST_ID_ALLOCATOR.fetch_add(1, Ordering::Relaxed);
             if id >= MAX_LIST_ID {
-                log::error!("The frame list ID allocator has exhausted.");
+                crate::error!("The frame list ID allocator has exhausted.");
                 abort();
             }
             self.list_id = id;

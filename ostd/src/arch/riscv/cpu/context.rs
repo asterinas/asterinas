@@ -194,7 +194,7 @@ impl UserContextApiInternal for UserContext {
                         panic!("Unknown interrupt in user mode: {:?}", i);
                     }
                     Trap::Exception(e) => {
-                        log::info!("Unknown exception in user mode: {:?}", e);
+                        crate::info!("Unknown exception in user mode: {:?}", e);
                         self.exception = Some(CpuException::Unknown);
                         break ReturnReason::UserException;
                     }

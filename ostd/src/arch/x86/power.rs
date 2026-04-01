@@ -56,7 +56,7 @@ pub(super) fn init() {
     // FIXME: We assume that the kernel is running in QEMU with the following QEMU command line
     // arguments that specify the isa-debug-exit device:
     // `-device isa-debug-exit,iobase=0xf4,iosize=0x04`.
-    log::info!("QEMU hypervisor detected, assuming that the isa-debug-exit device exists");
+    crate::info!("QEMU hypervisor detected, assuming that the isa-debug-exit device exists");
 
     qemu_isa_debug::init();
 }

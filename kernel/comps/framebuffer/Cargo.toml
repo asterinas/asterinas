@@ -9,7 +9,6 @@ edition.workspace = true
 aster-console.workspace = true
 aster-input.workspace = true
 component.workspace = true
-log.workspace = true
 ostd.workspace = true
 spin.workspace = true
 

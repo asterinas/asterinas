@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use log::debug;
-use ostd::arch::irq::IRQ_CHIP;
 pub(super) use ostd::arch::irq::MappedIrqLine;
+use ostd::{arch::irq::IRQ_CHIP, debug};
 
 use crate::transport::mmio::bus::MmioRegisterError;
 

@@ -35,7 +35,7 @@ pub fn sys_clone3(
     ctx: &Context,
     parent_context: &UserContext,
 ) -> Result<SyscallReturn> {
-    trace!(
+    debug!(
         "clone args addr = 0x{:x}, size = 0x{:x}",
         clong_args_addr, size
     );
@@ -45,13 +45,13 @@ pub fn sys_clone3(
 
     let clone_args = {
         let args: Clone3Args = ctx.user_space().read_val(clong_args_addr)?;
-        trace!("clone3 args = {:x?}", args);
+        debug!("clone3 args = {:x?}", args);
         CloneArgs::try_from(args)?
     };
     debug!("clone args = {:x?}", clone_args);
 
     let child_pid = clone_child(ctx, parent_context, clone_args)?;
-    trace!("child pid = {}", child_pid);
+    debug!("child pid = {}", child_pid);
     Ok(SyscallReturn::Return(child_pid as _))
 }
 

@@ -293,7 +293,7 @@ impl<'a> VmarMapOptions<'a> {
             })?;
 
         // Allocates a free region.
-        trace!(
+        debug!(
             "allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}",
             map_size, offset, align
         );

@@ -50,7 +50,7 @@ pub(crate) unsafe fn bringup_all_aps(info_ptr: *const PerApRawInfo, pt_ptr: Padd
 
     let bsp_id = get_bootstrap_hart_id();
 
-    log::info!("Bootstrapping hart is {}, booting all other harts", bsp_id);
+    crate::info!("Bootstrapping hart is {}, booting all other harts", bsp_id);
 
     for_each_hart_id(|hart_id| {
         if hart_id != bsp_id {
@@ -91,7 +91,7 @@ fn for_each_hart_id(mut f: impl FnMut(u32)) {
 ///     up correctly, and
 ///  3. the `hart_id` hart hasn't booted.
 unsafe fn bringup_ap(hart_id: u32) {
-    log::info!("Starting hart {}", hart_id);
+    crate::info!("Starting hart {}", hart_id);
 
     // Use SBI to start the hart directly at the AP boot code
     let result = sbi_rt::hart_start(
@@ -101,9 +101,9 @@ unsafe fn bringup_ap(hart_id: u32) {
     );
 
     if result.error == 0 {
-        log::debug!("Successfully started hart {}", hart_id);
+        crate::debug!("Successfully started hart {}", hart_id);
     } else {
-        log::error!(
+        crate::error!(
             "Failed to start hart {}: error code {}",
             hart_id,
             result.error

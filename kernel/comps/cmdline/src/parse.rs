@@ -119,9 +119,9 @@ where
     match last {
         Some(value) => match S::Value::parse_param(value) {
             Ok(v) => storage.store_param(v),
-            Err(_) => log::warn!("invalid value for kernel parameter '{}'", name),
+            Err(_) => ostd::warn!("invalid value for kernel parameter '{}'", name),
         },
-        None => log::warn!("kernel parameter '{}' requires a value", name),
+        None => ostd::warn!("kernel parameter '{}' requires a value", name),
     }
 }
 
@@ -135,12 +135,12 @@ pub fn setup_repeatable_kv_param<S: ParamStorage>(
 {
     let values: Vec<&str> = occurrences.iter().filter_map(|val| *val).collect();
     if values.is_empty() {
-        log::warn!("repeatable parameter '{}' requires values", name);
+        ostd::warn!("repeatable parameter '{}' requires values", name);
         return;
     }
     match S::Value::parse_all(&values) {
         Ok(v) => storage.store_param(v),
-        Err(_) => log::warn!("invalid value for kernel parameter '{}'", name),
+        Err(_) => ostd::warn!("invalid value for kernel parameter '{}'", name),
     }
 }
 
@@ -155,6 +155,6 @@ where
     };
     match S::Value::parse_flag(last) {
         Ok(v) => storage.store_param(v),
-        Err(_) => log::warn!("invalid value for flag '{}'", name),
+        Err(_) => ostd::warn!("invalid value for flag '{}'", name),
     }
 }

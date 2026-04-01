@@ -12,12 +12,12 @@ use acpi::{
     mcfg::Mcfg,
     rsdp::Rsdp,
 };
-use log::warn;
 use spin::Once;
 
 use crate::{
     boot::{self, BootloaderAcpiArg},
     mm::paddr_to_vaddr,
+    warn,
 };
 
 #[derive(Debug, Clone)]
@@ -155,7 +155,7 @@ pub(in crate::arch) fn init() {
         });
     }
 
-    log::info!("[ACPI]: Collected information {:?}", acpi_info);
+    crate::info!("[ACPI]: Collected information {:?}", acpi_info);
 
     ACPI_INFO.call_once(|| acpi_info);
 }

@@ -80,7 +80,7 @@ fn slot_size_from_layout(layout: Layout) -> Option<SlotInfo> {
 
 macro_rules! abort_with_message {
     ($($arg:tt)*) => {
-        log::error!($($arg)*);
+        crate::error!($($arg)*);
         crate::panic::abort();
     };
 }

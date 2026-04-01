@@ -30,7 +30,7 @@ pub(in crate::arch) fn init() {
         }
     }
 
-    log::info!("Detected ISA extensions: {:?}", global_isa_extensions);
+    crate::info!("Detected ISA extensions: {:?}", global_isa_extensions);
 
     GLOBAL_ISA_EXTENSIONS.call_once(|| global_isa_extensions);
 }

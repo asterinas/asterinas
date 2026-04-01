@@ -2,13 +2,12 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use log::info;
-
 use crate::{
     arch::{
         timer::pit::{self, OperatingMode},
         trap::TrapFrame,
     },
+    info,
     irq::IrqLine,
     timer::TIMER_FREQ,
 };

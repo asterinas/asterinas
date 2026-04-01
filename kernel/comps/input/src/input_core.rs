@@ -54,14 +54,14 @@ impl InputCore {
                         handler,
                         handler_class: handler_class.clone(),
                     });
-                    log::info!(
+                    ostd::info!(
                         "Input: successfully connected handler class {} to device {}",
                         handler_class.name(),
                         device_registry.device.name()
                     );
                 }
                 Err(e) => {
-                    log::info!(
+                    ostd::info!(
                         "Input: failed to connect handler class {} to device {}: {:?}",
                         handler_class.name(),
                         device_registry.device.name(),
@@ -71,7 +71,7 @@ impl InputCore {
             }
         }
 
-        log::info!("Input: registered handler class {}", handler_class.name());
+        ostd::info!("Input: registered handler class {}", handler_class.name());
         self.handler_classes.push(handler_class);
     }
 
@@ -102,7 +102,7 @@ impl InputCore {
             handler_class.disconnect(&device_registry.device);
         }
 
-        log::info!("Input: unregistered handler class {}", handler_class.name());
+        ostd::info!("Input: unregistered handler class {}", handler_class.name());
         Some(handler_class)
     }
 
@@ -120,14 +120,14 @@ impl InputCore {
                         handler,
                         handler_class: handler_class.clone(),
                     });
-                    log::info!(
+                    ostd::info!(
                         "Input: successfully connected handler class {} to device {}",
                         handler_class.name(),
                         device.name()
                     );
                 }
                 Err(e) => {
-                    log::info!(
+                    ostd::info!(
                         "Input: failed to connect handler class {} to device {}: {:?}",
                         handler_class.name(),
                         device.name(),
@@ -145,7 +145,7 @@ impl InputCore {
         };
         self.devices.push(new_registry);
 
-        log::info!("Input: registered device {}", device.name());
+        ostd::info!("Input: registered device {}", device.name());
         RegisteredInputDevice::new(device, handlers)
     }
 
@@ -173,7 +173,7 @@ impl InputCore {
                 .disconnect(&device_registry.device);
         }
 
-        log::info!("Input: unregistered device {}", device.name());
+        ostd::info!("Input: unregistered device {}", device.name());
         Some(device_registry.device)
     }
 

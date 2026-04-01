@@ -194,13 +194,13 @@ impl UserContextApiInternal for UserContext {
                             page_fault_addr: 0,
                             error_code: 0, // TODO: Set error code if needed
                         });
-                        log::debug!(
+                        crate::debug!(
                             "Exception {exception:?} occurred, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
                         );
                         break ReturnReason::UserException;
                     }
                     Exception::FloatingPointUnavailable => {
-                        log::debug!(
+                        crate::debug!(
                             "Floating point unit is not available, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
                         );
                         // TODO: Add FPU support and enable it when this exception occurs.
@@ -219,7 +219,7 @@ impl UserContextApiInternal for UserContext {
                     | Interrupt::HWI5
                     | Interrupt::HWI6
                     | Interrupt::HWI7 => {
-                        log::debug!("Handling hardware interrupt: {:?}", interrupt);
+                        crate::debug!("Handling hardware interrupt: {:?}", interrupt);
                         while let Some(irq_num) = crate::arch::irq::chip::claim() {
                             // Call the IRQ callback functions for the claimed interrupt
                             call_irq_callback_functions(

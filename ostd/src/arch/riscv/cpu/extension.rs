@@ -30,7 +30,7 @@ pub(in crate::arch) fn init() {
         } else if let Some(isa) = cpu.property("riscv,isa") {
             parse_isa_string(&isa)
         } else {
-            log::error!(
+            crate::error!(
                 "CPU {} has no riscv,isa or riscv,isa-extensions property",
                 cpu_count - 1
             );
@@ -40,7 +40,7 @@ pub(in crate::arch) fn init() {
         global_isa_extensions &= cpu_isa_extensions;
     }
 
-    log::info!("Detected ISA extensions: {:?}", global_isa_extensions);
+    crate::info!("Detected ISA extensions: {:?}", global_isa_extensions);
 
     GLOBAL_ISA_EXTENSIONS.call_once(|| global_isa_extensions);
 }

@@ -4,13 +4,13 @@ use alloc::vec::Vec;
 use core::{fmt::Debug, ptr::NonNull};
 
 use bitflags::bitflags;
-use log::{error, info};
 use spin::Once;
 use volatile::{VolatileRef, access::ReadWrite};
 
 use super::registers::Capability;
 use crate::{
     arch::trap::TrapFrame,
+    error_ratelimited, info,
     irq::IrqLine,
     sync::{LocalIrqDisabled, SpinLock},
 };
@@ -278,7 +278,7 @@ fn primary_fault_handler(fault_event_regs: &mut FaultEventRegisters) {
         }
 
         // Report
-        error!(
+        error_ratelimited!(
             "Catch iommu page fault, doing nothing. recording:{:x?}",
             recording
         );

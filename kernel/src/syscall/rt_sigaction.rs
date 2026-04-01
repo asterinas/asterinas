@@ -51,7 +51,7 @@ pub fn sys_rt_sigaction(
 
         let sig_action_c = ctx.user_space().read_val::<sigaction_t>(sig_action_addr)?;
         let sig_action = SigAction::from(sig_action_c);
-        trace!("sig action = {:?}", sig_action);
+        debug!("sig action = {:?}", sig_action);
         if sig_action.will_ignore(sig_num) {
             discard_signals_if_ignored(ctx, sig_num);
         }

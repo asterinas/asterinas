@@ -5,9 +5,9 @@ use core::{fmt::Debug, hint::spin_loop};
 
 use aster_network::{RxBuffer, TxBuffer};
 use aster_util::{field_ptr, slot_vec::SlotVec};
-use log::debug;
 use ostd::{
     arch::trap::TrapFrame,
+    debug,
     mm::{VmReader, VmWriter},
     sync::SpinLock,
 };

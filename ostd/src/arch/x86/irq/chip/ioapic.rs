@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use bit_field::BitField;
-use log::info;
 
 use crate::{
-    Error, Result,
+    Error, Result, info,
     io::{IoMem, IoMemAllocatorBuilder, Sensitive},
     irq::IrqLine,
 };

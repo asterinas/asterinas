@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use log::{info, warn};
 use queue::Queue;
 use spin::Once;
 
 use super::registers::{ExtendedCapabilityFlags, IOMMU_REGS};
-use crate::sync::SpinLock;
+use crate::{info, sync::SpinLock, warn};
 
 pub mod descriptor;
 pub mod queue;

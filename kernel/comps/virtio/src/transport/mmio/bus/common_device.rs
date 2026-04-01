@@ -3,9 +3,8 @@
 //! MMIO device common definitions or functions.
 
 use int_to_c_enum::TryFromInt;
-use log::info;
 use ostd::{
-    Error, Result,
+    Error, Result, info,
     io::IoMem,
     irq::IrqLine,
     mm::{HasPaddr, VmIoOnce},

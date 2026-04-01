@@ -6,9 +6,8 @@ use core::{alloc::Layout, ops::RangeInclusive};
 
 use align_ext::AlignExt;
 use fdt::node::FdtNode;
-use log::warn;
 use ostd::{
-    Error, arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, prelude::Paddr, sync::SpinLock,
+    Error, arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, prelude::Paddr, sync::SpinLock, warn,
 };
 use spin::Once;
 

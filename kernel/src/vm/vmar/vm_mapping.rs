@@ -383,7 +383,7 @@ impl VmMapping {
     }
 
     fn check_perms_for_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
-        trace!(
+        debug!(
             "self.perms {:?}, page_fault_info.required_perms {:?}, self.range {:?}",
             self.perms,
             page_fault_info.required_perms,

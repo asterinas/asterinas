@@ -77,7 +77,7 @@ pub(crate) fn count_processors() -> Option<u32> {
             matches!(e, MadtEntry::LocalX2Apic(e)
                 if e.x2apic_id == id && is_usable(e.flags))
         }) {
-            log::warn!(
+            crate::warn!(
                 "Firmware bug: In MADT, APIC ID {} is also listed as an x2APIC ID",
                 id,
             );
@@ -92,11 +92,11 @@ pub(crate) fn count_processors() -> Option<u32> {
         .entries()
         .filter(|e| match e {
             MadtEntry::LocalX2Apic(entry) => {
-                log::trace!("Found a local x2APIC entry in MADT: {:?}", entry);
+                crate::debug!("Found a local x2APIC entry in MADT: {:?}", entry);
                 is_usable(entry.flags)
             }
             MadtEntry::LocalApic(entry) => {
-                log::trace!("Found a local APIC entry in MADT: {:?}", entry);
+                crate::debug!("Found a local APIC entry in MADT: {:?}", entry);
                 is_usable(entry.flags) && !is_dup_apic(entry.apic_id as u32)
             }
             _ => false,

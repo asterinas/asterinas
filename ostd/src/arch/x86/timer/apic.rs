@@ -2,8 +2,6 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use log::info;
-
 use crate::{
     arch::{
         kernel::apic::{self, Apic, DivideConfig},
@@ -11,6 +9,7 @@ use crate::{
         trap::TrapFrame,
         tsc_freq,
     },
+    info,
     irq::IrqLine,
     task::disable_preempt,
     timer::TIMER_FREQ,

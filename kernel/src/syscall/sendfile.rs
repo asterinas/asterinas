@@ -16,7 +16,7 @@ pub fn sys_sendfile(
     count: isize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    trace!("raw offset ptr = 0x{:x}", offset_ptr);
+    debug!("raw offset ptr = 0x{:x}", offset_ptr);
 
     let offset = if offset_ptr == 0 {
         None
