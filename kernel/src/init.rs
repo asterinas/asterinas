@@ -105,15 +105,10 @@ fn bsp_idle_loop() {
         ostd::task::halt_cpu();
     }
 
-    // According to the Linux implementation, we should panic once the init process exits.
-    // Currently, we choose to power off the machine for more flexibility in testing with QEMU.
-    let raw_exit_code = init_process.status().exit_code();
-    let exit_code = if raw_exit_code == 0 {
-        ostd::power::ExitCode::Success
-    } else {
-        ostd::power::ExitCode::Failure
-    };
-    ostd::power::poweroff(exit_code);
+    panic!(
+        "The init process terminates with code {:?}",
+        init_process.status().exit_code()
+    );
 }
 
 fn ap_idle_loop() {
@@ -146,7 +141,7 @@ fn first_kthread() {
         let karg = INIT_PROC_ARGS.get().unwrap();
         let init_path = INIT_PATH.get().map(|s| s.as_str());
         spawn_init_process(init_path, karg.argv().to_vec(), karg.envp().to_vec())
-            .expect("Run init process failed.")
+            .expect("Failed to run the init process")
     });
 }
 
