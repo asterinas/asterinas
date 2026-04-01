@@ -12,7 +12,7 @@ use crate::{
         utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, Metadata},
+            inode::{Extension, Inode, Metadata, RevalidateResult},
             path::{is_dot, is_dotdot},
         },
     },
@@ -121,10 +121,22 @@ impl Inode for CgroupInode {
         Ok(())
     }
 
-    fn is_dentry_cacheable(&self) -> bool {
-        // Attribute nodes should not be cached because they may be dynamically
+    fn need_revalidation(&self) -> bool {
+        // Attribute nodes should be revalidated because they may be dynamically
         // created or removed based on the state of the cgroup controller.
-        // Caching them could result in stale or incorrect entries.
-        !matches!(self.node_kind, SysTreeNodeKind::Attr(..))
+        matches!(self.node_kind(), SysTreeNodeKind::Attr(..))
+    }
+
+    fn need_neg_child_revalidation(&self) -> bool {
+        matches!(self.node_kind(), SysTreeNodeKind::Branch(_))
+            || matches!(self.node_kind(), SysTreeNodeKind::Leaf(_))
+    }
+
+    fn revalidate_pos_child(&self, _name: &str, _child: &Arc<dyn Inode>) -> RevalidateResult {
+        RevalidateResult::Invalid
+    }
+
+    fn revalidate_neg_child(&self, _name: &str) -> RevalidateResult {
+        RevalidateResult::Invalid
     }
 }

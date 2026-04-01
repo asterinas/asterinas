@@ -62,14 +62,6 @@ impl InodeIo for PtySlaveInode {
 }
 
 impl Inode for PtySlaveInode {
-    /// Do not cache dentry in DCACHE.
-    ///
-    /// The slave will be deleted by the master when the master is released.
-    /// So we should not cache the dentry.
-    fn is_dentry_cacheable(&self) -> bool {
-        false
-    }
-
     fn size(&self) -> usize {
         self.metadata.read().size
     }
@@ -155,5 +147,11 @@ impl Inode for PtySlaveInode {
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn FileIo>>> {
         Some(self.device.open())
+    }
+
+    fn need_revalidation(&self) -> bool {
+        // The slave will be deleted by the master when the master is released,
+        // so we should revalidate it to avoid accessing the deleted slave.
+        true
     }
 }

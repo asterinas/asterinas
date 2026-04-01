@@ -161,8 +161,8 @@ impl Inode for Ptmx {
         Some(self.inner.open())
     }
 
-    fn is_dentry_cacheable(&self) -> bool {
-        false
+    fn need_revalidation(&self) -> bool {
+        true
     }
 }
 

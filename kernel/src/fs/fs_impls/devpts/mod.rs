@@ -17,7 +17,7 @@ use crate::{
         utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
-            inode::{Extension, Inode, InodeIo, Metadata, MknodType},
+            inode::{Extension, Inode, InodeIo, Metadata, MknodType, RevalidateResult},
             registry::{FsProperties, FsType},
         },
     },
@@ -363,7 +363,19 @@ impl Inode for RootInode {
         self.fs.upgrade().unwrap()
     }
 
-    fn is_dentry_cacheable(&self) -> bool {
-        false
+    fn need_revalidation(&self) -> bool {
+        true
+    }
+
+    fn need_neg_child_revalidation(&self) -> bool {
+        true
+    }
+
+    fn revalidate_pos_child(&self, _name: &str, _child: &Arc<dyn Inode>) -> RevalidateResult {
+        RevalidateResult::Invalid
+    }
+
+    fn revalidate_neg_child(&self, _name: &str) -> RevalidateResult {
+        RevalidateResult::Invalid
     }
 }
