@@ -365,12 +365,10 @@ impl Path {
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
-        if !current_mnt_ns.owns(&self.mount) {
-            return_errno_with_message!(
-                Errno::EINVAL,
-                "the source path is not in this mount namespace"
-            );
-        }
+
+        // Linux only checks whether the destination path belongs to the current mount namespace;
+        // it does not validate the source path.
+        // See <https://elixir.bootlin.com/linux/v6.19/source/fs/namespace.c#L2991>.     
         if !current_mnt_ns.owns(&dst_path.mount) {
             return_errno_with_message!(
                 Errno::EINVAL,
