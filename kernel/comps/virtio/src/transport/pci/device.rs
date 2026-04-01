@@ -285,7 +285,7 @@ impl VirtioPciModernTransport {
             }
         };
 
-        info!("[Virtio]: Found device:{:?}", device_type);
+        info!("Found device:{:?}", device_type);
 
         let mut msix = None;
         let mut notify = None;

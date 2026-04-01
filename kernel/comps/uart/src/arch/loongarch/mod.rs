@@ -22,5 +22,5 @@ pub(super) fn init() {
     let _ = || uart_console.trigger_input_callbacks();
     let _ = || uart.flush();
 
-    ostd::info!("[UART]: Registered NS16550A as a console");
+    ostd::info!("Registered NS16550A as a console");
 }

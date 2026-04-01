@@ -2,6 +2,13 @@
 
 //! The IOMMU support.
 
+// Set module-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "iommu: "
+    };
+}
+
 mod dma_remapping;
 mod fault;
 mod interrupt_remapping;

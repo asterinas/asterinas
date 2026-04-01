@@ -25,7 +25,7 @@ impl MmioCommonDevice {
 
         let this = Self { io_mem, irq };
         info!(
-            "[Virtio]: Found MMIO device at {:#x}, device ID {}, IRQ number {}",
+            "Found MMIO device at {:#x}, device ID {}, IRQ number {}",
             this.io_mem.paddr(),
             this.read_device_id().unwrap(),
             this.irq.num(),

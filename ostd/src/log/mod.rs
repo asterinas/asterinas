@@ -2,11 +2,35 @@
 
 //! Kernel logging API.
 //!
-//! This module provides the logging facade for OSTD and all OSTD-based crates.
-//! It uses eight log levels matching the severity levels described in
-//! `syslog(2)` and adds features like rate-limited logging and print-once.
+//! This module provides the logging facade
+//! for OSTD and all OSTD-based crates.
+//!
+//! # Setup: defining `__log_prefix`
+//!
+//! Every crate that uses the logging macros
+//! must define a `__log_prefix` macro at its crate root (`lib.rs`),
+//! before any `mod` declarations.
+//! This prefix is prepended to every log message from the crate
+//! at compile time via `concat!()`.
+//!
+//! ```rust,ignore
+//! // Set crate-level OSTD log prefix. For details, see `ostd::log` docs.
+//! macro_rules! __log_prefix {
+//!     () => {
+//!         "virtio: "
+//!     };
+//! }
+//!
+//! mod device;   // all modules inherit the "virtio: " prefix
+//! ```
+//!
+//! Convention: use the lowercase crate name (without `aster_` prefix),
+//! followed by `: `. For example: `"virtio: "`, `"pci: "`, `"uart: "`.
 //!
 //! # Quick start
+//!
+//! After defining `__log_prefix`,
+//! import the macros and use them:
 //!
 //! ```rust,ignore
 //! use ostd::prelude::*;
@@ -32,11 +56,8 @@
 //!
 //! ```rust,ignore
 //! use ostd::prelude::*;
-//! use ostd::log::Level;
 //!
 //! emerg!("system is going down");
-//! alert!("action required immediately");
-//! crit!("critical failure in subsystem");
 //! error!("operation failed: {}", err);
 //! warn!("deprecated feature used");
 //! notice!("configuration change applied");
@@ -50,8 +71,6 @@
 //! flooding the log from hot paths such as interrupt handlers:
 //!
 //! ```rust,ignore
-//! use ostd::prelude::*;
-//!
 //! // At most 10 messages per 5-second window from this call site.
 //! error_ratelimited!("IOMMU fault: {:?}", recording);
 //! warn_ratelimited!("spurious interrupt on vector {}", vec);
@@ -60,16 +79,43 @@
 //! # Print-once logging
 //!
 //! The `*_once!` macros emit a message only the first time the call
-//! site is reached, useful for one-time warnings about unsupported
-//! features:
+//! site is reached,
+//! useful for one-time warnings about unsupported features:
 //!
 //! ```rust,ignore
-//! use ostd::prelude::*;
-//!
 //! warn_once!("MAP_32BIT is not supported");
 //! info_once!("first time initializing subsystem X");
 //! ```
-
+//!
+//! # Per-module prefix overrides
+//!
+//! A subsystem module can override the crate-level prefix by defining
+//! its own `__log_prefix` at the top of its `mod.rs`,
+//! before any `mod child;` declarations.
+//! Child modules inherit the override via textual scoping:
+//!
+//! ```rust,ignore
+//! // Set module-level OSTD log prefix. For details, see `ostd::log` docs.
+//! macro_rules! __log_prefix {
+//!     () => {
+//!         "iommu: "
+//!     };
+//! }
+//!
+//! mod fault;      // inherits "iommu: " prefix
+//! mod registers;  // inherits "iommu: " prefix
+//! ```
+//!
+//! # Limitations
+//!
+//! ## No attributes on `__log_prefix` definitions
+//!
+//! Do not put `#[rustfmt::skip]` or any other attribute
+//! on `__log_prefix` definitions.
+//! Rust treats attributed `macro_rules!` items as "macro-expanded,"
+//! which triggers E0659 ambiguity with definitions at other scopes.
+//! See the design doc in `log/macros.rs` for the full explanation.
+//!
 mod bridge;
 mod level;
 mod logger;
@@ -78,7 +124,9 @@ mod macros;
 use self::bridge::LogCrateBridge;
 pub use self::{
     level::{Level, LevelFilter},
-    logger::{__logger, Log, Record, STATIC_MAX_LEVEL, inject_logger, max_level, set_max_level},
+    logger::{
+        __write_log_record, Log, Record, STATIC_MAX_LEVEL, inject_logger, max_level, set_max_level,
+    },
     macros::ratelimit::{DEFAULT_RATELIMIT_BURST, DEFAULT_RATELIMIT_INTERVAL_MS, RateLimitState},
 };
 

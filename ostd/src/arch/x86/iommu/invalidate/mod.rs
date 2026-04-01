@@ -16,7 +16,7 @@ pub(super) fn init() {
         .flags()
         .contains(ExtendedCapabilityFlags::QI)
     {
-        warn!("[IOMMU] Queued invalidation not supported");
+        warn!("Queued invalidation not supported");
         return;
     }
 
@@ -26,7 +26,7 @@ pub(super) fn init() {
         SpinLock::new(queue)
     });
 
-    info!("[IOMMU] Queued invalidation is enabled");
+    info!("Queued invalidation is enabled");
 }
 
 pub(super) static QUEUE: Once<SpinLock<Queue>> = Once::new();

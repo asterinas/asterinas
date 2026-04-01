@@ -30,7 +30,7 @@ pub(super) fn probe_for_device() {
         1 => (QEMU_IOAPIC1_GSI_BASE, QEMU_IOAPIC1_NUM_TRANS),
         2.. => (QEMU_IOAPIC2_GSI_BASE, QEMU_IOAPIC2_NUM_TRANS),
         0 => {
-            debug!("[Virtio]: Skip MMIO detection because there are no I/O APICs");
+            debug!("Skip MMIO detection because there are no I/O APICs");
             return;
         }
     };

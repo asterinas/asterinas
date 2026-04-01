@@ -77,5 +77,44 @@ Available variants for each level:
 - `*_ratelimited!` — at most 10 messages per 5-second window per call site.
 - `*_once!` — emits the message only the first time the call site is reached.
 
-See also:
-PR [#2260](https://github.com/asterinas/asterinas/pull/2260).
+### Define a log prefix for each crate (`log-prefix`) {#log-prefix}
+
+Every OSTD-based crate must define a `__log_prefix` macro
+at its crate root (in `lib.rs`),
+before any `mod` declarations.
+This labels all log messages from the crate:
+
+```rust
+// Set crate-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "virtio: "
+    };
+}
+```
+
+Convention: use the lowercase crate name
+(without `aster_` prefix), followed by `: `.
+For example: `"virtio: "`, `"pci: "`, `"uart: "`.
+
+Subsystem modules within a crate can override the prefix
+by defining their own `__log_prefix` at the top of `mod.rs`:
+
+```rust
+// Set module-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "net: "
+    };
+}
+```
+
+Child modules inherit the override automatically.
+
+Do not put `#[rustfmt::skip]` or any other attribute on
+`__log_prefix` definitions — it causes a compiler ambiguity
+error (E0659).
+
+Do not use manual bracket prefixes like `[IOMMU]` or `[Virtio]:`.
+The `__log_prefix` mechanism replaces them.
+

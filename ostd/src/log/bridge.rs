@@ -2,7 +2,7 @@
 
 //! Bridge that forwards `log` crate messages to the OSTD logger.
 
-use super::{__logger, Level, LevelFilter, Record, max_level};
+use super::{Level, LevelFilter, Record, logger::__logger, max_level};
 
 pub(super) struct LogCrateBridge;
 
@@ -19,6 +19,7 @@ impl ::log::Log for LogCrateBridge {
         {
             logger.log(&Record::new(
                 level,
+                "",
                 *record.args(),
                 record.module_path_static().unwrap_or(""),
                 record.file_static().unwrap_or(""),
