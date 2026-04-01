@@ -27,8 +27,7 @@ mod serial;
 pub(super) mod termio;
 mod vt;
 
-pub use device::SystemConsole;
-pub use driver::TtyDriver;
+pub(super) use driver::TtyDriver;
 pub(super) use flags::TtyFlags;
 
 pub(super) fn init_in_first_process() -> Result<()> {

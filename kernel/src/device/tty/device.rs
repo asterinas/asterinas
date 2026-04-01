@@ -124,11 +124,6 @@ impl SystemConsole {
             Arc::new(Self { inner })
         })
     }
-
-    /// Returns the terminal associated with the console device.
-    pub fn terminal(&self) -> &Arc<dyn Terminal> {
-        &self.inner
-    }
 }
 
 impl Device for SystemConsole {

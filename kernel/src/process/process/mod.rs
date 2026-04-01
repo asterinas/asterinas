@@ -69,15 +69,6 @@ pub(super) fn init_on_each_cpu() {
     timer_manager::init_on_each_cpu();
 }
 
-pub(super) fn init_in_first_process(ctx: &Context) {
-    // FIXME: This should be done by the userspace init process.
-    (crate::device::tty::SystemConsole::singleton()
-        .terminal()
-        .clone() as Arc<dyn Terminal>)
-        .set_control(ctx.process.as_ref())
-        .unwrap();
-}
-
 /// Process stands for a set of threads that shares the same userspace.
 pub struct Process {
     // Immutable Part

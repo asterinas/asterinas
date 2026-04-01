@@ -44,8 +44,6 @@ pub use stats::collect_process_creation_count;
 pub use term_status::TermStatus;
 pub use wait::{WaitOptions, WaitStatus, do_wait};
 
-use crate::context::Context;
-
 pub(super) fn init() {
     posix_thread::futex::init();
     stats::init();
@@ -53,8 +51,4 @@ pub(super) fn init() {
 
 pub(super) fn init_on_each_cpu() {
     process::init_on_each_cpu();
-}
-
-pub(super) fn init_in_first_process(ctx: &Context) {
-    process::init_in_first_process(ctx);
 }
