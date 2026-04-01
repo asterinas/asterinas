@@ -340,6 +340,21 @@ impl Path {
         self.mount.remount(mount_flags, fs_flags, data, ctx)
     }
 
+    /// Ensures that attaching this mount tree to `dst_path` would not create a cycle.
+    fn check_mnt_loop(&self, dst_path: &Self) -> Result<()> {
+        if dst_path
+            .mount_node()
+            .is_equal_or_descendant_of(self.mount_node())
+        {
+            return_errno_with_message!(
+                Errno::ELOOP,
+                "the destination path is inside the mount subtree"
+            );
+        }
+
+        Ok(())
+    }
+
     /// Creates a bind mount from the current path to the destination path.
     ///
     /// Creates a new mount tree that mirrors either the root mount (non-recursive)
@@ -376,6 +391,8 @@ impl Path {
             );
         }
 
+        self.check_mnt_loop(dst_path)?;
+
         let new_mount = self.mount.clone_mount_tree(&self.dentry, None, recursive);
         new_mount.graft_mount_tree(dst_path);
         Ok(())
@@ -389,7 +406,11 @@ impl Path {
     /// Returns `EINVAL` in the following cases:
     /// - The current path is not a mount root.
     /// - The mount of the current path is the root mount.
-    /// - Either source or destination path is not in the current mount namespace
+    /// - Either source or destination path is not in the current mount namespace.
+    /// - The mount tree contains a mount namespace file that would create a namespace loop.
+    ///
+    /// Returns `ELOOP` if moving the mount tree would create a mount loop, for
+    /// example, when the destination path is inside the subtree being moved.
     pub fn move_mount_to(&self, dst_path: &Self, ctx: &Context) -> Result<()> {
         if !self.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
@@ -412,17 +433,7 @@ impl Path {
                 "the destination path is not in this mount namespace"
             );
         }
-        if dst_path
-            .mount_node()
-            .is_equal_or_descendant_of(self.mount_node())
-        {
-            // Reject moves that would place a mount beneath itself, because the mount tree
-            // must remain acyclic.
-            return_errno_with_message!(
-                Errno::ELOOP,
-                "the destination path is inside the mount subtree being moved"
-            );
-        }
+        self.check_mnt_loop(dst_path)?;
 
         self.mount.graft_mount_tree(dst_path);
 
