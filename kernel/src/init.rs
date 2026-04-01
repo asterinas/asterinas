@@ -174,7 +174,6 @@ pub(crate) fn on_first_process_startup(ctx: &Context) {
     component::init_all(InitStage::Process, component::parse_metadata!()).unwrap();
     crate::device::init_in_first_process(ctx).unwrap();
     crate::fs::init_in_first_process(ctx);
-    crate::process::init_in_first_process(ctx);
 }
 
 static INIT_PATH: Once<String> = Once::new();
