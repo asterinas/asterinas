@@ -7,9 +7,12 @@ use crate::{
     prelude::*,
     process::{
         ProcessFilter, WaitOptions, WaitStatus, do_wait,
+        posix_thread::AsPosixThread,
         signal::{
             c_types::siginfo_t,
-            constants::{CLD_CONTINUED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, SIGCHLD, SIGCONT},
+            constants::{
+                CLD_CONTINUED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, CLD_TRAPPED, SIGCHLD, SIGCONT,
+            },
         },
     },
 };
@@ -67,22 +70,31 @@ pub fn sys_waitid(
 }
 
 fn calculate_si_code_and_si_status(wait_status: &WaitStatus) -> (i32, i32) {
-    // TODO: Add supports for `CLD_DUMPED` and `CLD_TRAPPED`.
+    let parse_exit_code = |exit_code: u32| {
+        const NORMAL_EXIT_MASK: u32 = 0xff;
+
+        // If the process exits normally, the lowest 8 bits of `status_code`
+        // will be zero. In this case, we return the actual exit code by
+        // shifting the `status_code` right by 8 bits.
+        if (exit_code & NORMAL_EXIT_MASK) == 0 {
+            (CLD_EXITED, (exit_code >> 8) as i32)
+        } else {
+            (CLD_KILLED, exit_code as i32)
+        }
+    };
+
+    // TODO: Add supports for `CLD_DUMPED`.
     match wait_status {
         WaitStatus::Zombie(process) => {
-            const NORMAL_EXIT_MASK: u32 = 0xff;
-
             let exit_code = process.status().exit_code();
-            // If the process exits normally, the lowest 8 bits of `status_code`
-            // will be zero. In this case, we return the actual exit code by
-            // shifting the `status_code` right by 8 bits.
-            if (exit_code & NORMAL_EXIT_MASK) == 0 {
-                (CLD_EXITED, (exit_code >> 8) as i32)
-            } else {
-                (CLD_KILLED, exit_code as i32)
-            }
+            parse_exit_code(exit_code)
         }
         WaitStatus::Stop(_process, signum) => (CLD_STOPPED, signum.as_u8() as i32),
         WaitStatus::Continue(_) => (CLD_CONTINUED, SIGCONT.as_u8() as i32),
+        WaitStatus::ThreadExit(thread) => {
+            let exit_code = thread.as_posix_thread().unwrap().exit_code();
+            parse_exit_code(exit_code)
+        }
+        WaitStatus::PtraceStop(_, status) => (CLD_TRAPPED, *status),
     }
 }

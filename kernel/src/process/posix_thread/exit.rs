@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{mm::VmIo, task::Task};
+use ostd::{arch::cpu::context::UserContext, mm::VmIo, task::Task};
 
 use super::{
     AsPosixThread, AsThreadLocal, ThreadLocal,
     futex::{FutexVisibility, futex_wake},
+    ptrace::PtraceEvent,
     robust_list::wake_robust_futex,
 };
 use crate::{
@@ -25,8 +26,8 @@ use crate::{
 /// # Panics
 ///
 /// If the current thread is not a POSIX thread, this method will panic.
-pub fn do_exit(term_status: TermStatus) {
-    exit_internal(term_status, false);
+pub fn do_exit(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContext) {
+    exit_internal(term_status, false, ctx, user_ctx);
 }
 
 /// Kills all threads and exits the current POSIX process.
@@ -34,12 +35,21 @@ pub fn do_exit(term_status: TermStatus) {
 /// # Panics
 ///
 /// If the current thread is not a POSIX thread, this method will panic.
-pub fn do_exit_group(term_status: TermStatus) {
-    exit_internal(term_status, true);
+pub fn do_exit_group(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContext) {
+    exit_internal(term_status, true, ctx, user_ctx);
 }
 
 /// Exits the current POSIX thread or process.
-fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
+fn exit_internal(
+    term_status: TermStatus,
+    is_exiting_group: bool,
+    ctx: &Context,
+    user_ctx: &mut UserContext,
+) {
+    let exit_code = term_status.as_u32();
+    ctx.posix_thread
+        .ptrace_may_stop_on(PtraceEvent::Exit(exit_code), ctx, user_ctx);
+
     let current_task = Task::current().unwrap();
     let current_thread = current_task.as_thread().unwrap();
     let posix_thread = current_thread.as_posix_thread().unwrap();
@@ -59,8 +69,10 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
         // According to Linux's behavior, the last thread's exit code will become the process's
         // exit code, so here we should just overwrite the old value (if any).
         if !has_exited_group && !in_evecve {
-            posix_process.status().set_exit_code(term_status.as_u32());
+            posix_process.status().set_exit_code(exit_code);
         }
+
+        posix_thread.set_exit_code(exit_code);
 
         // We should only change the thread status when running as the thread, so no race
         // conditions can occur in between.
@@ -71,6 +83,13 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
 
         tasks.remove_exited(&current_task, posix_thread.tid())
     };
+
+    posix_thread.clear_tracees(ctx);
+
+    if let Some(tracer) = posix_thread.tracer() {
+        let tracer = tracer.as_posix_thread().unwrap();
+        tracer.process().children_wait_queue().wake_all();
+    }
 
     wake_clear_ctid(thread_local);
 

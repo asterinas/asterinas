@@ -93,6 +93,7 @@ use super::{
     preadv::{sys_preadv, sys_preadv2, sys_readv},
     prlimit64::{sys_getrlimit, sys_prlimit64, sys_setrlimit},
     pselect6::sys_pselect6,
+    ptrace::sys_ptrace,
     pwrite64::sys_pwrite64,
     pwritev::{sys_pwritev, sys_pwritev2, sys_writev},
     read::sys_read,
@@ -235,7 +236,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FORK = 57              => sys_fork(args[..0], &user_ctx);
     SYS_VFORK = 58             => sys_vfork(args[..0], &user_ctx);
     SYS_EXECVE = 59            => sys_execve(args[..3], &mut user_ctx);
-    SYS_EXIT = 60              => sys_exit(args[..1]);
+    SYS_EXIT = 60              => sys_exit(args[..1], &mut user_ctx);
     SYS_WAIT4 = 61             => sys_wait4(args[..4]);
     SYS_KILL = 62              => sys_kill(args[..2]);
     SYS_UNAME = 63             => sys_uname(args[..1]);
@@ -270,6 +271,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETRLIMIT = 97         => sys_getrlimit(args[..2]);
     SYS_GETRUSAGE = 98         => sys_getrusage(args[..2]);
     SYS_SYSINFO = 99           => sys_sysinfo(args[..1]);
+    SYS_PTRACE = 101           => sys_ptrace(args[..4]);
     SYS_GETUID = 102           => sys_getuid(args[..0]);
     SYS_GETGID = 104           => sys_getgid(args[..0]);
     SYS_SETUID = 105           => sys_setuid(args[..1]);
@@ -349,7 +351,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_TIMER_DELETE = 226     => sys_timer_delete(args[..1]);
     SYS_CLOCK_GETTIME = 228    => sys_clock_gettime(args[..2]);
     SYS_CLOCK_NANOSLEEP = 230  => sys_clock_nanosleep(args[..4]);
-    SYS_EXIT_GROUP = 231       => sys_exit_group(args[..1]);
+    SYS_EXIT_GROUP = 231       => sys_exit_group(args[..1], &mut user_ctx);
     SYS_EPOLL_WAIT = 232       => sys_epoll_wait(args[..4]);
     SYS_EPOLL_CTL = 233        => sys_epoll_ctl(args[..4]);
     SYS_TGKILL = 234           => sys_tgkill(args[..3]);

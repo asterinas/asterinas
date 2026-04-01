@@ -49,6 +49,8 @@ pub trait Pause: WaitTimeout {
     /// This pause happens due to the reason specified. If the reason is `PauseReason::Sleep`,
     /// the caller should use `pause_until` straightforwardly.
     ///
+    /// If the reason is `PauseReason::StopByPtrace`, it can only be interrupted by `SIGKILL`.
+    ///
     /// # Errors
     ///
     /// This method will return an error with [`EINTR`] if a signal is received before the
@@ -145,7 +147,12 @@ impl Pause for Waiter {
         };
 
         let cancel_cond = || {
-            if posix_thread.has_pending() {
+            let has_pending = match reason {
+                PauseReason::StopByPtrace => posix_thread.has_pending_sigkill(),
+                _ => posix_thread.has_pending(),
+            };
+
+            if has_pending {
                 return Err(Error::with_message(
                     Errno::EINTR,
                     "the current thread is interrupted by a signal",
@@ -244,10 +251,10 @@ impl Pause for WaitQueue {
 }
 
 /// The reason why a process is paused by a `pause`-family method.
+#[derive(Debug, Clone, Copy)]
 pub enum PauseReason {
     Sleep,
     StopBySignal,
-    #[expect(dead_code)]
     StopByPtrace,
 }
 
