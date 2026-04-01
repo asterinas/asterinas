@@ -128,6 +128,11 @@ pub fn handle_pending_signal(
                 do_exit_group(TermStatus::Killed(SIGSEGV));
             }
         }
+        SigAction::Dfl if ctx.process.is_init_process() => {
+            // From Linux man pages "kill(2)":
+            // "The only signals that can be sent to process ID 1, the init process, are those for
+            // which init has explicitly installed signal handlers."
+        }
         SigAction::Dfl => {
             let sig_default_action = SigDefaultAction::from_signum(sig_num);
             trace!("sig_default_action = {:?}", sig_default_action);
