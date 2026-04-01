@@ -22,7 +22,7 @@ the kernel (`kernel/`) is entirely safe Rust.
 All development is done inside the project Docker container:
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v /dev:/dev \
+docker run -it --privileged --network=host -v /dev:/dev \
   -v $(pwd)/asterinas:/root/asterinas \
   asterinas/asterinas:0.17.1-20260319
 ```
