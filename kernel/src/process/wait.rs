@@ -8,9 +8,12 @@ use super::{
 use crate::{
     prelude::*,
     process::{
-        ReapedChildrenStats, Uid, pid_table, posix_thread::AsPosixThread, signal::sig_num::SigNum,
+        ReapedChildrenStats, Uid, pid_table,
+        posix_thread::{AsPosixThread, PosixThread},
+        signal::sig_num::SigNum,
         status::StopWaitStatus,
     },
+    thread::Thread,
     time::clocks::ProfClock,
 };
 
@@ -74,31 +77,107 @@ pub fn do_wait(
         |sigmask| sigmask + SIGCHLD,
         || {
             ctx.process.children_wait_queue().pause_until(|| {
+                'tracer_check: {
+                    // Currently, we only support the main thread as the tracer,
+                    // so there is no need to check the tracees of other threads.
+                    //
+                    // Lock order: tracer.tracees -> tracee.tracee_status
+                    let Some(mut tracees) =
+                        ctx.posix_thread.tracees().map(|tracees| tracees.lock())
+                    else {
+                        break 'tracer_check;
+                    };
+                    let unwaited_tracees = tracees
+                        .values()
+                        .filter(|tracee| {
+                            let tracee = tracee.as_posix_thread().unwrap();
+                            let tracee_process = tracee.weak_process().upgrade();
+                            tracee_process.is_some_and(|process| {
+                                wait_filter(tracee.tid(), &process, &child_filter)
+                            })
+                        })
+                        .collect::<Box<_>>();
+
+                    if unwaited_tracees.is_empty() {
+                        break 'tracer_check;
+                    }
+
+                    // Exit/death by signal is reported first to the tracer, then,
+                    // when the tracer consumes the waitpid(2) result, to the real
+                    // parent (to the real parent only when the whole multithreaded
+                    // process exits). If the tracer and the real parent are the same
+                    // process, the report is sent only once.
+                    //
+                    // Reference: <https://man7.org/linux/man-pages/man2/ptrace.2.html>
+                    if let Some(status) = wait_exited_tracees(&unwaited_tracees) {
+                        if !wait_options.contains(WaitOptions::WNOWAIT) {
+                            let WaitStatus::ThreadExit(thread) = &status else {
+                                unreachable!();
+                            };
+                            let tracee = thread.as_posix_thread().unwrap();
+                            tracees.remove(&tracee.tid());
+                            tracee.detach_tracer();
+                            drop(tracees);
+
+                            if let Some(process) = tracee.weak_process().upgrade()
+                                && process.status().is_zombie()
+                                && core::ptr::eq(
+                                    Weak::as_ptr(process.parent().lock().process()),
+                                    Arc::as_ptr(&ctx.process),
+                                )
+                                && Arc::ptr_eq(&process.main_thread(), thread)
+                            {
+                                reap_zombie_child(
+                                    status.pid(),
+                                    ctx.process.children().lock().as_mut().unwrap(),
+                                    ctx.process.reaped_children_stats(),
+                                );
+                            }
+                        }
+                        return Some(Ok(Some(status)));
+                    }
+
+                    // Waiting for ptrace-stops does not require `WaitOptions::WSTOPPED`.
+                    if let Some(status) = wait_stopped_tracees(&unwaited_tracees) {
+                        return Some(Ok(Some(status)));
+                    }
+
+                    if wait_options.contains(WaitOptions::WNOHANG) {
+                        break 'tracer_check;
+                    }
+
+                    // wait
+                    return None;
+                }
+
                 // Acquire the children lock at first to prevent race conditions.
                 // We want to ensure that multiple waiting threads
                 // do not return the same waited process status.
                 let mut children_lock = ctx.process.children().lock();
                 let children_mut = children_lock.as_mut().unwrap();
 
-                let unwaited_children = children_mut
+                let mut unwaited_children = children_mut
                     .values()
-                    .filter(|child| match &child_filter {
-                        ProcessFilter::Any => true,
-                        ProcessFilter::WithPid(pid) => child.pid() == *pid,
-                        ProcessFilter::WithPgid(pgid) => child.pgid() == *pgid,
-                        ProcessFilter::WithPidfd(pid_file) => match pid_file.process_opt() {
-                            Some(process) => Arc::ptr_eq(&process, child),
-                            None => false,
-                        },
-                    })
-                    .collect::<Box<_>>();
+                    .filter(|child| wait_filter(child.pid(), child, &child_filter))
+                    .peekable();
 
-                if unwaited_children.is_empty() {
+                if unwaited_children.peek().is_none() {
                     return Some(Err(Error::with_message(
                         Errno::ECHILD,
                         "the process has no child to wait",
                     )));
                 }
+
+                let unwaited_children = unwaited_children
+                    .filter(|child| {
+                        child
+                            .main_thread()
+                            .as_posix_thread()
+                            .unwrap()
+                            .tracer()
+                            .is_none()
+                    })
+                    .collect::<Box<_>>();
 
                 if let Some(status) = wait_zombie(&unwaited_children) {
                     if !wait_options.contains(WaitOptions::WNOWAIT) {
@@ -135,37 +214,68 @@ pub fn do_wait(
     Ok(zombie_child)
 }
 
+fn wait_filter(child_pid: Pid, child: &Arc<Process>, child_filter: &ProcessFilter) -> bool {
+    match &child_filter {
+        ProcessFilter::Any => true,
+        ProcessFilter::WithPid(pid) => child_pid == *pid,
+        ProcessFilter::WithPgid(pgid) => child.pgid() == *pgid,
+        ProcessFilter::WithPidfd(pid_file) => match pid_file.process_opt() {
+            Some(process) => Arc::ptr_eq(&process, child),
+            None => false,
+        },
+    }
+}
+
 pub enum WaitStatus {
     Zombie(Arc<Process>),
     Stop(Arc<Process>, SigNum),
     Continue(Arc<Process>),
+    ThreadExit(Arc<Thread>),
+    PtraceStop(Arc<Thread>, SigNum),
 }
 
 impl WaitStatus {
     pub fn pid(&self) -> Pid {
-        self.process().pid()
+        match self.source() {
+            WaitStatusSource::Process(process) => process.pid(),
+            WaitStatusSource::Thread(thread) => thread.tid(),
+        }
     }
 
     pub fn uid(&self) -> Uid {
-        self.process()
-            .main_thread()
-            .as_posix_thread()
-            .unwrap()
-            .credentials()
-            .ruid()
+        match self.source() {
+            WaitStatusSource::Process(process) => process
+                .main_thread()
+                .as_posix_thread()
+                .unwrap()
+                .credentials()
+                .ruid(),
+            WaitStatusSource::Thread(thread) => thread.credentials().ruid(),
+        }
     }
 
     pub fn prof_clock(&self) -> &Arc<ProfClock> {
-        self.process().prof_clock()
+        match self.source() {
+            WaitStatusSource::Process(process) => process.prof_clock(),
+            WaitStatusSource::Thread(thread) => thread.prof_clock(),
+        }
     }
 
-    fn process(&self) -> &Arc<Process> {
+    fn source(&self) -> WaitStatusSource<'_> {
         match self {
             WaitStatus::Zombie(process)
             | WaitStatus::Stop(process, _)
-            | WaitStatus::Continue(process) => process,
+            | WaitStatus::Continue(process) => WaitStatusSource::Process(process.as_ref()),
+            WaitStatus::ThreadExit(thread) | WaitStatus::PtraceStop(thread, _) => {
+                WaitStatusSource::Thread(thread.as_posix_thread().unwrap())
+            }
         }
     }
+}
+
+enum WaitStatusSource<'a> {
+    Process(&'a Process),
+    Thread(&'a PosixThread),
 }
 
 fn wait_zombie(unwaited_children: &[&Arc<Process>]) -> Option<WaitStatus> {
@@ -194,6 +304,28 @@ fn wait_stopped_or_continued(
             StopWaitStatus::Continue => WaitStatus::Continue((*process).clone()),
         };
         return Some(wait_status);
+    }
+
+    None
+}
+
+fn wait_exited_tracees(unwaited_tracees: &[&Arc<Thread>]) -> Option<WaitStatus> {
+    for tracee in unwaited_tracees.iter() {
+        if tracee.is_exited() {
+            return Some(WaitStatus::ThreadExit((*tracee).clone()));
+        }
+    }
+
+    None
+}
+
+fn wait_stopped_tracees(unwaited_tracees: &[&Arc<Thread>]) -> Option<WaitStatus> {
+    for tracee in unwaited_tracees.iter() {
+        let Some(sig_num) = tracee.as_posix_thread().unwrap().wait_ptrace_stopped() else {
+            continue;
+        };
+
+        return Some(WaitStatus::PtraceStop((*tracee).clone(), sig_num));
     }
 
     None
