@@ -43,7 +43,6 @@ pub struct PosixThreadBuilder {
     fpu_context: FpuContext,
     user_ns: Option<Arc<UserNamespace>>,
     ns_proxy: Option<Arc<NsProxy>>,
-    is_init_process: bool,
     default_timer_slack_ns: u64,
 }
 
@@ -68,7 +67,6 @@ impl PosixThreadBuilder {
             sig_queues: SigQueues::new(),
             sched_policy: SchedPolicy::Fair(Nice::default()),
             fpu_context: FpuContext::new(),
-            is_init_process: false,
             user_ns: None,
             ns_proxy: None,
             default_timer_slack_ns: 50_000, // 50 usec default slack
@@ -125,12 +123,6 @@ impl PosixThreadBuilder {
         self
     }
 
-    #[expect(clippy::wrong_self_convention)]
-    pub(in crate::process) fn is_init_process(mut self) -> Self {
-        self.is_init_process = true;
-        self
-    }
-
     pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
@@ -148,7 +140,6 @@ impl PosixThreadBuilder {
             fpu_context,
             user_ns,
             ns_proxy,
-            is_init_process,
             default_timer_slack_ns,
         } = self;
 
@@ -210,7 +201,7 @@ impl PosixThreadBuilder {
             );
 
             pid_table::pid_table_mut().insert_thread(tid, &thread);
-            task::create_new_user_task(user_ctx, thread, thread_local, is_init_process)
+            task::create_new_user_task(user_ctx, thread, thread_local)
         })
     }
 }

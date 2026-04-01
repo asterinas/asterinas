@@ -153,7 +153,6 @@ fn create_init_task(
 
     let thread_builder = PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials)
         .process(Arc::downgrade(process))
-        .fs(Arc::new(fs))
-        .is_init_process();
+        .fs(Arc::new(fs));
     Ok(thread_builder.build())
 }

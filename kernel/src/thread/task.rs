@@ -27,7 +27,6 @@ pub fn create_new_user_task(
     user_ctx: Box<UserContext>,
     thread_ref: Arc<Thread>,
     thread_local: ThreadLocal,
-    is_init_process: bool,
 ) -> Task {
     let user_task_entry = move |user_ctx: UserContext| {
         let current_task = Task::current().unwrap();
@@ -72,7 +71,7 @@ pub fn create_new_user_task(
 
         let has_kernel_event_fn = || ctx.has_pending();
 
-        if is_init_process {
+        if ctx.process.is_init_process() {
             crate::init::on_first_process_startup(&ctx);
         }
 
