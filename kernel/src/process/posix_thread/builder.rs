@@ -190,6 +190,7 @@ impl PosixThreadBuilder {
                     default_timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
                     tracee_status: Once::new(),
                     tracees: Once::new(),
+                    exit_code: AtomicU32::new(0),
                 }
             };
 
