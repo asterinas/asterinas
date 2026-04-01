@@ -122,7 +122,10 @@ impl InodeHandle {
         }
 
         let mut offset = self.offset.lock();
-        let read_cnt = self.path.inode().readdir_at(*offset, visitor)?;
+        let read_cnt = self
+            .path
+            .inode()
+            .readdir_at_path(&self.path, *offset, visitor)?;
         *offset += read_cnt;
         Ok(read_cnt)
     }
