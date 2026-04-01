@@ -160,7 +160,7 @@ impl FileTable {
             .table
             .get(fd.into())
             .map(|entry| entry.file.clone())
-            .ok_or(Error::with_message(Errno::EBADF, "fd does not exist"))?;
+            .ok_or(Error::with_message(Errno::EBADF, "the FD does not exist"))?;
         Ok(FileTableEntry::new(file, flags))
     }
 
@@ -215,19 +215,19 @@ impl FileTable {
         self.table
             .get(fd.into())
             .map(|entry| entry.file())
-            .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
+            .ok_or(Error::with_message(Errno::EBADF, "the FD does not exist"))
     }
 
     pub fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
         self.table
             .get(fd.into())
-            .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
+            .ok_or(Error::with_message(Errno::EBADF, "the FD does not exist"))
     }
 
     pub fn get_entry_mut(&mut self, fd: FileDesc) -> Result<&mut FileTableEntry> {
         self.table
             .get_mut(fd.into())
-            .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
+            .ok_or(Error::with_message(Errno::EBADF, "the FD does not exist"))
     }
 
     pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {
