@@ -374,11 +374,21 @@ impl Path {
 
         // Linux only checks whether the destination path belongs to the current mount namespace;
         // it does not validate the source path.
-        // See <https://elixir.bootlin.com/linux/v6.19/source/fs/namespace.c#L2991>.     
+        // See <https://elixir.bootlin.com/linux/v6.19/source/fs/namespace.c#L2991>.
         if !current_mnt_ns.owns(&dst_path.mount) {
             return_errno_with_message!(
                 Errno::EINVAL,
                 "the destination path is not in this mount namespace"
+            );
+        }
+
+        if dst_path
+            .mount_node()
+            .is_equal_or_descendant_of(self.mount_node())
+        {
+            return_errno_with_message!(
+                Errno::ELOOP,
+                "the destination path is inside the mount subtree"
             );
         }
 
@@ -395,7 +405,11 @@ impl Path {
     /// Returns `EINVAL` in the following cases:
     /// - The current path is not a mount root.
     /// - The mount of the current path is the root mount.
-    /// - Either source or destination path is not in the current mount namespace
+    /// - Either source or destination path is not in the current mount namespace.
+    /// - The mount tree contains a mount namespace file that would create a namespace loop.
+    ///
+    /// Returns `ELOOP` if moving the mount tree would create a mount loop, for
+    /// example, when the destination path is inside the subtree being moved.
     pub fn move_mount_to(&self, dst_path: &Self, ctx: &Context) -> Result<()> {
         if !self.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
