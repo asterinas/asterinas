@@ -4,9 +4,13 @@ use spin::Once;
 
 use crate::{
     fs::{
-        fs_impls::ramfs::RamFs,
         pseudofs::{NsCommonOps, NsType, StashedDentry},
-        vfs::path::{Mount, Path, PathResolver},
+        rootfs::{BootRootSpec, boot_root_spec},
+        vfs::{
+            file_system::FsFlags,
+            path::{Mount, Path, PathResolver},
+            registry,
+        },
     },
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},
@@ -29,13 +33,37 @@ pub struct MountNamespace {
 
 impl MountNamespace {
     /// Returns a reference to the singleton initial mount namespace.
+    ///
+    /// If `rootfs=virtiofs` is specified in the kernel command line, the mount
+    /// namespace will use virtiofs as the root filesystem. Otherwise, it will
+    /// use ramfs and let `rootfs::init_in_first_kthread()` populate it from the
+    /// initramfs.
     #[doc(hidden)]
     pub fn get_init_singleton() -> &'static Arc<MountNamespace> {
         static INIT: Once<Arc<MountNamespace>> = Once::new();
 
+        let owner = UserNamespace::get_init_singleton().clone();
+
         INIT.call_once(|| {
-            let owner = UserNamespace::get_init_singleton().clone();
-            let rootfs = RamFs::new();
+            let (fs_type, args) = match boot_root_spec() {
+                BootRootSpec::VirtioFs { tag } => {
+                    let fs_type = registry::look_up("virtiofs").expect(
+                        "virtiofs rootfs requested but fs type 'virtiofs' is not registered",
+                    );
+                    let tag = CString::new(tag.as_str())
+                        .expect("virtiofs rootfs requested but tag contains interior NUL byte");
+                    (fs_type, Some(tag))
+                }
+                BootRootSpec::RamfsInitramfs => {
+                    let fs_type = registry::look_up("ramfs")
+                        .expect("ramfs rootfs requested but fs type 'ramfs' is not registered");
+                    (fs_type, None)
+                }
+            };
+
+            let rootfs = fs_type
+                .create(FsFlags::empty(), args, None)
+                .expect("failed to create root filesystem for the initial mount namespace");
 
             Arc::new_cyclic(|weak_self| {
                 let root = Mount::new_root(rootfs, weak_self.clone());
