@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_virtio::device::VirtioDeviceError;
+use int_to_c_enum::TryFromInt;
+
 /// Error number.
 #[expect(clippy::upper_case_acronyms)]
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, TryFromInt)]
 pub enum Errno {
     EPERM = 1,    /* Operation not permitted */
     ENOENT = 2,   /* No such file or directory */
@@ -247,6 +250,31 @@ impl From<aster_block::bio::BioStatus> for Error {
                 Error::with_message(Errno::EIO, "I/O operation fails")
             }
             status => panic!("Can not convert the status: {:?} to an error", status),
+        }
+    }
+}
+
+impl From<VirtioDeviceError> for Error {
+    fn from(virtio_error: VirtioDeviceError) -> Self {
+        match virtio_error {
+            VirtioDeviceError::QueuesAmountDoNotMatch(_, _) => Error::with_message(
+                Errno::EINVAL,
+                "The queues amount does not match the requirement",
+            ),
+            VirtioDeviceError::QueueUnknownError => {
+                Error::with_message(Errno::EIO, "Unknown error of queue")
+            }
+            VirtioDeviceError::RequestIdExhausted => {
+                Error::with_message(Errno::EOVERFLOW, "Request IDs are exhausted")
+            }
+            VirtioDeviceError::FileSystemError(code) => {
+                let errno = Errno::try_from(code.saturating_abs()).unwrap_or(Errno::EIO);
+                Error::with_message(errno, "Filesystem request failed")
+            }
+            VirtioDeviceError::CapabilityListError => Error::with_message(
+                Errno::EINVAL,
+                "The input virtio capability list contains invalid element",
+            ),
         }
     }
 }

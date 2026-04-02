@@ -64,3 +64,9 @@ impl From<DeviceType> for InodeType {
         }
     }
 }
+
+impl From<InodeType> for u32 {
+    fn from(inode_type: InodeType) -> u32 {
+        inode_type as u32
+    }
+}

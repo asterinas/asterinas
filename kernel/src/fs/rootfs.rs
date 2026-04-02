@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::string::{String, ToString};
+
 use core2::io::{Cursor, Read};
 use cpio_decoder::{CpioDecoder, CpioEntry, FileMetadata, FileType};
 use device_id::{DeviceId, MajorId, MinorId};
 use lending_iterator::LendingIterator;
 use libflate::gzip::Decoder as GZipDecoder;
 use ostd::boot::boot_info;
+use spin::Once;
 
 use super::{
     file::{InodeMode, InodeType},
@@ -27,8 +30,55 @@ impl Read for BoxedReader<'_> {
     }
 }
 
-/// Unpack and prepare the rootfs from the initramfs CPIO buffer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BootRootSpec {
+    RamfsInitramfs,
+    VirtioFs { tag: String },
+}
+
+fn parse_boot_root_spec() -> BootRootSpec {
+    const DEFAULT_VIRTIOFS_TAG: &str = "kataShared";
+
+    let cmdline = boot_info().kernel_cmdline.as_str();
+    let mut rootfs = None;
+    let mut virtiofs_tag = None;
+
+    for arg in cmdline.split_whitespace() {
+        if let Some(value) = arg.strip_prefix("rootfs=") {
+            rootfs = Some(value);
+        } else if let Some(tag) = arg.strip_prefix("virtiofs_tag=") {
+            virtiofs_tag = Some(tag.to_string());
+        }
+    }
+
+    if rootfs == Some("virtiofs") {
+        return BootRootSpec::VirtioFs {
+            tag: virtiofs_tag.unwrap_or_else(|| DEFAULT_VIRTIOFS_TAG.to_string()),
+        };
+    }
+
+    BootRootSpec::RamfsInitramfs
+}
+
+pub(crate) fn boot_root_spec() -> &'static BootRootSpec {
+    static BOOT_ROOT_SPEC: Once<BootRootSpec> = Once::new();
+
+    BOOT_ROOT_SPEC.call_once(parse_boot_root_spec)
+}
+
+/// Unpack and prepare the rootfs from the initramfs CPIO buffer if needed.
 pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
+    match boot_root_spec() {
+        BootRootSpec::RamfsInitramfs => {}
+        BootRootSpec::VirtioFs { tag } => {
+            println!(
+                "[kernel] skipping initramfs unpack because boot rootfs is virtiofs (tag: {})",
+                tag
+            );
+            return Ok(());
+        }
+    }
+
     let initramfs_buf = boot_info()
         .initramfs
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "no initramfs found"))?;
