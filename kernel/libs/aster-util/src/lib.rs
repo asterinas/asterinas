@@ -3,7 +3,6 @@
 //! The util of Asterinas.
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(int_roundings)]
 
 extern crate alloc;
 

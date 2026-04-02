@@ -50,8 +50,6 @@
 //! assert_type_same!(SetExtendOp<W, Read>, RW);
 //! ```
 
-#![feature(proc_macro_diagnostic)]
-
 use syn::parse_macro_input;
 
 use crate::{type_flag::TypeFlagDef, util::expand_type_flag};

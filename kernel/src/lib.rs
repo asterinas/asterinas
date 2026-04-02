@@ -12,12 +12,10 @@
 #![feature(format_args_nl)]
 #![feature(linked_list_cursors)]
 #![feature(linked_list_retain)]
-#![feature(negative_impls)]
 #![feature(panic_can_unwind)]
 #![feature(register_tool)]
 #![feature(min_specialization)]
 #![feature(thin_box)]
-#![feature(trait_alias)]
 #![register_tool(component_access_control)]
 
 extern crate alloc;
