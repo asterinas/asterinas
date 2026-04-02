@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <linux/capability.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -92,7 +93,23 @@ static int write_scope(int scope)
 	return 0;
 }
 
-static pid_t spawn_target_process(void)
+static void drop_cap_sys_ptrace(void)
+{
+	struct __user_cap_header_struct hdr = {
+		.version = _LINUX_CAPABILITY_VERSION_3,
+	};
+	struct __user_cap_data_struct capdat[2] = { 0 };
+
+	CHECK(syscall(SYS_capget, &hdr, &capdat));
+
+	capdat[0].effective &= ~(1 << CAP_SYS_PTRACE);
+	capdat[0].permitted &= ~(1 << CAP_SYS_PTRACE);
+	capdat[0].inheritable &= ~(1 << CAP_SYS_PTRACE);
+
+	CHECK(syscall(SYS_capset, &hdr, &capdat));
+}
+
+static pid_t spawn_target_process(bool drop_ptrace_cap)
 {
 	int ready_pipe[2];
 	CHECK(pipe(ready_pipe));
@@ -100,8 +117,12 @@ static pid_t spawn_target_process(void)
 	pid_t target_pid = CHECK(fork());
 	if (target_pid == 0) {
 		close(ready_pipe[0]);
+		if (drop_ptrace_cap) {
+			drop_cap_sys_ptrace();
+		}
 
-		int fd = CHECK(open(TESTFILE, O_CREAT | O_RDWR | O_TRUNC, 0644));
+		int fd =
+			CHECK(open(TESTFILE, O_CREAT | O_RDWR | O_TRUNC, 0644));
 		CHECK_WITH(write(fd, TEST_CONTENT, strlen(TEST_CONTENT)),
 			   _ret == (ssize_t)strlen(TEST_CONTENT));
 		CHECK(dup2(fd, TARGET_FD));
@@ -121,7 +142,8 @@ static pid_t spawn_target_process(void)
 	return target_pid;
 }
 
-static int run_sibling_pidfd_getfd(pid_t target_pid, bool expect_success)
+static int run_sibling_pidfd_getfd(pid_t target_pid, bool expect_success,
+				   bool drop_ptrace_cap)
 {
 	pid_t attacker_pid = fork();
 	if (attacker_pid < 0) {
@@ -129,6 +151,10 @@ static int run_sibling_pidfd_getfd(pid_t target_pid, bool expect_success)
 	}
 
 	if (attacker_pid == 0) {
+		if (drop_ptrace_cap) {
+			drop_cap_sys_ptrace();
+		}
+
 		int pidfd = pidfd_open_syscall(target_pid);
 		if (pidfd < 0) {
 			_exit(10);
@@ -212,9 +238,9 @@ END_TEST()
 FN_TEST(yama_relational_denies_sibling_pidfd_getfd)
 {
 	TEST_SUCC(write_scope(YAMA_SCOPE_RELATIONAL));
-	pid_t target_pid = CHECK(spawn_target_process());
+	pid_t target_pid = CHECK(spawn_target_process(true));
 
-	TEST_SUCC(run_sibling_pidfd_getfd(target_pid, false));
+	TEST_SUCC(run_sibling_pidfd_getfd(target_pid, false, true));
 
 	cleanup_target_process(target_pid);
 	TEST_SUCC(write_scope(saved_scope));
@@ -224,9 +250,9 @@ END_TEST()
 FN_TEST(yama_disabled_allows_sibling_pidfd_getfd)
 {
 	TEST_SUCC(write_scope(YAMA_SCOPE_DISABLED));
-	pid_t target_pid = CHECK(spawn_target_process());
+	pid_t target_pid = CHECK(spawn_target_process(true));
 
-	TEST_SUCC(run_sibling_pidfd_getfd(target_pid, true));
+	TEST_SUCC(run_sibling_pidfd_getfd(target_pid, true, true));
 
 	cleanup_target_process(target_pid);
 	TEST_SUCC(write_scope(saved_scope));
