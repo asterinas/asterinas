@@ -30,7 +30,7 @@ impl ProcessFilter {
             P_PID => Ok(ProcessFilter::WithPid(id)),
             P_PGID => Ok(ProcessFilter::WithPgid(id)),
             P_PIDFD => {
-                let fd = FileDesc::try_from(id)
+                let fd = FileDesc::try_from(id.cast_signed())
                     .map_err(|_| Error::with_message(Errno::EINVAL, "the pidfd is invalid"))?;
                 let file = {
                     let mut file_table = ctx.thread_local.borrow_file_table_mut();

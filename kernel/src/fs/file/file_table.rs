@@ -23,6 +23,15 @@ use crate::{
 /// The value is guaranteed to be in the range `[0, i32::MAX]`.
 /// Use [`RawFileDesc`] at syscall boundaries,
 /// then convert to `FileDesc` via `TryFrom` for kernel-internal use.
+///
+/// Some system calls (e.g., `fcntl`) reinterpret
+/// values of types other than [`RawFileDesc`] (e.g., `u64` or `usize`)
+/// as file descriptors. Linux typically truncates the high bits
+/// without checking whether the full argument fits in range.
+/// To avoid accidental misuse, we do not implement `TryFrom` for
+/// those types. The syscall layer should first convert them to
+/// a [`RawFileDesc`] in an explicit, syscall-specific way,
+/// and then convert that value to a `FileDesc`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct FileDesc(RangedU32<0, { i32::MAX as _ }>);
 
@@ -74,6 +83,14 @@ impl From<FileDesc> for usize {
     }
 }
 
+// Intentionally, `TryFrom<RawFileDesc>` is
+// the only `TryFrom` implementation for `FileDesc`.
+//
+// We do not implement conversions from wider integer types
+// for Linux compatibility reasons; see the `FileDesc` type docs.
+// We also do not implement `TryFrom<u32>` directly,
+// to encourage callers to name `RawFileDesc` explicitly
+// instead of using a plain `u32`.
 impl TryFrom<RawFileDesc> for FileDesc {
     type Error = Error;
 
@@ -82,16 +99,6 @@ impl TryFrom<RawFileDesc> for FileDesc {
             return_errno_with_message!(Errno::EBADF, "negative FDs are not valid");
         }
         Ok(Self(RangedU32::new(value.cast_unsigned())))
-    }
-}
-
-impl TryFrom<u32> for FileDesc {
-    type Error = Error;
-
-    fn try_from(value: u32) -> Result<Self> {
-        Ok(Self(RangedU32::try_from(value).map_err(|_| {
-            Error::with_message(Errno::EBADF, "FD value exceeds maximum")
-        })?))
     }
 }
 
@@ -139,7 +146,7 @@ impl FileTable {
         let min_free_fd = get_min_free_fd();
         self.table.put_at(min_free_fd, entry);
         // Resource limits guarantee the table never exceeds `i32::MAX` entries.
-        Ok((min_free_fd as u32).try_into().unwrap())
+        Ok((min_free_fd as RawFileDesc).try_into().unwrap())
     }
 
     /// Duplicates `fd` onto the exact descriptor number `new_fd`.
@@ -167,7 +174,7 @@ impl FileTable {
     pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {
         let entry = FileTableEntry::new(item, flags);
         // Resource limits guarantee the table never exceeds `i32::MAX` entries.
-        (self.table.put(entry) as u32).try_into().unwrap()
+        (self.table.put(entry) as RawFileDesc).try_into().unwrap()
     }
 
     pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
@@ -197,7 +204,7 @@ impl FileTable {
             .filter_map(|(idx, entry)| {
                 if should_close(entry) {
                     // Resource limits guarantee the table never exceeds `i32::MAX` entries.
-                    Some((idx as u32).try_into().unwrap())
+                    Some((idx as RawFileDesc).try_into().unwrap())
                 } else {
                     None
                 }
@@ -234,7 +241,7 @@ impl FileTable {
         // Resource limits guarantee the table never exceeds `i32::MAX` entries.
         self.table
             .idxes_and_items()
-            .map(|(idx, entry)| ((idx as u32).try_into().unwrap(), entry.file()))
+            .map(|(idx, entry)| ((idx as RawFileDesc).try_into().unwrap(), entry.file()))
     }
 }
 

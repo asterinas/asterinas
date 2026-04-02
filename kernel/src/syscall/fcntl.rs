@@ -42,11 +42,10 @@ pub fn sys_fcntl(raw_fd: RawFileDesc, cmd: i32, arg: u64, ctx: &Context) -> Resu
 
 fn handle_dupfd(fd: FileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result<SyscallReturn> {
     let file_table = ctx.thread_local.borrow_file_table();
-    let new_fd = file_table.unwrap().write().dup_ceil(
-        fd,
-        (arg as u32).try_into().map_err(|_| Errno::EINVAL)?,
-        flags,
-    )?;
+    let ceil_fd = (arg as RawFileDesc)
+        .try_into()
+        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid fd"))?;
+    let new_fd = file_table.unwrap().write().dup_ceil(fd, ceil_fd, flags)?;
     Ok(SyscallReturn::Return(new_fd.into()))
 }
 
