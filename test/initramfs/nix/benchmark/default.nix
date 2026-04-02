@@ -18,7 +18,7 @@
     pname = "benchmark";
     version = "0.1.0";
     src = lib.fileset.toSource {
-      root = ./../../src;
+      root = ./../../src/benchmark;
       fileset = ./../../src/benchmark;
     };
 
@@ -43,7 +43,7 @@
         cp -r ${sysbench}/bin/sysbench $out/bin/
       ''}
 
-      cp -r $src/benchmark/* $out/
+      cp -r $src/* $out/
     '';
   };
 }

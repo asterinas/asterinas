@@ -3,13 +3,14 @@
 OSDK_TARGET_ARCH ?= x86_64
 SMP ?= 1
 VERBOSE ?= 1
-SYSCALL_TEST_SUITE ?= ltp
-SYSCALL_TEST_WORKDIR ?= /tmp
-ENABLE_BASIC_TEST ?= false
+ENABLE_CONFORMANCE_TEST ?= false
+CONFORMANCE_TEST_SUITE ?= ltp
+CONFORMANCE_TEST_WORKDIR ?= /tmp
+ENABLE_REGRESSION_TEST ?= false
 # Specify platform macros when building regression tests (supported: asterinas, linux).
 # - asterinas: Define both `__asterinas__` and `__linux__`. Tests may fail in Linux.
 # - linux: Define only `__linux__`. Tests may fail in Asterinas.
-BASIC_TEST_PLATFORM ?= asterinas
+REGRESSION_TEST_PLATFORM ?= asterinas
 DNS_SERVER ?= none
 # Set Nix's cached tarballs to be live for a longer period of time (30 days) to avoid network traffics.
 # Nix's default value is rather small (1 hour or 3600 seconds).
@@ -31,16 +32,9 @@ EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
 
 # Include benchmark, if BENCHMARK is set.
 ifeq ($(BENCHMARK), none)
-ENABLE_BENCHMARK = false
+ENABLE_BENCHMARK_TEST = false
 else
-ENABLE_BENCHMARK = true
-endif
-
-# Include syscall_test, if BUILD_SYSCALL_TEST is set.
-ifeq ($(BUILD_SYSCALL_TEST), 1)
-ENABLE_SYSCALL_TEST = true
-else
-ENABLE_SYSCALL_TEST = false
+ENABLE_BENCHMARK_TEST = true
 endif
 
 # Decreases the level of verbosity of diagnostic messages from Nix.
@@ -65,12 +59,12 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 	@nix-build \
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(OSDK_TARGET_ARCH) \
-		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
-		--argstr basicTestPlatform $(BASIC_TEST_PLATFORM) \
-		--arg enableBenchmark $(ENABLE_BENCHMARK) \
-		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
-		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
-		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
+		--arg enableBenchmarkTest $(ENABLE_BENCHMARK_TEST) \
+		--arg enableConformanceTest $(ENABLE_CONFORMANCE_TEST) \
+		--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
+		--argstr conformanceTestSuite $(CONFORMANCE_TEST_SUITE) \
+		--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
+		--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
 		--argstr dnsServer ${DNS_SERVER} \
 		--arg initramfsCompressed $(INITRAMFS_COMPRESSED) \
 		--arg smp $(SMP) \
@@ -82,12 +76,12 @@ $(INITRAMFS):
 	@nix-build \
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(OSDK_TARGET_ARCH) \
-		--arg enableBasicTest $(ENABLE_BASIC_TEST) \
-		--argstr basicTestPlatform $(BASIC_TEST_PLATFORM) \
-		--arg enableBenchmark $(ENABLE_BENCHMARK) \
-		--arg enableSyscallTest $(ENABLE_SYSCALL_TEST) \
-		--argstr syscallTestSuite $(SYSCALL_TEST_SUITE) \
-		--argstr syscallTestWorkDir $(SYSCALL_TEST_WORKDIR) \
+		--arg enableBenchmarkTest $(ENABLE_BENCHMARK_TEST) \
+		--arg enableConformanceTest $(ENABLE_CONFORMANCE_TEST) \
+		--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
+		--argstr conformanceTestSuite $(CONFORMANCE_TEST_SUITE) \
+		--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
+		--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
 		--argstr dnsServer ${DNS_SERVER} \
 		--arg smp $(SMP) \
 		--out-link $@ \
@@ -100,11 +94,10 @@ x86_64_pkgs:
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		$(NIX_QUIET) \
 		--argstr target x86_64 \
-		--arg enableBenchmark true \
-		--arg enableSyscallTest true \
+		--arg enableBenchmarkTest true \
+		--arg enableConformanceTest true \
 		--out-link /nix/var/nix/gcroots/auto/x86_64-pkgs \
 		-A busybox \
-		-A apps.package \
 		-A benchmark.fio \
 		-A benchmark.hackbench \
 		-A benchmark.iperf3 \
@@ -115,7 +108,8 @@ x86_64_pkgs:
 		-A benchmark.schbench \
 		-A benchmark.sqlite-speedtest1 \
 		-A benchmark.sysbench \
-		-A syscall.ltp
+		-A conformance.ltp \
+		-A regression.package
 
 # Prebuild riscv64 packages
 # Note: This may cause GitHub Runner ResourceExhausted errors when publish nix docker image.
@@ -126,12 +120,12 @@ riscv64_pkgs:
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		$(NIX_QUIET) \
 		--argstr target riscv64 \
-		--arg enableBenchmark false \
-		--arg enableSyscallTest true \
+		--arg enableBenchmarkTest false \
+		--arg enableConformanceTest true \
 		--out-link /nix/var/nix/gcroots/auto/riscv64-pkgs \
 		-A busybox \
-		-A apps.package \
-		-A syscall.ltp
+		-A conformance.ltp \
+		-A regression.package
 
 install_host_pkgs:
 	@nix-env \
@@ -154,7 +148,7 @@ initramfs_pkgs:
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		$(NIX_QUIET) \
 		--argstr target x86_64 \
-		--arg enableBenchmark true \
+		--arg enableBenchmarkTest true \
 		--out-link /nix/var/nix/gcroots/auto/x86_64-initramfs-with-benchmark \
 		-A initramfs-image
 
@@ -170,12 +164,12 @@ $(EXFAT_IMAGE):
 
 .PHONY: format
 format:
-	@$(MAKE) --no-print-directory -C src/apps format
+	@$(MAKE) --no-print-directory -C src/regression format
 	@nixfmt nix
 
 .PHONY: check
 check:
-	@$(MAKE) --no-print-directory -C src/apps check
+	@$(MAKE) --no-print-directory -C src/regression check
 	@nixfmt --check nix
 
 .PHONY: clean

@@ -7,7 +7,7 @@ This directory contains the testing infrastructure for Asterinas, organized into
 ### Initramfs-Based Tests ([`initramfs/`](initramfs/))
 
 Tests running in a minimal initramfs environment. Best for:
-- System call validation
+- Linux compatibility testing
 - Core functionality testing
 - Performance benchmarks
 

@@ -1,12 +1,12 @@
-{ lib, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, benchmark, syscall, dnsServer, pkgs }:
+{ lib, pkgs, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox
+, benchmark, conformance, regression, dnsServer, }:
 let
   boot_hello = builtins.path { path = ./../src/boot_hello.sh; };
   etc = lib.fileset.toSource {
-    root = ./../src/etc;
-    fileset = ./../src/etc;
+    root = ./../etc;
+    fileset = ./../etc;
   };
-  gvisor_libs = if syscall != null && syscall.testSuite == "gvisor" then
+  gvisor_libs = if conformance != null && conformance.testSuite == "gvisor" then
     builtins.path {
       name = "gvisor-libs";
       path = "/lib/x86_64-linux-gnu";
@@ -17,9 +17,9 @@ let
   # Whether the initramfs should include evtest, a common tool to debug input devices (`/dev/input/eventX`)
   is_evtest_included = false;
   all_pkgs = [ busybox etc resolv_conf ]
-    ++ lib.optionals (apps != null) [ apps.package ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
-    ++ lib.optionals (syscall != null) [ syscall.package ]
+    ++ lib.optionals (conformance != null) [ conformance.package ]
+    ++ lib.optionals (regression != null) [ regression.package ]
     ++ lib.optionals is_evtest_included [ pkgs.evtest ];
 in stdenvNoCC.mkDerivation {
   name = "initramfs";
@@ -42,19 +42,20 @@ in stdenvNoCC.mkDerivation {
 
     cp ${resolv_conf}/resolv.conf $out/etc/
 
-    ${lib.optionalString (apps != null) ''
-      cp -r ${apps.package}/* $out/test/
+    ${lib.optionalString (regression != null) ''
+      cp -r ${regression.package}/* $out/test/
     ''}
 
     ${lib.optionalString (benchmark != null) ''
       cp -r "${benchmark.package}"/* $out/benchmark/
     ''}
 
-    ${lib.optionalString (syscall != null) ''
-      cp -r "${syscall.package}"/opt/* $out/opt/
+    ${lib.optionalString (conformance != null) ''
+      cp -r "${conformance.package}"/opt/* $out/opt/
     ''}
 
-    ${lib.optionalString (syscall != null && syscall.testSuite == "gvisor") ''
+    ${lib.optionalString
+    (conformance != null && conformance.testSuite == "gvisor") ''
       # FIXME: Build gvisor syscall test with nix to avoid manual library copying.
       mkdir -p $out/lib/x86_64-linux-gnu
       cp -L ${gvisor_libs}/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2

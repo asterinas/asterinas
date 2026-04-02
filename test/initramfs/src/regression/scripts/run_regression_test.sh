@@ -16,4 +16,4 @@ for dir in $(find -L "${SCRIPT_DIR}" -mindepth 1 -maxdepth 1 -type d); do
     fi
 done
 
-echo "All general tests passed."
+echo "All regression tests passed."

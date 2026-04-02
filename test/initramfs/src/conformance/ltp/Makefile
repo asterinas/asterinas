@@ -19,9 +19,9 @@ $(TARGET_DIR): $(RUN_BASH) $(ALL_TESTS) $(EXT2_BLOCKLIST) $(EXFAT_BLOCKLIST)
 	@mkdir -p $@/testcases/bin
 	@mkdir -p $@/runtest
 	@awk '!/^#/ && NF' $(ALL_TESTS) > $@/all.txt
-	@if [ "$(SYSCALL_TEST_WORKDIR)" = "/ext2" ]; then \
+	@if [ "$(CONFORMANCE_TEST_WORKDIR)" = "/ext2" ]; then \
 		grep -vxF -f $(EXT2_BLOCKLIST) $@/all.txt > $@/filtered.txt; \
-	elif [ "$(SYSCALL_TEST_WORKDIR)" = "/exfat" ]; then \
+	elif [ "$(CONFORMANCE_TEST_WORKDIR)" = "/exfat" ]; then \
 		grep -vxF -f $(EXFAT_BLOCKLIST) $@/all.txt > $@/filtered.txt; \
 	else \
 		cp -f $@/all.txt $@/filtered.txt; \

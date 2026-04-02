@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 LTP_DIR=$(dirname "$0")
-TEST_TMP_DIR=${SYSCALL_TEST_WORKDIR:-/tmp}
+TEST_TMP_DIR=${CONFORMANCE_TEST_WORKDIR:-/tmp}
 LOG_FILE=$TEST_TMP_DIR/result.log
 RESULT=0
 

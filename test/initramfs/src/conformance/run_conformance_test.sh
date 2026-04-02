@@ -4,26 +4,26 @@
 
 set -e
 
-SYSCALL_TEST_SUITE=${SYSCALL_TEST_SUITE:-ltp}
+CONFORMANCE_TEST_SUITE=${CONFORMANCE_TEST_SUITE:-ltp}
 LTP_DIR=/opt/ltp
 GVISOR_DIR=/opt/gvisor
 
-if [ "${SYSCALL_TEST_SUITE}" == "ltp" ]; then
+if [ "${CONFORMANCE_TEST_SUITE}" == "ltp" ]; then
     echo "Running LTP syscall tests..."
     if ! "${LTP_DIR}/run_ltp_test.sh"; then
         echo "Error: LTP syscall tests failed." >&2
         exit 1
     fi
-elif [ "${SYSCALL_TEST_SUITE}" == "gvisor" ]; then
+elif [ "${CONFORMANCE_TEST_SUITE}" == "gvisor" ]; then
     echo "Running gVisor syscall tests..."
     if ! "${GVISOR_DIR}/run_gvisor_test.sh"; then
         echo "Error: gVisor syscall tests failed." >&2
         exit 2
     fi
 else
-    echo "Error: Unknown test suite '${SYSCALL_TEST_SUITE}'." >&2
+    echo "Error: Unknown test suite '${CONFORMANCE_TEST_SUITE}'." >&2
     exit 3
 fi
 
-echo "All syscall tests passed."
+echo "All conformance tests passed."
 exit 0

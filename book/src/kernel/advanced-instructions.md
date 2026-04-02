@@ -32,32 +32,32 @@ cargo osdk test
 
 ## Integration Test
 
-### General Test
+### Regression Test
 
-The following command builds and runs the test binaries in `test/initramfs/src/apps` directory on Asterinas.
+The following command builds and runs the regression test in `test/initramfs/src/regression` on Asterinas.
 
 ```bash
-make run_kernel AUTO_TEST=test
+make run_kernel AUTO_TEST=regression
 ```
 
-### Syscall Test
+### Conformance Test
 
-The following command builds and runs the syscall test binaries on Asterinas.
+The following command builds and runs the conformance test on Asterinas.
 
 ```bash
-make run_kernel AUTO_TEST=syscall
+make run_kernel AUTO_TEST=conformance
 ```
 
-To run system call tests interactively, start an instance of Asterinas with the system call tests built and installed.
+To run conformance test interactively, start an instance of Asterinas with the conformance tests built and installed.
 
 ```bash
-make run_kernel BUILD_SYSCALL_TEST=1
+make run_kernel ENABLE_CONFORMANCE_TEST=true
 ```
 
-Then, in the interactive shell, run the following script to start the syscall tests.
+Then, in the interactive shell, run the following script to start the conformance test.
 
 ```bash
-/opt/syscall_test/run_syscall_test.sh
+/opt/run_conformance_test.sh
 ```
 
 ## Debug
