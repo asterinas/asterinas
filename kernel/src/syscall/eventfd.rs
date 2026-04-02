@@ -22,10 +22,7 @@ use super::SyscallReturn;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{
-            CreationFlags, FileLike, StatusFlags,
-            file_table::{FdFlags, RawFileDesc},
-        },
+        file::{CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::AnonInodeFs,
         vfs::path::Path,
     },
@@ -36,9 +33,7 @@ use crate::{
 pub fn sys_eventfd(init_val: u64, ctx: &Context) -> Result<SyscallReturn> {
     debug!("init_val = 0x{:x}", init_val);
 
-    let fd = do_sys_eventfd2(init_val, Flags::empty(), ctx);
-
-    Ok(SyscallReturn::Return(fd as _))
+    do_sys_eventfd2(init_val, Flags::empty(), ctx)
 }
 
 pub fn sys_eventfd2(init_val: u64, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
@@ -47,12 +42,10 @@ pub fn sys_eventfd2(init_val: u64, flags: u32, ctx: &Context) -> Result<SyscallR
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;
     debug!("init_val = 0x{:x}, flags = {:?}", init_val, flags);
 
-    let fd = do_sys_eventfd2(init_val, flags, ctx);
-
-    Ok(SyscallReturn::Return(fd as _))
+    do_sys_eventfd2(init_val, flags, ctx)
 }
 
-fn do_sys_eventfd2(init_val: u64, flags: Flags, ctx: &Context) -> RawFileDesc {
+fn do_sys_eventfd2(init_val: u64, flags: Flags, ctx: &Context) -> Result<SyscallReturn> {
     let event_file = EventFile::new(init_val, flags);
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
@@ -61,9 +54,9 @@ fn do_sys_eventfd2(init_val: u64, flags: Flags, ctx: &Context) -> RawFileDesc {
     } else {
         FdFlags::empty()
     };
-    file_table_locked
-        .insert(Arc::new(event_file), fd_flags)
-        .into()
+
+    let fd = file_table_locked.insert(Arc::new(event_file), fd_flags);
+    Ok(SyscallReturn::Return(fd.into()))
 }
 
 bitflags! {
