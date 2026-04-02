@@ -1,0 +1,5 @@
+prctl:disable-tsc-ctxt-sw-stress-test
+prctl:disable-tsc-on-off-stress-test
+prctl:disable-tsc-test
+prctl:set-anon-vma-name-test
+prctl:set-process-name

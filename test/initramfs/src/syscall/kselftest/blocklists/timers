@@ -1,0 +1,7 @@
+timers:posix_timers
+timers:nanosleep
+timers:set-timer-lat
+timers:mqueue-lat
+timers:inconsistency-check
+timers:raw_skew
+timers:rtcpie

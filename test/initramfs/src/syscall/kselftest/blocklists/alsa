@@ -1,0 +1,4 @@
+alsa:mixer-test
+alsa:pcm-test
+alsa:test-pcmtest-driver
+alsa:utimer-test
