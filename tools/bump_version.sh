@@ -72,7 +72,7 @@ add_one() {
 # Update Docker image version in DOCKER_IMAGE_VERSION file
 update_docker_image_version() {
     local IFS="-"
-    local docker_version_parts=($(cat ${DOCKER_IMAGE_VERSION_PATH}))
+    local docker_version_parts=($(cat "${DOCKER_IMAGE_VERSION_PATH}"))
     local version_part=$1
 
     if [[ -z "$version_part" ]]; then
