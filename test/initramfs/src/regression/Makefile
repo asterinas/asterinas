@@ -27,7 +27,7 @@ ifeq ($(HOST_PLATFORM), x86_64-linux)
 SUBDIRS += intel_tdx
 endif
 
-# The C head and source files of all the apps, excluding the downloaded mongoose files
+# The C header and source files of all regression tests.
 C_SOURCES := $(shell find . -type f \( -name "*.c" -or -name "*.h" \))
 
 .PHONY: all
@@ -42,10 +42,10 @@ $(SUBDIRS): $(OUTPUT_DIR)
 
 .PHONY: format
 format:
-	@echo "Fixing code format for general tests..."
+	@echo "Fixing code format for regression tests..."
 	@clang-format -i $(C_SOURCES)
 
 .PHONY: check
 check:
-	@echo "Checking code format for general tests..."
+	@echo "Checking code format for regression tests..."
 	@clang-format --dry-run --Werror $(C_SOURCES)

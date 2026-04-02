@@ -56,10 +56,10 @@ jobs:
           - test_id: 'boot-release'
             release: true
 
-          - test_id: 'syscall-release'
+          - test_id: 'conformance-release'
             release: true
 
-          - test_id: 'syscall-release-smp4'
+          - test_id: 'conformance-release-smp4'
             release: true
             smp: 4
       fail-fast: false
@@ -68,10 +68,10 @@ jobs:
         # Remove unused packages from the host to save disk space.
         run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
       - uses: actions/checkout@v4
-      - name: Run integration tests ${{ (startsWith(matrix.test_id, 'syscall') && 'with LTP') || '' }}
+      - name: Run integration tests ${{ (startsWith(matrix.test_id, 'conformance') && 'with LTP') || '' }}
         uses: ./.github/actions/test
         with:
-          auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') || 'syscall' }}
+          auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') || 'conformance' }}
           release: ${{ !contains(matrix.release, 'false') }}
           arch: 'riscv64'
-          syscall_test_suite: 'ltp'
+          conformance_test_suite: 'ltp'

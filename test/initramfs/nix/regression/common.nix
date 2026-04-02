@@ -4,9 +4,11 @@ stdenv.mkDerivation ({
   pname = "${dir}-test";
   version = "0.1.0";
   src = lib.fileset.toSource {
-    root = ./../../src/apps;
-    fileset =
-      lib.fileset.unions [ ./../../src/apps/common ./../../src/apps/${dir} ];
+    root = ./../../src/regression;
+    fileset = lib.fileset.unions [
+      ./../../src/regression/common
+      ./../../src/regression/${dir}
+    ];
   };
 
   HOST_PLATFORM = "${hostPlatform.system}";
