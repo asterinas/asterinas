@@ -236,11 +236,21 @@ fn open_fs(
     ctx: &Context,
 ) -> Result<Arc<dyn FileSystem>> {
     let user_space = ctx.user_space();
-    let data = if data_addr == 0 {
+    let mut data = if data_addr == 0 {
         None
     } else {
         Some(user_space.read_cstring(data_addr, MAX_FILENAME_LEN)?)
     };
+
+    if data.is_none()
+        && fs_type.name() == "virtiofs"
+        && let Some(source) = dev_name
+    {
+        data = Some(
+            CString::new(source)
+                .map_err(|_| Error::with_message(Errno::EINVAL, "invalid virtiofs source"))?,
+        );
+    }
 
     let disk = if fs_type.properties().contains(FsProperties::NEED_DISK) {
         let dev_name = dev_name

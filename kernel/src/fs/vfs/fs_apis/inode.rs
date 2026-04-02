@@ -5,6 +5,7 @@
 use alloc::boxed::ThinBox;
 use core::time::Duration;
 
+use aster_virtio::device::filesystem::protocol::Attr;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use device_id::DeviceId;
 use ostd::task::Task;
@@ -117,6 +118,31 @@ pub struct Metadata {
     ///
     /// Corresponds to `st_rdev`.
     pub self_dev_id: Option<DeviceId>,
+}
+
+impl From<Attr> for Metadata {
+    fn from(attr: Attr) -> Self {
+        Metadata {
+            ino: attr.ino,
+            size: attr.size as usize,
+            optimal_block_size: attr.blksize as usize,
+            nr_sectors_allocated: attr.blocks as usize,
+            last_access_at: Duration::new(attr.atime, attr.atimensec),
+            last_modify_at: Duration::new(attr.mtime, attr.mtimensec),
+            last_meta_change_at: Duration::new(attr.ctime, attr.ctimensec),
+            type_: InodeType::from_raw_mode(attr.mode as u16).unwrap_or(InodeType::Unknown),
+            mode: InodeMode::from_bits_truncate(attr.mode as u16),
+            nr_hard_links: attr.nlink as usize,
+            uid: Uid::new(attr.uid),
+            gid: Gid::new(attr.gid),
+            container_dev_id: DeviceId::null(),
+            self_dev_id: if attr.rdev == 0 {
+                None
+            } else {
+                DeviceId::from_encoded_u64(attr.rdev as u64)
+            },
+        }
+    }
 }
 
 impl Metadata {

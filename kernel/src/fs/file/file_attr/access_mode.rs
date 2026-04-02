@@ -63,3 +63,9 @@ impl From<AccessMode> for Rights {
         }
     }
 }
+
+impl From<AccessMode> for u32 {
+    fn from(access_mode: AccessMode) -> u32 {
+        access_mode as u32
+    }
+}
