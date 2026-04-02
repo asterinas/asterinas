@@ -19,7 +19,7 @@ use crate::{
     fs::{
         file::{AccessMode, FileIo, InodeMode, InodeType, Permission, StatusFlags},
         utils::DirentVisitor,
-        vfs::path::Path,
+        vfs::path::{Dentry, Path},
     },
     prelude::*,
     process::{Gid, Uid, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
@@ -377,6 +377,16 @@ pub trait Inode: Any + InodeIo + Send + Sync {
     /// inode returns `true`.
     fn is_dentry_cacheable(&self) -> bool {
         true
+    }
+
+    /// Revalidates a cached child dentry from its parent lookup context.
+    ///
+    /// Returning `Ok(())` means the filesystem has guaranteed that `child`
+    /// still matches `name` under the current parent context.
+    /// Returning `Err(_)` means the cached child dentry cannot be used and
+    /// the error should be returned directly to the caller.
+    fn revalidate_child(&self, name: &str, child: &Dentry) -> Result<()> {
+        Ok(())
     }
 
     /// Returns the end position for [`SeekFrom::End`].
