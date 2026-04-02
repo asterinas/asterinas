@@ -165,6 +165,14 @@ if [ "$BOOT_METHOD" = "qemu-direct" ]; then
     fi
 fi
 
+# When using `grub-rescue-iso` or `grub-qcow2` boot, OVMF must be enabled.
+# Currently, the project's `grub-mkrescue` (in container image) only contained
+# `x86_64-efi` platform modules — no `i386-pc`. This meant the generated ISO/qcow2
+# could only be loaded by OVMF.
+if [ "$BOOT_METHOD" = "grub-rescue-iso" ] || [ "$BOOT_METHOD" = "grub-qcow2" ]; then
+    OVMF="on"
+fi
+
 if [ "$OVMF" = "on" ]; then
     if [ "$1" = "microvm" ]; then
         QEMU_ARGS="${QEMU_ARGS} \
