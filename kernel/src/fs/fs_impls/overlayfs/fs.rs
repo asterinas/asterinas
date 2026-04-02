@@ -30,9 +30,9 @@ use crate::{
             xattr::{XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags},
         },
     },
+    page_cache::PageCache,
     prelude::*,
     process::{Gid, Uid},
-    vm::vmo::Vmo,
 };
 
 const OVERLAY_FS_MAGIC: u64 = 0x794C7630;
@@ -465,7 +465,7 @@ impl OverlayInode {
         &self.extension
     }
 
-    pub fn page_cache(&self) -> Option<Arc<Vmo>> {
+    pub fn page_cache(&self) -> Option<PageCache> {
         let _ = self.get_top_valid_inode().page_cache()?;
         // Do copy-up for the potential memory mapping operations
         let upper = self.build_upper_recursively_if_needed().unwrap();
@@ -958,7 +958,7 @@ impl Inode for OverlayInode {
     fn set_mtime(&self, time: Duration);
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, time: Duration);
-    fn page_cache(&self) -> Option<Arc<Vmo>>;
+    fn page_cache(&self) -> Option<PageCache>;
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>>;
     fn open(

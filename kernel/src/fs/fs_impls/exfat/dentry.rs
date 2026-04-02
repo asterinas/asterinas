@@ -14,8 +14,8 @@ use super::{
 };
 use crate::{
     fs::file::{InodeMode, InodeType},
+    page_cache::PageCache,
     prelude::*,
-    vm::vmo::Vmo,
 };
 
 pub(super) const DENTRY_SIZE: usize = 32; // directory entry size
@@ -277,7 +277,7 @@ impl ExfatDentrySet {
         Self::new(dentries, false)
     }
 
-    pub(super) fn read_from(page_cache: &Vmo, offset: usize) -> Result<Self> {
+    pub(super) fn read_from(page_cache: &PageCache, offset: usize) -> Result<Self> {
         let mut iter = ExfatDentryIterator::new(page_cache, offset, None)?;
         let primary_dentry_result = iter.next();
 
@@ -442,13 +442,13 @@ pub(super) struct ExfatDentryIterator<'a> {
     /// The dentry position in current inode.
     entry: u32,
     /// The page cache of the iterated inode.
-    page_cache: &'a Vmo,
+    page_cache: &'a PageCache,
     /// Remaining size that can be iterated. If none, iterate through the whole cluster chain.
     size: Option<usize>,
 }
 
 impl<'a> ExfatDentryIterator<'a> {
-    pub fn new(page_cache: &'a Vmo, offset: usize, size: Option<usize>) -> Result<Self> {
+    pub fn new(page_cache: &'a PageCache, offset: usize, size: Option<usize>) -> Result<Self> {
         if size.is_some() && !size.unwrap().is_multiple_of(DENTRY_SIZE) {
             return_errno_with_message!(Errno::EINVAL, "remaining size unaligned to dentry size")
         }

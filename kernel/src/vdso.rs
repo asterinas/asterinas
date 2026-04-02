@@ -26,13 +26,13 @@ use ostd_pod::IntoBytes;
 use spin::Once;
 
 use crate::{
+    page_cache::{Vmo, VmoOptions},
     syscall::ClockId,
     time::{
         START_TIME, SystemTime,
         clocks::MonotonicClock,
         timer::{Timeout, TimerGuard},
     },
-    vm::vmo::{Vmo, VmoOptions},
 };
 
 const CLOCK_TAI: usize = 11;
@@ -263,7 +263,7 @@ impl Vdso {
         Self {
             data: SpinLock::new(vdso_data),
             vmo: vdso_vmo,
-            data_frame,
+            data_frame: data_frame.into(),
         }
     }
 

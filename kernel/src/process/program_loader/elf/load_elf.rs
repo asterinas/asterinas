@@ -218,7 +218,7 @@ struct ElfMappedInfo {
 /// i.e., will not include any padding bytes. So the boundaries may not
 /// be page-aligned.
 ///
-/// [`Vmo`]: crate::vm::vmo::Vmo
+/// [`Vmo`]: crate::page_cache::Vmo
 fn map_segment_vmos(
     elf: &ElfHeaders,
     vmar: &Vmar,
@@ -384,7 +384,7 @@ fn map_segment_vmo(
     if segment_size != 0 {
         let vm_map_options = vmar
             .new_map(segment_size, perms)?
-            .vmo(elf_vmo.clone())
+            .vmo(elf_vmo.as_vmo())
             .path(elf_file.clone())
             .vmo_offset(segment_offset)
             .offset(VmarMapOffset::FixedReplace(offset))

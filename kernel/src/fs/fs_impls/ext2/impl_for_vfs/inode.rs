@@ -16,9 +16,9 @@ use crate::{
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
+    page_cache::PageCache,
     prelude::*,
     process::{Gid, Uid},
-    vm::vmo::Vmo,
 };
 
 impl InodeIo for Ext2Inode {
@@ -121,7 +121,7 @@ impl Inode for Ext2Inode {
         Ok(())
     }
 
-    fn page_cache(&self) -> Option<Arc<Vmo>> {
+    fn page_cache(&self) -> Option<PageCache> {
         Some(self.page_cache())
     }
 

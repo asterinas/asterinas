@@ -12,7 +12,7 @@ use super::{
     fs::ExfatFs,
     utils::calc_checksum_32,
 };
-use crate::{fs::exfat::fat::FatChainFlags, prelude::*, vm::vmo::Vmo};
+use crate::{fs::exfat::fat::FatChainFlags, page_cache::PageCache, prelude::*};
 
 const UPCASE_MANDATORY_SIZE: usize = 128;
 
@@ -32,7 +32,7 @@ impl ExfatUpcaseTable {
 
     pub(super) fn load(
         fs_weak: Weak<ExfatFs>,
-        root_page_cache: &Vmo,
+        root_page_cache: &PageCache,
         root_chain: ExfatChain,
     ) -> Result<Self> {
         let dentry_iterator = ExfatDentryIterator::new(root_page_cache, 0, None)?;

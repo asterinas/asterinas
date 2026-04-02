@@ -14,7 +14,7 @@ use super::{
     fat::{ClusterID, ExfatChain},
     fs::ExfatFs,
 };
-use crate::{fs::exfat::fat::FatChainFlags, prelude::*, vm::vmo::Vmo};
+use crate::{fs::exfat::fat::FatChainFlags, page_cache::PageCache, prelude::*};
 
 // TODO: use u64
 type BitStore = u8;
@@ -36,7 +36,7 @@ pub(super) struct ExfatBitmap {
 impl ExfatBitmap {
     pub(super) fn load(
         fs_weak: Weak<ExfatFs>,
-        root_page_cache: &Vmo,
+        root_page_cache: &PageCache,
         root_chain: ExfatChain,
     ) -> Result<Self> {
         let dentry_iterator = ExfatDentryIterator::new(root_page_cache, 0, None)?;

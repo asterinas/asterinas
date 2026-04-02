@@ -34,7 +34,7 @@ use core::{
 use align_ext::AlignExt;
 use aster_block::bio::{BioStatus, BioWaiter};
 use ostd::{
-    mm::{VmIo, VmIoFill, VmReader, VmWriter, io_util::HasVmReaderWriter},
+    mm::{VmIo, VmIoFill, VmReader, VmWriter, io::util::HasVmReaderWriter},
     task::disable_preempt,
 };
 use xarray::{Cursor, LockedXArray, XArray};

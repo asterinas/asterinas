@@ -5,11 +5,11 @@ use align_ext::AlignExt;
 use super::SyscallReturn;
 use crate::{
     fs::file::file_table::{RawFileDesc, get_file_fast},
+    page_cache::VmoOptions,
     prelude::*,
     vm::{
         perms::VmPerms,
         vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, VmarMapOffset},
-        vmo::VmoOptions,
     },
 };
 
