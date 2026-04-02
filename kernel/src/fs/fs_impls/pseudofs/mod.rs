@@ -28,6 +28,7 @@ use core::{
 pub use allocator::AnonDeviceId;
 pub use anon_inodefs::AnonInodeFs;
 use device_id::DeviceId;
+pub(in crate::fs) use nsfs::NsInode;
 pub use nsfs::{NsCommonOps, NsFile, NsType, StashedDentry};
 pub use pidfdfs::PidfdFs;
 pub(in crate::fs) use pipefs::PipeFs;

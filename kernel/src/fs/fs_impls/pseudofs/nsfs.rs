@@ -63,7 +63,7 @@ impl NsFs {
 }
 
 /// An inode representing a namespace entry in [`NsFs`].
-struct NsInode<T: NsCommonOps> {
+pub(in crate::fs) struct NsInode<T: NsCommonOps> {
     common: PseudoInode,
     ns: Arc<T>,
     name: String,
@@ -89,6 +89,10 @@ impl<T: NsCommonOps> NsInode<T> {
 
     fn name(&self) -> &str {
         &self.name
+    }
+
+    pub(in crate::fs) fn ns(&self) -> &Arc<T> {
+        &self.ns
     }
 }
 
@@ -332,6 +336,11 @@ impl StashedDentry {
             ino,
             dentry: Mutex::new(Weak::new()),
         }
+    }
+
+    /// Returns the inode number reserved for this stashed dentry.
+    pub(in crate::fs) fn ino(&self) -> u64 {
+        self.ino
     }
 
     /// Returns the [`Path`] for the given namespace, reusing a cached
