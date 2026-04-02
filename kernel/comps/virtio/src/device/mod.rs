@@ -6,6 +6,7 @@ use crate::queue::QueueError;
 
 pub mod block;
 pub mod console;
+pub mod filesystem;
 pub mod input;
 pub mod network;
 pub mod socket;
@@ -36,6 +37,7 @@ pub(crate) enum VirtioDeviceType {
     Pstore = 22,
     Iommu = 23,
     Memory = 24,
+    FileSystem = 26,
 }
 
 #[derive(Debug)]
@@ -45,6 +47,10 @@ pub enum VirtioDeviceError {
     QueuesAmountDoNotMatch(u16, u16),
     /// unknown error of queue
     QueueUnknownError,
+    /// Request IDs have been exhausted
+    RequestIdExhausted,
+    /// filesystem request failed with a FUSE negative errno value
+    FileSystemError(i32),
     /// The input virtio capability list contains invalid element
     CapabilityListError,
 }

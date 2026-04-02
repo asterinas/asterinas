@@ -28,7 +28,7 @@ pub mod pci;
 /// 3. Access device config memory.
 /// 4. Config virtqueue.
 /// 5. Get the interrupt resources allocated to the device.
-pub trait VirtioTransport: Sync + Send + Debug {
+pub(crate) trait VirtioTransport: Sync + Send + Debug {
     // ====================Device related APIs=======================
 
     /// Get device type.
