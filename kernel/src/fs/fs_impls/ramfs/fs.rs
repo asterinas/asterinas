@@ -11,7 +11,8 @@ use aster_util::slot_vec::SlotVec;
 use device_id::DeviceId;
 use hashbrown::HashMap;
 use ostd::{
-    mm::{HasSize, io::util::HasVmReaderWriter},
+    mm::io::util::HasVmReaderWriter,
+    prelude::*,
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
@@ -32,7 +33,7 @@ use crate::{
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
-    prelude::*,
+    prelude::{Result, *},
     process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
     vm::vmo::Vmo,

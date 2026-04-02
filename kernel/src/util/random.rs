@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use rand::{RngCore, SeedableRng, rngs::StdRng};
+use rand::prelude::*;
 use spin::Once;
 
 use crate::prelude::*;

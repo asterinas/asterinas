@@ -15,12 +15,10 @@ mod tree;
 use alloc::{boxed::Box, collections::BTreeSet, string::String, vec::Vec};
 use core::{any::Any, format_args};
 
-use ostd::{
-    early_print, early_println,
-    ktest::{
-        KtestError, KtestItem, KtestIter, get_ktest_crate_whitelist, get_ktest_test_whitelist,
-    },
+use ostd::ktest::{
+    KtestError, KtestItem, KtestIter, get_ktest_crate_whitelist, get_ktest_test_whitelist,
 };
+use ostd::prelude::*;
 use owo_colors::OwoColorize;
 use path::{KtestPath, SuffixTrie};
 use tree::{KtestCrate, KtestTree};
@@ -71,7 +69,7 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     begin_panic(Box::new(throw_info.clone()));
 
     // If not caught, abort the kernel.
-    early_println!("An uncaught panic occurred: {:#?}", throw_info);
+    println!("An uncaught panic occurred: {:#?}", throw_info);
 
     ostd::prelude::abort();
 }
@@ -97,7 +95,7 @@ where
         test_whitelist.map(|paths| SuffixTrie::from_paths(paths.map(|p| KtestPath::from(&p))));
 
     let tree = KtestTree::from_iter(KtestIter::new());
-    early_print!(
+    print!(
         "\n[ktest runner] running {} tests in {} crates\n",
         tree.nr_tot_tests(),
         tree.nr_tot_crates()
@@ -108,7 +106,7 @@ where
         if let Some(crate_set) = &crate_set
             && !crate_set.contains(crate_.name())
         {
-            early_print!("\n[ktest runner] skipping crate \"{}\".\n", crate_.name());
+            print!("\n[ktest runner] skipping crate \"{}\".\n", crate_.name());
             continue;
         }
         match run_crate_ktests(crate_, &whitelist_trie) {
@@ -116,13 +114,13 @@ where
             KtestResult::Failed => return KtestResult::Failed,
         }
     }
-    early_print!("\n[ktest runner] All crates tested.\n");
+    print!("\n[ktest runner] All crates tested.\n");
     KtestResult::Ok
 }
 
 fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> KtestResult {
     let crate_name = crate_.name();
-    early_print!(
+    print!(
         "\nrunning {} tests in crate \"{}\"\n\n",
         crate_.nr_tot_tests(),
         crate_name
@@ -141,7 +139,7 @@ fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> Ktes
                     continue;
                 }
             }
-            early_print!(
+            print!(
                 "test {}::{} ...",
                 test.info().module_path,
                 test.info().fn_name
@@ -152,11 +150,11 @@ fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> Ktes
                     as fn(fn()) -> Result<(), Box<dyn Any + Send + 'static>>),
             ) {
                 Ok(()) => {
-                    early_print!(" {}\n", "ok".green());
+                    print!(" {}\n", "ok".green());
                     passed += 1;
                 }
                 Err(e) => {
-                    early_print!(" {}\n", "FAILED".red());
+                    print!(" {}\n", "FAILED".red());
                     failed_tests.push((test.clone(), e.clone()));
                 }
             }
@@ -164,21 +162,19 @@ fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> Ktes
     }
     let failed = failed_tests.len();
     if failed == 0 {
-        early_print!("\ntest result: {}.", "ok".green());
+        print!("\ntest result: {}.", "ok".green());
     } else {
-        early_print!("\ntest result: {}.", "FAILED".red());
+        print!("\ntest result: {}.", "FAILED".red());
     }
-    early_print!(
+    print!(
         " {} passed; {} failed; {} filtered out.\n",
-        passed,
-        failed,
-        filtered
+        passed, failed, filtered
     );
     assert!(passed + failed + filtered == crate_.nr_tot_tests());
     if failed > 0 {
-        early_print!("\nfailures:\n\n");
+        print!("\nfailures:\n\n");
         for (t, e) in failed_tests {
-            early_print!(
+            print!(
                 "---- {}:{}:{} - {} ----\n\n",
                 t.info().source,
                 t.info().line,
@@ -187,18 +183,18 @@ fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> Ktes
             );
             match e {
                 KtestError::Panic(s) => {
-                    early_print!("[caught panic] {}\n", s);
+                    print!("[caught panic] {}\n", s);
                 }
                 KtestError::ShouldPanicButNoPanic => {
-                    early_print!("test did not panic as expected\n");
+                    print!("test did not panic as expected\n");
                 }
                 KtestError::ExpectedPanicNotMatch(expected, s) => {
-                    early_print!("[caught panic] expected panic not match\n");
-                    early_print!("expected: {}\n", expected);
-                    early_print!("caught: {}\n", s);
+                    print!("[caught panic] expected panic not match\n");
+                    print!("expected: {}\n", expected);
+                    print!("caught: {}\n", s);
                 }
                 KtestError::Unknown => {
-                    early_print!(
+                    print!(
                         "[caught panic] unknown panic payload! (fatal panic handling error in ktest)\n"
                     );
                 }

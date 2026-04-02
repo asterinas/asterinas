@@ -3,11 +3,11 @@
 use alloc::sync::Arc;
 
 use ostd::{
-    Result,
     mm::{
-        Daddr, FallibleVmWrite, HasDaddr, HasSize, Infallible, VmReader,
+        Daddr, FallibleVmWrite, HasDaddr, Infallible, VmReader,
         dma::{FromDevice, ToDevice},
     },
+    prelude::*,
 };
 use ostd_pod::Pod;
 

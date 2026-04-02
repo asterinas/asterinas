@@ -4,7 +4,10 @@ use alloc::sync::Arc;
 
 use aster_framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE, PixelFormat};
 use device_id::{DeviceId, MajorId, MinorId};
-use ostd::mm::{HasPaddr, HasSize, VmIo, io::util::HasVmReaderWriter};
+use ostd::{
+    mm::{VmIo, io::util::HasVmReaderWriter},
+    prelude::*,
+};
 
 use super::{Device, DeviceType, registry::char};
 use crate::{
@@ -14,7 +17,7 @@ use crate::{
         file::{FileIo, Mappable, StatusFlags},
         vfs::inode::InodeIo,
     },
-    prelude::*,
+    prelude::{Result, *},
     process::signal::{PollHandle, Pollable},
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };

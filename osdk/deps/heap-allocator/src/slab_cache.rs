@@ -5,10 +5,11 @@
 use core::alloc::AllocError;
 
 use ostd::mm::{
-    PAGE_SIZE, Paddr,
+    PAGE_SIZE,
     frame::linked_list::LinkedList,
     heap::{HeapSlot, Slab, SlabMeta},
 };
+use ostd::prelude::*;
 
 const EXPECTED_EMPTY_SLABS: usize = 4;
 const MAX_EMPTY_SLABS: usize = 16;

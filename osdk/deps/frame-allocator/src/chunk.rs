@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::prelude::*;
 use ostd::{
     impl_frame_meta_for,
-    mm::{HasPaddr, PAGE_SIZE, Paddr, UniqueFrame, frame::linked_list::Link},
+    mm::{PAGE_SIZE, UniqueFrame, frame::linked_list::Link},
 };
 
 /// The order of a buddy chunk.

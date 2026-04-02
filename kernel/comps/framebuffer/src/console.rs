@@ -8,7 +8,8 @@ use aster_console::{
     mode::{ConsoleMode, KeyboardMode, KeyboardModeFlags},
 };
 use ostd::{
-    mm::{HasSize, VmReader},
+    mm::VmReader,
+    prelude::*,
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
 };
 use spin::Once;

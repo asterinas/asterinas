@@ -5,7 +5,7 @@
 
 use proc_macro::{Diagnostic, Level, Span, TokenStream};
 use quote::quote;
-use rand::{Rng, distr::Alphanumeric};
+use rand::{distr::Alphanumeric, prelude::Rng};
 use syn::{Expr, Ident, ItemFn, parse_macro_input};
 
 /// A macro attribute to mark the kernel entry point.

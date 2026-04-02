@@ -9,10 +9,10 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use ostd::prelude::*;
 use ostd::{
     cpu_local,
     irq::DisabledLocalIrqGuard,
-    mm::Paddr,
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
 };
 

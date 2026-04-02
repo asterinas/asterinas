@@ -4,15 +4,16 @@ use core::sync::atomic::AtomicU64;
 
 use align_ext::AlignExt;
 use aster_util::mem_obj_slice::Slice;
-use bitvec::array::BitArray;
+use bitvec::prelude::BitArray;
 use int_to_c_enum::TryFromInt;
 use ostd::{
     Error,
     mm::{
-        HasSize, Infallible, USegment, VmReader, VmWriter,
+        Infallible, USegment, VmReader, VmWriter,
         dma::DmaStream,
         io::util::{HasVmReaderWriter, VmReaderWriterResult},
     },
+    prelude::*,
     sync::{SpinLock, WaitQueue},
 };
 use spin::Once;
