@@ -4,14 +4,16 @@ use core::time::Duration;
 
 pub(super) use self::{
     builder::{ProcDirBuilder, ProcFileBuilder, ProcSymBuilder},
-    dir::{DirOps, ProcDir, lookup_child_from_table, populate_children_from_table},
+    dir::{
+        DirOps, ProcDir, ReaddirEntry, child_names_from_table, keyed_readdir_entries,
+        lookup_child_from_table, sequential_readdir_entries,
+    },
     file::{FileOps, FileOpsByHandle, ProcFile, read_i32_from},
     sym::{ProcSym, SymOps},
 };
-use super::{BLOCK_SIZE, ProcFs};
 use crate::{
     fs::{
-        file::{InodeMode, InodeType},
+        file::InodeMode,
         vfs::{
             file_system::FileSystem,
             inode::{Extension, Metadata},
@@ -30,16 +32,16 @@ struct Common {
     metadata: RwLock<Metadata>,
     extension: Extension,
     fs: Weak<dyn FileSystem>,
-    is_volatile: bool,
+    need_revalidation: bool,
 }
 
 impl Common {
-    fn new(metadata: Metadata, fs: Weak<dyn FileSystem>, is_volatile: bool) -> Self {
+    fn new(metadata: Metadata, fs: Weak<dyn FileSystem>, need_revalidation: bool) -> Self {
         Self {
             metadata: RwLock::new(metadata),
             extension: Extension::new(),
             fs,
-            is_volatile,
+            need_revalidation,
         }
     }
 
@@ -53,10 +55,6 @@ impl Common {
 
     fn ino(&self) -> u64 {
         self.metadata.read().ino
-    }
-
-    fn type_(&self) -> InodeType {
-        self.metadata.read().type_
     }
 
     fn size(&self) -> usize {
@@ -114,8 +112,8 @@ impl Common {
         Ok(())
     }
 
-    fn is_volatile(&self) -> bool {
-        self.is_volatile
+    fn need_revalidation(&self) -> bool {
+        self.need_revalidation
     }
 
     fn extension(&self) -> &Extension {

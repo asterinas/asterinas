@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::TidDirOps;
+use super::{TidDirOps, process_from_pid_entry};
 use crate::{
     events::IoEvents,
     fs::{
@@ -10,21 +10,22 @@ use crate::{
     },
     prelude::*,
     process::{
-        Process, VmarSnapshot,
+        VmarSnapshot,
+        pid_table::PidEntry,
         posix_thread::{AsPosixThread, alien_access::AlienAccessMode},
         signal::{PollHandle, Pollable},
     },
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/mem` (and also `/proc/[pid]/mem`).
-pub struct MemFileOps(Arc<Process>);
+pub struct MemFileOps(Arc<PidEntry>);
 
 impl MemFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3347>
-        ProcFileBuilder::new(Self(process_ref), mkmod!(u+rw))
+        ProcFileBuilder::new(Self(dir.pid_entry().clone()), mkmod!(u+rw))
             .parent(parent)
+            .need_revalidation()
             .build()
             .unwrap()
     }
@@ -36,11 +37,13 @@ impl FileOpsByHandle for MemFileOps {
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
     ) -> Result<Box<dyn FileIo>> {
+        let process = process_from_pid_entry(&self.0)
+            .ok_or_else(|| Error::with_message(Errno::ENOENT, "the process has exited"))?;
         // Hold the process VMAR lock while checking access permissions and
         // taking the VMAR identity snapshot to prevent race conditions.
-        let vmar_guard = self.0.lock_vmar();
+        let vmar_guard = process.lock_vmar();
 
-        self.0
+        process
             .main_thread()
             .as_posix_thread()
             .unwrap()
@@ -56,7 +59,7 @@ impl FileOpsByHandle for MemFileOps {
 }
 
 /// A file handle opened from `/proc/[pid]/task/[tid]/mem` (and also `/proc/[pid]/mem`).
-struct MemFileHandle(Arc<Process>, VmarSnapshot);
+struct MemFileHandle(Arc<PidEntry>, VmarSnapshot);
 
 impl Pollable for MemFileHandle {
     fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
@@ -72,7 +75,10 @@ impl InodeIo for MemFileHandle {
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        let vmar_guard = self.0.lock_vmar();
+        let Some(process) = process_from_pid_entry(&self.0) else {
+            return Ok(0);
+        };
+        let vmar_guard = process.lock_vmar();
         if !vmar_guard.is_same_as(&self.1) {
             // The process has executed a new program.
             return Ok(0);
@@ -95,7 +101,10 @@ impl InodeIo for MemFileHandle {
         reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        let vmar_guard = self.0.lock_vmar();
+        let Some(process) = process_from_pid_entry(&self.0) else {
+            return Ok(0);
+        };
+        let vmar_guard = process.lock_vmar();
         if !vmar_guard.is_same_as(&self.1) {
             // The process has executed a new program.
             return Ok(0);

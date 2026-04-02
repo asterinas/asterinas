@@ -233,6 +233,21 @@ impl MknodType {
     }
 }
 
+/// Indicates whether a cached dentry remains usable after revalidation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevalidateResult {
+    /// Keeps using the cached dentry.
+    Valid,
+    /// Drops the cached dentry and retries the lookup.
+    Invalid,
+}
+
+impl RevalidateResult {
+    pub const fn is_valid(self) -> bool {
+        matches!(self, Self::Valid)
+    }
+}
+
 /// I/O operations in an [`Inode`].
 ///
 /// This abstracts the common I/O operations used by both [`Inode`] (for regular files) and
@@ -314,6 +329,20 @@ pub trait Inode: Any + InodeIo + Send + Sync {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Reads directory entries using the opened `dir_path` as the lookup anchor.
+    ///
+    /// File systems that need dcache-backed child instantiation during `readdir`
+    /// can override this method. The default implementation forwards to
+    /// [`Inode::readdir_at`].
+    fn readdir_at_path(
+        &self,
+        _dir_path: &Path,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+    ) -> Result<usize> {
+        self.readdir_at(offset, visitor)
+    }
+
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
@@ -358,25 +387,32 @@ pub trait Inode: Any + InodeIo + Send + Sync {
 
     fn fs(&self) -> Arc<dyn FileSystem>;
 
-    /// Returns whether a VFS dentry for this inode should be put into the dentry cache.
+    /// Returns whether a cached dentry for this inode requires revalidation.
+    fn need_revalidation(&self) -> bool {
+        false
+    }
+
+    /// Returns whether cached negative child entries under this directory require revalidation.
+    fn need_neg_child_revalidation(&self) -> bool {
+        false
+    }
+
+    /// Revalidates a cached positive child entry under this directory.
     ///
-    /// The dentry cache in the VFS layer can accelerate the lookup of inodes. So usually,
-    /// it is preferable to use the dentry cache. And thus, the default return value of this method
-    /// is `true`.
+    /// Returns [`RevalidateResult::Valid`] if the cached child still matches `name`.
+    /// Returns [`RevalidateResult::Invalid`] if the cached entry should be dropped before
+    /// retrying the lookup.
+    fn revalidate_pos_child(&self, name: &str, child: &Arc<dyn Inode>) -> RevalidateResult {
+        RevalidateResult::Valid
+    }
+
+    /// Revalidates a cached negative child entry under this directory.
     ///
-    /// But this caching can raise consistency issues in certain use cases. Specifically, the dentry
-    /// cache works on the assumption that all FS operations go through the dentry layer first.
-    /// This is why the dentry cache can reflect the up-to-date FS state. Yet, this assumption
-    /// may be broken. If the inodes of a file system may "disappear" without unlinking through the
-    /// VFS layer, then their dentries should not be cached. For example, an inode in procfs
-    /// (say, `/proc/1/fd/2`) can "disappear" without notice from the perspective of the dentry cache.
-    /// So for such inodes, they are incompatible with the dentry cache. And this method returns `false`.
-    ///
-    /// Note that if any ancestor directory of an inode has this method returns `false`, then
-    /// this inode would not be cached by the dentry cache, even when the method of this
-    /// inode returns `true`.
-    fn is_dentry_cacheable(&self) -> bool {
-        true
+    /// Returns [`RevalidateResult::Valid`] if `name` should still be treated as absent.
+    /// Returns [`RevalidateResult::Invalid`] if the negative cache entry should be dropped
+    /// before retrying the lookup.
+    fn revalidate_neg_child(&self, name: &str) -> RevalidateResult {
+        RevalidateResult::Valid
     }
 
     /// Returns the end position for [`SeekFrom::End`].

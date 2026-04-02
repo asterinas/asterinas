@@ -70,6 +70,7 @@ impl StatusFileOps {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3326>
         ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r))
             .parent(parent)
+            .need_revalidation()
             .build()
             .unwrap()
     }
@@ -79,8 +80,14 @@ impl FileOps for StatusFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
-        let process = self.0.process_ref.as_ref();
-        let thread = self.0.thread();
+        let process = self
+            .0
+            .process()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has been reaped"))?;
+        let thread = self
+            .0
+            .thread()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has been reaped"))?;
         let posix_thread = thread.as_posix_thread().unwrap();
         let credentials = posix_thread.credentials();
 
@@ -155,13 +162,11 @@ impl FileOps for StatusFileOps {
             )?;
         }
 
-        if process.pid() == posix_thread.tid() {
-            writeln!(
-                printer,
-                "Threads:\t{}",
-                process.tasks().lock().as_slice().len()
-            )?;
-        }
+        writeln!(
+            printer,
+            "Threads:\t{}",
+            process.tasks().lock().as_slice().len()
+        )?;
 
         writeln!(
             printer,

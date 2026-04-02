@@ -75,13 +75,38 @@ use crate::{
 /// - env_start        : Start address of environment variables.
 /// - env_end          : End address of environment variables.
 /// - exit_code        : Process exit code as returned by waitpid(2).
-pub struct StatFileOps(TidDirOps);
+pub struct StatFileOps {
+    dir: TidDirOps,
+    mode: StatMode,
+}
+
+#[derive(Clone, Copy)]
+enum StatMode {
+    Process,
+    Thread,
+}
 
 impl StatFileOps {
-    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub fn new_thread_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        Self::new_inode_with_mode(dir.clone(), StatMode::Thread, parent)
+    }
+
+    pub fn new_process_inode(
+        dir: &super::super::PidDirOps,
+        parent: Weak<dyn Inode>,
+    ) -> Arc<dyn Inode> {
+        Self::new_inode_with_mode(dir.0.clone(), StatMode::Process, parent)
+    }
+
+    fn new_inode_with_mode(
+        dir: TidDirOps,
+        mode: StatMode,
+        parent: Weak<dyn Inode>,
+    ) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3341>
-        ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r))
+        ProcFileBuilder::new(Self { dir, mode }, mkmod!(a+r))
             .parent(parent)
+            .need_revalidation()
             .build()
             .unwrap()
     }
@@ -89,8 +114,14 @@ impl StatFileOps {
 
 impl FileOps for StatFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let process = self.0.process_ref.as_ref();
-        let thread = self.0.thread();
+        let process = self
+            .dir
+            .process()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has been reaped"))?;
+        let thread = self
+            .dir
+            .thread()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has been reaped"))?;
         let posix_thread = thread.as_posix_thread().unwrap();
 
         // According to the Linux implementation, a process's `/proc/<pid>/stat` should be
@@ -142,10 +173,9 @@ impl FileOps for StatFileOps {
         let cmaj_flt = 0;
 
         let (utime, stime) = {
-            let prof_clock = if self.0.thread_ref.is_none() {
-                process.prof_clock()
-            } else {
-                posix_thread.prof_clock()
+            let prof_clock = match self.mode {
+                StatMode::Process => process.prof_clock(),
+                StatMode::Thread => posix_thread.prof_clock(),
             };
             (
                 prof_clock.user_clock().read_jiffies().as_u64(),

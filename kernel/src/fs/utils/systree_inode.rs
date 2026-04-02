@@ -19,7 +19,10 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::{FileSystem, SuperBlock},
-            inode::{Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
+            inode::{
+                Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, RevalidateResult,
+                SymbolicLink,
+            },
         },
     },
     prelude::*,
@@ -259,7 +262,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         Ok(inode)
     }
 
-    fn new_dentry_iter(&self, min_ino: Ino) -> impl Iterator<Item = Dentry> + '_
+    fn new_dentry_iter(&self, min_ino: Ino) -> impl Iterator<Item = SysDentry> + '_
     where
         Self: Sized + 'static,
     {
@@ -614,8 +617,24 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
-    default fn is_dentry_cacheable(&self) -> bool {
-        true
+    default fn need_revalidation(&self) -> bool {
+        false
+    }
+
+    default fn need_neg_child_revalidation(&self) -> bool {
+        false
+    }
+
+    default fn revalidate_pos_child(
+        &self,
+        _name: &str,
+        _child: &Arc<dyn Inode>,
+    ) -> RevalidateResult {
+        RevalidateResult::Valid
+    }
+
+    default fn revalidate_neg_child(&self, _name: &str) -> RevalidateResult {
+        RevalidateResult::Valid
     }
 
     default fn extension(&self) -> &Extension {
@@ -641,9 +660,9 @@ impl<'a, I: Iterator<Item = &'a SysAttr>> AttrDentryIter<'a, I> {
 }
 
 impl<'a, I: Iterator<Item = &'a SysAttr>> Iterator for AttrDentryIter<'a, I> {
-    type Item = Dentry;
+    type Item = SysDentry;
 
-    fn next(&mut self) -> Option<Dentry> {
+    fn next(&mut self) -> Option<SysDentry> {
         let (iter, sys_node) = self.attrs_and_node.as_mut()?;
 
         for attr in iter {
@@ -655,7 +674,7 @@ impl<'a, I: Iterator<Item = &'a SysAttr>> Iterator for AttrDentryIter<'a, I> {
 
             if attr_ino >= self.min_ino {
                 // Filter by min_ino
-                return Some(Dentry {
+                return Some(SysDentry {
                     ino: attr_ino,
                     name: attr.name().clone(),
                     type_: InodeType::File,
@@ -683,9 +702,9 @@ impl NodeDentryIter {
 }
 
 impl Iterator for NodeDentryIter {
-    type Item = Dentry;
+    type Item = SysDentry;
 
-    fn next(&mut self) -> Option<Dentry> {
+    fn next(&mut self) -> Option<SysDentry> {
         while self.index < self.nodes.len() {
             let obj = &self.nodes[self.index];
             self.index += 1;
@@ -699,7 +718,7 @@ impl Iterator for NodeDentryIter {
                     SysNodeType::Leaf => InodeType::Dir,
                     SysNodeType::Symlink => InodeType::SymLink,
                 };
-                return Some(Dentry {
+                return Some(SysDentry {
                     ino: obj_ino,
                     name: obj.name().clone(),
                     type_,
@@ -727,14 +746,14 @@ impl<'a, KInode: SysTreeInodeTy> ThisAndParentDentryIter<'a, KInode> {
 }
 
 impl<KInode: SysTreeInodeTy> Iterator for ThisAndParentDentryIter<'_, KInode> {
-    type Item = Dentry;
+    type Item = SysDentry;
 
-    fn next(&mut self) -> Option<Dentry> {
+    fn next(&mut self) -> Option<SysDentry> {
         match self.state {
             0 => {
                 self.state = 1;
                 if self.inode.metadata().ino >= self.min_ino {
-                    Some(Dentry {
+                    Some(SysDentry {
                         ino: self.inode.metadata().ino,
                         name: Cow::from("."),
                         type_: InodeType::Dir,
@@ -751,7 +770,7 @@ impl<KInode: SysTreeInodeTy> Iterator for ThisAndParentDentryIter<'_, KInode> {
                     .upgrade()
                     .map_or(self.inode.metadata().ino, |p| p.metadata().ino);
                 if parent_ino >= self.min_ino {
-                    Some(Dentry {
+                    Some(SysDentry {
                         ino: parent_ino,
                         name: Cow::from(".."),
                         type_: InodeType::Dir,
@@ -766,7 +785,7 @@ impl<KInode: SysTreeInodeTy> Iterator for ThisAndParentDentryIter<'_, KInode> {
 }
 
 /// A directory entry of sysfs.
-struct Dentry {
+struct SysDentry {
     pub ino: Ino,
     pub name: SysStr,
     pub type_: InodeType,

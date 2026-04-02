@@ -2,9 +2,10 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use aster_util::slot_vec::SlotVec;
-use ostd::sync::RwMutexUpgradeableGuard;
-use template::{DirOps, ProcDir, lookup_child_from_table, populate_children_from_table};
+use template::{
+    DirOps, ProcDir, ReaddirEntry, child_names_from_table, keyed_readdir_entries,
+    lookup_child_from_table, sequential_readdir_entries,
+};
 
 use self::{
     cmdline::CmdLineFileOps, cpuinfo::CpuInfoFileOps, loadavg::LoadAvgFileOps,
@@ -12,22 +13,21 @@ use self::{
     sys::SysDirOps, thread_self::ThreadSelfSymOps, uptime::UptimeFileOps, version::VersionFileOps,
 };
 use crate::{
-    events::Observer,
     fs::{
         file::mkmod,
         procfs::{filesystems::FileSystemsFileOps, stat::StatFileOps},
         pseudofs::AnonDeviceId,
-        utils::{DirEntryVecExt, NAME_MAX},
+        utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
-            inode::Inode,
+            inode::{Inode, RevalidateResult},
             registry::{FsProperties, FsType},
         },
     },
     prelude::*,
     process::{
         Pid,
-        pid_table::{self, PidEvent},
+        pid_table::{self, PidEntry},
     },
 };
 
@@ -141,12 +141,7 @@ impl RootDirOps {
     pub fn new_inode(fs: Weak<ProcFs>, sb: &SuperBlock) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/root.c#L368>
         let fs: Weak<dyn FileSystem> = fs;
-        let root_inode = ProcDir::new_root(Self, fs, PROC_ROOT_INO, sb, mkmod!(a+rx));
-
-        let weak_ptr = Arc::downgrade(&root_inode);
-        pid_table::pid_table_mut().register_observer(weak_ptr);
-
-        root_inode
+        ProcDir::new_root(Self, fs, PROC_ROOT_INO, sb, mkmod!(a+rx), true)
     }
 
     #[expect(clippy::type_complexity)]
@@ -164,42 +159,39 @@ impl RootDirOps {
         ("uptime", UptimeFileOps::new_inode),
         ("version", VersionFileOps::new_inode),
     ];
-}
 
-impl Observer<PidEvent> for ProcDir<RootDirOps> {
-    fn on_events(&self, events: &PidEvent) {
-        let PidEvent::Exit(pid) = events;
+    fn get_pid_entry(pid: Pid) -> Option<Arc<PidEntry>> {
+        let pid_table = pid_table::pid_table_mut();
+        pid_table
+            .get_entry(pid)
+            .filter(|pid_entry| pid_entry.process().is_some())
+    }
 
-        let mut cached_children = self.cached_children().write();
-        cached_children.remove_entry_by_name(&pid.to_string());
+    fn process_entries() -> Vec<(usize, String)> {
+        let pid_table = pid_table::pid_table_mut();
+        pid_table
+            .iter_process_entries()
+            .filter_map(|pid_entry| {
+                pid_entry.process().and_then(|process_ref| {
+                    usize::try_from(process_ref.pid())
+                        .ok()
+                        .map(|process_pid| (process_pid, process_pid.to_string()))
+                })
+            })
+            .collect()
     }
 }
 
 impl DirOps for RootDirOps {
-    // Lock order: PID table -> cached entries
-    //
-    // Note that inverting the lock order is non-trivial because `Observer::on_events` will be
-    // called with the PID table locked.
-
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if let Ok(pid) = name.parse::<Pid>()
-            && let pid_table = pid_table::pid_table_mut()
-            && let Some(process_ref) = pid_table.get_process(pid)
+            && let Some(pid_entry) = Self::get_pid_entry(pid)
         {
-            let mut cached_children = dir.cached_children().write();
-            return Ok(cached_children
-                .put_entry_if_not_found(name, move || {
-                    PidDirOps::new_inode(process_ref, dir.this_weak().clone())
-                })
-                .clone());
+            return Ok(PidDirOps::new_inode(pid_entry, dir.this_weak().clone()));
         }
 
-        let mut cached_children = dir.cached_children().write();
-
         if let Some(child) =
-            lookup_child_from_table(name, &mut cached_children, Self::STATIC_ENTRIES, |f| {
-                (f)(dir.this_weak().clone())
-            })
+            lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| (f)(dir.this_weak().clone()))
         {
             return Ok(child);
         }
@@ -207,26 +199,59 @@ impl DirOps for RootDirOps {
         return_errno_with_message!(Errno::ENOENT, "the file does not exist");
     }
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let pid_table = pid_table::pid_table_mut();
-        let mut cached_children = dir.cached_children().write();
+    fn child_names(&self, _dir: &ProcDir<Self>) -> Vec<String> {
+        let mut children = Self::process_entries()
+            .into_iter()
+            .map(|(_, name)| name)
+            .collect::<Vec<_>>();
+        children.extend(child_names_from_table(Self::STATIC_ENTRIES));
+        children
+    }
 
-        for process_ref in pid_table.iter_processes() {
-            let pid = process_ref.pid().to_string();
-            cached_children.put_entry_if_not_found(&pid, move || {
-                PidDirOps::new_inode(process_ref, dir.this_weak().clone())
-            });
+    fn entries_from_offset(&self, _dir: &ProcDir<Self>, offset: usize) -> Vec<ReaddirEntry> {
+        const FIRST_PID_OFFSET: usize = 2 + RootDirOps::STATIC_ENTRIES.len();
+        let mut entries =
+            sequential_readdir_entries(offset, 2, child_names_from_table(Self::STATIC_ENTRIES));
+        entries.extend(keyed_readdir_entries(
+            offset,
+            FIRST_PID_OFFSET,
+            Self::process_entries(),
+        ));
+        entries
+    }
+
+    fn revalidate_pos_child(&self, name: &str, child: &dyn Inode) -> RevalidateResult {
+        let Ok(pid) = name.parse::<Pid>() else {
+            return RevalidateResult::Invalid;
+        };
+        let Some(child) = child.downcast_ref::<ProcDir<PidDirOps>>() else {
+            return RevalidateResult::Invalid;
+        };
+        let Some(pid_entry) = Self::get_pid_entry(pid) else {
+            return RevalidateResult::Invalid;
+        };
+        if Arc::ptr_eq(&pid_entry, child.inner().pid_entry()) {
+            RevalidateResult::Valid
+        } else {
+            RevalidateResult::Invalid
+        }
+    }
+
+    fn revalidate_neg_child(&self, name: &str) -> RevalidateResult {
+        if Self::STATIC_ENTRIES
+            .iter()
+            .any(|(entry_name, _)| *entry_name == name)
+        {
+            return RevalidateResult::Valid;
         }
 
-        drop(pid_table);
-
-        populate_children_from_table(&mut cached_children, Self::STATIC_ENTRIES, |f| {
-            (f)(dir.this_weak().clone())
-        });
-
-        cached_children.downgrade()
+        let Ok(pid) = name.parse::<Pid>() else {
+            return RevalidateResult::Valid;
+        };
+        if Self::get_pid_entry(pid).is_none() {
+            RevalidateResult::Valid
+        } else {
+            RevalidateResult::Invalid
+        }
     }
 }

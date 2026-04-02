@@ -12,5 +12,5 @@ pub use self::{
     events::{Events, EventsFilter},
     io_events::IoEvents,
     observer::Observer,
-    subject::{Subject, SyncSubject},
+    subject::SyncSubject,
 };

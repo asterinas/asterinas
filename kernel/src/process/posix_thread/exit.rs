@@ -69,7 +69,7 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
         }
         current_thread.exit();
 
-        tasks.remove_exited(&current_task, posix_thread.tid())
+        tasks.remove_exited(&current_task)
     };
 
     wake_clear_ctid(thread_local);

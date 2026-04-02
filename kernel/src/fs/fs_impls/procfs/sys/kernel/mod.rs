@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_util::slot_vec::SlotVec;
-use ostd::sync::RwMutexUpgradeableGuard;
-
 use crate::{
     fs::{
         file::mkmod,
@@ -11,9 +8,7 @@ use crate::{
             sys::kernel::{
                 cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps, yama::YamaDirOps,
             },
-            template::{
-                DirOps, ProcDirBuilder, lookup_child_from_table, populate_children_from_table,
-            },
+            template::{DirOps, ProcDirBuilder, child_names_from_table, lookup_child_from_table},
         },
         vfs::inode::Inode,
     },
@@ -48,12 +43,8 @@ impl KernelDirOps {
 
 impl DirOps for KernelDirOps {
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
-        let mut cached_children = dir.cached_children().write();
-
         if let Some(child) =
-            lookup_child_from_table(name, &mut cached_children, Self::STATIC_ENTRIES, |f| {
-                (f)(dir.this_weak().clone())
-            })
+            lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| (f)(dir.this_weak().clone()))
         {
             return Ok(child);
         }
@@ -61,16 +52,7 @@ impl DirOps for KernelDirOps {
         return_errno_with_message!(Errno::ENOENT, "the file does not exist");
     }
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let mut cached_children = dir.cached_children().write();
-
-        populate_children_from_table(&mut cached_children, Self::STATIC_ENTRIES, |f| {
-            (f)(dir.this_weak().clone())
-        });
-
-        cached_children.downgrade()
+    fn child_names(&self, _dir: &ProcDir<Self>) -> Vec<String> {
+        child_names_from_table(Self::STATIC_ENTRIES)
     }
 }
