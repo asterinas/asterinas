@@ -4,6 +4,8 @@
 
 set -e
 
+./aster/xattr_policy
+
 ./capability/capabilities
 ./capability/capset
 ./capability/execve
@@ -12,3 +14,5 @@ set -e
 ./namespace/proc_nsfs
 ./namespace/setns
 ./namespace/unshare
+
+./yama/pidfd_getfd_scope

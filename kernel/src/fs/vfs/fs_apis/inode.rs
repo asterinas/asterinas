@@ -424,6 +424,8 @@ pub trait Inode: Any + InodeIo + Send + Sync {
     /// Similar to Linux, using "fsuid" here allows setting filesystem permissions
     /// without changing the "normal" uids for other tasks.
     fn check_permission(&self, mut perm: Permission) -> Result<()> {
+        let requested_perm =
+            perm.intersection(Permission::MAY_READ | Permission::MAY_WRITE | Permission::MAY_EXEC);
         let creds = match Task::current() {
             Some(task) => match task.as_posix_thread() {
                 Some(thread) => thread.credentials(),
@@ -456,8 +458,7 @@ pub trait Inode: Any + InodeIo + Send + Sync {
             }
         }
 
-        perm =
-            perm.intersection(Permission::MAY_READ | Permission::MAY_WRITE | Permission::MAY_EXEC);
+        perm = requested_perm;
         let metadata = self.metadata();
         let mode = metadata.mode;
 
@@ -563,6 +564,7 @@ impl Debug for dyn Inode {
 pub struct Extension {
     group1: Once<ThinBox<dyn Any + Send + Sync>>,
     group2: Once<ThinBox<dyn Any + Send + Sync>>,
+    group3: Once<ThinBox<dyn Any + Send + Sync>>,
 }
 
 impl Extension {
@@ -571,6 +573,7 @@ impl Extension {
         Self {
             group1: Once::new(),
             group2: Once::new(),
+            group3: Once::new(),
         }
     }
 
@@ -582,6 +585,11 @@ impl Extension {
     /// Gets the second extension group.
     pub fn group2(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
         &self.group2
+    }
+
+    /// Gets the third extension group.
+    pub fn group3(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
+        &self.group3
     }
 }
 

@@ -11,6 +11,7 @@ use crate::{
     fs,
     fs::file::file_table::{FileDesc, get_file_fast},
     prelude::*,
+    security,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -56,6 +57,8 @@ fn removexattr(
     match lookup_path_for_xattr(&file_ctx, ctx) {
         Ok(path) => {
             path.remove_xattr(xattr_name)?;
+            let xattr_name = parse_xattr_name(name_str.as_ref())?;
+            security::sync_aster_inode_xattr(path.inode(), &xattr_name, None)?;
             fs::vfs::notify::on_attr_change(&path);
             Ok(())
         }
