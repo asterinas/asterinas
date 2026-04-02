@@ -7,6 +7,7 @@ use hashbrown::HashMap;
 use id_alloc::IdAlloc;
 use spin::Once;
 
+use super::try_get_mnt_ns_inode;
 use crate::{
     fs::{
         file::InodeType,
@@ -21,6 +22,15 @@ use crate::{
     },
     prelude::*,
 };
+
+/// Controls how recursive mount-tree cloning handles mount-namespace files.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum MountNsFileCopying {
+    /// Preserves mount-namespace files, matching bind-mount semantics.
+    Copy,
+    /// Omits mount-namespace files, matching mount-namespace cloning semantics.
+    Skip,
+}
 
 /// Mount propagation types.
 ///
@@ -310,13 +320,8 @@ impl Mount {
     /// The new mount node will have the same fs as the original one and
     /// have no parent and children. We should set the parent and children manually.
     ///
-    /// If the `new_ns` is set, the new mount will belong to the given mount namespace.
-    /// Otherwise, it will belong to the same mount namespace as the current mount.
-    fn clone_mount(
-        &self,
-        root_dentry: &Arc<Dentry>,
-        new_ns: Option<&Weak<MountNamespace>>,
-    ) -> Arc<Self> {
+    /// The new mount will belong to the given mount namespace.
+    fn clone_mount(&self, root_dentry: &Arc<Dentry>, new_ns: &Weak<MountNamespace>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             id: ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap(),
             root_dentry: root_dentry.clone(),
@@ -326,7 +331,7 @@ impl Mount {
             propagation: RwLock::new(MountPropType::default()),
             fs: self.fs.clone(),
             source: self.source.clone(),
-            mnt_ns: new_ns.cloned().unwrap_or_else(|| self.mnt_ns.clone()),
+            mnt_ns: new_ns.clone(),
             flags: AtomicPerMountFlags::new(self.flags.load(Ordering::Relaxed)),
             this: weak_self.clone(),
         })
@@ -341,13 +346,16 @@ impl Mount {
     /// If `recursive` is set to `true`, the entire tree will be copied.
     /// Otherwise, only the root mount node will be copied.
     ///
-    /// If the `new_ns` is set, the new mount tree will belong to the given mount namespace.
-    /// Otherwise, it will belong to the same mount namespace as the current mount.
+    /// If `mnt_ns_file_copying` is [`MountNsFileCopying::Skip`], mount namespace
+    /// file mounts are skipped while copying recursive subtrees.
+    ///
+    /// The new mount tree will belong to the given mount namespace.
     pub(super) fn clone_mount_tree(
         &self,
         root_dentry: &Arc<Dentry>,
-        new_ns: Option<&Weak<MountNamespace>>,
+        new_ns: &Weak<MountNamespace>,
         recursive: bool,
+        mnt_ns_file_copying: MountNsFileCopying,
     ) -> Arc<Self> {
         let new_root_mount = self.clone_mount(root_dentry, new_ns);
         if !recursive {
@@ -360,6 +368,12 @@ impl Mount {
             let new_parent_mount = new_stack.pop().unwrap();
             let old_children = old_mount.children.read();
             for old_child_mount in old_children.values() {
+                if mnt_ns_file_copying == MountNsFileCopying::Skip
+                    && try_get_mnt_ns_inode(old_child_mount.root_dentry()).is_some()
+                {
+                    continue;
+                }
+
                 let mountpoint = old_child_mount.mountpoint().unwrap();
                 if !mountpoint.is_equal_or_descendant_of(new_parent_mount.root_dentry()) {
                     continue;

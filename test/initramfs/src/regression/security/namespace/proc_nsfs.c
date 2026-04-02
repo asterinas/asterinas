@@ -388,7 +388,7 @@ END_TEST()
 	} while (0)
 
 /*
- * Verify that supported namespace files can be bind-mounted and queried via
+ * Verify that non-mount namespace files can be bind-mounted and queried via
  * nsfs ioctls.
  */
 FN_TEST(bind_mount_ns)
@@ -397,6 +397,9 @@ FN_TEST(bind_mount_ns)
 	char bind_mount_path[PATH_MAX];
 
 	for (size_t i = 0; i < ns_count; i++) {
+		if (clone_flags[i] == CLONE_NEWNS)
+			continue;
+
 		snprintf(bind_mount_path, sizeof(bind_mount_path),
 			 BIND_MOUNT_PATH_TEMPLATE, ns_files[i]);
 

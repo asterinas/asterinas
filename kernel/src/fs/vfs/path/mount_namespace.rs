@@ -2,11 +2,12 @@
 
 use spin::Once;
 
+use super::{mount::MountNsFileCopying, try_get_mnt_ns_inode};
 use crate::{
     fs::{
         fs_impls::ramfs::RamFs,
         pseudofs::{NsCommonOps, NsType, StashedDentry},
-        vfs::path::{Mount, Path, PathResolver},
+        vfs::path::{Dentry, Mount, Path, PathResolver},
     },
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},
@@ -25,6 +26,26 @@ pub struct MountNamespace {
     owner: Arc<UserNamespace>,
     /// The stashed dentry in nsfs.
     stashed_dentry: StashedDentry,
+}
+
+impl PartialEq for MountNamespace {
+    fn eq(&self, other: &Self) -> bool {
+        self.stashed_dentry == other.stashed_dentry
+    }
+}
+
+impl Eq for MountNamespace {}
+
+impl PartialOrd for MountNamespace {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MountNamespace {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.stashed_dentry.cmp(&other.stashed_dentry)
+    }
 }
 
 impl MountNamespace {
@@ -79,8 +100,12 @@ impl MountNamespace {
 
         let root_mount = &self.root;
         let new_mnt_ns = Arc::new_cyclic(|weak_self| {
-            let new_root =
-                root_mount.clone_mount_tree(root_mount.root_dentry(), Some(weak_self), true);
+            let new_root = root_mount.clone_mount_tree(
+                root_mount.root_dentry(),
+                weak_self,
+                true,
+                MountNsFileCopying::Skip,
+            );
             let stashed_dentry = StashedDentry::new();
             MountNamespace {
                 root: new_root,
@@ -118,6 +143,41 @@ impl MountNamespace {
     /// Checks whether a given mount belongs to this mount namespace.
     pub fn owns(self: &Arc<Self>, mount: &Mount) -> bool {
         mount.mnt_ns().as_ptr() == Arc::as_ptr(self)
+    }
+
+    /// Returns whether bind-mounting or moving `dentry` into this mount namespace
+    /// would create a mount-namespace loop.
+    pub(super) fn would_form_mnt_ns_loop(&self, dentry: &Dentry) -> bool {
+        let Some(mnt_ns_inode) = try_get_mnt_ns_inode(dentry) else {
+            return false;
+        };
+
+        self >= mnt_ns_inode.ns().as_ref()
+    }
+
+    /// Ensures that importing the mount subtree rooted at `root_mount` into this
+    /// mount namespace would not form a mount-namespace loop.
+    pub(super) fn check_no_mnt_ns_loop_in_tree(&self, root_mount: &Arc<Mount>) -> Result<()> {
+        let mut worklist = VecDeque::new();
+        worklist.push_back(root_mount.clone());
+
+        let mut checked_root_dentries = BTreeSet::new();
+
+        while let Some(mount) = worklist.pop_front() {
+            let root_dentry = mount.root_dentry();
+            if checked_root_dentries.insert(root_dentry.key())
+                && self.would_form_mnt_ns_loop(root_dentry)
+            {
+                return_errno_with_message!(
+                    Errno::ELOOP,
+                    "the mount tree contains a mount namespace file that would create a namespace loop"
+                );
+            }
+            let children = mount.children.read();
+            worklist.extend(children.values().cloned());
+        }
+
+        Ok(())
     }
 }
 
