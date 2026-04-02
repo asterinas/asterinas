@@ -3,6 +3,7 @@
 //! The slab cache that is composed of slabs.
 
 use core::alloc::AllocError;
+use core::result::Result;
 
 use ostd::mm::{
     PAGE_SIZE,
