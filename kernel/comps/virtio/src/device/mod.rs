@@ -6,6 +6,7 @@ use crate::queue::QueueError;
 
 pub mod block;
 pub mod console;
+pub mod entropy;
 pub mod input;
 pub mod network;
 pub mod socket;
