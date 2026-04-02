@@ -15,12 +15,18 @@
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
 #  - VNC_PORT: VNC port, default is "42".
+#  - ENABLE_VIRTIOFS: "0" or "1" to enable vhost-user virtio-fs device;
+#  - VIRTIOFS_TAG: mount tag for virtio-fs device;
+#  - VIRTIOFS_SOCKET: vhost-user socket path for virtio-fs backend.
 
 OVMF=${OVMF:-"on"}
 VHOST=${VHOST:-"off"}
 VSOCK=${VSOCK:-"off"}
 NETDEV=${NETDEV:-"user"}
 CONSOLE=${CONSOLE:-"hvc0"}
+ENABLE_VIRTIOFS=${ENABLE_VIRTIOFS:-"0"}
+VIRTIOFS_TAG=${VIRTIOFS_TAG:-"kataShared"}
+VIRTIOFS_SOCKET=${VIRTIOFS_SOCKET:-"/tmp/vhostqemu/vfs.sock"}
 
 SSH_RAND_PORT=${SSH_PORT:-$(shuf -i 1024-65535 -n 1)}
 NGINX_RAND_PORT=${NGINX_PORT:-$(shuf -i 1024-65535 -n 1)}
@@ -123,6 +129,17 @@ QEMU_ARGS="\
     $CONSOLE_ARGS \
     $IOMMU_EXTRA_ARGS \
 "
+
+if [ "$ENABLE_VIRTIOFS" = "1" ]; then
+    echo "[$1] Enabled virtio-fs: tag=$VIRTIOFS_TAG, socket=$VIRTIOFS_SOCKET" 1>&2
+    QEMU_ARGS="
+        $QEMU_ARGS \
+        -object memory-backend-memfd,id=mem0,size=${MEM:-8G},share=on \
+        -numa node,memdev=mem0 \
+        -chardev socket,id=char0,path=$VIRTIOFS_SOCKET \
+        -device vhost-user-fs-pci,chardev=char0,tag=$VIRTIOFS_TAG \
+    "
+fi
 
 MICROVM_QEMU_ARGS="\
     $COMMON_QEMU_ARGS \
