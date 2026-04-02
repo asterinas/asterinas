@@ -24,6 +24,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    security::{self, InodePermissionContext},
 };
 
 mod dentry;
@@ -62,6 +63,8 @@ impl Path {
             .inode()
             .check_permission(Permission::MAY_WRITE)
             .is_err()
+            || security::inode_permission(&InodePermissionContext::new(self, Permission::MAY_WRITE))
+                .is_err()
         {
             return_errno!(Errno::EACCES);
         }

@@ -24,6 +24,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    security::{self, FileOpenContext},
     util::ioctl::RawIoctl,
 };
 
@@ -46,6 +47,10 @@ impl InodeHandle {
             // object itself".
             // Reference: <https://man7.org/linux/man-pages/man2/openat.2.html>
             inode.check_permission(access_mode.into())?;
+            security::inode_permission(&crate::security::InodePermissionContext::new(
+                &path,
+                access_mode.into(),
+            ))?;
         }
 
         Self::new_unchecked_access(path, access_mode, status_flags)
@@ -58,10 +63,12 @@ impl InodeHandle {
     ) -> Result<Self> {
         let inode = path.inode();
         let (file_io, rights) = if status_flags.contains(StatusFlags::O_PATH) {
+            security::file_open(&FileOpenContext::new(&path, access_mode, status_flags))?;
             (None, Rights::empty())
         } else if inode.type_() == InodeType::Dir && access_mode.is_writable() {
             return_errno_with_message!(Errno::EISDIR, "a directory cannot be opened writable");
         } else {
+            security::file_open(&FileOpenContext::new(&path, access_mode, status_flags))?;
             let file_io = inode.open(access_mode, status_flags).transpose()?;
             let rights = Rights::from(access_mode);
             (file_io, rights)

@@ -4,6 +4,8 @@
 
 set -e
 
+./aster/xattr_policy
+
 ./capability/capabilities
 ./capability/capset
 ./capability/execve

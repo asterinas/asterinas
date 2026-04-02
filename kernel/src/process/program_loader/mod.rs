@@ -16,6 +16,7 @@ use crate::{
         },
     },
     prelude::*,
+    security::{self, BprmCheckContext},
     vm::vmar::Vmar,
 };
 
@@ -39,7 +40,7 @@ impl ProgramToLoad {
         mut argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Self> {
-        check_executable_inode(elf_file.inode().as_ref())?;
+        check_executable_path(&elf_file)?;
 
         // A limit to the recursion depth of shebang executables.
         //
@@ -69,7 +70,7 @@ impl ProgramToLoad {
                 let fs_path = FsPath::try_from(filename.as_str())?;
                 path_resolver.lookup(&fs_path)?
             };
-            check_executable_inode(interpreter.inode().as_ref())?;
+            check_executable_path(&interpreter)?;
 
             // Update the argument list and the executable inode. Then, try again.
             new_argv.extend(argv);
@@ -124,6 +125,13 @@ fn check_executable_inode(inode: &dyn Inode) -> Result<()> {
     if inode.check_permission(Permission::MAY_EXEC).is_err() {
         return_errno_with_message!(Errno::EACCES, "the inode is not executable");
     }
+
+    Ok(())
+}
+
+fn check_executable_path(path: &Path) -> Result<()> {
+    check_executable_inode(path.inode().as_ref())?;
+    security::bprm_check_security(&BprmCheckContext::new(path))?;
 
     Ok(())
 }

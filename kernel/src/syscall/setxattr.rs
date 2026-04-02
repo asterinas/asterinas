@@ -2,6 +2,8 @@
 
 use alloc::borrow::Cow;
 
+use ostd::mm::VmIo;
+
 use super::SyscallReturn;
 use crate::{
     fs,
@@ -19,6 +21,7 @@ use crate::{
     },
     prelude::*,
     process::credentials::capabilities::CapSet,
+    security,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -115,10 +118,19 @@ fn setxattr(
     if value_len > XATTR_VALUE_MAX_LEN {
         return_errno_with_message!(Errno::E2BIG, "xattr value too long");
     }
-    let mut value_reader = user_space.reader(value_ptr, value_len)?;
-
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
-    path.set_xattr(xattr_name, &mut value_reader, flags)?;
+    if security::is_aster_inode_xattr(&xattr_name) {
+        let value = read_xattr_value_from_user(value_ptr, value_len, user_space)?;
+        security::validate_aster_inode_xattr(&xattr_name, &value)?;
+
+        let mut value_reader = VmReader::from(value.as_slice()).to_fallible();
+        path.set_xattr(xattr_name, &mut value_reader, flags)?;
+        let xattr_name = parse_xattr_name(name_str.as_ref())?;
+        security::sync_aster_inode_xattr(path.inode(), &xattr_name, Some(&value))?;
+    } else {
+        let mut value_reader = user_space.reader(value_ptr, value_len)?;
+        path.set_xattr(xattr_name, &mut value_reader, flags)?;
+    }
     fs::vfs::notify::on_attr_change(&path);
     Ok(())
 }
@@ -200,4 +212,16 @@ pub(super) fn check_xattr_namespace(namespace: XattrNamespace, ctx: &Context) ->
         );
     }
     Ok(())
+}
+
+fn read_xattr_value_from_user(
+    value_ptr: Vaddr,
+    value_len: usize,
+    user_space: &CurrentUserSpace,
+) -> Result<Vec<u8>> {
+    let mut value = vec![0u8; value_len];
+    let mut writer = VmWriter::from(value.as_mut_slice()).to_fallible();
+    user_space.read(value_ptr, &mut writer)?;
+
+    Ok(value)
 }

@@ -19,6 +19,7 @@ use crate::{
         pid_table::PidTable,
         posix_thread::{AsPosixThread, AsThreadLocal},
     },
+    security::{self, InodePermissionContext},
 };
 
 /// The file descriptor of the current working directory.
@@ -419,7 +420,10 @@ impl PathResolver {
     pub fn lookup_at_path(&self, path: &Path, name: &str) -> Result<Path> {
         let dir_dentry = path.dentry.as_dir_dentry_or_err()?;
 
-        if path.inode().check_permission(Permission::MAY_EXEC).is_err() {
+        if path.inode().check_permission(Permission::MAY_EXEC).is_err()
+            || security::inode_permission(&InodePermissionContext::new(path, Permission::MAY_EXEC))
+                .is_err()
+        {
             return_errno_with_message!(Errno::EACCES, "the path cannot be looked up");
         }
         if name.len() > NAME_MAX {

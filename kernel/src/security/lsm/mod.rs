@@ -8,8 +8,18 @@
 
 mod modules;
 
-pub(crate) use self::modules::yama::{YamaScope, get_yama_scope, set_yama_scope};
-use crate::{prelude::*, process::posix_thread::PosixThread};
+pub(crate) use self::modules::{
+    aster::{is_aster_inode_xattr, sync_aster_inode_xattr, validate_aster_inode_xattr},
+    yama::{YamaScope, get_yama_scope, set_yama_scope},
+};
+use crate::{
+    fs::{
+        file::{AccessMode, Permission, StatusFlags},
+        vfs::path::Path,
+    },
+    prelude::*,
+    process::posix_thread::PosixThread,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LsmKind {
@@ -98,6 +108,74 @@ impl<'a> PtraceAccessContext<'a> {
     }
 }
 
+/// Carries the inputs for an executable image security check.
+pub(crate) struct BprmCheckContext<'a> {
+    executable: &'a Path,
+}
+
+impl<'a> BprmCheckContext<'a> {
+    pub(crate) const fn new(executable: &'a Path) -> Self {
+        Self { executable }
+    }
+
+    pub(crate) const fn executable(&self) -> &'a Path {
+        self.executable
+    }
+}
+
+/// Carries the inputs for an inode permission check.
+pub(crate) struct InodePermissionContext<'a> {
+    path: &'a Path,
+    permission: Permission,
+}
+
+impl<'a> InodePermissionContext<'a> {
+    pub(crate) const fn new(path: &'a Path, permission: Permission) -> Self {
+        Self { path, permission }
+    }
+
+    pub(crate) const fn path(&self) -> &'a Path {
+        self.path
+    }
+
+    pub(crate) const fn permission(&self) -> Permission {
+        self.permission
+    }
+}
+
+/// Carries the inputs for a file-open check.
+pub(crate) struct FileOpenContext<'a> {
+    path: &'a Path,
+    access_mode: AccessMode,
+    status_flags: StatusFlags,
+}
+
+impl<'a> FileOpenContext<'a> {
+    pub(crate) const fn new(
+        path: &'a Path,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Self {
+        Self {
+            path,
+            access_mode,
+            status_flags,
+        }
+    }
+
+    pub(crate) const fn path(&self) -> &'a Path {
+        self.path
+    }
+
+    pub(crate) const fn access_mode(&self) -> AccessMode {
+        self.access_mode
+    }
+
+    pub(crate) const fn status_flags(&self) -> StatusFlags {
+        self.status_flags
+    }
+}
+
 /// Defines the hook surface supported by built-in LSM modules.
 pub(crate) trait LsmModule: Sync {
     /// Returns the short module name.
@@ -113,6 +191,24 @@ pub(crate) trait LsmModule: Sync {
 
     /// Checks ptrace-style access between unrelated tasks.
     fn ptrace_access_check(&self, context: &PtraceAccessContext<'_>) -> Result<()> {
+        let _ = context;
+        Ok(())
+    }
+
+    /// Checks an executable image before `execve` loads it.
+    fn bprm_check_security(&self, context: &BprmCheckContext<'_>) -> Result<()> {
+        let _ = context;
+        Ok(())
+    }
+
+    /// Checks whether an inode access should be allowed after DAC succeeds.
+    fn inode_permission(&self, context: &InodePermissionContext<'_>) -> Result<()> {
+        let _ = context;
+        Ok(())
+    }
+
+    /// Checks whether a file open should be allowed.
+    fn file_open(&self, context: &FileOpenContext<'_>) -> Result<()> {
         let _ = context;
         Ok(())
     }
@@ -133,6 +229,33 @@ pub(super) fn init() {
 pub(crate) fn ptrace_access_check(context: &PtraceAccessContext<'_>) -> Result<()> {
     for module in modules::active_modules() {
         module.ptrace_access_check(context)?;
+    }
+
+    Ok(())
+}
+
+/// Runs executable-image hooks in module order.
+pub(crate) fn bprm_check_security(context: &BprmCheckContext<'_>) -> Result<()> {
+    for module in modules::active_modules() {
+        module.bprm_check_security(context)?;
+    }
+
+    Ok(())
+}
+
+/// Runs inode-permission hooks in module order.
+pub(crate) fn inode_permission(context: &InodePermissionContext<'_>) -> Result<()> {
+    for module in modules::active_modules() {
+        module.inode_permission(context)?;
+    }
+
+    Ok(())
+}
+
+/// Runs file-open hooks in module order.
+pub(crate) fn file_open(context: &FileOpenContext<'_>) -> Result<()> {
+    for module in modules::active_modules() {
+        module.file_open(context)?;
     }
 
     Ok(())
