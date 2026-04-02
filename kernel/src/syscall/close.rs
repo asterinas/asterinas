@@ -86,7 +86,8 @@ pub fn sys_close_range(
         let actual_last = last.min(table_len - 1);
 
         for fd in first..=actual_last {
-            let fd = fd.try_into()?;
+            // This is a valid FD as it is smaller than `file_table_locked.len()`.
+            let fd = fd.cast_signed().try_into().unwrap();
 
             if flags.contains(CloseRangeFlags::CLOEXEC) {
                 if let Ok(entry) = file_table_locked.get_entry_mut(fd) {
