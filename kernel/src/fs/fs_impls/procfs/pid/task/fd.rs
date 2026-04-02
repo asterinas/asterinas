@@ -2,8 +2,7 @@
 
 use core::marker::PhantomData;
 
-use aster_util::{printer::VmPrinter, slot_vec::SlotVec};
-use ostd::sync::RwMutexUpgradeableGuard;
+use aster_util::printer::VmPrinter;
 
 use super::TidDirOps;
 use crate::{
@@ -11,10 +10,9 @@ use crate::{
         file::{AccessMode, FileLike, chmod, file_table::FileDesc, mkmod},
         procfs::template::{
             DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFile, ProcFileBuilder, ProcSym,
-            ProcSymBuilder, SymOps,
+            ProcSymBuilder, ReaddirEntry, SymOps, keyed_readdir_entries,
         },
-        utils::DirEntryVecExt,
-        vfs::inode::{Inode, SymbolicLink},
+        vfs::inode::{Inode, RevalidateResult, SymbolicLink},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -37,8 +35,31 @@ impl<T: FdOps> FdDirOps<T> {
             mkmod!(u+rx),
         )
         .parent(parent)
+        .need_revalidation()
+        .need_neg_child_revalidation()
         .build()
         .unwrap()
+    }
+
+    fn fd_entry_names(&self) -> Vec<(usize, String)> {
+        let Some(thread) = self.dir.thread() else {
+            return Vec::new();
+        };
+        let posix_thread = thread.as_posix_thread().unwrap();
+        let file_table = posix_thread.file_table().lock();
+        let Some(file_table) = file_table.as_ref() else {
+            return Vec::new();
+        };
+
+        file_table
+            .read()
+            .fds_and_files()
+            .filter_map(|(file_desc, _)| {
+                usize::try_from(file_desc)
+                    .ok()
+                    .map(|fd| (fd, file_desc.to_string()))
+            })
+            .collect()
     }
 }
 
@@ -53,12 +74,13 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid FD");
         };
 
-        let mut cached_children = dir.cached_children().write();
-
-        let thread = self.dir.thread();
+        let Some(thread) = self.dir.thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the process has been reaped");
+        };
         let posix_thread = thread.as_posix_thread().unwrap();
+        let file_table = posix_thread.file_table().lock();
 
-        let access_mode = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
+        let access_mode = if let Some(file_table) = file_table.as_ref()
             && let Ok(file) = file_table.read().get_file(file_desc)
         {
             file.access_mode()
@@ -66,83 +88,67 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
             return_errno_with_message!(Errno::ENOENT, "the file does not exist");
         };
 
-        let child = T::new_inode(
+        Ok(T::new_inode(
             self.dir.clone(),
             file_desc,
             access_mode,
             dir.this_weak().clone(),
-        );
-        // The old entry is likely outdated given that `lookup_child` is called. Race conditions
-        // may occur, but caching the file descriptor (which aligns with the Linux implementation)
-        // is inherently racy, so preventing race conditions is not very meaningful.
-        cached_children.remove_entry_by_name(name);
-        cached_children.put((String::from(name), child.clone()));
-
-        Ok(child)
+        ))
     }
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let mut cached_children = dir.cached_children().write();
-
-        let thread = self.dir.thread();
-        let posix_thread = thread.as_posix_thread().unwrap();
-
-        let file_table = posix_thread.file_table().lock();
-        let Some(file_table) = file_table.as_ref() else {
-            *cached_children = SlotVec::new();
-            return cached_children.downgrade();
-        };
-
-        let file_table = file_table.read();
-
-        // Remove outdated entries.
-        for i in 0..cached_children.slots_len() {
-            let Some((_, child)) = cached_children.get(i) else {
-                continue;
-            };
-            let child = child.downcast_ref::<T::NodeType>().unwrap();
-            let child_ops = T::ref_from_inode(child);
-
-            let Ok(file) = file_table.get_file(child_ops.file_desc()) else {
-                cached_children.remove(i);
-                continue;
-            };
-            if !child_ops.is_valid(file) {
-                cached_children.remove(i);
-            }
-        }
-
-        // Add new entries.
-        for (file_desc, file) in file_table.fds_and_files() {
-            cached_children.put_entry_if_not_found(&file_desc.to_string(), || {
-                T::new_inode(
-                    self.dir.clone(),
-                    file_desc,
-                    file.access_mode(),
-                    dir.this_weak().clone(),
-                )
-            });
-        }
-
-        cached_children.downgrade()
+    fn child_names(&self, _dir: &ProcDir<Self>) -> Vec<String> {
+        self.fd_entry_names()
+            .into_iter()
+            .map(|(_, name)| name)
+            .collect()
     }
 
-    fn validate_child(&self, child: &dyn Inode) -> bool {
+    fn entries_from_offset(&self, _dir: &ProcDir<Self>, offset: usize) -> Vec<ReaddirEntry> {
+        keyed_readdir_entries(offset, 2, self.fd_entry_names())
+    }
+
+    fn revalidate_pos_child(&self, _name: &str, child: &dyn Inode) -> RevalidateResult {
         let child = child.downcast_ref::<T::NodeType>().unwrap();
         let child_ops = T::ref_from_inode(child);
 
-        let thread = self.dir.thread();
+        let Some(thread) = self.dir.thread() else {
+            return RevalidateResult::Invalid;
+        };
         let posix_thread = thread.as_posix_thread().unwrap();
+        let file_table = posix_thread.file_table().lock();
 
-        if let Some(file_table) = posix_thread.file_table().lock().as_ref()
+        if let Some(file_table) = file_table.as_ref()
             && let Ok(file) = file_table.read().get_file(child_ops.file_desc())
         {
-            child_ops.is_valid(file)
+            if child_ops.is_valid(file) {
+                RevalidateResult::Valid
+            } else {
+                RevalidateResult::Invalid
+            }
         } else {
-            false
+            RevalidateResult::Invalid
+        }
+    }
+
+    fn revalidate_neg_child(&self, name: &str) -> RevalidateResult {
+        let Ok(file_desc) = name.parse::<FileDesc>() else {
+            return RevalidateResult::Valid;
+        };
+
+        let Some(thread) = self.dir.thread() else {
+            return RevalidateResult::Valid;
+        };
+        let posix_thread = thread.as_posix_thread().unwrap();
+        let file_table = posix_thread.file_table().lock();
+
+        let Some(file_table) = file_table.as_ref() else {
+            return RevalidateResult::Valid;
+        };
+
+        if file_table.read().get_file(file_desc).is_err() {
+            RevalidateResult::Valid
+        } else {
+            RevalidateResult::Invalid
         }
     }
 }
@@ -198,6 +204,7 @@ impl FdOps for FileSymOps {
             mode,
         )
         .parent(parent)
+        .need_revalidation()
         .build()
         .unwrap()
     }
@@ -219,12 +226,15 @@ impl FdOps for FileSymOps {
 
 impl SymOps for FileSymOps {
     fn read_link(&self) -> Result<SymbolicLink> {
-        let thread = self.tid_dir_ops.thread();
+        let thread = self
+            .tid_dir_ops
+            .thread()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has been reaped"))?;
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let file_table = posix_thread.file_table().lock();
         let Some(file_table) = file_table.as_ref() else {
-            return_errno_with_message!(Errno::ENOENT, "the thread has exited");
+            return_errno_with_message!(Errno::ESRCH, "the process has been reaped");
         };
         let file_table = file_table.read();
         let file = file_table
@@ -259,6 +269,7 @@ impl FdOps for FileInfoOps {
             mkmod!(a+r),
         )
         .parent(parent)
+        .need_revalidation()
         .build()
         .unwrap()
     }
@@ -278,10 +289,14 @@ impl FdOps for FileInfoOps {
 
 impl FileOps for FileInfoOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let thread = self.tid_dir_ops.thread();
+        let thread = self
+            .tid_dir_ops
+            .thread()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has been reaped"))?;
         let posix_thread = thread.as_posix_thread().unwrap();
+        let file_table = posix_thread.file_table().lock();
 
-        let info = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
+        let info = if let Some(file_table) = file_table.as_ref()
             && let Ok(entry) = file_table.read().get_entry(self.file_desc)
         {
             entry.file().clone().dump_proc_fdinfo(entry.flags())

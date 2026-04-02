@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::TidDirOps;
+use super::{TidDirOps, process_from_pid_entry};
 use crate::{
     fs::{
         file::mkmod,
@@ -8,18 +8,18 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    process::Process,
+    process::pid_table::PidEntry,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/environ` (and also `/proc/[pid]/environ`).
-pub struct EnvironFileOps(Arc<Process>);
+pub struct EnvironFileOps(Arc<PidEntry>);
 
 impl EnvironFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3324>
-        ProcFileBuilder::new(Self(process_ref), mkmod!(u+r))
+        ProcFileBuilder::new(Self(dir.pid_entry().clone()), mkmod!(u+r))
             .parent(parent)
+            .need_revalidation()
             .build()
             .unwrap()
     }
@@ -27,7 +27,10 @@ impl EnvironFileOps {
 
 impl FileOps for EnvironFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let vmar_guard = self.0.lock_vmar();
+        let Some(process) = process_from_pid_entry(&self.0) else {
+            return_errno_with_message!(Errno::ESRCH, "the process has been reaped");
+        };
+        let vmar_guard = process.lock_vmar();
         let Some(init_stack_reader) = vmar_guard.init_stack_reader() else {
             // According to Linux behavior, return an empty string
             // if the process is a zombie process.

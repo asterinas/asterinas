@@ -1,32 +1,88 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::time::Duration;
+use core::{iter, time::Duration};
 
-use aster_util::slot_vec::SlotVec;
 use inherit_methods_macro::inherit_methods;
-use ostd::sync::RwMutexUpgradeableGuard;
 
 use super::Common;
 use crate::{
     fs::{
         file::{InodeMode, InodeType, StatusFlags},
-        utils::{DirEntryVecExt, DirentVisitor},
+        procfs::{BLOCK_SIZE, ProcFs},
+        utils::DirentVisitor,
         vfs::{
             file_system::{FileSystem, SuperBlock},
-            inode::{Extension, Inode, InodeIo, Metadata, MknodType},
-            path::{is_dot, is_dotdot},
+            inode::{Extension, Inode, InodeIo, Metadata, MknodType, RevalidateResult},
+            path::{Path, is_dot, is_dotdot},
         },
     },
     prelude::*,
     process::{Gid, Uid},
 };
 
+/// Represents one directory entry emitted by `readdir`.
+///
+/// The `next_offset` is the continuation cookie that should be used as the
+/// starting point of the next `readdir` call.
+pub struct ReaddirEntry {
+    name: String,
+    next_offset: usize,
+}
+
+impl ReaddirEntry {
+    pub fn new(name: String, next_offset: usize) -> Self {
+        Self { name, next_offset }
+    }
+}
+
+/// Builds sequential directory entries whose continuation cookies increase by one.
+pub fn sequential_readdir_entries<I>(
+    offset: usize,
+    first_entry_offset: usize,
+    entries: I,
+) -> Vec<ReaddirEntry>
+where
+    I: IntoIterator<Item = String>,
+{
+    entries
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, name)| {
+            let next_offset = first_entry_offset.saturating_add(idx).saturating_add(1);
+            (next_offset > offset).then(|| ReaddirEntry::new(name, next_offset))
+        })
+        .collect()
+}
+
+/// Builds directory entries whose offsets are derived from stable integer keys.
+///
+/// This is useful for procfs directories such as `/proc`, `/proc/[pid]/task`,
+/// and `/proc/[pid]/fd`, where Linux uses identifiers like PID, TID, or FD to
+/// keep iteration stable across mutations.
+pub fn keyed_readdir_entries<I>(
+    offset: usize,
+    first_entry_offset: usize,
+    entries: I,
+) -> Vec<ReaddirEntry>
+where
+    I: IntoIterator<Item = (usize, String)>,
+{
+    let start_key = offset.saturating_sub(first_entry_offset);
+    entries
+        .into_iter()
+        .filter_map(|(key, name)| {
+            let next_offset = first_entry_offset.saturating_add(key).saturating_add(1);
+            (key >= start_key && next_offset > offset).then(|| ReaddirEntry::new(name, next_offset))
+        })
+        .collect()
+}
+
 pub struct ProcDir<D: DirOps> {
     inner: D,
     this: Weak<ProcDir<D>>,
     parent: Option<Weak<dyn Inode>>,
-    cached_children: RwMutex<SlotVec<(String, Arc<dyn Inode>)>>,
     common: Common,
+    need_neg_child_revalidation: bool,
 }
 
 impl<D: DirOps> ProcDir<D> {
@@ -36,16 +92,17 @@ impl<D: DirOps> ProcDir<D> {
         ino: u64,
         sb: &SuperBlock,
         mode: InodeMode,
+        need_neg_child_revalidation: bool,
     ) -> Arc<Self> {
-        let metadata = Metadata::new_dir(ino, mode, super::BLOCK_SIZE, sb.container_dev_id);
+        let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE, sb.container_dev_id);
         let common = Common::new(metadata, fs, false);
 
         Arc::new_cyclic(|weak_self| Self {
             inner: dir,
             this: weak_self.clone(),
             parent: None,
-            cached_children: RwMutex::new(SlotVec::new()),
             common,
+            need_neg_child_revalidation,
         })
     }
 
@@ -53,16 +110,23 @@ impl<D: DirOps> ProcDir<D> {
         dir: D,
         fs: Weak<dyn FileSystem>,
         parent: Option<Weak<dyn Inode>>,
-        is_volatile: bool,
+        need_revalidation: bool,
+        need_neg_child_revalidation: bool,
         mode: InodeMode,
     ) -> Arc<Self> {
-        let common = new_dir_common(fs, mode, is_volatile);
+        let common = {
+            let arc_fs = fs.upgrade().unwrap();
+            let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
+            let ino = procfs.alloc_id();
+            let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE, procfs.sb().container_dev_id);
+            Common::new(metadata, fs, need_revalidation)
+        };
         Arc::new_cyclic(|weak_self| Self {
             inner: dir,
             this: weak_self.clone(),
             parent,
-            cached_children: RwMutex::new(SlotVec::new()),
             common,
+            need_neg_child_revalidation,
         })
     }
 
@@ -78,17 +142,9 @@ impl<D: DirOps> ProcDir<D> {
         self.parent.as_ref().and_then(|p| p.upgrade())
     }
 
-    pub fn cached_children(&self) -> &RwMutex<SlotVec<(String, Arc<dyn Inode>)>> {
-        &self.cached_children
+    pub fn inner(&self) -> &D {
+        &self.inner
     }
-}
-
-fn new_dir_common(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Common {
-    let fs_ref = fs.upgrade().unwrap();
-    let procfs = fs_ref.downcast_ref::<super::ProcFs>().unwrap();
-    let ino = procfs.alloc_id();
-    let metadata = Metadata::new_dir(ino, mode, super::BLOCK_SIZE, procfs.sb().container_dev_id);
-    Common::new(metadata, fs, is_volatile)
 }
 
 impl<D: DirOps + 'static> InodeIo for ProcDir<D> {
@@ -147,35 +203,53 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    fn readdir_at_path(
+        &self,
+        dir_path: &Path,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+    ) -> Result<usize> {
+        /// Returns the always-present `.` and `..` entries for a procfs directory.
+        fn special_entries<D: DirOps + 'static>(
+            dir: &ProcDir<D>,
+        ) -> impl Iterator<Item = (String, Arc<dyn Inode>, usize)> {
+            let this_inode: Arc<dyn Inode> = dir.this();
+            let parent_inode = dir.parent().unwrap_or_else(|| this_inode.clone());
+            iter::once((".".to_string(), this_inode, 1)).chain(iter::once((
+                "..".to_string(),
+                parent_inode,
+                2,
+            )))
+        }
+
         let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
-            // Read the two special entries.
-            if *offset == 0 {
-                let this_inode = self.this();
-                visitor.visit(
-                    ".",
-                    this_inode.common.ino(),
-                    this_inode.common.type_(),
-                    *offset,
-                )?;
-                *offset += 1;
-            }
-            if *offset == 1 {
-                let parent_inode = self.parent().unwrap_or(self.this());
-                visitor.visit("..", parent_inode.ino(), parent_inode.type_(), *offset)?;
-                *offset += 1;
+            for (name, inode, next_offset) in special_entries(self) {
+                if next_offset <= *offset {
+                    continue;
+                }
+
+                visitor.visit(name.as_ref(), inode.ino(), inode.type_(), next_offset)?;
+                *offset = next_offset;
             }
 
-            // Read the normal child entries.
-            let cached_children = self.inner.populate_children(self);
-            let start_offset = *offset;
-            for (idx, (name, child)) in cached_children
-                .idxes_and_items()
-                .map(|(idx, (name, child))| (idx + 2, (name, child)))
-                .skip_while(|(idx, _)| idx < &start_offset)
-            {
-                visitor.visit(name.as_ref(), child.ino(), child.type_(), idx)?;
-                *offset = idx + 1;
+            for child in self.inner.entries_from_offset(self, *offset) {
+                let dir_dentry = dir_path.dentry().as_dir_dentry_or_err()?;
+                let child_dentry = dir_dentry.lookup_child(&child.name)?;
+                let res = visitor.visit(
+                    child.name.as_ref(),
+                    child_dentry.inode().ino(),
+                    child_dentry.inode().type_(),
+                    child.next_offset,
+                );
+                match res {
+                    Ok(()) => {
+                        *offset = child.next_offset;
+                    }
+                    Err(error) if matches!(error.error(), Errno::ENOENT | Errno::ESRCH) => {
+                        *offset = child.next_offset;
+                    }
+                    Err(error) => return Err(error),
+                }
             }
             Ok(())
         };
@@ -207,14 +281,6 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
             return Ok(self.parent().unwrap_or(self.this()));
         }
 
-        let cached_children = self.cached_children.read();
-        if let Some(inode) = cached_children.find_entry_by_name(name)
-            && self.inner.validate_child(inode.as_ref())
-        {
-            return Ok(inode.clone());
-        }
-        drop(cached_children);
-
         self.inner.lookup_child(self, name)
     }
 
@@ -222,33 +288,57 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn is_dentry_cacheable(&self) -> bool {
-        !self.common.is_volatile()
+    fn need_revalidation(&self) -> bool {
+        self.common.need_revalidation()
+    }
+
+    fn need_neg_child_revalidation(&self) -> bool {
+        self.need_neg_child_revalidation
+    }
+
+    fn revalidate_pos_child(&self, name: &str, child: &Arc<dyn Inode>) -> RevalidateResult {
+        self.inner.revalidate_pos_child(name, child.as_ref())
+    }
+
+    fn revalidate_neg_child(&self, name: &str) -> RevalidateResult {
+        self.inner.revalidate_neg_child(name)
     }
 
     fn seek_end(&self) -> Option<usize> {
-        // Seeking directories under `/proc` with `SEEK_END` will start from zero.
         Some(0)
     }
 }
 
 pub trait DirOps: Sync + Send + Sized {
+    /// Look up a child inode in given `dir` by name.
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>>;
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>>;
+    /// Returns the child names currently visible under `dir`.
+    fn child_names(&self, dir: &ProcDir<Self>) -> Vec<String>;
 
+    /// Returns readdir entries whose offsets are greater than or equal to `offset`.
+    ///
+    /// Implementations should use stable cookies for dynamic directories so
+    /// that iteration can continue correctly after concurrent mutations.
+    fn entries_from_offset(&self, dir: &ProcDir<Self>, offset: usize) -> Vec<ReaddirEntry> {
+        sequential_readdir_entries(offset, 2, self.child_names(dir))
+    }
+
+    /// Revalidates a positive lookup result.
     #[must_use]
-    fn validate_child(&self, _child: &dyn Inode) -> bool {
-        true
+    fn revalidate_pos_child(&self, _name: &str, _child: &dyn Inode) -> RevalidateResult {
+        RevalidateResult::Valid
+    }
+
+    /// Revalidates a negative lookup result.
+    #[must_use]
+    fn revalidate_neg_child(&self, _name: &str) -> RevalidateResult {
+        RevalidateResult::Invalid
     }
 }
 
 pub fn lookup_child_from_table<Fp, F>(
     name: &str,
-    cached_children: &mut SlotVec<(String, Arc<dyn Inode>)>,
     table: &[(&str, Fp)],
     constructor_adaptor: F,
 ) -> Option<Arc<dyn Inode>>
@@ -258,27 +348,19 @@ where
 {
     for (child_name, child_constructor) in table.iter() {
         if *child_name == name {
-            return Some(
-                cached_children
-                    .put_entry_if_not_found(name, || (constructor_adaptor)(*child_constructor))
-                    .clone(),
-            );
+            return Some((constructor_adaptor)(*child_constructor));
         }
     }
 
     None
 }
 
-pub fn populate_children_from_table<Fp, F>(
-    cached_children: &mut SlotVec<(String, Arc<dyn Inode>)>,
-    table: &[(&str, Fp)],
-    constructor_adaptor: F,
-) where
+pub fn child_names_from_table<Fp>(table: &[(&str, Fp)]) -> Vec<String>
+where
     Fp: Copy,
-    F: Fn(Fp) -> Arc<dyn Inode>,
 {
-    for (child_name, child_constructor) in table.iter() {
-        cached_children
-            .put_entry_if_not_found(child_name, || (constructor_adaptor)(*child_constructor));
-    }
+    table
+        .iter()
+        .map(|(child_name, _)| String::from(*child_name))
+        .collect()
 }

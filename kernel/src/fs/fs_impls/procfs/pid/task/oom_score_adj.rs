@@ -4,7 +4,7 @@ use core::sync::atomic::Ordering;
 
 use aster_util::printer::VmPrinter;
 
-use super::TidDirOps;
+use super::{TidDirOps, process_from_pid_entry};
 use crate::{
     fs::{
         file::mkmod,
@@ -12,18 +12,18 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    process::Process,
+    process::pid_table::PidEntry,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/oom_score_adj` (and also `/proc/[pid]/oom_score_adj`).
-pub struct OomScoreAdjFileOps(Arc<Process>);
+pub struct OomScoreAdjFileOps(Arc<PidEntry>);
 
 impl OomScoreAdjFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3386>
-        ProcFileBuilder::new(Self(process_ref), mkmod!(a+r, u+w))
+        ProcFileBuilder::new(Self(dir.pid_entry().clone()), mkmod!(a+r, u+w))
             .parent(parent)
+            .need_revalidation()
             .build()
             .unwrap()
     }
@@ -33,7 +33,9 @@ impl FileOps for OomScoreAdjFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
-        let oom_score_adj = self.0.oom_score_adj().load(Ordering::Relaxed);
+        let process = process_from_pid_entry(&self.0)
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has been reaped"))?;
+        let oom_score_adj = process.oom_score_adj().load(Ordering::Relaxed);
         writeln!(printer, "{}", oom_score_adj)?;
 
         Ok(printer.bytes_written())
@@ -51,7 +53,9 @@ impl FileOps for OomScoreAdjFileOps {
         // does not have the `SYS_RESOURCE` capability, we should fail with
         // `EACCES`. See
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L1152>.
-        self.0.oom_score_adj().store(val as i16, Ordering::Relaxed);
+        let process = process_from_pid_entry(&self.0)
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has been reaped"))?;
+        process.oom_score_adj().store(val as i16, Ordering::Relaxed);
 
         Ok(read_bytes)
     }

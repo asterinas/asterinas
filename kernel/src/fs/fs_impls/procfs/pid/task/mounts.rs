@@ -59,6 +59,7 @@ impl MountsFileOps {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3351>
         ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r))
             .parent(parent)
+            .need_revalidation()
             .build()
             .unwrap()
     }
@@ -114,7 +115,10 @@ impl MountsFileOps {
 
 impl FileOps for MountsFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let thread = self.0.thread();
+        let thread = self
+            .0
+            .thread()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has been reaped"))?;
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let fs = posix_thread.read_fs();

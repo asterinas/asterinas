@@ -23,6 +23,7 @@ impl CgroupFileOps {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3379>
         ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r))
             .parent(parent)
+            .need_revalidation()
             .build()
             .unwrap()
     }
@@ -30,9 +31,11 @@ impl CgroupFileOps {
 
 impl FileOps for CgroupFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let path = self
+        let process = self
             .0
-            .process_ref
+            .process()
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process has been reaped"))?;
+        let path = process
             .cgroup()
             .get()
             .map(|cgroup| cgroup.path())

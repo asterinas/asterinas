@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_util::slot_vec::SlotVec;
-use ostd::sync::RwMutexUpgradeableGuard;
-
 use super::PidDirOps;
 use crate::{
-    events::Observer,
     fs::{
         file::mkmod,
         procfs::{
@@ -18,16 +14,15 @@ use crate::{
                 status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
-                DirOps, ProcDir, ProcDirBuilder, lookup_child_from_table,
-                populate_children_from_table,
+                DirOps, ProcDir, ProcDirBuilder, ReaddirEntry, child_names_from_table,
+                keyed_readdir_entries, lookup_child_from_table,
             },
         },
-        utils::DirEntryVecExt,
-        vfs::inode::Inode,
+        vfs::inode::{Inode, RevalidateResult},
     },
     prelude::*,
-    process::{Process, posix_thread::AsPosixThread, task_set::TidEvent},
-    thread::{AsThread, Thread, Tid},
+    process::{Process, pid_table, pid_table::PidEntry, posix_thread::AsPosixThread},
+    thread::{Thread, Tid},
 };
 
 mod auxv;
@@ -45,61 +40,97 @@ mod mounts;
 mod mountstats;
 mod ns;
 mod oom_score_adj;
-mod stat;
+pub(super) mod stat;
 mod status;
 mod uid_map;
 
+pub(super) fn process_from_pid_entry(pid_entry: &PidEntry) -> Option<Arc<Process>> {
+    pid_entry.process().or_else(|| {
+        pid_entry
+            .thread()
+            .map(|thread| thread.as_posix_thread().unwrap().process())
+    })
+}
+
 /// Represents the inode at `/proc/[pid]/task`.
-pub struct TaskDirOps(Arc<Process>);
+pub struct TaskDirOps(Arc<PidEntry>);
 
 impl TaskDirOps {
     pub fn new_inode(dir: &PidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.0.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3316>
-        let task_dir_inode = ProcDirBuilder::new(Self(process_ref), mkmod!(a+rx))
+        ProcDirBuilder::new(Self(dir.pid_entry().clone()), mkmod!(a+rx))
             .parent(parent)
+            .need_revalidation()
+            .need_neg_child_revalidation()
             .build()
-            .unwrap();
+            .unwrap()
+    }
 
-        let weak_ptr = Arc::downgrade(&task_dir_inode);
-        dir.0.process_ref.tasks().lock().register_observer(weak_ptr);
+    fn process(&self) -> Option<Arc<Process>> {
+        process_from_pid_entry(&self.0)
+    }
 
-        task_dir_inode
+    fn thread_entries(&self) -> Vec<(usize, String)> {
+        let Some(process_ref) = self.process() else {
+            return Vec::new();
+        };
+
+        let mut tids: Vec<_> = {
+            let tasks = process_ref.tasks().lock();
+            tasks
+                .as_slice()
+                .iter()
+                .map(|task| task.as_posix_thread().unwrap().tid())
+                .collect()
+        };
+        tids.sort_unstable();
+
+        let pid_table = pid_table::pid_table_mut();
+        tids.into_iter()
+            .filter_map(|tid| {
+                pid_table
+                    .get_entry(tid)
+                    .and_then(|_| usize::try_from(tid).ok())
+            })
+            .map(|tid| (tid, tid.to_string()))
+            .collect()
     }
 }
 
 /// Represents the inode at `/proc/[pid]/task/[tid]`.
 #[derive(Clone)]
 pub(super) struct TidDirOps {
-    pub(super) process_ref: Arc<Process>,
-    /// If `thread_ref` is `None`, this corresponds to a process-level `/proc/[pid]/*` file.
-    /// Otherwise, this corresponds to a thread-level `/proc/[pid]/task/[tid]/*` file.
-    pub(super) thread_ref: Option<Arc<Thread>>,
+    pid_entry: Arc<PidEntry>,
 }
 
 impl TidDirOps {
-    pub fn new_inode(
-        process_ref: Arc<Process>,
-        thread_ref: Arc<Thread>,
-        parent: Weak<dyn Inode>,
-    ) -> Arc<dyn Inode> {
+    pub fn new(pid_entry: Arc<PidEntry>) -> Self {
+        Self { pid_entry }
+    }
+
+    pub fn new_inode(pid_entry: Arc<PidEntry>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcDirBuilder::new(
-            Self {
-                process_ref,
-                thread_ref: Some(thread_ref),
-            },
+            Self { pid_entry },
             // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3796>
             mkmod!(a+rx),
         )
         .parent(parent)
+        .need_revalidation()
+        .need_neg_child_revalidation()
         .build()
         .unwrap()
     }
 
-    pub fn thread(&self) -> Arc<Thread> {
-        self.thread_ref
-            .clone()
-            .unwrap_or_else(|| self.process_ref.main_thread())
+    pub(super) fn pid_entry(&self) -> &Arc<PidEntry> {
+        &self.pid_entry
+    }
+
+    pub(super) fn process(&self) -> Option<Arc<Process>> {
+        process_from_pid_entry(&self.pid_entry)
+    }
+
+    pub(super) fn thread(&self) -> Option<Arc<Thread>> {
+        self.pid_entry.thread()
     }
 
     #[expect(clippy::type_complexity)]
@@ -121,7 +152,7 @@ impl TidDirOps {
         ("mountstats", MountStatsFileOps::new_inode),
         ("ns", NsDirOps::new_inode),
         ("oom_score_adj", OomScoreAdjFileOps::new_inode),
-        ("stat", StatFileOps::new_inode),
+        ("stat", StatFileOps::new_thread_inode),
         ("status", StatusFileOps::new_inode),
         ("uid_map", UidMapFileOps::new_inode),
         ("maps", MapsFileOps::new_inode),
@@ -131,31 +162,41 @@ impl TidDirOps {
 
 impl DirOps for TidDirOps {
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
-        let mut cached_children = dir.cached_children().write();
-        self.lookup_child_locked(&mut cached_children, dir.this_weak().clone(), name)
+        self.lookup_live_child(dir.this_weak().clone(), name)
     }
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let mut cached_children = dir.cached_children().write();
-        self.populate_children_locked(&mut cached_children, dir.this_weak().clone());
-        cached_children.downgrade()
+    fn child_names(&self, _dir: &ProcDir<Self>) -> Vec<String> {
+        self.listed_child_names()
+    }
+
+    fn revalidate_pos_child(&self, _name: &str, _child: &dyn Inode) -> RevalidateResult {
+        if self.process().is_none() || self.thread().is_none() {
+            RevalidateResult::Invalid
+        } else {
+            RevalidateResult::Valid
+        }
+    }
+
+    fn revalidate_neg_child(&self, name: &str) -> RevalidateResult {
+        if Self::STATIC_ENTRIES
+            .iter()
+            .any(|(entry_name, _)| *entry_name == name)
+        {
+            RevalidateResult::Invalid
+        } else {
+            RevalidateResult::Valid
+        }
     }
 }
 
 impl TidDirOps {
-    pub(super) fn lookup_child_locked(
+    pub(super) fn lookup_static_child(
         &self,
-        cached_children: &mut SlotVec<(String, Arc<dyn Inode>)>,
         this_ptr: Weak<dyn Inode>,
         name: &str,
     ) -> Result<Arc<dyn Inode>> {
         if let Some(child) =
-            lookup_child_from_table(name, cached_children, Self::STATIC_ENTRIES, |f| {
-                (f)(self, this_ptr)
-            })
+            lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| (f)(self, this_ptr))
         {
             return Ok(child);
         }
@@ -163,79 +204,121 @@ impl TidDirOps {
         return_errno_with_message!(Errno::ENOENT, "the file does not exist");
     }
 
-    pub(super) fn populate_children_locked(
+    pub(super) fn lookup_live_child(
         &self,
-        cached_children: &mut SlotVec<(String, Arc<dyn Inode>)>,
         this_ptr: Weak<dyn Inode>,
-    ) {
-        populate_children_from_table(cached_children, Self::STATIC_ENTRIES, |f| {
-            (f)(self, this_ptr.clone())
-        });
+        name: &str,
+    ) -> Result<Arc<dyn Inode>> {
+        if self.process().is_none() || self.thread().is_none() {
+            return_errno_with_message!(Errno::ENOENT, "the process or thread does not exist");
+        }
+
+        self.lookup_static_child(this_ptr, name)
     }
-}
 
-impl Observer<TidEvent> for ProcDir<TaskDirOps> {
-    fn on_events(&self, events: &TidEvent) {
-        let TidEvent::Exit(tid) = events;
+    pub(super) fn static_child_names(&self) -> Vec<String> {
+        child_names_from_table(Self::STATIC_ENTRIES)
+    }
 
-        let mut cached_children = self.cached_children().write();
-        cached_children.remove_entry_by_name(&tid.to_string());
+    pub(super) fn listed_child_names(&self) -> Vec<String> {
+        if self.process().is_none() || self.thread().is_none() {
+            return Vec::new();
+        }
+
+        self.static_child_names()
     }
 }
 
 impl DirOps for TaskDirOps {
-    // Lock order: task set -> cached entries
-    //
-    // Note that inverting the lock order is non-trivial because `Observer::on_events` will be
-    // called with the task set locked.
-
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         let Ok(tid) = name.parse::<Tid>() else {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid TID");
         };
 
-        for task in self.0.tasks().lock().as_slice() {
-            let thread_ref = task.as_thread().unwrap();
-            if thread_ref.as_posix_thread().unwrap().tid() != tid {
-                continue;
-            }
-
-            let mut cached_children = dir.cached_children().write();
-            return Ok(cached_children
-                .put_entry_if_not_found(name, || {
-                    TidDirOps::new_inode(
-                        self.0.clone(),
-                        thread_ref.clone(),
-                        dir.this_weak().clone(),
-                    )
-                })
-                .clone());
+        let Some(process_ref) = self.process() else {
+            return_errno_with_message!(Errno::ESRCH, "the process has been reaped");
+        };
+        let contains_tid = process_ref
+            .tasks()
+            .lock()
+            .as_slice()
+            .iter()
+            .any(|task| task.as_posix_thread().unwrap().tid() == tid);
+        if !contains_tid {
+            return_errno_with_message!(Errno::ENOENT, "the thread does not exist");
         }
 
-        return_errno_with_message!(Errno::ENOENT, "the thread does not exist")
+        let pid_table = pid_table::pid_table_mut();
+        let Some(pid_entry) = pid_table.get_entry(tid) else {
+            return_errno_with_message!(Errno::ENOENT, "the thread does not exist");
+        };
+
+        Ok(TidDirOps::new_inode(pid_entry, dir.this_weak().clone()))
     }
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let tasks = self.0.tasks().lock();
-        let mut cached_dentries = dir.cached_children().write();
+    fn child_names(&self, _dir: &ProcDir<Self>) -> Vec<String> {
+        self.thread_entries()
+            .into_iter()
+            .map(|(_, name)| name)
+            .collect()
+    }
 
-        for task in tasks.as_slice() {
-            let thread_ref = task.as_thread().unwrap();
-            cached_dentries.put_entry_if_not_found(
-                &task.as_posix_thread().unwrap().tid().to_string(),
-                || {
-                    TidDirOps::new_inode(
-                        self.0.clone(),
-                        thread_ref.clone(),
-                        dir.this_weak().clone(),
-                    )
-                },
-            );
+    fn entries_from_offset(&self, _dir: &ProcDir<Self>, offset: usize) -> Vec<ReaddirEntry> {
+        keyed_readdir_entries(offset, 2, self.thread_entries())
+    }
+
+    fn revalidate_pos_child(&self, name: &str, child: &dyn Inode) -> RevalidateResult {
+        let Ok(tid) = name.parse::<Tid>() else {
+            return RevalidateResult::Invalid;
+        };
+        let Some(child) = child.downcast_ref::<ProcDir<TidDirOps>>() else {
+            return RevalidateResult::Invalid;
+        };
+
+        let Some(process_ref) = self.process() else {
+            return RevalidateResult::Invalid;
+        };
+        let contains_tid = process_ref
+            .tasks()
+            .lock()
+            .as_slice()
+            .iter()
+            .any(|task| task.as_posix_thread().unwrap().tid() == tid);
+        if !contains_tid {
+            return RevalidateResult::Invalid;
         }
 
-        cached_dentries.downgrade()
+        let pid_table = pid_table::pid_table_mut();
+        let Some(pid_entry) = pid_table.get_entry(tid) else {
+            return RevalidateResult::Invalid;
+        };
+
+        if Arc::ptr_eq(&pid_entry, child.inner().pid_entry()) {
+            RevalidateResult::Valid
+        } else {
+            RevalidateResult::Invalid
+        }
+    }
+
+    fn revalidate_neg_child(&self, name: &str) -> RevalidateResult {
+        let Ok(tid) = name.parse::<Tid>() else {
+            return RevalidateResult::Valid;
+        };
+
+        let Some(process_ref) = self.process() else {
+            return RevalidateResult::Valid;
+        };
+
+        if process_ref
+            .tasks()
+            .lock()
+            .as_slice()
+            .iter()
+            .all(|task| task.as_posix_thread().unwrap().tid() != tid)
+        {
+            RevalidateResult::Valid
+        } else {
+            RevalidateResult::Invalid
+        }
     }
 }

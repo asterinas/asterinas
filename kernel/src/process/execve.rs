@@ -246,7 +246,7 @@ fn make_current_main_thread(ctx: &Context) {
     assert_eq!(tasks.as_slice().len(), 2);
     assert!(core::ptr::eq(ctx.task, tasks.as_slice()[1].as_ref()));
 
-    tasks.swap_main(pid, old_tid);
+    tasks.swap_main();
     ctx.posix_thread.set_main(pid);
     drop(tasks);
 

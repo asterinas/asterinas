@@ -8,9 +8,10 @@ use super::Common;
 use crate::{
     fs::{
         file::{InodeMode, InodeType, StatusFlags},
+        procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, InodeIo, Metadata, SymbolicLink},
+            inode::{Extension, Inode, InodeIo, Metadata, RevalidateResult, SymbolicLink},
         },
     },
     prelude::*,
@@ -26,28 +27,26 @@ impl<S: SymOps> ProcSym<S> {
     pub(super) fn new(
         sym: S,
         fs: Weak<dyn FileSystem>,
-        is_volatile: bool,
+        need_revalidation: bool,
         mode: InodeMode,
     ) -> Arc<Self> {
-        let common = new_symlink_common(fs, mode, is_volatile);
+        let common = {
+            let arc_fs = fs.upgrade().unwrap();
+            let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
+            let metadata = Metadata::new_symlink(
+                procfs.alloc_id(),
+                mode,
+                BLOCK_SIZE,
+                procfs.sb().container_dev_id,
+            );
+            Common::new(metadata, fs, need_revalidation)
+        };
         Arc::new(Self { inner: sym, common })
     }
 
     pub fn inner(&self) -> &S {
         &self.inner
     }
-}
-
-fn new_symlink_common(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Common {
-    let fs_ref = fs.upgrade().unwrap();
-    let procfs = fs_ref.downcast_ref::<super::ProcFs>().unwrap();
-    let metadata = Metadata::new_symlink(
-        procfs.alloc_id(),
-        mode,
-        super::BLOCK_SIZE,
-        procfs.sb().container_dev_id,
-    );
-    Common::new(metadata, fs, is_volatile)
 }
 
 impl<S: SymOps + 'static> InodeIo for ProcSym<S> {
@@ -102,12 +101,20 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         self.inner.read_link()
     }
 
-    fn write_link(&self, _target: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+    fn need_revalidation(&self) -> bool {
+        self.common.need_revalidation()
     }
 
-    fn is_dentry_cacheable(&self) -> bool {
-        !self.common.is_volatile()
+    fn revalidate_pos_child(&self, _name: &str, _child: &Arc<dyn Inode>) -> RevalidateResult {
+        RevalidateResult::Invalid
+    }
+
+    fn revalidate_neg_child(&self, _name: &str) -> RevalidateResult {
+        RevalidateResult::Invalid
+    }
+
+    fn write_link(&self, _target: &str) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
     }
 }
 
