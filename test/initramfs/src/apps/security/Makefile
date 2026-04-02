@@ -3,5 +3,6 @@
 SUBDIRS := \
 	capability \
 	namespace \
+	yama \
 
 include ../common/Makefile

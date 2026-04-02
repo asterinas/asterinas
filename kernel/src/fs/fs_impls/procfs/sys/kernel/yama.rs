@@ -13,7 +13,7 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    process::posix_thread::alien_access::yama::{YamaScope, get_yama_scope, set_yama_scope},
+    security::lsm::{YamaScope, get_yama_scope, set_yama_scope},
 };
 
 /// Represents the inode at `/proc/sys/kernel/yama`.
