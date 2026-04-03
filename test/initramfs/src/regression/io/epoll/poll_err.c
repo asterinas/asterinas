@@ -66,7 +66,7 @@ FN_TEST(poll_eintr)
 {
 	int fildes[2];
 	int rfd, wfd;
-	struct pollfd fds[1];
+	struct pollfd fds[2];
 
 	TEST_SUCC(pipe(fildes));
 	rfd = fildes[0];
@@ -76,10 +76,21 @@ FN_TEST(poll_eintr)
 	fds[0].events = POLLIN;
 	fds[0].revents = POLLIN;
 
-	// Even if `poll` fails with `EINTR`, `revents` must be cleared.
+	// A negative FD indicates an invalid entry which the kernel should ignore.
+	fds[1].fd = -rfd;
+	fds[1].events = POLLIN;
+	fds[1].revents = POLLIN;
+
+	// Do a `poll` syscall that will be interrupted by SIGALRM.
 	TEST_SUCC(alarm(1));
-	TEST_ERRNO(poll(fds, 1, 2000), EINTR);
+	TEST_ERRNO(poll(fds, 2, 2000), EINTR);
+
+	// Even if `poll` fails with `EINTR`, `revents` must be cleared.
 	TEST_RES(fds[0].revents, _ret == 0);
+	TEST_RES(fds[1].revents, _ret == 0);
+	// However, the FD should not be altered for either valid or invalid entries.
+	TEST_RES(fds[0].fd, _ret == rfd);
+	TEST_RES(fds[1].fd, _ret == -rfd);
 
 	TEST_SUCC(close(rfd));
 	TEST_SUCC(close(wfd));
@@ -99,9 +110,11 @@ FN_TEST(select_eintr)
 	FD_ZERO(&rfds);
 	FD_SET(rfd, &rfds);
 
-	// If `select` fails with `EINTR`, `rfds` will not be cleared.
+	// Do a `select` syscall that will be interrupted by SIGALRM.
 	TEST_SUCC(alarm(1));
 	TEST_ERRNO(select(rfd + 1, &rfds, NULL, NULL, NULL), EINTR);
+
+	// If `select` fails with `EINTR`, `rfds` will not be cleared.
 	TEST_RES(FD_ISSET(rfd, &rfds), _ret);
 
 	TEST_SUCC(close(rfd));
