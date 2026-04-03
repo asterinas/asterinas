@@ -21,9 +21,8 @@ pub(super) use crate::{
     fs::{
         file::InodeType,
         utils::{CStr256, DirentVisitor, Str16, Str64},
-        vfs::page_cache::{CachePage, PageCache, PageCacheBackend},
     },
+    page_cache::{PageCache, PageCacheBackend},
     prelude::*,
     time::UnixTime,
-    vm::vmo::Vmo,
 };

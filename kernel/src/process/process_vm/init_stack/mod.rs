@@ -21,12 +21,12 @@ use ostd::mm::VmIo;
 
 use self::aux_vec::{AuxKey, AuxVec};
 use crate::{
+    page_cache::{Vmo, VmoOptions},
     prelude::*,
     util::random::getrandom,
     vm::{
         perms::VmPerms,
         vmar::{VMAR_CAP_ADDR, Vmar, VmarMapOffset},
-        vmo::{Vmo, VmoOptions},
     },
 };
 

@@ -12,10 +12,10 @@ use super::{AccessMode, InodeHandle, StatusFlags, file_table::FdFlags, inode_han
 use crate::{
     fs::vfs::{inode::FallocMode, path::Path},
     net::socket::Socket,
+    page_cache::Vmo,
     prelude::*,
     process::signal::Pollable,
     util::ioctl::RawIoctl,
-    vm::vmo::Vmo,
 };
 
 /// The basic operations defined on a file

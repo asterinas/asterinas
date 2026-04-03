@@ -44,6 +44,7 @@ mod fs;
 mod init;
 mod ipc;
 mod net;
+mod page_cache;
 mod prelude;
 mod process;
 mod sched;
