@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{cell::Cell, time::Duration};
+use core::{cell::Cell, mem::offset_of, time::Duration};
 
 use ostd::mm::VmIo;
 
@@ -9,7 +9,7 @@ use crate::{
     events::IoEvents,
     fs::file::{
         FileLike,
-        file_table::{FileDesc, FileTable, RawFileDesc},
+        file_table::{FileDesc, FileTable},
     },
     prelude::*,
     process::{ResourceType, signal::Poller},
@@ -55,7 +55,7 @@ pub(super) fn do_sys_poll(
             read_addr += size_of::<c_pollfd>();
 
             let poll_fd = PollFd::from(c_poll_fd);
-            // Always clear the revents fields first
+            // Always clear the `revents` field first.
             poll_fd.revents().set(IoEvents::empty());
             poll_fds.push(poll_fd);
         }
@@ -70,12 +70,14 @@ pub(super) fn do_sys_poll(
 
     let result = do_poll(&poll_fds, timeout.as_ref(), ctx);
 
-    // Write back even if `do_poll` fails (e.g., if it is interrupted by a signal)
+    // Write back -- even when `do_poll` returns an error
+    // because the `revents` field may contain garbage and must be cleared.
     let mut write_addr = fds;
     for pollfd in poll_fds {
-        let c_poll_fd = c_pollfd::from(pollfd);
+        let revents = pollfd.revents().get().bits() as i16;
 
-        user_space.write_val(write_addr, &c_poll_fd)?;
+        // Update the `revents` field only. Keep all other fields unchanged.
+        user_space.write_val(write_addr + offset_of!(c_pollfd, revents), &revents)?;
         write_addr += size_of::<c_pollfd>();
     }
 
@@ -169,7 +171,7 @@ impl PollFiles<'_> {
             let events = if let Some(file) = self.file_at(index) {
                 file.poll(poll_fd.events(), Some(poller.as_handle_mut()))
             } else {
-                IoEvents::NVAL
+                poll_fd.revents_for_missing_file()
             };
 
             if events.is_empty() {
@@ -198,7 +200,7 @@ impl PollFiles<'_> {
             let events = if let Some(file) = self.file_at(index) {
                 file.poll(poll_fd.events(), None)
             } else {
-                IoEvents::NVAL
+                poll_fd.revents_for_missing_file()
             };
 
             if events.is_empty() {
@@ -260,6 +262,15 @@ impl PollFd {
     pub fn revents(&self) -> &Cell<IoEvents> {
         &self.revents
     }
+
+    /// Returns the desired `revents` value if the file does not exist.
+    pub(self) fn revents_for_missing_file(&self) -> IoEvents {
+        if self.fd.is_some() {
+            IoEvents::NVAL
+        } else {
+            IoEvents::empty()
+        }
+    }
 }
 
 impl From<c_pollfd> for PollFd {
@@ -267,19 +278,6 @@ impl From<c_pollfd> for PollFd {
         let fd = FileDesc::try_from(raw.fd).ok();
         let events = IoEvents::from_bits_truncate(raw.events as _);
         let revents = Cell::new(IoEvents::from_bits_truncate(raw.revents as _));
-        Self {
-            fd,
-            events,
-            revents,
-        }
-    }
-}
-
-impl From<PollFd> for c_pollfd {
-    fn from(raw: PollFd) -> Self {
-        let fd = raw.fd().map(RawFileDesc::from).unwrap_or(-1);
-        let events = raw.events().bits() as i16;
-        let revents = raw.revents().get().bits() as i16;
         Self {
             fd,
             events,
