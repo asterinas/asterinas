@@ -68,9 +68,9 @@ pub(super) fn do_sys_poll(
         poll_fds, nfds, timeout
     );
 
-    let num_revents = do_poll(&poll_fds, timeout.as_ref(), ctx)?;
+    let result = do_poll(&poll_fds, timeout.as_ref(), ctx);
 
-    // Write back
+    // Write back even if `do_poll` fails (e.g., if it is interrupted by a signal)
     let mut write_addr = fds;
     for pollfd in poll_fds {
         let c_poll_fd = c_pollfd::from(pollfd);
@@ -79,6 +79,7 @@ pub(super) fn do_sys_poll(
         write_addr += size_of::<c_pollfd>();
     }
 
+    let num_revents = result?;
     Ok(SyscallReturn::Return(num_revents as _))
 }
 
