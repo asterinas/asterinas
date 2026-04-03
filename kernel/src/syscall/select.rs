@@ -8,7 +8,12 @@ use super::{
     SyscallReturn,
     poll::{PollFd, do_poll},
 };
-use crate::{events::IoEvents, fs::file::file_table::RawFileDesc, prelude::*, time::timeval_t};
+use crate::{
+    events::IoEvents,
+    fs::file::file_table::{FileDesc, RawFileDesc},
+    prelude::*,
+    time::timeval_t,
+};
 
 pub fn sys_select(
     nfds: RawFileDesc,
@@ -105,14 +110,14 @@ fn do_select(
     timeout: Option<&Duration>,
     ctx: &Context,
 ) -> Result<usize> {
-    // Convert the FdSet to an array of PollFd
+    // Convert the `FdSet`s to an array of `PollFd`s
     let poll_fds = {
         let mut poll_fds = Vec::with_capacity(nfds as usize);
-        for fd in 0..nfds {
+        for raw_fd in 0..nfds {
             let events = {
-                let readable = readfds.as_ref().is_some_and(|fds| fds.is_set(fd));
-                let writable = writefds.as_ref().is_some_and(|fds| fds.is_set(fd));
-                let except = exceptfds.as_ref().is_some_and(|fds| fds.is_set(fd));
+                let readable = readfds.as_ref().is_some_and(|fds| fds.is_set(raw_fd));
+                let writable = writefds.as_ref().is_some_and(|fds| fds.is_set(raw_fd));
+                let except = exceptfds.as_ref().is_some_and(|fds| fds.is_set(raw_fd));
                 convert_rwe_to_events(readable, writable, except)
             };
 
@@ -120,13 +125,18 @@ fn do_select(
                 continue;
             }
 
+            let Ok(fd) = FileDesc::try_from(raw_fd) else {
+                // Linux will ignore FDs that are greater than the maximum FD ever opened by the
+                // process. So here we can break the loop and skip the remaining FDs.
+                break;
+            };
             let poll_fd = PollFd::new(Some(fd), events);
             poll_fds.push(poll_fd);
         }
         poll_fds
     };
 
-    // Clear up the three input fd_set's, which will be used for output as well
+    // Clear up the three input `FdSet`s, which will be used for output as well
     if let Some(fds) = readfds.as_mut() {
         fds.clear();
     }
@@ -137,34 +147,34 @@ fn do_select(
         fds.clear();
     }
 
-    // Do the poll syscall that is equivalent to the select syscall
+    // Do the `poll` syscall that is equivalent to the `select` syscall
     let num_revents = do_poll(&poll_fds, timeout, ctx)?;
     if num_revents == 0 {
         return Ok(0);
     }
 
-    // Convert poll's pollfd results to select's fd_set results
+    // Convert `PollFd` results to `FdSet` results
     let mut total_revents = 0;
     for poll_fd in &poll_fds {
-        let fd = poll_fd.fd().unwrap();
+        let raw_fd = RawFileDesc::from(poll_fd.fd().unwrap());
         let revents = poll_fd.revents().get();
         let (readable, writable, except) = convert_events_to_rwe(revents)?;
         if let Some(ref mut fds) = readfds
             && readable
         {
-            fds.set(fd)?;
+            fds.set(raw_fd)?;
             total_revents += 1;
         }
         if let Some(ref mut fds) = writefds
             && writable
         {
-            fds.set(fd)?;
+            fds.set(raw_fd)?;
             total_revents += 1;
         }
         if let Some(ref mut fds) = exceptfds
             && except
         {
-            fds.set(fd)?;
+            fds.set(raw_fd)?;
             total_revents += 1;
         }
     }
