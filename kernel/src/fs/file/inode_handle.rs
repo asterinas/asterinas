@@ -100,9 +100,11 @@ impl InodeHandle {
         (inode.as_ref(), is_offset_aware)
     }
 
-    fn inode_io_and_check_seekable(&self) -> Result<&dyn InodeIo> {
+    /// Returns the `InodeIo` for positional I/O, rejecting files
+    /// that do not support `pread`/`pwrite`.
+    fn inode_io_for_positional_io(&self) -> Result<&dyn InodeIo> {
         if let Some(ref file_io) = self.file_io {
-            file_io.check_seekable()?;
+            file_io.check_positional_io()?;
             return Ok(file_io.as_ref());
         }
 
@@ -296,22 +298,22 @@ impl FileLike for InodeHandle {
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let inode_io = self.inode_io_for_positional_io()?;
         if !self.rights.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
 
-        let inode_io = self.inode_io_and_check_seekable()?;
         let status_flags = self.status_flags();
 
         inode_io.read_at(offset, writer, status_flags)
     }
 
     fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let inode_io = self.inode_io_for_positional_io()?;
         if !self.rights.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
 
-        let inode_io = self.inode_io_and_check_seekable()?;
         let status_flags = self.status_flags();
 
         // FIXME: How can we deal with the `O_APPEND` flag if `file_io` is set?
@@ -533,6 +535,17 @@ pub trait FileIo: Pollable + InodeIo + Any + Send + Sync + 'static {
     /// the offset in the `seek()` operation will be ignored.
     /// In that case, the `seek()` operation will do nothing but succeed.
     fn is_offset_aware(&self) -> bool;
+
+    /// Checks whether positional I/O (`pread`/`pwrite`) is supported.
+    ///
+    /// The default delegates to [`check_seekable`], which is correct for
+    /// most files. Override this for files that support positional I/O
+    /// but not seeking (e.g., nsfs).
+    ///
+    /// [`check_seekable`]: FileIo::check_seekable
+    fn check_positional_io(&self) -> Result<()> {
+        self.check_seekable()
+    }
 
     // See `FileLike::mappable`.
     fn mappable(&self) -> Result<Mappable> {

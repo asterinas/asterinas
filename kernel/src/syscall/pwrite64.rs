@@ -26,10 +26,6 @@ pub fn sys_pwrite64(
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
-    // TODO: Check (f.file->f_mode & FMODE_PWRITE); We don't have f_mode in our FileLike trait
-    if user_buf_len == 0 {
-        return Ok(SyscallReturn::Return(0));
-    }
     if offset.checked_add(user_buf_len as i64).is_none() {
         return_errno_with_message!(Errno::EINVAL, "offset + user_buf_len overflow");
     }
