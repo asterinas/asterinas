@@ -2,12 +2,14 @@
 
 #define _GNU_SOURCE
 
-#include <unistd.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/file.h>
-#include <poll.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 #include "../../common/test.h"
 
@@ -177,6 +179,14 @@ FN_TEST(path)
 {
 	int fd;
 	char buf[1];
+	struct iovec empty_iov = {
+		.iov_base = buf,
+		.iov_len = 0,
+	};
+	struct iovec single_byte_iov = {
+		.iov_base = buf,
+		.iov_len = 1,
+	};
 	struct pollfd pfd;
 
 	// Test 1: Normal file
@@ -190,6 +200,23 @@ FN_TEST(path)
 	TEST_ERRNO(ioctl(fd, TCGETS), EBADF);
 	TEST_ERRNO(ftruncate(fd, 1), EBADF);
 	TEST_ERRNO(fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 1), EBADF);
+
+	/*
+	 * Regression coverage for `O_PATH` positional I/O. This complements
+	 * the existing `lseek` checks so that zero-length and nonzero-length
+	 * `pread`/`pwrite`/`preadv`/`pwritev` all keep returning `EBADF`
+	 * like Linux.
+	 */
+	TEST_ERRNO(pread(fd, buf, 0, 0), EBADF);
+	TEST_ERRNO(pread(fd, buf, 1, 0), EBADF);
+	TEST_ERRNO(pwrite(fd, buf, 0, 0), EBADF);
+	TEST_ERRNO(pwrite(fd, buf, 1, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, NULL, 0, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, NULL, 0, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, &empty_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, &empty_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, &single_byte_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, &single_byte_iov, 1, 0, 0), EBADF);
 
 	TEST_ERRNO(mmap(NULL, PAGE_SIZE, PROT_READ, MAP_SHARED, fd, 0), EBADF);
 	// FIXME: Asterinas reports `EACCES` because it performs the permission check first.
@@ -233,6 +260,21 @@ FN_TEST(path)
 	TEST_ERRNO(ioctl(fd, TCGETS), EBADF);
 	TEST_ERRNO(ftruncate(fd, 1), EBADF);
 	TEST_ERRNO(fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 1), EBADF);
+
+	/*
+	 * Regression coverage for `O_PATH` positional I/O. For details, see
+	 * comments above in "Test 1: Normal file".
+	 */
+	TEST_ERRNO(pread(fd, buf, 0, 0), EBADF);
+	TEST_ERRNO(pread(fd, buf, 1, 0), EBADF);
+	TEST_ERRNO(pwrite(fd, buf, 0, 0), EBADF);
+	TEST_ERRNO(pwrite(fd, buf, 1, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, NULL, 0, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, NULL, 0, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, &empty_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, &empty_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, &single_byte_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, &single_byte_iov, 1, 0, 0), EBADF);
 
 	TEST_ERRNO(mmap(NULL, PAGE_SIZE, PROT_READ, MAP_SHARED, fd, 0), EBADF);
 	// FIXME: Asterinas reports `EACCES` because it performs the permission check first.

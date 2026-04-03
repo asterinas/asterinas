@@ -6,6 +6,8 @@
 #include <signal.h>
 #include <string.h>
 #include <sys/poll.h>
+#include <sys/syscall.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 FN_SETUP()
@@ -207,6 +209,33 @@ FN_TEST(zero_writes_always_succeed)
 	TEST_SUCC(close(fildes[0]));
 	TEST_SUCC(write(fildes[1], buf, 0));
 
+	TEST_SUCC(close(fildes[1]));
+}
+END_TEST()
+
+// Verifies the Linux-compatible `ESPIPE` result for positional I/O on pipes.
+FN_TEST(zero_length_positional_io_fails_on_pipe)
+{
+	int fildes[2];
+	char buf[1] = { 'z' };
+	struct iovec iov = { .iov_base = buf, .iov_len = 0 };
+
+	TEST_SUCC(pipe(fildes));
+
+	TEST_ERRNO(syscall(SYS_pread64, fildes[0], buf, 0, 3), ESPIPE);
+	TEST_ERRNO(syscall(SYS_pread64, fildes[1], buf, 0, 3), ESPIPE);
+	TEST_ERRNO(syscall(SYS_pwrite64, fildes[1], buf, 0, 3), ESPIPE);
+	TEST_ERRNO(syscall(SYS_pwrite64, fildes[0], buf, 0, 3), ESPIPE);
+	TEST_ERRNO(syscall(SYS_preadv, fildes[0], NULL, 0, 3, 0), ESPIPE);
+	TEST_ERRNO(syscall(SYS_preadv, fildes[1], NULL, 0, 3, 0), ESPIPE);
+	TEST_ERRNO(syscall(SYS_pwritev, fildes[1], NULL, 0, 3, 0), ESPIPE);
+	TEST_ERRNO(syscall(SYS_pwritev, fildes[0], NULL, 0, 3, 0), ESPIPE);
+	TEST_ERRNO(syscall(SYS_preadv, fildes[0], &iov, 1, 3, 0), ESPIPE);
+	TEST_ERRNO(syscall(SYS_preadv, fildes[1], &iov, 1, 3, 0), ESPIPE);
+	TEST_ERRNO(syscall(SYS_pwritev, fildes[1], &iov, 1, 3, 0), ESPIPE);
+	TEST_ERRNO(syscall(SYS_pwritev, fildes[0], &iov, 1, 3, 0), ESPIPE);
+
+	TEST_SUCC(close(fildes[0]));
 	TEST_SUCC(close(fildes[1]));
 }
 END_TEST()

@@ -6,10 +6,6 @@ Pipes/PipeTest.FionRead/*
 Pipes/PipeTest.SizeChange*
 Pipes/PipeTest.Streaming/*
 
-# TODO: Fail with `ESPIPE` instead of `EBADF`
-# when calling `preadv` (`pwritev`) on a pipe writer (reader).
-Pipes/PipeTest.OffsetCalls/*
-
 # TODO: Report `O_LARGEFILE` flag for named pipes.
 Pipes/PipeTest.Flags/namedblocking
 Pipes/PipeTest.Flags/namednonblocking
