@@ -19,6 +19,7 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -64,6 +65,11 @@ FN_TEST(common_fs_operations)
 
 		/* read(2) and write(2) are not supported. */
 		TEST_ERRNO(read(nsfd, buf, 1), EINVAL);
+		/* Regression coverage for zero-length `pread` on nsfs. See PR
+		 * #2966. Linux rejects it with `EINVAL` rather than `ESPIPE`.
+		 */
+		TEST_ERRNO(pread(nsfd, buf, 0, 0), EINVAL);
+		TEST_ERRNO(pread(nsfd, buf, 1, 0), EINVAL);
 		TEST_ERRNO(write(nsfd, buf, 1), EBADF);
 
 		/* poll(2) should report IN, OUT, and RDNORM immediately. */
@@ -443,11 +449,25 @@ END_TEST()
 FN_TEST(open_with_o_path)
 {
 	int nsfd = TEST_SUCC(open("/proc/self/ns/uts", O_PATH));
+	char buf[1] = { 0 };
+	struct iovec empty_iov = {
+		.iov_base = buf,
+		.iov_len = 0,
+	};
 
 	/* An O_PATH fd does not support ioctl. */
 	TEST_ERRNO(ioctl(nsfd, NS_GET_NSTYPE), EBADF);
 	TEST_ERRNO(ioctl(nsfd, NS_GET_USERNS), EBADF);
 	TEST_ERRNO(ioctl(nsfd, NS_GET_PARENT), EBADF);
+	TEST_ERRNO(pread(nsfd, buf, 0, 0), EBADF);
+	TEST_ERRNO(pread(nsfd, buf, 1, 0), EBADF);
+	TEST_ERRNO(pwrite(nsfd, buf, 0, 0), EBADF);
+	TEST_ERRNO(pwrite(nsfd, buf, 1, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, nsfd, NULL, 0, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, nsfd, NULL, 0, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, nsfd, &empty_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, nsfd, &empty_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(lseek(nsfd, 0, SEEK_SET), EBADF);
 
 	TEST_SUCC(close(nsfd));
 }
