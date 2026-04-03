@@ -8,7 +8,6 @@ BENCHMARK ?= none
 BOOT_METHOD ?= grub-rescue-iso
 BOOT_PROTOCOL ?= multiboot2
 ENABLE_KVM ?= 1
-INTEL_TDX ?= 0
 MEM ?= 8G
 OVMF ?= on
 RELEASE ?= 0
@@ -30,6 +29,14 @@ COVERAGE ?= 0
 # linux-efi-handover64 and linux-efi-pe64 boot protocol.
 CONSOLE ?= hvc0
 # End of global build options.
+
+# Confidential computing options.
+# Enable Intel TDX support.
+INTEL_TDX ?= 0
+# Memory acceptance mode for Intel TDX guests (supported: lazy, eager).
+# This option only takes effect when INTEL_TDX is set to 1.
+ACCEPT_MEMORY_MODE ?= lazy
+# End of confidential computing options.
 
 # GDB debugging and profiling options.
 GDB_TCP_PORT ?= 1234
@@ -133,8 +140,12 @@ CARGO_OSDK_BUILD_ARGS += --init-args="/benchmark/common/bench_runner.sh $(BENCHM
 endif
 
 ifeq ($(INTEL_TDX), 1)
+	ifneq ($(filter $(ACCEPT_MEMORY_MODE),lazy eager),$(ACCEPT_MEMORY_MODE))
+	$(error ACCEPT_MEMORY_MODE must be one of: lazy, eager)
+	endif
 BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_COMMON_ARGS += --scheme tdx
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="accept_memory=$(ACCEPT_MEMORY_MODE)"
 endif
 
 ifeq ($(BOOT_PROTOCOL), multiboot)
