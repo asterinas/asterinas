@@ -86,15 +86,21 @@ fn do_sys_preadv(
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
-    if io_vec_count == 0 {
+    let user_space = ctx.user_space();
+    let mut writer_array = VmWriterArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
+
+    // Probe with a zero-length read so that unsupported files (e.g., pipes)
+    // still return the correct errno even when all buffers are empty.
+    if writer_array.writers_mut().is_empty() {
+        let mut empty = [0u8; 0];
+        let mut writer = VmWriter::from(empty.as_mut_slice()).to_fallible();
+        file.read_at(offset as usize, &mut writer)?;
         return Ok(0);
     }
 
     let mut total_len: usize = 0;
     let mut cur_offset = offset as usize;
 
-    let user_space = ctx.user_space();
-    let mut writer_array = VmWriterArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for writer in writer_array.writers_mut() {
         debug_assert!(writer.has_avail());
 
