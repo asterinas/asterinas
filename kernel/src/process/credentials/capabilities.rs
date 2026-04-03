@@ -72,6 +72,16 @@ impl CapSet {
         CapSet::all()
     }
 
+    /// Creates a capability set that contains exactly one Linux capability.
+    pub fn from_capability_number(capability: u64) -> Option<Self> {
+        if capability > Self::most_significant_bit() as u64 {
+            return None;
+        }
+
+        let bits = 1_u64.checked_shl(capability as u32)?;
+        Some(Self { bits })
+    }
+
     /// Returns the most significant bit in a 64-bit `CapSet` that may be set to represent a Linux
     /// capability.
     pub const fn most_significant_bit() -> u8 {

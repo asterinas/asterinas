@@ -5,12 +5,13 @@ use core::sync::atomic::Ordering;
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{
-    Gid, SecureBits, Uid, group::AtomicGid, secure_bits::AtomicSecureBits, user::AtomicUid,
+    Gid, INITIAL_BOUNDING_CAPSET, SecureBits, Uid, group::AtomicGid, secure_bits::AtomicSecureBits,
+    user::AtomicUid,
 };
 use crate::{
     prelude::*,
     process::credentials::{
-        AMBIENT_CAPSET, BOUNDING_CAPSET,
+        AMBIENT_CAPSET,
         capabilities::{AtomicCapSet, CapSet},
     },
 };
@@ -69,6 +70,8 @@ pub(super) struct Credentials_ {
     permitted_capset: AtomicCapSet,
     /// Capabilities that we can actually use.
     effective_capset: AtomicCapSet,
+    /// Capabilities that may be preserved across `execve()` and added to the inheritable set.
+    bounding_capset: AtomicCapSet,
 
     /// Secure bits.
     securebits: AtomicSecureBits,
@@ -95,6 +98,7 @@ impl Credentials_ {
             inheritable_capset: AtomicCapSet::new(CapSet::empty()),
             permitted_capset: AtomicCapSet::new(capset),
             effective_capset: AtomicCapSet::new(capset),
+            bounding_capset: AtomicCapSet::new(INITIAL_BOUNDING_CAPSET),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
         }
     }
@@ -203,7 +207,7 @@ impl Credentials_ {
         };
 
         let new_permitted = (self.inheritable_capset() & file_inheritable)
-            | (file_permitted & BOUNDING_CAPSET)
+            | (file_permitted & self.bounding_capset())
             | AMBIENT_CAPSET;
         let new_effective = (file_effective & new_permitted) | (!file_effective & AMBIENT_CAPSET);
 
@@ -517,6 +521,10 @@ impl Credentials_ {
         self.effective_capset.load(Ordering::Relaxed)
     }
 
+    pub(super) fn bounding_capset(&self) -> CapSet {
+        self.bounding_capset.load(Ordering::Relaxed)
+    }
+
     pub(super) fn set_inheritable_capset(&self, inheritable_capset: CapSet) {
         self.inheritable_capset
             .store(inheritable_capset, Ordering::Relaxed);
@@ -530,6 +538,24 @@ impl Credentials_ {
     pub(super) fn set_effective_capset(&self, effective_capset: CapSet) {
         self.effective_capset
             .store(effective_capset, Ordering::Relaxed);
+    }
+
+    fn set_bounding_capset(&self, bounding_capset: CapSet) {
+        self.bounding_capset
+            .store(bounding_capset, Ordering::Relaxed);
+    }
+
+    pub(super) fn drop_bounding_cap(&self, capability: CapSet) -> Result<()> {
+        if !self.effective_capset().contains(CapSet::SETPCAP) {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "only threads with CAP_SETPCAP can drop bounding capabilities"
+            );
+        }
+
+        let new_bounding_capset = self.bounding_capset() - capability;
+        self.set_bounding_capset(new_bounding_capset);
+        Ok(())
     }
 
     pub(super) fn keep_capabilities(&self) -> bool {
@@ -580,6 +606,7 @@ impl Clone for Credentials_ {
             inheritable_capset: self.inheritable_capset.clone(),
             permitted_capset: self.permitted_capset.clone(),
             effective_capset: self.effective_capset.clone(),
+            bounding_capset: self.bounding_capset.clone(),
             securebits: self.securebits.clone(),
         }
     }

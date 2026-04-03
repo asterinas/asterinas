@@ -29,6 +29,6 @@ use crate::prelude::*;
 /// - secure bits.
 pub struct Credentials<R = FullOp>(Arc<Credentials_>, R);
 
-// TODO: Support the bounding and ambient capability set.
-pub const BOUNDING_CAPSET: CapSet = CapSet::all();
+// TODO: Support the ambient capability set.
+pub const INITIAL_BOUNDING_CAPSET: CapSet = CapSet::all();
 pub const AMBIENT_CAPSET: CapSet = CapSet::empty();

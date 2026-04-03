@@ -34,6 +34,7 @@ set -e
 
 ./prctl/secure_bits
 ./prctl/subreaper
+./prctl/capbset
 
 ./pthread/pthread_signal_test
 ./pthread/pthread_test
