@@ -8,7 +8,7 @@ use core::{
 };
 
 use aster_util::ranged_integer::RangedU8;
-use bitvec::{BitArr, bitarr};
+use bitvec::prelude::*;
 use ostd::{
     cpu::CpuId,
     task::{

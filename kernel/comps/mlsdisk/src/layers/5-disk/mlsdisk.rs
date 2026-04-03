@@ -16,7 +16,7 @@ use core::{
 };
 
 use device_id::DeviceId;
-use ostd::mm::{HasSize, VmIo};
+use ostd::mm::VmIo;
 use ostd_pod::{FromZeros, Pod};
 
 use super::{
@@ -34,7 +34,7 @@ use crate::{
         },
     },
     os::{Aead, AeadIv as Iv, AeadKey as Key, AeadMac as Mac, RwLock},
-    prelude::*,
+    prelude::{Result, *},
     tx::CurrentTx,
 };
 

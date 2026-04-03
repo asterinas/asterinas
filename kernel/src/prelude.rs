@@ -17,7 +17,8 @@ pub(crate) use bitflags::bitflags;
 pub(crate) use int_to_c_enum::TryFromInt;
 pub(crate) use log::{debug, error, info, log_enabled, trace, warn};
 pub(crate) use ostd::{
-    mm::{FallibleVmRead, FallibleVmWrite, PAGE_SIZE, Vaddr, VmReader, VmWriter},
+    mm::{FallibleVmRead, FallibleVmWrite, PAGE_SIZE, VmReader, VmWriter},
+    prelude::Vaddr,
     sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
 };
 pub(crate) use ostd_pod::{FromBytes, FromZeros, IntoBytes, Pod};
@@ -57,5 +58,5 @@ pub(crate) use crate::{
     time::{Clock, wait::WaitTimeout},
     util::ReadCString,
 };
-pub(crate) type Result<T> = core::result::Result<T, Error>;
+pub(crate) type Result<T, E = Error> = core::result::Result<T, E>;
 pub(crate) use crate::{return_errno, return_errno_with_message};

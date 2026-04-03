@@ -23,7 +23,8 @@ use device_id::{DeviceId, MinorId};
 use log::{debug, info};
 use ostd::{
     arch::trap::TrapFrame,
-    mm::{HasSize, VmIo, dma::DmaStream},
+    mm::{VmIo, dma::DmaStream},
+    prelude::*,
     sync::SpinLock,
 };
 

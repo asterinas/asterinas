@@ -7,7 +7,7 @@ use alloc::{
 use core::ops::Range;
 
 use aster_softirq::BottomHalfDisabled;
-use bitvec::array::BitArray;
+use bitvec::prelude::BitArray;
 use ostd::{
     mm::{
         Daddr, FrameAllocOptions, HasDaddr, Infallible, PAGE_SIZE, VmReader, VmWriter,

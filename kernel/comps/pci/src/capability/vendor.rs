@@ -2,7 +2,7 @@
 
 //! Vendor-specific capability support.
 
-use ostd::{Error, Result};
+use ostd::{Error, prelude::*};
 
 use crate::{PciDeviceLocation, common_device::PciCommonDevice};
 

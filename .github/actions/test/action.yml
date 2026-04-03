@@ -60,6 +60,10 @@ runs:
           echo "RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static" >> $GITHUB_ENV
           echo "RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup" >> $GITHUB_ENV
         fi
+        # Install the Asterinas version of klint.
+        if [[ "${{ matrix.id }}" == "lint" ]]; then
+          cargo install klint-asterinas --git https://github.com/os-checker/klint-asterinas --rev 40952a7
+        fi
         
     - name: Run basic tests
       if: ${{ inputs.auto_test == 'general' }}

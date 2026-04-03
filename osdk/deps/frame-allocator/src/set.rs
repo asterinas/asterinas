@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::{HasPaddr, Paddr, frame::linked_list::LinkedList};
+use ostd::mm::frame::linked_list::LinkedList;
+use ostd::prelude::*;
 
 use crate::chunk::{BuddyOrder, FreeChunk, FreeHeadMeta, size_of_order};
 

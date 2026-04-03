@@ -4,9 +4,12 @@ use alloc::sync::Arc;
 
 use aster_network::{RxBuffer, TxBuffer, dma_pool::DmaSegment};
 use aster_util::mem_obj_slice::Slice;
-use ostd::mm::{
-    HasDaddr, HasSize,
-    dma::{DmaCoherent, DmaDirection, DmaStream},
+use ostd::{
+    mm::{
+        HasDaddr,
+        dma::{DmaCoherent, DmaDirection, DmaStream},
+    },
+    prelude::*,
 };
 
 /// A DMA-capable buffer.

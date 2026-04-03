@@ -2,7 +2,7 @@
 
 use core::ops::Index;
 
-use bittle::{Bits, BitsMut};
+use bittle::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;

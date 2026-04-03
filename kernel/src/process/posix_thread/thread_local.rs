@@ -2,7 +2,7 @@
 
 use core::cell::{Cell, Ref, RefCell, RefMut};
 
-use ostd::{arch::cpu::context::FpuContext, mm::Vaddr, sync::RwArc, task::CurrentTask};
+use ostd::{arch::cpu::context::FpuContext, prelude::Vaddr, sync::RwArc, task::CurrentTask};
 
 use super::RobustListHead;
 use crate::{
