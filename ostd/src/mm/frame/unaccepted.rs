@@ -2,6 +2,7 @@
 
 //! Support for unaccepted memory in confidential computing environments.
 
+use alloc::sync::Arc;
 use core::{
     ptr::NonNull,
     sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
@@ -273,12 +274,39 @@ pub(crate) fn is_range_unaccepted(addr: crate::mm::Paddr, size: usize) -> bool {
     table.is_range_pending(start, end, &locks).unwrap_or(true)
 }
 
+pub(crate) fn spawn_background_accept_worker(
+    spawner: impl Fn(alloc::boxed::Box<dyn FnOnce() + Send>),
+    sleeper: impl Fn(core::time::Duration) + Send + Sync + 'static,
+) {
+    if get_accept_memory_mode() != AcceptMemoryMode::LazyBackground
+        || BACKGROUND_WORKER_STARTED.swap(true, Ordering::AcqRel)
+    {
+        return;
+    }
+
+    let worker_count = background_worker_count();
+    let sleeper = Arc::new(sleeper);
+
+    for worker_id in 0..worker_count {
+        let sleeper = Arc::clone(&sleeper);
+        spawner(alloc::boxed::Box::new(move || {
+            background_accept_worker_loop(worker_id, sleeper)
+        }));
+    }
+
+    log::info!(
+        "lazy-background accept workers started: count={}",
+        worker_count
+    );
+}
+
 fn init_accept_mode_from_cmdline() {
     let mode = parse_accept_mode_from_cmdline();
     ACCEPT_MEMORY_MODE.call_once(|| mode);
 
     match mode {
         AcceptMemoryMode::Lazy => log::info!("accept_memory mode: lazy"),
+        AcceptMemoryMode::LazyBackground => log::info!("accept_memory mode: lazy-background"),
         AcceptMemoryMode::Eager => log::info!("accept_memory mode: eager"),
     }
 }
@@ -297,12 +325,82 @@ fn parse_accept_mode_from_cmdline() -> AcceptMemoryMode {
 
     match value {
         Some("lazy") => AcceptMemoryMode::Lazy,
+        Some("lazy-background") | Some("lazy_background") => AcceptMemoryMode::LazyBackground,
         Some("eager") => AcceptMemoryMode::Eager,
         _ => {
             log::warn!("unknown accept_memory mode '{:?}', fallback to lazy", value);
             AcceptMemoryMode::Lazy
         }
     }
+}
+
+fn background_accept_worker_loop(
+    worker_id: usize,
+    sleeper: Arc<dyn Fn(core::time::Duration) + Send + Sync>,
+) {
+    use core::{
+        sync::atomic::Ordering::{Acquire, Release},
+        time::Duration,
+    };
+
+    const ITERATION_SLEEP_MS: u64 = 5;
+    const IDLE_SLEEP_MS: u64 = 50;
+
+    if get_accept_memory_mode() != AcceptMemoryMode::LazyBackground {
+        return;
+    }
+
+    log::info!("lazy-background accept worker {} started", worker_id);
+
+    // Allow kernel and user space to fully boot before starting.
+    sleeper(Duration::from_secs(3));
+
+    if load_unaccepted_table().is_none() {
+        return;
+    }
+
+    let sleep = |ms| sleeper(Duration::from_millis(ms));
+
+    while !BACKGROUND_WORKER_DISABLED.load(Acquire) {
+        if EAGER_ACCEPT_COMPLETED.load(Acquire) || BACKGROUND_WORKER_DISABLED.load(Acquire) {
+            break;
+        }
+
+        match refill_deferred_memory(
+            BACKGROUND_REFILL_CHUNK_BYTES,
+            BACKGROUND_REFILL_BUDGET_BYTES,
+        ) {
+            Ok(0) => {
+                if is_reservoir_empty() {
+                    EAGER_ACCEPT_COMPLETED.store(true, Release);
+                    break;
+                }
+                sleep(IDLE_SLEEP_MS);
+            }
+            Ok(_) => sleep(ITERATION_SLEEP_MS),
+            Err(err) => {
+                log::error!("Background accept worker {} failed: {:?}", worker_id, err);
+                BACKGROUND_WORKER_DISABLED.store(true, Release);
+                break;
+            }
+        }
+    }
+
+    if EAGER_ACCEPT_COMPLETED.load(Acquire) && !BACKGROUND_WORKER_DISABLED.load(Acquire) {
+        log::info!(
+            "lazy-background accept worker {} finished normally",
+            worker_id
+        );
+    } else if BACKGROUND_WORKER_DISABLED.load(Acquire) {
+        log::warn!(
+            "lazy-background accept worker {} stopped: background refill disabled",
+            worker_id
+        );
+    }
+}
+
+fn background_worker_count() -> usize {
+    crate::cpu::num_cpus().clamp(1, BACKGROUND_WORKER_MAX)
 }
 
 fn load_unaccepted_table() -> Option<NonNull<EfiUnacceptedMemory>> {
@@ -524,6 +622,7 @@ fn segment_boundary_end(addr: Paddr) -> Paddr {
 enum AcceptMemoryMode {
     #[default]
     Lazy,
+    LazyBackground,
     Eager,
 }
 
@@ -534,6 +633,9 @@ const SEGMENT_BYTES: usize = 256 * 1024 * 1024;
 const DEFAULT_REFILL_CHUNK_BYTES: usize = 2 * 1024 * 1024;
 const FORCED_REFILL_EXTRA_BYTES: usize = 16 * 1024 * 1024;
 const DEFAULT_REFILL_BUDGET_BYTES: usize = 64 * 1024 * 1024;
+const BACKGROUND_REFILL_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+const BACKGROUND_REFILL_BUDGET_BYTES: usize = 64 * 1024 * 1024;
+const BACKGROUND_WORKER_MAX: usize = 16;
 
 static UNACCEPTED_TABLE: AtomicPtr<EfiUnacceptedMemory> = AtomicPtr::new(core::ptr::null_mut());
 static ACCEPT_MEMORY_MODE: Once<AcceptMemoryMode> = Once::new();
@@ -544,3 +646,5 @@ static SEGMENT_STATES: [SpinLock<SegmentState, LocalIrqDisabled>; SEGMENT_LOCK_C
     [const { SpinLock::new(SegmentState::new()) }; SEGMENT_LOCK_COUNT];
 static TOTAL_DEFERRED_BYTES: AtomicUsize = AtomicUsize::new(0);
 static NEXT_SEED: AtomicUsize = AtomicUsize::new(0);
+static BACKGROUND_WORKER_STARTED: AtomicBool = AtomicBool::new(false);
+static BACKGROUND_WORKER_DISABLED: AtomicBool = AtomicBool::new(false);

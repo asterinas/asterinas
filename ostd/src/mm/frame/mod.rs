@@ -120,6 +120,17 @@ pub fn accept_unaccepted_memory(addr: Paddr, size: usize) -> Result<(), AcceptEr
     }
 }
 
+/// Spawns the background memory accept worker for lazy-background accept mode.
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub fn spawn_background_accept_worker(
+    spawner: impl Fn(alloc::boxed::Box<dyn FnOnce() + Send>),
+    sleeper: impl Fn(core::time::Duration) + Send + Sync + 'static,
+) {
+    crate::if_tdx_enabled!({
+        unaccepted::spawn_background_accept_worker(spawner, sleeper);
+    });
+}
+
 /// Returns the maximum physical address that is tracked by frame metadata.
 pub(in crate::mm) fn max_paddr() -> Paddr {
     let max_paddr = MAX_PADDR.load(Ordering::Relaxed) as Paddr;

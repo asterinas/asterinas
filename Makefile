@@ -140,8 +140,8 @@ CARGO_OSDK_BUILD_ARGS += --init-args="/benchmark/common/bench_runner.sh $(BENCHM
 endif
 
 ifeq ($(INTEL_TDX), 1)
-	ifneq ($(filter $(ACCEPT_MEMORY_MODE),lazy eager),$(ACCEPT_MEMORY_MODE))
-	$(error ACCEPT_MEMORY_MODE must be one of: lazy, eager)
+	ifneq ($(filter $(ACCEPT_MEMORY_MODE),lazy eager lazy-background),$(ACCEPT_MEMORY_MODE))
+	$(error ACCEPT_MEMORY_MODE must be one of: lazy, eager, lazy-background)
 	endif
 BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_COMMON_ARGS += --scheme tdx

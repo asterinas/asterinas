@@ -33,6 +33,18 @@ pub(super) fn init() {
     cpu_time_stats::init();
 }
 
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub fn sleep_for(duration: Duration) {
+    use crate::time::{clocks::MonotonicClock, wait::WaitTimeout};
+    let waiter = ostd::sync::Waiter::new_pair().0;
+    let timer_manager = MonotonicClock::timer_manager();
+    let timeout = crate::time::wait::ManagedTimeout::new_with_manager(
+        crate::time::timer::Timeout::After(duration),
+        timer_manager,
+    );
+    let _ = waiter.wait_until_or_timeout(|| None::<()>, timeout);
+}
+
 pub(super) fn init_on_each_cpu() {
     cpu_time_stats::init_on_each_cpu();
 }
