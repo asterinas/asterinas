@@ -291,6 +291,14 @@ impl<R: TRights> Credentials<R> {
         self.0.effective_capset()
     }
 
+    /// Gets the capability bounding set.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn bounding_capset(&self) -> CapSet {
+        self.0.bounding_capset()
+    }
+
     /// Sets the capabilities that child processes can inherit.
     ///
     /// This method requires the `Write` right.
@@ -313,6 +321,16 @@ impl<R: TRights> Credentials<R> {
     #[require(R > Write)]
     pub fn set_effective_capset(&self, effective_capset: CapSet) {
         self.0.set_effective_capset(effective_capset);
+    }
+
+    /// Drops one capability from the bounding set.
+    ///
+    /// If the caller does not have the `CAP_SETPCAP` capability, this method returns an error.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn drop_bounding_cap(&self, capability: CapSet) -> Result<()> {
+        self.0.drop_bounding_cap(capability)
     }
 
     /// Gets keep capabilities flag.

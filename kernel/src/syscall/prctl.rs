@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
-        credentials::SecureBits,
+        credentials::{SecureBits, capabilities::CapSet},
         posix_thread::{ContextPthreadAdminApi, MAX_THREAD_NAME_LEN},
         signal::sig_num::SigNum,
     },
@@ -65,6 +65,15 @@ pub fn sys_prctl(
             }
             let credentials = ctx.credentials_mut();
             credentials.set_keep_capabilities(keep_cap != 0)?;
+        }
+        PrctlCmd::PR_CAPBSET_READ(capability) => {
+            let credentials = ctx.posix_thread.credentials();
+            let is_in_bounding_set = credentials.bounding_capset().contains(capability);
+            return Ok(SyscallReturn::Return(is_in_bounding_set as _));
+        }
+        PrctlCmd::PR_CAPBSET_DROP(capability) => {
+            let credentials = ctx.credentials_mut();
+            credentials.drop_bounding_cap(capability)?;
         }
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
             let thread_name = ctx.posix_thread.thread_name().lock();
@@ -129,6 +138,8 @@ const PR_GET_KEEPCAPS: i32 = 7;
 const PR_SET_KEEPCAPS: i32 = 8;
 const PR_SET_NAME: i32 = 15;
 const PR_GET_NAME: i32 = 16;
+const PR_CAPBSET_READ: i32 = 23;
+const PR_CAPBSET_DROP: i32 = 24;
 const PR_GET_SECUREBITS: i32 = 27;
 const PR_SET_SECUREBITS: i32 = 28;
 const PR_SET_TIMERSLACK: i32 = 29;
@@ -145,6 +156,8 @@ pub enum PrctlCmd {
     PR_GET_NAME(Vaddr),
     PR_GET_KEEPCAPS,
     PR_SET_KEEPCAPS(u32),
+    PR_CAPBSET_READ(CapSet),
+    PR_CAPBSET_DROP(CapSet),
     PR_SET_TIMERSLACK(u64),
     PR_GET_TIMERSLACK,
     PR_SET_DUMPABLE(Dumpable),
@@ -175,6 +188,8 @@ impl PrctlCmd {
             PR_SET_DUMPABLE => Ok(PrctlCmd::PR_SET_DUMPABLE(Dumpable::try_from(arg2)?)),
             PR_SET_NAME => Ok(PrctlCmd::PR_SET_NAME(arg2 as _)),
             PR_GET_NAME => Ok(PrctlCmd::PR_GET_NAME(arg2 as _)),
+            PR_CAPBSET_READ => Ok(PrctlCmd::PR_CAPBSET_READ(parse_capability(arg2)?)),
+            PR_CAPBSET_DROP => Ok(PrctlCmd::PR_CAPBSET_DROP(parse_capability(arg2)?)),
             PR_GET_TIMERSLACK => Ok(PrctlCmd::PR_GET_TIMERSLACK),
             PR_SET_TIMERSLACK => Ok(PrctlCmd::PR_SET_TIMERSLACK(arg2)),
             PR_GET_KEEPCAPS => Ok(PrctlCmd::PR_GET_KEEPCAPS),
@@ -191,4 +206,9 @@ impl PrctlCmd {
             }
         }
     }
+}
+
+fn parse_capability(capability: u64) -> Result<CapSet> {
+    CapSet::from_capability_number(capability)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the capability is not supported"))
 }
