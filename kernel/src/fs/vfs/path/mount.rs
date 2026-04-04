@@ -514,21 +514,6 @@ impl Mount {
         self.parent.read().as_ref().cloned()
     }
 
-    /// Returns whether `self` is `ancestor` or a descendant of it in the mount tree.
-    pub(super) fn is_equal_or_descendant_of(&self, ancestor: &Arc<Self>) -> bool {
-        let mut current = self.this();
-        loop {
-            if Arc::ptr_eq(&current, ancestor) {
-                return true;
-            }
-
-            let Some(parent) = current.parent().and_then(|parent| parent.upgrade()) else {
-                return false;
-            };
-            current = parent;
-        }
-    }
-
     /// Gets the associated mount namespace.
     pub(super) fn mnt_ns(&self) -> &Weak<MountNamespace> {
         &self.mnt_ns

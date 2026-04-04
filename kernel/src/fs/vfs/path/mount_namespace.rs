@@ -54,6 +54,11 @@ impl MountNamespace {
         &self.root
     }
 
+    /// Returns the creation sequence of this mount namespace.
+    pub(in crate::fs) fn seq(&self) -> u64 {
+        self.stashed_dentry.ino()
+    }
+
     /// Creates a new filesystem resolver for this namespace.
     ///
     /// The resolver is initialized with the root and current working directory

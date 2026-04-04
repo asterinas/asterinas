@@ -16,6 +16,7 @@ use crate::{
         file::{
             CreationFlags, InodeHandle, InodeMode, InodeType, OpenArgs, Permission, StatusFlags,
         },
+        pseudofs::NsInode,
         vfs::{
             file_system::{FileSystem, FsFlags},
             inode::{Inode, Metadata, MknodType},
@@ -236,6 +237,32 @@ impl Path {
     }
 }
 
+fn is_mnt_ns_loop(dentry: &Dentry, current_mnt_ns: &Arc<MountNamespace>) -> bool {
+    let inode = dentry.inode().as_ref();
+    let Some(mnt_ns_inode) = inode.downcast_ref::<NsInode<MountNamespace>>() else {
+        return false;
+    };
+
+    // Reject mount namespace files that would point to the current or an older
+    // mount namespace, because they would create a namespace loop if the mount
+    // tree were moved elsewhere.
+    current_mnt_ns.seq() >= mnt_ns_inode.ns().seq()
+}
+
+fn check_for_nsfs_mounts(root_mount: &Arc<Mount>, current_mnt_ns: &Arc<MountNamespace>) -> bool {
+    let mut worklist = VecDeque::new();
+    worklist.push_back(root_mount.clone());
+
+    while let Some(mount) = worklist.pop_front() {
+        if is_mnt_ns_loop(mount.root_dentry(), current_mnt_ns) {
+            return true;
+        }
+        worklist.extend(mount.children.read().values().cloned());
+    }
+
+    false
+}
+
 impl Path {
     /// Mounts a filesystem at the current path.
     ///
@@ -340,6 +367,18 @@ impl Path {
         self.mount.remount(mount_flags, fs_flags, data, ctx)
     }
 
+    /// Ensures that moving this mount tree to `dst_path` would not create a cycle.
+    fn check_mnt_loop(&self, dst_path: &Self) -> Result<()> {
+        if dst_path.is_reachable_from(self) {
+            return_errno_with_message!(
+                Errno::ELOOP,
+                "the destination path is inside the mount subtree"
+            );
+        }
+
+        Ok(())
+    }
+
     /// Creates a bind mount from the current path to the destination path.
     ///
     /// Creates a new mount tree that mirrors either the root mount (non-recursive)
@@ -348,8 +387,7 @@ impl Path {
     /// # Errors
     ///
     /// Returns `ENOTDIR` if the `dst_path` is not a directory.
-    /// Returns `EINVAL` if either source or destination path is not in the
-    /// current mount namespace.
+    /// Returns `EINVAL` if the destination path is not in the current mount namespace.
     pub fn bind_mount_to(&self, dst_path: &Self, recursive: bool, ctx: &Context) -> Result<()> {
         let can_bind = {
             let src_is_dir = self.type_() == InodeType::Dir;
@@ -365,20 +403,20 @@ impl Path {
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
-        if !current_mnt_ns.owns(&self.mount) {
-            return_errno_with_message!(
-                Errno::EINVAL,
-                "the source path is not in this mount namespace"
-            );
-        }
+
+        // Linux only checks whether the destination path belongs to the current mount namespace;
+        // it does not validate the source path.
+        // See <https://elixir.bootlin.com/linux/v6.19/source/fs/namespace.c#L2991>.
         if !current_mnt_ns.owns(&dst_path.mount) {
             return_errno_with_message!(
                 Errno::EINVAL,
                 "the destination path is not in this mount namespace"
             );
         }
-
-        let new_mount = self.mount.clone_mount_tree(&self.dentry, None, recursive);
+        let current_mnt_ns_weak = Arc::downgrade(current_mnt_ns);
+        let new_mount =
+            self.mount
+                .clone_mount_tree(&self.dentry, Some(&current_mnt_ns_weak), recursive);
         new_mount.graft_mount_tree(dst_path);
         Ok(())
     }
@@ -391,7 +429,11 @@ impl Path {
     /// Returns `EINVAL` in the following cases:
     /// - The current path is not a mount root.
     /// - The mount of the current path is the root mount.
-    /// - Either source or destination path is not in the current mount namespace
+    /// - Either source or destination path is not in the current mount namespace.
+    /// - The mount tree contains a mount namespace file that would create a namespace loop.
+    ///
+    /// Returns `ELOOP` if moving the mount tree would create a mount loop, for
+    /// example, when the destination path is inside the subtree being moved.
     pub fn move_mount_to(&self, dst_path: &Self, ctx: &Context) -> Result<()> {
         if !self.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
@@ -414,17 +456,13 @@ impl Path {
                 "the destination path is not in this mount namespace"
             );
         }
-        if dst_path
-            .mount_node()
-            .is_equal_or_descendant_of(self.mount_node())
-        {
-            // Reject moves that would place a mount beneath itself, because the mount tree
-            // must remain acyclic.
+        if check_for_nsfs_mounts(self.mount_node(), current_mnt_ns) {
             return_errno_with_message!(
-                Errno::ELOOP,
-                "the destination path is inside the mount subtree being moved"
+                Errno::EINVAL,
+                "the mount tree contains a mount namespace file that would create a namespace loop"
             );
         }
+        self.check_mnt_loop(dst_path)?;
 
         self.mount.graft_mount_tree(dst_path);
 
