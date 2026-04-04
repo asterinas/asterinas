@@ -87,16 +87,21 @@ fn do_sys_pwritev(
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
-    // TODO: Check (f.file->f_mode & FMODE_PREAD); We don't have f_mode in our FileLike trait
-    if io_vec_count == 0 {
+    let user_space = ctx.user_space();
+    let mut reader_array = VmReaderArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
+
+    // Probe with a zero-length write so that unsupported files (e.g., pipes)
+    // still return the correct errno even when all buffers are empty.
+    if reader_array.readers_mut().is_empty() {
+        let empty = [0u8; 0];
+        let mut reader = VmReader::from(empty.as_slice()).to_fallible();
+        file.write_at(offset as usize, &mut reader)?;
         return Ok(0);
     }
 
     let mut total_len: usize = 0;
     let mut cur_offset = offset as usize;
 
-    let user_space = ctx.user_space();
-    let mut reader_array = VmReaderArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for reader in reader_array.readers_mut() {
         debug_assert!(reader.has_remain());
 

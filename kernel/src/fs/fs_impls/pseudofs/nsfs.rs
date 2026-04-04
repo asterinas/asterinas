@@ -177,6 +177,11 @@ impl<T: NsCommonOps> FileIo for NsFile<T> {
         false
     }
 
+    fn check_positional_io(&self) -> Result<()> {
+        // Namespace files support `pread`/`pwrite` but not `lseek`.
+        Ok(())
+    }
+
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 

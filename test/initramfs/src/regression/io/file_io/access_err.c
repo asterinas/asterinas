@@ -2,12 +2,15 @@
 
 #define _GNU_SOURCE
 
-#include <unistd.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/file.h>
-#include <poll.h>
+#include <sys/syscall.h>
+#include <sys/uio.h>
+#include <unistd.h>
 
 #include "../../common/test.h"
 
@@ -182,9 +185,33 @@ FN_TEST(path)
 	// Test 1: Normal file
 
 	fd = TEST_SUCC(open(FILENAME, O_RDWR | O_PATH));
+	struct iovec empty_iov = {
+		.iov_base = buf,
+		.iov_len = 0,
+	};
+	struct iovec single_byte_iov = {
+		.iov_base = buf,
+		.iov_len = 1,
+	};
 
 	TEST_ERRNO(read(fd, buf, sizeof(buf)), EBADF);
 	TEST_ERRNO(write(fd, buf, sizeof(buf)), EBADF);
+	/*
+	 * Regression coverage for `O_PATH` positional I/O. This complements
+	 * the existing `lseek` checks so that zero-length and nonzero-length
+	 * `pread`/`pwrite`/`preadv`/`pwritev` all keep returning `EBADF`
+	 * like Linux.
+	 */
+	TEST_ERRNO(pread(fd, buf, 0, 0), EBADF);
+	TEST_ERRNO(pread(fd, buf, 1, 0), EBADF);
+	TEST_ERRNO(pwrite(fd, buf, 0, 0), EBADF);
+	TEST_ERRNO(pwrite(fd, buf, 1, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, NULL, 0, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, NULL, 0, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, &empty_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, &empty_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, &single_byte_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, &single_byte_iov, 1, 0, 0), EBADF);
 	TEST_ERRNO(lseek(fd, 0, SEEK_SET), EBADF);
 	TEST_ERRNO(lseek(fd, 0, SEEK_END), EBADF);
 	TEST_ERRNO(ioctl(fd, TCGETS), EBADF);
@@ -225,9 +252,21 @@ FN_TEST(path)
 	// Test 2: Directory
 
 	fd = TEST_SUCC(open(DIRNAME, O_RDWR | O_PATH));
+	empty_iov.iov_base = buf;
+	single_byte_iov.iov_base = buf;
 
 	TEST_ERRNO(read(fd, buf, sizeof(buf)), EBADF);
 	TEST_ERRNO(write(fd, buf, sizeof(buf)), EBADF);
+	TEST_ERRNO(pread(fd, buf, 0, 0), EBADF);
+	TEST_ERRNO(pread(fd, buf, 1, 0), EBADF);
+	TEST_ERRNO(pwrite(fd, buf, 0, 0), EBADF);
+	TEST_ERRNO(pwrite(fd, buf, 1, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, NULL, 0, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, NULL, 0, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, &empty_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, &empty_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_preadv, fd, &single_byte_iov, 1, 0, 0), EBADF);
+	TEST_ERRNO(syscall(SYS_pwritev, fd, &single_byte_iov, 1, 0, 0), EBADF);
 	TEST_ERRNO(lseek(fd, 0, SEEK_SET), EBADF);
 	TEST_ERRNO(lseek(fd, 0, SEEK_END), EBADF);
 	TEST_ERRNO(ioctl(fd, TCGETS), EBADF);
