@@ -3,7 +3,7 @@
 use alloc::sync::Arc;
 
 use aster_console::mode::{KeyboardMode, KeyboardModeFlags};
-use aster_framebuffer::{ConsoleCallbacks, FRAMEBUFFER_CONSOLE};
+use aster_framebuffer::FRAMEBUFFER;
 use aster_input::{
     event_type_codes::{KeyCode, KeyStatus},
     input_dev::{InputDevice, InputEvent},
@@ -11,10 +11,17 @@ use aster_input::{
 };
 use spin::Once;
 
-use crate::device::tty::vt::keyboard::{
-    CursorKey, LockKeyFlags, LockKeysState, ModifierKey, ModifierKeyFlags, ModifierKeysState,
-    NumpadKey,
-    keysym::{FuncId, KeySym, SpecialHandler, get_keysym},
+use crate::device::tty::{
+    Tty,
+    vt::{
+        driver::VtDriver,
+        keyboard::{
+            CursorKey, LockKeyFlags, ModifierKey, ModifierKeyFlags, ModifierKeysState, NumpadKey,
+            VtKeyboard,
+            keysym::{FuncId, KeySym, SpecialHandler, get_keysym},
+        },
+        manager::{VT_MANAGER, active_vt},
+    },
 };
 
 #[derive(Debug)]
@@ -50,12 +57,6 @@ impl InputHandlerClass for VtKeyboardHandlerClass {
 /// It is shared across all virtual terminals.
 static MODIFIER_KEYS_STATE: ModifierKeysState = ModifierKeysState::new();
 
-/// The state of lock keys (Caps Lock, Num Lock, Scroll Lock).
-///
-/// We should have one for each virtual terminal, but now
-/// we only have one virtual terminal, so we just use a global state.
-static LOCK_KEYS_STATE: LockKeysState = LockKeysState::new();
-
 /// A virtual terminal keyboard handler that handles input from a specific device.
 #[derive(Debug)]
 struct VtKeyboardHandler;
@@ -68,15 +69,13 @@ impl VtKeyboardHandler {
             key_status
         );
 
-        let Some(console) = FRAMEBUFFER_CONSOLE.get() else {
-            return;
-        };
-
-        let console_callbacks = console.lock_callbacks();
-        let keyboard_mode = console_callbacks.keyboard_mode();
+        let vt = active_vt();
+        let vt_console = vt.driver().vt_console();
+        let mut vt_keyboard = vt_console.lock_keyboard();
+        let keyboard_mode = vt_keyboard.mode();
 
         if keyboard_mode == KeyboardMode::MediumRaw {
-            self.handle_medium_mode(keycode, key_status, &console_callbacks);
+            self.handle_medium_mode(keycode, key_status, vt);
         }
 
         // Modifier keys are handled based on the keycode instead of the keymap.
@@ -114,19 +113,22 @@ impl VtKeyboardHandler {
         }
 
         match key_sym {
-            KeySym::Char(ch) => self.push_input(ch, &console_callbacks),
-            KeySym::Letter(ch) => self.handle_letter(ch, &console_callbacks),
-            KeySym::Meta(ch) => self.handle_meta(ch, &console_callbacks),
+            KeySym::Char(ch) => self.push_input(ch, vt, &vt_keyboard),
+            KeySym::Letter(ch) => self.handle_letter(ch, vt, &vt_keyboard),
+            KeySym::Meta(ch) => self.handle_meta(ch, vt, &vt_keyboard),
             KeySym::Modifier(modifier_key) => {
                 self.handle_modifier(modifier_key, key_status == KeyStatus::Pressed)
             }
-            KeySym::Numpad(numpad_key) => self.handle_numpad(numpad_key, &console_callbacks),
-            KeySym::Function(id) => self.handle_function(id, &console_callbacks),
-            KeySym::Cursor(cursor_key) => self.handle_cursor(cursor_key, &console_callbacks),
-            KeySym::Special(handler) => self.handle_special(handler, &console_callbacks),
-            KeySym::SwitchVt(_) => {
-                // TODO: Implement virtual terminal switching
-                log::warn!("Switching virtual terminal is not implemented yet");
+            KeySym::Numpad(numpad_key) => self.handle_numpad(numpad_key, vt, &vt_keyboard),
+            KeySym::Function(id) => self.handle_function(id, vt),
+            KeySym::Cursor(cursor_key) => self.handle_cursor(cursor_key, vt, &vt_keyboard),
+            KeySym::Special(handler) => self.handle_special(handler, vt, &mut vt_keyboard),
+            KeySym::SwitchVt(index) => {
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+
+                if let Err(e) = vtm.with_lock(|m| m.switch_vt(index)) {
+                    log::warn!("VT switching failed: {:?}", e);
+                }
             }
             KeySym::AltNumpad(_) => {
                 // TODO: Implement Alt+Numpad input
@@ -150,12 +152,7 @@ impl VtKeyboardHandler {
     /// Handles key events in Medium Raw mode.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/drivers/tty/vt/keyboard.c#L1436-L1454>
-    fn handle_medium_mode(
-        &self,
-        keycode: KeyCode,
-        key_status: KeyStatus,
-        console_callbacks: &ConsoleCallbacks,
-    ) {
+    fn handle_medium_mode(&self, keycode: KeyCode, key_status: KeyStatus, vt: &Tty<VtDriver>) {
         const UP_FLAG: u8 = 0x80;
 
         let up_bit = if matches!(key_status, KeyStatus::Pressed) {
@@ -165,18 +162,20 @@ impl VtKeyboardHandler {
         };
         let kc = keycode as u16;
 
-        if kc < 128 {
-            console_callbacks.trigger_callbacks(&[(kc as u8) | up_bit]);
+        let _ = if kc < 128 {
+            vt.push_input(&[(kc as u8) | up_bit])
         } else {
             let b0 = up_bit;
             let b1 = ((kc >> 7) as u8) | UP_FLAG;
             let b2 = (kc as u8) | UP_FLAG;
-            console_callbacks.trigger_callbacks(&[b0, b1, b2]);
-        }
+            vt.push_input(&[b0, b1, b2])
+        };
     }
 
-    fn handle_letter(&self, ch: char, console_callbacks: &ConsoleCallbacks) {
-        let caps_on = LOCK_KEYS_STATE.flags().contains(LockKeyFlags::CAPS_LOCK);
+    fn handle_letter(&self, ch: char, vt: &Tty<VtDriver>, vt_keyboard: &VtKeyboard) {
+        let caps_on = vt_keyboard
+            .lock_key_flags()
+            .contains(LockKeyFlags::CAPS_LOCK);
 
         let out = if caps_on && ch.is_ascii_alphabetic() {
             if ch.is_ascii_lowercase() {
@@ -188,18 +187,18 @@ impl VtKeyboardHandler {
             ch
         };
 
-        self.push_input(out, console_callbacks);
+        self.push_input(out, vt, vt_keyboard);
     }
 
-    fn handle_meta(&self, ch: char, console_callbacks: &ConsoleCallbacks) {
+    fn handle_meta(&self, ch: char, vt: &Tty<VtDriver>, vt_keyboard: &VtKeyboard) {
         debug_assert!(ch.is_ascii());
 
-        let mode_flags = console_callbacks.keyboard_mode_flags();
-        if mode_flags.contains(KeyboardModeFlags::META) {
-            console_callbacks.trigger_callbacks(&[0x1b, ch as u8]);
+        let mode_flags = vt_keyboard.mode_flags();
+        let _ = if mode_flags.contains(KeyboardModeFlags::META) {
+            vt.push_input(&[0x1b, ch as u8])
         } else {
-            console_callbacks.trigger_callbacks(&[ch as u8]);
-        }
+            vt.push_input(&[ch as u8])
+        };
     }
 
     fn handle_modifier(&self, modifier_key: ModifierKey, is_pressed: bool) {
@@ -228,56 +227,58 @@ impl VtKeyboardHandler {
         }
     }
 
-    fn handle_numpad(&self, numpad_key: NumpadKey, console_callbacks: &ConsoleCallbacks) {
-        let mode_flags = console_callbacks.keyboard_mode_flags();
+    fn handle_numpad(&self, numpad_key: NumpadKey, vt: &Tty<VtDriver>, vt_keyboard: &VtKeyboard) {
+        let mode_flags = vt_keyboard.mode_flags();
 
         let shift_down = MODIFIER_KEYS_STATE
             .flags()
             .contains(ModifierKeyFlags::SHIFT);
-        let num_lock_on = LOCK_KEYS_STATE.flags().contains(LockKeyFlags::NUM_LOCK);
+        let num_lock_on = vt_keyboard
+            .lock_key_flags()
+            .contains(LockKeyFlags::NUM_LOCK);
         let application_mode = mode_flags.contains(KeyboardModeFlags::APPLICATION);
 
         if application_mode && !shift_down {
-            match numpad_key {
-                NumpadKey::Num0 => console_callbacks.trigger_callbacks(b"\x1bOp"), // p
-                NumpadKey::Num1 => console_callbacks.trigger_callbacks(b"\x1bOq"), // q
-                NumpadKey::Num2 => console_callbacks.trigger_callbacks(b"\x1bOr"), // r
-                NumpadKey::Num3 => console_callbacks.trigger_callbacks(b"\x1bOs"), // s
-                NumpadKey::Num4 => console_callbacks.trigger_callbacks(b"\x1bOt"), // t
-                NumpadKey::Num5 => console_callbacks.trigger_callbacks(b"\x1bOu"), // u
-                NumpadKey::Num6 => console_callbacks.trigger_callbacks(b"\x1bOv"), // v
-                NumpadKey::Num7 => console_callbacks.trigger_callbacks(b"\x1bOw"), // w
-                NumpadKey::Num8 => console_callbacks.trigger_callbacks(b"\x1bOx"), // x
-                NumpadKey::Num9 => console_callbacks.trigger_callbacks(b"\x1bOy"), // y
-                NumpadKey::Plus => console_callbacks.trigger_callbacks(b"\x1bOl"), // l
-                NumpadKey::Minus => console_callbacks.trigger_callbacks(b"\x1bOS"), // S
-                NumpadKey::Asterisk => console_callbacks.trigger_callbacks(b"\x1bOR"), // R
-                NumpadKey::Slash => console_callbacks.trigger_callbacks(b"\x1bOQ"), // Q
-                NumpadKey::Enter => console_callbacks.trigger_callbacks(b"\x1bOM"), // M
-                NumpadKey::Dot => console_callbacks.trigger_callbacks(b"\x1bOn"),  // n
-            }
+            let _ = match numpad_key {
+                NumpadKey::Num0 => vt.push_input(b"\x1bOp"),     // p
+                NumpadKey::Num1 => vt.push_input(b"\x1bOq"),     // q
+                NumpadKey::Num2 => vt.push_input(b"\x1bOr"),     // r
+                NumpadKey::Num3 => vt.push_input(b"\x1bOs"),     // s
+                NumpadKey::Num4 => vt.push_input(b"\x1bOt"),     // t
+                NumpadKey::Num5 => vt.push_input(b"\x1bOu"),     // u
+                NumpadKey::Num6 => vt.push_input(b"\x1bOv"),     // v
+                NumpadKey::Num7 => vt.push_input(b"\x1bOw"),     // w
+                NumpadKey::Num8 => vt.push_input(b"\x1bOx"),     // x
+                NumpadKey::Num9 => vt.push_input(b"\x1bOy"),     // y
+                NumpadKey::Plus => vt.push_input(b"\x1bOl"),     // l
+                NumpadKey::Minus => vt.push_input(b"\x1bOS"),    // S
+                NumpadKey::Asterisk => vt.push_input(b"\x1bOR"), // R
+                NumpadKey::Slash => vt.push_input(b"\x1bOQ"),    // Q
+                NumpadKey::Enter => vt.push_input(b"\x1bOM"),    // M
+                NumpadKey::Dot => vt.push_input(b"\x1bOn"),      // n
+            };
             return;
         }
 
         if !num_lock_on {
             match numpad_key {
-                NumpadKey::Num0 => self.handle_function(FuncId::Insert, console_callbacks),
-                NumpadKey::Num1 => self.handle_function(FuncId::Select, console_callbacks),
-                NumpadKey::Num2 => self.handle_cursor(CursorKey::Down, console_callbacks),
-                NumpadKey::Num3 => self.handle_function(FuncId::Next, console_callbacks),
-                NumpadKey::Num4 => self.handle_cursor(CursorKey::Left, console_callbacks),
+                NumpadKey::Num0 => self.handle_function(FuncId::Insert, vt),
+                NumpadKey::Num1 => self.handle_function(FuncId::Select, vt),
+                NumpadKey::Num2 => self.handle_cursor(CursorKey::Down, vt, vt_keyboard),
+                NumpadKey::Num3 => self.handle_function(FuncId::Next, vt),
+                NumpadKey::Num4 => self.handle_cursor(CursorKey::Left, vt, vt_keyboard),
                 NumpadKey::Num5 => {
-                    if application_mode {
-                        console_callbacks.trigger_callbacks(b"\x1bOG");
+                    let _ = if application_mode {
+                        vt.push_input(b"\x1bOG")
                     } else {
-                        console_callbacks.trigger_callbacks(b"\x1b[G");
-                    }
+                        vt.push_input(b"\x1b[G")
+                    };
                 }
-                NumpadKey::Num6 => self.handle_cursor(CursorKey::Right, console_callbacks),
-                NumpadKey::Num7 => self.handle_function(FuncId::Find, console_callbacks),
-                NumpadKey::Num8 => self.handle_cursor(CursorKey::Up, console_callbacks),
-                NumpadKey::Num9 => self.handle_function(FuncId::Prior, console_callbacks),
-                NumpadKey::Dot => self.handle_function(FuncId::Remove, console_callbacks),
+                NumpadKey::Num6 => self.handle_cursor(CursorKey::Right, vt, vt_keyboard),
+                NumpadKey::Num7 => self.handle_function(FuncId::Find, vt),
+                NumpadKey::Num8 => self.handle_cursor(CursorKey::Up, vt, vt_keyboard),
+                NumpadKey::Num9 => self.handle_function(FuncId::Prior, vt),
+                NumpadKey::Dot => self.handle_function(FuncId::Remove, vt),
                 _ => {}
             }
             return;
@@ -302,76 +303,91 @@ impl VtKeyboardHandler {
             NumpadKey::Slash => '/',
         };
 
-        console_callbacks.trigger_callbacks(&[ch as u8]);
+        let _ = vt.push_input(&[ch as u8]);
 
         if matches!(numpad_key, NumpadKey::Enter) && mode_flags.contains(KeyboardModeFlags::CRLF) {
-            console_callbacks.trigger_callbacks(b"\n");
+            let _ = vt.push_input(b"\n");
         }
     }
 
-    fn handle_function(&self, id: FuncId, console_callbacks: &ConsoleCallbacks) {
+    fn handle_function(&self, id: FuncId, vt: &Tty<VtDriver>) {
         if let Some(seq) = id.to_function_string() {
-            console_callbacks.trigger_callbacks(seq);
+            let _ = vt.push_input(seq);
         }
     }
 
-    fn handle_cursor(&self, cursor_key: CursorKey, console_callbacks: &ConsoleCallbacks) {
-        let cursor_key_mode = console_callbacks
-            .keyboard_mode_flags()
+    fn handle_cursor(&self, cursor_key: CursorKey, vt: &Tty<VtDriver>, vt_keyboard: &VtKeyboard) {
+        let cursor_key_mode = vt_keyboard
+            .mode_flags()
             .contains(KeyboardModeFlags::CURSOR_KEY);
 
-        if cursor_key_mode {
+        let _ = if cursor_key_mode {
             match cursor_key {
-                CursorKey::Up => console_callbacks.trigger_callbacks(b"\x1bOA"),
-                CursorKey::Down => console_callbacks.trigger_callbacks(b"\x1bOB"),
-                CursorKey::Left => console_callbacks.trigger_callbacks(b"\x1bOD"),
-                CursorKey::Right => console_callbacks.trigger_callbacks(b"\x1bOC"),
+                CursorKey::Up => vt.push_input(b"\x1bOA"),
+                CursorKey::Down => vt.push_input(b"\x1bOB"),
+                CursorKey::Left => vt.push_input(b"\x1bOD"),
+                CursorKey::Right => vt.push_input(b"\x1bOC"),
             }
         } else {
             match cursor_key {
-                CursorKey::Up => console_callbacks.trigger_callbacks(b"\x1b[A"),
-                CursorKey::Down => console_callbacks.trigger_callbacks(b"\x1b[B"),
-                CursorKey::Left => console_callbacks.trigger_callbacks(b"\x1b[D"),
-                CursorKey::Right => console_callbacks.trigger_callbacks(b"\x1b[C"),
+                CursorKey::Up => vt.push_input(b"\x1b[A"),
+                CursorKey::Down => vt.push_input(b"\x1b[B"),
+                CursorKey::Left => vt.push_input(b"\x1b[D"),
+                CursorKey::Right => vt.push_input(b"\x1b[C"),
             }
-        }
+        };
     }
 
-    fn handle_special(&self, handler: SpecialHandler, console_callbacks: &ConsoleCallbacks) {
+    fn handle_special(
+        &self,
+        handler: SpecialHandler,
+        vt: &Tty<VtDriver>,
+        vt_keyboard: &mut VtKeyboard,
+    ) {
         match handler {
             SpecialHandler::ToggleCapsLock => {
-                LOCK_KEYS_STATE.toggle(LockKeyFlags::CAPS_LOCK);
+                vt_keyboard.toggle_lock_keys(LockKeyFlags::CAPS_LOCK);
             }
             SpecialHandler::ToggleNumLock => {
-                let application_mode = console_callbacks
-                    .keyboard_mode_flags()
+                let application_mode = vt_keyboard
+                    .mode_flags()
                     .contains(KeyboardModeFlags::APPLICATION);
                 if application_mode {
-                    console_callbacks.trigger_callbacks(b"\x1bOP");
+                    let _ = vt.push_input(b"\x1bOP");
                 } else {
-                    LOCK_KEYS_STATE.toggle(LockKeyFlags::NUM_LOCK);
+                    let _ = vt.push_input(b"\x1b[O");
+                    vt_keyboard.toggle_lock_keys(LockKeyFlags::NUM_LOCK);
                 }
             }
             SpecialHandler::ToggleBareNumLock => {
-                LOCK_KEYS_STATE.toggle(LockKeyFlags::NUM_LOCK);
+                vt_keyboard.toggle_lock_keys(LockKeyFlags::NUM_LOCK);
             }
             SpecialHandler::ToggleScrollLock => {
                 // TODO: Scroll Lock will affect the scrolling behavior of the console.
                 // For now, we just toggle the state.
-                LOCK_KEYS_STATE.toggle(LockKeyFlags::SCROLL_LOCK);
+                vt_keyboard.toggle_lock_keys(LockKeyFlags::SCROLL_LOCK);
             }
             SpecialHandler::Enter => {
-                console_callbacks.trigger_callbacks(b"\r");
-                if console_callbacks
-                    .keyboard_mode_flags()
-                    .contains(KeyboardModeFlags::CRLF)
-                {
-                    console_callbacks.trigger_callbacks(b"\n");
+                let _ = vt.push_input(b"\r");
+                if vt_keyboard.mode_flags().contains(KeyboardModeFlags::CRLF) {
+                    let _ = vt.push_input(b"\n");
                 }
             }
-            SpecialHandler::DecreaseConsole
-            | SpecialHandler::IncreaseConsole
-            | SpecialHandler::ScrollBackward
+            SpecialHandler::DecreaseConsole => {
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+
+                if let Err(e) = vtm.with_lock(|m| m.dec_console()) {
+                    log::warn!("VT decreasing failed: {:?}", e);
+                }
+            }
+            SpecialHandler::IncreaseConsole => {
+                let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
+
+                if let Err(e) = vtm.with_lock(|m| m.inc_console()) {
+                    log::warn!("VT increasing failed: {:?}", e);
+                }
+            }
+            SpecialHandler::ScrollBackward
             | SpecialHandler::ScrollForward
             | SpecialHandler::ShowMem
             | SpecialHandler::ShowState
@@ -385,15 +401,15 @@ impl VtKeyboardHandler {
     /// Adds the character to the input buffer of the virtual terminal.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/drivers/tty/vt/keyboard.c#L675>.
-    fn push_input(&self, ch: char, console_callbacks: &ConsoleCallbacks) {
-        let keyboard_mode = console_callbacks.keyboard_mode();
+    fn push_input(&self, ch: char, vt: &Tty<VtDriver>, vt_keyboard: &VtKeyboard) {
+        let keyboard_mode = vt_keyboard.mode();
 
         if keyboard_mode == KeyboardMode::Unicode {
             let mut buf = [0u8; 4];
             let s = ch.encode_utf8(&mut buf);
-            console_callbacks.trigger_callbacks(s.as_bytes());
+            let _ = vt.push_input(s.as_bytes());
         } else if ch.is_ascii() {
-            console_callbacks.trigger_callbacks(&[ch as u8]);
+            let _ = vt.push_input(&[ch as u8]);
         }
     }
 }
@@ -422,7 +438,7 @@ impl InputHandler for VtKeyboardHandler {
 static REGISTERED_INPUT_HANDLER_CLASS: Once<RegisteredInputHandlerClass> = Once::new();
 
 pub(super) fn init_in_first_process() {
-    if FRAMEBUFFER_CONSOLE.get().is_none() {
+    if FRAMEBUFFER.get().is_none() {
         return;
     }
 

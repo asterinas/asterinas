@@ -2,48 +2,69 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use aster_console::{
-    AnyConsoleDevice, ConsoleCallback, ConsoleSetFontError,
-    font::BitmapFont,
-    mode::{ConsoleMode, KeyboardMode, KeyboardModeFlags},
-};
-use ostd::{
-    mm::{HasSize, VmReader},
-    sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
-};
-use spin::Once;
+use aster_console::{ConsoleSetFontError, font::BitmapFont, mode::ConsoleMode};
+use ostd::mm::HasSize;
 
 use crate::{
-    FRAMEBUFFER, FrameBuffer, Pixel,
+    FrameBuffer, Pixel,
     ansi_escape::{EraseInDisplay, EscapeFsm, EscapeOp},
 };
 
 /// A text console rendered onto the framebuffer.
 pub struct FramebufferConsole {
-    callbacks: SpinLock<ConsoleCallbacks, LocalIrqDisabled>,
-    inner: SpinLock<(ConsoleState, EscapeFsm), LocalIrqDisabled>,
+    state: ConsoleState,
+    escape_fsm: EscapeFsm,
 }
 
-pub const CONSOLE_NAME: &str = "Framebuffer-Console";
+impl FramebufferConsole {
+    /// Creates a new framebuffer console.
+    pub fn new(framebuffer: Arc<FrameBuffer>) -> Self {
+        let state = ConsoleState::new(framebuffer);
+        let escape_fsm = EscapeFsm::new();
 
-pub static FRAMEBUFFER_CONSOLE: Once<Arc<FramebufferConsole>> = Once::new();
+        Self { state, escape_fsm }
+    }
 
-pub(crate) fn init() {
-    let Some(fb) = FRAMEBUFFER.get() else {
-        log::warn!("Framebuffer not initialized");
-        return;
-    };
+    /// Returns the current console mode.
+    pub fn mode(&self) -> ConsoleMode {
+        self.state.mode
+    }
 
-    FRAMEBUFFER_CONSOLE.call_once(|| Arc::new(FramebufferConsole::new(fb.clone())));
-}
+    /// Sets the console mode.
+    pub fn set_mode(&mut self, mode: ConsoleMode) {
+        let old_mode = self.state.mode;
+        self.state.mode = mode;
+        if old_mode == ConsoleMode::Graphics {
+            self.state.flush_fullscreen();
+        }
+    }
 
-impl AnyConsoleDevice for FramebufferConsole {
-    fn send(&self, buf: &[u8]) {
-        let mut inner = self.inner.lock();
-        let (state, esc_fsm) = &mut *inner;
+    /// Sets the font for the framebuffer console.
+    pub fn set_font(&mut self, font: BitmapFont) -> Result<(), ConsoleSetFontError> {
+        self.state.set_font(font)
+    }
 
+    /// Activates the console.
+    ///
+    /// If the console mode is [`ConsoleMode::Text`], the console will flush the entire
+    /// console buffer to the framebuffer.
+    pub fn activate(&mut self) {
+        self.state.is_active = true;
+        if self.state.mode == ConsoleMode::Text {
+            self.state.flush_fullscreen();
+        }
+    }
+
+    /// Deactivates the console, preventing it from rendering to the framebuffer
+    /// even if text is sent to it.
+    pub fn deactivate(&mut self) {
+        self.state.is_active = false;
+    }
+
+    /// Sends a byte slice to the console.
+    pub fn send(&mut self, buf: &[u8]) {
         for byte in buf {
-            if esc_fsm.eat(*byte, state) {
+            if self.escape_fsm.eat(*byte, &mut self.state) {
                 // The character is part of an ANSI escape sequence.
                 continue;
             }
@@ -53,113 +74,14 @@ impl AnyConsoleDevice for FramebufferConsole {
                 continue;
             }
 
-            state.send_char(*byte);
+            self.state.send_char(*byte);
         }
-    }
-
-    fn register_callback(&self, callback: &'static ConsoleCallback) {
-        self.callbacks.lock().callbacks.push(callback);
-    }
-
-    fn set_font(&self, font: BitmapFont) -> Result<(), ConsoleSetFontError> {
-        self.inner.lock().0.set_font(font)
-    }
-
-    fn set_mode(&self, mode: ConsoleMode) -> bool {
-        self.inner.lock().0.set_mode(mode);
-        true
-    }
-
-    fn mode(&self) -> Option<ConsoleMode> {
-        Some(self.inner.lock().0.mode())
-    }
-
-    fn set_keyboard_mode(&self, mode: KeyboardMode) -> bool {
-        let mut callbacks = self.callbacks.lock();
-        match mode {
-            // TODO: Add support for Raw mode.
-            KeyboardMode::Raw => false,
-            KeyboardMode::Xlate
-            | KeyboardMode::MediumRaw
-            | KeyboardMode::Unicode
-            | KeyboardMode::Off => {
-                callbacks.keyboard_mode = mode;
-                true
-            }
-        }
-    }
-
-    fn keyboard_mode(&self) -> Option<KeyboardMode> {
-        Some(self.callbacks.lock().keyboard_mode())
-    }
-}
-
-impl FramebufferConsole {
-    /// Creates a new framebuffer console.
-    pub(self) fn new(framebuffer: Arc<FrameBuffer>) -> Self {
-        let callbacks = ConsoleCallbacks {
-            callbacks: Vec::new(),
-            keyboard_mode: KeyboardMode::Unicode,
-            // Linux default: REPEAT | META
-            // Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/drivers/tty/vt/keyboard.c#L56>
-            keyboard_mode_flags: KeyboardModeFlags::REPEAT | KeyboardModeFlags::META,
-        };
-
-        let state = ConsoleState {
-            x_pos: 0,
-            y_pos: 0,
-            fg_color: Pixel::WHITE,
-            bg_color: Pixel::BLACK,
-            font: BitmapFont::new_basic8x8(),
-            is_output_enabled: true,
-
-            bytes: alloc::vec![0u8; framebuffer.io_mem().size()],
-            backend: framebuffer,
-        };
-
-        let esc_fsm = EscapeFsm::new();
-
-        Self {
-            callbacks: SpinLock::new(callbacks),
-            inner: SpinLock::new((state, esc_fsm)),
-        }
-    }
-
-    /// Locks the console callbacks.
-    pub fn lock_callbacks(&self) -> SpinLockGuard<'_, ConsoleCallbacks, LocalIrqDisabled> {
-        self.callbacks.lock()
     }
 }
 
 impl core::fmt::Debug for FramebufferConsole {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("FramebufferConsole").finish_non_exhaustive()
-    }
-}
-
-pub struct ConsoleCallbacks {
-    callbacks: Vec<&'static ConsoleCallback>,
-    keyboard_mode: KeyboardMode,
-    keyboard_mode_flags: KeyboardModeFlags,
-}
-
-impl ConsoleCallbacks {
-    /// Triggers the registered input callbacks with the given data.
-    pub fn trigger_callbacks(&self, bytes: &[u8]) {
-        let reader = VmReader::from(bytes);
-        for callback in self.callbacks.iter() {
-            callback(reader.clone());
-        }
-    }
-
-    /// Returns the keyboard mode.
-    pub fn keyboard_mode(&self) -> KeyboardMode {
-        self.keyboard_mode
-    }
-
-    /// Returns the keyboard mode flags.
-    pub fn keyboard_mode_flags(&self) -> KeyboardModeFlags {
-        self.keyboard_mode_flags
     }
 }
 
@@ -170,16 +92,39 @@ struct ConsoleState {
     fg_color: Pixel,
     bg_color: Pixel,
     font: BitmapFont,
-    /// Whether the output characters will be drawn in the framebuffer.
-    is_output_enabled: bool,
+    /// Whether the console is active.
+    is_active: bool,
+    mode: ConsoleMode,
 
     bytes: Vec<u8>,
     backend: Arc<FrameBuffer>,
 }
 
 impl ConsoleState {
+    fn new(backend: Arc<FrameBuffer>) -> Self {
+        let buffer_size = backend.io_mem().size();
+        Self {
+            x_pos: 0,
+            y_pos: 0,
+            fg_color: Pixel::WHITE,
+            bg_color: Pixel::BLACK,
+            font: BitmapFont::new_basic8x8(),
+            is_active: false,
+            mode: ConsoleMode::Text,
+            bytes: alloc::vec![0; buffer_size],
+            backend,
+        }
+    }
+
+    /// Flushes the entire console buffer to the framebuffer.
+    fn flush_fullscreen(&mut self) {
+        if self.is_active && self.mode == ConsoleMode::Text {
+            self.backend.write_bytes_at(0, &self.bytes).unwrap();
+        }
+    }
+
     /// Sends a single character to be drawn on the framebuffer.
-    pub(self) fn send_char(&mut self, ch: u8) {
+    fn send_char(&mut self, ch: u8) {
         if ch == b'\n' {
             self.newline();
             return;
@@ -214,7 +159,7 @@ impl ConsoleState {
         self.bytes.copy_within(offset.., 0);
         self.bytes[self.backend.io_mem().size() - offset..].fill(0);
 
-        if self.is_output_enabled {
+        if self.is_active && self.mode == ConsoleMode::Text {
             self.backend.write_bytes_at(0, &self.bytes).unwrap();
         }
 
@@ -260,7 +205,7 @@ impl ConsoleState {
             }
 
             // Write pixels to the framebuffer.
-            if self.is_output_enabled {
+            if self.is_active && self.mode == ConsoleMode::Text {
                 self.backend.write_bytes_at(off_st, render_buf).unwrap();
             }
 
@@ -269,7 +214,7 @@ impl ConsoleState {
     }
 
     /// Sets the font for the framebuffer console.
-    pub(self) fn set_font(&mut self, font: BitmapFont) -> Result<(), ConsoleSetFontError> {
+    fn set_font(&mut self, font: BitmapFont) -> Result<(), ConsoleSetFontError> {
         // Note that the font height cannot exceed the half the height of the framebuffer.
         // Otherwise, `shift_lines_up` will underflow `x_pos`.
         if font.width() > self.backend.width() || font.height() > self.backend.height() / 2 {
@@ -283,32 +228,6 @@ impl ConsoleState {
         }
 
         Ok(())
-    }
-
-    /// Sets the console mode (text or graphics).
-    pub(self) fn set_mode(&mut self, mode: ConsoleMode) {
-        if mode == ConsoleMode::Graphics {
-            self.is_output_enabled = false;
-            return;
-        }
-
-        if self.is_output_enabled {
-            return;
-        }
-
-        // We're switching from the graphics mode back to the text mode. The characters need to be
-        // redrawn in the framebuffer.
-        self.is_output_enabled = true;
-        self.backend.write_bytes_at(0, &self.bytes).unwrap();
-    }
-
-    /// Gets the current console mode.
-    pub(self) fn mode(&self) -> ConsoleMode {
-        if self.is_output_enabled {
-            ConsoleMode::Text
-        } else {
-            ConsoleMode::Graphics
-        }
     }
 
     /// Fills a rectangular pixel region `[x0, x1) × [y0, y1)` with the given color.
@@ -333,7 +252,7 @@ impl ConsoleState {
             }
 
             // Write pixels to the framebuffer.
-            if self.is_output_enabled {
+            if self.is_active && self.mode == ConsoleMode::Text {
                 self.backend.write_bytes_at(off, buf).unwrap();
             }
         }
