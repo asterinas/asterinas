@@ -16,17 +16,24 @@ use crate::{
 /// [`do_exit`]: crate::process::posix_thread::do_exit
 /// [`do_exit_group`]: crate::process::posix_thread::do_exit_group
 pub(super) fn exit_process(current_process: &Process) {
-    current_process.status().set_zombie();
     current_process.status().set_vfork_child(false);
 
     // Drop fields in `Process`.
     current_process.lock_vmar().set_vmar(None);
 
-    current_process.pidfile_pollee.notify(IoEvents::IN);
-
     send_parent_death_signal(current_process);
 
     move_children_to_reaper_process(current_process);
+
+    // Mark the current process as a zombie. After this point, it may be reaped concurrently and
+    // removed from the process tree. For example, the process may no longer have a live parent if
+    // the parent exits after reaping the process.
+    //
+    // This must happen after `move_children_to_reaper_process`. See the comments in
+    // `find_reaper_process` for details.
+    current_process.status().set_zombie();
+
+    current_process.pidfile_pollee.notify(IoEvents::IN);
 
     send_child_death_signal(current_process);
 
@@ -58,6 +65,10 @@ fn send_parent_death_signal(current_process: &Process) {
 ///
 /// If there is no reaper process for `current_process`, returns `None`.
 fn find_reaper_process(current_process: &Process) -> Option<Arc<Process>> {
+    // The current process is not yet zombie (see `exit_process`), so it cannot have been reaped,
+    // and it is still present in its parent's children map. An exiting parent will move the
+    // current process to a new reaper (updating this `Weak` reference) before becoming zombie
+    // itself. Therefore, the parent is always alive and `upgrade` cannot fail.
     let mut parent = current_process.parent().lock().process().upgrade().unwrap();
 
     loop {
@@ -79,8 +90,9 @@ fn find_reaper_process(current_process: &Process) -> Option<Arc<Process>> {
         if let Some(grandparent) = grandparent {
             parent = grandparent;
         } else {
-            // If both the parent and grandparent have exited concurrently, we will lose the clue
-            // about the ancestor processes. Therefore, we have to retry.
+            // The grandparent was concurrently reaped and dropped, so we lost the path up the
+            // ancestor chain. Retry from the current process's parent to pick up the latest reaper
+            // assignment. This `upgrade` won't fail for the same reason explained above.
             parent = current_process.parent().lock().process().upgrade().unwrap();
         }
     }
