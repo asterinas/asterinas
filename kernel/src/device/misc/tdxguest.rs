@@ -3,6 +3,7 @@
 use alloc::sync::Arc;
 use core::{
     mem::{offset_of, size_of},
+    sync::atomic::Ordering,
     time::Duration,
 };
 
@@ -190,7 +191,8 @@ pub fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
 
     // FIXME: The `get_quote` API from the `tdx_guest` crate should have been marked `unsafe`
     // because it has no way to determine if the input physical address is safe or not.
-    get_quote((buf.paddr() as u64) | SHARED_MASK, buf.size() as u64)?;
+    let mask = SHARED_MASK.load(Ordering::Relaxed);
+    get_quote(buf.paddr() as u64 | mask, buf.size() as u64)?;
 
     // Poll for the quote to be ready.
     let status_ptr = field_ptr!(&report_ptr, TdxQuoteHdr, status);
