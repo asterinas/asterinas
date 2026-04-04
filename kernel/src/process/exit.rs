@@ -57,8 +57,11 @@ fn send_parent_death_signal(current_process: &Process) {
 /// Finds a reaper process for `current_process`.
 ///
 /// If there is no reaper process for `current_process`, returns `None`.
+/// This includes the case where the parent has already exited concurrently,
+/// in which case the caller falls back to the init process.
 fn find_reaper_process(current_process: &Process) -> Option<Arc<Process>> {
-    let mut parent = current_process.parent().lock().process().upgrade().unwrap();
+    // The parent may have exited concurrently, so `upgrade` can fail.
+    let mut parent = current_process.parent().lock().process().upgrade()?;
 
     loop {
         if parent.is_init_process() {
@@ -81,7 +84,7 @@ fn find_reaper_process(current_process: &Process) -> Option<Arc<Process>> {
         } else {
             // If both the parent and grandparent have exited concurrently, we will lose the clue
             // about the ancestor processes. Therefore, we have to retry.
-            parent = current_process.parent().lock().process().upgrade().unwrap();
+            parent = current_process.parent().lock().process().upgrade()?;
         }
     }
 }
