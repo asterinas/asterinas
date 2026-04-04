@@ -16,7 +16,7 @@ use core::{cmp::max, ops::Add, time::Duration};
 use aster_util::coeff::Coeff;
 use ostd::sync::{LocalIrqDisabled, RwLock};
 
-const NANOS_PER_SECOND: u32 = 1_000_000_000;
+pub const NANOS_PER_SECOND: u32 = 1_000_000_000;
 
 /// `ClockSource` is an abstraction for hardware-assisted timing mechanisms.
 ///
