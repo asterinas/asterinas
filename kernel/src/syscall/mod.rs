@@ -8,10 +8,16 @@
 )]
 
 pub use clock_gettime::ClockId;
-use ostd::arch::cpu::context::UserContext;
+use ostd::{arch::cpu::context::UserContext, task::seccomp::SeccompMode};
 pub use timer_create::create_timer;
 
-use crate::{context::Context, cpu::LinuxAbi, prelude::*};
+use crate::{
+    context::Context,
+    cpu::LinuxAbi,
+    prelude::*,
+    process::signal::constants::SIGKILL,
+    syscall::arch::{SYS_EXIT, SYS_READ, SYS_RT_SIGRETURN, SYS_WRITE},
+};
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv.rs")]
@@ -131,6 +137,7 @@ mod sched_setattr;
 mod sched_setparam;
 mod sched_setscheduler;
 mod sched_yield;
+mod seccomp;
 mod select;
 mod semctl;
 mod semget;
@@ -367,6 +374,25 @@ impl SyscallArgument {
 
 pub fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
     let syscall_frame = SyscallArgument::new_from_context(user_ctx);
+    let seccomp_strict_whitelist: [u64; 4] = [SYS_READ, SYS_WRITE, SYS_RT_SIGRETURN, SYS_EXIT];
+    let seccomp = ctx.task.seccomp.lock();
+
+    match seccomp.mode {
+        SeccompMode::SECCOMP_MODE_DISABLED => (),
+        SeccompMode::SECCOMP_MODE_STRICT => {
+            if !seccomp_strict_whitelist.contains(&syscall_frame.syscall_number) {
+                ctx.process.stop(SIGKILL);
+                return;
+            }
+        }
+        SeccompMode::SECCOMP_MODE_FILTER => {
+            error!(
+                "SeccompMode::SECCOMP_MODE_FILTER is not implemented yet! Syscall {:?} will execute normally",
+                syscall_frame.syscall_number
+            )
+        }
+    }
+
     let syscall_return = arch::syscall_dispatch(
         syscall_frame.syscall_number,
         syscall_frame.args,
