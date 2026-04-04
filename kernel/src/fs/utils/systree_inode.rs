@@ -766,7 +766,7 @@ impl<KInode: SysTreeInodeTy> Iterator for ThisAndParentDentryIter<'_, KInode> {
 }
 
 /// A directory entry of sysfs.
-struct Dentry {
+pub(in crate::fs) struct Dentry {
     pub ino: Ino,
     pub name: SysStr,
     pub type_: InodeType,

@@ -3,7 +3,6 @@
 //! The virtio of Asterinas.
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(linked_list_cursors)]
 #![feature(trait_alias)]
 
 extern crate alloc;

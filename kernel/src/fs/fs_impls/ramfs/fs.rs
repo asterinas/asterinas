@@ -1026,17 +1026,17 @@ impl Inode for RamInode {
                 }
 
                 match (src_inode.typ, dst_inode.typ) {
-                    (InodeType::Dir, InodeType::Dir) => {
+                    (InodeType::Dir, InodeType::Dir)
                         if !dst_inode
                             .inner
                             .as_direntry()
                             .unwrap()
                             .read()
-                            .is_empty_children()
-                        {
-                            return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
-                        }
+                            .is_empty_children() =>
+                    {
+                        return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
                     }
+                    (InodeType::Dir, InodeType::Dir) => {}
                     (InodeType::Dir, _) => {
                         return_errno_with_message!(Errno::ENOTDIR, "old is not dir");
                     }
