@@ -78,7 +78,7 @@ pub(crate) unsafe fn boot_all_aps() {
     if num_cpus == 1 {
         return;
     }
-    log::info!("Booting {} processors", num_cpus - 1);
+    crate::info!("Booting {} processors", num_cpus - 1);
 
     let mut per_ap_raw_info = Vec::with_capacity(num_cpus);
     let mut per_ap_info = Vec::with_capacity(num_cpus);
@@ -102,7 +102,7 @@ pub(crate) unsafe fn boot_all_aps() {
         per_ap_info: per_ap_info.into_boxed_slice(),
     });
 
-    log::info!("Booting all application processors...");
+    crate::info!("Booting all application processors...");
 
     let info_ptr = AP_BOOT_INFO.get().unwrap().per_ap_raw_info.as_ptr();
     let pt_ptr = crate::mm::page_table::boot_pt::with_borrow(|pt| pt.root_address()).unwrap();
@@ -112,7 +112,7 @@ pub(crate) unsafe fn boot_all_aps() {
 
     wait_for_all_aps_started(num_cpus);
 
-    log::info!("All application processors started. The BSP continues to run.");
+    crate::info!("All application processors started. The BSP continues to run.");
 }
 
 static AP_LATE_ENTRY: Once<fn()> = Once::new();
@@ -160,7 +160,7 @@ pub(crate) unsafe extern "C" fn ap_early_entry(cpu_id: u32) -> ! {
     // 3. No remaining `with_borrow` invocations on this CPU from now on.
     unsafe { crate::mm::page_table::boot_pt::dismiss() };
 
-    log::info!("Processor {} started. Spinning for tasks.", cpu_id);
+    crate::info!("Processor {} started. Spinning for tasks.", cpu_id);
 
     // Mark the AP as started. The BSP will resume execution once all the APs
     // have been marked as such.

@@ -6,8 +6,7 @@ use core::fmt::Debug;
 use aster_bigtcp::device::{Checksum, DeviceCapabilities, Medium};
 use aster_network::{AnyNetworkDevice, EthernetAddr, NetError, RxBuffer, TxBuffer};
 use aster_util::slot_vec::SlotVec;
-use log::{debug, warn};
-use ostd::{arch::trap::TrapFrame, mm::VmReader, sync::SpinLock};
+use ostd::{arch::trap::TrapFrame, debug, mm::VmReader, sync::SpinLock, warn};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{

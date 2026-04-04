@@ -20,7 +20,7 @@ use device::{
     VirtioDeviceType, block::device::BlockDevice, console::device::ConsoleDevice,
     input::device::InputDevice, network::device::NetworkDevice, socket::device::SocketDevice,
 };
-use log::{error, warn};
+use ostd::{error, warn};
 use spin::Once;
 use transport::{DeviceStatus, mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER};
 

@@ -90,8 +90,9 @@ Below is a condensed summary of the most important rules.
   Always use `workspace.dependencies`.
 - **Error handling:** Propagate errors with `?`.
   Do not `.unwrap()` where failure is possible.
-- **Logging:** Use `log` crate macros only (`trace!`..`error!`).
-  No `println!` in production code.
+- **Logging:** Use OSTD logging macros only (`debug!`..`emerg!`).
+  Import via `use ostd::prelude::*`. No `println!` in production code.
+  Use `*_ratelimited!` in hot paths, `*_once!` for one-time warnings.
 - **Concurrency:** Establish and document lock order.
   Never do I/O or blocking under a spinlock.
   Avoid casual use of atomics.

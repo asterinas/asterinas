@@ -4,11 +4,11 @@
 use core::ops::Range;
 
 use id_alloc::IdAlloc;
-use log::debug;
 use spin::Once;
 
 use super::IoPort;
 use crate::{
+    debug,
     io::RawIoPortRange,
     sync::{LocalIrqDisabled, SpinLock},
 };

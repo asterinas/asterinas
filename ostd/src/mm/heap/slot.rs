@@ -86,7 +86,7 @@ impl HeapSlot {
             .zeroed(false)
             .alloc_segment_with(nframes, |_| LargeAllocFrameMeta)
             .map_err(|_| {
-                log::error!("Failed to allocate a large slot");
+                crate::error!("Failed to allocate a large slot");
                 AllocError
             })?;
 
@@ -108,7 +108,7 @@ impl HeapSlot {
     /// operations that only apply to large slots.
     pub fn dealloc_large(self) {
         let SlotInfo::LargeSlot(size) = self.info else {
-            log::error!(
+            crate::error!(
                 "Deallocating a large slot that was not allocated with `HeapSlot::alloc_large`"
             );
             crate::panic::abort();

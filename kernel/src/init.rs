@@ -83,7 +83,7 @@ fn ap_init() {
 // the latency to switching from the idle task to a useful, runnable one.
 
 fn bsp_idle_loop() {
-    log::info!("[kernel] Idle thread for CPU #0 started");
+    ostd::info!("[kernel] Idle thread for CPU #0 started");
 
     // Spawn the first non-idle kernel thread on BSP.
     ThreadOptions::new(first_kthread)
@@ -112,7 +112,7 @@ fn bsp_idle_loop() {
 }
 
 fn ap_idle_loop() {
-    log::info!(
+    ostd::info!(
         "[kernel] Idle thread for CPU #{} started",
         // No races because this function runs on a certain AP.
         CpuId::current_racy().as_usize(),

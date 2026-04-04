@@ -22,7 +22,7 @@ pub(super) fn init() {
         return;
     };
     let Ok(reset_port) = IoPort::acquire(reset_port_num) else {
-        log::warn!("The reset port from ACPI is not available");
+        ostd::warn!("The reset port from ACPI is not available");
         return;
     };
 

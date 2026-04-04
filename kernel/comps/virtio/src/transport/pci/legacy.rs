@@ -5,12 +5,13 @@ use core::fmt::Debug;
 
 use aster_pci::{capability::CapabilityData, cfg_space::Bar, common_device::PciCommonDevice};
 use aster_util::safe_ptr::SafePtr;
-use log::{info, warn};
 use ostd::{
     bus::BusProbeError,
+    info,
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaCoherent},
+    warn,
 };
 
 use crate::{

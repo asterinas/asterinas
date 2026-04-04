@@ -88,7 +88,7 @@ pub fn handle_pending_signal(
     let sig_num = signal.num();
     match sig_action {
         SigAction::Ign => {
-            trace!("Ignore signal {:?}", sig_num);
+            debug!("Ignore signal {:?}", sig_num);
         }
         SigAction::User {
             handler_addr,
@@ -135,7 +135,7 @@ pub fn handle_pending_signal(
         }
         SigAction::Dfl => {
             let sig_default_action = SigDefaultAction::from_signum(sig_num);
-            trace!("sig_default_action = {:?}", sig_default_action);
+            debug!("sig_default_action = {:?}", sig_default_action);
 
             match sig_default_action {
                 SigDefaultAction::Core | SigDefaultAction::Term => {
@@ -207,7 +207,7 @@ fn dequeue_pending_signal(ctx: &Context) -> Option<(Box<dyn Signal>, SigAction)>
         sig_dispositions.set_default(sig_num);
     }
 
-    trace!(
+    debug!(
         "sig_num = {:?}, sig_name = {}, sig_action = {:#x?}",
         signal.num(),
         signal.num().sig_name(),
@@ -384,7 +384,7 @@ pub fn handle_user_signal(
         }
     }
 
-    trace!(
+    debug!(
         "Before calling to signal handler: stack_pointer = 0x{:x}",
         stack_pointer
     );

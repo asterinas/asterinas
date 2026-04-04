@@ -85,10 +85,10 @@ pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
 
 fn init() {
     let Some(all_bus) = arch::init() else {
-        log::info!("no PCI bus was found");
+        ostd::info!("no PCI bus was found");
         return;
     };
-    log::info!("initializing the PCI bus with bus numbers `{:?}`", all_bus);
+    ostd::info!("initializing the PCI bus with bus numbers `{:?}`", all_bus);
 
     let mut lock = PCI_BUS.lock();
 

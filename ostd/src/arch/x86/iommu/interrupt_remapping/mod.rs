@@ -4,11 +4,13 @@ mod table;
 
 use core::fmt::Debug;
 
-use log::{info, warn};
 use spin::Once;
 pub(super) use table::IntRemappingTable;
 
-use crate::arch::iommu::registers::{ExtendedCapabilityFlags, IOMMU_REGS};
+use crate::{
+    arch::iommu::registers::{ExtendedCapabilityFlags, IOMMU_REGS},
+    info, warn,
+};
 
 pub struct IrtEntryHandle {
     index: u16,

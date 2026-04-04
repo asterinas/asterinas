@@ -109,7 +109,7 @@ fn dispatch_params(cmdline: &str) -> InitprocArgs {
     let mut registry = BTreeMap::new();
     for p in inventory::iter::<KernelParam> {
         if let Some(prev) = registry.insert(p.name, p) {
-            log::warn!(
+            ostd::warn!(
                 "duplicate kernel parameter '{}' registered; keeping last",
                 prev.name
             );

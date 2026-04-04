@@ -30,7 +30,7 @@ impl InputHandlerClass for VtKeyboardHandlerClass {
         if !capability.look_like_keyboard() {
             return Err(ConnectError::IncompatibleDevice);
         }
-        log::info!(
+        ostd::info!(
             "Virtual terminal keyboard handler connected to device: {}",
             dev.name()
         );
@@ -38,7 +38,7 @@ impl InputHandlerClass for VtKeyboardHandlerClass {
     }
 
     fn disconnect(&self, dev: &Arc<dyn InputDevice>) {
-        log::info!(
+        ostd::info!(
             "Virtual terminal keyboard handler disconnected from device: {}",
             dev.name()
         );
@@ -62,7 +62,7 @@ struct VtKeyboardHandler;
 
 impl VtKeyboardHandler {
     fn handle_key_event(&self, keycode: KeyCode, key_status: KeyStatus) {
-        log::trace!(
+        ostd::debug!(
             "Virtual terminal keyboard handler received key event: keycode={:?}, status={:?}",
             keycode,
             key_status
@@ -126,11 +126,11 @@ impl VtKeyboardHandler {
             KeySym::Special(handler) => self.handle_special(handler, &console_callbacks),
             KeySym::SwitchVt(_) => {
                 // TODO: Implement virtual terminal switching
-                log::warn!("Switching virtual terminal is not implemented yet");
+                ostd::warn!("Switching virtual terminal is not implemented yet");
             }
             KeySym::AltNumpad(_) => {
                 // TODO: Implement Alt+Numpad input
-                log::warn!("Alt+Numpad input is not implemented yet");
+                ostd::warn!("Alt+Numpad input is not implemented yet");
             }
             KeySym::NoOp => {
                 // Do nothing
@@ -377,7 +377,7 @@ impl VtKeyboardHandler {
             | SpecialHandler::ShowState
             | SpecialHandler::Compose
             | SpecialHandler::Reboot => {
-                log::warn!("VT keyboard action {:?} is not implemented yet", handler);
+                ostd::warn!("VT keyboard action {:?} is not implemented yet", handler);
             }
         }
     }
@@ -409,7 +409,7 @@ impl InputHandler for VtKeyboardHandler {
                     // Nothing to do
                 }
                 _ => {
-                    log::warn!(
+                    ostd::warn!(
                         "Virtual terminal keyboard handler received unsupported event: {:?}",
                         event
                     );

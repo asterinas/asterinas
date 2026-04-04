@@ -41,9 +41,9 @@ pub fn inject_restart_handler(handler: fn(ExitCode)) {
 pub fn restart(code: ExitCode) -> ! {
     if let Some(handler) = RESTART_HANDLER.get() {
         (handler)(code);
-        log::error!("Failed to restart the system because the restart handler fails");
+        crate::error!("Failed to restart the system because the restart handler fails");
     } else {
-        log::error!("Failed to restart the system because a restart handler is missing");
+        crate::error!("Failed to restart the system because a restart handler is missing");
     }
 
     machine_halt();
@@ -74,16 +74,16 @@ pub fn poweroff(code: ExitCode) -> ! {
 
     if let Some(handler) = POWEROFF_HANDLER.get() {
         (handler)(code);
-        log::error!("Failed to power off the system because the poweroff handler fails");
+        crate::error!("Failed to power off the system because the poweroff handler fails");
     } else {
-        log::error!("Failed to power off the system because a poweroff handler is missing");
+        crate::error!("Failed to power off the system because a poweroff handler is missing");
     }
 
     machine_halt();
 }
 
 fn machine_halt() -> ! {
-    log::error!("Halting the machine...");
+    crate::error!("Halting the machine...");
 
     // TODO: `inter_processor_call` may panic again (e.g., if there is an out-of-memory error). We
     // should find a way to make it panic-free.

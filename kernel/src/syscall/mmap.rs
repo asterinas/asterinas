@@ -87,7 +87,7 @@ fn do_sys_mmap(
         } else {
             if option.flags().contains(MMapFlags::MAP_32BIT) {
                 // TODO: MAP_32BIT requires the mapping address to be below 2 GiB.
-                warn!("MAP_32BIT is not supported");
+                warn_once!("MAP_32BIT is not supported");
             }
             if addr != 0 {
                 options = options.offset(VmarMapOffset::Hint(addr))

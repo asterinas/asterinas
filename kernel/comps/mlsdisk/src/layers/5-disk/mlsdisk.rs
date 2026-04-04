@@ -205,7 +205,7 @@ impl<D: BlockSet + 'static> MlsDisk<D> {
         // TODO: Error handling the sync operation
         self.inner.sync().unwrap();
 
-        trace!("[MlsDisk] Sync completed. {self:?}");
+        debug!("[MlsDisk] Sync completed. {self:?}");
         Ok(())
     }
 
