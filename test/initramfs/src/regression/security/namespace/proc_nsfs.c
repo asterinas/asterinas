@@ -37,9 +37,10 @@
  *     but noted here for future reference).
  * `clone_flags` lists the corresponding CLONE_NEW* flag for each entry.
  */
-static const char *ns_files[] = { "uts", "mnt", "user" };
-static const char *ns_names[] = { "uts", "mnt", "user" };
-static const int clone_flags[] = { CLONE_NEWUTS, CLONE_NEWNS, CLONE_NEWUSER };
+static const char *ns_files[] = { "uts", "mnt", "user", "ipc" };
+static const char *ns_names[] = { "uts", "mnt", "user", "ipc" };
+static const int clone_flags[] = { CLONE_NEWUTS, CLONE_NEWNS, CLONE_NEWUSER,
+				   CLONE_NEWIPC };
 static const size_t ns_count = sizeof(ns_files) / sizeof(ns_files[0]);
 
 /* -------------------------------------------------------------------------- */
