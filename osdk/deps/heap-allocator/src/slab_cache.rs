@@ -4,6 +4,7 @@
 
 use core::alloc::AllocError;
 
+use ostd::error;
 use ostd::mm::{
     PAGE_SIZE, Paddr,
     frame::linked_list::LinkedList,
@@ -63,7 +64,7 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
 
         // If no empty slab is available, allocate new slabs.
         let Ok(mut allocated_empty) = Slab::new() else {
-            log::error!("Failed to allocate a new slab");
+            error!("Failed to allocate a new slab");
             return Err(AllocError);
         };
         let allocated = allocated_empty.meta_mut().alloc().unwrap();
@@ -86,7 +87,7 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
     /// The slot must be allocated from the cache.
     pub fn dealloc(&mut self, slot: HeapSlot) -> Result<(), AllocError> {
         let which = which_slab(&slot).ok_or_else(|| {
-            log::error!("Can't find the slab for the slot");
+            error!("Can't find the slab for the slot");
             AllocError
         })?;
 
@@ -99,7 +100,7 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
         }
 
         let mut slab = extracted_slab.ok_or_else(|| {
-            log::error!("Deallocating a slot that is not allocated from the cache");
+            error!("Deallocating a slot that is not allocated from the cache");
             AllocError
         })?;
 

@@ -59,12 +59,12 @@ where
         Err(err) => {
             let info = err.downcast::<OopsInfo>().unwrap();
 
-            log::error!("Oops! {}", info.message);
+            ostd::error!("Oops! {}", info.message);
 
             let count = OOPS_COUNT.fetch_add(1, Ordering::Relaxed);
             if count >= MAX_OOPS_COUNT {
                 // Too many oops. Abort the kernel.
-                log::error!("Too many oops. The kernel panics.");
+                ostd::error!("Too many oops. The kernel panics.");
                 panic::abort();
             }
 
@@ -104,7 +104,7 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
 
     // Halt the system if the panic is not caught.
     if let Some(location) = info.location() {
-        log::error!(
+        ostd::error!(
             "Uncaught panic:\n\t{}\n\tat {}:{}\n\ton CPU {} by thread {:?}",
             message,
             location.file(),
@@ -113,7 +113,7 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
             thread,
         );
     } else {
-        log::error!(
+        ostd::error!(
             "Uncaught panic:\n\t{}\n\ton CPU {} by thread {:?}",
             message,
             cpu.as_usize(),
@@ -124,7 +124,7 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     if info.can_unwind() {
         panic::print_stack_trace();
     } else {
-        log::error!("Backtrace is disabled.");
+        ostd::error!("Backtrace is disabled.");
     }
 
     panic::abort();

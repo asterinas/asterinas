@@ -15,10 +15,14 @@ pub(crate) use core::{any::Any, ffi::CStr, fmt::Debug};
 
 pub(crate) use bitflags::bitflags;
 pub(crate) use int_to_c_enum::TryFromInt;
-pub(crate) use log::{debug, error, info, log_enabled, trace, warn};
 pub(crate) use ostd::{
+    alert, alert_once, alert_ratelimited, crit, crit_once, crit_ratelimited, debug, debug_once,
+    debug_ratelimited, emerg, emerg_once, emerg_ratelimited, error, error_once, error_ratelimited,
+    info, info_once, info_ratelimited, log, log_enabled,
     mm::{FallibleVmRead, FallibleVmWrite, PAGE_SIZE, Vaddr, VmReader, VmWriter},
+    notice, notice_once, notice_ratelimited,
     sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
+    warn, warn_once, warn_ratelimited,
 };
 pub(crate) use ostd_pod::{FromBytes, FromZeros, IntoBytes, Pod};
 

@@ -20,11 +20,18 @@ use device::{
     VirtioDeviceType, block::device::BlockDevice, console::device::ConsoleDevice,
     input::device::InputDevice, network::device::NetworkDevice, socket::device::SocketDevice,
 };
-use log::{error, warn};
+use ostd::{error, warn};
 use spin::Once;
 use transport::{DeviceStatus, mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER};
 
 use crate::transport::VirtioTransport;
+
+// Set crate-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "virtio: "
+    };
+}
 
 pub mod device;
 mod dma_buf;
@@ -75,13 +82,13 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
             VirtioDeviceType::Console => ConsoleDevice::init(transport),
             VirtioDeviceType::Socket => SocketDevice::init(transport),
             _ => {
-                warn!("[Virtio]: Found unimplemented device:{:?}", device_type);
+                warn!("Found unimplemented device:{:?}", device_type);
                 Ok(())
             }
         };
         if res.is_err() {
             error!(
-                "[Virtio]: Device initialization error:{:?}, device type:{:?}",
+                "Device initialization error:{:?}, device type:{:?}",
                 res, device_type
             );
         }

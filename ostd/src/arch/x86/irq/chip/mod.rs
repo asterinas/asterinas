@@ -7,12 +7,11 @@ use core::{
 };
 
 use ioapic::IoApic;
-use log::info;
 use spin::Once;
 
 use crate::{
-    Error, Result, arch::kernel::acpi::get_acpi_tables, io::IoMemAllocatorBuilder, irq::IrqLine,
-    sync::SpinLock,
+    Error, Result, arch::kernel::acpi::get_acpi_tables, info, io::IoMemAllocatorBuilder,
+    irq::IrqLine, sync::SpinLock,
 };
 
 mod ioapic;

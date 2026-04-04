@@ -5,8 +5,7 @@
 use core::ops::Range;
 
 use bus::MmioBus;
-use log::debug;
-use ostd::{io::IoMem, irq::IrqLine, sync::SpinLock};
+use ostd::{debug, io::IoMem, irq::IrqLine, sync::SpinLock};
 
 use crate::transport::mmio::bus::common_device::{
     MmioCommonDevice, mmio_check_magic, mmio_read_device_id,
@@ -54,7 +53,7 @@ where
     let start_addr = mmio_range.start;
     let Ok(io_mem) = IoMem::acquire(mmio_range) else {
         debug!(
-            "[Virtio]: Abort MMIO detection at {:#x} because the MMIO address is not available",
+            "Abort MMIO detection at {:#x} because the MMIO address is not available",
             start_addr
         );
         return Err(MmioRegisterError::MmioUnavailable);
@@ -67,7 +66,7 @@ where
     // MAY report an error."
     if !mmio_check_magic(&io_mem) {
         debug!(
-            "[Virtio]: Abort MMIO detection at {:#x} because the magic number does not match",
+            "Abort MMIO detection at {:#x} because the magic number does not match",
             start_addr
         );
         return Err(MmioRegisterError::MagicMismatch);
@@ -86,7 +85,7 @@ where
 
     let Ok(mapped_irq_line) = IrqLine::alloc().and_then(map_irq_line) else {
         debug!(
-            "[Virtio]: Ignore MMIO device at {:#x} because its IRQ line is not available",
+            "Ignore MMIO device at {:#x} because its IRQ line is not available",
             start_addr
         );
         return Err(MmioRegisterError::IrqUnavailable);

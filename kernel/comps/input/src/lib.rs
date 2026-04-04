@@ -38,6 +38,13 @@ extern crate alloc;
 #[macro_use]
 extern crate ostd_pod;
 
+// Set crate-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "input: "
+    };
+}
+
 pub mod event_type_codes;
 mod input_core;
 pub mod input_dev;

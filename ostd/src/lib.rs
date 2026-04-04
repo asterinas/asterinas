@@ -20,6 +20,17 @@ extern crate alloc;
 #[macro_use]
 extern crate ostd_pod;
 
+// The `__log_prefix` default must be defined at the crate root so that
+// all modules inherit it via textual scoping. See the design doc in
+// `log/macros.rs` for the full explanation of the prefix mechanism.
+
+// Set crate-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        ""
+    };
+}
+
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86/mod.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv/mod.rs")]
 #[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch/mod.rs")]
@@ -33,7 +44,7 @@ mod error;
 mod ex_table;
 pub mod io;
 pub mod irq;
-pub mod logger;
+pub mod log;
 pub mod mm;
 pub mod panic;
 pub mod power;
@@ -84,7 +95,7 @@ unsafe fn init() {
     #[cfg(not(target_arch = "x86_64"))]
     arch::serial::init();
 
-    logger::init();
+    log::init();
 
     // SAFETY:
     //  1. They are only called once in the boot context of the BSP.

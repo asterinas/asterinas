@@ -5,8 +5,7 @@
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
-use log::{debug, error};
-use ostd::bus::BusProbeError;
+use ostd::{bus::BusProbeError, debug, error};
 
 use super::{PciCommonDevice, device_info::PciDeviceId};
 

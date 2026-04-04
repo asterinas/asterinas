@@ -3,9 +3,8 @@
 //! MMIO device common definitions or functions.
 
 use int_to_c_enum::TryFromInt;
-use log::info;
 use ostd::{
-    Error, Result,
+    Error, Result, info,
     io::IoMem,
     irq::IrqLine,
     mm::{HasPaddr, VmIoOnce},
@@ -26,7 +25,7 @@ impl MmioCommonDevice {
 
         let this = Self { io_mem, irq };
         info!(
-            "[Virtio]: Found MMIO device at {:#x}, device ID {}, IRQ number {}",
+            "Found MMIO device at {:#x}, device ID {}, IRQ number {}",
             this.io_mem.paddr(),
             this.read_device_id().unwrap(),
             this.irq.num(),

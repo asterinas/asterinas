@@ -9,7 +9,6 @@ edition.workspace = true
 component.workspace = true
 bitflags.workspace = true
 bitvec.workspace = true
-log.workspace = true
 ostd.workspace = true
 ostd-pod.workspace = true
 spin.workspace = true

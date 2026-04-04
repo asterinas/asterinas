@@ -18,6 +18,13 @@ extern crate alloc;
 
 use component::{ComponentInitError, init_component};
 
+// Set crate-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "logger: "
+    };
+}
+
 mod aster_logger;
 mod console;
 

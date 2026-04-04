@@ -9,6 +9,13 @@ extern crate alloc;
 
 use component::{ComponentInitError, init_component};
 
+// Set crate-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "i8042: "
+    };
+}
+
 mod controller;
 mod keyboard;
 mod mouse;
@@ -17,7 +24,7 @@ mod ps2;
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
     if let Err(err) = controller::init() {
-        log::warn!("i8042 controller initialization failed: {:?}", err);
+        ostd::warn!("i8042 controller initialization failed: {:?}", err);
     }
     Ok(())
 }

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use log::info;
-
 use crate::{
     arch::device::io_port::WriteOnlyAccess,
+    info,
     io::{IoPort, sensitive_io_port},
 };
 
@@ -20,7 +19,7 @@ const IRQ_OFFSET: u8 = 0x20;
 
 /// Initializes and disables the 8259 Programmable Interrupt Controller (PIC).
 pub fn init_and_disable() {
-    info!("[PIC]: Initializing as disabled");
+    info!("Initializing as disabled");
 
     set_mask(0xff, 0xff);
 }

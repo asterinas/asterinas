@@ -8,12 +8,13 @@ use aster_pci::{
     common_device::PciCommonDevice,
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use log::{info, warn};
 use ostd::{
     bus::BusProbeError,
+    info,
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, dma::DmaCoherent},
+    warn,
 };
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};
@@ -284,7 +285,7 @@ impl VirtioPciModernTransport {
             }
         };
 
-        info!("[Virtio]: Found device:{:?}", device_type);
+        info!("Found device:{:?}", device_type);
 
         let mut msix = None;
         let mut notify = None;

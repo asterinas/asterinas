@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+// Set module-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "acpi: "
+    };
+}
+
 pub(in crate::arch) mod dmar;
 pub(in crate::arch) mod remapping;
 
@@ -12,12 +19,13 @@ use acpi::{
     mcfg::Mcfg,
     rsdp::Rsdp,
 };
-use log::warn;
 use spin::Once;
 
 use crate::{
     boot::{self, BootloaderAcpiArg},
+    info,
     mm::paddr_to_vaddr,
+    warn,
 };
 
 #[derive(Debug, Clone)]
@@ -155,7 +163,7 @@ pub(in crate::arch) fn init() {
         });
     }
 
-    log::info!("[ACPI]: Collected information {:?}", acpi_info);
+    info!("Collected information {:?}", acpi_info);
 
     ACPI_INFO.call_once(|| acpi_info);
 }

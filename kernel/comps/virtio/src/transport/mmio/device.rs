@@ -5,12 +5,12 @@ use core::mem::offset_of;
 
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use log::warn;
 use ostd::{
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaCoherent},
     sync::RwLock,
+    warn,
 };
 
 use super::{

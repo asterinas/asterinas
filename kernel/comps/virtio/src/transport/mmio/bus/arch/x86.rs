@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use log::debug;
-use ostd::arch::irq::IRQ_CHIP;
 pub(super) use ostd::arch::irq::MappedIrqLine;
+use ostd::{arch::irq::IRQ_CHIP, debug};
 
 use crate::transport::mmio::bus::MmioRegisterError;
 
@@ -31,7 +30,7 @@ pub(super) fn probe_for_device() {
         1 => (QEMU_IOAPIC1_GSI_BASE, QEMU_IOAPIC1_NUM_TRANS),
         2.. => (QEMU_IOAPIC2_GSI_BASE, QEMU_IOAPIC2_NUM_TRANS),
         0 => {
-            debug!("[Virtio]: Skip MMIO detection because there are no I/O APICs");
+            debug!("Skip MMIO detection because there are no I/O APICs");
             return;
         }
     };

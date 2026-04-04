@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub use context_table::RootTable;
-use log::{info, warn};
 pub use second_stage::IommuPtConfig;
 use spin::Once;
 
 use super::IommuError;
 use crate::{
     arch::iommu::registers::{CapabilitySagaw, IOMMU_REGS},
+    info,
     mm::{Daddr, PageTable},
     prelude::Paddr,
     sync::{LocalIrqDisabled, SpinLock},
+    warn,
 };
 
 mod context_table;
@@ -129,7 +130,7 @@ pub fn init() {
         .supported_adjusted_guest_address_widths()
         .contains(CapabilitySagaw::AGAW_39BIT_3LP)
     {
-        warn!("[IOMMU] 3-level page tables not supported, disabling DMA remapping");
+        warn!("3-level page tables not supported, disabling DMA remapping");
         return;
     }
 
@@ -150,7 +151,7 @@ pub fn init() {
     // Enable DMA remapping.
     let mut iommu_regs = IOMMU_REGS.get().unwrap().lock();
     iommu_regs.enable_dma_remapping(PAGE_TABLE.get().unwrap());
-    info!("[IOMMU] DMA remapping enabled");
+    info!("DMA remapping enabled");
 }
 
 // TODO: Currently `map()` or `unmap()` could be called in both task and interrupt

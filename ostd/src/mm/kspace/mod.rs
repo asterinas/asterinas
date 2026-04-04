@@ -40,8 +40,8 @@ pub(crate) mod kvirt_area;
 
 use core::ops::Range;
 
-use log::info;
 use spin::Once;
+
 #[cfg(ktest)]
 mod test;
 
@@ -57,7 +57,7 @@ use super::{
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
-    const_assert,
+    const_assert, info,
     mm::{HasPaddr, PAGE_SIZE, PagingLevel, frame::FrameRef, page_table::largest_pages},
     task::disable_preempt,
 };

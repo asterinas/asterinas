@@ -7,7 +7,6 @@ use core::arch::x86_64::{_fxrstor64, _fxsave64, _xrstor64, _xsave64};
 
 use bitflags::bitflags;
 use cfg_if::cfg_if;
-use log::debug;
 use ostd_pod::{FromZeros, IntoBytes};
 use spin::Once;
 use x86::bits64::segmentation::wrfsbase;
@@ -23,6 +22,7 @@ use crate::{
         trap::{RawUserContext, TrapFrame},
     },
     cpu::PrivilegeLevel,
+    debug,
     irq::call_irq_callback_functions,
     mm::Vaddr,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},

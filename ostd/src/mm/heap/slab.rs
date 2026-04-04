@@ -72,7 +72,7 @@ impl<const SLOT_SIZE: usize> SlabMeta<SLOT_SIZE> {
     /// Allocates a slot from the slab.
     pub fn alloc(&mut self) -> Result<HeapSlot, AllocError> {
         let Some(allocated) = self.free_list.pop() else {
-            log::error!("Allocating a slot from a full slab");
+            crate::error!("Allocating a slot from a full slab");
             return Err(AllocError);
         };
         self.nr_allocated += 1;
@@ -122,7 +122,7 @@ impl<const SLOT_SIZE: usize> Slab<SLOT_SIZE> {
     /// If the slot does not belong to the slab it returns [`AllocError`].
     pub fn dealloc(&mut self, slot: HeapSlot) -> Result<(), AllocError> {
         if !(self.paddr()..self.paddr() + self.size()).contains(&slot.paddr()) {
-            log::error!("Deallocating a slot to a slab that does not own the slot");
+            crate::error!("Deallocating a slot to a slab that does not own the slot");
             return Err(AllocError);
         }
         debug_assert_eq!(slot.size(), SLOT_SIZE);

@@ -53,7 +53,7 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
             | Exception::PageNonExecutableFault
             | Exception::PagePrivilegeIllegal => {
                 tlb_flush_addr(badv);
-                log::debug!(
+                crate::debug!(
                     "Page fault occurred in kernel: {exception:?}, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
                 );
                 let page_fault_addr = badv;
@@ -99,7 +99,7 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
                 | Interrupt::HWI5
                 | Interrupt::HWI6
                 | Interrupt::HWI7 => {
-                    log::debug!("Handling hardware interrupt: {:?}", interrupt);
+                    crate::debug!("Handling hardware interrupt: {:?}", interrupt);
                     while let Some(irq_num) = crate::arch::irq::chip::claim() {
                         // Call the IRQ callback functions for the claimed interrupt
                         call_irq_callback_functions(

@@ -34,6 +34,13 @@ extern crate alloc;
 #[macro_use]
 extern crate ostd_pod;
 
+// Set crate-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "block: "
+    };
+}
+
 pub mod bio;
 mod device_id;
 pub mod id;

@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU64, Ordering};
+// Set module-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "timer: "
+    };
+}
 
-use log::info;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{
     arch::{
@@ -11,6 +16,7 @@ use crate::{
         trap::TrapFrame,
         tsc_freq,
     },
+    info,
     irq::IrqLine,
     task::disable_preempt,
     timer::TIMER_FREQ,
@@ -95,14 +101,14 @@ enum Config {
 }
 
 fn init_deadline_mode_config() {
-    info!("[Timer]: Enable APIC TSC deadline mode");
+    info!("Enable APIC TSC deadline mode");
 
     let tsc_interval = tsc_freq() / TIMER_FREQ;
     CONFIG.call_once(|| Config::DeadlineMode { tsc_interval });
 }
 
 fn init_periodic_mode_config() {
-    info!("[Timer]: Enable APIC periodic mode");
+    info!("Enable APIC periodic mode");
 
     // Allocate IRQ
     let mut irq = IrqLine::alloc().unwrap();

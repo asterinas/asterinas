@@ -61,12 +61,12 @@ pub static FRAMEBUFFER: Once<Arc<FrameBuffer>> = Once::new();
 
 pub(crate) fn init() {
     let Some(framebuffer_arg) = boot_info().framebuffer_arg else {
-        log::warn!("Framebuffer not found");
+        ostd::warn!("Framebuffer not found");
         return;
     };
 
     if framebuffer_arg.address == 0 {
-        log::error!("Framebuffer address is zero");
+        ostd::error!("Framebuffer address is zero");
         return;
     }
 
@@ -78,7 +78,7 @@ pub(crate) fn init() {
         24 => PixelFormat::Rgb888,
         32 => PixelFormat::BgrReserved,
         _ => {
-            log::error!(
+            ostd::error!(
                 "Unsupported framebuffer pixel format: {} bpp",
                 framebuffer_arg.bpp
             );

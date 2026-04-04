@@ -55,6 +55,13 @@
 #![no_std]
 #![deny(unsafe_code)]
 
+// Set crate-level OSTD log prefix. For details, see `ostd::log` docs.
+macro_rules! __log_prefix {
+    () => {
+        "pci: "
+    };
+}
+
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86/mod.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv/mod.rs")]
 #[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch/mod.rs")]
@@ -85,10 +92,10 @@ pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
 
 fn init() {
     let Some(all_bus) = arch::init() else {
-        log::info!("no PCI bus was found");
+        ostd::info!("no PCI bus was found");
         return;
     };
-    log::info!("initializing the PCI bus with bus numbers `{:?}`", all_bus);
+    ostd::info!("initializing the PCI bus with bus numbers `{:?}`", all_bus);
 
     let mut lock = PCI_BUS.lock();
 

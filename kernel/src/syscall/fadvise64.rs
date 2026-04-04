@@ -37,22 +37,22 @@ pub fn sys_fadvise64(
 
     match behavior {
         FadviseBehavior::Normal => {
-            warn!("POSIX_FADV_NORMAL is ignored");
+            warn_once!("POSIX_FADV_NORMAL is ignored");
         }
         FadviseBehavior::Random => {
-            warn!("POSIX_FADV_RANDOM is ignored");
+            warn_once!("POSIX_FADV_RANDOM is ignored");
         }
         FadviseBehavior::Sequential => {
-            warn!("POSIX_FADV_SEQUENTIAL is ignored");
+            warn_once!("POSIX_FADV_SEQUENTIAL is ignored");
         }
         FadviseBehavior::Willneed => {
-            warn!("POSIX_FADV_WILLNEED is ignored");
+            warn_once!("POSIX_FADV_WILLNEED is ignored");
         }
         FadviseBehavior::Dontneed => {
-            warn!("POSIX_FADV_DONTNEED is ignored");
+            warn_once!("POSIX_FADV_DONTNEED is ignored");
         }
         FadviseBehavior::Noreuse => {
-            warn!("POSIX_FADV_NOREUSE is ignored");
+            warn_once!("POSIX_FADV_NOREUSE is ignored");
         }
     }
 
