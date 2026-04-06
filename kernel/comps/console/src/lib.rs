@@ -29,6 +29,8 @@ pub enum ConsoleSetFontError {
     InvalidFont,
 }
 
+// TODO: Refactor `AnyConsoleDevice`; this interface should not include
+// VT-specific mode operations.
 pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     /// Sends data to the console device.
     fn send(&self, buf: &[u8]);
