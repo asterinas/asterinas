@@ -3,7 +3,7 @@
 use aster_bigtcp::wire::{Ipv4Address, PortNum};
 
 use crate::{
-    net::socket::{netlink::NetlinkSocketAddr, unix::UnixSocketAddr, vsock::addr::VsockSocketAddr},
+    net::socket::{netlink::NetlinkSocketAddr, unix::UnixSocketAddr, vsock::VsockSocketAddr},
     prelude::*,
 };
 
