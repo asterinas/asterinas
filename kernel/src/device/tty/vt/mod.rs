@@ -1,5 +1,36 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Virtual terminal (VT) subsystem.
+//!
+//! This module implements Linux-compatible VT behavior for `/dev/ttyN` (`N >= 1`) and
+//! exposes the currently active VT through `/dev/tty0` (via the active-console device).
+//!
+//! A VT is identified by a 1-based index ([`VtIndex`]). The subsystem manages multiple
+//! VTs and presents one of them as the active terminal at a time.
+//!
+//! At boot, VT1 starts as the active VT and is allocated by default. Other VTs are
+//! allocated on demand when user-visible operations require them, such as opening
+//! `/dev/ttyN` or activating a VT with the `VT_ACTIVATE` ioctl.
+//!
+//! The `VT_DISALLOCATE` ioctl requests VT deallocation. This request is rejected if the
+//! target VT is busy, including the case where user space still holds open file handles
+//! for that VT. Open-file reference tracking exists so this user-visible rule can be
+//! enforced correctly: deallocation must fail while handles are open and may succeed only
+//! after those handles are closed.
+//!
+//! VT switching is visible through keyboard VT switching and the `VT_ACTIVATE` ioctl.
+//! The `VT_WAITACTIVE` ioctl waits until a given VT becomes active. VT switching policy
+//! is configured with the `VT_SETMODE` ioctl ([`manager::VtMode`]): in `Auto` mode, the
+//! kernel completes switches directly; in `Process` mode, switching away is coordinated
+//! with user space via the `VT_RELDISP` ioctl.
+//!
+//! Console display mode is configured with the `KDSETMODE` ioctl:
+//! - In text mode, the VT behaves as a text terminal.
+//! - In graphics mode, the VT is treated as graphics-owned display space.
+//!
+//! This distinction affects switching behavior. Some kernel-controlled switch paths are
+//! rejected when the active VT is in graphics mode.
+
 mod c_types;
 mod device;
 mod driver;
