@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod c_types;
+mod device;
 mod driver;
 mod file;
 mod ioctl_defs;
@@ -88,5 +89,6 @@ impl TryFrom<i32> for VtIndex {
 pub(super) fn init_in_first_process() -> Result<()> {
     keyboard::init_in_first_process();
     manager::init_in_first_process()?;
+    device::init_in_first_process();
     Ok(())
 }
