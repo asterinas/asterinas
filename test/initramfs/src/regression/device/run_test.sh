@@ -10,6 +10,8 @@ set -e
 ./pty/pty_blocking
 ./pty/pty_packet_mode
 
+./vt/vt_ioctl
+
 ./devtmpfs_mode
 ./evdev
 ./framebuffer
