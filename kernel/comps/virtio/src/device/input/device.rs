@@ -85,7 +85,7 @@ impl InputDevice {
         let event_table = EventTable::new(QUEUE_SIZE as usize);
         for i in 0..event_table.num_events() {
             let event_buf = event_table.get(i);
-            let token = event_queue.add_dma_buf(&[], &[&event_buf]);
+            let token = event_queue.add_output_bufs(&[&event_buf]);
             match token {
                 Ok(value) => {
                     assert_eq!(value, i as u16);
@@ -171,7 +171,7 @@ impl InputDevice {
             debug_assert!(token < QUEUE_SIZE);
             let ptr = self.event_table.get(token as usize);
             let res = handle_event(&ptr);
-            let new_token = event_queue.add_dma_buf(&[], &[&ptr]).unwrap();
+            let new_token = event_queue.add_output_bufs(&[&ptr]).unwrap();
             // This only works because nothing happen between `pop_used` and `add` that affects
             // the list of free descriptors in the queue, so `add` reuses the descriptor which
             // was just freed by `pop_used`.

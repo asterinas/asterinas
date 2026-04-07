@@ -74,7 +74,7 @@ impl SocketDevice {
         for i in 0..QUEUE_SIZE {
             let rx_pool = RX_BUFFER_POOL.get().unwrap();
             let rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>(), rx_pool).unwrap();
-            let token = recv_queue.add_dma_buf(&[], &[&rx_buffer])?;
+            let token = recv_queue.add_output_bufs(&[&rx_buffer])?;
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
         }
@@ -195,7 +195,7 @@ impl SocketDevice {
             TxBuffer::new(header, &mut VmReader::from(buffer).to_fallible(), tx_pool).unwrap()
         };
 
-        let token = self.send_queue.add_dma_buf(&[&tx_buffer], &[])?;
+        let token = self.send_queue.add_input_bufs(&[&tx_buffer])?;
 
         if self.send_queue.should_notify() {
             self.send_queue.notify();
@@ -306,7 +306,7 @@ impl SocketDevice {
 
     /// Add a used rx buffer to recv queue,@index is only to check the correctness
     fn add_rx_buffer(&mut self, rx_buffer: RxBuffer, index: u16) -> Result<(), SocketError> {
-        let token = self.recv_queue.add_dma_buf(&[], &[&rx_buffer])?;
+        let token = self.recv_queue.add_output_bufs(&[&rx_buffer])?;
         assert_eq!(index, token);
         assert!(self.rx_buffers.put_at(token as usize, rx_buffer).is_none());
         if self.recv_queue.should_notify() {

@@ -94,7 +94,7 @@ impl NetworkDevice {
         for i in 0..QUEUE_SIZE {
             let rx_pool = RX_BUFFER_POOL.get().unwrap();
             let rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool).unwrap();
-            let token = recv_queue.add_dma_buf(&[], &[&rx_buffer])?;
+            let token = recv_queue.add_output_bufs(&[&rx_buffer])?;
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
         }
@@ -156,7 +156,7 @@ impl NetworkDevice {
     fn add_rx_buffer(&mut self, rx_buffer: RxBuffer) -> Result<(), NetError> {
         let token = self
             .recv_queue
-            .add_dma_buf(&[], &[&rx_buffer])
+            .add_output_bufs(&[&rx_buffer])
             .map_err(queue_to_network_error)?;
         assert!(self.rx_buffers.put_at(token as usize, rx_buffer).is_none());
 
@@ -204,7 +204,7 @@ impl NetworkDevice {
 
         let token = self
             .send_queue
-            .add_dma_buf(&[&tx_buffer], &[])
+            .add_input_bufs(&[&tx_buffer])
             .map_err(queue_to_network_error)?;
 
         self.poll_stat.sent_packet += 1;
