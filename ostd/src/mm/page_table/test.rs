@@ -607,6 +607,43 @@ mod navigation {
     }
 
     #[ktest]
+    fn jump_near_address_space_end() {
+        use crate::mm::kspace::MappedItem;
+
+        let page_table = PageTable::<KernelPtConfig>::empty();
+
+        const HUGE_PAGE_SIZE: usize = PAGE_SIZE * 512; // 2M
+        let virt_range = 0usize.wrapping_sub(HUGE_PAGE_SIZE)..0usize.wrapping_sub(PAGE_SIZE);
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
+
+        // Map a page near the address space end.
+        assert_eq!(cursor.virt_addr(), 0usize.wrapping_sub(HUGE_PAGE_SIZE));
+        unsafe {
+            cursor.map(MappedItem::Untracked(
+                0,
+                1,
+                PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback),
+            ))
+        };
+        assert_eq!(
+            cursor.virt_addr(),
+            0usize.wrapping_sub(HUGE_PAGE_SIZE - PAGE_SIZE)
+        );
+
+        // Jump near the address space end.
+
+        cursor
+            .jump(0usize.wrapping_sub(HUGE_PAGE_SIZE / 2))
+            .unwrap();
+        assert_eq!(cursor.virt_addr(), 0usize.wrapping_sub(HUGE_PAGE_SIZE / 2));
+
+        cursor.jump(0usize.wrapping_sub(PAGE_SIZE * 2)).unwrap();
+        assert_eq!(cursor.virt_addr(), 0usize.wrapping_sub(PAGE_SIZE * 2));
+    }
+
+    #[ktest]
     fn find_next() {
         let (page_table, _, _) = setup_pt_with_two_mappings();
         let preempt_guard = disable_preempt();
