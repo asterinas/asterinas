@@ -33,7 +33,7 @@ mod error;
 mod ex_table;
 pub mod io;
 pub mod irq;
-pub mod logger;
+pub mod log;
 pub mod mm;
 pub mod panic;
 pub mod power;
@@ -84,7 +84,7 @@ unsafe fn init() {
     #[cfg(not(target_arch = "x86_64"))]
     arch::serial::init();
 
-    logger::init();
+    log::init();
 
     // SAFETY:
     //  1. They are only called once in the boot context of the BSP.

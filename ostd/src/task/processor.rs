@@ -106,7 +106,7 @@ fn before_switching_to(next_task: &Task, irq_guard: &DisabledLocalIrqGuard) {
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
         .is_err()
     {
-        log::warn!("Switching to a task already running in the foreground");
+        crate::warn!("Switching to a task already running in the foreground");
         core::hint::spin_loop();
     }
 }

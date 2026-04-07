@@ -45,7 +45,6 @@ jhash.workspace = true
 keyable-arc.workspace = true
 lending-iterator.workspace = true
 libflate.workspace = true
-log.workspace = true
 logo-ascii-art.workspace = true
 lru.workspace = true
 osdk-frame-allocator.workspace = true

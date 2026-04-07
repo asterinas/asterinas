@@ -20,9 +20,9 @@ use aster_block::{
 };
 use aster_util::mem_obj_slice::Slice;
 use device_id::{DeviceId, MinorId};
-use log::{debug, info};
 use ostd::{
     arch::trap::TrapFrame,
+    debug, info,
     mm::{HasSize, VmIo, dma::DmaStream},
     sync::SpinLock,
 };
@@ -227,7 +227,7 @@ impl DeviceInner {
             // block devices. When SMP is enabled on x86, the feature is on.
             // We should also consider negotiating the feature in the future.
             // return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
-            log::warn!(
+            ostd::warn!(
                 "Not supporting Multi-Queue Block IO Queueing Mechanism, only using the first queue"
             );
         }

@@ -300,7 +300,7 @@ impl RegisteredInputDevice {
 
         let handlers = self.handlers.read();
         if handlers.is_empty() {
-            log::debug!(
+            ostd::debug!(
                 "Input: dropped events from device {} because it has no handlers",
                 self.device.name()
             );

@@ -399,7 +399,7 @@ impl MemoryBar {
         // the base address.
         #[cfg(not(target_arch = "loongarch64"))]
         if base == 0 {
-            log::info!(
+            ostd::info!(
                 "presumably uninitialized BAR {} (Memory {:?}, size={}) of PCI device {:?}",
                 index,
                 address_length,
@@ -501,7 +501,7 @@ impl IoBar {
         // BAR has not been initialized. In the future, we may need to add the ability to manually
         // allocate the base address.
         if base == 0 {
-            log::info!(
+            ostd::info!(
                 "presumably uninitialized BAR {} (I/O, size={}) of PCI device {:?}",
                 index,
                 size,

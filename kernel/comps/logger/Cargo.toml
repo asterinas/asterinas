@@ -8,7 +8,6 @@ edition.workspace = true
 [dependencies]
 aster-console.workspace = true
 component.workspace = true
-log.workspace = true
 ostd.workspace = true
 owo-colors = { workspace = true, optional = true }
 

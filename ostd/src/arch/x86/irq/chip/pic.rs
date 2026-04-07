@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use log::info;
-
 use crate::{
     arch::device::io_port::WriteOnlyAccess,
+    info,
     io::{IoPort, sensitive_io_port},
 };
 

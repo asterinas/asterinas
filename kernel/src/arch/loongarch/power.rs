@@ -22,7 +22,7 @@ pub(super) fn init() {
         return;
     };
     let Ok(poweroff_reg) = IoMem::acquire(poweroff_addr..poweroff_addr + size_of::<u8>()) else {
-        log::warn!("The poweroff register from syscon-poweroff is not available");
+        ostd::warn!("The poweroff register from syscon-poweroff is not available");
         return;
     };
 

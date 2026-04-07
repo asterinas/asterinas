@@ -4,8 +4,7 @@
 
 use core::ops::RangeInclusive;
 
-use log::warn;
-use ostd::{Error, arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
+use ostd::{Error, arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, warn};
 use spin::Once;
 
 use crate::PciDeviceLocation;

@@ -16,7 +16,6 @@ hashbrown.workspace = true
 inherit-methods-macro.workspace = true
 lending-iterator.workspace = true
 lru.workspace = true
-log.workspace = true
 ostd.workspace = true
 ostd-pod.workspace = true
 postcard.workspace = true

@@ -40,8 +40,10 @@ pub(crate) mod kvirt_area;
 
 use core::ops::Range;
 
-use log::info;
 use spin::Once;
+
+use crate::info;
+
 #[cfg(ktest)]
 mod test;
 

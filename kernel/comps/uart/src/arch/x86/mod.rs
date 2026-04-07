@@ -34,7 +34,7 @@ pub(super) fn init() {
             .unwrap()
             .map_isa_pin_to(irq_line, ISA_INTR_NUM)
     }) else {
-        log::info!("[UART]: IRQ line is not available");
+        ostd::info!("[UART]: IRQ line is not available");
         return;
     };
 
@@ -46,5 +46,5 @@ pub(super) fn init() {
     IRQ_LINE.call_once(move || irq_line);
     uart.flush();
 
-    log::info!("[UART]: Registered NS16550A as a console");
+    ostd::info!("[UART]: Registered NS16550A as a console");
 }

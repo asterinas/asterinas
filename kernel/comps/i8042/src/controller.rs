@@ -84,7 +84,7 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
     // Enable the first PS/2 port (keyboard).
     controller.wait_and_send_command(Command::EnableFirstPort)?;
     if let Err(err) = super::keyboard::init(&mut controller) {
-        log::warn!("i8042 keyboard initialization failed: {:?}", err);
+        ostd::warn!("i8042 keyboard initialization failed: {:?}", err);
     } else {
         config.remove(Configuration::FIRST_PORT_CLOCK_DISABLED);
         config.insert(
@@ -100,7 +100,7 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
     if has_second_port {
         controller.wait_and_send_command(Command::EnableSecondPort)?;
         if let Err(err) = super::mouse::init(&mut controller) {
-            log::warn!("i8042 mouse initialization failed: {:?}", err);
+            ostd::warn!("i8042 mouse initialization failed: {:?}", err);
         } else {
             config.remove(Configuration::SECOND_PORT_CLOCK_DISABLED);
             config.insert(Configuration::SECOND_PORT_INTERRUPT_ENABLED);
@@ -144,19 +144,19 @@ impl I8042Controller {
             //
             // TODO: Add support for enumerating PnP devices and remove the command line option.
             if !Self::is_present_cmdline() {
-                log::info!(
+                ostd::info!(
                     "ACPI says i8042 controller is absent; \
                     if it is incorrect, append 'i8042.exist' in cmdline to override it"
                 );
                 return Err(I8042ControllerError::NotPresent);
             } else {
-                log::info!(
+                ostd::info!(
                     "ACPI says i8042 controller is absent; \
                     however, it is overridden by 'i8042.exist' in cmdline"
                 );
             }
         } else {
-            log::info!("ACPI says i8042 controller is present");
+            ostd::info!("ACPI says i8042 controller is present");
         }
 
         let controller = Self {

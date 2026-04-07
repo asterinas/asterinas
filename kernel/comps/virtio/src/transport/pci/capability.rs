@@ -7,7 +7,7 @@ use aster_pci::{
     cfg_space::{Bar, MemoryBar},
     common_device::BarManager,
 };
-use log::warn;
+use ostd::warn;
 
 #[expect(clippy::enum_variant_names)]
 #[repr(u8)]

@@ -78,7 +78,7 @@ pub fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
             let mut xapic = xapic::XApic::new(io_mem).unwrap();
             xapic.enable();
             let version = xapic.version();
-            log::info!(
+            crate::info!(
                 "xAPIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
                 xapic.id(),
                 version & 0xff,
@@ -90,7 +90,7 @@ pub fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
             let mut x2apic = x2apic::X2Apic::new().unwrap();
             x2apic.enable();
             let version = x2apic.version();
-            log::info!(
+            crate::info!(
                 "x2APIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
                 x2apic.id(),
                 version & 0xff,
@@ -352,11 +352,11 @@ pub enum DivideConfig {
 
 pub fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError> {
     if x2apic::X2Apic::has_x2apic() {
-        log::info!("x2APIC found!");
+        crate::info!("x2APIC found!");
         APIC_TYPE.call_once(|| ApicType::X2Apic);
         Ok(())
     } else if xapic::XApic::has_xapic() {
-        log::info!("xAPIC found!");
+        crate::info!("xAPIC found!");
         // SAFETY: xAPIC is present.
         let base_address = unsafe { xapic::read_xapic_base_address() };
         let io_mem = io_mem_builder.reserve(
@@ -366,7 +366,7 @@ pub fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError>
         APIC_TYPE.call_once(|| ApicType::XApic(io_mem));
         Ok(())
     } else {
-        log::warn!("Neither x2APIC nor xAPIC found!");
+        crate::warn!("Neither x2APIC nor xAPIC found!");
         Err(ApicInitError::NoApic)
     }
 }

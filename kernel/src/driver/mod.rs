@@ -3,7 +3,7 @@
 use alloc::string::ToString;
 
 use aster_framebuffer::{CONSOLE_NAME, FRAMEBUFFER_CONSOLE};
-use log::info;
+use ostd::info;
 
 pub fn init() {
     for device in aster_input::all_devices() {

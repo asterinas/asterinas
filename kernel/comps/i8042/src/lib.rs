@@ -17,7 +17,7 @@ mod ps2;
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
     if let Err(err) = controller::init() {
-        log::warn!("i8042 controller initialization failed: {:?}", err);
+        ostd::warn!("i8042 controller initialization failed: {:?}", err);
     }
     Ok(())
 }

@@ -45,7 +45,7 @@ pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042Controll
     let device_id = init_ctx
         .reset()?
         .ok_or(I8042ControllerError::DeviceUnknown)?;
-    log::info!("PS/2 mouse device ID: 0x{:02X}", device_id);
+    ostd::info!("PS/2 mouse device ID: 0x{:02X}", device_id);
 
     // Determine the mouse's type.
     let mut mouse_type =
@@ -53,7 +53,7 @@ pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042Controll
     if mouse_type == MouseType::Standard && init_ctx.enable_intellimouse().is_ok() {
         // Query the device ID again.
         let new_device_id = init_ctx.get_device_id()?;
-        log::info!("PS/2 mouse upgraded device ID: 0x{:02X}", new_device_id);
+        ostd::info!("PS/2 mouse upgraded device ID: 0x{:02X}", new_device_id);
         mouse_type =
             MouseType::from_device_id(new_device_id).ok_or(I8042ControllerError::DeviceUnknown)?;
     }
@@ -220,7 +220,7 @@ fn handle_mouse_input(_trap_frame: &TrapFrame) {
         return;
     };
     let Some(data) = controller.lock().receive_data() else {
-        log::warn!("PS/2 mouse has no input data");
+        ostd::warn!("PS/2 mouse has no input data");
         return;
     };
 
@@ -336,7 +336,7 @@ impl PacketState {
 
         let status = self.packet[INDEX_STATUS];
         if (status & OVERFLOWED_MASK) != 0 {
-            log::warn!("PS/2 mouse packet overflowed");
+            ostd::warn!("PS/2 mouse packet overflowed");
             return events;
         }
 

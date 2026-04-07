@@ -22,7 +22,6 @@ int-to-c-enum.workspace = true
 spin.workspace = true
 device-id.workspace = true
 id-alloc.workspace = true
-log.workspace = true
 ostd.workspace = true
 ostd-pod.workspace = true
 typeflags-util.workspace = true

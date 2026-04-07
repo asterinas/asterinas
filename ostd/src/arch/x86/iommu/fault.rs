@@ -4,13 +4,13 @@ use alloc::vec::Vec;
 use core::{fmt::Debug, ptr::NonNull};
 
 use bitflags::bitflags;
-use log::{error, info};
 use spin::Once;
 use volatile::{VolatileRef, access::ReadWrite};
 
 use super::registers::Capability;
 use crate::{
     arch::trap::TrapFrame,
+    error, info,
     irq::IrqLine,
     sync::{LocalIrqDisabled, SpinLock},
 };

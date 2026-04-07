@@ -30,7 +30,7 @@ pub static FRAMEBUFFER_CONSOLE: Once<Arc<FramebufferConsole>> = Once::new();
 
 pub(crate) fn init() {
     let Some(fb) = FRAMEBUFFER.get() else {
-        log::warn!("Framebuffer not initialized");
+        ostd::warn!("Framebuffer not initialized");
         return;
     };
 

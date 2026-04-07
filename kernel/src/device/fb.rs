@@ -534,7 +534,7 @@ impl FileIo for FbHandle {
                 )
             }
             _ => {
-                log::debug!(
+                ostd::debug!(
                     "the ioctl command {:#x} is unknown for framebuffer devices",
                     raw_ioctl.cmd()
                 );

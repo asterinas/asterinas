@@ -17,9 +17,9 @@ use aster_input::{
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
-use log::{debug, info};
 use ostd::{
     arch::trap::TrapFrame,
+    debug, info,
     io::IoMem,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaStream},
     sync::SpinLock,

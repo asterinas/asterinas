@@ -28,7 +28,7 @@ pub fn sys_accept4(
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    trace!("raw flags = 0x{:x}", flags);
+    debug!("raw flags = 0x{:x}", flags);
     let flags = Flags::from_bits_truncate(flags);
     debug!(
         "sockfd = {}, sockaddr_ptr = 0x{:x}, addrlen_ptr = 0x{:x}, flags = {:?}",

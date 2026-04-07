@@ -5,10 +5,10 @@
 use alloc::vec::Vec;
 use core::ops::Range;
 
-use log::{debug, info};
 use spin::Once;
 
 use crate::{
+    debug, info,
     io::io_mem::{Insensitive, IoMem, Sensitive},
     mm::{CachePolicy, PageFlags},
     util::range_alloc::RangeAllocator,

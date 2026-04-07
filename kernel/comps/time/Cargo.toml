@@ -9,7 +9,6 @@ edition.workspace = true
 aster-util.workspace = true
 bitflags.workspace = true
 component.workspace = true
-log.workspace = true
 ostd.workspace = true
 spin.workspace = true
 

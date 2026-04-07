@@ -4,11 +4,10 @@
 
 use alloc::collections::BTreeMap;
 
-use log::trace;
-
 use super::second_stage::IommuPtConfig;
 use crate::{
     arch::iommu::dma_remapping::PciDeviceLocation,
+    debug,
     mm::{
         Daddr, Frame, FrameAllocOptions, HasPaddr, PAGE_SIZE, Paddr, PageFlags, PageTable, VmIo,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
@@ -297,7 +296,7 @@ impl ContextTable {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
-        trace!(
+        debug!(
             "Mapping Daddr: {:x?} to Paddr: {:x?} for device: {:x?}",
             daddr, paddr, device
         );
@@ -324,7 +323,7 @@ impl ContextTable {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
-        trace!("Unmapping Daddr: {:x?} for device: {:x?}", daddr, device);
+        debug!("Unmapping Daddr: {:x?} for device: {:x?}", daddr, device);
 
         let pt = self.get_or_create_page_table(device);
         let preempt_guard = disable_preempt();

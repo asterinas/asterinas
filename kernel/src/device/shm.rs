@@ -24,6 +24,6 @@ pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Res
         Some("tmpfs".to_string()),
         ctx,
     )?;
-    log::debug!("Mount ramfs at \"/dev/shm\"");
+    ostd::debug!("Mount ramfs at \"/dev/shm\"");
     Ok(())
 }

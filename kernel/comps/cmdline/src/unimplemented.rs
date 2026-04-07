@@ -36,7 +36,7 @@ macro_rules! define_unimplemented_param {
 #[doc(hidden)]
 pub fn setup_unimplemented(occurrences: &[Option<&str>], name: &str) {
     if !occurrences.is_empty() {
-        log::warn!("kernel parameter '{}' is not yet implemented", name);
+        ostd::warn!("kernel parameter '{}' is not yet implemented", name);
     }
 }
 

@@ -47,12 +47,10 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use log::info;
-
 use crate::{
     arch::mm::PagingConsts,
     boot::memory_region::MemoryRegionType,
-    const_assert,
+    const_assert, info,
     mm::{
         CachePolicy, Infallible, PAGE_SIZE, Paddr, PageFlags, PageProperty, PrivilegedPageFlags,
         Segment, Vaddr, VmReader,

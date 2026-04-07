@@ -3,8 +3,7 @@
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use log::trace;
-use ostd::timer::Jiffies;
+use ostd::{debug, timer::Jiffies};
 
 use super::{Iface, iter_all_ifaces};
 use crate::{
@@ -27,7 +26,7 @@ pub(super) fn poll_ifaces() {
 
 fn spawn_background_poll_thread(iface: Arc<Iface>) {
     let task_fn = move || {
-        trace!("spawn background poll thread for {}", iface.name());
+        debug!("spawn background poll thread for {}", iface.name());
 
         let sched_poll = iface.sched_poll();
         let wait_queue = sched_poll.polling_wait_queue();

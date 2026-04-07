@@ -361,7 +361,7 @@ fn map_segment_vmo(
 
     let virt_range = loadable_phdr.virt_range();
     let file_range = loadable_phdr.file_range();
-    trace!(
+    debug!(
         "ELF segment: virt_range = {:#x?}, file_range = {:#x?}",
         virt_range, file_range,
     );

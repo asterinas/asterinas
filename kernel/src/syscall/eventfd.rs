@@ -37,7 +37,7 @@ pub fn sys_eventfd(init_val: u64, ctx: &Context) -> Result<SyscallReturn> {
 }
 
 pub fn sys_eventfd2(init_val: u64, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
-    trace!("raw flags = {}", flags);
+    debug!("raw flags = {}", flags);
     let flags = Flags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;
     debug!("init_val = 0x{:x}, flags = {:?}", init_val, flags);

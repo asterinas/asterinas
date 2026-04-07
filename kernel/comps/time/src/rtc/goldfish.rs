@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use chrono::{DateTime, Datelike, Timelike};
-use log::warn;
-use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
+use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, warn};
 
 use crate::{rtc::Driver, SystemTime};
 

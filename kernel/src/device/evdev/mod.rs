@@ -157,7 +157,7 @@ impl EvdevDevice {
                 if is_syn_dropped_event(&timed_event) {
                     // This is a bug in the device driver. We ignore the event to prevent bugs in
                     // the device drivers from breaking the invariant of the packet count.
-                    log::warn!(
+                    ostd::warn!(
                         "Received dropped event from evdev device '{}'",
                         self.device.name()
                     );
@@ -261,7 +261,7 @@ impl InputHandlerClass for EvdevHandlerClass {
         }
 
         let Some(minor) = found_minor else {
-            log::warn!(
+            ostd::warn!(
                 "Attempted to disconnect device '{}' but it did not connect to evdev",
                 device_name
             );
@@ -273,7 +273,7 @@ impl InputHandlerClass for EvdevHandlerClass {
 
         // Unregister from the char device subsystem.
         if let Err(err) = unregister(device_id) {
-            log::warn!(
+            ostd::warn!(
                 "Failed to unregister evdev device '{}' (minor: {}): {:?}",
                 device_name,
                 minor.get(),
@@ -282,7 +282,7 @@ impl InputHandlerClass for EvdevHandlerClass {
         }
 
         // TODO: Implement device node deletion when the functionality is available.
-        log::info!(
+        ostd::info!(
             "Disconnected evdev device '{}' (minor: {}), device node /dev/input/event{} still exists",
             device_name,
             minor.get(),
@@ -302,5 +302,5 @@ pub(super) fn init_in_first_kthread() {
     let handle = aster_input::register_handler_class(handler_class);
     REGISTERED_EVDDEV_CLASS.call_once(|| handle);
 
-    log::info!("Evdev device support initialized");
+    ostd::info!("Evdev device support initialized");
 }

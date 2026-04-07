@@ -99,7 +99,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
     } else {
         match iommu::init(&io_mem_builder) {
             Ok(_) => {}
-            Err(err) => log::warn!("IOMMU initialization error:{:?}", err),
+            Err(err) => crate::warn!("IOMMU initialization error:{:?}", err),
         }
     });
 
