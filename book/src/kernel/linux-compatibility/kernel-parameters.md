@@ -15,7 +15,8 @@ init=/bin/busybox
 
 Notes:
 - The value is the path to the executable.
-- If omitted, Asterinas will fail to boot.
+- If omitted, Asterinas will try to execute from the following paths in order:
+  `/sbin/init`, `/etc/init`, `/bin/init`, `/bin/sh`.
 
 ### `console`
 
