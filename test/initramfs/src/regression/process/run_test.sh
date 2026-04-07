@@ -32,6 +32,7 @@ set -e
 ./itimer/setitimer
 ./itimer/timer_create
 
+./prctl/capbset
 ./prctl/secure_bits
 ./prctl/subreaper
 
