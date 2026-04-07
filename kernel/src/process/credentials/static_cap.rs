@@ -275,7 +275,7 @@ impl<R: TRights> Credentials<R> {
         self.0.inheritable_capset()
     }
 
-    /// Gets the capabilities that are a process can potentially be granted.
+    /// Gets the capabilities that a process can potentially be granted.
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
@@ -283,12 +283,20 @@ impl<R: TRights> Credentials<R> {
         self.0.permitted_capset()
     }
 
-    /// Gets the capabilities that we can actually use.
+    /// Gets the capabilities that a process can actually use.
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn effective_capset(&self) -> CapSet {
         self.0.effective_capset()
+    }
+
+    /// Gets the capability bounding set.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn bounding_capset(&self) -> CapSet {
+        self.0.bounding_capset()
     }
 
     /// Sets the capabilities that child processes can inherit.
@@ -299,7 +307,7 @@ impl<R: TRights> Credentials<R> {
         self.0.set_inheritable_capset(inheritable_capset);
     }
 
-    /// Sets the capabilities that are a process can potentially be granted.
+    /// Sets the capabilities that a process can potentially be granted.
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
@@ -307,7 +315,7 @@ impl<R: TRights> Credentials<R> {
         self.0.set_permitted_capset(permitted_capset);
     }
 
-    /// Sets the capabilities that we can actually use.
+    /// Sets the capabilities that a process can actually use.
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
@@ -315,7 +323,17 @@ impl<R: TRights> Credentials<R> {
         self.0.set_effective_capset(effective_capset);
     }
 
-    /// Gets keep capabilities flag.
+    /// Drops one capability from the capability bounding set.
+    ///
+    /// If the caller does not have the `CAP_SETPCAP` capability, this method returns an error.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn drop_bounding_capability(&self, capability: CapSet) -> Result<()> {
+        self.0.drop_bounding_capability(capability)
+    }
+
+    /// Gets the keep-capabilities flag.
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
@@ -323,7 +341,7 @@ impl<R: TRights> Credentials<R> {
         self.0.keep_capabilities()
     }
 
-    /// Sets keep capabilities flag.
+    /// Sets the keep-capabilities flag.
     ///
     /// If the [`SecureBits::KEEP_CAPS_LOCKED`] is set, this method will return an error.
     ///

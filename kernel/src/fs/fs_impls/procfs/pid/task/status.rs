@@ -11,7 +11,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        credentials::{AMBIENT_CAPSET, BOUNDING_CAPSET},
+        credentials::AMBIENT_CAPSET,
         posix_thread::{AsPosixThread, SleepingState},
     },
     vm::vmar::RssType,
@@ -178,7 +178,11 @@ impl FileOps for StatusFileOps {
             "CapEff:\t{:016x}",
             credentials.effective_capset().bits()
         )?;
-        writeln!(printer, "CapBnd:\t{:016x}", BOUNDING_CAPSET.bits())?;
+        writeln!(
+            printer,
+            "CapBnd:\t{:016x}",
+            credentials.bounding_capset().bits()
+        )?;
         writeln!(printer, "CapAmb:\t{:016x}", AMBIENT_CAPSET.bits())?;
 
         Ok(printer.bytes_written())

@@ -7,7 +7,6 @@ use crate::{
     prelude::*,
     process::{
         credentials::{
-            BOUNDING_CAPSET,
             c_types::{CUserCapData, CUserCapHeader, LINUX_CAPABILITY_VERSION_3},
             capabilities::CapSet,
         },
@@ -66,7 +65,9 @@ pub fn sys_capset(
     {
         return_errno_with_message!(Errno::EPERM, "inheritable capabilities are not permitted");
     }
-    if !(credentials.inheritable_capset() | BOUNDING_CAPSET).contains(inheritable_capset) {
+    if !(credentials.inheritable_capset() | credentials.bounding_capset())
+        .contains(inheritable_capset)
+    {
         return_errno_with_message!(Errno::EPERM, "inheritable capabilities are not bounding");
     }
 

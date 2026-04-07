@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
-        credentials::SecureBits,
+        credentials::{SecureBits, capabilities::CapSet},
         posix_thread::{ContextPthreadAdminApi, MAX_THREAD_NAME_LEN},
         signal::sig_num::SigNum,
     },
@@ -74,6 +74,15 @@ pub fn sys_prctl(
             ctx.user_space()
                 .write_bytes(write_to_addr, thread_name.name().to_bytes_with_nul())?;
         }
+        PrctlCmd::PR_CAPBSET_READ(capability) => {
+            let credentials = ctx.posix_thread.credentials();
+            let is_in_bounding_set = credentials.bounding_capset().contains(capability);
+            return Ok(SyscallReturn::Return(is_in_bounding_set as _));
+        }
+        PrctlCmd::PR_CAPBSET_DROP(capability) => {
+            let credentials = ctx.credentials_mut();
+            credentials.drop_bounding_capability(capability)?;
+        }
         PrctlCmd::PR_GET_SECUREBITS => {
             let credentials = ctx.posix_thread.credentials();
             let securebits = credentials.securebits();
@@ -125,6 +134,8 @@ const PR_GET_KEEPCAPS: i32 = 7;
 const PR_SET_KEEPCAPS: i32 = 8;
 const PR_SET_NAME: i32 = 15;
 const PR_GET_NAME: i32 = 16;
+const PR_CAPBSET_READ: i32 = 23;
+const PR_CAPBSET_DROP: i32 = 24;
 const PR_GET_SECUREBITS: i32 = 27;
 const PR_SET_SECUREBITS: i32 = 28;
 const PR_SET_TIMERSLACK: i32 = 29;
@@ -143,6 +154,8 @@ pub enum PrctlCmd {
     PR_SET_KEEPCAPS(u32),
     PR_SET_NAME(Vaddr),
     PR_GET_NAME(Vaddr),
+    PR_CAPBSET_READ(CapSet),
+    PR_CAPBSET_DROP(CapSet),
     PR_GET_SECUREBITS,
     PR_SET_SECUREBITS(SecureBits),
     PR_SET_TIMERSLACK(u64),
@@ -173,6 +186,8 @@ impl PrctlCmd {
             PR_SET_KEEPCAPS => Ok(PrctlCmd::PR_SET_KEEPCAPS(arg2 as _)),
             PR_SET_NAME => Ok(PrctlCmd::PR_SET_NAME(arg2 as _)),
             PR_GET_NAME => Ok(PrctlCmd::PR_GET_NAME(arg2 as _)),
+            PR_CAPBSET_READ => Ok(PrctlCmd::PR_CAPBSET_READ(parse_capability(arg2)?)),
+            PR_CAPBSET_DROP => Ok(PrctlCmd::PR_CAPBSET_DROP(parse_capability(arg2)?)),
             PR_GET_SECUREBITS => Ok(PrctlCmd::PR_GET_SECUREBITS),
             PR_SET_SECUREBITS => Ok(PrctlCmd::PR_SET_SECUREBITS(SecureBits::try_from(
                 arg2 as u16,
@@ -187,4 +202,9 @@ impl PrctlCmd {
             }
         }
     }
+}
+
+fn parse_capability(capability: u64) -> Result<CapSet> {
+    CapSet::from_capability_number(capability)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid capability number"))
 }
