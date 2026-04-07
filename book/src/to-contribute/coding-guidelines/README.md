@@ -82,7 +82,7 @@ you are welcome to fix the code to match the guidelines.
 | Rust | Critical sections must not be split across lock boundaries | [`atomic-critical-sections`](rust-guidelines/select-topics/concurrency-and-races.md#atomic-critical-sections) |
 | Rust | Use `debug_assert` for correctness-only checks | [`debug-assert`](rust-guidelines/select-topics/defensive-programming.md#debug-assert) |
 | Rust | Propagate errors with `?` | [`propagate-errors`](rust-guidelines/select-topics/error-handling.md#propagate-errors) |
-| Rust | Use `log` crate macros exclusively | [`log-crate-only`](rust-guidelines/select-topics/logging.md#log-crate-only) |
+| Rust | Use OSTD logging macros exclusively | [`ostd-log-only`](rust-guidelines/select-topics/logging.md#ostd-log-only) |
 | Rust | Choose appropriate log levels | [`log-levels`](rust-guidelines/select-topics/logging.md#log-levels) |
 | Rust | Use RAII for all resource acquisition and release | [`raii`](rust-guidelines/select-topics/memory-and-resource-management.md#raii) |
 | Rust | Avoid O(n) algorithms on hot paths | [`no-linear-hot-paths`](rust-guidelines/select-topics/performance.md#no-linear-hot-paths) |

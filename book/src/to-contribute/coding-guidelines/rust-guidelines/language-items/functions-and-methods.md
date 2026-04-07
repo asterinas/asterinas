@@ -22,7 +22,7 @@ should be handled and dismissed early.
 ```rust
 pub(crate) fn init() {
     let Some(framebuffer_arg) = boot_info().framebuffer_arg else {
-        log::warn!("Framebuffer not found");
+        warn!("Framebuffer not found");
         return;
     };
     // ... main logic at the top level

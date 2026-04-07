@@ -15,7 +15,7 @@ with actionable guidelines.
 - **[Error Handling](error-handling.md)** —
   Idiomatic error propagation.
 - **[Logging](logging.md)** —
-  `log`-crate usage and level selection.
+  OSTD logging API and level selection.
 - **[Memory and Resource Management](memory-and-resource-management.md)** —
   RAII-based cleanup and resource ownership.
 - **[Performance](performance.md)** —

@@ -41,13 +41,16 @@ console=ttyS0 console=hvc0
 
 Set the verbosity level for Asterinas's logs.
 
-Valid values:
+Valid values (from most to least severe):
 - `off`
+- `emerg`
+- `alert`
+- `crit`
 - `error`
-- `warn`
+- `warn` (alias: `warning`)
+- `notice`
 - `info`
 - `debug`
-- `trace`
 
 Example:
 ```text
