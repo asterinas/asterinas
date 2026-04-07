@@ -271,7 +271,8 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
             let node_size = page_size::<C>(self.level + 1);
             let node_start = self.va.align_down(node_size);
             // If the address is within the current node, we can jump directly.
-            if node_start <= va && va < node_start + node_size {
+            // Note that `node_start + node_size` may overflow.
+            if node_start <= va && va - node_start < node_size {
                 self.va = va;
                 return Ok(());
             }
