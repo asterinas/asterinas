@@ -21,31 +21,28 @@ pub fn sys_prctl(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let prctl_cmd = PrctlCmd::from_args(option, arg2, arg3, arg4, arg5)?;
-    debug!("prctl cmd = {:x?}", prctl_cmd);
+    debug!("prctl_cmd = {:x?}", prctl_cmd);
+
     match prctl_cmd {
         PrctlCmd::PR_SET_PDEATHSIG(signum) => {
             ctx.process.set_parent_death_signal(signum);
         }
         PrctlCmd::PR_GET_PDEATHSIG(write_to_addr) => {
-            let write_val = {
-                match ctx.process.parent_death_signal() {
-                    None => 0i32,
-                    Some(signum) => signum.as_u8() as i32,
-                }
+            let write_val = match ctx.process.parent_death_signal() {
+                None => 0i32,
+                Some(signum) => signum.as_u8() as i32,
             };
-
             ctx.user_space().write_val(write_to_addr, &write_val)?;
         }
         PrctlCmd::PR_GET_DUMPABLE => {
-            // TODO: when coredump is supported, return the actual value
+            // TODO: When coredump is supported, return the actual value.
             return Ok(SyscallReturn::Return(Dumpable::Disable as _));
         }
         PrctlCmd::PR_SET_DUMPABLE(dumpable) => {
             if dumpable != Dumpable::Disable && dumpable != Dumpable::User {
-                return_errno!(Errno::EINVAL)
+                return_errno_with_message!(Errno::EINVAL, "invalid dumpable attribute");
             }
-
-            // TODO: implement coredump
+            // TODO: Implement coredump.
         }
         PrctlCmd::PR_GET_KEEPCAPS => {
             let keep_cap = {
@@ -56,20 +53,14 @@ pub fn sys_prctl(
                     0
                 }
             };
-
             return Ok(SyscallReturn::Return(keep_cap as _));
         }
         PrctlCmd::PR_SET_KEEPCAPS(keep_cap) => {
             if keep_cap > 1 {
-                return_errno!(Errno::EINVAL)
+                return_errno_with_message!(Errno::EINVAL, "invalid keep-capabilities flag");
             }
             let credentials = ctx.credentials_mut();
             credentials.set_keep_capabilities(keep_cap != 0)?;
-        }
-        PrctlCmd::PR_GET_NAME(write_to_addr) => {
-            let thread_name = ctx.posix_thread.thread_name().lock();
-            ctx.user_space()
-                .write_bytes(write_to_addr, thread_name.name().to_bytes_with_nul())?;
         }
         PrctlCmd::PR_SET_NAME(read_addr) => {
             let new_thread_name = ctx
@@ -77,6 +68,36 @@ pub fn sys_prctl(
                 .read_cstring(read_addr, MAX_THREAD_NAME_LEN)?;
             let mut thread_name = ctx.posix_thread.thread_name().lock();
             thread_name.set_name(&new_thread_name);
+        }
+        PrctlCmd::PR_GET_NAME(write_to_addr) => {
+            let thread_name = ctx.posix_thread.thread_name().lock();
+            ctx.user_space()
+                .write_bytes(write_to_addr, thread_name.name().to_bytes_with_nul())?;
+        }
+        PrctlCmd::PR_GET_SECUREBITS => {
+            let credentials = ctx.posix_thread.credentials();
+            let securebits = credentials.securebits();
+            return Ok(SyscallReturn::Return(securebits.bits() as _));
+        }
+        PrctlCmd::PR_SET_SECUREBITS(securebits) => {
+            let credentials = ctx.credentials_mut();
+            credentials.set_securebits(securebits)?;
+        }
+        PrctlCmd::PR_SET_TIMERSLACK(slack_ns) => {
+            // Negative values are invalid.
+            if (slack_ns as i64) < 0 {
+                return_errno_with_message!(Errno::EINVAL, "invalid timer slack");
+            }
+            // In Linux, a value of 0 means "use default slack".
+            if slack_ns == 0 {
+                ctx.posix_thread.reset_timer_slack_to_default();
+            } else {
+                ctx.posix_thread.set_timer_slack_ns(slack_ns);
+            }
+        }
+        PrctlCmd::PR_GET_TIMERSLACK => {
+            let slack_ns = ctx.posix_thread.timer_slack_ns();
+            return Ok(SyscallReturn::Return(slack_ns as _));
         }
         PrctlCmd::PR_SET_CHILD_SUBREAPER(is_set) => {
             let process = ctx.process.as_ref();
@@ -91,33 +112,8 @@ pub fn sys_prctl(
             ctx.user_space()
                 .write_val(write_addr, &(process.is_child_subreaper() as u32))?;
         }
-        PrctlCmd::PR_GET_SECUREBITS => {
-            let credentials = ctx.posix_thread.credentials();
-            let securebits = credentials.securebits();
-            return Ok(SyscallReturn::Return(securebits.bits() as _));
-        }
-        PrctlCmd::PR_SET_SECUREBITS(securebits) => {
-            let credentials = ctx.credentials_mut();
-            credentials.set_securebits(securebits)?;
-        }
-        PrctlCmd::PR_GET_TIMERSLACK => {
-            let slack_ns = ctx.posix_thread.timer_slack_ns();
-            return Ok(SyscallReturn::Return(slack_ns as _));
-        }
-        PrctlCmd::PR_SET_TIMERSLACK(slack_ns) => {
-            // Negative values are invalid
-            if (slack_ns as i64) < 0 {
-                return_errno!(Errno::EINVAL);
-            }
-
-            // In Linux, a value of 0 means "use default slack"
-            if slack_ns == 0 {
-                ctx.posix_thread.reset_timer_slack_to_default();
-            } else {
-                ctx.posix_thread.set_timer_slack_ns(slack_ns);
-            }
-        }
     }
+
     Ok(SyscallReturn::Return(0))
 }
 
@@ -141,18 +137,18 @@ const PR_GET_CHILD_SUBREAPER: i32 = 37;
 pub enum PrctlCmd {
     PR_SET_PDEATHSIG(SigNum),
     PR_GET_PDEATHSIG(Vaddr),
-    PR_SET_NAME(Vaddr),
-    PR_GET_NAME(Vaddr),
+    PR_GET_DUMPABLE,
+    PR_SET_DUMPABLE(Dumpable),
     PR_GET_KEEPCAPS,
     PR_SET_KEEPCAPS(u32),
-    PR_SET_TIMERSLACK(u64),
-    PR_GET_TIMERSLACK,
-    PR_SET_DUMPABLE(Dumpable),
-    PR_GET_DUMPABLE,
-    PR_SET_CHILD_SUBREAPER(bool),
-    PR_GET_CHILD_SUBREAPER(Vaddr),
+    PR_SET_NAME(Vaddr),
+    PR_GET_NAME(Vaddr),
     PR_GET_SECUREBITS,
     PR_SET_SECUREBITS(SecureBits),
+    PR_SET_TIMERSLACK(u64),
+    PR_GET_TIMERSLACK,
+    PR_SET_CHILD_SUBREAPER(bool),
+    PR_GET_CHILD_SUBREAPER(Vaddr),
 }
 
 #[repr(u64)]
@@ -173,18 +169,18 @@ impl PrctlCmd {
             PR_GET_PDEATHSIG => Ok(PrctlCmd::PR_GET_PDEATHSIG(arg2 as _)),
             PR_GET_DUMPABLE => Ok(PrctlCmd::PR_GET_DUMPABLE),
             PR_SET_DUMPABLE => Ok(PrctlCmd::PR_SET_DUMPABLE(Dumpable::try_from(arg2)?)),
-            PR_SET_NAME => Ok(PrctlCmd::PR_SET_NAME(arg2 as _)),
-            PR_GET_NAME => Ok(PrctlCmd::PR_GET_NAME(arg2 as _)),
-            PR_GET_TIMERSLACK => Ok(PrctlCmd::PR_GET_TIMERSLACK),
-            PR_SET_TIMERSLACK => Ok(PrctlCmd::PR_SET_TIMERSLACK(arg2)),
             PR_GET_KEEPCAPS => Ok(PrctlCmd::PR_GET_KEEPCAPS),
             PR_SET_KEEPCAPS => Ok(PrctlCmd::PR_SET_KEEPCAPS(arg2 as _)),
-            PR_SET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_SET_CHILD_SUBREAPER(arg2 > 0)),
-            PR_GET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_GET_CHILD_SUBREAPER(arg2 as _)),
+            PR_SET_NAME => Ok(PrctlCmd::PR_SET_NAME(arg2 as _)),
+            PR_GET_NAME => Ok(PrctlCmd::PR_GET_NAME(arg2 as _)),
             PR_GET_SECUREBITS => Ok(PrctlCmd::PR_GET_SECUREBITS),
             PR_SET_SECUREBITS => Ok(PrctlCmd::PR_SET_SECUREBITS(SecureBits::try_from(
                 arg2 as u16,
             )?)),
+            PR_SET_TIMERSLACK => Ok(PrctlCmd::PR_SET_TIMERSLACK(arg2)),
+            PR_GET_TIMERSLACK => Ok(PrctlCmd::PR_GET_TIMERSLACK),
+            PR_SET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_SET_CHILD_SUBREAPER(arg2 > 0)),
+            PR_GET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_GET_CHILD_SUBREAPER(arg2 as _)),
             _ => {
                 debug!("prctl cmd number: {}", option);
                 return_errno_with_message!(Errno::EINVAL, "unsupported prctl command");
