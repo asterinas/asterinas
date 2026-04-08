@@ -35,7 +35,7 @@ impl MountNamespace {
 
         INIT.call_once(|| {
             let owner = UserNamespace::get_init_singleton().clone();
-            let rootfs = RamFs::new();
+            let rootfs = RamFs::new_rootfs();
 
             Arc::new_cyclic(|weak_self| {
                 let root = Mount::new_root(rootfs, weak_self.clone());

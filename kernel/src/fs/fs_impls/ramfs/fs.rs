@@ -40,6 +40,7 @@ use crate::{
 
 /// A volatile file system whose data and metadata exists only in memory.
 pub struct RamFs {
+    name: &'static str,
     _anon_device_id: AnonDeviceId,
     /// The super block
     sb: SuperBlock,
@@ -53,9 +54,18 @@ pub struct RamFs {
 
 impl RamFs {
     pub fn new() -> Arc<Self> {
+        Self::new_internal("ramfs")
+    }
+
+    pub(in crate::fs) fn new_rootfs() -> Arc<Self> {
+        Self::new_internal("rootfs")
+    }
+
+    fn new_internal(name: &'static str) -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for ramfs");
         let root_dev_id = anon_device_id.id();
         Arc::new_cyclic(move |weak_fs| Self {
+            name,
             _anon_device_id: anon_device_id,
             sb: SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, root_dev_id),
             root: Arc::new_cyclic(|weak_root| RamInode {
@@ -85,7 +95,7 @@ impl RamFs {
 
 impl FileSystem for RamFs {
     fn name(&self) -> &'static str {
-        "ramfs"
+        self.name
     }
 
     fn sync(&self) -> Result<()> {
