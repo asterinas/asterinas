@@ -8,71 +8,105 @@ on:
     branches:
       - main
 
-jobs:
-  publish_osdk_image:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: BRAINSia/free-disk-space@v2
-      - uses: actions/checkout@v4
-      - name: Prepare for Docker build and push
-        id: prepare-for-docker-build-and-push
-        run: |
-          ./tools/github_workflows/prepare_for_docker_build_and_push.sh ${{ secrets.DOCKERHUB_USERNAME }} ${{ secrets.DOCKERHUB_TOKEN }} osdk
+permissions:
+  contents: read
 
-      - name: Build and push the OSDK development image
-        if: ${{ steps.prepare-for-docker-build-and-push.outputs.is_existed == 'false' }}
-        uses: docker/build-push-action@v4
+jobs:
+  # This file deliberately avoids `strategy: matrix` because:
+  # 1. Publish jobs call a reusable workflow (`docker/github-builder`), which
+  #    cannot be orchestrated with per-entry dependency ordering in this chain.
+  # 2. Images must be built in order: nix uses asterinas/osdk as its base,
+  #    and asterinas uses asterinas/nix as its base.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      image_version: ${{ steps.prepare.outputs.image_version }}
+      rust_version: ${{ steps.prepare.outputs.rust_version }}
+      osdk_existed: ${{ steps.prepare.outputs.osdk_existed }}
+      nix_existed: ${{ steps.prepare.outputs.nix_existed }}
+      asterinas_existed: ${{ steps.prepare.outputs.asterinas_existed }}
+    steps:
+      - uses: actions/checkout@v4
         with:
-          context: .
-          file: ./osdk/tools/docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: asterinas/osdk:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
-          build-args: |
-            ASTER_RUST_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.rust_version }}
+          sparse-checkout: |
+            DOCKER_IMAGE_VERSION
+            rust-toolchain.toml
+            tools/github_workflows
+      - name: Prepare for Docker build and push
+        id: prepare
+        run: |
+          ./tools/github_workflows/prepare_for_docker_build_and_push.sh "${{ secrets.DOCKERHUB_USERNAME }}" "${{ secrets.DOCKERHUB_TOKEN }}"
+
+  publish_osdk_image:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.osdk_existed != 'true' }}
+    uses: docker/github-builder/.github/workflows/build.yml@v1
+    permissions:
+      contents: read
+      id-token: write # for cosign keyless signing of provenance attestations
+    with:
+      output: image
+      push: true
+      platforms: linux/amd64,linux/arm64
+      context: .
+      file: ./osdk/tools/docker/Dockerfile
+      meta-images: asterinas/osdk
+      meta-tags: |
+        type=raw,value=${{ needs.prepare.outputs.image_version }}
+      build-args: |
+        ASTER_RUST_VERSION=${{ needs.prepare.outputs.rust_version }}
+    secrets:
+      registry-auths: |
+        - registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
   publish_nix_image:
-    needs: publish_osdk_image
-    runs-on: ubuntu-latest
-    steps:
-      - uses: BRAINSia/free-disk-space@v2
-      - uses: actions/checkout@v4
-      - name: Prepare for Docker build and push
-        id: prepare-for-docker-build-and-push
-        run: |
-          ./tools/github_workflows/prepare_for_docker_build_and_push.sh ${{ secrets.DOCKERHUB_USERNAME }} ${{ secrets.DOCKERHUB_TOKEN }} nix
-
-      - name: Build and push the Nix image
-        if: ${{ steps.prepare-for-docker-build-and-push.outputs.is_existed == 'false' }}
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./tools/docker/nix/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: asterinas/nix:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
-          build-args: |
-            BASE_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
+    needs: [prepare, publish_osdk_image]
+    # Run even if publish_osdk_image was skipped because the OSDK image exists.
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.nix_existed != 'true' }}
+    uses: docker/github-builder/.github/workflows/build.yml@v1
+    permissions:
+      contents: read
+      id-token: write # for cosign keyless signing of provenance attestations
+    with:
+      output: image
+      push: true
+      platforms: linux/amd64,linux/arm64
+      context: .
+      file: ./tools/docker/nix/Dockerfile
+      meta-images: asterinas/nix
+      meta-tags: |
+        type=raw,value=${{ needs.prepare.outputs.image_version }}
+      build-args: |
+        BASE_VERSION=${{ needs.prepare.outputs.image_version }}
+    secrets:
+      registry-auths: |
+        - registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
   publish_asterinas_image:
-    needs: publish_nix_image
-    runs-on: ubuntu-latest
-    steps:
-      - uses: BRAINSia/free-disk-space@v2
-      - uses: actions/checkout@v4
-      - name: Prepare for Docker build and push
-        id: prepare-for-docker-build-and-push
-        run: |
-          ./tools/github_workflows/prepare_for_docker_build_and_push.sh ${{ secrets.DOCKERHUB_USERNAME }} ${{ secrets.DOCKERHUB_TOKEN }} asterinas
-
-      - name: Build and push the Asterinas development image
-        if: ${{ steps.prepare-for-docker-build-and-push.outputs.is_existed == 'false' }}
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./tools/docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: asterinas/asterinas:${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
-          build-args: |
-            BASE_VERSION=${{ steps.prepare-for-docker-build-and-push.outputs.image_version }}
+    needs: [prepare, publish_nix_image]
+    # Run even if publish_nix_image was skipped because the Nix image exists.
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.asterinas_existed != 'true' }}
+    uses: docker/github-builder/.github/workflows/build.yml@v1
+    permissions:
+      contents: read
+      id-token: write # for cosign keyless signing of provenance attestations
+    with:
+      output: image
+      push: true
+      platforms: linux/amd64,linux/arm64
+      context: .
+      file: ./tools/docker/Dockerfile
+      meta-images: asterinas/asterinas
+      meta-tags: |
+        type=raw,value=${{ needs.prepare.outputs.image_version }}
+      build-args: |
+        BASE_VERSION=${{ needs.prepare.outputs.image_version }}
+    secrets:
+      registry-auths: |
+        - registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
