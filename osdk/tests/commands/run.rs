@@ -25,6 +25,7 @@ mod basic {
 
         // Run `cargo osdk run` in the created kernel directory
         let os_dir = PathBuf::from(work_dir.path()).join(KERNEL_NAME);
+        edit_config_files(&os_dir);
         let mut cmd_run = cargo_osdk(["run"]);
         cmd_run.current_dir(&os_dir);
         let output = cmd_run.ok().unwrap();
@@ -51,8 +52,7 @@ mod workspace {
         cargo_osdk_new
             .ok()
             .expect("Failed to create kernel project");
-        let manifest_path = os_dir.join("Cargo.toml");
-        depends_on_local_ostd(manifest_path);
+        edit_config_files(&os_dir);
     }
 
     fn prepare_workspace(workspace: &str) {
