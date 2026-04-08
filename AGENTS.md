@@ -101,6 +101,8 @@ Below is a condensed summary of the most important rules.
 - **Macros and attributes:** Prefer functions over macros.
   Suppress lints at the narrowest scope.
   Prefer `#[expect(...)]` over `#[allow(...)]`.
+  Sort non-derive outer attributes alphabetically;
+  place `#[derive(...)]` last with traits sorted alphabetically.
 - **Doc comments:** First line uses third-person singular present
   ("Returns", "Creates"). End sentence comments with punctuation.
   Wrap identifiers in backticks.

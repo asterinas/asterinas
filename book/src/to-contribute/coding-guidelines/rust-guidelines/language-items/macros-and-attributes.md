@@ -1,5 +1,45 @@
 # Macros and Attributes
 
+### Sort attributes and derive traits alphabetically (`alphabetical-attrs`) {#alphabetical-attrs}
+
+When an item carries multiple outer attributes,
+list non-derive attributes in **alphabetical order** by name
+and place `#[derive(...)]` **last**.
+Within `#[derive(...)]`,
+list the traits **alphabetically** as well.
+
+```rust
+// Good — non-derive attributes sorted; derive is last with sorted traits
+#[cfg(feature = "alloc")]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+pub struct Foo { ... }
+
+// Bad — arbitrary ordering
+#[derive(Debug, Default, Clone, Copy, Pod)]
+#[cfg(feature = "alloc")]
+#[repr(C)]
+pub struct Foo { ... }
+```
+
+Placing `#[derive(...)]` last ensures
+that derive macros always see the item
+after all attribute macros
+(e.g., `#[padding_struct]`, `#[pod_union]`)
+have transformed it.
+Derive helper attributes
+(e.g., `#[serde(...)]`, `#[clap(...)]`)
+stay immediately after `#[derive(...)]`.
+Sorting the remaining attributes alphabetically
+eliminates hesitation over placement
+and reduces noise in diffs.
+
+See also:
+PR [#3080](https://github.com/asterinas/asterinas/pull/3080#discussion_r3031834321)
+(motivating discussion)
+and PR [#2898](https://github.com/asterinas/asterinas/pull/2898#discussion_r2763969731)
+(earlier ad-hoc ordering choice).
+
 ### Use `#[expect(dead_code)]` with restraint (`expect-dead-code`) {#expect-dead-code}
 
 In general, dead code should be avoided because
