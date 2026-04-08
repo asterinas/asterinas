@@ -1,0 +1,12 @@
+[package]
+name = "ring-buffer"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+inherit-methods-macro.workspace = true
+ostd.workspace = true
+ostd-pod.workspace = true
+
+[lints]
+workspace = true
