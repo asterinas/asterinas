@@ -89,7 +89,7 @@ pub unsafe trait Id: Copy + Clone + Debug + Eq + Into<u32> + PartialEq {
 /// which represents a set of IDs from 0 to 10 (exclusive).
 ///
 /// ```
-/// #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+/// #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// pub struct MyId(u32);
 ///
 /// // SAFETY: `MyId` maintains the 1:1 mapping invariant for 0..10.
@@ -438,7 +438,7 @@ mod id_set_tests {
 
     /// A mock ID type for testing `IdSet`.
     /// `C` is the cardinality of this ID type.
-    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct MockId<const C: u32>(u32);
 
     unsafe impl<const C: u32> Id for MockId<C> {

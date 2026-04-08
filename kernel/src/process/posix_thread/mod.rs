@@ -395,7 +395,7 @@ pub fn last_tid() -> Tid {
 pub const PID_MAX: u32 = u32::MAX / 2;
 
 /// The sleeping state of a thread.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum SleepingState {
     /// The thread is running.
     Running,

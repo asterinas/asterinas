@@ -241,7 +241,7 @@ impl Inner {
 }
 
 /// Inode metadata.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct InodeMeta {
     size: usize,
     blocks: usize,

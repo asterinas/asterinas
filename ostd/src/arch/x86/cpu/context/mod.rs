@@ -37,17 +37,17 @@ cfg_if! {
 }
 
 /// Userspace CPU context, including general-purpose registers and exception information.
-#[derive(Clone, Default, Debug)]
 #[repr(C)]
+#[derive(Clone, Debug, Default)]
 pub struct UserContext {
     user_context: RawUserContext,
     exception: Option<CpuException>,
 }
 
 /// General registers.
-#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
-#[repr(C)]
 #[expect(missing_docs)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct GeneralRegs {
     pub rax: usize,
     pub rbx: usize,
@@ -87,7 +87,7 @@ pub struct GeneralRegs {
 // TODO: Some exceptions (like `AlignmentCheck`) also push an
 //       error code onto the stack, but that detail is not yet represented
 //       in this type definition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CpuException {
     ///  0 – #DE  Divide-by-zero error.
     DivisionError,
@@ -217,7 +217,7 @@ impl CpuException {
 /// Selector error code.
 ///
 /// Reference: <https://wiki.osdev.org/Exceptions#Selector_Error_Code>.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SelectorErrorCode(usize);
 
 impl UserContext {
@@ -358,7 +358,7 @@ impl UserContextApiInternal for UserContext {
 ///
 /// But there exists some vector which are special. Vector 1 can be both fault or trap and vector 2 is interrupt.
 /// So here we also define FaultOrTrap and Interrupt
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CpuExceptionType {
     /// CPU faults. Faults can be corrected, and the program may continue as if nothing happened.
     Fault,
@@ -389,7 +389,7 @@ impl CpuExceptionType {
 }
 
 /// Architecture-specific data reported with a page-fault exception.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RawPageFaultInfo {
     /// The error code pushed by the CPU for this page fault.
     pub error_code: PageFaultErrorCode,

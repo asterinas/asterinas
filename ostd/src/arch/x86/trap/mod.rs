@@ -61,9 +61,9 @@ cfg_if! {
 ///     }
 /// }
 /// ```
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
 #[expect(missing_docs)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct TrapFrame {
     // Pushed by 'trap.S'
     pub rax: usize,
@@ -122,8 +122,8 @@ pub(crate) unsafe fn init_on_cpu() {
 }
 
 /// Userspace context.
-#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct RawUserContext {
     pub(super) general: GeneralRegs,
     pub(super) trap_num: usize,

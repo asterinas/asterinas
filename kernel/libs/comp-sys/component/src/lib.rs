@@ -33,7 +33,7 @@ use log::{debug, error, info};
 /// - `Process`: The process stage, initialized after the first user process
 ///   is created. This stage runs in the context of the first user process,
 ///   and prepares the system for user-space execution.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum InitStage {
     Bootstrap,
     Kthread,

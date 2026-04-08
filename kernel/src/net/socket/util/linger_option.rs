@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct LingerOption {
     is_on: bool,
     timeout: Duration,

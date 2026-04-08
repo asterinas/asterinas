@@ -105,7 +105,7 @@ struct TimeSpecPair {
 
 /// This struct is corresponding to the `utimbuf` struct in Linux.
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct Utimbuf {
     actime: i64,
     modtime: i64,

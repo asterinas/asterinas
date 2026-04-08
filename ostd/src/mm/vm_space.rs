@@ -604,7 +604,7 @@ impl VmQueriedItem<'_> {
 ///
 /// This is kept private to ensure memory safety. The public interface
 /// should use `VmQueriedItem` for querying mapping information.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct VmItem {
     prop: PageProperty,
     mapped_item: MappedItem,
@@ -617,7 +617,7 @@ pub(crate) struct VmItemRef<'a> {
     mapped_item: MappedItemRef<'a>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum MappedItem {
     TrackedFrame(UFrame),
     UntrackedIoMem { paddr: Paddr, level: PagingLevel },

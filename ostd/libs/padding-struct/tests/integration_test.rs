@@ -7,8 +7,8 @@ use padding_struct::padding_struct;
 /// Test basic padding functionality
 #[test]
 fn basic_padding() {
-    #[repr(C)]
     #[padding_struct]
+    #[repr(C)]
     struct TestStruct {
         a: u8,
         b: u32,
@@ -42,8 +42,8 @@ fn basic_padding() {
 /// Test single field struct
 #[test]
 fn single_field() {
-    #[repr(C)]
     #[padding_struct]
+    #[repr(C)]
     struct SingleField {
         value: u64,
     }
@@ -61,8 +61,8 @@ fn single_field() {
 /// Test multiple fields struct
 #[test]
 fn multiple_fields() {
-    #[repr(C)]
     #[padding_struct]
+    #[repr(C)]
     struct MultiField {
         a: u8,
         b: u16,
@@ -98,8 +98,8 @@ fn multiple_fields() {
 /// Test struct with field documentation
 #[test]
 fn with_field_docs() {
-    #[repr(C)]
     #[padding_struct]
+    #[repr(C)]
     struct Documented {
         /// First field
         first: u8,
@@ -125,8 +125,8 @@ fn with_field_docs() {
 /// Verify that field offsets are consistent between reference and padded structs
 #[test]
 fn offset_consistency() {
-    #[repr(C)]
     #[padding_struct]
+    #[repr(C)]
     struct OffsetTest {
         a: u8,
         b: u32,
@@ -147,8 +147,8 @@ fn offset_consistency() {
 /// Test that padding is zero-filled
 #[test]
 fn padding_zero_filled() {
-    #[repr(C)]
     #[padding_struct]
+    #[repr(C)]
     struct ZeroPadded {
         a: u8,
         b: u32,
@@ -179,9 +179,9 @@ fn padding_zero_filled() {
 fn zerocopy_derive() {
     use zerocopy::*;
 
-    #[repr(C)]
     #[padding_struct]
-    #[derive(Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
+    #[repr(C)]
+    #[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
     struct ZerocopyStruct {
         a: u8,
         b: u32,
@@ -224,8 +224,8 @@ fn zerocopy_derive() {
 /// Test that repr attributes (align, packed, etc.) are preserved in ref struct
 #[test]
 fn repr_align_preserved() {
-    #[repr(C, align(16))]
     #[padding_struct]
+    #[repr(C, align(16))]
     struct AlignedStruct {
         a: u8,
         b: u32,
@@ -253,8 +253,8 @@ fn repr_align_preserved() {
 /// Test that size and alignment match between ref struct and padded struct
 #[test]
 fn size_align_match() {
-    #[repr(C, align(8))]
     #[padding_struct]
+    #[repr(C, align(8))]
     struct TestStruct {
         a: u8,
         b: u16,

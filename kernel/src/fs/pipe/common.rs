@@ -512,7 +512,7 @@ mod test {
     use super::*;
     use crate::thread::{Thread, kernel_thread::ThreadOptions};
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Ordering {
         WriteThenRead,
         ReadThenWrite,

@@ -218,7 +218,7 @@ impl<T: Pod> ConfigManager<T> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum VirtioTransportError {
     DeviceStatusError,
     InvalidArgs,

@@ -45,7 +45,7 @@ trait SubControlStatic: SubControl + Sized + 'static {
 }
 
 /// The type of a sub-controller in the cgroup subsystem.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum SubCtrlType {
     Memory,
     CpuSet,
@@ -499,5 +499,5 @@ impl Drop for PidsPreCharge<'_> {
 }
 
 /// An error type indicating that a problem occurred during the charge operation.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TryChargeError;

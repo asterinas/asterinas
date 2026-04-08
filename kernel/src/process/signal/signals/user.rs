@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct UserSignal {
     num: SigNum,
     pid: Pid,
@@ -23,7 +23,7 @@ pub struct UserSignal {
     kind: UserSignalKind,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 pub enum UserSignalKind {
     Kill,
     Tkill,

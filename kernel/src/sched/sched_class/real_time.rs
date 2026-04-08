@@ -22,7 +22,7 @@ use crate::thread::AsThread;
 
 pub type RealTimePriority = RangedU8<1, 99>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RealTimePolicy {
     Fifo,
     RoundRobin {

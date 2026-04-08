@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 /// An error describing the reason why `bind` failed.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BindError {
     /// All ephemeral ports is exhausted.
     Exhausted,
@@ -13,7 +13,7 @@ pub mod tcp {
     /// An error returned by [`TcpListener::new_listen`].
     ///
     /// [`TcpListener::new_listen`]: crate::socket::TcpListener::new_listen
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum ListenError {
         InvalidState,
         Unaddressable,
@@ -33,7 +33,7 @@ pub mod tcp {
     /// An error returned by [`TcpConnection::new_connect`].
     ///
     /// [`TcpConnection::new_connect`]: crate::socket::TcpConnection::new_connect
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum ConnectError {
         InvalidState,
         Unaddressable,
@@ -53,7 +53,7 @@ pub mod tcp {
     /// An error returned by [`TcpConnection::send`].
     ///
     /// [`TcpConnection::send`]: crate::socket::TcpConnection::send
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum SendError {
         InvalidState,
         /// The connection is reset.
@@ -71,7 +71,7 @@ pub mod tcp {
     /// An error returned by [`TcpConnection::recv`].
     ///
     /// [`TcpConnection::recv`]: crate::socket::TcpConnection::recv
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum RecvError {
         InvalidState,
         Finished,
@@ -95,7 +95,7 @@ pub mod udp {
     /// An error returned by [`UdpSocket::send`].
     ///
     /// [`UdpSocket::send`]: crate::socket::UdpSocket::send
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum SendError {
         Unaddressable,
         BufferFull,

@@ -282,7 +282,7 @@ pub fn is_valid_protocol(protocol: NetlinkProtocolId) -> bool {
 #[expect(non_camel_case_types)]
 #[expect(clippy::upper_case_acronyms)]
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum StandardNetlinkProtocol {
     /// Routing/device hook
     ROUTE = 0,

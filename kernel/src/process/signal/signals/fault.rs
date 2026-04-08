@@ -8,7 +8,7 @@ use crate::{
     process::signal::{c_types::siginfo_t, sig_num::SigNum},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FaultSignal {
     num: SigNum,
     code: i32,

@@ -20,7 +20,7 @@ use crate::{
     mm::paddr_to_vaddr,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct AcpiMemoryHandler {}
 
 impl AcpiHandler for AcpiMemoryHandler {

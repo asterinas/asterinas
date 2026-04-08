@@ -9,7 +9,7 @@ use align_ext::AlignExt;
 use crate::mm::{PAGE_SIZE, Paddr, Vaddr, kspace::kernel_loaded_offset};
 
 /// The type of initial memory regions that are needed for the kernel.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum MemoryRegionType {
     /// Maybe points to an unplugged DIMM module. It's bad anyway.
     BadMemory = 0,
@@ -50,7 +50,7 @@ impl MemoryRegionType {
 /// The information of initial memory regions that are needed by the kernel.
 ///
 /// The sections are **not** guaranteed to not overlap. The region must be page aligned.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MemoryRegion {
     base: usize,
     len: usize,

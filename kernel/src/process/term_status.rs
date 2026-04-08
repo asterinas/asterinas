@@ -2,7 +2,7 @@
 
 use super::signal::sig_num::SigNum;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TermStatus {
     Exited(u8),
     Killed(SigNum),

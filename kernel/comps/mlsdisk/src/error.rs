@@ -3,7 +3,7 @@
 use core::fmt;
 
 /// The error types used in this crate.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Errno {
     /// Transaction aborted.
     TxAborted,

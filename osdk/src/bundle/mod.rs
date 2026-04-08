@@ -42,7 +42,7 @@ pub struct Bundle {
 }
 
 /// The osdk bundle artifact manifest that stores as `bundle.toml`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BundleManifest {
     pub initramfs: Option<Initramfs>,
     pub aster_bin: Option<AsterBin>,

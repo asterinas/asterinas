@@ -44,7 +44,7 @@ fn are_files_identical(file1: &PathBuf, file2: &PathBuf) -> Result<bool> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BaseCrateType {
     /// The base crate is for running the target kernel crate.
     Run,

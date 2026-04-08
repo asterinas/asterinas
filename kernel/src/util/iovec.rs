@@ -5,7 +5,7 @@ use ostd::mm::{Infallible, VmSpace};
 use crate::prelude::*;
 
 /// A kernel space I/O vector.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct IoVec {
     base: Vaddr,
     len: usize,
@@ -17,7 +17,7 @@ struct IoVec {
 /// is that `UserIoVec` uses `isize` as the length type,
 /// while `IoVec` uses `usize`.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct UserIoVec {
     base: Vaddr,
     len: isize,

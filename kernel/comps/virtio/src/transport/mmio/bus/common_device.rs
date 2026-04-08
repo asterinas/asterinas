@@ -58,8 +58,8 @@ impl MmioCommonDevice {
 }
 
 /// Virtio MMIO version.
-#[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, TryFromInt)]
 pub enum VirtioMmioVersion {
     /// Legacy
     Legacy = 1,

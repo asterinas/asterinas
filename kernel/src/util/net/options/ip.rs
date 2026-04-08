@@ -14,10 +14,10 @@ use crate::{
 ///
 /// The raw definitions can be found at:
 /// <https://elixir.bootlin.com/linux/v6.0.19/source/include/uapi/linux/in.h#L94>.
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
 #[expect(clippy::upper_case_acronyms)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum CIpOptionName {
     TOS = 1,
     TTL = 2,

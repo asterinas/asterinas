@@ -29,7 +29,7 @@ pub trait BundleFile {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Initramfs {
     path: PathBuf,
     modified_time: SystemTime,

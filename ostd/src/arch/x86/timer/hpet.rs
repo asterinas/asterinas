@@ -30,8 +30,8 @@ const OFFSET_MAIN_COUNTER_VALUE_REGISTER: usize = 0x0F0;
 #[expect(dead_code)]
 const HPET_FREQ: usize = 1_000_000_000_000_000;
 
-#[derive(Debug)]
 #[repr(C)]
+#[derive(Debug)]
 struct HpetTimerRegister {
     configuration_and_capabilities_register: u32,
     timer_comparator_value_register: u32,

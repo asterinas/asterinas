@@ -11,7 +11,7 @@ use crate::{
 };
 
 /// Represents a partition entry.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PartitionInfo {
     Mbr(MbrEntry),
     Gpt(GptEntry),
@@ -37,7 +37,7 @@ impl PartitionInfo {
 ///
 /// See <https://wiki.osdev.org/MBR_(x86)#MBR_Format>.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct MbrHeader {
     bootstrap_code: [u8; 440],
     id: u32,
@@ -56,7 +56,7 @@ impl MbrHeader {
 ///
 /// See <https://wiki.osdev.org/Partition_Table>.
 #[repr(C, packed)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Pod)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Pod)]
 pub struct MbrEntry {
     flag: u8,
     start_chs: ChsAddr,
@@ -91,14 +91,14 @@ impl MbrEntry {
 ///   bits 6–7 are the upper two bits of the cylinder number
 /// - Byte 2: Lower 8 bits of the cylinder number (bits 0–7)
 #[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Pod)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Pod)]
 struct ChsAddr([u8; 3]);
 
 /// A GPT (GUID Partition Table) header.
 ///
 /// See <https://wiki.osdev.org/GPT#LBA_1:_Partition_Table_Header>.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct GptHeader {
     signature: u64,
     revision: u32,
@@ -127,7 +127,7 @@ impl GptHeader {
 ///
 /// See <https://wiki.osdev.org/GPT#LBA_2:_Partition_Entries>.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Pod)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Pod)]
 pub struct GptEntry {
     // Unique ID that defines the purpose and type of this Partition.
     // A value of zero defines that this partition entry is not being used.

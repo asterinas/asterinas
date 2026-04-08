@@ -187,9 +187,9 @@ fn handle_getseal(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(file_seals.bits() as _))
 }
 
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 enum FcntlCmd {
     F_DUPFD = 0,
     F_GETFD = 1,
@@ -210,8 +210,8 @@ enum FcntlCmd {
 pub type off_t = i64;
 
 #[expect(non_camel_case_types)]
-#[derive(Debug, Copy, Clone, TryFromInt)]
 #[repr(u16)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum RangeLockWhence {
     SEEK_SET = 0,
     SEEK_CUR = 1,
@@ -219,9 +219,9 @@ pub enum RangeLockWhence {
 }
 
 /// C struct for a file range lock in Libc
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Copy, Clone, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct c_flock {
     /// Type of lock: F_RDLCK, F_WRLCK, or F_UNLCK
     pub l_type: u16,

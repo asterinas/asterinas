@@ -32,7 +32,7 @@ use crate::{
 /// those types. The syscall layer should first convert them to
 /// a [`RawFileDesc`] in an explicit, syscall-specific way,
 /// and then convert that value to a `FileDesc`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct FileDesc(RangedU32<0, { i32::MAX as _ }>);
 
 /// A raw file descriptor as received from or returned to user space.

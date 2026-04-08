@@ -6,8 +6,8 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Pod)]
 pub struct Uid(u32);
 
 const ROOT_UID: u32 = 0;

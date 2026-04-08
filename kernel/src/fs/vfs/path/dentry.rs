@@ -539,7 +539,7 @@ impl Debug for Dentry {
 /// - For non-root dentries, it uses self's name and parent's pointer to form the key,
 /// - For the root dentry, it uses "/" and self's pointer to form the key.
 /// - For pseudo dentries, it uses self's name and self's pointer to form the key.
-#[derive(Debug, Clone, Hash, PartialOrd, Ord, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct DentryKey {
     name: String,
     parent_ptr: usize,

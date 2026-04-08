@@ -10,7 +10,7 @@ use crate::{net::socket::netlink::message::NLMSG_ALIGN, prelude::*, util::MultiR
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L52>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct CMsgSegHdr {
     /// Length of the message, including the header
     pub len: u32,

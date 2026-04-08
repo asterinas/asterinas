@@ -14,7 +14,7 @@ mod qemu;
 pub use qemu::*;
 
 /// All the configurable fields within a scheme.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Scheme {
     /// The working directory.
     ///

@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// IP-level socket options.
-#[derive(Debug, Clone, Copy, CopyGetters, Setters)]
+#[derive(Clone, Copy, CopyGetters, Debug, Setters)]
 #[get_copy = "pub"]
 #[set = "pub"]
 pub(super) struct IpOptionSet {
@@ -112,7 +112,7 @@ impl_socket_options!(
     pub struct Recverr(bool);
 );
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct IpTtl(Option<NonZeroU8>);
 
 impl IpTtl {

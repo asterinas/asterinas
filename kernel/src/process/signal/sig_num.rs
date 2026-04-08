@@ -7,7 +7,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 use super::constants::*;
 use crate::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SigNum {
     sig_num: u8,
 }

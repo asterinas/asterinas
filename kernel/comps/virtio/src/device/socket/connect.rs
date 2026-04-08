@@ -38,7 +38,7 @@ pub struct VsockBufferStatus {
 }
 
 /// The reason why a vsock connection was closed.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DisconnectReason {
     /// The peer has either closed the connection in response to our shutdown request, or forcibly
     /// closed it of its own accord.
@@ -134,7 +134,7 @@ impl VsockEvent {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ConnectionInfo {
     pub dst: VsockDeviceAddr,
     pub src_port: u32,

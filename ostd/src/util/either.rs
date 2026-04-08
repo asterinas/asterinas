@@ -4,7 +4,7 @@
 ///
 /// [`Left`]: Self::Left
 /// [`Right`]: Self::Right
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Either<L, R> {
     /// Contains the left value
     Left(L),

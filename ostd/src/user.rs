@@ -106,7 +106,7 @@ impl UserMode {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Debug, Eq, PartialEq)]
 /// A reason as to why the control of the CPU is returned from
 /// the user space to the kernel.
 pub enum ReturnReason {

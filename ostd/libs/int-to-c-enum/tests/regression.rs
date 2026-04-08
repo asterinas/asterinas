@@ -2,8 +2,8 @@
 
 use int_to_c_enum::TryFromInt;
 
-#[derive(TryFromInt, Debug, PartialEq, Eq)]
 #[repr(u8)]
+#[derive(Debug, Eq, PartialEq, TryFromInt)]
 enum Color {
     Red = 1,
     Blue = 2,

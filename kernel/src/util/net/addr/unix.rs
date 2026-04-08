@@ -9,7 +9,7 @@ use crate::{net::socket::unix::UnixSocketAddr, prelude::*};
 ///
 /// See <https://www.man7.org/linux/man-pages/man7/unix.7.html>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct CSocketAddrUnix {
     /// Address family (AF_UNIX).
     sun_family: u16,

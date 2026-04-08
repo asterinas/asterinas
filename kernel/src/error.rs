@@ -3,7 +3,7 @@
 /// Error number.
 #[expect(clippy::upper_case_acronyms)]
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Errno {
     EPERM = 1,    /* Operation not permitted */
     ENOENT = 2,   /* No such file or directory */
@@ -154,7 +154,7 @@ pub enum Errno {
 }
 
 /// error used in this crate
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Error {
     errno: Errno,
     #[expect(dead_code)]

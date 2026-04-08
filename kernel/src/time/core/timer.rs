@@ -16,7 +16,7 @@ use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 use super::Clock;
 
 /// A timeout, represented in one of the two ways.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum Timeout {
     /// The timeout is reached _after_ the `Duration` time is elapsed.
     After(Duration),

@@ -191,7 +191,7 @@ impl ThreadLocal {
 /// - `Loaded`: The FPU context is currently loaded onto the CPU. It may or may not still
 ///   be loaded in CPU after a context switch.
 /// - `Unloaded`: The FPU context is not currently loaded onto the CPU.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FpuState {
     Activated,
     Loaded,

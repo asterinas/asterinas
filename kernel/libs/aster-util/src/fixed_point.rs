@@ -41,7 +41,7 @@ use core::{
 /// let saturated = max_val.saturating_add(one);
 /// assert_eq!(saturated, max_val); // Stays at maximum.
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FixedU32<const FRAC_BITS: u32>(u32);
 
 impl<const FRAC_BITS: u32> FixedU32<FRAC_BITS> {
@@ -270,8 +270,8 @@ mod tests {
         assert_eq!(display_str, "1.500");
     }
 
-    #[ktest]
     #[expect(clippy::eq_op)]
+    #[ktest]
     fn edge_cases() {
         let zero = FixedU32_8::ZERO;
         let one = FixedU32_8::saturating_from_num(1);

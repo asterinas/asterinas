@@ -213,8 +213,8 @@ fn check_offset(offset: usize, len: usize, flags: MMapFlags) -> Result<()> {
 /// The mask for the mapping type.
 const MAP_TYPE_MASK: u32 = 0xf;
 
-#[derive(Copy, Clone, PartialEq, Debug, TryFromInt)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 enum MMapType {
     Shared = 0x1,
     Private = 0x2,

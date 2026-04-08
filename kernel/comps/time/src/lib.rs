@@ -31,7 +31,7 @@ fn time_init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SystemTime {
     pub year: u16,
     pub month: u8,

@@ -21,7 +21,7 @@ use super::{Error, Result, SysAttrSet, SysStr};
 pub const MAX_ATTR_SIZE: usize = 4096;
 
 /// The three types of nodes in a `SysTree`.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SysNodeType {
     /// A branching node is one that can have child nodes.
     Branch,
@@ -279,7 +279,7 @@ pub trait SysObj: Any + Send + Sync + Debug + 'static {
 }
 
 /// The unique ID of a `SysNode`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SysNodeId(u64);
 
 impl SysNodeId {
@@ -319,7 +319,7 @@ bitflags! {
     /// Users can provide permission modification functionality through additional abstractions at
     /// the upper layers. Correspondingly, it is the users' responsibility to do the permission
     /// verification at the "view" and "control" parts.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub struct SysPerms: u16 {
         // One-bit flags:
         /// The read permission for owner.

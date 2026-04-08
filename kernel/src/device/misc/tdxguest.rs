@@ -226,22 +226,22 @@ struct TdxQuoteHdr {
     out_len: u32,
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct TdxReportRequest {
     report_data: ReportData,
     tdx_report: TdReport,
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct ReportData {
     data: [u8; 64],
 }
 
 /// TDX Report structure (`TDREPORT_STRUCT`) as defined in the Intel TDX Module Specification.
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct TdReport {
     report_mac: ReportMac,
     _reserved: [u8; 256],
@@ -249,16 +249,16 @@ struct TdReport {
 }
 const_assert!(size_of::<TdReport>() == 1024);
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct ReportMac {
     _reserved1: [u8; 128],
     report_data: ReportData,
     _reserved2: [u8; 64],
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct TdInfo {
     attributes: [u8; 8],
     xfam: [u8; 8],

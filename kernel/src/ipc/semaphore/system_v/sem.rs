@@ -20,8 +20,8 @@ use crate::{
     },
 };
 
-#[derive(Clone, Copy, Debug, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct SemBuf {
     sem_num: u16,
     sem_op: i16,
@@ -35,7 +35,7 @@ impl SemBuf {
 }
 
 #[repr(u16)]
-#[derive(Debug, TryFromInt, Clone, Copy)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum Status {
     Normal = 0,
     Pending = 1,

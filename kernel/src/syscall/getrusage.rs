@@ -6,8 +6,8 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{prelude::*, time::timeval_t};
 
-#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
 #[repr(i32)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 enum RusageTarget {
     ForSelf = 0,
     Children = -1,
@@ -57,7 +57,7 @@ pub fn sys_getrusage(target: i32, rusage_addr: Vaddr, ctx: &Context) -> Result<S
 }
 
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct rusage_t {
     /// user time used
     pub ru_utime: timeval_t,

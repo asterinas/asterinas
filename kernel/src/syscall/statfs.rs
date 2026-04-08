@@ -59,8 +59,8 @@ pub fn sys_fstatfs(
 }
 
 /// FS Stat
-#[derive(Debug, Clone, Copy, Pod, Default)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct Statfs {
     /// Type of filesystem
     f_type: u64,

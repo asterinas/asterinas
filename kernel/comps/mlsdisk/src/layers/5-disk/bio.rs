@@ -75,7 +75,7 @@ pub struct BioReq {
 }
 
 /// The type of a block request.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BioType {
     /// A read request.
     Read,

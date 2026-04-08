@@ -7,7 +7,7 @@ use crate::{
     process::PidFile,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum ProcessFilter {
     Any,
     WithPid(Pid),

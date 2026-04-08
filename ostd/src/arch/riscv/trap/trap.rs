@@ -91,8 +91,8 @@ pub(super) unsafe fn init_on_cpu() {
 ///     println!("TRAP! tf: {:#x?}", tf);
 /// }
 /// ```
-#[derive(Debug, Clone, Copy)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
 pub struct TrapFrame {
     /// General registers
     pub general: GeneralRegs,
@@ -103,8 +103,8 @@ pub struct TrapFrame {
 }
 
 /// Saved registers on a trap.
-#[derive(Debug, Clone, Copy)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
 pub(in crate::arch) struct RawUserContext {
     /// General registers
     pub(in crate::arch) general: GeneralRegs,

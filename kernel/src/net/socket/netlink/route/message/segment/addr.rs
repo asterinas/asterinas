@@ -22,7 +22,7 @@ impl SegmentBody for AddrSegmentBody {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/if_addr.h#L8>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct CIfaddrMsg {
     pub family: u8,
     /// The prefix length
@@ -35,7 +35,7 @@ pub struct CIfaddrMsg {
     pub index: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct AddrSegmentBody {
     pub family: i32,
     pub prefix_len: u8,
@@ -103,9 +103,9 @@ bitflags! {
 /// `rt_scope_t` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L320>.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(clippy::upper_case_acronyms)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum RtScope {
     UNIVERSE = 0,
     // User defined values

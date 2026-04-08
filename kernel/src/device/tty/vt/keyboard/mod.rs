@@ -12,7 +12,7 @@ pub(super) fn init_in_first_process() {
 }
 
 /// A modifier key (Shift, Ctrl, Alt).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ModifierKey {
     Shift,
     Ctrl,
@@ -20,7 +20,7 @@ enum ModifierKey {
 }
 
 /// A numpad key (0-9, Dot, Enter, Plus, Minus, Asterisk, Slash).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NumpadKey {
     Num0,
     Num1,
@@ -41,7 +41,7 @@ enum NumpadKey {
 }
 
 /// A cursor key (Up, Down, Left, Right).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CursorKey {
     Up,
     Down,

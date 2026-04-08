@@ -50,7 +50,7 @@ static INFO: Once<BootInfo> = Once::new();
 /// The boot crate can choose either providing the raw RSDP physical address or
 /// providing the RSDT/XSDT physical address after parsing RSDP.
 /// This is because bootloaders differ in such behaviors.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum BootloaderAcpiArg {
     /// The bootloader does not provide one, a manual search is needed.
     NotProvided,
@@ -63,7 +63,7 @@ pub enum BootloaderAcpiArg {
 }
 
 /// The framebuffer arguments.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct BootloaderFramebufferArg {
     /// The address of the buffer.
     pub address: usize,

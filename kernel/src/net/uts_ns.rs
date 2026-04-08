@@ -124,8 +124,8 @@ fn copy_uts_field_from_user(addr: Vaddr, len: u32, ctx: &Context) -> Result<[u8;
 
 const UTS_FIELD_LEN: usize = 65;
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct UtsName {
     sysname: [u8; UTS_FIELD_LEN],
     nodename: [u8; UTS_FIELD_LEN],

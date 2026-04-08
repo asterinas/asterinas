@@ -102,7 +102,7 @@ struct MhtStorage<L> {
 }
 
 /// The metadata of the root MHT node of a `CryptoLog`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RootMhtMeta {
     pub pos: Pbid,
     pub mac: Mac,
@@ -111,8 +111,8 @@ pub struct RootMhtMeta {
 
 /// The Merkle-Hash Tree (MHT) node (internal).
 /// It contains a header for node metadata and a bunch of entries for managing children nodes.
-#[repr(C)]
 #[padding_struct]
+#[repr(C)]
 #[derive(Clone, Copy, Pod)]
 struct MhtNode {
     header: MhtNodeHeader,
@@ -121,9 +121,9 @@ struct MhtNode {
 const_assert!(size_of::<MhtNode>() <= BLOCK_SIZE);
 
 /// The header contains metadata of the current MHT node.
-#[repr(C)]
 #[padding_struct]
-#[derive(Clone, Copy, Debug, Pod, Default)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct MhtNodeHeader {
     // The height of the MHT whose root is this node
     height: Height,

@@ -44,7 +44,7 @@ use crate::{
     sync::{LocalIrqDisabled, SpinLock},
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct IommuVersion {
     major: u8,
     minor: u8,

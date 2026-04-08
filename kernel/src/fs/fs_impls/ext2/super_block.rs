@@ -413,7 +413,7 @@ bitflags! {
 }
 
 #[repr(u16)]
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, TryFromInt)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, TryFromInt)]
 pub enum ErrorsBehaviour {
     /// Continue execution
     #[default]
@@ -425,7 +425,7 @@ pub enum ErrorsBehaviour {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum OsId {
     Linux = 0,
     Hurd = 1,
@@ -435,7 +435,7 @@ pub enum OsId {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum RevLevel {
     /// The good old (original) format.
     GoodOld = 0,
@@ -451,7 +451,7 @@ const_assert!(size_of::<RawSuperBlock>() == SUPER_BLOCK_SIZE);
 /// on disk. It must be exactly 1024 bytes in length to match the Ext2 specification.
 /// The in-memory representation is provided by [`SuperBlock`].
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod, Default)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct RawSuperBlock {
     pub inodes_count: u32,
     pub blocks_count: u32,

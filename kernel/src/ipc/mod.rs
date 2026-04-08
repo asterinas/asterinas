@@ -23,9 +23,9 @@ bitflags! {
     }
 }
 
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum IpcControlCmd {
     IPC_RMID = 0,
     IPC_SET = 1,

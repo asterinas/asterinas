@@ -54,7 +54,7 @@ pub(super) struct TreeInner<K: RecordKey<K>, V, D> {
 }
 
 /// Levels in a `TxLsmTree`.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LsmLevel {
     L0 = 0,
     L1,
@@ -102,7 +102,7 @@ pub trait TxEventListener<K, V> {
 }
 
 /// Types of `TxLsmTree`'s internal transactions.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum TxType {
     /// A Compaction Transaction merges old `SSTable`s into new ones.
     Compaction { to_level: LsmLevel },
@@ -960,7 +960,7 @@ mod tests {
     }
 
     #[repr(C)]
-    #[derive(Copy, Clone, Pod, Debug)]
+    #[derive(Clone, Copy, Debug, Pod)]
     struct Value {
         pub hba: BlockId,
         pub key: Key,

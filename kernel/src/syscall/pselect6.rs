@@ -54,7 +54,7 @@ pub fn sys_pselect6(
 
 // Reference: <https://elixir.bootlin.com/linux/v6.19.8/source/fs/select.c#L763-L772>
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct SigMaskWithSize {
     addr: Vaddr,
     size: usize,

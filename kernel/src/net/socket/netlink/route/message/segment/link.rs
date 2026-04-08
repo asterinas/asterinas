@@ -25,7 +25,7 @@ impl SegmentBody for LinkSegmentBody {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L561>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct CIfinfoMsg {
     /// AF_UNSPEC
     pub family: u8,
@@ -41,7 +41,7 @@ pub struct CIfinfoMsg {
     pub change: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct LinkSegmentBody {
     pub family: CSocketAddrFamily,
     pub type_: InterfaceType,

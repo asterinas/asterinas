@@ -115,7 +115,7 @@ mod tests {
 
     use super::*;
 
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
     struct XEdit {
         x: i32,
     }

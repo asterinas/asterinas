@@ -10,7 +10,7 @@ use crate::util::hard_link_or_copy;
 
 use super::file::BundleFile;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AsterVmImage {
     path: PathBuf,
     typ: AsterVmImageType,
@@ -19,18 +19,18 @@ pub struct AsterVmImage {
     size: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AsterVmImageType {
     GrubIso(AsterGrubIsoImageMeta),
     Qcow2(AsterQcow2ImageMeta),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AsterGrubIsoImageMeta {
     pub grub_version: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AsterQcow2ImageMeta {
     pub grub_version: String,
 }

@@ -549,7 +549,7 @@ impl<E: Ext> TcpConnectionBg<E> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum TcpProcessResult {
     NotProcessed,
     Processed,

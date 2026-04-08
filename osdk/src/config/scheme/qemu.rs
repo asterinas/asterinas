@@ -11,7 +11,7 @@ use crate::{
     error_msg,
 };
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct QemuScheme {
     /// The additional arguments for running QEMU, in the form of raw
     /// command line arguments.
@@ -36,7 +36,7 @@ pub struct QemuScheme {
     pub with_monitor: Option<bool>,
 }
 
-#[derive(Debug, Clone, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Serialize)]
 pub struct Qemu {
     pub args: String,
     /// This finalized config has a unorthodox `Option` because

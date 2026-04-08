@@ -24,8 +24,8 @@ pub(super) struct IoctlCmd(u32);
 ///  - `ReadWrite` -> `_IOC_READ | _IOC_WRITE`
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctl.h#L49-L67>
-#[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromInt)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum IoctlDir {
     None = 0,
     Write = 1,

@@ -31,8 +31,8 @@ pub type IrqCallbackFunction = dyn Fn(&TrapFrame) + Sync + Send + 'static;
 /// [`alloc`]: Self::alloc
 /// [`alloc_specific`]: Self::alloc_specific
 /// [`on_active`]: Self::on_active
-#[derive(Debug)]
 #[must_use]
+#[derive(Debug)]
 pub struct IrqLine {
     inner: Arc<InnerHandle>,
     callbacks: Vec<CallbackHandle>,

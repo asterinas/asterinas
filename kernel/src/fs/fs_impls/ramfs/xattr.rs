@@ -16,7 +16,7 @@ use crate::{
 pub struct RamXattr(Once<Box<RwMutex<RamXattrInner>>>);
 
 /// An owned in-memory xattr name that possesses a valid namespace.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct RamXattrName {
     namespace: XattrNamespace,
     full_name: String,
@@ -25,7 +25,7 @@ struct RamXattrName {
 /// The value type of an in-memory xattr.
 type RamXattrValue = Vec<u8>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct RamXattrInner {
     map: HashMap<RamXattrName, RamXattrValue>,
     total_name_count: usize,

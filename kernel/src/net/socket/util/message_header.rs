@@ -135,7 +135,7 @@ impl ControlMessage {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/linux/socket.h#L105>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct CControlHeader {
     /// Data byte count, including hdr
     len: usize,

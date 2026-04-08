@@ -7,7 +7,7 @@
 
 macro_rules! define_ranged_integer {
     ($visibility: vis, $name: ident, $type: ty) => {
-        #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+        #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
         $visibility struct $name<const MIN: $type, const MAX: $type>($type);
 
         impl<const MIN: $type, const MAX: $type> $name<MIN, MAX> {

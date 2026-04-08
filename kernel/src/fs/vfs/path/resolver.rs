@@ -32,7 +32,7 @@ pub const AT_FDCWD: RawFileDesc = -100;
 ///
 /// All operations related to path resolution for a process should go through its associated
 /// `PathResolver`.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct PathResolver {
     root: Path,
     cwd: Path,
@@ -355,7 +355,7 @@ impl PathResolver {
 ///
 /// If the path can be traced back to the root of the resolver, it is `Reachable`.
 /// Otherwise, it is `Unreachable`.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum AbsPathResult {
     Reachable(String),
     Unreachable(String),

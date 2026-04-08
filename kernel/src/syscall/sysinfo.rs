@@ -6,9 +6,9 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{prelude::*, process::pid_table};
 
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Default, Clone, Copy, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct SysInfo {
     uptime: i64,     /* Seconds since boot */
     loads: [u64; 3], /* 1, 5, and 15 minute load averages */

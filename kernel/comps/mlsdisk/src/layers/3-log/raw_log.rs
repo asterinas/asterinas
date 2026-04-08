@@ -792,19 +792,19 @@ struct State {
 }
 
 /// The persistent state of a `RawLogStore`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RawLogStoreState {
     log_table: HashMap<RawLogId, RawLogEntry>,
 }
 
 /// A log entry implies the persistent state of the raw log.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct RawLogEntry {
     head: RawLogHead,
 }
 
 /// A log head contains chunk metadata of a log's already-persist data.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct RawLogHead {
     pub chunks: Vec<ChunkId>,
     pub num_blocks: u32,
@@ -907,13 +907,13 @@ impl RawLogHead {
 ////////////////////////////////////////////////////////////////////////////////
 
 /// A persistent edit to the state of `RawLogStore`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RawLogStoreEdit {
     edit_table: HashMap<RawLogId, RawLogEdit>,
 }
 
 /// The basic unit of a persistent edit to the state of `RawLogStore`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) enum RawLogEdit {
     Create(RawLogCreate),
     Append(RawLogAppend),
@@ -921,19 +921,19 @@ pub(super) enum RawLogEdit {
 }
 
 /// An edit that implies a log being created.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct RawLogCreate {
     tail: RawLogTail,
 }
 
 /// An edit that implies an existing log being appended.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct RawLogAppend {
     tail: RawLogTail,
 }
 
 /// A log tail contains chunk metadata of a log's TX-ongoing data.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct RawLogTail {
     // The last chunk of the head. If it is partially filled
     // (head_last_chunk_free_blocks > 0), then the tail should write to the

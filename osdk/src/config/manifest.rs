@@ -15,13 +15,13 @@ use super::scheme::Scheme;
 use crate::{error::Errno, error_msg, util::get_cargo_metadata};
 
 #[expect(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OsdkMeta {
     #[serde(rename(serialize = "type", deserialize = "type"))]
     pub type_: ProjectType,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ValueEnum, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProjectType {
     Kernel,
@@ -31,7 +31,7 @@ pub enum ProjectType {
 }
 
 /// The osdk manifest from configuration file `OSDK.toml`.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct TomlManifest {
     #[cfg_attr(not(test), expect(dead_code))]
     pub project_type: Option<ProjectType>,

@@ -51,9 +51,9 @@ pub struct SemaphoreSet {
 }
 
 // https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/ipcbuf.h
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Copy, Clone, Default, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct IpcPerm {
     key: u32,
     uid: u32,
@@ -72,9 +72,9 @@ pub struct IpcPerm {
 // layout of `semid_ds`.
 // Reference: <https://elixir.bootlin.com/linux/v6.16.9/A/ident/semid64_ds>.
 #[cfg(target_arch = "x86_64")]
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Copy, Clone, Default, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct SemidDs {
     sem_perm: IpcPerm,
     sem_otime: u64,
@@ -87,9 +87,9 @@ pub struct SemidDs {
 }
 
 #[cfg(not(target_arch = "x86_64"))]
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Copy, Clone, Default, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct SemidDs {
     sem_perm: IpcPerm,
     sem_otime: u64,

@@ -226,15 +226,15 @@ impl PollFiles<'_> {
 }
 
 // https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/poll.h
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct c_pollfd {
     fd: i32,
     events: i16,
     revents: i16,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct PollFd {
     fd: Option<FileDesc>,
     events: IoEvents,

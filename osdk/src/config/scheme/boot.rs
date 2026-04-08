@@ -4,7 +4,7 @@ use clap::ValueEnum;
 
 use std::path::PathBuf;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BootScheme {
     /// Command line arguments for the guest kernel
     #[serde(default)]
@@ -18,7 +18,7 @@ pub struct BootScheme {
     pub method: Option<BootMethod>,
 }
 
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum BootMethod {
     /// Boot the kernel by making a rescue CD image.
@@ -31,7 +31,7 @@ pub enum BootMethod {
     QemuDirect,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Boot {
     pub kcmdline: Vec<String>,
     pub initramfs: Option<PathBuf>,

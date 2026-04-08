@@ -6,7 +6,7 @@ use crate::{prelude::*, process::Pid};
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.18.6/source/include/uapi/linux/capability.h#L40>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct CUserCapHeader {
     pub version: u32,
     pub pid: Pid,
@@ -16,7 +16,7 @@ pub struct CUserCapHeader {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.18.6/source/include/uapi/linux/capability.h#L40>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct CUserCapData {
     pub effective: u32,
     pub permitted: u32,

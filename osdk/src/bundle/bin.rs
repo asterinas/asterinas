@@ -9,7 +9,7 @@ use std::{
 use super::file::BundleFile;
 use crate::{arch::Arch, util::hard_link_or_copy};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AsterBin {
     path: PathBuf,
     arch: Arch,
@@ -20,13 +20,13 @@ pub struct AsterBin {
     stripped: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AsterBinType {
     Elf(AsterElfMeta),
     BzImage(AsterBzImageMeta),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AsterElfMeta {
     pub has_linux_header: bool,
     pub has_pvh_header: bool,
@@ -34,7 +34,7 @@ pub struct AsterElfMeta {
     pub has_multiboot2_header: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AsterBzImageMeta {
     pub support_legacy32_boot: bool,
     pub support_efi_boot: bool,

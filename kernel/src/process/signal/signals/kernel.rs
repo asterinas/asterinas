@@ -3,7 +3,7 @@
 use super::Signal;
 use crate::process::signal::{c_types::siginfo_t, constants::SI_KERNEL, sig_num::SigNum};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct KernelSignal {
     num: SigNum,
 }

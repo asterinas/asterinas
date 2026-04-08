@@ -6,7 +6,7 @@ pub type Ext2Bid = u32;
 
 /// The pointers to blocks for an inode.
 #[repr(C)]
-#[derive(Clone, Copy, Default, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct BlockPtrs {
     inner: [Ext2Bid; MAX_BLOCK_PTRS],
 }

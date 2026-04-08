@@ -57,8 +57,8 @@ mod util;
 mod vdso;
 mod vm;
 
-#[ostd::main]
 #[controlled]
+#[ostd::main]
 fn main() {
     init::main();
 }

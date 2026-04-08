@@ -246,7 +246,7 @@ impl Drop for Tx {
 }
 
 /// The status of a transaction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TxStatus {
     Ongoing,
     Committed,

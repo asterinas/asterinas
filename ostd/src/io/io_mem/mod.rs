@@ -47,7 +47,7 @@ pub(crate) enum Sensitive {}
 pub enum Insensitive {}
 
 /// I/O memory.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct IoMem<SecuritySensitivity = Insensitive> {
     kvirt_area: Arc<KVirtArea>,
     // The actually used range for MMIO is `kvirt_area.start + offset..kvirt_area.start + offset + limit`

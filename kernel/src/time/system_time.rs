@@ -9,7 +9,7 @@ use time::{Date, Month, PrimitiveDateTime, Time};
 use crate::prelude::*;
 
 /// This struct corresponds to `SystemTime` in Rust std.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SystemTime(PrimitiveDateTime);
 
 pub static START_TIME: Once<SystemTime> = Once::new();

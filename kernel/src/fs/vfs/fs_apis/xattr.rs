@@ -8,8 +8,8 @@ pub const XATTR_LIST_MAX_LEN: usize = 65536;
 
 /// Represents different namespaces with different capabilities
 /// for extended attributes (xattrs).
-#[derive(Debug, PartialEq, Eq, Clone, Copy, TryFromInt, Hash)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, TryFromInt)]
 pub enum XattrNamespace {
     User = 1,
     Trusted = 2,

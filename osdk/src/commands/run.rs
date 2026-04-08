@@ -133,7 +133,7 @@ impl GdbServerArgs {
 }
 
 mod gdb {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum StubAddrType {
         Unix, // Unix Domain Socket
         Tcp,  // IP_ADDR:PORT
@@ -187,7 +187,7 @@ mod vsc {
 
     const VSC_DIR: &str = ".vscode";
 
-    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
     struct Existence {
         vsc_dir: bool,
         launch_file: bool,

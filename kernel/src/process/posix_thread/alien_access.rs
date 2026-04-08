@@ -128,8 +128,8 @@ pub mod yama {
     static YAMA_SCOPE: AtomicI32 = AtomicI32::new(YamaScope::Relational as i32);
 
     /// The Yama scope levels.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
     #[repr(i32)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
     pub enum YamaScope {
         /// No additional restrictions on alien attach.
         Disabled = 0,

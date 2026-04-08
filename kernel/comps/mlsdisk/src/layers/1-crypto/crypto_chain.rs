@@ -65,7 +65,7 @@ pub struct CryptoChain<L> {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Pod)]
+#[derive(Clone, Copy, Pod)]
 struct Footer {
     len: u32,
     pre_mac: Mac,

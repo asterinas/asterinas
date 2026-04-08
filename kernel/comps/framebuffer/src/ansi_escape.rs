@@ -12,7 +12,7 @@ pub(super) struct EscapeFsm {
 /// The mode for "Erase in Display" (ED) commands.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/drivers/tty/vt/vt.c#L1488>.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum EraseInDisplay {
     CursorToEnd,
     CursorToBeginning,

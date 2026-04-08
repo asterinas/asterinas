@@ -11,7 +11,7 @@ use std::{
 use libflate::{gzip, zlib};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum PayloadEncoding {
     #[default]
     #[serde(rename = "raw")]

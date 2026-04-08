@@ -532,7 +532,7 @@ impl SubmittedRequest {
 
 /// VirtIOBlock request.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct BlockReq {
     pub type_: u32,
     pub reserved: u32,
@@ -543,7 +543,7 @@ const REQ_SIZE: usize = size_of::<BlockReq>();
 
 /// Response of a VirtIOBlock request.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct BlockResp {
     pub status: u8,
 }

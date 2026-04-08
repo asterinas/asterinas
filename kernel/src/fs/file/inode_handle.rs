@@ -512,7 +512,7 @@ impl Debug for InodeHandle {
 }
 
 /// Describes the position to seek from.
-#[derive(Copy, PartialEq, Eq, Clone, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SeekFrom {
     Start(usize),
     End(isize),

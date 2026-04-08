@@ -48,8 +48,8 @@ pub(super) struct BlockAlloc<D> {
 }
 
 /// Incremental diff of block validity.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum AllocDiff {
     Alloc = 3,
     Dealloc = 7,

@@ -16,7 +16,7 @@ use component::{ComponentInitError, init_component};
 use spin::Once;
 
 /// The arguments passed to the init process, extracted from the kernel command line.
-#[derive(PartialEq, Debug)]
+#[derive(Debug, PartialEq)]
 pub struct InitprocArgs {
     argv: Vec<CString>,
     envp: Vec<CString>,

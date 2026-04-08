@@ -31,7 +31,7 @@ struct FbHandle {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L189>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct FbBitfield {
     /// Bit offset of the field
     pub offset: u32,
@@ -78,7 +78,7 @@ impl FbBitfield {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L243>.
 #[repr(C)]
-#[derive(Debug, Default, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct FbVarScreenInfo {
     /// Visible resolution width
     pub xres: u32,
@@ -143,9 +143,9 @@ struct FbVarScreenInfo {
 /// Fixed screen information for framebuffer devices; `struct fb_fix_screeninfo` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L158>.
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Default, Clone, Copy, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct FbFixScreenInfo {
     /// Identification string (e.g., "EFI VGA")
     pub id: [u8; 16],
@@ -183,7 +183,7 @@ struct FbFixScreenInfo {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L283>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct FbCmapUser {
     /// Starting offset in colormap
     pub start: u32,

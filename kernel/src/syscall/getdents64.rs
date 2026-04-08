@@ -126,7 +126,7 @@ struct Dirent {
 }
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct DirentInner {
     d_ino: u64,
     d_off: u64,
@@ -175,7 +175,7 @@ struct Dirent64 {
 }
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct Dirent64Inner {
     d_ino: u64,
     d_off: u64,
@@ -222,7 +222,7 @@ impl DirentSerializer for Dirent64 {
 
 #[expect(non_camel_case_types)]
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum DirentType {
     DT_UNKNOWN = 0,
     DT_FIFO = 1,

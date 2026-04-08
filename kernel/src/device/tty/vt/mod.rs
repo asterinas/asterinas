@@ -14,7 +14,7 @@ const MAX_CONSOLES: usize = 63;
 
 /// A virtual terminal index that is always in the range `1..=MAX_CONSOLES`.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct VtIndex(NonZeroU8);
 
 impl VtIndex {

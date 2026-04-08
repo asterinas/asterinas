@@ -336,9 +336,9 @@ pub enum ApicInitError {
     NoApic,
 }
 
-#[derive(Debug)]
-#[repr(u32)]
 #[expect(dead_code)]
+#[repr(u32)]
+#[derive(Debug)]
 pub enum DivideConfig {
     Divide1 = 0b1011,
     Divide2 = 0b0000,

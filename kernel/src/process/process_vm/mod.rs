@@ -164,7 +164,7 @@ pub struct ProcessVmarGuard<'a> {
 // NOTE: Upgrading the `Weak<Vmar>` in the snapshot is not permitted,
 // as this will cause the `Vmar` to be dropped in the wrong context,
 // and break the reference count used in `CurrentUserSpace::is_vmar_shared`.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct VmarSnapshot(Weak<Vmar>);
 
 impl VmarSnapshot {

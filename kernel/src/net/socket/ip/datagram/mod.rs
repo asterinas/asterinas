@@ -43,7 +43,7 @@ pub struct DatagramSocket {
     pseudo_path: Path,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct OptionSet {
     socket: SocketOptionSet,
     ip: IpOptionSet,

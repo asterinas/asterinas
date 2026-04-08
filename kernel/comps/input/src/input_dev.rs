@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Input event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InputEvent {
     /// Synchronization events (EV_SYN)
     Sync(SynEvent),
@@ -66,7 +66,7 @@ impl InputEvent {
 
 /// Input device identifier.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct InputId {
     /// Bus type identifier.
     bustype: u16,
@@ -135,7 +135,7 @@ impl InputId {
 }
 
 /// Input device capability bitmaps.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct InputCapability {
     /// Supported event types (`EV_KEY`, `EV_REL`, etc.)
     supported_event_types: EventTypes,

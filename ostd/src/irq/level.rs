@@ -16,7 +16,7 @@ use crate::{cpu::PrivilegeLevel, cpu_local_cell};
 /// An `InterruptLevel` is specific to a single CPU
 /// and is meaningless when used by or sent to other CPUs,
 /// hence it is `!Send` and `!Sync`.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InterruptLevel {
     /// Level 0 (the task context).
     L0,

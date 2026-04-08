@@ -23,7 +23,7 @@ use spin::Once;
 pub type ConsoleCallback = dyn Fn(VmReader<Infallible>) + Send + Sync;
 
 /// An error returned by [`AnyConsoleDevice::set_font`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ConsoleSetFontError {
     InappropriateDevice,
     InvalidFont,

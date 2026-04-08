@@ -111,8 +111,8 @@ impl IntRemappingTable {
 }
 
 /// The type of validation that must be performed by the interrupt-remapping hardware.
-#[derive(Debug, TryFromInt)]
 #[repr(u32)]
+#[derive(Debug, TryFromInt)]
 pub enum SourceValidationType {
     /// No requester-id verification is required.
     Disable = 0b00,
@@ -128,8 +128,8 @@ pub enum SourceValidationType {
 
 /// Source ID qualifier. This field is evaluated by hardware only when the Present bit
 /// is Set and the SVT field is 0b01.
-#[derive(Debug, TryFromInt)]
 #[repr(u32)]
+#[derive(Debug, TryFromInt)]
 pub enum SourceIdQualifier {
     /// Verify the interrupt request by comparing all 16 bits of the SID field with the
     /// 16-bit requester-id of the interrupt request.
@@ -147,9 +147,9 @@ pub enum SourceIdQualifier {
     IgnoreLeastThree = 0b11,
 }
 
-#[derive(Debug, TryFromInt)]
-#[repr(u32)]
 #[expect(dead_code)]
+#[repr(u32)]
+#[derive(Debug, TryFromInt)]
 enum DeliveryMode {
     FixedMode = 0b000,
     LowestPriority = 0b001,

@@ -6,7 +6,7 @@ use crate::{
     process::signal::{sig_action::SigActionFlags, signals::Signal},
 };
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct SigDispositions {
     // SigNum -> SigAction
     map: [SigAction; COUNT_ALL_SIGS],

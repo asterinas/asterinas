@@ -5,7 +5,7 @@ use aster_bigtcp::time::Duration;
 use super::options::CongestionControl;
 use crate::prelude::*;
 
-#[derive(Debug, Clone, Copy, CopyGetters, Setters)]
+#[derive(Clone, Copy, CopyGetters, Debug, Setters)]
 #[get_copy = "pub"]
 #[set = "pub"]
 pub(super) struct TcpOptionSet {
@@ -52,7 +52,7 @@ const TCP_TIMEOUT_INIT: Duration = Duration::from_secs(1);
 const TCP_RTO_MAX: Duration = Duration::from_secs(120);
 
 /// The number of retransmits.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct Retrans(u8);
 
 impl Retrans {

@@ -27,7 +27,7 @@ use crate::{
     vm::vmo::Vmo,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Metadata {
     /// The inode number, which uniquely identifies the file within the filesystem.
     ///
@@ -586,7 +586,7 @@ impl Extension {
 }
 
 /// A symbolic link.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum SymbolicLink {
     /// A plain text.
     ///
@@ -604,7 +604,7 @@ pub enum SymbolicLink {
 ///
 /// Each mode determines whether the target disk space within a file
 /// will be allocated, deallocated, or zeroed, among other operations.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FallocMode {
     /// Allocates disk space within the range specified.
     Allocate,

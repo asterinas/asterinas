@@ -16,7 +16,7 @@ pub struct SigStack {
     size: usize,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum SigStackStatus {
     /// The stack is enabled but currently inactive.
     Inactive,

@@ -17,9 +17,9 @@ pub type sigset_t = u64;
 // FIXME: this type should be put at suitable place
 pub type clock_t = i64;
 
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Clone, Copy, Default, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct sigaction_t {
     pub handler_ptr: Vaddr,
     pub flags: u32,
@@ -27,9 +27,9 @@ pub struct sigaction_t {
     pub mask: sigset_t,
 }
 
-#[repr(C)]
 #[padding_struct]
-#[derive(Clone, Copy, Pod, Default)]
+#[repr(C)]
+#[derive(Clone, Copy, Default, Pod)]
 pub struct siginfo_t {
     pub si_signo: i32,
     pub si_errno: i32,
@@ -78,8 +78,8 @@ impl siginfo_t {
     }
 }
 
-#[repr(C)]
 #[pod_union]
+#[repr(C)]
 #[derive(Clone, Copy)]
 union siginfo_fields_t {
     bytes: [u8; 128 - size_of::<i32>() * 4],
@@ -99,45 +99,45 @@ impl siginfo_fields_t {
     }
 }
 
-#[derive(Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Pod)]
 struct siginfo_common_t {
     first: siginfo_common_first_t,
     second: siginfo_common_second_t,
 }
 
-#[repr(C)]
 #[pod_union]
+#[repr(C)]
 #[derive(Clone, Copy)]
 union siginfo_common_first_t {
     piduid: siginfo_piduid_t,
     timer: siginfo_timer_t,
 }
 
-#[derive(Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Pod)]
 struct siginfo_piduid_t {
     pid: Pid,
     uid: Uid,
 }
 
-#[derive(Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Pod)]
 struct siginfo_timer_t {
     timerid: i32,
     overrun: i32,
 }
 
-#[repr(C)]
 #[pod_union]
+#[repr(C)]
 #[derive(Clone, Copy)]
 union siginfo_common_second_t {
     value: sigval_t,
     sigchild: siginfo_sigchild_t,
 }
 
-#[repr(C)]
 #[pod_union]
+#[repr(C)]
 #[derive(Clone, Copy)]
 pub union sigval_t {
     sigval_int: i32,
@@ -154,8 +154,8 @@ impl sigval_t {
     }
 }
 
-#[repr(C)]
 #[pod_union]
+#[repr(C)]
 #[derive(Clone, Copy)]
 union siginfo_sigchild_t {
     status: i32,
@@ -163,8 +163,8 @@ union siginfo_sigchild_t {
     stime: clock_t,
 }
 
-#[repr(C)]
 #[padding_struct]
+#[repr(C)]
 #[derive(Clone, Copy, Pod)]
 struct siginfo_sigfault_t {
     addr: Vaddr, //*const c_void
@@ -172,16 +172,16 @@ struct siginfo_sigfault_t {
     first: siginfo_sigfault_first_t,
 }
 
-#[repr(C)]
 #[pod_union]
+#[repr(C)]
 #[derive(Clone, Copy)]
 union siginfo_sigfault_first_t {
     addr_bnd: siginfo_addr_bnd_t,
     pkey: u32,
 }
 
-#[repr(C)]
 #[pod_union]
+#[repr(C)]
 #[derive(Clone, Copy)]
 union siginfo_addr_bnd_t {
     lower: Vaddr, // *const c_void
@@ -190,8 +190,8 @@ union siginfo_addr_bnd_t {
 
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/include/uapi/asm-generic/ucontext.h#L5>
 #[cfg(target_arch = "x86_64")]
-#[derive(Clone, Copy, Debug, Default, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct ucontext_t {
     pub uc_flags: u64,
     pub uc_link: Vaddr, // *mut ucontext_t
@@ -204,8 +204,8 @@ pub struct ucontext_t {
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/ucontext.h>
 #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
 #[padding_struct]
-#[derive(Clone, Copy, Debug, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct ucontext_t {
     pub uc_flags: u64,
     pub uc_link: Vaddr, // *mut ucontext_t
@@ -242,17 +242,17 @@ impl Default for ucontext_t {
 
 pub type stack_t = sigaltstack_t;
 
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct sigaltstack_t {
     pub ss_sp: Vaddr, // *mut c_void
     pub ss_flags: i32,
     pub ss_size: usize,
 }
 
-#[derive(Debug, Clone, Copy, Pod, Default)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct mcontext_t {
     inner: SigContext,
 }
@@ -267,8 +267,8 @@ impl mcontext_t {
     pub fn set_fpu_context_addr(&mut self, addr: Vaddr);
 }
 
-#[derive(Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Pod)]
 pub struct _sigev_thread {
     pub function: Vaddr,
     pub attribute: Vaddr,
@@ -279,8 +279,8 @@ const SIGEV_MAX_SIZE: usize = 64;
 const SIGEV_PREAMBLE_SIZE: usize = size_of::<i32>() * 2 + size_of::<sigval_t>();
 const SIGEV_PAD_SIZE: usize = (SIGEV_MAX_SIZE - SIGEV_PREAMBLE_SIZE) / size_of::<i32>();
 
-#[repr(C)]
 #[pod_union]
+#[repr(C)]
 #[derive(Clone, Copy)]
 pub union _sigev_un {
     pub _pad: [i32; SIGEV_PAD_SIZE],
@@ -302,8 +302,8 @@ impl _sigev_un {
     }
 }
 
-#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
 #[repr(i32)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 pub enum SigNotify {
     SIGEV_SIGNAL = 0,
     SIGEV_NONE = 1,

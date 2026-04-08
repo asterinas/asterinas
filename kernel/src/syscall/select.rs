@@ -213,8 +213,8 @@ fn convert_events_to_rwe(events: IoEvents) -> Result<(bool, bool, bool)> {
 const FD_SETSIZE: usize = 1024;
 const USIZE_BITS: usize = usize::BITS as usize;
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct FdSet {
     fds_bits: [usize; FD_SETSIZE / USIZE_BITS],
 }

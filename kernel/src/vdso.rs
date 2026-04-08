@@ -42,7 +42,7 @@ const DEFAULT_CLOCK_MODE: VdsoClockMode = VdsoClockMode::Tsc;
 static START_SECS_COUNT: Once<u64> = Once::new();
 static VDSO: Once<Arc<Vdso>> = Once::new();
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 enum VdsoClockMode {
     None = 0,
     Tsc = 1,
@@ -53,7 +53,7 @@ enum VdsoClockMode {
 /// This contains information that describes the current time with respect to a certain clock (see
 /// [`ClockId`]).
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct VdsoInstant {
     /// Seconds.
     secs: u64,
@@ -75,7 +75,7 @@ impl VdsoInstant {
 }
 
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct ArchVdsoData {}
 
 /// Plain-old-data vDSO data that will be mapped to userspace.
@@ -85,7 +85,7 @@ struct ArchVdsoData {}
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.2.10/source/include/vdso/datapage.h#L90>.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct VdsoData {
     seq: u32,
 

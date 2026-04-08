@@ -13,7 +13,7 @@ use crate::prelude::*;
 /// the Linux implementation. See
 /// <https://elixir.bootlin.com/linux/v6.10.2/source/include/uapi/linux/in.h#L256>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct CSocketAddrInet {
     /// Address family (AF_INET).
     sin_family: u16,
@@ -45,7 +45,7 @@ impl From<CSocketAddrInet> for (Ipv4Address, PortNum) {
 
 /// IPv4 4-byte address.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct CInetAddr {
     s_addr: [u8; 4],
 }
@@ -66,7 +66,7 @@ impl From<CInetAddr> for Ipv4Address {
 
 /// TCP/UDP port number.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct CPortNum {
     port: [u8; 2],
 }

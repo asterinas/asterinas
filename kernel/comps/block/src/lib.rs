@@ -84,7 +84,7 @@ pub trait BlockDevice: Send + Sync + Any + Debug {
 }
 
 /// Metadata for a block device.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct BlockDeviceMeta {
     /// The upper limit for the number of segments per bio.
     pub max_nr_segments_per_bio: usize,
@@ -100,7 +100,7 @@ impl dyn BlockDevice {
 }
 
 /// The error type which is returned from the APIs of this crate.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
     /// Device registered
     Registered,

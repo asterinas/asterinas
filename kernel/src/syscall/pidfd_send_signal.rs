@@ -156,8 +156,8 @@ enum SignalTarget {
 }
 
 // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/pidfd.h#L19>.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, TryFromInt)]
 #[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 enum PidfdSendSignalFlags {
     Default = 0x0,
     Thread = 0x1,

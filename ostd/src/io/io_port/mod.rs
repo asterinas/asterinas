@@ -193,8 +193,8 @@ pub(crate) use reserve_io_port_range;
 pub(crate) use sensitive_io_port;
 
 #[doc(hidden)]
-#[derive(Debug, Clone, Copy)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct RawIoPortRange {
     pub(crate) begin: u16,
     pub(crate) end: u16,

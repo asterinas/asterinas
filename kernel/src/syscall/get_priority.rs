@@ -110,8 +110,8 @@ impl PriorityTarget {
 }
 
 #[expect(non_camel_case_types)]
-#[derive(Clone, Debug, TryFromInt)]
 #[repr(i32)]
+#[derive(Clone, Debug, TryFromInt)]
 pub(super) enum Which {
     PRIO_PROCESS = 0,
     PRIO_PGRP = 1,

@@ -4,7 +4,7 @@
 #![cfg_attr(not(test), no_std)]
 
 /// Error type for TryFromInt derive macro
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum TryFromIntError {
     InvalidValue,
 }

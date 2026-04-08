@@ -75,9 +75,9 @@ impl Default for ResourceLimits {
     }
 }
 
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[expect(non_camel_case_types)]
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum ResourceType {
     RLIMIT_CPU = 0,
     RLIMIT_FSIZE = 1,
@@ -99,8 +99,8 @@ pub enum ResourceType {
 
 const RLIMIT_COUNT: usize = 16;
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct RawRLimit64 {
     pub cur: u64,
     pub max: u64,

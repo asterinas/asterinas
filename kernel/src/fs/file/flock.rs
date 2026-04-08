@@ -8,7 +8,7 @@ use super::{FileLike, InodeHandle};
 use crate::prelude::*;
 
 /// Represents a file lock (FLOCK) with an owner and type.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct Flock {
     /// Owner of the lock, which is an opened file descriptor.
     owner: Weak<dyn FileLike>,
@@ -189,8 +189,8 @@ impl Default for FlockList {
 }
 
 /// Represents the type of a Flock - either shared or exclusive.
-#[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u16)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FlockType {
     /// Represents a shared lock.
     SharedLock = 0,

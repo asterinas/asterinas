@@ -346,7 +346,7 @@ pub struct TestArgs {
     pub common_args: CommonArgs,
 }
 
-#[derive(Debug, Args, Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Args, Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CargoArgs {
     #[arg(
         long,
@@ -392,7 +392,7 @@ impl CargoArgs {
     }
 }
 
-#[derive(Debug, Args)]
+#[derive(Args, Debug)]
 /// Common args used for build, run, test and debug subcommand
 pub struct CommonArgs {
     #[command(flatten)]

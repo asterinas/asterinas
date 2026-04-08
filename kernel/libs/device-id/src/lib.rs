@@ -15,7 +15,7 @@
 use aster_util::ranged_integer::{RangedU16, RangedU32};
 
 /// A device ID, embedding the major ID and minor ID.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeviceId(u32);
 
 impl DeviceId {

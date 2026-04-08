@@ -113,7 +113,7 @@ pub struct TxLogStore<D> {
 
 /// Superblock of `TxLogStore`.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Debug)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct Superblock {
     journal_area_meta: EditJournalMeta,
     chunk_area_nblocks: usize,
@@ -938,14 +938,14 @@ struct State {
 }
 
 /// The persistent state of a `TxLogStore`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TxLogStoreState {
     log_table: HashMap<TxLogId, TxLogEntry>,
     bucket_table: HashMap<BucketName, Bucket>,
 }
 
 /// A log entry implies the persistent state of the tx log.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TxLogEntry {
     pub bucket: BucketName,
     pub key: Key,
@@ -953,7 +953,7 @@ pub struct TxLogEntry {
 }
 
 /// A bucket contains a set of logs which have the same name.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct Bucket {
     log_ids: HashSet<TxLogId>,
 }
@@ -1082,7 +1082,7 @@ impl TxLogStoreState {
 ////////////////////////////////////////////////////////////////////////////////
 
 /// A persistent edit to the state of `TxLogStore`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TxLogStoreEdit {
     edit_table: HashMap<TxLogId, TxLogEdit>,
 }
@@ -1098,7 +1098,7 @@ pub(super) struct OpenLogCache {
 }
 
 /// The basic unit of a persistent edit to the state of `TxLogStore`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) enum TxLogEdit {
     Create(TxLogCreate),
     Append(TxLogAppend),
@@ -1107,7 +1107,7 @@ pub(super) enum TxLogEdit {
 }
 
 /// An edit that implies a log being created.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct TxLogCreate {
     bucket: BucketName,
     key: Key,
@@ -1115,13 +1115,13 @@ pub(super) struct TxLogCreate {
 }
 
 /// An edit that implies an existing log being appended.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct TxLogAppend {
     root_mht: RootMhtMeta,
 }
 
 /// An edit that implies a log being moved from one bucket to another.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct TxLogMove {
     from: BucketName,
     to: BucketName,
@@ -1294,14 +1294,14 @@ mod journaling {
     pub type Journal<D> = EditJournal<AllEdit, AllState, D, JournalCompactPolicy>;
     pub type JournalCompactPolicy = DefaultCompactPolicy;
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Deserialize, Serialize)]
     pub struct AllState {
         pub chunk_alloc: ChunkAllocState,
         pub raw_log_store: RawLogStoreState,
         pub tx_log_store: TxLogStoreState,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Debug, Deserialize, Serialize)]
     pub struct AllEdit {
         pub chunk_edit: ChunkAllocEdit,
         pub raw_log_edit: RawLogStoreEdit,

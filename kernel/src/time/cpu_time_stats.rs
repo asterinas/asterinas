@@ -15,7 +15,7 @@ use crate::{sched::SchedPolicy, thread::Thread};
 /// All values are measured in jiffies (clock ticks).
 ///
 /// TODO: Implement proper accounting for CPU time
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CpuTimeStats {
     /// Time spent in user mode.
     pub user: Jiffies,

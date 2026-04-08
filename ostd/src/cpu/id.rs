@@ -11,7 +11,7 @@ use crate::util::id_set::Id;
 ///
 /// If converting from/to an integer, the integer must start from 0 and be less
 /// than the number of CPUs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CpuId(u32);
 
 impl CpuId {
@@ -45,7 +45,7 @@ impl From<CpuId> for u32 {
 }
 
 /// The error type returned when converting an out-of-range integer to [`CpuId`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CpuIdFromIntError;
 
 impl TryFrom<usize> for CpuId {

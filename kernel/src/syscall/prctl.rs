@@ -133,7 +133,7 @@ const PR_SET_CHILD_SUBREAPER: i32 = 36;
 const PR_GET_CHILD_SUBREAPER: i32 = 37;
 
 #[expect(non_camel_case_types)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum PrctlCmd {
     PR_SET_PDEATHSIG(SigNum),
     PR_GET_PDEATHSIG(Vaddr),
@@ -152,7 +152,7 @@ pub enum PrctlCmd {
 }
 
 #[repr(u64)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum Dumpable {
     Disable = 0, /* No setuid dumping */
     User = 1,    /* Dump as user of process */

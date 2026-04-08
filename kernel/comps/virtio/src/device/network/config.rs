@@ -64,8 +64,8 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct VirtioNetConfig {
     pub mac: EthernetAddr,
     pub status: Status,

@@ -4,7 +4,7 @@ use clap::ValueEnum;
 
 use std::path::PathBuf;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GrubScheme {
     /// The path of `grub_mkrecue`. Only needed if `boot.method` is `grub`
     pub grub_mkrescue: Option<PathBuf>,
@@ -15,7 +15,7 @@ pub struct GrubScheme {
     pub display_grub_menu: bool,
 }
 
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum BootProtocol {
     Linux,
@@ -24,7 +24,7 @@ pub enum BootProtocol {
     Multiboot2,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Grub {
     pub grub_mkrescue: PathBuf,
     pub boot_protocol: BootProtocol,

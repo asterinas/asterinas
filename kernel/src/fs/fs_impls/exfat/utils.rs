@@ -45,7 +45,7 @@ const YEAR_RANGE: Range<usize> = 9..16;
 
 const EXFAT_TIME_ZONE_VALID: u8 = 1 << 7;
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DosTimestamp {
     // Timestamp at the precision of double seconds.
     pub(super) time: u16,

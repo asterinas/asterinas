@@ -41,9 +41,9 @@ struct Footer<K> {
 }
 
 /// Footer metadata to describe a `SSTable`.
-#[repr(C)]
 #[padding_struct]
-#[derive(Copy, Clone, Pod, Debug, Default)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct FooterMeta {
     num_index: u16,
     index_nblocks: u16,
@@ -760,8 +760,8 @@ impl<K: Debug, V> Debug for SSTable<K, V> {
 }
 
 /// Flag bit for records in SSTable.
-#[derive(PartialEq, Eq, Debug)]
 #[repr(u8)]
+#[derive(Debug, Eq, PartialEq)]
 enum RecordFlag {
     Synced = 7,
     Unsynced = 11,

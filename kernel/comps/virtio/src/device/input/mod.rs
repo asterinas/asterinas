@@ -37,7 +37,7 @@ pub const DEVICE_NAME: &str = "Virtio-Input";
 
 /// Select value used for `device::InputDevice::select_config`.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum InputConfigSelect {
     /// Invalid configuration selection.
     #[expect(dead_code)]
@@ -66,8 +66,8 @@ enum InputConfigSelect {
     AbsInfo = 0x12,
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct VirtioInputConfig {
     /// write only
     select: u8,
@@ -87,9 +87,9 @@ impl VirtioInputConfig {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Pod)]
 #[expect(dead_code)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct AbsInfo {
     min: u32,
     max: u32,

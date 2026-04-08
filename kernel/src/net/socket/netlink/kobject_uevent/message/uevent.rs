@@ -12,8 +12,8 @@ use crate::prelude::*;
 /// `SysObj` action type.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.14/source/include/linux/kobject.h#L53>.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub(super) enum SysObjAction {
     /// Indicates the addition of a new `SysObj` to the system.
     ///

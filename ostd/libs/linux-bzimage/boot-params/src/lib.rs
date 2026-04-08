@@ -17,8 +17,8 @@ pub const LINUX_BOOT_HEADER_MAGIC: u32 = 0x53726448;
 ///
 /// Originally defined in the linux source tree:
 /// `linux/arch/x86/include/uapi/asm/bootparam.h`
-#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct BootParams {
     pub screen_info: ScreenInfo,        /* 0x000 */
     pub apm_bios_info: ApmBiosInfo,     /* 0x040 */
@@ -61,8 +61,8 @@ pub struct BootParams {
 ///
 /// Originally defined in the linux source tree:
 /// `linux/arch/x86/include/uapi/asm/bootparam.h`
-#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct SetupHeader {
     pub setup_sects: u8,
     pub root_flags: u16,
@@ -105,8 +105,8 @@ pub struct SetupHeader {
     pub kernel_info_offset: u32,
 }
 
-#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct ScreenInfo {
     pub orig_x: u8,             /* 0x00 */
     pub orig_y: u8,             /* 0x01 */
@@ -148,8 +148,8 @@ pub struct ScreenInfo {
     pub _reserved: [u8; 2],   /* 0x3e */
 }
 
-#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct ApmBiosInfo {
     pub version: u16,
     pub cseg: u16,
@@ -162,8 +162,8 @@ pub struct ApmBiosInfo {
     pub dseg_len: u16,
 }
 
-#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct IstInfo {
     pub signature: u32,
     pub command: u32,
@@ -171,15 +171,15 @@ pub struct IstInfo {
     pub perf_level: u32,
 }
 
-#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct SysDescTable {
     pub length: u16,
     pub table: [u8; 14],
 }
 
-#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct OlpcOfwHeader {
     pub ofw_magic: u32, /* OFW signature */
     pub ofw_version: u32,
@@ -187,14 +187,14 @@ pub struct OlpcOfwHeader {
     pub irq_desc_table: u32,
 }
 
-#[derive(Copy, Clone, Debug)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
 pub struct EdidInfo {
     pub dummy: [u8; 128],
 }
 
-#[derive(Copy, Clone, Debug)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
 pub struct EfiInfo {
     pub efi_loader_signature: u32,
     pub efi_systab: u32,
@@ -210,8 +210,8 @@ pub struct EfiInfo {
 ///
 /// Originally defined in the linux source tree:
 /// `linux/arch/x86/include/asm/e820/types.h`
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum E820Type {
     Ram = 1,
     Reserved = 2,
@@ -224,8 +224,8 @@ pub enum E820Type {
     ReservedKern = 128,
 }
 
-#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct BootE820Entry {
     pub addr: u64,
     pub size: u64,
@@ -234,8 +234,8 @@ pub struct BootE820Entry {
 
 const E820_MAX_ENTRIES_ZEROPAGE: usize = 128;
 
-#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct EddDeviceParams {
     // TODO: We currently have no plans to support the edd device,
     // and we need unnamed fields (Rust RFC 2102) to implement this
@@ -244,8 +244,8 @@ pub struct EddDeviceParams {
     pub _dummy: [u8; (0xeec - 0xd00) / 6 - 8],
 }
 
-#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 pub struct EddInfo {
     pub device: u8,
     pub version: u8,

@@ -11,9 +11,9 @@ use crate::{
 };
 
 /// `ItimerType` is used to differ the target timer for some timer-related syscalls.
-#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
-#[repr(i32)]
 #[expect(non_camel_case_types)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 pub(super) enum ItimerType {
     ITIMER_REAL = 0,
     ITIMER_VIRTUAL = 1,

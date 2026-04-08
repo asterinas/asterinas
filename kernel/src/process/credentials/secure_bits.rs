@@ -105,7 +105,7 @@ impl Clone for AtomicSecureBitsInner {
 }
 
 /// An atomic wrapper around `SecureBits`.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub(super) struct AtomicSecureBits {
     inner: AtomicSecureBitsInner,
 }

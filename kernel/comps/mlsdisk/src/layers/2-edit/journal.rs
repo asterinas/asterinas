@@ -68,7 +68,7 @@ pub struct EditJournal<
 ///
 /// The metadata is mainly useful when recovering an edit journal after a reboot.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Debug)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct EditJournalMeta {
     /// The number of blocks reserved for storing a snapshot `CryptoBlob`.
     pub snapshot_area_nblocks: usize,
@@ -313,7 +313,7 @@ where
 
 /// The snapshot to be stored in a `CryptoBlob`, including the persistent state
 /// and some metadata.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 struct Snapshot<S> {
     state: S,
     recover_from: BlockId,
@@ -822,12 +822,12 @@ mod tests {
         prelude::*,
     };
 
-    #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     struct XEdit {
         x: i32,
     }
 
-    #[derive(Serialize, Deserialize, Clone, Debug)]
+    #[derive(Clone, Debug, Deserialize, Serialize)]
     struct XState {
         sum: i32,
     }

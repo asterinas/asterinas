@@ -178,9 +178,9 @@ pub fn new_raw_socket_option(
 /// This can refer to either a socket option or a control message level.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h#L343>.
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
 #[expect(non_camel_case_types)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum CSocketOptionLevel {
     SOL_IP = 0,
     SOL_SOCKET = 1,

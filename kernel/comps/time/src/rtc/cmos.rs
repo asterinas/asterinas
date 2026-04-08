@@ -164,7 +164,7 @@ impl CmosAccess {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct CmosData {
     century: Option<NonZeroU8>,
     year: u16,

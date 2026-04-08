@@ -10,7 +10,7 @@ const EXT2_XATTR_MAGIC: u32 = 0xEA020000;
 /// The xattr header of an ext2 inode, organized
 /// at the beginning of an xattr block.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Debug)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct XattrHeader {
     magic: u32,
     ref_count: u32,
@@ -25,7 +25,7 @@ const XATTR_ENTRY_VALUE_GAP: usize = XATTR_ALIGN;
 
 /// The xattr entry of an ext2 inode, organized on an xattr block.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Debug)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct XattrEntry {
     name_len: u8,
     name_index: u8,

@@ -231,7 +231,7 @@ impl Debug for ChunkAlloc {
 ////////////////////////////////////////////////////////////////////////////////
 
 /// The persistent state of a chunk allocator.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ChunkAllocState {
     // A bitmap where each bit indicates whether a corresponding chunk
     // has been allocated.
@@ -326,7 +326,7 @@ impl ChunkAllocState {
 ////////////////////////////////////////////////////////////////////////////////
 
 /// A persistent edit to the state of a chunk allocator.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ChunkAllocEdit {
     edit_table: HashMap<ChunkId, ChunkEdit>,
 }
@@ -334,7 +334,7 @@ pub struct ChunkAllocEdit {
 /// The smallest unit of a persistent edit to the
 /// state of a chunk allocator, which is
 /// a chunk being either allocated or deallocated.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum ChunkEdit {
     Alloc,
     Dealloc,

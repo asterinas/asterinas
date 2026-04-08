@@ -77,7 +77,7 @@ enum State {
     Listen(ListenStream),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct OptionSet {
     socket: SocketOptionSet,
     ip: IpOptionSet,

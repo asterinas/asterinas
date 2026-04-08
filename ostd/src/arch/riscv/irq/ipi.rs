@@ -7,7 +7,7 @@ use spin::Once;
 use crate::{cpu::PinCurrentCpu, irq::IrqLine};
 
 /// Hardware-specific, architecture-dependent CPU ID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct HwCpuId(u32);
 
 impl HwCpuId {

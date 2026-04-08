@@ -14,7 +14,7 @@ impl_socket_options!(
     pub struct Inq(bool);
 );
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum CongestionControl {
     Reno,
     Cubic,

@@ -84,7 +84,7 @@ pub fn get_target_directory() -> PathBuf {
 }
 
 /// Information about an OSDK crate.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct CrateInfo {
     pub name: String,
     pub version: String,

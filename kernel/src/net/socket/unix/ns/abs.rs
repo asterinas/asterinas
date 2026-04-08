@@ -6,7 +6,7 @@ use keyable_arc::KeyableArc;
 
 use crate::prelude::*;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct AbstractHandle(KeyableArc<[u8]>);
 
 impl AbstractHandle {

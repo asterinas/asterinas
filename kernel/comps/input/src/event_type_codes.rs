@@ -87,7 +87,7 @@ impl EventTypes {
 
 /// Synchronization events.
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SynEvent {
     Report = 0x00,
     Config = 0x01,
@@ -97,7 +97,7 @@ pub enum SynEvent {
 
 /// Relative axes.
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RelCode {
     X = 0x00,
     Y = 0x01,
@@ -119,7 +119,7 @@ const REL_MAX: usize = 0x0f;
 const REL_COUNT: usize = REL_MAX + 1;
 
 /// A set of [`RelCode`] represented as a bitmap.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct RelCodeSet(BitVec<u8>);
 
 impl Default for RelCodeSet {
@@ -159,7 +159,7 @@ impl RelCodeSet {
 }
 
 /// A set of [`KeyCode`] represented as a bitmap.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct KeyCodeSet(BitVec<u8>);
 
 impl Default for KeyCodeSet {
@@ -211,7 +211,7 @@ impl KeyCodeSet {
 /// Common keyboard and mouse keys.
 // TODO: Add more uncommon key codes.
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyCode {
     // Reserved key.
     Reserved = 0,
@@ -367,7 +367,7 @@ const KEY_MAX: usize = 0x120;
 /// The number of key codes.
 const KEY_COUNT: usize = KEY_MAX + 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyStatus {
     Released,
     Pressed,

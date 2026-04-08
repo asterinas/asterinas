@@ -33,7 +33,7 @@ use crate::{
 };
 
 /// The global configuration for the OSDK actions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Config {
     pub work_dir: PathBuf,
     pub target_arch: Arch,

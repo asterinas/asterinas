@@ -10,7 +10,7 @@ use super::{
 };
 use crate::prelude::*;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum SigAction {
     #[default]
     Dfl, // Default action
@@ -126,7 +126,7 @@ impl SigActionFlags {
 }
 
 /// The default action to signals
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SigDefaultAction {
     Term, // Default action is to terminate the process.
     Ign,  // Default action is to ignore the signal.

@@ -9,7 +9,7 @@ use crate::{
     prelude::*,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UnixSocketAddr {
     Unnamed,
     Path(Arc<str>),
@@ -76,7 +76,7 @@ pub(super) enum UnixSocketAddrBound {
     Abstract(Arc<AbstractHandle>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) enum UnixSocketAddrKey {
     Path(KeyableArc<dyn Inode>),
     Abstract(KeyableArc<AbstractHandle>),

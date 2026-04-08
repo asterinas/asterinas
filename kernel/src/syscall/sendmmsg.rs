@@ -46,9 +46,9 @@ pub fn sys_sendmmsg(
     }
 }
 
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Clone, Copy, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct CMmsgHdr {
     msg_hdr: CUserMsgHdr,
     msg_len: u32,

@@ -8,7 +8,7 @@ use crate::{PciDeviceLocation, common_device::PciCommonDevice};
 
 /// Vendor specific capability. Users can access this capability area at will,
 /// except for the PCI configuration space which cannot be accessed at will through this structure.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CapabilityVndrData {
     location: PciDeviceLocation,
     cap_ptr: u16,

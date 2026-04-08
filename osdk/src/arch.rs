@@ -10,7 +10,7 @@ use std::fmt::{self, Display, Formatter};
 /// element of the target triple, but akin to the "target_arch" cfg
 /// of Cargo:
 /// <https://doc.rust-lang.org/reference/conditional-compilation.html#target_arch>
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Arch {
     #[serde(rename = "aarch64")]
     Aarch64,

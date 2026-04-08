@@ -4,7 +4,7 @@ use aster_virtio::device::socket::header::VsockDeviceAddr;
 
 use crate::{net::socket::util::SocketAddr, prelude::*};
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct VsockSocketAddr {
     pub cid: u32,
     pub port: u32,

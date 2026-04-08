@@ -56,7 +56,7 @@ pub fn sys_clone3(
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct Clone3Args {
     /// Flags bit mask
     flags: u64,

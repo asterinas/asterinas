@@ -12,9 +12,9 @@ use crate::{
 
 /// Standard well-defined IP protocols.
 /// From <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/in.h>.
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum Protocol {
     IPPROTO_IP = 0,         /* Dummy protocol for TCP		*/
     IPPROTO_ICMP = 1,       /* Internet Control Message Protocol	*/
@@ -46,9 +46,9 @@ pub enum Protocol {
 
 /// Socket types.
 /// From <https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/net.h>.
-#[repr(i32)]
 #[expect(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum SockType {
     /// Stream socket
     SOCK_STREAM = 1,
@@ -77,9 +77,9 @@ bitflags! {
     }
 }
 
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Clone, Copy, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct CUserMsgHdr {
     /// Pointer to socket address structure
     pub msg_name: Vaddr,

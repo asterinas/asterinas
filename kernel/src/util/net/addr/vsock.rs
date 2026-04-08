@@ -5,7 +5,7 @@ use crate::{net::socket::vsock::VsockSocketAddr, prelude::*};
 
 /// VSOCK socket address.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct CSocketAddrVm {
     /// Address family (AF_VSOCK).
     svm_family: u16,

@@ -35,7 +35,7 @@ mod resolver;
 ///
 /// Each `Path` corresponds to a node in the VFS tree, and a single node
 /// may have multiple `Path` instances referencing it due to mount operations.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Path {
     mount: Arc<Mount>,
     dentry: Arc<Dentry>,

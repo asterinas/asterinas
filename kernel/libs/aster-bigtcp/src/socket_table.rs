@@ -23,7 +23,7 @@ pub type SocketHash = u32;
 /// Note that two `TcpListener`s cannot listen on the same address
 /// even if both sockets set SO_REUSEADDR to true,
 /// so there cannot be multiple listeners with the same `ListenerKey`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ListenerKey {
     addr: IpAddress,
     port: PortNum,
@@ -54,7 +54,7 @@ impl From<IpListenEndpoint> for ListenerKey {
 }
 
 /// A unique key for identifying a `TcpConnection`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct ConnectionKey {
     local_addr: IpAddress,
     local_port: PortNum,

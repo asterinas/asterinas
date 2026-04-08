@@ -42,8 +42,8 @@ pub fn geturandom(writer: &mut VmWriter) -> Result<usize> {
 // TODO: Support true randomness by collecting environment noise.
 pub use geturandom as getrandom;
 
-#[derive(Debug, Copy, Clone)]
 #[expect(dead_code)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum MemFile {
     Mem,
     Kmem,

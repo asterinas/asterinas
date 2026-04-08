@@ -20,9 +20,9 @@ mod io {
     use super::*;
 
     /// A dummy Pod struct for testing complex types.
-    #[repr(C)]
     #[padding_struct]
-    #[derive(Clone, Copy, PartialEq, Debug, Default, Pod)]
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Pod)]
     pub struct TestPodStruct {
         pub a: u32,
         pub b: u64,

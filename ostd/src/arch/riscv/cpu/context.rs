@@ -21,17 +21,17 @@ use crate::{
 };
 
 /// Userspace CPU context, including general-purpose registers and exception information.
-#[derive(Clone, Default, Debug)]
 #[repr(C)]
+#[derive(Clone, Debug, Default)]
 pub struct UserContext {
     user_context: RawUserContext,
     exception: Option<CpuException>,
 }
 
 /// General registers.
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
 #[expect(missing_docs)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct GeneralRegs {
     pub zero: usize,
     pub ra: usize,
@@ -398,8 +398,8 @@ pub struct FFpuContext {
 }
 
 /// FPU context for D extension (64-bit floating point).
-#[repr(C)]
 #[padding_struct]
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct DFpuContext {
     f: [u64; 32],
@@ -407,8 +407,8 @@ pub struct DFpuContext {
 }
 
 /// FPU context for Q extension (128-bit floating point).
-#[repr(C)]
 #[padding_struct]
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
 pub struct QFpuContext {
     f: [u64; 64],

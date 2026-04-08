@@ -55,7 +55,7 @@ pub struct CryptoBlob<B> {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Pod)]
+#[derive(Clone, Copy, Pod)]
 struct Header {
     version: VersionId,
     mac: Mac,

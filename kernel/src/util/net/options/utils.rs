@@ -201,7 +201,7 @@ impl WriteToUser for CongestionControl {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct CLinger {
     l_onoff: i32,  // linger active
     l_linger: i32, // how many seconds to linger for

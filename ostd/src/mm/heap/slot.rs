@@ -31,7 +31,7 @@ pub struct HeapSlot {
 }
 
 /// The type and size of the heap slot that should be used for the allocation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SlotInfo {
     /// The slot is from a [`super::Slab`].
     ///

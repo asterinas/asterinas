@@ -255,7 +255,7 @@ impl crate::util::Rng for Rng {
 macro_rules! new_byte_array_type {
     ($name:ident, $n:expr) => {
         #[repr(C)]
-        #[derive(Copy, Clone, Pod, Debug, Default, Deserialize, Serialize)]
+        #[derive(Clone, Copy, Debug, Default, Deserialize, Pod, Serialize)]
         pub struct $name([u8; $n]);
 
         impl core::ops::Deref for $name {

@@ -3,7 +3,7 @@
 use crate::prelude::*;
 
 /// A set of group IDs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GroupIdSet(u32);
 
 impl GroupIdSet {

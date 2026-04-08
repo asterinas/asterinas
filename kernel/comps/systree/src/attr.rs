@@ -8,7 +8,7 @@ use crate::SysPerms;
 
 /// An attribute may be fetched or updated via the methods of `SysNode`
 /// such as `SysNode::read_attr` and  `SysNode::write_attr`.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct SysAttr {
     /// Local ID within the node's `SysAttrSet`. Unique within the set.
     id: u8,
@@ -44,7 +44,7 @@ impl SysAttr {
 /// Manages the attributes associated with a specific node in the `SysTree`.
 ///
 /// This is an immutable collection - use `SysAttrSetBuilder` to create non-empty sets.
-#[derive(Debug, Default, Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct SysAttrSet {
     /// Stores attributes keyed by their name.
     attrs: BTreeMap<SysStr, SysAttr>,

@@ -40,7 +40,7 @@ pub struct NetlinkSocket<P: SupportedNetlinkProtocol> {
     pseudo_path: Path,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct OptionSet {
     socket: SocketOptionSet,
 }

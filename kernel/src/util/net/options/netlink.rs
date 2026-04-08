@@ -11,10 +11,10 @@ use crate::{
 /// Socket options for netlink socket.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/netlink.h#L149>.
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
 #[expect(clippy::upper_case_acronyms)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum CNetlinkOptionName {
     ADD_MEMBERSHIP = 1,
     DROP_MEMBERSHIP = 2,

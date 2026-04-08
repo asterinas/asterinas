@@ -158,7 +158,7 @@ pub(super) fn init() {
 /// Root Inode ID.
 const ROOT_INO: u64 = 1;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PseudoInodeType {
     Root,
     Pipe,

@@ -241,7 +241,7 @@ pub fn sys_epoll_pwait2(
 // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/include/uapi/linux/eventpoll.h#L71-L81>.
 #[cfg_attr(target_arch = "x86_64", repr(packed))]
 #[cfg_attr(not(target_arch = "x86_64"), padding_struct)]
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 struct c_epoll_event {
     events: u32,
     data: u64,

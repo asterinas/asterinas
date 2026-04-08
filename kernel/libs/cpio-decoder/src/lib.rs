@@ -281,7 +281,7 @@ impl FileMetadata {
 
 /// The type of the file.
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, TryFromInt)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, TryFromInt)]
 pub enum FileType {
     /// FIFO special file
     FiFo = 0o010000,

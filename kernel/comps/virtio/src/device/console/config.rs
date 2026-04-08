@@ -20,8 +20,8 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct VirtioConsoleConfig {
     pub cols: u16,
     pub rows: u16,

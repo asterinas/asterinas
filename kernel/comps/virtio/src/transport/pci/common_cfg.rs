@@ -6,8 +6,8 @@ use ostd::io::IoMem;
 use super::capability::VirtioPciCapabilityData;
 use crate::transport::pci::capability::VirtioPciCpabilityType;
 
-#[derive(Debug, Default, Copy, Clone, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct VirtioPciCommonCfg {
     pub device_feature_select: u32,
     pub device_features: u32,

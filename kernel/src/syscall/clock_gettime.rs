@@ -35,9 +35,9 @@ pub fn sys_clock_gettime(
 }
 
 // The hard-coded clock IDs.
-#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
-#[repr(i32)]
 #[expect(non_camel_case_types)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 pub enum ClockId {
     CLOCK_REALTIME = 0,
     CLOCK_MONOTONIC = 1,
@@ -97,8 +97,8 @@ impl TryFrom<clockid_t> for DynamicClockIdInfo {
     }
 }
 
-#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
 #[repr(i32)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 pub enum DynamicClockType {
     Profiling = 0,
     Virtual = 1,

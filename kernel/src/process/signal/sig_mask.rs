@@ -28,7 +28,7 @@ pub type SigMask = SigSet;
 /// Because that all the signal numbers are in the range of 1 to 64, casting
 /// a signal set from `u64` to `SigSet` will always succeed.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Pod)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Pod)]
 pub struct SigSet {
     bits: u64,
 }

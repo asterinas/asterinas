@@ -55,7 +55,7 @@ use core::ops::Mul;
 /// `mult * c` will not result in numeric overflow (i.e., `mult * c` will stay below MAX_U64).
 ///
 /// This is how `Coeff` achieves accuracy and efficiency at the same time.
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct Coeff {
     mult: u32,
     shift: u32,

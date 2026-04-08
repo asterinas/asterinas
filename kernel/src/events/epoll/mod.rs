@@ -8,7 +8,7 @@ mod file;
 pub use file::EpollFile;
 
 /// An epoll control command.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EpollCtl {
     Add(FileDesc, EpollEvent, EpollFlags),
     Del(FileDesc),
@@ -29,7 +29,7 @@ bitflags! {
 ///
 /// This could be used as either an input of epoll ctl or an output of epoll wait.
 /// The memory layout is compatible with that of C's struct epoll_event.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EpollEvent {
     /// I/O events.
     ///

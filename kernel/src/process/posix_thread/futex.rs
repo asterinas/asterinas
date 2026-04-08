@@ -21,7 +21,7 @@ const FUTEX_BITSET_MATCH_ANY: FutexBitSet = 0xFFFF_FFFF;
 
 /// Specifies whether a futex is scoped to the current process or shared through
 /// its backing mapping.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FutexVisibility {
     /// Uses the calling process's private futex namespace.
     Private,
@@ -194,9 +194,9 @@ struct FutexWakeOpEncode {
     cmparg: u32,
 }
 
-#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
-#[repr(u32)]
 #[expect(non_camel_case_types)]
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 enum FutexWakeOp {
     /// Calculate `res = oparg`.
     FUTEX_OP_SET = 0,
@@ -210,9 +210,9 @@ enum FutexWakeOp {
     FUTEX_OP_XOR = 4,
 }
 
-#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
-#[repr(u32)]
 #[expect(non_camel_case_types)]
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 enum FutexWakeCmp {
     /// If (oldval == cmparg) do wake.
     FUTEX_OP_CMP_EQ = 0,
@@ -554,7 +554,7 @@ impl FutexItem {
 }
 
 /// The identity used for futex namespace and backing selection.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 enum FutexIdentity {
     Private { vmar: VmarSnapshot, addr: Vaddr },
     SharedLocal { vmar: VmarSnapshot, addr: Vaddr },
@@ -562,7 +562,7 @@ enum FutexIdentity {
 }
 
 /// The lookup key used for futex bucket selection and matching.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct FutexKey {
     /// A hash value deterministically computed from the futex identity.
     hash: usize,
@@ -688,9 +688,9 @@ impl FutexIdentity {
 }
 
 // Reference: <https://elixir.bootlin.com/linux/v6.18.2/source/include/uapi/linux/futex.h#L11>
-#[derive(PartialEq, Debug, Clone, Copy, TryFromInt)]
-#[repr(u32)]
 #[expect(non_camel_case_types)]
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 pub enum FutexOp {
     FUTEX_WAIT = 0,
     FUTEX_WAKE = 1,

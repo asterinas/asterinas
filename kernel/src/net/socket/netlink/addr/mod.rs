@@ -10,7 +10,7 @@ use crate::{net::socket::util::SocketAddr, prelude::*};
 ///
 /// The address contains the port number for unicast
 /// and the group IDs for multicast.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NetlinkSocketAddr {
     port: PortNum,
     groups: GroupIdSet,

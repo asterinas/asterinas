@@ -190,7 +190,7 @@ fn handle_keyboard_input(_trap_frame: &TrapFrame) {
 /// A scan code in the Scan Code Set 1.
 ///
 /// Reference: <https://wiki.osdev.org/PS/2_Keyboard#Scan_Code_Set_1>.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct ScanCode(u8);
 
 impl ScanCode {
@@ -221,7 +221,7 @@ impl ScanCode {
 }
 
 /// Scancode value and relevant modifier states.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct ScancodeInfo {
     scancode: ScanCode,
     key_status: KeyStatus,

@@ -14,8 +14,8 @@ use crate::prelude::*;
 ///  > values in elf.h.
 #[expect(non_camel_case_types)]
 #[expect(dead_code)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AuxKey {
     AT_IGNORE = 1,    /* entry should be ignored */
     AT_EXECFD = 2,    /* file descriptor of program */
@@ -53,7 +53,7 @@ impl AuxKey {
     pub(super) const AT_NULL: u8 = 0;
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct AuxVec {
     table: BTreeMap<AuxKey, u64>,
 }

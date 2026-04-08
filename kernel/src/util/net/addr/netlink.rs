@@ -8,7 +8,7 @@ use crate::{
 
 /// Netlink socket address.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct CSocketAddrNetlink {
     /// Address family (AF_NETLINK).
     nl_family: u16,

@@ -401,7 +401,7 @@ pub trait LocalRunQueue<T = Task> {
 }
 
 /// Possible triggers of an `enqueue` action.
-#[derive(PartialEq, Copy, Clone)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum EnqueueFlags {
     /// Spawn a new task.
     Spawn,
@@ -410,7 +410,7 @@ pub enum EnqueueFlags {
 }
 
 /// Possible triggers of an `update_current` action.
-#[derive(PartialEq, Copy, Clone)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum UpdateFlags {
     /// Timer interrupt.
     Tick,

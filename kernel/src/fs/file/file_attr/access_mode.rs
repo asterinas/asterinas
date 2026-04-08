@@ -5,8 +5,8 @@ use aster_rights::Rights;
 use crate::prelude::*;
 
 #[expect(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AccessMode {
     /// Read only
     O_RDONLY = 0,

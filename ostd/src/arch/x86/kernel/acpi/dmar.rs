@@ -40,9 +40,9 @@ pub enum Remapping {
     Sidp(Sidp),
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(u16)]
 #[expect(clippy::upper_case_acronyms)]
+#[repr(u16)]
+#[derive(Clone, Copy, Debug)]
 pub enum RemappingType {
     DRHD = 0,
     RMRR = 1,
@@ -53,8 +53,8 @@ pub enum RemappingType {
     SIDP = 6,
 }
 
-#[derive(Debug, Clone, Copy)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
 struct DmarHeader {
     header: SdtHeader,
     host_address_width: u8,

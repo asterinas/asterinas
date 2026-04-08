@@ -25,11 +25,11 @@ use component::{ComponentInitError, init_component};
 use ostd::sync::SpinLock;
 use spin::Once;
 
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct EthernetAddr(pub [u8; 6]);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum NetError {
     NotReady,
     WrongToken,

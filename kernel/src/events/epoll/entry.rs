@@ -43,7 +43,7 @@ impl Display for Entry {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct EntryKey {
     fd: FileDesc,
     file: KeyableWeak<dyn FileLike>,

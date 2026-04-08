@@ -21,7 +21,7 @@ pub fn has_dma_remapping() -> bool {
 }
 
 /// PCI device Location
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct PciDeviceLocation {
     /// Bus number
     pub bus: u8,

@@ -7,8 +7,8 @@ use int_to_c_enum::TryFromInt;
 /// The console mode (text or graphics).
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/include/uapi/linux/kd.h#L45>.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[repr(i32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum ConsoleMode {
     /// The text mode (`KD_TEXT` in Linux). The console will display text characters.
     Text = 0,
@@ -23,8 +23,8 @@ pub enum ConsoleMode {
 /// details, see <https://lct.sourceforge.net/lct/x60.html>.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/include/uapi/linux/kd.h#L81-L85>.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[repr(i32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum KeyboardMode {
     /// The scancode mode (`K_RAW` in Linux).
     Raw = 0,

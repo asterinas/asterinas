@@ -71,5 +71,5 @@ pub fn sys_socketpair(
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct SocketFds(RawFileDesc, RawFileDesc);

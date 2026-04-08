@@ -13,7 +13,7 @@ use crate::device::tty::vt::{
 /// The symbolic representation of a key under a given modifier state.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/drivers/tty/vt/keyboard.c#L69-L77>
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::device::tty::vt::keyboard) enum KeySym {
     /// A direct character output (similar to Linux `k_self`).
     ///
@@ -55,7 +55,7 @@ pub(in crate::device::tty::vt::keyboard) enum KeySym {
 /// Special key actions that are handled by the VT keyboard layer.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/drivers/tty/vt/keyboard.c#L84-L89>
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::device::tty::vt::keyboard) enum SpecialHandler {
     /// Toggle Caps Lock state (similar to Linux `fn_caps_toggle`).
     ToggleCapsLock,
@@ -820,7 +820,7 @@ pub(in crate::device::tty::vt::keyboard) fn get_keysym(
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/include/uapi/linux/keyboard.h#L49-L78>
 #[expect(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::device::tty::vt::keyboard) enum FuncId {
     F1 = 0,
     F2 = 1,

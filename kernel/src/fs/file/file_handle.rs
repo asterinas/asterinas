@@ -150,7 +150,7 @@ impl dyn FileLike {
 }
 
 /// An object that may be memory mapped into the user address space.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum Mappable {
     /// A VMO (i.e., page cache).
     Vmo(Arc<Vmo>),

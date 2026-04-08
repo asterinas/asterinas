@@ -9,7 +9,7 @@ use crate::{cpu::PinCurrentCpu, irq::IrqLine, smp::do_inter_processor_call};
 /// Hardware-specific, architecture-dependent CPU ID.
 ///
 /// This is the Local APIC ID in the x86_64 architecture.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct HwCpuId(u32);
 
 impl HwCpuId {

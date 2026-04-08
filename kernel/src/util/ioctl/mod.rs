@@ -603,7 +603,7 @@ mod test {
     /// The `EVIOCGBIT` ioctl enum.
     type GetEventBits = IoctlEnum<b'E', 0x20, 0x1F, OutData<[u8]>>;
 
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, Eq, PartialEq)]
     enum Action {
         SetControlTty { should_steal_tty: bool },
         GetEventBits { event_type: u8, buffer_length: u16 },

@@ -171,7 +171,7 @@ impl TaskSet {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub enum TidEvent {
     Exit(Tid),
 }

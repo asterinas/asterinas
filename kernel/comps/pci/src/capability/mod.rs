@@ -20,7 +20,7 @@ pub struct Capability {
 }
 
 /// PCI Capability data.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum CapabilityData {
     /// Id:0x01, Power Management
     Pm,

@@ -45,9 +45,9 @@ impl LinuxAbi for UserContext {
 /// `sys_rt_sigreturn`.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/sigcontext.h#L20>
+#[padding_struct]
 #[repr(C)]
 #[repr(align(16))]
-#[padding_struct]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct SigContext {
     pub pc: usize,

@@ -6,13 +6,13 @@ use super::{Boot, BootScheme, Grub, GrubScheme, Qemu, QemuScheme, inherit_option
 
 use crate::{cli::CommonArgs, config::Arch};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ActionChoice {
     Run,
     Test,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BuildScheme {
     pub profile: Option<String>,
     #[serde(default)]
@@ -30,7 +30,7 @@ pub struct BuildScheme {
     pub rustflags: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Build {
     pub profile: String,
     #[serde(default)]
@@ -134,7 +134,7 @@ impl BuildScheme {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ActionScheme {
     pub boot: Option<BootScheme>,
     pub grub: Option<GrubScheme>,
@@ -142,7 +142,7 @@ pub struct ActionScheme {
     pub build: Option<BuildScheme>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Action {
     pub boot: Boot,
     pub grub: Grub,

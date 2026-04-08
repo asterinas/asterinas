@@ -455,8 +455,8 @@ unsafe fn delay_drop<P: NonNullPtr + Send>(pointer: NonNull<<P as NonNullPtr>::T
 ///
 /// [`RcuDrop<T>`] is guaranteed to have the same layout as `T`. You can also
 /// access the inner value safely via [`RcuDrop<T>`].
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RcuDrop<T: Send + 'static> {
     value: ManuallyDrop<T>,
 }

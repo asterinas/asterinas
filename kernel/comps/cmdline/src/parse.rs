@@ -48,7 +48,7 @@ impl ParamStorage for AtomicBool {
 }
 
 /// Errors while parsing kernel command line parameters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ParamError {
     InvalidValue,
 }

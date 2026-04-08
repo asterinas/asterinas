@@ -173,7 +173,7 @@ impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
 /// This is a `struct` instead of an `enum` because if trivially representing
 /// the three variants with an `enum`, it would be 24 bytes. To minimize the
 /// memory footprint, we encode all three variants into an 8-byte integer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TlbFlushOp(Vaddr);
 
 // We require the address to be page-aligned, so the in-page offset part of the

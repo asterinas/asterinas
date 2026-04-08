@@ -34,7 +34,7 @@ bitflags! {
 }
 
 #[repr(u32)]
-#[derive(Debug, Copy, Clone, TryFromInt)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 enum ReqType {
     In = 0,
     Out = 1,
@@ -45,7 +45,7 @@ enum ReqType {
 }
 
 #[repr(u8)]
-#[derive(Debug, Eq, PartialEq, Copy, Clone, TryFromInt)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 enum RespStatus {
     /// Ok.
     Ok = 0,
@@ -57,9 +57,9 @@ enum RespStatus {
     _NotReady = 3,
 }
 
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Copy, Clone, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct VirtioBlockConfig {
     /// The number of 512-byte sectors.
     capacity: u64,
@@ -95,16 +95,16 @@ struct VirtioBlockConfig {
     unused1: [u8; 3],
 }
 
-#[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct VirtioBlockGeometry {
     cylinders: u16,
     heads: u8,
     sectors: u8,
 }
 
-#[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct VirtioBlockTopology {
     /// Exponent for physical block per logical block.
     physical_block_exp: u8,
@@ -116,8 +116,8 @@ struct VirtioBlockTopology {
     opt_io_size: u32,
 }
 
-#[derive(Debug, Copy, Clone)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
 struct VirtioBlockFeature {
     support_flush: bool,
 }

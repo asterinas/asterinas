@@ -113,7 +113,7 @@ impl<T> CpuLocal<T, DynamicStorage<T>> {
 const CHUNK_SIZE: usize = PAGE_SIZE;
 
 /// Footer metadata to describe a `SSTable`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct DynCpuLocalMeta;
 crate::impl_frame_meta_for!(DynCpuLocalMeta);
 

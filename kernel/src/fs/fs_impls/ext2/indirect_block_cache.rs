@@ -183,7 +183,7 @@ impl IndirectBlock {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum State {
     /// Indicates a new allocated block which content has not been initialized.
     Uninit,

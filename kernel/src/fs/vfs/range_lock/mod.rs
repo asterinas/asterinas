@@ -11,7 +11,7 @@ use crate::{prelude::*, process::Pid};
 mod range;
 
 /// The metadata of a POSIX advisory file range lock.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct RangeLock {
     /// Owner of the lock, representing the process holding the lock
     owner: Pid,
@@ -410,8 +410,8 @@ impl Default for RangeLockList {
 
 /// Type of file range lock, aligned with Linux kernel.
 /// F_RDLCK = 0, F_WRLCK = 1, F_UNLCK = 2,
-#[derive(Debug, Copy, Clone, PartialEq, TryFromInt)]
 #[repr(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 pub enum RangeLockType {
     ReadLock = 0,
     WriteLock = 1,

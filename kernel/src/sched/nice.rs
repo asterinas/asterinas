@@ -9,7 +9,7 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 ///
 /// It is an integer in the range of [-20, 19]. Process with a smaller nice
 /// value is more favorable in scheduling.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Nice(NiceValue);
 
 pub type NiceValue = RangedI8<-20, 19>;

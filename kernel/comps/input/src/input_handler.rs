@@ -6,7 +6,7 @@ use core::{any::Any, fmt::Debug};
 use crate::{InputDevice, input_dev::InputEvent, unregister_handler_class};
 
 /// Errors that can occur when connecting to an input device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectError {
     /// Device is not compatible with this handler class.
     IncompatibleDevice,
@@ -55,7 +55,7 @@ pub trait InputHandler: Send + Sync + Debug {
 }
 
 /// An input handler bound with the class that created it.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct BoundInputHandler {
     pub(crate) handler: Arc<dyn InputHandler>,
     pub(crate) handler_class: Arc<dyn InputHandlerClass>,

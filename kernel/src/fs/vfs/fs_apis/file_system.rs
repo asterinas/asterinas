@@ -60,7 +60,7 @@ impl Debug for dyn FileSystem {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct SuperBlock {
     pub magic: u64,
     pub bsize: usize,
@@ -153,8 +153,8 @@ impl From<FsFlags> for u32 {
 
 define_atomic_version_of_integer_like_type!(FsFlags, {
     /// An atomic version of `FsFlags`.
-    #[derive(Debug)]
     #[expect(dead_code)]
+    #[derive(Debug)]
     pub struct AtomicFsFlags(AtomicU32);
 });
 

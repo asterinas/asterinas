@@ -26,7 +26,7 @@ use crate::{
 ///
 /// This type defines how mount and unmount events are propagated
 /// from this mount to other mounts.
-#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum MountPropType {
     /// A private type is the default mount type. Mount and unmount events
     /// do not propagate to or from the private mounts.
@@ -96,7 +96,7 @@ impl PerMountFlags {
 /// The policy for updating access times (atime).
 ///
 /// A Mount can only have one of the following atime policies.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AtimePolicy {
     Relatime,
     Noatime,

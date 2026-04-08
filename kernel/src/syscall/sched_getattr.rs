@@ -23,8 +23,8 @@ pub(super) const SCHED_IDLE: u32 = 5;
 // pub(super) const SCHED_DEADLINE: u32 = 6; // Not supported.
 // pub(super) const SCHED_EXT: u32 = 7; // Not supported.
 
-#[derive(Default, Debug, Pod, Clone, Copy)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct LinuxSchedAttr {
     // Size of this structure
     pub(super) size: u32,

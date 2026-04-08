@@ -4,7 +4,7 @@ use crate::prelude::*;
 
 pub const MAX_THREAD_NAME_LEN: usize = 16;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct ThreadName([u8; MAX_THREAD_NAME_LEN]);
 
 impl ThreadName {

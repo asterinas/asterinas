@@ -49,9 +49,9 @@ pub fn sys_madvise(addr: Vaddr, len: usize, behavior: i32, ctx: &Context) -> Res
 }
 
 // Reference: <https://elixir.bootlin.com/linux/v4.8/source/include/uapi/asm-generic/mman-common.h#L37>
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[expect(non_camel_case_types)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 enum MadviseBehavior {
     MADV_NORMAL = 0,     /* no further special treatment */
     MADV_RANDOM = 1,     /* expect random page references */

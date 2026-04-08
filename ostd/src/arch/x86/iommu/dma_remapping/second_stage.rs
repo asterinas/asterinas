@@ -61,8 +61,8 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
-    #[derive(Pod)]
     #[repr(C)]
+    #[derive(Pod)]
     pub struct PteFlags: usize {
         /// Whether accesses to this page must snoop processor caches.
         const SNOOP =           1 << 11;
@@ -92,8 +92,8 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, Pod, Default)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct PageTableEntry(usize);
 
 /// Parses a bit-flag bits `val` in the representation of `from` to `to` in bits.

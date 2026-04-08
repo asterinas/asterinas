@@ -10,7 +10,7 @@ use crate::prelude::*;
 pub type ClusterID = u32;
 pub(super) const FAT_ENTRY_SIZE: usize = size_of::<ClusterID>();
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FatValue {
     Free,
     Next(ClusterID),
@@ -54,7 +54,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ExfatChain {
     // current clusterID
     current: ClusterID,

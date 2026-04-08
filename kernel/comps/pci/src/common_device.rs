@@ -122,7 +122,7 @@ impl PciCommonDevice {
 /// A header type is comprised of two pieces of information:
 /// 1. The device type ([`PciDeviceType`]);
 /// 2. Whether the device has multiple functions (`bool`).
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PciHeaderType {
     device_type: PciDeviceType,
     has_multi_funcs: bool,
@@ -158,8 +158,8 @@ impl PciHeaderType {
 /// Represents the type of PCI device, determined by the device's header type.
 ///
 /// Used to distinguish between general devices, PCI-to-PCI bridges, and PCI-to-Cardbus bridges.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PciDeviceType {
     /// General PCI device (header type 0x00).
     GeneralDevice,

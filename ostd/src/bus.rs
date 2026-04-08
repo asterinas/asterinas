@@ -5,7 +5,7 @@
 // TODO: Implement a bus component and move the `BusProbeError` into the module.
 
 /// An error that occurs during bus probing.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum BusProbeError {
     /// The device does not match the expected criteria.
     DeviceNotMatch,

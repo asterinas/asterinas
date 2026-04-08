@@ -3,7 +3,7 @@
 use crate::mm::page_table::PageTableError;
 
 /// The error type which is returned from the APIs of this crate.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
     /// Invalid arguments provided.
     InvalidArgs,

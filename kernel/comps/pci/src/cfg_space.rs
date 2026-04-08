@@ -238,7 +238,7 @@ bitflags! {
 }
 
 /// BAR space in PCI common config space.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum Bar {
     /// Memory BAR
     Memory(Arc<MemoryBar>),
@@ -423,7 +423,7 @@ impl MemoryBar {
 }
 
 /// The address length of a memory BAR (32 bits or 64 bits).
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AddrLen {
     /// 32 bits
     Bits32,
@@ -432,7 +432,7 @@ pub enum AddrLen {
 }
 
 /// I/O port BAR.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct IoBar {
     base: u32,
     size: u32,

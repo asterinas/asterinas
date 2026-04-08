@@ -232,7 +232,7 @@ fn handle_mouse_input(_trap_frame: &TrapFrame) {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum MouseType {
     Standard,
     IntelliMouse,

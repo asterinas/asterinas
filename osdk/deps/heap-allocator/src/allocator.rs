@@ -18,8 +18,8 @@ use ostd::{
 
 use crate::slab_cache::SlabCache;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(usize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum CommonSizeClass {
     Bytes8 = 8,
     Bytes16 = 16,

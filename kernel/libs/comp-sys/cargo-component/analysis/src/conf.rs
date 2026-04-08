@@ -9,7 +9,7 @@ use toml::Value;
 
 pub static CONFIG: OnceCell<Config> = OnceCell::new();
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Config {
     components: BTreeMap<String, ComponentName>,
     whitelists: BTreeMap<Ident, WhiteList>,
@@ -105,7 +105,7 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct WhiteList {
     components: BTreeMap<String, bool>,
 }
@@ -128,7 +128,7 @@ impl WhiteList {
 }
 
 // rust crate name does not allow '-', so when we store ,all '-' will be replaced with '_'
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Path {
     segments: Vec<String>,
 }

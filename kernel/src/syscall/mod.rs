@@ -353,7 +353,7 @@ pub struct SyscallArgument {
 }
 
 /// Syscall return
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum SyscallReturn {
     /// return isize, this value will be used to set rax
     Return(isize),

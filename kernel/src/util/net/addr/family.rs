@@ -10,9 +10,9 @@ use crate::{current_userspace, net::socket::util::SocketAddr, prelude::*};
 /// Address family.
 ///
 /// See <https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h>.
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
 #[expect(non_camel_case_types)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum CSocketAddrFamily {
     AF_UNSPEC = 0,
     /// Unix domain sockets
@@ -119,7 +119,7 @@ const ADDR_MAX_LEN: usize = 128;
 /// The size and layout of this structure is specified by RFC 3493. For details, see
 /// <https://datatracker.ietf.org/doc/html/rfc3493#section-3.10>.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 struct Storage {
     sa_family: u16,
     bytes: [u8; ADDR_MAX_LEN - 2],

@@ -19,8 +19,8 @@ use crate::{
 
 /// Bit 0 is `Present` bit, indicating whether this entry is present.
 /// Bit 63:12 is the context-table pointer pointing to this bus's context-table.
-#[derive(Pod, Clone, Copy)]
 #[repr(C)]
+#[derive(Clone, Copy, Pod)]
 pub struct RootEntry(u128);
 
 impl RootEntry {
@@ -173,8 +173,8 @@ impl RootTable {
 /// 0-----0: Present
 /// ```
 ///
-#[derive(Pod, Clone, Copy)]
 #[repr(C)]
+#[derive(Clone, Copy, Pod)]
 pub struct ContextEntry(u128);
 
 impl ContextEntry {

@@ -43,7 +43,7 @@ pub fn derive(attrs: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// // Internal private union
 /// #[repr(C)]
-/// #[derive(FromBytes, KnownLayout, Immutable)]
+/// #[derive(FromBytes, Immutable, KnownLayout)]
 /// union __Data__ {
 ///     value: u64,
 ///     bytes: [u8; 4],
@@ -51,7 +51,7 @@ pub fn derive(attrs: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// // Public wrapper struct that provides safe access
 /// #[repr(transparent)]
-/// #[derive(FromBytes, KnownLayout, Immutable, IntoBytes)]
+/// #[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
 /// pub struct Data(<ArrayFactory<
 ///        { align_of::<__Data__>() },
 ///        { size_of::<__Data__>() / (align_of::<__Data__>()) },

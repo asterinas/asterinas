@@ -41,7 +41,7 @@ pub type Str64 = FixedStr<64>;
 ///
 /// The string is terminated with a null byte.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Pod)]
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Pod)]
 pub struct FixedCStr<const N: usize>([u8; N]);
 
 impl<const N: usize> FixedCStr<N> {
@@ -122,7 +122,7 @@ impl<const N: usize> Debug for FixedCStr<N> {
 
 /// An owned string with a fixed capacity of `N`.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Pod)]
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd, Pod)]
 pub struct FixedStr<const N: usize>([u8; N]);
 
 impl<const N: usize> FixedStr<N> {

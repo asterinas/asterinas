@@ -36,7 +36,7 @@ mod test;
 
 pub(crate) mod boot_pt;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PageTableError {
     /// The provided virtual address range is invalid.
     InvalidVaddrRange(Vaddr, Vaddr),
@@ -528,7 +528,7 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
 /// to/from architecture-specific PTEs via the [`PteTrait`]. This is a scalar
 /// value that can be cloned or compared, and does not own the underlying page
 /// table node or mapped item if present.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PteScalar {
     /// A PTE that is considered absent by the MMU.
     Absent,

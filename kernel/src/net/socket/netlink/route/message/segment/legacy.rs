@@ -6,8 +6,8 @@ use crate::prelude::*;
 /// `rtgenmsg` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L548>.
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct CRtGenMsg {
     pub family: u8,
 }

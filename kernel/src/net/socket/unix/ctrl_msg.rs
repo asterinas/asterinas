@@ -183,9 +183,9 @@ impl CredMessage {
 /// Control message types.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/linux/socket.h#L178>.
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
 #[expect(non_camel_case_types)]
+#[repr(i32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 enum CControlType {
     SCM_RIGHTS = 1,
     SCM_CREDENTIALS = 2,

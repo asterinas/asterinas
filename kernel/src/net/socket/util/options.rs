@@ -21,7 +21,7 @@ use crate::{
     process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread},
 };
 
-#[derive(Debug, Clone, CopyGetters, Setters)]
+#[derive(Clone, CopyGetters, Debug, Setters)]
 #[get_copy = "pub"]
 #[set = "pub"]
 pub struct SocketOptionSet {

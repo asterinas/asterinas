@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 /// Individual pixel data containing raw channel values.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Pixel {
     pub red: u8,
     pub green: u8,
@@ -9,7 +9,7 @@ pub struct Pixel {
 }
 
 /// Pixel format that defines the memory layout of each pixel in the framebuffer.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PixelFormat {
     /// Each pixel uses 8 bits to represent its grayscale intensity, ranging from 0 (black) to 255 (white).
     Grayscale8,
@@ -22,7 +22,7 @@ pub enum PixelFormat {
 }
 
 /// A rendered pixel in a specific format.
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct RenderedPixel {
     buf: [u8; 4],
     len: u8,

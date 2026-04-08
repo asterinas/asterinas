@@ -163,8 +163,8 @@ mod feature_validation {
 mod test {
     use crate::prelude::*;
 
-    #[ktest]
     #[expect(clippy::eq_op)]
+    #[ktest]
     fn trivial_assertion() {
         assert_eq!(0, 0);
     }

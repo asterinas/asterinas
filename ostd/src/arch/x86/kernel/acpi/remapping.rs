@@ -18,7 +18,7 @@ use ostd_pod::Pod;
 ///
 /// A DRHD structure uniquely represents a remapping hardware unit present in the platform.
 /// There must be at least one instance of this structure for each PCI segment in the platform.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Drhd {
     header: DrhdHeader,
     device_scopes: Vec<DeviceScope>,
@@ -31,7 +31,7 @@ impl Drhd {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct DrhdHeader {
     typ: u16,
     length: u16,
@@ -46,14 +46,14 @@ pub struct DrhdHeader {
 /// BIOS allocated reserved memory ranges that may be DMA targets.
 /// It may report each such reserved memory region through the RMRR structures, along
 /// with the devices that requires access to the specified reserved memory region.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Rmrr {
     header: RmrrHeader,
     device_scopes: Vec<DeviceScope>,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct RmrrHeader {
     typ: u16,
     length: u16,
@@ -67,14 +67,14 @@ pub struct RmrrHeader {
 ///
 /// This structure is applicable only for platforms supporting Device-TLBs as reported through the
 /// Extended Capability Register.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Atsr {
     header: AtsrHeader,
     device_scopes: Vec<DeviceScope>,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct AtsrHeader {
     typ: u16,
     length: u16,
@@ -89,9 +89,9 @@ pub struct AtsrHeader {
 /// where Remapping hardware units spans across nodes.
 /// This optional structure provides the association between each Remapping hardware unit (identified
 /// by its respective Base Address) and the proximity domain to which that hardware unit belongs.
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Clone, Copy, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct Rhsa {
     typ: u16,
     length: u16,
@@ -104,14 +104,14 @@ pub struct Rhsa {
 ///
 /// An ANDD structure uniquely represents an ACPI name-space
 /// enumerated device capable of issuing DMA requests in the platform.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Andd {
     header: AnddHeader,
     acpi_object_name: String,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct AnddHeader {
     typ: u16,
     length: u16,
@@ -123,14 +123,14 @@ pub struct AnddHeader {
 ///
 /// The SATC reporting structure identifies devices that have address translation cache (ATC),
 /// as defined by the PCI Express Base Specification.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Satc {
     header: SatcHeader,
     device_scopes: Vec<DeviceScope>,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct SatcHeader {
     typ: u16,
     length: u16,
@@ -144,14 +144,14 @@ pub struct SatcHeader {
 /// The (SIDP) reporting structure identifies devices that have special
 /// properties and that may put restrictions on how system software must configure remapping
 /// structures that govern such devices in a platform where remapping hardware is enabled.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Sidp {
     header: SidpHeader,
     device_scopes: Vec<DeviceScope>,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct SidpHeader {
     typ: u16,
     length: u16,
@@ -161,14 +161,14 @@ pub struct SidpHeader {
 
 /// The Device Scope Structure is made up of Device Scope Entries. Each Device Scope Entry may be
 /// used to indicate a PCI endpoint device
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct DeviceScope {
     header: DeviceScopeHeader,
     path: Vec<(u8, u8)>,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct DeviceScopeHeader {
     typ: u8,
     length: u8,

@@ -9,9 +9,9 @@ use aster_pci::{
 };
 use log::warn;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(u8)]
 #[expect(clippy::enum_variant_names)]
+#[repr(u8)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum VirtioPciCpabilityType {
     CommonCfg = 1,
     NotifyCfg = 2,
@@ -20,7 +20,7 @@ pub enum VirtioPciCpabilityType {
     PciCfg = 5,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct VirtioPciCapabilityData {
     cfg_type: VirtioPciCpabilityType,
     offset: u32,

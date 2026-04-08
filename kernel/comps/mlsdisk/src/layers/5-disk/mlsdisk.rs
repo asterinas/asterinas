@@ -780,7 +780,7 @@ pub(super) struct Record {
 
 /// The key of a `Record`.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Pod)]
 pub(super) struct RecordKey {
     /// Logical block address of user data block.
     pub lba: Lba,
@@ -788,7 +788,7 @@ pub(super) struct RecordKey {
 
 /// The value of a `Record`.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Debug)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct RecordValue {
     /// Host block address of user data block.
     pub hba: Hba,

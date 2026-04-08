@@ -58,7 +58,7 @@ mod ioctl_defs {
 
 // Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/include/uapi/linux/input.h#L28>
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct EvdevEvent {
     sec: u64,
     usec: u64,
@@ -82,7 +82,7 @@ impl EvdevEvent {
 
 // Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/drivers/input/evdev.c#L181-L189>
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 enum EvdevClock {
     Realtime = 0,
     Monotonic = 1,

@@ -129,7 +129,7 @@ impl TypeFlagItem {
         let ident = self.ident.clone();
         quote!(
             #(#attributes)*
-            #[derive(Copy, Clone, Debug)]
+            #[derive(Clone, Copy, Debug)]
             #vis struct #ident {}
         )
     }

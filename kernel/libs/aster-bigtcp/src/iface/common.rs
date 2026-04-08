@@ -348,7 +348,7 @@ impl PortState {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.18/source/include/uapi/linux/if_arp.h#L30>
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum InterfaceType {
     // Arp protocol hardware identifiers
     /// from KA9Q: NET/ROM pseudo

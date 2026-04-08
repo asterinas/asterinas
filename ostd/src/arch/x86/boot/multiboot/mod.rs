@@ -171,8 +171,8 @@ fn parse_memory_regions(mb1_info: &MultibootLegacyInfo) -> MemoryRegionArray {
 ///         +-------------------+
 ///```
 ///
-#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 struct MultibootLegacyInfo {
     /// Indicate whether the below field exists.
     flags: u32,
@@ -257,8 +257,8 @@ impl MultibootLegacyInfo {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 struct VbeTable {
     control_info: u32,
     mode_info: u32,
@@ -268,8 +268,8 @@ struct VbeTable {
     interface_len: u16,
 }
 
-#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
 struct FramebufferTable {
     addr: u64,
     pitch: u32,
@@ -338,7 +338,7 @@ impl MemoryEntry {
 }
 
 /// A memory entry iterator in the memory map header info region.
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 struct MemoryEntryIter {
     cur_ptr: *const u8,
     region_end: *const u8,

@@ -13,7 +13,7 @@ use crate::{
 pub trait Set {}
 
 /// An non-empty type-level set.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Cons<T, S: Set>(PhantomData<(T, S)>);
 
 impl<T, S: Set> Cons<T, S> {
@@ -24,7 +24,7 @@ impl<T, S: Set> Cons<T, S> {
 }
 
 /// An empty type-level set.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Nil;
 
 impl<T, S: Set> Set for Cons<T, S> {}

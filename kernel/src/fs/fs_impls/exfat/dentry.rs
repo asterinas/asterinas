@@ -20,7 +20,7 @@ use crate::{
 
 pub(super) const DENTRY_SIZE: usize = 32; // directory entry size
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum ExfatDentry {
     File(ExfatFileDentry),
     Stream(ExfatStreamDentry),
@@ -78,7 +78,7 @@ const EXFAT_VENDOR_EXT: u8 = 0xE0;
 const EXFAT_VENDOR_ALLOC: u8 = 0xE1;
 
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct RawExfatDentry {
     pub(super) dentry_type: u8,
     pub(super) value: [u8; 31],
@@ -503,7 +503,7 @@ impl Iterator for ExfatDentryIterator<'_> {
 
 /// On-disk dentry formats
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 // For files & directories
 pub(super) struct ExfatFileDentry {
     pub(super) dentry_type: u8, // 0x85
@@ -541,7 +541,7 @@ pub(super) struct ExfatFileDentry {
 }
 
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 // MUST be immediately follow the FileDentry (the second dentry in a dentry set)
 pub(super) struct ExfatStreamDentry {
     pub(super) dentry_type: u8, // 0xC0
@@ -559,7 +559,7 @@ pub(super) struct ExfatStreamDentry {
 pub type UTF16Char = u16;
 
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 // MUST be immediately follow the StreamDentry in the number of NameLength/15 rounded up
 pub(super) struct ExfatNameDentry {
     pub(super) dentry_type: u8,                                // 0xC1
@@ -568,7 +568,7 @@ pub(super) struct ExfatNameDentry {
 }
 
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct ExfatBitmapDentry {
     pub(super) dentry_type: u8,
     pub(super) flags: u8,
@@ -578,7 +578,7 @@ pub(super) struct ExfatBitmapDentry {
 }
 
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct ExfatUpcaseDentry {
     pub(super) dentry_type: u8,
     pub(super) reserved1: [u8; 3],
@@ -589,7 +589,7 @@ pub(super) struct ExfatUpcaseDentry {
 }
 
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct ExfatVendorExtDentry {
     pub(super) dentry_type: u8,
     pub(super) flags: u8,
@@ -598,7 +598,7 @@ pub(super) struct ExfatVendorExtDentry {
 }
 
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct ExfatVendorAllocDentry {
     pub(super) dentry_type: u8,
     pub(super) flags: u8,
@@ -609,7 +609,7 @@ pub(super) struct ExfatVendorAllocDentry {
 }
 
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct ExfatGenericPrimaryDentry {
     pub(super) dentry_type: u8,
     pub(super) secondary_count: u8,
@@ -621,7 +621,7 @@ pub(super) struct ExfatGenericPrimaryDentry {
 }
 
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct ExfatGenericSecondaryDentry {
     pub(super) dentry_type: u8,
     pub(super) flags: u8,
@@ -631,13 +631,13 @@ pub(super) struct ExfatGenericSecondaryDentry {
 }
 
 #[repr(C, packed)]
-#[derive(Clone, Debug, Default, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct ExfatDeletedDentry {
     pub(super) dentry_type: u8,
     pub(super) reserved: [u8; 31],
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug, Default)]
 pub(super) struct ExfatName(Vec<UTF16Char>);
 
 impl ExfatName {

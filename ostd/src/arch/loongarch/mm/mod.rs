@@ -25,8 +25,8 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
-    #[derive(Pod)]
     #[repr(C)]
+    #[derive(Pod)]
     /// Possible flags for a page table entry.
     pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame is valid.
@@ -142,8 +142,8 @@ pub(crate) fn current_page_table_paddr() -> Paddr {
     pgdl
 }
 
-#[derive(Debug, Clone, Copy, Pod, Default)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(crate) struct PageTableEntry(usize);
 
 /// Parses a bit-flag bits `val` in the representation of `from` to `to` in bits.

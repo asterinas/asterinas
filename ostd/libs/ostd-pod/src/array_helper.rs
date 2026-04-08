@@ -14,29 +14,29 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 /// This type implements the zerocopy traits (`FromBytes`, `IntoBytes`, `Immutable`, `KnownLayout`)
 /// making it safe to transmute to/from byte arrays. It is primarily used internally by the
 /// `ArrayFactory` type system to provide aligned arrays for POD unions.
-#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy)]
 #[repr(transparent)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct U8Array<const N: usize>([u8; N]);
 
 const _: () = assert!(align_of::<U8Array<0>>() == 1);
 
 /// A transparent wrapper around `[u16; N]` with guaranteed 2-byte alignment.
-#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy)]
 #[repr(transparent)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct U16Array<const N: usize>([u16; N]);
 
 const _: () = assert!(align_of::<U16Array<0>>() == 2);
 
 /// A transparent wrapper around `[u32; N]` with guaranteed 4-byte alignment.
-#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy)]
 #[repr(transparent)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct U32Array<const N: usize>([u32; N]);
 
 const _: () = assert!(align_of::<U32Array<0>>() == 4);
 
 /// A transparent wrapper around `[u64; N]` with guaranteed 8-byte alignment.
-#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy)]
 #[repr(transparent)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct U64Array<const N: usize>([u64; N]);
 
 const _: () = assert!(align_of::<U64Array<0>>() == 8);

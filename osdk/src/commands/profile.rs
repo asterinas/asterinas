@@ -138,7 +138,7 @@ fn do_collect_stack_traces(args: &ProfileArgs) {
         .serialize_to(out_args.format(), out_args.cpu_mask, out_file);
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 struct Profile {
     // Index 0: capture; Index 1: CPU ID; Index 2: stack frame
     stack_traces: Vec<HashMap<u32, Vec<String>>>,

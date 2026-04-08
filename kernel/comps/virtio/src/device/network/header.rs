@@ -5,7 +5,7 @@ use int_to_c_enum::TryFromInt;
 
 /// VirtioNet header precedes each packet
 #[repr(C)]
-#[derive(Default, Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct VirtioNetHdr {
     flags: Flags,
     gso_type: u8,
@@ -29,10 +29,10 @@ bitflags! {
     }
 }
 
-#[repr(u8)]
-#[derive(Default, Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
 #[expect(dead_code)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Default, TryFromInt)]
 pub(super) enum GsoType {
     #[default]
     VIRTIO_NET_HDR_GSO_NONE = 0,

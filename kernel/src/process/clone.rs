@@ -99,7 +99,7 @@ bitflags! {
 ///     ---             set_tid_size
 ///     ---             cgroup          See CLONE_INTO_CGROUP
 /// ```
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct CloneArgs {
     pub flags: CloneFlags,
     pub pidfd: Option<Vaddr>,

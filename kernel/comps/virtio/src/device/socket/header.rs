@@ -33,7 +33,7 @@ use super::error::{self, SocketError};
 pub(super) const VIRTIO_VSOCK_HDR_LEN: usize = size_of::<VirtioVsockHdr>();
 
 /// Socket address.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct VsockDeviceAddr {
     /// Context Identifier.
     pub cid: u64,
@@ -44,7 +44,7 @@ pub struct VsockDeviceAddr {
 /// VirtioVsock header precedes the payload in each packet.
 // #[repr(packed)]
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct VirtioVsockHdr {
     pub src_cid: u64,
     pub dst_cid: u64,
@@ -115,8 +115,8 @@ impl VirtioVsockHdr {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[repr(u16)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, TryFromInt)]
 pub(super) enum VirtioVsockOp {
     #[default]
     Invalid = 0,
@@ -151,8 +151,8 @@ bitflags! {
 }
 
 /// Currently only stream sockets are supported. type is 1 for stream socket types.
-#[derive(Copy, Clone, Debug)]
 #[repr(u16)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum VsockType {
     /// Stream sockets provide in-order, guaranteed, connection-oriented delivery without message boundaries.
     Stream = 1,

@@ -79,8 +79,8 @@ pub(crate) struct Cursor<'rcu, C: PageTableConfig> {
 const MAX_NR_LEVELS: usize = 4;
 
 /// A fragment of a page table that can be taken out of the page table.
-#[derive(Debug)]
 #[must_use]
+#[derive(Debug)]
 pub(crate) enum PageTableFrag<C: PageTableConfig> {
     /// A mapped page table item.
     Mapped { va: Vaddr, item: RcuDrop<C::Item> },

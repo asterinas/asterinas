@@ -70,8 +70,8 @@ impl CopyCompat for CurrentUserSpace<'_> {
 }
 
 /// The kernel structure's trailing bytes after [`CopyCompat::write_val_compat`].
-#[must_use]
 #[expect(dead_code)]
+#[must_use]
 pub struct TrailingBytes<'a>(&'a [u8]);
 
 impl TrailingBytes<'_> {

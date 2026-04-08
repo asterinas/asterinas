@@ -213,7 +213,7 @@ impl Connection {
     }
 }
 
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ConnectionID {
     pub local_addr: VsockSocketAddr,
     pub peer_addr: VsockSocketAddr,

@@ -14,7 +14,7 @@ pub const OFFSET_MAX: usize = i64::MAX as usize;
 /// The range is [start, OFFSET_MAX] if only start is set.
 /// The range is [0, end] if only end is set.
 /// The range is [start, end] if both start and end are set.
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct FileRange {
     start: usize,
     end: usize,

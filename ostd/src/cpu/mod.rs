@@ -8,8 +8,8 @@ pub mod local;
 pub use id::{AtomicCpuSet, CpuId, CpuIdFromIntError, CpuSet, PinCurrentCpu, all_cpus, num_cpus};
 
 /// The CPU privilege level: user mode or kernel mode.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum PrivilegeLevel {
     /// User mode.
     User = 0,

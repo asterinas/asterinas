@@ -141,7 +141,7 @@ impl Bio {
 }
 
 /// The error type returned when enqueueing the `Bio`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BioEnqueueError {
     /// The request queue is full
     IsFull,
@@ -357,8 +357,8 @@ impl Debug for BioInner {
 }
 
 /// The type of `Bio`.
-#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 pub enum BioType {
     /// Read sectors from the device.
     Read = 0,
@@ -370,8 +370,8 @@ pub enum BioType {
 }
 
 /// The status of `Bio`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, TryFromInt)]
 #[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum BioStatus {
     /// The initial status for a newly created `Bio`.
     Init = 0,
@@ -388,7 +388,7 @@ pub enum BioStatus {
 }
 
 /// `BioSegment` is the basic memory unit of a block I/O request.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct BioSegment {
     inner: Arc<BioSegmentInner>,
 }
@@ -406,7 +406,7 @@ struct BioSegmentInner {
 }
 
 /// The direction of a bio request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BioDirection {
     /// Read from the backed block device.
     FromDevice,
@@ -742,7 +742,7 @@ pub fn is_sector_aligned(offset: usize) -> bool {
 /// your code can be generic over the _value_ of a const, but not the _type_ of the const.
 /// We choose `u16` because it is reasonably large to represent any alignment value
 /// used in practice.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct AlignedUsize<const N: u16>(usize);
 
 impl<const N: u16> AlignedUsize<N> {

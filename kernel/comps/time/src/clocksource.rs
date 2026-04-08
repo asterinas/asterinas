@@ -174,7 +174,7 @@ impl ClockSource {
 /// elapsed since a reference point (typically the system boot time).
 /// The [`Instant`] is expressed in seconds and the fractional part is
 /// expressed in nanoseconds.
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Instant {
     secs: u64,
     nanos: u32,
@@ -226,7 +226,7 @@ impl Add<Duration> for Instant {
 }
 
 /// The basic properties of `ClockSource`.
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 struct ClockSourceBase {
     freq: u64,
     max_delay_secs: u64,

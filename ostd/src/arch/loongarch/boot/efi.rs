@@ -34,7 +34,7 @@ const DEVICE_TREE_GUID: EfiGuid = efi_guid!(
 );
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 struct EfiGuid {
     b: [u8; 16],
 }

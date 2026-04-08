@@ -18,12 +18,12 @@ use crate::parse::{ParamError, ParseParamValue};
 /// - `"100-2000:2/25"` (range with stride and optional group size)
 ///
 /// The stored representation is a list of segments; expansion is optional.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CpuList {
     segments: Vec<CpuListSegment>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CpuListSegment {
     start: u32,
     end: u32,
@@ -218,7 +218,7 @@ fn parse_u32(s: &str) -> Result<u32, ParamError> {
 /// - `P` = 1024^5
 ///
 /// Case-insensitive.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MetricU64(pub u64);
 
 impl ParseParamValue for MetricU64 {

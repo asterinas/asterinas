@@ -199,7 +199,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum MappedItem {
     Tracked(Frame<dyn AnyFrameMeta>, PageProperty),
     Untracked(Paddr, PagingLevel, PageProperty),

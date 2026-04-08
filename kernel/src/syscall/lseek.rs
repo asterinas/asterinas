@@ -34,9 +34,9 @@ pub fn sys_lseek(
 }
 
 // Reference: <https://elixir.bootlin.com/linux/v6.17.7/source/include/uapi/linux/fs.h#L52>
-#[derive(Clone, Copy, Debug, TryFromInt)]
-#[repr(u32)]
 #[expect(non_camel_case_types)]
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 enum SeekType {
     SEEK_SET = 0,
     SEEK_CUR = 1,

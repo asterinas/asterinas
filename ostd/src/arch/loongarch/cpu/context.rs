@@ -18,9 +18,9 @@ use crate::{
 };
 
 /// General registers
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
 #[expect(missing_docs)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct GeneralRegs {
     pub zero: usize,
     pub ra: usize,
@@ -59,8 +59,8 @@ pub struct GeneralRegs {
 /// CPU exception information.
 //
 // TODO: Refactor the struct into an enum (similar to x86's `CpuException`).
-#[derive(Clone, Copy, Debug)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
 pub struct CpuExceptionInfo {
     /// The type of the exception.
     pub code: Exception,
@@ -88,8 +88,8 @@ impl CpuExceptionInfo {
 }
 
 /// Userspace CPU context, including general-purpose registers and exception information.
-#[derive(Clone, Debug)]
 #[repr(C)]
+#[derive(Clone, Debug)]
 pub struct UserContext {
     user_context: RawUserContext,
     trap: Trap,

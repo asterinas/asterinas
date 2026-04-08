@@ -5,7 +5,7 @@ use int_to_c_enum::TryFromInt;
 use crate::{device::DeviceType, prelude::*};
 
 #[repr(u16)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum InodeType {
     Unknown = 0o000000,
     NamedPipe = 0o010000,

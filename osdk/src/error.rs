@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Errno {
     Cli = 1,
     CreateCrate = 2,

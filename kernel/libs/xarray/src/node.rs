@@ -24,7 +24,7 @@ use crate::{
 /// directly store items are at the lowest height, with a height value of 1.
 /// Each level up from the bottom height increases the height number by 1.
 /// The height of an `XArray` is the height of its head.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct Height {
     height: u8,
 }

@@ -373,7 +373,7 @@ pub fn pid_table_mut() -> MutexGuard<'static, PidTable> {
 }
 
 /// An event emitted when a process exits.
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub enum PidEvent {
     /// A process with the given PID has exited.
     Exit(Pid),

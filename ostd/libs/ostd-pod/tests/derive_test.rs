@@ -7,7 +7,7 @@ use ostd_pod::{FromZeros, IntoBytes, Pod};
 #[test]
 fn pod_derive_simple() {
     #[repr(C)]
-    #[derive(Pod, Debug, Clone, Copy, PartialEq)]
+    #[derive(Clone, Copy, Debug, PartialEq, Pod)]
     struct S1 {
         a: u64,
         b: [u8; 8],
@@ -27,7 +27,7 @@ fn pod_derive_simple() {
 #[test]
 fn pod_derive_generic() {
     #[repr(C)]
-    #[derive(Pod, Clone, Copy, PartialEq, Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq, Pod)]
     struct Item<T: Pod> {
         value: T,
     }
@@ -43,7 +43,7 @@ fn pod_derive_generic() {
 #[test]
 fn pod_derive_zeroed() {
     #[repr(C)]
-    #[derive(Pod, Copy, Clone)]
+    #[derive(Clone, Copy, Pod)]
     struct Data {
         x: u64,
         y: u64,

@@ -108,7 +108,7 @@ impl DirEntryHeader {
 
 /// The type indicator in the `DirEntry`.
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DirEntryFileType {
     Unknown = 0,
     File = 1,

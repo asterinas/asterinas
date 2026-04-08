@@ -4,9 +4,9 @@ use ostd_pod::{FromZeros, IntoBytes, Pod, pod_union};
 
 #[test]
 fn union_roundtrip_from_bytes() {
-    #[repr(C)]
     #[pod_union]
-    #[derive(Copy, Clone)]
+    #[repr(C)]
+    #[derive(Clone, Copy)]
     union U1 {
         a: u32,
         b: u64,
@@ -21,9 +21,9 @@ fn union_roundtrip_from_bytes() {
 
 #[test]
 fn union_field_view_through_bytes() {
-    #[repr(C)]
     #[pod_union]
-    #[derive(Copy, Clone)]
+    #[repr(C)]
+    #[derive(Clone, Copy)]
     union U2 {
         a: u64,
         b: [u8; 8],
@@ -38,9 +38,9 @@ fn union_field_view_through_bytes() {
 
 #[test]
 fn union_mutable_accessor() {
-    #[repr(C)]
     #[pod_union]
-    #[derive(Copy, Clone)]
+    #[repr(C)]
+    #[derive(Clone, Copy)]
     union U3 {
         x: u32,
         y: [u8; 8],

@@ -13,7 +13,7 @@ macro_rules! define_boolean_value {
         $name: ident
     ) => {
         $(#[$attr])*
-        #[derive(Debug, Clone, Copy)]
+        #[derive(Clone, Copy, Debug)]
         pub struct $name(bool);
 
         impl $name {

@@ -5,7 +5,7 @@
 use crate::cfg_space::PciCommonCfgOffset;
 
 /// PCI device location.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct PciDeviceLocation {
     /// Bus number
     pub bus: u8,
@@ -90,7 +90,7 @@ impl PciDeviceLocation {
 }
 
 /// PCI device ID
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PciDeviceId {
     /// Vendor ID
     pub vendor_id: u16,

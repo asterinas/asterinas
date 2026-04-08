@@ -94,8 +94,8 @@ pub enum KtestError {
 }
 
 /// The information of the unit test.
-#[derive(Clone, PartialEq, Debug)]
 #[repr(C)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KtestItemInfo {
     /// The path of the module, not including the function name.
     ///
@@ -113,8 +113,8 @@ pub struct KtestItemInfo {
     pub col: usize,
 }
 
-#[derive(Clone, Debug)]
 #[repr(C)]
+#[derive(Clone, Debug)]
 pub struct KtestItem {
     fn_: fn() -> (),
     should_panic: (bool, Option<&'static str>),

@@ -9,8 +9,8 @@ type CCtrlChar = u8;
 
 bitflags! {
     /// The input flags; `c_iflags` bits in Linux.
-    #[derive(Pod)]
     #[repr(C)]
+    #[derive(Pod)]
     pub struct CInputFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h
         const IGNBRK  = 0x001;			/* Ignore break condition */
@@ -63,7 +63,7 @@ impl Default for COutputFlags {
 
 /// The control flags; `c_cflags` bits in Linux.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct CCtrlFlags(u32);
 
 impl Default for CCtrlFlags {
@@ -111,7 +111,7 @@ pub(super) enum CCtrlSize {
 
 /// The baud part of the control flags ([`CCtrlFlags`]).
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub(super) enum CCtrlBaud {
     // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h#L30
     B0 = 0x00000000, /* hang up */
@@ -171,9 +171,9 @@ impl Default for CLocalFlags {
 }
 
 /// An index for a control character ([`CCtrlChar`]).
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(clippy::upper_case_acronyms)]
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum CCtrlCharId {
     // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L42
     VINTR = 0,
@@ -228,8 +228,8 @@ impl CCtrlCharId {
 /// The termios; `struct termios` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L30>.
-#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub struct CTermios {
     c_iflags: CInputFlags,
     c_oflags: COutputFlags,
@@ -306,8 +306,8 @@ impl CTermios {
 /// A window size; `struct winsize` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termios.h#L15>.
-#[derive(Debug, Clone, Copy, Default, Pod)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct CWinSize {
     ws_row: u16,
     ws_col: u16,
@@ -318,9 +318,9 @@ pub struct CWinSize {
 /// A font operation; `struct console_font_op` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/kd.h#L159>.
-#[repr(C)]
 #[padding_struct]
-#[derive(Debug, Clone, Copy, Default, Pod)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct CFontOp {
     pub(super) op: u32,
     pub(super) flags: u32,

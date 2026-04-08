@@ -259,8 +259,8 @@ impl<D: BlockSet + 'static> WalTxInner<D> {
 }
 
 /// Two content kinds in a WAL.
-#[derive(PartialEq, Eq, Debug)]
 #[repr(u8)]
+#[derive(Debug, Eq, PartialEq)]
 enum WalAppendFlag {
     Record = 13,
     Sync = 23,

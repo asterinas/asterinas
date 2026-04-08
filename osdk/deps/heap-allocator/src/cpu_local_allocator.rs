@@ -131,20 +131,20 @@ mod test {
     use core::{cmp::PartialEq, fmt::Debug};
     use ostd::{cpu::CpuId, util::id_set::Id};
 
-    #[derive(Debug, PartialEq)]
     #[repr(align(2))]
+    #[derive(Debug, PartialEq)]
     struct Aligned2(u8);
-    #[derive(Debug, PartialEq)]
     #[repr(align(4))]
+    #[derive(Debug, PartialEq)]
     struct Aligned4(u8);
-    #[derive(Debug, PartialEq)]
     #[repr(align(8))]
+    #[derive(Debug, PartialEq)]
     struct Aligned8(u8);
-    #[derive(Debug, PartialEq)]
     #[repr(align(16))]
-    struct Aligned16(u8);
     #[derive(Debug, PartialEq)]
+    struct Aligned16(u8);
     #[repr(align(32))]
+    #[derive(Debug, PartialEq)]
     struct Aligned32(u8);
 
     #[track_caller]

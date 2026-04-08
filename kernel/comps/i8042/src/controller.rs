@@ -281,7 +281,7 @@ impl I8042Controller {
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/drivers/input/serio/libps2.c#L344>
 #[repr(u16)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Timeout {
     /// Short timeout for normal commands (500 ms).
     Short = 500,
@@ -319,7 +319,7 @@ where
 }
 
 /// Errors that can occur when initializing the i8042 controller.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum I8042ControllerError {
     NotPresent,
     ControllerTestFailed,
@@ -335,8 +335,8 @@ pub(super) enum I8042ControllerError {
 /// The commands that can be sent to the PS/2 controller.
 ///
 /// Reference: <https://wiki.osdev.org/I8042_PS/2_Controller#PS/2_Controller_Commands>.
-#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug)]
 enum Command {
     ReadConfiguration = 0x20,
     WriteConfiguration = 0x60,
