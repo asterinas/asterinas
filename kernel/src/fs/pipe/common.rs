@@ -25,7 +25,7 @@ use crate::{
     },
     util::{
         ioctl::{RawIoctl, dispatch_ioctl},
-        ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+        ring_buffer::{ConsumerU8Ext, ProducerU8Ext, RbConsumer, RbProducer, RingBuffer},
     },
 };
 
