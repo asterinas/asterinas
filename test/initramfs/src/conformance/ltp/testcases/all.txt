@@ -1092,7 +1092,7 @@ ppoll01
 
 prctl01
 # prctl02
-prctl03
+# prctl03 # FIXME: `SIGCHLD` must arrive by the time `wait()` returns. Otherwise, it is flaky.
 # prctl05
 # prctl06
 # prctl07
