@@ -11,6 +11,7 @@
  * * Add the `trap_handler_table`.
  * * Adjust some symbol names.
  * * Fix an off-by-one bug to correct the RSP value in the trap frame.
+ * * Disable alternate macro mode after using it.
  *
  * These changes are released under the following license:
  *
@@ -22,7 +23,8 @@
 .text
 .code64
 
-.altmacro
+.altmacro # enable alternate macro mode to use "%i"
+
 .macro DEF_HANDLER, i
 _trap_handler_\i:
 .if \i == 8 || (\i >= 10 && \i <= 14) || \i == 17
@@ -56,6 +58,8 @@ trap_handler_table:
     DEF_TABLE_ENTRY %i
     .set i, i + 1
 .endr
+
+.noaltmacro # disable alternate macro mode; otherwise, it may leak to other files
 
 .text
 .code64
