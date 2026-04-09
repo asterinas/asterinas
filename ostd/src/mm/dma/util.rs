@@ -6,19 +6,20 @@ use crate::{
     Error,
     arch::iommu::{self, has_dma_remapping},
     cpu::{AtomicCpuSet, CpuSet},
-    impl_frame_meta_for,
+    impl_frame_meta_for, irq,
     mm::{
         CachePolicy, Daddr, FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, Paddr, PageFlags,
         PageProperty, PrivilegedPageFlags, Segment,
         kspace::kvirt_area::KVirtArea,
-        page_table::vaddr_range,
         tlb::{TlbFlushOp, TlbFlusher},
     },
     task::disable_preempt,
-    util::range_alloc::RangeAllocator,
 };
 #[cfg(any(debug_assertions, all(target_arch = "x86_64", feature = "cvm_guest")))]
-use crate::{sync::SpinLock, util::range_counter::RangeCounter};
+use crate::{
+    sync::{LocalIrqDisabled, SpinLock},
+    util::range_counter::RangeCounter,
+};
 
 /// Metadata for frames behind a [`KVirtArea`] of different page table flags.
 ///
@@ -34,20 +35,48 @@ use crate::{sync::SpinLock, util::range_counter::RangeCounter};
 struct DmaBufferMeta;
 impl_frame_meta_for!(DmaBufferMeta);
 
-/// The allocator for device addresses.
 // TODO: Implement other architectures when their `IommuPtConfig` are ready.
 #[cfg(target_arch = "x86_64")]
-static DADDR_ALLOCATOR: RangeAllocator = RangeAllocator::new({
-    let range_inclusive = vaddr_range::<iommu::IommuPtConfig>();
-    // To avoid overflowing, just ignore the last page.
-    *range_inclusive.start()..*range_inclusive.end() & !(PAGE_SIZE - 1)
-});
+mod allocator {
+    use crate::{
+        arch::iommu,
+        irq::DisabledLocalIrqGuard,
+        mm::{PAGE_SIZE, page_table::vaddr_range},
+        util::range_alloc::RangeAllocator,
+    };
+
+    static DADDR_ALLOCATOR: RangeAllocator = RangeAllocator::new({
+        let range_inclusive = vaddr_range::<iommu::IommuPtConfig>();
+        // To avoid overflowing, just ignore the last page.
+        *range_inclusive.start()..*range_inclusive.end() & !(PAGE_SIZE - 1)
+    });
+
+    /// Returns a reference to the device address allocator.
+    ///
+    /// [`DisabledLocalIrqGuard`] is required because DMA objects may be
+    /// dropped in IRQ handlers. So the guard is necessary to prevent
+    /// deadlocks. For more details, see [`crate::mm::dma`].
+    ///
+    /// Meanwhile, note that deadlocks may occur if the page table nodes locked
+    /// in [`iommu`] are also locked in other files where only preemption is
+    /// disabled. This requires extra care.
+    pub(super) fn daddr_allocator(_guard: &DisabledLocalIrqGuard) -> &RangeAllocator {
+        &DADDR_ALLOCATOR
+    }
+}
 
 /// This is either to
 ///  - check if the same physical page is DMA mapped twice, or to
 ///  - track if we need to protect/unprotect pages in the CVM.
+///
+/// The lock uses [`LocalIrqDisabled`] (rather than [`PreemptDisabled`])
+/// because DMA objects may be dropped from IRQ handlers. For details, see
+/// [module-level docs](crate::mm::dma).
+///
+/// [`PreemptDisabled`]: crate::sync::PreemptDisabled
 #[cfg(any(debug_assertions, all(target_arch = "x86_64", feature = "cvm_guest")))]
-static PADDR_REF_CNTS: SpinLock<RangeCounter> = SpinLock::new(RangeCounter::new());
+static PADDR_REF_CNTS: SpinLock<RangeCounter, LocalIrqDisabled> =
+    SpinLock::new(RangeCounter::new());
 
 pub(super) fn cvm_need_private_protection() -> bool {
     #[cfg(target_arch = "x86_64")]
@@ -231,33 +260,44 @@ unsafe fn dealloc_protect_physical_range(pa_range: &Range<Paddr>) {
 /// The provided physical address range must be untyped DMA memory that
 /// outlives the following [`unmap_dma_remap()`] call.
 unsafe fn dma_remap(pa_range: &Range<Paddr>) -> Option<Daddr> {
-    if has_dma_remapping() {
-        #[cfg(target_arch = "x86_64")]
-        let daddr = DADDR_ALLOCATOR
-            .alloc(pa_range.len())
-            .expect("failed to allocate DMA address range");
-        #[cfg(not(target_arch = "x86_64"))]
-        let daddr = pa_range.clone();
-
-        for map_paddr in pa_range.clone().step_by(PAGE_SIZE) {
-            let map_daddr = (map_paddr - pa_range.start + daddr.start) as Daddr;
-            // SAFETY: The caller guarantees that `map_paddr` corresponds to
-            // untyped frames that outlive `iommu::unmap()` in `dma_unmap()`.
-            unsafe {
-                iommu::map(map_daddr, map_paddr).unwrap();
-            }
-        }
-        Some(daddr.start)
-    } else {
-        None
+    if !has_dma_remapping() {
+        return None;
     }
+
+    let _irq_guard = irq::disable_local();
+
+    #[cfg(target_arch = "x86_64")]
+    let daddr = allocator::daddr_allocator(&_irq_guard)
+        .alloc(pa_range.len())
+        .expect("failed to allocate DMA address range");
+    #[cfg(not(target_arch = "x86_64"))]
+    let daddr = pa_range.clone();
+
+    for map_paddr in pa_range.clone().step_by(PAGE_SIZE) {
+        let map_daddr = (map_paddr - pa_range.start + daddr.start) as Daddr;
+        // SAFETY: The caller guarantees that `map_paddr` corresponds to
+        // untyped frames that outlive `iommu::unmap()` in `dma_unmap()`.
+        unsafe {
+            iommu::map(map_daddr, map_paddr).unwrap();
+        }
+    }
+
+    Some(daddr.start)
 }
 
 fn unmap_dma_remap(daddr_range: Option<Range<Daddr>>) {
-    if let Some(da_range) = daddr_range {
-        for da in da_range.step_by(PAGE_SIZE) {
-            iommu::unmap(da).unwrap();
-            // FIXME: Flush IOTLBs to prevent any future DMA access to the frames.
-        }
+    let Some(da_range) = daddr_range else {
+        return;
+    };
+
+    let _irq_gurad = irq::disable_local();
+
+    // TODO: Free `da_range` to `allocator::daddr_allocator()`. This can only
+    // be done after IOTLB flushes are supported; otherwise, reusing the freed
+    // device address range may cause data corruption.
+
+    for da in da_range.step_by(PAGE_SIZE) {
+        iommu::unmap(da).unwrap();
+        // FIXME: Flush IOTLBs to prevent any future DMA access to the frames.
     }
 }
