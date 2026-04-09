@@ -14,9 +14,8 @@ FN_TEST(mmap_beyond_the_file)
 	int fd = TEST_SUCC(open(filename, O_CREAT | O_RDWR, 0600));
 	TEST_SUCC(ftruncate(fd, 2 * PAGE_SIZE));
 
-	char *addr = CHECK_WITH(mmap(NULL, 4 * PAGE_SIZE,
-				     PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0),
-				_ret != MAP_FAILED);
+	char *addr = TEST_SUCC(mmap(NULL, 4 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+				    MAP_SHARED, fd, 0));
 	TEST_RES(addr[1 * PAGE_SIZE], _ret == 0);
 	// The following operation (if uncommented) would cause a segmentation fault.
 	// TEST_RES(addr[3 * PAGE_SIZE], _ret == 0);

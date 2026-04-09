@@ -103,15 +103,15 @@ FN_TEST(mmap_and_mremap_fixed)
 	TEST_SUCC(munmap(addr2, PAGE_SIZE)); // free it for mremap
 
 	// Remap from the first address to the second address
-	CHECK_WITH(mremap(addr1, PAGE_SIZE, PAGE_SIZE,
-			  MREMAP_MAYMOVE | MREMAP_FIXED, addr2),
-		   _ret == addr2);
+	TEST_RES(mremap(addr1, PAGE_SIZE, PAGE_SIZE,
+			MREMAP_MAYMOVE | MREMAP_FIXED, addr2),
+		 _ret == addr2);
 	TEST_RES(strcmp(addr2, content), _ret == 0);
 
 	// Remap from the second address to the first address
-	CHECK_WITH(mremap(addr2, PAGE_SIZE, PAGE_SIZE,
-			  MREMAP_MAYMOVE | MREMAP_FIXED, addr1),
-		   _ret == addr1);
+	TEST_RES(mremap(addr2, PAGE_SIZE, PAGE_SIZE,
+			MREMAP_MAYMOVE | MREMAP_FIXED, addr1),
+		 _ret == addr1);
 	TEST_RES(strcmp(addr1, content), _ret == 0);
 
 	TEST_SUCC(munmap(addr1, PAGE_SIZE));
