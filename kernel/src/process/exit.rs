@@ -45,21 +45,32 @@ pub(super) fn exit_process(current_process: &Process) {
     drop(cgroup_guard);
 }
 
-/// Sends parent-death signals to the children.
-//
-// FIXME: According to the Linux implementation, the signal should be sent when the POSIX thread
-// that created the child exits, not when the whole process exits. For more details, see the
-// "CAVEATS" section in <https://man7.org/linux/man-pages/man2/pr_set_pdeathsig.2const.html>.
-fn send_parent_death_signal(children: &BTreeMap<Pid, Arc<Process>>) {
-    for child in children.values() {
-        let Some(signum) = child.parent_death_signal() else {
-            continue;
-        };
-
-        // FIXME: Set `si_pid` in the `siginfo_t` argument.
-        let signal = Box::new(KernelSignal::new(signum));
-        child.enqueue_signal(signal);
+/// Moves the children to a reaper process.
+///
+/// Returns the moved children. Note that no new processes can become this process's children after
+/// this point, so the returned children reliably represent the set of children at the time the
+/// process exits.
+fn move_children_to_reaper_process(current_process: &Process) -> BTreeMap<Pid, Arc<Process>> {
+    if current_process.is_init_process() {
+        return BTreeMap::new();
     }
+
+    while let Some(reaper_process) = find_reaper_process(current_process) {
+        if let Ok(children) = move_process_children(current_process, &reaper_process) {
+            reaper_process.children_wait_queue().wake_all();
+            return children;
+        }
+    }
+
+    const INIT_PROCESS_PID: Pid = 1;
+
+    let init_process = pid_table::pid_table_mut()
+        .get_process(INIT_PROCESS_PID)
+        .unwrap();
+    let children = move_process_children(current_process, &init_process).unwrap();
+    init_process.children_wait_queue().wake_all();
+
+    children
 }
 
 /// Finds a reaper process for `current_process`.
@@ -130,32 +141,21 @@ fn move_process_children(
     Ok(children)
 }
 
-/// Moves the children to a reaper process.
-///
-/// Returns the moved children. Note that no new processes can become this process's children after
-/// this point, so the returned children reliably represent the set of children at the time the
-/// process exits.
-fn move_children_to_reaper_process(current_process: &Process) -> BTreeMap<Pid, Arc<Process>> {
-    if current_process.is_init_process() {
-        return BTreeMap::new();
+/// Sends parent-death signals to the children.
+//
+// FIXME: According to the Linux implementation, the signal should be sent when the POSIX thread
+// that created the child exits, not when the whole process exits. For more details, see the
+// "CAVEATS" section in <https://man7.org/linux/man-pages/man2/pr_set_pdeathsig.2const.html>.
+fn send_parent_death_signal(children: &BTreeMap<Pid, Arc<Process>>) {
+    for child in children.values() {
+        let Some(signum) = child.parent_death_signal() else {
+            continue;
+        };
+
+        // FIXME: Set `si_pid` in the `siginfo_t` argument.
+        let signal = Box::new(KernelSignal::new(signum));
+        child.enqueue_signal(signal);
     }
-
-    while let Some(reaper_process) = find_reaper_process(current_process) {
-        if let Ok(children) = move_process_children(current_process, &reaper_process) {
-            reaper_process.children_wait_queue().wake_all();
-            return children;
-        }
-    }
-
-    const INIT_PROCESS_PID: Pid = 1;
-
-    let init_process = pid_table::pid_table_mut()
-        .get_process(INIT_PROCESS_PID)
-        .unwrap();
-    let children = move_process_children(current_process, &init_process).unwrap();
-    init_process.children_wait_queue().wake_all();
-
-    children
 }
 
 /// Sends a child-death signal to the parent.
