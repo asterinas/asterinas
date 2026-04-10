@@ -21,9 +21,11 @@ pub(super) fn exit_process(current_process: &Process) {
     // Drop fields in `Process`.
     current_process.lock_vmar().set_vmar(None);
 
-    send_parent_death_signal(current_process);
-
-    move_children_to_reaper_process(current_process);
+    // Move the children to the reaper process and send them signals. The children should see a new
+    // parent when they receive the signal.
+    let children = move_children_to_reaper_process(current_process);
+    send_parent_death_signal(&children);
+    drop(children);
 
     // Mark the current process as a zombie. After this point, it may be reaped concurrently and
     // removed from the process tree. For example, the process may no longer have a live parent if
@@ -48,9 +50,8 @@ pub(super) fn exit_process(current_process: &Process) {
 // FIXME: According to the Linux implementation, the signal should be sent when the POSIX thread
 // that created the child exits, not when the whole process exits. For more details, see the
 // "CAVEATS" section in <https://man7.org/linux/man-pages/man2/pr_set_pdeathsig.2const.html>.
-fn send_parent_death_signal(current_process: &Process) {
-    let current_children = current_process.children().lock();
-    for child in current_children.as_ref().unwrap().values() {
+fn send_parent_death_signal(children: &BTreeMap<Pid, Arc<Process>>) {
+    for child in children.values() {
         let Some(signum) = child.parent_death_signal() else {
             continue;
         };
@@ -100,11 +101,12 @@ fn find_reaper_process(current_process: &Process) -> Option<Arc<Process>> {
 
 /// Moves the children of `current_process` to be the children of `reaper_process`.
 ///
-/// If the `reaper_process` is zombie, returns `Err(())`.
+/// Returns the moved children on success. Otherwise, if the `reaper_process` is zombie, returns
+/// `Err(())`.
 fn move_process_children(
     current_process: &Process,
     reaper_process: &Arc<Process>,
-) -> core::result::Result<(), ()> {
+) -> core::result::Result<BTreeMap<Pid, Arc<Process>>, ()> {
     // Lock order: children of process -> parent of process
     let mut reaper_process_children = reaper_process.children().lock();
     let Some(reaper_process_children) = reaper_process_children.as_mut() else {
@@ -117,26 +119,31 @@ fn move_process_children(
     // This ensures when dealing with CLONE_PARENT,
     // the retrial will see an up-to-date real parent.
     let mut current_children = current_process.children().lock();
-    for child_process in current_children.as_mut().unwrap().values() {
+    let children = current_children.take().unwrap();
+
+    for child_process in children.values() {
         let mut parent = child_process.parent.lock();
         reaper_process_children.insert(child_process.pid(), child_process.clone());
         parent.set_process(reaper_process);
     }
-    *current_children = None;
 
-    Ok(())
+    Ok(children)
 }
 
 /// Moves the children to a reaper process.
-fn move_children_to_reaper_process(current_process: &Process) {
+///
+/// Returns the moved children. Note that no new processes can become this process's children after
+/// this point, so the returned children reliably represent the set of children at the time the
+/// process exits.
+fn move_children_to_reaper_process(current_process: &Process) -> BTreeMap<Pid, Arc<Process>> {
     if current_process.is_init_process() {
-        return;
+        return BTreeMap::new();
     }
 
     while let Some(reaper_process) = find_reaper_process(current_process) {
-        if move_process_children(current_process, &reaper_process).is_ok() {
+        if let Ok(children) = move_process_children(current_process, &reaper_process) {
             reaper_process.children_wait_queue().wake_all();
-            return;
+            return children;
         }
     }
 
@@ -145,8 +152,10 @@ fn move_children_to_reaper_process(current_process: &Process) {
     let init_process = pid_table::pid_table_mut()
         .get_process(INIT_PROCESS_PID)
         .unwrap();
-    move_process_children(current_process, &init_process).unwrap();
+    let children = move_process_children(current_process, &init_process).unwrap();
     init_process.children_wait_queue().wake_all();
+
+    children
 }
 
 /// Sends a child-death signal to the parent.
