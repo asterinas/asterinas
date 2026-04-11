@@ -51,6 +51,7 @@ set -e
 
 if [ "$(uname -m)" = "x86_64" ]; then
     ./signal/sigaltstack
+    ./signal/sigtrap
     ./signal/signal_fpu
     ./signal/signal_rflags_df
     ./signal/signal_test

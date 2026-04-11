@@ -3,6 +3,7 @@
 ifneq ($(HOST_PLATFORM), x86_64-linux)
 C_OBJS_FILTER += \
 	sigaltstack \
+	sigtrap \
 	signal_fpu \
 	signal_rflags_df \
 	signal_test
