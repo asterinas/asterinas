@@ -23,6 +23,8 @@ impl From<&CpuException> for FaultSignal {
             }
             CpuException::BoundRangeExceeded => (SIGSEGV, SEGV_BNDERR, None),
             CpuException::AlignmentCheck => (SIGBUS, BUS_ADRALN, None),
+            CpuException::Debug => (SIGTRAP, TRAP_TRACE, None),
+            CpuException::BreakPoint => (SIGTRAP, SI_KERNEL, None),
             CpuException::InvalidOpcode => (SIGILL, ILL_ILLOPC, None),
             CpuException::GeneralProtectionFault(..) => (SIGBUS, BUS_ADRERR, None),
             CpuException::PageFault(raw_page_fault_info) => {
