@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::arch::cpu::context::{CpuException, UserContext};
+use ostd::{
+    arch::cpu::context::{CpuException, UserContext},
+    user::UserContextApi,
+};
 
-use crate::process::signal::{SignalContext, sig_num::SigNum, signals::fault::FaultSignal};
+use crate::{
+    process::signal::{SignalContext, sig_num::SigNum, signals::fault::FaultSignal},
+    thread::exception::ToFaultSignal,
+};
 
 impl SignalContext for UserContext {
     fn set_arguments(&mut self, sig_num: SigNum, siginfo_addr: usize, ucontext_addr: usize) {
@@ -12,30 +18,45 @@ impl SignalContext for UserContext {
     }
 }
 
-impl From<&CpuException> for FaultSignal {
-    fn from(exception: &CpuException) -> Self {
+impl ToFaultSignal for CpuException {
+    fn to_fault_signal(&self, user_ctx: &UserContext) -> Option<FaultSignal> {
         use CpuException::*;
 
         use crate::process::signal::constants::*;
 
-        // FIXME: All the `None` addresses here should be the value of `sepc`
-        // CSR on trap. So we should either encode that in `CpuException` or
-        // pass it as an additional parameter here.
-        let (num, code, addr) = match exception {
-            InstructionMisaligned => (SIGBUS, BUS_ADRALN, None),
-            InstructionFault => (SIGSEGV, SEGV_ACCERR, None),
-            IllegalInstruction(_) => (SIGILL, ILL_ILLOPC, None),
-            Breakpoint => (SIGTRAP, TRAP_BRKPT, None),
-            LoadMisaligned(_) | StoreMisaligned(_) => (SIGBUS, BUS_ADRALN, None),
-            LoadFault(_) | StoreFault(_) => (SIGSEGV, SEGV_ACCERR, None),
-            UserEnvCall => unreachable!(),
-            SupervisorEnvCall => (SIGILL, ILL_ILLTRP, None),
-            InstructionPageFault(addr) | LoadPageFault(addr) | StorePageFault(addr) => {
-                (SIGSEGV, SEGV_MAPERR, Some(*addr as u64))
+        let sepc = user_ctx.instruction_pointer() as u64;
+
+        let (num, code, addr) = match self {
+            InstructionMisaligned => (SIGBUS, BUS_ADRALN, sepc),
+            InstructionFault => (SIGSEGV, SEGV_ACCERR, sepc),
+            IllegalInstruction(_) => (SIGILL, ILL_ILLOPC, sepc),
+            Breakpoint => (SIGTRAP, TRAP_BRKPT, sepc),
+            LoadMisaligned(_) | StoreMisaligned(_) => {
+                // The address should be the memory address, but Linux reports the instruction
+                // address. So we follow it.
+                //
+                // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/riscv/kernel/traps.c#L230-L232>
+                (SIGBUS, BUS_ADRALN, sepc)
             }
-            Unknown => (SIGILL, ILL_ILLTRP, None),
+            LoadFault(_) | StoreFault(_) => {
+                // The address should be the memory address, but Linux reports the instruction
+                // address. So we follow it.
+                //
+                // Reference:
+                // <https://elixir.bootlin.com/linux/v7.0/source/arch/riscv/kernel/traps.c#L198-L199>
+                // <https://elixir.bootlin.com/linux/v7.0/source/arch/riscv/kernel/traps.c#L252-L253>
+                (SIGSEGV, SEGV_ACCERR, sepc)
+            }
+            SupervisorEnvCall => (SIGILL, ILL_ILLTRP, sepc),
+            InstructionPageFault(addr) | LoadPageFault(addr) | StorePageFault(addr) => {
+                // FIXME: The code should be `SEGV_ACCERR` for faults within an existing mapping.
+                (SIGSEGV, SEGV_MAPERR, *addr as u64)
+            }
+            Unknown => (SIGILL, ILL_ILLTRP, sepc),
+
+            UserEnvCall => return None,
         };
 
-        FaultSignal::new(num, code, addr)
+        Some(FaultSignal::new(num, code, Some(addr)))
     }
 }

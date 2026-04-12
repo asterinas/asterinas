@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::arch::cpu::context::{CpuException, PageFaultErrorCode, UserContext};
+use ostd::{
+    arch::cpu::context::{CpuException, PageFaultErrorCode, UserContext},
+    user::UserContextApi,
+};
 
-use crate::process::signal::{
-    SignalContext, constants::*, sig_num::SigNum, signals::fault::FaultSignal,
+use crate::{
+    process::signal::{SignalContext, sig_num::SigNum, signals::fault::FaultSignal},
+    thread::exception::ToFaultSignal,
 };
 
 impl SignalContext for UserContext {
@@ -14,20 +18,46 @@ impl SignalContext for UserContext {
     }
 }
 
-impl From<&CpuException> for FaultSignal {
-    fn from(exception: &CpuException) -> Self {
-        let (num, code, addr) = match exception {
-            CpuException::DivisionError => (SIGFPE, FPE_INTDIV, None),
-            CpuException::X87FloatingPointException | CpuException::SIMDFloatingPointException => {
-                (SIGFPE, FPE_FLTDIV, None)
+impl ToFaultSignal for CpuException {
+    fn to_fault_signal(&self, user_ctx: &UserContext) -> Option<FaultSignal> {
+        use crate::process::signal::constants::*;
+
+        let rip = user_ctx.instruction_pointer() as u64;
+
+        let (num, code, addr) = match self {
+            CpuException::DivisionError => (SIGFPE, FPE_INTDIV, Some(rip)),
+            CpuException::Debug => {
+                // TODO: Derive the code from the debug status.
+                (SIGTRAP, TRAP_TRACE, Some(rip))
             }
-            CpuException::BoundRangeExceeded => (SIGSEGV, SEGV_BNDERR, None),
-            CpuException::AlignmentCheck => (SIGBUS, BUS_ADRALN, None),
-            CpuException::Debug => (SIGTRAP, TRAP_TRACE, None),
-            CpuException::BreakPoint => (SIGTRAP, SI_KERNEL, None),
-            CpuException::InvalidOpcode => (SIGILL, ILL_ILLOPC, None),
-            CpuException::GeneralProtectionFault(..) => (SIGBUS, BUS_ADRERR, None),
+            CpuException::BreakPoint => {
+                // Linux uses `SI_KERNEL` without an address.
+                //
+                // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/traps.c#L998>
+                (SIGTRAP, SI_KERNEL, None)
+            }
+            CpuException::Overflow => {
+                // Linux uses `SI_KERNEL` without an address.
+                //
+                // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/traps.c#L387>
+                (SIGSEGV, SI_KERNEL, None)
+            }
+            CpuException::InvalidOpcode => (SIGILL, ILL_ILLOPN, Some(rip)),
+            CpuException::StackSegmentFault(..) => {
+                // Linux uses `SI_KERNEL` without an address.
+                //
+                // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/traps.c#L519-L520>
+                (SIGBUS, SI_KERNEL, None)
+            }
+            CpuException::GeneralProtectionFault(..) => {
+                // Linux uses `SI_KERNEL` without an address.
+                //
+                // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/traps.c#L904-L911>
+                (SIGSEGV, SI_KERNEL, None)
+            }
             CpuException::PageFault(raw_page_fault_info) => {
+                // FIXME: The code should depend on whether the faulting address is covered by a
+                // mapping, not just on the `PRESENT` bit.
                 let code = if raw_page_fault_info
                     .error_code
                     .contains(PageFaultErrorCode::PRESENT)
@@ -39,9 +69,20 @@ impl From<&CpuException> for FaultSignal {
                 let addr = Some(raw_page_fault_info.addr as u64);
                 (SIGSEGV, code, addr)
             }
-            e => panic!("{e:?} cannot be handled via signals ({exception:?})"),
+            CpuException::X87FloatingPointException | CpuException::SIMDFloatingPointException => {
+                // TODO: Derive the code from the floating-point status.
+                (SIGFPE, FPE_FLTDIV, Some(rip))
+            }
+            CpuException::AlignmentCheck => {
+                // Linux does not provide an address.
+                //
+                // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/traps.c#L538-L539>
+                (SIGBUS, BUS_ADRALN, None)
+            }
+
+            _ => return None,
         };
 
-        FaultSignal::new(num, code, addr)
+        Some(FaultSignal::new(num, code, addr))
     }
 }
