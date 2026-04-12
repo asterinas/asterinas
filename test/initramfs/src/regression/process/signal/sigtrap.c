@@ -12,6 +12,7 @@
 
 static volatile int trap_brkpt_received;
 static volatile int trap_trace_received;
+static void *volatile last_si_addr;
 
 static void sigtrap_handler(int sig, siginfo_t *info, void *ctx)
 {
@@ -27,6 +28,8 @@ static void sigtrap_handler(int sig, siginfo_t *info, void *ctx)
 		uc->uc_mcontext.gregs[REG_EFL] &= ~0x100UL;
 		trap_trace_received = 1;
 	}
+
+	last_si_addr = info->si_addr;
 }
 
 static int trap_brkpt(void)
@@ -61,7 +64,9 @@ END_SETUP()
 
 FN_TEST(sigtrap)
 {
-	TEST_RES(trap_brkpt(), trap_brkpt_received == 1);
-	TEST_RES(trap_trace(), trap_trace_received == 1);
+	TEST_RES(trap_brkpt(),
+		 trap_brkpt_received == 1 && last_si_addr == NULL);
+	TEST_RES(trap_trace(),
+		 trap_trace_received == 1 && last_si_addr != NULL);
 }
 END_TEST()

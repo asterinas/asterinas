@@ -2,11 +2,12 @@
 
 ifneq ($(HOST_PLATFORM), x86_64-linux)
 C_OBJS_FILTER += \
+	fault_signals \
 	sigaltstack \
-	sigtrap \
 	signal_fpu \
 	signal_rflags_df \
-	signal_test
+	signal_test \
+	sigtrap
 endif
 
 include ../../common/Makefile

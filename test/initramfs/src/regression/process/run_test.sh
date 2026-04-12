@@ -51,11 +51,12 @@ set -e
 ./signal/signal_test2
 
 if [ "$(uname -m)" = "x86_64" ]; then
+    ./signal/fault_signals
     ./signal/sigaltstack
-    ./signal/sigtrap
     ./signal/signal_fpu
     ./signal/signal_rflags_df
     ./signal/signal_test
+    ./signal/sigtrap
 fi
 
 ./group_session
