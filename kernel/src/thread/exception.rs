@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use ostd::arch::cpu::context::CpuException;
 #[cfg(target_arch = "loongarch64")]
@@ -14,8 +12,7 @@ use crate::{
     vm::vmar::{PageFaultInfo, Vmar},
 };
 
-/// We can't handle most exceptions, just send self a fault signal before return to user space.
-pub fn handle_exception(ctx: &Context, context: &UserContext, exception: CpuException) {
+pub(super) fn handle_exception(ctx: &Context, user_ctx: &UserContext, exception: CpuException) {
     debug!("[User Trap] handle exception: {:#x?}", exception);
 
     if let Ok(page_fault_info) = PageFaultInfo::try_from(&exception) {
@@ -26,7 +23,9 @@ pub fn handle_exception(ctx: &Context, context: &UserContext, exception: CpuExce
         }
     }
 
-    generate_fault_signal(exception, ctx);
+    // We cannot handle most exceptions. Send a fault signal to the current thread before returning
+    // to user space.
+    generate_fault_signal(exception, ctx, user_ctx);
 }
 
 /// Handles the page fault occurs in the VMAR.
@@ -44,9 +43,30 @@ fn handle_page_fault_from_vmar(
     Ok(())
 }
 
-/// generate a fault signal for current process.
-fn generate_fault_signal(exception: CpuException, ctx: &Context) {
-    let signal = FaultSignal::from(&exception);
+/// A trait that converts CPU exceptions into fault signals.
+///
+/// This trait should be implemented by architecture-specific code for [`CpuException`].
+pub trait ToFaultSignal {
+    /// Converts a CPU exception into a fault signal.
+    ///
+    /// Returns `None` if the exception must be handled earlier and cannot be delivered as a signal.
+    ///
+    /// POSIX [requires] `SIGILL` and `SIGFPE` to report the address of the faulting instruction,
+    /// and `SIGSEGV` and `SIGBUS` to report the address of the faulting memory reference. Linux
+    /// behavior, however, is highly architecture-specific and does not always follow POSIX: for
+    /// some exceptions, it reports neither the expected code nor the expected address. Linux may
+    /// also attach an instruction address to `SIGTRAP`, but this behavior is not consistent across
+    /// architectures.
+    ///
+    /// [requires]: https://pubs.opengroup.org/onlinepubs/009695399/basedefs/signal.h.html
+    fn to_fault_signal(&self, user_ctx: &UserContext) -> Option<FaultSignal>;
+}
+
+/// Generates a fault signal for the current thread.
+fn generate_fault_signal(exception: CpuException, ctx: &Context, user_ctx: &UserContext) {
+    let Some(signal) = exception.to_fault_signal(user_ctx) else {
+        panic!("`{:?}` cannot be handled via signals", exception);
+    };
     ctx.posix_thread.enqueue_signal(Box::new(signal));
 }
 
