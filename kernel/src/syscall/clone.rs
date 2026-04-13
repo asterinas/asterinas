@@ -99,8 +99,15 @@ impl TryFrom<Clone3Args> for CloneArgs {
 
         let flags = CloneFlags::from_bits(value.flags as u32)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clone flags"))?;
-        let exit_signal =
-            (value.exit_signal != 0).then(|| SigNum::from_u8(value.exit_signal as u8));
+        let exit_signal = if value.exit_signal == 0 {
+            None
+        } else {
+            let exit_signal = u8::try_from(value.exit_signal)
+                .ok()
+                .and_then(|exit_signal| SigNum::try_from(exit_signal).ok())
+                .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid exit signal"))?;
+            Some(exit_signal)
+        };
         if flags.intersects(CloneFlags::CLONE_PARENT | CloneFlags::CLONE_THREAD)
             && exit_signal.is_some()
         {
