@@ -40,6 +40,13 @@ pub fn sys_ptrace(
 
             do_ptrace_attach(&parent_main_thread, current_thread)?;
         }
+        PtraceRequest::PTRACE_PEEKTEXT | PtraceRequest::PTRACE_PEEKDATA => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            let val = tracee.ptrace_peek_data(addr)?;
+            ctx.user_space().write_val(data, &val)?;
+        }
         #[cfg(target_arch = "x86_64")]
         PtraceRequest::PTRACE_PEEKUSER => {
             let tracee = ctx.posix_thread.get_tracee(tid)?;
@@ -47,6 +54,12 @@ pub fn sys_ptrace(
 
             let val = tracee.ptrace_peek_user(addr)?;
             ctx.user_space().write_val(data, &val)?;
+        }
+        PtraceRequest::PTRACE_POKETEXT | PtraceRequest::PTRACE_POKEDATA => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            tracee.ptrace_poke_data(addr, data)?;
         }
         #[cfg(target_arch = "x86_64")]
         PtraceRequest::PTRACE_POKEUSER => {
@@ -172,9 +185,17 @@ fn parse_ptrace_injected_signal(data: usize) -> Result<Option<SigNum>> {
 enum PtraceRequest {
     /// Indicates that this thread should be traced by its parent.
     PTRACE_TRACEME = 0,
+    /// Reads a word from the thread's text space at address `addr`.
+    PTRACE_PEEKTEXT = 1,
+    /// Reads a word from the thread's data space at address `addr`.
+    PTRACE_PEEKDATA = 2,
     /// Reads a word from the thread's user area at offset `addr`.
     #[cfg(target_arch = "x86_64")]
     PTRACE_PEEKUSER = 3,
+    /// Writes the word `data` to the thread's text space at address `addr`.
+    PTRACE_POKETEXT = 4,
+    /// Writes the word `data` to the thread's data space at address `addr`.
+    PTRACE_POKEDATA = 5,
     /// Writes the word `data` to the thread's user area at offset `addr`.
     #[cfg(target_arch = "x86_64")]
     PTRACE_POKEUSER = 6,
@@ -200,14 +221,6 @@ enum PtraceRequest {
     /// Gets the `siginfo` of the last ptrace-stop.
     PTRACE_GETSIGINFO = 0x4202,
     // TODO: Support other operations.
-    // /// Reads a word from the thread's text space at address `addr`.
-    // PTRACE_PEEKTEXT = 1,
-    // /// Reads a word from the thread's data space at address `addr`.
-    // PTRACE_PEEKDATA = 2,
-    // /// Writes the word `data` to the thread's text space at address `addr`.
-    // PTRACE_POKETEXT = 4,
-    // /// Writes the word `data` to the thread's data space at address `addr`.
-    // PTRACE_POKEDATA = 5,
     // /// Gets all floating-point registers used by the thread.
     // PTRACE_GETFPREGS = 14,
     // /// Sets all floating-point registers used by the thread.
