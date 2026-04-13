@@ -7,9 +7,17 @@ use ostd::sync::RwMutexUpgradeableGuard;
 use template::{DirOps, ProcDir, lookup_child_from_table, populate_children_from_table};
 
 use self::{
-    cmdline::CmdLineFileOps, cpuinfo::CpuInfoFileOps, loadavg::LoadAvgFileOps,
-    meminfo::MemInfoFileOps, mounts::MountsSymOps, pid::PidDirOps, self_::SelfSymOps,
-    sys::SysDirOps, thread_self::ThreadSelfSymOps, uptime::UptimeFileOps, version::VersionFileOps,
+    cmdline::CmdLineFileOps,
+    cpuinfo::CpuInfoFileOps,
+    loadavg::LoadAvgFileOps,
+    meminfo::MemInfoFileOps,
+    mounts::MountsSymOps,
+    pid::{PidDirOps, TidDirOps},
+    self_::SelfSymOps,
+    sys::SysDirOps,
+    thread_self::ThreadSelfSymOps,
+    uptime::UptimeFileOps,
+    version::VersionFileOps,
 };
 use crate::{
     events::Observer,
@@ -28,6 +36,7 @@ use crate::{
     process::{
         Pid,
         pid_table::{self, PidEvent},
+        posix_thread::AsPosixThread,
     },
 };
 
@@ -182,16 +191,26 @@ impl DirOps for RootDirOps {
     // called with the PID table locked.
 
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
-        if let Ok(pid) = name.parse::<Pid>()
-            && let pid_table = pid_table::pid_table_mut()
-            && let Some(process_ref) = pid_table.get_process(pid)
-        {
-            let mut cached_children = dir.cached_children().write();
-            return Ok(cached_children
-                .put_entry_if_not_found(name, move || {
-                    PidDirOps::new_inode(process_ref, dir.this_weak().clone())
-                })
-                .clone());
+        if let Ok(pid) = name.parse::<Pid>() {
+            let pid_table = pid_table::pid_table_mut();
+
+            if let Some(process_ref) = pid_table.get_process(pid) {
+                let mut cached_children = dir.cached_children().write();
+                return Ok(cached_children
+                    .put_entry_if_not_found(name, move || {
+                        PidDirOps::new_inode(process_ref, dir.this_weak().clone())
+                    })
+                    .clone());
+            }
+
+            if let Some(thread_ref) = pid_table.get_thread(pid) {
+                let process_ref = thread_ref.as_posix_thread().unwrap().process();
+                return Ok(TidDirOps::new_inode(
+                    process_ref,
+                    thread_ref,
+                    dir.this_weak().clone(),
+                ));
+            }
         }
 
         let mut cached_children = dir.cached_children().write();

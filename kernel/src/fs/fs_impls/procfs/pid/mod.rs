@@ -7,16 +7,13 @@ use super::template::{
     DirOps, ProcDir, ProcDirBuilder, lookup_child_from_table, populate_children_from_table,
 };
 use crate::{
-    fs::{
-        file::mkmod,
-        procfs::pid::task::{TaskDirOps, TidDirOps},
-        vfs::inode::Inode,
-    },
+    fs::{file::mkmod, procfs::pid::task::TaskDirOps, vfs::inode::Inode},
     prelude::*,
     process::Process,
 };
 
 mod task;
+pub(super) use task::TidDirOps;
 
 /// Represents the inode at `/proc/[pid]`.
 pub struct PidDirOps(
@@ -35,7 +32,7 @@ impl PidDirOps {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3493>
         ProcDirBuilder::new(Self(tid_dir_ops), mkmod!(a+rx))
             .parent(parent)
-            // The PID directories must be volatile, because it is just associated with one process.
+            // The PID directory must be volatile, because it is just associated with one process.
             .volatile()
             .build()
             .unwrap()
