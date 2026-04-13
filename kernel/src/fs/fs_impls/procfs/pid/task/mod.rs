@@ -70,7 +70,7 @@ impl TaskDirOps {
 
 /// Represents the inode at `/proc/[pid]/task/[tid]`.
 #[derive(Clone)]
-pub(super) struct TidDirOps {
+pub struct TidDirOps {
     pub(super) process_ref: Arc<Process>,
     /// If `thread_ref` is `None`, this corresponds to a process-level `/proc/[pid]/*` file.
     /// Otherwise, this corresponds to a thread-level `/proc/[pid]/task/[tid]/*` file.
@@ -92,6 +92,8 @@ impl TidDirOps {
             mkmod!(a+rx),
         )
         .parent(parent)
+        // The TID directory must be volatile, because it is just associated with one thread.
+        .volatile()
         .build()
         .unwrap()
     }
