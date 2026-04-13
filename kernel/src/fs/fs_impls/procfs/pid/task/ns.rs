@@ -7,6 +7,7 @@ use ostd::sync::RwMutexUpgradeableGuard;
 
 use crate::{
     fs::{
+        cgroupfs::CgroupNamespace,
         file::mkmod,
         procfs::{
             pid::TidDirOps,
@@ -46,29 +47,33 @@ impl NsDirOps {
 /// Namespace entries backed by the thread's [`NsProxy`].
 #[derive(Clone, Copy)]
 enum NsProxyEntry {
-    /// The UTS namespace.
-    Uts,
+    /// The cgroup namespace.
+    Cgroup,
     /// The mount namespace.
     Mnt,
+    /// The UTS namespace.
+    Uts,
 }
 
 impl NsProxyEntry {
     /// All supported `NsProxy`-backed namespace entries.
-    const ALL: &[Self] = &[Self::Uts, Self::Mnt];
+    const ALL: &[Self] = &[Self::Cgroup, Self::Mnt, Self::Uts];
 
     /// Returns the filename of this namespace entry under `/proc/[pid]/ns/`.
     fn as_str(self) -> &'static str {
         match self {
-            Self::Uts => "uts",
+            Self::Cgroup => "cgroup",
             Self::Mnt => "mnt",
+            Self::Uts => "uts",
         }
     }
 
     /// Parses a namespace entry name, returning `None` for unrecognized names.
     fn from_str(s: &str) -> Option<Self> {
         match s {
-            "uts" => Some(Self::Uts),
+            "cgroup" => Some(Self::Cgroup),
             "mnt" => Some(Self::Mnt),
+            "uts" => Some(Self::Uts),
             _ => None,
         }
     }
@@ -76,18 +81,22 @@ impl NsProxyEntry {
     /// Creates a symlink inode for this namespace entry.
     fn new_sym_inode(self, ns_proxy: &NsProxy, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         match self {
-            Self::Uts => NsSymOps::<UtsNamespace>::new_inode(ns_proxy.uts_ns().get_path(), parent),
+            Self::Cgroup => {
+                NsSymOps::<CgroupNamespace>::new_inode(ns_proxy.cgroup_ns().get_path(), parent)
+            }
             Self::Mnt => {
                 NsSymOps::<MountNamespace>::new_inode(ns_proxy.mnt_ns().get_path(), parent)
             }
+            Self::Uts => NsSymOps::<UtsNamespace>::new_inode(ns_proxy.uts_ns().get_path(), parent),
         }
     }
 
     /// Returns the current namespace path for this entry.
     fn current_path(self, ns_proxy: &NsProxy) -> Path {
         match self {
-            Self::Uts => ns_proxy.uts_ns().get_path(),
+            Self::Cgroup => ns_proxy.cgroup_ns().get_path(),
             Self::Mnt => ns_proxy.mnt_ns().get_path(),
+            Self::Uts => ns_proxy.uts_ns().get_path(),
         }
     }
 }
@@ -96,13 +105,16 @@ impl NsProxyEntry {
 ///
 /// Returns `None` if the inode is not a known namespace symlink type.
 fn cached_ns_path(inode: &dyn Inode) -> Option<&Path> {
+    if let Some(sym) = inode.downcast_ref::<NsSymlink<CgroupNamespace>>() {
+        return Some(&sym.inner().ns_path);
+    }
+    if let Some(sym) = inode.downcast_ref::<NsSymlink<MountNamespace>>() {
+        return Some(&sym.inner().ns_path);
+    }
     if let Some(sym) = inode.downcast_ref::<NsSymlink<UserNamespace>>() {
         return Some(&sym.inner().ns_path);
     }
     if let Some(sym) = inode.downcast_ref::<NsSymlink<UtsNamespace>>() {
-        return Some(&sym.inner().ns_path);
-    }
-    if let Some(sym) = inode.downcast_ref::<NsSymlink<MountNamespace>>() {
         return Some(&sym.inner().ns_path);
     }
     // TODO: Support additional namespace types.
@@ -223,12 +235,16 @@ impl DirOps for NsDirOps {
             return false;
         };
 
-        if child.downcast_ref::<NsSymlink<UtsNamespace>>().is_some() {
-            return cached_path == &ns_proxy.uts_ns().get_path();
+        if child.downcast_ref::<NsSymlink<CgroupNamespace>>().is_some() {
+            return cached_path == &ns_proxy.cgroup_ns().get_path();
         }
 
         if child.downcast_ref::<NsSymlink<MountNamespace>>().is_some() {
             return cached_path == &ns_proxy.mnt_ns().get_path();
+        }
+
+        if child.downcast_ref::<NsSymlink<UtsNamespace>>().is_some() {
+            return cached_path == &ns_proxy.uts_ns().get_path();
         }
 
         // TODO: Support additional namespace types.

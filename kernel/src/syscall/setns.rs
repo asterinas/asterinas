@@ -12,6 +12,7 @@
 
 use crate::{
     fs::{
+        cgroupfs::CgroupNamespace,
         file::{FileLike, InodeHandle, file_table::RawFileDesc},
         pseudofs::{NsCommonOps, NsFile},
         vfs::path::MountNamespace,
@@ -82,14 +83,19 @@ fn build_proxy_from_pid_file(
 
     let mut builder = NsProxyBuilder::new(current_proxy);
 
-    if flags.contains(CloneFlags::CLONE_NEWUTS) {
-        let target_ns = target_proxy.uts_ns();
-        set_uts_ns(&mut builder, target_ns, ctx)?;
+    if flags.contains(CloneFlags::CLONE_NEWCGROUP) {
+        let target_ns = target_proxy.cgroup_ns();
+        set_cgroup_ns(&mut builder, target_ns, ctx)?;
     }
 
     if flags.contains(CloneFlags::CLONE_NEWNS) {
         let target_ns = target_proxy.mnt_ns();
         set_mnt_ns(&mut builder, target_ns, ctx)?;
+    }
+
+    if flags.contains(CloneFlags::CLONE_NEWUTS) {
+        let target_ns = target_proxy.uts_ns();
+        set_uts_ns(&mut builder, target_ns, ctx)?;
     }
 
     // TODO: Support setting other namespaces from the target process.
@@ -119,11 +125,14 @@ fn build_proxy_from_ns_file(
 
     #[expect(clippy::nonminimal_bool)]
     let applied = false
-        || try_apply_ns_from_inode::<UtsNamespace>(inode_handle, flags, |ns| {
-            set_uts_ns(&mut builder, &ns, ctx)
+        || try_apply_ns_from_inode::<CgroupNamespace>(inode_handle, flags, |ns| {
+            set_cgroup_ns(&mut builder, &ns, ctx)
         })?
         || try_apply_ns_from_inode::<MountNamespace>(inode_handle, flags, |ns| {
             set_mnt_ns(&mut builder, &ns, ctx)
+        })?
+        || try_apply_ns_from_inode::<UtsNamespace>(inode_handle, flags, |ns| {
+            set_uts_ns(&mut builder, &ns, ctx)
         })?;
     // TODO: Support setting other namespaces from the ns file.
 
@@ -154,24 +163,14 @@ fn try_apply_ns_from_inode<T: NsCommonOps>(
     Ok(true)
 }
 
-fn set_uts_ns(
+fn set_cgroup_ns(
     builder: &mut NsProxyBuilder,
-    target_ns: &Arc<UtsNamespace>,
+    target_ns: &Arc<CgroupNamespace>,
     ctx: &Context,
 ) -> Result<()> {
-    // Verify the thread has SYS_ADMIN capability in the target namespace's owner
-    // and the current user namespace.
-    target_ns
-        .owner_user_ns()
-        .unwrap()
-        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
-    ctx.thread_local
-        .borrow_user_ns()
-        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+    check_set_ns_perms(target_ns, ctx)?;
 
-    // TODO: Are the checks above sufficient?
-
-    builder.uts_ns(target_ns.clone());
+    builder.cgroup_ns(target_ns.clone());
 
     Ok(())
 }
@@ -181,15 +180,7 @@ fn set_mnt_ns(
     target_ns: &Arc<MountNamespace>,
     ctx: &Context,
 ) -> Result<()> {
-    // Verify the thread has SYS_ADMIN capability in the target namespace's owner
-    // and the current user namespace.
-    target_ns
-        .owner_user_ns()
-        .unwrap()
-        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
-    ctx.thread_local
-        .borrow_user_ns()
-        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+    check_set_ns_perms(target_ns, ctx)?;
 
     if ctx.thread_local.is_fs_shared() {
         return_errno_with_message!(
@@ -201,6 +192,34 @@ fn set_mnt_ns(
     // TODO: Are the checks above sufficient?
 
     builder.mnt_ns(target_ns.clone());
+
+    Ok(())
+}
+
+fn set_uts_ns(
+    builder: &mut NsProxyBuilder,
+    target_ns: &Arc<UtsNamespace>,
+    ctx: &Context,
+) -> Result<()> {
+    check_set_ns_perms(target_ns, ctx)?;
+
+    builder.uts_ns(target_ns.clone());
+
+    Ok(())
+}
+
+fn check_set_ns_perms<T: NsCommonOps>(target_ns: &Arc<T>, ctx: &Context) -> Result<()> {
+    // Verify the thread has SYS_ADMIN capability in the target namespace's owner
+    // and the current user namespace.
+    target_ns
+        .owner_user_ns()
+        .unwrap()
+        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+    ctx.thread_local
+        .borrow_user_ns()
+        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+
+    // TODO: Are the checks above sufficient?
 
     Ok(())
 }

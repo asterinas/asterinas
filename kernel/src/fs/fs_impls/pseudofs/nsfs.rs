@@ -356,32 +356,31 @@ impl StashedDentry {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NsType {
-    Uts,
-    User,
+    Cgroup,
+    #[expect(unused)]
+    Ipc,
     Mnt,
+    #[expect(unused)]
+    Net,
     #[expect(unused)]
     Pid,
     #[expect(unused)]
     Time,
-    #[expect(unused)]
-    Cgroup,
-    #[expect(unused)]
-    Ipc,
-    #[expect(unused)]
-    Net,
+    User,
+    Uts,
 }
 
 impl NsType {
     const fn as_str(&self) -> &'static str {
         match self {
-            NsType::Uts => "uts",
-            NsType::User => "user",
-            NsType::Mnt => "mnt",
-            NsType::Pid => "pid",
-            NsType::Time => "time",
             NsType::Cgroup => "cgroup",
             NsType::Ipc => "ipc",
+            NsType::Mnt => "mnt",
             NsType::Net => "net",
+            NsType::Pid => "pid",
+            NsType::Time => "time",
+            NsType::User => "user",
+            NsType::Uts => "uts",
         }
     }
 }
@@ -389,14 +388,14 @@ impl NsType {
 impl From<NsType> for CloneFlags {
     fn from(value: NsType) -> Self {
         match value {
-            NsType::Uts => CloneFlags::CLONE_NEWUTS,
-            NsType::User => CloneFlags::CLONE_NEWUSER,
-            NsType::Mnt => CloneFlags::CLONE_NEWNS,
-            NsType::Pid => CloneFlags::CLONE_NEWPID,
-            NsType::Time => CloneFlags::CLONE_NEWTIME,
             NsType::Cgroup => CloneFlags::CLONE_NEWCGROUP,
             NsType::Ipc => CloneFlags::CLONE_NEWIPC,
+            NsType::Mnt => CloneFlags::CLONE_NEWNS,
             NsType::Net => CloneFlags::CLONE_NEWNET,
+            NsType::Pid => CloneFlags::CLONE_NEWPID,
+            NsType::Time => CloneFlags::CLONE_NEWTIME,
+            NsType::User => CloneFlags::CLONE_NEWUSER,
+            NsType::Uts => CloneFlags::CLONE_NEWUTS,
         }
     }
 }
