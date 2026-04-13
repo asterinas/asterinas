@@ -22,6 +22,11 @@ pub trait FileSystem: Any + Sync + Send {
     fn sync(&self) -> Result<()>;
 
     /// Returns the root inode of this file system.
+    ///
+    /// For each mount, the VFS invokes this method only once and eagerly when
+    /// it creates the mount root. It never defers the lookup to a later path
+    /// walk. For mounts created by `mount()`, the call happens in the thread
+    /// context that performs the syscall.
     fn root_inode(&self) -> Arc<dyn Inode>;
 
     /// Returns the super block of this file system.

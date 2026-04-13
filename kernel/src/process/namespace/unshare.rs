@@ -56,8 +56,12 @@ impl ContextUnshareAdminApi for Context<'_> {
         let mut thread_local_ns_proxy_ref = self.thread_local.borrow_ns_proxy_mut();
         let thread_local_ns_proxy = thread_local_ns_proxy_ref.unwrap();
 
-        let new_ns_proxy =
-            thread_local_ns_proxy.new_clone(&user_ns_ref, flags, self.posix_thread)?;
+        let new_ns_proxy = thread_local_ns_proxy.new_clone(
+            &user_ns_ref,
+            self.process.as_ref(),
+            self.posix_thread,
+            flags,
+        )?;
 
         if flags.contains(CloneFlags::CLONE_NEWNS) {
             self.thread_local

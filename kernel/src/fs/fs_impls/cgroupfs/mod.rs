@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+pub use cgroup_ns::CgroupNamespace;
 use fs::CgroupFsType;
+pub(in crate::fs) use systree_node::CgroupSystem;
 pub use systree_node::{CgroupMembership, CgroupNode, CgroupSysNode};
 
+mod cgroup_ns;
 mod controller;
 mod fs;
 mod inode;

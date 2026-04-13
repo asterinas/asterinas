@@ -259,7 +259,9 @@ impl CloneFlags {
             | CloneFlags::CLONE_CHILD_SETTID
             | CloneFlags::CLONE_CHILD_CLEARTID
             | CloneFlags::CLONE_VFORK
+            | CloneFlags::CLONE_NEWCGROUP
             | CloneFlags::CLONE_NEWNS
+            | CloneFlags::CLONE_NEWUTS
             | CloneFlags::CLONE_PARENT;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
@@ -378,8 +380,9 @@ fn clone_child_task(
     let child_ns_proxy = clone_ns_proxy(
         thread_local.borrow_ns_proxy().unwrap(),
         &child_user_ns,
-        clone_flags,
+        process,
         posix_thread,
+        clone_flags,
     )?;
 
     // Clone default timer slack
@@ -492,8 +495,9 @@ fn clone_child_process(
     let child_ns_proxy = clone_ns_proxy(
         thread_local.borrow_ns_proxy().unwrap(),
         &child_user_ns,
-        clone_flags,
+        process,
         posix_thread,
+        clone_flags,
     )?;
 
     // Clone default timer slack
@@ -747,10 +751,11 @@ fn clone_user_ns(
 fn clone_ns_proxy(
     parent_ns_proxy: &Arc<NsProxy>,
     user_ns: &Arc<UserNamespace>,
-    clone_flags: CloneFlags,
+    process: &Process,
     posix_thread: &PosixThread,
+    clone_flags: CloneFlags,
 ) -> Result<Arc<NsProxy>> {
-    parent_ns_proxy.new_clone(user_ns, clone_flags, posix_thread)
+    parent_ns_proxy.new_clone(user_ns, process, posix_thread, clone_flags)
 }
 
 #[expect(clippy::too_many_arguments)]

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_systree::SysObj;
 use aster_util::printer::VmPrinter;
+use ostd::task::Task;
 
 use crate::{
     fs::{
+        cgroupfs::{CgroupSysNode, CgroupSystem},
         file::mkmod,
         procfs::{
             pid::TidDirOps,
@@ -13,6 +14,7 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
+    process::posix_thread::AsThreadLocal,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/cgroup` (and also `/proc/[pid]/cgroup`).
@@ -30,13 +32,16 @@ impl CgroupFileOps {
 
 impl FileOps for CgroupFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let path = self
-            .0
-            .process_ref
-            .cgroup()
-            .get()
-            .map(|cgroup| cgroup.path())
-            .unwrap_or_else(|| "/".into());
+        let cgroup: Arc<dyn CgroupSysNode> = match self.0.process_ref.cgroup().get() {
+            Some(cgroup) => cgroup.clone(),
+            None => CgroupSystem::singleton().clone(),
+        };
+
+        let current_task = Task::current().unwrap();
+        let thread_local = current_task.as_thread_local().unwrap();
+        let ns_proxy = thread_local.borrow_ns_proxy();
+        let cgroup_ns = ns_proxy.unwrap().cgroup_ns();
+        let path = cgroup_ns.virtualize_path(cgroup);
 
         let mut printer = VmPrinter::new_skip(writer, offset);
         writeln!(printer, "0::{}", path)?;

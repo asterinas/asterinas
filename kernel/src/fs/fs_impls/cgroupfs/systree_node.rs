@@ -273,7 +273,7 @@ impl CgroupMembership {
 ///
 /// The cgroup system provides v2 unified hierarchy, and is also used as a root
 /// node in the cgroup systree.
-pub(super) struct CgroupSystem {
+pub(in crate::fs) struct CgroupSystem {
     fields: BranchNodeFields<CgroupNode, Self>,
     controller: Controller,
 }
@@ -344,7 +344,7 @@ impl CgroupNode {
 
 impl CgroupSystem {
     /// Returns the `CgroupSystem` singleton.
-    pub(super) fn singleton() -> &'static Arc<CgroupSystem> {
+    pub(in crate::fs) fn singleton() -> &'static Arc<CgroupSystem> {
         static SINGLETON: Once<Arc<CgroupSystem>> = Once::new();
 
         SINGLETON.call_once(Self::new)
