@@ -154,6 +154,10 @@ Follow the steps below to get Asterinas up and running.
     docker run -it --privileged --network=host -v /dev:/dev -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.17.1-20260319
     ```
 
+    Alternatively, if you use VS Code with the
+    [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+    extension, open the cloned folder and select "Reopen in Container".
+
 3. Inside the container,
 go to the project folder (`/root/asterinas`) and run:
 

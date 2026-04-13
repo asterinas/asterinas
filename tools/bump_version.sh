@@ -118,7 +118,8 @@ update_docker_image_version() {
 update_all_docker_version_refs() {
     new_version=$(cat ${DOCKER_IMAGE_VERSION_PATH})
 
-    # Update Docker image versions in README files and AGENTS.md
+    # Update Docker image versions in devcontainer.json, README files, and AGENTS.md
+    update_image_versions ${ASTER_SRC_DIR}/.devcontainer/devcontainer.json
     update_image_versions ${ASTER_SRC_DIR}/README.md
     update_image_versions ${ASTER_SRC_DIR}/AGENTS.md
     update_image_versions ${SCRIPT_DIR}/docker/README.md
