@@ -8,6 +8,7 @@ set -e
 
 ./clone3/clone_exit_signal
 ./clone3/clone_files
+./clone3/clone_invalid_exit_signal
 ./clone3/clone_no_exit_signal
 ./clone3/clone_parent
 ./clone3/clone_process
