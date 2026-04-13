@@ -369,6 +369,19 @@ impl From<aster_systree::Error> for Error {
     }
 }
 
+impl From<aster_drm::DrmError> for Error {
+    fn from(value: aster_drm::DrmError) -> Self {
+        match value {
+            aster_drm::DrmError::Invalid => Error::new(Errno::EINVAL),
+            aster_drm::DrmError::Busy => Error::new(Errno::EBUSY),
+            aster_drm::DrmError::NoMemory => Error::new(Errno::ENOMEM),
+            aster_drm::DrmError::NotSupported => Error::new(Errno::EOPNOTSUPP),
+            aster_drm::DrmError::NotFound => Error::new(Errno::ENOENT),
+            aster_drm::DrmError::PermissionDenied => Error::new(Errno::EACCES),
+        }
+    }
+}
+
 impl From<aster_util::printer::VmPrinterError> for Error {
     fn from(value: aster_util::printer::VmPrinterError) -> Self {
         match value {
