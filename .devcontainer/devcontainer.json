@@ -1,0 +1,15 @@
+{
+  "name": "Asterinas Dev Container",
+  "image": "asterinas/asterinas:0.17.2-20260407",
+  // Mount the workspace and the `/dev` directory
+  "workspaceFolder": "/root/asterinas",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/root/asterinas,type=bind",
+  "mounts": ["source=/dev,target=/dev,type=bind"],
+  // Run with privileged mode and host networking
+  "privileged": true,
+  "runArgs": ["--network=host"],
+  // Enable extensions for Rust development
+  "customizations": {
+    "vscode": { "extensions": ["rust-lang.rust-analyzer"] }
+  }
+}

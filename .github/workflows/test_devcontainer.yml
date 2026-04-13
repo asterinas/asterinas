@@ -1,0 +1,32 @@
+name: Test devcontainer
+
+on:
+  pull_request:
+    paths:
+      - ".devcontainer/**"
+  push:
+    branches: [main]
+    paths:
+      - ".devcontainer/**"
+  workflow_run:
+    workflows: ["Publish Docker images"]
+    types:
+      - completed
+
+jobs:
+  test-devcontainer:
+    # DO NOT run when the "Publish Docker images" workflow failed.
+    if: ${{ github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify image tag matches DOCKER_IMAGE_VERSION
+        run: |
+          EXPECTED=$(cat DOCKER_IMAGE_VERSION)
+          grep -q "asterinas/asterinas:${EXPECTED}" .devcontainer/devcontainer.json \
+            || { echo "devcontainer.json image doesn't match DOCKER_IMAGE_VERSION"; exit 1; }
+      - name: Build and verify dev container
+        uses: devcontainers/ci@v0.3
+        with:
+          runCmd: rustc --version && cargo --version && make --version
