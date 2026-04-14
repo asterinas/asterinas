@@ -60,7 +60,7 @@ impl super::SubControl for CpuSetController {
 }
 
 impl super::SubControlStatic for CpuSetController {
-    fn new(_is_root: bool) -> Self {
+    fn new(_is_root: bool, _is_active: bool) -> Self {
         Self { _private: () }
     }
 
