@@ -64,6 +64,10 @@ impl HookContext {
         Self { metadata, packet }
     }
 
+    pub fn into_parts(self) -> (UdpMetadata, Vec<u8>) {
+        (self.metadata, self.packet)
+    }
+
     pub fn metadata(&self) -> &UdpMetadata {
         &self.metadata
     }

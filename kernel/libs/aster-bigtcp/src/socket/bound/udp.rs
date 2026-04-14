@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{boxed::Box, sync::Arc, vec};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_softirq::BottomHalfDisabled;
@@ -16,6 +16,7 @@ use crate::{
     errors::udp::SendError,
     ext::Ext,
     iface::BoundPort,
+    netfilter::{self, HookContext, Verdict},
     socket::{RawUdpSocket, event::SocketEvents, unbound::new_udp_socket},
 };
 
@@ -148,13 +149,31 @@ impl<E: Ext> UdpSocket<E> {
         F: FnOnce(&mut [u8]) -> R,
     {
         let mut socket = self.0.inner.socket.lock();
+        let mut meta = meta.into();
 
         if size > socket.packet_send_capacity() {
             return Err(SendError::TooLarge);
         }
 
+        let mut packet = vec![0u8; size];
+        let result = f(packet.as_mut_slice());
+
+        if let Some(registry) = netfilter::registry()
+            && registry.udp_send_hooks_exist()
+        {
+            let mut context = HookContext::new(meta, packet);
+            let verdict = registry.run_udp_send_hooks(&mut context);
+
+            // FIXME: Return `SendError` to the caller when the packet is dropped.
+            if matches!(verdict, Some(Verdict::Drop)) {
+                return Ok(result);
+            }
+
+            (meta, packet) = context.into_parts();
+        }
+
         let buffer = socket.send(size, meta)?;
-        let result = f(buffer);
+        buffer.copy_from_slice(packet.as_slice());
 
         self.0
             .inner
