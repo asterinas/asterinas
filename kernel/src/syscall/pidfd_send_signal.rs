@@ -54,7 +54,8 @@ pub fn sys_pidfd_send_signal(
 
     match target {
         SignalTarget::Thread { tid, tgid } => {
-            tgkill(tid, tgid, Some(Box::new(signal) as Box<dyn Signal>), ctx)?;
+            let signal = Some(Box::new(signal) as Box<dyn Signal>);
+            tgkill(tid, Some(tgid), signal, ctx)?;
         }
         SignalTarget::Process { pid } => {
             kill(pid, Some(Box::new(signal) as Box<dyn Signal>), ctx)?;

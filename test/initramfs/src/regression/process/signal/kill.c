@@ -87,6 +87,7 @@ FN_TEST(kill_dead_thread)
 	// Killing dead threads will succeed.
 	TEST_SUCC(kill(cpid, SIGCHLD));
 	TEST_SUCC(tgkill(cpid, cpid, SIGCHLD));
+	TEST_SUCC(syscall(SYS_tkill, cpid, SIGCHLD));
 
 	TEST_SUCC(kill(cpid, SIGKILL));
 	TEST_RES(wait(&status), _ret == cpid && WIFSIGNALED(status) &&

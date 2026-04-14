@@ -155,7 +155,7 @@ macro_rules! import_generic_syscall_entries {
             symlink::sys_symlinkat,
             sync::{sys_sync, sys_syncfs},
             sysinfo::sys_sysinfo,
-            tgkill::sys_tgkill,
+            tgkill::{sys_tgkill, sys_tkill},
             timer_create::{sys_timer_create, sys_timer_delete},
             timer_settime::{sys_timer_gettime, sys_timer_settime},
             timerfd_create::sys_timerfd_create,
@@ -304,6 +304,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_SCHED_GET_PRIORITY_MAX = 125 => sys_sched_get_priority_max(args[..1]);
             SYS_SCHED_GET_PRIORITY_MIN = 126 => sys_sched_get_priority_min(args[..1]);
             SYS_KILL = 129                   => sys_kill(args[..2]);
+            SYS_TKILL = 130                  => sys_tkill(args[..2]);
             SYS_TGKILL = 131                 => sys_tgkill(args[..3]);
             SYS_SIGALTSTACK = 132            => sys_sigaltstack(args[..2], &user_ctx);
             SYS_RT_SIGSUSPEND = 133          => sys_rt_sigsuspend(args[..2]);

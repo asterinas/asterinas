@@ -125,6 +125,10 @@ pub fn handle_pending_signal(
                 debug!("Failed to handle user signal: {:?}", e);
                 // If signal handling fails, the process should be terminated with SIGSEGV.
                 // Reference: <https://elixir.bootlin.com/linux/v6.13/source/kernel/signal.c#L3082>
+                //
+                // FIXME: Linux converts a signal-frame setup failure into a SIGSEGV delivery,
+                // instead of killing the process directly.
+                // This can be observed in LTP test `signal06`.
                 do_exit_group(TermStatus::Killed(SIGSEGV));
             }
         }

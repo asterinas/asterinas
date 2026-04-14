@@ -160,7 +160,7 @@ use super::{
     symlink::{sys_symlink, sys_symlinkat},
     sync::{sys_sync, sys_syncfs},
     sysinfo::sys_sysinfo,
-    tgkill::sys_tgkill,
+    tgkill::{sys_tgkill, sys_tkill},
     time::sys_time,
     timer_create::{sys_timer_create, sys_timer_delete},
     timer_settime::{sys_timer_gettime, sys_timer_settime},
@@ -335,6 +335,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_REMOVEXATTR = 197      => sys_removexattr(args[..2]);
     SYS_LREMOVEXATTR = 198     => sys_lremovexattr(args[..2]);
     SYS_FREMOVEXATTR = 199     => sys_fremovexattr(args[..2]);
+    SYS_TKILL = 200            => sys_tkill(args[..2]);
     SYS_TIME = 201             => sys_time(args[..1]);
     SYS_FUTEX = 202            => sys_futex(args[..6]);
     SYS_SCHED_SETAFFINITY = 203 => sys_sched_setaffinity(args[..3]);

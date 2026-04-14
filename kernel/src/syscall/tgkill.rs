@@ -19,15 +19,24 @@ use crate::{
 
 /// Sends a signal to a thread with `tid` as its thread ID, and `tgid` as its thread group ID.
 pub fn sys_tgkill(tgid: Pid, tid: Tid, sig_num: u8, ctx: &Context) -> Result<SyscallReturn> {
+    do_sys_tgkill(Some(tgid), tid, sig_num, ctx)
+}
+
+/// Sends a signal to a thread with `tid` as its thread ID.
+pub fn sys_tkill(tid: Tid, sig_num: u8, ctx: &Context) -> Result<SyscallReturn> {
+    do_sys_tgkill(None, tid, sig_num, ctx)
+}
+
+fn do_sys_tgkill(tgid: Option<Pid>, tid: Tid, sig_num: u8, ctx: &Context) -> Result<SyscallReturn> {
     let sig_num = if sig_num == 0 {
         None
     } else {
         Some(SigNum::try_from(sig_num)?)
     };
-    debug!("tgid = {}, pid = {}, sig_num = {:?}", tgid, tid, sig_num);
+    debug!("tgid = {:?}, tid = {}, sig_num = {:?}", tgid, tid, sig_num);
 
-    if tgid.cast_signed() < 0 || tid.cast_signed() < 0 {
-        return_errno_with_message!(Errno::EINVAL, "negative TGIDs or TIDs are not valid");
+    if tgid.is_some_and(|tgid| tgid.cast_signed() <= 0) || tid.cast_signed() <= 0 {
+        return_errno_with_message!(Errno::EINVAL, "non-positive TGIDs or TIDs are not valid");
     }
 
     let signal = sig_num.map(|sig_num| {
