@@ -13,4 +13,5 @@ pub fn init() {
 /// Lazy init should be called after spawning init thread.
 pub fn init_in_first_kthread() {
     iface::init_in_first_kthread();
+    aster_bigtcp::netfilter::init_registry();
 }
