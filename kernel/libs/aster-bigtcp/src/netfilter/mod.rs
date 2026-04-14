@@ -25,6 +25,12 @@ impl Registry {
         }
     }
 
+    fn new_with_builtin_hooks() -> Self {
+        let mut registry = Self::new();
+        registry.register_udp_send_hook(Box::new(ebpf::EbpfHook::builtin_udp_send_prefix_a()));
+        registry
+    }
+
     pub fn register_udp_send_hook(&mut self, hook: Box<dyn HookFunction>) {
         self.udp_send.lock().push(hook);
     }
@@ -46,14 +52,13 @@ impl Registry {
 static NETFILTER_REGISTRY: Once<Arc<Registry>> = Once::new();
 
 pub fn init_registry() {
-    NETFILTER_REGISTRY.call_once(|| Arc::new(Registry::new()));
+    NETFILTER_REGISTRY.call_once(|| Arc::new(Registry::new_with_builtin_hooks()));
 }
 
 pub fn registry() -> Option<&'static Arc<Registry>> {
     NETFILTER_REGISTRY.get()
 }
 
-#[repr(C)]
 pub struct HookContext {
     metadata: UdpMetadata,
     packet: Vec<u8>,
