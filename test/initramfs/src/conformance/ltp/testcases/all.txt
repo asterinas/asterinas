@@ -1556,7 +1556,7 @@ signal02
 signal03
 signal04
 signal05
-signal06
+# signal06
 
 signalfd01
 signalfd02
@@ -1718,8 +1718,8 @@ timer_delete02
 # timer_settime02
 # timer_settime03
 
-# tkill01
-# tkill02
+tkill01
+tkill02
 
 truncate02
 truncate02_64

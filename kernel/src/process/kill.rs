@@ -75,21 +75,30 @@ pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Contex
 /// Sends a signal to a target thread, using the current process
 /// as the sender.
 ///
+/// Checks the target thread belongs to the target process if `tgid` is provided.
+///
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
-pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<()> {
+pub fn tgkill(
+    tid: Tid,
+    tgid: Option<Pid>,
+    signal: Option<Box<dyn Signal>>,
+    ctx: &Context,
+) -> Result<()> {
     let thread = pid_table::pid_table_mut()
         .get_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target thread does not exist"))?;
     let target_posix_thread = thread.as_posix_thread().unwrap();
 
-    // Check the TGID
-    let pid = target_posix_thread.process().pid();
-    if pid != tgid {
-        return_errno_with_message!(
-            Errno::ESRCH,
-            "the combination of the TGID and the TID is not valid"
-        );
+    if let Some(tgid) = tgid {
+        // Check the TGID
+        let pid = target_posix_thread.process().pid();
+        if pid != tgid {
+            return_errno_with_message!(
+                Errno::ESRCH,
+                "the combination of the TGID and the TID is not valid"
+            );
+        }
     }
 
     // Check permission
