@@ -11,6 +11,7 @@ bitflags.workspace = true
 int-to-c-enum.workspace = true
 jhash.workspace = true
 ostd.workspace = true
+rbpf.workspace = true
 smoltcp.workspace = true
 spin.workspace = true
 takeable.workspace = true

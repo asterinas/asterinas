@@ -243,6 +243,8 @@ zerocopy = { version = "0.8.34", features = [ "derive" ] }
 proc-macro2 = { version = "1.0.95", features = ["span-locations"] }
 quote = "1.0.35"
 syn = { version = "2.0.77", features = ["full", "parsing", "fold"] }
+# eBPF VM
+rbpf = { version = "0.4", default-features = false }
 
 # Cargo only looks at the profile settings 
 # in the Cargo.toml manifest at the root of the workspace
