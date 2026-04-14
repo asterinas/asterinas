@@ -7,6 +7,7 @@ set -e
 CGROUP_ROOT="/sys/fs/cgroup"
 CGROUP_NAME="user"
 PROCESS_ID=1
+BUSY_PID=""
 
 # --- Helpers ------------------------------------------------------------------
 
@@ -58,8 +59,30 @@ verify_ge() {
     fi
 }
 
+read_cpu_stat_field() {
+    local field=$1
+    local path=$2
+
+    while IFS=' ' read -r name value; do
+        if [ "$name" = "$field" ]; then
+            echo "$value"
+            return 0
+        fi
+    done < "$path"
+
+    echo "Error: Failed to read $field from $path"
+    exit 1
+}
+
 cleanup() {
     log_step "Cleaning up"
+
+    if [ -n "$BUSY_PID" ]; then
+        echo "Stopping busy-loop helper: $BUSY_PID"
+        kill "$BUSY_PID" 2>/dev/null || true
+        wait "$BUSY_PID" 2>/dev/null || true
+        BUSY_PID=""
+    fi
 
     if [ -f "$CGROUP_ROOT/cgroup.procs" ]; then
         echo "Moving process $PROCESS_ID back to root cgroup"
@@ -88,6 +111,9 @@ log_step "1.2 Check initial controller attributes"
 verify "cpuset.cpus.effective exists in root" \
     "ls cpuset.cpus.effective" \
     "cpuset.cpus.effective"
+verify "cpu.stat exists in root" \
+    "ls cpu.stat" \
+    "cpu.stat"
 
 log_step "1.3 Create user hierarchy"
 mkdir -p "$CGROUP_NAME"
@@ -103,6 +129,19 @@ log_step "1.5 Check initial memory.max in child"
 verify "memory.max doesn't exist initially" \
     "ls memory.max" \
     "ls: memory.max: No such file or directory"
+verify "cpu.stat exists initially in child" \
+    "ls cpu.stat" \
+    "cpu.stat"
+
+log_step "1.5.1 Check initial child cpu.stat only reports usage fields"
+CPU_STAT_LINES=$(wc -l < cpu.stat)
+echo "cpu.stat lines before enabling CPU sub-controller: $CPU_STAT_LINES"
+if [ "$CPU_STAT_LINES" -ne 3 ]; then
+    echo "Error: inactive child cpu.stat should contain exactly 3 lines"
+    exit 1
+else
+    echo "Verified"
+fi
 
 log_step "1.6 Check initial cgroup of process 1"
 verify "Process 1 initially in root cgroup" \
@@ -118,34 +157,83 @@ verify "Initial cgroup.events populated=0" \
 
 log_section "Section 2: Controller activation / deactivation"
 
-log_step "2.1 Enable memory and pids in root"
+log_step "2.1 Enable cpu, memory, and pids in root"
 cd "$CGROUP_ROOT"
-echo "+memory +pids" > cgroup.subtree_control
-verify "root subtree_control has memory and pids" \
+echo "+cpu +memory +pids" > cgroup.subtree_control
+verify "root subtree_control has cpu, memory, and pids" \
     "cat cgroup.subtree_control" \
-    "memory pids"
+    "cpu memory pids"
 
-log_step "2.2 Check child now has memory.max and pids.max"
+log_step "2.2 Check child now has cpu, memory, and pids controller files"
 cd "$CGROUP_NAME"
 echo "Current directory: $(pwd)"
+verify "cpu.stat still exists" \
+    "ls cpu.stat" \
+    "cpu.stat"
 verify "memory.max now exists" \
     "ls memory.max" \
     "memory.max"
 verify "pids.max now exists" \
     "ls pids.max" \
     "pids.max"
+verify "cpu.stat has nr_periods after enabling CPU sub-controller" \
+    "grep '^nr_periods ' cpu.stat" \
+    "nr_periods 0"
+verify "cpu.stat has burst_usec after enabling CPU sub-controller" \
+    "grep '^burst_usec ' cpu.stat" \
+    "burst_usec 0"
+
+log_step "2.2.1 Verify cpu.stat grows for a busy cgroup task"
+CPU_STAT_PATH="$CGROUP_ROOT/$CGROUP_NAME/cpu.stat"
+
+sh -c '
+CGROUP_PATH=$1
+echo $$ > "$CGROUP_PATH/cgroup.procs"
+while :; do
+    :
+done
+' sh "$CGROUP_ROOT/$CGROUP_NAME" &
+BUSY_PID=$!
+
+# Give the helper time to join the cgroup and start consuming CPU.
+sleep 1
+
+USAGE_BEFORE=$(read_cpu_stat_field "usage_usec" "$CPU_STAT_PATH")
+USER_BEFORE=$(read_cpu_stat_field "user_usec" "$CPU_STAT_PATH")
+echo "cpu.stat before measurement: usage_usec=$USAGE_BEFORE user_usec=$USER_BEFORE"
+
+sleep 2
+
+USAGE_AFTER=$(read_cpu_stat_field "usage_usec" "$CPU_STAT_PATH")
+USER_AFTER=$(read_cpu_stat_field "user_usec" "$CPU_STAT_PATH")
+echo "cpu.stat after measurement: usage_usec=$USAGE_AFTER user_usec=$USER_AFTER"
+
+kill "$BUSY_PID" 2>/dev/null || true
+wait "$BUSY_PID" 2>/dev/null || true
+BUSY_PID=""
+
+USAGE_DELTA=$((USAGE_AFTER - USAGE_BEFORE))
+USER_DELTA=$((USER_AFTER - USER_BEFORE))
+echo "cpu.stat delta: usage_usec=$USAGE_DELTA user_usec=$USER_DELTA"
+
+if [ "$USAGE_DELTA" -lt 1900000 ] || [ "$USER_DELTA" -lt 1900000 ]; then
+    echo "Error: cpu.stat did not charge enough busy CPU time"
+    exit 1
+else
+    echo "Verified"
+fi
 
 log_step "2.3 Check child cgroup.controllers"
-verify "child controllers are memory and pids" \
+verify "child controllers are cpu, memory, and pids" \
     "cat cgroup.controllers" \
-    "memory pids"
+    "cpu memory pids"
 
 log_step "2.4 Disable memory in root"
 cd "$CGROUP_ROOT"
 echo "-memory" > cgroup.subtree_control
 verify "root subtree_control removed memory" \
     "cat cgroup.subtree_control" \
-    "pids"
+    "cpu pids"
 
 log_step "2.5 Check child lost memory.max after deactivation"
 cd "$CGROUP_NAME"
