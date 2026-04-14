@@ -115,6 +115,7 @@ echo "All mount bind file test passed."
 ./procfs/dentry_cache
 ./procfs/mountstats
 ./procfs/pid_mem
+./procfs/tid
 
 ./pseudofs/memfd_access_err
 ./pseudofs/pseudo_dentry
