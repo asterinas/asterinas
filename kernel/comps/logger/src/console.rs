@@ -2,7 +2,7 @@
 
 //! `print` and `println` macros
 //!
-//! FIXME: It will print to all `virtio-console` devices, which is not a good choice.
+//! Selects one console backend for kernel prints.
 //!
 
 use alloc::{collections::btree_map::BTreeMap, fmt, string::String, sync::Arc};
@@ -10,6 +10,26 @@ use core::fmt::Write;
 
 use aster_console::AnyConsoleDevice;
 use ostd::sync::{LocalIrqDisabled, SpinLockGuard};
+use spin::Once;
+
+static CONSOLES: Once<alloc::vec::Vec<String>> = Once::new();
+aster_cmdline::define_repeatable_kv_param!("console", CONSOLES);
+
+fn selected_console_device_name() -> Option<&'static str> {
+    let console_name = CONSOLES
+        .get()
+        .and_then(|consoles| consoles.first())
+        .map(|s| s.as_str())
+        .unwrap_or("tty0");
+
+    // Translate Linux cmdline console names to internal registered console names.
+    match console_name {
+        "ttyS0" => Some("Uart-Console"),
+        "hvc0" => Some("Virtio-Console"),
+        "tty0" => Some("Framebuffer-Console"),
+        _ => None,
+    }
+}
 
 /// Prints the formatted arguments to the standard output.
 pub fn _print(args: fmt::Arguments) {
@@ -28,7 +48,14 @@ pub fn _print(args: fmt::Arguments) {
             if self.0.is_empty() {
                 ostd::early_print!("{}", s);
             } else {
-                for console in self.0.values() {
+                // Route each message to one selected backend instead of broadcasting
+                // to every registered console device.
+                if let Some(device_name) = selected_console_device_name()
+                    && let Some(console) = self.0.get(device_name)
+                {
+                    console.send(s.as_bytes());
+                } else if let Some((_, console)) = self.0.first_key_value() {
+                    // Fall back to the first registered console device.
                     console.send(s.as_bytes());
                 }
             }
