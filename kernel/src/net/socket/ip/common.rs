@@ -7,7 +7,10 @@ use aster_bigtcp::{
 };
 
 use crate::{
-    net::iface::{BoundPort, Iface, iter_all_ifaces, loopback_iface, virtio_iface},
+    net::{
+        iface::{BoundPort, Iface, iter_all_ifaces, loopback_iface, virtio_iface},
+        socket::util::check_port_privilege,
+    },
     prelude::*,
 };
 
@@ -49,6 +52,8 @@ fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
 }
 
 pub(super) fn bind_port(endpoint: &IpEndpoint, can_reuse: bool) -> Result<BoundPort> {
+    check_port_privilege(endpoint.port)?;
+
     let iface = match get_iface_to_bind(&endpoint.addr) {
         Some(iface) => iface,
         None => {
