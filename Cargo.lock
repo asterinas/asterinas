@@ -195,7 +195,6 @@ dependencies = [
  "component",
  "const_format",
  "controlled",
- "core2",
  "cpio-decoder",
  "device-id",
  "getset",
@@ -211,6 +210,7 @@ dependencies = [
  "logo-ascii-art",
  "loongArch64",
  "lru",
+ "no_std_io2",
  "osdk-frame-allocator",
  "osdk-heap-allocator",
  "ostd",
@@ -285,6 +285,7 @@ dependencies = [
  "cfg-if",
  "component",
  "fdt",
+ "int-to-c-enum",
  "ostd",
  "spin",
 ]
@@ -553,21 +554,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "core2"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b49ba7ef1ad6107f8824dbe97de947cbaac53c44e7f9756a1fba0d37c1eec505"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "cpio-decoder"
 version = "0.1.0"
 dependencies = [
- "core2",
  "int-to-c-enum",
  "lending-iterator",
+ "no_std_io2",
 ]
 
 [[package]]
@@ -1067,25 +1059,25 @@ checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
 
 [[package]]
 name = "libflate"
-version = "2.1.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45d9dfdc14ea4ef0900c1cddbc8dcd553fbaacd8a4a282cf4018ae9dd04fb21e"
+checksum = "cd96e993e5f3368b0cb8497dae6c860c22af8ff18388c61c6c0b86c58d86b5df"
 dependencies = [
  "adler32",
- "core2",
  "crc32fast",
  "dary_heap",
  "libflate_lz77",
+ "no_std_io2",
 ]
 
 [[package]]
 name = "libflate_lz77"
-version = "2.1.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6e0d73b369f386f1c44abd9c570d5318f55ccde816ff4b562fa452e5182863d"
+checksum = "ff7a10e427698aef6eef269482776debfef63384d30f13aad39a1a95e0e098fd"
 dependencies = [
- "core2",
- "hashbrown 0.14.5",
+ "hashbrown 0.16.1",
+ "no_std_io2",
  "rle-decode-fast",
 ]
 
@@ -1111,10 +1103,10 @@ name = "linux-bzimage-setup"
 version = "0.17.1"
 dependencies = [
  "cfg-if",
- "core2",
  "libflate",
  "linux-boot-params",
  "log",
+ "no_std_io2",
  "tdx-guest",
  "uart_16550",
  "uefi",
@@ -1240,6 +1232,15 @@ name = "never-say-never"
 version = "6.6.666"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf5a574dadd7941adeaa71823ecba5e28331b8313fb2e1c6a5c7e5981ea53ad6"
+
+[[package]]
+name = "no_std_io2"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b51ed7824b6e07d354605f4abb3d9d300350701299da96642ee084f5ce631550"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "nougat"

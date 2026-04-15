@@ -7,8 +7,8 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::convert::TryFrom;
 
-use core2::io::Read;
 use libflate::{gzip, zlib};
+use no_std_io2::io::Read;
 
 enum MagicNumber {
     Elf,

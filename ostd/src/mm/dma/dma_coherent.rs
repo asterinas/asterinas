@@ -6,6 +6,7 @@ use super::util::{
     alloc_kva, cvm_need_private_protection, prepare_dma, split_daddr, unprepare_dma,
 };
 use crate::{
+    arch::irq,
     error::Error,
     mm::{
         Daddr, FrameAllocOptions, HasDaddr, HasPaddr, HasPaddrRange, HasSize, Infallible,
@@ -21,6 +22,9 @@ use crate::{
 /// accessing the memory region with [`VmReader`] and [`VmWriter`]. If the
 /// device doesn't not support cache-coherent access, the memory region will be
 /// mapped without caching enabled.
+///
+/// For whether the associated methods can be used in IRQs, refer to
+/// [module-level docs](crate::mm::dma#usage-in-irqs).
 #[derive(Debug)]
 pub struct DmaCoherent {
     inner: Inner,
@@ -42,6 +46,9 @@ impl DmaCoherent {
     /// The `is_cache_coherent` argument specifies whether the target device
     /// that the DMA mapping is prepared for can access the main memory in a
     /// CPU cache coherent way or not.
+    ///
+    /// This method [requires](crate::mm::dma#usage-in-irqs) the caller to
+    /// have IRQs enabled.
     pub fn alloc(nframes: usize, is_cache_coherent: bool) -> Result<Self, Error> {
         Self::alloc_uninit(nframes, is_cache_coherent).inspect(|dma| {
             dma.writer().fill_zeros(dma.size());
@@ -53,7 +60,12 @@ impl DmaCoherent {
     ///
     /// This method is the same as [`DmaCoherent::alloc`]
     /// except that it skips zeroing the memory of newly-allocated DMA region.
+    ///
+    /// This method [requires](crate::mm::dma#usage-in-irqs) the caller to
+    /// have IRQs enabled.
     pub fn alloc_uninit(nframes: usize, is_cache_coherent: bool) -> Result<Self, Error> {
+        debug_assert!(irq::is_local_enabled());
+
         let cvm = cvm_need_private_protection();
 
         let (inner, paddr_range) = if is_cache_coherent && !cvm {

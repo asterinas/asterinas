@@ -379,7 +379,7 @@ impl DeviceInner {
                 continue;
             }
             let token = queue
-                .add_dma_buf(&[&req_slice], outputs.as_slice())
+                .add_dma_bufs(&[&req_slice], outputs.as_slice())
                 .expect("add queue failed");
             if queue.should_notify() {
                 queue.notify();
@@ -446,7 +446,7 @@ impl DeviceInner {
                 continue;
             }
             let token = queue
-                .add_dma_buf(inputs.as_slice(), &[&resp_slice])
+                .add_dma_bufs(inputs.as_slice(), &[&resp_slice])
                 .expect("add queue failed");
             if queue.should_notify() {
                 queue.notify();
@@ -500,7 +500,7 @@ impl DeviceInner {
                 continue;
             }
             let token = queue
-                .add_dma_buf(&[&req_slice], &[&resp_slice])
+                .add_dma_bufs(&[&req_slice], &[&resp_slice])
                 .expect("add queue failed");
             if queue.should_notify() {
                 queue.notify();

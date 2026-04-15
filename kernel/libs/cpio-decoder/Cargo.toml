@@ -6,9 +6,9 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-core2.workspace = true
 int-to-c-enum.workspace = true
 lending-iterator.workspace = true
+no_std_io2.workspace = true
 
 [lints]
 workspace = true

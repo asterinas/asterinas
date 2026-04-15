@@ -125,7 +125,10 @@ impl CloneArgs {
     ) -> Result<Self> {
         const FLAG_MASK: u64 = 0xff;
         let flags = CloneFlags::from(raw_flags & !FLAG_MASK);
-        let exit_signal = raw_flags & FLAG_MASK;
+        let exit_signal = match (raw_flags & FLAG_MASK) as u8 {
+            0 => None,
+            sig_num => SigNum::try_from(sig_num).ok(),
+        };
 
         // Disambiguate the `parent_tid` parameter. The field is used
         // both for `CLONE_PIDFD` and `CLONE_PARENT_SETTID`, so at
@@ -150,7 +153,7 @@ impl CloneArgs {
             pidfd,
             child_tid,
             parent_tid,
-            exit_signal: (exit_signal != 0).then(|| SigNum::from_u8(exit_signal as u8)),
+            exit_signal,
             stack: NonZeroU64::new(stack),
             tls,
             ..Default::default()

@@ -14,10 +14,10 @@ path = "src/main.rs"
 
 [dependencies]
 cfg-if.workspace = true
-core2.workspace = true
 libflate.workspace = true
 linux-boot-params.workspace = true
 log.workspace = true
+no_std_io2.workspace = true
 uart_16550.workspace = true
 xmas-elf.workspace = true
 
