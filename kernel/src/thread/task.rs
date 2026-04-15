@@ -71,7 +71,8 @@ pub fn create_new_user_task(
 
         let has_kernel_event_fn = || ctx.has_pending();
 
-        if ctx.process.is_init_process() {
+        // The startup method is only executed when the first user thread starts up.
+        if ctx.posix_thread.tid() == 1 {
             crate::init::on_first_process_startup(&ctx);
         }
 
