@@ -33,3 +33,8 @@ rustc_version = "0.4.1"
 
 [dev-dependencies]
 assert_cmd = "2.0.13"
+
+[patch.crates-io]
+# Temporary workaround for the `core2` yank; see #3132.
+# TODO: Once upstream `libflate` publishes the fix and `core2` is available again on crates.io, revert the workaround introduced by PR #3134.
+core2 = { git = "https://github.com/bbqsrc/core2", rev = "545e84bcb0f235b12e21351e0c69767958efe2a7" }

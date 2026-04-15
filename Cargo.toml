@@ -200,6 +200,11 @@ proc-macro2 = { version = "1.0.95", features = ["span-locations"] }
 quote = "1.0.35"
 syn = { version = "2.0.77", features = ["full", "parsing", "fold"] }
 
+[patch.crates-io]
+# Temporary workaround for the `core2` yank; see #3132.
+# TODO: Remove this git rev pin once upstream `libflate` publishes the fix and `core2` is available again on crates.io.
+core2 = { git = "https://github.com/bbqsrc/core2", rev = "545e84bcb0f235b12e21351e0c69767958efe2a7" }
+
 # Cargo only looks at the profile settings 
 # in the Cargo.toml manifest at the root of the workspace
 
