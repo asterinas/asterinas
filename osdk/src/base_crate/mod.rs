@@ -310,38 +310,8 @@ fn copy_profile_configurations(workspace_root: impl AsRef<Path>) {
         );
     }
 
-    copy_core2_patch(&target_manifest, &mut manifest);
-
     let content = toml::to_string(&manifest).unwrap();
     fs::write(manifest_path, content).unwrap();
-}
-
-fn copy_core2_patch(source_manifest: &toml::Table, target_manifest: &mut toml::Table) {
-    // Only propagate OSDK's temporary `core2` workaround. Copying the whole
-    // `[patch]` table may also pull unrelated workspace overrides, especially
-    // path-based patches that do not make sense in the generated base crate.
-    let Some(core2_patch) = source_manifest
-        .get("patch")
-        .and_then(toml::Value::as_table)
-        .and_then(|patch| patch.get("crates-io"))
-        .and_then(toml::Value::as_table)
-        .and_then(|crates_io| crates_io.get("core2"))
-        .cloned()
-    else {
-        return;
-    };
-
-    let patch = target_manifest
-        .entry("patch".to_string())
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
-        .as_table_mut()
-        .unwrap();
-    let crates_io = patch
-        .entry("crates-io".to_string())
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
-        .as_table_mut()
-        .unwrap();
-    crates_io.insert("core2".to_string(), core2_patch);
 }
 
 fn add_feature_entries(
