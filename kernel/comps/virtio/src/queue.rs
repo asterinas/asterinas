@@ -43,27 +43,27 @@ pub struct VirtQueue {
     /// Notify configuration manager
     notify_config: ConfigManager<u32>,
 
-    /// The index of queue
+    /// The index of the queue.
     queue_idx: u32,
     /// The size of the queue.
     ///
     /// This is both the number of descriptors, and the number of slots in the available and used
     /// rings.
     queue_size: u16,
-    /// The number of used queues.
+    /// The number of used descriptors.
     num_used: u16,
-    /// The head desc index of the free list.
+    /// The head descriptor index of the free list.
     free_head: u16,
-    /// the index of the next avail ring index
+    /// The next avail ring index.
     avail_idx: u16,
-    /// last service used index
+    /// The last-served used ring index.
     last_used_idx: u16,
-    /// Whether the callback of this queue is enabled
+    /// Whether the callback of this queue is enabled.
     is_callback_enabled: bool,
 }
 
 impl VirtQueue {
-    /// Create a new VirtQueue.
+    /// Creates a new virtqueue.
     pub(crate) fn new(
         idx: u16,
         mut size: u16,
@@ -156,7 +156,7 @@ impl VirtQueue {
         })
     }
 
-    /// Add dma buffers to the virtqueue, return a token.
+    /// Adds input and output DMA buffers to the virtqueue and returns a token.
     ///
     /// Ref: linux virtio_ring.c virtqueue_add
     pub fn add_dma_bufs<I: DmaBuf, O: DmaBuf>(
@@ -171,7 +171,7 @@ impl VirtQueue {
             return Err(QueueError::BufferTooSmall);
         }
 
-        // allocate descriptors from free list
+        // Allocate descriptors from the free list.
         let head = self.free_head;
         let mut last = self.free_head;
         for input in inputs.iter() {
@@ -195,7 +195,7 @@ impl VirtQueue {
             last = self.free_head;
             self.free_head = field_ptr!(desc, Descriptor, next).read_once().unwrap();
         }
-        // set last_elem.next = NULL
+        // Clear `DescFlags::NEXT` in the last descriptor.
         {
             let desc = &mut self.descs[last as usize];
             let mut flags: DescFlags = field_ptr!(desc, Descriptor, flags).read_once().unwrap();
@@ -215,10 +215,10 @@ impl VirtQueue {
             ring_slot_ptr.add(avail_slot as usize);
             ring_slot_ptr.write_once(&head).unwrap();
         }
-        // write barrier
+        // Write barrier.
         fence(Ordering::SeqCst);
 
-        // increase head of avail ring
+        // Increase the head index of the avail ring.
         self.avail_idx = self.avail_idx.wrapping_add(1);
         field_ptr!(&self.avail, AvailRing, idx)
             .write_once(&self.avail_idx)
@@ -238,20 +238,20 @@ impl VirtQueue {
         self.add_dma_bufs(&[] as &[&O], outputs)
     }
 
-    /// Whether there is a used element that can pop.
+    /// Returns whether there is a used element that can pop.
     pub fn can_pop(&self) -> bool {
-        // read barrier
+        // Read barrier.
         fence(Ordering::SeqCst);
 
         self.last_used_idx != field_ptr!(&self.used, UsedRing, idx).read_once().unwrap()
     }
 
-    /// The number of free descriptors.
+    /// Returns the number of free descriptors.
     pub fn available_desc(&self) -> usize {
         (self.queue_size - self.num_used) as usize
     }
 
-    /// Recycle descriptors in the list specified by head.
+    /// Recycles descriptors in the list specified by `head`.
     ///
     /// This will push all linked descriptors at the front of the free list.
     fn recycle_descriptors(&mut self, mut head: u16) {
@@ -259,7 +259,7 @@ impl VirtQueue {
         self.free_head = head;
         loop {
             let desc = &mut self.descs[head as usize];
-            // Sets the buffer address and length to 0
+            // Set the buffer address and length to 0.
             field_ptr!(desc, Descriptor, addr)
                 .write_once(&(0u64))
                 .unwrap();
@@ -283,7 +283,7 @@ impl VirtQueue {
         }
     }
 
-    /// Get a token from device used buffers, return (token, len).
+    /// Pops a device-used buffer and returns the token and the buffer length.
     ///
     /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
     pub fn pop_used(&mut self) -> Result<(u16, u32), QueueError> {
@@ -306,15 +306,16 @@ impl VirtQueue {
         Ok((index as u16, len))
     }
 
-    /// whether the driver should notify the device
+    /// Returns whether the driver should notify the device.
     pub fn should_notify(&self) -> bool {
-        // read barrier
+        // Read barrier.
         fence(Ordering::SeqCst);
+
         let flags = field_ptr!(&self.used, UsedRing, flags).read_once().unwrap();
         flags & 0x0001u16 == 0u16
     }
 
-    /// notify that there are available rings
+    /// Notifies the device that there are available elements.
     pub fn notify(&mut self) {
         if self.notify_config.is_modern() {
             self.notify_config
@@ -374,8 +375,9 @@ pub struct Descriptor {
 type DescriptorPtr<'a> = SafePtr<Descriptor, &'a Arc<DmaCoherent>, TRightSet<TRights![Dup, Write]>>;
 
 fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) {
-    // TODO: skip the empty dma buffer or just return error?
+    // TODO: Should we skip the empty DMA buffer or just return an error?
     debug_assert_ne!(buf.len(), 0);
+
     let daddr = buf.daddr();
     field_ptr!(desc_ptr, Descriptor, addr)
         .write_once(&(daddr as u64))
@@ -386,7 +388,7 @@ fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) {
 }
 
 bitflags! {
-    /// Descriptor flags
+    /// Descriptor flags.
     #[repr(C)]
     #[derive(Default, Pod)]
     struct DescFlags: u16 {
@@ -411,15 +413,14 @@ pub struct AvailRing {
     used_event: u16, // unused
 }
 
-/// The used ring is where the device returns buffers once it is done with them:
-/// it is only written to by the device, and read by the driver.
+/// The used ring is where the device returns buffers once it is done with them.
+/// It is only written to by the device and read by the driver.
 #[padding_struct]
 #[repr(C, align(4))]
 #[derive(Clone, Copy, Debug, Pod)]
 pub struct UsedRing {
-    // the flag in UsedRing
     flags: u16,
-    // the next index of the used element in ring array
+    /// The next index of the used element in the ring array.
     idx: u16,
     ring: [UsedElem; 64], // actual size: queue_size
     avail_event: u16,     // unused
@@ -433,11 +434,11 @@ pub struct UsedElem {
 }
 
 bitflags! {
-    /// The flags useds in [`AvailRing`]
+    /// The flags used in [`AvailRing`].
     #[repr(C)]
     #[derive(Pod)]
-    pub struct AvailFlags: u16 {
-        /// The flag used to disable virt queue interrupt
+    struct AvailFlags: u16 {
+        /// The flag used to disable virtqueue interrupts.
         const VIRTQ_AVAIL_F_NO_INTERRUPT = 1;
     }
 }
