@@ -14,10 +14,10 @@ pub enum Error {
     IoError,
 }
 
-impl From<core2::io::Error> for Error {
+impl From<no_std_io2::io::Error> for Error {
     #[inline]
-    fn from(err: core2::io::Error) -> Self {
-        use core2::io::ErrorKind;
+    fn from(err: no_std_io2::io::Error) -> Self {
+        use no_std_io2::io::ErrorKind;
 
         match err.kind() {
             ErrorKind::UnexpectedEof => Self::BufferShortError,

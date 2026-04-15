@@ -5,8 +5,8 @@
 use alloc::boxed::ThinBox;
 use core::time::Duration;
 
-use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use device_id::DeviceId;
+use no_std_io2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use ostd::task::Task;
 use spin::Once;
 
