@@ -1,15 +1,14 @@
-# The Cargo workspace configurations shared by all in-kernel crates.
+# The Cargo workspace configuration shared by in-kernel crates.
 #
-# As a kernel project, most crates in Asterinas are written and built for the kernel space.
-# But there are also a few userspace crates
-# whose crate-level `Cargo.toml` files are not affected by this workspace-level `Cargo.toml`.
-# The complete list can be found in the `workspace.exclude` field.
+# Most crates in Asterinas are written and built for the kernel space.
+# The user-space and host-native exceptions are listed in `workspace.exclude`.
 
 [workspace]
 resolver = "2"
-# When adding a new workspace crate that depends on OSTD, include it in
-# `default-members` unless it requires special handling, such as only compiling
-# on specific architectures or relying on its own Cargo configuration.
+# All in-kernel crates.
+#
+# These crates share a single workspace
+# so their `Cargo.toml` files do not need to repeat common settings.
 members = [
     "osdk/deps/frame-allocator",
     "osdk/deps/heap-allocator",
@@ -57,6 +56,14 @@ members = [
     "kernel/libs/typeflags-util",
     "kernel/libs/xarray",
 ]
+# All OSDK-based in-kernel crates.
+#
+# Use `cargo osdk <cmd>` for these crates.
+# When adding a workspace crate that depends on OSTD,
+# include it in `default-members`
+# unless it requires special handling,
+# such as only compiling on specific architectures
+# or relying on its own Cargo configuration.
 default-members = [
     "osdk/deps/frame-allocator",
     "osdk/deps/heap-allocator",
@@ -83,6 +90,11 @@ default-members = [
     "kernel/libs/device-id",
     "kernel/libs/xarray",
 ]
+# All user-space or host-native crates.
+#
+# Use plain `cargo <cmd>` for these crates.
+# Their crate-level `Cargo.toml` files are not affected
+# by the shared in-kernel workspace configuration.
 exclude = [
     "kernel/libs/comp-sys/cargo-component",
     "kernel/libs/comp-sys/component",

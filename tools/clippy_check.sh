@@ -5,7 +5,6 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(realpath "$(dirname "${BASH_SOURCE[0]}")/..")"
-WORKSPACE_MEMBERS="${PROJECT_ROOT}/tools/workspace_members.sh"
 LINUX_BZIMAGE_SETUP_DIR="ostd/libs/linux-bzimage/setup"
 
 usage() {
@@ -39,11 +38,19 @@ ensure_command() {
 }
 
 build_package_args() {
-    local member_set="$1"
+    local member_filter="$1"
+    local package_names
     local -n output_ref="$2"
 
     output_ref=()
-    mapfile -t output_ref < <("$WORKSPACE_MEMBERS" "$member_set" package-args)
+    package_names="$("${PROJECT_ROOT}/tools/print_workspace_members.sh" "$member_filter" --package-names)"
+    if [[ -z "$package_names" ]]; then
+        return
+    fi
+
+    while IFS= read -r package_name; do
+        output_ref+=(-p "$package_name")
+    done <<< "$package_names"
 }
 
 run_check_osdk() {
@@ -57,37 +64,41 @@ run_check_osdk() {
 }
 
 run_workspace_clippy() {
-    local -a default_package_args=()
     local -a non_default_package_args=()
+    local -a filtered_non_default_package_args=()
 
     ensure_command cargo
-    ensure_command "$WORKSPACE_MEMBERS"
+    ensure_command "${PROJECT_ROOT}/tools/print_workspace_members.sh"
 
-    build_package_args "default" default_package_args
-    if ((${#default_package_args[@]} > 0)); then
-        echo "Checking default workspace members"
-        (
-            cd "$PROJECT_ROOT"
-            RUSTFLAGS="-Dwarnings" cargo osdk clippy \
-                --manifest-path "$PROJECT_ROOT/Cargo.toml" \
-                "${default_package_args[@]}" -- --no-deps
-            RUSTFLAGS="-Dwarnings" cargo osdk clippy --ktests \
-                --manifest-path "$PROJECT_ROOT/Cargo.toml" \
-                "${default_package_args[@]}" -- --no-deps
+    echo "Checking default workspace members"
+    (
+        cd "$PROJECT_ROOT"
+        RUSTFLAGS="-Dwarnings" cargo osdk clippy -- --no-deps
+        RUSTFLAGS="-Dwarnings" cargo osdk clippy --ktests -- --no-deps
+    )
+
+    build_package_args "--non-default-ones" non_default_package_args
+    for ((index = 0; index < ${#non_default_package_args[@]}; index += 2)); do
+        if [[ "${non_default_package_args[index + 1]}" = "linux-bzimage-setup" ]]; then
+            continue
+        fi
+
+        filtered_non_default_package_args+=(
+            "${non_default_package_args[index]}"
+            "${non_default_package_args[index + 1]}"
         )
-    fi
+    done
 
-    build_package_args "non-default" non_default_package_args
-    if ((${#non_default_package_args[@]} > 0)); then
+    if ((${#filtered_non_default_package_args[@]} > 0)); then
         echo "Checking non-default workspace members"
         (
             cd "$PROJECT_ROOT"
-            RUSTFLAGS="-Dwarnings" cargo clippy "${non_default_package_args[@]}" --all-targets --no-deps
+            RUSTFLAGS="-Dwarnings" cargo clippy "${filtered_non_default_package_args[@]}" --all-targets --no-deps
         )
     fi
 
-    # `linux-bzimage/setup` only supports x86_64 currently and may fail on
-    # other architectures.
+    # `linux-bzimage/setup` only supports x86_64 currently.
+    # It may fail on other architectures.
     if [[ "${OSDK_TARGET_ARCH:-x86_64}" = "x86_64" ]]; then
         echo "Checking ${LINUX_BZIMAGE_SETUP_DIR}"
         (

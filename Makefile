@@ -339,35 +339,38 @@ profile_client: initramfs $(CARGO_OSDK)
 		--samples $(GDB_PROFILE_COUNT) --interval $(GDB_PROFILE_INTERVAL) --format $(GDB_PROFILE_FORMAT)
 
 .PHONY: test
+test: NON_DEFAULT_PACKAGE_NAMES = \
+    $(shell ./tools/print_workspace_members.sh --non-default-ones --package-names)
+test: TEST_PACKAGE_NAMES = \
+    $(filter-out linux-bzimage-setup,$(NON_DEFAULT_PACKAGE_NAMES))
 test:
-	@mapfile -t non_default_package_args < <(./tools/workspace_members.sh non-default package-args); \
-	if (($${#non_default_package_args[@]} > 0)); then \
-		cargo test "$${non_default_package_args[@]}"; \
+	@if [ -n "$(TEST_PACKAGE_NAMES)" ]; then \
+		cargo test $(addprefix -p ,$(TEST_PACKAGE_NAMES)); \
 	fi
 
 .PHONY: ktest
 ktest: CONSOLE = ttyS0
 ktest: initramfs $(CARGO_OSDK)
-	@# cargo-osdk tests default workspace members; linux-bzimage-setup is
-	@# left out of default-members since it is hard to unit test.
+	@# cargo-osdk tests default workspace members.
+	@# `linux-bzimage-setup` is left out of `default-members`
+	@# because it is hard to unit test.
 	@cargo osdk test $(CARGO_OSDK_TEST_ARGS)
 
 .PHONY: docs
+docs: private DEFAULT_PACKAGE_NAMES = \
+    $(shell ./tools/print_workspace_members.sh --default-ones --package-names)
+docs: private DEFAULT_NON_KERNEL_PACKAGE_NAMES = \
+    $(filter-out aster-kernel,$(DEFAULT_PACKAGE_NAMES))
+docs: private NON_DEFAULT_PACKAGE_NAMES = \
+    $(shell ./tools/print_workspace_members.sh --non-default-ones --package-names)
+docs: private DOC_NON_DEFAULT_PACKAGE_NAMES = \
+    $(filter-out linux-bzimage-setup,$(NON_DEFAULT_PACKAGE_NAMES))
 docs: $(CARGO_OSDK)
-	@mapfile -t default_package_args < <(./tools/workspace_members.sh default package-args); \
-	default_non_kernel_package_args=(); \
-	for ((index = 0; index < $${#default_package_args[@]}; index += 2)); do \
-		if [ "$${default_package_args[$$((index + 1))]}" = "aster-kernel" ]; then \
-			continue; \
-		fi; \
-		default_non_kernel_package_args+=("$${default_package_args[$$index]}" "$${default_package_args[$$((index + 1))]}"); \
-	done; \
-	if (($${#default_non_kernel_package_args[@]} > 0)); then \
-		RUSTDOCFLAGS="-Dwarnings" cargo osdk doc "$${default_non_kernel_package_args[@]}" --no-deps; \
+	@if [ -n "$(DEFAULT_NON_KERNEL_PACKAGE_NAMES)" ]; then \
+		RUSTDOCFLAGS="-Dwarnings" cargo osdk doc $(addprefix -p ,$(DEFAULT_NON_KERNEL_PACKAGE_NAMES)) --no-deps; \
 	fi
-	@mapfile -t non_default_package_args < <(./tools/workspace_members.sh non-default package-args); \
-	if (($${#non_default_package_args[@]} > 0)); then \
-		RUSTDOCFLAGS="-Dwarnings" cargo doc "$${non_default_package_args[@]}" --no-deps; \
+	@if [ -n "$(DOC_NON_DEFAULT_PACKAGE_NAMES)" ]; then \
+		RUSTDOCFLAGS="-Dwarnings" cargo doc $(addprefix -p ,$(DOC_NON_DEFAULT_PACKAGE_NAMES)) --no-deps; \
 	fi
 	@# The kernel crate is primarily composed of private items.
 	@# Include --document-private-items to fully check internal documentation.
@@ -392,17 +395,19 @@ format:
 	@$(MAKE) --no-print-directory -C test/nixos format
 
 .PHONY: check
+check: private WORKSPACE_MEMBER_DIRS = \
+    $(shell ./tools/print_workspace_members.sh)
 check: $(CARGO_OSDK)
 	@# Check formatting issues of the Rust code
 	@./tools/format_all.sh --check
 	@
 	@# Check if all workspace members enable workspace lints
-	@while IFS= read -r dir; do \
+	@for dir in $(WORKSPACE_MEMBER_DIRS); do \
 		if [[ "$$(tail -2 $$dir/Cargo.toml)" != "[lints]"$$'\n'"workspace = true" ]]; then \
 			echo "Error: Workspace lints in $$dir are not enabled"; \
 			exit 1; \
 		fi; \
-	done < <(./tools/workspace_members.sh members dirs)
+	done
 	@
 	@# Check compilation of the Rust code
 	@OSDK_TARGET_ARCH="$(OSDK_TARGET_ARCH)" ./tools/clippy_check.sh workspace
