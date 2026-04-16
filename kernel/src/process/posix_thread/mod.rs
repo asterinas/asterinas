@@ -365,7 +365,9 @@ impl ContextPthreadAdminApi for Context<'_> {
     }
 }
 
-static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(1);
+pub const FIRST_POSIX_TID: Tid = 1;
+
+static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(FIRST_POSIX_TID);
 
 /// Allocates a new tid for the new posix thread
 pub fn allocate_posix_tid() -> Tid {

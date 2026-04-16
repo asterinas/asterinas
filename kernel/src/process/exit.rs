@@ -2,7 +2,7 @@
 
 use core::sync::atomic::Ordering;
 
-use super::{Pid, Process, pid_table};
+use super::{INIT_PROCESS_PID, Pid, Process, pid_table};
 use crate::{
     events::IoEvents, fs::cgroupfs::CgroupMembership, prelude::*,
     process::signal::signals::kernel::KernelSignal,
@@ -61,8 +61,6 @@ fn move_children_to_reaper_process(current_process: &Process) -> BTreeMap<Pid, A
             return children;
         }
     }
-
-    const INIT_PROCESS_PID: Pid = 1;
 
     let init_process = pid_table::pid_table_mut()
         .get_process(INIT_PROCESS_PID)

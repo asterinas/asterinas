@@ -8,7 +8,7 @@ use core::{
 use self::timer_manager::PosixTimerManager;
 use super::{
     pid_table::{self, PidTable},
-    posix_thread::AsPosixThread,
+    posix_thread::{AsPosixThread, FIRST_POSIX_TID},
     process_vm::ProcessVmarGuard,
     rlimit::ResourceLimits,
     signal::{
@@ -54,6 +54,8 @@ pub use terminal::Terminal;
 
 /// Process ID.
 pub type Pid = u32;
+
+pub const INIT_PROCESS_PID: Pid = FIRST_POSIX_TID;
 
 define_atomic_version_of_integer_like_type!(Pid, {
     #[derive(Debug)]

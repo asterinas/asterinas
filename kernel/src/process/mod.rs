@@ -34,8 +34,8 @@ pub use namespace::{
 };
 pub use pid_file::PidFile;
 pub use process::{
-    ExitCode, JobControl, Pgid, Pid, Process, ProcessGroup, ReapedChildrenStats, Session, Sid,
-    Terminal, broadcast_signal_async, enqueue_signal_async, spawn_init_process,
+    ExitCode, INIT_PROCESS_PID, JobControl, Pgid, Pid, Process, ProcessGroup, ReapedChildrenStats,
+    Session, Sid, Terminal, broadcast_signal_async, enqueue_signal_async, spawn_init_process,
 };
 pub use process_filter::ProcessFilter;
 pub use process_vm::{INIT_STACK_SIZE, LockedHeap, ProcessVm, VmarSnapshot};

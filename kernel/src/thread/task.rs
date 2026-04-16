@@ -14,7 +14,7 @@ use crate::{
     current_userspace,
     prelude::*,
     process::{
-        posix_thread::{AsPosixThread, AsThreadLocal, ThreadLocal},
+        posix_thread::{AsPosixThread, AsThreadLocal, FIRST_POSIX_TID, ThreadLocal},
         signal::{HandlePendingSignal, PauseReason, handle_pending_signal},
     },
     syscall::handle_syscall,
@@ -72,7 +72,7 @@ pub fn create_new_user_task(
         let has_kernel_event_fn = || ctx.has_pending();
 
         // The startup method is only executed when the first user thread starts up.
-        if ctx.posix_thread.tid() == 1 {
+        if ctx.posix_thread.tid() == FIRST_POSIX_TID {
             crate::init::on_first_process_startup(&ctx);
         }
 
