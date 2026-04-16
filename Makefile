@@ -439,7 +439,7 @@ format:
 	@$(MAKE) --no-print-directory -C test/nixos format
 
 .PHONY: check
-check: initramfs $(CARGO_OSDK)
+check: $(CARGO_OSDK)
 	@# Check formatting issues of the Rust code
 	@./tools/format_all.sh --check
 	@

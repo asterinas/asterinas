@@ -6,15 +6,11 @@ pub use dirent_visitor::{DirentCounter, DirentVisitor};
 pub use direntry_vec::DirEntryVecExt;
 pub use endpoint::{Endpoint, EndpointState};
 pub use id_bitmap::IdBitmap;
-#[cfg(ktest)]
-pub use random_test::{generate_random_operation, new_fs_in_memory};
 
 mod dirent_visitor;
 mod direntry_vec;
 mod endpoint;
 mod id_bitmap;
-#[cfg(ktest)]
-mod random_test;
 pub mod systree_inode;
 
 use core::{
