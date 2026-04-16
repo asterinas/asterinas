@@ -149,3 +149,25 @@ jobs:
           conformance_test_suite: ${{ matrix.suite }}
           conformance_test_workdir: ${{ matrix.conformance_test_workdir }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
+
+  cross-compile-test:
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: arm-cross-boot
+            runs_on: ubuntu-24.04-arm
+            image: asterinas/asterinas:0.17.2-20260407
+            auto_test: boot
+            enable_kvm: false
+    runs-on: ${{ matrix.runs_on }}
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run cross-compile tests (${{ matrix.name }})
+        uses: ./.github/actions/test
+        with:
+          auto_test: ${{ matrix.auto_test }}
+          enable_kvm: ${{ matrix.enable_kvm }}
