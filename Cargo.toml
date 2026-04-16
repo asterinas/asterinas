@@ -7,6 +7,9 @@
 
 [workspace]
 resolver = "2"
+# When adding a new workspace crate that depends on OSTD, include it in
+# `default-members` unless it requires special handling, such as only compiling
+# on specific architectures or relying on its own Cargo configuration.
 members = [
     "osdk/deps/frame-allocator",
     "osdk/deps/heap-allocator",
@@ -52,6 +55,32 @@ members = [
     "kernel/libs/logo-ascii-art",
     "kernel/libs/typeflags",
     "kernel/libs/typeflags-util",
+    "kernel/libs/xarray",
+]
+default-members = [
+    "osdk/deps/frame-allocator",
+    "osdk/deps/heap-allocator",
+    "osdk/deps/test-kernel",
+    "ostd",
+    "kernel",
+    "kernel/comps/block",
+    "kernel/comps/cmdline",
+    "kernel/comps/console",
+    "kernel/comps/framebuffer",
+    "kernel/comps/i8042",
+    "kernel/comps/input",
+    "kernel/comps/logger",
+    "kernel/comps/mlsdisk",
+    "kernel/comps/network",
+    "kernel/comps/pci",
+    "kernel/comps/softirq",
+    "kernel/comps/systree",
+    "kernel/comps/time",
+    "kernel/comps/uart",
+    "kernel/comps/virtio",
+    "kernel/libs/aster-bigtcp",
+    "kernel/libs/aster-util",
+    "kernel/libs/device-id",
     "kernel/libs/xarray",
 ]
 exclude = [
