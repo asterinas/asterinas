@@ -94,14 +94,14 @@ enum Config {
 }
 
 fn init_deadline_mode_config() {
-    info!("[Timer]: Enable APIC TSC deadline mode");
+    info!("Enable APIC TSC deadline mode");
 
     let tsc_interval = tsc_freq() / TIMER_FREQ;
     CONFIG.call_once(|| Config::DeadlineMode { tsc_interval });
 }
 
 fn init_periodic_mode_config() {
-    info!("[Timer]: Enable APIC periodic mode");
+    info!("Enable APIC periodic mode");
 
     // Allocate IRQ
     let mut irq = IrqLine::alloc().unwrap();

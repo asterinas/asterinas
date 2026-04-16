@@ -284,7 +284,7 @@ impl IommuRegisters {
             })
             .expect("no DRHD structure found in the DMAR table");
         assert_ne!(base_address, 0, "IOMMU address should not be zero");
-        debug!("IOMMU base address: {:#x?}", base_address);
+        debug!("base address: {:#x?}", base_address);
 
         io_mem_builder.remove(base_address as usize..(base_address as usize + PAGE_SIZE));
         let base = NonNull::new(paddr_to_vaddr(base_address as usize) as *mut u8).unwrap();
@@ -315,10 +315,10 @@ impl IommuRegisters {
             }
         };
 
-        debug!("IOMMU registers:{:#x?}", iommu_regs);
-        debug!("IOMMU capability:{:#x?}", iommu_regs.read_capability());
+        debug!("registers: {:#x?}", iommu_regs);
+        debug!("capability: {:#x?}", iommu_regs.read_capability());
         debug!(
-            "IOMMU extend capability:{:#x?}",
+            "extend capability: {:#x?}",
             iommu_regs.read_extended_capability()
         );
 

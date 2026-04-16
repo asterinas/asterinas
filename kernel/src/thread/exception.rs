@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub(super) fn handle_exception(ctx: &Context, user_ctx: &UserContext, exception: CpuException) {
-    debug!("[User Trap] handle exception: {:#x?}", exception);
+    debug!("handle exception: {:#x?}", exception);
 
     if let Ok(page_fault_info) = PageFaultInfo::try_from(&exception) {
         let user_space = ctx.user_space();

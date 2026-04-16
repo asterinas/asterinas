@@ -279,7 +279,7 @@ fn primary_fault_handler(fault_event_regs: &mut FaultEventRegisters) {
 
         // Report
         error!(
-            "Catch iommu page fault, doing nothing. recording:{:x?}",
+            "caught page fault, doing nothing. recording: {:x?}",
             recording
         );
 

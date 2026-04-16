@@ -35,7 +35,7 @@ impl IoApic {
         let max_redirection_entry = access.max_redirection_entry();
 
         info!(
-            "[IOAPIC]: Found at {:#x}, ID {}, version {}, interrupt base {}, interrupt count {}",
+            "IOAPIC found at {:#x}, ID {}, version {}, interrupt base {}, interrupt count {}",
             base_address,
             access.id(),
             access.version(),

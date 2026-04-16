@@ -120,7 +120,7 @@ impl InputDevice {
 
             // Query and update device name from config.
             let name = device.query_config_id_name();
-            info!("Virtio input device name: {}", name);
+            info!("input device name: {}", name);
             device.device_name = name;
 
             // Query and set device capabilities.
@@ -258,10 +258,7 @@ impl InputDevice {
                     let key_event = InputEvent::from_key_and_status(key_code, key_status);
                     registered_device.submit_events(&[key_event]);
                 } else {
-                    debug!(
-                        "VirtIO Input: unmapped key code {}, dropped",
-                        virtio_event.code
-                    );
+                    debug!("unmapped key code {}, dropped", virtio_event.code);
                 }
             }
             // Relative movement events (EV_REL)
@@ -272,7 +269,7 @@ impl InputDevice {
                     registered_device.submit_events(&[rel_event]);
                 } else {
                     debug!(
-                        "VirtIO Input: unmapped relative event code {}, dropped",
+                        "unmapped relative event code {}, dropped",
                         virtio_event.code
                     );
                 }
@@ -281,7 +278,7 @@ impl InputDevice {
             // Other event types
             _ => {
                 debug!(
-                    "VirtIO Input: unsupported event type {}, skipping",
+                    "unsupported event type {}, skipping",
                     virtio_event.event_type
                 );
                 return true;
@@ -492,7 +489,7 @@ impl InputDevice {
         }
 
         info!(
-            "VirtIO input device capabilities set: KEY={}, REL={}",
+            "input device capabilities set: KEY={}, REL={}",
             ev_key.is_some(),
             ev_rel.is_some()
         );

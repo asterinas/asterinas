@@ -39,16 +39,10 @@ pub fn create_new_user_task(
         let mut user_mode = UserMode::new(user_ctx);
         user_mode.context_mut().activate_tls_pointer();
         debug!(
-            "[Task entry] rip = 0x{:x}",
-            user_mode.context().instruction_pointer()
-        );
-        debug!(
-            "[Task entry] rsp = 0x{:x}",
-            user_mode.context().stack_pointer()
-        );
-        debug!(
-            "[Task entry] rax = 0x{:x}",
-            user_mode.context().syscall_ret()
+            "task entry: rip = {:#x}, rsp = {:#x}, rax = {:#x}",
+            user_mode.context().instruction_pointer(),
+            user_mode.context().stack_pointer(),
+            user_mode.context().syscall_ret(),
         );
 
         // The `clone` syscall may require the child process to write its thread TID to the

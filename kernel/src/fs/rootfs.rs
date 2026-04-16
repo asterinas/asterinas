@@ -50,11 +50,7 @@ pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
     while let Some(entry_result) = decoder.next() {
         let mut entry = entry_result?;
         if let Err(e) = try_append_entry_to_rootfs(&mut entry, path_resolver) {
-            warn!(
-                "[kernel] failed to add entry {} to rootfs: {:?}",
-                entry.name(),
-                e
-            );
+            warn!("failed to add entry {} to rootfs: {:?}", entry.name(), e);
         }
     }
 

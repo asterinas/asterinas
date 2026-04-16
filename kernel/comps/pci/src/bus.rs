@@ -61,7 +61,7 @@ impl PciBus {
                 }
                 Err((err, common_device)) => {
                     if err != BusProbeError::DeviceNotMatch {
-                        error!("PCI device construction failed, reason: {:?}", err);
+                        error!("device construction failed, reason: {:?}", err);
                     }
                     debug_assert!(device_id == *common_device.device_id());
                     common_device
@@ -73,7 +73,7 @@ impl PciBus {
     }
 
     pub(super) fn register_common_device(&mut self, mut common_device: PciCommonDevice) {
-        debug!("Find PCI common device: {:#x?}", common_device);
+        debug!("found common device: {:#x?}", common_device);
         let device_id = *common_device.device_id();
         for driver in self.drivers.iter() {
             common_device = match driver.probe(common_device) {
@@ -84,7 +84,7 @@ impl PciBus {
                 }
                 Err((err, common_device)) => {
                     if err != BusProbeError::DeviceNotMatch {
-                        error!("PCI device construction failed, reason: {:?}", err);
+                        error!("device construction failed, reason: {:?}", err);
                     }
                     debug_assert!(device_id == *common_device.device_id());
                     common_device

@@ -60,7 +60,7 @@ impl NetworkDevice {
 
         if network_features != device_features {
             warn!(
-                "Virtio net contains unsupported device features: {:?}",
+                "unsupported device features: {:?}",
                 device_features.difference(supported_features)
             );
         }

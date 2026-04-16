@@ -16,7 +16,7 @@ use crate::{
 
 pub fn sys_semop(sem_id: i32, tsops: Vaddr, nsops: usize, ctx: &Context) -> Result<SyscallReturn> {
     debug!(
-        "[sys_semop] sem_id = {:?}, tsops_vaddr = {:x?}, nsops = {:?}",
+        "sem_id = {:?}, tsops_vaddr = {:x?}, nsops = {:?}",
         sem_id, tsops, nsops
     );
     do_sys_semtimedop(sem_id, tsops, nsops, None, ctx)
@@ -30,7 +30,7 @@ pub fn sys_semtimedop(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
-        "[sys_semtimedop] sem_id = {:?}, tsops_vaddr = {:x?}, nsops = {:?}, timeout_vaddr = {:x?}",
+        "sem_id = {:?}, tsops_vaddr = {:x?}, nsops = {:?}, timeout_vaddr = {:x?}",
         sem_id, tsops, nsops, timeout
     );
 

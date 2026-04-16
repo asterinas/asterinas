@@ -92,7 +92,7 @@ impl VirtioPciLegacyTransport {
                 return Err((BusProbeError::ConfigurationSpaceError, common_device));
             }
         };
-        info!("[Virtio]: Found device:{:?}", device_type);
+        info!("Found device:{:?}", device_type);
 
         let config_bar = common_device
             .bar_manager_mut()

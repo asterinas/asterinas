@@ -57,7 +57,7 @@ pub(super) fn init() {
     // Check if interrupt remapping is supported
     let extend_cap = iommu_regs.read_extended_capability();
     if !extend_cap.flags().contains(ExtendedCapabilityFlags::IR) {
-        warn!("[IOMMU] Interrupt remapping not supported");
+        warn!("Interrupt remapping not supported");
         return;
     }
 
@@ -65,7 +65,7 @@ pub(super) fn init() {
     REMAPPING_TABLE.call_once(IntRemappingTable::new);
     iommu_regs.enable_interrupt_remapping(REMAPPING_TABLE.get().unwrap());
 
-    info!("[IOMMU] Interrupt remapping enabled");
+    info!("Interrupt remapping enabled");
 }
 
 static REMAPPING_TABLE: Once<IntRemappingTable> = Once::new();

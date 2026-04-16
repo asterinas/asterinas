@@ -130,7 +130,7 @@ pub fn init() {
         .supported_adjusted_guest_address_widths()
         .contains(CapabilitySagaw::AGAW_39BIT_3LP)
     {
-        warn!("[IOMMU] 3-level page tables not supported, disabling DMA remapping");
+        warn!("3-level page tables not supported, disabling DMA remapping");
         return;
     }
 
@@ -151,7 +151,7 @@ pub fn init() {
     // Enable DMA remapping.
     let mut iommu_regs = IOMMU_REGS.get().unwrap().lock();
     iommu_regs.enable_dma_remapping(PAGE_TABLE.get().unwrap());
-    info!("[IOMMU] DMA remapping enabled");
+    info!("DMA remapping enabled");
 }
 
 // TODO: Currently `map()` or `unmap()` could be called in both task and interrupt

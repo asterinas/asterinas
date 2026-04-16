@@ -126,7 +126,7 @@ pub fn sem_op(
     ctx: &Context,
 ) -> Result<()> {
     debug_assert!(sem_id > 0);
-    debug!("[semop] sops: {:?}", sops);
+    debug!("sops: {:?}", sops);
 
     let pid = ctx.process.pid();
     let mut pending_op = PendingOp {

@@ -276,7 +276,7 @@ impl DeviceInner {
 
     /// Handles the IRQ issued from the device.
     fn handle_irq(&self) {
-        info!("Virtio block device handle IRQ");
+        info!("block device handle IRQ");
         // When we enter the IRQs handling function,
         // IRQs have already been disabled,
         // so there is no need to call `disable_irq`.
@@ -324,7 +324,7 @@ impl DeviceInner {
     }
 
     fn handle_config_change(&self) {
-        info!("Virtio block device config space change");
+        info!("block device config space change");
     }
 
     /// Reads data from the device, this function is non-blocking.

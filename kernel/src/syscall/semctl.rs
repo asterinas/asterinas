@@ -29,7 +29,7 @@ pub fn sys_semctl(
 
     let cmd = IpcControlCmd::try_from(cmd)?;
     debug!(
-        "[sys_semctl] semid = {}, semnum = {}, cmd = {:?}, arg = {:x}",
+        "semid = {}, semnum = {}, cmd = {:?}, arg = {:x}",
         semid, semnum, cmd, arg
     );
 

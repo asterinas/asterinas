@@ -23,6 +23,7 @@ use spin::Once;
 
 use crate::{
     boot::{self, BootloaderAcpiArg},
+    info,
     mm::paddr_to_vaddr,
     warn,
 };
@@ -162,7 +163,7 @@ pub(in crate::arch) fn init() {
         });
     }
 
-    crate::info!("[ACPI]: Collected information {:?}", acpi_info);
+    info!("Collected information {:?}", acpi_info);
 
     ACPI_INFO.call_once(|| acpi_info);
 }

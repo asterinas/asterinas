@@ -221,7 +221,7 @@ pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
 
     for isa_override in isa_overrides.iter() {
         info!(
-            "[IOAPIC]: Override ISA interrupt {} for GSI {}",
+            "IOAPIC override: ISA interrupt {} for GSI {}",
             isa_override.source, isa_override.target
         );
     }

@@ -62,21 +62,21 @@ pub(crate) fn init() -> Option<RangeInclusive<u8>> {
         .unwrap()
         .find_compatible(&["pci-host-ecam-generic"])
     else {
-        warn!("No generic PCI host controller node found in the device tree");
+        warn!("no generic host controller node found in the device tree");
         return None;
     };
 
     let Some(mut reg) = pci.reg() else {
-        warn!("PCI node should have exactly one `reg` property, but found zero `reg`s");
+        warn!("node should have exactly one `reg` property, but found zero `reg`s");
         return None;
     };
     let Some(region) = reg.next() else {
-        warn!("PCI node should have exactly one `reg` property, but found zero `reg`s");
+        warn!("node should have exactly one `reg` property, but found zero `reg`s");
         return None;
     };
     if reg.next().is_some() {
         warn!(
-            "PCI node should have exactly one `reg` property, but found {} `reg`s",
+            "node should have exactly one `reg` property, but found {} `reg`s",
             reg.count() + 2
         );
         return None;
@@ -85,7 +85,7 @@ pub(crate) fn init() -> Option<RangeInclusive<u8>> {
     let bus_range = if let Some(prop) = pci.property("bus-range") {
         if prop.value.len() != 8 || prop.value[0..3] != [0, 0, 0] || prop.value[4..7] != [0, 0, 0] {
             warn!(
-                "PCI node should have a `bus-range` property with two bytes, but found `{:?}`",
+                "node should have a `bus-range` property with two bytes, but found `{:?}`",
                 prop.value
             );
             return None;
@@ -94,7 +94,7 @@ pub(crate) fn init() -> Option<RangeInclusive<u8>> {
             // TODO: We don't support this case because the base address corresponds to the first
             // bus. Therefore, an offset must be applied to the bus value in `read32`/`write32`.
             warn!(
-                "PCI node with a non-zero bus start `{}` is not supported yet",
+                "node with a non-zero bus start `{}` is not supported yet",
                 prop.value[3]
             );
             return None;
