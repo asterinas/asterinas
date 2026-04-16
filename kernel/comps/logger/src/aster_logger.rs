@@ -38,9 +38,10 @@ fn print_logs(record: &Record, timestamp: &Duration) {
     };
 
     super::_print(format_args!(
-        "{} {:<6}: {}\n",
+        "{} {:<6}: {}{}\n",
         timestamp_style.style(format_args!("[{:>6}.{:03}]", secs, millis)),
         level_style.style(record.level()),
+        record_style.style(record.prefix()),
         record_style.style(record.args())
     ));
 }
@@ -51,9 +52,11 @@ fn print_logs(record: &Record, timestamp: &Duration) {
     let millis = timestamp.subsec_millis();
 
     super::_print(format_args!(
-        "{} {:<6}: {}\n",
-        format_args!("[{:>6}.{:03}]", secs, millis),
+        "[{:>6}.{:03}] {:<6}: {}{}\n",
+        secs,
+        millis,
         record.level(),
+        record.prefix(),
         record.args()
     ));
 }

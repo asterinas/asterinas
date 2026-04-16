@@ -36,7 +36,12 @@ pub fn __write_log_record(record: &Record) {
     if let Some(logger) = __logger() {
         logger.log(record);
     } else {
-        crate::console::early_print(format_args!("{}: {}\n", record.level(), record.args()));
+        crate::console::early_print(format_args!(
+            "{}: {}{}\n",
+            record.level(),
+            record.prefix(),
+            record.args()
+        ));
     }
 }
 
@@ -81,6 +86,7 @@ pub trait Log: Sync + Send {
 /// the backend must consume all data during the `log()` call.
 pub struct Record<'a> {
     level: Level,
+    prefix: &'static str,
     args: fmt::Arguments<'a>,
     module_path: &'static str,
     file: &'static str,
@@ -93,6 +99,7 @@ impl<'a> Record<'a> {
     #[inline]
     pub fn new(
         level: Level,
+        prefix: &'static str,
         args: fmt::Arguments<'a>,
         module_path: &'static str,
         file: &'static str,
@@ -100,6 +107,7 @@ impl<'a> Record<'a> {
     ) -> Self {
         Self {
             level,
+            prefix,
             args,
             module_path,
             file,
@@ -110,6 +118,11 @@ impl<'a> Record<'a> {
     /// Returns the log level.
     pub fn level(&self) -> Level {
         self.level
+    }
+
+    /// Returns the per-module log prefix (may be empty).
+    pub fn prefix(&self) -> &'static str {
+        self.prefix
     }
 
     /// Returns the formatted message arguments.

@@ -84,6 +84,7 @@ you are welcome to fix the code to match the guidelines.
 | Rust | Propagate errors with `?` | [`propagate-errors`](rust-guidelines/select-topics/error-handling.md#propagate-errors) |
 | Rust | Use OSTD logging macros exclusively | [`ostd-log-only`](rust-guidelines/select-topics/logging.md#ostd-log-only) |
 | Rust | Choose appropriate log levels | [`log-levels`](rust-guidelines/select-topics/logging.md#log-levels) |
+| Rust | Define a log prefix for each crate | [`log-prefix`](rust-guidelines/select-topics/logging.md#log-prefix) |
 | Rust | Use RAII for all resource acquisition and release | [`raii`](rust-guidelines/select-topics/memory-and-resource-management.md#raii) |
 | Rust | Avoid O(n) algorithms on hot paths | [`no-linear-hot-paths`](rust-guidelines/select-topics/performance.md#no-linear-hot-paths) |
 | Rust | Minimize unnecessary copies and allocations | [`minimize-copies`](rust-guidelines/select-topics/performance.md#minimize-copies) |

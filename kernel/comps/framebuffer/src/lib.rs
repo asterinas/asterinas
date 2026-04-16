@@ -6,6 +6,13 @@
 
 extern crate alloc;
 
+// Set this crate's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "framebuffer: "
+    };
+}
+
 mod ansi_escape;
 mod console;
 mod dummy_console;

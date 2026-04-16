@@ -6,6 +6,13 @@
 
 extern crate alloc;
 
+// Set this crate's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "heap: "
+    };
+}
+
 mod allocator;
 mod cpu_local_allocator;
 mod slab_cache;

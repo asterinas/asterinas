@@ -15,6 +15,13 @@ use component::{ComponentInitError, init_component};
 use rtc::Driver;
 use spin::Once;
 
+// Set this crate's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "time: "
+    };
+}
+
 mod clocksource;
 mod rtc;
 mod tsc;

@@ -42,8 +42,6 @@ use core::ops::Range;
 
 use spin::Once;
 
-use crate::info;
-
 #[cfg(ktest)]
 mod test;
 
@@ -59,7 +57,7 @@ use super::{
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
-    const_assert,
+    const_assert, info,
     mm::{HasPaddr, PAGE_SIZE, PagingLevel, frame::FrameRef, page_table::largest_pages},
     task::disable_preempt,
 };

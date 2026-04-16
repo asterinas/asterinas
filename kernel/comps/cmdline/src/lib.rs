@@ -50,6 +50,13 @@
 
 extern crate alloc;
 
+// Set this crate's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "cmdline: "
+    };
+}
+
 mod dispatch;
 pub mod parse;
 pub mod types;

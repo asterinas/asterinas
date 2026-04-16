@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+// Set this module's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "acpi: "
+    };
+}
+
 pub(in crate::arch) mod dmar;
 pub(in crate::arch) mod remapping;
 

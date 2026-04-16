@@ -26,6 +26,13 @@ use transport::{DeviceStatus, mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER};
 
 use crate::transport::VirtioTransport;
 
+// Set this crate's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "virtio: "
+    };
+}
+
 pub mod device;
 mod dma_buf;
 mod id_alloc;

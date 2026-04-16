@@ -9,6 +9,13 @@ extern crate alloc;
 
 use component::{ComponentInitError, init_component};
 
+// Set this crate's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "i8042: "
+    };
+}
+
 mod controller;
 mod keyboard;
 mod mouse;

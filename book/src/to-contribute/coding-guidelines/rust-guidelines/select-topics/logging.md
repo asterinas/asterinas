@@ -58,3 +58,41 @@ A log statement that fires on every syscall
 or every timer tick must use `debug!`.
 
 [`syslog(2)`]: https://man7.org/linux/man-pages/man2/syslog.2.html
+
+### Define a log prefix for each crate (`log-prefix`) {#log-prefix}
+
+Every OSTD-based crate must define a `__log_prefix` macro at its crate root (in `lib.rs`),
+before any `mod` declarations.
+This labels all log messages from the crate:
+
+```rust
+// Set this crate's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "virtio: "
+    };
+}
+```
+
+Convention: use the lowercase crate name (without `aster_` prefix), followed by `: `.
+For example: `"virtio: "`, `"pci: "`, `"uart: "`.
+
+Subsystem modules within a crate can override the prefix
+by defining their own `__log_prefix` at the top of `mod.rs`:
+
+```rust
+// Set this module's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "net: "
+    };
+}
+```
+
+Child modules inherit the override automatically.
+
+Do not put `#[rustfmt::skip]` or any other attribute on `__log_prefix` definitions —
+it causes a compiler ambiguity error (E0659).
+
+Do not use manual bracket prefixes like `[IOMMU]` or `[Virtio]:`.
+The `__log_prefix` mechanism replaces them.

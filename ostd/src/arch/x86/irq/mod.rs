@@ -2,6 +2,13 @@
 
 //! Interrupts.
 
+// Set this module's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "irq: "
+    };
+}
+
 pub(super) mod chip;
 pub(super) mod ipi;
 mod ops;

@@ -2,6 +2,13 @@
 
 //! The timer support.
 
+// Set this module's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "timer: "
+    };
+}
+
 mod apic;
 mod hpet;
 pub(in crate::arch) mod pit;

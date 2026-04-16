@@ -25,6 +25,7 @@ impl ::log::Log for LogCrateBridge {
             let level = map_log_level(record.level());
             logger.log(&Record::new(
                 level,
+                "",
                 *record.args(),
                 record.module_path_static().unwrap_or(""),
                 record.file_static().unwrap_or(""),
