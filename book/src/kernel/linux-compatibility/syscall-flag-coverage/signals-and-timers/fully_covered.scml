@@ -14,6 +14,9 @@ rt_sigreturn(arg);
 kill(pid, sig);
 
 // Send signal to a thread
+tkill(tid, sig);
+
+// Send signal to a thread within a process
 tgkill(tgid, tid, sig);
 
 // Send signal to the target process referred to by pidfd

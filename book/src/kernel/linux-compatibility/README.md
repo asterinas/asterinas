@@ -220,7 +220,7 @@ which are summarized in the table below.
 | 197     | removexattr            | ✅             | 💯 |
 | 198     | lremovexattr           | ✅             | 💯 |
 | 199     | fremovexattr           | ✅             | 💯 |
-| 200     | tkill                  | ❌             | N/A |
+| 200     | tkill                  | ✅             | 💯 |
 | 201     | time                   | ✅             | 💯 |
 | 202     | futex                  | ✅             | [⚠️](syscall-flag-coverage/inter-process-communication/#futex) |
 | 203     | sched_setaffinity      | ✅             | 💯 |
