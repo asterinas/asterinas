@@ -191,15 +191,14 @@ mod test {
     use core::sync::atomic::AtomicUsize;
 
     use ostd::prelude::*;
+    use spin::Once;
 
     use super::*;
 
     fn init() {
-        static DONE: AtomicBool = AtomicBool::new(false);
-        if !DONE.load(Ordering::SeqCst) {
-            let _ = super::super::init();
-            DONE.store(true, Ordering::SeqCst);
-        }
+        static INIT: Once<()> = Once::new();
+
+        INIT.call_once(|| super::super::init().unwrap());
     }
 
     #[ktest]

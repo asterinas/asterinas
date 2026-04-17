@@ -365,13 +365,14 @@ impl ContextPthreadAdminApi for Context<'_> {
     }
 }
 
+/// The TID of the first POSIX thread (i.e., the main thread of the init process).
 pub const FIRST_POSIX_TID: Tid = 1;
 
 static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(FIRST_POSIX_TID);
 
-/// Allocates a new tid for the new posix thread
+/// Allocates a new TID for the new POSIX thread.
 pub fn allocate_posix_tid() -> Tid {
-    let tid = POSIX_TID_ALLOCATOR.fetch_add(1, Ordering::SeqCst);
+    let tid = POSIX_TID_ALLOCATOR.fetch_add(1, Ordering::Relaxed);
     if tid >= PID_MAX {
         // When the kernel's next PID value reaches `PID_MAX`,
         // it should wrap back to a minimum PID value.
@@ -385,9 +386,9 @@ pub fn allocate_posix_tid() -> Tid {
     tid
 }
 
-/// Returns the last allocated tid
+/// Returns the last allocated TID.
 pub fn last_tid() -> Tid {
-    POSIX_TID_ALLOCATOR.load(Ordering::SeqCst) - 1
+    POSIX_TID_ALLOCATOR.load(Ordering::Relaxed) - 1
 }
 
 /// The maximum allowed process ID.

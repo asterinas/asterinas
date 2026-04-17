@@ -195,7 +195,7 @@ impl ContextSetNsAdminApi for Context<'_> {
         let mut thread_local_ns_proxy = self.thread_local.borrow_ns_proxy_mut();
 
         // TODO: When setting a specific namespace,
-        // other dependent fields of a posix thread may also need to be updated.
+        // other dependent fields of a POSIX thread may also need to be updated.
 
         if !Arc::ptr_eq(&thread_local_ns_proxy.unwrap().mnt_ns, &ns_proxy.mnt_ns) {
             *self.thread_local.borrow_fs().resolver().write() = ns_proxy.mnt_ns.new_path_resolver();

@@ -127,7 +127,7 @@ impl ExfatFs {
 
     pub(super) fn alloc_inode_number(&self) -> Ino {
         self.highest_inode_number
-            .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
     }
 
     pub(super) fn find_opened_inode(&self, hash: usize) -> Option<Arc<ExfatInode>> {

@@ -23,7 +23,7 @@ use crate::{
     time::{TimerManager, clocks::ProfClock},
 };
 
-/// The builder to build a posix thread
+/// The builder to build a POSIX thread
 pub struct PosixThreadBuilder {
     // The essential part
     tid: Tid,
