@@ -17,7 +17,7 @@ use super::{
         listen::Listen,
     },
 };
-use crate::{prelude::*, return_errno_with_message, util::MultiRead};
+use crate::{prelude::*, util::MultiRead};
 
 /// Manage all active sockets
 pub struct VsockSpace {

@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::sync::RwMutex;
-
 use super::SendRecvFlags;
 use crate::{
     events::IoEvents,
     prelude::*,
     process::signal::Pollee,
-    return_errno_with_message,
     util::{MultiRead, MultiWrite},
 };
 

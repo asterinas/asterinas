@@ -53,7 +53,6 @@ pub(crate) struct CurrentUserSpace<'a>(Ref<'a, Option<Arc<Vmar>>>);
 ///
 /// This is slower than [`Context::user_space`]. Don't use this getter
 /// If you get the access to the [`Context`].
-#[macro_export]
 macro_rules! current_userspace {
     () => {
         $crate::context::CurrentUserSpace::new(
@@ -64,6 +63,8 @@ macro_rules! current_userspace {
         )
     };
 }
+
+pub(crate) use current_userspace;
 
 impl<'a> CurrentUserSpace<'a> {
     /// Creates a new `CurrentUserSpace` from the current task.
@@ -282,3 +283,35 @@ fn check_vaddr_lowerbound(va: Vaddr) -> ostd::Result<()> {
     }
     Ok(())
 }
+
+/// Returns the current process.
+///
+/// # Panics
+///
+/// This macro will panic if the current task is not associated with a process. For example, it will
+/// happen if the current task is a kernel thread.
+macro_rules! current {
+    () => {
+        $crate::process::Process::current().unwrap()
+    };
+}
+
+pub(crate) use current;
+
+/// Returns the current thread.
+///
+/// # Panics
+///
+/// This macro will panic if the current task is not associated with a thread.
+///
+/// Except for unit tests, all tasks should be associated with threads. To write code that can be
+/// called directly in unit tests, consider using [`Thread::current`] instead.
+///
+/// [`Thread::current`]: crate::thread::Thread::current
+macro_rules! current_thread {
+    () => {
+        $crate::thread::Thread::current().expect("the current task is not associated with a thread")
+    };
+}
+
+pub(crate) use current_thread;

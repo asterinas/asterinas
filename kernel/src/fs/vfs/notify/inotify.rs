@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    collections::VecDeque,
-    string::String,
-    sync::{Arc, Weak},
-};
+use alloc::collections::VecDeque;
 use core::{
     fmt::Display,
     sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -29,7 +25,6 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    return_errno_with_message,
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 

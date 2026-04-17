@@ -101,7 +101,7 @@ use core::marker::PhantomData;
 use aster_util::safe_ptr::SafePtr;
 use sealed::{DataSpec, IoctlCmd, IoctlDir, PtrDataSpec};
 
-use crate::{current_userspace, prelude::*};
+use crate::{context::current_userspace, prelude::*};
 
 pub mod common_defs;
 mod sealed;

@@ -2,9 +2,9 @@
 
 use ostd::mm::VmIo;
 
-use super::RawSocketOption;
+use super::{RawSocketOption, impl_raw_sock_option_get_only, impl_raw_socket_option};
 use crate::{
-    current_userspace, impl_raw_sock_option_get_only, impl_raw_socket_option,
+    context::current_userspace,
     net::socket::options::{
         AcceptConn, Broadcast, Error, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
         RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,

@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::RawSocketOption;
+use super::{RawSocketOption, SocketOption, impl_raw_sock_option_set_only};
 use crate::{
-    impl_raw_sock_option_set_only,
     net::socket::netlink::{AddMembership, DropMembership},
     prelude::*,
-    util::net::options::SocketOption,
 };
 
 /// Socket options for netlink socket.

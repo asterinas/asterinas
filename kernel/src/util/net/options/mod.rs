@@ -75,7 +75,6 @@ pub trait RawSocketOption: SocketOption {
 }
 
 /// Impl `RawSocketOption` for a struct which implements `SocketOption`.
-#[macro_export]
 macro_rules! impl_raw_socket_option {
     ($option:ty) => {
         impl RawSocketOption for $option {
@@ -106,7 +105,6 @@ macro_rules! impl_raw_socket_option {
 }
 
 /// Impl `RawSocketOption` for a struct which is for only `getsockopt` and implements `SocketOption`.
-#[macro_export]
 macro_rules! impl_raw_sock_option_get_only {
     ($option:ty) => {
         impl RawSocketOption for $option {
@@ -133,7 +131,6 @@ macro_rules! impl_raw_sock_option_get_only {
 }
 
 /// Impl `RawSocketOption` for a struct which is for only `setsockopt` and implements `SocketOption`.
-#[macro_export]
 macro_rules! impl_raw_sock_option_set_only {
     ($option:ty) => {
         impl RawSocketOption for $option {
@@ -159,6 +156,11 @@ macro_rules! impl_raw_sock_option_set_only {
         }
     };
 }
+
+// Export macros to sub-modules
+use impl_raw_sock_option_get_only;
+use impl_raw_sock_option_set_only;
+use impl_raw_socket_option;
 
 pub fn new_raw_socket_option(
     level: CSocketOptionLevel,

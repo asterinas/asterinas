@@ -5,7 +5,7 @@ use core::{num::NonZeroU8, time::Duration};
 use ostd::mm::VmIo;
 
 use crate::{
-    current_userspace,
+    context::current_userspace,
     net::socket::{
         ip::{options::IpTtl, stream_options::CongestionControl},
         unix::CUserCred,
@@ -46,7 +46,7 @@ macro_rules! impl_read_write_for_32bit_type {
                 if (max_len as usize) < size_of::<$pod_ty>() {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
                 }
-                Ok(crate::current_userspace!().read_val::<$pod_ty>(addr)?)
+                Ok(crate::context::current_userspace!().read_val::<$pod_ty>(addr)?)
             }
         }
 
@@ -58,7 +58,7 @@ macro_rules! impl_read_write_for_32bit_type {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
                 }
 
-                crate::current_userspace!().write_val(addr, self)?;
+                crate::context::current_userspace!().write_val(addr, self)?;
                 Ok(write_len)
             }
         }

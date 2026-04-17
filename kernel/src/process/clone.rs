@@ -15,8 +15,8 @@ use super::{
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
 };
 use crate::{
+    context::current_userspace,
     cpu::LinuxAbi,
-    current_userspace,
     fs::{
         cgroupfs::{CgroupMembership, CgroupSysNode},
         file::file_table::{FdFlags, FileTable, RawFileDesc},

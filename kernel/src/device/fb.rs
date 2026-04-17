@@ -8,7 +8,7 @@ use ostd::mm::{HasPaddr, HasSize, VmIo, VmReader, VmWriter};
 
 use super::{Device, DeviceType, registry::char};
 use crate::{
-    current_userspace,
+    context::current_userspace,
     events::IoEvents,
     fs::{
         file::{FileIo, Mappable, StatusFlags},

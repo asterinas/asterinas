@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::RawSocketOption;
+use super::{RawSocketOption, SocketOption, impl_raw_socket_option};
 use crate::{
-    impl_raw_socket_option,
     net::socket::ip::stream_options::{
         Congestion, DeferAccept, Inq, KeepIdle, MaxSegment, NoDelay, SynCnt, UserTimeout,
         WindowClamp,
     },
     prelude::*,
-    util::net::options::SocketOption,
 };
 
 /// Sock options for tcp socket.
