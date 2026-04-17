@@ -2,12 +2,10 @@
 
 use int_to_c_enum::TryFromInt;
 
-use super::RawSocketOption;
+use super::{RawSocketOption, SocketOption, impl_raw_socket_option};
 use crate::{
-    impl_raw_socket_option,
     net::socket::ip::options::{Hdrincl, Recverr, Tos, Ttl},
     prelude::*,
-    util::net::options::SocketOption,
 };
 
 /// Socket options for IP socket.

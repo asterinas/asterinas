@@ -437,7 +437,7 @@ fn use_alternate_signal_stack(
 /// Writes a `u64` integer to the user's stack.
 #[cfg(target_arch = "x86_64")]
 fn write_u64_to_user_stack(sp: u64, value: u64) -> Result<u64> {
-    use crate::current_userspace;
+    use crate::context::current_userspace;
 
     let sp = sp.wrapping_sub(size_of::<u64>() as u64);
     current_userspace!().write_val(sp as _, &value)?;

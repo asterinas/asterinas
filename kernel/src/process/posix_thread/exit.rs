@@ -8,7 +8,7 @@ use super::{
     robust_list::wake_robust_futex,
 };
 use crate::{
-    current_userspace,
+    context::current_userspace,
     prelude::*,
     process::{
         TermStatus,

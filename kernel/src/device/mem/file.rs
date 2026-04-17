@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::vec;
-
 use ostd::mm::{FallibleVmWrite, VmReader, VmWriter};
 
 use crate::{
@@ -11,9 +9,8 @@ use crate::{
         file::{FileIo, StatusFlags},
         vfs::inode::InodeIo,
     },
-    prelude::Result,
+    prelude::*,
     process::signal::{PollHandle, Pollable},
-    return_errno_with_message,
     util::random,
 };
 

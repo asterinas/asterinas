@@ -363,16 +363,18 @@ impl From<aster_util::printer::VmPrinterError> for Error {
     }
 }
 
-#[macro_export]
 macro_rules! return_errno {
     ($errno: expr) => {
         return Err($crate::error::Error::new($errno))
     };
 }
 
-#[macro_export]
+pub(crate) use return_errno;
+
 macro_rules! return_errno_with_message {
     ($errno: expr, $message: expr) => {
         return Err($crate::error::Error::with_message($errno, $message))
     };
 }
+
+pub(crate) use return_errno_with_message;

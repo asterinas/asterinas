@@ -8,7 +8,7 @@ use ostd::{
 use spin::Once;
 
 use crate::{
-    current_userspace,
+    context::current_userspace,
     prelude::*,
     process::VmarSnapshot,
     time::wait::ManagedTimeout,

@@ -22,7 +22,7 @@ impl Vmar {
     /// use ostd::mm::PAGE_SIZE;
     ///
     /// use crate::{
-    ///     current_userspace,
+    ///     context::current_userspace,
     ///     vm::{perms::VmPerms, vmar::VmarMapOffset, vmo::VmoOptions},
     /// };
     ///

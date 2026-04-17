@@ -12,7 +12,7 @@ use ostd::mm::{Infallible, VmIo, VmReader, VmWriter};
 use spin::Once;
 
 use crate::{
-    current_userspace,
+    context::current_userspace,
     device::{
         registry::char,
         tty::{CFontOp, Tty, TtyDriver, file::TtyFile, termio::CTermios},

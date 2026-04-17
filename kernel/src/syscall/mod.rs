@@ -322,13 +322,16 @@ macro_rules! impl_syscall_nums_and_dispatch_fn {
             match syscall_number {
                 $(
                     $num => {
-                        $crate::log_syscall_entry!($name);
+                        $crate::syscall::log_syscall_entry!($name);
                         $crate::syscall::dispatch_fn_inner!(args, ctx, user_ctx, $handler $args)
                     }
                 )*
                 _ => {
                     ostd::warn!("Unimplemented syscall number: {}", syscall_number);
-                    $crate::return_errno_with_message!($crate::error::Errno::ENOSYS, "Syscall was unimplemented");
+                    $crate::error::return_errno_with_message!(
+                        $crate::error::Errno::ENOSYS,
+                        "Syscall was unimplemented"
+                    );
                 }
             }
         }
@@ -388,15 +391,17 @@ pub fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
     }
 }
 
-#[macro_export]
 macro_rules! log_syscall_entry {
     ($syscall_name: tt) => {
         if ostd::log_enabled!(ostd::log::Level::Info) {
             let syscall_name_str = stringify!($syscall_name);
-            let pid = $crate::current!().pid();
+            let pid = $crate::context::current!().pid();
             let tid = {
                 use $crate::process::posix_thread::AsPosixThread;
-                $crate::current_thread!().as_posix_thread().unwrap().tid()
+                $crate::context::current_thread!()
+                    .as_posix_thread()
+                    .unwrap()
+                    .tid()
             };
             ostd::info!(
                 "[pid={}][tid={}][id={}][{}]",
@@ -408,3 +413,5 @@ macro_rules! log_syscall_entry {
         }
     };
 }
+
+use log_syscall_entry;

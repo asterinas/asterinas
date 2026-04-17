@@ -10,8 +10,8 @@ use ostd::{
 
 use super::{Thread, oops};
 use crate::{
+    context::current_userspace,
     cpu::LinuxAbi,
-    current_userspace,
     prelude::*,
     process::{
         posix_thread::{AsPosixThread, AsThreadLocal, FIRST_POSIX_TID, ThreadLocal},

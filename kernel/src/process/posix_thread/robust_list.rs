@@ -5,7 +5,7 @@
 use ostd::{mm::VmIo, task::Task};
 
 use crate::{
-    current_userspace,
+    context::current_userspace,
     prelude::*,
     process::posix_thread::futex::{FutexVisibility, futex_wake},
     thread::Tid,

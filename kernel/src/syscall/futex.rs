@@ -5,7 +5,7 @@ use core::time::Duration;
 use ostd::mm::VmIo;
 
 use crate::{
-    current_userspace,
+    context::current_userspace,
     prelude::*,
     process::posix_thread::futex::{
         FutexFlags, FutexOp, FutexVisibility, futex_op_and_flags_from_u32, futex_requeue,
