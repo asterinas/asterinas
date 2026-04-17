@@ -65,11 +65,11 @@ pub fn sys_timer_create(
                         process.enqueue_signal(Box::new(signal));
                     })
                 }
-                // Spawn a posix thread to run the `sigev_function`, which is stored in
+                // Spawn a POSIX thread to run the `sigev_function`, which is stored in
                 // `sig_event.sigev_un._sigev_thread`.
                 //
                 // TODO: enable this instructions. Currently the system does not provide an API to spawn
-                // a posix thread to run a specified function.
+                // a POSIX thread to run a specified function.
                 SigNotify::SIGEV_THREAD => {
                     unimplemented!()
                 }

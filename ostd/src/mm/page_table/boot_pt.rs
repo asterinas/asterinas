@@ -73,7 +73,7 @@ where
 ///  - no [`with_borrow`] calls are performed on this CPU after this dismissal;
 pub(crate) unsafe fn dismiss() {
     IS_DISMISSED.store(true);
-    if DISMISS_COUNT.fetch_add(1, Ordering::SeqCst) as usize == num_cpus() - 1 {
+    if DISMISS_COUNT.fetch_add(1, Ordering::AcqRel) as usize == num_cpus() - 1 {
         let boot_pt = BOOT_PAGE_TABLE.lock().take().unwrap();
 
         dfs_walk_on_leave::<PageTableEntry, PagingConsts>(

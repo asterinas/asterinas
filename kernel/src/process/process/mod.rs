@@ -55,9 +55,11 @@ pub use terminal::Terminal;
 /// Process ID.
 pub type Pid = u32;
 
+/// The PID of the init process.
 pub const INIT_PROCESS_PID: Pid = FIRST_POSIX_TID;
 
 define_atomic_version_of_integer_like_type!(Pid, {
+    /// Atomic [`Pid`].
     #[derive(Debug)]
     pub struct AtomicPid(AtomicU32);
 });
