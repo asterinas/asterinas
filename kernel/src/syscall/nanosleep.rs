@@ -100,11 +100,17 @@ fn do_clock_nanosleep(
             ClockId::CLOCK_PROCESS_CPUTIME_ID => {
                 ctx.process.timer_manager().prof_timer().timer_manager()
             }
-            // FIXME: From the manual,
-            // the CPU clock IDs returned by clock_getcpuclockid(3)
-            // and pthread_getcpuclockid(3) can also be passed in clockid.
-            // But it's not covered here.
-            _ => return_errno_with_message!(Errno::EINVAL, "unknown clockid for clock_nanosleep"),
+            // Linux returns `EOPNOTSUPP` for `CLOCK_THREAD_CPUTIME_ID`,
+            // `CLOCK_MONOTONIC_RAW`, and the low-resolution coarse clocks.
+            ClockId::CLOCK_THREAD_CPUTIME_ID
+            | ClockId::CLOCK_MONOTONIC_RAW
+            | ClockId::CLOCK_REALTIME_COARSE
+            | ClockId::CLOCK_MONOTONIC_COARSE => {
+                return_errno_with_message!(
+                    Errno::EOPNOTSUPP,
+                    "unsupported clockid for clock_nanosleep"
+                );
+            }
         }
     };
 

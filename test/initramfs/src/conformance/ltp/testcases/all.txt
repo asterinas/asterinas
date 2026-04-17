@@ -98,7 +98,7 @@ chroot02
 # clock_adjtime02
 
 # clock_getres01
-# clock_nanosleep01
+clock_nanosleep01
 # clock_nanosleep02
 # clock_nanosleep03
 clock_nanosleep04
