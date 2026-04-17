@@ -16,7 +16,7 @@ pub(crate) use core::{any::Any, ffi::CStr, fmt::Debug};
 pub(crate) use bitflags::bitflags;
 pub(crate) use int_to_c_enum::TryFromInt;
 pub(crate) use ostd::{
-    alert, crit, debug, emerg, error, info, log,
+    alert, crit, debug, emerg, error, info,
     mm::{FallibleVmRead, FallibleVmWrite, PAGE_SIZE, Vaddr, VmReader, VmWriter},
     notice,
     sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
