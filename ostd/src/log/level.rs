@@ -41,8 +41,8 @@ use core::fmt;
 /// | Info         | Info (6)           | |
 /// | Debug        | Debug (7)          | |
 /// | Trace        | Debug (7)          | Bridge only; no `trace!` macro in OSTD |
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Level {
     /// System is unusable.
     Emerg = 0,
@@ -107,8 +107,8 @@ impl fmt::Display for Level {
 /// LevelFilter::Error(4)   -> Emerg(0), Alert(1), Crit(2), Error(3)
 /// LevelFilter::Debug(8)   -> everything
 /// ```
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LevelFilter {
     /// All logging disabled.
     Off = 0,
