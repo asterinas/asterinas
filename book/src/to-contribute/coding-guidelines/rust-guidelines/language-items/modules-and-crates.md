@@ -19,9 +19,14 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
 pub static I8042_CONTROLLER: ...
 ```
 
+Inside the `aster-kernel` crate, `pub(crate)` and `pub` are equivalent,
+as the crate has no downstream consumers.
+Prefer the shorter `pub`.
+
 See also:
-PR [#2951](https://github.com/asterinas/asterinas/pull/2951)
-and [#2605](https://github.com/asterinas/asterinas/pull/2605#discussion_r2720506912).
+PR [#2951](https://github.com/asterinas/asterinas/pull/2951),
+[#2605](https://github.com/asterinas/asterinas/pull/2605#discussion_r2720506912),
+and [#3154](https://github.com/asterinas/asterinas/pull/3154#discussion_r3100905375).
 
 ### Qualify function calls with the parent module (`qualified-fn-imports`) {#qualified-fn-imports}
 
