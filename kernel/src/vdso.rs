@@ -232,7 +232,7 @@ const PREBUILT_VDSO_LIB: &[u8] =
 /// This constant is specific to the prebuilt vDSO library and can be obtained from
 /// `readelf -s vdso_riscv64.so | grep '__vdso_rt_sigreturn'`.
 #[cfg(target_arch = "riscv64")]
-pub(crate) const __VDSO_RT_SIGRETURN_OFFSET: usize = 0x5b0;
+pub const __VDSO_RT_SIGRETURN_OFFSET: usize = 0x5b0;
 
 impl Vdso {
     /// Constructs a new `Vdso`, including an initialized `VdsoData` and a VMO of the vDSO.
@@ -380,7 +380,7 @@ pub(super) fn init_in_first_kthread() {
 /// Returns the vDSO VMO.
 ///
 /// This function will return `None` if vDSO does not exist (e.g., if it has not been initialized).
-pub(crate) fn vdso_vmo() -> Option<Arc<Vmo>> {
+pub fn vdso_vmo() -> Option<Arc<Vmo>> {
     VDSO.get().map(|vdso| vdso.vmo.clone())
 }
 

@@ -223,8 +223,8 @@ static TDX_REPORT: Once<RwMutex<USegment>> = Once::new();
 ///
 /// RTMRs are the only measurement registers that can be extended at runtime
 /// via [`extend_tdx_mr`].
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Rtmr {
+#[derive(Clone, Copy, Debug)]
+pub enum Rtmr {
     Rtmr0,
     Rtmr1,
     Rtmr2,
@@ -232,8 +232,8 @@ pub(crate) enum Rtmr {
 }
 
 /// TDX measurement register.
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum MeasurementReg {
+#[derive(Clone, Copy, Debug)]
+pub enum MeasurementReg {
     MrConfigId,
     MrOwner,
     MrOwnerConfig,
@@ -242,7 +242,7 @@ pub(crate) enum MeasurementReg {
 }
 
 /// Gets the TDX quote given the specified data in `inblob`.
-pub(crate) fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
+pub fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
     const GET_QUOTE_IN_FLIGHT: u64 = 0xFFFF_FFFF_FFFF_FFFF;
     const GET_QUOTE_BUF_SIZE: usize = 8 * 1024;
 
@@ -298,7 +298,7 @@ pub(crate) fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
 /// Most callers that only need to read a measurement register after an extend
 /// should use [`get_tdx_mr_refresh`] instead, which combines the refresh and
 /// the register read atomically.
-pub(crate) fn refresh_tdx_report(inblob: Option<&[u8]>) -> Result<()> {
+pub fn refresh_tdx_report(inblob: Option<&[u8]>) -> Result<()> {
     let report = TDX_REPORT
         .get()
         .ok_or_else(|| Error::with_message(Errno::ENODEV, "TDX report not initialized"))?
@@ -306,7 +306,7 @@ pub(crate) fn refresh_tdx_report(inblob: Option<&[u8]>) -> Result<()> {
     refresh_tdx_report_locked(&report, inblob)
 }
 
-pub(crate) const SHA384_DIGEST_SIZE: usize = 48;
+pub const SHA384_DIGEST_SIZE: usize = 48;
 
 /// Gets the measurement register value from the cached TDX report.
 ///
@@ -315,7 +315,7 @@ pub(crate) const SHA384_DIGEST_SIZE: usize = 48;
 /// [`get_tdx_mr_refresh`] call. If the register may have been updated by a
 /// recent [`extend_tdx_mr`], use [`get_tdx_mr_refresh`] instead to obtain the
 /// current hardware value.
-pub(crate) fn get_tdx_mr(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]> {
+pub fn get_tdx_mr(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]> {
     let report = TDX_REPORT
         .get()
         .ok_or_else(|| Error::with_message(Errno::ENODEV, "TDX report not initialized"))?
@@ -338,7 +338,7 @@ pub(crate) fn get_tdx_mr(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]
 /// Use this function after [`extend_tdx_mr`] to observe the updated RTMR
 /// value. If no extend has occurred and the cached report is still current,
 /// the cheaper [`get_tdx_mr`] can be used instead.
-pub(crate) fn get_tdx_mr_refresh(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]> {
+pub fn get_tdx_mr_refresh(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]> {
     let report = TDX_REPORT
         .get()
         .ok_or_else(|| Error::with_message(Errno::ENODEV, "TDX report not initialized"))?
@@ -361,7 +361,7 @@ pub(crate) fn get_tdx_mr_refresh(reg: MeasurementReg) -> Result<[u8; SHA384_DIGE
 /// atomically regenerates the report and reads the register. Alternatively,
 /// call [`refresh_tdx_report`] and then [`get_tdx_mr`] if you need to refresh
 /// once and read multiple registers.
-pub(crate) fn extend_tdx_mr(reg: Rtmr, data: &[u8; SHA384_DIGEST_SIZE]) -> Result<()> {
+pub fn extend_tdx_mr(reg: Rtmr, data: &[u8; SHA384_DIGEST_SIZE]) -> Result<()> {
     let index = match reg {
         Rtmr::Rtmr0 => 0,
         Rtmr::Rtmr1 => 1,
