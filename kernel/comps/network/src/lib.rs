@@ -33,6 +33,7 @@ pub struct EthernetAddr(pub [u8; 6]);
 pub enum NetError {
     NotReady,
     Busy,
+    NoMemory,
 }
 
 pub trait AnyNetworkDevice: Send + Sync + Any + Debug {

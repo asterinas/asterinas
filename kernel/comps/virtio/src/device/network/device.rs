@@ -17,7 +17,7 @@ use crate::{
             config::NetworkFeatures,
         },
     },
-    queue::{QueueError, VirtQueue},
+    queue::{self, VirtQueue},
     transport::{ConfigManager, VirtioTransport},
 };
 
@@ -33,6 +33,7 @@ pub struct NetworkDevice {
     header: VirtioNetHdr,
     tx_buffers: Vec<Option<TxBuffer>>,
     rx_buffers: SlotVec<RxBuffer>,
+    new_rx_buffer: Option<RxBuffer>,
     transport: Box<dyn VirtioTransport>,
     poll_stat: PollStatistics,
 }
@@ -81,19 +82,18 @@ impl NetworkDevice {
 
         let caps = init_caps(&features, &config);
 
-        let mut send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport.as_mut())
-            .expect("creating send queue fails");
+        let mut send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport.as_mut())?;
         send_queue.disable_callback();
 
-        let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport.as_mut())
-            .expect("creating recv queue fails");
+        let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport.as_mut())?;
 
         let tx_buffers = (0..QUEUE_SIZE).map(|_| None).collect();
 
         let mut rx_buffers = SlotVec::new();
         for i in 0..QUEUE_SIZE {
             let rx_pool = RX_BUFFER_POOL.get().unwrap();
-            let rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool).unwrap();
+            let rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool)
+                .map_err(VirtioDeviceError::ResourceAlloc)?;
             let token = recv_queue.add_output_bufs(&[&rx_buffer]).unwrap();
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
@@ -113,6 +113,7 @@ impl NetworkDevice {
             header: VirtioNetHdr::default(),
             tx_buffers,
             rx_buffers,
+            new_rx_buffer: None,
             transport,
             poll_stat: PollStatistics::new(),
         };
@@ -153,7 +154,7 @@ impl NetworkDevice {
     }
 
     /// Adds a `RxBuffer` to the receive queue.
-    fn add_rx_buffer(&mut self, rx_buffer: RxBuffer) -> Result<(), QueueError> {
+    fn add_rx_buffer(&mut self, rx_buffer: RxBuffer) -> Result<(), queue::AddBufsError> {
         let token = self.recv_queue.add_output_bufs(&[&rx_buffer])?;
         assert!(self.rx_buffers.put_at(token as usize, rx_buffer).is_none());
 
@@ -170,6 +171,16 @@ impl NetworkDevice {
 
     /// Receives a packet from network.
     fn receive(&mut self) -> Result<RxBuffer, NetError> {
+        if self.new_rx_buffer.is_none() {
+            // FIXME: Ideally, we can reuse the returned buffer without creating new buffer.
+            // But this requires locking device to be compatible with smoltcp interface.
+            let rx_pool = RX_BUFFER_POOL.get().unwrap();
+            let new_rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool)
+                .map_err(|_| NetError::NoMemory)?;
+
+            self.new_rx_buffer = Some(new_rx_buffer);
+        }
+
         let (token, len) = self
             .recv_queue
             .pop_used_with_min_bytes(size_of::<VirtioNetHdr>())
@@ -179,11 +190,7 @@ impl NetworkDevice {
         let mut rx_buffer = self.rx_buffers.remove(token as usize).unwrap();
         rx_buffer.set_packet_len(len as usize - size_of::<VirtioNetHdr>());
 
-        // FIXME: Ideally, we can reuse the returned buffer without creating new buffer.
-        // But this requires locking device to be compatible with smoltcp interface.
-        let rx_pool = RX_BUFFER_POOL.get().unwrap();
-        let new_rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool).unwrap();
-
+        let new_rx_buffer = self.new_rx_buffer.take().unwrap();
         self.add_rx_buffer(new_rx_buffer).unwrap();
 
         Ok(rx_buffer)
@@ -201,7 +208,7 @@ impl NetworkDevice {
             &mut VmReader::from(packet).to_fallible(),
             tx_pool,
         )
-        .unwrap();
+        .map_err(|_| NetError::NoMemory)?;
 
         let token = self.send_queue.add_input_bufs(&[&tx_buffer]).unwrap();
 

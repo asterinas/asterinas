@@ -24,8 +24,8 @@ pub struct ConsoleDevice {
     transport: SpinLock<Box<dyn VirtioTransport>>,
     receive_queue: SpinLock<VirtQueue>,
     transmit_queue: SpinLock<VirtQueue>,
-    send_buffer: Arc<DmaStream>,
-    receive_buffer: Arc<DmaStream>,
+    send_buffer: DmaStream,
+    receive_buffer: DmaStream,
     #[expect(clippy::box_collection)]
     callbacks: Rcu<Box<Vec<&'static ConsoleCallback>>>,
 }
@@ -92,13 +92,16 @@ impl ConsoleDevice {
         const RECV0_QUEUE_INDEX: u16 = 0;
         const TRANSMIT0_QUEUE_INDEX: u16 = 1;
         let receive_queue =
-            SpinLock::new(VirtQueue::new(RECV0_QUEUE_INDEX, 2, transport.as_mut()).unwrap());
-        let transmit_queue =
-            SpinLock::new(VirtQueue::new(TRANSMIT0_QUEUE_INDEX, 2, transport.as_mut()).unwrap());
+            SpinLock::new(VirtQueue::new(RECV0_QUEUE_INDEX, 2, transport.as_mut())?);
+        let transmit_queue = SpinLock::new(VirtQueue::new(
+            TRANSMIT0_QUEUE_INDEX,
+            2,
+            transport.as_mut(),
+        )?);
 
-        let send_buffer = Arc::new(DmaStream::alloc(1, false).unwrap());
-
-        let receive_buffer = Arc::new(DmaStream::alloc(1, false).unwrap());
+        let send_buffer = DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?;
+        let receive_buffer =
+            DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?;
 
         let device = Arc::new(Self {
             config_manager,
@@ -172,5 +175,5 @@ impl ConsoleDevice {
 }
 
 fn config_space_change(_: &TrapFrame) {
-    debug!("Virtio-Console device configuration space change");
+    debug!("console device configuration space change");
 }

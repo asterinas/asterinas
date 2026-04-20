@@ -27,7 +27,7 @@ use crate::{
             handle_recv_irq, register_device,
         },
     },
-    queue::{QueueError, VirtQueue},
+    queue::VirtQueue,
     transport::VirtioTransport,
 };
 
@@ -74,7 +74,7 @@ impl SocketDevice {
         for i in 0..QUEUE_SIZE {
             let rx_pool = RX_BUFFER_POOL.get().unwrap();
             let rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>(), rx_pool).unwrap();
-            let token = recv_queue.add_output_bufs(&[&rx_buffer])?;
+            let token = recv_queue.add_output_bufs(&[&rx_buffer]).unwrap();
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
         }
@@ -195,7 +195,10 @@ impl SocketDevice {
             TxBuffer::new(header, &mut VmReader::from(buffer).to_fallible(), tx_pool).unwrap()
         };
 
-        let token = self.send_queue.add_input_bufs(&[&tx_buffer])?;
+        let token = self
+            .send_queue
+            .add_input_bufs(&[&tx_buffer])
+            .map_err(|_| SocketError::QueueError)?;
 
         if self.send_queue.should_notify() {
             self.send_queue.notify();
@@ -207,10 +210,13 @@ impl SocketDevice {
         }
 
         // Pop out the buffer, so we can reuse the send queue further
-        let (pop_token, _) = self.send_queue.pop_used()?;
+        let (pop_token, _) = self
+            .send_queue
+            .pop_used()
+            .map_err(|_| SocketError::QueueError)?;
         debug_assert!(pop_token == token);
         if pop_token != token {
-            return Err(SocketError::QueueError(QueueError::WrongToken));
+            return Err(SocketError::QueueError);
         }
         debug!("send packet succeeds");
         Ok(())
@@ -264,7 +270,10 @@ impl SocketDevice {
         &mut self,
         // connection_info: &mut ConnectionInfo,
     ) -> Result<RxBuffer, SocketError> {
-        let (token, len) = self.recv_queue.pop_used()?;
+        let (token, len) = self
+            .recv_queue
+            .pop_used()
+            .map_err(|_| SocketError::QueueError)?;
         debug!(
             "receive packet in rx_queue: token = {}, len = {}",
             token, len
@@ -272,7 +281,7 @@ impl SocketDevice {
         let mut rx_buffer = self
             .rx_buffers
             .remove(token as usize)
-            .ok_or(QueueError::WrongToken)?;
+            .ok_or(SocketError::QueueError)?;
         rx_buffer.set_packet_len(len as usize);
 
         let rx_pool = RX_BUFFER_POOL.get().unwrap();
@@ -306,7 +315,10 @@ impl SocketDevice {
 
     /// Add a used rx buffer to recv queue,@index is only to check the correctness
     fn add_rx_buffer(&mut self, rx_buffer: RxBuffer, index: u16) -> Result<(), SocketError> {
-        let token = self.recv_queue.add_output_bufs(&[&rx_buffer])?;
+        let token = self
+            .recv_queue
+            .add_output_bufs(&[&rx_buffer])
+            .map_err(|_| SocketError::QueueError)?;
         assert_eq!(index, token);
         assert!(self.rx_buffers.put_at(token as usize, rx_buffer).is_none());
         if self.recv_queue.should_notify() {

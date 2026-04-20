@@ -27,8 +27,6 @@
 //
 use core::{fmt, result};
 
-use crate::queue::QueueError;
-
 /// The error type of VirtIO socket driver.
 #[derive(Debug)]
 pub enum SocketError {
@@ -61,13 +59,7 @@ pub enum SocketError {
     /// Recycled a wrong buffer.
     RecycledWrongBuffer,
     /// Queue Error
-    QueueError(QueueError),
-}
-
-impl From<QueueError> for SocketError {
-    fn from(value: QueueError) -> Self {
-        Self::QueueError(value)
-    }
+    QueueError,
 }
 
 impl From<int_to_c_enum::TryFromIntError> for SocketError {
@@ -116,7 +108,7 @@ impl fmt::Display for SocketError {
                 write!(f, "Peer has insufficient buffer space, try again later")
             }
             Self::RecycledWrongBuffer => write!(f, "Recycled a wrong buffer"),
-            Self::QueueError(_) => write!(f, "Error encountered out of vsock itself!"),
+            Self::QueueError => write!(f, "Error encountered out of vsock itself!"),
         }
     }
 }
