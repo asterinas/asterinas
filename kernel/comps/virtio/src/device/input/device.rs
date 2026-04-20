@@ -87,6 +87,10 @@ impl InputDevice {
             assert_eq!(token as usize, i);
         }
 
+        if event_queue.should_notify() {
+            event_queue.notify();
+        }
+
         let device = {
             let mut device = Self {
                 config: VirtioInputConfig::new(transport.as_mut()),
@@ -188,7 +192,7 @@ impl InputDevice {
             out
         };
 
-        String::from_utf8(out).unwrap()
+        String::from_utf8_lossy(out.as_slice()).to_string()
     }
 
     fn query_config_prop_bits(&self) -> Option<InputProp> {
@@ -530,6 +534,9 @@ impl EventTable {
         assert!(idx < self.num_events);
 
         let offset = idx * EVENT_SIZE;
+        self.stream
+            .sync_from_device(offset..offset + EVENT_SIZE)
+            .unwrap();
         SafePtr::new(&self.stream, offset)
     }
 
