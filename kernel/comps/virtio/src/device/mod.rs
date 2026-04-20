@@ -2,7 +2,7 @@
 
 use int_to_c_enum::TryFromInt;
 
-use crate::queue::QueueError;
+use crate::{queue, transport::VirtioTransportError};
 
 pub mod block;
 pub mod console;
@@ -40,17 +40,23 @@ pub(crate) enum VirtioDeviceType {
 
 #[derive(Debug)]
 pub enum VirtioDeviceError {
-    /// queues amount do not match the requirement
-    /// first element is actual value, second element is expect value
-    QueuesAmountDoNotMatch(u16, u16),
-    /// unknown error of queue
-    QueueUnknownError,
-    /// The input virtio capability list contains invalid element
-    CapabilityListError,
+    Transport(VirtioTransportError),
+    ResourceAlloc(ostd::Error),
+    InvalidQueueArgs,
+    UnsupportedConfig,
 }
 
-impl From<QueueError> for VirtioDeviceError {
-    fn from(_: QueueError) -> Self {
-        VirtioDeviceError::QueueUnknownError
+impl From<VirtioTransportError> for VirtioDeviceError {
+    fn from(value: VirtioTransportError) -> Self {
+        Self::Transport(value)
+    }
+}
+
+impl From<queue::CreationError> for VirtioDeviceError {
+    fn from(value: queue::CreationError) -> Self {
+        match value {
+            queue::CreationError::InvalidArgs => Self::InvalidQueueArgs,
+            queue::CreationError::ResourceAlloc(e) => Self::ResourceAlloc(e),
+        }
     }
 }

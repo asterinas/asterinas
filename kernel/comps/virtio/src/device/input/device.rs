@@ -77,12 +77,10 @@ impl InputDevice {
     /// Create a new VirtIO-Input driver.
     /// msix_vector_left should at least have one element or n elements where n is the virtqueue amount
     pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, transport.as_mut())
-            .expect("create event virtqueue failed");
-        let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, transport.as_mut())
-            .expect("create status virtqueue failed");
+        let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, transport.as_mut())?;
+        let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, transport.as_mut())?;
 
-        let event_table = EventTable::new(QUEUE_SIZE as usize);
+        let event_table = EventTable::new(QUEUE_SIZE as usize)?;
         for i in 0..event_table.num_events() {
             let event_buf = event_table.get(i);
             let token = event_queue.add_output_bufs(&[&event_buf]).unwrap();
@@ -510,14 +508,13 @@ impl InputDevice {
 /// each of which is large enough to contain a `VirtioInputEvent`.
 #[derive(Debug)]
 struct EventTable {
-    stream: Arc<DmaStream>,
+    stream: DmaStream,
     num_events: usize,
 }
 
 impl EventTable {
-    fn new(num_events: usize) -> Self {
+    fn new(num_events: usize) -> Result<Self, VirtioDeviceError> {
         assert!(num_events * size_of::<VirtioInputEvent>() <= PAGE_SIZE);
-
         debug_assert!(
             VirtioInputEvent::default()
                 .as_bytes()
@@ -525,8 +522,8 @@ impl EventTable {
                 .all(|b| *b == 0)
         );
 
-        let stream = Arc::new(DmaStream::alloc(1, false).unwrap());
-        Self { stream, num_events }
+        let stream = DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?;
+        Ok(Self { stream, num_events })
     }
 
     fn get(&self, idx: usize) -> EventBuf<'_> {

@@ -23,7 +23,7 @@ use device_id::{DeviceId, MinorId};
 use ostd::{
     arch::trap::TrapFrame,
     debug, info,
-    mm::{HasSize, VmIo, dma::DmaStream},
+    mm::{PAGE_SIZE, VmIo, dma::DmaStream},
     sync::SpinLock,
 };
 
@@ -214,30 +214,38 @@ impl DeviceInner {
     /// Creates and inits the device.
     fn init(mut transport: Box<dyn VirtioTransport>) -> Result<Arc<Self>, VirtioDeviceError> {
         let config_manager = VirtioBlockConfig::new_manager(transport.as_ref());
-        debug!("virio_blk_config = {:?}", config_manager.read_config());
-        assert_eq!(
-            config_manager.block_size(),
-            VirtioBlockConfig::sector_size(),
-            "currently not support customized device logical block size"
-        );
+
+        let config = config_manager.read_config();
+        debug!("virio_blk_config = {:?}", config);
+
+        let block_size = config_manager.block_size();
+        if block_size != VirtioBlockConfig::sector_size() {
+            ostd::error!("block size {} is not supported yet", block_size);
+            return Err(VirtioDeviceError::UnsupportedConfig);
+        }
+
         let num_queues = transport.num_queues();
         if num_queues != 1 {
-            // FIXME: support Multi-Queue Block IO Queueing Mechanism
+            // TODO: Support Multi-Queue Block IO Queueing Mechanism
             // (`BlkFeatures::MQ`) to accelerate multi-processor requests for
             // block devices. When SMP is enabled on x86, the feature is on.
-            // We should also consider negotiating the feature in the future.
-            // return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
             ostd::warn!(
-                "Not supporting Multi-Queue Block IO Queueing Mechanism, only using the first queue"
+                "Multi-Queue Block IO Queueing Mechanism is not supported yet; using the first queue"
             );
         }
+
         let features = VirtioBlockFeature::new(transport.as_ref());
-        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, transport.as_mut())
-            .expect("create virtqueue failed");
-        let block_requests = Arc::new(DmaStream::alloc(1, false).unwrap());
-        assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= block_requests.size());
-        let block_responses = Arc::new(DmaStream::alloc(1, false).unwrap());
-        assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.size());
+
+        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, transport.as_mut())?;
+
+        let block_requests =
+            Arc::new(DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?);
+        let block_responses =
+            Arc::new(DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?);
+        const {
+            assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= PAGE_SIZE);
+            assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= PAGE_SIZE);
+        }
 
         let device = Arc::new(Self {
             config_manager,

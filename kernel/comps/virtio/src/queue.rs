@@ -21,14 +21,6 @@ use crate::{
     transport::{ConfigManager, VirtioTransport, pci::legacy::VirtioPciLegacyTransport},
 };
 
-#[derive(Debug)]
-pub enum QueueError {
-    InvalidArgs,
-    BufferTooSmall,
-    NotReady,
-    WrongToken,
-}
-
 /// The mechanism for bulk data transport on virtio devices.
 ///
 /// Each device can have zero or more virtqueues.
@@ -65,6 +57,26 @@ pub struct VirtQueue {
     is_callback_enabled: bool,
 }
 
+/// An error returned by [`VirtQueue::new`].
+#[derive(Debug)]
+pub(crate) enum CreationError {
+    InvalidArgs,
+    ResourceAlloc(ostd::Error),
+}
+
+/// An error returned by [`VirtQueue::add_dma_bufs`] and its friends.
+#[derive(Debug)]
+pub enum AddBufsError {
+    InvalidArgs,
+    BufferTooSmall,
+}
+
+/// An error returned by [`VirtQueue::pop_used`] and its friends.
+#[derive(Debug)]
+pub enum PopUsedError {
+    NotReady,
+}
+
 #[derive(Debug)]
 struct DescriptorSlot {
     /// The device-visible descriptor stored in DMA-coherent memory.
@@ -92,65 +104,71 @@ impl VirtQueue {
         idx: u16,
         size: u16,
         transport: &mut dyn VirtioTransport,
-    ) -> Result<Self, QueueError> {
+    ) -> Result<Self, CreationError> {
         if !size.is_power_of_two() {
-            return Err(QueueError::InvalidArgs);
+            return Err(CreationError::InvalidArgs);
         }
 
-        let (descriptor_ptr, avail_ring_ptr, used_ring_ptr, device_queue_size) =
-            if transport.is_legacy_version() {
-                let device_queue_size = transport.max_queue_size(idx).unwrap() as usize;
-                let desc_size = size_of::<Descriptor>() * device_queue_size;
+        let (descriptor_ptr, avail_ring_ptr, used_ring_ptr, device_queue_size) = if transport
+            .is_legacy_version()
+        {
+            let device_queue_size = transport.max_queue_size(idx).unwrap() as usize;
+            let desc_size = size_of::<Descriptor>() * device_queue_size;
 
-                // We should establish a reasonable upper bound on the requested queue size from the
-                // device, but we are unsure of the exact value. We chose 1024 based on the current
-                // need, but it can be increased in the future if necessary.
-                if !device_queue_size.is_power_of_two()
-                    || size as usize > device_queue_size
-                    || device_queue_size > 1024
-                {
-                    return Err(QueueError::InvalidArgs);
-                }
+            // We should establish a reasonable upper bound on the requested queue size from the
+            // device, but we are unsure of the exact value. We chose 1024 based on the current
+            // need, but it can be increased in the future if necessary.
+            if !device_queue_size.is_power_of_two()
+                || size as usize > device_queue_size
+                || device_queue_size > 1024
+            {
+                return Err(CreationError::InvalidArgs);
+            }
 
-                let (dma1, dma2) = {
-                    let align_size = VirtioPciLegacyTransport::QUEUE_ALIGN_SIZE;
-                    let total_frames =
-                        VirtioPciLegacyTransport::calc_virtqueue_size_aligned(device_queue_size)
-                            / align_size;
-                    let dma = DmaCoherent::alloc(total_frames, true).unwrap();
+            let (dma1, dma2) = {
+                let align_size = VirtioPciLegacyTransport::QUEUE_ALIGN_SIZE;
+                let total_frames =
+                    VirtioPciLegacyTransport::calc_virtqueue_size_aligned(device_queue_size)
+                        / align_size;
+                let dma =
+                    DmaCoherent::alloc(total_frames, true).map_err(CreationError::ResourceAlloc)?;
 
-                    let avial_size = size_of::<u16>() * (3 + device_queue_size);
-                    let seg1_frames = (desc_size + avial_size).div_ceil(align_size);
+                let avail_size = size_of::<u16>() * (3 + device_queue_size);
+                let seg1_frames = (desc_size + avail_size).div_ceil(align_size);
 
-                    dma.split(seg1_frames * align_size)
-                };
-
-                let desc_frame_ptr: SafePtr<Descriptor, Arc<DmaCoherent>> =
-                    SafePtr::new(Arc::new(dma1), 0);
-                let mut avail_frame_ptr: SafePtr<AvailRing, Arc<DmaCoherent>> =
-                    desc_frame_ptr.clone().cast();
-                avail_frame_ptr.byte_add(desc_size);
-                let used_frame_ptr: SafePtr<UsedRing, Arc<DmaCoherent>> =
-                    SafePtr::new(Arc::new(dma2), 0);
-
-                (
-                    desc_frame_ptr,
-                    avail_frame_ptr,
-                    used_frame_ptr,
-                    device_queue_size as u16,
-                )
-            } else {
-                if size > 256 {
-                    return Err(QueueError::InvalidArgs);
-                }
-
-                (
-                    SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
-                    SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
-                    SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
-                    size,
-                )
+                dma.split(seg1_frames * align_size)
             };
+
+            let desc_frame_ptr: SafePtr<Descriptor, Arc<DmaCoherent>> =
+                SafePtr::new(Arc::new(dma1), 0);
+            let mut avail_frame_ptr: SafePtr<AvailRing, Arc<DmaCoherent>> =
+                desc_frame_ptr.clone().cast();
+            avail_frame_ptr.byte_add(desc_size);
+            let used_frame_ptr: SafePtr<UsedRing, Arc<DmaCoherent>> =
+                SafePtr::new(Arc::new(dma2), 0);
+
+            (
+                desc_frame_ptr,
+                avail_frame_ptr,
+                used_frame_ptr,
+                device_queue_size as u16,
+            )
+        } else {
+            if size > 256 {
+                return Err(CreationError::InvalidArgs);
+            }
+
+            let desc_frame = DmaCoherent::alloc(1, true).map_err(CreationError::ResourceAlloc)?;
+            let avail_frame = DmaCoherent::alloc(1, true).map_err(CreationError::ResourceAlloc)?;
+            let used_frame = DmaCoherent::alloc(1, true).map_err(CreationError::ResourceAlloc)?;
+
+            (
+                SafePtr::new(Arc::new(desc_frame), 0),
+                SafePtr::new(Arc::new(avail_frame), 0),
+                SafePtr::new(Arc::new(used_frame), 0),
+                size,
+            )
+        };
 
         debug!("queue_desc start paddr:{:x?}", descriptor_ptr.paddr());
         debug!("queue_driver start paddr:{:x?}", avail_ring_ptr.paddr());
@@ -211,14 +229,14 @@ impl VirtQueue {
     /// Adds only input DMA buffers to the virtqueue and returns a token.
     ///
     /// See [`Self::add_dma_bufs`] for more information about the result.
-    pub fn add_input_bufs<I: DmaBuf>(&mut self, inputs: &[&I]) -> Result<u16, QueueError> {
+    pub fn add_input_bufs<I: DmaBuf>(&mut self, inputs: &[&I]) -> Result<u16, AddBufsError> {
         self.add_dma_bufs(inputs, &[] as &[&I])
     }
 
     /// Adds only output DMA buffers to the virtqueue and returns a token.
     ///
     /// See [`Self::add_dma_bufs`] for more information about the result.
-    pub fn add_output_bufs<O: DmaBuf>(&mut self, outputs: &[&O]) -> Result<u16, QueueError> {
+    pub fn add_output_bufs<O: DmaBuf>(&mut self, outputs: &[&O]) -> Result<u16, AddBufsError> {
         self.add_dma_bufs(&[] as &[&O], outputs)
     }
 
@@ -244,12 +262,12 @@ impl VirtQueue {
         &mut self,
         inputs: &[&I],
         outputs: &[&O],
-    ) -> Result<u16, QueueError> {
+    ) -> Result<u16, AddBufsError> {
         if inputs.is_empty() && outputs.is_empty() {
-            return Err(QueueError::InvalidArgs);
+            return Err(AddBufsError::InvalidArgs);
         }
         if inputs.len() + outputs.len() > self.available_desc() {
-            return Err(QueueError::BufferTooSmall);
+            return Err(AddBufsError::BufferTooSmall);
         }
 
         let head = self.free_head.unwrap();
@@ -368,7 +386,7 @@ impl VirtQueue {
     /// even if [`Self::can_pop`] returns true because [`Self::can_pop`] does not check validity.
     ///
     /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
-    pub fn pop_used(&mut self) -> Result<(u16, u32), QueueError> {
+    pub fn pop_used(&mut self) -> Result<(u16, u32), PopUsedError> {
         self.pop_used_with_min_bytes(0)
     }
 
@@ -380,10 +398,13 @@ impl VirtQueue {
     /// here as well, including extra cases where the used buffer is shorter than `min_bytes`.
     ///
     /// For more information, see [`Self::pop_used`].
-    pub fn pop_used_with_min_bytes(&mut self, min_bytes: usize) -> Result<(u16, u32), QueueError> {
+    pub fn pop_used_with_min_bytes(
+        &mut self,
+        min_bytes: usize,
+    ) -> Result<(u16, u32), PopUsedError> {
         loop {
             if !self.can_pop() {
-                return Err(QueueError::NotReady);
+                return Err(PopUsedError::NotReady);
             }
 
             let last_used_slot = self.last_used_idx & (self.device_queue_size - 1);
