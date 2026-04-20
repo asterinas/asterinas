@@ -154,7 +154,10 @@ impl VirtQueue {
                 device_queue_size as u16,
             )
         } else {
-            if size > 256 {
+            let max_queue_size = transport.max_queue_size(idx).unwrap() as usize;
+
+            // There can be a maximum of 256 descriptors on one page.
+            if size as usize > max_queue_size || size > 256 {
                 return Err(CreationError::InvalidArgs);
             }
 

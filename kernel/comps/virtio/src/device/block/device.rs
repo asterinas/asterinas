@@ -305,10 +305,15 @@ impl DeviceInner {
             resp_slice.sync_from_device().unwrap();
             let resp: BlockResp = resp_slice.read_val(0).unwrap();
             self.id_allocator.dealloc(id);
-            match RespStatus::try_from(resp.status).unwrap() {
-                RespStatus::Ok => {}
-                // FIXME: Return an error instead of triggering a kernel panic
-                _ => panic!("io error in block device"),
+            match RespStatus::try_from(resp.status) {
+                Ok(RespStatus::Ok) => {}
+                _ => {
+                    // Completes the bio request with an error
+                    complete_request.bio_request.bios().for_each(|bio| {
+                        bio.complete(BioStatus::IoError);
+                    });
+                    continue;
+                }
             };
 
             // Synchronize DMA mapping if read from the device
