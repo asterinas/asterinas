@@ -184,6 +184,16 @@ impl VirtQueue {
         })
     }
 
+    /// Adds only input DMA buffers to the virtqueue and returns a token.
+    pub fn add_input_bufs<I: DmaBuf>(&mut self, inputs: &[&I]) -> Result<u16, QueueError> {
+        self.add_dma_bufs(inputs, &[] as &[&I])
+    }
+
+    /// Adds only output DMA buffers to the virtqueue and returns a token.
+    pub fn add_output_bufs<O: DmaBuf>(&mut self, outputs: &[&O]) -> Result<u16, QueueError> {
+        self.add_dma_bufs(&[] as &[&O], outputs)
+    }
+
     /// Adds input and output DMA buffers to the virtqueue and returns a token.
     ///
     /// Ref: linux virtio_ring.c virtqueue_add
@@ -199,8 +209,9 @@ impl VirtQueue {
             return Err(QueueError::BufferTooSmall);
         }
 
-        // Allocate descriptors from the free list.
         let head = self.free_head;
+
+        // Allocate descriptors from the free list.
         let mut last = self.free_head;
         for input in inputs.iter() {
             let desc = &self.descs[self.free_head as usize];
@@ -234,9 +245,8 @@ impl VirtQueue {
         }
         self.num_used += (inputs.len() + outputs.len()) as u16;
 
-        let avail_slot = self.avail_idx & (self.device_queue_size - 1);
-
         {
+            let avail_slot = self.avail_idx & (self.device_queue_size - 1);
             let ring_ptr: SafePtr<[u16; 64], &Arc<DmaCoherent>> =
                 field_ptr!(&self.avail, AvailRing, ring);
             let mut ring_slot_ptr = ring_ptr.cast::<u16>();
@@ -251,19 +261,10 @@ impl VirtQueue {
         field_ptr!(&self.avail, AvailRing, idx)
             .write_once(&self.avail_idx)
             .unwrap();
-
+        // Write barrier.
         fence(Ordering::SeqCst);
+
         Ok(head)
-    }
-
-    /// Adds only input DMA buffers to the virtqueue and returns a token.
-    pub fn add_input_bufs<I: DmaBuf>(&mut self, inputs: &[&I]) -> Result<u16, QueueError> {
-        self.add_dma_bufs(inputs, &[] as &[&I])
-    }
-
-    /// Adds only output DMA buffers to the virtqueue and returns a token.
-    pub fn add_output_bufs<O: DmaBuf>(&mut self, outputs: &[&O]) -> Result<u16, QueueError> {
-        self.add_dma_bufs(&[] as &[&O], outputs)
     }
 
     /// Returns whether there is a used element that can pop.
@@ -279,12 +280,36 @@ impl VirtQueue {
         self.descs.len() - self.num_used as usize
     }
 
+    /// Pops a device-used buffer and returns the token and the buffer length.
+    ///
+    /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
+    pub fn pop_used(&mut self) -> Result<(u16, u32), QueueError> {
+        if !self.can_pop() {
+            return Err(QueueError::NotReady);
+        }
+
+        let last_used_slot = self.last_used_idx & (self.device_queue_size - 1);
+        let element_ptr = {
+            let mut ptr = self.used.borrow_vm();
+            ptr.byte_add(offset_of!(UsedRing, ring) + last_used_slot as usize * 8);
+            ptr.cast::<UsedElem>()
+        };
+        let index = field_ptr!(&element_ptr, UsedElem, id).read_once().unwrap();
+        let len = field_ptr!(&element_ptr, UsedElem, len).read_once().unwrap();
+
+        self.recycle_descriptors(index as u16);
+        self.last_used_idx = self.last_used_idx.wrapping_add(1);
+
+        Ok((index as u16, len))
+    }
+
     /// Recycles descriptors in the list specified by `head`.
     ///
     /// This will push all linked descriptors at the front of the free list.
     fn recycle_descriptors(&mut self, mut head: u16) {
         let origin_free_head = self.free_head;
         self.free_head = head;
+
         loop {
             let desc = &mut self.descs[head as usize];
             // Set the buffer address and length to 0.
@@ -309,29 +334,6 @@ impl VirtQueue {
                 break;
             }
         }
-    }
-
-    /// Pops a device-used buffer and returns the token and the buffer length.
-    ///
-    /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
-    pub fn pop_used(&mut self) -> Result<(u16, u32), QueueError> {
-        if !self.can_pop() {
-            return Err(QueueError::NotReady);
-        }
-
-        let last_used_slot = self.last_used_idx & (self.device_queue_size - 1);
-        let element_ptr = {
-            let mut ptr = self.used.borrow_vm();
-            ptr.byte_add(offset_of!(UsedRing, ring) + last_used_slot as usize * 8);
-            ptr.cast::<UsedElem>()
-        };
-        let index = field_ptr!(&element_ptr, UsedElem, id).read_once().unwrap();
-        let len = field_ptr!(&element_ptr, UsedElem, len).read_once().unwrap();
-
-        self.recycle_descriptors(index as u16);
-        self.last_used_idx = self.last_used_idx.wrapping_add(1);
-
-        Ok((index as u16, len))
     }
 
     /// Returns whether the driver should notify the device.
