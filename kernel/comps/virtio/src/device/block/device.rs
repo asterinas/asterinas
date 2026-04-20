@@ -284,7 +284,7 @@ impl DeviceInner {
             // Pops the complete request
             let complete_request = {
                 let mut queue = self.queue.lock();
-                let Ok((token, _)) = queue.pop_used() else {
+                let Ok((token, _)) = queue.pop_used_with_min_bytes(RESP_SIZE) else {
                     return;
                 };
                 self.submitted_requests.lock().remove(&token).unwrap()

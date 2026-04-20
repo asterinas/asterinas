@@ -35,7 +35,7 @@ pub enum QueueError {
 #[derive(Debug)]
 pub struct VirtQueue {
     /// Descriptor table
-    descs: Vec<SafePtr<Descriptor, Arc<DmaCoherent>>>,
+    descs: Vec<DescriptorSlot>,
     /// Available ring
     avail: SafePtr<AvailRing, Arc<DmaCoherent>>,
     /// Used ring
@@ -56,13 +56,34 @@ pub struct VirtQueue {
     /// The number of used descriptors.
     num_used: u16,
     /// The head descriptor index of the free list.
-    free_head: u16,
+    free_head: Option<u16>,
     /// The next avail ring index.
     avail_idx: u16,
     /// The last-served used ring index.
     last_used_idx: u16,
     /// Whether the callback of this queue is enabled.
     is_callback_enabled: bool,
+}
+
+#[derive(Debug)]
+struct DescriptorSlot {
+    /// The device-visible descriptor stored in DMA-coherent memory.
+    ///
+    /// This memory is shared with the device, so descriptor contents read from it
+    /// may be stale, corrupted, or otherwise untrusted after device access.
+    ptr: SafePtr<Descriptor, Arc<DmaCoherent>>,
+
+    /// The next descriptor in the current driver-managed list.
+    ///
+    /// For an in-use descriptor, this links to the next descriptor in the same
+    /// device-visible buffer chain. For a free descriptor, this links to the next
+    /// descriptor in the free list.
+    next: Option<u16>,
+    /// The total output buffer length for an in-use descriptor chain.
+    ///
+    /// This is set only on the head descriptor of an in-use chain. It records the
+    /// total number of bytes covered by all descriptors in that chain.
+    len: Option<u32>,
 }
 
 impl VirtQueue {
@@ -146,21 +167,24 @@ impl VirtQueue {
             .unwrap();
 
         let mut descs = Vec::with_capacity(size as usize);
-        descs.push(descriptor_ptr);
-        for i in 0..size {
-            let mut desc = descs.get(i as usize).unwrap().clone();
-            let next_i = i + 1;
-            if next_i != size {
-                field_ptr!(&desc, Descriptor, next)
-                    .write_once(&next_i)
-                    .unwrap();
-                desc.add(1);
-                descs.push(desc);
-            } else {
-                field_ptr!(&desc, Descriptor, next)
-                    .write_once(&(0u16))
-                    .unwrap();
-            }
+        descs.push(DescriptorSlot {
+            ptr: descriptor_ptr,
+            next: None,
+            len: None,
+        });
+        for i in 0..size - 1 {
+            let last_desc = &mut descs[i as usize];
+            let new_desc = {
+                let mut ptr = last_desc.ptr.clone();
+                ptr.add(1);
+                DescriptorSlot {
+                    ptr,
+                    next: None,
+                    len: None,
+                }
+            };
+            last_desc.next = Some(i + 1);
+            descs.push(new_desc);
         }
 
         let notify_config = transport.notify_config(idx as usize);
@@ -177,7 +201,7 @@ impl VirtQueue {
             device_queue_size,
             queue_idx: idx as u32,
             num_used: 0,
-            free_head: 0,
+            free_head: Some(0),
             avail_idx: 0,
             last_used_idx: 0,
             is_callback_enabled: true,
@@ -185,16 +209,35 @@ impl VirtQueue {
     }
 
     /// Adds only input DMA buffers to the virtqueue and returns a token.
+    ///
+    /// See [`Self::add_dma_bufs`] for more information about the result.
     pub fn add_input_bufs<I: DmaBuf>(&mut self, inputs: &[&I]) -> Result<u16, QueueError> {
         self.add_dma_bufs(inputs, &[] as &[&I])
     }
 
     /// Adds only output DMA buffers to the virtqueue and returns a token.
+    ///
+    /// See [`Self::add_dma_bufs`] for more information about the result.
     pub fn add_output_bufs<O: DmaBuf>(&mut self, outputs: &[&O]) -> Result<u16, QueueError> {
         self.add_dma_bufs(&[] as &[&O], outputs)
     }
 
     /// Adds input and output DMA buffers to the virtqueue and returns a token.
+    ///
+    /// When successful, the result token is guaranteed to be valid. It will not exceed the queue
+    /// size, and the same token will not be returned twice, unless it has been removed from the
+    /// queue by [`Self::pop_used`] in the meantime.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if:
+    /// - both `inputs` and `outputs` are empty; or
+    /// - the queue does not have enough free descriptors, that is, [`Self::available_desc`] is
+    ///   smaller than `inputs.len() + outputs.len()`.
+    ///
+    /// If at least one buffer is provided and enough descriptors are available, this method is
+    /// guaranteed to succeed. Callers that have already checked these conditions may unwrap the
+    /// result.
     ///
     /// Ref: linux virtio_ring.c virtqueue_add
     pub fn add_dma_bufs<I: DmaBuf, O: DmaBuf>(
@@ -209,41 +252,63 @@ impl VirtQueue {
             return Err(QueueError::BufferTooSmall);
         }
 
-        let head = self.free_head;
+        let head = self.free_head.unwrap();
+        let mut output_len = 0;
 
         // Allocate descriptors from the free list.
         let mut last = self.free_head;
+        let mut current = self.free_head;
         for input in inputs.iter() {
-            let desc = &self.descs[self.free_head as usize];
-            set_dma_buf(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), *input);
-            field_ptr!(desc, Descriptor, flags)
+            let desc = &self.descs[current.unwrap() as usize];
+            set_dma_buf(
+                &desc.ptr.borrow_vm().restrict::<TRights![Write, Dup]>(),
+                *input,
+            );
+            field_ptr!(&desc.ptr, Descriptor, flags)
                 .write_once(&DescFlags::NEXT)
                 .unwrap();
-            last = self.free_head;
-            self.free_head = field_ptr!(desc, Descriptor, next).read_once().unwrap();
+            if let Some(next) = desc.next {
+                field_ptr!(&desc.ptr, Descriptor, next)
+                    .write_once(&next)
+                    .unwrap();
+            }
+            last = current;
+            current = desc.next;
         }
         for output in outputs.iter() {
-            let desc = &mut self.descs[self.free_head as usize];
-            set_dma_buf(
-                &desc.borrow_vm().restrict::<TRights![Write, Dup]>(),
+            let desc = &self.descs[current.unwrap() as usize];
+            output_len += set_dma_buf(
+                &desc.ptr.borrow_vm().restrict::<TRights![Write, Dup]>(),
                 *output,
             );
-            field_ptr!(desc, Descriptor, flags)
+            field_ptr!(&desc.ptr, Descriptor, flags)
                 .write_once(&(DescFlags::NEXT | DescFlags::WRITE))
                 .unwrap();
-            last = self.free_head;
-            self.free_head = field_ptr!(desc, Descriptor, next).read_once().unwrap();
+            if let Some(next) = desc.next {
+                field_ptr!(&desc.ptr, Descriptor, next)
+                    .write_once(&next)
+                    .unwrap();
+            }
+            last = current;
+            current = desc.next;
         }
         // Clear `DescFlags::NEXT` in the last descriptor.
         {
-            let desc = &mut self.descs[last as usize];
-            let mut flags: DescFlags = field_ptr!(desc, Descriptor, flags).read_once().unwrap();
+            let desc = &mut self.descs[last.unwrap() as usize];
+            self.free_head = desc.next;
+            desc.next = None;
+            let mut flags: DescFlags = field_ptr!(&desc.ptr, Descriptor, flags)
+                .read_once()
+                .unwrap();
             flags.remove(DescFlags::NEXT);
-            field_ptr!(desc, Descriptor, flags)
+            field_ptr!(&desc.ptr, Descriptor, flags)
                 .write_once(&flags)
                 .unwrap();
         }
+        // Update the number of used descriptors.
         self.num_used += (inputs.len() + outputs.len()) as u16;
+        // Store the length of the DMA buffer in the first descriptor.
+        self.descs[head as usize].len = Some(output_len);
 
         {
             let avail_slot = self.avail_idx & (self.device_queue_size - 1);
@@ -268,6 +333,9 @@ impl VirtQueue {
     }
 
     /// Returns whether there is a used element that can pop.
+    ///
+    /// Even if this method returns true, [`Self::pop_used`] can still return `None`. See the note
+    /// about malfunctioning devices in [`Self::pop_used`] for details.
     pub fn can_pop(&self) -> bool {
         // Read barrier.
         fence(Ordering::SeqCst);
@@ -282,25 +350,78 @@ impl VirtQueue {
 
     /// Pops a device-used buffer and returns the token and the buffer length.
     ///
+    /// When successful, the following is guaranteed:
+    /// - The token is valid.  It will not exceed the queue size. It was previously returned by
+    ///   [`Self::add_dma_bufs`], [`Self::add_input_bufs`], or [`Self::add_output_bufs`], and it has
+    ///   not yet been removed from the queue by this method.
+    /// - The length is valid. It will not exceed the length of the original DMA buffer.
+    ///
+    /// If the device malfunctions, it may report a token or length that violates these guarantees.
+    /// Such reports are logged as errors and ignored; the reported token is not returned to the
+    /// caller, preventing an invalid token from corrupting upper-layer state. If the device
+    /// continues to malfunction, the queue may become stuck because the affected buffer cannot be
+    /// reclaimed.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if no valid buffers can be popped. Note that this can occur
+    /// even if [`Self::can_pop`] returns true because [`Self::can_pop`] does not check validity.
+    ///
     /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
     pub fn pop_used(&mut self) -> Result<(u16, u32), QueueError> {
-        if !self.can_pop() {
-            return Err(QueueError::NotReady);
+        self.pop_used_with_min_bytes(0)
+    }
+
+    /// Pops a device-used buffer, which is expected to contain at least `min_bytes` bytes, and
+    /// returns the token and the buffer length.
+    ///
+    /// This is the same as [`Self::pop_used`], except it also guarantees that the used buffer is at
+    /// least `min_bytes` bytes. The note about malfunctioning devices in [`Self::pop_used`] applies
+    /// here as well, including extra cases where the used buffer is shorter than `min_bytes`.
+    ///
+    /// For more information, see [`Self::pop_used`].
+    pub fn pop_used_with_min_bytes(&mut self, min_bytes: usize) -> Result<(u16, u32), QueueError> {
+        loop {
+            if !self.can_pop() {
+                return Err(QueueError::NotReady);
+            }
+
+            let last_used_slot = self.last_used_idx & (self.device_queue_size - 1);
+            let element_ptr = {
+                let mut ptr = self.used.borrow_vm();
+                ptr.byte_add(offset_of!(UsedRing, ring) + last_used_slot as usize * 8);
+                ptr.cast::<UsedElem>()
+            };
+            let index = field_ptr!(&element_ptr, UsedElem, id).read_once().unwrap();
+            let len = field_ptr!(&element_ptr, UsedElem, len).read_once().unwrap();
+            self.last_used_idx = self.last_used_idx.wrapping_add(1);
+
+            let (desc, dma_len) = if let Some(desc) = self.descs.get_mut(index as usize)
+                && let Some(dma_len) = desc.len
+            {
+                (desc, dma_len)
+            } else {
+                ostd::error!(
+                    "invalid used token: {} (queue size: {})",
+                    index,
+                    self.descs.len(),
+                );
+                continue;
+            };
+            if len > dma_len || (len as usize) < min_bytes {
+                ostd::error!(
+                    "invalid used length: {} (expected {}..={})",
+                    len,
+                    min_bytes,
+                    dma_len,
+                );
+                continue;
+            }
+            desc.len = None;
+            self.recycle_descriptors(index as u16);
+
+            return Ok((index as u16, len));
         }
-
-        let last_used_slot = self.last_used_idx & (self.device_queue_size - 1);
-        let element_ptr = {
-            let mut ptr = self.used.borrow_vm();
-            ptr.byte_add(offset_of!(UsedRing, ring) + last_used_slot as usize * 8);
-            ptr.cast::<UsedElem>()
-        };
-        let index = field_ptr!(&element_ptr, UsedElem, id).read_once().unwrap();
-        let len = field_ptr!(&element_ptr, UsedElem, len).read_once().unwrap();
-
-        self.recycle_descriptors(index as u16);
-        self.last_used_idx = self.last_used_idx.wrapping_add(1);
-
-        Ok((index as u16, len))
     }
 
     /// Recycles descriptors in the list specified by `head`.
@@ -308,29 +429,23 @@ impl VirtQueue {
     /// This will push all linked descriptors at the front of the free list.
     fn recycle_descriptors(&mut self, mut head: u16) {
         let origin_free_head = self.free_head;
-        self.free_head = head;
+        self.free_head = Some(head);
 
         loop {
             let desc = &mut self.descs[head as usize];
             // Set the buffer address and length to 0.
-            field_ptr!(desc, Descriptor, addr)
+            field_ptr!(&desc.ptr, Descriptor, addr)
                 .write_once(&(0u64))
                 .unwrap();
-            field_ptr!(desc, Descriptor, len)
+            field_ptr!(&desc.ptr, Descriptor, len)
                 .write_once(&(0u32))
                 .unwrap();
             self.num_used -= 1;
 
-            let flags: DescFlags = field_ptr!(desc, Descriptor, flags).read_once().unwrap();
-            if flags.contains(DescFlags::NEXT) {
-                field_ptr!(desc, Descriptor, flags)
-                    .write_once(&DescFlags::empty())
-                    .unwrap();
-                head = field_ptr!(desc, Descriptor, next).read_once().unwrap();
+            if let Some(next) = desc.next {
+                head = next;
             } else {
-                field_ptr!(desc, Descriptor, next)
-                    .write_once(&origin_free_head)
-                    .unwrap();
+                desc.next = origin_free_head;
                 break;
             }
         }
@@ -404,17 +519,22 @@ pub struct Descriptor {
 
 type DescriptorPtr<'a> = SafePtr<Descriptor, &'a Arc<DmaCoherent>, TRightSet<TRights![Dup, Write]>>;
 
-fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) {
-    // TODO: Should we skip the empty DMA buffer or just return an error?
-    debug_assert_ne!(buf.len(), 0);
-
+fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) -> u32 {
     let daddr = buf.daddr();
+    let len = buf.len();
+
+    debug_assert!(len < (u32::MAX) as usize);
+    // TODO: Should we skip the empty DMA buffer or just return an error?
+    debug_assert_ne!(len, 0);
+
     field_ptr!(desc_ptr, Descriptor, addr)
         .write_once(&(daddr as u64))
         .unwrap();
     field_ptr!(desc_ptr, Descriptor, len)
-        .write_once(&(buf.len() as u32))
+        .write_once(&(len as u32))
         .unwrap();
+
+    len as u32
 }
 
 bitflags! {

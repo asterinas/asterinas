@@ -46,10 +46,9 @@ impl AnyConsoleDevice for ConsoleDevice {
             if transmit_queue.should_notify() {
                 transmit_queue.notify();
             }
-            while !transmit_queue.can_pop() {
+            while transmit_queue.pop_used().is_err() {
                 spin_loop();
             }
-            transmit_queue.pop_used().unwrap();
         }
     }
 

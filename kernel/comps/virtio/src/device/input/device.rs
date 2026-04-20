@@ -85,15 +85,8 @@ impl InputDevice {
         let event_table = EventTable::new(QUEUE_SIZE as usize);
         for i in 0..event_table.num_events() {
             let event_buf = event_table.get(i);
-            let token = event_queue.add_output_bufs(&[&event_buf]);
-            match token {
-                Ok(value) => {
-                    assert_eq!(value, i as u16);
-                }
-                Err(_) => {
-                    return Err(VirtioDeviceError::QueueUnknownError);
-                }
-            }
+            let token = event_queue.add_output_bufs(&[&event_buf]).unwrap();
+            assert_eq!(token as usize, i);
         }
 
         let device = {
@@ -167,7 +160,7 @@ impl InputDevice {
         let mut event_queue = self.event_queue.disable_irq().lock();
 
         // one interrupt may contain several input events, so it should loop
-        while let Ok((token, _)) = event_queue.pop_used() {
+        while let Ok((token, _)) = event_queue.pop_used_with_min_bytes(EVENT_SIZE) {
             debug_assert!(token < QUEUE_SIZE);
             let ptr = self.event_table.get(token as usize);
             let res = handle_event(&ptr);
