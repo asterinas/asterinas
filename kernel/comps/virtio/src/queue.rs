@@ -45,11 +45,14 @@ pub struct VirtQueue {
 
     /// The index of the queue.
     queue_idx: u32,
-    /// The size of the queue.
+    /// The size of the queue as seen by the device.
     ///
-    /// This is both the number of descriptors, and the number of slots in the available and used
-    /// rings.
-    queue_size: u16,
+    /// This is the number of slots in the available and used rings. It can be larger than the
+    /// number of descriptors if the device expects a larger queue, but the driver expects a smaller
+    /// one.
+    ///
+    /// This is _not_ the queue size specified by the driver, which is `desc.len()`.
+    device_queue_size: u16,
     /// The number of used descriptors.
     num_used: u16,
     /// The head descriptor index of the free list.
@@ -66,59 +69,82 @@ impl VirtQueue {
     /// Creates a new virtqueue.
     pub(crate) fn new(
         idx: u16,
-        mut size: u16,
+        size: u16,
         transport: &mut dyn VirtioTransport,
     ) -> Result<Self, QueueError> {
         if !size.is_power_of_two() {
             return Err(QueueError::InvalidArgs);
         }
 
-        let (descriptor_ptr, avail_ring_ptr, used_ring_ptr) = if transport.is_legacy_version() {
-            // Currently, we use one UFrame to place the descriptors and available rings, one UFrame to place used rings
-            // because the virtio-mmio legacy required the address to be continuous. The max queue size is 128.
-            if size > 128 {
-                return Err(QueueError::InvalidArgs);
-            }
-            let queue_size = transport.max_queue_size(idx).unwrap() as usize;
-            let desc_size = size_of::<Descriptor>() * queue_size;
-            size = queue_size as u16;
+        let (descriptor_ptr, avail_ring_ptr, used_ring_ptr, device_queue_size) =
+            if transport.is_legacy_version() {
+                let device_queue_size = transport.max_queue_size(idx).unwrap() as usize;
+                let desc_size = size_of::<Descriptor>() * device_queue_size;
 
-            let (dma1, dma2) = {
-                let align_size = VirtioPciLegacyTransport::QUEUE_ALIGN_SIZE;
-                let total_frames =
-                    VirtioPciLegacyTransport::calc_virtqueue_size_aligned(queue_size) / align_size;
-                let dma = DmaCoherent::alloc(total_frames, true).unwrap();
+                // We should establish a reasonable upper bound on the requested queue size from the
+                // device, but we are unsure of the exact value. We chose 1024 based on the current
+                // need, but it can be increased in the future if necessary.
+                if !device_queue_size.is_power_of_two()
+                    || size as usize > device_queue_size
+                    || device_queue_size > 1024
+                {
+                    return Err(QueueError::InvalidArgs);
+                }
 
-                let avial_size = size_of::<u16>() * (3 + queue_size);
-                let seg1_frames = (desc_size + avial_size).div_ceil(align_size);
+                let (dma1, dma2) = {
+                    let align_size = VirtioPciLegacyTransport::QUEUE_ALIGN_SIZE;
+                    let total_frames =
+                        VirtioPciLegacyTransport::calc_virtqueue_size_aligned(device_queue_size)
+                            / align_size;
+                    let dma = DmaCoherent::alloc(total_frames, true).unwrap();
 
-                dma.split(seg1_frames * align_size)
+                    let avial_size = size_of::<u16>() * (3 + device_queue_size);
+                    let seg1_frames = (desc_size + avial_size).div_ceil(align_size);
+
+                    dma.split(seg1_frames * align_size)
+                };
+
+                let desc_frame_ptr: SafePtr<Descriptor, Arc<DmaCoherent>> =
+                    SafePtr::new(Arc::new(dma1), 0);
+                let mut avail_frame_ptr: SafePtr<AvailRing, Arc<DmaCoherent>> =
+                    desc_frame_ptr.clone().cast();
+                avail_frame_ptr.byte_add(desc_size);
+                let used_frame_ptr: SafePtr<UsedRing, Arc<DmaCoherent>> =
+                    SafePtr::new(Arc::new(dma2), 0);
+
+                (
+                    desc_frame_ptr,
+                    avail_frame_ptr,
+                    used_frame_ptr,
+                    device_queue_size as u16,
+                )
+            } else {
+                if size > 256 {
+                    return Err(QueueError::InvalidArgs);
+                }
+
+                (
+                    SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
+                    SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
+                    SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
+                    size,
+                )
             };
-            let desc_frame_ptr: SafePtr<Descriptor, Arc<DmaCoherent>> =
-                SafePtr::new(Arc::new(dma1), 0);
-            let mut avail_frame_ptr: SafePtr<AvailRing, Arc<DmaCoherent>> =
-                desc_frame_ptr.clone().cast();
-            avail_frame_ptr.byte_add(desc_size);
-            let used_frame_ptr: SafePtr<UsedRing, Arc<DmaCoherent>> =
-                SafePtr::new(Arc::new(dma2), 0);
-            (desc_frame_ptr, avail_frame_ptr, used_frame_ptr)
-        } else {
-            if size > 256 {
-                return Err(QueueError::InvalidArgs);
-            }
-            (
-                SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
-                SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
-                SafePtr::new(Arc::new(DmaCoherent::alloc(1, true).unwrap()), 0),
-            )
-        };
+
         debug!("queue_desc start paddr:{:x?}", descriptor_ptr.paddr());
         debug!("queue_driver start paddr:{:x?}", avail_ring_ptr.paddr());
         debug!("queue_device start paddr:{:x?}", used_ring_ptr.paddr());
 
         transport
-            .set_queue(idx, size, &descriptor_ptr, &avail_ring_ptr, &used_ring_ptr)
+            .set_queue(
+                idx,
+                device_queue_size,
+                &descriptor_ptr,
+                &avail_ring_ptr,
+                &used_ring_ptr,
+            )
             .unwrap();
+
         let mut descs = Vec::with_capacity(size as usize);
         descs.push(descriptor_ptr);
         for i in 0..size {
@@ -138,15 +164,17 @@ impl VirtQueue {
         }
 
         let notify_config = transport.notify_config(idx as usize);
+
         field_ptr!(&avail_ring_ptr, AvailRing, flags)
             .write_once(&AvailFlags::empty())
             .unwrap();
+
         Ok(VirtQueue {
             descs,
             avail: avail_ring_ptr,
             used: used_ring_ptr,
             notify_config,
-            queue_size: size,
+            device_queue_size,
             queue_idx: idx as u32,
             num_used: 0,
             free_head: 0,
@@ -167,7 +195,7 @@ impl VirtQueue {
         if inputs.is_empty() && outputs.is_empty() {
             return Err(QueueError::InvalidArgs);
         }
-        if inputs.len() + outputs.len() + self.num_used as usize > self.queue_size as usize {
+        if inputs.len() + outputs.len() > self.available_desc() {
             return Err(QueueError::BufferTooSmall);
         }
 
@@ -206,7 +234,7 @@ impl VirtQueue {
         }
         self.num_used += (inputs.len() + outputs.len()) as u16;
 
-        let avail_slot = self.avail_idx & (self.queue_size - 1);
+        let avail_slot = self.avail_idx & (self.device_queue_size - 1);
 
         {
             let ring_ptr: SafePtr<[u16; 64], &Arc<DmaCoherent>> =
@@ -248,7 +276,7 @@ impl VirtQueue {
 
     /// Returns the number of free descriptors.
     pub fn available_desc(&self) -> usize {
-        (self.queue_size - self.num_used) as usize
+        self.descs.len() - self.num_used as usize
     }
 
     /// Recycles descriptors in the list specified by `head`.
@@ -291,7 +319,7 @@ impl VirtQueue {
             return Err(QueueError::NotReady);
         }
 
-        let last_used_slot = self.last_used_idx & (self.queue_size - 1);
+        let last_used_slot = self.last_used_idx & (self.device_queue_size - 1);
         let element_ptr = {
             let mut ptr = self.used.borrow_vm();
             ptr.byte_add(offset_of!(UsedRing, ring) + last_used_slot as usize * 8);
