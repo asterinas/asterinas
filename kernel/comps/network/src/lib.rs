@@ -32,9 +32,7 @@ pub struct EthernetAddr(pub [u8; 6]);
 #[derive(Clone, Copy, Debug)]
 pub enum NetError {
     NotReady,
-    WrongToken,
     Busy,
-    Unknown,
 }
 
 pub trait AnyNetworkDevice: Send + Sync + Any + Debug {

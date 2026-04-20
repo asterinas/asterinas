@@ -94,7 +94,7 @@ impl NetworkDevice {
         for i in 0..QUEUE_SIZE {
             let rx_pool = RX_BUFFER_POOL.get().unwrap();
             let rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool).unwrap();
-            let token = recv_queue.add_output_bufs(&[&rx_buffer])?;
+            let token = recv_queue.add_output_bufs(&[&rx_buffer]).unwrap();
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
         }
@@ -153,11 +153,8 @@ impl NetworkDevice {
     }
 
     /// Adds a `RxBuffer` to the receive queue.
-    fn add_rx_buffer(&mut self, rx_buffer: RxBuffer) -> Result<(), NetError> {
-        let token = self
-            .recv_queue
-            .add_output_bufs(&[&rx_buffer])
-            .map_err(queue_to_network_error)?;
+    fn add_rx_buffer(&mut self, rx_buffer: RxBuffer) -> Result<(), QueueError> {
+        let token = self.recv_queue.add_output_bufs(&[&rx_buffer])?;
         assert!(self.rx_buffers.put_at(token as usize, rx_buffer).is_none());
 
         self.poll_stat.received_packet += 1;
@@ -173,18 +170,22 @@ impl NetworkDevice {
 
     /// Receives a packet from network.
     fn receive(&mut self) -> Result<RxBuffer, NetError> {
-        let (token, len) = self.recv_queue.pop_used().map_err(queue_to_network_error)?;
+        let (token, len) = self
+            .recv_queue
+            .pop_used_with_min_bytes(size_of::<VirtioNetHdr>())
+            .map_err(|_| NetError::NotReady)?;
         debug!("receive packet: token = {}, len = {}", token, len);
-        let mut rx_buffer = self
-            .rx_buffers
-            .remove(token as usize)
-            .ok_or(NetError::WrongToken)?;
+
+        let mut rx_buffer = self.rx_buffers.remove(token as usize).unwrap();
         rx_buffer.set_packet_len(len as usize - size_of::<VirtioNetHdr>());
+
         // FIXME: Ideally, we can reuse the returned buffer without creating new buffer.
         // But this requires locking device to be compatible with smoltcp interface.
         let rx_pool = RX_BUFFER_POOL.get().unwrap();
         let new_rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool).unwrap();
-        self.add_rx_buffer(new_rx_buffer)?;
+
+        self.add_rx_buffer(new_rx_buffer).unwrap();
+
         Ok(rx_buffer)
     }
 
@@ -202,10 +203,7 @@ impl NetworkDevice {
         )
         .unwrap();
 
-        let token = self
-            .send_queue
-            .add_input_bufs(&[&tx_buffer])
-            .map_err(queue_to_network_error)?;
+        let token = self.send_queue.add_input_bufs(&[&tx_buffer]).unwrap();
 
         self.poll_stat.sent_packet += 1;
 
@@ -266,15 +264,6 @@ impl NetworkDevice {
         }
 
         self.poll_stat.received_packet = 0;
-    }
-}
-
-fn queue_to_network_error(err: QueueError) -> NetError {
-    match err {
-        QueueError::NotReady => NetError::NotReady,
-        QueueError::WrongToken => NetError::WrongToken,
-        QueueError::BufferTooSmall => NetError::Busy,
-        _ => NetError::Unknown,
     }
 }
 
