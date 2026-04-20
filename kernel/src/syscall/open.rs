@@ -96,15 +96,6 @@ fn do_open(
             {
                 return_errno_with_message!(Errno::ENOENT, "the file does not exist");
             }
-            if open_args
-                .creation_flags
-                .contains(CreationFlags::O_DIRECTORY)
-            {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "O_CREAT and O_DIRECTORY cannot be specified together"
-                );
-            }
             if result.target_is_dir() {
                 return_errno_with_message!(
                     Errno::EISDIR,

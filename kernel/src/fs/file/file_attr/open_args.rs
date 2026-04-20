@@ -19,6 +19,14 @@ impl OpenArgs {
     pub fn from_flags_and_mode(flags: u32, inode_mode: InodeMode) -> Result<Self> {
         let creation_flags = CreationFlags::from_bits_truncate(flags);
         let status_flags = StatusFlags::from_bits_truncate(flags);
+        if creation_flags.contains(CreationFlags::O_CREAT)
+            && creation_flags.contains(CreationFlags::O_DIRECTORY)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "O_CREAT and O_DIRECTORY cannot be specified together"
+            );
+        }
         let access_mode = AccessMode::from_u32(flags)?;
         Ok(Self {
             creation_flags,
