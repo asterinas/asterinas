@@ -36,7 +36,7 @@ macro_rules! __log_prefix {
 pub mod device;
 mod dma_buf;
 mod id_alloc;
-pub mod queue;
+mod queue;
 mod transport;
 
 static VIRTIO_BLOCK_MAJOR_ID: Once<MajorIdOwner> = Once::new();

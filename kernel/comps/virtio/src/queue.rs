@@ -26,7 +26,6 @@ pub enum QueueError {
     InvalidArgs,
     BufferTooSmall,
     NotReady,
-    AlreadyUsed,
     WrongToken,
 }
 
@@ -305,39 +304,6 @@ impl VirtQueue {
         self.last_used_idx = self.last_used_idx.wrapping_add(1);
 
         Ok((index as u16, len))
-    }
-
-    /// If the given token is next on the device used queue, pops it and returns the total buffer
-    /// length which was used (written) by the device.
-    ///
-    /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
-    pub fn pop_used_with_token(&mut self, token: u16) -> Result<u32, QueueError> {
-        if !self.can_pop() {
-            return Err(QueueError::NotReady);
-        }
-
-        let last_used_slot = self.last_used_idx & (self.queue_size - 1);
-        let element_ptr = {
-            let mut ptr = self.used.borrow_vm();
-            ptr.byte_add(offset_of!(UsedRing, ring) + last_used_slot as usize * 8);
-            ptr.cast::<UsedElem>()
-        };
-        let index = field_ptr!(&element_ptr, UsedElem, id).read_once().unwrap();
-        let len = field_ptr!(&element_ptr, UsedElem, len).read_once().unwrap();
-
-        if index as u16 != token {
-            return Err(QueueError::WrongToken);
-        }
-
-        self.recycle_descriptors(index as u16);
-        self.last_used_idx = self.last_used_idx.wrapping_add(1);
-
-        Ok(len)
-    }
-
-    /// Return size of the queue.
-    pub fn size(&self) -> u16 {
-        self.queue_size
     }
 
     /// whether the driver should notify the device
