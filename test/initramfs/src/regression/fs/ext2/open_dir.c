@@ -29,15 +29,55 @@ FN_TEST(open_creat_directory_on_existing_dir_returns_einval)
 }
 END_TEST()
 
+FN_TEST(open_creat_excl_directory_on_existing_dir_returns_einval)
+{
+	TEST_ERRNO(open(TARGET_DIR, O_CREAT | O_EXCL | O_DIRECTORY | O_WRONLY,
+			0644),
+		   EINVAL);
+}
+END_TEST()
+
+FN_TEST(open_creat_excl_directory_rdwr_on_existing_dir_returns_einval)
+{
+	TEST_ERRNO(open(TARGET_DIR, O_CREAT | O_EXCL | O_DIRECTORY | O_RDWR,
+			0644),
+		   EINVAL);
+}
+END_TEST()
+
+FN_TEST(open_creat_read_only_on_existing_dir_returns_eisdir)
+{
+	TEST_ERRNO(open(TARGET_DIR, O_CREAT | O_RDONLY, 0644), EISDIR);
+}
+END_TEST()
+
 FN_TEST(open_creat_on_existing_dir_returns_eisdir)
 {
 	TEST_ERRNO(open(TARGET_DIR, O_CREAT | O_WRONLY, 0644), EISDIR);
 }
 END_TEST()
 
+FN_TEST(open_creat_rdwr_on_existing_dir_returns_eisdir)
+{
+	TEST_ERRNO(open(TARGET_DIR, O_CREAT | O_RDWR, 0644), EISDIR);
+}
+END_TEST()
+
+FN_TEST(open_creat_excl_read_only_on_existing_dir_returns_eexist)
+{
+	TEST_ERRNO(open(TARGET_DIR, O_CREAT | O_EXCL | O_RDONLY, 0644), EEXIST);
+}
+END_TEST()
+
 FN_TEST(open_creat_excl_on_existing_dir_returns_eexist)
 {
 	TEST_ERRNO(open(TARGET_DIR, O_CREAT | O_EXCL | O_WRONLY, 0644), EEXIST);
+}
+END_TEST()
+
+FN_TEST(open_creat_excl_rdwr_on_existing_dir_returns_eexist)
+{
+	TEST_ERRNO(open(TARGET_DIR, O_CREAT | O_EXCL | O_RDWR, 0644), EEXIST);
 }
 END_TEST()
 
