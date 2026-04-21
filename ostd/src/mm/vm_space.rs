@@ -291,6 +291,12 @@ impl Cursor<'_> {
     }
 
     /// Jumps to the virtual address.
+    ///
+    /// If the target address is out of the range, this method will return `Err`.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the address has bad alignment.
     pub fn jump(&mut self, va: Vaddr) -> Result<()> {
         self.0.jump(va)?;
         Ok(())
@@ -337,6 +343,10 @@ impl<'a> CursorMut<'a> {
     /// Jumps to the virtual address.
     ///
     /// This is the same as [`Cursor::jump`].
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the address has bad alignment.
     pub fn jump(&mut self, va: Vaddr) -> Result<()> {
         self.pt_cursor.jump(va)?;
         Ok(())
