@@ -23,8 +23,9 @@ END_SETUP()
 FN_TEST(fstat)
 {
 	struct stat stat;
-	TEST_RES(fstat(fd, &stat),
-		 S_ISCHR(stat.st_mode) && stat.st_rdev == makedev(0x1, 0x7));
+	TEST_RES(fstat(fd, &stat), S_ISCHR(stat.st_mode) &&
+					   stat.st_rdev == makedev(0x1, 0x7) &&
+					   (stat.st_mode & 0777) == 0666);
 }
 END_TEST()
 
