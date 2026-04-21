@@ -47,10 +47,13 @@ impl<T: FdOps> FdDirOps<T> {
 
 impl<T: FdOps> DirOps for FdDirOps<T> {
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
-        let Ok(raw_fd) = name.parse::<RawFileDesc>() else {
+        let file_desc = if let Ok(raw_fd) = name.parse::<RawFileDesc>()
+            && let Ok(file_desc) = FileDesc::try_from(raw_fd)
+        {
+            file_desc
+        } else {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid FD");
         };
-        let fd = raw_fd.try_into()?;
 
         let Some(thread) = self.dir.thread() else {
             return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
@@ -58,7 +61,7 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let access_mode = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
-            && let Ok(file) = file_table.read().get_file(fd)
+            && let Ok(file) = file_table.read().get_file(file_desc)
         {
             file.access_mode()
         } else {
@@ -67,7 +70,7 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
 
         Ok(T::new_inode(
             self.dir.clone(),
-            fd,
+            file_desc,
             access_mode,
             this_dir.this_weak().clone(),
         ))
