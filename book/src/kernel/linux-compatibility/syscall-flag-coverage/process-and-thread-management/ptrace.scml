@@ -1,0 +1,5 @@
+// Request that the calling thread should be traced by its parent
+ptrace(request = PTRACE_TRACEME, tid, addr, data);
+
+// Resume a ptrace-stopped tracee, optionally injecting a signal
+ptrace(request = PTRACE_CONT, tid, addr, data);

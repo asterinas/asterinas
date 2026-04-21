@@ -3,7 +3,7 @@
 <!--
 Put system calls such as
 fork, vfork, clone, execve, exit, exit_group, wait4, waitid,
-getpid, getppid, gettid, setuid, setgid, getuid, getgid, and prctl
+getpid, getppid, gettid, setuid, setgid, getuid, getgid, prctl and ptrace
 under this category.
 -->
 
@@ -80,3 +80,22 @@ Ignored options:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/waitid.2.html).
+
+### `ptrace`
+
+Supported functionality in SCML:
+
+```c
+{{#include ptrace.scml}}
+```
+
+Supported requests:
+* `PTRACE_TRACEME`
+* `PTRACE_CONT`
+
+Additional limitations:
+* Only the main thread of a process can act as the tracer
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/ptrace.2.html).
+
