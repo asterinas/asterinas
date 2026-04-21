@@ -67,32 +67,24 @@ impl SocketDevice {
 
         let mut transport = device.transport.lock();
         let weak_device = Arc::downgrade(&device);
-        transport
-            .register_queue_callback(
-                RxQueue::QUEUE_INDEX,
-                Box::new(move |_: &TrapFrame| super::schedule_rx(&weak_device)),
-                true,
-            )
-            .unwrap();
+        transport.register_queue_callback(
+            RxQueue::QUEUE_INDEX,
+            Box::new(move |_: &TrapFrame| super::schedule_rx(&weak_device)),
+            true,
+        )?;
         let weak_device = Arc::downgrade(&device);
-        transport
-            .register_queue_callback(
-                TxQueue::QUEUE_INDEX,
-                Box::new(move |_: &TrapFrame| super::schedule_tx(&weak_device)),
-                true,
-            )
-            .unwrap();
+        transport.register_queue_callback(
+            TxQueue::QUEUE_INDEX,
+            Box::new(move |_: &TrapFrame| super::schedule_tx(&weak_device)),
+            true,
+        )?;
         let weak_device = Arc::downgrade(&device);
-        transport
-            .register_queue_callback(
-                EventQueue::QUEUE_INDEX,
-                Box::new(move |_: &TrapFrame| super::schedule_event(&weak_device)),
-                true,
-            )
-            .unwrap();
-        transport
-            .register_cfg_callback(Box::new(config_space_change))
-            .unwrap();
+        transport.register_queue_callback(
+            EventQueue::QUEUE_INDEX,
+            Box::new(move |_: &TrapFrame| super::schedule_event(&weak_device)),
+            true,
+        )?;
+        transport.register_cfg_callback(Box::new(config_space_change))?;
         transport.finish_init();
         drop(transport);
 

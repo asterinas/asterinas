@@ -58,6 +58,7 @@ impl From<queue::CreationError> for VirtioDeviceError {
         match value {
             queue::CreationError::InvalidArgs => Self::InvalidQueueArgs,
             queue::CreationError::ResourceAlloc(e) => Self::ResourceAlloc(e),
+            queue::CreationError::Transport(e) => Self::Transport(e),
         }
     }
 }

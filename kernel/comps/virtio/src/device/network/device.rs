@@ -133,16 +133,13 @@ impl NetworkDevice {
 
         device
             .transport
-            .register_cfg_callback(Box::new(config_space_change))
-            .unwrap();
+            .register_cfg_callback(Box::new(config_space_change))?;
         device
             .transport
-            .register_queue_callback(QUEUE_SEND, Box::new(handle_send_event), true)
-            .unwrap();
+            .register_queue_callback(QUEUE_SEND, Box::new(handle_send_event), true)?;
         device
             .transport
-            .register_queue_callback(QUEUE_RECV, Box::new(handle_recv_event), true)
-            .unwrap();
+            .register_queue_callback(QUEUE_RECV, Box::new(handle_recv_event), true)?;
 
         device.transport.finish_init();
 

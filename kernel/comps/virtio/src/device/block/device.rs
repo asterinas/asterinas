@@ -270,12 +270,8 @@ impl DeviceInner {
 
         {
             let mut transport = device.transport.lock();
-            transport
-                .register_cfg_callback(Box::new(handle_config_change))
-                .unwrap();
-            transport
-                .register_queue_callback(0, Box::new(handle_irq), false)
-                .unwrap();
+            transport.register_cfg_callback(Box::new(handle_config_change))?;
+            transport.register_queue_callback(0, Box::new(handle_irq), false)?;
             transport.finish_init();
         }
 

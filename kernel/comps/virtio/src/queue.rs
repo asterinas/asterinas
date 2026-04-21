@@ -18,7 +18,9 @@ use ostd::{
 
 use crate::{
     dma_buf::DmaBuf,
-    transport::{ConfigManager, VirtioTransport, pci::legacy::VirtioPciLegacyTransport},
+    transport::{
+        ConfigManager, VirtioTransport, VirtioTransportError, pci::legacy::VirtioPciLegacyTransport,
+    },
 };
 
 /// The mechanism for bulk data transport on virtio devices.
@@ -62,6 +64,7 @@ pub struct VirtQueue {
 pub(crate) enum CreationError {
     InvalidArgs,
     ResourceAlloc(ostd::Error),
+    Transport(VirtioTransportError),
 }
 
 /// An error returned by [`VirtQueue::add_dma_bufs`] and its friends.
@@ -112,7 +115,9 @@ impl VirtQueue {
         let (descriptor_ptr, avail_ring_ptr, used_ring_ptr, device_queue_size) = if transport
             .is_legacy_version()
         {
-            let device_queue_size = transport.max_queue_size(idx).unwrap() as usize;
+            let device_queue_size = transport
+                .max_queue_size(idx)
+                .map_err(CreationError::Transport)? as usize;
             let desc_size = size_of::<Descriptor>() * device_queue_size;
 
             // We should establish a reasonable upper bound on the requested queue size from the
@@ -154,7 +159,9 @@ impl VirtQueue {
                 device_queue_size as u16,
             )
         } else {
-            let max_queue_size = transport.max_queue_size(idx).unwrap() as usize;
+            let max_queue_size = transport
+                .max_queue_size(idx)
+                .map_err(CreationError::Transport)? as usize;
 
             // There can be a maximum of 256 descriptors on one page.
             if size as usize > max_queue_size || size > 256 {
@@ -185,7 +192,7 @@ impl VirtQueue {
                 &avail_ring_ptr,
                 &used_ring_ptr,
             )
-            .unwrap();
+            .map_err(CreationError::Transport)?;
 
         let mut descs = Vec::with_capacity(size as usize);
         descs.push(DescriptorSlot {

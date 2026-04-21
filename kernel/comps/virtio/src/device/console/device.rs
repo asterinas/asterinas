@@ -122,12 +122,12 @@ impl ConsoleDevice {
             let device = device.clone();
             move |_: &TrapFrame| device.handle_recv_irq()
         };
-        transport
-            .register_queue_callback(RECV0_QUEUE_INDEX, Box::new(handle_console_input), false)
-            .unwrap();
-        transport
-            .register_cfg_callback(Box::new(config_space_change))
-            .unwrap();
+        transport.register_queue_callback(
+            RECV0_QUEUE_INDEX,
+            Box::new(handle_console_input),
+            false,
+        )?;
+        transport.register_cfg_callback(Box::new(config_space_change))?;
         transport.finish_init();
         drop(transport);
 

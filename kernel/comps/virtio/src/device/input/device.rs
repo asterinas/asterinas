@@ -135,9 +135,7 @@ impl InputDevice {
         fn config_space_change(_: &TrapFrame) {
             debug!("input device config space change");
         }
-        transport
-            .register_cfg_callback(Box::new(config_space_change))
-            .unwrap();
+        transport.register_cfg_callback(Box::new(config_space_change))?;
         transport.finish_init();
         drop(transport);
 
