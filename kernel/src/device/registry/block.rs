@@ -6,7 +6,7 @@ use device_id::DeviceId;
 use ostd::mm::VmIo;
 
 use crate::{
-    device::{Device, DeviceType, add_node},
+    device::{Device, DeviceType, DevtmpfsInodeMeta, add_node},
     events::IoEvents,
     fs::{
         file::{FileIo, StatusFlags},
@@ -38,9 +38,9 @@ pub(super) fn init_in_first_kthread() {
 pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> {
     for device in aster_block::collect_all() {
         let device = Arc::new(BlockFile::new(device));
-        if let Some(devtmpfs_path) = device.devtmpfs_path() {
+        if let Some(devtmpfs_meta) = device.devtmpfs_meta() {
             let dev_id = device.id().as_encoded_u64();
-            add_node(DeviceType::Block, dev_id, &devtmpfs_path, path_resolver)?;
+            add_node(DeviceType::Block, dev_id, &devtmpfs_meta, path_resolver)?;
         }
     }
 
@@ -77,8 +77,8 @@ impl Device for BlockFile {
         self.0.id()
     }
 
-    fn devtmpfs_path(&self) -> Option<String> {
-        Some(self.0.name().into())
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+        Some(DevtmpfsInodeMeta::new(self.0.name()))
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

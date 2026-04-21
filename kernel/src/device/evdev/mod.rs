@@ -9,7 +9,7 @@
 
 mod file;
 
-use alloc::{format, string::String, sync::Arc, vec::Vec};
+use alloc::{format, sync::Arc, vec::Vec};
 use core::{
     fmt::Debug,
     sync::atomic::{AtomicU32, Ordering},
@@ -29,7 +29,7 @@ use ostd::sync::SpinLock;
 use spin::Once;
 
 use super::{
-    Device, DeviceType,
+    Device, DeviceType, DevtmpfsInodeMeta,
     registry::char::{MajorIdOwner, acquire_major, register, unregister},
 };
 use crate::{fs::file::FileIo, prelude::*, util::ring_buffer::RbProducer};
@@ -197,8 +197,11 @@ impl Device for EvdevDevice {
         self.id
     }
 
-    fn devtmpfs_path(&self) -> Option<String> {
-        Some(format!("input/event{}", self.id.minor().get()))
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+        Some(DevtmpfsInodeMeta::new(format!(
+            "input/event{}",
+            self.id.minor().get()
+        )))
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

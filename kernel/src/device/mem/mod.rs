@@ -28,10 +28,13 @@ pub use file::{getrandom, geturandom};
 use spin::Once;
 
 use super::{
-    Device, DeviceType,
+    Device, DeviceType, DevtmpfsInodeMeta,
     registry::char::{MajorIdOwner, acquire_major, register},
 };
-use crate::{fs::file::FileIo, prelude::*};
+use crate::{
+    fs::file::{FileIo, mkmod},
+    prelude::*,
+};
 
 /// A memory device.
 #[derive(Debug)]
@@ -61,8 +64,18 @@ impl Device for MemDevice {
         self.id
     }
 
-    fn devtmpfs_path(&self) -> Option<String> {
-        Some(self.file.name().into())
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+        // Linux's memory-device table uses nonzero modes only for devices
+        // that override devtmpfs's default `u+rw` permissions.
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/mem.c#L690>.
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/mem.c#L734>.
+        Some(match self.file {
+            MemFile::Full | MemFile::Null | MemFile::Random | MemFile::Urandom | MemFile::Zero => {
+                DevtmpfsInodeMeta::with_mode(self.file.name(), mkmod!(a+rw))
+            }
+            MemFile::Kmsg => DevtmpfsInodeMeta::with_mode(self.file.name(), mkmod!(a+r, u+w)),
+            _ => DevtmpfsInodeMeta::new(self.file.name()),
+        })
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

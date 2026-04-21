@@ -74,7 +74,7 @@ impl MemFile {
         }
     }
 
-    pub(super) fn name(&self) -> &str {
+    pub(super) fn name(&self) -> &'static str {
         match self {
             MemFile::Mem => "mem",
             MemFile::Kmem => "kmem",

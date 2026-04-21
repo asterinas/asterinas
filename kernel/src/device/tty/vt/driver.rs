@@ -14,6 +14,7 @@ use spin::Once;
 use crate::{
     context::current_userspace,
     device::{
+        DevtmpfsInodeMeta,
         registry::char,
         tty::{CFontOp, Tty, TtyDriver, file::TtyFile, termio::CTermios},
     },
@@ -101,8 +102,8 @@ impl TtyDriver for VtDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
     const DEVICE_MAJOR_ID: u32 = 4;
 
-    fn devtmpfs_path(&self, index: u32) -> Option<String> {
-        Some(format!("tty{}", index))
+    fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsInodeMeta<'_>> {
+        Some(DevtmpfsInodeMeta::new(format!("tty{}", index)))
     }
 
     fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>> {

@@ -5,6 +5,7 @@ use ostd::sync::SpinLock;
 use super::file::PtySlaveFile;
 use crate::{
     device::{
+        DevtmpfsInodeMeta,
         pty::packet::{PacketCtrl, PacketStatus},
         tty::{
             Tty, TtyDriver, TtyFlags,
@@ -116,7 +117,7 @@ impl TtyDriver for PtyDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L147>.
     const DEVICE_MAJOR_ID: u32 = 136;
 
-    fn devtmpfs_path(&self, _index: u32) -> Option<String> {
+    fn devtmpfs_meta(&self, _index: u32) -> Option<DevtmpfsInodeMeta<'_>> {
         None
     }
 

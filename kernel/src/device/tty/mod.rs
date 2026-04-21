@@ -5,7 +5,7 @@ use ostd::sync::LocalIrqDisabled;
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
-    device::{Device, DeviceType},
+    device::{Device, DeviceType, DevtmpfsInodeMeta},
     events::IoEvents,
     fs::file::{FileIo, StatusFlags},
     prelude::*,
@@ -326,8 +326,8 @@ impl<D: TtyDriver> Device for Tty<D> {
         )
     }
 
-    fn devtmpfs_path(&self) -> Option<String> {
-        self.driver.devtmpfs_path(self.index)
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+        self.driver.devtmpfs_meta(self.index)
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

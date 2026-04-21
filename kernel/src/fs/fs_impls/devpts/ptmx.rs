@@ -3,11 +3,14 @@
 use device_id::{DeviceId, MajorId, MinorId};
 
 use super::*;
-use crate::fs::{
-    file::{AccessMode, FileIo, StatusFlags},
-    vfs::{
-        file_system::SuperBlock,
-        inode::{Extension, InodeIo},
+use crate::{
+    device::DevtmpfsInodeMeta,
+    fs::{
+        file::{AccessMode, FileIo, StatusFlags},
+        vfs::{
+            file_system::SuperBlock,
+            inode::{Extension, InodeIo},
+        },
     },
 };
 
@@ -175,7 +178,7 @@ impl Device for Inner {
         DeviceId::new(MajorId::new(PTMX_MAJOR_NUM), MinorId::new(PTMX_MINOR_NUM))
     }
 
-    fn devtmpfs_path(&self) -> Option<String> {
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
         None
     }
 

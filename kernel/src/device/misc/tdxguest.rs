@@ -59,7 +59,7 @@ use tdx_guest::{
 };
 
 use crate::{
-    device::{Device, DeviceType, registry::char::register},
+    device::{Device, DeviceType, DevtmpfsInodeMeta, registry::char::register},
     events::IoEvents,
     fs::{
         file::{FileIo, StatusFlags},
@@ -97,8 +97,8 @@ impl Device for TdxGuest {
         self.id
     }
 
-    fn devtmpfs_path(&self) -> Option<String> {
-        Some("tdx_guest".into())
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+        Some(DevtmpfsInodeMeta::new("tdx_guest"))
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {

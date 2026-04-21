@@ -112,9 +112,9 @@ impl Drop for MajorIdOwner {
 
 pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> {
     for device in collect_all() {
-        if let Some(devtmpfs_path) = device.devtmpfs_path() {
+        if let Some(devtmpfs_meta) = device.devtmpfs_meta() {
             let dev_id = device.id().as_encoded_u64();
-            add_node(DeviceType::Char, dev_id, &devtmpfs_path, path_resolver)?;
+            add_node(DeviceType::Char, dev_id, &devtmpfs_meta, path_resolver)?;
         }
     }
 

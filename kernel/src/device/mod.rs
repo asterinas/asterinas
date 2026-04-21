@@ -9,6 +9,8 @@ mod registry;
 mod shm;
 pub mod tty;
 
+use alloc::borrow::Cow;
+
 use device_id::DeviceId;
 pub use mem::{getrandom, geturandom};
 pub use pty::{PtyMaster, PtySlave, new_pty_pair};
@@ -16,7 +18,7 @@ pub use registry::lookup;
 
 use crate::{
     fs::{
-        file::{FileIo, InodeType, mkmod},
+        file::{FileIo, InodeMode, InodeType, mkmod},
         ramfs::RamFs,
         vfs::{
             inode::MknodType,
@@ -34,8 +36,8 @@ pub trait Device: Send + Sync + 'static {
     /// Returns the device ID.
     fn id(&self) -> DeviceId;
 
-    /// Returns the path where the device should appear in devtmpfs (usually under `/dev`), if any.
-    fn devtmpfs_path(&self) -> Option<String>;
+    /// Returns the metadata that specifies a device inode to be created in devtmpfs, if any.
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>>;
 
     /// Opens the device, returning a file-like object that the userspace can interact with by
     /// doing I/O.
@@ -47,7 +49,7 @@ impl Debug for dyn Device {
         f.debug_struct("Device")
             .field("type", &self.type_())
             .field("id", &self.id())
-            .field("devtmpfs_path", &self.devtmpfs_path())
+            .field("devtmpfs_meta", &self.devtmpfs_meta())
             .finish_non_exhaustive()
     }
 }
@@ -59,6 +61,49 @@ pub enum DeviceType {
     Block,
 }
 
+/// The metadata that describes a device inode in devtmpfs.
+///
+/// The metadata contains the inode path relative to `/dev` and the
+/// permission bits used when creating the inode. Device subsystems can use this
+/// type to override the default mode.
+///
+/// If a device does not specify a mode explicitly, we use `mkmod!(u+rw)`,
+/// matching Linux devtmpfs's default device inode permissions.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/base/devtmpfs.c#L11>.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DevtmpfsInodeMeta<'a> {
+    path: Cow<'a, str>,
+    mode: InodeMode,
+}
+
+impl<'a> DevtmpfsInodeMeta<'a> {
+    /// Creates the metadata for a devtmpfs inode with the default mode (`u+rw`).
+    pub fn new(path: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            path: path.into(),
+            mode: mkmod!(u+rw),
+        }
+    }
+
+    /// Creates the metadata for a devtmpfs inode with the specified path and mode.
+    pub fn with_mode(path: impl Into<Cow<'a, str>>, mode: InodeMode) -> Self {
+        Self {
+            path: path.into(),
+            mode,
+        }
+    }
+
+    /// Returns the device inode path relative to `/dev`.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Returns the permission bits of the device inode.
+    pub fn mode(&self) -> InodeMode {
+        self.mode
+    }
+}
+
 /// Adds a device node in `/dev`.
 ///
 /// If the parent path does not exist, it will be created as a directory.
@@ -68,12 +113,12 @@ pub enum DeviceType {
 pub fn add_node(
     dev_type: DeviceType,
     dev_id: u64,
-    path: &str,
+    meta: &DevtmpfsInodeMeta<'_>,
     path_resolver: &PathResolver,
 ) -> Result<Path> {
     let mut dev_path = path_resolver.lookup(&FsPath::try_from("/dev").unwrap())?;
     let mut relative_path = {
-        let relative_path = path.trim_start_matches('/');
+        let relative_path = meta.path().trim_start_matches('/');
         if relative_path.is_empty() {
             return_errno_with_message!(Errno::EINVAL, "the device path is invalid");
         }
@@ -102,7 +147,7 @@ pub fn add_node(
                         DeviceType::Block => MknodType::BlockDevice(dev_id),
                         DeviceType::Char => MknodType::CharDevice(dev_id),
                     };
-                    dev_path = dev_path.mknod(next_name, mkmod!(a+rw), mknod_type)?;
+                    dev_path = dev_path.mknod(next_name, meta.mode(), mknod_type)?;
                 } else {
                     // Create the parent directory
                     dev_path =

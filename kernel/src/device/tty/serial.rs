@@ -9,6 +9,7 @@ use spin::Once;
 use super::{Tty, TtyDriver};
 use crate::{
     device::{
+        DevtmpfsInodeMeta,
         registry::char,
         tty::{file::TtyFile, termio::CTermios},
     },
@@ -30,8 +31,11 @@ impl TtyDriver for SerialDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
     const DEVICE_MAJOR_ID: u32 = 4;
 
-    fn devtmpfs_path(&self, index: u32) -> Option<String> {
-        Some(format!("ttyS{}", index - Self::MINOR_ID_BASE))
+    fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsInodeMeta<'_>> {
+        Some(DevtmpfsInodeMeta::new(format!(
+            "ttyS{}",
+            index - Self::MINOR_ID_BASE
+        )))
     }
 
     fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>> {

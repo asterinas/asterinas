@@ -11,7 +11,7 @@ use spin::Once;
 
 use crate::{
     device::{
-        Device, DeviceType,
+        Device, DeviceType, DevtmpfsInodeMeta,
         registry::char,
         tty::{
             Tty,
@@ -20,7 +20,7 @@ use crate::{
             vt::{VtDriver, tty1_device},
         },
     },
-    fs::file::FileIo,
+    fs::file::{FileIo, mkmod},
     prelude::*,
     process::{JobControl, Terminal},
 };
@@ -45,8 +45,8 @@ impl Device for Tty0Device {
         DeviceId::new(MajorId::new(4), MinorId::new(0))
     }
 
-    fn devtmpfs_path(&self) -> Option<String> {
-        Some("tty0".into())
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+        Some(DevtmpfsInodeMeta::new("tty0"))
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {
@@ -73,8 +73,9 @@ impl Device for TtyDevice {
         DeviceId::new(MajorId::new(5), MinorId::new(0))
     }
 
-    fn devtmpfs_path(&self) -> Option<String> {
-        Some("tty".into())
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/tty/tty_io.c#L3511>.
+        Some(DevtmpfsInodeMeta::with_mode("tty", mkmod!(a+rw)))
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {
@@ -135,8 +136,8 @@ impl Device for SystemConsole {
         DeviceId::new(MajorId::new(5), MinorId::new(1))
     }
 
-    fn devtmpfs_path(&self) -> Option<String> {
-        Some("console".into())
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+        Some(DevtmpfsInodeMeta::new("console"))
     }
 
     fn open(&self) -> Result<Box<dyn FileIo>> {
