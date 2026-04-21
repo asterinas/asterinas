@@ -103,9 +103,92 @@ pub fn read_tsc() -> u64 {
 /// Reads a hardware generated 64-bit random value.
 ///
 /// Returns `None` if no random value was generated.
+///
+/// This implementation uses the RISC-V Entropy Source Extension (Zkr) which
+/// provides access to a physical entropy source via the `seed` CSR.
+///
+/// Note: The Zkr specification explicitly requires using `csrrw` (not read-only
+/// CSR instructions) to access the `seed` CSR. The write signals polling and
+/// triggers the wipe-on-read security mechanism. Using `csrrs`/`csrrc` with rs1=x0
+/// would raise an illegal-instruction exception per the spec.
+///
+/// Reference:
+/// - "RISC-V Cryptography Extensions Volume I: Scalar & Entropy Source Instructions"
+///   - <https://docs.riscv.org/reference/isa/extensions/crypto-scalar/_attachments/riscv-crypto-spec-scalar.pdf>
+///   - Section 2.9: Entropy Source (Zkr) Extension
+///   - Section 4.1: The `seed` CSR
+///   - The `seed` CSR at address 0x015 provides up to 16 bits of entropy
+///
+/// The implementation follows a similar retry pattern as the x86 RDRAND version,
+/// adapted for RISC-V's 16-bit entropy output.
 pub fn read_random() -> Option<u64> {
-    // FIXME: Implement a hardware random number generator on RISC-V platforms.
-    None
+    use cpu::extension::{IsaExtensions, has_extensions};
+
+    // Check if the Zkr (Entropy Source) extension is available
+    if !has_extensions(IsaExtensions::ZKR) {
+        return None;
+    }
+
+    // The seed CSR provides 16 bits of entropy at a time.
+    // We need 4 successful reads to construct a 64-bit value.
+    const RETRY_LIMIT: usize = 10;
+    const OPST_ES16: usize = 0b10; // Status indicating entropy is available
+    const OPST_WAIT: usize = 0b01; // Status indicating entropy source is busy (waiting)
+    const OPST_BIST: usize = 0b00; // Status indicating entropy source is in self-test
+    const OPST_DEAD: usize = 0b11; // Status indicating entropy source has failed
+    const OPST_MASK: usize = 0b11 << 30;
+    const OPST_SHIFT: usize = 30;
+    const ENTROPY_MASK: usize = 0xFFFF;
+
+    let mut result: u64 = 0;
+
+    // Collect 4 chunks of 16-bit entropy to form a 64-bit value
+    for chunk in 0..4 {
+        let mut entropy_found = false;
+
+        for _ in 0..RETRY_LIMIT {
+            // Read the seed CSR using inline assembly.
+            // The seed CSR is at address 0x015.
+            // We use csrrw with x0 to perform a read while signaling polling intent
+            // (per Zkr spec, a write signals that the core is ready for entropy).
+            // We read into usize to match the native XLEN register width (RV64/RV32).
+            let seed_val: usize;
+            // IMPORTANT: The Zkr spec requires using `csrrw` to access seed CSR.
+            // The write operation signals polling and triggers wipe-on-read.
+            // Read-only CSR instructions (csrrs/csrrc with rs1=x0) would trap.
+            // The value written (x0) is ignored by hardware per the spec.
+            unsafe {
+                core::arch::asm!(
+                    "csrrw {0}, 0x015, x0",
+                    out(reg) seed_val,
+                    options(nomem, nostack)
+                );
+            }
+
+            // Extract status bits (bits 31:30)
+            let status = (seed_val & OPST_MASK) >> OPST_SHIFT;
+
+            match status {
+                // Entropy is available: extract 16 bits (bits 15:0).
+                OPST_ES16 => {
+                    let entropy = seed_val & ENTROPY_MASK;
+                    result |= (entropy as u64) << (chunk * 16);
+                    entropy_found = true;
+                    break;
+                }
+                // Entropy source failed permanently.
+                OPST_DEAD => return None,
+                // Entropy source busy or running self-test: retry.
+                OPST_WAIT | OPST_BIST => core::hint::spin_loop(),
+            }
+        }
+
+        if !entropy_found {
+            return None;
+        }
+    }
+
+    Some(result)
 }
 
 pub(crate) fn enable_cpu_features() {
