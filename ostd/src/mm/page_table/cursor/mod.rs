@@ -245,6 +245,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     }
 
     /// Jumps to the given virtual address.
+    ///
     /// If the target address is out of the range, this method will return `Err`.
     ///
     /// # Panics
@@ -373,8 +374,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     ///
     /// # Panics
     ///
-    /// This method panics if the address is out of the range where the cursor is required to operate,
-    /// or has bad alignment.
+    /// This method panics if the address has bad alignment.
     pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
         self.0.jump(va)
     }
