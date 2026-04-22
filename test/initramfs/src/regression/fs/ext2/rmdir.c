@@ -12,8 +12,8 @@
 
 #include "../../common/test.h"
 
-#define NON_EMPTY_DIR "/test_non_empty_dir"
-#define NON_EMPTY_CHILD "/test_non_empty_dir/test.txt"
+#define NON_EMPTY_DIR "/ext2/test_non_empty_dir"
+#define NON_EMPTY_CHILD "/ext2/test_non_empty_dir/test.txt"
 
 static void remove_file_if_exists(const char *path)
 {
