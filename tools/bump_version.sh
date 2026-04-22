@@ -33,13 +33,15 @@ update_dep_version() {
     sed -i "0,/${pattern}/s/${pattern}/$2 = { version = \"${new_version}\"/1" $1
 }
 
-# Update Docker image versions (`asterinas/asterinas:{version}`) in file $1
+# Update Docker image versions in file $1
 update_image_versions() {
     echo "Updating file $1"
-    # Update the version of the development container
+    # Update the version of the Asterinas development container
     sed -i "s/asterinas\/asterinas:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/asterinas:${new_version}/g" $1
-    # Update the test environment described in the OSDK manual
+    # Update the version of asterinas/osdk container
     sed -i "s/asterinas\/osdk:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/osdk:${new_version}/g" $1
+    # Update the version of asterinas/kata container
+    sed -i "s/asterinas\/kata:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/kata:${new_version}/g" $1
 }
 
 # Print the help message
@@ -125,8 +127,9 @@ update_all_docker_version_refs() {
     update_image_versions ${SCRIPT_DIR}/docker/README.md
 
     # Update Docker image versions in the Book
-    update_image_versions ${BOOK_DIR}/src/kernel/README.md
     update_image_versions ${BOOK_DIR}/src/kernel/intel-tdx.md
+    update_image_versions ${BOOK_DIR}/src/kernel/README.md
+    update_image_versions ${BOOK_DIR}/src/kernel/vm-based-containers/kata.md
     update_image_versions ${BOOK_DIR}/src/osdk/guide/intel-tdx.md
 
     # Update Docker image versions in workflows

@@ -44,6 +44,8 @@
         * [System information & misc](kernel/linux-compatibility/syscall-flag-coverage/system-information-and-misc/README.md)
     * [File System Coverage]()
     * [Kernel Parameters](kernel/linux-compatibility/kernel-parameters.md)
+* [VM-based Containers](kernel/vm-based-containers/README.md)
+    * [Kata Containers](kernel/vm-based-containers/kata.md)
 * [Roadmap](kernel/roadmap.md)
 
 # Asterinas OSTD
