@@ -8,6 +8,7 @@ use core::{
 
 use ostd::{
     cpu::{CpuId, num_cpus},
+    sync::SpinLock,
     task::{
         Task,
         scheduler::{EnqueueFlags, UpdateFlags},
@@ -110,41 +111,42 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
 /// needs to be updated since both the old and new weights are needed for re-evaluation.
 ///
 /// To indicate whether the weight needs to be updated, we pack the `weight` field
-/// with a bit flag `HAS_PENDING`. The overall mechanism is similar to an optimized
-/// version of spin locks. When accessing the `weight` field:
+/// with a bit flag `HAS_PENDING`. When accessing the `weight` field:
 ///
 /// - If the weight does not need to be updated (i.e. `weight & IS_PENDING == 0`),
 ///   we simply return the weight.
 /// - If the weight needs to be updated (i.e. `weight & IS_PENDING != 0`), we try to
-///   store the new weight into the `weight` field with `IS_PENDING` cleared via a
-///   `compare_exchange_weak` loop, which shouldn't take too much time since the update
-///   frequency is usually relatively low.
-/// - If the result of the loop turns out that the weight doesn't need to be updated, we
-///   return the weight directly.
+///   store the new weight into the `weight` field, which shouldn't take too much time
+///   since the update frequency is usually relatively low.
 /// - After a successful update, we re-evaluate the data of the run queue.
 ///
-/// This method allows the access to the weight lock-free and ensures only 1 load
-/// is needed most of the time.
+/// Most of the time, this mechanism allows the access to the weight lock-free and
+/// ensures that only one load is needed.
 #[derive(Debug)]
 pub struct FairAttr {
+    // Updates to the `weight` field must be serialized with the `pending_weight` lock.
     weight: AtomicU64,
-    pending_weight: AtomicU64,
+    pending_weight: SpinLock<u64>,
     vruntime: AtomicU64,
 }
 
 impl FairAttr {
     pub fn new(nice: Nice) -> Self {
+        let weight = nice_to_weight(nice);
         FairAttr {
-            weight: nice_to_weight(nice).into(),
-            pending_weight: Default::default(),
+            weight: weight.into(),
+            pending_weight: SpinLock::new(weight),
             vruntime: Default::default(),
         }
     }
 
     pub fn update(&self, nice: Nice) {
-        self.pending_weight
-            .store(nice_to_weight(nice), Ordering::Relaxed);
-        self.weight.fetch_or(HAS_PENDING, Ordering::Release);
+        let mut pending_weight = self.pending_weight.lock();
+        *pending_weight = nice_to_weight(nice);
+        self.weight.store(
+            self.weight.load(Ordering::Relaxed) | HAS_PENDING,
+            Ordering::Relaxed,
+        );
     }
 
     fn update_vruntime(&self, delta: u64, weight: u64) -> u64 {
@@ -153,29 +155,19 @@ impl FairAttr {
     }
 
     fn fetch_weight(&self) -> (u64, u64) {
-        let mut weight = self.weight.load(Ordering::Acquire);
+        // Synchronization is done via the `pending_weight` lock. Therefore, no additional ordering
+        // is required to access the atomic variable.
+        let weight = self.weight.load(Ordering::Relaxed);
         if weight & HAS_PENDING == 0 {
             return (weight, weight);
         }
 
-        let mut new_weight = self.pending_weight.load(Ordering::Relaxed);
-        loop {
-            match self.weight.compare_exchange_weak(
-                weight,
-                new_weight,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => break,
-                Err(failure) => {
-                    if failure & HAS_PENDING == 0 {
-                        return (failure, failure);
-                    }
-                    weight = failure;
-                    new_weight = self.pending_weight.load(Ordering::Relaxed);
-                }
-            }
-        }
+        let new_weight = {
+            // `pending_weight` always stores the latest weight.
+            let pending_weight = self.pending_weight.lock();
+            self.weight.store(*pending_weight, Ordering::Relaxed);
+            *pending_weight
+        };
         let old_weight = weight & !HAS_PENDING;
 
         // The `vruntime` field is an accumulated value, and we don't update
