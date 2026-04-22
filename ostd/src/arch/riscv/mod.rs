@@ -103,9 +103,75 @@ pub fn read_tsc() -> u64 {
 /// Reads a hardware generated 64-bit random value.
 ///
 /// Returns `None` if no random value was generated.
+///
+/// This implementation uses the RISC-V Entropy Source Extension (Zkr) which
+/// provides access to a physical entropy source via the `seed` CSR.
+///
+/// Reference:
+/// - "RISC-V Cryptography Extensions Volume I: Scalar & Entropy Source Instructions"
+///   - <https://docs.riscv.org/reference/isa/extensions/crypto-scalar/_attachments/riscv-crypto-spec-scalar.pdf>
+///   - Section 2.9: Zkr - Entropy Source Extension
+///   - Section 4.1: The `seed` CSR
 pub fn read_random() -> Option<u64> {
-    // FIXME: Implement a hardware random number generator on RISC-V platforms.
-    None
+    use cpu::extension::{IsaExtensions, has_extensions};
+
+    // Check if the Zkr (Entropy Source) extension is available.
+    if !has_extensions(IsaExtensions::ZKR) {
+        return None;
+    }
+
+    const RETRY_LIMIT: usize = 10;
+
+    const OPST_SHIFT: usize = 30;
+    const OPST_MASK: usize = 0b11 << OPST_SHIFT;
+    const ENTROPY_MASK: usize = 0xFFFF;
+
+    const OPST_ES16: usize = 0b10; // Status indicating entropy is available
+    const OPST_WAIT: usize = 0b01; // Status indicating entropy source is busy (waiting)
+    const OPST_BIST: usize = 0b00; // Status indicating entropy source is in self-test
+    const OPST_DEAD: usize = 0b11; // Status indicating entropy source has failed
+
+    // Read 16-bit entropy from hardware.
+    let read_entropy = || -> Option<u16> {
+        for _ in 0..RETRY_LIMIT {
+            let seed_val: usize;
+            // SAFETY: We've checked that the Zkr extension is available.
+            // Therefore, this is a valid instruction to access the `seed` CSR.
+            unsafe {
+                // The Zkr spec requires using `csrrw` to access `seed` CSR,
+                // which signals polling and flushing. See the spec for more
+                // information.
+                core::arch::asm!(
+                    "csrrw {0}, seed, zero",
+                    out(reg) seed_val,
+                    options(nomem, nostack)
+                );
+            }
+
+            // Extract status bits (bits 31:30).
+            let status = (seed_val & OPST_MASK) >> OPST_SHIFT;
+
+            if status == OPST_ES16 {
+                // Entropy is available: extract 16 bits (bits 15:0).
+                return Some((seed_val & ENTROPY_MASK) as u16);
+            } else if status == OPST_DEAD {
+                // Entropy source failed permanently.
+                return None;
+            } else if status == OPST_WAIT || status == OPST_BIST {
+                // Entropy source busy or running self-test: retry.
+                core::hint::spin_loop();
+            }
+        }
+        None
+    };
+
+    // Collect 4 chunks of 16-bit entropy to form a 64-bit random value.
+    let result = (read_entropy()? as u64)
+        | ((read_entropy()? as u64) << 16)
+        | ((read_entropy()? as u64) << 32)
+        | ((read_entropy()? as u64) << 48);
+
+    Some(result)
 }
 
 pub(crate) fn enable_cpu_features() {

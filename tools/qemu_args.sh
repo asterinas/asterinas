@@ -61,7 +61,7 @@ if [ "$1" = "riscv" ]; then
     # The ordering below ensures `x1` (ext2.img) is discovered before `x0`, maintaining this assumption.
     # TODO: Once UUID-based mounting is implemented, this strict ordering will no longer be required.
     QEMU_ARGS="\
-        -cpu rv64,svpbmt=true \
+        -cpu rv64,svpbmt=true,zkr=true \
         -machine virt \
         -m ${MEM:-8G} \
         -smp ${SMP:-1} \
