@@ -79,7 +79,7 @@ pub fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
             xapic.enable();
             let version = xapic.version();
             crate::info!(
-                "xAPIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
+                "xAPIC ID: {:x}, Version: {:x}, Max LVT: {:x}",
                 xapic.id(),
                 version & 0xff,
                 (version >> 16) & 0xff
@@ -91,7 +91,7 @@ pub fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
             x2apic.enable();
             let version = x2apic.version();
             crate::info!(
-                "x2APIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
+                "x2APIC ID: {:x}, Version: {:x}, Max LVT: {:x}",
                 x2apic.id(),
                 version & 0xff,
                 (version >> 16) & 0xff

@@ -156,7 +156,7 @@ pub fn init_all(
 }
 
 fn parse_input(components: Vec<ComponentInfo>) -> BTreeMap<String, ComponentInfo> {
-    debug!("All component:{components:?}");
+    debug!("All component: {components:?}");
     let mut out = BTreeMap::new();
     for component in components {
         out.insert(component.path.clone(), component);
@@ -202,7 +202,7 @@ fn match_and_call(
         infos.push(info);
     }
 
-    debug!("Remain components:{components:?}");
+    debug!("Remain components: {components:?}");
 
     if !components.is_empty() {
         info!("Exists components that are not initialized");
@@ -213,9 +213,9 @@ fn match_and_call(
     info!("Components initializing in {stage:?} stage...");
 
     for info in infos {
-        info!("Component initializing:{:?}", info);
+        info!("Component initializing: {:?}", info);
         if let Err(res) = (info.function.unwrap())() {
-            error!("Component initialize error:{:?}", res);
+            error!("Component initialize error: {:?}", res);
         } else {
             info!("Component initialize complete");
         }

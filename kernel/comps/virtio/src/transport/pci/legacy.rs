@@ -86,13 +86,13 @@ impl VirtioPciLegacyTransport {
             0x1009 => VirtioDeviceType::Transport9P,
             _ => {
                 warn!(
-                    "Unrecognized virtio-pci device id:{:x?}",
+                    "Unrecognized virtio-pci device ID: {:x?}",
                     common_device.device_id().device_id
                 );
                 return Err((BusProbeError::ConfigurationSpaceError, common_device));
             }
         };
-        info!("Found device:{:?}", device_type);
+        info!("Found device: {:?}", device_type);
 
         let config_bar = common_device
             .bar_manager_mut()

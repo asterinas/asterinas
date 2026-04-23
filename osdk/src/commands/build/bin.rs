@@ -103,7 +103,7 @@ pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: b
         match status {
             Ok(status) => {
                 if !status.success() {
-                    panic!("Failed to strip kernel elf.");
+                    panic!("Failed to strip kernel ELF");
                 }
             }
             Err(err) => match err.kind() {
@@ -111,7 +111,7 @@ pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: b
                     "`rust-strip` command not found. Please
                     try `cargo install cargo-binutils` and then rerun."
                 ),
-                _ => panic!("Strip kernel elf failed, err:{:#?}", err),
+                _ => panic!("Strip kernel ELF failed, error: {:#?}", err),
             },
         }
     } else {

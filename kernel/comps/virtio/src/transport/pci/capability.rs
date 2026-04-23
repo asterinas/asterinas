@@ -54,7 +54,7 @@ impl VirtioPciCapabilityData {
             3 => VirtioPciCpabilityType::IsrCfg,
             4 => VirtioPciCpabilityType::DeviceCfg,
             5 => VirtioPciCpabilityType::PciCfg,
-            _ => panic!("Unsupported virtio capability type:{:?}", cfg_type),
+            _ => panic!("Unsupported virtio capability type: {:?}", cfg_type),
         };
 
         let offset = vendor_cap.read32(8).unwrap();

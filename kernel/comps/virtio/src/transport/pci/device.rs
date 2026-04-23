@@ -277,12 +277,12 @@ impl VirtioPciModernTransport {
         let device_type = match VirtioDeviceType::try_from(device_type_value as u8) {
             Ok(device) => device,
             Err(_) => {
-                warn!("Unrecognized virtio-pci device id:{:x?}", device_id);
+                warn!("Unrecognized virtio-pci device ID: {:x?}", device_id);
                 return Err((BusProbeError::DeviceNotMatch, common_device));
             }
         };
 
-        info!("Found device:{:?}", device_type);
+        info!("Found device: {:?}", device_type);
 
         let mut notify = None;
         let mut common_cfg = None;
