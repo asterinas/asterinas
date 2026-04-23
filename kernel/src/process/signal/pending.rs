@@ -6,12 +6,48 @@ use crate::{
         Process,
         posix_thread::PosixThread,
         signal::{
+            SigNum,
             constants::SIGKILL,
             sig_mask::{SigMask, SigSet},
             signals::Signal,
         },
     },
 };
+
+/// A signal dequeued from either the thread or the process queue,
+/// carrying its origin so it can be correctly re-enqueued later.
+pub enum DequeuedSignal {
+    FromProcess(Box<dyn Signal>),
+    FromThread(Box<dyn Signal>),
+}
+
+impl DequeuedSignal {
+    /// Consumes the dequeued signal and returns the inner signal.
+    pub fn unwrap(self) -> Box<dyn Signal> {
+        match self {
+            Self::FromProcess(signal) | Self::FromThread(signal) => signal,
+        }
+    }
+
+    /// Returns a reference to the inner signal.
+    pub(in crate::process) fn signal(&self) -> &dyn Signal {
+        match self {
+            Self::FromProcess(signal) | Self::FromThread(signal) => signal.as_ref(),
+        }
+    }
+
+    /// Returns the signal number of the inner signal.
+    pub(in crate::process) fn num(&self) -> SigNum {
+        self.signal().num()
+    }
+
+    /// Replaces the inner signal with `new_signal`, preserving the origin.
+    pub(in crate::process) fn set_signal(&mut self, new_signal: Box<dyn Signal>) {
+        match self {
+            Self::FromProcess(signal) | Self::FromThread(signal) => *signal = new_signal,
+        }
+    }
+}
 
 /// Trait for handling pending signals.
 pub trait HandlePendingSignal {
@@ -31,7 +67,7 @@ pub trait HandlePendingSignal {
     /// Dequeues the next pending signal that is not masked by `mask`.
     ///
     /// Returns `None` if no such signal is available.
-    fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>>;
+    fn dequeue_signal(&self, mask: &SigMask) -> Option<DequeuedSignal>;
 }
 
 impl HandlePendingSignal for Context<'_> {
@@ -50,11 +86,17 @@ impl HandlePendingSignal for Context<'_> {
             || self.process.sig_queues().has_pending_signal(SIGKILL)
     }
 
-    fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {
+    fn dequeue_signal(&self, mask: &SigMask) -> Option<DequeuedSignal> {
         self.posix_thread
             .sig_queues()
             .dequeue(mask)
-            .or_else(|| self.process.sig_queues().dequeue(mask))
+            .map(DequeuedSignal::FromThread)
+            .or_else(|| {
+                self.process
+                    .sig_queues()
+                    .dequeue(mask)
+                    .map(DequeuedSignal::FromProcess)
+            })
     }
 }
 
@@ -73,10 +115,16 @@ impl HandlePendingSignal for PosixThread {
             || self.process().sig_queues().has_pending_signal(SIGKILL)
     }
 
-    fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {
+    fn dequeue_signal(&self, mask: &SigMask) -> Option<DequeuedSignal> {
         self.sig_queues()
             .dequeue(mask)
-            .or_else(|| self.process().sig_queues().dequeue(mask))
+            .map(DequeuedSignal::FromThread)
+            .or_else(|| {
+                self.process()
+                    .sig_queues()
+                    .dequeue(mask)
+                    .map(DequeuedSignal::FromProcess)
+            })
     }
 }
 

@@ -111,7 +111,8 @@ fn dequeue_signal_with_checking_ignore(
 ) -> Option<Box<dyn Signal>> {
     let sig_dispositions = ctx.process.sig_dispositions().lock();
     let sig_disposition = sig_dispositions.lock();
-    while let Some(signal) = ctx.posix_thread.dequeue_signal(&mask) {
+    while let Some(dequeued) = ctx.posix_thread.dequeue_signal(&mask) {
+        let signal = dequeued.unwrap();
         // If the signal is ignored and not blocked, the signal will be directly dropped.
         if !block_list.contains(signal.num()) && sig_disposition.will_ignore(signal.as_ref()) {
             continue;
