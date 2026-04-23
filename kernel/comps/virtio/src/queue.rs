@@ -173,9 +173,9 @@ impl VirtQueue {
             )
         };
 
-        debug!("queue_desc start paddr:{:x?}", descriptor_ptr.paddr());
-        debug!("queue_driver start paddr:{:x?}", avail_ring_ptr.paddr());
-        debug!("queue_device start paddr:{:x?}", used_ring_ptr.paddr());
+        debug!("queue_desc start paddr: {:x?}", descriptor_ptr.paddr());
+        debug!("queue_driver start paddr: {:x?}", avail_ring_ptr.paddr());
+        debug!("queue_device start paddr: {:x?}", used_ring_ptr.paddr());
 
         transport
             .set_queue(

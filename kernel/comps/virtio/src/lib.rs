@@ -85,13 +85,13 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
             VirtioDeviceType::Network => NetworkDevice::init(transport),
             VirtioDeviceType::Socket => SocketDevice::init(transport),
             _ => {
-                warn!("Found unimplemented device:{:?}", device_type);
+                warn!("Found unimplemented device: {:?}", device_type);
                 Ok(())
             }
         };
         if res.is_err() {
             error!(
-                "Device initialization error:{:?}, device type:{:?}",
+                "Device initialization error: {:?}, device type: {:?}",
                 res, device_type
             );
         }

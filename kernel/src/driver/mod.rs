@@ -7,7 +7,7 @@ use ostd::info;
 
 pub fn init() {
     for device in aster_input::all_devices() {
-        info!("Found an input device, name:{}", device.name());
+        info!("Found an input device, name: {}", device.name());
     }
 
     // FIXME: Currently, we have to do this manually to ensure the crates containing the input
