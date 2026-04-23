@@ -301,6 +301,33 @@ pub(super) fn load_total_unaccepted_bytes() -> usize {
     TOTAL_UNACCEPTED_BYTES.load(Ordering::Relaxed)
 }
 
+/// Spawns background worker threads that gradually accept deferred memory.
+pub(super) fn spawn_background_accept_worker(
+    spawner: impl Fn(alloc::boxed::Box<dyn FnOnce() + Send>),
+    sleeper: impl Fn(core::time::Duration) + Send + Sync + 'static,
+) {
+    if get_accept_memory_mode() != AcceptMemoryMode::LazyBackground
+        || BACKGROUND_WORKER_STARTED.swap(true, Ordering::AcqRel)
+    {
+        return;
+    }
+
+    let worker_count = background_worker_count();
+    let sleeper = Arc::new(sleeper);
+
+    for worker_id in 0..worker_count {
+        let sleeper = Arc::clone(&sleeper);
+        spawner(alloc::boxed::Box::new(move || {
+            background_accept_worker_loop(worker_id, sleeper)
+        }));
+    }
+
+    crate::info!(
+        "lazy-background accept workers started: count={}",
+        worker_count
+    );
+}
+
 /// Outcome of attempting to defer a usable memory range to the unaccepted reservoir.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum DeferOutcome {
@@ -319,6 +346,7 @@ pub(super) enum DeferOutcome {
 enum AcceptMemoryMode {
     #[default]
     Lazy,
+    LazyBackground,
     Eager,
 }
 
@@ -330,6 +358,7 @@ impl core::str::FromStr for AcceptMemoryMode {
         // parses before the framework runs, so accept both forms.
         match s {
             "lazy" => Ok(AcceptMemoryMode::Lazy),
+            "lazy-background" | "lazy_background" => Ok(AcceptMemoryMode::LazyBackground),
             "eager" => Ok(AcceptMemoryMode::Eager),
             _ => Err(()),
         }
@@ -342,6 +371,7 @@ fn init_accept_mode_from_cmdline() {
 
     match mode {
         AcceptMemoryMode::Lazy => crate::info!("accept_memory mode: lazy"),
+        AcceptMemoryMode::LazyBackground => crate::info!("accept_memory mode: lazy-background"),
         AcceptMemoryMode::Eager => crate::info!("accept_memory mode: eager"),
     }
 }
@@ -767,6 +797,70 @@ fn segment_boundary_end(addr: Paddr) -> Paddr {
     segment_start.saturating_add(SEGMENT_BYTES)
 }
 
+fn background_accept_worker_loop(
+    worker_id: usize,
+    sleeper: Arc<dyn Fn(core::time::Duration) + Send + Sync>,
+) {
+    use core::{
+        sync::atomic::Ordering::{Acquire, Release},
+        time::Duration,
+    };
+
+    const ITERATION_SLEEP_MS: u64 = 20;
+    const IDLE_SLEEP_MS: u64 = 200;
+
+    crate::info!("lazy-background accept worker {} started", worker_id);
+
+    if load_unaccepted_table().is_none() {
+        return;
+    }
+
+    let sleep_fn = |ms| sleeper(Duration::from_millis(ms));
+
+    while !BACKGROUND_WORKER_DISABLED.load(Acquire) {
+        if EAGER_ACCEPT_COMPLETED.load(Acquire) || BACKGROUND_WORKER_DISABLED.load(Acquire) {
+            break;
+        }
+
+        match refill_deferred_memory(
+            BACKGROUND_REFILL_CHUNK_BYTES,
+            BACKGROUND_REFILL_BUDGET_BYTES,
+        ) {
+            Ok(0) => {
+                if is_reservoir_empty() {
+                    break;
+                }
+                sleep_fn(IDLE_SLEEP_MS);
+            }
+            Ok(_) => sleep_fn(ITERATION_SLEEP_MS),
+            Err(err) => {
+                crate::error!("Background accept worker {} failed: {:?}", worker_id, err);
+                BACKGROUND_WORKER_DISABLED.store(true, Release);
+                break;
+            }
+        }
+    }
+
+    if is_reservoir_empty() && !BACKGROUND_WORKER_DISABLED.load(Acquire) {
+        crate::info!(
+            "lazy-background accept worker {} drained deferred reservoir",
+            worker_id
+        );
+    } else if BACKGROUND_WORKER_DISABLED.load(Acquire) {
+        crate::warn!(
+            "lazy-background accept worker {} stopped: background refill disabled",
+            worker_id
+        );
+    }
+}
+
+fn background_worker_count() -> usize {
+    // Use a small fraction of CPUs for background acceptance to avoid
+    // starving foreground workloads with lock contention and TDCALL overhead.
+    let cpus = crate::cpu::num_cpus();
+    (cpus / 4).clamp(1, BACKGROUND_WORKER_MAX)
+}
+
 struct DeferPlan {
     required_range_slots: [usize; SEGMENT_LOCK_COUNT],
     touched_segments: [usize; SEGMENT_LOCK_COUNT],
@@ -988,6 +1082,12 @@ const SEGMENT_BYTES: usize = 256 * 1024 * 1024;
 const MIN_REFILL_EXTRA_BUDGET_BYTES: usize = 16 * 1024 * 1024;
 const MAX_REFILL_EXTRA_BUDGET_BYTES: usize = 64 * 1024 * 1024;
 
+// Target chunk size a background worker tries to accept per successful refill.
+const BACKGROUND_REFILL_CHUNK_BYTES: usize = 2 * 1024 * 1024;
+// Maximum acceptance work a background worker performs in one refill iteration.
+const BACKGROUND_REFILL_BUDGET_BYTES: usize = 4 * 1024 * 1024;
+const BACKGROUND_WORKER_MAX: usize = 16;
+
 static UNACCEPTED_TABLE: AtomicPtr<EfiUnacceptedMemory> = AtomicPtr::new(core::ptr::null_mut());
 static ACCEPT_MEMORY_MODE: Once<AcceptMemoryMode> = Once::new();
 static EAGER_ACCEPT_COMPLETED: AtomicBool = AtomicBool::new(false);
@@ -1006,3 +1106,6 @@ static SEGMENT_STATES: [SpinLock<DeferredSegmentState, LocalIrqDisabled>; SEGMEN
     [const { SpinLock::new(DeferredSegmentState::new()) }; SEGMENT_LOCK_COUNT];
 /// Bit-per-segment hint bitmap used to skip obviously empty deferred segments.
 static NONEMPTY_SEGMENT_HINT_BITMAP: AtomicU64 = AtomicU64::new(0);
+
+static BACKGROUND_WORKER_STARTED: AtomicBool = AtomicBool::new(false);
+static BACKGROUND_WORKER_DISABLED: AtomicBool = AtomicBool::new(false);
