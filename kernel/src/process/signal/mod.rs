@@ -22,7 +22,7 @@ use ostd::{
     user::UserContextApi,
 };
 pub use pause::{Pause, PauseReason, with_sigmask_changed};
-pub use pending::HandlePendingSignal;
+pub use pending::{DequeuedSignal, HandlePendingSignal};
 pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
 use sig_mask::SigMask;
@@ -36,7 +36,7 @@ use crate::{
     process::{
         TermStatus,
         posix_thread::{ContextPthreadAdminApi, do_exit_group},
-        signal::{c_types::stack_t, signals::Signal},
+        signal::c_types::stack_t,
     },
 };
 
@@ -67,7 +67,7 @@ pub fn handle_pending_signal(
         .take()
         .map(|mask| RestoreSigMaskGuard { ctx, mask });
 
-    let (signal, sig_action) = if let Some(dequeued_signal) = dequeue_pending_signal(ctx) {
+    let (dequeued, sig_action) = if let Some(dequeued_signal) = dequeue_pending_signal(ctx) {
         dequeued_signal
     } else {
         // Fast path: There is no signal mask to restore.
@@ -84,6 +84,8 @@ pub fn handle_pending_signal(
             return;
         }
     };
+
+    let signal = dequeued.unwrap();
 
     let sig_num = signal.num();
     match sig_action {
@@ -184,7 +186,7 @@ impl Drop for RestoreSigMaskGuard<'_> {
     }
 }
 
-fn dequeue_pending_signal(ctx: &Context) -> Option<(Box<dyn Signal>, SigAction)> {
+fn dequeue_pending_signal(ctx: &Context) -> Option<(DequeuedSignal, SigAction)> {
     let posix_thread = ctx.posix_thread;
 
     let sig_dispositions = ctx.process.sig_dispositions().lock();
