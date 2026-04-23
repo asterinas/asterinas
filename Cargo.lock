@@ -1144,6 +1144,7 @@ dependencies = [
 name = "linux-bzimage-setup"
 version = "0.18.0"
 dependencies = [
+ "align_ext",
  "cfg-if",
  "linux-boot-params",
  "log",
@@ -1386,6 +1387,7 @@ dependencies = [
  "smallvec",
  "spin",
  "tdx-guest",
+ "uefi-raw 0.8.0",
  "unwinding",
  "volatile 0.6.1",
  "x86",
@@ -1849,14 +1851,14 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tdx-guest"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be70e62fdd829b19d5e1e03969f125391347e4e33d1419addfe59a45b043005d"
+version = "0.3.1"
+source = "git+https://github.com/Hsy-Intel/tdx-guest?rev=4008e6bb63869e02a98ab1d944b7270a76f06118#4008e6bb63869e02a98ab1d944b7270a76f06118"
 dependencies = [
  "bitflags 1.3.2",
  "iced-x86",
  "log",
  "raw-cpuid",
+ "uefi-raw 0.8.0",
  "x86_64",
 ]
 

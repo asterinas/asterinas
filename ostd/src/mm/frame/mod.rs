@@ -38,6 +38,9 @@ pub mod segment;
 pub mod unique;
 pub mod untyped;
 
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub(crate) mod unaccepted;
+
 mod frame_ref;
 pub use frame_ref::FrameRef;
 
@@ -61,6 +64,61 @@ use crate::{
 };
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
+
+/// Loads the total size in bytes of memory that is still unaccepted.
+pub fn load_total_unaccepted_bytes() -> usize {
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    {
+        crate::if_tdx_enabled!({
+            unaccepted::load_total_unaccepted_bytes()
+        } else {
+            0
+        })
+    }
+
+    #[cfg(not(all(target_arch = "x86_64", feature = "cvm_guest")))]
+    {
+        0
+    }
+}
+
+/// Returns whether the physical range still overlaps unaccepted memory.
+#[cfg(feature = "cvm_guest")]
+pub fn is_range_unaccepted(addr: Paddr, size: usize) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::if_tdx_enabled!({
+            unaccepted::is_range_unaccepted(addr, size)
+        } else {
+            false
+        })
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = (addr, size);
+        false
+    }
+}
+
+/// Accepts the physical range if it is still marked as unaccepted.
+#[cfg(feature = "cvm_guest")]
+pub fn accept_unaccepted_memory(addr: Paddr, size: usize) -> Result<(), AcceptError> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::if_tdx_enabled!({
+            unaccepted::accept_memory_if_needed(addr, size).map_err(AcceptError::from)
+        } else {
+            Ok(())
+        })
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = (addr, size);
+        Ok(())
+    }
+}
 
 /// Returns the maximum physical address that is tracked by frame metadata.
 pub(in crate::mm) fn max_paddr() -> Paddr {
@@ -366,4 +424,20 @@ pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
 
     // SAFETY: We have already held a reference to the frame.
     unsafe { slot.inc_ref_count() };
+}
+
+/// Error type for unaccepted-memory acceptance operations.
+#[cfg(feature = "cvm_guest")]
+#[derive(Debug)]
+pub enum AcceptError {
+    /// Error reported by the TDX guest accept operation.
+    #[cfg(target_arch = "x86_64")]
+    TdxGuest(tdx_guest::AcceptError),
+}
+
+#[cfg(all(feature = "cvm_guest", target_arch = "x86_64"))]
+impl From<tdx_guest::AcceptError> for AcceptError {
+    fn from(value: tdx_guest::AcceptError) -> Self {
+        Self::TdxGuest(value)
+    }
 }

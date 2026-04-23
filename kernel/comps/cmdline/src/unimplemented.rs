@@ -54,3 +54,27 @@ define_unimplemented_param!(
     "noreplace_smp",
     "initcall_debug"
 );
+
+/// Defines kernel command-line parameters that are handled by OSTD during early boot.
+///
+/// OSTD parses these parameters before the kernel command-line framework initializes.
+/// Registration here prevents them from being forwarded to the init process.
+#[macro_export]
+macro_rules! define_ostd_handled_param {
+    ($($name:expr),+ $(,)?) => {
+        $(
+            const _: () = {
+                fn __kparam_setup(_occurrences: &[Option<&str>]) {
+                    // Intentionally empty: OSTD handles this parameter during
+                    // early boot, before the kernel command-line framework runs.
+                }
+                $crate::submit! {
+                    $crate::KernelParam::new($name, __kparam_setup, false)
+                }
+            };
+        )+
+    };
+}
+
+// Parameters handled directly by OSTD during early boot.
+define_ostd_handled_param!("accept_memory");
