@@ -23,6 +23,7 @@ mod access;
 mod alarm;
 mod arch_prctl;
 mod bind;
+mod bpf;
 mod brk;
 mod capget;
 mod capset;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use ostd::sync::SpinLock;
 use smoltcp::socket::udp::UdpMetadata;
@@ -14,25 +15,51 @@ pub enum Verdict {
     Drop,
 }
 
+/// A unique identifier for a registered hook.
+///
+/// Used later to unregister the hook without scanning for identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HookId(u64);
+
+struct HookEntry {
+    id: HookId,
+    hook: Box<dyn HookFunction>,
+}
+
 pub struct Registry {
-    udp_send: SpinLock<Vec<Box<dyn HookFunction>>>,
+    next_id: AtomicU64,
+    udp_send: SpinLock<Vec<HookEntry>>,
 }
 
 impl Registry {
     pub fn new() -> Self {
         Self {
+            next_id: AtomicU64::new(1),
             udp_send: SpinLock::new(Vec::new()),
         }
     }
 
-    fn new_with_builtin_hooks() -> Self {
-        let mut registry = Self::new();
-        registry.register_udp_send_hook(Box::new(ebpf::EbpfHook::builtin_udp_send_prefix_a()));
-        registry
+    /// Registers a hook function for the UDP send hook point.
+    ///
+    /// Returns a [`HookId`] that can be used with [`Self::unregister_udp_send_hook`]
+    /// to remove the hook later (e.g., when the associated BPF link is closed).
+    pub fn register_udp_send_hook(&self, hook: Box<dyn HookFunction>) -> HookId {
+        let id = HookId(self.next_id.fetch_add(1, Ordering::Relaxed));
+        self.udp_send.lock().push(HookEntry { id, hook });
+        id
     }
 
-    pub fn register_udp_send_hook(&mut self, hook: Box<dyn HookFunction>) {
-        self.udp_send.lock().push(hook);
+    /// Unregisters a previously-registered UDP send hook.
+    ///
+    /// Returns `true` if a matching hook was found and removed.
+    pub fn unregister_udp_send_hook(&self, id: HookId) -> bool {
+        let mut hooks = self.udp_send.lock();
+        if let Some(pos) = hooks.iter().position(|entry| entry.id == id) {
+            hooks.remove(pos);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn udp_send_hooks_exist(&self) -> bool {
@@ -40,8 +67,8 @@ impl Registry {
     }
 
     pub fn run_udp_send_hooks(&self, context: &mut HookContext) -> Option<Verdict> {
-        for hook in self.udp_send.lock().iter() {
-            if let Some(verdict) = hook.run(context) {
+        for entry in self.udp_send.lock().iter() {
+            if let Some(verdict) = entry.hook.run(context) {
                 return Some(verdict);
             }
         }
@@ -49,10 +76,16 @@ impl Registry {
     }
 }
 
+impl Default for Registry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 static NETFILTER_REGISTRY: Once<Arc<Registry>> = Once::new();
 
 pub fn init_registry() {
-    NETFILTER_REGISTRY.call_once(|| Arc::new(Registry::new_with_builtin_hooks()));
+    NETFILTER_REGISTRY.call_once(|| Arc::new(Registry::new()));
 }
 
 pub fn registry() -> Option<&'static Arc<Registry>> {
