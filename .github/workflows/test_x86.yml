@@ -21,9 +21,9 @@ jobs:
         - /usr/local/lib/android:/usr/local/lib/android
         - /usr/share/dotnet:/usr/share/dotnet
     strategy:
+      fail-fast: false
       matrix:
         id: ['lint', 'compile', 'usermode_test', 'ktest']
-      fail-fast: false
     steps:
       - name: Free disk space
         # Remove unused packages from the host to save disk space.
@@ -35,7 +35,44 @@ jobs:
           auto_test: 'general'
           runs_on: 'ubuntu-latest'
 
-  integration-test:
+  osdk-test:
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+      options: -v /dev:/dev --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['asterinas/asterinas:0.17.1-20260319', 'asterinas/osdk:0.17.1-20260319']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run OSDK tests
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'osdk'
+          intel_tdx: false
+
+  boot-test:
+    runs-on: ubuntu-latest
+    container:
+      image: asterinas/asterinas:0.17.1-20260319
+      options: -v /dev:/dev --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { variant: 'legacy32', boot_protocol: 'linux-legacy32', smp: 4 }
+          - { variant: 'multiboot2-smp4', boot_protocol: 'multiboot', smp: 4 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run boot test (${{ matrix.variant }})
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'boot'
+          smp: ${{ matrix.smp }}
+          boot_protocol: ${{ matrix.boot_protocol }}
+
+  regression-test:
     runs-on: ubuntu-latest
     container:
       image: asterinas/asterinas:0.17.1-20260319
@@ -48,73 +85,58 @@ jobs:
         - /usr/local/lib/android:/usr/local/lib/android
         - /usr/share/dotnet:/usr/share/dotnet
     strategy:
+      fail-fast: false
       matrix:
         include:
-          # SMP Boot Test (Linux Legacy 32-bit Boot Protocol)
-          - test_id: 'boot-legacy32'
-            boot_protocol: 'linux-legacy32'
-            smp: 4
-          # SMP Boot Test (Multiboot)
-          - test_id: 'boot-multiboot2-smp4'
-            boot_protocol: 'multiboot'
-            smp: 4
-
-          # Conformance Test (Linux EFI PE/COFF Boot Protocol) (Debug Build)
-          - test_id: 'conformance-debug'
-            release: false
-            boot_protocol: 'linux-efi-pe64'
-          # Conformance Test at Ext2 (MicroVM)
-          - test_id: 'conformance-ext2-microvm'
-            scheme: 'microvm'
-            extra_blocklists: 'blocklists.ext2'
-            conformance_test_workdir: '/ext2'
-          # Conformance Test at Ext2 (IOMMU) (Debug Build)
-          - test_id: 'conformance-ext2-iommu-debug'
-            scheme: 'iommu'
-            extra_blocklists: 'blocklists.ext2'
-            conformance_test_workdir: '/ext2'
-            release: false
-          # Conformance Test at Exfat (Multiboot2) (without KVM enabled)
-          - test_id: 'conformance-exfat-multiboot2-nokvm'
-            boot_protocol: 'multiboot2'
-            enable_kvm: false
-            extra_blocklists: 'blocklists.exfat'
-            conformance_test_workdir: '/exfat'
-          # SMP Conformance Test (Multiboot2)
-          - test_id: 'conformance-multiboot2-smp4'
-            boot_protocol: 'multiboot2'
-            smp: 4
-
-          # Regression Test (Linux EFI Handover) (Debug Build)
-          - test_id: 'regression-handover64-debug'
-            release: false
-            boot_protocol: 'linux-efi-handover64'
-          # SMP Regression Test (Multiboot2)
-          - test_id: 'regression-multiboot2-smp4'
-            boot_protocol: 'multiboot2'
-            smp: 4
-      fail-fast: false
+          - { variant: 'handover64-debug', release: false, boot_protocol: 'linux-efi-handover64' }
+          - { variant: 'multiboot2-smp4',  boot_protocol: 'multiboot2', smp: 4 }
     steps:
       - name: Free disk space
         # Remove unused packages from the host to save disk space.
         run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
       - uses: actions/checkout@v4
-      - name: Run integration tests ${{ (startsWith(matrix.test_id, 'conformance') && 'with LTP') || '' }}
+      - name: Run regression test (${{ matrix.variant }})
         uses: ./.github/actions/test
         with:
-          auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
-              (startsWith(matrix.test_id, 'conformance') && 'conformance') || 'regression' }}
+          auto_test: 'regression'
           release: ${{ !contains(matrix.release, 'false') }}
-          enable_kvm: ${{ !contains(matrix.enable_kvm, 'false') }}
           smp: ${{ matrix.smp }}
-          netdev: ${{ matrix.netdev || 'tap' }}
-          scheme: ${{ matrix.scheme }}
-          extra_blocklists: ${{ matrix.extra_blocklists }}
-          conformance_test_suite: 'ltp'
-          conformance_test_workdir: ${{ matrix.conformance_test_workdir }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
-      - name: Run integration tests ${{ (startsWith(matrix.test_id, 'conformance') && 'with gVisor') || '' }}
-        if: ${{ startsWith(matrix.test_id, 'conformance') }}
+
+  conformance-test:
+    runs-on: ubuntu-latest
+    container:
+      image: asterinas/asterinas:0.17.1-20260319
+      options: -v /dev:/dev --privileged
+      volumes:
+        # Map the following directories on the host into the container so that
+        # the container can remove them to save some precious disk space (~16GB),
+        # which is quite limited on free-tier Github runners.
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ['ltp', 'gvisor', 'kselftest']
+        variant:
+          - 'debug'
+          - 'ext2-microvm'
+          - 'ext2-iommu-debug'
+          - 'exfat-multiboot2-nokvm'
+          - 'multiboot2-smp4'
+        include:
+          - { variant: 'debug', release: false, boot_protocol: 'linux-efi-pe64' }
+          - { variant: 'ext2-microvm', scheme: 'microvm', extra_blocklists: 'blocklists.ext2', conformance_test_workdir: '/ext2' }
+          - { variant: 'ext2-iommu-debug', scheme: 'iommu', extra_blocklists: 'blocklists.ext2', conformance_test_workdir: '/ext2', release: false }
+          - { variant: 'exfat-multiboot2-nokvm', boot_protocol: 'multiboot2', enable_kvm: false, extra_blocklists: 'blocklists.exfat', conformance_test_workdir: '/exfat' }
+          - { variant: 'multiboot2-smp4', boot_protocol: 'multiboot2', smp: 4 }
+    steps:
+      - name: Free disk space
+        # Remove unused packages from the host to save disk space.
+        run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
+      - uses: actions/checkout@v4
+      - name: Run conformance test (${{ matrix.variant }}, ${{ matrix.suite }})
         uses: ./.github/actions/test
         with:
           auto_test: 'conformance'
@@ -124,23 +146,6 @@ jobs:
           netdev: ${{ matrix.netdev || 'tap' }}
           scheme: ${{ matrix.scheme }}
           extra_blocklists: ${{ matrix.extra_blocklists }}
-          conformance_test_suite: 'gvisor'
+          conformance_test_suite: ${{ matrix.suite }}
           conformance_test_workdir: ${{ matrix.conformance_test_workdir }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
-
-  osdk-test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        image: ['asterinas/asterinas:0.17.1-20260319', 'asterinas/osdk:0.17.1-20260319']
-      fail-fast: false
-    container:
-      image: ${{ matrix.image }}
-      options: -v /dev:/dev --privileged
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run OSDK tests
-        uses: ./.github/actions/test
-        with:
-          auto_test: 'osdk'
-          intel_tdx: false

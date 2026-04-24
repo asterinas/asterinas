@@ -7,6 +7,7 @@
     name = "gvisor-prebuilt";
     path = builtins.getEnv "GVISOR_PREBUILT_DIR";
   };
+  kselftest = callPackage ./kselftest.nix { };
 
   package = stdenvNoCC.mkDerivation {
     pname = "conformance";
@@ -19,11 +20,15 @@
       cd $src
       mkdir -p $out
       export INITRAMFS=$out
-      export LTP_PREBUILT_DIR=${ltp}
-      export GVISOR_PREBUILT_DIR=${gvisor}
       export CONFORMANCE_TEST_SUITE=${testSuite}
       export CONFORMANCE_TEST_WORKDIR=${workDir}
       export SMP=${toString smp}
+      ${lib.optionalString (testSuite == "ltp")
+      "export LTP_PREBUILT_DIR=${ltp}"}
+      ${lib.optionalString (testSuite == "gvisor")
+      "export GVISOR_PREBUILT_DIR=${gvisor}"}
+      ${lib.optionalString (testSuite == "kselftest")
+      "export KSELFTEST_PREBUILT_DIR=${kselftest}"}
       make
     '';
   };

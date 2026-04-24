@@ -7,54 +7,6 @@ on:
     - cron: '0 22 * * *'
 
 jobs:
-  integration-test:
-    runs-on: self-hosted
-    container:
-      image: asterinas/asterinas:0.17.1-20260319
-      options: -v /dev:/dev --privileged
-    strategy:
-      matrix:
-        include:
-          # Boot Test (linux-efi-handover64)
-          - test_id: 'boot-handover64'
-          # SMP Boot Test
-          - test_id: 'boot-handover64-smp4'
-            netdev: 'tap'
-            smp: 4
-
-          # Conformance Test
-          - test_id: 'conformance'
-          # Conformance Test at Exfat
-          - test_id: 'conformance-exfat'
-            extra_blocklists: 'blocklists.exfat'
-            conformance_test_workdir: '/exfat'
-          # SMP Conformance Test
-          - test_id: 'conformance-smp4'
-            netdev: 'tap'
-            smp: 4
-
-          # Regression Test
-          - test_id: 'regression'
-          # SMP Regression Test
-          - test_id: 'regression-tap-smp4'
-            netdev: 'tap'
-            smp: 4
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run TDX integration tests
-        uses: ./.github/actions/test
-        with:
-          auto_test: ${{ startsWith(matrix.test_id, 'boot') && 'boot' ||
-              startsWith(matrix.test_id, 'conformance') && 'conformance' || 'regression' }}
-          intel_tdx: true
-          release: true
-          smp: ${{ matrix.smp }}
-          netdev: ${{ matrix.netdev }}
-          extra_blocklists: ${{ matrix.extra_blocklists }}
-          conformance_test_suite: 'ltp'
-          conformance_test_workdir: ${{ matrix.conformance_test_workdir }}
-
   osdk-test:
     runs-on: self-hosted
     strategy:
@@ -71,3 +23,81 @@ jobs:
         with:
           auto_test: 'osdk'
           intel_tdx: true
+
+  boot-test:
+    runs-on: self-hosted
+    container:
+      image: asterinas/asterinas:0.17.1-20260319
+      options: -v /dev:/dev --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { variant: 'handover64' }
+          - { variant: 'handover64-tap-smp4', netdev: 'tap', smp: 4 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run TDX boot test (${{ matrix.variant }})
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'boot'
+          intel_tdx: true
+          release: true
+          boot_protocol: 'linux-efi-handover64'
+          netdev: ${{ matrix.netdev || 'tap' }}
+          smp: ${{ matrix.smp }}
+
+  regression-test:
+    runs-on: self-hosted
+    container:
+      image: asterinas/asterinas:0.17.1-20260319
+      options: -v /dev:/dev --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { variant: 'handover64' }
+          - { variant: 'handover64-tap-smp4', netdev: 'tap', smp: 4 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run TDX regression test (${{ matrix.variant }})
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'regression'
+          intel_tdx: true
+          release: true
+          boot_protocol: 'linux-efi-handover64'
+          netdev: ${{ matrix.netdev || 'tap' }}
+          smp: ${{ matrix.smp }}
+
+  conformance-test:
+    runs-on: self-hosted
+    container:
+      image: asterinas/asterinas:0.17.1-20260319
+      options: -v /dev:/dev --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ['ltp']
+        variant:
+          - 'ramfs'
+          - 'exfat'
+          - 'tap-smp4'
+        include:
+          - { variant: 'ramfs' }
+          - { variant: 'exfat', extra_blocklists: 'blocklists.exfat', conformance_test_workdir: '/exfat' }
+          - { variant: 'tap-smp4', netdev: 'tap', smp: 4 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run TDX conformance test (${{ matrix.variant }}, ${{ matrix.suite }})
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'conformance'
+          intel_tdx: true
+          release: true
+          boot_protocol: 'linux-efi-handover64'
+          smp: ${{ matrix.smp }}
+          netdev: ${{ matrix.netdev || 'tap' }}
+          extra_blocklists: ${{ matrix.extra_blocklists }}
+          conformance_test_suite: ${{ matrix.suite }}
+          conformance_test_workdir: ${{ matrix.conformance_test_workdir }}

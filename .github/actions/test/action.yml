@@ -34,7 +34,7 @@ inputs:
     description: 'Architecture (x86_64/riscv64/loongarch64)'
     required: false
   extra_blocklists:
-    description: 'Extra blocklists directories'
+    description: 'Extra blocklists directories or files'
     required: false
   conformance_test_suite:
     description: 'Selected conformance test suite'
@@ -87,7 +87,7 @@ runs:
         [[ -n "${{ inputs.netdev }}" ]] && CMD+=" NETDEV=${{ inputs.netdev }}"
         [[ -n "${{ inputs.scheme }}" ]] && CMD+=" SCHEME=${{ inputs.scheme }}"
         [[ -n "${{ inputs.arch }}" ]] && CMD+=" OSDK_TARGET_ARCH=${{ inputs.arch }}"
-        [[ -n "${{ inputs.extra_blocklists }}" ]] && CMD+=" EXTRA_BLOCKLISTS_DIRS=${{ inputs.extra_blocklists }}"
+        [[ -n "${{ inputs.extra_blocklists }}" ]] && CMD+=" EXTRA_BLOCKLISTS=${{ inputs.extra_blocklists }}"
         [[ -n "${{ inputs.conformance_test_suite }}" ]] && CMD+=" CONFORMANCE_TEST_SUITE=${{ inputs.conformance_test_suite }}"
         [[ -n "${{ inputs.conformance_test_workdir }}" ]] && CMD+=" CONFORMANCE_TEST_WORKDIR=${{ inputs.conformance_test_workdir }}"
         [[ -n "${{ inputs.boot_protocol }}" ]] && CMD+=" BOOT_PROTOCOL=${{ inputs.boot_protocol }}"

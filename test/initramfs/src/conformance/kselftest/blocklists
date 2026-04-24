@@ -1,0 +1,111 @@
+# kselftest blocklist. One entry per line:
+#   <dir>:<test-name>   skip a single test case
+#   <dir>:*             skip every test case under <dir>
+# Blank lines and `#...` comments are ignored; leading/trailing whitespace is trimmed.
+
+# --- exec ---
+exec:execveat
+exec:non-regular
+exec:null-argv
+exec:check-exec
+exec:binfmt_script.py
+exec:check-exec-tests.sh
+
+# --- lsm ---
+lsm:lsm_get_self_attr_test
+lsm:lsm_list_modules_test
+
+# --- proc ---
+proc:fd-001-lookup
+proc:fd-002-posix-eq
+proc:fd-003-kthread
+proc:proc-2-is-kthread
+proc:proc-loadavg-001
+proc:proc-maps-race
+proc:proc-net-dev-lseek
+proc:proc-empty-vm
+proc:proc-pid-vm
+proc:proc-self-map-files-001
+proc:proc-self-map-files-002
+proc:proc-self-isnt-kthread
+proc:proc-self-syscall
+proc:proc-self-wchan
+proc:proc-subset-pid
+proc:proc-uptime-001
+proc:proc-uptime-002
+proc:setns-dcache
+proc:setns-sysvipc
+proc:proc-multiple-procfs
+proc:proc-fsconfig-hidepid
+proc:proc-pidns
+
+# --- signal ---
+signal:mangle_uc_sigmask
+
+# --- splice ---
+splice:short_splice_read.sh
+
+# --- timers ---
+timers:posix_timers
+timers:nanosleep
+timers:set-timer-lat
+timers:mqueue-lat
+timers:inconsistency-check
+timers:raw_skew
+timers:rtcpie
+timers:threadtest
+
+# --- vDSO ---
+vDSO:vdso_test_abi
+vDSO:vdso_test_correctness
+vDSO:vdso_test_getrandom
+
+# --- x86 ---
+x86:single_step_syscall_32
+x86:sysret_ss_attrs_32
+x86:syscall_nt_32
+x86:test_mremap_vdso_32
+x86:check_initial_reg_state_32
+x86:sigreturn_32
+x86:iopl_32
+x86:ioperm_32
+x86:test_vsyscall_32
+x86:mov_ss_trap_32
+x86:sigtrap_loop_32
+x86:syscall_arg_fault_32
+x86:fsgsbase_restore_32
+x86:sigaltstack_32
+x86:nx_stack_32
+x86:entry_from_vm86_32
+x86:test_syscall_vdso_32
+x86:unwind_vdso_32
+x86:test_FCMOV_32
+x86:test_FCOMI_32
+x86:test_FISTTP_32
+x86:vdso_restorer_32
+x86:ldt_gdt_32
+x86:ptrace_syscall_32
+x86:single_step_syscall_64
+x86:sysret_ss_attrs_64
+x86:syscall_nt_64
+x86:test_mremap_vdso_64
+x86:check_initial_reg_state_64
+x86:sigreturn_64
+x86:iopl_64
+x86:ioperm_64
+x86:test_vsyscall_64
+x86:mov_ss_trap_64
+x86:sigtrap_loop_64
+x86:syscall_arg_fault_64
+x86:fsgsbase_restore_64
+x86:fsgsbase_64
+x86:sysret_rip_64
+x86:syscall_numbering_64
+x86:corrupt_xstate_header_64
+x86:amx_64
+x86:lam_64
+x86:test_shadow_stack_64
+x86:avx_64
+x86:apx_64
+x86:ldt_gdt_64
+x86:ptrace_syscall_64

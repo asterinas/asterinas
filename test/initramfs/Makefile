@@ -109,6 +109,7 @@ x86_64_pkgs:
 		-A benchmark.sqlite-speedtest1 \
 		-A benchmark.sysbench \
 		-A conformance.ltp \
+		-A conformance.kselftest \
 		-A regression.package
 
 # Prebuild riscv64 packages
@@ -159,7 +160,7 @@ $(EXT2_IMAGE):
 
 $(EXFAT_IMAGE):
 	@mkdir -p $(BUILD_DIR)
-	@fallocate -l 64M $(EXFAT_IMAGE)
+	@fallocate -l 512M $(EXFAT_IMAGE)
 	@mkfs.exfat $(EXFAT_IMAGE)
 
 .PHONY: format

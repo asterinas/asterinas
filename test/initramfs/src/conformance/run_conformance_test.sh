@@ -7,6 +7,7 @@ set -e
 CONFORMANCE_TEST_SUITE=${CONFORMANCE_TEST_SUITE:-ltp}
 LTP_DIR=/opt/ltp
 GVISOR_DIR=/opt/gvisor
+KSELFTEST_DIR=/opt/kselftest
 
 if [ "${CONFORMANCE_TEST_SUITE}" == "ltp" ]; then
     echo "Running LTP syscall tests..."
@@ -20,9 +21,15 @@ elif [ "${CONFORMANCE_TEST_SUITE}" == "gvisor" ]; then
         echo "Error: gVisor syscall tests failed." >&2
         exit 2
     fi
+elif [ "${CONFORMANCE_TEST_SUITE}" == "kselftest" ]; then
+    echo "Running Linux kernel selftest..."
+    if ! "${KSELFTEST_DIR}/run_kselftest.sh"; then
+        echo "Error: Linux kernel selftest failed." >&2
+        exit 3
+    fi
 else
     echo "Error: Unknown test suite '${CONFORMANCE_TEST_SUITE}'." >&2
-    exit 3
+    exit 4
 fi
 
 echo "All conformance tests passed."

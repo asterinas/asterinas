@@ -6,25 +6,21 @@ INITRAMFS ?= $(CUR_DIR)/../../build/initramfs
 RUN_BASH := $(CUR_DIR)/run_conformance_test.sh
 TARGET_DIR := $(INITRAMFS)/opt
 CONFORMANCE_TEST_SUITE ?= ltp
-GVISOR_DIR := $(INITRAMFS)/opt/gvisor
-LTP_DIR := $(INITRAMFS)/opt/ltp
+VALID_SUITES := ltp gvisor kselftest
+SUITE_DIR := $(INITRAMFS)/opt/$(CONFORMANCE_TEST_SUITE)
+
+$(if $(filter $(CONFORMANCE_TEST_SUITE),$(VALID_SUITES)),,\
+  $(error CONFORMANCE_TEST_SUITE='$(CONFORMANCE_TEST_SUITE)' not one of: $(VALID_SUITES)))
 
 .PHONY: all
 all: $(TARGET_DIR)
 
-$(TARGET_DIR): $(RUN_BASH) $(GVISOR_DIR) $(LTP_DIR)
+$(TARGET_DIR): $(RUN_BASH) $(SUITE_DIR)
 	@# Copy bash script
 	@cp -f $(RUN_BASH) $@
 
-$(GVISOR_DIR):
-ifeq ($(CONFORMANCE_TEST_SUITE), gvisor)
-	@$(MAKE) --no-print-directory -C gvisor
-endif
-
-$(LTP_DIR):
-ifeq ($(CONFORMANCE_TEST_SUITE), ltp)
-	@$(MAKE) --no-print-directory -C ltp
-endif
+$(SUITE_DIR):
+	@$(MAKE) --no-print-directory -C $(CONFORMANCE_TEST_SUITE)
 
 .PHONY: clean
 clean:
