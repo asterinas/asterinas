@@ -1196,12 +1196,12 @@ read04
 # readdir01
 # readdir21
 
-# readlink01
-# readlink03
+readlink01
+readlink03
 
 #readlinkat test cases
-# readlinkat01
-# readlinkat02
+readlinkat01
+readlinkat02
 
 readv01
 # readv02

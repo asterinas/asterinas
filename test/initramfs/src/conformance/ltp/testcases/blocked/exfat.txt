@@ -63,6 +63,10 @@ pwritev201_64
 read01
 read02
 read04
+readlink01
+readlink03
+readlinkat01
+readlinkat02
 readv01
 rename01A
 rmdir03A

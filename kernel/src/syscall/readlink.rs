@@ -22,6 +22,10 @@ pub fn sys_readlinkat(
     usr_buf_len: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
+    if usr_buf_len == 0 {
+        return_errno_with_message!(Errno::EINVAL, "the buffer length is zero");
+    }
+
     let user_space = ctx.user_space();
     let path_name = user_space.read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!(
@@ -34,7 +38,11 @@ pub fn sys_readlinkat(
         let path_resolver = fs_ref.resolver().read();
 
         let path_name = path_name.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(dirfd, &path_name)?;
+        let fs_path = if path_name.is_empty() && dirfd != AT_FDCWD {
+            FsPath::from_fd(dirfd)?
+        } else {
+            FsPath::from_fd_and_path(dirfd, &path_name)?
+        };
         let path = path_resolver.lookup_no_follow(&fs_path)?;
 
         match path.inode().read_link()? {
