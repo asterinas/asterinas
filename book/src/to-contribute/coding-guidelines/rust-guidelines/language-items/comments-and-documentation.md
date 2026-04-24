@@ -15,16 +15,27 @@ Two primary references are:
 
 ### Follow RFC 1574 summary line conventions (`rfc1574-summary`) {#rfc1574-summary}
 
-The first line of a doc comment should be
-third-person singular present indicative
-("Returns", "Creates", "Acquires"),
-concise, and one sentence.
+The first line of a doc comment should be concise and one sentence.
+Its grammatical form depends on what the item is:
+
+- **Functions and methods** — third-person singular present indicative verb
+  ("Returns", "Creates", "Acquires"), describing the action performed.
+- **Types (structs, enums, traits, type aliases), modules, and fields** —
+  a noun phrase naming the thing, not describing an action.
+  This matches the Rust standard library convention
+  (e.g., `Vec` is "A contiguous growable array type").
 
 ```rust
 /// Returns the mapping's start address.
 pub fn map_to_addr(&self) -> Vaddr {
     self.map_to_addr
 }
+
+/// A policy for how [`FsPath::from_fd_at`] treats an empty `path_str`.
+pub enum EmptyPathStr { /* ... */ }
+
+/// A guard that releases a [`SpinLock`] when dropped.
+pub struct SpinLockGuard<'a, T> { /* ... */ }
 ```
 
 ### End sentence comments with punctuation (`comment-punctuation`) {#comment-punctuation}
