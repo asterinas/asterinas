@@ -62,6 +62,7 @@ qemu.args = """\
     -serial chardev:mux \
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
+    -netdev user,id=net01 \
     -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
     -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
     # NOTE: The `/etc/profile.d/init.sh` assumes that `ext2.img` appears as the first block device (`/dev/vda`).
@@ -70,6 +71,7 @@ qemu.args = """\
     -device virtio-blk-device,drive=x1 \
     -device virtio-blk-device,drive=x0 \
     -device virtio-keyboard-device \
+    -device virtio-net-device,netdev=net01 \
     -device virtio-serial-device \
     -device virtconsole,chardev=mux \
 """
