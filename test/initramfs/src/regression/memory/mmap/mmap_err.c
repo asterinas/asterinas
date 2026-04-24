@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 #include <sys/mman.h>
 #include <sys/fcntl.h>
+#include <stdint.h>
 #include <unistd.h>
 
 #include "../../common/test.h"
@@ -11,6 +12,9 @@
 
 // The value in `/proc/sys/vm/mmap_min_addr`.
 #define MMAP_MIN_ADDR ((void *)65536)
+
+#define IS_ABOVE_MMAP_MIN_ADDR(addr) \
+	((uintptr_t)(addr) >= (uintptr_t)MMAP_MIN_ADDR)
 
 static void *valid_addr;
 static void *avail_addr;
@@ -115,16 +119,17 @@ FN_TEST(underflow_addr)
 	void *addr = (void *)PAGE_SIZE;
 	void *addr2;
 
-	// `mmap` without MAP_FIXED. The hint address will be rounded
-	// to MMAP_MIN_ADDR, unless it is in the first page, in which
-	// case the hint will be ignored.
+	// `mmap` without MAP_FIXED. The hint address will be rounded to
+	// MMAP_MIN_ADDR unless it is in the first page, in which case the
+	// hint will be ignored. If MMAP_MIN_ADDR is already occupied, Linux
+	// may choose another available address.
 	addr2 = TEST_RES(mmap(addr, PAGE_SIZE, PROT_READ,
 			      MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
-			 _ret == MMAP_MIN_ADDR);
+			 IS_ABOVE_MMAP_MIN_ADDR(_ret));
 	TEST_SUCC(munmap(addr2, PAGE_SIZE));
 	addr2 = TEST_RES(mmap(addr + 1, PAGE_SIZE, PROT_READ,
 			      MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
-			 _ret == MMAP_MIN_ADDR);
+			 IS_ABOVE_MMAP_MIN_ADDR(_ret));
 	TEST_SUCC(munmap(addr2, PAGE_SIZE));
 	addr2 = TEST_RES(mmap(addr - 1, PAGE_SIZE, PROT_READ,
 			      MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),

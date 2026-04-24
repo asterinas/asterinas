@@ -6,4 +6,6 @@ set -e
 
 ./in_c/hello
 ./in_c_pie/hello
-[ "$(uname -m)" = "x86_64" ] && ./in_assembly/hello
+if [ "$(uname -m)" = "x86_64" ]; then
+    ./in_assembly/hello
+fi
