@@ -1,3 +1,4 @@
+access02
 bind04
 chdir01A
 chmod01
@@ -8,8 +9,10 @@ creat03
 dup05
 dup203
 dup205
+faccessat201
 fallocate03
 fchmod01
+fchmod02
 fchmodat01
 fchown05
 fchownat01
@@ -27,8 +30,12 @@ link05
 linkat01
 lstat01
 lstat01_64
+lstat02
+lstat02_64
 mkdir04
 mknod01
+mknod02
+mknod06
 mmap06
 mmap19
 mprotect02
@@ -84,6 +91,7 @@ setuid04
 stat02
 stat02_64
 symlink02
+symlink03
 symlink04
 symlinkat01
 truncate02
