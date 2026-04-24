@@ -59,7 +59,7 @@ qemu.args = """\
     --no-reboot \
     -nographic \
     -display none \
-    -serial chardev:mux \
+    -serial file:qemu-serial.log \
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
     -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
