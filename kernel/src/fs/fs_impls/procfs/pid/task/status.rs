@@ -163,13 +163,11 @@ impl FileOps for StatusFileOps {
             )?;
         }
 
-        if process.pid() == posix_thread.tid() {
-            writeln!(
-                printer,
-                "Threads:\t{}",
-                process.tasks().lock().as_slice().len()
-            )?;
-        }
+        writeln!(
+            printer,
+            "Threads:\t{}",
+            process.tasks().lock().as_slice().len()
+        )?;
 
         writeln!(
             printer,
