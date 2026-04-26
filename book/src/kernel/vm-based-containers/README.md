@@ -27,3 +27,4 @@ without requiring changes to the applications themselves.
 Here is the list of secure container runtimes that have been verified to work with Asterinas:
 
 - [Kata Containers](kata.md)
+- [Confidential Containers (CoCo)](coco.md)

@@ -46,6 +46,7 @@
     * [Kernel Parameters](kernel/linux-compatibility/kernel-parameters.md)
 * [VM-based Containers](kernel/vm-based-containers/README.md)
     * [Kata Containers](kernel/vm-based-containers/kata.md)
+    * [Confidential Containers (CoCo)](kernel/vm-based-containers/coco.md)
 * [Roadmap](kernel/roadmap.md)
 
 # Asterinas OSTD
