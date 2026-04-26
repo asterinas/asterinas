@@ -10,7 +10,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use core::time::Duration;
 
-pub use clocksource::{ClockSource, Instant};
+pub use clocksource::{ClockSource, Instant, NANOS_PER_SECOND};
 use component::{ComponentInitError, init_component};
 use rtc::Driver;
 use spin::Once;

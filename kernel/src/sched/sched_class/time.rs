@@ -2,6 +2,8 @@
 
 use core::mem;
 
+use aster_time::NANOS_PER_SECOND;
+use ostd::timer::TIMER_FREQ;
 use spin::Once;
 
 /// Returns the numerator and denominator of the ratio R:
@@ -29,16 +31,16 @@ fn tsc_factors() -> (u64, u64) {
 }
 
 /// The base time slice allocated for every thread, measured in nanoseconds.
-pub const BASE_SLICE_NS: u64 = 750_000;
+pub const BASE_SLICE_NS: u64 = 700_000;
 
-/// The minimum scheduling period, measured in nanoseconds.
-pub const MIN_PERIOD_NS: u64 = 6_000_000;
+/// The duration between ticks, measured in nanoseconds.
+pub const TICK_PERIOD_NS: u64 = (NANOS_PER_SECOND as u64 + TIMER_FREQ / 2) / TIMER_FREQ;
 
 fn consts() -> (u64, u64) {
     static CONSTS: Once<(u64, u64)> = Once::new();
     *CONSTS.call_once(|| {
         let (a, b) = tsc_factors();
-        (BASE_SLICE_NS * b / a, MIN_PERIOD_NS * b / a)
+        (BASE_SLICE_NS * b / a, TICK_PERIOD_NS * b / a)
     })
 }
 
@@ -47,7 +49,7 @@ pub fn base_slice_clocks() -> u64 {
     consts().0
 }
 
-/// Returns the minimum scheduling period, measured in TSC clock units.
-pub fn min_period_clocks() -> u64 {
+/// Returns the tick duration, measured in TSC clock units.
+pub fn tick_period_clocks() -> u64 {
     consts().1
 }
