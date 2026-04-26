@@ -8,10 +8,7 @@ use crate::{
         file::mkmod,
         procfs::{
             ProcDir,
-            sys::kernel::{
-                cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps, random::RandomDirOps,
-                yama::YamaDirOps,
-            },
+            sys::kernel::random::boot_id::BootIdFileOps,
             template::{
                 DirOps, ProcDirBuilder, lookup_child_from_table, populate_children_from_table,
             },
@@ -21,19 +18,13 @@ use crate::{
     prelude::*,
 };
 
-mod cap_last_cap;
-mod pid_max;
-mod random;
-mod yama;
+mod boot_id;
 
-/// Represents the inode at `/proc/sys/kernel`.
-pub struct KernelDirOps;
+/// Represents the inode at `/proc/sys/kernel/random`.
+pub struct RandomDirOps;
 
-impl KernelDirOps {
+impl RandomDirOps {
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        // Reference:
-        // <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/sysctl.c#L1765>
-        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L978>
         ProcDirBuilder::new(Self, mkmod!(a+rx))
             .parent(parent)
             .build()
@@ -42,14 +33,11 @@ impl KernelDirOps {
 
     #[expect(clippy::type_complexity)]
     const STATIC_ENTRIES: &'static [(&'static str, fn(Weak<dyn Inode>) -> Arc<dyn Inode>)] = &[
-        ("cap_last_cap", CapLastCapFileOps::new_inode),
-        ("pid_max", PidMaxFileOps::new_inode),
-        ("random", RandomDirOps::new_inode),
-        ("yama", YamaDirOps::new_inode),
+        ("boot_id", BootIdFileOps::new_inode),
     ];
 }
 
-impl DirOps for KernelDirOps {
+impl DirOps for RandomDirOps {
     fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         let mut cached_children = dir.cached_children().write();
 
