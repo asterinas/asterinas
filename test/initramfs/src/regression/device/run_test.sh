@@ -14,4 +14,5 @@ set -e
 ./evdev
 ./framebuffer
 ./full
+./hwrng
 ./random
