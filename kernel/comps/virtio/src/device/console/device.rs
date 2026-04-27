@@ -118,6 +118,7 @@ impl ConsoleDevice {
         // Register IRQ callbacks.
         let mut transport = device.transport.lock();
         let handle_console_input = {
+            // FIXME: This callback captures a strong `Arc`, creating a reference cycle.
             let device = device.clone();
             move |_: &TrapFrame| device.handle_recv_irq()
         };

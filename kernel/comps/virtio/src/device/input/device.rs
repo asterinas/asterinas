@@ -146,6 +146,7 @@ impl InputDevice {
 
         let mut transport = device.transport.lock();
         let handle_input = {
+            // FIXME: This callback captures a strong `Arc`, creating a reference cycle.
             let device = device.clone();
             move |_: &TrapFrame| device.handle_irq(&registered_device)
         };
