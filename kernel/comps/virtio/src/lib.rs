@@ -18,7 +18,8 @@ use bitflags::bitflags;
 use component::{ComponentInitError, init_component};
 use device::{
     VirtioDeviceType, block::device::BlockDevice, console::device::ConsoleDevice,
-    input::device::InputDevice, network::device::NetworkDevice, socket::device::SocketDevice,
+    entropy::device::EntropyDevice, input::device::InputDevice, network::device::NetworkDevice,
+    socket::device::SocketDevice,
 };
 use ostd::{error, warn};
 use spin::Once;
@@ -48,6 +49,7 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
     // Find all devices and register them to the corresponding crate
     transport::init();
 
+    device::entropy::init();
     device::network::init();
     device::socket::init();
 
@@ -77,9 +79,10 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
         let device_type = transport.device_type();
         let res = match transport.device_type() {
             VirtioDeviceType::Block => BlockDevice::init(transport),
+            VirtioDeviceType::Console => ConsoleDevice::init(transport),
+            VirtioDeviceType::Entropy => EntropyDevice::init(transport),
             VirtioDeviceType::Input => InputDevice::init(transport),
             VirtioDeviceType::Network => NetworkDevice::init(transport),
-            VirtioDeviceType::Console => ConsoleDevice::init(transport),
             VirtioDeviceType::Socket => SocketDevice::init(transport),
             _ => {
                 warn!("Found unimplemented device:{:?}", device_type);

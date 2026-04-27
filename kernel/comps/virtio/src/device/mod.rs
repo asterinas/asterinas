@@ -6,6 +6,7 @@ use crate::{queue, transport::VirtioTransportError};
 
 pub mod block;
 pub mod console;
+pub mod entropy;
 pub mod input;
 pub mod network;
 pub mod socket;

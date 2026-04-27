@@ -89,7 +89,7 @@ impl TxQueue {
 
     /// Tries to submit `packet` to the inflight queue immediately, or returns a guard for
     /// submitting the packet to the pending queue.
-    pub fn try_send(&mut self, packet: TxPacket) -> core::result::Result<(), TxPendingGuard<'_>> {
+    pub fn try_send(&mut self, packet: TxPacket) -> Result<(), TxPendingGuard<'_>> {
         if !self.pending.is_empty() || self.queue.available_desc() == 0 {
             return Err(TxPendingGuard {
                 queue: self,
