@@ -111,7 +111,7 @@ impl Connection {
             let packet_mut = packet_opt.as_mut().unwrap();
             let bytes_written = packet_mut.copy_payload(|mut writer| {
                 writer.limit(remaining_bytes);
-                Ok(reader.read(&mut writer)?)
+                reader.read(&mut writer).map_err(|(err, _)| err)
             })?;
             remaining_bytes -= bytes_written;
         }

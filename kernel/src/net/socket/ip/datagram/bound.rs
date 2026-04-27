@@ -58,7 +58,9 @@ impl datagram_common::Bound for BoundDatagram {
         _flags: SendRecvFlags,
     ) -> Result<(usize, Self::Endpoint)> {
         let result = self.bound_socket.recv(|packet, udp_metadata| {
-            let copied_res = writer.write(&mut VmReader::from(packet));
+            let copied_res = writer
+                .write(&mut VmReader::from(packet))
+                .map_err(Into::into);
             let endpoint = udp_metadata.endpoint;
             (copied_res, endpoint)
         });
@@ -91,6 +93,7 @@ impl datagram_common::Bound for BoundDatagram {
                     .inspect_err(|e| {
                         warn!("unexpected UDP packet {e:#?} will be sent");
                     })
+                    .map_err(Into::into)
             });
 
         match result {

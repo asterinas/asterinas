@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_bigtcp::{
-    errors::tcp::{RecvError, SendError},
+    errors::tcp::{IoError, RecvError, SendError},
     socket::{NeedIfacePoll, RawTcpSetOption},
     wire::IpEndpoint,
 };
@@ -74,29 +74,22 @@ impl ConnectedStream {
         writer: &mut dyn MultiWrite,
         _flags: SendRecvFlags,
     ) -> Result<(usize, NeedIfacePoll)> {
-        let result = self.tcp_conn.recv(|socket_buffer| {
-            match writer.write(&mut VmReader::from(&*socket_buffer)) {
-                Ok(len) => (len, Ok(len)),
-                Err(e) => (0, Err(e)),
-            }
-        });
+        let result = self
+            .tcp_conn
+            .recv(|socket_buffer| writer.write(&mut VmReader::from(&*socket_buffer)));
 
         match result {
-            Ok((Ok(0), need_poll)) => {
-                debug_assert!(!*need_poll);
+            Ok((recv_bytes, need_poll)) => Ok((recv_bytes.get(), need_poll)),
+            Err(IoError::NoProgress) => {
                 return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
             }
-            Ok((Ok(recv_bytes), need_poll)) => Ok((recv_bytes, need_poll)),
-            Ok((Err(e), need_poll)) => {
-                debug_assert!(!*need_poll);
-                Err(e)
-            }
-            Err(RecvError::Finished) | Err(RecvError::InvalidState) => {
+            Err(IoError::Copy(e)) => Err(e.into()),
+            Err(IoError::Socket(RecvError::Finished | RecvError::InvalidState)) => {
                 // `InvalidState` occurs when the connection is reset but `ECONNRESET` was reported
                 // earlier. Linux returns EOF in this case, so we follow it.
                 Ok((0, NeedIfacePoll::FALSE))
             }
-            Err(RecvError::ConnReset) => {
+            Err(IoError::Socket(RecvError::ConnReset)) => {
                 return_errno_with_message!(Errno::ECONNRESET, "the connection is reset")
             }
         }
@@ -107,27 +100,20 @@ impl ConnectedStream {
         reader: &mut dyn MultiRead,
         _flags: SendRecvFlags,
     ) -> Result<(usize, NeedIfacePoll)> {
-        let result = self.tcp_conn.send(|socket_buffer| {
-            match reader.read(&mut VmWriter::from(socket_buffer)) {
-                Ok(len) => (len, Ok(len)),
-                Err(e) => (0, Err(e)),
-            }
-        });
+        let result = self
+            .tcp_conn
+            .send(|socket_buffer| reader.read(&mut VmWriter::from(socket_buffer)));
 
         match result {
-            Ok((Ok(0), need_poll)) => {
-                debug_assert!(!*need_poll);
+            Ok((sent_bytes, need_poll)) => Ok((sent_bytes.get(), need_poll)),
+            Err(IoError::NoProgress) => {
                 return_errno_with_message!(Errno::EAGAIN, "the send buffer is full")
             }
-            Ok((Ok(sent_bytes), need_poll)) => Ok((sent_bytes, need_poll)),
-            Ok((Err(e), need_poll)) => {
-                debug_assert!(!*need_poll);
-                Err(e)
-            }
-            Err(SendError::InvalidState) => {
+            Err(IoError::Copy(e)) => Err(e.into()),
+            Err(IoError::Socket(SendError::InvalidState)) => {
                 return_errno_with_message!(Errno::EPIPE, "the connection is closed");
             }
-            Err(SendError::ConnReset) => {
+            Err(IoError::Socket(SendError::ConnReset)) => {
                 return_errno_with_message!(Errno::ECONNRESET, "the connection is reset");
             }
         }

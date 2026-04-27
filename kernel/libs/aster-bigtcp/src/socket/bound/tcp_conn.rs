@@ -4,7 +4,10 @@ use alloc::{
     boxed::Box,
     sync::{Arc, Weak},
 };
-use core::ops::{Deref, DerefMut};
+use core::{
+    num::NonZeroUsize,
+    ops::{Deref, DerefMut},
+};
 
 use aster_softirq::BottomHalfDisabled;
 use ostd::sync::{SpinLock, SpinLockGuard};
@@ -20,7 +23,7 @@ use super::{
 };
 use crate::{
     define_boolean_value,
-    errors::tcp::{ConnectError, RecvError, SendError},
+    errors::tcp::{ConnectError, IoError, RecvError, SendError},
     ext::Ext,
     iface::{BoundPort, PollKey, PollableIfaceMut},
     socket::{
@@ -370,9 +373,12 @@ impl<E: Ext> TcpConnection<E> {
     /// Sends some data.
     ///
     /// Polling the iface _may_ be required after this method succeeds.
-    pub fn send<F, R>(&self, f: F) -> Result<(R, NeedIfacePoll), SendError>
+    pub fn send<F, CopyErr>(
+        &self,
+        mut f: F,
+    ) -> Result<(NonZeroUsize, NeedIfacePoll), IoError<SendError, CopyErr>>
     where
-        F: FnOnce(&mut [u8]) -> (usize, R),
+        F: FnMut(&mut [u8]) -> Result<usize, (CopyErr, usize)>,
     {
         let common = self.iface().common();
         let mut iface = common.interface();
@@ -381,10 +387,56 @@ impl<E: Ext> TcpConnection<E> {
 
         if socket.is_rst_closed {
             socket.is_rst_closed = false;
-            return Err(SendError::ConnReset);
+            return Err(IoError::Socket(SendError::ConnReset));
         }
-        let result = socket.send(f)?;
 
+        let mut total_sent_bytes = 0;
+        let mut need_wrap_continuation = true;
+
+        let result = loop {
+            let mut sent_bytes = 0;
+            let mut socket_buffer_len = 0;
+
+            // `socket.send` exposes the largest contiguous writable range. If the free space in
+            // the transmit ring buffer wraps, one logical stream write may span two such ranges,
+            // so continue at most once while holding the same socket lock to avoid an avoidable
+            // short write.
+            let send_result = socket.send(|socket_buffer| {
+                socket_buffer_len = socket_buffer.len();
+                match f(socket_buffer) {
+                    Ok(current_sent_bytes) => {
+                        sent_bytes = current_sent_bytes;
+                        (current_sent_bytes, Ok(()))
+                    }
+                    Err((err, current_sent_bytes)) => {
+                        sent_bytes = current_sent_bytes;
+                        (current_sent_bytes, Err(err))
+                    }
+                }
+            });
+
+            let copy_result = match send_result {
+                Err(_) if total_sent_bytes > 0 => break total_sent_bytes,
+                res => res?,
+            };
+
+            total_sent_bytes += sent_bytes;
+
+            if let Err(err) = copy_result {
+                if total_sent_bytes == 0 {
+                    return Err(IoError::Copy(err));
+                }
+                break total_sent_bytes;
+            }
+
+            if sent_bytes < socket_buffer_len || !need_wrap_continuation {
+                break total_sent_bytes;
+            }
+
+            need_wrap_continuation = false;
+        };
+
+        let result = NonZeroUsize::new(result).ok_or(IoError::NoProgress)?;
         let poll_at = socket.poll_at(iface.context_mut());
         let need_poll = iface.update_next_poll_at_ms(&self.0, poll_at);
 
@@ -394,9 +446,12 @@ impl<E: Ext> TcpConnection<E> {
     /// Receives some data.
     ///
     /// Polling the iface _may_ be required after this method succeeds.
-    pub fn recv<F, R>(&self, f: F) -> Result<(R, NeedIfacePoll), RecvError>
+    pub fn recv<F, CopyErr>(
+        &self,
+        mut f: F,
+    ) -> Result<(NonZeroUsize, NeedIfacePoll), IoError<RecvError, CopyErr>>
     where
-        F: FnOnce(&mut [u8]) -> (usize, R),
+        F: FnMut(&mut [u8]) -> Result<usize, (CopyErr, usize)>,
     {
         let common = self.iface().common();
         let mut iface = common.interface();
@@ -404,16 +459,59 @@ impl<E: Ext> TcpConnection<E> {
         let mut socket = self.0.inner.lock();
 
         if socket.is_recv_shut && socket.recv_queue() == 0 {
-            return Err(RecvError::Finished);
+            return Err(IoError::Socket(RecvError::Finished));
         }
-        let result = match socket.recv(f) {
-            Err(_) if socket.is_rst_closed => {
-                socket.is_rst_closed = false;
-                return Err(RecvError::ConnReset);
-            }
-            res => res,
-        }?;
 
+        let mut total_recv_bytes = 0;
+        let mut need_wrap_continuation = true;
+
+        let result = loop {
+            let mut recv_bytes = 0;
+            let mut socket_buffer_len = 0;
+
+            // `socket.recv` exposes the largest contiguous readable range. If the receive ring
+            // buffer wraps, one logical stream read may span two such ranges, so continue at most
+            // once while holding the same socket lock to avoid an avoidable short read.
+            let recv_result = socket.recv(|socket_buffer| {
+                socket_buffer_len = socket_buffer.len();
+                match f(socket_buffer) {
+                    Ok(current_recv_bytes) => {
+                        recv_bytes = current_recv_bytes;
+                        (current_recv_bytes, Ok(()))
+                    }
+                    Err((err, current_recv_bytes)) => {
+                        recv_bytes = current_recv_bytes;
+                        (current_recv_bytes, Err(err))
+                    }
+                }
+            });
+
+            let copy_result = match recv_result {
+                Err(_) if socket.is_rst_closed && total_recv_bytes == 0 => {
+                    socket.is_rst_closed = false;
+                    return Err(IoError::Socket(RecvError::ConnReset));
+                }
+                Err(_) if total_recv_bytes > 0 => break total_recv_bytes,
+                res => res?,
+            };
+
+            total_recv_bytes += recv_bytes;
+
+            if let Err(err) = copy_result {
+                if total_recv_bytes == 0 {
+                    return Err(IoError::Copy(err));
+                }
+                break total_recv_bytes;
+            }
+
+            if recv_bytes < socket_buffer_len || !need_wrap_continuation {
+                break total_recv_bytes;
+            }
+
+            need_wrap_continuation = false;
+        };
+
+        let result = NonZeroUsize::new(result).ok_or(IoError::NoProgress)?;
         let poll_at = socket.poll_at(iface.context_mut());
         let need_poll = iface.update_next_poll_at_ms(&self.0, poll_at);
 
