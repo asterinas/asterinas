@@ -6,6 +6,8 @@ StatTest.FstatatEmptyPath
 StatTest.FstatatRel
 StatTest.FstatatSymlink
 StatTest.FstatatSymlinkDir
+StatTest.FstatatSymlinkDirWithTrailingSlash
+StatTest.FstatatSymlinkDirWithTrailingSlashSameInode
 StatTest.FstatDirWithOpath
 StatTest.FstatFileWithOpath
 StatTest.LeadingDoubleSlash
@@ -13,6 +15,7 @@ StatTest.LinkCountsWithDirChild
 StatTest.LinkCountsWithRegularFileChild
 StatTest.LinkCountsWithSubdirectories
 StatTest.LstatELOOPPath
+StatTest.LstatSymlinkDir
 StatTest.Nlinks
 StatTest.PathCanContainDotDot
 StatTest.PathCanContainEmptyComponent
