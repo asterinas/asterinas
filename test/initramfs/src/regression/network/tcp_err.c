@@ -493,7 +493,37 @@ FN_TEST(sendmsg_and_recvmsg)
 	iov[1].iov_len = 1;
 	msg.msg_iov = iov;
 	msg.msg_iovlen = 2;
+
+	char recv_buffer[4096] = { 0 };
+	/*
+	 * FIXME: Linux TCP reports `EFAULT` if a copy fault occurs before
+	 * completing the first SKB touched by the call. Later faults may return
+	 * a short count at SKB granularity. Asterinas has no SKBs, so it reports
+	 * byte-granular progress instead.
+	 *
+	 * Reference:
+	 * <https://elixir.bootlin.com/linux/v7.0/source/net/ipv4/tcp.c#L1328-L1329>
+	 * <https://elixir.bootlin.com/linux/v7.0/source/net/ipv4/tcp.c#L1441-L1442>
+	 */
+#ifdef __asterinas__
+	/*
+	 * The good bytes are queued in the TCP stream and must be drained
+	 * before the next case.
+	 */
+	TEST_RES(sendmsg(sk_accepted, &msg, 0), _ret == strlen(good_buffer));
+
+	sleep(1);
+
+	iov[0].iov_base = recv_buffer;
+	iov[0].iov_len = sizeof(recv_buffer);
+	msg.msg_iovlen = 1;
+	TEST_RES(recvmsg(sk_connected, &msg, 0),
+		 _ret == strlen(good_buffer) &&
+			 memcmp(recv_buffer, good_buffer,
+				strlen(good_buffer)) == 0);
+#else
 	TEST_ERRNO(sendmsg(sk_accepted, &msg, 0), EFAULT);
+#endif
 
 	// TEST CASE 4: Receive via a partially bad receive buffer
 
@@ -506,7 +536,7 @@ FN_TEST(sendmsg_and_recvmsg)
 
 	sleep(1);
 
-	char recv_buffer[4096] = { 0 };
+	memset(recv_buffer, 0, sizeof(recv_buffer));
 	iov[0].iov_base = recv_buffer;
 	iov[0].iov_len = 1;
 	TEST_RES(recvmsg(sk_connected, &msg, 0), _ret == 1);
@@ -516,13 +546,36 @@ FN_TEST(sendmsg_and_recvmsg)
 	iov[1].iov_base = (char *)1;
 	iov[1].iov_len = 1;
 	msg.msg_iovlen = 2;
-	TEST_ERRNO(recvmsg(sk_connected, &msg, 0), EFAULT);
 
+	/* FIXME: Refer to the above FIXME regarding sending with a bad buffer. */
+#ifdef __asterinas__
+	/*
+	 * The bytes copied are consumed from the TCP stream, so only the
+	 * remaining bytes are left for the next receive.
+	 */
+	TEST_RES(recvmsg(sk_connected, &msg, 0),
+		 _ret == 1 && recv_buffer[0] == good_buffer[1]);
+
+	memset(recv_buffer, 0, sizeof(recv_buffer));
 	iov[0].iov_base = recv_buffer;
-	iov[0].iov_len = 4096;
+	iov[0].iov_len = sizeof(recv_buffer);
 	msg.msg_iovlen = 1;
 	TEST_RES(recvmsg(sk_connected, &msg, 0),
-		 _ret == strlen(good_buffer) - 1);
+		 _ret == strlen(good_buffer) - 2 &&
+			 memcmp(recv_buffer, good_buffer + 2,
+				strlen(good_buffer) - 2) == 0);
+#else
+	TEST_ERRNO(recvmsg(sk_connected, &msg, 0), EFAULT);
+
+	memset(recv_buffer, 0, sizeof(recv_buffer));
+	iov[0].iov_base = recv_buffer;
+	iov[0].iov_len = sizeof(recv_buffer);
+	msg.msg_iovlen = 1;
+	TEST_RES(recvmsg(sk_connected, &msg, 0),
+		 _ret == strlen(good_buffer) - 1 &&
+			 memcmp(recv_buffer, good_buffer + 1,
+				strlen(good_buffer) - 1) == 0);
+#endif
 
 	// TEST CASE 5: Send a large buffer
 

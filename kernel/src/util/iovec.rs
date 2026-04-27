@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::{Infallible, VmSpace};
+use ostd::{
+    Error as OstdError,
+    mm::{Infallible, VmSpace},
+};
 
 use crate::prelude::*;
 
@@ -179,9 +182,13 @@ pub trait MultiRead: ReadCString {
     ///
     /// # Errors
     ///
-    /// This method returns [`Errno::EFAULT`] if a page fault occurs.
-    /// The position of `self` and the `writer` is left unspecified when this method returns error.
-    fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize>;
+    /// This method returns [`OstdError::PageFault`] if a page fault occurs, along with
+    /// the number of bytes copied before the error occurs. When an error is returned,
+    /// both `self` and `writer` are advanced by the returned byte count.
+    fn read(
+        &mut self,
+        writer: &mut VmWriter<'_, Infallible>,
+    ) -> core::result::Result<usize, (OstdError, usize)>;
 
     /// Calculates the total length of data remaining to read.
     fn sum_lens(&self) -> usize;
@@ -206,9 +213,13 @@ pub trait MultiWrite {
     ///
     /// # Errors
     ///
-    /// This method returns [`Errno::EFAULT`] if a page fault occurs.
-    /// The position of `self` and the `reader` is left unspecified when this method returns error.
-    fn write(&mut self, reader: &mut VmReader<'_, Infallible>) -> Result<usize>;
+    /// This method returns [`OstdError::PageFault`] if a page fault occurs, along with
+    /// the number of bytes copied before the error occurs. When an error is returned,
+    /// both `self` and `reader` are advanced by the returned byte count.
+    fn write(
+        &mut self,
+        reader: &mut VmReader<'_, Infallible>,
+    ) -> core::result::Result<usize, (OstdError, usize)>;
 
     /// Calculates the length of space available to write.
     fn sum_lens(&self) -> usize;
@@ -224,11 +235,16 @@ pub trait MultiWrite {
 }
 
 impl MultiRead for VmReaderArray<'_> {
-    fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize> {
+    fn read(
+        &mut self,
+        writer: &mut VmWriter<'_, Infallible>,
+    ) -> core::result::Result<usize, (OstdError, usize)> {
         let mut total_len = 0;
 
         for reader in &mut self.0 {
-            let copied_len = reader.read_fallible(writer)?;
+            let copied_len = reader
+                .read_fallible(writer)
+                .map_err(|(err, copied_len)| (err, total_len + copied_len))?;
             total_len += copied_len;
             if !writer.has_avail() {
                 break;
@@ -255,8 +271,11 @@ impl MultiRead for VmReaderArray<'_> {
 }
 
 impl MultiRead for VmReader<'_> {
-    fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize> {
-        Ok(self.read_fallible(writer)?)
+    fn read(
+        &mut self,
+        writer: &mut VmWriter<'_, Infallible>,
+    ) -> core::result::Result<usize, (OstdError, usize)> {
+        self.read_fallible(writer)
     }
 
     fn sum_lens(&self) -> usize {
@@ -283,11 +302,16 @@ impl dyn MultiRead + '_ {
 }
 
 impl MultiWrite for VmWriterArray<'_> {
-    fn write(&mut self, reader: &mut VmReader<'_, Infallible>) -> Result<usize> {
+    fn write(
+        &mut self,
+        reader: &mut VmReader<'_, Infallible>,
+    ) -> core::result::Result<usize, (OstdError, usize)> {
         let mut total_len = 0;
 
         for writer in &mut self.0 {
-            let copied_len = writer.write_fallible(reader)?;
+            let copied_len = writer
+                .write_fallible(reader)
+                .map_err(|(err, copied_len)| (err, total_len + copied_len))?;
             total_len += copied_len;
             if !reader.has_remain() {
                 break;
@@ -314,8 +338,11 @@ impl MultiWrite for VmWriterArray<'_> {
 }
 
 impl MultiWrite for VmWriter<'_> {
-    fn write(&mut self, reader: &mut VmReader<'_, Infallible>) -> Result<usize> {
-        Ok(self.write_fallible(reader)?)
+    fn write(
+        &mut self,
+        reader: &mut VmReader<'_, Infallible>,
+    ) -> core::result::Result<usize, (OstdError, usize)> {
+        self.write_fallible(reader)
     }
 
     fn sum_lens(&self) -> usize {

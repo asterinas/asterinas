@@ -10,6 +10,22 @@ pub enum BindError {
 }
 
 pub mod tcp {
+    /// An error returned by a TCP stream I/O operation before any byte is transferred.
+    ///
+    /// If some bytes are transferred before a socket or copy error is observed, the
+    /// operation succeeds with the transferred byte count instead.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum IoError<SocketError, CopyError> {
+        /// The operation made no progress.
+        ///
+        /// This usually means the send buffer is full or the receive buffer is empty.
+        NoProgress,
+        /// The underlying TCP socket failed the operation.
+        Socket(SocketError),
+        /// The caller-provided copy function failed.
+        Copy(CopyError),
+    }
+
     /// An error returned by [`TcpListener::new_listen`].
     ///
     /// [`TcpListener::new_listen`]: crate::socket::TcpListener::new_listen
@@ -68,6 +84,12 @@ pub mod tcp {
         }
     }
 
+    impl<CopyError> From<smoltcp::socket::tcp::SendError> for IoError<SendError, CopyError> {
+        fn from(value: smoltcp::socket::tcp::SendError) -> Self {
+            Self::Socket(value.into())
+        }
+    }
+
     /// An error returned by [`TcpConnection::recv`].
     ///
     /// [`TcpConnection::recv`]: crate::socket::TcpConnection::recv
@@ -85,6 +107,12 @@ pub mod tcp {
                 smoltcp::socket::tcp::RecvError::InvalidState => Self::InvalidState,
                 smoltcp::socket::tcp::RecvError::Finished => Self::Finished,
             }
+        }
+    }
+
+    impl<CopyError> From<smoltcp::socket::tcp::RecvError> for IoError<RecvError, CopyError> {
+        fn from(value: smoltcp::socket::tcp::RecvError) -> Self {
+            Self::Socket(value.into())
         }
     }
 }
