@@ -1,5 +1,26 @@
 // Request that the calling thread should be traced by its parent
 ptrace(request = PTRACE_TRACEME, tid, addr, data);
 
+// Read one word from the tracee's USER area
+ptrace(request = PTRACE_PEEKUSER, tid, addr, data);
+
+// Write one word to the tracee's USER area
+ptrace(request = PTRACE_POKEUSER, tid, addr, data);
+
 // Resume a ptrace-stopped tracee, optionally injecting a signal
 ptrace(request = PTRACE_CONT, tid, addr, data);
+
+// Kill a tracee
+ptrace(request = PTRACE_KILL, tid, addr, data);
+
+// Single-step a tracee, optionally injecting a signal
+ptrace(request = PTRACE_SINGLESTEP, tid, addr, data);
+
+// Get tracee general-purpose registers
+ptrace(request = PTRACE_GETREGS, tid, addr, data);
+
+// Set tracee general-purpose registers
+ptrace(request = PTRACE_SETREGS, tid, addr, data);
+
+// Get the siginfo associated with the current ptrace-stop
+ptrace(request = PTRACE_GETSIGINFO, tid, addr, data);
