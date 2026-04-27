@@ -91,10 +91,18 @@ Supported functionality in SCML:
 
 Supported requests:
 * `PTRACE_TRACEME`
+* `PTRACE_PEEKUSER` (x86-64 only)
+* `PTRACE_POKEUSER` (x86-64 only)
 * `PTRACE_CONT`
+* `PTRACE_KILL`
+* `PTRACE_SINGLESTEP` (x86-64 only)
+* `PTRACE_GETREGS` (x86-64 only)
+* `PTRACE_SETREGS` (x86-64 only)
+* `PTRACE_GETSIGINFO`
 
 Additional limitations:
 * Only the main thread of a process can act as the tracer
+* `PTRACE_PEEKUSER` and `PTRACE_POKEUSER` only support offsets for general-purpose registers
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/ptrace.2.html).
