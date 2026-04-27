@@ -9,7 +9,7 @@ use file::{BundleFile, Initramfs};
 use std::{
     io::{BufRead, BufReader, Write},
     os::unix::net::UnixStream,
-    process,
+    process::{self, ExitStatus},
     time::Duration,
 };
 use tempfile::NamedTempFile;
@@ -50,6 +50,39 @@ pub struct BundleManifest {
     pub config: Config,
     pub action: ActionChoice,
     pub last_modified: SystemTime,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum QemuExit {
+    Success,
+    Failed,
+    Unknown,
+}
+
+pub(crate) fn classify_qemu_exit_status(exit_status: ExitStatus) -> QemuExit {
+    if exit_status.success() {
+        return QemuExit::Success;
+    }
+
+    let Some(qemu_exit_code) = exit_status.code() else {
+        return QemuExit::Unknown;
+    };
+
+    // For x86 QEMU with `isa-debug-exit`, the guest exit code is encoded as
+    // `(code << 1) | 1`. Do not decode QEMU's own failure exit code `1`.
+    if qemu_exit_code == 1 {
+        return QemuExit::Unknown;
+    }
+
+    let kernel_exit_code = qemu_exit_code >> 1;
+    match kernel_exit_code {
+        // Corresponds to `ostd::QemuExitCode::Success`.
+        0x10 => QemuExit::Success,
+        // Corresponds to `ostd::QemuExitCode::Failed`.
+        0x20 => QemuExit::Failed,
+        // Unknown exit code, e.g., a triple fault.
+        _ => QemuExit::Unknown,
+    }
 }
 
 impl Bundle {
@@ -207,6 +240,16 @@ impl Bundle {
     }
 
     pub fn run(&self, config: &Config, action: ActionChoice) {
+        let exit_status = self.run_qemu_and_wait(config, action);
+        // FIXME: When panicking it sometimes returns success, why?
+        match classify_qemu_exit_status(exit_status) {
+            QemuExit::Success => {}
+            QemuExit::Failed => std::process::exit(1),
+            QemuExit::Unknown => std::process::exit(2),
+        }
+    }
+
+    pub(crate) fn run_qemu_and_wait(&self, config: &Config, action: ActionChoice) -> ExitStatus {
         match self.can_run_with_config(config, action) {
             Ok(()) => {}
             Err(msg) => {
@@ -303,23 +346,6 @@ impl Bundle {
             exit_status
         };
 
-        // FIXME: When panicking it sometimes returns success, why?
-        if !exit_status.success() {
-            // FIXME: Exit code manipulation is not needed when using non-x86 QEMU
-            let qemu_exit_code = exit_status.code().unwrap();
-            let kernel_exit_code = qemu_exit_code >> 1;
-            match kernel_exit_code {
-                // Success exit through ACPI.
-                0x0 => std::process::exit(0),
-                // Corresponds to `ostd::QemuExitCode::Success`.
-                0x10 => std::process::exit(0),
-                // Corresponds to `ostd::QemuExitCode::Failed`.
-                0x20 => std::process::exit(1),
-                // Unknown exit code, e.g., a triple fault.
-                _ => std::process::exit(2),
-            }
-        }
-
         fn wait_until_guest_kernel_shutdown(config: &Config, qemu_monitor_stream: &mut UnixStream) {
             let log_file = std::fs::File::open(config.work_dir.join("qemu.log")).unwrap();
 
@@ -345,6 +371,7 @@ impl Bundle {
                 std::thread::sleep(Duration::from_millis(100));
             }
         }
+        exit_status
     }
 
     /// Move the vm_image into the bundle.
