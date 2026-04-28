@@ -5,6 +5,7 @@ use ostd::{arch::cpu::context::UserContext, mm::VmIo, task::Task};
 use super::{
     AsPosixThread, AsThreadLocal, ThreadLocal,
     futex::{FutexVisibility, futex_wake},
+    ptrace::PtraceEvent,
     robust_list::wake_robust_futex,
 };
 use crate::{
@@ -39,6 +40,10 @@ pub fn do_exit_group(term_status: TermStatus, ctx: &Context, user_ctx: &mut User
 }
 
 /// Exits the current POSIX thread or process.
+//
+// A mutable reference to `user_ctx` is needed because exiting a traced thread
+// may trigger a "exit" ptrace-event-stop, which snapshots the current user
+// register state and may later restore tracer-updated registers.
 fn exit_internal(
     term_status: TermStatus,
     is_exiting_group: bool,
@@ -46,6 +51,8 @@ fn exit_internal(
     user_ctx: &mut UserContext,
 ) {
     let exit_code = term_status.as_u32();
+    ctx.posix_thread
+        .ptrace_may_stop_on(PtraceEvent::Exit(exit_code), ctx, user_ctx);
 
     let current_task = Task::current().unwrap();
     let current_thread = current_task.as_thread().unwrap();
