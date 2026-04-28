@@ -6,7 +6,10 @@ use crate::{
     prelude::*,
     process::{
         ExitCode, WaitOptions,
-        signal::{DequeuedSignal, sig_num::SigNum, signals::Signal},
+        signal::{
+            DequeuedSignal, c_types::siginfo_t, constants::SIGTRAP, sig_num::SigNum,
+            signals::Signal,
+        },
     },
     thread::Tid,
 };
@@ -188,5 +191,35 @@ impl PtraceEvent {
             | Self::VforkDone(tid) => *tid as usize,
             Self::Exit(exit_code) => *exit_code as usize,
         }
+    }
+
+    /// Creates a `siginfo_t` for the ptrace-stop triggered by this event.
+    pub(super) fn siginfo(&self, ctx: &Context) -> siginfo_t {
+        let code = PtraceWaitStatus::from_event(self).0;
+        let mut siginfo = siginfo_t::new(SIGTRAP, code);
+        siginfo.set_pid_uid_by(ctx);
+        siginfo
+    }
+}
+
+/// The `si_status` code of a ptrace-stop for `wait` syscalls.
+#[derive(Copy, Clone)]
+pub struct PtraceWaitStatus(i32);
+
+impl PtraceWaitStatus {
+    pub(super) fn from_event(event: &PtraceEvent) -> Self {
+        Self(SIGTRAP.as_u8() as i32 | ((event.code() as i32) << 8))
+    }
+
+    pub(super) fn from_signal(sig: SigNum) -> Self {
+        Self(sig.as_u8() as i32)
+    }
+
+    pub fn to_wait4_status(self) -> u32 {
+        ((self.0 as u32) << 8) | 0x7f
+    }
+
+    pub fn to_waitid_si_status(self) -> i32 {
+        self.0
     }
 }
