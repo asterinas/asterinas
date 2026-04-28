@@ -23,16 +23,16 @@ use crate::{
 /// The context that can be accessed from the current POSIX thread.
 #[derive(Clone)]
 pub struct Context<'a> {
-    pub process: Arc<Process>,
-    pub thread_local: &'a ThreadLocal,
-    pub posix_thread: &'a PosixThread,
-    pub thread: &'a Thread,
+    pub(crate) process: Arc<Process>,
+    pub(crate) thread_local: &'a ThreadLocal,
+    pub(crate) posix_thread: &'a PosixThread,
+    pub(crate) thread: &'a Thread,
     pub task: &'a Task,
 }
 
 impl Context<'_> {
     /// Gets the userspace of the current task.
-    pub fn user_space(&self) -> CurrentUserSpace<'_> {
+    pub(crate) fn user_space(&self) -> CurrentUserSpace<'_> {
         CurrentUserSpace(self.thread_local.vmar().borrow())
     }
 }
