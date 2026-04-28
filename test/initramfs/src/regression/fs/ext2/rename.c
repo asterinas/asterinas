@@ -17,6 +17,8 @@
 
 #define DIR_RENAMED_CHILD DIR_RENAMED "/child"
 #define DIR_RENAMED_GRANDCHILD DIR_RENAMED_CHILD "/grandchild"
+#define FILE_A BASE_DIR "/A"
+#define FILE_B BASE_DIR "/B"
 
 #define CROSS_MOUNT_DIR BASE_DIR "/mnt"
 #define CROSS_MOUNT_DIR_CHILD CROSS_MOUNT_DIR "/child"
@@ -42,6 +44,8 @@ static void ensure_test_tree(void)
 
 static void cleanup_test_tree(void)
 {
+	CHECK_WITH(unlink(FILE_A), _ret == 0 || errno == ENOENT);
+	CHECK_WITH(unlink(FILE_B), _ret == 0 || errno == ENOENT);
 	remove_if_exists(DIR_TARGET);
 	remove_if_exists(DIR_RENAMED_GRANDCHILD);
 	remove_if_exists(DIR_RENAMED_CHILD);
@@ -93,6 +97,27 @@ FN_TEST(rename_to_new_name)
 	TEST_SUCC(access(DIR_RENAMED_CHILD, F_OK));
 	TEST_ERRNO(access(DIR, F_OK), ENOENT);
 
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(rename_overwrites_negative_cache_on_ext2)
+{
+	ensure_dir(BASE_DIR);
+
+	int fd_a = TEST_SUCC(open(FILE_A, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(close(fd_a));
+	int fd_b = TEST_SUCC(open(FILE_B, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(close(fd_b));
+
+	TEST_SUCC(unlink(FILE_B));
+	TEST_ERRNO(access(FILE_B, F_OK), ENOENT);
+
+	TEST_SUCC(rename(FILE_A, FILE_B));
+	TEST_SUCC(access(FILE_B, F_OK));
+	TEST_SUCC(access(FILE_B, F_OK));
+
+	TEST_SUCC(unlink(FILE_B));
 	cleanup_test_tree();
 }
 END_TEST()
