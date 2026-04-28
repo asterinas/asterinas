@@ -18,9 +18,9 @@ use crate::{
         signal::{
             DequeuedSignal, PauseReason,
             c_types::siginfo_t,
-            constants::{CLD_TRAPPED, SIGCHLD},
+            constants::{CLD_TRAPPED, SIGCHLD, SIGKILL},
             sig_num::SigNum,
-            signals::{raw::RawSignal, user::UserSignal},
+            signals::{kernel::KernelSignal, raw::RawSignal, user::UserSignal},
         },
     },
     thread::{Thread, Tid},
@@ -55,8 +55,16 @@ impl PosixThread {
 
     /// Detaches the tracer of this thread.
     pub(in crate::process) fn detach_tracer(&self) {
+        self.detach_tracer_with(|_| {});
+    }
+
+    /// Detaches the tracer of this thread with a callback.
+    fn detach_tracer_with<F>(&self, detach_callback: F)
+    where
+        F: FnOnce(&TraceeState),
+    {
         if let Some(status) = self.tracee_status.get() {
-            status.detach_tracer();
+            status.detach_tracer_with(detach_callback);
             self.wake_signalled_waker();
         }
     }
@@ -242,11 +250,28 @@ impl PosixThread {
             return;
         };
 
+        let mut tracees_to_kill = Vec::new();
+
         // Lock order: tracer.tracees -> tracee.tracee_status
         let tracees = tracees.lock();
-        for (_, tracee) in tracees.iter() {
+        for (_, tracee_thread) in tracees.iter() {
+            let tracee = tracee_thread.as_posix_thread().unwrap();
+            let mut needs_kill = false;
+            tracee.detach_tracer_with(|state| {
+                if state.options.contains(PtraceOptions::PTRACE_O_EXITKILL) {
+                    needs_kill = true;
+                }
+            });
+            if needs_kill {
+                tracees_to_kill.push(tracee_thread.clone());
+            }
+        }
+
+        drop(tracees);
+
+        for tracee in tracees_to_kill {
             let tracee = tracee.as_posix_thread().unwrap();
-            tracee.detach_tracer();
+            tracee.enqueue_signal(Box::new(KernelSignal::new(SIGKILL)));
         }
     }
 }
@@ -278,7 +303,10 @@ impl TraceeStatus {
         Ok(())
     }
 
-    fn detach_tracer(&self) {
+    fn detach_tracer_with<F>(&self, detach_callback: F)
+    where
+        F: FnOnce(&TraceeState),
+    {
         // Hold the lock first to avoid race conditions.
         let mut state = self.state.lock();
 
@@ -289,6 +317,7 @@ impl TraceeStatus {
                 arch_ptrace::disable_single_step(regs);
             }
         }
+        detach_callback(&state);
         self.is_stopped.store(false, Ordering::Relaxed);
     }
 
