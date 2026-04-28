@@ -2,6 +2,7 @@
 
 #include <elf.h>
 #include <stddef.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/fcntl.h>
@@ -21,8 +22,16 @@ static struct custom_elf elf;
 
 #define EXE_PATH "/tmp/my_exe"
 
-#define UD2_INSTR \
-	"\x0f\x0b" // "ud2" in x86-64. TODO: Support other architectures.
+#if defined(__x86_64__)
+#define ELF_MACHINE EM_X86_64
+static const unsigned char illegal_instr[] = { 0x0f, 0x0b }; // `ud2`.
+#elif defined(__riscv) && __riscv_xlen == 64
+#define ELF_MACHINE EM_RISCV
+// A zero-filled instruction is illegal in RISC-V.
+static const unsigned char illegal_instr[] = { 0x00, 0x00, 0x00, 0x00 };
+#else
+#error "unsupported architecture"
+#endif
 
 FN_SETUP(init_exec)
 {
@@ -35,7 +44,7 @@ FN_SETUP(init_exec)
 	elf.ehdr.e_ident[EI_VERSION] = EV_CURRENT;
 
 	elf.ehdr.e_type = ET_EXEC;
-	elf.ehdr.e_machine = EM_X86_64;
+	elf.ehdr.e_machine = ELF_MACHINE;
 	elf.ehdr.e_version = EV_CURRENT;
 	elf.ehdr.e_entry = BASE_ADDRESS + offsetof(struct custom_elf, buf);
 
@@ -76,7 +85,7 @@ static int do_execve_good(void)
 	pid_t pid;
 	int status;
 
-	memcpy(elf.buf, UD2_INSTR, sizeof(UD2_INSTR));
+	memcpy(elf.buf, illegal_instr, sizeof(illegal_instr));
 
 	pid = CHECK(fork());
 	if (pid == 0) {
@@ -288,8 +297,39 @@ static int do_execve_fatal(void)
 #else /* __asterinas__ */
 
 #include <sys/ptrace.h>
-#include <sys/user.h>
 #include <sys/syscall.h>
+
+#if defined(__x86_64__)
+#include <sys/user.h>
+#elif defined(__riscv) && __riscv_xlen == 64
+#include <asm/ptrace.h>
+#include <sys/uio.h>
+#endif
+
+static void get_execve_regs(pid_t pid, struct user_regs_struct *regs)
+{
+#if defined(__x86_64__)
+	CHECK_WITH(ptrace(PTRACE_GETREGS, pid, NULL, regs),
+		   _ret >= 0 && regs->orig_rax == __NR_execve);
+#elif defined(__riscv) && __riscv_xlen == 64
+	struct iovec iov = { .iov_base = regs, .iov_len = sizeof(*regs) };
+
+	CHECK(ptrace(PTRACE_GETREGSET, pid, (void *)NT_PRSTATUS, &iov));
+#else
+#error "unsupported architecture"
+#endif
+}
+
+static int execve_result_errno(const struct user_regs_struct *regs)
+{
+#if defined(__x86_64__)
+	return -regs->rax;
+#elif defined(__riscv) && __riscv_xlen == 64
+	return -(long)regs->a0;
+#else
+#error "unsupported architecture"
+#endif
+}
 
 static int do_execve_fatal(void)
 {
@@ -324,14 +364,13 @@ static int do_execve_fatal(void)
 					  WSTOPSIG(status) == SIGTRAP);
 
 	// Get `execve` results.
-	CHECK_WITH(ptrace(PTRACE_GETREGS, pid, NULL, &regs),
-		   _ret >= 0 && regs.orig_rax == __NR_execve);
+	get_execve_regs(pid, &regs);
 
 	CHECK(ptrace(PTRACE_DETACH, pid, NULL, NULL));
 	CHECK_WITH(wait(&status), _ret == pid && WIFSIGNALED(status) &&
 					  WTERMSIG(status) == SIGSEGV);
 
-	errno = -regs.rax;
+	errno = execve_result_errno(&regs);
 	return errno == 0 ? 0 : -1;
 }
 
