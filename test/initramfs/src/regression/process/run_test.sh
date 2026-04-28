@@ -16,9 +16,7 @@ set -e
 ./cpu_affinity/cpu_affinity
 
 ./execve/execve
-if [ "$(uname -m)" = "x86_64" ]; then
-    ./execve/execve_err
-fi
+./execve/execve_err
 ./execve/execve_memfd
 ./execve/execve_mt_parent
 

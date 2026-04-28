@@ -4,7 +4,7 @@ SUBDIRS := \
 	in_c \
 	in_c_pie \
 
-ifeq ($(HOST_PLATFORM), x86_64-linux)
+ifneq ($(filter $(HOST_PLATFORM),x86_64-linux riscv64-linux),)
 SUBDIRS += in_assembly
 endif
 

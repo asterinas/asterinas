@@ -6,6 +6,8 @@ set -e
 
 ./in_c/hello
 ./in_c_pie/hello
-if [ "$(uname -m)" = "x86_64" ]; then
-    ./in_assembly/hello
-fi
+case "$(uname -m)" in
+    x86_64|riscv64)
+        ./in_assembly/hello
+        ;;
+esac
