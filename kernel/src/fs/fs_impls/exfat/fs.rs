@@ -27,10 +27,10 @@ use crate::{
     fs::{
         exfat::{constants::*, inode::Ino},
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::Inode,
             page_cache::{CachePage, PageCache, PageCacheBackend},
-            registry::{FsProperties, FsType},
+            registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
     prelude::*,
@@ -478,13 +478,11 @@ impl FsType for ExfatType {
         FsProperties::NEED_DISK
     }
 
-    fn create(
-        &self,
-        _flags: FsFlags,
-        _args: Option<CString>,
-        disk: Option<Arc<dyn BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
-        ExfatFs::open(disk.unwrap(), ExfatMountOptions::default()).map(|fs| fs as _)
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+        Ok(ExfatFs::open(
+            fs_creation_ctx.resolve_block_device()?,
+            ExfatMountOptions::default(),
+        )?)
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

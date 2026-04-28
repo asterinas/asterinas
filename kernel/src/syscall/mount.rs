@@ -7,7 +7,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsFlags},
             path::{AT_FDCWD, FsPath, MountPropType, Path, PerMountFlags},
-            registry::{FsProperties, FsType},
+            registry::{FsCreationCtx, FsType},
         },
     },
     prelude::*,
@@ -227,9 +227,9 @@ fn do_new_mount(
     Ok(())
 }
 
-/// Gets the filesystem by fs_type and dev_name.
+/// Gets the filesystem by fs_type and source.
 fn open_fs(
-    dev_name: Option<&str>,
+    source: Option<&str>,
     flags: MountFlags,
     fs_type: &dyn FsType,
     data_addr: Vaddr,
@@ -242,32 +242,8 @@ fn open_fs(
         Some(user_space.read_cstring(data_addr, MAX_FILENAME_LEN)?)
     };
 
-    let disk = if fs_type.properties().contains(FsProperties::NEED_DISK) {
-        let dev_name = dev_name
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the source is not specified"))?;
-        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, dev_name)?;
-        let path = ctx
-            .thread_local
-            .borrow_fs()
-            .resolver()
-            .read()
-            .lookup_no_follow(&fs_path)?;
-        if !path.type_().is_device() {
-            return_errno_with_message!(Errno::ENODEV, "the path is not a device file");
-        }
-
-        let id = path.metadata().self_dev_id;
-        let device = id.and_then(aster_block::lookup);
-        if device.is_none() {
-            return_errno_with_message!(Errno::ENODEV, "the device is not found");
-        }
-
-        device
-    } else {
-        None
-    };
-
-    fs_type.create(flags.into(), data, disk)
+    let fs_creation_ctx = FsCreationCtx::new(source, flags.into(), data.as_deref(), ctx);
+    fs_type.create(&fs_creation_ctx)
 }
 
 bitflags! {

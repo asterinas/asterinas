@@ -12,8 +12,8 @@ use super::{
     super_block::{RawSuperBlock, SUPER_BLOCK_OFFSET, SuperBlock},
 };
 use crate::fs::vfs::{
-    file_system::{FileSystem, FsEventSubscriberStats, FsFlags},
-    registry::{FsProperties, FsType},
+    file_system::{FileSystem, FsEventSubscriberStats},
+    registry::{FsCreationCtx, FsProperties, FsType},
 };
 
 /// The root inode number.
@@ -463,13 +463,8 @@ impl FsType for Ext2Type {
         FsProperties::NEED_DISK
     }
 
-    fn create(
-        &self,
-        _flags: FsFlags,
-        _args: Option<CString>,
-        disk: Option<Arc<dyn BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
-        Ext2::open(disk.unwrap()).map(|fs| fs as _)
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+        Ok(Ext2::open(fs_creation_ctx.resolve_block_device()?)?)
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

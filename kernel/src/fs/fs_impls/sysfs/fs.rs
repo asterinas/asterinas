@@ -9,9 +9,9 @@ use crate::{
         sysfs::{self, inode::SysFsInode},
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::Inode,
-            registry::{FsProperties, FsType},
+            registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
     prelude::*,
@@ -92,13 +92,8 @@ impl FsType for SysFsType {
         FsProperties::empty()
     }
 
-    fn create(
-        &self,
-        _flags: FsFlags,
-        _args: Option<CString>,
-        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
-        Ok(SysFs::singleton().clone() as _)
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+        Ok(SysFs::singleton().clone())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

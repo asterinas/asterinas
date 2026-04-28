@@ -2,7 +2,6 @@
 
 use alloc::sync::Arc;
 
-use aster_block::BlockDevice;
 use aster_systree::EmptyNode;
 use ostd::task::Task;
 use spin::Once;
@@ -14,12 +13,11 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::Inode,
-            registry::{FsProperties, FsType},
+            registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
-    prelude::*,
     process::posix_thread::AsThreadLocal,
 };
 
@@ -95,13 +93,8 @@ impl FsType for CgroupFsType {
         FsProperties::empty()
     }
 
-    fn create(
-        &self,
-        _flags: FsFlags,
-        _args: Option<CString>,
-        _disk: Option<Arc<dyn BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
-        Ok(CgroupFs::singleton().clone() as _)
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+        Ok(CgroupFs::singleton().clone())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

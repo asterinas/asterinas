@@ -4,9 +4,9 @@ use crate::{
     fs::{
         ramfs::RamFs,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::Inode,
-            registry::{FsProperties, FsType},
+            registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
     prelude::*,
@@ -63,12 +63,7 @@ impl FsType for TmpFsType {
         FsProperties::empty()
     }
 
-    fn create(
-        &self,
-        _flags: FsFlags,
-        _args: Option<CString>,
-        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         Ok(TmpFs::new())
     }
 

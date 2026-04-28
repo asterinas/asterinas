@@ -23,10 +23,10 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::{DirentCounter, DirentVisitor, NAME_MAX},
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
             path::{FsPath, Path},
-            registry::{FsProperties, FsType},
+            registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -1167,17 +1167,12 @@ impl FsType for OverlayFsType {
         FsProperties::empty()
     }
 
-    fn create(
-        &self,
-        _flags: FsFlags,
-        args: Option<CString>,
-        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         let mut lower = Vec::new();
         let mut upper = "";
         let mut work = "";
 
-        let args = args.ok_or(Error::new(Errno::EINVAL))?;
+        let args = fs_creation_ctx.args().ok_or(Error::new(Errno::EINVAL))?;
         let args = args.to_string_lossy();
         let entries = args.split(',');
 
@@ -1221,7 +1216,7 @@ impl FsType for OverlayFsType {
             .collect::<Result<Vec<_>>>()?;
         let work = path_resolver.lookup(&FsPath::try_from(work)?)?;
 
-        OverlayFs::new(upper, lower, work).map(|fs| fs as _)
+        Ok(OverlayFs::new(upper, lower, work)?)
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

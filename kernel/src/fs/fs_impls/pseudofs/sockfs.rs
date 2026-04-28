@@ -9,9 +9,9 @@ use crate::{
         file::mkmod,
         pseudofs::{NaivePseudoFs, PseudoInodeType},
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FileSystem,
             path::{Mount, Path},
-            registry::{FsProperties, FsType},
+            registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
     prelude::*,
@@ -63,12 +63,7 @@ impl FsType for SockFsType {
         FsProperties::empty()
     }
 
-    fn create(
-        &self,
-        _flags: FsFlags,
-        _args: Option<CString>,
-        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         return_errno_with_message!(Errno::EINVAL, "sockfs cannot be mounted");
     }
 

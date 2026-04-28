@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ffi::CStr;
+
 use aster_block::BlockDevice;
 use aster_systree::{
     AttrLessBranchNodeFields, SysNode, SysObj, SysPerms, SysStr, inherit_sys_branch_node,
@@ -9,7 +11,10 @@ use spin::Once;
 use crate::{
     fs::{
         fs_impls::sysfs,
-        vfs::file_system::{FileSystem, FsFlags},
+        vfs::{
+            file_system::{FileSystem, FsFlags},
+            path::{AT_FDCWD, FsPath},
+        },
     },
     prelude::*,
 };
@@ -23,15 +28,7 @@ pub trait FsType: Send + Sync + 'static {
     fn properties(&self) -> FsProperties;
 
     /// Creates an instance of this FS type.
-    ///
-    /// The optional `disk` argument must be provided
-    /// if `self.properties()` contains `FsProperties::NEED_DISK`.
-    fn create(
-        &self,
-        flags: FsFlags,
-        args: Option<CString>,
-        disk: Option<Arc<dyn BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>>;
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>>;
 
     /// Returns a `SysTree` node that represents the FS type.
     ///
@@ -41,6 +38,72 @@ pub trait FsType: Send + Sync + 'static {
     /// The same result will be returned by this method
     /// when it is called multiple times.
     fn sysnode(&self) -> Option<Arc<dyn SysNode>>;
+}
+
+/// A context that describes the inputs used to create a filesystem instance.
+///
+/// This context will be used by [`FsType::create`].
+pub struct FsCreationCtx<'a> {
+    source: Option<&'a str>,
+    flags: FsFlags,
+    args: Option<&'a CStr>,
+    task_ctx: &'a Context<'a>,
+}
+
+impl<'a> FsCreationCtx<'a> {
+    /// Creates a filesystem creation context from syscall inputs.
+    pub fn new(
+        source: Option<&'a str>,
+        flags: FsFlags,
+        args: Option<&'a CStr>,
+        task_ctx: &'a Context<'a>,
+    ) -> Self {
+        Self {
+            flags,
+            source,
+            args,
+            task_ctx,
+        }
+    }
+
+    /// Returns the user-supplied mount source.
+    pub(in crate::fs) fn source(&self) -> Option<&str> {
+        self.source
+    }
+
+    /// Returns the user-supplied mount flags.
+    #[expect(dead_code)]
+    pub(in crate::fs) fn flags(&self) -> FsFlags {
+        self.flags
+    }
+
+    /// Returns the filesystem-specific mount arguments.
+    pub(in crate::fs) fn args(&self) -> Option<&CStr> {
+        self.args
+    }
+
+    /// Resolves the mount source into a block device.
+    pub(in crate::fs) fn resolve_block_device(&self) -> Result<Arc<dyn BlockDevice>> {
+        let source = self
+            .source()
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the source is not specified"))?;
+        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, source)?;
+        let path = self
+            .task_ctx
+            .thread_local
+            .borrow_fs()
+            .resolver()
+            .read()
+            .lookup_no_follow(&fs_path)?;
+
+        if !path.type_().is_device() {
+            return_errno_with_message!(Errno::ENODEV, "the path is not a device file");
+        }
+        let id = path.metadata().self_dev_id;
+
+        id.and_then(aster_block::lookup)
+            .ok_or_else(|| Error::with_message(Errno::ENODEV, "the device is not found"))
+    }
 }
 
 bitflags! {

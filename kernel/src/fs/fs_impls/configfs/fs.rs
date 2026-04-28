@@ -2,24 +2,20 @@
 
 use alloc::sync::Arc;
 
-use aster_block::BlockDevice;
 use aster_systree::SysNode;
 use spin::Once;
 
 use super::inode::ConfigInode;
-use crate::{
-    fs::{
-        Result,
-        configfs::systree_node::ConfigRootNode,
-        pseudofs::AnonDeviceId,
-        utils::systree_inode::SysTreeInodeTy,
-        vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
-            inode::Inode,
-            registry::{FsProperties, FsType},
-        },
+use crate::fs::{
+    Result,
+    configfs::systree_node::ConfigRootNode,
+    pseudofs::AnonDeviceId,
+    utils::systree_inode::SysTreeInodeTy,
+    vfs::{
+        file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+        inode::Inode,
+        registry::{FsCreationCtx, FsProperties, FsType},
     },
-    prelude::*,
 };
 
 /// A file system that provides a user-space interface for configuring kernel objects.
@@ -97,13 +93,8 @@ impl FsType for ConfigFsType {
         FsProperties::empty()
     }
 
-    fn create(
-        &self,
-        _flags: FsFlags,
-        _args: Option<CString>,
-        _disk: Option<Arc<dyn BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
-        Ok(ConfigFs::singleton().clone() as _)
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+        Ok(ConfigFs::singleton().clone())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn SysNode>> {

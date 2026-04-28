@@ -24,11 +24,11 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::{CStr256, DirentVisitor},
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
             page_cache::{CachePage, PageCache, PageCacheBackend},
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
-            registry::{FsProperties, FsType},
+            registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -1333,12 +1333,7 @@ impl FsType for RamFsType {
         FsProperties::empty()
     }
 
-    fn create(
-        &self,
-        _flags: FsFlags,
-        _args: Option<CString>,
-        _disk: Option<Arc<dyn aster_block::BlockDevice>>,
-    ) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         Ok(RamFs::new())
     }
 
