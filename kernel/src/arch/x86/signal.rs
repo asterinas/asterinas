@@ -8,6 +8,7 @@ use ostd::{
 use crate::{
     process::signal::{SignalContext, sig_num::SigNum, signals::fault::FaultSignal},
     thread::exception::ToFaultSignal,
+    vm::vmar::PageFaultAddressState,
 };
 
 impl SignalContext for UserContext {
@@ -19,7 +20,11 @@ impl SignalContext for UserContext {
 }
 
 impl ToFaultSignal for CpuException {
-    fn to_fault_signal(&self, user_ctx: &UserContext) -> Option<FaultSignal> {
+    fn to_fault_signal(
+        &self,
+        user_ctx: &UserContext,
+        _page_fault_address_state: Option<PageFaultAddressState>,
+    ) -> Option<FaultSignal> {
         use crate::process::signal::constants::*;
 
         let rip = user_ctx.instruction_pointer() as u64;

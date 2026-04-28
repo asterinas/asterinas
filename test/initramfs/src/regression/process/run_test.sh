@@ -51,6 +51,7 @@ set -e
 ./signal/pidfd_send_signal
 ./signal/signal_fd
 ./signal/signal_test2
+./signal/fault_info
 
 if [ "$(uname -m)" = "x86_64" ]; then
     ./signal/fault_signals

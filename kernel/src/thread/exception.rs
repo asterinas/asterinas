@@ -9,36 +9,41 @@ use ostd::{arch::cpu::context::UserContext, task::Task};
 use crate::{
     prelude::*,
     process::signal::signals::fault::FaultSignal,
-    vm::vmar::{PageFaultInfo, Vmar},
+    vm::vmar::{PageFaultAddressState, PageFaultInfo, Vmar},
 };
 
 pub(super) fn handle_exception(ctx: &Context, user_ctx: &UserContext, exception: CpuException) {
     debug!("handle exception: {:#x?}", exception);
 
-    if let Ok(page_fault_info) = PageFaultInfo::try_from(&exception) {
+    let page_fault_address_state = if let Ok(page_fault_info) = PageFaultInfo::try_from(&exception)
+    {
         let user_space = ctx.user_space();
         let vmar = user_space.vmar();
-        if handle_page_fault_from_vmar(vmar, &page_fault_info).is_ok() {
-            return;
+        match handle_page_fault_from_vmar(vmar, &page_fault_info) {
+            Ok(()) => return,
+            Err(address_state) => Some(address_state),
         }
-    }
+    } else {
+        None
+    };
 
     // We cannot handle most exceptions. Send a fault signal to the current thread before returning
     // to user space.
-    generate_fault_signal(exception, ctx, user_ctx);
+    generate_fault_signal(exception, ctx, user_ctx, page_fault_address_state);
 }
 
 /// Handles the page fault occurs in the VMAR.
 fn handle_page_fault_from_vmar(
     vmar: &Vmar,
     page_fault_info: &PageFaultInfo,
-) -> core::result::Result<(), ()> {
-    if let Err(e) = vmar.handle_page_fault(page_fault_info) {
+) -> core::result::Result<(), PageFaultAddressState> {
+    if let Err(e) = vmar.handle_page_fault_with_report(page_fault_info) {
         warn!(
             "page fault handler failed: info: {:#x?}, err: {:?}",
-            page_fault_info, e
+            page_fault_info,
+            e.error()
         );
-        return Err(());
+        return Err(e.address_state());
     }
     Ok(())
 }
@@ -59,12 +64,21 @@ pub trait ToFaultSignal {
     /// architectures.
     ///
     /// [requires]: https://pubs.opengroup.org/onlinepubs/009695399/basedefs/signal.h.html
-    fn to_fault_signal(&self, user_ctx: &UserContext) -> Option<FaultSignal>;
+    fn to_fault_signal(
+        &self,
+        user_ctx: &UserContext,
+        page_fault_address_state: Option<PageFaultAddressState>,
+    ) -> Option<FaultSignal>;
 }
 
 /// Generates a fault signal for the current thread.
-fn generate_fault_signal(exception: CpuException, ctx: &Context, user_ctx: &UserContext) {
-    let Some(signal) = exception.to_fault_signal(user_ctx) else {
+fn generate_fault_signal(
+    exception: CpuException,
+    ctx: &Context,
+    user_ctx: &UserContext,
+    page_fault_address_state: Option<PageFaultAddressState>,
+) {
+    let Some(signal) = exception.to_fault_signal(user_ctx, page_fault_address_state) else {
         panic!("`{:?}` cannot be handled via signals", exception);
     };
     ctx.posix_thread.enqueue_signal(Box::new(signal));
@@ -81,5 +95,5 @@ pub(super) fn page_fault_handler(info: &CpuException) -> core::result::Result<()
     }
 
     let user_space = CurrentUserSpace::new(thread_local);
-    handle_page_fault_from_vmar(user_space.vmar(), &info.try_into().unwrap())
+    handle_page_fault_from_vmar(user_space.vmar(), &info.try_into().unwrap()).map_err(|_| ())
 }

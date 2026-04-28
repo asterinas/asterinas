@@ -8,6 +8,7 @@ use ostd::{
 use crate::{
     process::signal::{SignalContext, sig_num::SigNum, signals::fault::FaultSignal},
     thread::exception::ToFaultSignal,
+    vm::vmar::PageFaultAddressState,
 };
 
 impl SignalContext for UserContext {
@@ -19,7 +20,11 @@ impl SignalContext for UserContext {
 }
 
 impl ToFaultSignal for CpuException {
-    fn to_fault_signal(&self, user_ctx: &UserContext) -> Option<FaultSignal> {
+    fn to_fault_signal(
+        &self,
+        user_ctx: &UserContext,
+        page_fault_address_state: Option<PageFaultAddressState>,
+    ) -> Option<FaultSignal> {
         use CpuException::*;
 
         use crate::process::signal::constants::*;
@@ -49,8 +54,11 @@ impl ToFaultSignal for CpuException {
             }
             SupervisorEnvCall => (SIGILL, ILL_ILLTRP, sepc),
             InstructionPageFault(addr) | LoadPageFault(addr) | StorePageFault(addr) => {
-                // FIXME: The code should be `SEGV_ACCERR` for faults within an existing mapping.
-                (SIGSEGV, SEGV_MAPERR, *addr as u64)
+                let code = match page_fault_address_state {
+                    Some(PageFaultAddressState::Mapped) => SEGV_ACCERR,
+                    Some(PageFaultAddressState::Unmapped) | None => SEGV_MAPERR,
+                };
+                (SIGSEGV, code, *addr as u64)
             }
             Unknown => (SIGILL, ILL_ILLTRP, sepc),
 

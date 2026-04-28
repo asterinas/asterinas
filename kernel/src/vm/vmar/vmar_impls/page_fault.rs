@@ -5,6 +5,15 @@ use crate::{prelude::*, vm::perms::VmPerms};
 
 impl Vmar {
     pub fn handle_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
+        self.handle_page_fault_with_report(page_fault_info)
+            .map_err(PageFaultError::into_error)
+    }
+
+    /// Handles a page fault and reports the faulting address state on failure.
+    pub(crate) fn handle_page_fault_with_report(
+        &self,
+        page_fault_info: &PageFaultInfo,
+    ) -> core::result::Result<(), PageFaultError> {
         let inner = self.inner.read();
 
         let address = page_fault_info.address;
@@ -12,14 +21,58 @@ impl Vmar {
             debug_assert!(vm_mapping.range().contains(&address));
 
             let mut rss_delta = RssDelta::new(self);
-            return vm_mapping.handle_page_fault(&self.vm_space, page_fault_info, &mut rss_delta);
+            return vm_mapping
+                .handle_page_fault(&self.vm_space, page_fault_info, &mut rss_delta)
+                .map_err(|error| PageFaultError::new(PageFaultAddressState::Mapped, error));
         }
 
-        return_errno_with_message!(
-            Errno::EACCES,
-            "no VM mappings contain the page fault address"
-        );
+        Err(PageFaultError::new(
+            PageFaultAddressState::Unmapped,
+            Error::with_message(
+                Errno::EACCES,
+                "no VM mappings contain the page fault address",
+            ),
+        ))
     }
+}
+
+/// An unhandled page fault with VMAR-level context.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PageFaultError {
+    address_state: PageFaultAddressState,
+    error: Error,
+}
+
+impl PageFaultError {
+    fn new(address_state: PageFaultAddressState, error: Error) -> Self {
+        Self {
+            address_state,
+            error,
+        }
+    }
+
+    /// Returns whether the faulting address is covered by a VMAR mapping.
+    pub(crate) fn address_state(&self) -> PageFaultAddressState {
+        self.address_state
+    }
+
+    /// Returns the underlying page-fault handling error.
+    pub(crate) fn error(&self) -> Error {
+        self.error
+    }
+
+    fn into_error(self) -> Error {
+        self.error
+    }
+}
+
+/// Whether a faulting address is covered by a VMAR mapping.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PageFaultAddressState {
+    /// The faulting address is not covered by any VMAR mapping.
+    Unmapped,
+    /// The faulting address is covered by a VMAR mapping.
+    Mapped,
 }
 
 /// Page fault information converted from [`CpuException`].
