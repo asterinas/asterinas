@@ -279,8 +279,8 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_UTIMENSAT = 88               => sys_utimensat(args[..4]);
             SYS_CAPGET = 90                  => sys_capget(args[..2]);
             SYS_CAPSET = 91                  => sys_capset(args[..2]);
-            SYS_EXIT = 93                    => sys_exit(args[..1]);
-            SYS_EXIT_GROUP = 94              => sys_exit_group(args[..1]);
+            SYS_EXIT = 93                    => sys_exit(args[..1], &mut user_ctx);
+            SYS_EXIT_GROUP = 94              => sys_exit_group(args[..1], &mut user_ctx);
             SYS_WAITID = 95                  => sys_waitid(args[..5]);
             SYS_SET_TID_ADDRESS = 96         => sys_set_tid_address(args[..1]);
             SYS_UNSHARE = 97                 => sys_unshare(args[..1]);
