@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 #include <linux/nsfs.h>
 #include <linux/sched.h>
 #include <poll.h>
@@ -43,6 +44,16 @@ static const int clone_flags[] = {
 	CLONE_NEWCGROUP, CLONE_NEWIPC, CLONE_NEWNS, CLONE_NEWUSER, CLONE_NEWUTS,
 };
 static const size_t ns_count = sizeof(ns_files) / sizeof(ns_files[0]);
+
+#define DOT_DOTDOT_DIRENT_BUF_SIZE 48
+
+struct linux_dirent64 {
+	uint64_t d_ino;
+	int64_t d_off;
+	unsigned short d_reclen;
+	unsigned char d_type;
+	char d_name[];
+};
 
 /* -------------------------------------------------------------------------- */
 
@@ -644,5 +655,48 @@ FN_TEST(open_with_o_path)
 	TEST_ERRNO(lseek(nsfd, 0, SEEK_SET), EBADF);
 
 	TEST_SUCC(close(nsfd));
+}
+END_TEST()
+
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Verify that a stale `/proc/<pid>/ns` directory fd fails with ENOENT once
+ * iteration advances past `.` and `..`.
+ */
+FN_TEST(stale_ns_dir_getdents_after_reap)
+{
+	char path[PATH_MAX];
+	char buf[DOT_DOTDOT_DIRENT_BUF_SIZE];
+	int status;
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		pause();
+		_exit(1);
+	}
+
+	TEST_RES(snprintf(path, sizeof(path), "/proc/%d/ns", pid),
+		 _ret > 0 && _ret < (int)sizeof(path));
+	int dirfd = TEST_SUCC(open(path, O_RDONLY | O_DIRECTORY));
+
+	ssize_t bytes = TEST_RES(
+		syscall(SYS_getdents64, dirfd, buf, sizeof(buf)), _ret > 0);
+	struct linux_dirent64 *first = (struct linux_dirent64 *)buf;
+	struct linux_dirent64 *second =
+		(struct linux_dirent64 *)(buf + first->d_reclen);
+
+	TEST_RES(bytes,
+		 first->d_reclen > 0 &&
+			 (size_t)bytes == first->d_reclen + second->d_reclen);
+	TEST_RES(strcmp(first->d_name, "."), _ret == 0);
+	TEST_RES(strcmp(second->d_name, ".."), _ret == 0);
+
+	TEST_SUCC(kill(pid, SIGKILL));
+	TEST_RES(waitpid(pid, &status, 0), _ret == pid && WIFSIGNALED(status) &&
+						   WTERMSIG(status) == SIGKILL);
+
+	TEST_ERRNO(syscall(SYS_getdents64, dirfd, buf, sizeof(buf)), ENOENT);
+	TEST_SUCC(close(dirfd));
 }
 END_TEST()

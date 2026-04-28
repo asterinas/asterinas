@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -44,9 +45,12 @@ FN_TEST(proc_root_tid_entry)
 	};
 	char command[128];
 	char ch;
+	struct stat first;
+	struct stat second;
 	pthread_t thread;
 	pid_t pid = TEST_SUCC(getpid());
 
+	/* Keep a non-leader thread alive while probing its procfs entry. */
 	TEST_SUCC(pipe(context.ready_pipe));
 	TEST_SUCC(pipe(context.exit_pipe));
 	TEST_SUCC(pthread_create(&thread, NULL, thread_fn, &context));
@@ -54,18 +58,27 @@ FN_TEST(proc_root_tid_entry)
 		 _ret == 1 && ch == 'R' && context.tid > 0 &&
 			 context.tid != pid);
 
+	/* /proc/<tid> exists while the non-leader thread is alive. */
 	print_command(command, sizeof(command), "ls /proc/%d > /dev/null",
 		      context.tid);
 	TEST_RES(system(command), _ret == 0);
 
+	/* Repeated lookups of the live /proc/<tid> entry resolve to one inode. */
+	print_command(command, sizeof(command), "/proc/%d", context.tid);
+	TEST_SUCC(stat(command, &first));
+	TEST_RES(stat(command, &second), first.st_ino == second.st_ino);
+
+	/* The non-leader tid is directly lookable but not listed in /proc. */
 	print_command(command, sizeof(command),
 		      "ls /proc -al | grep ' %d$' > /dev/null", context.tid);
 	TEST_RES(system(command), _ret != 0);
 
+	/* The process leader remains listed in /proc. */
 	print_command(command, sizeof(command),
 		      "ls /proc -al | grep ' %d$' > /dev/null", pid);
 	TEST_RES(system(command), _ret == 0);
 
+	/* Release the thread after all /proc/<tid> observations are done. */
 	TEST_RES(write(context.exit_pipe[1], "X", 1), _ret == 1);
 	TEST_SUCC(pthread_join(thread, NULL));
 	TEST_SUCC(close(context.ready_pipe[0]));
