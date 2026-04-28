@@ -1,11 +1,17 @@
-# Package Management
+# Nix and NixOS Tools
+
+This category covers Nix package management tools and NixOS system management tools.
+
+## Package Management
+
+### Nix
 
 NixOS provides a set of [tools](https://nix.dev/manual/nix/2.28/command-ref/main-commands)
 for building, installing, and managing packages.
 
-## Verified Usage
+#### Verified Usage
 
-### `nix-build`
+##### `nix-build`
 
 `nix-build` builds Nix derivations and produces outputs in the Nix store.
 It is the preferred way to build software reproducibly.
@@ -51,7 +57,7 @@ nix-build
 ./result/bin/hello
 ```
 
-### `nix-env`
+##### `nix-env`
 
 `nix-env` installs or removes individual packages in your user profile.
 
@@ -63,7 +69,7 @@ nix-env -iA nixos.hello
 nix-env -e hello
 ```
 
-### `nix-shell`
+##### `nix-shell`
 
 `nix-shell` creates a temporary development environment with the specified dependencies.
 This is useful for testing software without modifying your system environment.
@@ -73,11 +79,15 @@ This is useful for testing software without modifying your system environment.
 nix-shell -p hello
 ```
 
+## NixOS System Management
+
 ### `nixos-rebuild`
 
 `nixos-rebuild` manages the entire system configuration declaratively.
 It applies changes defined in `configuration.nix`,
 and is the recommended approach for installing packages system-wide.
+
+#### Verified Usage
 
 ```bash
 # Edit the system configuration file

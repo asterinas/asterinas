@@ -6,9 +6,22 @@
 
 * [Getting Started](distro/README.md)
 * [Popular Applications](distro/popular-applications/README.md)
-    * [Package Management](distro/popular-applications/package-management.md)
-    * [Desktop Environment](distro/popular-applications/desktop-environment.md)
-    * [Containerization](distro/popular-applications/containerization.md)
+    * [System Core](distro/popular-applications/system-core/README.md)
+    * [Nix and NixOS Tools](distro/popular-applications/nix-and-nixos-tools/README.md)
+    * [Containerization and Virtualization](distro/popular-applications/containerization-and-virtualization/README.md)
+    * [Networking](distro/popular-applications/networking/README.md)
+    * [Web Servers & Proxies](distro/popular-applications/web-servers-and-proxies/README.md)
+    * [Databases & Middleware](distro/popular-applications/databases-and-middleware/README.md)
+    * [Development Tools](distro/popular-applications/development-tools/README.md)
+    * [CI/CD & DevOps](distro/popular-applications/cicd-and-devops/README.md)
+    * [Monitoring & Observability](distro/popular-applications/monitoring-and-observability/README.md)
+    * [Desktop Environments & Display](distro/popular-applications/desktop-environments-and-display/README.md)
+    * [Web Browsers](distro/popular-applications/web-browsers/README.md)
+    * [Office & Productivity](distro/popular-applications/office-and-productivity/README.md)
+    * [Multimedia](distro/popular-applications/multimedia/README.md)
+    * [Communication](distro/popular-applications/communication/README.md)
+    * [File Management & Terminal](distro/popular-applications/file-management-and-terminal/README.md)
+    * [AI & Machine Learning](distro/popular-applications/ai-and-machine-learning/README.md)
 
 # Asterinas Kernel
 

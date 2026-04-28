@@ -1,10 +1,14 @@
-# Desktop Environment
+# Desktop Environments & Display
 
-## Xfce
+This category covers desktop environments, window managers, and display servers.
+
+## Desktop Environments
+
+### Xfce
 
 [Xfce](https://www.xfce.org/) is a lightweight desktop environment for UNIX-like operating systems.
 
-### Installation
+#### Installation
 
 Add the following lines to the `configuration.nix` file:
 
@@ -20,14 +24,14 @@ TODO: upgrade mdbook to enable admonition blocks like the one below:
 > Xfce must be enabled during the initial installation of Asterinas NixOS. Applying configuration changes via `nixos-rebuild` is not working yet.
 -->
 
-### Verified Backends
+#### Verified Backends
 
 * Display server:
   * Xorg display server
 * Graphics drivers:
   * Standard UEFI VGA framebuffer
 
-### Verified Functionality
+#### Verified Functionality
 
 * Changing desktop wallpapers and background settings
 * Adjusting font size, style, and system theme
@@ -35,7 +39,7 @@ TODO: upgrade mdbook to enable admonition blocks like the one below:
 * Managing panels and window behavior
 * Using the settings manager and file browser
 
-### Verified GUI Applications
+#### Verified GUI Applications
 
 Utilities:
 
