@@ -9,7 +9,7 @@ inotify_rm_watch
 under this category.
 -->
 
-## Mount and Unmount File Systems
+## Mount and unmount file systems
 
 ### `mount`
 
@@ -60,7 +60,7 @@ Silently-ignored flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/umount.2.html).
 
-## Event Notifications
+## Event notifications
 
 ### `inotify_init` and `inotify_init1`
 

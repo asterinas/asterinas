@@ -98,4 +98,3 @@ Additional limitations:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/ptrace.2.html).
-

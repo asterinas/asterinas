@@ -22,7 +22,7 @@ This allows many existing Linux workloads
 to migrate to Asterinas-based VM environments seamlessly,
 without requiring changes to the applications themselves.
 
-## Supported Runtimes
+## Supported runtimes
 
 Here is the list of secure container runtimes that have been verified to work with Asterinas:
 

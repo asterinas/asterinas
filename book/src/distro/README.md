@@ -120,7 +120,7 @@ to customize the NixOS system to be installed:
 
 ### Kernel Developers
 
-1. Follow Steps 1 and 2 in the ["Getting Started" section of the Asterinas Kernel](../kernel/index.html#getting-started)
+1. Follow Steps 1 and 2 in the ["Getting started" section of the Asterinas Kernel](../kernel/index.html#getting-started)
    to set up the development environment.
 
 2. Inside the Docker container,

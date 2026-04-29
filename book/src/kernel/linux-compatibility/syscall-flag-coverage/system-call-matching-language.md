@@ -15,7 +15,7 @@ whether a strace log entry conforms to the supported patterns.
 This paves the way for an SCML‑based analyzer
 that reports unsupported calls in any application's trace.
 
-## Strace: A Quick Example
+## Strace: a quick example
 
 To illustrate, run strace on a simple "Hello, World!" program:
 
@@ -46,7 +46,7 @@ Key points of this output:
 
 SCML's syntax draws directly from these conventions.
 
-## SCML by Example
+## SCML by example
 
 SCML is intentionally simple:
 most Linux system‑call semantics hinge on bitflags.
@@ -58,7 +58,7 @@ Imagine you're developing a Linux-compatible OS (like Asterinas)
 that supports just a restricted subset of syscalls and their options.
 We will use SCML to describe the restricted functionality.
 
-### Matching Rules for System Calls
+### Matching rules for system calls
 
 For example,
 your OS supports the [`open`](https://man7.org/linux/man-pages/man2/openat.2.html) system call 
@@ -103,7 +103,7 @@ such as when the `O_CREAT` flag is present and a `mode` argument is required.
 This approach makes it easy to write concise rules that only constrain the arguments of interest,
 while allowing other parameters to vary as needed.
 
-### C-Style Comments
+### C-style comments
 
 SCML also supports C‑style comments:
 
@@ -115,7 +115,7 @@ open(path, flags = O_CREAT | O_RDONLY | O_WRONLY | O_RDWR | O_CLOEXEC, mode);
 open(path, flags = O_PATH | O_CLOEXEC);
 ```
 
-### Matching Rules for Bitflags
+### Matching rules for bitflags
 
 Above, we embedded flag combinations directly within individual system‑call rules,
 which can lead to duplication and make maintenance harder.
@@ -133,7 +133,7 @@ open(path, flags = O_CREAT | <access_mode> | O_CLOEXEC, mode);
 open(path, flags = O_PATH | O_CLOEXEC);
 ```
 
-### Matching Rules for Structs
+### Matching rules for structs
 
 SCML can match flags inside struct fields.
 Consider [`sigaction`](https://man7.org/linux/man-pages/man2/sigaction.2.html):
@@ -171,7 +171,7 @@ capget(
 );
 ```
 
-### Matching Rules for Arrays
+### Matching rules for arrays
 
 SCML can describe how to match flags embedded inside the struct values of an array.
 This is the case of the [`poll`](https://man7.org/linux/man-pages/man2/poll.2.html) system call.
@@ -193,7 +193,7 @@ poll(fds = [ <pollfd> ], nfds, timeout);
 
 Notice how SCML denotes an array with the `[ <struct_rule> ]` syntax.
 
-### Special Built-in Matching Rules
+### Special built-in matching rules
 
 Bitflags-based matching rules described above are expressive enough to
 capture most patterns of interesting system call arguments.
@@ -245,7 +245,7 @@ timer_create(
 );
 ```
 
-### Advanced Usage
+### Advanced usage
 
 Just like you can write multiple rules of the same system call,
 you may define multiple rules for the same struct:
@@ -321,7 +321,7 @@ This example demonstrates receiving a netlink message of type
 handles heterogeneous arrays where elements can be both structs and
 nested arrays, reflecting the hierarchical TLV encoding typical of netlink.
 
-## Formal Syntax
+## Formal syntax
 
 Below is the formal syntax of SCML,
 expressed in Extended Backus–Naur Form (EBNF).

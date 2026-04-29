@@ -1,6 +1,6 @@
 # The Framekernel Architecture
 
-## Framekernel: What and Why
+## Framekernel: what and why
 
 > The security of a microkernel, the speed of a monolithic kernel.
 
@@ -35,7 +35,7 @@ Asterinas can offer both exceptional performance and enhanced safety.
 
 ![A comparison between different OS architectures](../images/a_comparison_between_os_archs.svg)
 
-## Requirements for the OS Framework
+## Requirements for the OS framework
 
 While the concept of framekernel is straightforward,
 the design and implementation of the required OS framework present challenges.

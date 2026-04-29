@@ -8,7 +8,7 @@ Our roadmap includes the following plans:
 * By 2024, we aim to achieve production-ready status for VM environments on x86-64.
 * In 2025 and beyond, we will expand our support for CPU architectures and hardware devices.
 
-## Target Early Use Cases
+## Target early use cases
 
 One of the biggest challenges for a new OS kernel is driver support.
 Linux has been widely accepted due to its wide range of hardware support.

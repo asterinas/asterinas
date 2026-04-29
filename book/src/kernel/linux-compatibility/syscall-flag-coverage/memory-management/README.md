@@ -7,7 +7,7 @@ shmget, shmat, shmctl, mlock, munlock, mbind, and set_mempolicy
 under this part.
 -->
 
-## Memory Mappings
+## Memory mappings
 
 ### `mmap` and `munmap`
 

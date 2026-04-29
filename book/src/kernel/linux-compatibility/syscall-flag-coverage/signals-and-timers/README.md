@@ -37,7 +37,7 @@ Supported functionality in SCML:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/sigprocmask.2.html).
 
-## POSIX Interval Timers
+## POSIX interval timers
 
 ### `timer_create`
 

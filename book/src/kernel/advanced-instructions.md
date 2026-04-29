@@ -1,6 +1,6 @@
 # Advanced Build and Test Instructions
 
-## User-Mode Unit Tests
+## User-mode unit tests
 
 Asterinas consists of many crates,
 some of which do not require a VM environment
@@ -14,7 +14,7 @@ make test
 
 To test an individual crate, enter the directory of the crate and invoke `cargo test`.
 
-### Kernel-Mode Unit Tests
+### Kernel-mode unit tests
 
 Many crates in Asterinas do require a VM environment to be tested.
 The unit tests for these crates are empowered by OSDK.
@@ -30,9 +30,9 @@ cd asterinas/ostd
 cargo osdk test
 ```
 
-## Integration Test
+## Integration test
 
-### Regression Test
+### Regression test
 
 The following command builds and runs the regression test in `test/initramfs/src/regression` on Asterinas.
 
@@ -40,7 +40,7 @@ The following command builds and runs the regression test in `test/initramfs/src
 make run_kernel AUTO_TEST=regression
 ```
 
-### Conformance Test
+### Conformance test
 
 The following command builds and runs the conformance test on Asterinas.
 
@@ -62,7 +62,7 @@ Then, in the interactive shell, run the following script to start the conformanc
 
 ## Debug
 
-### Using GDB to Debug
+### Using GDB to debug
 
 To debug Asterinas via [QEMU GDB support](https://qemu-project.gitlab.io/qemu/system/gdb.html),
 you can compile Asterinas in the debug profile,

@@ -69,7 +69,7 @@ Unsupported `op` flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/reboot.2.html).
 
-## POSIX Clocks
+## POSIX clocks
 
 ### `clock_gettime`
 
