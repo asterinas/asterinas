@@ -1734,10 +1734,6 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn is_dentry_cacheable(&self) -> bool {
-        true
-    }
-
     fn extension(&self) -> &Extension {
         &self.extension
     }

@@ -12,7 +12,7 @@ use crate::{
         utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, Metadata},
+            inode::{Extension, Inode, Metadata, RevalidationPolicy},
             path::{is_dot, is_dotdot},
         },
     },
@@ -121,10 +121,25 @@ impl Inode for CgroupInode {
         Ok(())
     }
 
-    fn is_dentry_cacheable(&self) -> bool {
-        // Attribute nodes should not be cached because they may be dynamically
-        // created or removed based on the state of the cgroup controller.
-        // Caching them could result in stale or incorrect entries.
-        !matches!(self.node_kind, SysTreeNodeKind::Attr(..))
+    fn revalidation_policy(&self) -> RevalidationPolicy {
+        match self.node_kind() {
+            SysTreeNodeKind::Branch(_) | SysTreeNodeKind::Leaf(_) => {
+                RevalidationPolicy::REVALIDATE_EXISTS | RevalidationPolicy::REVALIDATE_ABSENT
+            }
+            SysTreeNodeKind::Attr(..) | SysTreeNodeKind::Symlink(_) => RevalidationPolicy::empty(),
+        }
+    }
+
+    fn revalidate_exists(&self, _name: &str, child: &dyn Inode) -> bool {
+        // Attribute nodes in the cache should not be trusted because they
+        // may be dynamically created or removed based on the state of the
+        // cgroup controller.
+        child
+            .downcast_ref::<Self>()
+            .is_some_and(|child| !matches!(child.node_kind(), SysTreeNodeKind::Attr(..)))
+    }
+
+    fn revalidate_absent(&self, _name: &str) -> bool {
+        false
     }
 }
