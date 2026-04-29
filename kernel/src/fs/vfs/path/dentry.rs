@@ -284,27 +284,65 @@ impl DirDentry<'_> {
             let _ = children.remove(name);
             let new_inode = self.inode.create(name, type_, mode)?;
 
-            return Ok(self.insert_created_child(&mut children, name, new_inode));
+            let new_child = Dentry::new(
+                new_inode,
+                DentryOptions::Leaf((String::from(name), self.this())),
+            );
+            return Ok(self.insert_positive_child(&mut children, name, new_child));
         }
 
         let new_inode = self.inode.create(name, type_, mode)?;
         let mut children = children.upgrade();
+        let new_child = Dentry::new(
+            new_inode,
+            DentryOptions::Leaf((String::from(name), self.this())),
+        );
 
-        Ok(self.insert_created_child(&mut children, name, new_inode))
+        Ok(self.insert_positive_child(&mut children, name, new_child))
     }
 
-    fn insert_created_child(
+    /// Inserts a positive child dentry into the directory cache.
+    fn insert_positive_child(
         &self,
         children: &mut DentryChildren,
         name: &str,
-        inode: Arc<dyn Inode>,
+        child: Arc<Dentry>,
     ) -> Arc<Dentry> {
-        let name = String::from(name);
-        let new_child = Dentry::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
+        // TODO: Use a better storage strategy to avoid extra string allocations.
+        children.insert_positive(String::from(name), child.clone());
+        self.revalidate_positive_children_if_needed(children);
 
-        children.insert_positive(name, new_child.clone());
+        child
+    }
 
-        new_child
+    /// Periodically revalidates cached positive children in this directory.
+    //
+    // TODO: This is a workaround to keep large `DentryChildren` caches from retaining stale
+    // positive entries for too long when the directory asks the VFS to revalidate
+    // existing children.
+    fn revalidate_positive_children_if_needed(&self, children: &mut DentryChildren) {
+        const POSITIVE_CHILD_REVALIDATION_INTERVAL: usize = 1024;
+        const POSITIVE_CHILD_REVALIDATION_CACHE_SIZE_THRESHOLD: usize = 1024;
+
+        if !self
+            .revalidation_policy
+            .contains(RevalidationPolicy::REVALIDATE_EXISTS)
+        {
+            return;
+        }
+
+        // Workaround: until `DentryCache` has a proper reclamation mechanism, periodically
+        // scan large caches and evict positive entries that fail `revalidate_exists`.
+        children.insert_count = children.insert_count.wrapping_add(1);
+        if !children
+            .insert_count
+            .is_multiple_of(POSITIVE_CHILD_REVALIDATION_INTERVAL)
+            || children.entries.len() <= POSITIVE_CHILD_REVALIDATION_CACHE_SIZE_THRESHOLD
+        {
+            return;
+        }
+
+        children.revalidate_positive_entries(self);
     }
 
     /// Looks up `name` relative to this dentry.
@@ -349,12 +387,13 @@ impl DirDentry<'_> {
             Err(error) => return Err(error),
         };
 
-        let name = String::from(name);
-        // TODO: Use a better storage strategy to avoid extra string allocations.
-        let target = Dentry::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
-        children.upgrade().insert_positive(name, target.clone());
+        let target = Dentry::new(
+            inode,
+            DentryOptions::Leaf((String::from(name), self.this())),
+        );
+        let mut children = children.upgrade();
 
-        Ok(target)
+        Ok(self.insert_positive_child(&mut children, name, target))
     }
 
     /// Creates a `Dentry` by making an inode of the `type_` with the `mode`.
@@ -370,12 +409,13 @@ impl DirDentry<'_> {
         }
 
         let inode = self.inode.mknod(name, mode, type_)?;
-        let name = String::from(name);
-        let new_child = Dentry::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
+        let new_child = Dentry::new(
+            inode,
+            DentryOptions::Leaf((String::from(name), self.this())),
+        );
+        let mut children = children.upgrade();
 
-        children.upgrade().insert_positive(name, new_child.clone());
-
-        Ok(new_child)
+        Ok(self.insert_positive_child(&mut children, name, new_child))
     }
 
     /// Links a new `Dentry` by `link()` the old inode.
@@ -386,16 +426,15 @@ impl DirDentry<'_> {
         }
 
         self.inode.link(old_inode, name)?;
-        let name = String::from(name);
         let dentry = Dentry::new(
             old_inode.clone(),
-            DentryOptions::Leaf((name.clone(), self.this())),
+            DentryOptions::Leaf((String::from(name), self.this())),
         );
-
-        children
-            .upgrade()
-            .insert_positive(name.clone(), dentry.clone());
-        fs::vfs::notify::on_link(dentry.parent().unwrap().inode(), dentry.inode(), || name);
+        let mut children = children.upgrade();
+        self.insert_positive_child(&mut children, name, dentry.clone());
+        fs::vfs::notify::on_link(dentry.parent().unwrap().inode(), dentry.inode(), || {
+            name.to_string()
+        });
         Ok(())
     }
 
@@ -538,7 +577,7 @@ impl DirDentry<'_> {
                         .name_and_parent
                         .set(new_name, old_dir_arc.clone())
                         .unwrap();
-                    children.insert_positive(String::from(new_name), dentry.clone());
+                    old_dir.insert_positive_child(&mut children, new_name, dentry.clone());
                 }
                 None => {
                     children.remove(new_name);
@@ -559,7 +598,7 @@ impl DirDentry<'_> {
                         .name_and_parent
                         .set(new_name, new_dir_arc.clone())
                         .unwrap();
-                    new_dir_children.insert_positive(String::from(new_name), dentry.clone());
+                    new_dir.insert_positive_child(&mut new_dir_children, new_name, dentry.clone());
                 }
                 None => {
                     new_dir_children.remove(new_name);
@@ -657,6 +696,7 @@ enum DentryOptions {
 #[derive(Debug)]
 struct DentryChildren {
     entries: HashMap<String, CachedDentry>,
+    insert_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -705,6 +745,7 @@ impl DentryChildren {
     fn new() -> Self {
         Self {
             entries: HashMap::new(),
+            insert_count: 0,
         }
     }
 
@@ -821,6 +862,16 @@ impl DentryChildren {
                 return_errno_with_message!(Errno::ENOENT, "found a negative dentry")
             }
         }
+    }
+
+    fn revalidate_positive_entries(&mut self, dir: &DirDentry<'_>) {
+        self.entries
+            .retain(|name, cached_entry| match cached_entry {
+                CachedDentry::Positive { dentry } => {
+                    dir.inode.revalidate_exists(name, dentry.inode().as_ref())
+                }
+                CachedDentry::Negative => true,
+            });
     }
 }
 
