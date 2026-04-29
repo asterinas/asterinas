@@ -208,7 +208,7 @@ php script.php
 php -r "echo 'Hello World';"
 ```
 
-### Python3
+### Python 3
 
 [Python](https://www.python.org/) is a high-level programming language.
 
@@ -475,9 +475,9 @@ emacs file.txt
 # C-g           - Cancel current command/prompt
 ```
 
-### Nano
+### nano
 
-[Nano](https://www.nano-editor.org/) is a simple, user-friendly terminal-based text editor.
+[nano](https://www.nano-editor.org/) is a simple, user-friendly terminal-based text editor.
 
 #### Installation
 
@@ -589,9 +589,9 @@ hugo new site my-site
 hugo server
 ```
 
-### Direnv
+### direnv
 
-[Direnv](https://direnv.net/) loads and unloads environment variables based on the current directory.
+[direnv](https://direnv.net/) loads and unloads environment variables based on the current directory.
 
 #### Installation
 

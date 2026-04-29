@@ -38,9 +38,9 @@ environment.systemPackages = [ pkgs.caddy ];
 caddy file-server --listen 10.0.2.15:8002
 ```
 
-### Nginx
+### NGINX
 
-[Nginx](https://nginx.org/) is a high-performance web server, reverse proxy, and load balancer.
+[NGINX](https://nginx.org/) is a high-performance web server, reverse proxy, and load balancer.
 
 #### Installation
 

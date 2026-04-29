@@ -4,9 +4,9 @@ This category covers network utilities, DNS/DHCP servers, VPN tools, and firewal
 
 ## Network Utilities
 
-### Curl
+### curl
 
-[Curl](https://curl.se/) transfers data with URLs.
+[curl](https://curl.se/) transfers data with URLs.
 
 #### Installation
 
@@ -76,9 +76,9 @@ nc -l port > received_file.txt
 nc -z hostname port
 ```
 
-### Rclone
+### rclone
 
-[Rclone](https://rclone.org/) syncs files to and from cloud storage providers.
+[rclone](https://rclone.org/) syncs files to and from cloud storage providers.
 
 #### Installation
 
@@ -105,9 +105,9 @@ rclone lsd /tmp/src
 rclone mkdir /tmp/src
 ```
 
-### Rsync
+### rsync
 
-[Rsync](https://rsync.samba.org/) is a fast and versatile file synchronization tool.
+[rsync](https://rsync.samba.org/) is a fast and versatile file synchronization tool.
 
 #### Installation
 
@@ -134,9 +134,9 @@ rsync -av --exclude '*.tmp' source/ destination/
 rsync -av --include '*.txt' --exclude '*' source/ destination/
 ```
 
-### Socat
+### socat
 
-[Socat](http://www.dest-unreach.org/socat/) is a multipurpose relay for bidirectional data transfer.
+[socat](http://www.dest-unreach.org/socat/) is a multipurpose relay for bidirectional data transfer.
 
 #### Installation
 
@@ -210,9 +210,9 @@ drill google.com CNAME      # Canonical name
 drill -x 8.8.8.8
 ```
 
-### Whois
+### whois
 
-[Whois](https://packages.qa.debian.org/w/whois.html) queries domain registration information.
+[whois](https://packages.qa.debian.org/w/whois.html) queries domain registration information.
 
 #### Installation
 

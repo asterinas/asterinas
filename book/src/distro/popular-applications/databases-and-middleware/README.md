@@ -32,9 +32,9 @@ sqlite3 database.db "SELECT * FROM users;"
 
 ## NoSQL & Key-Value Stores
 
-### Etcd
+### etcd
 
-[Etcd](https://etcd.io/) is a distributed key-value store that provides a reliable way to store data that needs to be accessed by a distributed system.
+[etcd](https://etcd.io/) is a distributed key-value store that provides a reliable way to store data that needs to be accessed by a distributed system.
 
 #### Installation
 

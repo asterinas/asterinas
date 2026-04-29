@@ -27,9 +27,9 @@ mutool draw -F text -o - file.pdf
 mutool draw -F png -o page-%03d.png sample.pdf
 ```
 
-### Pandoc
+### pandoc
 
-[Pandoc](https://hackage.haskell.org/package/pandoc-cli) is a universal document converter.
+[pandoc](https://hackage.haskell.org/package/pandoc-cli) is a universal document converter.
 
 #### Installation
 

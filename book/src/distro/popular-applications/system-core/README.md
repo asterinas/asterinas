@@ -8,9 +8,9 @@ This category covers essential system components: shells, init systems, system m
 
 [Bash](https://www.gnu.org/software/bash/) is the GNU Project's shell and command language, enabled by default in Asterinas NixOS.
 
-### Fish
+### fish
 
-[Fish](https://fishshell.com/) is a user-friendly shell with autosuggestions and web-based configuration.
+[fish](https://fishshell.com/) is a user-friendly shell with autosuggestions and web-based configuration.
 
 #### Installation
 
@@ -48,15 +48,15 @@ zsh script.sh
 
 [BusyBox](https://busybox.net/) provides many common UNIX utilities in a single small executable, enabled by default in `initramfs` of Asterinas NixOS.
 
-### Systemd
+### systemd
 
-[Systemd](https://systemd.io/) is a software suite for system and service management, enabled by default in `rootfs` of Asterinas NixOS.
+[systemd](https://systemd.io/) is a software suite for system and service management, enabled by default in `rootfs` of Asterinas NixOS.
 
 ## System Monitoring
 
-### Fastfetch
+### fastfetch
 
-[Fastfetch](https://github.com/fastfetch-cli/fastfetch) is a system information tool similar to `neofetch`.
+[fastfetch](https://github.com/fastfetch-cli/fastfetch) is a system information tool similar to `neofetch`.
 
 #### Installation
 
@@ -74,9 +74,9 @@ fastfetch
 fastfetch > fastfetch-output.txt
 ```
 
-### Htop
+### htop
 
-[Htop](https://htop.dev/) is an interactive process viewer.
+[htop](https://htop.dev/) is an interactive process viewer.
 
 #### Installation
 
@@ -97,9 +97,9 @@ htop
 # q             - Quit
 ```
 
-### Lsof
+### lsof
 
-[Lsof](https://github.com/lsof-org/lsof) lists open files and the processes that opened them.
+[lsof](https://github.com/lsof-org/lsof) lists open files and the processes that opened them.
 
 #### Installation
 
@@ -123,9 +123,9 @@ lsof -u root
 lsof +D /dev
 ```
 
-### Ncdu
+### ncdu
 
-[Ncdu](https://dev.yorhel.nl/ncdu) is a disk usage analyzer with an interactive TUI.
+[ncdu](https://dev.yorhel.nl/ncdu) is a disk usage analyzer with an interactive TUI.
 
 #### Installation
 
@@ -143,9 +143,9 @@ ncdu /var/log
 ncdu -o result.ncdu /var/log
 ```
 
-### Procps
+### procps
 
-[Procps](https://gitlab.com/procps-ng/procps) provides system utilities for process management and system information.
+[procps](https://gitlab.com/procps-ng/procps) provides system utilities for process management and system information.
 
 #### Installation
 
@@ -183,9 +183,9 @@ uptime
 
 ## Essential Tooling
 
-### Coreutils
+### coreutils
 
-[Coreutils](https://www.gnu.org/software/coreutils/) includes basic file, shell and text manipulation utilities.
+[coreutils](https://www.gnu.org/software/coreutils/) includes basic file, shell and text manipulation utilities.
 
 #### Installation
 
@@ -299,9 +299,9 @@ wc -w file.txt  # Words only
 wc -c file.txt  # Bytes only
 ```
 
-### Diffutils
+### diffutils
 
-[Diffutils](https://www.gnu.org/software/diffutils/) compares files line by line.
+[diffutils](https://www.gnu.org/software/diffutils/) compares files line by line.
 
 #### Installation
 
@@ -321,9 +321,9 @@ diff3 -m file1.txt file2.txt file3.txt
 diff3 -E file1.txt file2.txt file3.txt
 ```
 
-### Findutils
+### findutils
 
-[Findutils](https://www.gnu.org/software/findutils/) provides the basic directory searching utilities.
+[findutils](https://www.gnu.org/software/findutils/) provides the basic directory searching utilities.
 
 #### Installation
 
@@ -351,9 +351,9 @@ find /path -name "*.txt" | xargs rm
 find /path -name "*.log" | xargs -I {} cp {} {}.bak
 ```
 
-### Grep
+### grep
 
-[Grep](https://www.gnu.org/software/grep/) searches for patterns in text.
+[grep](https://www.gnu.org/software/grep/) searches for patterns in text.
 
 #### Installation
 
@@ -386,9 +386,9 @@ grep -v "pattern" file.txt
 grep -E "foo|bar" file.txt
 ```
 
-### Hostname
+### hostname
 
-[Hostname](https://man7.org/linux/man-pages/man1/hostname.1.html) shows or sets the system host name.
+[hostname](https://man7.org/linux/man-pages/man1/hostname.1.html) shows or sets the system host name.
 
 #### Installation
 
@@ -415,9 +415,9 @@ domainname test
 hostname -i
 ```
 
-### Less
+### less
 
-[Less](https://www.greenwoodsoftware.com/less/) is a terminal pager program for viewing text files.
+[less](https://www.greenwoodsoftware.com/less/) is a terminal pager program for viewing text files.
 
 #### Installation
 
@@ -440,9 +440,9 @@ less file.txt
 #   u             - Backward half window
 ```
 
-### Man-pages
+### man-pages
 
-[Man-pages](https://www.kernel.org/doc/man-pages/) provides the Linux manual pages.
+[man-pages](https://www.kernel.org/doc/man-pages/) provides the Linux manual pages.
 
 #### Installation
 
@@ -498,9 +498,9 @@ info bash
 #   q           - Quit
 ```
 
-### Util-linux
+### util-linux
 
-[Util-linux](https://www.kernel.org/pub/linux/utils/util-linux/) provides a set of system utilities for any Linux system.
+[util-linux](https://www.kernel.org/pub/linux/utils/util-linux/) provides a set of system utilities for any Linux system.
 
 #### Installation
 
@@ -545,9 +545,9 @@ hexdump -C file.bin
 whereis ls
 ```
 
-### Which
+### which
 
-[Which](https://www.gnu.org/software/which/) shows the full path of (shell) commands
+[which](https://www.gnu.org/software/which/) shows the full path of (shell) commands
 
 #### Installation
 

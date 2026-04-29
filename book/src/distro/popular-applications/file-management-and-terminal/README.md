@@ -4,9 +4,9 @@ This category covers file managers, terminal emulators, archiving tools, and mod
 
 ## Archiving & Compression
 
-### Bzip2
+### bzip2
 
-[Bzip2](https://www.sourceware.org/bzip2) uses the Burrows-Wheeler algorithm for compression.
+[bzip2](https://www.sourceware.org/bzip2) uses the Burrows-Wheeler algorithm for compression.
 
 #### Installation
 
@@ -34,9 +34,9 @@ bzmore file.txt.bz2
 bzgrep "pattern" file.txt.bz2
 ```
 
-### Gzip
+### gzip
 
-[Gzip](https://www.gnu.org/software/gzip/) is a popular data compression program.
+[gzip](https://www.gnu.org/software/gzip/) is a popular data compression program.
 
 #### Installation
 
@@ -64,9 +64,9 @@ zmore file.txt.gz
 zgrep "pattern" file.txt.gz
 ```
 
-### P7zip
+### p7zip
 
-[P7zip](https://p7zip.sourceforge.io/) is a port of 7-Zip to Unix-like systems.
+[p7zip](https://p7zip.sourceforge.io/) is a port of 7-Zip to Unix-like systems.
 
 #### Installation
 
@@ -93,9 +93,9 @@ environment.systemPackages = [ pkgs.p7zip ];
 7z t archive.7z
 ```
 
-### Tar
+### tar
 
-[Tar](https://www.gnu.org/software/tar/) creates and extracts archive files.
+[tar](https://www.gnu.org/software/tar/) creates and extracts archive files.
 
 #### Installation
 
@@ -122,9 +122,9 @@ tar -rf archive.tar newfile.txt
 tar -uf archive.tar updated_file.txt
 ```
 
-### Xz
+### XZ Utils
 
-[Xz](https://tukaani.org/xz/) provides high compression ratio using LZMA2 algorithm.
+[XZ Utils](https://tukaani.org/xz/) provides high compression ratio using LZMA2 algorithm.
 
 #### Installation
 
@@ -214,9 +214,9 @@ screen -S mysession -X quit
 
 ## File Inspection
 
-### File
+### file
 
-[File](https://darwinsys.com/file/) determines file type by examining content.
+[file](https://darwinsys.com/file/) determines file type by examining content.
 
 #### Installation
 
@@ -240,9 +240,9 @@ file -L symlink                # Follow symlinks
 
 ## Text Processing
 
-### Bat
+### bat
 
-[Bat](https://github.com/sharkdp/bat) is a `cat` clone with syntax highlighting and Git integration.
+[bat](https://github.com/sharkdp/bat) is a `cat` clone with syntax highlighting and Git integration.
 
 #### Installation
 
@@ -263,9 +263,9 @@ bat --plain file.txt
 bat -n file.txt
 ```
 
-### Gawk
+### gawk
 
-[Gawk](https://www.gnu.org/software/gawk/) is the GNU implementation of Awk programming language.
+[gawk](https://www.gnu.org/software/gawk/) is the GNU implementation of Awk programming language.
 
 #### Installation
 
@@ -286,9 +286,9 @@ awk '/pattern/ {print}' file.txt
 awk '{sum += $1} END {print "Sum:", sum}' numbers.txt
 ```
 
-### Sd
+### sd
 
-[Sd](https://github.com/chmln/sd) is an intuitive find-and-replace CLI tool.
+[sd](https://github.com/chmln/sd) is an intuitive find-and-replace CLI tool.
 
 #### Installation
 
@@ -303,9 +303,9 @@ environment.systemPackages = [ pkgs.sd ];
 sd "old" "new" *.txt
 ```
 
-### Sed
+### sed
 
-[Sed](https://www.gnu.org/software/sed/) is the GNU implementation of stream editor.
+[sed](https://www.gnu.org/software/sed/) is the GNU implementation of stream editor.
 
 #### Installation
 
@@ -337,7 +337,7 @@ sed '3c\Completely replaced line' file.txt
 
 ## Search & Filtering
 
-### Eza
+### eza
 
 [eza](https://github.com/eza-community/eza) is a modern replacement for `ls`.
 
@@ -363,9 +363,9 @@ eza -f
 eza -D
 ```
 
-### Fd
+### fd
 
-[Fd](https://github.com/sharkdp/fd) is a simple, fast alternative to `find`.
+[fd](https://github.com/sharkdp/fd) is a simple, fast alternative to `find`.
 
 #### Installation
 
@@ -386,9 +386,9 @@ fd pattern
 fd pattern -x rm
 ```
 
-### Fzf
+### fzf
 
-[Fzf](https://github.com/junegunn/fzf) is a command-line fuzzy finder.
+[fzf](https://github.com/junegunn/fzf) is a command-line fuzzy finder.
 
 #### Installation
 
@@ -403,9 +403,9 @@ environment.systemPackages = [ pkgs.fzf ];
 find . -type f | fzf -f "pattern"
 ```
 
-### Ripgrep
+### ripgrep
 
-[Ripgrep](https://github.com/BurntSushi/ripgrep) is a fast line-oriented search tool.
+[ripgrep](https://github.com/BurntSushi/ripgrep) is a fast line-oriented search tool.
 
 #### Installation
 
@@ -455,9 +455,9 @@ ag "pattern"
 ag --cc "main"
 ```
 
-### Tree
+### tree
 
-[Tree](http://mama.indstate.edu/users/ice/tree/) displays directory structures in a tree format.
+[tree](http://mama.indstate.edu/users/ice/tree/) displays directory structures in a tree format.
 
 #### Installation
 
@@ -477,9 +477,9 @@ tree -a
 
 ## Security & Backup
 
-### Age
+### age
 
-[Age](https://github.com/FiloSottile/age) is a simple, modern encryption tool.
+[age](https://github.com/FiloSottile/age) is a simple, modern encryption tool.
 
 #### Installation
 
@@ -498,9 +498,9 @@ age -r age1example... -o secrets.txt.age secrets.txt
 age -d -i key.txt -o secrets.txt secrets.txt.age
 ```
 
-### Crunch
+### crunch
 
-[Crunch](https://sourceforge.net/projects/crunch-wordlist/) generates wordlists by pattern.
+[crunch](https://sourceforge.net/projects/crunch-wordlist/) generates wordlists by pattern.
 
 #### Installation
 
@@ -586,9 +586,9 @@ echo "482c811da5d5b4bc6d497ffa98491e38" > md5_hash.txt # Genuine MD5 hash of "pa
 john --wordlist=wordlist.txt --format=raw-md5 md5_hash.txt
 ```
 
-### Restic
+### restic
 
-[Restic](https://restic.net/) is a fast, secure backup program.
+[restic](https://restic.net/) is a fast, secure backup program.
 
 #### Installation
 
@@ -609,9 +609,9 @@ restic -r /tmp/restic-repo backup ~/Documents
 restic -r /tmp/restic-repo snapshots
 ```
 
-### Wipe
+### wipe
 
-[Wipe](https://wipe.sourceforge.net/) securely erases files and directories.
+[wipe](https://wipe.sourceforge.net/) securely erases files and directories.
 
 #### Installation
 

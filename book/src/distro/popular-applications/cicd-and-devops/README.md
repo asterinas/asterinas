@@ -4,9 +4,9 @@ This category covers continuous integration/deployment tools and infrastructure 
 
 ## CI/CD Runners
 
-### Just
+### just
 
-[Just](https://github.com/casey/just) is a handy way to save and run project-specific commands.
+[just](https://github.com/casey/just) is a handy way to save and run project-specific commands.
 
 #### Installation
 

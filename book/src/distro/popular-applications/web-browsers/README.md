@@ -24,9 +24,9 @@ links http://example.com
 links -dump http://example.com
 ```
 
-### W3m
+### w3m
 
-[W3m](https://w3m.sourceforge.net/) is a text-based web browser.
+[w3m](https://w3m.sourceforge.net/) is a text-based web browser.
 
 #### Installation
 
