@@ -8,17 +8,15 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    process::Process,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/comm` (and also `/proc/[pid]/comm`).
-pub struct CommFileOps(Arc<Process>);
+pub struct CommFileOps(TidDirOps);
 
 impl CommFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3336>
-        ProcFileBuilder::new(Self(process_ref), mkmod!(a+r, u+w))
+        ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r, u+w))
             .parent(parent)
             .build()
             .unwrap()
@@ -27,7 +25,11 @@ impl CommFileOps {
 
 impl FileOps for CommFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let vmar_guard = self.0.lock_vmar();
+        let Some(process) = self.0.process() else {
+            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+        };
+
+        let vmar_guard = process.lock_vmar();
         let Some(vmar) = vmar_guard.as_ref() else {
             // According to Linux behavior, return an empty string
             // if the process is a zombie process.

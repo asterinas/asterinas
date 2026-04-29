@@ -35,13 +35,14 @@ impl<O: DirOps> ProcDirBuilder<O> {
         self.optional_builder(|ob| ob.parent(parent))
     }
 
-    pub fn volatile(self) -> Self {
-        self.optional_builder(|ob| ob.volatile())
-    }
-
     pub fn build(mut self) -> Result<Arc<ProcDir<O>>> {
-        let (fs, parent, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcDir::new(self.dir, fs, parent, is_volatile, self.mode))
+        let optional = self.optional_builder.take().unwrap().build()?;
+        Ok(ProcDir::new(
+            self.dir,
+            optional.fs,
+            optional.parent,
+            self.mode,
+        ))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -76,14 +77,9 @@ impl<O: FileOps> ProcFileBuilder<O> {
         self.optional_builder(|ob| ob.parent(parent))
     }
 
-    #[expect(dead_code)]
-    pub fn volatile(self) -> Self {
-        self.optional_builder(|ob| ob.volatile())
-    }
-
     pub fn build(mut self) -> Result<Arc<ProcFile<O>>> {
-        let (fs, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcFile::new(self.file, fs, is_volatile, self.mode))
+        let optional = self.optional_builder.take().unwrap().build()?;
+        Ok(ProcFile::new(self.file, optional.fs, self.mode))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -118,14 +114,9 @@ impl<O: SymOps> ProcSymBuilder<O> {
         self.optional_builder(|ob| ob.parent(parent))
     }
 
-    #[expect(dead_code)]
-    pub fn volatile(self) -> Self {
-        self.optional_builder(|ob| ob.volatile())
-    }
-
     pub fn build(mut self) -> Result<Arc<ProcSym<O>>> {
-        let (fs, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcSym::new(self.sym, fs, is_volatile, self.mode))
+        let optional = self.optional_builder.take().unwrap().build()?;
+        Ok(ProcSym::new(self.sym, optional.fs, self.mode))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -140,15 +131,16 @@ impl<O: SymOps> ProcSymBuilder<O> {
 
 struct OptionalBuilder {
     parent: Option<Weak<dyn Inode>>,
-    is_volatile: bool,
+}
+
+struct OptionalBuildResult {
+    fs: Weak<dyn FileSystem>,
+    parent: Option<Weak<dyn Inode>>,
 }
 
 impl OptionalBuilder {
     fn new() -> Self {
-        Self {
-            parent: None,
-            is_volatile: false,
-        }
+        Self { parent: None }
     }
 
     pub fn parent(mut self, parent: Weak<dyn Inode>) -> Self {
@@ -156,29 +148,15 @@ impl OptionalBuilder {
         self
     }
 
-    pub fn volatile(mut self) -> Self {
-        self.is_volatile = true;
-        self
-    }
-
-    #[expect(clippy::type_complexity)]
-    pub fn build(self) -> Result<(Weak<dyn FileSystem>, Option<Weak<dyn Inode>>, bool)> {
+    pub fn build(self) -> Result<OptionalBuildResult> {
         let Some(parent) = self.parent else {
             return_errno_with_message!(Errno::EINVAL, "must have parent");
         };
-        let parent_inode = parent.upgrade().unwrap();
-        let fs = Arc::downgrade(&parent_inode.fs());
+        let fs = Arc::downgrade(&parent.upgrade().unwrap().fs());
 
-        // The volatile property is inherited from parent.
-        let is_volatile = {
-            let mut is_volatile = self.is_volatile;
-            if !parent_inode.is_dentry_cacheable() {
-                is_volatile = true;
-            }
-
-            is_volatile
-        };
-
-        Ok((fs, Some(parent), is_volatile))
+        Ok(OptionalBuildResult {
+            fs,
+            parent: Some(parent),
+        })
     }
 }

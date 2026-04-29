@@ -155,7 +155,9 @@ impl MountInfoFileOps {
 
 impl FileOps for MountInfoFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let thread = self.0.thread();
+        let Some(thread) = self.0.thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let fs = posix_thread.read_fs();

@@ -10,20 +10,19 @@ use crate::{
     },
     prelude::*,
     process::{
-        Process, VmarSnapshot,
+        VmarSnapshot,
         posix_thread::{AsPosixThread, alien_access::AlienAccessMode},
         signal::{PollHandle, Pollable},
     },
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/mem` (and also `/proc/[pid]/mem`).
-pub struct MemFileOps(Arc<Process>);
+pub struct MemFileOps(TidDirOps);
 
 impl MemFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3347>
-        ProcFileBuilder::new(Self(process_ref), mkmod!(u+rw))
+        ProcFileBuilder::new(Self(dir.clone()), mkmod!(u+rw))
             .parent(parent)
             .build()
             .unwrap()
@@ -36,11 +35,14 @@ impl FileOpsByHandle for MemFileOps {
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
     ) -> Result<Box<dyn FileIo>> {
+        let Some(process) = self.0.process() else {
+            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+        };
         // Hold the process VMAR lock while checking access permissions and
         // taking the VMAR identity snapshot to prevent race conditions.
-        let vmar_guard = self.0.lock_vmar();
+        let vmar_guard = process.lock_vmar();
 
-        self.0
+        process
             .main_thread()
             .as_posix_thread()
             .unwrap()
@@ -56,7 +58,7 @@ impl FileOpsByHandle for MemFileOps {
 }
 
 /// A file handle opened from `/proc/[pid]/task/[tid]/mem` (and also `/proc/[pid]/mem`).
-struct MemFileHandle(Arc<Process>, VmarSnapshot);
+struct MemFileHandle(TidDirOps, VmarSnapshot);
 
 impl Pollable for MemFileHandle {
     fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
@@ -72,7 +74,11 @@ impl InodeIo for MemFileHandle {
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        let vmar_guard = self.0.lock_vmar();
+        let Some(process) = self.0.process() else {
+            // The process does not exist.
+            return Ok(0);
+        };
+        let vmar_guard = process.lock_vmar();
         if !vmar_guard.is_same_as(&self.1) {
             // The process has executed a new program.
             return Ok(0);
@@ -95,7 +101,11 @@ impl InodeIo for MemFileHandle {
         reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        let vmar_guard = self.0.lock_vmar();
+        let Some(process) = self.0.process() else {
+            // The process does not exist.
+            return Ok(0);
+        };
+        let vmar_guard = process.lock_vmar();
         if !vmar_guard.is_same_as(&self.1) {
             // The process has executed a new program.
             return Ok(0);

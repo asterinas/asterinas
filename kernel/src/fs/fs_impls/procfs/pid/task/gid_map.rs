@@ -10,18 +10,17 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    process::{Gid, Process},
+    process::Gid,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/gid_map` (and also `/proc/[pid]/gid_map`).
 #[expect(dead_code)]
-pub struct GidMapFileOps(Arc<Process>);
+pub struct GidMapFileOps(TidDirOps);
 
 impl GidMapFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3403>
-        ProcFileBuilder::new(Self(process_ref), mkmod!(a+r, u+w))
+        ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r, u+w))
             .parent(parent)
             .build()
             .unwrap()

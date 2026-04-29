@@ -32,7 +32,11 @@ impl CgroupFileOps {
 
 impl FileOps for CgroupFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let cgroup: Arc<dyn CgroupSysNode> = match self.0.process_ref.cgroup().get() {
+        let Some(process) = self.0.process() else {
+            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+        };
+
+        let cgroup: Arc<dyn CgroupSysNode> = match process.cgroup().get() {
             Some(cgroup) => cgroup.clone(),
             None => CgroupSystem::singleton().clone(),
         };

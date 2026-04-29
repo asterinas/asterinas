@@ -12,7 +12,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        Process, VmarSnapshot,
+        VmarSnapshot,
         posix_thread::{AsPosixThread, alien_access::AlienAccessMode},
         signal::{PollHandle, Pollable},
     },
@@ -20,13 +20,12 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/maps` (and also `/proc/[pid]/maps`).
-pub struct MapsFileOps(Arc<Process>);
+pub struct MapsFileOps(TidDirOps);
 
 impl MapsFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        let process_ref = dir.process_ref.clone();
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3343>
-        ProcFileBuilder::new(Self(process_ref), mkmod!(a+r))
+        ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r))
             .parent(parent)
             .build()
             .unwrap()
@@ -39,11 +38,14 @@ impl FileOpsByHandle for MapsFileOps {
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
     ) -> Result<Box<dyn FileIo>> {
+        let Some(process) = self.0.process() else {
+            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+        };
         // Hold the process VMAR lock while checking access permissions and
         // taking the VMAR identity snapshot to prevent race conditions.
-        let vmar_guard = self.0.lock_vmar();
+        let vmar_guard = process.lock_vmar();
 
-        self.0
+        process
             .main_thread()
             .as_posix_thread()
             .unwrap()
@@ -59,7 +61,7 @@ impl FileOpsByHandle for MapsFileOps {
 }
 
 /// A file handle opened from `/proc/[pid]/task/[tid]/maps` (and also `/proc/[pid]/maps`).
-struct MapsFileHandle(Arc<Process>, VmarSnapshot);
+struct MapsFileHandle(TidDirOps, VmarSnapshot);
 
 impl Pollable for MapsFileHandle {
     fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
@@ -77,7 +79,10 @@ impl InodeIo for MapsFileHandle {
     ) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
-        let vmar_guard = self.0.lock_vmar();
+        let Some(process) = self.0.process() else {
+            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+        };
+        let vmar_guard = process.lock_vmar();
         if !vmar_guard.is_same_as(&self.1) {
             // The process has executed a new program.
             return Ok(0);
