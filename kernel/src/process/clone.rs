@@ -449,6 +449,9 @@ fn clone_child_task(
             )
         })?;
 
+    let child_thread = child_task.as_thread().unwrap();
+    pid_table::pid_table_mut().insert_thread(child_tid, child_thread);
+
     Ok(child_task)
 }
 

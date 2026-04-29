@@ -347,9 +347,14 @@ fn reap_zombie_child(
     let mut pid_table = pid_table::pid_table_mut();
 
     // Lock order: children of process -> PID table -> tasks of process
-    for task in child_process.tasks().lock().as_slice() {
-        pid_table.remove_thread(task.as_posix_thread().unwrap().tid());
-    }
+    debug_assert_eq!(child_process.tasks().lock().as_slice().len(), 1);
+    debug_assert_eq!(
+        child_process.tasks().lock().as_slice()[0]
+            .as_posix_thread()
+            .unwrap()
+            .tid(),
+        child_pid
+    );
 
     // Lock order: children of process -> PID table
     // -> group of process -> group inner -> session inner
