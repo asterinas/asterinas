@@ -2,23 +2,22 @@
 
 use core::marker::PhantomData;
 
-use aster_util::{printer::VmPrinter, slot_vec::SlotVec};
-use ostd::sync::RwMutexUpgradeableGuard;
+use aster_util::printer::VmPrinter;
 
 use super::TidDirOps;
 use crate::{
     fs::{
         file::{
-            AccessMode, FileLike, chmod,
+            AccessMode, FileLike, InodeType, chmod,
             file_table::{FileDesc, RawFileDesc},
             mkmod,
         },
         procfs::template::{
-            DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFile, ProcFileBuilder, ProcSym,
-            ProcSymBuilder, SymOps,
+            DirOps, FileOps, ListedEntry, ProcDir, ProcDirBuilder, ProcFile, ProcFileBuilder,
+            ProcSym, ProcSymBuilder, ReaddirEntry, SymOps, keyed_readdir_entries,
+            visit_readdir_entries,
         },
-        utils::DirEntryVecExt,
-        vfs::inode::{Inode, SymbolicLink},
+        vfs::inode::{Inode, RevalidationPolicy, SymbolicLink},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -47,20 +46,15 @@ impl<T: FdOps> FdDirOps<T> {
 }
 
 impl<T: FdOps> DirOps for FdDirOps<T> {
-    // Lock order: cached entries -> file table
-    //
-    // Note that inverting the lock order is non-trivial because the file table is protected by a
-    // spin lock but the cached entries are protected by a mutex.
-
-    fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
+    fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         let Ok(raw_fd) = name.parse::<RawFileDesc>() else {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid FD");
         };
         let fd = raw_fd.try_into()?;
 
-        let mut cached_children = dir.cached_children().write();
-
-        let thread = self.dir.thread();
+        let Some(thread) = self.dir.thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let access_mode = if let Some(file_table) = posix_thread.file_table().lock().as_ref()
@@ -71,70 +65,58 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
             return_errno_with_message!(Errno::ENOENT, "the file does not exist");
         };
 
-        let child = T::new_inode(self.dir.clone(), fd, access_mode, dir.this_weak().clone());
-        // The old entry is likely outdated given that `lookup_child` is called. Race conditions
-        // may occur, but caching the file descriptor (which aligns with the Linux implementation)
-        // is inherently racy, so preventing race conditions is not very meaningful.
-        cached_children.remove_entry_by_name(name);
-        cached_children.put((String::from(name), child.clone()));
-
-        Ok(child)
+        Ok(T::new_inode(
+            self.dir.clone(),
+            fd,
+            access_mode,
+            this_dir.this_weak().clone(),
+        ))
     }
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let mut cached_children = dir.cached_children().write();
-
-        let thread = self.dir.thread();
+    fn visit_entries_from_offset<'a, F>(&'a self, offset: usize, visit_fn: F) -> Result<()>
+    where
+        F: FnMut(ReaddirEntry<'a>) -> Result<()>,
+    {
+        let Some(thread) = self.dir.thread() else {
+            return_errno_with_message!(Errno::ENOENT, "the thread does not exist");
+        };
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let file_table = posix_thread.file_table().lock();
         let Some(file_table) = file_table.as_ref() else {
-            *cached_children = SlotVec::new();
-            return cached_children.downgrade();
+            // The thread has exited.
+            return Ok(());
         };
 
-        let file_table = file_table.read();
+        // Collect the list of FDs first before visiting entries. This can avoid holding the file
+        // table lock while calling `visit_fn`, which may break the atomic mode.
+        let file_descs = {
+            let file_table = file_table.read();
+            file_table
+                .fds_and_files()
+                .map(|(file_desc, _)| usize::from(file_desc))
+                .collect::<Vec<_>>()
+        };
 
-        // Remove outdated entries.
-        for i in 0..cached_children.slots_len() {
-            let Some((_, child)) = cached_children.get(i) else {
-                continue;
-            };
-            let child = child.downcast_ref::<T::NodeType>().unwrap();
-            let child_ops = T::ref_from_inode(child);
-
-            let Ok(file) = file_table.get_file(child_ops.file_desc()) else {
-                cached_children.remove(i);
-                continue;
-            };
-            if !child_ops.is_valid(file) {
-                cached_children.remove(i);
-            }
-        }
-
-        // Add new entries.
-        for (file_desc, file) in file_table.fds_and_files() {
-            cached_children.put_entry_if_not_found(&file_desc.to_string(), || {
-                T::new_inode(
-                    self.dir.clone(),
-                    file_desc,
-                    file.access_mode(),
-                    dir.this_weak().clone(),
-                )
-            });
-        }
-
-        cached_children.downgrade()
+        visit_readdir_entries(
+            keyed_readdir_entries(offset, 2, file_descs, |file_desc| {
+                ListedEntry::new(file_desc.to_string(), T::entry_inode_type())
+            }),
+            visit_fn,
+        )
     }
 
-    fn validate_child(&self, child: &dyn Inode) -> bool {
+    fn revalidation_policy(&self) -> RevalidationPolicy {
+        RevalidationPolicy::REVALIDATE_EXISTS | RevalidationPolicy::REVALIDATE_ABSENT
+    }
+
+    fn revalidate_exists(&self, _name: &str, child: &dyn Inode) -> bool {
         let child = child.downcast_ref::<T::NodeType>().unwrap();
         let child_ops = T::ref_from_inode(child);
 
-        let thread = self.dir.thread();
+        let Some(thread) = self.dir.thread() else {
+            return false;
+        };
         let posix_thread = thread.as_posix_thread().unwrap();
 
         if let Some(file_table) = posix_thread.file_table().lock().as_ref()
@@ -144,6 +126,27 @@ impl<T: FdOps> DirOps for FdDirOps<T> {
         } else {
             false
         }
+    }
+
+    fn revalidate_absent(&self, name: &str) -> bool {
+        let Ok(file_desc) = name.parse::<RawFileDesc>() else {
+            return true;
+        };
+        let Ok(file_desc) = file_desc.try_into() else {
+            return true;
+        };
+
+        let Some(thread) = self.dir.thread() else {
+            return true;
+        };
+        let posix_thread = thread.as_posix_thread().unwrap();
+
+        let file_table = posix_thread.file_table().lock();
+        let Some(file_table) = file_table.as_ref() else {
+            return true;
+        };
+
+        file_table.read().get_file(file_desc).is_err()
     }
 }
 
@@ -158,6 +161,8 @@ pub(super) trait FdOps: Send + Sync + 'static {
     ) -> Arc<dyn Inode>;
 
     fn file_desc(&self) -> FileDesc;
+
+    fn entry_inode_type() -> InodeType;
 
     fn is_valid(&self, correspond_file: &Arc<dyn FileLike>) -> bool;
 
@@ -206,6 +211,10 @@ impl FdOps for FileSymOps {
         self.file_desc
     }
 
+    fn entry_inode_type() -> InodeType {
+        InodeType::SymLink
+    }
+
     fn is_valid(&self, correspond_file: &Arc<dyn FileLike>) -> bool {
         // We'll treat the old entry as valid and reuse it if the access mode is the same,
         // even if the file is different.
@@ -219,7 +228,9 @@ impl FdOps for FileSymOps {
 
 impl SymOps for FileSymOps {
     fn read_link(&self) -> Result<SymbolicLink> {
-        let thread = self.tid_dir_ops.thread();
+        let Some(thread) = self.tid_dir_ops.thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let file_table = posix_thread.file_table().lock();
@@ -267,6 +278,10 @@ impl FdOps for FileInfoOps {
         self.file_desc
     }
 
+    fn entry_inode_type() -> InodeType {
+        InodeType::File
+    }
+
     fn is_valid(&self, _correspond_file: &Arc<dyn FileLike>) -> bool {
         true
     }
@@ -278,7 +293,9 @@ impl FdOps for FileInfoOps {
 
 impl FileOps for FileInfoOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let thread = self.tid_dir_ops.thread();
+        let Some(thread) = self.tid_dir_ops.thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let info = if let Some(file_table) = posix_thread.file_table().lock().as_ref()

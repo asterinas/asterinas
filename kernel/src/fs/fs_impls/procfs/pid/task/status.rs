@@ -79,8 +79,9 @@ impl FileOps for StatusFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
-        let process = self.0.process_ref.as_ref();
-        let thread = self.0.thread();
+        let Some((thread, process)) = self.0.thread_and_process() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread or the process does not exist");
+        };
         let posix_thread = thread.as_posix_thread().unwrap();
         let credentials = posix_thread.credentials();
 

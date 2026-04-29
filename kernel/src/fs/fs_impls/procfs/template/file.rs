@@ -8,6 +8,7 @@ use super::Common;
 use crate::{
     fs::{
         file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags},
+        procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
             inode::{Extension, Inode, InodeIo, Metadata, SymbolicLink},
@@ -23,13 +24,18 @@ pub struct ProcFile<F: FileOps> {
 }
 
 impl<F: FileOps> ProcFile<F> {
-    pub(super) fn new(
-        file: F,
-        fs: Weak<dyn FileSystem>,
-        is_volatile: bool,
-        mode: InodeMode,
-    ) -> Arc<Self> {
-        let common = new_file_common(fs, mode, is_volatile);
+    pub(super) fn new(file: F, fs: Weak<dyn FileSystem>, mode: InodeMode) -> Arc<Self> {
+        let common = {
+            let arc_fs = fs.upgrade().unwrap();
+            let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
+            let metadata = Metadata::new_file(
+                procfs.alloc_id(),
+                mode,
+                BLOCK_SIZE,
+                procfs.sb().container_dev_id,
+            );
+            Common::new(metadata, fs)
+        };
         Arc::new(Self {
             inner: file,
             common,
@@ -39,18 +45,6 @@ impl<F: FileOps> ProcFile<F> {
     pub fn inner(&self) -> &F {
         &self.inner
     }
-}
-
-fn new_file_common(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Common {
-    let fs_ref = fs.upgrade().unwrap();
-    let procfs = fs_ref.downcast_ref::<super::ProcFs>().unwrap();
-    let metadata = Metadata::new_file(
-        procfs.alloc_id(),
-        mode,
-        super::BLOCK_SIZE,
-        procfs.sb().container_dev_id,
-    );
-    Common::new(metadata, fs, is_volatile)
 }
 
 impl<F: FileOps + 'static> InodeIo for ProcFile<F> {
@@ -108,10 +102,6 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
 
     fn write_link(&self, _target: &str) -> Result<()> {
         Err(Error::new(Errno::EINVAL))
-    }
-
-    fn is_dentry_cacheable(&self) -> bool {
-        !self.common.is_volatile()
     }
 
     fn seek_end(&self) -> Option<usize> {

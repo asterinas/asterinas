@@ -15,6 +15,7 @@ use crate::prelude::*;
 /// outer lock also permits it.
 pub struct Subject<E: Events>(BTreeSet<KeyableWeak<dyn Observer<E>>>);
 
+#[expect(dead_code)]
 impl<E: Events> Subject<E> {
     /// Creates an empty subject.
     pub const fn new() -> Self {

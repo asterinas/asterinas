@@ -8,6 +8,7 @@ use super::Common;
 use crate::{
     fs::{
         file::{InodeMode, InodeType, StatusFlags},
+        procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
             inode::{Extension, Inode, InodeIo, Metadata, SymbolicLink},
@@ -23,31 +24,24 @@ pub struct ProcSym<S: SymOps> {
 }
 
 impl<S: SymOps> ProcSym<S> {
-    pub(super) fn new(
-        sym: S,
-        fs: Weak<dyn FileSystem>,
-        is_volatile: bool,
-        mode: InodeMode,
-    ) -> Arc<Self> {
-        let common = new_symlink_common(fs, mode, is_volatile);
+    pub(super) fn new(sym: S, fs: Weak<dyn FileSystem>, mode: InodeMode) -> Arc<Self> {
+        let common = {
+            let arc_fs = fs.upgrade().unwrap();
+            let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
+            let metadata = Metadata::new_symlink(
+                procfs.alloc_id(),
+                mode,
+                BLOCK_SIZE,
+                procfs.sb().container_dev_id,
+            );
+            Common::new(metadata, fs)
+        };
         Arc::new(Self { inner: sym, common })
     }
 
     pub fn inner(&self) -> &S {
         &self.inner
     }
-}
-
-fn new_symlink_common(fs: Weak<dyn FileSystem>, mode: InodeMode, is_volatile: bool) -> Common {
-    let fs_ref = fs.upgrade().unwrap();
-    let procfs = fs_ref.downcast_ref::<super::ProcFs>().unwrap();
-    let metadata = Metadata::new_symlink(
-        procfs.alloc_id(),
-        mode,
-        super::BLOCK_SIZE,
-        procfs.sb().container_dev_id,
-    );
-    Common::new(metadata, fs, is_volatile)
 }
 
 impl<S: SymOps + 'static> InodeIo for ProcSym<S> {
@@ -104,10 +98,6 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
 
     fn write_link(&self, _target: &str) -> Result<()> {
         Err(Error::new(Errno::EPERM))
-    }
-
-    fn is_dentry_cacheable(&self) -> bool {
-        !self.common.is_volatile()
     }
 }
 

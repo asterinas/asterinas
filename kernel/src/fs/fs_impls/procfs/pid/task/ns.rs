@@ -2,21 +2,20 @@
 
 use core::marker::PhantomData;
 
-use aster_util::slot_vec::SlotVec;
-use ostd::sync::RwMutexUpgradeableGuard;
-
 use crate::{
     fs::{
         cgroupfs::CgroupNamespace,
-        file::mkmod,
+        file::{InodeType, mkmod},
         procfs::{
             pid::TidDirOps,
-            template::{DirOps, ProcDir, ProcDirBuilder, ProcSym, ProcSymBuilder, SymOps},
+            template::{
+                DirOps, ListedEntry, ProcDir, ProcDirBuilder, ProcSym, ProcSymBuilder,
+                ReaddirEntry, SymOps, visit_listed_entries,
+            },
         },
         pseudofs::NsCommonOps,
-        utils::DirEntryVecExt,
         vfs::{
-            inode::{Inode, SymbolicLink},
+            inode::{Inode, RevalidationPolicy, SymbolicLink},
             path::{MountNamespace, Path},
         },
     },
@@ -96,16 +95,6 @@ impl NsProxyEntry {
             Self::Uts => NsSymOps::<UtsNamespace>::new_inode(ns_proxy.uts_ns().get_path(), parent),
         }
     }
-
-    /// Returns the current namespace path for this entry.
-    fn current_path(self, ns_proxy: &NsProxy) -> Path {
-        match self {
-            Self::Cgroup => ns_proxy.cgroup_ns().get_path(),
-            Self::Ipc => ns_proxy.ipc_ns().get_path(),
-            Self::Mnt => ns_proxy.mnt_ns().get_path(),
-            Self::Uts => ns_proxy.uts_ns().get_path(),
-        }
-    }
 }
 
 /// Extracts the cached namespace path from a `NsSymlink<T>` inode.
@@ -132,114 +121,85 @@ fn cached_ns_path(inode: &dyn Inode) -> Option<&Path> {
 }
 
 impl DirOps for NsDirOps {
-    fn lookup_child(&self, dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
-        let mut cached_children = dir.cached_children().write();
-
+    fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if name == "user" {
-            let current_path = {
-                let user_ns = self.dir.process_ref.user_ns().lock();
-                user_ns.get_path()
+            let Some(process) = self.dir.process() else {
+                return_errno_with_message!(Errno::ESRCH, "the process does not exist");
             };
-            // Reuse the cached inode if the user namespace hasn't changed.
-            if let Some(cached) = cached_children.find_entry_by_name(name)
-                && cached_ns_path(&**cached) == Some(&current_path)
-            {
-                return Ok(cached.clone());
-            }
 
-            let inode = NsSymOps::<UserNamespace>::new_inode(current_path, dir.this_weak().clone());
-            cached_children.remove_entry_by_name(name);
-            cached_children.put((name.to_string(), inode.clone()));
-            return Ok(inode);
+            let user_ns = process.user_ns().lock();
+            return Ok(NsSymOps::<UserNamespace>::new_inode(
+                user_ns.get_path(),
+                this_dir.this_weak().clone(),
+            ));
         }
 
         // Validate the name and get the current namespace path.
         let entry = NsProxyEntry::from_str(name)
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "the file does not exist"))?;
 
-        let thread = self.dir.thread();
+        let Some(thread) = self.dir.thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
+
         let ns_proxy_guard = thread.as_posix_thread().unwrap().ns_proxy().lock();
         let ns_proxy = ns_proxy_guard
             .as_ref()
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "the thread has exited"))?;
-        let current_path = entry.current_path(ns_proxy);
-
-        // Reuse the cached inode if the namespace hasn't changed.
-        if let Some(cached) = cached_children.find_entry_by_name(name)
-            && cached_ns_path(&**cached) == Some(&current_path)
-        {
-            return Ok(cached.clone());
-        }
-
-        let inode = entry.new_sym_inode(ns_proxy, dir.this_weak().clone());
-        cached_children.remove_entry_by_name(name);
-        cached_children.put((name.to_string(), inode.clone()));
-        Ok(inode)
+        Ok(entry.new_sym_inode(ns_proxy, this_dir.this_weak().clone()))
     }
 
-    fn populate_children<'a>(
-        &self,
-        dir: &'a ProcDir<Self>,
-    ) -> RwMutexUpgradeableGuard<'a, SlotVec<(String, Arc<dyn Inode>)>> {
-        let mut cached_children = dir.cached_children().write();
-
-        // Refresh `NsProxy`-backed entries only when the namespace has changed
-        // or the proxy has been dropped.
-        let thread = self.dir.thread();
-        let ns_proxy = thread.as_posix_thread().unwrap().ns_proxy().lock();
-
-        for entry in NsProxyEntry::ALL {
-            let name = entry.as_str();
-            match ns_proxy.as_ref() {
-                Some(ns_proxy) => {
-                    let current_path = entry.current_path(ns_proxy);
-                    let needs_update = cached_children
-                        .find_entry_by_name(name)
-                        .is_none_or(|cached| cached_ns_path(&**cached) != Some(&current_path));
-                    if needs_update {
-                        cached_children.remove_entry_by_name(name);
-                        let inode = entry.new_sym_inode(ns_proxy, dir.this_weak().clone());
-                        cached_children.put((name.to_string(), inode));
-                    }
-                }
-                None => {
-                    // `NsProxy` is gone; remove the stale entry if present.
-                    cached_children.remove_entry_by_name(name);
-                }
-            }
-        }
-
-        drop(ns_proxy);
-
-        // Refresh the user namespace entry only when it has changed.
-        let user_ns_path = {
-            let user_ns = self.dir.process_ref.user_ns().lock();
-            user_ns.get_path()
+    fn visit_entries_from_offset<'a, F>(&'a self, offset: usize, visit_fn: F) -> Result<()>
+    where
+        F: FnMut(ReaddirEntry<'a>) -> Result<()>,
+    {
+        let Some(thread) = self.dir.thread() else {
+            return_errno_with_message!(Errno::ENOENT, "the thread does not exist");
         };
-        let user_needs_update = cached_children
-            .find_entry_by_name("user")
-            .is_none_or(|cached| cached_ns_path(&**cached) != Some(&user_ns_path));
-        if user_needs_update {
-            cached_children.remove_entry_by_name("user");
-            let user_inode =
-                NsSymOps::<UserNamespace>::new_inode(user_ns_path, dir.this_weak().clone());
-            cached_children.put(("user".to_string(), user_inode));
-        }
 
-        cached_children.downgrade()
+        let has_ns_proxy = thread
+            .as_posix_thread()
+            .unwrap()
+            .ns_proxy()
+            .lock()
+            .as_ref()
+            .is_some();
+        let ns_proxy_entries = has_ns_proxy
+            .then_some(NsProxyEntry::ALL)
+            .into_iter()
+            .flat_map(|entries| {
+                entries
+                    .iter()
+                    .map(|entry| ListedEntry::new(entry.as_str(), InodeType::SymLink))
+            });
+
+        let user_entry = Some(ListedEntry::new("user", InodeType::SymLink)).into_iter();
+
+        visit_listed_entries(offset, ns_proxy_entries.chain(user_entry), visit_fn)
     }
 
-    fn validate_child(&self, child: &dyn Inode) -> bool {
+    fn revalidation_policy(&self) -> RevalidationPolicy {
+        // Files in the `ns` directory will not appear implicitly. They can only disappear
+        // implicitly. Therefore, it is sufficient to revalidate only their existence.
+        RevalidationPolicy::REVALIDATE_EXISTS
+    }
+
+    fn revalidate_exists(&self, _name: &str, child: &dyn Inode) -> bool {
         let Some(cached_path) = cached_ns_path(child) else {
             return false;
         };
 
         if child.downcast_ref::<NsSymlink<UserNamespace>>().is_some() {
-            let user_ns = self.dir.process_ref.user_ns().lock();
+            let Some(process) = self.dir.process() else {
+                return false;
+            };
+            let user_ns = process.user_ns().lock();
             return cached_path == &user_ns.get_path();
         }
 
-        let thread = self.dir.thread();
+        let Some(thread) = self.dir.thread() else {
+            return false;
+        };
         let ns_proxy = thread.as_posix_thread().unwrap().ns_proxy().lock();
         let Some(ns_proxy) = ns_proxy.as_ref() else {
             return false;

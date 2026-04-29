@@ -11,7 +11,6 @@ use alloc::collections::btree_map::Entry;
 
 use super::{Pgid, Pid, Process, ProcessGroup, Session, Sid};
 use crate::{
-    events::{Events, Observer, Subject},
     prelude::*,
     process::posix_thread::AsPosixThread,
     thread::{Thread, Tid},
@@ -24,9 +23,8 @@ static PID_TABLE: Mutex<PidTable> = Mutex::new(PidTable::new());
 /// Combines the process, process-group, session, and thread tables into a
 /// single structure.
 pub struct PidTable {
-    entries: BTreeMap<u32, Arc<Mutex<PidEntry>>>,
+    entries: BTreeMap<u32, Arc<PidEntry>>,
     process_count: usize,
-    subject: Subject<PidEvent>,
 }
 
 impl PidTable {
@@ -34,15 +32,14 @@ impl PidTable {
         Self {
             entries: BTreeMap::new(),
             process_count: 0,
-            subject: Subject::new(),
         }
     }
 
     /// Returns the entry for the given ID, or creates a new one if absent.
-    fn get_or_create_entry(&mut self, id: u32) -> &Arc<Mutex<PidEntry>> {
+    fn get_or_create_entry(&mut self, id: u32) -> &Arc<PidEntry> {
         self.entries
             .entry(id)
-            .or_insert_with(|| Arc::new(Mutex::new(PidEntry::new())))
+            .or_insert_with(|| Arc::new(PidEntry::new()))
     }
 
     // ---- Thread operations ----
@@ -165,8 +162,6 @@ impl PidTable {
             pid_entry.is_empty()
         };
 
-        self.subject.notify_observers(&PidEvent::Exit(pid));
-
         if should_remove {
             map_entry.remove();
         }
@@ -257,11 +252,9 @@ impl PidTable {
         }
     }
 
-    // ---- Observer operations ----
-
-    /// Registers an observer which watches `PidEvent`.
-    pub fn register_observer(&mut self, observer: Weak<dyn Observer<PidEvent>>) {
-        self.subject.register_observer(observer);
+    /// Returns the entry for the given numeric identifier.
+    pub fn get_entry(&self, id: u32) -> Option<Arc<PidEntry>> {
+        self.entries.get(&id).cloned()
     }
 }
 
@@ -284,15 +277,91 @@ impl PidTable {
 /// are atomic with respect to the corresponding `PidEntry`. In other words,
 /// there will never be a `PidEntry` in the [`PidTable`] that is associated with
 /// a [`Process`], but at some intermediate moment has only an associated [`Thread`].
-struct PidEntry {
+pub struct PidEntry {
+    inner: Mutex<PidEntryInner>,
+}
+
+struct PidEntryInner {
     thread: Weak<Thread>,
     process: Weak<Process>,
     process_group: Weak<ProcessGroup>,
     session: Weak<Session>,
 }
 
+/// The process/thread type represented by a [`PidEntry`].
+///
+/// [`PidTable`]'s guarantees for process/thread update operations ensure that its
+/// entry is never seen in an intermediate [`PidEntryType`].
+pub enum PidEntryType {
+    /// The entry tracks a live process. The associated thread, if any, is
+    /// the process's main thread.
+    Process,
+    /// The entry tracks a non-main POSIX thread (one whose TID differs
+    /// from any live process's PID).
+    Thread,
+}
+
 impl PidEntry {
     /// Creates a new empty `PidEntry`.
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new(PidEntryInner::new()),
+        }
+    }
+
+    /// Locks and returns access to the entry internals.
+    fn lock(&self) -> MutexGuard<'_, PidEntryInner> {
+        self.inner.lock()
+    }
+
+    /// Returns the thread associated with the entry, if any.
+    pub fn thread(&self) -> Option<Arc<Thread>> {
+        self.lock().thread()
+    }
+
+    /// Returns the process of the thread associated with the entry, if any.
+    ///
+    /// This method is not limited to the process slot.
+    /// If the entry only tracks a thread,
+    /// this returns the process that the thread belongs to.
+    ///
+    /// This is useful for procfs lookups that need process-scoped state for
+    /// either `/proc/[pid]` or `/proc/[pid]/task/[tid]`.
+    pub fn process_of_thread(&self) -> Option<Arc<Process>> {
+        let inner = self.lock();
+
+        if let Some(process) = inner.process() {
+            return Some(process);
+        }
+
+        if let Some(thread) = inner.thread() {
+            return Some(thread.as_posix_thread().unwrap().process());
+        }
+
+        None
+    }
+
+    /// Returns whether the entry is associated with a process or a thread.
+    ///
+    /// If a process and a thread share this numeric ID, returns
+    /// [`PidEntryType::Process`].
+    pub fn type_(&self) -> Option<PidEntryType> {
+        let inner = self.lock();
+
+        if inner.has_live_process() {
+            return Some(PidEntryType::Process);
+        }
+
+        if inner.has_live_thread() {
+            return Some(PidEntryType::Thread);
+        }
+
+        None
+    }
+}
+
+impl PidEntryInner {
+    /// Creates a new empty `PidEntryInner`.
     fn new() -> Self {
         Self {
             thread: Weak::new(),
@@ -404,15 +473,6 @@ impl PidEntry {
 pub fn pid_table_mut() -> MutexGuard<'static, PidTable> {
     PID_TABLE.lock()
 }
-
-/// An event emitted when a process exits.
-#[derive(Clone, Copy)]
-pub enum PidEvent {
-    /// A process with the given PID has exited.
-    Exit(Pid),
-}
-
-impl Events for PidEvent {}
 
 /// Extension methods for `Weak<T>` values stored in `PidEntry`.
 ///
