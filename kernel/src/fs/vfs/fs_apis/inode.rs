@@ -233,6 +233,67 @@ impl MknodType {
     }
 }
 
+bitflags! {
+    /// Policy that controls when the VFS revalidates cached inode entries.
+    ///
+    /// # Why revalidation is needed
+    ///
+    /// Normally, inode creation and deletion go through VFS operations such as
+    /// `create`, `unlink`, `mkdir`, and `rmdir`. This lets the VFS keep its
+    /// dentry cache consistent with the underlying filesystem.
+    ///
+    /// However, some filesystems create or delete inodes without going through
+    /// the VFS. For example, procfs entries under `/proc` appear and disappear
+    /// as processes are forked and reaped. Networked filesystems may also be
+    /// modified by remote peers. For such filesystems, the VFS must revalidate
+    /// cached entries by asking the parent directory whether a cached child is
+    /// still valid.
+    ///
+    /// # Revalidation protocol
+    ///
+    /// A directory inode declares its policy through
+    /// [`Inode::revalidation_policy`].
+    ///
+    /// - [`REVALIDATE_EXISTS`](Self::REVALIDATE_EXISTS) makes the VFS call
+    ///   [`Inode::revalidate_exists`] on positive cache hits. If it returns
+    ///   `false`, the cached entry is dropped and the lookup is retried.
+    /// - [`REVALIDATE_ABSENT`](Self::REVALIDATE_ABSENT) makes the VFS call
+    ///   [`Inode::revalidate_absent`] on negative cache hits. If it returns
+    ///   `false`, the cached entry is dropped and the lookup is retried.
+    ///
+    /// If neither flag is set, cached entries are trusted unconditionally. The
+    /// policy must be fixed for each inode. Non-directory inodes should return
+    /// an empty policy.
+    ///
+    /// # Performance
+    ///
+    /// The revalidation callbacks run on every matching cache hit, so
+    /// filesystems should keep them cheap.
+    pub struct RevalidationPolicy: u8 {
+        /// Revalidate positive cache entries (cached child inodes).
+        ///
+        /// Set this when the directory may spontaneously
+        /// _lose_ children without going through VFS `unlink`/`rmdir`.
+        /// For example, procfs sets this on `/proc`
+        /// because PID directories disappear when processes exit.
+        ///
+        /// When set, every positive cache hit calls
+        /// [`Inode::revalidate_exists`] on the parent directory.
+        const REVALIDATE_EXISTS = 1 << 0;
+
+        /// Revalidate negative cache entries (names known to be absent).
+        ///
+        /// Set this when the directory may spontaneously _gain_ children
+        /// without going through VFS `create`/`mkdir`/`link`.
+        /// For example, procfs sets this on `/proc`
+        /// because PID directories appear when processes are forked.
+        ///
+        /// When set, every negative cache hit calls
+        /// [`Inode::revalidate_absent`] on the parent directory.
+        const REVALIDATE_ABSENT = 1 << 1;
+    }
+}
+
 /// I/O operations in an [`Inode`].
 ///
 /// This abstracts the common I/O operations used by both [`Inode`] (for regular files) and
@@ -358,24 +419,47 @@ pub trait Inode: Any + InodeIo + Send + Sync {
 
     fn fs(&self) -> Arc<dyn FileSystem>;
 
-    /// Returns whether a VFS dentry for this inode should be put into the dentry cache.
+    /// Returns the revalidation policy for cached children of this directory.
     ///
-    /// The dentry cache in the VFS layer can accelerate the lookup of inodes. So usually,
-    /// it is preferable to use the dentry cache. And thus, the default return value of this method
-    /// is `true`.
+    /// See [`RevalidationPolicy`] for the full protocol description.
     ///
-    /// But this caching can raise consistency issues in certain use cases. Specifically, the dentry
-    /// cache works on the assumption that all FS operations go through the dentry layer first.
-    /// This is why the dentry cache can reflect the up-to-date FS state. Yet, this assumption
-    /// may be broken. If the inodes of a file system may "disappear" without unlinking through the
-    /// VFS layer, then their dentries should not be cached. For example, an inode in procfs
-    /// (say, `/proc/1/fd/2`) can "disappear" without notice from the perspective of the dentry cache.
-    /// So for such inodes, they are incompatible with the dentry cache. And this method returns `false`.
+    /// Default: empty (no revalidation).
+    /// Correct for filesystems where all mutations go through the VFS.
+    fn revalidation_policy(&self) -> RevalidationPolicy {
+        RevalidationPolicy::empty()
+    }
+
+    /// Checks whether a cached child inode still exists under this directory.
     ///
-    /// Note that if any ancestor directory of an inode has this method returns `false`, then
-    /// this inode would not be cached by the dentry cache, even when the method of this
-    /// inode returns `true`.
-    fn is_dentry_cacheable(&self) -> bool {
+    /// Called on a positive cache hit
+    /// when [`RevalidationPolicy::REVALIDATE_EXISTS`] is set.
+    /// Returns `true` if `child` is still a valid child named `name`;
+    /// `false` if the entry should be dropped and the lookup retried.
+    ///
+    /// See [`RevalidationPolicy`] for the full protocol description.
+    ///
+    /// # Precondition
+    ///
+    /// Only called when `self.revalidation_policy()` includes `REVALIDATE_EXISTS`.
+    /// Otherwise, the return value is considered garbage.
+    fn revalidate_exists(&self, _name: &str, _child: &dyn Inode) -> bool {
+        true
+    }
+
+    /// Checks whether a name is still absent under this directory.
+    ///
+    /// Called on a negative cache hit
+    /// when [`RevalidationPolicy::REVALIDATE_ABSENT`] is set.
+    /// Returns `true` if `name` is still absent;
+    /// `false` if a child may now exist and the lookup should be retried.
+    ///
+    /// See [`RevalidationPolicy`] for the full protocol description.
+    ///
+    /// # Precondition
+    ///
+    /// Only called when `self.revalidation_policy()` includes `REVALIDATE_ABSENT`.
+    /// Otherwise, the return value is considered garbage.
+    fn revalidate_absent(&self, _name: &str) -> bool {
         true
     }
 

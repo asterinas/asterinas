@@ -431,14 +431,8 @@ impl PathResolver {
         } else if super::is_dotdot(name) {
             self.resolve_parent(path).unwrap_or_else(|| path.this())
         } else {
-            let target_inner_opt = dir_dentry.lookup_via_cache(name)?;
-            match target_inner_opt {
-                Some(target_inner) => Path::new(path.mount.clone(), target_inner),
-                None => {
-                    let target_inner = dir_dentry.lookup_via_fs(name)?;
-                    Path::new(path.mount.clone(), target_inner)
-                }
-            }
+            let target_dentry = dir_dentry.lookup_child(name)?;
+            Path::new(path.mount.clone(), target_dentry)
         };
 
         Ok(target_path.get_top_path())
