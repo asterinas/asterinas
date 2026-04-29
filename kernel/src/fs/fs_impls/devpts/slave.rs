@@ -62,14 +62,6 @@ impl InodeIo for PtySlaveInode {
 }
 
 impl Inode for PtySlaveInode {
-    /// Do not cache dentry in DCACHE.
-    ///
-    /// The slave will be deleted by the master when the master is released.
-    /// So we should not cache the dentry.
-    fn is_dentry_cacheable(&self) -> bool {
-        false
-    }
-
     fn size(&self) -> usize {
         self.metadata.read().size
     }

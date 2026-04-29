@@ -163,10 +163,6 @@ impl Inode for Ptmx {
     ) -> Option<Result<Box<dyn FileIo>>> {
         Some(self.inner.open())
     }
-
-    fn is_dentry_cacheable(&self) -> bool {
-        false
-    }
 }
 
 impl Device for Inner {
