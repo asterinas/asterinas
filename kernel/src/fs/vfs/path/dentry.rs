@@ -2,7 +2,7 @@
 
 use core::{
     ops::Deref,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, AtomicU64, Ordering},
 };
 
 use hashbrown::HashMap;
@@ -14,7 +14,7 @@ use crate::{
         self,
         file::{InodeMode, InodeType},
         vfs::{
-            inode::{Inode, MknodType},
+            inode::{Inode, MknodType, RevalidationPolicy},
             inode_ext::InodeExt,
         },
     },
@@ -26,10 +26,16 @@ pub(in crate::fs) struct Dentry {
     inode: Arc<dyn Inode>,
     type_: InodeType,
     name_and_parent: NameAndParent,
-    children: Option<RwMutex<DentryChildren>>,
+    dir_state: Option<DentryDirState>,
     flags: AtomicU32,
     mount_count: AtomicU32,
     this: Weak<Dentry>,
+}
+
+/// Per-directory cache state.
+struct DentryDirState {
+    children: RwMutex<DentryChildren>,
+    revalidation_policy: RevalidationPolicy,
 }
 
 /// The name and parent of a `Dentry`.
@@ -107,14 +113,18 @@ impl Dentry {
             DentryOptions::Pseudo(name_fn) => NameAndParent::Pseudo(name_fn),
         };
 
-        let children =
-            matches!(inode.type_(), InodeType::Dir).then(|| RwMutex::new(DentryChildren::new()));
+        let type_ = inode.type_();
+        let is_dir = type_ == InodeType::Dir;
+        let dir_state = is_dir.then(|| DentryDirState {
+            children: RwMutex::new(DentryChildren::new()),
+            revalidation_policy: inode.revalidation_policy(),
+        });
 
         Arc::new_cyclic(|weak_self| Self {
-            type_: inode.type_(),
+            type_,
             inode,
             name_and_parent,
-            children,
+            dir_state,
             flags: AtomicU32::new(DentryFlags::empty().bits()),
             mount_count: AtomicU32::new(0),
             this: weak_self.clone(),
@@ -156,12 +166,6 @@ impl Dentry {
     /// Gets the inner inode.
     pub(super) fn inode(&self) -> &Arc<dyn Inode> {
         &self.inode
-    }
-
-    /// Returns whether the dentry can be cached.
-    fn is_dentry_cacheable(&self) -> bool {
-        // Should we store it as a dentry flag?
-        self.inode.is_dentry_cacheable()
     }
 
     fn flags(&self) -> DentryFlags {
@@ -228,9 +232,9 @@ impl Dentry {
     }
 
     pub(super) fn as_dir_dentry_or_err(&self) -> Result<DirDentry<'_>> {
-        debug_assert_eq!(self.children.is_some(), self.type_ == InodeType::Dir);
+        debug_assert_eq!(self.dir_state.is_some(), self.type_ == InodeType::Dir);
 
-        let Some(children) = &self.children else {
+        let Some(dir_state) = &self.dir_state else {
             return_errno_with_message!(
                 Errno::ENOTDIR,
                 "the dentry is not related to a directory inode"
@@ -239,7 +243,8 @@ impl Dentry {
 
         Ok(DirDentry {
             inner: self,
-            children,
+            children: &dir_state.children,
+            revalidation_policy: dir_state.revalidation_policy,
         })
     }
 }
@@ -248,6 +253,7 @@ impl Dentry {
 pub(super) struct DirDentry<'a> {
     inner: &'a Dentry,
     children: &'a RwMutex<DentryChildren>,
+    revalidation_policy: RevalidationPolicy,
 }
 
 impl Deref for DirDentry<'_> {
@@ -267,39 +273,86 @@ impl DirDentry<'_> {
         mode: InodeMode,
     ) -> Result<Arc<Dentry>> {
         let children = self.children.upread();
-        if children.contains_valid(name) {
-            return_errno!(Errno::EEXIST);
+        if let Some(entry) = children.find(name)
+            && entry.is_positive()
+        {
+            if self.revalidate_cached_entry(name, &entry) {
+                return_errno_with_message!(Errno::EEXIST, "the dentry already exists");
+            }
+
+            let mut children = children.upgrade();
+            let _ = children.remove(name);
+            let new_inode = self.inode.create(name, type_, mode)?;
+
+            return Ok(self.insert_created_child(&mut children, name, new_inode));
         }
 
         let new_inode = self.inode.create(name, type_, mode)?;
-        let name = String::from(name);
-        let new_child = Dentry::new(new_inode, DentryOptions::Leaf((name.clone(), self.this())));
+        let mut children = children.upgrade();
 
-        if new_child.is_dentry_cacheable() {
-            children.upgrade().insert(name, new_child.clone());
+        Ok(self.insert_created_child(&mut children, name, new_inode))
+    }
+
+    fn insert_created_child(
+        &self,
+        children: &mut DentryChildren,
+        name: &str,
+        inode: Arc<dyn Inode>,
+    ) -> Arc<Dentry> {
+        let name = String::from(name);
+        let new_child = Dentry::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
+
+        children.insert_positive(name, new_child.clone());
+
+        new_child
+    }
+
+    /// Looks up `name` relative to this dentry.
+    ///
+    /// On a cache miss, this method instantiates the child through the file
+    /// system and inserts it into the cache before returning the resulting
+    /// child dentry.
+    ///
+    /// This method does not interpret `"."` or `".."`, does not check search
+    /// permission, and does not resolve overmounted children. Callers that need
+    /// full path-component semantics should use
+    /// [`super::PathResolver::lookup_at_path`].
+    pub(in crate::fs) fn lookup_child(&self, name: &str) -> Result<Arc<Dentry>> {
+        debug_assert!(!is_dot_or_dotdot(name));
+
+        let mut children = self.children.upread();
+
+        // Looks up via the dentry cache.
+        if let Some(cached_entry) = children.find(name) {
+            if self.revalidate_cached_entry(name, &cached_entry) {
+                return match cached_entry {
+                    CachedDentry::Positive { dentry } => Ok(dentry),
+                    CachedDentry::Negative => {
+                        return_errno_with_message!(Errno::ENOENT, "found a negative dentry")
+                    }
+                };
+            }
+
+            let mut children_for_update = children.upgrade();
+            let _ = children_for_update.remove(name);
+            children = children_for_update.downgrade();
         }
 
-        Ok(new_child)
-    }
+        // Looks up via the file system.
 
-    /// Lookups a target `Dentry` from the cache in children.
-    pub(super) fn lookup_via_cache(&self, name: &str) -> Result<Option<Arc<Dentry>>> {
-        let children = self.children.read();
-        children.find(name)
-    }
+        let inode = match self.inode.lookup(name) {
+            Ok(inode) => inode,
+            Err(error) if error.error() == Errno::ENOENT => {
+                children.upgrade().insert_negative(name.to_string());
+                return Err(error);
+            }
+            Err(error) => return Err(error),
+        };
 
-    /// Lookups a target `Dentry` from the file system.
-    pub(super) fn lookup_via_fs(&self, name: &str) -> Result<Arc<Dentry>> {
-        let children = self.children.upread();
-
-        // TODO: Add a right implementation to cache negative dentry.
-        let inode = self.inode.lookup(name)?;
         let name = String::from(name);
+        // TODO: Use a better storage strategy to avoid extra string allocations.
         let target = Dentry::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
-
-        if target.is_dentry_cacheable() {
-            children.upgrade().insert(name, target.clone());
-        }
+        children.upgrade().insert_positive(name, target.clone());
 
         Ok(target)
     }
@@ -312,7 +365,7 @@ impl DirDentry<'_> {
         type_: MknodType,
     ) -> Result<Arc<Dentry>> {
         let children = self.children.upread();
-        if children.contains_valid(name) {
+        if children.contains_positive(name) {
             return_errno!(Errno::EEXIST);
         }
 
@@ -320,9 +373,7 @@ impl DirDentry<'_> {
         let name = String::from(name);
         let new_child = Dentry::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
 
-        if new_child.is_dentry_cacheable() {
-            children.upgrade().insert(name, new_child.clone());
-        }
+        children.upgrade().insert_positive(name, new_child.clone());
 
         Ok(new_child)
     }
@@ -330,7 +381,7 @@ impl DirDentry<'_> {
     /// Links a new `Dentry` by `link()` the old inode.
     pub(super) fn link(&self, old_inode: &Arc<dyn Inode>, name: &str) -> Result<()> {
         let children = self.children.upread();
-        if children.contains_valid(name) {
+        if children.contains_positive(name) {
             return_errno!(Errno::EEXIST);
         }
 
@@ -341,9 +392,9 @@ impl DirDentry<'_> {
             DentryOptions::Leaf((name.clone(), self.this())),
         );
 
-        if dentry.is_dentry_cacheable() {
-            children.upgrade().insert(name.clone(), dentry.clone());
-        }
+        children
+            .upgrade()
+            .insert_positive(name.clone(), dentry.clone());
         fs::vfs::notify::on_link(dentry.parent().unwrap().inode(), dentry.inode(), || name);
         Ok(())
     }
@@ -354,28 +405,8 @@ impl DirDentry<'_> {
             return_errno_with_message!(Errno::EINVAL, "unlink on . or ..");
         }
 
-        let children = self.children.upread();
-        children.check_mountpoint(name)?;
-
-        let mut children = children.upgrade();
-        let dir_inode = &self.inode;
-
-        let child_inode = if let Some(cached_dentry) = children.entry(name)? {
-            let child_inode = cached_dentry.inode().clone();
-
-            dir_inode.unlink(name)?;
-            children.delete(name);
-
-            child_inode
-        } else {
-            // Cache miss: need to lookup from the underlying filesystem
-            let child_inode = dir_inode.lookup(name)?;
-            dir_inode.unlink(name)?;
-
-            child_inode
-        };
-
-        drop(children);
+        let dir_inode = self.inode();
+        let child_inode = self.remove_child(name, |dir_inode, name| dir_inode.unlink(name))?;
 
         let nlinks = child_inode.metadata().nr_hard_links;
         fs::vfs::notify::on_link_count(&child_inode);
@@ -407,28 +438,8 @@ impl DirDentry<'_> {
             return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
         }
 
-        let children = self.children.upread();
-        children.check_mountpoint(name)?;
-
-        let mut children = children.upgrade();
-        let dir_inode = &self.inode;
-
-        let child_inode = if let Some(cached_dentry) = children.entry(name)? {
-            let child_inode = cached_dentry.inode().clone();
-
-            dir_inode.rmdir(name)?;
-            children.delete(name);
-
-            child_inode
-        } else {
-            // Cache miss: need to lookup from the underlying filesystem
-            let child_inode = dir_inode.lookup(name)?;
-            dir_inode.rmdir(name)?;
-
-            child_inode
-        };
-
-        drop(children);
+        let dir_inode = self.inode();
+        let child_inode = self.remove_child(name, |dir_inode, name| dir_inode.rmdir(name))?;
 
         let nlinks = child_inode.metadata().nr_hard_links;
         if nlinks == 0 {
@@ -448,6 +459,47 @@ impl DirDentry<'_> {
                 .remove_subscribers(removed_nr_subscribers);
         }
         Ok(())
+    }
+
+    fn remove_child(
+        &self,
+        name: &str,
+        remove_child_fn: impl FnOnce(&dyn Inode, &str) -> Result<()>,
+    ) -> Result<Arc<dyn Inode>> {
+        let dir_inode = self.inode();
+        let mut children = self.children.upread();
+        let cached_child = match children.find(name) {
+            None => None,
+            Some(cached_entry) if !self.revalidate_cached_entry(name, &cached_entry) => {
+                let mut children_for_update = children.upgrade();
+                let _ = children_for_update.remove(name);
+                children = children_for_update.downgrade();
+                None
+            }
+            Some(cached_entry) => {
+                if cached_entry.is_mountpoint() {
+                    return_errno_with_message!(Errno::EBUSY, "dentry is mountpoint");
+                }
+
+                match cached_entry {
+                    CachedDentry::Positive { dentry } => Some(dentry),
+                    CachedDentry::Negative => {
+                        return_errno_with_message!(Errno::ENOENT, "found a negative dentry")
+                    }
+                }
+            }
+        };
+
+        let child_inode = match &cached_child {
+            Some(child) => child.inode().clone(),
+            None => dir_inode.lookup(name)?,
+        };
+
+        remove_child_fn(dir_inode.as_ref(), name)?;
+        if cached_child.is_some() {
+            children.upgrade().delete(name);
+        }
+        Ok(child_inode)
     }
 
     /// Renames a `Dentry` to the new `Dentry` by `rename()` the inner inode.
@@ -473,13 +525,12 @@ impl DirDentry<'_> {
                 return Ok(());
             }
 
-            let children = old_dir.children.upread();
-            let old_dentry = children.check_mountpoint_then_find(old_name)?;
+            let mut children = old_dir.children.write();
             children.check_mountpoint(new_name)?;
+            let old_dentry = children.probe_cached_child_for_rename(&old_dir, old_name)?;
 
             old_dir_inode.rename(old_name, old_dir_inode, new_name)?;
 
-            let mut children = children.upgrade();
             match old_dentry.as_ref() {
                 Some(dentry) => {
                     children.delete(old_name);
@@ -487,19 +538,17 @@ impl DirDentry<'_> {
                         .name_and_parent
                         .set(new_name, old_dir_arc.clone())
                         .unwrap();
-                    if dentry.is_dentry_cacheable() {
-                        children.insert(String::from(new_name), dentry.clone());
-                    }
+                    children.insert_positive(String::from(new_name), dentry.clone());
                 }
                 None => {
-                    children.delete(new_name);
+                    children.remove(new_name);
                 }
             }
         } else {
             // The two are different dentries
             let (mut self_children, mut new_dir_children) =
                 write_lock_children_on_two_dentries(&old_dir, &new_dir);
-            let old_dentry = self_children.check_mountpoint_then_find(old_name)?;
+            let old_dentry = self_children.probe_cached_child_for_rename(&old_dir, old_name)?;
             new_dir_children.check_mountpoint(new_name)?;
 
             old_dir_inode.rename(old_name, new_dir_inode, new_name)?;
@@ -510,27 +559,55 @@ impl DirDentry<'_> {
                         .name_and_parent
                         .set(new_name, new_dir_arc.clone())
                         .unwrap();
-                    if dentry.is_dentry_cacheable() {
-                        new_dir_children.insert(String::from(new_name), dentry.clone());
-                    }
+                    new_dir_children.insert_positive(String::from(new_name), dentry.clone());
                 }
                 None => {
-                    new_dir_children.delete(new_name);
+                    new_dir_children.remove(new_name);
                 }
             }
         }
         Ok(())
     }
+
+    /// Revalidates a cached entry.
+    ///
+    /// Returns `true` if the cached entry is still valid, or `false` if it should be invalidated.
+    fn revalidate_cached_entry(&self, name: &str, cached_entry: &CachedDentry) -> bool {
+        let policy = self.revalidation_policy;
+        if policy.is_empty() {
+            return true;
+        }
+
+        if policy.contains(RevalidationPolicy::REVALIDATE_EXISTS)
+            && let CachedDentry::Positive { dentry } = cached_entry
+        {
+            return self.inode.revalidate_exists(name, dentry.inode().as_ref());
+        }
+
+        if policy.contains(RevalidationPolicy::REVALIDATE_ABSENT)
+            && let CachedDentry::Negative = cached_entry
+        {
+            return self.inode.revalidate_absent(name);
+        }
+
+        true
+    }
 }
 
 impl Debug for Dentry {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("Dentry")
+        let mut debug = f.debug_struct("Dentry");
+        debug
             .field("inode", &self.inode)
             .field("type_", &self.type_)
             .field("flags", &self.flags)
-            .field("mount_count", &self.mount_count)
-            .finish_non_exhaustive()
+            .field("mount_count", &self.mount_count);
+        if let Some(dir_state) = &self.dir_state {
+            debug
+                .field("children", &*dir_state.children.read())
+                .field("revalidation_policy", &dir_state.revalidation_policy);
+        }
+        debug.finish_non_exhaustive()
     }
 }
 
@@ -570,100 +647,193 @@ enum DentryOptions {
     Pseudo(fn(&dyn Inode) -> String),
 }
 
-/// Manages child dentries, including both valid and negative entries.
+/// Manages child dentries in the per-directory cache.
 ///
 /// A _negative_ dentry reflects a failed filename lookup, saving potential
 /// repeated and costly lookups in the future.
+//
+// TODO: Implement a global reclamation mechanism for `DentryCache` to avoid unbounded growth
+// of cached dentries.
+#[derive(Debug)]
+struct DentryChildren {
+    entries: HashMap<String, CachedDentry>,
+}
+
+#[derive(Clone, Debug)]
+enum CachedDentry {
+    Positive { dentry: Arc<Dentry> },
+    Negative,
+}
+
+impl CachedDentry {
+    fn new_positive(dentry: Arc<Dentry>) -> Self {
+        Self::Positive { dentry }
+    }
+
+    fn new_negative() -> Self {
+        Self::Negative
+    }
+
+    fn into_dentry(self) -> Option<Arc<Dentry>> {
+        match self {
+            Self::Positive { dentry } => Some(dentry),
+            Self::Negative => None,
+        }
+    }
+
+    fn is_mountpoint(&self) -> bool {
+        match self {
+            Self::Positive { dentry } => dentry.is_mountpoint(),
+            Self::Negative => false,
+        }
+    }
+
+    fn is_positive(&self) -> bool {
+        matches!(self, Self::Positive { .. })
+    }
+}
+
 // TODO: Address the issue of negative dentry bloating. See the reference
 // https://lwn.net/Articles/894098/ for more details.
-struct DentryChildren {
-    dentries: HashMap<String, Option<Arc<Dentry>>>,
-}
+#[cfg(debug_assertions)]
+const NEGATIVE_ENTRY_LIMIT: usize = 10000;
+#[cfg(debug_assertions)]
+static NEGATIVE_ENTRY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 impl DentryChildren {
     /// Creates an empty dentry cache.
     fn new() -> Self {
         Self {
-            dentries: HashMap::new(),
+            entries: HashMap::new(),
         }
     }
 
-    /// Checks if a valid dentry with the given name exists.
-    fn contains_valid(&self, name: &str) -> bool {
-        self.dentries.get(name).is_some_and(|child| child.is_some())
+    /// Finds a cached dentry by name.
+    fn find(&self, name: &str) -> Option<CachedDentry> {
+        self.entries.get(name).cloned()
     }
 
-    /// Checks if a negative dentry with the given name exists.
-    #[expect(dead_code)]
-    fn contains_negative(&self, name: &str) -> bool {
-        self.dentries.get(name).is_some_and(|child| child.is_none())
+    /// Checks if a positive dentry with the given name exists.
+    fn contains_positive(&self, name: &str) -> bool {
+        self.entries
+            .get(name)
+            .is_some_and(|child| child.is_positive())
     }
 
-    /// Finds a dentry by name. Returns error for negative entries.
-    fn find(&self, name: &str) -> Result<Option<Arc<Dentry>>> {
-        match self.dentries.get(name) {
-            Some(Some(child)) => Ok(Some(child.clone())),
-            Some(None) => return_errno_with_message!(Errno::ENOENT, "found a negative dentry"),
-            None => Ok(None),
+    /// Inserts a positive dentry.
+    fn insert_positive(&mut self, name: String, dentry: Arc<Dentry>) {
+        let prev = self
+            .entries
+            .insert(name, CachedDentry::new_positive(dentry));
+
+        #[cfg(debug_assertions)]
+        if matches!(prev, Some(CachedDentry::Negative)) {
+            NEGATIVE_ENTRY_COUNTER.fetch_sub(1, Ordering::Relaxed);
         }
-    }
-
-    /// Inserts a valid cacheable dentry.
-    fn insert(&mut self, name: String, dentry: Arc<Dentry>) {
-        // Assume the caller has checked that the dentry is cacheable
-        // and will be newly created if looked up from the parent.
-        debug_assert!(dentry.is_dentry_cacheable());
-        let _ = self.dentries.insert(name, Some(dentry));
     }
 
     /// Inserts a negative dentry.
-    #[expect(dead_code)]
-    fn insert_negative(&mut self, name: String) {
-        let _ = self.dentries.insert(name, None);
-    }
-
-    /// Deletes a dentry by name, turning it into a negative entry if exists.
-    fn delete(&mut self, name: &str) -> Option<Arc<Dentry>> {
-        self.dentries.get_mut(name).and_then(Option::take)
-    }
-
-    /// Probes the corresponding cache entry by name.
     ///
-    /// Returns:
-    /// - `Ok(Some(entry))` for a valid dentry,
-    /// - `Ok(None)` for cache miss,
-    /// - `Err(ENOENT)` for a negative dentry.
-    fn entry(&self, name: &str) -> Result<Option<Arc<Dentry>>> {
-        match self.dentries.get(name) {
-            Some(Some(dentry)) => Ok(Some(dentry.clone())),
-            Some(None) => return_errno_with_message!(Errno::ENOENT, "found a negative dentry"),
-            None => Ok(None),
+    /// This operation should not overwrite an existing entry.
+    fn insert_negative(&mut self, name: String) {
+        let prev = self.entries.insert(name, CachedDentry::new_negative());
+        debug_assert!(
+            prev.is_none(),
+            "insert_negative overwrote an existing entry",
+        );
+
+        #[cfg(debug_assertions)]
+        {
+            let new_count = NEGATIVE_ENTRY_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
+            if new_count > NEGATIVE_ENTRY_LIMIT as u64 {
+                warn!("number of negative dentries has reached {}", new_count);
+            }
         }
+    }
+
+    /// Deletes a positive dentry by name, turning it into a negative entry if exists.
+    fn delete(&mut self, name: &str) {
+        let Some((_, exist_entry)) = self.entries.get_key_value_mut(name) else {
+            return;
+        };
+        if exist_entry.is_positive() {
+            #[cfg(debug_assertions)]
+            {
+                let new_count = NEGATIVE_ENTRY_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
+                if new_count > NEGATIVE_ENTRY_LIMIT as u64 {
+                    warn!("number of negative dentries has reached {}", new_count);
+                }
+            }
+            *exist_entry = CachedDentry::new_negative()
+        }
+    }
+
+    /// Removes a dentry by name without installing a negative cache entry.
+    fn remove(&mut self, name: &str) -> Option<Arc<Dentry>> {
+        let removed_entry = self.entries.remove(name);
+        #[cfg(debug_assertions)]
+        if matches!(removed_entry, Some(CachedDentry::Negative)) {
+            NEGATIVE_ENTRY_COUNTER.fetch_sub(1, Ordering::Relaxed);
+        }
+
+        removed_entry.and_then(CachedDentry::into_dentry)
     }
 
     /// Checks whether the dentry is a mount point. Returns an error if it is.
     fn check_mountpoint(&self, name: &str) -> Result<()> {
-        if let Some(Some(dentry)) = self.dentries.get(name)
-            && dentry.is_mountpoint()
+        if let Some(entry) = self.entries.get(name)
+            && entry.is_mountpoint()
         {
-            return_errno_with_message!(Errno::EBUSY, "dentry is mountpint");
+            return_errno_with_message!(Errno::EBUSY, "dentry is mountpoint");
         }
 
         Ok(())
     }
 
-    /// Checks if dentry is a mount point, then retrieves it.
-    fn check_mountpoint_then_find(&self, name: &str) -> Result<Option<Arc<Dentry>>> {
-        match self.dentries.get(name) {
-            Some(Some(dentry)) => {
-                if dentry.is_mountpoint() {
-                    return_errno_with_message!(Errno::EBUSY, "dentry is mountpoint");
-                }
-                Ok(Some(dentry.clone()))
-            }
-            Some(None) => return_errno_with_message!(Errno::ENOENT, "found a negative dentry"),
-            None => Ok(None),
+    /// Probes a cached child `Dentry` before a rename operation.
+    ///
+    /// Returns:
+    /// - `Ok(Some(entry))` for a valid positive dentry,
+    /// - `Ok(None)` for a cache miss or a stale entry,
+    /// - `Err(ENOENT)` for a valid negative dentry,
+    /// - `Err(EBUSY)` for a dentry that is a mountpoint.
+    fn probe_cached_child_for_rename(
+        &mut self,
+        dir: &DirDentry<'_>,
+        name: &str,
+    ) -> Result<Option<Arc<Dentry>>> {
+        let Some(cached_entry) = self.find(name) else {
+            return Ok(None);
+        };
+
+        if !dir.revalidate_cached_entry(name, &cached_entry) {
+            let _ = self.remove(name);
+            return Ok(None);
         }
+
+        if cached_entry.is_mountpoint() {
+            return_errno_with_message!(Errno::EBUSY, "dentry is mountpoint");
+        }
+
+        match cached_entry {
+            CachedDentry::Positive { dentry } => Ok(Some(dentry)),
+            CachedDentry::Negative => {
+                return_errno_with_message!(Errno::ENOENT, "found a negative dentry")
+            }
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+impl Drop for DentryChildren {
+    fn drop(&mut self) {
+        let negative_count = self
+            .entries
+            .values()
+            .filter(|entry| matches!(entry, CachedDentry::Negative))
+            .count();
+
+        NEGATIVE_ENTRY_COUNTER.fetch_sub(negative_count as u64, Ordering::Relaxed);
     }
 }
 
@@ -676,13 +846,19 @@ fn write_lock_children_on_two_dentries<'a>(
 ) {
     let this_key = this.key();
     let other_key = other.key();
-    if this_key < other_key {
-        let this = this.children.write();
-        let other = other.children.write();
-        (this, other)
-    } else {
-        let other = other.children.write();
-        let this = this.children.write();
-        (this, other)
+    match this_key.cmp(&other_key) {
+        core::cmp::Ordering::Less => {
+            let this = this.children.write();
+            let other = other.children.write();
+            (this, other)
+        }
+        core::cmp::Ordering::Greater => {
+            let other = other.children.write();
+            let this = this.children.write();
+            (this, other)
+        }
+        core::cmp::Ordering::Equal => {
+            unreachable!("two distinct DirDentry's with identical DentryKey")
+        }
     }
 }
