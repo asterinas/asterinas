@@ -6,6 +6,13 @@ use fs::CgroupFsType;
 pub(in crate::fs) use systree_node::CgroupSystem;
 pub use systree_node::{CgroupMembership, CgroupNode, CgroupSysNode};
 
+// Set this module's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "cgroup: "
+    };
+}
+
 mod cgroup_ns;
 mod controller;
 mod fs;
