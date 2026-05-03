@@ -133,12 +133,12 @@ impl SemaphoreSet {
         let count_const = inner
             .pending_const
             .iter()
-            .filter(|op| op.blocker(&inner.sems) == Some(PendingBlocker::Zero(sem_num)))
+            .filter(|op| op.blocker(&inner.sems) == Ok(PendingBlocker::Zero(sem_num)))
             .count();
         let count_alter = inner
             .pending_alter
             .iter()
-            .filter(|op| op.blocker(&inner.sems) == Some(PendingBlocker::Zero(sem_num)))
+            .filter(|op| op.blocker(&inner.sems) == Ok(PendingBlocker::Zero(sem_num)))
             .count();
         Ok(count_const + count_alter)
     }
@@ -154,7 +154,7 @@ impl SemaphoreSet {
         let count = inner
             .pending_alter
             .iter()
-            .filter(|op| op.blocker(&inner.sems) == Some(PendingBlocker::Decrease(sem_num)))
+            .filter(|op| op.blocker(&inner.sems) == Ok(PendingBlocker::Decrease(sem_num)))
             .count();
         Ok(count)
     }
@@ -184,7 +184,6 @@ impl SemaphoreSet {
         update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
 
         for wake_op in wake_queue {
-            wake_op.set_status(Status::Normal);
             if let Some(waker) = wake_op.waker() {
                 waker.wake_up();
             }

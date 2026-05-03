@@ -16,6 +16,7 @@
 
 #define SEMMNI 320000
 #define SEMMSL 320000
+#define SEMVMX 32767
 
 #define CUSTOM_KEY 0xdeadbeef
 
@@ -459,6 +460,33 @@ FN_TEST(semctl_waiter_counts_report_blocking_semnum)
 
 	TEST_RES(get_sem_val(semid, 0), _ret == 0);
 	TEST_RES(get_sem_val(semid, 1), _ret == 0);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semtimedop_reports_error_after_blocking)
+{
+	struct timed_semop_args wait = {
+		.nops = 2,
+		.timeout_ms = LONG_TIMEOUT_MS,
+		.ops = { { .sem_num = 0, .sem_op = -1, .sem_flg = 0 },
+			 { .sem_num = 1, .sem_op = 1, .sem_flg = 0 } },
+	};
+	pthread_t thread;
+	int semid = TEST_SUCC(create_sem_set(2));
+
+	TEST_SUCC(set_sem_val(semid, 1, SEMVMX));
+
+	wait.semid = semid;
+	TEST_SUCC(start_timed_semop_thread(&thread, &wait));
+	sleep_ms(SETTLE_MS);
+	TEST_RES(get_sem_ncnt(semid, 0), _ret == 1);
+
+	TEST_SUCC(set_sem_val(semid, 0, 1));
+	TEST_RES(join_timed_semop_thread(thread, &wait), _ret == ERANGE);
+	TEST_RES(get_sem_val(semid, 0), _ret == 1);
+	TEST_RES(get_sem_val(semid, 1), _ret == SEMVMX);
 
 	TEST_SUCC(remove_sem_set(semid));
 }
