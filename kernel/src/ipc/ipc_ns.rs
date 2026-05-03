@@ -138,7 +138,6 @@ impl IpcNamespace {
             return self.create_sem_set(num_sems, mode, credentials);
         }
 
-        let mut credentials = Some(credentials);
         loop {
             match self.sem_ids.with(key, |sem_set| {
                 Self::validate_sem_set(
@@ -171,10 +170,7 @@ impl IpcNamespace {
             }
 
             match self.sem_ids.insert_at(key, |key| {
-                let Some(credentials) = credentials.take() else {
-                    return_errno_with_message!(Errno::EINVAL, "credentials were already consumed");
-                };
-                SemaphoreSet::new(key, num_sems, mode, credentials)
+                SemaphoreSet::new(key, num_sems, mode, &credentials)
             }) {
                 Ok(()) => return Ok(key),
                 Err(err) if err.error() == Errno::EEXIST => continue,
@@ -215,7 +211,7 @@ impl IpcNamespace {
         credentials: Credentials<ReadOp>,
     ) -> Result<key_t> {
         self.sem_ids
-            .insert_auto(|key| SemaphoreSet::new(key, num_sems, mode, credentials))
+            .insert_auto(|key| SemaphoreSet::new(key, num_sems, mode, &credentials))
     }
 }
 

@@ -216,7 +216,7 @@ impl SemaphoreSet {
         key: key_t,
         num_sems: usize,
         mode: u16,
-        credentials: Credentials<ReadOp>,
+        credentials: &Credentials<ReadOp>,
     ) -> Result<Self> {
         if num_sems > SEMMSL {
             return_errno_with_message!(Errno::EINVAL, "num_sems exceeds SEMMSL");
