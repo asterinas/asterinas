@@ -308,3 +308,46 @@ FN_TEST(semop_sem_undo)
 	TEST_SUCC(remove_sem_set(semid));
 }
 END_TEST()
+
+FN_TEST(semop_retries_pending_alterations)
+{
+	struct timed_semop_args first_wait = {
+		.nops = 1,
+		.timeout_ms = LONG_TIMEOUT_MS,
+		.ops = { { .sem_num = 0, .sem_op = -1, .sem_flg = 0 } },
+	};
+	struct timed_semop_args second_wait = {
+		.nops = 2,
+		.timeout_ms = LONG_TIMEOUT_MS,
+		.ops = { { .sem_num = 0, .sem_op = 1, .sem_flg = 0 },
+			 { .sem_num = 1, .sem_op = -1, .sem_flg = 0 } },
+	};
+	struct sembuf release_second = {
+		.sem_num = 1,
+		.sem_op = 1,
+		.sem_flg = 0,
+	};
+	pthread_t first_thread;
+	pthread_t second_thread;
+	int semid = TEST_SUCC(create_sem_set(2));
+
+	first_wait.semid = semid;
+	TEST_SUCC(start_timed_semop_thread(&first_thread, &first_wait));
+	sleep_ms(SETTLE_MS);
+	TEST_RES(get_sem_ncnt(semid, 0), _ret == 1);
+
+	second_wait.semid = semid;
+	TEST_SUCC(start_timed_semop_thread(&second_thread, &second_wait));
+	sleep_ms(SETTLE_MS);
+	TEST_RES(get_sem_ncnt(semid, 1), _ret == 1);
+
+	TEST_SUCC(semop(semid, &release_second, 1));
+	TEST_RES(join_timed_semop_thread(second_thread, &second_wait),
+		 _ret == 0);
+	TEST_RES(join_timed_semop_thread(first_thread, &first_wait), _ret == 0);
+	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+	TEST_RES(get_sem_val(semid, 1), _ret == 0);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
