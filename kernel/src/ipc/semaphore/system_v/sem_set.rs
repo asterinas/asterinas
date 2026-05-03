@@ -266,7 +266,8 @@ impl SemaphoreSet {
 
 impl Drop for SemaphoreSet {
     fn drop(&mut self) {
-        let mut inner = self.inner();
+        let inner = self.inner.get_mut();
+
         let pending_alter = &mut inner.pending_alter;
         for pending_alter in pending_alter.iter_mut() {
             pending_alter.set_status(Status::Removed);
@@ -284,6 +285,5 @@ impl Drop for SemaphoreSet {
             }
         }
         pending_const.clear();
-        drop(inner);
     }
 }
