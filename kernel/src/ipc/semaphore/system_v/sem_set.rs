@@ -5,7 +5,9 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use aster_rights::ReadOp;
 
-use super::sem::{PendingOp, Semaphore, Status, update_pending_alter, wake_const_ops};
+use super::sem::{
+    PendingBlocker, PendingOp, Semaphore, Status, update_pending_alter, wake_const_ops,
+};
 use crate::{
     ipc::{IpcKey, IpcPermission},
     prelude::*,
@@ -120,39 +122,40 @@ impl SemSetInner {
 }
 
 impl SemaphoreSet {
-    pub fn pending_const_count(&self, sem_num: usize) -> Result<usize> {
+    /// Counts the number of pending operations waiting for the semaphore at `sem_num` to become
+    /// zero.
+    pub fn pending_zero_count(&self, sem_num: usize) -> Result<usize> {
         if sem_num >= self.num_sems {
             return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
         }
 
         let inner = self.inner.lock();
-        let pending_const = &inner.pending_const;
-        let mut count = 0;
-        for i in pending_const.iter() {
-            for sem_buf in i.sops_iter() {
-                if sem_buf.sem_num() as usize == sem_num {
-                    count += 1;
-                }
-            }
-        }
-        Ok(count)
+        let count_const = inner
+            .pending_const
+            .iter()
+            .filter(|op| op.blocker(&inner.sems) == Some(PendingBlocker::Zero(sem_num)))
+            .count();
+        let count_alter = inner
+            .pending_alter
+            .iter()
+            .filter(|op| op.blocker(&inner.sems) == Some(PendingBlocker::Zero(sem_num)))
+            .count();
+        Ok(count_const + count_alter)
     }
 
-    pub fn pending_alter_count(&self, sem_num: usize) -> Result<usize> {
+    /// Counts the number of pending operations waiting for the semaphore at `sem_num` to be able to
+    /// decrease by a certain amount.
+    pub fn pending_decrease_count(&self, sem_num: usize) -> Result<usize> {
         if sem_num >= self.num_sems {
             return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
         }
 
         let inner = self.inner.lock();
-        let pending_alter = &inner.pending_alter;
-        let mut count = 0;
-        for i in pending_alter.iter() {
-            for sem_buf in i.sops_iter() {
-                if sem_buf.sem_num() as usize == sem_num {
-                    count += 1;
-                }
-            }
-        }
+        let count = inner
+            .pending_alter
+            .iter()
+            .filter(|op| op.blocker(&inner.sems) == Some(PendingBlocker::Decrease(sem_num)))
+            .count();
         Ok(count)
     }
 

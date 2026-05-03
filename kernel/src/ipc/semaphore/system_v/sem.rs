@@ -27,12 +27,6 @@ pub struct SemBuf {
     sem_flags: i16,
 }
 
-impl SemBuf {
-    pub(super) fn sem_num(&self) -> u16 {
-        self.sem_num
-    }
-}
-
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
 pub(super) enum Status {
@@ -59,6 +53,12 @@ pub(super) struct PendingOp {
     pid: Pid,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PendingBlocker {
+    Zero(usize),
+    Decrease(usize),
+}
+
 impl PendingOp {
     pub(super) fn sops_iter(&self) -> Iter<'_, SemBuf> {
         self.sops.iter()
@@ -70,6 +70,26 @@ impl PendingOp {
 
     pub(super) fn waker(&self) -> Option<&Arc<Waker>> {
         self.waker.as_ref()
+    }
+
+    /// Returns the ID of the semaphore that the operation is blocked on, if there is one.
+    pub(super) fn blocker(&self, sems: &[Semaphore]) -> Option<PendingBlocker> {
+        for op in self.sops.iter() {
+            let sem_num = op.sem_num as usize;
+            let sem = sems.get(sem_num)?;
+            let val = sem.val();
+
+            // Zero condition
+            if op.sem_op == 0 && val != 0 {
+                return Some(PendingBlocker::Zero(sem_num));
+            }
+
+            if i32::from(op.sem_op) < -val {
+                return Some(PendingBlocker::Decrease(sem_num));
+            }
+        }
+
+        None
     }
 }
 
