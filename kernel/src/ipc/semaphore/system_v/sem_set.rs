@@ -120,32 +120,40 @@ impl SemSetInner {
 }
 
 impl SemaphoreSet {
-    pub fn pending_const_count(&self, sem_num: u16) -> usize {
+    pub fn pending_const_count(&self, sem_num: usize) -> Result<usize> {
+        if sem_num >= self.num_sems {
+            return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
+        }
+
         let inner = self.inner.lock();
         let pending_const = &inner.pending_const;
         let mut count = 0;
         for i in pending_const.iter() {
             for sem_buf in i.sops_iter() {
-                if sem_buf.sem_num() == sem_num {
+                if sem_buf.sem_num() as usize == sem_num {
                     count += 1;
                 }
             }
         }
-        count
+        Ok(count)
     }
 
-    pub fn pending_alter_count(&self, sem_num: u16) -> usize {
+    pub fn pending_alter_count(&self, sem_num: usize) -> Result<usize> {
+        if sem_num >= self.num_sems {
+            return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
+        }
+
         let inner = self.inner.lock();
         let pending_alter = &inner.pending_alter;
         let mut count = 0;
         for i in pending_alter.iter() {
             for sem_buf in i.sops_iter() {
-                if sem_buf.sem_num() == sem_num {
+                if sem_buf.sem_num() as usize == sem_num {
                     count += 1;
                 }
             }
         }
-        count
+        Ok(count)
     }
 
     pub fn num_sems(&self) -> usize {

@@ -2,6 +2,7 @@
 
 SUBDIRS := \
 	pipe \
+	sem \
 	shm \
 
 include ../common/Makefile

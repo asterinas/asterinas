@@ -19,8 +19,8 @@ pub fn sys_semctl(
     arg: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    if semid <= 0 || semnum < 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid semid or semnum")
+    if semid <= 0 {
+        return_errno_with_message!(Errno::EINVAL, "invalid semid")
     }
 
     let cmd = IpcControlCmd::try_from(cmd)?;
@@ -77,14 +77,14 @@ pub fn sys_semctl(
         }
         IpcControlCmd::SEM_GETNCNT => {
             let cnt: usize = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
-                Ok(sem_set.pending_alter_count(semnum as u16))
+                sem_set.pending_alter_count(semnum as usize)
             })?;
 
             return Ok(SyscallReturn::Return(cnt as isize));
         }
         IpcControlCmd::SEM_GETZCNT => {
             let cnt: usize = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
-                Ok(sem_set.pending_const_count(semnum as u16))
+                sem_set.pending_const_count(semnum as usize)
             })?;
 
             return Ok(SyscallReturn::Return(cnt as isize));
