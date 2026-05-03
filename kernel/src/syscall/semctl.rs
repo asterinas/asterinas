@@ -97,7 +97,6 @@ pub fn sys_semctl(
                 sem_set.setval(semnum as usize, val, ctx.process.pid())
             })?;
         }
-        _ => todo!("Need to support {:?} in SYS_SEMCTL", cmd),
     }
 
     Ok(SyscallReturn::Return(0))
