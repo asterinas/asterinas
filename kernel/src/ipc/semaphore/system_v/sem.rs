@@ -17,10 +17,6 @@ use crate::{
     ipc::{IpcFlags, IpcId, IpcNamespace},
     prelude::*,
     process::Pid,
-    time::{
-        clocks::JIFFIES_TIMER_MANAGER,
-        timer::{Timeout, TimerGuard},
-    },
 };
 
 #[repr(C)]
@@ -155,8 +151,6 @@ pub fn sem_op(
         },
     }
 
-    let mut timer = None;
-
     let sem_op_result = ipc_ns.with_sem_set(sem_id, PermissionMode::empty(), |sem_set| {
         let mut inner = sem_set.inner();
 
@@ -178,24 +172,9 @@ pub fn sem_op(
         // Prepare to wait
         let status = pending_op.status.clone();
         let (waiter, waker) = Waiter::new_pair();
+        pending_op.waker = Some(waker);
 
-        // Check if timeout exists to avoid calling `Arc::clone()`
-        if let Some(timeout) = timeout {
-            pending_op.waker = Some(waker.clone());
-
-            let jiffies_timer =
-                JIFFIES_TIMER_MANAGER
-                    .get()
-                    .unwrap()
-                    .create_timer(move |_guard: TimerGuard| {
-                        waker.wake_up();
-                    });
-            jiffies_timer.lock().set_timeout(Timeout::After(timeout));
-            timer = Some(jiffies_timer);
-        } else {
-            pending_op.waker = Some(waker);
-        }
-
+        // Insert the operation to the pending list
         if alter {
             inner.pending_alter.push_back(pending_op);
         } else {
@@ -205,11 +184,11 @@ pub fn sem_op(
         Ok(SemOpResult::Pending { status, waiter })
     })?;
 
-    let status = match sem_op_result {
+    let (result, status) = match sem_op_result {
         SemOpResult::Completed => return Ok(()),
         SemOpResult::Pending { status, waiter } => {
-            waiter.wait();
-            status
+            let result = waiter.pause_timeout(&timeout.as_ref().into());
+            (result, status)
         }
     };
 
@@ -235,7 +214,16 @@ pub fn sem_op(
             return_errno_with_message!(Errno::EIDRM, "the semaphore set is removed");
         }
         Status::Pending => {
-            return_errno_with_message!(Errno::EAGAIN, "the time limit is reached");
+            if let Err(err) = result
+                && err.error() == Errno::ETIME
+            {
+                return_errno_with_message!(Errno::EAGAIN, "the time limit is reached");
+            } else {
+                return_errno_with_message!(
+                    Errno::EINTR,
+                    "the current thread is interrupted by a signal"
+                )
+            }
         }
     }
 }

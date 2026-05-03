@@ -4,9 +4,11 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <signal.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -118,6 +120,22 @@ static int join_timed_semop_thread(pthread_t thread,
 	return args->error;
 }
 
+static void signal_handler(int signum)
+{
+	(void)signum;
+}
+
+FN_SETUP(install_signal_handler)
+{
+	struct sigaction action = {
+		.sa_handler = signal_handler,
+	};
+
+	CHECK(sigemptyset(&action.sa_mask));
+	CHECK(sigaction(SIGUSR1, &action, NULL));
+}
+END_SETUP()
+
 FN_TEST(semget_accept_arbitrary_keys)
 {
 	int semid = TEST_SUCC(semget(CUSTOM_KEY, 1, IPC_CREAT | 0600));
@@ -212,6 +230,31 @@ FN_TEST(semop_timeout_keeps_same_process_waiters)
 	TEST_SUCC(semop(semid, &post, 1));
 	TEST_RES(join_timed_semop_thread(long_thread, &long_wait), _ret == 0);
 	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semop_is_interrupted_by_signal)
+{
+	struct sembuf wait = { .sem_num = 0, .sem_op = -1, .sem_flg = 0 };
+	int semid = TEST_SUCC(create_sem_set(1));
+	pid_t child = TEST_SUCC(fork());
+	int status;
+
+	if (child == 0) {
+		CHECK_WITH(semop(semid, &wait, 1),
+			   _ret == -1 && errno == EINTR);
+		_exit(0);
+	}
+
+	sleep_ms(SETTLE_MS);
+	TEST_RES(get_sem_ncnt(semid, 0), _ret == 1);
+	TEST_SUCC(kill(child, SIGUSR1));
+
+	TEST_RES(waitpid(child, &status, 0),
+		 WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	TEST_RES(get_sem_ncnt(semid, 0), _ret == 0);
 
 	TEST_SUCC(remove_sem_set(semid));
 }
