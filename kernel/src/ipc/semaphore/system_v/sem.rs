@@ -298,15 +298,17 @@ pub(super) fn update_pending_alter(
 ) {
     let mut cursor = pending_alter.cursor_front_mut();
     while let Some(alter_op) = cursor.current() {
-        if let Ok(true) = perform_atomic_semop(sems, alter_op) {
-            let mut alter_op = cursor.remove_current_as_list().unwrap();
-
-            do_smart_wakeup_zero(sems, pending_const, alter_op.front().unwrap(), wake_queue);
-
-            wake_queue.append(&mut alter_op);
-        } else {
+        let Ok(true) = perform_atomic_semop(sems, alter_op) else {
             cursor.move_next();
-        }
+            continue;
+        };
+
+        let mut alter_op = cursor.remove_current_as_list().unwrap();
+        do_smart_wakeup_zero(sems, pending_const, alter_op.front().unwrap(), wake_queue);
+        wake_queue.append(&mut alter_op);
+
+        // Retry from the beginning since we've performed some alteration.
+        cursor = pending_alter.cursor_front_mut();
     }
 }
 
