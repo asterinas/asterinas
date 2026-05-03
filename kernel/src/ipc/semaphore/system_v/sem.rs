@@ -55,7 +55,7 @@ define_atomic_version_of_integer_like_type!(Status, try_from = true, {
     struct AtomicStatus(AtomicU16);
 });
 
-/// Pending atomic semop.
+/// A pending semaphore operation.
 pub(super) struct PendingOp {
     sops: Vec<SemBuf>,
     status: Arc<AtomicStatus>,
@@ -90,10 +90,12 @@ impl Debug for PendingOp {
 #[derive(Debug)]
 pub struct Semaphore {
     val: i32,
-    /// PID of the process that last modified semaphore.
-    /// - through semop with op != 0
-    /// - through semctl with SETVAL and SETALL
-    /// - through SEM_UNDO when task exit
+    /// The PID of the process that last modified the semaphore.
+    ///
+    /// This includes the following cases:
+    /// - through `semop` with a non-zero `sem_op`,
+    /// - through `semctl` with `SETVAL` and `SETALL`, and
+    /// - through `SEM_UNDO` on process exit.
     latest_modified_pid: Pid,
 }
 
@@ -233,7 +235,10 @@ pub fn sem_op(
     }
 }
 
-/// Update pending const and alter operations, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L1029>
+/// Looks for operations that can be completed after an alteration operation and then completes
+/// them.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L1029>
 fn do_smart_update(inner: &mut SemSetInner, pending_op: &PendingOp) -> LinkedList<PendingOp> {
     let mut wake_queue = LinkedList::new();
 
@@ -249,7 +254,9 @@ fn do_smart_update(inner: &mut SemSetInner, pending_op: &PendingOp) -> LinkedLis
     wake_queue
 }
 
-/// Look for pending alter operations that can be completed, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L949>
+/// Looks for alteration operations that can be completed and then completes them.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L949>
 pub(super) fn update_pending_alter(
     sems: &mut [Semaphore],
     pending_alter: &mut LinkedList<PendingOp>,
@@ -270,7 +277,10 @@ pub(super) fn update_pending_alter(
     }
 }
 
-/// Wakeup all wait for zero tasks, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L893>
+/// Wakes up pending tasks on constant operations if an alteration operation made those constant
+/// operations possible to complete.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L893>
 fn do_smart_wakeup_zero(
     sems: &mut [Semaphore],
     pending_const: &mut LinkedList<PendingOp>,
@@ -285,7 +295,9 @@ fn do_smart_wakeup_zero(
     }
 }
 
-/// Wakeup pending const operations, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L854>
+/// Wakes up pending tasks on constant operations if they can be completed.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L854>
 pub(super) fn wake_const_ops(
     sems: &mut [Semaphore],
     pending_const: &mut LinkedList<PendingOp>,
@@ -321,21 +333,26 @@ fn get_sops_flags(pending_op: &PendingOp) -> (bool, bool) {
     (alter, dupsop)
 }
 
-/// Perform atomic semop, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L719>
-/// 1. Return Ok(true) if the operation success.
-/// 2. Return Ok(false) if the caller needs to wait.
-/// 3. Return Err(err) if the operation cause error.
+/// Performs atomic semaphore operations.
+///
+/// 1. Return `Ok(true)` if all the operations succeed.
+/// 2. Return `Ok(false)` if the caller needs to wait.
+/// 3. Return `Err(err)` if the operations cause an error.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L719>
 fn perform_atomic_semop(sems: &mut [Semaphore], pending_op: &mut PendingOp) -> Result<bool> {
-    let mut result;
     for op in pending_op.sops_iter() {
-        let sem = sems.get(op.sem_num as usize).ok_or(Errno::EFBIG)?;
         let flags = IpcFlags::from_bits_truncate(op.sem_flags as u32);
-        result = sem.val();
+
+        let Some(sem) = sems.get(op.sem_num as usize) else {
+            return_errno_with_message!(Errno::EFBIG, "the semaphore number is out of bounds");
+        };
+        let mut result = sem.val();
 
         // Zero condition
         if op.sem_op == 0 && result != 0 {
             if flags.contains(IpcFlags::IPC_NOWAIT) {
-                return_errno_with_message!(Errno::EAGAIN, "semaphore would block on wait-for-zero");
+                return_errno_with_message!(Errno::EAGAIN, "the semaphore value is not zero");
             } else {
                 return Ok(false);
             }
@@ -344,7 +361,7 @@ fn perform_atomic_semop(sems: &mut [Semaphore], pending_op: &mut PendingOp) -> R
         result += i32::from(op.sem_op);
         if result < 0 {
             if flags.contains(IpcFlags::IPC_NOWAIT) {
-                return_errno_with_message!(Errno::EAGAIN, "semaphore would block on decrement");
+                return_errno_with_message!(Errno::EAGAIN, "the semaphore value is too small");
             } else {
                 return Ok(false);
             }

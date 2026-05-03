@@ -36,12 +36,13 @@ pub fn sys_semctl(
         IpcControlCmd::IPC_RMID => {
             let euid = ctx.posix_thread.credentials().euid();
             ipc_ns.remove_sem_set(semid, |sem_set| {
+                // TODO: Consider capabilities in addition to UIDs.
                 let permission = sem_set.permission();
                 let can_remove = (euid == permission.uid()) || (euid == permission.cuid());
                 if !can_remove {
                     return_errno_with_message!(
                         Errno::EPERM,
-                        "no permission to remove semaphore set"
+                        "the process does not have permission to remove the semaphore set"
                     );
                 }
 
@@ -59,7 +60,7 @@ pub fn sys_semctl(
                 sem.latest_modified_pid()
             }
             let pid: Pid = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
-                sem_set.get(semnum as usize, &sem_pid)
+                sem_set.get(semnum as usize, sem_pid)
             })?;
 
             return Ok(SyscallReturn::Return(pid as isize));
@@ -69,7 +70,7 @@ pub fn sys_semctl(
                 sem.val()
             }
             let val: i32 = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
-                sem_set.get(semnum as usize, &sem_val)
+                sem_set.get(semnum as usize, sem_val)
             })?;
 
             return Ok(SyscallReturn::Return(val as isize));
@@ -89,11 +90,8 @@ pub fn sys_semctl(
             return Ok(SyscallReturn::Return(cnt as isize));
         }
         IpcControlCmd::SEM_SETVAL => {
-            // In setval, arg is parse as i32
+            // In `SEM_SETVAL`, the argument is parsed as an `i32`.
             let val = arg as i32;
-            if val < 0 {
-                return_errno_with_message!(Errno::ERANGE, "semaphore value must not be negative");
-            }
 
             ipc_ns.with_sem_set(semid, PermissionMode::ALTER, |sem_set| {
                 sem_set.setval(semnum as usize, val, ctx.process.pid())
