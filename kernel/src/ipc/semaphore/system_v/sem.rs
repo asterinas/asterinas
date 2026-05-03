@@ -28,11 +28,15 @@ pub struct SemBuf {
 }
 
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, TryFromInt)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromInt)]
 pub(super) enum Status {
     Normal = 0,
     Pending = 1,
     Removed = 2,
+
+    // Errors
+    ErrWouldBlock = 4,
+    ErrValRange = 5,
 }
 
 impl From<Status> for u16 {
@@ -57,9 +61,29 @@ pub(super) struct PendingOp {
 pub(super) enum PendingBlocker {
     Zero(usize),
     Decrease(usize),
+    NotBlock,
 }
 
 impl PendingOp {
+    fn new(sops: Vec<SemBuf>, pid: Pid, num_sems: usize) -> Result<Self> {
+        for op in sops.iter() {
+            if op.sem_num as usize >= num_sems {
+                return_errno_with_message!(Errno::EFBIG, "the semaphore number is out of bounds");
+            }
+            if IpcFlags::from_bits_truncate(op.sem_flags as u32).contains(IpcFlags::SEM_UNDO) {
+                // TODO: Add support for the `SEM_UNDO` flag
+                return_errno_with_message!(Errno::EINVAL, "SEM_UNDO is not supported yet");
+            }
+        }
+
+        Ok(Self {
+            sops,
+            status: Arc::new(AtomicStatus::new(Status::Pending)),
+            waker: None,
+            pid,
+        })
+    }
+
     pub(super) fn sops_iter(&self) -> Iter<'_, SemBuf> {
         self.sops.iter()
     }
@@ -73,23 +97,40 @@ impl PendingOp {
     }
 
     /// Returns the ID of the semaphore that the operation is blocked on, if there is one.
-    pub(super) fn blocker(&self, sems: &[Semaphore]) -> Option<PendingBlocker> {
+    ///
+    /// The caller should provide `sems` whose size matches the number used to construct this
+    /// `PendingOp`. Otherwise, this method may panic.
+    pub(super) fn blocker(
+        &self,
+        sems: &[Semaphore],
+    ) -> core::result::Result<PendingBlocker, Status> {
         for op in self.sops.iter() {
             let sem_num = op.sem_num as usize;
-            let sem = sems.get(sem_num)?;
+            let sem = sems.get(sem_num).unwrap();
             let val = sem.val();
+
+            let flags = IpcFlags::from_bits_truncate(op.sem_flags as u32);
 
             // Zero condition
             if op.sem_op == 0 && val != 0 {
-                return Some(PendingBlocker::Zero(sem_num));
+                if flags.contains(IpcFlags::IPC_NOWAIT) {
+                    return Err(Status::ErrWouldBlock);
+                }
+                return Ok(PendingBlocker::Zero(sem_num));
             }
 
             if i32::from(op.sem_op) < -val {
-                return Some(PendingBlocker::Decrease(sem_num));
+                if flags.contains(IpcFlags::IPC_NOWAIT) {
+                    return Err(Status::ErrWouldBlock);
+                }
+                return Ok(PendingBlocker::Decrease(sem_num));
+            }
+            if i32::from(op.sem_op) > SEMVMX - val {
+                return Err(Status::ErrValRange);
             }
         }
 
-        None
+        Ok(PendingBlocker::NotBlock)
     }
 }
 
@@ -158,18 +199,13 @@ pub fn sem_op(
 
     let is_alter = check_alter_sop(&sops);
 
-    let mut pending_op = PendingOp {
-        sops,
-        status: Arc::new(AtomicStatus::new(Status::Pending)),
-        waker: None,
-        pid: ctx.process.pid(),
-    };
-
     // TODO: Support permission check
     warn!("Semaphore operation doesn't support permission check now");
 
     enum SemOpResult {
-        Completed,
+        Completed {
+            status: Status,
+        },
         Pending {
             status: Arc<AtomicStatus>,
             waiter: Waiter,
@@ -177,13 +213,19 @@ pub fn sem_op(
     }
 
     let sem_op_result = ipc_ns.with_sem_set(sem_id, PermissionMode::empty(), |sem_set| {
+        let mut pending_op = PendingOp::new(sops, ctx.process.pid(), sem_set.num_sems())?;
+
         let mut inner = sem_set.inner();
 
-        if perform_atomic_semop(&mut inner.sems, &mut pending_op)? {
+        // Try to perform the operation without blocking
+        if let Some(status) = perform_atomic_semop(&mut inner.sems, &mut pending_op) {
+            if status != Status::Normal {
+                return Ok(SemOpResult::Completed { status });
+            }
+
             if is_alter {
                 let wake_queue = do_smart_update(&mut inner, &pending_op);
                 for wake_op in wake_queue {
-                    wake_op.set_status(Status::Normal);
                     if let Some(waker) = wake_op.waker {
                         waker.wake_up();
                     }
@@ -191,7 +233,8 @@ pub fn sem_op(
             }
 
             sem_set.update_otime();
-            return Ok(SemOpResult::Completed);
+
+            return Ok(SemOpResult::Completed { status });
         }
 
         // Prepare to wait
@@ -209,8 +252,35 @@ pub fn sem_op(
         Ok(SemOpResult::Pending { status, waiter })
     })?;
 
-    let (result, status) = match sem_op_result {
-        SemOpResult::Completed => return Ok(()),
+    fn map_status_to_result(status: Status, waiter_error: Option<Error>) -> Result<()> {
+        match status {
+            Status::Normal => Ok(()),
+            Status::Removed => {
+                return_errno_with_message!(Errno::EIDRM, "the semaphore set is removed");
+            }
+            Status::Pending => {
+                if let Some(err) = waiter_error
+                    && err.error() == Errno::ETIME
+                {
+                    return_errno_with_message!(Errno::EAGAIN, "the time limit is reached");
+                } else {
+                    return_errno_with_message!(
+                        Errno::EINTR,
+                        "the current thread is interrupted by a signal"
+                    )
+                }
+            }
+            Status::ErrWouldBlock => {
+                return_errno_with_message!(Errno::EAGAIN, "the semaphore operation would block");
+            }
+            Status::ErrValRange => {
+                return_errno_with_message!(Errno::ERANGE, "the semaphore value exceeds SEMVMX");
+            }
+        }
+    }
+
+    let (waiter_result, status) = match sem_op_result {
+        SemOpResult::Completed { status } => return map_status_to_result(status, None),
         SemOpResult::Pending { status, waiter } => {
             let result = waiter.pause_timeout(&timeout.as_ref().into());
             (result, status)
@@ -233,24 +303,7 @@ pub fn sem_op(
         });
     }
 
-    match status.load(Ordering::Relaxed) {
-        Status::Normal => Ok(()),
-        Status::Removed => {
-            return_errno_with_message!(Errno::EIDRM, "the semaphore set is removed");
-        }
-        Status::Pending => {
-            if let Err(err) = result
-                && err.error() == Errno::ETIME
-            {
-                return_errno_with_message!(Errno::EAGAIN, "the time limit is reached");
-            } else {
-                return_errno_with_message!(
-                    Errno::EINTR,
-                    "the current thread is interrupted by a signal"
-                )
-            }
-        }
-    }
+    map_status_to_result(status.load(Ordering::Relaxed), waiter_result.err())
 }
 
 /// Checks whether there are two operations that will operate on the same semaphore and the first
@@ -318,12 +371,18 @@ pub(super) fn update_pending_alter(
 ) {
     let mut cursor = pending_alter.cursor_front_mut();
     while let Some(alter_op) = cursor.current() {
-        let Ok(true) = perform_atomic_semop(sems, alter_op) else {
+        let Some(status) = perform_atomic_semop(sems, alter_op) else {
             cursor.move_next();
             continue;
         };
+        alter_op.set_status(status);
 
         let mut alter_op = cursor.remove_current_as_list().unwrap();
+        if status != Status::Normal {
+            wake_queue.append(&mut alter_op);
+            continue;
+        }
+
         do_smart_wakeup_zero(sems, pending_const, alter_op.front().unwrap(), wake_queue);
         wake_queue.append(&mut alter_op);
 
@@ -360,7 +419,8 @@ pub(super) fn wake_const_ops(
 ) {
     let mut cursor = pending_const.cursor_front_mut();
     while let Some(const_op) = cursor.current() {
-        if let Ok(true) = perform_atomic_semop(sems, const_op) {
+        if let Some(status) = perform_atomic_semop(sems, const_op) {
+            const_op.set_status(status);
             wake_queue.append(&mut cursor.remove_current_as_list().unwrap());
         } else {
             cursor.move_next();
@@ -370,45 +430,16 @@ pub(super) fn wake_const_ops(
 
 /// Performs atomic semaphore operations.
 ///
-/// 1. Return `Ok(true)` if all the operations succeed.
-/// 2. Return `Ok(false)` if the caller needs to wait.
-/// 3. Return `Err(err)` if the operations cause an error.
+/// 1. Return `Some(Status::Normal)` if all the operations succeed.
+/// 2. Return `None` if the caller needs to wait.
+/// 3. Return `Some(error_status)` if the operations cause an error.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L719>
-fn perform_atomic_semop(sems: &mut [Semaphore], pending_op: &mut PendingOp) -> Result<bool> {
-    for op in pending_op.sops_iter() {
-        let flags = IpcFlags::from_bits_truncate(op.sem_flags as u32);
-
-        let Some(sem) = sems.get(op.sem_num as usize) else {
-            return_errno_with_message!(Errno::EFBIG, "the semaphore number is out of bounds");
-        };
-        let mut result = sem.val();
-
-        // Zero condition
-        if op.sem_op == 0 && result != 0 {
-            if flags.contains(IpcFlags::IPC_NOWAIT) {
-                return_errno_with_message!(Errno::EAGAIN, "the semaphore value is not zero");
-            } else {
-                return Ok(false);
-            }
-        }
-
-        result += i32::from(op.sem_op);
-        if result < 0 {
-            if flags.contains(IpcFlags::IPC_NOWAIT) {
-                return_errno_with_message!(Errno::EAGAIN, "the semaphore value is too small");
-            } else {
-                return Ok(false);
-            }
-        }
-
-        if result > SEMVMX {
-            return_errno_with_message!(Errno::ERANGE, "semaphore value exceeds SEMVMX");
-        }
-        if flags.contains(IpcFlags::SEM_UNDO) {
-            // TODO: Add support for the `SEM_UNDO` flag
-            return_errno_with_message!(Errno::EINVAL, "SEM_UNDO is not supported yet");
-        }
+fn perform_atomic_semop(sems: &mut [Semaphore], pending_op: &mut PendingOp) -> Option<Status> {
+    match pending_op.blocker(sems) {
+        Ok(PendingBlocker::NotBlock) => (),
+        Ok(PendingBlocker::Zero(_) | PendingBlocker::Decrease(_)) => return None,
+        Err(status) => return Some(status),
     }
 
     // Success, do operation
@@ -418,5 +449,5 @@ fn perform_atomic_semop(sems: &mut [Semaphore], pending_op: &mut PendingOp) -> R
         sem.latest_modified_pid = pending_op.pid;
     }
 
-    Ok(true)
+    Some(Status::Normal)
 }
