@@ -158,7 +158,7 @@ pub fn sem_op(
         },
     }
 
-    let sem_op_result = ipc_ns.with_sem_set(sem_id, None, PermissionMode::empty(), |sem_set| {
+    let sem_op_result = ipc_ns.with_sem_set(sem_id, PermissionMode::empty(), |sem_set| {
         let mut inner = sem_set.inner();
 
         if perform_atomic_semop(&mut inner.sems, &mut pending_op)? {
@@ -214,7 +214,7 @@ pub fn sem_op(
                 Status::Removed => Err(Error::new(Errno::EIDRM)),
                 Status::Pending => {
                     // FIXME: Lookup may be time-consuming.
-                    ipc_ns.with_sem_set(sem_id, None, PermissionMode::empty(), |sem_set| {
+                    ipc_ns.with_sem_set(sem_id, PermissionMode::empty(), |sem_set| {
                         let mut inner = sem_set.inner();
                         let pending_ops = if alter {
                             &mut inner.pending_alter

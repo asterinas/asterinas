@@ -84,7 +84,6 @@ impl IpcNamespace {
     pub fn with_sem_set<T, F>(
         &self,
         semid: key_t,
-        num_sems: Option<usize>,
         required_perm: PermissionMode,
         op: F,
     ) -> Result<T>
@@ -96,7 +95,7 @@ impl IpcNamespace {
         }
 
         self.sem_ids.with(semid, |sem_set| {
-            Self::validate_sem_set(semid, sem_set, num_sems, required_perm)?;
+            Self::validate_sem_set(semid, sem_set, None, required_perm)?;
             op(sem_set)
         })?
     }
