@@ -155,6 +155,8 @@ pub fn sem_op(
         },
     }
 
+    let mut timer = None;
+
     let sem_op_result = ipc_ns.with_sem_set(sem_id, PermissionMode::empty(), |sem_set| {
         let mut inner = sem_set.inner();
 
@@ -189,6 +191,7 @@ pub fn sem_op(
                         waker.wake_up();
                     });
             jiffies_timer.lock().set_timeout(Timeout::After(timeout));
+            timer = Some(jiffies_timer);
         } else {
             pending_op.waker = Some(waker);
         }
@@ -218,7 +221,7 @@ pub fn sem_op(
                         } else {
                             &mut inner.pending_const
                         };
-                        pending_ops.retain(|op| op.pid != pid);
+                        pending_ops.retain(|op| !Arc::ptr_eq(&op.status, &status));
 
                         Ok(())
                     })?;
