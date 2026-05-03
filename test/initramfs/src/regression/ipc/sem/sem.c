@@ -259,3 +259,27 @@ FN_TEST(semop_is_interrupted_by_signal)
 	TEST_SUCC(remove_sem_set(semid));
 }
 END_TEST()
+
+FN_TEST(semop_duplicate_semnum)
+{
+	struct sembuf ops[2] = {
+		{ .sem_num = 0, .sem_op = 1, .sem_flg = 0 },
+		{ .sem_num = 0, .sem_op = -1, .sem_flg = IPC_NOWAIT },
+	};
+	int semid = TEST_SUCC(create_sem_set(1));
+
+	/*
+	 * FIXME: Linux supports multiple operations on the same semaphore in a
+	 * single `semop`, but Asterinas rejects this unsupported case before
+	 * applying any operation.
+	 */
+#ifdef __asterinas__
+	TEST_ERRNO(semop(semid, ops, 2), EOPNOTSUPP);
+#else
+	TEST_SUCC(semop(semid, ops, 2));
+#endif
+	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()

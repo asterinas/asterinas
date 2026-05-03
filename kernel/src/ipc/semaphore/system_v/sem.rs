@@ -127,21 +127,26 @@ pub fn sem_op(
     ipc_ns: &Arc<IpcNamespace>,
     ctx: &Context,
 ) -> Result<()> {
-    let pid = ctx.process.pid();
+    let has_dup = check_dup_sops(&sops);
+    if has_dup {
+        warn!("Multiple operations on the same semaphore are not supported");
+        return_errno_with_message!(
+            Errno::EOPNOTSUPP,
+            "multiple operations on the same semaphore are not supported"
+        );
+    }
+
+    let is_alter = check_alter_sop(&sops);
+
     let mut pending_op = PendingOp {
         sops,
         status: Arc::new(AtomicStatus::new(Status::Pending)),
         waker: None,
-        pid,
+        pid: ctx.process.pid(),
     };
 
     // TODO: Support permission check
     warn!("Semaphore operation doesn't support permission check now");
-
-    let (alter, dupsop) = get_sops_flags(&pending_op);
-    if dupsop {
-        warn!("Found duplicate sop");
-    }
 
     enum SemOpResult {
         Completed,
@@ -155,7 +160,7 @@ pub fn sem_op(
         let mut inner = sem_set.inner();
 
         if perform_atomic_semop(&mut inner.sems, &mut pending_op)? {
-            if alter {
+            if is_alter {
                 let wake_queue = do_smart_update(&mut inner, &pending_op);
                 for wake_op in wake_queue {
                     wake_op.set_status(Status::Normal);
@@ -175,7 +180,7 @@ pub fn sem_op(
         pending_op.waker = Some(waker);
 
         // Insert the operation to the pending list
-        if alter {
+        if is_alter {
             inner.pending_alter.push_back(pending_op);
         } else {
             inner.pending_const.push_back(pending_op);
@@ -196,7 +201,7 @@ pub fn sem_op(
         // Remove and check again to avoid race conditions
         let _ = ipc_ns.with_sem_set(sem_id, PermissionMode::empty(), |sem_set| {
             let mut inner = sem_set.inner();
-            let pending_ops = if alter {
+            let pending_ops = if is_alter {
                 &mut inner.pending_alter
             } else {
                 &mut inner.pending_const
@@ -226,6 +231,41 @@ pub fn sem_op(
             }
         }
     }
+}
+
+/// Checks whether there are two operations that will operate on the same semaphore and the first
+/// operation is an alteration operation.
+fn check_dup_sops(sops: &[SemBuf]) -> bool {
+    fn check_dup_slow(sops: &[SemBuf]) -> bool {
+        for (i, op_i) in sops.iter().enumerate() {
+            if op_i.sem_op == 0 {
+                continue;
+            }
+            for op_j in sops[i + 1..].iter() {
+                if op_i.sem_num == op_j.sem_num {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    let mut mask = 0;
+    for op in sops.iter() {
+        let bit = 1u64 << (op.sem_num % 64);
+        if mask & bit != 0 {
+            return check_dup_slow(sops);
+        }
+        if op.sem_op != 0 {
+            mask |= bit;
+        }
+    }
+    false
+}
+
+/// Checks whether there is an operation that will change the value of a semaphore.
+fn check_alter_sop(sops: &[SemBuf]) -> bool {
+    sops.iter().any(|op| op.sem_op != 0)
 }
 
 /// Looks for operations that can be completed after an alteration operation and then completes
@@ -304,26 +344,6 @@ pub(super) fn wake_const_ops(
             cursor.move_next();
         }
     }
-}
-
-/// Iter the sops and return the flags (alter, dupsop)
-fn get_sops_flags(pending_op: &PendingOp) -> (bool, bool) {
-    let mut alter = false;
-    let mut dupsop = false;
-    let mut dup = 0;
-    for sop in pending_op.sops_iter() {
-        let mask: u64 = 1 << ((sop.sem_num) % 64);
-
-        if (dup & mask) != 0 {
-            dupsop = true;
-        }
-
-        if sop.sem_op != 0 {
-            alter = true;
-            dup |= mask;
-        }
-    }
-    (alter, dupsop)
 }
 
 /// Performs atomic semaphore operations.
