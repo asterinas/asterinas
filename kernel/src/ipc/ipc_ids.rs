@@ -11,14 +11,14 @@ use crate::prelude::*;
 ///
 /// Lock ordering:
 /// `objects` -> `id_allocator`.
-pub(crate) struct IpcIds<T> {
+pub(super) struct IpcIds<T> {
     objects: RwLock<BTreeMap<key_t, T>>,
     id_allocator: SpinLock<IdAlloc>,
 }
 
 impl<T> IpcIds<T> {
     /// Creates an IPC ID table with IDs in `1..=max_id`.
-    pub(crate) fn new(max_id: usize) -> Self {
+    pub(super) fn new(max_id: usize) -> Self {
         let mut id_allocator = IdAlloc::with_capacity(max_id + 1);
         // Remove the first index 0 (IPC IDs start from 1).
         id_allocator.alloc();
@@ -30,7 +30,7 @@ impl<T> IpcIds<T> {
     }
 
     /// Calls `op` with the object identified by `id`.
-    pub(crate) fn with<R, F>(&self, key: key_t, op: F) -> Result<R>
+    pub(super) fn with<R, F>(&self, key: key_t, op: F) -> Result<R>
     where
         F: FnOnce(&T) -> Result<R>,
     {
@@ -40,7 +40,7 @@ impl<T> IpcIds<T> {
     }
 
     /// Removes the object identified by `key`.
-    pub(crate) fn remove<F>(&self, key: key_t, may_remove: F) -> Result<()>
+    pub(super) fn remove<F>(&self, key: key_t, may_remove: F) -> Result<()>
     where
         F: FnOnce(&T) -> Result<()>,
     {
@@ -52,7 +52,7 @@ impl<T> IpcIds<T> {
     }
 
     /// Inserts a new object with an automatically allocated key.
-    pub(crate) fn insert_auto<F>(&self, new_object_fn: F) -> Result<key_t>
+    pub(super) fn insert_auto<F>(&self, new_object_fn: F) -> Result<key_t>
     where
         F: FnOnce(key_t) -> Result<T>,
     {
@@ -71,7 +71,7 @@ impl<T> IpcIds<T> {
     }
 
     /// Inserts a new object at `key`.
-    pub(crate) fn insert_at<F>(&self, key: key_t, new_object_fn: F) -> Result<()>
+    pub(super) fn insert_at<F>(&self, key: key_t, new_object_fn: F) -> Result<()>
     where
         F: FnOnce(key_t) -> Result<T>,
     {
@@ -92,7 +92,7 @@ impl<T> IpcIds<T> {
     }
 
     /// Frees `key` back to the allocator.
-    pub(crate) fn free_key(&self, key: key_t) {
+    pub(super) fn free_key(&self, key: key_t) {
         self.id_allocator.lock().free(key as usize);
     }
 }
