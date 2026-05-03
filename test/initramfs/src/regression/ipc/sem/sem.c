@@ -283,3 +283,28 @@ FN_TEST(semop_duplicate_semnum)
 	TEST_SUCC(remove_sem_set(semid));
 }
 END_TEST()
+
+FN_TEST(semop_sem_undo)
+{
+	struct sembuf op = {
+		.sem_num = 0,
+		.sem_op = 1,
+		.sem_flg = SEM_UNDO,
+	};
+	int semid = TEST_SUCC(create_sem_set(1));
+
+	/*
+	 * FIXME: Linux applies `SEM_UNDO`, but Asterinas rejects the flag as it
+	 * is not supported.
+	 */
+#ifdef __asterinas__
+	TEST_ERRNO(semop(semid, &op, 1), EINVAL);
+	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+#else
+	TEST_SUCC(semop(semid, &op, 1));
+	TEST_RES(get_sem_val(semid, 0), _ret == 1);
+#endif
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()

@@ -384,7 +384,8 @@ fn perform_atomic_semop(sems: &mut [Semaphore], pending_op: &mut PendingOp) -> R
             return_errno_with_message!(Errno::ERANGE, "semaphore value exceeds SEMVMX");
         }
         if flags.contains(IpcFlags::SEM_UNDO) {
-            todo!()
+            // TODO: Add support for the `SEM_UNDO` flag
+            return_errno_with_message!(Errno::EINVAL, "SEM_UNDO is not supported yet");
         }
     }
 

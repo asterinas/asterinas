@@ -36,21 +36,22 @@ bitflags! {
     }
 }
 
+// TODO: Add support for the commented-out commands below
 #[expect(non_camel_case_types)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
 pub enum IpcControlCmd {
     IPC_RMID = 0,
-    IPC_SET = 1,
+    // IPC_SET = 1,
     IPC_STAT = 2,
 
     SEM_GETPID = 11,
     SEM_GETVAL = 12,
-    SEM_GETALL = 13,
+    // SEM_GETALL = 13,
     SEM_GETNCNT = 14,
     SEM_GETZCNT = 15,
     SEM_SETVAL = 16,
-    SEM_SETALL = 17,
+    // SEM_SETALL = 17,
 }
 
 #[derive(Debug)]
