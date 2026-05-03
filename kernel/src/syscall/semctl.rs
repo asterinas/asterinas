@@ -55,7 +55,7 @@ pub fn sys_semctl(
                 return_errno_with_message!(Errno::ERANGE, "semaphore value must not be negative");
             }
 
-            ipc_ns.with_sem_set(semid, None, PermissionMode::ALTER, |sem_set| {
+            ipc_ns.with_sem_set(semid, PermissionMode::ALTER, |sem_set| {
                 sem_set.setval(semnum as usize, val, ctx.process.pid())
             })?;
         }
@@ -63,7 +63,7 @@ pub fn sys_semctl(
             fn sem_val(sem: &Semaphore) -> i32 {
                 sem.val()
             }
-            let val: i32 = ipc_ns.with_sem_set(semid, None, PermissionMode::READ, |sem_set| {
+            let val: i32 = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
                 sem_set.get(semnum as usize, &sem_val)
             })?;
 
@@ -73,28 +73,28 @@ pub fn sys_semctl(
             fn sem_pid(sem: &Semaphore) -> Pid {
                 sem.latest_modified_pid()
             }
-            let pid: Pid = ipc_ns.with_sem_set(semid, None, PermissionMode::READ, |sem_set| {
+            let pid: Pid = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
                 sem_set.get(semnum as usize, &sem_pid)
             })?;
 
             return Ok(SyscallReturn::Return(pid as isize));
         }
         IpcControlCmd::SEM_GETZCNT => {
-            let cnt: usize = ipc_ns.with_sem_set(semid, None, PermissionMode::READ, |sem_set| {
+            let cnt: usize = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
                 Ok(sem_set.pending_const_count(semnum as u16))
             })?;
 
             return Ok(SyscallReturn::Return(cnt as isize));
         }
         IpcControlCmd::SEM_GETNCNT => {
-            let cnt: usize = ipc_ns.with_sem_set(semid, None, PermissionMode::READ, |sem_set| {
+            let cnt: usize = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
                 Ok(sem_set.pending_alter_count(semnum as u16))
             })?;
 
             return Ok(SyscallReturn::Return(cnt as isize));
         }
         IpcControlCmd::IPC_STAT => {
-            ipc_ns.with_sem_set(semid, None, PermissionMode::READ, |sem_set| {
+            ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
                 let semid_ds = sem_set.semid_ds();
                 Ok(ctx.user_space().write_val(arg as Vaddr, &semid_ds)?)
             })?;
