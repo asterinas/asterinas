@@ -51,7 +51,7 @@ pub struct SemaphoreSet {
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct IpcPerm {
+struct IpcPerm {
     key: u32,
     uid: u32,
     gid: u32,

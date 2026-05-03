@@ -39,7 +39,7 @@ impl SemBuf {
 
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum Status {
+pub(super) enum Status {
     Normal = 0,
     Pending = 1,
     Removed = 2,
@@ -234,7 +234,7 @@ pub fn sem_op(
 }
 
 /// Update pending const and alter operations, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L1029>
-pub(super) fn do_smart_update(
+fn do_smart_update(
     inner: &mut SpinLockGuard<SemSetInner, PreemptDisabled>,
     pending_op: &PendingOp,
 ) -> LinkedList<PendingOp> {
