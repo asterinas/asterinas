@@ -8,7 +8,7 @@ use ostd::sync::PreemptDisabled;
 
 use super::sem::{PendingOp, Status, update_pending_alter, wake_const_ops};
 use crate::{
-    ipc::{IpcNamespace, IpcPermission, key_t, semaphore::system_v::sem::Semaphore},
+    ipc::{IpcPermission, key_t, semaphore::system_v::sem::Semaphore},
     prelude::*,
     process::{Credentials, Pid},
     time::clocks::RealTimeCoarseClock,
@@ -41,10 +41,8 @@ pub struct SemaphoreSet {
     permission: IpcPermission,
     /// Creation time or last modification via `semctl`
     sem_ctime: AtomicU64,
-    /// Last semop time.
+    /// Last `semop` time
     sem_otime: AtomicU64,
-    /// The IPC namespace.
-    ipc_ns: Weak<IpcNamespace>,
 }
 
 // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ipcbuf.h#L22>.
@@ -219,7 +217,6 @@ impl SemaphoreSet {
         num_sems: usize,
         mode: u16,
         credentials: Credentials<ReadOp>,
-        ipc_ns: &Arc<IpcNamespace>,
     ) -> Result<Self> {
         if num_sems > SEMMSL {
             return_errno_with_message!(Errno::EINVAL, "num_sems exceeds SEMMSL");
@@ -243,7 +240,6 @@ impl SemaphoreSet {
                 pending_alter: LinkedList::new(),
                 pending_const: LinkedList::new(),
             }),
-            ipc_ns: Arc::downgrade(ipc_ns),
         })
     }
 
@@ -289,16 +285,5 @@ impl Drop for SemaphoreSet {
         }
         pending_const.clear();
         drop(inner);
-
-        if let Some(ipc_ns) = self.ipc_ns.upgrade() {
-            ipc_ns.free_sem_key(self.permission.key());
-        } else {
-            // `upgrade()` returns `None` when the IPC namespace itself is being destroyed.
-            // In that path, dropping the namespace's semaphore-set map
-            // cascades into `SemaphoreSet::drop`,
-            // after the last strong reference to the namespace is already gone.
-            // Skipping `free_sem_key()` is correct
-            // because the namespace's ID allocator is being dropped together with the namespace.
-        }
     }
 }

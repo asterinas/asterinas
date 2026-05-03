@@ -95,12 +95,10 @@ impl IpcNamespace {
             return_errno_with_message!(Errno::EINVAL, "semaphore ID must be positive");
         }
 
-        self.sem_ids
-            .with(semid, |sem_set| {
-                Self::validate_sem_set(semid, sem_set, num_sems, required_perm)?;
-                op(sem_set)
-            })
-            .map_err(Self::map_sem_id_error)
+        self.sem_ids.with(semid, |sem_set| {
+            Self::validate_sem_set(semid, sem_set, num_sems, required_perm)?;
+            op(sem_set)
+        })?
     }
 
     /// Removes the semaphore set identified by `semid`.
@@ -112,14 +110,12 @@ impl IpcNamespace {
             return_errno_with_message!(Errno::EINVAL, "semaphore ID must be positive");
         }
 
-        self.sem_ids
-            .remove(semid, may_remove)
-            .map_err(Self::map_sem_id_error)
+        self.sem_ids.remove(semid, may_remove)
     }
 
     /// Returns the existing semaphore set or creates a new one.
     pub fn get_or_create_sem_set(
-        self: &Arc<Self>,
+        &self,
         key: key_t,
         num_sems: usize,
         flags: IpcFlags,
@@ -160,10 +156,11 @@ impl IpcNamespace {
 
                 Ok(key)
             }) {
-                Ok(key) => return Ok(key),
-                Err(err) if err.error() == Errno::ENOENT && flags.contains(IpcFlags::IPC_CREAT) => {
+                Err(_id_not_exist) if flags.contains(IpcFlags::IPC_CREAT) => {}
+                Err(_id_not_exist) => {
+                    return_errno_with_message!(Errno::ENOENT, "the ID does not exist");
                 }
-                Err(err) => return Err(err),
+                Ok(result) => return result,
             }
 
             if num_sems == 0 {
@@ -177,7 +174,7 @@ impl IpcNamespace {
                 let Some(credentials) = credentials.take() else {
                     return_errno_with_message!(Errno::EINVAL, "credentials were already consumed");
                 };
-                SemaphoreSet::new(key, num_sems, mode, credentials, self)
+                SemaphoreSet::new(key, num_sems, mode, credentials)
             }) {
                 Ok(()) => return Ok(key),
                 Err(err) if err.error() == Errno::EEXIST => continue,
@@ -212,26 +209,13 @@ impl IpcNamespace {
 
     /// Creates a new semaphore set and returns its key.
     fn create_sem_set(
-        self: &Arc<Self>,
+        &self,
         num_sems: usize,
         mode: u16,
         credentials: Credentials<ReadOp>,
     ) -> Result<key_t> {
         self.sem_ids
-            .insert_auto(|key| SemaphoreSet::new(key, num_sems, mode, credentials, self))
-    }
-
-    /// Frees a semaphore key back to the allocator.
-    pub(super) fn free_sem_key(&self, key: key_t) {
-        self.sem_ids.free_key(key);
-    }
-
-    fn map_sem_id_error(err: Error) -> Error {
-        if err.error() == Errno::ENOENT {
-            Error::new(Errno::EINVAL)
-        } else {
-            err
-        }
+            .insert_auto(|key| SemaphoreSet::new(key, num_sems, mode, credentials))
     }
 }
 

@@ -21,7 +21,7 @@ impl<T> IpcIds<T> {
     pub(super) fn new(max_id: usize) -> Self {
         let mut id_allocator = IdAlloc::with_capacity(max_id + 1);
         // Remove the first index 0 (IPC IDs start from 1).
-        id_allocator.alloc();
+        id_allocator.alloc_specific(0).unwrap();
 
         Self {
             objects: RwLock::new(BTreeMap::new()),
@@ -29,14 +29,18 @@ impl<T> IpcIds<T> {
         }
     }
 
-    /// Calls `op` with the object identified by `id`.
-    pub(super) fn with<R, F>(&self, key: key_t, op: F) -> Result<R>
+    /// Calls `op` with the object identified by `key`.
+    pub(super) fn with<R, F>(&self, key: key_t, op: F) -> core::result::Result<R, IdNotExistError>
     where
-        F: FnOnce(&T) -> Result<R>,
+        F: FnOnce(&T) -> R,
     {
         let objects = self.objects.read();
-        let object = objects.get(&key).ok_or(Error::new(Errno::ENOENT))?;
-        op(object)
+
+        let Some(object) = objects.get(&key) else {
+            return Err(IdNotExistError);
+        };
+
+        Ok(op(object))
     }
 
     /// Removes the object identified by `key`.
@@ -44,10 +48,19 @@ impl<T> IpcIds<T> {
     where
         F: FnOnce(&T) -> Result<()>,
     {
+        use alloc::collections::btree_map::Entry;
+
         let mut objects = self.objects.write();
-        let object = objects.get(&key).ok_or(Error::new(Errno::ENOENT))?;
-        may_remove(object)?;
-        objects.remove(&key).ok_or(Error::new(Errno::ENOENT))?;
+
+        let Entry::Occupied(entry) = objects.entry(key) else {
+            return_errno_with_message!(Errno::EINVAL, "the ID does not exist");
+        };
+
+        may_remove(entry.get())?;
+        entry.remove();
+
+        self.id_allocator.lock().free(key as usize);
+
         Ok(())
     }
 
@@ -57,16 +70,20 @@ impl<T> IpcIds<T> {
         F: FnOnce(key_t) -> Result<T>,
     {
         let mut objects = self.objects.write();
-        let mut id_allocator = self.id_allocator.lock();
-        let key = id_allocator.alloc().ok_or(Error::new(Errno::ENOSPC))? as key_t;
+
+        let Some(key) = self.id_allocator.lock().alloc().map(|key| key as key_t) else {
+            return_errno_with_message!(Errno::ENOSPC, "all IDs are exhausted");
+        };
+
         let object = match new_object_fn(key) {
             Ok(object) => object,
             Err(err) => {
-                id_allocator.free(key as usize);
+                self.id_allocator.lock().free(key as usize);
                 return Err(err);
             }
         };
         objects.insert(key, object);
+
         Ok(key)
     }
 
@@ -76,23 +93,34 @@ impl<T> IpcIds<T> {
         F: FnOnce(key_t) -> Result<T>,
     {
         let mut objects = self.objects.write();
-        let mut id_allocator = self.id_allocator.lock();
-        id_allocator
+
+        if self
+            .id_allocator
+            .lock()
             .alloc_specific(key as usize)
-            .ok_or(Error::new(Errno::EEXIST))?;
+            .is_none()
+        {
+            return_errno_with_message!(Errno::EEXIST, "the ID already exists");
+        }
+
         let object = match new_object_fn(key) {
             Ok(object) => object,
             Err(err) => {
-                id_allocator.free(key as usize);
+                self.id_allocator.lock().free(key as usize);
                 return Err(err);
             }
         };
         objects.insert(key, object);
+
         Ok(())
     }
+}
 
-    /// Frees `key` back to the allocator.
-    pub(super) fn free_key(&self, key: key_t) {
-        self.id_allocator.lock().free(key as usize);
+#[derive(Debug)]
+pub(super) struct IdNotExistError;
+
+impl From<IdNotExistError> for Error {
+    fn from(_value: IdNotExistError) -> Self {
+        Error::with_message(Errno::EINVAL, "the ID does not exist")
     }
 }
