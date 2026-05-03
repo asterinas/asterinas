@@ -19,12 +19,12 @@ use crate::{
 pub const SEMMNI: usize = 32000;
 /// Maximum number of semaphores per semaphore ID.
 pub const SEMMSL: usize = 32000;
-/// Maximum number of seaphores in all semaphore sets.
+/// Maximum number of semaphores in all semaphore sets.
 #[expect(dead_code)]
 pub const SEMMNS: usize = SEMMNI * SEMMSL;
 /// Maximum number of operations for semop.
 pub const SEMOPM: usize = 500;
-/// MAximum semaphore value.
+/// Maximum semaphore value.
 pub const SEMVMX: i32 = 32767;
 /// Maximum value that can be recorded for semaphore adjustment (SEM_UNDO).
 #[expect(dead_code)]
@@ -154,12 +154,14 @@ impl SemaphoreSet {
 
     pub fn setval(&self, sem_num: usize, val: i32, pid: Pid) -> Result<()> {
         if !(0..=SEMVMX).contains(&val) {
-            return_errno_with_message!(Errno::ERANGE, "semaphore value out of range");
+            return_errno_with_message!(Errno::ERANGE, "the semaphore value exceeds SEMVMX");
         }
 
         let mut inner = self.inner();
         let (sems, pending_alter, pending_const) = inner.field_mut();
-        let sem = sems.get_mut(sem_num).ok_or(Error::new(Errno::EINVAL))?;
+        let Some(sem) = sems.get_mut(sem_num) else {
+            return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
+        };
 
         sem.set_val(val);
         sem.set_latest_modified_pid(pid);
@@ -182,11 +184,14 @@ impl SemaphoreSet {
         Ok(())
     }
 
-    pub fn get<T>(&self, sem_num: usize, func: &dyn Fn(&Semaphore) -> T) -> Result<T> {
+    pub fn get<T>(&self, sem_num: usize, func: fn(&Semaphore) -> T) -> Result<T> {
         let inner = self.inner();
-        Ok(func(
-            inner.sems.get(sem_num).ok_or(Error::new(Errno::EINVAL))?,
-        ))
+        let Some(sem) = inner.sems.get(sem_num) else {
+            return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
+        };
+
+        let result = func(sem);
+        Ok(result)
     }
 
     pub fn permission(&self) -> &IpcPermission {
