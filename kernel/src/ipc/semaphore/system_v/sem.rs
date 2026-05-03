@@ -205,30 +205,37 @@ pub fn sem_op(
         Ok(SemOpResult::Pending { status, waiter })
     })?;
 
-    match sem_op_result {
-        SemOpResult::Completed => Ok(()),
+    let status = match sem_op_result {
+        SemOpResult::Completed => return Ok(()),
         SemOpResult::Pending { status, waiter } => {
             waiter.wait();
-            match status.load(Ordering::Relaxed) {
-                Status::Normal => Ok(()),
-                Status::Removed => Err(Error::new(Errno::EIDRM)),
-                Status::Pending => {
-                    // FIXME: Lookup may be time-consuming.
-                    ipc_ns.with_sem_set(sem_id, PermissionMode::empty(), |sem_set| {
-                        let mut inner = sem_set.inner();
-                        let pending_ops = if alter {
-                            &mut inner.pending_alter
-                        } else {
-                            &mut inner.pending_const
-                        };
-                        pending_ops.retain(|op| !Arc::ptr_eq(&op.status, &status));
+            status
+        }
+    };
 
-                        Ok(())
-                    })?;
+    if matches!(status.load(Ordering::Relaxed), Status::Pending) {
+        // Remove and check again to avoid race conditions
+        let _ = ipc_ns.with_sem_set(sem_id, PermissionMode::empty(), |sem_set| {
+            let mut inner = sem_set.inner();
+            let pending_ops = if alter {
+                &mut inner.pending_alter
+            } else {
+                &mut inner.pending_const
+            };
+            // FIXME: This may be time-consuming
+            pending_ops.retain(|op| !Arc::ptr_eq(&op.status, &status));
 
-                    Err(Error::new(Errno::EAGAIN))
-                }
-            }
+            Ok(())
+        });
+    }
+
+    match status.load(Ordering::Relaxed) {
+        Status::Normal => Ok(()),
+        Status::Removed => {
+            return_errno_with_message!(Errno::EIDRM, "the semaphore set is removed");
+        }
+        Status::Pending => {
+            return_errno_with_message!(Errno::EAGAIN, "the time limit is reached");
         }
     }
 }
