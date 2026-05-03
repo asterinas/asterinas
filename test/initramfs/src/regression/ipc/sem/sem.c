@@ -87,6 +87,13 @@ static int get_sem_ncnt(int semid, int semnum)
 	return semctl(semid, semnum, GETNCNT, arg);
 }
 
+static int get_sem_zcnt(int semid, int semnum)
+{
+	union semun arg = { 0 };
+
+	return semctl(semid, semnum, GETZCNT, arg);
+}
+
 static void *timed_semop_thread(void *data)
 {
 	struct timed_semop_args *args = data;
@@ -222,6 +229,7 @@ FN_TEST(semctl_set_zeros_wake_pending_alterations)
 	wait.semid = semid;
 	TEST_SUCC(start_timed_semop_thread(&thread, &wait));
 	sleep_ms(SETTLE_MS);
+	TEST_RES(get_sem_zcnt(semid, 0), _ret == 1);
 
 	TEST_SUCC(set_sem_val(semid, 0, 0));
 	TEST_RES(join_timed_semop_thread(thread, &wait), _ret == 0);
@@ -403,6 +411,54 @@ FN_TEST(semop_updates_pid_with_or_without_alteration)
 	TEST_RES(semctl(semid, 1, GETPID, arg), _ret == 0);
 	TEST_SUCC(semop(semid, &op, 1));
 	TEST_RES(semctl(semid, 1, GETPID, arg), _ret == getpid());
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semctl_waiter_counts_report_blocking_semnum)
+{
+	struct timed_semop_args wait = {
+		.nops = 2,
+		.timeout_ms = LONG_TIMEOUT_MS,
+		.ops = { { .sem_num = 0, .sem_op = 0, .sem_flg = 0 },
+			 { .sem_num = 1, .sem_op = -1, .sem_flg = 0 } },
+	};
+	pthread_t thread;
+	int semid = TEST_SUCC(create_sem_set(2));
+
+	wait.semid = semid;
+	TEST_SUCC(set_sem_val(semid, 0, 1));
+
+	TEST_SUCC(start_timed_semop_thread(&thread, &wait));
+	sleep_ms(SETTLE_MS);
+
+	// We're waiting at the first semaphore for zeros.
+	TEST_RES(get_sem_ncnt(semid, 0), _ret == 0);
+	TEST_RES(get_sem_zcnt(semid, 0), _ret == 1);
+	TEST_RES(get_sem_ncnt(semid, 1), _ret == 0);
+	TEST_RES(get_sem_zcnt(semid, 1), _ret == 0);
+
+	TEST_SUCC(set_sem_val(semid, 0, 0));
+	sleep_ms(SETTLE_MS);
+
+	// We're waiting at the second semaphore for decreasing.
+	TEST_RES(get_sem_ncnt(semid, 0), _ret == 0);
+	TEST_RES(get_sem_zcnt(semid, 0), _ret == 0);
+	TEST_RES(get_sem_ncnt(semid, 1), _ret == 1);
+	TEST_RES(get_sem_zcnt(semid, 1), _ret == 0);
+
+	TEST_SUCC(set_sem_val(semid, 1, 1));
+	TEST_RES(join_timed_semop_thread(thread, &wait), _ret == 0);
+
+	// There are no waiters.
+	TEST_RES(get_sem_ncnt(semid, 0), _ret == 0);
+	TEST_RES(get_sem_zcnt(semid, 0), _ret == 0);
+	TEST_RES(get_sem_ncnt(semid, 1), _ret == 0);
+	TEST_RES(get_sem_zcnt(semid, 1), _ret == 0);
+
+	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+	TEST_RES(get_sem_val(semid, 1), _ret == 0);
 
 	TEST_SUCC(remove_sem_set(semid));
 }

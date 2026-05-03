@@ -77,14 +77,14 @@ pub fn sys_semctl(
         }
         IpcControlCmd::SEM_GETNCNT => {
             let cnt: usize = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
-                sem_set.pending_alter_count(semnum as usize)
+                sem_set.pending_decrease_count(semnum as usize)
             })?;
 
             return Ok(SyscallReturn::Return(cnt as isize));
         }
         IpcControlCmd::SEM_GETZCNT => {
             let cnt: usize = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
-                sem_set.pending_const_count(semnum as usize)
+                sem_set.pending_zero_count(semnum as usize)
             })?;
 
             return Ok(SyscallReturn::Return(cnt as isize));
