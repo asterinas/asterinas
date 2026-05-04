@@ -12,7 +12,7 @@ use crate::prelude::*;
 /// Lock ordering:
 /// `objects` -> `id_allocator`.
 pub(super) struct IpcIds<T> {
-    objects: RwLock<BTreeMap<key_t, T>>,
+    objects: RwMutex<BTreeMap<key_t, T>>,
     id_allocator: SpinLock<IdAlloc>,
 }
 
@@ -24,7 +24,7 @@ impl<T> IpcIds<T> {
         id_allocator.alloc_specific(0).unwrap();
 
         Self {
-            objects: RwLock::new(BTreeMap::new()),
+            objects: RwMutex::new(BTreeMap::new()),
             id_allocator: SpinLock::new(id_allocator),
         }
     }
