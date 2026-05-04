@@ -16,6 +16,7 @@
 
 #define SEMMNI 320000
 #define SEMMSL 320000
+#define SEMOPM 500
 #define SEMVMX 32767
 
 #define CUSTOM_KEY 0xdeadbeef
@@ -153,6 +154,14 @@ FN_SETUP(install_signal_handler)
 }
 END_SETUP()
 
+FN_TEST(semget_reject_bad_semmnum)
+{
+	TEST_ERRNO(create_sem_set(0), EINVAL);
+	TEST_ERRNO(create_sem_set(-1), EINVAL);
+	TEST_ERRNO(create_sem_set(SEMMSL + 1), EINVAL);
+}
+END_TEST()
+
 FN_TEST(semget_accept_arbitrary_keys)
 {
 	int semid = TEST_SUCC(semget(CUSTOM_KEY, 1, IPC_CREAT | 0600));
@@ -187,6 +196,27 @@ FN_TEST(semget_accept_arbitrary_keys)
 }
 END_TEST()
 
+FN_TEST(semctl_reject_bad_semid)
+{
+	union semun arg = { 0 };
+	int semid = TEST_SUCC(create_sem_set(1));
+	int bad_semids[2] = { semid + 1, -1 };
+	int i, bad_semid;
+
+	for (i = 0; i < 2; ++i) {
+		bad_semid = bad_semids[i];
+		TEST_ERRNO(semctl(bad_semid, 0, IPC_STAT, arg), EINVAL);
+		TEST_ERRNO(semctl(bad_semid, 0, IPC_RMID, arg), EINVAL);
+		TEST_ERRNO(semctl(bad_semid, 0, GETNCNT, arg), EINVAL);
+		TEST_ERRNO(semctl(bad_semid, 0, GETZCNT, arg), EINVAL);
+		TEST_ERRNO(semctl(bad_semid, 0, GETVAL, arg), EINVAL);
+		TEST_ERRNO(semctl(bad_semid, 0, SETVAL, arg), EINVAL);
+	}
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
 FN_TEST(semctl_ipc_commands_ignore_semnum)
 {
 	union semun arg = { 0 };
@@ -208,6 +238,30 @@ FN_TEST(semctl_waiter_counts_reject_bad_semnum)
 	TEST_ERRNO(semctl(semid, 1, GETNCNT, arg), EINVAL);
 	TEST_ERRNO(semctl(semid, -1, GETZCNT, arg), EINVAL);
 	TEST_ERRNO(semctl(semid, 1, GETZCNT, arg), EINVAL);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semctl_get_set_values_reject_bad_semnum)
+{
+	int semid = TEST_SUCC(create_sem_set(1));
+
+	TEST_ERRNO(get_sem_val(semid, 1), EINVAL);
+	TEST_ERRNO(get_sem_val(semid, -1), EINVAL);
+	TEST_ERRNO(set_sem_val(semid, 1, 0), EINVAL);
+	TEST_ERRNO(set_sem_val(semid, -1, 0), EINVAL);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semctl_set_values_reject_bad_values)
+{
+	int semid = TEST_SUCC(create_sem_set(1));
+
+	TEST_ERRNO(set_sem_val(semid, 0, SEMVMX + 1), ERANGE);
+	TEST_ERRNO(set_sem_val(semid, 0, -1), ERANGE);
 
 	TEST_SUCC(remove_sem_set(semid));
 }
@@ -236,6 +290,61 @@ FN_TEST(semctl_set_zeros_wake_pending_alterations)
 	TEST_RES(join_timed_semop_thread(thread, &wait), _ret == 0);
 	TEST_RES(get_sem_val(semid, 0), _ret == 0);
 	TEST_RES(get_sem_val(semid, 1), _ret == 0);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semop_reject_bad_nops)
+{
+	struct sembuf op = { .sem_num = 0, .sem_op = 1, .sem_flg = 0 };
+	int semid = TEST_SUCC(create_sem_set(1));
+
+	TEST_ERRNO(semop(semid, &op, 0), EINVAL);
+	TEST_ERRNO(semop(semid, &op, SEMOPM + 1), E2BIG);
+	TEST_ERRNO(semop(semid, &op, -1), E2BIG);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semop_reject_bad_semid)
+{
+	struct sembuf op = { .sem_num = 0, .sem_op = 1, .sem_flg = 0 };
+	int semid = TEST_SUCC(create_sem_set(1));
+
+	TEST_ERRNO(semop(semid + 1, &op, 1), EINVAL);
+	TEST_ERRNO(semop(-1, &op, 1), EINVAL);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semop_reject_bad_semnum)
+{
+	struct sembuf ops[2] = { { .sem_num = 0, .sem_op = -1, .sem_flg = 0 },
+				 { .sem_num = 1, .sem_op = 0, .sem_flg = 0 } };
+	int semid = TEST_SUCC(create_sem_set(2));
+
+	ops[1].sem_num = 2;
+	TEST_ERRNO(semop(semid, ops, 2), EFBIG);
+
+	ops[1].sem_num = -1;
+	TEST_ERRNO(semop(semid, ops, 2), EFBIG);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semop_reject_bad_values)
+{
+	struct sembuf op = { .sem_num = 0, .sem_op = 1, .sem_flg = 0 };
+	int semid = TEST_SUCC(create_sem_set(1));
+
+	TEST_SUCC(set_sem_val(semid, 0, 1));
+
+	op.sem_op = SEMVMX;
+	TEST_ERRNO(semop(semid, &op, 1), ERANGE);
 
 	TEST_SUCC(remove_sem_set(semid));
 }

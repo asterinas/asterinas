@@ -1323,7 +1323,7 @@ select03
 # semctl04
 # semctl05
 # semctl06
-# semctl07
+semctl07
 # semctl08
 # semctl09
 
@@ -1333,7 +1333,7 @@ semget01
 
 # semop01
 # semop02
-# semop03
+semop03
 # semop04
 # semop05
 
