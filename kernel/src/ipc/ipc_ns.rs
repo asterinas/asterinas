@@ -13,8 +13,8 @@ use aster_rights::ReadOp;
 use spin::Once;
 
 use super::{
+    IPC_PRIVATE, IpcFlags, IpcId, IpcKey,
     ipc_ids::IpcIds,
-    key_t,
     semaphore::system_v::{
         PermissionMode,
         sem_set::{SEMMNI, SemaphoreSet},
@@ -22,7 +22,6 @@ use super::{
 };
 use crate::{
     fs::pseudofs::{NsCommonOps, NsType, StashedDentry},
-    ipc::IpcFlags,
     prelude::*,
     process::{
         Credentials, UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread,
@@ -59,10 +58,16 @@ impl IpcNamespace {
     }
 
     fn new(owner: Arc<UserNamespace>) -> Arc<Self> {
+        const MAX_SEM_ID: IpcId = {
+            assert!(SEMMNI <= u32::MAX as usize);
+            IpcId::new(SEMMNI as u32)
+        };
+
+        let sem_ids = IpcIds::new(MAX_SEM_ID);
         let stashed_dentry = StashedDentry::new();
 
         Arc::new(Self {
-            sem_ids: IpcIds::new(SEMMNI),
+            sem_ids,
             owner,
             stashed_dentry,
         })
@@ -83,117 +88,88 @@ impl IpcNamespace {
     /// Calls `op` with the semaphore set identified by `semid`.
     pub fn with_sem_set<T, F>(
         &self,
-        semid: key_t,
+        semid: IpcId,
         required_perm: PermissionMode,
         op: F,
     ) -> Result<T>
     where
         F: FnOnce(&SemaphoreSet) -> Result<T>,
     {
-        if semid <= 0 {
-            return_errno_with_message!(Errno::EINVAL, "semaphore ID must be positive");
-        }
-
         self.sem_ids.with(semid, |sem_set| {
-            Self::validate_sem_set(semid, sem_set, None, required_perm)?;
+            Self::validate_sem_set(sem_set, required_perm)?;
             op(sem_set)
         })?
     }
 
     /// Removes the semaphore set identified by `semid`.
-    pub fn remove_sem_set<F>(&self, semid: key_t, may_remove: F) -> Result<()>
+    pub fn remove_sem_set<F>(&self, semid: IpcId, may_remove: F) -> Result<()>
     where
         F: FnOnce(&SemaphoreSet) -> Result<()>,
     {
-        if semid <= 0 {
-            return_errno_with_message!(Errno::EINVAL, "semaphore ID must be positive");
-        }
-
         self.sem_ids.remove(semid, may_remove)
     }
 
     /// Returns the existing semaphore set or creates a new one.
     pub fn get_or_create_sem_set(
         &self,
-        key: key_t,
+        key: IpcKey,
         num_sems: usize,
         flags: IpcFlags,
         mode: u16,
         credentials: Credentials<ReadOp>,
-    ) -> Result<key_t> {
-        const IPC_NEW: key_t = 0;
-
-        if key < 0 {
-            return_errno_with_message!(Errno::EINVAL, "semaphore key must not be negative");
-        }
-
-        if key == IPC_NEW || (key as usize > SEMMNI && flags.contains(IpcFlags::IPC_CREAT)) {
-            if num_sems == 0 {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "num_sems must not be zero when creating"
-                );
-            }
+    ) -> Result<IpcId> {
+        if key == IPC_PRIVATE {
             return self.create_sem_set(num_sems, mode, credentials);
         }
 
+        // For now, we compute `semid` by hashing `key`. If the hash conflicts, we will simply
+        // return an error. See the TODO below.
+        const { assert!(SEMMNI <= u32::MAX as usize) };
+        let semid = IpcId::new(key.cast_unsigned() % SEMMNI as u32 + 1);
+
         loop {
-            match self.sem_ids.with(key, |sem_set| {
-                Self::validate_sem_set(
-                    key,
-                    sem_set,
-                    Some(num_sems),
-                    PermissionMode::ALTER | PermissionMode::READ,
-                )?;
+            match self.sem_ids.with(semid, |sem_set| {
+                if sem_set.permission().key() != key {
+                    if flags.contains(IpcFlags::IPC_CREAT) {
+                        // TODO: Manage all keys in a data structure (e.g., a map)
+                        return_errno_with_message!(Errno::ENOSPC, "key hashes conflict");
+                    }
+                    return_errno_with_message!(Errno::ENOENT, "the key does not exist");
+                }
+
+                Self::validate_sem_set(sem_set, PermissionMode::ALTER | PermissionMode::READ)?;
+
                 if flags.contains(IpcFlags::IPC_CREAT | IpcFlags::IPC_EXCL) {
                     return_errno_with_message!(
                         Errno::EEXIST,
-                        "semaphore set already exists with IPC_EXCL"
+                        "the semaphore set already exists with IPC_EXCL"
                     );
                 }
 
-                Ok(key)
+                if sem_set.num_sems() < num_sems {
+                    return_errno_with_message!(Errno::EINVAL, "the semaphore set is too small");
+                }
+
+                Ok(semid)
             }) {
                 Err(_id_not_exist) if flags.contains(IpcFlags::IPC_CREAT) => {}
                 Err(_id_not_exist) => {
-                    return_errno_with_message!(Errno::ENOENT, "the ID does not exist");
+                    return_errno_with_message!(Errno::ENOENT, "the key does not exist");
                 }
                 Ok(result) => return result,
             }
 
-            if num_sems == 0 {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "num_sems must not be zero when creating"
-                );
-            }
-
-            match self.sem_ids.insert_at(key, |key| {
+            match self.sem_ids.insert_at(semid, |_| {
                 SemaphoreSet::new(key, num_sems, mode, &credentials)
             }) {
-                Ok(()) => return Ok(key),
+                Ok(()) => return Ok(semid),
                 Err(err) if err.error() == Errno::EEXIST => continue,
                 Err(err) => return Err(err),
             }
         }
     }
 
-    fn validate_sem_set(
-        key: key_t,
-        sem_set: &SemaphoreSet,
-        num_sems: Option<usize>,
-        required_perm: PermissionMode,
-    ) -> Result<()> {
-        if key <= 0 {
-            return_errno_with_message!(Errno::EINVAL, "semaphore key must be positive");
-        }
-
-        if let Some(num_sems) = num_sems
-            && num_sems > sem_set.num_sems()
-        {
-            return_errno_with_message!(Errno::EINVAL, "num_sems exceeds the set size");
-        }
-
+    fn validate_sem_set(_sem_set: &SemaphoreSet, required_perm: PermissionMode) -> Result<()> {
         if !required_perm.is_empty() {
             // TODO: Support permission check
             warn!("Semaphore doesn't support permission check now");
@@ -202,15 +178,15 @@ impl IpcNamespace {
         Ok(())
     }
 
-    /// Creates a new semaphore set and returns its key.
+    /// Creates a new semaphore set and returns its ID.
     fn create_sem_set(
         &self,
         num_sems: usize,
         mode: u16,
         credentials: Credentials<ReadOp>,
-    ) -> Result<key_t> {
+    ) -> Result<IpcId> {
         self.sem_ids
-            .insert_auto(|key| SemaphoreSet::new(key, num_sems, mode, &credentials))
+            .insert_auto(|_| SemaphoreSet::new(IPC_PRIVATE, num_sems, mode, &credentials))
     }
 }
 

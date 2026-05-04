@@ -5,7 +5,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     ipc::{
-        IpcControlCmd,
+        IpcControlCmd, IpcId,
         semaphore::system_v::{PermissionMode, sem::Semaphore},
     },
     prelude::*,
@@ -15,17 +15,17 @@ use crate::{
 pub fn sys_semctl(
     semid: i32,
     semnum: i32,
-    cmd: i32,
+    op: i32,
     arg: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    if semid <= 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid semid")
-    }
+    let Ok(semid) = IpcId::try_from(semid.cast_unsigned()) else {
+        return_errno_with_message!(Errno::EINVAL, "non-positive semaphore IDs are invalid");
+    };
+    let cmd = IpcControlCmd::try_from(op)?;
 
-    let cmd = IpcControlCmd::try_from(cmd)?;
     debug!(
-        "semid = {}, semnum = {}, cmd = {:?}, arg = {:x}",
+        "semctl: semid = {:?}, semnum = {}, cmd = {:?}, arg = {:x}",
         semid, semnum, cmd, arg
     );
 

@@ -14,7 +14,7 @@ use super::{
     sem_set::{SEMVMX, SemSetInner},
 };
 use crate::{
-    ipc::{IpcFlags, IpcNamespace, key_t},
+    ipc::{IpcFlags, IpcId, IpcNamespace},
     prelude::*,
     process::Pid,
     time::{
@@ -125,17 +125,12 @@ impl Semaphore {
 }
 
 pub fn sem_op(
-    sem_id: key_t,
+    sem_id: IpcId,
     sops: Vec<SemBuf>,
     timeout: Option<Duration>,
     ipc_ns: &Arc<IpcNamespace>,
     ctx: &Context,
 ) -> Result<()> {
-    if sem_id <= 0 {
-        return_errno_with_message!(Errno::EINVAL, "semaphore ID must be positive");
-    }
-    debug!("[semop] sops: {:?}", sops);
-
     let pid = ctx.process.pid();
     let mut pending_op = PendingOp {
         sops,

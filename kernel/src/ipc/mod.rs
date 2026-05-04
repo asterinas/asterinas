@@ -6,13 +6,22 @@ use crate::{
 };
 
 mod ipc_ids;
-pub mod ipc_ns;
+mod ipc_ns;
 pub mod semaphore;
 
+pub use ipc_ids::IpcId;
 pub use ipc_ns::IpcNamespace;
 
-#[expect(non_camel_case_types)]
-pub type key_t = i32;
+/// An IPC key.
+///
+/// This key is specified by and can be looked up in userspace. Do not confuse it with the
+/// identifier [`IpcId`], which is specified by the kernel and returned to userspace upon lookup.
+pub type IpcKey = i32;
+
+/// A private IPC key.
+///
+/// This key cannot be looked up.
+const IPC_PRIVATE: IpcKey = 0;
 
 bitflags! {
     pub struct IpcFlags: u32{
@@ -46,7 +55,7 @@ pub enum IpcControlCmd {
 
 #[derive(Debug)]
 pub struct IpcPermission {
-    key: key_t,
+    key: IpcKey,
     /// Owner's UID
     uid: Uid,
     /// Owner's GID
@@ -60,7 +69,7 @@ pub struct IpcPermission {
 }
 
 impl IpcPermission {
-    pub fn key(&self) -> key_t {
+    pub fn key(&self) -> IpcKey {
         self.key
     }
 
@@ -89,7 +98,7 @@ impl IpcPermission {
         self.mode
     }
 
-    pub(self) fn new_sem_perm(key: key_t, uid: Uid, gid: Gid, mode: u16) -> Self {
+    pub(self) fn new_sem_perm(key: IpcKey, uid: Uid, gid: Gid, mode: u16) -> Self {
         Self {
             key,
             uid,

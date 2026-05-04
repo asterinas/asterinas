@@ -5,9 +5,9 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use aster_rights::ReadOp;
 
-use super::sem::{PendingOp, Status, update_pending_alter, wake_const_ops};
+use super::sem::{PendingOp, Semaphore, Status, update_pending_alter, wake_const_ops};
 use crate::{
-    ipc::{IpcPermission, key_t, semaphore::system_v::sem::Semaphore},
+    ipc::{IpcKey, IpcPermission},
     prelude::*,
     process::{Credentials, Pid},
     time::clocks::RealTimeCoarseClock,
@@ -225,13 +225,16 @@ impl SemaphoreSet {
     }
 
     pub(in crate::ipc) fn new(
-        key: key_t,
+        key: IpcKey,
         num_sems: usize,
         mode: u16,
         credentials: &Credentials<ReadOp>,
     ) -> Result<Self> {
+        if num_sems == 0 {
+            return_errno_with_message!(Errno::EINVAL, "the number of semaphores is zero")
+        }
         if num_sems > SEMMSL {
-            return_errno_with_message!(Errno::EINVAL, "num_sems exceeds SEMMSL");
+            return_errno_with_message!(Errno::EINVAL, "the number of semaphores exceeds SEMMSL");
         }
 
         let mut sems = Vec::with_capacity(num_sems);
@@ -257,7 +260,7 @@ impl SemaphoreSet {
 
     pub fn semid_ds(&self) -> SemidDs {
         let ipc_perm = IpcPerm {
-            key: self.permission.key() as u32,
+            key: self.permission.key().cast_unsigned(),
             uid: self.permission.uid().into(),
             gid: self.permission.gid().into(),
             cuid: self.permission.cuid().into(),
