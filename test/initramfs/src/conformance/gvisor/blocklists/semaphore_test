@@ -4,14 +4,6 @@ SemaphoreTest.SemCtlValAll
 SemaphoreTest.SemInfo
 SemaphoreTest.SemIpcSet
 SemaphoreTest.SemopGetncnt
-SemaphoreTest.SemopGetncntOnSetRemoval
-SemaphoreTest.SemopGetncntOnSignal
 SemaphoreTest.SemopGetzcnt
-SemaphoreTest.SemopGetzcntOnSetRemoval
-SemaphoreTest.SemopGetzcntOnSignal
-# SemOpMultiNoBlock requires handling the dupsop situation
+# TODO: Support multiple operations on the same semaphore in a `semop` syscall
 SemaphoreTest.SemOpMultiNoBlock
-SemaphoreTest.SemOpNamespace
-# SemOpRandom will failed in vmar/mod.rs:336:13:assertion failed.
-SemaphoreTest.SemOpRandom
-SemaphoreTest.SemTimedOpBlock
