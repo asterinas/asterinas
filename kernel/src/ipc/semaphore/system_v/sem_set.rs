@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use aster_rights::ReadOp;
-use ostd::sync::PreemptDisabled;
 
 use super::sem::{PendingOp, Status, update_pending_alter, wake_const_ops};
 use crate::{
@@ -36,7 +35,7 @@ pub struct SemaphoreSet {
     /// Number of semaphores in the set
     num_sems: usize,
     /// Inner
-    inner: SpinLock<SemSetInner>,
+    inner: Mutex<SemSetInner>,
     /// Semaphore permission
     permission: IpcPermission,
     /// Creation time or last modification via `semctl`
@@ -208,7 +207,7 @@ impl SemaphoreSet {
         );
     }
 
-    pub(super) fn inner(&self) -> SpinLockGuard<'_, SemSetInner, PreemptDisabled> {
+    pub(super) fn inner(&self) -> MutexGuard<'_, SemSetInner> {
         self.inner.lock()
     }
 
@@ -235,7 +234,7 @@ impl SemaphoreSet {
             permission,
             sem_ctime: AtomicU64::new(RealTimeCoarseClock::get().read_time().as_secs()),
             sem_otime: AtomicU64::new(0),
-            inner: SpinLock::new(SemSetInner {
+            inner: Mutex::new(SemSetInner {
                 sems: sems.into_boxed_slice(),
                 pending_alter: LinkedList::new(),
                 pending_const: LinkedList::new(),
