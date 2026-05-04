@@ -6,34 +6,28 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    ipc::semaphore::system_v::{
-        sem::{SemBuf, sem_op},
-        sem_set::SEMOPM,
+    ipc::{
+        IpcId,
+        semaphore::system_v::{
+            sem::{SemBuf, sem_op},
+            sem_set::SEMOPM,
+        },
     },
     prelude::*,
     time::timespec_t,
 };
 
-pub fn sys_semop(sem_id: i32, tsops: Vaddr, nsops: usize, ctx: &Context) -> Result<SyscallReturn> {
-    debug!(
-        "sem_id = {:?}, tsops_vaddr = {:x?}, nsops = {:?}",
-        sem_id, tsops, nsops
-    );
-    do_sys_semtimedop(sem_id, tsops, nsops, None, ctx)
+pub fn sys_semop(semid: i32, sops: Vaddr, nsops: usize, ctx: &Context) -> Result<SyscallReturn> {
+    do_sys_semtimedop(semid, sops, nsops, None, ctx)
 }
 
 pub fn sys_semtimedop(
-    sem_id: i32,
-    tsops: Vaddr,
+    semid: i32,
+    sops: Vaddr,
     nsops: usize,
     timeout: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    debug!(
-        "sem_id = {:?}, tsops_vaddr = {:x?}, nsops = {:?}, timeout_vaddr = {:x?}",
-        sem_id, tsops, nsops, timeout
-    );
-
     let timeout = if timeout == 0 {
         None
     } else {
@@ -42,33 +36,42 @@ pub fn sys_semtimedop(
         )?)
     };
 
-    do_sys_semtimedop(sem_id, tsops, nsops, timeout, ctx)
+    do_sys_semtimedop(semid, sops, nsops, timeout, ctx)
 }
 
 fn do_sys_semtimedop(
-    sem_id: i32,
-    tsops: Vaddr,
+    semid: i32,
+    sops: Vaddr,
     nsops: usize,
     timeout: Option<Duration>,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    if sem_id <= 0 || nsops == 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid sem_id or nsops");
+    debug!(
+        "semop: semid = {:?}, sops = {:#x}, nsops = {:?}, timeout = {:?}",
+        semid, sops, nsops, timeout
+    );
+
+    let Ok(semid) = IpcId::try_from(semid.cast_unsigned()) else {
+        return_errno_with_message!(Errno::EINVAL, "non-positive semaphore IDs are invalid");
+    };
+
+    if nsops == 0 {
+        return_errno_with_message!(Errno::EINVAL, "the number of operations is zero");
     }
     if nsops > SEMOPM {
-        return_errno_with_message!(Errno::E2BIG, "nsops exceeds SEMOPM");
+        return_errno_with_message!(Errno::E2BIG, "the number of operations exceeds SEMOPM");
     }
 
     let user_space = ctx.user_space();
     let mut semops = Vec::with_capacity(nsops);
     for i in 0..nsops {
-        semops.push(user_space.read_val::<SemBuf>(tsops + size_of::<SemBuf>() * i)?);
+        semops.push(user_space.read_val::<SemBuf>(sops + size_of::<SemBuf>() * i)?);
     }
 
     let ns_proxy = ctx.thread_local.borrow_ns_proxy();
     let ipc_ns = ns_proxy.unwrap().ipc_ns();
 
-    sem_op(sem_id, semops, timeout, ipc_ns, ctx)?;
+    sem_op(semid, semops, timeout, ipc_ns, ctx)?;
 
     Ok(SyscallReturn::Return(0))
 }
