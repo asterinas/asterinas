@@ -7,7 +7,7 @@ use core::{
 };
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-use ostd::sync::{PreemptDisabled, Waiter, Waker};
+use ostd::sync::{Waiter, Waker};
 
 use super::{
     PermissionMode,
@@ -234,10 +234,7 @@ pub fn sem_op(
 }
 
 /// Update pending const and alter operations, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L1029>
-fn do_smart_update(
-    inner: &mut SpinLockGuard<SemSetInner, PreemptDisabled>,
-    pending_op: &PendingOp,
-) -> LinkedList<PendingOp> {
+fn do_smart_update(inner: &mut SemSetInner, pending_op: &PendingOp) -> LinkedList<PendingOp> {
     let mut wake_queue = LinkedList::new();
 
     let (sems, pending_alter, pending_const) = inner.field_mut();
@@ -254,7 +251,7 @@ fn do_smart_update(
 
 /// Look for pending alter operations that can be completed, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L949>
 pub(super) fn update_pending_alter(
-    sems: &mut Box<[Semaphore]>,
+    sems: &mut [Semaphore],
     pending_alter: &mut LinkedList<PendingOp>,
     pending_const: &mut LinkedList<PendingOp>,
     wake_queue: &mut LinkedList<PendingOp>,
@@ -275,7 +272,7 @@ pub(super) fn update_pending_alter(
 
 /// Wakeup all wait for zero tasks, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L893>
 fn do_smart_wakeup_zero(
-    sems: &mut Box<[Semaphore]>,
+    sems: &mut [Semaphore],
     pending_const: &mut LinkedList<PendingOp>,
     pending_op: &PendingOp,
     wake_queue: &mut LinkedList<PendingOp>,
@@ -290,7 +287,7 @@ fn do_smart_wakeup_zero(
 
 /// Wakeup pending const operations, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L854>
 pub(super) fn wake_const_ops(
-    sems: &mut Box<[Semaphore]>,
+    sems: &mut [Semaphore],
     pending_const: &mut LinkedList<PendingOp>,
     wake_queue: &mut LinkedList<PendingOp>,
 ) {
@@ -328,7 +325,7 @@ fn get_sops_flags(pending_op: &PendingOp) -> (bool, bool) {
 /// 1. Return Ok(true) if the operation success.
 /// 2. Return Ok(false) if the caller needs to wait.
 /// 3. Return Err(err) if the operation cause error.
-fn perform_atomic_semop(sems: &mut Box<[Semaphore]>, pending_op: &mut PendingOp) -> Result<bool> {
+fn perform_atomic_semop(sems: &mut [Semaphore], pending_op: &mut PendingOp) -> Result<bool> {
     let mut result;
     for op in pending_op.sops_iter() {
         let sem = sems.get(op.sem_num as usize).ok_or(Errno::EFBIG)?;
