@@ -491,3 +491,34 @@ FN_TEST(semtimedop_reports_error_after_blocking)
 	TEST_SUCC(remove_sem_set(semid));
 }
 END_TEST()
+
+FN_TEST(semop_updates_otime_after_blocking)
+{
+	union semun arg = { 0 };
+	struct timed_semop_args wait = {
+		.nops = 1,
+		.timeout_ms = LONG_TIMEOUT_MS,
+		.ops = { { .sem_num = 0, .sem_op = -1, .sem_flg = 0 } }
+	};
+	pthread_t thread;
+	struct semid_ds semid_ds;
+	int semid = TEST_SUCC(create_sem_set(1));
+
+	wait.semid = semid;
+	TEST_SUCC(start_timed_semop_thread(&thread, &wait));
+	sleep_ms(SETTLE_MS);
+	TEST_RES(get_sem_ncnt(semid, 0), _ret == 1);
+
+	arg.buf = &semid_ds;
+	TEST_RES(semctl(semid, 0, IPC_STAT, arg), semid_ds.sem_otime == 0);
+
+	TEST_SUCC(set_sem_val(semid, 0, 1));
+	TEST_RES(join_timed_semop_thread(thread, &wait), _ret == 0);
+	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+
+	arg.buf = &semid_ds;
+	TEST_RES(semctl(semid, 0, IPC_STAT, arg), semid_ds.sem_otime != 0);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
