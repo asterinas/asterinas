@@ -387,3 +387,23 @@ FN_TEST(semop_retries_pending_alterations)
 	TEST_SUCC(remove_sem_set(semid));
 }
 END_TEST()
+
+FN_TEST(semop_updates_pid_with_or_without_alteration)
+{
+	union semun arg = { 0 };
+	struct sembuf op = { .sem_num = 0, .sem_op = 0, .sem_flg = 0 };
+	int semid = TEST_SUCC(create_sem_set(2));
+
+	TEST_RES(semctl(semid, 0, GETPID, arg), _ret == 0);
+	TEST_SUCC(semop(semid, &op, 1));
+	TEST_RES(semctl(semid, 0, GETPID, arg), _ret == getpid());
+
+	op.sem_num = 1;
+	op.sem_op = 1;
+	TEST_RES(semctl(semid, 1, GETPID, arg), _ret == 0);
+	TEST_SUCC(semop(semid, &op, 1));
+	TEST_RES(semctl(semid, 1, GETPID, arg), _ret == getpid());
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
