@@ -354,7 +354,7 @@ fn do_smart_update(inner: &mut SemSetInner, pending_op: &PendingOp) -> LinkedLis
         do_smart_wakeup_zero(sems, pending_const, pending_op, &mut wake_queue);
     }
     if !pending_alter.is_empty() {
-        update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
+        let _ = update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
     }
 
     wake_queue
@@ -362,13 +362,19 @@ fn do_smart_update(inner: &mut SemSetInner, pending_op: &PendingOp) -> LinkedLis
 
 /// Looks for alteration operations that can be completed and then completes them.
 ///
+/// This method returns whether at least one operation has been completed. The caller should update
+/// the semaphore set's `otime`.
+///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L949>
+#[must_use]
 pub(super) fn update_pending_alter(
     sems: &mut [Semaphore],
     pending_alter: &mut LinkedList<PendingOp>,
     pending_const: &mut LinkedList<PendingOp>,
     wake_queue: &mut LinkedList<PendingOp>,
-) {
+) -> bool {
+    let mut has_completed = false;
+
     let mut cursor = pending_alter.cursor_front_mut();
     while let Some(alter_op) = cursor.current() {
         let Some(status) = perform_atomic_semop(sems, alter_op) else {
@@ -382,6 +388,7 @@ pub(super) fn update_pending_alter(
             wake_queue.append(&mut alter_op);
             continue;
         }
+        has_completed = true;
 
         do_smart_wakeup_zero(sems, pending_const, alter_op.front().unwrap(), wake_queue);
         wake_queue.append(&mut alter_op);
@@ -389,6 +396,8 @@ pub(super) fn update_pending_alter(
         // Retry from the beginning since we've performed some alteration.
         cursor = pending_alter.cursor_front_mut();
     }
+
+    has_completed
 }
 
 /// Wakes up pending tasks on constant operations if an alteration operation made those constant
@@ -403,7 +412,7 @@ fn do_smart_wakeup_zero(
 ) {
     for sop in pending_op.sops_iter() {
         if sems.get(sop.sem_num as usize).unwrap().val == 0 {
-            wake_const_ops(sems, pending_const, wake_queue);
+            let _ = wake_const_ops(sems, pending_const, wake_queue);
             return;
         }
     }
@@ -411,21 +420,30 @@ fn do_smart_wakeup_zero(
 
 /// Wakes up pending tasks on constant operations if they can be completed.
 ///
+/// This method returns whether at least one operation has been completed. The caller should update
+/// the semaphore set's `otime`.
+///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L854>
+#[must_use]
 pub(super) fn wake_const_ops(
     sems: &mut [Semaphore],
     pending_const: &mut LinkedList<PendingOp>,
     wake_queue: &mut LinkedList<PendingOp>,
-) {
+) -> bool {
+    let mut has_completed = false;
+
     let mut cursor = pending_const.cursor_front_mut();
     while let Some(const_op) = cursor.current() {
         if let Some(status) = perform_atomic_semop(sems, const_op) {
+            has_completed |= status == Status::Normal;
             const_op.set_status(status);
             wake_queue.append(&mut cursor.remove_current_as_list().unwrap());
         } else {
             cursor.move_next();
         }
     }
+
+    has_completed
 }
 
 /// Performs atomic semaphore operations.

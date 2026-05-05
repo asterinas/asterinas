@@ -178,10 +178,12 @@ impl SemaphoreSet {
         sem.set_latest_modified_pid(pid);
 
         let mut wake_queue = LinkedList::new();
+        let mut has_completed_op = false;
         if val == 0 {
-            wake_const_ops(sems, pending_const, &mut wake_queue);
+            has_completed_op |= wake_const_ops(sems, pending_const, &mut wake_queue);
         }
-        update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
+        has_completed_op |=
+            update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
 
         for wake_op in wake_queue {
             if let Some(waker) = wake_op.waker() {
@@ -190,6 +192,10 @@ impl SemaphoreSet {
         }
 
         self.update_ctime();
+        if has_completed_op {
+            self.update_otime();
+        }
+
         Ok(())
     }
 
