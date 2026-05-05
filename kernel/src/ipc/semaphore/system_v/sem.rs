@@ -89,7 +89,7 @@ pub struct Semaphore {
     /// The PID of the process that last modified the semaphore.
     ///
     /// This includes the following cases:
-    /// - through `semop` with a non-zero `sem_op`,
+    /// - through `semop` with a zero or non-zero `sem_op`,
     /// - through `semctl` with `SETVAL` and `SETALL`, and
     /// - through `SEM_UNDO` on process exit.
     latest_modified_pid: Pid,
@@ -115,7 +115,7 @@ impl Semaphore {
     pub(super) fn new(val: i32) -> Self {
         Self {
             val,
-            latest_modified_pid: current!().pid(),
+            latest_modified_pid: 0,
         }
     }
 }
@@ -394,10 +394,8 @@ fn perform_atomic_semop(sems: &mut [Semaphore], pending_op: &mut PendingOp) -> R
     // Success, do operation
     for op in pending_op.sops_iter() {
         let sem = &mut sems[op.sem_num as usize];
-        if op.sem_op != 0 {
-            sem.val += i32::from(op.sem_op);
-            sem.latest_modified_pid = pending_op.pid;
-        }
+        sem.val += i32::from(op.sem_op);
+        sem.latest_modified_pid = pending_op.pid;
     }
 
     Ok(true)
