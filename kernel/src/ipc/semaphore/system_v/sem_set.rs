@@ -177,9 +177,8 @@ impl SemaphoreSet {
         let mut wake_queue = LinkedList::new();
         if val == 0 {
             wake_const_ops(sems, pending_const, &mut wake_queue);
-        } else {
-            update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
         }
+        update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
 
         for wake_op in wake_queue {
             wake_op.set_status(Status::Normal);

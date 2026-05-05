@@ -71,6 +71,15 @@ static int get_sem_val(int semid, int semnum)
 	return semctl(semid, semnum, GETVAL, arg);
 }
 
+static int set_sem_val(int semid, int semnum, int val)
+{
+	union semun arg = {
+		.val = val,
+	};
+
+	return semctl(semid, semnum, SETVAL, arg);
+}
+
 static int get_sem_ncnt(int semid, int semnum)
 {
 	union semun arg = { 0 };
@@ -191,6 +200,33 @@ FN_TEST(semctl_waiter_counts_reject_bad_semnum)
 	TEST_ERRNO(semctl(semid, 1, GETNCNT, arg), EINVAL);
 	TEST_ERRNO(semctl(semid, -1, GETZCNT, arg), EINVAL);
 	TEST_ERRNO(semctl(semid, 1, GETZCNT, arg), EINVAL);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semctl_set_zeros_wake_pending_alterations)
+{
+	struct timed_semop_args wait = {
+		.nops = 2,
+		.timeout_ms = LONG_TIMEOUT_MS,
+		.ops = { { .sem_num = 0, .sem_op = 0, .sem_flg = 0 },
+			 { .sem_num = 1, .sem_op = -1, .sem_flg = 0 } },
+	};
+	pthread_t thread;
+	int semid = TEST_SUCC(create_sem_set(2));
+
+	TEST_SUCC(set_sem_val(semid, 0, 1));
+	TEST_SUCC(set_sem_val(semid, 1, 1));
+
+	wait.semid = semid;
+	TEST_SUCC(start_timed_semop_thread(&thread, &wait));
+	sleep_ms(SETTLE_MS);
+
+	TEST_SUCC(set_sem_val(semid, 0, 0));
+	TEST_RES(join_timed_semop_thread(thread, &wait), _ret == 0);
+	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+	TEST_RES(get_sem_val(semid, 1), _ret == 0);
 
 	TEST_SUCC(remove_sem_set(semid));
 }
