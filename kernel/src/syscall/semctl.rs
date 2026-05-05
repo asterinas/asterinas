@@ -48,26 +48,11 @@ pub fn sys_semctl(
                 Ok(())
             })?;
         }
-        IpcControlCmd::SEM_SETVAL => {
-            // In setval, arg is parse as i32
-            let val = arg as i32;
-            if val < 0 {
-                return_errno_with_message!(Errno::ERANGE, "semaphore value must not be negative");
-            }
-
-            ipc_ns.with_sem_set(semid, PermissionMode::ALTER, |sem_set| {
-                sem_set.setval(semnum as usize, val, ctx.process.pid())
+        IpcControlCmd::IPC_STAT => {
+            ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
+                let semid_ds = sem_set.semid_ds();
+                Ok(ctx.user_space().write_val(arg as Vaddr, &semid_ds)?)
             })?;
-        }
-        IpcControlCmd::SEM_GETVAL => {
-            fn sem_val(sem: &Semaphore) -> i32 {
-                sem.val()
-            }
-            let val: i32 = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
-                sem_set.get(semnum as usize, &sem_val)
-            })?;
-
-            return Ok(SyscallReturn::Return(val as isize));
         }
         IpcControlCmd::SEM_GETPID => {
             fn sem_pid(sem: &Semaphore) -> Pid {
@@ -79,12 +64,15 @@ pub fn sys_semctl(
 
             return Ok(SyscallReturn::Return(pid as isize));
         }
-        IpcControlCmd::SEM_GETZCNT => {
-            let cnt: usize = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
-                Ok(sem_set.pending_const_count(semnum as u16))
+        IpcControlCmd::SEM_GETVAL => {
+            fn sem_val(sem: &Semaphore) -> i32 {
+                sem.val()
+            }
+            let val: i32 = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
+                sem_set.get(semnum as usize, &sem_val)
             })?;
 
-            return Ok(SyscallReturn::Return(cnt as isize));
+            return Ok(SyscallReturn::Return(val as isize));
         }
         IpcControlCmd::SEM_GETNCNT => {
             let cnt: usize = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
@@ -93,10 +81,22 @@ pub fn sys_semctl(
 
             return Ok(SyscallReturn::Return(cnt as isize));
         }
-        IpcControlCmd::IPC_STAT => {
-            ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
-                let semid_ds = sem_set.semid_ds();
-                Ok(ctx.user_space().write_val(arg as Vaddr, &semid_ds)?)
+        IpcControlCmd::SEM_GETZCNT => {
+            let cnt: usize = ipc_ns.with_sem_set(semid, PermissionMode::READ, |sem_set| {
+                Ok(sem_set.pending_const_count(semnum as u16))
+            })?;
+
+            return Ok(SyscallReturn::Return(cnt as isize));
+        }
+        IpcControlCmd::SEM_SETVAL => {
+            // In setval, arg is parse as i32
+            let val = arg as i32;
+            if val < 0 {
+                return_errno_with_message!(Errno::ERANGE, "semaphore value must not be negative");
+            }
+
+            ipc_ns.with_sem_set(semid, PermissionMode::ALTER, |sem_set| {
+                sem_set.setval(semnum as usize, val, ctx.process.pid())
             })?;
         }
         _ => todo!("Need to support {:?} in SYS_SEMCTL", cmd),
