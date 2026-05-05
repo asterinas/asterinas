@@ -67,6 +67,10 @@ sbi-rt = "0.0.3"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
 unwinding = { version = "=0.2.8", default-features = false, features = ["fde-static", "hide-trace", "panic", "personality", "unwinder"] }
 
+[target.aarch64-unknown-none-softfloat.dependencies]
+fdt = { version = "0.1.5", features = ["pretty-printing"] }
+unwinding = { version = "=0.2.8", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
+
 [target.loongarch64-unknown-none-softfloat.dependencies]
 loongArch64 = "0.2.5"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
