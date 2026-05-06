@@ -24,17 +24,17 @@ pub struct ProcFile<F: FileOps> {
 }
 
 impl<F: FileOps> ProcFile<F> {
-    pub(super) fn new(file: F, fs: Weak<dyn FileSystem>, mode: InodeMode) -> Arc<Self> {
+    pub fn new(file: F, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
         let common = {
-            let arc_fs = fs.upgrade().unwrap();
-            let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
+            let fs = parent.upgrade().unwrap().fs();
+            let procfs = fs.downcast_ref::<ProcFs>().unwrap();
             let metadata = Metadata::new_file(
                 procfs.alloc_id(),
                 mode,
                 BLOCK_SIZE,
                 procfs.sb().container_dev_id,
             );
-            Common::new(metadata, fs)
+            Common::new(metadata, Arc::downgrade(&fs))
         };
         Arc::new(Self {
             inner: file,

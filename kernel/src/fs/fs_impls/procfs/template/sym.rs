@@ -24,17 +24,17 @@ pub struct ProcSym<S: SymOps> {
 }
 
 impl<S: SymOps> ProcSym<S> {
-    pub(super) fn new(sym: S, fs: Weak<dyn FileSystem>, mode: InodeMode) -> Arc<Self> {
+    pub fn new(sym: S, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
         let common = {
-            let arc_fs = fs.upgrade().unwrap();
-            let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
+            let fs = parent.upgrade().unwrap().fs();
+            let procfs = fs.downcast_ref::<ProcFs>().unwrap();
             let metadata = Metadata::new_symlink(
                 procfs.alloc_id(),
                 mode,
                 BLOCK_SIZE,
                 procfs.sb().container_dev_id,
             );
-            Common::new(metadata, fs)
+            Common::new(metadata, Arc::downgrade(&fs))
         };
         Arc::new(Self { inner: sym, common })
     }

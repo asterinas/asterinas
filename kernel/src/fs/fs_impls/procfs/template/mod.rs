@@ -3,7 +3,6 @@
 use core::time::Duration;
 
 pub(super) use self::{
-    builder::{ProcDirBuilder, ProcFileBuilder, ProcSymBuilder},
     dir::{
         DirOps, ListedEntry, ProcDir, ReaddirEntry, StaticDirEntry, keyed_readdir_entries,
         listed_entries_from_table, lookup_child_from_table, sequential_readdir_entries,
@@ -24,7 +23,6 @@ use crate::{
     process::{Gid, Uid},
 };
 
-mod builder;
 mod dir;
 mod file;
 mod sym;

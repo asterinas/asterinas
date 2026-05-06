@@ -11,7 +11,7 @@ use aster_util::printer::VmPrinter;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, ProcFile},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -25,10 +25,7 @@ impl MemInfoFileOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/meminfo.c#L178>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L549-L550>
-        ProcFileBuilder::new(Self, mkmod!(a+r))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcFile::new(Self, parent, mkmod!(a+r))
     }
 }
 
