@@ -31,6 +31,10 @@ mod pids;
 
 /// A trait to abstract all individual cgroup sub-controllers.
 trait SubControl {
+    fn is_attr_absent(&self, _name: &str) -> bool {
+        false
+    }
+
     fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize>;
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize>;
@@ -274,12 +278,12 @@ impl Controller {
         };
 
         let sub_controller = self.read_sub(ctrl_type);
-        if sub_controller.try_get().is_none() {
+        let Some(controller) = sub_controller.try_get() else {
             // If the sub-controller is not active, all its attributes are considered absent.
-            true
-        } else {
-            false
-        }
+            return true;
+        };
+
+        controller.is_attr_absent(name)
     }
 
     pub(super) fn read_attr_at(
@@ -396,18 +400,18 @@ impl Controller {
                     child_node.controller().cpuset.update(new_controller);
                 }
                 SubCtrlType::Cpu => {
-                    // Preserve the accumulated CPU accounting while toggling `+cpu` on the
-                    // parent. The base usage fields of `cpu.stat` are always tracked, and only
-                    // the extra throttling-related fields depend on whether the controller is active.
-                    let is_enabled = parent_controller
-                        .active_set()
-                        .contains_type(SubCtrlType::Cpu);
-                    let guard = child_node.controller().cpu.read();
-                    if is_enabled {
-                        guard.get().enable();
-                    } else {
-                        guard.get().disable();
+                    let mut new_controller: SubController<CpuController> =
+                        SubController::new(Some(parent_controller));
+                    {
+                        let guard = child_node.controller().cpu.read();
+                        let previous_controller = guard.get();
+                        new_controller
+                            .inner
+                            .as_mut()
+                            .unwrap()
+                            .init_stats(previous_controller.inner.as_ref().unwrap());
                     }
+                    child_node.controller().cpu.update(Arc::new(new_controller));
                 }
                 SubCtrlType::Memory => {
                     let new_controller = Arc::new(SubController::new(Some(parent_controller)));
