@@ -129,3 +129,5 @@ echo "All mount bind file test passed."
 ./pseudofs/pseudo_mount
 
 ./symlink/symlink
+
+./utimensat/utimensat
