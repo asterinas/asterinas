@@ -7,7 +7,7 @@ and the project-specific conventions below.
 - **[Naming](naming.md)** —
   CamelCase/acronym style
   and closure variable suffixes.
-- **[Language Items](language-items/index.html)**
+- **[Language Items](language-items/)**
   - **[Variables, Expressions, and Statements](language-items/variables-expressions-and-statements.md)** —
     Explaining variables,
     block expressions,
@@ -35,7 +35,7 @@ and the project-specific conventions below.
     Narrow lint suppression,
     `#[expect(dead_code)]` policy,
     and macro restraint.
-- **[Select Topics](select-topics/index.html)**
+- **[Select Topics](select-topics/)**
   - **[Concurrency and Races](select-topics/concurrency-and-races.md)** —
     Lock ordering,
     spinlock discipline,

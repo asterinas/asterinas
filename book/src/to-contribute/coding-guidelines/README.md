@@ -11,10 +11,10 @@ and quality criteria for individual guidelines, see
 
 The guidelines are organized into the following pages:
 
-- **[General Guidelines](general-guidelines/index.html)** —
+- **[General Guidelines](general-guidelines/)** —
   Language-agnostic guidance for naming, comments,
   layout, formatting, and API design.
-- **[Rust Guidelines](rust-guidelines/index.html)** —
+- **[Rust Guidelines](rust-guidelines/)** —
   Rust-specific guidance for naming, language items,
   and cross-cutting topics.
 - **[Git Guidelines](git-guidelines.md)** —
@@ -34,21 +34,21 @@ you are welcome to fix the code to match the guidelines.
 
 | Category | Guideline | Short Name |
 |----------|-----------|------------|
-| General | Be descriptive | [`descriptive-names`](general-guidelines/index.html#descriptive-names) |
-| General | Be accurate | [`accurate-names`](general-guidelines/index.html#accurate-names) |
-| General | Encode units and important attributes in names | [`encode-units`](general-guidelines/index.html#encode-units) |
-| General | Use assertion-style boolean names | [`bool-names`](general-guidelines/index.html#bool-names) |
-| General | Prefer semantic line breaks | [`semantic-line-breaks`](general-guidelines/index.html#semantic-line-breaks) |
-| General | Explain why, not what | [`explain-why`](general-guidelines/index.html#explain-why) |
-| General | Document design decisions | [`design-decisions`](general-guidelines/index.html#design-decisions) |
-| General | Cite specifications and algorithm sources | [`cite-sources`](general-guidelines/index.html#cite-sources) |
-| General | One concept per file | [`one-concept-per-file`](general-guidelines/index.html#one-concept-per-file) |
-| General | Organize code for top-down reading | [`top-down-reading`](general-guidelines/index.html#top-down-reading) |
-| General | Group statements into logical paragraphs | [`logical-paragraphs`](general-guidelines/index.html#logical-paragraphs) |
-| General | Format error messages consistently | [`error-message-format`](general-guidelines/index.html#error-message-format) |
-| General | Stick to familiar conventions | [`familiar-conventions`](general-guidelines/index.html#familiar-conventions) |
-| General | Hide implementation details | [`hide-impl-details`](general-guidelines/index.html#hide-impl-details) |
-| General | Validate at boundaries, trust internally | [`validate-at-boundaries`](general-guidelines/index.html#validate-at-boundaries) |
+| General | Be descriptive | [`descriptive-names`](general-guidelines/#descriptive-names) |
+| General | Be accurate | [`accurate-names`](general-guidelines/#accurate-names) |
+| General | Encode units and important attributes in names | [`encode-units`](general-guidelines/#encode-units) |
+| General | Use assertion-style boolean names | [`bool-names`](general-guidelines/#bool-names) |
+| General | Prefer semantic line breaks | [`semantic-line-breaks`](general-guidelines/#semantic-line-breaks) |
+| General | Explain why, not what | [`explain-why`](general-guidelines/#explain-why) |
+| General | Document design decisions | [`design-decisions`](general-guidelines/#design-decisions) |
+| General | Cite specifications and algorithm sources | [`cite-sources`](general-guidelines/#cite-sources) |
+| General | One concept per file | [`one-concept-per-file`](general-guidelines/#one-concept-per-file) |
+| General | Organize code for top-down reading | [`top-down-reading`](general-guidelines/#top-down-reading) |
+| General | Group statements into logical paragraphs | [`logical-paragraphs`](general-guidelines/#logical-paragraphs) |
+| General | Format error messages consistently | [`error-message-format`](general-guidelines/#error-message-format) |
+| General | Stick to familiar conventions | [`familiar-conventions`](general-guidelines/#familiar-conventions) |
+| General | Hide implementation details | [`hide-impl-details`](general-guidelines/#hide-impl-details) |
+| General | Validate at boundaries, trust internally | [`validate-at-boundaries`](general-guidelines/#validate-at-boundaries) |
 | Rust | Follow Rust CamelCase and acronym capitalization | [`camel-case-acronyms`](rust-guidelines/naming.md#camel-case-acronyms) |
 | Rust | End closure variables with `_fn` | [`closure-fn-suffix`](rust-guidelines/naming.md#closure-fn-suffix) |
 | Rust | Introduce explaining variables | [`explain-variables`](rust-guidelines/language-items/variables-expressions-and-statements.md#explain-variables) |
