@@ -5,7 +5,7 @@ use crate::{
     fs,
     fs::{
         file::{InodeMode, InodeType, file_table::RawFileDesc},
-        vfs::path::{AT_FDCWD, FsPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -23,7 +23,7 @@ pub fn sys_mkdirat(
     let fs_ref = ctx.thread_local.borrow_fs();
     let (dir_path, name) = {
         let path = path.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(dirfd, &path)?;
+        let fs_path = FsPath::from_fd_at(dirfd, &path, EmptyPathStr::Reject)?;
         fs_ref
             .resolver()
             .read()

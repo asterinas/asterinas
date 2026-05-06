@@ -13,7 +13,7 @@ use crate::{
         fs_impls::sysfs,
         vfs::{
             file_system::{FileSystem, FsFlags},
-            path::{AT_FDCWD, FsPath},
+            path::{AT_FDCWD, EmptyPathStr, FsPath},
         },
     },
     prelude::*,
@@ -87,7 +87,7 @@ impl<'a> FsCreationCtx<'a> {
         let source = self
             .source()
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "the source is not specified"))?;
-        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, source)?;
+        let fs_path = FsPath::from_fd_at(AT_FDCWD, source, EmptyPathStr::Reject)?;
         let path = self
             .task_ctx
             .thread_local

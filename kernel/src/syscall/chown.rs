@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file::file_table::{RawFileDesc, get_file_fast},
         utils::PATH_MAX,
-        vfs::path::{AT_FDCWD, FsPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
     process::{Gid, Uid},
@@ -75,7 +75,8 @@ pub fn sys_fchownat(
 
     let path = {
         let path_name = path_name.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(dirfd, &path_name)?;
+        let fs_path =
+            FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::AllowIfFlag(flags.bits()))?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();

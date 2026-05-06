@@ -24,6 +24,115 @@ use crate::{
 /// The file descriptor of the current working directory.
 pub const AT_FDCWD: RawFileDesc = -100;
 
+/// The `AT_EMPTY_PATH` flag bit, as defined by Linux.
+pub const AT_EMPTY_PATH: u32 = 0x1000;
+
+/// Policy for how [`FsPath::from_fd_at`] treats an empty `path_str`.
+///
+/// [`FsPath::from_fd_at`] is the entry point that
+/// every `*at` syscall uses to resolve its `(dirfd, path_str)` argument pair.
+/// Whether an empty `path_str` should be rejected, conditionally accepted,
+/// or always accepted depends on the specific syscall's Linux semantics.
+/// This enum makes that decision explicit at every call site.
+///
+/// # Examples
+///
+/// One call per variant, showing the three patterns side by side:
+///
+/// ```ignore
+/// // mkdirat — dentry op, a name is mandatory.
+/// let fs_path = FsPath::from_fd_at(dirfd, &path_str, EmptyPathStr::Reject)?;
+///
+/// // faccessat2 — inode op with a `flags` argument; `""` accepted
+/// // only if the caller passed AT_EMPTY_PATH.
+/// let fs_path = FsPath::from_fd_at(
+///     dirfd,
+///     &path_str,
+///     EmptyPathStr::AllowIfFlag(flags.bits()),
+/// )?;
+///
+/// // readlinkat — inode op with no `flags` argument; `""` accepted
+/// // only when `dirfd` is a real fd rather than `AT_FDCWD`.
+/// let fs_path = FsPath::from_fd_at(dirfd, &path_str, EmptyPathStr::Allow)?;
+/// ```
+///
+/// # Design Rationales
+///
+/// Two questions about a syscall determine which variant is correct:
+///
+/// 1. **Target.** Does the syscall operate on an *inode*
+///    (the data or metadata behind `dirfd`)
+///    or on a *directory entry* (a name inside a parent directory)?
+///    An empty `path_str` means "operate on `dirfd` directly" —
+///    meaningful only for inode ops,
+///    since there is no such thing as a nameless dentry
+///    to create, remove, rename, or open.
+///
+/// 2. **ABI.** Does the syscall carry a `flags` argument
+///    that can hold the [`AT_EMPTY_PATH`] opt-in bit?
+///    `AT_EMPTY_PATH` post-dates most `*at` syscalls,
+///    and callers historically passed `""` by accident (and received `ENOENT`),
+///    so the accept-empty behaviour is opt-in —
+///    and the opt-in must live in a `flags` word.
+///
+/// Quick chooser:
+///
+/// - dentry op → [`Reject`](Self::Reject)
+/// - inode op with a `flags` argument → [`AllowIfFlag`](Self::AllowIfFlag)
+/// - inode op that accepts `""` without a `flags` argument → [`Allow`](Self::Allow)
+///   (rare; see the variant's docs)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EmptyPathStr {
+    /// Always reject an empty `path_str` with `ENOENT`; a name is mandatory.
+    ///
+    /// Use for syscalls whose target is a **directory entry** —
+    /// create, remove, rename, or open a named file.
+    /// Examples: `openat`, `mkdirat`, `mknodat`, `symlinkat`, `unlinkat`,
+    /// `renameat[2]`, and `linkat`'s *newname*.
+    ///
+    /// Also the right choice for the 3-argument forms
+    /// `faccessat`, `fchmodat`, and `futimesat`:
+    /// they are inode ops,
+    /// but they predate [`AT_EMPTY_PATH`] and
+    /// have no `flags` word to carry the opt-in.
+    /// Newer code should prefer `faccessat2` / `fchmodat2` with
+    /// [`AllowIfFlag`](Self::AllowIfFlag).
+    Reject,
+
+    /// Accept an empty `path_str`
+    /// iff [`AT_EMPTY_PATH`] is set in the enclosed raw flag bits;
+    /// otherwise behave like [`Reject`](Self::Reject).
+    ///
+    /// Callers pass their syscall's raw flag bits —
+    /// typically `flags.bits()` after parsing the flag word into a typed `BitFlags`.
+    /// Only the [`AT_EMPTY_PATH`] bit is inspected; the rest are ignored.
+    ///
+    /// Use for **inode-target** syscalls that carry a `flags` argument —
+    /// the common case for attribute queries and modifications on the inode behind `dirfd`.
+    /// Examples: `faccessat2`, `fchmodat2`, `fchownat`, `fstatat` / `newfstatat`,
+    /// `statx`, `utimensat`, `name_to_handle_at`, `execveat`, and `linkat`'s *oldname*.
+    ///
+    /// Any additional gating on top of [`AT_EMPTY_PATH`]
+    /// (for instance, `linkat` also requires `CAP_DAC_READ_SEARCH`)
+    /// stays in the syscall implementation;
+    /// this enum only decides whether an empty `path_str` is syntactically acceptable.
+    AllowIfFlag(u32),
+
+    /// Accept an empty `path_str` and operate on `dirfd` directly.
+    /// No flag is consulted.
+    ///
+    /// `dirfd` must be a real file descriptor; if it is [`AT_FDCWD`],
+    /// [`FsPath::from_fd_at`] still rejects `""` with `ENOENT`.
+    ///
+    /// Use only for inode-target syscalls
+    /// that Linux has chosen to accept an empty `path_str` unconditionally,
+    /// because they have no `flags` argument
+    /// in which [`AT_EMPTY_PATH`] could live.
+    /// This is deliberately rare:
+    /// as of Linux 6.8 the sole such syscall is **`readlinkat`**.
+    Allow,
+}
+
 /// A resolver for [`Path`]s.
 ///
 /// `PathResolver` provides a context for resolving paths, defined by a root directory
@@ -741,14 +850,32 @@ impl<'a> FsPath<'a> {
         })
     }
 
-    /// Creates a new `FsPath` from the given `dirfd` and `path`.
+    /// Constructs an `FsPath` from `(dirfd, path_str)`,
+    /// applying the syscall-specific empty-path-string `policy`.
     ///
-    /// If the FD is not valid (i.e., it's negative and it's not [`AT_FDCWD`]) or the path is empty
-    /// or too long, an error will be returned.
-    pub fn from_fd_and_path(dirfd: RawFileDesc, path: &'a str) -> Result<Self> {
+    /// An empty `path_str` is handled per the variant of `policy`;
+    /// see [`EmptyPathStr`] for the full rule. A non-empty absolute `path`
+    /// ignores `dirfd`; otherwise `dirfd` must be either [`AT_FDCWD`] or a
+    /// valid file descriptor.
+    ///
+    /// # Errors
+    ///
+    /// - `ENOENT` if `path` is empty and `policy` does not permit it.
+    /// - `ENAMETOOLONG` if `path.len() > PATH_MAX`.
+    /// - `EBADF` if `dirfd` is negative and is not [`AT_FDCWD`].
+    pub fn from_fd_at(dirfd: RawFileDesc, path: &'a str, policy: EmptyPathStr) -> Result<Self> {
         if path.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "the path is empty")
+            let allowed = match policy {
+                EmptyPathStr::Reject => false,
+                EmptyPathStr::AllowIfFlag(f) => f & AT_EMPTY_PATH != 0,
+                EmptyPathStr::Allow => dirfd != AT_FDCWD,
+            };
+            if !allowed {
+                return_errno_with_message!(Errno::ENOENT, "the path is empty");
+            }
+            return Self::from_fd(dirfd);
         }
+
         if path.len() > PATH_MAX {
             return_errno_with_message!(Errno::ENAMETOOLONG, "the path is too long");
         }
@@ -771,7 +898,7 @@ impl<'a> TryFrom<&'a str> for FsPath<'a> {
     type Error = crate::error::Error;
 
     fn try_from(path: &'a str) -> Result<FsPath<'a>> {
-        FsPath::from_fd_and_path(AT_FDCWD, path)
+        FsPath::from_fd_at(AT_FDCWD, path, EmptyPathStr::Reject)
     }
 }
 
@@ -923,5 +1050,46 @@ mod test {
             (" //b//a/ ", Ok((" //b//a", " "))),
         ];
         assert_split_results(&cases, SplitPath::split_dirname_and_basename);
+    }
+
+    #[ktest]
+    fn fs_path_from_fd_at_policy_matrix() {
+        // Reject: empty always ENOENT
+        assert!(
+            FsPath::from_fd_at(AT_FDCWD, "", EmptyPathStr::Reject)
+                .is_err_and(|e| e.error() == Errno::ENOENT)
+        );
+        assert!(
+            FsPath::from_fd_at(3, "", EmptyPathStr::Reject)
+                .is_err_and(|e| e.error() == Errno::ENOENT)
+        );
+
+        // AllowIfFlag: only AT_EMPTY_PATH bit opts in
+        assert!(
+            FsPath::from_fd_at(3, "", EmptyPathStr::AllowIfFlag(0))
+                .is_err_and(|e| e.error() == Errno::ENOENT)
+        );
+        assert!(FsPath::from_fd_at(3, "", EmptyPathStr::AllowIfFlag(AT_EMPTY_PATH)).is_ok());
+        // Unrelated bits do not opt in.
+        assert!(
+            FsPath::from_fd_at(3, "", EmptyPathStr::AllowIfFlag(0x100))
+                .is_err_and(|e| e.error() == Errno::ENOENT)
+        );
+
+        // Allow: rejected when dirfd == AT_FDCWD, permitted otherwise
+        assert!(
+            FsPath::from_fd_at(AT_FDCWD, "", EmptyPathStr::Allow)
+                .is_err_and(|e| e.error() == Errno::ENOENT)
+        );
+        assert!(FsPath::from_fd_at(3, "", EmptyPathStr::Allow).is_ok());
+    }
+
+    #[ktest]
+    fn fs_path_from_fd_at_rejects_too_long() {
+        let long = "a".repeat(PATH_MAX + 1);
+        assert!(
+            FsPath::from_fd_at(AT_FDCWD, &long, EmptyPathStr::Reject)
+                .is_err_and(|e| e.error() == Errno::ENAMETOOLONG)
+        );
     }
 }

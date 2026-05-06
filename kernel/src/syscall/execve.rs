@@ -6,7 +6,7 @@ use super::{SyscallReturn, constants::*};
 use crate::{
     fs::{
         file::file_table::RawFileDesc,
-        vfs::path::{AT_FDCWD, FsPath, Path},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
     },
     prelude::*,
     process::do_execve,
@@ -59,11 +59,7 @@ fn lookup_executable_file(
 
     let path = {
         let filename = filename.to_string_lossy();
-        let fs_path = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
-            FsPath::from_fd(dfd)?
-        } else {
-            FsPath::from_fd_and_path(dfd, &filename)?
-        };
+        let fs_path = FsPath::from_fd_at(dfd, &filename, EmptyPathStr::AllowIfFlag(flags.bits()))?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();

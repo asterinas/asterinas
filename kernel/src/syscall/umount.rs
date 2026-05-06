@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::vfs::path::{AT_FDCWD, FsPath},
+    fs::vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -15,7 +15,7 @@ pub fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<Syscall
     umount_flags.check_unsupported_flags()?;
 
     let path_name = path_name.to_string_lossy();
-    let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &path_name)?;
+    let fs_path = FsPath::from_fd_at(AT_FDCWD, &path_name, EmptyPathStr::Reject)?;
 
     let target_path = if umount_flags.contains(UmountFlags::UMOUNT_NOFOLLOW) {
         ctx.thread_local

@@ -9,7 +9,7 @@ use crate::{
             file_table::{RawFileDesc, get_file_fast},
         },
         utils::PATH_MAX,
-        vfs::path::{AT_FDCWD, FsPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
 };
@@ -66,11 +66,8 @@ fn do_fchmodat(
 
     let path = {
         let path_name = path_name.to_string_lossy();
-        let fs_path = if flags.contains(ChmodFlags::AT_EMPTY_PATH) && path_name.is_empty() {
-            FsPath::from_fd(dirfd)?
-        } else {
-            FsPath::from_fd_and_path(dirfd, &path_name)?
-        };
+        let fs_path =
+            FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::AllowIfFlag(flags.bits()))?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();

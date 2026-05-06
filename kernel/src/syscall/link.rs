@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file::{InodeType, file_table::RawFileDesc},
-        vfs::path::{AT_FDCWD, FsPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -33,12 +33,12 @@ pub fn sys_linkat(
         let old_path_name = old_path_name.to_string_lossy();
         let new_path_name = new_path_name.to_string_lossy();
 
-        let old_fs_path = if flags.contains(LinkFlags::AT_EMPTY_PATH) && old_path_name.is_empty() {
-            FsPath::from_fd(old_dirfd)?
-        } else {
-            FsPath::from_fd_and_path(old_dirfd, &old_path_name)?
-        };
-        let new_fs_path = FsPath::from_fd_and_path(new_dirfd, &new_path_name)?;
+        let old_fs_path = FsPath::from_fd_at(
+            old_dirfd,
+            &old_path_name,
+            EmptyPathStr::AllowIfFlag(flags.bits()),
+        )?;
+        let new_fs_path = FsPath::from_fd_at(new_dirfd, &new_path_name, EmptyPathStr::Reject)?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();

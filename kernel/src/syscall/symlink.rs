@@ -5,7 +5,7 @@ use crate::{
     fs,
     fs::{
         file::{InodeType, file_table::RawFileDesc, mkmod},
-        vfs::path::{AT_FDCWD, FsPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -32,7 +32,7 @@ pub fn sys_symlinkat(
 
     let (dir_path, link_name) = {
         let link_path_name = link_path_name.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(dirfd, &link_path_name)?;
+        let fs_path = FsPath::from_fd_at(dirfd, &link_path_name, EmptyPathStr::Reject)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()

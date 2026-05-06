@@ -6,7 +6,7 @@ use crate::{
         file::InodeType,
         vfs::{
             file_system::{FileSystem, FsFlags},
-            path::{AT_FDCWD, FsPath, MountPropType, Path, PerMountFlags},
+            path::{AT_FDCWD, EmptyPathStr, FsPath, MountPropType, Path, PerMountFlags},
             registry::{FsCreationCtx, FsType},
         },
     },
@@ -37,7 +37,7 @@ pub fn sys_mount(
 
     let dst_path = {
         let dst_name = dst_name.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &dst_name)?;
+        let fs_path = FsPath::from_fd_at(AT_FDCWD, &dst_name, EmptyPathStr::Reject)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
@@ -116,7 +116,7 @@ fn do_bind_mount(
             .user_space()
             .read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
         let src_name = src_name.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &src_name)?;
+        let fs_path = FsPath::from_fd_at(AT_FDCWD, &src_name, EmptyPathStr::Reject)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()
@@ -168,7 +168,7 @@ fn do_move_mount_old(src_name_addr: Vaddr, dst_path: Path, ctx: &Context) -> Res
             .user_space()
             .read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
         let src_name = src_name.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &src_name)?;
+        let fs_path = FsPath::from_fd_at(AT_FDCWD, &src_name, EmptyPathStr::Reject)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()

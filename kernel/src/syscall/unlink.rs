@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file::file_table::RawFileDesc,
-        vfs::path::{AT_FDCWD, FsPath, SplitPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -28,7 +28,7 @@ pub fn sys_unlinkat(
     let path_name = path_name.to_string_lossy();
     let (dir_path, name) = {
         let (parent_path_name, target_name) = path_name.split_dirname_and_filename()?;
-        let fs_path = FsPath::from_fd_and_path(dirfd, parent_path_name)?;
+        let fs_path = FsPath::from_fd_at(dirfd, parent_path_name, EmptyPathStr::Reject)?;
         (
             ctx.thread_local
                 .borrow_fs()

@@ -9,7 +9,7 @@ use crate::{
             StatusFlags,
             file_table::{FdFlags, RawFileDesc},
         },
-        vfs::path::{AT_FDCWD, FsPath, LookupResult, PathResolver},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, LookupResult, PathResolver},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -30,7 +30,7 @@ pub fn sys_openat(
 
     let file_handle = {
         let path = path.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(dirfd, path.as_ref())?;
+        let fs_path = FsPath::from_fd_at(dirfd, path.as_ref(), EmptyPathStr::Reject)?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let mask_mode = mode & !fs_ref.umask().get();

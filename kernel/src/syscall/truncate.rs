@@ -6,7 +6,7 @@ use crate::{
     fs::{
         file::file_table::{RawFileDesc, get_file_fast},
         utils::PATH_MAX,
-        vfs::path::{AT_FDCWD, FsPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
     process::ResourceType,
@@ -32,7 +32,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<Syscal
 
     let dir_path = {
         let path_name = path_name.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &path_name)?;
+        let fs_path = FsPath::from_fd_at(AT_FDCWD, &path_name, EmptyPathStr::Reject)?;
         ctx.thread_local
             .borrow_fs()
             .resolver()

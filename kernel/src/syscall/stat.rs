@@ -8,7 +8,7 @@ use crate::{
         file::file_table::{RawFileDesc, get_file_fast},
         vfs::{
             inode::Metadata,
-            path::{AT_FDCWD, FsPath},
+            path::{AT_FDCWD, EmptyPathStr, FsPath},
         },
     },
     prelude::*,
@@ -64,7 +64,8 @@ pub fn sys_fstatat(
 
     let path = {
         let filename = filename.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(dirfd, &filename)?;
+        let fs_path =
+            FsPath::from_fd_at(dirfd, &filename, EmptyPathStr::AllowIfFlag(flags.bits()))?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();

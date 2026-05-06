@@ -8,7 +8,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file::file_table::RawFileDesc,
-        vfs::path::{FsPath, Path},
+        vfs::path::{EmptyPathStr, FsPath, Path},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -49,12 +49,9 @@ pub fn sys_statx(
 
     let path = {
         let filename = filename.to_string_lossy();
-        let fs_path = if flags.contains(StatxFlags::AT_EMPTY_PATH) && filename.is_empty() {
-            // TODO: We can retrieve the metadata from `FileLike`. See `sys_fstat` as an example.
-            FsPath::from_fd(dirfd)?
-        } else {
-            FsPath::from_fd_and_path(dirfd, &filename)?
-        };
+        // TODO: We can retrieve the metadata from `FileLike`. See `sys_fstat` as an example.
+        let fs_path =
+            FsPath::from_fd_at(dirfd, &filename, EmptyPathStr::AllowIfFlag(flags.bits()))?;
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();

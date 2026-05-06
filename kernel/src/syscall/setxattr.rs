@@ -11,7 +11,7 @@ use crate::{
             file_table::{RawFileDesc, get_file_fast},
         },
         vfs::{
-            path::{AT_FDCWD, FsPath, Path},
+            path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
             xattr::{
                 XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags,
             },
@@ -137,7 +137,7 @@ pub(super) fn lookup_path_for_xattr<'a>(
     let lookup_path_from_fs =
         |path: &CString, ctx: &Context, symlink_no_follow: bool| -> Result<Cow<'_, Path>> {
             let path = path.to_string_lossy();
-            let fs_path = FsPath::from_fd_and_path(AT_FDCWD, &path)?;
+            let fs_path = FsPath::from_fd_at(AT_FDCWD, &path, EmptyPathStr::Reject)?;
             let fs_ref = ctx.thread_local.borrow_fs();
             let path_resolver = fs_ref.resolver().read();
             let path = if symlink_no_follow {

@@ -9,7 +9,7 @@ use crate::{
     fs,
     fs::{
         file::file_table::RawFileDesc,
-        vfs::path::{AT_FDCWD, FsPath, Path},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
     },
     prelude::*,
     time::{clocks::RealTimeCoarseClock, timespec_t, timeval_t},
@@ -20,6 +20,7 @@ use crate::{
 /// and `times[1]` represents the modification time.
 /// The `flags` argument is a bit mask that can include the following values:
 /// - `AT_SYMLINK_NOFOLLOW`: If set, the file is not dereferenced if it is a symbolic link.
+/// - `AT_EMPTY_PATH`: If set, an empty pathname means operating on `dirfd` directly.
 pub fn sys_utimensat(
     dirfd: RawFileDesc,
     pathname_ptr: Vaddr,
@@ -172,8 +173,15 @@ fn do_utimes(
 
     let path = {
         let fs_path = if let Some(pathname) = pathname.as_ref() {
-            FsPath::from_fd_and_path(dirfd, pathname)?
+            FsPath::from_fd_at(dirfd, pathname, EmptyPathStr::AllowIfFlag(flags.bits()))?
         } else {
+            // Matches Linux `do_utimes_fd`: no flags are accepted when pathname is NULL.
+            if !flags.is_empty() {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "flags must be zero when pathname is NULL"
+                );
+            }
             FsPath::from_fd(dirfd)?
         };
 
@@ -255,6 +263,7 @@ const UTIME_OMIT: i64 = (1i64 << 30) - 2i64;
 
 bitflags::bitflags! {
     struct UtimensFlags: u32 {
+        const AT_EMPTY_PATH = 0x1000;
         const AT_SYMLINK_NOFOLLOW = 0x100;
     }
 }

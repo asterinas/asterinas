@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file::{InodeType, file_table::RawFileDesc},
-        vfs::path::{AT_FDCWD, FsPath, SplitPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -40,7 +40,8 @@ pub fn sys_renameat2(
     let old_path_name = old_path_name.to_string_lossy();
     let (old_parent_path, old_name) = {
         let (old_parent_path_name, old_name) = old_path_name.split_dirname_and_basename()?;
-        let old_fs_path = FsPath::from_fd_and_path(old_dirfd, old_parent_path_name)?;
+        let old_fs_path =
+            FsPath::from_fd_at(old_dirfd, old_parent_path_name, EmptyPathStr::Reject)?;
         (path_resolver.lookup(&old_fs_path)?, old_name)
     };
     let old_path = path_resolver.lookup_at_path(&old_parent_path, old_name)?;
@@ -54,7 +55,8 @@ pub fn sys_renameat2(
             return_errno_with_message!(Errno::EISDIR, "the new path is a directory");
         }
         let (new_parent_path_name, new_name) = new_path_name.split_dirname_and_basename()?;
-        let new_parent_fs_path = FsPath::from_fd_and_path(new_dirfd, new_parent_path_name)?;
+        let new_parent_fs_path =
+            FsPath::from_fd_at(new_dirfd, new_parent_path_name, EmptyPathStr::Reject)?;
         (
             path_resolver.lookup(&new_parent_fs_path)?,
             new_name.to_string(),

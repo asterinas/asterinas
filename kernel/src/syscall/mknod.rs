@@ -7,7 +7,7 @@ use crate::{
         file::{InodeMode, InodeType, file_table::RawFileDesc},
         vfs::{
             inode::MknodType,
-            path::{AT_FDCWD, FsPath},
+            path::{AT_FDCWD, EmptyPathStr, FsPath},
         },
     },
     prelude::*,
@@ -35,7 +35,7 @@ pub fn sys_mknodat(
 
     let (dir_path, name) = {
         let path_name = path_name.to_string_lossy();
-        let fs_path = FsPath::from_fd_and_path(dirfd, &path_name)?;
+        let fs_path = FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::Reject)?;
         fs_ref
             .resolver()
             .read()

@@ -8,7 +8,7 @@ use crate::{
         file::file_table::RawFileDesc,
         vfs::{
             inode::SymbolicLink,
-            path::{AT_FDCWD, FsPath},
+            path::{AT_FDCWD, EmptyPathStr, FsPath},
         },
     },
     prelude::*,
@@ -38,11 +38,7 @@ pub fn sys_readlinkat(
         let path_resolver = fs_ref.resolver().read();
 
         let path_name = path_name.to_string_lossy();
-        let fs_path = if path_name.is_empty() && dirfd != AT_FDCWD {
-            FsPath::from_fd(dirfd)?
-        } else {
-            FsPath::from_fd_and_path(dirfd, &path_name)?
-        };
+        let fs_path = FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::Allow)?;
         let path = path_resolver.lookup_no_follow(&fs_path)?;
 
         match path.inode().read_link()? {
