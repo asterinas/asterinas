@@ -166,8 +166,5 @@ Supported functionality in SCML:
 {{#include utimensat.scml}}
 ```
 
-Unsupported flags:
-* `AT_EMPTY_PATH`
-
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/utimensat.2.html).
