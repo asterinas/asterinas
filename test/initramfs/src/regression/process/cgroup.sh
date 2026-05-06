@@ -132,6 +132,12 @@ verify "memory.max doesn't exist initially" \
 verify "cpu.stat exists initially in child" \
     "ls cpu.stat" \
     "cpu.stat"
+verify "cpu.weight doesn't exist initially" \
+    "ls cpu.weight" \
+    "ls: cpu.weight: No such file or directory"
+verify "cpu.max doesn't exist initially" \
+    "ls cpu.max" \
+    "ls: cpu.max: No such file or directory"
 
 log_step "1.5.1 Check initial child cpu.stat only reports usage fields"
 CPU_STAT_LINES=$(wc -l < cpu.stat)
@@ -170,6 +176,12 @@ echo "Current directory: $(pwd)"
 verify "cpu.stat still exists" \
     "ls cpu.stat" \
     "cpu.stat"
+verify "cpu.weight now exists" \
+    "ls cpu.weight" \
+    "cpu.weight"
+verify "cpu.max now exists" \
+    "ls cpu.max" \
+    "cpu.max"
 verify "memory.max now exists" \
     "ls memory.max" \
     "memory.max"
@@ -183,7 +195,72 @@ verify "cpu.stat has burst_usec after enabling CPU sub-controller" \
     "grep '^burst_usec ' cpu.stat" \
     "burst_usec 0"
 
-log_step "2.2.1 Verify cpu.stat grows for a busy cgroup task"
+log_step "2.2.1 Verify cpu.weight dummy read/write"
+verify "cpu.weight defaults to 100" \
+    "cat cpu.weight" \
+    "100"
+echo 250 > cpu.weight
+verify "cpu.weight accepts a valid weight" \
+    "cat cpu.weight" \
+    "250"
+
+log_step "2.2.2 Verify cpu.max dummy read/write"
+verify "cpu.max defaults to max with 100ms period" \
+    "cat cpu.max" \
+    "max 100000"
+echo "50000 200000" > cpu.max
+verify "cpu.max accepts quota and period" \
+    "cat cpu.max" \
+    "50000 200000"
+echo "30000" > cpu.max
+verify "cpu.max single value preserves period" \
+    "cat cpu.max" \
+    "30000 200000"
+verify "cpu.max rejects an invalid period" \
+    "echo '30000 999' > cpu.max 2>/dev/null || echo rejected" \
+    "rejected"
+echo "50000 invalid" > cpu.max
+verify "cpu.max accepts a non-numeric period" \
+    "cat cpu.max" \
+    "50000 200000"
+echo "max 100000" > cpu.max
+verify "cpu.max resets to default value" \
+    "cat cpu.max" \
+    "max 100000"
+
+log_step "2.2.3 Verify cpu controller settings reset after toggle"
+echo 250 > "$CGROUP_ROOT/$CGROUP_NAME/cpu.weight"
+echo "50000 200000" > "$CGROUP_ROOT/$CGROUP_NAME/cpu.max"
+
+cd "$CGROUP_ROOT"
+echo "-cpu" > cgroup.subtree_control
+verify "root subtree_control removed cpu" \
+    "cat cgroup.subtree_control" \
+    "memory pids"
+
+cd "$CGROUP_NAME"
+verify "cpu.weight removed after disabling" \
+    "ls cpu.weight" \
+    "ls: cpu.weight: No such file or directory"
+verify "cpu.max removed after disabling" \
+    "ls cpu.max" \
+    "ls: cpu.max: No such file or directory"
+
+cd "$CGROUP_ROOT"
+echo "+cpu" > cgroup.subtree_control
+verify "root subtree_control restored cpu" \
+    "cat cgroup.subtree_control" \
+    "cpu memory pids"
+
+cd "$CGROUP_NAME"
+verify "cpu.weight defaults after re-enable" \
+    "cat cpu.weight" \
+    "100"
+verify "cpu.max defaults after re-enable" \
+    "cat cpu.max" \
+    "max 100000"
+
+log_step "2.2.4 Verify cpu.stat grows for a busy cgroup task"
 CPU_STAT_PATH="$CGROUP_ROOT/$CGROUP_NAME/cpu.stat"
 
 sh -c '
