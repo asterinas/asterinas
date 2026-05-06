@@ -14,9 +14,9 @@ use crate::{
                 status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
-                DirOps, ListedEntry, ProcDir, ProcDirBuilder, ReaddirEntry, StaticDirEntry,
-                keyed_readdir_entries, listed_entries_from_table, lookup_child_from_table,
-                visit_listed_entries, visit_readdir_entries,
+                DirOps, ListedEntry, ProcDir, ReaddirEntry, StaticDirEntry, keyed_readdir_entries,
+                listed_entries_from_table, lookup_child_from_table, visit_listed_entries,
+                visit_readdir_entries,
             },
         },
         vfs::inode::{Inode, RevalidationPolicy},
@@ -51,10 +51,7 @@ pub struct TaskDirOps(Arc<PidEntry>);
 impl TaskDirOps {
     pub fn new_inode(dir: &PidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3316>
-        ProcDirBuilder::new(Self(dir.pid_entry().clone()), mkmod!(a+rx))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcDir::new(Self(dir.pid_entry().clone()), parent, mkmod!(a+rx))
     }
 
     fn process(&self) -> Option<Arc<Process>> {
@@ -74,14 +71,12 @@ impl TidDirOps {
     }
 
     pub fn new_inode(pid_entry: Arc<PidEntry>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcDirBuilder::new(
+        ProcDir::new(
             Self { pid_entry },
+            parent,
             // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3796>
             mkmod!(a+rx),
         )
-        .parent(parent)
-        .build()
-        .unwrap()
     }
 
     pub fn pid_entry(&self) -> &Arc<PidEntry> {

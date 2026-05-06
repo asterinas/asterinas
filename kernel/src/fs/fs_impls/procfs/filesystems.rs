@@ -5,7 +5,7 @@ use aster_util::printer::{VmPrinter, VmPrinterError};
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, ProcFile},
         vfs::{inode::Inode, registry::FsProperties},
     },
     prelude::*,
@@ -19,10 +19,7 @@ impl FileSystemsFileOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/filesystems.c#L259>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L549-L550>
-        ProcFileBuilder::new(Self, mkmod!(a+r))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcFile::new(Self, parent, mkmod!(a+r))
     }
 }
 

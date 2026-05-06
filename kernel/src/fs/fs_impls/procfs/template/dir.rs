@@ -56,23 +56,18 @@ impl<D: DirOps> ProcDir<D> {
     }
 
     /// Creates a non-root procfs directory inode under `parent`.
-    pub(super) fn new(
-        dir: D,
-        fs: Weak<dyn FileSystem>,
-        parent: Option<Weak<dyn Inode>>,
-        mode: InodeMode,
-    ) -> Arc<Self> {
+    pub fn new(dir: D, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
         let common = {
-            let arc_fs = fs.upgrade().unwrap();
-            let procfs = arc_fs.downcast_ref::<ProcFs>().unwrap();
+            let fs = parent.upgrade().unwrap().fs();
+            let procfs = fs.downcast_ref::<ProcFs>().unwrap();
             let ino = procfs.alloc_id();
             let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE, procfs.sb().container_dev_id);
-            Common::new(metadata, fs)
+            Common::new(metadata, Arc::downgrade(&fs))
         };
         Arc::new_cyclic(|weak_self| Self {
             inner: dir,
             this: weak_self.clone(),
-            parent,
+            parent: Some(parent),
             common,
         })
     }

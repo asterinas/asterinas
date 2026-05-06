@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::template::{
-    DirOps, ProcDir, ProcDirBuilder, ReaddirEntry, StaticDirEntry, listed_entries_from_table,
+    DirOps, ProcDir, ReaddirEntry, StaticDirEntry, listed_entries_from_table,
     lookup_child_from_table, visit_listed_entries,
 };
 use crate::{
@@ -29,10 +29,7 @@ impl PidDirOps {
     pub fn new_inode(pid_entry: Arc<PidEntry>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         let this = Self(TidDirOps::new(pid_entry));
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3493>
-        ProcDirBuilder::new(this, mkmod!(a+rx))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcDir::new(this, parent, mkmod!(a+rx))
     }
 
     pub(super) fn pid_entry(&self) -> &Arc<PidEntry> {

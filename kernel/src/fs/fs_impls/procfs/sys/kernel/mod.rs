@@ -9,7 +9,7 @@ use crate::{
                 cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps, yama::YamaDirOps,
             },
             template::{
-                DirOps, ProcDirBuilder, ReaddirEntry, StaticDirEntry, listed_entries_from_table,
+                DirOps, ReaddirEntry, StaticDirEntry, listed_entries_from_table,
                 lookup_child_from_table, visit_listed_entries,
             },
         },
@@ -30,10 +30,7 @@ impl KernelDirOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/sysctl.c#L1765>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L978>
-        ProcDirBuilder::new(Self, mkmod!(a+rx))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcDir::new(Self, parent, mkmod!(a+rx))
     }
 
     #[expect(clippy::type_complexity)]

@@ -8,7 +8,7 @@ use super::{super::PidDirOps, TidDirOps};
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, ProcFile},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -101,10 +101,7 @@ impl StatFileOps {
         parent: Weak<dyn Inode>,
     ) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3341>
-        ProcFileBuilder::new(Self { dir, mode }, mkmod!(a+r))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcFile::new(Self { dir, mode }, parent, mkmod!(a+r))
     }
 }
 

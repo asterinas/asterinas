@@ -9,8 +9,7 @@ use crate::{
         procfs::{
             pid::TidDirOps,
             template::{
-                DirOps, ListedEntry, ProcDir, ProcDirBuilder, ProcSym, ProcSymBuilder,
-                ReaddirEntry, SymOps, visit_listed_entries,
+                DirOps, ListedEntry, ProcDir, ProcSym, ReaddirEntry, SymOps, visit_listed_entries,
             },
         },
         pseudofs::NsCommonOps,
@@ -33,14 +32,12 @@ pub(super) struct NsDirOps {
 impl NsDirOps {
     /// Creates a new directory inode for the `ns` directory.
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcDirBuilder::new(
+        ProcDir::new(
             Self { dir: dir.clone() },
+            parent,
             // Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/proc/base.c#L3321>
             mkmod!(u+r, a+x),
         )
-        .parent(parent)
-        .build()
-        .unwrap()
     }
 }
 
@@ -237,17 +234,15 @@ struct NsSymOps<T: NsCommonOps> {
 impl<T: NsCommonOps> NsSymOps<T> {
     /// Creates a new symlink inode pointing to the given namespace.
     fn new_inode(ns_path: Path, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcSymBuilder::new(
+        ProcSym::new(
             Self {
                 ns_path,
                 phantom: PhantomData,
             },
+            parent,
             // Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/proc/namespaces.c#L105>
             mkmod!(a+rwx),
         )
-        .parent(parent)
-        .build()
-        .unwrap()
     }
 }
 

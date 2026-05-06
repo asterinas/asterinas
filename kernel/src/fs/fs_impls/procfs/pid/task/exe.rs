@@ -4,7 +4,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{ProcSymBuilder, SymOps},
+        procfs::template::{ProcSym, SymOps},
         vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,
@@ -18,10 +18,7 @@ impl ExeSymOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3350>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L174-L175>
-        ProcSymBuilder::new(Self(dir.clone()), mkmod!(a+rwx))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcSym::new(Self(dir.clone()), parent, mkmod!(a+rwx))
     }
 }
 

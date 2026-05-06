@@ -13,9 +13,8 @@ use crate::{
             mkmod,
         },
         procfs::template::{
-            DirOps, FileOps, ListedEntry, ProcDir, ProcDirBuilder, ProcFile, ProcFileBuilder,
-            ProcSym, ProcSymBuilder, ReaddirEntry, SymOps, keyed_readdir_entries,
-            visit_readdir_entries,
+            DirOps, FileOps, ListedEntry, ProcDir, ProcFile, ProcSym, ReaddirEntry, SymOps,
+            keyed_readdir_entries, visit_readdir_entries,
         },
         vfs::inode::{Inode, RevalidationPolicy, SymbolicLink},
     },
@@ -31,17 +30,15 @@ pub(super) struct FdDirOps<T> {
 
 impl<T: FdOps> FdDirOps<T> {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcDirBuilder::new(
+        ProcDir::new(
             Self {
                 dir: dir.clone(),
                 marker: PhantomData,
             },
+            parent,
             // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3317>
             mkmod!(u+rx),
         )
-        .parent(parent)
-        .build()
-        .unwrap()
     }
 }
 
@@ -197,17 +194,15 @@ impl FdOps for FileSymOps {
             mode = chmod!(mode, u+wx);
         }
 
-        ProcSymBuilder::new(
+        ProcSym::new(
             Self {
                 tid_dir_ops,
                 file_desc,
                 access_mode,
             },
+            parent,
             mode,
         )
-        .parent(parent)
-        .build()
-        .unwrap()
     }
 
     fn file_desc(&self) -> FileDesc {
@@ -264,17 +259,15 @@ impl FdOps for FileInfoOps {
         _access_mode: AccessMode,
         parent: Weak<dyn Inode>,
     ) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(
+        ProcFile::new(
             Self {
                 tid_dir_ops,
                 file_desc,
             },
+            parent,
             // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/fd.c#L383>.
             mkmod!(a+r),
         )
-        .parent(parent)
-        .build()
-        .unwrap()
     }
 
     fn file_desc(&self) -> FileDesc {

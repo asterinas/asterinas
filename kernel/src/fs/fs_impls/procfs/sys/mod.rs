@@ -7,7 +7,7 @@ use super::template::{
 use crate::{
     fs::{
         file::{InodeType, mkmod},
-        procfs::template::{DirOps, ProcDir, ProcDirBuilder, lookup_child_from_table},
+        procfs::template::{DirOps, ProcDir, lookup_child_from_table},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -23,10 +23,7 @@ impl SysDirOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L1566>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L488-L489>
-        ProcDirBuilder::new(Self, mkmod!(a+rx))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcDir::new(Self, parent, mkmod!(a+rx))
     }
 
     #[expect(clippy::type_complexity)]

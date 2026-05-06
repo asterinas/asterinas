@@ -3,7 +3,7 @@
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{ProcSymBuilder, SymOps},
+        procfs::template::{ProcSym, SymOps},
         vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,
@@ -17,10 +17,7 @@ impl MountsSymOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/root.c#L291>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L466>
-        ProcSymBuilder::new(Self, mkmod!(a+rwx))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcSym::new(Self, parent, mkmod!(a+rwx))
     }
 }
 

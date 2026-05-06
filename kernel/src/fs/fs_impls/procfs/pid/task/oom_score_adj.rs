@@ -8,7 +8,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFileBuilder, read_i32_from},
+        procfs::template::{FileOps, ProcFile, read_i32_from},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -20,10 +20,7 @@ pub struct OomScoreAdjFileOps(TidDirOps);
 impl OomScoreAdjFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3386>
-        ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r, u+w))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcFile::new(Self(dir.clone()), parent, mkmod!(a+r, u+w))
     }
 }
 

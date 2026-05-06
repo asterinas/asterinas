@@ -6,8 +6,8 @@ use crate::{
     fs::{
         file::{InodeType, mkmod},
         procfs::template::{
-            DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFileBuilder, ReaddirEntry,
-            StaticDirEntry, listed_entries_from_table, lookup_child_from_table, read_i32_from,
+            DirOps, FileOps, ProcDir, ProcFile, ReaddirEntry, StaticDirEntry,
+            listed_entries_from_table, lookup_child_from_table, read_i32_from,
             visit_listed_entries,
         },
         vfs::inode::Inode,
@@ -24,10 +24,7 @@ impl YamaDirOps {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/security/yama/yama_lsm.c#L463>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L978>
-        ProcDirBuilder::new(Self, mkmod!(a+rx))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcDir::new(Self, parent, mkmod!(a+rx))
     }
 
     #[expect(clippy::type_complexity)]
@@ -67,10 +64,7 @@ struct PtraceScopeFileOps;
 impl PtraceScopeFileOps {
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/security/yama/yama_lsm.c#L455>
-        ProcFileBuilder::new(Self, mkmod!(a+r, u+w))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcFile::new(Self, parent, mkmod!(a+r, u+w))
     }
 }
 

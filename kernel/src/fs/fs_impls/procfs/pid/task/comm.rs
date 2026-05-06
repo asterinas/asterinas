@@ -4,7 +4,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, ProcFile},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -16,10 +16,7 @@ pub struct CommFileOps(TidDirOps);
 impl CommFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3336>
-        ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r, u+w))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcFile::new(Self(dir.clone()), parent, mkmod!(a+r, u+w))
     }
 }
 

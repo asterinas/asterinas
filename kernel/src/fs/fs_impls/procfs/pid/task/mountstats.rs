@@ -8,7 +8,7 @@ use crate::{
         file::mkmod,
         procfs::{
             pid::task::mountinfo::make_mount_point_path,
-            template::{FileOps, ProcFileBuilder},
+            template::{FileOps, ProcFile},
         },
         vfs::{inode::Inode, path::PathResolver},
     },
@@ -41,10 +41,7 @@ pub struct MountStatsFileOps(TidDirOps);
 
 impl MountStatsFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcFile::new(Self(dir.clone()), parent, mkmod!(a+r))
     }
 
     /// Reads mount statistics for `/proc/[pid]/mountstats`.

@@ -5,7 +5,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{AccessMode, FileIo, StatusFlags, mkmod},
-        procfs::template::{FileOpsByHandle, ProcFileBuilder},
+        procfs::template::{FileOpsByHandle, ProcFile},
         vfs::inode::{Inode, InodeIo},
     },
     prelude::*,
@@ -22,10 +22,7 @@ pub struct MemFileOps(TidDirOps);
 impl MemFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3347>
-        ProcFileBuilder::new(Self(dir.clone()), mkmod!(u+rw))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcFile::new(Self(dir.clone()), parent, mkmod!(u+rw))
     }
 }
 

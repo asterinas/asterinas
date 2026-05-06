@@ -5,7 +5,7 @@ use aster_util::printer::VmPrinter;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFileBuilder},
+        procfs::template::{FileOps, ProcFile},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -18,10 +18,7 @@ pub struct PidMaxFileOps;
 impl PidMaxFileOps {
     pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/pid.c#L721>
-        ProcFileBuilder::new(Self, mkmod!(a+r, u+w))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcFile::new(Self, parent, mkmod!(a+r, u+w))
     }
 }
 

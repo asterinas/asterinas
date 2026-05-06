@@ -9,7 +9,7 @@ use crate::{
         file::mkmod,
         procfs::{
             pid::TidDirOps,
-            template::{FileOps, ProcFileBuilder},
+            template::{FileOps, ProcFile},
         },
         vfs::inode::Inode,
     },
@@ -23,10 +23,7 @@ pub struct CgroupFileOps(TidDirOps);
 impl CgroupFileOps {
     pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3379>
-        ProcFileBuilder::new(Self(dir.clone()), mkmod!(a+r))
-            .parent(parent)
-            .build()
-            .unwrap()
+        ProcFile::new(Self(dir.clone()), parent, mkmod!(a+r))
     }
 }
 
