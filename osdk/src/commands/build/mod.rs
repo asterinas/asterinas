@@ -193,11 +193,59 @@ pub fn do_cached_build(
                 ),
                 _ => make_elf_for_qemu(&osdk_output_directory, &aster_elf, build.strip_elf),
             };
-            bundle.consume_aster_bin(aster_bin);
+
+            if config.target_arch == Arch::Aarch64 {
+                // Generate raw ARM64 Image format for proper QEMU boot protocol
+                // QEMU checks "ARM\x64" magic at offset 56 only in raw binary, not in ELF
+                let image_path = make_arm64_image(osdk_output_directory.as_ref(), &aster_bin);
+                bundle.consume_aster_bin(aster_bin);
+                bundle.consume_aster_image(image_path);
+            } else {
+                bundle.consume_aster_bin(aster_bin);
+            }
         }
     }
 
     bundle
+}
+
+/// Generate raw ARM64 Image format for proper QEMU boot protocol.
+/// QEMU's arm_load_elf() sets is_linux=0 by default, treating ELF as firmware.
+/// Only load_aarch64_image() checks the "ARM\x64" magic at offset 56 and sets is_linux=1.
+/// We convert the ELF to raw binary so QEMU will properly detect and boot as Linux.
+fn make_arm64_image(install_dir: &Path, aster_bin: &AsterBin) -> PathBuf {
+    use std::process::Command;
+
+    let image_name = aster_bin
+        .path()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .replace(".qemu_elf", "");
+
+    let image_path = install_dir.join(image_name);
+
+    info!("Generating ARM64 Image format for QEMU Linux boot protocol");
+
+    // Convert ELF to raw binary with proper ARM64 Image header
+    let status = Command::new("rust-objcopy")
+        .arg("-O")
+        .arg("binary")
+        .arg(aster_bin.path())
+        .arg(&image_path)
+        .status()
+        .unwrap_or_else(|e| {
+            panic!("Failed to run rust-objcopy to generate ARM64 Image: {}", e);
+        });
+
+    if !status.success() {
+        panic!("rust-objcopy failed to generate ARM64 Image format");
+    }
+
+    info!("ARM64 Image generated at: {:?}", image_path);
+    println!("ARM64 Image: {:?}", image_path);
+    image_path
 }
 
 fn build_kernel_elf(
