@@ -214,7 +214,7 @@ fn build_kernel_elf(
 
     let mut rustflags = Vec::from(rustflags);
     // Asterinas does not support PIC yet.
-    rustflags.extend(vec![
+    rustflags.extend([
         &rustc_linker_script_arg,
         "-C relocation-model=static",
         "-C relro-level=off",
