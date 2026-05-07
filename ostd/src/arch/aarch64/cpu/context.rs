@@ -273,30 +273,114 @@ cpu_context_impl_getter_setter!(
     [sp, set_sp]
 );
 
-/// The FPU context of user task.
-/// FIXME: Implement FPU context on ARM64 platforms.
+/// The FPU/SIMD context of a user task.
+///
+/// ARM64 FPU state:
+/// - 32 128-bit SIMD/FP registers (Q0-Q31 / V0-V31): 512 bytes
+/// - FPSR (Floating-point Status Register): 4 bytes
+/// - FPCR (Floating-point Control Register): 4 bytes
+///   Total: 520 bytes.
 #[derive(Clone, Debug, Default)]
-pub struct FpuContext;
+#[repr(C, align(16))]
+pub struct FpuContext {
+    /// SIMD/FP registers Q0-Q31.
+    pub q: [u128; 32],
+    /// Floating-point Status Register.
+    pub fpsr: u32,
+    /// Floating-point Control Register.
+    pub fpcr: u32,
+}
 
 impl FpuContext {
-    /// Creates a new FPU context.
+    /// Creates a new FPU context with default (zero) state.
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
-    /// Saves CPU's current FPU context to this instance, if needed.
-    pub fn save(&mut self) {}
+    /// Saves CPU's current FPU context to this instance.
+    pub fn save(&mut self) {
+        // SAFETY: The pointer to self is valid and the STP instructions
+        // store 16-byte SIMD register values to aligned memory.
+        unsafe { fpu_save(self) };
+    }
 
-    /// Loads CPU's FPU context from this instance, if needed.
-    pub fn load(&mut self) {}
+    /// Loads CPU's FPU context from this instance.
+    pub fn load(&mut self) {
+        // SAFETY: The pointer to self is valid and the LDP instructions
+        // load 16-byte SIMD register values from aligned memory.
+        unsafe { fpu_load(self) };
+    }
 
     /// Returns the FPU context as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
-        &[]
+        // SAFETY: FpuContext is repr(C) with known layout.
+        unsafe { core::slice::from_raw_parts(self as *const Self as *const u8, size_of::<Self>()) }
     }
 
     /// Returns the FPU context as a mutable byte slice.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        &mut []
+        // SAFETY: FpuContext is repr(C) with known layout.
+        unsafe { core::slice::from_raw_parts_mut(self as *mut Self as *mut u8, size_of::<Self>()) }
     }
 }
+
+// SAFETY: The assembly functions save/restore Q0-Q31 + FPSR + FPCR.
+unsafe extern "C" {
+    fn fpu_save(ctx: *mut FpuContext);
+    fn fpu_load(ctx: *mut FpuContext);
+}
+
+core::arch::global_asm!(
+    r#"
+.section .text, "ax", @progbits
+.global fpu_save
+fpu_save:
+    .arch armv8-a+fp+simd
+    stp     q0, q1,   [x0, #0x00]
+    stp     q2, q3,   [x0, #0x20]
+    stp     q4, q5,   [x0, #0x40]
+    stp     q6, q7,   [x0, #0x60]
+    stp     q8, q9,   [x0, #0x80]
+    stp     q10, q11, [x0, #0xA0]
+    stp     q12, q13, [x0, #0xC0]
+    stp     q14, q15, [x0, #0xE0]
+    stp     q16, q17, [x0, #0x100]
+    stp     q18, q19, [x0, #0x120]
+    stp     q20, q21, [x0, #0x140]
+    stp     q22, q23, [x0, #0x160]
+    stp     q24, q25, [x0, #0x180]
+    stp     q26, q27, [x0, #0x1A0]
+    stp     q28, q29, [x0, #0x1C0]
+    stp     q30, q31, [x0, #0x1E0]
+    mrs     x1, S3_3_C4_C4_1  // FPSR
+    str     w1, [x0, #0x200]
+    mrs     x1, S3_3_C4_C4_0  // FPCR
+    str     w1, [x0, #0x204]
+    ret
+
+.global fpu_load
+fpu_load:
+    .arch armv8-a+fp+simd
+    ldp     q0, q1,   [x0, #0x00]
+    ldp     q2, q3,   [x0, #0x20]
+    ldp     q4, q5,   [x0, #0x40]
+    ldp     q6, q7,   [x0, #0x60]
+    ldp     q8, q9,   [x0, #0x80]
+    ldp     q10, q11, [x0, #0xA0]
+    ldp     q12, q13, [x0, #0xC0]
+    ldp     q14, q15, [x0, #0xE0]
+    ldp     q16, q17, [x0, #0x100]
+    ldp     q18, q19, [x0, #0x120]
+    ldp     q20, q21, [x0, #0x140]
+    ldp     q22, q23, [x0, #0x160]
+    ldp     q24, q25, [x0, #0x180]
+    ldp     q26, q27, [x0, #0x1A0]
+    ldp     q28, q29, [x0, #0x1C0]
+    ldp     q30, q31, [x0, #0x1E0]
+    ldr     w1, [x0, #0x200]
+    msr     S3_3_C4_C4_1, x1  // FPSR
+    ldr     w1, [x0, #0x204]
+    msr     S3_3_C4_C4_0, x1  // FPCR
+    ret
+"#,
+);
