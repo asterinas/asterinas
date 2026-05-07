@@ -2,7 +2,6 @@
 
 //！This crate defines the component system related macros.
 
-#![feature(proc_macro_diagnostic)]
 #![deny(unsafe_code)]
 
 mod init_comp;
