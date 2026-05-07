@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![feature(proc_macro_diagnostic)]
-#![feature(proc_macro_span)]
 
 use proc_macro::{Diagnostic, Level, Span, TokenStream};
 use quote::quote;

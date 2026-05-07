@@ -72,8 +72,6 @@
 //!     // no_rw_channel.read_write();              // compilation error!
 //! ```
 
-#![feature(proc_macro_diagnostic)]
-
 use require_item::RequireItem;
 use syn::parse_macro_input;
 
