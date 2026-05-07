@@ -8,6 +8,7 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
+    thread::Thread,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/environ` (and also `/proc/[pid]/environ`).
@@ -21,6 +22,10 @@ impl EnvironFileOps {
 }
 
 impl FileOps for EnvironFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let Some(process) = self.0.process() else {
             return_errno_with_message!(Errno::ESRCH, "the process does not exist");

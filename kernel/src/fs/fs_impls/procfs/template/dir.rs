@@ -21,6 +21,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    thread::Thread,
 };
 
 /// Wraps directory-specific procfs operations as a VFS inode.
@@ -113,7 +114,6 @@ impl<D: DirOps + 'static> InodeIo for ProcDir<D> {
 #[inherit_methods(from = "self.common")]
 impl<D: DirOps + 'static> Inode for ProcDir<D> {
     fn size(&self) -> usize;
-    fn metadata(&self) -> Metadata;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
     fn mode(&self) -> Result<InodeMode>;
@@ -129,6 +129,11 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, time: Duration);
     fn fs(&self) -> Arc<dyn FileSystem>;
+
+    fn metadata(&self) -> Metadata {
+        let owner_thread = self.inner.owner_thread();
+        self.common.metadata_with_owner(owner_thread)
+    }
 
     fn resize(&self, _new_size: usize) -> Result<()> {
         Err(Error::new(Errno::EISDIR))
@@ -232,6 +237,11 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
 }
 
 pub trait DirOps: Sync + Send + Sized {
+    /// Returns the thread whose credentials own this procfs inode.
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        None
+    }
+
     /// Looks up a child inode in `this_dir` by name.
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>>;
 

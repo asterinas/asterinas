@@ -133,6 +133,10 @@ impl TidDirOps {
 }
 
 impl DirOps for TidDirOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.thread()
+    }
+
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if self.pid_entry().type_().is_none() {
             return_errno_with_message!(Errno::ENOENT, "the thread or the process does not exist");
@@ -182,6 +186,10 @@ impl TidDirOps {
 }
 
 impl DirOps for TaskDirOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         let Ok(tid) = name.parse::<Tid>() else {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid TID");

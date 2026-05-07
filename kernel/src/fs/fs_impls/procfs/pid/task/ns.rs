@@ -22,6 +22,7 @@ use crate::{
     net::uts_ns::UtsNamespace,
     prelude::*,
     process::{NsProxy, UserNamespace, posix_thread::AsPosixThread},
+    thread::Thread,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/ns` (and also `/proc/[pid]/ns`).
@@ -80,16 +81,33 @@ impl NsProxyEntry {
     }
 
     /// Creates a symlink inode for this namespace entry.
-    fn new_sym_inode(self, ns_proxy: &NsProxy, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    fn new_sym_inode(
+        self,
+        dir: &TidDirOps,
+        ns_proxy: &NsProxy,
+        parent: Weak<dyn Inode>,
+    ) -> Arc<dyn Inode> {
         match self {
-            Self::Cgroup => {
-                NsSymOps::<CgroupNamespace>::new_inode(ns_proxy.cgroup_ns().get_path(), parent)
-            }
-            Self::Ipc => NsSymOps::<IpcNamespace>::new_inode(ns_proxy.ipc_ns().get_path(), parent),
-            Self::Mnt => {
-                NsSymOps::<MountNamespace>::new_inode(ns_proxy.mnt_ns().get_path(), parent)
-            }
-            Self::Uts => NsSymOps::<UtsNamespace>::new_inode(ns_proxy.uts_ns().get_path(), parent),
+            Self::Cgroup => NsSymOps::<CgroupNamespace>::new_inode(
+                dir.clone(),
+                ns_proxy.cgroup_ns().get_path(),
+                parent,
+            ),
+            Self::Ipc => NsSymOps::<IpcNamespace>::new_inode(
+                dir.clone(),
+                ns_proxy.ipc_ns().get_path(),
+                parent,
+            ),
+            Self::Mnt => NsSymOps::<MountNamespace>::new_inode(
+                dir.clone(),
+                ns_proxy.mnt_ns().get_path(),
+                parent,
+            ),
+            Self::Uts => NsSymOps::<UtsNamespace>::new_inode(
+                dir.clone(),
+                ns_proxy.uts_ns().get_path(),
+                parent,
+            ),
         }
     }
 }
@@ -118,6 +136,10 @@ fn cached_ns_path(inode: &dyn Inode) -> Option<&Path> {
 }
 
 impl DirOps for NsDirOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.dir.thread()
+    }
+
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if name == "user" {
             let Some(process) = self.dir.process() else {
@@ -126,6 +148,7 @@ impl DirOps for NsDirOps {
 
             let user_ns = process.user_ns().lock();
             return Ok(NsSymOps::<UserNamespace>::new_inode(
+                self.dir.clone(),
                 user_ns.get_path(),
                 this_dir.this_weak().clone(),
             ));
@@ -143,7 +166,7 @@ impl DirOps for NsDirOps {
         let ns_proxy = ns_proxy_guard
             .as_ref()
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "the thread has exited"))?;
-        Ok(entry.new_sym_inode(ns_proxy, this_dir.this_weak().clone()))
+        Ok(entry.new_sym_inode(&self.dir, ns_proxy, this_dir.this_weak().clone()))
     }
 
     fn visit_entries_from_offset<'a, F>(&'a self, offset: usize, visit_fn: F) -> Result<()>
@@ -227,15 +250,17 @@ type NsSymlink<T> = ProcSym<NsSymOps<T>>;
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/ns/<type>` (and also `/proc/[pid]/ns/<type>`).
 struct NsSymOps<T: NsCommonOps> {
+    dir: TidDirOps,
     ns_path: Path,
     phantom: PhantomData<T>,
 }
 
 impl<T: NsCommonOps> NsSymOps<T> {
     /// Creates a new symlink inode pointing to the given namespace.
-    fn new_inode(ns_path: Path, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    fn new_inode(dir: TidDirOps, ns_path: Path, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcSym::new(
             Self {
+                dir,
                 ns_path,
                 phantom: PhantomData,
             },
@@ -247,6 +272,10 @@ impl<T: NsCommonOps> NsSymOps<T> {
 }
 
 impl<T: NsCommonOps> SymOps for NsSymOps<T> {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.dir.thread()
+    }
+
     fn read_link(&self) -> Result<SymbolicLink> {
         Ok(SymbolicLink::Path(self.ns_path.clone()))
     }

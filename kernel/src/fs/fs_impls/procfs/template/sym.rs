@@ -16,6 +16,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    thread::Thread,
 };
 
 pub struct ProcSym<S: SymOps> {
@@ -67,7 +68,6 @@ impl<S: SymOps + 'static> InodeIo for ProcSym<S> {
 #[inherit_methods(from = "self.common")]
 impl<S: SymOps + 'static> Inode for ProcSym<S> {
     fn size(&self) -> usize;
-    fn metadata(&self) -> Metadata;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
     fn mode(&self) -> Result<InodeMode>;
@@ -83,6 +83,11 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, time: Duration);
     fn fs(&self) -> Arc<dyn FileSystem>;
+
+    fn metadata(&self) -> Metadata {
+        let owner_thread = self.inner.owner_thread();
+        self.common.metadata_with_owner(owner_thread)
+    }
 
     fn resize(&self, _new_size: usize) -> Result<()> {
         Err(Error::new(Errno::EPERM))
@@ -102,5 +107,10 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
 }
 
 pub trait SymOps: Sync + Send {
+    /// Returns the thread whose credentials own this procfs inode.
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        None
+    }
+
     fn read_link(&self) -> Result<SymbolicLink>;
 }

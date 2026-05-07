@@ -12,6 +12,7 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
+    thread::Thread,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/oom_score_adj` (and also `/proc/[pid]/oom_score_adj`).
@@ -25,6 +26,10 @@ impl OomScoreAdjFileOps {
 }
 
 impl FileOps for OomScoreAdjFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 

@@ -13,6 +13,7 @@ use crate::{
     },
     prelude::*,
     process::posix_thread::{AsPosixThread, SleepingState},
+    thread::Thread,
     vm::vmar::RssType,
 };
 
@@ -106,6 +107,10 @@ impl StatFileOps {
 }
 
 impl FileOps for StatFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.dir.thread()
+    }
+
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let Some((thread, process)) = self.dir.thread_and_process() else {
             return_errno_with_message!(Errno::ESRCH, "the thread or the process does not exist");

@@ -11,10 +11,10 @@ use crate::{
     },
     prelude::*,
     process::Uid,
+    thread::Thread,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/uid_map` (and also `/proc/[pid]/uid_map`).
-#[expect(dead_code)]
 pub struct UidMapFileOps(TidDirOps);
 
 impl UidMapFileOps {
@@ -25,6 +25,10 @@ impl UidMapFileOps {
 }
 
 impl FileOps for UidMapFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 

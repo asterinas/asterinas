@@ -20,13 +20,19 @@ use crate::{
         },
     },
     prelude::*,
-    process::{Gid, Uid},
+    process::{Gid, Uid, posix_thread::AsPosixThread},
+    thread::Thread,
 };
 
 mod dir;
 mod file;
 mod sym;
 
+/// Shared procfs inode state.
+///
+/// FIXME: Procfs permissions should be checked during each operation, not by relying on mutable
+/// inode ownership. See Linux comment:
+/// <https://elixir.bootlin.com/linux/v6.13/source/fs/proc/base.c#L107>.
 struct Common {
     metadata: RwLock<Metadata>,
     extension: Extension,
@@ -48,6 +54,23 @@ impl Common {
 
     fn metadata(&self) -> Metadata {
         *self.metadata.read()
+    }
+
+    fn metadata_with_owner(&self, owner_thread: Option<Arc<Thread>>) -> Metadata {
+        let Some(owner_thread) = owner_thread else {
+            return self.metadata();
+        };
+
+        let credentials = owner_thread.as_posix_thread().unwrap().credentials();
+        let mut metadata = self.metadata.write();
+        // Cache the dynamic owner into the metadata so that if the thread
+        // later exits, subsequent calls fall back to the last known owner
+        // instead of the root user. This is a best-effort attempt to align
+        // with Linux behavior. See:
+        // <https://github.com/asterinas/asterinas/pull/3164#discussion_r3212307770>.
+        metadata.uid = credentials.euid();
+        metadata.gid = credentials.egid();
+        *metadata
     }
 
     fn ino(&self) -> u64 {
