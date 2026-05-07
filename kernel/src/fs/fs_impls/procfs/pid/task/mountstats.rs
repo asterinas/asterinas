@@ -14,6 +14,7 @@ use crate::{
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
+    thread::Thread,
 };
 
 /// A single entry in the `mountstats` file.
@@ -81,6 +82,10 @@ impl MountStatsFileOps {
 }
 
 impl FileOps for MountStatsFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let Some(thread) = self.0.thread() else {
             return_errno_with_message!(Errno::ESRCH, "the thread does not exist");

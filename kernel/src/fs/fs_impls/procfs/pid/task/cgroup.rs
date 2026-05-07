@@ -15,6 +15,7 @@ use crate::{
     },
     prelude::*,
     process::posix_thread::AsThreadLocal,
+    thread::Thread,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/cgroup` (and also `/proc/[pid]/cgroup`).
@@ -28,6 +29,10 @@ impl CgroupFileOps {
 }
 
 impl FileOps for CgroupFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let Some(process) = self.0.process() else {
             return_errno_with_message!(Errno::ESRCH, "the process does not exist");

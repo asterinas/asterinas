@@ -8,6 +8,7 @@ use crate::{
         vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,
+    thread::Thread,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/exe` (and also `/proc/[pid]/exe`).
@@ -23,6 +24,10 @@ impl ExeSymOps {
 }
 
 impl SymOps for ExeSymOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn read_link(&self) -> Result<SymbolicLink> {
         let Some(process) = self.0.process() else {
             return_errno_with_message!(Errno::ESRCH, "the process does not exist");

@@ -14,6 +14,7 @@ use crate::{
         posix_thread::{AsPosixThread, alien_access::AlienAccessMode},
         signal::{PollHandle, Pollable},
     },
+    thread::Thread,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/mem` (and also `/proc/[pid]/mem`).
@@ -27,6 +28,10 @@ impl MemFileOps {
 }
 
 impl FileOpsByHandle for MemFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn open(
         &self,
         _access_mode: AccessMode,

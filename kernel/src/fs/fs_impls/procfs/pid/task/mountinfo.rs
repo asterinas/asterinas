@@ -15,6 +15,7 @@ use crate::{
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
+    thread::Thread,
 };
 
 /// A helper function to create the mount point path for a given mount (used by `mounts`,
@@ -151,6 +152,10 @@ impl MountInfoFileOps {
 }
 
 impl FileOps for MountInfoFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let Some(thread) = self.0.thread() else {
             return_errno_with_message!(Errno::ESRCH, "the thread does not exist");

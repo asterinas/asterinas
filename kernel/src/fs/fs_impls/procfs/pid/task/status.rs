@@ -14,6 +14,7 @@ use crate::{
         credentials::AMBIENT_CAPSET,
         posix_thread::{AsPosixThread, SleepingState},
     },
+    thread::Thread,
     vm::vmar::RssType,
 };
 
@@ -73,6 +74,10 @@ impl StatusFileOps {
 }
 
 impl FileOps for StatusFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
