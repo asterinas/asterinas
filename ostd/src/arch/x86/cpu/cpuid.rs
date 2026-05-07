@@ -25,8 +25,7 @@ enum Leaf {
 /// This method will return `None` if the leaf is not supported.
 pub fn cpuid(leaf: u32, subleaf: u32) -> Option<CpuidResult> {
     fn raw_cpuid(leaf: u32, subleaf: u32) -> CpuidResult {
-        // SAFETY: It is safe to execute the CPUID instruction.
-        unsafe { core::arch::x86_64::__cpuid_count(leaf, subleaf) }
+        core::arch::x86_64::__cpuid_count(leaf, subleaf)
     }
 
     let max_leaf = if leaf < Leaf::HypervisorBase as u32 {
