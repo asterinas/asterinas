@@ -217,7 +217,10 @@ inherit_sys_leaf_node!(Measurement, fields, {
             let mut in_sync_write = in_sync.upgrade();
             let mr = tdxguest::get_tdx_mr_refresh(attr.reg);
             *in_sync_write = true;
-            in_sync = in_sync_write.downgrade();
+            #[expect(unused_assignments, reason = "the value is a lock guard")]
+            {
+                in_sync = in_sync_write.downgrade();
+            }
             mr
         } else {
             tdxguest::get_tdx_mr(attr.reg)

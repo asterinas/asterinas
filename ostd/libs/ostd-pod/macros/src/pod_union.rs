@@ -20,7 +20,7 @@ fn split_attrs(attrs: Vec<Attribute>) -> (Vec<Attribute>, Vec<Path>) {
             let parsed: Punctuated<Path, Token![,]> = attr
                 .parse_args_with(Punctuated::parse_terminated)
                 .expect("failed to parse derive attribute");
-            derive_paths.extend(parsed.into_iter());
+            derive_paths.extend(parsed);
         } else {
             other_attrs.push(attr);
         }

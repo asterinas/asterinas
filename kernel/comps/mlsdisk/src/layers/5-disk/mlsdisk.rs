@@ -437,7 +437,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
 
         let mut res = range_query_ctx.into_results();
         let record_batches = {
-            res.sort_by(|(_, v1), (_, v2)| v1.hba.cmp(&v2.hba));
+            res.sort_by_key(|(_, v1)| v1.hba);
             res.chunk_by(|(_, v1), (_, v2)| v2.hba - v1.hba == 1)
         };
 

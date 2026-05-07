@@ -119,7 +119,7 @@ impl<T: 'static> CpuLocalCell<T> {
             // The implementation should ensure that the CPU-local object resides in the `.cpu_local`.
             debug_assert!(bsp_va + size_of::<T>() <= __cpu_local_end as *const () as usize);
 
-            bsp_va - bsp_base as usize
+            bsp_va - bsp_base
         };
 
         let local_base = arch::cpu::local::get_base() as usize;

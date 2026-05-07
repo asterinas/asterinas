@@ -488,17 +488,16 @@ impl<L: BlockLog> MhtStorage<L> {
         let num_append = nodes.len();
         let mut node_entries = Vec::with_capacity(num_append);
         let mut cipher_buf = Buf::alloc(num_append)?;
-        let mut pos = self.block_log.nblocks() as BlockId;
-        let start_pos = pos;
+        let start_pos = self.block_log.nblocks() as BlockId;
         for (i, node) in nodes.iter().enumerate() {
             let plain = node.as_bytes();
             let cipher = &mut cipher_buf.as_mut_slice()[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE];
             let key = Key::random();
             let mac = Aead::new().encrypt(plain, &key, &Iv::new_zeroed(), &[], cipher)?;
 
+            let pos = start_pos + i;
             node_entries.push(MhtNodeEntry { pos, key, mac });
             self.node_cache.put(pos, node.clone());
-            pos += 1;
         }
 
         let append_pos = self.block_log.append(cipher_buf.as_ref())?;
@@ -514,15 +513,14 @@ impl<L: BlockLog> MhtStorage<L> {
         }
 
         let mut cipher_buf = Buf::alloc(num_append)?;
-        let mut pos = self.block_log.nblocks() as BlockId;
-        let start_pos = pos;
+        let start_pos = self.block_log.nblocks() as BlockId;
         for (i, node) in nodes.iter().enumerate() {
             let cipher = &mut cipher_buf.as_mut_slice()[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE];
             let key = Key::random();
             let mac = Aead::new().encrypt(&node.0, &key, &Iv::new_zeroed(), &[], cipher)?;
 
+            let pos = start_pos + i;
             node_entries.push(MhtNodeEntry { pos, key, mac });
-            pos += 1;
         }
 
         let append_pos = self.block_log.append(cipher_buf.as_ref())?;

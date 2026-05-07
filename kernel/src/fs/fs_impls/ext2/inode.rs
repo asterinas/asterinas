@@ -417,11 +417,10 @@ impl Inode {
 
         let dst_inode_typ = new_dst_entry.type_();
         match (src_inode_typ, dst_inode_typ) {
-            (InodeType::Dir, InodeType::Dir) => {
-                if dst_inner.entry_count() > 2 {
-                    return_errno!(Errno::ENOTEMPTY);
-                }
+            (InodeType::Dir, InodeType::Dir) if dst_inner.entry_count() > 2 => {
+                return_errno!(Errno::ENOTEMPTY);
             }
+            (InodeType::Dir, InodeType::Dir) => {}
             (InodeType::Dir, _) => {
                 return_errno!(Errno::ENOTDIR);
             }
@@ -588,11 +587,10 @@ impl Inode {
         let mut dst_inner = write_guards.pop().unwrap();
         let dst_inode_typ = new_dst_entry.type_();
         match (src_inode_typ, dst_inode_typ) {
-            (InodeType::Dir, InodeType::Dir) => {
-                if dst_inner.entry_count() > 2 {
-                    return_errno!(Errno::ENOTEMPTY);
-                }
+            (InodeType::Dir, InodeType::Dir) if dst_inner.entry_count() > 2 => {
+                return_errno!(Errno::ENOTEMPTY);
             }
+            (InodeType::Dir, InodeType::Dir) => {}
             (InodeType::Dir, _) => {
                 return_errno!(Errno::ENOTDIR);
             }
