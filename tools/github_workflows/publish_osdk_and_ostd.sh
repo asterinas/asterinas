@@ -64,7 +64,8 @@ do_publish_for ostd/libs/linux-bzimage/boot-params
 do_publish_for ostd/libs/linux-bzimage/builder
 do_publish_for ostd/libs/linux-bzimage/setup \
     --target ../builder/src/x86_64-i386_pm-none.json \
-    -Zbuild-std=core,alloc,compiler_builtins
+    -Zbuild-std=core,alloc,compiler_builtins \
+    -Zjson-target-spec
 do_publish_for osdk
 
 # All supported targets of OSTD, this array should keep consistent with
