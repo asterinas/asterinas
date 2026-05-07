@@ -12,6 +12,7 @@ use crate::{
     },
     prelude::*,
     process::pid_table::{PidEntry, PidEntryType},
+    thread::Thread,
 };
 
 mod task;
@@ -52,6 +53,10 @@ impl PidDirOps {
 }
 
 impl DirOps for PidDirOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if self.0.pid_entry().type_().is_none() {
             return_errno_with_message!(Errno::ESRCH, "the process does not exist");

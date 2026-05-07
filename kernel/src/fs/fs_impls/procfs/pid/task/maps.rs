@@ -16,6 +16,7 @@ use crate::{
         posix_thread::{AsPosixThread, alien_access::AlienAccessMode},
         signal::{PollHandle, Pollable},
     },
+    thread::Thread,
     vm::vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR},
 };
 
@@ -30,6 +31,10 @@ impl MapsFileOps {
 }
 
 impl FileOpsByHandle for MapsFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
     fn open(
         &self,
         _access_mode: AccessMode,
