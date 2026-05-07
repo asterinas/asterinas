@@ -228,7 +228,10 @@ fn check_rust_toolchain(toolchain: &toml::Table) {
     let expected_channel = expected.get("channel").unwrap().as_str().unwrap();
 
     if channel != expected_channel {
-        error_msg!("The current version of rust-toolchain.toml is not compatible with the osdk");
+        error_msg!(
+            "The current version of rust-toolchain.toml `{channel}` \
+             is not compatible with the OSDK's `{expected_channel}`"
+        );
         process::exit(Errno::AddRustToolchain as _);
     }
 
