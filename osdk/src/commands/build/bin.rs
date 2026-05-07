@@ -187,6 +187,11 @@ fn install_setup_with_arch(
         cmd.arg("--version").arg(env!("CARGO_PKG_VERSION"));
     }
     cmd.arg("--target").arg(arch);
+    // Custom json target requires this cargo flag.
+    // See https://doc.rust-lang.org/cargo/reference/unstable.html#target-spec-json
+    if arch.ends_with(".json") {
+        cmd.arg("-Zjson-target-spec");
+    }
     cmd.arg("-Zbuild-std=core,alloc,compiler_builtins");
     cmd.arg("-Zbuild-std-features=compiler-builtins-mem");
     // Specify the build target directory to avoid cargo running
