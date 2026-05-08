@@ -5,7 +5,7 @@ use alloc::{string::String, sync::Arc};
 use smoltcp::{
     iface::Config,
     phy::{Device, TxToken},
-    wire::{self, Ipv4Cidr, Ipv4Packet},
+    wire::{self, Ipv4Cidr, Ipv4Packet, Ipv6Cidr, Ipv6Packet},
 };
 
 use crate::{
@@ -13,7 +13,7 @@ use crate::{
     ext::Ext,
     iface::{
         Iface, ScheduleNextPoll,
-        common::{IfaceCommon, InterfaceFlags, InterfaceType},
+        common::{IfaceCommon, InterfaceFlags, InterfaceType, IpPacket},
         iface::internal::IfaceInternal,
         time::get_network_timestamp,
     },
@@ -25,9 +25,11 @@ pub struct IpIface<D, E: Ext> {
 }
 
 impl<D: WithDevice, E: Ext> IpIface<D, E> {
+    // TODO: Support interfaces with multiple IPv4/IPv6 addresses or without IPv4 addresses.
     pub fn new(
         driver: D,
         ip_cidr: Ipv4Cidr,
+        ipv6_cidr: Option<Ipv6Cidr>,
         name: String,
         sched_poll: E::ScheduleNextPoll,
         type_: InterfaceType,
@@ -41,6 +43,9 @@ impl<D: WithDevice, E: Ext> IpIface<D, E> {
             interface.update_ip_addrs(|ip_addrs| {
                 debug_assert!(ip_addrs.is_empty());
                 ip_addrs.push(wire::IpCidr::Ipv4(ip_cidr)).unwrap();
+                if let Some(ipv6_cidr) = ipv6_cidr {
+                    ip_addrs.push(wire::IpCidr::Ipv6(ipv6_cidr)).unwrap();
+                }
             });
             interface
         });
@@ -62,7 +67,22 @@ impl<D: WithDevice + 'static, E: Ext> Iface<E> for IpIface<D, E> {
         self.driver.with(|device| {
             let next_poll = self.common.poll(
                 device,
-                |data, _iface_cx, tx_token| Some((Ipv4Packet::new_checked(data).ok()?, tx_token)),
+                |data, _iface_cx, tx_token| {
+                    if data.is_empty() {
+                        return None;
+                    }
+                    let version = data[0] >> 4;
+
+                    if version == 4 {
+                        let pkt = Ipv4Packet::new_checked(data).ok()?;
+                        Some((IpPacket::Ipv4(pkt), tx_token))
+                    } else if version == 6 {
+                        let pkt = Ipv6Packet::new_checked(data).ok()?;
+                        Some((IpPacket::Ipv6(pkt), tx_token))
+                    } else {
+                        None
+                    }
+                },
                 |pkt, iface_cx, tx_token| {
                     let ip_repr = pkt.ip_repr();
                     tx_token.consume(ip_repr.buffer_len(), |buffer| {

@@ -17,6 +17,13 @@
 // See <https://github.com/rust-lang/rust/issues/132952>.
 #![expect(rustdoc::private_intra_doc_links)]
 
+// Set this crate's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "bigtcp: "
+    };
+}
+
 pub mod boolean_value;
 pub mod device;
 pub mod errors;

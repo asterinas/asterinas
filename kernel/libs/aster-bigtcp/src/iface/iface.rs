@@ -2,7 +2,7 @@
 
 use alloc::sync::Arc;
 
-use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
+use smoltcp::wire::{Ipv4Address, Ipv4Cidr, Ipv6Address};
 
 use super::{BoundPort, InterfaceFlags, InterfaceType, port::BindPortConfig};
 use crate::{errors::BindError, ext::Ext};
@@ -27,8 +27,8 @@ impl<E: Ext> dyn Iface<E> {
     /// After binding the socket to the iface, the iface will handle all packets to and from the
     /// socket.
     ///
-    /// If [`BindPortConfig::Ephemeral`] is specified, the iface will pick up an ephemeral port for
-    /// the socket.
+    /// If no specific port is given in [`BindPortConfig`], the iface will pick up an ephemeral port
+    /// for the socket.
     ///
     /// FIXME: The reason for binding the socket and the iface together is because there are
     /// limitations inside smoltcp. See discussion at
@@ -65,6 +65,11 @@ impl<E: Ext> dyn Iface<E> {
     // FIXME: One iface may have multiple IPv4 addresses.
     pub fn ipv4_addr(&self) -> Option<Ipv4Address> {
         self.common().ipv4_addr()
+    }
+
+    /// Gets the IPv6 address of the iface, if any.
+    pub fn ipv6_addr(&self) -> Option<Ipv6Address> {
+        self.common().ipv6_addr()
     }
 
     /// Retrieves the prefix length of the interface's IPv4 address.

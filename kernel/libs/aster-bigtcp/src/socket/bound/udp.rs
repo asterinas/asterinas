@@ -106,9 +106,7 @@ impl<E: Ext> UdpSocket<E> {
         bound: BoundPort<E>,
         observer: E::UdpEventObserver,
     ) -> Result<Self, (BoundPort<E>, smoltcp::socket::udp::BindError)> {
-        let Some(local_endpoint) = bound.endpoint() else {
-            return Err((bound, smoltcp::socket::udp::BindError::Unaddressable));
-        };
+        let local_endpoint = bound.endpoint();
 
         let socket = {
             let mut socket = new_udp_socket();

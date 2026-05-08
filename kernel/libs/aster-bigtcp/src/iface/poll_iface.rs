@@ -39,6 +39,16 @@ impl<E: Ext> PollableIface<E> {
         self.interface.ipv4_addr()
     }
 
+    pub(super) fn ipv6_addr(&self) -> Option<smoltcp::wire::Ipv6Address> {
+        self.interface.ip_addrs().iter().find_map(|cidr| {
+            if let smoltcp::wire::IpCidr::Ipv6(ipv6_cidr) = cidr {
+                Some(ipv6_cidr.address())
+            } else {
+                None
+            }
+        })
+    }
+
     pub(super) fn prefix_len(&self) -> Option<u8> {
         self.interface
             .ip_addrs()
