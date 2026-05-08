@@ -22,5 +22,11 @@ ptrace(request = PTRACE_GETREGS, tid, addr, data);
 // Set tracee general-purpose registers
 ptrace(request = PTRACE_SETREGS, tid, addr, data);
 
+// Set the ptrace options of a tracee
+ptrace(request = PTRACE_SETOPTIONS, tid, addr, data);
+
+// Get the message associated with the current ptrace-event-stop
+ptrace(request = PTRACE_GETEVENTMSG, tid, addr, data);
+
 // Get the siginfo associated with the current ptrace-stop
 ptrace(request = PTRACE_GETSIGINFO, tid, addr, data);
