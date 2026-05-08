@@ -63,11 +63,13 @@ fn new_loopback() -> Arc<Iface> {
     use aster_bigtcp::{
         device::{Loopback, Medium},
         iface::IpIface,
-        wire::{Ipv4Address, Ipv4Cidr},
+        wire::{Ipv4Address, Ipv4Cidr, Ipv6Address, Ipv6Cidr},
     };
 
     const LOOPBACK_ADDRESS: Ipv4Address = Ipv4Address::new(127, 0, 0, 1);
     const LOOPBACK_ADDRESS_PREFIX_LEN: u8 = 8; // mask: 255.0.0.0
+    const LOOPBACK_IPV6_ADDRESS: Ipv6Address = Ipv6Address::new(0, 0, 0, 0, 0, 0, 0, 1);
+    const LOOPBACK_IPV6_PREFIX_LEN: u8 = 128;
 
     struct Wrapper(Mutex<Loopback>);
 
@@ -93,6 +95,10 @@ fn new_loopback() -> Arc<Iface> {
     IpIface::new(
         Wrapper(Mutex::new(Loopback::new(Medium::Ip))),
         Ipv4Cidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN),
+        Some(Ipv6Cidr::new(
+            LOOPBACK_IPV6_ADDRESS,
+            LOOPBACK_IPV6_PREFIX_LEN,
+        )),
         "lo".to_owned(),
         PollScheduler::new(),
         InterfaceType::LOOPBACK,

@@ -37,7 +37,7 @@ impl From<IpEndpoint> for SocketAddr {
 pub(super) const UNSPECIFIED_LOCAL_ENDPOINT: IpEndpoint =
     IpEndpoint::new(IpAddress::Ipv4(Ipv4Address::UNSPECIFIED), 0);
 
-/// IPv6 unspecified local endpoint.
+/// An IPv6 local endpoint, which indicates that the local endpoint is unspecified.
 pub(super) const UNSPECIFIED_LOCAL_ENDPOINT_V6: IpEndpoint =
     IpEndpoint::new(IpAddress::Ipv6(Ipv6Address::UNSPECIFIED), 0);
 

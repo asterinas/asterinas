@@ -13,7 +13,10 @@ use crate::{
     net::{
         iface::BoundPort,
         socket::{
-            ip::common::{bind_port, get_ephemeral_endpoint},
+            ip::{
+                addr::IpAddressFamily,
+                common::{bind_port, get_ephemeral_endpoint},
+            },
             util::SocketAddr,
         },
     },
@@ -22,6 +25,11 @@ use crate::{
 
 pub(super) struct InitStream {
     bound_port: Option<BoundPort>,
+    /// The address family of this socket (IPv4 or IPv6).
+    //
+    // TODO: Encode the address family in the type system (e.g., `InitStream<IPv4Family>`)
+    // so that type mismatches are caught at compile time instead of runtime.
+    family: IpAddressFamily,
     /// Indicates if the last `connect()` is considered to be done.
     ///
     /// If `connect()` is called but we're still in the `InitStream`, this means that the
@@ -45,33 +53,50 @@ pub(super) struct InitStream {
 }
 
 impl InitStream {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(family: IpAddressFamily) -> Self {
         Self {
             bound_port: None,
+            family,
             is_connect_done: true,
             is_conn_refused: AtomicBool::new(false),
         }
     }
 
-    pub(super) fn new_bound(bound_port: BoundPort) -> Self {
+    pub(super) fn new_bound(bound_port: BoundPort, family: IpAddressFamily) -> Self {
         Self {
             bound_port: Some(bound_port),
+            family,
             is_connect_done: true,
             is_conn_refused: AtomicBool::new(false),
         }
     }
 
-    pub(super) fn new_refused(bound_port: BoundPort) -> Self {
+    pub(super) fn new_refused(bound_port: BoundPort, family: IpAddressFamily) -> Self {
         Self {
             bound_port: Some(bound_port),
+            family,
             is_connect_done: false,
             is_conn_refused: AtomicBool::new(true),
         }
     }
 
+    /// Returns the address family of this socket.
+    pub(super) fn family(&self) -> IpAddressFamily {
+        self.family
+    }
+
     pub(super) fn bind(&mut self, endpoint: &IpEndpoint, can_reuse: bool) -> Result<()> {
         if self.bound_port.is_some() {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
+        }
+
+        // When we support `IPV6_V6ONLY` and if it is set, we should also reject IPv4-mapped
+        // IPv6 addresses.
+        if IpAddressFamily::from(endpoint.addr) != self.family {
+            return_errno_with_message!(
+                Errno::EAFNOSUPPORT,
+                "the protocol family does not match the address family"
+            );
         }
 
         self.bound_port = Some(bind_port(endpoint, can_reuse)?);
@@ -95,10 +120,33 @@ impl InitStream {
             "`finish_last_connect()` should be called before calling `connect()`"
         );
 
+        // When we support `IPV6_V6ONLY` and if it is set, we should also reject IPv4-mapped
+        // IPv6 addresses.
+        if IpAddressFamily::from(remote_endpoint.addr) != self.family {
+            return Err((
+                Error::with_message(
+                    Errno::EAFNOSUPPORT,
+                    "the protocol family does not match the address family",
+                ),
+                self,
+            ));
+        }
+
         let bound_port = if let Some(bound_port) = self.bound_port {
             bound_port
         } else {
-            let endpoint = get_ephemeral_endpoint(remote_endpoint);
+            let endpoint = match get_ephemeral_endpoint(remote_endpoint) {
+                Some(ep) => ep,
+                None => {
+                    return Err((
+                        Error::with_message(
+                            Errno::EADDRNOTAVAIL,
+                            "no interface has an address for the specified family",
+                        ),
+                        self,
+                    ));
+                }
+            };
             match bind_port(&endpoint, can_reuse) {
                 Ok(bound_port) => bound_port,
                 Err(err) => return Err((err, self)),
@@ -108,9 +156,9 @@ impl InitStream {
         ConnectingStream::new(bound_port, *remote_endpoint, option, observer).map_err(
             |(err, bound_port)| {
                 if err.error() == Errno::ECONNREFUSED {
-                    (err, InitStream::new_refused(bound_port))
+                    (err, InitStream::new_refused(bound_port, self.family))
                 } else {
-                    (err, InitStream::new_bound(bound_port))
+                    (err, InitStream::new_bound(bound_port, self.family))
                 }
             },
         )
@@ -165,7 +213,7 @@ impl InitStream {
 
         match ListenStream::new(bound_port, backlog, option, observer) {
             Ok(listen_stream) => Ok(listen_stream),
-            Err((bound_port, error)) => Err((error, Self::new_bound(bound_port))),
+            Err((bound_port, error)) => Err((error, Self::new_bound(bound_port, self.family))),
         }
     }
 
@@ -199,7 +247,7 @@ impl InitStream {
     pub(super) fn local_endpoint(&self) -> Option<IpEndpoint> {
         self.bound_port
             .as_ref()
-            .map(|bound_port| bound_port.endpoint().unwrap())
+            .map(|bound_port| bound_port.endpoint())
     }
 
     pub(super) fn check_io_events(&self) -> IoEvents {
