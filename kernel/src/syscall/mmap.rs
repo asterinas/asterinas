@@ -7,9 +7,9 @@ use crate::{
     fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     vm::{
+        page_cache::VmoOptions,
         perms::VmPerms,
         vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, VmarMapOffset},
-        vmo::VmoOptions,
     },
 };
 
