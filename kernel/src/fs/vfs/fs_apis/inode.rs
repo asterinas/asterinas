@@ -24,7 +24,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     time::clocks::RealTimeCoarseClock,
-    vm::vmo::Vmo,
+    vm::page_cache::PageCache,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -351,7 +351,7 @@ pub trait Inode: Any + InodeIo + Send + Sync {
 
     fn set_ctime(&self, time: Duration);
 
-    fn page_cache(&self) -> Option<Arc<Vmo>> {
+    fn page_cache(&self) -> Option<PageCache> {
         None
     }
 

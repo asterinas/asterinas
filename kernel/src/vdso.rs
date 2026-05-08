@@ -264,7 +264,7 @@ impl Vdso {
         Self {
             data: SpinLock::new(vdso_data),
             vmo: vdso_vmo,
-            data_frame,
+            data_frame: data_frame.into(),
         }
     }
 

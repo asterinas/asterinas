@@ -28,6 +28,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid},
     time::{Clock, clocks::RealTimeCoarseClock},
+    vm::page_cache::PageCache,
 };
 
 type Ino = u64;
@@ -423,7 +424,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         unimplemented!("fs() method should be implemented by the concrete inode type");
     }
 
-    default fn page_cache(&self) -> Option<Arc<crate::vm::vmo::Vmo>> {
+    default fn page_cache(&self) -> Option<PageCache> {
         None
     }
 

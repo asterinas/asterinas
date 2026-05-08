@@ -15,7 +15,7 @@ use crate::{
     prelude::*,
     process::signal::Pollable,
     util::ioctl::RawIoctl,
-    vm::vmo::Vmo,
+    vm::page_cache::Vmo,
 };
 
 /// The basic operations defined on a file
