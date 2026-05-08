@@ -370,6 +370,7 @@ impl Socket for VsockStreamSocket {
         let MessageHeader {
             control_messages,
             addr,
+            ..
         } = message_header;
 
         // According to the Linux man pages, `EISCONN` _may_ be returned when the destination

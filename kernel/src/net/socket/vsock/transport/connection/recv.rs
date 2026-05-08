@@ -50,16 +50,12 @@ impl Connection {
         // Packets can only be received from a `&mut connection`. Therefore, releasing the state
         // lock does not cause race conditions. We need to release the lock in order to copy to
         // userspace.
-        let is_peek = flags.contains(SendRecvFlags::MSG_PEEK);
-        let result = if is_peek {
-            packets.copy_to_userspace_peek(writer)
-        } else {
-            packets.copy_to_userspace(writer)
-        };
+        let receive_behavior = ReceiveBehavior::from_flags(flags);
+        let result = packets.receive(receive_behavior, writer);
         let recv_len = *result.as_ref().unwrap_or(&0);
 
         let mut state = self.inner.state.lock();
-        if is_peek {
+        if receive_behavior.is_peek() {
             state.undo_pop_rx_packets(packets);
         } else {
             state.ungrab_packets_and_finish_recv(&self.inner, packets, recv_len);
@@ -71,12 +67,51 @@ impl Connection {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReceiveBehavior {
+    Normal,
+    Peek,
+    Discard,
+    PeekDiscard,
+}
+
+impl ReceiveBehavior {
+    fn from_flags(flags: SendRecvFlags) -> Self {
+        match (
+            flags.contains(SendRecvFlags::MSG_PEEK),
+            flags.contains(SendRecvFlags::MSG_TRUNC),
+        ) {
+            (true, true) => Self::PeekDiscard,
+            (true, false) => Self::Peek,
+            (false, true) => Self::Discard,
+            (false, false) => Self::Normal,
+        }
+    }
+
+    fn is_peek(self) -> bool {
+        matches!(self, Self::Peek | Self::PeekDiscard)
+    }
+}
+
 struct PoppedRxPackets<'a> {
     packets: &'a mut [Option<RxPacket>],
     read_offset: usize,
 }
 
 impl PoppedRxPackets<'_> {
+    fn receive(
+        &mut self,
+        receive_behavior: ReceiveBehavior,
+        writer: &mut dyn MultiWrite,
+    ) -> Result<usize> {
+        match receive_behavior {
+            ReceiveBehavior::Normal => self.copy_to_userspace(writer),
+            ReceiveBehavior::Peek => self.copy_to_userspace_peek(writer),
+            ReceiveBehavior::Discard => Ok(self.skip_payload(writer.sum_lens())),
+            ReceiveBehavior::PeekDiscard => Ok(self.payload_len().min(writer.sum_lens())),
+        }
+    }
+
     fn copy_to_userspace(&mut self, writer: &mut dyn MultiWrite) -> Result<usize> {
         let mut read_offset = self.read_offset;
         let mut total_write_len = 0;
@@ -134,6 +169,52 @@ impl PoppedRxPackets<'_> {
         core::mem::swap(&mut self.packets, &mut packets);
         packets = &mut packets[n..];
         core::mem::swap(&mut self.packets, &mut packets);
+    }
+
+    fn skip_payload(&mut self, mut max_len: usize) -> usize {
+        let mut total_len = 0;
+        let mut read_offset = self.read_offset;
+
+        for (i, packet) in self.packets.iter().enumerate() {
+            let packet = packet.as_ref().unwrap();
+            let payload_len = packet.payload_len() - read_offset;
+            let skip_len = payload_len.min(max_len);
+
+            total_len += skip_len;
+            max_len -= skip_len;
+
+            if skip_len < payload_len {
+                read_offset += skip_len;
+                self.skip_packets(i);
+                self.read_offset = read_offset;
+                return total_len;
+            }
+
+            if max_len == 0 {
+                self.skip_packets(i + 1);
+                self.read_offset = 0;
+                return total_len;
+            }
+
+            read_offset = 0;
+        }
+
+        self.packets = &mut [];
+        self.read_offset = 0;
+        total_len
+    }
+
+    fn payload_len(&self) -> usize {
+        let mut total_len = 0;
+        let mut read_offset = self.read_offset;
+
+        for packet in self.packets.iter() {
+            let packet = packet.as_ref().unwrap();
+            total_len += packet.payload_len() - read_offset;
+            read_offset = 0;
+        }
+
+        total_len
     }
 }
 
