@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_bigtcp::wire::{Ipv4Address, PortNum};
+use aster_bigtcp::wire::{Ipv4Address, Ipv6Address, PortNum};
 
 use super::family::CSocketAddrFamily;
 use crate::prelude::*;
@@ -82,5 +82,67 @@ impl From<PortNum> for CPortNum {
 impl From<CPortNum> for PortNum {
     fn from(value: CPortNum) -> Self {
         Self::from_be_bytes(value.port)
+    }
+}
+
+/// IPv6 socket address.
+///
+/// See <https://www.man7.org/linux/man-pages/man7/ipv6.7.html>.
+///
+/// This corresponds to `struct sockaddr_in6` in Linux.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(super) struct CSocketAddrInet6 {
+    /// Address family (AF_INET6).
+    sin6_family: u16,
+    /// Port number.
+    sin6_port: CPortNum,
+    /// Flow information.
+    sin6_flowinfo: u32,
+    /// IPv6 address.
+    sin6_addr: CInet6Addr,
+    /// Scope ID.
+    sin6_scope_id: u32,
+}
+
+impl From<(Ipv6Address, PortNum)> for CSocketAddrInet6 {
+    fn from(value: (Ipv6Address, PortNum)) -> Self {
+        Self {
+            sin6_family: CSocketAddrFamily::AF_INET6 as u16,
+            sin6_port: value.1.into(),
+            sin6_flowinfo: 0,
+            sin6_addr: value.0.into(),
+            sin6_scope_id: 0,
+        }
+    }
+}
+
+impl From<CSocketAddrInet6> for (Ipv6Address, PortNum) {
+    fn from(value: CSocketAddrInet6) -> Self {
+        debug_assert_eq!(value.sin6_family, CSocketAddrFamily::AF_INET6 as u16);
+        (value.sin6_addr.into(), value.sin6_port.into())
+    }
+}
+
+/// IPv6 16-byte address.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+struct CInet6Addr {
+    s6_addr: [u8; 16],
+}
+
+impl From<Ipv6Address> for CInet6Addr {
+    fn from(value: Ipv6Address) -> Self {
+        let bits = value.to_bits();
+        Self {
+            s6_addr: bits.to_be_bytes(),
+        }
+    }
+}
+
+impl From<CInet6Addr> for Ipv6Address {
+    fn from(value: CInet6Addr) -> Self {
+        let bits = u128::from_be_bytes(value.s6_addr);
+        Ipv6Address::from_bits(bits)
     }
 }
