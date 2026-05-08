@@ -179,6 +179,21 @@ impl<E: Ext> UdpSocket<E> {
         Ok(result)
     }
 
+    /// Peeks some data.
+    ///
+    /// Polling the iface is _not_ required after this method succeeds.
+    pub fn peek<F, R>(&self, f: F) -> Result<R, smoltcp::socket::udp::RecvError>
+    where
+        F: FnOnce(&[u8], UdpMetadata) -> R,
+    {
+        let mut socket = self.0.inner.socket.lock();
+
+        let (data, meta) = socket.peek()?;
+        let result = f(data, *meta);
+
+        Ok(result)
+    }
+
     /// Calls `f` with an immutable reference to the associated [`RawUdpSocket`].
     //
     // NOTE: If a mutable reference is required, add a method above that correctly updates the next
