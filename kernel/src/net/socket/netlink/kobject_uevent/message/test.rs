@@ -81,7 +81,7 @@ fn multicast_synthetic_uevent() {
         UeventMessage::new(uevent, NetlinkSocketAddr::new(0, GroupIdSet::new(0x1)));
     NetlinkUeventProtocol::multicast(GroupIdSet::new(0x1), uevent_message).unwrap();
 
-    let (len, _) = socket
+    let (len, _, _) = socket
         .try_recv(&mut writer, SendRecvFlags::empty())
         .unwrap();
     let s = core::str::from_utf8(&buffer[..len]).unwrap();
