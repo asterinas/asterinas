@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::convert::Infallible;
+
 use aster_bigtcp::{
     errors::tcp::{IoError, RecvError, SendError},
-    socket::{NeedIfacePoll, RawTcpSetOption},
+    socket::{NeedIfacePoll, RawTcpSetOption, ReceiveBehavior},
     wire::IpEndpoint,
 };
 
@@ -74,16 +76,48 @@ impl ConnectedStream {
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, NeedIfacePoll)> {
-        let result = if flags.contains(SendRecvFlags::MSG_PEEK) {
-            let writer_len = writer.sum_lens();
-            self.tcp_conn.peek(
-                |socket_buffer| writer.write(&mut VmReader::from(socket_buffer)),
-                writer_len,
-            )
+        if flags.contains(SendRecvFlags::MSG_TRUNC) {
+            let receive_behavior = if flags.contains(SendRecvFlags::MSG_PEEK) {
+                ReceiveBehavior::Peek
+            } else {
+                ReceiveBehavior::Discard
+            };
+            let result = self.tcp_conn.recv::<_, Infallible>(
+                receive_behavior,
+                writer.sum_lens(),
+                |socket_buffer| Ok(socket_buffer.len()),
+            );
+
+            return match result {
+                Ok((recv_bytes, need_poll)) => Ok((recv_bytes.get(), need_poll)),
+                Err(IoError::NoProgress) => {
+                    return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
+                }
+                Err(IoError::Copy(err)) => match err {},
+                Err(IoError::Socket(RecvError::Finished | RecvError::InvalidState)) => {
+                    Ok((0, NeedIfacePoll::FALSE))
+                }
+                Err(IoError::Socket(RecvError::ConnReset)) => {
+                    return_errno_with_message!(Errno::ECONNRESET, "the connection is reset")
+                }
+            };
+        }
+
+        let receive_behavior = if flags.contains(SendRecvFlags::MSG_PEEK) {
+            ReceiveBehavior::Peek
         } else {
-            self.tcp_conn
-                .recv(|socket_buffer| writer.write(&mut VmReader::from(&*socket_buffer)))
+            ReceiveBehavior::Normal
         };
+        let max_len = if receive_behavior == ReceiveBehavior::Peek {
+            writer.sum_lens()
+        } else {
+            usize::MAX
+        };
+        let result = self
+            .tcp_conn
+            .recv(receive_behavior, max_len, |socket_buffer| {
+                writer.write(&mut VmReader::from(socket_buffer))
+            });
 
         match result {
             Ok((recv_bytes, need_poll)) => Ok((recv_bytes.get(), need_poll)),

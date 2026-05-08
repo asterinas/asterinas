@@ -19,7 +19,7 @@ use smoltcp::{
 };
 
 use super::{
-    common::{Inner, NeedIfacePoll, Socket, SocketBg},
+    common::{Inner, NeedIfacePoll, ReceiveBehavior, Socket, SocketBg},
     tcp_listen::TcpListenerBg,
 };
 use crate::{
@@ -109,6 +109,115 @@ impl<E: Ext> RawTcpSocketExt<E> {
     /// [`TcpConnection::clear_rst_closed`], [`TcpConnection::send`], or [`TcpConnection::recv`].
     pub fn is_rst_closed(&self) -> bool {
         self.is_rst_closed
+    }
+
+    fn recv_without_peek<F, CopyErr>(
+        &mut self,
+        receive_behavior: ReceiveBehavior,
+        max_len: usize,
+        f: &mut F,
+    ) -> Result<usize, IoError<RecvError, CopyErr>>
+    where
+        F: FnMut(&[u8]) -> Result<usize, (CopyErr, usize)>,
+    {
+        let mut total_recv_bytes = 0;
+        let mut need_wrap_continuation = true;
+
+        loop {
+            if total_recv_bytes >= max_len {
+                break Ok(total_recv_bytes);
+            }
+
+            let remaining_len = max_len - total_recv_bytes;
+            let mut recv_bytes = 0;
+            let mut socket_buffer_len = 0;
+
+            // `socket.recv` exposes the largest contiguous readable range. If the receive ring
+            // buffer wraps, one logical stream read may span two such ranges, so continue at most
+            // once while holding the same socket lock to avoid an avoidable short read.
+            let recv_result = self.recv(|socket_buffer| {
+                socket_buffer_len = socket_buffer.len().min(remaining_len);
+                let socket_buffer = &socket_buffer[..socket_buffer_len];
+
+                let copy_result = match receive_behavior {
+                    ReceiveBehavior::Normal => f(socket_buffer).map(|current_recv_bytes| {
+                        recv_bytes = current_recv_bytes;
+                    }),
+                    ReceiveBehavior::Discard => {
+                        recv_bytes = socket_buffer_len;
+                        Ok(())
+                    }
+                    ReceiveBehavior::Peek => unreachable!(),
+                };
+
+                match copy_result {
+                    Ok(()) => (recv_bytes, Ok(())),
+                    Err((err, current_recv_bytes)) => {
+                        recv_bytes = current_recv_bytes;
+                        (current_recv_bytes, Err(err))
+                    }
+                }
+            });
+
+            let copy_result = match recv_result {
+                Err(_) if self.is_rst_closed && total_recv_bytes == 0 => {
+                    self.is_rst_closed = false;
+                    return Err(IoError::Socket(RecvError::ConnReset));
+                }
+                Err(_) if total_recv_bytes > 0 => break Ok(total_recv_bytes),
+                res => res?,
+            };
+
+            total_recv_bytes += recv_bytes;
+
+            if let Err(err) = copy_result {
+                if total_recv_bytes == 0 {
+                    return Err(IoError::Copy(err));
+                }
+                break Ok(total_recv_bytes);
+            }
+
+            if recv_bytes < socket_buffer_len
+                || total_recv_bytes >= max_len
+                || !need_wrap_continuation
+            {
+                break Ok(total_recv_bytes);
+            }
+
+            need_wrap_continuation = false;
+        }
+    }
+
+    fn recv_with_peek<F, CopyErr>(
+        &mut self,
+        max_len: usize,
+        f: &mut F,
+    ) -> Result<usize, IoError<RecvError, CopyErr>>
+    where
+        F: FnMut(&[u8]) -> Result<usize, (CopyErr, usize)>,
+    {
+        let recv_len = self.recv_queue().min(max_len);
+        let peek_result = match self.peek(recv_len) {
+            Ok(socket_buffer) if socket_buffer.len() == recv_len => f(socket_buffer),
+            Ok(_) => {
+                let mut socket_buffer = vec![0; recv_len];
+                let peeked_len = self.peek_slice(&mut socket_buffer)?;
+                f(&socket_buffer[..peeked_len])
+            }
+            Err(err) => {
+                if self.is_rst_closed {
+                    self.is_rst_closed = false;
+                    return Err(IoError::Socket(RecvError::ConnReset));
+                }
+                return Err(err.into());
+            }
+        };
+
+        match peek_result {
+            Ok(recv_bytes) => Ok(recv_bytes),
+            Err((err, 0)) => Err(IoError::Copy(err)),
+            Err((_, recv_bytes)) => Ok(recv_bytes),
+        }
     }
 }
 
@@ -449,10 +558,12 @@ impl<E: Ext> TcpConnection<E> {
     /// Polling the iface _may_ be required after this method succeeds.
     pub fn recv<F, CopyErr>(
         &self,
+        receive_behavior: ReceiveBehavior,
+        max_len: usize,
         mut f: F,
     ) -> Result<(NonZeroUsize, NeedIfacePoll), IoError<RecvError, CopyErr>>
     where
-        F: FnMut(&mut [u8]) -> Result<usize, (CopyErr, usize)>,
+        F: FnMut(&[u8]) -> Result<usize, (CopyErr, usize)>,
     {
         let common = self.iface().common();
         let mut iface = common.interface();
@@ -463,107 +574,10 @@ impl<E: Ext> TcpConnection<E> {
             return Err(IoError::Socket(RecvError::Finished));
         }
 
-        let mut total_recv_bytes = 0;
-        let mut need_wrap_continuation = true;
-
-        let result = loop {
-            let mut recv_bytes = 0;
-            let mut socket_buffer_len = 0;
-
-            // `socket.recv` exposes the largest contiguous readable range. If the receive ring
-            // buffer wraps, one logical stream read may span two such ranges, so continue at most
-            // once while holding the same socket lock to avoid an avoidable short read.
-            let recv_result = socket.recv(|socket_buffer| {
-                socket_buffer_len = socket_buffer.len();
-                match f(socket_buffer) {
-                    Ok(current_recv_bytes) => {
-                        recv_bytes = current_recv_bytes;
-                        (current_recv_bytes, Ok(()))
-                    }
-                    Err((err, current_recv_bytes)) => {
-                        recv_bytes = current_recv_bytes;
-                        (current_recv_bytes, Err(err))
-                    }
-                }
-            });
-
-            let copy_result = match recv_result {
-                Err(_) if socket.is_rst_closed && total_recv_bytes == 0 => {
-                    socket.is_rst_closed = false;
-                    return Err(IoError::Socket(RecvError::ConnReset));
-                }
-                Err(_) if total_recv_bytes > 0 => break total_recv_bytes,
-                res => res?,
-            };
-
-            total_recv_bytes += recv_bytes;
-
-            if let Err(err) = copy_result {
-                if total_recv_bytes == 0 {
-                    return Err(IoError::Copy(err));
-                }
-                break total_recv_bytes;
-            }
-
-            if recv_bytes < socket_buffer_len || !need_wrap_continuation {
-                break total_recv_bytes;
-            }
-
-            need_wrap_continuation = false;
-        };
-
-        let result = NonZeroUsize::new(result).ok_or(IoError::NoProgress)?;
-        let poll_at = socket.poll_at(iface.context_mut());
-        let need_poll = iface.update_next_poll_at_ms(&self.0, poll_at);
-
-        Ok((result, need_poll))
-    }
-
-    /// Peeks some data.
-    ///
-    /// Polling the iface _may_ be required after this method succeeds.
-    pub fn peek<F, CopyErr>(
-        &self,
-        f: F,
-        max_len: usize,
-    ) -> Result<(NonZeroUsize, NeedIfacePoll), IoError<RecvError, CopyErr>>
-    where
-        F: FnOnce(&[u8]) -> Result<usize, (CopyErr, usize)>,
-    {
-        let common = self.iface().common();
-        let mut iface = common.interface();
-
-        let mut socket = self.0.inner.lock();
-
-        if socket.is_recv_shut && socket.recv_queue() == 0 {
-            return Err(IoError::Socket(RecvError::Finished));
-        }
-
-        let recv_len = socket.recv_queue().min(max_len);
-        let result = match socket.peek(recv_len) {
-            Ok(socket_buffer) if socket_buffer.len() == recv_len => f(socket_buffer),
-            Ok(_) => {
-                let mut socket_buffer = vec![0; recv_len];
-                let peeked_len = socket.peek_slice(&mut socket_buffer)?;
-                f(&socket_buffer[..peeked_len])
-            }
-            Err(err) => {
-                if socket.is_rst_closed {
-                    socket.is_rst_closed = false;
-                    return Err(IoError::Socket(RecvError::ConnReset));
-                }
-                return Err(err.into());
-            }
-        };
-
-        let result = match result {
-            Ok(recv_bytes) => recv_bytes,
-            Err((err, recv_bytes)) => {
-                if recv_bytes == 0 {
-                    return Err(IoError::Copy(err));
-                }
-                recv_bytes
-            }
+        let result = if receive_behavior == ReceiveBehavior::Peek {
+            socket.recv_with_peek(max_len, &mut f)?
+        } else {
+            socket.recv_without_peek(receive_behavior, max_len, &mut f)?
         };
 
         let result = NonZeroUsize::new(result).ok_or(IoError::NoProgress)?;
