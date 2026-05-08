@@ -297,9 +297,7 @@ impl<E: Ext> TcpConnection<E> {
         option: &RawTcpOption,
         observer: E::TcpEventObserver,
     ) -> Result<Self, (BoundPort<E>, ConnectError)> {
-        let Some(local_endpoint) = bound.endpoint() else {
-            return Err((bound, ConnectError::Unaddressable));
-        };
+        let local_endpoint = bound.endpoint();
 
         let iface = bound.iface().clone();
         // We have to lock `interface` before locking `sockets`

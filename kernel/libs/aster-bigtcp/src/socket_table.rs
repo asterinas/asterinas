@@ -6,7 +6,7 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::net::Ipv4Addr;
 
-use jhash::{jhash_1vals, jhash_3vals};
+use jhash::{jhash_1vals, jhash_3vals, jhash_u32_array};
 use ostd::const_assert;
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 
@@ -103,23 +103,48 @@ const fn hash_local_remote(
     remote_addr: IpAddress,
     remote_port: PortNum,
 ) -> SocketHash {
-    // FIXME: Deal with IPv6 addresses once IPv6 is supported.
-    let IpAddress::Ipv4(local_ipv4) = local_addr;
-    let IpAddress::Ipv4(remote_ipv4) = remote_addr;
-
-    jhash_3vals(
-        local_ipv4.to_bits(),
-        remote_ipv4.to_bits(),
-        (local_port as u32).wrapping_shl(16) | remote_port as u32,
-        HASH_SECRET.wrapping_add(NET_HASHMIX),
-    )
+    match (local_addr, remote_addr) {
+        (IpAddress::Ipv4(local_ipv4), IpAddress::Ipv4(remote_ipv4)) => jhash_3vals(
+            local_ipv4.to_bits(),
+            remote_ipv4.to_bits(),
+            (local_port as u32).wrapping_shl(16) | remote_port as u32,
+            HASH_SECRET.wrapping_add(NET_HASHMIX),
+        ),
+        (IpAddress::Ipv6(local_ipv6), IpAddress::Ipv6(remote_ipv6)) => {
+            let local_bits = local_ipv6.to_bits();
+            let remote_bits = remote_ipv6.to_bits();
+            let hash_keys = &[
+                (local_bits >> 96) as u32,
+                (local_bits >> 64) as u32,
+                (local_bits >> 32) as u32,
+                local_bits as u32,
+                (remote_bits >> 96) as u32,
+                (remote_bits >> 64) as u32,
+                (remote_bits >> 32) as u32,
+                remote_bits as u32,
+                (local_port as u32).wrapping_shl(16) | remote_port as u32,
+            ];
+            jhash_u32_array(hash_keys, HASH_SECRET.wrapping_add(NET_HASHMIX))
+        }
+        _ => panic!("cannot mix IPv4 and IPv6 addresses"),
+    }
 }
 
 const fn hash_addr_port(addr: IpAddress, port: PortNum) -> SocketHash {
-    // FIXME: Deal with IPv6 addresses once IPv6 is supported.
-    let IpAddress::Ipv4(ipv4_addr) = addr;
-
-    jhash_1vals(ipv4_addr.to_bits(), NET_HASHMIX) ^ (port as u32)
+    match addr {
+        IpAddress::Ipv4(ipv4_addr) => jhash_1vals(ipv4_addr.to_bits(), NET_HASHMIX) ^ (port as u32),
+        IpAddress::Ipv6(ipv6_addr) => {
+            let bits = ipv6_addr.to_bits();
+            let hash_keys = &[
+                (bits >> 96) as u32,
+                (bits >> 64) as u32,
+                (bits >> 32) as u32,
+                bits as u32,
+                port as u32,
+            ];
+            jhash_u32_array(hash_keys, NET_HASHMIX)
+        }
+    }
 }
 
 /// The socket table manages TCP and UDP sockets.

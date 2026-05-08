@@ -73,9 +73,7 @@ impl<E: Ext> TcpListener<E> {
         option: &RawTcpOption,
         observer: E::TcpEventObserver,
     ) -> Result<Self, (BoundPort<E>, ListenError)> {
-        let Some(local_endpoint) = bound.endpoint() else {
-            return Err((bound, ListenError::Unaddressable));
-        };
+        let local_endpoint = bound.endpoint();
 
         let iface = bound.iface().clone();
         let mut sockets = iface.common().sockets();
@@ -236,7 +234,7 @@ impl<E: Ext> TcpListenerBg<E> {
         let conn = TcpConnection::new_cyclic(
             self.bound
                 .iface()
-                .bind(BindPortConfig::Backlog(self.bound.port()))
+                .bind(BindPortConfig::new_backlog(self.bound.endpoint()))
                 .unwrap(),
             |weak| {
                 TcpConnectionInner::new(
