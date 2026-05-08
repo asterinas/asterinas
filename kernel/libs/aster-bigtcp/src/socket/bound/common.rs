@@ -92,7 +92,7 @@ impl<T: Inner<E>, E: Ext> Socket<T, E> {
     }
 
     pub fn local_endpoint(&self) -> Option<IpEndpoint> {
-        self.0.bound.endpoint()
+        Some(self.0.bound.endpoint())
     }
 
     pub fn iface(&self) -> &Arc<dyn Iface<E>> {
