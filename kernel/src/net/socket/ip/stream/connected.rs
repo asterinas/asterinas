@@ -72,11 +72,18 @@ impl ConnectedStream {
     pub(super) fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        _flags: SendRecvFlags,
+        flags: SendRecvFlags,
     ) -> Result<(usize, NeedIfacePoll)> {
-        let result = self
-            .tcp_conn
-            .recv(|socket_buffer| writer.write(&mut VmReader::from(&*socket_buffer)));
+        let result = if flags.contains(SendRecvFlags::MSG_PEEK) {
+            let writer_len = writer.sum_lens();
+            self.tcp_conn.peek(
+                |socket_buffer| writer.write(&mut VmReader::from(socket_buffer)),
+                writer_len,
+            )
+        } else {
+            self.tcp_conn
+                .recv(|socket_buffer| writer.write(&mut VmReader::from(&*socket_buffer)))
+        };
 
         match result {
             Ok((recv_bytes, need_poll)) => Ok((recv_bytes.get(), need_poll)),

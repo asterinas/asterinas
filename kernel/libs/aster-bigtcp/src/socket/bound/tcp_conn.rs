@@ -3,6 +3,7 @@
 use alloc::{
     boxed::Box,
     sync::{Arc, Weak},
+    vec,
 };
 use core::{
     num::NonZeroUsize,
@@ -509,6 +510,60 @@ impl<E: Ext> TcpConnection<E> {
             }
 
             need_wrap_continuation = false;
+        };
+
+        let result = NonZeroUsize::new(result).ok_or(IoError::NoProgress)?;
+        let poll_at = socket.poll_at(iface.context_mut());
+        let need_poll = iface.update_next_poll_at_ms(&self.0, poll_at);
+
+        Ok((result, need_poll))
+    }
+
+    /// Peeks some data.
+    ///
+    /// Polling the iface _may_ be required after this method succeeds.
+    pub fn peek<F, CopyErr>(
+        &self,
+        f: F,
+        max_len: usize,
+    ) -> Result<(NonZeroUsize, NeedIfacePoll), IoError<RecvError, CopyErr>>
+    where
+        F: FnOnce(&[u8]) -> Result<usize, (CopyErr, usize)>,
+    {
+        let common = self.iface().common();
+        let mut iface = common.interface();
+
+        let mut socket = self.0.inner.lock();
+
+        if socket.is_recv_shut && socket.recv_queue() == 0 {
+            return Err(IoError::Socket(RecvError::Finished));
+        }
+
+        let recv_len = socket.recv_queue().min(max_len);
+        let result = match socket.peek(recv_len) {
+            Ok(socket_buffer) if socket_buffer.len() == recv_len => f(socket_buffer),
+            Ok(_) => {
+                let mut socket_buffer = vec![0; recv_len];
+                let peeked_len = socket.peek_slice(&mut socket_buffer)?;
+                f(&socket_buffer[..peeked_len])
+            }
+            Err(err) => {
+                if socket.is_rst_closed {
+                    socket.is_rst_closed = false;
+                    return Err(IoError::Socket(RecvError::ConnReset));
+                }
+                return Err(err.into());
+            }
+        };
+
+        let result = match result {
+            Ok(recv_bytes) => recv_bytes,
+            Err((err, recv_bytes)) => {
+                if recv_bytes == 0 {
+                    return Err(IoError::Copy(err));
+                }
+                recv_bytes
+            }
         };
 
         let result = NonZeroUsize::new(result).ok_or(IoError::NoProgress)?;
