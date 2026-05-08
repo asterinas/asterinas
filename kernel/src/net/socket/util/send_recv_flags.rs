@@ -37,7 +37,7 @@ bitflags! {
 
 impl SendRecvFlags {
     fn supported_flags() -> Self {
-        SendRecvFlags::empty()
+        SendRecvFlags::MSG_PEEK
     }
 
     pub fn is_all_supported(&self) -> bool {
