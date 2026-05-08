@@ -19,7 +19,7 @@ impl Connection {
     pub(in crate::net::socket::vsock) fn try_recv(
         &mut self,
         writer: &mut dyn MultiWrite,
-        _flags: SendRecvFlags,
+        flags: SendRecvFlags,
     ) -> Result<usize> {
         // We use a packet-pool approach here so a receive attempt either completes for the chosen
         // packets or leaves the receive queue unchanged.
@@ -50,13 +50,20 @@ impl Connection {
         // Packets can only be received from a `&mut connection`. Therefore, releasing the state
         // lock does not cause race conditions. We need to release the lock in order to copy to
         // userspace.
-        let result = packets.copy_to_userspace(writer);
+        let is_peek = flags.contains(SendRecvFlags::MSG_PEEK);
+        let result = if is_peek {
+            packets.copy_to_userspace_peek(writer)
+        } else {
+            packets.copy_to_userspace(writer)
+        };
         let recv_len = *result.as_ref().unwrap_or(&0);
 
-        self.inner
-            .state
-            .lock()
-            .ungrab_packets_and_finish_recv(&self.inner, packets, recv_len);
+        let mut state = self.inner.state.lock();
+        if is_peek {
+            state.undo_pop_rx_packets(packets);
+        } else {
+            state.ungrab_packets_and_finish_recv(&self.inner, packets, recv_len);
+        }
 
         self.inner.pollee.invalidate();
 
@@ -96,6 +103,29 @@ impl PoppedRxPackets<'_> {
 
         self.packets = &mut [];
         self.read_offset = 0;
+        Ok(total_write_len)
+    }
+
+    fn copy_to_userspace_peek(&self, writer: &mut dyn MultiWrite) -> Result<usize> {
+        let mut read_offset = self.read_offset;
+        let mut total_write_len = 0;
+
+        for packet in self.packets.iter() {
+            let packet = packet.as_ref().unwrap();
+
+            let mut payload = packet.payload();
+            payload.skip(read_offset);
+
+            let write_len = writer.write(&mut payload)?;
+            total_write_len += write_len;
+
+            if payload.has_remain() {
+                return Ok(total_write_len);
+            }
+
+            read_offset = 0;
+        }
+
         Ok(total_write_len)
     }
 
