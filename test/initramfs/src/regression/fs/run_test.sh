@@ -119,6 +119,7 @@ echo "All mount bind file test passed."
 ./procfs/getdents
 ./procfs/mountstats
 ./procfs/pid_mem
+./procfs/proc_fd_open_fifo_after_setid
 ./procfs/tid
 
 ./pseudofs/memfd_access_err
