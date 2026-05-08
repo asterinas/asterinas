@@ -229,10 +229,10 @@ impl UnixStreamSocket {
     fn try_recv(
         &self,
         buf: &mut dyn MultiWrite,
-        _flags: SendRecvFlags,
+        flags: SendRecvFlags,
     ) -> Result<(usize, Vec<ControlMessage>)> {
         match self.state.read().as_ref() {
-            State::Connected(connected) => connected.try_read(buf, self.is_seqpacket),
+            State::Connected(connected) => connected.try_read(buf, self.is_seqpacket, flags),
             State::Init(_) | State::Listen(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is not connected")
             }

@@ -298,6 +298,32 @@ impl AuxiliaryData {
         ctrl_msgs
     }
 
+    /// Generates the control messages without consuming the auxiliary data.
+    pub(super) fn generate_control_cloned(&self, is_pass_cred: bool) -> Vec<ControlMessage> {
+        let mut ctrl_msgs = Vec::new();
+
+        let Self { files, cred } = self;
+
+        if is_pass_cred {
+            let unix_ctrl_msg = UnixControlMessage(Message::Cred(CredMessage {
+                cred: cred
+                    .as_ref()
+                    .map(SocketCred::to_real_c_cred)
+                    .unwrap_or_else(CUserCred::new_overflow),
+            }));
+            ctrl_msgs.push(ControlMessage::Unix(unix_ctrl_msg));
+        }
+
+        if !files.is_empty() {
+            let unix_ctrl_msg = UnixControlMessage(Message::Files(FileMessage {
+                files: files.clone(),
+            }));
+            ctrl_msgs.push(ControlMessage::Unix(unix_ctrl_msg));
+        }
+
+        ctrl_msgs
+    }
+
     /// Returns whether the auxiliary data contains nothing.
     pub(super) fn is_empty(&self) -> bool {
         self.files.is_empty() && self.cred.is_none()

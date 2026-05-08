@@ -14,7 +14,7 @@ use crate::{
         unix::{
             UnixSocketAddr, addr::UnixSocketAddrBound, cred::SocketCred, ctrl_msg::AuxiliaryData,
         },
-        util::{ControlMessage, SockShutdownCmd},
+        util::{ControlMessage, SendRecvFlags, SockShutdownCmd},
     },
     prelude::*,
     process::signal::Pollee,
@@ -117,6 +117,7 @@ impl Connected {
         &self,
         writer: &mut dyn MultiWrite,
         is_seqpacket: bool,
+        flags: SendRecvFlags,
     ) -> Result<(usize, Vec<ControlMessage>)> {
         let is_empty = writer.is_empty();
         if is_empty && !is_seqpacket {
@@ -138,9 +139,12 @@ impl Connected {
 
         // Fast path: There are no auxiliary data to receive.
         if !peer_end.has_aux.load(Ordering::Relaxed) {
-            let read_len = self
-                .inner
-                .read_with(move || reader.read_fallible_with_max_len(writer, no_aux_len))?;
+            let read_len = if flags.contains(SendRecvFlags::MSG_PEEK) {
+                reader.peek_fallible_with_max_len(writer, no_aux_len)?
+            } else {
+                self.inner
+                    .read_with(move || reader.read_fallible_with_max_len(writer, no_aux_len))?
+            };
             let ctrl_msgs = if is_pass_cred {
                 AuxiliaryData::default().generate_control(is_pass_cred)
             } else {
@@ -150,6 +154,25 @@ impl Connected {
         }
 
         let mut all_aux = peer_end.all_aux.lock();
+
+        if flags.contains(SendRecvFlags::MSG_PEEK) {
+            let read_start = reader.head();
+            let default_aux = AuxiliaryData::default();
+            let (message_len, aux_data) = if let Some(front) = all_aux.front() {
+                if front.start == read_start {
+                    ((front.end - read_start).0, &front.data)
+                } else {
+                    ((front.start - read_start).0, &default_aux)
+                }
+            } else {
+                (reader.len(), &default_aux)
+            };
+            let read_len = reader.peek_fallible_with_max_len(writer, message_len)?;
+            let ctrl_msgs = aux_data.generate_control_cloned(is_pass_cred);
+
+            return Ok((read_len, ctrl_msgs));
+        }
+
         let mut aux_prev_data: Option<AuxiliaryData> = None;
         let mut read_tot_len = 0;
 
