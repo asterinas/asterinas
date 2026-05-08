@@ -27,9 +27,9 @@ use crate::{
     prelude::*,
     process::LockedHeap,
     vm::{
+        page_cache::{CachePage, Vmo, VmoCommitError},
         perms::VmPerms,
         vmar::PageFaultInfo,
-        vmo::{CommitFlags, Vmo, VmoCommitError},
     },
 };
 
@@ -483,11 +483,17 @@ impl VmMapping {
                     let (frame, is_readonly) = match self.prepare_page(page_aligned_addr, is_write)
                     {
                         Ok((frame, is_readonly)) => (frame, is_readonly),
-                        Err(VmoCommitError::Err(e)) => return Err(e),
-                        Err(VmoCommitError::NeedIo(index)) => {
+                        Err(err) => {
+                            let Some(index) = err.pending_index() else {
+                                let VmoCommitError::Err(err) = err else {
+                                    unreachable!("non-pending commit error without an error");
+                                };
+                                return Err(err);
+                            };
+
                             drop(cursor);
                             drop(preempt_guard);
-                            self.vmo().unwrap().commit_on(index, CommitFlags::empty())?;
+                            self.vmo().unwrap().commit_on(index)?;
                             continue 'retry;
                         }
                     };
@@ -598,38 +604,45 @@ impl VmMapping {
             let mut cursor = vm_space.cursor_mut(&preempt_guard, &(start_addr..end_addr))?;
 
             let rss_delta_ref = &mut rss_delta;
-            let operate =
-                move |commit_fn: &mut dyn FnMut()
-                    -> core::result::Result<UFrame, VmoCommitError>| {
-                    if let (_, None) = cursor.query().unwrap() {
-                        // We regard all the surrounding pages as accessed, no matter
-                        // if it is really so. Then the hardware won't bother to update
-                        // the accessed bit of the page table on following accesses.
-                        let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
-                        let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
-                        let frame = commit_fn()?;
-                        cursor.map(frame, page_prop);
-                        rss_delta_ref.add(self.rss_type(), 1);
-                    } else {
-                        let next_addr = cursor.virt_addr() + PAGE_SIZE;
-                        if next_addr < end_addr {
-                            let _ = cursor.jump(next_addr);
-                        }
+            let operate = move |commit_fn: &mut dyn FnMut() -> core::result::Result<
+                (usize, CachePage),
+                VmoCommitError,
+            >| {
+                if let (_, None) = cursor.query().unwrap() {
+                    // We regard all the surrounding pages as accessed, no matter
+                    // if it is really so. Then the hardware won't bother to update
+                    // the accessed bit of the page table on following accesses.
+                    let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
+                    let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
+                    let (_, frame) = commit_fn()?;
+                    cursor.map(frame.into(), page_prop);
+                    rss_delta_ref.add(self.rss_type(), 1);
+                } else {
+                    let next_addr = cursor.virt_addr() + PAGE_SIZE;
+                    if next_addr < end_addr {
+                        let _ = cursor.jump(next_addr);
                     }
-                    Ok(())
-                };
+                }
+                Ok(())
+            };
 
             let start_offset = start_addr - self.map_to_addr;
             let end_offset = end_addr - self.map_to_addr;
             match vmo.try_operate_on_range(&(start_offset..end_offset), operate) {
                 Ok(_) => return Ok(()),
-                Err(VmoCommitError::NeedIo(index)) => {
+                Err(err) => {
+                    let Some(index) = err.pending_index() else {
+                        let VmoCommitError::Err(err) = err else {
+                            unreachable!("non-pending commit error without an error");
+                        };
+                        return Err(err);
+                    };
+
                     drop(preempt_guard);
-                    vmo.commit_on(index, CommitFlags::empty())?;
+                    vmo.commit_on(index)?;
                     start_addr = (index * PAGE_SIZE - vmo.offset()) + self.map_to_addr;
                     continue 'retry;
                 }
-                Err(VmoCommitError::Err(e)) => return Err(e),
             }
         }
     }
@@ -882,15 +895,17 @@ impl MappedVmo {
         page_offset: usize,
     ) -> core::result::Result<UFrame, VmoCommitError> {
         debug_assert!(page_offset.is_multiple_of(PAGE_SIZE));
-        self.vmo.try_commit_page(self.offset + page_offset)
+        self.vmo
+            .try_commit_page(self.offset + page_offset)
+            .map(|frame| frame.into())
     }
 
     /// Commits a page at a specific page index.
     ///
     /// This method may involve I/O operations if the VMO needs to fetch
     /// a page from the underlying page cache.
-    pub fn commit_on(&self, page_idx: usize, commit_flags: CommitFlags) -> Result<UFrame> {
-        self.vmo.commit_on(page_idx, commit_flags)
+    pub fn commit_on(&self, page_idx: usize) -> Result<UFrame> {
+        self.vmo.commit_on(page_idx).map(|frame| frame.into())
     }
 
     /// Traverses the indices within a specified range of a VMO sequentially.
@@ -898,7 +913,8 @@ impl MappedVmo {
     /// For each index position, you have the option to commit the page as well as
     /// perform other operations.
     ///
-    /// Once a commit operation needs to perform I/O, it will return a [`VmoCommitError::NeedIo`].
+    /// Once a commit operation needs to perform I/O, it will return a
+    /// [`VmoCommitError::NeedIo`].
     fn try_operate_on_range<F>(
         &self,
         range: &Range<usize>,
@@ -906,7 +922,7 @@ impl MappedVmo {
     ) -> core::result::Result<(), VmoCommitError>
     where
         F: FnMut(
-            &mut dyn FnMut() -> core::result::Result<UFrame, VmoCommitError>,
+            &mut dyn FnMut() -> core::result::Result<(usize, CachePage), VmoCommitError>,
         ) -> core::result::Result<(), VmoCommitError>,
     {
         let range = self.offset + range.start..self.offset + range.end;

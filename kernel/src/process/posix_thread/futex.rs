@@ -12,7 +12,7 @@ use crate::{
     prelude::*,
     process::VmarSnapshot,
     time::wait::ManagedTimeout,
-    vm::{perms::VmPerms, vmar::PageFaultInfo, vmo::Vmo},
+    vm::{page_cache::Vmo, perms::VmPerms, vmar::PageFaultInfo},
 };
 
 type FutexBitSet = u32;

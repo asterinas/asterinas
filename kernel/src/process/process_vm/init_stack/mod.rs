@@ -27,7 +27,6 @@ use crate::{
         page_cache::{Vmo, VmoOptions},
         perms::VmPerms,
         vmar::{VMAR_CAP_ADDR, Vmar, VmarMapOffset},
-        vmo::{Vmo, VmoOptions},
     },
 };
 

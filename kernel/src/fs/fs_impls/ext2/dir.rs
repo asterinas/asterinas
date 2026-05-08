@@ -2,7 +2,10 @@
 
 #![expect(dead_code)]
 
-use super::{inode::MAX_FNAME_LEN, prelude::*};
+use super::{
+    inode::{InodeImpl, MAX_FNAME_LEN},
+    prelude::*,
+};
 
 /// The data structure in a directory's data block. It is stored in a linked list.
 ///
@@ -257,7 +260,7 @@ impl<'a> DirEntryReader<'a> {
         let name_buf = &mut self.name_buf.as_mut().unwrap()[..name_len];
 
         let offset = entry_item.offset + DirEntry::HEADER_LEN;
-        self.page_cache.pages().read_bytes(offset, name_buf)?;
+        self.page_cache.read_bytes(offset, name_buf)?;
         Ok(name_buf)
     }
 }
@@ -265,13 +268,12 @@ impl<'a> DirEntryReader<'a> {
 impl DirEntryIter<'_> {
     /// Reads a `DirEntryItem` at the current offset.
     fn read_next_dir_entry(&mut self) -> Option<DirEntryItem> {
-        if self.offset >= self.page_cache.pages().size() {
+        if self.offset >= self.page_cache.size() {
             return None;
         };
 
         let header = self
             .page_cache
-            .pages()
             .read_val::<DirEntryHeader>(self.offset)
             .ok()?;
 
@@ -375,15 +377,21 @@ impl DirEntryItem {
 /// A writer for modifying `DirEntry` of the page cache.
 pub struct DirEntryWriter<'a> {
     page_cache: &'a PageCache,
+    inode_impl: &'a mut InodeImpl,
     offset: usize,
     name_buf: Option<[u8; MAX_FNAME_LEN]>,
 }
 
 impl<'a> DirEntryWriter<'a> {
     /// Constructs a writer with the given page cache and offset.
-    pub(super) fn new(page_cache: &'a PageCache, from_offset: usize) -> Self {
+    pub(super) fn new(
+        page_cache: &'a PageCache,
+        inode_impl: &'a mut InodeImpl,
+        from_offset: usize,
+    ) -> Self {
         Self {
             page_cache,
+            inode_impl,
             offset: from_offset,
             name_buf: None,
         }
@@ -391,9 +399,8 @@ impl<'a> DirEntryWriter<'a> {
 
     /// Writes a `DirEntry` at the current offset. The name is written after the header.
     pub fn write_entry(&mut self, header: &DirEntryHeader, name: &str) -> Result<()> {
-        self.page_cache.pages().write_val(self.offset, header)?;
+        self.page_cache.write_val(self.offset, header)?;
         self.page_cache
-            .pages()
             .write_bytes(self.offset + DirEntry::HEADER_LEN, name.as_bytes())?;
 
         self.offset += header.record_len as usize;
@@ -402,16 +409,17 @@ impl<'a> DirEntryWriter<'a> {
 
     /// Writes the header of a `DirEntry` at the current offset.
     pub fn write_header_only(&mut self, header: &DirEntryHeader) -> Result<()> {
-        self.page_cache.pages().write_val(self.offset, header)?;
+        self.page_cache.write_val(self.offset, header)?;
         self.offset += header.record_len as usize;
         Ok(())
     }
 
     /// Initializes two special `DirEntry`s ("." and "..") with the given inode numbers.
     pub fn init_dir(&mut self, self_ino: u32, parent_ino: u32) -> Result<()> {
-        debug_assert!(self.page_cache.pages().size() == 0 && self.offset == 0);
+        let old_size = self.page_cache.size();
+        debug_assert!(old_size == 0 && self.offset == 0);
 
-        self.page_cache.pages().resize(BLOCK_SIZE)?;
+        self.page_cache.resize(BLOCK_SIZE, old_size)?;
 
         let self_header = DirEntryHeader::new(self_ino, InodeType::Dir, 1);
         self.write_entry(&self_header, ".")?;
@@ -480,9 +488,10 @@ impl<'a> DirEntryWriter<'a> {
 
     fn append_entry_in_the_end(&mut self, mut header: DirEntryHeader, name: &str) -> Result<()> {
         // Resize and append it at the new block.
-        let old_size = self.page_cache.pages().size();
+        let old_size = self.page_cache.size();
         let new_size = old_size + BLOCK_SIZE;
-        self.page_cache.resize(new_size)?;
+        self.inode_impl.resize(new_size)?;
+        self.page_cache.resize(new_size, old_size)?;
         header.record_len = BLOCK_SIZE as _;
 
         self.offset = old_size;
@@ -512,8 +521,10 @@ impl<'a> DirEntryWriter<'a> {
         let pre_offset = pre_entry_item.offset;
         if is_last_entry {
             // Shrink the size.
+            let old_size = self.page_cache.size();
             let new_size = pre_offset.align_up(BLOCK_SIZE);
-            self.page_cache.resize(new_size)?;
+            self.page_cache.resize(new_size, old_size)?;
+            self.inode_impl.resize(new_size)?;
             pre_entry_item.set_record_len(new_size - pre_offset);
             self.offset = pre_offset;
             self.write_header_only(&pre_entry_item.header)?;
@@ -566,7 +577,7 @@ impl<'a> DirEntryWriter<'a> {
         let name_buf = &mut self.name_buf.as_mut().unwrap()[..name_len];
 
         let offset = item.offset + DirEntry::HEADER_LEN;
-        self.page_cache.pages().read_bytes(offset, name_buf)?;
+        self.page_cache.read_bytes(offset, name_buf)?;
 
         Ok(name_buf)
     }

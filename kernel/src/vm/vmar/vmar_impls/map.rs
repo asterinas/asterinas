@@ -10,7 +10,7 @@ use crate::{
         vfs::path::Path,
     },
     prelude::*,
-    vm::{perms::VmPerms, vmo::Vmo},
+    vm::{page_cache::Vmo, perms::VmPerms},
 };
 
 impl Vmar {
@@ -23,6 +23,7 @@ impl Vmar {
     ///
     /// use crate::{
     ///     context::current_userspace,
+    ///     vm::page_cache::VmoOptions,
     ///     vm::{perms::VmPerms, vmar::VmarMapOffset, vmo::VmoOptions},
     /// };
     ///
@@ -326,7 +327,10 @@ impl<'a> VmarMapOptions<'a> {
         let (mapped_mem, io_mem) = match mappable {
             Some(Mappable::Vmo(vmo)) => {
                 if let Some(ref path) = path {
-                    debug_assert!(Arc::ptr_eq(&vmo, &path.inode().page_cache().unwrap()));
+                    debug_assert!(Arc::ptr_eq(
+                        &vmo,
+                        &path.inode().page_cache().unwrap().as_vmo().clone()
+                    ));
                 }
 
                 let is_writable_tracked = if let Some(ref path) = path
