@@ -20,7 +20,7 @@ use takeable::Takeable;
 use util::{Retrans, TcpOptionSet};
 
 use super::{
-    addr::UNSPECIFIED_LOCAL_ENDPOINT,
+    addr::IpAddressFamily,
     options::{IpOptionSet, SetIpLevelOption},
 };
 use crate::{
@@ -101,8 +101,8 @@ impl OptionSet {
 }
 
 impl StreamSocket {
-    pub fn new(is_nonblocking: bool) -> Arc<Self> {
-        let init_stream = InitStream::new();
+    pub fn new(is_nonblocking: bool, family: IpAddressFamily) -> Arc<Self> {
+        let init_stream = InitStream::new(family);
         Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Init(init_stream))),
             options: RwLock::new(OptionSet::new()),
@@ -518,7 +518,7 @@ impl Socket for StreamSocket {
         let local_endpoint = match state.as_ref() {
             State::Init(init_stream) => init_stream
                 .local_endpoint()
-                .unwrap_or(UNSPECIFIED_LOCAL_ENDPOINT),
+                .unwrap_or_else(|| init_stream.family().unspecified_endpoint()),
             State::Connecting(connecting_stream) => connecting_stream.local_endpoint(),
             State::Listen(listen_stream) => listen_stream.local_endpoint(),
             State::Connected(connected_stream) => connected_stream.local_endpoint(),
