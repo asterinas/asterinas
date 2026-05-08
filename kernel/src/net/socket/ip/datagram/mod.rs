@@ -74,12 +74,15 @@ impl DatagramSocket {
         &self,
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
-    ) -> Result<(usize, SocketAddr)> {
+    ) -> Result<(usize, SocketAddr, SendRecvFlags)> {
+        let mut output_flags = SendRecvFlags::empty();
         let recv_bytes = self
             .inner
             .read()
-            .try_recv(writer, flags)
-            .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()))?;
+            .try_recv(writer, flags, &mut output_flags)
+            .map(|(recv_bytes, remote_endpoint)| {
+                (recv_bytes, remote_endpoint.into(), output_flags)
+            })?;
         self.pollee.invalidate();
 
         Ok(recv_bytes)
@@ -192,6 +195,7 @@ impl Socket for DatagramSocket {
         let MessageHeader {
             addr,
             control_messages,
+            ..
         } = message_header;
 
         let endpoint = match addr {
@@ -228,12 +232,13 @@ impl Socket for DatagramSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, peer_addr) =
+        let (received_bytes, peer_addr, output_flags) =
             self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
         // TODO: Receive control message
 
-        let message_header = MessageHeader::new(Some(peer_addr), Vec::new());
+        let message_header =
+            MessageHeader::new_with_flags(Some(peer_addr), Vec::new(), output_flags);
 
         Ok((received_bytes, message_header))
     }

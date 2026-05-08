@@ -2,6 +2,7 @@
 
 use aster_bigtcp::{
     errors::udp::{RecvError, SendError},
+    socket::ReceiveBehavior,
     wire::IpEndpoint,
 };
 
@@ -9,7 +10,7 @@ use crate::{
     events::IoEvents,
     net::{
         iface::{BoundPort, Iface, UdpSocket},
-        socket::util::{SendRecvFlags, datagram_common},
+        socket::util::{SendRecvFlags, datagram_common, recv_output_flags, recv_result_len},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -56,28 +57,30 @@ impl datagram_common::Bound for BoundDatagram {
         &self,
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
+        output_flags: &mut SendRecvFlags,
     ) -> Result<(usize, Self::Endpoint)> {
-        let result = if flags.contains(SendRecvFlags::MSG_PEEK) {
-            self.bound_socket.peek(|packet, udp_metadata| {
-                let copied_res = writer
-                    .write(&mut VmReader::from(packet))
-                    .map_err(Into::into);
-                let endpoint = udp_metadata.endpoint;
-                (copied_res, endpoint)
-            })
+        let receive_behavior = if flags.contains(SendRecvFlags::MSG_PEEK) {
+            ReceiveBehavior::Peek
         } else {
-            self.bound_socket.recv(|packet, udp_metadata| {
+            ReceiveBehavior::Normal
+        };
+        let result = self
+            .bound_socket
+            .recv(receive_behavior, |packet, udp_metadata| {
+                let message_len = packet.len();
                 let copied_res = writer
                     .write(&mut VmReader::from(packet))
                     .map_err(Into::into);
                 let endpoint = udp_metadata.endpoint;
-                (copied_res, endpoint)
-            })
-        };
+                (copied_res, endpoint, message_len)
+            });
 
         match result {
-            Ok((Ok(res), endpoint)) => Ok((res, endpoint)),
-            Ok((Err(e), _)) => Err(e),
+            Ok((Ok(copied_len), endpoint, message_len)) => {
+                *output_flags = recv_output_flags(copied_len, message_len);
+                Ok((recv_result_len(flags, copied_len, message_len), endpoint))
+            }
+            Ok((Err(e), _, _)) => Err(e),
             Err(RecvError::Exhausted) => {
                 return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
             }
