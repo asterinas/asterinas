@@ -43,6 +43,7 @@ pub trait Bound {
         &self,
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
+        output_flags: &mut SendRecvFlags,
     ) -> Result<(usize, Self::Endpoint)>;
     fn try_send(
         &self,
@@ -137,12 +138,13 @@ where
         &self,
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
+        output_flags: &mut SendRecvFlags,
     ) -> Result<(usize, UnboundSocket::Endpoint)> {
         match self {
             Inner::Unbound(_) => {
                 return_errno_with_message!(Errno::EAGAIN, "the socket is not bound");
             }
-            Inner::Bound(bound_datagram) => bound_datagram.try_recv(writer, flags),
+            Inner::Bound(bound_datagram) => bound_datagram.try_recv(writer, flags, output_flags),
         }
     }
 

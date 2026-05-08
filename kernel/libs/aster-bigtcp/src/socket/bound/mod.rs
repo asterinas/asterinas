@@ -5,7 +5,7 @@ mod tcp_conn;
 mod tcp_listen;
 mod udp;
 
-pub use common::NeedIfacePoll;
+pub use common::{NeedIfacePoll, ReceiveBehavior};
 pub use tcp_conn::{ConnectState, RawTcpSocketExt, TcpConnection};
 pub(crate) use tcp_conn::{TcpConnectionBg, TcpProcessResult};
 pub use tcp_listen::TcpListener;
