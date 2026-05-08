@@ -100,30 +100,7 @@ impl<R: Deref<Target = RingBuffer<u8>>> ConsumerU8Ext for Consumer<u8, R> {
         writer: &mut dyn MultiWrite,
         max_len: usize,
     ) -> Result<usize> {
-        let len = self.len().min(max_len);
-
-        let head = self.head();
-        let offset = head.0 & (self.capacity() - 1);
-
-        let read_len = if offset + len > self.capacity() {
-            // Read from two separate parts
-            let mut read_len = 0;
-
-            let mut reader = self.segment().reader();
-            reader.skip(offset).limit(self.capacity() - offset);
-            read_len += writer.write(&mut reader)?;
-
-            let mut reader = self.segment().reader();
-            reader.limit(len - (self.capacity() - offset));
-            read_len += writer.write(&mut reader)?;
-
-            read_len
-        } else {
-            let mut reader = self.segment().reader();
-            reader.skip(offset).limit(len);
-            writer.write(&mut reader)?
-        };
-
+        let read_len = copy_consumer_to_writer(self, writer, max_len)?;
         self.commit_read(read_len);
         Ok(read_len)
     }
@@ -133,28 +110,36 @@ impl<R: Deref<Target = RingBuffer<u8>>> ConsumerU8Ext for Consumer<u8, R> {
         writer: &mut dyn MultiWrite,
         max_len: usize,
     ) -> Result<usize> {
-        let len = self.len().min(max_len);
+        copy_consumer_to_writer(self, writer, max_len)
+    }
+}
 
-        let head = self.head();
-        let offset = head.0 & (self.capacity() - 1);
+fn copy_consumer_to_writer<R: Deref<Target = RingBuffer<u8>>>(
+    consumer: &Consumer<u8, R>,
+    writer: &mut dyn MultiWrite,
+    max_len: usize,
+) -> Result<usize> {
+    let len = consumer.len().min(max_len);
 
-        if offset + len > self.capacity() {
-            let mut read_len = 0;
+    let head = consumer.head();
+    let offset = head.0 & (consumer.capacity() - 1);
 
-            let mut reader = self.segment().reader();
-            reader.skip(offset).limit(self.capacity() - offset);
-            read_len += writer.write(&mut reader)?;
+    if offset + len > consumer.capacity() {
+        let mut read_len = 0;
 
-            let mut reader = self.segment().reader();
-            reader.limit(len - (self.capacity() - offset));
-            read_len += writer.write(&mut reader)?;
+        let mut reader = consumer.segment().reader();
+        reader.skip(offset).limit(consumer.capacity() - offset);
+        read_len += writer.write(&mut reader)?;
 
-            Ok(read_len)
-        } else {
-            let mut reader = self.segment().reader();
-            reader.skip(offset).limit(len);
-            Ok(writer.write(&mut reader)?)
-        }
+        let mut reader = consumer.segment().reader();
+        reader.limit(len - (consumer.capacity() - offset));
+        read_len += writer.write(&mut reader)?;
+
+        Ok(read_len)
+    } else {
+        let mut reader = consumer.segment().reader();
+        reader.skip(offset).limit(len);
+        Ok(writer.write(&mut reader)?)
     }
 }
 
