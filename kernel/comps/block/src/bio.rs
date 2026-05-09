@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::boxed::Box;
 use core::sync::atomic::AtomicU64;
 
 use align_ext::AlignExt;
@@ -30,18 +31,24 @@ use crate::{BLOCK_SIZE, SECTOR_SIZE, prelude::*};
 #[derive(Debug)]
 pub struct Bio(Arc<BioInner>);
 
+/// The completion function type for BIO operations.
+///
+/// The function receives the final `BioStatus` of the I/O operation.
+pub type BioCompleteFn = Box<dyn FnOnce(BioStatus) + Send>;
+
 impl Bio {
     /// Constructs a new `Bio`.
     ///
     /// The `type_` describes the type of the I/O.
     /// The `start_sid` is the starting sector id on the device.
     /// The `segments` describes the memory segments.
-    /// The `complete_fn` is the optional callback function.
+    /// The `complete_fn` is the optional callback function that will be invoked
+    /// when the I/O is completed, receiving the final `BioStatus`.
     pub fn new(
         type_: BioType,
         start_sid: Sid,
         segments: Vec<BioSegment>,
-        complete_fn: Option<fn(&SubmittedBio)>,
+        complete_fn: Option<BioCompleteFn>,
     ) -> Self {
         let nsectors = segments
             .iter()
@@ -319,7 +326,7 @@ struct BioInner {
     /// The memory segments in this `Bio`
     segments: Vec<BioSegment>,
     /// The I/O completion method
-    complete_fn: Option<fn(&SubmittedBio)>,
+    complete_fn: Option<BioCompleteFn>,
     /// The I/O status
     status: AtomicU32,
     /// The wait queue for I/O completion
