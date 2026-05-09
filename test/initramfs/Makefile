@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-OSDK_TARGET_ARCH ?= x86_64
+TARGET_ARCH ?= x86_64
 SMP ?= 1
 VERBOSE ?= 1
 ENABLE_CONFORMANCE_TEST ?= false
@@ -46,7 +46,7 @@ endif
 all: build
 
 .PHONY: build
-ifeq ($(OSDK_TARGET_ARCH), loongarch64)
+ifeq ($(TARGET_ARCH), loongarch64)
 build: $(EXT2_IMAGE) $(EXFAT_IMAGE)
 	@echo "For loongarch, we generate a fake initramfs to successfully test or build."
 	@touch $(INITRAMFS_IMAGE)
@@ -58,7 +58,7 @@ endif
 $(INITRAMFS_IMAGE): $(INITRAMFS)
 	@nix-build \
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
-		--argstr target $(OSDK_TARGET_ARCH) \
+		--argstr target $(TARGET_ARCH) \
 		--arg enableBenchmarkTest $(ENABLE_BENCHMARK_TEST) \
 		--arg enableConformanceTest $(ENABLE_CONFORMANCE_TEST) \
 		--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
@@ -75,7 +75,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 $(INITRAMFS):
 	@nix-build \
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
-		--argstr target $(OSDK_TARGET_ARCH) \
+		--argstr target $(TARGET_ARCH) \
 		--arg enableBenchmarkTest $(ENABLE_BENCHMARK_TEST) \
 		--arg enableConformanceTest $(ENABLE_CONFORMANCE_TEST) \
 		--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \

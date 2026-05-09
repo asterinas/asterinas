@@ -63,9 +63,9 @@ entry format.
 The test suite supports building for multiple architectures, including `x86_64` and `riscv64`. You can specify the desired architecture by running:
 
 ```bash
-make kernel OSDK_TARGET_ARCH=x86_64
+make kernel TARGET_ARCH=x86_64
 # or
-make kernel OSDK_TARGET_ARCH=riscv64
+make kernel TARGET_ARCH=riscv64
 ```
 
 The build artifacts (initramfs) can be found in the `test/initramfs/build` directory after the compilation.
