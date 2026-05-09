@@ -3,7 +3,7 @@
 # =========================== Makefile options. ===============================
 
 # Global build options.
-OSDK_TARGET_ARCH ?= x86_64
+TARGET_ARCH ?= x86_64
 BENCHMARK ?= none
 BOOT_METHOD ?= grub-rescue-iso
 BOOT_PROTOCOL ?= multiboot2
@@ -88,12 +88,14 @@ DEV_TRUSTED_PUBLIC_KEY ?= aster-nixos-dev.cachix.org-1:xrCbE2flfliFTQCY/2HeJoT2t
 
 # ========================= End of Makefile options. ==========================
 
+export OSDK_TARGET_ARCH=$(TARGET_ARCH)
+
 SHELL := /bin/bash
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
 # Common arguments for `cargo osdk` `build`, `run` and `test` commands.
-CARGO_OSDK_COMMON_ARGS := --target-arch=$(OSDK_TARGET_ARCH)
+CARGO_OSDK_COMMON_ARGS :=
 # The build arguments also apply to the `cargo osdk run` command.
 CARGO_OSDK_BUILD_ARGS := --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="console=$(CONSOLE)"
@@ -122,7 +124,7 @@ CARGO_OSDK_COMMON_ARGS += --profile release-lto
 OSTD_TASK_STACK_SIZE_IN_PAGES = 8
 else ifeq ($(RELEASE), 1)
 CARGO_OSDK_COMMON_ARGS += --release
-	ifeq ($(OSDK_TARGET_ARCH), riscv64)
+	ifeq ($(TARGET_ARCH), riscv64)
 	# FIXME: Unwinding in RISC-V seems to cost more stack space, so we increase
 	# the stack size for it. This may need further investigation.
 	# See https://github.com/asterinas/asterinas/pull/2383#discussion_r2307673156
@@ -151,9 +153,9 @@ BOOT_METHOD = qemu-direct
 endif
 
 ifeq ($(SCHEME), "")
-	ifeq ($(OSDK_TARGET_ARCH), riscv64)
+	ifeq ($(TARGET_ARCH), riscv64)
 	SCHEME = riscv
-	else ifeq ($(OSDK_TARGET_ARCH), loongarch64)
+	else ifeq ($(TARGET_ARCH), loongarch64)
 	SCHEME = loongarch
 	endif
 endif
@@ -188,7 +190,7 @@ CARGO_OSDK_COMMON_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
 endif
 
 ifeq ($(ENABLE_KVM), 1)
-	ifeq ($(OSDK_TARGET_ARCH), x86_64)
+	ifeq ($(TARGET_ARCH), x86_64)
 	CARGO_OSDK_COMMON_ARGS += --qemu-args="-accel kvm"
 	endif
 endif
@@ -381,7 +383,7 @@ docs: $(CARGO_OSDK)
 	@# Include --document-private-items to fully check internal documentation.
 	@RUSTDOCFLAGS="-Dwarnings --document-private-items -Arustdoc::private_intra_doc_links" \
 		cargo osdk doc -p aster-kernel --no-deps
-	@if [ "$(OSDK_TARGET_ARCH)" = "x86_64" ]; then \
+	@if [ "$(TARGET_ARCH)" = "x86_64" ]; then \
 		cd ostd/libs/linux-bzimage/setup && RUSTDOCFLAGS="-Dwarnings" cargo osdk doc --no-deps; \
 	fi
 
@@ -415,7 +417,7 @@ check: $(CARGO_OSDK)
 	done
 	@
 	@# Check compilation of the Rust code
-	@OSDK_TARGET_ARCH="$(OSDK_TARGET_ARCH)" ./tools/clippy_check.sh workspace
+	@./tools/clippy_check.sh workspace
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)
 	@$(MAKE) --no-print-directory -C test/initramfs check
