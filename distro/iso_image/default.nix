@@ -1,9 +1,10 @@
 { pkgs ? import <nixpkgs> { }, autoInstall ? false, extra-substituters ? ""
 , config-file-name ? "configuration.nix", extra-trusted-public-keys ? ""
-, version ? "", ... }:
+, target_platform ? "x86_64-linux", version ? "", ... }:
 let
   installer = pkgs.callPackage ../aster_nixos_installer {
-    inherit extra-substituters extra-trusted-public-keys config-file-name;
+    inherit extra-substituters extra-trusted-public-keys config-file-name
+      target_platform;
   };
   configuration = {
     imports = [

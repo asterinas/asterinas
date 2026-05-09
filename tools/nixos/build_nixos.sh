@@ -4,16 +4,21 @@
 
 set -e
 
+TARGET_ARCH=${TARGET_ARCH:-x86_64}
+# Accept config file name as parameter, default to "configuration.nix"
+CONFIG_FILE_NAME=${1:-"configuration.nix"}
+
 SCRIPT_DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
 ASTERINAS_DIR=$(realpath ${SCRIPT_DIR}/../..)
 ASTER_IMAGE_PATH=${ASTERINAS_DIR}/target/nixos/asterinas.img
 DISTRO_DIR=$(realpath ${ASTERINAS_DIR}/distro)
-# Accept config file name as parameter, default to "configuration.nix"
-CONFIG_FILE_NAME=${1:-"configuration.nix"}
 CONFIG_PATH=${DISTRO_DIR}/etc_nixos/${CONFIG_FILE_NAME}
+
+NIX_SYSTEM=$("${SCRIPT_DIR}/print_target_nix_system.sh" "${TARGET_ARCH}") || exit 1
 
 pushd $DISTRO_DIR
 nix-build aster_nixos_installer/default.nix \
+    --argstr target_platform "${NIX_SYSTEM}" \
     --argstr disable-systemd "${NIXOS_DISABLE_SYSTEMD}" \
     --argstr stage-2-hook "${NIXOS_STAGE_2_INIT}" \
     --argstr log-level "${LOG_LEVEL}" \
