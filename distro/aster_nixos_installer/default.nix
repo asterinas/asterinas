@@ -1,6 +1,7 @@
 { disable-systemd ? "false", stage-2-hook ? "/bin/sh -l", log-level ? "error"
 , console ? "hvc0", extra-substituters ? "", extra-trusted-public-keys ? ""
-, config-file-name ? "configuration.nix", pkgs ? import <nixpkgs> { } }:
+, config-file-name ? "configuration.nix", target_platform ? "x86_64-linux"
+, pkgs ? import <nixpkgs> { } }:
 let
   aster-kernel = builtins.path {
     name = "aster-kernel-osdk-bin";
@@ -16,6 +17,7 @@ let
       aster-stage-2-hook = stage-2-hook;
       aster-log-level = log-level;
       aster-console = console;
+      aster-target-platform = target_platform;
       aster-substituters = extra-substituters;
       aster-trusted-public-keys = extra-trusted-public-keys;
     };
@@ -25,6 +27,7 @@ let
     replacements = {
       aster-configuration = aster_configuration;
       aster-etc-nixos = etc-nixos;
+      aster-target-platform = target_platform;
       aster-substituters = extra-substituters;
       aster-trusted-public-keys = extra-trusted-public-keys;
     };

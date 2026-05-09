@@ -18,22 +18,28 @@ if [ "$#" -ne 1 ]; then
 fi
 
 MODE=$1
+TARGET_ARCH=${TARGET_ARCH:-x86_64}
 SCRIPT_DIR=$(dirname "$0")
 ASTERINAS_DIR=$(realpath "${SCRIPT_DIR}/../..")
+
+# tools/qemu_args.sh currently emits x86_64-specific arguments.
+# Reject other architectures to avoid invoking non-x86 QEMU with incompatible args.
+if [ "${TARGET_ARCH}" != "x86_64" ]; then
+    echo "Error: tools/nixos/run.sh currently supports only TARGET_ARCH=x86_64; got ${TARGET_ARCH}" >&2
+    exit 1
+fi
 
 # Change to Asterinas root directory to ensure all scripts run from the correct location.
 cd "${ASTERINAS_DIR}"
 
-# Base QEMU arguments
-BASE_QEMU_ARGS="qemu-system-x86_64 \
-    -bios /root/ovmf/release/OVMF.fd \
-"
+# Get base QEMU arguments from qemu_args.sh script
+QEMU_ARGS=$(${ASTERINAS_DIR}/tools/qemu_args.sh common 2>/dev/null)
 
-# Mode-specific QEMU arguments
+# Add mode-specific disk and device arguments
 case "$MODE" in
     nixos)
         NIXOS_DIR="${ASTERINAS_DIR}/target/nixos"
-        QEMU_ARGS="${BASE_QEMU_ARGS} \
+        QEMU_ARGS="${QEMU_ARGS} \
             -drive if=none,format=raw,id=u0,file=${NIXOS_DIR}/asterinas.img \
             -device virtio-blk-pci,drive=u0,disable-legacy=on,disable-modern=off \
         "
@@ -53,7 +59,7 @@ case "$MODE" in
         dd if=/dev/zero of="${ASTER_IMAGE_PATH}" bs=1M count=${NIXOS_DISK_SIZE_IN_MB} status=none
         echo "Image created successfully!"
 
-        QEMU_ARGS="${BASE_QEMU_ARGS} \
+        QEMU_ARGS="${QEMU_ARGS} \
             -cdrom ${ISO_IMAGE_PATH} -boot d \
             -drive if=none,format=raw,id=u0,file=${ASTER_IMAGE_PATH} \
             -device virtio-blk-pci,drive=u0,disable-legacy=on,disable-modern=off \
@@ -68,11 +74,7 @@ if [ "${ENABLE_KVM}" = "1" ]; then
     QEMU_ARGS="${QEMU_ARGS} -accel kvm"
 fi
 
-COMMON_QEMU_ARGS=$(${ASTERINAS_DIR}/tools/qemu_args.sh common 2>/dev/null)
-QEMU_ARGS="
-    ${QEMU_ARGS} \
-    ${COMMON_QEMU_ARGS} \
-"
+QEMU_BIN=${QEMU_BIN:-qemu-system-${TARGET_ARCH}}
 
 # The kernel uses a specific value to signal a successful shutdown via the
 # isa-debug-exit device.
@@ -83,7 +85,7 @@ QEMU_SUCCESS_EXIT_CODE=$(((KERNEL_SUCCESS_EXIT_CODE << 1) | 1))
 
 # Execute QEMU
 # shellcheck disable=SC2086
-${QEMU_ARGS} || exit_code=$?
+${QEMU_BIN} ${QEMU_ARGS} || exit_code=$?
 exit_code=${exit_code:-0}
 
 # Check if the execution was successful:

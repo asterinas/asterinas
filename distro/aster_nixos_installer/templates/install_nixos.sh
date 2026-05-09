@@ -136,6 +136,8 @@ COMMON_NIX_ARGS=(
     --option extra-trusted-public-keys "@aster-trusted-public-keys@"
 )
 
+NIX_SYSTEM="@aster-target-platform@"
+
 # Pre-build the NixOS system closure on the host
 # so that the result is cached in the host's Nix store.
 # Without this, nixos-install would build the system inside the (possibly empty) target image,
@@ -143,6 +145,8 @@ COMMON_NIX_ARGS=(
 #
 # See: https://www.mankier.com/8/nixos-install#--system
 SYSTEM_CLOSURE=$(nix-build '<nixpkgs/nixos>' -A system \
+    --option extra-platforms "${NIX_SYSTEM}" \
+    --argstr system "${NIX_SYSTEM}" \
     -I "nixos-config=${BUILD_DIR}/etc/nixos/configuration.nix" \
     "${COMMON_NIX_ARGS[@]}" \
     --no-out-link)
