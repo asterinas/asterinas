@@ -63,8 +63,8 @@ if [ "$1" = "riscv" ]; then
     QEMU_ARGS="\
         -cpu rv64,svpbmt=true \
         -machine virt \
-        -m ${MEM-:8G} \
-        -smp ${SMP-:1} \
+        -m ${MEM:-8G} \
+        -smp ${SMP:-1} \
         --no-reboot \
         -nographic \
         -display none \
