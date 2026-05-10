@@ -27,8 +27,14 @@ macro_rules! __log_prefix {
 
 mod aster_logger;
 mod console;
+mod klog;
 
 pub use console::_print;
+pub use klog::{
+    LinuxConsoleLogLevel, append_log, console_level, console_off, console_on, console_set_level,
+    dmesg_restrict_get, dmesg_restrict_set, init_klog, klog_capacity, klog_read, klog_read_all,
+    klog_size_unread, klog_wait_nonempty, mark_clear, read_all_requires_cap,
+};
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {

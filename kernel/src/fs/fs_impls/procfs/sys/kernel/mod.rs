@@ -6,7 +6,8 @@ use crate::{
         procfs::{
             ProcDir,
             sys::kernel::{
-                cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps, yama::YamaDirOps,
+                cap_last_cap::CapLastCapFileOps, dmesg_restrict::DmesgRestrictFileOps,
+                pid_max::PidMaxFileOps, yama::YamaDirOps,
             },
             template::{
                 DirOps, ReaddirEntry, StaticDirEntry, listed_entries_from_table,
@@ -19,6 +20,7 @@ use crate::{
 };
 
 mod cap_last_cap;
+mod dmesg_restrict;
 mod pid_max;
 mod yama;
 
@@ -39,6 +41,11 @@ impl KernelDirOps {
             "cap_last_cap",
             InodeType::File,
             CapLastCapFileOps::new_inode,
+        ),
+        (
+            "dmesg_restrict",
+            InodeType::File,
+            DmesgRestrictFileOps::new_inode,
         ),
         ("pid_max", InodeType::File, PidMaxFileOps::new_inode),
         ("yama", InodeType::Dir, YamaDirOps::new_inode),

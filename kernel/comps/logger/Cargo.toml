@@ -10,6 +10,7 @@ aster-console.workspace = true
 component.workspace = true
 ostd.workspace = true
 owo-colors = { workspace = true, optional = true }
+ring-buffer.workspace = true
 
 [features]
 default = ["log_color"]

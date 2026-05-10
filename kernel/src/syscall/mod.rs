@@ -172,6 +172,7 @@ mod statx;
 mod symlink;
 mod sync;
 mod sysinfo;
+pub(crate) mod syslog;
 mod tgkill;
 mod time;
 mod timer_create;
