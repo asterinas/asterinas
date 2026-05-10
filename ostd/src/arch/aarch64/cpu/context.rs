@@ -104,6 +104,14 @@ impl UserContext {
     }
 
     /// Activates the thread-local storage pointer for the current task.
+    ///
+    /// On AArch64, this writes the TPIDR_EL0 system register directly.
+    /// Unlike x86 (which must write FS base via MSR), this takes effect immediately
+    /// and user-space can use the TLS pointer right away.
+    ///
+    /// Note: This is called at task entry to set the initial TLS value from
+    /// `UserContext`. Subsequent context switches use `ThreadLocal.tls_value`
+    /// instead — see `kernel/src/process/posix_thread/thread_local.rs`.
     pub fn activate_tls_pointer(&self) {
         // SAFETY: Writing TPIDR_EL0 only affects the current thread's user-space
         // TLS pointer. It will be restored by the scheduler on next context switch.

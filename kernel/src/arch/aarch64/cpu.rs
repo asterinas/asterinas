@@ -143,6 +143,30 @@ impl SigContext {
     }
 }
 
+/// Reads the TPIDR_EL0 register (user-space TLS pointer).
+///
+/// This is used during context switching to save the current thread's TLS value
+/// from the hardware register.
+#[expect(unsafe_code)]
+pub fn read_tpidr_el0() -> usize {
+    let val: usize;
+    // SAFETY: Reading TPIDR_EL0 is safe and doesn't affect kernel state.
+    unsafe { core::arch::asm!("mrs {0}, tpidr_el0", out(reg) val) };
+    val
+}
+
+/// Writes the TPIDR_EL0 register (user-space TLS pointer).
+///
+/// This is used during context switching to restore the next thread's TLS value
+/// into the hardware register. On AArch64, EL0 can also write TPIDR_EL0 directly
+/// via `msr` instruction — the kernel does not intercept or override user-space writes.
+#[expect(unsafe_code)]
+pub fn write_tpidr_el0(val: usize) {
+    // SAFETY: Writing TPIDR_EL0 is safe. It only affects the current thread's
+    // user-space TLS pointer and won't affect kernel code.
+    unsafe { core::arch::asm!("msr tpidr_el0, {0}", in(reg) val) };
+}
+
 impl TryFrom<&CpuException> for PageFaultInfo {
     type Error = ();
 

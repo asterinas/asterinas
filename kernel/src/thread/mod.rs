@@ -34,6 +34,8 @@ fn pre_schedule_handler() {
     };
 
     thread_local.fpu().before_schedule();
+    #[cfg(target_arch = "aarch64")]
+    thread_local.tls().before_schedule();
 }
 
 fn post_schedule_handler() {
@@ -54,6 +56,8 @@ fn post_schedule_handler() {
     }
 
     thread_local.fpu().after_schedule();
+    #[cfg(target_arch = "aarch64")]
+    thread_local.tls().after_schedule();
 }
 
 pub(super) fn init() {

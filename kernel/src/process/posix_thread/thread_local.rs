@@ -40,6 +40,10 @@ pub struct ThreadLocal {
     fpu_context: RefCell<FpuContext>,
     fpu_state: Cell<FpuState>,
 
+    // User TLS state (AArch64 only — see ThreadTls for background).
+    #[cfg(target_arch = "aarch64")]
+    tls_value: Cell<usize>,
+
     // Signal.
     /// Stack address, size, and flags for the signal handler.
     sig_stack: RefCell<SigStack>,
@@ -74,6 +78,8 @@ impl ThreadLocal {
             fs: RefCell::new(fs),
             fpu_context: RefCell::new(fpu_context),
             fpu_state: Cell::new(FpuState::Unloaded),
+            #[cfg(target_arch = "aarch64")]
+            tls_value: Cell::new(0),
             sig_stack: RefCell::new(SigStack::default()),
             sig_mask_saved: Cell::new(None),
             user_ns: RefCell::new(user_ns),
@@ -160,6 +166,11 @@ impl ThreadLocal {
 
     pub fn fpu(&self) -> ThreadFpu<'_> {
         ThreadFpu(self)
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn tls(&self) -> ThreadTls<'_> {
+        ThreadTls(self)
     }
 
     pub fn sig_stack(&self) -> &RefCell<SigStack> {
@@ -266,6 +277,51 @@ impl ThreadFpu<'_> {
         if self.0.fpu_state.get() == FpuState::Activated {
             self.0.fpu_context.borrow_mut().load();
         }
+    }
+}
+
+/// The TLS information for the _current_ thread.
+///
+/// On AArch64, TPIDR_EL0 is the user-space thread pointer register.
+/// User-space can write TPIDR_EL0 directly via `msr` at any time without
+/// trapping into the kernel.
+///
+/// The kernel's responsibility is:
+///   - On `before_schedule()`: save the current hardware TPIDR_EL0 into
+///     `tls_value` so the value persists across context switches.
+///   - On `after_schedule()`: restore the next thread's `tls_value` into
+///     the hardware TPIDR_EL0 register.
+///
+/// # Notes about kernel preemption
+///
+/// Same assumptions as `ThreadFpu` — preemption does not occur within these
+/// methods. See the `ThreadFpu` comment block for details.
+#[cfg(target_arch = "aarch64")]
+pub struct ThreadTls<'a>(&'a ThreadLocal);
+
+#[cfg(target_arch = "aarch64")]
+impl ThreadTls<'_> {
+    /// Called before a context switch. Saves the current TPIDR_EL0 hardware
+    /// register value into `tls_value` if TLS is activated.
+    ///
+    /// Note: User-space may have modified TPIDR_EL0 via `msr` instruction since
+    /// the last kernel interaction. This save operation captures whatever value
+    /// is currently in the hardware register, ensuring the user-space write is
+    /// preserved across context switches.
+    pub fn before_schedule(&self) {
+        let current = crate::arch::cpu::read_tpidr_el0();
+        self.0.tls_value.set(current);
+    }
+
+    /// Called after a context switch. Restores `tls_value` into the TPIDR_EL0
+    /// hardware register if TLS was activated before the switch.
+    ///
+    /// This is called for the *next* thread (the one being switched to). If the
+    /// thread had TLS activated before it was preempted, its `tls_value` will
+    /// be written back to the hardware register.
+    pub fn after_schedule(&self) {
+        let val = self.0.tls_value.get();
+        crate::arch::cpu::write_tpidr_el0(val);
     }
 }
 

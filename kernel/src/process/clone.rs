@@ -687,8 +687,16 @@ fn clone_user_ctx(
             child_context.set_stack_pointer(new_sp.get() as usize);
         }
     }
+
     if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
         child_context.set_tls_pointer(tls as usize);
+    } else {
+        // On AArch64, TPIDR_EL0 is a user-accessible system register.
+        // If CLONE_SETTLS is specified, use the user-provided TLS value.
+        // Otherwise, inherit the parent's current hardware TPIDR_EL0 value
+        // (which may have been modified by user-space via `msr` instructions).
+        #[cfg(target_arch = "aarch64")]
+        child_context.set_tls_pointer(crate::arch::cpu::read_tpidr_el0());
     }
 
     child_context

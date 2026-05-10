@@ -42,6 +42,14 @@ pub(in crate::arch) struct RawUserContext {
     pub(in crate::arch) spsr_el1: usize,
     /// Exception Link Register
     pub(in crate::arch) elr_el1: usize,
+    /// Software-only thread-local storage pointer.
+    ///
+    /// This is NOT saved/restored on exception entry/exit. It is used only by
+    /// `clone()`/`exec()` to set the initial TLS value and by
+    /// `activate_tls_pointer()` to write the hardware TPIDR_EL0 register at
+    /// task entry. Context switches use `ThreadTls` instead — see
+    /// `kernel/src/process/posix_thread/thread_local.rs`.
+    pub(in crate::arch) tls_pointer: usize,
 }
 
 impl RawUserContext {
