@@ -163,6 +163,7 @@ update_project_dependencies() {
     # Automatically bump Cargo.lock files
     cargo update -p aster-kernel --precise $new_version # For Cargo.lock
     cd ${OSDK_DIR} && cargo update -p cargo-osdk --precise $new_version # For osdk/Cargo.lock
+    cd ${SCTRACE_DIR} && cargo update -p sctrace --precise $new_version # For tools/sctrace/Cargo.lock
 }
 
 # Synchronize project version to Docker version (update VERSION)
@@ -199,7 +200,8 @@ BOOK_DIR=${ASTER_SRC_DIR}/book
 WORKSPACE_CARGO_TOML_PATH=${ASTER_SRC_DIR}/Cargo.toml
 OSDK_DIR=${ASTER_SRC_DIR}/osdk
 OSDK_CARGO_TOML_PATH=${OSDK_DIR}/Cargo.toml
-SCTRACE_CARGO_TOML_PATH=${ASTER_SRC_DIR}/tools/sctrace/Cargo.toml
+SCTRACE_DIR=${ASTER_SRC_DIR}/tools/sctrace
+SCTRACE_CARGO_TOML_PATH=${SCTRACE_DIR}/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
 DOCKER_IMAGE_VERSION_PATH=${ASTER_SRC_DIR}/DOCKER_IMAGE_VERSION
 
