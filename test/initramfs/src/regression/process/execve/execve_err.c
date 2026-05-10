@@ -306,11 +306,10 @@ static int do_execve_fatal(void)
 #include <sys/uio.h>
 #endif
 
-static void get_execve_regs(pid_t pid, struct user_regs_struct *regs)
+static void get_tracee_regs(pid_t pid, struct user_regs_struct *regs)
 {
 #if defined(__x86_64__)
-	CHECK_WITH(ptrace(PTRACE_GETREGS, pid, NULL, regs),
-		   _ret >= 0 && regs->orig_rax == __NR_execve);
+	CHECK(ptrace(PTRACE_GETREGS, pid, NULL, regs));
 #elif defined(__riscv) && __riscv_xlen == 64
 	struct iovec iov = { .iov_base = regs, .iov_len = sizeof(*regs) };
 
@@ -320,7 +319,18 @@ static void get_execve_regs(pid_t pid, struct user_regs_struct *regs)
 #endif
 }
 
-static int execve_result_errno(const struct user_regs_struct *regs)
+static long get_syscall_number(const struct user_regs_struct *regs)
+{
+#if defined(__x86_64__)
+	return regs->orig_rax;
+#elif defined(__riscv) && __riscv_xlen == 64
+	return regs->a7;
+#else
+#error "unsupported architecture"
+#endif
+}
+
+static int get_syscall_errno(const struct user_regs_struct *regs)
 {
 #if defined(__x86_64__)
 	return -regs->rax;
@@ -364,13 +374,14 @@ static int do_execve_fatal(void)
 					  WSTOPSIG(status) == SIGTRAP);
 
 	// Get `execve` results.
-	get_execve_regs(pid, &regs);
+	get_tracee_regs(pid, &regs);
+	CHECK_WITH(get_syscall_number(&regs), _ret == __NR_execve);
 
 	CHECK(ptrace(PTRACE_DETACH, pid, NULL, NULL));
 	CHECK_WITH(wait(&status), _ret == pid && WIFSIGNALED(status) &&
 					  WTERMSIG(status) == SIGSEGV);
 
-	errno = execve_result_errno(&regs);
+	errno = get_syscall_errno(&regs);
 	return errno == 0 ? 0 : -1;
 }
 
