@@ -38,3 +38,5 @@ sleep 0.2
 ./uevent_err
 
 ./bpf_udp_hook
+
+./netfilter_ebpf/run_test.sh
