@@ -192,6 +192,7 @@ RUN apt update \
     grub2-common \
     libnuma1            `# running dependency for QEMU` \
     libpixman-1-dev     `# running dependency for QEMU` \
+    libsqlite3-dev      `# used by klint` \
     mtools              `# used by grub-mkrescue` \
     xorriso \
     && apt clean \
@@ -220,7 +221,7 @@ RUN cargo install --locked \
     typos-cli@1.39.0
 
 # Install klint.
-Run cargo install klint --git https://github.com/Rust-for-Linux/klint --rev 7d7c522
+RUN cargo install klint --git https://github.com/Rust-for-Linux/klint --rev 7d7c522
 
 # Install QEMU built from the previous stages
 COPY --from=qemu /usr/local/qemu /usr/local/qemu
