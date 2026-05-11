@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! The test suite for nix on Asterinas NixOS.
+//! The test suite for nix and nixos tools on Asterinas NixOS.
 //!
 //! See `test/nixos/README.md#documentation-maintenance` for sync requirements
 //! between this test suite and the corresponding "Verified Usage" book section.

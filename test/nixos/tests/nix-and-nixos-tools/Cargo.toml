@@ -1,5 +1,5 @@
 [package]
-name = "test-nix"
+name = "test-nix-and-nixos-tools"
 version.workspace = true
 repository.workspace = true
 license.workspace = true
