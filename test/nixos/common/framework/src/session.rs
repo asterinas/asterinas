@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    time::{Duration, Instant},
+};
 
 use rexpect::session::PtySession;
+use uuid::Uuid;
 
 use super::Error;
 
@@ -48,6 +52,7 @@ impl SessionDesc {
 /// It uses a [`SessionDesc`] to track the current prompt and the correct command
 /// to exit the current context.
 pub struct Session {
+    uuid: String,
     desc: SessionDesc,
     pty_session: PtySession,
 }
@@ -55,7 +60,11 @@ pub struct Session {
 impl Session {
     /// Creates a new session with the given PTY session and descriptor.
     pub(super) fn new(desc: SessionDesc, pty_session: PtySession) -> Self {
-        Self { desc, pty_session }
+        Self {
+            uuid: Uuid::new_v4().to_string(),
+            desc,
+            pty_session,
+        }
     }
 
     /// Executes a command in the current session.
@@ -213,6 +222,66 @@ impl Session {
         Ok(())
     }
 
+    /// Starts a background process, waits for readiness, and runs test operations.
+    ///
+    /// This method is intended for test cases that need temporary daemons such as HTTP servers.
+    /// It polls until the process becomes ready instead of relying on fixed sleeps. When the
+    /// method returns or unwinds, it makes a best-effort attempt to stop the background process.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nixos_test_framework::*;
+    ///
+    /// fn example(nixos_shell: &mut Session) -> Result<(), Error> {
+    ///     nixos_shell.with_background_process(
+    ///         BackgroundProcess::new(
+    ///             "python3 -m http.server 8000 >/tmp/http.log 2>&1 &",
+    ///             CommandCheck::new("curl http://127.0.0.1:8000", "Directory listing"),
+    ///             "pkill -f 'python3 -m http.server 8000'",
+    ///             CommandCheck::new(
+    ///                 "! pgrep -f 'python3 -m http.server 8000' >/dev/null && echo stopped",
+    ///                 "stopped",
+    ///             ),
+    ///         ),
+    ///         |shell| shell.run_cmd_and_expect("curl http://127.0.0.1:8000", "Directory listing"),
+    ///     )?;
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn with_background_process<F>(
+        &mut self,
+        background_process: BackgroundProcess,
+        test_ops: F,
+    ) -> Result<(), Error>
+    where
+        F: FnOnce(&mut Session) -> Result<(), Error>,
+    {
+        let guard = BackgroundProcessGuard {
+            session: self,
+            background_process,
+        };
+
+        let command_output = guard
+            .session
+            .run_cmd_and_collect_output(&guard.background_process.start)?;
+        if command_output.exit_status != 0 {
+            return Err(Error::NonZeroExit {
+                exit_status: command_output.exit_status,
+                output: command_output.output,
+            });
+        }
+
+        guard.session.wait_until_check_matches(
+            &guard.background_process.ready,
+            READY_TIMEOUT,
+            "background process to become ready",
+        )?;
+
+        test_ops(guard.session)
+    }
+
     pub(super) fn shutdown(&mut self) -> Result<(), Error> {
         self.pty_session
             .send_line(&self.desc.exit_cmd)
@@ -278,5 +347,221 @@ impl Session {
 
     fn clean_output(output: &str) -> String {
         String::from_utf8_lossy(&strip_ansi_escapes::strip(output)).to_string()
+    }
+
+    fn run_cmd_and_collect_output(&mut self, command: &str) -> Result<CommandOutput, Error> {
+        let exit_marker = self.uuid.as_str();
+        let quoted_command = format!("'{}'", command.replace('\'', r#"'"'"'"#));
+        let wrapped_command = format!(
+            r#"eval -- {}; __exit_code=$?; printf '\n{}%s\n' "$__exit_code""#,
+            quoted_command, exit_marker
+        );
+
+        println!("--> Running: {}", command);
+        self.pty_session
+            .send_line(&wrapped_command)
+            .map_err(Error::from)?;
+        self.pty_session
+            .exp_string(&wrapped_command)
+            .map_err(Error::from)?;
+
+        let unread = match self
+            .pty_session
+            .exp_string(&self.desc.prompt)
+            .map_err(Error::from)
+        {
+            Ok(unread) => unread,
+            Err(error) => {
+                Self::output_error(&error);
+                return Err(error);
+            }
+        };
+
+        let (command_output, exit_status) = Self::parse_command_output(&unread, exit_marker)?;
+
+        Ok(CommandOutput {
+            exit_status,
+            output: command_output,
+        })
+    }
+
+    fn parse_command_output(output: &str, exit_marker: &str) -> Result<(String, i32), Error> {
+        let Some((command_output, exit_status_text)) = output.rsplit_once(exit_marker) else {
+            return Err(Error::Protocol {
+                reason: "missing exit status marker".to_string(),
+                got: Self::clean_output(output),
+            });
+        };
+
+        let Some(exit_status_line) = exit_status_text.lines().next() else {
+            return Err(Error::Protocol {
+                reason: "missing numeric exit status".to_string(),
+                got: Self::clean_output(output),
+            });
+        };
+        let Ok(exit_status) = exit_status_line.parse::<i32>() else {
+            return Err(Error::Protocol {
+                reason: format!("invalid numeric exit status: {}", exit_status_line),
+                got: Self::clean_output(output),
+            });
+        };
+
+        Ok((
+            Self::clean_output(command_output).trim().to_string(),
+            exit_status,
+        ))
+    }
+
+    fn stop_background_process(
+        &mut self,
+        background_process: &BackgroundProcess,
+    ) -> Result<(), Error> {
+        let command_output = self.run_cmd_and_collect_output(&background_process.stop)?;
+        if command_output.exit_status != 0 {
+            return Err(Error::NonZeroExit {
+                exit_status: command_output.exit_status,
+                output: command_output.output,
+            });
+        }
+
+        self.wait_until_check_matches(
+            &background_process.stopped,
+            STOP_TIMEOUT,
+            "background process to stop",
+        )
+    }
+
+    fn wait_until_check_matches(
+        &mut self,
+        command_check: &CommandCheck,
+        timeout: Duration,
+        expected_state: &str,
+    ) -> Result<(), Error> {
+        let start_time = Instant::now();
+
+        loop {
+            let command_output = self.run_cmd_and_collect_output(&command_check.cmd)?;
+
+            if command_output.exit_status == 0
+                && command_output
+                    .output
+                    .contains(command_check.expect.as_ref())
+            {
+                return Ok(());
+            }
+
+            if start_time.elapsed() >= timeout {
+                return Err(Error::Timeout {
+                    expected: expected_state.to_string(),
+                    got: format!(
+                        "exit status: {}\nexpected output: {}\nactual output:\n{}",
+                        command_output.exit_status, command_check.expect, command_output.output
+                    ),
+                    timeout,
+                });
+            }
+
+            std::thread::sleep(POLL_INTERVAL);
+        }
+    }
+}
+
+/// Describes how to manage a background process during a test.
+pub struct BackgroundProcess {
+    /// Starts the background process.
+    start: Cow<'static, str>,
+    /// Checks whether the background process is ready for test operations.
+    ready: CommandCheck,
+    /// Stops the background process.
+    stop: Cow<'static, str>,
+    /// Checks whether the background process has fully stopped.
+    stopped: CommandCheck,
+}
+
+impl BackgroundProcess {
+    /// Creates a new background process descriptor.
+    pub fn new(
+        start: impl Into<Cow<'static, str>>,
+        ready: CommandCheck,
+        stop: impl Into<Cow<'static, str>>,
+        stopped: CommandCheck,
+    ) -> Self {
+        Self {
+            start: start.into(),
+            ready,
+            stop: stop.into(),
+            stopped,
+        }
+    }
+}
+
+/// Describes a command-based state check for a background process.
+pub struct CommandCheck {
+    /// Runs to observe whether the background process reached the target state.
+    cmd: Cow<'static, str>,
+    /// Must appear in the command output for the check to succeed.
+    expect: Cow<'static, str>,
+}
+
+impl CommandCheck {
+    /// Creates a new command-based state check.
+    pub fn new(cmd: impl Into<Cow<'static, str>>, expect: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            cmd: cmd.into(),
+            expect: expect.into(),
+        }
+    }
+}
+
+struct CommandOutput {
+    exit_status: i32,
+    output: String,
+}
+
+struct BackgroundProcessGuard<'s> {
+    session: &'s mut Session,
+    background_process: BackgroundProcess,
+}
+
+impl Drop for BackgroundProcessGuard<'_> {
+    fn drop(&mut self) {
+        let _ = self
+            .session
+            .stop_background_process(&self.background_process);
+    }
+}
+
+const READY_TIMEOUT: Duration = Duration::from_secs(30);
+const STOP_TIMEOUT: Duration = Duration::from_secs(10);
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+#[cfg(test)]
+mod tests {
+    use super::{Error, Session};
+
+    #[test]
+    fn parse_command_output_extracts_status_from_marker() {
+        let exit_marker = "00000000-0000-0000-0000-000000000000";
+        let command_output = format!("hello\n{}17\n", exit_marker);
+
+        let (output, exit_status) =
+            Session::parse_command_output(&command_output, exit_marker).unwrap();
+
+        assert_eq!(output, "hello");
+        assert_eq!(exit_status, 17);
+    }
+
+    #[test]
+    fn parse_command_output_rejects_missing_marker() {
+        let exit_marker = "00000000-0000-0000-0000-000000000000";
+        let error = Session::parse_command_output("hello", exit_marker).unwrap_err();
+
+        match error {
+            Error::Protocol { reason, got } => {
+                assert_eq!(reason, "missing exit status marker");
+                assert_eq!(got, "hello");
+            }
+            other => panic!("unexpected error: {:?}", other),
+        }
     }
 }
