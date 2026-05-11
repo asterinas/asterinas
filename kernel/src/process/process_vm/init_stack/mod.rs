@@ -17,13 +17,14 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use ostd::mm::VmIo;
+use ostd::mm::VmReader;
 
 use self::aux_vec::{AuxKey, AuxVec};
 use crate::{
     prelude::*,
     util::random::getrandom,
     vm::{
+        page_cache::{Vmo, VmoOptions},
         perms::VmPerms,
         vmar::{VMAR_CAP_ADDR, Vmar, VmarMapOffset},
         vmo::{Vmo, VmoOptions},
@@ -369,7 +370,9 @@ impl InitStackWriter<'_> {
     /// Returns the writing address.
     fn write_u64(&self, val: u64) -> Result<u64> {
         let new_pos = self.reserve_pos(size_of::<u64>(), align_of::<u64>())?;
-        self.vmo.write_val(new_pos - self.map_addr, &val)?;
+        let bytes = val.to_ne_bytes();
+        let mut reader = VmReader::from(bytes.as_slice()).to_fallible();
+        self.vmo.write(new_pos - self.map_addr, &mut reader)?;
         Ok(new_pos as u64)
     }
 
@@ -384,7 +387,8 @@ impl InitStackWriter<'_> {
     /// Returns the writing address.
     fn write_bytes(&self, bytes: &[u8]) -> Result<u64> {
         let new_pos = self.reserve_pos(bytes.len(), align_of::<u8>())?;
-        self.vmo.write_bytes(new_pos - self.map_addr, bytes)?;
+        let mut reader = VmReader::from(bytes).to_fallible();
+        self.vmo.write(new_pos - self.map_addr, &mut reader)?;
         Ok(new_pos as u64)
     }
 

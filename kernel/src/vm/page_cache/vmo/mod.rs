@@ -513,6 +513,30 @@ impl Vmo {
         Ok(())
     }
 
+    /// Fills the specified range with zeros.
+    pub(super) fn fill_zeros(&self, range: Range<usize>) -> Result<()> {
+        if range.is_empty() {
+            return Ok(());
+        }
+        if range.end > self.size() {
+            return_errno_with_message!(Errno::EINVAL, "the range to fill exceeds the VMO size");
+        }
+
+        static ZERO_PAGE: [u8; PAGE_SIZE] = [0; PAGE_SIZE];
+
+        let mut current_offset = range.start;
+        while current_offset < range.end {
+            let page_remaining = PAGE_SIZE - current_offset % PAGE_SIZE;
+            let write_len = (range.end - current_offset).min(page_remaining);
+            let mut reader = VmReader::from(&ZERO_PAGE[..write_len]).to_fallible();
+
+            self.write(current_offset, &mut reader)?;
+            current_offset += write_len;
+        }
+
+        Ok(())
+    }
+
     /// Writes data to pages without dirty tracking.
     ///
     /// Used for anonymous VMO writes where pages are always in the `UpToDate`
@@ -671,36 +695,7 @@ impl Vmo {
     }
 }
 
-impl VmIo for Vmo {
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
-        self.read(offset, writer)?;
-        Ok(())
-    }
-
-    fn write(&self, offset: usize, reader: &mut VmReader) -> ostd::Result<()> {
-        self.write(offset, reader)?;
-        Ok(())
-    }
-}
-
-impl VmIoFill for Vmo {
-    fn fill_zeros(
-        &self,
-        offset: usize,
-        len: usize,
-    ) -> core::result::Result<(), (ostd::Error, usize)> {
-        // TODO: Support efficient `fill_zeros()`.
-        for i in 0..len {
-            match self.write_slice(offset + i, &[0u8]) {
-                Ok(()) => continue,
-                Err(err) => return Err((err, i)),
-            }
-        }
-        Ok(())
-    }
-}
-
-/// A wrapper around a disk-backed VMO that provides specialized operations.
+/// A wrapper around a VMO with a backend that provides specialized operations.
 ///
 /// This structure is created by calling [`Vmo::as_backed_vmo()`] and provides
 /// access to backend-specific functionality like reading from storage and

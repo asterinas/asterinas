@@ -19,7 +19,7 @@ use aster_time::{Instant, read_monotonic_time};
 use aster_util::coeff::Coeff;
 use ostd::{
     const_assert,
-    mm::{PAGE_SIZE, UFrame, VmIo, VmIoOnce},
+    mm::{PAGE_SIZE, UFrame, VmIo, VmIoOnce, VmReader},
     sync::SpinLock,
 };
 use ostd_pod::IntoBytes;
@@ -32,7 +32,7 @@ use crate::{
         clocks::MonotonicClock,
         timer::{Timeout, TimerGuard},
     },
-    vm::vmo::{Vmo, VmoOptions},
+    vm::page_cache::{Vmo, VmoOptions},
 };
 
 const CLOCK_TAI: usize = 11;
@@ -244,16 +244,17 @@ impl Vdso {
             let vmo_options = VmoOptions::new(VDSO_VMO_LAYOUT.size);
             let vdso_vmo = vmo_options.alloc().unwrap();
             // Write vDSO data to vDSO VMO.
+            let mut reader = VmReader::from(vdso_data.as_bytes()).to_fallible();
             vdso_vmo
-                .write_bytes(VDSO_VMO_LAYOUT.data_offset, vdso_data.as_bytes())
+                .write(VDSO_VMO_LAYOUT.data_offset, &mut reader)
                 .unwrap();
 
             // Write vDSO library to vDSO VMO.
+            let mut reader =
+                VmReader::from(&PREBUILT_VDSO_LIB[..VDSO_VMO_LAYOUT.text_segment_size])
+                    .to_fallible();
             vdso_vmo
-                .write_bytes(
-                    VDSO_VMO_LAYOUT.text_segment_offset,
-                    &PREBUILT_VDSO_LIB[..VDSO_VMO_LAYOUT.text_segment_size],
-                )
+                .write(VDSO_VMO_LAYOUT.text_segment_offset, &mut reader)
                 .unwrap();
 
             let data_frame = vdso_vmo.try_commit_page(0).unwrap();

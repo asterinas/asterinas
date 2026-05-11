@@ -141,7 +141,12 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
 
 #[cfg(ktest)]
 mod test {
-    use ostd::{mm::VmIo, prelude::*};
+    use core::mem::size_of;
+
+    use ostd::{
+        mm::{VmIo, VmReader, VmWriter},
+        prelude::*,
+    };
 
     use super::*;
 
@@ -150,7 +155,10 @@ mod test {
         let vmo = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
         assert_eq!(vmo.size(), PAGE_SIZE);
         // the vmo is zeroed once allocated
-        assert_eq!(vmo.read_val::<usize>(0).unwrap(), 0);
+        let mut read_buffer = [0; size_of::<usize>()];
+        let mut writer = VmWriter::from(read_buffer.as_mut_slice()).to_fallible();
+        vmo.read(0, &mut writer).unwrap();
+        assert_eq!(usize::from_ne_bytes(read_buffer), 0);
     }
 
     #[ktest]
@@ -167,12 +175,22 @@ mod test {
         let vmo = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
         let val = 42u8;
         // write val
-        vmo.write_val(111, &val).unwrap();
-        let read_val: u8 = vmo.read_val(111).unwrap();
+        let mut reader = VmReader::from(core::slice::from_ref(&val)).to_fallible();
+        vmo.write(111, &mut reader).unwrap();
+
+        let mut read_buffer = [0];
+        let mut writer = VmWriter::from(read_buffer.as_mut_slice()).to_fallible();
+        vmo.read(111, &mut writer).unwrap();
+        let read_val = read_buffer[0];
         assert_eq!(val, read_val);
         // bit endian
-        vmo.write_bytes(222, &[0x12, 0x34, 0x56, 0x78]).unwrap();
-        let read_val: u32 = vmo.read_val(222).unwrap();
+        let mut reader = VmReader::from(&[0x12, 0x34, 0x56, 0x78][..]).to_fallible();
+        vmo.write(222, &mut reader).unwrap();
+
+        let mut read_buffer = [0; size_of::<u32>()];
+        let mut writer = VmWriter::from(read_buffer.as_mut_slice()).to_fallible();
+        vmo.read(222, &mut writer).unwrap();
+        let read_val = u32::from_ne_bytes(read_buffer);
         assert_eq!(read_val, 0x78563412)
     }
 
