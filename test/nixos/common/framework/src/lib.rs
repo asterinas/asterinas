@@ -28,7 +28,7 @@ use std::{env, fmt, time::Duration};
 #[doc(hidden)]
 pub use inventory;
 pub use nixos_test_macro::nixos_test;
-pub use session::{Session, SessionDesc};
+pub use session::{BackgroundProcess, CommandCheck, Session, SessionDesc};
 
 mod session;
 

@@ -13,3 +13,4 @@ inventory.workspace = true
 nixos-test-macro.workspace = true
 rexpect.workspace = true
 strip-ansi-escapes.workspace = true
+uuid.workspace = true
