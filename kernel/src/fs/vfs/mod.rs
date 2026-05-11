@@ -7,7 +7,6 @@
 
 mod fs_apis;
 pub mod notify;
-pub mod page_cache;
 pub mod path;
 pub mod range_lock;
 
