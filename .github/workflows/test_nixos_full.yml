@@ -97,7 +97,8 @@ jobs:
               { "name": "system-core", "disk_size": 10240, "timeout_minutes": 45 },
               { "name": "nix-and-nixos-tools", "disk_size": 8192 },
               { "name": "containerization-and-virtualization", "disk_size": 10240, "timeout_minutes": 45 },
-              { "name": "networking", "disk_size": 10240, "timeout_minutes": 45 }
+              { "name": "networking", "disk_size": 10240, "timeout_minutes": 45 },
+              { "name": "web-servers-and-proxies", "disk_size": 10240, "timeout_minutes": 45 }
             ]
           # A test suite that is quick to run as smoke test for the `pull_request` and `push` CI triggers.
           SMOKE_TEST_NAME: system-core
