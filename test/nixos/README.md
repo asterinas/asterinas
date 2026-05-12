@@ -45,9 +45,12 @@ use nixos_test_macro::nixos_test;
 // This macro generates the main function that runs all registered tests
 nixos_test_main!();
 
-// Register a test case using the #[nixos_test] attribute
+// Register a test case using the #[nixos_test] attribute.
+// Name test cases with a `<tool>_<action>`-style identifier so the output
+// groups naturally by tool, for example `echo_print_message` or
+// `touch_create_file`.
 #[nixos_test]
-fn basic_command_test(nixos_shell: &mut Session) -> Result<(), Error> {
+fn echo_print_message(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.run_cmd("echo 'Hello, World!'")?;
     nixos_shell.run_cmd_and_expect("cat /etc/os-release", "NixOS")?;
     Ok(())
@@ -55,7 +58,7 @@ fn basic_command_test(nixos_shell: &mut Session) -> Result<(), Error> {
 
 // You can define multiple test cases in the same file
 #[nixos_test]
-fn file_operations_test(nixos_shell: &mut Session) -> Result<(), Error> {
+fn touch_create_file(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.run_cmd("touch /tmp/test.txt")?;
     nixos_shell.run_cmd_and_expect("ls /tmp", "test.txt")?;
     Ok(())
@@ -63,6 +66,16 @@ fn file_operations_test(nixos_shell: &mut Session) -> Result<(), Error> {
 ```
 
 The `Session` type provides APIs for interacting with the VM. See the [Session API documentation](common/framework/src/session.rs) for details.
+
+When one test covers multiple closely related commands from the same package,
+keep the same left-hand grouping and make the right-hand side describe the
+behavior being verified, such as `coreutils_cat` or `findutils_xargs`.
+
+### Documentation Maintenance
+
+If a test suite verifies applications that are documented in Asterinas Book, keep the test suite and the corresponding "Verified Usage" section in sync. Whenever you add, remove, or change covered behavior in `test/nixos/tests/<suite>/`, review the matching documentation under `book/src/distro/popular-applications` and update it if needed.
+
+**Note**: `book/src/distro/popular-applications/desktop-environments-and-display/` intentionally has no counterpart under `test/nixos/tests/` and does not appear in the NixOS test matrix. GUI and display validation are out of scope for the current headless NixOS test runner.
 
 ### Step 4: (Optional) Configure NixOS
 
@@ -106,7 +119,7 @@ make run_iso
 make run_nixos NIXOS_TEST_SUITE=my-test
 
 # Run a specific test case
-make run_nixos NIXOS_TEST_SUITE=my-test NIXOS_TEST_CASE=basic_command_test
+make run_nixos NIXOS_TEST_SUITE=my-test NIXOS_TEST_CASE=echo_print_message
 
 # Customize timeout with units (default: 5min)
 make run_nixos NIXOS_TEST_SUITE=my-test NIXOS_TEST_TIMEOUT=10min    # 10 minutes
@@ -128,10 +141,13 @@ make nixos NIXOS_TEST_SUITE=podman
 make run_nixos NIXOS_TEST_SUITE=podman NIXOS_TEST_CASE=container_basic_test NIXOS_TEST_TIMEOUT=10min
 ```
 
-## Environment Variables
+## Variables
 
+Make variables:
 - **`NIXOS_TEST_SUITE`**: Name of the test suite to run (required for test mode)
 - **`NIXOS_TEST_CASE`**: Specific test case to run (optional, runs all if not specified)
+
+Framework environment variables:
 - **`NIXOS_TEST_TIMEOUT`**: Timeout for command execution with unit suffix (optional, default: 5min)
   - Supported formats: `<number>ms` (milliseconds), `<number>s` (seconds), `<number>min` (minutes)
   - Examples: `300000ms`, `300s`, `5min`
