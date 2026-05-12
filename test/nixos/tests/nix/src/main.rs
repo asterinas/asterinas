@@ -2,12 +2,8 @@
 
 //! The test suite for nix on Asterinas NixOS.
 //!
-//! # Document maintenance
-//!
-//! An application's test suite and its "Verified Usage" section in Asterinas Book
-//! should always be kept in sync.
-//! So whenever you modify the test suite,
-//! review the documentation and see if should be updated accordingly.
+//! See `test/nixos/README.md#documentation-maintenance` for sync requirements
+//! between this test suite and the corresponding "Verified Usage" book section.
 
 use nixos_test_framework::*;
 

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use std::borrow::Cow;
+
 use rexpect::session::PtySession;
 
 use super::Error;
@@ -8,61 +10,33 @@ use super::Error;
 ///
 /// A session descriptor defines how to interact with a particular execution context,
 /// such as a shell environment, container, or remote session. It specifies the prompt
-/// pattern (by `expect_prompt`) and the commands needed to enter (by `cmd_to_enter`)
-/// and exit (by `cmd_to_exit`) the context.
+/// pattern and the commands needed to enter and exit the context.
 ///
-/// # Example
-///
-/// The session descriptor uses a fluent builder API:
+/// # Examples
 ///
 /// ```rust
 /// use nixos_test_framework::SessionDesc;
 ///
-/// let desc = SessionDesc::new()
-///     .expect_prompt("/ #")
-///     .cmd_to_enter("podman run -it alpine")
-///     .cmd_to_exit("exit");
+/// let desc = SessionDesc::new("/ #", "podman run -it alpine", "exit");
 /// ```
 pub struct SessionDesc {
-    prompt: &'static str,
-    enter_command: &'static str,
-    exit_cmd: &'static str,
+    prompt: Cow<'static, str>,
+    enter_cmd: Cow<'static, str>,
+    exit_cmd: Cow<'static, str>,
 }
 
 impl SessionDesc {
-    /// Creates a new session descriptor with empty fields.
-    ///
-    /// Use the builder methods to configure the session before use.
-    pub fn new() -> Self {
+    /// Creates a new session descriptor.
+    pub fn new(
+        prompt: impl Into<Cow<'static, str>>,
+        enter_cmd: impl Into<Cow<'static, str>>,
+        exit_cmd: impl Into<Cow<'static, str>>,
+    ) -> Self {
         Self {
-            prompt: "",
-            enter_command: "",
-            exit_cmd: "",
+            prompt: prompt.into(),
+            enter_cmd: enter_cmd.into(),
+            exit_cmd: exit_cmd.into(),
         }
-    }
-
-    /// Sets the expected prompt pattern for this session.
-    pub fn expect_prompt(mut self, prompt: &'static str) -> Self {
-        self.prompt = prompt;
-        self
-    }
-
-    /// Sets the command used to enter this session.
-    pub fn cmd_to_enter(mut self, enter_command: &'static str) -> Self {
-        self.enter_command = enter_command;
-        self
-    }
-
-    /// Sets the command used to exit this session.
-    pub fn cmd_to_exit(mut self, exit_cmd: &'static str) -> Self {
-        self.exit_cmd = exit_cmd;
-        self
-    }
-}
-
-impl Default for SessionDesc {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -84,40 +58,6 @@ impl Session {
         Self { desc, pty_session }
     }
 
-    fn output_error(error: &Error) {
-        match error {
-            Error::EOF {
-                expected,
-                got,
-                exit_code,
-            } => {
-                println!("=== EOF Error Details ===");
-                println!("Expected: {}", expected);
-                println!(
-                    "Got: {}",
-                    String::from_utf8_lossy(&strip_ansi_escapes::strip(got))
-                );
-                println!("Exit code: {:?}", exit_code);
-                println!("========================");
-            }
-            Error::Timeout {
-                expected,
-                got,
-                timeout,
-            } => {
-                println!("=== Timeout Error Details ===");
-                println!("Expected: {}", expected);
-                println!(
-                    "Got: {}",
-                    String::from_utf8_lossy(&strip_ansi_escapes::strip(got))
-                );
-                println!("Timeout: {:?}", timeout);
-                println!("============================");
-            }
-            _ => {}
-        }
-    }
-
     /// Executes a command in the current session.
     ///
     /// This method runs the specified command and waits for it to complete.
@@ -125,9 +65,9 @@ impl Session {
     ///
     /// Returns an error if the command times out or the session terminates unexpectedly.
     ///
-    /// # Example
+    /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use nixos_test_framework::*;
     ///
     /// fn example(nixos_shell: &mut Session) -> Result<(), Error> {
@@ -141,13 +81,17 @@ impl Session {
     /// ```
     pub fn run_cmd(&mut self, command: &str) -> Result<(), Error> {
         println!("--> Running: {}", command);
-        self.pty_session.send_line(command)?;
+        self.pty_session.send_line(command).map_err(Error::from)?;
         // Read and consume the echoed command line
-        self.pty_session.exp_string(command).unwrap();
+        self.pty_session.exp_string(command).map_err(Error::from)?;
 
-        if let Err(e) = self.pty_session.exp_string(self.desc.prompt) {
-            Self::output_error(&e);
-            return Err(e);
+        if let Err(error) = self
+            .pty_session
+            .exp_string(&self.desc.prompt)
+            .map_err(Error::from)
+        {
+            Self::output_error(&error);
+            return Err(error);
         }
 
         Ok(())
@@ -163,9 +107,9 @@ impl Session {
     /// - The command times out
     /// - The session terminates unexpectedly
     ///
-    /// # Example
+    /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use nixos_test_framework::*;
     ///
     /// fn example(nixos_shell: &mut Session) -> Result<(), Error> {
@@ -183,24 +127,24 @@ impl Session {
     /// ```
     pub fn run_cmd_and_expect(&mut self, command: &str, expected: &str) -> Result<(), Error> {
         println!("--> Running: {} (expecting: {})", command, expected);
-        self.pty_session.send_line(command)?;
+        self.pty_session.send_line(command).map_err(Error::from)?;
         // Read and consume the echoed command line
-        self.pty_session.exp_string(command).unwrap();
+        self.pty_session.exp_string(command).map_err(Error::from)?;
 
-        match self.pty_session.exp_string(self.desc.prompt) {
+        match self
+            .pty_session
+            .exp_string(&self.desc.prompt)
+            .map_err(Error::from)
+        {
             Ok(unread) => {
-                let cleaned_unread =
-                    String::from_utf8_lossy(&strip_ansi_escapes::strip(&unread)).to_string();
+                let cleaned_unread = Self::clean_output(&unread);
                 if !cleaned_unread.contains(expected) {
-                    println!("=== Unexpected Output ===");
-                    println!("Expected: {}", expected);
-                    println!("Output before prompt:\n{}", cleaned_unread);
-                    println!("=========================");
-                    return Err(Error::EOF {
+                    let error = Error::ExpectMismatch {
                         expected: expected.to_string(),
                         got: cleaned_unread,
-                        exit_code: None,
-                    });
+                    };
+                    Self::output_error(&error);
+                    return Err(error);
                 }
             }
             Err(e) => {
@@ -212,13 +156,6 @@ impl Session {
         Ok(())
     }
 
-    pub(super) fn run<F>(&mut self, test_ops: F) -> Result<(), Error>
-    where
-        F: FnOnce(&mut Session) -> Result<(), Error>,
-    {
-        (test_ops)(self)
-    }
-
     /// Enters a nested session, runs operations, and automatically exits.
     ///
     /// This method is used to work with nested environments like containers, SSH sessions,
@@ -226,17 +163,18 @@ impl Session {
     ///
     /// Returns an error if entering, running operations, or exiting fails.
     ///
-    /// # Example
+    /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use nixos_test_framework::*;
     ///
     /// fn container_test(nixos_shell: &mut Session) -> Result<(), Error> {
     ///     // Define the container session
-    ///     let container_session_desc = SessionDesc::new()
-    ///         .expect_prompt("/ #")
-    ///         .cmd_to_enter("podman run -it docker.io/library/alpine")
-    ///         .cmd_to_exit("exit");
+    ///     let container_session_desc = SessionDesc::new(
+    ///         "/ #",
+    ///         "podman run -it docker.io/library/alpine",
+    ///         "exit",
+    ///     );
     ///
     ///     // Enter container, run tests, and automatically exit
     ///     nixos_shell.enter_session_and_run(container_session_desc, |alpine_shell| {
@@ -258,16 +196,16 @@ impl Session {
     {
         let old_desc = std::mem::replace(&mut self.desc, desc);
 
-        if let Err(e) = self.run_cmd(self.desc.enter_command) {
+        if let Err(e) = self.run_cmd(&self.desc.enter_cmd.clone()) {
             self.desc = old_desc;
             return Err(e);
         }
 
-        let res = self.run(test_ops);
+        let res = test_ops(self);
 
-        let exit_cmd = self.desc.exit_cmd;
+        let exit_cmd = self.desc.exit_cmd.clone();
         self.desc = old_desc;
-        let exit_res = self.run_cmd(exit_cmd);
+        let exit_res = self.run_cmd(&exit_cmd);
 
         res?;
         exit_res?;
@@ -276,10 +214,69 @@ impl Session {
     }
 
     pub(super) fn shutdown(&mut self) -> Result<(), Error> {
-        self.pty_session.send_line(self.desc.exit_cmd)?;
+        self.pty_session
+            .send_line(&self.desc.exit_cmd)
+            .map_err(Error::from)?;
 
-        self.pty_session.process.wait()?;
+        self.pty_session.process.wait().map_err(Error::from)?;
 
         Ok(())
+    }
+
+    fn output_error(error: &Error) {
+        match error {
+            Error::Pty(rexpect::error::Error::EOF {
+                expected,
+                got,
+                exit_code,
+            }) => {
+                println!("=== EOF Error Details ===");
+                println!("Expected: {}", expected);
+                println!("Got: {}", Self::clean_output(got));
+                println!("Exit code: {:?}", exit_code);
+                println!("========================");
+            }
+            Error::Timeout {
+                expected,
+                got,
+                timeout,
+            } => {
+                println!("=== Timeout Error Details ===");
+                println!("Expected: {}", expected);
+                println!("Got: {}", Self::clean_output(got));
+                println!("Timeout: {:?}", timeout);
+                println!("============================");
+            }
+            Error::ExpectMismatch { expected, got } => {
+                println!("=== Unexpected Output ===");
+                println!("Expected: {}", expected);
+                println!("Output before prompt:\n{}", got);
+                println!("=========================");
+            }
+            Error::Protocol { reason, got } => {
+                println!("=== Protocol Error Details ===");
+                println!("Reason: {}", reason);
+                println!("Got: {}", Self::clean_output(got));
+                println!("==============================");
+            }
+            Error::NonZeroExit {
+                exit_status,
+                output,
+            } => {
+                println!("=== Command Exit Error Details ===");
+                println!("Exit status: {}", exit_status);
+                println!("Output:\n{}", Self::clean_output(output));
+                println!("==================================");
+            }
+            Error::Pty(reason) => {
+                println!("=== PTY Error Details ===");
+                println!("Reason: {}", reason);
+                println!("=========================");
+            }
+        }
+    }
+
+    fn clean_output(output: &str) -> String {
+        String::from_utf8_lossy(&strip_ansi_escapes::strip(output)).to_string()
     }
 }
