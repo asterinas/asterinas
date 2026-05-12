@@ -8,7 +8,7 @@ pub(crate) use crate::{
     util::{Aead as _, RandomInit, Rng as _, Skcipher as _, align_down, align_up},
 };
 
-pub(crate) type Result<T> = core::result::Result<T, Error>;
+pub(crate) type Result<T, E = Error> = core::result::Result<T, E>;
 
 pub(crate) use core::fmt::{self, Debug};
 
