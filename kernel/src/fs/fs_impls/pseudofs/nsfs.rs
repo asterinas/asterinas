@@ -58,7 +58,7 @@ impl NsFs {
     /// Returns the pseudo mount node of the ns file system.
     pub(self) fn mount_node() -> &'static Arc<Mount> {
         static NSFS_MOUNT: Once<Arc<Mount>> = Once::new();
-        NSFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
+        NSFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
     }
 }
 

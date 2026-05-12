@@ -16,6 +16,7 @@
 #![feature(register_tool)]
 #![feature(min_specialization)]
 #![feature(thin_box)]
+#![feature(unique_rc_arc)]
 #![register_tool(component_access_control)]
 
 extern crate alloc;

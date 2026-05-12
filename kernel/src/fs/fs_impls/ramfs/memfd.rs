@@ -325,7 +325,7 @@ impl MemfdTmpFs {
     fn mount_node() -> &'static Arc<Mount> {
         static MEMFD_TMPFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        MEMFD_TMPFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
+        MEMFD_TMPFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
     }
 }
 
