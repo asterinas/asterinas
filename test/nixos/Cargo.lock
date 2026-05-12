@@ -116,6 +116,7 @@ dependencies = [
 name = "nixos-test-macro"
 version = "0.1.0"
 dependencies = [
+ "nixos-test-framework",
  "proc-macro2",
  "quote",
  "syn",
@@ -261,6 +262,13 @@ dependencies = [
 
 [[package]]
 name = "test-podman"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
+name = "test-system-core"
 version = "0.1.0"
 dependencies = [
  "nixos-test-framework",

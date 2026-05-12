@@ -21,14 +21,97 @@
 //! See the [project README](https://github.com/asterinas/asterinas/tree/main/test/nixos)
 //! for complete documentation on creating and running test suites.
 
-use std::env;
+#![deny(unsafe_code)]
 
+use std::{env, fmt, time::Duration};
+
+#[doc(hidden)]
 pub use inventory;
 pub use nixos_test_macro::nixos_test;
-pub use rexpect::error::Error;
 pub use session::{Session, SessionDesc};
 
 mod session;
+
+/// An error returned by the NixOS test framework.
+#[derive(Debug)]
+pub enum Error {
+    /// The PTY/process produced an underlying rexpect failure.
+    Pty(rexpect::error::Error),
+    /// The command output reached the prompt but did not contain the expected substring.
+    ExpectMismatch { expected: String, got: String },
+    /// The framing marker was missing or unparsable.
+    Protocol { reason: String, got: String },
+    /// A command exited with a non-zero status.
+    NonZeroExit { exit_status: i32, output: String },
+    /// Polling for an expected state timed out.
+    Timeout {
+        expected: String,
+        got: String,
+        timeout: Duration,
+    },
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pty(error) => write!(formatter, "{}", error),
+            Self::ExpectMismatch { expected, got } => write!(
+                formatter,
+                "Expected output containing '{}' but got '{}'",
+                expected, got
+            ),
+            Self::Protocol { reason, got } => {
+                write!(formatter, "Protocol error: {}. Output: '{}'", reason, got)
+            }
+            Self::NonZeroExit {
+                exit_status,
+                output,
+            } => write!(
+                formatter,
+                "Command exited with status {}. Output: '{}'",
+                exit_status, output
+            ),
+            Self::Timeout {
+                expected,
+                got,
+                timeout,
+            } => write!(
+                formatter,
+                "Timeout waiting for '{}'; got '{}' after {:?}",
+                expected, got, timeout
+            ),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Pty(error) => Some(error),
+            Self::ExpectMismatch { .. }
+            | Self::Protocol { .. }
+            | Self::NonZeroExit { .. }
+            | Self::Timeout { .. } => None,
+        }
+    }
+}
+
+impl From<rexpect::error::Error> for Error {
+    fn from(error: rexpect::error::Error) -> Self {
+        match error {
+            rexpect::error::Error::Timeout {
+                expected,
+                got,
+                timeout,
+            } => Self::Timeout {
+                expected,
+                got,
+                timeout,
+            },
+            other => Self::Pty(other),
+        }
+    }
+}
 
 /// A test case definition.
 pub struct TestCase {
@@ -98,21 +181,18 @@ pub fn __nixos_test_main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("=== Found {} test case(s) ===", test_cases.len());
         for tc in &test_cases {
-            println!("  - test_{}", tc.name);
+            println!("  - {}", tc.name);
         }
         println!();
     }
 
-    let mut session = rexpect::spawn(&qemu_cmd, Some(timeout_ms))?;
+    let mut session = rexpect::spawn(&qemu_cmd, Some(timeout_ms)).map_err(Error::from)?;
 
     println!("--> Waiting for login prompt...");
     let init_prompt = "root@asterinas:";
-    session.exp_string(init_prompt)?;
+    session.exp_string(init_prompt).map_err(Error::from)?;
 
-    let desc = SessionDesc::new()
-        .expect_prompt(init_prompt)
-        .cmd_to_enter("")
-        .cmd_to_exit("poweroff");
+    let desc = SessionDesc::new(init_prompt, "", "poweroff");
     let mut session = Session::new(desc, session);
 
     let mut passed = 0;
@@ -122,13 +202,13 @@ pub fn __nixos_test_main() -> Result<(), Box<dyn std::error::Error>> {
     for test_case in test_cases {
         println!("=== Running test case: {} ===", test_case.name);
 
-        match session.run(test_case.test_fn) {
+        match (test_case.test_fn)(&mut session) {
             Ok(_) => {
-                println!("✓ Test case 'test_{}' passed\n", test_case.name);
+                println!("✓ Test case '{}' passed\n", test_case.name);
                 passed += 1;
             }
             Err(_) => {
-                println!("✗ Test case 'test_{}' failed\n", test_case.name);
+                println!("✗ Test case '{}' failed\n", test_case.name);
                 failed += 1;
                 failed_tests.push(test_case.name);
             }
@@ -142,7 +222,7 @@ pub fn __nixos_test_main() -> Result<(), Box<dyn std::error::Error>> {
     let res = if !failed_tests.is_empty() {
         println!("\nFailed tests:");
         for name in failed_tests {
-            println!("  - test_{}", name);
+            println!("  - {}", name);
         }
 
         Err("Some tests failed")
@@ -164,14 +244,6 @@ pub fn __nixos_test_main() -> Result<(), Box<dyn std::error::Error>> {
 /// - `<number>ms` - milliseconds
 /// - `<number>s` - seconds
 /// - `<number>min` - minutes
-///
-/// # Examples
-///
-/// ```rust
-/// parse_timeout("300000ms") // Ok(300000)
-/// parse_timeout("300s")     // Ok(300000)
-/// parse_timeout("5min")     // Ok(300000)
-/// ```
 fn parse_timeout(timeout_str: &str) -> Result<u64, Box<dyn std::error::Error>> {
     let timeout_str = timeout_str.trim();
 
@@ -190,7 +262,7 @@ fn parse_timeout(timeout_str: &str) -> Result<u64, Box<dyn std::error::Error>> {
     }
 
     Err(format!(
-        "Invalid timeout format '{}'. Use: <number>ms, <number>s, or <number>m",
+        "Invalid timeout format '{}'. Use: <number>ms, <number>s, or <number>min",
         timeout_str
     )
     .into())
@@ -229,4 +301,23 @@ ENVIRONMENT VARIABLES:
 
 "
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_timeout;
+
+    #[test]
+    fn parse_timeout_supports_all_units() {
+        assert_eq!(parse_timeout("300000ms").unwrap(), 300_000);
+        assert_eq!(parse_timeout("300s").unwrap(), 300_000);
+        assert_eq!(parse_timeout("5min").unwrap(), 300_000);
+    }
+
+    #[test]
+    fn parse_timeout_reports_supported_units() {
+        let error = parse_timeout("5m").unwrap_err().to_string();
+
+        assert!(error.contains("<number>ms, <number>s, or <number>min"));
+    }
 }

@@ -5,5 +5,8 @@ repository.workspace = true
 license.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 nixos-test-framework.workspace = true

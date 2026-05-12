@@ -1,48 +1,179 @@
 # A comprehensive test for NixOS.
 #
-# This test suite is designed to run on GitHub's larger runners,
-# leveraging their extended storage capacity.
-# Here, we can thoroughly test a wider range of NixOS commands and various applications.
-# As GitHub charges more for these premium runners,
-# these tests will only run when changes are detected in AsterNixOS-specific content.
+# This workflow verifies that the basic functionality of popular applications
+# works correctly on Asterinas NixOS.
 name: Test AsterNixOS (full)
 
+permissions:
+  contents: read
+
 on:
+  schedule:
+    # Schedule to run on every day at 16:00 UTC (00:00 Beijing Time)
+    - cron: '0 16 * * *'
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Suite name to run. The default value is `all`, which means running all suites.
+        required: false
+        default: all
+        type: string
   pull_request:
-    paths:
+    paths: &triggering_paths
+      # Paths of test infra, which triggers smoke test.
+      # REMINDER: Keep in sync with INFRA_PATH_PREFIXES below.
       - distro/**
-      - .github/workflows/test_nixos_full.yml
       - tools/nixos/**
+      - tools/github_workflows/filter_json_array_with_changed_files.sh
+      - test/nixos/common/**
+      - .github/workflows/test_nixos_full.yml
+      # Paths of test suites, which trigger runs of the corresponding test suites.
+      - test/nixos/tests/**
   push:
     branches:
       - main
-    paths:
-      - distro/**
-      - .github/workflows/test_nixos_full.yml
-      - tools/nixos/**
+    paths: *triggering_paths
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  full-nixos-test:
-    runs-on: ubuntu-4-cores-150GB-ssd
-    container:
-      image: asterinas/asterinas:0.17.2-20260407
-      options: -v /dev:/dev --privileged
-    
+  # Select some or all NixOS test suites.
+  #
+  # Running all NixOS test suites would be too time consuming
+  # if triggered upon every PR change.
+  # So our strategy is to run the full set only for infrequent CI triggers
+  # such as `schedule`
+  # and to run a select set for frequent CI triggers
+  # such as `pull_request` and `push`.
+  # The `workflow` CI trigger selects all or one test suites
+  # depending on the user input.
+  #
+  # To do so, this first job specifies the selected NixOS test suites
+  # by producing a test matrix to be consumed by the second job.
+  select-test-suites:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.select.outputs.run }}
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute changed files
+        id: diff
+        run: |
+          case '${{ github.event_name }}' in
+            pull_request)
+              git diff --name-only \
+                '${{ github.event.pull_request.base.sha }}' \
+                '${{ github.event.pull_request.head.sha }}' > /tmp/changed
+              ;;
+            push)
+              if [ '${{ github.event.before }}' \
+                  = '0000000000000000000000000000000000000000' ]; then
+                git diff-tree --no-commit-id --name-only \
+                  -r '${{ github.sha }}' > /tmp/changed
+              else
+                git diff --name-only \
+                  '${{ github.event.before }}' '${{ github.sha }}' > /tmp/changed
+              fi
+              ;;
+          esac
+      - name: Select matrix
+        id: select
+        env:
+          # Keep in sync with on.<event>.paths above (anchored as &triggering_paths).
+          INFRA_PATH_PREFIXES: |
+            distro/
+            tools/nixos/
+            tools/github_workflows/filter_json_array_with_changed_files.sh
+            test/nixos/common/
+            .github/workflows/test_nixos_full.yml
+          # A matrix that keeps the info about the entire test suites.
+          FULL_TEST_MATRIX: >-
+            [
+              { "name": "system-core", "disk_size": 10240, "timeout_minutes": 45 }
+            ]
+          # A test suite that is quick to run as smoke test for the `pull_request` and `push` CI triggers.
+          SMOKE_TEST_NAME: system-core
+          # A test name manually selected by the user via the `workflow` CI trigger.
+          #
+          # A special value of "all" is used to select all test suites, rather than one.
+          MANUAL_TEST_NAME: ${{ github.event.inputs.suite }}
+        run: |
+          event='${{ github.event_name }}'
+          if [ "$event" = 'schedule' ]; then
+            matrix="$FULL_TEST_MATRIX"
+          elif [ "$event" = 'workflow_dispatch' ]; then
+            if [ "$MANUAL_TEST_NAME" = 'all' ]; then
+              matrix="$FULL_TEST_MATRIX"
+            else
+              matrix="$(
+                jq -c \
+                  --arg suite_name "$MANUAL_TEST_NAME" \
+                  '[.[] | select(.name == $suite_name)]' <<< "$FULL_TEST_MATRIX"
+              )"
+              if [ "$(jq 'length' <<< "$matrix")" -eq 0 ]; then
+                echo "Unknown suite name: $MANUAL_TEST_NAME" >&2
+                exit 1
+              fi
+            fi
+          else
+            matrix="$(
+              bash tools/github_workflows/filter_json_array_with_changed_files.sh \
+                --array "$FULL_TEST_MATRIX" \
+                --per-item-path-prefix 'test/nixos/tests' \
+                < /tmp/changed
+            )"
+            if [ "$(jq 'length' <<< "$matrix")" -eq 0 ] \
+              && grep -qE -f <(
+                  printf '%s\n' "$INFRA_PATH_PREFIXES" \
+                  | grep -v '^$' \
+                  | sed 's|^|^|'
+                ) /tmp/changed; then
+              matrix="$(
+                jq -c \
+                  --arg suite_name "$SMOKE_TEST_NAME" \
+                  '[.[] | select(.name == $suite_name)]' <<< "$FULL_TEST_MATRIX"
+              )"
+            fi
+          fi
+          matrix="$(jq -c <<< "$matrix")"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          if [ "$(jq 'length' <<< "$matrix")" -gt 0 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Run the selected NixOS test suites specified by the test matrix.
+  run-test-suites:
+    name: Test ${{ matrix.test.name }}
+    needs: select-test-suites
+    if: needs.select-test-suites.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
-        test:
-          - name: nix
-            disk_size: 6144
-          - name: podman
-            disk_size: 8192
-
-    name: Test ${{ matrix.test.name }}
-    timeout-minutes: 30
+        test: ${{ fromJson(needs.select-test-suites.outputs.matrix) }}
     steps:
+      - uses: endersonmenezes/free-disk-space@v3
+        with:
+          rm_cmd: "rmz"
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
       - uses: actions/checkout@v4
-      - name: Run the ${{ matrix.test.name }} test on AsterNixOS 
-        run: |
-          make nixos NIXOS_TEST_SUITE=${{ matrix.test.name }} NIXOS_DISK_SIZE_IN_MB=${{ matrix.test.disk_size }}
-          make run_nixos NIXOS_TEST_SUITE=${{ matrix.test.name }}
+      - name: Run the ${{ matrix.test.name }} test on AsterNixOS
+        timeout-minutes: ${{ matrix.test.timeout_minutes || 30 }}
+        uses: maus007/docker-run-action-fork@v1
+        with:
+          image: asterinas/asterinas:0.17.2-20260407
+          options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
+          run: |
+            make nixos NIXOS_TEST_SUITE=${{ matrix.test.name }} NIXOS_DISK_SIZE_IN_MB=${{ matrix.test.disk_size }}
+            make run_nixos NIXOS_TEST_SUITE=${{ matrix.test.name }}
