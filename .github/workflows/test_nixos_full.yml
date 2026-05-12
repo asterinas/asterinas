@@ -99,7 +99,8 @@ jobs:
               { "name": "containerization-and-virtualization", "disk_size": 10240, "timeout_minutes": 45 },
               { "name": "networking", "disk_size": 10240, "timeout_minutes": 45 },
               { "name": "web-servers-and-proxies", "disk_size": 10240, "timeout_minutes": 45 },
-              { "name": "databases-and-middleware", "disk_size": 10240, "timeout_minutes": 45 }
+              { "name": "databases-and-middleware", "disk_size": 10240, "timeout_minutes": 45 },
+              { "name": "development-tools", "disk_size": 10240, "timeout_minutes": 45 }
             ]
           # A test suite that is quick to run as smoke test for the `pull_request` and `push` CI triggers.
           SMOKE_TEST_NAME: system-core
