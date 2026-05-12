@@ -1857,35 +1857,42 @@ struct InodeBlockManager {
 
 impl InodeBlockManager {
     /// Reads one or multiple blocks to the segment start from `bid` asynchronously.
-    fn read_blocks_async(&self, bid: Ext2Bid, nblocks: usize) -> Result<BioWaiter> {
+    fn read_blocks_async(
+        &self,
+        bid: Ext2Bid,
+        nblocks: usize,
+    ) -> Result<(BioWaiter, Vec<BioSegment>)> {
         let mut bio_waiter = BioWaiter::new();
+        let mut bio_segments = Vec::new();
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + nblocks as Ext2Bid)? {
             let start_bid = dev_range.start as Ext2Bid;
             let range_nblocks = dev_range.len();
 
             let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::FromDevice);
-            let waiter = self.fs().read_blocks_async(start_bid, bio_segment)?;
+            let waiter = self
+                .fs()
+                .read_blocks_async(start_bid, bio_segment.clone(), None)?;
             bio_waiter.concat(waiter);
+            bio_segments.push(bio_segment);
         }
 
-        Ok(bio_waiter)
+        Ok((bio_waiter, bio_segments))
     }
 
     pub fn read_blocks(&self, bid: Ext2Bid, nblocks: usize, writer: &mut VmWriter) -> Result<()> {
         debug_assert!(nblocks * BLOCK_SIZE <= writer.avail());
-        let bio_waiter = self.read_blocks_async(bid, nblocks)?;
+        let (bio_waiter, bio_segments) = self.read_blocks_async(bid, nblocks)?;
+
         if Some(BioStatus::Complete) != bio_waiter.wait() {
             return_errno!(Errno::EIO);
         }
 
-        for bio in bio_waiter.reqs() {
-            for segment in bio.segments() {
-                segment
-                    .reader()?
-                    .read_fallible(writer)
-                    .map_err(|(e, _)| Error::from(e))?;
-            }
+        for bio_segment in bio_segments {
+            bio_segment
+                .reader()?
+                .read_fallible(writer)
+                .map_err(|(e, _)| Error::from(e))?;
         }
 
         Ok(())

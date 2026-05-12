@@ -170,6 +170,11 @@ impl BioRequest {
         self.bios.iter()
     }
 
+    /// Returns an iterator that consumes and yields the `SubmittedBio`s.
+    pub fn into_bios(self) -> impl Iterator<Item = SubmittedBio> {
+        self.bios.into_iter()
+    }
+
     /// Returns the number of sectors of this request.
     pub fn num_sectors(&self) -> usize {
         (self.sid_range.end.to_raw() - self.sid_range.start.to_raw())
