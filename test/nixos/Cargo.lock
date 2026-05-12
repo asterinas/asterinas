@@ -247,6 +247,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-containerization-and-virtualization"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-hello"
 version = "0.1.0"
 dependencies = [
@@ -255,13 +262,6 @@ dependencies = [
 
 [[package]]
 name = "test-nix-and-nixos-tools"
-version = "0.1.0"
-dependencies = [
- "nixos-test-framework",
-]
-
-[[package]]
-name = "test-podman"
 version = "0.1.0"
 dependencies = [
  "nixos-test-framework",
