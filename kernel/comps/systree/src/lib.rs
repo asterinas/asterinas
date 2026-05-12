@@ -78,7 +78,7 @@ pub fn primary_tree() -> &'static Arc<SysTree<RootNode>> {
 /// An owned string or a static reference to string.
 pub type SysStr = Cow<'static, str>;
 
-pub type Result<T> = core::result::Result<T, Error>;
+pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Debug)]
 pub enum Error {
