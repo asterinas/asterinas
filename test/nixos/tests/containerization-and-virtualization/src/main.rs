@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! The test suite for podman on Asterinas NixOS.
+//! The test suite for containerization and virtualization applications on Asterinas NixOS.
 //!
 //! See `test/nixos/README.md#documentation-maintenance` for sync requirements
 //! between this test suite and the corresponding "Verified Usage" book section.
@@ -9,8 +9,12 @@ use nixos_test_framework::*;
 
 nixos_test_main!();
 
+// ============================================================================
+// Podman
+// ============================================================================
+
 #[nixos_test]
-fn alpine_container_basic(nixos_shell: &mut Session) -> Result<(), Error> {
+fn podman_run_alpine_container(nixos_shell: &mut Session) -> Result<(), Error> {
     // Run alpine container
     nixos_shell.run_cmd_and_expect(
         "podman run --name=c1 docker.io/library/alpine ls /etc",
@@ -30,7 +34,7 @@ fn alpine_container_basic(nixos_shell: &mut Session) -> Result<(), Error> {
 }
 
 #[nixos_test]
-fn alpine_interactive_session(nixos_shell: &mut Session) -> Result<(), Error> {
+fn podman_open_interactive_session(nixos_shell: &mut Session) -> Result<(), Error> {
     let container_session_desc =
         SessionDesc::new("/ #", "podman run -it docker.io/library/alpine", "exit");
 
@@ -39,5 +43,19 @@ fn alpine_interactive_session(nixos_shell: &mut Session) -> Result<(), Error> {
         Ok(())
     })?;
 
+    Ok(())
+}
+
+// ============================================================================
+// Skopeo
+// ============================================================================
+
+#[nixos_test]
+fn skopeo_inspect_image(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd_and_expect(
+        "skopeo inspect docker://docker.io/library/alpine:latest",
+        "Digest",
+    )?;
+    nixos_shell.run_cmd_and_expect("skopeo list-tags docker://docker.io/library/alpine", "Tags")?;
     Ok(())
 }

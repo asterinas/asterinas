@@ -10,7 +10,7 @@ test/nixos/
 │   ├── template/               # Template for creating new tests
 │   └── ...                     # Core implementation of the framework
 ├── tests/
-│   ├── podman/                 # A real test crate
+│   ├── system-core/            # A real test crate
 │   │   ├── Cargo.toml
 │   │   ├── extra_config.nix    # (Optional) Additional NixOS configuration
 │   │   └── src/
@@ -137,8 +137,8 @@ make nixos NIXOS_TEST_SUITE=my-test && make run_nixos NIXOS_TEST_SUITE=my-test
 make iso NIXOS_TEST_SUITE=my-test && make run_iso && make run_nixos NIXOS_TEST_SUITE=my-test
 
 # Run specific test with custom timeout (10 minutes)
-make nixos NIXOS_TEST_SUITE=podman
-make run_nixos NIXOS_TEST_SUITE=podman NIXOS_TEST_CASE=container_basic_test NIXOS_TEST_TIMEOUT=10min
+make nixos NIXOS_TEST_SUITE=containerization-and-virtualization
+make run_nixos NIXOS_TEST_SUITE=containerization-and-virtualization NIXOS_TEST_CASE=podman_run_alpine_container NIXOS_TEST_TIMEOUT=10min
 ```
 
 ## Variables
