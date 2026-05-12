@@ -14,7 +14,7 @@ use crate::{
     cpu::LinuxAbi,
     prelude::*,
     process::{
-        posix_thread::{AsPosixThread, AsThreadLocal, FIRST_POSIX_TID, ThreadLocal},
+        posix_thread::{AsPosixThread, AsThreadLocal, FIRST_POSIX_TID, NOT_A_SYSCALL, ThreadLocal},
         signal::{HandlePendingSignal, PauseReason, handle_pending_signal},
     },
     syscall::handle_syscall,
@@ -78,17 +78,20 @@ pub fn create_new_user_task(
 
             // Handle user events
             let user_ctx = user_mode.context_mut();
-            let mut pre_syscall_ret = None;
             match return_reason {
                 ReturnReason::UserException => {
                     let exception = user_ctx.take_exception().unwrap();
+                    ctx.posix_thread.set_orig_syscall_ret(NOT_A_SYSCALL);
                     handle_exception(&ctx, user_ctx, exception)
                 }
                 ReturnReason::UserSyscall => {
-                    pre_syscall_ret = Some(user_ctx.syscall_ret());
+                    ctx.posix_thread
+                        .set_orig_syscall_ret(user_ctx.syscall_ret());
                     handle_syscall(&ctx, user_ctx);
                 }
-                ReturnReason::KernelEvent => {}
+                ReturnReason::KernelEvent => {
+                    ctx.posix_thread.set_orig_syscall_ret(NOT_A_SYSCALL);
+                }
             };
 
             // Exit if the thread terminates
@@ -97,7 +100,7 @@ pub fn create_new_user_task(
             }
 
             // Handle signals
-            handle_pending_signal(user_ctx, &ctx, pre_syscall_ret);
+            handle_pending_signal(user_ctx, &ctx);
 
             // Handle signals while the thread is stopped
             // FIXME: Currently, we handle all signals when the process is stopped.
@@ -112,7 +115,7 @@ pub fn create_new_user_task(
                     // We currently do not support ptrace.
                     PauseReason::StopBySignal,
                 );
-                handle_pending_signal(user_ctx, &ctx, None);
+                handle_pending_signal(user_ctx, &ctx);
             }
         }
     };
