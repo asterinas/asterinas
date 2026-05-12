@@ -40,7 +40,7 @@ impl PipeFs {
     fn mount_node() -> &'static Arc<Mount> {
         static PIPEFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        PIPEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
+        PIPEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
     }
 }
 

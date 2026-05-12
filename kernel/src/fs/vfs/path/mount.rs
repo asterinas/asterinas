@@ -207,7 +207,7 @@ impl Mount {
     pub(in crate::fs) fn new_root(
         fs: Arc<dyn FileSystem>,
         mnt_ns: Weak<MountNamespace>,
-    ) -> Arc<Self> {
+    ) -> Result<Arc<Self>> {
         let source = fs.name().to_string();
         Self::new(fs, PerMountFlags::default(), None, mnt_ns, Some(source))
     }
@@ -216,7 +216,7 @@ impl Mount {
     ///
     /// This pseudo mount is not mounted on other mount nodes, has no parent, and does not
     /// belong to any mount namespace.
-    pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Arc<Self> {
+    pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Result<Arc<Self>> {
         Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new(), None)
     }
 
@@ -234,10 +234,15 @@ impl Mount {
         parent_mount: Option<Weak<Mount>>,
         mnt_ns: Weak<MountNamespace>,
         source: Option<String>,
-    ) -> Arc<Self> {
-        let id = ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
+    ) -> Result<Arc<Self>> {
+        let id = ID_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc()
+            .ok_or_else(|| Error::new(Errno::ENOMEM))?;
 
-        Arc::new_cyclic(|weak_self| Self {
+        Ok(Arc::new_cyclic(|weak_self| Self {
             id,
             root_dentry: Dentry::new_root(fs.root_inode()),
             mountpoint: RwLock::new(None),
@@ -249,7 +254,7 @@ impl Mount {
             mnt_ns,
             flags: AtomicPerMountFlags::new(flags),
             this: weak_self.clone(),
-        })
+        }))
     }
 
     /// Gets the mount ID.
@@ -293,7 +298,7 @@ impl Mount {
             Some(Arc::downgrade(self)),
             self.mnt_ns.clone(),
             source,
-        );
+        )?;
         self.children.write().insert(key, child_mount.clone());
         child_mount.set_mountpoint(mountpoint);
 
@@ -321,9 +326,20 @@ impl Mount {
     /// have no parent and children. We should set the parent and children manually.
     ///
     /// The new mount will belong to the given mount namespace.
-    fn clone_mount(&self, root_dentry: &Arc<Dentry>, new_ns: &Weak<MountNamespace>) -> Arc<Self> {
-        Arc::new_cyclic(|weak_self| Self {
-            id: ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap(),
+    fn clone_mount(
+        &self,
+        root_dentry: &Arc<Dentry>,
+        new_ns: &Weak<MountNamespace>,
+    ) -> Result<Arc<Self>> {
+        let id = ID_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc()
+            .ok_or_else(|| Error::new(Errno::ENOMEM))?;
+
+        Ok(Arc::new_cyclic(|weak_self| Self {
+            id,
             root_dentry: root_dentry.clone(),
             mountpoint: RwLock::new(None),
             parent: RwLock::new(None),
@@ -334,7 +350,7 @@ impl Mount {
             mnt_ns: new_ns.clone(),
             flags: AtomicPerMountFlags::new(self.flags.load(Ordering::Relaxed)),
             this: weak_self.clone(),
-        })
+        }))
     }
 
     /// Clones a mount tree starting from the specified root `Dentry`.
@@ -356,10 +372,10 @@ impl Mount {
         new_ns: &Weak<MountNamespace>,
         recursive: bool,
         mnt_ns_file_copying: MountNsFileCopying,
-    ) -> Arc<Self> {
-        let new_root_mount = self.clone_mount(root_dentry, new_ns);
+    ) -> Result<Arc<Self>> {
+        let new_root_mount = self.clone_mount(root_dentry, new_ns)?;
         if !recursive {
-            return new_root_mount;
+            return Ok(new_root_mount);
         }
 
         let mut stack = vec![self.this()];
@@ -379,7 +395,7 @@ impl Mount {
                     continue;
                 }
                 let new_child_mount =
-                    old_child_mount.clone_mount(old_child_mount.root_dentry(), new_ns);
+                    old_child_mount.clone_mount(old_child_mount.root_dentry(), new_ns)?;
                 let key = mountpoint.key();
                 new_parent_mount
                     .children
@@ -392,7 +408,7 @@ impl Mount {
             }
         }
 
-        new_root_mount
+        Ok(new_root_mount)
     }
 
     /// Sets the propagation type of this mount.
@@ -615,6 +631,7 @@ impl Debug for Mount {
 
 impl Drop for Mount {
     fn drop(&mut self) {
+        self.clear_mountpoint();
         ID_ALLOCATOR.get().unwrap().lock().free(self.id);
     }
 }

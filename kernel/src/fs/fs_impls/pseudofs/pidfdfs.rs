@@ -40,7 +40,7 @@ impl PidfdFs {
     pub fn mount_node() -> &'static Arc<Mount> {
         static PIDFDFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        PIDFDFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
+        PIDFDFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
     }
 
     /// Returns the shared inode of the pidfd file system.

@@ -48,7 +48,7 @@ impl SockFs {
     pub fn mount_node() -> &'static Arc<Mount> {
         static SOCKFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        SOCKFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()))
+        SOCKFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
     }
 }
 
