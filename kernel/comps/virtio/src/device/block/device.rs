@@ -309,7 +309,7 @@ impl DeviceInner {
                 Ok(RespStatus::Ok) => {}
                 _ => {
                     // Completes the bio request with an error
-                    complete_request.bio_request.bios().for_each(|bio| {
+                    complete_request.bio_request.into_bios().for_each(|bio| {
                         bio.complete(BioStatus::IoError);
                     });
                     continue;
@@ -330,7 +330,7 @@ impl DeviceInner {
             }
 
             // Completes the bio request
-            complete_request.bio_request.bios().for_each(|bio| {
+            complete_request.bio_request.into_bios().for_each(|bio| {
                 bio.complete(BioStatus::Complete);
             });
         }
@@ -479,7 +479,7 @@ impl DeviceInner {
     /// This will be ignored if the device doesn't support the `VIRTIO_BLK_F_FLUSH` feature.
     fn flush(&self, bio_request: BioRequest) {
         if self.features.support_flush {
-            bio_request.bios().for_each(|bio| {
+            bio_request.into_bios().for_each(|bio| {
                 bio.complete(BioStatus::Complete);
             });
             return;
