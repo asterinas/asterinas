@@ -2,13 +2,12 @@
 
 //! Temporary file system (tmpfs) based on ramfs.
 
-pub(super) use fs::TmpFs;
 use fs::TmpFsType;
+pub(super) use fs::{TmpFs, default_max_blocks, default_max_inodes};
 
 mod fs;
 
-#[expect(dead_code)]
-const TMPFS_MAGIC: u64 = 0x0102_1994;
+pub(super) const TMPFS_MAGIC: u64 = 0x0102_1994;
 
 pub(super) fn init() {
     crate::fs::vfs::registry::register(&TmpFsType).unwrap();
