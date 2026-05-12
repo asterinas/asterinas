@@ -22,6 +22,7 @@ use crate::{
         file::{AccessMode, FileIo, InodeMode, InodeType, Permission, StatusFlags, mkmod},
         pipe::Pipe,
         pseudofs::AnonDeviceId,
+        tmpfs::{self, TMPFS_MAGIC},
         utils::{CStr256, DirentVisitor},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
@@ -60,13 +61,41 @@ impl RamFs {
         Self::new_internal("rootfs")
     }
 
+    // TODO: Remove this tmpfs-specific constructor once `TmpFs` no longer
+    // aliases `RamFs`.
+    pub(in crate::fs) fn new_tmpfs() -> Arc<Self> {
+        let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for tmpfs");
+        let sb = {
+            let mut super_block =
+                SuperBlock::new(TMPFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+            let max_blocks = tmpfs::default_max_blocks();
+            let max_inodes = tmpfs::default_max_inodes();
+            super_block.blocks = max_blocks;
+            super_block.bfree = max_blocks;
+            super_block.bavail = max_blocks;
+            super_block.files = max_inodes;
+            super_block.ffree = max_inodes;
+            super_block
+        };
+        Self::new_internal_with_sb("tmpfs", anon_device_id, sb)
+    }
+
     fn new_internal(name: &'static str) -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for ramfs");
+        let sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        Self::new_internal_with_sb(name, anon_device_id, sb)
+    }
+
+    fn new_internal_with_sb(
+        name: &'static str,
+        anon_device_id: AnonDeviceId,
+        sb: SuperBlock,
+    ) -> Arc<Self> {
         let root_dev_id = anon_device_id.id();
         Arc::new_cyclic(move |weak_fs| Self {
             name,
             _anon_device_id: anon_device_id,
-            sb: SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, root_dev_id),
+            sb,
             root: Arc::new_cyclic(|weak_root| RamInode {
                 inner: Inner::new_dir(weak_root.clone(), weak_root.clone()),
                 metadata: SpinLock::new(InodeMeta::new_dir(
