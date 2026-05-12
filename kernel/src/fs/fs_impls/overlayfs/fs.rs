@@ -1240,6 +1240,7 @@ mod tests {
             RamFs::new(),
             Arc::downgrade(MountNamespace::get_init_singleton()),
         )
+        .unwrap()
     }
 
     fn create_overlay_fs() -> Arc<dyn FileSystem> {

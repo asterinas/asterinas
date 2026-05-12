@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::UniqueArc;
+
 use spin::Once;
 
 use super::{mount::MountNsFileCopying, try_get_mnt_ns_inode};
@@ -21,7 +23,13 @@ use crate::{
 /// rejected and return an `Err`.
 pub struct MountNamespace {
     /// The root mount of this namespace.
-    root: Arc<Mount>,
+    ///
+    /// This field is wrapped within an `Option<_>`
+    /// because the root mount is unknown
+    /// in the beginning of the constructor method (see `new_clone`).
+    /// But if the constructor method completes,
+    /// this field is guaranteed to be `Some(_)`.
+    root: Option<Arc<Mount>>,
     /// The user namespace that owns this mount namespace.
     owner: Arc<UserNamespace>,
     /// The stashed dentry in nsfs.
@@ -58,21 +66,21 @@ impl MountNamespace {
             let owner = UserNamespace::get_init_singleton().clone();
             let rootfs = RamFs::new_rootfs();
 
-            Arc::new_cyclic(|weak_self| {
-                let root = Mount::new_root(rootfs, weak_self.clone());
-                let stashed_dentry = StashedDentry::new();
-                MountNamespace {
-                    root,
-                    owner,
-                    stashed_dentry,
-                }
-            })
+            let mut new_ns = UniqueArc::new(MountNamespace {
+                root: None,
+                owner,
+                stashed_dentry: StashedDentry::new(),
+            });
+            let root = Mount::new_root(rootfs, UniqueArc::downgrade(&new_ns))
+                .expect("failed to allocate mount ID for the root mount");
+            new_ns.root = Some(root);
+            UniqueArc::into_arc(new_ns)
         })
     }
 
     /// Gets the root mount of this namespace.
     pub fn root(&self) -> &Arc<Mount> {
-        &self.root
+        self.root.as_ref().unwrap()
     }
 
     /// Creates a new filesystem resolver for this namespace.
@@ -83,8 +91,8 @@ impl MountNamespace {
     /// The "effective root" refers to the currently visible root directory, which
     /// may differ from the original root filesystem if overlay mounts exist.
     pub fn new_path_resolver(&self) -> PathResolver {
-        let root = Path::new_fs_root(self.root.clone()).get_top_path();
-        let cwd = Path::new_fs_root(self.root.clone()).get_top_path();
+        let root = Path::new_fs_root(self.root().clone()).get_top_path();
+        let cwd = Path::new_fs_root(self.root().clone()).get_top_path();
         PathResolver::new(root, cwd)
     }
 
@@ -98,23 +106,21 @@ impl MountNamespace {
     ) -> Result<Arc<MountNamespace>> {
         owner.check_cap(CapSet::SYS_ADMIN, posix_thread)?;
 
-        let root_mount = &self.root;
-        let new_mnt_ns = Arc::new_cyclic(|weak_self| {
-            let new_root = root_mount.clone_mount_tree(
-                root_mount.root_dentry(),
-                weak_self,
-                true,
-                MountNsFileCopying::Skip,
-            );
-            let stashed_dentry = StashedDentry::new();
-            MountNamespace {
-                root: new_root,
-                owner,
-                stashed_dentry,
-            }
+        let root_mount = self.root();
+        let mut new_mnt_ns = UniqueArc::new(MountNamespace {
+            root: None,
+            owner,
+            stashed_dentry: StashedDentry::new(),
         });
+        let new_root = root_mount.clone_mount_tree(
+            root_mount.root_dentry(),
+            &UniqueArc::downgrade(&new_mnt_ns),
+            true,
+            MountNsFileCopying::Skip,
+        )?;
+        new_mnt_ns.root = Some(new_root);
 
-        Ok(new_mnt_ns)
+        Ok(UniqueArc::into_arc(new_mnt_ns))
     }
 
     /// Flushes all pending filesystem metadata and cached file data to the device
@@ -122,7 +128,7 @@ impl MountNamespace {
     pub fn sync(&self) -> Result<()> {
         let mut mount_queue = VecDeque::new();
         let mut visited_filesystems = hashbrown::HashSet::new();
-        mount_queue.push_back(self.root.clone());
+        mount_queue.push_back(self.root().clone());
 
         while let Some(current_mount) = mount_queue.pop_front() {
             let fs_ptr = Arc::as_ptr(current_mount.fs());
@@ -186,8 +192,13 @@ impl MountNamespace {
 // detached from their parents and cleared of their mountpoints.
 impl Drop for MountNamespace {
     fn drop(&mut self) {
+        let Some(root) = self.root.as_ref() else {
+            // The constructor must be incomplete
+            // and thus the subsequent cleanup logic can be skipped.
+            return;
+        };
         let mut worklist = VecDeque::new();
-        worklist.push_back(self.root.clone());
+        worklist.push_back(root.clone());
         while let Some(current_mount) = worklist.pop_front() {
             let mut children = current_mount.children.write();
             for (_, child) in children.drain() {

@@ -408,7 +408,7 @@ impl Path {
             &current_mnt_ns_weak,
             recursive,
             MountNsFileCopying::Copy,
-        );
+        )?;
         new_mount.graft_mount_tree(dst_path);
         Ok(())
     }
