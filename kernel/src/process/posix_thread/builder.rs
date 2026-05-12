@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, AtomicU64};
+use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize};
 
 use ostd::{
     arch::cpu::context::{FpuContext, UserContext},
@@ -16,7 +16,7 @@ use crate::{
     prelude::*,
     process::{
         Credentials, NsProxy, Process, UserNamespace,
-        posix_thread::name::ThreadName,
+        posix_thread::{NOT_A_SYSCALL, name::ThreadName},
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
     sched::{Nice, SchedPolicy},
@@ -182,6 +182,7 @@ impl PosixThreadBuilder {
                     tracee_status: Once::new(),
                     tracees: Once::new(),
                     exit_code: AtomicU32::new(0),
+                    orig_syscall_ret: AtomicUsize::new(NOT_A_SYSCALL),
                 }
             };
 

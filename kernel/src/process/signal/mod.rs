@@ -35,7 +35,9 @@ use crate::{
     prelude::*,
     process::{
         TermStatus,
-        posix_thread::{ContextPthreadAdminApi, do_exit_group, ptrace::PtraceStopResult},
+        posix_thread::{
+            ContextPthreadAdminApi, NOT_A_SYSCALL, do_exit_group, ptrace::PtraceStopResult,
+        },
         signal::{c_types::stack_t, constants::SIGKILL},
     },
 };
@@ -46,21 +48,18 @@ pub trait SignalContext {
 }
 
 /// Handles a pending signal for the current process.
-pub fn handle_pending_signal(
-    user_ctx: &mut UserContext,
-    ctx: &Context,
-    pre_syscall_ret: Option<usize>,
-) {
+pub fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
     // FIXME: This function may handle or suppress only one signal per trap, delaying
     // other pending unmasked signals until the next trap. Consider a looped scan.
     //
     // For details, see <https://github.com/asterinas/asterinas/pull/2984/#discussion_r3137275994>.
-    let syscall_restart = if let Some(pre_syscall_ret) = pre_syscall_ret
+    let orig_syscall_ret = ctx.posix_thread.orig_syscall_ret();
+    let syscall_restart = if orig_syscall_ret != NOT_A_SYSCALL
         && user_ctx.syscall_ret() == -(Errno::ERESTARTSYS as i32) as usize
     {
         // We should never return `ERESTARTSYS` to the userspace.
         user_ctx.set_syscall_ret(-(Errno::EINTR as i32) as usize);
-        Some(pre_syscall_ret)
+        Some(orig_syscall_ret)
     } else {
         None
     };

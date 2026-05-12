@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
 use ostd::{
@@ -44,6 +44,9 @@ pub use name::{MAX_THREAD_NAME_LEN, ThreadName};
 pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
 pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
+
+/// Sentinel for [`PosixThread::orig_syscall_ret`] on non-syscall entries.
+pub const NOT_A_SYSCALL: usize = usize::MAX;
 
 pub struct PosixThread {
     // Immutable part
@@ -102,6 +105,11 @@ pub struct PosixThread {
 
     /// Exit code of this thread.
     exit_code: AtomicU32,
+
+    /// Original syscall-return register value captured
+    /// at the most recent kernel entry,
+    /// or [`NOT_A_SYSCALL`] for non-syscall entries.
+    orig_syscall_ret: AtomicUsize,
 }
 
 impl PosixThread {
@@ -247,6 +255,18 @@ impl PosixThread {
         if let Some((waker, _)) = &*self.signalled_waker.lock() {
             waker.wake_up();
         }
+    }
+
+    /// Returns the original syscall-return register value
+    /// for the most recent kernel entry.
+    pub(in crate::process) fn orig_syscall_ret(&self) -> usize {
+        self.orig_syscall_ret.load(Ordering::Relaxed)
+    }
+
+    /// Sets the original syscall-return register value
+    /// for the most recent kernel entry.
+    pub fn set_orig_syscall_ret(&self, value: usize) {
+        self.orig_syscall_ret.store(value, Ordering::Relaxed);
     }
 
     /// Enqueues a thread-directed signal.
