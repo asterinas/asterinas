@@ -107,7 +107,8 @@ jobs:
               { "name": "office-and-productivity", "disk_size": 8192 },
               { "name": "multimedia", "disk_size": 8192 },
               { "name": "communication", "disk_size": 8192 },
-              { "name": "file-management-and-terminal", "disk_size": 8192 }
+              { "name": "file-management-and-terminal", "disk_size": 8192 },
+              { "name": "ai-and-machine-learning", "disk_size": 10240, "timeout_minutes": 45 }
             ]
           # A test suite that is quick to run as smoke test for the `pull_request` and `push` CI triggers.
           SMOKE_TEST_NAME: system-core
