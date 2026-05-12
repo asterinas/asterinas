@@ -454,6 +454,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-cicd-and-devops"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-containerization-and-virtualization"
 version = "0.1.0"
 dependencies = [
