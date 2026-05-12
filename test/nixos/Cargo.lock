@@ -510,6 +510,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-office-and-productivity"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-system-core"
 version = "0.1.0"
 dependencies = [
