@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub type Result<T> = core::result::Result<T, self::Error>;
+pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 /// Errors of CPIO decoder.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
