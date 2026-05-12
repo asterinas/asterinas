@@ -517,6 +517,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-web-browsers"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-web-servers-and-proxies"
 version = "0.1.0"
 dependencies = [
