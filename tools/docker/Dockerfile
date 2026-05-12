@@ -93,7 +93,7 @@ RUN ln -s /root/asterinas/tools/sctrace.sh /usr/local/bin/sctrace
 
 # Set the `ASTER_SCML` env var to make sctrace easier to use for Asterinas developers.
 # For more information, check out the README of sctrace.
-RUN echo 'export ASTER_SCML=$(find /root/asterinas/book/src/kernel/linux-compatibility/ -name "*.scml")' >> /root/.bashrc
+RUN echo 'export ASTER_SCML=$(find /root/asterinas/book/src/kernel/linux-compatibility/ -name "*.scml" 2>/dev/null)' >> /root/.bashrc
 
 # Copy the gvisor syscall test binaries
 COPY --from=build-gvisor /root/syscall_test_bins /root/syscall_test_bins
