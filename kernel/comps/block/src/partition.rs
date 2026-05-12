@@ -250,7 +250,7 @@ pub struct PartitionNode {
 }
 
 impl BlockDevice for PartitionNode {
-    fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
+    fn enqueue(&self, mut bio: SubmittedBio) -> Result<(), BioEnqueueError> {
         bio.set_sid_offset(self.info.start_sector());
         self.device.enqueue(bio)
     }
