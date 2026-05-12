@@ -4,8 +4,7 @@ use crate::{
     fs::{
         ramfs::RamFs,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            inode::Inode,
+            file_system::FileSystem,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
@@ -14,42 +13,20 @@ use crate::{
 
 /// The temporary file system (tmpfs) structure.
 //
-// TODO: Currently, tmpfs is implemented as a thin wrapper around ramfs.
-// In the future we need to implement tmpfs-specific features such as
-// memory limits and swap support.
-pub struct TmpFs {
-    inner: Arc<RamFs>,
+// TODO: `TmpFs` currently aliases `RamFs` and relies on `RamFs::new_tmpfs()`
+// to create tmpfs-flavored ramfs instances. In the future we need to
+// implement a dedicated tmpfs with tmpfs-specific features such as memory
+// limits and swap support.
+pub type TmpFs = RamFs;
+
+// FIXME: These defaults are only a rough approximation for tmpfs-over-ramfs.
+// A dedicated tmpfs implementation should replace them with real tmpfs limit
+// and accounting semantics.
+pub(in crate::fs) fn default_max_blocks() -> usize {
+    crate::vm::mem_total() / PAGE_SIZE / 2
 }
-
-impl TmpFs {
-    pub fn new() -> Arc<Self> {
-        Arc::new(TmpFs {
-            inner: RamFs::new(),
-        })
-    }
-}
-
-impl FileSystem for TmpFs {
-    fn name(&self) -> &'static str {
-        "tmpfs"
-    }
-
-    fn sync(&self) -> Result<()> {
-        // do nothing
-        Ok(())
-    }
-
-    fn root_inode(&self) -> Arc<dyn Inode> {
-        self.inner.root_inode()
-    }
-
-    fn sb(&self) -> SuperBlock {
-        self.inner.sb()
-    }
-
-    fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
-        self.inner.fs_event_subscriber_stats()
-    }
+pub(in crate::fs) fn default_max_inodes() -> usize {
+    crate::vm::mem_total() / PAGE_SIZE / 2
 }
 
 pub(super) struct TmpFsType;
@@ -64,7 +41,7 @@ impl FsType for TmpFsType {
     }
 
     fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(TmpFs::new())
+        Ok(TmpFs::new_tmpfs())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
