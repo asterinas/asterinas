@@ -101,6 +101,7 @@ dependencies = [
  "device-id",
  "id-alloc",
  "int-to-c-enum",
+ "io_util",
  "ostd",
  "ostd-pod",
  "spin",
@@ -203,6 +204,7 @@ dependencies = [
  "inherit-methods-macro",
  "int-to-c-enum",
  "intrusive-collections",
+ "io_util",
  "jhash",
  "keyable-arc",
  "lending-iterator",
@@ -991,6 +993,13 @@ source = "git+https://github.com/asterinas/inventory?rev=9dce587#9dce58712d1cd1e
 dependencies = [
  "ctor",
  "ghost",
+]
+
+[[package]]
+name = "io_util"
+version = "0.1.0"
+dependencies = [
+ "smallvec",
 ]
 
 [[package]]
