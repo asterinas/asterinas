@@ -141,60 +141,60 @@ fn parse_ptrace_injected_signal(data: usize) -> Result<Option<SigNum>> {
 #[derive(Debug, Clone, Copy, TryFromInt)]
 #[expect(non_camel_case_types)]
 enum PtraceRequest {
-    /// Indicate that this thread should be traced by its parent.
+    /// Indicates that this thread should be traced by its parent.
     PTRACE_TRACEME = 0,
-    /// Return the word in the thread's user area at offset ADDR.
+    /// Reads a word from the thread's user area at offset `addr`.
     #[cfg(target_arch = "x86_64")]
     PTRACE_PEEKUSER = 3,
-    /// Write the word DATA into the thread's user area at offset ADDR.
+    /// Writes the word `data` to the thread's user area at offset `addr`.
     #[cfg(target_arch = "x86_64")]
     PTRACE_POKEUSER = 6,
-    /// Continue the thread.
+    /// Continues the thread.
     PTRACE_CONT = 7,
-    /// Kill the thread.
+    /// Kills the thread.
     PTRACE_KILL = 8,
-    /// Single step the thread.
+    /// Single-steps the thread.
     #[cfg(target_arch = "x86_64")]
     PTRACE_SINGLESTEP = 9,
-    /// Get all general purpose registers used by a thread.
+    /// Gets all general-purpose registers used by the thread.
     #[cfg(target_arch = "x86_64")]
     PTRACE_GETREGS = 12,
-    /// Set all general purpose registers used by a thread.
+    /// Sets all general-purpose registers used by the thread.
     #[cfg(target_arch = "x86_64")]
     PTRACE_SETREGS = 13,
-    /// Get the siginfo of the last ptrace-stop.
+    /// Gets the `siginfo` of the last ptrace-stop.
     PTRACE_GETSIGINFO = 0x4202,
     // TODO: Support other operations.
-    // /// Return the word in the thread's text space at address ADDR.
+    // /// Reads a word from the thread's text space at address `addr`.
     // PTRACE_PEEKTEXT = 1,
-    // /// Return the word in the thread's data space at address ADDR.
+    // /// Reads a word from the thread's data space at address `addr`.
     // PTRACE_PEEKDATA = 2,
-    // /// Write the word DATA into the thread's text space at address ADDR.
+    // /// Writes the word `data` to the thread's text space at address `addr`.
     // PTRACE_POKETEXT = 4,
-    // /// Write the word DATA into the thread's data space at address ADDR.
+    // /// Writes the word `data` to the thread's data space at address `addr`.
     // PTRACE_POKEDATA = 5,
-    // /// Get all floating point registers used by a thread.
+    // /// Gets all floating-point registers used by the thread.
     // PTRACE_GETFPREGS = 14,
-    // /// Set all floating point registers used by a thread.
+    // /// Sets all floating-point registers used by the thread.
     // PTRACE_SETFPREGS = 15,
-    // /// Attach to a thread that is already running.
+    // /// Attaches to a thread that is already running.
     // PTRACE_ATTACH = 16,
-    // /// Detach from a thread attached to.
+    // /// Detaches from an attached thread.
     // PTRACE_DETACH = 17,
-    // /// Get all extended floating point registers used by a thread.
+    // /// Gets all extended floating-point registers used by the thread.
     // PTRACE_GETFPXREGS = 18,
-    // /// Set all extended floating point registers used by a thread.
+    // /// Sets all extended floating-point registers used by the thread.
     // PTRACE_SETFPXREGS = 19,
-    // /// Continue and stop at the next entry to or return from syscall.
+    // /// Continues and stops at the next entry to or return from syscall.
     // PTRACE_SYSCALL = 24,
-    // /// Continue and stop at the next syscall, it will not be executed.
+    // /// Continues and stops at the next syscall, which will not be executed.
     // PTRACE_SYSEMU = 31,
-    // /// Single step the thread, the next syscall will not be executed.
+    // /// Single-steps the thread, and the next syscall will not be executed.
     // PTRACE_SYSEMU_SINGLESTEP = 32,
-    // /// Set ptrace filter options.
+    // /// Sets ptrace filter options.
     // PTRACE_SETOPTIONS = 0x4200,
-    // /// Get register content.
+    // /// Gets register contents.
     // PTRACE_GETREGSET = 0x4204,
-    // /// Set register content.
+    // /// Sets register contents.
     // PTRACE_SETREGSET = 0x4205,
 }
