@@ -1,0 +1,10 @@
+[package]
+name = "io_util"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+smallvec.workspace = true
+
+[lints]
+workspace = true
