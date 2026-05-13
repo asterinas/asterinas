@@ -230,23 +230,25 @@ impl BlockGroup {
         let raw_descriptor = RawGroupDescriptor::from(&inner.metadata.descriptor);
         self.fs().sync_group_descriptor(self.idx, &raw_descriptor)?;
 
-        let mut bio_waiter = BioWaiter::new();
+        let mut io_batch = IoBatch::new();
         // Writes back the inode bitmap.
         let inode_bitmap_bid = Bid::new(inner.metadata.descriptor.inode_bitmap_bid as u64);
-        bio_waiter.concat(fs.block_device().write_bytes_async(
+        fs.block_device().write_bytes_async(
             inode_bitmap_bid.to_offset(),
             inner.metadata.inode_bitmap.as_bytes(),
-        )?);
+            &mut io_batch,
+        )?;
 
         // Writes back the block bitmap.
         let block_bitmap_bid = Bid::new(inner.metadata.descriptor.block_bitmap_bid as u64);
-        bio_waiter.concat(fs.block_device().write_bytes_async(
+        fs.block_device().write_bytes_async(
             block_bitmap_bid.to_offset(),
             inner.metadata.block_bitmap.as_bytes(),
-        )?);
+            &mut io_batch,
+        )?;
 
         // Waits for the completion of all submitted bios.
-        bio_waiter.wait().ok_or_else(|| {
+        io_batch.wait_all().map_err(|_| {
             Error::with_message(Errno::EIO, "failed to sync metadata of block group")
         })?;
 
@@ -317,18 +319,19 @@ impl Debug for BlockGroup {
     }
 }
 
-impl PageCacheBackend for BlockGroupImpl {
+impl BlockAsPageCacheBackend for BlockGroupImpl {
     fn submit_read_bio(
         &self,
         idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
         self.fs
             .upgrade()
             .unwrap()
-            .read_blocks_async(bid, bio_segment, complete_fn)
+            .read_blocks_async(bid, bio_segment, complete_fn, io_batch)
     }
 
     fn submit_write_bio(
@@ -336,12 +339,13 @@ impl PageCacheBackend for BlockGroupImpl {
         idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
         self.fs
             .upgrade()
             .unwrap()
-            .write_blocks_async(bid, bio_segment, complete_fn)
+            .write_blocks_async(bid, bio_segment, complete_fn, io_batch)
     }
 
     fn npages(&self) -> usize {

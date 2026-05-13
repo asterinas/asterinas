@@ -8,9 +8,10 @@ pub(super) use core::{
 pub(super) use align_ext::AlignExt;
 pub(super) use aster_block::{
     BLOCK_SIZE, BlockDevice, SECTOR_SIZE,
-    bio::{BioDirection, BioSegment, BioStatus, BioWaiter},
+    bio::{BioDirection, BioSegment, BioStatus},
     id::Bid,
 };
+pub(super) use io_util::batch::IoBatch;
 pub(super) use ostd::{
     mm::{Frame, FrameAllocOptions, Segment, USegment, VmIo},
     sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
@@ -24,5 +25,5 @@ pub(super) use crate::{
     },
     prelude::*,
     time::UnixTime,
-    vm::page_cache::{PageCache, PageCacheBackend},
+    vm::page_cache::{BlockAsPageCacheBackend, PageCache},
 };

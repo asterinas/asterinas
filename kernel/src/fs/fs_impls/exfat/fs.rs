@@ -7,11 +7,12 @@ use core::{num::NonZeroUsize, ops::Range, sync::atomic::AtomicU64};
 
 use aster_block::{
     BlockDevice,
-    bio::{BioCompleteFn, BioSegment, BioWaiter},
+    bio::{BioCompleteFn, BioSegment},
     id::BlockId,
 };
 use device_id::DeviceId;
 use hashbrown::HashMap;
+use io_util::batch::IoBatch;
 use lru::LruCache;
 pub(super) use ostd::mm::VmIo;
 
@@ -32,7 +33,7 @@ use crate::{
         },
     },
     prelude::*,
-    vm::page_cache::{PageCache, PageCacheBackend},
+    vm::page_cache::{BlockAsPageCacheBackend, PageCache},
 };
 
 #[derive(Debug)]
@@ -374,22 +375,24 @@ impl ExfatFs {
     }
 }
 
-impl PageCacheBackend for ExfatFs {
+impl BlockAsPageCacheBackend for ExfatFs {
     fn submit_read_bio(
         &self,
         idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size")
         }
-        let waiter = self.block_device.read_blocks_async(
+        self.block_device.read_blocks_async(
             BlockId::new(idx as u64),
             bio_segment,
             complete_fn,
+            io_batch,
         )?;
-        Ok(waiter)
+        Ok(())
     }
 
     fn submit_write_bio(
@@ -397,16 +400,18 @@ impl PageCacheBackend for ExfatFs {
         idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid write size")
         }
-        let waiter = self.block_device.write_blocks_async(
+        self.block_device.write_blocks_async(
             BlockId::new(idx as u64),
             bio_segment,
             complete_fn,
+            io_batch,
         )?;
-        Ok(waiter)
+        Ok(())
     }
 
     fn npages(&self) -> usize {

@@ -9,9 +9,10 @@ use core::{cmp::Ordering, time::Duration};
 pub(super) use align_ext::AlignExt;
 use aster_block::{
     BLOCK_SIZE, SECTOR_SIZE,
-    bio::{BioCompleteFn, BioDirection, BioSegment, BioWaiter},
+    bio::{BioCompleteFn, BioDirection, BioSegment},
     id::{Bid, BlockId},
 };
+use io_util::batch::IoBatch;
 use ostd::mm::{VmIo, io::util::HasVmReaderWriter};
 
 use super::{
@@ -37,7 +38,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::{PageCache, PageCacheBackend},
+    vm::page_cache::{BlockAsPageCacheBackend, PageCache},
 };
 
 ///Inode number
@@ -135,24 +136,27 @@ struct ExfatInodeInner {
     page_cache: PageCache,
 }
 
-impl PageCacheBackend for ExfatInode {
+impl BlockAsPageCacheBackend for ExfatInode {
     fn submit_read_bio(
         &self,
         idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         let inner = self.inner.read();
         if inner.size < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
         }
-        let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
-        let waiter = inner.fs().block_device().read_blocks_async(
+        let fs = inner.fs();
+        let sector_id = inner.get_sector_id(idx * PAGE_SIZE / fs.sector_size())?;
+        fs.block_device().read_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
             complete_fn,
+            io_batch,
         )?;
-        Ok(waiter)
+        Ok(())
     }
 
     fn submit_write_bio(
@@ -160,15 +164,18 @@ impl PageCacheBackend for ExfatInode {
         idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         let inner = self.inner.read();
-        let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
-        let waiter = inner.fs().block_device().write_blocks_async(
+        let fs = inner.fs();
+        let sector_id = inner.get_sector_id(idx * PAGE_SIZE / fs.sector_size())?;
+        fs.block_device().write_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
             complete_fn,
+            io_batch,
         )?;
-        Ok(waiter)
+        Ok(())
     }
 
     fn npages(&self) -> usize {
