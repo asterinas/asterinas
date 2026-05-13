@@ -329,11 +329,15 @@ impl Ext2 {
         bid: Ext2Bid,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
-        let waiter =
-            self.block_device
-                .read_blocks_async(Bid::new(bid as u64), bio_segment, complete_fn)?;
-        Ok(waiter)
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
+        self.block_device.read_blocks_async(
+            Bid::new(bid as u64),
+            bio_segment,
+            complete_fn,
+            io_batch,
+        )?;
+        Ok(())
     }
 
     /// Writes contiguous blocks starting from the `bid` synchronously.
@@ -353,11 +357,15 @@ impl Ext2 {
         bid: Ext2Bid,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
-        let waiter =
-            self.block_device
-                .write_blocks_async(Bid::new(bid as u64), bio_segment, complete_fn)?;
-        Ok(waiter)
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
+        self.block_device.write_blocks_async(
+            Bid::new(bid as u64),
+            bio_segment,
+            complete_fn,
+            io_batch,
+        )?;
+        Ok(())
     }
 
     /// Writes back the metadata to the block device.
@@ -374,42 +382,45 @@ impl Ext2 {
         }
 
         // Writes back the main superblock and group descriptor table.
-        let mut bio_waiter = BioWaiter::new();
+        let mut io_batch = IoBatch::new();
         let raw_super_block = RawSuperBlock::from((*super_block).deref());
-        bio_waiter.concat(
-            self.block_device
-                .write_bytes_async(SUPER_BLOCK_OFFSET, raw_super_block.as_bytes())?,
-        );
+        self.block_device.write_bytes_async(
+            SUPER_BLOCK_OFFSET,
+            raw_super_block.as_bytes(),
+            &mut io_batch,
+        )?;
         let group_descriptors_bio_segment = BioSegment::new_from_segment(
             self.group_descriptors_segment.clone(),
             BioDirection::ToDevice,
         );
-        bio_waiter.concat(self.block_device.write_blocks_async(
+        self.block_device.write_blocks_async(
             super_block.group_descriptors_bid(0),
             group_descriptors_bio_segment.clone(),
             None,
-        )?);
-        bio_waiter
-            .wait()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "failed to sync main metadata"))?;
-        drop(bio_waiter);
+            &mut io_batch,
+        )?;
+        io_batch
+            .wait_all()
+            .map_err(|_| Error::with_message(Errno::EIO, "failed to sync main metadata"))?;
 
         // Writes back the backups of superblock and group descriptor table.
         let mut raw_super_block_backup = raw_super_block;
         for idx in 1..super_block.block_groups_count() {
             if super_block.is_backup_group(idx as usize) {
-                let mut bio_waiter = BioWaiter::new();
+                let mut io_batch = IoBatch::new();
                 raw_super_block_backup.block_group_idx = idx as u16;
-                bio_waiter.concat(self.block_device.write_bytes_async(
+                self.block_device.write_bytes_async(
                     super_block.bid(idx as usize).to_offset(),
                     raw_super_block_backup.as_bytes(),
-                )?);
-                bio_waiter.concat(self.block_device.write_blocks_async(
+                    &mut io_batch,
+                )?;
+                self.block_device.write_blocks_async(
                     super_block.group_descriptors_bid(idx as usize),
                     group_descriptors_bio_segment.clone(),
                     None,
-                )?);
-                bio_waiter.wait().ok_or_else(|| {
+                    &mut io_batch,
+                )?;
+                io_batch.wait_all().map_err(|_| {
                     Error::with_message(Errno::EIO, "failed to sync backup metadata")
                 })?;
             }

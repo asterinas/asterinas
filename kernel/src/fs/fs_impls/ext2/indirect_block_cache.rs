@@ -109,7 +109,7 @@ impl IndirectBlockCache {
     fn evict(&mut self, num: usize) -> Result<()> {
         let num = num.min(self.cache.len());
 
-        let mut bio_waiter = BioWaiter::new();
+        let mut io_batch = IoBatch::new();
         for _ in 0..num {
             let (bid, block) = self.cache.pop_lru().unwrap();
             if block.is_dirty() {
@@ -117,13 +117,14 @@ impl IndirectBlockCache {
                     Segment::<()>::from(block.frame.clone()).into(),
                     BioDirection::ToDevice,
                 );
-                bio_waiter.concat(self.fs().write_blocks_async(bid, bio_segment, None)?);
+                self.fs()
+                    .write_blocks_async(bid, bio_segment, None, &mut io_batch)?;
             }
         }
 
-        bio_waiter.wait().ok_or_else(|| {
-            Error::with_message(Errno::EIO, "failed to evict the indirect blocks")
-        })?;
+        io_batch
+            .wait_all()
+            .map_err(|_| Error::with_message(Errno::EIO, "failed to evict the indirect blocks"))?;
 
         Ok(())
     }
