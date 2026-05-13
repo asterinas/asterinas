@@ -442,24 +442,14 @@ impl<'a> VmReader<'a, Infallible> {
             return Err(Error::InvalidArgs);
         }
 
-        let mut val = MaybeUninit::<T>::uninit();
+        let cursor = self.cursor.cast::<T>();
 
-        // SAFETY:
-        // - The memory range points to typed memory.
-        // - The validity requirements for write accesses are met because the pointer is converted
-        //   from a mutable pointer where the underlying storage outlives the temporary lifetime
-        //   and no other Rust references to the same storage exist during the lifetime.
-        // - The type, i.e., `T`, is plain-old-data.
-        let mut writer =
-            unsafe { VmWriter::from_kernel_space(val.as_mut_ptr().cast(), size_of::<T>()) };
-        self.read(&mut writer);
-        debug_assert!(!writer.has_avail());
+        // SAFETY: We have checked that the number of bytes remaining is at least the size of `T`.
+        // All other safety requirements are the same as for `Self::read`.
+        let val = unsafe { core::intrinsics::unaligned_volatile_load(cursor) };
+        self.cursor = self.cursor.wrapping_add(size_of::<T>());
 
-        // SAFETY:
-        // - `self.read` has initialized all the bytes in `val`.
-        // - The type is plain-old-data.
-        let val_inited = unsafe { val.assume_init() };
-        Ok(val_inited)
+        Ok(val)
     }
 
     /// Reads a value of the `PodOnce` type using one non-tearing memory load.
@@ -711,8 +701,13 @@ impl<'a> VmWriter<'a, Infallible> {
             return Err(Error::InvalidArgs);
         }
 
-        let mut reader = VmReader::from(new_val.as_bytes());
-        self.write(&mut reader);
+        let cursor = self.cursor.cast::<T>();
+
+        // SAFETY: We have checked that the number of bytes remaining is at least the size of `T`.
+        // All other safety requirements are the same as for `Self::write`.
+        unsafe { core::intrinsics::unaligned_volatile_store(cursor, *new_val) };
+        self.cursor = self.cursor.wrapping_add(size_of::<T>());
+
         Ok(())
     }
 
