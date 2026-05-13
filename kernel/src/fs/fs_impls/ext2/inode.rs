@@ -1842,7 +1842,8 @@ impl InodeImpl {
         bid: Ext2Bid,
         nblocks: usize,
         reader: &mut VmReader,
-    ) -> Result<BioWaiter>;
+        io_batch: &mut IoBatch,
+    ) -> Result<()>;
     pub fn write_blocks(&self, bid: Ext2Bid, nblocks: usize, reader: &mut VmReader) -> Result<()>;
 }
 
@@ -1865,8 +1866,8 @@ impl InodeBlockManager {
         &self,
         bid: Ext2Bid,
         nblocks: usize,
-    ) -> Result<(BioWaiter, Vec<BioSegment>)> {
-        let mut bio_waiter = BioWaiter::new();
+        io_batch: &mut IoBatch,
+    ) -> Result<Vec<BioSegment>> {
         let mut bio_segments = Vec::new();
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + nblocks as Ext2Bid)? {
@@ -1874,23 +1875,20 @@ impl InodeBlockManager {
             let range_nblocks = dev_range.len();
 
             let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::FromDevice);
-            let waiter = self
-                .fs()
-                .read_blocks_async(start_bid, bio_segment.clone(), None)?;
-            bio_waiter.concat(waiter);
+            self.fs()
+                .read_blocks_async(start_bid, bio_segment.clone(), None, io_batch)?;
             bio_segments.push(bio_segment);
         }
 
-        Ok((bio_waiter, bio_segments))
+        Ok(bio_segments)
     }
 
     pub fn read_blocks(&self, bid: Ext2Bid, nblocks: usize, writer: &mut VmWriter) -> Result<()> {
         debug_assert!(nblocks * BLOCK_SIZE <= writer.avail());
-        let (bio_waiter, bio_segments) = self.read_blocks_async(bid, nblocks)?;
+        let mut io_batch = IoBatch::new();
+        let bio_segments = self.read_blocks_async(bid, nblocks, &mut io_batch)?;
 
-        if Some(BioStatus::Complete) != bio_waiter.wait() {
-            return_errno!(Errno::EIO);
-        }
+        io_batch.wait_all()?;
 
         for bio_segment in bio_segments {
             bio_segment
@@ -1908,9 +1906,9 @@ impl InodeBlockManager {
         bid: Ext2Bid,
         nblocks: usize,
         reader: &mut VmReader,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         debug_assert_eq!(nblocks * BLOCK_SIZE, reader.remain());
-        let mut bio_waiter = BioWaiter::new();
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + nblocks as Ext2Bid)? {
             let start_bid = dev_range.start as Ext2Bid;
@@ -1919,18 +1917,17 @@ impl InodeBlockManager {
             let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::ToDevice);
             bio_segment.writer().unwrap().write_fallible(reader)?;
 
-            let waiter = self.fs().write_blocks_async(start_bid, bio_segment, None)?;
-            bio_waiter.concat(waiter);
+            self.fs()
+                .write_blocks_async(start_bid, bio_segment, None, io_batch)?;
         }
 
-        Ok(bio_waiter)
+        Ok(())
     }
 
     pub fn write_blocks(&self, bid: Ext2Bid, nblocks: usize, reader: &mut VmReader) -> Result<()> {
-        match self.write_blocks_async(bid, nblocks, reader)?.wait() {
-            Some(BioStatus::Complete) => Ok(()),
-            _ => return_errno!(Errno::EIO),
-        }
+        let mut io_batch = IoBatch::new();
+        self.write_blocks_async(bid, nblocks, reader, &mut io_batch)?;
+        io_batch.wait_all().map_err(Into::into)
     }
 
     pub fn nblocks(&self) -> usize {
@@ -1942,18 +1939,19 @@ impl InodeBlockManager {
     }
 }
 
-impl PageCacheBackend for InodeBlockManager {
+impl BlockAsPageCacheBackend for InodeBlockManager {
     fn submit_read_bio(
         &self,
         idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         let bid = idx as Ext2Bid;
         let dev_range = DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)?.read()?;
         let start_bid = dev_range.start as Ext2Bid;
         self.fs()
-            .read_blocks_async(start_bid, bio_segment, complete_fn)
+            .read_blocks_async(start_bid, bio_segment, complete_fn, io_batch)
     }
 
     fn submit_write_bio(
@@ -1961,12 +1959,13 @@ impl PageCacheBackend for InodeBlockManager {
         idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         let bid = idx as Ext2Bid;
         let dev_range = DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)?.read()?;
         let start_bid = dev_range.start as Ext2Bid;
         self.fs()
-            .write_blocks_async(start_bid, bio_segment, complete_fn)
+            .write_blocks_async(start_bid, bio_segment, complete_fn, io_batch)
     }
 
     fn npages(&self) -> usize {
