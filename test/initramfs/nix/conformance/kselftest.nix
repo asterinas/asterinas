@@ -1,5 +1,8 @@
-{ lib, stdenv, fetchgit, pkgsBuildBuild, pkgsBuildHost, }:
-stdenv.mkDerivation rec {
+{ lib, stdenv, fetchgit, pkgs, pkgsBuildBuild, pkgsBuildHost, }:
+let
+  crossCompilePrefix = pkgsBuildHost.gcc.targetPrefix;
+  hostCc = "${pkgsBuildBuild.gcc}/bin/gcc";
+in stdenv.mkDerivation rec {
   pname = "kselftest";
   version = "6.18";
 
@@ -36,18 +39,17 @@ stdenv.mkDerivation rec {
 
   enableParallelBuilding = true;
 
-  nativeBuildInputs = with pkgsBuildBuild; [ gcc_multi rsync ];
+  nativeBuildInputs = with pkgsBuildBuild; [ rsync ];
 
-  buildInputs = with pkgsBuildHost; [
-    glibc_multi
-    glibc_multi.static
-    libcap.dev
-  ];
+  buildInputs = with pkgs; [ glibc_multi.static libcap.dev ];
 
   buildPhase = ''
     runHook preBuild
-    make ARCH=${stdenv.hostPlatform.linuxArch} -j$NIX_BUILD_CORES headers
+    make ARCH=${stdenv.hostPlatform.linuxArch} \
+         CROSS_COMPILE=${crossCompilePrefix} HOSTCC=${hostCc} \
+         -j$NIX_BUILD_CORES headers
     make -C tools/testing/selftests ARCH=${stdenv.hostPlatform.linuxArch} \
+         CROSS_COMPILE=${crossCompilePrefix} HOSTCC=${hostCc} \
          -j$NIX_BUILD_CORES TARGETS="$kselftestTargets" all
     runHook postBuild
   '';
@@ -55,6 +57,7 @@ stdenv.mkDerivation rec {
   installPhase = ''
     runHook preInstall
     make -C tools/testing/selftests ARCH=${stdenv.hostPlatform.linuxArch} \
+         CROSS_COMPILE=${crossCompilePrefix} HOSTCC=${hostCc} \
          -j$NIX_BUILD_CORES TARGETS="$kselftestTargets" KSFT_INSTALL_PATH=$out install
     runHook postInstall
   '';
