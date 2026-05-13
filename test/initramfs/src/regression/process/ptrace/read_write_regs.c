@@ -5,7 +5,9 @@
 #include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <asm/prctl.h>
 #include <sys/ptrace.h>
+#include <sys/syscall.h>
 #include <sys/user.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -107,6 +109,9 @@ FN_TEST(read_write_regs)
 			  NON_USER_VA),
 		   EIO);
 #endif
+
+	/// Setting invalid FS base with `arch_prctl` should also fail with `EPERM`.
+	TEST_ERRNO(syscall(SYS_arch_prctl, ARCH_SET_FS, NON_USER_VA), EPERM);
 
 	// Peeking or Poking with unaligned offsets should fail with EIO.
 	TEST_ERRNO(ptrace(PTRACE_PEEKUSER, pid, 1, 0), EIO);
