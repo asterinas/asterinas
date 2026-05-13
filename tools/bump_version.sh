@@ -40,8 +40,6 @@ update_image_versions() {
     sed -i "s/asterinas\/asterinas:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/asterinas:${new_version}/g" $1
     # Update the version of asterinas/osdk container
     sed -i "s/asterinas\/osdk:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/osdk:${new_version}/g" $1
-    # Update the version of asterinas/kata container
-    sed -i "s/asterinas\/kata:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/kata:${new_version}/g" $1
 }
 
 # Print the help message
@@ -129,7 +127,6 @@ update_all_docker_version_refs() {
     # Update Docker image versions in the Book
     update_image_versions ${BOOK_DIR}/src/kernel/intel-tdx.md
     update_image_versions ${BOOK_DIR}/src/kernel/README.md
-    update_image_versions ${BOOK_DIR}/src/kernel/vm-based-containers/kata.md
     update_image_versions ${BOOK_DIR}/src/osdk/guide/intel-tdx.md
 
     # Update Docker image versions in workflows
