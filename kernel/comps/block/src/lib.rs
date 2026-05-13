@@ -18,12 +18,10 @@
 //! // Creates a bio request.
 //! let bio = Bio::new(BioType::Write, sid, segments, None);
 //! // Submits to the block device.
-//! let bio_waiter = bio.submit(block_device)?;
+//! let mut io_batch = IoBatch::new();
+//! bio.submit(block_device, &mut io_batch)?;
 //! // Waits for the the completion.
-//! let Some(status) = bio_waiter.wait() else {
-//!     return Err(IoError);
-//! };
-//! assert!(status == BioStatus::Complete);
+//! io_batch.wait_all()?;
 //! ```
 //!
 #![no_std]

@@ -6,6 +6,10 @@ use align_ext::AlignExt;
 use aster_util::mem_obj_slice::Slice;
 use bitvec::array::BitArray;
 use int_to_c_enum::TryFromInt;
+use io_util::{
+    IoError,
+    batch::{IoBatch, IoCompletion},
+};
 use ostd::{
     Error,
     mm::{
@@ -29,9 +33,7 @@ use crate::{BLOCK_SIZE, SECTOR_SIZE, impl_block_device::general_complete_fn, pre
 /// (4) The optional callback function that will be invoked when the I/O is completed.
 ///
 /// Before submission, a `Bio` owns its segments and completion callback.
-/// After submission, that ownership is transferred to `SubmittedBio`, while
-/// the returned `BioWaiter` only retains shared metadata for waiting and
-/// status queries.
+/// After submission, that ownership is transferred to `SubmittedBio`.
 pub struct Bio {
     metadata: Arc<BioMetadata>,
     complete_fn: Option<BioCompleteFn>,
@@ -86,8 +88,6 @@ impl Bio {
     }
 
     /// Returns the slice to the memory segments currently owned by this handle.
-    ///
-    /// The `Bio` handles returned by `BioWaiter` are metadata-only and never retain segments.
     pub fn segments(&self) -> &[BioSegment] {
         &self.segments
     }
@@ -102,12 +102,16 @@ impl Bio {
     /// This method consumes `self` and transfers its segments and completion
     /// callback to the submitted request.
     ///
-    /// Returns a `BioWaiter` to the caller to wait for its completion.
+    /// Pushes the completion record into `io_batch`.
     ///
     /// # Panics
     ///
     /// The caller must not submit a `Bio` more than once. Otherwise, a panic shall be triggered.
-    pub fn submit(self, block_device: &dyn BlockDevice) -> Result<BioWaiter, BioEnqueueError> {
+    pub fn submit(
+        self,
+        block_device: &dyn BlockDevice,
+        io_batch: &mut IoBatch,
+    ) -> Result<(), BioEnqueueError> {
         let Self {
             metadata,
             complete_fn,
@@ -142,9 +146,8 @@ impl Bio {
             return Err(e);
         }
 
-        Ok(BioWaiter {
-            metadata: vec![waiter_metadata],
-        })
+        io_batch.push(waiter_metadata);
+        Ok(())
     }
 
     /// Submits self to the `block_device` and waits for the result synchronously.
@@ -158,18 +161,11 @@ impl Bio {
         self,
         block_device: &dyn BlockDevice,
     ) -> Result<BioStatus, BioEnqueueError> {
-        let waiter = self.submit(block_device)?;
-        match waiter.wait() {
-            Some(status) => {
-                assert!(status == BioStatus::Complete);
-                Ok(status)
-            }
-            None => {
-                let status = waiter.status(0);
-                assert!(status != BioStatus::Complete);
-                Ok(status)
-            }
-        }
+        let mut io_batch = IoBatch::with_capacity(1);
+        self.submit(block_device, &mut io_batch)?;
+        let _ = io_batch.wait_all();
+        let metadata = io_batch[0].downcast_ref::<BioMetadata>().unwrap();
+        Ok(metadata.status())
     }
 }
 
@@ -196,87 +192,6 @@ pub enum BioEnqueueError {
 impl From<BioEnqueueError> for ostd::Error {
     fn from(_error: BioEnqueueError) -> Self {
         ostd::Error::NotEnoughResources
-    }
-}
-
-/// A waiter for `Bio` submissions.
-///
-/// This structure tracks the shared metadata of submitted `Bio` requests and
-/// provides functionality to wait for their completion and retrieve their
-/// statuses.
-#[must_use]
-#[derive(Debug)]
-pub struct BioWaiter {
-    metadata: Vec<Arc<BioMetadata>>,
-}
-
-impl BioWaiter {
-    /// Constructs a new `BioWaiter` instance with no `Bio` requests.
-    pub fn new() -> Self {
-        Self {
-            metadata: Vec::new(),
-        }
-    }
-
-    /// Returns the number of `Bio` requests associated with `self`.
-    pub fn nreqs(&self) -> usize {
-        self.metadata.len()
-    }
-
-    /// Returns the status of the `index`-th `Bio` request associated with `self`.
-    ///
-    /// # Panics
-    ///
-    /// If the `index` is out of bounds, this method will panic.
-    pub fn status(&self, index: usize) -> BioStatus {
-        self.metadata[index].status()
-    }
-
-    /// Merges the `Bio` requests from another `BioWaiter` into this one.
-    ///
-    /// Another `BioWaiter`'s tracked requests are appended to the end of
-    /// `self`, effectively concatenating the two lists.
-    pub fn concat(&mut self, mut other: Self) {
-        self.metadata.append(&mut other.metadata);
-    }
-
-    /// Waits for the completion of all `Bio` requests.
-    ///
-    /// This method iterates through each submitted request tracked by `self`,
-    /// waiting for its completion.
-    ///
-    /// The return value is an option indicating whether all the requests in the list
-    /// have successfully completed.
-    /// On success this value is guaranteed to be equal to `Some(BioStatus::Complete)`.
-    pub fn wait(&self) -> Option<BioStatus> {
-        let mut ret = Some(BioStatus::Complete);
-
-        for metadata in self.metadata.iter() {
-            let status = metadata.wait_queue.wait_until(|| {
-                let status = metadata.status();
-                if status != BioStatus::Submit {
-                    Some(status)
-                } else {
-                    None
-                }
-            });
-            if status != BioStatus::Complete && ret.is_some() {
-                ret = None;
-            }
-        }
-
-        ret
-    }
-
-    /// Clears all `Bio` requests in this waiter.
-    pub fn clear(&mut self) {
-        self.metadata.clear();
-    }
-}
-
-impl Default for BioWaiter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -385,6 +300,23 @@ impl BioMetadata {
 
     pub fn status(&self) -> BioStatus {
         BioStatus::try_from(self.status.load(Ordering::Relaxed)).unwrap()
+    }
+}
+
+impl IoCompletion for BioMetadata {
+    fn wait(&self) -> core::result::Result<(), IoError> {
+        let status = self.wait_queue.wait_until(|| {
+            let status = self.status();
+            (status != BioStatus::Submit).then_some(status)
+        });
+
+        match status {
+            BioStatus::Complete => Ok(()),
+            BioStatus::NotSupported => Err(IoError::Unsupported),
+            BioStatus::NoSpace => Err(IoError::OutOfSpace),
+            BioStatus::IoError => Err(IoError::Failed),
+            BioStatus::Init | BioStatus::Submit => unreachable!(),
+        }
     }
 }
 

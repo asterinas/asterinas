@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use io_util::batch::IoBatch;
 use ostd::mm::{VmIo, VmReader, VmWriter};
 
 use super::{
     BLOCK_SIZE, BlockDevice,
-    bio::{Bio, BioCompleteFn, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter},
+    bio::{Bio, BioCompleteFn, BioEnqueueError, BioSegment, BioStatus, BioType},
     id::{Bid, Sid},
 };
 use crate::{
@@ -33,14 +34,15 @@ impl dyn BlockDevice {
         bid: Bid,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter, BioEnqueueError> {
+        io_batch: &mut IoBatch,
+    ) -> Result<(), BioEnqueueError> {
         let bio = Bio::new(
             BioType::Read,
             Sid::from(bid),
             vec![bio_segment],
             complete_fn,
         );
-        bio.submit(self)
+        bio.submit(self, io_batch)
     }
 
     /// Synchronously writes contiguous blocks starting from the `bid`.
@@ -60,14 +62,15 @@ impl dyn BlockDevice {
         bid: Bid,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter, BioEnqueueError> {
+        io_batch: &mut IoBatch,
+    ) -> Result<(), BioEnqueueError> {
         let bio = Bio::new(
             BioType::Write,
             Sid::from(bid),
             vec![bio_segment],
             complete_fn,
         );
-        bio.submit(self)
+        bio.submit(self, io_batch)
     }
 
     /// Issues a sync request
@@ -162,13 +165,18 @@ impl VmIo for dyn BlockDevice {
 
 impl dyn BlockDevice {
     /// Asynchronously writes consecutive bytes of several sectors in size.
-    pub fn write_bytes_async(&self, offset: usize, buf: &[u8]) -> ostd::Result<BioWaiter> {
+    pub fn write_bytes_async(
+        &self,
+        offset: usize,
+        buf: &[u8],
+        io_batch: &mut IoBatch,
+    ) -> ostd::Result<()> {
         let write_len = buf.len();
         if !is_sector_aligned(offset) || !is_sector_aligned(write_len) {
             return Err(ostd::Error::InvalidArgs);
         }
         if write_len == 0 {
-            return Ok(BioWaiter::new());
+            return Ok(());
         }
 
         let bio = {
@@ -192,8 +200,8 @@ impl dyn BlockDevice {
             )
         };
 
-        let complete = bio.submit(self)?;
-        Ok(complete)
+        bio.submit(self, io_batch)?;
+        Ok(())
     }
 }
 
