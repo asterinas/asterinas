@@ -252,6 +252,12 @@ impl TraceeStatus {
         let mut state = self.state.lock();
 
         state.tracer = Weak::new();
+        #[cfg(target_arch = "x86_64")]
+        {
+            if let Some(regs) = state.general_regs.as_mut() {
+                arch_ptrace::disable_single_step(regs);
+            }
+        }
         self.is_stopped.store(false, Ordering::Relaxed);
     }
 
@@ -362,6 +368,17 @@ impl TraceeStatus {
         } else {
             state.signal.clear();
         }
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            let regs = state.general_regs.as_mut().unwrap();
+            if matches!(request, PtraceContRequest::SingleStep(_)) {
+                arch_ptrace::enable_single_step(regs);
+            } else {
+                arch_ptrace::disable_single_step(regs);
+            }
+        }
+
         self.is_stopped.store(false, Ordering::Relaxed);
 
         Ok(())

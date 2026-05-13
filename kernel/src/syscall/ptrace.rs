@@ -56,10 +56,18 @@ pub fn sys_ptrace(
             let sig_num = parse_ptrace_injected_signal(data)?;
 
             let tracee = ctx.posix_thread.get_tracee(tid)?;
-            tracee
-                .as_posix_thread()
-                .unwrap()
-                .ptrace_continue(PtraceContRequest::Continue(sig_num), ctx)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            tracee.ptrace_continue(PtraceContRequest::Continue(sig_num), ctx)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_SINGLESTEP => {
+            let sig_num = parse_ptrace_injected_signal(data)?;
+
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            tracee.ptrace_continue(PtraceContRequest::SingleStep(sig_num), ctx)?;
         }
         #[cfg(target_arch = "x86_64")]
         PtraceRequest::PTRACE_GETREGS => {
@@ -132,6 +140,9 @@ enum PtraceRequest {
     PTRACE_POKEUSER = 6,
     /// Continue the thread.
     PTRACE_CONT = 7,
+    /// Single step the thread.
+    #[cfg(target_arch = "x86_64")]
+    PTRACE_SINGLESTEP = 9,
     /// Get all general purpose registers used by a thread.
     #[cfg(target_arch = "x86_64")]
     PTRACE_GETREGS = 12,
@@ -149,8 +160,6 @@ enum PtraceRequest {
     // PTRACE_POKEDATA = 5,
     // /// Kill the thread.
     // PTRACE_KILL = 8,
-    // /// Single step the thread.
-    // PTRACE_SINGLESTEP = 9,
     // /// Get all floating point registers used by a thread.
     // PTRACE_GETFPREGS = 14,
     // /// Set all floating point registers used by a thread.

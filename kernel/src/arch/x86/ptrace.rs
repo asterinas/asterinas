@@ -128,6 +128,16 @@ pub fn write_user_word(
     rule.apply(regs, value)
 }
 
+/// Enables x86-64 single-step execution by setting the trap flag.
+pub fn enable_single_step(regs: &mut GeneralRegs) {
+    regs.rflags |= RFlags::TRAP_FLAG.bits() as usize;
+}
+
+/// Disables x86-64 single-step execution by clearing the trap flag.
+pub fn disable_single_step(regs: &mut GeneralRegs) {
+    regs.rflags &= !(RFlags::TRAP_FLAG.bits() as usize);
+}
+
 // =====================================================================
 // Per-register policy table.
 // =====================================================================
