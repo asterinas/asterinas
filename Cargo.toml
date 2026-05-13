@@ -49,6 +49,7 @@ members = [
     "kernel/libs/atomic-integer-wrapper",
     "kernel/libs/cpio-decoder",
     "kernel/libs/device-id",
+    "kernel/libs/io_util",
     "kernel/libs/jhash",
     "kernel/libs/keyable-arc",
     "kernel/libs/logo-ascii-art",
@@ -89,6 +90,7 @@ default-members = [
     "kernel/libs/aster-bigtcp",
     "kernel/libs/aster-util",
     "kernel/libs/device-id",
+    "kernel/libs/io_util",
     "kernel/libs/ring-buffer",
     "kernel/libs/xarray",
 ]
@@ -163,6 +165,7 @@ aster-util = { path = "kernel/libs/aster-util" }
 atomic-integer-wrapper = { path = "kernel/libs/atomic-integer-wrapper" }
 cpio-decoder = { path = "kernel/libs/cpio-decoder" }
 device-id = { path = "kernel/libs/device-id" }
+io_util = { path = "kernel/libs/io_util" }
 jhash = { path = "kernel/libs/jhash" }
 keyable-arc = { path = "kernel/libs/keyable-arc" }
 logo-ascii-art = { path = "kernel/libs/logo-ascii-art" }
