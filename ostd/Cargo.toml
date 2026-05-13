@@ -48,7 +48,7 @@ zerocopy.workspace = true
 # - `loongarch64-unknown-none-softfloat` is rather self-explaining.
 
 [target.x86_64-unknown-none.dependencies]
-x86_64 = "0.14.13"
+x86_64.workspace = true
 x86 = "0.52.0"
 acpi = "=5.2.0" # This upstream often bump minor versions with API changes
 multiboot2 = "0.24.0"
