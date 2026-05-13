@@ -19,9 +19,13 @@
 //! - [`Vmo`] is the lower-level memory object underneath a page cache. It owns
 //!   the page array, commits pages on demand, and is the abstraction shared
 //!   with page-fault and mapping code.
-//! - [`PageCacheBackend`] together with [`CachePage`] /
-//!   [`cache_page::PageState`] define how individual pages are populated from,
-//!   and written back to, backend storage.
+//! - [`CachePage`] stores cached page contents, while
+//!   [`cache_page::PageState`] records whether those contents are uninitialized,
+//!   clean, or dirty.
+//! - [`PageCacheBackend`] is the storage-facing contract used
+//!   to make a page readable or durable. [`BlockAsPageCacheBackend`] is a
+//!   helper interface for backends that can satisfy that contract with
+//!   block-device BIOs.
 //!
 //! For a file with a backend, the steady-state flow is
 //! `filesystem metadata -> PageCache -> Vmo -> PageCacheBackend -> block
@@ -81,7 +85,8 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use aster_block::bio::{BioCompleteFn, BioDirection, BioSegment, BioStatus, BioWaiter};
+use aster_block::bio::{BioCompleteFn, BioDirection, BioSegment, BioStatus};
+use io_util::batch::IoBatch;
 use ostd::mm::{Segment, VmIo, VmReader, io::util::HasVmReaderWriter};
 
 use crate::prelude::*;
@@ -329,12 +334,58 @@ impl VmIo for PageCache {
     }
 }
 
-/// Defines storage operations for page-cache pages with a backend.
+/// A storage backend for a backed [`PageCache`].
 ///
-/// A backend maps a page-cache page index to storage-specific I/O and submits
-/// the requested transfer. It does not own page-cache state transitions; the
-/// VMO helpers wrap these hooks with the required locking, dirty/writeback
-/// state, and completion handling.
+/// This trait is the high-level contract used by the page-cache layer to load
+/// page contents from storage and write dirty contents back. A successful read
+/// makes the requested page usable by readers; a successful write makes the
+/// page's current contents durable in the backend.
+///
+/// Direct implementations are useful for storage that does not naturally expose
+/// block-device BIOs, such as network filesystems. Filesystems backed by block
+/// devices usually implement [`BlockAsPageCacheBackend`] instead.
+pub trait PageCacheBackend: Sync + Send {
+    /// Reads a page from the backend asynchronously.
+    fn read_page_async(
+        &self,
+        idx: usize,
+        locked_page: cache_page::LockedCachePage,
+        io_batch: &mut IoBatch,
+    ) -> Result<()>;
+
+    /// Writes a page to the backend asynchronously.
+    fn write_page_async(
+        &self,
+        idx: usize,
+        locked_page: cache_page::LockedCachePage,
+        io_batch: &mut IoBatch,
+    ) -> Result<()>;
+
+    /// Returns the number of pages addressable in the backend storage.
+    ///
+    /// This defines the upper bound of valid page indices for I/O operations.
+    /// Requests beyond this limit are treated as holes (zero-filled).
+    fn npages(&self) -> usize;
+}
+
+impl dyn PageCacheBackend {
+    /// Reads a page from the backend synchronously.
+    pub fn read_page(&self, idx: usize, page: cache_page::LockedCachePage) -> Result<()> {
+        let mut io_batch = IoBatch::with_capacity(1);
+        self.read_page_async(idx, page, &mut io_batch)?;
+        io_batch.wait_all()?;
+        Ok(())
+    }
+}
+
+/// A block-I/O object that can serve as a [`PageCacheBackend`].
+///
+/// This trait is a convenience layer for filesystems whose cached file data is
+/// served by block I/O. Implementors submit the supplied [`BioSegment`] for the
+/// page at the requested index.
+///
+/// The blanket [`PageCacheBackend`] implementation adapts this trait to the
+/// generic page-cache backend contract.
 ///
 /// The `complete_fn` passed to submit methods may run from interrupt context,
 /// so implementations must not allocate, take blocking locks, or hold a lock
@@ -342,7 +393,7 @@ impl VmIo for PageCache {
 //
 // TODO: This trait should provide interfaces for reading or writing multiple
 // pages in a single BIO to improve efficiency for sequential I/O.
-pub trait PageCacheBackend: Sync + Send {
+pub trait BlockAsPageCacheBackend: Sync + Send {
     /// Submits read I/O for the page at `idx`.
     ///
     /// `bio_segment` identifies the page memory that must receive the data.
@@ -354,7 +405,8 @@ pub trait PageCacheBackend: Sync + Send {
         idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter>;
+        io_batch: &mut IoBatch,
+    ) -> Result<()>;
 
     /// Submits write I/O for the page at `idx`.
     ///
@@ -367,7 +419,8 @@ pub trait PageCacheBackend: Sync + Send {
         idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter>;
+        io_batch: &mut IoBatch,
+    ) -> Result<()>;
 
     /// Returns the number of pages addressable in the backend storage.
     ///
@@ -376,13 +429,13 @@ pub trait PageCacheBackend: Sync + Send {
     fn npages(&self) -> usize;
 }
 
-impl dyn PageCacheBackend {
-    /// Reads a page from the backend asynchronously.
+impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
     fn read_page_async(
         &self,
         idx: usize,
         locked_page: cache_page::LockedCachePage,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         let bio_segment = BioSegment::new_from_segment(
             Segment::from(locked_page.deref().clone()).into(),
             BioDirection::FromDevice,
@@ -395,15 +448,15 @@ impl dyn PageCacheBackend {
             // The page lock is released when `locked_page` (LockedCachePage) is dropped here.
         });
 
-        self.submit_read_bio(idx, bio_segment, Some(complete_fn))
+        self.submit_read_bio(idx, bio_segment, Some(complete_fn), io_batch)
     }
 
-    /// Writes a page to the backend asynchronously.
     fn write_page_async(
         &self,
         idx: usize,
         locked_page: cache_page::LockedCachePage,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         locked_page.wait_until_finish_writing_back();
 
         let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
@@ -436,7 +489,7 @@ impl dyn PageCacheBackend {
             }
         });
 
-        let res = self.submit_write_bio(idx, bio_segment, Some(complete_fn));
+        let res = self.submit_write_bio(idx, bio_segment, Some(complete_fn), io_batch);
         if res.is_err() {
             // If submission fails, re-dirty the page so the next writeback can
             // retry the data that never reached the device queue.
@@ -448,12 +501,7 @@ impl dyn PageCacheBackend {
         res
     }
 
-    /// Reads a page from the backend synchronously.
-    pub fn read_page(&self, idx: usize, page: cache_page::LockedCachePage) -> Result<()> {
-        let waiter = self.read_page_async(idx, page)?;
-        match waiter.wait() {
-            Some(BioStatus::Complete) => Ok(()),
-            _ => return_errno!(Errno::EIO),
-        }
+    fn npages(&self) -> usize {
+        BlockAsPageCacheBackend::npages(self)
     }
 }

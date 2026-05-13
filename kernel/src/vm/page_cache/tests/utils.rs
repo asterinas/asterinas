@@ -11,16 +11,14 @@ use core::fmt;
 
 use aster_block::{
     BlockDevice, BlockDeviceMeta, SECTOR_SIZE,
-    bio::{
-        Bio, BioCompleteFn, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter,
-        SubmittedBio,
-    },
+    bio::{Bio, BioCompleteFn, BioEnqueueError, BioSegment, BioStatus, BioType, SubmittedBio},
     id::Sid,
 };
 use device_id::DeviceId;
+use io_util::batch::IoBatch;
 use ostd::{mm::VmIo, sync::SpinLock};
 
-use crate::{prelude::*, thread::Thread, vm::page_cache::PageCacheBackend};
+use crate::{prelude::*, thread::Thread, vm::page_cache::BlockAsPageCacheBackend};
 
 /// Maximum number of cooperative yields before a test wait times out.
 const MAX_WAIT_YIELDS: usize = 1_000_000;
@@ -226,7 +224,8 @@ impl MockPageCacheBackend {
         page_idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
         self.maybe_fail_submission(kind, page_idx)?;
 
         let bio = Bio::new(
@@ -235,7 +234,7 @@ impl MockPageCacheBackend {
             vec![bio_segment],
             complete_fn,
         );
-        bio.submit(self)
+        bio.submit(self, io_batch)
             .map_err(ostd::Error::from)
             .map_err(Error::from)
     }
@@ -333,14 +332,15 @@ impl BlockDevice for MockPageCacheBackend {
     }
 }
 
-impl PageCacheBackend for MockPageCacheBackend {
+impl BlockAsPageCacheBackend for MockPageCacheBackend {
     fn submit_read_bio(
         &self,
         page_idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
-        self.submit_bio(IoKind::Read, page_idx, bio_segment, complete_fn)
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
+        self.submit_bio(IoKind::Read, page_idx, bio_segment, complete_fn, io_batch)
     }
 
     fn submit_write_bio(
@@ -348,8 +348,9 @@ impl PageCacheBackend for MockPageCacheBackend {
         page_idx: usize,
         bio_segment: BioSegment,
         complete_fn: Option<BioCompleteFn>,
-    ) -> Result<BioWaiter> {
-        self.submit_bio(IoKind::Write, page_idx, bio_segment, complete_fn)
+        io_batch: &mut IoBatch,
+    ) -> Result<()> {
+        self.submit_bio(IoKind::Write, page_idx, bio_segment, complete_fn, io_batch)
     }
 
     fn npages(&self) -> usize {
