@@ -22,7 +22,7 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use aster_block::bio::{BioStatus, BioWaiter};
+use io_util::batch::IoBatch;
 use ostd::{
     mm::{HasPaddr, VmIoFill, VmReader, VmWriter, io::util::HasVmReaderWriter},
     task::disable_preempt,
@@ -720,20 +720,17 @@ impl<'a> BackedVmo<'a> {
             return Ok(());
         }
 
-        let mut waiter = BioWaiter::new();
-
         let dirty_pages =
             self.collect_pages_if(locked_pages, page_idx_range, |_, page| page.is_dirty());
+
+        let mut io_batch = IoBatch::with_capacity(dirty_pages.len());
         for (idx, page) in dirty_pages {
             let locked_page = page.lock();
-            waiter.concat(self.backend.write_page_async(idx, locked_page)?);
+            self.backend
+                .write_page_async(idx, locked_page, &mut io_batch)?;
         }
 
-        if waiter.wait() != Some(BioStatus::Complete) {
-            return_errno!(Errno::EIO);
-        }
-
-        Ok(())
+        io_batch.wait_all().map_err(Into::into)
     }
 
     /// Removes up-to-date (clean) pages in the specified byte range from the page cache.

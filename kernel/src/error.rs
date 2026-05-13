@@ -251,6 +251,20 @@ impl From<aster_block::bio::BioStatus> for Error {
     }
 }
 
+impl From<io_util::IoError> for Error {
+    fn from(error: io_util::IoError) -> Self {
+        match error {
+            io_util::IoError::Unsupported => {
+                Error::with_message(Errno::EIO, "I/O operation is not supported")
+            }
+            io_util::IoError::OutOfSpace => {
+                Error::with_message(Errno::ENOSPC, "Insufficient space on device")
+            }
+            io_util::IoError::Failed => Error::with_message(Errno::EIO, "I/O operation fails"),
+        }
+    }
+}
+
 impl From<core::num::TryFromIntError> for Error {
     fn from(_: core::num::TryFromIntError) -> Self {
         Error::with_message(Errno::EINVAL, "Invalid integer")
