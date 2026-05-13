@@ -227,6 +227,7 @@ dependencies = [
  "time",
  "typeflags",
  "typeflags-util",
+ "x86_64",
  "xarray",
  "xmas-elf",
  "zerocopy",
