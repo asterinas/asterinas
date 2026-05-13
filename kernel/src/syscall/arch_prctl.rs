@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::arch::cpu::context::UserContext;
+use ostd::{arch::cpu::context::UserContext, mm::MAX_USERSPACE_VADDR};
 
 use super::SyscallReturn;
 use crate::prelude::*;
@@ -33,6 +33,9 @@ pub fn sys_arch_prctl(
 fn do_arch_prctl(code: ArchPrctlCode, addr: u64, user_ctx: &mut UserContext) -> Result<u64> {
     match code {
         ArchPrctlCode::ARCH_SET_FS => {
+            if addr as usize >= MAX_USERSPACE_VADDR {
+                return_errno_with_message!(Errno::EPERM, "fsbase must be a user-space address");
+            }
             user_ctx.set_tls_pointer(addr as usize);
             user_ctx.activate_tls_pointer();
             Ok(0)
