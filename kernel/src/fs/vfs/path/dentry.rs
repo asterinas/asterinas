@@ -2,7 +2,7 @@
 
 use core::{
     ops::Deref,
-    sync::atomic::{AtomicU32, AtomicU64, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use hashbrown::HashMap;
@@ -738,7 +738,8 @@ impl CachedDentry {
 #[cfg(debug_assertions)]
 const NEGATIVE_ENTRY_LIMIT: usize = 10000;
 #[cfg(debug_assertions)]
-static NEGATIVE_ENTRY_COUNTER: AtomicU64 = AtomicU64::new(0);
+static NEGATIVE_ENTRY_COUNTER: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 
 impl DentryChildren {
     /// Creates an empty dentry cache.
@@ -763,12 +764,12 @@ impl DentryChildren {
 
     /// Inserts a positive dentry.
     fn insert_positive(&mut self, name: String, dentry: Arc<Dentry>) {
-        let prev = self
+        let _prev = self
             .entries
             .insert(name, CachedDentry::new_positive(dentry));
 
         #[cfg(debug_assertions)]
-        if matches!(prev, Some(CachedDentry::Negative)) {
+        if matches!(_prev, Some(CachedDentry::Negative)) {
             NEGATIVE_ENTRY_COUNTER.fetch_sub(1, Ordering::Relaxed);
         }
     }

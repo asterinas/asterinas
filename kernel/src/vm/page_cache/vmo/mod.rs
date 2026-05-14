@@ -191,10 +191,10 @@ impl CommitMode {
 
 impl VmoCommitError {
     /// Returns the page index whose commit is pending on I/O or initialization.
-    pub fn pending_index(&self) -> Option<usize> {
+    pub fn pending_index(&self) -> Result<usize> {
         match self {
-            Self::NeedIo { index } | Self::WaitUntilInit { index, .. } => Some(*index),
-            Self::Err(_) => None,
+            Self::NeedIo { index } | Self::WaitUntilInit { index, .. } => Ok(*index),
+            Self::Err(e) => Err(*e),
         }
     }
 }
