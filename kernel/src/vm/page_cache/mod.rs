@@ -46,34 +46,62 @@
 //!
 //! The page-cache subsystem serializes per-page state transitions, including
 //! the backend page states in [`cache_page::PageState`] and the auxiliary
-//! writeback tracking bit in [`CachePageMeta`]. It does not provide whole-file
-//! serialization or page-table quiescence.
+//! writeback tracking bit in [`CachePageMeta`].
 //!
-//! Callers still need higher-level synchronization in two buckets:
+//! [`PageCache`] is stored inside a filesystem-level lock or inode lock. It
+//! prevents conflicting buffered I/O and resizing. However, it cannot prevent
+//! concurrent page faults. They need to be synchronized with page table locks,
+//! the reverse-mapping lock, and per-page locks. This module handles the
+//! complexity in cooperation with [`super::vmar`].
 //!
-//! - **Filesystem metadata / buffered-I/O lock.** Hold the inode- or file-level
-//!   lock that stabilizes file size, extent metadata, and write
-//!   ordering around filesystem-facing buffered access. The affected APIs are:
-//!   - buffered reads through the [`VmIo`] implementation on [`PageCache`],
-//!     such as [`VmIo::read_bytes`];
-//!   - buffered writes through the [`VmIo`] implementation on [`PageCache`],
-//!     such as [`VmIo::write_bytes`];
-//!   - zero-filling writes through [`PageCache::fill_zeros`];
-//!   - standalone [`PageCache::flush_range`] calls when `fsync`-like ordering
-//!     matters; and
-//!   - both sides of [`PageCache::resize`], because the file size and
-//!     page-cache capacity must be updated in one critical section.
-//! - **Reverse-mapping / invalidation lock.** Hold the lock shared with the
-//!   page-table and page-fault side whenever cached pages may disappear or the
-//!   accessible VMO range may shrink. The affected APIs are:
-//!   - shrinking [`PageCache::resize`];
-//!   - [`PageCache::evict_range`];
-//!   - [`PageCache::invalidate_range`]; and
-//!   - mapping-side access through [`Vmo::commit_on`], [`Vmo::try_commit_page`]
-//!     or [`Vmo::try_operate_on_range`] on the same file range.
-//
-// TODO: Implement built-in synchronization between mappings and [`PageCache`]
-// to meet reverse-mapping constraints above.
+//! A complete overview of how cached file I/O ("read"/"write" below),
+//! `O_DIRECT` file I/O ("read (direct)"/"write (direct)"), page cache
+//! management operations ("resize"/"flush"/"evict"), and page faults
+//! ("fault (load)"/"fault (store)") interact with each other when they are
+//! invoked concurrently is shown below.
+//!
+//! |                | read            | write           | read (direct) | write (direct)  | resize      | flush       | evict       | fault (load) | fault (store) |
+//! |----------------|-----------------|-----------------|---------------|-----------------|-------------|-------------|-------------|--------------|---------------|
+//! | read           | N/A             |                 |               |                 |             |             |             |              |               |
+//! | write          | inode*          | inode*          |               |                 |             |             |             |              |               |
+//! | read (direct)  | N/A             | (flush)         | N/A           |                 |             |             |             |              |               |
+//! | write (direct) | (flush + evict) | (flush + evict) | inode*        | inode*          |             |             |             |              |               |
+//! | resize         | inode           | inode           | inode         | inode           | inode       |             |             |              |               |
+//! | flush          | N/A             | page            | (flush)       | (flush + evict) | rmap + page | rmap + page |             |              |               |
+//! | evict          | N/A             | page            | (flush)       | (flush + evict) | rmap + page | rmap + page | rmap + page |              |               |
+//! | fault (load)   | N/A             | N/A             | N/A           | (flush + evict) | PT + rmap   | N/A         | PT + page   | N/A          |               |
+//! | fault (store)  | N/A             | N/A             | (flush)       | (flush + evict) | PT + rmap   | PT + page   | PT + page   | N/A          | N/A           |
+//!
+//! The annotations in the table are explained below.
+//!
+//!  - If two operations have no semantic conflicts, even if they are called
+//!    concurrently (e.g., if both operations try to read something), the
+//!    corresponding entry is noted as `N/A`.
+//!
+//!  - Userspace programs should not mix cached and direct file I/O. Otherwise,
+//!    data corruption caused by the program will be the user's fault. The
+//!    corresponding entry is noted as `(OP)` where `OP` is the operation
+//!    inserted by the filesystem before starting direct file I/O, which
+//!    ensures the correctness when the two operations are called
+//!    **sequentially**.
+//!
+//!  - For two operations protected by the inode lock, the entry is noted as
+//!    `inode` or `inode*`. The latter, `inode*`, means that lock usage is not
+//!    yet enforced at the page cache layer or the Rust type level (i.e.,
+//!    [`PageCache`] operations do not yet take `&mut self`).
+//!
+//!  - In this table, `flush` and `evict` are assumed to be able to be called
+//!    without holding the inode lock (e.g., under memory pressure). But as we
+//!    have not implemented any related mechanisms, they can currently only be
+//!    called from the filesystem while holding at least the inode read lock.
+//!
+//!  - For interactions between page faults and page cache management, the
+//!    correct order of multiple locks is important to ensure that the cached
+//!    page is always in a consistent state, even when operations are called
+//!    concurrently. The corresponding entry is noted as `LockA + LockB`. We
+//!    use `rmap` to denote the reverse-mapping lock, `PT` to denote the page
+//!    table lock, and `page` to denote the page lock. For more details, see
+//!    the comments in the implementation.
 
 use core::{
     ops::{Deref, Range},
@@ -93,7 +121,7 @@ mod tests;
 mod vmo;
 
 pub use cache_page::{CachePage, CachePageExt, CachePageMeta, LockedCachePage};
-pub use vmo::{Vmo, VmoCommitError, VmoFlags, VmoOptions};
+pub use vmo::{Vmo, VmoCommitError, VmoFlags, VmoMapMode, VmoOptions};
 
 /// The page cache for a file-like object.
 ///
@@ -177,7 +205,7 @@ impl PageCache {
     /// `PageCache::resize` only updates the page-aligned [`Vmo`] capacity. The
     /// filesystem must keep that capacity synchronized with its own file size
     /// under the same inode- or file-level lock that excludes conflicting
-    /// buffered I/O, page faults, and invalidation.
+    /// buffered I/O and resizing.
     ///
     /// The required ordering is:
     ///
@@ -212,10 +240,6 @@ impl PageCache {
     /// page_cache.resize(file_size, old_file_size).unwrap();
     /// assert_eq!(page_cache.size(), PAGE_SIZE);
     /// ```
-    //
-    // TODO: Integrate a reverse-mapping lock or equivalent synchronization so
-    // shrink/truncate can coordinate with mapped pages and concurrent page
-    // faults.
     pub fn resize(&mut self, new_file_size: usize, old_file_size: usize) -> Result<()> {
         let vmo = &self.0;
         assert!(vmo.flags.contains(VmoFlags::RESIZABLE));
@@ -228,6 +252,12 @@ impl PageCache {
             self.fill_zeros(old_file_size..fill_zero_end)?;
         }
 
+        let rmap = if new_file_size < old_file_size {
+            Some(vmo.rmap.lock())
+        } else {
+            None
+        };
+
         let new_cache_size = new_file_size.align_up(PAGE_SIZE);
         let locked_pages = vmo.pages.lock();
         let old_cache_size = vmo.size();
@@ -237,12 +267,12 @@ impl PageCache {
 
         vmo.size.store(new_cache_size, Ordering::Release);
 
-        if new_cache_size < old_cache_size {
+        if let Some(locked_rmap) = rmap {
             let decommit_range = new_cache_size..old_cache_size;
             if let Some(backed_vmo) = vmo.as_backed_vmo() {
-                backed_vmo.decommit_pages(locked_pages, &decommit_range)?;
+                backed_vmo.decommit_pages(locked_rmap, locked_pages, &decommit_range)?;
             } else {
-                vmo.decommit_anon_pages(locked_pages, decommit_range)?;
+                vmo.decommit_anon_pages(locked_rmap, locked_pages, decommit_range)?;
             }
         }
 
@@ -258,9 +288,6 @@ impl PageCache {
     /// Filesystems that need `fsync`-like guarantees must still exclude
     /// concurrent writers or repeat the operation until their own ordering
     /// requirements are met.
-    ///
-    /// Callers must hold the filesystem-level lock that serializes operations in
-    /// the target range.
     ///
     /// If the given range exceeds the current size of the page cache, only the pages within
     /// the valid range will be flushed.
@@ -278,17 +305,6 @@ impl PageCache {
     /// pages are left in place. This is useful for invalidating cached data that
     /// is no longer needed and can be re-read from the backend if necessary
     /// (e.g., before direct I/O operations).
-    ///
-    /// Callers must hold the filesystem-level lock that serializes operations in
-    /// the target range.
-    ///
-    /// Because this method can detach pages from the cache, callers must also
-    /// hold the reverse-mapping / page-table invalidation lock that excludes
-    /// concurrent page faults and mapped access to the same range.
-    //
-    // TODO: Integrate a reverse-mapping lock or equivalent synchronization so
-    // eviction can coordinate with mapped pages and concurrent page faults
-    // before removing cached pages from the page cache.
     #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let Some(vmo) = self.0.as_backed_vmo() else {
