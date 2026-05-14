@@ -1,7 +1,2 @@
-SendFileTest.DoNotSendfileIfOutfileIsAppendOnly
-SendFileTest.Overflow
-SendFileTest.SendFileToSelf
+# TODO: Support `F_GETPIPE_SZ` for `fcntl` syscall.
 SendFileTest.SendPipeBlocks
-SendFileTest.SendPipeWouldBlock
-SendFileTest.SendToNotARegularFile
-SendFileTest.SendToSpecialFile
