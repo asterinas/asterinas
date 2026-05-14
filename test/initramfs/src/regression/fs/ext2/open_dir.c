@@ -2,10 +2,7 @@
 
 #define _GNU_SOURCE
 
-#include <errno.h>
 #include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -95,7 +92,7 @@ END_TEST()
 
 FN_SETUP(cleanup)
 {
-	rmdir(TARGET_DIR);
-	rmdir(TEST_DIR);
+	CHECK(rmdir(TARGET_DIR));
+	CHECK(rmdir(TEST_DIR));
 }
 END_SETUP()

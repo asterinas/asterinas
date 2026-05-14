@@ -10,8 +10,7 @@
 //!
 //! # Overview
 //!
-//! The subsystem is intentionally split into three layers with different
-//! responsibilities:
+//! The subsystem is split into four layers with different responsibilities:
 //!
 //! - [`PageCache`] is the per-file façade used by filesystems. It exposes
 //!   buffered I/O, resize, flush, and invalidation operations in filesystem

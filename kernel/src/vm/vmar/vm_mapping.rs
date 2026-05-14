@@ -484,13 +484,7 @@ impl VmMapping {
                     {
                         Ok((frame, is_readonly)) => (frame, is_readonly),
                         Err(err) => {
-                            let Some(index) = err.pending_index() else {
-                                let VmoCommitError::Err(err) = err else {
-                                    unreachable!("non-pending commit error without an error");
-                                };
-                                return Err(err);
-                            };
-
+                            let index = err.pending_index()?;
                             drop(cursor);
                             drop(preempt_guard);
                             self.vmo().unwrap().commit_on(index)?;
@@ -631,13 +625,7 @@ impl VmMapping {
             match vmo.try_operate_on_range(&(start_offset..end_offset), operate) {
                 Ok(_) => return Ok(()),
                 Err(err) => {
-                    let Some(index) = err.pending_index() else {
-                        let VmoCommitError::Err(err) = err else {
-                            unreachable!("non-pending commit error without an error");
-                        };
-                        return Err(err);
-                    };
-
+                    let index = err.pending_index()?;
                     drop(preempt_guard);
                     vmo.commit_on(index)?;
                     start_addr = (index * PAGE_SIZE - vmo.offset()) + self.map_to_addr;
