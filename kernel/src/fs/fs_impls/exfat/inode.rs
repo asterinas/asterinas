@@ -8,7 +8,7 @@ use core::{cmp::Ordering, time::Duration};
 pub(super) use align_ext::AlignExt;
 use aster_block::{
     BLOCK_SIZE, SECTOR_SIZE,
-    bio::{BioCompleteFn, BioDirection, BioSegment},
+    bio::{BioCompleteFn, BioDirection, BioSegment, BioStatus},
     id::{Bid, BlockId},
 };
 use io_util::batch::IoBatch;
@@ -144,8 +144,14 @@ impl BlockAsPageCacheBackend for ExfatInode {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         let inner = self.inner.read();
-        if inner.size < idx * PAGE_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "Invalid read size")
+        if inner.size_allocated <= idx * PAGE_SIZE {
+            return_errno_with_message!(Errno::EINVAL, "invalid read size");
+        } else if inner.size <= idx * PAGE_SIZE {
+            drop(inner);
+            if let Some(complete_fn) = complete_fn {
+                (complete_fn)(BioStatus::Zeros);
+            }
+            return Ok(());
         }
         let fs = inner.fs();
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / fs.sector_size())?;
@@ -166,6 +172,9 @@ impl BlockAsPageCacheBackend for ExfatInode {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         let inner = self.inner.read();
+        if inner.size_allocated <= idx * PAGE_SIZE {
+            return_errno_with_message!(Errno::EINVAL, "invalid write size");
+        }
         let fs = inner.fs();
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / fs.sector_size())?;
         fs.block_device().write_blocks_async(
@@ -175,10 +184,6 @@ impl BlockAsPageCacheBackend for ExfatInode {
             io_batch,
         )?;
         Ok(())
-    }
-
-    fn npages(&self) -> usize {
-        self.inner.read().size.align_up(PAGE_SIZE) / PAGE_SIZE
     }
 }
 

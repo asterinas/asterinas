@@ -86,7 +86,7 @@ use core::{
 use align_ext::AlignExt;
 use aster_block::bio::{BioCompleteFn, BioDirection, BioSegment, BioStatus};
 use io_util::batch::IoBatch;
-use ostd::mm::{Segment, VmIo, io::util::HasVmReaderWriter};
+use ostd::mm::{Segment, VmIo, VmIoFill, io::util::HasVmReaderWriter};
 
 use crate::prelude::*;
 
@@ -345,6 +345,11 @@ impl VmIo for PageCache {
 /// devices usually implement [`BlockAsPageCacheBackend`] instead.
 pub trait PageCacheBackend: Sync + Send {
     /// Reads a page from the backend asynchronously.
+    ///
+    /// The caller may try to pass an index that exceeds the size of the
+    /// underlying backend (e.g., the file size). This can occur if file
+    /// truncation and a page fault occur at the same time. If this happens,
+    /// this method should fail with `EINVAL`.
     fn read_page_async(
         &self,
         idx: usize,
@@ -353,18 +358,20 @@ pub trait PageCacheBackend: Sync + Send {
     ) -> Result<()>;
 
     /// Writes a page to the backend asynchronously.
+    ///
+    /// If the caller tries to pass an index that exceeds the size of the
+    /// underlying backend (e.g. the file size), this method should fail with
+    /// `EINVAL`. Note that this cannot happen until we support concurrent file
+    /// truncation and page writeback.
+    //
+    // TODO: Revise this behavior once file truncation and page writeback can
+    // happen concurrently.
     fn write_page_async(
         &self,
         idx: usize,
         locked_page: cache_page::LockedCachePage,
         io_batch: &mut IoBatch,
     ) -> Result<()>;
-
-    /// Returns the number of pages addressable in the backend storage.
-    ///
-    /// This defines the upper bound of valid page indices for I/O operations.
-    /// Requests beyond this limit are treated as holes (zero-filled).
-    fn npages(&self) -> usize;
 }
 
 impl dyn PageCacheBackend {
@@ -399,6 +406,9 @@ pub trait BlockAsPageCacheBackend: Sync + Send {
     /// Implementations must attach `complete_fn`, when present, to the
     /// underlying asynchronous I/O so the page-cache layer can mark successful
     /// reads up to date and release the page lock.
+    ///
+    /// Implementations should fail with `EINVAL` for an out-of-bounds `idx`.
+    /// See also [`PageCacheBackend::read_page_async`].
     fn submit_read_bio(
         &self,
         idx: usize,
@@ -413,6 +423,9 @@ pub trait BlockAsPageCacheBackend: Sync + Send {
     /// Implementations must attach `complete_fn`, when present, to the
     /// underlying asynchronous I/O so the page-cache layer can finish writeback
     /// bookkeeping and report failures.
+    ///
+    /// Implementations should fail with `EINVAL` for an out-of-bounds `idx`.
+    /// See also [`PageCacheBackend::write_page_async`].
     fn submit_write_bio(
         &self,
         idx: usize,
@@ -420,12 +433,6 @@ pub trait BlockAsPageCacheBackend: Sync + Send {
         complete_fn: Option<BioCompleteFn>,
         io_batch: &mut IoBatch,
     ) -> Result<()>;
-
-    /// Returns the number of pages addressable in the backend storage.
-    ///
-    /// This defines the upper bound of valid page indices for I/O operations.
-    /// Requests beyond this limit are treated as holes (zero-filled).
-    fn npages(&self) -> usize;
 }
 
 impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
@@ -441,7 +448,10 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
         );
 
         let complete_fn: BioCompleteFn = Box::new(move |status| {
-            if status == BioStatus::Complete {
+            if status == BioStatus::Zeros {
+                locked_page.fill_zeros(0, PAGE_SIZE).unwrap();
+                locked_page.set_up_to_date();
+            } else if status == BioStatus::Complete {
                 locked_page.set_up_to_date();
             }
             // The page lock is released when `locked_page` (LockedCachePage) is dropped here.
@@ -498,9 +508,5 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
         }
 
         res
-    }
-
-    fn npages(&self) -> usize {
-        BlockAsPageCacheBackend::npages(self)
     }
 }
