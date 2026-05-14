@@ -28,6 +28,9 @@ pub enum PageState {
     /// `Dirty` indicates a page which content has been updated and not written back to underlying disk.
     /// The page is available to read, write, and map.
     Dirty = 2,
+    /// `Evicted` indicates an evicted page which content has been initialized.
+    /// The page is available to read, not available to write and map.
+    Evicted = 3,
 }
 
 impl From<PageState> for u8 {
@@ -55,6 +58,11 @@ impl PageState {
     /// Checks if the page is dirty.
     pub(super) fn is_dirty(self) -> bool {
         matches!(self, Self::Dirty)
+    }
+
+    /// Checks if the page is evicted.
+    pub(super) fn is_evicted(self) -> bool {
+        matches!(self, Self::Evicted)
     }
 }
 
@@ -285,6 +293,16 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
         self.metadata()
             .state
             .store(PageState::Dirty, Ordering::Release);
+    }
+
+    /// Marks the page as evicted.
+    ///
+    /// This indicates that the page has been evicted and is no longer
+    /// associated with the page cache.
+    pub(super) fn set_evicted(&self) {
+        self.metadata()
+            .state
+            .store(PageState::Evicted, Ordering::Release);
     }
 
     /// Sets the writing back flag of the page, indicating that the page
