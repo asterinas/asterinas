@@ -349,10 +349,7 @@ impl<'a> VmarMapOptions<'a> {
         let (mapped_mem, io_mem) = match mappable {
             Some(Mappable::Vmo(vmo)) => {
                 if let Some(ref path) = path {
-                    debug_assert!(Arc::ptr_eq(
-                        &vmo,
-                        &path.inode().page_cache().unwrap().as_vmo().clone()
-                    ));
+                    debug_assert!(Arc::ptr_eq(&vmo, &path.inode().page_cache().unwrap()));
                 }
 
                 let is_writable_tracked = if let Some(ref path) = path

@@ -74,9 +74,6 @@
 //
 // TODO: Implement built-in synchronization between mappings and [`PageCache`]
 // to meet reverse-mapping constraints above.
-// TODO: Remove the `VmIo` implementation for `PageCache` and make operations
-// that need to be protected by upper locks accept `&mut self`, and modify the
-// related usages.
 
 use core::{
     ops::{Deref, Range},
@@ -96,7 +93,7 @@ mod tests;
 mod vmo;
 
 pub use cache_page::{CachePage, CachePageExt, CachePageMeta, LockedCachePage};
-pub use vmo::{Vmo, VmoCommitError, VmoFlags, VmoOptions, WritableMappingStatus};
+pub use vmo::{Vmo, VmoCommitError, VmoFlags, VmoOptions};
 
 /// The page cache for a file-like object.
 ///
@@ -112,35 +109,37 @@ pub use vmo::{Vmo, VmoCommitError, VmoFlags, VmoOptions, WritableMappingStatus};
 /// - the higher-level synchronization that keeps metadata, buffered I/O,
 ///   invalidation, and VM mappings coherent.
 ///
-/// See the module-level documentation of [`crate::vm::page_cache`], especially the
-/// `Synchronization Model`, for the complete concurrency contract and the API
-/// lists covered by the filesystem lock and the reverse-mapping /
-/// invalidation lock.
-///
 /// Filesystems backed by persistent or remote storage create it with
 /// [`PageCache::new_with_backend`] and a [`PageCacheBackend`]. Purely
 /// in-memory filesystems can use [`PageCache::new_anon`] to get the same
 /// buffered-I/O interface without a backend.
 ///
+/// A `PageCache` is more than just an `Arc<Vmo>` wrapper. It acts as a unique
+/// handle to the underlying [`Vmo`], enabling additional operations and
+/// enforcing the correct concurrency contract (see the module-level
+/// documentation of [`crate::vm::page_cache`]). Typically, a user (such as a
+/// file system) should place a `PageCache` inside a [`Mutex`] or [`RwMutex`].
+/// Operations requiring exclusive access to the page cache handle require
+/// `&mut self`, so a proper inode or file system lock must be obtained in
+/// advance.
+///
 /// Reach for [`PageCache::as_vmo`] only when a lower-level consumer such as
 /// memory mapping or page-fault code must operate on the underlying [`Vmo`]
 /// directly.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct PageCache(Arc<Vmo>);
 
 impl PageCache {
     /// Creates a page cache with a backend and the specified initial capacity
     /// in bytes.
     pub fn new_with_backend(size: usize, backend: Weak<dyn PageCacheBackend>) -> Result<Self> {
-        Ok(Self::from(
-            VmoOptions::new_page_cache(size, backend).alloc()?,
-        ))
+        Ok(Self(VmoOptions::new_page_cache(size, backend).alloc()?))
     }
 
     /// Creates an anonymous page cache with the specified initial capacity in
     /// bytes.
     pub fn new_anon(size: usize) -> Result<Self> {
-        Ok(Self::from(VmoOptions::new_anon(size).alloc()?))
+        Ok(Self(VmoOptions::new_anon(size).alloc()?))
     }
 
     /// Returns the wrapped [`Vmo`].
@@ -154,11 +153,6 @@ impl PageCache {
     /// remains responsible for tracking EOF separately.
     pub fn size(&self) -> usize {
         self.0.size()
-    }
-
-    /// Returns the writable mapping status of the underlying VMO.
-    pub fn writable_mapping_status(&self) -> &WritableMappingStatus {
-        self.0.writable_mapping_status()
     }
 
     /// Resizes the page-cache capacity to cover a new file size.
@@ -203,7 +197,7 @@ impl PageCache {
     ///
     /// use crate::vm::page_cache::PageCache;
     ///
-    /// let page_cache = PageCache::new_anon(0).unwrap();
+    /// let mut page_cache = PageCache::new_anon(0).unwrap();
     ///
     /// // Extend: publish the new file size first, then grow the page cache
     /// // with the previous file size.
@@ -222,7 +216,7 @@ impl PageCache {
     // TODO: Integrate a reverse-mapping lock or equivalent synchronization so
     // shrink/truncate can coordinate with mapped pages and concurrent page
     // faults.
-    pub fn resize(&self, new_file_size: usize, old_file_size: usize) -> Result<()> {
+    pub fn resize(&mut self, new_file_size: usize, old_file_size: usize) -> Result<()> {
         let vmo = &self.0;
         assert!(vmo.flags.contains(VmoFlags::RESIZABLE));
 
@@ -327,18 +321,15 @@ impl PageCache {
     }
 }
 
-impl From<Arc<Vmo>> for PageCache {
-    fn from(vmo: Arc<Vmo>) -> Self {
-        Self(vmo)
-    }
-}
-
 impl VmIo for PageCache {
     fn read(&self, offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
         self.0.read(offset, writer)?;
         Ok(())
     }
 
+    // TODO: This should require `&mut` to ensure that the caller holds the
+    // inode lock. However, we need to fix the exfat code first, since it does
+    // not hold the write lock when handling `write()`.
     fn write(&self, offset: usize, reader: &mut VmReader) -> ostd::Result<()> {
         self.0.write(offset, reader)?;
         Ok(())

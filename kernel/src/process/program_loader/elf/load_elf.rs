@@ -421,7 +421,7 @@ fn map_segment_vmo(
     if segment_size != 0 {
         let vm_map_options = vmar
             .new_map(segment_size, perms)?
-            .vmo(elf_vmo.as_vmo().clone())
+            .vmo(elf_vmo.clone())
             .path(elf_file.clone())
             .vmo_offset(segment_offset)
             .offset(VmarMapOffset::FixedReplace(offset))
