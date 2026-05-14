@@ -16,4 +16,5 @@ const NAME_MAX: usize = 255;
 
 pub(super) fn init() {
     crate::fs::vfs::registry::register(&RamFsType).unwrap();
+    memfd::init();
 }

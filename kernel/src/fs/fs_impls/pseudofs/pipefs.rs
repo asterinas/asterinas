@@ -17,6 +17,11 @@ use crate::{
     prelude::*,
 };
 
+pub(super) fn init() {
+    // Touch the mount node to trigger the initialization of all singletons.
+    let _ = PipeFs::mount_node();
+}
+
 pub(in crate::fs) struct PipeFs {
     _private: (),
 }

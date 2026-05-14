@@ -30,6 +30,11 @@ use crate::{
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
+pub(super) fn init() {
+    // Touch the mount node to trigger the initialization of all singletons.
+    let _ = NsFs::mount_node();
+}
+
 /// A pseudo filesystem for namespace files.
 struct NsFs {
     _private: (),
