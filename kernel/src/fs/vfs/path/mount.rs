@@ -60,6 +60,16 @@ pub(super) fn init() {
     ID_ALLOCATOR.call_once(|| SpinLock::new(id_allocator));
 }
 
+/// Allocates a new mount ID from the global pool.
+fn alloc_mount_id() -> Result<usize> {
+    ID_ALLOCATOR
+        .get()
+        .unwrap()
+        .lock()
+        .alloc()
+        .ok_or_else(|| Error::with_message(Errno::ENOMEM, "mount ID pool exhausted"))
+}
+
 bitflags! {
     pub struct PerMountFlags: u32 {
         /// Mount read-only.
@@ -235,12 +245,7 @@ impl Mount {
         mnt_ns: Weak<MountNamespace>,
         source: Option<String>,
     ) -> Result<Arc<Self>> {
-        let id = ID_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .alloc()
-            .ok_or_else(|| Error::new(Errno::ENOMEM))?;
+        let id = alloc_mount_id()?;
 
         Ok(Arc::new_cyclic(|weak_self| Self {
             id,
@@ -331,12 +336,7 @@ impl Mount {
         root_dentry: &Arc<Dentry>,
         new_ns: &Weak<MountNamespace>,
     ) -> Result<Arc<Self>> {
-        let id = ID_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .alloc()
-            .ok_or_else(|| Error::new(Errno::ENOMEM))?;
+        let id = alloc_mount_id()?;
 
         Ok(Arc::new_cyclic(|weak_self| Self {
             id,
