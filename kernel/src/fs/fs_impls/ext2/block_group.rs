@@ -327,6 +327,9 @@ impl BlockAsPageCacheBackend for BlockGroupImpl {
         complete_fn: Option<BioCompleteFn>,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
+        if self.raw_inodes_size <= idx * BLOCK_SIZE {
+            return_errno_with_message!(Errno::EINVAL, "invalid read size");
+        }
         let bid = self.inode_table_bid + idx as Ext2Bid;
         self.fs
             .upgrade()
@@ -341,15 +344,14 @@ impl BlockAsPageCacheBackend for BlockGroupImpl {
         complete_fn: Option<BioCompleteFn>,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
+        if self.raw_inodes_size <= idx * BLOCK_SIZE {
+            return_errno_with_message!(Errno::EINVAL, "invalid write size");
+        }
         let bid = self.inode_table_bid + idx as Ext2Bid;
         self.fs
             .upgrade()
             .unwrap()
             .write_blocks_async(bid, bio_segment, complete_fn, io_batch)
-    }
-
-    fn npages(&self) -> usize {
-        self.raw_inodes_size.div_ceil(BLOCK_SIZE)
     }
 }
 
