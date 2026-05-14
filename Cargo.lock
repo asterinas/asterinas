@@ -101,7 +101,7 @@ dependencies = [
  "device-id",
  "id-alloc",
  "int-to-c-enum",
- "io_util",
+ "io-util",
  "ostd",
  "ostd-pod",
  "spin",
@@ -204,7 +204,7 @@ dependencies = [
  "inherit-methods-macro",
  "int-to-c-enum",
  "intrusive-collections",
- "io_util",
+ "io-util",
  "jhash",
  "keyable-arc",
  "lending-iterator",
@@ -997,7 +997,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "io_util"
+name = "io-util"
 version = "0.1.0"
 dependencies = [
  "smallvec",
