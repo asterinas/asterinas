@@ -29,6 +29,11 @@ use crate::{
     vm::{perms::VmPerms, vmo::Vmo},
 };
 
+pub(super) fn init() {
+    // Touch the mount node to trigger the initialization of all singletons.
+    let _ = MemfdTmpFs::mount_node();
+}
+
 /// Maximum file name length for `memfd_create`, excluding the final `\0` byte.
 ///
 /// See <https://man7.org/linux/man-pages/man2/memfd_create.2.html>

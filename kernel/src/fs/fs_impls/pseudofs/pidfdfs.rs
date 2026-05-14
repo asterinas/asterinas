@@ -15,6 +15,11 @@ use crate::{
     process::{Gid, Uid},
 };
 
+pub(super) fn init() {
+    // Touch the mount node to trigger the initialization of all singletons.
+    let _ = PidfdFs::mount_node();
+}
+
 pub struct PidfdFs {
     _private: (),
 }
