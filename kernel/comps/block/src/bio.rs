@@ -315,7 +315,7 @@ impl IoCompletion for BioMetadata {
             BioStatus::NotSupported => Err(IoError::Unsupported),
             BioStatus::NoSpace => Err(IoError::OutOfSpace),
             BioStatus::IoError => Err(IoError::Failed),
-            BioStatus::Init | BioStatus::Submit => unreachable!(),
+            BioStatus::Init | BioStatus::Submit | BioStatus::Zeros => unreachable!(),
         }
     }
 }
@@ -359,6 +359,8 @@ pub enum BioStatus {
     NoSpace = 4,
     /// An error occurred while doing I/O.
     IoError = 5,
+    /// No I/O operation is needed because the sectors to read only contain zeros.
+    Zeros = 6,
 }
 
 /// `BioSegment` is the basic memory unit of a block I/O request.

@@ -336,6 +336,9 @@ impl BlockAsPageCacheBackend for MockPageCacheBackend {
         complete_fn: Option<BioCompleteFn>,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
+        if page_idx >= self.num_pages {
+            return_errno!(Errno::EINVAL);
+        }
         self.submit_bio(IoKind::Read, page_idx, bio_segment, complete_fn, io_batch)
     }
 
@@ -346,10 +349,9 @@ impl BlockAsPageCacheBackend for MockPageCacheBackend {
         complete_fn: Option<BioCompleteFn>,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
+        if page_idx >= self.num_pages {
+            return_errno!(Errno::EINVAL);
+        }
         self.submit_bio(IoKind::Write, page_idx, bio_segment, complete_fn, io_batch)
-    }
-
-    fn npages(&self) -> usize {
-        self.num_pages
     }
 }

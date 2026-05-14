@@ -24,7 +24,7 @@ use core::{
 use align_ext::AlignExt;
 use io_util::batch::IoBatch;
 use ostd::{
-    mm::{HasPaddr, VmIoFill, io::util::HasVmReaderWriter},
+    mm::{HasPaddr, io::util::HasVmReaderWriter},
     task::disable_preempt,
 };
 use xarray::{Cursor, LockedXArray, XArray};
@@ -703,18 +703,12 @@ pub struct BackedVmo<'a> {
 impl<'a> BackedVmo<'a> {
     /// Writes back dirty pages in the specified byte range to the backend storage.
     pub(super) fn flush_dirty_pages(&self, range: &Range<usize>) -> Result<()> {
-        let page_idx_range = get_page_idx_range(range);
-        let npages = self.backend.npages();
-        if page_idx_range.start >= npages {
-            return Ok(());
-        }
-        let page_idx_range = page_idx_range.start..page_idx_range.end.min(npages);
-
         let locked_pages = self.vmo.pages.lock();
         if range.start > self.size() {
             return Ok(());
         }
 
+        let page_idx_range = get_page_idx_range(range);
         let dirty_pages =
             self.collect_pages_if(locked_pages, page_idx_range, |_, page| page.is_dirty());
 
@@ -737,16 +731,14 @@ impl<'a> BackedVmo<'a> {
     // TODO: Integrate reverse mappings or an explicit invalidation lock so this
     // path can coordinate with page faults.
     pub(super) fn evict_up_to_date_pages(&self, range: &Range<usize>) -> Result<()> {
+        let locked_pages = self.vmo.pages.lock();
         if range.start > self.size() {
             return Ok(());
         }
 
         let page_idx_range = get_page_idx_range(range);
-        let npages = self.backend.npages();
-        let locked_pages = self.vmo.pages.lock();
-        let pages_to_evict = self.collect_pages_if(locked_pages, page_idx_range, |idx, page| {
-            idx >= npages || page.is_up_to_date()
-        });
+        let pages_to_evict =
+            self.collect_pages_if(locked_pages, page_idx_range, |_, page| page.is_up_to_date());
         self.wait_for_writeback_and_remove_pages(pages_to_evict);
 
         Ok(())
@@ -784,7 +776,8 @@ impl<'a> BackedVmo<'a> {
         if let Some(page) = cursor.load() {
             let page = page.clone();
             drop(locked_pages);
-            if page_idx < self.backend.npages() && !commit_mode.skips_backend_read() {
+
+            if !commit_mode.skips_backend_read() {
                 page.ensure_init(|locked_page| self.backend.read_page(page_idx, locked_page))?;
                 return Ok(page.into());
             }
@@ -792,32 +785,21 @@ impl<'a> BackedVmo<'a> {
             return Ok(page.into());
         };
 
-        // Page is within the file bounds - need to allocate a cache page.
+        // The page is within the file bounds - need to allocate a cache page.
         let locked_page = CachePage::alloc_uninit()?
             .try_lock()
-            .expect("newly allocated cache page must be unlocked");
-
+            .expect("a newly allocated cache page must be unlocked");
         cursor.store(locked_page.clone());
-
         drop(locked_pages);
 
-        if page_idx < self.backend.npages() {
-            // Page is within the file bounds
-            if commit_mode.skips_backend_read() {
-                // Page will be completely overwritten, no need to read
-                Ok(locked_page.into())
-            } else {
-                let new_page = locked_page.clone();
-                // Read the page from backend storage
-                self.backend.read_page(page_idx, locked_page)?;
-                Ok(new_page.into())
-            }
+        if commit_mode.skips_backend_read() {
+            // The page will be completely overwritten, no need to read.
+            Ok(locked_page.into())
         } else {
-            // Page is beyond file bounds - treat as hole (zero-filled)
-            locked_page.fill_zeros(0, PAGE_SIZE).unwrap();
-            locked_page.set_up_to_date();
-
-            Ok(locked_page.unlock().into())
+            let new_page = locked_page.clone();
+            // Read the page from the backend storage.
+            self.backend.read_page(page_idx, locked_page)?;
+            Ok(new_page.into())
         }
     }
 
@@ -833,9 +815,8 @@ impl<'a> BackedVmo<'a> {
             return Err(VmoCommitError::NeedIo { index: page_idx });
         };
 
-        // If page is within file bounds, check if it's initialized
-        if !commit_mode.skips_backend_read() && page_idx < self.backend.npages() && page.is_uninit()
-        {
+        // Check if the page is initialized.
+        if !commit_mode.skips_backend_read() && page.is_uninit() {
             return Err(VmoCommitError::WaitUntilInit {
                 index: page_idx,
                 page: page.clone(),

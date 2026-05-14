@@ -384,7 +384,7 @@ impl BlockAsPageCacheBackend for ExfatFs {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.fs_size() < idx * PAGE_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "invalid read size")
+            return_errno_with_message!(Errno::EINVAL, "invalid read size");
         }
         self.block_device.read_blocks_async(
             BlockId::new(idx as u64),
@@ -403,7 +403,7 @@ impl BlockAsPageCacheBackend for ExfatFs {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.fs_size() < idx * PAGE_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "invalid write size")
+            return_errno_with_message!(Errno::EINVAL, "invalid write size");
         }
         self.block_device.write_blocks_async(
             BlockId::new(idx as u64),
@@ -412,10 +412,6 @@ impl BlockAsPageCacheBackend for ExfatFs {
             io_batch,
         )?;
         Ok(())
-    }
-
-    fn npages(&self) -> usize {
-        self.fs_size() / PAGE_SIZE
     }
 }
 

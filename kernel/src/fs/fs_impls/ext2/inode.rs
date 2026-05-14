@@ -1420,7 +1420,7 @@ impl InodeImpl {
             self.expand_blocks(old_blocks..new_blocks)?;
         }
 
-        // Expands the size
+        // Expands the size (after expanding blocks)
         self.update_size(new_size);
         Ok(())
     }
@@ -1672,13 +1672,13 @@ impl InodeImpl {
         let new_blocks = self.desc.size_to_blocks(new_size);
         let old_blocks = self.desc.blocks_count();
 
+        // Shrinks the size (before shrinking blocks)
+        self.update_size(new_size);
+
         // Shrinks block count if necessary
         if new_blocks < old_blocks {
             self.shrink_blocks(new_blocks..old_blocks);
         }
-
-        // Shrinks the size
-        self.update_size(new_size);
     }
 
     fn update_size(&mut self, new_size: usize) {
@@ -1945,8 +1945,17 @@ impl BlockAsPageCacheBackend for InodeBlockManager {
         complete_fn: Option<BioCompleteFn>,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
+        if idx >= Ext2Bid::MAX as usize {
+            return_errno_with_message!(Errno::EINVAL, "invalid read size");
+        }
         let bid = idx as Ext2Bid;
-        let dev_range = DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)?.read()?;
+        let dev_range = {
+            let mut reader = DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)?;
+            if idx >= self.nblocks() {
+                return_errno_with_message!(Errno::EINVAL, "invalid read size");
+            }
+            reader.read()?
+        };
         let start_bid = dev_range.start as Ext2Bid;
         self.fs()
             .read_blocks_async(start_bid, bio_segment, complete_fn, io_batch)
@@ -1959,15 +1968,20 @@ impl BlockAsPageCacheBackend for InodeBlockManager {
         complete_fn: Option<BioCompleteFn>,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
+        if idx >= Ext2Bid::MAX as usize {
+            return_errno_with_message!(Errno::EINVAL, "invalid write size");
+        }
         let bid = idx as Ext2Bid;
-        let dev_range = DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)?.read()?;
+        let dev_range = {
+            let mut reader = DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)?;
+            if idx >= self.nblocks() {
+                return_errno_with_message!(Errno::EINVAL, "invalid write size");
+            }
+            reader.read()?
+        };
         let start_bid = dev_range.start as Ext2Bid;
         self.fs()
             .write_blocks_async(start_bid, bio_segment, complete_fn, io_batch)
-    }
-
-    fn npages(&self) -> usize {
-        self.nblocks()
     }
 }
 
