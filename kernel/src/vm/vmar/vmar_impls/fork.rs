@@ -1,33 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::array;
-
-use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
     mm::{
-        CachePolicy, PageFlags, VmSpace,
+        CachePolicy, PageFlags,
         tlb::TlbFlushOp,
         vm_space::{CursorMut, VmQueriedItem},
     },
     task::disable_preempt,
 };
 
-use super::{RssDelta, VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar, VmarInner};
-use crate::{prelude::*, process::ProcessVm};
+use super::{RssDelta, VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar};
+use crate::{prelude::*, process::ProcessVm, vm::vmar::VmarHandle};
 
 impl Vmar {
     /// Creates a new VMAR whose content is inherited from another
     /// using copy-on-write (COW) technique.
-    pub fn fork_from(vmar: &Self) -> Result<Arc<Self>> {
+    pub fn fork_from(vmar: &Self) -> Result<VmarHandle> {
         // Obtain the heap lock and hold it for the entire method to avoid race conditions.
         let heap_guard = vmar.process_vm.heap().lock();
 
-        let new_vmar = Arc::new(Vmar {
-            inner: RwMutex::new(VmarInner::new()),
-            vm_space: Arc::new(VmSpace::new()),
-            rss_counters: array::from_fn(|_| PerCpuCounter::new()),
-            process_vm: ProcessVm::fork_from(&vmar.process_vm, &heap_guard),
-        });
+        let new_vmar = VmarHandle::new(ProcessVm::fork_from(&vmar.process_vm, &heap_guard));
 
         {
             let inner = vmar.inner.read();
@@ -127,7 +119,7 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
 mod test {
     use ostd::{
         io::IoMem,
-        mm::{FrameAllocOptions, PageProperty},
+        mm::{FrameAllocOptions, PageProperty, VmSpace},
         prelude::*,
     };
 

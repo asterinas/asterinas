@@ -12,7 +12,7 @@ use crate::{
         NsProxy, UserNamespace,
         signal::{SigStack, sig_mask::SigMask},
     },
-    vm::vmar::Vmar,
+    vm::vmar::VmarHandle,
 };
 
 /// Local data for a POSIX thread.
@@ -23,7 +23,7 @@ pub struct ThreadLocal {
     clear_child_tid: Cell<Vaddr>,
 
     // Virtual memory address regions.
-    vmar: RefCell<Option<Arc<Vmar>>>,
+    vmar: RefCell<Option<VmarHandle>>,
     page_fault_disabled: Cell<bool>,
 
     // Robust futexes.
@@ -57,7 +57,7 @@ impl ThreadLocal {
     pub(super) fn new(
         set_child_tid: Vaddr,
         clear_child_tid: Vaddr,
-        vmar: Arc<Vmar>,
+        vmar: VmarHandle,
         file_table: RwArc<FileTable>,
         fs: Arc<ThreadFsInfo>,
         fpu_context: FpuContext,
@@ -89,7 +89,7 @@ impl ThreadLocal {
         &self.clear_child_tid
     }
 
-    pub fn vmar(&self) -> &RefCell<Option<Arc<Vmar>>> {
+    pub fn vmar(&self) -> &RefCell<Option<VmarHandle>> {
         &self.vmar
     }
 
@@ -308,9 +308,9 @@ impl<T> ThreadLocalOptionRefMut<'_, T> {
         self.0.as_mut().unwrap()
     }
 
-    /// Removes the data and drops it.
-    pub(super) fn remove(&mut self) {
-        *self.0 = None;
+    /// Removes the data and returns it.
+    pub(super) fn remove(&mut self) -> Option<T> {
+        self.0.take()
     }
 
     /// Replaces the data with a new one, returning the old one.

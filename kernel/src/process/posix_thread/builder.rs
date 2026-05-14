@@ -22,6 +22,7 @@ use crate::{
     sched::{Nice, SchedPolicy},
     thread::{Thread, Tid, task},
     time::{TimerManager, clocks::ProfClock},
+    vm::vmar::VmarHandle,
 };
 
 /// The builder to build a POSIX thread
@@ -32,6 +33,7 @@ pub struct PosixThreadBuilder {
     user_ctx: Box<UserContext>,
     process: Weak<Process>,
     credentials: Credentials,
+    vmar: VmarHandle,
 
     // Optional part
     set_child_tid: Vaddr,
@@ -53,6 +55,7 @@ impl PosixThreadBuilder {
         thread_name: ThreadName,
         user_ctx: Box<UserContext>,
         credentials: Credentials,
+        vmar: VmarHandle,
     ) -> Self {
         Self {
             tid,
@@ -60,6 +63,7 @@ impl PosixThreadBuilder {
             user_ctx,
             process: Weak::new(),
             credentials,
+            vmar,
             set_child_tid: 0,
             clear_child_tid: 0,
             file_table: None,
@@ -130,6 +134,7 @@ impl PosixThreadBuilder {
             user_ctx,
             process,
             credentials,
+            vmar,
             thread_name,
             set_child_tid,
             clear_child_tid,
@@ -152,8 +157,6 @@ impl PosixThreadBuilder {
 
         let fs = fs
             .unwrap_or_else(|| Arc::new(ThreadFsInfo::new(ns_proxy.mnt_ns().new_path_resolver())));
-
-        let vmar = process.upgrade().unwrap().lock_vmar().dup_vmar().unwrap();
 
         Arc::new_cyclic(|weak_task| {
             let posix_thread = {

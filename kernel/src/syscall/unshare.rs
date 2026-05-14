@@ -76,7 +76,7 @@ fn check_flags(flags: CloneFlags, ctx: &Context) -> Result<()> {
         );
     }
 
-    if flags.contains(CloneFlags::CLONE_VM) && ctx.user_space().is_vmar_shared() {
+    if flags.contains(CloneFlags::CLONE_VM) && ctx.user_space().vmar().has_multiple_handles() {
         return_errno_with_message!(
             Errno::EINVAL,
             "`CLONE_VM` can only be used when the VMAR is not shared"

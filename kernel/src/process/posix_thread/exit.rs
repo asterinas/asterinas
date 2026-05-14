@@ -13,7 +13,7 @@ use crate::{
     prelude::*,
     process::{
         TermStatus,
-        exit::exit_process,
+        exit::{drop_after, exit_process},
         pid_table,
         signal::{constants::SIGKILL, signals::kernel::KernelSignal},
         task_set::TaskSet,
@@ -109,13 +109,13 @@ fn exit_internal(
     }
 
     // Drop fields in `PosixThread`.
-    *posix_thread.file_table().lock() = None;
-    *posix_thread.ns_proxy().lock() = None;
+    drop_after!(posix_thread.file_table().lock().take());
+    drop_after!(posix_thread.ns_proxy().lock().take());
 
     // Drop fields in `ThreadLocal`.
-    *thread_local.vmar().borrow_mut() = None;
-    thread_local.borrow_file_table_mut().remove();
-    thread_local.borrow_ns_proxy_mut().remove();
+    drop_after!(thread_local.vmar().borrow_mut().take());
+    drop_after!(thread_local.borrow_file_table_mut().remove());
+    drop_after!(thread_local.borrow_ns_proxy_mut().remove());
 
     if is_last_thread {
         exit_process(&posix_process);

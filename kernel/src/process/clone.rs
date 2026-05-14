@@ -31,7 +31,7 @@ use crate::{
     },
     sched::Nice,
     thread::{AsThread, Tid},
-    vm::vmar::Vmar,
+    vm::vmar::{Vmar, VmarHandle},
 };
 
 bitflags! {
@@ -379,10 +379,18 @@ fn clone_child_task(
     // Clone system V semaphore
     clone_sysvsem(clone_flags)?;
 
+    // Clone VMAR
+    let child_vmar = thread_local
+        .vmar()
+        .borrow()
+        .as_ref()
+        .unwrap()
+        .clone_handle();
+
     // Clone file table
     let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
 
-    // Clone fs
+    // Clone FS
     let child_fs = clone_fs(&thread_local.borrow_fs(), clone_flags);
 
     // Clone FPU context
@@ -429,16 +437,21 @@ fn clone_child_task(
             Credentials::new_from(&credentials)
         };
 
-        let mut thread_builder =
-            PosixThreadBuilder::new(child_tid, thread_name, child_user_ctx, credentials)
-                .process(posix_thread.weak_process().clone())
-                .sig_mask(sig_mask)
-                .file_table(child_file_table)
-                .fs(child_fs)
-                .fpu_context(child_fpu_context)
-                .user_ns(child_user_ns)
-                .ns_proxy(child_ns_proxy)
-                .default_timer_slack_ns(default_timer_slack_ns);
+        let mut thread_builder = PosixThreadBuilder::new(
+            child_tid,
+            thread_name,
+            child_user_ctx,
+            credentials,
+            child_vmar,
+        )
+        .process(posix_thread.weak_process().clone())
+        .sig_mask(sig_mask)
+        .file_table(child_file_table)
+        .fs(child_fs)
+        .fpu_context(child_fpu_context)
+        .user_ns(child_user_ns)
+        .ns_proxy(child_ns_proxy)
+        .default_timer_slack_ns(default_timer_slack_ns);
 
         // Deal with SETTID/CLEARTID flags
         clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
@@ -541,6 +554,8 @@ fn clone_child_process(
     let child_tid = allocate_posix_tid();
 
     let child = {
+        let child_vmar_arc = child_vmar.clone_arc();
+
         let mut child_thread_builder = {
             let thread_name = {
                 let executable_path = child_vmar.process_vm().executable_file();
@@ -558,14 +573,20 @@ fn clone_child_process(
                 Credentials::new_from(&credentials)
             };
 
-            PosixThreadBuilder::new(child_tid, child_thread_name, child_user_ctx, credentials)
-                .sig_mask(child_sig_mask)
-                .file_table(child_file_table)
-                .fs(child_fs)
-                .fpu_context(child_fpu_context)
-                .user_ns(child_user_ns.clone())
-                .ns_proxy(child_ns_proxy)
-                .default_timer_slack_ns(default_timer_slack_ns)
+            PosixThreadBuilder::new(
+                child_tid,
+                child_thread_name,
+                child_user_ctx,
+                credentials,
+                child_vmar,
+            )
+            .sig_mask(child_sig_mask)
+            .file_table(child_file_table)
+            .fs(child_fs)
+            .fpu_context(child_fpu_context)
+            .user_ns(child_user_ns.clone())
+            .ns_proxy(child_ns_proxy)
+            .default_timer_slack_ns(default_timer_slack_ns)
         };
 
         // Deal with SETTID/CLEARTID flags
@@ -577,7 +598,7 @@ fn clone_child_process(
 
         create_child_process(
             child_tid,
-            child_vmar,
+            child_vmar_arc,
             child_resource_limits,
             child_nice,
             child_oom_score_adj,
@@ -636,11 +657,11 @@ fn clone_parent_settid(
     Ok(())
 }
 
-fn clone_vmar(parent_vmar: &Arc<Vmar>, clone_flags: CloneFlags) -> Result<Arc<Vmar>> {
+fn clone_vmar(parent_vmar: &VmarHandle, clone_flags: CloneFlags) -> Result<VmarHandle> {
     // If CLONE_VM is set, the child and parent share the same VMAR.
     // Otherwise, the child has a copy of the parent's VMAR.
     if clone_flags.contains(CloneFlags::CLONE_VM) {
-        Ok(parent_vmar.clone())
+        Ok(parent_vmar.clone_handle())
     } else {
         Ok(Vmar::fork_from(parent_vmar)?)
     }
