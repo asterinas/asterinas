@@ -24,7 +24,11 @@ pub use self::{
         aux_vec::{AuxKey, AuxVec},
     },
 };
-use crate::{fs::vfs::path::Path, prelude::*, vm::vmar::Vmar};
+use crate::{
+    fs::vfs::path::Path,
+    prelude::*,
+    vm::vmar::{Vmar, VmarHandle},
+};
 
 /*
  * The user's virtual memory space layout looks like below.
@@ -160,10 +164,6 @@ pub struct ProcessVmarGuard<'a> {
 /// A snapshot of the process VMAR identity.
 ///
 /// This type is used only for identity comparison.
-//
-// NOTE: Upgrading the `Weak<Vmar>` in the snapshot is not permitted,
-// as this will cause the `Vmar` to be dropped in the wrong context,
-// and break the reference count used in `CurrentUserSpace::is_vmar_shared`.
 #[derive(Clone, Debug)]
 pub struct VmarSnapshot(Weak<Vmar>);
 
@@ -225,18 +225,12 @@ impl<'a> ProcessVmarGuard<'a> {
 
     /// Sets a new VMAR for the binding process.
     ///
+    /// This method will return the old VMAR.
+    ///
     /// If the `new_vmar` is `None`, this method will remove the
     /// current VMAR.
-    pub(super) fn set_vmar(&mut self, new_vmar: Option<Arc<Vmar>>) {
-        *self.inner = new_vmar;
-    }
-
-    /// Duplicates a new VMAR from the binding process.
-    ///
-    /// This method should only be used to clone the VMAR in the `Process`
-    /// and store it in the `ThreadLocal`.
-    pub(super) fn dup_vmar(&self) -> Option<Arc<Vmar>> {
-        self.inner.as_ref().cloned()
+    pub(super) fn set_vmar(&mut self, new_vmar: Option<Arc<Vmar>>) -> Option<Arc<Vmar>> {
+        core::mem::replace(&mut *self.inner, new_vmar)
     }
 
     /// Returns a reader for reading contents from
@@ -251,16 +245,28 @@ impl<'a> ProcessVmarGuard<'a> {
 
 /// Activates the [`Vmar`] in the current process's context.
 ///
-/// Returns a [`ProcessVmarGuard`] that keeps the process VMAR lock held.
-pub(super) fn activate_vmar<'a>(ctx: &'a Context<'a>, new_vmar: Arc<Vmar>) -> ProcessVmarGuard<'a> {
+/// Returns a [`ProcessVmarGuard`] that keeps the process VMAR lock held and the old [`Vmar`].
+pub(super) fn activate_vmar<'a>(
+    ctx: &'a Context<'a>,
+    new_vmar: VmarHandle,
+) -> (ProcessVmarGuard<'a>, VmarHandle) {
+    let vmar_arc = new_vmar.clone_arc();
+
     let mut vmar_guard = ctx.process.lock_vmar();
+
     // Disable preemption because `thread_local::vmar()` will be borrowed during a context switch.
-    let _preempt_guard = disable_preempt();
+    let old_vmar = {
+        let _preempt_guard = disable_preempt();
+        let old_vmar = ctx
+            .thread_local
+            .vmar()
+            .borrow_mut()
+            .replace(new_vmar)
+            .unwrap();
+        vmar_arc.vm_space().activate();
+        old_vmar
+    };
+    vmar_guard.set_vmar(Some(vmar_arc));
 
-    *ctx.thread_local.vmar().borrow_mut() = Some(new_vmar.clone());
-    new_vmar.vm_space().activate();
-
-    vmar_guard.set_vmar(Some(new_vmar));
-
-    vmar_guard
+    (vmar_guard, old_vmar)
 }

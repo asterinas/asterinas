@@ -13,9 +13,8 @@ use crate::{
 impl Vmar {
     /// Clears all mappings.
     ///
-    /// After being cleared, this vmar will become an empty vmar
-    #[expect(dead_code)] // TODO: This should be called when the last process drops the VMAR.
-    pub fn clear(&self) {
+    /// After being cleared, this VMAR will become an empty VMAR.
+    pub(super) fn clear(&self) {
         let mut inner = self.inner.write();
         inner.vm_mappings.clear();
 

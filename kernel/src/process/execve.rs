@@ -29,7 +29,7 @@ use crate::{
             signals::kernel::KernelSignal,
         },
     },
-    vm::vmar::Vmar,
+    vm::vmar::VmarHandle,
 };
 
 pub fn do_execve(
@@ -60,8 +60,8 @@ pub fn do_execve(
     let program_to_load =
         ProgramToLoad::build_from_file(elf_file.clone(), &path_resolver, argv, envp)?;
 
-    let new_vmar = Vmar::new(ProcessVm::new(elf_file.clone()));
-    let elf_load_info = program_to_load.load_to_vmar(new_vmar.as_ref(), &path_resolver)?;
+    let new_vmar = VmarHandle::new(ProcessVm::new(elf_file.clone()));
+    let elf_load_info = program_to_load.load_to_vmar(&new_vmar, &path_resolver)?;
 
     // Ensure no other thread is concurrently performing exit_group or execve.
     // If such an operation is in progress, return EAGAIN.
@@ -148,7 +148,7 @@ fn do_execve_no_return(
     user_context: &mut UserContext,
     path_resolver: &PathResolver,
     elf_file: Path,
-    new_vmar: Arc<Vmar>,
+    new_vmar: VmarHandle,
     elf_load_info: &ElfLoadInfo,
 ) -> Result<()> {
     let Context {
@@ -167,9 +167,10 @@ fn do_execve_no_return(
     // while holding the process VMAR lock.
     // This prevents race conditions when checking access permissions while opening
     // `/proc/[pid]/mem` or `/proc/[pid]/maps`.
-    let vmar_guard = activate_vmar(ctx, new_vmar);
+    let (vmar_guard, old_vmar) = activate_vmar(ctx, new_vmar);
     apply_caps_from_exec(process, ctx.credentials_mut(), elf_file.inode())?;
     drop(vmar_guard);
+    drop(old_vmar);
 
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.
