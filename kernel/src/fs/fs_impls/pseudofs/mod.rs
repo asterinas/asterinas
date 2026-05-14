@@ -154,6 +154,12 @@ pub(super) fn init() {
     crate::fs::vfs::registry::register(&SockFsType).unwrap();
     // Note: `AnonInodeFs` does not need to be registered in the FS registry.
     // Reference: <https://elixir.bootlin.com/linux/v6.16.5/A/ident/anon_inode_fs_type>
+
+    anon_inodefs::init();
+    nsfs::init();
+    pidfdfs::init();
+    pipefs::init();
+    sockfs::init();
 }
 
 /// Root Inode ID.

@@ -18,6 +18,11 @@ use crate::{
     process::{Gid, Uid},
 };
 
+pub(super) fn init() {
+    // Touch the mount node to trigger the initialization of all singletons.
+    let _ = SockFs::mount_node();
+}
+
 pub struct SockFs {
     _private: (),
 }
