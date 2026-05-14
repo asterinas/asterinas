@@ -4,8 +4,13 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs,
-    fs::file::file_table::{RawFileDesc, WithFileTable},
+    fs::{
+        self,
+        file::{
+            InodeHandle, InodeType, SeekFrom,
+            file_table::{RawFileDesc, WithFileTable},
+        },
+    },
     prelude::*,
 };
 
@@ -55,10 +60,36 @@ pub fn sys_sendfile(
         count = MAX_COUNT;
     }
 
+    let origin_f_pos = if offset.is_none() {
+        let outfile_is_pipe = out_file
+            .downcast_ref::<InodeHandle>()
+            .is_some_and(|inode_handle| {
+                inode_handle.path().inode().type_() == InodeType::NamedPipe
+            });
+
+        // If the output file is a pipe, Linux requires the input file to be seekable.
+        // See <https://elixir.bootlin.com/linux/v7.0/source/fs/splice.c#L1038>.
+        // If the output file is not a pipe, the input file does not need to be seekable,
+        // so we simply store the offset if available.
+        // The saved offset is used to restore the correct file position in case a short write occurs.
+        if outfile_is_pipe {
+            Some(
+                in_file.seek(SeekFrom::Current(0)).map_err(|_| {
+                    Error::with_message(Errno::EINVAL, "the in_file is not seekable")
+                })?,
+            )
+        } else {
+            in_file.seek(SeekFrom::Current(0)).ok()
+        }
+    } else {
+        None
+    };
+
     const BUFFER_SIZE: usize = PAGE_SIZE;
     let mut buffer = vec![0u8; BUFFER_SIZE].into_boxed_slice();
     let mut total_len = 0;
     let mut offset = offset.map(|offset| offset as usize);
+    let mut short_write_occurs = false;
 
     while total_len < count {
         // The offset decides how to read from `in_file`.
@@ -70,12 +101,8 @@ pub fn sys_sendfile(
         let max_readlen = buffer.len().min(count - total_len);
 
         // Read from `in_file`
-        let read_res = if let Some(offset) = offset.as_mut() {
-            let res = in_file.read_bytes_at(*offset, &mut buffer[..max_readlen]);
-            if let Ok(len) = res.as_ref() {
-                *offset += *len;
-            }
-            res
+        let read_res = if let Some(offset) = offset {
+            in_file.read_bytes_at(offset, &mut buffer[..max_readlen])
         } else {
             in_file.read_bytes(&mut buffer[..max_readlen])
         };
@@ -102,15 +129,31 @@ pub fn sys_sendfile(
         match write_res {
             Ok(len) => {
                 total_len += len;
-                if len < BUFFER_SIZE {
+                if let Some(offset) = offset.as_mut() {
+                    *offset += len;
+                }
+                if len < read_len {
+                    short_write_occurs = true;
                     break;
                 }
             }
             Err(e) => {
                 if total_len > 0 {
                     warn!("error occurs when trying to write file: {:?}", e);
+                    short_write_occurs = true;
                     break;
                 }
+
+                if offset.is_none() {
+                    if let Some(origin_f_pos) = origin_f_pos {
+                        in_file.seek(SeekFrom::Start(origin_f_pos))?;
+                    } else {
+                        error!(
+                            "the file position of in_file may be incorrect due to a write error"
+                        );
+                    }
+                }
+
                 return Err(e);
             }
         }
@@ -118,6 +161,17 @@ pub fn sys_sendfile(
 
     if let Some(offset) = offset {
         ctx.user_space().write_val(offset_ptr, &(offset as isize))?;
+    } else if short_write_occurs {
+        if let Some(origin_f_pos) = origin_f_pos {
+            // Seek `in_file` to the position corresponding to the last byte actually transferred.
+            // Note: since the file offset lock is not held between saving `origin_f_pos` and this
+            // point, a race condition may occur if another thread reads from the same file
+            // concurrently. Linux permits this behavior and leaves it to userspace to avoid such races.
+            let new_f_pos = origin_f_pos + total_len;
+            in_file.seek(SeekFrom::Start(new_f_pos))?;
+        } else {
+            error!("the file position of in_file may be incorrect due to a short write");
+        }
     }
 
     fs::vfs::notify::on_access(&in_file);
