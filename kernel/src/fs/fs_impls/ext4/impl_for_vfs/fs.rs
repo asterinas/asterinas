@@ -4,7 +4,7 @@
 
 use crate::{
     fs::{
-        ext4::fs::Ext4,
+        ext4::Ext4,
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},

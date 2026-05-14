@@ -5,10 +5,10 @@
 //! This module implements read-only Ext4 filesystem support.
 
 pub use fs::Ext4;
-pub use inode::Inode as Ext4Inode;
+pub use inode::{FilePerm, Inode as Ext4Inode};
 pub use super_block::MAGIC_NUM;
 
-use crate::fs::ext4::fs::Ext4Type;
+use fs::Ext4Type;
 
 mod block_group;
 mod dir;

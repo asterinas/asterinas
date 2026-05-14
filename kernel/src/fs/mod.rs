@@ -9,7 +9,7 @@ pub mod utils;
 pub mod vfs;
 
 pub use fs_impls::{
-    cgroupfs, configfs, devpts, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
+    cgroupfs, configfs, devpts, exfat, ext2, ext4, procfs, pseudofs, ramfs, sysfs, tmpfs,
 };
 
 use crate::{
