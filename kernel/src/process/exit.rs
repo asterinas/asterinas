@@ -19,7 +19,7 @@ pub(super) fn exit_process(current_process: &Process) {
     current_process.status().set_vfork_child(false);
 
     // Drop fields in `Process`.
-    current_process.lock_vmar().set_vmar(None);
+    drop_after!(current_process.lock_vmar().set_vmar(None));
 
     // Move the children to the reaper process and send them signals. The children should see a new
     // parent when they receive the signal.
@@ -44,6 +44,24 @@ pub(super) fn exit_process(current_process: &Process) {
     cgroup_guard.move_process_to_root(current_process);
     drop(cgroup_guard);
 }
+
+/// Drops a value after releasing the lock or borrow guard.
+///
+/// For example, [`ThreadLocal::vmar`] needs to be borrowed during a context switch. This means that
+/// the kernel may panic if we borrow it as mutable and tries to acquire a mutex while dropping the
+/// last [`VmarHandle`]. This utility macro ensures that the value is dropped only after the borrow
+/// guard has been released, preventing all these issues.
+///
+/// [`ThreadLocal::vmar`]: super::posix_thread::ThreadLocal::vmar
+/// [`VmarHandle`]: crate::vm::vmar::VmarHandle
+macro_rules! drop_after {
+    ($expr:expr) => {
+        let val = $expr;
+        drop(val);
+    };
+}
+
+pub(super) use drop_after;
 
 /// Moves the children to a reaper process.
 ///

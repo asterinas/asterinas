@@ -9,7 +9,11 @@ mod query;
 mod remap;
 mod unmap;
 
-use core::{array, ops::Range};
+use core::{
+    array,
+    ops::Range,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use align_ext::AlignExt;
 use aster_util::per_cpu_counter::PerCpuCounter;
@@ -37,15 +41,19 @@ pub struct Vmar {
     inner: RwMutex<VmarInner>,
     /// The attached `VmSpace`
     vm_space: Arc<VmSpace>,
-    /// The RSS counters.
+    /// The RSS counters
     rss_counters: [PerCpuCounter; NUM_RSS_COUNTERS],
     /// The process VM
     process_vm: ProcessVm,
+    /// The number of handles that this `Vmar` has (see [`super::VmarHandle`])
+    num_handles: AtomicUsize,
 }
 
 impl Vmar {
     /// Creates a new VMAR.
-    pub fn new(process_vm: ProcessVm) -> Arc<Self> {
+    ///
+    /// This method should only be invoked by [`super::VmarHandle`].
+    pub(super) fn new(process_vm: ProcessVm) -> Arc<Self> {
         let inner = VmarInner::new();
         let vm_space = VmSpace::new();
         let rss_counters = array::from_fn(|_| PerCpuCounter::new());
@@ -54,6 +62,7 @@ impl Vmar {
             vm_space: Arc::new(vm_space),
             rss_counters,
             process_vm,
+            num_handles: AtomicUsize::new(1),
         })
     }
 
@@ -75,6 +84,32 @@ impl Vmar {
     /// Returns the attached `ProcessVm`.
     pub fn process_vm(&self) -> &ProcessVm {
         &self.process_vm
+    }
+
+    /// Returns whether this VMAR has multiple handles.
+    pub fn has_multiple_handles(&self) -> bool {
+        self.num_handles.load(Ordering::Relaxed) > 1
+    }
+
+    /// Increases the number of handles.
+    ///
+    /// This method should only be invoked by [`super::VmarHandle`].
+    pub(super) fn inc_num_handles(&self) {
+        let old_num_handles = self.num_handles.fetch_add(1, Ordering::Relaxed);
+        debug_assert_ne!(old_num_handles, 0);
+    }
+
+    /// Decreases the number of handles.
+    ///
+    /// This method should only be invoked by [`super::VmarHandle`].
+    pub(super) fn dec_num_handles(&self) {
+        let old_num_handles = self.num_handles.fetch_sub(1, Ordering::Relaxed);
+        debug_assert_ne!(old_num_handles, 0);
+        if old_num_handles == 1 {
+            // Clear all the mappings. The last process using this VMAR exited
+            // or executed a new program, so this VMAR no longer has a handle.
+            self.clear();
+        }
     }
 
     fn add_rss_counter(&self, rss_type: RssType, val: isize) {
