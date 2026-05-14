@@ -65,7 +65,7 @@ impl VirtioFsInode {
         self.set_size(new_size);
         let is_mtime_changed = old_mtime != inner.metadata.last_modify_at;
 
-        let Some(page_cache) = &inner.page_cache else {
+        let Some(page_cache) = &mut inner.page_cache else {
             return Ok(());
         };
 
