@@ -150,7 +150,7 @@ impl VirtioFsInode {
             .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "virtiofs write size overflow"))?;
 
         let old_size = self.size();
-        let page_cache = inner.page_cache().unwrap();
+        let page_cache = inner.page_cache_mut().unwrap();
 
         if requested_end > old_size {
             // Extend the visible EOF before growing the page cache.

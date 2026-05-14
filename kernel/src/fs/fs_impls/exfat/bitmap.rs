@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![expect(dead_code)]
-#![expect(unused_variables)]
 
 use core::ops::Range;
 
@@ -10,11 +9,11 @@ use bitvec::prelude::*;
 
 use super::{
     constants::EXFAT_RESERVED_CLUSTERS,
-    dentry::{ExfatBitmapDentry, ExfatDentry, ExfatDentryIterator},
+    dentry::ExfatBitmapDentry,
     fat::{ClusterID, ExfatChain},
     fs::ExfatFs,
 };
-use crate::{fs::exfat::fat::FatChainFlags, prelude::*, vm::page_cache::PageCache};
+use crate::{fs::exfat::fat::FatChainFlags, prelude::*};
 
 // TODO: use u64
 type BitStore = u8;
@@ -34,27 +33,10 @@ pub(super) struct ExfatBitmap {
 }
 
 impl ExfatBitmap {
-    pub(super) fn load(
+    pub(super) fn load_bitmap_from_dentry(
         fs_weak: Weak<ExfatFs>,
-        root_page_cache: &PageCache,
-        root_chain: ExfatChain,
+        dentry: &ExfatBitmapDentry,
     ) -> Result<Self> {
-        let dentry_iterator = ExfatDentryIterator::new(root_page_cache, 0, None)?;
-
-        for dentry_result in dentry_iterator {
-            let dentry = dentry_result?;
-            if let ExfatDentry::Bitmap(bitmap_dentry) = dentry {
-                // If the last bit of bitmap is 0, it is a valid bitmap.
-                if (bitmap_dentry.flags & 0x1) == 0 {
-                    return Self::load_bitmap_from_dentry(fs_weak.clone(), &bitmap_dentry);
-                }
-            }
-        }
-
-        return_errno_with_message!(Errno::EINVAL, "bitmap not found")
-    }
-
-    fn load_bitmap_from_dentry(fs_weak: Weak<ExfatFs>, dentry: &ExfatBitmapDentry) -> Result<Self> {
         let fs = fs_weak.upgrade().unwrap();
         let num_clusters = (dentry.size as usize).align_up(fs.cluster_size()) / fs.cluster_size();
 
@@ -183,7 +165,6 @@ impl ExfatBitmap {
         let unit_size: u32 = (BITS_PER_BYTE * size_of::<BitStore>()) as u32;
         while cur_unit_index < total_cluster_num {
             let leading_zeros = bytes[cur_unit_index as usize].leading_zeros();
-            let head_cluster_num = unit_size - cur_unit_offset;
             if leading_zeros == 0 {
                 // Fall over to the next unit, we need to continue checking.
                 cur_unit_index += 1;
