@@ -29,7 +29,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::PageCache,
+    vm::page_cache::Vmo,
 };
 
 impl FileOps for Ext2Inode {
@@ -133,7 +133,7 @@ impl Inode for Ext2Inode {
         self.set_ctime(time)
     }
 
-    fn page_cache(&self) -> Option<PageCache> {
+    fn page_cache(&self) -> Option<Arc<Vmo>> {
         self.page_cache()
     }
 

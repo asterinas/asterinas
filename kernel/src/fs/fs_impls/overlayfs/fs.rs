@@ -35,7 +35,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::PageCache,
+    vm::page_cache::Vmo,
 };
 
 const OVERLAY_FS_MAGIC: u64 = 0x794C7630;
@@ -489,7 +489,7 @@ impl OverlayInode {
         &self.extension
     }
 
-    pub fn page_cache(&self) -> Option<PageCache> {
+    pub fn page_cache(&self) -> Option<Arc<Vmo>> {
         let _ = self.get_top_valid_inode().page_cache()?;
         // Do copy-up for the potential memory mapping operations
         let upper = self.build_upper_recursively_if_needed().unwrap();
@@ -990,7 +990,7 @@ impl Inode for OverlayInode {
     fn set_mtime(&self, time: Duration);
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, time: Duration);
-    fn page_cache(&self) -> Option<PageCache>;
+    fn page_cache(&self) -> Option<Arc<Vmo>>;
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>>;
     fn open(
@@ -1242,7 +1242,7 @@ impl FsType for OverlayFsType {
 // TODO: Enrich the tests to cover more cases.
 #[cfg(ktest)]
 mod tests {
-    use ostd::{mm::VmIo, prelude::ktest};
+    use ostd::prelude::ktest;
 
     use super::*;
     use crate::fs::{
@@ -1578,7 +1578,10 @@ mod tests {
         let f1 = root.lookup("f1").unwrap();
         assert_eq!(f1.size(), 0);
         f1.resize(PAGE_SIZE).unwrap();
-        f1.page_cache().unwrap().write_val(0, &3u8).unwrap();
+        f1.page_cache()
+            .unwrap()
+            .write(0, &mut VmReader::from([3].as_slice()).to_fallible())
+            .unwrap();
         f1.set_atime(Duration::default());
         f1.sync_data().unwrap();
         let mut data = [0u8; 1];

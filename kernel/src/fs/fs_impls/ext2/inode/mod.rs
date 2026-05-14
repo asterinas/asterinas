@@ -83,7 +83,10 @@ use self::{
     symlink::FastSymlinkTarget,
 };
 use super::{fs::Ext2, prelude::*, xattr::Xattr};
-use crate::fs::{ext2::utils, file::InodeMode, pipe::Pipe, vfs::inode::Extension};
+use crate::{
+    fs::{ext2::utils, file::InodeMode, pipe::Pipe, vfs::inode::Extension},
+    vm::page_cache::Vmo,
+};
 
 const MAX_LINK_COUNT: u16 = 32000;
 /// Size of the ext2 inode `i_block` byte area used by fast symlinks.
@@ -209,7 +212,7 @@ impl Inode {
     }
 
     /// Returns a clone of the data page cache for this inode if it has one.
-    pub(super) fn page_cache(&self) -> Option<PageCache> {
+    pub(super) fn page_cache(&self) -> Option<Arc<Vmo>> {
         self.inner.read().page_cache_clone()
     }
 }
@@ -458,15 +461,15 @@ impl InodeInner {
         self.payload.raw_block_ptrs(self.desc.file_acl)
     }
 
-    fn page_cache_clone(&self) -> Option<PageCache> {
-        self.payload.page_cache().cloned()
+    fn page_cache_clone(&self) -> Option<Arc<Vmo>> {
+        self.payload.page_cache().map(PageCache::as_vmo).cloned()
     }
 
     fn resize_page_cache(&mut self, new_size_bytes: usize, old_size_bytes: usize) -> Result<()> {
         let InodePayload::DataBacked {
             page_cache,
             block_manager,
-        } = &self.payload
+        } = &mut self.payload
         else {
             return_errno_with_message!(Errno::EINVAL, "inode has no data page cache");
         };
