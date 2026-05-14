@@ -57,6 +57,25 @@ impl Ord for MountNamespace {
 }
 
 impl MountNamespace {
+    /// Creates a new `MountNamespace` whose root mount is built by `build_root_fn`.
+    ///
+    /// The closure receives a `Weak<Self>` so that mounts in the new tree can
+    /// reference the namespace being constructed. Construction uses `UniqueArc`
+    /// to allow mutable initialization while still providing `Weak` references.
+    fn new_with_root<F>(owner: Arc<UserNamespace>, build_root_fn: F) -> Result<Arc<Self>>
+    where
+        F: FnOnce(&Weak<Self>) -> Result<Arc<Mount>>,
+    {
+        let mut new_ns = UniqueArc::new(Self {
+            root: None,
+            owner,
+            stashed_dentry: StashedDentry::new(),
+        });
+        let root = build_root_fn(&UniqueArc::downgrade(&new_ns))?;
+        new_ns.root = Some(root);
+        Ok(UniqueArc::into_arc(new_ns))
+    }
+
     /// Returns a reference to the singleton initial mount namespace.
     #[doc(hidden)]
     pub fn get_init_singleton() -> &'static Arc<MountNamespace> {
@@ -66,15 +85,8 @@ impl MountNamespace {
             let owner = UserNamespace::get_init_singleton().clone();
             let rootfs = RamFs::new_rootfs();
 
-            let mut new_ns = UniqueArc::new(MountNamespace {
-                root: None,
-                owner,
-                stashed_dentry: StashedDentry::new(),
-            });
-            let root = Mount::new_root(rootfs, UniqueArc::downgrade(&new_ns))
-                .expect("failed to allocate mount ID for the root mount");
-            new_ns.root = Some(root);
-            UniqueArc::into_arc(new_ns)
+            Self::new_with_root(owner, |weak_ns| Mount::new_root(rootfs, weak_ns.clone()))
+                .expect("failed to allocate mount ID for the root mount")
         })
     }
 
@@ -107,20 +119,14 @@ impl MountNamespace {
         owner.check_cap(CapSet::SYS_ADMIN, posix_thread)?;
 
         let root_mount = self.root();
-        let mut new_mnt_ns = UniqueArc::new(MountNamespace {
-            root: None,
-            owner,
-            stashed_dentry: StashedDentry::new(),
-        });
-        let new_root = root_mount.clone_mount_tree(
-            root_mount.root_dentry(),
-            &UniqueArc::downgrade(&new_mnt_ns),
-            true,
-            MountNsFileCopying::Skip,
-        )?;
-        new_mnt_ns.root = Some(new_root);
-
-        Ok(UniqueArc::into_arc(new_mnt_ns))
+        Self::new_with_root(owner, |weak_ns| {
+            root_mount.clone_mount_tree(
+                root_mount.root_dentry(),
+                weak_ns,
+                true,
+                MountNsFileCopying::Skip,
+            )
+        })
     }
 
     /// Flushes all pending filesystem metadata and cached file data to the device
