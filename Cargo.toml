@@ -110,9 +110,8 @@ exclude = [
 
 [workspace.lints.rust]
 redundant_imports = "warn"
-unused_qualifications = "warn"
-unsafe_op_in_unsafe_fn = "warn"
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(ktest)'] }
+unused_qualifications = "warn"
 
 [workspace.lints.clippy]
 allow_attributes = "warn"

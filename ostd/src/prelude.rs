@@ -5,7 +5,11 @@
 /// A specialized [`Result`] type for this crate.
 ///
 /// [`Result`]: core::result::Result
-pub type Result<T, E = error::Error> = core::result::Result<T, E>;
+#[expect(
+    unused_qualifications,
+    reason = "`error` below is intended to re-export the macro but brings the module into scope"
+)]
+pub type Result<T, E = crate::error::Error> = core::result::Result<T, E>;
 
 pub(crate) use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
