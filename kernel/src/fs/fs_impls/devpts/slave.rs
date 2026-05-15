@@ -6,10 +6,7 @@
 use super::*;
 use crate::{
     device::PtySlave,
-    fs::{
-        file::{AccessMode, FileIo, StatusFlags},
-        vfs::inode::InodeIo,
-    },
+    fs::file::{AccessMode, FileIo},
 };
 
 /// Same major number with Linux, the minor number is the index of slave.

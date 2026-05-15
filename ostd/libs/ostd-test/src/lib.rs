@@ -67,6 +67,7 @@
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
+#[cfg(not(test))]
 use alloc::{boxed::Box, string::String};
 
 #[derive(Clone, Debug)]

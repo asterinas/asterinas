@@ -11,7 +11,7 @@ pub use clock_gettime::ClockId;
 use ostd::arch::cpu::context::UserContext;
 pub use timer_create::create_timer;
 
-use crate::{context::Context, cpu::LinuxAbi, prelude::*};
+use crate::{cpu::LinuxAbi, prelude::*};
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv.rs")]

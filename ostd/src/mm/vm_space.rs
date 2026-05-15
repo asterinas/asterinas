@@ -18,8 +18,8 @@ use crate::{
     cpu_local_cell,
     io::IoMem,
     mm::{
-        Frame, HasPaddr, MAX_USERSPACE_VADDR, PAGE_SIZE, PageProperty, PrivilegedPageFlags, UFrame,
-        VmReader, VmWriter,
+        Frame, MAX_USERSPACE_VADDR, PAGE_SIZE, PageProperty, PrivilegedPageFlags, UFrame, VmReader,
+        VmWriter,
         frame::FrameRef,
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,

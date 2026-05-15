@@ -4,7 +4,7 @@ use alloc::vec;
 
 use crate::{
     mm::{
-        FrameAllocOptions, HasPaddr, PAGE_SIZE, VmReader, VmWriter,
+        FrameAllocOptions, PAGE_SIZE, VmReader, VmWriter,
         dma::*,
         io::{VmIo, VmIoOnce, util::HasVmReaderWriter},
     },

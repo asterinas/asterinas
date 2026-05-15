@@ -7,7 +7,7 @@ use ostd_pod::{IntoBytes, Pod};
 
 use super::{Iv, Key, Mac};
 use crate::{
-    layers::bio::{BLOCK_SIZE, BlockId, BlockLog, Buf},
+    layers::bio::{BlockLog, Buf},
     os::Aead,
     prelude::*,
 };

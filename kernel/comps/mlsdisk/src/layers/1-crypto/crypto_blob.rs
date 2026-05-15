@@ -4,7 +4,7 @@ use ostd_pod::{FromZeros, IntoBytes, Pod};
 
 use super::{Iv, Key, Mac, VersionId};
 use crate::{
-    layers::bio::{BLOCK_SIZE, BlockSet, Buf},
+    layers::bio::{BlockSet, Buf},
     os::{Aead, Mutex},
     prelude::*,
 };

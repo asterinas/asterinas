@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::{FallibleVmWrite, VmReader, VmWriter};
-
 use crate::{
-    error::Errno,
     events::IoEvents,
     fs::{
         file::{FileIo, StatusFlags},

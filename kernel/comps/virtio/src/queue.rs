@@ -4,7 +4,7 @@
 
 use alloc::{sync::Arc, vec::Vec};
 use core::{
-    mem::{offset_of, size_of},
+    mem::offset_of,
     sync::atomic::{Ordering, fence},
 };
 

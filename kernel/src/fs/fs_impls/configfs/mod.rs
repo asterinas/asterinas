@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-
 use aster_systree::{EmptyNode, SysBranchNode};
 use systree_node::ConfigRootNode;
 

@@ -19,11 +19,9 @@
 #![deny(unsafe_code)]
 
 extern crate alloc;
-
-use alloc::{
-    string::{String, ToString},
-    vec,
-};
+#[cfg(not(test))]
+use alloc::string::{String, ToString};
+use alloc::vec;
 use core::cmp::min;
 
 use int_to_c_enum::TryFromInt;

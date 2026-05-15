@@ -26,7 +26,7 @@ use super::{
 };
 use crate::{
     layers::{
-        bio::{BlockId, BlockSet, Buf, BufMut, BufRef},
+        bio::{BlockSet, Buf, BufMut, BufRef},
         log::TxLogStore,
         lsm::{
             AsKV, LsmLevel, RangeQueryCtx, RecordKey as RecordK, RecordValue as RecordV,

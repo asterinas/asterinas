@@ -76,7 +76,7 @@ use super::{
 };
 use crate::{
     layers::{
-        bio::{BlockId, BlockSet, Buf, BufMut, BufRef},
+        bio::{BlockSet, Buf, BufMut, BufRef},
         crypto::{CryptoLog, NodeCache, RootMhtMeta},
         edit::{CompactPolicy, Edit, EditJournal, EditJournalMeta},
         log::chunk::CHUNK_NBLOCKS,

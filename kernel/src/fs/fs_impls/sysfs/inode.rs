@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::{Arc, Weak};
-
-use ostd::sync::RwLock;
-
 use super::fs::SysFs;
 use crate::{
     fs::{

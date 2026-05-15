@@ -6,7 +6,7 @@ use core::cell::Ref;
 
 use inherit_methods_macro::inherit_methods;
 use ostd::{
-    mm::{Fallible, PodAtomic, VmIo, VmReader, VmWriter},
+    mm::{Fallible, PodAtomic, VmIo},
     task::Task,
 };
 

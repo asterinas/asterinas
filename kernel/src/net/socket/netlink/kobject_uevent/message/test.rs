@@ -3,7 +3,7 @@
 use alloc::vec;
 use core::str::FromStr;
 
-use ostd::{mm::VmWriter, prelude::*};
+use ostd::prelude::*;
 
 use crate::{
     net::socket::{
