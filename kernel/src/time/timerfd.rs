@@ -228,10 +228,6 @@ impl FileLike for TimerfdFile {
         Ok(read_len)
     }
 
-    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "the file is not valid for writing");
-    }
-
     fn status_flags(&self) -> StatusFlags {
         if self.is_nonblocking() {
             StatusFlags::O_NONBLOCK

@@ -76,14 +76,6 @@ impl PidFile {
 }
 
 impl FileLike for PidFile {
-    fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "PID file cannot be read");
-    }
-
-    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "PID file cannot be written");
-    }
-
     fn read_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(
             Errno::EINVAL,

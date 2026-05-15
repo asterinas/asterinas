@@ -261,14 +261,6 @@ impl Pollable for EpollFile {
 
 // Implement the common methods required by FileHandle
 impl FileLike for EpollFile {
-    fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "epoll files do not support read");
-    }
-
-    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "epoll files do not support write");
-    }
-
     fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
         return_errno_with_message!(Errno::ENOTTY, "epoll files do not support ioctl");
     }
