@@ -20,12 +20,48 @@ use crate::{
 
 /// The basic operations defined on a file
 pub trait FileLike: Pollable + Send + Sync + Any {
+    /// Reads data from this file.
+    ///
+    /// By default, this method returns `EBADF`
+    /// if the file is not readable,
+    /// or `EINVAL` if the file type does not support `read`.
+    /// These are distinct conditions:
+    /// [`access_mode`] may say that a file is readable,
+    /// while the file type still does not support `read`,
+    /// as with epoll files and pid files.
+    ///
+    /// Implementors should override this method if the file type supports reads.
+    /// An overriding implementation must check whether [`access_mode`] is readable
+    /// before performing the operation.
+    ///
+    /// [`access_mode`]: FileLike::access_mode
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        return_errno_with_message!(Errno::EBADF, "the file is not valid for reading");
+        if !self.access_mode().is_readable() {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened for reading");
+        }
+        return_errno_with_message!(Errno::EINVAL, "read is not supported for this file type");
     }
 
+    /// Writes data to this file.
+    ///
+    /// By default, this method returns `EBADF`
+    /// if the file is not writable,
+    /// or `EINVAL` if the file type does not support `write`.
+    /// These are distinct conditions:
+    /// [`access_mode`] may say that a file is writable,
+    /// while the file type still does not support `write`,
+    /// as with epoll files and pid files.
+    ///
+    /// Implementors should override this method if the file type supports writes.
+    /// An overriding implementation must check whether [`access_mode`] is writable
+    /// before performing the operation.
+    ///
+    /// [`access_mode`]: FileLike::access_mode
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        return_errno_with_message!(Errno::EBADF, "the file is not valid for writing");
+        if !self.access_mode().is_writable() {
+            return_errno_with_message!(Errno::EBADF, "the file is not opened for writing");
+        }
+        return_errno_with_message!(Errno::EINVAL, "write is not supported for this file type");
     }
 
     /// Read at the given file offset.
