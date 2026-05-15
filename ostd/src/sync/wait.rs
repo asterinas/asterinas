@@ -210,10 +210,10 @@ impl Waiter {
         &self,
         mut cond: F,
         cancel_cond: FCancel,
-    ) -> core::result::Result<R, E>
+    ) -> Result<R, E>
     where
         F: FnMut() -> Option<R>,
-        FCancel: Fn() -> core::result::Result<(), E>,
+        FCancel: Fn() -> Result<(), E>,
     {
         loop {
             if let Some(res) = cond() {

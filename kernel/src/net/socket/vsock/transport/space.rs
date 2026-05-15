@@ -67,7 +67,7 @@ impl VsockSpace {
         bound_port: BoundPort,
         remote_addr: VsockSocketAddr,
         pollee: &Pollee,
-    ) -> core::result::Result<Connection, (Error, BoundPort)> {
+    ) -> Result<Connection, (Error, BoundPort)> {
         use alloc::collections::btree_map::Entry;
 
         let mut sockets = self.sockets.lock();
@@ -116,7 +116,7 @@ impl VsockSpace {
         bound_port: BoundPort,
         backlog: usize,
         pollee: &Pollee,
-    ) -> core::result::Result<Listener, (Error, BoundPort)> {
+    ) -> Result<Listener, (Error, BoundPort)> {
         use alloc::collections::btree_map::Entry;
 
         let mut sockets = self.sockets.lock();

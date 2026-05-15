@@ -81,7 +81,7 @@ impl Init {
         backlog: usize,
         pollee: Pollee,
         is_seqpacket: bool,
-    ) -> core::result::Result<Listener, (Error, Self)> {
+    ) -> Result<Listener, (Error, Self)> {
         let Some(addr) = self.addr else {
             return Err((
                 Error::with_message(Errno::EINVAL, "the socket is not bound"),

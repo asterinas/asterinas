@@ -36,7 +36,7 @@ impl AtomicCpuId {
     /// and containing the previous value. If the previous value is empty, it returns
     /// `Ok(())`. Otherwise, it returns `Err(previous_value)` which the previous
     /// value is a valid CPU ID.
-    pub fn set_if_is_none(&self, cpu_id: CpuId) -> core::result::Result<(), CpuId> {
+    pub fn set_if_is_none(&self, cpu_id: CpuId) -> Result<(), CpuId> {
         self.0
             .compare_exchange(
                 Self::NONE,

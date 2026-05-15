@@ -89,7 +89,7 @@ impl InitStream {
         option: &RawTcpOption,
         can_reuse: bool,
         observer: StreamObserver,
-    ) -> core::result::Result<ConnectingStream, (Error, Self)> {
+    ) -> Result<ConnectingStream, (Error, Self)> {
         debug_assert!(
             self.is_connect_done,
             "`finish_last_connect()` should be called before calling `connect()`"
@@ -140,7 +140,7 @@ impl InitStream {
         backlog: usize,
         option: &RawTcpOption,
         observer: StreamObserver,
-    ) -> core::result::Result<ListenStream, (Error, Self)> {
+    ) -> Result<ListenStream, (Error, Self)> {
         if !self.is_connect_done {
             // See the comments of `is_connect_done`.
             // `listen()` is also not allowed until the second `connect()`.

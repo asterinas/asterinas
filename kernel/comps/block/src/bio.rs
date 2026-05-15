@@ -304,7 +304,7 @@ impl BioMetadata {
 }
 
 impl IoCompletion for BioMetadata {
-    fn wait(&self) -> core::result::Result<(), IoError> {
+    fn wait(&self) -> Result<(), IoError> {
         let status = self.wait_queue.wait_until(|| {
             let status = self.status();
             (status != BioStatus::Submit).then_some(status)

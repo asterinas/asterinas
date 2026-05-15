@@ -100,10 +100,7 @@ impl PendingOp {
     ///
     /// The caller should provide `sems` whose size matches the number used to construct this
     /// `PendingOp`. Otherwise, this method may panic.
-    pub(super) fn blocker(
-        &self,
-        sems: &[Semaphore],
-    ) -> core::result::Result<PendingBlocker, Status> {
+    pub(super) fn blocker(&self, sems: &[Semaphore]) -> Result<PendingBlocker, Status> {
         for op in self.sops.iter() {
             let sem_num = op.sem_num as usize;
             let sem = sems.get(sem_num).unwrap();

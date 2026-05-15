@@ -62,7 +62,7 @@ impl<E: Edit<S>, S> Edit<S> for EditGroup<E, S> {
 }
 
 impl<E: Edit<S>, S> Serialize for EditGroup<E, S> {
-    fn serialize<Se>(&self, serializer: Se) -> core::result::Result<Se::Ok, Se::Error>
+    fn serialize<Se>(&self, serializer: Se) -> Result<Se::Ok, Se::Error>
     where
         Se: serde::Serializer,
     {
@@ -75,7 +75,7 @@ impl<E: Edit<S>, S> Serialize for EditGroup<E, S> {
 }
 
 impl<'de, E: Edit<S>, S> Deserialize<'de> for EditGroup<E, S> {
-    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
@@ -90,7 +90,7 @@ impl<'de, E: Edit<S>, S> Deserialize<'de> for EditGroup<E, S> {
                 formatter.write_str("an edit group")
             }
 
-            fn visit_seq<A>(self, mut seq: A) -> core::result::Result<Self::Value, A::Error>
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where
                 A: serde::de::SeqAccess<'a>,
             {

@@ -959,7 +959,7 @@ mod test {
 
     use super::*;
 
-    type SplitResult = core::result::Result<(&'static str, &'static str), Errno>;
+    type SplitResult = Result<(&'static str, &'static str), Errno>;
 
     #[track_caller]
     fn assert_split_results(

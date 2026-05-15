@@ -198,7 +198,7 @@ impl<const ITEM_SIZE: usize> DynCpuLocalChunk<ITEM_SIZE> {
     pub fn try_dealloc<T>(
         &mut self,
         mut cpu_local: CpuLocal<T, DynamicStorage<T>>,
-    ) -> core::result::Result<(), CpuLocal<T, DynamicStorage<T>>> {
+    ) -> Result<(), CpuLocal<T, DynamicStorage<T>>> {
         let Some(index) = self.get_item_index(&cpu_local) else {
             return Err(cpu_local);
         };

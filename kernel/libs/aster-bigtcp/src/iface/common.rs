@@ -121,7 +121,7 @@ impl<E: Ext> IfaceCommon<E> {
         &self,
         iface: Arc<dyn Iface<E>>,
         config: BindPortConfig,
-    ) -> core::result::Result<BoundPort<E>, BindError> {
+    ) -> Result<BoundPort<E>, BindError> {
         let (port, can_reuse) = self.bind_port(config)?;
         Ok(BoundPort {
             iface,
