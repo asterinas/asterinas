@@ -252,10 +252,6 @@ impl FileLike for SignalFile {
         }
     }
 
-    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
-        return_errno_with_message!(Errno::EBADF, "signalfd does not support write operations");
-    }
-
     fn status_flags(&self) -> StatusFlags {
         if self.is_non_blocking() {
             StatusFlags::O_NONBLOCK
