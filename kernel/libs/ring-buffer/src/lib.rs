@@ -7,7 +7,6 @@ extern crate alloc;
 use alloc::sync::Arc;
 use core::{
     marker::PhantomData,
-    mem::size_of,
     num::Wrapping,
     ops::Deref,
     sync::atomic::{AtomicUsize, Ordering},

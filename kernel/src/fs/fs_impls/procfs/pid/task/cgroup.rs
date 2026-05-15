@@ -14,7 +14,6 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    process::posix_thread::AsThreadLocal,
     thread::Thread,
 };
 

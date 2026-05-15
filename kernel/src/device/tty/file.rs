@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{VmReader, VmWriter};
 
 use super::{Tty, TtyDriver};
 use crate::{

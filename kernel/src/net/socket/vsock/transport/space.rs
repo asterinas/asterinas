@@ -6,7 +6,7 @@ use aster_virtio::device::socket::{
     header::{VirtioVsockHdr, VirtioVsockOp, VirtioVsockShutdownFlags, VirtioVsockType},
     packet::{RxPacket, TxPacket},
 };
-use ostd::sync::{PreemptDisabled, SpinLock};
+use ostd::sync::PreemptDisabled;
 use spin::Once;
 
 use crate::{

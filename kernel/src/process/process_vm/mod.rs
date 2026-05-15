@@ -15,7 +15,7 @@ mod init_stack;
 #[cfg(target_arch = "riscv64")]
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use ostd::{sync::MutexGuard, task::disable_preempt};
+use ostd::task::disable_preempt;
 
 pub use self::{
     heap::{Heap, LockedHeap},

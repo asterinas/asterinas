@@ -27,7 +27,6 @@ use aster_virtio::device::socket::{
     header::{VirtioVsockHdr, VirtioVsockOp, VirtioVsockShutdownFlags},
     packet::RxPacket,
 };
-use ostd::sync::SpinLock;
 use takeable::Takeable;
 
 use crate::{

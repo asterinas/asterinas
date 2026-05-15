@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{ffi::CStr, mem::offset_of};
+use core::mem::offset_of;
 
 use super::family::CSocketAddrFamily;
 use crate::{net::socket::unix::UnixSocketAddr, prelude::*};

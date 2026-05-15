@@ -3,7 +3,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use aster_softirq::BottomHalfDisabled;
-use ostd::sync::SpinLock;
 
 use crate::{
     events::IoEvents,

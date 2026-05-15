@@ -3,7 +3,7 @@
 use ostd::{mm::VmIo, task::Task};
 
 use super::{
-    AsPosixThread, AsThreadLocal, ThreadLocal,
+    AsPosixThread, ThreadLocal,
     futex::{FutexVisibility, futex_wake},
     robust_list::wake_robust_futex,
 };

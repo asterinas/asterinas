@@ -504,7 +504,6 @@ impl Pollable for PipeWriter {
 
 #[cfg(ktest)]
 mod test {
-    use alloc::sync::Arc;
     use core::sync::atomic::{self, AtomicBool};
 
     use ostd::prelude::*;

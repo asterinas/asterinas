@@ -15,10 +15,7 @@ use crate::{
         vfs::{inode::SymbolicLink, path::MountNamespace},
     },
     prelude::*,
-    process::{
-        pid_table::PidTable,
-        posix_thread::{AsPosixThread, AsThreadLocal},
-    },
+    process::{pid_table::PidTable, posix_thread::AsPosixThread},
 };
 
 /// The file descriptor of the current working directory.

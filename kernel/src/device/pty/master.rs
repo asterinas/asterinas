@@ -16,7 +16,6 @@ use crate::{
     prelude::*,
     process::{
         Terminal,
-        posix_thread::AsThreadLocal,
         signal::{PollHandle, Pollable},
     },
     util::ioctl::{RawIoctl, dispatch_ioctl},

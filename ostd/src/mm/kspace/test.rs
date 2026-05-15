@@ -2,7 +2,7 @@
 
 use crate::{
     mm::{
-        Frame, FrameAllocOptions, PAGE_SIZE, Paddr,
+        Frame, FrameAllocOptions, PAGE_SIZE,
         frame::max_paddr,
         kspace::{
             LINEAR_MAPPING_BASE_VADDR, MappedItemRef, VMALLOC_VADDR_RANGE, kvirt_area::KVirtArea,

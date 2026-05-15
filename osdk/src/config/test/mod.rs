@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{
-    fs::{self, File},
-    path::PathBuf,
-};
+use std::fs::{self, File};
 
 use super::*;
 

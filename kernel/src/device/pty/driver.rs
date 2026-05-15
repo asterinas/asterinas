@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::sync::SpinLock;
-
 use super::file::PtySlaveFile;
 use crate::{
     device::{

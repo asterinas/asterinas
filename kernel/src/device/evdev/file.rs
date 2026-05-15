@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
 use core::{
     fmt::Debug,
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
@@ -12,10 +11,6 @@ use aster_input::{
     input_dev::InputEvent,
 };
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-use ostd::{
-    mm::{VmReader, VmWriter},
-    sync::Mutex,
-};
 
 use super::EvdevDevice;
 use crate::{

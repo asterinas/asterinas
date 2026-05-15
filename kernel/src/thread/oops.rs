@@ -11,20 +11,13 @@
 //! to make Rust panics as a general exception handling mechanism. Handling
 //! exceptions with [`Result`] is more idiomatic.
 
-use alloc::{
-    boxed::Box,
-    format,
-    string::{String, ToString},
-    sync::Arc,
-};
-use core::{
-    result::Result,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
-};
+use alloc::format;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use ostd::{cpu::PinCurrentCpu, panic, task::disable_preempt, util::id_set::Id};
 
 use super::Thread;
+use crate::prelude::*;
 
 // TODO: Control the kernel commandline parsing from the kernel crate.
 // In Linux it can be dynamically changed by writing to

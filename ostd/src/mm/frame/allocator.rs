@@ -11,7 +11,7 @@ use crate::{
     boot::memory_region::MemoryRegionType,
     error::Error,
     impl_frame_meta_for,
-    mm::{PAGE_SIZE, Paddr, paddr_to_vaddr},
+    mm::{PAGE_SIZE, paddr_to_vaddr},
     prelude::*,
     util::ops::range_difference,
 };

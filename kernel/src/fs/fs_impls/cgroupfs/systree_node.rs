@@ -49,12 +49,7 @@
 //!    When acquiring the `Cgroup Membership Lock` along with any other cgroup locks,
 //!    the `Cgroup Membership Lock` must be acquired first.
 
-use alloc::{
-    string::ToString,
-    sync::{Arc, Weak},
-};
 use core::{
-    fmt::Debug,
     str::FromStr,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -65,10 +60,7 @@ use aster_systree::{
 };
 use aster_util::printer::VmPrinter;
 use inherit_methods_macro::inherit_methods;
-use ostd::{
-    mm::{VmReader, VmWriter},
-    sync::{RwMutexReadGuard, RwMutexWriteGuard},
-};
+use ostd::sync::{RwMutexReadGuard, RwMutexWriteGuard};
 use spin::Once;
 
 use crate::{

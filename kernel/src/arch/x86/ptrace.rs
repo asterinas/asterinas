@@ -11,7 +11,6 @@ use ostd::{
     },
     mm::MAX_USERSPACE_VADDR,
 };
-use ostd_pod::IntoBytes;
 use x86_64::registers::rflags::RFlags;
 
 use crate::prelude::*;

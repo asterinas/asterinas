@@ -38,17 +38,13 @@
 //! For the TDX architecture specification see Intel's
 //! [TDX Module Specification](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html).
 
-use alloc::sync::Arc;
-use core::{
-    mem::{offset_of, size_of},
-    time::Duration,
-};
+use core::{mem::offset_of, time::Duration};
 
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
-    mm::{FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, USegment, VmIo, dma::DmaCoherent},
+    mm::{FrameAllocOptions, HasPaddr, HasSize, USegment, VmIo, dma::DmaCoherent},
     sync::{RwMutexWriteGuard, WaitQueue},
 };
 use spin::Once;

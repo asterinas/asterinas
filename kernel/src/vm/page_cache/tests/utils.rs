@@ -2,11 +2,7 @@
 
 //! Test-only helpers for deterministic page-cache I/O scheduling.
 
-use alloc::{
-    collections::{BTreeSet, VecDeque},
-    format, vec,
-    vec::Vec,
-};
+use alloc::{format, vec};
 use core::fmt;
 
 use aster_block::{
@@ -16,7 +12,7 @@ use aster_block::{
 };
 use device_id::DeviceId;
 use io_util::batch::IoBatch;
-use ostd::{mm::VmIo, sync::SpinLock};
+use ostd::mm::VmIo;
 
 use crate::{prelude::*, thread::Thread, vm::page_cache::BlockAsPageCacheBackend};
 

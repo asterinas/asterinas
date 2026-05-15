@@ -86,7 +86,7 @@ use core::{
 use align_ext::AlignExt;
 use aster_block::bio::{BioCompleteFn, BioDirection, BioSegment, BioStatus};
 use io_util::batch::IoBatch;
-use ostd::mm::{Segment, VmIo, VmReader, io::util::HasVmReaderWriter};
+use ostd::mm::{Segment, VmIo, io::util::HasVmReaderWriter};
 
 use crate::prelude::*;
 

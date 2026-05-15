@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, format, sync::Arc};
+use alloc::format;
 
 use aster_console::{
     AnyConsoleDevice,
@@ -8,7 +8,7 @@ use aster_console::{
     mode::{ConsoleMode, KeyboardMode},
 };
 use aster_framebuffer::DummyFramebufferConsole;
-use ostd::mm::{Infallible, VmIo, VmReader, VmWriter};
+use ostd::mm::{Infallible, VmIo};
 use spin::Once;
 
 use crate::{

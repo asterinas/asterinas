@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ffi::CStr;
-
 use aster_block::BlockDevice;
 use aster_systree::{
     AttrLessBranchNodeFields, SysNode, SysObj, SysPerms, SysStr, inherit_sys_branch_node,

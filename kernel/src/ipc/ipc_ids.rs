@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::btree_map::BTreeMap;
-
 use aster_util::ranged_integer::RangedU32;
 use id_alloc::IdAlloc;
 

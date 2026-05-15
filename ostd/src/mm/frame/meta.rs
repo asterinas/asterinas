@@ -42,8 +42,7 @@ use core::{
     any::Any,
     cell::UnsafeCell,
     fmt::Debug,
-    mem::{ManuallyDrop, MaybeUninit, size_of},
-    result::Result,
+    mem::{ManuallyDrop, MaybeUninit},
     sync::atomic::{AtomicU64, Ordering},
 };
 

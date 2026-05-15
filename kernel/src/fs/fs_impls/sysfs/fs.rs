@@ -4,7 +4,6 @@ use spin::Once;
 
 use crate::{
     fs::{
-        Result,
         pseudofs::AnonDeviceId,
         sysfs::{self, inode::SysFsInode},
         utils::systree_inode::SysTreeInodeTy,

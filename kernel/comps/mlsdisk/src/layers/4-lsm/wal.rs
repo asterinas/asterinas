@@ -9,7 +9,7 @@ use ostd_pod::Pod;
 use super::{AsKV, SyncId};
 use crate::{
     layers::{
-        bio::{BlockId, BlockSet, Buf, BufRef},
+        bio::{BlockSet, Buf, BufRef},
         log::{TxLog, TxLogId, TxLogStore},
     },
     os::Mutex,

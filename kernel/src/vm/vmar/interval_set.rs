@@ -243,7 +243,6 @@ where
 #[cfg(ktest)]
 mod tests {
     use alloc::{vec, vec::Vec};
-    use core::ops::Range;
 
     use ostd::prelude::ktest;
 

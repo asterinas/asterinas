@@ -141,12 +141,7 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
 
 #[cfg(ktest)]
 mod test {
-    use core::mem::size_of;
-
-    use ostd::{
-        mm::{VmIo, VmReader, VmWriter},
-        prelude::*,
-    };
+    use ostd::{mm::VmIo, prelude::*};
 
     use super::*;
 

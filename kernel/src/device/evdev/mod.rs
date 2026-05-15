@@ -9,7 +9,7 @@
 
 mod file;
 
-use alloc::{format, sync::Arc, vec::Vec};
+use alloc::format;
 use core::{
     fmt::Debug,
     sync::atomic::{AtomicU32, Ordering},
@@ -25,7 +25,6 @@ use file::{
     EVDEV_BUFFER_SIZE, EvdevEvent, EvdevFile, EvdevFileInner, is_syn_dropped_event,
     is_syn_report_event,
 };
-use ostd::sync::SpinLock;
 use spin::Once;
 
 use super::{

@@ -14,7 +14,7 @@ use crate::{
     cpu::LinuxAbi,
     prelude::*,
     process::{
-        posix_thread::{AsPosixThread, AsThreadLocal, FIRST_POSIX_TID, NOT_A_SYSCALL, ThreadLocal},
+        posix_thread::{AsPosixThread, FIRST_POSIX_TID, NOT_A_SYSCALL, ThreadLocal},
         signal::{HandlePendingSignal, PauseReason, handle_pending_signal},
     },
     syscall::handle_syscall,

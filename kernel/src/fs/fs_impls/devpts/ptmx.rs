@@ -5,13 +5,7 @@ use device_id::{DeviceId, MajorId, MinorId};
 use super::*;
 use crate::{
     device::DevtmpfsInodeMeta,
-    fs::{
-        file::{AccessMode, FileIo, StatusFlags},
-        vfs::{
-            file_system::SuperBlock,
-            inode::{Extension, InodeIo},
-        },
-    },
+    fs::file::{AccessMode, FileIo},
 };
 
 /// Same major number with Linux.

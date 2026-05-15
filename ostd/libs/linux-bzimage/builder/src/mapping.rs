@@ -7,7 +7,6 @@
 
 use std::{
     cmp::PartialOrd,
-    convert::From,
     ops::{Add, Sub},
 };
 

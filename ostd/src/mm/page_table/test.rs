@@ -370,13 +370,6 @@ mod arch_pte_impls {
         test_utils::{SubsetIter, all_page_properties},
         *,
     };
-    use crate::{
-        arch::mm::{PageTableEntry, PagingConsts},
-        mm::{
-            PageTableFlags,
-            page_table::{PteScalar, PteTrait},
-        },
-    };
 
     #[ktest]
     fn zeroed_pte_is_absent_pte() {

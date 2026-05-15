@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{Iv, Key, Mac};
 use crate::{
-    layers::bio::{BLOCK_SIZE, BlockId, BlockLog, Buf, BufMut, BufRef},
+    layers::bio::{BlockLog, Buf, BufMut, BufRef},
     os::{Aead, HashMap, Mutex, RwLock},
     prelude::*,
 };

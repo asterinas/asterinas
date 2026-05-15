@@ -20,8 +20,6 @@
 
 mod file;
 
-use alloc::sync::Arc;
-
 use device_id::{DeviceId, MajorId, MinorId};
 use file::MemFile;
 pub use file::{getrandom, geturandom};

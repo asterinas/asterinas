@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Arc, vec::Vec};
 use core::sync::atomic::Ordering;
 
 use super::SyscallReturn;

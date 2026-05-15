@@ -1,14 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    borrow::Cow,
-    collections::BTreeMap,
-    format,
-    string::{String, ToString},
-    sync::Arc,
-    vec,
-    vec::Vec,
-};
+use alloc::{borrow::Cow, format, vec};
 use core::fmt::Debug;
 
 use aster_systree::{
@@ -17,11 +9,7 @@ use aster_systree::{
     inherit_sys_leaf_node, inherit_sys_symlink_node, init_for_ktest,
 };
 use aster_util::printer::VmPrinter;
-use ostd::{
-    mm::{FallibleVmRead, VmReader, VmWriter},
-    prelude::ktest,
-    sync::RwLock,
-};
+use ostd::prelude::ktest;
 
 use crate::{
     fs::{

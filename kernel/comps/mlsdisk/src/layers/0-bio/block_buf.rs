@@ -19,11 +19,9 @@
 //! and `&mut [u8]` with `BufMut<[u8]>`.
 
 use alloc::vec;
-use core::convert::TryFrom;
 
 use lending_iterator::prelude::*;
 
-use super::BLOCK_SIZE;
 use crate::prelude::*;
 
 /// A owned buffer whose length is a multiple of the block size.

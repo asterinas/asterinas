@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    borrow::Cow,
-    boxed::Box,
-    string::ToString,
-    sync::{Arc, Weak},
-    vec::Vec,
-};
+use alloc::borrow::Cow;
 use core::time::Duration;
 
 use aster_systree::{
@@ -27,7 +21,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    time::{Clock, clocks::RealTimeCoarseClock},
+    time::clocks::RealTimeCoarseClock,
     vm::page_cache::PageCache,
 };
 

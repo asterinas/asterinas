@@ -124,10 +124,7 @@ impl<R: Deref<Target = RingBuffer<u8>>> ConsumerU8Ext for Consumer<u8, R> {
 mod test {
     use alloc::vec;
 
-    use ostd::{
-        mm::{PAGE_SIZE, VmReader, VmWriter},
-        prelude::*,
-    };
+    use ostd::prelude::*;
 
     use super::*;
 
