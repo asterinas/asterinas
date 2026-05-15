@@ -1448,7 +1448,7 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn fs(&self) -> alloc::sync::Arc<dyn FileSystem> {
+    fn fs(&self) -> Arc<dyn FileSystem> {
         self.inner.read().fs()
     }
 

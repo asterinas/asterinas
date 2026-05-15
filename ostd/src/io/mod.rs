@@ -38,11 +38,11 @@ cfg_if::cfg_if!(
 ///    exceed the maximum value specified by architecture.
 pub(crate) unsafe fn init(io_mem_builder: IoMemAllocatorBuilder) {
     // SAFETY: The safety is upheld by the caller.
-    unsafe { self::io_mem::init(io_mem_builder) };
+    unsafe { io_mem::init(io_mem_builder) };
 
     // SAFETY: The safety is upheld by the caller.
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        self::io_port::init()
+        io_port::init()
     };
 }

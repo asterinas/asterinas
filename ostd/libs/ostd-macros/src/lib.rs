@@ -241,7 +241,7 @@ pub fn global_heap_allocator_slot_map(_attr: TokenStream, item: TokenStream) -> 
     // Rewrite the input `const fn __any_name__(layout: Layout) -> Option<SlotInfo> { ... }` to
     // `const extern "Rust" fn __global_heap_slot_info_from_layout(layout: Layout) -> Option<SlotInfo> { ... }`.
 
-    let item = parse_macro_input!(item as syn::ItemFn);
+    let item = parse_macro_input!(item as ItemFn);
     let fn_name = &item.sig.ident;
 
     // Reject if the input is not a `const fn`.

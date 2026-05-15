@@ -136,7 +136,7 @@ pub fn expand_pod_union(input: DeriveInput) -> TokenStream2 {
         let field_ty = &field.ty;
 
         let ref_method_name = field_name;
-        let mut_method_name = syn::Ident::new(
+        let mut_method_name = Ident::new(
             &format!("{}_mut", field_name.as_ref().unwrap()),
             field_name.span(),
         );
@@ -162,8 +162,8 @@ pub fn expand_pod_union(input: DeriveInput) -> TokenStream2 {
     let init_methods = data_union.fields.named.iter().map(|field| {
         let field_name = field.ident.as_ref().expect("field name");
         let field_ty = &field.ty;
-        let new_method_name = syn::Ident::new(&format!("new_{}", field_name), field_name.span());
-        let mut_method_name = syn::Ident::new(&format!("{}_mut", field_name), field_name.span());
+        let new_method_name = Ident::new(&format!("new_{}", field_name), field_name.span());
+        let mut_method_name = Ident::new(&format!("{}_mut", field_name), field_name.span());
 
         quote! {
             #[allow(non_snake_case)]
@@ -177,7 +177,7 @@ pub fn expand_pod_union(input: DeriveInput) -> TokenStream2 {
     });
 
     // Generate module name to avoid symbol conflicts
-    let module_ident = syn::Ident::new(
+    let module_ident = Ident::new(
         &format!(
             "__private_module_generated_by_ostd_pod_{}",
             ident.to_string().to_lowercase()

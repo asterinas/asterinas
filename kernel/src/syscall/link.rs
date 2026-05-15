@@ -68,7 +68,7 @@ pub fn sys_link(
     new_path_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    self::sys_linkat(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr, 0, ctx)
+    sys_linkat(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr, 0, ctx)
 }
 
 bitflags::bitflags! {

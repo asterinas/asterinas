@@ -892,7 +892,7 @@ impl<'a> FsPath<'a> {
 }
 
 impl<'a> TryFrom<&'a str> for FsPath<'a> {
-    type Error = crate::error::Error;
+    type Error = Error;
 
     fn try_from(path: &'a str) -> Result<FsPath<'a>> {
         FsPath::from_fd_at(AT_FDCWD, path, EmptyPathStr::Reject)

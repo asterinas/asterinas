@@ -221,7 +221,7 @@ impl KtestIter {
     }
 }
 
-impl core::iter::Iterator for KtestIter {
+impl Iterator for KtestIter {
     type Item = KtestItem;
 
     fn next(&mut self) -> Option<Self::Item> {

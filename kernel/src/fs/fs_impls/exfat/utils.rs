@@ -20,7 +20,7 @@ pub fn calc_checksum_32(data: &[u8]) -> u32 {
 }
 
 /// Calculating checksum, ignoring certarin bytes in the range
-pub fn calc_checksum_16(data: &[u8], ignore: core::ops::Range<usize>, prev_checksum: u16) -> u16 {
+pub fn calc_checksum_16(data: &[u8], ignore: Range<usize>, prev_checksum: u16) -> u16 {
     let mut result = prev_checksum;
     for (pos, &value) in data.iter().enumerate() {
         // Ignore the checksum field

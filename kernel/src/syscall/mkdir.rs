@@ -41,5 +41,5 @@ pub fn sys_mkdirat(
 }
 
 pub fn sys_mkdir(path_addr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
-    self::sys_mkdirat(AT_FDCWD, path_addr, mode, ctx)
+    sys_mkdirat(AT_FDCWD, path_addr, mode, ctx)
 }

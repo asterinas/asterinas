@@ -159,7 +159,7 @@ impl SchedAttr {
             real_time: {
                 let (prio, policy) = match policy {
                     SchedPolicy::RealTime { rt_prio, rt_policy } => (rt_prio.get(), rt_policy),
-                    _ => (real_time::RealTimePriority::MAX.get(), Default::default()),
+                    _ => (RealTimePriority::MAX.get(), Default::default()),
                 };
                 real_time::RealTimeAttr::new(prio, policy)
             },

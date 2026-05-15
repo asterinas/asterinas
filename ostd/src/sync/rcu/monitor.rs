@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::collections::VecDeque;
-use core::sync::atomic::{
-    AtomicBool,
-    Ordering::{self, Relaxed},
-};
+use core::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
 use crate::{
     cpu::{AtomicCpuSet, CpuId, CpuSet, PinCurrentCpu},
@@ -127,9 +124,9 @@ impl GracePeriod {
     }
 
     fn finish_grace_period(&mut self, this_cpu: CpuId) {
-        self.cpu_mask.add(this_cpu, Ordering::Relaxed);
+        self.cpu_mask.add(this_cpu, Relaxed);
 
-        if self.cpu_mask.load(Ordering::Relaxed).is_full() {
+        if self.cpu_mask.load(Relaxed).is_full() {
             self.is_complete = true;
         }
     }
@@ -140,7 +137,7 @@ impl GracePeriod {
 
     fn restart(&mut self, callbacks: Callbacks) {
         self.is_complete = false;
-        self.cpu_mask.store(&CpuSet::new_empty(), Ordering::Relaxed);
+        self.cpu_mask.store(&CpuSet::new_empty(), Relaxed);
         self.callbacks = callbacks;
     }
 }

@@ -33,11 +33,11 @@ pub fn sys_fchown(raw_fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Res
 }
 
 pub fn sys_chown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
-    self::sys_fchownat(AT_FDCWD, path_ptr, uid, gid, 0, ctx)
+    sys_fchownat(AT_FDCWD, path_ptr, uid, gid, 0, ctx)
 }
 
 pub fn sys_lchown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
-    self::sys_fchownat(
+    sys_fchownat(
         AT_FDCWD,
         path_ptr,
         uid,
@@ -64,7 +64,7 @@ pub fn sys_fchownat(
     );
 
     if flags.contains(ChownFlags::AT_EMPTY_PATH) && path_name.is_empty() {
-        return self::sys_fchown(dirfd, uid, gid, ctx);
+        return sys_fchown(dirfd, uid, gid, ctx);
     }
 
     let uid = to_optional_id(uid, Uid::new)?;

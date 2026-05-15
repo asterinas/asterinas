@@ -85,7 +85,7 @@ pub(super) struct RawExfatDentry {
 }
 
 impl TryFrom<RawExfatDentry> for ExfatDentry {
-    type Error = crate::error::Error;
+    type Error = Error;
     fn try_from(dentry: RawExfatDentry) -> Result<Self> {
         let dentry_bytes = dentry.as_bytes();
         #[expect(clippy::match_overlapping_arm)]

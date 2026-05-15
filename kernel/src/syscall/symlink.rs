@@ -52,5 +52,5 @@ pub fn sys_symlink(
     linkpath_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    self::sys_symlinkat(target_addr, AT_FDCWD, linkpath_addr, ctx)
+    sys_symlinkat(target_addr, AT_FDCWD, linkpath_addr, ctx)
 }

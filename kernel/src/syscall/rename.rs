@@ -82,7 +82,7 @@ pub fn sys_renameat(
     new_path_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    self::sys_renameat2(old_dirfd, old_path_addr, new_dirfd, new_path_addr, 0, ctx)
+    sys_renameat2(old_dirfd, old_path_addr, new_dirfd, new_path_addr, 0, ctx)
 }
 
 pub fn sys_rename(
@@ -90,7 +90,7 @@ pub fn sys_rename(
     new_path_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    self::sys_renameat2(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr, 0, ctx)
+    sys_renameat2(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr, 0, ctx)
 }
 
 bitflags! {
