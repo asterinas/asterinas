@@ -154,7 +154,7 @@ impl ExfatFs {
         self.inodes.write().insert(inode.hash_index(), inode)
     }
 
-    pub(super) fn sync_meta_at(&self, range: core::ops::Range<usize>) -> Result<()> {
+    pub(super) fn sync_meta_at(&self, range: Range<usize>) -> Result<()> {
         self.meta_cache.flush_range(range)?;
         Ok(())
     }

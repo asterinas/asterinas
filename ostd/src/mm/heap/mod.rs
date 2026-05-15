@@ -86,7 +86,7 @@ macro_rules! abort_with_message {
 }
 
 #[alloc_error_handler]
-fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
+fn handle_alloc_error(layout: Layout) -> ! {
     abort_with_message!("Heap allocation error, layout = {:#x?}", layout);
 }
 

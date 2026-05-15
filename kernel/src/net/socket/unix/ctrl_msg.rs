@@ -65,7 +65,7 @@ struct FileMessage {
     files: Vec<Arc<dyn FileLike>>,
 }
 
-impl fmt::Debug for FileMessage {
+impl Debug for FileMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FileMessage")
             .field("len", &self.files.len())

@@ -61,7 +61,7 @@ impl AnyConsoleDevice for ConsoleDevice {
                 break;
             }
             // Contention on pushing, retry.
-            core::hint::spin_loop();
+            spin_loop();
         }
     }
 }

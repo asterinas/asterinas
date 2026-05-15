@@ -66,7 +66,7 @@ struct DmarHeader {
 // the Intel manual.
 unsafe impl AcpiTable for DmarHeader {
     const SIGNATURE: Signature = Signature::DMAR;
-    fn header(&self) -> &acpi::sdt::SdtHeader {
+    fn header(&self) -> &SdtHeader {
         &self.header
     }
 }

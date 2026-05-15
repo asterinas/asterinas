@@ -164,7 +164,7 @@ unsafe fn copy_ap_boot_code() {
     unsafe {
         core::ptr::copy_nonoverlapping(
             ap_boot_start,
-            crate::mm::paddr_to_vaddr(AP_BOOT_START_PA) as *mut u8,
+            paddr_to_vaddr(AP_BOOT_START_PA) as *mut u8,
             len,
         );
     }

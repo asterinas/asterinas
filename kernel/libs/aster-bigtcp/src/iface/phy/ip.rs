@@ -34,7 +34,7 @@ impl<D: WithDevice, E: Ext> IpIface<D, E> {
         flags: InterfaceFlags,
     ) -> Arc<Self> {
         let interface = driver.with(|device| {
-            let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+            let config = Config::new(wire::HardwareAddress::Ip);
             let now = get_network_timestamp();
 
             let mut interface = smoltcp::iface::Interface::new(config, device, now);

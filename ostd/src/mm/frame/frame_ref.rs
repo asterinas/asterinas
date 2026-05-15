@@ -86,7 +86,7 @@ unsafe impl<M: AnyFrameMeta + ?Sized> NonNullPtr for Frame<M> {
         }
     }
 
-    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> core::ptr::NonNull<Self::Target> {
+    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> NonNull<Self::Target> {
         NonNull::new(ptr_ref.inner.ptr.cast_mut()).unwrap().cast()
     }
 }

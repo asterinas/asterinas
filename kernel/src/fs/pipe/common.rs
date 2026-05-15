@@ -319,7 +319,7 @@ struct PipeObj {
 
 impl PipeObj {
     fn new() -> Arc<Self> {
-        let (reader, writer) = super::common::new_pair();
+        let (reader, writer) = new_pair();
         Arc::new(Self {
             reader,
             writer,

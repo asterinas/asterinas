@@ -119,7 +119,7 @@ unsafe extern "C" fn loongarch_boot(
 
     let device_tree_ptr =
         paddr_to_vaddr(systab.device_tree().expect("device tree not found")) as *const u8;
-    let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_ptr).unwrap() };
+    let fdt = unsafe { Fdt::from_ptr(device_tree_ptr).unwrap() };
     DEVICE_TREE.call_once(|| fdt);
 
     let cmdline_ptr = paddr_to_vaddr(cmdline_paddr) as *const i8;

@@ -55,7 +55,7 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
 }
 
 pub fn sys_pipe(fds: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    self::sys_pipe2(fds, 0, ctx)
+    sys_pipe2(fds, 0, ctx)
 }
 
 #[repr(C)]

@@ -44,7 +44,7 @@ pub fn sys_unlinkat(
 }
 
 pub fn sys_unlink(path_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    self::sys_unlinkat(AT_FDCWD, path_addr, 0, ctx)
+    sys_unlinkat(AT_FDCWD, path_addr, 0, ctx)
 }
 
 bitflags::bitflags! {

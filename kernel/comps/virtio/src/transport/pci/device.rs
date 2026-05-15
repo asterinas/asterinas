@@ -193,7 +193,7 @@ impl VirtioTransport for VirtioPciModernTransport {
         Ok(())
     }
 
-    fn max_queue_size(&self, idx: u16) -> Result<u16, crate::transport::VirtioTransportError> {
+    fn max_queue_size(&self, idx: u16) -> Result<u16, VirtioTransportError> {
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
             .write_once(&idx)
             .unwrap();
