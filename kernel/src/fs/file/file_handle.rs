@@ -79,9 +79,27 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::EINVAL, "set_status_flags is not supported");
     }
 
-    fn access_mode(&self) -> AccessMode {
-        AccessMode::O_RDWR
-    }
+    /// Returns the access mode of this file.
+    ///
+    /// The access mode indicates whether the file descriptor is readable or writable.
+    /// Readability is required for operations
+    /// such as [`read`], [`read_at`], and read-only memory mappings.
+    /// Writability is required for operations
+    /// such as [`write`], [`write_at`], [`resize`], [`fallocate`],
+    /// and writable memory mappings.
+    ///
+    /// For inode-backed files,
+    /// their access modes are determined dynamically for each opened file.
+    /// For special files such as epoll files, eventfd files, and pid files,
+    /// they are determined statically by the file types.
+    ///
+    /// [`read`]: FileLike::read
+    /// [`read_at`]: FileLike::read_at
+    /// [`write`]: FileLike::write
+    /// [`write_at`]: FileLike::write_at
+    /// [`resize`]: FileLike::resize
+    /// [`fallocate`]: FileLike::fallocate
+    fn access_mode(&self) -> AccessMode;
 
     fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
         return_errno_with_message!(Errno::ESPIPE, "seek is not supported");

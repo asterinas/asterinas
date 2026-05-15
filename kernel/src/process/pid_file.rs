@@ -8,7 +8,7 @@ use core::{
 use crate::{
     events::IoEvents,
     fs::{
-        file::{CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::PidfdFs,
         vfs::path::Path,
     },
@@ -114,6 +114,11 @@ impl FileLike for PidFile {
         } else {
             StatusFlags::empty()
         }
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/kernel/fork.c#L1898>.
+        AccessMode::O_RDWR
     }
 
     fn path(&self) -> &Path {

@@ -12,7 +12,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{
-            CreationFlags, FileLike,
+            AccessMode, CreationFlags, FileLike,
             file_table::{FdFlags, FileDesc, get_file_fast},
         },
         pseudofs::AnonInodeFs,
@@ -271,6 +271,11 @@ impl FileLike for EpollFile {
 
     fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
         return_errno_with_message!(Errno::ENOTTY, "epoll files do not support ioctl");
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventpoll.c#L2191>.
+        AccessMode::O_RDWR
     }
 
     fn path(&self) -> &Path {
