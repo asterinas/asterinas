@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use aster_rights::ReadOp;

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::VecDeque;
 use core::{
     fmt::Display,
     sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -9,7 +8,6 @@ use core::{
 use align_ext::AlignExt;
 use bitflags::bitflags;
 use hashbrown::HashMap;
-use ostd::{mm::VmWriter, sync::SpinLock};
 
 use crate::{
     events::IoEvents,

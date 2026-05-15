@@ -141,12 +141,11 @@ impl BlockSet for RawDisk {
 #[cfg(ktest)]
 mod test {
     use aster_block::{
-        BlockDevice, BlockDeviceMeta, SECTOR_SIZE,
-        bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
+        BlockDeviceMeta,
+        bio::{BioEnqueueError, SubmittedBio},
     };
-    use device_id::DeviceId;
     use ostd::{
-        mm::{FrameAllocOptions, Segment, VmIo},
+        mm::{FrameAllocOptions, Segment},
         prelude::*,
     };
 

@@ -5,11 +5,8 @@
 //! This module registers the `/dev/hwrng` character device and tracks the
 //! currently selected [`EntropyDevice`] backend.
 
-use alloc::{boxed::Box, sync::Arc};
-
 use aster_virtio::device::entropy::{self, device::EntropyDevice};
 use device_id::{DeviceId, MinorId};
-use ostd::mm::VmWriter;
 
 use crate::{
     device::{Device, DeviceType, DevtmpfsInodeMeta, registry::char},

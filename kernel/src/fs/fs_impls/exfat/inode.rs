@@ -3,7 +3,6 @@
 #![expect(dead_code)]
 #![expect(unused_variables)]
 
-use alloc::string::String;
 use core::{cmp::Ordering, time::Duration};
 
 pub(super) use align_ext::AlignExt;

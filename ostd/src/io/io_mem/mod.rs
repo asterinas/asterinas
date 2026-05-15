@@ -22,8 +22,7 @@ use crate::{
     arch::io::io_mem::{read_once, write_once},
     cpu::{AtomicCpuSet, CpuSet},
     mm::{
-        Fallible, HasPaddr, HasSize, Infallible, PAGE_SIZE, Paddr, PodOnce, VmIo, VmIoFill,
-        VmIoOnce, VmReader, VmWriter,
+        Fallible, Infallible, PAGE_SIZE, PodOnce, VmIo, VmIoFill, VmIoOnce, VmReader, VmWriter,
         io::{
             Io,
             copy::{memcpy, memset},
@@ -442,8 +441,6 @@ impl<SecuritySensitivity> Drop for IoMem<SecuritySensitivity> {
 
 #[cfg(ktest)]
 mod test {
-    use core::mem::size_of;
-
     use crate::{
         arch::io::io_mem::{copy_from_mmio, copy_to_mmio, read_once, write_once},
         prelude::ktest,

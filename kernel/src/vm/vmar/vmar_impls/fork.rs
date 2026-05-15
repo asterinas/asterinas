@@ -127,7 +127,7 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
 mod test {
     use ostd::{
         io::IoMem,
-        mm::{CachePolicy, FrameAllocOptions, PageProperty},
+        mm::{FrameAllocOptions, PageProperty},
         prelude::*,
     };
 

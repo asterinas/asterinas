@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::btree_set::BTreeSet, sync::Arc};
 use core::{borrow::Borrow, fmt::Display, time::Duration};
 
 use keyable_arc::KeyableWeak;
-use ostd::sync::Mutex;
 
 use super::{
     EpollCtl, EpollEvent, EpollFlags,

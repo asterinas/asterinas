@@ -6,7 +6,6 @@
 
 use core::{
     alloc::Layout,
-    result::Result,
     sync::atomic::{AtomicU32, Ordering},
 };
 

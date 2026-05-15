@@ -1,14 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Arc, vec::Vec};
-use core::{
-    any::Any,
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
-};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use bitflags::bitflags;
-use ostd::sync::RwLock;
 
 use crate::{
     fs::{

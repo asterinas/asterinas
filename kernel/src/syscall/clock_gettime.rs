@@ -10,7 +10,7 @@ use crate::{
     prelude::*,
     process::{pid_table, posix_thread::AsPosixThread},
     time::{
-        Clock, clockid_t,
+        clockid_t,
         clocks::{
             BootTimeClock, MonotonicClock, MonotonicCoarseClock, MonotonicRawClock, RealTimeClock,
             RealTimeCoarseClock,

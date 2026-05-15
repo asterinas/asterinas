@@ -17,8 +17,6 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use ostd::mm::VmReader;
-
 use self::aux_vec::{AuxKey, AuxVec};
 use crate::{
     prelude::*,

@@ -129,7 +129,7 @@ fn dealloc_cpu_local<T>(cpu_local: DynamicCpuLocal<T>) {
 mod test {
     use super::*;
     use core::{cmp::PartialEq, fmt::Debug};
-    use ostd::{cpu::CpuId, util::id_set::Id};
+    use ostd::util::id_set::Id;
 
     #[repr(align(2))]
     #[derive(Debug, PartialEq)]
