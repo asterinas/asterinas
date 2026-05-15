@@ -157,7 +157,7 @@ impl Credentials_ {
         Ok(())
     }
 
-    pub(super) fn set_fsuid(&self, fsuid: Option<Uid>) -> core::result::Result<Uid, Uid> {
+    pub(super) fn set_fsuid(&self, fsuid: Option<Uid>) -> Result<Uid, Uid> {
         let old_fsuid = self.fsuid();
 
         let Some(fsuid) = fsuid else {
@@ -394,7 +394,7 @@ impl Credentials_ {
         Ok(())
     }
 
-    pub(super) fn set_fsgid(&self, fsgid: Option<Gid>) -> core::result::Result<Gid, Gid> {
+    pub(super) fn set_fsgid(&self, fsgid: Option<Gid>) -> Result<Gid, Gid> {
         let old_fsgid = self.fsgid();
 
         let Some(fsgid) = fsgid else {

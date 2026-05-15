@@ -72,7 +72,7 @@ impl InitStream {
         self,
         remote_addr: VsockSocketAddr,
         pollee: &Pollee,
-    ) -> core::result::Result<ConnectingStream, (Error, Self)> {
+    ) -> Result<ConnectingStream, (Error, Self)> {
         if remote_addr.cid != VMADDR_CID_HOST {
             return Err((
                 Error::with_message(Errno::ENETUNREACH, "only the host vsock CID is supported"),
@@ -107,7 +107,7 @@ impl InitStream {
         self,
         backlog: usize,
         pollee: &Pollee,
-    ) -> core::result::Result<ListenStream, (Error, Self)> {
+    ) -> Result<ListenStream, (Error, Self)> {
         if !self.is_connect_done {
             return Err((
                 Error::with_message(Errno::EINVAL, "a previous connection attempt exists"),

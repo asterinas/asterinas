@@ -26,7 +26,7 @@ impl ConnectingStream {
         bound_port: BoundPort,
         remote_addr: VsockSocketAddr,
         pollee: &Pollee,
-    ) -> core::result::Result<Self, (Error, BoundPort)> {
+    ) -> Result<Self, (Error, BoundPort)> {
         bound_port
             .connect(remote_addr, pollee)
             .map(|connection| Self { connection })

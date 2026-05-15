@@ -31,7 +31,7 @@ impl<T> IpcIds<T> {
     }
 
     /// Calls `op` with the object identified by `id`.
-    pub(super) fn with<R, F>(&self, id: IpcId, op: F) -> core::result::Result<R, IdNotExistError>
+    pub(super) fn with<R, F>(&self, id: IpcId, op: F) -> Result<R, IdNotExistError>
     where
         F: FnOnce(&T) -> R,
     {

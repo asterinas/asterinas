@@ -290,7 +290,7 @@ impl fmt::Debug for MockPageCacheBackend {
 }
 
 impl BlockDevice for MockPageCacheBackend {
-    fn enqueue(&self, bio: SubmittedBio) -> core::result::Result<(), BioEnqueueError> {
+    fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
         let page_idx = bio.sid_range().start.to_offset() / PAGE_SIZE;
         let kind = IoKind::from_bio_type(bio.type_());
 

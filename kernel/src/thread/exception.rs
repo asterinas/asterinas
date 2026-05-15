@@ -29,10 +29,7 @@ pub(super) fn handle_exception(ctx: &Context, user_ctx: &UserContext, exception:
 }
 
 /// Handles the page fault occurs in the VMAR.
-fn handle_page_fault_from_vmar(
-    vmar: &Vmar,
-    page_fault_info: &PageFaultInfo,
-) -> core::result::Result<(), ()> {
+fn handle_page_fault_from_vmar(vmar: &Vmar, page_fault_info: &PageFaultInfo) -> Result<(), ()> {
     if let Err(e) = vmar.handle_page_fault(page_fault_info) {
         warn!(
             "page fault handler failed: info: {:#x?}, err: {:?}",
@@ -70,7 +67,7 @@ fn generate_fault_signal(exception: CpuException, ctx: &Context, user_ctx: &User
     ctx.posix_thread.enqueue_signal(Box::new(signal));
 }
 
-pub(super) fn page_fault_handler(info: &CpuException) -> core::result::Result<(), ()> {
+pub(super) fn page_fault_handler(info: &CpuException) -> Result<(), ()> {
     let task = Task::current().unwrap();
     let thread_local = task.as_thread_local().unwrap();
 

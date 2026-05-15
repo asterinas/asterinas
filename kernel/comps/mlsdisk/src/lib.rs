@@ -50,7 +50,7 @@ pub use self::{
 };
 
 #[init_component]
-fn init() -> core::result::Result<(), ComponentInitError> {
+fn init() -> Result<(), ComponentInitError> {
     // FIXME: how to find a valid device used to format mlsdisk.
     let id = DeviceId::new(MajorId::new(255), MinorId::new(0));
     let Some(device) = aster_block::lookup(id) else {
@@ -81,7 +81,7 @@ impl RawDisk {
 }
 
 impl BlockSet for RawDisk {
-    fn read(&self, pos: BlockId, mut buf: BufMut) -> core::result::Result<(), Error> {
+    fn read(&self, pos: BlockId, mut buf: BufMut) -> Result<(), Error> {
         if pos + buf.nblocks() > self.region.end {
             return_errno_with_msg!(Errno::InvalidArgs, "read position is out of range");
         }
@@ -99,7 +99,7 @@ impl BlockSet for RawDisk {
         }
     }
 
-    fn write(&self, pos: BlockId, buf: BufRef) -> core::result::Result<(), Error> {
+    fn write(&self, pos: BlockId, buf: BufRef) -> Result<(), Error> {
         if pos + buf.nblocks() > self.region.end {
             return_errno_with_msg!(Errno::InvalidArgs, "write position is out of range");
         }
@@ -115,7 +115,7 @@ impl BlockSet for RawDisk {
         }
     }
 
-    fn subset(&self, range: Range<BlockId>) -> core::result::Result<Self, Error> {
+    fn subset(&self, range: Range<BlockId>) -> Result<Self, Error> {
         if self.region.start + range.end > self.region.end {
             return_errno_with_msg!(Errno::InvalidArgs, "subset is out of range");
         }
@@ -129,7 +129,7 @@ impl BlockSet for RawDisk {
         })
     }
 
-    fn flush(&self) -> core::result::Result<(), Error> {
+    fn flush(&self) -> Result<(), Error> {
         Ok(())
     }
 
@@ -167,7 +167,7 @@ mod test {
     }
 
     impl BlockDevice for MemoryDisk {
-        fn enqueue(&self, bio: SubmittedBio) -> core::result::Result<(), BioEnqueueError> {
+        fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
             let bio_type = bio.type_();
             if bio_type == BioType::Flush {
                 bio.complete(BioStatus::Complete);

@@ -504,7 +504,7 @@ impl Controller {
     pub fn pre_charge_pids<'a>(
         &'a self,
         _cgroup_membership: &'a CgroupMembership,
-    ) -> core::result::Result<PidsPreCharge<'a>, TryChargeError> {
+    ) -> Result<PidsPreCharge<'a>, TryChargeError> {
         let guard = self.pids.read();
         let sub = guard.get();
         sub.try_charge_hierarchy()?;

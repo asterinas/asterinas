@@ -72,11 +72,7 @@ impl NameAndParent {
     /// # Errors
     ///
     /// Returns `SetNameAndParentError` if the `Dentry` is a root or pseudo `Dentry`.
-    fn set(
-        &self,
-        name: &str,
-        parent: Arc<Dentry>,
-    ) -> core::result::Result<(), SetNameAndParentError> {
+    fn set(&self, name: &str, parent: Arc<Dentry>) -> Result<(), SetNameAndParentError> {
         if let NameAndParent::Real(Some(name_and_parent)) = self {
             let mut name_and_parent = name_and_parent.write();
             *name_and_parent = (String::from(name), parent);

@@ -511,7 +511,7 @@ enum Record<E: Edit<S>, S> {
 }
 
 impl<E: Edit<S>, S> Serialize for Record<E, S> {
-    fn serialize<Se>(&self, serializer: Se) -> core::result::Result<Se::Ok, Se::Error>
+    fn serialize<Se>(&self, serializer: Se) -> Result<Se::Ok, Se::Error>
     where
         Se: serde::Serializer,
     {
@@ -527,7 +527,7 @@ impl<E: Edit<S>, S> Serialize for Record<E, S> {
 }
 
 impl<'de, E: Edit<S>, S> Deserialize<'de> for Record<E, S> {
-    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
@@ -537,7 +537,7 @@ impl<'de, E: Edit<S>, S> Deserialize<'de> for Record<E, S> {
         }
 
         impl<'de> Deserialize<'de> for Variants {
-            fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: serde::Deserializer<'de>,
             {
@@ -550,7 +550,7 @@ impl<'de, E: Edit<S>, S> Deserialize<'de> for Record<E, S> {
                         formatter.write_str("`Version` or `Edit`")
                     }
 
-                    fn visit_u32<E>(self, v: u32) -> core::result::Result<Self::Value, E>
+                    fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E>
                     where
                         E: serde::de::Error,
                     {
@@ -577,7 +577,7 @@ impl<'de, E: Edit<S>, S> Deserialize<'de> for Record<E, S> {
                 formatter.write_str("a journal record")
             }
 
-            fn visit_enum<A>(self, data: A) -> core::result::Result<Self::Value, A::Error>
+            fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
             where
                 A: serde::de::EnumAccess<'a>,
             {

@@ -185,10 +185,7 @@ pub trait MultiRead: ReadCString {
     /// This method returns [`OstdError::PageFault`] if a page fault occurs, along with
     /// the number of bytes copied before the error occurs. When an error is returned,
     /// both `self` and `writer` are advanced by the returned byte count.
-    fn read(
-        &mut self,
-        writer: &mut VmWriter<'_, Infallible>,
-    ) -> core::result::Result<usize, (OstdError, usize)>;
+    fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize, (OstdError, usize)>;
 
     /// Calculates the total length of data remaining to read.
     fn sum_lens(&self) -> usize;
@@ -216,10 +213,8 @@ pub trait MultiWrite {
     /// This method returns [`OstdError::PageFault`] if a page fault occurs, along with
     /// the number of bytes copied before the error occurs. When an error is returned,
     /// both `self` and `reader` are advanced by the returned byte count.
-    fn write(
-        &mut self,
-        reader: &mut VmReader<'_, Infallible>,
-    ) -> core::result::Result<usize, (OstdError, usize)>;
+    fn write(&mut self, reader: &mut VmReader<'_, Infallible>)
+    -> Result<usize, (OstdError, usize)>;
 
     /// Calculates the length of space available to write.
     fn sum_lens(&self) -> usize;
@@ -235,10 +230,7 @@ pub trait MultiWrite {
 }
 
 impl MultiRead for VmReaderArray<'_> {
-    fn read(
-        &mut self,
-        writer: &mut VmWriter<'_, Infallible>,
-    ) -> core::result::Result<usize, (OstdError, usize)> {
+    fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize, (OstdError, usize)> {
         let mut total_len = 0;
 
         for reader in &mut self.0 {
@@ -271,10 +263,7 @@ impl MultiRead for VmReaderArray<'_> {
 }
 
 impl MultiRead for VmReader<'_> {
-    fn read(
-        &mut self,
-        writer: &mut VmWriter<'_, Infallible>,
-    ) -> core::result::Result<usize, (OstdError, usize)> {
+    fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize, (OstdError, usize)> {
         self.read_fallible(writer)
     }
 
@@ -305,7 +294,7 @@ impl MultiWrite for VmWriterArray<'_> {
     fn write(
         &mut self,
         reader: &mut VmReader<'_, Infallible>,
-    ) -> core::result::Result<usize, (OstdError, usize)> {
+    ) -> Result<usize, (OstdError, usize)> {
         let mut total_len = 0;
 
         for writer in &mut self.0 {
@@ -341,7 +330,7 @@ impl MultiWrite for VmWriter<'_> {
     fn write(
         &mut self,
         reader: &mut VmReader<'_, Infallible>,
-    ) -> core::result::Result<usize, (OstdError, usize)> {
+    ) -> Result<usize, (OstdError, usize)> {
         self.write_fallible(reader)
     }
 

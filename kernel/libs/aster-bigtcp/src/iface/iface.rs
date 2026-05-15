@@ -33,10 +33,7 @@ impl<E: Ext> dyn Iface<E> {
     /// FIXME: The reason for binding the socket and the iface together is because there are
     /// limitations inside smoltcp. See discussion at
     /// <https://github.com/smoltcp-rs/smoltcp/issues/779>.
-    pub fn bind(
-        self: &Arc<Self>,
-        config: BindPortConfig,
-    ) -> core::result::Result<BoundPort<E>, BindError> {
+    pub fn bind(self: &Arc<Self>, config: BindPortConfig) -> Result<BoundPort<E>, BindError> {
         let common = self.common();
         common.bind(self.clone(), config)
     }

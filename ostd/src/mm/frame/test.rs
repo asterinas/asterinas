@@ -84,7 +84,7 @@ mod frame {
             .unwrap();
         let dyn_frame: Frame<dyn AnyFrameMeta> = frame.into();
         assert!(!dyn_frame.dyn_meta().is_untyped());
-        let result: core::result::Result<Frame<MockFrameMeta>, _> = Frame::try_from(dyn_frame);
+        let result: Result<Frame<MockFrameMeta>, _> = Frame::try_from(dyn_frame);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().meta().value, 42);
     }
@@ -387,7 +387,7 @@ mod segment {
         let options = FrameAllocOptions::new();
         let segment = options.alloc_segment(1).unwrap();
         let dyn_segment: Segment<dyn AnyFrameMeta> = segment.clone().into();
-        let result: core::result::Result<USegment, Segment<_>> = USegment::try_from(dyn_segment);
+        let result: Result<USegment, Segment<_>> = USegment::try_from(dyn_segment);
         assert!(result.is_ok());
         let usegment = result.unwrap();
         assert_eq!(usegment.size(), PAGE_SIZE);
@@ -401,8 +401,7 @@ mod segment {
             .alloc_segment_with(1, |_| MockFrameMeta { value: 42 })
             .unwrap();
         let dyn_segment: Segment<dyn AnyFrameMeta> = segment.into();
-        let result: core::result::Result<Segment<MockFrameMeta>, Segment<_>> =
-            Segment::try_from(dyn_segment);
+        let result: Result<Segment<MockFrameMeta>, Segment<_>> = Segment::try_from(dyn_segment);
         assert!(result.is_ok());
         let segment = result.unwrap();
         assert_eq!(segment.size(), PAGE_SIZE);

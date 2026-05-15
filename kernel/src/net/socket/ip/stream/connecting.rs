@@ -30,7 +30,7 @@ impl ConnectingStream {
         remote_endpoint: IpEndpoint,
         option: &RawTcpOption,
         observer: StreamObserver,
-    ) -> core::result::Result<Self, (Error, BoundPort)> {
+    ) -> Result<Self, (Error, BoundPort)> {
         let tcp_conn =
             match TcpConnection::new_connect(bound_port, remote_endpoint, option, observer) {
                 Ok(tcp_conn) => tcp_conn,

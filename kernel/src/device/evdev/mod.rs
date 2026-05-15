@@ -228,10 +228,7 @@ impl InputHandlerClass for EvdevHandlerClass {
         "evdev"
     }
 
-    fn connect(
-        &self,
-        dev: Arc<dyn InputDevice>,
-    ) -> core::result::Result<Arc<dyn InputHandler>, ConnectError> {
+    fn connect(&self, dev: Arc<dyn InputDevice>) -> Result<Arc<dyn InputHandler>, ConnectError> {
         // Allocate a new minor number.
         let minor = EVDEV_MINOR_COUNTER.fetch_add(1, Ordering::Relaxed);
         let minor_id = MinorId::new(minor);

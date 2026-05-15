@@ -121,7 +121,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_fsuid(&self, fsuid: Option<Uid>) -> core::result::Result<Uid, Uid> {
+    pub fn set_fsuid(&self, fsuid: Option<Uid>) -> Result<Uid, Uid> {
         self.0.set_fsuid(fsuid)
     }
 
@@ -222,7 +222,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_fsgid(&self, fsgid: Option<Gid>) -> core::result::Result<Gid, Gid> {
+    pub fn set_fsgid(&self, fsgid: Option<Gid>) -> Result<Gid, Gid> {
         self.0.set_fsgid(fsgid)
     }
 

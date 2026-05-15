@@ -172,7 +172,7 @@ impl super::SubController<PidsController> {
     /// charged levels are rolled back and `Err` is returned.
     ///
     /// This is used at fork time where `pids.max` must be enforced.
-    pub(super) fn try_charge_hierarchy(&self) -> core::result::Result<(), TryChargeError> {
+    pub(super) fn try_charge_hierarchy(&self) -> Result<(), TryChargeError> {
         let mut charged: Vec<&PidsController> = Vec::new();
         let mut current = Some(self);
 

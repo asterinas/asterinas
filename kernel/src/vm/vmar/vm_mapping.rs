@@ -522,7 +522,7 @@ impl VmMapping {
         &self,
         page_aligned_addr: Vaddr,
         write: bool,
-    ) -> core::result::Result<(UFrame, bool), VmoCommitError> {
+    ) -> Result<(UFrame, bool), VmoCommitError> {
         let mut is_readonly = false;
 
         let vmo = match &self.mapped_mem {
@@ -598,27 +598,25 @@ impl VmMapping {
             let mut cursor = vm_space.cursor_mut(&preempt_guard, &(start_addr..end_addr))?;
 
             let rss_delta_ref = &mut rss_delta;
-            let operate = move |commit_fn: &mut dyn FnMut() -> core::result::Result<
-                (usize, CachePage),
-                VmoCommitError,
-            >| {
-                if let (_, None) = cursor.query().unwrap() {
-                    // We regard all the surrounding pages as accessed, no matter
-                    // if it is really so. Then the hardware won't bother to update
-                    // the accessed bit of the page table on following accesses.
-                    let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
-                    let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
-                    let (_, frame) = commit_fn()?;
-                    cursor.map(frame.into(), page_prop);
-                    rss_delta_ref.add(self.rss_type(), 1);
-                } else {
-                    let next_addr = cursor.virt_addr() + PAGE_SIZE;
-                    if next_addr < end_addr {
-                        let _ = cursor.jump(next_addr);
+            let operate =
+                move |commit_fn: &mut dyn FnMut() -> Result<(usize, CachePage), VmoCommitError>| {
+                    if let (_, None) = cursor.query().unwrap() {
+                        // We regard all the surrounding pages as accessed, no matter
+                        // if it is really so. Then the hardware won't bother to update
+                        // the accessed bit of the page table on following accesses.
+                        let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
+                        let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
+                        let (_, frame) = commit_fn()?;
+                        cursor.map(frame.into(), page_prop);
+                        rss_delta_ref.add(self.rss_type(), 1);
+                    } else {
+                        let next_addr = cursor.virt_addr() + PAGE_SIZE;
+                        if next_addr < end_addr {
+                            let _ = cursor.jump(next_addr);
+                        }
                     }
-                }
-                Ok(())
-            };
+                    Ok(())
+                };
 
             let start_offset = start_addr - self.map_to_addr;
             let end_offset = end_addr - self.map_to_addr;
@@ -878,10 +876,7 @@ impl MappedVmo {
     /// If the VMO has not committed a frame at this index, it will commit
     /// one first and return it. If the commit operation needs to perform I/O,
     /// it will return a [`VmoCommitError::NeedIo`].
-    fn get_committed_frame(
-        &self,
-        page_offset: usize,
-    ) -> core::result::Result<UFrame, VmoCommitError> {
+    fn get_committed_frame(&self, page_offset: usize) -> Result<UFrame, VmoCommitError> {
         debug_assert!(page_offset.is_multiple_of(PAGE_SIZE));
         self.vmo
             .try_commit_page(self.offset + page_offset)
@@ -907,11 +902,11 @@ impl MappedVmo {
         &self,
         range: &Range<usize>,
         operate: F,
-    ) -> core::result::Result<(), VmoCommitError>
+    ) -> Result<(), VmoCommitError>
     where
         F: FnMut(
-            &mut dyn FnMut() -> core::result::Result<(usize, CachePage), VmoCommitError>,
-        ) -> core::result::Result<(), VmoCommitError>,
+            &mut dyn FnMut() -> Result<(usize, CachePage), VmoCommitError>,
+        ) -> Result<(), VmoCommitError>,
     {
         let range = self.offset + range.start..self.offset + range.end;
         self.vmo.try_operate_on_range(&range, operate)

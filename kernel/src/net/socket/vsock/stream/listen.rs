@@ -20,7 +20,7 @@ impl ListenStream {
         bound_port: BoundPort,
         backlog: usize,
         pollee: &Pollee,
-    ) -> core::result::Result<Self, (Error, BoundPort)> {
+    ) -> Result<Self, (Error, BoundPort)> {
         bound_port
             .listen(backlog, pollee)
             .map(|listener| Self { listener })

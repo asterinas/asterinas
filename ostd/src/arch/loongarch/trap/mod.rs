@@ -122,13 +122,10 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
 }
 
 #[expect(clippy::type_complexity)]
-static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuExceptionInfo) -> core::result::Result<(), ()>> =
-    Once::new();
+static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuExceptionInfo) -> Result<(), ()>> = Once::new();
 
 /// Injects a custom handler for page faults that occur in the kernel and
 /// are caused by user-space address.
-pub fn inject_user_page_fault_handler(
-    handler: fn(info: &CpuExceptionInfo) -> core::result::Result<(), ()>,
-) {
+pub fn inject_user_page_fault_handler(handler: fn(info: &CpuExceptionInfo) -> Result<(), ()>) {
     USER_PAGE_FAULT_HANDLER.call_once(|| handler);
 }

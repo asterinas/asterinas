@@ -120,7 +120,7 @@ impl BoundPort {
         self,
         remote_addr: VsockSocketAddr,
         pollee: &Pollee,
-    ) -> core::result::Result<Connection, (Error, BoundPort)> {
+    ) -> Result<Connection, (Error, BoundPort)> {
         let vsock_space = self.vsock_space();
         vsock_space.new_connection(self, remote_addr, pollee)
     }
@@ -133,7 +133,7 @@ impl BoundPort {
         self,
         backlog: usize,
         pollee: &Pollee,
-    ) -> core::result::Result<Listener, (Error, BoundPort)> {
+    ) -> Result<Listener, (Error, BoundPort)> {
         let vsock_space = self.vsock_space();
         vsock_space.new_listener(self, backlog, pollee)
     }

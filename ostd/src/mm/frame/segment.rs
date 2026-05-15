@@ -256,7 +256,7 @@ impl<M: AnyFrameMeta> From<Segment<M>> for Segment<dyn AnyFrameMeta> {
 impl<M: AnyFrameMeta> TryFrom<Segment<dyn AnyFrameMeta>> for Segment<M> {
     type Error = Segment<dyn AnyFrameMeta>;
 
-    fn try_from(seg: Segment<dyn AnyFrameMeta>) -> core::result::Result<Self, Self::Error> {
+    fn try_from(seg: Segment<dyn AnyFrameMeta>) -> Result<Self, Self::Error> {
         // SAFETY: for each page there would be a forgotten handle
         // when creating the `Segment` object.
         let first_frame = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(seg.range.start) };
@@ -293,7 +293,7 @@ impl TryFrom<Segment<dyn AnyFrameMeta>> for USegment {
     ///
     /// If the usage of the page is not the same as the expected usage, it will
     /// return the dynamic page itself as is.
-    fn try_from(seg: Segment<dyn AnyFrameMeta>) -> core::result::Result<Self, Self::Error> {
+    fn try_from(seg: Segment<dyn AnyFrameMeta>) -> Result<Self, Self::Error> {
         // SAFETY: for each page there would be a forgotten handle
         // when creating the `Segment` object.
         let first_frame = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(seg.range.start) };

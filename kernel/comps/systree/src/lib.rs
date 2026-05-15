@@ -54,7 +54,7 @@ use crate::tree::RootNode;
 static SINGLETON: Once<Arc<SysTree<RootNode>>> = Once::new();
 
 #[init_component]
-fn init() -> core::result::Result<(), ComponentInitError> {
+fn init() -> Result<(), ComponentInitError> {
     SINGLETON.call_once(|| Arc::new(SysTree::new()));
     Ok(())
 }
