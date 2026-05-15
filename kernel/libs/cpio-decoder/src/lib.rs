@@ -19,6 +19,7 @@
 #![deny(unsafe_code)]
 
 extern crate alloc;
+
 #[cfg(not(test))]
 use alloc::string::{String, ToString};
 use alloc::vec;
