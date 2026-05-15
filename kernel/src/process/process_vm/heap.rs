@@ -104,11 +104,7 @@ impl Heap {
     /// This behavior is consistent with the Linux `brk` syscall.
     //
     // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/mm/mmap.c#L115>
-    pub fn modify_heap_end(
-        &self,
-        new_heap_end: Vaddr,
-        ctx: &Context,
-    ) -> core::result::Result<Vaddr, Vaddr> {
+    pub fn modify_heap_end(&self, new_heap_end: Vaddr, ctx: &Context) -> Result<Vaddr, Vaddr> {
         let user_space = ctx.user_space();
         let vmar = user_space.vmar();
 

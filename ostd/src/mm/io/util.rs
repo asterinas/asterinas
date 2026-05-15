@@ -161,7 +161,7 @@ impl<S: HasVmReaderWriter + Send + Sync> VmIo for S {
 }
 
 impl<S: HasVmReaderWriter> VmIoFill for S {
-    fn fill_zeros(&self, offset: usize, len: usize) -> core::result::Result<(), (Error, usize)> {
+    fn fill_zeros(&self, offset: usize, len: usize) -> Result<(), (Error, usize)> {
         let mut writer = <Self as HasVmReaderWriter>::Types::to_writer_result(self.writer())
             .map_err(|err| (err, 0))?;
 

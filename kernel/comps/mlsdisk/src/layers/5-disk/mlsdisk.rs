@@ -74,7 +74,7 @@ impl<D: BlockSet + 'static> aster_block::BlockDevice for MlsDisk<D> {
     fn enqueue(
         &self,
         bio: aster_block::bio::SubmittedBio,
-    ) -> core::result::Result<(), aster_block::bio::BioEnqueueError> {
+    ) -> Result<(), aster_block::bio::BioEnqueueError> {
         use aster_block::bio::{BioStatus, BioType, SubmittedBio};
 
         if bio.type_() == BioType::Flush {

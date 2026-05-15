@@ -115,7 +115,7 @@ fn find_reaper_process(current_process: &Process) -> Option<Arc<Process>> {
 fn move_process_children(
     current_process: &Process,
     reaper_process: &Arc<Process>,
-) -> core::result::Result<BTreeMap<Pid, Arc<Process>>, ()> {
+) -> Result<BTreeMap<Pid, Arc<Process>>, ()> {
     // Lock order: children of process -> parent of process
     let mut reaper_process_children = reaper_process.children().lock();
     let Some(reaper_process_children) = reaper_process_children.as_mut() else {

@@ -27,11 +27,7 @@ impl Vmar {
     /// On error, both the error and the number of bytes read so far are returned.
     ///
     /// The `VmSpace` of the process is not required to be activated on the current CPU.
-    pub fn read_alien(
-        &self,
-        vaddr: Vaddr,
-        writer: &mut VmWriter,
-    ) -> core::result::Result<usize, (Error, usize)> {
+    pub fn read_alien(&self, vaddr: Vaddr, writer: &mut VmWriter) -> Result<usize, (Error, usize)> {
         let len = writer.avail();
         let read = |frame: UFrame, skip_offset: usize| {
             let mut reader = frame.reader();
@@ -56,7 +52,7 @@ impl Vmar {
         &self,
         vaddr: Vaddr,
         reader: &mut VmReader,
-    ) -> core::result::Result<usize, (Error, usize)> {
+    ) -> Result<usize, (Error, usize)> {
         let len = reader.remain();
         let write = |frame: UFrame, skip_offset: usize| {
             let mut writer = frame.writer();
@@ -74,11 +70,7 @@ impl Vmar {
     /// error and the number of bytes written so far are returned.
     ///
     /// The `VmSpace` of the process is not required to be activated on the current CPU.
-    pub fn fill_zeros_alien(
-        &self,
-        vaddr: Vaddr,
-        len: usize,
-    ) -> core::result::Result<usize, (Error, usize)> {
+    pub fn fill_zeros_alien(&self, vaddr: Vaddr, len: usize) -> Result<usize, (Error, usize)> {
         let mut remain = len;
         let write = |frame: UFrame, skip_offset: usize| {
             let mut writer = frame.writer();
@@ -102,9 +94,9 @@ impl Vmar {
         len: usize,
         required_page_flags: PageFlags,
         mut op: F,
-    ) -> core::result::Result<usize, (Error, usize)>
+    ) -> Result<usize, (Error, usize)>
     where
-        F: FnMut(UFrame, usize) -> core::result::Result<usize, (ostd::Error, usize)>,
+        F: FnMut(UFrame, usize) -> Result<usize, (ostd::Error, usize)>,
     {
         if len == 0 {
             return Ok(0);

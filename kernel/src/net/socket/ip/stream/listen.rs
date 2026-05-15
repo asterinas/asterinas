@@ -23,7 +23,7 @@ impl ListenStream {
         backlog: usize,
         option: &RawTcpOption,
         observer: StreamObserver,
-    ) -> core::result::Result<Self, (BoundPort, Error)> {
+    ) -> Result<Self, (BoundPort, Error)> {
         const SOMAXCONN: usize = 4096;
         let max_conn = SOMAXCONN.min(backlog);
 

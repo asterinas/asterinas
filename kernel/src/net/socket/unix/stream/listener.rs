@@ -262,7 +262,7 @@ impl Backlog {
         pollee: Pollee,
         options: &OptionSet,
         is_seqpacket: bool,
-    ) -> core::result::Result<Connected, (Error, Init)> {
+    ) -> Result<Connected, (Error, Init)> {
         if is_seqpacket != self.is_seqpacket {
             // FIXME: According to the Linux implementation, we should avoid this error by
             // maintaining two socket tables for SOCK_STREAM sockets and SOCK_SEQPACKET sockets

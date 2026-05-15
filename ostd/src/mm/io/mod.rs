@@ -191,7 +191,7 @@ pub trait VmIoFill {
     /// this method can be implemented in the following general way.
     ///
     /// ```rust
-    /// fn fill_zeros(&self, offset: usize, len: usize) -> core::result::Result<(), (Error, usize)> {
+    /// fn fill_zeros(&self, offset: usize, len: usize) -> Result<(), (Error, usize)> {
     ///     for i in 0..len {
     ///         match self.write_slice(offset + i, &[0u8]) {
     ///             Ok(()) => continue,
@@ -205,7 +205,7 @@ pub trait VmIoFill {
     /// But we choose not to provide a general, default implementation
     /// because doing so would make it too easy for a concrete type of `VmIoFill`
     /// to settle with a slower implementation for such a performance-sensitive operation.
-    fn fill_zeros(&self, offset: usize, len: usize) -> core::result::Result<(), (Error, usize)>;
+    fn fill_zeros(&self, offset: usize, len: usize) -> Result<(), (Error, usize)>;
 }
 
 /// A trait that enables reading/writing data from/to a VM object using one non-tearing memory
@@ -277,10 +277,7 @@ pub trait FallibleVmRead<F> {
     ///
     /// On success, the number of bytes read is returned;
     /// On error, both the error and the number of bytes read so far are returned.
-    fn read_fallible(
-        &mut self,
-        writer: &mut VmWriter<'_, F>,
-    ) -> core::result::Result<usize, (Error, usize)>;
+    fn read_fallible(&mut self, writer: &mut VmWriter<'_, F>) -> Result<usize, (Error, usize)>;
 }
 
 /// Fallible memory write from a `VmReader`.
@@ -292,10 +289,7 @@ pub trait FallibleVmWrite<F> {
     ///
     /// On success, the number of bytes written is returned;
     /// On error, both the error and the number of bytes written so far are returned.
-    fn write_fallible(
-        &mut self,
-        reader: &mut VmReader<'_, F>,
-    ) -> core::result::Result<usize, (Error, usize)>;
+    fn write_fallible(&mut self, reader: &mut VmReader<'_, F>) -> Result<usize, (Error, usize)>;
 }
 
 /// `VmReader` is a reader for reading data from a contiguous range of memory.
@@ -341,7 +335,7 @@ macro_rules! impl_read_fallible {
             fn read_fallible(
                 &mut self,
                 writer: &mut VmWriter<'_, $writer_fallibility>,
-            ) -> core::result::Result<usize, (Error, usize)> {
+            ) -> Result<usize, (Error, usize)> {
                 let copy_len = self.remain().min(writer.avail());
                 if copy_len == 0 {
                     return Ok(0);
@@ -376,7 +370,7 @@ macro_rules! impl_write_fallible {
             fn write_fallible(
                 &mut self,
                 reader: &mut VmReader<'_, $reader_fallibility>,
-            ) -> core::result::Result<usize, (Error, usize)> {
+            ) -> Result<usize, (Error, usize)> {
                 reader.read_fallible(self)
             }
         }
@@ -884,7 +878,7 @@ impl VmWriter<'_, Fallible> {
     ///
     /// If the memory write failed due to an unresolvable page fault, this method
     /// will return `Err` with the length set so far.
-    pub fn fill_zeros(&mut self, len: usize) -> core::result::Result<usize, (Error, usize)> {
+    pub fn fill_zeros(&mut self, len: usize) -> Result<usize, (Error, usize)> {
         let len_to_set = self.avail().min(len);
         if len_to_set == 0 {
             return Ok(0);

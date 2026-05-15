@@ -250,10 +250,7 @@ impl Vmo {
     ///
     /// If the commit operation needs to perform I/O, it will return a
     /// [`VmoCommitError::NeedIo`].
-    pub fn try_commit_page(
-        &self,
-        offset: usize,
-    ) -> core::result::Result<CachePage, VmoCommitError> {
+    pub fn try_commit_page(&self, offset: usize) -> Result<CachePage, VmoCommitError> {
         let page_idx = offset / PAGE_SIZE;
         if offset >= self.size() {
             return Err(VmoCommitError::Err(Error::with_message(
@@ -272,7 +269,7 @@ impl Vmo {
         &self,
         cursor: &mut Cursor<'_, CachePage>,
         commit_mode: CommitMode,
-    ) -> core::result::Result<(usize, CommittedPage), VmoCommitError> {
+    ) -> Result<(usize, CommittedPage), VmoCommitError> {
         if let Some(backed_vmo) = self.as_backed_vmo() {
             if let Some((index, page)) = backed_vmo.try_commit_with_cursor(cursor, commit_mode)? {
                 return Ok((index, page));
@@ -299,11 +296,11 @@ impl Vmo {
         &self,
         range: &Range<usize>,
         mut operate: F,
-    ) -> core::result::Result<(), VmoCommitError>
+    ) -> Result<(), VmoCommitError>
     where
         F: FnMut(
-            &mut dyn FnMut() -> core::result::Result<(usize, CachePage), VmoCommitError>,
-        ) -> core::result::Result<(), VmoCommitError>,
+            &mut dyn FnMut() -> Result<(usize, CachePage), VmoCommitError>,
+        ) -> Result<(), VmoCommitError>,
     {
         self.try_operate_on_range_internal(
             range,
@@ -321,11 +318,11 @@ impl Vmo {
         range: &Range<usize>,
         mut operate: F,
         commit_mode: CommitMode,
-    ) -> core::result::Result<(), VmoCommitError>
+    ) -> Result<(), VmoCommitError>
     where
         F: FnMut(
-            &mut dyn FnMut() -> core::result::Result<(usize, CommittedPage), VmoCommitError>,
-        ) -> core::result::Result<(), VmoCommitError>,
+            &mut dyn FnMut() -> Result<(usize, CommittedPage), VmoCommitError>,
+        ) -> Result<(), VmoCommitError>,
     {
         if range.end > self.size() {
             return Err(VmoCommitError::Err(Error::with_message(
@@ -645,14 +642,12 @@ impl Vmo {
         let mut current_range = range.clone();
 
         'retry: loop {
-            let mut operate = |commit_fn: &mut dyn FnMut() -> core::result::Result<
-                (usize, CommittedPage),
-                VmoCommitError,
-            >| {
-                let (idx, page) = commit_fn()?;
-                pages.push((idx, page));
-                Ok(())
-            };
+            let mut operate =
+                |commit_fn: &mut dyn FnMut() -> Result<(usize, CommittedPage), VmoCommitError>| {
+                    let (idx, page) = commit_fn()?;
+                    pages.push((idx, page));
+                    Ok(())
+                };
             match self.try_operate_on_range_internal(&current_range, &mut operate, commit_mode) {
                 Ok(()) => break 'retry,
                 Err(err) => {
@@ -831,7 +826,7 @@ impl<'a> BackedVmo<'a> {
         &self,
         cursor: &mut Cursor<'_, CachePage>,
         commit_mode: CommitMode,
-    ) -> core::result::Result<Option<(usize, CommittedPage)>, VmoCommitError> {
+    ) -> Result<Option<(usize, CommittedPage)>, VmoCommitError> {
         let page_idx = cursor.index() as usize;
 
         let Some(page) = cursor.load() else {
