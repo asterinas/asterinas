@@ -153,7 +153,7 @@ impl BidPath {
 }
 
 /// Direct pointers to blocks.
-pub const DIRECT_RANGE: core::ops::Range<usize> = 0..12;
+pub const DIRECT_RANGE: Range<usize> = 0..12;
 /// The number of direct blocks.
 pub const MAX_DIRECT_BLOCKS: Ext2Bid = DIRECT_RANGE.end as Ext2Bid;
 

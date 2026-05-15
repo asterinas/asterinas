@@ -546,7 +546,7 @@ impl<'de, E: Edit<S>, S> Deserialize<'de> for Record<E, S> {
                 impl Visitor<'_> for VariantVisitor {
                     type Value = Variants;
 
-                    fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                         formatter.write_str("`Version` or `Edit`")
                     }
 
@@ -573,7 +573,7 @@ impl<'de, E: Edit<S>, S> Deserialize<'de> for Record<E, S> {
         impl<'a, E: Edit<S>, S> Visitor<'a> for RecordVisitor<E, S> {
             type Value = Record<E, S>;
 
-            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("a journal record")
             }
 

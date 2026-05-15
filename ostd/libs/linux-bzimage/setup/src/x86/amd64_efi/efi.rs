@@ -105,10 +105,9 @@ fn efi_phase_boot(boot_params: &mut BootParams) {
 fn load_cmdline() -> Option<&'static CStr> {
     uefi::println!("[EFI stub] Loading the cmdline");
 
-    let loaded_image = open_protocol_exclusive::<uefi::proto::loaded_image::LoadedImage>(
-        uefi::boot::image_handle(),
-    )
-    .unwrap();
+    let loaded_image =
+        open_protocol_exclusive::<uefi::proto::loaded_image::LoadedImage>(boot::image_handle())
+            .unwrap();
 
     let Some(load_options) = loaded_image.load_options_as_bytes() else {
         uefi::println!("[EFI stub] Warning: No cmdline is available!");
@@ -171,12 +170,12 @@ fn load_initrd() -> Option<&'static [u8]> {
             .unwrap()
     };
 
-    let Ok(handle) = uefi::boot::locate_device_path::<LoadFile2>(&mut device_path) else {
+    let Ok(handle) = boot::locate_device_path::<LoadFile2>(&mut device_path) else {
         uefi::println!("[EFI stub] Warning: Failed to locate the initrd device!");
         return None;
     };
 
-    let Ok(mut load_file2) = uefi::boot::open_protocol_exclusive::<LoadFile2>(handle) else {
+    let Ok(mut load_file2) = open_protocol_exclusive::<LoadFile2>(handle) else {
         uefi::println!("[EFI stub] Warning: Failed to open the initrd protocol!");
         return None;
     };
@@ -192,7 +191,7 @@ fn load_initrd() -> Option<&'static [u8]> {
             core::ptr::null_mut(),
         )
     };
-    if status != uefi::Status::BUFFER_TOO_SMALL {
+    if status != Status::BUFFER_TOO_SMALL {
         uefi::println!("[EFI stub] Warning: Failed to get the initrd size!");
         return None;
     }
@@ -233,7 +232,7 @@ fn find_rsdp_addr() -> Option<*const ()> {
 
     // Prefer ACPI2 over ACPI.
     for acpi_guid in [ACPI2_GUID, ACPI_GUID] {
-        if let Some(rsdp_addr) = uefi::system::with_config_table(|table| {
+        if let Some(rsdp_addr) = system::with_config_table(|table| {
             table
                 .iter()
                 .find(|entry| entry.guid == acpi_guid)
@@ -255,7 +254,7 @@ fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
         proto::console::gop::{GraphicsOutput, PixelFormat},
     };
 
-    let Ok(handle) = uefi::boot::get_handle_for_protocol::<GraphicsOutput>() else {
+    let Ok(handle) = boot::get_handle_for_protocol::<GraphicsOutput>() else {
         uefi::println!("[EFI stub] Warning: Failed to locate the graphics handle!");
         return;
     };
@@ -274,7 +273,7 @@ fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
         open_protocol::<GraphicsOutput>(
             OpenProtocolParams {
                 handle,
-                agent: uefi::boot::image_handle(),
+                agent: boot::image_handle(),
                 controller: None,
             },
             OpenProtocolAttributes::GetProtocol,

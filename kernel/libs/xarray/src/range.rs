@@ -24,7 +24,7 @@ impl<'a, P: NonNullPtr + Send + Sync, M> Range<'a, P, M> {
     }
 }
 
-impl<'a, P: NonNullPtr + Send + Sync, M> core::iter::Iterator for Range<'a, P, M> {
+impl<'a, P: NonNullPtr + Send + Sync, M> Iterator for Range<'a, P, M> {
     type Item = (u64, P::Ref<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {

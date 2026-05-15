@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub fn sys_rmdir(path_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    self::sys_rmdirat(AT_FDCWD, path_addr, ctx)
+    sys_rmdirat(AT_FDCWD, path_addr, ctx)
 }
 
 pub(super) fn sys_rmdirat(

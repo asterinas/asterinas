@@ -27,7 +27,7 @@ impl PtySlaveInode {
             metadata: RwLock::new(Metadata::new_device(
                 device.index() as u64 + FIRST_SLAVE_INO,
                 mkmod!(u+rw, g+w),
-                super::BLOCK_SIZE,
+                BLOCK_SIZE,
                 device.as_ref(),
                 devpts.sb().container_dev_id,
             )),

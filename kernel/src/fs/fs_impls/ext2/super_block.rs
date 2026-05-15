@@ -113,7 +113,7 @@ pub struct SuperBlock {
 }
 
 impl TryFrom<RawSuperBlock> for SuperBlock {
-    type Error = crate::error::Error;
+    type Error = Error;
 
     fn try_from(sb: RawSuperBlock) -> Result<Self> {
         Ok(Self {

@@ -91,7 +91,7 @@ impl BufRef<'_> {
 }
 
 impl<'a> TryFrom<&'a [u8]> for BufRef<'a> {
-    type Error = crate::error::Error;
+    type Error = Error;
 
     fn try_from(buf: &'a [u8]) -> Result<Self> {
         if buf.is_empty() {
@@ -146,7 +146,7 @@ impl BufMut<'_> {
 }
 
 impl<'a> TryFrom<&'a mut [u8]> for BufMut<'a> {
-    type Error = crate::error::Error;
+    type Error = Error;
 
     fn try_from(buf: &'a mut [u8]) -> Result<Self> {
         if buf.is_empty() {

@@ -276,7 +276,7 @@ pub(crate) struct PageTablePageMeta<C: PageTableConfig> {
     level: PagingLevel,
     /// The lock for the page table page.
     lock: AtomicU8,
-    _phantom: core::marker::PhantomData<C>,
+    _phantom: PhantomData<C>,
 }
 
 impl<C: PageTableConfig> PageTablePageMeta<C> {

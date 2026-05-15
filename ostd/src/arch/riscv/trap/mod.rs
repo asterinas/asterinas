@@ -35,7 +35,7 @@ use crate::{
 pub(crate) unsafe fn init_on_cpu() {
     // SAFETY: The caller ensures the safety conditions.
     unsafe {
-        self::trap::init_on_cpu();
+        trap::init_on_cpu();
     }
 }
 

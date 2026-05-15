@@ -76,7 +76,7 @@ impl SubCtrlType {
 }
 
 impl FromStr for SubCtrlType {
-    type Err = aster_systree::Error;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
         match s {

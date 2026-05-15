@@ -33,7 +33,7 @@ impl Ptmx {
             metadata: RwLock::new(Metadata::new_device(
                 PTMX_INO,
                 mkmod!(a+rw),
-                super::BLOCK_SIZE,
+                BLOCK_SIZE,
                 &inner,
                 sb.container_dev_id,
             )),

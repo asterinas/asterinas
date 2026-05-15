@@ -213,10 +213,7 @@ const REG_RULES: &[RegRule] = &[
 ];
 
 const _: () = {
-    assert!(
-        (REG_RULES.len() + 1) * core::mem::size_of::<usize>()
-            == core::mem::size_of::<CUserRegsStruct>()
-    );
+    assert!((REG_RULES.len() + 1) * size_of::<usize>() == size_of::<CUserRegsStruct>());
 };
 
 /// One rule for a single register inside `CUserRegsStruct`.
@@ -326,14 +323,14 @@ const USER_MODIFIABLE_RFLAGS_MASK: usize = (RFlags::CARRY_FLAG.bits()
 fn check_user_offset(offset: usize) -> Result<()> {
     // We only support the offsets for general-purpose registers currently.
     // `struct user_regs_struct` is the first field in `struct user`.
-    if offset >= core::mem::size_of::<CUserRegsStruct>() {
+    if offset >= size_of::<CUserRegsStruct>() {
         return_errno_with_message!(
             Errno::EOPNOTSUPP,
             "only offsets for general-purpose registers are supported currently"
         );
     }
 
-    if !offset.is_multiple_of(core::mem::size_of::<usize>()) {
+    if !offset.is_multiple_of(size_of::<usize>()) {
         return_errno_with_message!(Errno::EIO, "invalid USER area offset");
     }
 
@@ -349,5 +346,5 @@ fn write_word(bytes: &mut [u8], offset: usize, value: usize) {
 }
 
 const fn word_range(offset: usize) -> Range<usize> {
-    offset..offset + core::mem::size_of::<usize>()
+    offset..offset + size_of::<usize>()
 }

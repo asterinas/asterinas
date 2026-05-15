@@ -128,7 +128,7 @@ unsafe fn init() {
     // 1. The kernel page table is activated on the BSP.
     // 2. The function is called only once on the BSP.
     // 3. No remaining `with_borrow` invocations from now.
-    unsafe { crate::mm::page_table::boot_pt::dismiss() };
+    unsafe { mm::page_table::boot_pt::dismiss() };
 
     arch::irq::enable_local();
 

@@ -92,7 +92,7 @@ bitflags! {
 }
 
 impl TryFrom<RawFallocMode> for FallocMode {
-    type Error = crate::error::Error;
+    type Error = Error;
     fn try_from(raw_mode: RawFallocMode) -> Result<Self> {
         // Check for invalid combinations of flags
         if raw_mode.contains(RawFallocMode::FALLOC_FL_PUNCH_HOLE)

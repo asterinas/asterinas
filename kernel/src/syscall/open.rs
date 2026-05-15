@@ -65,13 +65,13 @@ pub fn sys_openat(
 }
 
 pub fn sys_open(path_addr: Vaddr, flags: u32, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
-    self::sys_openat(AT_FDCWD, path_addr, flags, mode, ctx)
+    sys_openat(AT_FDCWD, path_addr, flags, mode, ctx)
 }
 
 pub fn sys_creat(path_addr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
     let flags =
         AccessMode::O_WRONLY as u32 | CreationFlags::O_CREAT.bits() | CreationFlags::O_TRUNC.bits();
-    self::sys_openat(AT_FDCWD, path_addr, flags, mode, ctx)
+    sys_openat(AT_FDCWD, path_addr, flags, mode, ctx)
 }
 
 fn do_open(

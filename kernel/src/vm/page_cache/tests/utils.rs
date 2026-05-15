@@ -281,7 +281,7 @@ fn wait_until_with_failure_message(mut condition: impl FnMut() -> bool, failure_
     panic!("{failure_message}");
 }
 
-impl fmt::Debug for MockPageCacheBackend {
+impl Debug for MockPageCacheBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MockPageCacheBackend")
             .field("num_pages", &self.num_pages)

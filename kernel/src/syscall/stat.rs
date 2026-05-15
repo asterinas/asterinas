@@ -29,11 +29,11 @@ pub fn sys_fstat(raw_fd: RawFileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Res
 }
 
 pub fn sys_stat(filename_ptr: Vaddr, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    self::sys_fstatat(AT_FDCWD, filename_ptr, stat_buf_ptr, 0, ctx)
+    sys_fstatat(AT_FDCWD, filename_ptr, stat_buf_ptr, 0, ctx)
 }
 
 pub fn sys_lstat(filename_ptr: Vaddr, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    self::sys_fstatat(
+    sys_fstatat(
         AT_FDCWD,
         filename_ptr,
         stat_buf_ptr,
@@ -59,7 +59,7 @@ pub fn sys_fstatat(
     );
 
     if flags.contains(StatFlags::AT_EMPTY_PATH) && filename.is_empty() {
-        return self::sys_fstat(dirfd, stat_buf_ptr, ctx);
+        return sys_fstat(dirfd, stat_buf_ptr, ctx);
     }
 
     let path = {

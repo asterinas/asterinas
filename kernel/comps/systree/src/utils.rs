@@ -331,7 +331,7 @@ pub trait _InheritSysLeafNode<T: SysNode> {
         false
     }
 
-    fn init_parent(&self, parent: alloc::sync::Weak<dyn SysBranchNode>) {
+    fn init_parent(&self, parent: Weak<dyn SysBranchNode>) {
         self.field().init_parent(parent);
     }
 
@@ -476,7 +476,7 @@ pub trait _InheritSysBranchNode<T: SysBranchNode> {
         false
     }
 
-    fn init_parent(&self, parent: alloc::sync::Weak<dyn SysBranchNode>) {
+    fn init_parent(&self, parent: Weak<dyn SysBranchNode>) {
         self.field().init_parent(parent);
     }
 
@@ -658,7 +658,7 @@ pub trait _InheritSysSymlinkNode<T: SysSymlink> {
         false
     }
 
-    fn init_parent(&self, parent: alloc::sync::Weak<dyn SysBranchNode>) {
+    fn init_parent(&self, parent: Weak<dyn SysBranchNode>) {
         self.field().init_parent(parent);
     }
 }
@@ -770,11 +770,11 @@ inherit_sys_leaf_node!(EmptyNode, fields, {
         crate::SysPerms::DEFAULT_RO_PERMS
     }
 
-    fn read_attr(&self, _name: &str, _writer: &mut ostd::mm::VmWriter) -> Result<usize> {
+    fn read_attr(&self, _name: &str, _writer: &mut VmWriter) -> Result<usize> {
         Err(Error::NotFound)
     }
 
-    fn write_attr(&self, _name: &str, _reader: &mut ostd::mm::VmReader) -> Result<usize> {
+    fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> Result<usize> {
         Err(Error::NotFound)
     }
 });

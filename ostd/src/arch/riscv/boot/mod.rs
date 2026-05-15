@@ -125,7 +125,7 @@ unsafe extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
     unsafe { BOOTSTRAP_HART_ID = hart_id as u32 };
 
     let device_tree_ptr = paddr_to_vaddr(device_tree_paddr) as *const u8;
-    let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_ptr).unwrap() };
+    let fdt = unsafe { Fdt::from_ptr(device_tree_ptr).unwrap() };
     DEVICE_TREE.call_once(|| fdt);
 
     use crate::boot::{EARLY_INFO, EarlyBootInfo, start_kernel};

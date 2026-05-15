@@ -159,7 +159,7 @@ fn init() -> Result<(), ComponentInitError> {
 }
 
 #[init_component(process)]
-fn init_in_first_process() -> Result<(), component::ComponentInitError> {
+fn init_in_first_process() -> Result<(), ComponentInitError> {
     let devices = collect_all();
     for device in devices {
         let Some(partition_info) = partition::parse(&device) else {

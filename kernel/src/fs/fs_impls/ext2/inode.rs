@@ -2138,7 +2138,7 @@ pub(super) struct InodeDesc {
 }
 
 impl TryFrom<RawInode> for InodeDesc {
-    type Error = crate::error::Error;
+    type Error = Error;
 
     fn try_from(inode: RawInode) -> Result<Self> {
         let inode_type = InodeType::from_raw_mode(inode.mode)?;

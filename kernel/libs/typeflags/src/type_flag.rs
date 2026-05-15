@@ -27,7 +27,7 @@ pub struct TypeFlagItem {
 }
 
 impl Parse for TypeFlagDef {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         let attributes = Attribute::parse_outer(input)?;
         let vis: Visibility = input.parse()?;
         let _: Token![trait] = input.parse()?;

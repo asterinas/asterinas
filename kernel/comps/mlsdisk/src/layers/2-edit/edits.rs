@@ -86,7 +86,7 @@ impl<'de, E: Edit<S>, S> Deserialize<'de> for EditGroup<E, S> {
         impl<'a, E: Edit<S>, S> serde::de::Visitor<'a> for EditsVisitor<E, S> {
             type Value = EditGroup<E, S>;
 
-            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("an edit group")
             }
 

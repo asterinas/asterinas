@@ -66,5 +66,5 @@ pub fn sys_mknodat(
 }
 
 pub fn sys_mknod(path_addr: Vaddr, mode: u16, dev: usize, ctx: &Context) -> Result<SyscallReturn> {
-    self::sys_mknodat(AT_FDCWD, path_addr, mode, dev, ctx)
+    sys_mknodat(AT_FDCWD, path_addr, mode, dev, ctx)
 }

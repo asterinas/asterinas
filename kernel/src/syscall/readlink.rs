@@ -59,5 +59,5 @@ pub fn sys_readlink(
     usr_buf_len: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    self::sys_readlinkat(AT_FDCWD, path_addr, usr_buf_addr, usr_buf_len, ctx)
+    sys_readlinkat(AT_FDCWD, path_addr, usr_buf_addr, usr_buf_len, ctx)
 }

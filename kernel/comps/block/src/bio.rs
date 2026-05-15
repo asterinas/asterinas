@@ -189,9 +189,9 @@ pub enum BioEnqueueError {
     TooBig,
 }
 
-impl From<BioEnqueueError> for ostd::Error {
+impl From<BioEnqueueError> for Error {
     fn from(_error: BioEnqueueError) -> Self {
-        ostd::Error::NotEnoughResources
+        Error::NotEnoughResources
     }
 }
 

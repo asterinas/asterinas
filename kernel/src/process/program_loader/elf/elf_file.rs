@@ -32,7 +32,7 @@ impl ElfHeaders {
 
     pub fn parse(input: &[u8]) -> Result<Self> {
         // Parse the ELF header.
-        let header = xmas_elf::header::parse_header(input)
+        let header = header::parse_header(input)
             .map_err(|_| Error::with_message(Errno::ENOEXEC, "the ELF header is invalid"))?;
         let elf_header = ElfHeader::parse(header)?;
         check_elf_header(&elf_header)?;
@@ -64,13 +64,13 @@ impl ElfHeaders {
         let mut max_load_align = PAGE_SIZE;
         let mut interp_phdr = None;
         for index in 0..ph_count {
-            let program_header = xmas_elf::program::parse_program_header(input, header, index)
-                .map_err(|_| {
+            let program_header =
+                program::parse_program_header(input, header, index).map_err(|_| {
                     Error::with_message(Errno::ENOEXEC, "the ELF program header is invalid")
                 })?;
             let ph64 = match program_header {
-                xmas_elf::program::ProgramHeader::Ph64(ph64) => *ph64,
-                xmas_elf::program::ProgramHeader::Ph32(_) => {
+                program::ProgramHeader::Ph64(ph64) => *ph64,
+                program::ProgramHeader::Ph32(_) => {
                     return_errno_with_message!(
                         Errno::ENOEXEC,
                         "the ELF program header is not 64-bit"
@@ -351,7 +351,7 @@ impl LoadablePhdr {
     }
 }
 
-fn parse_segment_perm(flags: xmas_elf::program::Flags) -> VmPerms {
+fn parse_segment_perm(flags: program::Flags) -> VmPerms {
     let mut vm_perm = VmPerms::empty();
     if flags.is_read() {
         vm_perm |= VmPerms::READ;

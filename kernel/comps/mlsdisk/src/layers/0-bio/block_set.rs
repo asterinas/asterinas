@@ -23,7 +23,7 @@ pub trait BlockSet: Sync + Send {
         let start_pos = offset / BLOCK_SIZE;
         let end_pos = (offset + buf.len()).div_ceil(BLOCK_SIZE);
         if end_pos > self.nblocks() {
-            return_errno_with_msg!(Errno::InvalidArgs, "read_slice position is out of range");
+            return_errno_with_msg!(InvalidArgs, "read_slice position is out of range");
         }
 
         let nblocks = end_pos - start_pos;
@@ -43,7 +43,7 @@ pub trait BlockSet: Sync + Send {
         let start_pos = offset / BLOCK_SIZE;
         let end_pos = (offset + buf.len()).div_ceil(BLOCK_SIZE);
         if end_pos > self.nblocks() {
-            return_errno_with_msg!(Errno::InvalidArgs, "write_slice position is out of range");
+            return_errno_with_msg!(InvalidArgs, "write_slice position is out of range");
         }
         let nblocks = end_pos - start_pos;
         let mut blocks = Buf::alloc(nblocks)?;
@@ -105,14 +105,11 @@ macro_rules! impl_blockset_for {
 }
 
 impl_blockset_for!(&T, "(**self)", |_this, _range| {
-    return_errno_with_msg!(Errno::NotFound, "cannot return `Self` by `subset` of `&T`");
+    return_errno_with_msg!(NotFound, "cannot return `Self` by `subset` of `&T`");
 });
 
 impl_blockset_for!(&mut T, "(**self)", |_this, _range| {
-    return_errno_with_msg!(
-        Errno::NotFound,
-        "cannot return `Self` by `subset` of `&mut T`"
-    );
+    return_errno_with_msg!(NotFound, "cannot return `Self` by `subset` of `&mut T`");
 });
 
 impl_blockset_for!(Box<T>, "(**self)", |this: &T, range| {
@@ -149,7 +146,7 @@ impl MemDisk {
 impl BlockSet for MemDisk {
     fn read(&self, pos: BlockId, mut buf: BufMut) -> Result<()> {
         if pos + buf.nblocks() > self.region.end {
-            return_errno_with_msg!(Errno::InvalidArgs, "read position is out of range");
+            return_errno_with_msg!(InvalidArgs, "read position is out of range");
         }
         let offset = (self.region.start + pos) * BLOCK_SIZE;
         let buf_len = buf.as_slice().len();
@@ -162,7 +159,7 @@ impl BlockSet for MemDisk {
 
     fn write(&self, pos: BlockId, buf: BufRef) -> Result<()> {
         if pos + buf.nblocks() > self.region.end {
-            return_errno_with_msg!(Errno::InvalidArgs, "write position is out of range");
+            return_errno_with_msg!(InvalidArgs, "write position is out of range");
         }
         let offset = (self.region.start + pos) * BLOCK_SIZE;
         let buf_len = buf.as_slice().len();
@@ -174,7 +171,7 @@ impl BlockSet for MemDisk {
 
     fn subset(&self, range: Range<BlockId>) -> Result<Self> {
         if self.region.start + range.end > self.region.end {
-            return_errno_with_msg!(Errno::InvalidArgs, "subset is out of range");
+            return_errno_with_msg!(InvalidArgs, "subset is out of range");
         }
 
         Ok(MemDisk {
