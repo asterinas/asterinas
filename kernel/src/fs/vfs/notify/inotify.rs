@@ -362,6 +362,7 @@ impl FileLike for InotifyFile {
     }
 
     fn access_mode(&self) -> AccessMode {
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/notify/inotify/inotify_user.c#L711>.
         AccessMode::O_RDONLY
     }
 

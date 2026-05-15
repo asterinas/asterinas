@@ -22,7 +22,7 @@ use super::SyscallReturn;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::AnonInodeFs,
         vfs::path::Path,
     },
@@ -229,6 +229,11 @@ impl FileLike for EventFile {
         // TODO: deal with other flags
 
         Ok(())
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L401>.
+        AccessMode::O_RDWR
     }
 
     fn path(&self) -> &Path {

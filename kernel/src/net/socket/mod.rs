@@ -7,7 +7,7 @@ use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
 
 use crate::{
     fs::{
-        file::{CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::SockFs,
         vfs::path::Path,
     },
@@ -167,6 +167,11 @@ impl<T: Socket + 'static> FileLike for T {
             self.set_nonblocking(false);
         }
         Ok(())
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/net/socket.c#L483>.
+        AccessMode::O_RDWR
     }
 
     fn as_socket(&self) -> Option<&dyn Socket> {
