@@ -12,7 +12,7 @@ use super::clockid_t;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::AnonInodeFs,
         vfs::path::Path,
     },
@@ -252,6 +252,11 @@ impl FileLike for TimerfdFile {
             .unwrap();
 
         Ok(())
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/timerfd.c#L436>.
+        AccessMode::O_RDWR
     }
 
     fn path(&self) -> &Path {

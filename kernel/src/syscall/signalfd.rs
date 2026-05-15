@@ -19,7 +19,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{
-            CreationFlags, FileLike, StatusFlags,
+            AccessMode, CreationFlags, FileLike, StatusFlags,
             file_table::{FdFlags, RawFileDesc, get_file_fast},
         },
         pseudofs::AnonInodeFs,
@@ -267,6 +267,11 @@ impl FileLike for SignalFile {
     fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
         self.set_non_blocking(new_flags.contains(StatusFlags::O_NONBLOCK));
         Ok(())
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/signalfd.c#L276>.
+        AccessMode::O_RDWR
     }
 
     fn path(&self) -> &Path {
