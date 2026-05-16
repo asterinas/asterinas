@@ -7,6 +7,7 @@ use core::ops::Range;
 use self::allocator::kvirt_area_allocator;
 use super::{KERNEL_PAGE_TABLE, KernelPtConfig, MappedItem};
 use crate::{
+    arch::mm::tlb_flush_all_excluding_global,
     irq,
     mm::{
         HasSize, PAGE_SIZE, Paddr, Split, Vaddr,
@@ -209,14 +210,17 @@ impl Drop for KVirtArea {
         let mut cursor = page_table.cursor_mut(&irq_guard, &range).unwrap();
         loop {
             // SAFETY: The range is under `KVirtArea` so it is safe to unmap.
-            // FIXME: Need to ensure that the unmapped item outlives the TLB entries.
             let Some(frag) = (unsafe { cursor.take_next(self.end() - cursor.virt_addr()) }) else {
                 break;
             };
             drop(frag);
         }
 
-        // 2. Free the virtual block.
+        // 2. Flush TLB to ensure the unmapped entries are not cached.
+        // Use full flush to ensure stale entries are cleared.
+        tlb_flush_all_excluding_global();
+
+        // 3. Free the virtual block.
         kvirt_area_allocator(&irq_guard).free(range);
     }
 }
