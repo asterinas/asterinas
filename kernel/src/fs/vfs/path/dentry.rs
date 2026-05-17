@@ -22,6 +22,74 @@ use crate::{
 };
 
 /// A `Dentry` represents a cached filesystem node in the VFS tree.
+///
+/// # Dentry variants
+///
+/// Conceptually, there are four variants of dentries:
+///
+/// - **Root** — the root of a mounted filesystem;
+///   its name derives from the mountpoint.
+///   It has no in-tree parent.
+/// - **Named** — an ordinary entry under a parent directory
+///   with a real, mutable name.
+/// - **Anonymous** — a real filesystem inode that has no name yet:
+///   it keeps a real parent directory,
+///   but is deliberately kept out of the parent's children cache,
+///   so path lookup cannot reach it.
+///   This variant is reserved for temporary files created via `O_TMPFILE`;
+///   such a file can be promoted to a `Named` dentry
+///   by a later `linkat(2)` (future work).
+/// - **Pseudo** — an object with no position in any real filesystem tree
+///   (pipes, sockets, anon-inode fds, namespace/pidfd files, memfd).
+///   It has no parent,
+///   and its name is a synthesized display string
+///   used only for `/proc/<pid>/fd/<n>`.
+///
+/// Only `Root` and `Named` dentries are reachable by path lookup;
+/// `Anonymous` and `Pseudo` are not.
+///
+/// To understand their connections and differences,
+/// ask the following three questions (Q1 to Q3) in the diagram below:
+///
+/// ```text
+/// +-------------------------------------------+
+/// | Q1. In a *real* filesystem tree?          |
+/// +-------------------------------------------+
+///   |
+///   |-- no -->  +-----------------------------+
+///   |           |           Pseudo            |
+///   |           |  pipe, socket, anon_inode,  |
+///   |           |  memfd, ns/pidfd            |
+///   |           +-----------------------------+
+///   | yes
+///   v
+/// +-------------------------------------------+
+/// | Q2. Has a *parent*?                       |
+/// +-------------------------------------------+
+///   |
+///   |-- no -->  +-----------------------------+
+///   |           |            Root             |
+///   |           |  root of a mounted fs       |
+///   |           +-----------------------------+
+///   | yes
+///   v
+/// +-------------------------------------------+
+/// | Q3. Has a *name*?                         |
+/// +-------------------------------------------+
+///   |
+///   |-- no -->  +-----------------------------+
+///   |           |          Anonymous          |
+///   |           |  O_TMPFILE: a real inode    |
+///   |           |  under a real directory,    |
+///   |           |  not yet / never named      |
+///   |           +-----------------------------+
+///   | yes
+///   v
+/// +-----------------------------+
+/// |            Named            |
+/// |  ordinary file or directory |
+/// +-----------------------------+
+/// ```
 pub(in crate::fs) struct Dentry {
     inode: Arc<dyn Inode>,
     type_: InodeType,
@@ -40,7 +108,17 @@ struct DentryDirState {
 
 /// The name and parent of a `Dentry`.
 enum NameAndParent {
+    /// A root or named `Dentry`:
+    /// `None` is the root (name `"/"`, no parent);
+    /// `Some` is a named child whose name and parent can change
+    /// (e.g. on `rename`).
     Real(Option<RwLock<(String, Arc<Dentry>)>>),
+    /// An anonymous child:
+    /// a real parent directory,
+    /// but a fixed `"/"` name and never present in the parent's children cache.
+    Anonymous(Arc<Dentry>),
+    /// A pseudo `Dentry`;
+    /// the `fn` synthesizes its display name.
     Pseudo(fn(&dyn Inode) -> String),
 }
 
@@ -55,15 +133,16 @@ impl NameAndParent {
                 Some(name_and_parent) => name_and_parent.read().0.clone(),
                 None => String::from("/"),
             },
+            NameAndParent::Anonymous(_) => String::from("/"),
             NameAndParent::Pseudo(name_fn) => (name_fn)(inode),
         }
     }
 
     fn parent(&self) -> Option<Arc<Dentry>> {
-        if let NameAndParent::Real(Some(name_and_parent)) = self {
-            Some(name_and_parent.read().1.clone())
-        } else {
-            None
+        match self {
+            NameAndParent::Real(Some(name_and_parent)) => Some(name_and_parent.read().1.clone()),
+            NameAndParent::Anonymous(parent) => Some(parent.clone()),
+            NameAndParent::Real(None) | NameAndParent::Pseudo(_) => None,
         }
     }
 
@@ -71,7 +150,10 @@ impl NameAndParent {
     ///
     /// # Errors
     ///
-    /// Returns `SetNameAndParentError` if the `Dentry` is a root or pseudo `Dentry`.
+    /// Returns `SetNameAndParentError`
+    /// if the `Dentry` is a root, anonymous, or pseudo `Dentry`.
+    /// (Promoting an anonymous `Dentry` to a named one,
+    /// e.g. for `linkat(2)` on an `O_TMPFILE` file, is future work.)
     fn set(&self, name: &str, parent: Arc<Dentry>) -> Result<(), SetNameAndParentError> {
         if let NameAndParent::Real(Some(name_and_parent)) = self {
             let mut name_and_parent = name_and_parent.write();
@@ -92,6 +174,14 @@ impl Dentry {
         Self::new(inode, DentryOptions::Root)
     }
 
+    /// Creates a new anonymous `Dentry` with the given inode and parent.
+    ///
+    /// See the [`Dentry`] type-level documentation for what "anonymous" means.
+    #[expect(dead_code, reason = "constructed by the upcoming O_TMPFILE support")]
+    pub(super) fn new_anonymous(inode: Arc<dyn Inode>, parent: Arc<Dentry>) -> Arc<Self> {
+        Self::new(inode, DentryOptions::Anonymous { parent })
+    }
+
     /// Creates a new pseudo `Dentry` with the given inode and name function.
     pub(super) fn new_pseudo(
         inode: Arc<dyn Inode>,
@@ -106,6 +196,7 @@ impl Dentry {
             DentryOptions::Named(name_and_parent) => {
                 NameAndParent::Real(Some(RwLock::new(name_and_parent)))
             }
+            DentryOptions::Anonymous { parent } => NameAndParent::Anonymous(parent),
             DentryOptions::Pseudo(name_fn) => NameAndParent::Pseudo(name_fn),
         };
 
@@ -648,9 +739,15 @@ impl Debug for Dentry {
 
 /// `DentryKey` is the unique identifier for the corresponding `Dentry`.
 ///
-/// - For non-root dentries, it uses self's name and parent's pointer to form the key,
+/// - For named dentries, it uses self's name and parent's pointer to form the key.
 /// - For the root dentry, it uses "/" and self's pointer to form the key.
 /// - For pseudo dentries, it uses self's name and self's pointer to form the key.
+///
+/// Anonymous dentries have no meaningful `DentryKey`:
+/// they all share a fixed `"/"` name under a real parent,
+/// so their keys would not be unique.
+/// They are never cached by a parent or used as a mountpoint,
+/// so [`Dentry::key`] must not be called on them.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct DentryKey {
     name: String,
@@ -660,6 +757,15 @@ pub(super) struct DentryKey {
 impl DentryKey {
     /// Forms a `DentryKey` from the corresponding `Dentry`.
     fn new(dentry: &Dentry) -> Self {
+        // Anonymous dentries must not be keyed:
+        // their keys would not be unique,
+        // and they are never cached by a parent or used as a mountpoint.
+        // See the [`DentryKey`] documentation for details.
+        debug_assert!(!matches!(
+            dentry.name_and_parent,
+            NameAndParent::Anonymous(_)
+        ));
+
         let name = dentry.name();
         let parent = dentry.parent().unwrap_or_else(|| dentry.this());
 
@@ -676,9 +782,19 @@ bitflags! {
     }
 }
 
+/// The shape of a [`Dentry`] to create.
+/// See [`Dentry`] for the taxonomy.
 enum DentryOptions {
+    /// Root of a mounted filesystem.
     Root,
+    /// A named entry under a parent directory.
     Named((String, Arc<Dentry>)),
+    /// A real inode parented to a directory
+    /// but kept out of the parent's children cache.
+    /// Reserved for `O_TMPFILE`.
+    Anonymous { parent: Arc<Dentry> },
+    /// An object with no place in any real filesystem tree;
+    /// the `fn` synthesizes its display name for `/proc/<pid>/fd/<n>`.
     Pseudo(fn(&dyn Inode) -> String),
 }
 
