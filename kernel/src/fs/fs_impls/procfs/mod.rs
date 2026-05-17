@@ -148,8 +148,7 @@ impl RootDirOps {
         ProcDir::new_root(Self, fs, PROC_ROOT_INO, sb, mkmod!(a+rx))
     }
 
-    #[expect(clippy::type_complexity)]
-    const STATIC_ENTRIES: &'static [StaticDirEntry<fn(Weak<dyn Inode>) -> Arc<dyn Inode>>] = &[
+    const STATIC_ENTRIES: &'static [StaticEntry] = &[
         ("cmdline", InodeType::File, CmdLineFileOps::new_inode),
         ("cpuinfo", InodeType::File, CpuInfoFileOps::new_inode),
         (
@@ -273,3 +272,6 @@ impl DirOps for RootDirOps {
         pid_entry.is_none_or(|pid_entry| pid_entry.type_().is_none())
     }
 }
+
+type StaticEntry = StaticDirEntry<fn(Weak<dyn Inode>) -> Arc<dyn Inode>>;
+type StaticEntryWithOps<T> = StaticDirEntry<fn(&T, Weak<dyn Inode>) -> Arc<dyn Inode>>;

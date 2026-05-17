@@ -6,54 +6,49 @@
 //! built-in policy modules. Each module can implement shared hook traits and
 //! inspect common hook contexts before allowing or rejecting an operation.
 //!
-//! This module defines the common LSM traits, alien access hook contexts, and
-//! dispatch helpers shared by built-in modules such as `yama`.
+//! This module defines the common LSM traits and hook contexts shared by
+//! built-in modules such as `yama`. Module selection follows the `lsm=` and
+//! legacy `security=` kernel command-line parameters.
 
-mod checks;
+pub mod hooks;
 mod modules;
 
-pub use self::{
-    checks::alien_access::{AlienAccessContext, LsmAlienAccessCheck, alien_access_check},
-    modules::yama::{YamaScope, get_yama_scope, set_yama_scope},
-};
-use crate::prelude::*;
-
-/// The kind of an LSM module.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LsmKind {
-    Minor,
-    #[expect(dead_code)]
-    Major,
+pub mod yama {
+    pub use super::modules::yama::{YamaScope, get_scope, set_scope};
 }
 
-impl LsmKind {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Minor => "minor",
-            Self::Major => "major",
-        }
+pub use self::hooks::AlienAccessContext;
+use self::hooks::LsmAlienAccessHook;
+use crate::prelude::*;
+
+bitflags! {
+    /// LSM module flags.
+    pub struct LsmFlags: u32 {
+        /// Marks a module as selectable through the legacy `security=` parameter.
+        const LEGACY_MAJOR = 1 << 0;
+        /// Marks a module as mutually exclusive with other exclusive modules.
+        const EXCLUSIVE = 1 << 1;
     }
 }
 
 /// Defines the common interface for built-in LSM modules.
-pub trait LsmModule: LsmAlienAccessCheck + Sync {
+trait LsmModule: LsmAlienAccessHook + Sync {
     /// Returns the module name.
     fn name(&self) -> &'static str;
 
-    /// Returns the module kind.
-    fn kind(&self) -> LsmKind;
+    /// Returns the module flags.
+    fn flags(&self) -> LsmFlags;
+}
 
-    /// Initializes the module during boot.
-    fn init(&self);
+/// Returns whether the Yama LSM is enabled.
+pub fn is_yama_enabled() -> bool {
+    modules::active_modules()
+        .iter()
+        .any(|module| module.name() == "yama")
 }
 
 pub(super) fn init() {
     for module in modules::active_modules() {
-        info!(
-            "[kernel] LSM module enabled: {} ({})",
-            module.name(),
-            module.kind().as_str()
-        );
-        module.init();
+        info!("[kernel] LSM module enabled: {}", module.name());
     }
 }

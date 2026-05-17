@@ -5,18 +5,20 @@ use aster_util::printer::VmPrinter;
 use crate::{
     fs::{
         file::{InodeType, mkmod},
-        procfs::template::{
-            DirOps, FileOps, ProcDir, ProcFile, ReaddirEntry, StaticDirEntry,
-            listed_entries_from_table, lookup_child_from_table, read_i32_from,
-            visit_listed_entries,
+        procfs::{
+            StaticEntry,
+            template::{
+                DirOps, FileOps, ProcDir, ProcFile, ReaddirEntry, listed_entries_from_table,
+                lookup_child_from_table, read_i32_from, visit_listed_entries,
+            },
         },
         vfs::inode::Inode,
     },
     prelude::*,
-    security::lsm::{YamaScope, get_yama_scope, set_yama_scope},
+    security::lsm::yama,
 };
 
-/// Directory operations for `/proc/sys/kernel/yama`.
+/// Represents the inode at `/proc/sys/kernel/yama`.
 pub struct YamaDirOps;
 
 impl YamaDirOps {
@@ -27,8 +29,7 @@ impl YamaDirOps {
         ProcDir::new(Self, parent, mkmod!(a+rx))
     }
 
-    #[expect(clippy::type_complexity)]
-    const STATIC_ENTRIES: &'static [StaticDirEntry<fn(Weak<dyn Inode>) -> Arc<dyn Inode>>] = &[(
+    const STATIC_ENTRIES: &'static [StaticEntry] = &[(
         "ptrace_scope",
         InodeType::File,
         PtraceScopeFileOps::new_inode,
@@ -58,7 +59,7 @@ impl DirOps for YamaDirOps {
     }
 }
 
-/// File operations for `/proc/sys/kernel/yama/ptrace_scope`.
+/// Represents the inode at `/proc/sys/kernel/yama/ptrace_scope`.
 struct PtraceScopeFileOps;
 
 impl PtraceScopeFileOps {
@@ -72,16 +73,16 @@ impl FileOps for PtraceScopeFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
-        writeln!(printer, "{}", get_yama_scope() as i32)?;
+        writeln!(printer, "{}", yama::get_scope() as i32)?;
 
         Ok(printer.bytes_written())
     }
 
     fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {
         let (val, read_bytes) = read_i32_from(reader)?;
-        let new_scope = YamaScope::try_from(val)?;
+        let new_scope = yama::YamaScope::try_from(val)?;
 
-        set_yama_scope(new_scope)?;
+        yama::set_scope(new_scope)?;
 
         Ok(read_bytes)
     }
