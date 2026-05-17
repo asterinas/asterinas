@@ -8,6 +8,8 @@ set -e
 ./capability/capset
 ./capability/execve
 
+./lsm/yama
+
 ./namespace/cgroup_ns
 ./namespace/ipc_ns_sem
 ./namespace/mnt_ns
