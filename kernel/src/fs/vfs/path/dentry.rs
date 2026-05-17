@@ -90,6 +90,44 @@ use crate::{
 /// |  ordinary file or directory |
 /// +-----------------------------+
 /// ```
+///
+/// # Dentries vs inodes
+///
+/// An [`Inode`] *is* the filesystem object:
+/// it owns the file's data and metadata
+/// (type, size, mode, owner, timestamps, link count)
+/// and is implemented per filesystem (e.g. ramfs, ext2).
+/// An inode has no inherent name and no location in the directory tree.
+///
+/// A `Dentry` is the VFS-level cache node that *names* an inode
+/// and places it in the path namespace.
+/// Every `Dentry` references exactly one inode (held as `Arc<dyn Inode>`),
+/// but the reverse is not one-to-one:
+///
+/// - **One inode, many dentries.**
+///   Hard links are several `Named` dentries referencing the same inode;
+///   the inode's link count tracks how many.
+/// - **One inode, no reachable dentry.**
+///   A file unlinked while still open,
+///   or an `Anonymous` (`O_TMPFILE`) inode,
+///   lives on with no `Named` dentry, so path lookup cannot reach it.
+/// - **Directories are one-to-one.**
+///   A directory inode cannot be hard-linked,
+///   so it has exactly one `Named` (or `Root`) dentry;
+///   only the `Dentry` layer holds the parent/child structure
+///   and the children cache that path lookup walks.
+///
+/// Rule of thumb:
+/// operations on *content and metadata*
+/// (`read`, `write`, `stat`, `chmod`)
+/// act on the [`Inode`];
+/// operations on *names and tree shape*
+/// (lookup, `link`, `unlink`, `rename`, mounting)
+/// act on the `Dentry`.
+/// A [`Path`](super::Path) goes one step further
+/// and pairs a `Dentry` with the `Mount` it was reached through,
+/// since mounts let a single `Dentry`
+/// appear at several locations in the namespace.
 pub(in crate::fs) struct Dentry {
     inode: Arc<dyn Inode>,
     type_: InodeType,
