@@ -2,7 +2,9 @@
 
 use core::sync::atomic::{AtomicI32, Ordering};
 
-use super::super::{AlienAccessContext, LsmAlienAccessCheck, LsmKind, LsmModule};
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
+
+use super::super::{AlienAccessContext, LsmFlags, LsmModule, hooks::LsmAlienAccessHook};
 use crate::{
     prelude::*,
     process::{
@@ -17,13 +19,13 @@ pub static YAMA_LSM: YamaLsm = YamaLsm;
 /// The Yama minor LSM.
 pub struct YamaLsm;
 
-impl LsmAlienAccessCheck for YamaLsm {
-    fn alien_access_check(&self, context: &AlienAccessContext) -> Result<()> {
+impl LsmAlienAccessHook for YamaLsm {
+    fn on_alien_access(&self, context: &AlienAccessContext) -> Result<()> {
         if context.mode().kind() != AlienAccessKind::Attach {
             return Ok(());
         }
 
-        let is_denied = match get_yama_scope() {
+        let is_denied = match get_scope() {
             YamaScope::Disabled => false,
             YamaScope::Relational => {
                 !context.accessor_has_cap_sys_ptrace()
@@ -49,20 +51,18 @@ impl LsmModule for YamaLsm {
         "yama"
     }
 
-    fn kind(&self) -> LsmKind {
-        LsmKind::Minor
+    fn flags(&self) -> LsmFlags {
+        LsmFlags::empty()
     }
-
-    fn init(&self) {}
 }
 
 /// Returns the current Yama scope for alien access.
-pub fn get_yama_scope() -> YamaScope {
-    YAMA_SCOPE.load(Ordering::Relaxed).try_into().unwrap()
+pub fn get_scope() -> YamaScope {
+    YAMA_SCOPE.load(Ordering::Relaxed)
 }
 
 /// Sets the Yama scope for alien access.
-pub fn set_yama_scope(new_scope: YamaScope) -> Result<()> {
+pub fn set_scope(new_scope: YamaScope) -> Result<()> {
     UserNamespace::get_init_singleton().check_cap(
         CapSet::SYS_PTRACE,
         current_thread!().as_posix_thread().unwrap(),
@@ -71,8 +71,8 @@ pub fn set_yama_scope(new_scope: YamaScope) -> Result<()> {
     YAMA_SCOPE
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current_scope| {
             let is_downgrading_from_no_attach =
-                current_scope == YamaScope::NoAttach as i32 && new_scope != YamaScope::NoAttach;
-            (!is_downgrading_from_no_attach).then_some(new_scope as i32)
+                current_scope == YamaScope::NoAttach && new_scope != YamaScope::NoAttach;
+            (!is_downgrading_from_no_attach).then_some(new_scope)
         })
         .map_err(|_| {
             Error::with_message(
@@ -83,8 +83,6 @@ pub fn set_yama_scope(new_scope: YamaScope) -> Result<()> {
 
     Ok(())
 }
-
-static YAMA_SCOPE: AtomicI32 = AtomicI32::new(YamaScope::Relational as i32);
 
 /// The Yama scope levels.
 #[repr(i32)]
@@ -99,6 +97,18 @@ pub enum YamaScope {
     /// Disallow any alien attach.
     NoAttach = 3,
 }
+
+impl From<YamaScope> for i32 {
+    fn from(scope: YamaScope) -> Self {
+        scope as i32
+    }
+}
+
+define_atomic_version_of_integer_like_type!(YamaScope, try_from = true, {
+    struct AtomicYamaScope(AtomicI32);
+});
+
+static YAMA_SCOPE: AtomicYamaScope = AtomicYamaScope(AtomicI32::new(YamaScope::Relational as i32));
 
 fn is_ancestor_of(ancestor: &Weak<Process>, descendant: Arc<Process>) -> bool {
     let mut current = descendant;

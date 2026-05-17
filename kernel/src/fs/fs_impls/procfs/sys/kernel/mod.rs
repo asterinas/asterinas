@@ -4,18 +4,19 @@ use crate::{
     fs::{
         file::{InodeType, mkmod},
         procfs::{
-            ProcDir,
+            ProcDir, StaticEntry,
             sys::kernel::{
                 cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps, yama::YamaDirOps,
             },
             template::{
-                DirOps, ReaddirEntry, StaticDirEntry, listed_entries_from_table,
+                DirOps, ListedEntry, ReaddirEntry, listed_entries_from_table,
                 lookup_child_from_table, visit_listed_entries,
             },
         },
         vfs::inode::Inode,
     },
     prelude::*,
+    security::lsm::is_yama_enabled,
 };
 
 mod cap_last_cap;
@@ -33,15 +34,13 @@ impl KernelDirOps {
         ProcDir::new(Self, parent, mkmod!(a+rx))
     }
 
-    #[expect(clippy::type_complexity)]
-    const STATIC_ENTRIES: &'static [StaticDirEntry<fn(Weak<dyn Inode>) -> Arc<dyn Inode>>] = &[
+    const STATIC_ENTRIES: &'static [StaticEntry] = &[
         (
             "cap_last_cap",
             InodeType::File,
             CapLastCapFileOps::new_inode,
         ),
         ("pid_max", InodeType::File, PidMaxFileOps::new_inode),
-        ("yama", InodeType::Dir, YamaDirOps::new_inode),
     ];
 }
 
@@ -53,6 +52,10 @@ impl DirOps for KernelDirOps {
             return Ok(child);
         }
 
+        if name == "yama" && is_yama_enabled() {
+            return Ok(YamaDirOps::new_inode(this_dir.this_weak().clone()));
+        }
+
         return_errno_with_message!(Errno::ENOENT, "the file does not exist");
     }
 
@@ -60,9 +63,11 @@ impl DirOps for KernelDirOps {
     where
         F: FnMut(ReaddirEntry<'a>) -> Result<()>,
     {
+        let yama_entry = is_yama_enabled().then(|| ListedEntry::new("yama", InodeType::Dir));
+
         visit_listed_entries(
             offset,
-            listed_entries_from_table(Self::STATIC_ENTRIES),
+            listed_entries_from_table(Self::STATIC_ENTRIES).chain(yama_entry),
             visit_fn,
         )
     }

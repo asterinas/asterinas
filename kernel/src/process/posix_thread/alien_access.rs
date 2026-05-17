@@ -7,7 +7,7 @@
 use crate::{
     prelude::*,
     process::{credentials::capabilities::CapSet, posix_thread::PosixThread},
-    security::lsm::{self, AlienAccessContext},
+    security::lsm::{AlienAccessContext, hooks as lsm_hooks},
 };
 
 impl PosixThread {
@@ -53,7 +53,7 @@ impl PosixThread {
             );
         }
 
-        lsm::alien_access_check(&AlienAccessContext::new(
+        lsm_hooks::on_alien_access(&AlienAccessContext::new(
             accessor,
             self,
             mode,

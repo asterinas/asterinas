@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use self::kernel::KernelDirOps;
-use super::template::{
-    ReaddirEntry, StaticDirEntry, listed_entries_from_table, visit_listed_entries,
+use super::{
+    StaticEntry,
+    template::{ReaddirEntry, listed_entries_from_table, visit_listed_entries},
 };
 use crate::{
     fs::{
@@ -26,8 +27,7 @@ impl SysDirOps {
         ProcDir::new(Self, parent, mkmod!(a+rx))
     }
 
-    #[expect(clippy::type_complexity)]
-    const STATIC_ENTRIES: &'static [StaticDirEntry<fn(Weak<dyn Inode>) -> Arc<dyn Inode>>] =
+    const STATIC_ENTRIES: &'static [StaticEntry] =
         &[("kernel", InodeType::Dir, KernelDirOps::new_inode)];
 }
 

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::template::{
-    DirOps, ProcDir, ReaddirEntry, StaticDirEntry, listed_entries_from_table,
-    lookup_child_from_table, visit_listed_entries,
+use super::{
+    StaticEntryWithOps,
+    template::{
+        DirOps, ProcDir, ReaddirEntry, listed_entries_from_table, lookup_child_from_table,
+        visit_listed_entries,
+    },
 };
 use crate::{
     fs::{
@@ -41,8 +44,7 @@ impl PidDirOps {
         &self.0
     }
 
-    #[expect(clippy::type_complexity)]
-    const STATIC_ENTRIES: &[StaticDirEntry<fn(&PidDirOps, Weak<dyn Inode>) -> Arc<dyn Inode>>] = &[
+    const STATIC_ENTRIES: &[StaticEntryWithOps<PidDirOps>] = &[
         ("task", InodeType::Dir, TaskDirOps::new_inode),
         (
             "stat",
