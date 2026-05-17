@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+pub mod lsm;
+
 use cfg_if::cfg_if;
 
 cfg_if! {
@@ -10,6 +12,8 @@ cfg_if! {
 }
 
 pub(super) fn init() {
+    lsm::init();
+
     #[cfg(target_arch = "x86_64")]
     ostd::if_tdx_enabled!({
         tsm::init();
