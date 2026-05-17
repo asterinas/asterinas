@@ -5,6 +5,7 @@ use crate::{
     fs::{
         file::{InodeType, mkmod},
         procfs::{
+            StaticEntryWithOps,
             pid::task::{
                 auxv::AuxvFileOps, cgroup::CgroupFileOps, cmdline::CmdlineFileOps,
                 comm::CommFileOps, environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps,
@@ -14,7 +15,7 @@ use crate::{
                 status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
-                DirOps, ListedEntry, ProcDir, ReaddirEntry, StaticDirEntry, keyed_readdir_entries,
+                DirOps, ListedEntry, ProcDir, ReaddirEntry, keyed_readdir_entries,
                 listed_entries_from_table, lookup_child_from_table, visit_listed_entries,
                 visit_readdir_entries,
             },
@@ -98,10 +99,7 @@ impl TidDirOps {
         Some((thread, process))
     }
 
-    #[expect(clippy::type_complexity)]
-    const STATIC_ENTRIES: &'static [StaticDirEntry<
-        fn(&TidDirOps, Weak<dyn Inode>) -> Arc<dyn Inode>,
-    >] = &[
+    const STATIC_ENTRIES: &'static [StaticEntryWithOps<TidDirOps>] = &[
         ("auxv", InodeType::File, AuxvFileOps::new_inode),
         ("cgroup", InodeType::File, CgroupFileOps::new_inode),
         ("cmdline", InodeType::File, CmdlineFileOps::new_inode),

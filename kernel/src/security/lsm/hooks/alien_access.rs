@@ -12,12 +12,13 @@ use crate::{
     process::posix_thread::{PosixThread, alien_access::AlienAccessMode},
 };
 
-/// Defines hooks for alien access checks.
-pub trait LsmAlienAccessCheck: Sync {
-    /// Checks whether the accessor may inspect or attach to the target.
-    fn alien_access_check(&self, _context: &AlienAccessContext) -> Result<()> {
-        Ok(())
+/// Runs alien access hooks in module order.
+pub fn on_alien_access(context: &AlienAccessContext) -> Result<()> {
+    for module in modules::active_modules() {
+        module.on_alien_access(context)?;
     }
+
+    Ok(())
 }
 
 /// The inputs for an alien access check through the LSM stack.
@@ -29,6 +30,7 @@ pub struct AlienAccessContext<'a> {
 }
 
 impl<'a> AlienAccessContext<'a> {
+    /// Creates an alien access context.
     pub const fn new(
         accessor: &'a PosixThread,
         target: &'a PosixThread,
@@ -43,28 +45,23 @@ impl<'a> AlienAccessContext<'a> {
         }
     }
 
+    /// Returns the thread requesting access.
     pub const fn accessor(&self) -> &PosixThread {
         self.accessor
     }
 
+    /// Returns the thread being accessed.
     pub const fn target(&self) -> &PosixThread {
         self.target
     }
 
+    /// Returns the requested access mode.
     pub const fn mode(&self) -> AlienAccessMode {
         self.mode
     }
 
+    /// Returns whether the accessor has `CapSet::SYS_PTRACE`.
     pub const fn accessor_has_cap_sys_ptrace(&self) -> bool {
         self.accessor_has_cap_sys_ptrace
     }
-}
-
-/// Runs alien access hooks in module order.
-pub fn alien_access_check(context: &AlienAccessContext) -> Result<()> {
-    for module in modules::active_modules() {
-        module.alien_access_check(context)?;
-    }
-
-    Ok(())
 }
