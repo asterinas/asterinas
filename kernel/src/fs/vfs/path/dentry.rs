@@ -103,7 +103,7 @@ impl Dentry {
     fn new(inode: Arc<dyn Inode>, options: DentryOptions) -> Arc<Self> {
         let name_and_parent = match options {
             DentryOptions::Root => NameAndParent::Real(None),
-            DentryOptions::Leaf(name_and_parent) => {
+            DentryOptions::Named(name_and_parent) => {
                 NameAndParent::Real(Some(RwLock::new(name_and_parent)))
             }
             DentryOptions::Pseudo(name_fn) => NameAndParent::Pseudo(name_fn),
@@ -282,7 +282,7 @@ impl DirDentry<'_> {
 
             let new_child = Dentry::new(
                 new_inode,
-                DentryOptions::Leaf((String::from(name), self.this())),
+                DentryOptions::Named((String::from(name), self.this())),
             );
             return Ok(self.insert_positive_child(&mut children, name, new_child));
         }
@@ -291,7 +291,7 @@ impl DirDentry<'_> {
         let mut children = children.upgrade();
         let new_child = Dentry::new(
             new_inode,
-            DentryOptions::Leaf((String::from(name), self.this())),
+            DentryOptions::Named((String::from(name), self.this())),
         );
 
         Ok(self.insert_positive_child(&mut children, name, new_child))
@@ -385,7 +385,7 @@ impl DirDentry<'_> {
 
         let target = Dentry::new(
             inode,
-            DentryOptions::Leaf((String::from(name), self.this())),
+            DentryOptions::Named((String::from(name), self.this())),
         );
         let mut children = children.upgrade();
 
@@ -407,7 +407,7 @@ impl DirDentry<'_> {
         let inode = self.inode.mknod(name, mode, type_)?;
         let new_child = Dentry::new(
             inode,
-            DentryOptions::Leaf((String::from(name), self.this())),
+            DentryOptions::Named((String::from(name), self.this())),
         );
         let mut children = children.upgrade();
 
@@ -424,7 +424,7 @@ impl DirDentry<'_> {
         self.inode.link(old_inode, name)?;
         let dentry = Dentry::new(
             old_inode.clone(),
-            DentryOptions::Leaf((String::from(name), self.this())),
+            DentryOptions::Named((String::from(name), self.this())),
         );
         let mut children = children.upgrade();
         self.insert_positive_child(&mut children, name, dentry.clone());
@@ -678,7 +678,7 @@ bitflags! {
 
 enum DentryOptions {
     Root,
-    Leaf((String, Arc<Dentry>)),
+    Named((String, Arc<Dentry>)),
     Pseudo(fn(&dyn Inode) -> String),
 }
 
