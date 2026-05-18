@@ -7,6 +7,7 @@ let
   nixos = pkgs.nixos (import "${installer}/etc_nixos/configuration.nix");
   cachixPkgs = with nixos.pkgs;
     [
+      gdb
       hello-asterinas
       xfce.xfdesktop
       xfce.xfwm4

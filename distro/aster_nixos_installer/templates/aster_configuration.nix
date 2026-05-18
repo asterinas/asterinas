@@ -32,6 +32,7 @@
   # please refer to https://nixos.org/manual/nixpkgs/stable/#sec-overlays-definition.
   config.nixpkgs.overlays = [
     (import ./overlays/desktop/default.nix)
+    (import ./overlays/gdb/default.nix)
     (import ./overlays/hello-asterinas/default.nix)
     (import ./overlays/podman/default.nix)
     (import ./overlays/switch-to-configuration-ng/default.nix)

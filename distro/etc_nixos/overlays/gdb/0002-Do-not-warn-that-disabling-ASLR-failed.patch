@@ -1,0 +1,31 @@
+From 30ddbd9a2cc54073e00f25e78a1737cd6c1ca447 Mon Sep 17 00:00:00 2001
+From: Wang Siyuan <wsy@stu.pku.edu.cn>
+Date: Mon, 18 May 2026 14:35:59 +0800
+Subject: [PATCH 2/2] Do not warn that disabling ASLR failed
+
+This patch suppresses the GDB warning "Error disabling address space randomization".
+TODO: Remove this patch once personality(ADDR_NO_RANDOMIZE) is supported.
+
+---
+ gdb/nat/linux-personality.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/gdb/nat/linux-personality.c b/gdb/nat/linux-personality.c
+index a406c73..cee1ab1 100644
+--- a/gdb/nat/linux-personality.c
++++ b/gdb/nat/linux-personality.c
+@@ -43,8 +43,9 @@ maybe_disable_address_space_randomization (int disable_randomization)
+ 	}
+       if (errno != 0 || (m_personality_set
+ 			 && !(personality (0xffffffff) & ADDR_NO_RANDOMIZE)))
+-	warning (_("Error disabling address space randomization: %s"),
+-		 safe_strerror (errno));
++      {
++        // Ignore failures to disable ASLR.
++      }
+     }
+ }
+
+--
+2.34.1
+

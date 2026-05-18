@@ -1,0 +1,36 @@
+From 29198bccc3cb7c2ec9eeeb5bece1dbb07ed283ad Mon Sep 17 00:00:00 2001
+From: Wang Siyuan <wsy@stu.pku.edu.cn>
+Date: Mon, 18 May 2026 14:35:44 +0800
+Subject: [PATCH 1/2] Bypass reading x86 debug registers
+
+This patch emulates the default state of the x86 debug registers,
+so it can correctly respond when a tracer reads the tracee’s
+debug registers via `PTRACE_PEEKUSER`. In the current implementation,
+the tracee’s x86 debug registers are never actually modified,
+so they always remain at their default values.
+
+---
+ gdb/nat/x86-linux-dregs.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/gdb/nat/x86-linux-dregs.c b/gdb/nat/x86-linux-dregs.c
+index a6c0ea6..0123f90 100644
+--- a/gdb/nat/x86-linux-dregs.c
++++ b/gdb/nat/x86-linux-dregs.c
+@@ -39,6 +39,13 @@ u_debugreg_offset (int regnum)
+ static unsigned long
+ x86_linux_dr_get (ptid_t ptid, int regnum)
+ {
++  if ((0 <= regnum && regnum <= 5) || regnum == DR_CONTROL)
++    return 0;
++  else if (regnum == DR_STATUS)
++    return 0xffff0ff0UL;
++  else
++    gdb_assert_not_reached ("unexpected debug register");
++
+   int tid;
+   unsigned long value;
+
+--
+2.34.1
+
