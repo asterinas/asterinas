@@ -154,6 +154,8 @@ pub fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
                 const SYSCALL_INSTR_LEN: usize = 4; // ecall
                 #[cfg(target_arch = "loongarch64")]
                 const SYSCALL_INSTR_LEN: usize = 4; // syscall
+                #[cfg(target_arch = "aarch64")]
+                const SYSCALL_INSTR_LEN: usize = 4; // svc #0
 
                 user_ctx.set_syscall_ret(pre_syscall_ret);
                 user_ctx
@@ -409,6 +411,14 @@ pub fn handle_user_signal(
             // TODO: Set the flags in the context structure.
             // Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/kernel/signal.c#L805>
             let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
+        } else if #[cfg(target_arch = "aarch64")] {
+            // ARM64 signal frame layout
+            let ucontext_addr = alloc_aligned_in_user_stack(
+                stack_pointer,
+                size_of::<ucontext_t>() + fpu_context_bytes.len(),
+                align_of::<ucontext_t>(),
+            );
+            let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
         } else {
             compile_error!("unsupported target");
         }
@@ -441,7 +451,7 @@ pub fn handle_user_signal(
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "x86_64")] {
             stack_pointer = write_u64_to_user_stack(stack_pointer, retaddr as u64)?;
-        } else if #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))] {
+        } else if #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64",  target_arch = "aarch64"))] {
             user_ctx.set_ra(retaddr);
         } else {
             compile_error!("unsupported target");
