@@ -108,6 +108,8 @@ const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000;
 const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000;
 #[cfg(target_arch = "loongarch64")]
 const KERNEL_CODE_BASE_VADDR: usize = 0x9000_0000_0000_0000;
+#[cfg(target_arch = "aarch64")]
+const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000;
 
 const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_fff0_8000_0000 << ADDR_WIDTH_SHIFT;
 const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_fff0_0000_0000 << ADDR_WIDTH_SHIFT;
