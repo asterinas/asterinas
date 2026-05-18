@@ -22,6 +22,10 @@ ptrace(request = PTRACE_GETREGS, tid, addr, data);
 // Set tracee general-purpose registers
 ptrace(request = PTRACE_SETREGS, tid, addr, data);
 
+// Resume a ptrace-stopped tracee and stop it again at syscall entry/exit,
+// optionally injecting a signal
+ptrace(request = PTRACE_SYSCALL, tid, addr, data);
+
 // Set the ptrace options of a tracee
 ptrace(request = PTRACE_SETOPTIONS, tid, addr, data);
 
