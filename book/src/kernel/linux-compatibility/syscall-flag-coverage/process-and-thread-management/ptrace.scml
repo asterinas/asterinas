@@ -1,8 +1,20 @@
 // Request that the calling thread should be traced by its parent
 ptrace(request = PTRACE_TRACEME, tid, addr, data);
 
+// Read one word from the tracee's text space
+ptrace(request = PTRACE_PEEKTEXT, tid, addr, data);
+
+// Read one word from the tracee's data space
+ptrace(request = PTRACE_PEEKDATA, tid, addr, data);
+
 // Read one word from the tracee's USER area
 ptrace(request = PTRACE_PEEKUSER, tid, addr, data);
+
+// Write one word to the tracee's text space
+ptrace(request = PTRACE_POKETEXT, tid, addr, data);
+
+// Write one word to the tracee's data space
+ptrace(request = PTRACE_POKEDATA, tid, addr, data);
 
 // Write one word to the tracee's USER area
 ptrace(request = PTRACE_POKEUSER, tid, addr, data);
