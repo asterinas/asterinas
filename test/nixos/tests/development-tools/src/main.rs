@@ -305,6 +305,47 @@ fn meson_build(nixos_shell: &mut Session) -> Result<(), Error> {
 }
 
 // ============================================================================
+// Debugging Tools - GDB
+// ============================================================================
+
+#[nixos_test]
+fn gdb_debug(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd("gcc -g -O0 /tmp/gdb_sample.c -o /tmp/hello")?;
+
+    nixos_shell.run_cmd_and_expect(
+        "gdb -batch -x /tmp/gdb_commands.gdb /tmp/hello > /tmp/gdb.out 2>&1 && echo GDB_OK",
+        "GDB_OK",
+    )?;
+
+    // Check for expected GDB output.
+    nixos_shell.run_cmd_and_expect(
+        "grep -F 'Breakpoint 1, hello_world' /tmp/gdb.out",
+        "Breakpoint 1, hello_world",
+    )?;
+    nixos_shell.run_cmd_and_expect("grep -F '#0  hello_world' /tmp/gdb.out", "#0  hello_world")?;
+    nixos_shell.run_cmd_and_expect("grep -E '#1 .* in main' /tmp/gdb.out", "in main")?;
+    nixos_shell.run_cmd_and_expect("grep -F '$1 = 1' /tmp/gdb.out", "$1 = 1")?;
+    nixos_shell.run_cmd_and_expect("grep -F 'rip' /tmp/gdb.out", "rip")?;
+    nixos_shell.run_cmd_and_expect("grep -F 'rsp' /tmp/gdb.out", "rsp")?;
+    nixos_shell.run_cmd_and_expect(
+        "grep -F 'Hello, World 1000!' /tmp/gdb.out",
+        "Hello, World 1000!",
+    )?;
+    nixos_shell.run_cmd_and_expect("grep -F '$2 = (int *)' /tmp/gdb.out", "$2 = (int *)")?;
+    nixos_shell.run_cmd_and_expect("grep -F '4321' /tmp/gdb.out", "4321")?;
+    nixos_shell.run_cmd_and_expect(
+        "grep -F 'memory check passed: 1234' /tmp/gdb.out",
+        "memory check passed: 1234",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "(! grep -iF 'warning' /tmp/gdb.out) && echo no-warning",
+        "no-warning",
+    )?;
+
+    Ok(())
+}
+
+// ============================================================================
 // Hugo
 // ============================================================================
 
