@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "riscv64",
+    target_arch = "aarch64"
+))]
 use ostd::arch::cpu::context::CpuException;
 #[cfg(target_arch = "loongarch64")]
 use ostd::arch::cpu::context::CpuExceptionInfo as CpuException;
