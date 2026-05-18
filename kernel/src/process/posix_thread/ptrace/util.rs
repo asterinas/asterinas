@@ -49,7 +49,7 @@ pub enum PtraceStopResult {
 #[derive(Default)]
 pub(super) enum StopDeliverySignal {
     /// The signal that has not yet been reported through `wait`.
-    Pending(DequeuedSignal),
+    Pending(DequeuedSignal, PtraceWaitStatus),
     /// The signal that has been reported through `wait`.
     Consumed(DequeuedSignal),
     /// The signal that is injected by the tracer.
@@ -61,8 +61,8 @@ pub(super) enum StopDeliverySignal {
 
 impl StopDeliverySignal {
     /// Records the signal associated with a ptrace-stop.
-    pub(super) fn stop(&mut self, signal: DequeuedSignal) {
-        *self = Self::Pending(signal);
+    pub(super) fn stop(&mut self, signal: DequeuedSignal, wait_status: PtraceWaitStatus) {
+        *self = Self::Pending(signal, wait_status);
     }
 
     /// Clears and returns the signal associated with a ptrace-stop,
@@ -71,24 +71,24 @@ impl StopDeliverySignal {
         let this = core::mem::replace(self, Self::Empty);
 
         match this {
-            Self::Pending(signal) | Self::Injected(signal) => Some(signal),
+            Self::Pending(signal, _) | Self::Injected(signal) => Some(signal),
             Self::Consumed(_) | Self::Empty => None,
         }
     }
 
-    /// Returns the signal associated with a ptrace-stop,
+    /// Returns the wait status of the signal associated with a ptrace-stop,
     /// if it has not yet been reported through `wait`.
-    pub(super) fn wait(&mut self, options: WaitOptions) -> Option<&dyn Signal> {
+    pub(super) fn wait(&mut self, options: WaitOptions) -> Option<PtraceWaitStatus> {
         let this = core::mem::replace(self, Self::Empty);
 
         match this {
-            Self::Pending(signal) => {
+            Self::Pending(signal, wait_status) => {
                 if !options.contains(WaitOptions::WNOWAIT) {
                     *self = Self::Consumed(signal);
                 } else {
-                    *self = Self::Pending(signal);
+                    *self = Self::Pending(signal, wait_status);
                 }
-                Some(self.get().unwrap())
+                Some(wait_status)
             }
             Self::Consumed(signal) => {
                 *self = Self::Consumed(signal);
@@ -104,7 +104,7 @@ impl StopDeliverySignal {
         let this = core::mem::replace(self, Self::Empty);
 
         let mut signal = match this {
-            Self::Pending(signal) | Self::Consumed(signal) => signal,
+            Self::Pending(signal, _) | Self::Consumed(signal) => signal,
             Self::Injected(_) | Self::Empty => unreachable!(),
         };
 
@@ -116,7 +116,7 @@ impl StopDeliverySignal {
     /// but does not change the state.
     pub(super) fn get(&self) -> Option<&dyn Signal> {
         match self {
-            Self::Pending(signal) | Self::Consumed(signal) | Self::Injected(signal) => {
+            Self::Pending(signal, _) | Self::Consumed(signal) | Self::Injected(signal) => {
                 Some(signal.signal())
             }
             Self::Empty => None,
@@ -213,6 +213,14 @@ impl PtraceWaitStatus {
 
     pub(super) fn from_signal(sig: SigNum) -> Self {
         Self(sig.as_u8() as i32)
+    }
+
+    pub(super) fn from_syscall(options: &PtraceOptions) -> Self {
+        let mut sig = SIGTRAP.as_u8() as i32;
+        if options.contains(PtraceOptions::PTRACE_O_TRACESYSGOOD) {
+            sig |= 0x80;
+        }
+        Self(sig)
     }
 
     pub fn to_wait4_status(self) -> u32 {
