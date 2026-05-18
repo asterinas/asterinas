@@ -119,7 +119,7 @@ pub fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
                     _ => return,
                 }
             }
-            PtraceStopResult::NotTraced(dequeued) => (dequeued.unwrap(), sig_action),
+            PtraceStopResult::NotTraced(dequeued) => (dequeued.unwrap().unwrap(), sig_action),
         }
     } else {
         (dequeued.unwrap(), sig_action)

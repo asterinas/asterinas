@@ -19,7 +19,6 @@ pub enum PtraceContRequest {
     Continue(Option<SigNum>),
     #[cfg_attr(not(target_arch = "x86_64"), expect(dead_code))]
     SingleStep(Option<SigNum>),
-    #[expect(dead_code)]
     Syscall(Option<SigNum>),
 }
 
@@ -41,8 +40,10 @@ pub enum PtraceStopResult {
     Continued(Option<DequeuedSignal>),
     /// The ptrace-stop is interrupted by `SIGKILL`.
     Interrupted,
-    /// The thread is not traced, returning the stop signal back.
-    NotTraced(DequeuedSignal),
+    /// The thread is not traced, or the stop condition is not met
+    /// (e.g., the tracee is not being traced for syscall-stops).
+    /// Returning the stop signal back, if it is a signal-delivery-stop.
+    NotTraced(Option<DequeuedSignal>),
 }
 
 /// The signal associated with a ptrace-stop and its later signal delivery.
@@ -230,4 +231,12 @@ impl PtraceWaitStatus {
     pub fn to_waitid_si_status(self) -> i32 {
         self.0
     }
+}
+
+/// Creates a `siginfo_t` for a syscall-stop.
+pub(super) fn syscall_stop_siginfo(options: &PtraceOptions, ctx: &Context) -> siginfo_t {
+    let code = PtraceWaitStatus::from_syscall(options).0;
+    let mut siginfo = siginfo_t::new(SIGTRAP, code);
+    siginfo.set_pid_uid_by(ctx);
+    siginfo
 }

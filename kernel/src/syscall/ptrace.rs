@@ -96,6 +96,14 @@ pub fn sys_ptrace(
                 .read_val::<arch_ptrace::CUserRegsStruct>(data)?;
             tracee.ptrace_set_regs(regs)?;
         }
+        PtraceRequest::PTRACE_SYSCALL => {
+            let sig_num = parse_ptrace_injected_signal(data)?;
+
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            tracee.ptrace_continue(PtraceContRequest::Syscall(sig_num), ctx)?;
+        }
         PtraceRequest::PTRACE_SETOPTIONS => {
             let options = PtraceOptions::from_bits(data)
                 .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid ptrace options"))?;
@@ -183,6 +191,8 @@ enum PtraceRequest {
     /// Sets all general-purpose registers used by the thread.
     #[cfg(target_arch = "x86_64")]
     PTRACE_SETREGS = 13,
+    /// Continues and stops at the next entry to or return from syscall.
+    PTRACE_SYSCALL = 24,
     /// Sets ptrace options.
     PTRACE_SETOPTIONS = 0x4200,
     /// Gets the message of the last ptrace-event-stop.
@@ -210,8 +220,6 @@ enum PtraceRequest {
     // PTRACE_GETFPXREGS = 18,
     // /// Sets all extended floating-point registers used by the thread.
     // PTRACE_SETFPXREGS = 19,
-    // /// Continues and stops at the next entry to or return from syscall.
-    // PTRACE_SYSCALL = 24,
     // /// Continues and stops at the next syscall, which will not be executed.
     // PTRACE_SYSEMU = 31,
     // /// Single-steps the thread, and the next syscall will not be executed.

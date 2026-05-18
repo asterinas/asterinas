@@ -27,9 +27,9 @@ use crate::{
 
 mod util;
 
+pub(in crate::process) use util::PtraceEvent;
 use util::StopDeliverySignal;
-pub use util::{PtraceContRequest, PtraceOptions, PtraceWaitStatus};
-pub(in crate::process) use util::{PtraceEvent, PtraceStopResult};
+pub use util::{PtraceContRequest, PtraceOptions, PtraceStopResult, PtraceWaitStatus};
 
 impl PosixThread {
     /// Returns whether this thread is being traced.
@@ -80,7 +80,7 @@ impl PosixThread {
         if let Some(status) = self.tracee_status.get() {
             status.ptrace_stop(signal, ctx, user_ctx)
         } else {
-            PtraceStopResult::NotTraced(signal)
+            PtraceStopResult::NotTraced(Some(signal))
         }
     }
 
@@ -97,6 +97,21 @@ impl PosixThread {
     ) {
         if let Some(status) = self.tracee_status.get() {
             status.ptrace_may_stop_on(event, ctx, user_ctx)
+        }
+    }
+
+    /// Stops this thread at a syscall-stop if requested by the tracer.
+    ///
+    /// Returns a [`PtraceStopResult`] indicating why this ptrace-stop ended.
+    pub fn ptrace_may_stop_on_syscall(
+        &self,
+        ctx: &Context,
+        user_ctx: &mut UserContext,
+    ) -> PtraceStopResult {
+        if let Some(status) = self.tracee_status.get() {
+            status.ptrace_may_stop_on_syscall(ctx, user_ctx)
+        } else {
+            PtraceStopResult::NotTraced(None)
         }
     }
 
@@ -342,6 +357,7 @@ impl TraceeStatus {
                 arch_ptrace::disable_single_step(regs);
             }
         }
+        state.is_tracing_syscall = false;
         detach_callback(&state);
         self.is_stopped.store(false, Ordering::Relaxed);
     }
@@ -359,7 +375,7 @@ impl TraceeStatus {
         let state = self.state.lock();
 
         let Some(tracer) = state.tracer() else {
-            return PtraceStopResult::NotTraced(signal);
+            return PtraceStopResult::NotTraced(Some(signal));
         };
 
         let wait_status = PtraceWaitStatus::from_signal(signal.signal().num());
@@ -405,6 +421,29 @@ impl TraceeStatus {
         );
     }
 
+    fn ptrace_may_stop_on_syscall(
+        &self,
+        ctx: &Context,
+        user_ctx: &mut UserContext,
+    ) -> PtraceStopResult {
+        let state = self.state.lock();
+
+        let Some(tracer) = state.tracer() else {
+            return PtraceStopResult::NotTraced(None);
+        };
+        if !state.is_tracing_syscall {
+            return PtraceStopResult::NotTraced(None);
+        }
+
+        let siginfo = util::syscall_stop_siginfo(&state.options, ctx);
+        let signal = Box::new(RawSignal::new(siginfo));
+        let signal = DequeuedSignal::FromThread(signal);
+        let wait_status = PtraceWaitStatus::from_syscall(&state.options);
+
+        self.do_ptrace_stop(state, tracer, signal, wait_status, None, ctx, user_ctx)
+    }
+
+    #[expect(clippy::too_many_arguments)]
     fn do_ptrace_stop(
         &self,
         mut state: MutexGuard<'_, TraceeState>,
@@ -455,6 +494,7 @@ impl TraceeStatus {
                 state.general_regs = None;
                 state.orig_syscall_ret = NOT_A_SYSCALL;
             }
+            state.is_tracing_syscall = false;
             self.is_stopped.store(false, Ordering::Relaxed);
             return PtraceStopResult::Interrupted;
         };
@@ -524,9 +564,8 @@ impl TraceeStatus {
         self.check_ptrace_stopped(&state)?;
 
         if let Some(sig_num) = request.sig_num() {
-            state
-                .signal
-                .inject(Box::new(UserSignal::new_kill(sig_num, ctx)));
+            let signal = Box::new(UserSignal::new_kill(sig_num, ctx));
+            state.signal.inject(signal);
         } else {
             state.signal.clear();
         }
@@ -540,6 +579,8 @@ impl TraceeStatus {
                 arch_ptrace::disable_single_step(regs);
             }
         }
+
+        state.is_tracing_syscall = matches!(request, PtraceContRequest::Syscall(_));
 
         self.is_stopped.store(false, Ordering::Relaxed);
 
@@ -625,6 +666,8 @@ struct TraceeState {
     event: Option<PtraceEvent>,
     /// The configured ptrace options.
     options: PtraceOptions,
+    /// Whether the tracee should stop at the next syscall enter or exit.
+    is_tracing_syscall: bool,
     /// The general-purpose registers of the tracee at the time of ptrace-stop.
     #[cfg(target_arch = "x86_64")]
     general_regs: Option<GeneralRegs>,
@@ -640,6 +683,7 @@ impl TraceeState {
             signal: StopDeliverySignal::default(),
             event: None,
             options: PtraceOptions::empty(),
+            is_tracing_syscall: false,
             #[cfg(target_arch = "x86_64")]
             general_regs: None,
             #[cfg(target_arch = "x86_64")]
