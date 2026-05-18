@@ -12,4 +12,9 @@ pub fn init() {
     // the input core. We should find a way to avoid this in the future.
     #[expect(unused_imports)]
     use aster_i8042::*;
+
+    // Likewise, force the device-mapper component to be linked so its
+    // `#[init_component]` hook runs and creates the mapped devices requested
+    // through the `dm_mod.create=` kernel command line.
+    use aster_device_mapper as _;
 }
