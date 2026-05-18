@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -445,7 +446,7 @@ FN_TEST(ptrace_kill_from_signal_stop)
 		// This write is unreachable, because the child is in a ptrace-stop,
 		// and the parent has sent a `SIGKILL` to it.
 		*flag = 2;
-		exit(-1);
+		_exit(-1);
 	}
 
 	int status;
@@ -460,5 +461,38 @@ FN_TEST(ptrace_kill_from_signal_stop)
 		 _ret == pid && WIFSIGNALED(status) &&
 			 WTERMSIG(status) == SIGKILL && *flag == 1);
 	TEST_SUCC(munmap((void *)flag, 4096));
+}
+END_TEST()
+
+FN_TEST(ptrace_syscall_stop_wait_continue)
+{
+	SKIP_TEST_IF(read_yama_scope() == YAMA_SCOPE_NO_ATTACH);
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		CHECK(ptrace(PTRACE_TRACEME, 0, 0, 0));
+		CHECK(raise(SIGSTOP));
+		CHECK(syscall(SYS_getppid));
+		_exit(0);
+	}
+
+	int status = 0;
+	TEST_RES(waitpid(pid, &status, 0), _ret == pid && WIFSTOPPED(status) &&
+						   WSTOPSIG(status) == SIGSTOP);
+	TEST_SUCC(ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD));
+
+	TEST_SUCC(ptrace(PTRACE_SYSCALL, pid, 0, 0));
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFSTOPPED(status) &&
+			 WSTOPSIG(status) == (SIGTRAP | 0x80));
+
+	TEST_SUCC(ptrace(PTRACE_SYSCALL, pid, 0, 0));
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFSTOPPED(status) &&
+			 WSTOPSIG(status) == (SIGTRAP | 0x80));
+
+	TEST_SUCC(ptrace(PTRACE_CONT, pid, 0, 0));
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 END_TEST()
