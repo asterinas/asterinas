@@ -362,7 +362,9 @@ impl TraceeStatus {
             return PtraceStopResult::NotTraced(signal);
         };
 
-        self.do_ptrace_stop(state, tracer, signal, None, ctx, user_ctx)
+        let wait_status = PtraceWaitStatus::from_signal(signal.signal().num());
+
+        self.do_ptrace_stop(state, tracer, signal, wait_status, None, ctx, user_ctx)
     }
 
     fn ptrace_may_stop_on(&self, event: PtraceEvent, ctx: &Context, user_ctx: &mut UserContext) {
@@ -390,8 +392,17 @@ impl TraceeStatus {
         let siginfo = event.siginfo(ctx);
         let signal = Box::new(RawSignal::new(siginfo));
         let signal = DequeuedSignal::FromThread(signal);
+        let wait_status = PtraceWaitStatus::from_event(&event);
 
-        self.do_ptrace_stop(state, tracer, signal, Some(event), ctx, user_ctx);
+        self.do_ptrace_stop(
+            state,
+            tracer,
+            signal,
+            wait_status,
+            Some(event),
+            ctx,
+            user_ctx,
+        );
     }
 
     fn do_ptrace_stop(
@@ -399,6 +410,7 @@ impl TraceeStatus {
         mut state: MutexGuard<'_, TraceeState>,
         tracer: Arc<Thread>,
         signal: DequeuedSignal,
+        wait_status: PtraceWaitStatus,
         event: Option<PtraceEvent>,
         ctx: &Context,
         user_ctx: &mut UserContext,
@@ -408,7 +420,7 @@ impl TraceeStatus {
 
         debug_assert!(!self.is_ptrace_stopped());
 
-        state.signal.stop(signal);
+        state.signal.stop(signal, wait_status);
         state.event = event;
         #[cfg(target_arch = "x86_64")]
         {
@@ -503,11 +515,7 @@ impl TraceeStatus {
             return None;
         }
 
-        let event_status = state.event.as_ref().map(PtraceWaitStatus::from_event);
-        let signal = state.signal.wait(options)?;
-        let status = event_status.unwrap_or_else(|| PtraceWaitStatus::from_signal(signal.num()));
-
-        Some(status)
+        state.signal.wait(options)
     }
 
     fn resume(&self, request: PtraceContRequest, ctx: &Context) -> Result<()> {
