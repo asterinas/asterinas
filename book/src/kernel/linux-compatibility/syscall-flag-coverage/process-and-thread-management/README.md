@@ -91,7 +91,11 @@ Supported functionality in SCML:
 
 Supported requests:
 * `PTRACE_TRACEME`
+* `PTRACE_PEEKTEXT`
+* `PTRACE_PEEKDATA`
 * `PTRACE_PEEKUSER` (x86-64 only)
+* `PTRACE_POKETEXT`
+* `PTRACE_POKEDATA`
 * `PTRACE_POKEUSER` (x86-64 only)
 * `PTRACE_CONT`
 * `PTRACE_KILL`
