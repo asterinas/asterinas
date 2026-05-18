@@ -59,3 +59,49 @@ fn skopeo_inspect_image(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.run_cmd_and_expect("skopeo list-tags docker://docker.io/library/alpine", "Tags")?;
     Ok(())
 }
+
+// ============================================================================
+// Qemu
+// ============================================================================
+
+#[nixos_test]
+fn qemu_display_version(nixos_shell: &mut Session) -> Result<(), Error> {
+    // Verifies that the QEMU emulator is available and reports its version.
+    nixos_shell.run_cmd_and_expect(
+        "qemu-system-$(uname -m) --version",
+        "QEMU emulator version",
+    )?;
+    Ok(())
+}
+
+#[nixos_test]
+fn qemu_tcg_run_linux(nixos_shell: &mut Session) -> Result<(), Error> {
+    // Run a Linux kernel inside QEMU using the TCG software emulator.
+    const CMD: &str = concat!(
+        "qemu-system-$(uname -m) ",
+        "-accel tcg ",
+        "-kernel $LINUX_BZIMAGE ",
+        "-nographic -no-reboot ",
+        "-append 'console=ttyS0 panic=-1'"
+    );
+    nixos_shell.run_cmd_and_expect(CMD, "Linux version")?;
+    Ok(())
+}
+
+#[nixos_test]
+fn qemu_tcg_run_aster(nixos_shell: &mut Session) -> Result<(), Error> {
+    // Run a Asterinas kernel inside QEMU using the TCG software emulator.
+    const CMD: &str = concat!(
+        "qemu-system-$(uname -m) ",
+        "-accel tcg ",
+        "-cpu Icelake-Server ",
+        "-machine q35 -m 1G ",
+        "-bios $OVMF_PATH ",
+        "-kernel /run/current-system/kernel ",
+        "-device isa-debug-exit,iobase=0xf4,iosize=0x04 ",
+        "-nographic -no-reboot ",
+        "-append 'console=ttyS0 panic=-1'"
+    );
+    nixos_shell.run_cmd_and_expect(CMD, "Spawn the first kernel thread")?;
+    Ok(())
+}
