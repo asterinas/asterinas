@@ -140,7 +140,7 @@ impl BlockAsPageCacheBackend for ExfatInode {
         &self,
         idx: usize,
         bio_segment: BioSegment,
-        complete_fn: Option<BioCompleteFn>,
+        complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         let inner = self.inner.read();
@@ -148,9 +148,7 @@ impl BlockAsPageCacheBackend for ExfatInode {
             return_errno_with_message!(Errno::EINVAL, "invalid read size");
         } else if inner.size <= idx * PAGE_SIZE {
             drop(inner);
-            if let Some(complete_fn) = complete_fn {
-                (complete_fn)(BioStatus::Zeros);
-            }
+            (complete_fn)(BioStatus::Zeros);
             return Ok(());
         }
         let fs = inner.fs();
@@ -158,7 +156,7 @@ impl BlockAsPageCacheBackend for ExfatInode {
         fs.block_device().read_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
-            complete_fn,
+            Some(complete_fn),
             io_batch,
         )?;
         Ok(())
@@ -168,7 +166,7 @@ impl BlockAsPageCacheBackend for ExfatInode {
         &self,
         idx: usize,
         bio_segment: BioSegment,
-        complete_fn: Option<BioCompleteFn>,
+        complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         let inner = self.inner.read();
@@ -180,7 +178,7 @@ impl BlockAsPageCacheBackend for ExfatInode {
         fs.block_device().write_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
-            complete_fn,
+            Some(complete_fn),
             io_batch,
         )?;
         Ok(())

@@ -324,7 +324,7 @@ impl BlockAsPageCacheBackend for BlockGroupImpl {
         &self,
         idx: usize,
         bio_segment: BioSegment,
-        complete_fn: Option<BioCompleteFn>,
+        complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.raw_inodes_size <= idx * BLOCK_SIZE {
@@ -334,14 +334,14 @@ impl BlockAsPageCacheBackend for BlockGroupImpl {
         self.fs
             .upgrade()
             .unwrap()
-            .read_blocks_async(bid, bio_segment, complete_fn, io_batch)
+            .read_blocks_async(bid, bio_segment, Some(complete_fn), io_batch)
     }
 
     fn submit_write_bio(
         &self,
         idx: usize,
         bio_segment: BioSegment,
-        complete_fn: Option<BioCompleteFn>,
+        complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.raw_inodes_size <= idx * BLOCK_SIZE {
@@ -351,7 +351,7 @@ impl BlockAsPageCacheBackend for BlockGroupImpl {
         self.fs
             .upgrade()
             .unwrap()
-            .write_blocks_async(bid, bio_segment, complete_fn, io_batch)
+            .write_blocks_async(bid, bio_segment, Some(complete_fn), io_batch)
     }
 }
 
