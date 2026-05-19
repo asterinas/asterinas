@@ -5,8 +5,9 @@ on:
   push:
     branches:
       - main
-    paths: 
+    paths:
       - VERSION
+      - test/nixos/common/merge_nixos_config.sh
 
 jobs:
   push-cachix:
