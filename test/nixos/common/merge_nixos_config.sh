@@ -9,6 +9,10 @@
 # combination of the two inputs. If the same key is set by both <base_file>
 # and <extra_file>, then the value provided by <extra_file> takes precedence.
 #
+# NOTES: If `<extra_file>` and `<merged_file>` refer to the same file while
+# `<base_file>` is different, the script rejects the invocation to avoid
+# circular import.
+#
 # A NixOS configuration file, usually named `configuration.nix`, is written in
 # the following form:
 #
@@ -40,7 +44,20 @@ if [ ! -f "$EXTRA_FILE" ]; then
     exit 1
 fi
 
+ABS_BASE="$(realpath "$BASE_FILE")"
 ABS_EXTRA="$(realpath "$EXTRA_FILE")"
+ABS_MERGED="$(realpath -m "$MERGED_FILE")"
+
+if [ "$ABS_BASE" = "$ABS_EXTRA" ] && [ "$ABS_EXTRA" = "$ABS_MERGED" ]; then
+    exit 0
+fi
+
+if [ "$ABS_EXTRA" = "$ABS_MERGED" ]; then
+    echo "Error: merged_file must not alias extra_file"
+    exit 1
+fi
+
+BASE_CONTENT="$(cat "$BASE_FILE")"
 
 # Keep the base module embedded so its relative imports resolve from the final
 # generated `configuration.nix`, while importing the extra module from its
@@ -55,9 +72,8 @@ let
   baseModule = (
 EOF
 
-cat "$BASE_FILE" >> "$MERGED_FILE"
-
 printf '%s\n' \
+  "$BASE_CONTENT" \
   '  );' \
   "  extraModule = import $ABS_EXTRA;" \
   '' \
