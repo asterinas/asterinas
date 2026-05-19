@@ -403,9 +403,12 @@ pub trait BlockAsPageCacheBackend: Sync + Send {
     /// Submits read I/O for the page at `idx`.
     ///
     /// `bio_segment` identifies the page memory that must receive the data.
-    /// Implementations must attach `complete_fn`, when present, to the
-    /// underlying asynchronous I/O so the page-cache layer can mark successful
+    /// Implementations must attach `complete_fn` to the underlying
+    /// asynchronous I/O so the page-cache layer can mark successful
     /// reads up to date and release the page lock.
+    ///
+    /// If the page only contains zeros, implementations may call `complete_fn`
+    /// with [`BioStatus::Zeros`], skip I/O, and leave `bio_segment` unfilled.
     ///
     /// Implementations should fail with `EINVAL` for an out-of-bounds `idx`.
     /// See also [`PageCacheBackend::read_page_async`].
@@ -413,15 +416,15 @@ pub trait BlockAsPageCacheBackend: Sync + Send {
         &self,
         idx: usize,
         bio_segment: BioSegment,
-        complete_fn: Option<BioCompleteFn>,
+        complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()>;
 
     /// Submits write I/O for the page at `idx`.
     ///
     /// `bio_segment` contains the stable page snapshot that must be written.
-    /// Implementations must attach `complete_fn`, when present, to the
-    /// underlying asynchronous I/O so the page-cache layer can finish writeback
+    /// Implementations must attach `complete_fn` to the underlying
+    /// asynchronous I/O so the page-cache layer can finish writeback
     /// bookkeeping and report failures.
     ///
     /// Implementations should fail with `EINVAL` for an out-of-bounds `idx`.
@@ -430,7 +433,7 @@ pub trait BlockAsPageCacheBackend: Sync + Send {
         &self,
         idx: usize,
         bio_segment: BioSegment,
-        complete_fn: Option<BioCompleteFn>,
+        complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()>;
 }
@@ -457,7 +460,7 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
             // The page lock is released when `locked_page` (LockedCachePage) is dropped here.
         });
 
-        self.submit_read_bio(idx, bio_segment, Some(complete_fn), io_batch)
+        self.submit_read_bio(idx, bio_segment, complete_fn, io_batch)
     }
 
     fn write_page_async(
@@ -498,7 +501,7 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
             }
         });
 
-        let res = self.submit_write_bio(idx, bio_segment, Some(complete_fn), io_batch);
+        let res = self.submit_write_bio(idx, bio_segment, complete_fn, io_batch);
         if res.is_err() {
             // If submission fails, re-dirty the page so the next writeback can
             // retry the data that never reached the device queue.

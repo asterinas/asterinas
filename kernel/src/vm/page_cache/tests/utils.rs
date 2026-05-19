@@ -219,7 +219,7 @@ impl MockPageCacheBackend {
         kind: IoKind,
         page_idx: usize,
         bio_segment: BioSegment,
-        complete_fn: Option<BioCompleteFn>,
+        complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         self.maybe_fail_submission(kind, page_idx)?;
@@ -228,7 +228,7 @@ impl MockPageCacheBackend {
             kind.bio_type(),
             Sid::from_offset(page_idx * PAGE_SIZE),
             vec![bio_segment],
-            complete_fn,
+            Some(complete_fn),
         );
         bio.submit(self, io_batch)
             .map_err(ostd::Error::from)
@@ -333,7 +333,7 @@ impl BlockAsPageCacheBackend for MockPageCacheBackend {
         &self,
         page_idx: usize,
         bio_segment: BioSegment,
-        complete_fn: Option<BioCompleteFn>,
+        complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if page_idx >= self.num_pages {
@@ -346,7 +346,7 @@ impl BlockAsPageCacheBackend for MockPageCacheBackend {
         &self,
         page_idx: usize,
         bio_segment: BioSegment,
-        complete_fn: Option<BioCompleteFn>,
+        complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if page_idx >= self.num_pages {
