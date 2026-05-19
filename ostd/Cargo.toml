@@ -37,6 +37,7 @@ spin.workspace = true
 smallvec.workspace = true
 volatile.workspace = true
 zerocopy.workspace = true
+arm-gic = "0.8.1"
 
 # The targets are chosen to prevent the generated machine code from using any
 # vector or floating-point registers.
