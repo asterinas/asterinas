@@ -49,6 +49,14 @@ pub enum Error {
         got: String,
         timeout: Duration,
     },
+    /// An error collection that aggregates multiple errors.
+    ///
+    /// For each collected error, it keeps a name (in `String`)
+    /// and a detailed error info (in `Error`).
+    Aggregated {
+        summary: String,
+        collections: Vec<(String, Error)>,
+    },
 }
 
 impl fmt::Display for Error {
@@ -80,6 +88,12 @@ impl fmt::Display for Error {
                 "Timeout waiting for '{}'; got '{}' after {:?}",
                 expected, got, timeout
             ),
+            Self::Aggregated {
+                summary,
+                collections,
+            } => {
+                write!(formatter, "{} ({} error(s))", summary, collections.len())
+            }
         }
     }
 }
@@ -91,7 +105,8 @@ impl std::error::Error for Error {
             Self::UnexpectedOutput { .. }
             | Self::Protocol { .. }
             | Self::NonZeroExit { .. }
-            | Self::Timeout { .. } => None,
+            | Self::Timeout { .. }
+            | Self::Aggregated { .. } => None,
         }
     }
 }

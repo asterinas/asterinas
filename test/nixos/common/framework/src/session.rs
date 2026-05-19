@@ -342,6 +342,18 @@ impl Session {
                 println!("Reason: {}", reason);
                 println!("=========================");
             }
+            Error::Aggregated {
+                summary,
+                collections,
+            } => {
+                println!("=== Aggregated Error Details ===");
+                println!("Summary: {}", summary);
+                for (name, error) in collections {
+                    println!("--- {}", name);
+                    Self::output_error(error);
+                }
+                println!("================================");
+            }
         }
     }
 
