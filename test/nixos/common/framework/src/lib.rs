@@ -38,7 +38,7 @@ pub enum Error {
     /// The PTY/process produced an underlying rexpect failure.
     Pty(rexpect::error::Error),
     /// The command output reached the prompt but did not contain the expected substring.
-    ExpectMismatch { expected: String, got: String },
+    UnexpectedOutput { expected: String, got: String },
     /// The framing marker was missing or unparsable.
     Protocol { reason: String, got: String },
     /// A command exited with a non-zero status.
@@ -55,7 +55,7 @@ impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Pty(error) => write!(formatter, "{}", error),
-            Self::ExpectMismatch { expected, got } => write!(
+            Self::UnexpectedOutput { expected, got } => write!(
                 formatter,
                 "Expected output containing '{}' but got '{}'",
                 expected, got
@@ -88,7 +88,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Pty(error) => Some(error),
-            Self::ExpectMismatch { .. }
+            Self::UnexpectedOutput { .. }
             | Self::Protocol { .. }
             | Self::NonZeroExit { .. }
             | Self::Timeout { .. } => None,
@@ -105,9 +105,18 @@ impl From<rexpect::error::Error> for Error {
                 timeout,
             } => Self::Timeout {
                 expected,
-                got,
+                got: truncate_output_for_error(&clean_output(&got)),
                 timeout,
             },
+            rexpect::error::Error::EOF {
+                expected,
+                got,
+                exit_code,
+            } => Self::Pty(rexpect::error::Error::EOF {
+                expected,
+                got: truncate_output_for_error(&clean_output(&got)),
+                exit_code,
+            }),
             other => Self::Pty(other),
         }
     }
@@ -236,6 +245,27 @@ pub fn __nixos_test_main() -> Result<(), Box<dyn std::error::Error>> {
     shutdown_res?;
 
     Ok(())
+}
+
+pub(crate) fn truncate_output_for_error(output: &str) -> String {
+    const MAX_ERROR_OUTPUT_LEN: usize = 16 * 1024;
+
+    if output.len() <= MAX_ERROR_OUTPUT_LEN {
+        return output.to_string();
+    }
+
+    let mut start = output.len() - MAX_ERROR_OUTPUT_LEN;
+    while !output.is_char_boundary(start) {
+        start += 1;
+    }
+
+    let mut truncated = format!("... <truncated {} leading bytes of output>\n", start);
+    truncated.push_str(&output[start..]);
+    truncated
+}
+
+pub(crate) fn clean_output(output: &str) -> String {
+    String::from_utf8_lossy(&strip_ansi_escapes::strip(output)).to_string()
 }
 
 /// Parses timeout string with units into milliseconds.

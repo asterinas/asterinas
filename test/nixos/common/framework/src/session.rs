@@ -8,7 +8,7 @@ use std::{
 use rexpect::session::PtySession;
 use uuid::Uuid;
 
-use super::Error;
+use super::{Error, clean_output, truncate_output_for_error};
 
 /// Describes a runtime session configuration.
 ///
@@ -146,11 +146,11 @@ impl Session {
             .map_err(Error::from)
         {
             Ok(unread) => {
-                let cleaned_unread = Self::clean_output(&unread);
+                let cleaned_unread = clean_output(&unread);
                 if !cleaned_unread.contains(expected) {
-                    let error = Error::ExpectMismatch {
+                    let error = Error::UnexpectedOutput {
                         expected: expected.to_string(),
-                        got: cleaned_unread,
+                        got: truncate_output_for_error(&cleaned_unread),
                     };
                     Self::output_error(&error);
                     return Err(error);
@@ -269,7 +269,7 @@ impl Session {
         if command_output.exit_status != 0 {
             return Err(Error::NonZeroExit {
                 exit_status: command_output.exit_status,
-                output: command_output.output,
+                output: truncate_output_for_error(&command_output.output),
             });
         }
 
@@ -301,7 +301,7 @@ impl Session {
             }) => {
                 println!("=== EOF Error Details ===");
                 println!("Expected: {}", expected);
-                println!("Got: {}", Self::clean_output(got));
+                println!("Got: {}", got);
                 println!("Exit code: {:?}", exit_code);
                 println!("========================");
             }
@@ -312,11 +312,11 @@ impl Session {
             } => {
                 println!("=== Timeout Error Details ===");
                 println!("Expected: {}", expected);
-                println!("Got: {}", Self::clean_output(got));
+                println!("Got: {}", got);
                 println!("Timeout: {:?}", timeout);
                 println!("============================");
             }
-            Error::ExpectMismatch { expected, got } => {
+            Error::UnexpectedOutput { expected, got } => {
                 println!("=== Unexpected Output ===");
                 println!("Expected: {}", expected);
                 println!("Output before prompt:\n{}", got);
@@ -325,7 +325,7 @@ impl Session {
             Error::Protocol { reason, got } => {
                 println!("=== Protocol Error Details ===");
                 println!("Reason: {}", reason);
-                println!("Got: {}", Self::clean_output(got));
+                println!("Got: {}", got);
                 println!("==============================");
             }
             Error::NonZeroExit {
@@ -334,7 +334,7 @@ impl Session {
             } => {
                 println!("=== Command Exit Error Details ===");
                 println!("Exit status: {}", exit_status);
-                println!("Output:\n{}", Self::clean_output(output));
+                println!("Output:\n{}", output);
                 println!("==================================");
             }
             Error::Pty(reason) => {
@@ -343,10 +343,6 @@ impl Session {
                 println!("=========================");
             }
         }
-    }
-
-    fn clean_output(output: &str) -> String {
-        String::from_utf8_lossy(&strip_ansi_escapes::strip(output)).to_string()
     }
 
     fn run_cmd_and_collect_output(&mut self, command: &str) -> Result<CommandOutput, Error> {
@@ -386,30 +382,29 @@ impl Session {
     }
 
     fn parse_command_output(output: &str, exit_marker: &str) -> Result<(String, i32), Error> {
+        let sanitize_output = |str| truncate_output_for_error(&clean_output(str));
+
         let Some((command_output, exit_status_text)) = output.rsplit_once(exit_marker) else {
             return Err(Error::Protocol {
                 reason: "missing exit status marker".to_string(),
-                got: Self::clean_output(output),
+                got: sanitize_output(output),
             });
         };
 
         let Some(exit_status_line) = exit_status_text.lines().next() else {
             return Err(Error::Protocol {
                 reason: "missing numeric exit status".to_string(),
-                got: Self::clean_output(output),
+                got: sanitize_output(command_output),
             });
         };
         let Ok(exit_status) = exit_status_line.parse::<i32>() else {
             return Err(Error::Protocol {
                 reason: format!("invalid numeric exit status: {}", exit_status_line),
-                got: Self::clean_output(output),
+                got: sanitize_output(command_output),
             });
         };
 
-        Ok((
-            Self::clean_output(command_output).trim().to_string(),
-            exit_status,
-        ))
+        Ok((clean_output(command_output).trim().to_string(), exit_status))
     }
 
     fn stop_background_process(
@@ -420,7 +415,7 @@ impl Session {
         if command_output.exit_status != 0 {
             return Err(Error::NonZeroExit {
                 exit_status: command_output.exit_status,
-                output: command_output.output,
+                output: truncate_output_for_error(&command_output.output),
             });
         }
 
@@ -455,7 +450,9 @@ impl Session {
                     expected: expected_state.to_string(),
                     got: format!(
                         "exit status: {}\nexpected output: {}\nactual output:\n{}",
-                        command_output.exit_status, command_check.expect, command_output.output
+                        command_output.exit_status,
+                        command_check.expect,
+                        truncate_output_for_error(&command_output.output)
                     ),
                     timeout,
                 });
