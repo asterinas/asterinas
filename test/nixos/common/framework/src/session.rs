@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rexpect::session::PtySession;
+use rexpect::{reader::Regex, session::PtySession};
 use uuid::Uuid;
 
 use super::{Error, clean_output, truncate_output_for_error};
@@ -160,6 +160,54 @@ impl Session {
                 Self::output_error(&e);
                 return Err(e);
             }
+        }
+
+        Ok(())
+    }
+
+    /// Executes a command and verifies its output matches the expected regex.
+    ///
+    /// This method runs the command and checks that the specified regex matches
+    /// the output before the prompt reappears.
+    ///
+    /// Returns an error if:
+    /// - The expected regex does not match the output
+    /// - The command times out
+    /// - The session terminates unexpectedly
+    ///
+    /// # Example
+    ///
+    /// ```rust,norun
+    /// use nixos_test_framework::*;
+    /// use rexpect::reader::Regex;
+    ///
+    /// fn example(nixos_shell: &mut Session) -> Result<(), Error> {
+    ///     let expected = Regex::new(r"(?m)^Hello, .*!$").unwrap();
+    ///     nixos_shell.run_cmd_and_expect_regex("echo 'Hello, World!'", &expected)?;
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn run_cmd_and_expect_regex(
+        &mut self,
+        command: &str,
+        expected: &Regex,
+    ) -> Result<(), Error> {
+        let command_output = self.run_cmd_and_collect_output(command)?;
+
+        if command_output.exit_status != 0 {
+            return Err(Error::NonZeroExit {
+                exit_status: command_output.exit_status,
+                output: truncate_output_for_error(&command_output.output),
+            });
+        }
+
+        if !expected.is_match(&command_output.output) {
+            let error = Error::UnexpectedOutput {
+                expected: expected.as_str().to_string(),
+                got: truncate_output_for_error(&command_output.output),
+            };
+            Self::output_error(&error);
+            return Err(error);
         }
 
         Ok(())
