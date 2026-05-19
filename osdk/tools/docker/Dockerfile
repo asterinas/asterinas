@@ -216,6 +216,7 @@ RUN mkdir -p /github/home \
 # Install cargo tools
 RUN cargo install --locked \
     cargo-binutils \
+    cargo-expand@v1.0.122 \
     mdbook@0.5.2 \
     mdbook-mermaid@0.17.0 \
     typos-cli@1.39.0
