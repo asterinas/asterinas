@@ -360,7 +360,7 @@ pub trait PageCacheBackend: Sync + Send {
     /// Writes a page to the backend asynchronously.
     ///
     /// If the caller tries to pass an index that exceeds the size of the
-    /// underlying backend (e.g. the file size), this method should fail with
+    /// underlying backend (e.g., the file size), this method should fail with
     /// `EINVAL`. Note that this cannot happen until we support concurrent file
     /// truncation and page writeback.
     //

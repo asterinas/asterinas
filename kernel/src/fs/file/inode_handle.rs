@@ -521,7 +521,7 @@ pub enum SeekFrom {
     Current(isize),
 }
 
-/// Provides file operations for one opened file description.
+/// File operations for one opened file description.
 ///
 /// A per-open file object can hold file-description-specific state and override
 /// operations that are not purely inode-backed, such as state and operations for

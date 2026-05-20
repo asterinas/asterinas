@@ -294,7 +294,7 @@ bitflags! {
     }
 }
 
-/// Provides basic file operations.
+/// Basic file operations.
 ///
 /// For inode-backed files without per-`open()` state, [`Inode`] implements this
 /// trait directly. For files whose behavior depends on state created by `open`,

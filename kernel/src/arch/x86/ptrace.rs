@@ -397,9 +397,9 @@ const fn word_range(offset: usize) -> Range<usize> {
 const LINUX_USER_CS: usize = 0x33;
 const LINUX_USER_SS: usize = 0x2b;
 
-// Some applications (e.g., GDB), rely on `ptrace` exposing Linux's
+// Some applications (e.g., GDB) rely on `ptrace` exposing Linux's
 // conventional x86-64 user segment selector values.
 //
-// See: <https://sourceware.org/git/?p=binutils-gdb.git;a=blob;f=gdb/nat/x86-linux.c#l124>.
+// See: <https://sourceware.org/git/?p=binutils-gdb.git;a=blob;f=gdb/nat/x86-linux.c;h=16391dcde24407fc2c219194bc960f761bd048fe;hb=HEAD#l124>.
 ostd::const_assert!(LINUX_USER_CS == USER_CS_VALUE);
 ostd::const_assert!(LINUX_USER_SS == USER_SS_VALUE);

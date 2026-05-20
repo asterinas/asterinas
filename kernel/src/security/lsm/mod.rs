@@ -17,7 +17,6 @@ pub mod yama {
     pub use super::modules::yama::{YamaScope, get_scope, set_scope};
 }
 
-pub use self::hooks::AlienAccessContext;
 use self::hooks::LsmAlienAccessHook;
 use crate::prelude::*;
 
@@ -31,7 +30,7 @@ bitflags! {
     }
 }
 
-/// Defines the common interface for built-in LSM modules.
+/// The common interface for built-in LSM modules.
 trait LsmModule: LsmAlienAccessHook + Sync {
     /// Returns the module name.
     fn name(&self) -> &'static str;
