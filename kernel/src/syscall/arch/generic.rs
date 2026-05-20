@@ -80,6 +80,7 @@ macro_rules! import_generic_syscall_entries {
             munmap::sys_munmap,
             nanosleep::{sys_clock_nanosleep, sys_nanosleep},
             open::sys_openat,
+            personality::sys_personality,
             pidfd_getfd::sys_pidfd_getfd,
             pidfd_open::sys_pidfd_open,
             pidfd_send_signal::sys_pidfd_send_signal,
@@ -280,6 +281,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_CAPGET = 90                  => sys_capget(args[..2]);
             SYS_CAPSET = 91                  => sys_capset(args[..2]);
             SYS_EXIT = 93                    => sys_exit(args[..1], &mut user_ctx);
+            SYS_PERSONALITY = 92             => sys_personality(args[..1]);
             SYS_EXIT_GROUP = 94              => sys_exit_group(args[..1], &mut user_ctx);
             SYS_WAITID = 95                  => sys_waitid(args[..5]);
             SYS_SET_TID_ADDRESS = 96         => sys_set_tid_address(args[..1]);
