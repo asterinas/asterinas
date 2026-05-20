@@ -10,7 +10,7 @@ qemu.args = '''
     -monitor pty \
     -nodefaults \
     -bios /root/ovmf/release/OVMF.fd \
-    -object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"2\", \"port\": \"4050\" } }' \
+    -object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"1\", \"port\": \"4050\" } }' \
     -cpu host,-kvm-steal-time,pmu=off \
     -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
     -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \

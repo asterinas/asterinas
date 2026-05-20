@@ -185,11 +185,11 @@ pub mod test {
 
     #[test]
     fn test_split_kv_array() {
-        let args = "-enable-kvm -object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"2\", \"port\": \"4050\" } }'";
+        let args = "-enable-kvm -object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"1\", \"port\": \"4050\" } }'";
 
         let expected = &[
             "-enable-kvm",
-            "-object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"2\", \"port\": \"4050\" } }'",
+            "-object '{ \"qom-type\": \"tdx-guest\", \"id\": \"tdx0\", \"sept-ve-disable\": true, \"quote-generation-socket\": { \"type\": \"vsock\", \"cid\": \"1\", \"port\": \"4050\" } }'",
         ];
 
         let array = split_to_kv_array(args);
