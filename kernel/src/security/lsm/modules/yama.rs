@@ -4,7 +4,10 @@ use core::sync::atomic::{AtomicI32, Ordering};
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
-use super::super::{AlienAccessContext, LsmFlags, LsmModule, hooks::LsmAlienAccessHook};
+use super::super::{
+    LsmFlags, LsmModule,
+    hooks::{AlienAccessContext, LsmAlienAccessHook},
+};
 use crate::{
     prelude::*,
     process::{
