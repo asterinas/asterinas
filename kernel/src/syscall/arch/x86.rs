@@ -81,6 +81,7 @@ use super::{
     nanosleep::{sys_clock_nanosleep, sys_nanosleep},
     open::{sys_creat, sys_open, sys_openat},
     pause::sys_pause,
+    personality::sys_personality,
     pidfd_getfd::sys_pidfd_getfd,
     pidfd_open::sys_pidfd_open,
     pidfd_send_signal::sys_pidfd_send_signal,
@@ -302,6 +303,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SIGALTSTACK = 131      => sys_sigaltstack(args[..2], &user_ctx);
     SYS_UTIME = 132            => sys_utime(args[..2]);
     SYS_MKNOD = 133            => sys_mknod(args[..3]);
+    SYS_PERSONALITY = 135      => sys_personality(args[..1]);
     SYS_STATFS = 137           => sys_statfs(args[..2]);
     SYS_FSTATFS = 138          => sys_fstatfs(args[..2]);
     SYS_GET_PRIORITY = 140     => sys_get_priority(args[..2]);

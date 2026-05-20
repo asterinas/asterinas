@@ -183,6 +183,7 @@ impl PosixThreadBuilder {
                     tracees: Once::new(),
                     exit_code: AtomicU32::new(0),
                     orig_syscall_ret: AtomicUsize::new(NOT_A_SYSCALL),
+                    personality: AtomicU32::new(0),
                 }
             };
 

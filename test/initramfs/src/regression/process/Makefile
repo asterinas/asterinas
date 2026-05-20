@@ -10,6 +10,7 @@ SUBDIRS := \
 	getcpu \
 	getpid \
 	itimer \
+	personality \
 	prctl \
 	pthread \
 	ptrace \

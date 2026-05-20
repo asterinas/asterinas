@@ -32,6 +32,7 @@ mod builder;
 mod exit;
 pub mod futex;
 mod name;
+mod personality;
 mod posix_thread_ext;
 pub mod ptrace;
 mod robust_list;
@@ -41,6 +42,7 @@ pub use builder::PosixThreadBuilder;
 pub(super) use exit::sigkill_other_threads;
 pub use exit::{do_exit, do_exit_group};
 pub use name::{MAX_THREAD_NAME_LEN, ThreadName};
+pub use personality::Personality;
 pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
 pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
@@ -110,6 +112,9 @@ pub struct PosixThread {
     /// at the most recent kernel entry,
     /// or [`NOT_A_SYSCALL`] for non-syscall entries.
     orig_syscall_ret: AtomicUsize,
+
+    /// The personality value for this thread.
+    personality: AtomicU32,
 }
 
 impl PosixThread {
