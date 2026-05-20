@@ -17,6 +17,7 @@
 
 #define RFLAGS_INTERRUPT_FLAG (1UL << 9)
 #define USER_REG_OFFSET(field) offsetof(struct user_regs_struct, field)
+#define USER_DEBUG_REG_OFFSET(index) offsetof(struct user, u_debugreg[(index)])
 #define NON_USER_VA 0x800000000000UL
 
 FN_TEST(read_write_regs)
@@ -88,6 +89,15 @@ FN_TEST(read_write_regs)
 	// still report the underlying signal-delivery syscall number.
 	TEST_RES(ptrace(PTRACE_PEEKUSER, pid, USER_REG_OFFSET(orig_rax), 0),
 		 _ret == __NR_tgkill || _ret == __NR_rt_tgsigqueueinfo);
+
+	// The x86 debug registers should be readable,
+	// and should have the expected default values.
+	for (int i = 0; i < 8; i++) {
+		unsigned long expected = (i == 6) ? 0xffff0ff0UL : 0;
+		TEST_RES(ptrace(PTRACE_PEEKUSER, pid, USER_DEBUG_REG_OFFSET(i),
+				0),
+			 _ret == expected);
+	}
 
 	// Poking with invalid values should fail with EIO.
 	TEST_ERRNO(ptrace(PTRACE_POKEUSER, pid, USER_REG_OFFSET(fs_base),

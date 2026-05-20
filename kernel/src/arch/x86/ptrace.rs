@@ -101,6 +101,20 @@ pub fn read_user_word(regs: &GeneralRegs, orig_rax: usize, offset: usize) -> Res
         return Ok(orig_rax);
     }
 
+    // FIXME: This emulates the default state of the x86 debug registers,
+    // so it can correctly respond when a tracer reads the tracee’s debug
+    // registers via `PTRACE_PEEKUSER`.
+    // Currently, the tracee’s x86 debug registers are never actually modified,
+    // so they always remain at their default values.
+    if let Some(index) = debug_register_index(offset) {
+        let value = match index {
+            6 => DEBUG_STATUS_DEFAULT_VALUE,
+            0..=5 | 7 => 0,
+            _ => unreachable!(),
+        };
+        return Ok(value);
+    }
+
     let rule =
         RegRule::for_offset(offset).expect("offset has been validated by `check_user_offset`");
     Ok(match rule.policy {
@@ -120,6 +134,12 @@ pub fn write_user_word(
     if offset == core::mem::offset_of!(CUserRegsStruct, orig_rax) {
         *orig_rax = value;
         return Ok(());
+    }
+    if debug_register_index(offset).is_some() {
+        return_errno_with_message!(
+            Errno::EOPNOTSUPP,
+            "writing x86 debug registers is not supported currently"
+        );
     }
 
     let rule =
@@ -321,20 +341,44 @@ const USER_MODIFIABLE_RFLAGS_MASK: usize = (RFlags::CARRY_FLAG.bits()
 //
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/user_64.h#L103-L132>
 fn check_user_offset(offset: usize) -> Result<()> {
-    // We only support the offsets for general-purpose registers currently.
-    // `struct user_regs_struct` is the first field in `struct user`.
-    if offset >= size_of::<CUserRegsStruct>() {
-        return_errno_with_message!(
-            Errno::EOPNOTSUPP,
-            "only offsets for general-purpose registers are supported currently"
-        );
-    }
-
     if !offset.is_multiple_of(size_of::<usize>()) {
         return_errno_with_message!(Errno::EIO, "invalid USER area offset");
     }
 
-    Ok(())
+    // We only support the offsets for general-purpose registers,
+    // and x86 debug registers currently.
+    // `struct user_regs_struct` is the first field in `struct user`.
+    if offset < size_of::<CUserRegsStruct>() {
+        return Ok(());
+    }
+
+    if debug_register_index(offset).is_some() {
+        return Ok(());
+    }
+
+    return_errno_with_message!(
+        Errno::EOPNOTSUPP,
+        "only offsets for general-purpose registers and debug registers are supported currently"
+    );
+}
+
+// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/user_64.h#L103-L132>.
+const DEBUG_REGS_OFFSET: usize = 848;
+const DEBUG_REGS_COUNT: usize = 8;
+const DEBUG_STATUS_DEFAULT_VALUE: usize = 0xffff0ff0;
+
+const fn debug_register_index(offset: usize) -> Option<usize> {
+    if !offset.is_multiple_of(size_of::<usize>()) {
+        return None;
+    }
+
+    if offset < DEBUG_REGS_OFFSET
+        || offset >= DEBUG_REGS_OFFSET + DEBUG_REGS_COUNT * size_of::<usize>()
+    {
+        return None;
+    }
+
+    Some((offset - DEBUG_REGS_OFFSET) / size_of::<usize>())
 }
 
 fn read_word(bytes: &[u8], offset: usize) -> usize {
