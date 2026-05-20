@@ -214,8 +214,9 @@ impl Vmo {
     ///
     /// For anonymous VMOs the page is zero-filled on first access.
     /// For VMOs with a backend this may perform synchronous I/O.
-    pub fn commit_on(&self, page_idx: usize) -> Result<CachePage> {
-        self.commit_on_internal(page_idx, CommitMode::Read)
+    pub fn commit_on(&self, page_idx: usize) -> Result<()> {
+        self.commit_on_internal(page_idx, CommitMode::Read)?;
+        Ok(())
     }
 
     fn commit_on_internal(&self, page_idx: usize, commit_mode: CommitMode) -> Result<CachePage> {
@@ -416,7 +417,8 @@ impl Vmo {
                 page_offset = 0;
             }
 
-            // `current_idx < page_idx_range.end` guarantees at least one page is successfully collected here.
+            // `current_idx < page_idx_range.end` guarantees at least one page is successfully
+            // collected here.
             current_idx = page_batch.last().unwrap().0 + 1;
         }
 
@@ -548,7 +550,8 @@ impl Vmo {
                 *page_offset = 0;
             }
 
-            // `current_idx < page_idx_range.end` guarantees at least one page is successfully collected here.
+            // `current_idx < page_idx_range.end` guarantees at least one page is successfully
+            // collected here.
             current_idx = page_batch.last().unwrap().0 + 1;
         }
 
@@ -573,7 +576,8 @@ impl Vmo {
         while current_idx < page_idx_range.end {
             self.collect_pages(current_idx, page_idx_range.end, commit_mode, page_batch)?;
 
-            // `current_idx < page_idx_range.end` guarantees at least one page is successfully collected here.
+            // `current_idx < page_idx_range.end` guarantees at least one page is successfully
+            // collected here.
             let next_idx = page_batch.last().unwrap().0 + 1;
 
             for (_, page) in page_batch.drain(..) {
