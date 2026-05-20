@@ -90,7 +90,7 @@ if [ "$1" = "riscv" ]; then
 fi
 
 if [ "$1" = "tdx" ]; then
-    TDX_OBJECT='{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "2", "port": "4050" } }'
+    TDX_OBJECT='{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "1", "port": "4050" } }'
 
     QEMU_ARGS="\
         -m ${MEM:-8G} \

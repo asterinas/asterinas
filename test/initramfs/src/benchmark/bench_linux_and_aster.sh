@@ -160,7 +160,7 @@ run_benchmark() {
             -bios /root/ovmf/release/OVMF.fd
             -nodefaults
             -serial stdio
-            -object '{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "2", "port": "4050" } }'
+            -object '{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "1", "port": "4050" } }'
         )
     fi
 
