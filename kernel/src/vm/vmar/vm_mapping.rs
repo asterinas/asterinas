@@ -906,8 +906,8 @@ impl MappedVmo {
     ///
     /// This method may involve I/O operations if the VMO needs to fetch
     /// a page from the underlying page cache.
-    pub fn commit_on(&self, page_idx: usize) -> Result<UFrame> {
-        self.vmo.commit_on(page_idx).map(|frame| frame.into())
+    pub fn commit_on(&self, page_idx: usize) -> Result<()> {
+        self.vmo.commit_on(page_idx)
     }
 
     /// Traverses the indices within a specified range of a VMO sequentially.
