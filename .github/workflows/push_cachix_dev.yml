@@ -21,7 +21,7 @@ jobs:
     container:
       image: asterinas/asterinas:0.17.2-20260508
       options: -v /dev:/dev --privileged
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
