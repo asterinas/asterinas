@@ -503,6 +503,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-development-tools-python"
+version = "0.1.0"
+dependencies = [
+ "nixos-test-framework",
+]
+
+[[package]]
 name = "test-file-management-and-terminal"
 version = "0.1.0"
 dependencies = [
