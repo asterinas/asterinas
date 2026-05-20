@@ -214,8 +214,9 @@ impl Vmo {
     ///
     /// For anonymous VMOs the page is zero-filled on first access.
     /// For VMOs with a backend this may perform synchronous I/O.
-    pub fn commit_on(&self, page_idx: usize) -> Result<CachePage> {
-        self.commit_on_internal(page_idx, CommitMode::Read)
+    pub fn commit_on(&self, page_idx: usize) -> Result<()> {
+        self.commit_on_internal(page_idx, CommitMode::Read)?;
+        Ok(())
     }
 
     fn commit_on_internal(&self, page_idx: usize, commit_mode: CommitMode) -> Result<CachePage> {
