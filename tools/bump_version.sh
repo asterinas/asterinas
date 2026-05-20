@@ -10,6 +10,7 @@ set -e
 #   --docker_version_file [major|minor|patch|date]   Bump the Docker image version in the DOCKER_IMAGE_VERSION file under the project root
 #   --docker_version_refs                            Update all references to the Docker image version throughout the codebase
 #   --version_file                                   Bump the project version to match the Docker image version
+#   --api_doc_hyperlinks_in_book                     Update all API doc hyperlinks in the Book to match VERSION
 #   --help, -h                                       Show this help message
 # Options:
 #   major, minor, patch, date                        The version part to increment when bumping the Docker image version
@@ -50,6 +51,7 @@ print_help() {
     echo "  --docker_version_file [major|minor|patch|date]   Bump the Docker image version in the DOCKER_IMAGE_VERSION file under the project root"
     echo "  --docker_version_refs                            Update all references to the Docker image version throughout the codebase"
     echo "  --version_file                                   Bump the project version to match the Docker image version"
+    echo "  --api_doc_hyperlinks_in_book                     Update all API doc hyperlinks in the Book to match VERSION"
     echo "  --help, -h                                       Show this help message"
     echo ""
     echo "The [major|minor|patch|date] options for --docker_version_file specify which part of the"
@@ -144,6 +146,21 @@ update_all_docker_version_refs() {
     done
 }
 
+update_api_doc_hyperlinks_in_book() {
+    new_version=$(cat ${VERSION_PATH})
+
+    # This matches 'asterinas.github.io/api-docs/' followed by any X.Y.Z version.
+    SEARCH_PATTERN="asterinas\.github\.io/api-docs/[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+"
+    REPLACE_STR="asterinas\.github\.io/api-docs/${new_version}"
+
+    grep -rl "asterinas.github.io/api-docs/" "$BOOK_SRC_DIR" | while read -r file; do
+        # We use '|' as a delimiter for sed to avoid escaping the slashes in the URL.
+        sed -i "s|$SEARCH_PATTERN|$REPLACE_STR|g" "$file"
+    done
+
+    echo "Updated Book API doc hyperlinks to ${new_version}"
+}
+
 # Update project dependencies (Cargo.toml and Cargo.lock)
 update_project_dependencies() {
     # Update the versions in Cargo.toml
@@ -199,6 +216,7 @@ OSDK_DIR=${ASTER_SRC_DIR}/osdk
 OSDK_CARGO_TOML_PATH=${OSDK_DIR}/Cargo.toml
 SCTRACE_DIR=${ASTER_SRC_DIR}/tools/sctrace
 SCTRACE_CARGO_TOML_PATH=${SCTRACE_DIR}/Cargo.toml
+BOOK_SRC_DIR=${ASTER_SRC_DIR}/book/src
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
 DOCKER_IMAGE_VERSION_PATH=${ASTER_SRC_DIR}/DOCKER_IMAGE_VERSION
 
@@ -219,7 +237,10 @@ case "$command" in
     "--version_file")
         sync_project_version
         ;;
+    "--api_doc_hyperlinks_in_book")
+        update_api_doc_hyperlinks_in_book
+        ;;
     *)
-        echo "Warning: Using --docker_version_file, --docker_version_refs, or --version_file instead."
+        echo "Warning: Using --docker_version_file, --docker_version_refs, --version_file, or --api_doc_hyperlinks_in_book instead."
         ;;
 esac
