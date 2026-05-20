@@ -34,7 +34,7 @@ log::info!("VirtIO block device initialized: {} sectors", num_sectors);
 println!("VirtIO block device initialized: {} sectors", num_sectors);
 ```
 
-[`ostd::log`]: https://asterinas.github.io/api-docs/0.17.2/ostd/log/
+[`ostd::log`]: https://asterinas.github.io/api-docs/0.18.0/ostd/log/
 
 ### Choose appropriate log levels (`log-levels`) {#log-levels}
 

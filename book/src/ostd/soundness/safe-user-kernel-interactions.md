@@ -1,9 +1,9 @@
 # Safe User-Kernel Interactions
 
 OSTD provides three API categories for user-kernel interactions:
-entering/exiting user space ([`UserMode`](https://asterinas.github.io/api-docs/0.17.1/ostd/user/struct.UserMode.html), [`UserContext`](https://asterinas.github.io/api-docs/0.17.1/ostd/arch/cpu/context/struct.UserContext.html)),
-managing user address spaces ([`VmSpace`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/vm_space/struct.VmSpace.html)),
-and accessing user memory ([`VmReader<Fallible>`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/io/struct.VmReader.html), [`VmWriter<Fallible>`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/io/struct.VmWriter.html)).
+entering/exiting user space ([`UserMode`](https://asterinas.github.io/api-docs/0.18.0/ostd/user/struct.UserMode.html), [`UserContext`](https://asterinas.github.io/api-docs/0.18.0/ostd/arch/cpu/context/struct.UserContext.html)),
+managing user address spaces ([`VmSpace`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/vm_space/struct.VmSpace.html)),
+and accessing user memory ([`VmReader<Fallible>`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/io/struct.VmReader.html), [`VmWriter<Fallible>`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/io/struct.VmWriter.html)).
 
 ## UserMode and UserContext
 
@@ -19,14 +19,14 @@ It is `!Send`:
 once created on a task,
 it cannot be sent to another,
 preventing cross-task confusion of register state.
-[`UserMode::context()`](https://asterinas.github.io/api-docs/0.17.1/ostd/user/struct.UserMode.html#method.context)
-and [`UserMode::context_mut()`](https://asterinas.github.io/api-docs/0.17.1/ostd/user/struct.UserMode.html#method.context_mut)
+[`UserMode::context()`](https://asterinas.github.io/api-docs/0.18.0/ostd/user/struct.UserMode.html#method.context)
+and [`UserMode::context_mut()`](https://asterinas.github.io/api-docs/0.18.0/ostd/user/struct.UserMode.html#method.context_mut)
 give access to the underlying `UserContext`
 for register inspection and modification between entries.
 
 Clients may set arbitrary values in `UserContext`,
 but the sanitization inside
-[`UserMode::execute(has_kernel_event)`](https://asterinas.github.io/api-docs/0.17.1/ostd/user/struct.UserMode.html#method.execute)
+[`UserMode::execute(has_kernel_event)`](https://asterinas.github.io/api-docs/0.18.0/ostd/user/struct.UserMode.html#method.execute)
 ensures kernel safety invariants
 are enforced every time before entering user space:
 
@@ -55,8 +55,8 @@ The above safety measures are key to achieving the following invariant:
 
 `VmSpace` manages a user-space page table.
 To modify page table mappings,
-clients obtain a [`CursorMut`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/vm_space/struct.CursorMut.html)
-via [`VmSpace::cursor_mut(guard, &range)`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/vm_space/struct.VmSpace.html#method.cursor_mut),
+clients obtain a [`CursorMut`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/vm_space/struct.CursorMut.html)
+via [`VmSpace::cursor_mut(guard, &range)`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/vm_space/struct.VmSpace.html#method.cursor_mut),
 which gives exclusive access to a virtual address range within the page table.
 
 The key safety invariant of `VmSpace` is:
@@ -66,11 +66,11 @@ The key safety invariant of `VmSpace` is:
 `CursorMut` exposes exactly two methods for creating mappings,
 and neither accepts typed frames:
 
-- [`CursorMut::map(frame, prop)`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/vm_space/struct.CursorMut.html#method.map)
+- [`CursorMut::map(frame, prop)`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/vm_space/struct.CursorMut.html#method.map)
   accepts a `UFrame` — an untyped frame.
   There is no code path that converts a typed `Frame<M>` to `UFrame`
   unless `M: AnyUFrameMeta`.
-- [`CursorMut::map_iomem(io_mem, prop, len, offset)`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/vm_space/struct.CursorMut.html#method.map_iomem)
+- [`CursorMut::map_iomem(io_mem, prop, len, offset)`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/vm_space/struct.CursorMut.html#method.map_iomem)
   accepts an `IoMem` (defaulting to `IoMem<Insensitive>`) —
   peripheral MMIO memory that does not host Rust objects.
 
@@ -95,8 +95,8 @@ for [untyped frames](safe-memory-management.md#the-solution-typed-and-untyped-fr
 
 > **Safety Invariant.** The kernel never creates Rust references to user memory.
 
-[`VmSpace::reader(vaddr, len)`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/vm_space/struct.VmSpace.html#method.reader)
-and [`VmSpace::writer(vaddr, len)`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/vm_space/struct.VmSpace.html#method.writer)
+[`VmSpace::reader(vaddr, len)`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/vm_space/struct.VmSpace.html#method.reader)
+and [`VmSpace::writer(vaddr, len)`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/vm_space/struct.VmSpace.html#method.writer)
 are the only safe APIs for user memory access.
 They return `VmReader<Fallible>` / `VmWriter<Fallible>` cursors —
 the same raw-pointer-based mechanism used for untyped frame access,
