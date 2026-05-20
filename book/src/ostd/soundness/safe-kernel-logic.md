@@ -68,8 +68,8 @@ and if the interrupt handler tries to acquire the same lock,
 a deadlock results.
 
 The kind of guard —
-preemption-only ([`PreemptDisabled`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.PreemptDisabled.html))
-or IRQ-disabled ([`LocalIrqDisabled`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.LocalIrqDisabled.html)) —
+preemption-only ([`PreemptDisabled`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/enum.PreemptDisabled.html))
+or IRQ-disabled ([`LocalIrqDisabled`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/enum.LocalIrqDisabled.html)) —
 is chosen at lock declaration time
 and statically enforced by the type system,
 ensuring consistent usage throughout the lock's lifetime.
