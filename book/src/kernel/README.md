@@ -18,7 +18,7 @@ establishes Asterinas as a more secure and dependable kernel option.
 * Asterinas surpasses Linux in terms of developer friendliness.
 It empowers kernel developers to
 (1) utilize the more productive Rust programming language,
-(2) leverage a purpose-built toolkit called [OSDK]() to streamline their workflows,
+(2) leverage a purpose-built toolkit called [OSDK](../osdk/guide/) to streamline their workflows,
 and (3) choose between releasing their kernel modules as open source
 or keeping them proprietary,
 thanks to the flexibility offered by [MPL](../).

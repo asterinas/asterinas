@@ -212,7 +212,7 @@ drill -x 8.8.8.8
 
 ### whois
 
-[whois](https://packages.qa.debian.org/w/whois.html) queries domain registration information.
+[whois](https://tracker.debian.org/pkg/whois) queries domain registration information.
 
 #### Installation
 
