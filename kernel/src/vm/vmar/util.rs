@@ -3,7 +3,7 @@
 use core::ops::Range;
 
 /// Determines whether two ranges are intersected.
-/// returns false if one of the ranges has a length of 0
+/// Returns false if one of the ranges has a length of 0.
 pub fn is_intersected(range1: &Range<usize>, range2: &Range<usize>) -> bool {
     range1.start.max(range2.start) < range1.end.min(range2.end)
 }

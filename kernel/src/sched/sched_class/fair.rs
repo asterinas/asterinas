@@ -83,7 +83,7 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
 ///
 /// # Scheduling periods
 ///
-/// Scheduling periods is designed to calculate the time slice for each threads.
+/// Scheduling periods are designed to calculate the time slice for each threads.
 ///
 /// The time slice for each threads is calculated by the formula:
 ///
@@ -113,9 +113,9 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
 /// To indicate whether the weight needs to be updated, we pack the `weight` field
 /// with a bit flag `HAS_PENDING`. When accessing the `weight` field:
 ///
-/// - If the weight does not need to be updated (i.e. `weight & IS_PENDING == 0`),
+/// - If the weight does not need to be updated (i.e., `weight & HAS_PENDING == 0`),
 ///   we simply return the weight.
-/// - If the weight needs to be updated (i.e. `weight & IS_PENDING != 0`), we try to
+/// - If the weight needs to be updated (i.e., `weight & HAS_PENDING != 0`), we try to
 ///   store the new weight into the `weight` field, which shouldn't take too much time
 ///   since the update frequency is usually relatively low.
 /// - After a successful update, we re-evaluate the data of the run queue.
