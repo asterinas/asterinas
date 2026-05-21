@@ -600,7 +600,8 @@ impl Vmo {
                 {
                     Ok(written_size) => written_size,
                     Err((err, written_size)) => {
-                        if written_size > 0 {
+                        // If the page is not initialized, keep it as it is on a partial write.
+                        if written_size > 0 && locked_page.is_up_to_date() {
                             locked_page.set_dirty();
                         }
                         return Err(Error::from(err));
