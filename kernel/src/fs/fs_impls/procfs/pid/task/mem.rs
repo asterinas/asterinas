@@ -5,7 +5,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{AccessMode, FileIo, StatusFlags, mkmod},
-        procfs::template::{FileOpsByHandle, ProcFile},
+        procfs::template::{ProcFile, ProcFileOpsByHandle},
         vfs::inode::{Inode, InodeIo},
     },
     prelude::*,
@@ -27,7 +27,7 @@ impl MemFileOps {
     }
 }
 
-impl FileOpsByHandle for MemFileOps {
+impl ProcFileOpsByHandle for MemFileOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }

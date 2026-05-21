@@ -19,12 +19,12 @@ use crate::{
     thread::Thread,
 };
 
-pub struct ProcFile<F: FileOps> {
+pub struct ProcFile<F: ProcFileOps> {
     inner: F,
     common: Common,
 }
 
-impl<F: FileOps> ProcFile<F> {
+impl<F: ProcFileOps> ProcFile<F> {
     pub fn new(file: F, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
         let common = {
             let fs = parent.upgrade().unwrap().fs();
@@ -48,7 +48,7 @@ impl<F: FileOps> ProcFile<F> {
     }
 }
 
-impl<F: FileOps + 'static> InodeIo for ProcFile<F> {
+impl<F: ProcFileOps + 'static> InodeIo for ProcFile<F> {
     fn read_at(
         &self,
         offset: usize,
@@ -69,7 +69,7 @@ impl<F: FileOps + 'static> InodeIo for ProcFile<F> {
 }
 
 #[inherit_methods(from = "self.common")]
-impl<F: FileOps + 'static> Inode for ProcFile<F> {
+impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
     fn size(&self) -> usize;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
@@ -123,7 +123,7 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
     }
 }
 
-pub trait FileOps: Sync + Send {
+pub trait ProcFileOps: Sync + Send {
     /// Returns the thread whose credentials own this procfs inode.
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         None
@@ -144,7 +144,7 @@ pub trait FileOps: Sync + Send {
     }
 }
 
-pub trait FileOpsByHandle: Sync + Send {
+pub trait ProcFileOpsByHandle: Sync + Send {
     /// Returns the thread whose credentials own this procfs inode.
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         None
@@ -153,9 +153,9 @@ pub trait FileOpsByHandle: Sync + Send {
     fn open(&self, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Box<dyn FileIo>>;
 }
 
-impl<T: FileOpsByHandle> FileOps for T {
+impl<T: ProcFileOpsByHandle> ProcFileOps for T {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
-        FileOpsByHandle::owner_thread(self)
+        ProcFileOpsByHandle::owner_thread(self)
     }
 
     fn read_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {

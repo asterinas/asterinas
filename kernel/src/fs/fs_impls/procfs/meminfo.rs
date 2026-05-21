@@ -11,7 +11,7 @@ use aster_util::printer::VmPrinter;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFile},
+        procfs::template::{ProcFile, ProcFileOps},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -29,7 +29,7 @@ impl MemInfoFileOps {
     }
 }
 
-impl FileOps for MemInfoFileOps {
+impl ProcFileOps for MemInfoFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 

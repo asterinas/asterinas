@@ -6,7 +6,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFile},
+        procfs::template::{ProcFile, ProcFileOps},
         vfs::{
             file_system::FsFlags,
             inode::Inode,
@@ -151,7 +151,7 @@ impl MountInfoFileOps {
     }
 }
 
-impl FileOps for MountInfoFileOps {
+impl ProcFileOps for MountInfoFileOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }

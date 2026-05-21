@@ -8,7 +8,7 @@ use crate::{
         file::mkmod,
         procfs::{
             pid::task::mountinfo::make_mount_point_path,
-            template::{FileOps, ProcFile},
+            template::{ProcFile, ProcFileOps},
         },
         vfs::{
             inode::Inode,
@@ -110,7 +110,7 @@ impl MountsFileOps {
     }
 }
 
-impl FileOps for MountsFileOps {
+impl ProcFileOps for MountsFileOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }

@@ -11,7 +11,7 @@ use ostd::boot::boot_info;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFile},
+        procfs::template::{ProcFile, ProcFileOps},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -29,7 +29,7 @@ impl CmdLineFileOps {
     }
 }
 
-impl FileOps for CmdLineFileOps {
+impl ProcFileOps for CmdLineFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 

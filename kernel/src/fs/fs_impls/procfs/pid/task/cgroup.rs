@@ -9,7 +9,7 @@ use crate::{
         file::mkmod,
         procfs::{
             pid::TidDirOps,
-            template::{FileOps, ProcFile},
+            template::{ProcFile, ProcFileOps},
         },
         vfs::inode::Inode,
     },
@@ -27,7 +27,7 @@ impl CgroupFileOps {
     }
 }
 
-impl FileOps for CgroupFileOps {
+impl ProcFileOps for CgroupFileOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }
