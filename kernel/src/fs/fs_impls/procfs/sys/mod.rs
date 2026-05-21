@@ -8,7 +8,7 @@ use super::{
 use crate::{
     fs::{
         file::{InodeType, mkmod},
-        procfs::template::{DirOps, ProcDir, lookup_child_from_table},
+        procfs::template::{ProcDir, ProcDirOps, lookup_child_from_table},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -31,7 +31,7 @@ impl SysDirOps {
         &[("kernel", InodeType::Dir, KernelDirOps::new_inode)];
 }
 
-impl DirOps for SysDirOps {
+impl ProcDirOps for SysDirOps {
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if let Some(child) = lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| {
             (f)(this_dir.this_weak().clone())

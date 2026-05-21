@@ -18,7 +18,7 @@ use crate::{
         registry::char,
         tty::{CFontOp, Tty, TtyDriver, file::TtyFile, termio::CTermios},
     },
-    fs::file::FileIo,
+    fs::file::PerOpenFileOps,
     prelude::*,
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
@@ -106,7 +106,7 @@ impl TtyDriver for VtDriver {
         Some(DevtmpfsInodeMeta::new(format!("tty{}", index)))
     }
 
-    fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>> {
+    fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn PerOpenFileOps>> {
         Ok(Box::new(TtyFile::new(tty)))
     }
 

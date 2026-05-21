@@ -11,14 +11,14 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{
-            AccessMode, FileIo, InodeHandle, InodeMode, InodeType, StatusFlags,
+            AccessMode, InodeHandle, InodeMode, InodeType, PerOpenFileOps, StatusFlags,
             file_table::{FdFlags, FileDesc},
             mkmod,
         },
         pseudofs::{NaivePseudoFs, PseudoInode, PseudoInodeType},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, InodeIo, Metadata},
+            inode::{Extension, FileOps, Inode, Metadata},
             path::{Dentry, Mount, Path},
         },
     },
@@ -126,7 +126,7 @@ impl<T: NsCommonOps> Inode for NsInode<T> {
         &self,
         access_mode: AccessMode,
         _status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         // FIXME: This may not be the most appropriate place to check the access mode,
         // but the check must not be bypassed even if the current process has the
         // CAP_DAC_OVERRIDE capability. It is hard to find a better place for it,
@@ -141,7 +141,7 @@ impl<T: NsCommonOps> Inode for NsInode<T> {
         let ns_file = NsFile {
             ns: self.ns.clone(),
         };
-        Some(Ok(Box::new(ns_file) as Box<dyn FileIo>))
+        Some(Ok(Box::new(ns_file) as Box<dyn PerOpenFileOps>))
     }
 
     fn set_mode(&self, _mode: InodeMode) -> Result<()> {
@@ -150,7 +150,7 @@ impl<T: NsCommonOps> Inode for NsInode<T> {
 }
 
 #[inherit_methods(from = "self.common")]
-impl<T: NsCommonOps> InodeIo for NsInode<T> {
+impl<T: NsCommonOps> FileOps for NsInode<T> {
     fn read_at(
         &self,
         _offset: usize,
@@ -177,7 +177,7 @@ impl<T: NsCommonOps> NsFile<T> {
     }
 }
 
-impl<T: NsCommonOps> FileIo for NsFile<T> {
+impl<T: NsCommonOps> PerOpenFileOps for NsFile<T> {
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "ns files are not seekable");
     }
@@ -246,7 +246,7 @@ impl<T: NsCommonOps> Pollable for NsFile<T> {
     }
 }
 
-impl<T: NsCommonOps> InodeIo for NsFile<T> {
+impl<T: NsCommonOps> FileOps for NsFile<T> {
     fn read_at(
         &self,
         _offset: usize,

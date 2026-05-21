@@ -8,8 +8,9 @@ use crate::{
         procfs::{
             StaticEntry,
             template::{
-                DirOps, ProcDir, ProcFile, ProcFileOps, ReaddirEntry, listed_entries_from_table,
-                lookup_child_from_table, read_i32_from, visit_listed_entries,
+                ProcDir, ProcDirOps, ProcFile, ProcFileOps, ReaddirEntry,
+                listed_entries_from_table, lookup_child_from_table, read_i32_from,
+                visit_listed_entries,
             },
         },
         vfs::inode::Inode,
@@ -36,7 +37,7 @@ impl YamaDirOps {
     )];
 }
 
-impl DirOps for YamaDirOps {
+impl ProcDirOps for YamaDirOps {
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if let Some(child) = lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| {
             (f)(this_dir.this_weak().clone())

@@ -19,14 +19,14 @@ use super::{memfd::MemfdInode, xattr::RamXattr, *};
 use crate::{
     device::{self, DeviceType},
     fs::{
-        file::{AccessMode, FileIo, InodeMode, InodeType, Permission, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags, mkmod},
         pipe::Pipe,
         pseudofs::AnonDeviceId,
         tmpfs::{self, TMPFS_MAGIC},
         utils::{CStr256, DirentVisitor},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            inode::{Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
+            inode::{Extension, FallocMode, FileOps, Inode, Metadata, MknodType, SymbolicLink},
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
@@ -252,7 +252,7 @@ impl Inner {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         match self {
             Self::BlockDevice(device_id) | Self::CharDevice(device_id) => {
                 let Some(device_id) = DeviceId::from_encoded_u64(*device_id) else {
@@ -628,7 +628,7 @@ impl RamInode {
     }
 }
 
-impl InodeIo for RamInode {
+impl FileOps for RamInode {
     fn read_at(
         &self,
         offset: usize,
@@ -691,6 +691,23 @@ impl InodeIo for RamInode {
             _ => return_errno_with_message!(Errno::EISDIR, "write is not supported"),
         };
         Ok(written_len)
+    }
+
+    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        if self.typ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
+        }
+
+        let cnt = self
+            .inner
+            .as_direntry()
+            .unwrap()
+            .read()
+            .visit_entry(offset, visitor)?;
+
+        self.set_atime(now());
+
+        Ok(cnt)
     }
 }
 
@@ -846,7 +863,7 @@ impl Inode for RamInode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         self.inner.open(access_mode, status_flags)
     }
 
@@ -892,23 +909,6 @@ impl Inode for RamInode {
         }
 
         Ok(new_inode)
-    }
-
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        if self.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
-        }
-
-        let cnt = self
-            .inner
-            .as_direntry()
-            .unwrap()
-            .read()
-            .visit_entry(offset, visitor)?;
-
-        self.set_atime(now());
-
-        Ok(cnt)
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {

@@ -58,8 +58,8 @@ use crate::{
     device::{Device, DeviceType, DevtmpfsInodeMeta, registry::char::register},
     events::IoEvents,
     fs::{
-        file::{FileIo, StatusFlags},
-        vfs::inode::InodeIo,
+        file::{PerOpenFileOps, StatusFlags},
+        vfs::inode::FileOps,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -97,7 +97,7 @@ impl Device for TdxGuest {
         Some(DevtmpfsInodeMeta::new("tdx_guest"))
     }
 
-    fn open(&self) -> Result<Box<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         Ok(Box::new(TdxGuestFile))
     }
 }
@@ -155,7 +155,7 @@ impl Pollable for TdxGuestFile {
     }
 }
 
-impl InodeIo for TdxGuestFile {
+impl FileOps for TdxGuestFile {
     fn read_at(
         &self,
         _offset: usize,
@@ -175,7 +175,7 @@ impl InodeIo for TdxGuestFile {
     }
 }
 
-impl FileIo for TdxGuestFile {
+impl PerOpenFileOps for TdxGuestFile {
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "seek is not supported")
     }

@@ -4,12 +4,12 @@ use core::time::Duration;
 
 pub(super) use self::{
     dir::{
-        DirOps, ListedEntry, ProcDir, ReaddirEntry, StaticDirEntry, keyed_readdir_entries,
+        ListedEntry, ProcDir, ProcDirOps, ReaddirEntry, StaticDirEntry, keyed_readdir_entries,
         listed_entries_from_table, lookup_child_from_table, sequential_readdir_entries,
         visit_listed_entries, visit_readdir_entries,
     },
     file::{ProcFile, ProcFileOps, ProcFileOpsByHandle, read_i32_from},
-    sym::{ProcSym, SymOps},
+    sym::{ProcSym, ProcSymOps},
 };
 use crate::{
     fs::{

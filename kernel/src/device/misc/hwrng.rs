@@ -12,8 +12,8 @@ use crate::{
     device::{Device, DeviceType, DevtmpfsInodeMeta, registry::char},
     events::IoEvents,
     fs::{
-        file::{FileIo, StatusFlags},
-        vfs::inode::InodeIo,
+        file::{PerOpenFileOps, StatusFlags},
+        vfs::inode::FileOps,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -56,7 +56,7 @@ impl Device for HwRngDevice {
         Some(DevtmpfsInodeMeta::new("hwrng"))
     }
 
-    fn open(&self) -> Result<Box<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         // TODO: Reject non-read-only opens with `EINVAL`
         // once device `open` callbacks receive `AccessMode`.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/core.c#L169>.
@@ -76,7 +76,7 @@ impl Pollable for HwRngFile {
     }
 }
 
-impl InodeIo for HwRngFile {
+impl FileOps for HwRngFile {
     fn read_at(
         &self,
         _offset: usize,
@@ -140,7 +140,7 @@ impl InodeIo for HwRngFile {
     }
 }
 
-impl FileIo for HwRngFile {
+impl PerOpenFileOps for HwRngFile {
     fn check_seekable(&self) -> Result<()> {
         Ok(())
     }

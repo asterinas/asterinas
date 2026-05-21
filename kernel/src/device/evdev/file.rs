@@ -16,8 +16,8 @@ use super::EvdevDevice;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{FileIo, StatusFlags},
-        vfs::inode::InodeIo,
+        file::{PerOpenFileOps, StatusFlags},
+        vfs::inode::FileOps,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -356,7 +356,7 @@ impl Pollable for EvdevFile {
     }
 }
 
-impl InodeIo for EvdevFile {
+impl FileOps for EvdevFile {
     fn read_at(
         &self,
         _offset: usize,
@@ -405,7 +405,7 @@ impl InodeIo for EvdevFile {
     }
 }
 
-impl FileIo for EvdevFile {
+impl PerOpenFileOps for EvdevFile {
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "the inode is an evdev file");
     }

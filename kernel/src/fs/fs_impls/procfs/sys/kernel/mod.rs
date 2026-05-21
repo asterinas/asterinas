@@ -9,7 +9,7 @@ use crate::{
                 cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps, yama::YamaDirOps,
             },
             template::{
-                DirOps, ListedEntry, ReaddirEntry, listed_entries_from_table,
+                ListedEntry, ProcDirOps, ReaddirEntry, listed_entries_from_table,
                 lookup_child_from_table, visit_listed_entries,
             },
         },
@@ -44,7 +44,7 @@ impl KernelDirOps {
     ];
 }
 
-impl DirOps for KernelDirOps {
+impl ProcDirOps for KernelDirOps {
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if let Some(child) = lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| {
             (f)(this_dir.this_weak().clone())

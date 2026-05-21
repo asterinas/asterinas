@@ -3,8 +3,8 @@
 use crate::{
     events::IoEvents,
     fs::{
-        file::{FileIo, StatusFlags},
-        vfs::inode::InodeIo,
+        file::{PerOpenFileOps, StatusFlags},
+        vfs::inode::FileOps,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -96,7 +96,7 @@ impl Pollable for MemFile {
     }
 }
 
-impl InodeIo for MemFile {
+impl FileOps for MemFile {
     fn read_at(
         &self,
         _offset: usize,
@@ -136,7 +136,7 @@ impl InodeIo for MemFile {
     }
 }
 
-impl FileIo for MemFile {
+impl PerOpenFileOps for MemFile {
     fn check_seekable(&self) -> Result<()> {
         Ok(())
     }

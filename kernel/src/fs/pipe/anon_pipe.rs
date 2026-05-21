@@ -6,12 +6,12 @@ use inherit_methods_macro::inherit_methods;
 
 use crate::{
     fs::{
-        file::{AccessMode, FileIo, InodeHandle, InodeMode, InodeType, StatusFlags, mkmod},
+        file::{AccessMode, InodeHandle, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         pipe::Pipe,
         pseudofs::{PipeFs, PseudoInode, PseudoInodeType},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, InodeIo, Metadata},
+            inode::{Extension, FileOps, Inode, Metadata},
         },
     },
     prelude::*,
@@ -59,7 +59,7 @@ impl AnonPipeInode {
 }
 
 #[inherit_methods(from = "self.pseudo_inode")]
-impl InodeIo for AnonPipeInode {
+impl FileOps for AnonPipeInode {
     fn read_at(
         &self,
         _offset: usize,
@@ -100,7 +100,7 @@ impl Inode for AnonPipeInode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         Some(self.pipe.open_anon(access_mode, status_flags))
     }
 }

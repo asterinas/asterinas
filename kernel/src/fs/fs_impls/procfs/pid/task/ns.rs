@@ -9,7 +9,8 @@ use crate::{
         procfs::{
             pid::TidDirOps,
             template::{
-                DirOps, ListedEntry, ProcDir, ProcSym, ReaddirEntry, SymOps, visit_listed_entries,
+                ListedEntry, ProcDir, ProcDirOps, ProcSym, ProcSymOps, ReaddirEntry,
+                visit_listed_entries,
             },
         },
         pseudofs::NsCommonOps,
@@ -135,7 +136,7 @@ fn cached_ns_path(inode: &dyn Inode) -> Option<&Path> {
     None
 }
 
-impl DirOps for NsDirOps {
+impl ProcDirOps for NsDirOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.dir.thread()
     }
@@ -271,7 +272,7 @@ impl<T: NsCommonOps> NsSymOps<T> {
     }
 }
 
-impl<T: NsCommonOps> SymOps for NsSymOps<T> {
+impl<T: NsCommonOps> ProcSymOps for NsSymOps<T> {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.dir.thread()
     }

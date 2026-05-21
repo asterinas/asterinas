@@ -9,12 +9,12 @@ use aster_systree::{
 
 use crate::{
     fs::{
-        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         utils::DirentVisitor,
         vfs::{
             file_system::{FileSystem, SuperBlock},
             inode::{
-                Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, RevalidationPolicy,
+                Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RevalidationPolicy,
                 SymbolicLink,
             },
         },
@@ -311,7 +311,7 @@ pub(in crate::fs) enum SysTreeNodeKind {
     Symlink(Arc<dyn SysSymlink>),
 }
 
-impl<KInode: SysTreeInodeTy + Send + Sync + 'static> InodeIo for KInode {
+impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
     default fn read_at(
         &self,
         offset: usize,
@@ -344,6 +344,70 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> InodeIo for KInode {
         };
 
         Ok(len)
+    }
+
+    default fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        // Why interpreting the `offset` argument as an inode number?
+        //
+        // It may take multiple `getdents` system calls
+        // -- and thus multiple calls to this method --
+        // to list a large directory when the syscall is provided a small buffer.
+        // Between these calls,
+        // the directory may have new entries added or existing ones removed
+        // by some concurrent users that are working on the directory.
+        // In such situations,
+        // missing some of the concurrently-added entries is inevitable,
+        // but reporting the same entry multiple times would be
+        // very confusing to the user.
+        //
+        // To address this issue,
+        // the `readdir_at` method reports entries starting from a user-given `offset`
+        // and returns an increment that the next call should be put on the `offset` argument
+        // to avoid getting duplicated entries.
+        //
+        // Different file systems may interpret the meaning of
+        // the `offset` argument differently:
+        // one may take it as a _byte_ offset,
+        // while the other may treat it as an _index_.
+        // This freedom is guaranteed by Linux as documented in
+        // [the man page of getdents](https://man7.org/linux/man-pages/man2/getdents.2.html).
+        //
+        // Our implementation of sysfs interprets the `offset`
+        // as an _inode number_.
+        // By inode numbers, directory entries will have a _stable_ order
+        // across different calls to `readdir_at`.
+        // The `new_dentry_iter` is responsible for filtering out entries
+        // with inode numbers less than `start_ino`.
+        let start_ino = offset as Ino;
+        let mut count = 0;
+        let mut last_ino = start_ino;
+
+        let dentries = {
+            let mut dentries: Vec<_> = self.new_dentry_iter(start_ino).collect();
+            dentries.sort_by_key(|d| d.ino);
+            dentries
+        };
+
+        for dentry in dentries {
+            let res = visitor.visit(&dentry.name, dentry.ino, dentry.type_, dentry.ino as usize);
+
+            if res.is_err() {
+                if count == 0 {
+                    return_errno_with_message!(Errno::EINVAL, "dirent visitor error");
+                } else {
+                    break;
+                }
+            }
+            count += 1;
+            last_ino = dentry.ino;
+        }
+
+        if count == 0 {
+            return Ok(0);
+        }
+
+        let next_ino = last_ino + 1;
+        Ok((next_ino - start_ino) as usize)
     }
 }
 
@@ -517,70 +581,6 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         }
     }
 
-    default fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        // Why interpreting the `offset` argument as an inode number?
-        //
-        // It may take multiple `getdents` system calls
-        // -- and thus multiple calls to this method --
-        // to list a large directory when the syscall is provided a small buffer.
-        // Between these calls,
-        // the directory may have new entries added or existing ones removed
-        // by some concurrent users that are working on the directory.
-        // In such situations,
-        // missing some of the concurrently-added entries is inevitable,
-        // but reporting the same entry multiple times would be
-        // very confusing to the user.
-        //
-        // To address this issue,
-        // the `readdir_at` method reports entries starting from a user-given `offset`
-        // and returns an increment that the next call should be put on the `offset` argument
-        // to avoid getting duplicated entries.
-        //
-        // Different file systems may interpret the meaning of
-        // the `offset` argument differently:
-        // one may take it as a _byte_ offset,
-        // while the other may treat it as an _index_.
-        // This freedom is guaranteed by Linux as documented in
-        // [the man page of getdents](https://man7.org/linux/man-pages/man2/getdents.2.html).
-        //
-        // Our implementation of sysfs interprets the `offset`
-        // as an _inode number_.
-        // By inode numbers, directory entries will have a _stable_ order
-        // across different calls to `readdir_at`.
-        // The `new_dentry_iter` is responsible for filtering out entries
-        // with inode numbers less than `start_ino`.
-        let start_ino = offset as Ino;
-        let mut count = 0;
-        let mut last_ino = start_ino;
-
-        let dentries = {
-            let mut dentries: Vec<_> = self.new_dentry_iter(start_ino).collect();
-            dentries.sort_by_key(|d| d.ino);
-            dentries
-        };
-
-        for dentry in dentries {
-            let res = visitor.visit(&dentry.name, dentry.ino, dentry.type_, dentry.ino as usize);
-
-            if res.is_err() {
-                if count == 0 {
-                    return_errno_with_message!(Errno::EINVAL, "dirent visitor error");
-                } else {
-                    break;
-                }
-            }
-            count += 1;
-            last_ino = dentry.ino;
-        }
-
-        if count == 0 {
-            return Ok(0);
-        }
-
-        let next_ino = last_ino + 1;
-        Ok((next_ino - start_ino) as usize)
-    }
-
     default fn read_link(&self) -> Result<SymbolicLink> {
         match &self.node_kind() {
             SysTreeNodeKind::Symlink(s) => Ok(SymbolicLink::Plain(s.target_path().to_string())),
@@ -596,7 +596,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         &self,
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         None
     }
 

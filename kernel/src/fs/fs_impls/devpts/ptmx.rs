@@ -5,7 +5,7 @@ use device_id::{DeviceId, MajorId, MinorId};
 use super::*;
 use crate::{
     device::DevtmpfsInodeMeta,
-    fs::file::{AccessMode, FileIo},
+    fs::file::{AccessMode, PerOpenFileOps},
 };
 
 /// Same major number with Linux.
@@ -49,7 +49,7 @@ impl Ptmx {
 
 // Many methods are left to do nothing because every time the ptmx is being opened,
 // it returns the pty master. So the ptmx can not be used at upper layer.
-impl InodeIo for Ptmx {
+impl FileOps for Ptmx {
     fn read_at(
         &self,
         _offset: usize,
@@ -154,7 +154,7 @@ impl Inode for Ptmx {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         Some(self.inner.open())
     }
 }
@@ -172,7 +172,7 @@ impl Device for Inner {
         None
     }
 
-    fn open(&self) -> Result<Box<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         let devpts = self.0.upgrade().unwrap();
         Ok(devpts.create_master_slave_pair()?.0)
     }

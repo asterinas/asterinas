@@ -13,8 +13,8 @@ use crate::{
             mkmod,
         },
         procfs::template::{
-            DirOps, ListedEntry, ProcDir, ProcFile, ProcFileOps, ProcSym, ReaddirEntry, SymOps,
-            keyed_readdir_entries, visit_readdir_entries,
+            ListedEntry, ProcDir, ProcDirOps, ProcFile, ProcFileOps, ProcSym, ProcSymOps,
+            ReaddirEntry, keyed_readdir_entries, visit_readdir_entries,
         },
         vfs::inode::{Inode, RevalidationPolicy, SymbolicLink},
     },
@@ -43,7 +43,7 @@ impl<T: FdOps> FdDirOps<T> {
     }
 }
 
-impl<T: FdOps> DirOps for FdDirOps<T> {
+impl<T: FdOps> ProcDirOps for FdDirOps<T> {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.dir.thread()
     }
@@ -229,7 +229,7 @@ impl FdOps for FileSymOps {
     }
 }
 
-impl SymOps for FileSymOps {
+impl ProcSymOps for FileSymOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.tid_dir_ops.thread()
     }

@@ -4,9 +4,9 @@ use super::TidDirOps;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, FileIo, StatusFlags, mkmod},
+        file::{AccessMode, PerOpenFileOps, StatusFlags, mkmod},
         procfs::template::{ProcFile, ProcFileOpsByHandle},
-        vfs::inode::{Inode, InodeIo},
+        vfs::inode::{FileOps, Inode},
     },
     prelude::*,
     process::{
@@ -36,7 +36,7 @@ impl ProcFileOpsByHandle for MemFileOps {
         &self,
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
-    ) -> Result<Box<dyn FileIo>> {
+    ) -> Result<Box<dyn PerOpenFileOps>> {
         let Some(process) = self.0.process() else {
             return_errno_with_message!(Errno::ESRCH, "the process does not exist");
         };
@@ -69,7 +69,7 @@ impl Pollable for MemFileHandle {
     }
 }
 
-impl InodeIo for MemFileHandle {
+impl FileOps for MemFileHandle {
     fn read_at(
         &self,
         offset: usize,
@@ -125,7 +125,7 @@ impl InodeIo for MemFileHandle {
     }
 }
 
-impl FileIo for MemFileHandle {
+impl PerOpenFileOps for MemFileHandle {
     fn check_seekable(&self) -> Result<()> {
         Ok(())
     }

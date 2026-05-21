@@ -39,11 +39,11 @@ use spin::Once;
 
 use crate::{
     fs::{
-        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            inode::{Extension, Inode, InodeIo, Metadata},
+            inode::{Extension, FileOps, Inode, Metadata},
         },
     },
     prelude::*,
@@ -235,7 +235,7 @@ impl PseudoInode {
     }
 }
 
-impl InodeIo for PseudoInode {
+impl FileOps for PseudoInode {
     fn read_at(
         &self,
         _offset: usize,
@@ -354,7 +354,7 @@ impl Inode for PseudoInode {
         &self,
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         Some(Err(Error::with_message(
             Errno::ENXIO,
             "the pseudo inode is not re-openable",

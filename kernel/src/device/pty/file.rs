@@ -6,8 +6,8 @@ use crate::{
     device::PtySlave,
     events::IoEvents,
     fs::{
-        file::{FileIo, StatusFlags},
-        vfs::inode::InodeIo,
+        file::{PerOpenFileOps, StatusFlags},
+        vfs::inode::FileOps,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -60,7 +60,7 @@ impl Pollable for PtySlaveFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
 }
 
-impl InodeIo for PtySlaveFile {
+impl FileOps for PtySlaveFile {
     fn read_at(
         &self,
         _offset: usize,
@@ -81,7 +81,7 @@ impl InodeIo for PtySlaveFile {
 }
 
 #[inherit_methods(from = "self.0")]
-impl FileIo for PtySlaveFile {
+impl PerOpenFileOps for PtySlaveFile {
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32>;
 
     fn check_seekable(&self) -> Result<()> {

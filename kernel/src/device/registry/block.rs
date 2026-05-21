@@ -9,8 +9,8 @@ use crate::{
     device::{Device, DeviceType, DevtmpfsInodeMeta, add_node},
     events::IoEvents,
     fs::{
-        file::{FileIo, StatusFlags},
-        vfs::{inode::InodeIo, path::PathResolver},
+        file::{PerOpenFileOps, StatusFlags},
+        vfs::{inode::FileOps, path::PathResolver},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -81,19 +81,19 @@ impl Device for BlockFile {
         Some(DevtmpfsInodeMeta::new(self.0.name()))
     }
 
-    fn open(&self) -> Result<Box<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         Ok(Box::new(OpenBlockFile(self.0.clone())))
     }
 }
 
 /// Represents an opened block device file ready for I/O operations.
 //
-// TODO: This type wraps an `Arc<dyn BlockDevice>` in another `Box` just to implement the `FileIo`
-// trait. It leads to redundant vtable dispatch and heap allocation. We should devise a better
-// strategy to eliminate the unnecessary intermediate `Box`.
+// TODO: This type wraps an `Arc<dyn BlockDevice>` in another `Box` just to implement the
+// `PerOpenFileOps` trait. It leads to redundant vtable dispatch and heap allocation. We should
+// devise a better strategy to eliminate the unnecessary intermediate `Box`.
 struct OpenBlockFile(Arc<dyn BlockDevice>);
 
-impl InodeIo for OpenBlockFile {
+impl FileOps for OpenBlockFile {
     fn read_at(
         &self,
         offset: usize,
@@ -126,7 +126,7 @@ impl Pollable for OpenBlockFile {
     }
 }
 
-impl FileIo for OpenBlockFile {
+impl PerOpenFileOps for OpenBlockFile {
     fn check_seekable(&self) -> Result<()> {
         Ok(())
     }

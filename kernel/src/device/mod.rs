@@ -18,7 +18,7 @@ pub use registry::lookup;
 
 use crate::{
     fs::{
-        file::{FileIo, InodeMode, InodeType, mkmod},
+        file::{InodeMode, InodeType, PerOpenFileOps, mkmod},
         ramfs::RamFs,
         vfs::{
             inode::MknodType,
@@ -41,7 +41,7 @@ pub trait Device: Send + Sync + 'static {
 
     /// Opens the device, returning a file-like object that the userspace can interact with by
     /// doing I/O.
-    fn open(&self) -> Result<Box<dyn FileIo>>;
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>>;
 }
 
 impl Debug for dyn Device {

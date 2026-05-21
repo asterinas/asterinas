@@ -10,8 +10,8 @@ use crate::{
     events::IoEvents,
     fs::{
         devpts::Ptmx,
-        file::{AccessMode, FileIo, OpenArgs, StatusFlags, file_table::FdFlags, mkmod},
-        vfs::{inode::InodeIo, path::FsPath},
+        file::{AccessMode, OpenArgs, PerOpenFileOps, StatusFlags, file_table::FdFlags, mkmod},
+        vfs::{inode::FileOps, path::FsPath},
     },
     prelude::*,
     process::{
@@ -90,7 +90,7 @@ impl Pollable for PtyMaster {
     }
 }
 
-impl InodeIo for PtyMaster {
+impl FileOps for PtyMaster {
     fn read_at(
         &self,
         _offset: usize,
@@ -138,7 +138,7 @@ impl InodeIo for PtyMaster {
     }
 }
 
-impl FileIo for PtyMaster {
+impl PerOpenFileOps for PtyMaster {
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "the inode is a pty");
     }

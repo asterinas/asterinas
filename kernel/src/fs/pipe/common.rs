@@ -10,9 +10,9 @@ use ostd::sync::WaitQueue;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, FileIo, StatusFlags},
+        file::{AccessMode, PerOpenFileOps, StatusFlags},
         utils::{Endpoint, EndpointState},
-        vfs::inode::InodeIo,
+        vfs::inode::FileOps,
     },
     prelude::*,
     process::{
@@ -29,7 +29,7 @@ use crate::{
     },
 };
 
-/// A handle for a pipe that implements `FileIo`.
+/// A handle for a pipe that implements `PerOpenFileOps`.
 ///
 /// Once a handle for a `Pipe` exists, the corresponding pipe object will
 /// not be dropped.
@@ -44,14 +44,14 @@ impl PipeHandle {
     }
 
     fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
-        // `InodeHandle` checks the access mode before calling methods in `FileIo`.
+        // `InodeHandle` checks the access mode before calling methods in `PerOpenFileOps`.
         debug_assert!(self.access_mode.is_readable());
 
         self.inner.reader.try_read(writer)
     }
 
     fn try_write(&self, reader: &mut VmReader) -> Result<usize> {
-        // `InodeHandle` checks the access mode before calling methods in `FileIo`.
+        // `InodeHandle` checks the access mode before calling methods in `PerOpenFileOps`.
         debug_assert!(self.access_mode.is_writable());
 
         self.inner.writer.try_write(reader)
@@ -96,7 +96,7 @@ impl Drop for PipeHandle {
     }
 }
 
-impl InodeIo for PipeHandle {
+impl FileOps for PipeHandle {
     fn read_at(
         &self,
         _offset: usize,
@@ -136,7 +136,7 @@ impl InodeIo for PipeHandle {
     }
 }
 
-impl FileIo for PipeHandle {
+impl PerOpenFileOps for PipeHandle {
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "the inode is a FIFO file")
     }
@@ -184,7 +184,7 @@ impl Pipe {
 
     /// Opens the named pipe with the specified access mode and status flags.
     ///
-    /// Returns a handle that implements `FileIo` for performing I/O operations.
+    /// Returns a handle that implements `PerOpenFileOps` for performing I/O operations.
     ///
     /// The open behavior follows POSIX semantics:
     /// - Opening for read-only blocks until a writer opens the pipe.
@@ -197,7 +197,7 @@ impl Pipe {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Result<Box<dyn FileIo>> {
+    ) -> Result<Box<dyn PerOpenFileOps>> {
         self.open_handle(access_mode, status_flags, true)
     }
 
@@ -206,7 +206,7 @@ impl Pipe {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Result<Box<dyn FileIo>> {
+    ) -> Result<Box<dyn PerOpenFileOps>> {
         self.open_handle(access_mode, status_flags, false)
     }
 
@@ -216,7 +216,7 @@ impl Pipe {
         access_mode: AccessMode,
         status_flags: StatusFlags,
         is_named_pipe: bool,
-    ) -> Result<Box<dyn FileIo>> {
+    ) -> Result<Box<dyn PerOpenFileOps>> {
         check_status_flags(status_flags)?;
 
         let mut pipe = self.pipe.lock();
@@ -519,8 +519,8 @@ mod test {
 
     fn test_blocking<W, R>(write: W, read: R, ordering: Ordering)
     where
-        W: FnOnce(Box<dyn FileIo>) + Send + 'static,
-        R: FnOnce(Box<dyn FileIo>) + Send + 'static,
+        W: FnOnce(Box<dyn PerOpenFileOps>) + Send + 'static,
+        R: FnOnce(Box<dyn PerOpenFileOps>) + Send + 'static,
     {
         let pipe = Pipe::new();
         let reader = pipe
@@ -641,7 +641,7 @@ mod test {
         );
     }
 
-    fn read(reader: &dyn FileIo, buf: &mut [u8]) -> crate::prelude::Result<usize> {
+    fn read(reader: &dyn PerOpenFileOps, buf: &mut [u8]) -> crate::prelude::Result<usize> {
         reader.read_at(
             0,
             &mut VmWriter::from(buf).to_fallible(),
@@ -649,7 +649,7 @@ mod test {
         )
     }
 
-    fn write(writer: &dyn FileIo, buf: &[u8]) -> crate::prelude::Result<usize> {
+    fn write(writer: &dyn PerOpenFileOps, buf: &[u8]) -> crate::prelude::Result<usize> {
         writer.write_at(
             0,
             &mut VmReader::from(buf).to_fallible(),

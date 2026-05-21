@@ -9,8 +9,8 @@ use crate::{
     context::current_userspace,
     events::IoEvents,
     fs::{
-        file::{FileIo, Mappable, StatusFlags},
-        vfs::inode::InodeIo,
+        file::{Mappable, PerOpenFileOps, StatusFlags},
+        vfs::inode::FileOps,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -232,7 +232,7 @@ impl Device for Fb {
         Some(DevtmpfsInodeMeta::new("fb0"))
     }
 
-    fn open(&self) -> Result<Box<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         let Some(framebuffer) = FRAMEBUFFER.get() else {
             return Err(Error::with_message(
                 Errno::ENODEV,
@@ -401,7 +401,7 @@ impl Pollable for FbHandle {
     }
 }
 
-impl InodeIo for FbHandle {
+impl FileOps for FbHandle {
     fn read_at(
         &self,
         offset: usize,
@@ -486,7 +486,7 @@ impl InodeIo for FbHandle {
     }
 }
 
-impl FileIo for FbHandle {
+impl PerOpenFileOps for FbHandle {
     fn check_seekable(&self) -> Result<()> {
         Ok(())
     }

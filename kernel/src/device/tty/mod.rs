@@ -7,7 +7,7 @@ use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
     device::{Device, DeviceType, DevtmpfsInodeMeta},
     events::IoEvents,
-    fs::file::{FileIo, StatusFlags},
+    fs::file::{PerOpenFileOps, StatusFlags},
     prelude::*,
     process::{
         JobControl, Terminal, broadcast_signal_async,
@@ -330,7 +330,7 @@ impl<D: TtyDriver> Device for Tty<D> {
         self.driver.devtmpfs_meta(self.index)
     }
 
-    fn open(&self) -> Result<Box<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         D::open(self.weak_self.upgrade().unwrap())
     }
 }

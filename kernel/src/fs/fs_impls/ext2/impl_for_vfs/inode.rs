@@ -8,11 +8,11 @@ use crate::{
     device,
     fs::{
         ext2::{FilePerm, Inode as Ext2Inode},
-        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags},
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
+            inode::{Extension, FallocMode, FileOps, Inode, Metadata, MknodType, SymbolicLink},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -21,7 +21,7 @@ use crate::{
     vm::page_cache::PageCache,
 };
 
-impl InodeIo for Ext2Inode {
+impl FileOps for Ext2Inode {
     fn read_at(
         &self,
         offset: usize,
@@ -46,6 +46,10 @@ impl InodeIo for Ext2Inode {
         } else {
             self.write_at(offset, reader)
         }
+    }
+
+    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        self.readdir_at(offset, visitor)
     }
 }
 
@@ -129,7 +133,7 @@ impl Inode for Ext2Inode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         match self.inode_type() {
             inode_type @ (InodeType::BlockDevice | InodeType::CharDevice) => {
                 let device_id = self.device_id();
@@ -182,10 +186,6 @@ impl Inode for Ext2Inode {
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
         Ok(self.lookup(name)?)
-    }
-
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        self.readdir_at(offset, visitor)
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {

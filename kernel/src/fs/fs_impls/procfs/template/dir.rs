@@ -15,7 +15,7 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::{FileSystem, SuperBlock},
-            inode::{Extension, Inode, InodeIo, Metadata, MknodType, RevalidationPolicy},
+            inode::{Extension, FileOps, Inode, Metadata, MknodType, RevalidationPolicy},
             path::{is_dot, is_dotdot},
         },
     },
@@ -29,14 +29,14 @@ use crate::{
 /// `ProcDir` owns the directory implementation object,
 /// tracks parent linkage for `.` and `..`,
 /// and forwards inode methods that are common to all procfs directories.
-pub struct ProcDir<D: DirOps> {
+pub struct ProcDir<D: ProcDirOps> {
     inner: D,
     this: Weak<ProcDir<D>>,
     parent: Option<Weak<dyn Inode>>,
     common: Common,
 }
 
-impl<D: DirOps> ProcDir<D> {
+impl<D: ProcDirOps> ProcDir<D> {
     /// Creates the root procfs directory inode.
     pub fn new_root(
         dir: D,
@@ -91,7 +91,7 @@ impl<D: DirOps> ProcDir<D> {
     }
 }
 
-impl<D: DirOps + 'static> InodeIo for ProcDir<D> {
+impl<D: ProcDirOps + 'static> FileOps for ProcDir<D> {
     fn read_at(
         &self,
         _offset: usize,
@@ -109,10 +109,50 @@ impl<D: DirOps + 'static> InodeIo for ProcDir<D> {
     ) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
+
+    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        /// Returns the always-present `.` and `..` entries for a procfs directory.
+        fn special_entries<D: ProcDirOps + 'static>(
+            dir: &ProcDir<D>,
+        ) -> impl Iterator<Item = (&'static str, Arc<dyn Inode>, usize)> {
+            let this_inode: Arc<dyn Inode> = dir.this();
+            let parent_inode = dir.parent().unwrap_or_else(|| this_inode.clone());
+            [(".", this_inode, 1), ("..", parent_inode, 2)].into_iter()
+        }
+
+        let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
+            for (name, inode, next_offset) in special_entries(self) {
+                if next_offset <= *offset {
+                    continue;
+                }
+
+                visitor.visit(name, inode.ino(), inode.type_(), next_offset)?;
+                *offset = next_offset;
+            }
+
+            self.inner.visit_entries_from_offset(*offset, |child| {
+                visitor.visit(
+                    child.name.as_ref(),
+                    child.ino,
+                    child.type_,
+                    child.next_offset,
+                )?;
+                *offset = child.next_offset;
+                Ok(())
+            })?;
+            Ok(())
+        };
+
+        let mut iterate_offset = offset;
+        match try_readdir(&mut iterate_offset, visitor) {
+            Err(e) if iterate_offset == offset => Err(e),
+            _ => Ok(iterate_offset - offset),
+        }
+    }
 }
 
 #[inherit_methods(from = "self.common")]
-impl<D: DirOps + 'static> Inode for ProcDir<D> {
+impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
     fn size(&self) -> usize;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
@@ -149,46 +189,6 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
 
     fn mknod(&self, _name: &str, _mode: InodeMode, _type_: MknodType) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
-    }
-
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        /// Returns the always-present `.` and `..` entries for a procfs directory.
-        fn special_entries<D: DirOps + 'static>(
-            dir: &ProcDir<D>,
-        ) -> impl Iterator<Item = (&'static str, Arc<dyn Inode>, usize)> {
-            let this_inode: Arc<dyn Inode> = dir.this();
-            let parent_inode = dir.parent().unwrap_or_else(|| this_inode.clone());
-            [(".", this_inode, 1), ("..", parent_inode, 2)].into_iter()
-        }
-
-        let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
-            for (name, inode, next_offset) in special_entries(self) {
-                if next_offset <= *offset {
-                    continue;
-                }
-
-                visitor.visit(name, inode.ino(), inode.type_(), next_offset)?;
-                *offset = next_offset;
-            }
-
-            self.inner.visit_entries_from_offset(*offset, |child| {
-                visitor.visit(
-                    child.name.as_ref(),
-                    child.ino,
-                    child.type_,
-                    child.next_offset,
-                )?;
-                *offset = child.next_offset;
-                Ok(())
-            })?;
-            Ok(())
-        };
-
-        let mut iterate_offset = offset;
-        match try_readdir(&mut iterate_offset, visitor) {
-            Err(e) if iterate_offset == offset => Err(e),
-            _ => Ok(iterate_offset - offset),
-        }
     }
 
     fn link(&self, _old: &Arc<dyn Inode>, _name: &str) -> Result<()> {
@@ -236,7 +236,7 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
     }
 }
 
-pub trait DirOps: Sync + Send + Sized {
+pub trait ProcDirOps: Sync + Send + Sized {
     /// Returns the thread whose credentials own this procfs inode.
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         None
@@ -291,7 +291,7 @@ pub trait DirOps: Sync + Send + Sized {
 /// A statically declared procfs child entry.
 ///
 /// The tuple stores the exported filename,
-/// the inode type reported to [`Inode::readdir_at`],
+/// the inode type reported to [`FileOps::readdir_at`],
 /// and the constructor used by lookup paths to instantiate the inode.
 pub type StaticDirEntry<Fp> = (&'static str, InodeType, Fp);
 
@@ -335,7 +335,7 @@ mod readdir {
     //!
     //! # Vocabulary
     //!
-    //! - **Offset** - the cursor passed to `Inode::readdir_at`. Maps to
+    //! - **Offset** - the cursor passed to `FileOps::readdir_at`. Maps to
     //!   `dirent::d_off`. Offsets `1` and `2` are reserved for `.` and `..`.
     //!
     //! - **Key** - an integer that uniquely identifies one dynamic child
@@ -377,10 +377,10 @@ mod readdir {
         }
     }
 
-    /// A directory entry emitted by [`DirOps::visit_entries_from_offset`].
+    /// A directory entry emitted by [`ProcDirOps::visit_entries_from_offset`].
     ///
     /// The `next_offset` is the continuation offset that should be used as the
-    /// starting point of the next [`Inode::readdir_at`] call.
+    /// starting point of the next [`FileOps::readdir_at`] call.
     pub struct ReaddirEntry<'a> {
         pub(super) name: Cow<'a, str>,
         pub(super) ino: u64,
@@ -407,7 +407,7 @@ mod readdir {
 
     /// A placeholder inode number for procfs entries.
     ///
-    /// [`Inode::readdir_at`] reports procfs entries without instantiating child inodes first,
+    /// [`FileOps::readdir_at`] reports procfs entries without instantiating child inodes first,
     /// so the inode number returned here is only a placeholder.
     /// Lookup still creates the real child inode on demand when the path is opened.
     //

@@ -6,7 +6,7 @@
 use super::*;
 use crate::{
     device::PtySlave,
-    fs::file::{AccessMode, FileIo},
+    fs::file::{AccessMode, PerOpenFileOps},
 };
 
 /// Same major number with Linux, the minor number is the index of slave.
@@ -38,7 +38,7 @@ impl PtySlaveInode {
     }
 }
 
-impl InodeIo for PtySlaveInode {
+impl FileOps for PtySlaveInode {
     fn read_at(
         &self,
         _offset: usize,
@@ -142,7 +142,7 @@ impl Inode for PtySlaveInode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         Some(self.device.open())
     }
 }

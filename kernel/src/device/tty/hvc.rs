@@ -13,7 +13,7 @@ use crate::{
         registry::char,
         tty::{file::TtyFile, termio::CTermios},
     },
-    fs::file::FileIo,
+    fs::file::PerOpenFileOps,
     prelude::*,
 };
 
@@ -31,7 +31,7 @@ impl TtyDriver for HvcDriver {
         Some(DevtmpfsInodeMeta::new(format!("hvc{}", index)))
     }
 
-    fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>> {
+    fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn PerOpenFileOps>> {
         Ok(Box::new(TtyFile::new(tty)))
     }
 

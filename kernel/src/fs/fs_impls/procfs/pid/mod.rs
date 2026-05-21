@@ -3,7 +3,7 @@
 use super::{
     StaticEntryWithOps,
     template::{
-        DirOps, ProcDir, ReaddirEntry, listed_entries_from_table, lookup_child_from_table,
+        ProcDir, ProcDirOps, ReaddirEntry, listed_entries_from_table, lookup_child_from_table,
         visit_listed_entries,
     },
 };
@@ -54,7 +54,7 @@ impl PidDirOps {
     ];
 }
 
-impl DirOps for PidDirOps {
+impl ProcDirOps for PidDirOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }
