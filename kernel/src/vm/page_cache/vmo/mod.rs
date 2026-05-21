@@ -693,7 +693,7 @@ impl<'a> BackedVmo<'a> {
     /// Writes back dirty pages in the specified byte range to the backend storage.
     pub(super) fn flush_dirty_pages(&self, range: &Range<usize>) -> Result<()> {
         let locked_pages = self.vmo.pages.lock();
-        if range.start > self.size() {
+        if range.start >= self.size() {
             return Ok(());
         }
 
@@ -721,7 +721,7 @@ impl<'a> BackedVmo<'a> {
     // path can coordinate with page faults.
     pub(super) fn evict_up_to_date_pages(&self, range: &Range<usize>) -> Result<()> {
         let locked_pages = self.vmo.pages.lock();
-        if range.start > self.size() {
+        if range.start >= self.size() {
             return Ok(());
         }
 
@@ -743,9 +743,8 @@ impl<'a> BackedVmo<'a> {
         locked_pages: LockedXArray<CachePage>,
         range: &Range<usize>,
     ) -> Result<()> {
-        if range.start > self.size() {
-            return Ok(());
-        }
+        // Do not check `self.size()` here. It contains the new size, however, we want to decommit
+        // pages outside of the new range. See `PageCache::resize` for a concrete example.
 
         let page_idx_range = get_page_idx_range(range);
         let pages_to_decommit = self.collect_pages_if(locked_pages, page_idx_range, |_, _| true);
