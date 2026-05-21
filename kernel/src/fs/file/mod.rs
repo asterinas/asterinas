@@ -20,4 +20,4 @@ pub(crate) use inode_attr::mode::{
     chmod, mkmod, perms_to_mask, who_and_perms_to_mask, who_to_mask,
 };
 pub use inode_attr::{mode::InodeMode, permission::Permission, r#type::InodeType};
-pub use inode_handle::{FileIo, InodeHandle, SeekFrom};
+pub use inode_handle::{InodeHandle, PerOpenFileOps, SeekFrom};

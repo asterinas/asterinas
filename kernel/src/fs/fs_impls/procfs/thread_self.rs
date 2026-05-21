@@ -5,7 +5,7 @@ use alloc::format;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{ProcSym, SymOps},
+        procfs::template::{ProcSym, ProcSymOps},
         vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,
@@ -22,7 +22,7 @@ impl ThreadSelfSymOps {
     }
 }
 
-impl SymOps for ThreadSelfSymOps {
+impl ProcSymOps for ThreadSelfSymOps {
     fn read_link(&self) -> Result<SymbolicLink> {
         let pid = current!().pid();
         let tid = current_thread!().as_posix_thread().unwrap().tid();

@@ -20,7 +20,7 @@ use crate::{
             vt::{VtDriver, tty1_device},
         },
     },
-    fs::file::{FileIo, mkmod},
+    fs::file::{PerOpenFileOps, mkmod},
     prelude::*,
     process::{JobControl, Terminal},
 };
@@ -49,7 +49,7 @@ impl Device for Tty0Device {
         Some(DevtmpfsInodeMeta::new("tty0"))
     }
 
-    fn open(&self) -> Result<Box<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         self.active_vt().open()
     }
 }
@@ -78,7 +78,7 @@ impl Device for TtyDevice {
         Some(DevtmpfsInodeMeta::with_mode("tty", mkmod!(a+rw)))
     }
 
-    fn open(&self) -> Result<Box<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         let Some(terminal) = current!().terminal() else {
             return_errno_with_message!(
                 Errno::ENOTTY,
@@ -140,7 +140,7 @@ impl Device for SystemConsole {
         Some(DevtmpfsInodeMeta::new("console"))
     }
 
-    fn open(&self) -> Result<Box<dyn FileIo>> {
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         self.inner.open()
     }
 }

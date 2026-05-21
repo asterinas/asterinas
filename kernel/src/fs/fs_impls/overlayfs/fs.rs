@@ -19,12 +19,12 @@ use ostd::{
 
 use crate::{
     fs::{
-        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         pseudofs::AnonDeviceId,
         utils::{DirentCounter, DirentVisitor, NAME_MAX},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            inode::{Extension, FallocMode, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
+            inode::{Extension, FallocMode, FileOps, Inode, Metadata, MknodType, SymbolicLink},
             path::{FsPath, Path},
             registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags},
@@ -555,7 +555,7 @@ impl OverlayInode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>>;
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>>;
     pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
     pub fn list_xattr(
         &self,
@@ -945,7 +945,7 @@ fn is_opaque_dir(inode: &Arc<dyn Inode>) -> Result<bool> {
 }
 
 #[inherit_methods(from = "self")]
-impl InodeIo for OverlayInode {
+impl FileOps for OverlayInode {
     fn read_at(
         &self,
         offset: usize,
@@ -958,6 +958,7 @@ impl InodeIo for OverlayInode {
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize>;
+    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize>;
 }
 
 #[inherit_methods(from = "self")]
@@ -987,8 +988,7 @@ impl Inode for OverlayInode {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>>;
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize>;
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>>;
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()>;
     fn unlink(&self, name: &str) -> Result<()>;
     fn rmdir(&self, name: &str) -> Result<()>;

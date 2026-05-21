@@ -31,7 +31,7 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, InodeIo, Metadata, MknodType, SymbolicLink},
+            inode::{Extension, FileOps, Inode, Metadata, MknodType, SymbolicLink},
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
         },
     },
@@ -1297,7 +1297,7 @@ fn check_corner_cases_for_rename(
     Ok(())
 }
 
-impl InodeIo for ExfatInode {
+impl FileOps for ExfatInode {
     fn read_at(
         &self,
         offset: usize,
@@ -1322,6 +1322,62 @@ impl InodeIo for ExfatInode {
         } else {
             self.write_at(offset, reader)
         }
+    }
+
+    fn readdir_at(&self, dir_cnt: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        let inner = self.inner.upread();
+
+        if dir_cnt >= (inner.num_sub_inodes + 2) as usize {
+            return Ok(0);
+        }
+
+        let mut empty_visitor = EmptyVisitor;
+
+        let dir_read = {
+            let fs = inner.fs();
+            let fs_guard = fs.lock();
+
+            let mut dir_read = 0usize;
+
+            if dir_cnt == 0
+                && visitor
+                    .visit(".", inner.ino, inner.inode_type, 0xFFFFFFFFFFFFFFFEusize)
+                    .is_ok()
+            {
+                dir_read += 1;
+            }
+
+            if dir_cnt <= 1 {
+                let parent_inode = inner.get_parent_inode().unwrap();
+                let parent_inner = parent_inode.inner.read();
+                let ino = parent_inner.ino;
+                let type_ = parent_inner.inode_type;
+                if visitor
+                    .visit("..", ino, type_, 0xFFFFFFFFFFFFFFFFusize)
+                    .is_ok()
+                {
+                    dir_read += 1;
+                }
+            }
+
+            // Skip . and ..
+            let dir_to_skip = dir_cnt.saturating_sub(2);
+
+            // Skip previous directories.
+            let (off, _) = inner.visit_sub_inodes(0, dir_to_skip, &mut empty_visitor, &fs_guard)?;
+            let (_, read) = inner.visit_sub_inodes(
+                off,
+                inner.num_sub_inodes as usize - dir_to_skip,
+                visitor,
+                &fs_guard,
+            )?;
+            dir_read += read;
+            dir_read
+        };
+
+        inner.upgrade().update_atime()?;
+
+        Ok(dir_read)
     }
 }
 
@@ -1492,62 +1548,6 @@ impl Inode for ExfatInode {
 
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
-    }
-
-    fn readdir_at(&self, dir_cnt: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        let inner = self.inner.upread();
-
-        if dir_cnt >= (inner.num_sub_inodes + 2) as usize {
-            return Ok(0);
-        }
-
-        let mut empty_visitor = EmptyVisitor;
-
-        let dir_read = {
-            let fs = inner.fs();
-            let fs_guard = fs.lock();
-
-            let mut dir_read = 0usize;
-
-            if dir_cnt == 0
-                && visitor
-                    .visit(".", inner.ino, inner.inode_type, 0xFFFFFFFFFFFFFFFEusize)
-                    .is_ok()
-            {
-                dir_read += 1;
-            }
-
-            if dir_cnt <= 1 {
-                let parent_inode = inner.get_parent_inode().unwrap();
-                let parent_inner = parent_inode.inner.read();
-                let ino = parent_inner.ino;
-                let type_ = parent_inner.inode_type;
-                if visitor
-                    .visit("..", ino, type_, 0xFFFFFFFFFFFFFFFFusize)
-                    .is_ok()
-                {
-                    dir_read += 1;
-                }
-            }
-
-            // Skip . and ..
-            let dir_to_skip = dir_cnt.saturating_sub(2);
-
-            // Skip previous directories.
-            let (off, _) = inner.visit_sub_inodes(0, dir_to_skip, &mut empty_visitor, &fs_guard)?;
-            let (_, read) = inner.visit_sub_inodes(
-                off,
-                inner.num_sub_inodes as usize - dir_to_skip,
-                visitor,
-                &fs_guard,
-            )?;
-            dir_read += read;
-            dir_read
-        };
-
-        inner.upgrade().update_atime()?;
-
-        Ok(dir_read)
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {

@@ -157,7 +157,7 @@ fn try_apply_ns_from_inode<T: NsCommonOps>(
     flags: CloneFlags,
     apply: impl FnOnce(Arc<T>) -> Result<()>,
 ) -> Result<bool> {
-    let Some(ns_file) = inode_handle.downcast_file_io::<NsFile<T>>()? else {
+    let Some(ns_file) = inode_handle.downcast_open_file::<NsFile<T>>()? else {
         return Ok(false);
     };
 

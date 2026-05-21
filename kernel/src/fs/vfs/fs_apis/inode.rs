@@ -17,7 +17,7 @@ use super::{
 use crate::{
     device::{Device, DeviceType},
     fs::{
-        file::{AccessMode, FileIo, InodeMode, InodeType, Permission, StatusFlags},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags},
         utils::DirentVisitor,
         vfs::path::Path,
     },
@@ -294,11 +294,12 @@ bitflags! {
     }
 }
 
-/// I/O operations in an [`Inode`].
+/// Provides basic file operations.
 ///
-/// This abstracts the common I/O operations used by both [`Inode`] (for regular files) and
-/// [`FileIo`] (for special files).
-pub trait InodeIo {
+/// For inode-backed files without per-`open()` state, [`Inode`] implements this
+/// trait directly. For files whose behavior depends on state created by `open`,
+/// the per-`open()` object implements this trait through [`PerOpenFileOps`].
+pub trait FileOps {
     /// Reads data from the file into the given `VmWriter`.
     fn read_at(
         &self,
@@ -314,9 +315,14 @@ pub trait InodeIo {
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize>;
+
+    /// Reads directory entries from the given offset.
+    fn readdir_at(&self, _offset: usize, _visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        return_errno_with_message!(Errno::ENOTDIR, "readdir is not supported");
+    }
 }
 
-pub trait Inode: Any + InodeIo + Send + Sync {
+pub trait Inode: Any + FileOps + Send + Sync {
     fn size(&self) -> usize;
 
     fn resize(&self, new_size: usize) -> Result<()>;
@@ -367,12 +373,8 @@ pub trait Inode: Any + InodeIo + Send + Sync {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         None
-    }
-
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        Err(Error::new(Errno::ENOTDIR))
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {

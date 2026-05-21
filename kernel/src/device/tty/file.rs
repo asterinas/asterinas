@@ -6,8 +6,8 @@ use super::{Tty, TtyDriver};
 use crate::{
     events::IoEvents,
     fs::{
-        file::{FileIo, StatusFlags},
-        vfs::inode::InodeIo,
+        file::{PerOpenFileOps, StatusFlags},
+        vfs::inode::FileOps,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -27,7 +27,7 @@ impl<D: TtyDriver> Pollable for TtyFile<D> {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
 }
 
-impl<D: TtyDriver> InodeIo for TtyFile<D> {
+impl<D: TtyDriver> FileOps for TtyFile<D> {
     fn read_at(
         &self,
         _offset: usize,
@@ -48,7 +48,7 @@ impl<D: TtyDriver> InodeIo for TtyFile<D> {
 }
 
 #[inherit_methods(from = "self.0")]
-impl<D: TtyDriver> FileIo for TtyFile<D> {
+impl<D: TtyDriver> PerOpenFileOps for TtyFile<D> {
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32>;
 
     fn check_seekable(&self) -> Result<()> {

@@ -7,11 +7,11 @@ use inherit_methods_macro::inherit_methods;
 use super::Common;
 use crate::{
     fs::{
-        file::{AccessMode, FileIo, InodeMode, InodeType, StatusFlags},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags},
         procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, InodeIo, Metadata, SymbolicLink},
+            inode::{Extension, FileOps, Inode, Metadata, SymbolicLink},
         },
     },
     prelude::*,
@@ -48,7 +48,7 @@ impl<F: ProcFileOps> ProcFile<F> {
     }
 }
 
-impl<F: ProcFileOps + 'static> InodeIo for ProcFile<F> {
+impl<F: ProcFileOps + 'static> FileOps for ProcFile<F> {
     fn read_at(
         &self,
         offset: usize,
@@ -118,7 +118,7 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         self.inner.open(access_mode, status_flags)
     }
 }
@@ -139,7 +139,7 @@ pub trait ProcFileOps: Sync + Send {
         &self,
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         None
     }
 }
@@ -150,7 +150,11 @@ pub trait ProcFileOpsByHandle: Sync + Send {
         None
     }
 
-    fn open(&self, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Box<dyn FileIo>>;
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Result<Box<dyn PerOpenFileOps>>;
 }
 
 impl<T: ProcFileOpsByHandle> ProcFileOps for T {
@@ -170,7 +174,7 @@ impl<T: ProcFileOpsByHandle> ProcFileOps for T {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn FileIo>>> {
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         Some(self.open(access_mode, status_flags))
     }
 }
