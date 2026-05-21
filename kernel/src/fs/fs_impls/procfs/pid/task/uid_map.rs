@@ -6,7 +6,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFile},
+        procfs::template::{ProcFile, ProcFileOps},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -24,7 +24,7 @@ impl UidMapFileOps {
     }
 }
 
-impl FileOps for UidMapFileOps {
+impl ProcFileOps for UidMapFileOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }

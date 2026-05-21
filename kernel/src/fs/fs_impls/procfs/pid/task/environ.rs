@@ -4,7 +4,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFile},
+        procfs::template::{ProcFile, ProcFileOps},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -21,7 +21,7 @@ impl EnvironFileOps {
     }
 }
 
-impl FileOps for EnvironFileOps {
+impl ProcFileOps for EnvironFileOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }

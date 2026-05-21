@@ -8,7 +8,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFile, read_i32_from},
+        procfs::template::{ProcFile, ProcFileOps, read_i32_from},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -25,7 +25,7 @@ impl OomScoreAdjFileOps {
     }
 }
 
-impl FileOps for OomScoreAdjFileOps {
+impl ProcFileOps for OomScoreAdjFileOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }
