@@ -67,10 +67,7 @@ fn skopeo_inspect_image(nixos_shell: &mut Session) -> Result<(), Error> {
 #[nixos_test]
 fn qemu_display_version(nixos_shell: &mut Session) -> Result<(), Error> {
     // Verifies that the QEMU emulator is available and reports its version.
-    nixos_shell.run_cmd_and_expect(
-        "qemu-system-$(uname -m) --version",
-        "QEMU emulator version",
-    )?;
+    nixos_shell.run_cmd_and_expect("qemu-system-$(uname -m) --version", "QEMU emulator version")?;
     Ok(())
 }
 
