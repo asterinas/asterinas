@@ -23,10 +23,15 @@ macro_rules! __log_prefix {
 }
 
 mod error;
+mod table;
+pub mod target;
 
 use component::{ComponentInitError, init_component};
 
-pub use self::error::{DmError, DmErrorWithContext};
+pub use self::{
+    error::{DmError, DmErrorWithContext},
+    table::{DmTable, DmTableSegment},
+};
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
