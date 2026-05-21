@@ -103,6 +103,7 @@ jobs:
               { "name": "development-tools", "disk_size": 10240, "timeout_minutes": 45 },
               { "name": "development-tools-go", "disk_size": 8192, "timeout_minutes": 60 },
               { "name": "development-tools-python", "disk_size": 8192, "timeout_minutes": 60 },
+              { "name": "development-tools-openjdk", "disk_size": 8192, "timeout_minutes": 60 },
               { "name": "cicd-and-devops", "disk_size": 8192, "timeout_minutes": 45 },
               { "name": "monitoring-and-observability", "disk_size": 8192 },
               { "name": "web-browsers", "disk_size": 8192 },
