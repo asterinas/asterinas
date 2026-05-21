@@ -103,6 +103,7 @@ pub trait CachePageExt: Sized {
     fn wait_queue(&self) -> &'static WaitQueue;
 
     /// Tries to lock the cache page.
+    #[expect(dead_code)]
     fn try_lock(self) -> Option<LockedCachePage>;
 
     /// Tries to lock the cache page by reference.
