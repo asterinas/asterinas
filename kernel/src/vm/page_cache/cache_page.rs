@@ -17,30 +17,17 @@ use crate::prelude::*;
 
 /// The state of a page in the page cache.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum PageState {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
+pub enum PageState {
     /// `Uninit` indicates a new allocated page which content has not been initialized.
-    /// The page is available to write, not available to read.
+    /// The page is available to write, not available to read or map.
     Uninit = 0,
     /// `UpToDate` indicates a page which content is consistent with corresponding disk content.
-    /// The page is available to read and write.
+    /// The page is available to read and map, not available to write.
     UpToDate = 1,
     /// `Dirty` indicates a page which content has been updated and not written back to underlying disk.
-    /// The page is available to read and write.
+    /// The page is available to read, write, and map.
     Dirty = 2,
-}
-
-impl TryFrom<u8> for PageState {
-    type Error = Error;
-
-    fn try_from(value: u8) -> Result<Self> {
-        match value {
-            0 => Ok(Self::Uninit),
-            1 => Ok(Self::UpToDate),
-            2 => Ok(Self::Dirty),
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid page state"),
-        }
-    }
 }
 
 impl From<PageState> for u8 {
@@ -53,6 +40,23 @@ define_atomic_version_of_integer_like_type!(PageState, try_from = true, {
     #[derive(Debug)]
     struct AtomicPageState(AtomicU8);
 });
+
+impl PageState {
+    /// Checks if the page is uninitialized.
+    pub(super) fn is_uninit(self) -> bool {
+        matches!(self, Self::Uninit)
+    }
+
+    /// Checks if the page is up-to-date.
+    pub(super) fn is_up_to_date(self) -> bool {
+        matches!(self, Self::UpToDate)
+    }
+
+    /// Checks if the page is dirty.
+    pub(super) fn is_dirty(self) -> bool {
+        matches!(self, Self::Dirty)
+    }
+}
 
 /// A page in the page cache.
 pub type CachePage = Frame<CachePageMeta>;
@@ -160,28 +164,9 @@ pub trait CachePageExt: Sized {
         Ok(page)
     }
 
-    /// Checks if the page is uninitialized.
-    fn is_uninit(&self) -> bool {
-        matches!(
-            self.metadata().state.load(Ordering::Acquire),
-            PageState::Uninit
-        )
-    }
-
-    /// Checks if the page is up-to-date.
-    fn is_up_to_date(&self) -> bool {
-        matches!(
-            self.metadata().state.load(Ordering::Acquire),
-            PageState::UpToDate
-        )
-    }
-
-    /// Checks if the page is dirty.
-    fn is_dirty(&self) -> bool {
-        matches!(
-            self.metadata().state.load(Ordering::Acquire),
-            PageState::Dirty
-        )
+    /// Returns the state of the cache page.
+    fn state(&self) -> PageState {
+        self.metadata().state.load(Ordering::Acquire)
     }
 }
 
@@ -232,13 +217,13 @@ impl CachePageExt for CachePage {
 
     fn ensure_init(&self, init_fn: impl FnOnce(LockedCachePage) -> Result<()>) -> Result<()> {
         // Fast path: if the page is already initialized, return immediately without waiting.
-        if !self.is_uninit() {
+        if !self.state().is_uninit() {
             return Ok(());
         }
 
         let locked_page = self.lock_guard();
         // Check again after acquiring the lock to avoid duplicate initialization.
-        if !locked_page.is_uninit() {
+        if !locked_page.state().is_uninit() {
             return Ok(());
         }
 

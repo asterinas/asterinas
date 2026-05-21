@@ -591,7 +591,7 @@ impl Vmo {
                     Ok(written_size) => written_size,
                     Err((err, written_size)) => {
                         // If the page is not initialized, keep it as it is on a partial write.
-                        if written_size > 0 && locked_page.is_up_to_date() {
+                        if written_size > 0 && locked_page.state().is_up_to_date() {
                             locked_page.set_dirty();
                         }
                         return Err(Error::from(err));
@@ -702,8 +702,9 @@ impl<'a> BackedVmo<'a> {
         }
 
         let page_idx_range = get_page_idx_range(range);
-        let dirty_pages =
-            self.collect_pages_if(locked_pages, page_idx_range, |_, page| page.is_dirty());
+        let dirty_pages = self.collect_pages_if(locked_pages, page_idx_range, |_, page| {
+            page.state().is_dirty()
+        });
 
         let mut io_batch = IoBatch::with_capacity(dirty_pages.len());
         for (idx, page) in dirty_pages {
@@ -730,8 +731,9 @@ impl<'a> BackedVmo<'a> {
         }
 
         let page_idx_range = get_page_idx_range(range);
-        let pages_to_evict =
-            self.collect_pages_if(locked_pages, page_idx_range, |_, page| page.is_up_to_date());
+        let pages_to_evict = self.collect_pages_if(locked_pages, page_idx_range, |_, page| {
+            page.state().is_up_to_date()
+        });
         self.wait_for_writeback_and_remove_pages(pages_to_evict);
 
         Ok(())
@@ -806,7 +808,7 @@ impl<'a> BackedVmo<'a> {
         };
 
         // Check if the page is initialized.
-        if !commit_mode.skips_backend_read() && page.is_uninit() {
+        if !commit_mode.skips_backend_read() && page.state().is_uninit() {
             return Err(VmoCommitError::WaitUntilInit {
                 index: page_idx,
                 page: page.clone(),
