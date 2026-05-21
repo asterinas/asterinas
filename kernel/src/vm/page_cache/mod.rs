@@ -288,6 +288,7 @@ impl PageCache {
     // TODO: Integrate a reverse-mapping lock or equivalent synchronization so
     // eviction can coordinate with mapped pages and concurrent page faults
     // before removing cached pages from the page cache.
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let Some(vmo) = self.0.as_backed_vmo() else {
             return Ok(());
@@ -302,8 +303,12 @@ impl PageCache {
     /// bypass the page cache. It uses the same locking requirements as
     /// [`PageCache::flush_range`] and [`PageCache::evict_range`].
     pub fn invalidate_range(&self, range: Range<usize>) -> Result<()> {
-        self.flush_range(range.clone())?;
-        self.evict_range(range)
+        let Some(vmo) = self.0.as_backed_vmo() else {
+            return Ok(());
+        };
+
+        vmo.flush_dirty_pages(&range)?;
+        vmo.evict_up_to_date_pages(&range)
     }
 
     /// Fills the specified range of the page cache with zeros.
@@ -475,7 +480,7 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
         bio_segment
             .writer()
             .unwrap()
-            .write_fallible(&mut locked_page.reader().to_fallible())?;
+            .write(&mut locked_page.reader());
 
         locked_page.set_writing_back();
         locked_page.set_up_to_date();
