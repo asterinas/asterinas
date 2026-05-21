@@ -177,18 +177,6 @@ pub enum VmoCommitError {
     WaitUntilInit { index: usize, page: CachePage },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CommitMode {
-    Read,
-    Overwrite,
-}
-
-impl CommitMode {
-    fn skips_backend_read(self) -> bool {
-        matches!(self, Self::Overwrite)
-    }
-}
-
 impl VmoCommitError {
     /// Returns the page index whose commit is pending on I/O or initialization.
     pub fn pending_index(&self) -> Result<usize> {
@@ -211,6 +199,18 @@ impl From<ostd::Error> for VmoCommitError {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommitMode {
+    Read,
+    Overwrite,
+}
+
+impl CommitMode {
+    fn skips_backend_read(self) -> bool {
+        matches!(self, Self::Overwrite)
+    }
+}
+
 impl Vmo {
     /// Commits the page at `page_idx`, blocking on backend I/O if required.
     ///
@@ -226,24 +226,27 @@ impl Vmo {
         page_idx: usize,
         commit_mode: CommitMode,
     ) -> Result<CommittedPage> {
+        if let Some(backed_vmo) = self.as_backed_vmo() {
+            return backed_vmo.commit_on_internal(page_idx, commit_mode);
+        }
+
+        self.commit_on_anonymous(page_idx)
+    }
+
+    fn commit_on_anonymous(&self, page_idx: usize) -> Result<CommittedPage> {
         let mut locked_pages = self.pages.lock();
         if page_idx >= self.size().div_ceil(PAGE_SIZE) {
             return_errno_with_message!(Errno::EINVAL, "the offset is outside the VMO");
         }
 
-        if let Some(backed_vmo) = self.as_backed_vmo() {
-            backed_vmo.commit_on(locked_pages, page_idx, commit_mode)
-        } else {
-            let mut cursor = locked_pages.cursor_mut(page_idx as u64);
-            if let Some(page) = cursor.load() {
-                return Ok(page.clone().into());
-            }
-
-            let new_page = CachePage::alloc_zero()?;
-            cursor.store(new_page.clone());
-
-            Ok(new_page.into())
+        let mut cursor = locked_pages.cursor_mut(page_idx as u64);
+        if let Some(page) = cursor.load() {
+            return Ok(page.clone().into());
         }
+
+        let new_page = CachePage::alloc_zero()?;
+        cursor.store(new_page.clone());
+        Ok(new_page.into())
     }
 
     /// Tries to commit the page covering byte `offset` without blocking on I/O.
@@ -271,9 +274,7 @@ impl Vmo {
         commit_mode: CommitMode,
     ) -> Result<(usize, CommittedPage), VmoCommitError> {
         if let Some(backed_vmo) = self.as_backed_vmo() {
-            if let Some((index, page)) = backed_vmo.try_commit_with_cursor(cursor, commit_mode)? {
-                return Ok((index, page));
-            }
+            return backed_vmo.try_commit_with_cursor(cursor, commit_mode);
         } else if let Some(page) = cursor.load() {
             let index = cursor.index() as usize;
             return Ok((index, page.clone().into()));
@@ -282,7 +283,8 @@ impl Vmo {
         // Need to commit. Only Anonymous VMOs can reach here, because VMOs
         // with a backend will return `Err` if the page is not loaded.
         let index = cursor.index() as usize;
-        Ok((index, self.commit_on_internal(index, commit_mode)?))
+        let page = self.commit_on_anonymous(index)?;
+        Ok((index, page))
     }
 
     /// Traverses the indices within a specified range of a VMO sequentially.
@@ -424,7 +426,7 @@ impl Vmo {
                 &mut page_batch,
             )?;
 
-            for (_, page) in &page_batch {
+            for (_, page) in page_batch.iter() {
                 page.reader().skip(page_offset).read_fallible(writer)?;
                 page_offset = 0;
             }
@@ -766,13 +768,18 @@ impl<'a> BackedVmo<'a> {
     }
 
     /// Commits a page at the given index for a VMO with a backend.
-    fn commit_on(
+    fn commit_on_internal(
         &self,
-        mut locked_pages: LockedXArray<'_, CachePage>,
         page_idx: usize,
         commit_mode: CommitMode,
     ) -> Result<CommittedPage> {
+        let mut locked_pages = self.pages.lock();
+        if page_idx >= self.size().div_ceil(PAGE_SIZE) {
+            return_errno_with_message!(Errno::EINVAL, "the offset is outside the VMO");
+        }
+
         let mut cursor = locked_pages.cursor_mut(page_idx as u64);
+
         if let Some(page) = cursor.load() {
             let page = page.clone();
             drop(locked_pages);
@@ -808,7 +815,7 @@ impl<'a> BackedVmo<'a> {
         &self,
         cursor: &mut Cursor<'_, CachePage>,
         commit_mode: CommitMode,
-    ) -> Result<Option<(usize, CommittedPage)>, VmoCommitError> {
+    ) -> Result<(usize, CommittedPage), VmoCommitError> {
         let page_idx = cursor.index() as usize;
 
         let Some(page) = cursor.load() else {
@@ -823,7 +830,7 @@ impl<'a> BackedVmo<'a> {
             });
         }
 
-        Ok(Some((page_idx, page.clone().into())))
+        Ok((page_idx, page.clone().into()))
     }
 
     /// Collects pages in the specified page-index range that satisfy `should_collect`.
@@ -874,7 +881,7 @@ impl<'a> BackedVmo<'a> {
     /// new page for the same index and starting duplicate BIOs while the old
     /// page is still under writeback.
     fn wait_for_writeback_and_remove_pages(&self, pages_to_remove: Vec<(usize, CachePage)>) {
-        for (_, page) in &pages_to_remove {
+        for (_, page) in pages_to_remove.iter() {
             let locked_page = page.lock_guard();
             locked_page.wait_until_finish_writing_back();
         }
