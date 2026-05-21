@@ -3,7 +3,7 @@
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{ProcSym, SymOps},
+        procfs::template::{ProcSym, ProcSymOps},
         vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,
@@ -21,7 +21,7 @@ impl MountsSymOps {
     }
 }
 
-impl SymOps for MountsSymOps {
+impl ProcSymOps for MountsSymOps {
     fn read_link(&self) -> Result<SymbolicLink> {
         Ok(SymbolicLink::Plain("self/mounts".to_string()))
     }

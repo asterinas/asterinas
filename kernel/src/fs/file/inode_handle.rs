@@ -16,7 +16,7 @@ use crate::{
         pipe::PipeHandle,
         utils::DirentVisitor,
         vfs::{
-            inode::{FallocMode, InodeIo},
+            inode::{FallocMode, FileOps},
             inode_ext::InodeExt,
             path::Path,
             range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
@@ -29,10 +29,10 @@ use crate::{
 
 pub struct InodeHandle {
     path: Path,
-    /// `file_io` is similar to the `file_private` field in Linux's `file` structure. If `file_io`
-    /// is `Some(_)`, typical file operations including `read`, `write`, `poll`, and `ioctl` will
-    /// be provided by `file_io`, instead of `path`.
-    file_io: Option<Box<dyn FileIo>>,
+    /// `open_file` is similar to the `file_private` field in Linux's `file` structure. If
+    /// `open_file` is `Some(_)`, typical file operations including `read`, `write`, `poll`,
+    /// and `ioctl` will be provided by the per-open file object instead of `path`.
+    open_file: Option<Box<dyn PerOpenFileOps>>,
     offset: Mutex<usize>,
     status_flags: AtomicStatusFlags,
     rights: Rights,
@@ -57,19 +57,19 @@ impl InodeHandle {
         status_flags: StatusFlags,
     ) -> Result<Self> {
         let inode = path.inode();
-        let (file_io, rights) = if status_flags.contains(StatusFlags::O_PATH) {
+        let (open_file, rights) = if status_flags.contains(StatusFlags::O_PATH) {
             (None, Rights::empty())
         } else if inode.type_() == InodeType::Dir && access_mode.is_writable() {
             return_errno_with_message!(Errno::EISDIR, "a directory cannot be opened writable");
         } else {
-            let file_io = inode.open(access_mode, status_flags).transpose()?;
+            let open_file = inode.open(access_mode, status_flags).transpose()?;
             let rights = Rights::from(access_mode);
-            (file_io, rights)
+            (open_file, rights)
         };
 
         Ok(Self {
             path,
-            file_io,
+            open_file,
             offset: Mutex::new(0),
             status_flags: AtomicStatusFlags::new(status_flags),
             rights,
@@ -89,10 +89,10 @@ impl InodeHandle {
         self.rights
     }
 
-    fn inode_io_and_is_offset_aware(&self) -> (&dyn InodeIo, bool) {
-        if let Some(ref file_io) = self.file_io {
-            let is_offset_aware = file_io.is_offset_aware();
-            return (file_io.as_ref(), is_offset_aware);
+    fn file_ops_and_is_offset_aware(&self) -> (&dyn FileOps, bool) {
+        if let Some(ref open_file) = self.open_file {
+            let is_offset_aware = open_file.is_offset_aware();
+            return (open_file.as_ref(), is_offset_aware);
         }
 
         let inode = self.path.inode();
@@ -100,12 +100,12 @@ impl InodeHandle {
         (inode.as_ref(), is_offset_aware)
     }
 
-    /// Returns the `InodeIo` for positional I/O, rejecting files
+    /// Returns the `FileOps` for positional I/O, rejecting files
     /// that do not support `pread`/`pwrite`.
-    fn inode_io_for_positional_io(&self) -> Result<&dyn InodeIo> {
-        if let Some(ref file_io) = self.file_io {
-            file_io.check_positional_io()?;
-            return Ok(file_io.as_ref());
+    fn file_ops_for_positional_io(&self) -> Result<&dyn FileOps> {
+        if let Some(ref open_file) = self.open_file {
+            open_file.check_positional_io()?;
+            return Ok(open_file.as_ref());
         }
 
         let inode = self.path.inode();
@@ -221,23 +221,23 @@ impl InodeHandle {
         Ok(())
     }
 
-    pub fn downcast_file_io<T: 'static>(&self) -> Result<Option<&T>> {
+    pub fn downcast_open_file<T: 'static>(&self) -> Result<Option<&T>> {
         if self.rights.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 
-        let Some(file_io) = self.file_io.as_ref() else {
+        let Some(open_file) = self.open_file.as_ref() else {
             return Ok(None);
         };
 
-        Ok((file_io.as_ref() as &dyn Any).downcast_ref::<T>())
+        Ok((open_file.as_ref() as &dyn Any).downcast_ref::<T>())
     }
 }
 
 impl Pollable for InodeHandle {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        if let Some(ref file_io) = self.file_io {
-            return file_io.poll(mask, poller);
+        if let Some(ref open_file) = self.open_file {
+            return open_file.poll(mask, poller);
         }
 
         if self.rights.is_empty() {
@@ -255,16 +255,16 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
 
-        let (inode_io, is_offset_aware) = self.inode_io_and_is_offset_aware();
+        let (file_ops, is_offset_aware) = self.file_ops_and_is_offset_aware();
         let status_flags = self.status_flags();
 
         if !is_offset_aware {
-            return inode_io.read_at(0, writer, status_flags);
+            return file_ops.read_at(0, writer, status_flags);
         }
 
         let mut offset = self.offset.lock();
 
-        let len = inode_io.read_at(*offset, writer, status_flags)?;
+        let len = file_ops.read_at(*offset, writer, status_flags)?;
         *offset += len;
 
         Ok(len)
@@ -275,56 +275,56 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
 
-        let (inode_io, is_offset_aware) = self.inode_io_and_is_offset_aware();
+        let (file_ops, is_offset_aware) = self.file_ops_and_is_offset_aware();
         let status_flags = self.status_flags();
 
         if !is_offset_aware {
-            return inode_io.write_at(0, reader, status_flags);
+            return file_ops.write_at(0, reader, status_flags);
         }
 
         let mut offset = self.offset.lock();
 
-        // FIXME: How can we deal with the `O_APPEND` flag if `file_io` is set?
-        if status_flags.contains(StatusFlags::O_APPEND) && self.file_io.is_none() {
+        // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
+        if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
             // FIXME: `O_APPEND` should ensure that new content is appended even if another process
             // is writing to the file concurrently.
             *offset = self.path.size();
         }
 
-        let len = inode_io.write_at(*offset, reader, status_flags)?;
+        let len = file_ops.write_at(*offset, reader, status_flags)?;
         *offset += len;
 
         Ok(len)
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let inode_io = self.inode_io_for_positional_io()?;
+        let file_ops = self.file_ops_for_positional_io()?;
         if !self.rights.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
 
         let status_flags = self.status_flags();
 
-        inode_io.read_at(offset, writer, status_flags)
+        file_ops.read_at(offset, writer, status_flags)
     }
 
     fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
-        let inode_io = self.inode_io_for_positional_io()?;
+        let file_ops = self.file_ops_for_positional_io()?;
         if !self.rights.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
 
         let status_flags = self.status_flags();
 
-        // FIXME: How can we deal with the `O_APPEND` flag if `file_io` is set?
-        if status_flags.contains(StatusFlags::O_APPEND) && self.file_io.is_none() {
+        // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
+        if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
             // If the file has the `O_APPEND` flag, the offset is ignored.
             // FIXME: `O_APPEND` should ensure that new content is appended even if another process
             // is writing to the file concurrently.
             offset = self.path.size();
         }
 
-        inode_io.write_at(offset, reader, status_flags)
+        file_ops.write_at(offset, reader, status_flags)
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
@@ -332,8 +332,8 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 
-        if let Some(ref file_io) = self.file_io {
-            return file_io.ioctl(raw_ioctl);
+        if let Some(ref open_file) = self.open_file {
+            return open_file.ioctl(raw_ioctl);
         }
 
         return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
@@ -349,10 +349,10 @@ impl FileLike for InodeHandle {
             // If the inode has a page cache, it is a file-backed mapping and
             // we return the VMO as the mappable object.
             Ok(Mappable::Vmo(page_cache.as_vmo().clone()))
-        } else if let Some(ref file_io) = self.file_io {
+        } else if let Some(ref open_file) = self.open_file {
             // Otherwise, it is a special file (e.g. device file) and we should
             // return the file-specific mappable object.
-            file_io.mappable()
+            open_file.mappable()
         } else {
             return_errno_with_message!(Errno::ENODEV, "the file is not mappable");
         }
@@ -382,9 +382,9 @@ impl FileLike for InodeHandle {
         // "packet" mode is not yet supported. Remove this check once "packet"
         // mode is implemented.
         if self
-            .file_io
+            .open_file
             .as_ref()
-            .and_then(|file_io| (file_io.as_ref() as &dyn Any).downcast_ref::<PipeHandle>())
+            .and_then(|open_file| (open_file.as_ref() as &dyn Any).downcast_ref::<PipeHandle>())
             .is_some()
         {
             crate::fs::pipe::check_status_flags(new_status_flags)?;
@@ -404,9 +404,9 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 
-        if let Some(ref file_io) = self.file_io {
-            file_io.check_seekable()?;
-            if file_io.is_offset_aware() {
+        if let Some(ref open_file) = self.open_file {
+            open_file.check_seekable()?;
+            if open_file.is_offset_aware() {
                 // TODO: Figure out whether we need to add support for seeking from the end of
                 // special files.
                 return do_seek_util(&self.offset, pos, None);
@@ -521,17 +521,18 @@ pub enum SeekFrom {
     Current(isize),
 }
 
-/// A trait for file-like objects that provide custom I/O operations.
+/// Provides file operations for one opened file description.
 ///
-/// This trait is typically implemented for special files like devices or
-/// named pipes (FIFOs), which have behaviors different from regular on-disk files.
-pub trait FileIo: Pollable + InodeIo + Any + Send + Sync + 'static {
+/// A per-open file object can hold file-description-specific state and override
+/// operations that are not purely inode-backed, such as state and operations for
+/// devices, pipes, namespace files, and procfs files.
+pub trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
     /// Checks whether the `seek()` operation should fail.
     fn check_seekable(&self) -> Result<()>;
 
     /// Returns whether the `read()`/`write()` operation should use and advance the offset.
     ///
-    /// If [`FileIo::check_seekable`] succeeds but this method returns `false`,
+    /// If [`PerOpenFileOps::check_seekable`] succeeds but this method returns `false`,
     /// the offset in the `seek()` operation will be ignored.
     /// In that case, the `seek()` operation will do nothing but succeed.
     fn is_offset_aware(&self) -> bool;
@@ -542,7 +543,7 @@ pub trait FileIo: Pollable + InodeIo + Any + Send + Sync + 'static {
     /// most files. Override this for files that support positional I/O
     /// but not seeking (e.g., nsfs).
     ///
-    /// [`check_seekable`]: FileIo::check_seekable
+    /// [`check_seekable`]: PerOpenFileOps::check_seekable
     fn check_positional_io(&self) -> Result<()> {
         self.check_seekable()
     }

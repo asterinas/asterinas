@@ -15,7 +15,7 @@ use crate::{
                 status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
-                DirOps, ListedEntry, ProcDir, ReaddirEntry, keyed_readdir_entries,
+                ListedEntry, ProcDir, ProcDirOps, ReaddirEntry, keyed_readdir_entries,
                 listed_entries_from_table, lookup_child_from_table, visit_listed_entries,
                 visit_readdir_entries,
             },
@@ -130,7 +130,7 @@ impl TidDirOps {
     ];
 }
 
-impl DirOps for TidDirOps {
+impl ProcDirOps for TidDirOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.thread()
     }
@@ -183,7 +183,7 @@ impl TidDirOps {
     }
 }
 
-impl DirOps for TaskDirOps {
+impl ProcDirOps for TaskDirOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }

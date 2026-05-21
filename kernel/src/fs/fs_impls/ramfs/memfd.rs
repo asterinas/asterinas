@@ -17,7 +17,7 @@ use crate::{
         tmpfs::TmpFs,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FallocMode, Inode, InodeIo, Metadata},
+            inode::{Extension, FallocMode, FileOps, Inode, Metadata},
             path::{Mount, Path},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -96,7 +96,7 @@ impl MemfdInode {
 }
 
 #[inherit_methods(from = "self.inode")]
-impl InodeIo for MemfdInode {
+impl FileOps for MemfdInode {
     fn read_at(
         &self,
         offset: usize,

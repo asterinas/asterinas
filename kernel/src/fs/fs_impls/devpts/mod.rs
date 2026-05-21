@@ -17,7 +17,7 @@ use crate::{
         utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            inode::{Extension, Inode, InodeIo, Metadata, MknodType, RevalidationPolicy},
+            inode::{Extension, FileOps, Inode, Metadata, MknodType, RevalidationPolicy},
             registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
@@ -171,7 +171,7 @@ impl RootInode {
     }
 }
 
-impl InodeIo for RootInode {
+impl FileOps for RootInode {
     fn read_at(
         &self,
         _offset: usize,
@@ -188,6 +188,43 @@ impl InodeIo for RootInode {
         _status_flags: StatusFlags,
     ) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
+    }
+
+    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
+            // Read the 3 special entries.
+            if *offset == 0 {
+                visitor.visit(".", self.ino(), self.type_(), *offset)?;
+                *offset += 1;
+            }
+            if *offset == 1 {
+                visitor.visit("..", self.ino(), self.type_(), *offset)?;
+                *offset += 1;
+            }
+            if *offset == 2 {
+                visitor.visit("ptmx", self.ptmx.ino(), self.ptmx.type_(), *offset)?;
+                *offset += 1;
+            }
+
+            // Read the slaves.
+            let slaves = self.slaves.read();
+            let start_offset = *offset;
+            for (idx, (name, node)) in slaves
+                .idxes_and_items()
+                .map(|(idx, (name, node))| (idx + 3, (name, node)))
+                .skip_while(|(idx, _)| idx < &start_offset)
+            {
+                visitor.visit(name.as_ref(), node.ino(), node.type_(), idx)?;
+                *offset = idx + 1;
+            }
+            Ok(())
+        };
+
+        let mut iterate_offset = offset;
+        match try_readdir(&mut iterate_offset, visitor) {
+            Err(e) if offset == iterate_offset => Err(e),
+            _ => Ok(iterate_offset - offset),
+        }
     }
 }
 
@@ -273,43 +310,6 @@ impl Inode for RootInode {
 
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
-    }
-
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
-            // Read the 3 special entries.
-            if *offset == 0 {
-                visitor.visit(".", self.ino(), self.type_(), *offset)?;
-                *offset += 1;
-            }
-            if *offset == 1 {
-                visitor.visit("..", self.ino(), self.type_(), *offset)?;
-                *offset += 1;
-            }
-            if *offset == 2 {
-                visitor.visit("ptmx", self.ptmx.ino(), self.ptmx.type_(), *offset)?;
-                *offset += 1;
-            }
-
-            // Read the slaves.
-            let slaves = self.slaves.read();
-            let start_offset = *offset;
-            for (idx, (name, node)) in slaves
-                .idxes_and_items()
-                .map(|(idx, (name, node))| (idx + 3, (name, node)))
-                .skip_while(|(idx, _)| idx < &start_offset)
-            {
-                visitor.visit(name.as_ref(), node.ino(), node.type_(), idx)?;
-                *offset = idx + 1;
-            }
-            Ok(())
-        };
-
-        let mut iterate_offset = offset;
-        match try_readdir(&mut iterate_offset, visitor) {
-            Err(e) if offset == iterate_offset => Err(e),
-            _ => Ok(iterate_offset - offset),
-        }
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {

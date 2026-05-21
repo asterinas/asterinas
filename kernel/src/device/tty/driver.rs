@@ -5,7 +5,7 @@ use crate::{
         DevtmpfsInodeMeta,
         tty::{Tty, termio::CTermios},
     },
-    fs::file::FileIo,
+    fs::file::PerOpenFileOps,
     prelude::*,
     util::ioctl::RawIoctl,
 };
@@ -28,7 +28,7 @@ pub trait TtyDriver: Send + Sync + 'static {
     /// Opens the TTY.
     ///
     /// This function will be called when opening `/dev/tty`.
-    fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn FileIo>>
+    fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn PerOpenFileOps>>
     where
         Self: Sized;
 

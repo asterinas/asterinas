@@ -11,7 +11,7 @@ use crate::{
         procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, InodeIo, Metadata, SymbolicLink},
+            inode::{Extension, FileOps, Inode, Metadata, SymbolicLink},
         },
     },
     prelude::*,
@@ -19,12 +19,12 @@ use crate::{
     thread::Thread,
 };
 
-pub struct ProcSym<S: SymOps> {
+pub struct ProcSym<S: ProcSymOps> {
     inner: S,
     common: Common,
 }
 
-impl<S: SymOps> ProcSym<S> {
+impl<S: ProcSymOps> ProcSym<S> {
     pub fn new(sym: S, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
         let common = {
             let fs = parent.upgrade().unwrap().fs();
@@ -45,7 +45,7 @@ impl<S: SymOps> ProcSym<S> {
     }
 }
 
-impl<S: SymOps + 'static> InodeIo for ProcSym<S> {
+impl<S: ProcSymOps + 'static> FileOps for ProcSym<S> {
     fn read_at(
         &self,
         _offset: usize,
@@ -66,7 +66,7 @@ impl<S: SymOps + 'static> InodeIo for ProcSym<S> {
 }
 
 #[inherit_methods(from = "self.common")]
-impl<S: SymOps + 'static> Inode for ProcSym<S> {
+impl<S: ProcSymOps + 'static> Inode for ProcSym<S> {
     fn size(&self) -> usize;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
@@ -106,7 +106,7 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
     }
 }
 
-pub trait SymOps: Sync + Send {
+pub trait ProcSymOps: Sync + Send {
     /// Returns the thread whose credentials own this procfs inode.
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         None

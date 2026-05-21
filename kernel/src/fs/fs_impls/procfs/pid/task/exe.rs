@@ -4,7 +4,7 @@ use super::TidDirOps;
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{ProcSym, SymOps},
+        procfs::template::{ProcSym, ProcSymOps},
         vfs::inode::{Inode, SymbolicLink},
     },
     prelude::*,
@@ -23,7 +23,7 @@ impl ExeSymOps {
     }
 }
 
-impl SymOps for ExeSymOps {
+impl ProcSymOps for ExeSymOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }
