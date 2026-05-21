@@ -1070,7 +1070,7 @@ impl InodeInner {
         // writing with the page cache.
 
         if end_offset > file_size {
-            self.inode_impl.resize(end_offset)?;
+            self.resize_page_cache_and_inode(end_offset)?;
         }
 
         let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;

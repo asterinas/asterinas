@@ -91,6 +91,7 @@ test_ext2 "/ext2" "test_file.txt"
 ./ext2/open_dir
 ./ext2/rename
 ./ext2/rmdir
+./ext2/short_rw
 ./ext2/unix_socket
 echo "All ext2 fs test passed."
 
