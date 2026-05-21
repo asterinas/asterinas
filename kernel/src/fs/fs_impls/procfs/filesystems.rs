@@ -5,7 +5,7 @@ use aster_util::printer::{VmPrinter, VmPrinterError};
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFile},
+        procfs::template::{ProcFile, ProcFileOps},
         vfs::{inode::Inode, registry::FsProperties},
     },
     prelude::*,
@@ -23,7 +23,7 @@ impl FileSystemsFileOps {
     }
 }
 
-impl FileOps for FileSystemsFileOps {
+impl ProcFileOps for FileSystemsFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 

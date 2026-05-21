@@ -8,7 +8,7 @@ use super::{super::PidDirOps, TidDirOps};
 use crate::{
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFile},
+        procfs::template::{ProcFile, ProcFileOps},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -106,7 +106,7 @@ impl StatFileOps {
     }
 }
 
-impl FileOps for StatFileOps {
+impl ProcFileOps for StatFileOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.dir.thread()
     }

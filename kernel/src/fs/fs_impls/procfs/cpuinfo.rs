@@ -17,7 +17,7 @@ use crate::{
     arch::cpu::CpuInformation,
     fs::{
         file::mkmod,
-        procfs::template::{FileOps, ProcFile},
+        procfs::template::{ProcFile, ProcFileOps},
         vfs::inode::Inode,
     },
     prelude::*,
@@ -35,7 +35,7 @@ impl CpuInfoFileOps {
     }
 }
 
-impl FileOps for CpuInfoFileOps {
+impl ProcFileOps for CpuInfoFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 

@@ -8,7 +8,7 @@ use crate::{
         procfs::{
             StaticEntry,
             template::{
-                DirOps, FileOps, ProcDir, ProcFile, ReaddirEntry, listed_entries_from_table,
+                DirOps, ProcDir, ProcFile, ProcFileOps, ReaddirEntry, listed_entries_from_table,
                 lookup_child_from_table, read_i32_from, visit_listed_entries,
             },
         },
@@ -69,7 +69,7 @@ impl PtraceScopeFileOps {
     }
 }
 
-impl FileOps for PtraceScopeFileOps {
+impl ProcFileOps for PtraceScopeFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
