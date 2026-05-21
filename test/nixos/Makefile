@@ -89,6 +89,7 @@ run_nixos: check-test-name
 
 .PHONY: check
 check:
+	@cargo fmt --check
 	@cargo clippy -- -D warnings
 
 .PHONY: format
