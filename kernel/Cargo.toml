@@ -60,6 +60,7 @@ rand = { workspace = true, features = [
 ] }
 ring-buffer.workspace = true
 smallvec.workspace = true
+sparse-id-alloc.workspace = true
 spin.workspace = true
 takeable.workspace = true
 time.workspace = true

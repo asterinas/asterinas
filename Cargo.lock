@@ -234,6 +234,7 @@ dependencies = [
  "ring-buffer",
  "riscv",
  "smallvec",
+ "sparse-id-alloc",
  "spin",
  "takeable",
  "tdx-guest",
@@ -1786,6 +1787,10 @@ dependencies = [
  "log",
  "managed",
 ]
+
+[[package]]
+name = "sparse-id-alloc"
+version = "0.1.0"
 
 [[package]]
 name = "spin"
