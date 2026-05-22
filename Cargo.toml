@@ -56,6 +56,7 @@ members = [
     "kernel/libs/keyable-arc",
     "kernel/libs/logo-ascii-art",
     "kernel/libs/ring-buffer",
+    "kernel/libs/sparse-id-alloc",
     "kernel/libs/typeflags",
     "kernel/libs/typeflags-util",
     "kernel/libs/xarray",
@@ -96,6 +97,7 @@ default-members = [
     "kernel/libs/device-id",
     "kernel/libs/io-util",
     "kernel/libs/ring-buffer",
+    "kernel/libs/sparse-id-alloc",
     "kernel/libs/xarray",
 ]
 # All user-space or host-native crates.
@@ -178,6 +180,7 @@ jhash = { path = "kernel/libs/jhash" }
 keyable-arc = { path = "kernel/libs/keyable-arc" }
 logo-ascii-art = { path = "kernel/libs/logo-ascii-art" }
 ring-buffer = { path = "kernel/libs/ring-buffer" }
+sparse-id-alloc = { path = "kernel/libs/sparse-id-alloc" }
 typeflags = { path = "kernel/libs/typeflags" }
 typeflags-util = { path = "kernel/libs/typeflags-util" }
 xarray = { path = "kernel/libs/xarray" }
