@@ -6,6 +6,7 @@ VERBOSE ?= 1
 ENABLE_CONFORMANCE_TEST ?= false
 CONFORMANCE_TEST_SUITE ?= ltp
 CONFORMANCE_TEST_WORKDIR ?= /tmp
+XFSTESTS_BACKEND ?= block
 ENABLE_REGRESSION_TEST ?= false
 # Specify platform macros when building regression tests (supported: asterinas, linux).
 # - asterinas: Define both `__asterinas__` and `__linux__`. Tests may fail in Linux.
@@ -44,7 +45,9 @@ endif
 BUILD_XFSTESTS_IMAGES = false
 ifeq ($(ENABLE_CONFORMANCE_TEST), true)
 ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
+ifeq ($(XFSTESTS_BACKEND), block)
 BUILD_XFSTESTS_IMAGES = true
+endif
 endif
 endif
 

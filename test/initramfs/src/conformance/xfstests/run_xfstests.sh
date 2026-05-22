@@ -8,30 +8,26 @@ set -eu
 export PATH=__RUNTIME_PATH__
 
 XFSTESTS_DIR=/opt/xfstests
+BACKEND=${XFSTESTS_BACKEND:-block}
+export XFSTESTS_DIR XFSTESTS_BACKEND
+
+case "$BACKEND" in
+    block|virtiofs)
+        BACKEND_RUNNER="$XFSTESTS_DIR/run_xfstests_${BACKEND}.sh"
+        ;;
+    *)
+        echo "Unsupported xfstests backend: $BACKEND" >&2
+        exit 1
+        ;;
+esac
+
+if [ ! -x "$BACKEND_RUNNER" ]; then
+    echo "xfstests backend runner is not executable: $BACKEND_RUNNER" >&2
+    exit 1
+fi
+
+mkdir -p "$XFSTESTS_DIR/test" "$XFSTESTS_DIR/scratch"
 cd "$XFSTESTS_DIR"
-
-TEST_DEV=${XFSTESTS_TEST_DEV:-/dev/vdc}
-SCRATCH_DEV=${XFSTESTS_SCRATCH_DEV:-/dev/vdd}
-export TEST_DEV SCRATCH_DEV
-
-# Mount xfstests images with explicit error checking so a mount failure is not
-# silently skipped (which would cause ./check to run against empty directories
-# and still print the "all passed" success line).
-for entry in "$TEST_DEV:$XFSTESTS_DIR/test:test" "$SCRATCH_DEV:$XFSTESTS_DIR/scratch:scratch"; do
-    dev="${entry%%:*}"; rest="${entry#*:}"; mnt="${rest%%:*}"; role="${rest##*:}"
-    if [ ! -b "$dev" ]; then
-        echo "Expected $dev to be a block device for xfstests $role" >&2
-        exit 1
-    fi
-    if ! mount -t ext2 "$dev" "$mnt"; then
-        echo "Failed to mount $dev on $mnt ($role)" >&2
-        exit 1
-    fi
-    if ! mountpoint -q "$mnt"; then
-        echo "$mnt is not a mountpoint after mount(8) succeeded ($role)" >&2
-        exit 1
-    fi
-done
 
 RUNLIST_FILE=""
 TEST_ARGS=""
@@ -82,4 +78,4 @@ fi
 # Word-splitting is intentional here: TEST_ARGS contains only test names
 # and the -E flag, none of which contain whitespace or shell metacharacters.
 # shellcheck disable=SC2086
-./check $TEST_ARGS
+"$BACKEND_RUNNER" $TEST_ARGS
