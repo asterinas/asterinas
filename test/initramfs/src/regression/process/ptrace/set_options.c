@@ -174,8 +174,10 @@ FN_TEST(ptrace_trace_exit)
 
 	// Confirm the tracee has not yet exited at this point.
 	TEST_RES(waitpid(pid, &status, WNOHANG), _ret == 0);
+#ifdef __x86_64__
 	struct user_regs_struct regs = { 0 };
 	TEST_SUCC(ptrace(PTRACE_GETREGS, pid, 0, &regs));
+#endif
 
 	TEST_RES(eventmsg, WIFEXITED(_ret) && WEXITSTATUS(_ret) == 0);
 	CLEANUP_CHILD();

@@ -42,10 +42,13 @@ set -e
 ./pthread/pthread_signal_test
 ./pthread/pthread_test
 
-./ptrace/debugger
 ./ptrace/ptrace
-./ptrace/read_write_regs
 ./ptrace/set_options
+
+if [ "$(uname -m)" = "x86_64" ]; then
+    ./ptrace/debugger
+    ./ptrace/read_write_regs
+fi
 
 ./sched/sched_attr_getset
 ./sched/sched_param_getset
