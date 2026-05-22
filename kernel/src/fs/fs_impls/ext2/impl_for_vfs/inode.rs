@@ -255,6 +255,14 @@ impl Inode for Ext2Inode {
         self.get_xattr(name, value_writer)
     }
 
+    fn get_xattr_without_permission_check(
+        &self,
+        name: XattrName,
+        value_writer: &mut VmWriter,
+    ) -> Result<usize> {
+        self.get_xattr_without_permission_check(name, value_writer)
+    }
+
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
         self.list_xattr(namespace, list_writer)
     }

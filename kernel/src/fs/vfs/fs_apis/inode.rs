@@ -498,6 +498,19 @@ pub trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
+    /// Gets an xattr for kernel-internal consumers.
+    ///
+    /// User-facing xattr syscalls must call `get_xattr`. This helper is for
+    /// metadata that the kernel must inspect as part of another operation, such
+    /// as loading `security.capability` while executing an executable file.
+    fn get_xattr_without_permission_check(
+        &self,
+        name: XattrName,
+        value_writer: &mut VmWriter,
+    ) -> Result<usize> {
+        self.get_xattr(name, value_writer)
+    }
+
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }

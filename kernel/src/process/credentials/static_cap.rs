@@ -4,7 +4,10 @@ use aster_rights::{Dup, Read, TRights, Write};
 use aster_rights_proc::require;
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
-use super::{Credentials, Gid, SecureBits, Uid, capabilities::CapSet, credentials_::Credentials_};
+use super::{
+    Credentials, FileCapabilities, Gid, SecureBits, Uid, capabilities::CapSet,
+    credentials_::Credentials_,
+};
 use crate::prelude::*;
 
 impl<R: TRights> Credentials<R> {
@@ -247,6 +250,19 @@ impl<R: TRights> Credentials<R> {
         self.0.set_sgid(egid);
     }
 
+    /// Recomputes capability sets for `execve()` using the executable file's capabilities.
+    ///
+    /// This method should only be used when executing a new executable file.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub(in crate::process) fn update_capsets_for_exec(
+        &self,
+        file_capabilities: Option<FileCapabilities>,
+    ) -> Result<()> {
+        self.0.update_capsets_for_exec(file_capabilities)
+    }
+
     // *********** Supplementary Groups methods **********
 
     /// Acquires the read lock of supplementary group IDs.
@@ -275,7 +291,7 @@ impl<R: TRights> Credentials<R> {
         self.0.inheritable_capset()
     }
 
-    /// Gets the capabilities that a process can potentially be granted.
+    /// Gets the capabilities that are a process can potentially be granted.
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
@@ -283,7 +299,7 @@ impl<R: TRights> Credentials<R> {
         self.0.permitted_capset()
     }
 
-    /// Gets the capabilities that a process can actually use.
+    /// Gets the capabilities that we can actually use.
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
@@ -307,7 +323,7 @@ impl<R: TRights> Credentials<R> {
         self.0.set_inheritable_capset(inheritable_capset);
     }
 
-    /// Sets the capabilities that a process can potentially be granted.
+    /// Sets the capabilities that are a process can potentially be granted.
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
@@ -315,7 +331,7 @@ impl<R: TRights> Credentials<R> {
         self.0.set_permitted_capset(permitted_capset);
     }
 
-    /// Sets the capabilities that a process can actually use.
+    /// Sets the capabilities that we can actually use.
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
@@ -323,17 +339,7 @@ impl<R: TRights> Credentials<R> {
         self.0.set_effective_capset(effective_capset);
     }
 
-    /// Drops one capability from the capability bounding set.
-    ///
-    /// If the caller does not have the `CAP_SETPCAP` capability, this method returns an error.
-    ///
-    /// This method requires the `Write` right.
-    #[require(R > Write)]
-    pub fn drop_bounding_capability(&self, capability: CapSet) -> Result<()> {
-        self.0.drop_bounding_capability(capability)
-    }
-
-    /// Gets the keep-capabilities flag.
+    /// Gets keep capabilities flag.
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
@@ -341,7 +347,7 @@ impl<R: TRights> Credentials<R> {
         self.0.keep_capabilities()
     }
 
-    /// Sets the keep-capabilities flag.
+    /// Sets keep capabilities flag.
     ///
     /// If the [`SecureBits::KEEP_CAPS_LOCKED`] is set, this method will return an error.
     ///
@@ -349,6 +355,14 @@ impl<R: TRights> Credentials<R> {
     #[require(R > Write)]
     pub fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
         self.0.set_keep_capabilities(keep_capabilities)
+    }
+
+    /// Drops a capability from the bounding set.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn drop_bounding_capability(&self, capability: CapSet) -> Result<()> {
+        self.0.drop_bounding_capability(capability)
     }
 
     // *********** Secure Bits methods **********

@@ -557,6 +557,11 @@ impl OverlayInode {
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>>;
     pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
+    pub fn get_xattr_without_permission_check(
+        &self,
+        name: XattrName,
+        value_writer: &mut VmWriter,
+    ) -> Result<usize>;
     pub fn list_xattr(
         &self,
         namespace: XattrNamespace,
@@ -1007,6 +1012,11 @@ impl Inode for OverlayInode {
         flags: XattrSetFlags,
     ) -> Result<()>;
     fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
+    fn get_xattr_without_permission_check(
+        &self,
+        name: XattrName,
+        value_writer: &mut VmWriter,
+    ) -> Result<usize>;
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize>;
     fn remove_xattr(&self, name: XattrName) -> Result<()>;
 }

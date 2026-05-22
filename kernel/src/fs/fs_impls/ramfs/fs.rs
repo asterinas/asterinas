@@ -1304,6 +1304,16 @@ impl Inode for RamInode {
         self.xattr.get(name, value_writer)
     }
 
+    fn get_xattr_without_permission_check(
+        &self,
+        name: XattrName,
+        value_writer: &mut VmWriter,
+    ) -> Result<usize> {
+        RamXattr::check_file_type_for_xattr(self.typ)
+            .map_err(|_| Error::with_message(Errno::ENODATA, "no available xattrs"))?;
+        self.xattr.get(name, value_writer)
+    }
+
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
         if RamXattr::check_file_type_for_xattr(self.typ).is_err() {
             return Ok(0);

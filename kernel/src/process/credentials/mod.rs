@@ -3,6 +3,7 @@
 pub mod c_types;
 pub mod capabilities;
 mod credentials_;
+mod file_capabilities;
 mod group;
 mod secure_bits;
 mod static_cap;
@@ -11,6 +12,7 @@ mod user;
 use aster_rights::FullOp;
 use capabilities::CapSet;
 use credentials_::Credentials_;
+pub(in crate::process) use file_capabilities::FileCapabilities;
 pub use group::Gid;
 pub use secure_bits::SecureBits;
 pub use user::Uid;
@@ -29,5 +31,5 @@ use crate::prelude::*;
 /// - secure bits.
 pub struct Credentials<R = FullOp>(Arc<Credentials_>, R);
 
-// TODO: Support the ambient capability set.
+// TODO: Support the bounding and ambient capability set.
 pub const AMBIENT_CAPSET: CapSet = CapSet::empty();

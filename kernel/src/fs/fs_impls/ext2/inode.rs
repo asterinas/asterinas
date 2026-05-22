@@ -856,11 +856,24 @@ impl Inode {
     }
 
     pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
-        if self.xattr.is_none() {
-            return_errno_with_message!(Errno::ENODATA, "no available xattrs");
-        }
+        let xattr = self
+            .xattr
+            .as_ref()
+            .ok_or(Error::with_message(Errno::ENODATA, "no available xattrs"))?;
         self.check_permission(Permission::MAY_READ)?;
-        self.xattr.as_ref().unwrap().get(name, value_writer)
+        xattr.get(name, value_writer)
+    }
+
+    pub fn get_xattr_without_permission_check(
+        &self,
+        name: XattrName,
+        value_writer: &mut VmWriter,
+    ) -> Result<usize> {
+        let xattr = self
+            .xattr
+            .as_ref()
+            .ok_or(Error::with_message(Errno::ENODATA, "no available xattrs"))?;
+        xattr.get(name, value_writer)
     }
 
     pub fn list_xattr(
