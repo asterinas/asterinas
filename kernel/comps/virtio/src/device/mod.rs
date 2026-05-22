@@ -7,6 +7,7 @@ use crate::{queue, transport::VirtioTransportError};
 pub mod block;
 pub mod console;
 pub mod entropy;
+pub mod filesystem;
 pub mod input;
 pub mod network;
 pub mod socket;
@@ -37,6 +38,7 @@ pub(crate) enum VirtioDeviceType {
     Pstore = 22,
     Iommu = 23,
     Memory = 24,
+    FileSystem = 26,
 }
 
 #[derive(Debug)]
