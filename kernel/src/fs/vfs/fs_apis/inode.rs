@@ -22,7 +22,8 @@ use crate::{
         vfs::path::Path,
     },
     prelude::*,
-    process::{Gid, Uid, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    process::{Gid, Uid, posix_thread::AsPosixThread},
+    security,
     time::clocks::RealTimeCoarseClock,
     vm::page_cache::PageCache,
 };
@@ -510,37 +511,17 @@ pub trait Inode: Any + FileOps + Send + Sync {
     /// Similar to Linux, using "fsuid" here allows setting filesystem permissions
     /// without changing the "normal" uids for other tasks.
     fn check_permission(&self, mut perm: Permission) -> Result<()> {
-        let creds = match Task::current() {
-            Some(task) => match task.as_posix_thread() {
-                Some(thread) => thread.credentials(),
-                None => return Ok(()),
-            },
+        let current = match Task::current() {
+            Some(task) => task,
             None => return Ok(()),
         };
+        let Some(posix_thread) = current.as_posix_thread() else {
+            return Ok(());
+        };
+        let creds = posix_thread.credentials();
 
-        // With DAC_OVERRIDE capability, the user can bypass some permission checks.
-        if creds.effective_capset().contains(CapSet::DAC_OVERRIDE) {
-            // Read/write DACs are always overridable.
-            perm -= Permission::MAY_READ | Permission::MAY_WRITE;
-
-            // Executable DACs are overridable when there is at least one exec bit set.
-            if perm.may_exec() {
-                let metadata = self.metadata();
-                let mode = metadata.mode;
-
-                if mode.is_owner_executable()
-                    || mode.is_group_executable()
-                    || mode.is_other_executable()
-                {
-                    perm -= Permission::MAY_EXEC;
-                } else {
-                    return_errno_with_message!(
-                        Errno::EACCES,
-                        "root execute permission denied: no execute bits set"
-                    );
-                }
-            }
-        }
+        let overridden = security::inode_dac_override(self.metadata().mode, perm, posix_thread)?;
+        perm -= overridden;
 
         perm =
             perm.intersection(Permission::MAY_READ | Permission::MAY_WRITE | Permission::MAY_EXEC);

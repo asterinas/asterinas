@@ -7,8 +7,8 @@
 //! inspect common hook contexts before allowing or rejecting an operation.
 //!
 //! This module defines the common LSM traits and hook contexts shared by
-//! built-in modules such as `yama`. Module selection follows the `lsm=` and
-//! legacy `security=` kernel command-line parameters.
+//! built-in modules such as `capability` and `yama`. Module selection follows
+//! the `lsm=` and legacy `security=` kernel command-line parameters.
 
 pub mod hooks;
 mod modules;
@@ -17,8 +17,11 @@ pub mod yama {
     pub use super::modules::yama::{YamaScope, get_scope, set_scope};
 }
 
-use self::hooks::LsmAlienAccessHook;
-use crate::prelude::*;
+pub use self::hooks::{
+    AlienAccessContext, CapabilityReason, CapableContext, InodeDacOverrideContext,
+};
+use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook, LsmInodeHook};
+use crate::{fs::file::Permission, prelude::*};
 
 bitflags! {
     /// LSM module flags.
@@ -31,7 +34,7 @@ bitflags! {
 }
 
 /// The common interface for built-in LSM modules.
-trait LsmModule: LsmAlienAccessHook + Sync {
+trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + LsmInodeHook + Sync {
     /// Returns the module name.
     fn name(&self) -> &'static str;
 
@@ -50,4 +53,14 @@ pub(super) fn init() {
     for module in modules::active_modules() {
         info!("[kernel] LSM module enabled: {}", module.name());
     }
+}
+
+/// Runs the LSM stack for a capability check.
+pub fn capable(context: &CapableContext) -> Result<()> {
+    hooks::on_capable(context)
+}
+
+/// Runs the LSM stack for a DAC override decision on an inode.
+pub fn inode_dac_override(context: &InodeDacOverrideContext) -> Result<Permission> {
+    hooks::on_inode_dac_override(context)
 }

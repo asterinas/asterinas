@@ -6,6 +6,7 @@ use crate::{
     fs::pseudofs::{NsCommonOps, NsType, StashedDentry},
     prelude::*,
     process::{Uid, credentials::capabilities::CapSet, posix_thread::PosixThread},
+    security::{self, CapabilityReason},
 };
 
 /// The user namespace.
@@ -27,20 +28,18 @@ impl UserNamespace {
 
     /// Checks whether the thread has the required capability in this user namespace.
     pub fn check_cap(&self, required: CapSet, posix_thread: &PosixThread) -> Result<()> {
-        // Since creating new user namespaces is not supported at the moment,
-        // there is effectively only one user namespace in the entire system.
-        // Therefore, the thread has a single set of capabilities used for permission checks.
-        // FIXME: Once support for creating new user namespaces is added,
-        // we should verify the thread's capabilities within the relevant user namespace.
-        let cap_set = posix_thread.credentials().effective_capset();
-        if cap_set.contains(required) {
-            return Ok(());
-        }
+        self.check_cap_with_reason(required, posix_thread, CapabilityReason::General)
+    }
 
-        return_errno_with_message!(
-            Errno::EPERM,
-            "the thread does not have the required capability"
-        )
+    /// Checks whether the thread has the required capability in this user namespace
+    /// for a specific kernel operation.
+    pub fn check_cap_with_reason(
+        &self,
+        required: CapSet,
+        posix_thread: &PosixThread,
+        reason: CapabilityReason,
+    ) -> Result<()> {
+        security::capable(self, required, posix_thread, reason)
     }
 
     /// Returns the owner UID of the user namespace.
