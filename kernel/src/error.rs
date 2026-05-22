@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use int_to_c_enum::TryFromInt;
+
 /// Error number.
 #[expect(clippy::upper_case_acronyms)]
 #[repr(i32)]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, TryFromInt)]
 pub enum Errno {
     EPERM = 1,    /* Operation not permitted */
     ENOENT = 2,   /* No such file or directory */

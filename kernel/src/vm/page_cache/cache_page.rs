@@ -127,6 +127,18 @@ pub trait CachePageExt: Sized {
     /// be called while holding a spinlock or with interrupts disabled.
     fn ensure_init(&self, init_fn: impl FnOnce(LockedCachePage) -> Result<()>) -> Result<()>;
 
+    /// Clears writeback state for a page whose writeback has completed or was canceled.
+    ///
+    /// Callers must invoke this method only to finish a writeback operation
+    /// previously started with [`LockedCachePage::set_writing_back`], either
+    /// from its completion callback or while handling submission failure.
+    fn clear_writing_back(&self) {
+        self.metadata()
+            .is_writing_back
+            .store(false, Ordering::Release);
+        self.wait_queue().wake_all();
+    }
+
     /// Allocates a new cache page which content and state are uninitialized.
     fn alloc_uninit() -> Result<CachePage> {
         let meta = CachePageMeta::default();
@@ -273,7 +285,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
     ///
     /// This indicates that the page's contents are synchronized with disk
     /// and can be safely read.
-    pub(super) fn set_up_to_date(&self) {
+    pub fn set_up_to_date(&self) {
         self.page()
             .metadata()
             .state
@@ -284,7 +296,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
     ///
     /// This indicates that the page has been modified and needs to be
     /// written back to disk eventually.
-    pub(super) fn set_dirty(&self) {
+    pub fn set_dirty(&self) {
         self.metadata()
             .state
             .store(PageState::Dirty, Ordering::Release);
@@ -292,7 +304,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
 
     /// Sets the writing back flag of the page, indicating that the page
     /// is in-flight to storage.
-    pub(super) fn set_writing_back(&self) {
+    pub fn set_writing_back(&self) {
         self.metadata()
             .is_writing_back
             .store(true, Ordering::Release);
@@ -301,7 +313,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
     /// Waits until the page finishes writing back to storage.
     ///
     /// This function will wait on the same wait queue used for locking the page.
-    pub(super) fn wait_until_finish_writing_back(&self) {
+    pub fn wait_until_finish_writing_back(&self) {
         self.wait_queue
             .wait_until(|| (!self.is_writing_back()).then_some(()));
     }
@@ -314,7 +326,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
 
 impl LockedCachePage<CachePage> {
     /// Unlocks the page and returns the underlying cache page.
-    pub(super) fn unlock(mut self) -> CachePage {
+    pub fn unlock(mut self) -> CachePage {
         let page = self.page.take().expect("page already taken");
         unlock_page(&page, self.wait_queue);
         page
@@ -368,11 +380,4 @@ fn lock_page(page: &CachePage) -> &'static WaitQueue {
             .ok()
     });
     wait_queue
-}
-
-pub(super) fn clear_writing_back(page: &CachePage) {
-    page.metadata()
-        .is_writing_back
-        .store(false, Ordering::Release);
-    page.wait_queue().wake_all();
 }
