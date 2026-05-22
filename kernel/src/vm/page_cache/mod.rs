@@ -95,7 +95,7 @@ mod cache_page;
 mod tests;
 mod vmo;
 
-pub use cache_page::{CachePage, CachePageExt, CachePageMeta};
+pub use cache_page::{CachePage, CachePageExt, CachePageMeta, LockedCachePage};
 pub use vmo::{Vmo, VmoCommitError, VmoFlags, VmoOptions, WritableMappingStatus};
 
 /// The page cache for a file-like object.
@@ -358,7 +358,7 @@ pub trait PageCacheBackend: Sync + Send {
     fn read_page_async(
         &self,
         idx: usize,
-        locked_page: cache_page::LockedCachePage,
+        locked_page: LockedCachePage,
         io_batch: &mut IoBatch,
     ) -> Result<()>;
 
@@ -374,14 +374,14 @@ pub trait PageCacheBackend: Sync + Send {
     fn write_page_async(
         &self,
         idx: usize,
-        locked_page: cache_page::LockedCachePage,
+        locked_page: LockedCachePage,
         io_batch: &mut IoBatch,
     ) -> Result<()>;
 }
 
 impl dyn PageCacheBackend {
     /// Reads a page from the backend synchronously.
-    pub fn read_page(&self, idx: usize, page: cache_page::LockedCachePage) -> Result<()> {
+    pub fn read_page(&self, idx: usize, page: LockedCachePage) -> Result<()> {
         let mut io_batch = IoBatch::with_capacity(1);
         self.read_page_async(idx, page, &mut io_batch)?;
         io_batch.wait_all()?;
@@ -447,7 +447,7 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
     fn read_page_async(
         &self,
         idx: usize,
-        locked_page: cache_page::LockedCachePage,
+        locked_page: LockedCachePage,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         let bio_segment = BioSegment::new_from_segment(
@@ -471,7 +471,7 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
     fn write_page_async(
         &self,
         idx: usize,
-        locked_page: cache_page::LockedCachePage,
+        locked_page: LockedCachePage,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         locked_page.wait_until_finish_writing_back();
@@ -489,7 +489,7 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
         let submit_page = page.clone();
 
         let complete_fn: BioCompleteFn = Box::new(move |status| {
-            cache_page::clear_writing_back(&submit_page);
+            submit_page.clear_writing_back();
             if status != BioStatus::Complete {
                 // TODO: Record the writeback error (e.g., EIO) in the VMO
                 // (or the corresponding inode) so that a subsequent sync syscall
@@ -512,7 +512,7 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
             // retry the data that never reached the device queue.
             let locked_page = page.lock();
             locked_page.set_dirty();
-            cache_page::clear_writing_back(&locked_page);
+            locked_page.clear_writing_back();
         }
 
         res

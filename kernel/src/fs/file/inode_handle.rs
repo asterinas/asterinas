@@ -123,8 +123,13 @@ impl InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
 
+        let file_ops: &dyn FileOps = if let Some(ref open_file) = self.open_file {
+            open_file.as_ref()
+        } else {
+            self.path.inode().as_ref()
+        };
         let mut offset = self.offset.lock();
-        let read_cnt = self.path.inode().readdir_at(*offset, visitor)?;
+        let read_cnt = file_ops.readdir_at(*offset, visitor)?;
         *offset += read_cnt;
         Ok(read_cnt)
     }
@@ -409,7 +414,7 @@ impl FileLike for InodeHandle {
             if open_file.is_offset_aware() {
                 // TODO: Figure out whether we need to add support for seeking from the end of
                 // special files.
-                return do_seek_util(&self.offset, pos, None);
+                return do_seek_util(&self.offset, pos, open_file.seek_end()?);
             } else {
                 return Ok(0);
             }
@@ -546,6 +551,16 @@ pub trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
     /// [`check_seekable`]: PerOpenFileOps::check_seekable
     fn check_positional_io(&self) -> Result<()> {
         self.check_seekable()
+    }
+
+    /// Returns the end position for [`SeekFrom::End`].
+    ///
+    /// This is intentionally separate from `Inode::seek_end`. Both `Inode`
+    /// and [`PerOpenFileOps`] need `SEEK_END` support, but `Inode::seek_end`
+    /// has an inode-specific default implementation, so the two cannot be
+    /// cleanly unified under [`FileOps`].
+    fn seek_end(&self) -> Result<Option<usize>> {
+        Ok(None)
     }
 
     // See `FileLike::mappable`.
