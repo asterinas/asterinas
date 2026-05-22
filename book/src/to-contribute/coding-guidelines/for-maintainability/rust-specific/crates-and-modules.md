@@ -65,6 +65,70 @@ PR [#2951](https://github.com/asterinas/asterinas/pull/2951),
 [#2605](https://github.com/asterinas/asterinas/pull/2605#discussion_r2720506912),
 and [#3154](https://github.com/asterinas/asterinas/pull/3154#discussion_r3100905375).
 
+### Restrict subsystem visibility with a short name (`short-vis-path`) {#short-vis-path}
+
+To conform with the [`narrow-visibility`](#narrow-visibility) guideline,
+a common pattern is to expose Rust items inside a subsystem only to the subsystem itself.
+But when the subsystem sits deep in the module hierarchy,
+we have to write long visibility modifiers
+like `pub(in crate::a::very::deep::subsystem)`,
+which is tedious for writers and unfriendly for readers.
+
+Instead, you can use the `short_vis_path` macro
+to create a short name for the long full path of a subsystem:
+
+```rust
+// In kernel/src/a/very/deep/subsystem/lib.rs
+
+// Good
+#![short_vis_path::add(subsystem)]
+
+pub(in subsystem) fn struct Foo {}
+
+// Bad: violating the narrow-visibility guideline.
+pub struct Foo {}
+
+// Bad: the visibility path is too long to read.
+pub(in crate::a::very::deep::subsystem) struct Foo {}
+```
+
+To avoid overusing this attribute, only follow this guideline
+when **all** of the following three conditions are met:
+
+* the submodule depth exceeds 2 levels
+  (i.e., the target path contains at least two `::` separators)
+
+```rust
+// In kernel/src/fs/utils/systree_inode.rs
+
+// Good: `fs` is a direct submodule of root, thus it's readable already.
+pub(in crate::fs) struct Dentry {}
+
+// Bad: no need to do this.
+#![short_vis_path::add(fs)]
+pub(in fs) struct Dentry {}
+```
+
+* `pub(super)` and `pub(self)` are inapplicable
+
+```rust
+// In ostd/src/mm/page_table/mod.rs
+
+// Good
+pub(super) const fn vaddr_range() {}
+
+// Bad
+#![short_vis_path::add(mm)]
+pub(in mm) const fn vaddr_range() {}
+```
+
+* and the restricted visibility path is used at least 2 times
+
+Refer to [#3188] for the `short-vis-path` design.
+
+[pub-in-path]: https://doc.rust-lang.org/reference/visibility-and-privacy.html#pubin-path-pubcrate-pubsuper-and-pubself
+[#3188]: https://github.com/asterinas/asterinas/issues/3188
+
 ### Qualify function calls with the parent module (`qualified-fn-imports`) {#qualified-fn-imports}
 
 When importing a free function or a static/constant
