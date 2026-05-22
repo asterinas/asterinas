@@ -14,9 +14,7 @@ use crate::{
     cpu::LinuxAbi,
     prelude::*,
     process::{
-        posix_thread::{
-            AsPosixThread, FIRST_POSIX_TID, NOT_A_SYSCALL, ThreadLocal, ptrace::PtraceStopResult,
-        },
+        posix_thread::{AsPosixThread, FIRST_POSIX_TID, ThreadLocal, ptrace::PtraceStopResult},
         signal::{HandlePendingSignal, PauseReason, handle_pending_signal},
     },
     syscall::handle_syscall,
@@ -83,12 +81,12 @@ pub fn create_new_user_task(
             match return_reason {
                 ReturnReason::UserException => {
                     let exception = user_ctx.take_exception().unwrap();
-                    ctx.posix_thread.set_orig_syscall_ret(NOT_A_SYSCALL);
+                    ctx.thread_local.set_orig_syscall_ret(None);
                     handle_exception(&ctx, user_ctx, exception)
                 }
                 ReturnReason::UserSyscall => {
-                    ctx.posix_thread
-                        .set_orig_syscall_ret(user_ctx.syscall_ret());
+                    ctx.thread_local
+                        .set_orig_syscall_ret(Some(user_ctx.syscall_ret()));
 
                     let res = ctx.posix_thread.ptrace_may_stop_on_syscall(&ctx, user_ctx);
                     if !matches!(res, PtraceStopResult::Interrupted) {
@@ -98,7 +96,7 @@ pub fn create_new_user_task(
                     }
                 }
                 ReturnReason::KernelEvent => {
-                    ctx.posix_thread.set_orig_syscall_ret(NOT_A_SYSCALL);
+                    ctx.thread_local.set_orig_syscall_ret(None);
                 }
             };
 

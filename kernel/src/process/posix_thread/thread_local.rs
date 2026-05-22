@@ -46,6 +46,9 @@ pub struct ThreadLocal {
     /// Saved signal mask. It will be restored either after the signal handler, or upon
     /// return from the system call if there is no signal handler to run.
     sig_mask_saved: Cell<Option<SigMask>>,
+    /// Original syscall-return register value captured
+    /// at the most recent kernel entry, or `None` for non-syscall entries.
+    orig_syscall_ret: Cell<Option<usize>>,
 
     // Namespaces.
     user_ns: RefCell<Arc<UserNamespace>>,
@@ -76,6 +79,7 @@ impl ThreadLocal {
             fpu_state: Cell::new(FpuState::Unloaded),
             sig_stack: RefCell::new(SigStack::default()),
             sig_mask_saved: Cell::new(None),
+            orig_syscall_ret: Cell::new(None),
             user_ns: RefCell::new(user_ns),
             ns_proxy: RefCell::new(Some(ns_proxy)),
         }
@@ -168,6 +172,18 @@ impl ThreadLocal {
 
     pub(in crate::process) fn sig_mask_saved(&self) -> &Cell<Option<SigMask>> {
         &self.sig_mask_saved
+    }
+
+    /// Returns the original syscall-return register value
+    /// for the most recent kernel entry.
+    pub(in crate::process) fn orig_syscall_ret(&self) -> Option<usize> {
+        self.orig_syscall_ret.get()
+    }
+
+    /// Sets the original syscall-return register value
+    /// for the most recent kernel entry.
+    pub fn set_orig_syscall_ret(&self, value: Option<usize>) {
+        self.orig_syscall_ret.set(value);
     }
 
     pub fn borrow_user_ns(&self) -> Ref<'_, Arc<UserNamespace>> {

@@ -58,7 +58,7 @@ impl From<&GeneralRegs> for CUserRegsStruct {
     /// Builds the register snapshot from saved general-purpose registers.
     ///
     /// `orig_rax` is left at zero. Callers needing the syscall-entry
-    /// value should assign it from `PosixThread::orig_syscall_ret`.
+    /// value should assign it from `ThreadLocal::orig_syscall_ret`.
     fn from(regs: &GeneralRegs) -> Self {
         let mut out = Self::default();
         let bytes = out.as_mut_bytes();
@@ -77,7 +77,7 @@ impl CUserRegsStruct {
     /// Validates the user-supplied `regs` and then applies it into `regs`.
     ///
     /// `orig_rax` is ignored. Callers should separately assign this
-    /// field to `PosixThread::orig_syscall_ret`.
+    /// field to `ThreadLocal::orig_syscall_ret`.
     ///
     /// # Errors
     ///
@@ -172,7 +172,7 @@ macro_rules! off {
 /// Each entry covers one `usize` field in `CUserRegsStruct` that is either
 /// backed by `GeneralRegs` or fixed to an ABI-defined value.
 /// `orig_rax` is the only exception: it is stored in
-/// `PosixThread::orig_syscall_ret` rather than `GeneralRegs`.
+/// `ThreadLocal::orig_syscall_ret` rather than `GeneralRegs`.
 const REG_RULES: &[RegRule] = &[
     RegRule::rw(off!(rax), |r| r.rax, |r, v| r.rax = v, Policy::Set),
     RegRule::rw(off!(rbx), |r| r.rbx, |r, v| r.rbx = v, Policy::Set),

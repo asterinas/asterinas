@@ -10,7 +10,7 @@ use ostd::{arch::cpu::context::UserContext, sync::Waiter};
 
 use super::{AsPosixThread, PosixThread};
 #[cfg(target_arch = "x86_64")]
-use crate::{arch::ptrace as arch_ptrace, process::posix_thread::NOT_A_SYSCALL};
+use crate::arch::ptrace as arch_ptrace;
 use crate::{
     prelude::*,
     process::{
@@ -484,7 +484,7 @@ impl TraceeStatus {
         #[cfg(target_arch = "x86_64")]
         {
             state.general_regs = Some(*user_ctx.general_regs());
-            state.orig_syscall_ret = ctx.posix_thread.orig_syscall_ret();
+            state.set_orig_syscall_ret(ctx.thread_local.orig_syscall_ret());
         }
         self.is_stopped.store(true, Ordering::Relaxed);
         drop(state);
@@ -512,7 +512,7 @@ impl TraceeStatus {
             #[cfg(target_arch = "x86_64")]
             {
                 state.general_regs = None;
-                state.orig_syscall_ret = NOT_A_SYSCALL;
+                state.clear_orig_syscall_ret();
             }
             state.is_tracing_syscall = false;
             self.is_stopped.store(false, Ordering::Relaxed);
@@ -527,9 +527,8 @@ impl TraceeStatus {
         {
             let regs = state.general_regs.take().unwrap();
             *user_ctx.general_regs_mut() = regs;
-            ctx.posix_thread
-                .set_orig_syscall_ret(state.orig_syscall_ret);
-            state.orig_syscall_ret = NOT_A_SYSCALL;
+            ctx.thread_local
+                .set_orig_syscall_ret(state.take_orig_syscall_ret());
         }
 
         PtraceStopResult::Continued(signal)
@@ -729,7 +728,8 @@ struct TraceeState {
     /// The general-purpose registers of the tracee at the time of ptrace-stop.
     #[cfg(target_arch = "x86_64")]
     general_regs: Option<GeneralRegs>,
-    /// The value of `PosixThread::orig_syscall_ret` at the time of ptrace-stop.
+    /// The value of `ThreadLocal::orig_syscall_ret` at the time of ptrace-stop,
+    /// or [`Self::NOT_A_SYSCALL`] for non-syscall stops.
     #[cfg(target_arch = "x86_64")]
     orig_syscall_ret: usize,
 }
@@ -745,11 +745,30 @@ impl TraceeState {
             #[cfg(target_arch = "x86_64")]
             general_regs: None,
             #[cfg(target_arch = "x86_64")]
-            orig_syscall_ret: NOT_A_SYSCALL,
+            orig_syscall_ret: Self::NOT_A_SYSCALL,
         }
     }
 
     fn tracer(&self) -> Option<Arc<Thread>> {
         self.tracer.upgrade()
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+impl TraceeState {
+    const NOT_A_SYSCALL: usize = usize::MAX;
+
+    fn set_orig_syscall_ret(&mut self, value: Option<usize>) {
+        self.orig_syscall_ret = value.unwrap_or(Self::NOT_A_SYSCALL);
+    }
+
+    fn take_orig_syscall_ret(&mut self) -> Option<usize> {
+        let value = self.orig_syscall_ret;
+        self.clear_orig_syscall_ret();
+        (value != Self::NOT_A_SYSCALL).then_some(value)
+    }
+
+    fn clear_orig_syscall_ret(&mut self) {
+        self.orig_syscall_ret = Self::NOT_A_SYSCALL;
     }
 }
