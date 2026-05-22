@@ -8,6 +8,7 @@ cd "$(dirname "$0")"
 
 sh ./capability/run_test.sh
 
+./lsm/module_selection
 ./lsm/yama
 
 ./namespace/cgroup_ns

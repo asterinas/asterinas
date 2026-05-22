@@ -20,6 +20,10 @@ OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
 COVERAGE ?= 0
+# Extra kernel command-line arguments, separated by spaces.
+#
+# Example: EXTRA_KCMD_ARGS="lsm=yama"
+EXTRA_KCMD_ARGS ?=
 
 # Specify the primary system console (supported: tty0, ttyS0, hvc0).
 # - tty0: The active virtual terminal (VT).
@@ -104,6 +108,7 @@ CARGO_OSDK_COMMON_ARGS :=
 # The build arguments also apply to the `cargo osdk run` command.
 CARGO_OSDK_BUILD_ARGS := --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="console=$(CONSOLE)"
+CARGO_OSDK_BUILD_ARGS += $(foreach arg,$(EXTRA_KCMD_ARGS),--kcmd-args="$(arg)")
 CARGO_OSDK_TEST_ARGS :=
 
 ifeq ($(AUTO_TEST), conformance)
@@ -123,6 +128,9 @@ CARGO_OSDK_BUILD_ARGS += --kcmd-args="INTEL_TDX=$(INTEL_TDX)"
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_regression_test.sh"
 else ifeq ($(AUTO_TEST), boot)
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/boot_hello.sh"
+else ifeq ($(AUTO_TEST), lsm-module-selection)
+ENABLE_REGRESSION_TEST := true
+CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_lsm_module_selection_test.sh"
 else ifeq ($(AUTO_TEST), vsock)
 ENABLE_REGRESSION_TEST := true
 export VSOCK=on
@@ -281,6 +289,9 @@ else ifeq ($(AUTO_TEST), regression)
 else ifeq ($(AUTO_TEST), boot)
 	@tail --lines 100 qemu.log | grep -q "^Successfully booted." \
 		|| (echo "Boot test failed" && exit 1)
+else ifeq ($(AUTO_TEST), lsm-module-selection)
+	@tail --lines 100 qemu.log | grep -q "^LSM module selection test passed." \
+		|| (echo "LSM module selection test failed" && exit 1)
 else ifeq ($(AUTO_TEST), vsock)
 	@tail --lines 100 qemu.log | grep -q "^Vsock test passed." \
 		|| (echo "Vsock test failed" && exit 1)

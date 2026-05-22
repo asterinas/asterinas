@@ -33,6 +33,7 @@ in {
     buildCommand = ''
       mkdir -p $out
       cp ${scripts}/* $out
+      chmod +x $out/*.sh
 
       ${lib.concatMapStringsSep "\n" (name: ''
         ln -sT "${allPkgs.${name}}/${name}" "$out/${name}"
