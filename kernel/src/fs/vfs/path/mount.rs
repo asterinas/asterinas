@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use hashbrown::HashMap;
-use id_alloc::IdAlloc;
 use ostd::sync::{RwMutexReadGuard, RwMutexWriteGuard};
-use spin::Once;
+use sparse_id_alloc::SparseIdAlloc;
 
 use super::try_get_mnt_ns_inode;
 use crate::{
@@ -75,29 +74,64 @@ pub enum MountPropType {
     // TODO: Implement other propagation types.
 }
 
-static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
+/// 32-bit recyclable mount IDs.
+///
+/// IDs start at 1; 0 is never issued and denotes an invalid mount.
+/// Exhaustion returns `ENOMEM`.
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/namespace.c#L282>
+static MOUNT_ID_ALLOCATOR: SpinLock<SparseIdAlloc> =
+    SpinLock::new(SparseIdAlloc::new(1, i32::MAX as u32));
 
-/// The reserved mount ID, which represents an invalid mount.
-static RESERVED_MOUNT_ID: usize = 0;
+/// The first 64-bit unique mount ID.
+///
+/// The minimum keeps unique IDs above the recyclable ID range, ensuring
+/// the two ID spaces never overlap numerically.
+///
+/// This value is chosen to align with Linux.
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/namespace.c#L73>
+pub const MNT_UNIQUE_ID_MIN: u64 = (1 << 31) + 1;
 
-pub(super) fn init() {
-    // TODO: Make it configurable.
-    const MAX_MOUNT_NUM: usize = 10000;
+/// Monotonically increasing 64-bit unique mount IDs.
+static NEXT_FREE_UNIQUE_ID: AtomicU64 = AtomicU64::new(MNT_UNIQUE_ID_MIN);
 
-    let mut id_allocator = IdAlloc::with_capacity(MAX_MOUNT_NUM);
-    let _ = id_allocator.alloc_specific(RESERVED_MOUNT_ID).unwrap(); // Reserve mount ID 0.
+pub(super) fn init() {}
 
-    ID_ALLOCATOR.call_once(|| SpinLock::new(id_allocator));
+/// A mount's pair of identifiers.
+///
+/// Allocates from [`MOUNT_ID_ALLOCATOR`] and [`NEXT_FREE_UNIQUE_ID`] on
+/// construction; on drop, releases the recyclable ID back to the pool.
+/// The unique ID is monotonic and is not freed.
+pub(super) struct MountId {
+    recyclable_id: u32,
+    unique_id: u64,
 }
 
-/// Allocates a new mount ID from the global pool.
-fn alloc_mount_id() -> Result<usize> {
-    ID_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc()
-        .ok_or_else(|| Error::with_message(Errno::ENOMEM, "mount ID pool exhausted"))
+impl MountId {
+    /// Allocates a new pair of mount identifiers.
+    ///
+    /// Returns `None` if the recyclable ID range is exhausted.
+    pub(super) fn alloc() -> Option<Self> {
+        let recyclable_id = MOUNT_ID_ALLOCATOR.lock().alloc()?;
+        let unique_id = NEXT_FREE_UNIQUE_ID.fetch_add(1, Ordering::Relaxed);
+        Some(Self {
+            recyclable_id,
+            unique_id,
+        })
+    }
+
+    pub(super) fn recyclable_id(&self) -> u32 {
+        self.recyclable_id
+    }
+
+    pub(super) fn unique_id(&self) -> u64 {
+        self.unique_id
+    }
+}
+
+impl Drop for MountId {
+    fn drop(&mut self) {
+        MOUNT_ID_ALLOCATOR.lock().free(self.recyclable_id);
+    }
 }
 
 bitflags! {
@@ -206,8 +240,9 @@ define_atomic_version_of_integer_like_type!(PerMountFlags, {
 /// Each `Mount` can be viewed as a node in the mount tree, maintaining
 /// mount-related information and the structure of the mount tree.
 pub struct Mount {
-    /// Global unique identifier for the mount node.
-    id: usize,
+    /// Pair of recyclable and unique mount identifiers; the recyclable
+    /// half is returned to the pool when the `Mount` drops.
+    id: MountId,
     /// Root dentry.
     root_dentry: Arc<Dentry>,
     /// Mountpoint dentry. A mount node can be mounted on one dentry of another mount node,
@@ -293,9 +328,10 @@ impl Mount {
         mnt_ns: Weak<MountNamespace>,
         source: Option<String>,
     ) -> Result<Arc<Self>> {
-        let id = alloc_mount_id()?;
+        let id = MountId::alloc()
+            .ok_or_else(|| Error::with_message(Errno::ENOMEM, "mount ID space exhausted"))?;
 
-        Ok(Arc::new_cyclic(|weak_self| Self {
+        let mount = Arc::new_cyclic(|weak_self| Self {
             id,
             root_dentry: Dentry::new_root(fs.root_inode()),
             mountpoint: RwLock::new(None),
@@ -307,12 +343,28 @@ impl Mount {
             propagation: RwLock::new(MountPropType::default()),
             flags: AtomicPerMountFlags::new(flags),
             this: weak_self.clone(),
-        }))
+        });
+        // `upgrade` returns `None` for pseudo mounts (no namespace) and for
+        // mounts still being built by `MountNamespace::new_with_root` (the
+        // namespace is a `UniqueArc` at that point). The latter are
+        // registered by `new_with_root` after the namespace is finalized.
+        if let Some(ns) = mount.mnt_ns.upgrade() {
+            ns.register_mount(&mount);
+        }
+        Ok(mount)
     }
 
-    /// Gets the mount ID.
-    pub fn id(&self) -> usize {
-        self.id
+    /// Gets the recyclable 32-bit mount ID.
+    pub fn id(&self) -> u32 {
+        self.id.recyclable_id()
+    }
+
+    /// Gets the unique 64-bit mount ID.
+    ///
+    /// Unique IDs start at [`MNT_UNIQUE_ID_MIN`], increase monotonically,
+    /// and are never reused.
+    pub fn unique_id(&self) -> u64 {
+        self.id.unique_id()
     }
 
     /// Returns the mount source.
@@ -389,9 +441,10 @@ impl Mount {
         root_dentry: &Arc<Dentry>,
         new_ns: &Weak<MountNamespace>,
     ) -> Result<Arc<Self>> {
-        let id = alloc_mount_id()?;
+        let id = MountId::alloc()
+            .ok_or_else(|| Error::with_message(Errno::ENOMEM, "mount ID space exhausted"))?;
 
-        Ok(Arc::new_cyclic(|weak_self| Self {
+        let mount = Arc::new_cyclic(|weak_self| Self {
             id,
             root_dentry: root_dentry.clone(),
             mountpoint: RwLock::new(None),
@@ -403,7 +456,11 @@ impl Mount {
             propagation: RwLock::new(MountPropType::default()),
             flags: AtomicPerMountFlags::new(self.flags.load(Ordering::Relaxed)),
             this: weak_self.clone(),
-        }))
+        });
+        if let Some(ns) = mount.mnt_ns.upgrade() {
+            ns.register_mount(&mount);
+        }
+        Ok(mount)
     }
 
     /// Clones a mount tree starting from the specified root `Dentry`.
@@ -699,6 +756,12 @@ impl Debug for Mount {
 impl Drop for Mount {
     fn drop(&mut self) {
         self.clear_mountpoint();
-        ID_ALLOCATOR.get().unwrap().lock().free(self.id);
+        // `upgrade` returns `None` for pseudo mounts (no namespace) and for
+        // mounts whose namespace is itself being dropped (the `mounts` map
+        // will be freed in a moment).
+        if let Some(ns) = self.mnt_ns.upgrade() {
+            ns.deregister_mount(self.id.unique_id());
+        }
+        // The recyclable ID is returned to the pool by `MountId`'s `Drop`.
     }
 }

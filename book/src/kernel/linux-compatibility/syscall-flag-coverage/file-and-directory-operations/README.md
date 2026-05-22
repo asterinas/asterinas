@@ -131,7 +131,6 @@ Silently-ignored flags:
 
 Silently-ignored masks:
 * `STATX_DIOALIGN`
-* `STATX_MNT_ID_UNIQUE`
 * `STATX_SUBVOL`
 * `STATX_WRITE_ATOMIC`
 * `STATX_DIO_READ_ALIGN`
