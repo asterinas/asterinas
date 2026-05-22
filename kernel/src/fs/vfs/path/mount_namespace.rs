@@ -38,6 +38,8 @@ pub struct MountNamespace {
     owner: Arc<UserNamespace>,
     /// The stashed dentry in nsfs.
     stashed_dentry: StashedDentry,
+    /// Live mounts that belong to this namespace, keyed by [`Mount::unique_id`].
+    mounts: SpinLock<BTreeMap<u64, Weak<Mount>>>,
 }
 
 impl PartialEq for MountNamespace {
@@ -74,10 +76,16 @@ impl MountNamespace {
             root: None,
             owner,
             stashed_dentry: StashedDentry::new(),
+            mounts: SpinLock::new(BTreeMap::new()),
         });
         let root = build_root_fn(&UniqueArc::downgrade(&new_ns))?;
         new_ns.root = Some(root);
-        Ok(UniqueArc::into_arc(new_ns))
+        let ns = UniqueArc::into_arc(new_ns);
+        // Mounts created inside `build_root_fn` saw a `Weak` to a
+        // `UniqueArc`, whose `upgrade` returns `None`; they could not
+        // self-register at construction. Register the finished tree.
+        ns.register_existing_mount_tree();
+        Ok(ns)
     }
 
     /// Returns a reference to the singleton initial mount namespace.
@@ -138,6 +146,57 @@ impl MountNamespace {
                 &topology_guard,
             )
         })
+    }
+
+    /// Records that `mount` is now part of this namespace's mount tree.
+    pub(super) fn register_mount(&self, mount: &Arc<Mount>) {
+        self.mounts
+            .lock()
+            .insert(mount.unique_id(), Arc::downgrade(mount));
+    }
+
+    /// Removes `unique_id` from this namespace's lookup table.
+    pub(super) fn deregister_mount(&self, unique_id: u64) {
+        self.mounts.lock().remove(&unique_id);
+    }
+
+    /// Looks up a live mount in this namespace by its unique 64-bit ID.
+    ///
+    /// No recyclable-`id` counterpart exists: the 32-bit ID space is reused
+    /// on drop, so a keyed lookup would race the next allocation.
+    #[expect(
+        dead_code,
+        reason = "no in-tree consumer yet; staged for statmount/listmount"
+    )]
+    pub fn lookup_by_unique_id(&self, unique_id: u64) -> Option<Arc<Mount>> {
+        let mount = {
+            let mounts = self.mounts.lock();
+            mounts.get(&unique_id).and_then(Weak::upgrade)?
+        };
+
+        let topology_guard = MountTopology::read_lock();
+        mount
+            .is_equal_or_descendant_of(self.root(), &topology_guard)
+            .then_some(mount)
+    }
+
+    /// Walks the in-place mount tree and registers every mount in
+    /// [`Self::mounts`] in a single locked update.
+    fn register_existing_mount_tree(self: &Arc<Self>) {
+        let mut entries = Vec::new();
+        let mut stack = vec![self.root().clone()];
+
+        while let Some(mount) = stack.pop() {
+            entries.push((mount.unique_id(), Arc::downgrade(&mount)));
+
+            let children: Vec<_> = mount.children.read().values().cloned().collect();
+            stack.extend(children);
+        }
+
+        let mut mounts = self.mounts.lock();
+        for (id, weak_mount) in entries {
+            mounts.insert(id, weak_mount);
+        }
     }
 
     /// Flushes all pending filesystem metadata and cached file data to the device
