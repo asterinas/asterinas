@@ -44,10 +44,11 @@ pub(super) fn make_mount_point_path(
 
 /// A single entry in the mountinfo file.
 struct MountInfoEntry<'a> {
-    /// A unique ID for the mount (but not guaranteed to be unique across reboots).
-    mount_id: usize,
-    /// The ID of the parent mount (or self if it has no parent).
-    parent_id: usize,
+    /// The recyclable mount ID (matches [`Mount::id`]); reused after the
+    /// mount is dropped.
+    mount_id: u32,
+    /// The recyclable ID of the parent mount (or self if it has no parent).
+    parent_id: u32,
     /// The major device ID of the filesystem.
     major: u32,
     /// The minor device ID of the filesystem.

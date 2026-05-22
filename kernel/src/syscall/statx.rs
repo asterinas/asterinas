@@ -62,7 +62,7 @@ pub fn sys_statx(
         }
     };
 
-    let statx = Statx::new(&path);
+    let statx = Statx::new(&path, mask);
 
     user_space.write_val(statx_buf_ptr, &statx)?;
     Ok(SyscallReturn::Return(0))
@@ -122,7 +122,7 @@ pub struct Statx {
 }
 
 impl Statx {
-    fn new(path: &Path) -> Self {
+    fn new(path: &Path, requested_mask: StatxMask) -> Self {
         let info = path.metadata();
 
         let (stx_dev_major, stx_dev_minor) =
@@ -138,9 +138,24 @@ impl Statx {
             stx_attributes |= STATX_ATTR_MOUNT_ROOT;
         }
 
+        // If `STATX_MNT_ID_UNIQUE` is specified, a 64-bit unique ID is provided
+        // instead of a 32-bit recyclable ID.
+        // Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/stat.c#L303>
+        let want_unique_mnt_id = requested_mask.contains(StatxMask::STATX_MNT_ID_UNIQUE);
+        let stx_mnt_id = if want_unique_mnt_id {
+            path.mount_node().unique_id()
+        } else {
+            path.mount_node().id() as u64
+        };
+        let mnt_id_mask_bit = if want_unique_mnt_id {
+            StatxMask::STATX_MNT_ID_UNIQUE
+        } else {
+            StatxMask::STATX_MNT_ID
+        };
+
         let stx_mask = StatxMask::STATX_BASIC_STATS.bits()
             | StatxMask::STATX_BTIME.bits()
-            | StatxMask::STATX_MNT_ID.bits();
+            | mnt_id_mask_bit.bits();
 
         Self {
             // FIXME: All zero fields below are dummy implementations that need to be improved in the future.
@@ -164,7 +179,7 @@ impl Statx {
             stx_rdev_minor,
             stx_dev_major,
             stx_dev_minor,
-            stx_mnt_id: path.mount_node().id() as u64,
+            stx_mnt_id,
             stx_dio_mem_align: 0,
             stx_dio_offset_align: 0,
             __spare3: [0; 12],
