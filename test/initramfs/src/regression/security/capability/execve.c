@@ -286,3 +286,31 @@ FN_TEST(file_caps_v3_rootid_mismatch)
 					 &file_caps, sizeof(file_caps)));
 }
 END_TEST()
+
+FN_TEST(exec_only_file_without_caps)
+{
+	char *exec_path;
+	pid_t pid;
+	int ret;
+	int status;
+
+	exec_path = copy_child_to_temp_exec();
+	TEST_SUCC(chmod(exec_path, 0111));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		CHECK(setresuid(nobody, nobody, nobody));
+		CHECK(execl(exec_path, exec_path, CAPS_NONE, CAPS_NONE,
+			    CAPS_NONE, NULL));
+	}
+
+	ret = waitpid(pid, &status, 0);
+	TEST_SUCC(unlink(exec_path));
+	free(exec_path);
+
+	TEST_RES(ret, _ret == pid);
+	if (ret == pid) {
+		TEST_RES(WIFEXITED(status), _ret && WEXITSTATUS(status) == 0);
+	}
+}
+END_TEST()

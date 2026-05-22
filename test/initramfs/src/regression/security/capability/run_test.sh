@@ -15,5 +15,14 @@ echo "[capability] running capset"
 echo "[capability] running setgroups"
 ./setgroups
 
+echo "[capability] running trusted_xattr"
+./trusted_xattr
+
+echo "[capability] running kill"
+./kill
+
+echo "[capability] running reboot"
+./reboot
+
 echo "[capability] running execve"
 ./execve
