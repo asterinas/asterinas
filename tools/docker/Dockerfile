@@ -83,6 +83,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     strace \
     sudo \
     unzip \
+    virtiofsd \
     vim \
     zip
 # Clean apt cache
