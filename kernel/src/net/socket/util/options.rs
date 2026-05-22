@@ -18,7 +18,8 @@ use crate::{
         unix::{CUserCred, UNIX_DATAGRAM_DEFAULT_BUF_SIZE, UNIX_STREAM_DEFAULT_BUF_SIZE},
     },
     prelude::*,
-    process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    security::{self, CapabilityReason},
 };
 
 #[derive(Clone, CopyGetters, Debug, Setters)]
@@ -261,17 +262,14 @@ impl SocketOptionSet {
 }
 
 fn check_current_privileged() -> Result<()> {
-    let credentials = {
-        let current = current_thread!();
-        let posix_thread = current.as_posix_thread().unwrap();
-        posix_thread.credentials()
-    };
-
-    if credentials.effective_capset().contains(CapSet::NET_ADMIN) {
-        return Ok(());
-    }
-
-    return_errno_with_message!(Errno::EPERM, "the process does not have permissions")
+    let current = current_thread!();
+    let posix_thread = current.as_posix_thread().unwrap();
+    security::capable(
+        UserNamespace::get_init_singleton().as_ref(),
+        CapSet::NET_ADMIN,
+        posix_thread,
+        CapabilityReason::Socket,
+    )
 }
 
 fn check_priority(priority: i32) -> Result<()> {

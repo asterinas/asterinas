@@ -3,6 +3,25 @@
 #define SOCK_TYPE SOCK_STREAM
 #include "unix_streamlike_prologue.h"
 
+#include <linux/capability.h>
+#include <sys/syscall.h>
+
+static void drop_cap_sys_admin(void)
+{
+	struct __user_cap_header_struct header = {
+		.version = _LINUX_CAPABILITY_VERSION_3,
+	};
+	struct __user_cap_data_struct data[2] = { 0 };
+
+	CHECK(syscall(SYS_capget, &header, data));
+
+	data[0].effective &= ~(1U << CAP_SYS_ADMIN);
+	data[0].permitted &= ~(1U << CAP_SYS_ADMIN);
+	data[0].inheritable &= ~(1U << CAP_SYS_ADMIN);
+
+	CHECK(syscall(SYS_capset, &header, data));
+}
+
 FN_TEST(sendto)
 {
 	char buf[1] = { 'z' };
@@ -108,6 +127,76 @@ FN_TEST(scm_rights)
 
 	TEST_ERRNO(write(cfds[1], "y", 1), EPIPE);
 	TEST_SUCC(close(cfds[1]));
+
+	TEST_SUCC(close(fildes[0]));
+	TEST_SUCC(close(fildes[1]));
+}
+END_TEST()
+
+FN_TEST(scm_credentials_requires_cap_sys_admin)
+{
+	int fildes[2];
+	char byte = 'x';
+	char control[CMSG_SPACE(sizeof(struct ucred))];
+	struct iovec iov = {
+		.iov_base = &byte,
+		.iov_len = sizeof(byte),
+	};
+	struct msghdr msg = {
+		.msg_iov = &iov,
+		.msg_iovlen = 1,
+		.msg_control = control,
+		.msg_controllen = sizeof(control),
+	};
+	struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+	struct ucred fake_cred = {
+		.pid = getpid(),
+		.uid = 123,
+		.gid = 456,
+	};
+	struct ucred recv_cred = { 0 };
+	int one = 1;
+	int status;
+	pid_t pid;
+
+	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM, 0, fildes));
+	TEST_SUCC(setsockopt(fildes[1], SOL_SOCKET, SO_PASSCRED, &one,
+			     sizeof(one)));
+
+	cmsg->cmsg_level = SOL_SOCKET;
+	cmsg->cmsg_type = SCM_CREDENTIALS;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(fake_cred));
+	memcpy(CMSG_DATA(cmsg), &fake_cred, sizeof(fake_cred));
+
+	TEST_RES(sendmsg(fildes[0], &msg, 0), _ret == 1);
+
+	memset(control, 0, sizeof(control));
+	msg.msg_controllen = sizeof(control);
+	TEST_RES(
+		recvmsg(fildes[1], &msg, 0),
+		_ret == 1 && (cmsg = CMSG_FIRSTHDR(&msg)) &&
+			cmsg->cmsg_level == SOL_SOCKET &&
+			cmsg->cmsg_type == SCM_CREDENTIALS &&
+			cmsg->cmsg_len == CMSG_LEN(sizeof(recv_cred)) &&
+			(memcpy(&recv_cred, CMSG_DATA(cmsg), sizeof(recv_cred)),
+			 recv_cred.pid == fake_cred.pid &&
+				 recv_cred.uid == fake_cred.uid &&
+				 recv_cred.gid == fake_cred.gid));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_cap_sys_admin();
+		fake_cred.pid = getpid();
+		msg.msg_controllen = sizeof(control);
+		memcpy(CMSG_DATA(cmsg), &fake_cred, sizeof(fake_cred));
+		if (sendmsg(fildes[0], &msg, 0) < 0 && errno == EPERM) {
+			_exit(EXIT_SUCCESS);
+		}
+		_exit(EXIT_FAILURE);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0), _ret == pid);
+	TEST_RES(WIFEXITED(status), WEXITSTATUS(status) == EXIT_SUCCESS);
 
 	TEST_SUCC(close(fildes[0]));
 	TEST_SUCC(close(fildes[1]));

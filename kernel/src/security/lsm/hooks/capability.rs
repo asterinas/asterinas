@@ -66,7 +66,6 @@ pub enum CapabilityReason {
     CredentialsSetUid,
     CredentialsSetGid,
     CredentialsSetPcap,
-    General,
     Namespace,
     Ptrace,
     ResourceLimit,

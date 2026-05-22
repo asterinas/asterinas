@@ -7,6 +7,7 @@ use crate::{
     fs::pseudofs::{NsCommonOps, NsType, StashedDentry},
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},
+    security::CapabilityReason,
     util::padded,
 };
 
@@ -54,7 +55,11 @@ impl UtsNamespace {
         owner: Arc<UserNamespace>,
         posix_thread: &PosixThread,
     ) -> Result<Arc<Self>> {
-        owner.check_cap(CapSet::SYS_ADMIN, posix_thread)?;
+        owner.check_cap_with_reason(
+            CapSet::SYS_ADMIN,
+            posix_thread,
+            CapabilityReason::Namespace,
+        )?;
         Ok(Self::new(*self.uts_name.read(), owner))
     }
 
@@ -68,7 +73,11 @@ impl UtsNamespace {
     /// This method will fail with `EPERM` if the caller does not have the SYS_ADMIN capability
     /// in the owner user namespace.
     pub fn set_hostname(&self, addr: Vaddr, len: usize, ctx: &Context) -> Result<()> {
-        self.owner.check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+        self.owner.check_cap_with_reason(
+            CapSet::SYS_ADMIN,
+            ctx.posix_thread,
+            CapabilityReason::Namespace,
+        )?;
 
         let new_host_name = copy_uts_field_from_user(addr, len as _, ctx)?;
         debug!(
@@ -84,7 +93,11 @@ impl UtsNamespace {
     /// This method will fail with `EPERM` if the caller does not have the SYS_ADMIN capability
     /// in the owner user namespace.
     pub fn set_domainname(&self, addr: Vaddr, len: usize, ctx: &Context) -> Result<()> {
-        self.owner.check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+        self.owner.check_cap_with_reason(
+            CapSet::SYS_ADMIN,
+            ctx.posix_thread,
+            CapabilityReason::Namespace,
+        )?;
 
         let new_domain_name = copy_uts_field_from_user(addr, len as _, ctx)?;
         debug!(

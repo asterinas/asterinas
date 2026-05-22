@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ptr;
+
 use super::super::{
     AlienAccessContext, CapableContext, InodeDacOverrideContext, LsmFlags, LsmModule,
     hooks::{LsmAlienAccessHook, LsmCapabilityHook, LsmInodeHook},
@@ -27,7 +29,18 @@ impl LsmModule for CapabilityLsm {
 
 impl LsmCapabilityHook for CapabilityLsm {
     fn on_capable(&self, context: &CapableContext) -> Result<()> {
-        let _ = (context.user_namespace(), context.reason());
+        let current_process = context.posix_thread().process();
+        let current_user_ns = current_process.user_ns().lock();
+        if !ptr::eq(current_user_ns.as_ref(), context.user_namespace()) {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the target user namespace is outside the caller's capability scope"
+            );
+        }
+
+        // Capability bit checks are reason-independent. The reason stays in the
+        // shared context for modules that need operation-specific policy.
+        let _reason = context.reason();
         if context
             .posix_thread()
             .credentials()

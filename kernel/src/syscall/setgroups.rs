@@ -5,13 +5,21 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{Gid, posix_thread::ContextPthreadAdminApi},
+    process::{
+        Gid, UserNamespace, credentials::capabilities::CapSet, posix_thread::ContextPthreadAdminApi,
+    },
+    security::{self, CapabilityReason},
 };
 
 pub fn sys_setgroups(size: usize, group_list_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("size = {}, group_list_addr = 0x{:x}", size, group_list_addr);
 
-    // TODO: check perm: the calling process should have the CAP_SETGID capability
+    security::capable(
+        UserNamespace::get_init_singleton().as_ref(),
+        CapSet::SETGID,
+        ctx.posix_thread,
+        CapabilityReason::CredentialsSetGid,
+    )?;
 
     if size > NGROUPS_MAX {
         return_errno_with_message!(Errno::EINVAL, "size cannot be greater than NGROUPS_MAX");

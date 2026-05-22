@@ -6,12 +6,14 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
+        UserNamespace,
         credentials::{
             c_types::{CUserCapData, CUserCapHeader, LINUX_CAPABILITY_VERSION_3},
             capabilities::CapSet,
         },
         posix_thread::ContextPthreadAdminApi,
     },
+    security::{self, CapabilityReason},
 };
 
 pub fn sys_capset(
@@ -61,7 +63,13 @@ pub fn sys_capset(
     }
     if !(credentials.inheritable_capset() | credentials.permitted_capset())
         .contains(inheritable_capset)
-        && !credentials.effective_capset().contains(CapSet::SETPCAP)
+        && security::capable(
+            UserNamespace::get_init_singleton().as_ref(),
+            CapSet::SETPCAP,
+            ctx.posix_thread,
+            CapabilityReason::CredentialsSetPcap,
+        )
+        .is_err()
     {
         return_errno_with_message!(Errno::EPERM, "inheritable capabilities are not permitted");
     }

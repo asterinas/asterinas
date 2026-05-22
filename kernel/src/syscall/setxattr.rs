@@ -18,7 +18,8 @@ use crate::{
         },
     },
     prelude::*,
-    process::credentials::capabilities::CapSet,
+    process::{UserNamespace, credentials::capabilities::CapSet},
+    security::{self, CapabilityReason},
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -186,18 +187,21 @@ pub(super) fn parse_xattr_name(name_str: &str) -> Result<XattrName<'_>> {
 }
 
 pub(super) fn check_xattr_namespace(namespace: XattrNamespace, ctx: &Context) -> Result<()> {
-    let credentials = ctx.posix_thread.credentials();
-    let permitted_capset = credentials.permitted_capset();
-    let effective_capset = credentials.effective_capset();
-
-    if namespace == XattrNamespace::Trusted
-        && (!permitted_capset.contains(CapSet::SYS_ADMIN)
-            || !effective_capset.contains(CapSet::SYS_ADMIN))
-    {
+    if namespace == XattrNamespace::Trusted && !current_can_access_trusted_xattr(ctx) {
         return_errno_with_message!(
             Errno::EPERM,
             "try to access trusted xattr without CAP_SYS_ADMIN"
         );
     }
     Ok(())
+}
+
+pub(super) fn current_can_access_trusted_xattr(ctx: &Context) -> bool {
+    security::capable(
+        UserNamespace::get_init_singleton().as_ref(),
+        CapSet::SYS_ADMIN,
+        ctx.posix_thread,
+        CapabilityReason::Xattr,
+    )
+    .is_ok()
 }

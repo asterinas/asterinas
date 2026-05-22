@@ -4,9 +4,9 @@
 
 set -e
 
-./capability/capabilities
-./capability/capset
-./capability/execve
+cd "$(dirname "$0")"
+
+sh ./capability/run_test.sh
 
 ./lsm/yama
 

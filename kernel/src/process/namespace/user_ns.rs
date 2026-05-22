@@ -26,11 +26,6 @@ impl UserNamespace {
         })
     }
 
-    /// Checks whether the thread has the required capability in this user namespace.
-    pub fn check_cap(&self, required: CapSet, posix_thread: &PosixThread) -> Result<()> {
-        self.check_cap_with_reason(required, posix_thread, CapabilityReason::General)
-    }
-
     /// Checks whether the thread has the required capability in this user namespace
     /// for a specific kernel operation.
     pub fn check_cap_with_reason(

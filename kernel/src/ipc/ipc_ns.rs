@@ -26,6 +26,7 @@ use crate::{
     process::{
         Credentials, UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread,
     },
+    security::CapabilityReason,
 };
 
 /// The IPC namespace.
@@ -81,7 +82,11 @@ impl IpcNamespace {
         owner: Arc<UserNamespace>,
         posix_thread: &PosixThread,
     ) -> Result<Arc<Self>> {
-        owner.check_cap(CapSet::SYS_ADMIN, posix_thread)?;
+        owner.check_cap_with_reason(
+            CapSet::SYS_ADMIN,
+            posix_thread,
+            CapabilityReason::Namespace,
+        )?;
         Ok(Self::new(owner))
     }
 

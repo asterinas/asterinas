@@ -10,6 +10,7 @@ use crate::{
     },
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},
+    security::CapabilityReason,
 };
 
 /// The cgroup namespace for the unified cgroup hierarchy.
@@ -39,7 +40,11 @@ impl CgroupNamespace {
         owner: Arc<UserNamespace>,
         posix_thread: &PosixThread,
     ) -> Result<Arc<Self>> {
-        owner.check_cap(CapSet::SYS_ADMIN, posix_thread)?;
+        owner.check_cap_with_reason(
+            CapSet::SYS_ADMIN,
+            posix_thread,
+            CapabilityReason::Namespace,
+        )?;
 
         let root: Arc<dyn CgroupSysNode> = match current_cgroup {
             Some(current_cgroup) => current_cgroup,

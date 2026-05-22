@@ -8,6 +8,7 @@ use super::{
 use crate::{
     prelude::*,
     process::{credentials::capabilities::CapSet, posix_thread::PosixThread},
+    security::CapabilityReason,
     thread::Tid,
 };
 
@@ -177,7 +178,7 @@ fn check_signal_perm(target: &PosixThread, ctx: &Context, signum: Option<SigNum>
     if target_process
         .user_ns()
         .lock()
-        .check_cap(CapSet::KILL, ctx.posix_thread)
+        .check_cap_with_reason(CapSet::KILL, ctx.posix_thread, CapabilityReason::Signal)
         .is_ok()
     {
         return Ok(());

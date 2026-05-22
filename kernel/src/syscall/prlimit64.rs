@@ -12,6 +12,7 @@ use crate::{
         posix_thread::AsPosixThread,
         rlimit::{RawRLimit64, SYSCTL_NR_OPEN},
     },
+    security::CapabilityReason,
 };
 
 pub fn sys_getrlimit(resource: u32, rlim_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
@@ -97,7 +98,11 @@ fn check_rlimit_perm(target_process: &Process, ctx: &Context) -> Result<()> {
     if target_process
         .user_ns()
         .lock()
-        .check_cap(CapSet::SYS_RESOURCE, ctx.posix_thread)
+        .check_cap_with_reason(
+            CapSet::SYS_RESOURCE,
+            ctx.posix_thread,
+            CapabilityReason::ResourceLimit,
+        )
         .is_ok()
     {
         return Ok(());

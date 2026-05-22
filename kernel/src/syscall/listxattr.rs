@@ -2,7 +2,7 @@
 
 use super::{
     SyscallReturn,
-    setxattr::{XattrFileCtx, lookup_path_for_xattr},
+    setxattr::{XattrFileCtx, current_can_access_trusted_xattr, lookup_path_for_xattr},
 };
 use crate::{
     fs::{
@@ -10,7 +10,6 @@ use crate::{
         vfs::xattr::{XATTR_LIST_MAX_LEN, XattrNamespace},
     },
     prelude::*,
-    process::credentials::capabilities::CapSet,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -94,12 +93,7 @@ fn listxattr(
 }
 
 fn get_current_xattr_namespace(ctx: &Context) -> XattrNamespace {
-    let credentials = ctx.posix_thread.credentials();
-    let permitted_capset = credentials.permitted_capset();
-    let effective_capset = credentials.effective_capset();
-
-    if permitted_capset.contains(CapSet::SYS_ADMIN) && effective_capset.contains(CapSet::SYS_ADMIN)
-    {
+    if current_can_access_trusted_xattr(ctx) {
         XattrNamespace::Trusted
     } else {
         XattrNamespace::User

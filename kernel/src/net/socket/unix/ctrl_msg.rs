@@ -13,7 +13,8 @@ use crate::{
     },
     net::socket::util::{CControlHeader, ControlMessage},
     prelude::*,
-    process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    security::{self, CapabilityReason},
     util::net::CSocketOptionLevel,
 };
 
@@ -205,7 +206,7 @@ enum CControlType {
 #[derive(Default)]
 pub(super) struct AuxiliaryData {
     files: Vec<Arc<dyn FileLike>>,
-    cred: Option<SocketCred>,
+    cred: Option<CUserCred>,
 }
 
 impl AuxiliaryData {
@@ -231,15 +232,24 @@ impl AuxiliaryData {
                     files.append(&mut msg_files);
                 }
                 Message::Cred(CredMessage { cred: msg_cred }) => {
-                    let cur_cred = SocketCred::<ReadOp>::new_current();
-                    if cur_cred.to_real_c_cred() != msg_cred {
-                        // FIXME: Allow this if we're root or have the CAP_SYS_ADMIN capability.
-                        return_errno_with_message!(
-                            Errno::EPERM,
-                            "setting others' credentials is not allowed"
-                        );
+                    let cur_cred = SocketCred::<ReadOp>::new_current().to_real_c_cred();
+                    if cur_cred != msg_cred {
+                        let current = current_thread!();
+                        let posix_thread = current.as_posix_thread().unwrap();
+                        security::capable(
+                            UserNamespace::get_init_singleton().as_ref(),
+                            CapSet::SYS_ADMIN,
+                            posix_thread,
+                            CapabilityReason::Socket,
+                        )
+                        .map_err(|_| {
+                            Error::with_message(
+                                Errno::EPERM,
+                                "setting others' credentials requires CAP_SYS_ADMIN",
+                            )
+                        })?;
                     }
-                    cred = Some(cur_cred);
+                    cred = Some(msg_cred);
                 }
             }
         }
@@ -253,13 +263,14 @@ impl AuxiliaryData {
         {
             warn!("UNIX sockets in SCM_RIGHTS messages can leak kernel resource");
 
-            let credentials = current_thread!().as_posix_thread().unwrap().credentials();
-            if !credentials.effective_capset().contains(CapSet::SYS_ADMIN) {
-                return_errno_with_message!(
-                    Errno::EPERM,
-                    "UNIX sockets in SCM_RIGHTS messages can leak kernel resource"
-                )
-            }
+            let current = current_thread!();
+            let posix_thread = current.as_posix_thread().unwrap();
+            security::capable(
+                UserNamespace::get_init_singleton().as_ref(),
+                CapSet::SYS_ADMIN,
+                posix_thread,
+                CapabilityReason::Socket,
+            )?;
         }
 
         Ok(Self { files, cred })
@@ -268,7 +279,7 @@ impl AuxiliaryData {
     /// Fills the current credentials if there are no credentials.
     pub(super) fn fill_cred(&mut self) {
         if self.cred.is_none() {
-            self.cred = Some(SocketCred::<ReadOp>::new_current());
+            self.cred = Some(SocketCred::<ReadOp>::new_current().to_real_c_cred());
         }
     }
 
@@ -280,10 +291,7 @@ impl AuxiliaryData {
 
         if is_pass_cred {
             let unix_ctrl_msg = UnixControlMessage(Message::Cred(CredMessage {
-                cred: cred
-                    .as_ref()
-                    .map(SocketCred::to_real_c_cred)
-                    .unwrap_or_else(CUserCred::new_overflow),
+                cred: (*cred).unwrap_or_else(CUserCred::new_overflow),
             }));
             ctrl_msgs.push(ControlMessage::Unix(unix_ctrl_msg));
         }
@@ -312,10 +320,7 @@ impl AuxiliaryData {
             return false;
         }
 
-        if is_pass_cred
-            && self.cred.as_ref().map(SocketCred::to_real_c_cred)
-                != other.cred.as_ref().map(SocketCred::to_real_c_cred)
-        {
+        if is_pass_cred && self.cred != other.cred {
             return false;
         }
 

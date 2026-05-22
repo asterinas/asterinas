@@ -15,6 +15,7 @@ use crate::{
         credentials::capabilities::CapSet,
         posix_thread::{AsPosixThread, alien_access::AlienAccessKind},
     },
+    security::CapabilityReason,
 };
 
 pub static YAMA_LSM: YamaLsm = YamaLsm;
@@ -70,9 +71,10 @@ pub fn get_scope() -> YamaScope {
 
 /// Sets the Yama scope for alien access.
 pub fn set_scope(new_scope: YamaScope) -> Result<()> {
-    UserNamespace::get_init_singleton().check_cap(
+    UserNamespace::get_init_singleton().check_cap_with_reason(
         CapSet::SYS_PTRACE,
         current_thread!().as_posix_thread().unwrap(),
+        CapabilityReason::Ptrace,
     )?;
 
     YAMA_SCOPE
