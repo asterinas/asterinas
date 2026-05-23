@@ -346,6 +346,21 @@ fn gdb_debug(nixos_shell: &mut Session) -> Result<(), Error> {
 }
 
 // ============================================================================
+// Debugging Tools - strace
+// ============================================================================
+
+#[nixos_test]
+fn strace_ls(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd_and_expect(
+        "strace -o /tmp/strace.out ls /tmp >/dev/null && echo STRACE_OK",
+        "STRACE_OK",
+    )?;
+    nixos_shell.run_cmd_and_expect("grep -F 'execve(' /tmp/strace.out", "execve(")?;
+    nixos_shell.run_cmd_and_expect("grep -F 'getdents64(' /tmp/strace.out", "getdents64(")?;
+    Ok(())
+}
+
+// ============================================================================
 // Hugo
 // ============================================================================
 

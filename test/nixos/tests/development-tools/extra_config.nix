@@ -14,7 +14,6 @@ in {
   environment.systemPackages = with pkgs; [
     clang
     gcc
-    gdb
     go
     lua
     nodejs
@@ -31,6 +30,8 @@ in {
     gnumake
     meson
     ninja
+    gdb
+    strace
     hugo
     direnv
     shellcheck
