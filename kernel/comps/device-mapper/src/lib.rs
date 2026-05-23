@@ -22,6 +22,7 @@ macro_rules! __log_prefix {
     };
 }
 
+mod device;
 mod error;
 mod table;
 pub mod target;
@@ -29,6 +30,7 @@ pub mod target;
 use component::{ComponentInitError, init_component};
 
 pub use self::{
+    device::DmDevice,
     error::{DmError, DmErrorWithContext},
     table::{DmTable, DmTableSegment},
 };
