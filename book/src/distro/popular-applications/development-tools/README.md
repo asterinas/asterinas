@@ -461,6 +461,23 @@ gcc -g -O0 gdb_sample.c -o gdb_sample
 gdb -batch -x gdb_commands.gdb ./gdb_sample
 ```
 
+### strace
+
+[strace](https://strace.io/) traces interactions between processes and the kernel, which include system calls, signal deliveries, and changes of process state.
+
+#### Installation
+
+```nix
+environment.systemPackages = [ pkgs.strace ];
+```
+
+#### Verified Usage
+
+```bash
+# Trace `ls` and save the syscall log
+strace -o strace.out ls /tmp
+```
+
 ## Editors & IDEs
 
 ### Emacs
