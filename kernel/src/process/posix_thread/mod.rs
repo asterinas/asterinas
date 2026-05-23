@@ -21,6 +21,7 @@ use crate::{
         ExitCode, Pid,
         namespace::nsproxy::NsProxy,
         posix_thread::ptrace::TraceeStatus,
+        seccomp::{SeccompFilter, SeccompFilterChain, SeccompMode, SeccompState},
         signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
     thread::{Thread, Tid},
@@ -107,6 +108,10 @@ pub struct PosixThread {
 
     /// The personality value for this thread.
     personality: AtomicU32,
+
+    /// Secure computing mode state. Linux keeps seccomp and no_new_privs as
+    /// per-thread attributes that are inherited across fork, clone, and execve.
+    seccomp: SeccompState,
 }
 
 impl PosixThread {
@@ -342,6 +347,45 @@ impl PosixThread {
     /// Returns the exit code of this thread.
     pub fn exit_code(&self) -> ExitCode {
         self.exit_code.load(Ordering::Relaxed)
+    }
+
+    /// Returns whether `PR_SET_NO_NEW_PRIVS` has been enabled.
+    pub fn no_new_privs(&self) -> bool {
+        self.seccomp.no_new_privs()
+    }
+
+    /// Enables `no_new_privs`. Once enabled it cannot be cleared.
+    pub fn set_no_new_privs(&self) {
+        self.seccomp.set_no_new_privs();
+    }
+
+    /// Returns the currently active seccomp mode.
+    pub fn seccomp_mode(&self) -> SeccompMode {
+        self.seccomp.mode()
+    }
+
+    /// Enables strict seccomp mode.
+    pub fn enable_seccomp_strict(&self) -> Result<()> {
+        self.seccomp.enable_strict()
+    }
+
+    /// Appends a seccomp filter and enters filter mode.
+    pub fn append_seccomp_filter(&self, filter: SeccompFilter) -> Result<()> {
+        self.seccomp.append_filter(filter)
+    }
+
+    /// Returns the immutable seccomp filter chain, if any.
+    pub fn seccomp_filter_chain(&self) -> Option<Arc<SeccompFilterChain>> {
+        self.seccomp.filter_chain()
+    }
+
+    /// Returns the number of installed seccomp filters.
+    pub fn seccomp_filter_count(&self) -> usize {
+        self.seccomp.filter_count()
+    }
+
+    pub(in crate::process) fn seccomp_state(&self) -> &SeccompState {
+        &self.seccomp
     }
 }
 

@@ -29,6 +29,7 @@ use crate::{
         NsProxy, UserNamespace,
         pid_file::PidFile,
         posix_thread::{PosixThread, ThreadLocal, allocate_posix_tid},
+        seccomp::SeccompState,
         stats::PROCESS_CREATION_COUNTER,
     },
     sched::Nice,
@@ -411,6 +412,9 @@ fn clone_child_task(
     // Clone default timer slack
     let default_timer_slack_ns = posix_thread.timer_slack_ns();
 
+    // Inherit seccomp and no_new_privs.
+    let seccomp = SeccompState::fork_from(posix_thread.seccomp_state());
+
     if clone_flags.contains(CloneFlags::CLONE_NEWNS) {
         child_fs
             .resolver()
@@ -457,7 +461,8 @@ fn clone_child_task(
         .fpu_context(child_fpu_context)
         .user_ns(child_user_ns)
         .ns_proxy(child_ns_proxy)
-        .default_timer_slack_ns(default_timer_slack_ns);
+        .default_timer_slack_ns(default_timer_slack_ns)
+        .seccomp(seccomp);
         #[cfg(target_arch = "x86_64")]
         {
             thread_builder = thread_builder.fs_base(child_fs_base).gs_base(child_gs_base);
@@ -546,6 +551,9 @@ fn clone_child_process(
     // Clone default timer slack
     let default_timer_slack_ns = posix_thread.timer_slack_ns();
 
+    // Inherit seccomp and no_new_privs.
+    let seccomp = SeccompState::fork_from(posix_thread.seccomp_state());
+
     if clone_flags.contains(CloneFlags::CLONE_NEWNS) {
         child_fs
             .resolver()
@@ -593,6 +601,7 @@ fn clone_child_process(
             .user_ns(child_user_ns.clone())
             .ns_proxy(child_ns_proxy)
             .default_timer_slack_ns(default_timer_slack_ns)
+            .seccomp(seccomp)
         };
         #[cfg(target_arch = "x86_64")]
         {
