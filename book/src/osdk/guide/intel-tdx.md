@@ -32,7 +32,7 @@ Therefore, it is recommended to use a Docker image to deploy the environment.
 Run a TDX Docker container:
 
 ```bash
-docker run -it --privileged --network=host -v /dev:/dev asterinas/osdk:0.17.2-20260508
+docker run -it --privileged --network=host -v /dev:/dev asterinas/osdk:0.17.2-20260523
 ```
 
 ## Edit `OSDK.toml` for Intel TDX support
