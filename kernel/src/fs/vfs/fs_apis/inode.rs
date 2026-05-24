@@ -119,6 +119,19 @@ pub struct Metadata {
     pub self_dev_id: Option<DeviceId>,
 }
 
+/// Describes whether an inode may get new hard links.
+///
+/// This does not control symbolic links. A symbolic link is a separate inode
+/// whose target is a pathname string, so creating one does not link the target
+/// inode directly.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HardLinkability {
+    /// Allows creating hard links to the inode.
+    Linkable,
+    /// Prevents creating hard links to the inode.
+    Unlinkable,
+}
+
 impl Metadata {
     pub fn new_dir(ino: u64, mode: InodeMode, blk_size: usize, container_dev_id: DeviceId) -> Self {
         let now = RealTimeCoarseClock::get().read_time();
@@ -363,6 +376,14 @@ pub trait Inode: Any + FileOps + Send + Sync {
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
+    }
+
+    fn create_tmpfile(
+        &self,
+        mode: InodeMode,
+        hard_linkability: HardLinkability,
+    ) -> Result<Arc<dyn Inode>> {
+        Err(Error::new(Errno::EOPNOTSUPP))
     }
 
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {

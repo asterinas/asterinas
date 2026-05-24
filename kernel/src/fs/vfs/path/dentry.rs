@@ -215,7 +215,6 @@ impl Dentry {
     /// Creates a new anonymous `Dentry` with the given inode and parent.
     ///
     /// See the [`Dentry`] type-level documentation for what "anonymous" means.
-    #[expect(dead_code, reason = "constructed by the upcoming O_TMPFILE support")]
     pub(super) fn new_anonymous(inode: Arc<dyn Inode>, parent: Arc<Dentry>) -> Arc<Self> {
         Self::new(inode, DentryOptions::Anonymous { parent })
     }
