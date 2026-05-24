@@ -46,6 +46,7 @@ that Asterinas can run on as an OS kernel.
 | x86-64              | Tier 1 |
 | x86-64 (Intel TDX)  | Tier 2 |
 | RISC-V 64           | Tier 2 |
+| ARM 64              | Tier 3 |
 | LoongArch 64        | Tier 3 |
 
 Tier definitions:

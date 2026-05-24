@@ -367,7 +367,7 @@ which are summarized in the table below.
     - N/A = not applicable (e.g., syscall not supported)
 
 Most of these system calls (or their variants) are also supported
-for the RISC-V and LoongArch architectures.
+for the ARM, RISC-V, and LoongArch architectures.
 
 ## File systems
 
