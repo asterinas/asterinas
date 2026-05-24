@@ -26,7 +26,10 @@ use crate::{
         utils::{CStr256, DirentVisitor},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            inode::{Extension, FallocMode, FileOps, Inode, Metadata, MknodType, SymbolicLink},
+            inode::{
+                Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
+                SymbolicLink,
+            },
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
@@ -108,6 +111,7 @@ impl RamFs {
                 this: weak_root.clone(),
                 fs: weak_fs.clone(),
                 container_dev_id: root_dev_id,
+                hard_linkability: HardLinkability::Linkable,
                 extension: Extension::new(),
                 xattr: RamXattr::new(),
             }),
@@ -162,6 +166,10 @@ pub(super) struct RamInode {
     /// Detached inodes such as `memfd` store it directly
     /// because they do not have a valid fs reference.
     container_dev_id: DeviceId,
+    /// Hard linkability.
+    /// All inodes except temporary files are set to linkable
+    /// Linkability of temporary files is specified via [`RamInode::create_tmpfile`]
+    hard_linkability: HardLinkability,
     /// Extensions
     extension: Extension,
     /// Extended attributes
@@ -321,6 +329,12 @@ impl InodeMeta {
             uid,
             gid,
         }
+    }
+
+    pub fn new_tmpfile(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
+        let mut meta = Self::new(mode, uid, gid);
+        meta.nlinks = 0;
+        meta
     }
 
     pub fn resize(&mut self, new_size: usize) {
@@ -504,6 +518,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
+            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -518,6 +533,28 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
+            hard_linkability: HardLinkability::Linkable,
+            extension: Extension::new(),
+            xattr: RamXattr::new(),
+        })
+    }
+
+    fn new_tmpfile(
+        fs: &Arc<RamFs>,
+        mode: InodeMode,
+        uid: Uid,
+        gid: Gid,
+        hard_linkability: HardLinkability,
+    ) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| RamInode {
+            inner: Inner::new_file(),
+            metadata: SpinLock::new(InodeMeta::new_tmpfile(mode, uid, gid)),
+            ino: fs.alloc_id(),
+            typ: InodeType::File,
+            this: weak_self.clone(),
+            fs: Arc::downgrade(fs),
+            container_dev_id: fs.sb.container_dev_id,
+            hard_linkability,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -539,6 +576,7 @@ impl RamInode {
             this: Weak::new(),
             fs: Weak::new(),
             container_dev_id: dev_id,
+            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         }
@@ -553,6 +591,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
+            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -579,6 +618,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
+            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -593,6 +633,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
+            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -607,6 +648,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
+            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
@@ -911,6 +953,25 @@ impl Inode for RamInode {
         Ok(new_inode)
     }
 
+    fn create_tmpfile(
+        &self,
+        mode: InodeMode,
+        hard_linkability: HardLinkability,
+    ) -> Result<Arc<dyn Inode>> {
+        if self.typ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
+        }
+
+        let fs = self.fs.upgrade().unwrap();
+        Ok(RamInode::new_tmpfile(
+            &fs,
+            mode,
+            Uid::new_root(),
+            Gid::new_root(),
+            hard_linkability,
+        ))
+    }
+
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
         if !Arc::ptr_eq(&self.fs(), &old.fs()) {
             return_errno_with_message!(Errno::EXDEV, "not same fs");
@@ -925,24 +986,29 @@ impl Inode for RamInode {
         if old.typ == InodeType::Dir {
             return_errno_with_message!(Errno::EPERM, "old is a dir");
         }
+        if old.hard_linkability == HardLinkability::Unlinkable {
+            return_errno_with_message!(Errno::ENOENT, "tmpfile is not linkable");
+        }
 
         let mut self_dir = self.inner.as_direntry().unwrap().write();
         if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exist");
         }
         self_dir.append_entry(name, old.this.upgrade().unwrap());
+        let now = now();
+
+        // An `O_TMPFILE` inode starts with zero links. Bump the link count
+        // before exposing the new entry to concurrent lookup or unlink.
+        let mut old_meta = old.metadata.lock();
+        old_meta.inc_nlinks();
+        old_meta.set_ctime(now);
+        drop(old_meta);
         drop(self_dir);
 
-        let now = now();
         let mut self_meta = self.metadata.lock();
         self_meta.set_mtime(now);
         self_meta.set_ctime(now);
         self_meta.inc_size();
-        drop(self_meta);
-
-        let mut old_meta = old.metadata.lock();
-        old_meta.inc_nlinks();
-        old_meta.set_ctime(now);
 
         Ok(())
     }
