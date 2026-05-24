@@ -10,6 +10,7 @@ SUBDIRS := \
 	procfs \
 	pseudofs \
 	symlink \
+	tmpfile \
 	utimensat \
 
 include ../common/Makefile

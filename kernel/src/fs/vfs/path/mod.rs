@@ -22,7 +22,7 @@ use crate::{
         pseudofs::NsInode,
         vfs::{
             file_system::{FileSystem, FsFlags},
-            inode::{Inode, Metadata, MknodType},
+            inode::{HardLinkability, Inode, Metadata, MknodType},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -74,6 +74,28 @@ impl Path {
             .as_dir_dentry_or_err()?
             .create(name, type_, mode)?;
         Ok(Self::new(self.mount.clone(), new_child_dentry))
+    }
+
+    /// Creates a new `Path` to represent an unnamed temporary file.
+    ///
+    /// The returned inode has no directory entry and is invisible to `readdir`.
+    /// If created hard-linkable, it may later be given a name via a link
+    /// operation; otherwise it can never be linked.
+    pub fn create_tmpfile(
+        &self,
+        mode: InodeMode,
+        hard_linkability: HardLinkability,
+    ) -> Result<Self> {
+        if self
+            .inode()
+            .check_permission(Permission::MAY_WRITE)
+            .is_err()
+        {
+            return_errno!(Errno::EACCES);
+        }
+        let tmp_inode = self.inode().create_tmpfile(mode, hard_linkability)?;
+        let tmp_dentry = Dentry::new_anonymous(tmp_inode, self.dentry.clone());
+        Ok(Self::new(self.mount.clone(), tmp_dentry))
     }
 
     /// Creates a new pseudo `Path`.
