@@ -153,12 +153,50 @@ impl MountNamespace {
     ///
     /// No recyclable-`id` counterpart exists: the 32-bit ID space is reused
     /// on drop, so a keyed lookup would race the next allocation.
-    #[expect(
-        dead_code,
-        reason = "no in-tree consumer yet; staged for statmount/listmount"
-    )]
     pub fn lookup_by_unique_id(&self, unique_id: u64) -> Option<Arc<Mount>> {
         self.mounts.lock().get(&unique_id).and_then(Weak::upgrade)
+    }
+
+    /// Returns the unique IDs of mounts in this namespace that are strict
+    /// descendants of `parent`, ordered by `unique_id`.
+    ///
+    /// `after` is exclusive: entries with `unique_id == after` are skipped;
+    /// passing `0` yields the whole namespace. With `reverse = true` the order
+    /// is reversed and `after` becomes the strict upper bound. At most `limit`
+    /// IDs are returned.
+    ///
+    /// Ancestry is checked outside the `mounts` lock so that the per-`Mount`
+    /// parent locks are never acquired while the table lock is held.
+    pub fn descendant_ids_of(
+        &self,
+        parent: &Arc<Mount>,
+        after: u64,
+        reverse: bool,
+        limit: usize,
+    ) -> Vec<u64> {
+        use core::ops::Bound;
+
+        let snapshot: Vec<(u64, Arc<Mount>)> = {
+            let guard = self.mounts.lock();
+            let iter: Box<dyn Iterator<Item = (&u64, &Weak<Mount>)>> = if reverse {
+                if after == 0 {
+                    Box::new(guard.iter().rev())
+                } else {
+                    Box::new(guard.range(..after).rev())
+                }
+            } else {
+                Box::new(guard.range((Bound::Excluded(&after), Bound::Unbounded)))
+            };
+            iter.filter_map(|(&id, weak)| weak.upgrade().map(|m| (id, m)))
+                .collect()
+        };
+
+        snapshot
+            .into_iter()
+            .filter(|(_, m)| !Arc::ptr_eq(m, parent) && m.is_equal_or_descendant_of(parent))
+            .map(|(id, _)| id)
+            .take(limit)
+            .collect()
     }
 
     /// Walks the in-place mount tree and registers every mount in

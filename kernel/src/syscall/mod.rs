@@ -78,6 +78,7 @@ mod ioctl;
 mod kill;
 mod link;
 mod listen;
+mod listmount;
 mod listxattr;
 mod lseek;
 mod madvise;
