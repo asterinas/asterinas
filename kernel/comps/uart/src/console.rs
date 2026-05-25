@@ -25,6 +25,7 @@ impl<U: Uart> Debug for UartConsole<U> {
 
 impl<U: Uart> UartConsole<U> {
     /// Creates a new UART console.
+    #[cfg_attr(target_arch = "aarch64", expect(dead_code))]
     pub(super) fn new(uart: U) -> Arc<Self> {
         Arc::new(Self {
             uart,
@@ -39,6 +40,7 @@ impl<U: Uart> UartConsole<U> {
     }
 
     // Triggers the registered input callbacks.
+    #[cfg_attr(target_arch = "aarch64", expect(dead_code))]
     pub(super) fn trigger_input_callbacks(&self) {
         let mut buf = [0; 16];
 
@@ -71,6 +73,7 @@ impl<U: Uart + Send + Sync + 'static> AnyConsoleDevice for UartConsole<U> {
 }
 
 /// A trait that abstracts UART devices.
+#[cfg_attr(target_arch = "aarch64", allow(dead_code, clippy::allow_attributes))]
 pub(super) trait Uart {
     /// Sends a sequence of bytes to UART.
     fn send(&self, buf: &[u8]);
@@ -80,9 +83,6 @@ pub(super) trait Uart {
     fn recv(&self, buf: &mut [u8]) -> usize;
 
     /// Flushes the received buffer.
-    ///
-    /// This method should be called after setting up the IRQ handlers to ensure new received data
-    /// will trigger IRQs.
     fn flush(&self);
 }
 

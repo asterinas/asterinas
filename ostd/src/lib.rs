@@ -29,6 +29,7 @@ macro_rules! __log_prefix {
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86/mod.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv/mod.rs")]
 #[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch/mod.rs")]
+#[cfg_attr(target_arch = "aarch64", path = "arch/aarch64/mod.rs")]
 pub mod arch;
 
 pub mod boot;

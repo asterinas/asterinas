@@ -28,7 +28,7 @@ use crate::{
     },
     error::Errno,
     error_msg,
-    util::{DirGuard, new_command_checked_exists},
+    util::{DirGuard, hard_link_or_copy, new_command_checked_exists},
 };
 
 /// The osdk bundle artifact that stores as `bundle` directory.
@@ -46,6 +46,7 @@ pub struct Bundle {
 pub struct BundleManifest {
     pub initramfs: Option<Initramfs>,
     pub aster_bin: Option<AsterBin>,
+    pub aster_image: Option<PathBuf>,
     pub vm_image: Option<AsterVmImage>,
     pub config: Config,
     pub action: ActionChoice,
@@ -106,6 +107,7 @@ impl Bundle {
             manifest: BundleManifest {
                 initramfs,
                 aster_bin: None,
+                aster_image: None,
                 vm_image: None,
                 config: config.clone(),
                 action,
@@ -267,10 +269,19 @@ impl Bundle {
 
         match action.boot.method {
             BootMethod::QemuDirect => {
-                let aster_bin = self.manifest.aster_bin.as_ref().unwrap();
-                qemu_cmd
-                    .arg("-kernel")
-                    .arg(self.path.join(aster_bin.path()));
+                // For ARM64, use raw Image format instead of ELF for proper FDT passing.
+                // QEMU's ELF loading sets is_linux=0, skipping FDT initialization.
+                // Raw Image format triggers "ARM\x64" magic check, setting is_linux=1
+                // and properly passing FDT address in x0.
+                let kernel_path = if config.target_arch == Arch::Aarch64
+                    && let Some(ref aster_image) = self.manifest.aster_image
+                {
+                    self.path.join(aster_image)
+                } else {
+                    let aster_bin = self.manifest.aster_bin.as_ref().unwrap();
+                    self.path.join(aster_bin.path())
+                };
+                qemu_cmd.arg("-kernel").arg(kernel_path);
                 if let Some(ref initramfs) = action.boot.initramfs {
                     qemu_cmd.arg("-initrd").arg(initramfs);
                 } else {
@@ -389,6 +400,18 @@ impl Bundle {
             panic!("aster_bin already exists");
         }
         self.manifest.aster_bin = Some(aster_bin.copy_to(&self.path));
+        self.write_manifest_to_fs();
+    }
+
+    /// Move the ARM64 Image into the bundle (raw binary format).
+    pub fn consume_aster_image(&mut self, image_path: impl AsRef<Path>) {
+        if self.manifest.aster_image.is_some() {
+            panic!("aster_image already exists");
+        }
+        let file_name = image_path.as_ref().file_name().unwrap();
+        let copied_path = self.path.join(file_name);
+        hard_link_or_copy(image_path.as_ref(), &copied_path).unwrap();
+        self.manifest.aster_image = Some(PathBuf::from(file_name));
         self.write_manifest_to_fs();
     }
 

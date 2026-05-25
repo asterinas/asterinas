@@ -27,6 +27,9 @@ typ = "typ"
 sigfault = "sigfault"
 sems = "sems"
 THRE = "THRE"
+Indx = "Indx"    # ARM Architecture Reference Manual: AttrIndx (Attribute Index)
+ALLE = "ALLE"    # ARM64 TLBI instruction: ALLE1IS, ALLE1, ALLE2OS, etc.
+ands = "ands"    # ARM64 assembly instruction: ANDS (AND + Set Flags)
 
 # Files with svg suffix are ignored to check. 
 [type.svg]

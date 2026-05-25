@@ -8,6 +8,7 @@ use crate::SystemTime;
 pub trait Driver {
     /// Creates a RTC driver.
     /// Returns [`Some<Self>`] on success, [`None`] otherwise (e.g. platform unsupported).
+    #[cfg_attr(target_arch = "aarch64", expect(unused))]
     fn try_new() -> Option<Self>
     where
         Self: Sized;

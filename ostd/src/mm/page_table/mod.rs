@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![cfg_attr(
-    any(target_arch = "riscv64", target_arch = "loongarch64"),
+    any(
+        target_arch = "riscv64",
+        target_arch = "loongarch64",
+        target_arch = "aarch64"
+    ),
     expect(dead_code)
 )]
 

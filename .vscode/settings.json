@@ -16,6 +16,8 @@
         "riscv64imac-unknown-none-elf",
         "--target",
         "loongarch64-unknown-none-softfloat",
+        "--target",
+        "aarch64-unknown-none-softfloat",
         "-Zbuild-std=core,alloc,compiler_builtins",
         "-Zbuild-std-features=compiler-builtins-mem"
     ],

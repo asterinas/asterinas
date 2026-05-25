@@ -13,7 +13,9 @@ pub(crate) trait UserContextApiInternal {
     where
         F: FnMut() -> bool;
 
-    /// Uses the information inside CpuContext to build a trapframe
+    /// Uses the information inside CpuContext to build a trapframe.
+    /// Not used on all architectures (e.g., aarch64 has its own trap handling path).
+    #[cfg_attr(target_arch = "aarch64", expect(dead_code))]
     fn as_trap_frame(&self) -> TrapFrame;
 }
 

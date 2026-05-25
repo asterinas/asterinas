@@ -3,7 +3,11 @@
 //! System call handlers.
 
 #![cfg_attr(
-    any(target_arch = "riscv64", target_arch = "loongarch64"),
+    any(
+        target_arch = "riscv64",
+        target_arch = "loongarch64",
+        target_arch = "aarch64"
+    ),
     expect(dead_code)
 )]
 
@@ -16,6 +20,7 @@ use crate::{cpu::LinuxAbi, prelude::*};
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv.rs")]
 #[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch.rs")]
+#[cfg_attr(target_arch = "aarch64", path = "arch/aarch64.rs")]
 mod arch;
 
 mod accept;

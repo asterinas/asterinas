@@ -90,3 +90,28 @@ qemu.args = """\
     -device virtconsole,chardev=mux \
     -rtc base=utc
 """
+
+[scheme."aarch64"]
+supported_archs = ["aarch64"]
+boot.method = "qemu-direct"
+build.strip_elf = false
+
+qemu.args = """\
+    -cpu cortex-a72 \
+    -machine virt,gic-version=3,virtualization=on \
+    -m ${MEM:-8G} \
+    -smp ${SMP:-1} \
+    --no-reboot \
+    -nographic \
+    -display none \
+    -serial chardev:mux \
+    -monitor chardev:mux \
+    -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
+    -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
+    -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
+    -device virtio-blk-device,drive=x0 \
+    -device virtio-blk-device,drive=x1 \
+    -device virtio-keyboard-device \
+    -device virtio-serial-device \
+    -device virtconsole,chardev=mux \
+"""
