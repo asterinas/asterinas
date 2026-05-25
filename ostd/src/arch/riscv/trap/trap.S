@@ -16,10 +16,14 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
-# Constants / Macros defined in Rust code:
-#   XLENB
-#   LOAD
-#   STORE
+# Constant and Macros for riscv64:
+.equ XLENB, 8
+.macro LOAD_SP a1, a2
+    ld \a1, \a2*XLENB(sp)
+.endm
+.macro STORE_SP a1, a2
+    sd \a1, \a2*XLENB(sp)
+.endm
 
 .text
 
