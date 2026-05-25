@@ -14,6 +14,13 @@ nixos_test_main!();
 // ============================================================================
 
 #[nixos_test]
+fn bash_run_script(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd("echo 'echo \"Hello from Bash\"' > /tmp/test_bash.sh")?;
+    nixos_shell.run_cmd_and_expect("bash /tmp/test_bash.sh", "Hello from Bash")?;
+    Ok(())
+}
+
+#[nixos_test]
 fn fish_run_script(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.run_cmd("echo 'echo \"Hello from Fish\"' > /tmp/test_fish.fish")?;
     nixos_shell.run_cmd_and_expect("fish /tmp/test_fish.fish", "Hello from Fish")?;
@@ -24,6 +31,33 @@ fn fish_run_script(nixos_shell: &mut Session) -> Result<(), Error> {
 fn zsh_run_script(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.run_cmd("echo 'echo \"Hello from Zsh\"' > /tmp/test_zsh.sh")?;
     nixos_shell.run_cmd_and_expect("zsh /tmp/test_zsh.sh", "Hello from Zsh")?;
+    Ok(())
+}
+
+// ============================================================================
+// Init & Service Management
+// ============================================================================
+
+#[nixos_test]
+fn busybox_run_applets(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd_and_expect("busybox | head -1", "BusyBox")?;
+    nixos_shell.run_cmd_and_expect("busybox ls -al /", "total")?;
+    nixos_shell.run_cmd_and_expect("busybox cat --help", "Usage: cat")?;
+    Ok(())
+}
+
+#[nixos_test]
+fn systemctl_status(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd_and_expect("systemctl --no-pager status", "State:")?;
+    Ok(())
+}
+
+#[nixos_test]
+fn systemctl_list_units(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd_and_expect(
+        "systemctl --no-pager list-units --type=service --state=running",
+        "loaded units listed",
+    )?;
     Ok(())
 }
 
