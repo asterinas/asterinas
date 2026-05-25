@@ -11,7 +11,7 @@ use io_util::{
     batch::{IoBatch, IoCompletion},
 };
 use ostd::{
-    Error,
+    Error, irq,
     mm::{
         HasSize, Infallible, USegment, VmReader, VmWriter,
         dma::DmaStream,
@@ -22,7 +22,9 @@ use ostd::{
 use spin::Once;
 
 use super::{BlockDevice, id::Sid};
-use crate::{BLOCK_SIZE, SECTOR_SIZE, impl_block_device::general_complete_fn, prelude::*};
+use crate::{
+    BLOCK_SIZE, SECTOR_SIZE, completion, impl_block_device::general_complete_fn, prelude::*,
+};
 
 /// The unit for block I/O.
 ///
@@ -237,12 +239,23 @@ impl SubmittedBio {
     }
 
     /// Completes the `Bio` by consuming `self`, releasing the segments, and
-    /// invoking the callback function.
+    /// invoking the callback function from the block softirq whenever the
+    /// caller is in IRQ or softirq context.
     ///
     /// When the driver finishes the request for this `Bio`, it will call this method.
     pub fn complete(self, status: BioStatus) {
         assert!(status != BioStatus::Init && status != BioStatus::Submit);
 
+        if irq::InterruptLevel::current().is_task_context() {
+            // Synchronous in-task completions can still make forward progress
+            // without a later IRQ.
+            self.complete_now(status);
+        } else {
+            completion::enqueue(self, status);
+        }
+    }
+
+    pub(super) fn complete_now(self, status: BioStatus) {
         let Self {
             metadata,
             complete_fn,
