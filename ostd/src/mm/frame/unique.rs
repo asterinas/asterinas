@@ -8,7 +8,10 @@ use super::{
     AnyFrameMeta, Frame, MetaSlot,
     meta::{GetFrameError, REF_COUNT_UNIQUE},
 };
-use crate::mm::{HasPaddr, HasSize, PAGE_SIZE, Paddr, PagingConsts, PagingLevel, frame::mapping};
+use crate::{
+    mm::{PAGE_SIZE, PagingConsts, PagingLevel, frame::mapping},
+    prelude::*,
+};
 
 /// An owning frame pointer.
 ///

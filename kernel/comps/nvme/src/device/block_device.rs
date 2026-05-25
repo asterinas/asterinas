@@ -28,8 +28,8 @@ use aster_block::{
 use aster_util::safe_ptr::SafePtr;
 use device_id::DeviceId;
 use ostd::{
-    debug, error, info,
-    mm::{HasDaddr, HasSize, PAGE_SIZE, dma::DmaStream},
+    mm::{HasDaddr, PAGE_SIZE, dma::DmaStream},
+    prelude::*,
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard, WaitQueue},
     timer::Jiffies,
 };
@@ -814,9 +814,8 @@ mod test {
     };
     use io_util::batch::IoBatch;
     use ostd::{
-        info,
         mm::{FrameAllocOptions, VmIo, VmReader, io::util::HasVmReaderWriter},
-        prelude::ktest,
+        prelude::*,
     };
 
     use super::{BioType, IoOp, NvmeBlockDevice};

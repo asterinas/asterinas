@@ -23,10 +23,7 @@ use core::{
 
 use align_ext::AlignExt;
 use io_util::batch::IoBatch;
-use ostd::{
-    mm::{HasPaddr, io::util::HasVmReaderWriter},
-    task::disable_preempt,
-};
+use ostd::{mm::io::util::HasVmReaderWriter, prelude::HasPaddr, task::disable_preempt};
 use xarray::{Cursor, LockedXArray, XArray};
 
 use crate::{

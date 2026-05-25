@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use aster_softirq::{BottomHalfDisabled, Taskless};
-use ostd::sync::SpinLock;
 use spin::Once;
 
-use crate::net::socket::vsock::transport::{conn_id::ConnId, space::vsock_space};
+use crate::{
+    net::socket::vsock::transport::{conn_id::ConnId, space::vsock_space},
+    prelude::*,
+};
 
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(0);
 

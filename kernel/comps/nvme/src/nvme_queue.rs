@@ -12,7 +12,7 @@ use core::{
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use ostd::{
     mm::{HasDaddr, dma::DmaCoherent},
-    warn,
+    prelude::*,
 };
 
 use crate::{

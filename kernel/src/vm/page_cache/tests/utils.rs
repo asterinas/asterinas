@@ -2,7 +2,7 @@
 
 //! Test-only helpers for deterministic page-cache I/O scheduling.
 
-use alloc::{format, vec};
+use alloc::format;
 use core::fmt;
 
 use aster_block::{

@@ -2,8 +2,8 @@
 
 use crate::{
     arch::device::io_port::WriteOnlyAccess,
-    info,
     io::{IoPort, sensitive_io_port},
+    prelude::*,
 };
 
 sensitive_io_port! {

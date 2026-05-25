@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-
 use ostd::task::{
     Task,
     scheduler::{EnqueueFlags, UpdateFlags},
 };
 
 use super::{CurrentRuntime, SchedAttr, SchedClassRq};
+use crate::prelude::*;
 
 /// The per-cpu run queue for the IDLE scheduling class.
 ///
@@ -22,7 +21,7 @@ impl IdleClassRq {
     }
 }
 
-impl core::fmt::Debug for IdleClassRq {
+impl Debug for IdleClassRq {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if self.entity.is_some() {
             write!(f, "Idle: occupied")?;

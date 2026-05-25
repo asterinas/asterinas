@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 
 use align_ext::AlignExt;
 use aster_util::mem_obj_slice::Slice;
-use bitvec::array::BitArray;
+use bitvec::prelude::BitArray;
 use int_to_c_enum::TryFromInt;
 use io_util::{
     IoError,
@@ -13,10 +13,11 @@ use io_util::{
 use ostd::{
     Error,
     mm::{
-        HasSize, Infallible, USegment, VmReader, VmWriter,
+        Infallible, USegment, VmReader, VmWriter,
         dma::DmaStream,
         io::util::{HasVmReaderWriter, VmReaderWriterResult},
     },
+    prelude::*,
     sync::{LocalIrqDisabled, SpinLock, WaitQueue},
 };
 use spin::Once;

@@ -9,7 +9,7 @@ pub(super) use table::IntRemappingTable;
 
 use crate::{
     arch::iommu::registers::{ExtendedCapabilityFlags, IOMMU_REGS},
-    info, warn,
+    prelude::*,
 };
 
 pub struct IrtEntryHandle {

@@ -12,16 +12,15 @@
 //! - [cpu_byteorder](https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-kernel-cpu_byteorder)
 //! - [address_bits](https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-kernel-address_bits)
 
-use alloc::sync::Arc;
-
 use aster_systree::{
     BranchNodeFields, Error, Result, SysAttrSetBuilder, SysBranchNode, SysNode, SysPerms, SysStr,
     inherit_sys_branch_node,
 };
 use aster_util::printer::VmPrinter;
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{VmReader, VmWriter};
 use spin::Once;
+
+use crate::prelude::*;
 
 /// Registers a new kernel `SysNode`.
 pub(super) fn register(config_obj: Arc<dyn SysNode>) -> crate::prelude::Result<()> {

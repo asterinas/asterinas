@@ -60,6 +60,7 @@ run_check_osdk() {
     (
         cd "$PROJECT_ROOT/osdk"
         RUSTFLAGS="-Dwarnings" cargo clippy --all-targets --no-deps
+        RUSTC="klint" RUSTFLAGS="-Dwarnings" cargo check
     )
 }
 
@@ -75,6 +76,7 @@ run_workspace_clippy() {
         cd "$PROJECT_ROOT"
         RUSTFLAGS="-Dwarnings" cargo osdk clippy -- --no-deps
         RUSTFLAGS="-Dwarnings" cargo osdk clippy --ktests -- --no-deps
+        RUSTFLAGS="-Dwarnings" cargo osdk check --ktests --klint
     )
 
     build_package_args "--non-default-ones" non_default_package_args
@@ -105,6 +107,7 @@ run_workspace_clippy() {
             cd "$PROJECT_ROOT/$LINUX_BZIMAGE_SETUP_DIR"
             RUSTFLAGS="-Dwarnings" cargo osdk clippy -- --no-deps
             RUSTFLAGS="-Dwarnings" cargo osdk clippy --ktests -- --no-deps
+            RUSTFLAGS="-Dwarnings" cargo osdk check --ktests --klint
         )
     fi
 }

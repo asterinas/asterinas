@@ -7,8 +7,8 @@ use aster_console::{AnyConsoleDevice, ConsoleCallback};
 use aster_util::mem_obj_slice::Slice;
 use ostd::{
     arch::trap::TrapFrame,
-    debug,
     mm::{VmReader, dma::DmaStream, io::util::HasVmReaderWriter},
+    prelude::*,
     sync::{Rcu, SpinLock},
 };
 

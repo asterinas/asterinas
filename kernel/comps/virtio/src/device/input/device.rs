@@ -19,9 +19,9 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use ostd::{
     arch::trap::TrapFrame,
-    debug, info,
     io::IoMem,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaStream},
+    prelude::*,
     sync::SpinLock,
 };
 use ostd_pod::IntoBytes;

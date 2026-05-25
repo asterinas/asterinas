@@ -2,7 +2,7 @@
 
 //! Panic support.
 
-use crate::early_println;
+use crate::prelude::*;
 
 extern crate cfg_if;
 extern crate gimli;
@@ -91,7 +91,7 @@ pub fn print_stack_trace() {
         UnwindContext, UnwindReasonCode,
     };
 
-    use crate::{early_print, sync::SpinLock};
+    use crate::sync::SpinLock;
 
     /// We acquire a global lock to prevent the frames in the stack trace from
     /// interleaving. The spin lock is used merely for its simplicity.

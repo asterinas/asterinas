@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use int_to_c_enum::TryFromInt;
-
 use super::{RawSocketOption, SocketOption, impl_raw_socket_option};
 use crate::{
     net::socket::ip::options::{Hdrincl, Recverr, Tos, Ttl},

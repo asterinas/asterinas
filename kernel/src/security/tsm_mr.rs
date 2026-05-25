@@ -17,19 +17,16 @@
 //! For more information about the TSM-MR ABI, see the Linux kernel
 //! [documentation](https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-devices-virtual-misc-tdx_guest).
 
-use alloc::sync::Arc;
-
 use aster_systree::{
     BranchNodeFields, Error, NormalNodeFields, Result, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
     inherit_sys_branch_node, inherit_sys_leaf_node,
 };
 use inherit_methods_macro::inherit_methods;
-use ostd::{
-    mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
-    sync::RwMutex,
-};
 
-use crate::device::misc::tdxguest::{self, MeasurementReg, Rtmr, SHA384_DIGEST_SIZE};
+use crate::{
+    device::misc::tdxguest::{self, MeasurementReg, Rtmr, SHA384_DIGEST_SIZE},
+    prelude::*,
+};
 
 pub(super) fn init() {
     let node = {

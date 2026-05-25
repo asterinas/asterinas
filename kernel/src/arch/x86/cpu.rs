@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{borrow::ToOwned, collections::btree_set::BTreeSet, string::String, vec::Vec};
-use core::{arch::x86_64::CpuidResult, ffi::CStr, fmt, str};
+use alloc::borrow::ToOwned;
+use core::{arch::x86_64::CpuidResult, fmt, str};
 
 use ostd::{
     arch::{
@@ -12,13 +12,12 @@ use ostd::{
         tsc_freq,
     },
     cpu::{PinCurrentCpu, num_cpus},
-    mm::Vaddr,
-    sync::SpinLock,
     task::DisabledPreemptGuard,
 };
 
 use crate::{
     cpu::LinuxAbi,
+    prelude::*,
     vm::{perms::VmPerms, vmar::PageFaultInfo},
 };
 

@@ -9,11 +9,10 @@ use aster_pci::{
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use ostd::{
     bus::BusProbeError,
-    info,
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, dma::DmaCoherent},
-    warn,
+    prelude::*,
 };
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};

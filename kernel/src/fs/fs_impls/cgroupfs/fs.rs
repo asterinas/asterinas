@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-
 use aster_systree::EmptyNode;
 use ostd::task::Task;
 use spin::Once;
@@ -9,7 +7,6 @@ use spin::Once;
 use super::inode::CgroupInode;
 use crate::{
     fs::{
-        Result,
         pseudofs::AnonDeviceId,
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
@@ -18,7 +15,7 @@ use crate::{
             registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
-    process::posix_thread::AsThreadLocal,
+    prelude::*,
 };
 
 /// A file system for managing cgroups.

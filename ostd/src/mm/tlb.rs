@@ -2,7 +2,6 @@
 
 //! TLB flush operations.
 
-use alloc::vec::Vec;
 use core::{
     mem::MaybeUninit,
     ops::Range,
@@ -10,7 +9,7 @@ use core::{
 };
 
 use super::{
-    PAGE_SIZE, Vaddr,
+    PAGE_SIZE,
     frame::{Frame, meta::AnyFrameMeta},
 };
 use crate::{
@@ -18,6 +17,7 @@ use crate::{
     const_assert,
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local,
+    prelude::*,
     smp::IpiSender,
     sync::{LocalIrqDisabled, RcuDrop, SpinLock},
 };

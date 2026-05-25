@@ -2,7 +2,7 @@
 
 use core::ops::Range;
 
-use ostd::mm::Vaddr;
+use ostd::prelude::Vaddr;
 
 /// A virtual range and its relocated address.
 pub(super) struct RelocatedRange {

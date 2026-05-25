@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-
 use ostd::task::{
     Task,
     scheduler::{EnqueueFlags, UpdateFlags},
 };
 
 use super::{CurrentRuntime, SchedAttr, SchedClassRq};
+use crate::prelude::*;
 
 /// The per-cpu run queue for the STOP scheduling class.
 ///
@@ -23,7 +22,7 @@ impl StopClassRq {
     }
 }
 
-impl core::fmt::Debug for StopClassRq {
+impl Debug for StopClassRq {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if self.entity.is_some() {
             write!(f, "Stop: occupied")?;

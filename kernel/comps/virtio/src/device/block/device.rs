@@ -22,8 +22,8 @@ use aster_util::mem_obj_slice::Slice;
 use device_id::{DeviceId, MinorId};
 use ostd::{
     arch::trap::TrapFrame,
-    debug, info,
     mm::{PAGE_SIZE, VmIo, dma::DmaStream},
+    prelude::*,
     sync::SpinLock,
 };
 

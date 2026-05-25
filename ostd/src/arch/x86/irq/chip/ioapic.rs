@@ -3,9 +3,10 @@
 use bit_field::BitField;
 
 use crate::{
-    Error, Result, info,
+    Error,
     io::{IoMem, IoMemAllocatorBuilder, Sensitive},
     irq::IrqLine,
+    prelude::*,
 };
 
 /// I/O Advanced Programmable Interrupt Controller (APIC).

@@ -9,9 +9,10 @@ use ostd_pod::FromZeros;
 use super::{PageTableNode, PageTableNodeRef, PteTrait};
 use crate::{
     mm::{
-        HasPaddr, PageTableFlags, PagingLevel,
+        PageTableFlags, PagingLevel,
         page_table::{PageTableConfig, PteScalar},
     },
+    prelude::*,
     sync::RcuDrop,
 };
 

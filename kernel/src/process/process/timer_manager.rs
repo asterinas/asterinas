@@ -1,17 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    boxed::Box,
-    sync::{Arc, Weak},
-    vec::Vec,
-};
-
 use id_alloc::IdAlloc;
-use ostd::{cpu::PrivilegeLevel, irq::InterruptLevel, sync::Mutex, timer};
+use ostd::{cpu::PrivilegeLevel, irq::InterruptLevel, timer};
 
 use super::Process;
 use crate::{
     fs::cgroupfs::{CpuStatKind, charge_cpu_time},
+    prelude::*,
     process::{
         posix_thread::AsPosixThread,
         signal::{constants::SIGALRM, signals::kernel::KernelSignal},

@@ -2,7 +2,6 @@
 
 //! CPU execution context control.
 
-use alloc::boxed::Box;
 use core::arch::x86_64::{_fxrstor64, _fxsave64, _xrstor64, _xsave64};
 
 use bitflags::bitflags;
@@ -22,9 +21,8 @@ use crate::{
         trap::{RawUserContext, TrapFrame},
     },
     cpu::PrivilegeLevel,
-    debug,
     irq::call_irq_callback_functions,
-    mm::Vaddr,
+    prelude::*,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 

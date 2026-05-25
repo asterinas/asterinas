@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-
 use aster_systree::SysNode;
 use spin::Once;
 
 use super::inode::ConfigInode;
-use crate::fs::{
-    Result,
-    configfs::systree_node::ConfigRootNode,
-    pseudofs::AnonDeviceId,
-    utils::systree_inode::SysTreeInodeTy,
-    vfs::{
-        file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-        inode::Inode,
-        registry::{FsCreationCtx, FsProperties, FsType},
+use crate::{
+    fs::{
+        configfs::systree_node::ConfigRootNode,
+        pseudofs::AnonDeviceId,
+        utils::systree_inode::SysTreeInodeTy,
+        vfs::{
+            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            inode::Inode,
+            registry::{FsCreationCtx, FsProperties, FsType},
+        },
     },
+    prelude::*,
 };
 
 /// A file system that provides a user-space interface for configuring kernel objects.

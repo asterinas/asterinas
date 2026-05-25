@@ -7,7 +7,7 @@ use core::{
     ptr::NonNull,
 };
 
-use crate::mm::Vaddr;
+use crate::prelude::*;
 
 mod slab;
 mod slot;

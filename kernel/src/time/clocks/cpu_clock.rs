@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::time::Duration;
 
-use ostd::{
-    sync::{LocalIrqDisabled, SpinLock},
-    timer::Jiffies,
-};
+use ostd::{sync::LocalIrqDisabled, timer::Jiffies};
 
-use crate::time::Clock;
+use crate::prelude::*;
 
 /// A clock used to record the CPU time for processes and threads.
 pub struct CpuClock {

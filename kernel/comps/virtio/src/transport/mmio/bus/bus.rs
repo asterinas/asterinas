@@ -4,7 +4,7 @@
 
 use alloc::{collections::VecDeque, fmt::Debug, sync::Arc, vec::Vec};
 
-use ostd::{bus::BusProbeError, debug, error};
+use ostd::{bus::BusProbeError, prelude::*};
 
 use super::common_device::MmioCommonDevice;
 

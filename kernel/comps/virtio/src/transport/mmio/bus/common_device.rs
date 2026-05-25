@@ -3,12 +3,7 @@
 //! MMIO device common definitions or functions.
 
 use int_to_c_enum::TryFromInt;
-use ostd::{
-    Error, Result, info,
-    io::IoMem,
-    irq::IrqLine,
-    mm::{HasPaddr, VmIoOnce},
-};
+use ostd::{Error, io::IoMem, irq::IrqLine, mm::VmIoOnce, prelude::*};
 
 use super::arch::MappedIrqLine;
 

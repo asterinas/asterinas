@@ -2,7 +2,7 @@
 
 use aster_framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE, PixelFormat};
 use device_id::{DeviceId, MajorId, MinorId};
-use ostd::mm::{HasPaddr, HasSize, VmIo};
+use ostd::{mm::VmIo, prelude::*};
 
 use super::{Device, DeviceType, DevtmpfsInodeMeta, registry::char};
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
         file::{Mappable, PerOpenFileOps, StatusFlags},
         vfs::inode::FileOps,
     },
-    prelude::*,
+    prelude::{Result, *},
     process::signal::{PollHandle, Pollable},
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };

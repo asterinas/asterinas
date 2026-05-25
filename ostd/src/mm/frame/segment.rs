@@ -8,7 +8,10 @@ use super::{
     Frame, inc_frame_ref_count,
     meta::{AnyFrameMeta, GetFrameError},
 };
-use crate::mm::{AnyUFrameMeta, HasPaddr, HasSize, PAGE_SIZE, Paddr, Split};
+use crate::{
+    mm::{AnyUFrameMeta, PAGE_SIZE, Split},
+    prelude::*,
+};
 
 /// A contiguous range of homogeneous physical memory frames.
 ///

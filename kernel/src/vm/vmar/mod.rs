@@ -9,7 +9,7 @@ mod vm_mapping;
 
 mod vmar_impls;
 
-use ostd::mm::Vaddr;
+use ostd::prelude::Vaddr;
 
 pub use self::{
     handle::VmarHandle,

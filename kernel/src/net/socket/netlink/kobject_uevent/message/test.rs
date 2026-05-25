@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::vec;
 use core::str::FromStr;
 
 use ostd::prelude::*;

@@ -7,11 +7,9 @@ use spin::Once;
 use super::IommuError;
 use crate::{
     arch::iommu::registers::{CapabilitySagaw, IOMMU_REGS},
-    info,
     mm::{Daddr, PageTable},
-    prelude::Paddr,
+    prelude::*,
     sync::{LocalIrqDisabled, SpinLock},
-    warn,
 };
 
 mod context_table;

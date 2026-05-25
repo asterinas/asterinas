@@ -2,7 +2,8 @@
 
 use ostd::{
     impl_frame_meta_for,
-    mm::{HasPaddr, PAGE_SIZE, Paddr, UniqueFrame, frame::linked_list::Link},
+    mm::{PAGE_SIZE, UniqueFrame, frame::linked_list::Link},
+    prelude::*,
 };
 
 /// The order of a buddy chunk.

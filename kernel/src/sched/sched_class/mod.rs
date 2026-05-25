@@ -4,14 +4,13 @@
 
 #![warn(unused)]
 
-use alloc::{boxed::Box, sync::Arc};
-use core::{fmt, ops::Bound, sync::atomic::Ordering};
+use core::{ops::Bound, sync::atomic::Ordering};
 
 use ostd::{
     arch::read_tsc as sched_clock,
     cpu::{CpuId, CpuSet, PinCurrentCpu, all_cpus},
     irq::disable_local,
-    sync::{LocalIrqDisabled, SpinLock},
+    sync::LocalIrqDisabled,
     task::{
         AtomicCpuId, Task,
         scheduler::{
@@ -26,7 +25,10 @@ use super::{
     nice::Nice,
     stats::{SchedulerStats, set_stats_from_scheduler},
 };
-use crate::thread::{AsThread, Thread};
+use crate::{
+    prelude::*,
+    thread::{AsThread, Thread},
+};
 
 mod policy;
 mod time;
@@ -115,7 +117,7 @@ impl CurrentRuntime {
 
 /// The run queue for scheduling classes (the main trait). Scheduling classes
 /// should implement this trait to function as expected.
-trait SchedClassRq: Send + fmt::Debug {
+trait SchedClassRq: Send + Debug {
     /// Enqueues a task into the run queue.
     fn enqueue(&mut self, task: Arc<Task>, flags: Option<EnqueueFlags>);
 

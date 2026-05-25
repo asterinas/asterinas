@@ -17,22 +17,14 @@
 //! The `demo_set` is initially empty. One can create directories to trigger creating an in-kernel object
 //! that represents a new demo. Each demo has two attributes called `attr_a` and `attr_b`.
 
-use alloc::{string::ToString, sync::Arc};
-use core::{
-    fmt::Debug,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_systree::{
     BranchNodeFields, Error, NormalNodeFields, Result, SysAttrSet, SysAttrSetBuilder, SysObj,
     SysPerms, SysStr, inherit_sys_branch_node, inherit_sys_leaf_node,
 };
 use inherit_methods_macro::inherit_methods;
-use ostd::{
-    mm::{VmReader, VmWriter},
-    prelude::ktest,
-};
-use ostd_pod::IntoBytes;
+use ostd::prelude::ktest;
 use spin::Once;
 
 use crate::{
@@ -40,6 +32,7 @@ use crate::{
         file::{InodeType, mkmod},
         vfs::file_system::FileSystem,
     },
+    prelude::*,
     time::clocks::init_for_ktest as time_init_for_ktest,
 };
 

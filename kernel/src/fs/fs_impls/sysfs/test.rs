@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{borrow::Cow, format, vec};
-use core::fmt::Debug;
+use alloc::{borrow::Cow, format};
 
 use aster_systree::{
     BranchNodeFields, Error as SysTreeError, NormalNodeFields, Result as SysTreeResult,

@@ -16,7 +16,7 @@ use core::{
 };
 
 use device_id::DeviceId;
-use ostd::mm::{HasSize, VmIo};
+use ostd::mm::VmIo;
 use ostd_pod::{FromZeros, Pod};
 
 use super::{

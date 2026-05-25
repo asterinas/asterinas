@@ -7,9 +7,9 @@ use core::{alloc::AllocError, ptr::NonNull};
 use crate::{
     impl_frame_meta_for,
     mm::{
-        FrameAllocOptions, PAGE_SIZE, Paddr, Segment, Vaddr, kspace::LINEAR_MAPPING_BASE_VADDR,
-        paddr_to_vaddr,
+        FrameAllocOptions, PAGE_SIZE, Segment, kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr,
     },
+    prelude::*,
 };
 
 /// A slot that will become or has been turned from a heap allocation.
@@ -111,7 +111,7 @@ impl HeapSlot {
             crate::error!(
                 "Deallocating a large slot that was not allocated with `HeapSlot::alloc_large`"
             );
-            crate::panic::abort();
+            abort();
         };
 
         debug_assert_eq!(size % PAGE_SIZE, 0);

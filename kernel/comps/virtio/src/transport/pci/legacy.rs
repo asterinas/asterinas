@@ -7,11 +7,10 @@ use aster_pci::{cfg_space::BarAccess, common_device::PciCommonDevice};
 use aster_util::safe_ptr::SafePtr;
 use ostd::{
     bus::BusProbeError,
-    info,
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaCoherent},
-    warn,
+    prelude::*,
 };
 
 use crate::{

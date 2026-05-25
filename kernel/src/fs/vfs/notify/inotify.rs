@@ -6,7 +6,6 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use bitflags::bitflags;
 use hashbrown::HashMap;
 
 use crate::{

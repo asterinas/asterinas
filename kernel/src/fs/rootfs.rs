@@ -2,7 +2,7 @@
 
 use cpio_decoder::{CpioDecoder, CpioEntry, FileMetadata, FileType};
 use device_id::{DeviceId, MajorId, MinorId};
-use lending_iterator::LendingIterator;
+use lending_iterator::prelude::LendingIterator;
 use libflate::gzip::Decoder as GZipDecoder;
 use no_std_io2::io::{Cursor, Read};
 use ostd::boot::boot_info;

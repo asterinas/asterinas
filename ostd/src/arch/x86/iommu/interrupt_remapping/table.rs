@@ -8,7 +8,8 @@ use int_to_c_enum::TryFromInt;
 
 use super::IrtEntryHandle;
 use crate::{
-    mm::{FrameAllocOptions, HasPaddr, PAGE_SIZE, Segment, io::util::HasVmReaderWriter},
+    mm::{FrameAllocOptions, PAGE_SIZE, Segment, io::util::HasVmReaderWriter},
+    prelude::*,
     sync::{LocalIrqDisabled, SpinLock},
 };
 

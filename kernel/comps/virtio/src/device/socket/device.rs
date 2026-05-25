@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use aster_softirq::BottomHalfDisabled;
 use ostd::{
     arch::trap::TrapFrame,
-    debug,
+    prelude::*,
     sync::{SpinLock, SpinLockGuard},
 };
 use spin::Once;

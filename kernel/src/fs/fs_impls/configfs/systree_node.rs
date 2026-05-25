@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::{Arc, Weak};
-use core::fmt::Debug;
-
 use aster_systree::{
     BranchNodeFields, Result, SysAttrSet, SysBranchNode, SysObj, SysPerms, SysStr,
     inherit_sys_branch_node,
 };
 use inherit_methods_macro::inherit_methods;
 use spin::Once;
+
+use crate::prelude::*;
 
 /// The `SysTree` node that represents the root node of the `ConfigFs`.
 #[derive(Debug)]

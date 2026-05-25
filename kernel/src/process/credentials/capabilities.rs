@@ -3,7 +3,8 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-use bitflags::bitflags;
+
+use crate::prelude::bitflags;
 
 bitflags! {
     /// Represents a set of Linux capabilities.

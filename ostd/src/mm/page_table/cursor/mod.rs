@@ -39,9 +39,10 @@ use super::{
 };
 use crate::{
     mm::{
-        PageProperty, Vaddr,
+        PageProperty,
         page_table::{PageTableNode, is_valid_range},
     },
+    prelude::*,
     sync::RcuDrop,
     task::atomic_mode::InAtomicMode,
 };

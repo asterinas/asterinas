@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::VecDeque, sync::Arc};
 use core::{
     array,
     num::NonZero,
@@ -8,7 +7,7 @@ use core::{
 };
 
 use aster_util::ranged_integer::RangedU8;
-use bitvec::{BitArr, bitarr};
+use bitvec::prelude::*;
 use ostd::{
     cpu::CpuId,
     task::{
@@ -18,7 +17,7 @@ use ostd::{
 };
 
 use super::{CurrentRuntime, SchedAttr, SchedClassRq, time::base_slice_clocks};
-use crate::thread::AsThread;
+use crate::{prelude::*, thread::AsThread};
 
 pub type RealTimePriority = RangedU8<1, 99>;
 
@@ -91,7 +90,7 @@ struct PrioArray {
     queue: [VecDeque<Arc<Task>>; 100],
 }
 
-impl core::fmt::Debug for PrioArray {
+impl Debug for PrioArray {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("PrioArray")
             .field_with("map", |f| {

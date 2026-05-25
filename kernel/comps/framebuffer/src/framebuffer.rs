@@ -3,10 +3,11 @@
 use alloc::{sync::Arc, vec::Vec};
 
 use ostd::{
-    Error, Result,
+    Error,
     boot::boot_info,
     io::IoMem,
-    mm::{CachePolicy, HasSize, VmIo},
+    mm::{CachePolicy, VmIo},
+    prelude::*,
     sync::Mutex,
 };
 use spin::Once;

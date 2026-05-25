@@ -9,8 +9,8 @@ use ostd::{
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaCoherent},
+    prelude::*,
     sync::RwLock,
-    warn,
 };
 
 use super::{

@@ -11,7 +11,7 @@ use aster_pci::{
 };
 use ostd::{
     bus::BusProbeError,
-    error, info,
+    prelude::*,
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
 };
 

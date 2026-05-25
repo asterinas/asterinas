@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::vec_deque::VecDeque, sync::Arc};
 use core::{
     fmt::Display,
     str::FromStr,
@@ -9,19 +8,18 @@ use core::{
 
 use aster_systree::{Error, Result, SysAttrSetBuilder, SysBranchNode, SysObj};
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-use bitflags::bitflags;
-use ostd::{
-    mm::{VmReader, VmWriter},
-    sync::Rcu,
-};
+use ostd::sync::Rcu;
 
-use crate::fs::cgroupfs::{
-    CgroupMembership, CgroupNode,
-    controller::{
-        cpu::CpuController, cpuset::CpuSetController, memory::MemoryController,
-        pids::PidsController,
+use crate::{
+    fs::cgroupfs::{
+        CgroupMembership, CgroupNode,
+        controller::{
+            cpu::CpuController, cpuset::CpuSetController, memory::MemoryController,
+            pids::PidsController,
+        },
+        systree_node::CgroupSysNode,
     },
-    systree_node::CgroupSysNode,
+    prelude::*,
 };
 
 pub(super) mod cpu;

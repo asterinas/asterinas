@@ -13,13 +13,16 @@ use x86_64::{
     structures::paging::PhysFrame,
 };
 
-use crate::mm::{
-    PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
-    dma::DmaDirection,
-    page_prop::{
-        CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
+use crate::{
+    mm::{
+        PAGE_SIZE, PagingConstsTrait, PagingLevel, PodOnce,
+        dma::DmaDirection,
+        page_prop::{
+            CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
+        },
+        page_table::{PteScalar, PteTrait},
     },
-    page_table::{PteScalar, PteTrait},
+    prelude::*,
 };
 
 mod pat;

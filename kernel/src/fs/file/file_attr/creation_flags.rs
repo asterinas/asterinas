@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use bitflags::bitflags;
+use crate::prelude::bitflags;
 
 bitflags! {
     pub struct CreationFlags: u32 {

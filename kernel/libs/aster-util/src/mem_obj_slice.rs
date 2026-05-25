@@ -12,10 +12,13 @@
 use alloc::sync::Arc;
 use core::{borrow::Borrow, fmt::Debug, ops::Range};
 
-use ostd::mm::{
-    HasDaddr, HasPaddr, HasSize, Infallible, VmReader, VmWriter,
-    dma::DmaStream,
-    io::util::{HasVmReaderWriter, VmReaderWriterResult},
+use ostd::{
+    mm::{
+        Daddr, HasDaddr, Infallible, VmReader, VmWriter,
+        dma::DmaStream,
+        io::util::{HasVmReaderWriter, VmReaderWriterResult},
+    },
+    prelude::*,
 };
 
 macro_rules! assert_in_range {
@@ -39,13 +42,13 @@ impl<MemObj: HasSize> HasSize for Slice<MemObj> {
 }
 
 impl<MemObj: HasSize + HasPaddr> HasPaddr for Slice<MemObj> {
-    fn paddr(&self) -> ostd::mm::Paddr {
+    fn paddr(&self) -> Paddr {
         self.mem_obj().paddr() + self.offset().start
     }
 }
 
 impl<MemObj: HasSize + HasDaddr> HasDaddr for Slice<MemObj> {
-    fn daddr(&self) -> ostd::mm::Daddr {
+    fn daddr(&self) -> Daddr {
         self.mem_obj().daddr() + self.offset().start
     }
 }
@@ -102,13 +105,13 @@ impl<MemObj: HasSize + HasVmReaderWriter<Types = VmReaderWriterResult>> HasVmRea
 {
     type Types = VmReaderWriterResult;
 
-    fn reader(&self) -> ostd::prelude::Result<VmReader<'_, Infallible>> {
+    fn reader(&self) -> Result<VmReader<'_, Infallible>> {
         let mut reader = self.mem_obj().reader()?;
         reader.skip(self.offset().start).limit(self.size());
         Ok(reader)
     }
 
-    fn writer(&self) -> ostd::prelude::Result<VmWriter<'_, Infallible>> {
+    fn writer(&self) -> Result<VmWriter<'_, Infallible>> {
         let mut writer = self.mem_obj().writer()?;
         writer.skip(self.offset().start).limit(self.size());
         Ok(writer)
@@ -123,7 +126,7 @@ impl<MemObj: HasSize + Borrow<Arc<DmaStream>>> Slice<MemObj> {
     ///
     /// The method will call [`DmaStream::sync_from_device`] with the offset
     /// range of this slice.
-    pub fn sync_from_device(&self) -> ostd::prelude::Result<()> {
+    pub fn sync_from_device(&self) -> Result<()> {
         self.mem_obj()
             .borrow()
             .sync_from_device(self.offset().clone())
@@ -133,7 +136,7 @@ impl<MemObj: HasSize + Borrow<Arc<DmaStream>>> Slice<MemObj> {
     ///
     /// The method will call [`DmaStream::sync_to_device`] with the offset
     /// range of this slice.
-    pub fn sync_to_device(&self) -> ostd::prelude::Result<()> {
+    pub fn sync_to_device(&self) -> Result<()> {
         self.mem_obj()
             .borrow()
             .sync_to_device(self.offset().clone())

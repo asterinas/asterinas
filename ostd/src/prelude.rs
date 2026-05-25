@@ -17,7 +17,7 @@ pub(crate) use alloc::{boxed::Box, sync::Arc, vec::Vec};
 pub use ostd_macros::ktest;
 
 pub use crate::{
-    alert, crit, debug, early_print as print, early_println as println, emerg, error, info,
+    alert, crit, debug, early_print, early_println, emerg, error, info,
     mm::{HasPaddr, HasSize, Paddr, Vaddr},
     notice,
     panic::abort,

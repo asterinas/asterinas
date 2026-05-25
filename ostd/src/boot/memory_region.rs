@@ -6,7 +6,10 @@ use core::ops::Deref;
 
 use align_ext::AlignExt;
 
-use crate::mm::{PAGE_SIZE, Paddr, Vaddr, kspace::kernel_loaded_offset};
+use crate::{
+    mm::{PAGE_SIZE, kspace::kernel_loaded_offset},
+    prelude::*,
+};
 
 /// The type of initial memory regions that are needed for the kernel.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

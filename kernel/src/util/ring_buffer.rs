@@ -122,8 +122,6 @@ impl<R: Deref<Target = RingBuffer<u8>>> ConsumerU8Ext for Consumer<u8, R> {
 
 #[cfg(ktest)]
 mod test {
-    use alloc::vec;
-
     use ostd::prelude::*;
 
     use super::*;

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, vec, vec::Vec};
-
 use aster_input::event_type_codes::KeyCode;
 use spin::Once;
 
-use crate::device::tty::vt::{
-    VtIndex,
-    keyboard::{CursorKey, ModifierKey, ModifierKeyFlags, NumpadKey},
+use crate::{
+    device::tty::vt::{
+        VtIndex,
+        keyboard::{CursorKey, ModifierKey, ModifierKeyFlags, NumpadKey},
+    },
+    prelude::*,
 };
 
 /// The symbolic representation of a key under a given modifier state.

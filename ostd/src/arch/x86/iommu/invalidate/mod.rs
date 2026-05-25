@@ -4,7 +4,7 @@ use queue::Queue;
 use spin::Once;
 
 use super::registers::{ExtendedCapabilityFlags, IOMMU_REGS};
-use crate::{info, sync::SpinLock, warn};
+use crate::{prelude::*, sync::SpinLock};
 
 pub mod descriptor;
 pub mod queue;

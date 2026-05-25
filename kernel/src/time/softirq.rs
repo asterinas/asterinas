@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, vec, vec::Vec};
-
 use aster_softirq::{SoftIrqLine, softirq_id::TIMER_SOFTIRQ_ID};
 use ostd::{sync::RcuOption, timer};
+
+use crate::prelude::*;
 
 #[expect(clippy::type_complexity)]
 static TIMER_SOFTIRQ_CALLBACKS: RcuOption<Box<Vec<fn()>>> = RcuOption::new_none();

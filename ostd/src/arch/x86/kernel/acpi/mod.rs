@@ -23,9 +23,8 @@ use spin::Once;
 
 use crate::{
     boot::{self, BootloaderAcpiArg},
-    info,
     mm::paddr_to_vaddr,
-    warn,
+    prelude::*,
 };
 
 #[derive(Clone, Debug)]

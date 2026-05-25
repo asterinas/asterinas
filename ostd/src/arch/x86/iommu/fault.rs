@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::vec::Vec;
 use core::{fmt::Debug, ptr::NonNull};
 
 use bitflags::bitflags;
@@ -10,8 +9,8 @@ use volatile::{VolatileRef, access::ReadWrite};
 use super::registers::Capability;
 use crate::{
     arch::trap::TrapFrame,
-    error, info,
     irq::IrqLine,
+    prelude::*,
     sync::{LocalIrqDisabled, SpinLock},
 };
 

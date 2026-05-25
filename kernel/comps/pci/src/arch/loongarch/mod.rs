@@ -6,9 +6,7 @@ use core::{alloc::Layout, ops::RangeInclusive};
 
 use align_ext::AlignExt;
 use fdt::node::FdtNode;
-use ostd::{
-    Error, arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, prelude::Paddr, sync::SpinLock, warn,
-};
+use ostd::{Error, arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, prelude::*, sync::SpinLock};
 use spin::Once;
 
 use crate::PciDeviceLocation;

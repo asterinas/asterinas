@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_systree::{Error, MAX_ATTR_SIZE, Result, SysAttrSetBuilder, SysPerms, SysStr};
 use aster_util::printer::VmPrinter;
-use ostd::mm::{VmReader, VmWriter};
 
 use super::TryChargeError;
-use crate::{process::posix_thread::PID_MAX, util::ReadCString};
+use crate::{prelude::*, process::posix_thread::PID_MAX};
 
 /// A sub-controller responsible for PID resource management in the cgroup subsystem.
 ///

@@ -2,7 +2,6 @@
 
 use core::time::Duration;
 
-use int_to_c_enum::TryFromInt;
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;

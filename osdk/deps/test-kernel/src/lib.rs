@@ -16,10 +16,10 @@ use alloc::{boxed::Box, collections::BTreeSet, string::String, vec::Vec};
 use core::{any::Any, format_args};
 
 use ostd::{
-    early_print, early_println,
     ktest::{
         KtestError, KtestItem, KtestIter, get_ktest_crate_whitelist, get_ktest_test_whitelist,
     },
+    prelude::*,
 };
 use owo_colors::OwoColorize;
 use path::{KtestPath, SuffixTrie};
@@ -73,7 +73,7 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     // If not caught, abort the kernel.
     early_println!("An uncaught panic occurred: {:#?}", throw_info);
 
-    ostd::prelude::abort();
+    abort();
 }
 
 /// Run all the tests registered by `#[ktest]` in the `.ktest_array` section.

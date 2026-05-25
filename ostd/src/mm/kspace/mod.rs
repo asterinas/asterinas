@@ -46,7 +46,7 @@ use spin::Once;
 mod test;
 
 use super::{
-    Frame, HasSize, Paddr, PagingConstsTrait, Vaddr,
+    Frame, PagingConstsTrait,
     frame::{
         Segment,
         meta::{AnyFrameMeta, MetaPageMeta, mapping},
@@ -57,8 +57,9 @@ use super::{
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
-    const_assert, info,
-    mm::{HasPaddr, PAGE_SIZE, PagingLevel, frame::FrameRef, page_table::largest_pages},
+    const_assert,
+    mm::{PAGE_SIZE, PagingLevel, frame::FrameRef, page_table::largest_pages},
+    prelude::*,
     task::disable_preempt,
 };
 

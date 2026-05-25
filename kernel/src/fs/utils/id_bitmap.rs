@@ -3,11 +3,7 @@
 use core::ops::Range;
 
 use aster_block::BLOCK_SIZE;
-use bitvec::{
-    order::Lsb0,
-    slice::BitSlice,
-    view::{AsBits, AsMutBits},
-};
+use bitvec::prelude::*;
 
 use crate::prelude::*;
 
@@ -199,12 +195,9 @@ impl Debug for IdBitmap {
 
 #[cfg(ktest)]
 mod test {
-    use alloc::vec;
-
-    use aster_block::BLOCK_SIZE;
     use ostd::prelude::ktest;
 
-    use super::IdBitmap;
+    use super::*;
 
     #[ktest]
     fn bitmap_alloc_out_of_bounds() {

@@ -8,10 +8,10 @@ use bitvec::prelude::{BitVec, bitvec};
 
 use super::{AnyStorage, CpuLocal};
 use crate::{
-    Result,
     cpu::{CpuId, PinCurrentCpu, all_cpus, num_cpus},
     irq::DisabledLocalIrqGuard,
-    mm::{FrameAllocOptions, HasPaddr, PAGE_SIZE, Segment, Vaddr, paddr_to_vaddr},
+    mm::{FrameAllocOptions, PAGE_SIZE, Segment, paddr_to_vaddr},
+    prelude::*,
     util::id_set::Id,
 };
 

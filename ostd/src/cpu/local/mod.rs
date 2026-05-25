@@ -56,7 +56,8 @@ use static_cpu_local::StaticStorage;
 use super::CpuId;
 use crate::{
     irq::DisabledLocalIrqGuard,
-    mm::{PAGE_SIZE, Paddr, frame::allocator, paddr_to_vaddr},
+    mm::{PAGE_SIZE, frame::allocator, paddr_to_vaddr},
+    prelude::*,
     util::id_set::Id,
 };
 
@@ -314,7 +315,7 @@ mod is_used {
 mod test {
     use core::cell::RefCell;
 
-    use ostd_macros::ktest;
+    use crate::prelude::ktest;
 
     #[ktest]
     fn cpu_local() {

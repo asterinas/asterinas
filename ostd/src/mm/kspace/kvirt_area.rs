@@ -9,11 +9,12 @@ use super::{KERNEL_PAGE_TABLE, KernelPtConfig, MappedItem};
 use crate::{
     irq,
     mm::{
-        HasSize, PAGE_SIZE, Paddr, Split, Vaddr,
+        PAGE_SIZE, Split,
         frame::{Frame, meta::AnyFrameMeta},
         page_prop::PageProperty,
         page_table::largest_pages,
     },
+    prelude::*,
 };
 
 mod allocator {

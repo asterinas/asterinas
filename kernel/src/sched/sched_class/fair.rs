@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::BinaryHeap, sync::Arc};
+use alloc::collections::BinaryHeap;
 use core::{
     cmp::{self, Reverse},
     sync::atomic::{AtomicU64, Ordering},
@@ -8,7 +8,6 @@ use core::{
 
 use ostd::{
     cpu::{CpuId, num_cpus},
-    sync::SpinLock,
     task::{
         Task,
         scheduler::{EnqueueFlags, UpdateFlags},
@@ -20,6 +19,7 @@ use super::{
     time::{base_slice_clocks, min_period_clocks},
 };
 use crate::{
+    prelude::*,
     sched::nice::{Nice, NiceValue},
     thread::AsThread,
 };
@@ -183,7 +183,7 @@ impl FairAttr {
 /// run queue implemented by `BTreeSet` in the `FairClassRq`.
 struct FairQueueItem(Arc<Task>, u64);
 
-impl core::fmt::Debug for FairQueueItem {
+impl Debug for FairQueueItem {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:?}", self.key())
     }

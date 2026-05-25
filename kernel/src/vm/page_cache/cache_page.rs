@@ -9,7 +9,8 @@ use core::{
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use ostd::{
     impl_untyped_frame_meta_for,
-    mm::{Frame, FrameAllocOptions, HasPaddr},
+    mm::{Frame, FrameAllocOptions},
+    prelude::HasPaddr,
     sync::WaitQueue,
 };
 

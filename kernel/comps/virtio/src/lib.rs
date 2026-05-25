@@ -19,7 +19,7 @@ use device::{
     entropy::device::EntropyDevice, input::device::InputDevice, network::device::NetworkDevice,
     socket::device::SocketDevice,
 };
-use ostd::{error, warn};
+use ostd::prelude::*;
 use spin::Once;
 use transport::{DeviceStatus, mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER};
 

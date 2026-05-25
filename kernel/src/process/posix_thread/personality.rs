@@ -2,9 +2,8 @@
 
 use core::sync::atomic::Ordering;
 
-use bitflags::bitflags;
-
 use super::PosixThread;
+use crate::prelude::*;
 
 bitflags! {
     pub struct Personality: u32 {

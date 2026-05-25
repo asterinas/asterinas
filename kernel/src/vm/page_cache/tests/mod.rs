@@ -3,8 +3,6 @@
 //! Regression tests for the page-cache subsystem in the
 //! concurrency scenarios.
 
-use alloc::vec;
-
 use ostd::{mm::VmIo, prelude::ktest};
 
 use self::utils::{IoCompletion, IoKind, MockPageCacheBackend, wait_until};

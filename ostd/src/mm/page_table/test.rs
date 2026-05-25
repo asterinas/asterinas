@@ -10,7 +10,6 @@ use crate::{
         page_prop::{CachePolicy, PageFlags},
         vm_space::VmItem,
     },
-    prelude::*,
     task::disable_preempt,
 };
 
