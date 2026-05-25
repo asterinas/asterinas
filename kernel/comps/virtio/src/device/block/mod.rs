@@ -200,7 +200,7 @@ impl ConfigManager<VirtioBlockConfig> {
 
 impl VirtioBlockFeature {
     pub(self) fn new(transport: &dyn VirtioTransport) -> Self {
-        let support_flush = transport.read_device_features() & BlockFeatures::FLUSH.bits() == 1;
+        let support_flush = (transport.read_device_features() & BlockFeatures::FLUSH.bits()) != 0;
         VirtioBlockFeature { support_flush }
     }
 }
