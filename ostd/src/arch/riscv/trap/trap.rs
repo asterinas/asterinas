@@ -10,6 +10,7 @@
 // We make the following new changes:
 // * Implement the `trap_handler` of Asterinas.
 // * Concatenate multiple `global_asm!` statements.
+// * Remove riscv32 code.
 //
 // These changes are released under the following license:
 //
@@ -23,16 +24,6 @@ use crate::arch::cpu::{
 };
 
 global_asm!(
-    #[cfg(target_arch = "riscv32")]
-    r"
-    .equ XLENB, 4
-    .macro LOAD_SP a1, a2
-        lw \a1, \a2*XLENB(sp)
-    .endm
-    .macro STORE_SP a1, a2
-        sw \a1, \a2*XLENB(sp)
-    .endm
-    ",
     #[cfg(target_arch = "riscv64")]
     r"
     .equ XLENB, 8
