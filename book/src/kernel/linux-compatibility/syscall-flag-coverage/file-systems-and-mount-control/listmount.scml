@@ -1,0 +1,8 @@
+// List the unique IDs of a mount's strict descendants in the current
+// mount namespace.
+listmount(
+    req,
+    mnt_ids,
+    nr_mnt_ids,
+    flags = LISTMOUNT_REVERSE
+);

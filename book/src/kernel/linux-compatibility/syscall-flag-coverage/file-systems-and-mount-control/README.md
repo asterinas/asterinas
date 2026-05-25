@@ -4,8 +4,8 @@
 Put system calls such as
 mount, umount2, pivot_root, statfs, fstatfs, truncate, ftruncate, fsync, 
 fdatasync, sync, syncfs, sync_file_range, open_tree, move_mount, fsopen,
-fsconfig, fsmount, fspick, inotify_init, inotify_init1, inotify_add_watch,
-inotify_rm_watch
+fsconfig, fsmount, fspick, listmount, inotify_init, inotify_init1,
+inotify_add_watch, inotify_rm_watch
 under this category.
 -->
 
@@ -116,6 +116,34 @@ Unsupported flags:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/move_mount.2.html).
+
+## Mount queries
+
+### `listmount`
+
+Supported functionality in SCML:
+
+```c
+{{#include listmount.scml}}
+```
+
+The `req` argument is a `struct mnt_id_req`:
+* `mnt_id` is the parent mount's `unique_id`,
+  or `LSMT_ROOT` (`(uint64_t)-1`) for the current namespace's root mount.
+* `param` is a pagination cursor;
+  only descendants with `unique_id` strictly greater than `param` are returned
+  (strictly less than `param` when `LISTMOUNT_REVERSE` is set).
+* `size` must equal `MNT_ID_REQ_SIZE_VER0` (24);
+  future struct versions are not yet accepted.
+* `spare` must be `0`.
+
+Limitations:
+* Bind-mount visibility filtering (Linux's `is_path_reachable`)
+  is not yet modeled;
+  descendancy is determined by the strict mount parent chain.
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/listmount.2.html).
 
 ## Event notifications
 

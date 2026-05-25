@@ -69,6 +69,7 @@ macro_rules! import_generic_syscall_entries {
             kill::sys_kill,
             link::sys_linkat,
             listen::sys_listen,
+            listmount::sys_listmount,
             listxattr::{sys_flistxattr, sys_listxattr, sys_llistxattr},
             lseek::sys_lseek,
             madvise::sys_madvise,
@@ -414,6 +415,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_FACCESSAT2 = 439             => sys_faccessat2(args[..4]);
             SYS_EPOLL_PWAIT2 = 441           => sys_epoll_pwait2(args[..6]);
             SYS_FCHMODAT2 = 452              => sys_fchmodat2(args[..4]);
+            SYS_LISTMOUNT = 458              => sys_listmount(args[..4]);
             // Architecture-specific syscalls
             $( $name = $num => $handler $args );*
         }

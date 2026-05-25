@@ -6,7 +6,7 @@ use core::time::Duration;
 
 pub(in crate::fs) use dentry::Dentry;
 use inherit_methods_macro::inherit_methods;
-pub use mount::{Mount, MountPropType, PerMountFlags};
+pub use mount::{MNT_UNIQUE_ID_MIN, Mount, MountPropType, PerMountFlags};
 use mount::{MountNsFileCopying, MountTopology};
 pub use mount_namespace::MountNamespace;
 pub use resolver::{
