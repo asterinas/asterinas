@@ -59,11 +59,11 @@ pub fn main() {
         OsdkSubcommand::Test(test_args) => {
             execute_test_command(&load_config(&test_args.common_args), test_args);
         }
-        OsdkSubcommand::Check(args) => execute_forwarded_command("check", &args.args, args.ktests),
-        OsdkSubcommand::Clippy(args) => {
-            execute_forwarded_command("clippy", &args.args, args.ktests)
+        OsdkSubcommand::Check(args) => execute_forwarded_command("check", args),
+        OsdkSubcommand::Clippy(args) => execute_forwarded_command("clippy", args),
+        OsdkSubcommand::Doc(args) => {
+            execute_forwarded_command("doc", &args.to_doc_subcommand_args())
         }
-        OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", &args.args, false),
     }
 }
 
@@ -108,6 +108,11 @@ pub struct KtestWithForwardedArguments {
     #[arg(long, help = "Check all targets that have `ktest = true` set")]
     pub ktests: bool,
     #[arg(
+        long,
+        help = "Check kernel-specific code via KLint, only companied with `cargo osdk check`"
+    )]
+    pub klint: bool,
+    #[arg(
         help = "The full set of Cargo arguments",
         trailing_var_arg = true,
         allow_hyphen_values = true
@@ -123,6 +128,16 @@ pub struct ForwardedArguments {
         allow_hyphen_values = true
     )]
     pub args: Vec<String>,
+}
+
+impl ForwardedArguments {
+    fn to_doc_subcommand_args(&self) -> KtestWithForwardedArguments {
+        KtestWithForwardedArguments {
+            ktests: false,
+            klint: false,
+            args: self.args.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
