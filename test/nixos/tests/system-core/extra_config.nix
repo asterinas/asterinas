@@ -4,6 +4,7 @@
   environment.systemPackages = with pkgs; [
     fish
     zsh
+    busybox
     fastfetch
     lsof
     ncdu

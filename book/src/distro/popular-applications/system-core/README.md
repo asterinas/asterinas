@@ -8,6 +8,19 @@ This category covers essential system components: shells, init systems, system m
 
 [Bash](https://www.gnu.org/software/bash/) is the GNU Project's shell and command language, enabled by default in Asterinas NixOS.
 
+#### Installation
+
+```nix
+environment.systemPackages = [ pkgs.bash ];
+```
+
+#### Verified Usage
+
+```bash
+# Execute a script
+bash script.sh
+```
+
 ### fish
 
 [fish](https://fishshell.com/) is a user-friendly shell with autosuggestions and web-based configuration.
@@ -48,9 +61,45 @@ zsh script.sh
 
 [BusyBox](https://busybox.net/) provides many common UNIX utilities in a single small executable, enabled by default in `initramfs` of Asterinas NixOS.
 
+#### Installation
+
+```nix
+environment.systemPackages = [ pkgs.busybox ];
+```
+
+#### Verified Usage
+
+```bash
+# List all applets provided by BusyBox
+busybox
+
+# Run a BusyBox applet explicitly
+busybox ls -al /
+
+# Show help for a specific applet
+busybox cat --help
+```
+
 ### systemd
 
 [systemd](https://systemd.io/) is a software suite for system and service management, enabled by default in `rootfs` of Asterinas NixOS.
+
+#### Installation
+
+```nix
+# Asterinas uses a patched `systemd` package.
+systemd.package = pkgs.aster_systemd;
+```
+
+#### Verified Usage
+
+```bash
+# Show overall system status
+systemctl --no-pager status
+
+# List running services
+systemctl --no-pager list-units --type=service --state=running
+```
 
 ## System Monitoring
 
