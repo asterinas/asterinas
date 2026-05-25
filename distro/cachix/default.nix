@@ -16,6 +16,7 @@ let
       podman
       podman.man
       aster_systemd
+      jtreg
     ] ++ (with nixos.config; [
       system.build.toplevel
       systemd.package

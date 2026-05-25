@@ -1,0 +1,150 @@
+From 7a8bc3c2d55f1bc4a4b472a4de2ac6d9d7690001 Mon Sep 17 00:00:00 2001
+From: Qingsong Chen <changxian.cqs@antgroup.com>
+Date: Mon, 2 Mar 2026 03:26:07 +0000
+Subject: [PATCH 1/2] Make jtreg use tools from PATH
+
+`jtreg` hardcodes many helper tools as `/bin/*` or `/usr/bin/*`. Those
+paths do not exist in the Nix build sandbox, so the build fails before
+it can produce the image. Use tool names instead and rely on `PATH`,
+which the Nix build environment already populates.
+---
+ make/Defs.gmk  | 80 +++++++++++++++++++++++---------------------------
+ make/Rules.gmk |  2 +-
+ make/jtreg.gmk |  2 +-
+ 3 files changed, 39 insertions(+), 45 deletions(-)
+
+diff --git a/make/Defs.gmk b/make/Defs.gmk
+index 9089e9c7d..b37c5ffd4 100644
+--- a/make/Defs.gmk
++++ b/make/Defs.gmk
+@@ -134,49 +134,31 @@ REGTEST_TOOL_JAVAC_OPTIONS = \
+ 
+ #----- Unix commands
+ 
+-AWK     = /usr/bin/awk
+-CAT 	= /bin/cat
+-CHMOD 	= /bin/chmod
+-CP 	= /bin/cp
+-DIFF 	= /usr/bin/diff
+-ECHO	= /bin/echo
+-FIND	= /usr/bin/find
+-GREP 	:= $(shell if [ -r /bin/grep ]; then echo /bin/grep ; else echo /usr/bin/grep ; fi )
+-LN	= /bin/ln
+-LS	= /bin/ls
+-MKDIR 	= /bin/mkdir
+-MV 	= /bin/mv
+-PANDOC  := $(shell if [ -r /usr/bin/pandoc ]; then \
+-		echo /usr/bin/pandoc ; \
+-	elif [ -r /usr/local/bin/pandoc ]; then \
+-		echo /usr/local/bin/pandoc ; \
+-	elif [ -r /opt/homebrew/bin/tidy ]; then \
+-		echo /opt/homebrew/bin/pandoc ; \
+-	else \
+-		echo /bin/echo "pandoc not available" ; \
+-	fi )
+-PERL	= /usr/bin/perl
+-PRINTF  = /usr/bin/printf
+-RM 	= /bin/rm -rf
+-SED 	:= $(shell if [ -r /bin/sed ]; then echo /bin/sed ; else echo /usr/bin/sed ; fi )
+-SH 	= /bin/sh
+-SORT    = /usr/bin/sort
+-TEST 	= /usr/bin/test
+-ifeq ($(SYSTEM_UNAME), Darwin)
+-TIDY 	:= $(shell if [ -r /usr/local/bin/tidy ]; then \
+-		echo /usr/local/bin/tidy ; \
+-	elif [ -r /opt/homebrew/bin/tidy ]; then \
+-		echo /opt/homebrew/bin/tidy ; \
+-	else \
+-		echo /usr/bin/tidy ; \
+-	fi )
+-else
+-TIDY	= /usr/bin/tidy
+-endif
+-TOUCH 	= /usr/bin/touch
+-UNZIP 	= /usr/bin/unzip
+-WC 	= /usr/bin/wc
+-ZIP 	= /usr/bin/zip
++AWK     = awk
++CAT 	= cat
++CHMOD 	= chmod
++CP 	= cp
++DIFF 	= diff
++ECHO	= echo
++FIND	= find
++GREP 	:= grep
++LN	= ln
++LS	= ls
++MKDIR 	= mkdir
++MV 	= mv
++PANDOC  := pandoc
++PERL	= perl
++PRINTF  = printf
++RM 	= rm -rf
++SED 	:= sed
++SH 	= sh
++SORT    = sort
++TEST 	= test
++TIDY	= tidy
++TOUCH 	= touch
++UNZIP 	= unzip
++WC 	= wc
++ZIP 	= zip
+ 
+ 
+ #----------------------------------------------------------------------
+@@ -212,12 +194,12 @@ BUILD_MILESTONE = dev
+ BUILD_NUMBER = b00
+ 
+ # don't eval dates here directly, because that leads to unstable builds
+-#BUILD_YEAR:sh = /bin/date +"%Y"
+-BUILD_YEAR_CMD = /bin/date '+%Y'
+-#BUILD_DOCDATE:sh = /bin/date +"%B %d, %Y"
+-BUILD_DOCDATE_CMD = /bin/date  +'%B %d, %Y'
+-#BUILD_ZIPDATE:sh = /bin/date '+%d %h %Y'
+-BUILD_ZIPDATE_CMD = /bin/date  '+%d %h %Y'
++#BUILD_YEAR:sh = date +"%Y"
++BUILD_YEAR_CMD = date '+%Y'
++#BUILD_DOCDATE:sh = date +"%B %d, %Y"
++BUILD_DOCDATE_CMD = date  +'%B %d, %Y'
++#BUILD_ZIPDATE:sh = date '+%d %h %Y'
++BUILD_ZIPDATE_CMD = date  '+%d %h %Y'
+ BUILD_NONFCS_MILESTONE_sh = echo $(BUILD_MILESTONE) | sed -e 's/[fF][cC][sS]//'
+ BUILD_NONFCS_MILESTONE = $(BUILD_NONFCS_MILESTONE_sh:sh)
+ 
+@@ -226,7 +208,7 @@ ZIPSFX_VERSION_sh = echo '$(BUILD_VERSION)' | sed -e 's|\([^0-9][^0-9]*\)|_|g'
+ ZIPSFX_MILESTONE_sh = echo '$(BUILD_MILESTONE)'
+ ZIPSFX_BUILD_sh = echo '$(BUILD_NUMBER)'
+ ZIPSFX_NEWBUILD_sh = echo '$(BUILD_NUMBER)' | sed -e 's|[^[0-9]||g' | xargs printf "%d"
+-ZIPSFX_DATE_sh = echo "`$(BUILD_ZIPDATE_CMD)`" | /usr/bin/tr -s '[A-Z] ' '[a-z]_'
++ZIPSFX_DATE_sh = echo "`$(BUILD_ZIPDATE_CMD)`" | tr -s '[A-Z] ' '[a-z]_'
+ 
+ VERBOSE_ZIP_SUFFIX = $(shell $(ZIPSFX_VERSION_sh))-$(shell $(ZIPSFX_MILESTONE_sh))-bin-$(shell $(ZIPSFX_BUILD_sh))-$(shell $(ZIPSFX_DATE_sh))
+ 
+diff --git a/make/Rules.gmk b/make/Rules.gmk
+index 1a9a5601e..c39742150 100644
+--- a/make/Rules.gmk
++++ b/make/Rules.gmk
+@@ -73,7 +73,7 @@ $(IMAGES_DIR)/%.jar: pkgsToFiles.sh
+ 	  echo "$(@F:%.jar=%)-Build: $(BUILD_NUMBER)" ; \
+ 	  echo "$(@F:%.jar=%)-BuildJavaVersion: `$(JDKJAVA) -fullversion 2>&1 | awk '{print $$NF}'  | \
+ 		sed -e 's|^"\(.*\)"$$|Java(TM) 2 SDK, Version \1|'`" ; \
+-	  echo "$(@F:%.jar=%)-BuildDate: `/bin/date +'%B %d, %Y'`" ; \
++	  echo "$(@F:%.jar=%)-BuildDate: `date +'%B %d, %Y'`" ; \
+ 	) \
+ 		> $(@:$(IMAGES_DIR)/%.jar=$(BUILDDIR)/jarData/%/manifest.txt)
+ 	sh pkgsToFiles.sh $(CLASSDIR) $($(@F:%.jar=PKGS.JAR.%)) > $(@:$(IMAGES_DIR)/%.jar=$(BUILDDIR)/jarData/%/includes.txt)
+diff --git a/make/jtreg.gmk b/make/jtreg.gmk
+index 5de111727..1e8f8fd27 100644
+--- a/make/jtreg.gmk
++++ b/make/jtreg.gmk
+@@ -344,7 +344,7 @@ ID_COMMAND := $(PRINTF) "git:%s%s\n" \
+ 
+ $(JTREG_IMAGEDIR)/release:
+ 	echo "JTREG_VERSION=$(BUILD_VERSION) $(BUILD_NUMBER)" > $@
+-	echo "BUILD_DATE=`/bin/date +'%B %d, %Y'`" >> $@
++	echo "BUILD_DATE=`date +'%B %d, %Y'`" >> $@
+ 	if [ -r $(TOPDIR)/.git ]; then \
+ 	    echo "SOURCE=$$($(ID_COMMAND))" >> $@ ; \
+ 	elif [ -n "$(SRCREV)" -a -r $(SRCREV) ]; then \
+-- 
+2.43.0
