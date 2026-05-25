@@ -4,8 +4,8 @@
 
 use aster_network::{RxBuffer, TxBuffer, TxBufferBuilder};
 use ostd::{
-    Result,
     mm::{Infallible, VmReader, VmWriter},
+    prelude::*,
 };
 
 use crate::device::socket::{

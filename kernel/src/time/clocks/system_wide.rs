@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::time::Duration;
 
 use aster_time::read_monotonic_time;
-use ostd::{cpu::PinCurrentCpu, cpu_local, sync::SpinLock, task::disable_preempt, timer::Jiffies};
+use ostd::{cpu::PinCurrentCpu, cpu_local, task::disable_preempt, timer::Jiffies};
 use paste::paste;
 use spin::Once;
 
-use crate::time::{
-    self, Clock, SystemTime, system_time::START_TIME_AS_DURATION, timer::TimerManager,
+use crate::{
+    prelude::*,
+    time::{self, SystemTime, system_time::START_TIME_AS_DURATION, timer::TimerManager},
 };
 
 /// The Clock that reads the jiffies, and turn the counter into `Duration`.

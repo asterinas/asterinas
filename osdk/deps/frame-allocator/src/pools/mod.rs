@@ -12,7 +12,7 @@ use core::{
 use ostd::{
     cpu_local,
     irq::DisabledLocalIrqGuard,
-    mm::Paddr,
+    prelude::*,
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
 };
 

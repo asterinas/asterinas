@@ -5,7 +5,7 @@
 use core::ops::Range;
 
 use bus::MmioBus;
-use ostd::{debug, io::IoMem, irq::IrqLine, sync::SpinLock};
+use ostd::{io::IoMem, irq::IrqLine, prelude::*, sync::SpinLock};
 
 use crate::transport::mmio::bus::common_device::{
     MmioCommonDevice, mmio_check_magic, mmio_read_device_id,
@@ -48,7 +48,7 @@ fn try_register_mmio_device<F>(
     map_irq_line: F,
 ) -> Result<(), MmioRegisterError>
 where
-    F: FnOnce(IrqLine) -> ostd::Result<arch::MappedIrqLine>,
+    F: FnOnce(IrqLine) -> Result<arch::MappedIrqLine>,
 {
     let start_addr = mmio_range.start;
     let Ok(io_mem) = IoMem::acquire(mmio_range) else {

@@ -12,20 +12,18 @@
 //! ([`Vmo`]) that encapsulates both the data and the vDSO routines. The VMO is intended to be
 //! mapped into the address space of every user space process for efficient access.
 
-use alloc::sync::Arc;
 use core::{mem::ManuallyDrop, time::Duration};
 
 use aster_time::{Instant, read_monotonic_time};
 use aster_util::coeff::Coeff;
 use ostd::{
     const_assert,
-    mm::{PAGE_SIZE, UFrame, VmIo, VmIoOnce, VmReader},
-    sync::SpinLock,
+    mm::{UFrame, VmIo, VmIoOnce},
 };
-use ostd_pod::IntoBytes;
 use spin::Once;
 
 use crate::{
+    prelude::*,
     syscall::ClockId,
     time::{
         START_TIME, SystemTime,

@@ -2,10 +2,13 @@
 
 use core::{marker::PhantomData, ops::Range};
 
-use crate::mm::{
-    Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce,
-    page_prop::{CachePolicy, PageFlags, PageTableFlags, PrivilegedPageFlags as PrivFlags},
-    page_table::{PageTableConfig, PteScalar, PteTrait},
+use crate::{
+    mm::{
+        PageProperty, PagingConstsTrait, PagingLevel, PodOnce,
+        page_prop::{CachePolicy, PageFlags, PageTableFlags, PrivilegedPageFlags as PrivFlags},
+        page_table::{PageTableConfig, PteScalar, PteTrait},
+    },
+    prelude::*,
 };
 
 /// The page table used by iommu maps the device address

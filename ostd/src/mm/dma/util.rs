@@ -8,11 +8,12 @@ use crate::{
     cpu::{AtomicCpuSet, CpuSet},
     impl_frame_meta_for, irq,
     mm::{
-        CachePolicy, Daddr, FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, Paddr, PageFlags,
-        PageProperty, PrivilegedPageFlags, Segment,
+        CachePolicy, Daddr, FrameAllocOptions, PAGE_SIZE, PageFlags, PageProperty,
+        PrivilegedPageFlags, Segment,
         kspace::kvirt_area::KVirtArea,
         tlb::{TlbFlushOp, TlbFlusher},
     },
+    prelude::*,
     task::disable_preempt,
 };
 #[cfg(any(debug_assertions, all(target_arch = "x86_64", feature = "cvm_guest")))]
@@ -190,7 +191,7 @@ pub(super) unsafe fn unprepare_dma(pa_range: &Range<Paddr>, daddr: Option<Daddr>
 /// outlives the following [`dealloc_protect_physical_range()`] call.
 #[cfg(any(debug_assertions, all(target_arch = "x86_64", feature = "cvm_guest")))]
 unsafe fn alloc_unprotect_physical_range(pa_range: &Range<Paddr>) {
-    use alloc::{vec, vec::Vec};
+    use alloc::vec;
 
     debug_assert!(pa_range.start.is_multiple_of(PAGE_SIZE));
     debug_assert!(pa_range.end.is_multiple_of(PAGE_SIZE));

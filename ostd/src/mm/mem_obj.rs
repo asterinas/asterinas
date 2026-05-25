@@ -2,11 +2,10 @@
 
 //! Traits for memory objects.
 
-use alloc::{boxed::Box, rc::Rc, sync::Arc};
+use alloc::rc::Rc;
 use core::ops::Range;
 
-use super::Paddr;
-use crate::mm::Daddr;
+use crate::{mm::Daddr, prelude::*};
 
 /// Memory objects that have a start physical address.
 pub trait HasPaddr {

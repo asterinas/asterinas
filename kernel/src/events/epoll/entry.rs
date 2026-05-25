@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    collections::vec_deque::VecDeque,
-    sync::{Arc, Weak},
-};
 use core::{
     fmt::Display,
     sync::atomic::{AtomicBool, Ordering},
 };
 
 use keyable_arc::{KeyableArc, KeyableWeak};
-use ostd::sync::{LocalIrqDisabled, Mutex, MutexGuard, SpinLock, SpinLockGuard};
+use ostd::sync::LocalIrqDisabled;
 
 use super::{EpollEvent, EpollFlags};
 use crate::{
     events::{self, IoEvents},
     fs::file::{FileLike, file_table::FileDesc},
+    prelude::*,
     process::signal::{PollHandle, Pollee},
 };
 

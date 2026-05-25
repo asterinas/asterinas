@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use int_to_c_enum::TryFromInt;
+use crate::prelude::TryFromInt;
 
 /// An ioctl command that follows Linux-style encoding.
 ///

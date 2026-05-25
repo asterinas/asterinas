@@ -7,12 +7,12 @@ use alloc::collections::BTreeMap;
 use super::second_stage::IommuPtConfig;
 use crate::{
     arch::iommu::dma_remapping::PciDeviceLocation,
-    debug,
     mm::{
-        Daddr, Frame, FrameAllocOptions, HasPaddr, PAGE_SIZE, Paddr, PageFlags, PageTable, VmIo,
+        Daddr, Frame, FrameAllocOptions, PAGE_SIZE, PageFlags, PageTable, VmIo,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableError,
     },
+    prelude::*,
     task::disable_preempt,
 };
 

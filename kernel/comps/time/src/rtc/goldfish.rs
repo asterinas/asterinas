@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use chrono::{DateTime, Datelike, Timelike};
-use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, warn};
+use chrono::prelude::{DateTime, *};
+use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, prelude::*};
 
-use crate::{rtc::Driver, SystemTime};
+use crate::{SystemTime, rtc::Driver};
 
 pub struct RtcGoldfish {
     io_mem: IoMem,

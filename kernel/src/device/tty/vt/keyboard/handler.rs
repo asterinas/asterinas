@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-
 use aster_console::mode::{KeyboardMode, KeyboardModeFlags};
 use aster_framebuffer::{ConsoleCallbacks, FRAMEBUFFER_CONSOLE};
 use aster_input::{
@@ -11,10 +9,13 @@ use aster_input::{
 };
 use spin::Once;
 
-use crate::device::tty::vt::keyboard::{
-    CursorKey, LockKeyFlags, LockKeysState, ModifierKey, ModifierKeyFlags, ModifierKeysState,
-    NumpadKey,
-    keysym::{FuncId, KeySym, SpecialHandler, get_keysym},
+use crate::{
+    device::tty::vt::keyboard::{
+        CursorKey, LockKeyFlags, LockKeysState, ModifierKey, ModifierKeyFlags, ModifierKeysState,
+        NumpadKey,
+        keysym::{FuncId, KeySym, SpecialHandler, get_keysym},
+    },
+    prelude::*,
 };
 
 #[derive(Debug)]

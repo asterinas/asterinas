@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, vec::Vec};
 use core::{
     fmt,
     ops::{Deref, DerefMut},
@@ -10,8 +9,8 @@ use ioapic::IoApic;
 use spin::Once;
 
 use crate::{
-    Error, Result, arch::kernel::acpi::get_acpi_tables, info, io::IoMemAllocatorBuilder,
-    irq::IrqLine, sync::SpinLock,
+    Error, arch::kernel::acpi::get_acpi_tables, io::IoMemAllocatorBuilder, irq::IrqLine,
+    prelude::*, sync::SpinLock,
 };
 
 mod ioapic;

@@ -7,10 +7,9 @@
 use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use aster_util::fixed_point::FixedU32;
-use ostd::{
-    sync::RwLock,
-    timer::{self, TIMER_FREQ},
-};
+use ostd::timer::{self, TIMER_FREQ};
+
+use crate::prelude::*;
 
 /// Fixed-point representation of the load average.
 ///

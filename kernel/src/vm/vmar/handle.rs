@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::{Arc, Weak};
 use core::ops::Deref;
 
-use crate::{process::ProcessVm, vm::vmar::Vmar};
+use crate::{prelude::*, process::ProcessVm, vm::vmar::Vmar};
 
 /// A VMAR handle that is owned by a POSIX thread.
 ///

@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 
 use align_ext::AlignExt;
 use int_to_c_enum::TryFromInt;
-use ostd::Result;
+use ostd::prelude::*;
 
 use self::{
     msix::{CapabilityMsixData, RawCapabilityMsix},

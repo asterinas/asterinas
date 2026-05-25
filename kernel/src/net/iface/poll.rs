@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::time::Duration;
 
-use ostd::{debug, timer::Jiffies};
+use ostd::timer::Jiffies;
 
 use super::{Iface, iter_all_ifaces};
 use crate::{
+    prelude::*,
     sched::{Nice, SchedPolicy},
     thread::kernel_thread::ThreadOptions,
-    time::wait::WaitTimeout,
 };
 
 pub fn init_in_first_kthread() {

@@ -8,7 +8,7 @@ use x86::{
 use super::ApicTimer;
 use crate::{
     io::{IoMem, Sensitive},
-    mm::{HasPaddr, HasSize},
+    prelude::*,
 };
 
 #[derive(Debug)]

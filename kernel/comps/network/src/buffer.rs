@@ -4,11 +4,11 @@ use alloc::sync::Arc;
 use core::marker::PhantomData;
 
 use ostd::{
-    Result,
     mm::{
-        Daddr, HasDaddr, HasSize, Infallible, VmReader, VmWriter,
+        Daddr, HasDaddr, Infallible, VmReader, VmWriter,
         dma::{FromDevice, ToDevice},
     },
+    prelude::*,
 };
 use ostd_pod::Pod;
 

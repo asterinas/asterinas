@@ -1,23 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_systree::{Error, MAX_ATTR_SIZE, Result, SysAttrSetBuilder, SysPerms, SysStr};
 use aster_util::{per_cpu_counter::PerCpuCounter, printer::VmPrinter};
-use ostd::{
-    cpu::CpuId,
-    mm::{VmReader, VmWriter},
-    sync::SpinLock,
-    task::atomic_mode::AsAtomicModeGuard,
-    timer::Jiffies,
-    warn,
-};
+use ostd::{cpu::CpuId, task::atomic_mode::AsAtomicModeGuard, timer::Jiffies};
 
 use crate::{
     fs::cgroupfs::systree_node::{CgroupSysNode, CgroupSystem},
+    prelude::*,
     process::Process,
-    util::ReadCString,
 };
 
 /// A sub-controller responsible for CPU resource management in the cgroup subsystem.

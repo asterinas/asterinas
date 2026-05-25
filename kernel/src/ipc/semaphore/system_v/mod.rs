@@ -2,7 +2,7 @@
 
 //! System V semaphore.
 
-use bitflags::bitflags;
+use crate::prelude::bitflags;
 
 pub mod sem;
 pub mod sem_set;

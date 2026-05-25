@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::{
-    fmt::Debug,
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
     time::Duration,
 };

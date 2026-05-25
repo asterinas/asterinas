@@ -9,8 +9,8 @@ use crate::{
         trap::TrapFrame,
         tsc_freq,
     },
-    info,
     irq::IrqLine,
+    prelude::*,
     task::disable_preempt,
     timer::TIMER_FREQ,
 };

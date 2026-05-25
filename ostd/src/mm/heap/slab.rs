@@ -5,10 +5,13 @@
 use core::{alloc::AllocError, ptr::NonNull};
 
 use super::{slot::HeapSlot, slot_list::SlabSlotList};
-use crate::mm::{
-    FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, UniqueFrame,
-    frame::{linked_list::Link, meta::AnyFrameMeta},
-    paddr_to_vaddr,
+use crate::{
+    mm::{
+        FrameAllocOptions, PAGE_SIZE, UniqueFrame,
+        frame::{linked_list::Link, meta::AnyFrameMeta},
+        paddr_to_vaddr,
+    },
+    prelude::*,
 };
 
 /// A slab.
@@ -85,7 +88,7 @@ impl<const SLOT_SIZE: usize> Slab<SLOT_SIZE> {
     ///
     /// If the size is less than `SLOT_SIZE` or [`PAGE_SIZE`], the size will be
     /// the maximum of the two.
-    pub fn new() -> crate::prelude::Result<Self> {
+    pub fn new() -> Result<Self> {
         const { assert!(SLOT_SIZE <= PAGE_SIZE) };
         // To ensure we can store a pointer in each slot.
         const { assert!(SLOT_SIZE >= size_of::<usize>()) };

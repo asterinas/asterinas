@@ -2,8 +2,10 @@
 
 //! Intervals and interval sets used in VMARs.
 
-use alloc::collections::btree_map::{BTreeMap, Cursor, CursorMut};
+use alloc::collections::btree_map::{Cursor, CursorMut};
 use core::ops::Range;
+
+use crate::prelude::*;
 
 /// The interval of an item in an interval set.
 ///
@@ -242,8 +244,6 @@ where
 
 #[cfg(ktest)]
 mod tests {
-    use alloc::{vec, vec::Vec};
-
     use ostd::prelude::ktest;
 
     use super::*;

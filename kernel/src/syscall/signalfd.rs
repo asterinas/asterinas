@@ -11,7 +11,6 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use bitflags::bitflags;
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;

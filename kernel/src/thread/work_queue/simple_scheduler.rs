@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
-
 use super::worker_pool::{WorkerPool, WorkerScheduler};
+use crate::prelude::*;
 
 /// SimpleScheduler is the simplest scheduling implementation.
 /// Only when there is a liveness problem in the workerpool, increase the workers,

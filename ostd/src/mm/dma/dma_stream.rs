@@ -9,12 +9,13 @@ use crate::{
     arch::{irq, mm::can_sync_dma},
     error::Error,
     mm::{
-        Daddr, FrameAllocOptions, HasDaddr, HasPaddr, HasPaddrRange, HasSize, Infallible,
-        PAGE_SIZE, Paddr, Split, USegment, VmReader, VmWriter,
+        Daddr, FrameAllocOptions, HasDaddr, HasPaddrRange, Infallible, PAGE_SIZE, Split, USegment,
+        VmReader, VmWriter,
         io::util::{HasVmReaderWriter, VmReaderWriterResult},
         kspace::kvirt_area::KVirtArea,
         paddr_to_vaddr,
     },
+    prelude::*,
 };
 
 /// [`DmaDirection`] limits the data flow direction of [`DmaStream`] and

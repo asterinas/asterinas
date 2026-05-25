@@ -3,7 +3,6 @@
 use core::sync::atomic::{AtomicU16, Ordering};
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-use bitflags::bitflags;
 
 use crate::prelude::*;
 

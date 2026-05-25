@@ -311,7 +311,7 @@ impl DebugProfileOutArgs {
     /// output path to the file to override the file name.
     pub fn output_path(&self, hint: Option<&PathBuf>) -> PathBuf {
         self.output.clone().unwrap_or_else(|| {
-            use chrono::{DateTime, offset::Local};
+            use chrono::prelude::{DateTime, Local};
             let file_stem = if let Some(hint) = hint {
                 format!(
                     "{}",

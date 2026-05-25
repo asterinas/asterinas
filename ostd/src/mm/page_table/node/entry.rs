@@ -5,12 +5,13 @@
 use super::{PageTableGuard, PageTableNode, PteState, PteStateRef, PteTrait};
 use crate::{
     mm::{
-        HasPaddr, nr_subpage_per_huge,
+        nr_subpage_per_huge,
         page_prop::PageProperty,
         page_size,
         page_table::{PageTableConfig, PageTableNodeRef, PteScalar},
     },
     panic::PanicGuard,
+    prelude::*,
     sync::RcuDrop,
     task::atomic_mode::InAtomicMode,
 };

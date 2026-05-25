@@ -9,11 +9,12 @@ use crate::{
     arch::irq,
     error::Error,
     mm::{
-        Daddr, FrameAllocOptions, HasDaddr, HasPaddr, HasPaddrRange, HasSize, Infallible,
-        PAGE_SIZE, Paddr, Segment, Split, VmReader, VmWriter,
+        Daddr, FrameAllocOptions, HasDaddr, HasPaddrRange, Infallible, PAGE_SIZE, Segment, Split,
+        VmReader, VmWriter,
         io::util::{HasVmReaderWriter, VmReaderWriterIdentity},
         kspace::kvirt_area::KVirtArea,
     },
+    prelude::*,
 };
 
 /// A DMA memory object that can be accessed in a cache-coherent manner.

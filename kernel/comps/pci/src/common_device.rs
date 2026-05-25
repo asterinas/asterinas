@@ -2,7 +2,7 @@
 
 //! PCI device common definitions or functions.
 
-use ostd::Result;
+use ostd::prelude::*;
 
 use crate::{
     capability::{RawCapabilities, msix::CapabilityMsixData, vendor::CapabilityVndrData},

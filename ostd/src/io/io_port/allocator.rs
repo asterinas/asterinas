@@ -8,8 +8,8 @@ use spin::Once;
 
 use super::IoPort;
 use crate::{
-    debug,
     io::RawIoPortRange,
+    prelude::*,
     sync::{LocalIrqDisabled, SpinLock},
 };
 

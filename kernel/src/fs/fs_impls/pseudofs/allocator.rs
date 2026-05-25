@@ -2,8 +2,9 @@
 
 use device_id::{DeviceId, MajorId, MinorId};
 use id_alloc::IdAlloc;
-use ostd::sync::Mutex;
 use spin::Once;
+
+use crate::prelude::*;
 
 /// An anonymous device ID that automatically recycles itself on drop.
 #[derive(Debug)]

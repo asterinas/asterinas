@@ -16,11 +16,7 @@ use super::{
     meta::{AnyFrameMeta, get_slot},
     unique::UniqueFrame,
 };
-use crate::{
-    arch::mm::PagingConsts,
-    mm::{Paddr, Vaddr},
-    panic::abort,
-};
+use crate::{arch::mm::PagingConsts, prelude::*};
 
 /// A linked list of frames.
 ///

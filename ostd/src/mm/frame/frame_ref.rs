@@ -6,10 +6,7 @@ use super::{
     Frame,
     meta::{AnyFrameMeta, MetaSlot},
 };
-use crate::{
-    mm::{HasPaddr, Paddr},
-    sync::non_null::NonNullPtr,
-};
+use crate::{prelude::*, sync::non_null::NonNullPtr};
 
 /// A struct that can work as `&'a Frame<M>`.
 pub struct FrameRef<'a, M: AnyFrameMeta + ?Sized> {

@@ -2,15 +2,14 @@
 
 //! I/O Memory allocator.
 
-use alloc::vec::Vec;
 use core::ops::Range;
 
 use spin::Once;
 
 use crate::{
-    debug, info,
     io::io_mem::{Insensitive, IoMem, Sensitive},
     mm::{CachePolicy, PageFlags},
+    prelude::*,
     util::range_alloc::RangeAllocator,
 };
 

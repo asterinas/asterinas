@@ -17,8 +17,7 @@ use crate::{
     cpu::num_cpus,
     cpu_local_cell,
     mm::{
-        Frame, FrameAllocOptions, PAGE_SIZE, Paddr, PageProperty, PagingConstsTrait, PagingLevel,
-        Vaddr,
+        Frame, FrameAllocOptions, PAGE_SIZE, PageProperty, PagingConstsTrait, PagingLevel,
         frame::{
             self,
             allocator::{self, EarlyAllocatedFrameMeta},
@@ -27,6 +26,7 @@ use crate::{
         page_prop::PageTableFlags,
         page_table::PteScalar,
     },
+    prelude::*,
     sync::SpinLock,
 };
 

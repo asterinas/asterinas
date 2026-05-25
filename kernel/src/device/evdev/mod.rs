@@ -10,10 +10,7 @@
 mod file;
 
 use alloc::format;
-use core::{
-    fmt::Debug,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_input::{
     event_type_codes::SynEvent,

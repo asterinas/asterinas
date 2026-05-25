@@ -4,10 +4,11 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use ostd::sync::SpinLock;
-
 use super::ExitCode;
-use crate::process::{WaitOptions, signal::sig_num::SigNum};
+use crate::{
+    prelude::*,
+    process::{WaitOptions, signal::sig_num::SigNum},
+};
 
 /// The status of a process.
 ///

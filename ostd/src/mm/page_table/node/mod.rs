@@ -42,11 +42,12 @@ pub(in crate::mm) use self::{
 use super::{PageTableConfig, PteTrait, nr_subpage_per_huge};
 use crate::{
     mm::{
-        FrameAllocOptions, HasPaddr, Infallible, PagingConstsTrait, PagingLevel, VmReader,
+        FrameAllocOptions, Infallible, PagingConstsTrait, PagingLevel, VmReader,
         frame::{Frame, FrameRef, meta::AnyFrameMeta},
         paddr_to_vaddr,
         page_table::{PteScalar, load_pte, store_pte},
     },
+    prelude::*,
     task::atomic_mode::InAtomicMode,
 };
 

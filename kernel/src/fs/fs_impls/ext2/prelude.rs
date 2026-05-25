@@ -14,7 +14,7 @@ pub(super) use aster_block::{
 pub(super) use io_util::batch::IoBatch;
 pub(super) use ostd::{
     mm::{Frame, FrameAllocOptions, Segment, USegment, VmIo},
-    sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
+    sync::{RwMutexReadGuard, RwMutexWriteGuard},
 };
 
 pub(super) use super::utils::{Dirty, IsPowerOf};

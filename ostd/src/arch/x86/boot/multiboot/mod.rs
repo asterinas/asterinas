@@ -7,7 +7,8 @@ use crate::{
         BootloaderAcpiArg, BootloaderFramebufferArg,
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
     },
-    mm::{Paddr, kspace::paddr_to_vaddr},
+    mm::kspace::paddr_to_vaddr,
+    prelude::*,
 };
 
 global_asm!(include_str!("header.S"));

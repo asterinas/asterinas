@@ -1,19 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    boxed::Box,
-    collections::BinaryHeap,
-    sync::{Arc, Weak},
-    vec::Vec,
-};
+use alloc::collections::BinaryHeap;
 use core::{
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 
-use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
+use ostd::sync::LocalIrqDisabled;
 
-use super::Clock;
+use crate::prelude::*;
 
 /// A timeout, represented in one of the two ways.
 #[derive(Clone, Debug)]

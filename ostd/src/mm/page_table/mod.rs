@@ -15,12 +15,13 @@ use core::{
 use ostd_pod::Pod;
 
 use super::{
-    HasPaddr, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, kspace::KernelPtConfig,
-    nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::UserPtConfig,
+    PagingConstsTrait, PagingLevel, PodOnce, kspace::KernelPtConfig, nr_subpage_per_huge,
+    page_prop::PageProperty, page_size, vm_space::UserPtConfig,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::page_prop::PageTableFlags,
+    prelude::*,
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt},
 };
 

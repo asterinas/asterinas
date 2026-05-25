@@ -26,7 +26,7 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use bitvec::{order::Lsb0, view::BitView};
+use bitvec::prelude::*;
 use smallvec::SmallVec;
 
 use crate::const_assert;

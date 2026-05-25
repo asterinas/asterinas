@@ -7,8 +7,8 @@ use crate::{
         timer::pit::{self, OperatingMode},
         trap::TrapFrame,
     },
-    info,
     irq::IrqLine,
+    prelude::*,
     timer::TIMER_FREQ,
 };
 

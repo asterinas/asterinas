@@ -4,11 +4,7 @@
 
 use core::{alloc::Layout, cell::RefCell};
 
-use ostd::{
-    cpu_local,
-    irq::DisabledLocalIrqGuard,
-    mm::{PAGE_SIZE, Paddr},
-};
+use ostd::{cpu_local, irq::DisabledLocalIrqGuard, mm::PAGE_SIZE, prelude::*};
 
 cpu_local! {
     static CACHE: RefCell<CacheOfSizes> = RefCell::new(CacheOfSizes::new());

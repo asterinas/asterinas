@@ -56,7 +56,8 @@ pub use segment::Segment;
 use untyped::{AnyUFrameMeta, UFrame};
 
 use crate::{
-    mm::{HasPaddr, HasSize, PAGE_SIZE, Paddr, PagingConsts, PagingLevel, Vaddr},
+    mm::{PAGE_SIZE, PagingConsts, PagingLevel},
+    prelude::*,
     sync::RcuDrop,
 };
 

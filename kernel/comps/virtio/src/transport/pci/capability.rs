@@ -3,7 +3,7 @@
 use aster_pci::{
     capability::vendor::CapabilityVndrData, cfg_space::BarAccess, common_device::BarManager,
 };
-use ostd::{io::IoMem, warn};
+use ostd::{io::IoMem, prelude::*};
 
 #[expect(clippy::enum_variant_names)]
 #[repr(u8)]

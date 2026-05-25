@@ -4,7 +4,7 @@
 
 use alloc::vec::Vec;
 
-use ostd::{Error, Result, io::IoMem, irq::IrqLine, mm::VmIoOnce};
+use ostd::{Error, io::IoMem, irq::IrqLine, mm::VmIoOnce, prelude::*};
 
 use crate::{
     PciDeviceLocation,

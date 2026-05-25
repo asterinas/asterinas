@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-
 use aster_systree::{Error, Result, SysAttrSetBuilder, SysPerms, SysStr};
 use aster_util::printer::VmPrinter;
-use ostd::{
-    cpu::num_cpus,
-    mm::{VmReader, VmWriter},
-};
+use ostd::cpu::num_cpus;
+
+use crate::prelude::*;
 
 /// A sub-controller responsible for CPU resource management in the cgroup subsystem.
 pub struct CpuSetController {

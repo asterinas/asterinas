@@ -17,11 +17,9 @@ pub use aster_logger::{print, println};
 pub use bitflags::bitflags;
 pub use int_to_c_enum::TryFromInt;
 pub use ostd::{
-    alert, crit, debug, emerg, error, info,
-    mm::{FallibleVmRead, FallibleVmWrite, PAGE_SIZE, Vaddr, VmReader, VmWriter},
-    notice,
+    mm::{FallibleVmRead, FallibleVmWrite, PAGE_SIZE, VmReader, VmWriter},
+    prelude::{Vaddr, alert, crit, debug, emerg, error, info, notice, warn},
     sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
-    warn,
 };
 pub use ostd_pod::{FromBytes, FromZeros, IntoBytes, Pod};
 

@@ -38,9 +38,9 @@ use crate::{
         },
         kernel::acpi::dmar::{Dmar, Remapping},
     },
-    debug,
     io::IoMemAllocatorBuilder,
     mm::{PAGE_SIZE, paddr_to_vaddr},
+    prelude::*,
     sync::{LocalIrqDisabled, SpinLock},
 };
 

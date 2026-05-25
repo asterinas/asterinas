@@ -44,11 +44,9 @@ pub fn parse_shebang_line(file_first_page: &[u8]) -> Result<Option<Vec<CString>>
 
 #[cfg(ktest)]
 mod test {
-    use alloc::{ffi::CString, vec};
-
     use ostd::prelude::*;
 
-    use super::parse_shebang_line;
+    use super::*;
 
     #[ktest]
     fn parse_shebang_line_with_multiple_args() {

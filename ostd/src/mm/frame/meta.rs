@@ -20,7 +20,10 @@ pub(crate) mod mapping {
     //! in [`FRAME_METADATA_RANGE`].
 
     use super::MetaSlot;
-    use crate::mm::{PAGE_SIZE, Paddr, PagingConstsTrait, Vaddr, kspace::FRAME_METADATA_RANGE};
+    use crate::{
+        mm::{PAGE_SIZE, PagingConstsTrait, kspace::FRAME_METADATA_RANGE},
+        prelude::*,
+    };
 
     /// Converts a physical address of a base frame to the virtual address of the metadata slot.
     pub(crate) const fn frame_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
@@ -49,15 +52,15 @@ use core::{
 use crate::{
     arch::mm::PagingConsts,
     boot::memory_region::MemoryRegionType,
-    const_assert, info,
+    const_assert,
     mm::{
-        CachePolicy, Infallible, PAGE_SIZE, Paddr, PageFlags, PageProperty, PrivilegedPageFlags,
-        Segment, Vaddr, VmReader,
+        CachePolicy, Infallible, PAGE_SIZE, PageFlags, PageProperty, PrivilegedPageFlags, Segment,
+        VmReader,
         frame::allocator::{self, EarlyAllocatedFrameMeta},
         paddr_to_vaddr, page_size,
         page_table::boot_pt,
     },
-    panic::abort,
+    prelude::*,
     util::ops::range_difference,
 };
 

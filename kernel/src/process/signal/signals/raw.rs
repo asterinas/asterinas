@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::fmt::Debug;
-
-use crate::process::signal::{c_types::siginfo_t, sig_num::SigNum, signals::Signal};
+use crate::{
+    prelude::*,
+    process::signal::{c_types::siginfo_t, sig_num::SigNum, signals::Signal},
+};
 
 /// A signal that carries raw [`siginfo_t`] information.
 #[derive(Clone, Copy)]

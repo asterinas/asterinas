@@ -30,11 +30,7 @@ extern crate alloc;
 
 use core::alloc::Layout;
 
-use ostd::{
-    cpu::PinCurrentCpu,
-    irq,
-    mm::{Paddr, frame::GlobalFrameAllocator},
-};
+use ostd::{cpu::PinCurrentCpu, irq, mm::frame::GlobalFrameAllocator, prelude::*};
 
 mod cache;
 mod chunk;

@@ -3,12 +3,11 @@
 #![expect(dead_code)]
 #![expect(unused_variables)]
 
-use alloc::sync::Arc;
 use core::time::Duration;
 
-use ostd::sync::{MutexGuard, SpinLock, WaitQueue};
+use ostd::sync::WaitQueue;
 
-use crate::time::wait::WaitTimeout;
+use crate::prelude::*;
 
 /// Represents potential errors during lock operations on synchronization primitives,
 /// specifically for operations associated with a `Condvar` (Condition Variable).
@@ -265,7 +264,7 @@ impl Condvar {
 
 #[cfg(ktest)]
 mod test {
-    use ostd::{prelude::*, sync::Mutex};
+    use ostd::prelude::*;
 
     use super::*;
     use crate::thread::{Thread, kernel_thread::ThreadOptions};

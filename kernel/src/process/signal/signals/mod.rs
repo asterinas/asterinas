@@ -5,9 +5,8 @@ pub mod kernel;
 pub mod raw;
 pub mod user;
 
-use core::{any::Any, fmt::Debug};
-
 use super::{c_types::siginfo_t, sig_num::SigNum};
+use crate::prelude::*;
 
 pub trait Signal: Send + Sync + Debug + Any {
     /// Returns the number of the signal.

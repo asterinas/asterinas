@@ -15,7 +15,15 @@
 
 use core::num::NonZeroU8;
 
-use ostd::{arch::{device::io_port::{ReadWriteAccess, WriteOnlyAccess}, kernel::ACPI_INFO}, io::IoPort, sync::SpinLock, warn};
+use ostd::{
+    arch::{
+        device::io_port::{ReadWriteAccess, WriteOnlyAccess},
+        kernel::ACPI_INFO,
+    },
+    io::IoPort,
+    prelude::*,
+    sync::SpinLock,
+};
 
 use super::Driver;
 use crate::SystemTime;

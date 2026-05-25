@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::string::ToString;
-
 use aster_framebuffer::{CONSOLE_NAME, FRAMEBUFFER_CONSOLE};
-use ostd::info;
+
+use crate::prelude::*;
 
 pub fn init() {
     for device in aster_input::all_devices() {

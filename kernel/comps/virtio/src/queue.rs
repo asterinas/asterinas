@@ -12,8 +12,8 @@ use aster_rights::{Dup, TRightSet, TRights, Write};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use ostd::{
-    debug,
-    mm::{HasPaddr, PodOnce, Split, dma::DmaCoherent},
+    mm::{PodOnce, Split, dma::DmaCoherent},
+    prelude::*,
 };
 
 use crate::{
