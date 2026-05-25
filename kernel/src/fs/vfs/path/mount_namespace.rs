@@ -164,10 +164,6 @@ impl MountNamespace {
     ///
     /// No recyclable-`id` counterpart exists: the 32-bit ID space is reused
     /// on drop, so a keyed lookup would race the next allocation.
-    #[expect(
-        dead_code,
-        reason = "no in-tree consumer yet; staged for statmount/listmount"
-    )]
     pub fn lookup_by_unique_id(&self, unique_id: u64) -> Option<Arc<Mount>> {
         let mount = {
             let mounts = self.mounts.lock();
@@ -178,6 +174,34 @@ impl MountNamespace {
         mount
             .is_equal_or_descendant_of(self.root(), &topology_guard)
             .then_some(mount)
+    }
+
+    /// Returns live mounts in this namespace that are strict descendants of
+    /// `parent`, ordered by [`Mount::unique_id`].
+    ///
+    /// Live mounts are snapshotted under `mounts.lock`; ancestry is checked
+    /// afterward so per-`Mount` locks are never acquired while the table lock
+    /// is held.
+    pub fn descendant_mounts_of(
+        &self,
+        parent: &Arc<Mount>,
+    ) -> impl DoubleEndedIterator<Item = Arc<Mount>> {
+        let snapshot: Vec<_> = {
+            let guard = self.mounts.lock();
+            guard.values().filter_map(|weak| weak.upgrade()).collect()
+        };
+
+        let topology_guard = MountTopology::read_lock();
+
+        let descendants: Vec<_> = snapshot
+            .into_iter()
+            .filter(|mount| {
+                !Arc::ptr_eq(mount, parent)
+                    && mount.is_equal_or_descendant_of(parent, &topology_guard)
+            })
+            .collect();
+
+        descendants.into_iter()
     }
 
     /// Walks the in-place mount tree and registers every mount in
