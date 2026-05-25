@@ -27,6 +27,7 @@ typ = "typ"
 sigfault = "sigfault"
 sems = "sems"
 THRE = "THRE"
+TestNG = "TestNG"
 
 # Files with svg suffix are ignored to check. 
 [type.svg]
