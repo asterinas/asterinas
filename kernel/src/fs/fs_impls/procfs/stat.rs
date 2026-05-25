@@ -121,7 +121,7 @@ impl StatFileOps {
         let softirq_stats: Vec<usize> = softirq_stats.collect();
         let total_softirqs: usize = softirq_stats.iter().sum();
 
-        // We only have 5 defined softirq types; the rest are reserved.
+        // We only have 6 defined softirq types; the rest are reserved.
         // Fill in zeros for the reserved types to match the expected output format.
         writeln!(
             printer,
@@ -132,7 +132,7 @@ impl StatFileOps {
             softirq_stats[TASKLESS_SOFTIRQ_ID as usize],        // TASKLESS
             softirq_stats[NETWORK_TX_SOFTIRQ_ID as usize],      // NETWORK_TX
             softirq_stats[NETWORK_RX_SOFTIRQ_ID as usize],      // NETWORK_RX
-            0usize,                                             // Reserved
+            softirq_stats[BLOCK_SOFTIRQ_ID as usize],           // BLOCK
             0usize,                                             // Reserved
             0usize,                                             // Reserved
             0usize,                                             // Reserved
