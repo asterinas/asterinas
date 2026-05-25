@@ -474,7 +474,7 @@ impl DeviceInner {
     /// Flushes any cached data from the guest to the persistent storage on the host.
     /// This will be ignored if the device doesn't support the `VIRTIO_BLK_F_FLUSH` feature.
     fn flush(&self, bio_request: BioRequest) {
-        if self.features.support_flush {
+        if !self.features.support_flush {
             bio_request.into_bios().for_each(|bio| {
                 bio.complete(BioStatus::Complete);
             });
