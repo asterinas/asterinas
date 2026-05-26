@@ -24,6 +24,7 @@ macro_rules! __log_prefix {
 
 mod device;
 mod error;
+mod registry;
 mod table;
 pub mod target;
 
@@ -32,10 +33,12 @@ use component::{ComponentInitError, init_component};
 pub use self::{
     device::DmDevice,
     error::{DmError, DmErrorWithContext},
+    registry::{create_device, list_devices, lookup_device, remove_device},
     table::{DmTable, DmTableSegment},
 };
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
+    registry::init().map_err(|_| ComponentInitError::Unknown)?;
     Ok(())
 }
