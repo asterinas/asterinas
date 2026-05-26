@@ -13,6 +13,7 @@ let
 in {
   environment.systemPackages = with pkgs; [
     (python3.withPackages (p: with p; [ torch tensorflow pytest ]))
+    codex
     ollama
   ];
 
