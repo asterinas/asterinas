@@ -147,7 +147,7 @@ impl<E: Ext> UdpSocket<E> {
     {
         let mut socket = self.0.inner.socket.lock();
 
-        if size > socket.packet_send_capacity() {
+        if size > socket.payload_send_capacity() {
             return Err(SendError::TooLarge);
         }
 
