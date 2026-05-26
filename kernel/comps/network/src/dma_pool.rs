@@ -46,7 +46,8 @@ impl<D: DmaDirection> DmaPool<D> {
     /// To optimize performance, the pool employs a lazy deallocation strategy:
     /// A DMAable page is freed only if it meets the following conditions:
     /// 1. The page is currently not in use;
-    /// 2. The total number of allocated DMAable pages exceeds the specified `high_watermark`.
+    /// 2. The total number of available DMAable pages (i.e., allocated pages that have at
+    ///    least one free segment) exceeds the specified `high_watermark`.
     ///
     /// The returned pool can be used to allocate small segments for DMA usage.
     /// All allocated segments will have the same DMA direction
@@ -253,22 +254,27 @@ impl<D: DmaDirection> Drop for DmaSegment<D> {
         let pool = page.pool.upgrade().unwrap();
 
         // Keep the same lock order as `pool.alloc_segment`
-        // Lock order: pool.avail_pages -> pool.all_pages -> page.allocated_segments
+        // Lock order: pool.avail_pages -> pool.all_pages
+        //             pool.avail_pages -> page.allocated_segments
         let mut avail_pages = pool.avail_pages.lock();
-        let mut all_pages = pool.all_pages.lock();
 
-        let mut allocated_segments = page.allocated_segments.lock();
+        let (became_avail, became_free) = {
+            let mut allocated_segments = page.allocated_segments.lock();
 
-        let nr_blocks_per_page = PAGE_SIZE / self.size;
-        let became_avail = get_next_free_index(&allocated_segments, nr_blocks_per_page).is_none();
+            let nr_blocks_per_page = PAGE_SIZE / self.size;
+            let became_avail =
+                get_next_free_index(&allocated_segments, nr_blocks_per_page).is_none();
 
-        debug_assert!((page.daddr()..page.daddr() + PAGE_SIZE).contains(&self.daddr()));
-        let segment_idx = (self.daddr() - page.daddr()) / self.size;
-        allocated_segments.set(segment_idx, false);
+            debug_assert!((page.daddr()..page.daddr() + PAGE_SIZE).contains(&self.daddr()));
+            let segment_idx = (self.daddr() - page.daddr()) / self.size;
+            allocated_segments.set(segment_idx, false);
 
-        let became_free = allocated_segments.not_any();
+            let became_free = allocated_segments.not_any();
+            (became_avail, became_free)
+        };
 
-        if became_free && all_pages.len() > pool.high_watermark {
+        if became_free && avail_pages.len() > pool.high_watermark {
+            let mut all_pages = pool.all_pages.lock();
             avail_pages.retain(|page_| !Arc::ptr_eq(page_, &page));
             all_pages.retain(|page_| !Arc::ptr_eq(page_, &page));
             return;
@@ -332,7 +338,7 @@ mod test {
             .collect();
         assert_eq!(pool.num_pages(), 100);
         drop(segments1);
-        assert_eq!(pool.num_pages(), 50);
+        assert_eq!(pool.num_pages(), 51);
     }
 
     #[ktest]
