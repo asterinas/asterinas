@@ -74,31 +74,42 @@ fn qemu_display_version(nixos_shell: &mut Session) -> Result<(), Error> {
 #[nixos_test]
 fn qemu_tcg_run_linux(nixos_shell: &mut Session) -> Result<(), Error> {
     // Run a Linux kernel inside QEMU using the TCG software emulator.
+    //
+    // Use `grep -v /bin/echo` to filter out lines that affect matching, such as:
+    //   [    0.000000] Kernel command line: initrd=initrd console=ttyS0 panic=-1 rdinit=/bin/echo Entered userspace
+    //   [    0.012005] Command line: initrd=initrd console=ttyS0 panic=-1 rdinit=/bin/echo Entered userspace
     const CMD: &str = concat!(
         "qemu-system-$(uname -m) ",
         "-accel tcg ",
         "-kernel $LINUX_BZIMAGE ",
+        "-initrd /run/current-system/initrd ",
         "-nographic -no-reboot ",
-        "-append 'console=ttyS0 panic=-1'"
+        "-append 'console=ttyS0 panic=-1 rdinit=/bin/echo Entered userspace' ",
+        "| grep -v /bin/echo"
     );
-    nixos_shell.run_cmd_and_expect(CMD, "Linux version")?;
+    nixos_shell.run_cmd_and_expect(CMD, "Entered userspace")?;
     Ok(())
 }
 
 #[nixos_test]
 fn qemu_tcg_run_aster(nixos_shell: &mut Session) -> Result<(), Error> {
     // Run a Asterinas kernel inside QEMU using the TCG software emulator.
+    //
+    // Use `grep -v /bin/echo` to filter out lines that affect matching, such as:
+    //   [EFI stub] Loaded the cmdline: "console=ttyS0 panic=-1 init=/bin/echo Entered userspace initrd=initrd"
     const CMD: &str = concat!(
         "qemu-system-$(uname -m) ",
         "-accel tcg ",
         "-cpu Icelake-Server ",
-        "-machine q35 -m 1G ",
+        "-machine q35 -m 2G ",
         "-bios $OVMF_PATH ",
         "-kernel /run/current-system/kernel ",
+        "-initrd /run/current-system/initrd ",
         "-device isa-debug-exit,iobase=0xf4,iosize=0x04 ",
         "-nographic -no-reboot ",
-        "-append 'console=ttyS0 panic=-1'"
+        "-append 'console=ttyS0 panic=-1 init=/bin/echo Entered userspace' ",
+        "| grep -v /bin/echo"
     );
-    nixos_shell.run_cmd_and_expect(CMD, "Spawn the first kernel thread")?;
+    nixos_shell.run_cmd_and_expect(CMD, "Entered userspace")?;
     Ok(())
 }
