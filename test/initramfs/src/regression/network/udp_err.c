@@ -445,3 +445,19 @@ FN_TEST(send_and_recv_large_buffer)
 	TEST_SUCC(close(sender));
 }
 END_TEST()
+
+FN_TEST(bind_tcp_and_udp_to_same_port)
+{
+	int tcp = TEST_SUCC(socket(PF_INET, SOCK_STREAM, 0));
+	int udp = TEST_SUCC(socket(PF_INET, SOCK_DGRAM, 0));
+
+	sk_addr.sin_port = htons(8082);
+
+	TEST_SUCC(bind(tcp, (struct sockaddr *)&sk_addr, sizeof(sk_addr)));
+	TEST_SUCC(listen(tcp, 1));
+	TEST_SUCC(bind(udp, (struct sockaddr *)&sk_addr, sizeof(sk_addr)));
+
+	TEST_SUCC(close(tcp));
+	TEST_SUCC(close(udp));
+}
+END_TEST()

@@ -11,11 +11,11 @@ use super::{connecting::ConnectingStream, listen::ListenStream, observer::Stream
 use crate::{
     events::IoEvents,
     net::{
-        iface::BoundPort,
+        iface::BoundTcpPort,
         socket::{
             ip::{
                 addr::IpAddressFamily,
-                common::{bind_port, get_ephemeral_endpoint},
+                common::{get_ephemeral_endpoint, resolve_bind_iface_and_config},
             },
             util::SocketAddr,
         },
@@ -24,7 +24,7 @@ use crate::{
 };
 
 pub(super) struct InitStream {
-    bound_port: Option<BoundPort>,
+    bound_port: Option<BoundTcpPort>,
     /// The address family of this socket (IPv4 or IPv6).
     //
     // TODO: Encode the address family in the type system (e.g., `InitStream<IPv4Family>`)
@@ -62,7 +62,7 @@ impl InitStream {
         }
     }
 
-    pub(super) fn new_bound(bound_port: BoundPort, family: IpAddressFamily) -> Self {
+    pub(super) fn new_bound(bound_port: BoundTcpPort, family: IpAddressFamily) -> Self {
         Self {
             bound_port: Some(bound_port),
             family,
@@ -71,7 +71,7 @@ impl InitStream {
         }
     }
 
-    pub(super) fn new_refused(bound_port: BoundPort, family: IpAddressFamily) -> Self {
+    pub(super) fn new_refused(bound_port: BoundTcpPort, family: IpAddressFamily) -> Self {
         Self {
             bound_port: Some(bound_port),
             family,
@@ -104,7 +104,7 @@ impl InitStream {
         Ok(())
     }
 
-    pub(super) fn bound_port(&self) -> Option<&BoundPort> {
+    pub(super) fn bound_port(&self) -> Option<&BoundTcpPort> {
         self.bound_port.as_ref()
     }
 
@@ -271,4 +271,9 @@ impl InitStream {
             None
         }
     }
+}
+
+fn bind_port(endpoint: &IpEndpoint, can_reuse: bool) -> Result<BoundTcpPort> {
+    let (iface, config) = resolve_bind_iface_and_config(endpoint, can_reuse)?;
+    Ok(iface.bind_tcp(config)?)
 }
