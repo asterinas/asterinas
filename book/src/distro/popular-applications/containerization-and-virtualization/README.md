@@ -127,8 +127,9 @@ qemu-system-$(uname -m) --version
 qemu-system-$(uname -m) \
   -accel tcg \
   -kernel $LINUX_BZIMAGE \
+  -initrd /run/current-system/initrd \
   -nographic -no-reboot \
-  -append 'console=ttyS0 panic=-1'
+  -append 'console=ttyS0 panic=-1 rdinit=/bin/init'
 ```
 
 ##### Run Asterinas kernel with TCG
@@ -140,9 +141,10 @@ qemu-system-$(uname -m) \
   -machine q35 -m 1G \
   -bios $OVMF_PATH \
   -kernel /run/current-system/kernel \
+  -initrd /run/current-system/initrd \
   -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
   -nographic -no-reboot \
-  -append 'console=ttyS0 panic=-1'
+  -append 'console=ttyS0 panic=-1 init=/bin/init'
 ```
 
 > **Note**: Running the Asterinas kernel requires the `linux/multiboot` boot protocol (**multiboot2 is not supported**).
