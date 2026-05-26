@@ -1,6 +1,6 @@
 # AI & Machine Learning
 
-This category covers deep learning frameworks, LLM tools, and inference engines.
+This category covers deep learning frameworks, inference engines, and AI coding agents.
 
 ## Deep Learning Frameworks
 
@@ -60,4 +60,23 @@ ollama serve
 
 # List downloaded models
 ollama list
+```
+
+## AI Coding Agents
+
+### Codex
+
+[Codex](https://github.com/openai/codex) is a coding agent that runs from the terminal and connects to OpenAI-compatible model providers.
+
+#### Installation
+
+```nix
+environment.systemPackages = [ pkgs.codex ];
+```
+
+#### Verified Usage
+
+```bash
+# Start an interactive Codex session
+codex
 ```
