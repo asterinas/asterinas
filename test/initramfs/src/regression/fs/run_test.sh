@@ -122,6 +122,7 @@ echo "All mount bind file test passed."
 ./isolation/chroot
 ./isolation/pivot_root
 
+./mount/listmount
 ./mount/mount_api
 ./mount/mount_move
 
