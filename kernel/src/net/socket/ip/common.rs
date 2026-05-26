@@ -14,7 +14,7 @@ use crate::{
     prelude::*,
 };
 
-pub(super) fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
+fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
     match *ip_addr {
         IpAddress::Ipv4(ipv4_addr) => iter_all_ifaces()
             .find(|iface| iface.ipv4_addr().is_some_and(|addr| addr == ipv4_addr))
