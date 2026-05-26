@@ -4,7 +4,7 @@
 
 set -e
 
-./cgroup.sh
+./clock_nanosleep/nanosleep_err
 
 ./clone3/clone_exit_signal
 ./clone3/clone_files
@@ -14,8 +14,6 @@ set -e
 ./clone3/clone_process
 
 ./cpu_affinity/cpu_affinity
-
-./clock_nanosleep/nanosleep_err
 
 ./execve/execve
 ./execve/execve_comm
@@ -73,6 +71,7 @@ if [ "$(uname -m)" = "x86_64" ]; then
     ./signal/sigtrap
 fi
 
+./cgroup.sh
 ./group_session
 ./job_control
 ./pidfd

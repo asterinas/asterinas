@@ -184,6 +184,7 @@ fn do_execve_no_return(
     // Unshare file descriptor table and close files with O_CLOEXEC flag.
     unshare_and_close_files(ctx);
 
+    // Set the thread name.
     *posix_thread.thread_name().lock() = thread_name;
 
     // Unshare and reset signal dispositions to their default actions.

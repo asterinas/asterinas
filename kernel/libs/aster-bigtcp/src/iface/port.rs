@@ -9,9 +9,9 @@ pub struct BindPortConfig {
 }
 
 enum PortKind {
-    /// Binds to the specified non-reusable port.
-    CanReuse(u16),
     /// Binds to the specified reusable port.
+    CanReuse(u16),
+    /// Binds to the specified non-reusable port.
     Specified(u16),
     /// Allocates an ephemeral port to bind.
     Ephemeral(bool),

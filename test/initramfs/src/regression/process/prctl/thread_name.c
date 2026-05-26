@@ -37,7 +37,8 @@ FN_TEST(fork_inherits_thread_name)
 
 	pid = TEST_SUCC(fork());
 	if (pid == 0) {
-		_exit(check_proc_stat_comm(THREAD_NAME));
+		CHECK_WITH(check_proc_stat_comm(THREAD_NAME), _ret == 0);
+		_exit(0);
 	}
 
 	TEST_RES(waitpid(pid, &status, 0),

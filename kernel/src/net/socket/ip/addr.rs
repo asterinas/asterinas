@@ -29,7 +29,7 @@ impl From<IpEndpoint> for SocketAddr {
     }
 }
 
-/// A local endpoint, which indicates that the local endpoint is unspecified.
+/// An IPv4 local endpoint, which indicates that the local endpoint is unspecified.
 ///
 /// According to the Linux man pages and the Linux implementation, `getsockname()` will _not_ fail
 /// even if the socket is unbound. Instead, it will return an unspecified socket address. This
@@ -50,7 +50,7 @@ pub enum IpAddressFamily {
 
 impl IpAddressFamily {
     /// Returns the unspecified endpoint for this address family.
-    pub const fn unspecified_endpoint(&self) -> IpEndpoint {
+    pub(super) const fn unspecified_endpoint(&self) -> IpEndpoint {
         match self {
             IpAddressFamily::IPv4 => UNSPECIFIED_LOCAL_ENDPOINT,
             IpAddressFamily::IPv6 => UNSPECIFIED_LOCAL_ENDPOINT_V6,

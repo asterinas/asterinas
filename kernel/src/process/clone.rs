@@ -557,6 +557,7 @@ fn clone_child_process(
         let child_vmar_arc = child_vmar.clone_arc();
 
         let mut child_thread_builder = {
+            // Inherit the parent's thread name
             let child_thread_name = ctx.posix_thread.thread_name().lock().clone();
 
             let credentials = {

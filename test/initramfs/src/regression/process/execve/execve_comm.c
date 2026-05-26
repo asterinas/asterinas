@@ -23,7 +23,6 @@ FN_TEST(execve_symlink)
 	int status;
 	pid_t pid;
 
-	unlink(LINK_PATH);
 	TEST_SUCC(symlink(CHILD_PATH, LINK_PATH));
 
 	pid = TEST_SUCC(fork());
@@ -35,7 +34,7 @@ FN_TEST(execve_symlink)
 	TEST_RES(waitpid(pid, &status, 0),
 		 _ret == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-	unlink(LINK_PATH);
+	TEST_SUCC(unlink(LINK_PATH));
 }
 END_TEST()
 

@@ -18,33 +18,6 @@ use smoltcp::{
     wire::{IpAddress, IpEndpoint, Ipv4Address, Ipv4Packet, Ipv6Address, Ipv6Packet},
 };
 
-/// An enum representing either an IPv4 or IPv6 packet.
-pub(super) enum IpPacket<'a> {
-    Ipv4(Ipv4Packet<&'a [u8]>),
-    Ipv6(Ipv6Packet<&'a [u8]>),
-}
-
-/// Normalizes IPv4-mapped IPv6 addresses to IPv4 addresses.
-///
-/// IPv4-mapped IPv6 addresses (::ffff:x.x.x.x) should be treated as equivalent
-/// to their IPv4 counterparts for binding purposes. This ensures that binding
-/// to 192.0.2.1:80 and ::ffff:192.0.2.1:80 are treated as the same.
-//
-// TODO: This function currently only handles port binding conflict detection.
-// Full dual-stack support is not yet implemented, including:
-// - Accepting IPv4 connections on IPv6 wildcard socket (binding to `::`)
-// - Returning IPv4-mapped addresses in `accept()` for IPv4 clients
-// - Proper handling of `IPV6_V6ONLY` socket option
-fn normalize_ip_address(addr: IpAddress) -> IpAddress {
-    if let IpAddress::Ipv6(ipv6) = addr
-        && let Some(ipv4) = ipv6.to_ipv4_mapped()
-    {
-        return IpAddress::Ipv4(ipv4);
-    }
-
-    addr
-}
-
 use super::{
     Iface,
     poll::{FnHelper, PollContext, SocketTableAction},
@@ -69,6 +42,33 @@ pub struct IfaceCommon<E: Ext> {
     used_ports: SpinLock<BTreeMap<IpAddress, BTreeMap<u16, PortState>>, BottomHalfDisabled>,
     sockets: SpinLock<SocketTable<E>, BottomHalfDisabled>,
     sched_poll: E::ScheduleNextPoll,
+}
+
+/// An enum representing either an IPv4 or IPv6 packet.
+pub(super) enum IpPacket<'a> {
+    Ipv4(Ipv4Packet<&'a [u8]>),
+    Ipv6(Ipv6Packet<&'a [u8]>),
+}
+
+/// Normalizes IPv4-mapped IPv6 addresses to IPv4 addresses.
+///
+/// IPv4-mapped IPv6 addresses (`::ffff:x.x.x.x`) should be treated as equivalent
+/// to their IPv4 counterparts for binding purposes. This ensures that binding
+/// to `192.0.2.1:80` and `::ffff:192.0.2.1:80` are treated as the same.
+//
+// TODO: This function currently only handles port binding conflict detection.
+// Full dual-stack support is not yet implemented, including:
+// - Accepting IPv4 connections on IPv6 wildcard socket (binding to `::`).
+// - Returning IPv4-mapped addresses in `accept()` for IPv4 clients.
+// - Proper handling of `IPV6_V6ONLY` socket option.
+fn normalize_ip_address(addr: IpAddress) -> IpAddress {
+    if let IpAddress::Ipv6(ipv6) = addr
+        && let Some(ipv4) = ipv6.to_ipv4_mapped()
+    {
+        return IpAddress::Ipv4(ipv4);
+    }
+
+    addr
 }
 
 impl<E: Ext> IfaceCommon<E> {
@@ -129,7 +129,7 @@ impl<E: Ext> IfaceCommon<E> {
 /// An allocator that allocates a unique index for each interface.
 //
 // FIXME: This allocator is specific to each network namespace.
-pub static INTERFACE_INDEX_ALLOCATOR: AtomicU32 = AtomicU32::new(1);
+static INTERFACE_INDEX_ALLOCATOR: AtomicU32 = AtomicU32::new(1);
 
 // Lock order: `interface` -> `sockets`
 impl<E: Ext> IfaceCommon<E> {
