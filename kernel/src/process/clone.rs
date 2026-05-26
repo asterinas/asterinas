@@ -10,7 +10,7 @@ use ostd::{
 
 use super::{
     Credentials, Pid, Process, pid_table,
-    posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
+    posix_thread::{AsPosixThread, PosixThreadBuilder},
     rlimit::ResourceLimits,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
 };
@@ -557,16 +557,7 @@ fn clone_child_process(
         let child_vmar_arc = child_vmar.clone_arc();
 
         let mut child_thread_builder = {
-            let thread_name = {
-                let executable_path = child_vmar.process_vm().executable_file();
-                thread_local
-                    .borrow_fs()
-                    .resolver()
-                    .read()
-                    .make_abs_path(executable_path)
-                    .into_string()
-            };
-            let child_thread_name = ThreadName::new_from_executable_path(&thread_name);
+            let child_thread_name = ctx.posix_thread.thread_name().lock().clone();
 
             let credentials = {
                 let credentials = ctx.posix_thread.credentials();
