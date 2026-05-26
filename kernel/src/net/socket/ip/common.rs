@@ -8,7 +8,7 @@ use aster_bigtcp::{
 
 use crate::{
     net::{
-        iface::{BoundPort, Iface, iter_all_ifaces, loopback_iface, virtio_iface},
+        iface::{Iface, iter_all_ifaces, loopback_iface, virtio_iface},
         socket::util::check_port_privilege,
     },
     prelude::*,
@@ -69,7 +69,10 @@ fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
     }
 }
 
-pub(super) fn bind_port(endpoint: &IpEndpoint, can_reuse: bool) -> Result<BoundPort> {
+pub(super) fn resolve_bind_iface_and_config(
+    endpoint: &IpEndpoint,
+    can_reuse: bool,
+) -> Result<(Arc<Iface>, BindPortConfig)> {
     check_port_privilege(endpoint.port)?;
 
     let iface = match get_iface_to_bind(&endpoint.addr) {
@@ -84,7 +87,7 @@ pub(super) fn bind_port(endpoint: &IpEndpoint, can_reuse: bool) -> Result<BoundP
 
     let bind_port_config = BindPortConfig::new(*endpoint, can_reuse);
 
-    Ok(iface.bind(bind_port_config)?)
+    Ok((iface, bind_port_config))
 }
 
 impl From<BindError> for Error {

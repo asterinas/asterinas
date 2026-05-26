@@ -10,7 +10,7 @@ use super::{connected::ConnectedStream, init::InitStream, observer::StreamObserv
 use crate::{
     events::IoEvents,
     net::{
-        iface::{BoundPort, Iface, TcpConnection},
+        iface::{BoundTcpPort, Iface, TcpConnection},
         socket::ip::IpAddressFamily,
     },
     prelude::*,
@@ -29,11 +29,11 @@ pub(super) enum ConnResult {
 
 impl ConnectingStream {
     pub(super) fn new(
-        bound_port: BoundPort,
+        bound_port: BoundTcpPort,
         remote_endpoint: IpEndpoint,
         option: &RawTcpOption,
         observer: StreamObserver,
-    ) -> Result<Self, (Error, BoundPort)> {
+    ) -> Result<Self, (Error, BoundTcpPort)> {
         let tcp_conn =
             match TcpConnection::new_connect(bound_port, remote_endpoint, option, observer) {
                 Ok(tcp_conn) => tcp_conn,
@@ -105,7 +105,7 @@ impl ConnectingStream {
         self.tcp_conn.iface()
     }
 
-    pub(super) fn bound_port(&self) -> &BoundPort {
+    pub(super) fn bound_port(&self) -> &BoundTcpPort {
         self.tcp_conn.bound_port()
     }
 

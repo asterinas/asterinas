@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::{Arc, Weak};
+use core::ops::Deref;
 
 use smoltcp::wire::IpEndpoint;
 use spin::once::Once;
@@ -21,6 +22,7 @@ pub struct Socket<T: Inner<E>, E: Ext>(pub(super) Takeable<Arc<SocketBg<T, E>>>)
 /// [`TcpListenerInner`]: super::tcp_listen::TcpListenerInner
 /// [`UdpSocketInner`]: super::udp::UdpSocketInner
 pub trait Inner<E: Ext> {
+    type BoundPort: Deref<Target = BoundPort<E>>;
     type Observer: SocketEventObserver;
 
     /// Called by [`Socket::drop`].
@@ -41,7 +43,7 @@ pub trait Inner<E: Ext> {
 /// [`UdpSocketBg`]: super::udp::UdpSocketBg
 /// [`TcpConnection`]: super::tcp_conn::TcpConnection
 pub struct SocketBg<T: Inner<E>, E: Ext> {
-    pub(super) bound: BoundPort<E>,
+    pub(super) bound: T::BoundPort,
     pub(super) inner: T,
     observer: Once<T::Observer>,
 }
@@ -55,7 +57,7 @@ impl<T: Inner<E>, E: Ext> Drop for Socket<T, E> {
 }
 
 impl<T: Inner<E>, E: Ext> Socket<T, E> {
-    pub(super) fn new(bound: BoundPort<E>, inner: T) -> Self {
+    pub(super) fn new(bound: T::BoundPort, inner: T) -> Self {
         Self(Takeable::new(Arc::new(SocketBg {
             bound,
             inner,
@@ -63,7 +65,7 @@ impl<T: Inner<E>, E: Ext> Socket<T, E> {
         })))
     }
 
-    pub(super) fn new_cyclic<F>(bound: BoundPort<E>, inner_fn: F) -> Self
+    pub(super) fn new_cyclic<F>(bound: T::BoundPort, inner_fn: F) -> Self
     where
         F: FnOnce(&Weak<SocketBg<T, E>>) -> T,
     {
@@ -99,7 +101,7 @@ impl<T: Inner<E>, E: Ext> Socket<T, E> {
         self.0.bound.iface()
     }
 
-    pub fn bound_port(&self) -> &BoundPort<E> {
+    pub fn bound_port(&self) -> &T::BoundPort {
         &self.0.bound
     }
 }

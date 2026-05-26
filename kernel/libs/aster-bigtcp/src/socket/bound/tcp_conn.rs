@@ -25,7 +25,7 @@ use crate::{
     define_boolean_value,
     errors::tcp::{ConnectError, IoError, RecvError, SendError},
     ext::Ext,
-    iface::{BoundPort, PollKey, PollableIfaceMut},
+    iface::{BoundTcpPort, PollKey, PollableIfaceMut},
     socket::{
         event::SocketEvents,
         option::{RawTcpOption, RawTcpSetOption},
@@ -253,6 +253,7 @@ impl<E: Ext> TcpConnectionInner<E> {
 }
 
 impl<E: Ext> Inner<E> for TcpConnectionInner<E> {
+    type BoundPort = BoundTcpPort<E>;
     type Observer = E::TcpEventObserver;
 
     fn on_drop(this: &Arc<SocketBg<Self, E>>) {
@@ -292,11 +293,11 @@ impl<E: Ext> TcpConnection<E> {
     ///
     /// Polling the iface is _always_ required after this method succeeds.
     pub fn new_connect(
-        bound: BoundPort<E>,
+        bound: BoundTcpPort<E>,
         remote_endpoint: IpEndpoint,
         option: &RawTcpOption,
         observer: E::TcpEventObserver,
-    ) -> Result<Self, (BoundPort<E>, ConnectError)> {
+    ) -> Result<Self, (BoundTcpPort<E>, ConnectError)> {
         let local_endpoint = bound.endpoint();
 
         let iface = bound.iface().clone();
@@ -358,12 +359,12 @@ impl<E: Ext> TcpConnection<E> {
         }
     }
 
-    /// Converts back to the [`BoundPort`].
+    /// Converts back to the [`BoundTcpPort`].
     ///
     /// This method will succeed if the connection is fully closed and no network events can reach
     /// this connection. We guarantee that this method will always succeed if
     /// [`Self::connect_state`] returns [`ConnectState::Refused`].
-    pub fn into_bound_port(mut self) -> Option<BoundPort<E>> {
+    pub fn into_bound_port(mut self) -> Option<BoundTcpPort<E>> {
         let this: TcpConnectionBg<E> = Arc::into_inner(self.0.take())?;
         Some(this.bound)
     }

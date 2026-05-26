@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr, Ipv6Address};
 
-use super::{BoundPort, InterfaceFlags, InterfaceType, port::BindPortConfig};
+use super::{BindPortConfig, BoundTcpPort, BoundUdpPort, InterfaceFlags, InterfaceType};
 use crate::{errors::BindError, ext::Ext};
 
 /// A network interface.
@@ -22,20 +22,32 @@ pub trait Iface<E>: internal::IfaceInternal<E> + Send + Sync {
 }
 
 impl<E: Ext> dyn Iface<E> {
-    /// Binds a socket to the iface.
+    // FIXME: The reason for binding the socket and the iface together is because there are
+    // limitations inside smoltcp. See discussion at
+    // <https://github.com/smoltcp-rs/smoltcp/issues/779>.
+
+    /// Binds a TCP port to the iface.
     ///
-    /// After binding the socket to the iface, the iface will handle all packets to and from the
-    /// socket.
-    ///
-    /// If no specific port is given in [`BindPortConfig`], the iface will pick up an ephemeral port
-    /// for the socket.
-    ///
-    /// FIXME: The reason for binding the socket and the iface together is because there are
-    /// limitations inside smoltcp. See discussion at
-    /// <https://github.com/smoltcp-rs/smoltcp/issues/779>.
-    pub fn bind(self: &Arc<Self>, config: BindPortConfig) -> Result<BoundPort<E>, BindError> {
+    /// If no specific port is given in [`BindPortConfig`], the iface will pick up an ephemeral
+    /// port.
+    pub fn bind_tcp(
+        self: &Arc<Self>,
+        config: BindPortConfig,
+    ) -> Result<BoundTcpPort<E>, BindError> {
         let common = self.common();
-        common.bind(self.clone(), config)
+        common.bind_tcp(self.clone(), config)
+    }
+
+    /// Binds a UDP port to the iface.
+    ///
+    /// If no specific port is given in [`BindPortConfig`], the iface will pick up an ephemeral
+    /// port.
+    pub fn bind_udp(
+        self: &Arc<Self>,
+        config: BindPortConfig,
+    ) -> Result<BoundUdpPort<E>, BindError> {
+        let common = self.common();
+        common.bind_udp(self.clone(), config)
     }
 
     /// Returns the interface index.

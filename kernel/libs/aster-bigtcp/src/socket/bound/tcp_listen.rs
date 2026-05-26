@@ -17,7 +17,7 @@ use super::{
 use crate::{
     errors::tcp::ListenError,
     ext::Ext,
-    iface::{BindPortConfig, BoundPort, PollableIfaceMut},
+    iface::{BindPortConfig, BoundTcpPort, PollableIfaceMut},
     socket::{
         option::{RawTcpOption, RawTcpSetOption},
         unbound::{RawTcpSocket, new_tcp_socket},
@@ -50,6 +50,7 @@ impl<E: Ext> TcpListenerInner<E> {
 }
 
 impl<E: Ext> Inner<E> for TcpListenerInner<E> {
+    type BoundPort = BoundTcpPort<E>;
     type Observer = E::TcpEventObserver;
 
     fn on_drop(this: &Arc<SocketBg<Self, E>>) {
@@ -68,11 +69,11 @@ impl<E: Ext> TcpListener<E> {
     ///
     /// Polling the iface is _not_ required after this method succeeds.
     pub fn new_listen(
-        bound: BoundPort<E>,
+        bound: BoundTcpPort<E>,
         max_conn: usize,
         option: &RawTcpOption,
         observer: E::TcpEventObserver,
-    ) -> Result<Self, (BoundPort<E>, ListenError)> {
+    ) -> Result<Self, (BoundTcpPort<E>, ListenError)> {
         let local_endpoint = bound.endpoint();
 
         let iface = bound.iface().clone();
@@ -234,7 +235,7 @@ impl<E: Ext> TcpListenerBg<E> {
         let conn = TcpConnection::new_cyclic(
             self.bound
                 .iface()
-                .bind(BindPortConfig::new_backlog(self.bound.endpoint()))
+                .bind_tcp(BindPortConfig::new_backlog(self.bound.endpoint()))
                 .unwrap(),
             |weak| {
                 TcpConnectionInner::new(

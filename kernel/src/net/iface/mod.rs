@@ -11,7 +11,8 @@ pub use init::{init, iter_all_ifaces, loopback_iface, virtio_iface};
 pub(super) use poll::init_in_first_kthread;
 
 pub type Iface = dyn aster_bigtcp::iface::Iface<ext::BigtcpExt>;
-pub type BoundPort = aster_bigtcp::iface::BoundPort<ext::BigtcpExt>;
+pub type BoundTcpPort = aster_bigtcp::iface::BoundTcpPort<ext::BigtcpExt>;
+pub type BoundUdpPort = aster_bigtcp::iface::BoundUdpPort<ext::BigtcpExt>;
 
 pub type RawTcpSocketExt = aster_bigtcp::socket::RawTcpSocketExt<ext::BigtcpExt>;
 
