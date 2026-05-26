@@ -53,3 +53,16 @@ fn ollama_start_server(nixos_shell: &mut Session) -> Result<(), Error> {
 
     Ok(())
 }
+
+// ============================================================================
+// AI Coding Agents - Codex
+// ============================================================================
+
+#[nixos_test]
+fn codex_show_help(nixos_shell: &mut Session) -> Result<(), Error> {
+    // CI does not provide a Codex API key, so we cannot test real requests or
+    // interactive workflows. This smoke test only verifies that the Codex
+    // package is installed and that its offline CLI entrypoint works.
+    nixos_shell.run_cmd_and_expect("codex --help", "Run Codex non-interactively")?;
+    Ok(())
+}
