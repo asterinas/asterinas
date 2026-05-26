@@ -10,10 +10,7 @@ use ostd::{
 
 use super::process_vm::activate_vmar;
 use crate::{
-    fs::vfs::{
-        inode::Inode,
-        path::{Path, PathResolver},
-    },
+    fs::vfs::{inode::Inode, path::Path},
     prelude::*,
     process::{
         ContextUnshareAdminApi, Credentials, Process, pid_table,
@@ -34,6 +31,7 @@ use crate::{
 
 pub fn do_execve(
     elf_file: Path,
+    thread_name: ThreadName,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     ctx: &Context,
@@ -86,8 +84,8 @@ pub fn do_execve(
     let res = do_execve_no_return(
         ctx,
         user_context,
-        &path_resolver,
         elf_file,
+        thread_name,
         new_vmar,
         &elf_load_info,
     );
@@ -146,8 +144,8 @@ fn read_cstring_vec(
 fn do_execve_no_return(
     ctx: &Context,
     user_context: &mut UserContext,
-    path_resolver: &PathResolver,
     elf_file: Path,
+    thread_name: ThreadName,
     new_vmar: VmarHandle,
     elf_load_info: &ElfLoadInfo,
 ) -> Result<()> {
@@ -186,9 +184,7 @@ fn do_execve_no_return(
     // Unshare file descriptor table and close files with O_CLOEXEC flag.
     unshare_and_close_files(ctx);
 
-    // Update the process's executable path and set the thread name
-    let executable_path = path_resolver.make_abs_path(&elf_file).into_string();
-    *posix_thread.thread_name().lock() = ThreadName::new_from_executable_path(&executable_path);
+    *posix_thread.thread_name().lock() = thread_name;
 
     // Unshare and reset signal dispositions to their default actions.
     unshare_and_reset_sigdispositions(process);

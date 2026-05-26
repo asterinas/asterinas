@@ -16,6 +16,7 @@ set -e
 ./cpu_affinity/cpu_affinity
 
 ./execve/execve
+./execve/execve_comm
 ./execve/execve_err
 ./execve/execve_memfd
 ./execve/execve_mt_parent
