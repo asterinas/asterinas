@@ -6,7 +6,10 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::{
+    ops::Deref,
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+};
 
 use aster_softirq::BottomHalfDisabled;
 use bitflags::bitflags;
@@ -39,7 +42,7 @@ pub struct IfaceCommon<E: Ext> {
     flags: InterfaceFlags,
 
     interface: SpinLock<PollableIface<E>, BottomHalfDisabled>,
-    used_ports: SpinLock<BTreeMap<NormalizedAddress, BTreeMap<u16, PortState>>, BottomHalfDisabled>,
+    used_ports: SpinLock<BTreeMap<PortKey, PortState>, BottomHalfDisabled>,
     sockets: SpinLock<SocketTable<E>, BottomHalfDisabled>,
     sched_poll: E::ScheduleNextPoll,
 }
@@ -153,17 +156,37 @@ const IP_LOCAL_PORT_START: u16 = 32768;
 const IP_LOCAL_PORT_END: u16 = 60999;
 
 impl<E: Ext> IfaceCommon<E> {
-    pub(super) fn bind(
+    pub(super) fn bind_tcp(
         &self,
         iface: Arc<dyn Iface<E>>,
         config: BindPortConfig,
+    ) -> Result<BoundTcpPort<E>, BindError> {
+        self.bind(iface, config, PortProtocol::Tcp)
+            .map(BoundTcpPort)
+    }
+
+    pub(super) fn bind_udp(
+        &self,
+        iface: Arc<dyn Iface<E>>,
+        config: BindPortConfig,
+    ) -> Result<BoundUdpPort<E>, BindError> {
+        self.bind(iface, config, PortProtocol::Udp)
+            .map(BoundUdpPort)
+    }
+
+    fn bind(
+        &self,
+        iface: Arc<dyn Iface<E>>,
+        config: BindPortConfig,
+        protocol: PortProtocol,
     ) -> Result<BoundPort<E>, BindError> {
         let addr = config.addr();
-        let (port, can_reuse) = self.bind_port(config)?;
+        let (port, can_reuse) = self.bind_port(config, protocol)?;
         Ok(BoundPort {
             iface,
             addr,
             port,
+            protocol,
             can_reuse: AtomicBool::new(can_reuse),
         })
     }
@@ -174,13 +197,19 @@ impl<E: Ext> IfaceCommon<E> {
     ///
     /// See <https://en.wikipedia.org/wiki/Ephemeral_port>.
     fn alloc_ephemeral_port(
-        used_ports: &mut BTreeMap<NormalizedAddress, BTreeMap<u16, PortState>>,
+        used_ports: &mut BTreeMap<PortKey, PortState>,
         addr: NormalizedAddress,
+        protocol: PortProtocol,
         _can_reuse: bool,
     ) -> Option<u16> {
-        let address_ports = used_ports.entry(addr).or_default();
+        let mut key = PortKey {
+            addr,
+            port: 0,
+            protocol,
+        };
         for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
-            if let Entry::Vacant(..) = address_ports.entry(port) {
+            key.port = port;
+            if !used_ports.contains_key(&key) {
                 return Some(port);
             }
         }
@@ -191,7 +220,11 @@ impl<E: Ext> IfaceCommon<E> {
         None
     }
 
-    fn bind_port(&self, config: BindPortConfig) -> Result<(u16, bool), BindError> {
+    fn bind_port(
+        &self,
+        config: BindPortConfig,
+        protocol: PortProtocol,
+    ) -> Result<(u16, bool), BindError> {
         let mut used_ports = self.used_ports.lock();
         let config_can_reuse = config.can_reuse();
         let addr = NormalizedAddress::from(config.addr());
@@ -199,50 +232,59 @@ impl<E: Ext> IfaceCommon<E> {
         let port = if let Some(port) = config.port() {
             port
         } else {
-            match Self::alloc_ephemeral_port(&mut used_ports, addr, config_can_reuse) {
+            match Self::alloc_ephemeral_port(&mut used_ports, addr, protocol, config_can_reuse) {
                 Some(port) => port,
                 None => return Err(BindError::Exhausted),
             }
         };
 
-        let address_ports = used_ports.entry(addr).or_default();
-        if let Some(port_state) = address_ports.get_mut(&port) {
-            // FIXME: If the socket is not a backlog socket,
-            // we should check whether there is a listening socket on the port.
-            // If there is, the socket cannot be bound to that port.
-            let can_reuse = config.is_backlog() || (port_state.can_reuse() & config_can_reuse);
-            if can_reuse {
-                port_state.nsocket += 1;
-                if config_can_reuse {
-                    port_state.nreuse += 1;
+        let key = PortKey {
+            addr,
+            port,
+            protocol,
+        };
+        let entry = used_ports.entry(key);
+        match entry {
+            Entry::Occupied(mut occupied) => {
+                let port_state = occupied.get_mut();
+                // FIXME: If the socket is not a backlog socket,
+                // we should check whether there is a listening socket on the port.
+                // If there is, the socket cannot be bound to that port.
+                let can_reuse = config.is_backlog() || (port_state.can_reuse() & config_can_reuse);
+                if can_reuse {
+                    port_state.nsocket += 1;
+                    if config_can_reuse {
+                        port_state.nreuse += 1;
+                    }
+                } else {
+                    return Err(BindError::InUse);
                 }
-            } else {
-                return Err(BindError::InUse);
             }
-        } else {
-            let port_state = PortState::new(config_can_reuse);
-            address_ports.insert(port, port_state);
+            Entry::Vacant(vacant) => {
+                let port_state = PortState::new(config_can_reuse);
+                vacant.insert(port_state);
+            }
         };
 
         Ok((port, config_can_reuse))
     }
 
     /// Releases the port so that it can be used again.
-    fn release_port(&self, addr: IpAddress, port: u16, can_reuse: bool) {
-        let addr = NormalizedAddress::from(addr);
+    fn release_port(&self, addr: IpAddress, port: u16, can_reuse: bool, protocol: PortProtocol) {
+        let key = PortKey {
+            addr: NormalizedAddress::from(addr),
+            port,
+            protocol,
+        };
         let mut used_ports = self.used_ports.lock();
-        if let Some(address_ports) = used_ports.get_mut(&addr)
-            && let Some(port_state) = address_ports.get_mut(&port)
-        {
+        if let Entry::Occupied(mut occupied) = used_ports.entry(key) {
+            let port_state = occupied.get_mut();
             port_state.nsocket -= 1;
             if can_reuse {
                 port_state.nreuse -= 1;
             }
             if port_state.nsocket == 0 {
-                address_ports.remove(&port);
-                if address_ports.is_empty() {
-                    used_ports.remove(&addr);
-                }
+                occupied.remove();
             }
         }
     }
@@ -316,12 +358,11 @@ impl<E: Ext> IfaceCommon<E> {
 /// A port bound to an iface.
 ///
 /// When dropped, the port is automatically released.
-//
-// FIXME: TCP and UDP ports are independent. Find a way to track the protocol here.
 pub struct BoundPort<E: Ext> {
     iface: Arc<dyn Iface<E>>,
     addr: IpAddress,
     port: u16,
+    protocol: PortProtocol,
     can_reuse: AtomicBool,
 }
 
@@ -351,15 +392,17 @@ impl<E: Ext> BoundPort<E> {
         let iface_common = self.iface.common();
         let mut used_ports = iface_common.used_ports.lock();
 
+        // Check after locking `used_ports` to avoid race conditions.
         if self.can_reuse.load(Ordering::Relaxed) == can_reuse {
             return;
         }
 
-        let normalized_addr = NormalizedAddress::from(self.addr);
-        if let Some(port_state) = used_ports
-            .get_mut(&normalized_addr)
-            .and_then(|address_ports| address_ports.get_mut(&self.port))
-        {
+        let key = PortKey {
+            addr: NormalizedAddress::from(self.addr),
+            port: self.port,
+            protocol: self.protocol,
+        };
+        if let Some(port_state) = used_ports.get_mut(&key) {
             if can_reuse {
                 port_state.nreuse += 1;
             } else {
@@ -373,10 +416,44 @@ impl<E: Ext> BoundPort<E> {
 
 impl<E: Ext> Drop for BoundPort<E> {
     fn drop(&mut self) {
-        self.iface
-            .common()
-            .release_port(self.addr, self.port, *self.can_reuse.get_mut());
+        self.iface.common().release_port(
+            self.addr,
+            self.port,
+            *self.can_reuse.get_mut(),
+            self.protocol,
+        );
     }
+}
+
+/// A TCP port bound to an iface.
+pub struct BoundTcpPort<E: Ext>(BoundPort<E>);
+/// A UDP port bound to an iface.
+pub struct BoundUdpPort<E: Ext>(BoundPort<E>);
+
+impl<E: Ext> Deref for BoundTcpPort<E> {
+    type Target = BoundPort<E>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl<E: Ext> Deref for BoundUdpPort<E> {
+    type Target = BoundPort<E>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct PortKey {
+    addr: NormalizedAddress,
+    port: u16,
+    protocol: PortProtocol,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum PortProtocol {
+    Tcp,
+    Udp,
 }
 
 struct PortState {

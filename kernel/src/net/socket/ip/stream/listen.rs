@@ -9,7 +9,7 @@ use aster_bigtcp::{
 use super::{connected::ConnectedStream, observer::StreamObserver};
 use crate::{
     events::IoEvents,
-    net::iface::{BoundPort, Iface, TcpListener},
+    net::iface::{BoundTcpPort, Iface, TcpListener},
     prelude::*,
 };
 
@@ -19,11 +19,11 @@ pub(super) struct ListenStream {
 
 impl ListenStream {
     pub(super) fn new(
-        bound_port: BoundPort,
+        bound_port: BoundTcpPort,
         backlog: usize,
         option: &RawTcpOption,
         observer: StreamObserver,
-    ) -> Result<Self, (BoundPort, Error)> {
+    ) -> Result<Self, (BoundTcpPort, Error)> {
         const SOMAXCONN: usize = 4096;
         let max_conn = SOMAXCONN.min(backlog);
 

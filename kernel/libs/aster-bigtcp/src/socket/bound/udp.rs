@@ -15,7 +15,7 @@ use super::common::{Inner, Socket, SocketBg};
 use crate::{
     errors::udp::SendError,
     ext::Ext,
-    iface::BoundPort,
+    iface::BoundUdpPort,
     socket::{RawUdpSocket, event::SocketEvents, unbound::new_udp_socket},
 };
 
@@ -28,6 +28,7 @@ pub struct UdpSocketInner {
 }
 
 impl<E: Ext> Inner<E> for UdpSocketInner {
+    type BoundPort = BoundUdpPort<E>;
     type Observer = E::UdpEventObserver;
 
     fn on_drop(this: &Arc<SocketBg<Self, E>>) {
@@ -103,9 +104,9 @@ impl<E: Ext> UdpSocket<E> {
     ///
     /// Polling the iface is _not_ required after this method succeeds.
     pub fn new_bind(
-        bound: BoundPort<E>,
+        bound: BoundUdpPort<E>,
         observer: E::UdpEventObserver,
-    ) -> Result<Self, (BoundPort<E>, smoltcp::socket::udp::BindError)> {
+    ) -> Result<Self, (BoundUdpPort<E>, smoltcp::socket::udp::BindError)> {
         let local_endpoint = bound.endpoint();
 
         let socket = {
