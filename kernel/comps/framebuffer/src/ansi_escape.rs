@@ -394,7 +394,7 @@ impl EscapeFsm {
                 100..=107 => op.set_bg_color(COLORS[op_code as usize - 100 + 8]),
 
                 // Invalid or unsupported
-                _ => return,
+                _ => {}
             }
         }
     }
