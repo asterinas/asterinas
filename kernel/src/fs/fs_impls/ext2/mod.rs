@@ -1,59 +1,78 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! A safe Rust Ext2 filesystem.
+//! Ext2 filesystem implementation, providing file I/O, directory operations,
+//! symlinks, and extended attributes through the Asterinas VFS trait interfaces.
 //!
-//! The Second Extended File System(Ext2) is a major rewrite of the Ext filesystem.
-//! It is the predominant filesystem in use by Linux from the early 1990s to the early 2000s.
-//! The structures of Ext3 and Ext4 are based on Ext2 and add some additional options
-//! such as journaling.
+//! This module is the entry point for ext2 support in Asterinas. A caller
+//! registers `Ext2` as a filesystem type via `init`, after which the VFS
+//! can mount ext2 volumes and operate on them through the standard
+//! filesystem trait interfaces. Buffered I/O is delegated to the
+//! `PageCache` subsystem; this module does not cache block data itself.
 //!
-//! The features of this version of Ext2 are as follows:
-//! 1. No unsafe Rust. The filesystem is written is Rust without any unsafe code,
-//!    ensuring that there are no memory safety issues in the code.
-//! 2. Deep integration with PageCache. The data and metadata of the filesystem are
-//!    stored in PageCache, which accelerates the performance of data access.
-//! 3. Compatible with queue-based block device. The filesystem can submits multiple
-//!    BIO requests to be block device at once, thereby enhancing I/O performance.
+//! The Second Extended File System (ext2) is a classic Linux filesystem
+//! introduced in 1993 as a replacement for the original ext filesystem.
+//! It was the default Linux filesystem throughout the 1990s and remains
+//! the on-disk foundation for ext3 and ext4. This implementation covers
+//! the base ext2 feature set; it does not include ext3/ext4 extensions
+//! such as journaling, extents, or inline data.
 //!
-//! # Example
+//! # On-disk layout
 //!
-//! ```no_run
-//! // Opens an Ext2 from the block device.
-//! let ext2 = Ext2::open(block_device)?;
-//! // Lookup the root inode.
-//! let root = ext2.root_inode()?;
-//! // Create a file inside root directory.
-//! let file = root.create("file", InodeType::File, FilePerm::from_bits_truncate(0o666))?;
-//! // Write data into the file.
-//! const WRITE_DATA: &[u8] = b"Hello, World";
-//! let len = file.write_at(0, WRITE_DATA)?;
-//! assert!(len == WRITE_DATA.len());
-//! ```
+//! An ext2 volume is divided into fixed-size block groups. Each block group
+//! contains a block bitmap, an inode bitmap, an inode table, and data blocks.
+//! The superblock and the block group descriptor table are stored in block
+//! group 0 (with backup copies in select other groups). The `fs` module
+//! manages the superblock and block group descriptor table, while
+//! `block_group` tracks per-group allocation state.
 //!
-//! # Limitation
+//! Individual files and directories are represented by inodes. The `inode`
+//! module handles inode I/O, including data block mapping, directory entry
+//! management, and symlink resolution. The `impl_for_vfs` module wires
+//! these operations into the VFS trait interfaces so that the rest of the
+//! kernel accesses ext2 through the common filesystem API.
 //!
-//! Here we summarizes the features that need to be implemented in the future.
-//! 1. Supports merging small read/write operations.
-//! 2. Handles the intermediate failure status correctly.
+//! # Module structure
+//!
+//! | Module         | Responsibility                                       |
+//! |----------------|------------------------------------------------------|
+//! | `fs`           | Filesystem-level state: superblock, block groups     |
+//! | `inode`        | Inode operations: file I/O, directories, symlinks    |
+//! | `xattr`        | Extended attribute block management                  |
+//! | `block_group`  | Block group descriptor and per-group allocation      |
+//! | `super_block`  | On-disk superblock parsing and writeback             |
+//! | `impl_for_vfs` | Wires ext2 types into the VFS trait interfaces       |
+//! | `fs_type`      | `FsType` registration glue                           |
+//! | `utils`        | Dirty tracking, sparse-super helpers, and time utils |
+//! | `prelude`      | Common imports shared across submodules              |
+//!
+//! Directory entry layout helpers live under `inode::dir::dir_entry`,
+//! next to the directory operations that use them.
+//!
+//! # References
+//!
+//! - <https://www.kernel.org/doc/html/latest/filesystems/ext2.html>
+//! - <https://www.nongnu.org/ext2-doc/ext2.html>
 
 pub use fs::Ext2;
 pub use inode::{FilePerm, Inode};
-pub use super_block::MAGIC_NUM;
 
-use crate::fs::ext2::fs::Ext2Type;
+use self::fs_type::Ext2Type;
+use crate::fs::vfs::registry;
 
 mod block_group;
-mod block_ptr;
-mod dir;
 mod fs;
+mod fs_type;
 mod impl_for_vfs;
-mod indirect_block_cache;
 mod inode;
 mod prelude;
 mod super_block;
 mod utils;
 mod xattr;
 
+#[cfg(ktest)]
+mod test_utils;
+
+/// Registers the ext2 filesystem type with the VFS registry.
 pub(super) fn init() {
-    crate::fs::vfs::registry::register(&Ext2Type).unwrap();
+    registry::register(&Ext2Type).unwrap();
 }

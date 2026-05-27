@@ -59,6 +59,7 @@ rand = { workspace = true, features = [
     "std_rng",
 ] }
 ring-buffer.workspace = true
+smallvec.workspace = true
 spin.workspace = true
 takeable.workspace = true
 time.workspace = true
