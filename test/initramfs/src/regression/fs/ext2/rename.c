@@ -101,7 +101,7 @@ FN_TEST(rename_to_new_name)
 }
 END_TEST()
 
-FN_TEST(rename_negative_dcache)
+FN_TEST(rename_overwrites_negative_cache_on_ext2)
 {
 	ensure_dir(BASE_DIR);
 

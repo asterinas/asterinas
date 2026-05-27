@@ -1,13 +1,17 @@
 { lib, stdenvNoCC, pkgs, conformanceSrc }:
 
 let
+  standaloneCoreutils = pkgs.coreutils.override { singleBinary = false; };
+
   runtimeDeps = with pkgs; [
+    standaloneCoreutils
     perl
     bash
     gnugrep
     gnused
     gawk
     coreutils
+    glibc.bin
     findutils
     util-linux
     bc
