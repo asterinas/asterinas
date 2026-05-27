@@ -6,11 +6,13 @@ pub use dirent_visitor::{DirentCounter, DirentVisitor};
 pub use direntry_vec::DirEntryVecExt;
 pub use endpoint::{Endpoint, EndpointState};
 pub use id_bitmap::IdBitmap;
+pub use rename_flags::RenameFlags;
 
 mod dirent_visitor;
 mod direntry_vec;
 mod endpoint;
 mod id_bitmap;
+mod rename_flags;
 pub mod systree_inode;
 
 use core::{

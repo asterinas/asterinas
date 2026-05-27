@@ -18,7 +18,7 @@ use crate::{
     device::{Device, DeviceType},
     fs::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags},
-        utils::DirentVisitor,
+        utils::{DirentVisitor, RenameFlags},
         vfs::path::Path,
     },
     prelude::*,
@@ -431,7 +431,16 @@ pub trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        flags: RenameFlags,
+    ) -> Result<()> {
+        if !flags.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "unsupported rename flags");
+        }
         Err(Error::new(Errno::ENOTDIR))
     }
 

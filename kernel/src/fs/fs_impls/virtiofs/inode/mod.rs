@@ -40,7 +40,7 @@ use super::{
 use crate::{
     fs::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags},
-        utils::DirentVisitor,
+        utils::{DirentVisitor, RenameFlags},
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FileOps, Inode, Metadata, RevalidationPolicy, SymbolicLink},
@@ -450,7 +450,16 @@ impl Inode for VirtioFsInode {
         Ok(())
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        flags: RenameFlags,
+    ) -> Result<()> {
+        if !flags.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "unsupported rename flags");
+        }
         let target = target.downcast_ref::<VirtioFsInode>().unwrap();
 
         let fs = self.fs_ref();

@@ -13,6 +13,7 @@ use crate::{
     fs::{
         self,
         file::{InodeMode, InodeType},
+        utils::RenameFlags,
         vfs::{
             inode::{Inode, MknodType, RevalidationPolicy},
             inode_ext::InodeExt,
@@ -682,6 +683,7 @@ impl DirDentry<'_> {
         old_name: &str,
         new_dir_arc: &Arc<Dentry>,
         new_name: &str,
+        flags: RenameFlags,
     ) -> Result<()> {
         let old_dir = old_dir_arc.as_dir_dentry_or_err()?;
         let new_dir = new_dir_arc.as_dir_dentry_or_err()?;
@@ -703,7 +705,7 @@ impl DirDentry<'_> {
             children.check_mountpoint(new_name)?;
             let old_dentry = children.probe_cached_child_for_rename(&old_dir, old_name)?;
 
-            old_dir_inode.rename(old_name, old_dir_inode, new_name)?;
+            old_dir_inode.rename(old_name, old_dir_inode, new_name, flags)?;
 
             match old_dentry.as_ref() {
                 Some(dentry) => {
@@ -725,7 +727,7 @@ impl DirDentry<'_> {
             let old_dentry = self_children.probe_cached_child_for_rename(&old_dir, old_name)?;
             new_dir_children.check_mountpoint(new_name)?;
 
-            old_dir_inode.rename(old_name, new_dir_inode, new_name)?;
+            old_dir_inode.rename(old_name, new_dir_inode, new_name, flags)?;
             match old_dentry.as_ref() {
                 Some(dentry) => {
                     self_children.delete(old_name);

@@ -11,7 +11,10 @@ mod dir_entry;
 
 use self::dir_entry::{DOT_BYTE, DOT_DOT_BYTE, DirBlockView, DirEntryFileType, DirEntryHeader};
 use super::{super::Ext2, FileFlags, FilePerm, Inode, InodeInner, MAX_LINK_COUNT};
-use crate::fs::ext2::{prelude::*, utils};
+use crate::fs::{
+    ext2::{prelude::*, utils},
+    utils::RenameFlags,
+};
 
 /// Information about a candidate directory entry slot.
 #[derive(Clone, Copy, Debug)]
@@ -235,7 +238,11 @@ impl Inode {
         old_name: &str,
         target: &Inode,
         new_name: &str,
+        flags: RenameFlags,
     ) -> Result<()> {
+        if !flags.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "unsupported rename flags");
+        }
         let fs = self.fs()?;
         let is_same_dir = self.ino == target.ino;
         if is_same_dir && old_name == new_name {

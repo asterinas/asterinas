@@ -17,7 +17,7 @@ use crate::{
     fs::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags},
         fs_impls::ext2::{FilePerm, Inode as Ext2Inode},
-        utils::DirentVisitor,
+        utils::{DirentVisitor, RenameFlags},
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FallocMode, FileOps, Inode, Metadata, MknodType, SymbolicLink},
@@ -207,11 +207,17 @@ impl Inode for Ext2Inode {
         self.rmdir(name)
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        flags: RenameFlags,
+    ) -> Result<()> {
         let target = target
             .downcast_ref::<Ext2Inode>()
             .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
-        self.rename(old_name, target, new_name)
+        self.rename(old_name, target, new_name, flags)
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {

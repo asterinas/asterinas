@@ -14,7 +14,7 @@ use crate::{
     fs::{
         file::{InodeMode, InodeType, StatusFlags, mkmod},
         pseudofs::AnonDeviceId,
-        utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
+        utils::{DirEntryVecExt, DirentVisitor, NAME_MAX, RenameFlags},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{Extension, FileOps, Inode, Metadata, MknodType, RevalidationPolicy},
@@ -350,7 +350,16 @@ impl Inode for RootInode {
         Ok(inode)
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        flags: RenameFlags,
+    ) -> Result<()> {
+        if !flags.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "unsupported rename flags");
+        }
         Err(Error::new(Errno::EPERM))
     }
 

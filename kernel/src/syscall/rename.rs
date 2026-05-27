@@ -4,6 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file::{InodeType, file_table::RawFileDesc},
+        utils::RenameFlags,
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath},
     },
     prelude::*,
@@ -70,7 +71,7 @@ pub fn sys_renameat2(
         );
     }
 
-    old_parent_path.rename(old_name, &new_parent_path, &new_name)?;
+    old_parent_path.rename(old_name, &new_parent_path, &new_name, RenameFlags::empty())?;
 
     Ok(SyscallReturn::Return(0))
 }

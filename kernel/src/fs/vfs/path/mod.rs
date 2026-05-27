@@ -20,6 +20,7 @@ use crate::{
             CreationFlags, InodeHandle, InodeMode, InodeType, OpenArgs, Permission, StatusFlags,
         },
         pseudofs::NsInode,
+        utils::RenameFlags,
         vfs::{
             file_system::{FileSystem, FsFlags},
             inode::{HardLinkability, Inode, Metadata, MknodType},
@@ -545,12 +546,18 @@ impl Path {
     }
 
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
-    pub fn rename(&self, old_name: &str, new_dir: &Self, new_name: &str) -> Result<()> {
+    pub fn rename(
+        &self,
+        old_name: &str,
+        new_dir: &Self,
+        new_name: &str,
+        flags: RenameFlags,
+    ) -> Result<()> {
         if !Arc::ptr_eq(&self.mount, &new_dir.mount) {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name)
+        DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name, flags)
     }
 }
 

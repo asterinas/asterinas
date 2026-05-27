@@ -10,7 +10,7 @@ use aster_systree::{
 use crate::{
     fs::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
-        utils::DirentVisitor,
+        utils::{DirentVisitor, RenameFlags},
         vfs::{
             file_system::{FileSystem, SuperBlock},
             inode::{
@@ -549,7 +549,11 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         _old_name: &str,
         _target: &Arc<dyn Inode>,
         _new_name: &str,
+        flags: RenameFlags,
     ) -> Result<()> {
+        if !flags.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "unsupported rename flags");
+        }
         Err(Error::new(Errno::EPERM))
     }
 

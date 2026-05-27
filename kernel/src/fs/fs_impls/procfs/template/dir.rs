@@ -12,7 +12,7 @@ use crate::{
     fs::{
         file::{InodeMode, InodeType, StatusFlags},
         procfs::{BLOCK_SIZE, ProcFs},
-        utils::DirentVisitor,
+        utils::{DirentVisitor, RenameFlags},
         vfs::{
             file_system::{FileSystem, SuperBlock},
             inode::{Extension, FileOps, Inode, Metadata, MknodType, RevalidationPolicy},
@@ -214,7 +214,16 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
         self.inner.lookup_child(self, name)
     }
 
-    fn rename(&self, _old_name: &str, _target: &Arc<dyn Inode>, _new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        _old_name: &str,
+        _target: &Arc<dyn Inode>,
+        _new_name: &str,
+        flags: RenameFlags,
+    ) -> Result<()> {
+        if !flags.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "unsupported rename flags");
+        }
         Err(Error::new(Errno::EPERM))
     }
 

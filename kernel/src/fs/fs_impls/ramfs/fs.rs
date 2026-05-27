@@ -23,7 +23,7 @@ use crate::{
         pipe::Pipe,
         pseudofs::AnonDeviceId,
         tmpfs::{self, TMPFS_MAGIC},
-        utils::{CStr256, DirentVisitor},
+        utils::{CStr256, DirentVisitor, RenameFlags},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{
@@ -1093,7 +1093,16 @@ impl Inode for RamInode {
         Ok(inode as _)
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        flags: RenameFlags,
+    ) -> Result<()> {
+        if !flags.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "unsupported rename flags");
+        }
         if is_dot_or_dotdot(old_name) {
             return_errno_with_message!(Errno::EISDIR, "old_name is . or ..");
         }
