@@ -13,7 +13,7 @@ use linux_bzimage_builder::{
 use crate::{
     arch::Arch,
     bundle::{
-        bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
+        bin::{AsterBin, AsterBinType, AsterBzImageMeta},
         file::BundleFile,
     },
     util::{get_current_crates, hard_link_or_copy, new_command_checked_exists},
@@ -80,7 +80,11 @@ pub fn make_install_bzimage(
     )
 }
 
-pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: bool) -> AsterBin {
+pub fn make_stripped_boot_elf(
+    install_dir: impl AsRef<Path>,
+    elf: &AsterBin,
+    strip: bool,
+) -> AsterBin {
     let result_elf_path = {
         let elf_name = elf
             .path()
@@ -119,6 +123,16 @@ pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: b
         hard_link_or_copy(elf.path(), &result_elf_path).unwrap();
     }
 
+    AsterBin::new(
+        &result_elf_path,
+        elf.arch(),
+        elf.typ().clone(),
+        elf.version().clone(),
+        strip,
+    )
+}
+
+pub fn make_elf_for_qemu(elf: AsterBin) -> AsterBin {
     if elf.arch() == Arch::X86_64 {
         // Because QEMU denies a x86_64 multiboot ELF file (GRUB2 accept it, btw),
         // modify `em_machine` to pretend to be an x86 (32-bit) ELF image,
@@ -128,7 +142,7 @@ pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: b
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
-            .open(&result_elf_path)
+            .open(elf.path())
             .unwrap();
 
         let bytes: [u8; 2] = [0x03, 0x00];
@@ -138,18 +152,7 @@ pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: b
         file.flush().unwrap();
     }
 
-    AsterBin::new(
-        &result_elf_path,
-        elf.arch(),
-        AsterBinType::Elf(AsterElfMeta {
-            has_linux_header: false,
-            has_pvh_header: false,
-            has_multiboot_header: true,
-            has_multiboot2_header: true,
-        }),
-        elf.version().clone(),
-        strip,
-    )
+    elf
 }
 
 fn install_setup_with_arch(
