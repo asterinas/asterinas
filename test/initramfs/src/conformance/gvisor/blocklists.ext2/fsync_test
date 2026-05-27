@@ -1,3 +1,0 @@
-FsyncTest.CannotFsyncOnUnopenedFd
-FsyncTest.TempDirSucceeds
-FsyncTest.TempFileSucceeds

@@ -13,7 +13,7 @@
 #define TEST_FILE "/ext2/short_rw"
 #define TEST_DATA "abcdefg"
 
-FN_TEST(short_write_no_uninit_leak)
+FN_TEST(short_write_should_not_leak_uninit_cache_page)
 {
 	char *buf;
 	int fd;
