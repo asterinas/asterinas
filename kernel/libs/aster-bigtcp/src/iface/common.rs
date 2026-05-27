@@ -39,7 +39,7 @@ pub struct IfaceCommon<E: Ext> {
     flags: InterfaceFlags,
 
     interface: SpinLock<PollableIface<E>, BottomHalfDisabled>,
-    used_ports: SpinLock<BTreeMap<IpAddress, BTreeMap<u16, PortState>>, BottomHalfDisabled>,
+    used_ports: SpinLock<BTreeMap<NormalizedAddress, BTreeMap<u16, PortState>>, BottomHalfDisabled>,
     sockets: SpinLock<SocketTable<E>, BottomHalfDisabled>,
     sched_poll: E::ScheduleNextPoll,
 }
@@ -50,25 +50,30 @@ pub(super) enum IpPacket<'a> {
     Ipv6(Ipv6Packet<&'a [u8]>),
 }
 
-/// Normalizes IPv4-mapped IPv6 addresses to IPv4 addresses.
+/// A normalized IP address for binding purposes.
+///
+/// IPv4 addresses are normalized to IPv4-mapped IPv6 addresses. IPv6 addresses
+/// remain unchanged.
 ///
 /// IPv4-mapped IPv6 addresses (`::ffff:x.x.x.x`) should be treated as equivalent
 /// to their IPv4 counterparts for binding purposes. This ensures that binding
 /// to `192.0.2.1:80` and `::ffff:192.0.2.1:80` are treated as the same.
 //
-// TODO: This function currently only handles port binding conflict detection.
-// Full dual-stack support is not yet implemented, including:
+// TODO: This type currently only handles port binding conflict detection. Full
+// dual-stack support is not yet implemented, including:
 // - Accepting IPv4 connections on IPv6 wildcard socket (binding to `::`).
 // - Returning IPv4-mapped addresses in `accept()` for IPv4 clients.
 // - Proper handling of `IPV6_V6ONLY` socket option.
-fn normalize_ip_address(addr: IpAddress) -> IpAddress {
-    if let IpAddress::Ipv6(ipv6) = addr
-        && let Some(ipv4) = ipv6.to_ipv4_mapped()
-    {
-        return IpAddress::Ipv4(ipv4);
-    }
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct NormalizedAddress(Ipv6Address);
 
-    addr
+impl From<IpAddress> for NormalizedAddress {
+    fn from(value: IpAddress) -> Self {
+        match value {
+            IpAddress::Ipv4(ipv4) => Self(ipv4.to_ipv6_mapped()),
+            IpAddress::Ipv6(ipv6) => Self(ipv6),
+        }
+    }
 }
 
 impl<E: Ext> IfaceCommon<E> {
@@ -169,8 +174,8 @@ impl<E: Ext> IfaceCommon<E> {
     ///
     /// See <https://en.wikipedia.org/wiki/Ephemeral_port>.
     fn alloc_ephemeral_port(
-        used_ports: &mut BTreeMap<IpAddress, BTreeMap<u16, PortState>>,
-        addr: IpAddress,
+        used_ports: &mut BTreeMap<NormalizedAddress, BTreeMap<u16, PortState>>,
+        addr: NormalizedAddress,
         _can_reuse: bool,
     ) -> Option<u16> {
         let address_ports = used_ports.entry(addr).or_default();
@@ -189,7 +194,7 @@ impl<E: Ext> IfaceCommon<E> {
     fn bind_port(&self, config: BindPortConfig) -> Result<(u16, bool), BindError> {
         let mut used_ports = self.used_ports.lock();
         let config_can_reuse = config.can_reuse();
-        let addr = normalize_ip_address(config.addr());
+        let addr = NormalizedAddress::from(config.addr());
 
         let port = if let Some(port) = config.port() {
             port
@@ -224,7 +229,7 @@ impl<E: Ext> IfaceCommon<E> {
 
     /// Releases the port so that it can be used again.
     fn release_port(&self, addr: IpAddress, port: u16, can_reuse: bool) {
-        let addr = normalize_ip_address(addr);
+        let addr = NormalizedAddress::from(addr);
         let mut used_ports = self.used_ports.lock();
         if let Some(address_ports) = used_ports.get_mut(&addr)
             && let Some(port_state) = address_ports.get_mut(&port)
@@ -350,7 +355,7 @@ impl<E: Ext> BoundPort<E> {
             return;
         }
 
-        let normalized_addr = normalize_ip_address(self.addr);
+        let normalized_addr = NormalizedAddress::from(self.addr);
         if let Some(port_state) = used_ports
             .get_mut(&normalized_addr)
             .and_then(|address_ports| address_ports.get_mut(&self.port))
