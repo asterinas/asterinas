@@ -474,10 +474,16 @@ impl InodeInner {
 
     fn clear_dirty(&mut self) {
         self.desc.clear_dirty();
+        if let Ok(block_manager) = self.block_manager() {
+            block_manager.clear_dirty();
+        }
     }
 
     fn is_dirty(&self) -> bool {
         self.desc.is_dirty()
+            || self
+                .block_manager()
+                .is_ok_and(|block_manager| block_manager.is_dirty())
     }
 
     fn inode_type(&self) -> InodeType {

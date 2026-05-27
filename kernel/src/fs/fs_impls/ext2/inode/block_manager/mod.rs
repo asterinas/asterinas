@@ -61,6 +61,16 @@ impl InodeBlockManager {
         *self.block_ptr_tree.read().raw_block_ptrs()
     }
 
+    /// Returns whether the block-pointer tree has uncommitted changes.
+    pub(super) fn is_dirty(&self) -> bool {
+        self.block_ptr_tree.read().is_dirty()
+    }
+
+    /// Clears the block-pointer dirty flag after writeback.
+    pub(super) fn clear_dirty(&self) {
+        self.block_ptr_tree.write().clear_dirty();
+    }
+
     /// Creates an iterator over existing and hole block ranges.
     ///
     /// The returned iterator holds a read lock on the block-pointer tree for

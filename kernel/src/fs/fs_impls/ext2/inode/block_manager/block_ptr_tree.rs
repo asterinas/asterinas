@@ -30,7 +30,7 @@ const MAX_BLOCK_POINTER_LEVELS: usize = 4;
 /// or to indirect metadata blocks at the level selected by the slot.
 #[derive(Debug)]
 pub(in crate::fs::fs_impls::ext2::inode) struct BlockPtrTree {
-    raw_block_ptrs: RawBlockPtrs,
+    raw_block_ptrs: Dirty<RawBlockPtrs>,
     indirect_blocks_manager: Mutex<IndirectBlockManager>,
 }
 
@@ -41,7 +41,7 @@ impl BlockPtrTree {
         fs: Weak<Ext2>,
     ) -> Self {
         Self {
-            raw_block_ptrs,
+            raw_block_ptrs: Dirty::new(raw_block_ptrs),
             indirect_blocks_manager: Mutex::new(IndirectBlockManager::new(fs)),
         }
     }
@@ -49,6 +49,16 @@ impl BlockPtrTree {
     /// Returns a reference to the raw on-disk block pointer state.
     pub(in crate::fs::fs_impls::ext2::inode) fn raw_block_ptrs(&self) -> &RawBlockPtrs {
         &self.raw_block_ptrs
+    }
+
+    /// Returns whether the `RawBlockPtrs` is dirty.
+    pub(super) fn is_dirty(&self) -> bool {
+        self.raw_block_ptrs.is_dirty()
+    }
+
+    /// Clears the dirty flag for the raw on-disk block pointer state.
+    pub(super) fn clear_dirty(&mut self) {
+        self.raw_block_ptrs.clear_dirty();
     }
 
     /// Flushes all dirty cached indirect blocks to the device.

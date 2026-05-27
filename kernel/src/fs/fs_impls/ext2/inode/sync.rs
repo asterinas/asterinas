@@ -11,62 +11,45 @@ use super::{super::Ext2, Inode, InodeInner, RawInode};
 use crate::fs::ext2::{prelude::*, utils};
 
 impl Inode {
-    /// Flushes xattr, data pages, and indirect blocks, then writes the inode descriptor back to
-    /// the block group's inode table page cache.
+    /// Flushes all dirty state owned by the inode.
     ///
-    /// Returns `true` if the descriptor was dirty and written back. The caller is responsible for
-    /// flushing the inode table and the block device.
-    pub(in crate::fs::fs_impls::ext2) fn sync_all(&self) -> Result<bool> {
-        // `fsync` step 1: flush the xattr.
+    /// Writes xattrs, data pages, and indirect blocks back before staging dirty
+    /// inode metadata in the block group's inode-table page cache.
+    pub(in crate::fs::fs_impls::ext2) fn sync_all(&self) -> Result<()> {
+        // Step 1: flush the xattr.
         if let Some(xattr) = &self.xattr {
             xattr.flush()?;
         }
 
-        // `fsync` step 2: flush dirty data pages.
+        // Step 2: flush dirty data pages.
         let fs = self.fs()?;
         let mut inner = self.inner.write();
         inner.sync_data_pages()?;
 
-        // `fsync` step 3: flush inode-local indirect metadata before
-        // persisting inode-table state.
+        // Step 3: flush inode-local indirect metadata before inode-table state.
         inner.sync_indirect_blocks()?;
 
-        // `fsync` step 4: persist inode metadata to the inode table page cache.
-        let desc_is_dirty = if inner.is_dirty() {
-            inner.write_back_desc(&fs, self.ino)?;
-            true
-        } else {
-            false
-        };
-
-        Ok(desc_is_dirty)
+        // Step 4: persist inode metadata to the inode-table page cache.
+        inner.write_back_inode_desc(&fs, self.ino)
     }
 
-    /// Flushes dirty data pages, indirect blocks, and dirty inode metadata.
+    /// Flushes dirty file data and the metadata required to retrieve it.
     ///
-    /// Returns `true` if the descriptor was dirty and written back. The caller is responsible for
-    /// flushing the inode table and the block device.
-    pub(in crate::fs::fs_impls::ext2) fn sync_data(&self) -> Result<bool> {
+    /// Writes data pages and indirect blocks back before staging dirty inode
+    /// metadata in the block group's inode-table page cache. This does not flush
+    /// xattrs.
+    pub(in crate::fs::fs_impls::ext2) fn sync_data(&self) -> Result<()> {
         let fs = self.fs()?;
         let mut inner = self.inner.write();
 
-        // `fdatasync` writes back dirty data pages first. The caller is
-        // responsible for the final device-cache flush.
+        // Step 1: flush dirty data pages.
         inner.sync_data_pages()?;
 
-        // `fdatasync` must also persist dirty indirect metadata needed to reach
-        // newly written data blocks before the final device flush.
+        // Step 2: flush inode-local indirect metadata before inode-table state.
         inner.sync_indirect_blocks()?;
 
-        // Persist metadata conservatively whenever the descriptor is dirty so
-        // `fdatasync` does not miss file-size or block-mapping updates.
-        let desc_is_dirty = if inner.is_dirty() {
-            inner.write_back_desc(&fs, self.ino)?;
-            true
-        } else {
-            false
-        };
-        Ok(desc_is_dirty)
+        // Step 3: persist inode metadata to the inode-table page cache.
+        inner.write_back_inode_desc(&fs, self.ino)
     }
 
     /// Attempts final reclaim for a deleted inode.
@@ -99,7 +82,7 @@ impl Inode {
         {
             block_manager.truncate_to_byte_len(0);
         }
-        inner.write_back_desc(&fs, self.ino)?;
+        inner.write_back_inode_desc(&fs, self.ino)?;
 
         fs.free_inode(self.ino, self.type_)?;
         Ok(true)
@@ -107,13 +90,18 @@ impl Inode {
 }
 
 impl InodeInner {
-    /// Serializes the descriptor to disk and clears the dirty flag.
-    pub(super) fn write_back_desc(&mut self, fs: &Ext2, ino: Ext2Ino) -> Result<()> {
+    /// Serializes the descriptor to inode-table page cache if dirty and clears dirty state.
+    pub(super) fn write_back_inode_desc(&mut self, fs: &Ext2, ino: Ext2Ino) -> Result<()> {
+        if !self.is_dirty() {
+            return Ok(());
+        }
+
         let raw_block_ptrs = self.raw_block_ptrs();
         self.desc.block_ptrs = raw_block_ptrs.block_ptrs;
         self.desc.sector_count = raw_block_ptrs.sector_count;
+
         let raw_inode = RawInode::from(&*self.desc);
-        fs.write_inode_desc(ino, &raw_inode)?;
+        fs.write_back_inode_desc(ino, &raw_inode)?;
         self.clear_dirty();
         Ok(())
     }
