@@ -11,7 +11,7 @@ use std::{
     time::SystemTime,
 };
 
-use bin::{make_elf_for_qemu, make_install_bzimage};
+use bin::{make_elf_for_qemu, make_install_bzimage, make_stripped_boot_elf};
 
 use super::util::{COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH, cargo, profile_name_adapter};
 use crate::{
@@ -164,12 +164,14 @@ pub fn do_cached_build(
     }
     let mut bundle = Bundle::new(&bundle_path, config, action);
 
+    let boot_elf = make_stripped_boot_elf(&osdk_output_directory, &aster_elf, build.strip_elf);
+
     match boot.method {
         BootMethod::GrubRescueIso | BootMethod::GrubQcow2 => {
             info!("Building boot device image");
             let bootdev_image = grub::create_bootdev_image(
                 &osdk_output_directory,
-                &aster_elf,
+                &boot_elf,
                 boot.initramfs.as_ref(),
                 config,
                 action,
@@ -187,11 +189,11 @@ pub fn do_cached_build(
                 BootProtocol::Linux => make_install_bzimage(
                     &osdk_output_directory,
                     &osdk_output_directory,
-                    &aster_elf,
+                    &boot_elf,
                     build.linux_x86_legacy_boot,
                     config.build.encoding.clone(),
                 ),
-                _ => make_elf_for_qemu(&osdk_output_directory, &aster_elf, build.strip_elf),
+                _ => make_elf_for_qemu(boot_elf),
             };
             bundle.consume_aster_bin(aster_bin);
         }
