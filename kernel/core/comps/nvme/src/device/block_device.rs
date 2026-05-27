@@ -16,6 +16,7 @@ use alloc::{borrow::ToOwned, format, string::String, sync::Arc, vec::Vec};
 use core::{
     ffi::CStr,
     hint::spin_loop,
+    num::NonZeroUsize,
     sync::atomic::{AtomicU32, Ordering},
     time::Duration,
 };
@@ -32,6 +33,7 @@ use ostd::{
     mm::{HasDaddr, HasSize, PAGE_SIZE, dma::DmaStream},
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard, WaitQueue},
     timer::Jiffies,
+    warn,
 };
 
 use super::{
@@ -48,6 +50,7 @@ use crate::{
     },
     nvme_regs::{NvmeRegs32, NvmeRegs64},
     nvme_spec::{NvmeCommand, NvmeCompletion},
+    prp::PrpPointers,
     transport::pci::transport::{NvmePciTransport, NvmePciTransportLock},
 };
 
@@ -146,7 +149,9 @@ struct IdentifyControllerData {
     serial: [u8; 20],
     model: [u8; 40],
     firmware: [u8; 8],
-    _rest: [u8; 56],
+    _bytes_72_76: [u8; 5],
+    mdts: u8,
+    _rest: [u8; 55],
 }
 
 #[repr(C)]
@@ -191,6 +196,7 @@ struct InitContext {
     dstrd: u16,
     cc_mps_value: u32,
     controller_ready_timeout: Duration,
+    max_io_bytes: NonZeroUsize,
 }
 
 struct IoMsixVectors([u16; QUEUE_NUM - 1]);
@@ -202,6 +208,7 @@ struct NvmeDeviceInner {
     transport: NvmePciTransportLock,
     namespace: NvmeNamespace,
     dstrd: u16,
+    max_io_bytes: NonZeroUsize,
     stats: NvmeStats,
 }
 
@@ -284,6 +291,7 @@ impl NvmeDeviceInner {
             transport: NvmePciTransportLock::new(init_ctx.transport),
             namespace,
             dstrd: init_ctx.dstrd,
+            max_io_bytes: init_ctx.max_io_bytes,
             stats: NvmeStats::new(),
         };
         Ok((device, io_msix_vectors))
@@ -371,6 +379,7 @@ impl InitContext {
             dstrd,
             cc_mps_value,
             controller_ready_timeout,
+            max_io_bytes: MAX_BYTES_BY_NLB,
         })
     }
 
@@ -518,9 +527,15 @@ impl InitContext {
         let model = bytes_to_cstr_string(&result.model);
         let firmware = bytes_to_cstr_string(&result.firmware);
 
+        self.max_io_bytes = max_io_bytes_from_mdts(result.mdts);
+
         info!(
-            "Controller identified - Serial: {}, Model: {}, Firmware: {}",
-            serial, model, firmware
+            "Controller identified - Serial: {}, Model: {}, Firmware: {}, max I/O={} bytes (MDTS={})",
+            serial,
+            model,
+            firmware,
+            self.max_io_bytes.get(),
+            result.mdts
         );
         Ok(())
     }
@@ -721,7 +736,7 @@ impl NvmeDeviceInner {
 
     /// Performs read or write I/O for a `BioRequest` on I/O queue [`IO_QID`].
     ///
-    /// Splits work into chunks; each chunk is built from `io_op` and submitted synchronously.
+    /// Each segment is transferred with PRP lists when needed.
     fn io_rw_request(&self, request: BioRequest, io_op: IoOp) {
         const { assert!(LBA_SIZE == SECTOR_SIZE) };
 
@@ -737,39 +752,48 @@ impl NvmeDeviceInner {
                 debug_assert!(dma_slice.daddr().is_multiple_of(SECTOR_SIZE));
                 debug_assert!(dma_slice.size().is_multiple_of(SECTOR_SIZE));
 
-                let seg_sectors = (dma_slice.size() / SECTOR_SIZE) as u64;
-                let mut remaining = seg_sectors;
-                let mut ptr0 = dma_slice.daddr() as u64;
+                let mut dma_addr = dma_slice.daddr() as u64;
+                let mut remaining_bytes = dma_slice.size();
 
-                while remaining > 0 {
-                    // TODO: Support PRP lists / `ptr1`. For now we only use `ptr0` and keep
-                    // `ptr1` at 0, so each command is limited to a page.
-                    let sectors_to_io = {
-                        let bytes_in_page = (PAGE_SIZE as u64) - (ptr0 & (PAGE_SIZE as u64 - 1));
-                        let sectors_in_page = bytes_in_page / (SECTOR_SIZE as u64);
-                        sectors_in_page.min(remaining)
-                    };
+                while let Some(remaining) = NonZeroUsize::new(remaining_bytes) {
+                    let chunk_bytes = remaining.min(self.max_io_bytes);
+                    debug_assert!(chunk_bytes.get().is_multiple_of(SECTOR_SIZE));
 
-                    let entry = match io_op {
-                        IoOp::Read => {
-                            nvme_cmd::io_read(nsid, lba, (sectors_to_io - 1) as u16, ptr0, 0u64)
-                        }
-                        IoOp::Write => {
-                            nvme_cmd::io_write(nsid, lba, (sectors_to_io - 1) as u16, ptr0, 0u64)
-                        }
-                    };
                     // TODO: This path submits and waits synchronously, which may block.
-                    if self.submit_and_wait(IO_QID, entry).is_err() {
+                    if self
+                        .submit_io_chunk(nsid, lba, dma_addr, chunk_bytes, io_op)
+                        .is_err()
+                    {
                         status = BioStatus::IoError;
                     }
 
-                    lba += sectors_to_io;
-                    remaining -= sectors_to_io;
-                    ptr0 += (SECTOR_SIZE as u64) * sectors_to_io;
+                    let chunk_sectors = (chunk_bytes.get() / SECTOR_SIZE) as u64;
+                    lba += chunk_sectors;
+                    dma_addr += chunk_bytes.get() as u64;
+                    remaining_bytes -= chunk_bytes.get();
                 }
             }
             bio.complete(status);
         }
+    }
+
+    /// Submits one read or write covering `length` bytes at contiguous `dma_addr`.
+    fn submit_io_chunk(
+        &self,
+        nsid: u32,
+        lba: u64,
+        dma_addr: u64,
+        length: NonZeroUsize,
+        io_op: IoOp,
+    ) -> Result<(), NvmeDeviceError> {
+        let prp = PrpPointers::build_prp(dma_addr, length)?;
+        let nlb = (length.get() / SECTOR_SIZE - 1) as u16;
+        let entry = match io_op {
+            IoOp::Read => nvme_cmd::io_read(nsid, lba, nlb, prp.prp1(), prp.prp2()),
+            IoOp::Write => nvme_cmd::io_write(nsid, lba, nlb, prp.prp1(), prp.prp2()),
+        };
+
+        self.submit_and_wait(IO_QID, entry)
     }
 
     fn read(&self, request: BioRequest) {
@@ -801,6 +825,40 @@ fn bytes_to_cstr_string(bytes: &[u8]) -> String {
     } else {
         String::new()
     }
+}
+
+/// Maximum bytes transferable in one NVMe command.
+///
+/// `NLB` is zero-based in a `u16`, so one command covers at most 65536 LBAs.
+const MAX_BYTES_BY_NLB: NonZeroUsize =
+    NonZeroUsize::new((u16::MAX as usize + 1) * SECTOR_SIZE).unwrap();
+
+/// Converts Identify Controller MDTS into an effective per-command byte limit.
+///
+/// MDTS `0` means no device-side limit; we still cap at [`MAX_BYTES_BY_NLB`].
+fn max_io_bytes_from_mdts(mdts: u8) -> NonZeroUsize {
+    if mdts == 0 {
+        return MAX_BYTES_BY_NLB;
+    }
+
+    const PAGE_SIZE_NONZERO: NonZeroUsize = NonZeroUsize::new(PAGE_SIZE).unwrap();
+
+    let Some(pages) = 1usize
+        .checked_shl(u32::from(mdts))
+        .and_then(NonZeroUsize::new)
+    else {
+        warn!(
+            "Invalid MDTS {}, falling back to {}-byte I/O limit",
+            mdts,
+            MAX_BYTES_BY_NLB.get()
+        );
+        return MAX_BYTES_BY_NLB;
+    };
+    let Some(bytes) = pages.checked_mul(PAGE_SIZE_NONZERO) else {
+        return MAX_BYTES_BY_NLB;
+    };
+
+    bytes.min(MAX_BYTES_BY_NLB)
 }
 
 #[cfg(ktest)]
