@@ -256,7 +256,7 @@ impl Ext2 {
     }
 
     /// Writes an inode descriptor to the group's `PageCache`.
-    pub(super) fn write_inode_desc(&self, ino: Ext2Ino, raw_inode: &RawInode) -> Result<()> {
+    pub(super) fn write_back_inode_desc(&self, ino: Ext2Ino, raw_inode: &RawInode) -> Result<()> {
         {
             let sb = self.super_block.read();
             // Apply ext2 inode-number validity rules before indexing groups.
@@ -269,7 +269,7 @@ impl Ext2 {
             .find_group(ino)
             .ok_or_else(|| Error::with_message(Errno::EIO, "block group index out of range"))?;
 
-        group.write_inode_desc(ino, raw_inode)
+        group.write_back_inode_desc(ino, raw_inode)
     }
 
     /// Allocates up to `count` contiguous blocks.
@@ -393,7 +393,7 @@ impl Ext2 {
             .find_group(ino)
             .ok_or_else(|| Error::with_message(Errno::EIO, "block group index out of range"))?;
 
-        if let Err(err) = self.write_inode_desc(ino, &raw_inode) {
+        if let Err(err) = self.write_back_inode_desc(ino, &raw_inode) {
             if let Ok(was_allocated) = block_group.free_inode(ino, inode_type)
                 && was_allocated
             {
@@ -911,7 +911,7 @@ mod test {
 
         // Free path now takes caller-provided inode type; no inode-table read is needed.
         let raw_dir = make_raw_inode(0o040755, 1, 0);
-        f.ext2.write_inode_desc(ino, &raw_dir).unwrap();
+        f.ext2.write_back_inode_desc(ino, &raw_dir).unwrap();
         f.ext2.free_inode(ino, InodeType::Dir).unwrap();
         assert_eq!(f.ext2.super_block().free_inodes_count(), before_sb_free);
         assert_eq!(f.ext2.block_group(0).free_inodes_count(), before_group_free);
@@ -966,7 +966,10 @@ mod test {
         // Already-free inode: should return Ok and keep counters unchanged.
         let target_ino = f_free.sb.first_ino();
         let raw_file = make_raw_inode(0o100644, 1, 0);
-        f_free.ext2.write_inode_desc(target_ino, &raw_file).unwrap();
+        f_free
+            .ext2
+            .write_back_inode_desc(target_ino, &raw_file)
+            .unwrap();
 
         let before_sb = f_free.ext2.super_block().free_inodes_count();
         let before_group = f_free.ext2.block_group(0).free_inodes_count();

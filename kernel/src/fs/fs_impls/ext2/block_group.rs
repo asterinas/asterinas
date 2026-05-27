@@ -224,7 +224,7 @@ impl BlockGroup {
         // `inode_cache.write()`.
         let inodes: Vec<Arc<Inode>> = self.inode_cache.read().values().cloned().collect();
         for inode in inodes {
-            let _ = inode.sync_all()?;
+            inode.sync_all()?;
         }
         self.sync_inode_table()
     }
@@ -449,7 +449,7 @@ impl BlockGroup {
     }
 
     /// Writes an inode descriptor to the group's inode table `PageCache`.
-    pub(super) fn write_inode_desc(&self, ino: Ext2Ino, raw: &RawInode) -> Result<()> {
+    pub(super) fn write_back_inode_desc(&self, ino: Ext2Ino, raw: &RawInode) -> Result<()> {
         let inode_idx = self.inode_idx_in_group(ino);
         let offset_bytes = (inode_idx as usize) * self.inode_size;
         self.inode_table_cache.write_val(offset_bytes, raw)?;

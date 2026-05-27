@@ -87,7 +87,7 @@ impl Inode {
         child_inner.dec_link_count(2);
 
         if child_inner.link_count() == 0 {
-            child_inner.write_back_desc(&fs, entry_info.ino)?;
+            child_inner.write_back_inode_desc(&fs, entry_info.ino)?;
             let _ = fs.remove_inode(entry_info.ino);
         }
 
@@ -222,7 +222,7 @@ impl Inode {
         child_inner.set_ctime(utils::now());
         child_inner.dec_link_count(1);
         if child_inner.link_count() == 0 {
-            child_inner.write_back_desc(&fs, entry_info.ino)?;
+            child_inner.write_back_inode_desc(&fs, entry_info.ino)?;
             let _ = fs.remove_inode(entry_info.ino);
         }
         Ok(())
@@ -387,7 +387,7 @@ impl Inode {
             replaced_inner.dec_link_count(1);
 
             if replaced_inner.link_count() == 0 {
-                replaced_inner.write_back_desc(&fs, replaced.ino())?;
+                replaced_inner.write_back_inode_desc(&fs, replaced.ino())?;
                 let _ = fs.remove_inode(replaced.ino());
             }
         }
