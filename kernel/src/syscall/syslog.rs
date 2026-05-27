@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_logger::{
-    LinuxConsoleLogLevel, console_off, console_on, console_set_level, klog_capacity, klog_read,
-    klog_read_all, klog_size_unread, klog_wait_nonempty, mark_clear, read_all_requires_cap,
-};
+use aster_logger::{self, LinuxConsoleLogLevel, LOG_BUFFER_CAPACITY};
 use int_to_c_enum::TryFromInt;
 use ostd::mm::VmReader;
 
@@ -57,7 +54,7 @@ pub fn sys_syslog(action: i32, buf: Vaddr, len: usize, ctx: &Context) -> Result<
             ))
         }
         SysLogAction::ReadAll => {
-            if read_all_requires_cap() {
+            if aster_logger::klog().dmesg_restrict() {
                 ensure_cap(ctx)?;
             }
             Ok(SyscallReturn::Return(
@@ -71,35 +68,43 @@ pub fn sys_syslog(action: i32, buf: Vaddr, len: usize, ctx: &Context) -> Result<
         }
         SysLogAction::Clear => {
             ensure_cap(ctx)?;
-            mark_clear();
+            aster_logger::klog().mark_clear();
             Ok(SyscallReturn::Return(0))
         }
         SysLogAction::ConsoleOff => {
             ensure_cap(ctx)?;
-            console_off();
+            aster_logger::klog().disable_console();
             Ok(SyscallReturn::Return(0))
         }
         SysLogAction::ConsoleOn => {
             ensure_cap(ctx)?;
-            console_on();
+            aster_logger::klog().restore_console_level();
             Ok(SyscallReturn::Return(0))
         }
         SysLogAction::ConsoleLevel => {
             ensure_cap(ctx)?;
-            let new_level = LinuxConsoleLogLevel::from_raw(len as i32)
+            let raw = len as i32;
+            if !(1..=8).contains(&raw) {
+                return_errno_with_message!(Errno::EINVAL, "console level out of range");
+            }
+            let new_level = LinuxConsoleLogLevel::from_raw(raw)
                 .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid console level"))?;
-            let _old = console_set_level(new_level);
+            aster_logger::klog().set_console_level(new_level);
             Ok(SyscallReturn::Return(0))
         }
         SysLogAction::SizeUnread => {
-            ensure_cap(ctx)?;
-            Ok(SyscallReturn::Return(klog_size_unread() as isize))
-        }
-        SysLogAction::SizeBuffer => {
-            if read_all_requires_cap() {
+            if aster_logger::klog().dmesg_restrict() {
                 ensure_cap(ctx)?;
             }
-            Ok(SyscallReturn::Return(klog_capacity() as isize))
+            Ok(SyscallReturn::Return(
+                aster_logger::klog().size_unread() as isize
+            ))
+        }
+        SysLogAction::SizeBuffer => {
+            if aster_logger::klog().dmesg_restrict() {
+                ensure_cap(ctx)?;
+            }
+            Ok(SyscallReturn::Return(LOG_BUFFER_CAPACITY as isize))
         }
     }
 }
@@ -127,10 +132,10 @@ fn read_destructive(buf: Vaddr, len: usize, ctx: &Context) -> Result<usize> {
     while copied < len {
         // Block until at least one byte is available, then drain non-blocking.
         if copied == 0 {
-            klog_wait_nonempty();
+            aster_logger::klog().wait_nonempty();
         }
         let to_take = core::cmp::min(len - copied, tmp.len());
-        let n = klog_read(&mut tmp[..to_take]);
+        let n = aster_logger::klog().read(&mut tmp[..to_take]);
         if n == 0 {
             // If we raced with another reader after waiting, wait again for the first byte.
             if copied == 0 {
@@ -155,10 +160,12 @@ fn read_all(buf: Vaddr, len: usize, ctx: &Context, clear_after: bool) -> Result<
     let mut offset = 0;
     let user_space = ctx.user_space();
     let mut writer = user_space.writer(buf, len)?;
+    let klog = aster_logger::klog();
+    let at_tail = klog.snapshot_tail();
 
     while copied < len {
         let to_take = core::cmp::min(len - copied, tmp.len());
-        let n = klog_read_all(&mut tmp[..to_take], offset, len);
+        let n = klog.read_all(&mut tmp[..to_take], offset, len, at_tail);
         if n == 0 {
             break;
         }
@@ -169,7 +176,7 @@ fn read_all(buf: Vaddr, len: usize, ctx: &Context, clear_after: bool) -> Result<
     }
 
     if clear_after {
-        mark_clear();
+        klog.mark_clear();
     }
 
     Ok(copied)

@@ -239,6 +239,7 @@ dependencies = [
  "ostd",
  "owo-colors",
  "ring-buffer",
+ "spin",
 ]
 
 [[package]]

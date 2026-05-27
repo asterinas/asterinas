@@ -1,6 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
+//! Kernel log buffer (`klog`) backing `dmesg(1)` and `syslog(2)`.
+//!
+//! `KernelLog` stores formatted records in a fixed-capacity ring buffer; the
+//! oldest records are evicted on overflow. Console output is gated by a
+//! configurable level independent of buffer retention.
+//!
+//! # Locking
+//!
+//! Lock order on `KernelLog`: `buffer` -> `clear_tail`. `saved_console_level`
+//! is independent. All locks are IRQ-safe because the logger fires from
+//! interrupt context.
+//!
+//! # Invariants
+//!
+//! - `clear_tail` is monotonic and always satisfies `head <= clear_tail <= tail`
+//!   (modulo wraparound of the cumulative `usize` counters).
+//! - `console_level` is always a valid `LinuxConsoleLogLevel` discriminant.
+
 use core::{
     fmt::{self, Write},
     sync::atomic::{AtomicBool, AtomicU8, Ordering},
@@ -10,15 +27,16 @@ use core::{
 use ostd::{
     log::{Level, Record},
     mm::VmIo,
-    sync::{SpinLock, WaitQueue},
+    sync::{LocalIrqDisabled, SpinLock, WaitQueue},
 };
 use ring_buffer::RingBuffer;
+use spin::Once;
 
 /// Size of the kernel log ring buffer (64 KB).
 ///
 /// This matches the default `CONFIG_LOG_BUF_SHIFT=16` in Linux.
 /// The buffer stores formatted log messages including timestamps.
-const LOG_BUFFER_CAPACITY: usize = 64 * 1024;
+pub const LOG_BUFFER_CAPACITY: usize = 64 * 1024;
 
 /// Maximum size of a single formatted log message.
 ///
@@ -26,12 +44,6 @@ const LOG_BUFFER_CAPACITY: usize = 64 * 1024;
 /// scratch buffer used to format messages without heap allocation, which is
 /// important for logging in low-memory or allocator-internal contexts.
 const FORMAT_BUF_CAPACITY: usize = 512;
-
-/// Chunk size for copying data to/from user space.
-///
-/// Reading and writing are done in chunks to avoid holding locks for too long
-/// and to limit stack usage.
-const COPY_CHUNK: usize = 512;
 
 /// Linux console log level.
 ///
@@ -90,24 +102,20 @@ impl LinuxConsoleLogLevel {
     }
 }
 
-static KLOG: SpinLock<Option<Arc<KernelLog>>> = SpinLock::new(None);
+static KLOG: Once<KernelLog> = Once::new();
+
+/// Returns a reference to the global [`KernelLog`].
+///
+/// Initializes the kernel log buffer on first call.
+pub fn klog() -> &'static KernelLog {
+    KLOG.call_once(KernelLog::new)
+}
 
 /// Initializes the kernel log buffer.
 ///
 /// This function must be called before any logging operations.
 pub fn init_klog() {
-    let mut guard = KLOG.lock();
-    if guard.is_none() {
-        *guard = Some(Arc::new(KernelLog::new()));
-    }
-}
-
-fn klog() -> Arc<KernelLog> {
-    let mut guard = KLOG.lock();
-    if guard.is_none() {
-        *guard = Some(Arc::new(KernelLog::new()));
-    }
-    guard.as_ref().unwrap().clone()
+    KLOG.call_once(KernelLog::new);
 }
 
 /// Appends a log record to the kernel log buffer.
@@ -135,101 +143,18 @@ pub fn append_log(record: &Record, timestamp: &Duration) {
     }
 }
 
-/// Checks if a log message at the given level should be printed to console.
-pub fn should_print(level: Level) -> bool {
-    klog().should_print(level)
-}
-
-/// Returns the current console log level.
-pub fn console_level() -> LinuxConsoleLogLevel {
-    klog().get_console_level()
-}
-
-/// Sets the console log level.
+/// The kernel log buffer.
 ///
-/// Returns the previous console log level.
-pub fn console_set_level(level: LinuxConsoleLogLevel) -> LinuxConsoleLogLevel {
-    klog().set_console_level(level, false)
-}
-
-/// Disables console output by setting the log level to `Off`.
-///
-/// The previous log level is saved and can be restored with `console_on()`.
-/// Returns the previous console log level.
-pub fn console_off() -> LinuxConsoleLogLevel {
-    klog().set_console_level(LinuxConsoleLogLevel::Off, true)
-}
-
-/// Restores the console log level that was saved by `console_off()`.
-///
-/// Returns the restored console log level.
-pub fn console_on() -> LinuxConsoleLogLevel {
-    klog().restore_console_level()
-}
-
-/// Reads log messages from the kernel log buffer (destructive).
-///
-/// This is a blocking read that removes data from the buffer as it is read.
-/// Returns the number of bytes read into `dst`.
-pub fn klog_read(dst: &mut [u8]) -> usize {
-    klog().read(dst)
-}
-
-/// Reads log messages from the kernel log buffer (non-destructive).
-///
-/// Reads up to `window_len` bytes starting at `offset` within the available
-/// log data. The data remains in the buffer after reading.
-/// Returns the number of bytes read into `dst`.
-pub fn klog_read_all(dst: &mut [u8], offset: usize, window_len: usize) -> usize {
-    klog().read_all(dst, offset, window_len)
-}
-
-/// Marks the current buffer position as cleared.
-///
-/// After this call, `klog_read_all` will only return messages logged after
-/// the clear operation, but the data is not actually removed from the buffer.
-pub fn mark_clear() {
-    klog().mark_clear();
-}
-
-/// Returns the number of unread bytes in the kernel log buffer.
-pub fn klog_size_unread() -> usize {
-    klog().size_unread()
-}
-
-/// Returns the total capacity of the kernel log buffer in bytes.
-pub fn klog_capacity() -> usize {
-    LOG_BUFFER_CAPACITY
-}
-
-/// Checks if reading all log messages requires `CAP_SYSLOG` or `CAP_SYS_ADMIN`.
-///
-/// When `dmesg_restrict` is enabled, unprivileged users cannot read the
-/// kernel log buffer via `SYSLOG_ACTION_READ_ALL`.
-pub fn read_all_requires_cap() -> bool {
-    klog().dmesg_restrict()
-}
-
-/// Gets the current value of the `dmesg_restrict` flag.
-pub fn dmesg_restrict_get() -> bool {
-    klog().dmesg_restrict.load(Ordering::Relaxed)
-}
-
-/// Sets the `dmesg_restrict` flag.
-///
-/// When enabled, reading all log messages requires `CAP_SYSLOG` or `CAP_SYS_ADMIN`.
-pub fn dmesg_restrict_set(val: bool) {
-    klog().dmesg_restrict.store(val, Ordering::Relaxed);
-}
-
-struct KernelLog {
-    buffer: SpinLock<RingBuffer<u8>>,
-    clear_tail: SpinLock<usize>,
+/// Stores formatted log records in a fixed-capacity ring buffer, manages
+/// console log levels, and provides read access for `syslog(2)` and `/proc/sys/kernel/dmesg_restrict`.
+pub struct KernelLog {
+    buffer: SpinLock<RingBuffer<u8>, LocalIrqDisabled>,
+    clear_tail: SpinLock<usize, LocalIrqDisabled>,
     dmesg_restrict: AtomicBool,
     /// Current console log level (stored as raw u8 for atomic access).
     console_level: AtomicU8,
     /// Saved console log level for restore after console_off/console_on.
-    saved_console_level: SpinLock<Option<LinuxConsoleLogLevel>>,
+    saved_console_level: SpinLock<Option<LinuxConsoleLogLevel>, LocalIrqDisabled>,
     waitq: WaitQueue,
 }
 
@@ -253,6 +178,7 @@ impl KernelLog {
             if bytes.len() > cap {
                 bytes = &bytes[bytes.len() - cap..];
                 buf.clear();
+                *self.clear_tail.lock() = 0;
             }
 
             // Drop oldest data if needed.
@@ -260,18 +186,19 @@ impl KernelLog {
             let need_drop = bytes.len().saturating_sub(free);
             if need_drop > 0 {
                 buf.commit_read(need_drop);
-                self.bump_clear_tail(&mut buf);
+                self.bump_clear_tail(&buf);
             }
 
             buf.push_slice(bytes)
                 .expect("push_slice must succeed after drop");
         }
 
-        // Wake up blocked readers once new data arrives.
+        // The `buffer` lock must be dropped before waking — the waiters' re-check
+        // in `wait_nonempty` re-acquires it.
         self.waitq.wake_all();
     }
 
-    fn bump_clear_tail(&self, buf: &mut RingBuffer<u8>) {
+    fn bump_clear_tail(&self, buf: &RingBuffer<u8>) {
         let mut clear_tail = self.clear_tail.lock();
         let head = buf.head().0;
         if *clear_tail < head {
@@ -279,7 +206,10 @@ impl KernelLog {
         }
     }
 
-    fn read(&self, dst: &mut [u8]) -> usize {
+    /// Reads and removes log messages from the buffer (destructive).
+    ///
+    /// Returns the number of bytes read into `dst`.
+    pub fn read(&self, dst: &mut [u8]) -> usize {
         let mut copied = 0;
         while copied < dst.len() {
             let chunk = {
@@ -292,7 +222,7 @@ impl KernelLog {
                     core::cmp::min(core::cmp::min(dst.len() - copied, COPY_CHUNK), available);
                 copy_from(&buf, buf.head().0, &mut dst[copied..copied + take]);
                 buf.commit_read(take);
-                self.bump_clear_tail(&mut buf);
+                self.bump_clear_tail(&buf);
                 take
             };
             copied += chunk;
@@ -300,65 +230,93 @@ impl KernelLog {
         copied
     }
 
-    fn read_all(&self, dst: &mut [u8], offset: usize, window_len: usize) -> usize {
-        let mut copied = 0;
-        while copied < dst.len() {
-            let buf = self.buffer.lock();
-            let head = buf.head().0;
-            let tail = buf.tail().0;
-            let base = core::cmp::max(head, *self.clear_tail.lock());
-            let available = tail.saturating_sub(base);
-            if available == 0 {
-                return copied;
-            }
-            let window = core::cmp::min(available, window_len);
-            if offset + copied >= window {
-                return copied;
-            }
-            let remain = window - (offset + copied);
-            let take = core::cmp::min(core::cmp::min(dst.len() - copied, COPY_CHUNK), remain);
-            let start = (tail - window) + offset + copied;
-
-            // Copy while holding the lock to prevent data from being overwritten.
-            copy_from(&buf, start, &mut dst[copied..copied + take]);
-            drop(buf);
-
-            copied += take;
+    /// Reads log messages without removing them (non-destructive).
+    ///
+    /// Reads up to `window_len` bytes starting at `offset` within the available
+    /// log data, pinned to the snapshot `at_tail` for cross-chunk consistency.
+    /// Returns the number of bytes read into `dst`.
+    pub fn read_all(&self, dst: &mut [u8], offset: usize, window_len: usize, at_tail: usize) -> usize {
+        let buf = self.buffer.lock();
+        let base = core::cmp::max(buf.head().0, *self.clear_tail.lock());
+        let available = at_tail.saturating_sub(base);
+        let window = core::cmp::min(available, window_len);
+        if offset >= window {
+            return 0;
         }
-        copied
+        let take = core::cmp::min(dst.len(), window - offset);
+        let start = (at_tail - window) + offset;
+        copy_from(&buf, start, &mut dst[..take]);
+        take
     }
 
-    fn mark_clear(&self) {
+    /// Returns the current tail position for snapshot-based reads.
+    ///
+    /// The returned value can be passed to [`read_all`](Self::read_all) to
+    /// ensure all chunks within a single syscall observe a consistent view.
+    pub fn snapshot_tail(&self) -> usize {
+        self.buffer.lock().tail().0
+    }
+
+    /// Marks the current buffer position as cleared.
+    ///
+    /// After this call, [`read_all`](Self::read_all) will only return messages
+    /// logged after the clear operation.
+    pub fn mark_clear(&self) {
         let buf = self.buffer.lock();
         let mut clear_tail = self.clear_tail.lock();
         *clear_tail = buf.tail().0;
     }
 
-    fn size_unread(&self) -> usize {
-        self.buffer.lock().len()
+    /// Returns the number of unread bytes in the kernel log buffer.
+    pub fn size_unread(&self) -> usize {
+        let buf = self.buffer.lock();
+        let base = core::cmp::max(buf.head().0, *self.clear_tail.lock());
+        buf.tail().0.saturating_sub(base)
     }
 
-    fn dmesg_restrict(&self) -> bool {
+    /// Returns whether `dmesg_restrict` is enabled.
+    pub fn dmesg_restrict(&self) -> bool {
         self.dmesg_restrict.load(Ordering::Relaxed)
     }
 
-    fn set_console_level(
-        &self,
-        level: LinuxConsoleLogLevel,
-        save_old: bool,
-    ) -> LinuxConsoleLogLevel {
-        let mut saved = self.saved_console_level.lock();
+    /// Sets the `dmesg_restrict` flag.
+    ///
+    /// When enabled, reading all log messages requires `CAP_SYSLOG` or `CAP_SYS_ADMIN`.
+    pub fn set_dmesg_restrict(&self, val: bool) {
+        self.dmesg_restrict.store(val, Ordering::Relaxed);
+    }
+
+    /// Sets the console log level.
+    ///
+    /// Returns the previous console log level.
+    pub fn set_console_level(&self, level: LinuxConsoleLogLevel) -> LinuxConsoleLogLevel {
         let old_raw = self.console_level.swap(level as u8, Ordering::SeqCst);
-        // SAFETY: We only store valid LinuxConsoleLogLevel values.
+        // `console_level` is only ever written from `LinuxConsoleLogLevel as u8`,
+        // so `from_raw` never fails; `unwrap_or(Info)` is defensive.
+        LinuxConsoleLogLevel::from_raw(old_raw as i32).unwrap_or(LinuxConsoleLogLevel::Info)
+    }
+
+    /// Disables console output by setting the log level to `Off`.
+    ///
+    /// The previous log level is saved and can be restored with
+    /// [`restore_console_level`](Self::restore_console_level).
+    /// Returns the previous console log level.
+    pub fn disable_console(&self) -> LinuxConsoleLogLevel {
+        let mut saved = self.saved_console_level.lock();
+        let old_raw = self.console_level.swap(LinuxConsoleLogLevel::Off as u8, Ordering::SeqCst);
         let old =
             LinuxConsoleLogLevel::from_raw(old_raw as i32).unwrap_or(LinuxConsoleLogLevel::Info);
-        if save_old && saved.is_none() {
+        if saved.is_none() {
             *saved = Some(old);
         }
         old
     }
 
-    fn restore_console_level(&self) -> LinuxConsoleLogLevel {
+    /// Restores the console log level saved by
+    /// [`disable_console`](Self::disable_console).
+    ///
+    /// Returns the restored console log level.
+    pub fn restore_console_level(&self) -> LinuxConsoleLogLevel {
         let mut saved = self.saved_console_level.lock();
         if let Some(prev) = saved.take() {
             self.console_level.store(prev as u8, Ordering::SeqCst);
@@ -373,22 +331,23 @@ impl KernelLog {
         LinuxConsoleLogLevel::from_raw(raw as i32).unwrap_or(LinuxConsoleLogLevel::Info)
     }
 
-    fn should_print(&self, level: Level) -> bool {
+    /// Checks if a log message at the given level should be printed to console.
+    pub fn should_print(&self, level: Level) -> bool {
         self.get_console_level().should_print(level)
     }
 
-    fn wait_nonempty(&self) {
+    /// Blocks until the kernel log buffer is non-empty.
+    pub fn wait_nonempty(&self) {
         self.waitq
             .wait_until(|| (!self.buffer.lock().is_empty()).then_some(()));
     }
 }
 
-/// Blocks until the kernel log buffer is non-empty.
+/// Chunk size for copying data between kernel and user space.
 ///
-/// This is used by `SYSLOG_ACTION_READ` to wait for new log messages.
-pub fn klog_wait_nonempty() {
-    klog().wait_nonempty();
-}
+/// Reading is done in chunks to limit stack usage and avoid holding
+/// locks for too long.
+const COPY_CHUNK: usize = 512;
 
 fn copy_from(rb: &RingBuffer<u8>, start: usize, dst: &mut [u8]) {
     let cap = rb.capacity();

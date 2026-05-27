@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_logger::{dmesg_restrict_get, dmesg_restrict_set};
+use aster_logger;
 use aster_util::printer::VmPrinter;
 
 use crate::{
@@ -11,6 +11,8 @@ use crate::{
     },
     prelude::*,
 };
+
+const DMESG_RESTRICT_MAX_INPUT: usize = 16;
 
 /// Represents the inode at `/proc/sys/kernel/dmesg_restrict`.
 pub struct DmesgRestrictFileOps;
@@ -24,7 +26,11 @@ impl DmesgRestrictFileOps {
 impl FileOps for DmesgRestrictFileOps {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
-        writeln!(printer, "{}", if dmesg_restrict_get() { 1 } else { 0 })?;
+        writeln!(
+            printer,
+            "{}",
+            if aster_logger::klog().dmesg_restrict() { 1 } else { 0 }
+        )?;
         Ok(printer.bytes_written())
     }
 
@@ -59,9 +65,7 @@ impl FileOps for DmesgRestrictFileOps {
             _ => return_errno_with_message!(Errno::EINVAL, "expected 0 or 1"),
         };
 
-        dmesg_restrict_set(val);
+        aster_logger::klog().set_dmesg_restrict(val);
         Ok(read_len)
     }
 }
-
-const DMESG_RESTRICT_MAX_INPUT: usize = 16;
