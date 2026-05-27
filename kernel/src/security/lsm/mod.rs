@@ -18,9 +18,13 @@ pub mod yama {
 }
 
 pub use self::hooks::{
-    AlienAccessContext, CapabilityReason, CapableContext, InodeDacOverrideContext,
+    AlienAccessContext, BprmCheckContext, BprmCommittedCredsContext, CapabilityReason,
+    CapableContext, FileOpenContext, InodeDacOverrideContext, InodePermissionContext,
 };
-use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook, LsmInodeHook};
+use self::hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook, LsmInodeHook};
+pub(super) use self::modules::aster_mac::{
+    is_aster_mac_inode_xattr, sync_aster_mac_inode_xattr, validate_aster_mac_inode_xattr,
+};
 use crate::{fs::file::Permission, prelude::*};
 
 bitflags! {
@@ -34,7 +38,9 @@ bitflags! {
 }
 
 /// The common interface for built-in LSM modules.
-trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + LsmInodeHook + Sync {
+trait LsmModule:
+    LsmAlienAccessHook + LsmBprmHook + LsmCapabilityHook + LsmFileHook + LsmInodeHook + Sync
+{
     /// Returns the module name.
     fn name(&self) -> &'static str;
 
@@ -49,6 +55,13 @@ pub fn is_yama_enabled() -> bool {
         .any(|module| module.name() == "yama")
 }
 
+/// Returns whether the `aster_mac` LSM is enabled.
+pub fn is_aster_mac_enabled() -> bool {
+    modules::active_modules()
+        .iter()
+        .any(|module| module.name() == "aster_mac")
+}
+
 pub(super) fn init() {
     for module in modules::active_modules() {
         info!("[kernel] LSM module enabled: {}", module.name());
@@ -60,7 +73,27 @@ pub fn capable(context: &CapableContext) -> Result<()> {
     hooks::on_capable(context)
 }
 
+/// Runs the LSM stack for an executable image check.
+pub fn bprm_check_security(context: &BprmCheckContext<'_>) -> Result<()> {
+    hooks::on_bprm_check_security(context)
+}
+
+/// Runs the LSM stack after executable credentials are committed.
+pub fn bprm_committed_creds(context: &BprmCommittedCredsContext<'_>) -> Result<()> {
+    hooks::on_bprm_committed_creds(context)
+}
+
 /// Runs the LSM stack for a DAC override decision on an inode.
 pub fn inode_dac_override(context: &InodeDacOverrideContext) -> Result<Permission> {
     hooks::on_inode_dac_override(context)
+}
+
+/// Runs the LSM stack for an inode permission check.
+pub fn inode_permission(context: &InodePermissionContext<'_>) -> Result<()> {
+    hooks::on_inode_permission(context)
+}
+
+/// Runs the LSM stack for a file open check.
+pub fn file_open(context: &FileOpenContext<'_>) -> Result<()> {
+    hooks::on_file_open(context)
 }

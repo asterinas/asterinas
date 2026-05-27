@@ -81,6 +81,9 @@ pub(super) struct Credentials_ {
 
     /// Secure bits.
     securebits: AtomicSecureBits,
+
+    /// The current `aster_mac` task label.
+    aster_mac_label: RwLock<String>,
 }
 
 impl Credentials_ {
@@ -106,6 +109,7 @@ impl Credentials_ {
             effective_capset: AtomicCapSet::new(capset),
             bounding_capset: AtomicCapSet::new(CapSet::all()),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
+            aster_mac_label: RwLock::new("unconfined".to_string()),
         }
     }
 
@@ -626,6 +630,14 @@ impl Credentials_ {
         self.securebits.try_store(securebits, Ordering::Relaxed)
     }
 
+    pub(super) fn aster_mac_label(&self) -> String {
+        self.aster_mac_label.read().clone()
+    }
+
+    pub(super) fn set_aster_mac_label(&self, label: String) {
+        *self.aster_mac_label.write() = label;
+    }
+
     fn current_has_capability(&self, capability: CapSet, reason: CapabilityReason) -> bool {
         let current = current_thread!();
         let Some(posix_thread) = current.as_posix_thread() else {
@@ -659,6 +671,7 @@ impl Clone for Credentials_ {
             effective_capset: self.effective_capset.clone(),
             bounding_capset: self.bounding_capset.clone(),
             securebits: self.securebits.clone(),
+            aster_mac_label: RwLock::new(self.aster_mac_label.read().clone()),
         }
     }
 }

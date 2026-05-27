@@ -4,7 +4,7 @@ use core::ptr;
 
 use super::super::{
     AlienAccessContext, CapableContext, InodeDacOverrideContext, LsmFlags, LsmModule,
-    hooks::{LsmAlienAccessHook, LsmCapabilityHook, LsmInodeHook},
+    hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook, LsmInodeHook},
 };
 use crate::{
     fs::file::Permission,
@@ -83,6 +83,8 @@ impl LsmAlienAccessHook for CapabilityLsm {
     }
 }
 
+impl LsmBprmHook for CapabilityLsm {}
+
 impl LsmInodeHook for CapabilityLsm {
     fn on_inode_dac_override(&self, context: &InodeDacOverrideContext) -> Result<Permission> {
         let credentials = context.posix_thread().credentials();
@@ -120,3 +122,5 @@ impl LsmInodeHook for CapabilityLsm {
         Ok(overridden)
     }
 }
+
+impl LsmFileHook for CapabilityLsm {}

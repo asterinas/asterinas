@@ -6,7 +6,7 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
 use super::super::{
     AlienAccessContext, LsmFlags, LsmModule,
-    hooks::{LsmAlienAccessHook, LsmCapabilityHook, LsmInodeHook},
+    hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook, LsmInodeHook},
 };
 use crate::{
     prelude::*,
@@ -62,7 +62,11 @@ impl LsmModule for YamaLsm {
 
 impl LsmCapabilityHook for YamaLsm {}
 
+impl LsmBprmHook for YamaLsm {}
+
 impl LsmInodeHook for YamaLsm {}
+
+impl LsmFileHook for YamaLsm {}
 
 /// Returns the current Yama scope for alien access.
 pub fn get_scope() -> YamaScope {

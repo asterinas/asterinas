@@ -15,14 +15,24 @@ cfg_if! {
 pub use self::lsm::CapabilityReason;
 use crate::{
     fs::{
-        file::{InodeMode, Permission},
-        vfs::path::Path,
+        file::{AccessMode, InodeMode, Permission, StatusFlags},
+        vfs::{inode::Inode, path::Path, xattr::XattrName},
     },
     prelude::*,
     process::{
         Credentials, UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread,
     },
 };
+
+/// Returns whether the Yama LSM is enabled.
+pub fn is_yama_enabled() -> bool {
+    lsm::is_yama_enabled()
+}
+
+/// Returns whether the `aster_mac` LSM is enabled.
+pub fn is_aster_mac_enabled() -> bool {
+    lsm::is_aster_mac_enabled()
+}
 
 pub(super) fn init() {
     lsm::init();
@@ -49,9 +59,14 @@ pub fn capable(
     ))
 }
 
+/// Runs the LSM stack for an executable image check.
+pub fn bprm_check_security(path: &Path) -> Result<()> {
+    lsm::bprm_check_security(&lsm::BprmCheckContext::new(path))
+}
+
 /// Updates security state after credentials are committed for a new executable.
-pub fn bprm_committed_creds(_path: &Path, _credentials: &Credentials<ReadWriteOp>) -> Result<()> {
-    Ok(())
+pub fn bprm_committed_creds(path: &Path, credentials: &Credentials<ReadWriteOp>) -> Result<()> {
+    lsm::bprm_committed_creds(&lsm::BprmCommittedCredsContext::new(path, credentials))
 }
 
 /// Runs the LSM stack for a DAC override decision on an inode.
@@ -65,4 +80,33 @@ pub fn inode_dac_override(
         permission,
         posix_thread,
     ))
+}
+
+/// Runs the LSM stack for an inode permission check.
+pub fn inode_permission(path: &Path, permission: Permission) -> Result<()> {
+    lsm::inode_permission(&lsm::InodePermissionContext::new(path, permission))
+}
+
+/// Runs the LSM stack for a file open check.
+pub fn file_open(path: &Path, access_mode: AccessMode, status_flags: StatusFlags) -> Result<()> {
+    lsm::file_open(&lsm::FileOpenContext::new(path, access_mode, status_flags))
+}
+
+/// Returns whether an xattr is owned by the `aster_mac` LSM.
+pub fn is_aster_mac_inode_xattr(name: &XattrName<'_>) -> bool {
+    lsm::is_aster_mac_inode_xattr(name)
+}
+
+/// Validates an `aster_mac` inode xattr value before storing it.
+pub fn validate_aster_mac_inode_xattr(name: &XattrName<'_>, value: &[u8]) -> Result<()> {
+    lsm::validate_aster_mac_inode_xattr(name, value)
+}
+
+/// Synchronizes the cached `aster_mac` inode state after an xattr update.
+pub fn sync_aster_mac_inode_xattr(
+    inode: &Arc<dyn Inode>,
+    name: &XattrName<'_>,
+    value: Option<&[u8]>,
+) -> Result<()> {
+    lsm::sync_aster_mac_inode_xattr(inode, name, value)
 }

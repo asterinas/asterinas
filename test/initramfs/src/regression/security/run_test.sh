@@ -10,6 +10,10 @@ sh ./capability/run_test.sh
 
 ./lsm/module_selection
 ./lsm/yama
+if [ -r /proc/self/attr/current ]; then
+	./lsm/aster_mac/label_state
+	./lsm/aster_mac/xattr_policy
+fi
 
 ./namespace/cgroup_ns
 ./namespace/ipc_ns_sem

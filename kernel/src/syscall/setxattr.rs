@@ -2,6 +2,8 @@
 
 use alloc::borrow::Cow;
 
+use ostd::mm::VmIo;
+
 use super::SyscallReturn;
 use crate::{
     fs,
@@ -112,14 +114,25 @@ fn setxattr(
     let name_str = name_cstr.to_string_lossy();
     let xattr_name = parse_xattr_name(name_str.as_ref())?;
     check_xattr_namespace(xattr_name.namespace(), ctx)?;
+    let is_aster_mac_xattr = security::is_aster_mac_inode_xattr(&xattr_name);
 
     if value_len > XATTR_VALUE_MAX_LEN {
         return_errno_with_message!(Errno::E2BIG, "xattr value too long");
     }
-    let mut value_reader = user_space.reader(value_ptr, value_len)?;
-
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
+    let mut value = vec![0u8; value_len];
+    user_space.read_bytes(value_ptr, &mut value)?;
+
+    if is_aster_mac_xattr {
+        security::validate_aster_mac_inode_xattr(&xattr_name, &value)?;
+    }
+
+    let mut value_reader = VmReader::from(value.as_slice()).to_fallible();
     path.set_xattr(xattr_name, &mut value_reader, flags)?;
+    if is_aster_mac_xattr {
+        let xattr_name = parse_xattr_name(name_str.as_ref())?;
+        security::sync_aster_mac_inode_xattr(&path.inode(), &xattr_name, Some(&value))?;
+    }
     fs::vfs::notify::on_attr_change(&path);
     Ok(())
 }

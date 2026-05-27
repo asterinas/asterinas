@@ -24,6 +24,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    security,
     util::ioctl::RawIoctl,
 };
 
@@ -56,6 +57,8 @@ impl InodeHandle {
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
+        security::file_open(&path, access_mode, status_flags)?;
+
         let inode = path.inode();
         let (open_file, rights) = if status_flags.contains(StatusFlags::O_PATH) {
             (None, Rights::empty())

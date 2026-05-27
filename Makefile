@@ -131,6 +131,9 @@ CARGO_OSDK_BUILD_ARGS += --init-args="/test/boot_hello.sh"
 else ifeq ($(AUTO_TEST), lsm-module-selection)
 ENABLE_REGRESSION_TEST := true
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_lsm_module_selection_test.sh"
+else ifeq ($(AUTO_TEST), aster-mac)
+ENABLE_REGRESSION_TEST := true
+CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_aster_mac_test.sh"
 else ifeq ($(AUTO_TEST), vsock)
 ENABLE_REGRESSION_TEST := true
 export VSOCK=on
@@ -292,6 +295,9 @@ else ifeq ($(AUTO_TEST), boot)
 else ifeq ($(AUTO_TEST), lsm-module-selection)
 	@tail --lines 100 qemu.log | grep -q "^LSM module selection test passed." \
 		|| (echo "LSM module selection test failed" && exit 1)
+else ifeq ($(AUTO_TEST), aster-mac)
+	@tail --lines 100 qemu.log | grep -q "^Aster MAC test passed." \
+		|| (echo "Aster MAC test failed" && exit 1)
 else ifeq ($(AUTO_TEST), vsock)
 	@tail --lines 100 qemu.log | grep -q "^Vsock test passed." \
 		|| (echo "Vsock test failed" && exit 1)

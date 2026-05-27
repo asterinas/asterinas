@@ -2,7 +2,10 @@
 
 use super::super::modules;
 use crate::{
-    fs::file::{InodeMode, Permission},
+    fs::{
+        file::{InodeMode, Permission},
+        vfs::path::Path,
+    },
     prelude::*,
     process::posix_thread::PosixThread,
 };
@@ -18,11 +21,43 @@ pub fn on_inode_dac_override(context: &InodeDacOverrideContext) -> Result<Permis
     Ok(overridden)
 }
 
+/// Runs inode permission hooks in module order.
+pub fn on_inode_permission(context: &InodePermissionContext<'_>) -> Result<()> {
+    for module in modules::active_modules() {
+        module.on_inode_permission(context)?;
+    }
+
+    Ok(())
+}
+
 /// The inputs for a DAC override decision on an inode.
 pub struct InodeDacOverrideContext<'a> {
     mode: InodeMode,
     permission: Permission,
     posix_thread: &'a PosixThread,
+}
+
+/// The inputs for a permission check on an inode.
+pub struct InodePermissionContext<'a> {
+    path: &'a Path,
+    permission: Permission,
+}
+
+impl<'a> InodePermissionContext<'a> {
+    /// Creates an inode permission context.
+    pub const fn new(path: &'a Path, permission: Permission) -> Self {
+        Self { path, permission }
+    }
+
+    /// Returns the path being checked.
+    pub const fn path(&self) -> &'a Path {
+        self.path
+    }
+
+    /// Returns the requested permission.
+    pub const fn permission(&self) -> Permission {
+        self.permission
+    }
 }
 
 impl<'a> InodeDacOverrideContext<'a> {

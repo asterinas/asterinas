@@ -375,6 +375,14 @@ impl<R: TRights> Credentials<R> {
         self.0.securebits()
     }
 
+    /// Gets the current `aster_mac` security label.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn aster_mac_label(&self) -> String {
+        self.0.aster_mac_label()
+    }
+
     /// Sets the secure bits.
     ///
     /// If the caller does not have the `CAP_SETPCAP` capability, or if it tries to set locked
@@ -384,5 +392,13 @@ impl<R: TRights> Credentials<R> {
     #[require(R > Write)]
     pub fn set_securebits(&self, securebits: SecureBits) -> Result<()> {
         self.0.set_securebits(securebits)
+    }
+
+    /// Sets the current `aster_mac` security label.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn set_aster_mac_label(&self, label: String) {
+        self.0.set_aster_mac_label(label);
     }
 }

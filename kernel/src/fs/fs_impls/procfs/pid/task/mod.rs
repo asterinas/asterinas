@@ -7,12 +7,25 @@ use crate::{
         procfs::{
             StaticEntryWithOps,
             pid::task::{
-                auxv::AuxvFileOps, cgroup::CgroupFileOps, cmdline::CmdlineFileOps,
-                comm::CommFileOps, environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps,
-                gid_map::GidMapFileOps, maps::MapsFileOps, mem::MemFileOps,
-                mountinfo::MountInfoFileOps, mounts::MountsFileOps, mountstats::MountStatsFileOps,
-                ns::NsDirOps, oom_score_adj::OomScoreAdjFileOps, stat::StatFileOps,
-                status::StatusFileOps, uid_map::UidMapFileOps,
+                attr::{ATTR_DIR_NAME, AttrDirOps},
+                auxv::AuxvFileOps,
+                cgroup::CgroupFileOps,
+                cmdline::CmdlineFileOps,
+                comm::CommFileOps,
+                environ::EnvironFileOps,
+                exe::ExeSymOps,
+                fd::FdDirOps,
+                gid_map::GidMapFileOps,
+                maps::MapsFileOps,
+                mem::MemFileOps,
+                mountinfo::MountInfoFileOps,
+                mounts::MountsFileOps,
+                mountstats::MountStatsFileOps,
+                ns::NsDirOps,
+                oom_score_adj::OomScoreAdjFileOps,
+                stat::StatFileOps,
+                status::StatusFileOps,
+                uid_map::UidMapFileOps,
             },
             template::{
                 ListedEntry, ProcDir, ProcDirOps, ReaddirEntry, keyed_readdir_entries,
@@ -24,9 +37,11 @@ use crate::{
     },
     prelude::*,
     process::{Process, pid_table, pid_table::PidEntry, posix_thread::AsPosixThread},
+    security,
     thread::{Thread, Tid},
 };
 
+mod attr;
 mod auxv;
 mod cgroup;
 mod cmdline;
@@ -170,16 +185,23 @@ impl TidDirOps {
         name: &str,
     ) -> Result<Arc<dyn Inode>> {
         if let Some(child) =
-            lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| (f)(self, this_ptr))
+            lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| (f)(self, this_ptr.clone()))
         {
             return Ok(child);
+        }
+
+        if name == ATTR_DIR_NAME && security::is_aster_mac_enabled() {
+            return Ok(AttrDirOps::new_inode(self, this_ptr));
         }
 
         return_errno_with_message!(Errno::ENOENT, "the file does not exist");
     }
 
     pub(super) fn static_listed_entries(&self) -> impl Iterator<Item = ListedEntry<'_>> + '_ {
-        listed_entries_from_table(Self::STATIC_ENTRIES)
+        let attr_entry = security::is_aster_mac_enabled()
+            .then(|| ListedEntry::new(ATTR_DIR_NAME, InodeType::Dir));
+
+        listed_entries_from_table(Self::STATIC_ENTRIES).chain(attr_entry)
     }
 }
 
