@@ -45,6 +45,12 @@ pub const LOG_BUFFER_CAPACITY: usize = 64 * 1024;
 /// important for logging in low-memory or allocator-internal contexts.
 const FORMAT_BUF_CAPACITY: usize = 512;
 
+/// Chunk size for copying data between kernel and user space.
+///
+/// Reading is done in chunks to limit stack usage and avoid holding
+/// locks for too long.
+const COPY_CHUNK: usize = 512;
+
 /// Linux console log level.
 ///
 /// Controls which log messages are broadcast to the console. Only messages
@@ -116,6 +122,40 @@ pub fn klog() -> &'static KernelLog {
 /// This function must be called before any logging operations.
 pub fn init_klog() {
     KLOG.call_once(KernelLog::new);
+}
+
+struct FixedBuf<'a> {
+    buf: &'a mut [u8],
+    len: usize,
+}
+
+impl<'a> FixedBuf<'a> {
+    fn new(buf: &'a mut [u8]) -> Self {
+        Self { buf, len: 0 }
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        &self.buf[..self.len]
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
+impl Write for FixedBuf<'_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let space = self.buf.len().saturating_sub(self.len);
+        if space == 0 {
+            return Ok(());
+        }
+
+        let bytes = s.as_bytes();
+        let copy_len = bytes.len().min(space);
+        self.buf[self.len..self.len + copy_len].copy_from_slice(&bytes[..copy_len]);
+        self.len += copy_len;
+        Ok(())
+    }
 }
 
 /// Appends a log record to the kernel log buffer.
@@ -343,12 +383,6 @@ impl KernelLog {
     }
 }
 
-/// Chunk size for copying data between kernel and user space.
-///
-/// Reading is done in chunks to limit stack usage and avoid holding
-/// locks for too long.
-const COPY_CHUNK: usize = 512;
-
 fn copy_from(rb: &RingBuffer<u8>, start: usize, dst: &mut [u8]) {
     let cap = rb.capacity();
     let offset = start & (cap - 1);
@@ -358,39 +392,5 @@ fn copy_from(rb: &RingBuffer<u8>, start: usize, dst: &mut [u8]) {
         rb.segment().read_slice(0, &mut dst[first..]).unwrap();
     } else {
         rb.segment().read_slice(offset, dst).unwrap();
-    }
-}
-
-struct FixedBuf<'a> {
-    buf: &'a mut [u8],
-    len: usize,
-}
-
-impl<'a> FixedBuf<'a> {
-    fn new(buf: &'a mut [u8]) -> Self {
-        Self { buf, len: 0 }
-    }
-
-    fn as_bytes(&self) -> &[u8] {
-        &self.buf[..self.len]
-    }
-
-    fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-}
-
-impl Write for FixedBuf<'_> {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        let space = self.buf.len().saturating_sub(self.len);
-        if space == 0 {
-            return Ok(());
-        }
-
-        let bytes = s.as_bytes();
-        let copy_len = bytes.len().min(space);
-        self.buf[self.len..self.len + copy_len].copy_from_slice(&bytes[..copy_len]);
-        self.len += copy_len;
-        Ok(())
     }
 }

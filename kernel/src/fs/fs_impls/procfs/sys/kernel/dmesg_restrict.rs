@@ -66,6 +66,6 @@ impl FileOps for DmesgRestrictFileOps {
         };
 
         aster_logger::klog().set_dmesg_restrict(val);
-        Ok(read_len)
+        Ok(input_len)
     }
 }
