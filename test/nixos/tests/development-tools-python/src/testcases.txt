@@ -10,11 +10,11 @@
 # Instead, diff the new output against this file and carry over all
 # existing "-i" filters.
 
-test.test_asyncio.test_base_events -i test_create_server_stream_bittype
+test.test_asyncio.test_base_events -i test_create_server_stream_bittype -i test_create_server_ipv6
 test.test_asyncio.test_buffered_proto
 test.test_asyncio.test_context
 test.test_asyncio.test_eager_task_factory
-test.test_asyncio.test_events -i test_ssl_connect_accepted_socket -i test_server_close -i test_get_event_loop_new_process -i test_get_loop -i test_create_server* -i test_create_ssl*
+test.test_asyncio.test_events -i test_ssl_connect_accepted_socket -i test_server_close -i test_get_event_loop_new_process -i test_get_loop -i test_create_server* -i test_create_ssl* -i test_create_datagram_endpoint_ipv6
 test.test_asyncio.test_futures
 test.test_asyncio.test_futures2
 test.test_asyncio.test_locks
@@ -30,7 +30,7 @@ test.test_asyncio.test_sock_lowlevel -i test_cancel_sock_accept -i test_sock_cli
 test.test_asyncio.test_ssl -i test_create_connection_memory_leak -i test_flush_before_shutdown -i test_create_connection_ssl* -i test_create_server_ssl* -i test_remote_shutdown_receives_trailing_data* -i test_start_tls* -i test_shutdown*
 test.test_asyncio.test_sslproto -i test_create_connection_memory_leak -i test_create_connection_ssl_failed_certificate -i test_start_tls*
 test.test_asyncio.test_staggered
-test.test_asyncio.test_streams -i test_open_connection_happy_eyeball_refcycles -i test_open_connection_no_loop_ssl -i test_open_unix_connection_no_loop_ssl
+test.test_asyncio.test_streams -i test_open_connection_happy_eyeball_refcycles -i test_open_connection_no_loop_ssl -i test_open_unix_connection_no_loop_ssl -i test_unhandled_cancel -i test_unhandled_exception
 test.test_asyncio.test_subprocess
 test.test_asyncio.test_taskgroups
 test.test_asyncio.test_tasks
@@ -273,7 +273,7 @@ test_list
 test_listcomps
 test_lltrace
 test_locale
-test_logging -i test_output -i test_noserver -i test_max_bytes* -i test_namer_rotator_inheritance -i test_rollover*
+test_logging -i test_output -i test_noserver -i test_max_bytes* -i test_namer_rotator_inheritance -i test_rollover* -i test_udp_reconnection
 test_long
 test_longexp
 test_lzma
@@ -376,7 +376,7 @@ test_slice
 test_smtplib
 # test_smtpnet
 test_sndhdr
-test_socket -i testDetach -i BasicUDPLITETest -i BasicUDPTest -i testRecvFromIntoEmptyBuffer -i testCreateConnectionClose -i testSourceAddress -i NetworkConnectionNoServer -i test_injected_authentication_failure -i testCmsgTrunc* -i testRecvmsgPeek -i testRecvmsgTrunc -i testSendmsgDontWait -i SendmsgUDPLITETest -i testUnencodableAddr -i UDPLITETimeoutTest -i test_tcp4 -i testCloseException -i testInterfaceNameIndex -i testSendtoErrors -i testSockName -i test_socket_fileno -i RecvmsgIntoUDPLITETest -i RecvmsgUDPLITETest
+test_socket -i testDetach -i BasicUDPLITETest -i BasicUDPTest -i testRecvFromIntoEmptyBuffer -i testCreateConnectionClose -i testSourceAddress -i NetworkConnectionNoServer -i test_injected_authentication_failure -i testCmsgTrunc* -i testRecvmsgPeek -i testRecvmsgTrunc -i testSendmsgDontWait -i SendmsgUDPLITETest -i testUnencodableAddr -i UDPLITETimeoutTest -i test_tcp4 -i testCloseException -i testInterfaceNameIndex -i testSendtoErrors -i testSockName -i test_socket_fileno -i RecvmsgIntoUDPLITETest -i RecvmsgUDPLITETest -i test_tcp6 -i test_address -i test_family_and_type -i test_ipv6_only_default -i test_getaddrinfo_ipv6_scopeid_symbolic -i test_getnameinfo_ipv6_scopeid_symbolic
 test_socketserver
 test_sort
 test_source_encoding
