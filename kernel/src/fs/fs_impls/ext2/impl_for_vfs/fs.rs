@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! [`FileSystem`] trait implementation for [`Ext2`].
+//!
+//! Translates VFS-level mount, sync, stat, and root-inode requests into
+//! the corresponding ext2-internal operations.
+
+use aster_block::{BLOCK_SIZE, bio::BioStatus};
+
 use crate::{
     fs::{
-        ext2::{Ext2, MAGIC_NUM as EXT2_MAGIC},
+        fs_impls::ext2::{Ext2, super_block::MAGIC_NUM},
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
@@ -18,10 +25,10 @@ impl FileSystem for Ext2 {
     }
 
     fn sync(&self) -> Result<()> {
-        self.sync_all_inodes()?;
-        self.sync_metadata()?;
-
-        self.block_device().sync()?;
+        self.sync_all()?;
+        if self.block_device().sync()? != BioStatus::Complete {
+            return_errno_with_message!(Errno::EIO, "failed to flush block device");
+        }
         Ok(())
     }
 
@@ -30,19 +37,26 @@ impl FileSystem for Ext2 {
     }
 
     fn sb(&self) -> SuperBlock {
-        let ext2_sb = self.super_block();
+        let sb = self.super_block();
+        let blocks = if self.uses_minix_df() {
+            sb.total_blocks()
+        } else {
+            sb.total_blocks().saturating_sub(sb.total_metadata_blocks())
+        };
         SuperBlock {
-            magic: EXT2_MAGIC as _,
-            bsize: ext2_sb.block_size(),
-            blocks: ext2_sb.total_blocks() as _,
-            bfree: ext2_sb.free_blocks_count() as _,
-            bavail: ext2_sb.free_blocks_count() as _,
-            files: ext2_sb.total_inodes() as _,
-            ffree: ext2_sb.free_inodes_count() as _,
-            fsid: 0, // TODO
+            magic: MAGIC_NUM as u64,
+            bsize: BLOCK_SIZE,
+            blocks: blocks as usize,
+            bfree: sb.free_blocks_count() as usize,
+            bavail: sb
+                .free_blocks_count()
+                .saturating_sub(sb.reserved_blocks_count()) as usize,
+            files: sb.total_inodes() as usize,
+            ffree: sb.free_inodes_count() as usize,
+            fsid: 0,
             namelen: NAME_MAX,
-            frsize: ext2_sb.fragment_size(),
-            flags: 0, // TODO
+            frsize: sb.fragment_size(),
+            flags: 0,
             container_dev_id: self.container_device_id(),
         }
     }
