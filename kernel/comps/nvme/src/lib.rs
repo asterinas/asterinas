@@ -33,6 +33,7 @@ mod nvme_cmd;
 mod nvme_queue;
 mod nvme_regs;
 mod nvme_spec;
+mod prp;
 mod transport;
 
 static NVME_BLOCK_MAJOR_ID: Once<MajorIdOwner> = Once::new();
