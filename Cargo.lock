@@ -222,6 +222,7 @@ dependencies = [
  "rand",
  "ring-buffer",
  "riscv",
+ "smallvec",
  "spin",
  "takeable",
  "tdx-guest",
