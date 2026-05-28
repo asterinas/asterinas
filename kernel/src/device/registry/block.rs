@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_block::{BlockDevice, SECTOR_SIZE};
+use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE};
 use aster_nvme::NvmeBlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 use device_id::DeviceId;
 use ostd::mm::VmIo;
 
 use crate::{
+    context::current_userspace,
     device::{Device, DeviceType, DevtmpfsInodeMeta, add_node},
     events::IoEvents,
     fs::{
@@ -65,10 +66,27 @@ pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> 
 }
 
 mod ioctl_defs {
-    use crate::util::ioctl::{OutData, ioc};
+    use crate::util::ioctl::{NoData, OutData, ioc};
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fs.h>
+
+    /// Returns the device size in bytes.
     pub(super) type BlkGetSize64 = ioc!(BLKGETSIZE64, 0x12, 114, OutData<u64>);
+
+    /// Returns the logical sector size of the block device.
+    ///
+    /// This is the smallest unit of I/O the device can address and,
+    /// importantly, the minimum alignment required for `O_DIRECT` I/O on
+    /// files backed by this device. Both buffer address and offset must be a
+    /// multiple of this value.
+    ///
+    /// Benchmarks and filesystem tests (for example, `xfstests`, LTP
+    /// `preadv03`/`pwritev03`) rely on this ioctl to size `O_DIRECT` buffers.
+    /// If the effective alignment enforced by the filesystem layered on top
+    /// is larger than the hardware sector, such as `ext2`'s 4 KiB block, this
+    /// ioctl must return that larger value. Otherwise user programs will align
+    /// correctly for the device but still hit `EINVAL` at the filesystem.
+    pub(super) type BlkGetSectorSize = ioc!(BLKSSZGET, 0x12, 104, NoData);
 }
 
 /// Represents a block device inode in the filesystem.
@@ -156,6 +174,15 @@ impl PerOpenFileOps for OpenBlockFile {
         use ioctl_defs::*;
 
         dispatch_ioctl!(match raw_ioctl {
+            _cmd @ BlkGetSectorSize => {
+                // TODO: Query the per-device logical block size once block device metadata
+                // exposes it. For now, report the effective minimum I/O granularity enforced
+                // by Asterinas filesystems so userspace can use `BLKSSZGET` for `O_DIRECT`
+                // alignment.
+                let sector_size = SECTOR_SIZE.max(BLOCK_SIZE) as i32;
+                current_userspace!().write_val(raw_ioctl.arg(), &sector_size)?;
+                Ok(0)
+            }
             cmd @ BlkGetSize64 => {
                 let size = (self.0.metadata().nr_sectors * SECTOR_SIZE) as u64;
                 cmd.write(&size)?;
