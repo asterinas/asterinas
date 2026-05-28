@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
+use alloc::sync::{Arc, Weak};
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use aster_console::{ConsoleSetFontError, font::BitmapFont, mode::ConsoleMode};
+use aster_console::{ConsoleCallback, ConsoleSetFontError, font::BitmapFont, mode::ConsoleMode};
 use aster_framebuffer::{FRAMEBUFFER, FramebufferConsole};
 use int_to_c_enum::TryFromInt;
 use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
@@ -18,6 +18,7 @@ pub(in crate::device::tty::vt) struct VtConsole {
     keyboard: SpinLock<VtKeyboard, LocalIrqDisabled>,
     is_allocated: AtomicBool,
     backend: SpinLock<VtConsoleBackend, LocalIrqDisabled>,
+    write_callback: SpinLock<Option<Arc<ConsoleCallback>>, LocalIrqDisabled>,
     inner: SpinLock<VtConsoleInner, LocalIrqDisabled>,
 }
 
@@ -151,6 +152,7 @@ impl VtConsole {
             keyboard: SpinLock::new(VtKeyboard::default()),
             is_allocated: AtomicBool::new(false),
             backend: SpinLock::new(VtConsoleBackend::None),
+            write_callback: SpinLock::new(None),
             inner: SpinLock::new(VtConsoleInner::new()),
         }
     }
@@ -194,6 +196,11 @@ impl VtConsole {
             VtConsoleBackend::Framebuffer(c) => c.set_font(font),
             VtConsoleBackend::None => Err(ConsoleSetFontError::InappropriateDevice),
         }
+    }
+
+    /// Sets a callback to be called when the console needs to send data back to the terminal.
+    pub fn set_write_callback(&self, callback: Arc<ConsoleCallback>) {
+        *self.write_callback.lock() = Some(callback);
     }
 }
 
@@ -279,6 +286,11 @@ impl VtConsole {
             && let Some(fb) = FRAMEBUFFER.get()
         {
             let mut console = FramebufferConsole::new(fb.clone());
+
+            if let Some(callback) = self.write_callback.lock().clone() {
+                console.set_write_callback(callback);
+            }
+
             console.set_mode(mode);
             *backend = VtConsoleBackend::Framebuffer(console);
         }

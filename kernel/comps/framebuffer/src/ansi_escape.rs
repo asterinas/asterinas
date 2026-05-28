@@ -20,6 +20,17 @@ pub(super) enum EraseInDisplay {
     EntireScreenAndScrollback,
 }
 
+/// The code for "Device Status Report" (DSR) commands.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.13/source/drivers/tty/vt/vt.c#L2507-L2511>.
+pub(super) enum DeviceStatusReportCode {
+    /// Reports the status of the device by transmitting `ESC[0n` if the device is OK.
+    TerminalStatusReport = 5,
+    /// Reports the cursor position (CPR) by transmitting `ESC[n;mR`,
+    /// where n is the row and m is the column.
+    CursorPositionReport = 6,
+}
+
 /// A trait to execute operations from ANSI escape sequences.
 pub(super) trait EscapeOp {
     /// Sets the cursor position.
@@ -32,6 +43,9 @@ pub(super) trait EscapeOp {
 
     /// Erases part or all of the display.
     fn erase_in_display(&mut self, mode: EraseInDisplay);
+
+    /// Reports the device status with the given code.
+    fn device_status_report(&mut self, code: DeviceStatusReportCode);
 }
 
 const MAX_PARAMS: usize = 8;
@@ -336,6 +350,21 @@ impl EscapeFsm {
             // SGR - Select Graphic Rendition
             b'm' => self.handle_sgr(num_params, op),
 
+            // DSR - Device Status Report: CSI n 'n'
+            b'n' => {
+                let n = self.param_or(0, 0);
+                let code = match n {
+                    5 => DeviceStatusReportCode::TerminalStatusReport,
+                    6 => DeviceStatusReportCode::CursorPositionReport,
+                    _ => {
+                        // Invalid parameter.
+                        return;
+                    }
+                };
+
+                op.device_status_report(code);
+            }
+
             // Unknown CSI: swallow silently.
             _ => {}
         }
@@ -487,6 +516,10 @@ mod test {
 
         fn erase_in_display(&mut self, mode: EraseInDisplay) {
             self.last_ed = Some(mode);
+        }
+
+        fn device_status_report(&mut self, _code: DeviceStatusReportCode) {
+            // Not needed for current tests.
         }
     }
 
