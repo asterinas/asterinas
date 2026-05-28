@@ -440,7 +440,10 @@ impl DeviceInner {
                     .iter()
                     .map(|segment| segment.inner_dma_slice())
             });
-            inputs.extend(dma_slices_iter);
+            for dma_slice in dma_slices_iter {
+                dma_slice.sync_to_device().unwrap();
+                inputs.push(dma_slice);
+            }
             inputs
         };
 
