@@ -132,6 +132,34 @@ runs:
           echo "Generated config file $CONFIG_FILE"
         done
 
+    - name: Set up benchmark git auth
+      if: ${{ inputs.task == 'result' }}
+      shell: bash
+      env:
+        BENCHMARK_SECRET: ${{ inputs.benchmark-secret }}
+      run: |
+        cat > "$RUNNER_TEMP/benchmark-git-askpass.sh" <<'EOF'
+        #!/bin/sh
+        case "$1" in
+          *Username*) printf '%s\n' "x-access-token" ;;
+          *Password*) printf '%s\n' "$BENCHMARK_SECRET" ;;
+          *) printf '\n' ;;
+        esac
+        EOF
+        chmod 700 "$RUNNER_TEMP/benchmark-git-askpass.sh"
+        echo "GIT_ASKPASS=$RUNNER_TEMP/benchmark-git-askpass.sh" >> "$GITHUB_ENV"
+        echo "GIT_TERMINAL_PROMPT=0" >> "$GITHUB_ENV"
+
+    - name: Pre-clone benchmark repository
+      if: ${{ inputs.task == 'result' }}
+      shell: bash
+      env:
+        BENCHMARK_SECRET: ${{ inputs.benchmark-secret }}
+      run: |
+        git clone --depth 1 -b gh-pages https://github.com/asterinas/benchmark.git ./benchmark-data-repository
+        git -C ./benchmark-data-repository config user.name "github-action-benchmark"
+        git -C ./benchmark-data-repository config user.email "github@users.noreply.github.com"
+
     - name: Store benchmark results
       if: ${{ inputs.task == 'result' }}
       uses: asterinas/github-action-benchmark@v5
@@ -140,8 +168,62 @@ runs:
         output-file-path: "configs/config_*.json"
         github-token: ${{ inputs.benchmark-secret }}
         gh-repository: 'github.com/asterinas/benchmark'
-        auto-push: true
+        auto-push: false
+        skip-fetch-gh-pages: true
         comment-on-alert: true
         fail-on-alert: false
         max-items-in-chart: 60
         ref: ${{ github.sha }}
+
+    - name: Push benchmark results
+      if: ${{ inputs.task == 'result' }}
+      shell: bash
+      env:
+        BENCHMARK_SECRET: ${{ inputs.benchmark-secret }}
+      run: |
+        cd ./benchmark-data-repository
+
+        unpushed_commit_count=$(git rev-list --count origin/gh-pages..HEAD)
+        if [[ "$unpushed_commit_count" == "0" ]]; then
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "Benchmark action left uncommitted changes in benchmark-data-repository."
+            git status --short
+            exit 1
+          fi
+
+          echo "No benchmark result changes to push."
+          exit 0
+        fi
+
+        for i in {1..5}; do
+          if ! git fetch origin gh-pages; then
+            backoff_seconds=$((i * 5))
+            echo "Fetch attempt $i failed, retrying in ${backoff_seconds}s..."
+            sleep "$backoff_seconds"
+            continue
+          fi
+
+          if ! git rebase origin/gh-pages; then
+            git rebase --abort || true
+            echo "Rebase conflict while syncing gh-pages."
+            exit 1
+          fi
+
+          if git push origin HEAD:gh-pages; then
+            echo "Successfully pushed benchmark results!"
+            exit 0
+          fi
+
+          backoff_seconds=$((i * 5))
+          echo "Push attempt $i failed, retrying in ${backoff_seconds}s..."
+          sleep "$backoff_seconds"
+        done
+
+        echo "Failed to push after 5 attempts."
+        exit 1
+
+    - name: Clean up benchmark git auth
+      if: ${{ always() && inputs.task == 'result' }}
+      shell: bash
+      run: |
+        rm -f "$RUNNER_TEMP/benchmark-git-askpass.sh"
