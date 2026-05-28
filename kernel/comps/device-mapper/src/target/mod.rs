@@ -5,6 +5,8 @@
 //! A target is the per-segment policy that turns a BIO addressed to the mapped
 //! device into concrete I/O on the underlying device(s).
 
+pub mod linear;
+
 use aster_block::bio::{BioStatus, SubmittedBio};
 
 /// A device-mapper target.
