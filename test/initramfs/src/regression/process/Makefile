@@ -2,6 +2,7 @@
 
 SUBDIRS := \
 	alarm \
+	clock_nanosleep \
 	clone3 \
 	cpu_affinity \
 	execve \

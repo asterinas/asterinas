@@ -15,6 +15,8 @@ set -e
 
 ./cpu_affinity/cpu_affinity
 
+./clock_nanosleep/nanosleep_err
+
 ./execve/execve
 ./execve/execve_comm
 ./execve/execve_err
