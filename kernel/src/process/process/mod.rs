@@ -5,6 +5,8 @@ use core::{
     time::Duration,
 };
 
+use ostd::timer::Jiffies;
+
 use self::timer_manager::PosixTimerManager;
 use super::{
     pid_table::{self, PidTable},
@@ -124,7 +126,6 @@ pub struct Process {
     /// Instead of letting the init process to reap all orphan zombie processes,
     /// a subreaper can reap orphan zombie processes among its descendants.
     is_child_subreaper: AtomicBool,
-
     /// Whether the process has a subreaper that will reap it when the
     /// process becomes orphaned.
     ///
@@ -139,15 +140,16 @@ pub struct Process {
     sig_queues: SigQueues,
     /// The signal that the process should receive when parent process exits.
     parent_death_signal: AtomicSigNum,
-
     /// The signal that should be sent to the parent when this process exits.
     exit_signal: AtomicSigNum,
 
+    // Time
     /// A profiling clock measures the user CPU time and kernel CPU time of the current process.
     prof_clock: Arc<ProfClock>,
-
     /// A manager that manages timer resources and utilities of the process.
     timer_manager: PosixTimerManager,
+    /// Process start time since boot.
+    start_time: Jiffies,
 
     // Namespaces
     /// The user namespace
@@ -262,6 +264,7 @@ impl Process {
             oom_score_adj: AtomicI16::new(oom_score_adj),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
             prof_clock,
+            start_time: Jiffies::elapsed(),
             user_ns: Mutex::new(user_ns),
         })
     }
@@ -293,6 +296,11 @@ impl Process {
     /// Gets the timer resources and utilities of the process.
     pub fn timer_manager(&self) -> &PosixTimerManager {
         &self.timer_manager
+    }
+
+    /// Returns the process start time since boot.
+    pub fn start_time(&self) -> Jiffies {
+        self.start_time
     }
 
     pub fn tasks(&self) -> &Mutex<TaskSet> {

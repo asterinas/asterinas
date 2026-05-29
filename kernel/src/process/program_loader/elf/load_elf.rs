@@ -2,6 +2,8 @@
 
 //! ELF file parser.
 
+use core::ops::Range;
+
 use align_ext::AlignExt;
 
 use super::{
@@ -61,6 +63,10 @@ pub fn load_elf_to_vmar(
     )]
     let (elf_mapped_info, entry_point, mut aux_vec) =
         map_vmos_and_build_aux_vec(vmar, ldso, &elf_headers, &elf_file)?;
+    vmar.process_vm()
+        .set_code_range(elf_mapped_info.code_range.clone());
+    vmar.process_vm()
+        .set_data_range(elf_mapped_info.data_range.clone());
 
     // Map the vDSO and set the entry.
     // Since the vDSO does not require being mapped to any specific address,
@@ -76,7 +82,7 @@ pub fn load_elf_to_vmar(
         .map_and_write_init_stack(vmar, argv, envp, aux_vec)?;
     vmar.process_vm().map_and_init_heap(
         vmar,
-        elf_mapped_info.data_segment_size,
+        elf_mapped_info.data_range.len(),
         elf_mapped_info.heap_base,
     )?;
 
@@ -205,8 +211,10 @@ fn load_ldso(vmar: &Vmar, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<Lds
 struct ElfMappedInfo {
     /// The range covering all the mapped segments.
     full_range: RelocatedRange,
-    /// The size of the data segment.
-    data_segment_size: usize,
+    /// The executable code range after relocation.
+    code_range: Range<Vaddr>,
+    /// The data range after relocation.
+    data_range: Range<Vaddr>,
     /// The base address for the heap start.
     heap_base: Vaddr,
 }
@@ -333,14 +341,34 @@ fn map_segment_vmos(
         map_segment_vmo(loadable_phdr, elf_file, vmar, map_at)?;
     }
 
-    // Calculate the data segment size.
-    // According to Linux behavior, the data segment only includes the last loadable segment.
+    // The code range spans all executable loadable segments after relocation.
+    let code_range = elf
+        .loadable_phdrs()
+        .iter()
+        .filter(|phdr| phdr.vm_perms().contains(VmPerms::EXEC))
+        .map(|phdr| {
+            let range = phdr.virt_range();
+            let start = relocated_range
+                .relocated_addr_of(range.start)
+                .expect("`calc_total_vaddr_bounds()` should cover all segments");
+            start..(start + range.len())
+        })
+        .reduce(|acc_range, range| acc_range.start.min(range.start)..acc_range.end.max(range.end))
+        .unwrap_or(0..0);
+
+    // According to Linux behavior, the data range only includes the last loadable segment.
     // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/binfmt_elf.c#L1200-L1227>
-    let data_segment_size = elf.find_last_vaddr_bound().map_or(0, |range| range.len());
+    let data_range = elf.find_last_vaddr_bound().map_or(0..0, |range| {
+        let start = relocated_range
+            .relocated_addr_of(range.start)
+            .expect("`calc_total_vaddr_bounds()` should cover all segments");
+        start..(start + range.len())
+    });
 
     Ok(ElfMappedInfo {
         full_range: relocated_range,
-        data_segment_size,
+        code_range,
+        data_range,
         heap_base: heap_base.unwrap_or(map_range.end),
     })
 }
