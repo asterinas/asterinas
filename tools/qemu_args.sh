@@ -19,7 +19,8 @@
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
 #  - VNC_PORT: VNC port, default is "42";
-#  - ATTACH_XFSTESTS_IMAGES: "true" or "false", whether to attach xfstests images (xfstests_test.img and xfstests_scratch.img) to the VM. Defaults to auto-detection from ENABLE_CONFORMANCE_TEST + CONFORMANCE_TEST_SUITE.
+#  - XFSTESTS_NEEDS_BLOCK_DEVICES: "true" or "false", whether to attach
+#    xfstests images (xfstests_test.img and xfstests_scratch.img) to the VM.
 
 OVMF=${OVMF:-"on"}
 VHOST=${VHOST:-"off"}
@@ -27,11 +28,12 @@ VSOCK=${VSOCK:-"off"}
 VIRTIOFS=${VIRTIOFS:-"off"}
 NETDEV=${NETDEV:-"user"}
 CONSOLE=${CONSOLE:-"hvc0"}
+XFSTESTS_NEEDS_BLOCK_DEVICES=${XFSTESTS_NEEDS_BLOCK_DEVICES:-false}
 
-ATTACH_XFSTESTS_IMAGES=${ATTACH_XFSTESTS_IMAGES:-false}
-if [ "${ENABLE_CONFORMANCE_TEST:-"false"}" = "true" ] && \
-   [ "${CONFORMANCE_TEST_SUITE:-"ltp"}" = "xfstests" ]; then
-    ATTACH_XFSTESTS_IMAGES="true"
+if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" != "true" ] && \
+   [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" != "false" ]; then
+    echo "Invalid XFSTESTS_NEEDS_BLOCK_DEVICES=${XFSTESTS_NEEDS_BLOCK_DEVICES}" 1>&2
+    exit 1
 fi
 VIRTIOFS_TAG=${VIRTIOFS_TAG:-"aster-virtiofs"}
 VIRTIOFS_SOCKET=${VIRTIOFS_SOCKET:-"/tmp/vhostqemu/vfs.sock"}
@@ -144,8 +146,8 @@ COMMON_QEMU_ARGS="\
     -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
 "
 
-# Add xfstests drives when the selected conformance suite is `xfstests`.
-if [ "$ATTACH_XFSTESTS_IMAGES" = "true" ]; then
+# Add xfstests drives when the selected file system needs block devices.
+if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" = "true" ]; then
     COMMON_QEMU_ARGS="$COMMON_QEMU_ARGS \
     -drive if=none,format=raw,id=x2,file=./test/initramfs/build/xfstests_test.img \
     -drive if=none,format=raw,id=x3,file=./test/initramfs/build/xfstests_scratch.img \
@@ -195,8 +197,8 @@ else
     "
 fi
 
-# Add xfstests devices when the selected conformance suite is `xfstests`.
-if [ "$ATTACH_XFSTESTS_IMAGES" = "true" ]; then
+# Add xfstests devices when the selected file system needs block devices.
+if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" = "true" ]; then
     if [ "$1" = "microvm" ]; then
         QEMU_ARGS="$QEMU_ARGS \
         -device virtio-blk-device,drive=x2,serial=vxfstest \

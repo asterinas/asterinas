@@ -53,10 +53,13 @@ CONFORMANCE_TEST_WORKDIR ?= /tmp
 #   directory, and appends that file directly.
 EXTRA_BLOCKLISTS ?= ""
 # Parameters for xfstests.
-XFSTESTS_RUNLIST ?= /opt/xfstests/short.list
+XFSTESTS_RUNLIST ?= /opt/xfstests/$(XFSTESTS_FS_TYPE)/run_list/short.list
 XFSTESTS_DISK_SIZE ?= 12G
 XFSTESTS_TEST_DEV ?= /dev/vdc
 XFSTESTS_SCRATCH_DEV ?= /dev/vdd
+XFSTESTS_FS_TYPE ?= ext2
+XFSTESTS_FS_DIR := test/initramfs/src/conformance/xfstests/$(XFSTESTS_FS_TYPE)
+XFSTESTS_BUILD_CONFIG := $(XFSTESTS_FS_DIR)/config/build_config.mk
 # Specify whether to build regression tests under `test/initramfs/src/regression`.
 ENABLE_REGRESSION_TEST ?= false
 # End of auto test features.
@@ -115,6 +118,7 @@ ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_RUNLIST=$(XFSTESTS_RUNLIST)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_TEST_DEV=$(XFSTESTS_TEST_DEV)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_SCRATCH_DEV=$(XFSTESTS_SCRATCH_DEV)"
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE)"
 endif
 CARGO_OSDK_BUILD_ARGS += --init-args="/opt/run_conformance_test.sh"
 else ifeq ($(AUTO_TEST), regression)
@@ -127,6 +131,20 @@ else ifeq ($(AUTO_TEST), vsock)
 ENABLE_REGRESSION_TEST := true
 export VSOCK=on
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_vsock_test.sh"
+endif
+
+XFSTESTS_NEEDS_BLOCK_DEVICES := false
+XFSTESTS_MKFS :=
+ifeq ($(ENABLE_CONFORMANCE_TEST), true)
+ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
+ifeq ($(wildcard $(XFSTESTS_FS_DIR)),)
+$(error Unsupported XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE))
+endif
+ifeq ($(wildcard $(XFSTESTS_BUILD_CONFIG)),)
+$(error Missing xfstests build config: $(XFSTESTS_BUILD_CONFIG))
+endif
+include $(XFSTESTS_BUILD_CONFIG)
+endif
 endif
 
 ifeq ($(RELEASE_LTO), 1)

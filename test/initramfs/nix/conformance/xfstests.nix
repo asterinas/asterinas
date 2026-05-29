@@ -32,10 +32,15 @@ in stdenvNoCC.mkDerivation {
   buildCommand = ''
     mkdir -p $out/xfstests
     cp -r ${pkgs.xfstests}/lib/xfstests/* $out/xfstests/
+    chmod -R u+w $out/xfstests
+
     cp ${conformanceSrc}/xfstests/run_xfstests.sh $out/xfstests/
     sed -i "s|__RUNTIME_PATH__|${runtimePath}|" $out/xfstests/run_xfstests.sh
     chmod +x $out/xfstests/run_xfstests.sh
-    cp ${conformanceSrc}/xfstests/local.config $out/xfstests/
-    cp ${conformanceSrc}/xfstests/*.list $out/xfstests/
+    for fs_dir in ${conformanceSrc}/xfstests/*; do
+      if [ -d "$fs_dir" ]; then
+        cp -r "$fs_dir" $out/xfstests/
+      fi
+    done
   '';
 }

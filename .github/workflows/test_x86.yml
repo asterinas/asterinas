@@ -194,4 +194,5 @@ jobs:
           release: true
           mem: '12G'
           xfstests_disk_size: '2G'
-          xfstests_runlist: '/opt/xfstests/short.list'
+          xfstests_runlist: '/opt/xfstests/ext2/run_list/short.list'
+          xfstests_fs_type: 'ext2'
