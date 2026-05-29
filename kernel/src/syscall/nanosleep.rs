@@ -39,13 +39,7 @@ pub fn sys_clock_nanosleep(
     remain_timespec_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let is_abs_time = if flags == 0 {
-        false
-    } else if flags == TIMER_ABSTIME {
-        true
-    } else {
-        unreachable!()
-    };
+    let is_abs_time = (flags & TIMER_ABSTIME) != 0;
 
     do_clock_nanosleep(
         clockid,
