@@ -160,6 +160,16 @@ impl InitStack {
         self.pos()
     }
 
+    /// Returns the range that held the initial arguments.
+    pub fn argv_range(&self) -> Range<Vaddr> {
+        self.argv_range.lock().clone()
+    }
+
+    /// Returns the range that held the initial environment variables.
+    pub fn envp_range(&self) -> Range<Vaddr> {
+        self.envp_range.lock().clone()
+    }
+
     /// Maps the VMO of the init stack and constructs a writer to initialize its content.
     pub(super) fn map_and_write(
         &self,

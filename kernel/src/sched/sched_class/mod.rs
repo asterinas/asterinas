@@ -38,7 +38,7 @@ mod stop;
 
 use self::policy::{SchedPolicyKind, SchedPolicyState};
 pub use self::{
-    policy::SchedPolicy,
+    policy::{LinuxSchedPolicy, SchedPolicy},
     real_time::{RealTimePolicy, RealTimePriority},
 };
 
@@ -207,7 +207,7 @@ impl SchedAttr {
         })
     }
 
-    fn last_cpu(&self) -> Option<CpuId> {
+    pub fn last_cpu(&self) -> Option<CpuId> {
         self.last_cpu.get()
     }
 

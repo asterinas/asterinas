@@ -30,6 +30,43 @@ impl Default for SchedPolicy {
     }
 }
 
+/// The Linux scheduling policy code.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17.7/source/include/uapi/linux/sched.h#L112>.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, TryFromInt)]
+pub enum LinuxSchedPolicy {
+    Normal = 0,
+    Fifo = 1,
+    RoundRobin = 2,
+    Batch = 3, // Not supported.
+    Iso = 4,   // Reserved but not implemented yet on Linux.
+    Idle = 5,
+    Deadline = 6, // Not supported.
+    Ext = 7,      // Not supported.
+}
+
+/// Projects internal scheduling policies onto Linux's user-visible policy codes.
+///
+/// This projection is many-to-one: `Stop` is reported as `Fifo`, and the
+/// kernel-only `Idle` policy is reported as `Normal`.
+impl From<SchedPolicy> for LinuxSchedPolicy {
+    fn from(policy: SchedPolicy) -> Self {
+        match policy {
+            SchedPolicy::Stop => LinuxSchedPolicy::Fifo,
+            SchedPolicy::RealTime {
+                rt_policy: RealTimePolicy::Fifo,
+                ..
+            } => LinuxSchedPolicy::Fifo,
+            SchedPolicy::RealTime {
+                rt_policy: RealTimePolicy::RoundRobin { .. },
+                ..
+            } => LinuxSchedPolicy::RoundRobin,
+            SchedPolicy::Fair(_) | SchedPolicy::Idle => LinuxSchedPolicy::Normal,
+        }
+    }
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, TryFromInt)]
 pub(super) enum SchedPolicyKind {

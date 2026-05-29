@@ -30,6 +30,17 @@ impl SigDispositions {
         self.map[idx]
     }
 
+    /// Returns all signal dispositions in ascending signal-number order.
+    ///
+    /// The iterator covers standard and real-time signals.
+    pub fn iter(&self) -> impl Iterator<Item = (SigNum, SigAction)> + '_ {
+        self.map.iter().enumerate().map(|(idx, sig_action)| {
+            let sig_num = MIN_STD_SIG_NUM + idx as u8;
+
+            (SigNum::from_u8(sig_num), *sig_action)
+        })
+    }
+
     pub fn set(&mut self, num: SigNum, sa: SigAction) -> Result<SigAction> {
         check_sigaction(&sa)?;
         let idx = Self::num_to_idx(num);
