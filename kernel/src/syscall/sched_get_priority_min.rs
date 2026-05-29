@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, sched_get_priority_max::SCHED_PRIORITY_RANGE};
-use crate::prelude::*;
+use super::{SyscallReturn, sched_get_priority_max::sched_priority_range};
+use crate::{prelude::*, sched::LinuxSchedPolicy};
 
 pub fn sys_sched_get_priority_min(policy: u32, _: &Context) -> Result<SyscallReturn> {
-    let range = SCHED_PRIORITY_RANGE
-        .get(policy as usize)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid scheduling policy"))?;
+    let linux_policy = LinuxSchedPolicy::try_from(policy)?;
+    let range = sched_priority_range(linux_policy);
     Ok(SyscallReturn::Return(*range.start() as isize))
 }

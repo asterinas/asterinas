@@ -4,24 +4,15 @@ use ostd::{const_assert, mm::VmIo};
 
 use super::{
     SyscallReturn,
-    sched_get_priority_max::{SCHED_PRIORITY_RANGE, rt_to_static, static_to_rt},
+    sched_get_priority_max::{rt_to_static, sched_priority_range, static_to_rt},
 };
 use crate::{
     prelude::*,
     process::pid_table,
-    sched::{Nice, RealTimePolicy, SchedAttr, SchedPolicy},
+    sched::{LinuxSchedPolicy, Nice, RealTimePolicy, SchedAttr, SchedPolicy},
     thread::Tid,
     util::CopyCompat,
 };
-
-pub(super) const SCHED_NORMAL: u32 = 0;
-pub(super) const SCHED_FIFO: u32 = 1;
-pub(super) const SCHED_RR: u32 = 2;
-// pub(super) const SCHED_BATCH: u32 = 3; // Not supported.
-// SCHED_ISO: Reserved but not implemented yet on Linux.
-pub(super) const SCHED_IDLE: u32 = 5;
-// pub(super) const SCHED_DEADLINE: u32 = 6; // Not supported.
-// pub(super) const SCHED_EXT: u32 = 7; // Not supported.
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
@@ -63,16 +54,16 @@ impl TryFrom<SchedPolicy> for LinuxSchedAttr {
     fn try_from(value: SchedPolicy) -> Result<Self> {
         Ok(match value {
             SchedPolicy::Stop => LinuxSchedAttr {
-                sched_policy: SCHED_FIFO,
+                sched_policy: LinuxSchedPolicy::Fifo as u32,
                 sched_priority: 99, // Linux uses 99 as the default priority for STOP tasks.
                 ..Default::default()
             },
 
             SchedPolicy::RealTime { rt_prio, rt_policy } => LinuxSchedAttr {
                 sched_policy: match rt_policy {
-                    RealTimePolicy::Fifo => SCHED_FIFO,
-                    RealTimePolicy::RoundRobin { .. } => SCHED_RR,
-                },
+                    RealTimePolicy::Fifo => LinuxSchedPolicy::Fifo,
+                    RealTimePolicy::RoundRobin { .. } => LinuxSchedPolicy::RoundRobin,
+                } as u32,
                 sched_priority: rt_to_static(rt_prio),
                 ..Default::default()
             },
@@ -81,12 +72,12 @@ impl TryFrom<SchedPolicy> for LinuxSchedAttr {
             // `SchedPolicy::Fair` instead of `SchedPolicy::Idle`. Tasks of the
             // latter policy are invisible to the user API.
             SchedPolicy::Fair(Nice::MAX) => LinuxSchedAttr {
-                sched_policy: SCHED_IDLE,
+                sched_policy: LinuxSchedPolicy::Idle as u32,
                 ..Default::default()
             },
 
             SchedPolicy::Fair(nice) => LinuxSchedAttr {
-                sched_policy: SCHED_NORMAL,
+                sched_policy: LinuxSchedPolicy::Normal as u32,
                 sched_nice: nice.value().get().into(),
                 ..Default::default()
             },
@@ -103,12 +94,14 @@ impl TryFrom<LinuxSchedAttr> for SchedPolicy {
     type Error = Error;
 
     fn try_from(value: LinuxSchedAttr) -> Result<Self> {
-        Ok(match value.sched_policy {
-            SCHED_FIFO | SCHED_RR => SchedPolicy::RealTime {
+        let linux_policy = LinuxSchedPolicy::try_from(value.sched_policy)?;
+
+        Ok(match linux_policy {
+            LinuxSchedPolicy::Fifo | LinuxSchedPolicy::RoundRobin => SchedPolicy::RealTime {
                 rt_prio: static_to_rt(value.sched_priority)?,
-                rt_policy: match value.sched_policy {
-                    SCHED_FIFO => RealTimePolicy::Fifo,
-                    SCHED_RR => RealTimePolicy::RoundRobin {
+                rt_policy: match linux_policy {
+                    LinuxSchedPolicy::Fifo => RealTimePolicy::Fifo,
+                    LinuxSchedPolicy::RoundRobin => RealTimePolicy::RoundRobin {
                         base_slice_factor: None,
                     },
                     _ => unreachable!(),
@@ -119,7 +112,7 @@ impl TryFrom<LinuxSchedAttr> for SchedPolicy {
                 return_errno_with_message!(Errno::EINVAL, "invalid scheduling priority")
             }
 
-            SCHED_NORMAL => SchedPolicy::Fair(Nice::new(
+            LinuxSchedPolicy::Normal => SchedPolicy::Fair(Nice::new(
                 i8::try_from(value.sched_nice)
                     .ok()
                     .and_then(|n| n.try_into().ok())
@@ -129,9 +122,14 @@ impl TryFrom<LinuxSchedAttr> for SchedPolicy {
             // The SCHED_IDLE policy is mapped to the highest nice value of
             // `SchedPolicy::Fair` instead of `SchedPolicy::Idle`. Tasks of the
             // latter policy are invisible to the user API.
-            SCHED_IDLE => SchedPolicy::Fair(Nice::MAX),
+            LinuxSchedPolicy::Idle => SchedPolicy::Fair(Nice::MAX),
 
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid scheduling policy"),
+            LinuxSchedPolicy::Batch
+            | LinuxSchedPolicy::Iso
+            | LinuxSchedPolicy::Deadline
+            | LinuxSchedPolicy::Ext => {
+                return_errno_with_message!(Errno::EINVAL, "invalid scheduling policy")
+            }
         })
     }
 }
@@ -183,7 +181,9 @@ pub(super) fn write_linux_sched_attr_to_user(
 
     attr.size = (size_of::<LinuxSchedAttr>() as u32).min(user_size);
 
-    let range = &SCHED_PRIORITY_RANGE[attr.sched_policy as usize];
+    let linux_policy = LinuxSchedPolicy::try_from(attr.sched_policy)
+        .expect("all user-visible scheduling policies should be valid");
+    let range = sched_priority_range(linux_policy);
     attr.sched_util_min = *range.start();
     attr.sched_util_max = *range.end();
 
