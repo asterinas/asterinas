@@ -23,4 +23,5 @@ jobs:
           release: true
           mem: '12G'
           xfstests_disk_size: '12G'
-          xfstests_runlist: '/opt/xfstests/full.list'
+          xfstests_runlist: '/opt/xfstests/ext2/run_list/full.list'
+          xfstests_fs_type: 'ext2'
