@@ -55,6 +55,13 @@ impl siginfo_t {
         self.siginfo_fields.sigfault_mut().addr = si_addr;
     }
 
+    pub fn set_sigsys(&mut self, call_addr: Vaddr, syscall: i32, arch: u32) {
+        let sigsys = self.siginfo_fields.sigsys_mut();
+        sigsys.call_addr = call_addr;
+        sigsys.syscall = syscall;
+        sigsys.arch = arch;
+    }
+
     pub fn set_pid_uid(&mut self, pid: Pid, uid: Uid) {
         let pid_uid = {
             let pid_uid = siginfo_piduid_t { pid, uid };
@@ -80,6 +87,12 @@ impl siginfo_t {
     pub fn si_addr(&self) -> Vaddr {
         self.siginfo_fields.sigfault().addr
     }
+
+    #[cfg(ktest)]
+    pub fn sigsys_fields(&self) -> (Vaddr, i32, u32) {
+        let sigsys = self.siginfo_fields.sigsys();
+        (sigsys.call_addr, sigsys.syscall, sigsys.arch)
+    }
 }
 
 #[pod_union]
@@ -89,6 +102,7 @@ union siginfo_fields_t {
     bytes: [u8; 128 - size_of::<i32>() * 4],
     common: siginfo_common_t,
     sigfault: siginfo_sigfault_t,
+    sigsys: siginfo_sigsys_t,
 }
 
 impl Default for siginfo_fields_t {
@@ -174,6 +188,14 @@ struct siginfo_sigfault_t {
     addr: Vaddr, //*const c_void
     addr_lsb: i16,
     first: siginfo_sigfault_first_t,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod)]
+struct siginfo_sigsys_t {
+    call_addr: Vaddr, //*const c_void
+    syscall: i32,
+    arch: u32,
 }
 
 #[pod_union]
