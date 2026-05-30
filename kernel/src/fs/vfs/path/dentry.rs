@@ -688,8 +688,23 @@ impl DirDentry<'_> {
         let old_dir = old_dir_arc.as_dir_dentry_or_err()?;
         let new_dir = new_dir_arc.as_dir_dentry_or_err()?;
 
-        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
-            return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
+        if is_dot_or_dotdot(old_name) {
+            return_errno_with_message!(Errno::EBUSY, "old_name is . or ..");
+        }
+        if is_dot_or_dotdot(new_name) {
+            // A `.`/`..` final component names an existing directory. Linux
+            // rejects it with `EBUSY`, except that `RENAME_NOREPLACE` reports the
+            // already-existing destination as `EEXIST`.
+            if flags.contains(RenameFlags::NOREPLACE) {
+                return_errno_with_message!(
+                    Errno::EEXIST,
+                    "the destination exists and RENAME_NOREPLACE is set"
+                );
+            }
+            return_errno_with_message!(Errno::EBUSY, "new_name is . or ..");
+        }
+        if flags.contains(RenameFlags::WHITEOUT) {
+            return_errno_with_message!(Errno::EINVAL, "RENAME_WHITEOUT is not supported");
         }
 
         let old_dir_inode = old_dir.inode();
@@ -698,47 +713,150 @@ impl DirDentry<'_> {
         // The two are the same dentry, we just modify the name
         if Arc::ptr_eq(old_dir_arc, new_dir_arc) {
             if old_name == new_name {
+                if flags.contains(RenameFlags::NOREPLACE) {
+                    old_dir_inode.rename(old_name, old_dir_inode, new_name, flags)?;
+                }
                 return Ok(());
             }
 
             let mut children = old_dir.children.write();
-            children.check_mountpoint(new_name)?;
-            let old_dentry = children.probe_cached_child_for_rename(&old_dir, old_name)?;
-
+            let old_dentry = children.probe_cached_child_for_rename(&old_dir, old_name, false)?;
+            let new_dentry = children.probe_cached_child_for_rename(&old_dir, new_name, true)?;
             old_dir_inode.rename(old_name, old_dir_inode, new_name, flags)?;
 
-            match old_dentry.as_ref() {
-                Some(dentry) => {
-                    children.delete(old_name);
-                    dentry
-                        .name_and_parent
-                        .set(new_name, old_dir_arc.clone())
-                        .unwrap();
-                    old_dir.insert_positive_child(&mut children, new_name, dentry.clone());
+            if flags.contains(RenameFlags::EXCHANGE) {
+                match (old_dentry.as_ref(), new_dentry.as_ref()) {
+                    (Some(old_dentry), Some(new_dentry)) => {
+                        children.remove(old_name);
+                        children.remove(new_name);
+                        old_dentry
+                            .name_and_parent
+                            .set(new_name, old_dir_arc.clone())
+                            .unwrap();
+                        new_dentry
+                            .name_and_parent
+                            .set(old_name, old_dir_arc.clone())
+                            .unwrap();
+                        old_dir.insert_positive_child(&mut children, old_name, new_dentry.clone());
+                        old_dir.insert_positive_child(&mut children, new_name, old_dentry.clone());
+                    }
+                    (Some(old_dentry), None) => {
+                        children.remove(old_name);
+                        old_dentry
+                            .name_and_parent
+                            .set(new_name, old_dir_arc.clone())
+                            .unwrap();
+                        old_dir.insert_positive_child(&mut children, new_name, old_dentry.clone());
+                    }
+                    (None, Some(new_dentry)) => {
+                        children.remove(new_name);
+                        new_dentry
+                            .name_and_parent
+                            .set(old_name, old_dir_arc.clone())
+                            .unwrap();
+                        old_dir.insert_positive_child(&mut children, old_name, new_dentry.clone());
+                    }
+                    (None, None) => {
+                        children.remove(old_name);
+                        children.remove(new_name);
+                    }
                 }
-                None => {
-                    children.remove(new_name);
+            } else {
+                match old_dentry.as_ref() {
+                    Some(dentry) => {
+                        children.delete(old_name);
+                        dentry
+                            .name_and_parent
+                            .set(new_name, old_dir_arc.clone())
+                            .unwrap();
+                        old_dir.insert_positive_child(&mut children, new_name, dentry.clone());
+                    }
+                    None => {
+                        children.remove(new_name);
+                    }
                 }
             }
         } else {
-            // The two are different dentries
+            // The two are different dentries.  The helper orders locks by
+            // dentry key, giving rename and exchange a deterministic
+            // two-parent lock order and avoiding ABBA deadlocks.
             let (mut self_children, mut new_dir_children) =
                 write_lock_children_on_two_dentries(&old_dir, &new_dir);
-            let old_dentry = self_children.probe_cached_child_for_rename(&old_dir, old_name)?;
-            new_dir_children.check_mountpoint(new_name)?;
-
+            let old_dentry =
+                self_children.probe_cached_child_for_rename(&old_dir, old_name, false)?;
+            let new_dentry =
+                new_dir_children.probe_cached_child_for_rename(&new_dir, new_name, true)?;
             old_dir_inode.rename(old_name, new_dir_inode, new_name, flags)?;
-            match old_dentry.as_ref() {
-                Some(dentry) => {
-                    self_children.delete(old_name);
-                    dentry
-                        .name_and_parent
-                        .set(new_name, new_dir_arc.clone())
-                        .unwrap();
-                    new_dir.insert_positive_child(&mut new_dir_children, new_name, dentry.clone());
+            if flags.contains(RenameFlags::EXCHANGE) {
+                match (old_dentry.as_ref(), new_dentry.as_ref()) {
+                    (Some(old_dentry), Some(new_dentry)) => {
+                        self_children.remove(old_name);
+                        new_dir_children.remove(new_name);
+                        old_dentry
+                            .name_and_parent
+                            .set(new_name, new_dir_arc.clone())
+                            .unwrap();
+                        new_dentry
+                            .name_and_parent
+                            .set(old_name, old_dir_arc.clone())
+                            .unwrap();
+                        old_dir.insert_positive_child(
+                            &mut self_children,
+                            old_name,
+                            new_dentry.clone(),
+                        );
+                        new_dir.insert_positive_child(
+                            &mut new_dir_children,
+                            new_name,
+                            old_dentry.clone(),
+                        );
+                    }
+                    (Some(old_dentry), None) => {
+                        self_children.remove(old_name);
+                        old_dentry
+                            .name_and_parent
+                            .set(new_name, new_dir_arc.clone())
+                            .unwrap();
+                        new_dir.insert_positive_child(
+                            &mut new_dir_children,
+                            new_name,
+                            old_dentry.clone(),
+                        );
+                    }
+                    (None, Some(new_dentry)) => {
+                        new_dir_children.remove(new_name);
+                        new_dentry
+                            .name_and_parent
+                            .set(old_name, old_dir_arc.clone())
+                            .unwrap();
+                        old_dir.insert_positive_child(
+                            &mut self_children,
+                            old_name,
+                            new_dentry.clone(),
+                        );
+                    }
+                    (None, None) => {
+                        self_children.remove(old_name);
+                        new_dir_children.remove(new_name);
+                    }
                 }
-                None => {
-                    new_dir_children.remove(new_name);
+            } else {
+                match old_dentry.as_ref() {
+                    Some(dentry) => {
+                        self_children.delete(old_name);
+                        dentry
+                            .name_and_parent
+                            .set(new_name, new_dir_arc.clone())
+                            .unwrap();
+                        new_dir.insert_positive_child(
+                            &mut new_dir_children,
+                            new_name,
+                            dentry.clone(),
+                        );
+                    }
+                    None => {
+                        new_dir_children.remove(new_name);
+                    }
                 }
             }
         }
@@ -976,17 +1094,6 @@ impl DentryChildren {
         removed_entry.and_then(CachedDentry::into_dentry)
     }
 
-    /// Checks whether the dentry is a mount point. Returns an error if it is.
-    fn check_mountpoint(&self, name: &str) -> Result<()> {
-        if let Some(entry) = self.entries.get(name)
-            && entry.is_mountpoint()
-        {
-            return_errno_with_message!(Errno::EBUSY, "dentry is mountpoint");
-        }
-
-        Ok(())
-    }
-
     /// Probes a cached child `Dentry` before a rename operation.
     ///
     /// Returns:
@@ -998,6 +1105,7 @@ impl DentryChildren {
         &mut self,
         dir: &DirDentry<'_>,
         name: &str,
+        allow_negative: bool,
     ) -> Result<Option<Arc<Dentry>>> {
         let Some(cached_entry) = self.find(name) else {
             return Ok(None);
@@ -1014,6 +1122,7 @@ impl DentryChildren {
 
         match cached_entry {
             CachedDentry::Positive { dentry } => Ok(Some(dentry)),
+            CachedDentry::Negative if allow_negative => Ok(None),
             CachedDentry::Negative => {
                 return_errno_with_message!(Errno::ENOENT, "found a negative dentry")
             }

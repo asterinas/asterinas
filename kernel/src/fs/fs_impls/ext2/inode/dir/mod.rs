@@ -240,12 +240,18 @@ impl Inode {
         new_name: &str,
         flags: RenameFlags,
     ) -> Result<()> {
-        if !flags.is_empty() {
-            return_errno_with_message!(Errno::EINVAL, "unsupported rename flags");
+        if flags.contains(RenameFlags::WHITEOUT) {
+            return_errno_with_message!(Errno::EINVAL, "RENAME_WHITEOUT is not supported");
         }
         let fs = self.fs()?;
         let is_same_dir = self.ino == target.ino;
         if is_same_dir && old_name == new_name {
+            if flags.contains(RenameFlags::NOREPLACE) {
+                return_errno_with_message!(
+                    Errno::EEXIST,
+                    "target exists and RENAME_NOREPLACE is set"
+                );
+            }
             return Ok(());
         }
 
@@ -265,6 +271,15 @@ impl Inode {
                 .map(|entry_info| fs.read_inode(entry_info.ino))
                 .transpose()?
         };
+        if flags.contains(RenameFlags::NOREPLACE) && replaced_inode.is_some() {
+            return_errno_with_message!(Errno::EEXIST, "target exists and RENAME_NOREPLACE is set");
+        }
+        if flags.contains(RenameFlags::EXCHANGE) && replaced_inode.is_none() {
+            return_errno_with_message!(
+                Errno::ENOENT,
+                "target does not exist and RENAME_EXCHANGE is set"
+            );
+        }
 
         // The `DirDentry.children` lock in the VFS layer keeps the parent
         // directory entry stable during this operation, so we only need to
@@ -280,7 +295,25 @@ impl Inode {
         let mut guards = MultiInodeInnerGuards::lock(&lock_targets);
 
         // Step 3: validate invariants under lock.
-        self.validate_rename_invariants(&guards, &old_inode, replaced_inode.as_deref())?;
+        if flags.contains(RenameFlags::EXCHANGE) {
+            self.validate_exchange_invariants(
+                &guards,
+                target,
+                &old_inode,
+                replaced_inode.as_deref(),
+            )?;
+            self.apply_exchange_dir_mutations(
+                &mut guards,
+                target,
+                old_name,
+                &old_inode,
+                replaced_inode.as_deref().unwrap(),
+                new_name,
+            )?;
+            return Ok(());
+        } else {
+            self.validate_rename_invariants(&guards, &old_inode, replaced_inode.as_deref())?;
+        }
 
         // Step 4: apply directory mutations and metadata updates.
         self.apply_dir_mutations(
@@ -291,6 +324,44 @@ impl Inode {
             replaced_inode.as_deref(),
             new_name,
         )?;
+
+        Ok(())
+    }
+
+    fn validate_exchange_invariants(
+        &self,
+        guards: &MultiInodeInnerGuards,
+        target: &Inode,
+        old_inode: &Inode,
+        new_inode: Option<&Inode>,
+    ) -> Result<()> {
+        if old_inode.type_ == InodeType::Dir {
+            let old_inner = guards.inner(old_inode.ino());
+            let parent_ino = old_inner.find_entry_info("..")?.ino;
+            if parent_ino != self.ino {
+                return_errno_with_message!(Errno::EIO, "dotdot entry inconsistent with source dir");
+            }
+        }
+
+        let Some(new_inode) = new_inode else {
+            return_errno!(Errno::ENOENT);
+        };
+        if new_inode.type_ == InodeType::Dir {
+            let new_inner = guards.inner(new_inode.ino());
+            let parent_ino = new_inner.find_entry_info("..")?.ino;
+            if parent_ino == old_inode.ino() {
+                return_errno!(Errno::EINVAL);
+            }
+            if parent_ino != target.ino {
+                // The caller has already locked the target parent, so any
+                // different `..` target points to an inconsistent on-disk tree.
+                return_errno_with_message!(Errno::EIO, "dotdot entry inconsistent with target dir");
+            }
+        }
+
+        // The "directory into its own subtree" cases are rejected at the
+        // syscall boundary against the cached directory tree, so there is no
+        // need to walk ancestors here while holding the inode write locks.
 
         Ok(())
     }
@@ -409,6 +480,85 @@ impl Inode {
             old_inner.set_mtime_ctime(utils::now());
         } else {
             old_inner.set_ctime(utils::now());
+        }
+
+        Ok(())
+    }
+
+    fn apply_exchange_dir_mutations(
+        &self,
+        guards: &mut MultiInodeInnerGuards,
+        target: &Inode,
+        old_name: &str,
+        old_inode: &Inode,
+        new_inode: &Inode,
+        new_name: &str,
+    ) -> Result<()> {
+        let old_is_dir = old_inode.type_ == InodeType::Dir;
+        let new_is_dir = new_inode.type_ == InodeType::Dir;
+        let is_same_dir = self.ino == target.ino;
+
+        let old_entry_info = guards.inner(self.ino).find_entry_info(old_name)?;
+        let new_entry_info = guards.inner(target.ino).find_entry_info(new_name)?;
+
+        let old_file_type = DirEntryFileType::from(old_inode.type_);
+        let new_file_type = DirEntryFileType::from(new_inode.type_);
+        {
+            let source_inner = guards.inner_mut(self.ino);
+            source_inner.set_entry_target(&old_entry_info, new_inode.ino(), new_file_type)?;
+            source_inner.set_mtime_ctime(utils::now());
+        }
+        {
+            let target_inner = guards.inner_mut(target.ino);
+            target_inner.set_entry_target(&new_entry_info, old_inode.ino(), old_file_type)?;
+            if !is_same_dir {
+                target_inner.set_mtime_ctime(utils::now());
+            }
+        }
+
+        if !is_same_dir {
+            if old_is_dir {
+                let old_inner = guards.inner_mut(old_inode.ino());
+                let dotdot_entry_info = old_inner.find_entry_info("..")?;
+                old_inner.set_entry_target(
+                    &dotdot_entry_info,
+                    target.ino,
+                    DirEntryFileType::Dir,
+                )?;
+                old_inner.remove_flags(FileFlags::INDEX_DIR);
+                old_inner.set_mtime_ctime(utils::now());
+            } else {
+                guards.inner_mut(old_inode.ino()).set_ctime(utils::now());
+            }
+
+            if new_is_dir {
+                let new_inner = guards.inner_mut(new_inode.ino());
+                let dotdot_entry_info = new_inner.find_entry_info("..")?;
+                new_inner.set_entry_target(&dotdot_entry_info, self.ino, DirEntryFileType::Dir)?;
+                new_inner.remove_flags(FileFlags::INDEX_DIR);
+                new_inner.set_mtime_ctime(utils::now());
+            } else {
+                guards.inner_mut(new_inode.ino()).set_ctime(utils::now());
+            }
+
+            if old_is_dir != new_is_dir {
+                let source_inner = guards.inner_mut(self.ino);
+                if old_is_dir {
+                    source_inner.dec_link_count(1);
+                } else {
+                    source_inner.inc_link_count(1);
+                }
+
+                let target_inner = guards.inner_mut(target.ino);
+                if old_is_dir {
+                    target_inner.inc_link_count(1);
+                } else {
+                    target_inner.dec_link_count(1);
+                }
+            }
+        } else {
+            guards.inner_mut(old_inode.ino()).set_ctime(utils::now());
+            guards.inner_mut(new_inode.ino()).set_ctime(utils::now());
         }
 
         Ok(())

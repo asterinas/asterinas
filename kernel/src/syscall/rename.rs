@@ -26,13 +26,20 @@ pub fn sys_renameat2(
         "old_dirfd = {}, old_path = {:?}, new_dirfd = {}, new_path = {:?}",
         old_dirfd, old_path_name, new_dirfd, new_path_name
     );
-    let Some(flags) = Flags::from_bits(flags) else {
+    let Some(flags) = RenameFlags::from_bits(flags) else {
         return_errno_with_message!(Errno::EINVAL, "invalid flags");
     };
-    // TODO: Add support for handling the `NOREPLACE`, `EXCHANGE`, and `WHITEOUT` flags.
-    if !flags.is_empty() {
-        warn!("unsupported flags: {:?}", flags);
-        return_errno_with_message!(Errno::EINVAL, "unsupported flags");
+    if flags.contains(RenameFlags::NOREPLACE) && flags.contains(RenameFlags::EXCHANGE) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "RENAME_NOREPLACE and RENAME_EXCHANGE are mutually exclusive"
+        );
+    }
+    if flags.contains(RenameFlags::WHITEOUT) && flags.contains(RenameFlags::EXCHANGE) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "RENAME_WHITEOUT and RENAME_EXCHANGE are mutually exclusive"
+        );
     }
 
     let fs_ref = ctx.thread_local.borrow_fs();
@@ -52,7 +59,10 @@ pub fn sys_renameat2(
 
     let new_path_name = new_path_name.to_string_lossy();
     let (new_parent_path, new_name) = {
-        if old_path.type_() != InodeType::Dir && new_path_name.ends_with('/') {
+        if old_path.type_() != InodeType::Dir
+            && new_path_name.ends_with('/')
+            && !flags.contains(RenameFlags::EXCHANGE)
+        {
             return_errno_with_message!(Errno::EISDIR, "the new path is a directory");
         }
         let (new_parent_path_name, new_name) = new_path_name.split_dirname_and_basename()?;
@@ -71,7 +81,28 @@ pub fn sys_renameat2(
         );
     }
 
-    old_parent_path.rename(old_name, &new_parent_path, &new_name, RenameFlags::empty())?;
+    // An exchange swaps both entries, so the destination must already exist and
+    // the symmetric "directory into its own subtree" case must be rejected as
+    // well. Resolving the destination here, at the path layer, lets the check
+    // walk the cached directory tree instead of the on-disk one, so the
+    // filesystem does not need to traverse ancestors while holding the rename
+    // locks (which would invert the inode lock order across concurrent renames).
+    if flags.contains(RenameFlags::EXCHANGE) {
+        let new_path = path_resolver.lookup_at_path(&new_parent_path, &new_name)?;
+        if new_path.type_() != InodeType::Dir && new_path_name.ends_with('/') {
+            return_errno_with_message!(Errno::ENOTDIR, "the new path is not a directory");
+        }
+        if new_path.type_() == InodeType::Dir
+            && old_parent_path.is_equal_or_descendant_of(&new_path)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the old path is inside the new directory or its subtree"
+            );
+        }
+    }
+
+    old_parent_path.rename(old_name, &new_parent_path, &new_name, flags)?;
 
     Ok(SyscallReturn::Return(0))
 }
@@ -92,15 +123,4 @@ pub fn sys_rename(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     sys_renameat2(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr, 0, ctx)
-}
-
-bitflags! {
-    /// Flags used in the `renameat2` system call.
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.16.3/source/include/uapi/linux/fcntl.h#L140-L143>.
-    struct Flags: u32 {
-        const NOREPLACE = 1 << 0;
-        const EXCHANGE  = 1 << 1;
-        const WHITEOUT  = 1 << 2;
-    }
 }

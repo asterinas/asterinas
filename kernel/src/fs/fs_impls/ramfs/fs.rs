@@ -463,6 +463,15 @@ impl DirEntry {
         Some(substitute)
     }
 
+    fn replace_inode(&mut self, idx: usize, inode: Arc<RamInode>) -> Result<Arc<RamInode>> {
+        assert!(idx >= NUM_SPECIAL_ENTRIES);
+        let idx_children = idx - NUM_SPECIAL_ENTRIES;
+        let Some(entry) = self.children.get_mut(idx_children) else {
+            return_errno!(Errno::ENOENT);
+        };
+        Ok(core::mem::replace(&mut entry.1, inode))
+    }
+
     fn visit_entry(&self, idx: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let try_visit = |idx: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
             // Read the two special entries("." and "..").
@@ -1100,8 +1109,8 @@ impl Inode for RamInode {
         new_name: &str,
         flags: RenameFlags,
     ) -> Result<()> {
-        if !flags.is_empty() {
-            return_errno_with_message!(Errno::EINVAL, "unsupported rename flags");
+        if flags.contains(RenameFlags::WHITEOUT) {
+            return_errno_with_message!(Errno::EINVAL, "RENAME_WHITEOUT is not supported");
         }
         if is_dot_or_dotdot(old_name) {
             return_errno_with_message!(Errno::EISDIR, "old_name is . or ..");
@@ -1160,7 +1169,33 @@ impl Inode for RamInode {
             let (src_idx, src_inode) = self_dir
                 .get_entry(old_name)
                 .ok_or(Error::new(Errno::ENOENT))?;
+            if flags.contains(RenameFlags::NOREPLACE) && self_dir.contains_entry(new_name) {
+                return_errno_with_message!(
+                    Errno::EEXIST,
+                    "target exists and RENAME_NOREPLACE is set"
+                );
+            }
             let is_dir = src_inode.typ == InodeType::Dir;
+
+            if flags.contains(RenameFlags::EXCHANGE) {
+                let (dst_idx, dst_inode) = self_dir
+                    .get_entry(new_name)
+                    .ok_or(Error::new(Errno::ENOENT))?;
+                if src_inode.ino != dst_inode.ino {
+                    self_dir.replace_inode(src_idx, dst_inode.clone())?;
+                    self_dir.replace_inode(dst_idx, src_inode.clone())?;
+                    drop(self_dir);
+
+                    let now = now();
+                    let mut self_meta = self.metadata.lock();
+                    self_meta.set_mtime(now);
+                    self_meta.set_ctime(now);
+                    drop(self_meta);
+                    src_inode.set_ctime(now);
+                    dst_inode.set_ctime(now);
+                }
+                return Ok(());
+            }
 
             if let Some((dst_idx, dst_inode)) = self_dir.get_entry(new_name) {
                 check_replace_inode(&src_inode, &dst_inode)?;
@@ -1201,13 +1236,76 @@ impl Inode for RamInode {
             let (src_idx, src_inode) = self_dir
                 .get_entry(old_name)
                 .ok_or(Error::new(Errno::ENOENT))?;
+            let dst_entry = target_dir.get_entry(new_name);
+            if flags.contains(RenameFlags::NOREPLACE) && dst_entry.is_some() {
+                return_errno_with_message!(
+                    Errno::EEXIST,
+                    "target exists and RENAME_NOREPLACE is set"
+                );
+            }
             // Avoid renaming a directory to a subdirectory of itself
             if Arc::ptr_eq(&src_inode, &target_inode_arc) {
                 return_errno!(Errno::EINVAL);
             }
             let is_dir = src_inode.typ == InodeType::Dir;
 
-            if let Some((dst_idx, dst_inode)) = target_dir.get_entry(new_name) {
+            if flags.contains(RenameFlags::EXCHANGE) {
+                let (dst_idx, dst_inode) = dst_entry.ok_or(Error::new(Errno::ENOENT))?;
+                if Arc::ptr_eq(&self_inode_arc, &dst_inode) {
+                    return_errno!(Errno::EINVAL);
+                }
+                // The "directory into its own subtree" cases are rejected at the
+                // syscall boundary against the cached directory tree, so there is
+                // no need to walk ancestors here while holding the directory
+                // write locks.
+
+                self_dir.replace_inode(src_idx, dst_inode.clone())?;
+                target_dir.replace_inode(dst_idx, src_inode.clone())?;
+                drop(self_dir);
+                drop(target_dir);
+
+                let now = now();
+                let mut self_meta = self.metadata.lock();
+                if is_dir && dst_inode.typ != InodeType::Dir {
+                    self_meta.dec_nlinks();
+                } else if !is_dir && dst_inode.typ == InodeType::Dir {
+                    self_meta.inc_nlinks();
+                }
+                self_meta.set_mtime(now);
+                self_meta.set_ctime(now);
+                drop(self_meta);
+                let mut target_meta = target.metadata.lock();
+                if is_dir && dst_inode.typ != InodeType::Dir {
+                    target_meta.inc_nlinks();
+                } else if !is_dir && dst_inode.typ == InodeType::Dir {
+                    target_meta.dec_nlinks();
+                }
+                target_meta.set_mtime(now);
+                target_meta.set_ctime(now);
+                drop(target_meta);
+
+                if is_dir {
+                    src_inode
+                        .inner
+                        .as_direntry()
+                        .unwrap()
+                        .write()
+                        .set_parent(target.this.clone());
+                }
+                if dst_inode.typ == InodeType::Dir {
+                    dst_inode
+                        .inner
+                        .as_direntry()
+                        .unwrap()
+                        .write()
+                        .set_parent(self.this.clone());
+                }
+                src_inode.set_ctime(now);
+                dst_inode.set_ctime(now);
+                return Ok(());
+            }
+
+            if let Some((dst_idx, dst_inode)) = dst_entry {
                 // Avoid renaming a subdirectory to a directory.
                 if Arc::ptr_eq(&self_inode_arc, &dst_inode) {
                     return_errno!(Errno::ENOTEMPTY);
