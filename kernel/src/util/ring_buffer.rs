@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Deref;
+use core::{
+    num::Wrapping,
+    ops::{Deref, Range},
+};
 
 use ostd::mm::io::util::HasVmReaderWriter;
 pub use ring_buffer::{Consumer, Producer, RbConsumer, RbProducer, RingBuffer};
@@ -64,6 +67,48 @@ impl<R: Deref<Target = RingBuffer<u8>>> ProducerU8Ext for Producer<u8, R> {
     }
 }
 
+/// Extension methods for byte ring buffers.
+pub trait RingBufferU8Ext {
+    /// Picks data from an absolute ring-counter range into `writer` without consuming it.
+    ///
+    /// Returns the number of bytes copied.
+    fn pick_fallible(
+        &self,
+        range: Range<Wrapping<usize>>,
+        writer: &mut dyn MultiWrite,
+    ) -> Result<usize>;
+}
+
+impl RingBufferU8Ext for RingBuffer<u8> {
+    fn pick_fallible(
+        &self,
+        range: Range<Wrapping<usize>>,
+        writer: &mut dyn MultiWrite,
+    ) -> Result<usize> {
+        let len = (range.end - range.start).0;
+        let offset = range.start.0 & (self.capacity() - 1);
+
+        if offset + len > self.capacity() {
+            // Read from two separate parts
+            let mut read_len = 0;
+
+            let mut reader = self.segment().reader();
+            reader.skip(offset).limit(self.capacity() - offset);
+            read_len += writer.write(&mut reader)?;
+
+            let mut reader = self.segment().reader();
+            reader.limit(len - (self.capacity() - offset));
+            read_len += writer.write(&mut reader)?;
+
+            Ok(read_len)
+        } else {
+            let mut reader = self.segment().reader();
+            reader.skip(offset).limit(len);
+            Ok(writer.write(&mut reader)?)
+        }
+    }
+}
+
 /// Extension methods for reading bytes from a [`Consumer<u8, _>`].
 pub trait ConsumerU8Ext {
     /// Reads data from the ring buffer into `writer`.
@@ -92,29 +137,10 @@ impl<R: Deref<Target = RingBuffer<u8>>> ConsumerU8Ext for Consumer<u8, R> {
         max_len: usize,
     ) -> Result<usize> {
         let len = self.len().min(max_len);
-
         let head = self.head();
-        let offset = head.0 & (self.capacity() - 1);
-
-        let read_len = if offset + len > self.capacity() {
-            // Read from two separate parts
-            let mut read_len = 0;
-
-            let mut reader = self.segment().reader();
-            reader.skip(offset).limit(self.capacity() - offset);
-            read_len += writer.write(&mut reader)?;
-
-            let mut reader = self.segment().reader();
-            reader.limit(len - (self.capacity() - offset));
-            read_len += writer.write(&mut reader)?;
-
-            read_len
-        } else {
-            let mut reader = self.segment().reader();
-            reader.skip(offset).limit(len);
-            writer.write(&mut reader)?
-        };
-
+        let read_len = self
+            .ring_buffer()
+            .pick_fallible(head..head + Wrapping(len), writer)?;
         self.commit_read(read_len);
         Ok(read_len)
     }
