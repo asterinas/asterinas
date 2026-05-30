@@ -1682,8 +1682,9 @@ sysinfo01
 sysinfo02
 # sysinfo03
 
+# Need the support for `/proc/sys/kernel/printk`
 # syslog11
-# syslog12
+syslog12
 
 tgkill01
 # tgkill02
