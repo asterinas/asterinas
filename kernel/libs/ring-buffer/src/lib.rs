@@ -466,6 +466,11 @@ impl<T, R: Deref<Target = RingBuffer<T>>> Consumer<T, R> {
 }
 
 impl<T, R: Deref<Target = RingBuffer<T>>> Consumer<T, R> {
+    /// Returns the underlying ring buffer.
+    pub fn ring_buffer(&self) -> &RingBuffer<T> {
+        &self.rb
+    }
+
     /// Commits a read operation by advancing the head pointer.
     ///
     /// This method is intended for advanced use cases where the caller reads
@@ -475,7 +480,7 @@ impl<T, R: Deref<Target = RingBuffer<T>>> Consumer<T, R> {
     /// # Panics
     ///
     /// Panics if `len` exceeds the number of available items in the buffer.
-    pub fn commit_read(&self, len: usize) {
+    pub fn commit_read(&mut self, len: usize) {
         assert!(
             len <= self.len(),
             "commit_read: len exceeds available items"
