@@ -5,7 +5,11 @@
 //! A target is the per-segment policy that turns a BIO addressed to the mapped
 //! device into concrete I/O on the underlying device(s).
 
+pub mod error;
 pub mod linear;
+pub mod zero;
+
+use alloc::vec::Vec;
 
 use aster_block::bio::{BioStatus, SubmittedBio};
 
@@ -46,4 +50,9 @@ pub trait DmTarget: core::fmt::Debug + Send + Sync {
     fn flush(&self) -> BioStatus {
         BioStatus::Complete
     }
+}
+
+/// Returns a zero-filled buffer of `len` bytes.
+pub(crate) fn zero_vec(len: usize) -> Vec<u8> {
+    alloc::vec![0u8; len]
 }
