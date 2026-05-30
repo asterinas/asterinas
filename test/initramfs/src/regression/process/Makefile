@@ -16,6 +16,7 @@ SUBDIRS := \
 	ptrace \
 	sched \
 	signal \
+	syslog \
 
 ifeq ($(HOST_PLATFORM), x86_64-linux)
 SUBDIRS += fork
