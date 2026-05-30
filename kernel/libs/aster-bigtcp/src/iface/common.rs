@@ -42,7 +42,7 @@ pub struct IfaceCommon<E: Ext> {
     flags: InterfaceFlags,
 
     interface: SpinLock<PollableIface<E>, BottomHalfDisabled>,
-    used_ports: SpinLock<BTreeMap<PortKey, PortState>, BottomHalfDisabled>,
+    used_ports: SpinLock<PortTable, BottomHalfDisabled>,
     sockets: SpinLock<SocketTable<E>, BottomHalfDisabled>,
     sched_poll: E::ScheduleNextPoll,
 }
@@ -95,7 +95,7 @@ impl<E: Ext> IfaceCommon<E> {
             type_,
             flags,
             interface: SpinLock::new(PollableIface::new(interface)),
-            used_ports: SpinLock::new(BTreeMap::new()),
+            used_ports: SpinLock::new(PortTable::new()),
             sockets: SpinLock::new(SocketTable::new()),
             sched_poll,
         }
@@ -181,7 +181,7 @@ impl<E: Ext> IfaceCommon<E> {
         protocol: PortProtocol,
     ) -> Result<BoundPort<E>, BindError> {
         let addr = config.addr();
-        let (port, can_reuse) = self.bind_port(config, protocol)?;
+        let (port, can_reuse) = self.used_ports.lock().bind(config, protocol)?;
         Ok(BoundPort {
             iface,
             addr,
@@ -191,102 +191,11 @@ impl<E: Ext> IfaceCommon<E> {
         })
     }
 
-    /// Allocates an ephemeral port.
-    ///
-    /// We follow the port range that many Linux kernels use by default, which is 32768-60999.
-    ///
-    /// See <https://en.wikipedia.org/wiki/Ephemeral_port>.
-    fn alloc_ephemeral_port(
-        used_ports: &mut BTreeMap<PortKey, PortState>,
-        addr: NormalizedAddress,
-        protocol: PortProtocol,
-        _can_reuse: bool,
-    ) -> Option<u16> {
-        let mut key = PortKey {
-            addr,
-            port: 0,
-            protocol,
-        };
-        for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
-            key.port = port;
-            if !used_ports.contains_key(&key) {
-                return Some(port);
-            }
-        }
-
-        // FIXME: If `can_reuse` is `true`, we should also check all in-use ephemeral ports
-        // to see if any can be reused instead of directly returning `None`.
-
-        None
-    }
-
-    fn bind_port(
-        &self,
-        config: BindPortConfig,
-        protocol: PortProtocol,
-    ) -> Result<(u16, bool), BindError> {
-        let mut used_ports = self.used_ports.lock();
-        let config_can_reuse = config.can_reuse();
-        let addr = NormalizedAddress::from(config.addr());
-
-        let port = if let Some(port) = config.port() {
-            port
-        } else {
-            match Self::alloc_ephemeral_port(&mut used_ports, addr, protocol, config_can_reuse) {
-                Some(port) => port,
-                None => return Err(BindError::Exhausted),
-            }
-        };
-
-        let key = PortKey {
-            addr,
-            port,
-            protocol,
-        };
-        let entry = used_ports.entry(key);
-        match entry {
-            Entry::Occupied(mut occupied) => {
-                let port_state = occupied.get_mut();
-                // FIXME: If the socket is not a backlog socket,
-                // we should check whether there is a listening socket on the port.
-                // If there is, the socket cannot be bound to that port.
-                let can_reuse = config.is_backlog() || (port_state.can_reuse() & config_can_reuse);
-                if can_reuse {
-                    port_state.nsocket += 1;
-                    if config_can_reuse {
-                        port_state.nreuse += 1;
-                    }
-                } else {
-                    return Err(BindError::InUse);
-                }
-            }
-            Entry::Vacant(vacant) => {
-                let port_state = PortState::new(config_can_reuse);
-                vacant.insert(port_state);
-            }
-        };
-
-        Ok((port, config_can_reuse))
-    }
-
     /// Releases the port so that it can be used again.
     fn release_port(&self, addr: IpAddress, port: u16, can_reuse: bool, protocol: PortProtocol) {
-        let key = PortKey {
-            addr: NormalizedAddress::from(addr),
-            port,
-            protocol,
-        };
-        let mut used_ports = self.used_ports.lock();
-        if let Entry::Occupied(mut occupied) = used_ports.entry(key) {
-            let port_state = occupied.get_mut();
-            port_state.nsocket -= 1;
-            if can_reuse {
-                port_state.nreuse -= 1;
-            }
-            if port_state.nsocket == 0 {
-                occupied.remove();
-            }
-        }
+        self.used_ports
+            .lock()
+            .release(addr, port, can_reuse, protocol);
     }
 }
 
@@ -402,13 +311,7 @@ impl<E: Ext> BoundPort<E> {
             port: self.port,
             protocol: self.protocol,
         };
-        if let Some(port_state) = used_ports.get_mut(&key) {
-            if can_reuse {
-                port_state.nreuse += 1;
-            } else {
-                port_state.nreuse -= 1;
-            }
-        }
+        used_ports.set_can_reuse(key, can_reuse);
 
         self.can_reuse.store(can_reuse, Ordering::Relaxed);
     }
@@ -470,6 +373,150 @@ impl PortState {
 
     pub(self) fn can_reuse(&self) -> bool {
         self.nsocket == self.nreuse
+    }
+}
+
+struct PortTable {
+    used_ports: BTreeMap<PortKey, PortState>,
+    next_ephemeral_port: u16,
+}
+
+impl PortTable {
+    fn new() -> Self {
+        Self {
+            used_ports: BTreeMap::new(),
+            next_ephemeral_port: IP_LOCAL_PORT_START,
+        }
+    }
+
+    fn bind(
+        &mut self,
+        config: BindPortConfig,
+        protocol: PortProtocol,
+    ) -> Result<(u16, bool), BindError> {
+        let config_can_reuse = config.can_reuse();
+        let addr = NormalizedAddress::from(config.addr());
+
+        let port = if let Some(port) = config.port() {
+            port
+        } else {
+            match self.alloc_ephemeral_port(addr, protocol, config_can_reuse) {
+                Some(port) => port,
+                None => return Err(BindError::Exhausted),
+            }
+        };
+
+        let key = PortKey {
+            addr,
+            port,
+            protocol,
+        };
+        let entry = self.used_ports.entry(key);
+        match entry {
+            Entry::Occupied(mut occupied) => {
+                let port_state = occupied.get_mut();
+                // FIXME: If the socket is not a backlog socket,
+                // we should check whether there is a listening socket on the port.
+                // If there is, the socket cannot be bound to that port.
+                let can_reuse = config.is_backlog() || (port_state.can_reuse() & config_can_reuse);
+                if can_reuse {
+                    port_state.nsocket += 1;
+                    if config_can_reuse {
+                        port_state.nreuse += 1;
+                    }
+                } else {
+                    return Err(BindError::InUse);
+                }
+            }
+            Entry::Vacant(vacant) => {
+                let port_state = PortState::new(config_can_reuse);
+                vacant.insert(port_state);
+            }
+        };
+
+        Ok((port, config_can_reuse))
+    }
+
+    /// Allocates an ephemeral port.
+    ///
+    /// We follow the port range that many Linux kernels use by default, which is 32768-60999.
+    ///
+    /// Each allocation starts scanning from the port immediately
+    /// after the last successfully allocated ephemeral port.
+    /// This ensures that a recently released port is not immediately
+    /// reused by a new socket, which avoids potential port conflicts.
+    ///
+    /// See <https://en.wikipedia.org/wiki/Ephemeral_port>.
+    fn alloc_ephemeral_port(
+        &mut self,
+        addr: NormalizedAddress,
+        protocol: PortProtocol,
+        _can_reuse: bool,
+    ) -> Option<u16> {
+        const fn next_ephemeral_port_after(port: u16) -> u16 {
+            if port >= IP_LOCAL_PORT_END {
+                IP_LOCAL_PORT_START
+            } else {
+                port + 1
+            }
+        }
+
+        let mut key = PortKey {
+            addr,
+            port: 0,
+            protocol,
+        };
+        let start_port = self.next_ephemeral_port;
+        let mut port = start_port;
+        loop {
+            key.port = port;
+            if !self.used_ports.contains_key(&key) {
+                self.next_ephemeral_port = next_ephemeral_port_after(port);
+                return Some(port);
+            }
+
+            port = next_ephemeral_port_after(port);
+            if port == start_port {
+                break;
+            }
+        }
+
+        // FIXME: If `can_reuse` is `true`, we should also check all in-use ephemeral ports
+        // to see if any can be reused instead of directly returning `None`.
+
+        None
+    }
+
+    fn release(&mut self, addr: IpAddress, port: u16, can_reuse: bool, protocol: PortProtocol) {
+        let key = PortKey {
+            addr: NormalizedAddress::from(addr),
+            port,
+            protocol,
+        };
+        let Entry::Occupied(mut occupied) = self.used_ports.entry(key) else {
+            return;
+        };
+
+        let port_state = occupied.get_mut();
+        port_state.nsocket -= 1;
+        if can_reuse {
+            port_state.nreuse -= 1;
+        }
+        if port_state.nsocket == 0 {
+            occupied.remove();
+        }
+    }
+
+    fn set_can_reuse(&mut self, key: PortKey, can_reuse: bool) {
+        let Some(port_state) = self.used_ports.get_mut(&key) else {
+            return;
+        };
+
+        if can_reuse {
+            port_state.nreuse += 1;
+        } else {
+            port_state.nreuse -= 1;
+        }
     }
 }
 
