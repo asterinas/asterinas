@@ -79,3 +79,55 @@ fn rb_write_read_all() {
     }
     assert!(prod.is_empty());
 }
+
+#[ktest]
+fn rb_formatter_overwrites_oldest() {
+    use core::fmt::Write;
+
+    let mut rb = RingBuffer::<u8>::new(8);
+    {
+        let mut formatter = rb.formatter();
+        write!(formatter, "1234567890").unwrap();
+        assert_eq!(formatter.bytes_written(), 10);
+    }
+
+    let mut output = [0u8; 8];
+    rb.pop_slice(&mut output).unwrap();
+    assert_eq!(&output, b"34567890");
+}
+
+#[ktest]
+fn rb_formatter_limit() {
+    use core::fmt::Write;
+
+    let mut rb = RingBuffer::<u8>::new(8);
+    {
+        let mut formatter = rb.formatter().limit(6);
+        write!(formatter, "abcdefghi").unwrap();
+        assert_eq!(formatter.bytes_written(), 6);
+    }
+
+    let mut output = [0u8; 6];
+    rb.pop_slice(&mut output).unwrap();
+    assert_eq!(&output, b"abcdef");
+}
+
+#[ktest]
+fn rb_read_at_wraparound() {
+    use ostd::mm::VmWriter;
+
+    let mut rb = RingBuffer::<u8>::new(8);
+    rb.push_slice(b"abcdef").unwrap();
+
+    let mut skipped = [0u8; 4];
+    rb.pop_slice(&mut skipped).unwrap();
+    rb.push_slice(b"123456").unwrap();
+
+    let mut output = [0u8; 8];
+    let mut writer = VmWriter::from(&mut output[..]).to_fallible();
+    let pick_start = rb.head();
+    let pick_end = pick_start + Wrapping(rb.len());
+    let copied = rb.pick_range(pick_start..pick_end, &mut writer).unwrap();
+    assert_eq!(copied, output.len());
+    assert_eq!(&output, b"ef123456");
+}
