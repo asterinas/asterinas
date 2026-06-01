@@ -18,7 +18,6 @@ Supported functionality in SCML:
 
 Unsupported codes:
 * `ARCH_GET_CPUID` and `ARCH_SET_CPUID`
-* `ARCH_GET_GS` and `ARCH_SET_GS`
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/arch_prctl.2.html).
