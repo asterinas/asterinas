@@ -274,24 +274,40 @@ impl AuxiliaryData {
 
     /// Generates the control messages from the auxiliary data.
     pub(super) fn generate_control(&mut self, is_pass_cred: bool) -> Vec<ControlMessage> {
-        let mut ctrl_msgs = Vec::new();
+        let files = (!self.files.is_empty()).then(|| FileMessage {
+            files: core::mem::take(&mut self.files),
+        });
 
-        let Self { files, cred } = self;
+        Self::generate_control_from_parts(self.cred.as_ref(), files, is_pass_cred)
+    }
+
+    /// Generates the control messages without consuming the auxiliary data.
+    pub(super) fn generate_control_cloned(&self, is_pass_cred: bool) -> Vec<ControlMessage> {
+        let files = (!self.files.is_empty()).then(|| FileMessage {
+            files: self.files.clone(),
+        });
+
+        Self::generate_control_from_parts(self.cred.as_ref(), files, is_pass_cred)
+    }
+
+    fn generate_control_from_parts(
+        cred: Option<&SocketCred>,
+        files: Option<FileMessage>,
+        is_pass_cred: bool,
+    ) -> Vec<ControlMessage> {
+        let mut ctrl_msgs = Vec::new();
 
         if is_pass_cred {
             let unix_ctrl_msg = UnixControlMessage(Message::Cred(CredMessage {
                 cred: cred
-                    .as_ref()
                     .map(SocketCred::to_real_c_cred)
                     .unwrap_or_else(CUserCred::new_overflow),
             }));
             ctrl_msgs.push(ControlMessage::Unix(unix_ctrl_msg));
         }
 
-        if !files.is_empty() {
-            let unix_ctrl_msg = UnixControlMessage(Message::Files(FileMessage {
-                files: core::mem::take(files),
-            }));
+        if let Some(files) = files {
+            let unix_ctrl_msg = UnixControlMessage(Message::Files(files));
             ctrl_msgs.push(ControlMessage::Unix(unix_ctrl_msg));
         }
 

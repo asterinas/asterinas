@@ -229,10 +229,10 @@ impl UnixStreamSocket {
     fn try_recv(
         &self,
         buf: &mut dyn MultiWrite,
-        _flags: SendRecvFlags,
-    ) -> Result<(usize, Vec<ControlMessage>)> {
+        flags: SendRecvFlags,
+    ) -> Result<(usize, Vec<ControlMessage>, SendRecvFlags)> {
         match self.state.read().as_ref() {
-            State::Connected(connected) => connected.try_read(buf, self.is_seqpacket),
+            State::Connected(connected) => connected.try_read(buf, self.is_seqpacket, flags),
             State::Init(_) | State::Listen(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is not connected")
             }
@@ -472,6 +472,7 @@ impl Socket for UnixStreamSocket {
         let MessageHeader {
             control_messages,
             addr,
+            ..
         } = message_header;
 
         // According to the Linux man pages, `EISCONN` _may_ be returned when the destination
@@ -506,10 +507,10 @@ impl Socket for UnixStreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, control_messages) =
+        let (received_bytes, control_messages, output_flags) =
             self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
-        let message_header = MessageHeader::new(None, control_messages);
+        let message_header = MessageHeader::new_with_flags(None, control_messages, output_flags);
 
         Ok((received_bytes, message_header))
     }

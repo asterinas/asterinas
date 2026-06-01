@@ -268,6 +268,7 @@ impl Socket for UnixDatagramSocket {
         let MessageHeader {
             addr,
             control_messages,
+            ..
         } = message_header;
 
         let remote_addr = match addr {
@@ -290,10 +291,11 @@ impl Socket for UnixDatagramSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, control_messages, peer_addr) =
-            self.block_on(IoEvents::IN, || self.local_receiver.try_recv(writer))?;
+        let (received_bytes, control_messages, peer_addr, output_flags) =
+            self.block_on(IoEvents::IN, || self.local_receiver.try_recv(writer, flags))?;
 
-        let message_header = MessageHeader::new(Some(peer_addr.into()), control_messages);
+        let message_header =
+            MessageHeader::new_with_flags(Some(peer_addr.into()), control_messages, output_flags);
 
         Ok((received_bytes, message_header))
     }

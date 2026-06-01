@@ -37,11 +37,29 @@ bitflags! {
 
 impl SendRecvFlags {
     fn supported_flags() -> Self {
-        SendRecvFlags::empty()
+        SendRecvFlags::MSG_PEEK | SendRecvFlags::MSG_TRUNC
     }
 
     pub fn is_all_supported(&self) -> bool {
         let supported_flags = Self::supported_flags();
         supported_flags.contains(*self)
+    }
+}
+
+/// Returns the receive length visible to user space.
+pub fn recv_result_len(flags: SendRecvFlags, copied_len: usize, message_len: usize) -> usize {
+    if flags.contains(SendRecvFlags::MSG_TRUNC) {
+        message_len
+    } else {
+        copied_len
+    }
+}
+
+/// Returns flags that describe how the message was received.
+pub fn recv_output_flags(copied_len: usize, message_len: usize) -> SendRecvFlags {
+    if copied_len < message_len {
+        SendRecvFlags::MSG_TRUNC
+    } else {
+        SendRecvFlags::empty()
     }
 }

@@ -11,7 +11,7 @@ use smoltcp::{
     wire::{IpRepr, UdpRepr},
 };
 
-use super::common::{Inner, Socket, SocketBg};
+use super::common::{Inner, ReceiveBehavior, Socket, SocketBg};
 use crate::{
     errors::udp::SendError,
     ext::Ext,
@@ -165,14 +165,29 @@ impl<E: Ext> UdpSocket<E> {
     /// Receives some data.
     ///
     /// Polling the iface is _not_ required after this method succeeds.
-    pub fn recv<F, R>(&self, f: F) -> Result<R, smoltcp::socket::udp::RecvError>
+    pub fn recv<F, R>(
+        &self,
+        receive_behavior: ReceiveBehavior,
+        f: F,
+    ) -> Result<R, smoltcp::socket::udp::RecvError>
     where
         F: FnOnce(&[u8], UdpMetadata) -> R,
     {
         let mut socket = self.0.inner.socket.lock();
 
-        let (data, meta) = socket.recv()?;
-        let result = f(data, meta);
+        let result = match receive_behavior {
+            ReceiveBehavior::Normal | ReceiveBehavior::Discard => {
+                // UDP receives a whole datagram at once. `Discard` does not need a separate
+                // socket operation because the callback can observe the datagram length without
+                // copying from `data`.
+                let (data, meta) = socket.recv()?;
+                f(data, meta)
+            }
+            ReceiveBehavior::Peek => {
+                let (data, meta) = socket.peek()?;
+                f(data, *meta)
+            }
+        };
 
         Ok(result)
     }

@@ -109,6 +109,17 @@ define_boolean_value!(
     NeedIfacePoll
 );
 
+/// Describes how receive data is handled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiveBehavior {
+    /// Consumes received data after copying it.
+    Normal,
+    /// Copies received data without consuming it.
+    Peek,
+    /// Consumes received data without copying it.
+    Discard,
+}
+
 impl<T: Inner<E>, E: Ext> SocketBg<T, E> {
     pub(crate) fn notify_dead_events(self: Arc<Self>)
     where

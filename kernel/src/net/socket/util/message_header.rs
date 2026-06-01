@@ -2,7 +2,7 @@
 
 use align_ext::AlignExt;
 
-use super::SocketAddr;
+use super::{SendRecvFlags, SocketAddr};
 use crate::{net::socket::unix::UnixControlMessage, prelude::*, util::net::CSocketOptionLevel};
 
 /// Message header used for sendmsg/recvmsg.
@@ -10,6 +10,7 @@ use crate::{net::socket::unix::UnixControlMessage, prelude::*, util::net::CSocke
 pub struct MessageHeader {
     pub(in crate::net) addr: Option<SocketAddr>,
     pub(in crate::net) control_messages: Vec<ControlMessage>,
+    pub(in crate::net) flags: SendRecvFlags,
 }
 
 impl MessageHeader {
@@ -18,6 +19,20 @@ impl MessageHeader {
         Self {
             addr,
             control_messages,
+            flags: SendRecvFlags::empty(),
+        }
+    }
+
+    /// Creates a new `MessageHeader` with receive output flags.
+    pub const fn new_with_flags(
+        addr: Option<SocketAddr>,
+        control_messages: Vec<ControlMessage>,
+        flags: SendRecvFlags,
+    ) -> Self {
+        Self {
+            addr,
+            control_messages,
+            flags,
         }
     }
 
@@ -29,6 +44,11 @@ impl MessageHeader {
     /// Returns the control messages.
     pub fn control_messages(&self) -> &Vec<ControlMessage> {
         &self.control_messages
+    }
+
+    /// Returns the output flags.
+    pub fn flags(&self) -> SendRecvFlags {
+        self.flags
     }
 }
 

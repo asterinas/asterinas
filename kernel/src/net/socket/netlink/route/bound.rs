@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Sub;
-
 use super::message::{RtnlMessage, RtnlSegment};
 use crate::{
     events::IoEvents,
@@ -12,7 +10,7 @@ use crate::{
             message::{ContinueRead, ProtocolSegment},
             route::kernel::get_netlink_route_kernel,
         },
-        util::{SendRecvFlags, datagram_common},
+        util::{SendRecvFlags, datagram_common, recv_output_flags, recv_result_len},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -101,17 +99,20 @@ impl datagram_common::Bound for BoundNetlinkRoute {
         &self,
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
+        output_flags: &mut SendRecvFlags,
     ) -> Result<(usize, NetlinkSocketAddr)> {
-        // TODO: Deal with other flags. Only MSG_PEEK is handled here.
-        if !flags.sub(SendRecvFlags::MSG_PEEK).is_all_supported() {
+        // TODO: Deal with other flags.
+        if !flags.is_all_supported() {
             warn!("unsupported flags: {:?}", flags);
         }
 
         let mut receive_queue = self.receive_queue.lock();
 
         receive_queue.dequeue_if(|response, response_len| {
-            let len = response_len.min(writer.sum_lens());
+            let copied_len = response_len.min(writer.sum_lens());
             response.write_to(writer)?;
+            *output_flags = recv_output_flags(copied_len, response_len);
+            let len = recv_result_len(flags, copied_len, response_len);
 
             // TODO: The message can only come from kernel socket currently.
             let remote = NetlinkSocketAddr::new_unspecified();

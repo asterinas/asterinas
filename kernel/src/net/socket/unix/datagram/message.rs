@@ -13,7 +13,7 @@ use crate::{
             addr::{UnixSocketAddrBound, UnixSocketAddrKey},
             ctrl_msg::AuxiliaryData,
         },
-        util::ControlMessage,
+        util::{ControlMessage, SendRecvFlags, recv_output_flags, recv_result_len},
     },
     prelude::*,
     process::signal::Pollee,
@@ -163,7 +163,8 @@ impl MessageReceiver {
     pub(super) fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-    ) -> Result<(usize, Vec<ControlMessage>, UnixSocketAddr)> {
+        flags: SendRecvFlags,
+    ) -> Result<(usize, Vec<ControlMessage>, UnixSocketAddr, SendRecvFlags)> {
         let mut inner = self.queue.inner.lock();
         let inner = inner.as_mut().unwrap();
 
@@ -171,27 +172,41 @@ impl MessageReceiver {
             if !inner.is_shutdown {
                 return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty");
             } else {
-                return Ok((0, Vec::new(), UnixSocketAddr::Unnamed));
+                return Ok((
+                    0,
+                    Vec::new(),
+                    UnixSocketAddr::Unnamed,
+                    SendRecvFlags::empty(),
+                ));
             }
         };
 
+        let message_len = msg.bytes.len();
         let len = writer.write(&mut VmReader::from(msg.bytes.as_slice()))?;
-        if len != msg.bytes.len() {
-            warn!("setting MSG_TRUNC is not supported");
-        }
-
-        let mut msg = inner.messages.pop_front().unwrap();
-        inner.total_length -= msg.bytes.len();
+        let output_flags = recv_output_flags(len, message_len);
 
         let is_pass_cred = self.queue.is_pass_cred.load(Ordering::Relaxed);
-        let ctrl_msgs = msg.aux.generate_control(is_pass_cred);
+        let src = msg.src.clone();
 
-        self.queue.pollee.invalidate();
-        // A writer may still fail if the free space is not enough.
-        // So we have to wake up all the writers here.
-        self.queue.send_wait_queue.wake_all();
+        let ctrl_msgs = if flags.contains(SendRecvFlags::MSG_PEEK) {
+            msg.aux.generate_control_cloned(is_pass_cred)
+        } else {
+            let mut msg = inner.messages.pop_front().unwrap();
+            inner.total_length -= msg.bytes.len();
 
-        Ok((len, ctrl_msgs, msg.src))
+            self.queue.pollee.invalidate();
+            // A writer may still fail if the free space is not enough.
+            // So we have to wake up all the writers here.
+            self.queue.send_wait_queue.wake_all();
+            msg.aux.generate_control(is_pass_cred)
+        };
+
+        Ok((
+            recv_result_len(flags, len, message_len),
+            ctrl_msgs,
+            src,
+            output_flags,
+        ))
     }
 
     pub(super) fn shutdown(&self) {

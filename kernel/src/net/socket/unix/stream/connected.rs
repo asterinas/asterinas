@@ -14,7 +14,9 @@ use crate::{
         unix::{
             UnixSocketAddr, addr::UnixSocketAddrBound, cred::SocketCred, ctrl_msg::AuxiliaryData,
         },
-        util::{ControlMessage, SockShutdownCmd},
+        util::{
+            ControlMessage, SendRecvFlags, SockShutdownCmd, recv_output_flags, recv_result_len,
+        },
     },
     prelude::*,
     process::signal::Pollee,
@@ -117,13 +119,14 @@ impl Connected {
         &self,
         writer: &mut dyn MultiWrite,
         is_seqpacket: bool,
-    ) -> Result<(usize, Vec<ControlMessage>)> {
+        flags: SendRecvFlags,
+    ) -> Result<(usize, Vec<ControlMessage>, SendRecvFlags)> {
         let is_empty = writer.is_empty();
         if is_empty && !is_seqpacket {
             if self.inner.this_end().reader.lock().is_empty() {
                 return_errno_with_message!(Errno::EAGAIN, "the channel is empty");
             }
-            return Ok((0, Vec::new()));
+            return Ok((0, Vec::new(), SendRecvFlags::empty()));
         }
 
         let this_end = self.inner.this_end();
@@ -138,20 +141,53 @@ impl Connected {
 
         // Fast path: There are no auxiliary data to receive.
         if !peer_end.has_aux.load(Ordering::Relaxed) {
-            let read_len = self
-                .inner
-                .read_with(move || reader.read_fallible_with_max_len(writer, no_aux_len))?;
+            let read_len = if flags.contains(SendRecvFlags::MSG_PEEK) {
+                reader.peek_fallible_with_max_len(writer, no_aux_len)?
+            } else {
+                self.inner
+                    .read_with(move || reader.read_fallible_with_max_len(writer, no_aux_len))?
+            };
             let ctrl_msgs = if is_pass_cred {
                 AuxiliaryData::default().generate_control(is_pass_cred)
             } else {
                 Vec::new()
             };
-            return Ok((read_len, ctrl_msgs));
+            return Ok((read_len, ctrl_msgs, SendRecvFlags::empty()));
         }
 
         let mut all_aux = peer_end.all_aux.lock();
+
+        if flags.contains(SendRecvFlags::MSG_PEEK) {
+            let read_start = reader.head();
+            let default_aux = AuxiliaryData::default();
+            let (message_len, aux_data) = if let Some(front) = all_aux.front() {
+                if front.start == read_start {
+                    ((front.end - read_start).0, &front.data)
+                } else {
+                    ((front.start - read_start).0, &default_aux)
+                }
+            } else {
+                (reader.len(), &default_aux)
+            };
+            let read_len = reader.peek_fallible_with_max_len(writer, message_len)?;
+            let ctrl_msgs = aux_data.generate_control_cloned(is_pass_cred);
+            let output_flags = if is_seqpacket {
+                recv_output_flags(read_len, message_len)
+            } else {
+                SendRecvFlags::empty()
+            };
+            let result_len = if is_seqpacket {
+                recv_result_len(flags, read_len, message_len)
+            } else {
+                read_len
+            };
+
+            return Ok((result_len, ctrl_msgs, output_flags));
+        }
+
         let mut aux_prev_data: Option<AuxiliaryData> = None;
         let mut read_tot_len = 0;
+        let mut message_len = 0;
 
         let aux_data = loop {
             let read_start = reader.head();
@@ -195,9 +231,9 @@ impl Connected {
             // Record the current auxiliary data. Break if the read is incomplete or this is a
             // `SOCK_SEQPACKET` socket.
             if is_seqpacket {
+                message_len = aux_len;
                 aux_prev_data = Some(all_aux.pop_front().unwrap().data);
                 if read_len < aux_len {
-                    warn!("setting MSG_TRUNC is not supported");
                     reader.skip(aux_len - read_len);
                 }
                 break aux_prev_data.as_mut().unwrap();
@@ -223,7 +259,18 @@ impl Connected {
             .has_aux
             .store(!all_aux.is_empty(), Ordering::Relaxed);
 
-        Ok((read_tot_len, ctrl_msgs))
+        let output_flags = if is_seqpacket {
+            recv_output_flags(read_tot_len, message_len)
+        } else {
+            SendRecvFlags::empty()
+        };
+        let result_len = if is_seqpacket {
+            recv_result_len(flags, read_tot_len, message_len)
+        } else {
+            read_tot_len
+        };
+
+        Ok((result_len, ctrl_msgs, output_flags))
     }
 
     pub(super) fn try_write(
