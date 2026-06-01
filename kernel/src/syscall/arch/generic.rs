@@ -157,6 +157,7 @@ macro_rules! import_generic_syscall_entries {
             symlink::sys_symlinkat,
             sync::{sys_sync, sys_syncfs},
             sysinfo::sys_sysinfo,
+            syslog::sys_syslog,
             tgkill::{sys_tgkill, sys_tkill},
             timer_create::{sys_timer_create, sys_timer_delete},
             timer_settime::{sys_timer_gettime, sys_timer_settime},
@@ -297,6 +298,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_TIMER_DELETE = 111           => sys_timer_delete(args[..1]);
             SYS_CLOCK_GETTIME = 113          => sys_clock_gettime(args[..2]);
             SYS_CLOCK_NANOSLEEP = 115        => sys_clock_nanosleep(args[..4]);
+            SYS_SYSLOG = 116                 => sys_syslog(args[..3]);
             SYS_PTRACE = 117                 => sys_ptrace(args[..4]);
             SYS_SCHED_SETPARAM = 118         => sys_sched_setparam(args[..2]);
             SYS_SCHED_SETSCHEDULER = 119     => sys_sched_setscheduler(args[..3]);

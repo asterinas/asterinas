@@ -27,8 +27,10 @@ macro_rules! __log_prefix {
 
 mod aster_logger;
 mod console;
+mod klog;
 
 pub use console::_print;
+pub use klog::{KernelLog, LinuxConsoleLogLevel, MINIMUM_CONSOLE_LOG_LEVEL, klog};
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {

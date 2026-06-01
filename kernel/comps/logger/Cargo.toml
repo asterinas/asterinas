@@ -7,9 +7,13 @@ edition.workspace = true
 
 [dependencies]
 aster-console.workspace = true
+atomic-integer-wrapper.workspace = true
 component.workspace = true
+int-to-c-enum.workspace = true
 ostd.workspace = true
 owo-colors = { workspace = true, optional = true }
+ring-buffer.workspace = true
+spin.workspace = true
 
 [features]
 default = ["log_color"]
