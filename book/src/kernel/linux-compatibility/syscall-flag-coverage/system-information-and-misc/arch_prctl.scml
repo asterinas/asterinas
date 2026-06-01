@@ -1,5 +1,5 @@
-// Get or set the FS register
+// Get or set the FS/GS base registers.
 arch_prctl(
-    code = ARCH_GET_FS | ARCH_SET_FS,
+    code = ARCH_SET_GS | ARCH_SET_FS | ARCH_GET_FS | ARCH_GET_GS,
     addr
 );
