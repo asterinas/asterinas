@@ -167,8 +167,7 @@ impl Condvar {
         match res {
             Ok(()) => Ok((lock.lock(), false)),
             Err(_) => {
-                let mut counter = self.counter.lock();
-                counter.waiter_count -= 1;
+                self.counter.lock().waiter_count -= 1;
                 Err(LockErr::Timeout((lock.lock(), true)))
             }
         }
