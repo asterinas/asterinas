@@ -9,7 +9,7 @@ use crate::{
     net::{
         iface::{Iface, iter_all_ifaces},
         socket::netlink::{
-            message::{CMsgSegHdr, CSegmentType, GetRequestFlags, SegHdrCommonFlags},
+            message::{CMsgSegHdr, CSegmentType, ErrorSegment, GetRequestFlags, SegHdrCommonFlags},
             route::message::{
                 AddrAttr, AddrMessageFlags, AddrSegment, AddrSegmentBody, RtScope, RtnlSegment,
             },
@@ -66,3 +66,46 @@ fn iface_to_new_addr(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> Option<
 
     Some(AddrSegment::new(header, addr_message, attrs))
 }
+
+pub(super) fn do_new_addr(request_segment: &AddrSegment) -> Result<Vec<RtnlSegment>> {
+    use aster_bigtcp::wire::{Ipv4Address, Ipv4Cidr};
+
+    let body = request_segment.body();
+
+    // Only AF_INET supported for now
+    if body.family != CSocketAddrFamily::AF_INET as i32 {
+        return_errno_with_message!(Errno::EAFNOSUPPORT, "only AF_INET is supported");
+    }
+
+    let prefix_len = body.prefix_len;
+
+    // Extract IFA_ADDRESS or IFA_LOCAL from attributes
+    let mut ipv4_addr: Option<[u8; 4]> = None;
+    for attr in request_segment.attrs() {
+        match attr {
+            AddrAttr::Address(octets) => { ipv4_addr = Some(*octets); }
+            AddrAttr::Local(octets)   => { if ipv4_addr.is_none() { ipv4_addr = Some(*octets); } }
+            _ => {}
+        }
+    }
+
+    let octets = ipv4_addr.ok_or_else(|| {
+        Error::with_message(Errno::EINVAL, "no address provided in RTM_NEWADDR")
+    })?;
+
+    let smoltcp_addr = Ipv4Address::new(octets[0], octets[1], octets[2], octets[3]);
+    let cidr = Ipv4Cidr::new(smoltcp_addr, prefix_len);
+
+    // Find the target interface by index
+    let iface_index = body.index.map(|n| n.get()).unwrap_or(0);
+    let iface = iter_all_ifaces()
+        .find(|iface| iface.index() == iface_index)
+        .ok_or_else(|| Error::with_message(Errno::ENODEV, "interface not found"))?;
+
+    iface.set_ipv4_cidr(cidr);
+
+    // Send ACK (NLMSG_ERROR with err=0) as Linux does for successful write operations
+    let ack = ErrorSegment::new_from_request(request_segment.header(), None);
+    Ok(vec![RtnlSegment::Error(ack)])
+}
+

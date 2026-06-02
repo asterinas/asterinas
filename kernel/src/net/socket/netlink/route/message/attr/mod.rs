@@ -2,6 +2,7 @@
 
 pub mod addr;
 pub mod link;
+pub mod route;
 
 /// The size limit for interface names.
 const IFNAME_SIZE: usize = 16;

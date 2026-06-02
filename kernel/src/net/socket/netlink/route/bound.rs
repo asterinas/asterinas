@@ -102,16 +102,29 @@ impl datagram_common::Bound for BoundNetlinkRoute {
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, NetlinkSocketAddr)> {
-        // TODO: Deal with other flags. Only MSG_PEEK is handled here.
-        if !flags.sub(SendRecvFlags::MSG_PEEK).is_all_supported() {
+        // TODO: Deal with other flags. Only MSG_PEEK and MSG_TRUNC are handled here.
+        let unsupported = flags.sub(SendRecvFlags::MSG_PEEK).sub(SendRecvFlags::MSG_TRUNC);
+        if !unsupported.is_all_supported() {
             warn!("unsupported flags: {:?}", flags);
         }
+
+        let truncate = flags.contains(SendRecvFlags::MSG_TRUNC);
 
         let mut receive_queue = self.receive_queue.lock();
 
         receive_queue.dequeue_if(|response, response_len| {
-            let len = response_len.min(writer.sum_lens());
-            response.write_to(writer)?;
+            // When MSG_TRUNC is set, return the actual message length even if the
+            // buffer is smaller (or zero). This allows callers like iproute2 to use
+            // MSG_PEEK|MSG_TRUNC with a zero-length buffer to probe the message size.
+            let len = if truncate {
+                response_len
+            } else {
+                response_len.min(writer.sum_lens())
+            };
+
+            if writer.sum_lens() > 0 {
+                response.write_to(writer)?;
+            }
 
             // TODO: The message can only come from kernel socket currently.
             let remote = NetlinkSocketAddr::new_unspecified();

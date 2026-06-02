@@ -8,14 +8,19 @@
 mod attr;
 mod segment;
 
-pub(super) use attr::{addr::AddrAttr, link::LinkAttr};
+pub(super) use attr::{addr::AddrAttr, link::LinkAttr, route::RouteAttr};
 pub(super) use segment::{
     RtnlSegment,
     addr::{AddrMessageFlags, AddrSegment, AddrSegmentBody, RtScope},
     link::{LinkSegment, LinkSegmentBody},
+    route::RouteSegment,
 };
 
 use crate::net::socket::netlink::message::Message;
 
 /// A netlink route message.
 pub(in crate::net::socket::netlink) type RtnlMessage = Message<RtnlSegment>;
+
+use crate::net::socket::netlink::table::MulticastMessage;
+
+impl MulticastMessage for RtnlMessage {}

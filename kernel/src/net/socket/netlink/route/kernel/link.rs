@@ -11,8 +11,10 @@ use crate::{
     net::{
         iface::{Iface, iter_all_ifaces},
         socket::netlink::{
-            message::{CMsgSegHdr, CSegmentType, GetRequestFlags, SegHdrCommonFlags},
-            route::message::{LinkAttr, LinkSegment, LinkSegmentBody, RtnlSegment},
+            addr::GroupIdSet,
+            message::{CMsgSegHdr, CSegmentType, ErrorSegment, GetRequestFlags, SegHdrCommonFlags},
+            route::message::{LinkAttr, LinkSegment, LinkSegmentBody, RtnlMessage, RtnlSegment},
+            table::{NetlinkRouteProtocol, SupportedNetlinkProtocol},
         },
     },
     prelude::*,
@@ -143,3 +145,34 @@ fn iface_to_new_link(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> LinkSeg
 
     LinkSegment::new(header, link_message, attrs)
 }
+
+pub(super) fn do_new_link(request_segment: &LinkSegment) -> Result<Vec<RtnlSegment>> {
+    let iface_index = request_segment
+        .body()
+        .index
+        .map(|n| n.get())
+        .unwrap_or(0);
+    let iface = iter_all_ifaces()
+        .find(|i| i.index() == iface_index)
+        .ok_or_else(|| Error::with_message(Errno::ENODEV, "interface not found"))?;
+
+    // Return ACK (error=0 = success)
+    let ack = ErrorSegment::new_from_request(request_segment.header(), None);
+
+    // Send unsolicited RTM_NEWLINK notification to RTMGRP_LINK (group bit 1 = index 0)
+    let notification_header = CMsgSegHdr {
+        len: 0,
+        type_: CSegmentType::NEWLINK as _,
+        flags: SegHdrCommonFlags::empty().bits(),
+        seq: 0,
+        pid: 0,
+    };
+    let notification_seg = RtnlSegment::NewLink(iface_to_new_link(&notification_header, &iface));
+    let _ = NetlinkRouteProtocol::multicast(
+        GroupIdSet::new(0x1),
+        RtnlMessage::new(vec![notification_seg]),
+    );
+
+    Ok(vec![RtnlSegment::Error(ack)])
+}
+

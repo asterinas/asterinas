@@ -28,7 +28,7 @@ use crate::{
 ///
 /// A netlink message can be transmitted to and from user space using a single send/receive syscall.
 /// It consists of one or more [`ProtocolSegment`]s.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Message<T> {
     segments: Vec<T>,
 }
