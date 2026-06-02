@@ -177,7 +177,7 @@ pub fn __nixos_test_main() -> Result<(), Box<dyn std::error::Error>> {
         .ok()
         .map(|v| parse_timeout(&v))
         .transpose()?
-        .unwrap_or(300_000); // Default: 5 minutes
+        .unwrap_or(600_000); // Default: 10 minutes
 
     let all_test_cases: Vec<&TestCase> = inventory::iter::<TestCase>().collect();
 
@@ -343,7 +343,7 @@ ENVIRONMENT VARIABLES:
     NIXOS_TEST_TIMEOUT      Timeout for command execution
                             Supports: <number>ms, <number>s, <number>min
                             Examples: 300000ms, 300s, 5min
-                            (default: 5min = 300000ms)
+                            (default: 10min = 600000ms)
 
 "
     );
