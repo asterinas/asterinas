@@ -5,6 +5,7 @@ use std::{
     ffi::OsStr,
     fs::{self, File},
     io::{BufRead, BufReader, Result, Write},
+    os::unix::fs::MetadataExt,
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
     process::Command,
@@ -391,10 +392,26 @@ impl Drop for DirGuard {
 /// - `to`: The destination file path.
 ///
 /// # Returns
-/// - `Ok(0)` if the hard link is successfully created (no data was copied).
+/// - `Ok(0)` if the hard link is successfully created or both paths already point to the same file
+///   (no data was copied).
 /// - `Ok(size)` where `size` is the number of bytes copied if the hard link failed and a copy was performed.
 /// - `Err(error)` if an error occurred during the copy operation.
 pub fn hard_link_or_copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<u64> {
+    let from_metadata = fs::metadata(&from)?;
+    // If the destination is already a hard link to the source, creating another hard link will
+    // fail because the destination exists, and falling back to `fs::copy` would truncate the file.
+    if let Ok(to_metadata) = fs::metadata(&to)
+        && from_metadata.dev() == to_metadata.dev()
+        && from_metadata.ino() == to_metadata.ino()
+    {
+        info!(
+            "Skipping copy because {:?} and {:?} point to the same file",
+            from.as_ref(),
+            to.as_ref()
+        );
+        return Ok(0);
+    }
+
     if fs::hard_link(&from, &to).is_err() {
         info!("Copying {:?} -> {:?}", from.as_ref(), to.as_ref());
         return fs::copy(from, to);
