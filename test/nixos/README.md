@@ -121,7 +121,7 @@ make run_nixos NIXOS_TEST_SUITE=my-test
 # Run a specific test case
 make run_nixos NIXOS_TEST_SUITE=my-test NIXOS_TEST_CASE=echo_print_message
 
-# Customize timeout with units (default: 5min)
+# Customize timeout with units (default: 10min)
 make run_nixos NIXOS_TEST_SUITE=my-test NIXOS_TEST_TIMEOUT=10min    # 10 minutes
 make run_nixos NIXOS_TEST_SUITE=my-test NIXOS_TEST_TIMEOUT=600s   # 600 seconds
 make run_nixos NIXOS_TEST_SUITE=my-test NIXOS_TEST_TIMEOUT=600000ms  # 600000 milliseconds
@@ -148,6 +148,6 @@ Make variables:
 - **`NIXOS_TEST_CASE`**: Specific test case to run (optional, runs all if not specified)
 
 Framework environment variables:
-- **`NIXOS_TEST_TIMEOUT`**: Timeout for command execution with unit suffix (optional, default: 5min)
+- **`NIXOS_TEST_TIMEOUT`**: Timeout for command execution with unit suffix (optional, default: 10min)
   - Supported formats: `<number>ms` (milliseconds), `<number>s` (seconds), `<number>min` (minutes)
   - Examples: `300000ms`, `300s`, `5min`
