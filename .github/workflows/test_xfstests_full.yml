@@ -22,6 +22,6 @@ jobs:
           conformance_test_suite: 'xfstests'
           release: true
           mem: '12G'
-          xfstests_disk_size: '12G'
-          xfstests_runlist: '/opt/xfstests/ext2/run_list/full.list'
           xfstests_fs_type: 'ext2'
+          xfstests_runlist: 'full.list'
+          xfstests_disk_size: '12G'

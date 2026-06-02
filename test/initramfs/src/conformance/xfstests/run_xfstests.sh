@@ -69,6 +69,13 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -n "$RUNLIST_FILE" ]; then
+  case "$RUNLIST_FILE" in
+    */*)
+      echo "Run list must be a filename: $RUNLIST_FILE" >&2
+      exit 2
+      ;;
+  esac
+  RUNLIST_FILE="$XFSTESTS_FS_DIR/run_list/$RUNLIST_FILE"
   if [ ! -f "$RUNLIST_FILE" ]; then
     echo "Run list file not found: $RUNLIST_FILE" >&2
     exit 2

@@ -32,6 +32,7 @@ in stdenvNoCC.mkDerivation {
   buildCommand = ''
     mkdir -p $out/xfstests
     cp -r ${pkgs.xfstests}/lib/xfstests/* $out/xfstests/
+    # Allow tmpfs/prepare.sh to patch the read-only common/config at runtime.
     chmod -R u+w $out/xfstests
 
     cp ${conformanceSrc}/xfstests/run_xfstests.sh $out/xfstests/
