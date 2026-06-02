@@ -34,23 +34,9 @@ LTP_DEV_IMAGE := $(BUILD_DIR)/ltp_dev.img
 SSD_IMAGE := $(BUILD_DIR)/nvme0n1.img
 XFSTESTS_TEST_IMAGE := $(BUILD_DIR)/xfstests_test.img
 XFSTESTS_SCRATCH_IMAGE := $(BUILD_DIR)/xfstests_scratch.img
-XFSTESTS_DISK_SIZE ?= 12G
 XFSTESTS_FS_TYPE ?= ext2
-XFSTESTS_FS_DIR := $(CUR_DIR)/src/conformance/xfstests/$(XFSTESTS_FS_TYPE)
-XFSTESTS_BUILD_CONFIG := $(XFSTESTS_FS_DIR)/config/build_config.mk
-XFSTESTS_NEEDS_BLOCK_DEVICES := false
-XFSTESTS_MKFS :=
-ifeq ($(ENABLE_CONFORMANCE_TEST), true)
-ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
-ifeq ($(wildcard $(XFSTESTS_FS_DIR)),)
-$(error Unsupported XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE))
-endif
-ifeq ($(wildcard $(XFSTESTS_BUILD_CONFIG)),)
-$(error Missing xfstests build config: $(XFSTESTS_BUILD_CONFIG))
-endif
-include $(XFSTESTS_BUILD_CONFIG)
-endif
-endif
+XFSTESTS_DISK_SIZE ?= 12G
+include $(CUR_DIR)/src/conformance/xfstests/build_config.mk
 
 # Include benchmark, if BENCHMARK is set.
 ifeq ($(BENCHMARK), none)
@@ -215,17 +201,11 @@ $(SSD_IMAGE):
 
 $(XFSTESTS_TEST_IMAGE):
 	@mkdir -p $(BUILD_DIR)
-ifeq ($(strip $(XFSTESTS_MKFS)),)
-	$(error Missing mkfs command for XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE))
-endif
 	@truncate -s $(XFSTESTS_DISK_SIZE) $@
 	@$(XFSTESTS_MKFS) $@
 
 $(XFSTESTS_SCRATCH_IMAGE):
 	@mkdir -p $(BUILD_DIR)
-ifeq ($(strip $(XFSTESTS_MKFS)),)
-	$(error Missing mkfs command for XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE))
-endif
 	@truncate -s $(XFSTESTS_DISK_SIZE) $@
 	@$(XFSTESTS_MKFS) $@
 
