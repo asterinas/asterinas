@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(vsock)]
+
 use aster_virtio::device::socket::{header::VirtioVsockOp, packet::RxPacket};
 
 use crate::{
@@ -16,7 +18,7 @@ use crate::{
 
 impl Connection {
     /// Copies queued payload bytes into `writer` and updates receive credit accounting.
-    pub(in crate::net::socket::vsock) fn try_recv(
+    pub(in vsock) fn try_recv(
         &mut self,
         writer: &mut dyn MultiWrite,
         _flags: SendRecvFlags,
