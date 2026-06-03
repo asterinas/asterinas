@@ -55,13 +55,11 @@ fn post_schedule_handler() {
     }
 }
 
-fn pre_user_run_handler() {
+fn pre_user_run_handler(guard: &DisabledLocalIrqGuard) {
     let task = Task::current().unwrap();
-    let Some(thread_local) = task.as_thread_local() else {
-        return;
-    };
+    let thread_local = task.as_thread_local().unwrap();
 
-    thread_local.supp_user_context().before_user_exec();
+    thread_local.supp_user_context().before_user_exec(guard);
 }
 
 pub(super) fn init() {

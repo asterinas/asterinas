@@ -179,7 +179,6 @@ impl UserContextApiInternal for UserContext {
     {
         loop {
             crate::task::scheduler::might_preempt();
-            crate::task::call_pre_user_run_handler();
             self.user_context.run();
 
             let scause = riscv::register::scause::read();

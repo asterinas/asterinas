@@ -79,12 +79,24 @@ use ostd::irq::DisabledLocalIrqGuard;
 /// It is **not** `Sync` and must not be accessed across threads.
 ///
 /// All methods assume kernel preemption cannot occur
-/// for the duration of the call (the existing `ThreadLocal` discipline).
+/// for the duration of the call.
+/// In the current architecture, this is always true
+/// because kernel preemption was never implemented.
 ///
-/// [`before_schedule`]:  Self::before_schedule
+/// More importantly, we cannot implement kernel preemption
+/// without refactoring the `ThreadLocal` mechanism
+/// because `ThreadLocal` cannot be accessed in interrupt handlers
+/// for soundness reasons.
+/// But such access is necessary for the preempted schedule.
+///
+/// Therefore, we omit the preemption guards for better performance and
+/// defer preemption considerations to future work.
+///
+/// [`before_schedule`]: Self::before_schedule
 /// [`before_user_exec`]: Self::before_user_exec
-/// [`get`]:              Self::get
-/// [`set`]:              Self::set
+/// [`get`]: Self::get
+/// [`set`]: Self::set
+#[derive(Debug)]
 pub struct CpuSync<R> {
     location: Cell<CanonicalValueLocation>,
     reg: RefCell<R>,
@@ -97,7 +109,7 @@ impl<R: UserReg> CpuSync<R> {
     /// The CPU register is presumed to
     /// hold some other task's bytes (or nobody's)
     /// until the first [`Self::before_user_exec`] loads `reg` onto it.
-    pub const fn new(reg: R) -> Self {
+    pub(super) const fn new(reg: R) -> Self {
         Self {
             location: Cell::new(CanonicalValueLocation::InMemory),
             reg: RefCell::new(reg),
@@ -141,14 +153,6 @@ impl<R: UserReg> CpuSync<R> {
         }
     }
 
-    /// Returns where the canonical value currently lives.
-    ///
-    /// Only useful for diagnostics.
-    #[expect(unused)]
-    pub fn location(&self) -> CanonicalValueLocation {
-        self.location.get()
-    }
-
     // ---- Lifecycle callbacks ----
 
     /// Scheduler hook: this task is about to be switched off the CPU.
@@ -156,7 +160,7 @@ impl<R: UserReg> CpuSync<R> {
     /// This hook method ensures that
     /// the canonical value of the register `R` is saved into `self`
     /// and the canonical value location is marked `InMemory`.
-    pub fn before_schedule(&self, guard: &DisabledLocalIrqGuard) {
+    pub(super) fn before_schedule(&self, guard: &DisabledLocalIrqGuard) {
         let loc = self.location.get();
         if loc == CanonicalValueLocation::OnCpu {
             self.reg.borrow_mut().save_from_cpu_with_irq_disabled(guard);
@@ -174,9 +178,9 @@ impl<R: UserReg> CpuSync<R> {
     /// This hook method ensures that
     /// the canonical value of the register `R` is loaded to the CPU hardware
     /// and the canonical value location is marked `OnCpu`.
-    pub fn before_user_exec(&self) {
+    pub(super) fn before_user_exec(&self, guard: &DisabledLocalIrqGuard) {
         if self.location.get() == CanonicalValueLocation::InMemory {
-            self.reg.borrow().restore_to_cpu();
+            self.reg.borrow().restore_to_cpu_with_irq_disabled(guard);
         }
         self.location.set(CanonicalValueLocation::OnCpu);
     }
@@ -208,11 +212,21 @@ pub trait UserReg {
     ///
     /// May be invoked in any IRQ state.
     fn restore_to_cpu(&self);
+
+    /// Writes `self`'s value into the CPU register(s),
+    /// with the caller's guarantee that local IRQs are disabled.
+    ///
+    /// Implementors may override to take a cheaper path
+    /// that is only safe with IRQs disabled
+    /// The default falls back to [`Self::restore_to_cpu`].
+    fn restore_to_cpu_with_irq_disabled(&self, _guard: &DisabledLocalIrqGuard) {
+        self.restore_to_cpu();
+    }
 }
 
 /// Where the latest canonical value of a [`UserReg`] currently lives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CanonicalValueLocation {
+enum CanonicalValueLocation {
     /// Only the in-memory copy holds the canonical value.
     InMemory,
     /// Only the CPU register holds the canonical value.
@@ -221,7 +235,7 @@ pub enum CanonicalValueLocation {
     Both,
 }
 
-// ---------- UserReg impls for ostd register types ----------
+// ---------- `UserReg` impls for OSTD register types ----------
 
 impl UserReg for ostd::arch::cpu::context::FpuContext {
     fn save_from_cpu(&mut self) {
@@ -247,10 +261,20 @@ impl UserReg for ostd::arch::cpu::context::FsBase {
 #[cfg(target_arch = "x86_64")]
 impl UserReg for ostd::arch::cpu::context::GsBase {
     fn save_from_cpu(&mut self) {
-        self.save();
+        let guard = ostd::irq::disable_local();
+        self.save(&guard);
+    }
+
+    fn save_from_cpu_with_irq_disabled(&mut self, guard: &DisabledLocalIrqGuard) {
+        self.save(guard);
     }
 
     fn restore_to_cpu(&self) {
-        self.load();
+        let guard = ostd::irq::disable_local();
+        self.load(&guard);
+    }
+
+    fn restore_to_cpu_with_irq_disabled(&self, guard: &DisabledLocalIrqGuard) {
+        self.load(guard)
     }
 }
