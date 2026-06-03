@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#define _GNU_SOURCE
+
 #include <errno.h>
 #include <fcntl.h>
+#include <string.h>
 #include <sys/mount.h>
+#include <sys/syscall.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "../../common/test.h"
@@ -19,6 +24,17 @@
 #define DIR_RENAMED_GRANDCHILD DIR_RENAMED_CHILD "/grandchild"
 #define FILE_A BASE_DIR "/A"
 #define FILE_B BASE_DIR "/B"
+#define FILE_C BASE_DIR "/C"
+#define FILE_D BASE_DIR "/D"
+#define RAMFS_EXCHANGE_BASE "/rename_exchange_ramfs"
+
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif
+
+#ifndef RENAME_EXCHANGE
+#define RENAME_EXCHANGE (1 << 1)
+#endif
 
 #define CROSS_MOUNT_DIR BASE_DIR "/mnt"
 #define CROSS_MOUNT_DIR_CHILD CROSS_MOUNT_DIR "/child"
@@ -31,6 +47,14 @@ static void ensure_dir(const char *path)
 static void remove_if_exists(const char *path)
 {
 	CHECK_WITH(rmdir(path), _ret == 0 || errno == ENOENT);
+}
+
+static void unlink_or_rmdir_if_exists(const char *path)
+{
+	CHECK_WITH(unlink(path),
+		   _ret == 0 || errno == ENOENT || errno == EISDIR);
+	CHECK_WITH(rmdir(path),
+		   _ret == 0 || errno == ENOENT || errno == ENOTDIR);
 }
 
 static void ensure_test_tree(void)
@@ -46,7 +70,15 @@ static void cleanup_test_tree(void)
 {
 	CHECK_WITH(unlink(FILE_A), _ret == 0 || errno == ENOENT);
 	CHECK_WITH(unlink(FILE_B), _ret == 0 || errno == ENOENT);
-	remove_if_exists(DIR_TARGET);
+	CHECK_WITH(unlink(FILE_C), _ret == 0 || errno == ENOENT);
+	CHECK_WITH(unlink(FILE_D), _ret == 0 || errno == ENOENT);
+	unlink_or_rmdir_if_exists(DIR_TARGET);
+	unlink_or_rmdir_if_exists(BASE_DIR "/src_parent/file/nested");
+	unlink_or_rmdir_if_exists(BASE_DIR "/src_parent/file");
+	unlink_or_rmdir_if_exists(BASE_DIR "/dst_parent/dir/nested");
+	unlink_or_rmdir_if_exists(BASE_DIR "/dst_parent/dir");
+	remove_if_exists(BASE_DIR "/src_parent");
+	remove_if_exists(BASE_DIR "/dst_parent");
 	remove_if_exists(DIR_RENAMED_GRANDCHILD);
 	remove_if_exists(DIR_RENAMED_CHILD);
 	remove_if_exists(DIR_GRANDCHILD);
@@ -56,6 +88,38 @@ static void cleanup_test_tree(void)
 	remove_if_exists(DIR_CHILD);
 	remove_if_exists(DIR);
 	remove_if_exists(BASE_DIR);
+	unlink_or_rmdir_if_exists(RAMFS_EXCHANGE_BASE "/src/file/nested");
+	unlink_or_rmdir_if_exists(RAMFS_EXCHANGE_BASE "/src/file");
+	unlink_or_rmdir_if_exists(RAMFS_EXCHANGE_BASE "/dst/dir/nested");
+	unlink_or_rmdir_if_exists(RAMFS_EXCHANGE_BASE "/dst/dir");
+	remove_if_exists(RAMFS_EXCHANGE_BASE "/src");
+	remove_if_exists(RAMFS_EXCHANGE_BASE "/dst");
+	remove_if_exists(RAMFS_EXCHANGE_BASE);
+}
+
+static long renameat2_syscall(const char *old_path, const char *new_path,
+			      unsigned int flags)
+{
+	return syscall(SYS_renameat2, AT_FDCWD, old_path, AT_FDCWD, new_path,
+		       flags);
+}
+
+static void write_file(const char *path, const char *data)
+{
+	int fd = CHECK(open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644));
+	CHECK_WITH(write(fd, data, strlen(data)),
+		   _ret == (ssize_t)strlen(data));
+	CHECK(close(fd));
+}
+
+static void expect_file_content(const char *path, const char *expected)
+{
+	char buf[32] = { 0 };
+	int fd = CHECK(open(path, O_RDONLY));
+	CHECK_WITH(read(fd, buf, sizeof(buf) - 1),
+		   _ret == (ssize_t)strlen(expected));
+	CHECK(close(fd));
+	CHECK_WITH(strcmp(buf, expected), _ret == 0);
 }
 
 FN_SETUP(cleanup_before_test)
@@ -83,6 +147,228 @@ FN_TEST(rename_to_self)
 	TEST_SUCC(rename(DIR, DIR));
 	TEST_SUCC(access(DIR, F_OK));
 	TEST_SUCC(access(DIR_GRANDCHILD, F_OK));
+
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(renameat2_noreplace)
+{
+	ensure_dir(BASE_DIR);
+	write_file(FILE_A, "A");
+	write_file(FILE_B, "B");
+
+	TEST_ERRNO(renameat2_syscall(FILE_A, FILE_B, RENAME_NOREPLACE), EEXIST);
+	TEST_SUCC(access(FILE_A, F_OK));
+	expect_file_content(FILE_B, "B");
+
+	TEST_SUCC(unlink(FILE_B));
+	TEST_SUCC(renameat2_syscall(FILE_A, FILE_B, RENAME_NOREPLACE));
+	TEST_ERRNO(access(FILE_A, F_OK), ENOENT);
+	expect_file_content(FILE_B, "A");
+
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(renameat2_exchange)
+{
+	ensure_dir(BASE_DIR);
+	write_file(FILE_A, "A");
+	write_file(FILE_B, "B");
+	TEST_SUCC(access(FILE_A, F_OK));
+	TEST_SUCC(access(FILE_B, F_OK));
+
+	TEST_SUCC(renameat2_syscall(FILE_A, FILE_B, RENAME_EXCHANGE));
+	expect_file_content(FILE_A, "B");
+	expect_file_content(FILE_B, "A");
+
+	TEST_ERRNO(renameat2_syscall(FILE_A, FILE_C, RENAME_EXCHANGE), ENOENT);
+
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(renameat2_exchange_file_and_dir)
+{
+	const char *dir = BASE_DIR "/exchange_dir";
+	const char *dir_slash = BASE_DIR "/exchange_dir/";
+	const char *nested = BASE_DIR "/exchange_dir/nested";
+
+	ensure_dir(BASE_DIR);
+	ensure_dir(dir);
+	write_file(nested, "nested");
+	write_file(FILE_A, "file");
+
+	TEST_SUCC(renameat2_syscall(FILE_A, dir_slash, RENAME_EXCHANGE));
+	TEST_SUCC(access(FILE_A "/nested", F_OK));
+	expect_file_content(dir, "file");
+
+	TEST_SUCC(unlink(dir));
+	TEST_SUCC(unlink(FILE_A "/nested"));
+	TEST_SUCC(rmdir(FILE_A));
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(renameat2_exchange_file_and_dir_across_parents_nlink)
+{
+	const char *src_parent = BASE_DIR "/src_parent";
+	const char *src_file = BASE_DIR "/src_parent/file";
+	const char *src_nested = BASE_DIR "/src_parent/file/nested";
+	const char *dst_parent = BASE_DIR "/dst_parent";
+	const char *dst_dir = BASE_DIR "/dst_parent/dir";
+	const char *dst_nested = BASE_DIR "/dst_parent/dir/nested";
+	struct stat src_parent_before;
+	struct stat dst_parent_before;
+	struct stat src_parent_after;
+	struct stat dst_parent_after;
+
+	ensure_dir(BASE_DIR);
+	ensure_dir(src_parent);
+	ensure_dir(dst_parent);
+	ensure_dir(dst_dir);
+	write_file(src_file, "file");
+	write_file(dst_nested, "nested");
+	TEST_SUCC(stat(src_parent, &src_parent_before));
+	TEST_SUCC(stat(dst_parent, &dst_parent_before));
+
+	TEST_SUCC(renameat2_syscall(src_file, dst_dir, RENAME_EXCHANGE));
+	TEST_SUCC(stat(src_parent, &src_parent_after));
+	TEST_SUCC(stat(dst_parent, &dst_parent_after));
+	TEST_RES(stat(src_parent, &src_parent_after),
+		 src_parent_after.st_nlink == src_parent_before.st_nlink + 1);
+	TEST_RES(stat(dst_parent, &dst_parent_after),
+		 dst_parent_after.st_nlink == dst_parent_before.st_nlink - 1);
+	TEST_SUCC(access(src_nested, F_OK));
+	expect_file_content(dst_dir, "file");
+
+	TEST_SUCC(unlink(dst_dir));
+	TEST_SUCC(unlink(src_nested));
+	TEST_SUCC(rmdir(src_file));
+	remove_if_exists(dst_parent);
+	remove_if_exists(src_parent);
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(renameat2_exchange_file_and_dir_across_parents_nlink_ramfs)
+{
+	const char *src_parent = RAMFS_EXCHANGE_BASE "/src";
+	const char *src_file = RAMFS_EXCHANGE_BASE "/src/file";
+	const char *src_nested = RAMFS_EXCHANGE_BASE "/src/file/nested";
+	const char *dst_parent = RAMFS_EXCHANGE_BASE "/dst";
+	const char *dst_dir = RAMFS_EXCHANGE_BASE "/dst/dir";
+	const char *dst_nested = RAMFS_EXCHANGE_BASE "/dst/dir/nested";
+	struct stat src_parent_before;
+	struct stat dst_parent_before;
+	struct stat src_parent_after;
+	struct stat dst_parent_after;
+
+	ensure_dir(RAMFS_EXCHANGE_BASE);
+	ensure_dir(src_parent);
+	ensure_dir(dst_parent);
+	ensure_dir(dst_dir);
+	write_file(src_file, "file");
+	write_file(dst_nested, "nested");
+	TEST_SUCC(stat(src_parent, &src_parent_before));
+	TEST_SUCC(stat(dst_parent, &dst_parent_before));
+
+	TEST_SUCC(renameat2_syscall(src_file, dst_dir, RENAME_EXCHANGE));
+	TEST_SUCC(stat(src_parent, &src_parent_after));
+	TEST_SUCC(stat(dst_parent, &dst_parent_after));
+	TEST_RES(stat(src_parent, &src_parent_after),
+		 src_parent_after.st_nlink == src_parent_before.st_nlink + 1);
+	TEST_RES(stat(dst_parent, &dst_parent_after),
+		 dst_parent_after.st_nlink == dst_parent_before.st_nlink - 1);
+	TEST_SUCC(access(src_nested, F_OK));
+	expect_file_content(dst_dir, "file");
+
+	TEST_SUCC(unlink(dst_dir));
+	TEST_SUCC(unlink(src_nested));
+	TEST_SUCC(rmdir(src_file));
+	remove_if_exists(dst_parent);
+	remove_if_exists(src_parent);
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(renameat2_invalid_flag_combinations)
+{
+	ensure_dir(BASE_DIR);
+	write_file(FILE_A, "A");
+	write_file(FILE_B, "B");
+
+	TEST_ERRNO(renameat2_syscall(FILE_A, FILE_B,
+				     RENAME_NOREPLACE | RENAME_EXCHANGE),
+		   EINVAL);
+	TEST_SUCC(access(FILE_A, F_OK));
+	expect_file_content(FILE_B, "B");
+
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(renameat2_noreplace_dot_destination)
+{
+	ensure_dir(BASE_DIR);
+	ensure_dir(DIR);
+	write_file(FILE_A, "A");
+
+	// The destination basename "." names the existing directory DIR, so
+	// RENAME_NOREPLACE reports EEXIST (verified against renameat2(2)).
+	TEST_ERRNO(renameat2_syscall(FILE_A, DIR "/.", RENAME_NOREPLACE),
+		   EEXIST);
+	TEST_SUCC(access(FILE_A, F_OK));
+	TEST_SUCC(access(DIR, F_OK));
+
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(renameat2_exchange_into_descendant)
+{
+	ensure_test_tree();
+	write_file(DIR_TARGET, "target");
+
+	TEST_ERRNO(renameat2_syscall(DIR, DIR_TARGET, RENAME_EXCHANGE), EINVAL);
+	TEST_SUCC(access(DIR, F_OK));
+	TEST_SUCC(access(DIR_TARGET, F_OK));
+
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(renameat2_exchange_trailing_slash_nondir)
+{
+	ensure_dir(BASE_DIR);
+	write_file(FILE_A, "A");
+	write_file(FILE_B, "B");
+
+	// A trailing slash requires the destination to be a directory; an
+	// exchange whose destination is a regular file named with a trailing
+	// slash reports ENOTDIR (verified against renameat2(2)).
+	TEST_ERRNO(renameat2_syscall(FILE_A, FILE_B "/", RENAME_EXCHANGE),
+		   ENOTDIR);
+	expect_file_content(FILE_A, "A");
+	expect_file_content(FILE_B, "B");
+
+	cleanup_test_tree();
+}
+END_TEST()
+
+FN_TEST(rename_dot_destination_busy)
+{
+	ensure_dir(BASE_DIR);
+	ensure_dir(DIR);
+	write_file(FILE_A, "A");
+
+	// A `.`/`..` final component names an existing directory; a plain
+	// rename onto it reports EBUSY (verified against rename(2)).
+	TEST_ERRNO(renameat2_syscall(FILE_A, DIR "/.", 0), EBUSY);
+	TEST_ERRNO(renameat2_syscall(FILE_A, DIR "/..", 0), EBUSY);
+	TEST_SUCC(access(FILE_A, F_OK));
+	TEST_SUCC(access(DIR, F_OK));
 
 	cleanup_test_tree();
 }
