@@ -9,11 +9,12 @@
 use alloc::{sync::Arc, vec::Vec};
 use core::mem;
 
+use aster_fuse::FuseError;
 use aster_softirq::Taskless;
 use aster_util::{mem_obj_slice::Slice, slot_vec::SlotVec};
 use ostd::{
     mm::dma::{FromDevice, ToDevice},
-    sync::{LocalIrqDisabled, SpinLock},
+    sync::{LocalIrqDisabled, SpinLock, WaitQueue},
 };
 use smallvec::SmallVec;
 use spin::Once;
@@ -21,9 +22,17 @@ use spin::Once;
 use super::request::FuseRequest;
 use crate::{device::filesystem::pool::FsDmaStorage, queue::VirtQueue};
 
+/// Maximum virtqueue descriptors used by one FUSE request.
+///
+/// Current requests use at most two to-device buffers (request header/body and
+/// optional write payload) and two from-device buffers (reply header and
+/// optional read payload).
+pub(super) const MAX_DMA_BUFS_PER_REQUEST: usize = 4;
+
 /// A virtio-fs request queue and its in-flight request state.
 pub(super) struct FsRequestQueue {
     inner: SpinLock<FsRequestQueueInner, LocalIrqDisabled>,
+    wait_queue: WaitQueue,
     taskless: Once<Arc<Taskless>>,
 }
 
@@ -47,6 +56,7 @@ impl FsRequestQueue {
                 in_flight_requests: SlotVec::new(),
                 pending_completions: Vec::new(),
             }),
+            wait_queue: WaitQueue::new(),
             taskless: Once::new(),
         })
     }
@@ -73,43 +83,65 @@ impl FsRequestQueue {
     }
 
     /// Submits a FUSE request to the virtqueue.
-    pub(super) fn add_request(&self, request: FuseRequest) {
-        let mut inner = self.inner.lock();
-        let token = {
-            let request_bufs = request
-                .request_bufs()
-                .iter()
-                .map(|buf| buf.as_dma_slice())
-                .collect::<SmallVec<[&Slice<FsDmaStorage<ToDevice>>; 2]>>();
-            let reply_bufs = request
-                .waiter()
-                .reply_bufs()
-                .iter()
-                .map(|buf| buf.as_dma_slice())
-                .collect::<SmallVec<[&Slice<FsDmaStorage<FromDevice>>; 2]>>();
+    pub(super) fn add_request(&self, request: FuseRequest) -> Result<(), FuseError> {
+        let num_dma_bufs = request.num_dma_bufs();
+        debug_assert!(num_dma_bufs <= MAX_DMA_BUFS_PER_REQUEST);
 
-            inner
-                .queue
-                .add_dma_bufs(request_bufs.as_slice(), reply_bufs.as_slice())
-                .unwrap()
-        };
+        let mut request = Some(request);
 
-        inner.in_flight_requests.put_at(token as usize, request);
+        self.wait_queue.wait_until(|| {
+            let mut inner = self.inner.lock();
+            if num_dma_bufs > inner.queue.available_desc() {
+                return None;
+            }
 
-        if inner.queue.should_notify() {
-            inner.queue.notify();
-        }
+            let request = request.take().unwrap();
+            let token = {
+                let request_bufs = request
+                    .request_bufs()
+                    .iter()
+                    .map(|buf| buf.as_dma_slice())
+                    .collect::<SmallVec<[&Slice<FsDmaStorage<ToDevice>>; 2]>>();
+                let reply_bufs = request
+                    .waiter()
+                    .reply_bufs()
+                    .iter()
+                    .map(|buf| buf.as_dma_slice())
+                    .collect::<SmallVec<[&Slice<FsDmaStorage<FromDevice>>; 2]>>();
+
+                inner
+                    .queue
+                    .add_dma_bufs(request_bufs.as_slice(), reply_bufs.as_slice())
+                    .unwrap()
+            };
+            inner.in_flight_requests.put_at(token as usize, request);
+
+            if inner.queue.should_notify() {
+                inner.queue.notify();
+            }
+
+            Some(())
+        });
+
+        Ok(())
     }
 
     /// Moves completed virtqueue descriptors into the pending-completion list.
     pub(super) fn drain_completed_requests(&self) {
         let mut inner = self.inner.lock();
+        let mut has_freed_descs = false;
         while let Ok((token, len)) = inner.queue.pop_used() {
+            has_freed_descs = true;
             let reply_len = len as usize;
             let request = inner.in_flight_requests.remove(token as usize).unwrap();
             inner
                 .pending_completions
                 .push(CompletedFuseRequest { request, reply_len });
+        }
+        drop(inner);
+
+        if has_freed_descs {
+            self.wait_queue.wake_all();
         }
     }
 

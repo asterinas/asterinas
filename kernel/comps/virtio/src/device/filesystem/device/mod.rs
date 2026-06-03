@@ -87,8 +87,8 @@ impl FileSystemDevice {
     /// # Locking
     ///
     /// Builds the request before taking the selected request queue `SpinLock`.
-    /// The queue lock is held only while enqueueing and is released before the
-    /// waiter is returned.
+    /// The submit path may sleep waiting for free queue descriptors, but the
+    /// queue lock is never held across that wait.
     fn submit_fuse_op<Op: FuseOperation>(
         &self,
         nodeid: FuseNodeId,
@@ -100,7 +100,7 @@ impl FileSystemDevice {
         let waiter = request.waiter().clone();
 
         let queue = self.select_request_queue(request.nodeid());
-        self.submit(queue, request);
+        self.submit(queue, request)?;
 
         Ok(waiter)
     }
@@ -176,8 +176,12 @@ impl FileSystemDevice {
         FuseUnique::new(self.next_unique.fetch_add(1, Ordering::Relaxed))
     }
 
-    fn submit(&self, request_queue: &FsRequestQueue, request: FuseRequest) {
-        request_queue.add_request(request);
+    fn submit(
+        &self,
+        request_queue: &FsRequestQueue,
+        request: FuseRequest,
+    ) -> Result<(), FuseError> {
+        request_queue.add_request(request)
     }
 
     fn alloc_and_fill_request_buf(

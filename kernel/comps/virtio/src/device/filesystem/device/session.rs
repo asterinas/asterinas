@@ -290,7 +290,7 @@ impl FuseSession {
             .device
             .prepare_request(nodeid, &mut operation, None, None)?;
         self.device
-            .submit(self.device.hiprio_queue.as_ref(), request);
+            .submit(self.device.hiprio_queue.as_ref(), request)?;
 
         Ok(())
     }
