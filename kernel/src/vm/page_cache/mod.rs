@@ -174,6 +174,10 @@ impl PageCache {
     /// used to determine the boundary of previously valid data so that only the
     /// discarded range within a partially truncated tail page is zero-filled.
     ///
+    /// Extending the page cache does not eagerly allocate pages and therefore
+    /// cannot return an error. Shrinking may fail because it can zero-fill or
+    /// decommit existing pages.
+    ///
     /// # Size Synchronization
     ///
     /// `PageCache::resize` only updates the page-aligned [`Vmo`] capacity. The
