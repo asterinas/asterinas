@@ -28,6 +28,7 @@ pub mod read;
 pub mod readdir;
 pub mod readlink;
 pub mod release;
+pub mod rename;
 pub mod rmdir;
 pub mod setattr;
 pub mod statfs;

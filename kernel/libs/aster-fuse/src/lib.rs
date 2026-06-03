@@ -51,6 +51,7 @@ pub use self::{
         readdir::ReaddirOperation,
         readlink::{MAX_READLINK_LEN, ReadlinkOperation},
         release::{ReleaseFlags, ReleaseKind, ReleaseOperation, ReleaseReq},
+        rename::{RenameOperation, RenameReq},
         rmdir::RmdirOperation,
         setattr::{SetattrOperation, SetattrReq, SetattrValid},
         statfs::{Kstatfs, StatfsOperation, StatfsReply},
