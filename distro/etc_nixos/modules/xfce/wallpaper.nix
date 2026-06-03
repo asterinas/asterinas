@@ -14,8 +14,8 @@
 let
   wallpaper = pkgs.fetchurl {
     url =
-      "https://raw.githubusercontent.com/asterinas/asterinas-artwork/8950cd62b61914feb03fcb0d9e6eebaf349fc3ae/aster_nixos/v0.17.0/wallpaper_joseph-barrientos_unsplash_2400x1600.jpg";
-    sha256 = "191nc88n4y4n3srxdn6g4y8fcc3vmld8wjc8xc6376602bi90i6n";
+      "https://raw.githubusercontent.com/asterinas/asterinas-artwork/f92b04a998f16c0b11f22987181a67c9106c3684/aster_nixos/v0.18.0/wallpaper_berry-madjidi_unsplash_1625x1080.png";
+    sha256 = "0y6r8nq9gp05nlpk1s9fscs0jcj70pxhxaim698q9lfwfqkidlhz";
   };
 
   xfceDesktopXml = pkgs.writeText "xfce4-desktop.xml" ''
