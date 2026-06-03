@@ -1,0 +1,6 @@
+# This file configures some Clippy lints.
+#
+# For more information,
+# see <https://doc.rust-lang.org/clippy/configuration.html>.
+
+check-inconsistent-struct-field-initializers = true
