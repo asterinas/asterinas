@@ -12,6 +12,8 @@ pub(super) struct TcpOptionSet {
     no_delay: bool,
     maxseg: u32,
     keep_idle: u32,
+    keep_intvl: u32,
+    keep_cnt: u8,
     syn_cnt: u8,
     defer_accept: Retrans,
     window_clamp: u32,
@@ -20,8 +22,11 @@ pub(super) struct TcpOptionSet {
     receive_inq: bool,
 }
 
+// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/net/tcp.h>
 pub(super) const DEFAULT_MAXSEG: u32 = 536;
 pub(super) const DEFAULT_KEEP_IDLE: u32 = 7200;
+pub(super) const DEFAULT_KEEP_INTVL: u32 = 75;
+pub(super) const DEFAULT_KEEP_CNT: u8 = 9;
 pub(super) const DEFAULT_SYN_CNT: u8 = 6;
 pub(super) const DEFAULT_WINDOW_CLAMP: u32 = 0x8000_0000;
 
@@ -31,6 +36,8 @@ impl TcpOptionSet {
             no_delay: false,
             maxseg: DEFAULT_MAXSEG,
             keep_idle: DEFAULT_KEEP_IDLE,
+            keep_intvl: DEFAULT_KEEP_INTVL,
+            keep_cnt: DEFAULT_KEEP_CNT,
             syn_cnt: DEFAULT_SYN_CNT,
             defer_accept: Retrans(0),
             window_clamp: DEFAULT_WINDOW_CLAMP,
