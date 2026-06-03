@@ -199,7 +199,7 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
         let guard = G::read_guard();
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
-            Some(RwLockReadGuard { inner: self, guard })
+            Some(RwLockReadGuard { guard, inner: self })
         } else {
             self.lock.fetch_sub(READER, Release);
             None
@@ -216,7 +216,7 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
             .compare_exchange(0, WRITER, Acquire, Relaxed)
             .is_ok()
         {
-            Some(RwLockWriteGuard { inner: self, guard })
+            Some(RwLockWriteGuard { guard, inner: self })
         } else {
             None
         }
@@ -229,7 +229,7 @@ impl<T: ?Sized, G: SpinGuardian> RwLock<T, G> {
         let guard = G::guard();
         let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
-            return Some(RwLockUpgradeableGuard { inner: self, guard });
+            return Some(RwLockUpgradeableGuard { guard, inner: self });
         } else if lock == WRITER {
             self.lock.fetch_sub(UPGRADEABLE_READER, Release);
         }
@@ -388,10 +388,10 @@ impl<'a, T: ?Sized, G: SpinGuardian> RwLockUpgradeableGuard<'a, T, G> {
             Relaxed,
         );
         if res.is_ok() {
-            let inner = self.inner;
             let guard = self.guard.transfer_to();
+            let inner = self.inner;
             drop(self);
-            Ok(RwLockWriteGuard { inner, guard })
+            Ok(RwLockWriteGuard { guard, inner })
         } else {
             Err(self)
         }

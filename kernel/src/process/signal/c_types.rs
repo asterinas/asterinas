@@ -229,16 +229,16 @@ impl Default for ucontext_t {
     fn default() -> Self {
         Self {
             uc_flags: 0,
-            uc_link: Default::default(),
-            uc_stack: Default::default(),
-            uc_sigmask: Default::default(),
-            __unused: [0; 120],
-            uc_mcontext: Default::default(),
             __pad1: [0; _],
+            uc_link: Default::default(),
             __pad2: [0; _],
+            uc_stack: Default::default(),
             __pad3: [0; _],
+            uc_sigmask: Default::default(),
             __pad4: [0; _],
+            __unused: [0; 120],
             __pad5: [0; _],
+            uc_mcontext: Default::default(),
             __pad6: [0; _],
         }
     }

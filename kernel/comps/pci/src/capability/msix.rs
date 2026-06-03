@@ -123,9 +123,9 @@ impl CapabilityMsixData {
             table_size,
             table_bar,
             pending_table_bar: pba_bar,
-            irqs,
             table_offset,
             pending_table_offset: pba_offset,
+            irqs,
         })
     }
 

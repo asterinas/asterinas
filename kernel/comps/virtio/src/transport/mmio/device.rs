@@ -75,9 +75,9 @@ impl VirtioMmioTransport {
         };
         let device = Self {
             layout,
+            device: Arc::new(VirtioMmioDevice { device_id }),
             common_device: device,
             multiplex: MultiplexIrq::new(irq, interrupt_ack, interrupt_status),
-            device: Arc::new(VirtioMmioDevice { device_id }),
         };
         if device.common_device.read_version().unwrap() == VirtioMmioVersion::Legacy {
             field_ptr!(&device.layout, VirtioMmioLayout, legacy_guest_page_size)

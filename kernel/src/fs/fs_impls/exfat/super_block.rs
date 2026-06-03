@@ -47,34 +47,36 @@ impl TryFrom<ExfatBootSector> for ExfatSuperBlock {
     type Error = Error;
     fn try_from(sector: ExfatBootSector) -> Result<ExfatSuperBlock> {
         const EXFAT_CLUSTERS_UNTRACKED: u32 = !0;
+
         let mut block = ExfatSuperBlock {
-            sect_per_cluster_bits: sector.sector_per_cluster_bits as u32,
-            sect_per_cluster: 1 << sector.sector_per_cluster_bits as u32,
-
-            cluster_size_bits: (sector.sector_per_cluster_bits + sector.sector_size_bits) as u32,
-            cluster_size: 1 << (sector.sector_per_cluster_bits + sector.sector_size_bits) as u32,
-
-            sector_size: 1 << sector.sector_size_bits,
-            num_fat_sectors: sector.fat_length,
-            fat1_start_sector: sector.fat_offset as u64,
-            fat2_start_sector: sector.fat_offset as u64,
-
-            data_start_sector: sector.cluster_offset as u64,
             num_sectors: sector.vol_length,
             num_clusters: sector.cluster_count + EXFAT_RESERVED_CLUSTERS,
 
+            sector_size: 1 << sector.sector_size_bits,
+
+            cluster_size: 1 << (sector.sector_per_cluster_bits + sector.sector_size_bits) as u32,
+            cluster_size_bits: (sector.sector_per_cluster_bits + sector.sector_size_bits) as u32,
+
+            sect_per_cluster: 1 << sector.sector_per_cluster_bits as u32,
+            sect_per_cluster_bits: sector.sector_per_cluster_bits as u32,
+
+            fat1_start_sector: sector.fat_offset as u64,
+            fat2_start_sector: sector.fat_offset as u64,
+            data_start_sector: sector.cluster_offset as u64,
+
+            num_fat_sectors: sector.fat_length,
+
             root_dir: sector.root_cluster,
+
+            dentries_per_clu: 1
+                << ((sector.sector_per_cluster_bits + sector.sector_size_bits) as u32
+                    - DENTRY_SIZE_BITS),
 
             vol_flags: sector.vol_flags as u32,
             vol_flags_persistent: (sector.vol_flags & (VOLUME_DIRTY | MEDIA_FAILURE)) as u32,
 
             cluster_search_ptr: EXFAT_FIRST_CLUSTER,
-
             used_clusters: EXFAT_CLUSTERS_UNTRACKED,
-
-            dentries_per_clu: 1
-                << ((sector.sector_per_cluster_bits + sector.sector_size_bits) as u32
-                    - DENTRY_SIZE_BITS),
         };
 
         if block.num_fat_sectors == 2 {

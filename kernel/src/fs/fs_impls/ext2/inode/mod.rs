@@ -145,25 +145,29 @@ impl Inode {
         block_group_idx: usize,
         fs: Weak<Ext2>,
     ) -> Arc<Self> {
-        Arc::new_cyclic(|weak_self: &Weak<Self>| Self {
-            ino,
-            type_,
-            block_group_idx,
-            xattr: match type_ {
+        Arc::new_cyclic(|weak_self: &Weak<Self>| {
+            let xattr = match type_ {
                 InodeType::Dir | InodeType::File => Some(Xattr::new(
                     inode_desc.file_acl,
                     weak_self.clone(),
                     fs.clone(),
                 )),
                 _ => None,
-            },
-            pipe: match type_ {
+            };
+            let pipe = match type_ {
                 InodeType::NamedPipe => Some(Pipe::new()),
                 _ => None,
-            },
-            inner: RwMutex::new(InodeInner::new(inode_desc, fs.clone())),
-            fs,
-            extension: Extension::new(),
+            };
+            Self {
+                ino,
+                type_,
+                inner: RwMutex::new(InodeInner::new(inode_desc, fs.clone())),
+                block_group_idx,
+                fs,
+                xattr,
+                pipe,
+                extension: Extension::new(),
+            }
         })
     }
 

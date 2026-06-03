@@ -28,10 +28,10 @@ impl VirtioMsixManager {
         let shared_interrupt_vector = msix_vector_list.pop().unwrap();
         Self {
             config_msix_vector,
-            unused_msix_vectors: msix_vector_list,
-            msix,
             shared_interrupt_vector,
+            unused_msix_vectors: msix_vector_list,
             used_msix_vectors: Vec::new(),
+            msix,
         }
     }
 

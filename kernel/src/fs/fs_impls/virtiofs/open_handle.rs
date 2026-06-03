@@ -36,10 +36,10 @@ impl VirtioFsOpenHandle {
     ) -> Arc<Self> {
         Arc::new(Self {
             fh,
+            nodeid,
             access_mode,
             status_flags,
             open_flags,
-            nodeid,
             fs,
             release_options,
         })

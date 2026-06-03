@@ -29,15 +29,16 @@ struct Inner(Weak<DevPts>);
 impl Ptmx {
     pub fn new(fs: Weak<DevPts>, sb: &SuperBlock) -> Arc<Self> {
         let inner = Inner(fs.clone());
+        let metadata = Metadata::new_device(
+            PTMX_INO,
+            mkmod!(a+rw),
+            BLOCK_SIZE,
+            &inner,
+            sb.container_dev_id,
+        );
         Arc::new(Self {
-            metadata: RwLock::new(Metadata::new_device(
-                PTMX_INO,
-                mkmod!(a+rw),
-                BLOCK_SIZE,
-                &inner,
-                sb.container_dev_id,
-            )),
             inner,
+            metadata: RwLock::new(metadata),
             extension: Extension::new(),
         })
     }

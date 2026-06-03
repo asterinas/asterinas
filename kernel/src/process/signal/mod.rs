@@ -351,8 +351,8 @@ pub fn handle_user_signal(
     };
 
     let mut ucontext = ucontext_t {
-        uc_sigmask: mask_to_restore.into(),
         uc_stack,
+        uc_sigmask: mask_to_restore.into(),
         ..Default::default()
     };
 

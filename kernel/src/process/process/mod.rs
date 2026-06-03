@@ -235,37 +235,40 @@ impl Process {
         sig_dispositions: Arc<Mutex<SigDispositions>>,
         user_ns: Arc<UserNamespace>,
     ) -> Arc<Self> {
-        // SIGCHID does not interrupt pauser. Child process will
-        // resume paused parent when doing exit.
-        let children_wait_queue = WaitQueue::new();
+        Arc::new_cyclic(|process_ref: &Weak<Process>| {
+            // SIGCHID does not interrupt pauser. Child process will
+            // resume paused parent when doing exit.
+            let children_wait_queue = WaitQueue::new();
 
-        let prof_clock = ProfClock::new();
+            let prof_clock = ProfClock::new();
+            let timer_manager = PosixTimerManager::new(&prof_clock, process_ref);
 
-        Arc::new_cyclic(|process_ref: &Weak<Process>| Self {
-            pid,
-            tasks: Mutex::new(TaskSet::new()),
-            vmar: Mutex::new(Some(vmar)),
-            children_wait_queue,
-            pidfile_pollee: Pollee::new(),
-            status: ProcessStatus::default(),
-            parent: ParentProcess::new(Weak::new()),
-            children: Mutex::new(Some(BTreeMap::new())),
-            process_group: Mutex::new(None),
-            reaped_children_stats: Mutex::new(ReapedChildrenStats::default()),
-            is_child_subreaper: AtomicBool::new(false),
-            has_child_subreaper: AtomicBool::new(false),
-            sig_dispositions: Mutex::new(sig_dispositions),
-            sig_queues: SigQueues::new(),
-            parent_death_signal: AtomicSigNum::new_empty(),
-            exit_signal: AtomicSigNum::new_empty(),
-            resource_limits,
-            cgroup: RcuOption::new(None),
-            nice: AtomicNice::new(nice),
-            oom_score_adj: AtomicI16::new(oom_score_adj),
-            timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
-            prof_clock,
-            start_time: Jiffies::elapsed(),
-            user_ns: Mutex::new(user_ns),
+            Self {
+                pid,
+                vmar: Mutex::new(Some(vmar)),
+                children_wait_queue,
+                pidfile_pollee: Pollee::new(),
+                tasks: Mutex::new(TaskSet::new()),
+                status: ProcessStatus::default(),
+                parent: ParentProcess::new(Weak::new()),
+                children: Mutex::new(Some(BTreeMap::new())),
+                process_group: Mutex::new(None),
+                reaped_children_stats: Mutex::new(ReapedChildrenStats::default()),
+                resource_limits,
+                cgroup: RcuOption::new(None),
+                nice: AtomicNice::new(nice),
+                oom_score_adj: AtomicI16::new(oom_score_adj),
+                is_child_subreaper: AtomicBool::new(false),
+                has_child_subreaper: AtomicBool::new(false),
+                sig_dispositions: Mutex::new(sig_dispositions),
+                sig_queues: SigQueues::new(),
+                parent_death_signal: AtomicSigNum::new_empty(),
+                exit_signal: AtomicSigNum::new_empty(),
+                prof_clock,
+                timer_manager,
+                start_time: Jiffies::elapsed(),
+                user_ns: Mutex::new(user_ns),
+            }
         })
     }
 

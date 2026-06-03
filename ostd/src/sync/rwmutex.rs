@@ -111,9 +111,9 @@ impl<T> RwMutex<T> {
     /// Creates a new read-write mutex with an initial value.
     pub const fn new(val: T) -> Self {
         Self {
-            val: UnsafeCell::new(val),
             lock: AtomicUsize::new(0),
             queue: WaitQueue::new(),
+            val: UnsafeCell::new(val),
         }
     }
 }
