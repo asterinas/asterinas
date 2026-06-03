@@ -251,7 +251,7 @@ pub fn global_heap_allocator_slot_map(_attr: TokenStream, item: TokenStream) -> 
     );
 
     quote!(
-        /// SAFETY: The name does not collide with other symbols.
+        // SAFETY: The name does not collide with other symbols.
         #[unsafe(no_mangle)]
         const extern "Rust" fn __global_heap_slot_info_from_layout(
             layout: ::core::alloc::Layout,
