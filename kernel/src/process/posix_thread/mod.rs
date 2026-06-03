@@ -29,6 +29,7 @@ use crate::{
 
 pub mod alien_access;
 mod builder;
+pub(super) mod cpu_sync;
 mod exit;
 pub mod futex;
 mod name;

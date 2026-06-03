@@ -2,9 +2,13 @@
 
 use core::cell::{Cell, Ref, RefCell, RefMut};
 
-use ostd::{arch::cpu::context::FpuContext, sync::RwArc, task::CurrentTask};
+#[cfg(target_arch = "x86_64")]
+use ostd::arch::cpu::context::{FsBase, GsBase};
+use ostd::{
+    arch::cpu::context::FpuContext, irq::DisabledLocalIrqGuard, sync::RwArc, task::CurrentTask,
+};
 
-use super::RobustListHead;
+use super::{RobustListHead, cpu_sync::CpuSync};
 use crate::{
     fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
@@ -36,9 +40,8 @@ pub struct ThreadLocal {
     /// File system.
     fs: RefCell<Arc<ThreadFsInfo>>,
 
-    // User FPU context.
-    fpu_context: RefCell<FpuContext>,
-    fpu_state: Cell<FpuState>,
+    // Supplementary userspace CPU context.
+    supp_user_context: SuppUserContext,
 
     // Signal.
     /// Stack address, size, and flags for the signal handler.
@@ -63,7 +66,7 @@ impl ThreadLocal {
         vmar: VmarHandle,
         file_table: RwArc<FileTable>,
         fs: Arc<ThreadFsInfo>,
-        fpu_context: FpuContext,
+        supp_user_context: SuppUserContext,
         user_ns: Arc<UserNamespace>,
         ns_proxy: Arc<NsProxy>,
     ) -> Self {
@@ -75,8 +78,7 @@ impl ThreadLocal {
             robust_list: RefCell::new(None),
             file_table: RefCell::new(Some(file_table)),
             fs: RefCell::new(fs),
-            fpu_context: RefCell::new(fpu_context),
-            fpu_state: Cell::new(FpuState::Unloaded),
+            supp_user_context,
             sig_stack: RefCell::new(SigStack::default()),
             sig_mask_saved: Cell::new(None),
             orig_syscall_ret: Cell::new(None),
@@ -162,8 +164,8 @@ impl ThreadLocal {
         Arc::strong_count(&self.fs.borrow()) > 2
     }
 
-    pub fn fpu(&self) -> ThreadFpu<'_> {
-        ThreadFpu(self)
+    pub fn supp_user_context(&self) -> &SuppUserContext {
+        &self.supp_user_context
     }
 
     pub fn sig_stack(&self) -> &RefCell<SigStack> {
@@ -199,88 +201,98 @@ impl ThreadLocal {
     }
 }
 
-/// The current state of `ThreadFpu`.
+/// Supplementary userspace CPU context.
 ///
-/// - `Activated`: The FPU context is currently loaded onto the CPU and it must be loaded
-///   while the associated task is running. If preemption occurs in between, the context switch
-///   must load FPU context again.
-/// - `Loaded`: The FPU context is currently loaded onto the CPU. It may or may not still
-///   be loaded in CPU after a context switch.
-/// - `Unloaded`: The FPU context is not currently loaded onto the CPU.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FpuState {
-    Activated,
-    Loaded,
-    Unloaded,
+/// # `UserContext` vs `SuppUserContext`.
+///
+/// The entire userspace CPU state is split into two structs:
+/// `UserContext` and `SuppUserContext`.
+/// `UserContext` is a set of essential CPU registers,
+/// including the general-purpose ones,
+/// that are used by the kernel as well.
+/// Thus, to avoid conflicts between the userspace and kernel space use,
+/// `UserContext` has to be saved/restored _eagerly_ upon every exit/enter from/to the userspace.
+/// For best performance,
+/// the number of registers in `UserContext` is kept as small as possible.
+///
+/// In contrast,
+/// `SuppUserContext` is a set of supplementary CPU registers,
+/// such as FPU registers,
+/// that are modifiable by the userspace
+/// but might or might not be used in the kernel space.
+/// As such,
+/// the saving and restoring of `SuppUserContext` can be delayed to
+/// the point of context switching,
+/// when saving and restoring are unavoidable.
+///
+/// In conclusion,
+/// dividing userspace CPU states into `UserContext` and `SuppUserContext`
+/// allows for better performance.
+pub struct SuppUserContext {
+    fpu: CpuSync<FpuContext>,
+    #[cfg(target_arch = "x86_64")]
+    fs_base: CpuSync<FsBase>,
+    #[cfg(target_arch = "x86_64")]
+    gs_base: CpuSync<GsBase>,
 }
 
-/// The FPU information for the _current_ thread.
-///
-/// # Notes about kernel preemption
-///
-/// All the methods of `ThreadFpu` assume that preemption will not occur.
-/// This means that the FPU state will not change unexpectedly
-/// (e.g., changing from `Loaded` to `Unloaded`).
-///
-/// In the current architecture, this is always true because kernel
-/// preemption was never implemented. More importantly, we cannot implement
-/// kernel preemption without refactoring the `ThreadLocal` mechanism
-/// because `ThreadLocal` cannot be accessed in interrupt handlers for
-/// soundness reasons. But such access is necessary for the preempted
-/// schedule.
-///
-/// Therefore, we omit the preemption guards for better performance and
-/// defer preemption considerations to future work.
-pub struct ThreadFpu<'a>(&'a ThreadLocal);
-
-impl ThreadFpu<'_> {
-    pub fn activate(&self) {
-        match self.0.fpu_state.get() {
-            FpuState::Activated => return,
-            FpuState::Loaded => (),
-            FpuState::Unloaded => self.0.fpu_context.borrow_mut().load(),
-        }
-        self.0.fpu_state.set(FpuState::Activated);
-    }
-
-    pub fn deactivate(&self) {
-        if self.0.fpu_state.get() == FpuState::Activated {
-            self.0.fpu_state.set(FpuState::Loaded);
+impl SuppUserContext {
+    pub fn new() -> Self {
+        Self {
+            fpu: CpuSync::new(FpuContext::new()),
+            #[cfg(target_arch = "x86_64")]
+            fs_base: CpuSync::new(FsBase::default()),
+            #[cfg(target_arch = "x86_64")]
+            gs_base: CpuSync::new(GsBase::default()),
         }
     }
 
-    pub fn clone_context(&self) -> FpuContext {
-        match self.0.fpu_state.get() {
-            FpuState::Activated | FpuState::Loaded => {
-                let mut fpu_context = self.0.fpu_context.borrow_mut();
-                fpu_context.save();
-                fpu_context.clone()
-            }
-            FpuState::Unloaded => self.0.fpu_context.borrow().clone(),
+    pub fn with_fpu_context(mut self, ctx: FpuContext) -> Self {
+        self.fpu = CpuSync::new(ctx);
+        self
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn with_fs_base(mut self, fs_base: FsBase) -> Self {
+        self.fs_base = CpuSync::new(fs_base);
+        self
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn with_gs_base(mut self, gs_base: GsBase) -> Self {
+        self.gs_base = CpuSync::new(gs_base);
+        self
+    }
+
+    pub fn fpu(&self) -> &CpuSync<FpuContext> {
+        &self.fpu
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn fs_base(&self) -> &CpuSync<FsBase> {
+        &self.fs_base
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn gs_base(&self) -> &CpuSync<GsBase> {
+        &self.gs_base
+    }
+
+    pub fn before_schedule(&self, guard: &DisabledLocalIrqGuard) {
+        self.fpu.before_schedule(guard);
+        #[cfg(target_arch = "x86_64")]
+        {
+            self.fs_base.before_schedule(guard);
+            self.gs_base.before_schedule(guard);
         }
     }
 
-    pub fn set_context(&self, context: FpuContext) {
-        let _ = self.0.fpu_context.replace(context);
-        self.0.fpu_state.set(FpuState::Unloaded);
-    }
-
-    pub fn before_schedule(&self) {
-        match self.0.fpu_state.get() {
-            FpuState::Activated => {
-                self.0.fpu_context.borrow_mut().save();
-            }
-            FpuState::Loaded => {
-                self.0.fpu_context.borrow_mut().save();
-                self.0.fpu_state.set(FpuState::Unloaded);
-            }
-            FpuState::Unloaded => (),
-        }
-    }
-
-    pub fn after_schedule(&self) {
-        if self.0.fpu_state.get() == FpuState::Activated {
-            self.0.fpu_context.borrow_mut().load();
+    pub fn before_user_exec(&self) {
+        self.fpu.before_user_exec();
+        #[cfg(target_arch = "x86_64")]
+        {
+            self.fs_base.before_user_exec();
+            self.gs_base.before_user_exec();
         }
     }
 }

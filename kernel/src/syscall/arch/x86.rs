@@ -316,7 +316,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SCHED_GET_PRIORITY_MIN = 147 => sys_sched_get_priority_min(args[..1]);
     SYS_PIVOT_ROOT = 155       => sys_pivot_root(args[..2]);
     SYS_PRCTL = 157            => sys_prctl(args[..5]);
-    SYS_ARCH_PRCTL = 158       => sys_arch_prctl(args[..2], &mut user_ctx);
+    SYS_ARCH_PRCTL = 158       => sys_arch_prctl(args[..2]);
     SYS_SETRLIMIT = 160        => sys_setrlimit(args[..2]);
     SYS_CHROOT = 161           => sys_chroot(args[..1]);
     SYS_SYNC = 162             => sys_sync(args[..0]);

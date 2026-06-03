@@ -170,12 +170,6 @@ impl UserContext {
     pub fn tls_pointer(&self) -> usize {
         self.tp()
     }
-
-    /// Activates the thread-local storage pointer for the current task.
-    pub fn activate_tls_pointer(&self) {
-        // In RISC-V, `tp` will be loaded at `UserContext::execute`, so it does not need to be
-        // activated in advance.
-    }
 }
 
 impl UserContextApiInternal for UserContext {
@@ -185,6 +179,7 @@ impl UserContextApiInternal for UserContext {
     {
         loop {
             crate::task::scheduler::might_preempt();
+            crate::task::call_pre_user_run_handler();
             self.user_context.run();
 
             let scause = riscv::register::scause::read();
