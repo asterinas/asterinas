@@ -3,8 +3,8 @@
 use super::{RawSocketOption, SocketOption, impl_raw_socket_option};
 use crate::{
     net::socket::ip::stream_options::{
-        Congestion, DeferAccept, Inq, KeepIdle, MaxSegment, NoDelay, SynCnt, UserTimeout,
-        WindowClamp,
+        Congestion, DeferAccept, Inq, KeepCnt, KeepIdle, KeepIntvl, MaxSegment, NoDelay, SynCnt,
+        UserTimeout, WindowClamp,
     },
     prelude::*,
 };
@@ -23,13 +23,15 @@ pub enum CTcpOptionName {
     MAXSEG = 2,
     /// Never send partially complete segments
     CORK = 3,
-    /// Start keeplives after this period     
+    /// Start keepalives after this period
     KEEPIDLE = 4,
     /// Interval between keepalives
-    KEEPALIVE = 5,
+    KEEPINTVL = 5,
+    /// Number of keepalives before death
+    KEEPCNT = 6,
     /// Number of SYN retransmits
     SYNCNT = 7,
-    /// Wake up listener only when data arriv
+    /// Wake up listener only when data arrives
     DEFER_ACCEPT = 9,
     /// Bound advertised window
     WINDOW_CLAMP = 10,
@@ -47,6 +49,8 @@ pub fn new_tcp_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CTcpOptionName::NODELAY => Ok(Box::new(NoDelay::new())),
         CTcpOptionName::MAXSEG => Ok(Box::new(MaxSegment::new())),
         CTcpOptionName::KEEPIDLE => Ok(Box::new(KeepIdle::new())),
+        CTcpOptionName::KEEPINTVL => Ok(Box::new(KeepIntvl::new())),
+        CTcpOptionName::KEEPCNT => Ok(Box::new(KeepCnt::new())),
         CTcpOptionName::SYNCNT => Ok(Box::new(SynCnt::new())),
         CTcpOptionName::DEFER_ACCEPT => Ok(Box::new(DeferAccept::new())),
         CTcpOptionName::WINDOW_CLAMP => Ok(Box::new(WindowClamp::new())),
@@ -60,6 +64,8 @@ pub fn new_tcp_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
 impl_raw_socket_option!(NoDelay);
 impl_raw_socket_option!(MaxSegment);
 impl_raw_socket_option!(KeepIdle);
+impl_raw_socket_option!(KeepIntvl);
+impl_raw_socket_option!(KeepCnt);
 impl_raw_socket_option!(SynCnt);
 impl_raw_socket_option!(DeferAccept);
 impl_raw_socket_option!(WindowClamp);

@@ -4,6 +4,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::{
     socket::{NeedIfacePoll, RawTcpOption, RawTcpSetOption},
+    time::Duration,
     wire::IpEndpoint,
 };
 use connected::{ConnectedStream, close_and_linger};
@@ -12,7 +13,7 @@ use init::InitStream;
 use listen::ListenStream;
 use observer::StreamObserver;
 use options::{
-    Congestion, DeferAccept, Inq, KEEPALIVE_INTERVAL, KeepIdle, MaxSegment, NoDelay, SynCnt,
+    Congestion, DeferAccept, Inq, KeepCnt, KeepIdle, KeepIntvl, MaxSegment, NoDelay, SynCnt,
     UserTimeout, WindowClamp,
 };
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
@@ -93,8 +94,10 @@ impl OptionSet {
     }
 
     fn raw(&self) -> RawTcpOption {
+        let keep_alive_interval = Duration::from_secs(self.tcp.keep_intvl() as u64);
+
         RawTcpOption {
-            keep_alive: self.socket.keep_alive().then_some(KEEPALIVE_INTERVAL),
+            keep_alive: self.socket.keep_alive().then_some(keep_alive_interval),
             is_nagle_enabled: !self.tcp.no_delay(),
         }
     }
@@ -112,12 +115,27 @@ impl StreamSocket {
         })
     }
 
-    fn new_accepted(connected_stream: ConnectedStream) -> Arc<Self> {
+    fn new_accepted(connected_stream: ConnectedStream, listener_options: &OptionSet) -> Arc<Self> {
         let options = connected_stream.raw_with(|raw_tcp_socket| {
             let mut options = OptionSet::new();
 
-            if raw_tcp_socket.keep_alive().is_some() {
+            // Inherit socket options from `raw_tcp_socket` first, then fall
+            // back to `listener_options` for options the raw socket cannot
+            // expose.
+            //
+            // The raw socket is created when a connection arrives, before
+            // `accept()` returns it. If the listener's options are changed
+            // after that but before `accept()` returns, using only
+            // `listener_options` would give the accepted socket "new" options
+            // while its raw socket still has the "old" ones.
+
+            if let Some(interval) = raw_tcp_socket.keep_alive() {
                 options.socket.set_keep_alive(true);
+                options.tcp.set_keep_intvl(interval.secs() as u32);
+            } else {
+                options
+                    .tcp
+                    .set_keep_intvl(listener_options.tcp.keep_intvl());
             }
 
             if !raw_tcp_socket.nagle_enabled() {
@@ -303,7 +321,8 @@ impl StreamSocket {
 
         let accepted = listen_stream.try_accept().map(|connected_stream| {
             let remote_endpoint = connected_stream.remote_endpoint();
-            let accepted_socket = Self::new_accepted(connected_stream);
+            let listener_options = self.options.read();
+            let accepted_socket = Self::new_accepted(connected_stream, &listener_options);
             (accepted_socket as _, remote_endpoint.into())
         });
         let iface_to_poll = listen_stream.iface().clone();
@@ -639,6 +658,14 @@ impl Socket for StreamSocket {
                 let keep_idle = options.tcp.keep_idle();
                 tcp_keep_idle.set(keep_idle);
             }
+            tcp_keep_intvl @ KeepIntvl => {
+                let keep_intvl = options.tcp.keep_intvl();
+                tcp_keep_intvl.set(keep_intvl);
+            }
+            tcp_keep_cnt @ KeepCnt => {
+                let keep_cnt = options.tcp.keep_cnt();
+                tcp_keep_cnt.set(keep_cnt);
+            }
             tcp_syn_cnt @ SynCnt => {
                 let syn_cnt = options.tcp.syn_cnt();
                 tcp_syn_cnt.set(syn_cnt);
@@ -678,7 +705,12 @@ impl Socket for StreamSocket {
         let mut options = self.options.write();
 
         // Deal with socket-level options
-        let need_iface_poll = match options.socket.set_option(option, state.as_ref()) {
+        let socket_option_result = {
+            let OptionSet { socket, tcp, .. } = &mut *options;
+            socket.set_option(option, &(state.as_ref(), &*tcp))
+        };
+
+        let need_iface_poll = match socket_option_result {
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // Deal with IP-level options
                 match options.ip.set_option(option, state.as_ref()) {
@@ -748,6 +780,35 @@ fn do_tcp_setsockopt(
             options.tcp.set_keep_idle(*keepidle);
 
             // TODO: Track when the socket becomes idle to actually support keep idle.
+        }
+        tcp_keep_intvl @ KeepIntvl => {
+            // Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/net/tcp.h#L168>
+            const MIN_KEEP_INTVL: u32 = 1;
+            const MAX_KEEP_INTVL: u32 = 32767;
+
+            let keepintvl = tcp_keep_intvl.get().unwrap();
+            if *keepintvl < MIN_KEEP_INTVL || *keepintvl > MAX_KEEP_INTVL {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the keepalive interval is out of bounds"
+                );
+            }
+            options.tcp.set_keep_intvl(*keepintvl);
+
+            return Ok(state.set_keep_alive(options.socket.keep_alive(), *keepintvl));
+        }
+        tcp_keep_cnt @ KeepCnt => {
+            // Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/net/tcp.h#L169>
+            const MIN_KEEP_CNT: u8 = 1;
+            const MAX_KEEP_CNT: u8 = 127;
+
+            let keepcnt = tcp_keep_cnt.get().unwrap();
+            if *keepcnt < MIN_KEEP_CNT || *keepcnt > MAX_KEEP_CNT {
+                return_errno_with_message!(Errno::EINVAL, "the keepalive count is out of bounds");
+            }
+            options.tcp.set_keep_cnt(*keepcnt);
+
+            // TODO: Track the keepalive count in the underlying TCP socket.
         }
         tcp_syn_cnt @ SynCnt => {
             const MAX_TCP_SYN_CNT: u8 = 127;
@@ -821,15 +882,7 @@ impl State {
             State::Listen(listen_stream) => Some(listen_stream.iface()),
         }
     }
-}
 
-impl GetSocketLevelOption for State {
-    fn is_listening(&self) -> bool {
-        matches!(self, Self::Listen(_))
-    }
-}
-
-impl SetSocketLevelOption for State {
     fn set_reuse_addr(&self, reuse_addr: bool) {
         let bound_port = match self {
             State::Init(init_stream) => {
@@ -849,17 +902,29 @@ impl SetSocketLevelOption for State {
         bound_port.set_can_reuse(reuse_addr);
     }
 
-    fn set_keep_alive(&self, keep_alive: bool) -> NeedIfacePoll {
-        let interval = if keep_alive {
-            Some(KEEPALIVE_INTERVAL)
-        } else {
-            None
-        };
+    fn set_keep_alive(&self, is_keep_alive_enabled: bool, keep_intvl: u32) -> NeedIfacePoll {
+        let interval = is_keep_alive_enabled.then(|| Duration::from_secs(keep_intvl as u64));
 
         let set_keepalive = |raw_socket: &dyn RawTcpSetOption| raw_socket.set_keep_alive(interval);
 
         self.set_raw_option(set_keepalive)
             .unwrap_or(NeedIfacePoll::FALSE)
+    }
+}
+
+impl GetSocketLevelOption for State {
+    fn is_listening(&self) -> bool {
+        matches!(self, Self::Listen(_))
+    }
+}
+
+impl SetSocketLevelOption for (&State, &TcpOptionSet) {
+    fn set_reuse_addr(&self, reuse_addr: bool) {
+        self.0.set_reuse_addr(reuse_addr);
+    }
+
+    fn set_keep_alive(&self, keep_alive: bool) -> NeedIfacePoll {
+        self.0.set_keep_alive(keep_alive, self.1.keep_intvl())
     }
 }
 
