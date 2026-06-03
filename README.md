@@ -8,7 +8,7 @@ so that GitHub will render that URL as a video player in Markdown.
 The original file name will be displayed up in the top bar of the video player.
 So make sure you give the video file a cool name before uploading it.
 -->
-https://github.com/user-attachments/assets/26be2d18-994d-4658-a1b8-f8959bd88b75
+https://github.com/user-attachments/assets/f77ee711-a0d6-413f-aaaa-8f9566df3e41
 
 <p align="center">
     <a href="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml/badge.svg?event=push" alt="Test x86-64" style="max-width: 100%;"></a>
