@@ -317,12 +317,12 @@ pub(super) struct DirBlockViewIter<'a> {
 }
 
 impl DirBlockViewIter<'_> {
-    /// Reads the next entry header and name.
+    /// Reads the next entry header and advances the iterator.
     ///
-    /// Returns `(offset_within_block, DirEntry)` when an entry is found. The
-    /// `offset_within_block` is relative to the `DirBlockView`'s start, not
-    /// absolute.
-    pub(super) fn next_entry(&mut self) -> Result<Option<(usize, DirEntry<'_>)>> {
+    /// Returns `(offset_within_block, DirEntryHeader)` when an entry is found.
+    /// The `offset_within_block` is relative to the start of the
+    /// `DirBlockView`.
+    pub(super) fn next_entry_header(&mut self) -> Result<Option<(usize, DirEntryHeader)>> {
         let end = self.block.offset + self.block.limit;
         if self.cursor >= end {
             return Ok(None);
@@ -330,9 +330,27 @@ impl DirBlockViewIter<'_> {
 
         let header = self.block.read_header(self.cursor)?;
         let rec_len = header.rec_len as usize;
-        let name_len = header.name_len as usize;
+        let entry_offset = self.cursor - self.block.offset;
+        self.cursor += rec_len;
+
+        Ok(Some((entry_offset, header)))
+    }
+
+    /// Reads the next entry and advances the iterator.
+    ///
+    /// Returns `(offset_within_block, DirEntry)` when an entry is found. The
+    /// `offset_within_block` is relative to the start of the `DirBlockView`.
+    /// Deleted entries are returned with an empty `name`.
+    ///
+    /// The returned `name` borrows from the iterator's reusable buffer.
+    pub(super) fn next_entry(&mut self) -> Result<Option<(usize, DirEntry<'_>)>> {
+        let Some((entry_offset, header)) = self.next_entry_header()? else {
+            return Ok(None);
+        };
+
         let name = if header.ino != 0 {
-            let name_abs_offset = self.cursor + Self::HEADER_LEN;
+            let name_len = header.name_len as usize;
+            let name_abs_offset = self.block.offset + entry_offset + Self::HEADER_LEN;
             self.block
                 .page_cache
                 .read_bytes(name_abs_offset, &mut self.name_buf[..name_len])?;
@@ -340,9 +358,6 @@ impl DirBlockViewIter<'_> {
         } else {
             &[]
         };
-
-        let entry_offset = self.cursor - self.block.offset;
-        self.cursor += rec_len;
 
         Ok(Some((entry_offset, DirEntry { header, name })))
     }
