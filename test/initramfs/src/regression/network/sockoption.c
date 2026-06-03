@@ -282,6 +282,74 @@ FN_TEST(keepidle)
 }
 END_TEST()
 
+FN_TEST(keepintvl)
+{
+	int keepintvl;
+	socklen_t keepintvl_len = sizeof(keepintvl);
+
+	// 1. Check default values
+	refresh_connection();
+	TEST_RES(getsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPINTVL,
+			    &keepintvl, &keepintvl_len),
+		 keepintvl == 75);
+	TEST_RES(getsockopt(sk_accepted, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl,
+			    &keepintvl_len),
+		 keepintvl == 75);
+
+	// 2. Set and get value
+	int seconds = 30;
+	TEST_SUCC(setsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPINTVL, &seconds,
+			     sizeof(seconds)));
+	TEST_RES(getsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPINTVL,
+			    &keepintvl, &keepintvl_len),
+		 keepintvl == 30);
+
+	// 3. Inherit the value from the listening socket
+	int enabled = 1;
+	TEST_SUCC(setsockopt(sk_listen, IPPROTO_TCP, TCP_KEEPINTVL, &seconds,
+			     sizeof(seconds)));
+	TEST_SUCC(setsockopt(sk_listen, SOL_SOCKET, SO_KEEPALIVE, &enabled,
+			     sizeof(enabled)));
+	refresh_connection();
+	TEST_RES(getsockopt(sk_accepted, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl,
+			    &keepintvl_len),
+		 keepintvl == 30);
+
+	// 4. Inherit the value while keepalive is disabled
+	enabled = 0;
+	seconds = 50;
+	TEST_SUCC(setsockopt(sk_listen, IPPROTO_TCP, TCP_KEEPINTVL, &seconds,
+			     sizeof(seconds)));
+	TEST_SUCC(setsockopt(sk_listen, SOL_SOCKET, SO_KEEPALIVE, &enabled,
+			     sizeof(enabled)));
+	refresh_connection();
+	TEST_RES(getsockopt(sk_accepted, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl,
+			    &keepintvl_len),
+		 keepintvl == 50);
+}
+END_TEST()
+
+FN_TEST(keepcnt)
+{
+	int keepcnt;
+	socklen_t keepcnt_len = sizeof(keepcnt);
+
+	// 1. Check default value
+	refresh_connection();
+	TEST_RES(getsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt,
+			    &keepcnt_len),
+		 keepcnt == 9);
+
+	// 2. Set and get value
+	int count = 5;
+	TEST_SUCC(setsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPCNT, &count,
+			     sizeof(count)));
+	TEST_RES(getsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt,
+			    &keepcnt_len),
+		 keepcnt == 5);
+}
+END_TEST()
+
 FN_TEST(ip_tos)
 {
 	int tos;
