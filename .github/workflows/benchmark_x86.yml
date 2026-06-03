@@ -107,7 +107,7 @@ jobs:
       max-parallel: 1
     timeout-minutes: 60
     container: 
-      image: asterinas/asterinas:0.17.2-20260523
+      image: asterinas/asterinas:0.18.0-20260603
       options: -v /dev:/dev --privileged
 
     steps:
