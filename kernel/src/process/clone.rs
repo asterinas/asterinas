@@ -708,11 +708,12 @@ fn clone_tls_regs(
     tls: u64,
 ) -> (FsBase, GsBase) {
     let supp = thread_local.supp_user_context();
-    let mut child_fs_base = supp.fs_base().get();
+    let child_fs_base = if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
+        FsBase::new(tls as usize)
+    } else {
+        supp.fs_base().get()
+    };
     let child_gs_base = supp.gs_base().get();
-    if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
-        child_fs_base = FsBase::new(tls as usize);
-    }
 
     (child_fs_base, child_gs_base)
 }
