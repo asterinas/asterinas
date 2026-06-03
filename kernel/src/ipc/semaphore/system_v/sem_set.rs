@@ -253,14 +253,14 @@ impl SemaphoreSet {
 
         Ok(Self {
             num_sems,
-            permission,
-            sem_ctime: AtomicU64::new(RealTimeCoarseClock::get().read_time().as_secs()),
-            sem_otime: AtomicU64::new(0),
             inner: Mutex::new(SemSetInner {
                 sems: sems.into_boxed_slice(),
                 pending_alter: LinkedList::new(),
                 pending_const: LinkedList::new(),
             }),
+            permission,
+            sem_ctime: AtomicU64::new(RealTimeCoarseClock::get().read_time().as_secs()),
+            sem_otime: AtomicU64::new(0),
         })
     }
 

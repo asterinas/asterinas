@@ -82,8 +82,8 @@ impl<L: BlockLog> CryptoChain<L> {
     pub fn new(block_log: L) -> Self {
         Self {
             block_log,
-            block_range: 0..0,
             key: Key::random(),
+            block_range: 0..0,
             block_macs: Vec::new(),
         }
     }

@@ -162,9 +162,9 @@ impl<D: DmaDirection> DmaPage<D> {
         segments.set(free_segment_index, true);
 
         let segment = DmaSegment {
-            size: self.segment_size,
             dma_stream: self.storage.clone(),
             start_addr: self.storage.daddr() + free_segment_index * self.segment_size,
+            size: self.segment_size,
             page: Arc::downgrade(self),
         };
 

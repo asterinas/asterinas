@@ -134,9 +134,9 @@ impl MessageReceiver {
         let queue = MessageQueue {
             addr: Once::new(),
             inner: Mutex::new(Some(inner)),
+            is_pass_cred: AtomicBool::new(false),
             pollee: Pollee::new(),
             send_wait_queue: WaitQueue::new(),
-            is_pass_cred: AtomicBool::new(false),
         };
 
         Self {

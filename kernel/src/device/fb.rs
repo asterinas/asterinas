@@ -293,8 +293,8 @@ impl FbHandle {
             right_margin: DEFAULT_RIGHT_MARGIN,
             upper_margin: DEFAULT_UPPER_MARGIN,
             lower_margin: DEFAULT_LOWER_MARGIN,
-            vsync_len: DEFAULT_VSYNC_LEN,
             hsync_len: (self.framebuffer.width() as u32 / 8) & 0xf8,
+            vsync_len: DEFAULT_VSYNC_LEN,
             ..Default::default()
         }
     }

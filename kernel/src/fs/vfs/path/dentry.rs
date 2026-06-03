@@ -245,8 +245,8 @@ impl Dentry {
         });
 
         Arc::new_cyclic(|weak_self| Self {
-            type_,
             inode,
+            type_,
             name_and_parent,
             dir_state,
             flags: AtomicU32::new(DentryFlags::empty().bits()),
