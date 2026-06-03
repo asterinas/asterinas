@@ -57,8 +57,8 @@ impl<'a> FsCreationCtx<'a> {
         task_ctx: &'a Context<'a>,
     ) -> Self {
         Self {
-            flags,
             source,
+            flags,
             args,
             task_ctx,
         }

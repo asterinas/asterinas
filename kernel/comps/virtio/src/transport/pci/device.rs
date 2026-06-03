@@ -317,12 +317,12 @@ impl VirtioPciModernTransport {
         let msix_manager = VirtioMsixManager::new(msix);
 
         Ok(Self {
+            device_type,
             common_device,
             common_cfg,
             device_cfg,
             notify,
             msix_manager,
-            device_type,
         })
     }
 }

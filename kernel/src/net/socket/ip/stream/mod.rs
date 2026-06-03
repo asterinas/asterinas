@@ -151,8 +151,8 @@ impl StreamSocket {
         connected_stream.init_observer(StreamObserver::new(pollee.clone()));
 
         Arc::new(Self {
-            options: RwLock::new(options),
             state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
+            options: RwLock::new(options),
             is_nonblocking: AtomicBool::new(false),
             pollee,
             pseudo_path: SockFs::new_path(),

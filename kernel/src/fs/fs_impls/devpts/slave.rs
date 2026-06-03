@@ -23,15 +23,16 @@ pub struct PtySlaveInode {
 impl PtySlaveInode {
     pub fn new(device: Arc<PtySlave>, fs: Weak<DevPts>) -> Arc<Self> {
         let devpts = fs.upgrade().unwrap();
+        let metadata = Metadata::new_device(
+            device.index() as u64 + FIRST_SLAVE_INO,
+            mkmod!(u+rw, g+w),
+            BLOCK_SIZE,
+            device.as_ref(),
+            devpts.sb().container_dev_id,
+        );
         Arc::new(Self {
-            metadata: RwLock::new(Metadata::new_device(
-                device.index() as u64 + FIRST_SLAVE_INO,
-                mkmod!(u+rw, g+w),
-                BLOCK_SIZE,
-                device.as_ref(),
-                devpts.sb().container_dev_id,
-            )),
             device,
+            metadata: RwLock::new(metadata),
             extension: Extension::new(),
             fs,
         })

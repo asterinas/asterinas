@@ -168,9 +168,9 @@ impl Ext2 {
         };
 
         let ext2 = Arc::new_cyclic(|weak_self| Ext2 {
-            block_groups,
             block_device: device,
             super_block: RwMutex::new(Dirty::new(super_block)),
+            block_groups,
             nr_inodes_per_group,
             group_descriptors_segment,
             mount_options,
