@@ -12,7 +12,7 @@ use crate::x86::amd64_efi::alloc::alloc_pages;
 
 pub(super) const PAGE_SIZE: u64 = 4096;
 
-/// SAFETY: The name does not collide with other symbols.
+// SAFETY: The name does not collide with other symbols.
 #[unsafe(no_mangle)]
 unsafe extern "sysv64" fn main_efi_common64(
     handle: Handle,
