@@ -76,9 +76,17 @@ impl PageCacheBackend for VirtioFsInode {
     ) -> Result<()> {
         locked_page.wait_until_finish_writing_back();
 
+        let page_start = page_offset(idx)?;
+        let file_size = self.size();
+        if page_start >= file_size {
+            return_errno_with_message!(Errno::EINVAL, "virtiofs writeback page is beyond EOF");
+        }
+        let writeback_len = PAGE_SIZE.min(file_size - page_start);
+
         let fs = self.fs_ref();
-        let data_buf = fs.session().alloc_write_buf(PAGE_SIZE)?;
-        let page_reader = locked_page.reader();
+        let data_buf = fs.session().alloc_write_buf(writeback_len)?;
+        let mut page_reader = locked_page.reader();
+        page_reader.limit(writeback_len);
 
         data_buf
             .writer()
@@ -105,8 +113,8 @@ impl PageCacheBackend for VirtioFsInode {
         let complete_page = page.clone();
         let write_req = WriteReq::new(
             handle.fh(),
-            page_offset(idx)? as u64,
-            PAGE_SIZE as u32,
+            page_start as u64,
+            writeback_len as u32,
             handle.file_flags(),
             WriteFlags::empty(),
         );

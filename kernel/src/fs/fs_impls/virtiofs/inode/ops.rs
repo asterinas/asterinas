@@ -156,26 +156,32 @@ impl VirtioFsInode {
         let page_cache = inner.page_cache().unwrap();
 
         if requested_end > old_size {
-            page_cache.resize(requested_end, old_size)?;
+            // Extend the visible EOF before growing the page cache.
+            self.set_size(requested_end);
+            page_cache
+                .resize(requested_end, old_size)
+                .expect("expanding the page cache should not fail");
         }
 
-        // If a later step fails, the enlarged page-cache capacity does not
-        // publish an EOF extension. The cached inode size advances only after
-        // writeback succeeds, and cached reads are limited by that size.
+        let mut write_through_page_cache = || -> Result<()> {
+            page_cache.write(offset, reader).map_err(Error::from)?;
+            page_cache.flush_range(offset..requested_end)
+        };
 
-        page_cache.write(offset, reader)?;
-
-        // FIXME: The page cache writeback API reports only the page index, not
-        // the dirty byte range within the page. Although this call flushes the
-        // requested byte range, the virtio-fs client currently only submits
-        // whole-page writes to the server. This can write bytes outside the
-        // user request.
-        page_cache.flush_range(offset..requested_end)?;
+        if let Err(err) = write_through_page_cache() {
+            if requested_end > old_size {
+                // Roll back in truncate order: shrink the page cache before
+                // restoring the old visible EOF.
+                page_cache.resize(old_size, requested_end)?;
+                self.set_size(old_size);
+            }
+            return Err(err);
+        }
 
         let new_size = self.size().max(requested_end);
         let attr_version = self.fs_ref().session().bump_attr_version();
+
         inner.commit_local_write(new_size, attr_version);
-        self.set_size(new_size);
 
         Ok(write_len)
     }
