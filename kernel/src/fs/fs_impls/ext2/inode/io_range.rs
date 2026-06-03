@@ -83,7 +83,6 @@ mod test {
             inode::{RAW_BLOCK_PTRS_LEN, block_manager::RawBlockPtrs},
             test_utils::Ext2FixtureBuilder,
         },
-        prelude::*,
         time::clocks,
     };
 

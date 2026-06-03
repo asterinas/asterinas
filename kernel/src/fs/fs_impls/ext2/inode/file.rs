@@ -7,6 +7,8 @@
 //! File size, page-cache state, and ext2 block mappings must stay coherent
 //! across those entry points.
 
+#![short_vis_path::add(ext2)]
+
 use ostd::mm::io::util::HasVmReaderWriter;
 
 use super::{super::Ext2, FileFlags, Inode, InodeInner, io_range::IoRange};
@@ -20,11 +22,7 @@ use crate::{
 
 impl Inode {
     /// Reads file data at `offset` through the page cache.
-    pub(in crate::fs::fs_impls::ext2) fn read_at(
-        &self,
-        offset: usize,
-        writer: &mut VmWriter,
-    ) -> Result<usize> {
+    pub(in ext2) fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -41,11 +39,7 @@ impl Inode {
     }
 
     /// Writes file data at `offset` through the page cache.
-    pub(in crate::fs::fs_impls::ext2) fn write_at(
-        &self,
-        offset: usize,
-        reader: &mut VmReader,
-    ) -> Result<usize> {
+    pub(in ext2) fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -61,11 +55,7 @@ impl Inode {
     }
 
     /// Direct-I/O read path.
-    pub(in crate::fs::fs_impls::ext2) fn read_direct_at(
-        &self,
-        offset: usize,
-        writer: &mut VmWriter,
-    ) -> Result<usize> {
+    pub(in ext2) fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -87,11 +77,7 @@ impl Inode {
     }
 
     /// Direct-I/O write path with pre-allocation and rollback.
-    pub(in crate::fs::fs_impls::ext2) fn write_direct_at(
-        &self,
-        offset: usize,
-        reader: &mut VmReader,
-    ) -> Result<usize> {
+    pub(in ext2) fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -112,7 +98,7 @@ impl Inode {
     }
 
     /// Truncates or extends the file to `new_size` bytes.
-    pub(in crate::fs::fs_impls::ext2) fn resize(&self, new_size: usize) -> Result<()> {
+    pub(in ext2) fn resize(&self, new_size: usize) -> Result<()> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -148,12 +134,7 @@ impl Inode {
     }
 
     /// Implements fallocate operations for ext2.
-    pub(in crate::fs::fs_impls::ext2) fn fallocate(
-        &self,
-        mode: FallocMode,
-        offset: usize,
-        len: usize,
-    ) -> Result<()> {
+    pub(in ext2) fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
         if len == 0 {
             return Ok(());
         }

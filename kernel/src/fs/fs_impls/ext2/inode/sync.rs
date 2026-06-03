@@ -7,6 +7,8 @@
 //! metadata, and inode-table state ordered consistently; reclaim must release
 //! all storage owned by a zero-link inode exactly once.
 
+#![short_vis_path::add(ext2)]
+
 use super::{super::Ext2, Inode, InodeInner, RawInode};
 use crate::fs::ext2::{prelude::*, utils};
 
@@ -15,7 +17,7 @@ impl Inode {
     ///
     /// Writes xattrs, data pages, and indirect blocks back before staging dirty
     /// inode metadata in the block group's inode-table page cache.
-    pub(in crate::fs::fs_impls::ext2) fn sync_all(&self) -> Result<()> {
+    pub(in ext2) fn sync_all(&self) -> Result<()> {
         // Step 1: flush the xattr.
         if let Some(xattr) = &self.xattr {
             xattr.flush()?;
@@ -38,7 +40,7 @@ impl Inode {
     /// Writes data pages and indirect blocks back before staging dirty inode
     /// metadata in the block group's inode-table page cache. This does not flush
     /// xattrs.
-    pub(in crate::fs::fs_impls::ext2) fn sync_data(&self) -> Result<()> {
+    pub(in ext2) fn sync_data(&self) -> Result<()> {
         let fs = self.fs()?;
         let mut inner = self.inner.write();
 

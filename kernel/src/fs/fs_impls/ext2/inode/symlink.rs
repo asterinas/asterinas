@@ -11,6 +11,8 @@
 //! - **Slow symlink** — longer targets are written to an allocated data block
 //!   through the normal page-cache path.
 
+#![short_vis_path::add(ext2)]
+
 use super::{
     super::Ext2, Inode, InodeInner, InodePayload, MAX_FAST_SYMLINK_LEN, RAW_BLOCK_PTRS_LEN,
     block_manager::RawBlockPtrs,
@@ -51,7 +53,7 @@ impl FastSymlinkTarget {
 
 impl Inode {
     /// Reads symbolic link target bytes and decodes them as UTF-8.
-    pub(in crate::fs::fs_impls::ext2) fn read_link(&self) -> Result<String> {
+    pub(in ext2) fn read_link(&self) -> Result<String> {
         if self.type_ != InodeType::SymLink {
             return_errno!(Errno::EINVAL);
         }
@@ -61,7 +63,7 @@ impl Inode {
     }
 
     /// Writes symbolic link target bytes into either fast-inline or slow-page-cache storage.
-    pub(in crate::fs::fs_impls::ext2) fn write_link(&self, target: &str) -> Result<()> {
+    pub(in ext2) fn write_link(&self, target: &str) -> Result<()> {
         if self.type_ != InodeType::SymLink {
             return_errno!(Errno::EINVAL);
         }

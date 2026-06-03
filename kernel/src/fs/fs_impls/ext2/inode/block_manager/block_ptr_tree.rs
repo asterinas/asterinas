@@ -2,6 +2,8 @@
 
 //! Logical-to-physical block translation via the ext2 block-pointer tree.
 
+#![short_vis_path::add(inode)]
+
 use device_id::{decode_device_numbers, encode_device_numbers};
 use smallvec::SmallVec;
 
@@ -29,17 +31,14 @@ const MAX_BLOCK_POINTER_LEVELS: usize = 4;
 /// Non-zero pointers must refer either to data blocks at the leaf level
 /// or to indirect metadata blocks at the level selected by the slot.
 #[derive(Debug)]
-pub(in crate::fs::fs_impls::ext2::inode) struct BlockPtrTree {
+pub(in inode) struct BlockPtrTree {
     raw_block_ptrs: Dirty<RawBlockPtrs>,
     indirect_blocks_manager: Mutex<IndirectBlockManager>,
 }
 
 impl BlockPtrTree {
     /// Creates a new block-pointer tree from the on-disk raw pointers.
-    pub(in crate::fs::fs_impls::ext2::inode) fn new(
-        raw_block_ptrs: RawBlockPtrs,
-        fs: Weak<Ext2>,
-    ) -> Self {
+    pub(in inode) fn new(raw_block_ptrs: RawBlockPtrs, fs: Weak<Ext2>) -> Self {
         Self {
             raw_block_ptrs: Dirty::new(raw_block_ptrs),
             indirect_blocks_manager: Mutex::new(IndirectBlockManager::new(fs)),
@@ -47,7 +46,7 @@ impl BlockPtrTree {
     }
 
     /// Returns a reference to the raw on-disk block pointer state.
-    pub(in crate::fs::fs_impls::ext2::inode) fn raw_block_ptrs(&self) -> &RawBlockPtrs {
+    pub(in inode) fn raw_block_ptrs(&self) -> &RawBlockPtrs {
         &self.raw_block_ptrs
     }
 
@@ -62,12 +61,12 @@ impl BlockPtrTree {
     }
 
     /// Flushes all dirty cached indirect blocks to the device.
-    pub(in crate::fs::fs_impls::ext2::inode) fn sync_indirect_blocks(&self) -> Result<()> {
+    pub(in inode) fn sync_indirect_blocks(&self) -> Result<()> {
         self.indirect_blocks_manager.lock().sync()
     }
 
     /// Resolves a logical block to a contiguous physical block range.
-    pub(in crate::fs::fs_impls::ext2::inode) fn lookup_block_range(
+    pub(in inode) fn lookup_block_range(
         &self,
         iblock: Iblock,
         max_blocks: u32,
@@ -81,10 +80,7 @@ impl BlockPtrTree {
     }
 
     /// Resolves a logical block to physical block (read-only).
-    pub(in crate::fs::fs_impls::ext2::inode) fn lookup_block(
-        &self,
-        iblock: Iblock,
-    ) -> Result<Option<Ext2Bid>> {
+    pub(in inode) fn lookup_block(&self, iblock: Iblock) -> Result<Option<Ext2Bid>> {
         let range = self.lookup_block_range(iblock, 1)?;
         Ok(if range.is_empty() {
             None
@@ -110,7 +106,7 @@ impl BlockPtrTree {
     // TODO: When a leaf block range is partially allocated, we walk the indirect tree
     // twice: once to discover the existing prefix, then again to find the hole
     // and allocate. A cursor over the leaf block could eliminate the second walk.
-    pub(in crate::fs::fs_impls::ext2::inode) fn resolve_block_range(
+    pub(in inode) fn resolve_block_range(
         &mut self,
         fs: &Arc<Ext2>,
         iblock: Iblock,
@@ -143,11 +139,7 @@ impl BlockPtrTree {
     /// Like Linux's `ext2_truncate_blocks`, this is a best-effort operation.
     /// Errors are logged but not propagated — leaked blocks from partial
     /// failures are recoverable by e2fsck.
-    pub(in crate::fs::fs_impls::ext2::inode) fn truncate_to_byte_len(
-        &mut self,
-        fs: &Ext2,
-        new_size: usize,
-    ) {
+    pub(in inode) fn truncate_to_byte_len(&mut self, fs: &Ext2, new_size: usize) {
         // First logical block to free = ceil(new_size / block_size).
         let iblock = match Iblock::try_from(new_size.div_ceil(BLOCK_SIZE)) {
             Ok(ib) => ib,
@@ -195,11 +187,7 @@ impl BlockPtrTree {
     /// Returns `0` if the block is actually allocated. The result may stop
     /// early at a direct/indirect region boundary, but it never overestimates:
     /// every block in the returned interval is known to be unmapped.
-    pub(in crate::fs::fs_impls::ext2::inode) fn approx_hole_blocks(
-        &self,
-        iblock: Iblock,
-        max_blocks: u32,
-    ) -> Result<u32> {
+    pub(in inode) fn approx_hole_blocks(&self, iblock: Iblock, max_blocks: u32) -> Result<u32> {
         if max_blocks == 0 {
             return Ok(0);
         }
@@ -879,17 +867,14 @@ impl BlockPtrTree {
 /// deadlock. The struct is the authoritative in-memory state and is written
 /// back to the inode on sync.
 #[derive(Clone, Copy, Debug)]
-pub(in crate::fs::fs_impls::ext2::inode) struct RawBlockPtrs {
+pub(in inode) struct RawBlockPtrs {
     pub sector_count: u32,
     pub block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
 }
 
 impl RawBlockPtrs {
     /// Creates a `RawBlockPtrs` from the given sector count and pointer array.
-    pub(in crate::fs::fs_impls::ext2::inode) fn new(
-        sector_count: u32,
-        block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
-    ) -> Self {
+    pub(in inode) fn new(sector_count: u32, block_ptrs: [u32; RAW_BLOCK_PTRS_LEN]) -> Self {
         Self {
             sector_count,
             block_ptrs,
@@ -897,7 +882,7 @@ impl RawBlockPtrs {
     }
 
     /// Reads the ext2 special-file device encoding stored in `i_block`.
-    pub(in crate::fs::fs_impls::ext2::inode) fn read_device_id(&self) -> u64 {
+    pub(in inode) fn read_device_id(&self) -> u64 {
         let (major, minor) = if self.block_ptrs[0] != 0 {
             let old_encoded_device = self.block_ptrs[0];
             // Old_decode_dev: (major << 8) | minor with 8-bit major/minor.
@@ -918,7 +903,7 @@ impl RawBlockPtrs {
     }
 
     /// Writes a device ID into the ext2 special-file `i_block` layout.
-    pub(in crate::fs::fs_impls::ext2::inode) fn write_device_id(&mut self, device_id: u64) {
+    pub(in inode) fn write_device_id(&mut self, device_id: u64) {
         let (major, minor) = decode_device_numbers(device_id);
 
         // Old_valid_dev: MAJOR/MINOR must both fit in 8 bits.
@@ -935,7 +920,7 @@ impl RawBlockPtrs {
 
 /// Result of resolving a physical block range from a logical block position.
 #[derive(Debug)]
-pub(in crate::fs::fs_impls::ext2::inode) enum ResolvedBlockRange {
+pub(in inode) enum ResolvedBlockRange {
     /// The physical range already exists on device.
     Existing(Range<Ext2Bid>),
     /// The physical range was freshly allocated on device.
@@ -1200,7 +1185,6 @@ mod test {
     use super::*;
     use crate::{
         fs::fs_impls::ext2::test_utils::{Ext2FixtureBuilder, write_indirect_ptr},
-        prelude::*,
         time::clocks,
     };
 

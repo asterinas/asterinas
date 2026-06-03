@@ -6,6 +6,21 @@ Names must be accurate, unabbreviated,
 and follow
 [Rust API Guidelines on naming](https://rust-lang.github.io/api-guidelines/naming.html).
 
+### Create crates with kebab-case names (`kebab-case-crate-names`) {#kebab-case-crate-names}
+
+Asterinas prefers kebab-case for crate names, which is unspecified in official
+Rust API Guidelines.
+
+```rust
+// Good
+[package]
+name = "short-vis-path"
+
+// Bad
+[package]
+name = "short_vis_path"
+```
+
 ### Follow Rust CamelCase and acronym capitalization (`camel-case-acronyms`) {#camel-case-acronyms}
 
 Type names follow Rust's CamelCase convention.
