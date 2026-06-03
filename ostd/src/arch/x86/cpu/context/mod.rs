@@ -23,7 +23,7 @@ use crate::{
     },
     cpu::PrivilegeLevel,
     debug,
-    irq::{call_irq_callback_functions, disable_local},
+    irq::{DisabledLocalIrqGuard, call_irq_callback_functions},
     mm::Vaddr,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
@@ -113,9 +113,10 @@ impl GsBase {
     }
 
     /// Saves the current CPU GS base into this struct.
-    pub fn save(&mut self) {
-        let _guard = disable_local();
-        // SAFETY: Reading the user GS base does not affect kernel code.
+    pub fn save(&mut self, _guard: &DisabledLocalIrqGuard) {
+        // SAFETY:
+        // 1. In these steps, we have disabled the IRQ and are not using the kernel GS base.
+        // 2. Reading the user GS base does not affect kernel code.
         unsafe {
             swapgs();
             self.0 = rdgsbase() as usize;
@@ -124,9 +125,10 @@ impl GsBase {
     }
 
     /// Loads this struct's GS base onto the CPU.
-    pub fn load(&self) {
-        let _guard = disable_local();
-        // SAFETY: Writing the user GS base does not affect kernel code.
+    pub fn load(&self, _guard: &DisabledLocalIrqGuard) {
+        // SAFETY:
+        // 1. In these steps, we have disabled the IRQ and are not using the kernel GS base.
+        // 2. Writing the user GS base does not affect kernel code.
         unsafe {
             swapgs();
             wrgsbase(self.0 as u64);
@@ -315,7 +317,6 @@ impl UserContextApiInternal for UserContext {
         // Return when it is syscall or cpu exception type is Fault or Trap.
         loop {
             crate::task::scheduler::might_preempt();
-            crate::task::call_pre_user_run_handler();
             self.user_context.run();
 
             let exception =

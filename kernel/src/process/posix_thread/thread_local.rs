@@ -287,12 +287,12 @@ impl SuppUserContext {
         }
     }
 
-    pub fn before_user_exec(&self) {
-        self.fpu.before_user_exec();
+    pub fn before_user_exec(&self, guard: &DisabledLocalIrqGuard) {
+        self.fpu.before_user_exec(guard);
         #[cfg(target_arch = "x86_64")]
         {
-            self.fs_base.before_user_exec();
-            self.gs_base.before_user_exec();
+            self.fs_base.before_user_exec(guard);
+            self.gs_base.before_user_exec(guard);
         }
     }
 }
