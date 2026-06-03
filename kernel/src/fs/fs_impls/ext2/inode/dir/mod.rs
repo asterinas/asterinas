@@ -123,11 +123,12 @@ impl Inode {
         let is_dir = type_ == InodeType::Dir;
         let dir_entry_file_type = DirEntryFileType::from(type_);
 
-        // Scan for a slot before creating the child inode to avoid wasting
-        // an inode allocation when the name already exists (EEXIST).
+        // Find a slot before creating the child inode to avoid wasting
+        // an inode allocation if the directory cannot accept a new entry.
+        // The VFS dentry layer has already validated that `name` is absent.
         let fs = self.fs()?;
         let mut parent_inner = self.inner.write();
-        let slot = match parent_inner.scan_dir_for_slot(name)? {
+        let slot = match parent_inner.find_dir_slot(name.len())? {
             Some(slot) => slot,
             None => parent_inner.grow_dir_block(&fs)?,
         };
@@ -179,7 +180,7 @@ impl Inode {
         }
 
         let dir_inner = guards.inner_mut(self.ino());
-        let slot = match dir_inner.scan_dir_for_slot(name)? {
+        let slot = match dir_inner.find_dir_slot(name.len())? {
             Some(slot) => slot,
             None => dir_inner.grow_dir_block(&fs)?,
         };
@@ -466,7 +467,7 @@ impl InodeInner {
         ino: Ext2Ino,
         file_type: DirEntryFileType,
     ) -> Result<()> {
-        let slot = match self.scan_dir_for_slot(name)? {
+        let slot = match self.find_dir_slot(name.len())? {
             Some(slot) => slot,
             None => self.grow_dir_block(fs)?,
         };
@@ -488,8 +489,8 @@ impl InodeInner {
             let mut entry_iter = block.iter_entries();
 
             loop {
-                let (_entry_offset, entry) = match entry_iter.next_entry() {
-                    Ok(Some(pair)) => pair,
+                let entry = match entry_iter.next_entry() {
+                    Ok(Some((_, entry))) => entry,
                     Ok(None) => break,
                     Err(_) => return false,
                 };
@@ -579,14 +580,16 @@ impl InodeInner {
         Ok(advanced)
     }
 
-    /// Scans directory blocks for a reusable slot or a duplicate entry.
-    fn scan_dir_for_slot(&self, name: &str) -> Result<Option<DirSlotInfo>> {
+    /// Finds a reusable slot for a directory entry name of `name_len` bytes.
+    ///
+    /// Returns `None` if existing directory blocks have no reusable space. The
+    /// returned slot may be a deleted entry or the spare tail of a live entry.
+    fn find_dir_slot(&self, name_len: usize) -> Result<Option<DirSlotInfo>> {
         if self.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
-        let name_bytes = name.as_bytes();
-        let new_rec_len = DirEntryHeader::min_rec_len(name_bytes.len()) as usize;
+        let new_rec_len = DirEntryHeader::min_rec_len(name_len) as usize;
         debug_assert!(new_rec_len <= BLOCK_SIZE);
 
         let file_size = self.file_size();
@@ -598,19 +601,14 @@ impl InodeInner {
             let block = DirBlockView::from_index(page_cache, block_idx, file_size);
             let mut entry_iter = block.iter_entries();
 
-            while let Some((entry_offset, entry)) = entry_iter.next_entry()? {
-                let ino = entry.header.ino;
-                let rec_len = entry.header.rec_len as usize;
-
-                // Check for duplicate name.
-                if ino != 0 && entry.name == name_bytes {
-                    return_errno!(Errno::EEXIST);
-                }
+            while let Some((entry_offset, header)) = entry_iter.next_entry_header()? {
+                let ino = header.ino;
+                let rec_len = header.rec_len as usize;
 
                 let used_rec_len = if ino == 0 {
                     0
                 } else {
-                    DirEntryHeader::min_rec_len(entry.header.name_len as usize) as usize
+                    DirEntryHeader::min_rec_len(header.name_len as usize) as usize
                 };
 
                 // Free entry can be reused, occupied entry can be split.
