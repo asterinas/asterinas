@@ -360,9 +360,10 @@ pub fn handle_user_signal(
     ucontext.uc_mcontext.copy_user_regs_from(user_ctx);
 
     // Clone and reset the FPU context.
-    let fpu_context = ctx.thread_local.fpu().clone_context();
+    let supp = ctx.thread_local.supp_user_context();
+    let fpu_context = supp.fpu().get();
     let fpu_context_bytes = fpu_context.as_bytes();
-    ctx.thread_local.fpu().set_context(FpuContext::new());
+    supp.fpu().set(FpuContext::new());
 
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "x86_64")] {

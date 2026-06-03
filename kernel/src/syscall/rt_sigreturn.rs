@@ -47,7 +47,7 @@ pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<Sys
     let mut fpu_context = FpuContext::new();
     ctx.user_space()
         .read_bytes(fpu_context_addr, fpu_context.as_bytes_mut())?;
-    ctx.thread_local.fpu().set_context(fpu_context);
+    ctx.thread_local.supp_user_context().fpu().set(fpu_context);
 
     // Restore the signal mask.
     let sig_mask = ucontext.uc_sigmask;

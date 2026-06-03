@@ -94,7 +94,7 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
 
 fn before_switching_to(next_task: &Task, irq_guard: &DisabledLocalIrqGuard) {
     if let Some(handler) = PRE_SCHEDULE_HANDLER.get() {
-        handler();
+        handler(irq_guard);
     }
 
     // Ensure that the mapping to the kernel stack is valid.

@@ -3,6 +3,8 @@
 use alloc::borrow::Cow;
 use core::{num::NonZeroU64, sync::atomic::Ordering};
 
+#[cfg(target_arch = "x86_64")]
+use ostd::arch::cpu::context::{FsBase, GsBase};
 use ostd::{
     arch::cpu::context::UserContext, cpu::CpuId, mm::VmIo, sync::RwArc, task::Task,
     user::UserContextApi,
@@ -394,7 +396,7 @@ fn clone_child_task(
     let child_fs = clone_fs(&thread_local.borrow_fs(), clone_flags);
 
     // Clone FPU context
-    let child_fpu_context = thread_local.fpu().clone_context();
+    let child_fpu_context = thread_local.supp_user_context().fpu().get();
 
     // Clone namespaces
     let child_user_ns = thread_local.borrow_user_ns().clone();
@@ -416,13 +418,17 @@ fn clone_child_task(
             .switch_to_mnt_ns(child_ns_proxy.mnt_ns())?;
     }
 
-    let child_user_ctx = Box::new(clone_user_ctx(
+    #[cfg_attr(target_arch = "x86_64", expect(unused_mut))]
+    let mut child_user_ctx = Box::new(clone_user_ctx(
         parent_context,
         clone_args.stack,
         clone_args.stack_size,
-        clone_args.tls,
-        clone_flags,
     ));
+
+    #[cfg(target_arch = "x86_64")]
+    let (child_fs_base, child_gs_base) = clone_tls_regs(thread_local, clone_flags, clone_args.tls);
+    #[cfg(not(target_arch = "x86_64"))]
+    clone_tls_pointer(child_user_ctx.as_mut(), clone_flags, clone_args.tls);
 
     // Inherit sigmask from current thread
     let sig_mask = posix_thread.sig_mask().into();
@@ -452,6 +458,10 @@ fn clone_child_task(
         .user_ns(child_user_ns)
         .ns_proxy(child_ns_proxy)
         .default_timer_slack_ns(default_timer_slack_ns);
+        #[cfg(target_arch = "x86_64")]
+        {
+            thread_builder = thread_builder.fs_base(child_fs_base).gs_base(child_gs_base);
+        }
 
         // Deal with SETTID/CLEARTID flags
         clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
@@ -496,13 +506,17 @@ fn clone_child_process(
     let child_vmar = clone_vmar(thread_local.vmar().borrow().as_ref().unwrap(), clone_flags)?;
 
     // Clone the user context
-    let child_user_ctx = Box::new(clone_user_ctx(
+    #[cfg_attr(target_arch = "x86_64", expect(unused_mut))]
+    let mut child_user_ctx = Box::new(clone_user_ctx(
         parent_context,
         clone_args.stack,
         clone_args.stack_size,
-        clone_args.tls,
-        clone_flags,
     ));
+
+    #[cfg(target_arch = "x86_64")]
+    let (child_fs_base, child_gs_base) = clone_tls_regs(thread_local, clone_flags, clone_args.tls);
+    #[cfg(not(target_arch = "x86_64"))]
+    clone_tls_pointer(child_user_ctx.as_mut(), clone_flags, clone_args.tls);
 
     // Clone the file table
     let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
@@ -517,7 +531,7 @@ fn clone_child_process(
     clone_sysvsem(clone_flags)?;
 
     // Clone FPU context
-    let child_fpu_context = thread_local.fpu().clone_context();
+    let child_fpu_context = thread_local.supp_user_context().fpu().get();
 
     // Clone the namespaces
     let child_user_ns = clone_user_ns(clone_flags, thread_local)?;
@@ -580,6 +594,12 @@ fn clone_child_process(
             .ns_proxy(child_ns_proxy)
             .default_timer_slack_ns(default_timer_slack_ns)
         };
+        #[cfg(target_arch = "x86_64")]
+        {
+            child_thread_builder = child_thread_builder
+                .fs_base(child_fs_base)
+                .gs_base(child_gs_base);
+        }
 
         // Deal with SETTID/CLEARTID flags
         clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
@@ -663,8 +683,6 @@ fn clone_user_ctx(
     parent_context: &UserContext,
     new_sp: Option<NonZeroU64>,
     stack_size: Option<NonZeroU64>,
-    tls: u64,
-    clone_flags: CloneFlags,
 ) -> UserContext {
     let mut child_context = parent_context.clone();
     // The return value in the child thread is zero.
@@ -679,11 +697,31 @@ fn clone_user_ctx(
             child_context.set_stack_pointer(new_sp.get() as usize);
         }
     }
+
+    child_context
+}
+
+#[cfg(target_arch = "x86_64")]
+fn clone_tls_regs(
+    thread_local: &ThreadLocal,
+    clone_flags: CloneFlags,
+    tls: u64,
+) -> (FsBase, GsBase) {
+    let supp = thread_local.supp_user_context();
+    let mut child_fs_base = supp.fs_base().get();
+    let child_gs_base = supp.gs_base().get();
+    if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
+        child_fs_base = FsBase::new(tls as usize);
+    }
+
+    (child_fs_base, child_gs_base)
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn clone_tls_pointer(child_context: &mut UserContext, clone_flags: CloneFlags, tls: u64) {
     if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
         child_context.set_tls_pointer(tls as usize);
     }
-
-    child_context
 }
 
 fn clone_fs(parent_fs: &Arc<ThreadFsInfo>, clone_flags: CloneFlags) -> Arc<ThreadFsInfo> {
