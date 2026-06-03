@@ -119,6 +119,7 @@ unused_qualifications = "warn"
 
 [workspace.lints.clippy]
 allow_attributes = "warn"
+inconsistent_struct_constructor = "warn"
 redundant_test_prefix = "warn"
 
 # Keys under `workspace.package` and the `package` section of each crate 
