@@ -3,12 +3,14 @@
     Toward a production-grade Linux alternative—memory safe, high-performance, and more<br/>
 </p>
 
-<!-- Asterinas NixOS 0.17.0 demo. It is uploaded as a Github attachment
+<!-- Asterinas NixOS 0.18.0 demo. It is uploaded as a Github attachment
 so that GitHub will render that URL as a video player in Markdown.
 The original file name will be displayed up in the top bar of the video player.
 So make sure you give the video file a cool name before uploading it.
 -->
-https://github.com/user-attachments/assets/f77ee711-a0d6-413f-aaaa-8f9566df3e41
+https://github.com/user-attachments/assets/eabf8674-8503-44f7-abcc-52395d2ca4a3
+
+
 
 <p align="center">
     <a href="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml/badge.svg?event=push" alt="Test x86-64" style="max-width: 100%;"></a>
