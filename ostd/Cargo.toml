@@ -76,6 +76,10 @@ default = ["cvm_guest"]
 cvm_guest = ["dep:tdx-guest", "dep:iced-x86"]
 coverage = ["minicov"]
 riscv_sv39_mode = []
+# Enable the DDT shift quirk required by QEMU's RISC-V IOMMU emulation (PPN
+# at bits 53:10 instead of the spec-defined 55:12). Enable this only when
+# running under QEMU; real hardware follows the spec.
+riscv_iommu_qemu_quirk = []
 
 [lints]
 workspace = true

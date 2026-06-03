@@ -172,6 +172,20 @@ endif
 
 ifneq ($(SCHEME), "")
 CARGO_OSDK_COMMON_ARGS += --scheme $(SCHEME)
+# The iommu scheme needs qemu-direct on riscv64 (no UEFI/GRUB).
+# x86_64 keeps the default grub-rescue-iso from OSDK.toml.
+ifeq ($(SCHEME), iommu)
+	ifeq ($(TARGET_ARCH), riscv64)
+	CARGO_OSDK_COMMON_ARGS += --boot-method="qemu-direct"
+	# QEMU's RISC-V IOMMU emulation places PPN at bits 53:10 instead
+	# of the spec-defined 55:12; enable the corresponding quirk.
+	ifeq ($(FEATURES),)
+		FEATURES := ostd/riscv_iommu_qemu_quirk
+	else
+		FEATURES := $(FEATURES),ostd/riscv_iommu_qemu_quirk
+	endif
+	endif
+endif
 else
 CARGO_OSDK_COMMON_ARGS += --boot-method="$(BOOT_METHOD)"
 endif

@@ -153,6 +153,29 @@ if [ "$ATTACH_XFSTESTS_IMAGES" = "true" ]; then
 fi
 
 if [ "$1" = "iommu" ]; then
+    if [ "$OSDK_TARGET_ARCH" = "riscv64" ]; then
+        QEMU_ARGS="\
+            -cpu rv64,svpbmt=true,zkr=true \
+            -machine virt,iommu-sys=on \
+            -m ${MEM:-8G} \
+            -smp ${SMP:-1} \
+            --no-reboot \
+            -nographic \
+            -display none \
+            -monitor chardev:mux \
+            -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
+            -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
+            -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
+            -device virtio-blk-device,drive=x1,iommu_platform=on \
+            -device virtio-blk-device,drive=x0,iommu_platform=on \
+            -device virtio-keyboard-device \
+            -device virtio-serial-device \
+            $CONSOLE_ARGS \
+        "
+        echo $QEMU_ARGS
+        exit 0
+    fi
+
     if [ "$OVMF" = "off" ]; then
         echo "Warning: OVMF is off, enabling it for IOMMU support." 1>&2
         OVMF="on"

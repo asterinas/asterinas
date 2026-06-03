@@ -28,6 +28,8 @@ sigfault = "sigfault"
 sems = "sems"
 THRE = "THRE"
 TestNG = "TestNG"
+SADE = "SADE"
+GADE = "GADE"
 
 # Files with svg suffix are ignored to check. 
 [type.svg]

@@ -35,8 +35,8 @@ use crate::{
 struct DmaBufferMeta;
 impl_frame_meta_for!(DmaBufferMeta);
 
-// TODO: Implement other architectures when their `IommuPtConfig` are ready.
-#[cfg(target_arch = "x86_64")]
+// TODO: Implement LoongArch when its `IommuPtConfig` is ready.
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 mod allocator {
     use crate::{
         arch::iommu,
@@ -266,11 +266,11 @@ unsafe fn dma_remap(pa_range: &Range<Paddr>) -> Option<Daddr> {
 
     let _irq_guard = irq::disable_local();
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     let daddr = allocator::daddr_allocator(&_irq_guard)
         .alloc(pa_range.len())
         .expect("failed to allocate DMA address range");
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "riscv64")))]
     let daddr = pa_range.clone();
 
     for map_paddr in pa_range.clone().step_by(PAGE_SIZE) {

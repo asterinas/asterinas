@@ -2,10 +2,7 @@
 
 //! Virtual memory (VM).
 
-#![cfg_attr(
-    any(target_arch = "riscv64", target_arch = "loongarch64"),
-    expect(unused_imports)
-)]
+#![cfg_attr(any(target_arch = "loongarch64"), expect(unused_imports))]
 
 pub mod dma;
 pub mod frame;

@@ -36,7 +36,7 @@ build.strip_elf = true
 qemu.args = "$(./tools/qemu_args.sh microvm)"
 
 [scheme."iommu"]
-supported_archs = ["x86_64"]
+supported_archs = ["x86_64", "riscv64"]
 qemu.args = "$(./tools/qemu_args.sh iommu)"
 
 [scheme."tdx"]

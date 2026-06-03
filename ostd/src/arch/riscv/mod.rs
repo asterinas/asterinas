@@ -57,6 +57,11 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
+    match iommu::init(&io_mem_builder) {
+        Ok(_) => {}
+        Err(err) => crate::warn!("IOMMU initialization error: {:?}", err),
+    }
+
     // SAFETY:
     // 1. All the system device memory have been removed from the builder.
     // 2. RISC-V platforms do not have port I/O.
