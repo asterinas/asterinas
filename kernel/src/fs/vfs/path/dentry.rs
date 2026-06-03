@@ -6,7 +6,7 @@ use core::{
 };
 
 use hashbrown::HashMap;
-use ostd::sync::RwMutexWriteGuard;
+use ostd::sync::{RwMutexUpgradeableGuard, RwMutexWriteGuard};
 
 use super::{is_dot, is_dot_or_dotdot, is_dotdot};
 use crate::{
@@ -396,25 +396,7 @@ impl DirDentry<'_> {
         type_: InodeType,
         mode: InodeMode,
     ) -> Result<Arc<Dentry>> {
-        let children = self.children.upread();
-        if let Some(entry) = children.find(name)
-            && entry.is_positive()
-        {
-            if self.revalidate_cached_entry(name, &entry) {
-                return_errno_with_message!(Errno::EEXIST, "the dentry already exists");
-            }
-
-            let mut children = children.upgrade();
-            let _ = children.remove(name);
-            let new_inode = self.inode.create(name, type_, mode)?;
-
-            let new_child = Dentry::new(
-                new_inode,
-                DentryOptions::Named((String::from(name), self.this())),
-            );
-            return Ok(self.insert_positive_child(&mut children, name, new_child));
-        }
-
+        let children = self.validate_child_absent(name)?;
         let new_inode = self.inode.create(name, type_, mode)?;
         let mut children = children.upgrade();
         let new_child = Dentry::new(
@@ -423,6 +405,43 @@ impl DirDentry<'_> {
         );
 
         Ok(self.insert_positive_child(&mut children, name, new_child))
+    }
+
+    /// Validates that `name` is absent and keeps that result stable for creation.
+    fn validate_child_absent<'a>(
+        &'a self,
+        name: &str,
+    ) -> Result<RwMutexUpgradeableGuard<'a, DentryChildren>> {
+        let mut children = self.children.upread();
+
+        if let Some(cached_entry) = children.find(name) {
+            if self.revalidate_cached_entry(name, &cached_entry) {
+                return match cached_entry {
+                    CachedDentry::Positive { .. } => {
+                        return_errno_with_message!(Errno::EEXIST, "the dentry already exists")
+                    }
+                    CachedDentry::Negative => Ok(children),
+                };
+            }
+
+            let mut children_for_update = children.upgrade();
+            let _ = children_for_update.remove(name);
+            children = children_for_update.downgrade();
+        }
+
+        match self.inode.lookup(name) {
+            Ok(inode) => {
+                let existing_child = Dentry::new(
+                    inode,
+                    DentryOptions::Named((String::from(name), self.this())),
+                );
+                let mut children_for_update = children.upgrade();
+                self.insert_positive_child(&mut children_for_update, name, existing_child);
+                return_errno_with_message!(Errno::EEXIST, "the dentry already exists");
+            }
+            Err(error) if error.error() == Errno::ENOENT => Ok(children),
+            Err(error) => Err(error),
+        }
     }
 
     /// Inserts a positive child dentry into the directory cache.
@@ -527,11 +546,7 @@ impl DirDentry<'_> {
         mode: InodeMode,
         type_: MknodType,
     ) -> Result<Arc<Dentry>> {
-        let children = self.children.upread();
-        if children.contains_positive(name) {
-            return_errno!(Errno::EEXIST);
-        }
-
+        let children = self.validate_child_absent(name)?;
         let inode = self.inode.mknod(name, mode, type_)?;
         let new_child = Dentry::new(
             inode,
@@ -544,11 +559,7 @@ impl DirDentry<'_> {
 
     /// Links a new `Dentry` by `link()` the old inode.
     pub(super) fn link(&self, old_inode: &Arc<dyn Inode>, name: &str) -> Result<()> {
-        let children = self.children.upread();
-        if children.contains_positive(name) {
-            return_errno!(Errno::EEXIST);
-        }
-
+        let children = self.validate_child_absent(name)?;
         self.inode.link(old_inode, name)?;
         let dentry = Dentry::new(
             old_inode.clone(),
@@ -902,13 +913,6 @@ impl DentryChildren {
     /// Finds a cached dentry by name.
     fn find(&self, name: &str) -> Option<CachedDentry> {
         self.entries.get(name).cloned()
-    }
-
-    /// Checks if a positive dentry with the given name exists.
-    fn contains_positive(&self, name: &str) -> bool {
-        self.entries
-            .get(name)
-            .is_some_and(|child| child.is_positive())
     }
 
     /// Inserts a positive dentry.
