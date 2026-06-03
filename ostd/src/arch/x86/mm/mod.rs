@@ -294,10 +294,10 @@ impl PageTableEntry {
 
 impl PodOnce for PageTableEntry {}
 
-/// SAFETY: The implementation is safe because:
-///  - `from_usize` and `into_usize` are not overridden;
-///  - `from_repr` and `repr` are correctly implemented;
-///  - a zeroed PTE represents an absent entry.
+// SAFETY: The implementation is safe because:
+//  - `from_usize` and `into_usize` are not overridden;
+//  - `from_repr` and `repr` are correctly implemented;
+//  - a zeroed PTE represents an absent entry.
 unsafe impl PteTrait for PageTableEntry {
     fn from_repr(repr: &PteScalar, level: PagingLevel) -> Self {
         match repr {
