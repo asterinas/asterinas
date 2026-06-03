@@ -12,7 +12,8 @@ use core::cmp;
 use ostd::{arch::trap::TrapFrame, debug, info};
 
 use super::{
-    DEFAULT_QUEUE_SIZE, FileSystemDevice, HIPRIO_QUEUE_INDEX, queue::FsRequestQueue,
+    DEFAULT_QUEUE_SIZE, FileSystemDevice, HIPRIO_QUEUE_INDEX,
+    queue::{FsRequestQueue, MAX_DMA_BUFS_PER_REQUEST},
     register_device,
 };
 use crate::{
@@ -158,6 +159,10 @@ impl FileSystemDevice {
             .max_queue_size(index)
             .map_err(VirtioDeviceError::from)?;
         let queue_size = DEFAULT_QUEUE_SIZE.min(max_queue_size);
+
+        if queue_size < MAX_DMA_BUFS_PER_REQUEST as u16 {
+            return Err(VirtioDeviceError::UnsupportedConfig);
+        }
 
         VirtQueue::new(index, queue_size, transport).map_err(Into::into)
     }

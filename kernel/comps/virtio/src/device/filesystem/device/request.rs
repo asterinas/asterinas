@@ -75,6 +75,11 @@ impl FuseRequest {
         self.request_bufs.as_slice()
     }
 
+    /// Returns the number of virtqueue descriptors needed by this request.
+    pub(super) fn num_dma_bufs(&self) -> usize {
+        self.request_bufs.len() + self.waiter.reply_bufs().iter().count()
+    }
+
     /// Returns the waiter that owns the reply buffers and completion status.
     pub(super) fn waiter(&self) -> &Arc<FuseWaiter> {
         &self.waiter
