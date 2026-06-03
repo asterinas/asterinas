@@ -145,7 +145,6 @@ impl UserContextApiInternal for UserContext {
     {
         let ret = loop {
             crate::task::scheduler::might_preempt();
-            crate::task::call_pre_user_run_handler();
             self.user_context.run();
 
             let cause = loongArch64::register::estat::read().cause();

@@ -121,10 +121,15 @@ impl RawUserContext {
     /// On return, the context will be reset to the status before the trap.
     /// Trap reason and error code will be placed at `scause` and `stval`.
     pub(in crate::arch) fn run(&mut self) {
+        let guard = crate::irq::disable_local();
+
+        crate::task::call_pre_user_run_handler(&guard);
+
         // Return to userspace with interrupts disabled. Otherwise, interrupts
         // after switching `sscratch` will mess up the CPU state.
-        crate::arch::irq::disable_local();
-        unsafe { run_user(self) }
+        core::mem::forget(guard);
+
+        unsafe { run_user(self) };
     }
 }
 
