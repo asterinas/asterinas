@@ -55,8 +55,6 @@ syscall_return: # (regs: &mut RawUserContext)
     pop r15
     # rip
     # rflags
-    # fsbase
-    # gsbase
     # trap_num
     # error_code
 
@@ -113,10 +111,9 @@ syscall_entry:
     mov gs:12, rsp          # store user rsp -> scratch at TSS.sp1
     mov rsp, gs:4           # load kernel rsp <- TSS.sp0
     pop rsp                 # load rsp <- UserContext
-    add rsp, 21*8           # rsp -> error code of UserContext
+    add rsp, 19*8           # rsp -> error code of UserContext
 
     push 0x100              # push trap_num
-    sub rsp, 16             # skip fsbase, gsbase
     # push general registers
     push r11                # push rflags
     push rcx                # push rip

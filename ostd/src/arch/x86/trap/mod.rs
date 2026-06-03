@@ -82,7 +82,6 @@ pub struct TrapFrame {
     pub r13: usize,
     pub r14: usize,
     pub r15: usize,
-    pub _pad: usize,
 
     pub trap_num: usize,
     pub error_code: usize,

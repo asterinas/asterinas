@@ -132,12 +132,6 @@ impl UserContext {
         self.tp()
     }
 
-    /// Activates the thread-local storage pointer for the current task.
-    pub fn activate_tls_pointer(&self) {
-        // In LoongArch, `tp` will be loaded at `UserContext::execute`, so it does not need to be
-        // activated in advance.
-    }
-
     /// Enables floating-point unit.
     pub fn enable_fpu(&mut self) {
         self.user_context.euen = 0x1;
@@ -151,6 +145,7 @@ impl UserContextApiInternal for UserContext {
     {
         let ret = loop {
             crate::task::scheduler::might_preempt();
+            crate::task::call_pre_user_run_handler();
             self.user_context.run();
 
             let cause = loongArch64::register::estat::read().cause();
@@ -359,7 +354,7 @@ impl FpuContext {
     pub fn save(&mut self) {}
 
     /// Loads CPU's FPU context from this instance, if needed.
-    pub fn load(&mut self) {}
+    pub fn load(&self) {}
 
     /// Returns the FPU context as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {

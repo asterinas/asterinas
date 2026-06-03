@@ -4,6 +4,10 @@
 
 set -e
 
+if [ "$(uname -m)" = "x86_64" ]; then
+    ./arch_prctl/fsgsbase
+fi
+
 ./clock_nanosleep/nanosleep_err
 
 ./clone3/clone_exit_signal

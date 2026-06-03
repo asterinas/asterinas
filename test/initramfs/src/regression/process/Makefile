@@ -19,7 +19,9 @@ SUBDIRS := \
 	signal \
 
 ifeq ($(HOST_PLATFORM), x86_64-linux)
-SUBDIRS += fork
+SUBDIRS += \
+	arch_prctl \
+	fork
 endif
 
 include ../common/Makefile

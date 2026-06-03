@@ -6,7 +6,7 @@ use core::ops::Range;
 
 use ostd::{
     arch::{
-        cpu::context::GeneralRegs,
+        cpu::context::{FsBase, GeneralRegs, GsBase},
         trap::{USER_CS_VALUE, USER_SS_VALUE},
     },
     mm::MAX_USERSPACE_VADDR,
@@ -54,27 +54,35 @@ pub struct CUserRegsStruct {
     pub gs: usize,
 }
 
-impl From<&GeneralRegs> for CUserRegsStruct {
-    /// Builds the register snapshot from saved general-purpose registers.
+impl CUserRegsStruct {
+    /// Builds the register snapshot from saved register state.
     ///
     /// `orig_rax` is left at zero. Callers needing the syscall-entry
     /// value should assign it from `ThreadLocal::orig_syscall_ret`.
-    fn from(regs: &GeneralRegs) -> Self {
+    pub fn from_regs(general_regs: &GeneralRegs, fs_base: FsBase, gs_base: GsBase) -> Self {
         let mut out = Self::default();
         let bytes = out.as_mut_bytes();
         for rule in REG_RULES {
             let value = match rule.policy {
                 Policy::Fixed(val) => val,
-                _ => (rule.get.unwrap())(regs),
+                _ => (rule.get.unwrap())(general_regs),
             };
             write_word(bytes, rule.offset, value);
         }
+        write_word(
+            bytes,
+            core::mem::offset_of!(CUserRegsStruct, fsbase),
+            fs_base.addr(),
+        );
+        write_word(
+            bytes,
+            core::mem::offset_of!(CUserRegsStruct, gsbase),
+            gs_base.addr(),
+        );
         out
     }
-}
 
-impl CUserRegsStruct {
-    /// Validates the user-supplied `regs` and then applies it into `regs`.
+    /// Validates the user-supplied `regs` and then applies it into saved register state.
     ///
     /// `orig_rax` is ignored. Callers should separately assign this
     /// field to `ThreadLocal::orig_syscall_ret`.
@@ -82,21 +90,51 @@ impl CUserRegsStruct {
     /// # Errors
     ///
     /// Returns `EIO` on any invalid value.
-    pub fn apply_to(&self, regs: &mut GeneralRegs) -> Result<()> {
+    pub fn apply_to(
+        &self,
+        general_regs: &mut GeneralRegs,
+        fs_base: &mut FsBase,
+        gs_base: &mut GsBase,
+    ) -> Result<()> {
         let bytes = self.as_bytes();
-        let mut new_regs = *regs;
+        let mut new_general_regs = *general_regs;
         for rule in REG_RULES {
             let value = read_word(bytes, rule.offset);
-            rule.apply(&mut new_regs, value)?;
+            rule.apply(&mut new_general_regs, value)?;
         }
-        *regs = new_regs;
+
+        let fsbase = read_word(bytes, core::mem::offset_of!(CUserRegsStruct, fsbase));
+        if !is_user_addr(fsbase) {
+            return_errno_with_message!(Errno::EIO, "invalid register value");
+        }
+
+        let gsbase = read_word(bytes, core::mem::offset_of!(CUserRegsStruct, gsbase));
+        if !is_user_addr(gsbase) {
+            return_errno_with_message!(Errno::EIO, "invalid register value");
+        }
+
+        *general_regs = new_general_regs;
+        *fs_base = FsBase::new(fsbase);
+        *gs_base = GsBase::new(gsbase);
         Ok(())
     }
 }
 
 /// Reads one word from the x86-64 USER area at `offset`.
-pub fn read_user_word(regs: &GeneralRegs, orig_rax: usize, offset: usize) -> Result<usize> {
+pub fn read_user_word(
+    general_regs: &GeneralRegs,
+    fs_base: FsBase,
+    gs_base: GsBase,
+    orig_rax: usize,
+    offset: usize,
+) -> Result<usize> {
     check_user_offset(offset)?;
+    if offset == core::mem::offset_of!(CUserRegsStruct, fsbase) {
+        return Ok(fs_base.addr());
+    }
+    if offset == core::mem::offset_of!(CUserRegsStruct, gsbase) {
+        return Ok(gs_base.addr());
+    }
     if offset == core::mem::offset_of!(CUserRegsStruct, orig_rax) {
         return Ok(orig_rax);
     }
@@ -119,18 +157,34 @@ pub fn read_user_word(regs: &GeneralRegs, orig_rax: usize, offset: usize) -> Res
         RegRule::for_offset(offset).expect("offset has been validated by `check_user_offset`");
     Ok(match rule.policy {
         Policy::Fixed(value) => value,
-        _ => (rule.get.unwrap())(regs),
+        _ => (rule.get.unwrap())(general_regs),
     })
 }
 
 /// Writes one word to the x86-64 USER area at `offset`.
 pub fn write_user_word(
-    regs: &mut GeneralRegs,
+    general_regs: &mut GeneralRegs,
+    fs_base: &mut FsBase,
+    gs_base: &mut GsBase,
     orig_rax: &mut usize,
     offset: usize,
     value: usize,
 ) -> Result<()> {
     check_user_offset(offset)?;
+    if offset == core::mem::offset_of!(CUserRegsStruct, fsbase) {
+        if !is_user_addr(value) {
+            return_errno_with_message!(Errno::EIO, "invalid register value");
+        }
+        *fs_base = FsBase::new(value);
+        return Ok(());
+    }
+    if offset == core::mem::offset_of!(CUserRegsStruct, gsbase) {
+        if !is_user_addr(value) {
+            return_errno_with_message!(Errno::EIO, "invalid register value");
+        }
+        *gs_base = GsBase::new(value);
+        return Ok(());
+    }
     if offset == core::mem::offset_of!(CUserRegsStruct, orig_rax) {
         *orig_rax = value;
         return Ok(());
@@ -144,7 +198,7 @@ pub fn write_user_word(
 
     let rule =
         RegRule::for_offset(offset).expect("offset has been validated by `check_user_offset`");
-    rule.apply(regs, value)
+    rule.apply(general_regs, value)
 }
 
 /// Enables x86-64 single-step execution by setting the trap flag.
@@ -171,8 +225,8 @@ macro_rules! off {
 ///
 /// Each entry covers one `usize` field in `CUserRegsStruct` that is either
 /// backed by `GeneralRegs` or fixed to an ABI-defined value.
-/// `orig_rax` is the only exception: it is stored in
-/// `ThreadLocal::orig_syscall_ret` rather than `GeneralRegs`.
+/// `orig_rax`, `fsbase`, and `gsbase` are handled separately because they are
+/// not stored in `GeneralRegs`.
 const REG_RULES: &[RegRule] = &[
     RegRule::rw(off!(rax), |r| r.rax, |r, v| r.rax = v, Policy::Set),
     RegRule::rw(off!(rbx), |r| r.rbx, |r, v| r.rbx = v, Policy::Set),
@@ -202,19 +256,6 @@ const REG_RULES: &[RegRule] = &[
         |r, v| r.rip = v,
         Policy::SetIf(is_user_addr),
     ),
-    // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/kernel/ptrace.c#L389-L400>
-    RegRule::rw(
-        off!(fsbase),
-        |r| r.fsbase,
-        |r, v| r.fsbase = v,
-        Policy::SetIf(is_user_addr),
-    ),
-    RegRule::rw(
-        off!(gsbase),
-        |r| r.gsbase,
-        |r, v| r.gsbase = v,
-        Policy::SetIf(is_user_addr),
-    ),
     // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/kernel/ptrace.c#L369>
     RegRule::rw(
         off!(rflags),
@@ -233,7 +274,7 @@ const REG_RULES: &[RegRule] = &[
 ];
 
 const _: () = {
-    assert!((REG_RULES.len() + 1) * size_of::<usize>() == size_of::<CUserRegsStruct>());
+    assert!((REG_RULES.len() + 3) * size_of::<usize>() == size_of::<CUserRegsStruct>());
 };
 
 /// One rule for a single register inside `CUserRegsStruct`.

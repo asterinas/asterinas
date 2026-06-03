@@ -37,7 +37,6 @@ pub fn create_new_user_task(
         let (stop_waiter, _) = Waiter::new_pair();
 
         let mut user_mode = UserMode::new(user_ctx);
-        user_mode.context_mut().activate_tls_pointer();
         debug!(
             "task entry: rip = {:#x}, rsp = {:#x}, rax = {:#x}",
             user_mode.context().instruction_pointer(),
@@ -72,9 +71,7 @@ pub fn create_new_user_task(
 
         while !current_thread.is_exited() {
             // Execute the user code
-            ctx.thread_local.fpu().activate();
             let return_reason = user_mode.execute(has_kernel_event_fn);
-            ctx.thread_local.fpu().deactivate();
 
             // Handle user events
             let user_ctx = user_mode.context_mut();

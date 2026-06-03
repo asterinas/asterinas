@@ -8,7 +8,7 @@ and accessing user memory ([`VmReader<Fallible>`](https://asterinas.github.io/ap
 ## UserMode and UserContext
 
 `UserContext` stores the user-space register state
-(general-purpose registers, RFLAGS, FS/GS base, and exception info).
+(general-purpose registers, RFLAGS, and exception info).
 Clients read and write this state between user-space entries —
 for instance, to set up syscall return values
 or inspect exception details.
@@ -46,11 +46,6 @@ are enforced every time before entering user space:
    If an interrupt occurred between `swapgs` and `sysret`,
    the interrupt handler would see the user GS base instead of the kernel GS base,
    corrupting CPU-local storage access.
-
-3. **FS base**:
-   The user's `fsbase` is stored in `UserContext` and restored via `wrfsbase`.
-   The kernel uses GS (not FS) for CPU-local storage,
-   so a user-controlled FS base cannot affect kernel state.
 
 The above safety measures are key to achieving the following invariant:
 

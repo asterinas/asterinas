@@ -7,6 +7,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
     cpu::{AtomicCpuSet, CpuId, CpuSet},
+    irq::DisabledLocalIrqGuard,
     task::Task,
 };
 
@@ -25,7 +26,7 @@ pub mod work_queue;
 
 pub type Tid = u32;
 
-fn pre_schedule_handler() {
+fn pre_schedule_handler(irq_guard: &DisabledLocalIrqGuard) {
     let Some(task) = Task::current() else {
         return;
     };
@@ -33,7 +34,7 @@ fn pre_schedule_handler() {
         return;
     };
 
-    thread_local.fpu().before_schedule();
+    thread_local.supp_user_context().before_schedule(irq_guard);
 }
 
 fn post_schedule_handler() {
@@ -52,14 +53,22 @@ fn post_schedule_handler() {
     if let Some(vmar) = vmar.as_ref() {
         vmar.vm_space().activate()
     }
+}
 
-    thread_local.fpu().after_schedule();
+fn pre_user_run_handler() {
+    let task = Task::current().unwrap();
+    let Some(thread_local) = task.as_thread_local() else {
+        return;
+    };
+
+    thread_local.supp_user_context().before_user_exec();
 }
 
 pub(super) fn init() {
     CONTEXT_SWITCH_COUNTER.call_once(PerCpuCounter::new);
     ostd::task::inject_pre_schedule_handler(pre_schedule_handler);
     ostd::task::inject_post_schedule_handler(post_schedule_handler);
+    ostd::task::inject_pre_user_run_handler(pre_user_run_handler);
     ostd::arch::trap::inject_user_page_fault_handler(exception::page_fault_handler);
 }
 

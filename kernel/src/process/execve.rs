@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_rights::ReadWriteOp;
+#[cfg(target_arch = "x86_64")]
+use ostd::arch::cpu::context::{FsBase, GsBase};
 use ostd::{
     arch::cpu::context::{FpuContext, GeneralRegs, UserContext},
     mm::VmIo,
@@ -277,13 +279,22 @@ fn set_cpu_context(
     user_context: &mut UserContext,
     elf_load_info: &ElfLoadInfo,
 ) {
+    let supp = thread_local.supp_user_context();
+
     // Reset FPU context.
-    thread_local.fpu().set_context(FpuContext::new());
+    supp.fpu().set(FpuContext::new());
 
     // Reset general-purpose registers.
     *user_context.general_regs_mut() = GeneralRegs::default();
     // Clear the TLS pointer.
+    #[cfg(target_arch = "x86_64")]
+    {
+        supp.fs_base().set(FsBase::default());
+        supp.gs_base().set(GsBase::default());
+    }
+    #[cfg(not(target_arch = "x86_64"))]
     user_context.set_tls_pointer(0);
+
     // Set the new instruction pointer to the ELF entry point.
     user_context.set_instruction_pointer(elf_load_info.entry_point as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point);

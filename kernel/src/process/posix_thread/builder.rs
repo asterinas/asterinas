@@ -2,6 +2,8 @@
 
 use core::sync::atomic::{AtomicU32, AtomicU64};
 
+#[cfg(target_arch = "x86_64")]
+use ostd::arch::cpu::context::{FsBase, GsBase};
 use ostd::{
     arch::cpu::context::{FpuContext, UserContext},
     cpu::CpuSet,
@@ -16,7 +18,7 @@ use crate::{
     prelude::*,
     process::{
         Credentials, NsProxy, Process, UserNamespace,
-        posix_thread::name::ThreadName,
+        posix_thread::{name::ThreadName, thread_local::SuppUserContext},
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
     sched::{Nice, SchedPolicy},
@@ -43,7 +45,7 @@ pub struct PosixThreadBuilder {
     sig_mask: AtomicSigMask,
     sig_queues: SigQueues,
     sched_policy: SchedPolicy,
-    fpu_context: FpuContext,
+    supp_user_context: SuppUserContext,
     user_ns: Option<Arc<UserNamespace>>,
     ns_proxy: Option<Arc<NsProxy>>,
     default_timer_slack_ns: u64,
@@ -71,7 +73,7 @@ impl PosixThreadBuilder {
             sig_mask: AtomicSigMask::new_empty(),
             sig_queues: SigQueues::new(),
             sched_policy: SchedPolicy::Fair(Nice::default()),
-            fpu_context: FpuContext::new(),
+            supp_user_context: SuppUserContext::new(),
             user_ns: None,
             ns_proxy: None,
             default_timer_slack_ns: 50_000, // 50 usec default slack
@@ -108,9 +110,27 @@ impl PosixThreadBuilder {
         self
     }
 
-    pub fn fpu_context(mut self, fpu_context: FpuContext) -> Self {
-        self.fpu_context = fpu_context;
-        self
+    pub fn fpu_context(self, fpu_context: FpuContext) -> Self {
+        Self {
+            supp_user_context: self.supp_user_context.with_fpu_context(fpu_context),
+            ..self
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn fs_base(self, fs_base: FsBase) -> Self {
+        Self {
+            supp_user_context: self.supp_user_context.with_fs_base(fs_base),
+            ..self
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn gs_base(self, gs_base: GsBase) -> Self {
+        Self {
+            supp_user_context: self.supp_user_context.with_gs_base(gs_base),
+            ..self
+        }
     }
 
     pub fn user_ns(mut self, user_ns: Arc<UserNamespace>) -> Self {
@@ -143,7 +163,7 @@ impl PosixThreadBuilder {
             sig_mask,
             sig_queues,
             sched_policy,
-            fpu_context,
+            supp_user_context,
             user_ns,
             ns_proxy,
             default_timer_slack_ns,
@@ -203,7 +223,7 @@ impl PosixThreadBuilder {
                 vmar,
                 file_table,
                 fs,
-                fpu_context,
+                supp_user_context,
                 user_ns,
                 ns_proxy,
             );

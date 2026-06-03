@@ -9,7 +9,7 @@ use bitflags::bitflags;
 use cfg_if::cfg_if;
 use ostd_pod::{FromZeros, IntoBytes};
 use spin::Once;
-use x86::bits64::segmentation::wrfsbase;
+use x86::bits64::segmentation::{rdfsbase, rdgsbase, swapgs, wrfsbase, wrgsbase};
 use x86_64::registers::{
     control::{Cr0, Cr0Flags},
     rflags::RFlags,
@@ -23,7 +23,7 @@ use crate::{
     },
     cpu::PrivilegeLevel,
     debug,
-    irq::call_irq_callback_functions,
+    irq::{call_irq_callback_functions, disable_local},
     mm::Vaddr,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
@@ -67,8 +67,72 @@ pub struct GeneralRegs {
     pub r15: usize,
     pub rip: usize,
     pub rflags: usize,
-    pub fsbase: usize,
-    pub gsbase: usize,
+}
+
+/// The user-mode FS base register.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FsBase(usize);
+
+impl FsBase {
+    /// Creates a new `FsBase` with the given address.
+    pub fn new(addr: usize) -> Self {
+        Self(addr)
+    }
+
+    /// Returns the stored address.
+    pub fn addr(&self) -> usize {
+        self.0
+    }
+
+    /// Saves the current CPU FS base into this struct.
+    pub fn save(&mut self) {
+        // SAFETY: Reading the user FS base does not affect kernel code.
+        self.0 = unsafe { rdfsbase() as usize };
+    }
+
+    /// Loads this struct's FS base onto the CPU.
+    pub fn load(&self) {
+        // SAFETY: Writing the user FS base does not affect kernel code.
+        unsafe { wrfsbase(self.0 as u64) }
+    }
+}
+
+/// The user-mode GS base register.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GsBase(usize);
+
+impl GsBase {
+    /// Creates a new `GsBase` with the given address.
+    pub fn new(addr: usize) -> Self {
+        Self(addr)
+    }
+
+    /// Returns the stored address.
+    pub fn addr(&self) -> usize {
+        self.0
+    }
+
+    /// Saves the current CPU GS base into this struct.
+    pub fn save(&mut self) {
+        let _guard = disable_local();
+        // SAFETY: Reading the user GS base does not affect kernel code.
+        unsafe {
+            swapgs();
+            self.0 = rdgsbase() as usize;
+            swapgs();
+        }
+    }
+
+    /// Loads this struct's GS base onto the CPU.
+    pub fn load(&self) {
+        let _guard = disable_local();
+        // SAFETY: Writing the user GS base does not affect kernel code.
+        unsafe {
+            swapgs();
+            wrgsbase(self.0 as u64);
+            swapgs();
+        }
+    }
 }
 
 /// Architectural CPU exceptions (x86-64 vectors 0-31).
@@ -235,29 +299,6 @@ impl UserContext {
     pub fn take_exception(&mut self) -> Option<CpuException> {
         self.exception.take()
     }
-
-    /// Sets the thread-local storage pointer.
-    pub fn set_tls_pointer(&mut self, tls: usize) {
-        self.set_fsbase(tls)
-    }
-
-    /// Gets the thread-local storage pointer.
-    pub fn tls_pointer(&self) -> usize {
-        self.fsbase()
-    }
-
-    /// Activates the thread-local storage pointer for the current task.
-    ///
-    /// The method by itself is safe because the value of the TLS register won't affect kernel code.
-    /// But if the user program relies on the TLS pointer, make sure that the pointer is correctly
-    /// set when entering the user space.
-    pub fn activate_tls_pointer(&self) {
-        // In x86, context switching preserves `fsbase`, but `fsbase` won't be loaded at
-        // `UserContext::execute`, so it must be activated in advance.
-        //
-        // SAFETY: Setting `fsbase` won't affect kernel code.
-        unsafe { wrfsbase(self.fsbase() as u64) }
-    }
 }
 
 impl UserContextApiInternal for UserContext {
@@ -274,6 +315,7 @@ impl UserContextApiInternal for UserContext {
         // Return when it is syscall or cpu exception type is Fault or Trap.
         loop {
             crate::task::scheduler::might_preempt();
+            crate::task::call_pre_user_run_handler();
             self.user_context.run();
 
             let exception =
@@ -337,7 +379,6 @@ impl UserContextApiInternal for UserContext {
             r13: self.user_context.general.r13,
             r14: self.user_context.general.r14,
             r15: self.user_context.general.r15,
-            _pad: 0,
             trap_num: self.user_context.trap_num,
             error_code: self.user_context.error_code,
             rip: self.user_context.general.rip,
@@ -488,9 +529,7 @@ cpu_context_impl_getter_setter!(
     [r14, set_r14],
     [r15, set_r15],
     [rip, set_rip],
-    [rflags, set_rflags],
-    [fsbase, set_fsbase],
-    [gsbase, set_gsbase]
+    [rflags, set_rflags]
 );
 
 /// The FPU context of user task.
@@ -530,7 +569,7 @@ impl FpuContext {
     }
 
     /// Loads CPU's FPU context from this instance.
-    pub fn load(&mut self) {
+    pub fn load(&self) {
         let mem_addr = self.as_bytes().as_ptr();
 
         if let Some(xstate_max_features) = XSTATE_MAX_FEATURES.get() {

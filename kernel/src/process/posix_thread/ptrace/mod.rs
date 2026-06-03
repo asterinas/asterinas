@@ -5,7 +5,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(target_arch = "x86_64")]
-use ostd::arch::cpu::context::GeneralRegs;
+use ostd::arch::cpu::context::{FsBase, GeneralRegs, GsBase};
 use ostd::{arch::cpu::context::UserContext, sync::Waiter};
 
 use super::{AsPosixThread, PosixThread};
@@ -483,6 +483,9 @@ impl TraceeStatus {
         state.event = event;
         #[cfg(target_arch = "x86_64")]
         {
+            let supp = ctx.thread_local.supp_user_context();
+            state.fs_base = Some(supp.fs_base().get());
+            state.gs_base = Some(supp.gs_base().get());
             state.general_regs = Some(*user_ctx.general_regs());
             state.set_orig_syscall_ret(ctx.thread_local.orig_syscall_ret());
         }
@@ -512,6 +515,8 @@ impl TraceeStatus {
             #[cfg(target_arch = "x86_64")]
             {
                 state.general_regs = None;
+                state.fs_base = None;
+                state.gs_base = None;
                 state.clear_orig_syscall_ret();
             }
             state.is_tracing_syscall = false;
@@ -525,8 +530,11 @@ impl TraceeStatus {
 
         #[cfg(target_arch = "x86_64")]
         {
-            let regs = state.general_regs.take().unwrap();
-            *user_ctx.general_regs_mut() = regs;
+            let general_regs = state.general_regs.take().unwrap();
+            *user_ctx.general_regs_mut() = general_regs;
+            let supp = ctx.thread_local.supp_user_context();
+            supp.fs_base().set(state.fs_base.take().unwrap());
+            supp.gs_base().set(state.gs_base.take().unwrap());
             ctx.thread_local
                 .set_orig_syscall_ret(state.take_orig_syscall_ret());
         }
@@ -612,8 +620,10 @@ impl TraceeStatus {
         let state = self.state.lock();
         self.check_ptrace_stopped(&state)?;
 
-        let regs = state.general_regs.as_ref().unwrap();
-        let mut regs = arch_ptrace::CUserRegsStruct::from(regs);
+        let general_regs = state.general_regs.as_ref().unwrap();
+        let fs_base = state.fs_base.unwrap();
+        let gs_base = state.gs_base.unwrap();
+        let mut regs = arch_ptrace::CUserRegsStruct::from_regs(general_regs, fs_base, gs_base);
         regs.orig_rax = state.orig_syscall_ret;
         Ok(regs)
     }
@@ -624,7 +634,17 @@ impl TraceeStatus {
         let mut state = self.state.lock();
         self.check_ptrace_stopped(&state)?;
 
-        regs.apply_to(state.general_regs.as_mut().unwrap())?;
+        let TraceeState {
+            general_regs,
+            fs_base,
+            gs_base,
+            ..
+        } = &mut *state;
+        regs.apply_to(
+            general_regs.as_mut().unwrap(),
+            fs_base.as_mut().unwrap(),
+            gs_base.as_mut().unwrap(),
+        )?;
         state.orig_syscall_ret = regs.orig_rax;
 
         Ok(())
@@ -635,8 +655,16 @@ impl TraceeStatus {
         // Hold the lock first to avoid race conditions.
         let state = self.state.lock();
         self.check_ptrace_stopped(&state)?;
-        let regs = state.general_regs.as_ref().unwrap();
-        arch_ptrace::read_user_word(regs, state.orig_syscall_ret, offset)
+        let general_regs = state.general_regs.as_ref().unwrap();
+        let fs_base = state.fs_base.unwrap();
+        let gs_base = state.gs_base.unwrap();
+        arch_ptrace::read_user_word(
+            general_regs,
+            fs_base,
+            gs_base,
+            state.orig_syscall_ret,
+            offset,
+        )
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -645,8 +673,20 @@ impl TraceeStatus {
         let mut state = self.state.lock();
         self.check_ptrace_stopped(&state)?;
         let mut orig_syscall_ret = state.orig_syscall_ret;
-        let regs = state.general_regs.as_mut().unwrap();
-        arch_ptrace::write_user_word(regs, &mut orig_syscall_ret, offset, value)?;
+        let TraceeState {
+            general_regs,
+            fs_base,
+            gs_base,
+            ..
+        } = &mut *state;
+        arch_ptrace::write_user_word(
+            general_regs.as_mut().unwrap(),
+            fs_base.as_mut().unwrap(),
+            gs_base.as_mut().unwrap(),
+            &mut orig_syscall_ret,
+            offset,
+            value,
+        )?;
         state.orig_syscall_ret = orig_syscall_ret;
         Ok(())
     }
@@ -728,6 +768,12 @@ struct TraceeState {
     /// The general-purpose registers of the tracee at the time of ptrace-stop.
     #[cfg(target_arch = "x86_64")]
     general_regs: Option<GeneralRegs>,
+    /// The FS base of the tracee at the time of ptrace-stop.
+    #[cfg(target_arch = "x86_64")]
+    fs_base: Option<FsBase>,
+    /// The GS base of the tracee at the time of ptrace-stop.
+    #[cfg(target_arch = "x86_64")]
+    gs_base: Option<GsBase>,
     /// The value of `ThreadLocal::orig_syscall_ret` at the time of ptrace-stop,
     /// or [`Self::NOT_A_SYSCALL`] for non-syscall stops.
     #[cfg(target_arch = "x86_64")]
@@ -744,6 +790,10 @@ impl TraceeState {
             is_tracing_syscall: false,
             #[cfg(target_arch = "x86_64")]
             general_regs: None,
+            #[cfg(target_arch = "x86_64")]
+            fs_base: None,
+            #[cfg(target_arch = "x86_64")]
+            gs_base: None,
             #[cfg(target_arch = "x86_64")]
             orig_syscall_ret: Self::NOT_A_SYSCALL,
         }

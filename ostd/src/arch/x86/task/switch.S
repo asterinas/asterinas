@@ -16,16 +16,12 @@ context_switch: # (nxt: *const TaskContext, cur: *mut TaskContext)
   mov [rsi + 32], r13
   mov [rsi + 40], r14
   mov [rsi + 48], r15
-  rdfsbase r15
-  mov [rsi + 64], r15 # 64 = offsetof(TaskContext, fsbase)
   # Fallthrough
 
 .global first_context_switch
 .type first_context_switch, @function
 first_context_switch: # (nxt: *const TaskContext)
   # Restore nxt's registers
-  mov r15, [rdi + 64]
-  wrfsbase r15
   mov rsp, [rdi + 0]
   mov rbx, [rdi + 8]
   mov rbp, [rdi + 16]

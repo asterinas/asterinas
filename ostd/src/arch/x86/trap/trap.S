@@ -88,13 +88,12 @@ _trap_from_user:
     mov gs:12, rax          # store user rsp -> scratch at TSS.sp1
 
     mov rsp, [rsp + 8*8]    # load rsp <- UserContext
-    add rsp, 22*8           # rsp -> top of UserContext
+    add rsp, 20*8           # rsp -> top of UserContext
     mov rax, gs:4           # rax = kernel stack
 
     # push trap_num, error_code
     push [rax - 6*8]        # push error_code
     push [rax - 7*8]        # push trap_num
-    sub rsp, 16             # skip fsbase, gsbase
     # push general registers
     push [rax - 3*8]        # push rflags
     push [rax - 5*8]        # push rip
@@ -112,7 +111,6 @@ _trap_from_kernel:
     # - rax
 
     pop rax
-    push 0
     push r15
     push r14
     push r13
@@ -121,7 +119,7 @@ _trap_from_kernel:
     push r10
     push r9
     push r8
-    lea r8, [rsp + 14*8]
+    lea r8, [rsp + 13*8]
     push r8                 # push rsp
     push rbp
     push rdi
@@ -151,7 +149,7 @@ _trap_from_kernel:
     pop r14
     pop r15
 
-    # skip padding, trap_num, error_code
-    add rsp, 24
+    # skip trap_num and error_code
+    add rsp, 16
 
     iretq
