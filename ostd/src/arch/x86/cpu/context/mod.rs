@@ -380,6 +380,7 @@ impl UserContextApiInternal for UserContext {
             r13: self.user_context.general.r13,
             r14: self.user_context.general.r14,
             r15: self.user_context.general.r15,
+            _pad: 0,
             trap_num: self.user_context.trap_num,
             error_code: self.user_context.error_code,
             rip: self.user_context.general.rip,

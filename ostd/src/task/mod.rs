@@ -228,9 +228,10 @@ impl TaskOptions {
         // the context switch.
         //
         // According to the System V AMD64 ABI, the stack pointer should be aligned
-        // to at least 16 bytes. And a larger alignment is needed if larger arguments
-        // are passed to the function. The `kernel_task_entry` function does not
-        // have any arguments, so we only need to align the stack pointer to 16 bytes.
+        // to at least 16 bytes. A larger alignment is needed if larger arguments
+        // are passed to the function, which is not the case for the
+        // `kernel_task_entry` function because it does not have any arguments. So
+        // we only need to align the stack pointer to 16 bytes.
         ctx.set_stack_pointer(kstack.end_vaddr() - 16);
 
         let new_task = Task {

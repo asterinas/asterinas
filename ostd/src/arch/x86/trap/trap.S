@@ -111,6 +111,7 @@ _trap_from_kernel:
     # - rax
 
     pop rax
+    push 0
     push r15
     push r14
     push r13
@@ -149,7 +150,7 @@ _trap_from_kernel:
     pop r14
     pop r15
 
-    # skip trap_num and error_code
-    add rsp, 16
+    # skip padding, trap_num, error_code
+    add rsp, 24
 
     iretq
