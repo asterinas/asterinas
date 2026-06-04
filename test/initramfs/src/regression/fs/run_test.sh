@@ -99,6 +99,7 @@ test_ext2 "/ext2" "test_file.txt"
 ./ext2/rmdir
 ./ext2/short_rw
 ./ext2/sparse
+./ext2/shared_block_device
 ./ext2/symlink
 ./ext2/unix_socket
 ./ext2/xattr
