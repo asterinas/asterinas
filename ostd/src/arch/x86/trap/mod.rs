@@ -82,6 +82,7 @@ pub struct TrapFrame {
     pub r13: usize,
     pub r14: usize,
     pub r15: usize,
+    pub _pad: usize,
 
     pub trap_num: usize,
     pub error_code: usize,
@@ -91,6 +92,16 @@ pub struct TrapFrame {
     pub cs: usize,
     pub rflags: usize,
 }
+
+// The padding field in `TrapFrame` is necessary. Do not attempt to remove it
+// without considering this note. Otherwise, the code will be **unsound**.
+//
+// According to the System V AMD64 ABI, the stack pointer should be aligned to
+// at least 16 bytes. The hardware will align the stack pointer to a 16-byte
+// boundary for exceptions and interrupts ("In IA-32e mode, the RSP is aligned
+// to a 16-byte boundary before pushing the stack frame"), so we only need to
+// ensure the size of a `TrapFrame` is also aligned.
+crate::const_assert!(size_of::<TrapFrame>().is_multiple_of(16));
 
 /// Initializes interrupt handling on x86_64.
 ///
