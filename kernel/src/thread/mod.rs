@@ -55,18 +55,10 @@ fn post_schedule_handler() {
     }
 }
 
-fn pre_user_run_handler(guard: &DisabledLocalIrqGuard) {
-    let task = Task::current().unwrap();
-    let thread_local = task.as_thread_local().unwrap();
-
-    thread_local.supp_user_context().before_user_exec(guard);
-}
-
 pub(super) fn init() {
     CONTEXT_SWITCH_COUNTER.call_once(PerCpuCounter::new);
     ostd::task::inject_pre_schedule_handler(pre_schedule_handler);
     ostd::task::inject_post_schedule_handler(post_schedule_handler);
-    ostd::task::inject_pre_user_run_handler(pre_user_run_handler);
     ostd::arch::trap::inject_user_page_fault_handler(exception::page_fault_handler);
 }
 
