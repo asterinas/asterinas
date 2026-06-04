@@ -6,8 +6,8 @@ use crate::{
     Error,
     io::IoMem,
     mm::{
-        CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
-        UFrame, VmSpace,
+        CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PAGE_SIZE, PageFlags,
+        PageProperty, UFrame, VmSpace,
         io::{VmIo, VmIoFill, VmReader, VmWriter, util::HasVmReaderWriter},
         tlb::TlbFlushOp,
         vm_space::{VmQueriedItem, get_activated_vm_space},
@@ -608,6 +608,25 @@ mod vmspace {
                 .expect("failed to create the mutable cursor");
             cursor_mut.map(frame.clone(), prop);
         }
+    }
+
+    /// Ensures `unmap` panics when `len` overflows the address space
+    /// instead of silently wrapping (issue #3159).
+    #[ktest]
+    #[should_panic(expected = "the unmap length overflows the address space")]
+    fn vmspace_unmap_overflowing_len() {
+        let vmspace = VmSpace::default();
+        let range = 0x1000..0x2000;
+        let preempt_guard = disable_preempt();
+
+        let mut cursor_mut = vmspace
+            .cursor_mut(&preempt_guard, &range)
+            .expect("failed to create the mutable cursor");
+        // Page-aligned `len` that wraps past `usize::MAX` when added to the
+        // cursor's virtual address. Without the checked addition this used
+        // to wrap and bypass the documented out-of-range panic.
+        let overflowing_len = usize::MAX & !(PAGE_SIZE - 1);
+        cursor_mut.unmap(overflowing_len);
     }
 
     /// Unmaps twice using `CursorMut`.

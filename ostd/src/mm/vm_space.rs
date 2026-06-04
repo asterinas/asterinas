@@ -464,7 +464,10 @@ impl<'a> CursorMut<'a> {
     ///  - the length is longer than the remaining range of the cursor;
     ///  - the length is not page-aligned.
     pub fn unmap(&mut self, len: usize) -> usize {
-        let end_va = self.virt_addr() + len;
+        let end_va = self
+            .virt_addr()
+            .checked_add(len)
+            .expect("the unmap length overflows the address space");
         let mut num_unmapped: usize = 0;
         loop {
             // SAFETY: It is safe to un-map memory in the userspace. And the
