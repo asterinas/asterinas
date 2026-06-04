@@ -37,8 +37,6 @@ static PRE_SCHEDULE_HANDLER: Once<fn(&DisabledLocalIrqGuard)> = Once::new();
 
 static POST_SCHEDULE_HANDLER: Once<fn()> = Once::new();
 
-static PRE_USER_RUN_HANDLER: Once<fn(&DisabledLocalIrqGuard)> = Once::new();
-
 /// Injects a handler to be executed before scheduling.
 pub fn inject_pre_schedule_handler(handler: fn(&DisabledLocalIrqGuard)) {
     PRE_SCHEDULE_HANDLER.call_once(|| handler);
@@ -47,21 +45,6 @@ pub fn inject_pre_schedule_handler(handler: fn(&DisabledLocalIrqGuard)) {
 /// Injects a handler to be executed after scheduling.
 pub fn inject_post_schedule_handler(handler: fn()) {
     POST_SCHEDULE_HANDLER.call_once(|| handler);
-}
-
-/// Injects a handler to be executed right before entering user mode.
-pub fn inject_pre_user_run_handler(handler: fn(&DisabledLocalIrqGuard)) {
-    PRE_USER_RUN_HANDLER.call_once(|| handler);
-}
-
-/// Runs the pre-user-run handler if one has been injected.
-///
-/// Called by architecture-specific `execute()` implementations
-/// right before entering user mode.
-pub(crate) fn call_pre_user_run_handler(guard: &DisabledLocalIrqGuard) {
-    if let Some(handler) = PRE_USER_RUN_HANDLER.get() {
-        handler(guard);
-    }
 }
 
 /// A task that executes a function to the end.

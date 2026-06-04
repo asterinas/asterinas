@@ -17,7 +17,7 @@ use crate::{
         trap::{RawUserContext, SSTATUS_FS_MASK, TrapFrame, handle_irq},
     },
     cpu::PrivilegeLevel,
-    user::{ReturnReason, UserContextApi, UserContextApiInternal},
+    user::{ReturnReason, UserContextApi, UserContextApiInternal, UserModeHooks},
 };
 
 /// Userspace CPU context, including general-purpose registers and exception information.
@@ -173,13 +173,13 @@ impl UserContext {
 }
 
 impl UserContextApiInternal for UserContext {
-    fn execute<F>(&mut self, mut has_kernel_event: F) -> ReturnReason
-    where
-        F: FnMut() -> bool,
-    {
+    fn execute<T: UserModeHooks>(&mut self, hooks: &T) -> ReturnReason {
         loop {
             crate::task::scheduler::might_preempt();
-            self.user_context.run();
+
+            let guard = crate::irq::disable_local();
+            hooks.pre_user_run(&guard);
+            self.user_context.run(guard);
 
             let scause = riscv::register::scause::read();
             let Ok(cause) = Trap::<Interrupt, Exception>::try_from(scause.cause()) else {
@@ -214,7 +214,7 @@ impl UserContextApiInternal for UserContext {
                 }
             }
 
-            if has_kernel_event() {
+            if hooks.has_kernel_event() {
                 break ReturnReason::KernelEvent;
             }
         }

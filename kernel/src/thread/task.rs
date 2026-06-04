@@ -2,10 +2,11 @@
 
 use ostd::{
     arch::cpu::context::UserContext,
+    irq::DisabledLocalIrqGuard,
     mm::VmIo,
     sync::Waiter,
     task::{Task, TaskOptions},
-    user::{ReturnReason, UserContextApi, UserMode},
+    user::{ReturnReason, UserContextApi, UserMode, UserModeHooks},
 };
 
 use super::{Thread, oops};
@@ -62,8 +63,6 @@ pub fn create_new_user_task(
             task: &current_task,
         };
 
-        let has_kernel_event_fn = || ctx.has_pending();
-
         // The startup method is only executed when the first user thread starts up.
         if ctx.posix_thread.tid() == FIRST_POSIX_TID {
             crate::init::on_first_process_startup(&ctx);
@@ -71,7 +70,7 @@ pub fn create_new_user_task(
 
         while !current_thread.is_exited() {
             // Execute the user code
-            let return_reason = user_mode.execute(has_kernel_event_fn);
+            let return_reason = user_mode.execute(&ctx);
 
             // Handle user events
             let user_ctx = user_mode.context_mut();
@@ -134,4 +133,16 @@ pub fn create_new_user_task(
     .local_data(thread_local)
     .build()
     .expect("spawn task failed")
+}
+
+impl UserModeHooks for Context<'_> {
+    fn has_kernel_event(&self) -> bool {
+        self.has_pending()
+    }
+
+    fn pre_user_run(&self, guard: &DisabledLocalIrqGuard) {
+        self.thread_local
+            .supp_user_context()
+            .before_user_exec(guard);
+    }
 }
