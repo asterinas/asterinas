@@ -87,7 +87,7 @@ impl ConnectingStream {
             )),
             ConnectState::Refused => {
                 let bound_port = self.tcp_conn.into_bound_port().unwrap();
-                let family = IpAddressFamily::from(*bound_port.addr());
+                let family = IpAddressFamily::from(bound_port.addr());
                 ConnResult::Refused(InitStream::new_refused(bound_port, family))
             }
         }
