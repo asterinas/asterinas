@@ -22,19 +22,16 @@ use super::{
     super::{
         dir::VirtioFsDir,
         file::{CachePolicy, VirtioFsFile},
-        fs::VirtioFs,
         open_handle::VirtioFsOpenHandle,
         valid_until,
     },
     TimeField, VirtioFsInode, WriteOffset,
     metadata::StaleAttrAction,
-    metadata_from_attr,
 };
 use crate::{
     fs::{
         file::{AccessMode, PerOpenFileOps, StatusFlags},
         utils::DirentVisitor,
-        vfs::file_system::FileSystem,
     },
     prelude::*,
     thread::work_queue::{self, WorkPriority},
@@ -418,31 +415,6 @@ impl VirtioFsInode {
         Ok(Box::new(VirtioFsDir::new(inode, open_handle)))
     }
 
-    /// Builds a child inode from a FUSE entry reply.
-    ///
-    /// This is used for operations that instantiate a new inode cache entry.
-    /// There is no existing cache for that child, so no stale-reply merge is
-    /// needed; the entry and attr TTLs are installed as the initial deadlines.
-    pub(super) fn build_child_inode(
-        fs: &Arc<VirtioFs>,
-        entry_reply: EntryReply,
-    ) -> Arc<VirtioFsInode> {
-        let entry_valid_until =
-            valid_until(entry_reply.entry_valid(), entry_reply.entry_valid_nsec());
-        let attr_reply = FuseAttrReply::from(&entry_reply);
-        let attr_valid_until = valid_until(attr_reply.attr_valid(), attr_reply.attr_valid_nsec());
-
-        VirtioFsInode::new(
-            entry_reply.nodeid(),
-            entry_reply.generation(),
-            metadata_from_attr(attr_reply.attr(), fs.sb().container_dev_id),
-            Arc::downgrade(fs),
-            entry_valid_until,
-            attr_valid_until,
-            fs.session().bump_attr_version(),
-        )
-    }
-
     /// Commits an `EntryReply` reply for this cached inode.
     ///
     /// `EntryReply` replies carry both attributes and one new lookup reference.
@@ -652,6 +624,10 @@ impl Drop for VirtioFsInode {
     // FUSE forgets must run outside Drop: the session may sleep and
     // may need VFS locks; defer to the work queue.
     fn drop(&mut self) {
+        if let Some(fs) = self.fs.upgrade() {
+            fs.remove_inode_from_cache(self);
+        }
+
         let nlookup = self.lookup_count.drain();
         if nlookup > 0 {
             self.forget_async(nlookup);
