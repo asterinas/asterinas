@@ -2,6 +2,7 @@
 
 //! Inode implementation for `virtiofs`.
 
+mod cache;
 mod metadata;
 mod ops;
 mod page_cache;
@@ -12,8 +13,8 @@ use core::{
 };
 
 use aster_fuse::{
-    DirentType, FuseGeneration, FuseNodeId, FuseOpenFlags, LookupCount, ReleaseFlags, ReleaseKind,
-    SetattrReq, SetattrValid,
+    DirentType, EntryReply, FUSE_ROOT_ID, FuseGeneration, FuseNodeId, FuseOpenFlags, LookupCount,
+    ReleaseFlags, ReleaseKind, SetattrReq, SetattrValid,
     ops::{
         link::{LinkOperation, LinkReq},
         lookup::LookupOperation,
@@ -26,6 +27,8 @@ use aster_fuse::{
     },
 };
 use aster_virtio::device::filesystem::device::AttrVersion;
+pub(super) use cache::InodeCache;
+use device_id::DeviceId;
 pub(super) use metadata::metadata_from_attr;
 
 use super::{
@@ -79,8 +82,38 @@ pub(super) struct VirtioFsInode {
 }
 
 impl VirtioFsInode {
-    /// Creates an inode from a fresh FUSE entry or attribute reply.
-    pub(super) fn new(
+    /// Creates the root inode.
+    pub(super) fn new_root(
+        root_entry: EntryReply,
+        fs: Weak<VirtioFs>,
+        container_device_id: DeviceId,
+        attr_version: AttrVersion,
+    ) -> Arc<Self> {
+        Self::new(
+            FUSE_ROOT_ID,
+            root_entry.generation(),
+            metadata_from_attr(root_entry.attr(), container_device_id),
+            fs,
+            Duration::MAX,
+            valid_until(root_entry.attr_valid(), root_entry.attr_valid_nsec()),
+            attr_version,
+        )
+    }
+
+    /// Creates an inode from a fresh FUSE entry reply.
+    pub(super) fn new_from_entry_reply(entry_reply: EntryReply, fs: &Arc<VirtioFs>) -> Arc<Self> {
+        Self::new(
+            entry_reply.nodeid(),
+            entry_reply.generation(),
+            metadata_from_attr(entry_reply.attr(), fs.container_device_id()),
+            Arc::downgrade(fs),
+            valid_until(entry_reply.entry_valid(), entry_reply.entry_valid_nsec()),
+            valid_until(entry_reply.attr_valid(), entry_reply.attr_valid_nsec()),
+            fs.session().bump_attr_version(),
+        )
+    }
+
+    fn new(
         nodeid: FuseNodeId,
         generation: FuseGeneration,
         metadata: Metadata,
@@ -125,6 +158,37 @@ impl VirtioFsInode {
 
     pub(super) fn size(&self) -> usize {
         self.size.load(Ordering::Acquire)
+    }
+
+    /// Updates a cached inode with a fresh FUSE entry reply.
+    ///
+    /// A successful entry reply gives the client one additional lookup
+    /// reference and a refreshed directory-entry TTL. Even though the inode
+    /// object already exists, the cached lookup count and metadata still need
+    /// to observe the reply before the inode is returned to VFS.
+    pub(super) fn update_from_entry_reply(
+        &self,
+        entry_reply: &EntryReply,
+        request_attr_version: AttrVersion,
+    ) -> Result<()> {
+        self.commit_entry_reply(
+            entry_reply,
+            request_attr_version,
+            metadata::StaleAttrAction::Discard,
+        )?;
+        *self.entry_valid_until.lock() =
+            valid_until(entry_reply.entry_valid(), entry_reply.entry_valid_nsec());
+        Ok(())
+    }
+
+    fn lookup_child_inode(&self, name: &str) -> Result<Arc<VirtioFsInode>> {
+        let fs = self.fs_ref();
+        let request_attr_version = fs.session().snapshot_attr_version();
+        let entry_reply = fs
+            .session()
+            .do_fuse_op(self.nodeid(), LookupOperation::new(name))?;
+
+        fs.lookup_inode_from_cache(entry_reply, request_attr_version)
     }
 
     fn type_(&self) -> InodeType {
@@ -292,28 +356,12 @@ impl Inode for VirtioFsInode {
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
         let fs = self.fs_ref();
         let parent_nodeid = self.nodeid();
+        let request_attr_version = fs.session().snapshot_attr_version();
         let entry_reply = fs
             .session()
             .do_fuse_op(parent_nodeid, LookupOperation::new(name))?;
-        let nodeid = entry_reply.nodeid();
 
-        let entry_valid_until =
-            valid_until(entry_reply.entry_valid(), entry_reply.entry_valid_nsec());
-        let attr_valid_until = valid_until(entry_reply.attr_valid(), entry_reply.attr_valid_nsec());
-
-        // TODO: Add an inode cache keyed by `(nodeid, generation)` so hard
-        // links to the same FUSE inode share one `VirtioFsInode`.
-        let inode = VirtioFsInode::new(
-            nodeid,
-            entry_reply.generation(),
-            metadata_from_attr(entry_reply.attr(), fs.sb().container_dev_id),
-            Arc::downgrade(&fs),
-            entry_valid_until,
-            attr_valid_until,
-            fs.session().bump_attr_version(),
-        );
-
-        Ok(inode)
+        Ok(fs.lookup_inode_from_cache(entry_reply, request_attr_version)?)
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
@@ -348,7 +396,11 @@ impl Inode for VirtioFsInode {
                 )
             }
         };
-        Ok(VirtioFsInode::build_child_inode(&fs, entry_reply))
+
+        let child = VirtioFsInode::new_from_entry_reply(entry_reply, &fs);
+        fs.insert_inode_to_cache(&child);
+
+        Ok(child)
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
@@ -373,15 +425,27 @@ impl Inode for VirtioFsInode {
 
     fn unlink(&self, name: &str) -> Result<()> {
         let fs = self.fs_ref();
+        let child = self.lookup_child_inode(name)?;
+
         fs.session()
             .do_fuse_op(self.nodeid(), UnlinkOperation::new(name))?;
+
+        self.expire_attr_cache();
+        child.expire_attr_cache();
+
         Ok(())
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
         let fs = self.fs_ref();
+        let child = self.lookup_child_inode(name)?;
+
         fs.session()
             .do_fuse_op(self.nodeid(), RmdirOperation::new(name))?;
+
+        self.expire_attr_cache();
+        child.expire_attr_cache();
+
         Ok(())
     }
 
