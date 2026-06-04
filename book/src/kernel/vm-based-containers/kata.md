@@ -100,7 +100,7 @@ to enter an environment with Kata and Asterinas preinstalled:
 docker run -it \
     "${KATA_DOCKER_ARGS[@]}" \
     -w /root/kata-containers \
-    asterinas/kata:0.17.2-20260523
+    asterinas/kata:0.18.0-20260603
 ```
 
 The command above makes `/root/kata-containers` the working directory,
@@ -123,7 +123,7 @@ docker run -it \
     "${KATA_DOCKER_ARGS[@]}" \
     -v "${ASTERINAS_SRC}:/root/asterinas" \
     -w /root/kata-containers \
-    asterinas/kata:0.17.2-20260523
+    asterinas/kata:0.18.0-20260603
 ```
 
 This setup allows you to rebuild the kernel
