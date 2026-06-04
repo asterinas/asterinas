@@ -46,7 +46,7 @@ impl FuseFileHandle {
 /// `FuseNodeId`, the old cached inode must be treated as stale and replaced
 /// instead of being retargeted in place.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Pod)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Pod)]
 pub struct FuseNodeId(u64);
 
 impl FuseNodeId {

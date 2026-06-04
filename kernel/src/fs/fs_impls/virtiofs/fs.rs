@@ -4,13 +4,13 @@
 //!
 //! This module defines the filesystem type and objects for virtio-fs.
 
-use core::time::Duration;
-
-use aster_fuse::{FUSE_ROOT_ID, Kstatfs, StatfsOperation, ops::lookup::LookupOperation};
-use aster_virtio::device::filesystem::device::{self, FileSystemDevice, FuseSession};
+use aster_fuse::{
+    EntryReply, FUSE_ROOT_ID, Kstatfs, StatfsOperation, ops::lookup::LookupOperation,
+};
+use aster_virtio::device::filesystem::device::{self, AttrVersion, FileSystemDevice, FuseSession};
 use device_id::DeviceId;
 
-use super::{inode::VirtioFsInode, valid_until};
+use super::inode::{InodeCache, VirtioFsInode};
 use crate::{
     fs::{
         pseudofs::AnonDeviceId,
@@ -65,6 +65,7 @@ pub(super) struct VirtioFs {
     root: Arc<VirtioFsInode>,
     tag: String,
     session: Arc<FuseSession>,
+    inode_cache: InodeCache,
     fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
@@ -84,25 +85,22 @@ impl VirtioFs {
         let sb = SuperBlock::from((container_dev_id, statfs));
 
         let root_entry = session.do_fuse_op(FUSE_ROOT_ID, LookupOperation::new("."))?;
-        let root_metadata = super::inode::metadata_from_attr(root_entry.attr(), container_dev_id);
-        let attr_valid_until = valid_until(root_entry.attr_valid(), root_entry.attr_valid_nsec());
 
         Ok(Arc::new_cyclic(|weak_fs| {
-            let root = VirtioFsInode::new(
-                FUSE_ROOT_ID,
-                root_entry.generation(),
-                root_metadata,
+            let root = VirtioFsInode::new_root(
+                root_entry,
                 weak_fs.clone(),
-                Duration::MAX,
-                attr_valid_until,
+                container_dev_id,
                 session.bump_attr_version(),
             );
+            let inode_cache = InodeCache::new(&root);
 
             Self {
                 sb,
                 root,
                 tag,
                 session,
+                inode_cache,
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             }
         }))
@@ -110,6 +108,34 @@ impl VirtioFs {
 
     pub(super) fn session(&self) -> &Arc<FuseSession> {
         &self.session
+    }
+
+    /// Returns the device ID of this virtio-fs mount.
+    pub(super) fn container_device_id(&self) -> DeviceId {
+        self.sb.container_dev_id
+    }
+
+    /// Reads an inode from a FUSE entry reply via the inode cache.
+    pub(super) fn lookup_inode_from_cache(
+        self: &Arc<Self>,
+        entry_reply: EntryReply,
+        request_attr_version: AttrVersion,
+    ) -> Result<Arc<VirtioFsInode>> {
+        self.inode_cache
+            .lookup_inode(entry_reply, request_attr_version, self)
+    }
+
+    /// Inserts a newly created inode into the inode cache.
+    pub(super) fn insert_inode_to_cache(&self, inode: &Arc<VirtioFsInode>) {
+        self.inode_cache.insert_inode(inode);
+    }
+
+    /// Removes an inode from the cache if it is still the cached entry.
+    pub(super) fn remove_inode_from_cache(
+        &self,
+        inode: &VirtioFsInode,
+    ) -> Option<Weak<VirtioFsInode>> {
+        self.inode_cache.remove_inode(inode)
     }
 }
 
