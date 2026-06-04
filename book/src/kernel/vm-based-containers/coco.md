@@ -91,7 +91,7 @@ to enter an environment with CoCo and Asterinas preinstalled:
 ```bash
 docker run -it \
     "${COCO_DOCKER_ARGS[@]}" \
-    asterinas/coco:0.17.2-20260407
+    asterinas/coco:0.18.0-20260603
 ```
 
 The image bundles the CoCo runtime, the Asterinas guest kernel,
@@ -115,7 +115,7 @@ ASTERINAS_SRC=$HOME/asterinas
 docker run -it \
     "${COCO_DOCKER_ARGS[@]}" \
     -v "${ASTERINAS_SRC}:/root/asterinas" \
-    asterinas/coco:0.17.2-20260407
+    asterinas/coco:0.18.0-20260603
 ```
 
 The `asterinas/coco` image is built on top of the `asterinas/asterinas` image,
