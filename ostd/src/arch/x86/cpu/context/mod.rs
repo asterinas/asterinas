@@ -371,7 +371,6 @@ impl UserContextApiInternal for UserContext {
             rsi: self.user_context.general.rsi,
             rdi: self.user_context.general.rdi,
             rbp: self.user_context.general.rbp,
-            rsp: self.user_context.general.rsp,
             r8: self.user_context.general.r8,
             r9: self.user_context.general.r9,
             r10: self.user_context.general.r10,
@@ -380,12 +379,13 @@ impl UserContextApiInternal for UserContext {
             r13: self.user_context.general.r13,
             r14: self.user_context.general.r14,
             r15: self.user_context.general.r15,
-            _pad: 0,
             trap_num: self.user_context.trap_num,
             error_code: self.user_context.error_code,
             rip: self.user_context.general.rip,
             cs: 0,
             rflags: self.user_context.general.rflags,
+            rsp: self.user_context.general.rsp,
+            ss: 0,
         }
     }
 }

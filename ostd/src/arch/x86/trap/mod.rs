@@ -73,7 +73,6 @@ pub struct TrapFrame {
     pub rsi: usize,
     pub rdi: usize,
     pub rbp: usize,
-    pub rsp: usize,
     pub r8: usize,
     pub r9: usize,
     pub r10: usize,
@@ -82,7 +81,6 @@ pub struct TrapFrame {
     pub r13: usize,
     pub r14: usize,
     pub r15: usize,
-    pub _pad: usize,
 
     pub trap_num: usize,
     pub error_code: usize,
@@ -91,10 +89,11 @@ pub struct TrapFrame {
     pub rip: usize,
     pub cs: usize,
     pub rflags: usize,
+    pub rsp: usize,
+    pub ss: usize,
 }
 
-// The padding field in `TrapFrame` is necessary. Do not attempt to remove it
-// without considering this note. Otherwise, the code will be **unsound**.
+// Be careful: This assertion is a **soundness** requirement.
 //
 // According to the System V AMD64 ABI, the stack pointer should be aligned to
 // at least 16 bytes. The hardware will align the stack pointer to a 16-byte

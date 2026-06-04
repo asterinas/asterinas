@@ -10,8 +10,8 @@
  * We make the following new changes:
  * * Add the `trap_handler_table`.
  * * Adjust some symbol names.
- * * Fix an off-by-one bug to correct the RSP value in the trap frame.
  * * Disable alternate macro mode after using it.
+ * * Report the RSP pushed by the CPU in the trap frame.
  *
  * These changes are released under the following license:
  *
@@ -103,6 +103,8 @@ _trap_from_user:
 
 _trap_from_kernel:
     # kernel stack:
+    # - ss
+    # - rsp                 # ss:rsp is unconditionally pushed in 64-bit mode
     # - rflags
     # - cs
     # - rip
@@ -111,7 +113,6 @@ _trap_from_kernel:
     # - rax
 
     pop rax
-    push 0
     push r15
     push r14
     push r13
@@ -120,8 +121,6 @@ _trap_from_kernel:
     push r10
     push r9
     push r8
-    lea r8, [rsp + 13*8]
-    push r8                 # push rsp
     push rbp
     push rdi
     push rsi
@@ -140,7 +139,6 @@ _trap_from_kernel:
     pop rsi
     pop rdi
     pop rbp
-    pop r8                  # skip rsp
     pop r8
     pop r9
     pop r10
@@ -150,7 +148,7 @@ _trap_from_kernel:
     pop r14
     pop r15
 
-    # skip padding, trap_num, error_code
-    add rsp, 24
+    # skip trap_num, error_code
+    add rsp, 16
 
     iretq
