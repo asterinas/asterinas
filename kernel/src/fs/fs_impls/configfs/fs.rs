@@ -85,6 +85,8 @@ impl FileSystem for ConfigFs {
 pub(super) struct ConfigFsType;
 
 impl FsType for ConfigFsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "configfs"
     }

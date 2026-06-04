@@ -83,6 +83,8 @@ impl FileSystem for SysFs {
 pub(super) struct SysFsType;
 
 impl FsType for SysFsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "sysfs"
     }
