@@ -2,11 +2,12 @@
 
 use alloc::{
     collections::btree_map::{BTreeMap, Entry},
-    string::String,
+    ffi::CString,
     sync::Arc,
     vec::Vec,
 };
 use core::{
+    ffi::CStr,
     ops::Deref,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
@@ -37,7 +38,7 @@ use crate::{
 
 pub struct IfaceCommon<E: Ext> {
     index: u32,
-    name: String,
+    name: CString,
     type_: InterfaceType,
     flags: InterfaceFlags,
 
@@ -81,7 +82,7 @@ impl From<IpAddress> for NormalizedAddress {
 
 impl<E: Ext> IfaceCommon<E> {
     pub(super) fn new(
-        name: String,
+        name: CString,
         type_: InterfaceType,
         flags: InterfaceFlags,
         interface: smoltcp::iface::Interface,
@@ -105,7 +106,7 @@ impl<E: Ext> IfaceCommon<E> {
         self.index
     }
 
-    pub(super) fn name(&self) -> &str {
+    pub(super) fn name(&self) -> &CStr {
         &self.name
     }
 
