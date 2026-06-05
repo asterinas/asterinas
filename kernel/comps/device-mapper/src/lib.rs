@@ -27,6 +27,7 @@ mod device;
 mod error;
 mod parser;
 mod registry;
+mod sha256;
 mod table;
 pub mod target;
 
