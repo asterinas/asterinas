@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::btree_map::BTreeMap, string::String, sync::Arc};
+use alloc::{collections::btree_map::BTreeMap, ffi::CString, sync::Arc};
 
 use aster_softirq::BottomHalfDisabled;
 use ostd::sync::SpinLock;
@@ -37,7 +37,7 @@ impl<D: WithDevice, E: Ext> EtherIface<D, E> {
         ether_addr: EthernetAddress,
         ip_cidr: Ipv4Cidr,
         gateway: Ipv4Address,
-        name: String,
+        name: CString,
         sched_poll: E::ScheduleNextPoll,
         flags: InterfaceFlags,
     ) -> Arc<Self> {

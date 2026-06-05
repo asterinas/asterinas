@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{string::String, sync::Arc};
+use alloc::{ffi::CString, sync::Arc};
 
 use smoltcp::{
     iface::Config,
@@ -30,7 +30,7 @@ impl<D: WithDevice, E: Ext> IpIface<D, E> {
         driver: D,
         ip_cidr: Ipv4Cidr,
         ipv6_cidr: Option<Ipv6Cidr>,
-        name: String,
+        name: CString,
         sched_poll: E::ScheduleNextPoll,
         type_: InterfaceType,
         flags: InterfaceFlags,
