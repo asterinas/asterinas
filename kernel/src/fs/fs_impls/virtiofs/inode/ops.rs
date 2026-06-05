@@ -568,25 +568,29 @@ impl VirtioFsInode {
         let old_nodeid = self.nodeid();
         let fs = self.fs_ref();
         let request_attr_version = fs.session().snapshot_attr_version();
-        let entry_reply = fs
+        let lookup_reply = fs
             .session()
             .do_fuse_op(parent_nodeid, LookupOperation::new(name))?;
 
-        if entry_reply.nodeid() != old_nodeid || entry_reply.generation() != self.generation() {
-            if let Err(err) = fs.session().forget(entry_reply.nodeid(), 1) {
+        if lookup_reply.nodeid() != old_nodeid || lookup_reply.generation() != self.generation() {
+            if let Err(err) = fs.session().forget(lookup_reply.nodeid(), 1) {
                 warn!(
                     "virtiofs forget failed for stale lookup inode {}: {:?}",
-                    entry_reply.nodeid().as_u64(),
+                    lookup_reply.nodeid().as_u64(),
                     err
                 );
             }
             return_errno_with_message!(Errno::ESTALE, "virtiofs stale dentry after revalidate");
         }
 
-        self.commit_entry_reply(&entry_reply, request_attr_version, StaleAttrAction::Discard)?;
+        self.commit_entry_reply(
+            &lookup_reply,
+            request_attr_version,
+            StaleAttrAction::Discard,
+        )?;
 
         *self.entry_valid_until.lock() =
-            valid_until(entry_reply.entry_valid(), entry_reply.entry_valid_nsec());
+            valid_until(lookup_reply.entry_valid(), lookup_reply.entry_valid_nsec());
 
         Ok(())
     }

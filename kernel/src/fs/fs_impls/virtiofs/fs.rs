@@ -118,11 +118,11 @@ impl VirtioFs {
     /// Reads an inode from a FUSE entry reply via the inode cache.
     pub(super) fn lookup_inode_from_cache(
         self: &Arc<Self>,
-        entry_reply: EntryReply,
+        lookup_reply: EntryReply,
         request_attr_version: AttrVersion,
     ) -> Result<Arc<VirtioFsInode>> {
         self.inode_cache
-            .lookup_inode(entry_reply, request_attr_version, self)
+            .lookup_inode(lookup_reply, request_attr_version, self)
     }
 
     /// Inserts a newly created inode into the inode cache.
