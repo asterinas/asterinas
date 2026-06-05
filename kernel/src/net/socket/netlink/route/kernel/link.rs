@@ -2,6 +2,7 @@
 
 //! Handle link-related requests.
 
+use alloc::borrow::ToOwned;
 use core::num::NonZero;
 
 use aster_bigtcp::iface::InterfaceType;
@@ -46,7 +47,7 @@ pub(super) fn do_get_link(request_segment: &LinkSegment) -> Result<Vec<RtnlSegme
 
 enum FilterBy<'a> {
     Index(u32),
-    Name(&'a str),
+    Name(&'a CStr),
     Dump,
 }
 
@@ -71,7 +72,7 @@ impl<'a> FilterBy<'a> {
 
         let required_name = request_segment.attrs().iter().find_map(|attr| {
             if let LinkAttr::Name(name) = attr {
-                Some(name.to_str().unwrap())
+                Some(name.as_c_str())
             } else {
                 None
             }
@@ -137,7 +138,7 @@ fn iface_to_new_link(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> LinkSeg
     };
 
     let attrs = vec![
-        LinkAttr::Name(CString::new(iface.name()).unwrap()),
+        LinkAttr::Name(iface.name().to_owned()),
         LinkAttr::Mtu(iface.mtu() as u32),
     ];
 

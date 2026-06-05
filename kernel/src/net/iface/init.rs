@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::borrow::ToOwned;
 use core::slice::Iter;
 
 use aster_bigtcp::{
@@ -99,7 +98,7 @@ fn new_loopback() -> Arc<Iface> {
             LOOPBACK_IPV6_ADDRESS,
             LOOPBACK_IPV6_PREFIX_LEN,
         )),
-        "lo".to_owned(),
+        CString::new("lo").unwrap(),
         PollScheduler::new(),
         InterfaceType::LOOPBACK,
         flags,
@@ -148,7 +147,7 @@ fn new_virtio() -> Option<Arc<Iface>> {
         EthernetAddress(ether_addr),
         Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
         VIRTIO_GATEWAY,
-        "eth0".to_owned(),
+        CString::new("eth0").unwrap(),
         PollScheduler::new(),
         flags,
     ))

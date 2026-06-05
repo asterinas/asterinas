@@ -2,6 +2,7 @@
 
 //! Handle address-related requests.
 
+use alloc::borrow::ToOwned;
 use core::num::NonZeroU32;
 
 use super::util::finish_response;
@@ -60,7 +61,7 @@ fn iface_to_new_addr(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> Option<
 
     let attrs = vec![
         AddrAttr::Address(ipv4_addr.octets()),
-        AddrAttr::Label(CString::new(iface.name()).unwrap()),
+        AddrAttr::Label(iface.name().to_owned()),
         AddrAttr::Local(ipv4_addr.octets()),
     ];
 

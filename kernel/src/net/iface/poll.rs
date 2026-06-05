@@ -26,7 +26,7 @@ pub(super) fn poll_ifaces() {
 
 fn spawn_background_poll_thread(iface: Arc<Iface>) {
     let task_fn = move || {
-        debug!("spawn background poll thread for {}", iface.name());
+        debug!("spawn background poll thread for {:?}", iface.name());
 
         let sched_poll = iface.sched_poll();
         let wait_queue = sched_poll.polling_wait_queue();

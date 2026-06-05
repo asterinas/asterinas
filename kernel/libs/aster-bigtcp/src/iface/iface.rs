@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
+use core::ffi::CStr;
 
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr, Ipv6Address};
 
@@ -58,7 +59,7 @@ impl<E: Ext> dyn Iface<E> {
     /// Gets the name of the iface.
     ///
     /// In Linux, the name is usually the driver name followed by a unit number.
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &CStr {
         self.common().name()
     }
 
