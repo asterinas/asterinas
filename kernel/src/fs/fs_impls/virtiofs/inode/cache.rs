@@ -23,11 +23,11 @@ impl InodeCache {
     /// Looks up an inode by FUSE node ID and validates its generation.
     pub(in crate::fs::fs_impls::virtiofs) fn lookup_inode(
         &self,
-        entry_reply: EntryReply,
+        lookup_reply: EntryReply,
         request_attr_version: AttrVersion,
         fs: &Arc<VirtioFs>,
     ) -> Result<Arc<VirtioFsInode>> {
-        let nodeid = entry_reply.nodeid();
+        let nodeid = lookup_reply.nodeid();
 
         // An `EntryReply` carries a new lookup reference even when the inode is
         // already cached, so cache hits still need to commit the reply.
@@ -36,14 +36,14 @@ impl InodeCache {
             .read()
             .get(&nodeid)
             .and_then(Weak::upgrade)
-            .filter(|inode| inode.generation() == entry_reply.generation())
+            .filter(|inode| inode.generation() == lookup_reply.generation())
         {
             // Reusing a cached inode can still fail while committing the
             // returned attributes, because a size or mtime change may require
             // page-cache resize or invalidation. There is no local recovery
             // path for those page-cache errors, so propagate them to the
             // lookup caller.
-            inode.update_from_entry_reply(&entry_reply, request_attr_version)?;
+            inode.update_from_entry_reply(&lookup_reply, request_attr_version)?;
             return Ok(inode);
         }
 
@@ -53,16 +53,16 @@ impl InodeCache {
         if let Some(inode) = inode_cache
             .get(&nodeid)
             .and_then(Weak::upgrade)
-            .filter(|inode| inode.generation() == entry_reply.generation())
+            .filter(|inode| inode.generation() == lookup_reply.generation())
         {
             drop(inode_cache);
             // See the first cache-hit path above for why committing a fresh
             // `EntryReply` to a cached inode may still fail.
-            inode.update_from_entry_reply(&entry_reply, request_attr_version)?;
+            inode.update_from_entry_reply(&lookup_reply, request_attr_version)?;
             return Ok(inode);
         }
 
-        let inode = VirtioFsInode::new_from_entry_reply(entry_reply, fs);
+        let inode = VirtioFsInode::new_from_entry_reply(lookup_reply, fs);
         inode_cache.insert(nodeid, Arc::downgrade(&inode));
 
         Ok(inode)
