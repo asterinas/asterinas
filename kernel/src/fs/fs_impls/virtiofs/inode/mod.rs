@@ -184,11 +184,11 @@ impl VirtioFsInode {
     fn lookup_child_inode(&self, name: &str) -> Result<Arc<VirtioFsInode>> {
         let fs = self.fs_ref();
         let request_attr_version = fs.session().snapshot_attr_version();
-        let entry_reply = fs
+        let lookup_reply = fs
             .session()
             .do_fuse_op(self.nodeid(), LookupOperation::new(name))?;
 
-        fs.lookup_inode_from_cache(entry_reply, request_attr_version)
+        fs.lookup_inode_from_cache(lookup_reply, request_attr_version)
     }
 
     fn type_(&self) -> InodeType {
@@ -357,17 +357,17 @@ impl Inode for VirtioFsInode {
         let fs = self.fs_ref();
         let parent_nodeid = self.nodeid();
         let request_attr_version = fs.session().snapshot_attr_version();
-        let entry_reply = fs
+        let lookup_reply = fs
             .session()
             .do_fuse_op(parent_nodeid, LookupOperation::new(name))?;
 
-        Ok(fs.lookup_inode_from_cache(entry_reply, request_attr_version)?)
+        Ok(fs.lookup_inode_from_cache(lookup_reply, request_attr_version)?)
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         let fs = self.fs_ref();
         let parent_nodeid = self.nodeid();
-        let entry_reply = match type_ {
+        let create_reply = match type_ {
             InodeType::File => fs.session().do_fuse_op(
                 parent_nodeid,
                 MknodOperation::new(
@@ -397,7 +397,7 @@ impl Inode for VirtioFsInode {
             }
         };
 
-        let child = VirtioFsInode::new_from_entry_reply(entry_reply, &fs);
+        let child = VirtioFsInode::new_from_entry_reply(create_reply, &fs);
         fs.insert_inode_to_cache(&child);
 
         Ok(child)
@@ -410,12 +410,12 @@ impl Inode for VirtioFsInode {
 
         let fs = self.fs_ref();
         let request_attr_version = fs.session().snapshot_attr_version();
-        let entry_reply = fs.session().do_fuse_op(
+        let link_reply = fs.session().do_fuse_op(
             self.nodeid(),
             LinkOperation::new(LinkReq::new(old.nodeid()), name),
         )?;
         old.commit_entry_reply(
-            &entry_reply,
+            &link_reply,
             request_attr_version,
             metadata::StaleAttrAction::MergeLink,
         )?;
