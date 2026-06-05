@@ -2,6 +2,7 @@
 
 #include <net/if.h>
 #include <netlink/route/addr.h>
+#include <stddef.h>
 #include <unistd.h>
 
 #include "../common/test.h"
@@ -215,6 +216,14 @@ FN_TEST(get_link_error)
 
 	// ifname = "" with nul
 	req.abuf[0] = '\0';
+	TEST_ERROR_SEGMENT(ENODEV);
+
+	// ifname = "\xff\xfe" with nul
+	const unsigned char non_utf8_ifname[] = { 0xff, 0xfe, '\0' };
+	req.hdr.nlmsg_len =
+		offsetof(struct nl_req, abuf) + sizeof(non_utf8_ifname);
+	req.ahdr.nla_len = sizeof(struct nlattr) + sizeof(non_utf8_ifname);
+	memcpy(req.abuf, non_utf8_ifname, sizeof(non_utf8_ifname));
 	TEST_ERROR_SEGMENT(ENODEV);
 
 	// Invalid name attribute (too short) without index
