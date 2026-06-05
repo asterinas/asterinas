@@ -145,12 +145,14 @@ impl ConnectionState {
 
             num_packets += 1;
 
+            let mut payload_len = packet_ref.payload_len();
+
             if read_offset.is_none() {
+                payload_len -= self.rx_queue.read_offset;
                 read_offset = Some(self.rx_queue.read_offset);
                 self.rx_queue.read_offset = 0;
             }
 
-            let payload_len = packet_ref.payload_len();
             if payload_len >= max_bytes {
                 break;
             } else {
