@@ -207,11 +207,11 @@ unsafe fn alloc_unprotect_physical_range(pa_range: &Range<Paddr>) {
             //  - The provided physical address range is in bounds.
             //  - All of the physical pages are untyped memory.
             unsafe {
-                crate::arch::tdx_guest::unprotect_gpa_tdvm_call(
-                    partial.start * PAGE_SIZE,
-                    partial.len() * PAGE_SIZE,
-                )
-                .expect("failed to unprotect the DMA segment in TDX guest");
+                let gpa = partial.start * PAGE_SIZE;
+                let size = partial.len() * PAGE_SIZE;
+                crate::arch::tdx_guest::unprotect_gpa_tdvm_call(gpa, size).unwrap_or_else(|err| {
+                    panic_page_convert_error("unprotect", gpa, size, err)
+                });
             }
         }
     } else {
@@ -243,14 +243,25 @@ unsafe fn dealloc_protect_physical_range(pa_range: &Range<Paddr>) {
             //  - The provided physical address range is in bounds.
             //  - All of the physical pages are untyped memory.
             unsafe {
-                crate::arch::tdx_guest::protect_gpa_tdvm_call(
-                    removed.start * PAGE_SIZE,
-                    removed.len() * PAGE_SIZE,
-                )
-                .expect("failed to protect the DMA segment in TDX guest");
+                let gpa = removed.start * PAGE_SIZE;
+                let size = removed.len() * PAGE_SIZE;
+                crate::arch::tdx_guest::protect_gpa_tdvm_call(gpa, size)
+                    .unwrap_or_else(|err| panic_page_convert_error("protect", gpa, size, err));
             }
         }
     });
+}
+
+#[cfg(all(target_arch = "x86_64", any(debug_assertions, feature = "cvm_guest")))]
+fn panic_page_convert_error(
+    action: &str,
+    gpa: Paddr,
+    size: usize,
+    err: crate::arch::tdx_guest::PageConvertError,
+) -> ! {
+    panic!(
+        "failed to {action} the DMA segment in TDX guest: gpa={gpa:#x}, size={size:#x}, error={err:?}"
+    )
 }
 
 /// Allocates device addresses and maps them to the given physical address range.
