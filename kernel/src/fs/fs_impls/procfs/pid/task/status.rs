@@ -57,7 +57,9 @@ use crate::{
 /// - CapEff: Effective capabilities.
 /// - CapBnd: Bounding set.
 /// - CapAmb: Ambient capabilities.
+/// - NoNewPrivs: Whether the no_new_privs attribute is set.
 /// - Seccomp: Seccomp mode.
+/// - Seccomp_filters: Number of installed seccomp filters.
 /// - Cpus_allowed: CPUs allowed for this process.
 /// - Cpus_allowed_list: List of CPUs allowed for this process.
 /// - Mems_allowed: Memory nodes allowed for this process.
@@ -192,6 +194,21 @@ impl ProcFileOps for StatusFileOps {
             credentials.bounding_capset().bits()
         )?;
         writeln!(printer, "CapAmb:\t{:016x}", AMBIENT_CAPSET.bits())?;
+        writeln!(
+            printer,
+            "NoNewPrivs:\t{}",
+            posix_thread.no_new_privs() as u32
+        )?;
+        writeln!(
+            printer,
+            "Seccomp:\t{}",
+            posix_thread.seccomp_mode().as_u32()
+        )?;
+        writeln!(
+            printer,
+            "Seccomp_filters:\t{}",
+            posix_thread.seccomp_filter_count()
+        )?;
 
         Ok(printer.bytes_written())
     }
