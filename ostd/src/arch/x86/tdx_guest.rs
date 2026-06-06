@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use tdx_guest::{TdxTrapFrame, tdcall::accept_page, tdvmcall::map_gpa};
+use tdx_guest::{
+    SHARED_BIT, SHARED_MASK, TdxTrapFrame,
+    tdcall::{TdCallError, accept_page},
+    tdvmcall::{TdVmcallError, map_gpa},
+};
 
 use super::trap::TrapFrame;
 use crate::{mm::PAGE_SIZE, prelude::Paddr};
-
-const SHARED_BIT: u8 = 51;
-const SHARED_MASK: u64 = 1u64 << SHARED_BIT;
-
-#[derive(Debug)]
-pub enum PageConvertError {
-    TdCall,
-    TdVmcall,
-}
 
 /// Converts physical pages to Intel TDX shared pages.
 ///
@@ -30,8 +25,10 @@ pub enum PageConvertError {
 ///    erasing the data will not cause memory safety issues.
 pub unsafe fn unprotect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), PageConvertError> {
     debug_assert!(gpa.is_multiple_of(PAGE_SIZE));
+    debug_assert!(size.is_multiple_of(PAGE_SIZE));
 
-    map_gpa(gpa as u64 | SHARED_MASK, size as u64).map_err(|_| PageConvertError::TdVmcall)
+    // SAFETY: The caller ensures the safety of this operation.
+    unsafe { convert_gpa_range(gpa as u64, (gpa + size) as u64, TargetPageState::Shared) }
 }
 
 /// Converts physical pages to Intel TDX private pages.
@@ -50,16 +47,96 @@ pub unsafe fn unprotect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), Pag
 ///    erasing the data will not cause memory safety issues.
 pub unsafe fn protect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), PageConvertError> {
     debug_assert!(gpa.is_multiple_of(PAGE_SIZE));
+    debug_assert!(size.is_multiple_of(PAGE_SIZE));
 
-    map_gpa(gpa as u64, size as u64).map_err(|_| PageConvertError::TdVmcall)?;
+    // SAFETY: The caller ensures the safety of this operation.
+    unsafe { convert_gpa_range(gpa as u64, (gpa + size) as u64, TargetPageState::Private)? };
     for page_gpa in (gpa..gpa + size).step_by(PAGE_SIZE) {
         // SAFETY: The caller ensures the safety of this operation.
-        unsafe {
-            accept_page(0, page_gpa as u64).map_err(|_| PageConvertError::TdCall)?;
-        }
+        unsafe { accept_page(0, page_gpa as u64).map_err(PageConvertError::TdCall)? };
     }
 
     Ok(())
+}
+
+#[derive(Debug)]
+pub enum PageConvertError {
+    #[expect(dead_code)]
+    TdCall(TdCallError),
+    #[expect(dead_code)]
+    TdVmcall {
+        output_value: u64,
+        error: TdVmcallError,
+        retry_count: usize,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum TargetPageState {
+    Private,
+    Shared,
+}
+
+impl TargetPageState {
+    fn as_gpa_mask(self) -> u64 {
+        match self {
+            Self::Private => 0,
+            Self::Shared => {
+                const { assert!(SHARED_MASK == 1u64 << SHARED_BIT) };
+                SHARED_MASK
+            }
+        }
+    }
+}
+
+/// # Safety
+///
+/// The caller must ensure that `start_gpa..end_gpa` represents a valid GPA
+/// region that can be safely converted to `target_state`.
+unsafe fn convert_gpa_range(
+    start_gpa: u64,
+    end_gpa: u64,
+    target_state: TargetPageState,
+) -> Result<(), PageConvertError> {
+    // Retrying the same page a second time should succeed; use 3 just in case.
+    const MAX_MAP_GPA_RETRIES_PER_PAGE: usize = 3;
+
+    let mut next_gpa = start_gpa;
+    let mut retry_count = 0;
+
+    loop {
+        let gpa_with_mask = next_gpa | target_state.as_gpa_mask();
+        let remaining_size = end_gpa - next_gpa;
+
+        match map_gpa(gpa_with_mask, remaining_size) {
+            Ok(()) => return Ok(()),
+            Err((retry_gpa, TdVmcallError::TdxRetry))
+                if (next_gpa..end_gpa).contains(&retry_gpa)
+                    && retry_gpa.is_multiple_of(PAGE_SIZE as u64) =>
+            {
+                if retry_gpa == next_gpa {
+                    retry_count += 1;
+                    if retry_count >= MAX_MAP_GPA_RETRIES_PER_PAGE {
+                        return Err(PageConvertError::TdVmcall {
+                            output_value: retry_gpa,
+                            error: TdVmcallError::TdxRetry,
+                            retry_count,
+                        });
+                    }
+                } else {
+                    next_gpa = retry_gpa;
+                    retry_count = 0;
+                }
+            }
+            Err((output_value, error)) => {
+                return Err(PageConvertError::TdVmcall {
+                    output_value,
+                    error,
+                    retry_count,
+                });
+            }
+        }
+    }
 }
 
 pub struct TrapFrameWrapper<'a>(pub &'a mut TrapFrame);
