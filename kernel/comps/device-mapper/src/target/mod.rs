@@ -3,10 +3,17 @@
 //! Device-mapper targets.
 //!
 //! A target is the per-segment policy that turns a BIO addressed to the mapped
-//! device into concrete I/O on the underlying device(s).
+//! device into concrete I/O on the underlying device(s). The set mirrors the
+//! Linux device-mapper targets of the same name:
+//!
+//! - [`linear`]: remaps a contiguous sector range onto a lower device.
+//! - [`zero`]: serves zero-filled reads and discards writes.
+//! - [`error`]: fails every read and write.
+//! - [`verity`]: read-only integrity checking against a Merkle hash tree.
 
 pub mod error;
 pub mod linear;
+pub mod verity;
 pub mod zero;
 
 use alloc::vec::Vec;

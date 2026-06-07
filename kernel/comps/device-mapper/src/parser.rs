@@ -16,7 +16,9 @@ use crate::{
     DmError, DmErrorWithContext,
     registry::normalize_name,
     table::{DmTable, DmTableSegment},
-    target::{DmTarget, error::ErrorTarget, linear::LinearTarget, zero::ZeroTarget},
+    target::{
+        DmTarget, error::ErrorTarget, linear::LinearTarget, verity::VerityTarget, zero::ZeroTarget,
+    },
 };
 
 /// One `dm-mod.create=` value from the kernel command line.
@@ -117,6 +119,7 @@ fn parse_segment(line: &str) -> Result<DmTableSegment, DmErrorWithContext> {
             }
             Box::<ErrorTarget>::default()
         }
+        "verity" => Box::new(parse_verity_target(&args)?),
         _ => return Err(DmError::UnsupportedTarget.context("unsupported dm target")),
     };
     if let Some(size_sectors) = target.size_sectors()
@@ -141,6 +144,10 @@ fn parse_linear_target(args: &[&str]) -> Result<LinearTarget, DmErrorWithContext
     Ok(LinearTarget::new(device, start_sector))
 }
 
+fn parse_verity_target(args: &[&str]) -> Result<VerityTarget, DmErrorWithContext> {
+    VerityTarget::from_table_args(args)
+}
+
 pub fn lookup_block_device(name_or_id: &str) -> Result<Arc<dyn BlockDevice>, DmErrorWithContext> {
     if let Some(raw) = name_or_id.strip_prefix("dev:") {
         let id = parse_u64(Some(raw), "encoded device id")?;
@@ -163,11 +170,47 @@ fn parse_u64(value: Option<&str>, what: &str) -> Result<u64, DmErrorWithContext>
         .map_err(|_| DmError::InvalidTable.context(alloc::format!("{} is invalid", what)))
 }
 
+/// Parses a single mandatory table field, attaching `what` to any error.
+pub fn parse_field<T: FromStr>(value: &str, what: &str) -> Result<T, DmErrorWithContext> {
+    value
+        .parse::<T>()
+        .map_err(|_| DmError::InvalidTable.context(alloc::format!("{} is invalid", what)))
+}
+
+pub fn parse_hex_bytes(input: &str) -> Result<Vec<u8>, DmError> {
+    if input == "-" {
+        return Ok(Vec::new());
+    }
+    if !input.len().is_multiple_of(2) {
+        return Err(DmError::InvalidArgument);
+    }
+
+    let mut out = Vec::with_capacity(input.len() / 2);
+    let bytes = input.as_bytes();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let hi = hex_value(bytes[offset]).ok_or(DmError::InvalidArgument)?;
+        let lo = hex_value(bytes[offset + 1]).ok_or(DmError::InvalidArgument)?;
+        out.push((hi << 4) | lo);
+        offset += 2;
+    }
+    Ok(out)
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
 #[cfg(ktest)]
 mod tests {
     use ostd::prelude::ktest;
 
-    use super::{DmCreateArg, parse_create_arg};
+    use super::{DmCreateArg, parse_create_arg, parse_hex_bytes};
     use crate::DmError;
 
     #[ktest]
@@ -203,5 +246,16 @@ mod tests {
     fn parse_create_arg_rejects_unknown_target() {
         let result = parse_create_arg("demo: 0 8 bogus", 0);
         assert_eq!(result.unwrap_err().kind, DmError::UnsupportedTarget);
+    }
+
+    #[ktest]
+    fn parse_hex_bytes_round_trips_and_validates() {
+        assert_eq!(
+            parse_hex_bytes("00ff10").unwrap(),
+            alloc::vec![0x00, 0xff, 0x10]
+        );
+        assert!(parse_hex_bytes("0").is_err());
+        assert!(parse_hex_bytes("gg").is_err());
+        assert!(parse_hex_bytes("-").unwrap().is_empty());
     }
 }
