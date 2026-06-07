@@ -212,13 +212,13 @@ impl<D: TtyDriver> Tty<D> {
 
         // TODO: Add support for timeout.
         let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
-        let len = if is_nonblocking {
-            self.driver.push_output(&processed)?
+        if is_nonblocking {
+            let _ = self.driver.push_output(&processed)?;
         } else {
-            self.wait_events(IoEvents::OUT, None, || self.driver.push_output(&processed))?
+            let _ = self.wait_events(IoEvents::OUT, None, || self.driver.push_output(&processed))?;
         };
         self.pollee.invalidate();
-        Ok(len)
+        Ok(write_len)
     }
 
     pub fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
