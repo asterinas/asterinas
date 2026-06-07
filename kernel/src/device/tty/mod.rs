@@ -215,7 +215,8 @@ impl<D: TtyDriver> Tty<D> {
         if is_nonblocking {
             let _ = self.driver.push_output(&processed)?;
         } else {
-            let _ = self.wait_events(IoEvents::OUT, None, || self.driver.push_output(&processed))?;
+            let _ =
+                self.wait_events(IoEvents::OUT, None, || self.driver.push_output(&processed))?;
         };
         self.pollee.invalidate();
         Ok(write_len)
