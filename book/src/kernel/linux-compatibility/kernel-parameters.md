@@ -4,19 +4,18 @@ This section documents kernel command-line parameters supported by Asterinas.
 
 ## Inherited from Linux
 
-### `init`
+### `rdinit`
 
-Run the specified binary as `init`.
+Run the specified initramfs binary as the first userspace process.
 
 Example:
 ```text
-init=/bin/busybox
+rdinit=/bin/busybox
 ```
 
 Notes:
-- The value is the path to the executable.
-- If omitted, Asterinas will try to execute from the following paths in order:
-  `/sbin/init`, `/etc/init`, `/bin/init`, `/bin/sh`.
+- The value is the path to the executable in the initramfs root.
+- If omitted, Asterinas will try to execute `/init` from the initramfs root.
 
 ### `console`
 
