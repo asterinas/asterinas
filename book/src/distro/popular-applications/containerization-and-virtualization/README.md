@@ -144,7 +144,7 @@ qemu-system-$(uname -m) \
   -initrd /run/current-system/initrd \
   -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
   -nographic -no-reboot \
-  -append 'console=ttyS0 panic=-1 init=/bin/init'
+  -append 'console=ttyS0 panic=-1 rdinit=/bin/init'
 ```
 
 > **Note**: Running the Asterinas kernel requires the `linux/multiboot` boot protocol (**multiboot2 is not supported**).
