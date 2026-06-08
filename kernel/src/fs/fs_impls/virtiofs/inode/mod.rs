@@ -22,6 +22,7 @@ use aster_fuse::{
         mknod::{MknodOperation, MknodReq},
         open::{OpenReq, OpendirOperation},
         release::ReleaseOptions,
+        rename::{RenameOperation, RenameReq},
         rmdir::RmdirOperation,
         unlink::UnlinkOperation,
     },
@@ -445,6 +446,27 @@ impl Inode for VirtioFsInode {
 
         self.expire_attr_cache();
         child.expire_attr_cache();
+
+        Ok(())
+    }
+
+    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+        let target = target.downcast_ref::<VirtioFsInode>().unwrap();
+
+        let fs = self.fs_ref();
+
+        // TODO: Invalidate the stale positive dentry for `old_name`
+        // when encountering `ENOENT` once the rename interface can
+        // pass the cached old dentry down.
+        fs.session().do_fuse_op(
+            self.nodeid(),
+            RenameOperation::new(RenameReq::new(target.nodeid()), old_name, new_name),
+        )?;
+
+        self.expire_attr_cache();
+        if self.nodeid() != target.nodeid() {
+            target.expire_attr_cache();
+        }
 
         Ok(())
     }
