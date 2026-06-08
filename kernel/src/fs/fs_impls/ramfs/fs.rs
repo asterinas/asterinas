@@ -30,7 +30,7 @@ use crate::{
                 Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
                 SymbolicLink,
             },
-            path::{is_dot, is_dot_or_dotdot, is_dotdot},
+            path::{is_dot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -404,14 +404,6 @@ impl DirEntry {
 
     fn set_parent(&mut self, parent: Weak<RamInode>) {
         self.parent = parent;
-    }
-
-    fn contains_entry(&self, name: &str) -> bool {
-        if is_dot_or_dotdot(name) {
-            true
-        } else {
-            self.idx_map.contains_key(name.as_bytes())
-        }
     }
 
     fn get_entry(&self, name: &str) -> Option<(usize, Arc<RamInode>)> {
@@ -861,18 +853,6 @@ impl Inode for RamInode {
     }
 
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
-        if name.len() > NAME_MAX {
-            return_errno!(Errno::ENAMETOOLONG);
-        }
-        if self.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
-        }
-
-        let self_dir = self.inner.as_direntry().unwrap().upread();
-        if self_dir.contains_entry(name) {
-            return_errno_with_message!(Errno::EEXIST, "entry exists");
-        }
-
         let new_inode = match type_ {
             MknodType::CharDevice(dev_id) | MknodType::BlockDevice(dev_id) => {
                 let dev_type = type_.device_type().unwrap();
@@ -893,7 +873,7 @@ impl Inode for RamInode {
             ),
         };
 
-        let mut self_dir = self_dir.upgrade();
+        let mut self_dir = self.inner.as_direntry().unwrap().write();
         self_dir.append_entry(name, new_inode.clone());
         drop(self_dir);
 
@@ -910,18 +890,6 @@ impl Inode for RamInode {
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        if name.len() > NAME_MAX {
-            return_errno!(Errno::ENAMETOOLONG);
-        }
-        if self.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
-        }
-
-        let self_dir = self.inner.as_direntry().unwrap().upread();
-        if self_dir.contains_entry(name) {
-            return_errno_with_message!(Errno::EEXIST, "entry exists");
-        }
-
         let fs = self.fs.upgrade().unwrap();
         let new_inode = match type_ {
             InodeType::File => RamInode::new_file(&fs, mode, Uid::new_root(), Gid::new_root()),
@@ -937,7 +905,7 @@ impl Inode for RamInode {
             }
         };
 
-        let mut self_dir = self_dir.upgrade();
+        let mut self_dir = self.inner.as_direntry().unwrap().write();
         self_dir.append_entry(name, new_inode.clone());
         drop(self_dir);
 
@@ -958,10 +926,6 @@ impl Inode for RamInode {
         mode: InodeMode,
         hard_linkability: HardLinkability,
     ) -> Result<Arc<dyn Inode>> {
-        if self.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
-        }
-
         let fs = self.fs.upgrade().unwrap();
         Ok(RamInode::new_tmpfile(
             &fs,
@@ -973,27 +937,14 @@ impl Inode for RamInode {
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
-        if !Arc::ptr_eq(&self.fs(), &old.fs()) {
-            return_errno_with_message!(Errno::EXDEV, "not same fs");
-        }
-        if self.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
-        }
-
         let old = old
             .downcast_ref::<RamInode>()
             .ok_or(Error::new(Errno::EXDEV))?;
-        if old.typ == InodeType::Dir {
-            return_errno_with_message!(Errno::EPERM, "old is a dir");
-        }
         if old.hard_linkability == HardLinkability::Unlinkable {
             return_errno_with_message!(Errno::ENOENT, "tmpfile is not linkable");
         }
 
         let mut self_dir = self.inner.as_direntry().unwrap().write();
-        if self_dir.contains_entry(name) {
-            return_errno_with_message!(Errno::EEXIST, "entry exist");
-        }
         self_dir.append_entry(name, old.this.upgrade().unwrap());
         let now = now();
 
@@ -1014,14 +965,7 @@ impl Inode for RamInode {
     }
 
     fn unlink(&self, name: &str) -> Result<()> {
-        if is_dot_or_dotdot(name) {
-            return_errno_with_message!(Errno::EISDIR, "unlink . or ..");
-        }
-
         let target = self.find(name)?;
-        if target.typ == InodeType::Dir {
-            return_errno_with_message!(Errno::EISDIR, "unlink on dir");
-        }
 
         // When we got the lock, the dir may have been modified by another thread
         let mut self_dir = self.inner.as_direntry().unwrap().write();
@@ -1046,17 +990,7 @@ impl Inode for RamInode {
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
-        if is_dot(name) {
-            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
-        }
-        if is_dotdot(name) {
-            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
-        }
-
         let target = self.find(name)?;
-        if target.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "rmdir on not dir");
-        }
 
         // When we got the lock, the dir may have been modified by another thread
         let (mut self_dir, target_dir) = write_lock_two_direntries_by_ino(
@@ -1094,26 +1028,9 @@ impl Inode for RamInode {
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        if is_dot_or_dotdot(old_name) {
-            return_errno_with_message!(Errno::EISDIR, "old_name is . or ..");
-        }
-        if is_dot_or_dotdot(new_name) {
-            return_errno_with_message!(Errno::EISDIR, "new_name is . or ..");
-        }
-
         let target = target
             .downcast_ref::<RamInode>()
             .ok_or(Error::new(Errno::EXDEV))?;
-
-        if !Arc::ptr_eq(&self.fs(), &target.fs()) {
-            return_errno_with_message!(Errno::EXDEV, "not same fs");
-        }
-        if self.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
-        }
-        if target.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "target is not dir");
-        }
 
         // Perform necessary checks to ensure that `dst_inode` can be replaced by `src_inode`.
         let check_replace_inode =

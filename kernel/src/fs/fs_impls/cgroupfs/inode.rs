@@ -9,7 +9,6 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, Inode, Metadata, RevalidationPolicy},
-            path::{is_dot, is_dotdot},
         },
     },
     prelude::*,
@@ -89,13 +88,6 @@ impl Inode for CgroupInode {
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
-        if is_dot(name) {
-            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
-        }
-        if is_dotdot(name) {
-            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
-        }
-
         let SysTreeNodeKind::Branch(branch_node) = self.node_kind() else {
             return_errno_with_message!(Errno::ENOTDIR, "the current node is not a branch node");
         };

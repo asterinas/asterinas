@@ -492,10 +492,6 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         _type_: InodeType,
         mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        if name.len() > super::NAME_MAX {
-            return_errno!(Errno::ENAMETOOLONG);
-        }
-
         let SysTreeNodeKind::Branch(branch_node) = &self.node_kind() else {
             return_errno_with_message!(Errno::ENOTDIR, "self is not a dir");
         };

@@ -32,7 +32,6 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FileOps, Inode, Metadata, MknodType, SymbolicLink},
-            path::{is_dot, is_dot_or_dotdot, is_dotdot},
         },
     },
     prelude::*,
@@ -1518,19 +1517,6 @@ impl Inode for ExfatInode {
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         let fs = self.inner.read().fs();
         let fs_guard = fs.lock();
-        {
-            let inner = self.inner.read();
-            if !inner.inode_type.is_directory() {
-                return_errno!(Errno::ENOTDIR)
-            }
-            if name.len() > MAX_NAME_LENGTH {
-                return_errno!(Errno::ENAMETOOLONG)
-            }
-
-            if inner.lookup_by_name(name, false, &fs_guard).is_ok() {
-                return_errno!(Errno::EEXIST)
-            }
-        }
 
         let result = self.add_entry(name, type_, mode, &fs_guard)?;
         let _ = fs.insert_inode(result.clone());
@@ -1555,16 +1541,6 @@ impl Inode for ExfatInode {
     }
 
     fn unlink(&self, name: &str) -> Result<()> {
-        if !self.inner.read().inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
-        }
-        if name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
-        if is_dot_or_dotdot(name) {
-            return_errno!(Errno::EISDIR)
-        }
-
         let fs = self.inner.read().fs();
         let fs_guard = fs.lock();
 
@@ -1586,19 +1562,6 @@ impl Inode for ExfatInode {
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
-        if !self.inner.read().inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
-        }
-        if is_dot(name) {
-            return_errno_with_message!(Errno::EINVAL, "rmdir on .")
-        }
-        if is_dotdot(name) {
-            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..")
-        }
-        if name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
-
         let fs = self.inner.read().fs();
         let fs_guard = fs.lock();
 
@@ -1645,20 +1608,9 @@ impl Inode for ExfatInode {
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
-            return_errno!(Errno::EISDIR);
-        }
-        if old_name.len() > MAX_NAME_LENGTH || new_name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
         let Some(target_) = target.downcast_ref::<ExfatInode>() else {
             return_errno_with_message!(Errno::EINVAL, "not an exfat inode")
         };
-        if !self.inner.read().inode_type.is_directory()
-            || !target_.inner.read().inode_type.is_directory()
-        {
-            return_errno!(Errno::ENOTDIR)
-        }
 
         let fs = self.inner.read().fs();
         let fs_guard = fs.lock();
