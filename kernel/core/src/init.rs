@@ -139,7 +139,7 @@ fn first_kthread() {
 
     INIT_PROCESS.call_once(|| {
         let karg = INIT_PROC_ARGS.get().unwrap();
-        let init_path = INIT_PATH.get().map(|s| s.as_str());
+        let init_path = RDINIT_PATH.get().map(|s| s.as_str());
         spawn_init_process(init_path, karg.argv().to_vec(), karg.envp().to_vec())
             .expect("Failed to run the init process")
     });
@@ -170,5 +170,5 @@ pub(super) fn on_first_process_startup(ctx: &Context) {
     crate::fs::init_in_first_process(ctx);
 }
 
-static INIT_PATH: Once<String> = Once::new();
-aster_cmdline::define_kv_param!("init", INIT_PATH);
+static RDINIT_PATH: Once<String> = Once::new();
+aster_cmdline::define_kv_param!("rdinit", RDINIT_PATH);

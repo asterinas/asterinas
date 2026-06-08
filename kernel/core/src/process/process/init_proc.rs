@@ -29,15 +29,12 @@ pub fn spawn_init_process(
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
-    let process = if let Some(executable_path) = executable_path {
-        create_init_process(
-            executable_path,
-            with_init_argv0(executable_path, argv),
-            envp,
-        )?
-    } else {
-        create_default_init_process(argv, envp)?
-    };
+    let executable_path = executable_path.unwrap_or("/init");
+    let process = create_init_process(
+        executable_path,
+        with_init_argv0(executable_path, argv),
+        envp,
+    )?;
 
     // Linux starts the init process without placing it in a process group or session.
     // It joins one only after userspace first calls `setsid()`.
@@ -51,28 +48,6 @@ pub fn spawn_init_process(
     process.run();
 
     Ok(process)
-}
-
-fn create_default_init_process(argv: Vec<CString>, envp: Vec<CString>) -> Result<Arc<Process>> {
-    // Linux probes the fallback init executables in this order:
-    // <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1634>.
-    const DEFAULT_INIT_EXEC_PATHS: &[&str] = &["/sbin/init", "/etc/init", "/bin/init", "/bin/sh"];
-
-    let mut last_error = None;
-
-    for default_init_exec_path in DEFAULT_INIT_EXEC_PATHS {
-        // FIXME: Avoid cloning `argv` and `envp` for each fallback candidate.
-        match create_init_process(
-            default_init_exec_path,
-            with_init_argv0(default_init_exec_path, argv.clone()),
-            envp.clone(),
-        ) {
-            Ok(process) => return Ok(process),
-            Err(error) => last_error = Some(error),
-        }
-    }
-
-    Err(last_error.unwrap())
 }
 
 fn with_init_argv0(executable_path: &str, mut argv: Vec<CString>) -> Vec<CString> {
