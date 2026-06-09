@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod drm;
 mod evdev;
 mod fb;
 mod mem;
@@ -166,6 +167,8 @@ pub fn init_in_first_kthread() {
     mem::init_in_first_kthread();
     misc::init_in_first_kthread();
     evdev::init_in_first_kthread();
+    // TODO: Remove this fallback once fbdev is provided through DRM emulation.
+    let _ = drm::init_in_first_kthread();
     fb::init_in_first_kthread();
 }
 
