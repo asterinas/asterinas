@@ -2,7 +2,7 @@
 
 use alloc::format;
 
-use aster_console::{
+use aster_framebuffer::{
     font::BitmapFont,
     mode::{ConsoleMode, KeyboardMode},
 };
@@ -53,7 +53,7 @@ impl VtDriver {
             CFontOp::OP_SET => CFontOp::NONTALL_VPITCH,
             CFontOp::OP_SET_TALL => font_op.height,
             CFontOp::OP_SET_DEFAULT => {
-                return console_set_font(&self.console, BitmapFont::new_basic8x8());
+                return self.console.set_font(BitmapFont::new_basic8x8());
             }
             _ => return_errno_with_message!(Errno::EINVAL, "the font operation is invalid"),
         };
@@ -84,23 +84,9 @@ impl VtDriver {
             vpitch as usize,
             font_data,
         );
-        console_set_font(&self.console, font)?;
+        self.console.set_font(font)?;
 
         Ok(())
-    }
-}
-
-fn console_set_font(console: &VtConsole, font: BitmapFont) -> Result<()> {
-    use aster_console::ConsoleSetFontError;
-
-    match console.set_font(font) {
-        Ok(()) => Ok(()),
-        Err(ConsoleSetFontError::InappropriateDevice) => {
-            return_errno_with_message!(Errno::ENOTTY, "the console has no support for font setting")
-        }
-        Err(ConsoleSetFontError::InvalidFont) => {
-            return_errno_with_message!(Errno::EINVAL, "the font is invalid for the console")
-        }
     }
 }
 
@@ -176,6 +162,7 @@ impl TtyDriver for VtDriver {
                 let font_op = cmd.read()?;
 
                 if font_op.op == CFontOp::OP_GET {
+                    // TODO: Add support for getting the font of the console device.
                     return_errno_with_message!(Errno::EINVAL, "getting font data is not supported");
                 }
 

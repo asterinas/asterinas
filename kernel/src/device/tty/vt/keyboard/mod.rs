@@ -5,7 +5,7 @@ mod keysym;
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
-use aster_console::mode::{KeyboardMode, KeyboardModeFlags};
+use aster_framebuffer::mode::{KeyboardMode, KeyboardModeFlags};
 
 use crate::prelude::*;
 

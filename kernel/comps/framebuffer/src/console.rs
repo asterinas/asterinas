@@ -2,12 +2,14 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use aster_console::{ConsoleSetFontError, font::BitmapFont, mode::ConsoleMode};
 use ostd::mm::HasSize;
 
 use crate::{
-    FrameBuffer, Pixel,
     ansi_escape::{EraseInDisplay, EscapeFsm, EscapeOp},
+    font::BitmapFont,
+    framebuffer::FrameBuffer,
+    mode::ConsoleMode,
+    pixel::Pixel,
 };
 
 /// A text console rendered onto the framebuffer.
@@ -22,6 +24,12 @@ use crate::{
 pub struct FramebufferConsole {
     state: ConsoleState,
     escape_fsm: EscapeFsm,
+}
+
+/// An error returned by [`FramebufferConsole::set_font`].
+#[derive(Clone, Copy, Debug)]
+pub enum ConsoleSetFontError {
+    InvalidFont,
 }
 
 impl FramebufferConsole {

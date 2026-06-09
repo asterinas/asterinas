@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::Pixel;
+use crate::pixel::Pixel;
 
 /// A finite-state machine (FSM) to handle ANSI escape sequences.
 #[derive(Debug)]
