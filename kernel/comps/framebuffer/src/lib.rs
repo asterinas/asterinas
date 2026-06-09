@@ -14,14 +14,13 @@ macro_rules! __log_prefix {
 }
 
 mod ansi_escape;
-mod console;
-mod framebuffer;
-mod pixel;
+pub mod console;
+pub mod font;
+pub mod framebuffer;
+pub mod mode;
+pub mod pixel;
 
 use component::{ComponentInitError, init_component};
-pub use console::FramebufferConsole;
-pub use framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE};
-pub use pixel::{Pixel, PixelFormat, RenderedPixel};
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {

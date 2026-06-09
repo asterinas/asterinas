@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE, PixelFormat};
+use aster_framebuffer::{
+    framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE},
+    pixel::PixelFormat,
+};
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::mm::{HasPaddr, HasSize, VmIo};
 

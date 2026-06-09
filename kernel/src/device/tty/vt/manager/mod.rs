@@ -2,7 +2,7 @@
 
 mod console;
 
-use aster_console::mode::ConsoleMode;
+use aster_framebuffer::mode::ConsoleMode;
 use console::VtModeType;
 pub(super) use console::{VtConsole, VtMode};
 use ostd::sync::{LocalIrqDisabled, WaitQueue};

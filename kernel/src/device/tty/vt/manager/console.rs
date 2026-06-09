@@ -3,13 +3,15 @@
 use alloc::sync::Weak;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use aster_console::{ConsoleSetFontError, font::BitmapFont, mode::ConsoleMode};
-use aster_framebuffer::{FRAMEBUFFER, FramebufferConsole};
+use aster_framebuffer::{
+    console::FramebufferConsole, font::BitmapFont, framebuffer::FRAMEBUFFER, mode::ConsoleMode,
+};
 use int_to_c_enum::TryFromInt;
 use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 
 use crate::{
     device::tty::vt::{c_types::CVtMode, keyboard::VtKeyboard},
+    error::{Errno, Error, return_errno_with_message},
     process::{Process, signal::sig_num::SigNum},
 };
 
@@ -107,7 +109,7 @@ impl From<VtMode> for CVtMode {
 }
 
 impl TryInto<VtMode> for CVtMode {
-    type Error = crate::prelude::Error;
+    type Error = Error;
 
     fn try_into(self) -> crate::prelude::Result<VtMode> {
         let mode_type = VtModeType::try_from(self.mode)?;
@@ -188,11 +190,18 @@ impl VtConsole {
     pub(in crate::device::tty::vt) fn set_font(
         &self,
         font: BitmapFont,
-    ) -> Result<(), ConsoleSetFontError> {
+    ) -> crate::prelude::Result<()> {
         let mut backend = self.backend.lock();
         match &mut *backend {
-            VtConsoleBackend::Framebuffer(c) => c.set_font(font),
-            VtConsoleBackend::None => Err(ConsoleSetFontError::InappropriateDevice),
+            VtConsoleBackend::Framebuffer(c) => c.set_font(font).map_err(|_| {
+                Error::with_message(Errno::EINVAL, "the font is invalid for the console")
+            }),
+            VtConsoleBackend::None => {
+                return_errno_with_message!(
+                    Errno::ENOTTY,
+                    "the console has no support for font setting"
+                );
+            }
         }
     }
 }
