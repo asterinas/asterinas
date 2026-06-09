@@ -175,6 +175,10 @@ impl Inode for Ext2Inode {
         Ok(self.create(name, type_, mode.into())?)
     }
 
+    fn create_symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        Ok(self.create_symlink(name, target, mode.into())?)
+    }
+
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         let (inode_type, device_id) = match type_ {
             MknodType::CharDevice(dev_id) => (InodeType::CharDevice, Some(dev_id)),
@@ -232,10 +236,6 @@ impl Inode for Ext2Inode {
 
     fn read_link(&self) -> Result<SymbolicLink> {
         self.read_link().map(SymbolicLink::Plain)
-    }
-
-    fn write_link(&self, target: &str) -> Result<()> {
-        self.write_link(target)
     }
 
     fn sync(&self, mode: SyncMode) -> Result<()> {
