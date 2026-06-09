@@ -66,7 +66,10 @@ impl MountNamespace {
     /// The closure receives a `Weak<Self>` so that mounts in the new tree can
     /// reference the namespace being constructed. Construction uses `UniqueArc`
     /// to allow mutable initialization while still providing `Weak` references.
-    fn new_with_root<F>(owner: Arc<UserNamespace>, build_root_fn: F) -> Result<Arc<Self>>
+    pub(in crate::fs) fn new_with_root<F>(
+        owner: Arc<UserNamespace>,
+        build_root_fn: F,
+    ) -> Result<Arc<Self>>
     where
         F: FnOnce(&Weak<Self>) -> Result<Arc<Mount>>,
     {

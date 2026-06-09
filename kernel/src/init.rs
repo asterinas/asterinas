@@ -2,13 +2,21 @@
 
 //! Kernel initialization.
 
-use aster_cmdline::INIT_PROC_ARGS;
+use core::{
+    str::FromStr,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+use aster_cmdline::{INIT_PROC_ARGS, parse::ParamStorage};
 use component::InitStage;
 use ostd::{cpu::CpuId, util::id_set::Id};
 use spin::once::Once;
 
 use crate::{
-    fs::vfs::path::{MountNamespace, PathResolver},
+    fs::{
+        rootfs::{self, RootFsType},
+        vfs::path::{FsPath, MountNamespace, PathResolver, PerMountFlags},
+    },
     prelude::*,
     process::{Process, spawn_init_process},
     sched::SchedPolicy,
@@ -127,6 +135,14 @@ fn ap_idle_loop() {
 // The first kernel thread
 //--------------------------------------------------------------------------
 
+enum BootInit {
+    Initramfs(&'static str),
+    RootFs {
+        mnt_ns: Arc<MountNamespace>,
+        init_path: Option<&'static str>,
+    },
+}
+
 // The main function of the first (non-idle) kernel thread
 fn first_kthread() {
     println!("Spawn the first kernel thread");
@@ -134,18 +150,140 @@ fn first_kthread() {
     let init_mnt_ns = MountNamespace::get_init_singleton();
     let fs_resolver = init_mnt_ns.new_path_resolver();
     init_in_first_kthread(&fs_resolver);
+    let boot_init = prepare_boot_init(&fs_resolver);
 
     print_banner();
 
     INIT_PROCESS.call_once(|| {
         let karg = INIT_PROC_ARGS.get().unwrap();
-        let init_path = RDINIT_PATH.get().map(|s| s.as_str());
-        spawn_init_process(init_path, karg.argv().to_vec(), karg.envp().to_vec())
-            .expect("Failed to run the init process")
+        let argv = karg.argv().to_vec();
+        let envp = karg.envp().to_vec();
+        match boot_init {
+            BootInit::Initramfs(init_path) => {
+                println!("[kernel] running {} as the initramfs init", init_path);
+                spawn_init_process(init_mnt_ns.clone(), init_path, argv, envp)
+            }
+            BootInit::RootFs {
+                mnt_ns,
+                init_path: Some(init_path),
+            } => {
+                println!("[kernel] running {} as the rootfs init", init_path);
+                spawn_init_process(mnt_ns, init_path, argv, envp)
+            }
+            BootInit::RootFs {
+                mnt_ns,
+                init_path: None,
+            } => spawn_default_rootfs_init(mnt_ns, argv, envp),
+        }
+        .expect("failed to run the init process")
     });
 }
 
+fn prepare_boot_init(path_resolver: &PathResolver) -> BootInit {
+    if let Some(init_path) = find_initramfs_init(path_resolver) {
+        return BootInit::Initramfs(init_path);
+    }
+
+    let mnt_ns = mount_rootfs();
+    let init_path = INIT_PATH.get().map(String::as_str);
+    BootInit::RootFs { mnt_ns, init_path }
+}
+
+fn find_initramfs_init(path_resolver: &PathResolver) -> Option<&'static str> {
+    const DEFAULT_INITRAMFS_INIT_PATH: &str = "/init";
+
+    if let Some(init_path) = RDINIT_PATH.get().map(String::as_str) {
+        let lookup_result = FsPath::try_from(init_path)
+            .and_then(|fs_path| path_resolver.lookup(&fs_path).map(|_| ()));
+        if let Err(error) = lookup_result {
+            warn!(
+                "check access for rdinit={} failed: {:?}, ignoring",
+                init_path, error
+            );
+            return None;
+        }
+
+        return Some(init_path);
+    }
+
+    Some(DEFAULT_INITRAMFS_INIT_PATH).filter(|init_path| {
+        path_resolver
+            .lookup(&FsPath::try_from(*init_path).unwrap())
+            .is_ok()
+    })
+}
+
+fn mount_rootfs() -> Arc<MountNamespace> {
+    let root = ROOT_PATH
+        .get()
+        .expect("neither an initramfs init nor root= was provided");
+    let rootfs_types = ROOTFS_TYPES
+        .get()
+        .map(|rootfs_types| rootfs_types.as_slice())
+        .unwrap_or(RootFsType::ALL);
+
+    rootfs::mount(root, rootfs_types, root_mount_flags())
+        .expect("failed to mount the root filesystem")
+}
+
+fn spawn_default_rootfs_init(
+    mnt_ns: Arc<MountNamespace>,
+    argv: Vec<CString>,
+    envp: Vec<CString>,
+) -> Result<Arc<Process>> {
+    // Linux probes the fallback init executables in this order:
+    // <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1604-L1607>.
+    const DEFAULT_INIT_EXEC_PATHS: &[&str] = &["/sbin/init", "/etc/init", "/bin/init", "/bin/sh"];
+
+    let mut last_error = None;
+
+    for &init_path in DEFAULT_INIT_EXEC_PATHS {
+        // FIXME: Avoid cloning `argv` and `envp` for each fallback candidate.
+        match spawn_init_process(mnt_ns.clone(), init_path, argv.clone(), envp.clone()) {
+            Ok(process) => {
+                println!("[kernel] running {} as the rootfs init", init_path);
+                return Ok(process);
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    Err(last_error.unwrap())
+}
+
 static INIT_PROCESS: Once<Arc<Process>> = Once::new();
+
+fn root_mount_flags() -> PerMountFlags {
+    let mut flags = PerMountFlags::default();
+    if ROOT_MOUNT_READ_ONLY.load(Ordering::Relaxed) {
+        flags.insert(PerMountFlags::RDONLY);
+    }
+    flags
+}
+
+struct SetRootMountReadOnly;
+
+impl ParamStorage for SetRootMountReadOnly {
+    type Value = bool;
+
+    fn store_param(&self, value: Self::Value) {
+        if value {
+            ROOT_MOUNT_READ_ONLY.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+struct SetRootMountReadWrite;
+
+impl ParamStorage for SetRootMountReadWrite {
+    type Value = bool;
+
+    fn store_param(&self, value: Self::Value) {
+        if value {
+            ROOT_MOUNT_READ_ONLY.store(false, Ordering::Relaxed);
+        }
+    }
+}
 
 fn init_in_first_kthread(path_resolver: &PathResolver) {
     component::init_all(InitStage::Kthread, component::parse_metadata!()).unwrap();
@@ -172,3 +310,42 @@ pub(super) fn on_first_process_startup(ctx: &Context) {
 
 static RDINIT_PATH: Once<String> = Once::new();
 aster_cmdline::define_kv_param!("rdinit", RDINIT_PATH);
+
+static ROOT_PATH: Once<String> = Once::new();
+aster_cmdline::define_kv_param!("root", ROOT_PATH);
+
+/// Root filesystem type candidates.
+struct RootFsTypes(Vec<RootFsType>);
+
+impl RootFsTypes {
+    /// Returns the root filesystem type candidates as a slice.
+    fn as_slice(&self) -> &[RootFsType] {
+        self.0.as_slice()
+    }
+}
+
+impl FromStr for RootFsTypes {
+    type Err = core::convert::Infallible;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let candidates = value
+            .split(',')
+            .filter(|type_name| !type_name.is_empty())
+            .map(str::parse)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self(candidates))
+    }
+}
+
+static ROOTFS_TYPES: Once<RootFsTypes> = Once::new();
+aster_cmdline::define_kv_param!("rootfstype", ROOTFS_TYPES);
+
+static INIT_PATH: Once<String> = Once::new();
+aster_cmdline::define_kv_param!("init", INIT_PATH);
+
+static ROOT_MOUNT_READ_ONLY: AtomicBool = AtomicBool::new(true);
+static RO_PARAM: SetRootMountReadOnly = SetRootMountReadOnly;
+aster_cmdline::define_flag_param!("ro", RO_PARAM);
+static RW_PARAM: SetRootMountReadWrite = SetRootMountReadWrite;
+aster_cmdline::define_flag_param!("rw", RW_PARAM);

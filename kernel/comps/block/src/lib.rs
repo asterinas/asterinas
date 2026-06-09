@@ -149,25 +149,36 @@ pub fn lookup(id: DeviceId) -> Option<Arc<dyn BlockDevice>> {
     DEVICE_REGISTRY.lock().get(&id.to_raw()).cloned()
 }
 
-static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn BlockDevice>>> = Mutex::new(BTreeMap::new());
-
-#[init_component]
-fn init() -> Result<(), ComponentInitError> {
-    device_id::init();
-
-    Ok(())
+/// Looks up a block device by its kernel device name.
+pub fn lookup_by_name(name: &str) -> Option<Arc<dyn BlockDevice>> {
+    DEVICE_REGISTRY
+        .lock()
+        .values()
+        .find(|device| device.name() == name)
+        .cloned()
 }
 
-#[init_component(process)]
-fn init_in_first_process() -> Result<(), ComponentInitError> {
+/// Scans registered whole-disk devices and updates their partitions.
+pub fn scan_partitions() {
     let devices = collect_all();
     for device in devices {
+        if device.is_partition() {
+            continue;
+        }
+
         let Some(partition_info) = partition::parse(&device) else {
             continue;
         };
 
         device.set_partitions(partition_info);
     }
+}
+
+static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn BlockDevice>>> = Mutex::new(BTreeMap::new());
+
+#[init_component]
+fn init() -> Result<(), ComponentInitError> {
+    device_id::init();
 
     Ok(())
 }
