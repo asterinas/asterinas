@@ -4,7 +4,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -47,8 +46,7 @@ FN_TEST(readdir_seekdir_resume)
 		TEST_SUCC(close(fd));
 	}
 
-	DIR *dp = opendir(dir);
-	TEST_RES(dp == NULL ? -1 : 0, _ret >= 0);
+	DIR *dp = TEST_SUCC(opendir(dir));
 
 	struct dirent *ent;
 	int skip = 3;
@@ -64,8 +62,7 @@ FN_TEST(readdir_seekdir_resume)
 			 ent->d_name);
 	closedir(dp);
 
-	dp = opendir(dir);
-	TEST_RES(dp == NULL ? -1 : 0, _ret >= 0);
+	dp = TEST_SUCC(opendir(dir));
 
 	seekdir(dp, saved_pos);
 	ent = readdir(dp);
@@ -87,8 +84,7 @@ FN_TEST(mkdir_contains_dot_dotdot)
 
 	ensure_dir(dir);
 
-	DIR *dp = opendir(dir);
-	TEST_RES(dp == NULL ? -1 : 0, _ret >= 0);
+	DIR *dp = TEST_SUCC(opendir(dir));
 
 	struct dirent *ent;
 	int count = 0;
@@ -124,8 +120,7 @@ FN_TEST(dir_growth_many_files)
 		TEST_SUCC(close(fd));
 	}
 
-	DIR *dp = opendir(dir);
-	TEST_RES(dp == NULL ? -1 : 0, _ret >= 0);
+	DIR *dp = TEST_SUCC(opendir(dir));
 
 	int count = 0;
 	while (readdir(dp) != NULL)
@@ -158,13 +153,10 @@ FN_TEST(dot_dotdot_semantics)
 	snprintf(dot_path, sizeof(dot_path), "%s/.", child);
 	snprintf(dotdot_path, sizeof(dotdot_path), "%s/..", child);
 
-	TEST_SUCC(stat(dot_path, &st_dot));
-	TEST_SUCC(stat(dotdot_path, &st_dotdot));
-
-	TEST_RES((ino_t)st_dot.st_ino == (ino_t)st_child.st_ino ? 0 : -1,
-		 _ret == 0);
-	TEST_RES((ino_t)st_dotdot.st_ino == (ino_t)st_parent.st_ino ? 0 : -1,
-		 _ret == 0);
+	TEST_RES(stat(dot_path, &st_dot),
+		 (ino_t)st_dot.st_ino == (ino_t)st_child.st_ino);
+	TEST_RES(stat(dotdot_path, &st_dotdot),
+		 (ino_t)st_dotdot.st_ino == (ino_t)st_parent.st_ino);
 
 	remove_if_exists(child);
 	remove_if_exists(parent);

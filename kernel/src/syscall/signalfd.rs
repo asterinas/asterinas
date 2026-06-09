@@ -114,7 +114,7 @@ fn update_existing_signalfd(
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let signal_file = file
         .downcast_ref::<SignalFile>()
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "File descriptor is not a signalfd"))?;
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not a signal file"))?;
 
     if signal_file.mask().load(Ordering::Relaxed) != new_mask {
         signal_file.update_signal_mask(new_mask)?;
@@ -209,10 +209,8 @@ impl SignalFile {
 
 impl Pollable for SignalFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        let current = current_thread!();
-        let Some(posix_thread) = current.as_posix_thread() else {
-            return IoEvents::empty();
-        };
+        let thread = current_thread!();
+        let posix_thread = thread.as_posix_thread().unwrap();
 
         if let Some(poller) = poller {
             posix_thread.register_signalfd_poller(poller, mask);
@@ -225,13 +223,11 @@ impl Pollable for SignalFile {
 impl FileLike for SignalFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if writer.avail() < size_of::<SignalfdSiginfo>() {
-            return_errno_with_message!(Errno::EINVAL, "Buffer too small for siginfo structure");
+            return_errno_with_message!(Errno::EINVAL, "the signal buffer is too small");
         }
 
         let thread = current_thread!();
-        let posix_thread = thread
-            .as_posix_thread()
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "Not a POSIX thread"))?;
+        let posix_thread = thread.as_posix_thread().unwrap();
 
         // Fast path: There are already pending signals or the signalfd is non-blocking.
         // So we don't need to create and register the poller.

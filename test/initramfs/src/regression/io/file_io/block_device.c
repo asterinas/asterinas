@@ -4,10 +4,6 @@
 
 #include "../../common/test.h"
 #include <fcntl.h>
-#ifndef __asterinas__
-#include <linux/loop.h>
-#include <sys/ioctl.h>
-#endif
 #include <stdint.h>
 #include <unistd.h>
 
@@ -24,6 +20,9 @@ static int close_block_device(int fd)
 	return close(fd);
 }
 #else
+#include <linux/loop.h>
+#include <sys/ioctl.h>
+
 #define LOOP_BACKING_FILE "/tmp/block_device_file_io.img"
 #define LOOP_BACKING_FILE_SIZE (SECTOR_SIZE * 8)
 
