@@ -335,49 +335,38 @@ pub trait FileOps {
     }
 }
 
-pub trait Inode: Any + FileOps + Send + Sync {
-    fn size(&self) -> usize;
-
+/// Provides inode operations that should only be called by the VFS layer.
+///
+/// These methods rely on VFS-side validation, permission checks, dentry-cache
+/// coordination, mountpoint checks, or path-resolution rules. Code outside
+/// `crate::fs` should use VFS wrappers such as [`Path`] instead.
+pub(in crate::fs) trait InodeVfsOps {
+    /// Resizes a regular file.
+    ///
+    /// # VFS guarantees
+    ///
+    /// The inode type is [`InodeType::File`].
     fn resize(&self, new_size: usize) -> Result<()>;
 
-    fn metadata(&self) -> Metadata;
-
-    fn ino(&self) -> u64;
-
-    fn type_(&self) -> InodeType;
-
-    fn mode(&self) -> Result<InodeMode>;
-
-    fn set_mode(&self, mode: InodeMode) -> Result<()>;
-
-    fn owner(&self) -> Result<Uid>;
-
-    fn set_owner(&self, uid: Uid) -> Result<()>;
-
-    fn group(&self) -> Result<Gid>;
-
-    fn set_group(&self, gid: Gid) -> Result<()>;
-
-    fn atime(&self) -> Duration;
-
-    fn set_atime(&self, time: Duration);
-
-    fn mtime(&self) -> Duration;
-
-    fn set_mtime(&self, time: Duration);
-
-    fn ctime(&self) -> Duration;
-
-    fn set_ctime(&self, time: Duration);
-
-    fn page_cache(&self) -> Option<PageCache> {
-        None
-    }
-
+    /// Creates a child inode under this directory.
+    ///
+    /// # VFS guarantees
+    ///
+    /// - The inode type is [`InodeType::Dir`].
+    /// - Write permission on `self` has been checked.
+    /// - `name` is an ordinary child name: non-empty, contains no `/`, is not
+    ///   `.` or `..`, and is no longer than `NAME_MAX`.
+    /// - No child named `name` exists under `self` when the method is called.
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Creates an unnamed temporary file under this directory.
+    ///
+    /// # VFS guarantees
+    ///
+    /// - The inode type is [`InodeType::Dir`].
+    /// - Write permission on `self` has been checked.
     fn create_tmpfile(
         &self,
         mode: InodeMode,
@@ -386,61 +375,105 @@ pub trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
+    /// Creates a special child inode under this directory.
+    ///
+    /// # VFS guarantees
+    ///
+    /// - The inode type is [`InodeType::Dir`].
+    /// - Write permission on `self` has been checked.
+    /// - `name` is an ordinary child name: non-empty, contains no `/`, is not
+    ///   `.` or `..`, and is no longer than `NAME_MAX`.
+    /// - No child named `name` exists under `self` when the method is called.
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn open(
-        &self,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        None
-    }
-
+    /// Adds a hard link named `name` to `old` under this directory.
+    ///
+    /// # VFS guarantees
+    ///
+    /// - The inode type is [`InodeType::Dir`].
+    /// - Write permission on `self` has been checked.
+    /// - `old` is not a directory.
+    /// - `self` and `old` belong to the same filesystem instance.
+    /// - `name` is an ordinary child name: non-empty, contains no `/`, is not
+    ///   `.` or `..`, and is no longer than `NAME_MAX`.
+    /// - No child named `name` exists under `self` when the method is called.
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Removes a non-directory child named `name` from this directory.
+    ///
+    /// # VFS guarantees
+    ///
+    /// - The inode type is [`InodeType::Dir`].
+    /// - Write permission on `self` has been checked.
+    /// - `name` is an ordinary child name: non-empty, contains no `/`, is not
+    ///   `.` or `..`, and is no longer than `NAME_MAX`.
+    /// - The resolved child exists and is not a directory.
+    /// - The target child is not a mountpoint.
     fn unlink(&self, name: &str) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Removes an empty directory child named `name` from this directory.
+    ///
+    /// # VFS guarantees
+    ///
+    /// - The inode type is [`InodeType::Dir`].
+    /// - Write permission on `self` has been checked.
+    /// - `name` is an ordinary child name: non-empty, contains no `/`, is not
+    ///   `.` or `..`, and is no longer than `NAME_MAX`.
+    /// - The resolved child exists and is a directory.
+    /// - The target child is not a mountpoint.
     fn rmdir(&self, name: &str) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Looks up a child named `name` in this directory.
+    ///
+    /// # VFS guarantees
+    ///
+    /// - The inode type is [`InodeType::Dir`].
+    /// - `name` is an ordinary child name: non-empty, contains no `/`, is not
+    ///   `.` or `..`, and is no longer than `NAME_MAX`.
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Renames `old_name` from this directory to `new_name` under `target`.
+    ///
+    /// # VFS guarantees
+    ///
+    /// - The inode type of both `self` and `target` is [`InodeType::Dir`].
+    /// - `self` and `target` belong to the same filesystem instance.
+    /// - Write permission on both directories has been checked.
+    /// - `old_name` and `new_name` are ordinary child names: non-empty,
+    ///   contain no `/`, are not `.` or `..`, and are no longer than
+    ///   `NAME_MAX`.
+    /// - The overwritten target child, if any, is not a mountpoint.
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Reads the symlink target.
+    ///
+    /// # VFS guarantees
+    ///
+    /// The inode type is [`InodeType::SymLink`].
     fn read_link(&self) -> Result<SymbolicLink> {
         Err(Error::new(Errno::EISDIR))
     }
 
+    /// Replaces the symlink target.
+    ///
+    /// # VFS guarantees
+    ///
+    /// The inode type is [`InodeType::SymLink`].
     fn write_link(&self, target: &str) -> Result<()> {
         Err(Error::new(Errno::EISDIR))
     }
-
-    fn sync_all(&self) -> Result<()> {
-        Ok(())
-    }
-
-    fn sync_data(&self) -> Result<()> {
-        Ok(())
-    }
-
-    /// Manipulates a range of space of the file according to the specified allocate mode,
-    /// the manipulated range starts at `offset` and continues for `len` bytes.
-    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        return_errno!(Errno::EOPNOTSUPP);
-    }
-
-    fn fs(&self) -> Arc<dyn FileSystem>;
 
     /// Returns the revalidation policy for cached children of this directory.
     ///
@@ -448,6 +481,10 @@ pub trait Inode: Any + FileOps + Send + Sync {
     ///
     /// Default: empty (no revalidation).
     /// Correct for filesystems where all mutations go through the VFS.
+    ///
+    /// # VFS guarantees
+    ///
+    /// The inode type is [`InodeType::Dir`].
     fn revalidation_policy(&self) -> RevalidationPolicy {
         RevalidationPolicy::empty()
     }
@@ -461,10 +498,14 @@ pub trait Inode: Any + FileOps + Send + Sync {
     ///
     /// See [`RevalidationPolicy`] for the full protocol description.
     ///
-    /// # Precondition
+    /// # VFS guarantees
     ///
-    /// Only called when `self.revalidation_policy()` includes `REVALIDATE_EXISTS`.
-    /// Otherwise, the return value is considered garbage.
+    /// - The inode type is [`InodeType::Dir`].
+    /// - `self.revalidation_policy()` includes
+    ///   [`RevalidationPolicy::REVALIDATE_EXISTS`].
+    /// - `name` is an ordinary child name: non-empty, contains no `/`, is not
+    ///   `.` or `..`, and is no longer than `NAME_MAX`.
+    /// - `child` is the cached child inode named `name`.
     fn revalidate_exists(&self, _name: &str, _child: &dyn Inode) -> bool {
         true
     }
@@ -478,12 +519,113 @@ pub trait Inode: Any + FileOps + Send + Sync {
     ///
     /// See [`RevalidationPolicy`] for the full protocol description.
     ///
-    /// # Precondition
+    /// # VFS guarantees
     ///
-    /// Only called when `self.revalidation_policy()` includes `REVALIDATE_ABSENT`.
-    /// Otherwise, the return value is considered garbage.
+    /// - The inode type is [`InodeType::Dir`].
+    /// - `self.revalidation_policy()` includes
+    ///   [`RevalidationPolicy::REVALIDATE_ABSENT`].
+    /// - `name` is an ordinary child name: non-empty, contains no `/`, is not
+    ///   `.` or `..`, and is no longer than `NAME_MAX`.
     fn revalidate_absent(&self, _name: &str) -> bool {
         true
+    }
+
+    /// Opens inode-specific per-open file operations, if needed.
+    ///
+    /// # VFS guarantees
+    ///
+    /// - The open is not an `O_PATH` open.
+    /// - If the inode type is [`InodeType::Dir`], the access mode is not
+    ///   writable.
+    /// - Permission has been checked (unless `O_PATH`).
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
+        None
+    }
+
+    /// Manipulates a range of file space according to `mode`.
+    ///
+    /// # VFS guarantees
+    ///
+    /// - The inode type is [`InodeType::File`] or [`InodeType::Dir`].
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        return_errno!(Errno::EOPNOTSUPP);
+    }
+}
+
+/// Provides public inode operations.
+///
+/// These methods can be called outside the VFS directly since they
+/// do not require any VFS guarantees.
+#[expect(private_bounds)]
+pub trait Inode: InodeVfsOps + Any + FileOps + Send + Sync {
+    /// Returns the current file size.
+    fn size(&self) -> usize;
+
+    /// Returns the full metadata snapshot.
+    fn metadata(&self) -> Metadata;
+
+    /// Returns the inode number within the filesystem.
+    fn ino(&self) -> u64;
+
+    /// Returns the inode type.
+    fn type_(&self) -> InodeType;
+
+    /// Returns the permission mode.
+    fn mode(&self) -> Result<InodeMode>;
+
+    /// Changes the permission mode.
+    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+
+    /// Returns the owner UID.
+    fn owner(&self) -> Result<Uid>;
+
+    /// Changes the owner UID.
+    fn set_owner(&self, uid: Uid) -> Result<()>;
+
+    /// Returns the owner GID.
+    fn group(&self) -> Result<Gid>;
+
+    /// Changes the owner GID.
+    fn set_group(&self, gid: Gid) -> Result<()>;
+
+    /// Returns the last access time.
+    fn atime(&self) -> Duration;
+
+    /// Changes the last access time.
+    fn set_atime(&self, time: Duration);
+
+    /// Returns the last modification time.
+    fn mtime(&self) -> Duration;
+
+    /// Changes the last modification time.
+    fn set_mtime(&self, time: Duration);
+
+    /// Returns the last metadata-change time.
+    fn ctime(&self) -> Duration;
+
+    /// Changes the last metadata-change time.
+    fn set_ctime(&self, time: Duration);
+
+    /// Flushes all dirty data and metadata for this inode.
+    fn sync_all(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Flushes dirty file data for this inode.
+    fn sync_data(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Returns the filesystem instance that owns this inode.
+    fn fs(&self) -> Arc<dyn FileSystem>;
+
+    /// Returns the page cache backing this inode, if any.
+    fn page_cache(&self) -> Option<PageCache> {
+        None
     }
 
     /// Returns the end position for [`SeekFrom::End`].
@@ -502,9 +644,7 @@ pub trait Inode: Any + FileOps + Send + Sync {
         }
     }
 
-    /// Gets the extension of this inode.
-    fn extension(&self) -> &Extension;
-
+    /// Sets an extended attribute.
     fn set_xattr(
         &self,
         name: XattrName,
@@ -514,14 +654,17 @@ pub trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
+    /// Reads an extended attribute.
     fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
+    /// Lists extended attributes in `namespace`.
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
+    /// Removes an extended attribute.
     fn remove_xattr(&self, name: XattrName) -> Result<()> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
@@ -591,6 +734,9 @@ pub trait Inode: Any + FileOps + Send + Sync {
 
         Ok(())
     }
+
+    /// Returns the extension storage for this inode.
+    fn extension(&self) -> &Extension;
 }
 
 impl dyn Inode {
