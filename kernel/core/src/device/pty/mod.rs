@@ -34,9 +34,7 @@ pub(crate) fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context)
     )?;
 
     // Create the "ptmx" symlink.
-    let ptmx = dev.new_fs_child("ptmx", InodeType::SymLink, mkmod!(a+rwx))?;
-    ptmx.inode().write_link("pts/ptmx")?;
-
+    dev.new_fs_symlink_child("ptmx", "pts/ptmx", mkmod!(a+rwx))?;
     Ok(())
 }
 
