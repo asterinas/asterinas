@@ -23,7 +23,7 @@ END_TEST()
 
 FN_SETUP(close_first_efd)
 {
-	close(efd);
+	CHECK(close(efd));
 }
 END_SETUP()
 
@@ -37,11 +37,19 @@ FN_TEST(write_ullong_max_returns_einval)
 {
 	uint64_t val = UINT64_MAX;
 	TEST_ERRNO(write(efd, &val, sizeof(val)), EINVAL);
+
+	val -= 1;
+	TEST_SUCC(write(efd, &val, sizeof(val)));
+	TEST_ERRNO(write(efd, &val, sizeof(val)), EAGAIN);
+
+	val = 0;
+	TEST_SUCC(write(efd, &val, sizeof(val)));
+	TEST_SUCC(write(efd, &val, sizeof(val)));
 }
 END_TEST()
 
 FN_SETUP(cleanup)
 {
-	close(efd);
+	CHECK(close(efd));
 }
 END_SETUP()

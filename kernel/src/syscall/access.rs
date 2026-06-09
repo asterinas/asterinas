@@ -58,7 +58,7 @@ bitflags! {
         const R_OK = 0x4;
         const W_OK = 0x2;
         const X_OK = 0x1;
-        // We could ignore F_OK in bitflags.
+        // We should ignore F_OK in bitflags.
         // const F_OK = 0x0;
     }
 }
@@ -71,9 +71,9 @@ fn do_faccessat(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let mode = AccessMode::from_bits(mode)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "Invalid mode"))?;
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid mode"))?;
     let flags = FaccessatFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "Invalid flags"))?;
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
 
     let path_name = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
     debug!(
@@ -95,22 +95,15 @@ fn do_faccessat(
         }
     };
 
-    // AccessMode::empty() means F_OK and no more permission check needed.
-    if mode.is_empty() {
-        return Ok(SyscallReturn::Return(0));
-    }
-
     let inode = path.inode();
 
-    // FIXME: The current implementation is dummy
+    // F_OK is represented by `AccessMode::empty()`, which does not perform permission checks.
     if mode.contains(AccessMode::R_OK) {
         inode.check_permission(Permission::MAY_READ)?;
     }
-
     if mode.contains(AccessMode::W_OK) {
         inode.check_permission(Permission::MAY_WRITE)?;
     }
-
     if mode.contains(AccessMode::X_OK) {
         inode.check_permission(Permission::MAY_EXEC)?;
     }

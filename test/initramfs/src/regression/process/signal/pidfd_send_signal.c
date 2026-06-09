@@ -88,9 +88,9 @@ FN_SETUP(cleanup_process)
 }
 END_SETUP()
 
-/* ========================
- *  Tests for NULL siginfo
- * ======================== */
+/* ==========================
+ *   Tests for NULL siginfo
+ * ========================== */
 
 int null_info_child_pid;
 int null_info_pidfd;

@@ -214,7 +214,7 @@ fn do_futimesat(
             || mutime.usec < 0
             || mutime.sec < 0
         {
-            return_errno_with_message!(Errno::EINVAL, "Invalid time");
+            return_errno_with_message!(Errno::EINVAL, "invalid time");
         }
         let (autime, mutime) = (timespec_t::from(autime), timespec_t::from(mutime));
         Some(TimeSpecPair {

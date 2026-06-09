@@ -3,7 +3,7 @@
 //! `eventfd()` creates an "eventfd object" (we name it as `EventFile`)
 //! which serves as a mechanism for event wait/notify.
 //!
-//! `EventFile` holds a u64 integer counter.
+//! `EventFile` holds a `u64` integer counter.
 //! Writing to `EventFile` increments the counter by the written value.
 //! Reading from `EventFile` returns the current counter value and resets it
 //! (It is also possible to only read 1,
@@ -107,7 +107,7 @@ impl EventFile {
             events |= IoEvents::IN;
         }
 
-        // if it is possible to write a value of at least "1"
+        // If it is possible to write a value of at least "1"
         // without blocking, the file is writable
         let is_writable = *counter < Self::MAX_COUNTER_VALUE;
         if is_writable {
@@ -125,7 +125,7 @@ impl EventFile {
             return_errno_with_message!(Errno::EAGAIN, "the counter is zero");
         }
 
-        // Copy value from counter, and set the new counter value
+        // Copy the value from the counter and set the new counter value
         if self.flags.lock().contains(Flags::EFD_SEMAPHORE) {
             writer.write_fallible(&mut 1u64.as_bytes().into())?;
             *counter -= 1;
@@ -140,24 +140,22 @@ impl EventFile {
         Ok(())
     }
 
-    /// Adds val to the counter.
+    /// Adds a value to the counter.
     ///
-    /// If the new_value is overflowed or exceeds MAX_COUNTER_VALUE, the counter value
-    /// will not be modified, and this method returns `Err(EINVAL)`.
+    /// If the new value overflows or exceeds `MAX_COUNTER_VALUE`, the counter value
+    /// will not be modified and this method will return `Err(EAGAIN)`.
     fn add_counter_val(&self, val: u64) -> Result<()> {
         let mut counter = self.counter.lock();
 
-        let new_value = (*counter)
-            .checked_add(val)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "arithmetic overflow"))?;
-
-        if new_value <= Self::MAX_COUNTER_VALUE {
+        if let Some(new_value) = (*counter).checked_add(val)
+            && new_value <= Self::MAX_COUNTER_VALUE
+        {
             *counter = new_value;
             self.pollee.notify(IoEvents::IN);
             return Ok(());
         }
 
-        return_errno_with_message!(Errno::EINVAL, "new value exceeds MAX_COUNTER_VALUE");
+        return_errno_with_message!(Errno::EAGAIN, "the new value exceeds MAX_COUNTER_VALUE");
     }
 }
 
@@ -171,9 +169,8 @@ impl Pollable for EventFile {
 impl FileLike for EventFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let read_len = size_of::<u64>();
-
         if writer.avail() < read_len {
-            return_errno_with_message!(Errno::EINVAL, "buf len is less len u64 size");
+            return_errno_with_message!(Errno::EINVAL, "the event buffer is too small");
         }
 
         if self.is_nonblocking() {
@@ -188,27 +185,26 @@ impl FileLike for EventFile {
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         let write_len = size_of::<u64>();
         if reader.remain() < write_len {
-            return_errno_with_message!(Errno::EINVAL, "buf len is less than the size of u64");
+            return_errno_with_message!(Errno::EINVAL, "the event buffer is too small");
         }
 
         let supplied_value = reader.read_val::<u64>()?;
 
-        if supplied_value == u64::MAX {
-            return_errno_with_message!(Errno::EINVAL, "write value must not be ULLONG_MAX");
-        }
-
-        // Try to add counter val at first
-        if self.add_counter_val(supplied_value).is_ok() {
-            return Ok(write_len);
+        if supplied_value > EventFile::MAX_COUNTER_VALUE {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the written value exceeds MAX_COUNTER_VALUE"
+            );
         }
 
         if self.is_nonblocking() {
-            return_errno_with_message!(Errno::EAGAIN, "try writing to event file again");
+            // Try to add the value
+            self.add_counter_val(supplied_value)?;
+        } else {
+            // Wait until the value can be added
+            self.write_wait_queue
+                .pause_until(|| self.add_counter_val(supplied_value).ok())?;
         }
-
-        // Wait until counter can be added val to
-        self.write_wait_queue
-            .pause_until(|| self.add_counter_val(supplied_value).ok())?;
 
         Ok(write_len)
     }
@@ -230,7 +226,7 @@ impl FileLike for EventFile {
             *flags &= !Flags::EFD_NONBLOCK;
         }
 
-        // TODO: deal with other flags
+        // TODO: Deal with other flags
 
         Ok(())
     }

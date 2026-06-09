@@ -4,7 +4,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -29,8 +28,8 @@ END_SETUP()
 FN_TEST(xattr_set_get_roundtrip)
 {
 	const char *path = BASE_DIR "/roundtrip";
-	int fd = CHECK(open(path, O_CREAT | O_WRONLY, 0644));
-	CHECK(close(fd));
+	int fd = TEST_SUCC(open(path, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(close(fd));
 
 	TEST_SUCC(setxattr(path, "user.test", "value123", 8, 0));
 
@@ -38,7 +37,7 @@ FN_TEST(xattr_set_get_roundtrip)
 	TEST_RES(getxattr(path, "user.test", buf, sizeof(buf)), _ret == 8);
 	TEST_RES(strcmp(buf, "value123"), _ret == 0);
 
-	CHECK(unlink(path));
+	TEST_SUCC(unlink(path));
 }
 END_TEST()
 
@@ -49,8 +48,8 @@ END_TEST()
 FN_TEST(xattr_remove_enodata)
 {
 	const char *path = BASE_DIR "/removefile";
-	int fd = CHECK(open(path, O_CREAT | O_WRONLY, 0644));
-	CHECK(close(fd));
+	int fd = TEST_SUCC(open(path, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(close(fd));
 
 	TEST_SUCC(setxattr(path, "user.gone", "tmp", 3, 0));
 	TEST_SUCC(removexattr(path, "user.gone"));
@@ -58,21 +57,21 @@ FN_TEST(xattr_remove_enodata)
 	char buf[64] = { 0 };
 	TEST_ERRNO(getxattr(path, "user.gone", buf, sizeof(buf)), ENODATA);
 
-	CHECK(unlink(path));
+	TEST_SUCC(unlink(path));
 }
 END_TEST()
 
 FN_TEST(xattr_nonexistent_enodata)
 {
 	const char *path = BASE_DIR "/noattr";
-	int fd = CHECK(open(path, O_CREAT | O_WRONLY, 0644));
-	CHECK(close(fd));
+	int fd = TEST_SUCC(open(path, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(close(fd));
 
 	char buf[64] = { 0 };
 	TEST_ERRNO(getxattr(path, "user.nonexistent", buf, sizeof(buf)),
 		   ENODATA);
 
-	CHECK(unlink(path));
+	TEST_SUCC(unlink(path));
 }
 END_TEST()
 
@@ -95,8 +94,8 @@ FN_TEST(xattr_with_o_path_fd)
 	TEST_ERRNO(syscall(SYS_flistxattr, opath_fd, list, sizeof(list)),
 		   EBADF);
 	TEST_ERRNO(syscall(SYS_fremovexattr, opath_fd, name), EBADF);
-
 	TEST_SUCC(close(opath_fd));
+
 	TEST_SUCC(unlink(path));
 }
 END_TEST()

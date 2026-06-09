@@ -162,9 +162,9 @@ FN_TEST(rename_dir_replace_nlink)
 	TEST_RES(stat(dst_parent, &st_after),
 		 st_after.st_nlink == st_before.st_nlink);
 
-	CHECK_WITH(rmdir(dst_child), _ret == 0 || errno == ENOENT);
-	CHECK_WITH(rmdir(dst_parent), _ret == 0 || errno == ENOENT);
-	CHECK_WITH(rmdir(src_parent), _ret == 0 || errno == ENOENT);
-	CHECK_WITH(rmdir(BASE_DIR), _ret == 0 || errno == ENOENT);
+	remove_if_exists(dst_child);
+	remove_if_exists(dst_parent);
+	remove_if_exists(src_parent);
+	remove_if_exists(BASE_DIR);
 }
 END_TEST()

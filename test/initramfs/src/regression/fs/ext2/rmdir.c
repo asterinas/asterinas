@@ -4,8 +4,6 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -17,20 +15,12 @@
 
 static void remove_file_if_exists(const char *path)
 {
-	if (unlink(path) == -1 && errno != ENOENT) {
-		fprintf(stderr, "cleanup failed: unlink(%s): %s\n", path,
-			strerror(errno));
-		exit(EXIT_FAILURE);
-	}
+	CHECK_WITH(unlink(path), _ret >= 0 || errno == ENOENT);
 }
 
 static void remove_dir_if_exists(const char *path)
 {
-	if (rmdir(path) == -1 && errno != ENOENT) {
-		fprintf(stderr, "cleanup failed: rmdir(%s): %s\n", path,
-			strerror(errno));
-		exit(EXIT_FAILURE);
-	}
+	CHECK_WITH(rmdir(path), _ret >= 0 || errno == ENOENT);
 }
 
 FN_TEST(rmdir_failed_non_empty_dir)
