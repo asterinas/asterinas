@@ -1,119 +1,203 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::borrow::Cow;
+//! Root filesystem mounting during boot.
+//!
+//! Asterinas first tries to boot from the initramfs. It checks the path specified by `rdinit`, or
+//! `/init` when `rdinit` is not provided. If the selected path is accessible, Asterinas runs it as
+//! the first userspace process. Otherwise, Asterinas boots from the root filesystem.
+//!
+//! For root filesystem boot, this module mounts a supported filesystem from the block device
+//! specified by `root`. The mounted filesystem replaces the bootstrap root in the initial mount
+//! namespace and becomes the root and working directory of the first userspace process. The
+//! bootstrap root is then detached. The `root` parameter is required when this boot path is
+//! selected, and [`SUPPORTED_ROOTFS_TYPES`] lists the supported filesystem types.
+//!
+//! The following kernel parameters configure root filesystem boot:
+//!
+//! - `root` specifies the block device to mount.
+//! - `rootfstype` specifies a comma-separated list of filesystem type candidates. All supported
+//!   types are tried when it is not provided.
+//! - `ro` and `rw` select read-only or read-write mounting. The root filesystem is read-only by
+//!   default. They use last-wins semantics: the last `ro` or `rw` parameter determines the mount
+//!   mode.
+//! - `init` specifies the init executable on the mounted filesystem. If it is not provided,
+//!   Asterinas tries `/sbin/init`, `/etc/init`, `/bin/init`, and `/bin/sh` in order.
 
-use cpio_decoder::{CpioDecoder, CpioEntry, FileMetadata, FileType};
-use device_id::{DeviceId, MajorId, MinorId};
-use lending_iterator::LendingIterator;
-use no_std_io2::io::{Cursor, Read};
-use ostd::boot::boot_info;
-use zune_inflate::DeflateDecoder;
+// Set this module's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "rootfs: "
+    };
+}
+
+use core::{
+    str::FromStr,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+use aster_cmdline::parse::ParamStorage;
+use spin::once::Once;
 
 use super::{
-    file::{InodeMode, InodeType},
-    vfs::path::{FsPath, PathResolver, is_dot},
+    ext2,
+    vfs::{
+        file_system::FsFlags,
+        path::{FsPath, Mount, MountNamespace, Path, PathResolver, PerMountFlags},
+        registry::{DynFsType, FsAndRoot, FsCreationCtx},
+    },
 };
-use crate::{fs::vfs::inode::MknodType, prelude::*};
+use crate::prelude::*;
 
-/// Unpack and prepare the rootfs from the initramfs CPIO buffer.
-pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
-    let initramfs_buf = boot_info()
-        .initramfs
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "no initramfs found"))?;
+/// Filesystem types supported for the root filesystem.
+pub static SUPPORTED_ROOTFS_TYPES: &[&dyn DynFsType] = &[&ext2::EXT2_TYPE];
 
-    let (reader, suffix) = match &initramfs_buf[..4] {
-        // Gzip magic number: 0x1F 0x8B
-        &[0x1F, 0x8B, _, _] => {
-            let decompressed = DeflateDecoder::new(initramfs_buf)
-                .decode_gzip()
-                .map_err(|_| Error::with_message(Errno::EINVAL, "gzip decompression failed"))?;
-            (Cow::Owned(decompressed), ".gz")
-        }
-        _ => (Cow::Borrowed(initramfs_buf), ""),
-    };
-
-    println!("[kernel] unpacking initramfs.cpio{} to rootfs ...", suffix);
-
-    let mut decoder = CpioDecoder::new(Cursor::new(reader));
-
-    while let Some(entry_result) = decoder.next() {
-        let mut entry = entry_result?;
-        if let Err(e) = try_append_entry_to_rootfs(&mut entry, path_resolver) {
-            warn!("failed to add entry {} to rootfs: {:?}", entry.name(), e);
-        }
-    }
-
-    println!("[kernel] rootfs is ready");
+/// Mounts and switches to the root filesystem configured by the kernel command line.
+///
+/// The filesystem replaces the bootstrap root mount and becomes the resolver's root and working
+/// directory.
+///
+/// Returns an error if `root` is not provided or the root filesystem cannot be opened or mounted.
+pub fn switch_to_rootfs(path_resolver: &mut PathResolver) -> Result<()> {
+    let root = ROOT_PATH.get().ok_or_else(|| {
+        Error::with_message(Errno::EINVAL, "the `root` parameter was not provided")
+    })?;
+    let (fs_flags, mount_flags) = rootfs_flags();
+    let fs_and_root = open_rootfs(root, fs_flags)?;
+    let rootfs_mount = Mount::new_detached(
+        fs_and_root,
+        mount_flags,
+        Arc::downgrade(MountNamespace::get_init_singleton()),
+        Some(root.to_string()),
+    )?;
+    path_resolver.switch_root_for_boot(rootfs_mount);
+    println!("[kernel] rootfs is ready (mounted from {})", root);
     Ok(())
 }
 
-fn try_append_entry_to_rootfs<R: Read>(
-    entry: &mut CpioEntry<R>,
-    path_resolver: &PathResolver,
-) -> Result<()> {
-    // Make sure the name is a relative path, and is not end with "/".
-    let entry_name = entry.name().trim_start_matches('/').trim_end_matches('/');
-    if entry_name.is_empty() {
-        return_errno_with_message!(Errno::EINVAL, "invalid entry name");
-    }
-    if is_dot(entry_name) {
-        return Ok(());
-    }
-
-    // Here we assume that the directory referred by "prefix" must has been created.
-    // The basis of this assumption is：
-    // The mkinitramfs script uses `find` command to ensure that the entries are
-    // sorted that a directory always appears before its child directories and files.
-    let (parent, name) = if let Some((prefix, last)) = entry_name.rsplit_once('/') {
-        (path_resolver.lookup(&FsPath::try_from(prefix)?)?, last)
-    } else {
-        (path_resolver.root().clone(), entry_name)
+/// Finds the init program specified for booting from the root filesystem.
+///
+/// Resolves the path specified by `init` and returns the resolved path together with the original
+/// pathname. Returns `Ok(None)` when `init` is not provided, and an error if the configured
+/// pathname is invalid or cannot be resolved.
+pub fn find_init(path_resolver: &PathResolver) -> Result<Option<(Path, &'static str)>> {
+    let Some(init_path) = INIT_PATH.get().map(String::as_str) else {
+        return Ok(None);
     };
 
-    let metadata = entry.metadata();
-    let mode = InodeMode::from_bits_truncate(metadata.permission_mode());
-    match metadata.file_type() {
-        FileType::File => {
-            let path = parent.new_fs_child(name, InodeType::File, mode)?;
-            entry.read_all(path.inode().writer(0))?;
-        }
-        FileType::Dir => {
-            let _ = parent.new_fs_child(name, InodeType::Dir, mode)?;
-        }
-        FileType::Link => {
-            let path = parent.new_fs_child(name, InodeType::SymLink, mode)?;
-            let link_content = {
-                let mut link_data: Vec<u8> = Vec::new();
-                entry.read_all(&mut link_data)?;
-                core::str::from_utf8(&link_data)?.to_string()
-            };
-            path.inode().write_link(&link_content)?;
-        }
-        FileType::Char => {
-            let device_id = try_device_id_from_metadata(metadata)?;
-            parent.mknod(name, mode, MknodType::CharDevice(device_id))?;
-        }
-        FileType::Block => {
-            let device_id = try_device_id_from_metadata(metadata)?;
-            parent.mknod(name, mode, MknodType::BlockDevice(device_id))?;
-        }
-        FileType::FiFo => {
-            parent.mknod(name, mode, MknodType::NamedPipe)?;
-        }
-        FileType::Socket => {
-            return_errno_with_message!(Errno::EINVAL, "socket files are not supported in initramfs")
+    let path = path_resolver.lookup(&FsPath::try_from(init_path)?)?;
+    Ok(Some((path, init_path)))
+}
+
+fn open_rootfs(root: &str, fs_flags: FsFlags) -> Result<FsAndRoot> {
+    // Treat a `/dev/...` value of `root` as a Linux-compatible root device spec, not as a VFS path
+    // lookup.
+    // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/base/devtmpfs.c#L358-L359>.
+    let device_name = root
+        .strip_prefix("/dev/")
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "root must name a /dev block device"))?;
+    let device = aster_block::lookup_by_name(device_name)
+        .ok_or_else(|| Error::with_message(Errno::ENODEV, "root block device not found"))?;
+    open_rootfs_from_candidates(device, rootfs_types(), fs_flags)
+}
+
+fn open_rootfs_from_candidates(
+    device: Arc<dyn aster_block::BlockDevice>,
+    rootfs_types: &[&dyn DynFsType],
+    fs_flags: FsFlags,
+) -> Result<FsAndRoot> {
+    let mut fs_creation_ctx = FsCreationCtx::from_block_device(device, fs_flags, None);
+    for rootfs_type in rootfs_types {
+        match rootfs_type.get_or_create(&mut fs_creation_ctx) {
+            Ok(fs_and_root) => return Ok(fs_and_root),
+            Err(err) if err.error() == Errno::EINVAL => continue,
+            Err(err) => return Err(err),
         }
     }
 
-    Ok(())
+    return_errno_with_message!(Errno::ENODEV, "no root filesystem type could mount root")
 }
 
-fn try_device_id_from_metadata(metadata: &FileMetadata) -> Result<u64> {
-    let major = {
-        let dev_maj = u16::try_from(metadata.rdev_maj())?;
-        MajorId::try_from(dev_maj).map_err(|msg| Error::with_message(Errno::EINVAL, msg))?
-    };
-    let minor = MinorId::try_from(metadata.rdev_min())
-        .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?;
-    Ok(DeviceId::new(major, minor).as_encoded_u64())
+fn rootfs_flags() -> (FsFlags, PerMountFlags) {
+    let mut fs_flags = FsFlags::empty();
+    let mut mount_flags = PerMountFlags::default();
+    if ROOT_MOUNT_READ_ONLY.load(Ordering::Relaxed) {
+        fs_flags.insert(FsFlags::RDONLY);
+        mount_flags.insert(PerMountFlags::RDONLY);
+    }
+    (fs_flags, mount_flags)
 }
+
+fn rootfs_types() -> &'static [&'static dyn DynFsType] {
+    ROOTFS_TYPES
+        .get()
+        .map(RootFsTypes::as_slice)
+        .unwrap_or(SUPPORTED_ROOTFS_TYPES)
+}
+
+static ROOT_PATH: Once<String> = Once::new();
+aster_cmdline::define_kv_param!("root", ROOT_PATH);
+
+static INIT_PATH: Once<String> = Once::new();
+aster_cmdline::define_kv_param!("init", INIT_PATH);
+
+/// Root filesystem type candidates.
+struct RootFsTypes(Vec<&'static dyn DynFsType>);
+
+impl RootFsTypes {
+    /// Returns the root filesystem type candidates as a slice.
+    fn as_slice(&self) -> &[&'static dyn DynFsType] {
+        self.0.as_slice()
+    }
+}
+
+impl FromStr for RootFsTypes {
+    type Err = core::convert::Infallible;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let candidates = value
+            .split(',')
+            .filter(|type_name| !type_name.is_empty())
+            .filter_map(|type_name| {
+                SUPPORTED_ROOTFS_TYPES
+                    .iter()
+                    .copied()
+                    .find(|fs_type| fs_type.name() == type_name)
+            })
+            .collect();
+
+        Ok(Self(candidates))
+    }
+}
+
+static ROOTFS_TYPES: Once<RootFsTypes> = Once::new();
+aster_cmdline::define_kv_param!("rootfstype", ROOTFS_TYPES);
+
+static ROOT_MOUNT_READ_ONLY: AtomicBool = AtomicBool::new(true);
+
+struct SetRootMountReadOnly;
+struct SetRootMountReadWrite;
+
+impl ParamStorage for SetRootMountReadOnly {
+    type Value = bool;
+
+    fn store_param(&self, value: Self::Value) {
+        if value {
+            ROOT_MOUNT_READ_ONLY.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+impl ParamStorage for SetRootMountReadWrite {
+    type Value = bool;
+
+    fn store_param(&self, value: Self::Value) {
+        if value {
+            ROOT_MOUNT_READ_ONLY.store(false, Ordering::Relaxed);
+        }
+    }
+}
+
+static RO_PARAM: SetRootMountReadOnly = SetRootMountReadOnly;
+static RW_PARAM: SetRootMountReadWrite = SetRootMountReadWrite;
+aster_cmdline::define_flag_param!("ro", RO_PARAM);
+aster_cmdline::define_flag_param!("rw", RW_PARAM);

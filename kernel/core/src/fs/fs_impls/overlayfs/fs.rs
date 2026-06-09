@@ -1248,12 +1248,13 @@ mod tests {
     use super::*;
     use crate::fs::{
         ramfs::RamFs,
-        vfs::path::{Mount, MountNamespace},
+        vfs::path::{Mount, MountNamespace, PerMountFlags},
     };
 
     fn new_dummy_mount() -> Arc<Mount> {
         Mount::new_root(
             RamFs::new(),
+            PerMountFlags::default(),
             Arc::downgrade(MountNamespace::get_init_singleton()),
         )
         .unwrap()

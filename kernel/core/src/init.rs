@@ -8,7 +8,10 @@ use ostd::{cpu::CpuId, util::id_set::Id};
 use spin::once::Once;
 
 use crate::{
-    fs::vfs::path::{MountNamespace, PathResolver},
+    fs::{
+        initramfs, rootfs,
+        vfs::path::{FsPath, MountNamespace, Path, PathResolver},
+    },
     prelude::*,
     process::{Process, spawn_init_process},
     sched::SchedPolicy,
@@ -32,6 +35,12 @@ pub(super) fn main() {
         .cpu_affinity(CpuId::bsp().into())
         .sched_policy(SchedPolicy::Idle)
         .spawn();
+}
+
+pub(super) fn on_first_process_startup(ctx: &Context) {
+    component::init_all(InitStage::Process, component::parse_metadata!()).unwrap();
+    crate::device::init_in_first_process(ctx).unwrap();
+    crate::fs::init_in_first_process(ctx);
 }
 
 fn init() {
@@ -134,15 +143,107 @@ fn first_kthread() {
     let init_mnt_ns = MountNamespace::get_init_singleton();
     let fs_resolver = init_mnt_ns.new_path_resolver();
     init_in_first_kthread(&fs_resolver);
+    let boot_init = prepare_boot_init(fs_resolver);
 
     print_banner();
 
     INIT_PROCESS.call_once(|| {
         let karg = INIT_PROC_ARGS.get().unwrap();
-        let init_path = RDINIT_PATH.get().map(|s| s.as_str());
-        spawn_init_process(init_path, karg.argv().to_vec(), karg.envp().to_vec())
-            .expect("Failed to run the init process")
+        let argv = karg.argv().to_vec();
+        let envp = karg.envp().to_vec();
+        boot_init
+            .spawn(argv, envp)
+            .expect("failed to run the init process")
     });
+}
+
+struct BootInit {
+    path_resolver: PathResolver,
+    init_path: Option<(Path, &'static str)>,
+}
+
+impl BootInit {
+    fn spawn(self, argv: Vec<CString>, envp: Vec<CString>) -> Result<Arc<Process>> {
+        let Self {
+            path_resolver,
+            init_path,
+        } = self;
+
+        // Only rootfs boot may have no init path; initramfs boot always provides one.
+        let Some((init_path, init_name)) = init_path else {
+            return spawn_default_rootfs_init(path_resolver, argv, envp);
+        };
+
+        println!("[kernel] running {} as the init process", init_name);
+        spawn_init_process(
+            path_resolver,
+            init_path,
+            with_init_argv0(init_name, argv),
+            envp,
+        )
+    }
+}
+
+fn prepare_boot_init(mut path_resolver: PathResolver) -> BootInit {
+    if let Ok(init_path) = initramfs::find_init(&path_resolver) {
+        return BootInit {
+            path_resolver,
+            init_path: Some(init_path),
+        };
+    }
+
+    rootfs::switch_to_rootfs(&mut path_resolver)
+        .expect("neither an initramfs init nor a usable root filesystem was available");
+    let init_path = rootfs::find_init(&path_resolver).expect("failed to resolve rootfs init path");
+    BootInit {
+        path_resolver,
+        init_path,
+    }
+}
+
+fn spawn_default_rootfs_init(
+    path_resolver: PathResolver,
+    argv: Vec<CString>,
+    envp: Vec<CString>,
+) -> Result<Arc<Process>> {
+    // Linux probes the fallback init executables in this order:
+    // Reference: <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1634>.
+    const DEFAULT_INIT_EXEC_PATHS: &[&str] = &["/sbin/init", "/etc/init", "/bin/init", "/bin/sh"];
+
+    let mut last_error = None;
+
+    for &init_name in DEFAULT_INIT_EXEC_PATHS {
+        // FIXME: Avoid cloning `argv` and `envp` for each fallback candidate.
+        let init_path = match path_resolver.lookup(&FsPath::try_from(init_name).unwrap()) {
+            Ok(path) => path,
+            Err(error) => {
+                last_error = Some(error);
+                continue;
+            }
+        };
+
+        match spawn_init_process(
+            path_resolver.clone(),
+            init_path,
+            with_init_argv0(init_name, argv.clone()),
+            envp.clone(),
+        ) {
+            Ok(process) => {
+                println!("[kernel] running {} as the rootfs init", init_name);
+                return Ok(process);
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    Err(last_error.unwrap())
+}
+
+fn with_init_argv0(init_name: &str, mut argv: Vec<CString>) -> Vec<CString> {
+    // Linux prepends the init executable path as `argv[0]`.
+    // Reference: <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1491>.
+    argv.insert(0, CString::new(init_name).unwrap());
+    argv
 }
 
 static INIT_PROCESS: Once<Arc<Process>> = Once::new();
@@ -163,12 +264,3 @@ fn print_banner() {
     println!("");
     println!("{}", logo_ascii_art::get_gradient_color_version());
 }
-
-pub(super) fn on_first_process_startup(ctx: &Context) {
-    component::init_all(InitStage::Process, component::parse_metadata!()).unwrap();
-    crate::device::init_in_first_process(ctx).unwrap();
-    crate::fs::init_in_first_process(ctx);
-}
-
-static RDINIT_PATH: Once<String> = Once::new();
-aster_cmdline::define_kv_param!("rdinit", RDINIT_PATH);
