@@ -284,18 +284,12 @@ impl Mount {
     /// mount node. It is the fs's responsibility to ensure the data consistency.
     pub(in crate::fs) fn new_root(
         fs: Arc<dyn FileSystem>,
+        flags: PerMountFlags,
         mnt_ns: Weak<MountNamespace>,
     ) -> Result<Arc<Self>> {
         let source = fs.name().to_string();
         let root_dentry = Dentry::new_root(fs.root_inode());
-        Self::new(
-            root_dentry,
-            fs,
-            PerMountFlags::default(),
-            None,
-            mnt_ns,
-            Some(source),
-        )
+        Self::new(root_dentry, fs, flags, None, mnt_ns, Some(source))
     }
 
     /// Creates a pseudo mount node with an associated FS.
