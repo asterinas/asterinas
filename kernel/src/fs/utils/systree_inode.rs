@@ -14,15 +14,14 @@ use crate::{
         vfs::{
             file_system::{FileSystem, SuperBlock},
             inode::{
-                Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RevalidationPolicy,
-                SymbolicLink,
+                Extension, FallocMode, FileOps, Inode, InodeVfsOps, Metadata, MknodType,
+                RevalidationPolicy, SymbolicLink,
             },
         },
     },
     prelude::*,
     process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
-    vm::page_cache::PageCache,
 };
 
 type Ino = u64;
@@ -31,8 +30,7 @@ type Ino = u64;
 /// e.g., a `SysFs` inode and a `CgroupFs` inode.
 ///
 /// The struct implementing this trait will have a default implementation for
-/// the [`Inode`] trait. Users only need to additionally implement the
-/// [`Inode::fs`] method.
+/// the [`Inode`] trait and [`InodeVfsOps`].
 #[expect(dead_code)]
 pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     fn new_arc(
@@ -53,6 +51,8 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     fn set_mode(&self, mode: InodeMode) -> Result<()>;
 
     fn extension(&self) -> &Extension;
+
+    fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn parent(&self) -> &Weak<Self>;
 
@@ -411,79 +411,11 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
     }
 }
 
-impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
-    default fn type_(&self) -> InodeType {
-        self.metadata().type_
-    }
-
-    default fn metadata(&self) -> Metadata {
-        let mut metadata = *self.metadata();
-        metadata.mode = self.mode().unwrap();
-        metadata
-    }
-
-    default fn ino(&self) -> u64 {
-        self.metadata().ino
-    }
-
-    default fn mode(&self) -> Result<InodeMode> {
-        self.mode()
-    }
-
-    default fn set_mode(&self, mode: InodeMode) -> Result<()> {
-        self.set_mode(mode)
-    }
-
-    default fn size(&self) -> usize {
-        self.metadata().size
-    }
-
+impl<KInode: SysTreeInodeTy + Send + Sync + 'static> InodeVfsOps for KInode {
     default fn resize(&self, _new_size: usize) -> Result<()> {
         // The `resize` operation should be ignored by kernelfs inodes,
         // and should not incur an error.
         Ok(())
-    }
-
-    default fn atime(&self) -> Duration {
-        self.metadata().last_access_at
-    }
-
-    default fn set_atime(&self, _time: Duration) {}
-
-    default fn mtime(&self) -> Duration {
-        self.metadata().last_modify_at
-    }
-
-    default fn set_mtime(&self, _time: Duration) {}
-
-    default fn ctime(&self) -> Duration {
-        self.metadata().last_meta_change_at
-    }
-
-    default fn set_ctime(&self, _time: Duration) {}
-
-    default fn owner(&self) -> Result<Uid> {
-        Ok(self.metadata().uid)
-    }
-
-    default fn set_owner(&self, _uid: Uid) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    default fn group(&self) -> Result<Gid> {
-        Ok(self.metadata().gid)
-    }
-
-    default fn set_group(&self, _gid: Gid) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    default fn fs(&self) -> Arc<dyn FileSystem> {
-        unimplemented!("fs() method should be implemented by the concrete inode type");
-    }
-
-    default fn page_cache(&self) -> Option<PageCache> {
-        None
     }
 
     default fn create(
@@ -588,26 +520,6 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         Err(Error::new(Errno::EPERM))
     }
 
-    default fn open(
-        &self,
-        _access_mode: AccessMode,
-        _status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        None
-    }
-
-    default fn sync_all(&self) -> Result<()> {
-        Ok(())
-    }
-
-    default fn sync_data(&self) -> Result<()> {
-        Ok(())
-    }
-
-    default fn fallocate(&self, _mode: FallocMode, _offset: usize, _len: usize) -> Result<()> {
-        Err(Error::new(Errno::EOPNOTSUPP))
-    }
-
     default fn revalidation_policy(&self) -> RevalidationPolicy {
         RevalidationPolicy::empty()
     }
@@ -618,6 +530,92 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn revalidate_absent(&self, _name: &str) -> bool {
         true
+    }
+
+    default fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
+        None
+    }
+
+    default fn fallocate(&self, _mode: FallocMode, _offset: usize, _len: usize) -> Result<()> {
+        Err(Error::new(Errno::EOPNOTSUPP))
+    }
+}
+
+impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
+    default fn type_(&self) -> InodeType {
+        self.metadata().type_
+    }
+
+    default fn metadata(&self) -> Metadata {
+        let mut metadata = *self.metadata();
+        metadata.mode = self.mode().unwrap();
+        metadata
+    }
+
+    default fn ino(&self) -> u64 {
+        self.metadata().ino
+    }
+
+    default fn mode(&self) -> Result<InodeMode> {
+        self.mode()
+    }
+
+    default fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        self.set_mode(mode)
+    }
+
+    default fn size(&self) -> usize {
+        self.metadata().size
+    }
+
+    default fn atime(&self) -> Duration {
+        self.metadata().last_access_at
+    }
+
+    default fn set_atime(&self, _time: Duration) {}
+
+    default fn mtime(&self) -> Duration {
+        self.metadata().last_modify_at
+    }
+
+    default fn set_mtime(&self, _time: Duration) {}
+
+    default fn ctime(&self) -> Duration {
+        self.metadata().last_meta_change_at
+    }
+
+    default fn set_ctime(&self, _time: Duration) {}
+
+    default fn owner(&self) -> Result<Uid> {
+        Ok(self.metadata().uid)
+    }
+
+    default fn set_owner(&self, _uid: Uid) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    default fn group(&self) -> Result<Gid> {
+        Ok(self.metadata().gid)
+    }
+
+    default fn set_group(&self, _gid: Gid) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    default fn fs(&self) -> Arc<dyn FileSystem> {
+        SysTreeInodeTy::fs(self)
+    }
+
+    default fn sync_all(&self) -> Result<()> {
+        Ok(())
+    }
+
+    default fn sync_data(&self) -> Result<()> {
+        Ok(())
     }
 
     default fn extension(&self) -> &Extension {

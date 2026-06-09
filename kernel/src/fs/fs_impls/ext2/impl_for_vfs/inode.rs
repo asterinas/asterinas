@@ -20,7 +20,10 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FallocMode, FileOps, Inode, Metadata, MknodType, SymbolicLink},
+            inode::{
+                Extension, FallocMode, FileOps, Inode, InodeVfsOps, Metadata, MknodType,
+                SymbolicLink,
+            },
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -61,13 +64,107 @@ impl FileOps for Ext2Inode {
     }
 }
 
+impl InodeVfsOps for Ext2Inode {
+    fn resize(&self, new_size: usize) -> Result<()> {
+        self.resize(new_size)
+    }
+
+    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        Ok(self.create(name, type_, mode.into())?)
+    }
+
+    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
+        let (inode_type, device_id) = match type_ {
+            MknodType::CharDevice(dev_id) => (InodeType::CharDevice, Some(dev_id)),
+            MknodType::BlockDevice(dev_id) => (InodeType::BlockDevice, Some(dev_id)),
+            MknodType::NamedPipe => (InodeType::NamedPipe, None),
+        };
+
+        let new_inode = self.create(name, inode_type, mode.into())?;
+        if let Some(device_id) = device_id {
+            // Store the ext2 special-file device encoding in `i_block`.
+            new_inode.set_device_id(device_id)?;
+        }
+
+        Ok(new_inode)
+    }
+
+    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
+        Ok(self.lookup(name)?)
+    }
+
+    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
+        let old = old
+            .downcast_ref::<Ext2Inode>()
+            .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
+        self.link(old, name)
+    }
+
+    fn unlink(&self, name: &str) -> Result<()> {
+        self.unlink(name)
+    }
+
+    fn rmdir(&self, name: &str) -> Result<()> {
+        self.rmdir(name)
+    }
+
+    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+        let target = target
+            .downcast_ref::<Ext2Inode>()
+            .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
+        self.rename(old_name, target, new_name)
+    }
+
+    fn read_link(&self) -> Result<SymbolicLink> {
+        self.read_link().map(SymbolicLink::Plain)
+    }
+
+    fn write_link(&self, target: &str) -> Result<()> {
+        self.write_link(target)
+    }
+
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
+        match self.inode_type() {
+            inode_type @ (InodeType::BlockDevice | InodeType::CharDevice) => {
+                let device_id = self.device_id();
+                let Some(device_id) = DeviceId::from_encoded_u64(device_id) else {
+                    return Some(Err(Error::with_message(
+                        Errno::ENODEV,
+                        "the device ID is invalid",
+                    )));
+                };
+                let device_type = inode_type
+                    .device_type()
+                    .expect("BlockDevice and CharDevice always have a device type");
+                let Some(device) = device::lookup(device_type, device_id) else {
+                    return Some(Err(Error::with_message(
+                        Errno::ENODEV,
+                        "the required device ID does not exist",
+                    )));
+                };
+
+                Some(device.open())
+            }
+            InodeType::NamedPipe => {
+                let pipe = self.pipe().expect("NamedPipe inode must have a pipe");
+                Some(pipe.open_named(access_mode, status_flags))
+            }
+            _ => None,
+        }
+    }
+
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        self.fallocate(mode, offset, len)
+    }
+}
+
 impl Inode for Ext2Inode {
     fn size(&self) -> usize {
         self.file_size()
-    }
-
-    fn resize(&self, new_size: usize) -> Result<()> {
-        self.resize(new_size)
     }
 
     fn metadata(&self) -> Metadata {
@@ -134,94 +231,6 @@ impl Inode for Ext2Inode {
         self.page_cache()
     }
 
-    fn open(
-        &self,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        match self.inode_type() {
-            inode_type @ (InodeType::BlockDevice | InodeType::CharDevice) => {
-                let device_id = self.device_id();
-                let Some(device_id) = DeviceId::from_encoded_u64(device_id) else {
-                    return Some(Err(Error::with_message(
-                        Errno::ENODEV,
-                        "the device ID is invalid",
-                    )));
-                };
-                let device_type = inode_type
-                    .device_type()
-                    .expect("BlockDevice and CharDevice always have a device type");
-                let Some(device) = device::lookup(device_type, device_id) else {
-                    return Some(Err(Error::with_message(
-                        Errno::ENODEV,
-                        "the required device ID does not exist",
-                    )));
-                };
-
-                Some(device.open())
-            }
-            InodeType::NamedPipe => {
-                let pipe = self.pipe().expect("NamedPipe inode must have a pipe");
-                Some(pipe.open_named(access_mode, status_flags))
-            }
-            _ => None,
-        }
-    }
-
-    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        Ok(self.create(name, type_, mode.into())?)
-    }
-
-    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
-        let (inode_type, device_id) = match type_ {
-            MknodType::CharDevice(dev_id) => (InodeType::CharDevice, Some(dev_id)),
-            MknodType::BlockDevice(dev_id) => (InodeType::BlockDevice, Some(dev_id)),
-            MknodType::NamedPipe => (InodeType::NamedPipe, None),
-        };
-
-        let new_inode = self.create(name, inode_type, mode.into())?;
-        if let Some(device_id) = device_id {
-            // Store the ext2 special-file device encoding in `i_block`.
-            new_inode.set_device_id(device_id)?;
-        }
-
-        Ok(new_inode)
-    }
-
-    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
-        Ok(self.lookup(name)?)
-    }
-
-    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
-        let old = old
-            .downcast_ref::<Ext2Inode>()
-            .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
-        self.link(old, name)
-    }
-
-    fn unlink(&self, name: &str) -> Result<()> {
-        self.unlink(name)
-    }
-
-    fn rmdir(&self, name: &str) -> Result<()> {
-        self.rmdir(name)
-    }
-
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        let target = target
-            .downcast_ref::<Ext2Inode>()
-            .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
-        self.rename(old_name, target, new_name)
-    }
-
-    fn read_link(&self) -> Result<SymbolicLink> {
-        self.read_link().map(SymbolicLink::Plain)
-    }
-
-    fn write_link(&self, target: &str) -> Result<()> {
-        self.write_link(target)
-    }
-
     fn sync_all(&self) -> Result<()> {
         self.sync_all()?;
         let fs = self.fs()?;
@@ -242,10 +251,6 @@ impl Inode for Ext2Inode {
             return_errno_with_message!(Errno::EIO, "failed to flush block device");
         }
         Ok(())
-    }
-
-    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        self.fallocate(mode, offset, len)
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

@@ -18,7 +18,7 @@ use crate::{
         pseudofs::{NaivePseudoFs, PseudoInode, PseudoInodeType},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata},
+            inode::{Extension, FileOps, Inode, InodeVfsOps, Metadata},
             path::{Dentry, Mount, Path},
         },
     },
@@ -102,25 +102,8 @@ impl<T: NsCommonOps> NsInode<T> {
 }
 
 #[inherit_methods(from = "self.common")]
-impl<T: NsCommonOps> Inode for NsInode<T> {
-    fn size(&self) -> usize;
+impl<T: NsCommonOps> InodeVfsOps for NsInode<T> {
     fn resize(&self, _new_size: usize) -> Result<()>;
-    fn metadata(&self) -> Metadata;
-    fn extension(&self) -> &Extension;
-    fn ino(&self) -> u64;
-    fn type_(&self) -> InodeType;
-    fn mode(&self) -> Result<InodeMode>;
-    fn owner(&self) -> Result<Uid>;
-    fn set_owner(&self, uid: Uid) -> Result<()>;
-    fn group(&self) -> Result<Gid>;
-    fn set_group(&self, gid: Gid) -> Result<()>;
-    fn atime(&self) -> Duration;
-    fn set_atime(&self, time: Duration);
-    fn mtime(&self) -> Duration;
-    fn set_mtime(&self, time: Duration);
-    fn ctime(&self) -> Duration;
-    fn set_ctime(&self, time: Duration);
-    fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn open(
         &self,
@@ -143,6 +126,27 @@ impl<T: NsCommonOps> Inode for NsInode<T> {
         };
         Some(Ok(Box::new(ns_file) as Box<dyn PerOpenFileOps>))
     }
+}
+
+#[inherit_methods(from = "self.common")]
+impl<T: NsCommonOps> Inode for NsInode<T> {
+    fn size(&self) -> usize;
+    fn metadata(&self) -> Metadata;
+    fn extension(&self) -> &Extension;
+    fn ino(&self) -> u64;
+    fn type_(&self) -> InodeType;
+    fn mode(&self) -> Result<InodeMode>;
+    fn owner(&self) -> Result<Uid>;
+    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn group(&self) -> Result<Gid>;
+    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn atime(&self) -> Duration;
+    fn set_atime(&self, time: Duration);
+    fn mtime(&self) -> Duration;
+    fn set_mtime(&self, time: Duration);
+    fn ctime(&self) -> Duration;
+    fn set_ctime(&self, time: Duration);
+    fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn set_mode(&self, _mode: InodeMode) -> Result<()> {
         return_errno_with_message!(Errno::EPERM, "the mode of ns inodes cannot be changed");

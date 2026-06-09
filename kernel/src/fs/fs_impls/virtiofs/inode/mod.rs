@@ -43,7 +43,9 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, RevalidationPolicy, SymbolicLink},
+            inode::{
+                Extension, FileOps, Inode, InodeVfsOps, Metadata, RevalidationPolicy, SymbolicLink,
+            },
         },
     },
     prelude::*,
@@ -191,10 +193,6 @@ impl VirtioFsInode {
 
         fs.lookup_inode_from_cache(lookup_reply, request_attr_version)
     }
-
-    fn type_(&self) -> InodeType {
-        self.type_
-    }
 }
 
 /// An inode timestamp field updated through `SETATTR`.
@@ -253,11 +251,7 @@ impl InodeInner {
     }
 }
 
-impl Inode for VirtioFsInode {
-    fn size(&self) -> usize {
-        self.size()
-    }
-
+impl InodeVfsOps for VirtioFsInode {
     fn resize(&self, new_size: usize) -> Result<()> {
         if self.type_() != InodeType::File {
             return_errno_with_message!(Errno::EISDIR, "resize on non-regular file");
@@ -268,90 +262,6 @@ impl Inode for VirtioFsInode {
 
         let setattr_req = SetattrReq::new(SetattrValid::FATTR_SIZE).set_size(size);
         self.setattr(setattr_req)
-    }
-
-    fn metadata(&self) -> Metadata {
-        self.inner.read().metadata
-    }
-
-    fn ino(&self) -> u64 {
-        self.nodeid().as_u64()
-    }
-
-    fn type_(&self) -> InodeType {
-        self.type_
-    }
-
-    fn mode(&self) -> Result<InodeMode> {
-        Ok(self.inner.read().metadata.mode)
-    }
-
-    fn set_mode(&self, mode: InodeMode) -> Result<()> {
-        let mode_bits = self.type_() as u32 | u32::from(mode.bits());
-        let setattr_req = SetattrReq::new(SetattrValid::FATTR_MODE).set_mode(mode_bits);
-        self.setattr(setattr_req)
-    }
-
-    fn owner(&self) -> Result<Uid> {
-        Ok(self.inner.read().metadata.uid)
-    }
-
-    fn set_owner(&self, uid: Uid) -> Result<()> {
-        let setattr_req = SetattrReq::new(SetattrValid::FATTR_UID).set_uid(uid.into());
-        self.setattr(setattr_req)
-    }
-
-    fn group(&self) -> Result<Gid> {
-        Ok(self.inner.read().metadata.gid)
-    }
-
-    fn set_group(&self, gid: Gid) -> Result<()> {
-        let setattr_req = SetattrReq::new(SetattrValid::FATTR_GID).set_gid(gid.into());
-        self.setattr(setattr_req)
-    }
-
-    fn atime(&self) -> Duration {
-        self.inner.read().metadata.last_access_at
-    }
-
-    fn set_atime(&self, time: Duration) {
-        self.set_time(TimeField::Access, time);
-    }
-
-    fn mtime(&self) -> Duration {
-        self.inner.read().metadata.last_modify_at
-    }
-
-    fn set_mtime(&self, time: Duration) {
-        self.set_time(TimeField::Modify, time);
-    }
-
-    fn ctime(&self) -> Duration {
-        self.inner.read().metadata.last_meta_change_at
-    }
-
-    fn set_ctime(&self, time: Duration) {
-        self.set_time(TimeField::Change, time);
-    }
-
-    fn page_cache(&self) -> Option<PageCache> {
-        self.inner.read().page_cache.clone()
-    }
-
-    fn open(
-        &self,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        match self.type_ {
-            InodeType::File => Some(self.open_file(access_mode, status_flags)),
-            InodeType::Dir => Some(self.open_directory(access_mode, status_flags)),
-            // TODO: Support opening special files like device files and named pipes.
-            _ => Some(Err(Error::with_message(
-                Errno::EOPNOTSUPP,
-                "opening this virtiofs inode type is not supported",
-            ))),
-        }
     }
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
@@ -471,23 +381,6 @@ impl Inode for VirtioFsInode {
         Ok(())
     }
 
-    fn sync_data(&self) -> Result<()> {
-        let inner = self.inner.write();
-        let Some(page_cache) = &inner.page_cache else {
-            return Ok(());
-        };
-        let cached_size = page_cache.size();
-        if cached_size > 0 {
-            page_cache.flush_range(0..cached_size)?;
-        }
-
-        Ok(())
-    }
-
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        self.fs_ref()
-    }
-
     fn revalidation_policy(&self) -> RevalidationPolicy {
         match self.type_ {
             InodeType::Dir => {
@@ -520,6 +413,113 @@ impl Inode for VirtioFsInode {
         let target = fs.session().readlink(self.nodeid())?;
 
         Ok(SymbolicLink::Plain(target))
+    }
+
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
+        match self.type_ {
+            InodeType::File => Some(self.open_file(access_mode, status_flags)),
+            InodeType::Dir => Some(self.open_directory(access_mode, status_flags)),
+            // TODO: Support opening special files like device files and named pipes.
+            _ => Some(Err(Error::with_message(
+                Errno::EOPNOTSUPP,
+                "opening this virtiofs inode type is not supported",
+            ))),
+        }
+    }
+}
+
+impl Inode for VirtioFsInode {
+    fn size(&self) -> usize {
+        self.size()
+    }
+
+    fn metadata(&self) -> Metadata {
+        self.inner.read().metadata
+    }
+
+    fn ino(&self) -> u64 {
+        self.nodeid().as_u64()
+    }
+
+    fn type_(&self) -> InodeType {
+        self.type_
+    }
+
+    fn mode(&self) -> Result<InodeMode> {
+        Ok(self.inner.read().metadata.mode)
+    }
+
+    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        let mode_bits = self.type_ as u32 | u32::from(mode.bits());
+        let setattr_req = SetattrReq::new(SetattrValid::FATTR_MODE).set_mode(mode_bits);
+        self.setattr(setattr_req)
+    }
+
+    fn owner(&self) -> Result<Uid> {
+        Ok(self.inner.read().metadata.uid)
+    }
+
+    fn set_owner(&self, uid: Uid) -> Result<()> {
+        let setattr_req = SetattrReq::new(SetattrValid::FATTR_UID).set_uid(uid.into());
+        self.setattr(setattr_req)
+    }
+
+    fn group(&self) -> Result<Gid> {
+        Ok(self.inner.read().metadata.gid)
+    }
+
+    fn set_group(&self, gid: Gid) -> Result<()> {
+        let setattr_req = SetattrReq::new(SetattrValid::FATTR_GID).set_gid(gid.into());
+        self.setattr(setattr_req)
+    }
+
+    fn atime(&self) -> Duration {
+        self.inner.read().metadata.last_access_at
+    }
+
+    fn set_atime(&self, time: Duration) {
+        self.set_time(TimeField::Access, time);
+    }
+
+    fn mtime(&self) -> Duration {
+        self.inner.read().metadata.last_modify_at
+    }
+
+    fn set_mtime(&self, time: Duration) {
+        self.set_time(TimeField::Modify, time);
+    }
+
+    fn ctime(&self) -> Duration {
+        self.inner.read().metadata.last_meta_change_at
+    }
+
+    fn set_ctime(&self, time: Duration) {
+        self.set_time(TimeField::Change, time);
+    }
+
+    fn page_cache(&self) -> Option<PageCache> {
+        self.inner.read().page_cache.clone()
+    }
+
+    fn sync_data(&self) -> Result<()> {
+        let inner = self.inner.write();
+        let Some(page_cache) = &inner.page_cache else {
+            return Ok(());
+        };
+        let cached_size = page_cache.size();
+        if cached_size > 0 {
+            page_cache.flush_range(0..cached_size)?;
+        }
+
+        Ok(())
+    }
+
+    fn fs(&self) -> Arc<dyn FileSystem> {
+        self.fs_ref()
     }
 
     fn extension(&self) -> &Extension {

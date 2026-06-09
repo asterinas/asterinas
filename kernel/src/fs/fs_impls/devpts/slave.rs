@@ -58,13 +58,23 @@ impl FileOps for PtySlaveInode {
     }
 }
 
+impl InodeVfsOps for PtySlaveInode {
+    fn resize(&self, new_size: usize) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
+        Some(self.device.open())
+    }
+}
+
 impl Inode for PtySlaveInode {
     fn size(&self) -> usize {
         self.metadata.read().size
-    }
-
-    fn resize(&self, new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
     }
 
     fn metadata(&self) -> Metadata {
@@ -136,13 +146,5 @@ impl Inode for PtySlaveInode {
 
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
-    }
-
-    fn open(
-        &self,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        Some(self.device.open())
     }
 }

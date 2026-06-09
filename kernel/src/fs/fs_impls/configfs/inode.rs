@@ -7,7 +7,7 @@ use crate::{
         utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, Metadata},
+            inode::{Extension, Metadata},
         },
     },
     prelude::*,
@@ -77,9 +77,7 @@ impl SysTreeInodeTy for ConfigInode {
     fn extension(&self) -> &Extension {
         &self.extension
     }
-}
 
-impl Inode for ConfigInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         ConfigFs::singleton().clone()
     }

@@ -11,7 +11,7 @@ use crate::{
         procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, SymbolicLink},
+            inode::{Extension, FileOps, Inode, InodeVfsOps, Metadata, SymbolicLink},
         },
     },
     prelude::*,
@@ -68,6 +68,29 @@ impl<F: ProcFileOps + 'static> FileOps for ProcFile<F> {
     }
 }
 
+impl<F: ProcFileOps + 'static> InodeVfsOps for ProcFile<F> {
+    fn resize(&self, _new_size: usize) -> Result<()> {
+        // Resizing files under `/proc` will succeed, but will do nothing.
+        Ok(())
+    }
+
+    fn read_link(&self) -> Result<SymbolicLink> {
+        Err(Error::new(Errno::EINVAL))
+    }
+
+    fn write_link(&self, _target: &str) -> Result<()> {
+        Err(Error::new(Errno::EINVAL))
+    }
+
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
+        self.inner.open(access_mode, status_flags)
+    }
+}
+
 #[inherit_methods(from = "self.common")]
 impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
     fn size(&self) -> usize;
@@ -92,34 +115,13 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
         self.common.metadata_with_owner(owner_thread)
     }
 
-    fn resize(&self, _new_size: usize) -> Result<()> {
-        // Resizing files under `/proc` will succeed, but will do nothing.
-        Ok(())
-    }
-
     fn type_(&self) -> InodeType {
         InodeType::File
-    }
-
-    fn read_link(&self) -> Result<SymbolicLink> {
-        Err(Error::new(Errno::EINVAL))
-    }
-
-    fn write_link(&self, _target: &str) -> Result<()> {
-        Err(Error::new(Errno::EINVAL))
     }
 
     fn seek_end(&self) -> Option<usize> {
         // Seeking regular files under `/proc` with `SEEK_END` will fail.
         None
-    }
-
-    fn open(
-        &self,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        self.inner.open(access_mode, status_flags)
     }
 }
 

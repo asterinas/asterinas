@@ -69,13 +69,23 @@ impl FileOps for Ptmx {
     }
 }
 
+impl InodeVfsOps for Ptmx {
+    fn resize(&self, new_size: usize) -> Result<()> {
+        Ok(())
+    }
+
+    fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
+        Some(self.inner.open())
+    }
+}
+
 impl Inode for Ptmx {
     fn size(&self) -> usize {
         self.metadata.read().size
-    }
-
-    fn resize(&self, new_size: usize) -> Result<()> {
-        Ok(())
     }
 
     fn metadata(&self) -> Metadata {
@@ -148,14 +158,6 @@ impl Inode for Ptmx {
     fn fs(&self) -> Arc<dyn FileSystem> {
         // FIXME: The below code may panic if the devpts is dropped.
         self.devpts().unwrap()
-    }
-
-    fn open(
-        &self,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        Some(self.inner.open())
     }
 }
 

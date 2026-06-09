@@ -11,7 +11,7 @@ use crate::{
         procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, SymbolicLink},
+            inode::{Extension, FileOps, Inode, InodeVfsOps, Metadata, SymbolicLink},
         },
     },
     prelude::*,
@@ -65,6 +65,20 @@ impl<S: ProcSymOps + 'static> FileOps for ProcSym<S> {
     }
 }
 
+impl<S: ProcSymOps + 'static> InodeVfsOps for ProcSym<S> {
+    fn resize(&self, _new_size: usize) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn read_link(&self) -> Result<SymbolicLink> {
+        self.inner.read_link()
+    }
+
+    fn write_link(&self, _target: &str) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
+}
+
 #[inherit_methods(from = "self.common")]
 impl<S: ProcSymOps + 'static> Inode for ProcSym<S> {
     fn size(&self) -> usize;
@@ -89,20 +103,8 @@ impl<S: ProcSymOps + 'static> Inode for ProcSym<S> {
         self.common.metadata_with_owner(owner_thread)
     }
 
-    fn resize(&self, _new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
-    }
-
     fn type_(&self) -> InodeType {
         InodeType::SymLink
-    }
-
-    fn read_link(&self) -> Result<SymbolicLink> {
-        self.inner.read_link()
-    }
-
-    fn write_link(&self, _target: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
     }
 }
 

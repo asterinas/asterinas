@@ -31,7 +31,7 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, MknodType, SymbolicLink},
+            inode::{Extension, FileOps, Inode, InodeVfsOps, Metadata, MknodType, SymbolicLink},
         },
     },
     prelude::*,
@@ -1380,15 +1380,7 @@ impl FileOps for ExfatInode {
     }
 }
 
-impl Inode for ExfatInode {
-    fn ino(&self) -> u64 {
-        self.inner.read().ino
-    }
-
-    fn size(&self) -> usize {
-        self.inner.read().size
-    }
-
+impl InodeVfsOps for ExfatInode {
     fn resize(&self, new_size: usize) -> Result<()> {
         let inner = self.inner.upread();
 
@@ -1416,102 +1408,6 @@ impl Inode for ExfatInode {
         }
 
         Ok(())
-    }
-
-    fn metadata(&self) -> Metadata {
-        let inner = self.inner.read();
-
-        let blk_size = inner.fs().sector_size();
-
-        let nlinks = if inner.inode_type.is_directory() {
-            (inner.num_sub_dirs + 2) as usize
-        } else {
-            1
-        };
-
-        Metadata {
-            ino: inner.ino,
-            size: inner.size,
-            optimal_block_size: blk_size,
-            nr_sectors_allocated: inner.nr_sectors_allocated(),
-            last_access_at: inner.atime.as_duration().unwrap_or_default(),
-            last_modify_at: inner.mtime.as_duration().unwrap_or_default(),
-            last_meta_change_at: inner.ctime.as_duration().unwrap_or_default(),
-            type_: inner.inode_type,
-            mode: inner.make_mode(),
-            nr_hard_links: nlinks,
-            uid: Uid::new(inner.fs().mount_option().fs_uid as u32),
-            gid: Gid::new(inner.fs().mount_option().fs_gid as u32),
-            container_dev_id: inner.fs().container_device_id(),
-            self_dev_id: None,
-        }
-    }
-
-    fn type_(&self) -> InodeType {
-        self.inner.read().inode_type
-    }
-
-    fn mode(&self) -> Result<InodeMode> {
-        Ok(self.inner.read().make_mode())
-    }
-
-    fn set_mode(&self, mode: InodeMode) -> Result<()> {
-        //Pass through
-        Ok(())
-    }
-
-    fn atime(&self) -> Duration {
-        self.inner.read().atime.as_duration().unwrap_or_default()
-    }
-
-    fn set_atime(&self, time: Duration) {
-        self.inner.write().atime = DosTimestamp::from_duration(time).unwrap_or_default();
-    }
-
-    fn mtime(&self) -> Duration {
-        self.inner.read().mtime.as_duration().unwrap_or_default()
-    }
-
-    fn set_mtime(&self, time: Duration) {
-        self.inner.write().mtime = DosTimestamp::from_duration(time).unwrap_or_default();
-    }
-
-    fn ctime(&self) -> Duration {
-        self.inner.read().ctime.as_duration().unwrap_or_default()
-    }
-
-    fn set_ctime(&self, time: Duration) {
-        self.inner.write().ctime = DosTimestamp::from_duration(time).unwrap_or_default();
-    }
-
-    fn owner(&self) -> Result<Uid> {
-        Ok(Uid::new(
-            self.inner.read().fs().mount_option().fs_uid as u32,
-        ))
-    }
-
-    fn set_owner(&self, uid: Uid) -> Result<()> {
-        // Pass through.
-        Ok(())
-    }
-
-    fn group(&self) -> Result<Gid> {
-        Ok(Gid::new(
-            self.inner.read().fs().mount_option().fs_gid as u32,
-        ))
-    }
-
-    fn set_group(&self, gid: Gid) -> Result<()> {
-        // Pass through.
-        Ok(())
-    }
-
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        self.inner.read().fs()
-    }
-
-    fn page_cache(&self) -> Option<PageCache> {
-        Some(self.inner.read().page_cache.clone())
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
@@ -1670,6 +1566,112 @@ impl Inode for ExfatInode {
 
     fn write_link(&self, target: &str) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
+    }
+}
+
+impl Inode for ExfatInode {
+    fn ino(&self) -> u64 {
+        self.inner.read().ino
+    }
+
+    fn size(&self) -> usize {
+        self.inner.read().size
+    }
+
+    fn metadata(&self) -> Metadata {
+        let inner = self.inner.read();
+
+        let blk_size = inner.fs().sector_size();
+
+        let nlinks = if inner.inode_type.is_directory() {
+            (inner.num_sub_dirs + 2) as usize
+        } else {
+            1
+        };
+
+        Metadata {
+            ino: inner.ino,
+            size: inner.size,
+            optimal_block_size: blk_size,
+            nr_sectors_allocated: inner.nr_sectors_allocated(),
+            last_access_at: inner.atime.as_duration().unwrap_or_default(),
+            last_modify_at: inner.mtime.as_duration().unwrap_or_default(),
+            last_meta_change_at: inner.ctime.as_duration().unwrap_or_default(),
+            type_: inner.inode_type,
+            mode: inner.make_mode(),
+            nr_hard_links: nlinks,
+            uid: Uid::new(inner.fs().mount_option().fs_uid as u32),
+            gid: Gid::new(inner.fs().mount_option().fs_gid as u32),
+            container_dev_id: inner.fs().container_device_id(),
+            self_dev_id: None,
+        }
+    }
+
+    fn type_(&self) -> InodeType {
+        self.inner.read().inode_type
+    }
+
+    fn mode(&self) -> Result<InodeMode> {
+        Ok(self.inner.read().make_mode())
+    }
+
+    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        //Pass through
+        Ok(())
+    }
+
+    fn atime(&self) -> Duration {
+        self.inner.read().atime.as_duration().unwrap_or_default()
+    }
+
+    fn set_atime(&self, time: Duration) {
+        self.inner.write().atime = DosTimestamp::from_duration(time).unwrap_or_default();
+    }
+
+    fn mtime(&self) -> Duration {
+        self.inner.read().mtime.as_duration().unwrap_or_default()
+    }
+
+    fn set_mtime(&self, time: Duration) {
+        self.inner.write().mtime = DosTimestamp::from_duration(time).unwrap_or_default();
+    }
+
+    fn ctime(&self) -> Duration {
+        self.inner.read().ctime.as_duration().unwrap_or_default()
+    }
+
+    fn set_ctime(&self, time: Duration) {
+        self.inner.write().ctime = DosTimestamp::from_duration(time).unwrap_or_default();
+    }
+
+    fn owner(&self) -> Result<Uid> {
+        Ok(Uid::new(
+            self.inner.read().fs().mount_option().fs_uid as u32,
+        ))
+    }
+
+    fn set_owner(&self, uid: Uid) -> Result<()> {
+        // Pass through.
+        Ok(())
+    }
+
+    fn group(&self) -> Result<Gid> {
+        Ok(Gid::new(
+            self.inner.read().fs().mount_option().fs_gid as u32,
+        ))
+    }
+
+    fn set_group(&self, gid: Gid) -> Result<()> {
+        // Pass through.
+        Ok(())
+    }
+
+    fn fs(&self) -> Arc<dyn FileSystem> {
+        self.inner.read().fs()
+    }
+
+    fn page_cache(&self) -> Option<PageCache> {
+        Some(self.inner.read().page_cache.clone())
     }
 
     fn sync_all(&self) -> Result<()> {

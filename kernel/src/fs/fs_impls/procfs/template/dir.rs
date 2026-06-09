@@ -15,7 +15,9 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::{FileSystem, SuperBlock},
-            inode::{Extension, FileOps, Inode, Metadata, MknodType, RevalidationPolicy},
+            inode::{
+                Extension, FileOps, Inode, InodeVfsOps, Metadata, MknodType, RevalidationPolicy,
+            },
             path::{is_dot, is_dotdot},
         },
     },
@@ -151,36 +153,9 @@ impl<D: ProcDirOps + 'static> FileOps for ProcDir<D> {
     }
 }
 
-#[inherit_methods(from = "self.common")]
-impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
-    fn size(&self) -> usize;
-    fn extension(&self) -> &Extension;
-    fn ino(&self) -> u64;
-    fn mode(&self) -> Result<InodeMode>;
-    fn set_mode(&self, mode: InodeMode) -> Result<()>;
-    fn owner(&self) -> Result<Uid>;
-    fn set_owner(&self, uid: Uid) -> Result<()>;
-    fn group(&self) -> Result<Gid>;
-    fn set_group(&self, gid: Gid) -> Result<()>;
-    fn atime(&self) -> Duration;
-    fn set_atime(&self, time: Duration);
-    fn mtime(&self) -> Duration;
-    fn set_mtime(&self, time: Duration);
-    fn ctime(&self) -> Duration;
-    fn set_ctime(&self, time: Duration);
-    fn fs(&self) -> Arc<dyn FileSystem>;
-
-    fn metadata(&self) -> Metadata {
-        let owner_thread = self.inner.owner_thread();
-        self.common.metadata_with_owner(owner_thread)
-    }
-
+impl<D: ProcDirOps + 'static> InodeVfsOps for ProcDir<D> {
     fn resize(&self, _new_size: usize) -> Result<()> {
         Err(Error::new(Errno::EISDIR))
-    }
-
-    fn type_(&self) -> InodeType {
-        InodeType::Dir
     }
 
     fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
@@ -228,6 +203,35 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
 
     fn revalidate_absent(&self, name: &str) -> bool {
         self.inner.revalidate_absent(name)
+    }
+}
+
+#[inherit_methods(from = "self.common")]
+impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
+    fn size(&self) -> usize;
+    fn extension(&self) -> &Extension;
+    fn ino(&self) -> u64;
+    fn mode(&self) -> Result<InodeMode>;
+    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    fn owner(&self) -> Result<Uid>;
+    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn group(&self) -> Result<Gid>;
+    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn atime(&self) -> Duration;
+    fn set_atime(&self, time: Duration);
+    fn mtime(&self) -> Duration;
+    fn set_mtime(&self, time: Duration);
+    fn ctime(&self) -> Duration;
+    fn set_ctime(&self, time: Duration);
+    fn fs(&self) -> Arc<dyn FileSystem>;
+
+    fn metadata(&self) -> Metadata {
+        let owner_thread = self.inner.owner_thread();
+        self.common.metadata_with_owner(owner_thread)
+    }
+
+    fn type_(&self) -> InodeType {
+        InodeType::Dir
     }
 
     fn seek_end(&self) -> Option<usize> {

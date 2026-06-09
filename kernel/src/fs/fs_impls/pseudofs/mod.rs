@@ -43,7 +43,7 @@ use crate::{
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            inode::{Extension, FileOps, Inode, Metadata},
+            inode::{Extension, FileOps, Inode, InodeVfsOps, Metadata},
         },
     },
     prelude::*,
@@ -261,13 +261,26 @@ impl FileOps for PseudoInode {
     }
 }
 
+impl InodeVfsOps for PseudoInode {
+    fn resize(&self, _new_size: usize) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "pseudo inodes can not be resized");
+    }
+
+    fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
+        Some(Err(Error::with_message(
+            Errno::ENXIO,
+            "the pseudo inode is not re-openable",
+        )))
+    }
+}
+
 impl Inode for PseudoInode {
     fn size(&self) -> usize {
         self.metadata.lock().size
-    }
-
-    fn resize(&self, _new_size: usize) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "pseudo inodes can not be resized");
     }
 
     fn metadata(&self) -> Metadata {
@@ -348,17 +361,6 @@ impl Inode for PseudoInode {
 
     fn set_ctime(&self, time: Duration) {
         self.metadata.lock().last_meta_change_at = time;
-    }
-
-    fn open(
-        &self,
-        _access_mode: AccessMode,
-        _status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        Some(Err(Error::with_message(
-            Errno::ENXIO,
-            "the pseudo inode is not re-openable",
-        )))
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {
