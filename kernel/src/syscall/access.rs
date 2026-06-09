@@ -13,7 +13,7 @@ use crate::{
 pub fn sys_faccessat(
     dirfd: RawFileDesc,
     path_ptr: Vaddr,
-    mode: u16,
+    mode: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
@@ -24,7 +24,7 @@ pub fn sys_faccessat(
     do_faccessat(dirfd, path_ptr, mode, 0, ctx)
 }
 
-pub fn sys_access(path_ptr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_access(path_ptr: Vaddr, mode: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("access: path_ptr = {:#x}, mode = {:o}", path_ptr, mode);
 
     do_faccessat(AT_FDCWD, path_ptr, mode, 0, ctx)
@@ -33,7 +33,7 @@ pub fn sys_access(path_ptr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallRe
 pub fn sys_faccessat2(
     dirfd: RawFileDesc,
     path_ptr: Vaddr,
-    mode: u16,
+    mode: u32,
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
@@ -54,7 +54,7 @@ bitflags! {
 }
 
 bitflags! {
-    struct AccessMode: u16 {
+    struct AccessMode: u32 {
         const R_OK = 0x4;
         const W_OK = 0x2;
         const X_OK = 0x1;
@@ -66,7 +66,7 @@ bitflags! {
 fn do_faccessat(
     dirfd: RawFileDesc,
     path_ptr: Vaddr,
-    mode: u16,
+    mode: u32,
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {

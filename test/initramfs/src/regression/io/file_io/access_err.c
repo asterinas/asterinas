@@ -42,6 +42,16 @@ FN_SETUP(create)
 }
 END_SETUP()
 
+FN_TEST(access_mode)
+{
+	TEST_ERRNO(access(FILENAME, 0x10000), EINVAL);
+	TEST_ERRNO(access(FILENAME, -1), EINVAL);
+	TEST_ERRNO(faccessat(AT_FDCWD, FILENAME, 0x10000, 0), EINVAL);
+	TEST_ERRNO(syscall(SYS_faccessat2, AT_FDCWD, FILENAME, 0x10000, 0),
+		   EINVAL);
+}
+END_TEST()
+
 FN_TEST(readable)
 {
 	int fd;
