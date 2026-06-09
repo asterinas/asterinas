@@ -100,9 +100,6 @@ Supported functionality in SCML:
 {{#include recvfrom_and_recvmsg.scml}}
 ```
 
-Partially-supported flags:
-* `MSG_PEEK` because it is only supported in netlink socket
-
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/recvfrom.2.html).
 
