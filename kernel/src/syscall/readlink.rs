@@ -41,7 +41,7 @@ pub fn sys_readlinkat(
         let fs_path = FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::Allow)?;
         let path = path_resolver.lookup_no_follow(&fs_path)?;
 
-        match path.inode().read_link()? {
+        match path.read_link()? {
             SymbolicLink::Plain(s) => s,
             SymbolicLink::Path(path) => path_resolver.make_abs_path(&path).into_string(),
         }

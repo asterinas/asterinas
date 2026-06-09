@@ -13,6 +13,7 @@ use crate::{
     fs::{
         self,
         file::{InodeMode, InodeType},
+        utils::NAME_MAX,
         vfs::{
             inode::{Inode, MknodType, RevalidationPolicy},
             inode_ext::InodeExt,
@@ -396,6 +397,8 @@ impl DirDentry<'_> {
         type_: InodeType,
         mode: InodeMode,
     ) -> Result<Arc<Dentry>> {
+        validate_new_child_name(name)?;
+
         let children = self.validate_child_absent(name)?;
         let new_inode = self.inode.create(name, type_, mode)?;
         let mut children = children.upgrade();
@@ -500,6 +503,7 @@ impl DirDentry<'_> {
     /// [`super::PathResolver::lookup_at_path`].
     pub(in crate::fs) fn lookup_child(&self, name: &str) -> Result<Arc<Dentry>> {
         debug_assert!(!is_dot_or_dotdot(name));
+        validate_child_name(name)?;
 
         let mut children = self.children.upread();
 
@@ -546,6 +550,8 @@ impl DirDentry<'_> {
         mode: InodeMode,
         type_: MknodType,
     ) -> Result<Arc<Dentry>> {
+        validate_new_child_name(name)?;
+
         let children = self.validate_child_absent(name)?;
         let inode = self.inode.mknod(name, mode, type_)?;
         let new_child = Dentry::new(
@@ -559,6 +565,14 @@ impl DirDentry<'_> {
 
     /// Links a new `Dentry` by `link()` the old inode.
     pub(super) fn link(&self, old_inode: &Arc<dyn Inode>, name: &str) -> Result<()> {
+        validate_new_child_name(name)?;
+        if old_inode.type_() == InodeType::Dir {
+            return_errno_with_message!(Errno::EPERM, "hard links to directories are not allowed");
+        }
+        if !Arc::ptr_eq(&self.inode.fs(), &old_inode.fs()) {
+            return_errno_with_message!(Errno::EXDEV, "the operation cannot cross filesystems");
+        }
+
         let children = self.validate_child_absent(name)?;
         self.inode.link(old_inode, name)?;
         let dentry = Dentry::new(
@@ -575,12 +589,22 @@ impl DirDentry<'_> {
 
     /// Deletes a `Dentry` by `unlink()` the inner inode.
     pub(super) fn unlink(&self, name: &str) -> Result<()> {
+        validate_child_name(name)?;
         if is_dot_or_dotdot(name) {
             return_errno_with_message!(Errno::EINVAL, "unlink on . or ..");
         }
 
         let dir_inode = self.inode();
-        let child_inode = self.remove_child(name, |dir_inode, name| dir_inode.unlink(name))?;
+        let child_inode = self.remove_child(
+            name,
+            |child_inode| {
+                if child_inode.type_() == InodeType::Dir {
+                    return_errno_with_message!(Errno::EISDIR, "unlink on a directory");
+                }
+                Ok(())
+            },
+            |dir_inode, name| dir_inode.unlink(name),
+        )?;
 
         let nlinks = child_inode.metadata().nr_hard_links;
         fs::vfs::notify::on_link_count(&child_inode);
@@ -605,6 +629,7 @@ impl DirDentry<'_> {
 
     /// Deletes a directory `Dentry` by `rmdir()` the inner inode.
     pub(super) fn rmdir(&self, name: &str) -> Result<()> {
+        validate_child_name(name)?;
         if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .");
         }
@@ -613,7 +638,16 @@ impl DirDentry<'_> {
         }
 
         let dir_inode = self.inode();
-        let child_inode = self.remove_child(name, |dir_inode, name| dir_inode.rmdir(name))?;
+        let child_inode = self.remove_child(
+            name,
+            |child_inode| {
+                if child_inode.type_() != InodeType::Dir {
+                    return_errno_with_message!(Errno::ENOTDIR, "rmdir on a non-directory");
+                }
+                Ok(())
+            },
+            |dir_inode, name| dir_inode.rmdir(name),
+        )?;
 
         let nlinks = child_inode.metadata().nr_hard_links;
         if nlinks == 0 {
@@ -638,6 +672,7 @@ impl DirDentry<'_> {
     fn remove_child(
         &self,
         name: &str,
+        validate_child_fn: impl FnOnce(&dyn Inode) -> Result<()>,
         remove_child_fn: impl FnOnce(&dyn Inode, &str) -> Result<()>,
     ) -> Result<Arc<dyn Inode>> {
         let dir_inode = self.inode();
@@ -669,6 +704,7 @@ impl DirDentry<'_> {
             None => dir_inode.lookup(name)?,
         };
 
+        validate_child_fn(child_inode.as_ref())?;
         remove_child_fn(dir_inode.as_ref(), name)?;
         if cached_child.is_some() {
             children.upgrade().delete(name);
@@ -689,6 +725,8 @@ impl DirDentry<'_> {
         if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
         }
+        validate_child_name(old_name)?;
+        validate_child_name(new_name)?;
 
         let old_dir_inode = old_dir.inode();
         let new_dir_inode = new_dir.inode();
@@ -1066,4 +1104,27 @@ fn write_lock_children_on_two_dentries<'a>(
             unreachable!("two distinct DirDentry's with identical DentryKey")
         }
     }
+}
+
+fn validate_child_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        return_errno_with_message!(Errno::ENOENT, "the child name is empty");
+    }
+    if name.len() > NAME_MAX {
+        return_errno_with_message!(Errno::ENAMETOOLONG, "the child name is too long");
+    }
+    if name.as_bytes().contains(&b'/') {
+        return_errno_with_message!(Errno::EINVAL, "the child name contains a path separator");
+    }
+
+    Ok(())
+}
+
+fn validate_new_child_name(name: &str) -> Result<()> {
+    validate_child_name(name)?;
+    if is_dot_or_dotdot(name) {
+        return_errno_with_message!(Errno::EEXIST, "the child already exists");
+    }
+
+    Ok(())
 }

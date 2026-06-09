@@ -22,7 +22,7 @@ use crate::{
         pseudofs::NsInode,
         vfs::{
             file_system::{FileSystem, FsFlags},
-            inode::{HardLinkability, Inode, Metadata, MknodType},
+            inode::{HardLinkability, Inode, Metadata, MknodType, SymbolicLink},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -62,13 +62,7 @@ impl Path {
 
     /// Creates a new `Path` to represent the child directory of a file system.
     pub fn new_fs_child(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
-        if self
-            .inode()
-            .check_permission(Permission::MAY_WRITE)
-            .is_err()
-        {
-            return_errno!(Errno::EACCES);
-        }
+        self.check_write_permission()?;
         let new_child_dentry = self
             .dentry
             .as_dir_dentry_or_err()?
@@ -86,14 +80,10 @@ impl Path {
         mode: InodeMode,
         hard_linkability: HardLinkability,
     ) -> Result<Self> {
-        if self
-            .inode()
-            .check_permission(Permission::MAY_WRITE)
-            .is_err()
-        {
-            return_errno!(Errno::EACCES);
-        }
-        let tmp_inode = self.inode().create_tmpfile(mode, hard_linkability)?;
+        self.check_write_permission()?;
+
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+        let tmp_inode = dir_dentry.inode().create_tmpfile(mode, hard_linkability)?;
         let tmp_dentry = Dentry::new_anonymous(tmp_inode, self.dentry.clone());
         Ok(Self::new(self.mount.clone(), tmp_dentry))
     }
@@ -265,6 +255,18 @@ impl Path {
 
     fn this(&self) -> Self {
         self.clone()
+    }
+
+    fn check_write_permission(&self) -> Result<()> {
+        if self
+            .inode()
+            .check_permission(Permission::MAY_WRITE)
+            .is_err()
+        {
+            return_errno!(Errno::EACCES);
+        }
+
+        Ok(())
     }
 }
 
@@ -522,6 +524,7 @@ impl Path {
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
+        self.check_write_permission()?;
         let inner = self
             .dentry
             .as_dir_dentry_or_err()?
@@ -534,17 +537,20 @@ impl Path {
         if !Arc::ptr_eq(&old.mount, &self.mount) {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
+        self.check_write_permission()?;
 
         self.dentry.as_dir_dentry_or_err()?.link(old.inode(), name)
     }
 
     /// Unlinks a name from the `Path`.
     pub fn unlink(&self, name: &str) -> Result<()> {
+        self.check_write_permission()?;
         self.dentry.as_dir_dentry_or_err()?.unlink(name)
     }
 
     /// Removes a directory by `rmdir()` the inner inode.
     pub fn rmdir(&self, name: &str) -> Result<()> {
+        self.check_write_permission()?;
         self.dentry.as_dir_dentry_or_err()?.rmdir(name)
     }
 
@@ -553,8 +559,37 @@ impl Path {
         if !Arc::ptr_eq(&self.mount, &new_dir.mount) {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
+        self.check_write_permission()?;
+        new_dir.check_write_permission()?;
 
         DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name)
+    }
+
+    /// Resizes the regular file at this path.
+    pub fn resize(&self, size: usize) -> Result<()> {
+        match self.type_() {
+            InodeType::File => self.inode().resize(size),
+            InodeType::Dir => return_errno_with_message!(Errno::EISDIR, "resize on a directory"),
+            _ => return_errno_with_message!(Errno::EINVAL, "resize on a non-regular file"),
+        }
+    }
+
+    /// Reads the target of the symbolic link at this path.
+    pub fn read_link(&self) -> Result<SymbolicLink> {
+        if self.type_() != InodeType::SymLink {
+            return_errno_with_message!(Errno::EINVAL, "readlink on a non-symlink");
+        }
+
+        self.inode().read_link()
+    }
+
+    /// Replaces the target of the symbolic link at this path.
+    pub fn write_link(&self, target: &str) -> Result<()> {
+        if self.type_() != InodeType::SymLink {
+            return_errno_with_message!(Errno::EINVAL, "write_link on a non-symlink");
+        }
+
+        self.inode().write_link(target)
     }
 }
 
@@ -568,7 +603,6 @@ impl Path {
     pub fn mode(&self) -> Result<InodeMode>;
     pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
     pub fn size(&self) -> usize;
-    pub fn resize(&self, size: usize) -> Result<()>;
     pub fn owner(&self) -> Result<Uid>;
     pub fn set_owner(&self, uid: Uid) -> Result<()>;
     pub fn group(&self) -> Result<Gid>;
