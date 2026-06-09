@@ -11,7 +11,10 @@ use smoltcp::{
     wire::{IpRepr, UdpRepr},
 };
 
-use super::common::{Inner, Socket, SocketBg};
+use super::{
+    ReceiveBehavior,
+    common::{Inner, Socket, SocketBg},
+};
 use crate::{
     errors::udp::SendError,
     ext::Ext,
@@ -166,14 +169,24 @@ impl<E: Ext> UdpSocket<E> {
     /// Receives some data.
     ///
     /// Polling the iface is _not_ required after this method succeeds.
-    pub fn recv<F, R>(&self, f: F) -> Result<R, smoltcp::socket::udp::RecvError>
+    pub fn recv<CopyFn, R>(
+        &self,
+        behavior: ReceiveBehavior,
+        copy_fn: CopyFn,
+    ) -> Result<R, smoltcp::socket::udp::RecvError>
     where
-        F: FnOnce(&[u8], UdpMetadata) -> R,
+        CopyFn: FnOnce(&[u8], UdpMetadata) -> R,
     {
         let mut socket = self.0.inner.socket.lock();
 
-        let (data, meta) = socket.recv()?;
-        let result = f(data, meta);
+        let (data, meta) = match behavior {
+            ReceiveBehavior::Recv => socket.recv()?,
+            ReceiveBehavior::Peek => {
+                let (data, meta) = socket.peek()?;
+                (data, *meta)
+            }
+        };
+        let result = copy_fn(data, meta);
 
         Ok(result)
     }

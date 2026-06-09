@@ -80,3 +80,36 @@ FN_SETUP(close_tcp_listener)
 	CHECK(close(tcp_listener));
 }
 END_SETUP()
+
+FN_TEST(udp_msg_peek)
+{
+	int send_fd;
+	int recv_fd;
+	int msg_flags = 0;
+	char buf[PAYLOAD_LEN] = {};
+	struct sockaddr_in addr = { .sin_family = AF_INET };
+	socklen_t addr_len = sizeof(addr);
+
+	send_fd = TEST_SUCC(socket(AF_INET, SOCK_DGRAM, 0));
+	recv_fd = TEST_SUCC(socket(AF_INET, SOCK_DGRAM, 0));
+
+	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	TEST_SUCC(bind(recv_fd, (struct sockaddr *)&addr, sizeof(addr)));
+	TEST_SUCC(getsockname(recv_fd, (struct sockaddr *)&addr, &addr_len));
+	TEST_SUCC(connect(send_fd, (struct sockaddr *)&addr, addr_len));
+
+	TEST_RES(send(send_fd, PAYLOAD, PAYLOAD_LEN, 0), _ret == PAYLOAD_LEN);
+
+	// Peeking a datagram must not consume the datagram.
+	TEST_RES(peek_message(recv_fd, buf, PAYLOAD_LEN, &msg_flags),
+		 _ret == PAYLOAD_LEN && (msg_flags & MSG_TRUNC) == 0 &&
+			 memcmp(buf, PAYLOAD, PAYLOAD_LEN) == 0);
+
+	memset(buf, 0, sizeof(buf));
+	TEST_RES(recv(recv_fd, buf, sizeof(buf), 0),
+		 _ret == PAYLOAD_LEN && memcmp(buf, PAYLOAD, PAYLOAD_LEN) == 0);
+
+	TEST_SUCC(close(send_fd));
+	TEST_SUCC(close(recv_fd));
+}
+END_TEST()
