@@ -15,14 +15,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#ifndef SYS_pidfd_getfd
-#ifdef __NR_pidfd_getfd
-#define SYS_pidfd_getfd __NR_pidfd_getfd
-#elif defined(__x86_64__)
-#define SYS_pidfd_getfd 438
-#endif
-#endif
-
 #include "../../common/test.h"
 
 enum {
