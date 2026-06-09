@@ -331,3 +331,73 @@ FN_TEST(unix_raw_msg_peek)
 	SOCKETPAIR_CLOSE();
 }
 END_TEST()
+
+static int send_getlink_request(int fd, unsigned int seq)
+{
+	struct {
+		struct nlmsghdr hdr;
+		struct ifinfomsg info;
+	} req = {
+		.hdr = {
+			.nlmsg_len = sizeof(req),
+			.nlmsg_type = RTM_GETLINK,
+			.nlmsg_flags = NLM_F_REQUEST,
+			.nlmsg_seq = seq,
+		},
+		.info = {
+			.ifi_family = AF_UNSPEC,
+			.ifi_change = 0xffffffff,
+		},
+	};
+	return send(fd, &req, sizeof(req), 0) == sizeof(req) ? 0 : -1;
+}
+
+FN_TEST(netlink_raw_msg_peek)
+{
+	struct sockaddr_nl addr = { .nl_family = AF_NETLINK };
+	int fd;
+	int msg_flags = 0;
+	char peek_buf[8192] = {};
+	char recv_buf[8192] = {};
+	ssize_t peek_len;
+
+	fd = TEST_SUCC(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+	TEST_SUCC(bind(fd, (struct sockaddr *)&addr, sizeof(addr)));
+
+	TEST_RES(send_getlink_request(fd, 1), _ret == 0);
+
+	peek_len = TEST_RES(peek_message(fd, peek_buf, sizeof(peek_buf),
+					 &msg_flags),
+			    _ret > 0 && (msg_flags & MSG_TRUNC) == 0);
+
+	TEST_RES(recv(fd, recv_buf, sizeof(recv_buf), 0),
+		 _ret == peek_len && memcmp(recv_buf, peek_buf, peek_len) == 0);
+
+	TEST_SUCC(close(fd));
+}
+END_TEST()
+
+FN_TEST(netlink_dgram_msg_peek)
+{
+	struct sockaddr_nl addr = { .nl_family = AF_NETLINK };
+	int fd;
+	int msg_flags = 0;
+	char peek_buf[8192] = {};
+	char recv_buf[8192] = {};
+	ssize_t peek_len;
+
+	fd = TEST_SUCC(socket(AF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE));
+	TEST_SUCC(bind(fd, (struct sockaddr *)&addr, sizeof(addr)));
+
+	TEST_RES(send_getlink_request(fd, 2), _ret == 0);
+
+	peek_len = TEST_RES(peek_message(fd, peek_buf, sizeof(peek_buf),
+					 &msg_flags),
+			    _ret > 0 && (msg_flags & MSG_TRUNC) == 0);
+
+	TEST_RES(recv(fd, recv_buf, sizeof(recv_buf), 0),
+		 _ret == peek_len && memcmp(recv_buf, peek_buf, peek_len) == 0);
+
+	TEST_SUCC(close(fd));
+}
+END_TEST()
