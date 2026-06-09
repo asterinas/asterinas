@@ -16,12 +16,12 @@ use ostd::{
 };
 
 use super::{
-    CurrentRuntime, SchedAttr, SchedClassRq,
+    CurrentRuntime, SchedClassRq,
     time::{base_slice_clocks, min_period_clocks},
 };
 use crate::{
     sched::nice::{Nice, NiceValue},
-    thread::AsThread,
+    thread::{AsThread, Thread},
 };
 
 const WEIGHT_0: u64 = 1024;
@@ -320,9 +320,10 @@ impl SchedClassRq for FairClassRq {
     fn update_current(
         &mut self,
         rt: &CurrentRuntime,
-        attr: &SchedAttr,
+        thread: &Thread,
         flags: UpdateFlags,
     ) -> bool {
+        let attr = thread.sched_attr();
         match flags {
             UpdateFlags::Tick | UpdateFlags::Yield | UpdateFlags::Wait => {
                 let (_old_weight, weight) = attr.fair.fetch_weight();

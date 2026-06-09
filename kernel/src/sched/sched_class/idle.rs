@@ -7,7 +7,8 @@ use ostd::task::{
     scheduler::{EnqueueFlags, UpdateFlags},
 };
 
-use super::{CurrentRuntime, SchedAttr, SchedClassRq};
+use super::{CurrentRuntime, SchedClassRq};
+use crate::thread::Thread;
 
 /// The per-cpu run queue for the IDLE scheduling class.
 ///
@@ -54,7 +55,7 @@ impl SchedClassRq for IdleClassRq {
         self.entity.take()
     }
 
-    fn update_current(&mut self, _: &CurrentRuntime, _: &SchedAttr, _flags: UpdateFlags) -> bool {
+    fn update_current(&mut self, _: &CurrentRuntime, _: &Thread, _flags: UpdateFlags) -> bool {
         !self.is_empty()
     }
 }

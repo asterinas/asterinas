@@ -134,8 +134,7 @@ trait SchedClassRq: Send + fmt::Debug {
     ///
     /// The return value of this method indicates whether there is another task
     /// **in this run queue** to replace the current one.
-    fn update_current(&mut self, rt: &CurrentRuntime, attr: &SchedAttr, flags: UpdateFlags)
-    -> bool;
+    fn update_current(&mut self, rt: &CurrentRuntime, thread: &Thread, flags: UpdateFlags) -> bool;
 }
 
 /// The scheduling attribute for a thread.
@@ -387,10 +386,10 @@ impl LocalRunQueue for PerCpuClassRqSet {
             let attr = &cur.sched_attr();
 
             match attr.policy_kind() {
-                SchedPolicyKind::Stop => (self.stop.update_current(rt, attr, flags), 0),
-                SchedPolicyKind::RealTime => (self.real_time.update_current(rt, attr, flags), 1),
-                SchedPolicyKind::Fair => (self.fair.update_current(rt, attr, flags), 2),
-                SchedPolicyKind::Idle => (self.idle.update_current(rt, attr, flags), 3),
+                SchedPolicyKind::Stop => (self.stop.update_current(rt, cur, flags), 0),
+                SchedPolicyKind::RealTime => (self.real_time.update_current(rt, cur, flags), 1),
+                SchedPolicyKind::Fair => (self.fair.update_current(rt, cur, flags), 2),
+                SchedPolicyKind::Idle => (self.idle.update_current(rt, cur, flags), 3),
             }
         } else {
             (false, 4)
