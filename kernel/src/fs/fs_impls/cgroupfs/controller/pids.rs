@@ -129,7 +129,11 @@ impl super::SubControl for PidsController {
 }
 
 impl super::SubControlStatic for PidsController {
-    fn new(_is_root: bool, _is_active: bool) -> Self {
+    fn new(
+        _is_root: bool,
+        _is_active: bool,
+        _parent_controller: Option<&super::Controller>,
+    ) -> Self {
         Self {
             max_pids: AtomicU32::new(u32::MAX),
             current_count: AtomicU32::new(0),

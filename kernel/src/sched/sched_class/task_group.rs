@@ -56,7 +56,6 @@ impl TaskGroup {
     }
 
     /// Creates a child task group under `parent`.
-    #[expect(dead_code)]
     pub(crate) fn new_child(parent: &Arc<TaskGroup>, weight: u32) -> Arc<Self> {
         let cpu_count = cpu::num_cpus();
         Arc::new_cyclic(|weak_self| Self {
@@ -90,7 +89,6 @@ impl TaskGroup {
     }
 
     /// Updates the CPU weight and refreshes any queued group entities.
-    #[expect(dead_code)]
     pub(crate) fn update_weight(&self, weight: u32) {
         let scaled_weight = scale_cgroup_weight(weight);
         let parent = self.parent();
