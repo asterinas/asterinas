@@ -17,6 +17,7 @@ sleep 0.2
 ./unix_client
 
 ./listen_backlog
+./msg_peek
 ./privileged_ports
 ./send_buf_full
 ./sendmmsg

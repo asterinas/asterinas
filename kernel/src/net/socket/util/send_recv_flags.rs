@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_bigtcp::socket::ReceiveBehavior;
+
 use crate::prelude::*;
 
 bitflags! {
@@ -37,11 +39,20 @@ bitflags! {
 
 impl SendRecvFlags {
     fn supported_flags() -> Self {
-        SendRecvFlags::empty()
+        SendRecvFlags::MSG_PEEK
     }
 
     pub fn is_all_supported(&self) -> bool {
         let supported_flags = Self::supported_flags();
         supported_flags.contains(*self)
+    }
+
+    /// Returns whether receive operations should consume or peek data.
+    pub fn receive_behavior(&self) -> ReceiveBehavior {
+        if self.contains(SendRecvFlags::MSG_PEEK) {
+            ReceiveBehavior::Peek
+        } else {
+            ReceiveBehavior::Recv
+        }
     }
 }
