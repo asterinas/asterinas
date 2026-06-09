@@ -389,12 +389,30 @@ impl Deref for DirDentry<'_> {
 }
 
 impl DirDentry<'_> {
-    /// Creates a `Dentry` by creating a new inode of the `type_` with the `mode`.
+    /// Creates a `Dentry` by creating a new non-symbolic-link inode.
+    ///
+    /// This path deliberately cannot create symbolic links. Use
+    /// [`Self::symlink`] when the new child is a symbolic link.
     pub(super) fn create(
         &self,
         name: &str,
         type_: InodeType,
         mode: InodeMode,
+    ) -> Result<Arc<Dentry>> {
+        self.create_child(name, || self.inode.create(name, type_, mode))
+    }
+
+    /// Creates a `Dentry` by creating a symbolic-link inode with its target.
+    ///
+    /// This is the only child-creation path that creates symbolic links.
+    pub(super) fn symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<Dentry>> {
+        self.create_child(name, || self.inode.symlink(name, target, mode))
+    }
+
+    fn create_child(
+        &self,
+        name: &str,
+        mut create_inode_fn: impl FnMut() -> Result<Arc<dyn Inode>>,
     ) -> Result<Arc<Dentry>> {
         let children = self.children.upread();
         if let Some(entry) = children.find(name)
@@ -406,21 +424,18 @@ impl DirDentry<'_> {
 
             let mut children = children.upgrade();
             let _ = children.remove(name);
-            let new_inode = self.inode.create(name, type_, mode)?;
-
             let new_child = Dentry::new(
-                new_inode,
+                create_inode_fn()?,
                 DentryOptions::Named((String::from(name), self.this())),
             );
             return Ok(self.insert_positive_child(&mut children, name, new_child));
         }
 
-        let new_inode = self.inode.create(name, type_, mode)?;
-        let mut children = children.upgrade();
         let new_child = Dentry::new(
-            new_inode,
+            create_inode_fn()?,
             DentryOptions::Named((String::from(name), self.this())),
         );
+        let mut children = children.upgrade();
 
         Ok(self.insert_positive_child(&mut children, name, new_child))
     }

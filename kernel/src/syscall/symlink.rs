@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file::{InodeType, file_table::RawFileDesc, mkmod},
+        file::{file_table::RawFileDesc, mkmod},
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
@@ -41,8 +41,7 @@ pub fn sys_symlinkat(
             .into_parent_and_filename()?
     };
 
-    let new_path = dir_path.new_fs_child(&link_name, InodeType::SymLink, mkmod!(a+rwx))?;
-    new_path.inode().write_link(&target)?;
+    dir_path.new_fs_symlink_child(&link_name, &target, mkmod!(a+rwx))?;
     fs::vfs::notify::on_create(&dir_path, || link_name);
     Ok(SyscallReturn::Return(0))
 }
