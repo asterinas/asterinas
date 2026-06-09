@@ -56,7 +56,7 @@ pub fn sys_pwritev2(
     let offset = offset_low.cast_signed();
     let flags = match RWFFlag::from_bits(flags) {
         Some(flags) => flags,
-        None => return_errno_with_message!(Errno::EINVAL, "invalid flags"),
+        None => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported flags"),
     };
     let res = if offset == -1 {
         do_sys_writev(raw_fd, io_vec_ptr, io_vec_count, ctx)?
