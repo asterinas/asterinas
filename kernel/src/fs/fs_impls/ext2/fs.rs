@@ -111,7 +111,10 @@ impl Ext2MountOptions {
 
 impl Ext2 {
     /// Opens and loads an Ext2 filesystem from a block device.
-    pub(super) fn open(device: Arc<dyn BlockDevice>, data: Option<&CStr>) -> Result<Arc<Self>> {
+    pub(in crate::fs) fn open(
+        device: Arc<dyn BlockDevice>,
+        data: Option<&CStr>,
+    ) -> Result<Arc<Self>> {
         let super_block = {
             let raw_super_block = device.read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)?;
             SuperBlock::try_from(raw_super_block)?

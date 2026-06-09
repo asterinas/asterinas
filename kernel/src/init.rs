@@ -2,18 +2,26 @@
 
 //! Kernel initialization.
 
+use core::str::FromStr;
+
 use aster_cmdline::INIT_PROC_ARGS;
 use component::InitStage;
 use ostd::{cpu::CpuId, util::id_set::Id};
 use spin::once::Once;
 
 use crate::{
-    fs::vfs::path::{MountNamespace, PathResolver},
+    fs::{
+        rootfs::{self, RootFsType},
+        vfs::path::{FsPath, MountNamespace, PathResolver},
+    },
     prelude::*,
     process::{Process, spawn_init_process},
     sched::SchedPolicy,
     thread::kernel_thread::ThreadOptions,
 };
+
+const DEFAULT_ROOTFS_INIT_PATHS: &[&str] = &["/sbin/init", "/etc/init", "/bin/init", "/bin/sh"];
+const DEFAULT_INITRAMFS_INIT_PATH: &str = "/init";
 
 pub(super) fn main() {
     // Initialize the global states for all CPUs.
@@ -135,13 +143,66 @@ fn first_kthread() {
     let fs_resolver = init_mnt_ns.new_path_resolver();
     init_in_first_kthread(&fs_resolver);
 
+    enum BootInit<'a> {
+        Initramfs(&'a str),
+        Rootfs {
+            mnt_ns: Arc<MountNamespace>,
+            init_path: &'a str,
+        },
+    }
+
+    let initramfs_init = RDINIT_PATH.get().map(String::as_str).or_else(|| {
+        fs_resolver
+            .lookup(&FsPath::try_from(DEFAULT_INITRAMFS_INIT_PATH).unwrap())
+            .is_ok()
+            .then_some(DEFAULT_INITRAMFS_INIT_PATH)
+    });
+
+    let boot_init = if let Some(init_path) = initramfs_init {
+        BootInit::Initramfs(init_path)
+    } else {
+        let root = ROOT_PATH
+            .get()
+            .expect("Neither an initramfs init nor root= was provided");
+        let rootfs_types = ROOTFS_TYPE
+            .get()
+            .map(|rootfs_types| rootfs_types.as_slice())
+            .unwrap_or(RootFsType::ALL);
+        let mnt_ns =
+            rootfs::mount(root, rootfs_types).expect("Failed to mount the root filesystem");
+
+        let init_path = INIT_PATH
+            .get()
+            .map(String::as_str)
+            .or_else(|| {
+                let resolver = mnt_ns.new_path_resolver();
+                DEFAULT_ROOTFS_INIT_PATHS
+                    .iter()
+                    .copied()
+                    .find(|path| resolver.lookup(&FsPath::try_from(*path).unwrap()).is_ok())
+            })
+            .expect("No init executable was found on the root filesystem");
+
+        BootInit::Rootfs { mnt_ns, init_path }
+    };
+
     print_banner();
 
     INIT_PROCESS.call_once(|| {
         let karg = INIT_PROC_ARGS.get().unwrap();
-        let init_path = RDINIT_PATH.get().map(|s| s.as_str());
-        spawn_init_process(init_path, karg.argv().to_vec(), karg.envp().to_vec())
-            .expect("Failed to run the init process")
+        let argv = karg.argv().to_vec();
+        let envp = karg.envp().to_vec();
+        match boot_init {
+            BootInit::Initramfs(init_path) => {
+                println!("[kernel] running {} as the initramfs init", init_path);
+                spawn_init_process(init_mnt_ns.clone(), init_path, argv, envp)
+            }
+            BootInit::Rootfs { mnt_ns, init_path } => {
+                println!("[kernel] running {} as the real-root init", init_path);
+                spawn_init_process(mnt_ns, init_path, argv, envp)
+            }
+        }
+        .expect("Failed to run the init process")
     });
 }
 
@@ -172,3 +233,36 @@ pub(super) fn on_first_process_startup(ctx: &Context) {
 
 static RDINIT_PATH: Once<String> = Once::new();
 aster_cmdline::define_kv_param!("rdinit", RDINIT_PATH);
+
+static ROOT_PATH: Once<String> = Once::new();
+aster_cmdline::define_kv_param!("root", ROOT_PATH);
+
+/// Contains root filesystem type candidates.
+struct RootFsTypes(Vec<RootFsType>);
+
+impl RootFsTypes {
+    /// Returns the root filesystem type candidates as a slice.
+    fn as_slice(&self) -> &[RootFsType] {
+        self.0.as_slice()
+    }
+}
+
+impl FromStr for RootFsTypes {
+    type Err = core::convert::Infallible;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let candidates = value
+            .split(',')
+            .filter(|type_name| !type_name.is_empty())
+            .map(str::parse)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self(candidates))
+    }
+}
+
+static ROOTFS_TYPE: Once<RootFsTypes> = Once::new();
+aster_cmdline::define_kv_param!("rootfstype", ROOTFS_TYPE);
+
+static INIT_PATH: Once<String> = Once::new();
+aster_cmdline::define_kv_param!("init", INIT_PATH);
