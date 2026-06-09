@@ -297,3 +297,37 @@ FN_TEST(unix_seqpacket_msg_peek_with_scm_rights)
 	TEST_SUCC(close(fds[1]));
 }
 END_TEST()
+
+FN_TEST(unix_dgram_msg_peek)
+{
+	int fds[2] = { -1, -1 };
+	int msg_flags = 0;
+	char buf[PAYLOAD_LEN] = {};
+
+	SOCKETPAIR_CONNECT(SOCK_DGRAM);
+
+	SOCKETPAIR_SEND(0, PAYLOAD_LEN);
+
+	SOCKETPAIR_PEEK(0, PAYLOAD_LEN);
+	SOCKETPAIR_RECV(0, PAYLOAD_LEN);
+
+	SOCKETPAIR_CLOSE();
+}
+END_TEST()
+
+FN_TEST(unix_raw_msg_peek)
+{
+	int fds[2] = { -1, -1 };
+	int msg_flags = 0;
+	char buf[PAYLOAD_LEN] = {};
+
+	SOCKETPAIR_CONNECT(SOCK_RAW);
+
+	SOCKETPAIR_SEND(0, PAYLOAD_LEN);
+
+	SOCKETPAIR_PEEK(0, PAYLOAD_LEN);
+	SOCKETPAIR_RECV(0, PAYLOAD_LEN);
+
+	SOCKETPAIR_CLOSE();
+}
+END_TEST()
