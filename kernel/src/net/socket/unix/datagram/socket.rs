@@ -291,7 +291,7 @@ impl Socket for UnixDatagramSocket {
         }
 
         let (received_bytes, control_messages, peer_addr) =
-            self.block_on(IoEvents::IN, || self.local_receiver.try_recv(writer))?;
+            self.block_on(IoEvents::IN, || self.local_receiver.try_recv(writer, flags))?;
 
         let message_header = MessageHeader::new(Some(peer_addr.into()), control_messages);
 
