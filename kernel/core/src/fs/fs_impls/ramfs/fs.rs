@@ -197,8 +197,8 @@ impl Inner {
         Self::File(Mutex::new(PageCache::new_anon(0).unwrap()))
     }
 
-    pub(self) fn new_symlink() -> Self {
-        Self::SymLink(SpinLock::new(String::from("")))
+    pub(self) fn new_symlink(target: &str) -> Self {
+        Self::SymLink(SpinLock::new(String::from(target)))
     }
 
     pub(self) fn new_block_device(dev_id: u64) -> Self {
@@ -595,10 +595,20 @@ impl RamInode {
         }
     }
 
-    fn new_symlink(fs: &Arc<RamFs>, mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
+    fn new_symlink(
+        fs: &Arc<RamFs>,
+        mode: InodeMode,
+        uid: Uid,
+        gid: Gid,
+        target: &str,
+    ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
-            inner: Inner::new_symlink(),
-            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
+            inner: Inner::new_symlink(target),
+            metadata: SpinLock::new({
+                let mut metadata = InodeMeta::new(mode, uid, gid);
+                metadata.size = target.len();
+                metadata
+            }),
             ino: fs.alloc_id(),
             typ: InodeType::SymLink,
             this: weak_self.clone(),
@@ -665,6 +675,43 @@ impl RamInode {
             extension: Extension::new(),
             xattr: RamXattr::new(),
         })
+    }
+
+    fn create_child_inode(
+        &self,
+        name: &str,
+        create_fn: impl FnOnce(&Arc<RamFs>, Uid, Gid) -> Arc<RamInode>,
+    ) -> Result<Arc<RamInode>> {
+        if name.len() > NAME_MAX {
+            return_errno!(Errno::ENAMETOOLONG);
+        }
+        if self.typ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
+        }
+
+        let self_dir = self.inner.as_direntry().unwrap().upread();
+        if self_dir.contains_entry(name) {
+            return_errno_with_message!(Errno::EEXIST, "entry exists");
+        }
+
+        let fs = self.fs.upgrade().unwrap();
+        let (uid, gid) = current_fs_ids();
+        let new_inode = create_fn(&fs, uid, gid);
+
+        let mut self_dir = self_dir.upgrade();
+        self_dir.append_entry(name, new_inode.clone());
+        drop(self_dir);
+
+        let now = now();
+        let mut inode_meta = self.metadata.lock();
+        inode_meta.set_mtime(now);
+        inode_meta.set_ctime(now);
+        inode_meta.inc_size();
+        if new_inode.typ == InodeType::Dir {
+            inode_meta.inc_nlinks();
+        }
+
+        Ok(new_inode)
     }
 
     fn find(&self, name: &str) -> Result<Arc<Self>> {
@@ -929,43 +976,21 @@ impl Inode for RamInode {
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        if name.len() > NAME_MAX {
-            return_errno!(Errno::ENAMETOOLONG);
-        }
-        if self.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
-        }
-
-        let self_dir = self.inner.as_direntry().unwrap().upread();
-        if self_dir.contains_entry(name) {
-            return_errno_with_message!(Errno::EEXIST, "entry exists");
-        }
-
-        let fs = self.fs.upgrade().unwrap();
-        let (uid, gid) = current_fs_ids();
-        let new_inode = match type_ {
-            InodeType::File => RamInode::new_file(&fs, mode, uid, gid),
-            InodeType::SymLink => RamInode::new_symlink(&fs, mode, uid, gid),
-            InodeType::Socket => RamInode::new_socket(&fs, mode, uid, gid),
-            InodeType::Dir => RamInode::new_dir(&fs, mode, uid, gid, &self.this),
+        let new_inode = self.create_child_inode(name, |fs, uid, gid| match type_ {
+            InodeType::File => RamInode::new_file(fs, mode, uid, gid),
+            InodeType::Socket => RamInode::new_socket(fs, mode, uid, gid),
+            InodeType::Dir => RamInode::new_dir(fs, mode, uid, gid, &self.this),
             _ => {
                 panic!("unsupported inode type");
             }
-        };
+        })?;
+        Ok(new_inode)
+    }
 
-        let mut self_dir = self_dir.upgrade();
-        self_dir.append_entry(name, new_inode.clone());
-        drop(self_dir);
-
-        let now = now();
-        let mut inode_meta = self.metadata.lock();
-        inode_meta.set_mtime(now);
-        inode_meta.set_ctime(now);
-        inode_meta.inc_size();
-        if type_ == InodeType::Dir {
-            inode_meta.inc_nlinks();
-        }
-
+    fn symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        let new_inode = self.create_child_inode(name, |fs, uid, gid| {
+            RamInode::new_symlink(fs, mode, uid, gid, target)
+        })?;
         Ok(new_inode)
     }
 
@@ -1253,20 +1278,6 @@ impl Inode for RamInode {
 
         let link = self.inner.as_symlink().unwrap().lock();
         Ok(SymbolicLink::Plain(link.clone()))
-    }
-
-    fn write_link(&self, target: &str) -> Result<()> {
-        if self.typ != InodeType::SymLink {
-            return_errno_with_message!(Errno::EINVAL, "self is not symlink");
-        }
-
-        let mut link = self.inner.as_symlink().unwrap().lock();
-        *link = String::from(target);
-        drop(link);
-
-        // Symlink's metadata.blocks should be 0, so just set the size.
-        self.metadata.lock().size = target.len();
-        Ok(())
     }
 
     fn metadata(&self) -> Result<Metadata> {
