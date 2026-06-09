@@ -103,11 +103,11 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
         InodeType::File
     }
 
-    fn read_link(&self) -> Result<SymbolicLink> {
+    fn symlink(&self, _name: &str, _target: &str, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EINVAL))
     }
 
-    fn write_link(&self, _target: &str) -> Result<()> {
+    fn read_link(&self) -> Result<SymbolicLink> {
         Err(Error::new(Errno::EINVAL))
     }
 
