@@ -122,7 +122,7 @@ impl AsRef<EndpointState> for EndpointState {
 }
 
 impl<T: AsRef<EndpointState>> Endpoint<T> {
-    /// Reads from the endpoint and updates the local/remote [`Pollee`]s.
+    /// Reads from the endpoint.
     ///
     /// Note that if `read` returns `Ok(0)`, it is assumed that there is no data to read and an
     /// [`Errno::EAGAIN`] error will be returned instead.
@@ -139,8 +139,6 @@ impl<T: AsRef<EndpointState>> Endpoint<T> {
         let read_len = read()?;
 
         if read_len > 0 {
-            self.peer_end().as_ref().pollee.notify(IoEvents::OUT);
-            self.this_end().as_ref().pollee.invalidate();
             Ok(read_len)
         } else if is_shutdown {
             Ok(0)
@@ -149,7 +147,7 @@ impl<T: AsRef<EndpointState>> Endpoint<T> {
         }
     }
 
-    /// Writes to the endpoint and updates the local/remote [`Pollee`]s.
+    /// Writes to the endpoint.
     ///
     /// Note that if `write` returns `Ok(0)`, it is assumed that there is no space to write and an
     /// [`Errno::EAGAIN`] error will be returned instead.
@@ -166,13 +164,23 @@ impl<T: AsRef<EndpointState>> Endpoint<T> {
 
         let written_len = write()?;
 
-        if written_len > 0 {
-            self.peer_end().as_ref().pollee.notify(IoEvents::IN);
-            self.this_end().as_ref().pollee.invalidate();
-            Ok(written_len)
-        } else {
+        if written_len == 0 {
             return_errno_with_message!(Errno::EAGAIN, "the channel is full");
         }
+
+        Ok(written_len)
+    }
+
+    /// Notifies the local/remote [`Pollee`]s that data have been read.
+    pub fn notify_read(&self) {
+        self.peer_end().as_ref().pollee.notify(IoEvents::OUT);
+        self.this_end().as_ref().pollee.invalidate();
+    }
+
+    /// Notifies the local/remote [`Pollee`]s that data have been written.
+    pub fn notify_write(&self) {
+        self.peer_end().as_ref().pollee.notify(IoEvents::IN);
+        self.this_end().as_ref().pollee.invalidate();
     }
 
     /// Polls the I/O events in the local [`Pollee`].
