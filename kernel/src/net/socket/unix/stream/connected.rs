@@ -14,13 +14,13 @@ use crate::{
         unix::{
             UnixSocketAddr, addr::UnixSocketAddrBound, cred::SocketCred, ctrl_msg::AuxiliaryData,
         },
-        util::{ControlMessage, SockShutdownCmd},
+        util::{ControlMessage, SendRecvFlags, SockShutdownCmd},
     },
     prelude::*,
     process::signal::Pollee,
     util::{
         MultiRead, MultiWrite,
-        ring_buffer::{ConsumerU8Ext, ProducerU8Ext, RbConsumer, RbProducer, RingBuffer},
+        ring_buffer::{ProducerU8Ext, RbConsumer, RbProducer, RingBuffer, RingBufferU8Ext},
     },
 };
 
@@ -117,6 +117,7 @@ impl Connected {
         &self,
         writer: &mut dyn MultiWrite,
         is_seqpacket: bool,
+        flags: SendRecvFlags,
     ) -> Result<(usize, Vec<ControlMessage>)> {
         let is_empty = writer.is_empty();
         if is_empty && !is_seqpacket {
@@ -135,14 +136,24 @@ impl Connected {
         let no_aux_len = reader.len();
 
         let is_pass_cred = this_end.is_pass_cred.load(Ordering::Relaxed);
+        let behavior = flags.receive_behavior();
 
         // Fast path: There are no auxiliary data to receive.
         if !peer_end.has_aux.load(Ordering::Relaxed) {
-            let read_len = self
-                .inner
-                .read_with(move || reader.read_fallible_with_max_len(writer, no_aux_len))?;
+            let read_len = self.inner.read_with(|| {
+                let head = reader.head();
+                let copy_range = head..head + Wrapping(no_aux_len);
+                reader.ring_buffer().pick_fallible(copy_range, writer)
+            })?;
+            if behavior.will_consume_data() {
+                reader.commit_read(read_len);
+                if read_len > 0 {
+                    self.inner.notify_read();
+                }
+            }
+
             let ctrl_msgs = if is_pass_cred {
-                AuxiliaryData::default().generate_control(is_pass_cred)
+                AuxiliaryData::default().generate_control(behavior, is_pass_cred)
             } else {
                 Vec::new()
             };
@@ -150,79 +161,116 @@ impl Connected {
         }
 
         let mut all_aux = peer_end.all_aux.lock();
-        let mut aux_prev_data: Option<AuxiliaryData> = None;
-        let mut read_tot_len = 0;
+        let mut aux_pos = 0;
 
-        let aux_data = loop {
-            let read_start = reader.head();
-            let (aux_len, aux_front) = if let Some(front) = all_aux.front_mut() {
+        let read_base = reader.head();
+        let mut read_tot_len = 0;
+        let mut trunc_len = 0;
+
+        loop {
+            let read_start = read_base + Wrapping(read_tot_len);
+            let (aux_len, aux_front) = if let Some(front) = all_aux.get(aux_pos) {
                 if front.start == read_start {
                     ((front.end - read_start).0, Some(front))
                 } else {
                     ((front.start - read_start).0, None)
                 }
             } else {
-                (usize::MAX, None)
+                ((reader.tail() - read_start).0, None)
             };
 
             // Unless the auxiliary data we have already received is a subset of the current
             // auxiliary data, we cannot receive additional bytes.
-            if let Some(prev) = aux_prev_data.as_mut() {
-                let is_subset = if let Some(front) = aux_front.as_ref() {
-                    prev.is_subset_of(&front.data, is_pass_cred)
-                } else {
-                    prev.is_subset_of(&AuxiliaryData::default(), is_pass_cred)
+            if read_tot_len > 0 {
+                let is_subset = match (aux_pos.checked_sub(1), aux_front.as_ref()) {
+                    (Some(prev_pos), Some(front)) => {
+                        let prev = all_aux.get(prev_pos).unwrap();
+                        prev.data.is_subset_of(&front.data, is_pass_cred)
+                    }
+                    (Some(prev_pos), None) => {
+                        let prev = all_aux.get(prev_pos).unwrap();
+                        prev.data
+                            .is_subset_of(&AuxiliaryData::default(), is_pass_cred)
+                    }
+                    (None, Some(front)) => {
+                        AuxiliaryData::default().is_subset_of(&front.data, is_pass_cred)
+                    }
+                    (None, None) => true,
                 };
                 if !is_subset {
-                    break prev;
+                    break;
                 }
             }
 
             // Read the payload bytes of the current auxiliary data.
-            let read_res = if !is_empty && aux_len > 0 {
-                self.inner
-                    .read_with(|| reader.read_fallible_with_max_len(writer, aux_len))
+            let read_res = if !is_empty && (aux_len > 0 || aux_front.is_none()) {
+                self.inner.read_with(|| {
+                    let copy_range = read_start..read_start + Wrapping(aux_len);
+                    reader.ring_buffer().pick_fallible(copy_range, writer)
+                })
             } else {
                 Ok(0)
             };
             let read_len = match read_res {
                 Ok(read_len) => read_len,
-                Err(_) if read_tot_len > 0 => break aux_prev_data.as_mut().unwrap(),
+                Err(_) if read_tot_len > 0 => break,
                 Err(err) => return Err(err),
             };
+
             read_tot_len += read_len;
+            if aux_front.is_some() {
+                aux_pos += 1;
+            }
 
             // Record the current auxiliary data. Break if the read is incomplete or this is a
             // `SOCK_SEQPACKET` socket.
             if is_seqpacket {
-                aux_prev_data = Some(all_aux.pop_front().unwrap().data);
                 if read_len < aux_len {
                     warn!("setting MSG_TRUNC is not supported");
-                    reader.skip(aux_len - read_len);
+                    trunc_len = aux_len - read_len;
                 }
-                break aux_prev_data.as_mut().unwrap();
-            } else if let Some(front) = aux_front {
-                if read_len < aux_len {
-                    front.start += read_len;
-                    break &mut front.data;
-                }
-                aux_prev_data = Some(all_aux.pop_front().unwrap().data);
-            } else {
-                aux_prev_data = Some(AuxiliaryData::default());
-                if read_len < aux_len {
-                    break aux_prev_data.as_mut().unwrap();
-                }
+                break;
+            } else if read_len < aux_len {
+                break;
             }
-        };
+        }
 
+        // Consume the payload bytes that we've read.
+        if behavior.will_consume_data() {
+            let consume_tot_len = read_tot_len + trunc_len;
+            reader.commit_read(consume_tot_len);
+            if consume_tot_len > 0 {
+                self.inner.notify_read();
+            }
+        }
         drop(reader);
 
-        let ctrl_msgs = aux_data.generate_control(is_pass_cred);
-        debug_assert!(is_seqpacket || read_tot_len != 0);
-        peer_end
-            .has_aux
-            .store(!all_aux.is_empty(), Ordering::Relaxed);
+        // Consume the auxiliary data that we've read.
+        let ctrl_msgs = if aux_pos >= 1 {
+            let aux_data = all_aux.get_mut(aux_pos - 1).unwrap();
+            debug_assert!((aux_data.start - read_base).0 <= read_tot_len);
 
+            let ctrl_msgs = aux_data.data.generate_control(behavior, is_pass_cred);
+            if behavior.will_consume_data() {
+                let remaining_aux_count = all_aux.len() - (aux_pos - 1);
+                all_aux.truncate_front(remaining_aux_count);
+                let consume_len = read_tot_len + trunc_len;
+                if (all_aux.front().unwrap().end - read_base).0 <= consume_len {
+                    all_aux.pop_front();
+                } else {
+                    all_aux.front_mut().unwrap().start = read_base + Wrapping(consume_len);
+                }
+                peer_end
+                    .has_aux
+                    .store(!all_aux.is_empty(), Ordering::Relaxed);
+            }
+            ctrl_msgs
+        } else {
+            let mut default_aux_data = AuxiliaryData::default();
+            default_aux_data.generate_control(behavior, is_pass_cred)
+        };
+
+        debug_assert!(is_seqpacket || read_tot_len != 0);
         Ok((read_tot_len, ctrl_msgs))
     }
 
@@ -253,12 +301,11 @@ impl Connected {
         // Fast path: There are no auxiliary data to transmit.
         if aux_data.is_empty() && !is_seqpacket && !need_pass_cred {
             let mut writer = this_end.writer.lock();
-            return self.inner.write_with(move || {
-                if is_seqpacket && writer.free_len() < reader.sum_lens() {
-                    return Ok(0);
-                }
-                writer.write_fallible(reader)
-            });
+            let write_len = self
+                .inner
+                .write_with(move || writer.write_fallible(reader))?;
+            self.inner.notify_write();
+            return Ok(write_len);
         }
 
         let mut all_aux = this_end.all_aux.lock();
@@ -299,6 +346,8 @@ impl Connected {
             end: write_start + Wrapping(write_len),
         };
         all_aux.push_back(aux_range);
+
+        self.inner.notify_write();
 
         Ok(write_len)
     }

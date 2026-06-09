@@ -404,7 +404,12 @@ impl PipeReader {
             consumer.read_fallible(writer)
         };
 
-        self.state.read_with(read)
+        let read_len = self.state.read_with(read)?;
+        if read_len > 0 {
+            self.state.notify_read();
+        }
+
+        Ok(read_len)
     }
 
     fn buffer_len(&self) -> usize {
@@ -462,6 +467,9 @@ impl PipeWriter {
         };
 
         let res = self.state.write_with(write);
+        if res.is_ok() {
+            self.state.notify_write();
+        }
         if res.is_err_and(|e| e.error() == Errno::EPIPE)
             && let Some(posix_thread) = current_thread!().as_posix_thread()
         {

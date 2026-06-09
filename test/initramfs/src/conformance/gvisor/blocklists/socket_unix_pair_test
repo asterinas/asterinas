@@ -17,6 +17,3 @@ AllUnixDomainSockets/UnixSocketPairCmsgTest.CredPassTruncatedMsgCtrunc/*
 
 # TODO: Support `MSG_CMSG_CLOEXEC`
 AllUnixDomainSockets/UnixSocketPairCmsgTest.CloexecRecvFDPass/*
-
-# TODO: Support `MSG_PEEK`
-AllUnixDomainSockets/UnixSocketPairCmsgTest.FDPassPeek/*

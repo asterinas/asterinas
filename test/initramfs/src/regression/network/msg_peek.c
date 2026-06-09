@@ -31,6 +31,48 @@ static socklen_t tcp_addr_len = sizeof(tcp_addr);
 		TEST_SUCC(usleep(APPEND_SETTLE_USEC));      \
 	} while (0)
 
+#define UNIX_STREAM_WAIT_APPENDED_READABLE() \
+	TEST_SUCC(usleep(APPEND_SETTLE_USEC))
+
+#define UNIX_STREAM_CONNECT()                                        \
+	do {                                                         \
+		int fds[2] = { -1, -1 };                             \
+		TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM, 0, fds)); \
+		send_fd = fds[0];                                    \
+		recv_fd = fds[1];                                    \
+	} while (0)
+
+#define SOCKETPAIR_CONNECT(socket_type) \
+	TEST_SUCC(socketpair(AF_UNIX, (socket_type), 0, fds))
+
+#define SOCKETPAIR_CLOSE()                \
+	do {                              \
+		TEST_SUCC(close(fds[0])); \
+		TEST_SUCC(close(fds[1])); \
+	} while (0)
+
+#define SOCKETPAIR_SEND(offset, len)                         \
+	TEST_RES(send(fds[0], PAYLOAD + (offset), (len), 0), \
+		 _ret == (ssize_t)(len))
+
+#define SOCKETPAIR_PEEK(offset, len)                                           \
+	do {                                                                   \
+		memset(buf, 0, sizeof(buf));                                   \
+		msg_flags = 0;                                                 \
+		TEST_RES(peek_message(fds[1], buf, (len), &msg_flags),         \
+			 _ret == (ssize_t)(len) &&                             \
+				 (msg_flags & MSG_TRUNC) == 0 &&               \
+				 memcmp(buf, PAYLOAD + (offset), (len)) == 0); \
+	} while (0)
+
+#define SOCKETPAIR_RECV(offset, len)                                           \
+	do {                                                                   \
+		memset(buf, 0, sizeof(buf));                                   \
+		TEST_RES(recv(fds[1], buf, (len), 0),                          \
+			 _ret == (ssize_t)(len) &&                             \
+				 memcmp(buf, PAYLOAD + (offset), (len)) == 0); \
+	} while (0)
+
 static ssize_t peek_message(int fd, char *buf, size_t len, int *msg_flags)
 {
 	struct iovec iov = { .iov_base = buf, .iov_len = len };
@@ -111,5 +153,147 @@ FN_TEST(udp_msg_peek)
 
 	TEST_SUCC(close(send_fd));
 	TEST_SUCC(close(recv_fd));
+}
+END_TEST()
+
+#define PREFIX unix_stream_
+#define CONNECT() UNIX_STREAM_CONNECT()
+#define WAIT_APPENDED_READABLE() UNIX_STREAM_WAIT_APPENDED_READABLE()
+#include "msg_peek_stream.h"
+#undef PREFIX
+#undef CONNECT
+#undef WAIT_APPENDED_READABLE
+
+FN_TEST(unix_stream_msg_peek_with_passcred)
+{
+	int fds[2] = { -1, -1 };
+	int optval = 1;
+	char buf[PAYLOAD_LEN] = {};
+	char control[CMSG_SPACE(sizeof(struct ucred))] = {};
+	struct iovec iov = { .iov_base = buf, .iov_len = sizeof(buf) };
+	struct msghdr msg = {
+		.msg_iov = &iov,
+		.msg_iovlen = 1,
+		.msg_control = control,
+		.msg_controllen = sizeof(control),
+	};
+
+	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM, 0, fds));
+	TEST_SUCC(setsockopt(fds[1], SOL_SOCKET, SO_PASSCRED, &optval,
+			     sizeof(optval)));
+
+	TEST_RES(send(fds[0], PAYLOAD, SHORT_LEN, 0), _ret == SHORT_LEN);
+	TEST_RES(send(fds[0], PAYLOAD + SHORT_LEN, PAYLOAD_LEN - SHORT_LEN, 0),
+		 _ret == PAYLOAD_LEN - SHORT_LEN);
+
+	TEST_RES(recvmsg(fds[1], &msg, MSG_PEEK),
+		 _ret == PAYLOAD_LEN && (msg.msg_flags & MSG_CTRUNC) == 0 &&
+			 memcmp(buf, PAYLOAD, PAYLOAD_LEN) == 0);
+	TEST_RES(CMSG_FIRSTHDR(&msg),
+		 _ret != NULL && _ret->cmsg_level == SOL_SOCKET &&
+			 _ret->cmsg_type == SCM_CREDENTIALS &&
+			 _ret->cmsg_len >= CMSG_LEN(sizeof(struct ucred)));
+
+	memset(buf, 0, sizeof(buf));
+	TEST_RES(recv(fds[1], buf, sizeof(buf), 0),
+		 _ret == PAYLOAD_LEN && memcmp(buf, PAYLOAD, PAYLOAD_LEN) == 0);
+
+	TEST_SUCC(close(fds[0]));
+	TEST_SUCC(close(fds[1]));
+}
+END_TEST()
+
+FN_TEST(unix_seqpacket_msg_peek)
+{
+	int fds[2] = { -1, -1 };
+	int msg_flags = 0;
+	char buf[PAYLOAD_LEN * 2] = {};
+
+	SOCKETPAIR_CONNECT(SOCK_SEQPACKET);
+
+	SOCKETPAIR_SEND(0, PAYLOAD_LEN);
+
+	SOCKETPAIR_PEEK(0, PAYLOAD_LEN);
+
+	SOCKETPAIR_RECV(0, PAYLOAD_LEN);
+
+	SOCKETPAIR_SEND(0, PAYLOAD_LEN);
+	SOCKETPAIR_SEND(SHORT_LEN, PAYLOAD_LEN - SHORT_LEN);
+
+	memset(buf, 0, sizeof(buf));
+	msg_flags = 0;
+	TEST_RES(peek_message(fds[1], buf, sizeof(buf), &msg_flags),
+		 _ret == PAYLOAD_LEN && (msg_flags & MSG_TRUNC) == 0 &&
+			 memcmp(buf, PAYLOAD, PAYLOAD_LEN) == 0);
+
+	SOCKETPAIR_RECV(0, PAYLOAD_LEN);
+	SOCKETPAIR_RECV(SHORT_LEN, PAYLOAD_LEN - SHORT_LEN);
+
+	SOCKETPAIR_CLOSE();
+}
+END_TEST()
+
+FN_TEST(unix_seqpacket_msg_peek_with_scm_rights)
+{
+	int fds[2] = { -1, -1 };
+	int pipe_fds[2] = { -1, -1 };
+	int *cdata;
+	char buf[1] = {};
+	char control[CMSG_SPACE(sizeof(int))] = {};
+	struct iovec iov = { .iov_base = buf, .iov_len = 0 };
+	struct msghdr msg = {
+		.msg_iov = &iov,
+		.msg_iovlen = 1,
+		.msg_control = control,
+		.msg_controllen = sizeof(control),
+	};
+	struct cmsghdr *chdr = CMSG_FIRSTHDR(&msg);
+	int peeked_fd;
+	int received_fd;
+
+	TEST_SUCC(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds));
+	TEST_SUCC(pipe(pipe_fds));
+
+	chdr->cmsg_level = SOL_SOCKET;
+	chdr->cmsg_type = SCM_RIGHTS;
+	chdr->cmsg_len = CMSG_LEN(sizeof(int));
+	cdata = (int *)CMSG_DATA(chdr);
+	cdata[0] = pipe_fds[0];
+	TEST_RES(sendmsg(fds[0], &msg, 0), _ret == 0);
+
+	memset(control, 0, sizeof(control));
+	msg.msg_controllen = sizeof(control);
+	TEST_RES(recvmsg(fds[1], &msg, MSG_PEEK),
+		 _ret == 0 && (msg.msg_flags & MSG_CTRUNC) == 0 &&
+			 (chdr = CMSG_FIRSTHDR(&msg)) &&
+			 chdr->cmsg_level == SOL_SOCKET &&
+			 chdr->cmsg_type == SCM_RIGHTS &&
+			 chdr->cmsg_len >= CMSG_LEN(sizeof(int)));
+	cdata = (int *)CMSG_DATA(chdr);
+	peeked_fd = cdata[0];
+
+	TEST_RES(write(pipe_fds[1], "p", 1), _ret == 1);
+	TEST_RES(read(peeked_fd, buf, 1), _ret == 1 && buf[0] == 'p');
+
+	memset(control, 0, sizeof(control));
+	msg.msg_controllen = sizeof(control);
+	TEST_RES(recvmsg(fds[1], &msg, 0),
+		 _ret == 0 && (msg.msg_flags & MSG_CTRUNC) == 0 &&
+			 (chdr = CMSG_FIRSTHDR(&msg)) &&
+			 chdr->cmsg_level == SOL_SOCKET &&
+			 chdr->cmsg_type == SCM_RIGHTS &&
+			 chdr->cmsg_len >= CMSG_LEN(sizeof(int)));
+	cdata = (int *)CMSG_DATA(chdr);
+	received_fd = cdata[0];
+
+	TEST_RES(write(pipe_fds[1], "r", 1), _ret == 1);
+	TEST_RES(read(received_fd, buf, 1), _ret == 1 && buf[0] == 'r');
+
+	TEST_SUCC(close(peeked_fd));
+	TEST_SUCC(close(received_fd));
+	TEST_SUCC(close(pipe_fds[0]));
+	TEST_SUCC(close(pipe_fds[1]));
+	TEST_SUCC(close(fds[0]));
+	TEST_SUCC(close(fds[1]));
 }
 END_TEST()
