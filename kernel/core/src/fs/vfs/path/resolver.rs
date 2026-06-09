@@ -361,6 +361,31 @@ impl PathResolver {
         Ok(())
     }
 
+    /// Switches the bootstrap resolver to `new_root` and detaches its old root mount.
+    ///
+    /// This combines the final topology effects of `pivot_root(".", ".")` followed by detaching
+    /// the old root. The two operations can be performed under one topology lock because no
+    /// userspace process can observe the intermediate mount tree.
+    ///
+    /// This method may only be used before the first userspace process is created, when this is the
+    /// only resolver that can reference the bootstrap root.
+    pub(in crate::fs) fn switch_root_for_boot(&mut self, new_root_mount: Arc<Mount>) {
+        let mut topology_guard = MountTopology::write_lock();
+        let parent_path = {
+            let parent_mount = self.root.mount.parent().unwrap().upgrade().unwrap();
+            let mountpoint = self.root.mount.mountpoint().unwrap();
+            Path::new(parent_mount, mountpoint)
+        };
+
+        self.root.mount.detach_from_parent(&mut topology_guard);
+        new_root_mount.graft_mount_tree(&parent_path, &mut topology_guard);
+        drop(topology_guard);
+
+        let new_root = Path::new_fs_root(new_root_mount);
+        self.root = new_root.clone();
+        self.cwd = new_root;
+    }
+
     /// Changes the root mount in the mount namespace of the calling thread.
     ///
     /// This function moves the original root mount of the calling thread to `put_old_path` and makes

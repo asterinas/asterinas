@@ -378,15 +378,13 @@ impl Path {
         }
 
         let mut topology_guard = MountTopology::write_lock();
-        let child_mount = self.mount.do_mount(
+        self.mount.do_mount(
             fs_and_root,
             flags,
             &self.dentry,
             source,
             &mut topology_guard,
-        )?;
-
-        Ok(child_mount)
+        )
     }
 
     /// Unmounts the filesystem mounted at the current path.

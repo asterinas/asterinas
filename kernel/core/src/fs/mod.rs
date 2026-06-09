@@ -2,6 +2,7 @@
 
 pub mod file;
 mod fs_impls;
+pub mod initramfs;
 pub mod pipe;
 pub mod rootfs;
 pub mod thread_info;
@@ -30,7 +31,7 @@ pub fn init_on_each_cpu() {
 }
 
 pub fn init_in_first_kthread(path_resolver: &PathResolver) {
-    rootfs::init_in_first_kthread(path_resolver).unwrap();
+    initramfs::init_in_first_kthread(path_resolver).unwrap();
 }
 
 pub fn init_in_first_process(ctx: &Context) {

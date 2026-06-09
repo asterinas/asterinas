@@ -63,7 +63,7 @@ macro_rules! __log_prefix {
 pub use fs::Ext2;
 pub use inode::{FilePerm, Inode};
 
-use self::fs_type::EXT2_TYPE;
+pub(in crate::fs) use self::fs_type::EXT2_TYPE;
 use crate::fs::vfs::registry;
 
 mod block_group;

@@ -62,13 +62,6 @@ FN_TEST(pivot_root)
 		 CHROOT_DIR, PIVOT_TARGET_DIR);
 	ensure_dir(pivot_target_full_path);
 
-	// Negative test: pivot_root should fail if the root mount is the rootfs mount.
-	// We skip this in Linux because common test environments (e.g., Docker) do not
-	// use rootfs as the root mount.
-#ifdef __asterinas__
-	TEST_ERRNO(syscall(SYS_pivot_root, CHROOT_DIR, CHROOT_DIR), EINVAL);
-#endif
-
 	TEST_SUCC(chroot(CHROOT_DIR));
 	TEST_SUCC(chdir("/"));
 
