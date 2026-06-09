@@ -101,30 +101,36 @@ impl Inode {
     }
 
     /// Creates a child inode and directory entry under this directory.
+    ///
+    /// To create a symbolic link, use [`Inode::symlink`] instead.
     pub(in crate::fs::fs_impls::ext2) fn create(
         &self,
         name: &str,
         type_: InodeType,
         perm: FilePerm,
     ) -> Result<Arc<Inode>> {
-        if !matches!(
-            type_,
-            InodeType::File
-                | InodeType::Dir
-                | InodeType::SymLink
-                | InodeType::CharDevice
-                | InodeType::BlockDevice
-                | InodeType::NamedPipe
-                | InodeType::Socket
-        ) {
+        if matches!(type_, InodeType::Unknown | InodeType::SymLink) {
             return_errno!(Errno::EINVAL);
         }
 
         let is_dir = type_ == InodeType::Dir;
-        let dir_entry_file_type = DirEntryFileType::from(type_);
+        self.create_initialized_child(name, type_, perm, |fs, child_ino, child_inner| {
+            if is_dir {
+                child_inner.make_empty(fs, child_ino, self.ino)?;
+            }
+            Ok(())
+        })
+    }
 
-        // Scan for a slot before creating the child inode to avoid wasting
-        // an inode allocation when the name already exists (EEXIST).
+    /// Creates a child inode, initializes it, and publishes its directory entry.
+    pub(super) fn create_initialized_child(
+        &self,
+        name: &str,
+        type_: InodeType,
+        perm: FilePerm,
+        init_child_fn: impl FnOnce(&Arc<Ext2>, Ext2Ino, &mut InodeInner) -> Result<()>,
+    ) -> Result<Arc<Inode>> {
+        let dir_entry_file_type = DirEntryFileType::from(type_);
         let fs = self.fs()?;
         let mut parent_inner = self.inner.write();
         let slot = match parent_inner.scan_dir_for_slot(name)? {
@@ -140,16 +146,10 @@ impl Inode {
         // from Inode desc and then insert it into inode cache.
         let child = fs.create_inode(self.ino, type_, perm)?;
         let child_ino = child.ino();
-
-        let result = if is_dir {
-            child
-                .inner
-                .write()
-                .make_empty(&fs, child_ino, self.ino)
-                .and_then(|_| parent_inner.add_entry(&slot, name, child_ino, dir_entry_file_type))
-        } else {
-            parent_inner.add_entry(&slot, name, child_ino, dir_entry_file_type)
-        };
+        let mut child_inner = child.inner.write();
+        let result = init_child_fn(&fs, child_ino, &mut child_inner)
+            .and_then(|_| parent_inner.add_entry(&slot, name, child_ino, dir_entry_file_type));
+        drop(child_inner);
 
         if let Err(err) = result {
             // Clear the link count so other resources are reclaimed by `Drop`.
@@ -159,7 +159,7 @@ impl Inode {
         }
 
         // Link the child dir's `..` to parent dir.
-        if is_dir {
+        if type_ == InodeType::Dir {
             parent_inner.inc_link_count(1);
         }
         parent_inner.set_mtime_ctime(utils::now());
