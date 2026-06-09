@@ -203,8 +203,8 @@ impl Inner {
         Self::File(Mutex::new(PageCache::new_anon(0).unwrap()))
     }
 
-    pub(self) fn new_symlink() -> Self {
-        Self::SymLink(SpinLock::new(String::from("")))
+    pub(self) fn new_symlink(target: &str) -> Self {
+        Self::SymLink(SpinLock::new(String::from(target)))
     }
 
     pub(self) fn new_block_device(dev_id: u64) -> Self {
@@ -622,11 +622,16 @@ impl RamInode {
         mode: InodeMode,
         uid: Uid,
         gid: Gid,
+        target: &str,
         to_be_revalidated: ToBeRevalidated,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
-            inner: Inner::new_symlink(),
-            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
+            inner: Inner::new_symlink(target),
+            metadata: SpinLock::new({
+                let mut metadata = InodeMeta::new(mode, uid, gid);
+                metadata.size = target.len();
+                metadata
+            }),
             ino: fs.alloc_id(),
             typ: InodeType::SymLink,
             dir_revalidation_policy: RevalidationPolicy::empty(),
@@ -751,7 +756,7 @@ impl RamInode {
         name: &str,
         mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        self.create_impl(name, InodeType::Dir, mode, ToBeRevalidated::Yes)
+        self.create_impl(name, InodeType::Dir, mode, None, ToBeRevalidated::Yes)
     }
 
     /// Creates a device inode whose dentry must be revalidated.
@@ -889,6 +894,7 @@ impl RamInode {
         name: &str,
         type_: InodeType,
         mode: InodeMode,
+        symlink_target: Option<&str>,
         to_be_revalidated: ToBeRevalidated,
     ) -> Result<Arc<dyn Inode>> {
         if name.len() > NAME_MAX {
@@ -907,9 +913,16 @@ impl RamInode {
         let (uid, gid) = current_fs_ids();
         let new_inode = match type_ {
             InodeType::File => RamInode::new_file(&fs, mode, uid, gid, to_be_revalidated),
-            InodeType::SymLink => RamInode::new_symlink(&fs, mode, uid, gid, to_be_revalidated),
             InodeType::Socket => RamInode::new_socket(&fs, mode, uid, gid, to_be_revalidated),
             InodeType::Dir => RamInode::new_dir(&fs, mode, uid, gid, &self.this, to_be_revalidated),
+            InodeType::SymLink => RamInode::new_symlink(
+                &fs,
+                mode,
+                uid,
+                gid,
+                symlink_target.expect("a symlink target must be provided"),
+                to_be_revalidated,
+            ),
             _ => panic!("unsupported inode type"),
         };
 
@@ -1183,7 +1196,17 @@ impl Inode for RamInode {
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        self.create_impl(name, type_, mode, ToBeRevalidated::No)
+        self.create_impl(name, type_, mode, None, ToBeRevalidated::No)
+    }
+
+    fn create_symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        self.create_impl(
+            name,
+            InodeType::SymLink,
+            mode,
+            Some(target),
+            ToBeRevalidated::No,
+        )
     }
 
     fn create_tmpfile(
@@ -1416,20 +1439,6 @@ impl Inode for RamInode {
 
         let link = self.inner.as_symlink().unwrap().lock();
         Ok(SymbolicLink::Plain(link.clone()))
-    }
-
-    fn write_link(&self, target: &str) -> Result<()> {
-        if self.typ != InodeType::SymLink {
-            return_errno_with_message!(Errno::EINVAL, "self is not symlink");
-        }
-
-        let mut link = self.inner.as_symlink().unwrap().lock();
-        *link = String::from(target);
-        drop(link);
-
-        // Symlink's metadata.blocks should be 0, so just set the size.
-        self.metadata.lock().size = target.len();
-        Ok(())
     }
 
     fn metadata(&self) -> Result<Metadata> {
