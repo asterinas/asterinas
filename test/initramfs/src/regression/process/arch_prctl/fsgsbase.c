@@ -29,9 +29,9 @@ static int cpu_has_fsgsbase(void)
 	return ebx & CPUID_FSGSBASE;
 }
 
-static long arch_get_gs(void)
+static int arch_get_gs(uintptr_t *gs_base)
 {
-	return syscall(SYS_arch_prctl, ARCH_GET_GS, 0);
+	return syscall(SYS_arch_prctl, ARCH_GET_GS, gs_base);
 }
 
 static int arch_set_gs(uintptr_t gs_base)
@@ -56,16 +56,18 @@ FN_TEST(sync_gsbase_from_cpu)
 {
 	SKIP_TEST_IF(!cpu_has_fsgsbase());
 
+	uintptr_t got_gs;
+
 	uintptr_t syscall_gs = (uintptr_t)&gs_slots[0];
 	TEST_SUCC(arch_set_gs(syscall_gs));
 	usleep(100); // Trigger a syscall and context switch.
 	TEST_RES(read_gsbase(), _ret == syscall_gs);
-	TEST_RES(arch_get_gs(), _ret == syscall_gs);
+	TEST_RES(arch_get_gs(&got_gs), got_gs == syscall_gs);
 
 	uintptr_t fsgsbase_gs = (uintptr_t)&gs_slots[1];
 	write_gsbase(fsgsbase_gs);
 	usleep(100); // Trigger a syscall and context switch.
 	TEST_RES(read_gsbase(), _ret == fsgsbase_gs);
-	TEST_RES(arch_get_gs(), _ret == fsgsbase_gs);
+	TEST_RES(arch_get_gs(&got_gs), got_gs == fsgsbase_gs);
 }
 END_TEST()

@@ -2,7 +2,7 @@
 
 use ostd::{
     arch::cpu::context::{FsBase, GsBase},
-    mm::MAX_USERSPACE_VADDR,
+    mm::{MAX_USERSPACE_VADDR, VmIo},
 };
 
 use super::SyscallReturn;
@@ -18,7 +18,7 @@ enum ArchPrctlCode {
     ARCH_GET_GS = 0x1004,
 }
 
-pub fn sys_arch_prctl(code: u64, addr: u64, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_arch_prctl(code: u64, addr: usize, ctx: &Context) -> Result<SyscallReturn> {
     let arch_prctl_code = ArchPrctlCode::try_from(code)?;
     debug!(
         "arch_prctl_code: {:?}, addr = 0x{:x}",
@@ -28,25 +28,33 @@ pub fn sys_arch_prctl(code: u64, addr: u64, ctx: &Context) -> Result<SyscallRetu
     Ok(SyscallReturn::Return(res as _))
 }
 
-fn do_arch_prctl(code: ArchPrctlCode, addr: u64, ctx: &Context) -> Result<u64> {
+fn do_arch_prctl(code: ArchPrctlCode, addr: usize, ctx: &Context) -> Result<u64> {
     let supp = ctx.thread_local.supp_user_context();
 
     match code {
         ArchPrctlCode::ARCH_SET_GS => {
-            if addr as usize >= MAX_USERSPACE_VADDR {
+            if addr >= MAX_USERSPACE_VADDR {
                 return_errno_with_message!(Errno::EPERM, "gsbase must be a userspace address");
             }
-            supp.gs_base().set(GsBase::new(addr as usize));
+            supp.gs_base().set(GsBase::new(addr));
             Ok(0)
         }
         ArchPrctlCode::ARCH_SET_FS => {
-            if addr as usize >= MAX_USERSPACE_VADDR {
+            if addr >= MAX_USERSPACE_VADDR {
                 return_errno_with_message!(Errno::EPERM, "fsbase must be a userspace address");
             }
-            supp.fs_base().set(FsBase::new(addr as usize));
+            supp.fs_base().set(FsBase::new(addr));
             Ok(0)
         }
-        ArchPrctlCode::ARCH_GET_FS => Ok(supp.fs_base().get().addr() as u64),
-        ArchPrctlCode::ARCH_GET_GS => Ok(supp.gs_base().get().addr() as u64),
+        ArchPrctlCode::ARCH_GET_FS => {
+            let base = supp.fs_base().get().addr();
+            ctx.user_space().write_val(addr, &base)?;
+            Ok(0)
+        }
+        ArchPrctlCode::ARCH_GET_GS => {
+            let base = supp.gs_base().get().addr();
+            ctx.user_space().write_val(addr, &base)?;
+            Ok(0)
+        }
     }
 }
