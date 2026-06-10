@@ -99,6 +99,13 @@ fn do_sys_mmap(
         }
 
         if option.flags().contains(MMapFlags::MAP_ANONYMOUS) {
+            // Linux rejects MAP_SHARED_VALIDATE for anonymous mappings.
+            if option.typ() == MMapType::SharedValidate {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "MAP_SHARED_VALIDATE and MAP_ANONYMOUS cannot be used together"
+                );
+            }
             // Anonymous shared mappings should share the same memory pages.
             if option.typ().is_shared() {
                 let shared_vmo = {
