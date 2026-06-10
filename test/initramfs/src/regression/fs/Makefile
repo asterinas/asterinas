@@ -3,6 +3,7 @@
 SUBDIRS := \
 	ext2 \
 	fdatasync \
+	getcwd \
 	inotify \
 	isolation \
 	mount \

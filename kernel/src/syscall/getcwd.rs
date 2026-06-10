@@ -27,8 +27,10 @@ pub fn sys_getcwd(buf: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn
 
     let cwd = CString::new(abs_path)?;
     let bytes = cwd.as_bytes_with_nul();
-    let write_len = len.min(bytes.len());
-    ctx.user_space().write_bytes(buf, &bytes[..write_len])?;
+    if bytes.len() > len {
+        return_errno_with_message!(Errno::ERANGE, "the CWD buffer is too small");
+    }
+    ctx.user_space().write_bytes(buf, bytes)?;
 
-    Ok(SyscallReturn::Return(write_len as _))
+    Ok(SyscallReturn::Return(bytes.len() as _))
 }
