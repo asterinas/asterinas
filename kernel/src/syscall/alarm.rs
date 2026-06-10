@@ -3,7 +3,10 @@
 use core::time::Duration;
 
 use super::SyscallReturn;
-use crate::{prelude::*, time::timer::Timeout};
+use crate::{
+    prelude::*,
+    time::{NSEC_PER_SEC, timer::Timeout},
+};
 
 pub fn sys_alarm(seconds: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("seconds = {}", seconds);
@@ -13,7 +16,11 @@ pub fn sys_alarm(seconds: u32, ctx: &Context) -> Result<SyscallReturn> {
 
     let remaining = timer_guard.remain();
     let mut remaining_secs = remaining.as_secs();
-    if remaining.subsec_nanos() > 0 {
+    // Round up remaining time to match Linux kernel behavior.
+    // Reference: <https://elixir.bootlin.com/linux/v6.15/source/kernel/time/itimer.c#L311-L319>
+    if (remaining_secs == 0 && remaining.subsec_nanos() > 0)
+        || remaining.subsec_nanos() as i64 >= NSEC_PER_SEC / 2
+    {
         remaining_secs += 1;
     }
 
