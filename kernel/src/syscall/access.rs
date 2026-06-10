@@ -8,7 +8,6 @@ use crate::{
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
-    security,
 };
 
 pub fn sys_faccessat(
@@ -102,24 +101,18 @@ fn do_faccessat(
     }
 
     let inode = path.inode();
-    let mut permission = Permission::empty();
-
     // FIXME: The current implementation is dummy
     if mode.contains(AccessMode::R_OK) {
-        permission |= Permission::MAY_READ;
         inode.check_permission(Permission::MAY_READ)?;
     }
 
     if mode.contains(AccessMode::W_OK) {
-        permission |= Permission::MAY_WRITE;
         inode.check_permission(Permission::MAY_WRITE)?;
     }
 
     if mode.contains(AccessMode::X_OK) {
-        permission |= Permission::MAY_EXEC;
         inode.check_permission(Permission::MAY_EXEC)?;
     }
-    security::inode_permission(&path, permission)?;
 
     Ok(SyscallReturn::Return(0))
 }

@@ -16,9 +16,7 @@ pub use self::{
     },
     capability::{CapabilityReason, CapableContext, on_capable},
     file::{FileOpenContext, on_file_open},
-    inode::{
-        InodeDacOverrideContext, InodePermissionContext, on_inode_dac_override, on_inode_permission,
-    },
+    inode::{InodeDacOverrideContext, on_inode_dac_override},
 };
 use crate::{fs::file::Permission, prelude::*};
 
@@ -52,11 +50,6 @@ pub(super) trait LsmInodeHook: Sync {
     /// Returns which requested DAC permissions may be bypassed on an inode.
     fn on_inode_dac_override(&self, _context: &InodeDacOverrideContext) -> Result<Permission> {
         Ok(Permission::empty())
-    }
-
-    /// Checks whether an inode operation may use the requested permission.
-    fn on_inode_permission(&self, _context: &InodePermissionContext<'_>) -> Result<()> {
-        Ok(())
     }
 }
 

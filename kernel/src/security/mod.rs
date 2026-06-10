@@ -82,11 +82,6 @@ pub fn inode_dac_override(
     ))
 }
 
-/// Runs the LSM stack for an inode permission check.
-pub fn inode_permission(path: &Path, permission: Permission) -> Result<()> {
-    lsm::inode_permission(&lsm::InodePermissionContext::new(path, permission))
-}
-
 /// Runs the LSM stack for a file open check.
 pub fn file_open(path: &Path, access_mode: AccessMode, status_flags: StatusFlags) -> Result<()> {
     lsm::file_open(&lsm::FileOpenContext::new(path, access_mode, status_flags))

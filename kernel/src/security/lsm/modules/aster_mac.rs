@@ -4,8 +4,7 @@ use alloc::boxed::ThinBox;
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use super::super::{
-    BprmCheckContext, BprmCommittedCredsContext, FileOpenContext, InodePermissionContext, LsmFlags,
-    LsmModule,
+    BprmCheckContext, BprmCommittedCredsContext, FileOpenContext, LsmFlags, LsmModule,
     hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook, LsmInodeHook},
 };
 use crate::{
@@ -69,34 +68,7 @@ impl LsmBprmHook for AsterMacLsm {
     }
 }
 
-impl LsmInodeHook for AsterMacLsm {
-    fn on_inode_permission(&self, context: &InodePermissionContext<'_>) -> Result<()> {
-        let inode = context.path().inode();
-        let rules = inode_security_state(inode.as_ref()).rules(inode.as_ref());
-        let permission = context.permission();
-
-        if permission.may_read() && rules.contains(AsterMacPolicyRules::READ_DENY) {
-            return_errno_with_message!(
-                Errno::EACCES,
-                "read access is denied by the Aster MAC LSM xattr policy"
-            );
-        }
-        if permission.may_write() && rules.contains(AsterMacPolicyRules::WRITE_DENY) {
-            return_errno_with_message!(
-                Errno::EACCES,
-                "write access is denied by the Aster MAC LSM xattr policy"
-            );
-        }
-        if permission.may_exec() && rules.contains(AsterMacPolicyRules::EXEC_DENY) {
-            return_errno_with_message!(
-                Errno::EACCES,
-                "exec access is denied by the Aster MAC LSM xattr policy"
-            );
-        }
-
-        Ok(())
-    }
-}
+impl LsmInodeHook for AsterMacLsm {}
 
 impl LsmFileHook for AsterMacLsm {
     fn on_file_open(&self, context: &FileOpenContext<'_>) -> Result<()> {

@@ -132,13 +132,11 @@ FN_TEST(open_xattr_blocks_o_path_open)
 }
 END_TEST()
 
-FN_TEST(read_xattr_blocks_access_and_open)
+FN_TEST(read_xattr_blocks_read_open)
 {
 	TEST_SUCC(set_policy_xattr(POLICY_FILE, "security.aster_mac.read", "1"));
-	TEST_ERRNO(access(POLICY_FILE, R_OK), EACCES);
 	TEST_ERRNO(open(POLICY_FILE, O_RDONLY), EACCES);
 	TEST_SUCC(removexattr(POLICY_FILE, "security.aster_mac.read"));
-	TEST_SUCC(access(POLICY_FILE, R_OK));
 	int fd = TEST_RES(open(POLICY_FILE, O_RDONLY), _ret >= 0);
 	if (fd >= 0) {
 		TEST_SUCC(close(fd));
@@ -146,13 +144,11 @@ FN_TEST(read_xattr_blocks_access_and_open)
 }
 END_TEST()
 
-FN_TEST(write_xattr_blocks_access_and_open)
+FN_TEST(write_xattr_blocks_write_open)
 {
 	TEST_SUCC(set_policy_xattr(POLICY_FILE, "security.aster_mac.write", "1"));
-	TEST_ERRNO(access(POLICY_FILE, W_OK), EACCES);
 	TEST_ERRNO(open(POLICY_FILE, O_WRONLY), EACCES);
 	TEST_SUCC(removexattr(POLICY_FILE, "security.aster_mac.write"));
-	TEST_SUCC(access(POLICY_FILE, W_OK));
 	int fd = TEST_RES(open(POLICY_FILE, O_WRONLY), _ret >= 0);
 	if (fd >= 0) {
 		TEST_SUCC(close(fd));

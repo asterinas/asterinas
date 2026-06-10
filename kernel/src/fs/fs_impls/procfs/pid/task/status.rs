@@ -14,7 +14,6 @@ use crate::{
         credentials::AMBIENT_CAPSET,
         posix_thread::{AsPosixThread, SleepingState},
     },
-    security,
     thread::Thread,
     vm::vmar::RssType,
 };
@@ -193,9 +192,6 @@ impl ProcFileOps for StatusFileOps {
             credentials.bounding_capset().bits()
         )?;
         writeln!(printer, "CapAmb:\t{:016x}", AMBIENT_CAPSET.bits())?;
-        if security::is_aster_mac_enabled() {
-            writeln!(printer, "AsterMacLabel:\t{}", credentials.aster_mac_label())?;
-        }
 
         Ok(printer.bytes_written())
     }

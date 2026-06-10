@@ -19,7 +19,7 @@ pub mod yama {
 
 pub use self::hooks::{
     AlienAccessContext, BprmCheckContext, BprmCommittedCredsContext, CapabilityReason,
-    CapableContext, FileOpenContext, InodeDacOverrideContext, InodePermissionContext,
+    CapableContext, FileOpenContext, InodeDacOverrideContext,
 };
 use self::hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook, LsmInodeHook};
 pub(super) use self::modules::aster_mac::{
@@ -86,11 +86,6 @@ pub fn bprm_committed_creds(context: &BprmCommittedCredsContext<'_>) -> Result<(
 /// Runs the LSM stack for a DAC override decision on an inode.
 pub fn inode_dac_override(context: &InodeDacOverrideContext) -> Result<Permission> {
     hooks::on_inode_dac_override(context)
-}
-
-/// Runs the LSM stack for an inode permission check.
-pub fn inode_permission(context: &InodePermissionContext<'_>) -> Result<()> {
-    hooks::on_inode_permission(context)
 }
 
 /// Runs the LSM stack for a file open check.
