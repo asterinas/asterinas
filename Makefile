@@ -133,6 +133,7 @@ ENABLE_REGRESSION_TEST := true
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_lsm_module_selection_test.sh"
 else ifeq ($(AUTO_TEST), aster-mac)
 ENABLE_REGRESSION_TEST := true
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="security=aster_mac"
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_aster_mac_test.sh"
 else ifeq ($(AUTO_TEST), vsock)
 ENABLE_REGRESSION_TEST := true
