@@ -1152,7 +1152,7 @@ dependencies = [
  "tdx-guest",
  "uart_16550",
  "uefi",
- "uefi-raw",
+ "uefi-raw 0.14.0",
  "xmas-elf",
 ]
 
@@ -1256,7 +1256,7 @@ dependencies = [
  "multiboot2-common",
  "ptr_meta 0.3.0",
  "thiserror",
- "uefi-raw",
+ "uefi-raw 0.8.0",
 ]
 
 [[package]]
@@ -1971,26 +1971,26 @@ dependencies = [
 
 [[package]]
 name = "uefi"
-version = "0.32.0"
+version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91f17ea8502a6bd414acb2bf5194f90ca4c48e33a2d18cb57eab3294d2050d99"
+checksum = "66ab9569afdd1e33a31d8002343aa1df594f055347b1a66136bf9dd6cbc3ec37"
 dependencies = [
  "bitflags 2.9.1",
  "cfg-if",
  "log",
- "ptr_meta 0.2.0",
+ "ptr_meta 0.3.0",
  "qemu-exit",
  "ucs2",
  "uefi-macros",
- "uefi-raw",
+ "uefi-raw 0.14.0",
  "uguid",
 ]
 
 [[package]]
 name = "uefi-macros"
-version = "0.16.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c19ee3a01d435eda42cb9931269b349d28a1762f91ddf01c68d276f74b957cc3"
+checksum = "4687412b5ac74d245d5bfb1733ede50c31be19bf8a4b6a967a29b451bab49e67"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2005,6 +2005,16 @@ checksum = "b463030b802e1265a3800fab24df95d3229c202c2e408832a206f05b4d1496ca"
 dependencies = [
  "bitflags 2.9.1",
  "ptr_meta 0.2.0",
+ "uguid",
+]
+
+[[package]]
+name = "uefi-raw"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3775e5934877acaef4b00f254f252df1e2266903c31e51455c117f4f2824eda"
+dependencies = [
+ "bitflags 2.9.1",
  "uguid",
 ]
 

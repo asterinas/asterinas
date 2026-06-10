@@ -22,12 +22,12 @@ uart_16550.workspace = true
 xmas-elf.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
-uefi = { version = "0.32.0", features = ["global_allocator", "panic_handler", "logger", "qemu"]}
-uefi-raw = "0.8.0"
+uefi = { version = "0.37.0", features = ["global_allocator", "panic_handler", "logger", "qemu"]}
+uefi-raw = "0.14.0"
 tdx-guest = { version = "0.2.4", optional = true }
 
 [target.x86_64-i386_pm-none.dependencies]
-uefi-raw = "0.8.0"
+uefi-raw = "0.14.0"
 
 [features]
 default = ["cvm_guest"]
