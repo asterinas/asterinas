@@ -60,8 +60,28 @@ impl Path {
         Self::new(mount, inner)
     }
 
-    /// Creates a new `Path` to represent the child directory of a file system.
+    /// Creates a new child `Path` in a file system.
+    ///
+    /// This API is for non-symbolic-link children. Use
+    /// [`Self::new_fs_symlink_child`] to create a symbolic link, because a
+    /// symbolic link should be created atomically with its target.
     pub fn new_fs_child(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
+        debug_assert_ne!(type_, InodeType::SymLink);
+        self.new_fs_child_with(|dir_dentry| dir_dentry.create(name, type_, mode))
+    }
+
+    /// Creates a new symbolic-link child `Path` in a file system.
+    ///
+    /// Use this API instead of [`Self::new_fs_child`] when creating symbolic
+    /// links so the link target is supplied at creation time.
+    pub fn new_fs_symlink_child(&self, name: &str, target: &str, mode: InodeMode) -> Result<Self> {
+        self.new_fs_child_with(|dir_dentry| dir_dentry.symlink(name, target, mode))
+    }
+
+    fn new_fs_child_with(
+        &self,
+        create_child_fn: impl FnOnce(&DirDentry<'_>) -> Result<Arc<Dentry>>,
+    ) -> Result<Self> {
         if self
             .inode()
             .check_permission(Permission::MAY_WRITE)
@@ -69,10 +89,8 @@ impl Path {
         {
             return_errno!(Errno::EACCES);
         }
-        let new_child_dentry = self
-            .dentry
-            .as_dir_dentry_or_err()?
-            .create(name, type_, mode)?;
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+        let new_child_dentry = create_child_fn(&dir_dentry)?;
         Ok(Self::new(self.mount.clone(), new_child_dentry))
     }
 

@@ -588,10 +588,6 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         }
     }
 
-    default fn write_link(&self, _target: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
-    }
-
     default fn open(
         &self,
         _access_mode: AccessMode,

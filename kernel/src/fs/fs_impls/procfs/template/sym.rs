@@ -101,8 +101,8 @@ impl<S: ProcSymOps + 'static> Inode for ProcSym<S> {
         self.inner.read_link()
     }
 
-    fn write_link(&self, _target: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+    fn symlink(&self, _name: &str, _target: &str, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        Err(Error::new(Errno::EINVAL))
     }
 }
 

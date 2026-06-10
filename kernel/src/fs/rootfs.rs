@@ -92,13 +92,13 @@ fn try_append_entry_to_rootfs(
             let _ = parent.new_fs_child(name, InodeType::Dir, mode)?;
         }
         FileType::Link => {
-            let path = parent.new_fs_child(name, InodeType::SymLink, mode)?;
+            let name = name.to_string();
             let link_content = {
                 let mut link_data: Vec<u8> = Vec::new();
                 entry.read_all(&mut link_data)?;
                 core::str::from_utf8(&link_data)?.to_string()
             };
-            path.inode().write_link(&link_content)?;
+            parent.new_fs_symlink_child(&name, &link_content, mode)?;
         }
         FileType::Char => {
             let device_id = try_device_id_from_metadata(metadata)?;
