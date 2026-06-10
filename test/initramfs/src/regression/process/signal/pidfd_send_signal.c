@@ -78,13 +78,46 @@ END_TEST()
 FN_TEST(pidfd_send_signal_process)
 {
 	TEST_SUCC(pidfd_send_signal(process_pidfd, sig, &siginfo, 0));
-	TEST_SUCC(waitid(P_PID, process_pid, NULL, WNOWAIT | WEXITED));
+	TEST_SUCC(waitid(P_PID, process_pid, NULL, WEXITED));
 }
 END_TEST()
 
 FN_SETUP(cleanup_process)
 {
 	CHECK(close(process_pidfd));
+}
+END_SETUP()
+
+/* ========================
+ *  Tests for NULL siginfo
+ * ======================== */
+
+int null_info_child_pid;
+int null_info_pidfd;
+
+FN_SETUP(create_null_info_process)
+{
+	null_info_child_pid = CHECK(fork());
+	if (null_info_child_pid == 0) {
+		while (1) {
+			usleep(100);
+		}
+	}
+
+	null_info_pidfd = CHECK(pidfd_open(null_info_child_pid, 0));
+}
+END_SETUP()
+
+FN_TEST(pidfd_send_signal_null_info)
+{
+	TEST_SUCC(pidfd_send_signal(null_info_pidfd, SIGTERM, NULL, 0));
+	TEST_SUCC(waitid(P_PID, null_info_child_pid, NULL, WEXITED));
+}
+END_TEST()
+
+FN_SETUP(cleanup_null_info_process)
+{
+	CHECK(close(null_info_pidfd));
 }
 END_SETUP()
 
