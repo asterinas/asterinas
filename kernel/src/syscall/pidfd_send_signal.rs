@@ -39,17 +39,21 @@ pub fn sys_pidfd_send_signal(
 
     let target = get_target_from_pidfd(pidfd, flags, ctx)?;
 
-    let is_self = match &target {
-        SignalTarget::Thread { tid, tgid: _ } => *tid == ctx.posix_thread.tid(),
-        SignalTarget::Process { pid } => *pid == ctx.posix_thread.tid(),
-        SignalTarget::ProcessGroup { pgid: _ } => false,
-    };
+    // Only check `si_code` permissions when the user explicitly provided a siginfo.
+    // When `info_ptr` is `NULL`, the kernel generates the siginfo, so no restriction applies.
+    if info_ptr != 0 {
+        let is_self = match &target {
+            SignalTarget::Thread { tid, tgid: _ } => *tid == ctx.posix_thread.tid(),
+            SignalTarget::Process { pid } => *pid == ctx.posix_thread.tid(),
+            SignalTarget::ProcessGroup { pgid: _ } => false,
+        };
 
-    if !is_self && (siginfo.si_code >= 0 || siginfo.si_code == SI_TKILL) {
-        return_errno_with_message!(
-            Errno::EPERM,
-            "signals with custom code can only be sent to the current thread/process"
-        );
+        if !is_self && (siginfo.si_code >= 0 || siginfo.si_code == SI_TKILL) {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "signals with custom code can only be sent to the current thread/process"
+            );
+        }
     }
 
     match target {
