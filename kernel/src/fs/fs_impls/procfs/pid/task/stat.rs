@@ -20,6 +20,7 @@ use crate::{
     },
     sched::{LinuxSchedPolicy, RealTimePriority, SchedPolicy},
     thread::Thread,
+    time::NSEC_PER_SEC,
     vm::vmar::RssType,
 };
 
@@ -346,9 +347,8 @@ impl ProcFileOps for StatFileOps {
 
 /// Converts a duration into kernel clock ticks.
 fn duration_to_jiffies(duration: Duration) -> u64 {
-    const NSEC_PER_SEC: u64 = 1_000_000_000;
-    const NSEC_PER_JIFFY: u64 = NSEC_PER_SEC / TIMER_FREQ;
-    const { assert!(NSEC_PER_SEC.is_multiple_of(TIMER_FREQ)) };
+    const NSEC_PER_JIFFY: u64 = NSEC_PER_SEC as u64 / TIMER_FREQ;
+    const { assert!((NSEC_PER_SEC as u64).is_multiple_of(TIMER_FREQ)) };
 
     let sec_jiffies = duration.as_secs().saturating_mul(TIMER_FREQ);
     let subsec_jiffies = u64::from(duration.subsec_nanos()) / NSEC_PER_JIFFY;
