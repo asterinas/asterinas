@@ -30,13 +30,13 @@ use crate::{
     process::signal::{PollHandle, Pollable, Pollee},
 };
 
-pub fn sys_eventfd(init_val: u64, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_eventfd(init_val: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("init_val = 0x{:x}", init_val);
 
     do_sys_eventfd2(init_val, Flags::empty(), ctx)
 }
 
-pub fn sys_eventfd2(init_val: u64, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_eventfd2(init_val: u32, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("raw flags = {}", flags);
     let flags = Flags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;
@@ -45,8 +45,8 @@ pub fn sys_eventfd2(init_val: u64, flags: u32, ctx: &Context) -> Result<SyscallR
     do_sys_eventfd2(init_val, flags, ctx)
 }
 
-fn do_sys_eventfd2(init_val: u64, flags: Flags, ctx: &Context) -> Result<SyscallReturn> {
-    let event_file = EventFile::new(init_val, flags);
+fn do_sys_eventfd2(init_val: u32, flags: Flags, ctx: &Context) -> Result<SyscallReturn> {
+    let event_file = EventFile::new(init_val as u64, flags);
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
     let fd_flags = if flags.contains(Flags::EFD_CLOEXEC) {
@@ -192,6 +192,10 @@ impl FileLike for EventFile {
         }
 
         let supplied_value = reader.read_val::<u64>()?;
+
+        if supplied_value == u64::MAX {
+            return_errno_with_message!(Errno::EINVAL, "write value must not be ULLONG_MAX");
+        }
 
         // Try to add counter val at first
         if self.add_counter_val(supplied_value).is_ok() {

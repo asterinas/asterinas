@@ -9,6 +9,7 @@ set -e
 ./epoll/test_epoll_pwait.sh
 
 ./eventfd2/eventfd2
+./eventfd2/eventfd2_err
 
 ./file_io/access_err
 ./file_io/fcntl_lock
