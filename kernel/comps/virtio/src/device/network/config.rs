@@ -50,7 +50,7 @@ bitflags! {
 }
 
 impl NetworkFeatures {
-    pub(super) fn support_features() -> Self {
+    pub(super) fn supported_features() -> Self {
         NetworkFeatures::VIRTIO_NET_F_MAC | NetworkFeatures::VIRTIO_NET_F_STATUS
     }
 }

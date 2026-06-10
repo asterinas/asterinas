@@ -56,7 +56,7 @@ impl PollStatistics {
 impl NetworkDevice {
     pub(crate) fn negotiate_features(device_features: u64) -> u64 {
         let device_features = NetworkFeatures::from_bits_truncate(device_features);
-        let supported_features = NetworkFeatures::support_features();
+        let supported_features = NetworkFeatures::supported_features();
         let network_features = device_features & supported_features;
 
         if network_features != device_features {
