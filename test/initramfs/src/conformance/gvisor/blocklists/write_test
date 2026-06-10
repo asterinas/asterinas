@@ -1,5 +1,4 @@
 WriteTest.PartialWriteSIGBUS
 WriteTest.PartialWriteSIGSEGV
-WriteTest.PwriteNoChangeOffset
 WriteTest.WriteExceedsRLimit
 WriteTest.WriteNoExceedsRLimit
