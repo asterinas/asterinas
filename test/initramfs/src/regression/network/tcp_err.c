@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#define _GNU_SOURCE
 #include <unistd.h>
 #include <sys/signal.h>
 #include <sys/socket.h>
@@ -297,6 +298,15 @@ FN_TEST(accept)
 	TEST_ERRNO(accept(sk_connected, psaddr, &addrlen), EINVAL);
 
 	TEST_ERRNO(accept(sk_accepted, psaddr, &addrlen), EINVAL);
+}
+END_TEST()
+
+FN_TEST(accept4_invalid_flags)
+{
+	TEST_ERRNO(accept4(sk_listen, NULL, NULL, 0x1), EINVAL);
+	TEST_ERRNO(accept4(sk_listen, NULL, NULL,
+			   ~(SOCK_CLOEXEC | SOCK_NONBLOCK)),
+		   EINVAL);
 }
 END_TEST()
 
