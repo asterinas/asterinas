@@ -153,17 +153,21 @@ FN_TEST(clone_files)
 	int pipefds[2];
 	TEST_SUCC(syscall(SYS_pipe2, pipefds, O_CLOEXEC));
 
-	// Duplicate the pipe fd to a high-value FD to prevent it from being reused.
+	// Duplicate the pipe fds to high-value FDs to prevent unrelated
+	// open operations during multi-threaded exec from reusing them.
 	int dupped_pipe_fd = 100;
+	int dupped_pipe_write_fd = 101;
 	TEST_SUCC(syscall(SYS_dup3, pipefds[0], dupped_pipe_fd, O_CLOEXEC));
+	TEST_SUCC(syscall(SYS_dup3, pipefds[1], dupped_pipe_write_fd, 0));
 	TEST_SUCC(close(pipefds[0]));
+	TEST_SUCC(close(pipefds[1]));
 
 	struct clone_args args = { .flags = CLONE_FILES,
 				   .exit_signal = SIGCHLD };
 	pid_t pid = TEST_SUCC(sys_clone3(&args));
 
 	if (pid == 0) {
-		CHECK(close(pipefds[1]));
+		CHECK(close(dupped_pipe_write_fd));
 		exit(EXIT_SUCCESS);
 	}
 
@@ -193,6 +197,6 @@ FN_TEST(clone_files)
 		 _ret == pid && WIFEXITED(status) &&
 			 WEXITSTATUS(status) == 102);
 	TEST_SUCC(close(dupped_pipe_fd));
-	TEST_ERRNO(close(pipefds[1]), EBADF);
+	TEST_ERRNO(close(dupped_pipe_write_fd), EBADF);
 }
 END_TEST()
