@@ -27,7 +27,7 @@ let
       ${pkgs.lib.optionalString autoInstall ''
         if [ "$(tty)" == "/dev/hvc0" ]; then
           echo "The installer automatically runs on /dev/hvc0!"
-          install_aster_nixos.sh --config $HOME/configuration.nix --disk /dev/vda --force-format-disk || true
+          aster-nixos-install --config $HOME/configuration.nix --disk /dev/vda --force-format-disk || true
           poweroff
         fi
       ''}

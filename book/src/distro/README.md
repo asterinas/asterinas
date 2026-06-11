@@ -83,7 +83,7 @@ to customize the NixOS system to be installed:
 7. Start installation:
 
     ```bash
-    install_aster_nixos.sh --config configuration.nix --disk /dev/vda --force-format-disk
+    aster-nixos-install --config configuration.nix --disk /dev/vda --force-format-disk
     ```
     
     The installation process involves downloading packages
