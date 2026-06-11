@@ -18,9 +18,6 @@ pub fn sys_getsockopt(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let level = CSocketOptionLevel::try_from(level).map_err(|_| Errno::EOPNOTSUPP)?;
-    if optlen_addr == 0 {
-        return_errno_with_message!(Errno::EINVAL, "optlen_addr is null pointer");
-    }
 
     let user_space = ctx.user_space();
     let optlen: u32 = user_space.read_val(optlen_addr)?;
