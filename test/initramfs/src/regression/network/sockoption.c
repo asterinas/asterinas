@@ -74,6 +74,18 @@ FN_TEST(null_optlen)
 }
 END_TEST()
 
+FN_TEST(null_optval)
+{
+	socklen_t len = sizeof(int);
+	TEST_ERRNO(setsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, NULL,
+			      sizeof(int)),
+		   EFAULT);
+	TEST_ERRNO(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, NULL,
+			      &len),
+		   EFAULT);
+}
+END_TEST()
+
 int refresh_connection()
 {
 	close(sk_connected);

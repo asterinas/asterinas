@@ -16,9 +16,6 @@ pub fn sys_setsockopt(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let level = CSocketOptionLevel::try_from(level).map_err(|_| Errno::EOPNOTSUPP)?;
-    if optval == 0 {
-        return_errno_with_message!(Errno::EINVAL, "optval is null pointer");
-    }
 
     debug!(
         "level = {:?}, sockfd = {}, optname = {}, optval = {}",
