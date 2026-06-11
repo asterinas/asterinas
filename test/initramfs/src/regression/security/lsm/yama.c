@@ -4,7 +4,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <linux/capability.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -15,7 +14,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "../../common/test.h"
+#include "../../common/capability.h"
 
 enum {
 	YAMA_SCOPE_DISABLED = 0,
@@ -59,22 +58,6 @@ static int write_scope(int scope)
 	return close(fd);
 }
 
-static void drop_cap_sys_ptrace(void)
-{
-	struct __user_cap_header_struct hdr = {
-		.version = _LINUX_CAPABILITY_VERSION_3,
-	};
-	struct __user_cap_data_struct capdat[2] = { 0 };
-
-	CHECK(syscall(SYS_capget, &hdr, &capdat));
-
-	capdat[0].effective &= ~(1 << CAP_SYS_PTRACE);
-	capdat[0].permitted &= ~(1 << CAP_SYS_PTRACE);
-	capdat[0].inheritable &= ~(1 << CAP_SYS_PTRACE);
-
-	CHECK(syscall(SYS_capset, &hdr, &capdat));
-}
-
 static pid_t spawn_target_process(bool drop_ptrace_cap)
 {
 	int ready_pipe[2];
@@ -84,7 +67,7 @@ static pid_t spawn_target_process(bool drop_ptrace_cap)
 	if (target_pid == 0) {
 		CHECK(close(ready_pipe[0]));
 		if (drop_ptrace_cap) {
-			drop_cap_sys_ptrace();
+			drop_capability(CAP_SYS_PTRACE);
 		}
 
 		int fd =
@@ -139,7 +122,7 @@ FN_TEST(relational_denies_sibling_pidfd_getfd)
 	pid_t attacker_pid = TEST_SUCC(fork());
 
 	if (attacker_pid == 0) {
-		drop_cap_sys_ptrace();
+		drop_capability(CAP_SYS_PTRACE);
 
 		int pidfd = CHECK(pidfd_open_syscall(target_pid));
 
@@ -165,7 +148,7 @@ FN_TEST(disabled_allows_sibling_pidfd_getfd)
 	pid_t attacker_pid = TEST_SUCC(fork());
 
 	if (attacker_pid == 0) {
-		drop_cap_sys_ptrace();
+		drop_capability(CAP_SYS_PTRACE);
 
 		int pidfd = CHECK(pidfd_open_syscall(target_pid));
 		int duplicated_fd =

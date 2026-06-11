@@ -12,9 +12,8 @@
 #include <sys/wait.h>
 #include <stdint.h>
 #include <string.h>
-#include <linux/capability.h>
 
-#include "../../common/test.h"
+#include "../../common/capability.h"
 #include "../../common/yama_ptrace_scope.h"
 
 #define PAGE_SIZE 4096
@@ -182,22 +181,6 @@ FN_TEST(proc_mem_yama_scope)
 }
 END_TEST()
 
-static void drop_cap_sys_ptrace(void)
-{
-	struct __user_cap_header_struct hdr = {
-		.version = _LINUX_CAPABILITY_VERSION_3,
-	};
-	struct __user_cap_data_struct capdat[2] = { 0 };
-
-	CHECK(syscall(SYS_capget, &hdr, &capdat));
-
-	capdat[0].effective &= ~(1 << CAP_SYS_PTRACE);
-	capdat[0].permitted &= ~(1 << CAP_SYS_PTRACE);
-	capdat[0].inheritable &= ~(1 << CAP_SYS_PTRACE);
-
-	CHECK(syscall(SYS_capset, &hdr, &capdat));
-}
-
 static void drop_to_another_user(void)
 {
 	CHECK(setresgid(65534, 65534, 65534));
@@ -232,7 +215,7 @@ static int access_from_sibling(int drop_cap, int switch_user)
 		if (drop_cap) {
 			// Keep the target capability same with the accessor,
 			// to pass Linux commoncap checks.
-			drop_cap_sys_ptrace();
+			drop_capability(CAP_SYS_PTRACE);
 		}
 		char ch;
 		CHECK(read(pipe_block[0], &ch, 1));
@@ -247,7 +230,7 @@ static int access_from_sibling(int drop_cap, int switch_user)
 	if (accessor == 0) {
 		CHECK(close(pipe_res[0]));
 		if (drop_cap) {
-			drop_cap_sys_ptrace();
+			drop_capability(CAP_SYS_PTRACE);
 		}
 		if (switch_user) {
 			drop_to_another_user();
@@ -284,7 +267,7 @@ static int access_from_parent(int drop_cap)
 	if (parent == 0) {
 		CHECK(close(pipe_res[0]));
 		if (drop_cap) {
-			drop_cap_sys_ptrace();
+			drop_capability(CAP_SYS_PTRACE);
 		}
 
 		int pipe_block[2];

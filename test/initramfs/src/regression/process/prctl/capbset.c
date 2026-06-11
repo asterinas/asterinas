@@ -2,8 +2,7 @@
 
 #define _GNU_SOURCE
 
-#include "../../common/test.h"
-#include <linux/capability.h>
+#include "../../common/capability.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,31 +12,6 @@
 #include <unistd.h>
 
 #define CAP_MASK(capability) (1ULL << (capability))
-
-static void read_cap_data(struct __user_cap_data_struct cap_data[2])
-{
-	struct __user_cap_header_struct cap_header = {
-		.version = _LINUX_CAPABILITY_VERSION_3,
-		.pid = 0,
-	};
-
-	CHECK(syscall(SYS_capget, &cap_header, cap_data));
-}
-
-static int __write_cap_data(const struct __user_cap_data_struct cap_data[2])
-{
-	struct __user_cap_header_struct cap_header = {
-		.version = _LINUX_CAPABILITY_VERSION_3,
-		.pid = 0,
-	};
-
-	return syscall(SYS_capset, &cap_header, cap_data);
-}
-
-static void write_cap_data(const struct __user_cap_data_struct cap_data[2])
-{
-	CHECK(__write_cap_data(cap_data));
-}
 
 static void read_proc_capbnd(uint64_t *capbnd)
 {
