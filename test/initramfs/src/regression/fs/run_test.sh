@@ -135,6 +135,7 @@ echo "All mount bind file test passed."
 ./procfs/tid
 
 ./pseudofs/memfd_access_err
+./pseudofs/memfd_create
 ./pseudofs/pseudo_dentry
 ./pseudofs/pseudo_dev_id
 ./pseudofs/pseudo_inode
