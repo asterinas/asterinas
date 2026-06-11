@@ -15,6 +15,11 @@ set -e
 ./lsm/module_selection
 ./lsm/yama
 
+./seccomp/basic
+./seccomp/exec
+./seccomp/status
+./seccomp/whitelist
+
 ./namespace/cgroup_ns
 ./namespace/ipc_ns_sem
 ./namespace/mnt_ns
