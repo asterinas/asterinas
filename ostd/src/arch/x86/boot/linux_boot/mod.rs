@@ -90,10 +90,25 @@ fn parse_acpi_arg(boot_params: &BootParams) -> BootloaderAcpiArg {
     let rsdp = boot_params.acpi_rsdp_addr;
 
     if rsdp == 0 {
-        BootloaderAcpiArg::NotProvided
+        if is_efi_boot(boot_params) {
+            BootloaderAcpiArg::NotProvided
+        } else {
+            BootloaderAcpiArg::ScanBios
+        }
     } else {
         BootloaderAcpiArg::Rsdp(rsdp.try_into().expect("RSDP address overflowed!"))
     }
+}
+
+fn is_efi_boot(boot_params: &BootParams) -> bool {
+    const EFI32_LOADER_SIGNATURE: u32 = u32::from_le_bytes(*b"EL32");
+    const EFI64_LOADER_SIGNATURE: u32 = u32::from_le_bytes(*b"EL64");
+
+    let efi_info = boot_params.efi_info;
+    matches!(
+        efi_info.efi_loader_signature,
+        EFI32_LOADER_SIGNATURE | EFI64_LOADER_SIGNATURE
+    )
 }
 
 fn parse_framebuffer_info(boot_params: &BootParams) -> Option<BootloaderFramebufferArg> {

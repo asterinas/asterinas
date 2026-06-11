@@ -62,7 +62,7 @@ fn parse_initramfs(mb1_info: &MultibootLegacyInfo) -> Option<&[u8]> {
 fn parse_acpi_arg(_mb1_info: &MultibootLegacyInfo) -> BootloaderAcpiArg {
     // Multiboot v1 is BIOS-oriented and does not define a standard field for
     // the RSDP or the EFI System Table.
-    BootloaderAcpiArg::NotProvided
+    BootloaderAcpiArg::ScanBios
 }
 
 fn parse_framebuffer_info(mb1_info: &MultibootLegacyInfo) -> Option<BootloaderFramebufferArg> {
