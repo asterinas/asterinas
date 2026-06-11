@@ -3,7 +3,11 @@
 use ostd::power::{ExitCode, poweroff, restart};
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::credentials::capabilities::CapSet};
+use crate::{
+    prelude::*,
+    process::{UserNamespace, credentials::capabilities::CapSet},
+    security::lsm::hooks as lsm_hooks,
+};
 
 // Linux reboot magic constants.
 const LINUX_REBOOT_MAGIC1: u32 = 0xfee1dead;
@@ -46,14 +50,11 @@ pub fn sys_reboot(
         return_errno_with_message!(Errno::EINVAL, "the reboot magic is invalid");
     }
 
-    if !ctx
-        .posix_thread
-        .credentials()
-        .effective_capset()
-        .contains(CapSet::SYS_BOOT)
-    {
-        return_errno_with_message!(Errno::EPERM, "reboot without SYS_BOOT is not allowed");
-    }
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        UserNamespace::get_init_singleton().as_ref(),
+        ctx.posix_thread,
+        CapSet::SYS_BOOT,
+    ))?;
 
     let cmd = RebootCmd::try_from(op)?;
 

@@ -5,13 +5,18 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{Gid, posix_thread::ContextPthreadAdminApi},
+    process::{Gid, credentials::capabilities::CapSet, posix_thread::ContextPthreadAdminApi},
+    security::lsm::hooks as lsm_hooks,
 };
 
 pub fn sys_setgroups(size: usize, group_list_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("size = {}, group_list_addr = 0x{:x}", size, group_list_addr);
 
-    // TODO: check perm: the calling process should have the CAP_SETGID capability
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        ctx.thread_local.borrow_user_ns().as_ref(),
+        ctx.posix_thread,
+        CapSet::SETGID,
+    ))?;
 
     if size > NGROUPS_MAX {
         return_errno_with_message!(Errno::EINVAL, "size cannot be greater than NGROUPS_MAX");

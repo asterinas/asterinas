@@ -32,7 +32,8 @@ use super::{
 };
 use crate::{
     fs::{ext2::utils, vfs::file_system::FsEventSubscriberStats},
-    process::{Gid, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    process::{Gid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    security::lsm::hooks as lsm_hooks,
     thread::Thread,
 };
 
@@ -561,21 +562,24 @@ impl Ext2 {
             return true;
         }
 
-        let Some(credentials) = Thread::current().and_then(|thread| {
-            thread
-                .as_posix_thread()
-                .map(|posix_thread| posix_thread.credentials())
-        }) else {
+        let Some(thread) = Thread::current() else {
+            return true;
+        };
+        let Some(posix_thread) = thread.as_posix_thread() else {
             return true;
         };
 
-        if credentials
-            .effective_capset()
-            .contains(CapSet::SYS_RESOURCE)
+        if lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+            UserNamespace::get_init_singleton().as_ref(),
+            posix_thread,
+            CapSet::SYS_RESOURCE,
+        ))
+        .is_ok()
         {
             return true;
         }
 
+        let credentials = posix_thread.credentials();
         if u32::from(credentials.fsuid()) == reserved_uid {
             return true;
         }

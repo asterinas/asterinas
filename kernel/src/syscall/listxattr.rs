@@ -10,7 +10,8 @@ use crate::{
         vfs::xattr::{XATTR_LIST_MAX_LEN, XattrNamespace},
     },
     prelude::*,
-    process::credentials::capabilities::CapSet,
+    process::{UserNamespace, credentials::capabilities::CapSet},
+    security::lsm::hooks as lsm_hooks,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -94,11 +95,21 @@ fn listxattr(
 }
 
 fn get_current_xattr_namespace(ctx: &Context) -> XattrNamespace {
-    let credentials = ctx.posix_thread.credentials();
-    let permitted_capset = credentials.permitted_capset();
-    let effective_capset = credentials.effective_capset();
+    if !ctx
+        .posix_thread
+        .credentials()
+        .permitted_capset()
+        .contains(CapSet::SYS_ADMIN)
+    {
+        return XattrNamespace::User;
+    }
 
-    if permitted_capset.contains(CapSet::SYS_ADMIN) && effective_capset.contains(CapSet::SYS_ADMIN)
+    if lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        UserNamespace::get_init_singleton().as_ref(),
+        ctx.posix_thread,
+        CapSet::SYS_ADMIN,
+    ))
+    .is_ok()
     {
         XattrNamespace::Trusted
     } else {

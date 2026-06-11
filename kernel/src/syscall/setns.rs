@@ -24,6 +24,7 @@ use crate::{
         CloneFlags, ContextSetNsAdminApi, NsProxy, NsProxyBuilder, PidFile,
         check_unsupported_ns_flags, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
     },
+    security::lsm::hooks as lsm_hooks,
     syscall::SyscallReturn,
 };
 
@@ -232,13 +233,16 @@ fn set_uts_ns(
 fn check_set_ns_perms<T: NsCommonOps>(target_ns: &Arc<T>, ctx: &Context) -> Result<()> {
     // Verify the thread has SYS_ADMIN capability in the target namespace's owner
     // and the current user namespace.
-    target_ns
-        .owner_user_ns()
-        .unwrap()
-        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
-    ctx.thread_local
-        .borrow_user_ns()
-        .check_cap(CapSet::SYS_ADMIN, ctx.posix_thread)?;
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        target_ns.owner_user_ns().unwrap().as_ref(),
+        ctx.posix_thread,
+        CapSet::SYS_ADMIN,
+    ))?;
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        ctx.thread_local.borrow_user_ns().as_ref(),
+        ctx.posix_thread,
+        CapSet::SYS_ADMIN,
+    ))?;
 
     // TODO: Are the checks above sufficient?
 

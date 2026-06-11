@@ -13,6 +13,7 @@ use crate::{
     },
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},
+    security::lsm::hooks as lsm_hooks,
 };
 
 /// Represents a mount namespace, which encapsulates a mount tree and provides
@@ -116,7 +117,11 @@ impl MountNamespace {
         owner: Arc<UserNamespace>,
         posix_thread: &PosixThread,
     ) -> Result<Arc<MountNamespace>> {
-        owner.check_cap(CapSet::SYS_ADMIN, posix_thread)?;
+        lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+            owner.as_ref(),
+            posix_thread,
+            CapSet::SYS_ADMIN,
+        ))?;
 
         let root_mount = self.root();
         Self::new_with_root(owner, |weak_ns| {

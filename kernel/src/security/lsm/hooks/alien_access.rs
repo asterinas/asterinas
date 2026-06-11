@@ -13,9 +13,9 @@ use crate::{
 };
 
 /// Runs alien access hooks in module order.
-pub fn on_alien_access(context: &AlienAccessContext) -> Result<()> {
+pub fn on_alien_access(context: AlienAccessContext) -> Result<()> {
     for module in modules::active_modules() {
-        module.on_alien_access(context)?;
+        module.on_alien_access(&context)?;
     }
 
     Ok(())
@@ -26,7 +26,6 @@ pub struct AlienAccessContext<'a> {
     accessor: &'a PosixThread,
     target: &'a PosixThread,
     mode: AlienAccessMode,
-    accessor_has_cap_sys_ptrace: bool,
 }
 
 impl<'a> AlienAccessContext<'a> {
@@ -35,13 +34,11 @@ impl<'a> AlienAccessContext<'a> {
         accessor: &'a PosixThread,
         target: &'a PosixThread,
         mode: AlienAccessMode,
-        accessor_has_cap_sys_ptrace: bool,
     ) -> Self {
         Self {
             accessor,
             target,
             mode,
-            accessor_has_cap_sys_ptrace,
         }
     }
 
@@ -58,10 +55,5 @@ impl<'a> AlienAccessContext<'a> {
     /// Returns the requested access mode.
     pub const fn mode(&self) -> AlienAccessMode {
         self.mode
-    }
-
-    /// Returns whether the accessor has `CapSet::SYS_PTRACE`.
-    pub const fn accessor_has_cap_sys_ptrace(&self) -> bool {
-        self.accessor_has_cap_sys_ptrace
     }
 }

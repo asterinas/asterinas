@@ -10,6 +10,7 @@ use super::process_vm::INIT_STACK_SIZE;
 use crate::{
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet},
+    security::lsm::hooks as lsm_hooks,
 };
 
 // Constants for the boot-time rlimit defaults
@@ -155,7 +156,11 @@ impl RLimit64 {
         let _guard = self.lock.lock();
         if new.max > self.get_max() {
             let init_user_ns = UserNamespace::get_init_singleton();
-            init_user_ns.check_cap(CapSet::SYS_RESOURCE, ctx.posix_thread)?;
+            lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                init_user_ns.as_ref(),
+                ctx.posix_thread,
+                CapSet::SYS_RESOURCE,
+            ))?;
         }
         let old = RawRLimit64 {
             cur: self.cur.load(Ordering::Relaxed),

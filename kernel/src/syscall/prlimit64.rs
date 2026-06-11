@@ -12,6 +12,7 @@ use crate::{
         posix_thread::AsPosixThread,
         rlimit::{RawRLimit64, SYSCTL_NR_OPEN},
     },
+    security::lsm::hooks as lsm_hooks,
 };
 
 pub fn sys_getrlimit(resource: u32, rlim_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
@@ -94,11 +95,12 @@ fn do_prlimit64(
 /// the resource limits of the target process.
 // Reference: <https://man7.org/linux/man-pages/man2/prlimit.2.html>
 fn check_rlimit_perm(target_process: &Process, ctx: &Context) -> Result<()> {
-    if target_process
-        .user_ns()
-        .lock()
-        .check_cap(CapSet::SYS_RESOURCE, ctx.posix_thread)
-        .is_ok()
+    if lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        target_process.user_ns().lock().as_ref(),
+        ctx.posix_thread,
+        CapSet::SYS_RESOURCE,
+    ))
+    .is_ok()
     {
         return Ok(());
     }

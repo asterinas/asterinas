@@ -8,6 +8,7 @@ use super::{
 use crate::{
     prelude::*,
     process::{credentials::capabilities::CapSet, posix_thread::PosixThread},
+    security::lsm::hooks as lsm_hooks,
     thread::Tid,
 };
 
@@ -174,11 +175,12 @@ fn check_signal_perm(target: &PosixThread, ctx: &Context, signum: Option<SigNum>
         return Ok(());
     }
 
-    if target_process
-        .user_ns()
-        .lock()
-        .check_cap(CapSet::KILL, ctx.posix_thread)
-        .is_ok()
+    if lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        target_process.user_ns().lock().as_ref(),
+        ctx.posix_thread,
+        CapSet::KILL,
+    ))
+    .is_ok()
     {
         return Ok(());
     }
