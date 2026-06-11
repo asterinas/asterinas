@@ -32,6 +32,13 @@ FN_TEST(pidfd_open)
 }
 END_TEST()
 
+FN_TEST(pidfd_open_invalid_pid)
+{
+	TEST_ERRNO(syscall(SYS_pidfd_open, 0, 0), EINVAL);
+	TEST_ERRNO(syscall(SYS_pidfd_open, -1, 0), EINVAL);
+}
+END_TEST()
+
 FN_TEST(read_write)
 {
 	char buf[1] = {};

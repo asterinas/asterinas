@@ -15,8 +15,8 @@ pub fn sys_pidfd_open(pid: Pid, flags: u32, ctx: &Context) -> Result<SyscallRetu
         flags.contains(PidfdFlags::PIDFD_NONBLOCK)
     };
 
-    if pid.cast_signed() < 0 {
-        return_errno_with_message!(Errno::EINVAL, "all negative PIDs are not valid");
+    if pid.cast_signed() <= 0 {
+        return_errno_with_message!(Errno::EINVAL, "non-positive PIDs are not valid");
     }
 
     let process = pid_table::pid_table_mut()
