@@ -122,6 +122,41 @@ FN_SETUP(cleanup_null_info_process)
 END_SETUP()
 
 /* ==========================
+ *  Tests for null signal (0)
+ * ========================== */
+
+int null_sig_child_pid;
+int null_sig_pidfd;
+
+FN_SETUP(create_null_sig_process)
+{
+	null_sig_child_pid = CHECK(fork());
+	if (null_sig_child_pid == 0) {
+		while (1) {
+			usleep(100);
+		}
+	}
+
+	null_sig_pidfd = CHECK(pidfd_open(null_sig_child_pid, 0));
+}
+END_SETUP()
+
+FN_TEST(pidfd_send_signal_null_signal)
+{
+	// Signal 0 is a null signal used for permission/existence checks
+	TEST_SUCC(pidfd_send_signal(null_sig_pidfd, 0, NULL, 0));
+}
+END_TEST()
+
+FN_SETUP(cleanup_null_sig_process)
+{
+	CHECK(kill(null_sig_child_pid, SIGKILL));
+	CHECK(waitid(P_PID, null_sig_child_pid, NULL, WEXITED));
+	CHECK(close(null_sig_pidfd));
+}
+END_SETUP()
+
+/* ==========================
  *  Tests for `PIDFD_SELF_*`
  * ========================== */
 
