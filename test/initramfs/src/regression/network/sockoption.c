@@ -65,6 +65,15 @@ FN_TEST(invalid_socket_option)
 }
 END_TEST()
 
+FN_TEST(null_optlen)
+{
+	int val;
+	TEST_ERRNO(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, &val,
+			      NULL),
+		   EFAULT);
+}
+END_TEST()
+
 int refresh_connection()
 {
 	close(sk_connected);
