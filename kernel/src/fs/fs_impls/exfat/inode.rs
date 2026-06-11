@@ -809,6 +809,8 @@ impl ExfatInode {
 
         {
             let mut inner = inner.upgrade();
+            // Evict pages that may have been brought in by concurrent readahead.
+            inner.page_cache.evict_range(start..end).unwrap();
             inner.update_atime_and_mtime()?;
             inner.size = new_size;
         }
