@@ -28,44 +28,54 @@ pub fn sys_pidfd_send_signal(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let flags = PidfdSendSignalFlags::try_from(flags)?;
-    let sig_num = SigNum::try_from(sig_num as u8)?;
+    let sig_num = if sig_num == 0 {
+        None
+    } else {
+        Some(SigNum::try_from(sig_num as u8)?)
+    };
     debug!(
         "pidfd={}, info_ptr={:#x}, flags={:?}",
         pidfd, info_ptr, flags
     );
 
-    let siginfo = read_siginfo_from_user(info_ptr, sig_num, ctx)?;
-    let signal = RawSignal::new(siginfo);
-
     let target = get_target_from_pidfd(pidfd, flags, ctx)?;
 
-    // Only check `si_code` permissions when the user explicitly provided a siginfo.
-    // When `info_ptr` is `NULL`, the kernel generates the siginfo, so no restriction applies.
-    if info_ptr != 0 {
-        let is_self = match &target {
-            SignalTarget::Thread { tid, tgid: _ } => *tid == ctx.posix_thread.tid(),
-            SignalTarget::Process { pid } => *pid == ctx.posix_thread.tid(),
-            SignalTarget::ProcessGroup { pgid: _ } => false,
-        };
+    let signal = if let Some(sig_num) = sig_num {
+        let siginfo = read_siginfo_from_user(info_ptr, sig_num, ctx)?;
 
-        if !is_self && (siginfo.si_code >= 0 || siginfo.si_code == SI_TKILL) {
-            return_errno_with_message!(
-                Errno::EPERM,
-                "signals with custom code can only be sent to the current thread/process"
-            );
+        // Only check `si_code` permissions when the user explicitly provided a siginfo.
+        // When `info_ptr` is `NULL`, the kernel generates the siginfo, so no restriction applies.
+        if info_ptr != 0 {
+            let is_self = match &target {
+                SignalTarget::Thread { tid, tgid: _ } => *tid == ctx.posix_thread.tid(),
+                SignalTarget::Process { pid } => *pid == ctx.posix_thread.tid(),
+                SignalTarget::ProcessGroup { pgid: _ } => false,
+            };
+
+            if !is_self && (siginfo.si_code >= 0 || siginfo.si_code == SI_TKILL) {
+                return_errno_with_message!(
+                    Errno::EPERM,
+                    "signals with custom code can only be sent to the current thread/process"
+                );
+            }
         }
-    }
+
+        Some(RawSignal::new(siginfo))
+    } else {
+        None
+    };
 
     match target {
         SignalTarget::Thread { tid, tgid } => {
-            let signal = Some(Box::new(signal) as Box<dyn Signal>);
+            let signal = signal.map(|s| Box::new(s) as Box<dyn Signal>);
             tgkill(tid, Some(tgid), signal, ctx)?;
         }
         SignalTarget::Process { pid } => {
-            kill(pid, Some(Box::new(signal) as Box<dyn Signal>), ctx)?;
+            let signal = signal.map(|s| Box::new(s) as Box<dyn Signal>);
+            kill(pid, signal, ctx)?;
         }
         SignalTarget::ProcessGroup { pgid } => {
-            kill_group(pgid, Some(signal), ctx)?;
+            kill_group(pgid, signal, ctx)?;
         }
     }
 
