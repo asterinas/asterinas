@@ -26,6 +26,7 @@ use crate::{
     fs::file::PerOpenFileOps,
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    security::lsm::hooks as lsm_hooks,
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
@@ -286,10 +287,11 @@ fn check_vt_ioctl_perm(tty: &Tty<VtDriver>) -> Result<()> {
     }
 
     let init_user_ns = UserNamespace::get_init_singleton();
-    init_user_ns.check_cap(
-        CapSet::SYS_TTY_CONFIG,
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        init_user_ns.as_ref(),
         current_thread!().as_posix_thread().unwrap(),
-    )?;
+        CapSet::SYS_TTY_CONFIG,
+    ))?;
 
     Ok(())
 }

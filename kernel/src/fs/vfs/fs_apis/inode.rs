@@ -7,7 +7,7 @@ use core::time::Duration;
 
 use device_id::DeviceId;
 use no_std_io2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
-use ostd::task::Task;
+use ostd::task::{CurrentTask, Task};
 use spin::Once;
 
 use super::{
@@ -22,7 +22,12 @@ use crate::{
         vfs::path::Path,
     },
     prelude::*,
-    process::{Gid, Uid, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    process::{
+        Gid, Uid,
+        credentials::capabilities::CapSet,
+        posix_thread::{AsPosixThread, PosixThread},
+    },
+    security::lsm::hooks as lsm_hooks,
     time::clocks::RealTimeCoarseClock,
     vm::page_cache::PageCache,
 };
@@ -531,24 +536,24 @@ pub trait Inode: Any + FileOps + Send + Sync {
     /// Similar to Linux, using "fsuid" here allows setting filesystem permissions
     /// without changing the "normal" uids for other tasks.
     fn check_permission(&self, mut perm: Permission) -> Result<()> {
-        let creds = match Task::current() {
-            Some(task) => match task.as_posix_thread() {
-                Some(thread) => thread.credentials(),
-                None => return Ok(()),
-            },
-            None => return Ok(()),
+        let Some(task) = Task::current() else {
+            return Ok(());
+        };
+        let Some(posix_thread) = task.as_posix_thread() else {
+            return Ok(());
         };
 
+        let creds = posix_thread.credentials();
+        let metadata = self.metadata();
+        let mode = metadata.mode;
+
         // With DAC_OVERRIDE capability, the user can bypass some permission checks.
-        if creds.effective_capset().contains(CapSet::DAC_OVERRIDE) {
+        if has_dac_override_capability(&task, posix_thread) {
             // Read/write DACs are always overridable.
             perm -= Permission::MAY_READ | Permission::MAY_WRITE;
 
             // Executable DACs are overridable when there is at least one exec bit set.
             if perm.may_exec() {
-                let metadata = self.metadata();
-                let mode = metadata.mode;
-
                 if mode.is_owner_executable()
                     || mode.is_group_executable()
                     || mode.is_other_executable()
@@ -562,11 +567,6 @@ pub trait Inode: Any + FileOps + Send + Sync {
                 }
             }
         }
-
-        perm =
-            perm.intersection(Permission::MAY_READ | Permission::MAY_WRITE | Permission::MAY_EXEC);
-        let metadata = self.metadata();
-        let mode = metadata.mode;
 
         if metadata.uid == creds.fsuid() {
             if (perm.may_read() && !mode.is_owner_readable())
@@ -591,6 +591,17 @@ pub trait Inode: Any + FileOps + Send + Sync {
 
         Ok(())
     }
+}
+
+fn has_dac_override_capability(task: &CurrentTask, posix_thread: &PosixThread) -> bool {
+    let thread_local = task.as_thread_local().unwrap();
+    let user_ns = thread_local.borrow_user_ns();
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        user_ns.as_ref(),
+        posix_thread,
+        CapSet::DAC_OVERRIDE,
+    ))
+    .is_ok()
 }
 
 impl dyn Inode {
