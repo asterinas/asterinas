@@ -74,8 +74,8 @@ pub(crate) fn get_acpi_tables() -> Option<&'static AcpiTables<AcpiMemoryHandler>
             BootloaderAcpiArg::Xsdt(addr) => unsafe {
                 AcpiTables::from_rsdt(AcpiMemoryHandler {}, 1, addr).unwrap()
             },
-            BootloaderAcpiArg::NotProvided => {
-                // We search by ourselves if the bootloader decides not to provide a rsdp location.
+            BootloaderAcpiArg::ScanBios => {
+                // SAFETY: The selected boot path permits legacy BIOS RSDP scanning.
                 let rsdp = unsafe { Rsdp::search_for_on_bios(AcpiMemoryHandler {}) };
                 match rsdp {
                     Ok(map) => unsafe {
@@ -86,6 +86,10 @@ pub(crate) fn get_acpi_tables() -> Option<&'static AcpiTables<AcpiMemoryHandler>
                         return SyncAcpiTables(None);
                     }
                 }
+            }
+            BootloaderAcpiArg::NotProvided => {
+                warn!("ACPI info not found!");
+                return SyncAcpiTables(None);
             }
         };
 
