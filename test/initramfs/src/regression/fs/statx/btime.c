@@ -114,7 +114,7 @@ FN_TEST(statx_btime_not_requested)
 	struct statx stx;
 	TEST_SUCC(syscall(SYS_statx, fd, "", AT_EMPTY_PATH, STATX_BASIC_STATS,
 			  &stx));
-	TEST_RES(0, (stx.stx_mask & STATX_BTIME) == 0);
+	TEST_RES(0, (stx.stx_mask & STATX_BTIME) != 0);
 }
 END_TEST()
 
@@ -122,7 +122,8 @@ FN_TEST(statx_btime_ramfs)
 {
 	struct statx stx;
 	TEST_SUCC(syscall(SYS_statx, fd, "", AT_EMPTY_PATH, STATX_BTIME, &stx));
-	TEST_RES(0, stx.stx_btime.tv_sec == 0 && stx.stx_btime.tv_nsec == 0);
+	TEST_RES(0, (stx.stx_mask & STATX_BTIME) != 0);
+	TEST_RES(0, stx.stx_btime.tv_sec != 0 || stx.stx_btime.tv_nsec != 0);
 }
 END_TEST()
 

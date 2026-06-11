@@ -292,6 +292,7 @@ struct InodeMeta {
     size: usize,
     blocks: usize,
     atime: Duration,
+    btime: Duration,
     mtime: Duration,
     ctime: Duration,
     mode: InodeMode,
@@ -307,6 +308,7 @@ impl InodeMeta {
             size: 0,
             blocks: 0,
             atime: now,
+            btime: now,
             mtime: now,
             ctime: now,
             mode,
@@ -322,6 +324,7 @@ impl InodeMeta {
             size: NUM_SPECIAL_ENTRIES,
             blocks: 1,
             atime: now,
+            btime: now,
             mtime: now,
             ctime: now,
             mode,
@@ -1309,7 +1312,7 @@ impl Inode for RamInode {
             } else {
                 DeviceId::from_encoded_u64(rdev)
             },
-            birth_at: None,
+            birth_at: Some(inode_metadata.btime),
         }
     }
 
