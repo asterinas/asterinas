@@ -40,4 +40,4 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM ERR
 
-${DISTRO_DIR}/result/bin/install_aster_nixos.sh --config ${CONFIG_PATH} --disk ${DISK}
+${DISTRO_DIR}/result/bin/aster-nixos-install --config ${CONFIG_PATH} --disk ${DISK}
