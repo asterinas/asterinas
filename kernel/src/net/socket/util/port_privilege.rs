@@ -4,7 +4,8 @@ use core::ops::Range;
 
 use crate::{
     prelude::*,
-    process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    security::lsm::hooks as lsm_hooks,
 };
 
 const PRIVILEGED_PORTS: Range<u16> = 0..1024;
@@ -15,17 +16,16 @@ pub fn check_port_privilege(port: u16) -> Result<()> {
         return Ok(());
     }
 
-    let credentials = {
-        let thread = current_thread!();
-        let posix_thread = thread.as_posix_thread().unwrap();
-        posix_thread.credentials()
-    };
-
     // This should be checked under the network namespace's owner user namespace, if we later
     // support those namespaces.
-    if credentials
-        .effective_capset()
-        .contains(CapSet::NET_BIND_SERVICE)
+    let thread = current_thread!();
+    let posix_thread = thread.as_posix_thread().unwrap();
+    if lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        UserNamespace::get_init_singleton().as_ref(),
+        posix_thread,
+        CapSet::NET_BIND_SERVICE,
+    ))
+    .is_ok()
     {
         return Ok(());
     }

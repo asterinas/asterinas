@@ -6,7 +6,7 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
 use super::super::{
     LsmFlags, LsmModule,
-    hooks::{AlienAccessContext, LsmAlienAccessHook},
+    hooks::{AlienAccessContext, LsmAlienAccessHook, LsmCapabilityHook},
 };
 use crate::{
     prelude::*,
@@ -15,6 +15,7 @@ use crate::{
         credentials::capabilities::CapSet,
         posix_thread::{AsPosixThread, alien_access::AlienAccessKind},
     },
+    security::lsm::hooks as lsm_hooks,
 };
 
 pub static YAMA_LSM: YamaLsm = YamaLsm;
@@ -28,16 +29,26 @@ impl LsmAlienAccessHook for YamaLsm {
             return Ok(());
         }
 
+        let accessor_has_cap_sys_ptrace = {
+            let target_process = context.target().process();
+            let target_user_ns = target_process.user_ns().lock();
+            lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                target_user_ns.as_ref(),
+                context.accessor(),
+                CapSet::SYS_PTRACE,
+            ))
+            .is_ok()
+        };
         let is_denied = match get_scope() {
             YamaScope::Disabled => false,
             YamaScope::Relational => {
-                !context.accessor_has_cap_sys_ptrace()
+                !accessor_has_cap_sys_ptrace
                     && !is_ancestor_of(
                         context.accessor().weak_process(),
                         context.target().process(),
                     )
             }
-            YamaScope::Capability => !context.accessor_has_cap_sys_ptrace(),
+            YamaScope::Capability => !accessor_has_cap_sys_ptrace,
             YamaScope::NoAttach => true,
         };
 
@@ -59,6 +70,8 @@ impl LsmModule for YamaLsm {
     }
 }
 
+impl LsmCapabilityHook for YamaLsm {}
+
 /// Returns the current Yama scope for alien access.
 pub fn get_scope() -> YamaScope {
     YAMA_SCOPE.load(Ordering::Relaxed)
@@ -66,10 +79,11 @@ pub fn get_scope() -> YamaScope {
 
 /// Sets the Yama scope for alien access.
 pub fn set_scope(new_scope: YamaScope) -> Result<()> {
-    UserNamespace::get_init_singleton().check_cap(
-        CapSet::SYS_PTRACE,
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        UserNamespace::get_init_singleton().as_ref(),
         current_thread!().as_posix_thread().unwrap(),
-    )?;
+        CapSet::SYS_PTRACE,
+    ))?;
 
     YAMA_SCOPE
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current_scope| {

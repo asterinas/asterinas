@@ -2,28 +2,33 @@
 
 //! Built-in LSM module registration and boot-time selection.
 //!
-//! Linux provides two kernel command-line parameters for choosing enabled LSM
-//! modules: `lsm=` is the modern ordered module list, while `security=` is the
-//! legacy selector for one major LSM.
+//! The kernel always enables mandatory LSMs first. The capability module is
+//! mandatory because ordinary capability enforcement must not depend on boot
+//! parameters.
+//! All other built-in LSM modules are optional and selected according to boot
+//! parameters.
 //!
-//! When `lsm=` is specified, its comma-separated module names are used as the
-//! enabled LSM stack in that order. Unknown module names are ignored with a
+//! Linux provides two kernel command-line parameters for choosing additional
+//! LSM modules: `lsm=` is the modern ordered module list, while `security=` is
+//! the legacy selector for one major LSM.
+//!
+//! When `lsm=` is specified, its comma-separated module names are appended after
+//! the mandatory modules in that order. Unknown module names are ignored with a
 //! warning, and duplicate names are ignored after their first selection.
 //!
-//! Exclusive modules listed in `lsm=` are also processed in order: the first
-//! selected exclusive module is kept, and later exclusive entries are ignored.
+//! Exclusive modules listed in `lsm=` are processed in order: the first selected
+//! exclusive module is kept, and later exclusive entries are ignored.
 //!
-//! When only `security=` is specified, the default LSM stack is selected first.
-//! The named module is then selected if it is a legacy major LSM; if it is also
-//! exclusive, it replaces the currently selected exclusive module.
-//!
-//! This means `security=` applies after the default stack, while `lsm=` fully
-//! controls the explicit module order.
+//! When only `security=` is specified, the default optional LSM stack is selected
+//! after the mandatory modules. The named module is then selected if it is a
+//! legacy major LSM; if it is also exclusive, it replaces the currently selected
+//! exclusive module.
 //!
 //! If both parameters are specified, `security=` is ignored because `lsm=`
-//! fully describes the enabled stack. If neither parameter is specified, the
-//! default LSM stack is used.
+//! describes the optional enabled stack. If neither parameter is specified, the
+//! mandatory modules plus the default optional stack are used.
 
+mod capability;
 pub mod yama;
 
 use spin::Once;
@@ -37,11 +42,14 @@ static LEGACY_SECURITY_PARAM: Once<String> = Once::new();
 aster_cmdline::define_kv_param!("lsm", LSM_PARAM);
 aster_cmdline::define_kv_param!("security", LEGACY_SECURITY_PARAM);
 
-/// All LSM modules compiled into the kernel.
-static ALL_MODULES: [&'static dyn LsmModule; 1] = [&yama::YAMA_LSM];
+/// LSM modules that are always enabled before boot-selected modules.
+static MANDATORY_MODULES: [&'static dyn LsmModule; 1] = [&capability::CAPABILITY_LSM];
 
-/// The fallback LSM stack used when no boot-time selector is specified.
-pub(super) static DEFAULT_MODULES: [&'static dyn LsmModule; 1] = [&yama::YAMA_LSM];
+/// All LSM modules compiled into the kernel.
+static ALL_MODULES: [&'static dyn LsmModule; 2] = [&capability::CAPABILITY_LSM, &yama::YAMA_LSM];
+
+/// The fallback optional LSM stack used when no boot-time selector is specified.
+pub(super) static DEFAULT_OPTIONAL_MODULES: [&'static dyn LsmModule; 1] = [&yama::YAMA_LSM];
 
 static ALL_MODULES_BY_NAME: Once<BTreeMap<&'static str, &'static dyn LsmModule>> = Once::new();
 static ACTIVE_MODULES: Once<Box<[&'static dyn LsmModule]>> = Once::new();
@@ -72,6 +80,9 @@ impl ModuleSelection {
         modules_by_name: &BTreeMap<&'static str, &'static dyn LsmModule>,
     ) -> Self {
         let mut selection = Self::default();
+        for module in MANDATORY_MODULES {
+            selection.push(module);
+        }
 
         match (LSM_PARAM.get(), LEGACY_SECURITY_PARAM.get()) {
             (Some(lsm_param), security_param) => {
@@ -93,7 +104,7 @@ impl ModuleSelection {
                 }
             }
             (None, security_param) => {
-                for module in DEFAULT_MODULES.iter().copied() {
+                for module in DEFAULT_OPTIONAL_MODULES.iter().copied() {
                     selection.push(module);
                 }
 

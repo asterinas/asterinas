@@ -12,6 +12,7 @@ use crate::{
         },
         posix_thread::ContextPthreadAdminApi,
     },
+    security::lsm::hooks as lsm_hooks,
 };
 
 pub fn sys_capset(
@@ -61,9 +62,13 @@ pub fn sys_capset(
     }
     if !(credentials.inheritable_capset() | credentials.permitted_capset())
         .contains(inheritable_capset)
-        && !credentials.effective_capset().contains(CapSet::SETPCAP)
     {
-        return_errno_with_message!(Errno::EPERM, "inheritable capabilities are not permitted");
+        let current_user_ns = ctx.thread_local.borrow_user_ns();
+        lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+            current_user_ns.as_ref(),
+            ctx.posix_thread,
+            CapSet::SETPCAP,
+        ))?;
     }
     if !(credentials.inheritable_capset() | credentials.bounding_capset())
         .contains(inheritable_capset)

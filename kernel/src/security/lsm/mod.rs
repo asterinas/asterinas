@@ -7,8 +7,8 @@
 //! inspect common hook contexts before allowing or rejecting an operation.
 //!
 //! This module defines the common LSM traits and hook contexts shared by
-//! built-in modules such as `yama`. Module selection follows the `lsm=` and
-//! legacy `security=` kernel command-line parameters.
+//! built-in modules such as `capability` and `yama`. Module selection follows
+//! the `lsm=` and legacy `security=` kernel command-line parameters.
 
 pub mod hooks;
 mod modules;
@@ -17,7 +17,7 @@ pub mod yama {
     pub use super::modules::yama::{YamaScope, get_scope, set_scope};
 }
 
-use self::hooks::LsmAlienAccessHook;
+use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook};
 use crate::prelude::*;
 
 bitflags! {
@@ -31,7 +31,7 @@ bitflags! {
 }
 
 /// The common interface for built-in LSM modules.
-trait LsmModule: LsmAlienAccessHook + Sync {
+trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
     /// Returns the module name.
     fn name(&self) -> &'static str;
 
