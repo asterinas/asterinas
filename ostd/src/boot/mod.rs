@@ -52,8 +52,10 @@ static INFO: Once<BootInfo> = Once::new();
 /// This is because bootloaders differ in such behaviors.
 #[derive(Clone, Copy, Debug)]
 pub enum BootloaderAcpiArg {
-    /// The bootloader does not provide one, a manual search is needed.
+    /// The bootloader does not provide one.
     NotProvided,
+    /// The boot path permits scanning legacy BIOS regions for the RSDP.
+    ScanBios,
     /// Physical address of the RSDP.
     Rsdp(usize),
     /// Address of RSDT provided in RSDP v1.
