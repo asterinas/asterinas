@@ -99,8 +99,6 @@ int main(void)
 		return 3;
 	}
 
-	char buf[4096]
-		__attribute__((aligned(__alignof__(struct inotify_event))));
 	/* FIONREAD should indicate pending bytes before read */
 	int pending = 0;
 	if (ioctl(ifd, FIONREAD, &pending) < 0)
@@ -109,6 +107,13 @@ int main(void)
 		fprintf(stderr, "FIONREAD should be > 0 when POLLIN set\n");
 		return 5;
 	}
+
+	/* Wait for the child to finish so all events are queued, then drain. */
+	int status = 0;
+	waitpid(pid, &status, 0);
+
+	char buf[4096]
+		__attribute__((aligned(__alignof__(struct inotify_event))));
 	ssize_t len = read(ifd, buf, sizeof(buf));
 	if (len < 0)
 		die("read");
@@ -129,8 +134,6 @@ int main(void)
 		}
 	}
 
-	int status = 0;
-	waitpid(pid, &status, 0);
 	close(ifd);
 	unlink(file);
 	rmdir(dir);
