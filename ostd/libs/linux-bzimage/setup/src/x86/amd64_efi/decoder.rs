@@ -7,8 +7,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::convert::TryFrom;
 
-use libflate::{gzip, zlib};
-use no_std_io2::io::Read;
+use zune_inflate::DeflateDecoder;
 
 enum MagicNumber {
     Elf,
@@ -34,20 +33,10 @@ impl TryFrom<&[u8]> for MagicNumber {
 
 /// Detects the format used to encode the payload and decodes the payload accordingly.
 pub fn decode_payload(payload: &[u8]) -> Vec<u8> {
-    let mut kernel = Vec::new();
     let magic = MagicNumber::try_from(payload).unwrap();
     match magic {
-        MagicNumber::Elf => {
-            kernel = payload.to_vec();
-        }
-        MagicNumber::Gzip => {
-            let mut decoder = gzip::Decoder::new(payload).unwrap();
-            decoder.read_to_end(&mut kernel).unwrap();
-        }
-        MagicNumber::Zlib => {
-            let mut decoder = zlib::Decoder::new(payload).unwrap();
-            decoder.read_to_end(&mut kernel).unwrap();
-        }
+        MagicNumber::Elf => payload.to_vec(),
+        MagicNumber::Gzip => DeflateDecoder::new(payload).decode_gzip().unwrap(),
+        MagicNumber::Zlib => DeflateDecoder::new(payload).decode_zlib().unwrap(),
     }
-    kernel
 }

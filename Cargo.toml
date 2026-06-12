@@ -250,6 +250,7 @@ xmas-elf = "0.10.0"
 # Note: when updating the zerocopy version, 
 # also update it in `ostd/libs/ostd-pod/README.md`.
 zerocopy = { version = "0.8.34", features = [ "derive" ] }
+zune-inflate = { version = "0.2", default-features = false, features = ["gzip", "zlib"] }
 
 # Proc-macro dependencies
 proc-macro2 = { version = "1.0.95", features = ["span-locations"] }
