@@ -46,7 +46,6 @@ io-util.workspace = true
 jhash.workspace = true
 keyable-arc.workspace = true
 lending-iterator.workspace = true
-libflate.workspace = true
 logo-ascii-art.workspace = true
 lru.workspace = true
 no_std_io2.workspace = true
@@ -69,6 +68,7 @@ typeflags-util.workspace = true
 xarray.workspace = true
 xmas-elf.workspace = true
 zerocopy.workspace = true
+zune-inflate.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
 tdx-guest = { version = "0.2.4", optional = true }
