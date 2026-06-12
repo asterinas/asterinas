@@ -156,6 +156,15 @@ impl PageCache {
         self.0.size()
     }
 
+    /// Submits speculative read-side population for the specified page-index range.
+    ///
+    /// The operation is best-effort and submission-synchronous: missing pages
+    /// may have backend reads submitted, but this method does not wait for all
+    /// prefetched pages to become readable.
+    pub fn readahead(&self, page_idx_range: Range<usize>) -> Result<()> {
+        self.0.readahead(page_idx_range)
+    }
+
     /// Returns the writable mapping status of the underlying VMO.
     pub fn writable_mapping_status(&self) -> &WritableMappingStatus {
         self.0.writable_mapping_status()
@@ -292,7 +301,6 @@ impl PageCache {
     // TODO: Integrate a reverse-mapping lock or equivalent synchronization so
     // eviction can coordinate with mapped pages and concurrent page faults
     // before removing cached pages from the page cache.
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let Some(vmo) = self.0.as_backed_vmo() else {
             return Ok(());

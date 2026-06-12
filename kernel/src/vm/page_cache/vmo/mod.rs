@@ -218,6 +218,16 @@ impl Vmo {
         self.commit_on_internal(page_idx, CommitMode::Read)
     }
 
+    /// Submits read-side page-cache population for the specified page-index range.
+    pub(super) fn readahead(&self, page_idx_range: Range<usize>) -> Result<()> {
+        let Some(backed_vmo) = self.as_backed_vmo() else {
+            // Anonymous VMOs (e.g., ramfs) have no I/O latency to hide.
+            return Ok(());
+        };
+
+        backed_vmo.readahead(page_idx_range)
+    }
+
     fn commit_on_internal(&self, page_idx: usize, commit_mode: CommitMode) -> Result<CachePage> {
         if let Some(backed_vmo) = self.as_backed_vmo() {
             return backed_vmo.commit_on_internal(page_idx, commit_mode);
@@ -690,6 +700,47 @@ pub struct BackedVmo<'a> {
 }
 
 impl<'a> BackedVmo<'a> {
+    /// Submits read I/O for pages in the specified page-index range.
+    fn readahead(&self, page_idx_range: Range<usize>) -> Result<()> {
+        let page_count = self.size().div_ceil(PAGE_SIZE);
+        let readahead_end_idx = page_idx_range.end.min(page_count);
+        if page_idx_range.start >= readahead_end_idx {
+            return Ok(());
+        }
+
+        let page_idx_range = page_idx_range.start..readahead_end_idx;
+        let mut io_batch = IoBatch::with_capacity(page_idx_range.len());
+
+        for page_idx in page_idx_range {
+            self.readahead_one(page_idx, &mut io_batch)?;
+        }
+
+        Ok(())
+    }
+
+    /// Submits read I/O for a specific page.
+    fn readahead_one(&self, page_idx: usize, io_batch: &mut IoBatch) -> Result<()> {
+        let mut locked_pages = self.vmo.pages.lock();
+        if page_idx >= self.size().div_ceil(PAGE_SIZE) {
+            return_errno_with_message!(Errno::EINVAL, "the page index is out of range");
+        }
+
+        let mut cursor = locked_pages.cursor_mut(page_idx as u64);
+        if cursor.load().is_some() {
+            return Ok(());
+        }
+
+        let page = CachePage::alloc_uninit()?;
+        let Some(locked_page) = page.try_lock() else {
+            return Ok(());
+        };
+        cursor.store(locked_page.clone());
+        drop(locked_pages);
+
+        self.backend
+            .read_page_async(page_idx, locked_page, io_batch)
+    }
+
     /// Writes back dirty pages in the specified byte range to the backend storage.
     pub(super) fn flush_dirty_pages(&self, range: &Range<usize>) -> Result<()> {
         let locked_pages = self.vmo.pages.lock();
