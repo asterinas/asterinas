@@ -5,6 +5,8 @@
 
 use core::marker::PhantomData;
 
+use ostd::task::Task;
+
 use super::message::{RtnlMessage, RtnlSegment};
 use crate::{
     net::socket::netlink::{
@@ -15,16 +17,26 @@ use crate::{
     prelude::*,
 };
 
-mod addr;
-mod link;
-mod util;
+pub(in crate::net) mod addr;
+pub(in crate::net) mod link;
+pub(in crate::net) mod util;
 
-pub(super) struct NetlinkRouteKernelSocket {
+/// The kernel-side netlink route socket.
+///
+/// Each network namespace owns one instance of this socket, which handles
+/// netlink route requests (e.g. link/address queries) originating from
+/// user space within that namespace.
+///
+/// This is a zero-sized type (contains only `PhantomData`), so it is
+/// `Copy` — we can return it by value from a per-namespace lookup
+/// without needing `unsafe` lifetime extension.
+#[derive(Copy, Clone)]
+pub(in crate::net) struct NetlinkRouteKernelSocket {
     _private: PhantomData<()>,
 }
 
 impl NetlinkRouteKernelSocket {
-    const fn new() -> Self {
+    pub(in crate::net) const fn new() -> Self {
         Self {
             _private: PhantomData,
         }
@@ -70,9 +82,15 @@ impl NetlinkRouteKernelSocket {
     }
 }
 
-/// FIXME: NETLINK_ROUTE_KERNEL should be a per-network namespace socket
-static NETLINK_ROUTE_KERNEL: NetlinkRouteKernelSocket = NetlinkRouteKernelSocket::new();
-
-pub(super) fn get_netlink_route_kernel() -> &'static NetlinkRouteKernelSocket {
-    &NETLINK_ROUTE_KERNEL
+/// Returns the kernel-side netlink route socket for the current thread's
+/// network namespace.
+///
+/// `NetlinkRouteKernelSocket` is a zero-sized `Copy` type, so we return it
+/// by value from the per-namespace instance — no `unsafe` required.
+pub(super) fn get_netlink_route_kernel() -> NetlinkRouteKernelSocket {
+    let current_task = Task::current().unwrap();
+    let thread_local = current_task.as_thread_local().unwrap();
+    let ns_proxy_ref = thread_local.borrow_ns_proxy();
+    let ns_proxy = ns_proxy_ref.unwrap();
+    ns_proxy.net_ns().netlink_route_kernel()
 }

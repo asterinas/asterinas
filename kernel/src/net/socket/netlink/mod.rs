@@ -43,7 +43,7 @@ mod kobject_uevent;
 mod message;
 mod options;
 mod receiver;
-mod route;
+pub(in crate::net) mod route;
 mod table;
 
 pub use addr::{GroupIdSet, NetlinkSocketAddr};

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub mod iface;
+pub mod net_ns;
 pub mod socket;
 pub mod uts_ns;
 

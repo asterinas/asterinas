@@ -20,7 +20,7 @@ use crate::{
         },
     },
     ipc::IpcNamespace,
-    net::uts_ns::UtsNamespace,
+    net::{net_ns::NetNamespace, uts_ns::UtsNamespace},
     prelude::*,
     process::{NsProxy, UserNamespace, posix_thread::AsPosixThread},
     thread::Thread,
@@ -52,13 +52,15 @@ enum NsProxyEntry {
     Ipc,
     /// The mount namespace.
     Mnt,
+    /// The network namespace.
+    Net,
     /// The UTS namespace.
     Uts,
 }
 
 impl NsProxyEntry {
     /// All supported `NsProxy`-backed namespace entries.
-    const ALL: &[Self] = &[Self::Cgroup, Self::Ipc, Self::Mnt, Self::Uts];
+    const ALL: &[Self] = &[Self::Cgroup, Self::Ipc, Self::Mnt, Self::Net, Self::Uts];
 
     /// Returns the filename of this namespace entry under `/proc/[pid]/ns/`.
     fn as_str(self) -> &'static str {
@@ -66,6 +68,7 @@ impl NsProxyEntry {
             Self::Cgroup => "cgroup",
             Self::Ipc => "ipc",
             Self::Mnt => "mnt",
+            Self::Net => "net",
             Self::Uts => "uts",
         }
     }
@@ -76,6 +79,7 @@ impl NsProxyEntry {
             "cgroup" => Some(Self::Cgroup),
             "ipc" => Some(Self::Ipc),
             "mnt" => Some(Self::Mnt),
+            "net" => Some(Self::Net),
             "uts" => Some(Self::Uts),
             _ => None,
         }
@@ -104,6 +108,11 @@ impl NsProxyEntry {
                 ns_proxy.mnt_ns().get_path(),
                 parent,
             ),
+            Self::Net => NsSymOps::<NetNamespace>::new_inode(
+                dir.clone(),
+                ns_proxy.net_ns().get_path(),
+                parent,
+            ),
             Self::Uts => NsSymOps::<UtsNamespace>::new_inode(
                 dir.clone(),
                 ns_proxy.uts_ns().get_path(),
@@ -124,6 +133,9 @@ fn cached_ns_path(inode: &dyn Inode) -> Option<&Path> {
         return Some(&sym.inner().ns_path);
     }
     if let Some(sym) = inode.downcast_ref::<NsSymlink<MountNamespace>>() {
+        return Some(&sym.inner().ns_path);
+    }
+    if let Some(sym) = inode.downcast_ref::<NsSymlink<NetNamespace>>() {
         return Some(&sym.inner().ns_path);
     }
     if let Some(sym) = inode.downcast_ref::<NsSymlink<UserNamespace>>() {
