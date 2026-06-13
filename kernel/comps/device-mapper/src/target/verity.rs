@@ -43,7 +43,7 @@ use crate::{
 const DIGEST_SIZE: usize = 32;
 /// The number of 512-byte sectors per block.
 const SECTORS_PER_BLOCK: u64 = (BLOCK_SIZE / SECTOR_SIZE) as u64;
-/// The number of arguments in a `verity` table line.
+/// The number of mandatory arguments in a `verity` table line.
 const NR_TABLE_ARGS: usize = 10;
 
 /// One level of the hash tree, in the order it is stored on the hash device.
@@ -100,6 +100,7 @@ pub struct VerityTarget {
     data_device: Arc<dyn BlockDevice>,
     hash_device: Arc<dyn BlockDevice>,
     num_data_blocks: u64,
+    size_sectors: u64,
     version: u8,
     salt: Vec<u8>,
     root_digest: [u8; DIGEST_SIZE],
@@ -120,12 +121,16 @@ impl VerityTarget {
     /// Supports SHA-256 with 4096-byte data and hash blocks; the salt may be
     /// `-` to denote an empty salt.
     pub fn from_table_args(args: &[&str]) -> Result<Self, DmErrorWithContext> {
-        if args.len() != NR_TABLE_ARGS {
+        if args.len() != NR_TABLE_ARGS && args.len() != NR_TABLE_ARGS + 1 {
             return Err(DmError::InvalidTable.context(
                 "verity target expects: <version> <data_dev> <hash_dev> \
                  <data_block_size> <hash_block_size> <num_data_blocks> \
-                 <hash_start_block> <algorithm> <root_digest> <salt>",
+                 <hash_start_block> <algorithm> <root_digest> <salt> [0]",
             ));
+        }
+        if args.len() == NR_TABLE_ARGS + 1 && args[NR_TABLE_ARGS] != "0" {
+            return Err(DmError::UnsupportedTarget
+                .context("verity target optional parameters are not supported"));
         }
 
         let version = parse_field::<u8>(args[0], "verity version")?;
@@ -170,11 +175,30 @@ impl VerityTarget {
         let hashes_per_block = (BLOCK_SIZE / DIGEST_SIZE) as u64;
         let levels = build_hash_levels(num_data_blocks, hashes_per_block, hash_start_block)
             .map_err(|err| err.context("verity hash tree geometry is invalid"))?;
+        let size_sectors = num_data_blocks
+            .checked_mul(SECTORS_PER_BLOCK)
+            .ok_or_else(|| DmError::InvalidArgument.context("verity data device is too large"))?;
+        if size_sectors > data_device.metadata().nr_sectors as u64 {
+            return Err(DmError::InvalidArgument
+                .context("verity data device is smaller than the table geometry"));
+        }
+        let hash_end_block = levels
+            .last()
+            .and_then(|level| level.first_block.checked_add(level.nr_blocks))
+            .ok_or_else(|| DmError::InvalidArgument.context("verity hash tree is too large"))?;
+        let hash_end_sector = hash_end_block
+            .checked_mul(SECTORS_PER_BLOCK)
+            .ok_or_else(|| DmError::InvalidArgument.context("verity hash device is too large"))?;
+        if hash_end_sector > hash_device.metadata().nr_sectors as u64 {
+            return Err(DmError::InvalidArgument
+                .context("verity hash device is smaller than the table geometry"));
+        }
 
         Ok(Self {
             data_device,
             hash_device,
             num_data_blocks,
+            size_sectors,
             version,
             salt,
             root_digest,
@@ -207,10 +231,15 @@ impl VerityTarget {
                 return false;
             }
 
-            let hash_block_index = level.first_block + block_in_level;
+            let Some(hash_block_index) = level.first_block.checked_add(block_in_level) else {
+                return false;
+            };
+            let Some(hash_block_offset) = block_offset(hash_block_index) else {
+                return false;
+            };
             if self
                 .hash_device
-                .read_bytes(hash_block_index as usize * BLOCK_SIZE, hash_scratch)
+                .read_bytes(hash_block_offset, hash_scratch)
                 .is_err()
             {
                 return false;
@@ -238,7 +267,10 @@ impl VerityTarget {
         // (the generic partition scanner, for instance, reads a single sector).
         // Each overlapping block is read and verified once, then the requested
         // byte range is scattered into the request's memory segments.
-        let mut device_offset = target_start_sector as usize * SECTOR_SIZE;
+        let Some(mut device_offset) = sector_offset(target_start_sector) else {
+            bio.complete(BioStatus::IoError);
+            return;
+        };
 
         let mut data_block = super::zero_vec(BLOCK_SIZE);
         let mut hash_scratch = super::zero_vec(BLOCK_SIZE);
@@ -255,7 +287,10 @@ impl VerityTarget {
                 }
 
                 if cached_block != Some(block_index) {
-                    let block_offset = block_index as usize * BLOCK_SIZE;
+                    let Some(block_offset) = block_offset(block_index) else {
+                        bio.complete(BioStatus::IoError);
+                        return;
+                    };
                     if self
                         .data_device
                         .read_bytes(block_offset, &mut data_block)
@@ -283,7 +318,11 @@ impl VerityTarget {
                 }
 
                 segment_offset += chunk;
-                device_offset += chunk;
+                let Some(next_device_offset) = device_offset.checked_add(chunk) else {
+                    bio.complete(BioStatus::IoError);
+                    return;
+                };
+                device_offset = next_device_offset;
             }
         }
 
@@ -297,7 +336,7 @@ impl DmTarget for VerityTarget {
     }
 
     fn size_sectors(&self) -> Option<u64> {
-        Some(self.num_data_blocks * SECTORS_PER_BLOCK)
+        Some(self.size_sectors)
     }
 
     fn handle_bio(&self, bio: SubmittedBio, target_start_sector: u64) {
@@ -308,4 +347,12 @@ impl DmTarget for VerityTarget {
             BioType::Flush => bio.complete(BioStatus::Complete),
         }
     }
+}
+
+fn sector_offset(sector: u64) -> Option<usize> {
+    usize::try_from(sector).ok()?.checked_mul(SECTOR_SIZE)
+}
+
+fn block_offset(block: u64) -> Option<usize> {
+    usize::try_from(block).ok()?.checked_mul(BLOCK_SIZE)
 }

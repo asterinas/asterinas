@@ -42,9 +42,7 @@ use spin::Once;
 pub use self::{
     device::DmDevice,
     error::{DmError, DmErrorWithContext},
-    parser::{DmCreateArg, parse_create_arg},
-    registry::{create_device, list_devices, lookup_device, remove_device},
-    table::{DmTable, DmTableSegment},
+    parser::DmCreateArg,
 };
 
 static DM_CREATE_ARGS: Once<Vec<DmCreateArg>> = Once::new();
@@ -56,12 +54,12 @@ fn init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
-#[init_component(kthread)]
-fn init_in_first_kthread() -> Result<(), ComponentInitError> {
+#[init_component(process)]
+fn init_in_first_process() -> Result<(), ComponentInitError> {
     let create_args = DM_CREATE_ARGS.get().cloned().unwrap_or_default();
     for (index, arg) in create_args.iter().enumerate() {
-        match parse_create_arg(arg.as_str(), index) {
-            Ok(parsed) => match create_device(parsed.name.clone(), parsed.table) {
+        match parser::parse_create_arg(arg.as_str(), index) {
+            Ok(parsed) => match registry::create_device(parsed.name.clone(), parsed.table) {
                 Ok(device) => {
                     ostd::info!("created dm device '{}' ({:?})", device.name(), device.id());
                 }
@@ -99,16 +97,21 @@ mod tests {
         id::Sid,
     };
     use device_id::{DeviceId, MajorId, MinorId};
+    use io_util::batch::IoBatch;
     use ostd::{
         mm::{FrameAllocOptions, Segment, VmIo, io::util::HasVmReaderWriter},
         prelude::*,
     };
 
     use super::{
+        DmError,
         device::DmDevice,
         table::{DmTable, DmTableSegment},
         target::{
-            error::ErrorTarget, linear::LinearTarget, verity::build_hash_levels, zero::ZeroTarget,
+            error::ErrorTarget,
+            linear::LinearTarget,
+            verity::{VerityTarget, build_hash_levels},
+            zero::ZeroTarget,
         },
     };
 
@@ -118,6 +121,14 @@ mod tests {
         id: DeviceId,
         bytes: Segment<()>,
         flushes: AtomicUsize,
+    }
+
+    #[derive(Debug)]
+    struct OffsetBlockDevice {
+        name: &'static str,
+        id: DeviceId,
+        inner: Arc<DmDevice>,
+        sid_offset: u64,
     }
 
     struct RegisteredDiskGuard(DeviceId);
@@ -161,7 +172,11 @@ mod tests {
 
             let mut offset = bio.sid_range().start.to_offset();
             for segment in bio.segments() {
-                if offset + segment.nbytes() > self.bytes.size() {
+                let Some(end_offset) = offset.checked_add(segment.nbytes()) else {
+                    bio.complete(BioStatus::IoError);
+                    return Ok(());
+                };
+                if end_offset > self.bytes.size() {
                     bio.complete(BioStatus::IoError);
                     return Ok(());
                 }
@@ -182,7 +197,7 @@ mod tests {
                     }
                     BioType::Flush => unreachable!(),
                 }
-                offset += segment.nbytes();
+                offset = end_offset;
             }
             bio.complete(BioStatus::Complete);
             Ok(())
@@ -204,15 +219,50 @@ mod tests {
         }
     }
 
-    fn read_device(device: &dyn BlockDevice, offset: usize, len: usize) -> (BioStatus, Vec<u8>) {
+    impl BlockDevice for OffsetBlockDevice {
+        fn enqueue(&self, mut bio: SubmittedBio) -> Result<(), BioEnqueueError> {
+            bio.set_sid_offset(self.sid_offset);
+            self.inner.enqueue(bio)
+        }
+
+        fn metadata(&self) -> BlockDeviceMeta {
+            let mut metadata = self.inner.metadata();
+            metadata.nr_sectors = metadata.nr_sectors.saturating_sub(self.sid_offset as usize);
+            metadata
+        }
+
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        fn id(&self) -> DeviceId {
+            self.id
+        }
+    }
+
+    fn read_offset_device(
+        device: &OffsetBlockDevice,
+        dm: &DmDevice,
+        offset: usize,
+        len: usize,
+    ) -> (BioStatus, Vec<u8>) {
+        let status = Arc::new(AtomicUsize::new(BioStatus::Init as usize));
+        let complete_status = status.clone();
         let segment = BioSegment::alloc(len.div_ceil(BLOCK_SIZE), BioDirection::FromDevice);
         let bio = Bio::new(
             BioType::Read,
             Sid::from_offset(offset),
             vec![segment.clone()],
-            None,
+            Some(Box::new(move |bio_status| {
+                complete_status.store(bio_status as usize, Ordering::Relaxed);
+            })),
         );
-        let status = bio.submit_and_wait(device).unwrap();
+        let mut io_batch = IoBatch::with_capacity(1);
+        bio.submit(device, &mut io_batch).unwrap();
+        dm.handle_requests();
+        let _ = io_batch.wait_all();
+
+        let status = BioStatus::try_from(status.load(Ordering::Relaxed) as u32).unwrap();
         let mut bytes = vec![0u8; len];
         if status == BioStatus::Complete {
             segment.inner_dma_slice().read_bytes(0, &mut bytes).unwrap();
@@ -220,16 +270,43 @@ mod tests {
         (status, bytes)
     }
 
-    fn write_device(device: &dyn BlockDevice, offset: usize, bytes: &[u8]) -> BioStatus {
+    fn submit_device_io(
+        device: &DmDevice,
+        type_: BioType,
+        offset: usize,
+        segments: Vec<BioSegment>,
+    ) -> BioStatus {
+        let status = Arc::new(AtomicUsize::new(BioStatus::Init as usize));
+        let complete_status = status.clone();
+        let bio = Bio::new(
+            type_,
+            Sid::from_offset(offset),
+            segments,
+            Some(Box::new(move |bio_status| {
+                complete_status.store(bio_status as usize, Ordering::Relaxed);
+            })),
+        );
+        let mut io_batch = IoBatch::with_capacity(1);
+        bio.submit(device, &mut io_batch).unwrap();
+        device.handle_requests();
+        let _ = io_batch.wait_all();
+        BioStatus::try_from(status.load(Ordering::Relaxed) as u32).unwrap()
+    }
+
+    fn read_device(device: &DmDevice, offset: usize, len: usize) -> (BioStatus, Vec<u8>) {
+        let segment = BioSegment::alloc(len.div_ceil(BLOCK_SIZE), BioDirection::FromDevice);
+        let status = submit_device_io(device, BioType::Read, offset, vec![segment.clone()]);
+        let mut bytes = vec![0u8; len];
+        if status == BioStatus::Complete {
+            segment.inner_dma_slice().read_bytes(0, &mut bytes).unwrap();
+        }
+        (status, bytes)
+    }
+
+    fn write_device(device: &DmDevice, offset: usize, bytes: &[u8]) -> BioStatus {
         let segment = BioSegment::alloc(bytes.len().div_ceil(BLOCK_SIZE), BioDirection::ToDevice);
         segment.inner_dma_slice().write_bytes(0, bytes).unwrap();
-        let bio = Bio::new(
-            BioType::Write,
-            Sid::from_offset(offset),
-            vec![segment],
-            None,
-        );
-        bio.submit_and_wait(device).unwrap()
+        submit_device_io(device, BioType::Write, offset, vec![segment])
     }
 
     fn digest_v1(block: &[u8], salt: &[u8]) -> [u8; 32] {
@@ -306,6 +383,37 @@ mod tests {
     }
 
     #[ktest]
+    fn dm_device_honors_submitted_bio_sid_offset() {
+        let lower = Arc::new(MemoryDisk::new("sid-offset-lower", 14, 8));
+        let first_block = vec![0x11u8; BLOCK_SIZE];
+        let second_block = vec![0x22u8; BLOCK_SIZE];
+        lower.write_bytes_at(0, &first_block);
+        lower.write_bytes_at(BLOCK_SIZE, &second_block);
+
+        let table = DmTable::new(vec![DmTableSegment {
+            start_sector: 0,
+            len_sectors: (4 * BLOCK_SIZE / SECTOR_SIZE) as u64,
+            target: Box::new(LinearTarget::new(lower.clone(), 0)),
+        }])
+        .unwrap();
+        let dm = Arc::new(DmDevice::new(
+            "dm-sid-offset-test".into(),
+            DeviceId::null(),
+            table,
+        ));
+        let partition = OffsetBlockDevice {
+            name: "dm-sid-offset-test1",
+            id: DeviceId::null(),
+            inner: dm.clone(),
+            sid_offset: (BLOCK_SIZE / SECTOR_SIZE) as u64,
+        };
+
+        let (status, read_back) = read_offset_device(&partition, &dm, 0, BLOCK_SIZE);
+        assert_eq!(status, BioStatus::Complete);
+        assert_eq!(read_back, second_block);
+    }
+
+    #[ktest]
     fn zero_and_error_targets_have_expected_io_behavior() {
         let zero_table = DmTable::new(vec![DmTableSegment {
             start_sector: 0,
@@ -346,7 +454,7 @@ mod tests {
         root_hex: &str,
         salt_hex: &str,
     ) -> DmDevice {
-        let verity = super::target::verity::VerityTarget::from_table_args(&[
+        let verity = VerityTarget::from_table_args(&[
             "1",
             data_name,
             hash_name,
@@ -464,6 +572,94 @@ mod tests {
     }
 
     #[ktest]
+    fn verity_target_rejects_undersized_lower_devices() {
+        let data_disk = Arc::new(MemoryDisk::new("verity-small-data", 12, 1));
+        let hash_disk = Arc::new(MemoryDisk::new("verity-small-hash", 13, 1));
+        aster_block::register(data_disk.clone() as Arc<dyn BlockDevice>).unwrap();
+        aster_block::register(hash_disk.clone() as Arc<dyn BlockDevice>).unwrap();
+        let _data_guard = RegisteredDiskGuard(data_disk.id());
+        let _hash_guard = RegisteredDiskGuard(hash_disk.id());
+
+        let root_hex = to_hex(&[0u8; 32]);
+        let salt_hex = to_hex(&[0x7bu8; 16]);
+        let result = VerityTarget::from_table_args(&[
+            "1",
+            "verity-small-data",
+            "verity-small-hash",
+            &BLOCK_SIZE.to_string(),
+            &BLOCK_SIZE.to_string(),
+            "2",
+            "0",
+            "sha256",
+            &root_hex,
+            &salt_hex,
+        ]);
+        assert_eq!(result.unwrap_err().kind, DmError::InvalidArgument);
+
+        let result = VerityTarget::from_table_args(&[
+            "1",
+            "verity-small-data",
+            "verity-small-hash",
+            &BLOCK_SIZE.to_string(),
+            &BLOCK_SIZE.to_string(),
+            "1",
+            "1",
+            "sha256",
+            &root_hex,
+            &salt_hex,
+        ]);
+        assert_eq!(result.unwrap_err().kind, DmError::InvalidArgument);
+    }
+
+    #[ktest]
+    fn verity_target_accepts_zero_optional_params() {
+        let data_disk = Arc::new(MemoryDisk::new("verity-opt-data", 15, 2));
+        let hash_disk = Arc::new(MemoryDisk::new("verity-opt-hash", 16, 2));
+        aster_block::register(data_disk.clone() as Arc<dyn BlockDevice>).unwrap();
+        aster_block::register(hash_disk.clone() as Arc<dyn BlockDevice>).unwrap();
+        let _data_guard = RegisteredDiskGuard(data_disk.id());
+        let _hash_guard = RegisteredDiskGuard(hash_disk.id());
+
+        let data_blocks = vec![vec![0x11u8; BLOCK_SIZE]];
+        let salt = [0x7bu8; 16];
+        let root_digest = install_verity_tree(&data_disk, &hash_disk, &data_blocks, &salt, 0);
+        let root_hex = to_hex(&root_digest);
+        let salt_hex = to_hex(&salt);
+        let target = VerityTarget::from_table_args(&[
+            "1",
+            "verity-opt-data",
+            "verity-opt-hash",
+            &BLOCK_SIZE.to_string(),
+            &BLOCK_SIZE.to_string(),
+            "1",
+            "0",
+            "sha256",
+            &root_hex,
+            &salt_hex,
+            "0",
+        ]);
+        assert!(target.is_ok());
+    }
+
+    #[ktest]
+    fn verity_target_rejects_nonzero_optional_params() {
+        let result = VerityTarget::from_table_args(&[
+            "1",
+            "missing-data",
+            "missing-hash",
+            &BLOCK_SIZE.to_string(),
+            &BLOCK_SIZE.to_string(),
+            "1",
+            "0",
+            "sha256",
+            &to_hex(&[0u8; 32]),
+            "-",
+            "1",
+        ]);
+        assert_eq!(result.unwrap_err().kind, DmError::UnsupportedTarget);
+    }
+
+    #[ktest]
     fn verity_target_verifies_multi_level_tree() {
         // 130 data blocks force a two-level hash tree (128 digests fit in one
         // 4096-byte hash block), exercising the level-by-level walk that the
@@ -541,7 +737,7 @@ mod tests {
         let arg = alloc::format!("\"{}\"", table)
             .parse::<super::DmCreateArg>()
             .unwrap();
-        let parsed = super::parse_create_arg(arg.as_str(), 0).unwrap();
+        let parsed = super::parser::parse_create_arg(arg.as_str(), 0).unwrap();
         assert_eq!(parsed.name, "dm-verity-it");
 
         let dm = DmDevice::new(parsed.name.clone(), DeviceId::null(), parsed.table);

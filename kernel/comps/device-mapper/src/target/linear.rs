@@ -45,7 +45,21 @@ impl DmTarget for LinearTarget {
     fn handle_bio(&self, bio: SubmittedBio, target_start_sector: u64) {
         // Reissue the request to the lower device with the same memory segments
         // (which share the underlying DMA buffers) at the remapped sector.
-        let lower_start = Sid::new(self.start_sector + target_start_sector);
+        let request_sectors = bio.sid_range().end.to_raw() - bio.sid_range().start.to_raw();
+        let Some(lower_start_sector) = self.start_sector.checked_add(target_start_sector) else {
+            bio.complete(BioStatus::IoError);
+            return;
+        };
+        let Some(lower_end_sector) = lower_start_sector.checked_add(request_sectors) else {
+            bio.complete(BioStatus::IoError);
+            return;
+        };
+        if lower_end_sector > self.lower.metadata().nr_sectors as u64 {
+            bio.complete(BioStatus::IoError);
+            return;
+        }
+
+        let lower_start = Sid::new(lower_start_sector);
         let lower_bio = Bio::new(bio.type_(), lower_start, bio.segments().to_vec(), None);
         let status = lower_bio
             .submit_and_wait(self.lower.as_ref())

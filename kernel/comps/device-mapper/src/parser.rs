@@ -62,7 +62,7 @@ pub struct ParsedDmCreate {
     pub table: DmTable,
 }
 
-pub fn parse_create_arg(
+pub(crate) fn parse_create_arg(
     arg: &str,
     fallback_index: usize,
 ) -> Result<ParsedDmCreate, DmErrorWithContext> {
@@ -148,7 +148,9 @@ fn parse_verity_target(args: &[&str]) -> Result<VerityTarget, DmErrorWithContext
     VerityTarget::from_table_args(args)
 }
 
-pub fn lookup_block_device(name_or_id: &str) -> Result<Arc<dyn BlockDevice>, DmErrorWithContext> {
+pub(crate) fn lookup_block_device(
+    name_or_id: &str,
+) -> Result<Arc<dyn BlockDevice>, DmErrorWithContext> {
     if let Some(raw) = name_or_id.strip_prefix("dev:") {
         let id = parse_u64(Some(raw), "encoded device id")?;
         let device_id = DeviceId::from_encoded_u64(id)
@@ -171,13 +173,13 @@ fn parse_u64(value: Option<&str>, what: &str) -> Result<u64, DmErrorWithContext>
 }
 
 /// Parses a single mandatory table field, attaching `what` to any error.
-pub fn parse_field<T: FromStr>(value: &str, what: &str) -> Result<T, DmErrorWithContext> {
+pub(crate) fn parse_field<T: FromStr>(value: &str, what: &str) -> Result<T, DmErrorWithContext> {
     value
         .parse::<T>()
         .map_err(|_| DmError::InvalidTable.context(alloc::format!("{} is invalid", what)))
 }
 
-pub fn parse_hex_bytes(input: &str) -> Result<Vec<u8>, DmError> {
+pub(crate) fn parse_hex_bytes(input: &str) -> Result<Vec<u8>, DmError> {
     if input == "-" {
         return Ok(Vec::new());
     }
@@ -226,14 +228,19 @@ mod tests {
     }
 
     #[ktest]
-    fn parse_create_arg_accepts_zero_and_error_segments() {
-        let parsed = parse_create_arg("demo: 0 8 zero; 8 8 error", 0).unwrap();
+    fn parse_create_arg_accepts_single_segment() {
+        let parsed = parse_create_arg("demo: 0 8 zero", 0).unwrap();
         assert_eq!(parsed.name, "demo");
-        assert_eq!(parsed.table.total_sectors(), 16);
+        assert_eq!(parsed.table.total_sectors(), 8);
         let segments = parsed.table.segments();
-        assert_eq!(segments.len(), 2);
+        assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].target.type_name(), "zero");
-        assert_eq!(segments[1].target.type_name(), "error");
+    }
+
+    #[ktest]
+    fn parse_create_arg_rejects_multiple_segments() {
+        let result = parse_create_arg("demo: 0 8 zero; 8 8 error", 0);
+        assert!(result.is_err());
     }
 
     #[ktest]

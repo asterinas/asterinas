@@ -28,22 +28,23 @@ impl DmTableSegment {
 
 /// A device-mapper table.
 ///
-/// BIOs that cross target boundaries are rejected; callers must split them
-/// before dispatch.
+/// The initial implementation supports a single segment. Multi-segment tables
+/// require splitting submitted BIOs at target boundaries, which the block BIO
+/// ownership model does not expose yet.
 #[derive(Debug)]
 pub struct DmTable {
     segments: Vec<DmTableSegment>,
-    total_sectors: u64,
+    total_sectors: usize,
 }
 
 impl DmTable {
     pub fn new(segments: Vec<DmTableSegment>) -> Result<Self, DmError> {
-        if segments.is_empty() {
+        if segments.len() != 1 {
             return Err(DmError::InvalidTable);
         }
 
         let mut previous_end = 0;
-        let mut total_sectors = 0;
+        let mut total_sectors = 0u64;
         for segment in &segments {
             if segment.len_sectors == 0 {
                 return Err(DmError::InvalidTable);
@@ -52,12 +53,13 @@ impl DmTable {
             let Some(end_sector) = segment.end_sector() else {
                 return Err(DmError::InvalidTable);
             };
-            if segment.start_sector < previous_end {
+            if segment.start_sector != previous_end {
                 return Err(DmError::InvalidTable);
             }
             previous_end = end_sector;
             total_sectors = total_sectors.max(end_sector);
         }
+        let total_sectors = usize::try_from(total_sectors).map_err(|_| DmError::InvalidTable)?;
 
         Ok(Self {
             segments,
@@ -65,7 +67,7 @@ impl DmTable {
         })
     }
 
-    pub fn total_sectors(&self) -> u64 {
+    pub fn total_sectors(&self) -> usize {
         self.total_sectors
     }
 
@@ -74,6 +76,13 @@ impl DmTable {
     }
 
     pub fn find_segment(&self, start_sector: u64, end_sector: u64) -> Option<&DmTableSegment> {
+        let Ok(total_sectors) = u64::try_from(self.total_sectors) else {
+            return None;
+        };
+        if end_sector > total_sectors {
+            return None;
+        }
+
         self.segments
             .iter()
             .find(|segment| segment.contains_range(start_sector, end_sector))
