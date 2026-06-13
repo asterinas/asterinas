@@ -135,6 +135,7 @@ dependencies = [
  "aster-cmdline",
  "component",
  "device-id",
+ "io-util",
  "ostd",
  "spin",
 ]

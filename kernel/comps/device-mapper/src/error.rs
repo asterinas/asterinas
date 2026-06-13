@@ -9,7 +9,6 @@ pub enum DmError {
     DeviceNotFound,
     InvalidArgument,
     InvalidTable,
-    IoError,
     NoDeviceId,
     UnsupportedTarget,
 }

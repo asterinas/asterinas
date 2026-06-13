@@ -4,10 +4,9 @@ use alloc::{
     collections::BTreeMap,
     string::{String, ToString},
     sync::Arc,
-    vec::Vec,
 };
 
-use aster_block::{BlockDevice, MajorIdOwner};
+use aster_block::MajorIdOwner;
 use device_id::{DeviceId, MinorId};
 use ostd::sync::Mutex;
 use spin::Once;
@@ -47,8 +46,8 @@ pub fn init() -> Result<(), DmError> {
     Ok(())
 }
 
-pub fn create_device(name: String, table: DmTable) -> Result<Arc<DmDevice>, DmError> {
-    if name.is_empty() || name.contains('/') {
+pub(crate) fn create_device(name: String, table: DmTable) -> Result<Arc<DmDevice>, DmError> {
+    if !is_valid_device_name(&name) {
         return Err(DmError::InvalidArgument);
     }
 
@@ -64,34 +63,18 @@ pub fn create_device(name: String, table: DmTable) -> Result<Arc<DmDevice>, DmEr
     Ok(device)
 }
 
-pub fn remove_device(name: &str) -> Result<Arc<DmDevice>, DmError> {
-    let mut registry = DM_REGISTRY.lock();
-    let device = registry
-        .devices_by_name
-        .remove(name)
-        .ok_or(DmError::DeviceNotFound)?;
-    let _ = aster_block::unregister(device.id());
-    Ok(device)
+fn is_valid_device_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name
+            .chars()
+            .any(|ch| ch == '/' || ch.is_control() || ch.is_whitespace())
 }
 
-pub fn lookup_device(name: &str) -> Option<Arc<DmDevice>> {
-    DM_REGISTRY.lock().devices_by_name.get(name).cloned()
-}
-
-pub fn list_devices() -> Vec<Arc<DmDevice>> {
-    DM_REGISTRY
-        .lock()
-        .devices_by_name
-        .values()
-        .cloned()
-        .collect()
-}
-
-pub fn default_name(index: usize) -> String {
+fn default_name(index: usize) -> String {
     alloc::format!("dm-{}", index)
 }
 
-pub fn normalize_name(raw: &str, fallback_index: usize) -> String {
+pub(crate) fn normalize_name(raw: &str, fallback_index: usize) -> String {
     if raw == "-" || raw.is_empty() {
         default_name(fallback_index)
     } else {

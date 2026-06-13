@@ -10,6 +10,7 @@ aster-block.workspace = true
 aster-cmdline.workspace = true
 component.workspace = true
 device-id.workspace = true
+io-util.workspace = true
 ostd.workspace = true
 spin.workspace = true
 
