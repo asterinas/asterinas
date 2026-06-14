@@ -216,11 +216,12 @@ pub fn sys_epoll_pwait2(
     max_events: i32,
     timeout_addr: Vaddr,
     sigmask: Vaddr,
+    sigmask_size: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
-        "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout_ts = 0x{:x}, sigmask = 0x{:x}",
-        epfd, events_addr, max_events, timeout_addr, sigmask,
+        "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout_ts = 0x{:x}, sigmask = 0x{:x}, sigmask_size = {}",
+        epfd, events_addr, max_events, timeout_addr, sigmask, sigmask_size,
     );
 
     let timeout: Option<Duration> = if timeout_addr == 0 {
@@ -231,7 +232,15 @@ pub fn sys_epoll_pwait2(
         Some(duration)
     };
 
-    let events_len = do_epoll_pwait2(epfd, events_addr, max_events, timeout, sigmask, 8, ctx)?;
+    let events_len = do_epoll_pwait2(
+        epfd,
+        events_addr,
+        max_events,
+        timeout,
+        sigmask,
+        sigmask_size,
+        ctx,
+    )?;
 
     Ok(SyscallReturn::Return(events_len as _))
 }
