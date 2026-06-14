@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #include "../../common/test.h"
-#include <unistd.h>
+#include <signal.h>
 #include <sys/epoll.h>
+#include <sys/syscall.h>
+#include <time.h>
+#include <unistd.h>
 
 FN_TEST(epoll_add_del)
 {
@@ -160,6 +163,52 @@ FN_TEST(epoll_flags_oneshot)
 	ev.data.fd = rfd;
 	TEST_SUCC(epoll_ctl(epfd, EPOLL_CTL_MOD, rfd, &ev));
 	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 1);
+
+	// Clean up
+	TEST_SUCC(close(epfd));
+	TEST_SUCC(close(rfd));
+	TEST_SUCC(close(wfd));
+}
+END_TEST()
+
+FN_TEST(epoll_pwait2_sigsetsize_invalid)
+{
+	int fildes[2];
+	int epfd, rfd, wfd;
+	struct epoll_event ev;
+	struct timespec ts = { 0, 0 };
+	sigset_t mask;
+
+	// Setup pipes
+	TEST_SUCC(pipe(fildes));
+	rfd = fildes[0];
+	wfd = fildes[1];
+
+	// Setup epoll
+	epfd = TEST_SUCC(epoll_create1(0));
+	ev.events = EPOLLIN;
+	ev.data.fd = rfd;
+	TEST_SUCC(epoll_ctl(epfd, EPOLL_CTL_ADD, rfd, &ev));
+
+	// Write something to the pipe
+	TEST_SUCC(write(wfd, "x", 1));
+
+	// If `sigmask` is specified, `sigsetsize` must be 8
+	sigemptyset(&mask);
+	TEST_ERRNO(syscall(SYS_epoll_pwait2, epfd, &ev, 1, &ts, &mask, 0),
+		   EINVAL);
+	TEST_ERRNO(syscall(SYS_epoll_pwait2, epfd, &ev, 1, &ts, &mask, 4),
+		   EINVAL);
+	TEST_RES(syscall(SYS_epoll_pwait2, epfd, &ev, 1, &ts, &mask, 8),
+		 _ret == 1);
+	TEST_ERRNO(syscall(SYS_epoll_pwait2, epfd, &ev, 1, &ts, &mask, 16),
+		   EINVAL);
+
+	// Otherwise, `sigsetsize` will be ignored
+	TEST_RES(syscall(SYS_epoll_pwait2, epfd, &ev, 1, &ts, NULL, 0),
+		 _ret == 1);
+	TEST_RES(syscall(SYS_epoll_pwait2, epfd, &ev, 1, &ts, NULL, 99),
+		 _ret == 1);
 
 	// Clean up
 	TEST_SUCC(close(epfd));

@@ -404,7 +404,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_CLOSE_RANGE = 436            => sys_close_range(args[..3]);
             SYS_PIDFD_GETFD = 438            => sys_pidfd_getfd(args[..3]);
             SYS_FACCESSAT2 = 439             => sys_faccessat2(args[..4]);
-            SYS_EPOLL_PWAIT2 = 441           => sys_epoll_pwait2(args[..5]);
+            SYS_EPOLL_PWAIT2 = 441           => sys_epoll_pwait2(args[..6]);
             SYS_FCHMODAT2 = 452              => sys_fchmodat2(args[..4]);
             // Architecture-specific syscalls
             $( $name = $num => $handler $args );*
