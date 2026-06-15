@@ -72,6 +72,7 @@ impl Inode {
 
         let read_len = writer.avail();
         if !is_block_aligned(offset) || !is_block_aligned(read_len) {
+            // TODO: Implement a fallback mechanism.
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
         }
         if read_len == 0 {
@@ -102,7 +103,7 @@ impl Inode {
         }
 
         if !is_block_aligned(offset) || !is_block_aligned(write_len) {
-            // TODO: fallback to buffer_io like Linux.
+            // TODO: Implement a fallback mechanism.
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
         }
 
@@ -420,7 +421,7 @@ impl InodeInner {
     ) -> Result<()> {
         let write_len = reader.remain();
         debug_assert_eq!(write_len % BLOCK_SIZE, 0);
-        // end is already checked in `InodeInner::write_direct_at`.
+        // `end` is already checked in `InodeInner::write_direct_at`.
         let end = offset + write_len;
         let iblock_start = Iblock::try_from(offset / BLOCK_SIZE)
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
@@ -435,7 +436,7 @@ impl InodeInner {
                 IoRange::Mapped(device_range) => {
                     let nblocks = device_range.len();
                     let bio_segment = BioSegment::alloc(nblocks, BioDirection::ToDevice);
-                    bio_segment.writer()?.write_fallible(reader)?;
+                    bio_segment.writer().unwrap().write_fallible(reader)?;
                     fs.write_blocks_async(device_range.start, bio_segment, None, &mut io_batch)?;
                 }
                 IoRange::Hole(_) => {
@@ -563,9 +564,7 @@ impl InodeInner {
                 continue;
             }
             let bio_segment = BioSegment::alloc(block_range.len(), BioDirection::ToDevice);
-            let mut segment_writer = bio_segment.writer().map_err(|_| {
-                Error::with_message(Errno::EIO, "failed to access zero-write bio segment")
-            })?;
+            let mut segment_writer = bio_segment.writer().unwrap();
             segment_writer.fill_zeros(block_range.len() * BLOCK_SIZE);
             fs.write_blocks_async(block_range.start, bio_segment, None, &mut io_batch)?;
         }

@@ -8,7 +8,6 @@ mod indirect_block_manager;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use aster_block::bio::BioCompleteFn;
-use ostd::mm::io::util::HasVmReaderWriter;
 
 use self::block_ptr_tree::ResolvedBlockRange;
 pub(super) use self::block_ptr_tree::{BlockPtrTree, RawBlockPtrs};
@@ -157,11 +156,7 @@ impl BlockAsPageCacheBackend for InodeBlockManager {
             }
             None => {
                 // Encountered a hole, zero fill the page.
-                let mut segment_writer = bio_segment.inner_dma_slice().writer().map_err(|_| {
-                    Error::with_message(Errno::EIO, "failed to access zero-fill bio segment")
-                })?;
-                segment_writer.fill_zeros(bio_segment.nbytes());
-                complete_fn(BioStatus::Complete);
+                complete_fn(BioStatus::Zeros);
                 Ok(())
             }
         }
