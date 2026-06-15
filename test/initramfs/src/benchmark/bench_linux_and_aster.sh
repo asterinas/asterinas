@@ -92,6 +92,11 @@ run_benchmark() {
     local smp_val=1
     local mem_val="8G"
     local aster_scheme_cmd_part="SCHEME=iommu" # Default scheme
+    local virtiofs_val="off"
+    local virtiofs_tag="aster-virtiofs"
+    local virtiofs_socket="/tmp/vhostqemu/benchmark-vfs.sock"
+    local virtiofs_shared_dir="${BENCHMARK_ROOT}/../../build/virtiofs-benchmark"
+    local virtiofsd_path="/usr/libexec/virtiofsd"
 
     # Process runtime_configs_str to override defaults and gather extra args
     while IFS='=' read -r key value; do
@@ -109,6 +114,21 @@ run_benchmark() {
                  else
                      aster_scheme_cmd_part="SCHEME=${value}" # Override default
                  fi
+                 ;;
+             "virtiofs")
+                 virtiofs_val="$value"
+                 ;;
+             "virtiofs_tag")
+                 virtiofs_tag="$value"
+                 ;;
+             "virtiofs_socket")
+                 virtiofs_socket="$value"
+                 ;;
+             "virtiofs_shared_dir")
+                 virtiofs_shared_dir="$value"
+                 ;;
+             "virtiofsd")
+                 virtiofsd_path="$value"
                  ;;
              *)
                  echo "Warning: Unknown runtime configuration key '$key'" >&2
@@ -129,6 +149,15 @@ run_benchmark() {
         NETDEV=tap
         VHOST=on
     )
+    if [[ "$virtiofs_val" == "on" ]]; then
+        asterinas_cmd_arr+=(
+            VIRTIOFS=on
+            "VIRTIOFS_TAG=${virtiofs_tag}"
+            "VIRTIOFS_SOCKET=${virtiofs_socket}"
+            "VIRTIOFS_SHARED_DIR=${virtiofs_shared_dir}"
+            "VIRTIOFSD=${virtiofsd_path}"
+        )
+    fi
     if [[ "$platform" == "tdx" ]]; then
         asterinas_cmd_arr+=(INTEL_TDX=1)
     fi
@@ -149,6 +178,14 @@ run_benchmark() {
         -netdev "tap,id=net01,script=${BENCHMARK_ROOT}/../../../../tools/net/qemu-ifup.sh,downscript=${BENCHMARK_ROOT}/../../../../tools/net/qemu-ifdown.sh,vhost=on"
         -nographic
     )
+    if [[ "$virtiofs_val" == "on" ]]; then
+        linux_cmd_arr+=(
+            -object "memory-backend-memfd,id=mem0,size=${mem_val},share=on"
+            -numa "node,memdev=mem0"
+            -chardev "socket,id=char0,path=${virtiofs_socket}"
+            -device "vhost-user-fs-pci,chardev=char0,tag=${virtiofs_tag}"
+        )
+    fi
     if [[ "$platform" != "tdx" ]]; then
         linux_cmd_arr+=(
             -cpu Icelake-Server,-pcid,+x2apic
@@ -164,16 +201,59 @@ run_benchmark() {
         )
     fi
 
+    start_benchmark_virtiofsd() {
+        rm -rf "${virtiofs_shared_dir:?}"/*
+        VIRTIOFSD="${virtiofsd_path}" \
+            VIRTIOFS_SOCKET="${virtiofs_socket}" \
+            VIRTIOFS_SHARED_DIR="${virtiofs_shared_dir}" \
+            VIRTIOFS_LOG="virtiofsd-benchmark.log" \
+            "${BENCHMARK_ROOT}/../../../../tools/start_virtiofsd.sh"
+    }
+
+    stop_benchmark_virtiofsd() {
+        if [[ ! -f "${virtiofs_socket}.pid" ]]; then
+            return
+        fi
+
+        local virtiofsd_pid
+        virtiofsd_pid=$(cat "${virtiofs_socket}.pid")
+        local virtiofsd_comm=""
+        if [[ -n "$virtiofsd_pid" && -r "/proc/${virtiofsd_pid}/comm" ]]; then
+            virtiofsd_comm=$(cat "/proc/${virtiofsd_pid}/comm")
+        fi
+        if [[ "$virtiofsd_comm" == "virtiofsd" ]]; then
+            kill "$virtiofsd_pid" 2>/dev/null || true
+            wait "$virtiofsd_pid" 2>/dev/null || true
+        fi
+        rm -f "${virtiofs_socket}.pid" "${virtiofs_socket}"
+    }
+
     # Run the benchmark depending on the mode
     case "${run_mode}" in
         "guest_only")
             echo "Running benchmark ${benchmark} on Asterinas..."
+            if [[ "$virtiofs_val" == "on" ]]; then
+                mkdir -p "${virtiofs_shared_dir}"
+                rm -rf "${virtiofs_shared_dir:?}"/*
+            fi
             # Execute directly from array, redirect stderr to stdout, then tee
             "${asterinas_cmd_arr[@]}" 2>&1 | tee "${ASTER_OUTPUT}"
             prepare_fs
+            if [[ "$virtiofs_val" == "on" ]]; then
+                start_benchmark_virtiofsd
+            fi
             echo "Running benchmark ${benchmark} on Linux..."
             # Execute directly from array, redirect stderr to stdout, then tee
-            "${linux_cmd_arr[@]}" 2>&1 | tee "${LINUX_OUTPUT}"
+            if [[ "$virtiofs_val" == "on" ]]; then
+                set +e
+                "${linux_cmd_arr[@]}" 2>&1 | tee "${LINUX_OUTPUT}"
+                local linux_status=${PIPESTATUS[0]}
+                set -e
+                stop_benchmark_virtiofsd
+                return "$linux_status"
+            else
+                "${linux_cmd_arr[@]}" 2>&1 | tee "${LINUX_OUTPUT}"
+            fi
             ;;
         "host_guest")
             # Note: host_guest_bench_runner.sh expects commands as single strings.
