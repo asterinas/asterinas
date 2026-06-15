@@ -347,7 +347,7 @@ impl BlockGroup {
         for block_bit in range_start..range_end {
             if !metadata.block_bitmap.is_allocated(block_bit) {
                 warn!(
-                    "ext2_free_blocks: bit already cleared for block {}",
+                    "free_blocks: bit already cleared for block {}",
                     self.first_block + start_bit + (block_bit - range_start) as u32
                 );
             } else {
@@ -407,7 +407,7 @@ impl BlockGroup {
         let mut metadata = self.metadata.write();
 
         if !metadata.inode_bitmap.is_allocated(inode_idx) {
-            warn!("ext2_free_inode: inode idx {} already freed", inode_idx);
+            warn!("free_inode: inode idx {} already freed", inode_idx);
             return Ok(false);
         }
 

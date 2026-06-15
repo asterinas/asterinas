@@ -53,6 +53,13 @@
 //! - <https://www.kernel.org/doc/html/latest/filesystems/ext2.html>
 //! - <https://www.nongnu.org/ext2-doc/ext2.html>
 
+// Set this module's log prefix for `ostd::log`.
+macro_rules! __log_prefix {
+    () => {
+        "ext2: "
+    };
+}
+
 pub use fs::Ext2;
 pub use inode::{FilePerm, Inode};
 

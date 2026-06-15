@@ -13,7 +13,7 @@ extern crate alloc;
 #[macro_use]
 extern crate ostd_pod;
 
-// Set this module's log prefix for `ostd::log`.
+// Set this crate's log prefix for `ostd::log`.
 macro_rules! __log_prefix {
     () => {
         "nvme: "

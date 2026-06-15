@@ -152,10 +152,7 @@ impl BlockPtrTree {
         let iblock = match Iblock::try_from(new_size.div_ceil(BLOCK_SIZE)) {
             Ok(ib) => ib,
             Err(_) => {
-                error!(
-                    "ext2 truncate: size exceeds ext2 limits, new_size={}",
-                    new_size
-                );
+                error!("truncate: size exceeds ext2 limits, new_size={}", new_size);
                 return;
             }
         };
@@ -163,26 +160,17 @@ impl BlockPtrTree {
         let walk = match self.walk_at(iblock) {
             Ok(w) => w,
             Err(err) => {
-                error!(
-                    "ext2 truncate: failed to compute block walk, err: {:?}",
-                    err
-                );
+                error!("truncate: failed to compute block walk, err: {:?}", err);
                 return;
             }
         };
 
         if walk.is_direct_data_block() {
             if let Err(err) = self.truncate_direct_slots(fs, walk.root_slot() as usize) {
-                error!(
-                    "ext2 truncate: truncate_direct_slots failed, err: {:?}",
-                    err
-                );
+                error!("truncate: truncate_direct_slots failed, err: {:?}", err);
             }
         } else if let Err(err) = self.truncate_indirect_path(fs, &walk) {
-            error!(
-                "ext2 truncate: truncate_indirect_path failed, err: {:?}",
-                err
-            );
+            error!("truncate: truncate_indirect_path failed, err: {:?}", err);
         }
 
         self.free_indirect_roots_after(fs, walk.root_slot() as usize);
@@ -604,7 +592,7 @@ impl BlockPtrTree {
             if let Err(err) = fs.free_blocks(block_bid, 1) {
                 // Best-effort free path logs errors and proceeds.
                 error!(
-                    "ext2: free_block_subtree: failed to free data block {}: {:?}",
+                    "free_block_subtree: failed to free data block {}: {:?}",
                     block_bid, err
                 );
                 return;
@@ -627,7 +615,7 @@ impl BlockPtrTree {
                     // Skip the damaged subtree after logging the read failure so
                     // cleanup can continue for the remaining subtree.
                     error!(
-                        "ext2: free_block_subtree: failed to read indirect block {} (indirect_levels {})",
+                        "free_block_subtree: failed to read indirect block {} (indirect_levels {})",
                         block_bid, indirect_levels
                     );
                     return;
@@ -641,7 +629,7 @@ impl BlockPtrTree {
 
         if let Err(err) = fs.free_blocks(block_bid, 1) {
             error!(
-                "ext2: free_block_subtree: failed to free indirect block {}: {:?}",
+                "free_block_subtree: failed to free indirect block {}: {:?}",
                 block_bid, err
             );
             return;

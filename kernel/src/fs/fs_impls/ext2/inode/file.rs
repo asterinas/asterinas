@@ -257,7 +257,7 @@ impl InodeInner {
         }
         if let Err(err) = self.resize_page_cache(old_size, end) {
             error!(
-                "ext2: write_at cleanup page cache resize failed: old_size={}, err={:?}",
+                "write_at: cleanup page cache resize failed: old_size={}, err={:?}",
                 old_size, err
             );
         }
