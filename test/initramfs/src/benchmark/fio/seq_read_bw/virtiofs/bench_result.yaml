@@ -1,0 +1,17 @@
+alert:
+  bigger_is_better: true
+  threshold: 125%
+chart:
+  description: fio -filename=/virtiofs/fio-test -size=1G -bs=1M -direct=1
+  legend: Average file read bandwidth on {system}
+  title: '[virtio-fs] The bandwidth of sequential reads'
+  unit: MB/s
+result_extraction:
+  result_index: 2
+  search_pattern: bw=[0-9]+
+runtime_config:
+  aster_scheme: 'null'
+  virtiofs: 'on'
+  virtiofs_tag: aster-virtiofs
+  virtiofs_socket: /tmp/vhostqemu/benchmark-vfs.sock
+  virtiofs_shared_dir: test/initramfs/build/virtiofs-benchmark

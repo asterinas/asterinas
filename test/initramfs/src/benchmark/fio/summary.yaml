@@ -3,3 +3,5 @@ benchmarks:
   - seq_read_bw_ext2
   - seq_write_bw_ext2_no_iommu
   - seq_read_bw_ext2_no_iommu
+  - seq_write_bw_virtiofs
+  - seq_read_bw_virtiofs
