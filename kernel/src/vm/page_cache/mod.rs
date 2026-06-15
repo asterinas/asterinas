@@ -229,6 +229,9 @@ impl PageCache {
         if new_file_size < old_file_size && !new_file_size.is_multiple_of(PAGE_SIZE) {
             let fill_zero_end = old_file_size.min(new_file_size.align_up(PAGE_SIZE));
             self.fill_zeros(new_file_size..fill_zero_end)?;
+        } else if new_file_size > old_file_size && !old_file_size.is_multiple_of(PAGE_SIZE) {
+            let fill_zero_end = new_file_size.min(old_file_size.align_up(PAGE_SIZE));
+            self.fill_zeros(old_file_size..fill_zero_end)?;
         }
 
         let new_cache_size = new_file_size.align_up(PAGE_SIZE);
