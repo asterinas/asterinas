@@ -86,7 +86,7 @@ impl InodeBlockManager {
         let fs = match self.fs() {
             Ok(fs) => fs,
             Err(err) => {
-                error!("ext2 truncate: failed to get fs reference, err: {:?}", err);
+                error!("truncate: failed to get fs reference, err: {:?}", err);
                 return;
             }
         };

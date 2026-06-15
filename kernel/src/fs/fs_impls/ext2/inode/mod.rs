@@ -214,7 +214,7 @@ impl Drop for Inode {
     fn drop(&mut self) {
         if let Err(err) = self.try_reclaim_deleted_inode() {
             debug!(
-                "ext2: failed to reclaim deleted inode {} during drop: {:?}",
+                "failed to reclaim deleted inode {} during drop: {:?}",
                 self.ino, err
             );
         }
