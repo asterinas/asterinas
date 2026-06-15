@@ -15,3 +15,12 @@ prctl(op = PR_GET_CHILD_SUBREAPER | PR_SET_CHILD_SUBREAPER, isset);
 
 // Retrieve or set the timer slack value (nanoseconds)
 prctl(op = PR_GET_TIMERSLACK | PR_SET_TIMERSLACK, slack_ns);
+
+// Retrieve or set the "no new privileges" bit. Once set, it cannot be unset and
+// is inherited across fork, clone, and execve.
+prctl(op = PR_GET_NO_NEW_PRIVS | PR_SET_NO_NEW_PRIVS, ..);
+
+// Retrieve or set the secure computing mode. PR_SET_SECCOMP selects
+// SECCOMP_MODE_STRICT (no filter) or SECCOMP_MODE_FILTER (with a classic-BPF
+// `sock_fprog`); PR_GET_SECCOMP returns the current mode.
+prctl(op = PR_GET_SECCOMP | PR_SET_SECCOMP, ..);

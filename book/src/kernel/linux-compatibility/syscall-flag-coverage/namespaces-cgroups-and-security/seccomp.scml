@@ -1,0 +1,20 @@
+// Enter the strict secure computing mode. Afterwards only read(2), write(2),
+// _exit(2) (but not exit_group(2)), and rt_sigreturn(2) are permitted; any
+// other system call kills the thread with SIGKILL.
+seccomp(operation = SECCOMP_SET_MODE_STRICT, flags, args);
+
+// Install a classic-BPF filter for the calling thread. The filter is appended
+// to the thread's filter chain and inherited across fork, clone, and execve.
+// SECCOMP_FILTER_FLAG_LOG logs every non-allow action of this filter;
+// SECCOMP_FILTER_FLAG_SPEC_ALLOW is accepted for Linux compatibility but has no
+// effect, as Asterinas applies no speculation-mitigation here.
+seccomp(
+    operation = SECCOMP_SET_MODE_FILTER,
+    flags = SECCOMP_FILTER_FLAG_LOG | SECCOMP_FILTER_FLAG_SPEC_ALLOW,
+    args
+);
+
+// Query whether the kernel recognizes a given filter return action. The action
+// is read from `args`; exact action values are supported while values carrying
+// data bits are rejected, matching Linux.
+seccomp(operation = SECCOMP_GET_ACTION_AVAIL, flags, args);
