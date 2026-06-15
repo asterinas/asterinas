@@ -53,8 +53,8 @@ impl<'a> IoRangeIter<'a> {
             .lookup_block_range(start_iblock, max_blocks)?;
 
         if device_block_range.is_empty() {
-            // Linux's ext2 documents the slow case in `ext2_fiemap()`:
-            // `ext2_get_blocks()` iterates unmapped space block by block.  We
+            // Linux's ext2 documents the slow case where it iterates unmapped
+            // space block by block, as shown in the reference link below. We
             // keep the same sparse-file semantics, but optimize by asking the
             // block-pointer tree for a conservative hole run instead of
             // re-walking from the root for every logical block.

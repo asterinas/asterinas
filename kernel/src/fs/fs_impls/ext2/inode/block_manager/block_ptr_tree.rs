@@ -140,9 +140,10 @@ impl BlockPtrTree {
 
     /// Truncates blocks to the new byte length (best-effort).
     ///
-    /// Like Linux's `ext2_truncate_blocks`, this is a best-effort operation.
-    /// Errors are logged but not propagated — leaked blocks from partial
-    /// failures are recoverable by e2fsck.
+    /// This is a best-effort operation. Errors are logged but not propagated.
+    /// Leaked blocks from partial failures are recoverable by e2fsck. Linux
+    /// also follows this practice (see
+    /// <https://elixir.bootlin.com/linux/v7.0/source/fs/ext2/inode.c#L1172>).
     pub(in crate::fs::fs_impls::ext2::inode) fn truncate_to_byte_len(
         &mut self,
         fs: &Ext2,
@@ -332,7 +333,7 @@ impl BlockPtrTree {
         detach_level: usize,
     ) -> Result<Option<Ext2Bid>> {
         let detached_bid = if detach_level == 0 {
-            // Subtree root is referenced directly from inode.block_ptrs[].
+            // Subtree root is referenced directly from `inode.block_ptrs[]`.
             let slot = walk.root_slot() as usize;
             let bid = self.raw_block_ptrs.block_ptrs[slot];
             self.raw_block_ptrs.block_ptrs[slot] = 0;
