@@ -70,8 +70,8 @@ impl Inode {
             type_: self.type_,
             mode: inner.mode(),
             nr_hard_links: inner.link_count() as usize,
-            uid: Uid::new(inner.uid()),
-            gid: Gid::new(inner.gid()),
+            uid: Uid::from_raw(inner.uid()),
+            gid: Gid::from_raw(inner.gid()),
             container_dev_id,
             self_dev_id,
         }

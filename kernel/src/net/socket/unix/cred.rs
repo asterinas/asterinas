@@ -5,7 +5,7 @@ use aster_rights_proc::require;
 
 use crate::{
     prelude::*,
-    process::{Credentials, Gid, Pid, Uid, posix_thread::AsPosixThread},
+    process::{Credentials, Gid, Pid, RawGid, RawUid, Uid, posix_thread::AsPosixThread},
 };
 
 pub(super) struct SocketCred<R = ReadOp> {
@@ -40,8 +40,8 @@ impl<R: TRights> SocketCred<R> {
     pub(super) fn to_effective_c_cred(&self) -> CUserCred {
         CUserCred {
             pid: self.pid,
-            uid: self.cred.euid(),
-            gid: self.cred.egid(),
+            uid: self.cred.euid().as_raw(),
+            gid: self.cred.egid().as_raw(),
         }
     }
 
@@ -50,8 +50,8 @@ impl<R: TRights> SocketCred<R> {
     pub(super) fn to_real_c_cred(&self) -> CUserCred {
         CUserCred {
             pid: self.pid,
-            uid: self.cred.ruid(),
-            gid: self.cred.rgid(),
+            uid: self.cred.ruid().as_raw(),
+            gid: self.cred.rgid().as_raw(),
         }
     }
 
@@ -85,24 +85,24 @@ impl<R: TRights> SocketCred<R> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Pod)]
 pub struct CUserCred {
     pid: Pid,
-    uid: Uid,
-    gid: Gid,
+    uid: RawUid,
+    gid: RawGid,
 }
 
 impl CUserCred {
     pub(in crate::net) const fn new_invalid() -> Self {
         Self {
             pid: 0,
-            uid: Uid::INVALID,
-            gid: Gid::INVALID,
+            uid: Uid::RAW_INVALID,
+            gid: Gid::RAW_INVALID,
         }
     }
 
     pub(in crate::net) const fn new_overflow() -> Self {
         Self {
             pid: 0,
-            uid: Uid::OVERFLOW,
-            gid: Gid::OVERFLOW,
+            uid: Uid::OVERFLOW.as_raw(),
+            gid: Gid::OVERFLOW.as_raw(),
         }
     }
 }
