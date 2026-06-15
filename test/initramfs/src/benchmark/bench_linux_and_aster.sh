@@ -66,13 +66,13 @@ generate_template() {
 extract_result_file() {
     local bench_result="$1"
     local relative_path="${bench_result#*/benchmark/}"
-    local first_dir="${relative_path%%/*}"
     local filename=$(basename "$bench_result")
 
     # Handle different naming conventions for result files
     if [[ "$filename" == bench_* ]]; then
-        local second_part=$(dirname "$bench_result" | awk -F"/benchmark/$first_dir/" '{print $2}' | cut -d'/' -f1)
-        echo "result_${first_dir}-${second_part}.json"
+        local job_path
+        job_path=$(dirname "$bench_result" | awk -F"/benchmark/" '{print $2}')
+        echo "result_${job_path//\//-}.json"
     else
         local result_file="result_${relative_path//\//-}"
         echo "${result_file/.yaml/.json}"
