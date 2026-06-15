@@ -69,3 +69,17 @@ FN_TEST(mprotect_invalid_permission)
 	TEST_SUCC(munmap(addr, PAGE_SIZE));
 }
 END_TEST()
+
+FN_TEST(mprotect_merge_after_split_mapping)
+{
+	void *addr = TEST_SUCC(mmap(NULL, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+
+	// Split the mapping into two.
+	TEST_SUCC(mprotect(addr, PAGE_SIZE, PROT_READ));
+	// After the first mapping is protected, the two mappings will merge.
+	TEST_SUCC(mprotect(addr, 2 * PAGE_SIZE, PROT_READ | PROT_WRITE));
+
+	TEST_SUCC(munmap(addr, 2 * PAGE_SIZE));
+}
+END_TEST()

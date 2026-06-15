@@ -43,7 +43,12 @@ impl Vmar {
             let new_perms = perms | (vm_mapping_perms & VmPerms::ALL_MAY_PERMS);
             new_perms.check()?;
 
-            let vm_mapping = inner.remove(&vm_mapping_range.start).unwrap();
+            let Some(vm_mapping) = inner.remove(&vm_mapping_range.start) else {
+                // This can happen only if the mapping is merged to the previous one (just
+                // protected before). We can skip this mapping because its property is already
+                // correct.
+                continue;
+            };
             let vm_mapping_range = vm_mapping.range();
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 
