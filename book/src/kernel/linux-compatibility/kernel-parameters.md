@@ -35,6 +35,28 @@ console=ttyS0
 console=ttyS0 console=hvc0
 ```
 
+### `virtio_mmio.device`
+
+Register a VirtIO-MMIO device from the kernel command line.
+This parameter may be specified multiple times.
+
+Format:
+```text
+virtio_mmio.device=<size>@<base>:<irq>[:<id>]
+```
+
+Notes:
+- `size` and `base` may be decimal or hexadecimal with a `0x` prefix.
+- `size` may use `K`, `M`, `G`, or `T` suffixes.
+- `irq` must be nonzero.
+- The optional `id` field is accepted for Linux compatibility but ignored.
+
+Examples:
+```text
+virtio_mmio.device=0x200@0x5950f000:10
+virtio_mmio.device=1K@0x1001e000:74
+```
+
 ## Asterinas-specific
 
 ### `ostd.log_level`
