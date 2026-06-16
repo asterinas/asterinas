@@ -78,8 +78,8 @@ impl Inode for Ptmx {
         Ok(())
     }
 
-    fn metadata(&self) -> Metadata {
-        *self.metadata.read()
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(*self.metadata.read())
     }
 
     fn extension(&self) -> &Extension {

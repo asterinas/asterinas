@@ -1287,10 +1287,10 @@ impl Inode for RamInode {
         Ok(())
     }
 
-    fn metadata(&self) -> Metadata {
+    fn metadata(&self) -> Result<Metadata> {
         let rdev = self.inner.device_id().unwrap_or(0);
         let inode_metadata = self.metadata.lock();
-        Metadata {
+        Ok(Metadata {
             ino: self.ino as _,
             size: inode_metadata.size,
             optimal_block_size: BLOCK_SIZE,
@@ -1309,7 +1309,7 @@ impl Inode for RamInode {
             } else {
                 DeviceId::from_encoded_u64(rdev)
             },
-        }
+        })
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

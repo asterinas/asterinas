@@ -52,13 +52,9 @@ impl Common {
         self.fs.upgrade().unwrap()
     }
 
-    fn metadata(&self) -> Metadata {
-        *self.metadata.read()
-    }
-
     fn metadata_with_owner(&self, owner_thread: Option<Arc<Thread>>) -> Metadata {
         let Some(owner_thread) = owner_thread else {
-            return self.metadata();
+            return *self.metadata.read();
         };
 
         let credentials = owner_thread.as_posix_thread().unwrap().credentials();
