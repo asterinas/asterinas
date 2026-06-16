@@ -78,7 +78,7 @@ impl FileOps for AnonPipeInode {
 impl Inode for AnonPipeInode {
     fn size(&self) -> usize;
     fn resize(&self, _new_size: usize) -> Result<()>;
-    fn metadata(&self) -> Metadata;
+    fn metadata(&self) -> Result<Metadata>;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
     fn type_(&self) -> InodeType;

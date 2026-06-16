@@ -274,7 +274,7 @@ impl Path {
             return Ok(());
         };
 
-        let metadata = self.metadata();
+        let metadata = self.metadata()?;
         let fsuid = posix_thread.credentials().fsuid();
 
         // The source inode owner can hardlink all they like.
@@ -704,7 +704,7 @@ impl Path {
     pub fn fs(&self) -> Arc<dyn FileSystem>;
     pub fn sync_all(&self) -> Result<()>;
     pub fn sync_data(&self) -> Result<()>;
-    pub fn metadata(&self) -> Metadata;
+    pub fn metadata(&self) -> Result<Metadata>;
     pub fn mode(&self) -> Result<InodeMode>;
     pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
     pub fn size(&self) -> usize;

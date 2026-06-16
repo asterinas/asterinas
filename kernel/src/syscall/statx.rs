@@ -62,7 +62,7 @@ pub fn sys_statx(
         }
     };
 
-    let statx = Statx::new(&path, mask);
+    let statx = Statx::new(&path, mask)?;
 
     user_space.write_val(statx_buf_ptr, &statx)?;
     Ok(SyscallReturn::Return(0))
@@ -122,8 +122,8 @@ pub struct Statx {
 }
 
 impl Statx {
-    fn new(path: &Path, requested_mask: StatxMask) -> Self {
-        let info = path.metadata();
+    fn new(path: &Path, requested_mask: StatxMask) -> Result<Self> {
+        let info = path.metadata()?;
 
         let (stx_dev_major, stx_dev_minor) =
             device_id::decode_device_numbers(info.container_dev_id.as_encoded_u64());
@@ -166,7 +166,7 @@ impl Statx {
             StatxTimestamp::default()
         };
 
-        Self {
+        Ok(Self {
             // FIXME: All zero fields below are dummy implementations that need to be improved in the future.
             stx_mask,
             stx_blksize: info.optimal_block_size as u32,
@@ -192,7 +192,7 @@ impl Statx {
             stx_dio_mem_align: 0,
             stx_dio_offset_align: 0,
             __spare3: [0; 12],
-        }
+        })
     }
 }
 

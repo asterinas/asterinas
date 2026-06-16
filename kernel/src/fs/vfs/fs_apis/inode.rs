@@ -357,7 +357,24 @@ pub trait Inode: Any + FileOps + Send + Sync {
 
     fn resize(&self, new_size: usize) -> Result<()>;
 
-    fn metadata(&self) -> Metadata;
+    /// Returns all inode metadata.
+    ///
+    /// This method returns all metadata fields and is typically used to serve
+    /// syscalls such as `fstat`. Callers must not assume that this operation
+    /// is always cheap. For example, remote filesystems may need to perform
+    /// I/O when getting or updating metadata, and such operations may fail.
+    ///
+    /// If only a specific field is needed, prefer using the dedicated getters
+    /// such as [`size`], [`ino`], [`type_`], [`mode`], [`owner`], and [`group`], which
+    /// are generally cheaper as they return cached data from the inode.
+    ///
+    /// [`size`]: Inode::size
+    /// [`ino`]: Inode::ino
+    /// [`type_`]: Inode::type_
+    /// [`mode`]: Inode::mode
+    /// [`owner`]: Inode::owner
+    /// [`group`]: Inode::group
+    fn metadata(&self) -> Result<Metadata>;
 
     fn ino(&self) -> u64;
 
@@ -562,7 +579,7 @@ pub trait Inode: Any + FileOps + Send + Sync {
         };
 
         let creds = posix_thread.credentials();
-        let metadata = self.metadata();
+        let metadata = self.metadata()?;
         let mode = metadata.mode;
 
         // With DAC_OVERRIDE capability, the user can bypass some permission checks.

@@ -417,10 +417,10 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         self.metadata().type_
     }
 
-    default fn metadata(&self) -> Metadata {
+    default fn metadata(&self) -> Result<Metadata> {
         let mut metadata = *self.metadata();
         metadata.mode = self.mode().unwrap();
-        metadata
+        Ok(metadata)
     }
 
     default fn ino(&self) -> u64 {
