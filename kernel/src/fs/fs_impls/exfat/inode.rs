@@ -1422,7 +1422,7 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn metadata(&self) -> Metadata {
+    fn metadata(&self) -> Result<Metadata> {
         let inner = self.inner.read();
 
         let blk_size = inner.fs().sector_size();
@@ -1433,7 +1433,7 @@ impl Inode for ExfatInode {
             1
         };
 
-        Metadata {
+        Ok(Metadata {
             ino: inner.ino,
             size: inner.size,
             optimal_block_size: blk_size,
@@ -1449,7 +1449,7 @@ impl Inode for ExfatInode {
             container_dev_id: inner.fs().container_device_id(),
             self_dev_id: None,
             birth_at: Some(inner.crtime.as_duration().unwrap_or_default()),
-        }
+        })
     }
 
     fn type_(&self) -> InodeType {

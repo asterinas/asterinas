@@ -22,7 +22,7 @@ pub fn sys_fstat(raw_fd: RawFileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Res
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
-    let stat = Stat::from(file.path().metadata());
+    let stat = Stat::from(file.path().metadata()?);
     ctx.user_space().write_val(stat_buf_ptr, &stat)?;
 
     Ok(SyscallReturn::Return(0))
@@ -72,7 +72,7 @@ pub fn sys_fstatat(
         }
     };
 
-    let stat = Stat::from(path.metadata());
+    let stat = Stat::from(path.metadata()?);
     user_space.write_val(stat_buf_ptr, &stat)?;
     Ok(SyscallReturn::Return(0))
 }

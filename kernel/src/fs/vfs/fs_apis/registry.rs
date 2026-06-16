@@ -97,7 +97,7 @@ impl<'a> FsCreationCtx<'a> {
         if !path.type_().is_device() {
             return_errno_with_message!(Errno::ENODEV, "the path is not a device file");
         }
-        let id = path.metadata().self_dev_id;
+        let id = path.metadata()?.self_dev_id;
 
         id.and_then(aster_block::lookup)
             .ok_or_else(|| Error::with_message(Errno::ENODEV, "the device is not found"))

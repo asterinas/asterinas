@@ -272,8 +272,8 @@ impl Inode for VirtioFsInode {
         self.setattr(setattr_req)
     }
 
-    fn metadata(&self) -> Metadata {
-        self.inner.read().metadata
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(self.inner.read().metadata)
     }
 
     fn ino(&self) -> u64 {
@@ -285,7 +285,7 @@ impl Inode for VirtioFsInode {
     }
 
     fn mode(&self) -> Result<InodeMode> {
-        Ok(self.inner.read().metadata.mode)
+        Ok(self.metadata()?.mode)
     }
 
     fn set_mode(&self, mode: InodeMode) -> Result<()> {
@@ -295,7 +295,7 @@ impl Inode for VirtioFsInode {
     }
 
     fn owner(&self) -> Result<Uid> {
-        Ok(self.inner.read().metadata.uid)
+        Ok(self.metadata()?.uid)
     }
 
     fn set_owner(&self, uid: Uid) -> Result<()> {
@@ -304,7 +304,7 @@ impl Inode for VirtioFsInode {
     }
 
     fn group(&self) -> Result<Gid> {
-        Ok(self.inner.read().metadata.gid)
+        Ok(self.metadata()?.gid)
     }
 
     fn set_group(&self, gid: Gid) -> Result<()> {

@@ -471,10 +471,10 @@ impl OverlayInode {
         upper.resize(new_size)
     }
 
-    pub fn metadata(&self) -> Metadata {
-        let mut metadata = self.get_top_valid_inode().metadata();
+    pub fn metadata(&self) -> Result<Metadata> {
+        let mut metadata = self.get_top_valid_inode().metadata()?;
         metadata.ino = self.ino;
-        metadata
+        Ok(metadata)
     }
 
     pub fn ino(&self) -> u64 {
@@ -974,7 +974,7 @@ impl FileOps for OverlayInode {
 impl Inode for OverlayInode {
     fn size(&self) -> usize;
     fn resize(&self, new_size: usize) -> Result<()>;
-    fn metadata(&self) -> Metadata;
+    fn metadata(&self) -> Result<Metadata>;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
     fn type_(&self) -> InodeType;

@@ -465,8 +465,8 @@ impl DirDentry<'_> {
         child
     }
 
-    fn has_sticky_bit(&self) -> bool {
-        self.inode.metadata().mode.has_sticky_bit()
+    fn has_sticky_bit(&self) -> Result<bool> {
+        Ok(self.inode.metadata()?.mode.has_sticky_bit())
     }
 
     fn check_sticky_bit_permission(&self, child_inode: &Arc<dyn Inode>) -> Result<()> {
@@ -475,8 +475,8 @@ impl DirDentry<'_> {
             return Ok(());
         };
 
-        let dir_metadata = self.inode.metadata();
-        let child_metadata = child_inode.metadata();
+        let dir_metadata = self.inode.metadata()?;
+        let child_metadata = child_inode.metadata()?;
         let fsuid = posix_thread.credentials().fsuid();
         if fsuid == dir_metadata.uid || fsuid == child_metadata.uid {
             return Ok(());
@@ -664,7 +664,7 @@ impl DirDentry<'_> {
         let dir_inode = self.inode();
         let child_inode = self.remove_child(name, |dir_inode, name| dir_inode.unlink(name))?;
 
-        let nlinks = child_inode.metadata().nr_hard_links;
+        let nlinks = child_inode.metadata()?.nr_hard_links;
         fs::vfs::notify::on_link_count(&child_inode);
         if nlinks == 0 {
             // FIXME: `DELETE_SELF` should be generated after closing the last FD.
@@ -697,7 +697,7 @@ impl DirDentry<'_> {
         let dir_inode = self.inode();
         let child_inode = self.remove_child(name, |dir_inode, name| dir_inode.rmdir(name))?;
 
-        let nlinks = child_inode.metadata().nr_hard_links;
+        let nlinks = child_inode.metadata()?.nr_hard_links;
         if nlinks == 0 {
             // FIXME: `DELETE_SELF` should be generated after closing the last FD.
             fs::vfs::notify::on_inode_removed(&child_inode);
@@ -808,7 +808,7 @@ impl DirDentry<'_> {
 
             Self::check_rename_mode(mode, new_dentry.as_ref())?;
 
-            if self.has_sticky_bit() {
+            if self.has_sticky_bit()? {
                 self.check_sticky_bit_permission(old_dentry.inode())?;
                 if let Some(new_dentry) = new_dentry.as_ref() {
                     self.check_sticky_bit_permission(new_dentry.inode())?;
@@ -855,10 +855,10 @@ impl DirDentry<'_> {
             Self::check_rename_mode(mode, new_dentry.as_ref())?;
             Self::check_rename_cycle(mode, self, &old_dentry, new_dir, new_dentry.as_ref())?;
 
-            if self.has_sticky_bit() {
+            if self.has_sticky_bit()? {
                 self.check_sticky_bit_permission(old_dentry.inode())?;
             }
-            if new_dir.has_sticky_bit()
+            if new_dir.has_sticky_bit()?
                 && let Some(new_dentry) = new_dentry.as_ref()
             {
                 new_dir.check_sticky_bit_permission(new_dentry.inode())?;

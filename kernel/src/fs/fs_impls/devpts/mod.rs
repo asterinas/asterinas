@@ -239,8 +239,8 @@ impl Inode for RootInode {
         Err(Error::new(Errno::EISDIR))
     }
 
-    fn metadata(&self) -> Metadata {
-        *self.metadata.read()
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(*self.metadata.read())
     }
 
     fn extension(&self) -> &Extension {

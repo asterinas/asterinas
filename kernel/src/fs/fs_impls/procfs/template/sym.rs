@@ -84,9 +84,9 @@ impl<S: ProcSymOps + 'static> Inode for ProcSym<S> {
     fn set_ctime(&self, time: Duration);
     fn fs(&self) -> Arc<dyn FileSystem>;
 
-    fn metadata(&self) -> Metadata {
+    fn metadata(&self) -> Result<Metadata> {
         let owner_thread = self.inner.owner_thread();
-        self.common.metadata_with_owner(owner_thread)
+        Ok(self.common.metadata_with_owner(owner_thread))
     }
 
     fn resize(&self, _new_size: usize) -> Result<()> {

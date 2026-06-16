@@ -148,7 +148,7 @@ impl FileOps for MemfdInode {
 
 #[inherit_methods(from = "self.inode")]
 impl Inode for MemfdInode {
-    fn metadata(&self) -> Metadata;
+    fn metadata(&self) -> Result<Metadata>;
     fn size(&self) -> usize;
     fn atime(&self) -> Duration;
     fn set_atime(&self, time: Duration);
