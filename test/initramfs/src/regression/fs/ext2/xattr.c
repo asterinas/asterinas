@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#define _GNU_SOURCE
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/xattr.h>
 #include <unistd.h>
 
@@ -70,5 +73,30 @@ FN_TEST(xattr_nonexistent_enodata)
 		   ENODATA);
 
 	CHECK(unlink(path));
+}
+END_TEST()
+
+FN_TEST(xattr_with_o_path_fd)
+{
+	const char *path = BASE_DIR "/opath";
+	const char name[] = "user.test";
+	int val = 1234;
+	char buf[sizeof(val)];
+	char list[sizeof(name)];
+
+	int fd = TEST_SUCC(open(path, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(close(fd));
+
+	int opath_fd = TEST_SUCC(open(path, O_PATH));
+	TEST_ERRNO(syscall(SYS_fsetxattr, opath_fd, name, &val, sizeof(val), 0),
+		   EBADF);
+	TEST_ERRNO(syscall(SYS_fgetxattr, opath_fd, name, buf, sizeof(buf)),
+		   EBADF);
+	TEST_ERRNO(syscall(SYS_flistxattr, opath_fd, list, sizeof(list)),
+		   EBADF);
+	TEST_ERRNO(syscall(SYS_fremovexattr, opath_fd, name), EBADF);
+
+	TEST_SUCC(close(opath_fd));
+	TEST_SUCC(unlink(path));
 }
 END_TEST()

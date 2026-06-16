@@ -7,7 +7,7 @@ use crate::{
     fs,
     fs::{
         file::{
-            FileLike,
+            FileLike, StatusFlags,
             file_table::{RawFileDesc, get_file_fast},
         },
         vfs::{
@@ -153,7 +153,11 @@ pub(super) fn lookup_path_for_xattr<'a>(
         XattrFileCtx::Path(path) => lookup_path_from_fs(path, ctx, false),
         XattrFileCtx::PathNoFollow(path) => lookup_path_from_fs(path, ctx, true),
         XattrFileCtx::FileHandle(file) => {
-            let path = file.as_inode_handle_or_err()?.path();
+            let file = file.as_inode_handle_or_err()?;
+            if file.status_flags().contains(StatusFlags::O_PATH) {
+                return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+            }
+            let path = file.path();
             Ok(Cow::Borrowed(path))
         }
     }
