@@ -8,7 +8,6 @@ Intel TDX (Trust Domain Extensions) is a Trusted Execution Environment (TEE) tec
 that enhances VM security
 by creating isolated, hardware-enforced trust domains
 with encrypted memory, secure initialization, and attestation mechanisms.
-For more information about Intel TDX, jump to the last section.
 
 ## Why choose Asterinas for Intel TDX
 
@@ -33,27 +32,18 @@ excluding the safe device drivers built on top of the Asterinas Framework
 that may handle untrusted inputs from the host.
 For more information, see [our talk on OC3'24](https://www.youtube.com/watch?v=3AQ5lpXujGo).
 
+Here is the [official documentation](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/documentation.html) for Intel TDX features.
+
 ## Prepare the Intel TDX environment
 
 Please make sure your server supports Intel TDX.
 
-See [this guide](https://github.com/canonical/tdx/tree/noble-24.04?tab=readme-ov-file#4-setup-host-os)
+See [this guide](https://github.com/canonical/tdx/#4-setup-host-os)
 or other materials to enable Intel TDX in host OS.
 
-To verify the TDX host status,
-you can type:
-
-```bash
-dmesg | grep "TDX module initialized"
-```
-
-The following result is an example:
-
-```bash
-[   20.507296] tdx: TDX module initialized.
-```
-
-`TDX module initialized` means TDX module is loaded successfully.
+You can use script in [tools/check-tdx-support.sh](https://github.com/asterinas/asterinas/tree/main/tools/check-tdx-support.sh) to check 
+whether TDX is enabled for your CPU. Due to asterinas is not supporting 
+KVM now, further steps for checking whether TDX is supported for KVM are omitted.
 
 ## Build and run Asterinas
 
@@ -106,39 +96,3 @@ make gdb_client INTEL_TDX=1
 
 Note that you must use hardware assisted breakpoints
 because KVM is enabled when debugging a TD.
-
-## About Intel TDX
-
-Intel® Trust Domain Extensions (Intel® TDX)
-is Intel's newest confidential computing technology.
-This hardware-based trusted execution environment (TEE)
-facilitates the deployment of trust domains (TD),
-which are hardware-isolated virtual machines (VM) designed to
-protect sensitive data and applications from unauthorized access.
-
-A CPU-measured Intel TDX module enables Intel TDX.
-This software module runs in a new CPU Secure Arbitration Mode (SEAM)
-as a peer virtual machine manager (VMM),
-and supports TD entry and exit
-using the existing virtualization infrastructure.
-The module is hosted in a reserved memory space
-identified by the SEAM Range Register (SEAMRR).
-
-Intel TDX uses hardware extensions for managing and encrypting memory
-and protects both the confidentiality and integrity
-of the TD CPU state from non-SEAM mode.
-
-Intel TDX uses architectural elements such as SEAM,
-a shared bit in Guest Physical Address (GPA),
-secure Extended Page Table (EPT),
-physical-address-metadata table,
-Intel® Total Memory Encryption – Multi-Key (Intel® TME-MK),
-and remote attestation.
-
-Intel TDX ensures data integrity, confidentiality, and authenticity,
-which empowers engineers and tech professionals
-to create and maintain secure systems,
-enhancing trust in virtualized environments.
-
-For more information,
-please refer to [Intel TDX website](https://www.intel.com/content/www/us/en/developer/tools/trust-domain-extensions/overview.html).
