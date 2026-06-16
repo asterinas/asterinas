@@ -168,3 +168,17 @@ Supported functionality in SCML:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/utimensat.2.html).
+
+### `mknod` and `mknodat`
+
+Supported functionality in SCML:
+
+```c
+{{#include mknod_and_mknodat.scml}}
+```
+
+Unsupported File types:
+* `S_IFSOCK`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/mknod.2.html).

@@ -1,0 +1,7 @@
+supported_filetype = S_IFREG | S_IFCHR | S_IFBLK | S_IFIFO;
+supported_perms = S_ISUID | S_ISGID | S_ISVTX | <INTEGER>;
+supported_mode = <supported_filetype> | <supported_perms>;
+
+// Create a filesystem node (file, device special file, or named pipe)
+mknod(path, mode = <supported_mode>, dev);
+mknodat(dirfd, path, mode = <supported_mode>, dev);
