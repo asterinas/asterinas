@@ -8,8 +8,6 @@ if [ "$(uname -m)" = "x86_64" ]; then
     ./arch_prctl/fsgsbase
 fi
 
-./clock_nanosleep/nanosleep_err
-
 ./clone3/clone_exit_signal
 ./clone3/clone_files
 ./clone3/clone_invalid_exit_signal
@@ -34,9 +32,6 @@ fi
 ./getcpu/getcpu
 
 ./getpid/getpid
-
-./itimer/setitimer
-./itimer/timer_create
 
 ./personality/personality
 

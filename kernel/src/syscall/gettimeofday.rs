@@ -5,25 +5,28 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    time::{SystemTime, timeval_t},
+    time::{SystemTime, timeval_t, timezone_t},
 };
 
-// The use of the timezone structure is obsolete.
-// Glibc sets the timezone_addr argument to NULL, so just ignore it.
 pub fn sys_gettimeofday(
     timeval_addr: Vaddr,
-    /* timezone_addr: Vaddr, */ ctx: &Context,
+    timezone_addr: Vaddr,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
-    if timeval_addr == 0 {
-        return Ok(SyscallReturn::Return(0));
+    if timeval_addr != 0 {
+        let time_val = {
+            let now = SystemTime::now();
+            let time_duration = now.duration_since(&SystemTime::UNIX_EPOCH)?;
+            timeval_t::from(time_duration)
+        };
+        ctx.user_space().write_val(timeval_addr, &time_val)?;
     }
 
-    let time_val = {
-        let now = SystemTime::now();
-        let time_duration = now.duration_since(&SystemTime::UNIX_EPOCH)?;
-        timeval_t::from(time_duration)
-    };
-    ctx.user_space().write_val(timeval_addr, &time_val)?;
+    if timezone_addr != 0 {
+        // TODO: Return the actual system timezone when available.
+        let tz = timezone_t::default();
+        ctx.user_space().write_val(timezone_addr, &tz)?;
+    }
 
     Ok(SyscallReturn::Return(0))
 }

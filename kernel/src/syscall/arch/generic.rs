@@ -345,7 +345,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_UMASK = 166                  => sys_umask(args[..1]);
             SYS_PRCTL = 167                  => sys_prctl(args[..5]);
             SYS_GETCPU = 168                 => sys_getcpu(args[..3]);
-            SYS_GETTIMEOFDAY = 169           => sys_gettimeofday(args[..1]);
+            SYS_GETTIMEOFDAY = 169           => sys_gettimeofday(args[..2]);
             SYS_GETPID = 172                 => sys_getpid(args[..0]);
             SYS_GETPPID = 173                => sys_getppid(args[..0]);
             SYS_GETUID = 174                 => sys_getuid(args[..0]);

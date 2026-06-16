@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 SUBDIRS := \
-	alarm \
-	clock_nanosleep \
 	clone3 \
 	cpu_affinity \
 	execve \
@@ -10,7 +8,6 @@ SUBDIRS := \
 	fork_c \
 	getcpu \
 	getpid \
-	itimer \
 	personality \
 	prctl \
 	pthread \

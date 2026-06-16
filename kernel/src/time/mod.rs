@@ -171,3 +171,11 @@ pub struct itimerspec_t {
     pub it_interval: timespec_t,
     pub it_value: timespec_t,
 }
+
+/// This struct is corresponding to the `timezone` struct in Linux.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+pub struct timezone_t {
+    pub tz_minuteswest: i32,
+    pub tz_dsttime: i32,
+}
