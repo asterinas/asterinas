@@ -660,29 +660,23 @@ impl BlockPtrTree {
             .copied()
             .unwrap_or(self.raw_block_ptrs.block_ptrs[0]);
 
-        let mut guard = BlockAllocGuard::new(fs);
         // Allocate the missing indirect metadata first, then place data blocks
         // immediately after the metadata run when possible.
-        let mut indirect_blocks = Vec::with_capacity(indirect_blks as usize);
+        let mut guard = BlockAllocGuard::new(fs, indirect_blks);
 
-        while (indirect_blocks.len() as u32) < indirect_blks {
-            let remaining_indirect_blks = indirect_blks - indirect_blocks.len() as u32;
+        let mut remaining_indirect_blks = indirect_blks;
+        while remaining_indirect_blks > 0 {
             let allocated = fs.alloc_blocks(remaining_indirect_blks, alloc_goal)?;
             debug_assert!(allocated.end >= allocated.start);
             let allocated_count = allocated.end - allocated.start;
             debug_assert!(allocated_count > 0 && allocated_count <= remaining_indirect_blks);
 
-            indirect_blocks.extend(allocated.clone());
             alloc_goal = allocated.end;
+            remaining_indirect_blks -= allocated_count;
+            guard.extend_indirect_blocks(allocated);
         }
 
-        let data_goal = indirect_blocks
-            .last()
-            .copied()
-            .map_or(alloc_goal, |last_metadata| last_metadata + 1);
-        guard.track_indirect_blocks(indirect_blocks);
-
-        let data_blocks_range = fs.alloc_blocks(data_blks, data_goal)?;
+        let data_blocks_range = fs.alloc_blocks(data_blks, alloc_goal)?;
         debug_assert!(data_blocks_range.end >= data_blocks_range.start);
         let allocated_count = data_blocks_range.end - data_blocks_range.start;
         guard.track_data_blocks(data_blocks_range);
@@ -1131,18 +1125,17 @@ struct BlockAllocGuard<'a> {
 }
 
 impl<'a> BlockAllocGuard<'a> {
-    fn new(fs: &'a Ext2) -> Self {
+    fn new(fs: &'a Ext2, indirect_blocks: u32) -> Self {
         Self {
             fs,
-            indirect_blocks: Vec::new(),
+            indirect_blocks: Vec::with_capacity(indirect_blocks as usize),
             data_blocks: Range { start: 0, end: 0 },
             committed: false,
         }
     }
 
-    fn track_indirect_blocks(&mut self, indirect_blocks: Vec<Ext2Bid>) {
-        debug_assert!(self.indirect_blocks.is_empty());
-        self.indirect_blocks = indirect_blocks;
+    fn extend_indirect_blocks(&mut self, indirect_blocks: Range<Ext2Bid>) {
+        self.indirect_blocks.extend(indirect_blocks);
     }
 
     fn track_data_blocks(&mut self, data_blocks: Range<Ext2Bid>) {
