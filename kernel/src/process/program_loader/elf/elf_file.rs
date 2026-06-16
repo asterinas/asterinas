@@ -8,8 +8,9 @@ use xmas_elf::{
 };
 
 use crate::{
-    fs::{utils::PATH_MAX, vfs::inode::Inode},
+    fs::utils::PATH_MAX,
     prelude::*,
+    process::program_loader::ExecutableFile,
     vm::{perms::VmPerms, vmar::VMAR_CAP_ADDR},
 };
 
@@ -395,12 +396,12 @@ impl InterpPhdr {
         })
     }
 
-    /// Reads the LDSO path from the ELF inode.
-    pub(super) fn read_ldso_path(&self, elf_inode: &Arc<dyn Inode>) -> Result<CString> {
+    /// Reads the LDSO path from the ELF file.
+    pub(super) fn read_ldso_path(&self, elf_file: &ExecutableFile) -> Result<CString> {
         // Note that `self.file_size` is at most `PATH_SIZE`.
         let file_size = self.file_size as usize;
         let mut buffer = vec![0; file_size];
-        if elf_inode.read_bytes_at(self.file_offset, &mut buffer)? != file_size {
+        if elf_file.read_bytes_at(self.file_offset, &mut buffer)? != file_size {
             return_errno_with_message!(Errno::EIO, "the interpreter path cannot be fully read");
         }
 

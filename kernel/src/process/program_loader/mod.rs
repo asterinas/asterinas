@@ -9,9 +9,10 @@ use self::{
 };
 use crate::{
     fs::{
-        file::{InodeType, Permission},
+        file::{AccessMode, FileLike, InodeHandle, InodeType, Permission, StatusFlags},
         vfs::{
             inode::Inode,
+            notify,
             path::{FsPath, Path, PathResolver},
         },
     },
@@ -24,23 +25,58 @@ use crate::{
 /// This struct encapsulates the ELF file to be executed along with its header data,
 /// the `argv` and the `envp` which is required for the program execution.
 pub(super) struct ProgramToLoad {
-    elf_file: Path,
+    elf_file: ExecutableFile,
     elf_headers: ElfHeaders,
     argv: Vec<CString>,
     envp: Vec<CString>,
 }
 
+/// Represents an opened executable file that tracks open/access/close notifications.
+#[derive(Clone)]
+pub struct ExecutableFile {
+    file: Arc<dyn FileLike>,
+}
+
+impl ExecutableFile {
+    /// Creates an executable file wrapper and emits an open notification.
+    fn new(file: Arc<dyn FileLike>) -> Self {
+        notify::on_open(&file);
+
+        Self { file }
+    }
+
+    /// Returns the path of the executable file.
+    pub(in crate::process) fn path(&self) -> &Path {
+        self.file.path()
+    }
+
+    /// Reads bytes from the executable file at the specified offset.
+    ///
+    /// Emits an access notification when at least one byte is read.
+    pub(in crate::process) fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        let read_len = self.file.read_bytes_at(offset, buf)?;
+        if read_len > 0 {
+            notify::on_access(&self.file);
+        }
+
+        Ok(read_len)
+    }
+
+    /// Returns the inner file and consume this handle.
+    pub(in crate::process) fn into_file(self) -> Arc<dyn FileLike> {
+        self.file
+    }
+}
+
 impl ProgramToLoad {
-    /// Constructs a new `ProgramToLoad` from a file and handles shebang interpretation if
-    /// necessary.
+    /// Constructs a new `ProgramToLoad` from an opened executable and handles shebang
+    /// interpretation if necessary.
     pub(super) fn build_from_file(
-        mut elf_file: Path,
+        mut elf_file: ExecutableFile,
         path_resolver: &PathResolver,
         mut argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Self> {
-        check_executable_inode(elf_file.inode().as_ref())?;
-
         // A limit to the recursion depth of shebang executables.
         //
         // If the interpreter is a shebang, then recursion will be triggered. If it loops, we
@@ -51,7 +87,7 @@ impl ProgramToLoad {
             // Read the first page of the file, which should contain a shebang or an ELF header.
             let (file_first_page, len) = {
                 let mut buffer = Box::new([0u8; PAGE_SIZE]);
-                let len = elf_file.inode().read_bytes_at(0, &mut *buffer)?;
+                let len = elf_file.read_bytes_at(0, &mut *buffer)?;
                 (buffer, len)
             };
 
@@ -60,7 +96,7 @@ impl ProgramToLoad {
             };
 
             if recursive_limit == 0 {
-                return_errno_with_message!(Errno::ELOOP, "the recursieve limit is reached");
+                return_errno_with_message!(Errno::ELOOP, "the recursive limit is reached");
             }
             recursive_limit -= 1;
 
@@ -69,12 +105,11 @@ impl ProgramToLoad {
                 let fs_path = FsPath::try_from(filename.as_str())?;
                 path_resolver.lookup(&fs_path)?
             };
-            check_executable_inode(interpreter.inode().as_ref())?;
 
-            // Update the argument list and the executable inode. Then, try again.
+            // Update the argument list and the executable file. Then, try again.
             new_argv.extend(argv);
             argv = new_argv;
-            elf_file = interpreter;
+            elf_file = open_executable_file(interpreter)?;
         };
 
         let elf_headers = ElfHeaders::parse(&file_first_page[..len])?;
@@ -95,17 +130,28 @@ impl ProgramToLoad {
         vmar: &Vmar,
         path_resolver: &PathResolver,
     ) -> Result<ElfLoadInfo> {
-        let elf_load_info = load_elf_to_vmar(
+        load_elf_to_vmar(
             vmar,
             self.elf_file,
             path_resolver,
             self.elf_headers,
             self.argv,
             self.envp,
-        )?;
-
-        Ok(elf_load_info)
+        )
     }
+}
+
+/// Opens a path as an executable file.
+pub fn open_executable_file(path: Path) -> Result<ExecutableFile> {
+    check_executable_inode(path.inode().as_ref())?;
+
+    let file: Arc<dyn FileLike> = Arc::new(InodeHandle::new_unchecked_access(
+        path,
+        AccessMode::O_RDONLY,
+        StatusFlags::empty(),
+    )?);
+
+    Ok(ExecutableFile::new(file))
 }
 
 fn check_executable_inode(inode: &dyn Inode) -> Result<()> {

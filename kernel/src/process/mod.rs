@@ -39,6 +39,7 @@ pub use process::{
 };
 pub use process_filter::ProcessFilter;
 pub use process_vm::{INIT_STACK_SIZE, LockedHeap, ProcessVm, VmarSnapshot};
+pub use program_loader::{ExecutableFile, open_executable_file};
 pub use rlimit::ResourceType;
 pub use stats::collect_process_creation_count;
 pub use term_status::TermStatus;

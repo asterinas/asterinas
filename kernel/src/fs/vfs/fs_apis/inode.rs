@@ -616,6 +616,7 @@ impl dyn Inode {
         }
     }
 
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
         self.read_at(offset, &mut writer, StatusFlags::empty())

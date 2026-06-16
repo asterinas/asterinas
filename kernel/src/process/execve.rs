@@ -21,7 +21,7 @@ use crate::{
             sigkill_other_threads,
         },
         process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, ProcessVm},
-        program_loader::{ProgramToLoad, elf::ElfLoadInfo},
+        program_loader::{ExecutableFile, ProgramToLoad, elf::ElfLoadInfo},
         signal::{
             HandlePendingSignal, PauseReason, SigStack,
             constants::{SIGCHLD, SIGKILL},
@@ -32,7 +32,7 @@ use crate::{
 };
 
 pub fn do_execve(
-    elf_file: Path,
+    elf_file: ExecutableFile,
     thread_name: ThreadName,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
@@ -52,15 +52,16 @@ pub fn do_execve(
 
     debug!(
         "file path: {:?}, argv = {:?}, envp = {:?}",
-        path_resolver.make_abs_path(&elf_file).into_string(),
+        path_resolver.make_abs_path(elf_file.path()).into_string(),
         argv,
         envp
     );
 
-    let program_to_load =
-        ProgramToLoad::build_from_file(elf_file.clone(), &path_resolver, argv, envp)?;
+    let elf_path = elf_file.path().clone();
 
-    let new_vmar = VmarHandle::new(ProcessVm::new(elf_file.clone()));
+    let program_to_load = ProgramToLoad::build_from_file(elf_file, &path_resolver, argv, envp)?;
+
+    let new_vmar = VmarHandle::new(ProcessVm::new(elf_path.clone()));
     let elf_load_info = program_to_load.load_to_vmar(&new_vmar, &path_resolver)?;
 
     // Ensure no other thread is concurrently performing exit_group or execve.
@@ -86,7 +87,7 @@ pub fn do_execve(
     let res = do_execve_no_return(
         ctx,
         user_context,
-        elf_file,
+        elf_path,
         thread_name,
         new_vmar,
         &elf_load_info,
