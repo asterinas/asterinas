@@ -4,6 +4,8 @@
 
 set -e
 
+./block_io/block_io_lseek
+
 ./epoll/epoll_err
 ./epoll/poll_err
 ./epoll/test_epoll_pwait.sh
