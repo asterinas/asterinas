@@ -7,7 +7,8 @@ ip_options = IP_TOS | IP_TTL | IP_HDRINCL;
 
 tcp_options = TCP_NODELAY | TCP_MAXSEG | TCP_KEEPIDLE | TCP_SYNCNT |
               TCP_DEFER_ACCEPT | TCP_WINDOW_CLAMP | TCP_CONGESTION |
-              TCP_USER_TIMEOUT | TCP_INQ;
+              TCP_USER_TIMEOUT | TCP_INQ | TCP_KEEPINTVL |
+              TCP_KEEPCNT;
 
 // Get options at socket level
 getsockopt(
