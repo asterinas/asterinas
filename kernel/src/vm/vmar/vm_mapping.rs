@@ -3,6 +3,7 @@
 use alloc::{borrow::Cow, format};
 use core::{
     cmp::{max, min},
+    fmt::{Debug, Formatter, Result as FmtResult},
     num::NonZeroUsize,
     ops::Range,
 };
@@ -20,9 +21,9 @@ use ostd::{
 
 use super::{RssType, Vmar, interval_set::Interval, util::is_intersected, vmar_impls::RssDelta};
 use crate::{
-    fs::vfs::{
-        inode::Inode,
-        path::{Path, PathResolver},
+    fs::{
+        file::FileLike,
+        vfs::{inode::Inode, path::PathResolver},
     },
     prelude::*,
     process::LockedHeap,
@@ -52,7 +53,6 @@ use crate::{
 /// type and cannot be [`Drop`]. To remove a mapping, use [`Self::unmap`].
 ///
 /// [`Vmar`]: crate::vm::vmar::Vmar
-#[derive(Debug)]
 pub struct VmMapping {
     /// The size of mapping, in bytes. The map size can even be larger than the
     /// size of VMO. Those pages outside VMO range cannot be read or write.
@@ -68,11 +68,11 @@ pub struct VmMapping {
     /// The start of the virtual address maps to the start of the range
     /// specified in the mapped object.
     mapped_mem: MappedMemory,
-    /// The path of the file that backs the mapping.
+    /// The file that backs the mapping.
     ///
-    /// If the mapping is VMO-backed, the `mapped_mem` field should be the
-    /// page cache of the inode in the path.
-    path: Option<Path>,
+    /// If the mapping is VMO-backed, the `mapped_mem` field should be the page
+    /// cache of the inode referenced by the file's path.
+    file: Option<Arc<dyn FileLike>>,
     /// Whether the mapping is shared.
     ///
     /// The updates to a shared mapping are visible among processes, or carried
@@ -85,6 +85,20 @@ pub struct VmMapping {
     ///
     /// All pages within the same `VmMapping` have the same permissions.
     perms: VmPerms,
+}
+
+impl Debug for VmMapping {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("VmMapping")
+            .field("map_size", &self.map_size)
+            .field("map_to_addr", &self.map_to_addr)
+            .field("mapped_mem", &self.mapped_mem)
+            .field("file", &self.file.as_ref().map(|file| file.path()))
+            .field("is_shared", &self.is_shared)
+            .field("handle_page_faults_around", &self.handle_page_faults_around)
+            .field("perms", &self.perms)
+            .finish()
+    }
 }
 
 impl Interval<Vaddr> for VmMapping {
@@ -100,7 +114,7 @@ impl VmMapping {
         map_size: NonZeroUsize,
         map_to_addr: Vaddr,
         mapped_mem: MappedMemory,
-        path: Option<Path>,
+        file: Option<Arc<dyn FileLike>>,
         is_shared: bool,
         handle_page_faults_around: bool,
         perms: VmPerms,
@@ -109,7 +123,7 @@ impl VmMapping {
             map_size,
             map_to_addr,
             mapped_mem,
-            path,
+            file,
             is_shared,
             handle_page_faults_around,
             perms,
@@ -119,7 +133,7 @@ impl VmMapping {
     pub(super) fn new_fork(&self) -> VmMapping {
         VmMapping {
             mapped_mem: self.mapped_mem.dup(),
-            path: self.path.clone(),
+            file: self.file.clone(),
             ..*self
         }
     }
@@ -152,7 +166,7 @@ impl VmMapping {
 
     /// Returns the inode of the file that backs the mapping.
     pub fn inode(&self) -> Option<&Arc<dyn Inode>> {
-        self.path.as_ref().map(|path| path.inode())
+        self.file.as_ref().map(|file| file.path().inode())
     }
 
     /// Returns a reference to the VMO if this mapping is VMO-backed.
@@ -300,8 +314,10 @@ impl VmMapping {
                 }
             }
 
-            if let Some(path) = &self.path {
-                return Some(Cow::Owned(path_resolver.make_abs_path(path).into_string()));
+            if let Some(file) = &self.file {
+                return Some(Cow::Owned(
+                    path_resolver.make_abs_path(file.path()).into_string(),
+                ));
             }
 
             // Reference: <https://github.com/google/gvisor/blob/38123b53da96ff6983fcc103dfe2a9cc4e0d80c8/test/syscalls/linux/proc.cc#L1158-L1172>
@@ -675,7 +691,7 @@ impl VmMapping {
             map_to_addr: self.map_to_addr,
             map_size: NonZeroUsize::new(left_size).unwrap(),
             mapped_mem: l_mapped_mem,
-            path: self.path.clone(),
+            file: self.file.clone(),
             ..self
         };
         let right = Self {
@@ -962,7 +978,12 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     let is_adjacent = left.map_end() == right.map_to_addr();
     let is_type_equal = left.is_shared == right.is_shared
         && left.handle_page_faults_around == right.handle_page_faults_around
-        && left.perms == right.perms;
+        && left.perms == right.perms
+        && match (&left.file, &right.file) {
+            (Some(left_file), Some(right_file)) => Arc::ptr_eq(left_file, right_file),
+            (None, None) => true,
+            _ => false,
+        };
 
     if !is_adjacent || !is_type_equal {
         return None;
@@ -997,7 +1018,7 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     Some(VmMapping {
         map_size,
         mapped_mem,
-        path: left.path.clone(),
+        file: left.file.clone(),
         ..*left
     })
 }
