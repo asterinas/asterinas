@@ -86,13 +86,10 @@ impl<T: FromStr> ParseParamValue for T {
     }
 }
 
-/// A `Vec<T>` where `T: FromStr` can be a repeatable parameter.
-impl<T: FromStr> ParseRepeatableParamValue for Vec<T> {
+/// A `Vec<T>` where `T: ParseParamValue` can be a repeatable parameter.
+impl<T: ParseParamValue> ParseRepeatableParamValue for Vec<T> {
     fn parse_all(values: &[&str]) -> Result<Self, ParamError> {
-        values
-            .iter()
-            .map(|v| v.parse().map_err(|_| ParamError::InvalidValue))
-            .collect()
+        values.iter().map(|value| T::parse_param(value)).collect()
     }
 }
 

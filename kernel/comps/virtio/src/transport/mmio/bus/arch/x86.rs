@@ -1,17 +1,65 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::vec::Vec;
+
+use aster_cmdline::types::MmioDevice;
 pub(super) use ostd::arch::irq::MappedIrqLine;
-use ostd::{arch::irq::IRQ_CHIP, debug};
+use ostd::{arch::irq::IRQ_CHIP, debug, info, warn};
+use spin::Once;
 
 use crate::transport::mmio::bus::MmioRegisterError;
 
 pub(super) fn probe_for_device() {
-    // TODO: The correct method for detecting VirtIO-MMIO devices on x86_64 systems is to parse the
-    // kernel command line if ACPI tables are absent [1], or the ACPI SSDT if ACPI tables are
-    // present [2]. Neither of them is supported for now. This function's approach of blindly
-    // scanning the MMIO region is only a workaround.
-    // [1]: https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/drivers/virtio/virtio_mmio.c#L733
-    // [2]: https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/drivers/virtio/virtio_mmio.c#L840
+    probe_from_kernel_cmdline();
+    probe_from_microvm_constants();
+}
+
+static VIRTIO_MMIO_CMDLINE_DEVICES: Once<Vec<MmioDevice>> = Once::new();
+aster_cmdline::define_repeatable_kv_param!("virtio_mmio.device", VIRTIO_MMIO_CMDLINE_DEVICES);
+
+/// Probes Linux-compatible `virtio_mmio.device=<size>@<base>:<irq>[:<id>]` parameters.
+///
+/// This format follows Linux's `virtio_mmio.device` kernel parameter.
+fn probe_from_kernel_cmdline() {
+    let Some(devices) = VIRTIO_MMIO_CMDLINE_DEVICES.get() else {
+        return;
+    };
+
+    let irq_chip = IRQ_CHIP.get().unwrap();
+
+    for device in devices {
+        info!(
+            "Probe MMIO command-line device: base={:#x}, size={:#x}, irq={}",
+            device.base(),
+            device.size().get(),
+            device.irq().get()
+        );
+
+        let Some(mmio_end) = device.base().checked_add(device.size().get()) else {
+            warn!(
+                "Ignore MMIO command-line device at {:#x} because its range overflows",
+                device.base()
+            );
+            continue;
+        };
+
+        if let Err(err) = super::try_register_mmio_device(device.base()..mmio_end, |irq_line| {
+            irq_chip.map_gsi_pin_to(irq_line, device.irq().get())
+        }) {
+            warn!(
+                "Ignore MMIO command-line device at {:#x} due to an error ({:?})",
+                device.base(),
+                err,
+            );
+        }
+    }
+}
+
+fn probe_from_microvm_constants() {
+    // TODO: If ACPI tables are present, the correct method for detecting VirtIO-MMIO
+    // devices is to parse the ACPI SSDT [1]. It is not supported yet, so we fall
+    // back to blindly scanning QEMU MicroVM's fixed MMIO window as a workaround.
+    // [1]: https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/drivers/virtio/virtio_mmio.c#L840
 
     // Constants from QEMU MicroVM. We should remove them as they're QEMU's implementation details.
     //

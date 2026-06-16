@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 aster-bigtcp.workspace = true
 aster-block.workspace = true
+aster-cmdline.workspace = true
 aster-console.workspace = true
 aster-fuse.workspace = true
 aster-input.workspace = true
