@@ -112,7 +112,7 @@ impl BlockPtrTree {
     // and allocate. A cursor over the leaf block could eliminate the second walk.
     pub(in crate::fs::fs_impls::ext2::inode) fn resolve_block_range(
         &mut self,
-        fs: &Arc<Ext2>,
+        fs: &Ext2,
         iblock: Iblock,
         max_blocks: u32,
     ) -> Result<ResolvedBlockRange> {
@@ -647,20 +647,20 @@ impl BlockPtrTree {
     /// placed near the newly allocated metadata when possible. The returned
     /// guard frees all allocated blocks on drop unless `commit` is called after
     /// the blocks have been spliced into the tree.
-    fn allocate_blocks(
+    fn allocate_blocks<'a>(
         &self,
-        fs: &Arc<Ext2>,
+        fs: &'a Ext2,
         indirect_blks: u32,
         data_blks: u32,
         walk: &BlockPointerWalk,
-    ) -> Result<BlockAllocGuard> {
+    ) -> Result<BlockAllocGuard<'a>> {
         let mut alloc_goal = walk
             .visited_entries
             .last()
             .copied()
             .unwrap_or(self.raw_block_ptrs.block_ptrs[0]);
 
-        let mut guard = BlockAllocGuard::new(fs.clone());
+        let mut guard = BlockAllocGuard::new(fs);
         // Allocate the missing indirect metadata first, then place data blocks
         // immediately after the metadata run when possible.
         let mut indirect_blocks = Vec::with_capacity(indirect_blks as usize);
@@ -1123,15 +1123,15 @@ impl BlockPointerWalk {
 
 /// Rollback guard for metadata and data blocks allocated through the block-pointer tree.
 #[derive(Debug)]
-struct BlockAllocGuard {
-    fs: Arc<Ext2>,
+struct BlockAllocGuard<'a> {
+    fs: &'a Ext2,
     indirect_blocks: Vec<Ext2Bid>,
     data_blocks: Range<Ext2Bid>,
     committed: bool,
 }
 
-impl BlockAllocGuard {
-    fn new(fs: Arc<Ext2>) -> Self {
+impl<'a> BlockAllocGuard<'a> {
+    fn new(fs: &'a Ext2) -> Self {
         Self {
             fs,
             indirect_blocks: Vec::new(),
@@ -1155,7 +1155,7 @@ impl BlockAllocGuard {
     }
 }
 
-impl Drop for BlockAllocGuard {
+impl Drop for BlockAllocGuard<'_> {
     fn drop(&mut self) {
         if self.committed {
             return;
@@ -1193,11 +1193,7 @@ mod test {
         time::clocks,
     };
 
-    fn alloc_single_block(
-        tree: &mut BlockPtrTree,
-        fs: &Arc<Ext2>,
-        iblock: Iblock,
-    ) -> Result<Ext2Bid> {
+    fn alloc_single_block(tree: &mut BlockPtrTree, fs: &Ext2, iblock: Iblock) -> Result<Ext2Bid> {
         let step = tree.resolve_block_range(fs, iblock, 1)?;
         let range = match step {
             ResolvedBlockRange::Existing(r) | ResolvedBlockRange::NewlyAllocated(r) => r,
