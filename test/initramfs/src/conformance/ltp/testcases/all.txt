@@ -1227,20 +1227,20 @@ readv01
 removexattr01
 # removexattr02
 
-# rename01
-# rename03
-# rename04
-# rename05
-# rename06
-# rename07
-# rename08
+rename01
+rename03
+rename04
+rename05
+rename06
+rename07
+rename08
 # rename09
 # rename10
 # rename11
 # rename12
-# rename13
+rename13
 rename14
-# rename15
+rename15
 
 #renameat test cases
 # renameat01
