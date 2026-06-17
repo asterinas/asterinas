@@ -114,7 +114,13 @@ fn exit_internal(
 
     // Drop fields in `ThreadLocal`.
     drop_after!(thread_local.vmar().borrow_mut().take());
-    drop_after!(thread_local.borrow_file_table_mut().remove());
+    drop_after!({
+        let file_table = thread_local.borrow_file_table_mut().remove();
+        if is_last_thread && let Some(file_table) = file_table.as_ref() {
+            file_table.read().release_all_range_locks();
+        }
+        file_table
+    });
     drop_after!(thread_local.borrow_ns_proxy_mut().remove());
 
     if is_last_thread {

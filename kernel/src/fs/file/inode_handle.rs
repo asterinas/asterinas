@@ -503,7 +503,6 @@ impl FileLike for InodeHandle {
 
 impl Drop for InodeHandle {
     fn drop(&mut self) {
-        self.release_range_locks();
         notify::on_close(self);
         let _ = self.unlock_flock();
     }
