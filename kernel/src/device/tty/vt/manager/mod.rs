@@ -5,7 +5,10 @@ mod console;
 use aster_console::mode::ConsoleMode;
 use console::VtModeType;
 pub(super) use console::{VtConsole, VtMode};
-use ostd::sync::{LocalIrqDisabled, WaitQueue};
+use ostd::{
+    mm::Infallible,
+    sync::{LocalIrqDisabled, WaitQueue},
+};
 use spin::Once;
 
 use crate::{
@@ -84,6 +87,23 @@ impl VtManager {
             let vt_index = VtIndex::new((i + 1) as u8).unwrap();
             let driver = VtDriver::new(vt_index);
             let tty = Tty::new(vt_index.get() as u32, driver);
+
+            let tty_weak = Arc::downgrade(&tty);
+            let write_callback = Arc::new(move |mut reader: VmReader<Infallible>| {
+                let mut buf = [0u8; 128];
+                while reader.remain() > 0 {
+                    let count = core::cmp::min(reader.remain(), buf.len());
+                    let mut writer = VmWriter::from(&mut buf[..count]);
+                    reader.read(&mut writer);
+
+                    if let Some(tty_arc) = tty_weak.upgrade() {
+                        let _ = tty_arc.push_input(&buf[..count]);
+                    }
+                }
+            });
+
+            tty.driver().vt_console().set_write_callback(write_callback);
+
             char::register(tty.clone())?;
             Ok::<Arc<Tty<VtDriver>>, Error>(tty)
         })?;

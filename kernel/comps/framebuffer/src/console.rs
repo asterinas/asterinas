@@ -2,12 +2,12 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use aster_console::{ConsoleSetFontError, font::BitmapFont, mode::ConsoleMode};
-use ostd::mm::HasSize;
+use aster_console::{ConsoleCallback, ConsoleSetFontError, font::BitmapFont, mode::ConsoleMode};
+use ostd::mm::{HasSize, VmReader};
 
 use crate::{
     FrameBuffer, Pixel,
-    ansi_escape::{EraseInDisplay, EscapeFsm, EscapeOp},
+    ansi_escape::{DeviceStatusReportCode, EraseInDisplay, EscapeFsm, EscapeOp},
 };
 
 /// A text console rendered onto the framebuffer.
@@ -66,6 +66,11 @@ impl FramebufferConsole {
         self.state.set_font(font)
     }
 
+    /// Sets a callback to be called when the console needs to send data back to the terminal.
+    pub fn set_write_callback(&mut self, callback: Arc<ConsoleCallback>) {
+        self.state.write_callback = Some(callback);
+    }
+
     /// Sends a byte slice to the console.
     pub fn send(&mut self, buf: &[u8]) {
         for byte in buf {
@@ -90,7 +95,6 @@ impl core::fmt::Debug for FramebufferConsole {
     }
 }
 
-#[derive(Debug)]
 struct ConsoleState {
     x_pos: usize,
     y_pos: usize,
@@ -100,9 +104,24 @@ struct ConsoleState {
 
     is_active: bool,
     mode: ConsoleMode,
+    write_callback: Option<Arc<ConsoleCallback>>,
 
     bytes: Vec<u8>,
     backend: Arc<FrameBuffer>,
+}
+
+impl core::fmt::Debug for ConsoleState {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ConsoleState")
+            .field("x_pos", &self.x_pos)
+            .field("y_pos", &self.y_pos)
+            .field("fg_color", &self.fg_color)
+            .field("bg_color", &self.bg_color)
+            .field("font", &self.font)
+            .field("is_active", &self.is_active)
+            .field("mode", &self.mode)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ConsoleState {
@@ -116,6 +135,7 @@ impl ConsoleState {
             font: BitmapFont::new_basic8x8(),
             is_active: false,
             mode: ConsoleMode::Text,
+            write_callback: None,
             bytes: alloc::vec![0; buffer_size],
             backend,
         }
@@ -335,6 +355,28 @@ impl EscapeOp for ConsoleState {
             EraseInDisplay::EntireScreen | EraseInDisplay::EntireScreenAndScrollback => {
                 // Clear the entire screen.
                 self.fill_rect_pixels(0, 0, w, h, bg);
+            }
+        }
+    }
+
+    fn device_status_report(&mut self, code: DeviceStatusReportCode) {
+        match code {
+            DeviceStatusReportCode::TerminalStatusReport => {
+                let resp = b"\x1b[0n";
+
+                if let Some(callback) = self.write_callback.clone() {
+                    callback(VmReader::from(resp.as_slice()));
+                }
+            }
+            DeviceStatusReportCode::CursorPositionReport => {
+                let col = self.x_pos / self.font.width() + 1;
+                let row = self.y_pos / self.font.height() + 1;
+
+                let resp = alloc::format!("\x1b[{};{}R", row, col);
+
+                if let Some(callback) = self.write_callback.clone() {
+                    callback(VmReader::from(resp.as_bytes()));
+                }
             }
         }
     }
