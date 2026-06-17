@@ -47,6 +47,7 @@ readlink01
 readlink03
 readlinkat01
 readlinkat02
+rename15
 select01
 setfsuid04
 setresuid04
