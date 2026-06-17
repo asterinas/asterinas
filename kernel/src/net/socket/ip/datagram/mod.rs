@@ -9,7 +9,10 @@ use unbound::{BindOptions, UnboundDatagram};
 use super::addr::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::IoEvents,
-    fs::{pseudofs::SockFs, vfs::path::Path},
+    fs::{
+        pseudofs::SockFs,
+        vfs::{notify, path::Path},
+    },
     net::{
         iface::is_broadcast_endpoint,
         socket::{
@@ -41,6 +44,12 @@ pub struct DatagramSocket {
     is_nonblocking: AtomicBool,
     pollee: Pollee,
     pseudo_path: Path,
+}
+
+impl Drop for DatagramSocket {
+    fn drop(&mut self) {
+        notify::on_close(self);
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -8,7 +8,10 @@ use unbound::UnboundNetlink;
 use super::{GroupIdSet, NetlinkSocketAddr};
 use crate::{
     events::IoEvents,
-    fs::{pseudofs::SockFs, vfs::path::Path},
+    fs::{
+        pseudofs::SockFs,
+        vfs::{notify, path::Path},
+    },
     net::socket::{
         Socket,
         netlink::{AddMembership, DropMembership, table::SupportedNetlinkProtocol},
@@ -31,13 +34,25 @@ use crate::{
 mod bound;
 mod unbound;
 
-pub struct NetlinkSocket<P: SupportedNetlinkProtocol> {
+pub struct NetlinkSocket<P: SupportedNetlinkProtocol>
+where
+    BoundNetlink<P::Message>: Bound<Endpoint = NetlinkSocketAddr>,
+{
     inner: RwMutex<Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>>,
     options: RwLock<OptionSet>,
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
     pseudo_path: Path,
+}
+
+impl<P: SupportedNetlinkProtocol> Drop for NetlinkSocket<P>
+where
+    BoundNetlink<P::Message>: Bound<Endpoint = NetlinkSocketAddr>,
+{
+    fn drop(&mut self) {
+        notify::on_close(self);
+    }
 }
 
 #[derive(Clone, Debug)]

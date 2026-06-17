@@ -7,7 +7,10 @@ use aster_rights::ReadDupOp;
 use super::message::{MessageQueue, MessageReceiver};
 use crate::{
     events::IoEvents,
-    fs::{pseudofs::SockFs, vfs::path::Path},
+    fs::{
+        pseudofs::SockFs,
+        vfs::{notify, path::Path},
+    },
     net::socket::{
         Socket,
         options::{Error as SocketError, PeerCred, SocketOption, macros::sock_option_mut},
@@ -35,6 +38,12 @@ pub struct UnixDatagramSocket {
     is_nonblocking: AtomicBool,
     is_write_shutdown: AtomicBool,
     pseudo_path: Path,
+}
+
+impl Drop for UnixDatagramSocket {
+    fn drop(&mut self) {
+        notify::on_close(self);
+    }
 }
 
 #[derive(Clone, Debug)]

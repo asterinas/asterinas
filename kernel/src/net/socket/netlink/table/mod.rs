@@ -36,7 +36,7 @@ impl NetlinkSocketTable {
     }
 }
 
-pub trait SupportedNetlinkProtocol {
+pub trait SupportedNetlinkProtocol: 'static {
     type Message: 'static + Send;
 
     fn socket_table() -> &'static RwMutex<ProtocolSocketTable<Self::Message>>;

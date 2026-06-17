@@ -10,7 +10,7 @@ use crate::{
     fs::{
         file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::PidfdFs,
-        vfs::path::Path,
+        vfs::{notify, path::Path},
     },
     prelude::*,
     process::{
@@ -24,6 +24,12 @@ pub struct PidFile {
     is_nonblocking: AtomicBool,
     /// The pseudo path associated with this pid file.
     pseudo_path: Path,
+}
+
+impl Drop for PidFile {
+    fn drop(&mut self) {
+        notify::on_close(self);
+    }
 }
 
 impl Debug for PidFile {

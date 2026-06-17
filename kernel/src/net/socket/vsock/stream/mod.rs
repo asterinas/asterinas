@@ -15,7 +15,11 @@ use takeable::Takeable;
 
 use crate::{
     events::IoEvents,
-    fs::{file::FileLike, pseudofs::SockFs, vfs::path::Path},
+    fs::{
+        file::FileLike,
+        pseudofs::SockFs,
+        vfs::{notify, path::Path},
+    },
     net::socket::{
         Socket,
         options::{Error as SocketError, SocketOption, macros::sock_option_mut},
@@ -35,6 +39,12 @@ pub struct VsockStreamSocket {
     // (e.g., `super::transport`) rather than in this module.
     pollee: Pollee,
     pseudo_path: Path,
+}
+
+impl Drop for VsockStreamSocket {
+    fn drop(&mut self) {
+        notify::on_close(self);
+    }
 }
 
 enum State {

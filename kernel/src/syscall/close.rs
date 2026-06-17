@@ -4,10 +4,7 @@ use bitflags::bitflags;
 
 use super::SyscallReturn;
 use crate::{
-    fs::{
-        self,
-        file::file_table::{FdFlags, RawFileDesc},
-    },
+    fs::file::file_table::{FdFlags, RawFileDesc},
     prelude::*,
     process::ContextUnshareAdminApi,
 };
@@ -29,8 +26,6 @@ pub fn sys_close(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
         let _ = file_table_locked.get_file(fd)?;
         file_table_locked.close_file(fd).unwrap()
     };
-
-    fs::vfs::notify::on_close(&file);
 
     // Cleanup work needs to be done in the `Drop` impl.
     //

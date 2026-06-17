@@ -384,7 +384,7 @@ pub fn on_open(file: &Arc<dyn FileLike>) {
 }
 
 /// Notifies that a file was closed.
-pub fn on_close(file: &Arc<dyn FileLike>) {
+pub fn on_close(file: &dyn FileLike) {
     // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
     let path = file.path();
 

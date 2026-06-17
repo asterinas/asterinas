@@ -18,6 +18,7 @@ use crate::{
         vfs::{
             inode::{FallocMode, FileOps},
             inode_ext::InodeExt,
+            notify,
             path::Path,
             range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
         },
@@ -503,6 +504,7 @@ impl FileLike for InodeHandle {
 impl Drop for InodeHandle {
     fn drop(&mut self) {
         self.release_range_locks();
+        notify::on_close(self);
         let _ = self.unlock_flock();
     }
 }
