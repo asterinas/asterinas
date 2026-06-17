@@ -22,9 +22,11 @@
 //!   into the `inventory` registry.
 //! - At early boot the `dispatch` module builds a lookup table from the
 //!   registry, tokenizes the kernel command line, groups recognized
-//!   occurrences and calls the corresponding setup functions. Unrecognized
-//!   tokens are forwarded to the init process as `argv` (bare tokens) or
-//!   `envp` (`key=value`).
+//!   occurrences and calls the corresponding setup functions in
+//!   command-line order (sorted by the last occurrence position of each
+//!   parameter). Early parameters are dispatched before regular ones.
+//!   Unrecognized tokens are forwarded to the init process as `argv`
+//!   (bare tokens) or `envp` (`key=value`).
 //!
 //! Relationship to components
 //! - This crate integrates with the component initialization system. The cmdline
