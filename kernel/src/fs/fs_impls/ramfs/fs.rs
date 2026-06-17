@@ -36,7 +36,8 @@ use crate::{
         },
     },
     prelude::*,
-    process::{Gid, Uid},
+    process::{Gid, Uid, posix_thread::AsPosixThread},
+    thread::Thread,
     time::clocks::RealTimeCoarseClock,
     vm::page_cache::PageCache,
 };
@@ -923,15 +924,18 @@ impl Inode for RamInode {
         }
 
         let fs = self.fs.upgrade().unwrap();
+        let (uid, gid) = Thread::current()
+            .and_then(|thread| {
+                let posix_thread = thread.as_posix_thread()?;
+                let credentials = posix_thread.credentials();
+                Some((credentials.fsuid(), credentials.fsgid()))
+            })
+            .unwrap_or((Uid::new_root(), Gid::new_root()));
         let new_inode = match type_ {
-            InodeType::File => RamInode::new_file(&fs, mode, Uid::new_root(), Gid::new_root()),
-            InodeType::SymLink => {
-                RamInode::new_symlink(&fs, mode, Uid::new_root(), Gid::new_root())
-            }
-            InodeType::Socket => RamInode::new_socket(&fs, mode, Uid::new_root(), Gid::new_root()),
-            InodeType::Dir => {
-                RamInode::new_dir(&fs, mode, Uid::new_root(), Gid::new_root(), &self.this)
-            }
+            InodeType::File => RamInode::new_file(&fs, mode, uid, gid),
+            InodeType::SymLink => RamInode::new_symlink(&fs, mode, uid, gid),
+            InodeType::Socket => RamInode::new_socket(&fs, mode, uid, gid),
+            InodeType::Dir => RamInode::new_dir(&fs, mode, uid, gid, &self.this),
             _ => {
                 panic!("unsupported inode type");
             }
