@@ -187,8 +187,8 @@ impl PerOpenFileOps for PtyMaster {
 
                     let slave_name = {
                         let devpts_path = path_resolver
-                            .make_abs_path(super::DEV_PTS.get().unwrap())
-                            .into_string();
+                            .make_abs_path(super::DEV_PTS.get().unwrap())?
+                            .into_path_buf();
                         format!("{}/{}", devpts_path, self.slave.index())
                     };
 

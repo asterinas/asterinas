@@ -300,8 +300,12 @@ impl VmMapping {
                 }
             }
 
-            if let Some(path) = &self.path {
-                return Some(Cow::Owned(path_resolver.make_abs_path(path).into_string()));
+            // TODO: Support paths longer than the path max length.
+            // Reference: <https://elixir.bootlin.com/linux/v6.15/source/fs/seq_file.c#L239>
+            if let Some(path) = &self.path
+                && let Ok(abs_path) = path_resolver.make_abs_path(path)
+            {
+                return Some(Cow::Owned(abs_path.into_path_buf().to_string()));
             }
 
             // Reference: <https://github.com/google/gvisor/blob/38123b53da96ff6983fcc103dfe2a9cc4e0d80c8/test/syscalls/linux/proc.cc#L1158-L1172>
