@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use align_ext::AlignExt;
 use io_util::batch::IoBatch;
 use ostd::mm::{VmIo, VmReader, VmWriter};
 
 use super::{
-    BLOCK_SIZE, BlockDevice,
+    BLOCK_SIZE, BlockDevice, SECTOR_SIZE,
     bio::{Bio, BioCompleteFn, BioEnqueueError, BioSegment, BioStatus, BioType},
     id::{Bid, Sid},
 };
@@ -85,30 +86,37 @@ impl VmIo for dyn BlockDevice {
     /// Reads consecutive bytes of several sectors in size.
     fn read(&self, offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
         let read_len = writer.avail();
-        if !is_sector_aligned(offset) || !is_sector_aligned(read_len) {
-            return Err(ostd::Error::InvalidArgs);
-        }
         if read_len == 0 {
             return Ok(());
         }
 
+        let request_end = offset.checked_add(read_len).ok_or(ostd::Error::Overflow)?;
+        let device_size = self.metadata().nr_sectors * SECTOR_SIZE;
+        if request_end > device_size {
+            return Err(ostd::Error::InvalidArgs);
+        }
+
+        let aligned_offset = offset.align_down(SECTOR_SIZE);
+        let aligned_end = request_end.align_up(SECTOR_SIZE);
+        let aligned_len = aligned_end - aligned_offset;
+
         let (bio, bio_segment) = {
             let num_blocks = {
-                let first = Bid::from_offset(offset).to_raw();
-                let last = Bid::from_offset(offset + read_len - 1).to_raw();
+                let first = Bid::from_offset(aligned_offset).to_raw();
+                let last = Bid::from_offset(aligned_end - 1).to_raw();
                 (last - first + 1) as usize
             };
             let bio_segment = BioSegment::alloc_inner(
                 num_blocks,
-                offset % BLOCK_SIZE,
-                read_len,
+                aligned_offset % BLOCK_SIZE,
+                aligned_len,
                 BioDirection::FromDevice,
             );
 
             (
                 Bio::new(
                     BioType::Read,
-                    Sid::from_offset(offset),
+                    Sid::from_offset(aligned_offset),
                     vec![bio_segment.clone()],
                     None,
                 ),
@@ -118,7 +126,12 @@ impl VmIo for dyn BlockDevice {
 
         let status = bio.submit_and_wait(self)?;
         match status {
-            BioStatus::Complete => bio_segment.read(0, writer),
+            BioStatus::Complete => {
+                let segment_offset = offset - aligned_offset;
+                bio_segment.read(segment_offset, writer)?;
+
+                Ok(())
+            }
             _ => Err(ostd::Error::IoError),
         }
     }
@@ -126,35 +139,76 @@ impl VmIo for dyn BlockDevice {
     /// Writes consecutive bytes of several sectors in size.
     fn write(&self, offset: usize, reader: &mut VmReader) -> ostd::Result<()> {
         let write_len = reader.remain();
-        if !is_sector_aligned(offset) || !is_sector_aligned(write_len) {
-            return Err(ostd::Error::InvalidArgs);
-        }
         if write_len == 0 {
             return Ok(());
         }
 
-        let bio = {
-            let num_blocks = {
-                let first = Bid::from_offset(offset).to_raw();
-                let last = Bid::from_offset(offset + write_len - 1).to_raw();
-                (last - first + 1) as usize
-            };
-            let bio_segment = BioSegment::alloc_inner(
-                num_blocks,
-                offset % BLOCK_SIZE,
-                write_len,
-                BioDirection::ToDevice,
-            );
-            bio_segment.write(0, reader)?;
+        let request_end = offset.checked_add(write_len).ok_or(ostd::Error::Overflow)?;
+        let device_size = self.metadata().nr_sectors * SECTOR_SIZE;
+        if request_end > device_size {
+            return Err(ostd::Error::InvalidArgs);
+        }
 
-            Bio::new(
-                BioType::Write,
-                Sid::from_offset(offset),
-                vec![bio_segment],
-                None,
-            )
+        let aligned_offset = offset.align_down(SECTOR_SIZE);
+        let aligned_end = request_end.align_up(SECTOR_SIZE);
+
+        // If the write range is not sector-aligned, preserve the bytes in the
+        // surrounding sectors that are outside the user-requested range.
+        // The request is split into at most three segments: a read-modify-write
+        // first sector, sector-aligned middle sectors written directly from the
+        // reader, and a read-modify-write last sector. Each segment consumes
+        // only the bytes that belong to it so later segments see the remaining
+        // input bytes.
+
+        let need_read_first_sector = !is_sector_aligned(offset);
+        let mut middle_sector_offset = aligned_offset;
+        let last_sector_offset = (request_end - 1).align_down(SECTOR_SIZE);
+        let need_read_last_sector = {
+            let is_last_sector_aligned = is_sector_aligned(request_end);
+            let is_the_same_sector = last_sector_offset == aligned_offset;
+            !(is_last_sector_aligned || need_read_first_sector && is_the_same_sector)
+        };
+        let middle_end = if need_read_last_sector {
+            last_sector_offset
+        } else {
+            aligned_end
         };
 
+        let mut bio_segments = Vec::new();
+
+        if need_read_first_sector {
+            let first_segment = self.read_sector_for_write(aligned_offset)?;
+            let first_segment_offset = offset - aligned_offset;
+            let first_write_len = (SECTOR_SIZE - first_segment_offset).min(write_len);
+            let mut first_reader = reader.clone();
+            first_reader.limit(first_write_len);
+            first_segment.write(first_segment_offset, &mut first_reader)?;
+            reader.skip(first_write_len);
+            bio_segments.push(first_segment);
+            middle_sector_offset += SECTOR_SIZE;
+        }
+        if middle_sector_offset < middle_end {
+            let middle_len = middle_end - middle_sector_offset;
+            let middle_segment = alloc_write_segment(middle_sector_offset, middle_len);
+            let mut middle_reader = reader.clone();
+            middle_reader.limit(middle_len);
+            middle_segment.write(0, &mut middle_reader)?;
+            reader.skip(middle_len);
+            bio_segments.push(middle_segment);
+        }
+        if need_read_last_sector {
+            let last_segment = self.read_sector_for_write(last_sector_offset)?;
+            last_segment.write(0, reader)?;
+            bio_segments.push(last_segment);
+        }
+        debug_assert!(!reader.has_remain());
+
+        let bio = Bio::new(
+            BioType::Write,
+            Sid::from_offset(aligned_offset),
+            bio_segments,
+            None,
+        );
         let status = bio.submit_and_wait(self)?;
         match status {
             BioStatus::Complete => Ok(()),
@@ -203,6 +257,33 @@ impl dyn BlockDevice {
         bio.submit(self, io_batch)?;
         Ok(())
     }
+
+    fn read_sector_for_write(&self, sector_offset: usize) -> ostd::Result<BioSegment> {
+        // The segment will be submitted by the later write bio, so keep it writable
+        // from the CPU side and read the preserved sector directly into it.
+        let write_segment = alloc_write_segment(sector_offset, SECTOR_SIZE);
+        let read_bio = Bio::new(
+            BioType::Read,
+            Sid::from_offset(sector_offset),
+            vec![write_segment.clone()],
+            None,
+        );
+        if read_bio.submit_and_wait(self)? != BioStatus::Complete {
+            return Err(ostd::Error::IoError);
+        }
+
+        Ok(write_segment)
+    }
+}
+
+fn alloc_write_segment(offset: usize, len: usize) -> BioSegment {
+    let num_blocks = {
+        let first = Bid::from_offset(offset).to_raw();
+        let last = Bid::from_offset(offset + len - 1).to_raw();
+        (last - first + 1) as usize
+    };
+
+    BioSegment::alloc_inner(num_blocks, offset % BLOCK_SIZE, len, BioDirection::ToDevice)
 }
 
 pub(super) fn general_complete_fn(
