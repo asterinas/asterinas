@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{mm::VmIo, sync::Waiter};
+use ostd::sync::Waiter;
 
 use super::SyscallReturn;
 use crate::{
@@ -18,11 +18,9 @@ pub fn sys_rt_sigsuspend(
         sigmask_addr, sigmask_size
     );
 
-    if sigmask_size != size_of::<SigMask>() {
-        return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
-    }
+    let checked_size = SigMask::check_full_size(sigmask_size)?;
 
-    let sigmask = ctx.user_space().read_val::<SigMask>(sigmask_addr)?;
+    let sigmask = checked_size.read_val(&ctx.user_space(), sigmask_addr)?;
     ctx.save_and_set_sig_mask(sigmask);
 
     // Wait until receiving any signal

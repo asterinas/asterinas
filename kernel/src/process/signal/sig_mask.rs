@@ -13,6 +13,7 @@ use core::{
 };
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
+use ostd::mm::VmIo;
 
 use super::{constants::MIN_STD_SIG_NUM, sig_num::SigNum};
 use crate::prelude::*;
@@ -28,7 +29,7 @@ pub type SigMask = SigSet;
 /// Because that all the signal numbers are in the range of 1 to 64, casting
 /// a signal set from `u64` to `SigSet` will always succeed.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Pod)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SigSet {
     bits: u64,
 }
@@ -126,6 +127,13 @@ impl ops::Not for SigSet {
     }
 }
 
+// This is to allow hexadecimally formatting a `SigSet` when debug printing it.
+impl LowerHex for SigSet {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        LowerHex::fmt(&self.bits, f)
+    }
+}
+
 impl SigSet {
     pub fn new_empty() -> Self {
         SigSet { bits: 0 }
@@ -156,12 +164,83 @@ impl SigSet {
         let other = other.into();
         self.bits & other.bits != 0
     }
+
+    /// Checks whether the user-provided size matches the full size of [`SigSet`].
+    ///
+    /// This is used for syscalls whose Linux ABI requires the size to be exactly
+    /// `size_of::<SigSet>()`.
+    pub fn check_full_size(size: usize) -> Result<SigSetFullSize> {
+        if size != size_of::<Self>() {
+            return_errno_with_message!(Errno::EINVAL, "the sigset size is invalid");
+        }
+        Ok(SigSetFullSize { _private: () })
+    }
+
+    /// Checks whether the user-provided size is not larger than [`SigSet`].
+    ///
+    /// This is used for syscalls such as `rt_sigpending`, whose Linux ABI
+    /// rejects only sizes greater than `size_of::<SigSet>()` and copies at most
+    /// the requested number of bytes.
+    pub fn check_trunc_size(size: usize) -> Result<SigSetTruncSize> {
+        if size > size_of::<Self>() {
+            return_errno_with_message!(Errno::EINVAL, "the sigset size is too large");
+        }
+        Ok(SigSetTruncSize { size })
+    }
 }
 
-// This is to allow hexadecimally formatting a `SigSet` when debug printing it.
-impl LowerHex for SigSet {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        LowerHex::fmt(&self.bits, f) // delegate to u64's implementation
+/// A checked user-space size for a full [`SigMask`].
+pub type SigMaskFullSize = SigSetFullSize;
+
+/// A checked user-space size for a full [`SigSet`].
+///
+/// See [`SigSet::check_full_size`].
+#[derive(Clone, Copy, Debug)]
+pub struct SigSetFullSize {
+    _private: (),
+}
+
+impl SigSetFullSize {
+    /// Reads a full [`SigSet`] from user space.
+    pub(crate) fn read_val(self, user_space: &CurrentUserSpace<'_>, addr: Vaddr) -> Result<SigSet> {
+        let val: u64 = user_space.read_val(addr)?;
+        Ok(SigSet::from(val))
+    }
+
+    /// Writes a full [`SigSet`] to user space.
+    pub(crate) fn write_val(
+        self,
+        user_space: &CurrentUserSpace<'_>,
+        addr: Vaddr,
+        sigset: &SigSet,
+    ) -> Result<()> {
+        user_space.write_val(addr, &u64::from(*sigset))?;
+        Ok(())
+    }
+}
+
+/// A checked user-space size for a possibly truncated [`SigMask`].
+pub type SigMaskTruncSize = SigSetTruncSize;
+
+/// A checked user-space size for a possibly truncated [`SigSet`].
+///
+/// See [`SigSet::check_trunc_size`].
+#[derive(Clone, Copy, Debug)]
+pub struct SigSetTruncSize {
+    size: usize,
+}
+
+impl SigSetTruncSize {
+    /// Writes a possibly truncated [`SigSet`] to user space.
+    pub(crate) fn write_val(
+        self,
+        user_space: &CurrentUserSpace<'_>,
+        addr: Vaddr,
+        sigset: &SigSet,
+    ) -> Result<()> {
+        let bytes = u64::from(*sigset).to_ne_bytes();
+        user_space.write_bytes(addr, &bytes[..self.size])?;
+        Ok(())
     }
 }
 
