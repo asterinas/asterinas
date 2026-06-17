@@ -621,6 +621,201 @@ FN_TEST(self_connect)
 }
 END_TEST()
 
+FN_TEST(ipv6_send_and_recv)
+{
+	int listen_fd = TEST_SUCC(socket(PF_INET6, SOCK_STREAM, 0));
+	int client_fd = TEST_SUCC(socket(PF_INET6, SOCK_STREAM, 0));
+	struct sockaddr_in6 listen_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8892),
+		.sin6_addr = IN6ADDR_LOOPBACK_INIT,
+	};
+	struct sockaddr_in6 peer_addr = { 0 };
+	socklen_t peer_len = sizeof(peer_addr);
+	char buf[3] = { 0 };
+
+	TEST_SUCC(bind(listen_fd, (struct sockaddr *)&listen_addr,
+		       sizeof(listen_addr)));
+	TEST_SUCC(listen(listen_fd, 3));
+	TEST_SUCC(connect(client_fd, (struct sockaddr *)&listen_addr,
+			  sizeof(listen_addr)));
+
+	int accepted_fd = TEST_SUCC(
+		accept(listen_fd, (struct sockaddr *)&peer_addr, &peer_len));
+	TEST_RES(write(client_fd, "v6", 2), _ret == 2);
+	TEST_RES(read(accepted_fd, buf, 2),
+		 _ret == 2 && memcmp(buf, "v6", 2) == 0 &&
+			 peer_len == sizeof(peer_addr) &&
+			 peer_addr.sin6_family == AF_INET6);
+
+	TEST_SUCC(close(accepted_fd));
+	TEST_SUCC(close(client_fd));
+	TEST_SUCC(close(listen_fd));
+}
+END_TEST()
+
+FN_TEST(ipv6_mapped_ipv4_connect)
+{
+	int listen_fd = TEST_SUCC(socket(PF_INET, SOCK_STREAM, 0));
+	int client_fd = TEST_SUCC(socket(PF_INET6, SOCK_STREAM, 0));
+	struct sockaddr_in listen_addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(8893),
+	};
+	struct sockaddr_in6 mapped_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8893),
+		.sin6_addr = { .s6_addr = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff,
+					    0xff, 127, 0, 0, 1 } },
+	};
+	struct sockaddr_in6 client_addr = { 0 };
+	socklen_t client_len = sizeof(client_addr);
+	char buf[7] = { 0 };
+
+	TEST_SUCC(inet_aton("127.0.0.1", &listen_addr.sin_addr));
+	TEST_SUCC(bind(listen_fd, (struct sockaddr *)&listen_addr,
+		       sizeof(listen_addr)));
+	TEST_SUCC(listen(listen_fd, 3));
+	TEST_SUCC(connect(client_fd, (struct sockaddr *)&mapped_addr,
+			  sizeof(mapped_addr)));
+
+	int accepted_fd = TEST_SUCC(accept(listen_fd, NULL, NULL));
+	TEST_RES(getsockname(client_fd, (struct sockaddr *)&client_addr,
+			     &client_len),
+		 client_len == sizeof(client_addr) &&
+			 client_addr.sin6_family == AF_INET6 &&
+			 IN6_IS_ADDR_V4MAPPED(&client_addr.sin6_addr));
+	TEST_RES(write(client_fd, "mapped", 6), _ret == 6);
+	TEST_RES(read(accepted_fd, buf, 6),
+		 _ret == 6 && memcmp(buf, "mapped", 6) == 0);
+
+	TEST_SUCC(close(accepted_fd));
+	TEST_SUCC(close(client_fd));
+	TEST_SUCC(close(listen_fd));
+}
+END_TEST()
+
+FN_TEST(ipv6_v6only_connect_unreachable)
+{
+	int client_fd = TEST_SUCC(socket(PF_INET6, SOCK_STREAM, 0));
+	int v6only = 1;
+	struct sockaddr_in6 mapped_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8894),
+		.sin6_addr = { .s6_addr = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff,
+					    0xff, 127, 0, 0, 1 } },
+	};
+
+	TEST_SUCC(setsockopt(client_fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only,
+			     sizeof(v6only)));
+
+	// A v6only socket cannot reach an IPv4-mapped address, so the connection
+	// attempt fails immediately with ENETUNREACH.
+	TEST_ERRNO(connect(client_fd, (struct sockaddr *)&mapped_addr,
+			   sizeof(mapped_addr)),
+		   ENETUNREACH);
+
+	TEST_SUCC(close(client_fd));
+}
+END_TEST()
+
+FN_TEST(ipv6_wildcard_accepts_ipv4)
+{
+	int listen_fd = TEST_SUCC(socket(PF_INET6, SOCK_STREAM, 0));
+	int client_fd = TEST_SUCC(socket(PF_INET, SOCK_STREAM, 0));
+	struct sockaddr_in6 listen_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8894),
+		.sin6_addr = IN6ADDR_ANY_INIT,
+	};
+	struct sockaddr_in connect_addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(8894),
+	};
+	struct sockaddr_in6 peer_addr = { 0 };
+	socklen_t peer_len = sizeof(peer_addr);
+
+	TEST_SUCC(inet_aton("127.0.0.1", &connect_addr.sin_addr));
+	TEST_SUCC(bind(listen_fd, (struct sockaddr *)&listen_addr,
+		       sizeof(listen_addr)));
+	TEST_SUCC(listen(listen_fd, 3));
+	TEST_SUCC(connect(client_fd, (struct sockaddr *)&connect_addr,
+			  sizeof(connect_addr)));
+
+	int accepted_fd = TEST_SUCC(
+		accept(listen_fd, (struct sockaddr *)&peer_addr, &peer_len));
+	TEST_RES(0, peer_len == sizeof(peer_addr) &&
+			    peer_addr.sin6_family == AF_INET6 &&
+			    IN6_IS_ADDR_V4MAPPED(&peer_addr.sin6_addr));
+
+	TEST_SUCC(close(accepted_fd));
+	TEST_SUCC(close(client_fd));
+	TEST_SUCC(close(listen_fd));
+}
+END_TEST()
+
+FN_TEST(ipv6_v6only_wildcard_port_isolated)
+{
+	int ipv6_fd = TEST_SUCC(socket(PF_INET6, SOCK_STREAM, 0));
+	int ipv4_fd = TEST_SUCC(socket(PF_INET, SOCK_STREAM, 0));
+	struct sockaddr_in6 ipv6_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8895),
+		.sin6_addr = IN6ADDR_ANY_INIT,
+	};
+	struct sockaddr_in ipv4_addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(8895),
+	};
+	int v6only = 1;
+
+	TEST_SUCC(inet_aton("127.0.0.1", &ipv4_addr.sin_addr));
+	TEST_SUCC(setsockopt(ipv6_fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only,
+			     sizeof(v6only)));
+	TEST_SUCC(bind(ipv6_fd, (struct sockaddr *)&ipv6_addr,
+		       sizeof(ipv6_addr)));
+	TEST_SUCC(bind(ipv4_fd, (struct sockaddr *)&ipv4_addr,
+		       sizeof(ipv4_addr)));
+	TEST_SUCC(listen(ipv6_fd, 3));
+	TEST_SUCC(listen(ipv4_fd, 3));
+
+	TEST_SUCC(close(ipv4_fd));
+	TEST_SUCC(close(ipv6_fd));
+}
+END_TEST()
+
+FN_TEST(ipv6_dual_stack_listener_conflict)
+{
+	int ipv4_fd = TEST_SUCC(socket(PF_INET, SOCK_STREAM, 0));
+	int ipv6_fd = TEST_SUCC(socket(PF_INET6, SOCK_STREAM, 0));
+	struct sockaddr_in ipv4_addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(8896),
+	};
+	struct sockaddr_in6 ipv6_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8896),
+		.sin6_addr = IN6ADDR_ANY_INIT,
+	};
+	int reuse = 1;
+
+	TEST_SUCC(inet_aton("127.0.0.1", &ipv4_addr.sin_addr));
+	TEST_SUCC(setsockopt(ipv4_fd, SOL_SOCKET, SO_REUSEADDR, &reuse,
+			     sizeof(reuse)));
+	TEST_SUCC(setsockopt(ipv6_fd, SOL_SOCKET, SO_REUSEADDR, &reuse,
+			     sizeof(reuse)));
+	TEST_SUCC(bind(ipv4_fd, (struct sockaddr *)&ipv4_addr,
+		       sizeof(ipv4_addr)));
+	TEST_SUCC(bind(ipv6_fd, (struct sockaddr *)&ipv6_addr,
+		       sizeof(ipv6_addr)));
+	TEST_SUCC(listen(ipv4_fd, 3));
+	TEST_ERRNO(listen(ipv6_fd, 3), EADDRINUSE);
+
+	TEST_SUCC(close(ipv6_fd));
+	TEST_SUCC(close(ipv4_fd));
+}
+END_TEST()
+
 FN_TEST(listen_at_the_same_address)
 {
 	int sk_listen1;

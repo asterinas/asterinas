@@ -85,21 +85,24 @@ impl InitStream {
         self.family
     }
 
-    pub(super) fn bind(&mut self, endpoint: &IpEndpoint, can_reuse: bool) -> Result<()> {
+    pub(super) fn bind(
+        &mut self,
+        endpoint: &IpEndpoint,
+        can_reuse: bool,
+        is_ipv6_only: bool,
+    ) -> Result<()> {
         if self.bound_port.is_some() {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
         }
 
-        // When we support `IPV6_V6ONLY` and if it is set, we should also reject IPv4-mapped
-        // IPv6 addresses.
-        if IpAddressFamily::from(endpoint.addr) != self.family {
+        if !self.is_endpoint_family_supported(endpoint) {
             return_errno_with_message!(
                 Errno::EAFNOSUPPORT,
                 "the protocol family does not match the address family"
             );
         }
 
-        self.bound_port = Some(bind_port(endpoint, can_reuse)?);
+        self.bound_port = Some(bind_port(endpoint, can_reuse, is_ipv6_only)?);
 
         Ok(())
     }
@@ -120,9 +123,7 @@ impl InitStream {
             "`finish_last_connect()` should be called before calling `connect()`"
         );
 
-        // When we support `IPV6_V6ONLY` and if it is set, we should also reject IPv4-mapped
-        // IPv6 addresses.
-        if IpAddressFamily::from(remote_endpoint.addr) != self.family {
+        if !self.is_endpoint_family_supported(remote_endpoint) {
             return Err((
                 Error::with_message(
                     Errno::EAFNOSUPPORT,
@@ -147,13 +148,13 @@ impl InitStream {
                     ));
                 }
             };
-            match bind_port(&endpoint, can_reuse) {
+            match bind_port(&endpoint, can_reuse, false) {
                 Ok(bound_port) => bound_port,
                 Err(err) => return Err((err, self)),
             }
         };
 
-        ConnectingStream::new(bound_port, *remote_endpoint, option, observer).map_err(
+        ConnectingStream::new(bound_port, *remote_endpoint, option, observer, self.family).map_err(
             |(err, bound_port)| {
                 if err.error() == Errno::ECONNREFUSED {
                     (err, InitStream::new_refused(bound_port, self.family))
@@ -273,7 +274,15 @@ impl InitStream {
     }
 }
 
-fn bind_port(endpoint: &IpEndpoint, can_reuse: bool) -> Result<BoundTcpPort> {
-    let (iface, config) = resolve_bind_iface_and_config(endpoint, can_reuse)?;
+impl InitStream {
+    fn is_endpoint_family_supported(&self, endpoint: &IpEndpoint) -> bool {
+        let endpoint_family = IpAddressFamily::from(endpoint.addr);
+        endpoint_family == self.family
+            || (self.family == IpAddressFamily::IPv6 && endpoint_family == IpAddressFamily::IPv4)
+    }
+}
+
+fn bind_port(endpoint: &IpEndpoint, can_reuse: bool, is_ipv6_only: bool) -> Result<BoundTcpPort> {
+    let (iface, config) = resolve_bind_iface_and_config(endpoint, can_reuse, is_ipv6_only)?;
     Ok(iface.bind_tcp(config)?)
 }

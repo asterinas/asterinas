@@ -2,7 +2,7 @@
 
 use aster_bigtcp::{
     errors::BindError,
-    iface::BindPortConfig,
+    iface::{BindPortConfig, BindPortScope},
     wire::{IpAddress, IpEndpoint},
 };
 
@@ -14,14 +14,17 @@ use crate::{
     prelude::*,
 };
 
-fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
-    match *ip_addr {
-        IpAddress::Ipv4(ipv4_addr) => iter_all_ifaces()
+fn get_iface_to_bind(scope: BindPortScope) -> Option<Arc<Iface>> {
+    match scope {
+        BindPortScope::Address(IpAddress::Ipv4(ipv4_addr)) => iter_all_ifaces()
             .find(|iface| iface.ipv4_addr().is_some_and(|addr| addr == ipv4_addr))
             .map(Clone::clone),
-        IpAddress::Ipv6(ipv6_addr) => iter_all_ifaces()
+        BindPortScope::Address(IpAddress::Ipv6(ipv6_addr)) => iter_all_ifaces()
             .find(|iface| iface.ipv6_addr().is_some_and(|addr| addr == ipv6_addr))
             .map(Clone::clone),
+        BindPortScope::Ipv4Wildcard
+        | BindPortScope::Ipv6OnlyWildcard
+        | BindPortScope::Ipv6DualStackWildcard => Some(loopback_iface().clone()),
     }
 }
 
@@ -72,10 +75,12 @@ fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
 pub(super) fn resolve_bind_iface_and_config(
     endpoint: &IpEndpoint,
     can_reuse: bool,
+    is_ipv6_only: bool,
 ) -> Result<(Arc<Iface>, BindPortConfig)> {
     check_port_privilege(endpoint.port)?;
 
-    let iface = match get_iface_to_bind(&endpoint.addr) {
+    let scope = bind_scope(endpoint, is_ipv6_only);
+    let iface = match get_iface_to_bind(scope) {
         Some(iface) => iface,
         None => {
             return_errno_with_message!(
@@ -85,9 +90,20 @@ pub(super) fn resolve_bind_iface_and_config(
         }
     };
 
-    let bind_port_config = BindPortConfig::new(*endpoint, can_reuse);
+    let bind_port_config = BindPortConfig::new_with_scope(scope, endpoint.port, can_reuse);
 
     Ok((iface, bind_port_config))
+}
+
+fn bind_scope(endpoint: &IpEndpoint, is_ipv6_only: bool) -> BindPortScope {
+    match endpoint.addr {
+        IpAddress::Ipv4(addr) if addr.is_unspecified() => BindPortScope::Ipv4Wildcard,
+        IpAddress::Ipv6(addr) if addr.is_unspecified() && is_ipv6_only => {
+            BindPortScope::Ipv6OnlyWildcard
+        }
+        IpAddress::Ipv6(addr) if addr.is_unspecified() => BindPortScope::Ipv6DualStackWildcard,
+        _ => BindPortScope::Address(endpoint.addr),
+    }
 }
 
 impl From<BindError> for Error {

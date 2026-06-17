@@ -4,6 +4,7 @@ use core::num::NonZeroU8;
 
 use aster_bigtcp::socket::NeedIfacePoll;
 
+use super::addr::IpAddressFamily;
 use crate::{
     net::socket::options::{
         SocketOption,
@@ -21,6 +22,7 @@ pub(super) struct IpOptionSet {
     ttl: IpTtl,
     hdrincl: bool,
     recverr: bool,
+    ipv6_only: bool,
 }
 
 const DEFAULT_TTL: u8 = 64;
@@ -33,6 +35,7 @@ impl IpOptionSet {
             ttl: IpTtl(None),
             hdrincl: false,
             recverr: false,
+            ipv6_only: false,
         }
     }
 
@@ -42,10 +45,15 @@ impl IpOptionSet {
             ttl: IpTtl(None),
             hdrincl: false,
             recverr: false,
+            ipv6_only: false,
         }
     }
 
-    pub(super) fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+    pub(super) fn get_option(
+        &self,
+        option: &mut dyn SocketOption,
+        family: IpAddressFamily,
+    ) -> Result<()> {
         sock_option_mut!(match option {
             ip_tos @ Tos => {
                 let tos = self.tos();
@@ -63,6 +71,16 @@ impl IpOptionSet {
                 let recverr = self.recverr();
                 ip_recverr.set(recverr);
             }
+            ipv6_only @ Ipv6Only => {
+                if family != IpAddressFamily::IPv6 {
+                    return_errno_with_message!(
+                        Errno::EOPNOTSUPP,
+                        "IPV6_V6ONLY is unsupported on IPv4 sockets"
+                    );
+                }
+                let is_ipv6_only = self.ipv6_only();
+                ipv6_only.set(is_ipv6_only);
+            }
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option is unknown"),
         });
 
@@ -73,6 +91,7 @@ impl IpOptionSet {
         &mut self,
         option: &dyn SocketOption,
         socket: &dyn SetIpLevelOption,
+        family: IpAddressFamily,
     ) -> Result<NeedIfacePoll> {
         sock_option_ref!(match option {
             ip_tos @ Tos => {
@@ -95,6 +114,17 @@ impl IpOptionSet {
                 let recverr = ip_recverr.get().unwrap();
                 self.set_recverr(*recverr);
             }
+            ipv6_only @ Ipv6Only => {
+                if family != IpAddressFamily::IPv6 {
+                    return_errno_with_message!(
+                        Errno::ENOPROTOOPT,
+                        "IPV6_V6ONLY is unsupported on IPv4 sockets"
+                    );
+                }
+                socket.check_set_ipv6_only()?;
+                let is_ipv6_only = ipv6_only.get().unwrap();
+                self.set_ipv6_only(*is_ipv6_only);
+            }
             _ => return_errno_with_message!(
                 Errno::ENOPROTOOPT,
                 "the socket option to be set is unknown"
@@ -110,6 +140,7 @@ impl_socket_options!(
     pub struct Ttl(IpTtl);
     pub struct Hdrincl(bool);
     pub struct Recverr(bool);
+    pub struct Ipv6Only(bool);
 );
 
 #[derive(Clone, Copy, Debug)]
@@ -131,4 +162,8 @@ impl IpTtl {
 
 pub(super) trait SetIpLevelOption {
     fn set_hdrincl(&self, _hdrincl: bool) -> Result<()>;
+
+    fn check_set_ipv6_only(&self) -> Result<()> {
+        Ok(())
+    }
 }

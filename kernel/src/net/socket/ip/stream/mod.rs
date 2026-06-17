@@ -21,7 +21,7 @@ use takeable::Takeable;
 use util::{Retrans, TcpOptionSet};
 
 use super::{
-    addr::IpAddressFamily,
+    addr::{IpAddressFamily, SocketAddrOp, endpoint_to_socket_addr, socket_addr_to_endpoint},
     options::{IpOptionSet, SetIpLevelOption},
 };
 use crate::{
@@ -61,6 +61,7 @@ pub struct StreamSocket {
     // and other locks in `aster-bigtcp`), which will break the atomic mode.
     state: RwLock<Takeable<State>>,
     options: RwLock<OptionSet>,
+    family: IpAddressFamily,
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
@@ -109,13 +110,27 @@ impl StreamSocket {
         Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Init(init_stream))),
             options: RwLock::new(OptionSet::new()),
+            family,
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
             pseudo_path: SockFs::new_path(),
         })
     }
 
-    fn new_accepted(connected_stream: ConnectedStream, listener_options: &OptionSet) -> Arc<Self> {
+    fn socket_addr_to_endpoint(
+        &self,
+        socket_addr: SocketAddr,
+        op: SocketAddrOp,
+    ) -> Result<IpEndpoint> {
+        let is_ipv6_only = self.options.read().ip.ipv6_only();
+        socket_addr_to_endpoint(socket_addr, self.family, is_ipv6_only, op)
+    }
+
+    fn new_accepted(
+        connected_stream: ConnectedStream,
+        listener_options: &OptionSet,
+        family: IpAddressFamily,
+    ) -> Arc<Self> {
         let options = connected_stream.raw_with(|raw_tcp_socket| {
             let mut options = OptionSet::new();
 
@@ -153,6 +168,7 @@ impl StreamSocket {
         Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
             options: RwLock::new(options),
+            family,
             is_nonblocking: AtomicBool::new(false),
             pollee,
             pseudo_path: SockFs::new_path(),
@@ -322,8 +338,12 @@ impl StreamSocket {
         let accepted = listen_stream.try_accept().map(|connected_stream| {
             let remote_endpoint = connected_stream.remote_endpoint();
             let listener_options = self.options.read();
-            let accepted_socket = Self::new_accepted(connected_stream, &listener_options);
-            (accepted_socket as _, remote_endpoint.into())
+            let accepted_socket =
+                Self::new_accepted(connected_stream, &listener_options, self.family);
+            (
+                accepted_socket as _,
+                endpoint_to_socket_addr(remote_endpoint, self.family),
+            )
         });
         let iface_to_poll = listen_stream.iface().clone();
 
@@ -368,7 +388,10 @@ impl StreamSocket {
             iface.poll();
         }
 
-        Ok((recv_bytes, remote_endpoint.into()))
+        Ok((
+            recv_bytes,
+            endpoint_to_socket_addr(remote_endpoint, self.family),
+        ))
     }
 
     fn try_send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
@@ -448,19 +471,22 @@ impl SocketPrivate for StreamSocket {
 
 impl Socket for StreamSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
-        let endpoint = socket_addr.try_into()?;
+        let endpoint = self.socket_addr_to_endpoint(socket_addr, SocketAddrOp::Bind)?;
+        let options = self.options.read();
+        let can_reuse = options.socket.reuse_addr();
+        let is_ipv6_only = options.ip.ipv6_only();
+        drop(options);
 
         let mut state = self.write_updated_state();
         let State::Init(init_stream) = state.as_mut() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
         };
 
-        let can_reuse = self.options.read().socket.reuse_addr();
-        init_stream.bind(&endpoint, can_reuse)
+        init_stream.bind(&endpoint, can_reuse, is_ipv6_only)
     }
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
-        let remote_endpoint = socket_addr.try_into()?;
+        let remote_endpoint = self.socket_addr_to_endpoint(socket_addr, SocketAddrOp::Connect)?;
 
         if let Some(result) = self.start_connect(&remote_endpoint) {
             return result;
@@ -542,7 +568,7 @@ impl Socket for StreamSocket {
             State::Listen(listen_stream) => listen_stream.local_endpoint(),
             State::Connected(connected_stream) => connected_stream.local_endpoint(),
         };
-        Ok(local_endpoint.into())
+        Ok(endpoint_to_socket_addr(local_endpoint, self.family))
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
@@ -554,7 +580,7 @@ impl Socket for StreamSocket {
             State::Connecting(connecting_stream) => connecting_stream.remote_endpoint(),
             State::Connected(connected_stream) => connected_stream.remote_endpoint(),
         };
-        Ok(remote_endpoint.into())
+        Ok(endpoint_to_socket_addr(remote_endpoint, self.family))
     }
 
     fn sendmsg(
@@ -626,7 +652,7 @@ impl Socket for StreamSocket {
         }
 
         // Deal with IP-level options
-        match options.ip.get_option(option) {
+        match options.ip.get_option(option, self.family) {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res,
         }
@@ -713,7 +739,7 @@ impl Socket for StreamSocket {
         let need_iface_poll = match socket_option_result {
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // Deal with IP-level options
-                match options.ip.set_option(option, state.as_ref()) {
+                match options.ip.set_option(option, state.as_ref(), self.family) {
                     Err(err) if err.error() == Errno::ENOPROTOOPT => {
                         // Deal with TCP-level options
                         do_tcp_setsockopt(option, &mut options, state.as_mut())?
@@ -934,6 +960,16 @@ impl SetIpLevelOption for State {
             Errno::ENOPROTOOPT,
             "IP_HDRINCL cannot be set on TCP sockets"
         );
+    }
+
+    fn check_set_ipv6_only(&self) -> Result<()> {
+        match self {
+            State::Init(init_stream) if init_stream.local_endpoint().is_none() => Ok(()),
+            _ => return_errno_with_message!(
+                Errno::EINVAL,
+                "IPV6_V6ONLY cannot be changed after the socket is bound"
+            ),
+        }
     }
 }
 
