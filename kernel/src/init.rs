@@ -2,9 +2,12 @@
 
 //! Kernel initialization.
 
-use core::str::FromStr;
+use core::{
+    str::FromStr,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
-use aster_cmdline::INIT_PROC_ARGS;
+use aster_cmdline::{INIT_PROC_ARGS, parse::ParamStorage};
 use component::InitStage;
 use ostd::{cpu::CpuId, util::id_set::Id};
 use spin::once::Once;
@@ -12,7 +15,7 @@ use spin::once::Once;
 use crate::{
     fs::{
         rootfs::{self, RootFsType},
-        vfs::path::{FsPath, MountNamespace, PathResolver},
+        vfs::path::{FsPath, MountNamespace, PathResolver, PerMountFlags},
     },
     prelude::*,
     process::{Process, spawn_init_process},
@@ -168,8 +171,8 @@ fn first_kthread() {
             .get()
             .map(|rootfs_types| rootfs_types.as_slice())
             .unwrap_or(RootFsType::ALL);
-        let mnt_ns =
-            rootfs::mount(root, rootfs_types).expect("Failed to mount the root filesystem");
+        let mnt_ns = rootfs::mount(root, rootfs_types, root_mount_flags())
+            .expect("Failed to mount the root filesystem");
 
         let init_path = INIT_PATH
             .get()
@@ -207,6 +210,38 @@ fn first_kthread() {
 }
 
 static INIT_PROCESS: Once<Arc<Process>> = Once::new();
+
+fn root_mount_flags() -> PerMountFlags {
+    let mut flags = PerMountFlags::default();
+    if ROOT_MOUNT_READ_ONLY.load(Ordering::Relaxed) {
+        flags.insert(PerMountFlags::RDONLY);
+    }
+    flags
+}
+
+struct SetRootMountReadOnly;
+
+impl ParamStorage for SetRootMountReadOnly {
+    type Value = bool;
+
+    fn store_param(&self, value: Self::Value) {
+        if value {
+            ROOT_MOUNT_READ_ONLY.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+struct SetRootMountReadWrite;
+
+impl ParamStorage for SetRootMountReadWrite {
+    type Value = bool;
+
+    fn store_param(&self, value: Self::Value) {
+        if value {
+            ROOT_MOUNT_READ_ONLY.store(false, Ordering::Relaxed);
+        }
+    }
+}
 
 fn init_in_first_kthread(path_resolver: &PathResolver) {
     component::init_all(InitStage::Kthread, component::parse_metadata!()).unwrap();
@@ -266,3 +301,9 @@ aster_cmdline::define_kv_param!("rootfstype", ROOTFS_TYPE);
 
 static INIT_PATH: Once<String> = Once::new();
 aster_cmdline::define_kv_param!("init", INIT_PATH);
+
+static ROOT_MOUNT_READ_ONLY: AtomicBool = AtomicBool::new(true);
+static RO_PARAM: SetRootMountReadOnly = SetRootMountReadOnly;
+aster_cmdline::define_flag_param!("ro", RO_PARAM);
+static RW_PARAM: SetRootMountReadWrite = SetRootMountReadWrite;
+aster_cmdline::define_flag_param!("rw", RW_PARAM);

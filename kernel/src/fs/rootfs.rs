@@ -15,7 +15,7 @@ use super::{
     file::{InodeMode, InodeType},
     vfs::{
         file_system::FileSystem,
-        path::{FsPath, Mount, MountNamespace, PathResolver, is_dot},
+        path::{FsPath, Mount, MountNamespace, PathResolver, PerMountFlags, is_dot},
     },
 };
 use crate::{fs::vfs::inode::MknodType, prelude::*, process::UserNamespace};
@@ -82,7 +82,11 @@ pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
 }
 
 /// Mounts the specified block device as a root filesystem in a new mount namespace.
-pub fn mount(root: &str, rootfs_types: &[RootFsType]) -> Result<Arc<MountNamespace>> {
+pub fn mount(
+    root: &str,
+    rootfs_types: &[RootFsType],
+    mount_flags: PerMountFlags,
+) -> Result<Arc<MountNamespace>> {
     // Treat `root=/dev/...` as a Linux-compatible root device spec, not as a
     // VFS path lookup. Linux also mounts the root filesystem before
     // auto-mounting devtmpfs on `/dev`.
@@ -95,8 +99,9 @@ pub fn mount(root: &str, rootfs_types: &[RootFsType]) -> Result<Arc<MountNamespa
     let fs = open_rootfs_from_candidates(device, rootfs_types)?;
 
     let owner = UserNamespace::get_init_singleton().clone();
-    let mount_namespace =
-        MountNamespace::new_with_root(owner, |weak_ns| Mount::new_root(fs, weak_ns.clone()))?;
+    let mount_namespace = MountNamespace::new_with_root(owner, |weak_ns| {
+        Mount::new_root_with_flags(fs, mount_flags, weak_ns.clone())
+    })?;
     println!("[kernel] mounted {} as the root filesystem", root);
     Ok(mount_namespace)
 }
