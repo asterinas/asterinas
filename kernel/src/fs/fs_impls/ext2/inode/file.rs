@@ -169,36 +169,26 @@ impl Inode {
 
         match mode {
             FallocMode::Allocate => {
-                let allocated_block_ranges = match inner.allocate_range_blocks(offset, end) {
-                    Ok(ranges) => ranges,
-                    Err(err) => {
-                        inner.rollback_fallocate(old_size);
-                        return Err(err);
-                    }
+                let rollback_kind = if end > old_size {
+                    RollbackKind::PageCacheAndBlocks { end }
+                } else {
+                    RollbackKind::BlocksOnly
                 };
-                if let Err(err) = inner.zero_new_blocks(&fs, &allocated_block_ranges) {
-                    inner.rollback_fallocate(old_size);
-                    return Err(err);
+                let mut guard = InodeRollbackGuard::new(&mut inner, rollback_kind);
+                let inner: &mut InodeInner = guard.inner_mut();
+                let allocated_block_ranges = inner.allocate_range_blocks(offset, end)?;
+                inner.zero_new_blocks(&fs, &allocated_block_ranges)?;
+                if end > guard.old_size() {
+                    guard.inner_mut().expand(&fs, end)?;
                 }
-                if end > old_size
-                    && let Err(err) = inner.expand(&fs, end)
-                {
-                    inner.rollback_fallocate(old_size);
-                    return Err(err);
-                }
+                guard.commit();
             }
             FallocMode::AllocateKeepSize => {
-                let allocated_block_ranges = match inner.allocate_range_blocks(offset, end) {
-                    Ok(ranges) => ranges,
-                    Err(err) => {
-                        inner.rollback_fallocate(old_size);
-                        return Err(err);
-                    }
-                };
-                if let Err(err) = inner.zero_new_blocks(&fs, &allocated_block_ranges) {
-                    inner.rollback_fallocate(old_size);
-                    return Err(err);
-                }
+                let mut guard = InodeRollbackGuard::new(&mut inner, RollbackKind::BlocksOnly);
+                let inner = guard.inner_mut();
+                let allocated_block_ranges = inner.allocate_range_blocks(offset, end)?;
+                inner.zero_new_blocks(&fs, &allocated_block_ranges)?;
+                guard.commit();
             }
             _ => {
                 return_errno_with_message!(
@@ -213,6 +203,100 @@ impl Inode {
     }
 }
 
+/// The rollback an `InodeRollbackGuard` performs when it is not committed.
+pub(super) enum RollbackKind {
+    /// Both page-cache capacity and block mappings, restored to `old_size`.
+    ///
+    /// This is the counterpart of a preceding `prepare_write`, which may have
+    /// grown the page cache and allocated data blocks for `[.., end)`.
+    PageCacheAndBlocks { end: usize },
+    /// Block mappings only, with the page cache left untouched.
+    ///
+    /// The counterpart of `fallocate`, which allocates blocks without
+    /// expanding the page cache.
+    BlocksOnly,
+}
+
+/// RAII guard that restores an inode to its pre-mutation state when dropped,
+/// unless `commit` is called first.
+///
+/// The guard's sole responsibility is rollback. The caller performs any
+/// preparation (e.g. `prepare_write`) explicitly, arms the guard with the
+/// matching `RollbackKind`, drives the fallible mutation, and calls `commit`
+/// on success. Any early return via `?` drops the guard and triggers the
+/// rollback described by its `RollbackKind`. The caller must hold the
+/// `InodeInner` write lock for the entire armed sequence.
+pub(super) struct InodeRollbackGuard<'a> {
+    inner: &'a mut InodeInner,
+    old_size: usize,
+    kind: RollbackKind,
+    committed: bool,
+}
+
+impl<'a> InodeRollbackGuard<'a> {
+    /// Creates a guard, capturing the current file size as the rollback target.
+    ///
+    /// `kind` selects what is restored on drop. Preparation that established
+    /// the state being guarded (such as `prepare_write`) must already have run.
+    pub(super) fn new(inner: &'a mut InodeInner, kind: RollbackKind) -> Self {
+        let old_size = inner.file_size();
+        Self {
+            inner,
+            old_size,
+            kind,
+            committed: false,
+        }
+    }
+
+    /// Marks the mutation as successful so that drop becomes a no-op.
+    pub(super) fn commit(mut self) {
+        self.committed = true;
+    }
+
+    /// Returns mutable access to the guarded inode for the fallible work.
+    pub(super) fn inner_mut(&mut self) -> &mut InodeInner {
+        self.inner
+    }
+
+    /// Returns the file size captured when the guard was armed.
+    pub(super) fn old_size(&self) -> usize {
+        self.old_size
+    }
+
+    /// Truncates only block mappings back to the armed file size.
+    fn rollback_blocks(&mut self) {
+        if let Ok(block_manager) = self.inner.block_manager() {
+            block_manager.truncate_to_byte_len(self.old_size);
+        }
+    }
+
+    /// Truncates page cache and block mappings back to the armed file size.
+    fn rollback_page_cache_and_blocks(&mut self, end: usize) {
+        if end <= self.old_size {
+            return;
+        }
+        if let Err(err) = self.inner.resize_page_cache(self.old_size, end) {
+            error!(
+                "ext2: rollback page cache resize failed: old_size={}, err={:?}",
+                self.old_size, err
+            );
+        }
+        self.rollback_blocks();
+    }
+}
+
+impl Drop for InodeRollbackGuard<'_> {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        match self.kind {
+            RollbackKind::PageCacheAndBlocks { end } => self.rollback_page_cache_and_blocks(end),
+            RollbackKind::BlocksOnly => self.rollback_blocks(),
+        }
+    }
+}
+
 impl InodeInner {
     /// Prepares the inode for a write spanning `[offset, end)`.
     ///
@@ -221,10 +305,9 @@ impl InodeInner {
     ///
     /// # Rollback
     ///
-    /// On failure the caller **must** invoke `rollback_write` with the
-    /// original file size and `end` to restore page-cache capacity and
-    /// free partially allocated blocks. The caller must hold `InodeInner`
-    /// write lock for the entire prepare-write-commit sequence.
+    /// Pair this with an `InodeRollbackGuard` armed with
+    /// `RollbackKind::PageCacheAndBlocks`: on any later failure the guard
+    /// restores the original file size and frees partially allocated blocks.
     pub(super) fn prepare_write(&mut self, fs: &Ext2, offset: usize, end: usize) -> Result<()> {
         let old_size = self.file_size();
         if end > old_size {
@@ -248,30 +331,6 @@ impl InodeInner {
         self.zero_partial_writes(offset, end)?;
         self.allocate_range_blocks(offset, end)?;
         Ok(())
-    }
-
-    /// Truncates page cache and blocks after a failed write.
-    pub(super) fn rollback_write(&mut self, old_size: usize, end: usize) {
-        if end <= old_size {
-            return;
-        }
-        if let Err(err) = self.resize_page_cache(old_size, end) {
-            error!(
-                "ext2: write_at cleanup page cache resize failed: old_size={}, err={:?}",
-                old_size, err
-            );
-        }
-
-        if let Ok(block_manager) = self.block_manager() {
-            block_manager.truncate_to_byte_len(old_size);
-        }
-    }
-
-    /// Truncates only block mappings after a failed fallocate.
-    fn rollback_fallocate(&mut self, old_size: usize) {
-        if let Ok(block_manager) = self.block_manager() {
-            block_manager.truncate_to_byte_len(old_size);
-        }
     }
 
     /// Reads file data at `offset` through the inode page cache.
@@ -301,17 +360,13 @@ impl InodeInner {
         let end = offset
             .checked_add(write_len)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
-        let old_size = self.file_size();
 
-        if let Err(err) = self.prepare_write(fs, offset, end) {
-            self.rollback_write(old_size, end);
-            return Err(err);
-        }
-
-        if let Err(err) = self.page_cache().write(offset, reader) {
-            self.rollback_write(old_size, end);
-            return Err(err.into());
-        }
+        let mut guard = InodeRollbackGuard::new(self, RollbackKind::PageCacheAndBlocks { end });
+        let old_size = guard.old_size();
+        let inner = guard.inner_mut();
+        inner.prepare_write(fs, offset, end)?;
+        inner.page_cache().write(offset, reader)?;
+        guard.commit();
 
         self.set_mtime_ctime(utils::now());
         if end > old_size {
@@ -351,27 +406,25 @@ impl InodeInner {
         let end = offset
             .checked_add(write_len)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
-        let old_size = self.file_size();
 
-        if let Err(err) = self.prepare_write(fs, offset, end) {
-            self.rollback_write(old_size, end);
-            return Err(err);
-        }
+        let mut guard = InodeRollbackGuard::new(self, RollbackKind::PageCacheAndBlocks { end });
+        let old_size = guard.old_size();
+        let inner = guard.inner_mut();
+        inner.prepare_write(fs, offset, end)?;
 
         let discard_start_bytes = offset.min(old_size);
         let discard_end_bytes = end.min(old_size);
         if discard_start_bytes < discard_end_bytes {
-            self.page_cache()
+            inner
+                .page_cache()
                 .invalidate_range(discard_start_bytes..discard_end_bytes)?;
         }
 
-        if let Err(err) = self.write_direct_blocks(fs, offset, reader) {
-            self.rollback_write(old_size, end);
-            return Err(err);
-        }
+        inner.write_direct_blocks(fs, offset, reader)?;
+        guard.commit();
 
         self.set_mtime_ctime(utils::now());
-        if end > self.file_size() {
+        if end > old_size {
             self.set_file_size(end);
         }
         Ok(write_len)

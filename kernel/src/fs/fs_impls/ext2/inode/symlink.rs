@@ -12,8 +12,10 @@
 //!   through the normal page-cache path.
 
 use super::{
-    super::Ext2, Inode, InodeInner, InodePayload, MAX_FAST_SYMLINK_LEN, RAW_BLOCK_PTRS_LEN,
+    super::Ext2,
+    Inode, InodeInner, InodePayload, MAX_FAST_SYMLINK_LEN, RAW_BLOCK_PTRS_LEN,
     block_manager::RawBlockPtrs,
+    file::{InodeRollbackGuard, RollbackKind},
 };
 use crate::fs::ext2::{prelude::*, utils};
 
@@ -111,8 +113,14 @@ impl InodeInner {
                     Arc::downgrade(fs),
                 );
             }
-            self.prepare_write(fs.as_ref(), 0, target_len)?;
-            self.page_cache().write_bytes(0, target.as_bytes())?;
+            // The guard rolls back the block allocation if writing the target
+            // bytes fails partway through.
+            let mut guard =
+                InodeRollbackGuard::new(self, RollbackKind::PageCacheAndBlocks { end: target_len });
+            let inner = guard.inner_mut();
+            inner.prepare_write(fs.as_ref(), 0, target_len)?;
+            inner.page_cache().write_bytes(0, target.as_bytes())?;
+            guard.commit();
         }
 
         self.set_file_size(target_len);
