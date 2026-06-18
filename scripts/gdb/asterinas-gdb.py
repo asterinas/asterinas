@@ -90,7 +90,7 @@ def _register():
 
     loaded = []
     warnings = []
-    for name in ("printers",):
+    for name in ("printers", "kernel"):
         try:
             mod = __import__(f"helper.{name}", fromlist=[name])
             if hasattr(mod, "register"):

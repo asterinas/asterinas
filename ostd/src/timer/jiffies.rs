@@ -14,6 +14,7 @@ use super::TIMER_FREQ;
 #[derive(Clone, Copy, Debug)]
 pub struct Jiffies(u64);
 
+// COUPLED: scripts/gdb/helper/kernel.py
 pub(crate) static ELAPSED: AtomicU64 = AtomicU64::new(0);
 
 impl Jiffies {

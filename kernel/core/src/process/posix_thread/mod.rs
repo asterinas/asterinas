@@ -49,6 +49,7 @@ pub(crate) use robust_list::RobustListHead;
 pub(crate) use thread_local::SuppUserContext;
 pub(crate) use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 
+// COUPLED: scripts/gdb/helper/kernel.py
 pub struct PosixThread {
     // Immutable part
     process: Weak<Process>,
@@ -393,6 +394,7 @@ impl ContextPthreadAdminApi for Context<'_> {
     }
 }
 
+// COUPLED: scripts/gdb/helper/constants.py
 const MAX_THREAD_NAME_LEN: usize = 16;
 pub(crate) type ThreadName = FixedCStr<MAX_THREAD_NAME_LEN>;
 
