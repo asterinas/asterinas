@@ -198,13 +198,13 @@ mod test {
     fn resize() {
         use crate::vm::page_cache::PageCache;
 
-        let vmo = PageCache::new_anon(PAGE_SIZE).unwrap();
-        vmo.write_val(10, &42u8).unwrap();
-        vmo.resize(2 * PAGE_SIZE, vmo.size()).unwrap();
-        assert_eq!(vmo.size(), 2 * PAGE_SIZE);
-        assert_eq!(vmo.read_val::<u8>(10).unwrap(), 42);
-        vmo.write_val(PAGE_SIZE + 20, &123u8).unwrap();
-        vmo.resize(PAGE_SIZE, vmo.size()).unwrap();
-        assert_eq!(vmo.read_val::<u8>(10).unwrap(), 42);
+        let mut page_cache = PageCache::new_anon(PAGE_SIZE).unwrap();
+        page_cache.write_val(10, &42u8).unwrap();
+        page_cache.resize(2 * PAGE_SIZE, page_cache.size()).unwrap();
+        assert_eq!(page_cache.size(), 2 * PAGE_SIZE);
+        assert_eq!(page_cache.read_val::<u8>(10).unwrap(), 42);
+        page_cache.write_val(PAGE_SIZE + 20, &123u8).unwrap();
+        page_cache.resize(PAGE_SIZE, page_cache.size()).unwrap();
+        assert_eq!(page_cache.read_val::<u8>(10).unwrap(), 42);
     }
 }
