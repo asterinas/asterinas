@@ -41,9 +41,11 @@ FN_TEST(xattr_set_get_roundtrip)
 }
 END_TEST()
 
-// TODO: xattr_list test is disabled because sys_listxattr only lists one
-// namespace (Trusted when running as root), so user.* xattrs are invisible.
-// This is a VFS-level bug, not ext2-specific.
+// Currently, the `listxattr()` syscall in Asterinas only lists xattrs within
+// one namespace ("Trusted" when running as root), so `user.*` xattrs are
+// invisible. This is a VFS-level bug, not ext2-specific.
+//
+// TODO: Add some tests for xattr listing after this bug has been fixed.
 
 FN_TEST(xattr_remove_enodata)
 {

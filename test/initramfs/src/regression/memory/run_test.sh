@@ -13,3 +13,5 @@ set -e
 ./mmap/mmap_readahead
 ./mmap/mmap_shared_filebacked
 ./mmap/mmap_vmrss
+./mmap/rev_map_ext2
+./mmap/rev_map_tmpfs
