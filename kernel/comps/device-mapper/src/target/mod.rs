@@ -9,9 +9,11 @@
 //! - [`linear`]: remaps a contiguous sector range onto a lower device.
 //! - [`zero`]: serves zero-filled reads and discards writes.
 //! - [`error`]: fails every read and write.
+//! - [`verity`]: read-only integrity checking against a Merkle hash tree.
 
 pub mod error;
 pub mod linear;
+pub mod verity;
 pub mod zero;
 
 use alloc::vec::Vec;
@@ -29,14 +31,15 @@ use aster_block::bio::{BioStatus, SubmittedBio};
 /// once, either by forwarding the I/O downwards or by synthesizing a result.
 pub trait DmTarget: core::fmt::Debug + Send + Sync {
     /// The target type name, matching the keyword used in a dm table line
-    /// (for example `linear` or `error`).
+    /// (for example `linear` or `verity`).
     fn type_name(&self) -> &'static str;
 
     /// The size this target requires its segment to have, in 512-byte sectors.
     ///
-    /// Targets that derive their geometry from fixed parameters return `Some`
-    /// so the parser can reject a table whose declared segment length disagrees
-    /// with that geometry. Targets that adapt to any length return `None`.
+    /// Targets that derive their geometry from on-disk metadata (such as
+    /// `verity`) return `Some` so the parser can reject a table whose declared
+    /// segment length disagrees with that geometry. Targets that adapt to any
+    /// length return `None`.
     fn size_sectors(&self) -> Option<u64> {
         None
     }
