@@ -1,4 +1,2 @@
 FixtureTruncateTest.Truncate
 FixtureTruncateTest.Ftruncate
-TruncateTest.TruncateNonWriteable
-TruncateTest.FtruncateVirtualTmp_NoRandomSave

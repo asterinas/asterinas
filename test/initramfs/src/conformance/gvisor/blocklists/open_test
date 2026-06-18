@@ -1,5 +1,4 @@
 OpenTest.AppendConcurrentWrite
-OpenTest.CanTruncateReadOnlyNoWritePermission
 OpenTest.CanTruncateWithStrangePermissions
 OpenTest.DirectoryDirectFails
 OpenTest.OpenNoFollowStillFollowsLinksInPath

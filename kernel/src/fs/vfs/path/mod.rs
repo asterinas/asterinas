@@ -556,6 +556,13 @@ impl Path {
 
         DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name)
     }
+
+    /// Resizes the file.
+    pub fn resize(&self, size: usize) -> Result<()> {
+        let inode = self.inode();
+        inode.check_permission(Permission::MAY_WRITE)?;
+        inode.resize(size)
+    }
 }
 
 // Methods inherited from `Inode`.
@@ -568,7 +575,6 @@ impl Path {
     pub fn mode(&self) -> Result<InodeMode>;
     pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
     pub fn size(&self) -> usize;
-    pub fn resize(&self, size: usize) -> Result<()>;
     pub fn owner(&self) -> Result<Uid>;
     pub fn set_owner(&self, uid: Uid) -> Result<()>;
     pub fn group(&self) -> Result<Gid>;
