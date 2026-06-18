@@ -7,7 +7,7 @@ use bitflags::bitflags;
 
 use crate::{
     fs::{
-        file::{AccessMode, FileLike, InodeType},
+        file::{AccessMode, FileLike, InodeType, StatusFlags},
         vfs::path::Path,
     },
     prelude::*,
@@ -271,7 +271,6 @@ define_atomic_version_of_integer_like_type!(FsEvents, {
 
 /// Notifies that a file was accessed.
 pub fn on_access(file: &Arc<dyn FileLike>) {
-    // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
     let path = file.path();
 
     if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
@@ -282,7 +281,6 @@ pub fn on_access(file: &Arc<dyn FileLike>) {
 
 /// Notifies that a file was modified.
 pub fn on_modify(file: &Arc<dyn FileLike>) {
-    // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
     let path = file.path();
 
     if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
@@ -374,28 +372,38 @@ pub fn on_create(file_path: &Path, name: impl FnOnce() -> String) {
 
 /// Notifies that a file was opened.
 pub fn on_open(file: &Arc<dyn FileLike>) {
-    // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
-    let path = file.path();
-
-    if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
+    let Some(path) = notifiable_path(file) else {
         return;
-    }
+    };
     notify_parent(path, FsEvents::OPEN);
 }
 
 /// Notifies that a file was closed.
 pub fn on_close(file: &Arc<dyn FileLike>) {
-    // TODO: Check fmode flags (FMODE_NONOTIFY, FMODE_NONOTIFY_PERM).
-    let path = file.path();
-
-    if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
+    let Some(path) = notifiable_path(file) else {
         return;
-    }
+    };
     let events = match file.access_mode() {
         AccessMode::O_RDONLY => FsEvents::CLOSE_NOWRITE,
         _ => FsEvents::CLOSE_WRITE,
     };
     notify_parent(path, events);
+}
+
+/// Returns the file's path if open/close events should be emitted for it.
+///
+/// `O_PATH` file descriptors carry `FMODE_NONOTIFY` in Linux's `f_mode` and
+/// thus suppress all fsnotify events, so they yield `None`. `None` is also
+/// returned when the filesystem has no event subscribers.
+fn notifiable_path(file: &Arc<dyn FileLike>) -> Option<&Path> {
+    if file.status_flags().contains(StatusFlags::O_PATH) {
+        return None;
+    }
+    let path = file.path();
+    if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
+        return None;
+    }
+    Some(path)
 }
 
 /// Notifies that a file's attributes changed.
