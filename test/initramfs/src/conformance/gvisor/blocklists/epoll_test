@@ -1,5 +1,3 @@
-EpollTest.CycleOfOneDisallowed
-EpollTest.CycleOfThreeDisallowed
 EpollTest.RegularFiles
 # `EpollPwait2Timeout` expects `epoll_pwait2()` not to return before the
 # requested timeout expires. Our current timeout mechanism is jiffies-based

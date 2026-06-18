@@ -104,7 +104,7 @@ impl Entry {
     ///
     /// Since an epoll entry only holds a weak reference to the file,
     /// it is possible (albeit unlikely) that the file has been dropped.
-    fn file(&self) -> Option<Arc<dyn FileLike>> {
+    pub(super) fn file(&self) -> Option<Arc<dyn FileLike>> {
         self.key.file.upgrade().map(KeyableArc::into)
     }
 

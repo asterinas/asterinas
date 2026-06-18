@@ -26,6 +26,10 @@ use crate::{
     util::ioctl::RawIoctl,
 };
 
+/// Global mutex to prevent parallel cycle formation in epoll topologies.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/eventpoll.c#L258>
+static EPNESTED_MUTEX: Mutex<()> = Mutex::new(());
+
 /// A file-like object that provides epoll API.
 ///
 /// Conceptually, we maintain two lists: one consists of all interesting files,
@@ -48,6 +52,19 @@ pub struct EpollFile {
     ready: Arc<ReadySet>,
     /// The pseudo path associated with this epoll file.
     pseudo_path: Path,
+    /// Serializes epoll_ctl operations (check + insert) to prevent TOCTOU races.
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/eventpoll.c#L2316>
+    mtx: Mutex<()>,
+}
+
+/// Result of the reachability check.
+enum ReachResult {
+    /// Cycle detected.
+    Found,
+    /// Nesting depth exceeded limit.
+    TooDeep,
+    /// Not found.
+    NotFound,
 }
 
 impl EpollFile {
@@ -59,10 +76,12 @@ impl EpollFile {
             interest: Mutex::new(BTreeSet::new()),
             ready: Arc::new(ReadySet::new()),
             pseudo_path,
+            mtx: Mutex::new(()),
         })
     }
 
     /// Controls the interest list of the epoll file.
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/eventpoll.c#L2316>
     pub fn control(&self, thread_local: &ThreadLocal, cmd: &EpollCtl) -> Result<()> {
         let fd = match cmd {
             EpollCtl::Add(fd, ..) => *fd,
@@ -73,6 +92,27 @@ impl EpollFile {
         let mut file_table = thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, fd).into_owned();
         drop(file_table);
+
+        // Reject cycles: an epoll file cannot monitor itself or form indirect cycles.
+        if let EpollCtl::Add(..) = cmd {
+            if (self as *const _ as *const ()) == (file.as_ref() as *const _ as *const ()) {
+                return_errno_with_message!(Errno::EINVAL, "epoll file cannot be added to itself");
+            }
+            if let Some(target_epoll) = file.downcast_ref::<EpollFile>() {
+                // Lock ordering: epnested_mutex -> mtx
+                let _epnested_guard = EPNESTED_MUTEX.lock();
+                self.check_cycle(target_epoll)?;
+
+                let _mtx_guard = self.mtx.lock();
+                let EpollCtl::Add(fd, ep_event, ep_flags) = *cmd else {
+                    unreachable!()
+                };
+                return self.add_interest(fd, file, ep_event, ep_flags);
+            }
+        }
+
+        // For non-epoll ADD or DEL/MOD operations
+        let _mtx_guard = self.mtx.lock();
 
         match *cmd {
             EpollCtl::Add(fd, ep_event, ep_flags) => {
@@ -249,6 +289,84 @@ impl EpollFile {
     fn warn_unsupported_flags(&self, flags: &EpollFlags) {
         if flags.intersects(EpollFlags::EXCLUSIVE | EpollFlags::WAKE_UP) {
             warn!("{:?} contains unsupported flags", flags);
+        }
+    }
+
+    /// Maximum number of nesting allowed inside epoll sets.
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/eventpoll.c#L94>
+    const EP_MAX_NESTS: usize = 4;
+
+    /// Checks whether adding `target` as an interest of `self` would create a cycle
+    /// or exceed the maximum nesting depth.
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/eventpoll.c#L2132>
+    fn check_cycle(&self, target: &EpollFile) -> Result<()> {
+        let self_ptr = self as *const Self as *const ();
+        let mut visited = Vec::new();
+        match target.can_reach(self_ptr, &mut visited, 0) {
+            ReachResult::Found => {
+                return_errno_with_message!(
+                    Errno::ELOOP,
+                    "adding this fd would create an epoll cycle"
+                );
+            }
+            ReachResult::TooDeep => {
+                return_errno_with_message!(
+                    Errno::ELOOP,
+                    "adding this fd would exceed the maximum epoll nesting depth"
+                );
+            }
+            ReachResult::NotFound => Ok(()),
+        }
+    }
+
+    /// Checks whether an epoll file at the given raw pointer is reachable by
+    /// recursively traversing the epoll files monitored by `self`.
+    fn can_reach(
+        &self,
+        target_ptr: *const (),
+        visited: &mut Vec<*const ()>,
+        depth: usize,
+    ) -> ReachResult {
+        let self_ptr = self as *const Self as *const ();
+
+        if self_ptr == target_ptr {
+            return ReachResult::Found;
+        }
+
+        if depth > Self::EP_MAX_NESTS {
+            return ReachResult::TooDeep;
+        }
+
+        if visited.contains(&self_ptr) {
+            return ReachResult::NotFound;
+        }
+
+        visited.push(self_ptr);
+
+        let files: Vec<Arc<dyn FileLike>> = {
+            let interest = self.interest.lock();
+            interest.iter().filter_map(|entry| entry.0.file()).collect()
+        };
+
+        let mut max_depth_reached = false;
+        for file in &files {
+            if let Some(ep) = file.downcast_ref::<EpollFile>() {
+                let ep_ptr = ep as *const EpollFile as *const ();
+                if ep_ptr == target_ptr {
+                    return ReachResult::Found;
+                }
+                match ep.can_reach(target_ptr, visited, depth + 1) {
+                    ReachResult::Found => return ReachResult::Found,
+                    ReachResult::TooDeep => max_depth_reached = true,
+                    ReachResult::NotFound => {}
+                }
+            }
+        }
+
+        if max_depth_reached {
+            ReachResult::TooDeep
+        } else {
+            ReachResult::NotFound
         }
     }
 }
