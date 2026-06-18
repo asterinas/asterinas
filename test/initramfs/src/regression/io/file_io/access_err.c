@@ -8,9 +8,12 @@
 #include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
+#include "../../common/capability.h"
 #include "../../common/test.h"
 
 #define FILENAME "/tmp/testfile"
@@ -340,6 +343,40 @@ FN_TEST(flags)
 	// `O_PATH | O_CREAT` has no effect.
 	TEST_ERRNO(open("/tmp/file_does_not_exist", O_PATH | O_CREAT, 0644),
 		   ENOENT);
+}
+END_TEST()
+
+FN_TEST(truncation_requires_write_permission)
+{
+	const char data[] = "hello";
+	struct stat st;
+	pid_t pid;
+	int status;
+	int fd;
+
+	fd = TEST_SUCC(open(FILENAME, O_WRONLY | O_TRUNC));
+	TEST_RES(write(fd, data, sizeof(data) - 1),
+		 _ret == (ssize_t)(sizeof(data) - 1));
+	TEST_SUCC(close(fd));
+	TEST_SUCC(chmod(FILENAME, S_IRUSR | S_IRGRP));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_DAC_OVERRIDE);
+		CHECK_WITH(open(FILENAME, O_RDONLY | O_TRUNC),
+			   _ret == -1 && errno == EACCES);
+
+		CHECK_WITH(truncate(FILENAME, 0),
+			   _ret == -1 && errno == EACCES);
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+	TEST_SUCC(chmod(FILENAME, 0666));
+	TEST_RES(stat(FILENAME, &st),
+		 _ret == 0 && st.st_size == (off_t)(sizeof(data) - 1));
 }
 END_TEST()
 

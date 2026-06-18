@@ -2,6 +2,7 @@ OpenTest.AbsPath
 OpenTest.AppendOnly
 OpenTest.AtAbsPath
 OpenTest.AtRelPath
+OpenTest.CanTruncateReadOnlyNoWritePermission
 OpenTest.CanTruncateWriteOnlyNoReadPermission
 OpenTest.CreateWithAppend
 OpenTest.DirectoryWritableFails
