@@ -1,0 +1,53 @@
+name: Test GDB helpers
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/gdb/**
+      - Makefile
+      - .github/workflows/test_gdb_helpers.yml
+      - book/src/kernel/debugging-with-gdb.md
+      - book/src/osdk/reference/commands/debug.md
+      - kernel/src/fs/file/file_table.rs
+      - kernel/src/process/pid_table.rs
+      - kernel/src/process/posix_thread/mod.rs
+      - kernel/src/process/posix_thread/name.rs
+      - kernel/src/thread/mod.rs
+      - osdk/src/cli.rs
+      - osdk/src/commands/debug.rs
+      - ostd/src/timer/jiffies.rs
+      - ostd/src/timer/mod.rs
+      - rust-toolchain.toml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/gdb/**
+      - Makefile
+      - .github/workflows/test_gdb_helpers.yml
+      - book/src/kernel/debugging-with-gdb.md
+      - book/src/osdk/reference/commands/debug.md
+      - kernel/src/fs/file/file_table.rs
+      - kernel/src/process/pid_table.rs
+      - kernel/src/process/posix_thread/mod.rs
+      - kernel/src/process/posix_thread/name.rs
+      - kernel/src/thread/mod.rs
+      - osdk/src/cli.rs
+      - osdk/src/commands/debug.rs
+      - ostd/src/timer/jiffies.rs
+      - ostd/src/timer/mod.rs
+      - rust-toolchain.toml
+
+jobs:
+  gdb-smoke-test:
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/asterinas:0.18.0-20260702
+      options: -v /dev:/dev --privileged
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run GDB smoke test
+        run: |
+          make gdb-smoke-test
