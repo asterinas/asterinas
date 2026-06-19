@@ -27,6 +27,7 @@ VSOCK=${VSOCK:-"off"}
 VIRTIOFS=${VIRTIOFS:-"off"}
 NETDEV=${NETDEV:-"user"}
 CONSOLE=${CONSOLE:-"hvc0"}
+ENABLE_KVM=${ENABLE_KVM:-"1"}
 
 ATTACH_XFSTESTS_IMAGES=${ATTACH_XFSTESTS_IMAGES:-false}
 if [ "${ENABLE_CONFORMANCE_TEST:-"false"}" = "true" ] && \
@@ -128,13 +129,20 @@ if [ "$1" = "tdx" ]; then
     exit 0
 fi
 
+CPU_ARGS="-cpu Icelake-Server,+x2apic"
+if [ "$ENABLE_KVM" = "1" ]; then
+    # RustShyper needs nested VMX. KVM acceleration alone does not expose it
+    # unless the guest CPU model advertises the VMX CPUID bit explicitly.
+    CPU_ARGS="${CPU_ARGS},+vmx"
+fi
+
 COMMON_QEMU_ARGS="\
-    -cpu Icelake-Server,+x2apic \
+    ${CPU_ARGS} \
     -smp ${SMP:-1} \
     -m ${MEM:-8G} \
     --no-reboot \
     -nographic \
-    -display vnc=0.0.0.0:${VNC_PORT:-42} \
+    ${DISPLAY_ARGS} \
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
     $NETDEV_ARGS \

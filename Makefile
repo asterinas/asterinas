@@ -15,7 +15,7 @@ RELEASE ?= 0
 RELEASE_LTO ?= 0
 LOG_LEVEL ?= error
 SCHEME ?= ""
-SMP ?= 1
+SMP ?= 2
 OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
@@ -71,6 +71,8 @@ DNS_SERVER ?= none
 
 # NixOS settings
 NIXOS_DISK_SIZE_IN_MB ?= 8192
+export NIXOS_BOOT_SIZE_IN_MB ?= 1024
+export NIXOS_PRUNE_BOOT ?= true
 NIXOS_DISABLE_SYSTEMD ?= false
 # The following option is only effective when NIXOS_DISABLE_SYSTEMD is set to 'true'.
 # Use a login shell to ensure that environment variables are initialized correctly.
@@ -320,6 +322,10 @@ run_nixos:
     else \
         ./tools/nixos/run.sh nixos; \
     fi
+
+.PHONY: sync_kvm_hello_world
+sync_kvm_hello_world:
+	@./tools/nixos/sync_kvm_hello_world.sh
 
 # Build the Asterinas NixOS patched packages
 cachix:

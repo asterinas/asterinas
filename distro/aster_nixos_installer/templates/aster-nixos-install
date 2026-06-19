@@ -8,6 +8,8 @@ set -e
 CONFIG_PATH=""
 DISK=""
 FORCE_FORMAT_DISK=false
+NIXOS_BOOT_SIZE_IN_MB=${NIXOS_BOOT_SIZE_IN_MB:-1024}
+NIXOS_PRUNE_BOOT=${NIXOS_PRUNE_BOOT:-true}
 
 # Function to display help
 show_help() {
@@ -90,9 +92,10 @@ else
     ROOT_DEVICE="${DISK}2"
 fi
 if [ ! -b "${BOOT_DEVICE}" ] && [ ! -b "${ROOT_DEVICE}" ]; then
+    ROOT_PARTITION_START_MB=$((NIXOS_BOOT_SIZE_IN_MB + 1))
     parted ${DISK} -- mklabel gpt
-    parted ${DISK} -- mkpart ESP fat32 1MB 512MB
-    parted ${DISK} -- mkpart root ext2 512MB 100%
+    parted ${DISK} -- mkpart ESP fat32 1MB "${ROOT_PARTITION_START_MB}MB"
+    parted ${DISK} -- mkpart root ext2 "${ROOT_PARTITION_START_MB}MB" 100%
     parted ${DISK} -- set 1 esp on
     echo "partition finished"
 
@@ -131,6 +134,29 @@ cp @aster-configuration@ ${BUILD_DIR}/etc/nixos/aster_configuration.nix
 cp -r @aster-etc-nixos@/modules ${BUILD_DIR}/etc/nixos
 cp -r @aster-etc-nixos@/overlays ${BUILD_DIR}/etc/nixos
 
+prune_old_boot_kernels() {
+    case "${NIXOS_PRUNE_BOOT}" in
+        true|1|yes|on)
+            ;;
+        *)
+            return
+            ;;
+    esac
+
+    if [ -d "${BUILD_DIR}/nix/var/nix/profiles" ]; then
+        echo "Pruning old NixOS system generations from ${BUILD_DIR}/nix/var/nix/profiles..."
+        find "${BUILD_DIR}/nix/var/nix/profiles" -maxdepth 1 \
+            \( -name 'system-*-link' -o -name 'system' \) -exec rm -f {} +
+    fi
+
+    if [ ! -d "${BUILD_DIR}/boot/kernels" ]; then
+        return
+    fi
+
+    echo "Pruning old boot kernels from ${BUILD_DIR}/boot/kernels..."
+    find "${BUILD_DIR}/boot/kernels" -mindepth 1 -maxdepth 1 -type f -delete
+}
+
 COMMON_NIX_ARGS=(
     --option extra-substituters "@aster-substituters@"
     --option extra-trusted-public-keys "@aster-trusted-public-keys@"
@@ -152,6 +178,7 @@ SYSTEM_CLOSURE=$(nix-build '<nixpkgs/nixos>' -A system \
     --no-out-link)
 
 export PATH=${PATH}:/run/current-system/sw/bin
+prune_old_boot_kernels
 nixos-install --root ${BUILD_DIR} --no-root-passwd \
     --system "${SYSTEM_CLOSURE}" \
     "${COMMON_NIX_ARGS[@]}"

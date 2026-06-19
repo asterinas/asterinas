@@ -21,6 +21,7 @@ MODE=$1
 TARGET_ARCH=${TARGET_ARCH:-x86_64}
 SCRIPT_DIR=$(dirname "$0")
 ASTERINAS_DIR=$(realpath "${SCRIPT_DIR}/../..")
+ENABLE_KVM=${ENABLE_KVM:-1}
 
 # tools/qemu_args.sh currently emits x86_64-specific arguments.
 # Reject other architectures to avoid invoking non-x86 QEMU with incompatible args.

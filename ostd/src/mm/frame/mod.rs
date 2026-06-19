@@ -324,6 +324,27 @@ impl<M: AnyUFrameMeta> From<Frame<M>> for UFrame {
     }
 }
 
+/// Restores a forgotten [`UFrame`] from a physical address.
+///
+/// # Safety
+///
+/// The caller must ensure that `paddr` was produced by forgetting a `UFrame`
+/// and that the restored handle is created exactly once.
+pub(crate) unsafe fn uframe_from_raw(paddr: Paddr) -> UFrame {
+    // SAFETY: The caller guarantees that the raw frame handle is valid.
+    unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) }
+}
+
+/// Borrows a forgotten [`UFrame`] from a physical address.
+///
+/// # Safety
+///
+/// The caller must ensure that the original `UFrame` outlives `'a`.
+pub(crate) unsafe fn uframe_ref_from_raw<'a>(paddr: Paddr) -> FrameRef<'a, dyn AnyUFrameMeta> {
+    // SAFETY: The caller guarantees that the borrowed frame handle is valid.
+    unsafe { FrameRef::<dyn AnyUFrameMeta>::borrow_paddr(paddr) }
+}
+
 impl From<UFrame> for Frame<dyn AnyFrameMeta> {
     fn from(frame: UFrame) -> Self {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
