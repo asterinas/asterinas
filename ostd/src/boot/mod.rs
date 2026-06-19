@@ -22,6 +22,8 @@ use alloc::{
 use memory_region::{MemoryRegion, MemoryRegionArray};
 use spin::Once;
 
+use crate::log::LevelFilter;
+
 /// The boot information provided by the bootloader.
 pub struct BootInfo {
     /// The name of the bootloader.
@@ -111,6 +113,38 @@ pub(crate) fn init_after_heap() {
         framebuffer_arg: boot_time_info.framebuffer_arg,
         memory_regions: boot_time_info.memory_regions.to_vec(),
     });
+}
+
+/// The early command line arguments.
+///
+/// [`crate::early_cmdline_parser`] can be used to specify how this is parsed
+/// from the kernel command line. If it is not specified, we will use the
+/// default values (see the field documentation).
+pub struct EarlyCmdline {
+    /// The log level filter.
+    ///
+    /// The default value is [`LevelFilter::Debug`].
+    pub log_level: LevelFilter,
+    /// Whether to enable the early console.
+    ///
+    /// The default value is `true`.
+    pub has_early_console: bool,
+}
+
+#[linkage = "weak"]
+// SAFETY: The name does not collide with other symbols.
+#[unsafe(no_mangle)]
+fn __early_cmdline_parser(_cmdline: &str) -> EarlyCmdline {
+    EarlyCmdline {
+        log_level: LevelFilter::Debug,
+        has_early_console: true,
+    }
+}
+
+/// Parses the early command line arguments.
+pub(crate) fn parse_early_cmdline() -> EarlyCmdline {
+    let kernel_cmdline = EARLY_INFO.get().unwrap().kernel_cmdline;
+    __early_cmdline_parser(kernel_cmdline)
 }
 
 /// Starts the kernel.

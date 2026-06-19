@@ -6,22 +6,14 @@ use spin::Once;
 use x86_64::instructions::port::ReadWriteAccess;
 
 use crate::{
+    boot::EarlyCmdline,
     console::uart_ns16650a::{Ns16550aAccess, Ns16550aRegister, Ns16550aUart},
     io::{IoPort, reserve_io_port_range},
     sync::{LocalIrqDisabled, SpinLock},
 };
 
 /// The primary serial port, which serves as an early console.
-pub static SERIAL_PORT: Once<SpinLock<Ns16550aUart<SerialAccess>, LocalIrqDisabled>> =
-    Once::initialized(SpinLock::new(Ns16550aUart::new(
-        // SAFETY:
-        // 1. It is assumed that the serial port exists and can be accessed via the I/O registers.
-        //    (FIXME: This needs to be confirmed by checking the ACPI table or using kernel
-        //    parameters to obtain early information for building the early console.)
-        // 2. `reserve_io_port_range` guarantees exclusive ownership of the I/O registers.
-        unsafe { SerialAccess::new(0x3F8) },
-    )));
-reserve_io_port_range!(0x3F8..0x400);
+pub static SERIAL_PORT: Once<SpinLock<Ns16550aUart<SerialAccess>, LocalIrqDisabled>> = Once::new();
 
 /// Access to serial registers via I/O ports in x86.
 #[derive(Debug)]
@@ -83,6 +75,23 @@ impl Ns16550aAccess for SerialAccess {
 }
 
 /// Initializes the serial port.
-pub(crate) fn init() {
-    SERIAL_PORT.get().unwrap().lock().init();
+pub(crate) fn init(early_cmdline: &EarlyCmdline) {
+    if !early_cmdline.has_early_console {
+        return;
+    }
+
+    // TODO: Add existence check for COM1.
+    SERIAL_PORT.call_once(|| {
+        // SAFETY:
+        // 1. The legacy COM1 serial port at 0x3F8 can be disabled via the command line. If it is
+        //    enabled, it is assumed to exist and be accessible via the I/O registers.
+        //    (FIXME: This needs to be confirmed by checking the ACPI table or using more specific
+        //    kernel parameters to obtain early information for building the early console.)
+        // 2. `reserve_io_port_range` guarantees exclusive ownership of the I/O registers.
+        let access = unsafe { SerialAccess::new(0x3F8) };
+        let mut serial = Ns16550aUart::new(access);
+        serial.init();
+        SpinLock::new(serial)
+    });
 }
+reserve_io_port_range!(0x3F8..0x400);

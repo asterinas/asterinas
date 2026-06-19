@@ -58,6 +58,7 @@ macro_rules! __log_prefix {
 }
 
 mod dispatch;
+mod early;
 pub mod parse;
 pub mod types;
 mod unimplemented;
