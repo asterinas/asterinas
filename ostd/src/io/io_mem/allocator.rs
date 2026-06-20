@@ -104,7 +104,10 @@ impl IoMemAllocatorBuilder {
     /// # Panics
     ///
     /// This function will panic if the specified range is not available.
-    #[cfg_attr(target_arch = "loongarch64", expect(unused))]
+    #[cfg_attr(
+        any(target_arch = "loongarch64", target_arch = "aarch64"),
+        expect(unused)
+    )]
     pub(crate) fn reserve(
         &self,
         range: Range<usize>,
