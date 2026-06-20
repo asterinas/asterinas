@@ -1,7 +1,4 @@
-# Memory and Resource Management
-
-Rust's ownership model is the primary tool
-for safe resource management in the kernel.
+# Resource Management
 
 ### Use RAII for all resource acquisition and release (`raii`) {#raii}
 

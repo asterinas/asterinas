@@ -1,11 +1,5 @@
 # Naming
 
-Asterinas enforces strict, Rust-idiomatic naming
-across the entire codebase.
-Names must be accurate, unabbreviated,
-and follow
-[Rust API Guidelines on naming](https://rust-lang.github.io/api-guidelines/naming.html).
-
 ### Follow Rust CamelCase and acronym capitalization (`camel-case-acronyms`) {#camel-case-acronyms}
 
 Type names follow Rust's CamelCase convention.
@@ -49,4 +43,3 @@ let expired_fn = move |_guard: TimerGuard| {
 See also:
 PR [#395](https://github.com/asterinas/asterinas/pull/395#discussion_r1402964415)
 and [#783](https://github.com/asterinas/asterinas/pull/783#discussion_r1593335375).
-

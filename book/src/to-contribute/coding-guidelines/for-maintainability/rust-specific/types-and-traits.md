@@ -1,4 +1,4 @@
-# Types and Traits
+# Types & Traits
 
 ### Use types to enforce invariants (`rust-type-invariants`) {#rust-type-invariants}
 

@@ -1,11 +1,4 @@
-# Assembly Guidelines
-
-These guidelines apply to assembly code
-in module-level `global_asm!` blocks and standalone `.S` files.
-For the underlying philosophy, see
-[How Guidelines Are Written](how-guidelines-are-written.md).
-
-## Sections
+# Assembly Conventions
 
 ### Use the correct section directive (`asm-section-directives`) {#asm-section-directives}
 
@@ -43,8 +36,6 @@ foo:
     mov rax, 1
     ret
 ```
-
-## Functions
 
 ### Place attributes directly before the function (`asm-function-attributes`) {#asm-function-attributes}
 

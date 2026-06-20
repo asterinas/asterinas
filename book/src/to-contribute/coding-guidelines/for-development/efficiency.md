@@ -1,9 +1,4 @@
-# Performance
-
-Performance on critical paths is taken very seriously.
-Changes to hot paths must be benchmarked.
-Unnecessary copies, allocations,
-and O(n) algorithms are rejected.
+# Efficiency
 
 ### Avoid O(n) algorithms on hot paths (`no-linear-hot-paths`) {#no-linear-hot-paths}
 

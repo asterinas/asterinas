@@ -21,4 +21,3 @@ runnable = false         # displays a run button for rust code
 
 [preprocessor.mermaid]
 command = "mdbook-mermaid"
-
