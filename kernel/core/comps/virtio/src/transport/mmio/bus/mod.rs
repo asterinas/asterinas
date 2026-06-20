@@ -14,6 +14,7 @@ use crate::transport::mmio::bus::common_device::{
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv.rs")]
 #[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch.rs")]
+#[cfg_attr(target_arch = "aarch64", path = "arch/arm.rs")]
 mod arch;
 
 #[expect(clippy::module_inception)]
@@ -42,7 +43,10 @@ pub(super) fn init() {
 ///
 /// Returns `Ok(())` if the device was registered, or a specific
 /// `MmioRegisterError` otherwise.
-#[cfg_attr(target_arch = "loongarch64", expect(unused))]
+#[cfg_attr(
+    any(target_arch = "loongarch64", target_arch = "aarch64"),
+    expect(unused)
+)]
 fn try_register_mmio_device<F>(
     mmio_range: Range<usize>,
     map_irq_line: F,
