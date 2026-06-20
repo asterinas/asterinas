@@ -8,6 +8,7 @@
 )]
 
 pub mod dma;
+pub mod fault;
 pub mod frame;
 pub mod heap;
 pub mod io;
