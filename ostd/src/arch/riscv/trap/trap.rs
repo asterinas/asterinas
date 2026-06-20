@@ -24,6 +24,7 @@ use crate::{
         extension::{IsaExtensions, has_extensions},
     },
     irq::DisabledLocalIrqGuard,
+    mm::fault::TrapFrameApi,
 };
 
 /// FPU status bits.
@@ -84,6 +85,16 @@ pub struct TrapFrame {
     pub sstatus: usize,
     /// Supervisor Exception Program Counter
     pub sepc: usize,
+}
+
+impl TrapFrameApi for TrapFrame {
+    fn set_instruction_pointer(&mut self, ip: usize) {
+        self.sepc = ip;
+    }
+
+    fn instruction_pointer(&self) -> usize {
+        self.sepc
+    }
 }
 
 /// Saved registers on a trap.

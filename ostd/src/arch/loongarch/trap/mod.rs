@@ -6,7 +6,6 @@
 mod trap;
 
 use loongArch64::register::estat::{self, Exception, Interrupt, Trap};
-use spin::Once;
 pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
@@ -14,7 +13,6 @@ use crate::{
     arch::{cpu::context::CpuExceptionInfo, irq::HwIrqLine, mm::tlb_flush_addr},
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
-    mm::MAX_USERSPACE_VADDR,
 };
 
 /// Initializes trap handling on LoongArch.
@@ -56,26 +54,17 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
                 crate::debug!(
                     "Page fault occurred in kernel: {exception:?}, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
                 );
-                let page_fault_addr = badv;
-                // Check if the page fault is caused by user-space address
-                if let Some(handler) = USER_PAGE_FAULT_HANDLER.get()
-                    && (0..MAX_USERSPACE_VADDR).contains(&(page_fault_addr as usize))
-                    && handler(&CpuExceptionInfo {
+                crate::mm::fault::handle_user_page_fault(
+                    f,
+                    &CpuExceptionInfo {
                         code: exception,
-                        page_fault_addr,
+                        page_fault_addr: badv,
                         error_code: 0,
-                    })
-                    .is_ok()
-                {
-                    return;
-                }
-                panic!(
-                    "User page fault handler failed: addr: {page_fault_addr:#x}, err: {exception:?}"
+                    },
+                    badv,
                 );
             }
-            Exception::PageModifyFault => {
-                unimplemented!()
-            }
+            Exception::PageModifyFault => unimplemented!(),
             Exception::FetchInstructionAddressError => todo!(),
             Exception::MemoryAccessAddressError => todo!(),
             Exception::AddressNotAligned => todo!(),
@@ -119,13 +108,4 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
         ),
         Trap::Unknown => panic!("Unknown trap, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"),
     }
-}
-
-#[expect(clippy::type_complexity)]
-static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuExceptionInfo) -> Result<(), ()>> = Once::new();
-
-/// Injects a custom handler for page faults that occur in the kernel and
-/// are caused by user-space address.
-pub fn inject_user_page_fault_handler(handler: fn(info: &CpuExceptionInfo) -> Result<(), ()>) {
-    USER_PAGE_FAULT_HANDLER.call_once(|| handler);
 }

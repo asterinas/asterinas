@@ -59,7 +59,7 @@ pub(super) fn init() {
     CONTEXT_SWITCH_COUNTER.call_once(PerCpuCounter::new);
     ostd::task::inject_pre_schedule_handler(pre_schedule_handler);
     ostd::task::inject_post_schedule_handler(post_schedule_handler);
-    ostd::arch::trap::inject_user_page_fault_handler(exception::page_fault_handler);
+    ostd::mm::fault::inject_user_page_fault_handler(exception::page_fault_handler);
 }
 
 /// A thread is a wrapper on top of task.
