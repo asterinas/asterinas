@@ -2,7 +2,7 @@
 
 use core::arch::global_asm;
 
-use crate::arch::cpu::context::GeneralRegs;
+use crate::{arch::cpu::context::GeneralRegs, mm::fault::TrapFrameApi};
 
 global_asm!(include_str!("trap.S"));
 
@@ -44,6 +44,16 @@ pub struct TrapFrame {
     pub era: usize,
     /// Extended Unit Enable
     pub euen: usize,
+}
+
+impl TrapFrameApi for TrapFrame {
+    fn set_instruction_pointer(&mut self, ip: usize) {
+        self.era = ip;
+    }
+
+    fn instruction_pointer(&self) -> usize {
+        self.era
+    }
 }
 
 /// Saved registers on a trap.
