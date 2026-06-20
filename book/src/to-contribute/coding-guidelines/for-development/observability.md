@@ -1,7 +1,4 @@
-# Logging
-
-Consistent logging makes debugging tractable
-across a large kernel codebase.
+# Observability
 
 ### Use OSTD logging macros exclusively (`ostd-log-only`) {#ostd-log-only}
 

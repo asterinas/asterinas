@@ -1,7 +1,7 @@
 # How Guidelines Are Written
 
 The guidelines in this collection reflect
-a set of widely-recognized **philosophy** and **principles**
+widely-recognized **philosophy** and **principles**
 for writing high-quality software.
 Three books have influenced the guidelines the most:
 1. [_The Art of Readable Code_](https://www.oreilly.com/library/view/the-art-of/9781449318482/)

@@ -1,4 +1,41 @@
-# Modules and Crates
+# Crates & Modules
+
+### Use workspace dependencies (`workspace-deps`) {#workspace-deps}
+
+Always declare shared dependencies
+in the workspace `[workspace.dependencies]` table
+and reference them with `.workspace = true`
+in member crates.
+
+```toml
+# In the workspace root Cargo.toml
+[workspace.dependencies]
+ostd = { version = "0.17.0", path = "ostd" }
+bitflags = "2.6"
+
+# In a member crate's Cargo.toml
+[dependencies]
+ostd.workspace = true
+bitflags.workspace = true
+```
+
+### Add module-level documentation for major components (`module-docs`) {#module-docs}
+
+A module file that serves as
+an important kernel component
+(e.g., subsystem entry point, major data structure, driver)
+should begin with a `//!` comment explaining:
+1. What the module does
+2. The key types it exposes
+3. How it relates to neighboring modules
+
+```rust
+//! Virtual memory area (VMA) management.
+//!
+//! This module defines [`VmMapping`] and associated types,
+//! which represent contiguous regions of a process's virtual address space.
+//! VMAs are managed by the [`Vmar`] tree in the parent module.
+```
 
 ### Default to the narrowest visibility (`narrow-visibility`) {#narrow-visibility}
 
@@ -69,26 +106,7 @@ use ostd::mm::kspace::LINEAR_MAPPING_BASE_VADDR;
 let base = LINEAR_MAPPING_BASE_VADDR;
 ```
 
-This rule applies to **free functions and statics/constants**.
+This guideline applies to **free functions and statics/constants**.
 Types, traits, and enum variants
 should still be imported directly by name,
 following the standard Rust convention.
-
-### Use workspace dependencies (`workspace-deps`) {#workspace-deps}
-
-Always declare shared dependencies
-in the workspace `[workspace.dependencies]` table
-and reference them with `.workspace = true`
-in member crates.
-
-```toml
-# In the workspace root Cargo.toml
-[workspace.dependencies]
-ostd = { version = "0.17.0", path = "ostd" }
-bitflags = "2.6"
-
-# In a member crate's Cargo.toml
-[dependencies]
-ostd.workspace = true
-bitflags.workspace = true
-```

@@ -1,8 +1,4 @@
-# Git Guidelines
-
-These guidelines cover commit hygiene and pull request conventions.
-For the underlying philosophy, see
-[How Guidelines Are Written](how-guidelines-are-written.md).
+# Process
 
 ### Write imperative, descriptive subject lines (`imperative-subject`) {#imperative-subject}
 

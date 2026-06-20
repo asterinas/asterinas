@@ -1,8 +1,4 @@
-# Testing Guidelines
-
-This page covers language-agnostic testing conventions.
-For Rust-specific assertion policy (`assert!` vs `debug_assert!`), see
-[Rust Guidelines — Defensive Programming](rust-guidelines/select-topics/defensive-programming.md).
+# Testing
 
 ### Add regression tests for every bug fix (`add-regression-tests`) {#add-regression-tests}
 

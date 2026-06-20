@@ -1,8 +1,4 @@
-# Concurrency and Races
-
-Concurrency code is reviewed with extreme rigor.
-Lock ordering, atomic correctness, memory ordering,
-and race condition analysis are all demanded explicitly.
+# Concurrency
 
 ### Establish and enforce a consistent lock order (`lock-ordering`) {#lock-ordering}
 

@@ -1,4 +1,4 @@
-# Unsafety
+# Memory Safety
 
 ### Justify every use of `unsafe` (`justify-unsafe-use`) {#justify-unsafe-use}
 
