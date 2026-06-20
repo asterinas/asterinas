@@ -254,14 +254,6 @@ impl UserContextApiInternal for UserContext {
 }
 
 impl UserContextApi for UserContext {
-    fn trap_number(&self) -> usize {
-        todo!()
-    }
-
-    fn trap_error_code(&self) -> usize {
-        todo!()
-    }
-
     fn instruction_pointer(&self) -> usize {
         self.user_context.era
     }

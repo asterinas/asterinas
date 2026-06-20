@@ -116,8 +116,3 @@ pub(crate) const fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize {
 pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     page_size::<C>(level) / C::BASE_PAGE_SIZE
 }
-
-/// Checks if the given address is page-aligned.
-pub const fn is_page_aligned(p: usize) -> bool {
-    (p & (PAGE_SIZE - 1)) == 0
-}
