@@ -169,7 +169,10 @@ impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
     }
 }
 
-#[cfg_attr(target_arch = "loongarch64", expect(unused))]
+#[cfg_attr(
+    any(target_arch = "loongarch64", target_arch = "aarch64"),
+    expect(unused)
+)]
 impl IoMem<Sensitive> {
     /// Reads a value of the `PodOnce` type at the specified offset using one
     /// non-tearing memory load.

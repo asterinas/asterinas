@@ -17,7 +17,6 @@ targets = ["x86_64-unknown-none"]
 
 [dependencies]
 align_ext.workspace = true
-bit_field.workspace = true
 bitflags.workspace = true
 bitvec.workspace = true
 gimli.workspace = true
@@ -44,6 +43,7 @@ zerocopy.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
 acpi.workspace = true
+bit_field.workspace = true
 int-to-c-enum.workspace = true
 linux-boot-params.workspace = true
 multiboot2.workspace = true
@@ -54,6 +54,7 @@ x86.workspace = true
 x86_64.workspace = true
 
 [target.riscv64imac-unknown-none-elf.dependencies]
+bit_field.workspace = true
 fdt.workspace = true
 riscv.workspace = true
 sbi-rt.workspace = true
@@ -63,6 +64,10 @@ unwinding = { workspace = true, features = ["fde-static"] }
 fdt.workspace = true
 loongArch64.workspace = true
 unwinding = { workspace = true, features = ["fde-gnu-eh-frame-hdr"] }
+
+[target.aarch64-unknown-none-softfloat.dependencies]
+fdt.workspace = true
+unwinding = { workspace = true, features = ["fde-static"] }
 
 [features]
 default = ["cvm_guest"]
