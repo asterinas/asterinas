@@ -43,7 +43,7 @@ trait SubControl {
 /// Defines the static properties and behaviors of a specific cgroup sub-controller.
 trait SubControlStatic: SubControl + Sized + 'static {
     /// Creates a new instance of the sub-controller.
-    fn new(is_root: bool, is_active: bool) -> Self;
+    fn new(is_root: bool, is_active: bool, parent_controller: Option<&Controller>) -> Self;
 
     /// Returns the `SubCtrlType` enum variant corresponding to this sub-controller.
     fn type_() -> SubCtrlType;
@@ -189,7 +189,7 @@ impl<T: SubControlStatic> SubController<T> {
         let inner = if is_active || T::type_() == SubCtrlType::Cpu {
             // `cpu.stat` exists regardless of whether `+cpu` has been enabled, so the
             // CPU sub-controller must remain instantiated even while inactive.
-            Some(T::new(is_root, is_active))
+            Some(T::new(is_root, is_active, parent_controller))
         } else {
             None
         };
@@ -319,66 +319,56 @@ impl Controller {
         controller.write_attr(name, reader)
     }
 
-    /// Activates a sub-control of the specified type.
-    pub(super) fn activate(
+    /// Validates a subtree-control change before applying it.
+    pub(super) fn validate_subtree_control_change(
         &self,
-        ctrl_type: SubCtrlType,
+        enable_set: SubCtrlSet,
+        disable_set: SubCtrlSet,
         current_node: &dyn CgroupSysNode,
         parent_controller: Option<&Controller>,
-        cgroup_membership: &mut CgroupMembership,
     ) -> Result<()> {
-        let mut active_set = self.active_set();
-        if active_set.contains_type(ctrl_type) {
-            return Ok(());
+        for ctrl_type in enable_set.iter_types() {
+            // A cgroup can activate the sub-control only if this
+            // sub-control has been activated in its parent cgroup.
+            if parent_controller
+                .is_some_and(|controller| !controller.active_set().contains_type(ctrl_type))
+            {
+                return Err(Error::NotFound);
+            }
         }
 
-        // A cgroup can activate the sub-control only if this
-        // sub-control has been activated in its parent cgroup.
-        if parent_controller
-            .is_some_and(|controller| !controller.active_set().contains_type(ctrl_type))
-        {
-            return Err(Error::NotFound);
+        for ctrl_type in disable_set.iter_types() {
+            // If any child node has activated this sub-control,
+            // the deactivation operation will be rejected.
+            for child in current_node.children() {
+                let cgroup_child = Arc::downcast::<CgroupNode>(child).unwrap();
+                // This is race-free because if a child wants to activate a sub-controller, it must
+                // acquire the write lock of `CgroupMembership` which has already been held here.
+                if cgroup_child
+                    .controller()
+                    .active_set()
+                    .contains_type(ctrl_type)
+                {
+                    return Err(Error::ResourceUnavailable);
+                }
+            }
         }
-
-        active_set.add_type(ctrl_type);
-        self.active_set.store(active_set, Ordering::Relaxed);
-        self.update_sub_controllers_for_descents(ctrl_type, current_node, cgroup_membership);
 
         Ok(())
     }
 
-    /// Deactivates a sub-control of the specified type.
-    pub(super) fn deactivate(
+    /// Applies a validated subtree-control change.
+    pub(super) fn apply_subtree_control_change(
         &self,
-        ctrl_type: SubCtrlType,
+        new_active_set: SubCtrlSet,
+        changed_set: SubCtrlSet,
         current_node: &dyn CgroupSysNode,
         cgroup_membership: &mut CgroupMembership,
-    ) -> Result<()> {
-        let mut active_set = self.active_set();
-        if !active_set.contains_type(ctrl_type) {
-            return Ok(());
+    ) {
+        self.active_set.store(new_active_set, Ordering::Relaxed);
+        for ctrl_type in changed_set.iter_types() {
+            self.update_sub_controllers_for_descents(ctrl_type, current_node, cgroup_membership);
         }
-
-        // If any child node has activated this sub-control,
-        // the deactivation operation will be rejected.
-        for child in current_node.children() {
-            let cgroup_child = Arc::downcast::<CgroupNode>(child).unwrap();
-            // This is race-free because if a child wants to activate a sub-controller, it must
-            // acquire the write lock of `CgroupMembership` which has already been held here.
-            if cgroup_child
-                .controller()
-                .active_set()
-                .contains_type(ctrl_type)
-            {
-                return Err(Error::InvalidOperation);
-            }
-        }
-
-        active_set.remove_type(ctrl_type);
-        self.active_set.store(active_set, Ordering::Relaxed);
-        self.update_sub_controllers_for_descents(ctrl_type, current_node, cgroup_membership);
-
-        Ok(())
     }
 
     fn update_sub_controllers_for_descents(
@@ -405,11 +395,9 @@ impl Controller {
                     {
                         let guard = child_node.controller().cpu.read();
                         let previous_controller = guard.get();
-                        new_controller
-                            .inner
-                            .as_mut()
-                            .unwrap()
-                            .init_stats(previous_controller.inner.as_ref().unwrap());
+                        let previous_cpu_controller = previous_controller.inner.as_ref().unwrap();
+                        let new_cpu_controller = new_controller.inner.as_mut().unwrap();
+                        new_cpu_controller.inherit_state_from(previous_cpu_controller);
                     }
                     child_node.controller().cpu.update(Arc::new(new_controller));
                 }
