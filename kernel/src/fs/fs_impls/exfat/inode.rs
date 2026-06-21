@@ -31,8 +31,7 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, MknodType, SymbolicLink},
-            path::{is_dot, is_dot_or_dotdot, is_dotdot},
+            inode::{Extension, FileOps, Inode, InodeVfsOps, Metadata, MknodType, SymbolicLink},
         },
     },
     prelude::*,
@@ -1381,15 +1380,7 @@ impl FileOps for ExfatInode {
     }
 }
 
-impl Inode for ExfatInode {
-    fn ino(&self) -> u64 {
-        self.inner.read().ino
-    }
-
-    fn size(&self) -> usize {
-        self.inner.read().size
-    }
-
+impl InodeVfsOps for ExfatInode {
     fn resize(&self, new_size: usize) -> Result<()> {
         let inner = self.inner.upread();
 
@@ -1417,6 +1408,174 @@ impl Inode for ExfatInode {
         }
 
         Ok(())
+    }
+
+    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        let fs = self.inner.read().fs();
+        let fs_guard = fs.lock();
+
+        let result = self.add_entry(name, type_, mode, &fs_guard)?;
+        let _ = fs.insert_inode(result.clone());
+
+        self.inner.write().update_atime_and_mtime()?;
+
+        let inner = self.inner.read();
+
+        if inner.is_sync() {
+            inner.sync_all(&fs_guard)?;
+        }
+
+        Ok(result)
+    }
+
+    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
+        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
+    }
+
+    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
+    }
+
+    fn unlink(&self, name: &str) -> Result<()> {
+        let fs = self.inner.read().fs();
+        let fs_guard = fs.lock();
+
+        let inode = self.inner.read().lookup_by_name(name, true, &fs_guard)?;
+
+        // FIXME: we need to step by following line to avoid deadlock.
+        if inode.type_() != InodeType::File {
+            return_errno!(Errno::EISDIR)
+        }
+        self.delete_inode(inode, true, &fs_guard)?;
+        self.inner.write().update_atime_and_mtime()?;
+
+        let inner = self.inner.read();
+        if inner.is_sync() {
+            inner.sync_all(&fs_guard)?;
+        }
+
+        Ok(())
+    }
+
+    fn rmdir(&self, name: &str) -> Result<()> {
+        let fs = self.inner.read().fs();
+        let fs_guard = fs.lock();
+
+        let inode = self.inner.read().lookup_by_name(name, true, &fs_guard)?;
+
+        if inode.inner.read().inode_type != InodeType::Dir {
+            return_errno!(Errno::ENOTDIR)
+        } else if !inode.inner.read().is_empty_dir()? {
+            // Check if directory to be deleted is empty.
+            return_errno!(Errno::ENOTEMPTY)
+        }
+        self.delete_inode(inode, true, &fs_guard)?;
+        self.inner.write().update_atime_and_mtime()?;
+
+        let inner = self.inner.read();
+        // Sync this inode since size has changed.
+        if inner.is_sync() {
+            inner.sync_all(&fs_guard)?;
+        }
+
+        Ok(())
+    }
+
+    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
+        // FIXME: Readdir should be immutable instead of mutable, but there will be no performance issues due to the global fs lock.
+        let inner = self.inner.upread();
+        if !inner.inode_type.is_directory() {
+            return_errno!(Errno::ENOTDIR)
+        }
+
+        if name.len() > MAX_NAME_LENGTH {
+            return_errno!(Errno::ENAMETOOLONG)
+        }
+
+        let inode = {
+            let fs = inner.fs();
+            let fs_guard = fs.lock();
+            inner.lookup_by_name(name, true, &fs_guard)?
+        };
+
+        inner.upgrade().update_atime()?;
+
+        Ok(inode)
+    }
+
+    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+        let Some(target_) = target.downcast_ref::<ExfatInode>() else {
+            return_errno_with_message!(Errno::EINVAL, "not an exfat inode")
+        };
+
+        let fs = self.inner.read().fs();
+        let fs_guard = fs.lock();
+        // Rename something to itself, return success directly.
+        let up_old_name = fs.upcase_table().lock().str_to_upcase(old_name)?;
+        let up_new_name = fs.upcase_table().lock().str_to_upcase(new_name)?;
+        if self.inner.read().ino == target_.inner.read().ino && up_old_name.eq(&up_new_name) {
+            return Ok(());
+        }
+
+        // Read 'old_name' file or dir and its dentries.
+        let old_inode = self
+            .inner
+            .read()
+            .lookup_by_name(old_name, true, &fs_guard)?;
+        // FIXME: Users may be confused, since inode with the same upper case name will be removed.
+        let lookup_exist_result = target_
+            .inner
+            .read()
+            .lookup_by_name(new_name, false, &fs_guard);
+        // Check for the corner cases.
+        if let Ok(ref exist_inode) = lookup_exist_result {
+            check_corner_cases_for_rename(&old_inode, exist_inode)?;
+        }
+
+        // All checks are done here. This is a valid rename and it needs to modify the metadata.
+        self.delete_inode(old_inode.clone(), false, &fs_guard)?;
+        // Create the new dentries.
+        let new_inode =
+            target_.add_entry(new_name, old_inode.type_(), old_inode.mode()?, &fs_guard)?;
+        // Update metadata.
+        old_inode.copy_metadata_from(new_inode);
+        // Update its children's parent_hash.
+        old_inode.update_subdir_parent_hash(&fs_guard)?;
+        // Insert back.
+        let _ = fs.insert_inode(old_inode.clone());
+        // Remove the exist 'new_name' file.
+        if let Ok(exist_inode) = lookup_exist_result {
+            target_.delete_inode(exist_inode, true, &fs_guard)?;
+        }
+        // Update the times.
+        self.inner.write().update_atime_and_mtime()?;
+        target_.inner.write().update_atime_and_mtime()?;
+        // Sync
+        if self.inner.read().is_sync() || target_.inner.read().is_sync() {
+            // TODO: what if fs crashed between syncing?
+            old_inode.inner.read().sync_all(&fs_guard)?;
+            target_.inner.read().sync_all(&fs_guard)?;
+            self.inner.read().sync_all(&fs_guard)?;
+        }
+        Ok(())
+    }
+
+    fn read_link(&self) -> Result<SymbolicLink> {
+        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
+    }
+
+    fn write_link(&self, target: &str) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
+    }
+}
+
+impl Inode for ExfatInode {
+    fn ino(&self) -> u64 {
+        self.inner.read().ino
+    }
+
+    fn size(&self) -> usize {
+        self.inner.read().size
     }
 
     fn metadata(&self) -> Metadata {
@@ -1513,211 +1672,6 @@ impl Inode for ExfatInode {
 
     fn page_cache(&self) -> Option<PageCache> {
         Some(self.inner.read().page_cache.clone())
-    }
-
-    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        let fs = self.inner.read().fs();
-        let fs_guard = fs.lock();
-        {
-            let inner = self.inner.read();
-            if !inner.inode_type.is_directory() {
-                return_errno!(Errno::ENOTDIR)
-            }
-            if name.len() > MAX_NAME_LENGTH {
-                return_errno!(Errno::ENAMETOOLONG)
-            }
-
-            if inner.lookup_by_name(name, false, &fs_guard).is_ok() {
-                return_errno!(Errno::EEXIST)
-            }
-        }
-
-        let result = self.add_entry(name, type_, mode, &fs_guard)?;
-        let _ = fs.insert_inode(result.clone());
-
-        self.inner.write().update_atime_and_mtime()?;
-
-        let inner = self.inner.read();
-
-        if inner.is_sync() {
-            inner.sync_all(&fs_guard)?;
-        }
-
-        Ok(result)
-    }
-
-    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
-        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
-    }
-
-    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
-    }
-
-    fn unlink(&self, name: &str) -> Result<()> {
-        if !self.inner.read().inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
-        }
-        if name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
-        if is_dot_or_dotdot(name) {
-            return_errno!(Errno::EISDIR)
-        }
-
-        let fs = self.inner.read().fs();
-        let fs_guard = fs.lock();
-
-        let inode = self.inner.read().lookup_by_name(name, true, &fs_guard)?;
-
-        // FIXME: we need to step by following line to avoid deadlock.
-        if inode.type_() != InodeType::File {
-            return_errno!(Errno::EISDIR)
-        }
-        self.delete_inode(inode, true, &fs_guard)?;
-        self.inner.write().update_atime_and_mtime()?;
-
-        let inner = self.inner.read();
-        if inner.is_sync() {
-            inner.sync_all(&fs_guard)?;
-        }
-
-        Ok(())
-    }
-
-    fn rmdir(&self, name: &str) -> Result<()> {
-        if !self.inner.read().inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
-        }
-        if is_dot(name) {
-            return_errno_with_message!(Errno::EINVAL, "rmdir on .")
-        }
-        if is_dotdot(name) {
-            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..")
-        }
-        if name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
-
-        let fs = self.inner.read().fs();
-        let fs_guard = fs.lock();
-
-        let inode = self.inner.read().lookup_by_name(name, true, &fs_guard)?;
-
-        if inode.inner.read().inode_type != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR)
-        } else if !inode.inner.read().is_empty_dir()? {
-            // Check if directory to be deleted is empty.
-            return_errno!(Errno::ENOTEMPTY)
-        }
-        self.delete_inode(inode, true, &fs_guard)?;
-        self.inner.write().update_atime_and_mtime()?;
-
-        let inner = self.inner.read();
-        // Sync this inode since size has changed.
-        if inner.is_sync() {
-            inner.sync_all(&fs_guard)?;
-        }
-
-        Ok(())
-    }
-
-    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
-        // FIXME: Readdir should be immutable instead of mutable, but there will be no performance issues due to the global fs lock.
-        let inner = self.inner.upread();
-        if !inner.inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
-        }
-
-        if name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
-
-        let inode = {
-            let fs = inner.fs();
-            let fs_guard = fs.lock();
-            inner.lookup_by_name(name, true, &fs_guard)?
-        };
-
-        inner.upgrade().update_atime()?;
-
-        Ok(inode)
-    }
-
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
-            return_errno!(Errno::EISDIR);
-        }
-        if old_name.len() > MAX_NAME_LENGTH || new_name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
-        let Some(target_) = target.downcast_ref::<ExfatInode>() else {
-            return_errno_with_message!(Errno::EINVAL, "not an exfat inode")
-        };
-        if !self.inner.read().inode_type.is_directory()
-            || !target_.inner.read().inode_type.is_directory()
-        {
-            return_errno!(Errno::ENOTDIR)
-        }
-
-        let fs = self.inner.read().fs();
-        let fs_guard = fs.lock();
-        // Rename something to itself, return success directly.
-        let up_old_name = fs.upcase_table().lock().str_to_upcase(old_name)?;
-        let up_new_name = fs.upcase_table().lock().str_to_upcase(new_name)?;
-        if self.inner.read().ino == target_.inner.read().ino && up_old_name.eq(&up_new_name) {
-            return Ok(());
-        }
-
-        // Read 'old_name' file or dir and its dentries.
-        let old_inode = self
-            .inner
-            .read()
-            .lookup_by_name(old_name, true, &fs_guard)?;
-        // FIXME: Users may be confused, since inode with the same upper case name will be removed.
-        let lookup_exist_result = target_
-            .inner
-            .read()
-            .lookup_by_name(new_name, false, &fs_guard);
-        // Check for the corner cases.
-        if let Ok(ref exist_inode) = lookup_exist_result {
-            check_corner_cases_for_rename(&old_inode, exist_inode)?;
-        }
-
-        // All checks are done here. This is a valid rename and it needs to modify the metadata.
-        self.delete_inode(old_inode.clone(), false, &fs_guard)?;
-        // Create the new dentries.
-        let new_inode =
-            target_.add_entry(new_name, old_inode.type_(), old_inode.mode()?, &fs_guard)?;
-        // Update metadata.
-        old_inode.copy_metadata_from(new_inode);
-        // Update its children's parent_hash.
-        old_inode.update_subdir_parent_hash(&fs_guard)?;
-        // Insert back.
-        let _ = fs.insert_inode(old_inode.clone());
-        // Remove the exist 'new_name' file.
-        if let Ok(exist_inode) = lookup_exist_result {
-            target_.delete_inode(exist_inode, true, &fs_guard)?;
-        }
-        // Update the times.
-        self.inner.write().update_atime_and_mtime()?;
-        target_.inner.write().update_atime_and_mtime()?;
-        // Sync
-        if self.inner.read().is_sync() || target_.inner.read().is_sync() {
-            // TODO: what if fs crashed between syncing?
-            old_inode.inner.read().sync_all(&fs_guard)?;
-            target_.inner.read().sync_all(&fs_guard)?;
-            self.inner.read().sync_all(&fs_guard)?;
-        }
-        Ok(())
-    }
-
-    fn read_link(&self) -> Result<SymbolicLink> {
-        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
-    }
-
-    fn write_link(&self, target: &str) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
     }
 
     fn sync_all(&self) -> Result<()> {

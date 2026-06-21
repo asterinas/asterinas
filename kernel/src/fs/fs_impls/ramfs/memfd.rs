@@ -17,7 +17,7 @@ use crate::{
         tmpfs::TmpFs,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FallocMode, FileOps, Inode, Metadata},
+            inode::{Extension, FallocMode, FileOps, Inode, InodeVfsOps, Metadata},
             path::{Mount, Path},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -146,6 +146,35 @@ impl FileOps for MemfdInode {
     }
 }
 
+impl InodeVfsOps for MemfdInode {
+    fn resize(&self, new_size: usize) -> Result<()> {
+        let seals = self.seals.lock();
+        let old_size = self.inode.size();
+        if seals.contains(FileSeals::F_SEAL_SHRINK) && new_size < old_size {
+            return_errno_with_message!(Errno::EPERM, "the file is sealed against shrinking");
+        }
+        if seals.contains(FileSeals::F_SEAL_GROW) && new_size > old_size {
+            return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+        }
+
+        self.inode.resize(new_size)
+    }
+
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        let seals = self.seals.lock();
+        if seals.contains(FileSeals::F_SEAL_GROW) && offset + len > self.inode.size() {
+            return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+        }
+        if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE)
+            && mode == FallocMode::PunchHoleKeepSize
+        {
+            return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
+        }
+
+        self.inode.fallocate(mode, offset, len)
+    }
+}
+
 #[inherit_methods(from = "self.inode")]
 impl Inode for MemfdInode {
     fn metadata(&self) -> Metadata;
@@ -175,19 +204,6 @@ impl Inode for MemfdInode {
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize>;
     fn remove_xattr(&self, name: XattrName) -> Result<()>;
 
-    fn resize(&self, new_size: usize) -> Result<()> {
-        let seals = self.seals.lock();
-        let old_size = self.inode.size();
-        if seals.contains(FileSeals::F_SEAL_SHRINK) && new_size < old_size {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against shrinking");
-        }
-        if seals.contains(FileSeals::F_SEAL_GROW) && new_size > old_size {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
-        }
-
-        self.inode.resize(new_size)
-    }
-
     fn set_mode(&self, mode: InodeMode) -> Result<()> {
         let seals = self.seals.lock();
         if seals.contains(FileSeals::F_SEAL_EXEC)
@@ -200,20 +216,6 @@ impl Inode for MemfdInode {
         }
 
         self.inode.set_mode(mode)
-    }
-
-    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        let seals = self.seals.lock();
-        if seals.contains(FileSeals::F_SEAL_GROW) && offset + len > self.inode.size() {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
-        }
-        if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE)
-            && mode == FallocMode::PunchHoleKeepSize
-        {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
-        }
-
-        self.inode.fallocate(mode, offset, len)
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

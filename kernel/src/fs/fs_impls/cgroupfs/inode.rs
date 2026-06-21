@@ -8,8 +8,7 @@ use crate::{
         utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, Metadata, RevalidationPolicy},
-            path::{is_dot, is_dotdot},
+            inode::{Extension, Inode, InodeVfsOps, Metadata, RevalidationPolicy},
         },
     },
     prelude::*,
@@ -81,21 +80,14 @@ impl SysTreeInodeTy for CgroupInode {
             .upgrade()
             .expect("invalid weak reference to `self`")
     }
-}
 
-impl Inode for CgroupInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         CgroupFs::singleton().clone()
     }
+}
 
+impl InodeVfsOps for CgroupInode {
     fn rmdir(&self, name: &str) -> Result<()> {
-        if is_dot(name) {
-            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
-        }
-        if is_dotdot(name) {
-            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
-        }
-
         let SysTreeNodeKind::Branch(branch_node) = self.node_kind() else {
             return_errno_with_message!(Errno::ENOTDIR, "the current node is not a branch node");
         };

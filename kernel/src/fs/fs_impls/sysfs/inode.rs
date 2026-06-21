@@ -7,7 +7,7 @@ use crate::{
         utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, Metadata},
+            inode::{Extension, Inode, InodeVfsOps, Metadata},
         },
     },
     prelude::*,
@@ -85,13 +85,13 @@ impl SysTreeInodeTy for SysFsInode {
     fn extension(&self) -> &Extension {
         &self.extension
     }
-}
 
-impl Inode for SysFsInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         SysFs::singleton().clone()
     }
+}
 
+impl InodeVfsOps for SysFsInode {
     fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
         Err(Error::with_message(
             Errno::EPERM,

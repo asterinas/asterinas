@@ -24,7 +24,10 @@ use crate::{
         utils::{DirentCounter, DirentVisitor, NAME_MAX},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            inode::{Extension, FallocMode, FileOps, Inode, Metadata, MknodType, SymbolicLink},
+            inode::{
+                Extension, FallocMode, FileOps, Inode, InodeVfsOps, Metadata, MknodType,
+                SymbolicLink,
+            },
             path::{FsPath, Path},
             registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags},
@@ -962,9 +965,28 @@ impl FileOps for OverlayInode {
 }
 
 #[inherit_methods(from = "self")]
+impl InodeVfsOps for OverlayInode {
+    fn resize(&self, new_size: usize) -> Result<()>;
+    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
+    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>>;
+    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()>;
+    fn unlink(&self, name: &str) -> Result<()>;
+    fn rmdir(&self, name: &str) -> Result<()>;
+    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>>;
+    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()>;
+    fn read_link(&self) -> Result<SymbolicLink>;
+    fn write_link(&self, target: &str) -> Result<()>;
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>>;
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()>;
+}
+
+#[inherit_methods(from = "self")]
 impl Inode for OverlayInode {
     fn size(&self) -> usize;
-    fn resize(&self, new_size: usize) -> Result<()>;
     fn metadata(&self) -> Metadata;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
@@ -982,23 +1004,8 @@ impl Inode for OverlayInode {
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, time: Duration);
     fn page_cache(&self) -> Option<PageCache>;
-    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
-    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>>;
-    fn open(
-        &self,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn PerOpenFileOps>>>;
-    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()>;
-    fn unlink(&self, name: &str) -> Result<()>;
-    fn rmdir(&self, name: &str) -> Result<()>;
-    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>>;
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()>;
-    fn read_link(&self) -> Result<SymbolicLink>;
-    fn write_link(&self, target: &str) -> Result<()>;
     fn sync_all(&self) -> Result<()>;
     fn sync_data(&self) -> Result<()>;
-    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()>;
     fn fs(&self) -> Arc<dyn FileSystem>;
     fn set_xattr(
         &self,

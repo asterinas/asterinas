@@ -11,7 +11,7 @@ use crate::{
         pseudofs::{PipeFs, PseudoInode, PseudoInodeType},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata},
+            inode::{Extension, FileOps, Inode, InodeVfsOps, Metadata},
         },
     },
     prelude::*,
@@ -75,9 +75,21 @@ impl FileOps for AnonPipeInode {
 }
 
 #[inherit_methods(from = "self.pseudo_inode")]
+impl InodeVfsOps for AnonPipeInode {
+    fn resize(&self, _new_size: usize) -> Result<()>;
+
+    fn open(
+        &self,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
+        Some(self.pipe.open_anon(access_mode, status_flags))
+    }
+}
+
+#[inherit_methods(from = "self.pseudo_inode")]
 impl Inode for AnonPipeInode {
     fn size(&self) -> usize;
-    fn resize(&self, _new_size: usize) -> Result<()>;
     fn metadata(&self) -> Metadata;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
@@ -95,12 +107,4 @@ impl Inode for AnonPipeInode {
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, time: Duration);
     fn fs(&self) -> Arc<dyn FileSystem>;
-
-    fn open(
-        &self,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        Some(self.pipe.open_anon(access_mode, status_flags))
-    }
 }

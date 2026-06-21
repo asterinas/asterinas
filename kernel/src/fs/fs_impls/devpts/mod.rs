@@ -17,7 +17,9 @@ use crate::{
         utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            inode::{Extension, FileOps, Inode, Metadata, MknodType, RevalidationPolicy},
+            inode::{
+                Extension, FileOps, Inode, InodeVfsOps, Metadata, MknodType, RevalidationPolicy,
+            },
             registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
@@ -228,13 +230,84 @@ impl FileOps for RootInode {
     }
 }
 
+impl InodeVfsOps for RootInode {
+    fn resize(&self, new_size: usize) -> Result<()> {
+        Err(Error::new(Errno::EISDIR))
+    }
+
+    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn unlink(&self, name: &str) -> Result<()> {
+        match name {
+            "." | ".." => {
+                return_errno_with_message!(Errno::EISDIR, "the devpts directory cannot be unlinked")
+            }
+            "ptmx" => return_errno_with_message!(Errno::EPERM, "the ptmx inode cannot be unlinked"),
+            slave => {
+                if self.slaves.read().find_entry_by_name(slave).is_none() {
+                    return_errno_with_message!(Errno::ENOENT, "the slave inode does not exist");
+                }
+                return_errno_with_message!(Errno::EPERM, "the slave inode cannot be unlinked");
+            }
+        }
+    }
+
+    fn rmdir(&self, name: &str) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
+        let inode = match name {
+            "." | ".." => self.fs.upgrade().unwrap().root_inode(),
+            // Call the "open" method of ptmx to create a master and slave pair.
+            "ptmx" => self.ptmx.clone(),
+            slave => self
+                .slaves
+                .read()
+                .find_entry_by_name(slave)
+                .cloned()
+                .ok_or(Error::new(Errno::ENOENT))?,
+        };
+        Ok(inode)
+    }
+
+    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn revalidation_policy(&self) -> RevalidationPolicy {
+        RevalidationPolicy::REVALIDATE_EXISTS | RevalidationPolicy::REVALIDATE_ABSENT
+    }
+
+    fn revalidate_exists(&self, _name: &str, _child: &dyn Inode) -> bool {
+        // Slave entries are created by opening `ptmx` and removed when the
+        // master is dropped, bypassing VFS dentry updates. Always retry lookup
+        // so a cached dentry cannot refer to a removed or reused pty index.
+        //
+        // TODO: Add a devpts-to-VFS dentry invalidation/update path for slave
+        // add/remove, similar to Linux devpts dropping slave dentries on pty
+        // teardown. Then this conservative revalidation can be relaxed.
+        false
+    }
+
+    fn revalidate_absent(&self, _name: &str) -> bool {
+        false
+    }
+}
+
 impl Inode for RootInode {
     fn size(&self) -> usize {
         self.metadata.read().size
-    }
-
-    fn resize(&self, new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
     }
 
     fn metadata(&self) -> Metadata {
@@ -304,76 +377,7 @@ impl Inode for RootInode {
         self.metadata.write().last_meta_change_at = time;
     }
 
-    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    fn unlink(&self, name: &str) -> Result<()> {
-        match name {
-            "." | ".." => {
-                return_errno_with_message!(Errno::EISDIR, "the devpts directory cannot be unlinked")
-            }
-            "ptmx" => return_errno_with_message!(Errno::EPERM, "the ptmx inode cannot be unlinked"),
-            slave => {
-                if self.slaves.read().find_entry_by_name(slave).is_none() {
-                    return_errno_with_message!(Errno::ENOENT, "the slave inode does not exist");
-                }
-                return_errno_with_message!(Errno::EPERM, "the slave inode cannot be unlinked");
-            }
-        }
-    }
-
-    fn rmdir(&self, name: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
-        let inode = match name {
-            "." | ".." => self.fs().root_inode(),
-            // Call the "open" method of ptmx to create a master and slave pair.
-            "ptmx" => self.ptmx.clone(),
-            slave => self
-                .slaves
-                .read()
-                .find_entry_by_name(slave)
-                .cloned()
-                .ok_or(Error::new(Errno::ENOENT))?,
-        };
-        Ok(inode)
-    }
-
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
-    }
-
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
-    }
-
-    fn revalidation_policy(&self) -> RevalidationPolicy {
-        RevalidationPolicy::REVALIDATE_EXISTS | RevalidationPolicy::REVALIDATE_ABSENT
-    }
-
-    fn revalidate_exists(&self, _name: &str, _child: &dyn Inode) -> bool {
-        // Slave entries are created by opening `ptmx` and removed when the
-        // master is dropped, bypassing VFS dentry updates. Always retry lookup
-        // so a cached dentry cannot refer to a removed or reused pty index.
-        //
-        // TODO: Add a devpts-to-VFS dentry invalidation/update path for slave
-        // add/remove, similar to Linux devpts dropping slave dentries on pty
-        // teardown. Then this conservative revalidation can be relaxed.
-        false
-    }
-
-    fn revalidate_absent(&self, _name: &str) -> bool {
-        false
     }
 }

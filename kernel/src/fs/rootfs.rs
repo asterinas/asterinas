@@ -98,7 +98,7 @@ fn try_append_entry_to_rootfs(
                 entry.read_all(&mut link_data)?;
                 core::str::from_utf8(&link_data)?.to_string()
             };
-            path.inode().write_link(&link_content)?;
+            path.write_link(&link_content)?;
         }
         FileType::Char => {
             let device_id = try_device_id_from_metadata(metadata)?;
