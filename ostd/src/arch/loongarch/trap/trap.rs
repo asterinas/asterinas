@@ -2,7 +2,7 @@
 
 use core::arch::global_asm;
 
-use crate::arch::cpu::context::GeneralRegs;
+use crate::{arch::cpu::context::GeneralRegs, irq::DisabledLocalIrqGuard};
 
 global_asm!(include_str!("trap.S"));
 
@@ -76,11 +76,7 @@ impl RawUserContext {
     ///
     /// On return, the context will be reset to the status before the trap.
     /// Trap reason will be placed at `estat`.
-    pub(in crate::arch) fn run(&mut self) {
-        let guard = crate::irq::disable_local();
-
-        crate::task::call_pre_user_run_handler(&guard);
-
+    pub(in crate::arch) fn run(&mut self, guard: DisabledLocalIrqGuard) {
         // Return to userspace with interrupts disabled. Otherwise, interrupts
         // after switching `SAVE_SCRATCH` will mess up the CPU state.
         core::mem::forget(guard);

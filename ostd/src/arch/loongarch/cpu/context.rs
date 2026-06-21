@@ -14,7 +14,7 @@ use crate::{
     },
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
-    user::{ReturnReason, UserContextApi, UserContextApiInternal},
+    user::{ReturnReason, UserContextApi, UserContextApiInternal, UserModeHooks},
 };
 
 /// General registers
@@ -139,13 +139,13 @@ impl UserContext {
 }
 
 impl UserContextApiInternal for UserContext {
-    fn execute<F>(&mut self, mut has_kernel_event: F) -> ReturnReason
-    where
-        F: FnMut() -> bool,
-    {
+    fn execute<T: UserModeHooks>(&mut self, hooks: &T) -> ReturnReason {
         let ret = loop {
             crate::task::scheduler::might_preempt();
-            self.user_context.run();
+
+            let guard = crate::irq::disable_local();
+            hooks.pre_user_run(&guard);
+            self.user_context.run(guard);
 
             let cause = loongArch64::register::estat::read().cause();
             let badv = loongArch64::register::badv::read().raw();
@@ -235,7 +235,7 @@ impl UserContextApiInternal for UserContext {
                 }
             }
 
-            if has_kernel_event() {
+            if hooks.has_kernel_event() {
                 break ReturnReason::KernelEvent;
             }
         };
