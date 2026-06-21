@@ -495,3 +495,76 @@ fn delayed_io_completion() {
     assert!(second_flush_result.lock().take().unwrap().is_ok());
     assert_eq!(backend.persisted_page_bytes(0), latest_dirty_pattern);
 }
+
+/// A demand read after readahead reuses the prefetched page without issuing
+/// a second backend read.
+#[ktest]
+fn readahead_pages_served_by_demand_read() {
+    let backend = MockPageCacheBackend::new(4);
+    let pattern = vec![0xAA; PAGE_SIZE];
+    backend.set_persisted_page_bytes(2, &pattern);
+
+    let page_cache = new_backend_page_cache(&backend, 4);
+    page_cache.readahead(2..3).unwrap();
+
+    // Demand read the same page — should hit the already-populated cache.
+    let mut buf = vec![0u8; PAGE_SIZE];
+    page_cache.read_bytes(2 * PAGE_SIZE, &mut buf).unwrap();
+
+    assert_eq!(backend.read_count(2), 1);
+    assert_eq!(buf, pattern);
+}
+
+/// Readahead skips a page that is already resident (e.g., written before).
+#[ktest]
+fn readahead_skips_resident_pages() {
+    let backend = MockPageCacheBackend::new(2);
+
+    let page_cache = new_backend_page_cache(&backend, 2);
+    // Populate page 0 via a write (makes it resident and dirty).
+    let write_data = vec![0xBB; PAGE_SIZE];
+    page_cache.write_bytes(0, &write_data).unwrap();
+
+    // Readahead the same page — should not submit a backend read.
+    page_cache.readahead(0..1).unwrap();
+    assert_eq!(backend.read_count(0), 0);
+}
+
+/// Readahead clamps the requested range to the page-cache capacity.
+#[ktest]
+fn readahead_clamps_to_vmo_size() {
+    let backend = MockPageCacheBackend::new(3);
+
+    let page_cache = new_backend_page_cache(&backend, 3);
+    // Request far beyond the 3-page capacity.
+    page_cache.readahead(1..10).unwrap();
+
+    assert_eq!(backend.read_count(1), 1);
+    assert_eq!(backend.read_count(2), 1);
+}
+
+/// A demand read succeeds even after a readahead I/O completes with failure.
+#[ktest]
+fn readahead_io_failure_allows_demand_retry() {
+    let backend = MockPageCacheBackend::new(2);
+    backend.set_completion(IoKind::Read, IoCompletion::Deferred);
+
+    let page_cache = new_backend_page_cache(&backend, 2);
+    page_cache.readahead(0..1).unwrap();
+
+    backend.wait_for_deferred_bios(IoKind::Read, 1);
+    // Complete the readahead with an I/O error.
+    backend.complete_next_deferred_bio(IoKind::Read, false);
+
+    // Switch to immediate completion for the demand retry.
+    backend.set_completion(IoKind::Read, IoCompletion::Immediate);
+    let pattern = vec![0xCC; PAGE_SIZE];
+    backend.set_persisted_page_bytes(0, &pattern);
+
+    let mut buf = vec![0u8; PAGE_SIZE];
+    page_cache.read_bytes(0, &mut buf).unwrap();
+
+    // The demand read should have triggered a new backend read.
+    assert_eq!(backend.read_count(0), 2);
+    assert_eq!(buf, pattern);
+}

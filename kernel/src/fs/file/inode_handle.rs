@@ -2,7 +2,7 @@
 
 //! Opened Inode-backed File Handle
 
-use core::{fmt::Display, sync::atomic::Ordering};
+use core::{fmt::Display, ops::Range, sync::atomic::Ordering};
 
 use aster_rights::Rights;
 
@@ -34,8 +34,146 @@ pub struct InodeHandle {
     /// and `ioctl` will be provided by the per-open file object instead of `path`.
     open_file: Option<Box<dyn PerOpenFileOps>>,
     offset: Mutex<usize>,
+    readahead: Mutex<ReadaheadState>,
     status_flags: AtomicStatusFlags,
     rights: Rights,
+}
+
+/// Maximum readahead window in pages.
+const MAX_READAHEAD_PAGES: usize = 32;
+
+/// Per-open-file readahead heuristic state.
+#[derive(Debug, Default)]
+struct ReadaheadState {
+    /// Byte offset immediately after the most recent read.
+    prev_pos: Option<usize>,
+    /// Page index where the most recent readahead window started.
+    start_page_idx: usize,
+    /// Total size of the most recent readahead window in pages.
+    nr_window_pages: usize,
+    /// Page index where the next readahead window should be submitted.
+    trigger_page_idx: usize,
+}
+
+impl ReadaheadState {
+    /// Records a completed read.
+    ///
+    /// Returns the page-index range to prefetch.
+    ///
+    /// Reads are treated as sequential when their first page is the same as or
+    /// immediately after the page containing the end of the previous read.
+    fn on_read(&mut self, offset: usize, read_len: usize) -> Option<Range<usize>> {
+        let read_end = offset + read_len;
+        let read_start_idx = offset / PAGE_SIZE;
+        let read_end_idx = read_end.div_ceil(PAGE_SIZE);
+
+        if !self.is_sequential_read(read_start_idx) {
+            self.prev_pos = Some(read_end);
+            self.clear_window();
+            return None;
+        }
+
+        self.prev_pos = Some(read_end);
+
+        if self.nr_window_pages == 0 {
+            return self.start_initial_window(read_start_idx, read_end_idx);
+        }
+
+        self.try_submit_next_window(read_end_idx)
+    }
+
+    /// Returns whether the read continues the previous page-level stream.
+    fn is_sequential_read(&self, read_start_idx: usize) -> bool {
+        let Some(prev_pos) = self.prev_pos else {
+            return read_start_idx == 0;
+        };
+
+        let prev_page_idx = prev_pos / PAGE_SIZE;
+        read_start_idx == prev_page_idx || read_start_idx == prev_page_idx + 1
+    }
+
+    /// Starts the initial window for a sequential stream.
+    fn start_initial_window(
+        &mut self,
+        read_start_idx: usize,
+        read_end_idx: usize,
+    ) -> Option<Range<usize>> {
+        let nr_window_pages = Self::initial_window_pages(read_end_idx - read_start_idx);
+        let readahead_start_idx = read_end_idx;
+        let window_end_idx = read_start_idx + nr_window_pages;
+
+        self.start_page_idx = read_start_idx;
+        self.nr_window_pages = nr_window_pages;
+        self.trigger_page_idx = readahead_start_idx;
+
+        if readahead_start_idx >= window_end_idx {
+            return None;
+        }
+
+        Some(readahead_start_idx..window_end_idx)
+    }
+
+    /// Advances the window after the read reaches the trigger page.
+    fn try_submit_next_window(&mut self, read_end_idx: usize) -> Option<Range<usize>> {
+        let window_end_idx = self.start_page_idx + self.nr_window_pages;
+        if read_end_idx <= self.trigger_page_idx {
+            return None;
+        }
+
+        // If the read passed the whole window, skip pages that demand reads
+        // should already have populated.
+        let new_start_idx = window_end_idx.max(read_end_idx);
+        let nr_new_window_pages = Self::next_window_pages(self.nr_window_pages);
+        let new_end_idx = new_start_idx + nr_new_window_pages;
+
+        self.start_page_idx = new_start_idx;
+        self.nr_window_pages = nr_new_window_pages;
+        self.trigger_page_idx = new_start_idx;
+
+        Some(new_start_idx..new_end_idx)
+    }
+
+    /// Returns the initial total window size in pages.
+    ///
+    /// Reference:
+    /// <https://elixir.bootlin.com/linux/v7.1-rc7/source/mm/readahead.c#L371>.
+    fn initial_window_pages(nr_read_pages: usize) -> usize {
+        debug_assert!(nr_read_pages > 0);
+
+        if nr_read_pages > MAX_READAHEAD_PAGES / 4 {
+            return MAX_READAHEAD_PAGES;
+        }
+
+        let base = nr_read_pages.next_power_of_two();
+        if base <= MAX_READAHEAD_PAGES / 32 {
+            base * 4
+        } else if base <= MAX_READAHEAD_PAGES / 4 {
+            base * 2
+        } else {
+            MAX_READAHEAD_PAGES
+        }
+    }
+
+    /// Returns the next total window size in pages.
+    ///
+    /// Reference:
+    /// <https://elixir.bootlin.com/linux/v7.1-rc7/source/mm/readahead.c#L390>.
+    fn next_window_pages(nr_current_pages: usize) -> usize {
+        if nr_current_pages < MAX_READAHEAD_PAGES / 16 {
+            nr_current_pages * 4
+        } else if nr_current_pages <= MAX_READAHEAD_PAGES / 2 {
+            nr_current_pages * 2
+        } else {
+            MAX_READAHEAD_PAGES
+        }
+    }
+
+    /// Clears the active readahead window.
+    fn clear_window(&mut self) {
+        self.start_page_idx = 0;
+        self.nr_window_pages = 0;
+        self.trigger_page_idx = 0;
+    }
 }
 
 impl InodeHandle {
@@ -71,6 +209,7 @@ impl InodeHandle {
             path,
             open_file,
             offset: Mutex::new(0),
+            readahead: Mutex::new(ReadaheadState::default()),
             status_flags: AtomicStatusFlags::new(status_flags),
             rights,
         })
@@ -237,6 +376,37 @@ impl InodeHandle {
 
         Ok((open_file.as_ref() as &dyn Any).downcast_ref::<T>())
     }
+
+    fn maybe_readahead(&self, offset: usize, read_len: usize, status_flags: StatusFlags) {
+        if read_len == 0 || self.open_file.is_some() || status_flags.contains(StatusFlags::O_DIRECT)
+        {
+            return;
+        }
+        let Some(page_cache) = self.path.inode().page_cache() else {
+            return;
+        };
+
+        // If another reader is updating the heuristic state, skip this opportunity and let
+        // the demand read complete without waiting.
+        let Some(mut readahead) = self.readahead.try_lock() else {
+            return;
+        };
+        let Some(page_idx_range) = readahead.on_read(offset, read_len) else {
+            return;
+        };
+        drop(readahead);
+
+        let file_size = self.path.size();
+        let file_end_idx = file_size.div_ceil(PAGE_SIZE);
+        let readahead_end_idx = page_idx_range.end.min(file_end_idx);
+        if page_idx_range.start >= readahead_end_idx {
+            return;
+        }
+
+        // Readahead must not affect the result of the completed demand read.
+        // Cache population failures only lose this speculative optimization.
+        let _ = page_cache.readahead(page_idx_range.start..readahead_end_idx);
+    }
 }
 
 impl Pollable for InodeHandle {
@@ -267,10 +437,14 @@ impl FileLike for InodeHandle {
             return file_ops.read_at(0, writer, status_flags);
         }
 
-        let mut offset = self.offset.lock();
-
-        let len = file_ops.read_at(*offset, writer, status_flags)?;
-        *offset += len;
+        let (old_offset, len) = {
+            let mut offset = self.offset.lock();
+            let old_offset = *offset;
+            let len = file_ops.read_at(old_offset, writer, status_flags)?;
+            *offset += len;
+            (old_offset, len)
+        };
+        self.maybe_readahead(old_offset, len, status_flags);
 
         Ok(len)
     }
@@ -310,7 +484,10 @@ impl FileLike for InodeHandle {
 
         let status_flags = self.status_flags();
 
-        file_ops.read_at(offset, writer, status_flags)
+        let len = file_ops.read_at(offset, writer, status_flags)?;
+        self.maybe_readahead(offset, len, status_flags);
+
+        Ok(len)
     }
 
     fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
