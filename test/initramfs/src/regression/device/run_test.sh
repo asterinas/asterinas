@@ -5,6 +5,7 @@
 set -e
 
 ./pty/close_pty
+./pty/output_flags
 ./pty/open_ptmx
 ./pty/open_pty
 ./pty/pty_blocking

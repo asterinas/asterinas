@@ -208,18 +208,18 @@ impl<D: TtyDriver> Tty<D> {
 
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
+        let processed = self.ldisc.lock().process_output(&buf[..write_len]);
 
         // TODO: Add support for timeout.
         let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
-        let len = if is_nonblocking {
-            self.driver.push_output(&buf[..write_len])?
+        if is_nonblocking {
+            let _ = self.driver.push_output(&processed)?;
         } else {
-            self.wait_events(IoEvents::OUT, None, || {
-                self.driver.push_output(&buf[..write_len])
-            })?
+            let _ =
+                self.wait_events(IoEvents::OUT, None, || self.driver.push_output(&processed))?;
         };
         self.pollee.invalidate();
-        Ok(len)
+        Ok(write_len)
     }
 
     pub fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {

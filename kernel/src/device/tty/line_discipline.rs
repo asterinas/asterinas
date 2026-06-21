@@ -2,7 +2,7 @@
 
 use ostd::const_assert;
 
-use super::termio::{CCtrlCharId, CTermios, CWinSize};
+use super::termio::{CCtrlCharId, COutputFlags, CTermios, CWinSize};
 use crate::{
     device::tty::termio::{CInputFlags, CLocalFlags},
     prelude::*,
@@ -113,7 +113,7 @@ impl LineDiscipline {
         // Typically, a TTY in raw mode does not echo. But the TTY can also be in a CBREAK mode,
         // with ICANON closed and ECHO opened.
         if self.termios.local_flags().contains(CLocalFlags::ECHO) {
-            self.output_char(ch, echo_callback);
+            self.echo_char(ch, echo_callback);
         }
 
         if self.is_full() {
@@ -157,11 +157,30 @@ impl LineDiscipline {
         Ok(())
     }
 
-    // TODO: respect output flags
-    fn output_char<F: FnMut(&[u8])>(&self, ch: u8, mut echo_callback: F) {
+    /// Echoes a character back to the output, respecting output processing flags.
+    ///
+    /// Currently supported output flags: `OPOST`, `ONLCR`, `OCRNL`.
+    ///
+    /// TODO: Implement remaining output flags: `OLCUC`, `ONOCR`, `ONLRET`, `OFILL`, `OFDEL`.
+    fn echo_char<F: FnMut(&[u8])>(&self, ch: u8, mut echo_callback: F) {
+        let oflags = self.termios.output_flags();
+        let opost = oflags.contains(COutputFlags::OPOST);
+
         match ch {
-            b'\n' => echo_callback(b"\n"),
-            b'\r' => echo_callback(b"\r\n"),
+            b'\n' => {
+                if opost && oflags.contains(COutputFlags::ONLCR) {
+                    echo_callback(b"\r\n");
+                } else {
+                    echo_callback(b"\n");
+                }
+            }
+            b'\r' => {
+                if opost && oflags.contains(COutputFlags::OCRNL) {
+                    echo_callback(b"\n");
+                } else {
+                    echo_callback(b"\r");
+                }
+            }
             ch if ch == self.termios.special_char(CCtrlCharId::VERASE) => {
                 // The driver should erase the current character
                 echo_callback(b"\x08");
@@ -251,6 +270,38 @@ impl LineDiscipline {
     fn flush_line(&mut self) -> Option<()> {
         let bytes = self.current_line.drain();
         self.read_buffer.push_slice(bytes)
+    }
+
+    /// Processes output bytes according to the output flags.
+    ///
+    /// Currently supported output flags: `OPOST`, `ONLCR`, `OCRNL`.
+    ///
+    /// TODO: Implement remaining output flags: `OLCUC`, `ONOCR`, `ONLRET`, `OFILL`, `OFDEL`.
+    pub fn process_output(&self, buf: &[u8]) -> Vec<u8> {
+        let oflags = self.termios.output_flags();
+        if !oflags.contains(COutputFlags::OPOST) {
+            return buf.to_vec();
+        }
+
+        let n_extra = if oflags.contains(COutputFlags::ONLCR) {
+            buf.iter().filter(|&&b| b == b'\n').count()
+        } else {
+            0
+        };
+        let mut result = Vec::with_capacity(buf.len() + n_extra);
+        for &ch in buf {
+            match ch {
+                b'\n' if oflags.contains(COutputFlags::ONLCR) => {
+                    result.push(b'\r');
+                    result.push(b'\n');
+                }
+                b'\r' if oflags.contains(COutputFlags::OCRNL) => {
+                    result.push(b'\n');
+                }
+                _ => result.push(ch),
+            }
+        }
+        result
     }
 
     pub fn window_size(&self) -> CWinSize {

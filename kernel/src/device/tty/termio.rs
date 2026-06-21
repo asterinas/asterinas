@@ -301,6 +301,11 @@ impl CTermios {
     pub fn local_flags(&self) -> &CLocalFlags {
         &self.c_lflags
     }
+
+    /// Returns the output flags.
+    pub(super) fn output_flags(&self) -> &COutputFlags {
+        &self.c_oflags
+    }
 }
 
 /// A window size; `struct winsize` in Linux.
