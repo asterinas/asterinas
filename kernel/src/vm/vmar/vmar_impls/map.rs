@@ -7,7 +7,6 @@ use crate::{
     fs::{
         file::{FileLike, Mappable},
         ramfs::memfd::MemfdInode,
-        vfs::path::Path,
     },
     prelude::*,
     vm::{page_cache::Vmo, perms::VmPerms},
@@ -58,7 +57,7 @@ impl Vmar {
 pub struct VmarMapOptions<'a> {
     parent: &'a Vmar,
     mappable: Option<Mappable>,
-    path: Option<Path>,
+    file: Option<Arc<dyn FileLike>>,
     perms: VmPerms,
     may_perms: VmPerms,
     vmo_offset: usize,
@@ -102,7 +101,7 @@ impl<'a> VmarMapOptions<'a> {
         Self {
             parent,
             mappable: None,
-            path: None,
+            file: None,
             perms,
             may_perms: VmPerms::ALL_MAY_PERMS,
             vmo_offset: 0,
@@ -151,26 +150,6 @@ impl<'a> VmarMapOptions<'a> {
             panic!("Cannot set `vmo` when `mappable` is already set");
         }
         self.mappable = Some(Mappable::Vmo(vmo));
-
-        self
-    }
-
-    /// Sets the [`Path`] of the mapping.
-    ///
-    /// If a [`Vmo`] is specified, the inode behind the [`Path`] must have
-    /// the [`Vmo`] as the page cache.
-    ///
-    /// The [`Path`] of a mapping will be implicitly set if [`Self::mappable`]
-    /// is set.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if a [`Path`] is already provided.
-    pub fn path(mut self, path: Path) -> Self {
-        if self.path.is_some() {
-            panic!("Cannot set `path` when `path` is already set");
-        }
-        self.path = Some(path);
 
         self
     }
@@ -227,32 +206,31 @@ impl<'a> VmarMapOptions<'a> {
         self
     }
 
-    /// Binds the file's [`Mappable`] object to the mapping and sets the
-    /// [`Path`] of the mapping.
+    /// Binds the file's [`Mappable`] object to the mapping.
     ///
     /// This method accepts file-specific details, like a page cache (inode)
     /// or I/O memory, but not both simultaneously.
     ///
     /// # Panics
     ///
-    /// This function panics if a [`Vmo`], [`Mappable`], or [`Path`] is already
+    /// This function panics if a [`Vmo`], [`Mappable`], or file is already
     /// provided.
     ///
     /// # Errors
     ///
     /// This function returns an error if the file does not have a corresponding
     /// mappable object of [`Mappable`].
-    pub fn mappable(mut self, file: &dyn FileLike) -> Result<Self> {
+    pub fn mappable(mut self, file: Arc<dyn FileLike>) -> Result<Self> {
         if self.mappable.is_some() {
             panic!("Cannot set `mappable` when `mappable` is already set");
         }
-        if self.path.is_some() {
-            panic!("Cannot set `mappable` when `path` is already set");
+        if self.file.is_some() {
+            panic!("Cannot set `mappable` when `file` is already set");
         }
 
         let mappable = file.mappable()?;
         self.mappable = Some(mappable);
-        self.path = Some(file.path().clone());
+        self.file = Some(file);
 
         Ok(self)
     }
@@ -267,7 +245,7 @@ impl<'a> VmarMapOptions<'a> {
         let Self {
             parent,
             mappable,
-            path,
+            file,
             perms,
             mut may_perms,
             vmo_offset,
@@ -326,14 +304,16 @@ impl<'a> VmarMapOptions<'a> {
         // Parse the `Mappable` and prepare the `MappedMemory`.
         let (mapped_mem, io_mem) = match mappable {
             Some(Mappable::Vmo(vmo)) => {
-                if let Some(ref path) = path {
+                if let Some(ref file) = file {
+                    let path = file.path();
                     debug_assert!(Arc::ptr_eq(
                         &vmo,
                         &path.inode().page_cache().unwrap().as_vmo().clone()
                     ));
                 }
 
-                let is_writable_tracked = if let Some(ref path) = path
+                let path = file.as_ref().map(|file| file.path());
+                let is_writable_tracked = if let Some(path) = path
                     && let Some(memfd_inode) = path.inode().downcast_ref::<MemfdInode>()
                     && is_shared
                     && may_perms.contains(VmPerms::MAY_WRITE)
@@ -357,7 +337,7 @@ impl<'a> VmarMapOptions<'a> {
             NonZeroUsize::new(map_size).unwrap(),
             map_to_addr,
             mapped_mem,
-            path,
+            file,
             is_shared,
             handle_page_faults_around,
             perms | may_perms,

@@ -6,10 +6,10 @@ use super::{SyscallReturn, constants::*};
 use crate::{
     fs::{
         file::file_table::RawFileDesc,
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
-    process::{do_execve, posix_thread::ThreadName},
+    process::{ExecutableFile, do_execve, open_executable_file, posix_thread::ThreadName},
 };
 
 pub fn sys_execve(
@@ -21,7 +21,7 @@ pub fn sys_execve(
 ) -> Result<SyscallReturn> {
     let (elf_file, thread_name) = {
         let flags = OpenFlags::empty();
-        lookup_executable_file(AT_FDCWD, filename_ptr, flags, ctx)?
+        lookup_and_open_executable_file(AT_FDCWD, filename_ptr, flags, ctx)?
     };
 
     do_execve(
@@ -47,7 +47,7 @@ pub fn sys_execveat(
     let (elf_file, thread_name) = {
         let flags = OpenFlags::from_bits(flags)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
-        lookup_executable_file(dfd, filename_ptr, flags, ctx)?
+        lookup_and_open_executable_file(dfd, filename_ptr, flags, ctx)?
     };
 
     do_execve(
@@ -61,12 +61,12 @@ pub fn sys_execveat(
     Ok(SyscallReturn::NoReturn)
 }
 
-fn lookup_executable_file(
+fn lookup_and_open_executable_file(
     dfd: RawFileDesc,
     filename_ptr: Vaddr,
     flags: OpenFlags,
     ctx: &Context,
-) -> Result<(Path, ThreadName)> {
+) -> Result<(ExecutableFile, ThreadName)> {
     let filename = ctx
         .user_space()
         .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
@@ -93,7 +93,9 @@ fn lookup_executable_file(
         ThreadName::new_from_executable_path(&filename)
     };
 
-    Ok((path, thread_name))
+    let executable_file = open_executable_file(path)?;
+
+    Ok((executable_file, thread_name))
 }
 
 bitflags::bitflags! {

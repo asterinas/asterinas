@@ -95,3 +95,22 @@ FN_TEST(close_dup_fd_releases_locks)
 	TEST_SUCC(close(fd));
 }
 END_TEST()
+
+FN_TEST(process_exit_releases_locks)
+{
+	int fd = TEST_SUCC(open(TEST_FILE, O_RDWR));
+	pid_t child = TEST_SUCC(fork());
+	if (child == 0) {
+		CHECK(try_write_lock(fd, 0, 100));
+		_exit(0);
+	}
+
+	int status = 0;
+	TEST_SUCC(waitpid(child, &status, 0));
+	TEST_RES(status, WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+	TEST_SUCC(try_write_lock(fd, 0, 100));
+
+	TEST_SUCC(close(fd));
+}
+END_TEST()

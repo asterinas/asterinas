@@ -193,6 +193,14 @@ impl FileTable {
         self.close_files(|entry| entry.flags().contains(FdFlags::CLOEXEC))
     }
 
+    pub fn release_all_range_locks(&self) {
+        for (_, file) in self.fds_and_files() {
+            if let Ok(inode_handle) = file.as_inode_handle_or_err() {
+                inode_handle.release_range_locks();
+            }
+        }
+    }
+
     fn close_files<F>(&mut self, should_close: F) -> Vec<Arc<dyn FileLike>>
     where
         F: Fn(&FileTableEntry) -> bool,

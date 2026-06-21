@@ -12,7 +12,12 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::{file::FileLike, pseudofs::SockFs, utils::EndpointState, vfs::path::Path},
+    fs::{
+        file::FileLike,
+        pseudofs::SockFs,
+        utils::EndpointState,
+        vfs::{notify, path::Path},
+    },
     net::socket::{
         Socket,
         options::{
@@ -43,6 +48,12 @@ pub struct UnixStreamSocket {
 
     is_seqpacket: bool,
     pseudo_path: Path,
+}
+
+impl Drop for UnixStreamSocket {
+    fn drop(&mut self) {
+        notify::on_close(self);
+    }
 }
 
 enum State {

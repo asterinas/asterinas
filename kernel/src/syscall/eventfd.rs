@@ -24,7 +24,7 @@ use crate::{
     fs::{
         file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::AnonInodeFs,
-        vfs::path::Path,
+        vfs::{notify, path::Path},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -74,6 +74,12 @@ struct EventFile {
     write_wait_queue: WaitQueue,
     /// The pseudo path associated with this eventfd file.
     pseudo_path: Path,
+}
+
+impl Drop for EventFile {
+    fn drop(&mut self) {
+        notify::on_close(self);
+    }
 }
 
 impl EventFile {

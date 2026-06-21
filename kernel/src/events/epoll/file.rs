@@ -16,7 +16,7 @@ use crate::{
             file_table::{FdFlags, FileDesc, get_file_fast},
         },
         pseudofs::AnonInodeFs,
-        vfs::path::Path,
+        vfs::{notify, path::Path},
     },
     prelude::*,
     process::{
@@ -48,6 +48,12 @@ pub struct EpollFile {
     ready: Arc<ReadySet>,
     /// The pseudo path associated with this epoll file.
     pseudo_path: Path,
+}
+
+impl Drop for EpollFile {
+    fn drop(&mut self) {
+        notify::on_close(self);
+    }
 }
 
 impl EpollFile {

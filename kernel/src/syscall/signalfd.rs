@@ -23,7 +23,7 @@ use crate::{
             file_table::{FdFlags, RawFileDesc, get_file_fast},
         },
         pseudofs::AnonInodeFs,
-        vfs::path::Path,
+        vfs::{notify, path::Path},
     },
     prelude::*,
     process::{
@@ -142,6 +142,12 @@ struct SignalFile {
     non_blocking: AtomicBool,
     /// The pseudo path associated with this signalfd file.
     pseudo_path: Path,
+}
+
+impl Drop for SignalFile {
+    fn drop(&mut self) {
+        notify::on_close(self);
+    }
 }
 
 impl SignalFile {

@@ -26,7 +26,11 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::{file::FileLike, pseudofs::SockFs, vfs::path::Path},
+    fs::{
+        file::FileLike,
+        pseudofs::SockFs,
+        vfs::{notify, path::Path},
+    },
     net::{
         iface::Iface,
         socket::{
@@ -939,6 +943,8 @@ impl SetIpLevelOption for State {
 
 impl Drop for StreamSocket {
     fn drop(&mut self) {
+        notify::on_close(self);
+
         let state = self.state.get_mut().take();
 
         let conn = match state {

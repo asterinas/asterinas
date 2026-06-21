@@ -17,7 +17,7 @@ use crate::{
         vfs::{
             inode::Inode,
             inode_ext::InodeExt,
-            notify::{FsEventSubscriber, FsEvents},
+            notify::{self, FsEventSubscriber, FsEvents},
             path::Path,
         },
     },
@@ -62,6 +62,8 @@ impl Drop for InotifyFile {
     ///
     /// This will remove all subscribers from their inodes.
     fn drop(&mut self) {
+        notify::on_close(self);
+
         let watch_map = self.watch_map.get_mut();
 
         for (_, entry) in watch_map.drain() {
