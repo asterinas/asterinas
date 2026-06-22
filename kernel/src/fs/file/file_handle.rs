@@ -141,8 +141,11 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::ESPIPE, "seek is not supported");
     }
 
-    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "fallocate is not supported");
+    fn fallocate(&self, _mode: FallocMode, _offset: usize, _len: usize) -> Result<()> {
+        return_errno_with_message!(
+            Errno::ENODEV,
+            "fallocate is not supported for this file type"
+        );
     }
 
     fn as_socket(&self) -> Option<&dyn Socket> {
