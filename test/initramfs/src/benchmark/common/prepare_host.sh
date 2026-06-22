@@ -12,10 +12,12 @@ LINUX_OUTPUT="${BENCHMARK_ROOT}/linux_output.txt"
 ASTER_OUTPUT="${BENCHMARK_ROOT}/aster_output.txt"
 # Dependencies for Linux
 LINUX_DEPENDENCIES_DIR="/opt/linux_binary_cache"
-LINUX_KERNEL="${LINUX_DEPENDENCIES_DIR}/vmlinuz"
 LINUX_KERNEL_VERSION="6.16.0"
+LINUX_KERNEL_IMAGE="vmlinux-${LINUX_KERNEL_VERSION}-virtiofs"
+LINUX_KERNEL="${LINUX_DEPENDENCIES_DIR}/${LINUX_KERNEL_IMAGE}"
 LINUX_MODULES_DIR="${BENCHMARK_ROOT}/../build/initramfs/lib/modules/${LINUX_KERNEL_VERSION}/kernel"
-WGET_SCRIPT="${BENCHMARK_ROOT}/../../../tools/atomic_wget.sh"
+WGET_SCRIPT="${BENCHMARK_ROOT}/../../../../tools/atomic_wget.sh"
+LINUX_BINARY_CACHE_COMMIT="3ce8db9"
 
 # Prepare Linux kernel and modules
 prepare_libs() {
@@ -23,7 +25,7 @@ prepare_libs() {
 
     # Array of files to download and their URLs
     declare -A files=(
-        ["${LINUX_KERNEL}"]="https://raw.githubusercontent.com/asterinas/linux_binary_cache/24db4ff/vmlinuz-${LINUX_KERNEL_VERSION}"
+        ["${LINUX_KERNEL}"]="https://raw.githubusercontent.com/li041/linux_binary_cache/${LINUX_BINARY_CACHE_COMMIT}/6.16.0-virtiofs/vmlinux"
     )
 
     # Download files if they don't exist
