@@ -15,7 +15,7 @@ use crate::{
         file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::AnonInodeFs,
         vfs::{
-            inode::Inode,
+            inode::{FallocMode, Inode},
             inode_ext::InodeExt,
             notify::{FsEventSubscriber, FsEvents},
             path::Path,
@@ -359,6 +359,10 @@ impl FileLike for InotifyFile {
             Ordering::Relaxed,
         );
         Ok(())
+    }
+
+    fn fallocate(&self, _mode: FallocMode, _offset: usize, _len: usize) -> Result<()> {
+        return_errno_with_message!(Errno::EBADF, "inotify file is not opened writable");
     }
 
     fn access_mode(&self) -> AccessMode {
