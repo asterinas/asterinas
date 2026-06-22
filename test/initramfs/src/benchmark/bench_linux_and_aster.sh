@@ -26,11 +26,12 @@ parse_raw_results() {
     local nth_occurrence="$2"
     local result_index="$3"
     local result_file="$4"
+    local unit="$5"
 
-    # Extract and sanitize numeric results
+    # Extract and sanitize results
     local linux_result aster_result
-    linux_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${LINUX_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
-    aster_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${ASTER_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
+    linux_result=$(extract_result_value "${LINUX_OUTPUT}" "$search_pattern" "$nth_occurrence" "$result_index" "$unit")
+    aster_result=$(extract_result_value "${ASTER_OUTPUT}" "$search_pattern" "$nth_occurrence" "$result_index" "$unit")
 
     # Ensure both results are valid
     if [ -z "${linux_result}" ] || [ -z "${aster_result}" ]; then
@@ -44,6 +45,91 @@ parse_raw_results() {
          (.[] | select(.extra == "aster_result") | .value) |= $aster_result' \
         "${RESULT_TEMPLATE}" > "${result_file}"
     echo "Results written to ${result_file}"
+}
+
+extract_result_value() {
+    local output_file="$1"
+    local search_pattern="$2"
+    local nth_occurrence="$3"
+    local result_index="$4"
+    local unit="$5"
+
+    local raw_value
+    raw_value=$(awk -v pattern="$search_pattern" -v result_index="$result_index" '
+        $0 ~ pattern {
+            if (result_index == "NF") {
+                print $NF
+            } else {
+                print $result_index
+            }
+        }
+    ' "$output_file" | tr -d '\r' | sed -n "${nth_occurrence}p")
+
+    if [[ "$unit" == "MB/s" && "$raw_value" =~ ^bw= ]]; then
+        convert_bandwidth_to_mb_per_sec "$raw_value"
+    else
+        sanitize_numeric_result "$raw_value"
+    fi
+}
+
+convert_bandwidth_to_mb_per_sec() {
+    local raw_value="$1"
+    local value source_unit
+
+    if [[ ! "$raw_value" =~ ^bw=([0-9]+(\.[0-9]+)?)([KMGT]?i?B/s)$ ]]; then
+        sanitize_numeric_result "$raw_value"
+        return
+    fi
+
+    value="${BASH_REMATCH[1]}"
+    source_unit="${BASH_REMATCH[3]}"
+
+    case "$source_unit" in
+        B/s)
+            format_float "$(awk -v value="$value" 'BEGIN { print value / 1000000 }')"
+            ;;
+        KB/s)
+            format_float "$(awk -v value="$value" 'BEGIN { print value / 1000 }')"
+            ;;
+        MB/s)
+            format_float "$value"
+            ;;
+        GB/s)
+            format_float "$(awk -v value="$value" 'BEGIN { print value * 1000 }')"
+            ;;
+        TB/s)
+            format_float "$(awk -v value="$value" 'BEGIN { print value * 1000000 }')"
+            ;;
+        KiB/s)
+            format_float "$(awk -v value="$value" 'BEGIN { print value * 1024 / 1000000 }')"
+            ;;
+        MiB/s)
+            format_float "$(awk -v value="$value" 'BEGIN { print value * 1048576 / 1000000 }')"
+            ;;
+        GiB/s)
+            format_float "$(awk -v value="$value" 'BEGIN { print value * 1073741824 / 1000000 }')"
+            ;;
+        TiB/s)
+            format_float "$(awk -v value="$value" 'BEGIN { print value * 1099511627776 / 1000000 }')"
+            ;;
+        *)
+            sanitize_numeric_result "$raw_value"
+            ;;
+    esac
+}
+
+sanitize_numeric_result() {
+    local raw_value="$1"
+    echo "$raw_value" | sed 's/[^0-9.]*//g'
+}
+
+format_float() {
+    local value="$1"
+    awk -v value="$value" 'BEGIN {
+        text = sprintf("%.6f", value);
+        sub(/\.?0+$/, "", text);
+        print text;
+    }'
 }
 
 # Generate a new result template based on unit and legend
@@ -290,7 +376,7 @@ parse_results() {
     local legend=$(yq -r '.chart.legend // {system}' "$bench_result")
 
     generate_template "$unit" "$legend"
-    parse_raw_results "$search_pattern" "$nth_occurrence" "$result_index" "$(extract_result_file "$bench_result")"
+    parse_raw_results "$search_pattern" "$nth_occurrence" "$result_index" "$(extract_result_file "$bench_result")" "$unit"
 }
 
 # Clean up temporary files

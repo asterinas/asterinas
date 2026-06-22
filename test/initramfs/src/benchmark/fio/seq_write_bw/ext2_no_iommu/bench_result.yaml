@@ -8,6 +8,6 @@ chart:
   unit: MB/s
 result_extraction:
   result_index: 2
-  search_pattern: bw=[0-9]+
+  search_pattern: bw=[0-9.]+[KMGT]?i?B/s
 runtime_config:
   aster_scheme: 'null'
