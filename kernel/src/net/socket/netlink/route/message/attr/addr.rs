@@ -29,8 +29,8 @@ enum AddrAttrClass {
 
 #[derive(Debug)]
 pub enum AddrAttr {
-    Address([u8; 4]),
-    Local([u8; 4]),
+    Address(Vec<u8>),
+    Local(Vec<u8>),
     Label(CString),
 }
 
