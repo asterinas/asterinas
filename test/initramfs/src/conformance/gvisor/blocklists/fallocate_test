@@ -1,4 +1,1 @@
-AllocateTest.FallocatePipe
-AllocateTest.FallocateChar
 AllocateTest.FallocateRlimit
-AllocateTest.FallocateOtherFDs
