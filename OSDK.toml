@@ -19,10 +19,8 @@ kcmd_args = [
     "HOME=/",
     "USER=root",
     "PATH=/bin:/benchmark",
-    "rdinit=/init",
 ]
 init_args = ["sh", "-l"]
-initramfs = "test/initramfs/build/initramfs.cpio.gz"
 
 # Special options for testing
 [test.qemu]
