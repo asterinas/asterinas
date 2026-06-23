@@ -123,31 +123,17 @@ impl RouteManager {
         manager
     }
 
-    pub(super) fn dump(&self, table_filter: Option<RouteTableId>) -> Result<Vec<RouteTableEntry>> {
-        Ok(match table_filter {
-            Some(table_id) => {
-                let table = self.tables.get(&table_id).ok_or_else(|| {
-                    Error::with_message(Errno::ENOENT, "the FIB table does not exist")
-                })?;
+    pub(super) fn dump(&self) -> Vec<RouteTableEntry> {
+        self.tables
+            .iter()
+            .flat_map(|(table_id, table)| {
                 table
                     .entries()
                     .iter()
                     .cloned()
-                    .map(|route| RouteTableEntry::new(table_id, route))
-                    .collect()
-            }
-            None => self
-                .tables
-                .iter()
-                .flat_map(|(table_id, table)| {
-                    table
-                        .entries()
-                        .iter()
-                        .cloned()
-                        .map(|route| RouteTableEntry::new(*table_id, route))
-                })
-                .collect(),
-        })
+                    .map(|route| RouteTableEntry::new(*table_id, route))
+            })
+            .collect()
     }
 
     pub(super) fn lookup_entry(&self, key: &RouteLookupKey) -> Result<RouteTableEntry> {

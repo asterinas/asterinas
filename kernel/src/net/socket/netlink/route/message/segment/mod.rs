@@ -42,8 +42,7 @@ use route::RouteSegment;
 
 use crate::{
     net::socket::netlink::message::{
-        CMsgSegHdr, CSegmentType, ContinueRead, DeleteRequestFlags, DoneSegment, ErrorSegment,
-        ProtocolSegment,
+        CMsgSegHdr, CSegmentType, ContinueRead, DoneSegment, ErrorSegment, ProtocolSegment,
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -109,15 +108,6 @@ impl ProtocolSegment for RtnlSegment {
             }
             Ok(CSegmentType::GETROUTE) => {
                 RouteSegment::read_from(&header, reader)?.map(RtnlSegment::GetRoute)
-            }
-            Ok(CSegmentType::DELROUTE) => {
-                let payload_len = header.calc_payload_len_with_padding(reader)?;
-                reader.skip_some(payload_len);
-                let _ = DeleteRequestFlags::from_bits_truncate(header.flags).check_unsupported();
-                ContinueRead::skipped_with_error(
-                    Errno::EOPNOTSUPP,
-                    "the segment type is not supported",
-                )
             }
             _ => {
                 let payload_len = header.calc_payload_len_with_padding(reader)?;

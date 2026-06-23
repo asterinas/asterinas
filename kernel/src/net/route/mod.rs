@@ -155,8 +155,8 @@ fn bootstrap_routes_for_iface(iface: &Arc<Iface>) -> Result<Vec<RouteTableEntry>
 }
 
 /// Dumps IP routes.
-pub fn dump(table_filter: Option<RouteTableId>) -> Result<Vec<RouteTableEntry>> {
-    ROUTE_MANAGER.get().unwrap().dump(table_filter)
+pub fn dump() -> Vec<RouteTableEntry> {
+    ROUTE_MANAGER.get().unwrap().dump()
 }
 
 /// Looks up an IP route.
