@@ -28,6 +28,10 @@ sigfault = "sigfault"
 sems = "sems"
 THRE = "THRE"
 TestNG = "TestNG"
+OIF = "OIF"
+oif = "oif"
+IIF = "IIF"
+iif = "iif"
 
 # Files with svg suffix are ignored to check.
 [type.svg]
