@@ -123,7 +123,7 @@ which are summarized in the table below.
 | 100     | times                  | ❌             | N/A |
 | 101     | ptrace                 | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#ptrace) |
 | 102     | getuid                 | ✅             | 💯 |
-| 103     | syslog                 | ❌             | N/A |
+| 103     | syslog                 | ✅             | 💯 |
 | 104     | getgid                 | ✅             | 💯 |
 | 105     | setuid                 | ✅             | 💯 |
 | 106     | setgid                 | ✅             | 💯 |

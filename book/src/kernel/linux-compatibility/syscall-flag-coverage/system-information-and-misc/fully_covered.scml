@@ -4,6 +4,9 @@ set_tid_address(tidptr);
 // Return system information
 sysinfo(info);
 
+// Read and/or clear kernel message ring buffer
+syslog(type, bufp, size);
+
 // Get directory entries
 getdents(fd, dirp, count);
 getdents64(fd, dirp, count);
