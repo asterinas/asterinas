@@ -63,6 +63,7 @@ jobs:
         include:
           - { variant: 'legacy32', boot_protocol: 'linux-legacy32', smp: 4 }
           - { variant: 'multiboot2-smp4', boot_protocol: 'multiboot', smp: 4 }
+          - { variant: 'multiboot2-smp4-rootfs', boot_protocol: 'multiboot', smp: 4, rootfs_boot: true }
     steps:
       - uses: actions/checkout@v4
       - name: Run boot test (${{ matrix.variant }})
@@ -71,6 +72,7 @@ jobs:
           auto_test: 'boot'
           smp: ${{ matrix.smp }}
           boot_protocol: ${{ matrix.boot_protocol }}
+          rootfs_boot: ${{ matrix.rootfs_boot }}
 
   regression-test:
     runs-on: ubuntu-latest
