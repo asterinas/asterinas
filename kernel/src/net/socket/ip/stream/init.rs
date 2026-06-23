@@ -135,17 +135,9 @@ impl InitStream {
         let bound_port = if let Some(bound_port) = self.bound_port {
             bound_port
         } else {
-            let endpoint = match get_ephemeral_endpoint(remote_endpoint) {
-                Some(ep) => ep,
-                None => {
-                    return Err((
-                        Error::with_message(
-                            Errno::EADDRNOTAVAIL,
-                            "no interface has an address for the specified family",
-                        ),
-                        self,
-                    ));
-                }
+            let endpoint = match get_ephemeral_endpoint(remote_endpoint, false) {
+                Ok(endpoint) => endpoint,
+                Err(err) => return Err((err, self)),
             };
             match bind_port(&endpoint, can_reuse) {
                 Ok(bound_port) => bound_port,

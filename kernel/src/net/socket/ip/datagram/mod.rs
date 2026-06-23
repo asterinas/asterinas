@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::cell::Cell;
+
 use aster_bigtcp::wire::IpEndpoint;
 use bound::BoundDatagram;
 use unbound::{BindOptions, UnboundDatagram};
@@ -15,7 +17,10 @@ use crate::{
         route::is_broadcast_endpoint,
         socket::{
             Socket,
-            ip::options::{IpOptionSet, SetIpLevelOption},
+            ip::{
+                common::get_ephemeral_endpoint,
+                options::{IpOptionSet, SetIpLevelOption},
+            },
             options::{Error as SocketError, SocketOption, macros::sock_option_mut},
             private::SocketPrivate,
             util::{
@@ -98,7 +103,9 @@ impl DatagramSocket {
         reader: &mut dyn MultiRead,
         remote: Option<&IpEndpoint>,
         flags: SendFlags,
+        can_broadcast: bool,
     ) -> Result<usize> {
+        let broadcast_checked = Cell::new(false);
         let (sent_bytes, iface_to_poll) = select_remote_and_bind(
             &self.inner,
             remote,
@@ -109,11 +116,23 @@ impl DatagramSocket {
                         "the destination address is not specified",
                     )
                 })?;
+                let endpoint = get_ephemeral_endpoint(remote_endpoint, can_broadcast)?;
+                broadcast_checked.set(true);
                 self.inner
                     .write()
-                    .bind_ephemeral(remote_endpoint, &self.pollee)
+                    .bind(&endpoint, &self.pollee, BindOptions { can_reuse: false })
             },
             |bound_datagram, remote_endpoint| {
+                if !can_broadcast
+                    && remote.is_some()
+                    && !broadcast_checked.get()
+                    && is_broadcast_endpoint(remote_endpoint)
+                {
+                    return_errno_with_message!(
+                        Errno::EACCES,
+                        "sending to a broadcast address without SO_BROADCAST is not allowed"
+                    );
+                }
                 let sent_bytes = bound_datagram.try_send(reader, remote_endpoint, flags)?;
                 let iface_to_poll = bound_datagram.iface().clone();
                 Ok((sent_bytes, iface_to_poll))
@@ -203,15 +222,7 @@ impl Socket for DatagramSocket {
             None => None,
         };
 
-        if let Some(endpoint) = endpoint.as_ref() {
-            let can_broadcast = self.options.read().socket.broadcast();
-            if !can_broadcast && is_broadcast_endpoint(endpoint) {
-                return_errno_with_message!(
-                    Errno::EACCES,
-                    "sending to a broadcast address without SO_BROADCAST is not allowed"
-                );
-            }
-        }
+        let can_broadcast = self.options.read().socket.broadcast();
 
         if !control_messages.is_empty() {
             // TODO: Support sending control message
@@ -219,7 +230,7 @@ impl Socket for DatagramSocket {
         }
 
         // TODO: Block if the send buffer is full
-        self.try_send(reader, endpoint.as_ref(), flags)
+        self.try_send(reader, endpoint.as_ref(), flags, can_broadcast)
     }
 
     fn recvmsg(
