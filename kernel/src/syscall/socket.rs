@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_bigtcp::wire::IpProtocol;
+
 use super::SyscallReturn;
 use crate::{
     fs::file::{FileLike, file_table::FdFlags},
     net::socket::{
-        ip::{DatagramSocket, IpAddressFamily, StreamSocket},
+        ip::{DatagramSocket, IcmpSocket, IpAddressFamily, RawSocket, StreamSocket},
         netlink::{
             NetlinkRouteSocket, NetlinkUeventSocket, StandardNetlinkProtocol, is_valid_protocol,
         },
@@ -12,6 +14,7 @@ use crate::{
         vsock::VsockStreamSocket,
     },
     prelude::*,
+    process::credentials::capabilities::CapSet,
     util::net::{CSocketAddrFamily, Protocol, SOCK_TYPE_MASK, SockFlags, SockType},
 };
 
@@ -57,8 +60,31 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32, ctx: &Context) -> Resu
                 Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP => {
                     DatagramSocket::new(is_nonblocking) as Arc<dyn FileLike>
                 }
+                Protocol::IPPROTO_ICMP => IcmpSocket::new(is_nonblocking) as Arc<dyn FileLike>,
                 _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported protocol"),
             }
+        }
+        (CSocketAddrFamily::AF_INET | CSocketAddrFamily::AF_INET6, SockType::SOCK_RAW) => {
+            // Check capability: raw sockets require CAP_NET_RAW
+            let credentials = ctx.posix_thread.credentials();
+            if !credentials.effective_capset().contains(CapSet::NET_RAW) {
+                return_errno_with_message!(Errno::EPERM, "operation not permitted");
+            }
+
+            let ip_protocol = if protocol == 0 {
+                // Default to RAW protocol if protocol is not specified
+                IpProtocol::from(255)
+            } else {
+                // Validate the protocol number
+                if !(0..=255).contains(&protocol) || protocol == 253 {
+                    return_errno_with_message!(Errno::EINVAL, "invalid protocol");
+                }
+                IpProtocol::from(protocol as u8)
+            };
+
+            debug!("raw socket protocol = {:?}", ip_protocol);
+
+            RawSocket::new(is_nonblocking, ip_protocol) as Arc<dyn FileLike>
         }
         (CSocketAddrFamily::AF_NETLINK, SockType::SOCK_RAW | SockType::SOCK_DGRAM) => {
             let netlink_family = StandardNetlinkProtocol::try_from(protocol as u32);

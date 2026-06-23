@@ -19,4 +19,10 @@ pub trait Ext {
 
     /// The type for UDP sockets to observe events.
     type UdpEventObserver: SocketEventObserver;
+
+    /// The type for Raw sockets to observe events.
+    type RawEventObserver: SocketEventObserver;
+
+    /// The type for ICMP sockets to observe events.
+    type IcmpEventObserver: SocketEventObserver;
 }

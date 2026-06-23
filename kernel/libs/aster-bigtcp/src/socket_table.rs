@@ -12,7 +12,7 @@ use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 
 use crate::{
     ext::Ext,
-    socket::{TcpConnectionBg, TcpListenerBg, UdpSocketBg},
+    socket::{IcmpSocketBg, RawSocketBg, TcpConnectionBg, TcpListenerBg, UdpSocketBg},
     wire::PortNum,
 };
 
@@ -147,7 +147,7 @@ const fn hash_addr_port(addr: IpAddress, port: PortNum) -> SocketHash {
     }
 }
 
-/// The socket table manages TCP and UDP sockets.
+/// The socket table manages TCP, UDP, and Raw sockets.
 ///
 /// Unlike the Linux inet hashtable, which is shared across a single network namespace,
 /// this table is currently limited to a single interface.
@@ -167,6 +167,10 @@ pub(crate) struct SocketTable<E: Ext> {
     // Note that multiple UDP sockets can be bound to the same address,
     // so we cannot use (addr, port) as a _unique_ key for UDP sockets.
     udp_sockets: Vec<Arc<UdpSocketBg<E>>>,
+    // Raw sockets are stored in a vector similar to UDP sockets.
+    raw_sockets: Vec<Arc<RawSocketBg<E>>>,
+    // ICMP sockets are stored in a vector similar to UDP sockets.
+    icmp_sockets: Vec<Arc<IcmpSocketBg<E>>>,
 }
 
 // On Linux, the number of buckets is determined at runtime based on the available memory.
@@ -191,11 +195,15 @@ impl<E: Ext> SocketTable<E> {
             .collect();
 
         let udp_sockets = Vec::new();
+        let raw_sockets = Vec::new();
+        let icmp_sockets = Vec::new();
 
         Self {
             listener_buckets,
             connection_buckets,
             udp_sockets,
+            raw_sockets,
+            icmp_sockets,
         }
     }
 
@@ -259,6 +267,26 @@ impl<E: Ext> SocketTable<E> {
                 .any(|socket| Arc::ptr_eq(socket, &udp_socket))
         );
         self.udp_sockets.push(udp_socket);
+    }
+
+    pub(crate) fn insert_raw_socket(&mut self, raw_socket: Arc<RawSocketBg<E>>) {
+        debug_assert!(
+            !self
+                .raw_sockets
+                .iter()
+                .any(|socket| Arc::ptr_eq(socket, &raw_socket))
+        );
+        self.raw_sockets.push(raw_socket);
+    }
+
+    pub(crate) fn insert_icmp_socket(&mut self, icmp_socket: Arc<IcmpSocketBg<E>>) {
+        debug_assert!(
+            !self
+                .icmp_sockets
+                .iter()
+                .any(|socket| Arc::ptr_eq(socket, &icmp_socket))
+        );
+        self.icmp_sockets.push(icmp_socket);
     }
 
     pub(crate) fn lookup_listener(&self, key: &ListenerKey) -> Option<&Arc<TcpListenerBg<E>>> {
@@ -336,8 +364,38 @@ impl<E: Ext> SocketTable<E> {
         Some(self.udp_sockets.swap_remove(index))
     }
 
+    pub(crate) fn remove_raw_socket(
+        &mut self,
+        socket: &Arc<RawSocketBg<E>>,
+    ) -> Option<Arc<RawSocketBg<E>>> {
+        let index = self
+            .raw_sockets
+            .iter()
+            .position(|raw_socket| Arc::ptr_eq(raw_socket, socket))?;
+        Some(self.raw_sockets.swap_remove(index))
+    }
+
+    pub(crate) fn remove_icmp_socket(
+        &mut self,
+        socket: &Arc<IcmpSocketBg<E>>,
+    ) -> Option<Arc<IcmpSocketBg<E>>> {
+        let index = self
+            .icmp_sockets
+            .iter()
+            .position(|icmp_socket| Arc::ptr_eq(icmp_socket, socket))?;
+        Some(self.icmp_sockets.swap_remove(index))
+    }
+
     pub(crate) fn udp_socket_iter(&self) -> impl Iterator<Item = &Arc<UdpSocketBg<E>>> {
         self.udp_sockets.iter()
+    }
+
+    pub(crate) fn raw_socket_iter(&self) -> impl Iterator<Item = &Arc<RawSocketBg<E>>> {
+        self.raw_sockets.iter()
+    }
+
+    pub(crate) fn icmp_socket_iter(&self) -> impl Iterator<Item = &Arc<IcmpSocketBg<E>>> {
+        self.icmp_sockets.iter()
     }
 }
 

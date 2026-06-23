@@ -14,17 +14,6 @@ use crate::{
     prelude::*,
 };
 
-fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
-    match *ip_addr {
-        IpAddress::Ipv4(ipv4_addr) => iter_all_ifaces()
-            .find(|iface| iface.ipv4_addr().is_some_and(|addr| addr == ipv4_addr))
-            .map(Clone::clone),
-        IpAddress::Ipv6(ipv6_addr) => iter_all_ifaces()
-            .find(|iface| iface.ipv6_addr().is_some_and(|addr| addr == ipv6_addr))
-            .map(Clone::clone),
-    }
-}
-
 /// Get a suitable iface to deal with sendto/connect request if the socket is not bound to an iface.
 /// If the remote address is the same as that of some iface, we will use the iface.
 /// Otherwise, we will use a default interface.
@@ -99,6 +88,56 @@ impl From<BindError> for Error {
             BindError::InUse => {
                 Error::with_message(Errno::EADDRINUSE, "the address is already in use")
             }
+        }
+    }
+}
+
+pub(super) fn resolve_bind_raw_iface_and_addr(addr: IpAddress) -> Result<(Arc<Iface>, IpAddress)> {
+    let iface = match get_iface_to_bind(&addr) {
+        Some(iface) => iface,
+        None => {
+            // Use loopback if not specified
+            if addr.is_unspecified() {
+                loopback_iface().clone()
+            } else {
+                return_errno_with_message!(
+                    Errno::EADDRNOTAVAIL,
+                    "the address is not available from the local machine"
+                );
+            }
+        }
+    };
+
+    // Use the iface's address if unspecified
+    let bind_addr = if addr.is_unspecified() {
+        match addr {
+            IpAddress::Ipv4(_) => iface.ipv4_addr().map(IpAddress::Ipv4).unwrap_or(addr),
+            IpAddress::Ipv6(_) => iface.ipv6_addr().map(IpAddress::Ipv6).unwrap_or(addr),
+        }
+    } else {
+        addr
+    };
+
+    Ok((iface, bind_addr))
+}
+
+fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
+    match *ip_addr {
+        IpAddress::Ipv4(ipv4_addr) => {
+            if ipv4_addr.is_unspecified() {
+                return None;
+            }
+            iter_all_ifaces()
+                .find(|iface| iface.ipv4_addr().is_some_and(|addr| addr == ipv4_addr))
+                .map(Clone::clone)
+        }
+        IpAddress::Ipv6(ipv6_addr) => {
+            if ipv6_addr.is_unspecified() {
+                return None;
+            }
+            iter_all_ifaces()
+                .find(|iface| iface.ipv6_addr().is_some_and(|addr| addr == ipv6_addr))
+                .map(Clone::clone)
         }
     }
 }

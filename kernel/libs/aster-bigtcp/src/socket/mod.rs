@@ -6,9 +6,13 @@ mod option;
 mod unbound;
 
 pub use bound::{
-    ConnectState, NeedIfacePoll, RawTcpSocketExt, TcpConnection, TcpListener, UdpSocket,
+    ConnectState, ICMP_RECV_PAYLOAD_LEN, ICMP_SEND_PAYLOAD_LEN, IcmpPacketMetadata, IcmpSocket,
+    NeedIfacePoll, RAW_RECV_PAYLOAD_LEN, RAW_SEND_PAYLOAD_LEN, RawPacketMetadata, RawSocket,
+    RawTcpSocketExt, TcpConnection, TcpListener, UdpSocket,
 };
-pub(crate) use bound::{TcpConnectionBg, TcpListenerBg, TcpProcessResult, UdpSocketBg};
+pub(crate) use bound::{
+    IcmpSocketBg, RawSocketBg, TcpConnectionBg, TcpListenerBg, TcpProcessResult, UdpSocketBg,
+};
 pub use event::{SocketEventObserver, SocketEvents};
 pub use option::{RawTcpOption, RawTcpSetOption};
 pub use unbound::{

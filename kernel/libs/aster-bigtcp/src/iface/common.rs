@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{
-    collections::btree_map::{BTreeMap, Entry},
+    collections::{
+        BTreeSet,
+        btree_map::{BTreeMap, Entry},
+    },
     ffi::CString,
     sync::Arc,
     vec::Vec,
@@ -32,7 +35,7 @@ use super::{
 use crate::{
     errors::BindError,
     ext::Ext,
-    socket::{TcpListenerBg, UdpSocketBg},
+    socket::{IcmpSocketBg, RawSocketBg, TcpListenerBg, UdpSocketBg},
     socket_table::SocketTable,
 };
 
@@ -44,6 +47,8 @@ pub struct IfaceCommon<E: Ext> {
 
     interface: SpinLock<PollableIface<E>, BottomHalfDisabled>,
     used_ports: SpinLock<PortTable, BottomHalfDisabled>,
+    used_raw_protocols: SpinLock<BTreeMap<RawProtocolKey, usize>, BottomHalfDisabled>,
+    used_icmp_ids: SpinLock<BTreeSet<IcmpIdKey>, BottomHalfDisabled>,
     sockets: SpinLock<SocketTable<E>, BottomHalfDisabled>,
     sched_poll: E::ScheduleNextPoll,
 }
@@ -97,6 +102,8 @@ impl<E: Ext> IfaceCommon<E> {
             flags,
             interface: SpinLock::new(PollableIface::new(interface)),
             used_ports: SpinLock::new(PortTable::new()),
+            used_raw_protocols: SpinLock::new(BTreeMap::new()),
+            used_icmp_ids: SpinLock::new(BTreeSet::new()),
             sockets: SpinLock::new(SocketTable::new()),
             sched_poll,
         }
@@ -175,6 +182,79 @@ impl<E: Ext> IfaceCommon<E> {
             .map(BoundUdpPort)
     }
 
+    pub(super) fn bind_raw(
+        &self,
+        iface: Arc<dyn Iface<E>>,
+        protocol: u8,
+        addr: IpAddress,
+        port: u16,
+    ) -> Result<BoundRawPort<E>, BindError> {
+        let key = RawProtocolKey {
+            addr: NormalizedAddress::from(addr),
+            protocol,
+            port,
+        };
+        let mut used_protocols = self.used_raw_protocols.lock();
+        if used_protocols.contains_key(&key) {
+            return Err(BindError::InUse);
+        }
+        used_protocols.insert(key, 1);
+        Ok(BoundRawPort {
+            inner: BoundPort {
+                iface,
+                addr,
+                port,
+                protocol: PortProtocol::Udp,
+                can_reuse: AtomicBool::new(false),
+            },
+            protocol,
+        })
+    }
+
+    pub(super) fn release_raw_protocol(&self, addr: IpAddress, protocol: u8, port: u16) {
+        let key = RawProtocolKey {
+            addr: NormalizedAddress::from(addr),
+            protocol,
+            port,
+        };
+        self.used_raw_protocols.lock().remove(&key);
+    }
+
+    pub(super) fn bind_icmp(
+        &self,
+        iface: Arc<dyn Iface<E>>,
+        icmp_id: u16,
+        addr: IpAddress,
+    ) -> Result<BoundIcmpPort<E>, BindError> {
+        let key = IcmpIdKey {
+            addr: NormalizedAddress::from(addr),
+            icmp_id,
+        };
+        let mut used_ids = self.used_icmp_ids.lock();
+        if used_ids.contains(&key) {
+            return Err(BindError::InUse);
+        }
+        used_ids.insert(key);
+        Ok(BoundIcmpPort {
+            inner: BoundPort {
+                iface,
+                addr,
+                port: icmp_id,
+                protocol: PortProtocol::Udp,
+                can_reuse: AtomicBool::new(false),
+            },
+            icmp_id,
+        })
+    }
+
+    pub(super) fn release_icmp_id(&self, addr: IpAddress, icmp_id: u16) {
+        let key = IcmpIdKey {
+            addr: NormalizedAddress::from(addr),
+            icmp_id,
+        };
+        self.used_icmp_ids.lock().remove(&key);
+    }
+
     fn bind(
         &self,
         iface: Arc<dyn Iface<E>>,
@@ -206,6 +286,16 @@ impl<E: Ext> IfaceCommon<E> {
         sockets.insert_udp_socket(socket);
     }
 
+    pub(crate) fn register_raw_socket(&self, socket: Arc<RawSocketBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        sockets.insert_raw_socket(socket);
+    }
+
+    pub(crate) fn register_icmp_socket(&self, socket: Arc<IcmpSocketBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        sockets.insert_icmp_socket(socket);
+    }
+
     pub(crate) fn remove_tcp_listener(&self, socket: &Arc<TcpListenerBg<E>>) {
         let mut sockets = self.sockets.lock();
         let removed = sockets.remove_listener(socket.listener_key());
@@ -215,6 +305,18 @@ impl<E: Ext> IfaceCommon<E> {
     pub(crate) fn remove_udp_socket(&self, socket: &Arc<UdpSocketBg<E>>) {
         let mut sockets = self.sockets.lock();
         let removed = sockets.remove_udp_socket(socket);
+        debug_assert!(removed.is_some());
+    }
+
+    pub(crate) fn remove_raw_socket(&self, socket: &Arc<RawSocketBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        let removed = sockets.remove_raw_socket(socket);
+        debug_assert!(removed.is_some());
+    }
+
+    pub(crate) fn remove_icmp_socket(&self, socket: &Arc<IcmpSocketBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        let removed = sockets.remove_icmp_socket(socket);
         debug_assert!(removed.is_some());
     }
 }
@@ -333,6 +435,54 @@ impl<E: Ext> Drop for BoundPort<E> {
 pub struct BoundTcpPort<E: Ext>(BoundPort<E>);
 /// A UDP port bound to an iface.
 pub struct BoundUdpPort<E: Ext>(BoundPort<E>);
+/// A Raw protocol bound to an iface.
+pub struct BoundRawPort<E: Ext> {
+    inner: BoundPort<E>,
+    protocol: u8,
+}
+
+/// An ICMP identifier bound to an iface.
+pub struct BoundIcmpPort<E: Ext> {
+    inner: BoundPort<E>,
+    icmp_id: u16,
+}
+
+impl<E: Ext> BoundRawPort<E> {
+    pub fn protocol(&self) -> u8 {
+        self.protocol
+    }
+    pub fn addr(&self) -> &IpAddress {
+        &self.inner.addr
+    }
+}
+
+impl<E: Ext> Drop for BoundRawPort<E> {
+    fn drop(&mut self) {
+        self.inner.iface.common().release_raw_protocol(
+            self.inner.addr,
+            self.protocol,
+            self.inner.port,
+        );
+    }
+}
+
+impl<E: Ext> BoundIcmpPort<E> {
+    pub fn icmp_id(&self) -> u16 {
+        self.icmp_id
+    }
+    pub fn addr(&self) -> &IpAddress {
+        &self.inner.addr
+    }
+}
+
+impl<E: Ext> Drop for BoundIcmpPort<E> {
+    fn drop(&mut self) {
+        self.inner
+            .iface
+            .common()
+            .release_icmp_id(self.inner.addr, self.icmp_id);
+    }
+}
 
 impl<E: Ext> Deref for BoundTcpPort<E> {
     type Target = BoundPort<E>;
@@ -346,12 +496,37 @@ impl<E: Ext> Deref for BoundUdpPort<E> {
         &self.0
     }
 }
+impl<E: Ext> Deref for BoundRawPort<E> {
+    type Target = BoundPort<E>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+impl<E: Ext> Deref for BoundIcmpPort<E> {
+    type Target = BoundPort<E>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct PortKey {
     addr: NormalizedAddress,
     port: u16,
     protocol: PortProtocol,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct RawProtocolKey {
+    addr: NormalizedAddress,
+    protocol: u8,
+    port: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct IcmpIdKey {
+    addr: NormalizedAddress,
+    icmp_id: u16,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

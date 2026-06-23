@@ -140,3 +140,51 @@ pub mod udp {
         }
     }
 }
+
+pub mod icmp {
+    /// An error returned by [`IcmpSocket::send`].
+    ///
+    /// [`IcmpSocket::send`]: crate::socket::IcmpSocket::send
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum SendError {
+        Unaddressable,
+        BufferFull,
+        /// The packet is too large.
+        TooLarge,
+    }
+
+    /// An error returned by [`IcmpSocket::recv`].
+    ///
+    /// [`IcmpSocket::recv`]: crate::socket::IcmpSocket::recv
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum RecvError {
+        /// The receive buffer is empty.
+        Exhausted,
+        /// The packet is truncated.
+        Truncated,
+    }
+}
+
+pub mod raw {
+    /// An error returned by [`RawSocket::send`].
+    ///
+    /// [`RawSocket::send`]: crate::socket::RawSocket::send
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum SendError {
+        Unaddressable,
+        BufferFull,
+        /// The packet is too large.
+        TooLarge,
+    }
+
+    /// An error returned by [`RawSocket::recv`].
+    ///
+    /// [`RawSocket::recv`]: crate::socket::RawSocket::recv
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum RecvError {
+        /// The receive buffer is empty.
+        Exhausted,
+        /// The packet is truncated.
+        Truncated,
+    }
+}

@@ -3,9 +3,12 @@
 use alloc::sync::Arc;
 use core::ffi::CStr;
 
-use smoltcp::wire::{Ipv4Address, Ipv4Cidr, Ipv6Address};
+use smoltcp::wire::{IpProtocol, Ipv4Address, Ipv4Cidr, Ipv6Address};
 
-use super::{BindPortConfig, BoundTcpPort, BoundUdpPort, InterfaceFlags, InterfaceType};
+use super::{
+    BindPortConfig, BoundIcmpPort, BoundRawPort, BoundTcpPort, BoundUdpPort, InterfaceFlags,
+    InterfaceType,
+};
 use crate::{errors::BindError, ext::Ext};
 
 /// A network interface.
@@ -49,6 +52,27 @@ impl<E: Ext> dyn Iface<E> {
     ) -> Result<BoundUdpPort<E>, BindError> {
         let common = self.common();
         common.bind_udp(self.clone(), config)
+    }
+
+    /// Binds a raw protocol to the iface.
+    pub fn bind_raw(
+        self: &Arc<Self>,
+        protocol: IpProtocol,
+        addr: smoltcp::wire::IpAddress,
+        port: u16,
+    ) -> Result<BoundRawPort<E>, BindError> {
+        let common = self.common();
+        common.bind_raw(self.clone(), u8::from(protocol), addr, port)
+    }
+
+    /// Binds an ICMP identifier to the iface.
+    pub fn bind_icmp(
+        self: &Arc<Self>,
+        icmp_id: u16,
+        addr: smoltcp::wire::IpAddress,
+    ) -> Result<BoundIcmpPort<E>, BindError> {
+        let common = self.common();
+        common.bind_icmp(self.clone(), icmp_id, addr)
     }
 
     /// Returns the interface index.

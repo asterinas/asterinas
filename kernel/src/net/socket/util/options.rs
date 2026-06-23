@@ -3,7 +3,8 @@
 use core::ops::RangeInclusive;
 
 use aster_bigtcp::socket::{
-    NeedIfacePoll, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
+    NeedIfacePoll, RAW_RECV_PAYLOAD_LEN, RAW_SEND_PAYLOAD_LEN, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN,
+    UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
 };
 
 use super::LingerOption;
@@ -12,7 +13,8 @@ use crate::{
         netlink::NETLINK_DEFAULT_BUF_SIZE,
         options::{
             AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
-            RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+            RcvTimeo, RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SndTimeo,
+            SocketOption,
             macros::{sock_option_mut, sock_option_ref},
         },
         unix::{CUserCred, UNIX_DATAGRAM_DEFAULT_BUF_SIZE, UNIX_STREAM_DEFAULT_BUF_SIZE},
@@ -68,6 +70,15 @@ impl SocketOptionSet {
         Self {
             send_buf: UDP_SEND_PAYLOAD_LEN as u32,
             recv_buf: UDP_RECV_PAYLOAD_LEN as u32,
+            ..Default::default()
+        }
+    }
+
+    /// Returns the default socket level options for raw socket.
+    pub(in crate::net) fn new_raw() -> Self {
+        Self {
+            send_buf: RAW_SEND_PAYLOAD_LEN as u32,
+            recv_buf: RAW_RECV_PAYLOAD_LEN as u32,
             ..Default::default()
         }
     }
@@ -168,6 +179,14 @@ impl SocketOptionSet {
             _socket_peer_groups @ PeerGroups => {
                 return_errno_with_message!(Errno::ENODATA, "the socket does not have peer groups");
             }
+            socket_rcvtimeo @ RcvTimeo => {
+                // Ignore, no timeout support yet, return 0 (no timeout)
+                socket_rcvtimeo.set(0);
+            }
+            socket_sndtimeo @ SndTimeo => {
+                // Ignore, no timeout support yet, return 0 (no timeout)
+                socket_sndtimeo.set(0);
+            }
             _ => return_errno_with_message!(
                 Errno::ENOPROTOOPT,
                 "the socket option to get is unknown"
@@ -250,6 +269,14 @@ impl SocketOptionSet {
                 } else {
                     self.set_recv_buf(*recv_buf);
                 }
+            }
+            socket_rcvtimeo @ RcvTimeo => {
+                // Ignore, no timeout support yet
+                let _ = socket_rcvtimeo.get();
+            }
+            socket_sndtimeo @ SndTimeo => {
+                // Ignore, no timeout support yet
+                let _ = socket_sndtimeo.get();
             }
             _ => return_errno_with_message!(
                 Errno::ENOPROTOOPT,

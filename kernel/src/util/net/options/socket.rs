@@ -7,10 +7,12 @@ use crate::{
     context::current_userspace,
     net::socket::options::{
         AcceptConn, Broadcast, Error, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
-        RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+        RcvTimeo, RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SndTimeo,
+        SocketOption,
     },
     prelude::*,
     process::Gid,
+    time::timeval_t,
 };
 
 /// Socket level options.
@@ -38,6 +40,8 @@ enum CSocketOptionName {
     REUSEPORT = 15,
     PASSCRED = 16,
     PEERCRED = 17,
+    RCVTIMEO = 20,
+    SNDTIMEO = 21,
     ATTACH_FILTER = 26,
     DETACH_FILTER = 27,
     ACCPETCONN = 30,
@@ -67,6 +71,12 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::SNDBUFFORCE => Ok(Box::new(SendBufForce::new())),
         CSocketOptionName::RCVBUFFORCE => Ok(Box::new(RecvBufForce::new())),
         CSocketOptionName::PEERGROUPS => Ok(Box::new(PeerGroups::new())),
+        CSocketOptionName::RCVTIMEO | CSocketOptionName::RCVTIMEO_NEW => {
+            Ok(Box::new(RcvTimeo::new()))
+        }
+        CSocketOptionName::SNDTIMEO | CSocketOptionName::SNDTIMEO_NEW => {
+            Ok(Box::new(SndTimeo::new()))
+        }
         _ => return_errno_with_message!(Errno::ENOPROTOOPT, "unsupported socket-level option"),
     }
 }
@@ -108,6 +118,65 @@ impl RawSocketOption for PeerGroups {
         }
 
         Ok(*buffer_len as usize)
+    }
+
+    fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {
+        self
+    }
+
+    fn as_sock_option(&self) -> &dyn SocketOption {
+        self
+    }
+}
+
+// Implement RawSocketOption for RcvTimeo and SndTimeo
+impl RawSocketOption for RcvTimeo {
+    fn read_from_user(&mut self, _addr: Vaddr, max_len: u32) -> Result<()> {
+        if max_len < size_of::<timeval_t>() as u32 {
+            return_errno_with_message!(Errno::EINVAL, "invalid buffer size");
+        }
+        // Ignore the actual value for now
+        Ok(())
+    }
+
+    fn write_to_user(&self, addr: Vaddr, buffer_len: &mut u32) -> Result<usize> {
+        // Return 0 timeout (no timeout)
+        let tv = timeval_t { sec: 0, usec: 0 };
+        if *buffer_len < size_of::<timeval_t>() as u32 {
+            *buffer_len = size_of::<timeval_t>() as u32;
+            return_errno_with_message!(Errno::ERANGE, "buffer too small");
+        }
+        current_userspace!().write_val(addr, &tv)?;
+        Ok(size_of::<timeval_t>())
+    }
+
+    fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {
+        self
+    }
+
+    fn as_sock_option(&self) -> &dyn SocketOption {
+        self
+    }
+}
+
+impl RawSocketOption for SndTimeo {
+    fn read_from_user(&mut self, _addr: Vaddr, max_len: u32) -> Result<()> {
+        if max_len < size_of::<timeval_t>() as u32 {
+            return_errno_with_message!(Errno::EINVAL, "invalid buffer size");
+        }
+        // Ignore the actual value for now
+        Ok(())
+    }
+
+    fn write_to_user(&self, addr: Vaddr, buffer_len: &mut u32) -> Result<usize> {
+        // Return 0 timeout (no timeout)
+        let tv = timeval_t { sec: 0, usec: 0 };
+        if *buffer_len < size_of::<timeval_t>() as u32 {
+            *buffer_len = size_of::<timeval_t>() as u32;
+            return_errno_with_message!(Errno::ERANGE, "buffer too small");
+        }
+        current_userspace!().write_val(addr, &tv)?;
+        Ok(size_of::<timeval_t>())
     }
 
     fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {

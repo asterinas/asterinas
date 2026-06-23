@@ -45,6 +45,15 @@ impl IpOptionSet {
         }
     }
 
+    pub(super) const fn new_raw() -> Self {
+        Self {
+            tos: 0,
+            ttl: IpTtl(None),
+            hdrincl: false,
+            recverr: false,
+        }
+    }
+
     pub(super) fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
         sock_option_mut!(match option {
             ip_tos @ Tos => {

@@ -30,4 +30,6 @@ impl_socket_options!(
     pub struct SendBufForce(u32);
     pub struct RecvBufForce(u32);
     pub struct PeerGroups(Arc<[Gid]>);
+    pub struct RcvTimeo(u64);
+    pub struct SndTimeo(u64);
 );

@@ -2,6 +2,7 @@
 
 use core::cmp::min;
 
+use aster_bigtcp::wire::PortNum;
 use ostd::{mm::VmIo, task::Task};
 
 use super::{
@@ -255,16 +256,82 @@ pub fn write_socket_addr_with_max_len(
     }
 
     let actual_len = match socket_addr {
-        SocketAddr::IPv4(addr, port) => write_c_socket_address_util::<CSocketAddrInet, _>(
-            (*addr, *port),
-            dest,
-            max_len as usize,
-        )?,
-        SocketAddr::IPv6(addr, port) => write_c_socket_address_util::<CSocketAddrInet6, _>(
-            (*addr, *port),
-            dest,
-            max_len as usize,
-        )?,
+        SocketAddr::IPv4(addr, port) => {
+            use aster_bigtcp::wire::Ipv4Address;
+            // Check if it's an unspecified address (unbound socket case)
+            if addr.is_unspecified() && *port == 0 {
+                // For unbound IPv4 socket, preserve user's existing port
+                let actual_len = size_of::<CSocketAddrInet>();
+                let written_len = min(actual_len, max_len as usize);
+                let preserved_port = if written_len >= size_of::<CSocketAddrInet>() {
+                    let mut existing = CSocketAddrInet::new_zeroed();
+                    let _ = current_userspace!()
+                        .read_bytes(dest, &mut existing.as_mut_bytes()[..written_len]);
+                    // Only try to extract port if the family is correct
+                    // Read family from first 2 bytes (since struct is repr(C))
+                    let family_bytes = &existing.as_bytes()[0..2];
+                    let family = u16::from_ne_bytes(family_bytes.try_into().unwrap());
+                    if family == CSocketAddrFamily::AF_INET as u16 {
+                        let (_, original_port): (Ipv4Address, PortNum) = existing.into();
+                        original_port
+                    } else {
+                        PortNum::from(0u16)
+                    }
+                } else {
+                    PortNum::from(0u16)
+                };
+                // Create new address with unspecified addr and preserved port
+                write_c_socket_address_util::<CSocketAddrInet, _>(
+                    (Ipv4Address::UNSPECIFIED, preserved_port),
+                    dest,
+                    max_len as usize,
+                )?
+            } else {
+                write_c_socket_address_util::<CSocketAddrInet, _>(
+                    (*addr, *port),
+                    dest,
+                    max_len as usize,
+                )?
+            }
+        }
+        SocketAddr::IPv6(addr, port) => {
+            use aster_bigtcp::wire::Ipv6Address;
+            // Check if it's an unspecified address (unbound socket case)
+            if addr.is_unspecified() && *port == 0 {
+                // For unbound IPv6 socket, preserve user's existing port
+                let actual_len = size_of::<CSocketAddrInet6>();
+                let written_len = min(actual_len, max_len as usize);
+                let preserved_port = if written_len >= size_of::<CSocketAddrInet6>() {
+                    let mut existing = CSocketAddrInet6::new_zeroed();
+                    let _ = current_userspace!()
+                        .read_bytes(dest, &mut existing.as_mut_bytes()[..written_len]);
+                    // Only try to extract port if the family is correct
+                    // Read family from first 2 bytes (since struct is repr(C))
+                    let family_bytes = &existing.as_bytes()[0..2];
+                    let family = u16::from_ne_bytes(family_bytes.try_into().unwrap());
+                    if family == CSocketAddrFamily::AF_INET6 as u16 {
+                        let (_, original_port): (Ipv6Address, PortNum) = existing.into();
+                        original_port
+                    } else {
+                        PortNum::from(0u16)
+                    }
+                } else {
+                    PortNum::from(0u16)
+                };
+                // Create new address with unspecified addr and preserved port
+                write_c_socket_address_util::<CSocketAddrInet6, _>(
+                    (Ipv6Address::UNSPECIFIED, preserved_port),
+                    dest,
+                    max_len as usize,
+                )?
+            } else {
+                write_c_socket_address_util::<CSocketAddrInet6, _>(
+                    (*addr, *port),
+                    dest,
+                    max_len as usize,
+                )?
+            }
+        }
         SocketAddr::Unix(addr) => unix::into_c_bytes_and(addr, |bytes| {
             let written_len = min(bytes.len(), max_len as _);
             current_userspace!().write_bytes(dest, &bytes[..written_len])?;
@@ -290,11 +357,25 @@ fn write_c_socket_address_util<TCSockAddr, TSockAddr>(
 where
     TCSockAddr: Pod + From<TSockAddr>,
 {
-    let c_socket_addr = TCSockAddr::from(addr);
     let actual_len = size_of::<TCSockAddr>();
     let written_len = min(actual_len, max_len);
 
-    current_userspace!().write_bytes(dest, &c_socket_addr.as_bytes()[..written_len])?;
+    // Read existing data first to preserve fields we don't modify
+    let mut existing_addr = TCSockAddr::new_zeroed();
+    if written_len > 0 {
+        let _ =
+            current_userspace!().read_bytes(dest, &mut existing_addr.as_mut_bytes()[..written_len]);
+    }
+
+    // Create new address
+    let new_c_socket_addr = TCSockAddr::from(addr);
+    // Copy fields that we want to change from new address to existing
+    // For IPv4 and IPv6 sockaddr, we only change family, addr, port, keep other fields
+    // (like sin_zero for IPv4, flowinfo/scope_id for IPv6 if they exist)
+    existing_addr.as_mut_bytes()[..size_of::<TCSockAddr>()]
+        .copy_from_slice(new_c_socket_addr.as_bytes());
+
+    current_userspace!().write_bytes(dest, &existing_addr.as_bytes()[..written_len])?;
 
     Ok(actual_len)
 }
