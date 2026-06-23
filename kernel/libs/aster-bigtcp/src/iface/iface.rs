@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::ffi::CStr;
 
-use smoltcp::wire::{EthernetAddress, Ipv4Address, Ipv4Cidr, Ipv6Cidr};
+use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv4Cidr, Ipv6Cidr};
 
 use super::{BindPortConfig, BoundTcpPort, BoundUdpPort, InterfaceFlags, InterfaceType};
 use crate::{errors::BindError, ext::Ext};
@@ -94,6 +94,11 @@ impl<E: Ext> dyn Iface<E> {
     /// IPv6 does not define broadcast addresses and uses multicast instead.
     pub fn broadcast_addr(&self) -> Option<Ipv4Address> {
         self.common().ipv4_cidr()?.broadcast()
+    }
+
+    /// Returns routes currently installed in the iface.
+    pub fn routes(&self) -> Vec<(IpCidr, IpAddress)> {
+        self.common().routes()
     }
 
     /// Returns a reference to the associated [`ScheduleNextPoll`].

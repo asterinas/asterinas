@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::btree_set::BTreeSet, sync::Arc};
+use alloc::{collections::btree_set::BTreeSet, sync::Arc, vec::Vec};
 use core::{
     borrow::Borrow,
     sync::atomic::{AtomicU64, Ordering},
@@ -53,6 +53,18 @@ impl<E: Ext> PollableIface<E> {
                 None
             }
         })
+    }
+
+    pub(super) fn routes(&mut self) -> Vec<(smoltcp::wire::IpCidr, smoltcp::wire::IpAddress)> {
+        let mut routes = Vec::new();
+        self.interface.routes_mut().update(|route_entries| {
+            routes.extend(
+                route_entries
+                    .iter()
+                    .map(|route| (route.cidr, route.via_router)),
+            );
+        });
+        routes
     }
 
     /// Returns the next poll time.
