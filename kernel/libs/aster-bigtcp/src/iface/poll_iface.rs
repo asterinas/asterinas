@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::btree_set::BTreeSet, sync::Arc};
+use alloc::{collections::btree_set::BTreeSet, sync::Arc, vec::Vec};
 use core::{
     borrow::Borrow,
     sync::atomic::{AtomicU64, Ordering},
@@ -49,11 +49,42 @@ impl<E: Ext> PollableIface<E> {
         })
     }
 
+    pub(super) fn ipv6_prefix_len(&self) -> Option<u8> {
+        self.interface.ip_addrs().iter().find_map(|cidr| {
+            if let smoltcp::wire::IpCidr::Ipv6(ipv6_cidr) = cidr {
+                Some(ipv6_cidr.prefix_len())
+            } else {
+                None
+            }
+        })
+    }
+
     pub(super) fn prefix_len(&self) -> Option<u8> {
         self.interface
             .ip_addrs()
             .first()
             .map(|ip_addr| ip_addr.prefix_len())
+    }
+
+    pub(super) fn ipv4_routes(
+        &mut self,
+    ) -> Vec<(smoltcp::wire::Ipv4Cidr, smoltcp::wire::Ipv4Address)> {
+        let mut ipv4_routes = Vec::new();
+        self.interface.routes_mut().update(|routes| {
+            ipv4_routes.extend(routes.iter().filter_map(|route| {
+                let smoltcp::wire::IpCidr::Ipv4(cidr) = route.cidr else {
+                    return None;
+                };
+                // Directly connected routes are already represented by the interface address and
+                // prefix. Only routes with an IPv4 next hop need separate route-table entries.
+                let smoltcp::wire::IpAddress::Ipv4(gateway) = route.via_router else {
+                    return None;
+                };
+
+                Some((cidr, gateway))
+            }));
+        });
+        ipv4_routes
     }
 
     /// Returns the next poll time.
