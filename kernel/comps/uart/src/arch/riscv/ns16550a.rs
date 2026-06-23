@@ -47,7 +47,11 @@ pub(super) fn init(fdt_node: FdtNode) {
     };
 
     let reg_addr = reg.starting_address as usize;
-    let Ok(io_mem) = IoMem::acquire(reg_addr..reg_addr + reg_size) else {
+    let Some(reg_end) = reg_addr.checked_add(reg_size) else {
+        ostd::info!("Invalid I/O memory range found in NS16550A node");
+        return;
+    };
+    let Ok(io_mem) = IoMem::acquire(reg_addr..reg_end) else {
         ostd::info!("I/O memory is not available for NS16550A");
         return;
     };
