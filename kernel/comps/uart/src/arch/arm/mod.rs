@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{
-    arch::serial::{Pl011Uart, SERIAL_PORT},
-    sync::{LocalIrqDisabled, SpinLock},
-};
+use ostd::arch::serial::{Pl011Uart, SERIAL_PORT};
 
 use crate::{
     alloc::string::ToString,
-    console::{Uart, UartConsole},
+    console::{Uart, UartConsole, UartMut},
 };
 
 pub(super) fn init() {
@@ -30,26 +27,13 @@ pub(super) fn init() {
     ostd::info!("Registered PL011 as a console");
 }
 
-impl Uart for &'static SpinLock<Pl011Uart, LocalIrqDisabled> {
-    fn send(&self, buf: &[u8]) {
-        let mut uart = self.lock();
-
-        for byte in buf {
-            // TODO: This is termios-specific behavior and should be part of the TTY implementation
-            // instead of the serial console implementation. See the ONLCR flag for more details.
-            if *byte == b'\n' {
-                uart.send(b'\r');
-            }
-            uart.send(*byte);
-        }
+impl UartMut for Pl011Uart {
+    fn send_byte(&mut self, byte: u8) {
+        self.send(byte);
     }
 
-    fn recv(&self, _buf: &mut [u8]) -> usize {
+    fn recv_byte(&mut self) -> Option<u8> {
         // TODO: Set up the IRQ line and handle the received data.
-        0
-    }
-
-    fn flush(&self) {
-        // TODO: Set up the IRQ line and flush the received data.
+        None
     }
 }
