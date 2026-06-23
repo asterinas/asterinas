@@ -4,8 +4,6 @@ NetlinkRouteTest.ChangeNetnsAndOtherAttrsTogether
 NetlinkRouteTest.ControlMessageIgnored
 NetlinkRouteTest.GetLinkByIndex
 NetlinkRouteTest.GetLinkByName
-NetlinkRouteTest.GetRouteDump
-NetlinkRouteTest.GetRouteRequest
 NetlinkRouteTest.GetRuleDump
 NetlinkRouteTest.LinkedToNetns
 NetlinkRouteTest.LinkMulticastGroupBasic
