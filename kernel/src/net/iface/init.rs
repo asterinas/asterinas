@@ -14,11 +14,7 @@ use crate::{net::iface::sched::PollScheduler, prelude::*};
 
 static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
 
-pub fn loopback_iface() -> &'static Arc<Iface> {
-    &IFACES.get().unwrap()[0]
-}
-
-pub fn virtio_iface() -> Option<&'static Arc<Iface>> {
+fn virtio_iface() -> Option<&'static Arc<Iface>> {
     IFACES.get().unwrap().get(1)
 }
 

@@ -3,78 +3,81 @@
 use aster_bigtcp::{
     errors::BindError,
     iface::BindPortConfig,
-    wire::{IpAddress, IpEndpoint},
+    wire::{IpAddress, IpEndpoint, Ipv4Address, Ipv6Address},
 };
 
 use crate::{
     net::{
-        iface::{Iface, iter_all_ifaces, loopback_iface, virtio_iface},
+        iface::Iface,
+        route::{self, RouteLookupKey, RouteType},
         socket::util::check_port_privilege,
     },
     prelude::*,
 };
 
-fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
-    match *ip_addr {
-        IpAddress::Ipv4(ipv4_addr) => iter_all_ifaces()
-            .find(|iface| {
-                iface
-                    .ipv4_cidr()
-                    .is_some_and(|cidr| cidr.address() == ipv4_addr)
-            })
-            .map(Clone::clone),
-        IpAddress::Ipv6(ipv6_addr) => iter_all_ifaces()
-            .find(|iface| {
-                iface
-                    .ipv6_cidr()
-                    .is_some_and(|cidr| cidr.address() == ipv6_addr)
-            })
-            .map(Clone::clone),
+pub(super) fn get_ephemeral_endpoint(
+    remote_endpoint: &IpEndpoint,
+    can_broadcast: bool,
+) -> Result<IpEndpoint> {
+    if !can_broadcast
+        && matches!(remote_endpoint.addr, IpAddress::Ipv4(addr) if addr.is_broadcast())
+    {
+        return_errno_with_message!(
+            Errno::EACCES,
+            "sending to a broadcast address without SO_BROADCAST is not allowed"
+        );
     }
-}
 
-/// Get a suitable iface to deal with sendto/connect request if the socket is not bound to an iface.
-/// If the remote address is the same as that of some iface, we will use the iface.
-/// Otherwise, we will use a default interface.
-fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
-    match remote_ip_addr {
-        IpAddress::Ipv4(remote_ipv4_addr) => {
-            if let Some(iface) = iter_all_ifaces().find(|iface| {
-                iface
-                    .ipv4_cidr()
-                    .is_some_and(|cidr| cidr.address() == *remote_ipv4_addr)
-            }) {
-                return iface.clone();
-            }
-
-            // FIXME: Instead of hardcoding the rules here, we should choose the
-            // default interface according to the routing table.
-            if let Some(virtio_iface) = virtio_iface() {
-                virtio_iface.clone()
-            } else {
-                loopback_iface().clone()
-            }
+    // Linux treats an unspecified remote address as the loopback address of
+    // the same family when selecting a route. IPv4-mapped IPv6 destinations
+    // are routed through the IPv4 connect path.
+    // References:
+    // - <https://elixir.bootlin.com/linux/v7.0/source/net/ipv4/route.c#L2803-L2811>
+    // - <https://elixir.bootlin.com/linux/v7.0/source/net/ipv6/tcp_ipv6.c#L171-L181>
+    // - <https://elixir.bootlin.com/linux/v7.0/source/net/ipv6/tcp_ipv6.c#L215-L240>
+    let route_dst = match remote_endpoint.addr {
+        IpAddress::Ipv4(addr) if addr.is_unspecified() => Ipv4Address::LOCALHOST.into(),
+        IpAddress::Ipv6(addr) if addr.is_unspecified() => Ipv6Address::LOCALHOST.into(),
+        IpAddress::Ipv6(addr)
+            if addr
+                .to_ipv4_mapped()
+                .is_some_and(|addr| addr.is_unspecified()) =>
+        {
+            Ipv4Address::LOCALHOST.into()
         }
-        IpAddress::Ipv6(remote_ipv6_addr) => {
-            if let Some(iface) = iter_all_ifaces().find(|iface| {
-                iface
-                    .ipv6_cidr()
-                    .is_some_and(|cidr| cidr.address() == *remote_ipv6_addr)
-            }) {
-                return iface.clone();
-            }
-
-            // Fall back to an interface with an IPv6 address.
-            // Prefer virtio over loopback for external traffic.
-            if let Some(virtio_iface) = virtio_iface()
-                && virtio_iface.ipv6_cidr().is_some()
-            {
-                return virtio_iface.clone();
-            }
-
-            loopback_iface().clone()
-        }
+        addr => addr,
+    };
+    let route_entry = route::lookup(RouteLookupKey::new_dst(route_dst))?;
+    if !can_broadcast && route_entry.route().type_() == RouteType::Broadcast {
+        return_errno_with_message!(
+            Errno::EACCES,
+            "sending to a broadcast address without SO_BROADCAST is not allowed"
+        );
     }
+
+    let oif_index = route_entry
+        .route()
+        .oif_index()
+        .ok_or_else(|| Error::with_message(Errno::ENODEV, "the route has no output iface"))?;
+    let iface = route::iface_by_index(oif_index).ok_or_else(|| {
+        Error::with_message(Errno::ENODEV, "the route output iface does not exist")
+    })?;
+    let (source, error_message) = match remote_endpoint.addr {
+        IpAddress::Ipv4(_) => (
+            iface
+                .ipv4_cidr()
+                .map(|cidr| IpAddress::Ipv4(cidr.address())),
+            "the route output iface has no IPv4 address",
+        ),
+        IpAddress::Ipv6(_) => (
+            iface
+                .ipv6_cidr()
+                .map(|cidr| IpAddress::Ipv6(cidr.address())),
+            "the route output iface has no IPv6 address",
+        ),
+    };
+    let source = source.ok_or_else(|| Error::with_message(Errno::EADDRNOTAVAIL, error_message))?;
+    Ok(IpEndpoint::new(source, 0))
 }
 
 pub(super) fn resolve_bind_iface_and_config(
@@ -83,15 +86,7 @@ pub(super) fn resolve_bind_iface_and_config(
 ) -> Result<(Arc<Iface>, BindPortConfig)> {
     check_port_privilege(endpoint.port)?;
 
-    let iface = match get_iface_to_bind(&endpoint.addr) {
-        Some(iface) => iface,
-        None => {
-            return_errno_with_message!(
-                Errno::EADDRNOTAVAIL,
-                "the address is not available from the local machine"
-            );
-        }
-    };
+    let iface = route::lookup_local_iface(&endpoint.addr)?;
 
     let bind_port_config = BindPortConfig::new(*endpoint, can_reuse);
 
@@ -107,20 +102,6 @@ impl From<BindError> for Error {
             BindError::InUse => {
                 Error::with_message(Errno::EADDRINUSE, "the address is already in use")
             }
-        }
-    }
-}
-
-pub(super) fn get_ephemeral_endpoint(remote_endpoint: &IpEndpoint) -> Option<IpEndpoint> {
-    let iface = get_ephemeral_iface(&remote_endpoint.addr);
-    match remote_endpoint.addr {
-        IpAddress::Ipv4(_) => {
-            let ipv4_cidr = iface.ipv4_cidr()?;
-            Some(IpEndpoint::new(IpAddress::Ipv4(ipv4_cidr.address()), 0))
-        }
-        IpAddress::Ipv6(_) => {
-            let ipv6_cidr = iface.ipv6_cidr()?;
-            Some(IpEndpoint::new(IpAddress::Ipv6(ipv6_cidr.address()), 0))
         }
     }
 }

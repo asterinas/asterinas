@@ -5,7 +5,7 @@ mod init;
 mod poll;
 mod sched;
 
-pub use init::{init, iter_all_ifaces, loopback_iface, virtio_iface};
+pub use init::{init, iter_all_ifaces};
 pub(super) use poll::init_in_first_kthread;
 
 pub type Iface = dyn aster_bigtcp::iface::Iface<ext::BigtcpExt>;
