@@ -10,6 +10,7 @@ use crate::{
         io::io_mem::{read_once, write_once},
         mm::paddr_to_daddr,
     },
+    boot::EarlyCmdline,
     console::uart_ns16650a::{Ns16550aAccess, Ns16550aRegister, Ns16550aUart},
     sync::{LocalIrqDisabled, SpinLock},
 };
@@ -48,7 +49,11 @@ impl Ns16550aAccess for SerialAccess {
 }
 
 /// Initializes the serial port.
-pub(crate) fn init() {
+pub(crate) fn init(early_cmdline: &EarlyCmdline) {
+    if !early_cmdline.has_early_console {
+        return;
+    }
+
     let Some(base_address) = lookup_uart_base_address() else {
         return;
     };

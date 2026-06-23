@@ -6,7 +6,10 @@ use core::fmt;
 
 use spin::Once;
 
-use crate::sync::{LocalIrqDisabled, SpinLock};
+use crate::{
+    boot::EarlyCmdline,
+    sync::{LocalIrqDisabled, SpinLock},
+};
 
 /// The primary serial port, which serves as an early console.
 pub(crate) static SERIAL_PORT: Once<SpinLock<SbiSerial, LocalIrqDisabled>> =
@@ -33,4 +36,4 @@ impl fmt::Write for SbiSerial {
 }
 
 /// Initializes the serial port.
-pub(crate) fn init() {}
+pub(crate) fn init(_early_cmdline: &EarlyCmdline) {}
