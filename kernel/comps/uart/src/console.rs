@@ -86,7 +86,16 @@ pub(super) trait Uart {
     fn flush(&self);
 }
 
-impl<A: Ns16550aAccess> Uart for SpinLock<Ns16550aUart<A>, LocalIrqDisabled> {
+/// A trait that abstracts byte-wise UART device operations.
+pub(super) trait UartMut {
+    /// Sends one byte to UART.
+    fn send_byte(&mut self, byte: u8);
+
+    /// Receives one byte from UART.
+    fn recv_byte(&mut self) -> Option<u8>;
+}
+
+impl<T: UartMut> Uart for SpinLock<T, LocalIrqDisabled> {
     fn send(&self, buf: &[u8]) {
         let mut uart = self.lock();
 
@@ -94,9 +103,9 @@ impl<A: Ns16550aAccess> Uart for SpinLock<Ns16550aUart<A>, LocalIrqDisabled> {
             // TODO: This is termios-specific behavior and should be part of the TTY implementation
             // instead of the serial console implementation. See the ONLCR flag for more details.
             if *byte == b'\n' {
-                uart.send(b'\r');
+                uart.send_byte(b'\r');
             }
-            uart.send(*byte);
+            uart.send_byte(*byte);
         }
     }
 
@@ -104,7 +113,7 @@ impl<A: Ns16550aAccess> Uart for SpinLock<Ns16550aUart<A>, LocalIrqDisabled> {
         let mut uart = self.lock();
 
         for (i, byte) in buf.iter_mut().enumerate() {
-            let Some(recv_byte) = uart.recv() else {
+            let Some(recv_byte) = uart.recv_byte() else {
                 return i;
             };
             *byte = recv_byte;
@@ -116,13 +125,23 @@ impl<A: Ns16550aAccess> Uart for SpinLock<Ns16550aUart<A>, LocalIrqDisabled> {
     fn flush(&self) {
         let mut uart = self.lock();
 
-        while uart.recv().is_some() {}
+        while uart.recv_byte().is_some() {}
     }
 }
 
 #[inherit_methods(from = "(**self)")]
-impl<A: Ns16550aAccess> Uart for &SpinLock<Ns16550aUart<A>, LocalIrqDisabled> {
+impl<T: UartMut> Uart for &SpinLock<T, LocalIrqDisabled> {
     fn send(&self, buf: &[u8]);
     fn recv(&self, buf: &mut [u8]) -> usize;
     fn flush(&self);
+}
+
+impl<A: Ns16550aAccess> UartMut for Ns16550aUart<A> {
+    fn send_byte(&mut self, byte: u8) {
+        self.send(byte);
+    }
+
+    fn recv_byte(&mut self) -> Option<u8> {
+        self.recv()
+    }
 }
