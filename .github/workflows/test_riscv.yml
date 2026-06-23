@@ -53,8 +53,16 @@ jobs:
           - test_id: 'boot-debug-smp4'
             smp: 4
 
+          - test_id: 'boot-debug-smp4-rootfs'
+            smp: 4
+            rootfs_boot: true
+
           - test_id: 'boot-release'
             release: true
+
+          - test_id: 'boot-release-rootfs'
+            release: true
+            rootfs_boot: true
 
           - test_id: 'conformance-release'
             release: true
@@ -75,3 +83,4 @@ jobs:
           release: ${{ !contains(matrix.release, 'false') }}
           arch: 'riscv64'
           conformance_test_suite: 'ltp'
+          rootfs_boot: ${{ matrix.rootfs_boot }}

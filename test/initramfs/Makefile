@@ -18,7 +18,8 @@ NIXPKGS_CACHE_TTL := 2592000 # In seconds
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
-INITRAMFS := $(BUILD_DIR)/initramfs
+INITRAMFS_DIR := $(BUILD_DIR)/initramfs
+ROOTFS_IMAGE := $(BUILD_DIR)/rootfs.img
 INITRAMFS_SKIP_GZIP ?= 0
 ifeq ($(INITRAMFS_SKIP_GZIP),1)
 INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio
@@ -54,52 +55,68 @@ ifeq ($(VERBOSE), 0)
 NIX_QUIET = --quiet -Q
 endif
 
-.PHONY: all
-all: build
+BOOT_IMAGE_NIX_ARGS := \
+	--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+	--argstr target $(TARGET_ARCH) \
+	--arg enableBenchmarkTest $(ENABLE_BENCHMARK_TEST) \
+	--arg enableConformanceTest $(ENABLE_CONFORMANCE_TEST) \
+	--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
+	--argstr conformanceTestSuite $(CONFORMANCE_TEST_SUITE) \
+	--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
+	--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
+	--argstr dnsServer ${DNS_SERVER} \
+	--arg smp $(SMP)
 
-.PHONY: build
+.PHONY: initramfs-boot-images
 ifeq ($(TARGET_ARCH), loongarch64)
-build: $(EXT2_IMAGE) $(EXFAT_IMAGE)
+initramfs-boot-images: data-disk-images
 	@echo "For loongarch, we generate a fake initramfs to successfully test or build."
 	@touch $(INITRAMFS_IMAGE)
-else ifeq ($(BUILD_XFSTESTS_IMAGES), true)
-build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE) $(XFSTESTS_TEST_IMAGE) $(XFSTESTS_SCRATCH_IMAGE)
 else
-build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE)
+initramfs-boot-images: $(INITRAMFS_IMAGE) data-disk-images
+endif
+
+.PHONY: data-disk-images
+ifeq ($(TARGET_ARCH), loongarch64)
+data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE)
+else ifeq ($(BUILD_XFSTESTS_IMAGES), true)
+data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE) $(XFSTESTS_TEST_IMAGE) $(XFSTESTS_SCRATCH_IMAGE)
+else
+data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE)
 endif
 
 .PHONY: $(INITRAMFS_IMAGE)
-$(INITRAMFS_IMAGE): $(INITRAMFS)
+$(INITRAMFS_IMAGE): $(INITRAMFS_DIR)
 	@nix-build \
-		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
-		--argstr target $(TARGET_ARCH) \
-		--arg enableBenchmarkTest $(ENABLE_BENCHMARK_TEST) \
-		--arg enableConformanceTest $(ENABLE_CONFORMANCE_TEST) \
-		--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
-		--argstr conformanceTestSuite $(CONFORMANCE_TEST_SUITE) \
-		--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
-		--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
-		--argstr dnsServer ${DNS_SERVER} \
+		$(BOOT_IMAGE_NIX_ARGS) \
 		--arg initramfsCompressed $(INITRAMFS_COMPRESSED) \
-		--arg smp $(SMP) \
 		--out-link $@ \
 		nix -A initramfs-image
 
-.PHONY: $(INITRAMFS)
-$(INITRAMFS):
+.PHONY: $(INITRAMFS_DIR)
+$(INITRAMFS_DIR):
 	@nix-build \
-		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
-		--argstr target $(TARGET_ARCH) \
-		--arg enableBenchmarkTest $(ENABLE_BENCHMARK_TEST) \
-		--arg enableConformanceTest $(ENABLE_CONFORMANCE_TEST) \
-		--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
-		--argstr conformanceTestSuite $(CONFORMANCE_TEST_SUITE) \
-		--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
-		--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
-		--argstr dnsServer ${DNS_SERVER} \
-		--arg smp $(SMP) \
+		$(BOOT_IMAGE_NIX_ARGS) \
 		--out-link $@ \
 		nix -A initramfs
+
+.PHONY: rootfs-image
+rootfs-image: $(ROOTFS_IMAGE)
+
+.PHONY: rootfs-boot-images
+ifeq ($(TARGET_ARCH), loongarch64)
+rootfs-boot-images:
+	$(error Rootfs image is not supported for loongarch64)
+else
+rootfs-boot-images: rootfs-image data-disk-images
+endif
+
+.PHONY: $(ROOTFS_IMAGE)
+$(ROOTFS_IMAGE):
+	@nix-build \
+		$(BOOT_IMAGE_NIX_ARGS) \
+		--out-link $@ \
+		nix -A rootfs-image
 
 # Prebuild x86_64 packages
 x86_64_pkgs:
