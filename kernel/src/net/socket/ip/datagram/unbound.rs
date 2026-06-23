@@ -60,12 +60,7 @@ impl datagram_common::Unbound for UnboundDatagram {
         remote_endpoint: &Self::Endpoint,
         pollee: &Pollee,
     ) -> Result<Self::Bound> {
-        let endpoint = get_ephemeral_endpoint(remote_endpoint).ok_or_else(|| {
-            Error::with_message(
-                Errno::EADDRNOTAVAIL,
-                "no interface has an address for the specified family",
-            )
-        })?;
+        let endpoint = get_ephemeral_endpoint(remote_endpoint, true)?;
         self.bind(&endpoint, pollee, BindOptions { can_reuse: false })
     }
 
