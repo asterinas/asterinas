@@ -205,6 +205,10 @@ impl PerOpenFileOps for OpenBlockFile {
         true
     }
 
+    fn seek_end(&self) -> Result<Option<usize>> {
+        Ok(Some(self.0.metadata().nr_sectors * SECTOR_SIZE))
+    }
+
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 

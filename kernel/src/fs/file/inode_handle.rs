@@ -412,8 +412,6 @@ impl FileLike for InodeHandle {
         if let Some(ref open_file) = self.open_file {
             open_file.check_seekable()?;
             if open_file.is_offset_aware() {
-                // TODO: Figure out whether we need to add support for seeking from the end of
-                // special files.
                 return do_seek_util(&self.offset, pos, open_file.seek_end()?);
             } else {
                 return Ok(0);

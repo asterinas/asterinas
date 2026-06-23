@@ -4,7 +4,9 @@
 
 #include "../../common/test.h"
 #include <fcntl.h>
+#include <linux/fs.h>
 #include <stdint.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #define SECTOR_SIZE 512
@@ -21,7 +23,6 @@ static int close_block_device(int fd)
 }
 #else
 #include <linux/loop.h>
-#include <sys/ioctl.h>
 
 #define LOOP_BACKING_FILE "/tmp/block_device_file_io.img"
 #define LOOP_BACKING_FILE_SIZE (SECTOR_SIZE * 8)
@@ -52,6 +53,24 @@ static int close_block_device(int fd)
 	return unlink(LOOP_BACKING_FILE);
 }
 #endif
+
+// Verifies that seeking to the end of a block device reports the same
+// byte-granular size that the block-device ioctl reports.
+FN_TEST(seek_end_matches_block_device_size)
+{
+	int fd;
+	uint64_t block_device_size;
+
+	fd = TEST_SUCC(open_block_device());
+
+	TEST_SUCC(ioctl(fd, BLKGETSIZE64, &block_device_size));
+	TEST_RES(lseek(fd, 0, SEEK_END), (uint64_t)_ret == block_device_size);
+	TEST_RES(lseek(fd, -SECTOR_SIZE, SEEK_END),
+		 (uint64_t)_ret == block_device_size - SECTOR_SIZE);
+
+	TEST_SUCC(close_block_device(fd));
+}
+END_TEST()
 
 // Verifies that short and non-sector-aligned block-device reads return the
 // requested byte range instead of leaking sector-sized read internals.
