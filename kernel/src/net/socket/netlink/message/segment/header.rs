@@ -96,18 +96,6 @@ bitflags! {
 }
 
 bitflags! {
-    /// Modifiers for DELETE requests.
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L82>.
-    pub struct DeleteRequestFlags: u16 {
-        /// Do not delete recursively
-        const NONREC = 0x100;
-        /// Delete multiple objects
-        const BULK = 0x200;
-    }
-}
-
-bitflags! {
     /// Flags for ACK messages.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L86>.
