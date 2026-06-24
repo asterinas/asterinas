@@ -31,6 +31,10 @@ impl Connection {
         reader: &mut dyn MultiRead,
         _flags: SendRecvFlags,
     ) -> Result<usize> {
+        if self.inner.bound_port.vsock_space().is_vhost_backend() {
+            return self.try_send_vhost(reader);
+        }
+
         // See the comments in `try_recv` to know why we use a packet-pool approach here.
         let mut packet_pool = [const { None }; 8];
 
@@ -48,6 +52,53 @@ impl Connection {
         Self::copy_to_send_buffers(&mut packet_pool[..], reader, num_bytes)?;
 
         self.build_and_send_tx_packets(&mut packet_pool[..])?;
+
+        self.inner.pollee.invalidate();
+
+        Ok(num_bytes)
+    }
+
+    fn try_send_vhost(&mut self, reader: &mut dyn MultiRead) -> Result<usize> {
+        let max_bytes = reader.sum_lens();
+        let num_bytes = {
+            let mut state = self.inner.state.lock();
+
+            state.test_and_clear_error(&self.inner)?;
+
+            if state.shutdown.local_write_closed || state.shutdown.peer_read_closed {
+                return_errno_with_message!(Errno::EPIPE, "the connection is closed for writing");
+            }
+
+            if max_bytes == 0 {
+                return Ok(0);
+            }
+
+            max_bytes.min(state.check_peer_credit(&self.inner)?)
+        };
+
+        let mut payload = vec![0u8; num_bytes];
+        reader.prefault_read(num_bytes)?;
+        let mut writer = VmWriter::from(payload.as_mut_slice());
+        reader
+            .read(&mut writer)
+            .map_err(|(err, _)| Error::from(err))?;
+
+        let mut state = self.inner.state.lock();
+        if state.shutdown.local_write_closed || state.shutdown.peer_read_closed {
+            return_errno_with_message!(Errno::EPIPE, "the connection is closed for writing");
+        }
+
+        let header = state.make_data_header(&self.inner, num_bytes);
+        if !self
+            .inner
+            .bound_port
+            .vsock_space()
+            .send_payload(&header, &payload)?
+        {
+            return_errno_with_message!(Errno::ENODEV, "no vhost-vsock backend is available");
+        }
+        state.consume_peer_credit(num_bytes);
+        drop(state);
 
         self.inner.pollee.invalidate();
 
@@ -128,8 +179,10 @@ impl Connection {
             return_errno_with_message!(Errno::EPIPE, "the connection is closed for writing");
         }
 
-        let vsock_space = self.inner.bound_port.vsock_space();
-        let mut tx = vsock_space.device().lock_tx();
+        let Some(device) = self.inner.bound_port.vsock_space().virtio_device() else {
+            return_errno_with_message!(Errno::ENODEV, "no virtio-vsock device is available");
+        };
+        let mut tx = device.lock_tx();
 
         let mut num_bytes = 0;
         let mut num_bytes_in_pending = 0;

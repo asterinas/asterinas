@@ -25,3 +25,10 @@ pub use stream::VsockStreamSocket;
 pub(in crate::net) fn init() {
     transport::init();
 }
+
+pub(crate) fn handle_vhost_packet(
+    header: aster_virtio::device::socket::header::VirtioVsockHdr,
+    payload: &[u8],
+) -> crate::prelude::Result<()> {
+    transport::handle_vhost_packet(header, payload)
+}

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_virtio::device::socket::{header::VirtioVsockOp, packet::RxPacket};
+use aster_virtio::device::socket::header::VirtioVsockOp;
 
 use crate::{
     net::socket::{
         util::SendRecvFlags,
         vsock::transport::{
             CREDIT_UPDATE_THRESHOLD, Connection,
-            connection::{ConnectionInner, ConnectionState},
+            connection::{ConnectionInner, ConnectionState, RxPayload},
         },
     },
     prelude::*,
@@ -65,7 +65,7 @@ impl Connection {
 }
 
 struct PoppedRxPackets<'a> {
-    packets: &'a mut [Option<RxPacket>],
+    packets: &'a mut [Option<RxPayload>],
     read_offset: usize,
 }
 
@@ -77,10 +77,12 @@ impl PoppedRxPackets<'_> {
         for (i, packet) in self.packets.iter().enumerate() {
             let packet = packet.as_ref().unwrap();
 
-            let mut payload = packet.payload();
+            let mut payload = packet.payload_reader();
             payload.skip(read_offset);
 
-            let write_len = writer.write(&mut payload)?;
+            let write_len = writer
+                .write(&mut payload)
+                .map_err(|(err, _)| Error::from(err))?;
             total_write_len += write_len;
 
             if payload.has_remain() {
@@ -111,7 +113,7 @@ impl ConnectionState {
     fn grab_packets_to_recv<'a>(
         &mut self,
         conn: &ConnectionInner,
-        packet_pool: &'a mut [Option<RxPacket>],
+        packet_pool: &'a mut [Option<RxPayload>],
         max_bytes: usize,
     ) -> Result<Option<PoppedRxPackets<'a>>> {
         if max_bytes != 0
@@ -131,7 +133,7 @@ impl ConnectionState {
 
     fn pop_rx_packets<'a>(
         &mut self,
-        packet_pool: &'a mut [Option<RxPacket>],
+        packet_pool: &'a mut [Option<RxPayload>],
         mut max_bytes: usize,
     ) -> Option<PoppedRxPackets<'a>> {
         let mut read_offset = None;

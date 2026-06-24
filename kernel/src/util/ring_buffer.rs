@@ -46,17 +46,23 @@ impl<R: Deref<Target = RingBuffer<u8>>> ProducerU8Ext for Producer<u8, R> {
 
             let mut writer = self.segment().writer();
             writer.skip(offset).limit(self.capacity() - offset);
-            write_len += reader.read(&mut writer)?;
+            write_len += reader
+                .read(&mut writer)
+                .map_err(|(err, _)| Error::from(err))?;
 
             let mut writer = self.segment().writer();
             writer.limit(free_len - (self.capacity() - offset));
-            write_len += reader.read(&mut writer)?;
+            write_len += reader
+                .read(&mut writer)
+                .map_err(|(err, _)| Error::from(err))?;
 
             write_len
         } else {
             let mut writer = self.segment().writer();
             writer.skip(offset).limit(free_len);
-            reader.read(&mut writer)?
+            reader
+                .read(&mut writer)
+                .map_err(|(err, _)| Error::from(err))?
         };
 
         self.commit_write(write_len);
@@ -102,17 +108,23 @@ impl<R: Deref<Target = RingBuffer<u8>>> ConsumerU8Ext for Consumer<u8, R> {
 
             let mut reader = self.segment().reader();
             reader.skip(offset).limit(self.capacity() - offset);
-            read_len += writer.write(&mut reader)?;
+            read_len += writer
+                .write(&mut reader)
+                .map_err(|(err, _)| Error::from(err))?;
 
             let mut reader = self.segment().reader();
             reader.limit(len - (self.capacity() - offset));
-            read_len += writer.write(&mut reader)?;
+            read_len += writer
+                .write(&mut reader)
+                .map_err(|(err, _)| Error::from(err))?;
 
             read_len
         } else {
             let mut reader = self.segment().reader();
             reader.skip(offset).limit(len);
-            writer.write(&mut reader)?
+            writer
+                .write(&mut reader)
+                .map_err(|(err, _)| Error::from(err))?
         };
 
         self.commit_read(read_len);
