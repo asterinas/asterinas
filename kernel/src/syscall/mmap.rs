@@ -157,16 +157,16 @@ fn check_len(len: usize) -> Result<usize> {
 }
 
 fn check_addr(addr: Vaddr, len: usize) -> Result<()> {
+    if addr > VMAR_CAP_ADDR - len {
+        return_errno_with_message!(Errno::ENOMEM, "the mapping address is too high");
+    }
+
     if !addr.is_multiple_of(PAGE_SIZE) {
         return_errno_with_message!(Errno::EINVAL, "the mapping address is not aligned");
     }
 
     if addr < VMAR_LOWEST_ADDR {
         return_errno_with_message!(Errno::EPERM, "the mapping address is too low");
-    }
-
-    if addr > VMAR_CAP_ADDR - len {
-        return_errno_with_message!(Errno::ENOMEM, "the mapping address is too high");
     }
 
     Ok(())

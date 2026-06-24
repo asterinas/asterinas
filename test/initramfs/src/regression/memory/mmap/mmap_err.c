@@ -206,6 +206,36 @@ FN_TEST(overflow_offset)
 }
 END_TEST()
 
+FN_TEST(kernel_addr)
+{
+	void *addr = (void *)0xffffffffffff0000ul;
+
+	// Some applications probe the maximum mappable address by checking whether
+	// an unaligned large address returns `ENOMEM` or `EINVAL`. One example is
+	// gVisor, see
+	// <https://github.com/google/gvisor/blob/abf59273b7ba39536ad07ca6579c047f3101f9bb/pkg/abi/linux/mm.go#L143-L157>.
+	//
+	// So we must ensure that the following error code is `ENOMEM` (instead of
+	// `EINVAL`), even if the address is not page-aligned.
+	TEST_ERRNO(mmap(addr + 1, 512, PROT_NONE,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
+		   ENOMEM);
+	TEST_ERRNO(mmap(addr + 0, 512, PROT_NONE,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
+		   ENOMEM);
+	TEST_ERRNO(mmap(addr - 1, 512, PROT_NONE,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
+		   ENOMEM);
+
+	TEST_ERRNO(mmap(valid_addr + 1, 512, PROT_NONE,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
+		   EINVAL);
+	TEST_ERRNO(mmap(valid_addr - 1, 512, PROT_NONE,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
+		   EINVAL);
+}
+END_TEST()
+
 FN_TEST(unaligned_offset)
 {
 	TEST_ERRNO(mmap(valid_addr, PAGE_SIZE, PROT_READ,
