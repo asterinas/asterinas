@@ -1,6 +1,7 @@
 RmdirTest.CanRemoveWithTrailingSlashes
 RmdirTest.OpenDirectory
 UnlinkTest.AbsTmpFile
+UnlinkTest.AtBad
 UnlinkTest.AtDir
 UnlinkTest.AtDirDegradedPermissions
 UnlinkTest.AtFile
@@ -8,6 +9,7 @@ UnlinkTest.DirNotEmpty
 UnlinkTest.IsDir
 UnlinkTest.OpenFile
 UnlinkTest.OpenFile_NoRandomSave
+UnlinkTest.ParentDegradedPermissions
 UnlinkTest.Rmdir
 UnlinkTest.UnlinkWithOpenFDs
 UnlinkTest.UnlinkWithOpenFDsWriteOnly
