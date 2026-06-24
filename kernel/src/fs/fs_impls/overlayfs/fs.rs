@@ -498,6 +498,9 @@ impl OverlayInode {
 
     pub fn metadata(&self) -> Metadata {
         let mut metadata = self.get_top_valid_inode().metadata();
+        if self.type_ == InodeType::Dir {
+            metadata.container_dev_id = self.overlay_fs().sb().container_dev_id;
+        }
         metadata.ino = self.ino;
         metadata
     }
