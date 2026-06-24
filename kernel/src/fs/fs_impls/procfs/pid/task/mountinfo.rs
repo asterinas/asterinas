@@ -126,10 +126,9 @@ impl MountInfoFileOps {
             let fs_type = mount.fs().name();
             let source = mount.source().unwrap_or("none");
             let fs_flags = mount.fs().flags();
-
-            // The following fields are dummy for now.
-            let major = 0;
-            let minor = 0;
+            let container_dev_id = mount.fs().sb().container_dev_id;
+            let major = container_dev_id.major().get() as u32;
+            let minor = container_dev_id.minor().get();
 
             let entry = MountInfoEntry {
                 mount_id,
