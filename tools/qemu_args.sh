@@ -22,6 +22,8 @@
 #  - ATTACH_XFSTESTS_IMAGES: "true" or "false", whether to attach xfstests images (xfstests_test.img and xfstests_scratch.img) to the VM. Defaults to auto-detection from ENABLE_CONFORMANCE_TEST + CONFORMANCE_TEST_SUITE.
 
 OVMF=${OVMF:-"on"}
+OVMF_PATH=${OVMF_PATH:-"/root/ovmf/release/OVMF.fd"}
+MICROVM_OVMF_PATH=${MICROVM_OVMF_PATH:-"/root/ovmf/release/microvm/MICROVM.fd"}
 VHOST=${VHOST:-"off"}
 VSOCK=${VSOCK:-"off"}
 VIRTIOFS=${VIRTIOFS:-"off"}
@@ -257,11 +259,11 @@ fi
 if [ "$OVMF" = "on" ]; then
     if [ "$1" = "microvm" ]; then
         QEMU_ARGS="${QEMU_ARGS} \
-            -bios /root/ovmf/release/microvm/MICROVM.fd \
+            -bios ${MICROVM_OVMF_PATH} \
         "
     else
         QEMU_ARGS="${QEMU_ARGS} \
-            -bios /root/ovmf/release/OVMF.fd \
+            -bios ${OVMF_PATH} \
         "
     fi
 fi

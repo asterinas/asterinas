@@ -10,6 +10,8 @@ set -e
 
 usage() {
     echo "Usage: $0 [nixos | iso]"
+    echo "  Environment:"
+    echo "    PRESERVE_ASTERINAS_IMG=1  Reuse an existing target/nixos/asterinas.img in iso mode"
     exit 1
 }
 
@@ -47,6 +49,7 @@ case "$MODE" in
     iso)
         ASTER_IMAGE_PATH=${ASTERINAS_DIR}/target/nixos/asterinas.img
         NIXOS_DISK_SIZE_IN_MB=${NIXOS_DISK_SIZE_IN_MB:-8192}
+        PRESERVE_ASTERINAS_IMG=${PRESERVE_ASTERINAS_IMG:-0}
         ISO_IMAGE_PATH=$(find "${ASTERINAS_DIR}/target/nixos/iso_image/iso" -name "*.iso" | head -n 1)
 
         if [ ! -f "$ISO_IMAGE_PATH" ]; then
@@ -54,10 +57,14 @@ case "$MODE" in
             exit 1
         fi
 
-        rm -f "${ASTER_IMAGE_PATH}"
-        echo "Creating image at ${ASTER_IMAGE_PATH} of size ${NIXOS_DISK_SIZE_IN_MB}MB......"
-        dd if=/dev/zero of="${ASTER_IMAGE_PATH}" bs=1M count=${NIXOS_DISK_SIZE_IN_MB} status=none
-        echo "Image created successfully!"
+        if [ "${PRESERVE_ASTERINAS_IMG}" = "1" ] && [ -f "${ASTER_IMAGE_PATH}" ]; then
+            echo "Reusing existing image at ${ASTER_IMAGE_PATH}"
+        else
+            rm -f "${ASTER_IMAGE_PATH}"
+            echo "Creating image at ${ASTER_IMAGE_PATH} of size ${NIXOS_DISK_SIZE_IN_MB}MB......"
+            dd if=/dev/zero of="${ASTER_IMAGE_PATH}" bs=1M count=${NIXOS_DISK_SIZE_IN_MB} status=none
+            echo "Image created successfully!"
+        fi
 
         QEMU_ARGS="${QEMU_ARGS} \
             -cdrom ${ISO_IMAGE_PATH} -boot d \

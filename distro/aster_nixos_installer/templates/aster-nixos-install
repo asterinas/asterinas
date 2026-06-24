@@ -76,8 +76,16 @@ fi
 # Confirm dangerous operation if --force-format-disk is used
 if [[ "$FORCE_FORMAT_DISK" == true ]]; then
     echo "WARNING: You are about to FORMAT the disk: $DISK"
-    sgdisk --zap-all $DISK
-    partprobe $DISK
+    if command -v sgdisk >/dev/null 2>&1; then
+        sgdisk --zap-all $DISK
+    else
+        wipefs -a $DISK
+        dd if=/dev/zero of=$DISK bs=1M count=4 conv=fsync
+    fi
+    if command -v partx >/dev/null 2>&1; then
+        partx -d $DISK || true
+    fi
+    partprobe $DISK || true
 fi
 
 BUILD_DIR=$(mktemp -d -p /mnt)
@@ -89,15 +97,46 @@ else
     BOOT_DEVICE="${DISK}1"
     ROOT_DEVICE="${DISK}2"
 fi
-if [ ! -b "${BOOT_DEVICE}" ] && [ ! -b "${ROOT_DEVICE}" ]; then
-    parted ${DISK} -- mklabel gpt
-    parted ${DISK} -- mkpart ESP fat32 1MB 512MB
-    parted ${DISK} -- mkpart root ext2 512MB 100%
-    parted ${DISK} -- set 1 esp on
+
+create_block_device_node() {
+    DEVICE_PATH="$1"
+    DEVICE_NAME=$(basename "${DEVICE_PATH}")
+    SYSFS_DEV="/sys/class/block/${DEVICE_NAME}/dev"
+
+    if [ -b "${DEVICE_PATH}" ] || [ ! -r "${SYSFS_DEV}" ]; then
+        return
+    fi
+
+    MAJOR_MINOR=$(cat "${SYSFS_DEV}")
+    MAJOR=${MAJOR_MINOR%:*}
+    MINOR=${MAJOR_MINOR#*:}
+    mknod "${DEVICE_PATH}" b "${MAJOR}" "${MINOR}"
+}
+
+if [ "${FORCE_FORMAT_DISK}" = true ] || { [ ! -b "${BOOT_DEVICE}" ] && [ ! -b "${ROOT_DEVICE}" ]; }; then
+    parted -s ${DISK} -- mklabel gpt
+    parted -s ${DISK} -- mkpart ESP fat32 1MB 512MB
+    parted -s ${DISK} -- mkpart root ext2 512MB 100%
+    parted -s ${DISK} -- set 1 esp on
+    partprobe ${DISK} || true
+    if command -v partx >/dev/null 2>&1; then
+        partx -a ${DISK} || true
+    fi
+    part_wait_count=0
+    while { [ ! -b "${BOOT_DEVICE}" ] || [ ! -b "${ROOT_DEVICE}" ]; } && [ "${part_wait_count}" -lt 50 ]; do
+        create_block_device_node "${BOOT_DEVICE}"
+        create_block_device_node "${ROOT_DEVICE}"
+        sleep 0.1
+        part_wait_count=$((part_wait_count + 1))
+    done
+    if [ ! -b "${BOOT_DEVICE}" ] || [ ! -b "${ROOT_DEVICE}" ]; then
+        echo "Partition devices ${BOOT_DEVICE} and ${ROOT_DEVICE} did not appear" >&2
+        exit 1
+    fi
     echo "partition finished"
 
-    mkfs.fat -F 32 -n boot "${BOOT_DEVICE}"
-    mkfs.ext2 -L nixos "${ROOT_DEVICE}"
+    @aster-dosfstools-bin@ -F 32 -n boot "${BOOT_DEVICE}"
+    @aster-e2fsprogs-bin@ -L nixos "${ROOT_DEVICE}"
     echo "mkfs finished"
 else
     echo "Partitions ${BOOT_DEVICE} and ${ROOT_DEVICE} already exist — skipping partitioning and mkfs"
@@ -153,6 +192,7 @@ SYSTEM_CLOSURE=$(nix-build '<nixpkgs/nixos>' -A system \
 
 export PATH=${PATH}:/run/current-system/sw/bin
 nixos-install --root ${BUILD_DIR} --no-root-passwd \
+    --no-channel-copy \
     --system "${SYSTEM_CLOSURE}" \
     "${COMMON_NIX_ARGS[@]}"
 

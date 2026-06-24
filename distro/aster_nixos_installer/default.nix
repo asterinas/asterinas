@@ -30,6 +30,8 @@ let
       aster-target-platform = target_platform;
       aster-substituters = extra-substituters;
       aster-trusted-public-keys = extra-trusted-public-keys;
+      aster-dosfstools-bin = "${pkgs.dosfstools}/bin/mkfs.fat";
+      aster-e2fsprogs-bin = "${pkgs.e2fsprogs}/bin/mkfs.ext2";
     };
     isExecutable = true;
   };
@@ -46,4 +48,3 @@ in pkgs.stdenv.mkDerivation {
     ln -s ${aster-kernel} $out/kernel
   '';
 }
-
