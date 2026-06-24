@@ -88,14 +88,16 @@ impl FileOps for VirtioFsFile {
         &self,
         offset: usize,
         writer: &mut VmWriter,
-        _status_flags: StatusFlags,
+        status_flags: StatusFlags,
     ) -> Result<usize> {
         let fh = self.open_handle.fh();
-        let file_flags = self.open_handle.file_flags();
+        let file_flags = self.open_handle.access_mode() as u32 | status_flags.bits();
 
-        match self.cache_policy {
-            CachePolicy::Cached => self.inode.cached_read_at(offset, writer, fh, file_flags),
-            CachePolicy::Direct => self.inode.direct_read_at(offset, writer, fh, file_flags),
+        if self.cache_policy == CachePolicy::Cached && !status_flags.contains(StatusFlags::O_DIRECT)
+        {
+            self.inode.cached_read_at(offset, writer, fh, file_flags)
+        } else {
+            self.inode.direct_read_at(offset, writer, fh, file_flags)
         }
     }
 
@@ -105,8 +107,11 @@ impl FileOps for VirtioFsFile {
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {
+        let fh = self.open_handle.fh();
+        let file_flags = self.open_handle.access_mode() as u32 | status_flags.bits();
+
         let write_offset = if status_flags.contains(StatusFlags::O_APPEND) {
-            self.inode.revalidate_attr(self.open_handle.fh())?;
+            self.inode.revalidate_attr(fh)?;
             WriteOffset::Append
         } else {
             WriteOffset::Absolute(offset)
@@ -117,21 +122,14 @@ impl FileOps for VirtioFsFile {
         // bytes that precede the user write. Keep append writes on the direct
         // path until writeback can issue precise positional ranges without
         // append semantics.
-        if self.cache_policy == CachePolicy::Cached && !status_flags.contains(StatusFlags::O_APPEND)
+        if self.cache_policy == CachePolicy::Cached
+            && !status_flags.intersects(StatusFlags::O_APPEND | StatusFlags::O_DIRECT)
         {
-            self.inode.cached_write_at(
-                write_offset,
-                reader,
-                self.open_handle.fh(),
-                self.open_handle.file_flags(),
-            )
+            self.inode
+                .cached_write_at(write_offset, reader, fh, file_flags)
         } else {
-            self.inode.direct_write_at(
-                write_offset,
-                reader,
-                self.open_handle.fh(),
-                self.open_handle.file_flags(),
-            )
+            self.inode
+                .direct_write_at(write_offset, reader, fh, file_flags)
         }
     }
 }

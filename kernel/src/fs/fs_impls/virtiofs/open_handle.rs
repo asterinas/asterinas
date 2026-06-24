@@ -55,6 +55,11 @@ impl VirtioFsOpenHandle {
         self.access_mode as u32 | self.status_flags.bits()
     }
 
+    /// Returns the access mode.
+    pub(super) fn access_mode(&self) -> AccessMode {
+        self.access_mode
+    }
+
     /// Returns the `FUSE_OPEN` reply flags.
     pub(super) fn open_flags(&self) -> FuseOpenFlags {
         self.open_flags
