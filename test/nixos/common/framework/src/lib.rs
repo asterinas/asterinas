@@ -214,7 +214,14 @@ pub fn __nixos_test_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut session = rexpect::spawn(&qemu_cmd, Some(timeout_ms)).map_err(Error::from)?;
 
     println!("--> Waiting for login prompt...");
-    let init_prompt = "root@asterinas:";
+    let login_prompt = "root@asterinas:";
+    session.exp_string(login_prompt).map_err(Error::from)?;
+    session.send_line("stty -echo").map_err(Error::from)?;
+    session.exp_string(login_prompt).map_err(Error::from)?;
+    let init_prompt = "ASTERINAS_TEST_PROMPT# ";
+    session.send_line(
+        "bind 'set enable-bracketed-paste off' 2>/dev/null || true; unset PROMPT_COMMAND; export PS1='ASTERINAS_TEST_PROMPT# '",
+    ).map_err(Error::from)?;
     session.exp_string(init_prompt).map_err(Error::from)?;
 
     let desc = SessionDesc::new(init_prompt, "", "poweroff");

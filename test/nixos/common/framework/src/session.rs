@@ -55,6 +55,7 @@ pub struct Session {
     uuid: String,
     desc: SessionDesc,
     pty_session: PtySession,
+    command_seq: usize,
 }
 
 impl Session {
@@ -64,7 +65,20 @@ impl Session {
             uuid: Uuid::new_v4().to_string(),
             desc,
             pty_session,
+            command_seq: 0,
         }
+    }
+
+    fn next_command_marker(&mut self) -> String {
+        let marker = format!("__ASTERINAS_CMD_DONE_{}__", self.command_seq);
+        self.command_seq += 1;
+        marker
+    }
+
+    fn marker_print_command(marker: &str) -> String {
+        let split_at = marker.len() / 2;
+        let (head, tail) = marker.split_at(split_at);
+        format!("printf '\\n%s%s\\n' '{}' '{}'", head, tail)
     }
 
     /// Executes a command in the current session.
@@ -90,15 +104,13 @@ impl Session {
     /// ```
     pub fn run_cmd(&mut self, command: &str) -> Result<(), Error> {
         println!("--> Running: {}", command);
+        let marker = self.next_command_marker();
         self.pty_session.send_line(command).map_err(Error::from)?;
-        // Read and consume the echoed command line
-        self.pty_session.exp_string(command).map_err(Error::from)?;
+        self.pty_session
+            .send_line(&Self::marker_print_command(&marker))
+            .map_err(Error::from)?;
 
-        if let Err(error) = self
-            .pty_session
-            .exp_string(&self.desc.prompt)
-            .map_err(Error::from)
-        {
+        if let Err(error) = self.pty_session.exp_string(&marker).map_err(Error::from) {
             Self::output_error(&error);
             return Err(error);
         }
@@ -136,15 +148,13 @@ impl Session {
     /// ```
     pub fn run_cmd_and_expect(&mut self, command: &str, expected: &str) -> Result<(), Error> {
         println!("--> Running: {} (expecting: {})", command, expected);
+        let marker = self.next_command_marker();
         self.pty_session.send_line(command).map_err(Error::from)?;
-        // Read and consume the echoed command line
-        self.pty_session.exp_string(command).map_err(Error::from)?;
+        self.pty_session
+            .send_line(&Self::marker_print_command(&marker))
+            .map_err(Error::from)?;
 
-        match self
-            .pty_session
-            .exp_string(&self.desc.prompt)
-            .map_err(Error::from)
-        {
+        match self.pty_session.exp_string(&marker).map_err(Error::from) {
             Ok(unread) => {
                 let cleaned_unread = clean_output(&unread);
                 if !cleaned_unread.contains(expected) {
@@ -406,24 +416,24 @@ impl Session {
     }
 
     fn run_cmd_and_collect_output(&mut self, command: &str) -> Result<CommandOutput, Error> {
+        let done_marker = self.next_command_marker();
         let exit_marker = self.uuid.as_str();
         let quoted_command = format!("'{}'", command.replace('\'', r#"'"'"'"#));
         let wrapped_command = format!(
-            r#"eval -- {}; __exit_code=$?; printf '\n{}%s\n' "$__exit_code""#,
-            quoted_command, exit_marker
+            r#"eval -- {}; __exit_code=$?; printf '\n{}%s\n' "$__exit_code"; {}"#,
+            quoted_command,
+            exit_marker,
+            Self::marker_print_command(&done_marker)
         );
 
         println!("--> Running: {}", command);
         self.pty_session
             .send_line(&wrapped_command)
             .map_err(Error::from)?;
-        self.pty_session
-            .exp_string(&wrapped_command)
-            .map_err(Error::from)?;
 
         let unread = match self
             .pty_session
-            .exp_string(&self.desc.prompt)
+            .exp_string(&done_marker)
             .map_err(Error::from)
         {
             Ok(unread) => unread,
