@@ -4,20 +4,35 @@ use alloc::collections::BTreeMap;
 use core::ops::Range;
 
 use crate::{
-    Error,
-    arch::vm::ept::{EptItem, EptPtConfig},
+    arch::vm::{
+        ept::{EptItem, EptPtConfig},
+        vmx::flush_ept_all_contexts_sync,
+    },
     mm::{
-        HasPaddr, PageProperty, UFrame, VmReader,
         io::Fallible,
-        page_table::{self, PageTable},
+        page_table::{self, PageTable, PageTableFrag},
+        PageProperty, UFrame, VmReader, PAGE_SIZE,
     },
     prelude::*,
     sync::Mutex,
     task::atomic_mode::AsAtomicModeGuard,
+    Error,
 };
 
+/// Manages the guest physical memory space of a VM.
+///
+/// This type owns the EPT page table that maps guest physical addresses to
+/// host physical frames. One `GuestPhysMemSpace` can be reused by multiple
+/// vCPUs in the same VM by passing the value returned by [`Self::eptp`] to
+/// [`super::GuestMode::execute`]. The kernel is responsible for pairing each
+/// vCPU with the guest physical memory space that belongs to its VM.
+///
+/// Internally, this type reuses [`PageTable`] with [`EptPtConfig`] to manage
+/// EPT mappings. It also records memory slots so a guest physical range can be
+/// translated back to the userspace virtual range that backs it.
 pub struct GuestPhysMemSpace {
     pt: PageTable<EptPtConfig>,
+    update_lock: Mutex<()>,
     memory_slots: Mutex<BTreeMap<u32, MemorySlot>>,
 }
 
@@ -50,6 +65,10 @@ impl MemorySlot {
         self.guest_start < other.guest_end && other.guest_start < self.guest_end
     }
 
+    fn guest_range(&self) -> Range<Gpaddr> {
+        self.guest_start..self.guest_end
+    }
+
     fn translate_guest_range(&self, gpa: Gpaddr, len: usize) -> Result<Option<Vaddr>> {
         let gpa_end = gpa.checked_add(len).ok_or(Error::Overflow)?;
         if gpa < self.guest_start || gpa_end > self.guest_end {
@@ -74,6 +93,7 @@ impl GuestPhysMemSpace {
     pub fn new() -> Self {
         Self {
             pt: PageTable::<EptPtConfig>::empty(),
+            update_lock: Mutex::new(()),
             memory_slots: Mutex::new(BTreeMap::new()),
         }
     }
@@ -114,31 +134,127 @@ impl GuestPhysMemSpace {
         })
     }
 
-    /// Records a userspace-backed guest memory slot.
-    pub fn record_memory_slot(
+    /// Installs or removes a userspace-backed guest memory slot.
+    ///
+    /// `slot` identifies the memory slot to update. If `memory_size` is zero,
+    /// this method removes the slot and its EPT mappings. Otherwise, it maps
+    /// `frames` into the guest physical range starting at `guest_start` with
+    /// the supplied page properties, and records the corresponding
+    /// `userspace_start` so the range can later be accessed by
+    /// [`Self::reader`].
+    ///
+    /// The backing frames are accepted as [`UFrame`]s. This typed boundary
+    /// keeps safe kernel code from mapping arbitrary host-sensitive typed
+    /// frames into guest memory, which is part of preserving kernel memory
+    /// safety. The caller is still responsible for ensuring that the supplied
+    /// frames are the frames backing the userspace range described by
+    /// `userspace_start`.
+    pub fn set_memory_region(
         &self,
         slot: u32,
         userspace_start: Vaddr,
         guest_start: Gpaddr,
         memory_size: usize,
+        frames: Vec<UFrame>,
+        prop: PageProperty,
     ) -> Result<()> {
-        let mut memory_slots = self.memory_slots.lock();
+        let _update_guard = self.update_lock.lock();
+
         if memory_size == 0 {
-            memory_slots.remove(&slot);
+            let old_slot = self.memory_slots.lock().get(&slot).copied();
+            if let Some(old_slot) = old_slot {
+                flush_ept_all_contexts_sync()?;
+                let old_frags = self.take_range(old_slot.guest_range())?;
+                let result = flush_and_drop(old_frags);
+                self.memory_slots.lock().remove(&slot);
+                result?;
+            }
             return Ok(());
         }
 
-        let new_slot = MemorySlot::new(userspace_start, guest_start, memory_size)?;
-        for (&existing_slot_id, existing_slot) in memory_slots.iter() {
-            if existing_slot_id != slot && existing_slot.overlaps_guest_range(&new_slot) {
-                return Err(Error::InvalidArgs);
-            }
+        validate_memory_region(userspace_start, guest_start, memory_size)?;
+        if frames.len().checked_mul(PAGE_SIZE).ok_or(Error::Overflow)? != memory_size {
+            return Err(Error::InvalidArgs);
         }
 
-        memory_slots.insert(slot, new_slot);
+        let new_slot = MemorySlot::new(userspace_start, guest_start, memory_size)?;
+        let old_slot = {
+            let memory_slots = self.memory_slots.lock();
+            for (&existing_slot_id, existing_slot) in memory_slots.iter() {
+                if existing_slot_id != slot && existing_slot.overlaps_guest_range(&new_slot) {
+                    return Err(Error::InvalidArgs);
+                }
+            }
+            memory_slots.get(&slot).copied()
+        };
+
+        // Check INVEPT support before changing mappings that may need a flush.
+        if old_slot.is_some() {
+            flush_ept_all_contexts_sync()?;
+        }
+
+        let old_frags = match old_slot {
+            Some(old_slot) => self.take_range(old_slot.guest_range())?,
+            None => Vec::new(),
+        };
+
+        if let Err(err) = self.map_range(new_slot.guest_range(), frames, prop) {
+            if old_slot.is_some() {
+                self.memory_slots.lock().remove(&slot);
+            }
+            flush_and_drop(old_frags)?;
+            return Err(err);
+        }
+
+        self.memory_slots.lock().insert(slot, new_slot);
+        flush_and_drop(old_frags)?;
         Ok(())
     }
 
+    fn map_range(&self, gpa: Range<Gpaddr>, frames: Vec<UFrame>, prop: PageProperty) -> Result<()> {
+        if gpa.is_empty() {
+            return Ok(());
+        }
+
+        let preempt_guard = crate::task::disable_preempt();
+        let mut cursor = self.pt.cursor_mut(&preempt_guard, &gpa)?;
+        for frame in frames {
+            // SAFETY: It is safe to map untyped memory into guest physical memory.
+            unsafe {
+                cursor.map((frame, prop));
+            }
+        }
+        Ok(())
+    }
+
+    fn take_range(&self, gpa: Range<Gpaddr>) -> Result<Vec<PageTableFrag<EptPtConfig>>> {
+        if gpa.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let preempt_guard = crate::task::disable_preempt();
+        let mut cursor = self.pt.cursor_mut(&preempt_guard, &gpa)?;
+        let mut frags = Vec::new();
+        while cursor.virt_addr() < gpa.end {
+            let len = gpa
+                .end
+                .checked_sub(cursor.virt_addr())
+                .ok_or(Error::Overflow)?;
+            // SAFETY: The range belongs to the guest EPT, and removed fragments
+            // are kept alive until `flush_and_drop` has completed INVEPT.
+            let Some(frag) = (unsafe { cursor.take_next(len) }) else {
+                break;
+            };
+            frags.push(frag);
+        }
+
+        Ok(frags)
+    }
+
+    /// Returns the EPT pointer value for this guest memory space.
+    ///
+    /// The returned value is passed to [`super::GuestMode::execute`] so VM
+    /// entry can use this EPT as the guest physical address space.
     pub fn eptp(&self) -> u64 {
         const EPT_MEM_TYPE_WB: u64 = 6;
         const EPT_PAGE_WALK_LENGTH_4_LEVELS: u64 = 3 << 3;
@@ -146,6 +262,12 @@ impl GuestPhysMemSpace {
         self.pt.root_paddr() as u64 | EPT_MEM_TYPE_WB | EPT_PAGE_WALK_LENGTH_4_LEVELS
     }
 
+    /// Returns a reader for a userspace-backed guest physical range.
+    ///
+    /// The `gpa` argument names a guest physical address. This method uses the
+    /// recorded memory slots to translate the requested guest physical range
+    /// back to the userspace virtual address range that backs it, then reuses
+    /// [`VmReader`] to access that userspace memory.
     pub fn reader(&self, gpa: Gpaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
         let memory_slots = self.memory_slots.lock();
         let mut userspace_addr = None;
@@ -160,6 +282,54 @@ impl GuestPhysMemSpace {
         // SAFETY: The memory range is in user space, as checked above.
         Ok(unsafe { VmReader::<Fallible>::from_user_space(userspace_addr as *const u8, len) })
     }
+}
+
+impl Default for GuestPhysMemSpace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for GuestPhysMemSpace {
+    fn drop(&mut self) {
+        error!("hypervisor: release guest memory space.");
+        if let Err(err) = flush_ept_all_contexts_sync() {
+            error!(
+                "hypervisor: failed to flush EPT translations while dropping guest memory: {:?}",
+                err
+            );
+        }
+    }
+}
+
+fn validate_memory_region(
+    userspace_start: Vaddr,
+    guest_start: Gpaddr,
+    memory_size: usize,
+) -> Result<()> {
+    if !userspace_start.is_multiple_of(PAGE_SIZE)
+        || !guest_start.is_multiple_of(PAGE_SIZE)
+        || !memory_size.is_multiple_of(PAGE_SIZE)
+    {
+        return Err(Error::InvalidArgs);
+    }
+    Ok(())
+}
+
+fn flush_and_drop(frags: Vec<PageTableFrag<EptPtConfig>>) -> Result<()> {
+    if frags.is_empty() {
+        return Ok(());
+    }
+
+    if let Err(err) = flush_ept_all_contexts_sync() {
+        // The EPT entries have already been invalidated. Leaking the fragments
+        // is safer than freeing frames that may still be cached by hardware.
+        core::mem::forget(frags);
+        return Err(err);
+    }
+
+    drop(frags);
+    Ok(())
 }
 
 pub type QueriedItem = (Paddr, PageProperty);

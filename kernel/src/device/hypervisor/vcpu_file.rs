@@ -2,10 +2,10 @@
 
 //! VCPU file descriptor implementation
 
-use core::mem::size_of;
-
 use ostd::{
     arch::vm::{GuestExitInfo, VmxExitReason},
+    mm::VmIo,
+    task::Task,
     vm::GuestMode,
 };
 
@@ -13,6 +13,7 @@ use super::{
     apic::emulate_apic_mmio,
     ioctl::*,
     vcpu::{PendingMmioOperation, PendingOperation, PendingPioOperation, PioDirection},
+    vm::Vm,
 };
 use crate::{
     fs::{
@@ -32,15 +33,20 @@ pub(super) use super::vcpu::Vcpu;
 
 /// VCPU file descriptor
 pub struct VcpuFile {
+    vm: Arc<Vm>,
     vcpu: Arc<Vcpu>,
     pseudo_path: Path,
 }
 
 impl VcpuFile {
     /// Creates a new VCPU file
-    pub fn new(vcpu: Arc<Vcpu>) -> Self {
+    pub fn new(vm: Arc<Vm>, vcpu: Arc<Vcpu>) -> Self {
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[rustshyper-vcpu]".to_string());
-        Self { vcpu, pseudo_path }
+        Self {
+            vm,
+            vcpu,
+            pseudo_path,
+        }
     }
 }
 
@@ -82,6 +88,39 @@ impl FileLike for VcpuFile {
                 self.vcpu.set_sregs(sregs)?;
                 Ok(0)
             }
+            cmd @ GetMsrs => {
+                let msrs = cmd.with_data_ptr(|ptr| Ok(ptr.read()?))?;
+                let mut entries = read_msr_entries(msrs, raw_ioctl.arg())?;
+                let handled_count = self.vcpu.get_msrs(&mut entries)?;
+                write_msr_entries(msrs, raw_ioctl.arg(), &entries)?;
+                Ok(handled_count)
+            }
+            cmd @ SetMsrs => {
+                let msrs = cmd.read()?;
+                let entries = read_msr_entries(msrs, raw_ioctl.arg())?;
+                self.vcpu.set_msrs(&entries)
+            }
+            cmd @ SetFpu => {
+                let _fpu = cmd.read()?;
+                // TODO: Install FPU/XMM state into the guest context.
+                Ok(0)
+            }
+            cmd @ GetLapic => {
+                let lapic = self.vcpu.get_lapic()?;
+                cmd.write(&lapic)?;
+                Ok(0)
+            }
+            cmd @ SetLapic => {
+                let lapic = cmd.read()?;
+                self.vcpu.set_lapic(&lapic)?;
+                Ok(0)
+            }
+            cmd @ SetCpuid2 => {
+                let cpuid = cmd.read()?;
+                let entries = read_cpuid_entries(cpuid, raw_ioctl.arg())?;
+                self.vcpu.set_cpuid_entries(entries)?;
+                Ok(0)
+            }
             _ => {
                 let ioctl_nr = raw_ioctl.cmd() & 0xff;
                 error!(
@@ -107,6 +146,76 @@ impl FileLike for VcpuFile {
     }
 }
 
+fn read_cpuid_entries(cpuid: VcpuCpuid2, arg: usize) -> Result<Vec<VcpuCpuidEntry2>> {
+    let nent = usize::try_from(cpuid.nent)?;
+    if nent > KVM_MAX_CPUID_ENTRIES {
+        return_errno_with_message!(Errno::E2BIG, "too many CPUID entries");
+    }
+
+    let entries_addr = arg
+        .checked_add(size_of::<VcpuCpuid2>())
+        .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+    let entries_len = nent
+        .checked_mul(size_of::<VcpuCpuidEntry2>())
+        .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+    let current = Task::current().unwrap();
+    let thread_local = current.as_thread_local().unwrap();
+    let user_space = CurrentUserSpace::new(thread_local);
+    let mut reader = user_space.reader(entries_addr, entries_len)?;
+    let mut entries = Vec::new();
+    for _ in 0..nent {
+        entries.push(reader.read_val()?);
+    }
+
+    Ok(entries)
+}
+
+fn read_msr_entries(msrs: VcpuMsrs, arg: usize) -> Result<Vec<VcpuMsrEntry>> {
+    let nmsrs = usize::try_from(msrs.nmsrs)?;
+    if nmsrs > KVM_MAX_MSR_ENTRIES {
+        return_errno_with_message!(Errno::E2BIG, "too many MSR entries");
+    }
+
+    let entries_addr = arg
+        .checked_add(size_of::<VcpuMsrs>())
+        .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+    let entries_len = nmsrs
+        .checked_mul(size_of::<VcpuMsrEntry>())
+        .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+    let current = Task::current().unwrap();
+    let thread_local = current.as_thread_local().unwrap();
+    let user_space = CurrentUserSpace::new(thread_local);
+    let mut reader = user_space.reader(entries_addr, entries_len)?;
+    let mut entries = Vec::new();
+    for _ in 0..nmsrs {
+        entries.push(reader.read_val()?);
+    }
+
+    Ok(entries)
+}
+
+fn write_msr_entries(msrs: VcpuMsrs, arg: usize, entries: &[VcpuMsrEntry]) -> Result<()> {
+    debug_assert_eq!(usize::try_from(msrs.nmsrs).ok(), Some(entries.len()));
+
+    let entries_addr = arg
+        .checked_add(size_of::<VcpuMsrs>())
+        .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+    let entries_len = entries
+        .len()
+        .checked_mul(size_of::<VcpuMsrEntry>())
+        .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+    let current = Task::current().unwrap();
+    let thread_local = current.as_thread_local().unwrap();
+    let user_space = CurrentUserSpace::new(thread_local);
+    user_space.write_val(arg, &msrs)?;
+    let mut writer = user_space.writer(entries_addr, entries_len)?;
+    for entry in entries {
+        writer.write_val(entry)?;
+    }
+
+    Ok(())
+}
+
 impl VcpuFile {
     fn ioctl_run(&self) -> Result<i32> {
         self.complete_pending_operation()?;
@@ -120,7 +229,7 @@ impl VcpuFile {
         let mut consecutive_preemption_timer_exits = 0_u64;
 
         loop {
-            let eptp = self.vcpu.vm()?.guest_mem().eptp();
+            let eptp = self.vm.guest_mem().eptp();
             let exit_info = match guest_mode.execute(eptp as u64) {
                 Ok(exit_info) => exit_info,
                 Err(err) => {
@@ -166,11 +275,18 @@ impl VcpuFile {
                     self.vcpu
                         .guest_context()
                         .advance_rip(exit_info.instruction_len as _);
-                    if self.vcpu.wait_for_hlt_wakeup() {
-                        None
-                    } else {
-                        Some(exit_info)
+                    loop {
+                        if self.vcpu.wait_for_hlt_wakeup() {
+                            break None;
+                        }
+
+                        // TODO: Use a more efficient wait mechanism instead of busy-waiting.
+                        Task::yield_now();
                     }
+                }
+                Ok(VmxExitReason::PAUSE_INSTRUCTION) => {
+                    consecutive_preemption_timer_exits = 0;
+                    None
                 }
                 Ok(_) => Some(exit_info),
                 Err(_) => Some(exit_info),

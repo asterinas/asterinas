@@ -94,7 +94,7 @@ fn instruction_len() -> Result<u32> {
 }
 
 fn advance_guest_rip(context: &Mutex<GuestContext>) -> Result<()> {
-    let len = instruction_len().map_err(Error::from)? as usize;
+    let len = instruction_len()? as usize;
     context.lock().arch_mut().advance_rip(len as u64);
     Ok(())
 }

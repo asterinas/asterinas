@@ -142,7 +142,7 @@ impl PageTableEntry {
         Self(paddr & Self::PHYS_MASK | flags)
     }
 
-    fn new_pt(paddr: Paddr, flags: PageTableFlags) -> Self {
+    fn new_pt(paddr: Paddr, _flags: PageTableFlags) -> Self {
         // TODO: currently ignore the flags argument.
         let flags =
             PteFlags::READABLE.bits() | PteFlags::WRITABLE.bits() | PteFlags::EXECUTABLE.bits();

@@ -1,7 +1,7 @@
 use ostd::{
     arch::vm::{
-        GuestContext, VcpuDtable as ArchVcpuDtable, VcpuRegs as ArchVcpuRegs,
-        VcpuSegment as ArchVcpuSegment, VcpuSregs as ArchVcpuSregs,
+        GuestContext, GuestCpuidEntry as ArchGuestCpuidEntry, VcpuDtable as ArchVcpuDtable,
+        VcpuRegs as ArchVcpuRegs, VcpuSegment as ArchVcpuSegment, VcpuSregs as ArchVcpuSregs,
     },
     vm::GuestInterruptPort,
 };
@@ -9,8 +9,8 @@ use ostd::{
 use super::{
     apic::Lapic,
     ioctl::{
-        KVM_RUN_EXIT_REASON_OFFSET, KVM_RUN_MMAP_SIZE, KVM_RUN_STRUCT_SIZE, VcpuDtable, VcpuRegs,
-        VcpuSegment, VcpuSregs,
+        KVM_RUN_EXIT_REASON_OFFSET, KVM_RUN_MMAP_SIZE, KVM_RUN_STRUCT_SIZE, LapicState,
+        VcpuCpuidEntry2, VcpuDtable, VcpuMsrEntry, VcpuRegs, VcpuSegment, VcpuSregs,
     },
     vm::Vm,
 };
@@ -48,7 +48,6 @@ pub(super) enum PendingOperation {
 }
 
 pub struct Vcpu {
-    pub(super) id: u32,
     pub(super) vm: Weak<Vm>,
     pub(super) guest_context: Mutex<GuestContext>,
     pub(super) lapic: SpinLock<Lapic>,
@@ -60,7 +59,6 @@ impl Vcpu {
     pub(super) fn new(id: u32, vm: &Arc<Vm>, lapic: Lapic) -> Result<Arc<Self>> {
         let run_page = VmoOptions::new(KVM_RUN_MMAP_SIZE).alloc()?;
         Ok(Arc::new(Self {
-            id,
             vm: Arc::downgrade(vm),
             guest_context: Mutex::new(GuestContext::new(id)?),
             lapic: SpinLock::new(lapic),
@@ -161,6 +159,76 @@ impl Vcpu {
             return_errno_with_message!(Errno::EBUSY, "cannot set sregs while vCPU is running");
         }
         context.set_sregs(arch_sregs_from_kvm(sregs));
+        Ok(())
+    }
+
+    pub fn set_cpuid_entries(&self, entries: Vec<VcpuCpuidEntry2>) -> Result<()> {
+        let mut context = self.guest_context.lock();
+        if context.is_running() {
+            return_errno_with_message!(Errno::EBUSY, "cannot set CPUID while vCPU is running");
+        }
+
+        context.set_cpuid_entries(entries.into_iter().map(ArchGuestCpuidEntry::from).collect());
+        Ok(())
+    }
+
+    pub fn get_msrs(&self, entries: &mut [VcpuMsrEntry]) -> Result<i32> {
+        let context = self.guest_context.lock();
+        if context.is_running() {
+            return_errno_with_message!(Errno::EBUSY, "cannot get MSRs while vCPU is running");
+        }
+
+        let mut handled_count = 0;
+        for entry in entries {
+            let Some(data) = context.read_msr(entry.index) else {
+                break;
+            };
+
+            entry.data = data;
+            handled_count += 1;
+        }
+
+        Ok(handled_count)
+    }
+
+    pub fn set_msrs(&self, entries: &[VcpuMsrEntry]) -> Result<i32> {
+        let mut context = self.guest_context.lock();
+        if context.is_running() {
+            return_errno_with_message!(Errno::EBUSY, "cannot set MSRs while vCPU is running");
+        }
+
+        let mut handled_count = 0;
+        for entry in entries {
+            if !context.write_msr(entry.index, entry.data) {
+                break;
+            }
+
+            handled_count += 1;
+        }
+
+        Ok(handled_count)
+    }
+
+    pub fn get_lapic(&self) -> Result<LapicState> {
+        {
+            let context = self.guest_context.lock();
+            if context.is_running() {
+                return_errno_with_message!(Errno::EBUSY, "cannot get LAPIC while vCPU is running");
+            }
+        }
+
+        Ok(self.lapic.lock().to_kvm_state())
+    }
+
+    pub fn set_lapic(&self, state: &LapicState) -> Result<()> {
+        {
+            let context = self.guest_context.lock();
+            if context.is_running() {
+                return_errno_with_message!(Errno::EBUSY, "cannot set LAPIC while vCPU is running");
+            }
+        }
+
+        self.lapic.lock().set_from_kvm_state(state);
         Ok(())
     }
 

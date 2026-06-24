@@ -28,7 +28,10 @@ pub(crate) mod vmx;
 pub(crate) mod x86;
 
 pub use self::{
-    context::{GuestContext, GuestCpuConfig, VcpuDtable, VcpuRegs, VcpuSegment, VcpuSregs},
+    context::{
+        GuestContext, GuestCpuConfig, GuestCpuidEntry, VcpuDtable, VcpuRegs, VcpuSegment,
+        VcpuSregs, default_cpuid_entries,
+    },
     exit::GuestExitInfo,
-    vmx::{VmxExitReason, init_vmx},
+    vmx::VmxExitReason,
 };

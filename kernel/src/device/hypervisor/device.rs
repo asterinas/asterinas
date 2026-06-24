@@ -5,10 +5,15 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use device_id::{DeviceId, MajorId, MinorId};
-use ostd::task::Task;
+use ostd::{
+    arch::vm::{GuestCpuConfig, default_cpuid_entries},
+    mm::VmIo,
+    task::Task,
+};
 
 use super::{KVM_MAJOR, KVM_MINOR, ioctl::*, vm::Vm, vm_file::VmFile};
 use crate::{
+    context::current_userspace,
     device::{Device, DeviceType, DevtmpfsInodeMeta},
     events::IoEvents,
     fs::{
@@ -64,6 +69,40 @@ impl HypervisorDeviceFile {
     fn alloc_vm_id(&self) -> u32 {
         self.next_vm_id.fetch_add(1, Ordering::Relaxed)
     }
+
+    fn get_supported_cpuid(&self, mut cpuid: VcpuCpuid2, arg: usize) -> Result<i32> {
+        let entries = default_cpuid_entries(GuestCpuConfig {
+            vcpu_id: 0,
+            lapic_id: 0,
+            vcpu_count: KVM_RECOMMENDED_VCPUS as u32,
+        });
+        let needed = u32::try_from(entries.len())?;
+        let requested = usize::try_from(cpuid.nent)?;
+        cpuid.nent = needed;
+
+        if requested < entries.len() {
+            current_userspace!().write_val(arg, &cpuid)?;
+            return_errno_with_message!(Errno::E2BIG, "the userspace CPUID buffer is too small");
+        }
+
+        current_userspace!().write_val(arg, &cpuid)?;
+        let entries_addr = arg
+            .checked_add(size_of::<VcpuCpuid2>())
+            .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+        let entries_len = entries
+            .len()
+            .checked_mul(size_of::<VcpuCpuidEntry2>())
+            .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+        let current = Task::current().unwrap();
+        let thread_local = current.as_thread_local().unwrap();
+        let user_space = CurrentUserSpace::new(thread_local);
+        let mut writer = user_space.writer(entries_addr, entries_len)?;
+        for entry in entries {
+            writer.write_val(&VcpuCpuidEntry2::from(entry))?;
+        }
+
+        Ok(0)
+    }
 }
 
 impl Pollable for HypervisorDeviceFile {
@@ -117,8 +156,15 @@ impl PerOpenFileOps for HypervisorDeviceFile {
 
                 Ok(vm_fd.into())
             }
+            CheckExtension => {
+                Ok(check_extension(raw_ioctl.arg()))
+            }
             GetVcpuMmapSize => {
                 Ok(KVM_RUN_MMAP_SIZE as i32)
+            }
+            cmd @ GetSupportedCpuid => {
+                let cpuid = cmd.with_data_ptr(|ptr| Ok(ptr.read()?))?;
+                self.get_supported_cpuid(cpuid, raw_ioctl.arg())
             }
             _ => {
                 let ioctl_nr = raw_ioctl.cmd() & 0xff;

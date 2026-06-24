@@ -3,13 +3,10 @@
 //! This module provides wrappers for VMX instructions and VMCS access
 #![allow(missing_docs)]
 
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 use crate::{
-    arch::vm::context::VcpuRegs,
-    error,
-    error::Error,
-    info,
-    mm::{Gpaddr, Paddr},
-    prelude::*,
+    arch::vm::context::VcpuRegs, error, error::Error, info, mm::Frame, prelude::*, sync::SpinLock,
 };
 
 type GuestPhysAddr = Gpaddr;
@@ -18,13 +15,26 @@ type PhysAddr = Paddr;
 /// VMCS revision identifier (read from MSR)
 static mut VMCS_REVISION: u32 = 0;
 
+static EPT_FLUSH_LOCK: SpinLock<()> = SpinLock::new(());
+static EPT_FLUSH_ACKS: AtomicUsize = AtomicUsize::new(0);
+static EPT_FLUSH_ERRORS: AtomicUsize = AtomicUsize::new(0);
+
+const INVEPT_ALL_CONTEXTS: u64 = 2;
+const EPT_VPID_CAP_INVEPT: u64 = 1 << 20;
+const EPT_VPID_CAP_INVEPT_ALL_CONTEXTS: u64 = 1 << 26;
+
 /*
  * This file contains code derived from the RVM-Tutorial project.
  * Source: https://github.com/equation314/RVM-Tutorial
  */
-#[allow(non_camel_case_types)]
+#[expect(
+    dead_code,
+    non_camel_case_types,
+    reason = "VMX names follow Intel SDM terminology, and the catalog includes MSRs reserved for future VMX paths."
+)]
+#[repr(u32)]
 #[derive(Clone, Copy, Debug)]
-pub enum Msr {
+pub(crate) enum Msr {
     IA32_FEATURE_CONTROL = 0x3a,
 
     IA32_PAT = 0x277,
@@ -58,7 +68,7 @@ pub enum Msr {
 }
 
 #[inline]
-pub unsafe fn rdmsr(msr: u32) -> u64 {
+unsafe fn rdmsr(msr: u32) -> u64 {
     let low: u32;
     let high: u32;
     unsafe {
@@ -74,7 +84,7 @@ pub unsafe fn rdmsr(msr: u32) -> u64 {
 }
 
 #[inline]
-pub unsafe fn wrmsr(msr: u32, value: u64) {
+unsafe fn wrmsr(msr: u32, value: u64) {
     let low = value as u32;
     let high = (value >> 32) as u32;
     unsafe {
@@ -89,11 +99,11 @@ pub unsafe fn wrmsr(msr: u32, value: u64) {
 }
 
 impl Msr {
-    pub fn read(&self) -> u64 {
+    pub(crate) fn read(&self) -> u64 {
         unsafe { rdmsr(*self as u32) }
     }
 
-    pub fn write(&self, value: u64) {
+    pub(crate) fn write(&self, value: u64) {
         unsafe { wrmsr(*self as u32, value) }
     }
 }
@@ -104,7 +114,7 @@ impl Msr {
 // VMCS Access Functions
 // ============================================
 #[inline]
-pub unsafe fn vmread(field: u32) -> Result<u64> {
+unsafe fn vmread(field: u32) -> Result<u64> {
     let value: u64;
     let mut rflags: u64;
     unsafe {
@@ -130,7 +140,7 @@ pub unsafe fn vmread(field: u32) -> Result<u64> {
 }
 
 #[inline]
-pub unsafe fn vmwrite(field: u32, value: u64) -> Result<()> {
+unsafe fn vmwrite(field: u32, value: u64) -> Result<()> {
     let mut rflags: u64;
     unsafe {
         core::arch::asm!(
@@ -157,14 +167,14 @@ pub unsafe fn vmwrite(field: u32, value: u64) -> Result<()> {
 macro_rules! vmcs_read {
     ($field_enum: ident, u64) => {
         impl $field_enum {
-            pub fn read(self) -> Result<u64> {
+            pub(crate) fn read(self) -> Result<u64> {
                 unsafe { vmread(self as u32) }
             }
         }
     };
     ($field_enum: ident, $ux: ty) => {
         impl $field_enum {
-            pub fn read(self) -> Result<$ux> {
+            pub(crate) fn read(self) -> Result<$ux> {
                 unsafe { vmread(self as u32).map(|v| v as $ux) }
             }
         }
@@ -174,14 +184,14 @@ macro_rules! vmcs_read {
 macro_rules! vmcs_write {
     ($field_enum: ident, u64) => {
         impl $field_enum {
-            pub fn write(self, value: u64) -> Result<()> {
+            pub(crate) fn write(self, value: u64) -> Result<()> {
                 unsafe { vmwrite(self as u32, value) }
             }
         }
     };
     ($field_enum: ident, $ux: ty) => {
         impl $field_enum {
-            pub fn write(self, value: $ux) -> Result<()> {
+            pub(crate) fn write(self, value: $ux) -> Result<()> {
                 unsafe { vmwrite(self as u32, value as u64) }
             }
         }
@@ -190,8 +200,13 @@ macro_rules! vmcs_write {
 
 /// 16-Bit Control Fields. (SDM Vol. 3D, Appendix B.1.1)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsControl16 {
+#[expect(
+    clippy::upper_case_acronyms,
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(crate) enum VmcsControl16 {
     /// Virtual-processor identifier (VPID).
     VPID = 0x0,
     /// Posted-interrupt notification vector.
@@ -199,13 +214,16 @@ pub enum VmcsControl16 {
     /// EPTP index.
     EPTP_INDEX = 0x4,
 }
-vmcs_read!(VmcsControl16, u16);
-vmcs_write!(VmcsControl16, u16);
 
 /// 64-Bit Control Fields. (SDM Vol. 3D, Appendix B.2.1)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsControl64 {
+#[expect(
+    clippy::upper_case_acronyms,
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(crate) enum VmcsControl64 {
     /// Address of I/O bitmap A (full).
     IO_BITMAP_A_ADDR = 0x2000,
     /// Address of I/O bitmap B (full).
@@ -264,8 +282,12 @@ vmcs_write!(VmcsControl64, u64);
 
 /// 32-Bit Control Fields. (SDM Vol. 3D, Appendix B.3.1)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsControl32 {
+#[expect(
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(crate) enum VmcsControl32 {
     /// Pin-based VM-execution controls.
     PINBASED_EXEC_CONTROLS = 0x4000,
     /// Primary processor-based VM-execution controls.
@@ -308,8 +330,12 @@ vmcs_write!(VmcsControl32, u32);
 
 /// Natural-Width Control Fields. (SDM Vol. 3D, Appendix B.4.1)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsControlNW {
+#[expect(
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(crate) enum VmcsControlNW {
     /// CR0 guest/host mask.
     CR0_GUEST_HOST_MASK = 0x6000,
     /// CR4 guest/host mask.
@@ -331,8 +357,13 @@ vmcs_read!(VmcsControlNW, usize);
 vmcs_write!(VmcsControlNW, usize);
 
 /// 16-Bit Guest-State Fields. (SDM Vol. 3D, Appendix B.1.2)
-#[allow(non_camel_case_types)]
-pub enum VmcsGuest16 {
+#[derive(Clone, Copy, Debug)]
+#[expect(
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(crate) enum VmcsGuest16 {
     /// Guest ES selector.
     ES_SELECTOR = 0x800,
     /// Guest CS selector.
@@ -359,8 +390,12 @@ vmcs_write!(VmcsGuest16, u16);
 
 /// 64-Bit Guest-State Fields. (SDM Vol. 3D, Appendix B.2.3)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsGuest64 {
+#[expect(
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(crate) enum VmcsGuest64 {
     /// VMCS link pointer (full).
     LINK_PTR = 0x2800,
     /// Guest IA32_DEBUGCTL (full).
@@ -389,8 +424,13 @@ vmcs_write!(VmcsGuest64, u64);
 
 /// 32-Bit Guest-State Fields. (SDM Vol. 3D, Appendix B.3.3)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsGuest32 {
+#[expect(
+    clippy::upper_case_acronyms,
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(crate) enum VmcsGuest32 {
     /// Guest ES limit.
     ES_LIMIT = 0x4800,
     /// Guest CS limit.
@@ -443,8 +483,12 @@ vmcs_write!(VmcsGuest32, u32);
 
 /// Natural-Width Guest-State Fields. (SDM Vol. 3D, Appendix B.4.3)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsGuestNW {
+#[expect(
+    clippy::upper_case_acronyms,
+    non_camel_case_types,
+    reason = "VMX names follow Intel SDM terminology."
+)]
+pub(crate) enum VmcsGuestNW {
     /// Guest CR0.
     CR0 = 0x6800,
     /// Guest CR3.
@@ -491,8 +535,11 @@ vmcs_write!(VmcsGuestNW, usize);
 
 /// 16-Bit Host-State Fields. (SDM Vol. 3D, Appendix B.1.3)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsHost16 {
+#[expect(
+    non_camel_case_types,
+    reason = "VMX names follow Intel SDM terminology."
+)]
+pub(super) enum VmcsHost16 {
     /// Host ES selector.
     ES_SELECTOR = 0xC00,
     /// Host CS selector.
@@ -508,13 +555,16 @@ pub enum VmcsHost16 {
     /// Host TR selector.
     TR_SELECTOR = 0xC0C,
 }
-vmcs_read!(VmcsHost16, u16);
 vmcs_write!(VmcsHost16, u16);
 
 /// 64-Bit Host-State Fields. (SDM Vol. 3D, Appendix B.2.4)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsHost64 {
+#[expect(
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(super) enum VmcsHost64 {
     /// Host IA32_PAT (full).
     IA32_PAT = 0x2C00,
     /// Host IA32_EFER (full).
@@ -522,23 +572,29 @@ pub enum VmcsHost64 {
     /// Host IA32_PERF_GLOBAL_CTRL (full).
     IA32_PERF_GLOBAL_CTRL = 0x2C04,
 }
-vmcs_read!(VmcsHost64, u64);
 vmcs_write!(VmcsHost64, u64);
 
 /// 32-Bit Host-State Field. (SDM Vol. 3D, Appendix B.3.4)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsHost32 {
+#[expect(
+    non_camel_case_types,
+    reason = "VMX names follow Intel SDM terminology."
+)]
+pub(super) enum VmcsHost32 {
     /// Host IA32_SYSENTER_CS.
     IA32_SYSENTER_CS = 0x4C00,
 }
-vmcs_read!(VmcsHost32, u32);
 vmcs_write!(VmcsHost32, u32);
 
 /// Natural-Width Host-State Fields. (SDM Vol. 3D, Appendix B.4.4)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsHostNW {
+#[expect(
+    clippy::upper_case_acronyms,
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(super) enum VmcsHostNW {
     /// Host CR0.
     CR0 = 0x6C00,
     /// Host CR3.
@@ -564,13 +620,15 @@ pub enum VmcsHostNW {
     /// Host RIP.
     RIP = 0x6C16,
 }
-vmcs_read!(VmcsHostNW, usize);
 vmcs_write!(VmcsHostNW, usize);
 
 /// 64-Bit Read-Only Data Fields. (SDM Vol. 3D, Appendix B.2.2)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsReadOnly64 {
+#[expect(
+    non_camel_case_types,
+    reason = "VMX names follow Intel SDM terminology."
+)]
+pub(crate) enum VmcsReadOnly64 {
     /// Guest-physical address (full).
     GUEST_PHYSICAL_ADDR = 0x2400,
 }
@@ -578,8 +636,12 @@ vmcs_read!(VmcsReadOnly64, u64);
 
 /// 32-Bit Read-Only Data Fields. (SDM Vol. 3D, Appendix B.3.2)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsReadOnly32 {
+#[expect(
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(crate) enum VmcsReadOnly32 {
     /// VM-instruction error.
     VM_INSTRUCTION_ERROR = 0x4400,
     /// Exit reason.
@@ -601,8 +663,12 @@ vmcs_read!(VmcsReadOnly32, u32);
 
 /// Natural-Width Read-Only Data Fields. (SDM Vol. 3D, Appendix B.4.2)
 #[derive(Clone, Copy, Debug)]
-#[allow(non_camel_case_types)]
-pub enum VmcsReadOnlyNW {
+#[expect(
+    dead_code,
+    non_camel_case_types,
+    reason = "VMCS field names follow Intel SDM terminology, including fields reserved for future use."
+)]
+pub(crate) enum VmcsReadOnlyNW {
     /// Exit qualification.
     EXIT_QUALIFICATION = 0x6400,
     /// I/O RCX.
@@ -624,7 +690,7 @@ vmcs_read!(VmcsReadOnlyNW, usize);
 // VMX Build Functions
 // ============================================
 
-pub fn set_control(
+pub(super) fn set_control(
     control: VmcsControl32,
     capability_msr: Msr,
     old_value: u32,
@@ -690,7 +756,7 @@ macro_rules! def_exit_reasons {
 }
 
 def_exit_reasons! {
-    #[allow(non_camel_case_types)]
+    #[expect(non_camel_case_types, reason = "VMX names follow Intel SDM terminology.")]
     /// VMX basic exit reasons. (SDM Vol. 3D, Appendix C)
     pub enum VmxExitReason {
         EXCEPTION_NMI = 0,
@@ -764,16 +830,16 @@ def_exit_reasons! {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct VmxExitInfo {
-    pub entry_failure: bool,
-    pub exit_reason: u32,
-    pub instruction_len: u32,
-    pub exit_qualification: u64,
-    pub guest_phys_addr: GuestPhysAddr,
-    pub guest_rip: GuestPhysAddr,
+pub(crate) struct VmxExitInfo {
+    pub(crate) entry_failure: bool,
+    pub(crate) exit_reason: u32,
+    pub(crate) instruction_len: u32,
+    pub(crate) exit_qualification: u64,
+    pub(crate) guest_phys_addr: GuestPhysAddr,
+    pub(crate) guest_rip: GuestPhysAddr,
 }
 
-pub fn exit_info() -> Result<VmxExitInfo> {
+pub(crate) fn exit_info() -> Result<VmxExitInfo> {
     let reason_raw = VmcsReadOnly32::EXIT_REASON.read()?;
     let entry_failure = (reason_raw & (1 << 31)) != 0;
     let exit_reason = reason_raw & 0x7FFF_FFFF;
@@ -794,14 +860,12 @@ pub fn exit_info() -> Result<VmxExitInfo> {
 // ============================================
 
 /// Initialize VMX support
-pub fn init_vmx() -> Result<()> {
+pub(crate) fn init_vmx() -> Result<()> {
     // Check CPUID for VMX support
-    unsafe {
-        let cpuid_result = core::arch::x86_64::__cpuid(1);
-        if (cpuid_result.ecx & (1 << 5)) == 0 {
-            error!("VMX not supported by CPU");
-            return Err(Error::NotEnoughResources);
-        }
+    let cpuid_result = core::arch::x86_64::__cpuid(1);
+    if (cpuid_result.ecx & (1 << 5)) == 0 {
+        error!("VMX not supported by CPU");
+        return Err(Error::NotEnoughResources);
     }
 
     // Read VMX basic MSR to get VMCS revision ID
@@ -844,7 +908,7 @@ pub fn init_vmx() -> Result<()> {
 
 /// Execute VMXON
 #[inline]
-pub unsafe fn vmxon(vmxon_region: PhysAddr) -> Result<()> {
+unsafe fn vmxon(vmxon_region: PhysAddr) -> Result<()> {
     let mut rflags: u64;
     unsafe {
         core::arch::asm!(
@@ -868,21 +932,68 @@ pub unsafe fn vmxon(vmxon_region: PhysAddr) -> Result<()> {
     Ok(())
 }
 
-/// Execute VMXOFF
-#[inline]
-pub unsafe fn vmxoff() -> Result<()> {
-    let mut rflags: u64;
+#[repr(C, align(16))]
+struct InveptDescriptor {
+    eptp: u64,
+    reserved: u64,
+}
+
+/// Invalidates EPT-derived translations on every CPU.
+pub(crate) fn flush_ept_all_contexts_sync() -> Result<()> {
+    let cap = Msr::IA32_VMX_EPT_VPID_CAP.read();
+    if cap & EPT_VPID_CAP_INVEPT == 0 || cap & EPT_VPID_CAP_INVEPT_ALL_CONTEXTS == 0 {
+        return Err(Error::NotEnoughResources);
+    }
+
+    let _flush_guard = EPT_FLUSH_LOCK.lock();
+    EPT_FLUSH_ACKS.store(0, Ordering::Release);
+    EPT_FLUSH_ERRORS.store(0, Ordering::Release);
+
+    let targets = crate::cpu::CpuSet::new_full();
+    let cpu_count = crate::cpu::num_cpus();
+    crate::smp::inter_processor_call(&targets, flush_ept_all_contexts_on_cpu);
+
+    while EPT_FLUSH_ACKS.load(Ordering::Acquire) < cpu_count {
+        core::hint::spin_loop();
+    }
+
+    if EPT_FLUSH_ERRORS.load(Ordering::Acquire) != 0 {
+        return Err(Error::InvalidArgs);
+    }
+    Ok(())
+}
+
+fn flush_ept_all_contexts_on_cpu() {
+    if invept_all_contexts().is_err() {
+        EPT_FLUSH_ERRORS.fetch_add(1, Ordering::AcqRel);
+    }
+    EPT_FLUSH_ACKS.fetch_add(1, Ordering::AcqRel);
+}
+
+fn invept_all_contexts() -> Result<()> {
+    let descriptor = InveptDescriptor {
+        eptp: 0,
+        reserved: 0,
+    };
+    let mut failed: u8;
+    let mut invalid: u8;
     unsafe {
         core::arch::asm!(
-            "vmxoff",
-            "pushfq",
-            "pop {}",
-            out(reg) rflags,
-            options(nostack)
+            "invept {typ}, [{desc}]",
+            "setb {failed}",
+            "setz {invalid}",
+            typ = in(reg) INVEPT_ALL_CONTEXTS,
+            desc = in(reg) &descriptor,
+            failed = lateout(reg_byte) failed,
+            invalid = lateout(reg_byte) invalid,
+            options(nostack, readonly)
         );
     }
 
-    if (rflags & 1) != 0 {
+    if failed != 0 {
+        return Err(Error::InvalidArgs);
+    }
+    if invalid != 0 {
         return Err(Error::InvalidArgs);
     }
 
@@ -891,7 +1002,7 @@ pub unsafe fn vmxoff() -> Result<()> {
 
 /// Execute VMCLEAR
 #[inline]
-pub fn vmclear(vmcs: u64) -> Result<()> {
+pub(super) fn vmclear(vmcs: u64) -> Result<()> {
     let mut rflags: u64;
     unsafe {
         core::arch::asm!(
@@ -916,7 +1027,7 @@ pub fn vmclear(vmcs: u64) -> Result<()> {
 
 /// Execute VMPTRLD
 #[inline]
-pub fn vmptrld(vmcs: u64) -> Result<()> {
+pub(super) fn vmptrld(vmcs: u64) -> Result<()> {
     let mut rflags: u64;
     unsafe {
         core::arch::asm!(
@@ -940,7 +1051,7 @@ pub fn vmptrld(vmcs: u64) -> Result<()> {
 }
 
 /// Allocate and initialize VMCS region
-pub fn alloc_vmcs() -> Result<PhysAddr> {
+pub(super) fn alloc_vmcs() -> Result<Frame<()>> {
     use crate::mm::{FrameAllocOptions, paddr_to_vaddr};
 
     // Allocate a single page frame with zero initialization
@@ -960,14 +1071,11 @@ pub fn alloc_vmcs() -> Result<PhysAddr> {
         // Rest of page is already zeroed by FrameAllocOptions
     }
 
-    // Leak the frame to prevent deallocation
-    core::mem::forget(frame);
-
-    Ok(phys_addr)
+    Ok(frame)
 }
 
 /// Allocate and initialize VMXON region
-pub fn alloc_vmxon_region() -> Result<PhysAddr> {
+fn alloc_vmxon_region() -> Result<PhysAddr> {
     use crate::mm::{FrameAllocOptions, paddr_to_vaddr};
 
     // Allocate a single page frame with zero initialization
@@ -993,12 +1101,12 @@ pub fn alloc_vmxon_region() -> Result<PhysAddr> {
     Ok(phys_addr)
 }
 
-pub fn vcpu_run(guest_regs_ptr: *mut VcpuRegs, launched: u64) -> u64 {
+pub(crate) fn vcpu_run(guest_regs_ptr: *mut VcpuRegs, launched: u64) -> u64 {
     unsafe { __rkvm_vcpu_run(guest_regs_ptr, launched) }
 }
 
-pub fn vm_exit_handler_virtaddr() -> usize {
-    __rkvm_vm_exit_handler as usize
+pub(super) fn vm_exit_handler_virtaddr() -> usize {
+    __rkvm_vm_exit_handler as *const () as usize
 }
 
 unsafe extern "C" {
@@ -1134,8 +1242,3 @@ core::arch::global_asm!(
         ret
     "#
 );
-
-/// Get VMCS revision ID
-pub fn get_vmcs_revision() -> u32 {
-    unsafe { VMCS_REVISION }
-}

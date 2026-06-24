@@ -1,6 +1,10 @@
 use x86::vmx::vmcs::control::{
     EntryControls, ExitControls, PinbasedControls, PrimaryControls, SecondaryControls,
 };
+use x86::{
+    dtables::{self, DescriptorTablePointer},
+    segmentation, task,
+};
 use x86_64::registers::{
     control::{Cr0, Cr3, Cr4},
     model_specific::EferFlags,
@@ -9,17 +13,16 @@ use x86_64::registers::{
 use super::{
     context::{VcpuControlRegisters, VcpuMsrs, VcpuRegs, VcpuSegment, VcpuSregs},
     vmx::*,
-    x86::{DescriptorTablePointer, cs, ds, es, fs, get_tr_base, gs, sgdt, sidt, ss, tr},
+    x86::get_tr_base,
 };
 use crate::{
-    Error,
-    mm::{Frame, FrameAllocOptions, HasPaddr, PAGE_SIZE, Paddr, VmIo},
+    mm::{Frame, FrameAllocOptions, PAGE_SIZE, VmIo},
     prelude::*,
 };
 
 pub(crate) struct Vmcs {
-    /// VMCS physical address
-    vmcs_phys: Paddr,
+    /// VMCS memory region.
+    vmcs_region: Frame<()>,
     /// IO bitmap A for trapping lower port range accesses.
     io_bitmap_a: Frame<()>,
     /// IO bitmap B for trapping upper port range accesses.
@@ -60,24 +63,18 @@ impl VmcsGuestState {
 impl Vmcs {
     pub fn new() -> Result<Self> {
         // Allocate VMCS
-        let vmcs_phys = alloc_vmcs().map_err(Error::from)?;
+        let vmcs_region = alloc_vmcs()?;
 
-        let io_bitmap_a = FrameAllocOptions::new()
-            .alloc_frame()
-            .map_err(Error::from)?;
-        let io_bitmap_b = FrameAllocOptions::new()
-            .alloc_frame()
-            .map_err(Error::from)?;
-        let msr_bitmap = FrameAllocOptions::new()
-            .alloc_frame()
-            .map_err(Error::from)?;
+        let io_bitmap_a = FrameAllocOptions::new().alloc_frame()?;
+        let io_bitmap_b = FrameAllocOptions::new().alloc_frame()?;
+        let msr_bitmap = FrameAllocOptions::new().alloc_frame()?;
         let all_ones = [0xff_u8; PAGE_SIZE];
-        io_bitmap_a.write_bytes(0, &all_ones).map_err(Error::from)?;
-        io_bitmap_b.write_bytes(0, &all_ones).map_err(Error::from)?;
-        msr_bitmap.write_bytes(0, &all_ones).map_err(Error::from)?;
+        io_bitmap_a.write_bytes(0, &all_ones)?;
+        io_bitmap_b.write_bytes(0, &all_ones)?;
+        msr_bitmap.write_bytes(0, &all_ones)?;
 
-        return Ok(Self {
-            vmcs_phys,
+        Ok(Self {
+            vmcs_region,
             io_bitmap_a,
             io_bitmap_b,
             msr_bitmap,
@@ -86,15 +83,15 @@ impl Vmcs {
                 loaded: false,
                 launched: false,
             },
-        });
+        })
     }
 
-    // pub fn vmcs_phys(&self) -> Paddr {
-    //     self.vmcs_phys
-    // }
+    fn vmcs_phys(&self) -> Paddr {
+        self.vmcs_region.paddr()
+    }
 
     pub fn load(&mut self) -> Result<()> {
-        vmptrld(self.vmcs_phys as _)?;
+        vmptrld(self.vmcs_phys() as _)?;
         self.state.loaded = true;
         Ok(())
     }
@@ -112,7 +109,7 @@ impl Vmcs {
     }
 
     pub fn quit(&mut self) -> Result<()> {
-        vmclear(self.vmcs_phys as u64)?;
+        vmclear(self.vmcs_phys() as u64)?;
         self.state.loaded = false;
         self.state.launched = false;
         Ok(())
@@ -120,8 +117,8 @@ impl Vmcs {
 
     pub fn init(&mut self, vmcs_guest_state: VmcsGuestState, eptp: u64) -> Result<()> {
         if !self.state.loaded {
-            vmclear(self.vmcs_phys as u64)?;
-            vmptrld(self.vmcs_phys as u64)?;
+            vmclear(self.vmcs_phys() as u64)?;
+            vmptrld(self.vmcs_phys() as u64)?;
             self.state.loaded = true;
         }
         self.setup_vmcs(vmcs_guest_state, eptp)?;
@@ -146,25 +143,29 @@ impl Vmcs {
         VmcsHostNW::CR3.write(Cr3::read_raw().0.start_address().as_u64() as _)?; // TODO: check difference with JiaYuekai
         VmcsHostNW::CR4.write(Cr4::read_raw() as _)?;
 
-        VmcsHost16::ES_SELECTOR.write(es().bits())?;
-        VmcsHost16::CS_SELECTOR.write(cs().bits())?;
-        VmcsHost16::SS_SELECTOR.write(ss().bits())?;
-        VmcsHost16::DS_SELECTOR.write(ds().bits())?;
-        VmcsHost16::FS_SELECTOR.write(fs().bits())?;
-        VmcsHost16::GS_SELECTOR.write(gs().bits())?;
+        VmcsHost16::ES_SELECTOR.write(segmentation::es().bits())?;
+        VmcsHost16::CS_SELECTOR.write(segmentation::cs().bits())?;
+        VmcsHost16::SS_SELECTOR.write(segmentation::ss().bits())?;
+        VmcsHost16::DS_SELECTOR.write(segmentation::ds().bits())?;
+        VmcsHost16::FS_SELECTOR.write(segmentation::fs().bits())?;
+        VmcsHost16::GS_SELECTOR.write(segmentation::gs().bits())?;
         VmcsHostNW::FS_BASE.write(Msr::IA32_FS_BASE.read() as _)?;
         VmcsHostNW::GS_BASE.write(Msr::IA32_GS_BASE.read() as _)?;
 
-        let tr = tr();
-        let mut gdtp = DescriptorTablePointer::default();
-        let mut idtp = DescriptorTablePointer::default();
-        sgdt(&mut gdtp);
-        sidt(&mut idtp);
+        // SAFETY: STR only reads the current task-register selector.
+        let tr = unsafe { task::tr() };
+        let mut gdtp = DescriptorTablePointer::<u64>::default();
+        let mut idtp = DescriptorTablePointer::<u64>::default();
+        // SAFETY: SGDT/SIDT only read descriptor-table registers into local memory.
+        unsafe {
+            dtables::sgdt(&mut gdtp);
+            dtables::sidt(&mut idtp);
+        }
 
         VmcsHost16::TR_SELECTOR.write(tr.bits())?;
         VmcsHostNW::TR_BASE.write(get_tr_base(tr, &gdtp) as _)?;
-        VmcsHostNW::GDTR_BASE.write(gdtp.base as _)?;
-        VmcsHostNW::IDTR_BASE.write(idtp.base as _)?;
+        VmcsHostNW::GDTR_BASE.write(gdtp.base as usize)?;
+        VmcsHostNW::IDTR_BASE.write(idtp.base as usize)?;
         VmcsHostNW::RIP.write(vm_exit_handler_virtaddr() as _)?;
 
         VmcsHostNW::IA32_SYSENTER_ESP.write(0)?;
@@ -363,6 +364,18 @@ impl Vmcs {
         // setup EPT
         VmcsControl64::EPTP.write(eptp)?;
         Ok(())
+    }
+}
+
+impl Drop for Vmcs {
+    fn drop(&mut self) {
+        if !self.state.loaded {
+            return;
+        }
+
+        if let Err(err) = vmclear(self.vmcs_phys() as u64) {
+            warn!("rustshyper: failed to clear VMCS during drop: {:?}", err);
+        }
     }
 }
 

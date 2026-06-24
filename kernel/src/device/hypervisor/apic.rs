@@ -1,16 +1,31 @@
 //! Emulated LAPIC and IOAPIC device for guest VMs.
 //!
 //! Use pure software emulate for now.
+use super::ioctl::LapicState;
 use crate::prelude::*;
 
 pub const IOAPIC_NUM_PINS: usize = 24;
 
+const APIC_MODE_EXTINT: u32 = 0x7;
+const APIC_LVT_VECTOR_MASK: u32 = 0xFF;
+const APIC_LVT_DELIVERY_MODE_MASK: u32 = 0x700;
+const APIC_LVT_SEND_PENDING: u32 = 1 << 12;
+const APIC_LVT_INPUT_POLARITY: u32 = 1 << 13;
+const APIC_LVT_REMOTE_IRR: u32 = 1 << 14;
+const APIC_LVT_LEVEL_TRIGGER: u32 = 1 << 15;
 const APIC_LVT_MASKED: u32 = 1 << 16;
+const APIC_LINT_MASK: u32 = APIC_LVT_VECTOR_MASK
+    | APIC_LVT_DELIVERY_MODE_MASK
+    | APIC_LVT_SEND_PENDING
+    | APIC_LVT_INPUT_POLARITY
+    | APIC_LVT_REMOTE_IRR
+    | APIC_LVT_LEVEL_TRIGGER
+    | APIC_LVT_MASKED;
 const APIC_TIMER_MODE_ONESHOT: u32 = 0b00;
 const APIC_TIMER_MODE_PERIODIC: u32 = 0b01;
 
 /// Local APIC state.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Lapic {
     pub id: u32,
     pub ldr: u32, // Logical Destination Register
@@ -26,7 +41,28 @@ pub struct Lapic {
     pub icr: [u32; 2], // Interrupt Command Register, 64 bits
     pub tmr: [u32; 8], // Trigger Mode Register
 
+    pub lvt_lint0: u32,
+    pub lvt_lint1: u32,
+
     pub timer: ApicTimer,
+}
+
+impl Default for Lapic {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            ldr: 0,
+            tpr: 0,
+            ppr: 0,
+            irr: [0; 8],
+            isr: [0; 8],
+            icr: [0; 2],
+            tmr: [0; 8],
+            lvt_lint0: APIC_LVT_MASKED,
+            lvt_lint1: APIC_LVT_MASKED,
+            timer: ApicTimer::default(),
+        }
+    }
 }
 
 /// Intel® 64 and IA-32 Architectures Software Developer’s Manual.
@@ -145,6 +181,89 @@ impl Default for Ioapic {
 }
 
 impl Lapic {
+    pub fn to_kvm_state(&self) -> LapicState {
+        let mut state = LapicState::default();
+
+        write_apic_reg(&mut state.regs, XLAPIC_RW_ID, self.id << 24);
+        write_apic_reg(&mut state.regs, XLAPIC_RO_VER, (6 << 16) | 0x14);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_TPR, self.tpr as u32);
+        write_apic_reg(&mut state.regs, XLAPIC_RO_PPR, self.ppr as u32);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_LDR, self.ldr);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_DFR, 0xFFFF_FFFF);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_SIVR, 0x1FF);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_LVT_CMCI, APIC_LVT_MASKED);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_LVT_THERM, APIC_LVT_MASKED);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_LVT_PERF, APIC_LVT_MASKED);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_LVT_LINT0, self.lvt_lint0);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_LVT_LINT1, self.lvt_lint1);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_LVT_ERROR, APIC_LVT_MASKED);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_LVT_TIMER, self.timer.lvt_timer);
+        write_apic_reg(
+            &mut state.regs,
+            XLAPIC_RW_TIMER_INIT,
+            self.timer.initial_count,
+        );
+        write_apic_reg(
+            &mut state.regs,
+            XLAPIC_RO_TIMER_CURR,
+            self.timer.current_count,
+        );
+        write_apic_reg(&mut state.regs, XLAPIC_RW_TIMER_DIVI, self.timer.divide);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_ICR_LOW, self.icr[0]);
+        write_apic_reg(&mut state.regs, XLAPIC_RW_ICR_HIGH, self.icr[1]);
+
+        for index in 0..8 {
+            write_apic_reg(
+                &mut state.regs,
+                apic_reg_array_offset(XLAPIC_RO_ISR_BASE, index),
+                self.isr[index],
+            );
+            write_apic_reg(
+                &mut state.regs,
+                apic_reg_array_offset(XLAPIC_RO_TMR_BASE, index),
+                self.tmr[index],
+            );
+            write_apic_reg(
+                &mut state.regs,
+                apic_reg_array_offset(XLAPIC_RO_IRR_BASE, index),
+                self.irr[index],
+            );
+        }
+
+        state
+    }
+
+    pub fn set_from_kvm_state(&mut self, state: &LapicState) {
+        self.id = (read_apic_reg(&state.regs, XLAPIC_RW_ID) >> 24) & 0xFF;
+        self.tpr = (read_apic_reg(&state.regs, XLAPIC_RW_TPR) & 0xFF) as u8;
+        self.ldr = read_apic_reg(&state.regs, XLAPIC_RW_LDR) & 0xFF00_0000;
+        self.lvt_lint0 = sanitize_lvt_lint(read_apic_reg(&state.regs, XLAPIC_RW_LVT_LINT0));
+        self.lvt_lint1 = sanitize_lvt_lint(read_apic_reg(&state.regs, XLAPIC_RW_LVT_LINT1));
+        self.timer.lvt_timer = read_apic_reg(&state.regs, XLAPIC_RW_LVT_TIMER);
+        self.timer.initial_count = read_apic_reg(&state.regs, XLAPIC_RW_TIMER_INIT);
+        self.timer.current_count = read_apic_reg(&state.regs, XLAPIC_RO_TIMER_CURR);
+        self.timer.divide = read_apic_reg(&state.regs, XLAPIC_RW_TIMER_DIVI);
+        self.icr[0] = read_apic_reg(&state.regs, XLAPIC_RW_ICR_LOW);
+        self.icr[1] = read_apic_reg(&state.regs, XLAPIC_RW_ICR_HIGH);
+
+        for index in 0..8 {
+            self.isr[index] = read_apic_reg(
+                &state.regs,
+                apic_reg_array_offset(XLAPIC_RO_ISR_BASE, index),
+            );
+            self.tmr[index] = read_apic_reg(
+                &state.regs,
+                apic_reg_array_offset(XLAPIC_RO_TMR_BASE, index),
+            );
+            self.irr[index] = read_apic_reg(
+                &state.regs,
+                apic_reg_array_offset(XLAPIC_RO_IRR_BASE, index),
+            );
+        }
+
+        self.update_ppr();
+    }
+
     pub fn add_pending_interrupt(&mut self, vec: u8) {
         // Set the corresponding bit in IRR.
         Self::set_bit(&mut self.irr, vec);
@@ -185,9 +304,30 @@ impl Lapic {
     }
 }
 
+fn sanitize_lvt_lint(value: u32) -> u32 {
+    value & APIC_LINT_MASK
+}
+
+fn apic_reg_array_offset(base: u64, index: usize) -> u64 {
+    base + (index as u64) * 0x10
+}
+
+fn read_apic_reg(regs: &[u8], offset: u64) -> u32 {
+    let offset = offset as usize;
+    let mut bytes = [0; 4];
+    bytes.copy_from_slice(&regs[offset..offset + 4]);
+    u32::from_le_bytes(bytes)
+}
+
+fn write_apic_reg(regs: &mut [u8], offset: u64, value: u32) {
+    let offset = offset as usize;
+    regs[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
 use ostd::{
-    arch::tsc_freq,
-    vm::{self, GuestInterruptPort, GuestTimerPort},
+    arch::{tsc_freq, vm::GuestContext},
+    mm::Gpaddr,
+    vm::{GuestInterruptPort, GuestPhysMemSpace, GuestTimerPort},
 };
 
 impl GuestInterruptPort for Lapic {
@@ -415,10 +555,6 @@ struct MmioInstruction {
     len: usize,
 }
 
-use alloc::sync::Arc;
-
-use ostd::mm::{FallibleVmRead, VmWriter};
-
 use super::vcpu::Vcpu;
 
 /// Emulate a guest access to APIC MMIO region.
@@ -439,7 +575,7 @@ pub(super) fn emulate_apic_mmio(vcpu: Arc<Vcpu>, fault_gpa: u64) -> Result<bool>
     let (guest_rip, guest_rip_gpa) = {
         let context = vcpu.guest_context();
         let guest_rip = context.rip() as usize;
-        let guest_rip_gpa = match vm::translate_gva_to_gpa(&context, guest_mem, guest_rip) {
+        let guest_rip_gpa = match translate_gva_to_gpa(&context, guest_mem, guest_rip) {
             Ok(gpa) => gpa,
             Err(err) => {
                 error!(
@@ -482,6 +618,60 @@ pub(super) fn emulate_apic_mmio(vcpu: Arc<Vcpu>, fault_gpa: u64) -> Result<bool>
 
     vcpu.guest_context().advance_rip(insn.len as u64);
     Ok(true)
+}
+
+fn translate_gva_to_gpa(
+    context: &GuestContext,
+    guest_mem: &GuestPhysMemSpace,
+    gva: usize,
+) -> core::result::Result<Gpaddr, ostd::Error> {
+    const PTE_PRESENT: u64 = 1 << 0;
+    const PTE_HUGE: u64 = 1 << 7;
+    const PTE_ADDR_MASK: u64 = 0x000f_ffff_ffff_f000;
+    const PAGE_2M_MASK: Gpaddr = (1 << 21) - 1;
+    const PAGE_1G_MASK: Gpaddr = (1 << 30) - 1;
+    const PTE_SIZE: Gpaddr = size_of::<u64>();
+
+    let sregs = context.sregs();
+    if (sregs.cr0 & (1 << 31)) == 0 {
+        return Ok(gva);
+    }
+
+    let read_guest_pte = |gpa: Gpaddr| -> core::result::Result<u64, ostd::Error> {
+        let mut reader = guest_mem.reader(gpa, PTE_SIZE)?;
+        reader.read_val::<u64>()
+    };
+    let pte_addr = |entry: u64| -> Gpaddr { (entry & PTE_ADDR_MASK) as Gpaddr };
+
+    let cr3 = (sregs.cr3 as Gpaddr) & !0xfff;
+    let pml4e_gpa = cr3 + (((gva >> 39) & 0x1ff) * PTE_SIZE);
+    let pml4e = read_guest_pte(pml4e_gpa)?;
+    if (pml4e & PTE_PRESENT) == 0 {
+        return Err(ostd::Error::PageFault);
+    }
+
+    let pdpte = read_guest_pte(pte_addr(pml4e) + (((gva >> 30) & 0x1ff) * PTE_SIZE))?;
+    if (pdpte & PTE_PRESENT) == 0 {
+        return Err(ostd::Error::PageFault);
+    }
+    if (pdpte & PTE_HUGE) != 0 {
+        return Ok(pte_addr(pdpte) | (gva & PAGE_1G_MASK));
+    }
+
+    let pde = read_guest_pte(pte_addr(pdpte) + (((gva >> 21) & 0x1ff) * PTE_SIZE))?;
+    if (pde & PTE_PRESENT) == 0 {
+        return Err(ostd::Error::PageFault);
+    }
+    if (pde & PTE_HUGE) != 0 {
+        return Ok(pte_addr(pde) | (gva & PAGE_2M_MASK));
+    }
+
+    let pte = read_guest_pte(pte_addr(pde) + (((gva >> 12) & 0x1ff) * PTE_SIZE))?;
+    if (pte & PTE_PRESENT) == 0 {
+        return Err(ostd::Error::PageFault);
+    }
+
+    Ok(pte_addr(pte) | (gva & 0xfff))
 }
 
 fn emulate_lapic_mmio(vcpu: Arc<Vcpu>, fault_gpa: u64, insn: MmioInstruction) -> Result<bool> {
@@ -575,8 +765,9 @@ pub fn emulate_lapic_read(vcpu: Arc<Vcpu>, offset: u64) -> (u64, bool) {
         XLAPIC_RW_DFR => 0xFFFF_FFFF,
         XLAPIC_RW_SIVR => 0x1FF,
         XLAPIC_RW_LVT_CMCI => 1u64 << 16,
-        XLAPIC_RW_LVT_THERM | XLAPIC_RW_LVT_PERF | XLAPIC_RW_LVT_LINT0 | XLAPIC_RW_LVT_LINT1
-        | XLAPIC_RW_LVT_ERROR => 0x10000,
+        XLAPIC_RW_LVT_THERM | XLAPIC_RW_LVT_PERF | XLAPIC_RW_LVT_ERROR => 0x10000,
+        XLAPIC_RW_LVT_LINT0 => lapic.lvt_lint0 as u64,
+        XLAPIC_RW_LVT_LINT1 => lapic.lvt_lint1 as u64,
         XLAPIC_RW_LVT_TIMER => lapic.timer.lvt_timer as u64,
         XLAPIC_RW_TIMER_INIT => lapic.timer.initial_count as u64,
         XLAPIC_RW_TIMER_DIVI => lapic.timer.divide as u64,
@@ -611,7 +802,6 @@ pub struct Icr {
     pub dest_shorthand: u8,
     pub dest_id: u8,
     pub src_id: u8,
-    pub level: u8,
     pub vector: u8,
 }
 
@@ -684,7 +874,6 @@ pub fn emulate_lapic_write(vcpu: Arc<Vcpu>, offset: u64, value: u64) -> Option<L
                 delivery_mode: ((value >> 8) & 0x7) as u8,
                 dest_mode: ((value >> 11) & 0x1) as u8,
                 dest_shorthand: ((value >> 18) & 0b11) as u8,
-                level: ((value >> 14) & 0x1) as u8,
                 dest_id: ((lapic.icr[1] >> 24) & 0xFF) as u8,
                 src_id: lapic.id as u8,
             };
@@ -693,9 +882,14 @@ pub fn emulate_lapic_write(vcpu: Arc<Vcpu>, offset: u64, value: u64) -> Option<L
         XLAPIC_RW_ICR_HIGH => {
             lapic.icr[1] = value as u32;
         }
-        XLAPIC_RW_SIVR | XLAPIC_RW_LVT_CMCI | XLAPIC_RW_LVT_THERM | XLAPIC_RW_LVT_PERF
-        | XLAPIC_RW_LVT_LINT0 | XLAPIC_RW_LVT_LINT1 | XLAPIC_RW_LVT_ERROR => { /* silently ignored */
+        XLAPIC_RW_LVT_LINT0 => {
+            lapic.lvt_lint0 = sanitize_lvt_lint(value as u32);
         }
+        XLAPIC_RW_LVT_LINT1 => {
+            lapic.lvt_lint1 = sanitize_lvt_lint(value as u32);
+        }
+        XLAPIC_RW_SIVR | XLAPIC_RW_LVT_CMCI | XLAPIC_RW_LVT_THERM | XLAPIC_RW_LVT_PERF
+        | XLAPIC_RW_LVT_ERROR => { /* silently ignored */ }
         _ => {
             warn!(
                 "MMIO.xLAPIC: Write at offset {:#05x} not supported, value is {:#018x}",
@@ -762,6 +956,14 @@ pub fn emulate_ioapic_write(ioapic: &mut Ioapic, offset: u64, value: u64) -> boo
 
 pub fn default_lapic_ldr(vcpu_id: u32) -> u32 {
     (1_u32.checked_shl(vcpu_id).unwrap_or(0)) << 24
+}
+
+pub fn default_lapic_lvt_lint0(vcpu_id: u32) -> u32 {
+    if vcpu_id == 0 {
+        APIC_MODE_EXTINT << 8
+    } else {
+        APIC_LVT_MASKED
+    }
 }
 
 const APIC_ICR_DESTINATION_MODE_LOGICAL: u8 = 1;

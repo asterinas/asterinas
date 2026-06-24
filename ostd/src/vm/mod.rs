@@ -1,5 +1,5 @@
-/// implements GuestMode
-///
+//! Guest virtualization support.
+
 mod gpm_space;
 mod host_context;
 mod interrupt;
@@ -12,7 +12,6 @@ pub use self::{
     gpm_space::GuestPhysMemSpace, interrupt::GuestInterruptPort, timer::GuestTimerPort,
 };
 use crate::{
-    Error,
     arch::vm::{
         context::{
             GuestContext, VcpuControlRegister, VcpuControlRegisters, VcpuDtable, VcpuRunState,
@@ -20,79 +19,82 @@ use crate::{
         },
         exit::GuestExitInfo,
         vmx::{
-            Msr, VmcsControl32, VmcsControl64, VmcsControlNW, VmcsGuest16, VmcsGuest32,
-            VmcsGuest64, VmcsGuestNW, VmcsReadOnly32, exit_info,
+            exit_info, Msr, VmcsControl32, VmcsControl64, VmcsControlNW, VmcsGuest16, VmcsGuest32,
+            VmcsGuest64, VmcsGuestNW, VmcsReadOnly32,
         },
         x86::write_cr2_raw,
     },
-    mm::Gpaddr,
     prelude::*,
     sync::{Mutex, SpinLock},
+    Error,
 };
 
+/// Initializes guest virtualization support on this platform.
+pub fn init() -> Result<()> {
+    crate::arch::vm::vmx::init_vmx()
+}
+
+/// Runs guest vCPU code in an isolated guest execution mode.
+///
+/// `GuestMode` is the OSTD-side execution object for a guest vCPU. It borrows
+/// the vCPU context and the kernel-provided interrupt and timer policy ports,
+/// then enters guest execution until a VM exit must be handled outside OSTD.
+///
+/// On x86, the implementation uses VMX to enter VMX non-root mode. The CPU
+/// executes the code described by [`GuestContext`] while memory accesses are
+/// translated through the EPT identified by the EPT pointer passed to
+/// [`Self::execute`]. Provided that the EPT maps only guest-owned memory and
+/// selected device ranges, guest code cannot directly access host memory
+/// outside those mappings. This protects kernel memory safety from direct
+/// guest memory access.
+///
+/// VMCS controls force the CPU to leave VMX non-root mode on events that must
+/// be handled by the host, such as external interrupts, EPT violations, I/O
+/// instructions, or selected control-register and MSR accesses. OSTD handles
+/// exits that belong to the low-level CPU contract, such as CPUID, CR access,
+/// and MSR read/write emulation. Other exits are returned to the kernel as
+/// [`GuestExitInfo`] so the kernel can emulate devices, forward events to
+/// userspace, or stop the vCPU. This VM-exit boundary prevents guest code from
+/// escaping guest execution and running arbitrary host control flow.
+///
+/// Here is a sample code on how to use `GuestMode`.
+///
+/// ```no_run
+/// use ostd::{
+///     arch::vm::GuestContext,
+///     prelude::*,
+///     sync::{Mutex, SpinLock},
+///     vm::{GuestInterruptPort, GuestMode, GuestTimerPort},
+/// };
+///
+/// fn run_guest(
+///     context: &Mutex<GuestContext>,
+///     interrupt_port: &SpinLock<dyn GuestInterruptPort>,
+///     timer_port: &SpinLock<dyn GuestTimerPort>,
+///     eptp: u64,
+/// ) -> Result<()> {
+///     let mut guest_mode =
+///         GuestMode::new(context, interrupt_port, timer_port);
+///
+///     loop {
+///         let _exit_info = guest_mode.execute(eptp)?;
+///         todo!("handle the userspace-visible VM exit");
+///     }
+/// }
+/// ```
 pub struct GuestMode<'a> {
     context: &'a Mutex<GuestContext>,
     interrupt_port: &'a SpinLock<dyn GuestInterruptPort>,
     timer_port: &'a SpinLock<dyn GuestTimerPort>,
 }
 
-/// Translates a guest virtual address to a guest physical address.
-pub fn translate_gva_to_gpa(
-    context: &GuestContext,
-    guest_mem: &GuestPhysMemSpace,
-    gva: usize,
-) -> Result<Gpaddr> {
-    const PTE_PRESENT: u64 = 1 << 0;
-    const PTE_HUGE: u64 = 1 << 7;
-    const PTE_ADDR_MASK: u64 = 0x000f_ffff_ffff_f000;
-    const PAGE_2M_MASK: Gpaddr = (1 << 21) - 1;
-    const PAGE_1G_MASK: Gpaddr = (1 << 30) - 1;
-    const PTE_SIZE: Gpaddr = core::mem::size_of::<u64>();
-
-    let cr0 = context.arch().cr0();
-    let cr3 = context.arch().cr3();
-    if (cr0 & (1 << 31)) == 0 {
-        return Ok(gva);
-    }
-
-    let read_guest_pte = |gpa: Gpaddr| -> Result<u64> {
-        let mut reader = guest_mem.reader(gpa, PTE_SIZE)?;
-        reader.read_val::<u64>()
-    };
-    let pte_addr = |entry: u64| -> Gpaddr { (entry & PTE_ADDR_MASK) as Gpaddr };
-
-    let cr3 = (cr3 as Gpaddr) & !0xfff;
-    let pml4e_gpa = cr3 + (((gva >> 39) & 0x1ff) * PTE_SIZE);
-    let pml4e = read_guest_pte(pml4e_gpa)?;
-    if (pml4e & PTE_PRESENT) == 0 {
-        return Err(Error::PageFault);
-    }
-
-    let pdpte = read_guest_pte(pte_addr(pml4e) + (((gva >> 30) & 0x1ff) * PTE_SIZE))?;
-    if (pdpte & PTE_PRESENT) == 0 {
-        return Err(Error::PageFault);
-    }
-    if (pdpte & PTE_HUGE) != 0 {
-        return Ok(pte_addr(pdpte) | (gva & PAGE_1G_MASK));
-    }
-
-    let pde = read_guest_pte(pte_addr(pdpte) + (((gva >> 21) & 0x1ff) * PTE_SIZE))?;
-    if (pde & PTE_PRESENT) == 0 {
-        return Err(Error::PageFault);
-    }
-    if (pde & PTE_HUGE) != 0 {
-        return Ok(pte_addr(pde) | (gva & PAGE_2M_MASK));
-    }
-
-    let pte = read_guest_pte(pte_addr(pde) + (((gva >> 12) & 0x1ff) * PTE_SIZE))?;
-    if (pte & PTE_PRESENT) == 0 {
-        return Err(Error::PageFault);
-    }
-
-    Ok(pte_addr(pte) | (gva & 0xfff))
-}
-
 impl<'a> GuestMode<'a> {
+    /// Creates a guest execution object.
+    ///
+    /// The `context` contains the vCPU state to execute. The `interrupt_port`
+    /// and `timer_port` are kernel-provided policy objects consulted before VM
+    /// entry. Creating this value does not enter the guest; use
+    /// [`Self::execute`] to run the vCPU.
     pub fn new(
         context: &'a Mutex<GuestContext>,
         interrupt_port: &'a SpinLock<dyn GuestInterruptPort>,
@@ -105,6 +107,25 @@ impl<'a> GuestMode<'a> {
         }
     }
 
+    /// Runs the guest with the supplied EPT pointer.
+    ///
+    /// Before VM entry, this method initializes or loads the VMCS, marks the
+    /// vCPU as running, prepares guest interrupts and timers, and loads the
+    /// current [`GuestContext`] state into hardware. After VM exit, it saves
+    /// the hardware vCPU state back into `GuestContext` and restores the host
+    /// CPU state before ordinary kernel execution resumes.
+    ///
+    /// Some VM exits are part of OSTD's low-level CPU contract and are handled
+    /// internally. For example, OSTD handles CPUID, control-register access,
+    /// MSR read/write, interrupt-window, and external-interrupt exits without
+    /// returning them to the kernel. Exits that require higher-level policy or
+    /// device emulation are returned as [`GuestExitInfo`].
+    ///
+    /// The `eptp` argument must identify the EPT root that defines the guest
+    /// physical address space for this run.
+    ///
+    /// If the vCPU is waiting for SIPI, this method returns a synthetic
+    /// `HLT`-style exit without entering guest execution.
     pub fn execute(&mut self, eptp: u64) -> Result<GuestExitInfo> {
         if self.context.lock().run_state() == VcpuRunState::WaitForSipi {
             return self.wait_for_sipi(self.context.lock().arch().rip() as _);
@@ -123,7 +144,7 @@ impl<'a> GuestMode<'a> {
             self.complete_vmexit(host_context, run_result)?;
 
             use crate::arch::vm::exit::vmexit_handler;
-            let exit_info = exit_info().map_err(Error::from)?;
+            let exit_info = exit_info()?;
             let exit_info = vmexit_handler(self.context, &exit_info)?;
             drop(irq_guard);
 
@@ -158,7 +179,7 @@ impl<'a> GuestMode<'a> {
         debug!("rustshyper: initializing vcpu vmcs");
         let mut context = self.context.lock();
         let vmcs_guest_state = context.vmcs_guest_state();
-        context.vmcs.init(vmcs_guest_state, eptp as u64)?;
+        context.vmcs.init(vmcs_guest_state, eptp)?;
 
         Ok(())
     }
@@ -206,9 +227,7 @@ impl<'a> GuestMode<'a> {
     }
 
     fn prepare_interrupt(&self) -> Result<Option<u8>> {
-        VmcsControl32::VMENTRY_INTERRUPTION_INFO_FIELD
-            .write(0)
-            .map_err(Error::from)?;
+        VmcsControl32::VMENTRY_INTERRUPTION_INFO_FIELD.write(0)?;
 
         let pending_vector = self.interrupt_port.lock().check_pending_interrupt();
 
@@ -223,7 +242,7 @@ impl<'a> GuestMode<'a> {
 
         if self.context.lock().after_hlt {
             clear_block_by_sti()?;
-            VmcsGuest32::ACTIVITY_STATE.write(0).map_err(Error::from)?;
+            VmcsGuest32::ACTIVITY_STATE.write(0)?;
             self.context.lock().after_hlt = false;
         }
 
@@ -238,16 +257,13 @@ impl<'a> GuestMode<'a> {
         disable_interrupt_window_exiting()?;
 
         // inject interrupt through VMCS
-        VmcsControl32::VMENTRY_INTERRUPTION_INFO_FIELD
-            .write(intr_info)
-            .map_err(Error::from)?;
+        VmcsControl32::VMENTRY_INTERRUPTION_INFO_FIELD.write(intr_info)?;
         self.interrupt_port.lock().accept_interrupt(vector);
-        return Ok(Some(vector));
+        Ok(Some(vector))
     }
 
     fn prepare_preemption_timer(&self) -> Result<()> {
         let context = self.context.lock();
-        let vcpu_id = context.cpu_config.vcpu_id;
         let guest_tsc = context.guest_tsc();
         let msr_deadline = context
             .tsc_deadline()
@@ -269,60 +285,34 @@ impl<'a> GuestMode<'a> {
         self.load_guest_run_msrs(&context);
         context.arch_mut().load_fpu();
 
-        VmcsGuestNW::RIP
-            .write(context.arch().rip() as usize)
-            .map_err(Error::from)?;
-        VmcsGuestNW::RSP
-            .write(context.arch().gpr(7) as usize)
-            .map_err(Error::from)?;
+        VmcsGuestNW::RIP.write(context.arch().rip() as usize)?;
+        VmcsGuestNW::RSP.write(context.arch().gpr(7) as usize)?;
         // TODO: why | 0x2 ?
-        VmcsGuestNW::RFLAGS
-            .write((context.arch().rflags() | 0x2) as usize)
-            .map_err(Error::from)?;
+        VmcsGuestNW::RFLAGS.write((context.arch().rflags() | 0x2) as usize)?;
 
         write_control_registers_to_vmcs(context.arch().control_regs())?;
 
         use x86::{msr::*, vmx::vmcs::control::EntryControls};
         use x86_64::registers::model_specific::EferFlags;
         let guest_efer = context.arch().msr(IA32_EFER);
-        VmcsGuest64::IA32_EFER
-            .write(guest_efer)
-            .map_err(Error::from)?;
-        let mut entry = VmcsControl32::VMENTRY_CONTROLS
-            .read()
-            .map_err(Error::from)?;
+        VmcsGuest64::IA32_EFER.write(guest_efer)?;
+        let mut entry = VmcsControl32::VMENTRY_CONTROLS.read()?;
         if guest_efer & EferFlags::LONG_MODE_ACTIVE.bits() != 0 {
             entry |= EntryControls::IA32E_MODE_GUEST.bits();
         } else {
             entry &= !EntryControls::IA32E_MODE_GUEST.bits();
         }
-        VmcsControl32::VMENTRY_CONTROLS
-            .write(entry)
-            .map_err(Error::from)?;
+        VmcsControl32::VMENTRY_CONTROLS.write(entry)?;
 
         let guest_cr3 = context.arch().cr3();
-        VmcsGuestNW::CR3
-            .write(guest_cr3 as usize)
-            .map_err(Error::from)?;
+        VmcsGuestNW::CR3.write(guest_cr3 as usize)?;
 
-        VmcsGuest64::IA32_PAT
-            .write(context.arch().msr(IA32_PAT))
-            .map_err(Error::from)?;
-        VmcsGuestNW::FS_BASE
-            .write(context.arch().msr(IA32_FS_BASE) as usize)
-            .map_err(Error::from)?;
-        VmcsGuestNW::GS_BASE
-            .write(context.arch().msr(IA32_GS_BASE) as usize)
-            .map_err(Error::from)?;
-        VmcsGuest32::IA32_SYSENTER_CS
-            .write(context.arch().msr(IA32_SYSENTER_CS) as u32)
-            .map_err(Error::from)?;
-        VmcsGuestNW::IA32_SYSENTER_ESP
-            .write(context.arch().msr(IA32_SYSENTER_ESP) as usize)
-            .map_err(Error::from)?;
-        VmcsGuestNW::IA32_SYSENTER_EIP
-            .write(context.arch().msr(IA32_SYSENTER_EIP) as usize)
-            .map_err(Error::from)?;
+        VmcsGuest64::IA32_PAT.write(context.arch().msr(IA32_PAT))?;
+        VmcsGuestNW::FS_BASE.write(context.arch().msr(IA32_FS_BASE) as usize)?;
+        VmcsGuestNW::GS_BASE.write(context.arch().msr(IA32_GS_BASE) as usize)?;
+        VmcsGuest32::IA32_SYSENTER_CS.write(context.arch().msr(IA32_SYSENTER_CS) as u32)?;
+        VmcsGuestNW::IA32_SYSENTER_ESP.write(context.arch().msr(IA32_SYSENTER_ESP) as usize)?;
+        VmcsGuestNW::IA32_SYSENTER_EIP.write(context.arch().msr(IA32_SYSENTER_EIP) as usize)?;
 
         Ok(())
     }
@@ -334,24 +324,22 @@ impl<'a> GuestMode<'a> {
         self.context.lock().arch_mut().set_cr2(Cr2::read_raw());
 
         let mut context = self.context.lock();
+        context.arch_mut().set_rip(VmcsGuestNW::RIP.read()? as u64);
         context
             .arch_mut()
-            .set_rip(VmcsGuestNW::RIP.read().map_err(Error::from)? as u64);
+            .set_gpr(7, 8, VmcsGuestNW::RSP.read()? as u64);
         context
             .arch_mut()
-            .set_gpr(7, 8, VmcsGuestNW::RSP.read().map_err(Error::from)? as u64);
-        context
-            .arch_mut()
-            .set_rflags(VmcsGuestNW::RFLAGS.read().map_err(Error::from)? as u64);
+            .set_rflags(VmcsGuestNW::RFLAGS.read()? as u64);
 
-        let guest_cr3 = VmcsGuestNW::CR3.read().map_err(Error::from)?;
+        let guest_cr3 = VmcsGuestNW::CR3.read()?;
         context.arch_mut().set_cr3(guest_cr3 as u64);
 
         context
             .arch_mut()
             .set_control_regs_from_vmcs(read_control_registers_from_vmcs()?);
 
-        let guest_efer = VmcsGuest64::IA32_EFER.read().map_err(Error::from)?;
+        let guest_efer = VmcsGuest64::IA32_EFER.read()?;
         context.arch_mut().set_msr(IA32_EFER, guest_efer);
 
         context.arch_mut().set_gdt(read_dtable_from_vmcs(
@@ -430,8 +418,8 @@ impl<'a> GuestMode<'a> {
         let cstar = Msr::IA32_CSTAR.read();
         let syscall_mask = Msr::IA32_FMASK.read();
         let kernel_gs_base = Msr::IA32_KERNEL_GSBASE.read();
-        let fs_base = VmcsGuestNW::FS_BASE.read().map_err(Error::from)? as u64;
-        let gs_base = VmcsGuestNW::GS_BASE.read().map_err(Error::from)? as u64;
+        let fs_base = VmcsGuestNW::FS_BASE.read()? as u64;
+        let gs_base = VmcsGuestNW::GS_BASE.read()? as u64;
 
         let mut context = self.context.lock();
         context.arch_mut().set_msr(IA32_STAR, star);
@@ -488,8 +476,8 @@ fn min_gap(left: Option<u64>, right: Option<u64>) -> Option<u64> {
 
 fn read_dtable_from_vmcs(base_field: VmcsGuestNW, limit_field: VmcsGuest32) -> Result<VcpuDtable> {
     Ok(VcpuDtable {
-        base: base_field.read().map_err(Error::from)? as u64,
-        limit: limit_field.read().map_err(Error::from)? as u16,
+        base: base_field.read()? as u64,
+        limit: limit_field.read()? as u16,
         padding: [0; 3],
     })
 }
@@ -515,13 +503,9 @@ fn write_control_register_to_vmcs(
     mask_field: VmcsControlNW,
     shadow_field: VmcsControlNW,
 ) -> Result<()> {
-    real_field.write(reg.real() as usize).map_err(Error::from)?;
-    mask_field
-        .write(reg.host_mask() as usize)
-        .map_err(Error::from)?;
-    shadow_field
-        .write(reg.read_shadow() as usize)
-        .map_err(Error::from)
+    real_field.write(reg.real() as usize)?;
+    mask_field.write(reg.host_mask() as usize)?;
+    shadow_field.write(reg.read_shadow() as usize)
 }
 
 fn read_control_registers_from_vmcs() -> Result<VcpuControlRegisters> {
@@ -543,9 +527,9 @@ fn read_control_register_state_from_vmcs(
     mask_field: VmcsControlNW,
     shadow_field: VmcsControlNW,
 ) -> Result<VcpuControlRegister> {
-    let real = value_field.read().map_err(Error::from)? as u64;
-    let mask = mask_field.read().map_err(Error::from)? as u64;
-    let shadow = shadow_field.read().map_err(Error::from)? as u64;
+    let real = value_field.read()? as u64;
+    let mask = mask_field.read()? as u64;
+    let shadow = shadow_field.read()? as u64;
     Ok(VcpuControlRegister::from_vmcs(mask, shadow, real))
 }
 
@@ -555,19 +539,19 @@ fn read_segment_from_vmcs(
     limit_field: VmcsGuest32,
     rights_field: VmcsGuest32,
 ) -> Result<VcpuSegment> {
-    let rights = rights_field.read().map_err(Error::from)?;
+    let rights = rights_field.read()?;
     Ok(VcpuSegment {
-        base: base_field.read().map_err(Error::from)? as u64,
-        limit: limit_field.read().map_err(Error::from)?,
-        selector: selector_field.read().map_err(Error::from)?,
+        base: base_field.read()? as u64,
+        limit: limit_field.read()?,
+        selector: selector_field.read()?,
         type_: (rights & 0x0f) as u8,
-        s: ((rights >> 4) & 0x1) as u8,
-        dpl: ((rights >> 5) & 0x3) as u8,
         present: ((rights >> 7) & 0x1) as u8,
-        avl: ((rights >> 12) & 0x1) as u8,
-        l: ((rights >> 13) & 0x1) as u8,
+        dpl: ((rights >> 5) & 0x3) as u8,
         db: ((rights >> 14) & 0x1) as u8,
+        s: ((rights >> 4) & 0x1) as u8,
+        l: ((rights >> 13) & 0x1) as u8,
         g: ((rights >> 15) & 0x1) as u8,
+        avl: ((rights >> 12) & 0x1) as u8,
         unusable: ((rights >> 16) & 0x1) as u8,
         padding: 0,
     })

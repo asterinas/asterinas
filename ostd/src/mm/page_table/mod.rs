@@ -27,8 +27,7 @@ use crate::{
 mod cursor;
 mod node;
 
-pub(in crate::mm) use cursor::PageTableFrag;
-pub(crate) use cursor::{Cursor, CursorMut};
+pub(crate) use cursor::{Cursor, CursorMut, PageTableFrag};
 use node::*; // FIXME: Remove glob imports.
 
 #[cfg(ktest)]

@@ -1,14 +1,11 @@
 use crate::{
-    Error,
     arch::vm::{context::GuestContext, vmx::VmcsReadOnlyNW},
     prelude::*,
     sync::Mutex,
 };
 
 pub(crate) fn emulate_cr_access(context: &Mutex<GuestContext>) -> Result<()> {
-    let qualification = VmcsReadOnlyNW::EXIT_QUALIFICATION
-        .read()
-        .map_err(Error::from)?;
+    let qualification = VmcsReadOnlyNW::EXIT_QUALIFICATION.read()?;
     let cr_index = (qualification & 0xF) as u8;
     let access = ((qualification >> 4) & 0b11) as u8;
     let gpr_index = ((qualification >> 8) & 0xF) as u8;

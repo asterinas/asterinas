@@ -3,7 +3,7 @@
 //! VM file descriptor implementation
 
 use ostd::{
-    mm::{CachePolicy, PAGE_SIZE, PageFlags, PageProperty, vm_space::VmQueriedItem},
+    mm::{CachePolicy, Gpaddr, PageFlags, PageProperty, vm_space::VmQueriedItem},
     task::Task,
 };
 
@@ -15,7 +15,6 @@ use crate::{
         vfs::path::Path,
     },
     prelude::*,
-    process::posix_thread::AsThreadLocal,
     util::ioctl::{RawIoctl, dispatch_ioctl},
     vm::vmar::{PageFaultInfo, Vmar},
 };
@@ -38,60 +37,78 @@ impl VmFile {
     }
 
     fn set_user_memory_region(&self, region: UserMemoryRegion) -> Result<()> {
-        let vmar = current_vmar()?;
         let memory_size = usize::try_from(region.memory_size)?;
+        if region.flags & !KVM_MEM_READONLY != 0 {
+            return_errno_with_message!(Errno::EINVAL, "unsupported guest memory flags");
+        }
+        if memory_size == 0 {
+            self.vm
+                .guest_mem()
+                .set_memory_region(
+                    region.slot,
+                    0,
+                    0,
+                    0,
+                    Vec::new(),
+                    default_guest_mem_prop(false),
+                )
+                .map_err(Error::from)?;
+            return Ok(());
+        }
+
+        let vmar = current_vmar()?;
         let userspace_start = usize::try_from(region.userspace_addr)?;
         let guest_start = usize::try_from(region.guest_phys_addr)?;
         let userspace_end = userspace_start
             .checked_add(memory_size)
             .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
-        let guest_end = guest_start
-            .checked_add(memory_size)
-            .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+        validate_user_memory_region(userspace_start, guest_start, memory_size)?;
 
-        let guest_space = self.vm.guest_mem();
-        guest_space.record_memory_slot(region.slot, userspace_start, guest_start, memory_size)?;
-
-        let is_readonly = region.flags & KVM_MEM_READONLY != 0;
-        let guest_page_flags = if is_readonly {
-            PageFlags::RX
-        } else {
-            PageFlags::RWX
-        };
-        let prop = PageProperty::new_user(guest_page_flags, CachePolicy::Writeback);
-
+        let mut frames = Vec::new();
         let mut userspace_addr = userspace_start;
-        let mut guest_phys_addr = guest_start;
-        while userspace_addr < userspace_end && guest_phys_addr < guest_end {
-            let frame = query_user_ram_frame(&vmar, userspace_addr)?;
-            let preempt_guard = ostd::task::disable_preempt();
-            let mut guest_cursor_mut = guest_space.cursor_mut(
-                &preempt_guard,
-                &(guest_phys_addr..guest_phys_addr + PAGE_SIZE),
-            )?;
-            guest_cursor_mut.map(frame, prop);
+        while userspace_addr < userspace_end {
+            frames.push(query_user_ram_frame(&vmar, userspace_addr)?);
             userspace_addr += PAGE_SIZE;
-            guest_phys_addr += PAGE_SIZE;
         }
+
+        let prop = default_guest_mem_prop(region.flags & KVM_MEM_READONLY != 0);
+        self.vm
+            .guest_mem()
+            .set_memory_region(
+                region.slot,
+                userspace_start,
+                guest_start,
+                memory_size,
+                frames,
+                prop,
+            )
+            .map_err(Error::from)?;
 
         Ok(())
     }
 }
 
-fn log_vm_error(context: &str, err: &Error) {
-    match err.message() {
-        Some(msg) => {
-            error!(
-                "rustshyper: {} failed: errno={:?}, msg={}",
-                context,
-                err.error(),
-                msg
-            );
-        }
-        None => {
-            error!("rustshyper: {} failed: errno={:?}", context, err.error());
-        }
+fn default_guest_mem_prop(is_readonly: bool) -> PageProperty {
+    let guest_page_flags = if is_readonly {
+        PageFlags::RX
+    } else {
+        PageFlags::RWX
+    };
+    PageProperty::new_user(guest_page_flags, CachePolicy::Writeback)
+}
+
+fn validate_user_memory_region(
+    userspace_start: Vaddr,
+    guest_start: Gpaddr,
+    memory_size: usize,
+) -> Result<()> {
+    if !userspace_start.is_multiple_of(PAGE_SIZE)
+        || !guest_start.is_multiple_of(PAGE_SIZE)
+        || !memory_size.is_multiple_of(PAGE_SIZE)
+    {
+        return_errno_with_message!(Errno::EINVAL, "guest memory region must be page-aligned");
     }
+    Ok(())
 }
 
 impl FileLike for VmFile {
@@ -109,6 +126,9 @@ impl FileLike for VmFile {
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         dispatch_ioctl!(match raw_ioctl {
+            CheckExtension => {
+                Ok(check_extension(raw_ioctl.arg()))
+            }
             CreateVcpu => {
                 let vcpu_id = u32::try_from(raw_ioctl.arg())?;
 
@@ -116,7 +136,7 @@ impl FileLike for VmFile {
                 let vcpu = self.vm.create_vcpu(vcpu_id)?;
 
                 // Create a file descriptor for the VCPU
-                let vcpu_file = Arc::new(VcpuFile::new(vcpu));
+                let vcpu_file = Arc::new(VcpuFile::new(self.vm.clone(), vcpu));
 
                 // Insert into the current process's file table
                 let current = Task::current().unwrap();
@@ -132,6 +152,36 @@ impl FileLike for VmFile {
                 Ok(0)
             }
             SetTssAddr => {
+                // TODO:
+                Ok(0)
+            }
+            CreateIrqchip => {
+                self.vm.create_irqchip()?;
+                Ok(0)
+            }
+            cmd @ IrqLine => {
+                let irq_level = cmd.read()?;
+                self.vm.set_irq_line(irq_level)?;
+                Ok(0)
+            }
+            cmd @ RegisterCoalescedMmio => {
+                let _zone = cmd.read()?;
+                // TODO: Implement coalesced MMIO registration
+                Ok(0)
+            }
+            cmd @ UnregisterCoalescedMmio => {
+                let _zone = cmd.read()?;
+                // TODO: Implement coalesced MMIO unregistration
+                Ok(0)
+            }
+            cmd @ SetGsiRouting => {
+                let routing = cmd.read()?;
+                let entries = read_irq_routing_entries(routing, raw_ioctl.arg())?;
+                self.vm.set_gsi_routing(&entries)?;
+                Ok(0)
+            }
+            cmd @ CreatePit2 => {
+                let _pit_config = cmd.read()?;
                 Ok(0)
             }
             _ => {
@@ -153,6 +203,30 @@ impl FileLike for VmFile {
     fn dump_proc_fdinfo(self: Arc<Self>, _fd_flags: FdFlags) -> Box<dyn core::fmt::Display> {
         Box::new(alloc::format!("vm_id: {}\n", self.vm.id))
     }
+}
+
+fn read_irq_routing_entries(routing: IrqRouting, arg: usize) -> Result<Vec<IrqRoutingEntry>> {
+    let nr = usize::try_from(routing.nr)?;
+    if nr > KVM_MAX_IRQ_ROUTES {
+        return_errno_with_message!(Errno::E2BIG, "too many GSI routing entries");
+    }
+
+    let entries_addr = arg
+        .checked_add(size_of::<IrqRouting>())
+        .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+    let entries_len = nr
+        .checked_mul(size_of::<IrqRoutingEntry>())
+        .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+    let current = Task::current().unwrap();
+    let thread_local = current.as_thread_local().unwrap();
+    let user_space = CurrentUserSpace::new(thread_local);
+    let mut reader = user_space.reader(entries_addr, entries_len)?;
+    let mut entries = Vec::new();
+    for _ in 0..nr {
+        entries.push(reader.read_val()?);
+    }
+
+    Ok(entries)
 }
 
 fn current_vmar() -> Result<Arc<Vmar>> {

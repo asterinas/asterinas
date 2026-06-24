@@ -16,6 +16,7 @@ pub(crate) mod task;
 mod timer;
 pub mod trap;
 // pub mod virt;
+/// Intel VMX-based guest virtualization support.
 pub mod vm;
 
 #[cfg(feature = "cvm_guest")]

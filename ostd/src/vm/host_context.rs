@@ -2,9 +2,10 @@ use crate::arch::{
     cpu::context::FpuContext,
     vm::{
         vmx::Msr,
-        x86::{read_cr2_raw, write_cr2_raw},
+        x86::write_cr2_raw,
     },
 };
+use x86_64::registers::control::Cr2;
 
 #[derive(Debug, Clone)]
 /// Host Contexts that can't be auto loaded/saved by VMCS
@@ -21,11 +22,11 @@ impl HostContext {
         Self {
             msrs: HostRunMsrs::read_current(),
             fpu,
-            cr2: read_cr2_raw(),
+            cr2: Cr2::read_raw(),
         }
     }
 
-    pub fn load(mut self) {
+    pub fn load(self) {
         write_cr2_raw(self.cr2);
         self.fpu.load();
         self.msrs.restore();
