@@ -19,10 +19,6 @@
 #define BUFFER_SIZE 65536
 #define ALIGNMENT 4096
 
-#ifndef O_DIRECT
-#define O_DIRECT 040000
-#endif
-
 static char *nvme_write_buf;
 static char *nvme_read_buf;
 

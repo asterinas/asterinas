@@ -3,7 +3,6 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -15,14 +14,6 @@
 
 #define EXECUTABLE_PATH "/test/process/execve/hello"
 #define MFD_NAME "test_memfd_execve"
-
-#ifndef MFD_NOEXEC_SEAL
-#define MFD_NOEXEC_SEAL 0x0008U
-#endif
-
-#ifndef F_SEAL_EXEC
-#define F_SEAL_EXEC 0x0020U
-#endif
 
 FN_TEST(memfd_noexec_seal)
 {

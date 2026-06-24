@@ -19,10 +19,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#ifndef CLONE_PIDFD
-#define CLONE_PIDFD 0x00001000
-#endif
-
 static pid_t sys_clone3(struct clone_args *args)
 {
 	return syscall(SYS_clone3, args, sizeof(struct clone_args));

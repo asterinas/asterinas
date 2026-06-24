@@ -13,6 +13,9 @@
 
 #define ALT_STACK_SIZE (SIGSTKSZ + 40960)
 
+// SS_AUTODISARM is defined in <linux/signal.h>, but we cannot include it
+// because doing so would cause conflicts between structure definitions in libc
+// and those in <linux/signal.h>.
 #ifndef SS_AUTODISARM
 #define SS_AUTODISARM (1 << 31)
 #endif
