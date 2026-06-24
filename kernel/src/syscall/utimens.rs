@@ -12,6 +12,7 @@ use crate::{
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
     },
     prelude::*,
+    security::{self, FileSetattrKind},
     time::{clocks::RealTimeCoarseClock, timespec_t, timeval_t},
 };
 
@@ -171,29 +172,25 @@ fn do_utimes(
         Some(pathname.to_string_lossy().into_owned())
     };
 
-    let path = {
-        let fs_path = if let Some(pathname) = pathname.as_ref() {
-            FsPath::from_fd_at(dirfd, pathname, EmptyPathStr::AllowIfFlag(flags.bits()))?
-        } else {
-            // Matches Linux `do_utimes_fd`: no flags are accepted when pathname is NULL.
-            if !flags.is_empty() {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "flags must be zero when pathname is NULL"
-                );
-            }
-            FsPath::from_fd(dirfd)?
-        };
-
-        let fs_ref = ctx.thread_local.borrow_fs();
-        let path_resolver = fs_ref.resolver().read();
-        if flags.contains(UtimensFlags::AT_SYMLINK_NOFOLLOW) {
-            path_resolver.lookup_no_follow(&fs_path)?
-        } else {
-            path_resolver.lookup(&fs_path)?
+    let fs_path = if let Some(pathname) = pathname.as_ref() {
+        FsPath::from_fd_at(dirfd, pathname, EmptyPathStr::AllowIfFlag(flags.bits()))?
+    } else {
+        // Matches Linux `do_utimes_fd`: no flags are accepted when pathname is NULL.
+        if !flags.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "flags must be zero when pathname is NULL");
         }
+        FsPath::from_fd(dirfd)?
     };
 
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
+    let path = if flags.contains(UtimensFlags::AT_SYMLINK_NOFOLLOW) {
+        path_resolver.lookup_no_follow(&fs_path)?
+    } else {
+        path_resolver.lookup(&fs_path)?
+    };
+
+    security::file_setattr(&path, &path_resolver, FileSetattrKind::Times)?;
     vfs_utimes(&path, times)
 }
 

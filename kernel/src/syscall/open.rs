@@ -6,7 +6,7 @@ use crate::{
     fs::{
         file::{
             AccessMode, CreationFlags, FileLike, InodeHandle, InodeMode, InodeType, OpenArgs,
-            StatusFlags,
+            Permission, StatusFlags,
             file_table::{FdFlags, RawFileDesc},
         },
         vfs::{
@@ -15,6 +15,7 @@ use crate::{
         },
     },
     prelude::*,
+    security::{self, FileCreateKind},
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -96,7 +97,7 @@ fn do_open(
     };
 
     let file_handle: Arc<dyn FileLike> = match lookup_res {
-        LookupResult::Resolved(path) => Arc::new(path.open(open_args)?),
+        LookupResult::Resolved(path) => Arc::new(path.open(open_args, path_resolver)?),
         LookupResult::AtParent(result) => {
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT)
                 || open_args.status_flags.contains(StatusFlags::O_PATH)
@@ -111,6 +112,23 @@ fn do_open(
             }
 
             let (parent, tail_name) = result.into_parent_and_basename();
+            if parent
+                .inode()
+                .check_permission(Permission::MAY_WRITE)
+                .is_err()
+            {
+                return_errno!(Errno::EACCES);
+            }
+
+            security::file_create(
+                &parent,
+                &tail_name,
+                path_resolver,
+                FileCreateKind::Regular,
+                Some(open_args.access_mode),
+                open_args.status_flags,
+            )?;
+
             let new_path =
                 parent.new_fs_child(&tail_name, InodeType::File, open_args.inode_mode)?;
             fs::vfs::notify::on_create(&parent, || tail_name.clone());

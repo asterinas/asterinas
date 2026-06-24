@@ -3,10 +3,11 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::{InodeType, file_table::RawFileDesc},
+        file::{InodeType, Permission, file_table::RawFileDesc},
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath},
     },
     prelude::*,
+    security,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -69,6 +70,26 @@ pub fn sys_renameat2(
             "the new path is inside the old directory or its subtree"
         );
     }
+
+    if old_parent_path
+        .inode()
+        .check_permission(Permission::MAY_WRITE)
+        .is_err()
+        || new_parent_path
+            .inode()
+            .check_permission(Permission::MAY_WRITE)
+            .is_err()
+    {
+        return_errno!(Errno::EACCES);
+    }
+    security::file_rename(
+        &old_path,
+        &old_parent_path,
+        old_name,
+        &new_parent_path,
+        &new_name,
+        &path_resolver,
+    )?;
 
     old_parent_path.rename(old_name, &new_parent_path, &new_name)?;
 

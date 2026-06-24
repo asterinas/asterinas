@@ -9,6 +9,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    security::{self, FileSetattrKind},
 };
 
 pub fn sys_fchown(raw_fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
@@ -20,9 +21,14 @@ pub fn sys_fchown(raw_fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Res
         return Ok(SyscallReturn::Return(0));
     }
 
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
-    let path = file.path();
+    let path = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+        file.path().clone()
+    };
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
+    security::file_setattr(&path, &path_resolver, FileSetattrKind::Owner)?;
     if let Some(uid) = uid {
         path.set_owner(uid)?;
     }
@@ -73,20 +79,18 @@ pub fn sys_fchownat(
         return Ok(SyscallReturn::Return(0));
     }
 
-    let path = {
-        let path_name = path_name.to_string_lossy();
-        let fs_path =
-            FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::AllowIfFlag(flags.bits()))?;
+    let path_name = path_name.to_string_lossy();
+    let fs_path = FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::AllowIfFlag(flags.bits()))?;
 
-        let fs_ref = ctx.thread_local.borrow_fs();
-        let path_resolver = fs_ref.resolver().read();
-        if flags.contains(ChownFlags::AT_SYMLINK_NOFOLLOW) {
-            path_resolver.lookup_no_follow(&fs_path)?
-        } else {
-            path_resolver.lookup(&fs_path)?
-        }
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
+    let path = if flags.contains(ChownFlags::AT_SYMLINK_NOFOLLOW) {
+        path_resolver.lookup_no_follow(&fs_path)?
+    } else {
+        path_resolver.lookup(&fs_path)?
     };
 
+    security::file_setattr(&path, &path_resolver, FileSetattrKind::Owner)?;
     if let Some(uid) = uid {
         path.set_owner(uid)?;
     }

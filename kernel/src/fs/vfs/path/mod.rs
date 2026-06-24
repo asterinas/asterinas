@@ -28,6 +28,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    security,
 };
 
 mod dentry;
@@ -130,7 +131,7 @@ impl Path {
     /// Opens the `Path` with the given `OpenArgs`.
     ///
     /// Returns an `InodeHandle` on success.
-    pub fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
+    pub fn open(&self, open_args: OpenArgs, path_resolver: &PathResolver) -> Result<InodeHandle> {
         let inode = self.inode().as_ref();
         let inode_type = inode.type_();
         let creation_flags = &open_args.creation_flags;
@@ -161,6 +162,17 @@ impl Path {
             );
         }
 
+        if !status_flags.contains(StatusFlags::O_PATH) {
+            inode.check_permission(open_args.access_mode.into())?;
+        }
+
+        security::file_open(
+            self,
+            path_resolver,
+            open_args.access_mode,
+            open_args.status_flags,
+        )?;
+
         if inode_type.is_regular_file()
             && creation_flags.contains(CreationFlags::O_TRUNC)
             && !status_flags.contains(StatusFlags::O_PATH)
@@ -168,7 +180,7 @@ impl Path {
             self.resize(0)?;
         }
 
-        InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
+        InodeHandle::new_unchecked_access(self.clone(), open_args.access_mode, *status_flags)
     }
 
     /// Gets the real name of the `Path` from its dentry.
