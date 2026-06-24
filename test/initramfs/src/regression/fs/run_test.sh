@@ -86,6 +86,11 @@ test_mount_bind_file() {
 }
 
 echo "Start ext2 fs test......"
+if [ "${FS_REGRESSION_ONLY:-}" = "mount_propagation" ]; then
+    ./mount/mount_propagation
+    exit
+fi
+
 test_ext2 "/ext2" "test_file.txt"
 ./ext2/fallocate
 ./ext2/file_io
@@ -101,6 +106,7 @@ test_ext2 "/ext2" "test_file.txt"
 ./ext2/sparse
 ./ext2/symlink
 ./ext2/unix_socket
+./ext2/readdir_offset
 ./ext2/xattr
 echo "All ext2 fs test passed."
 
@@ -122,6 +128,7 @@ echo "All mount bind file test passed."
 ./isolation/pivot_root
 
 ./mount/mount_move
+./mount/mount_propagation
 
 ./overlayfs/ovl_test
 ./overlayfs/readdir_small_buffer

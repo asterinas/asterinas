@@ -41,12 +41,12 @@ const OVERLAY_FS_MAGIC: u64 = 0x794C7630;
 /// upper and lower directories that potentially comes from different
 /// file systems, into a single, unified view at a designated mount point.
 pub struct OverlayFs {
-    /// The writable upper layer.
-    upper: OverlayUpper,
+    /// The writable upper layer. Missing for lowerdir-only read-only overlays.
+    upper: Option<OverlayUpper>,
     /// The read-only lower layer.
     lower: OverlayLower,
-    /// The work directory.
-    work: OverlayWork,
+    /// The work directory. Missing for lowerdir-only read-only overlays.
+    work: Option<OverlayWork>,
     /// Configuration settings.
     config: OverlayConfig,
     /// Super block.
@@ -112,7 +112,7 @@ impl OverlayFs {
     /// Creates a new overlayfs instance.
     ///
     /// # Arguments
-    /// * `upper` - The upper directory (writable layer)
+    /// * `upper` - The upper directory (writable layer), if present
     /// * `lower` - Vector of lower directories (read-only layers, in priority order)
     /// * `work` - The work directory (must be empty and on same filesystem as upper)
     ///
@@ -120,18 +120,35 @@ impl OverlayFs {
     /// An `Arc<OverlayFs>` on success, or an error if validation fails.
     ///
     /// # Errors
+    /// * `EINVAL` - If no lower layer is provided
+    /// * `EINVAL` - If only one of upper and work is provided
     /// * `EINVAL` - If work and upper are on different filesystems
     /// * `EINVAL` - If work is not empty
-    pub fn new(upper: Path, lower: Vec<Path>, work: Path) -> Result<Arc<Self>> {
-        Self::validate_work_and_upper(&work, &upper)?;
-        Self::validate_work_empty(&work)?;
+    pub fn new(upper: Option<Path>, lower: Vec<Path>, work: Option<Path>) -> Result<Arc<Self>> {
+        if lower.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "lowerdir is required");
+        }
+
+        match (upper.as_ref(), work.as_ref()) {
+            (Some(upper), Some(work)) => {
+                Self::validate_work_and_upper(work, upper)?;
+                Self::validate_work_empty(work)?;
+            }
+            (None, None) => {}
+            _ => {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "upperdir and workdir must be specified together"
+                );
+            }
+        }
 
         let anon_device_id =
             AnonDeviceId::acquire().expect("no device ID is available for overlayfs");
         Ok(Arc::new_cyclic(|weak| Self {
-            upper: OverlayUpper { path: upper },
+            upper: upper.map(|path| OverlayUpper { path }),
             lower: OverlayLower { paths: lower },
-            work: OverlayWork { path: work },
+            work: work.map(|path| OverlayWork { path }),
             config: OverlayConfig::default(),
             sb: OverlaySB,
             anon_device_id,
@@ -171,15 +188,18 @@ impl FileSystem for OverlayFs {
     /// Utilizes the layered directory entries to build the root inode.
     fn root_inode(&self) -> Arc<dyn Inode> {
         let fs = self.fs();
-        let upper_inode = fs.upper.path.inode().clone();
-        let ino = upper_inode.ino();
+        let upper_inode = fs.upper.as_ref().map(|upper| upper.path.inode().clone());
+        let ino = upper_inode
+            .as_ref()
+            .unwrap_or_else(|| fs.lower.paths[0].inode())
+            .ino();
         Arc::new_cyclic(|weak| OverlayInode {
             ino,
             type_: InodeType::Dir,
             name_upon_creation: SpinLock::new(String::from("")),
             extension: Extension::new(),
             parent: None,
-            upper: Mutex::new(Some(upper_inode)),
+            upper: Mutex::new(upper_inode),
             upper_is_opaque: false,
             lowers: fs
                 .lower
@@ -218,6 +238,10 @@ impl OverlayFs {
         self.self_.upgrade().unwrap()
     }
 
+    fn has_upper_layer(&self) -> bool {
+        self.upper.is_some()
+    }
+
     /// Allocates a new unique inode number.
     fn alloc_ino(&self) -> u64 {
         self.next_ino.fetch_add(1, Ordering::Relaxed)
@@ -239,6 +263,7 @@ impl OverlayInode {
     /// Creates a new non-exist child `OverlayInode` in the upper layer.
     /// If the parent directories do not exist, they will be created recursively in the upper layer.
     pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        self.ensure_writable()?;
         if self.type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -368,6 +393,7 @@ impl OverlayInode {
     /// Deletes the target file by creating a "whiteout" file from the upper layer.
     /// The corresponding parent directories will be created also if they do not exist.
     pub fn unlink(&self, name: &str) -> Result<()> {
+        self.ensure_writable()?;
         // TODO: Hold the upper lock from here to avoid race condition
         let inode = self.lookup(name)?;
         let target = inode.downcast_ref::<OverlayInode>().unwrap();
@@ -391,7 +417,8 @@ impl OverlayInode {
         }
 
         if target_has_valid_lower {
-            let whiteout = upper.create(&whiteout_name(name), InodeType::File, mkmod!(a+r, u+w))?;
+            let whiteout =
+                upper.create(&whiteout_name(name), InodeType::File, mkmod!(a + r, u + w))?;
             // FIXME: Align the whiteout xattr behavior with Linux
             whiteout.set_xattr(
                 XattrName::try_from_full_name(WHITEOUT_XATTR_NAME).unwrap(),
@@ -406,6 +433,7 @@ impl OverlayInode {
     /// Deletes the target directory by creating an "opaque" directory from the upper layer.
     /// The corresponding parent directories will be created also if they do not exist.
     pub fn rmdir(&self, name: &str) -> Result<()> {
+        self.ensure_writable()?;
         // TODO: Hold the upper lock from here to avoid race condition
         let inode = self.lookup(name)?;
         let target = inode.downcast_ref::<OverlayInode>().unwrap();
@@ -437,7 +465,7 @@ impl OverlayInode {
 
         upper.rmdir(name)?;
 
-        let whiteout = upper.create(&whiteout_name(name), InodeType::File, mkmod!(a+r, u+w))?;
+        let whiteout = upper.create(&whiteout_name(name), InodeType::File, mkmod!(a + r, u + w))?;
         // FIXME: Align the whiteout xattr behavior with Linux
         whiteout.set_xattr(
             XattrName::try_from_full_name(WHITEOUT_XATTR_NAME).unwrap(),
@@ -487,7 +515,11 @@ impl OverlayInode {
     }
 
     pub fn page_cache(&self) -> Option<PageCache> {
-        let _ = self.get_top_valid_inode().page_cache()?;
+        let top = self.get_top_valid_inode();
+        let page_cache = top.page_cache()?;
+        if !self.overlay_fs().has_upper_layer() {
+            return Some(page_cache);
+        }
         // Do copy-up for the potential memory mapping operations
         let upper = self.build_upper_recursively_if_needed().unwrap();
         upper.page_cache()
@@ -573,14 +605,34 @@ impl OverlayInode {
     pub fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()>;
 }
 
-#[inherit_methods(from = "self.build_upper_recursively_if_needed().unwrap()")]
 impl OverlayInode {
-    pub fn set_atime(&self, time: Duration);
-    pub fn set_mtime(&self, time: Duration);
-    pub fn set_ctime(&self, time: Duration);
-}
+    pub fn set_atime(&self, time: Duration) {
+        if !self.overlay_fs().has_upper_layer() {
+            return;
+        }
+        self.build_upper_recursively_if_needed()
+            .unwrap()
+            .set_atime(time);
+    }
 
-impl OverlayInode {
+    pub fn set_mtime(&self, time: Duration) {
+        if !self.overlay_fs().has_upper_layer() {
+            return;
+        }
+        self.build_upper_recursively_if_needed()
+            .unwrap()
+            .set_mtime(time);
+    }
+
+    pub fn set_ctime(&self, time: Duration) {
+        if !self.overlay_fs().has_upper_layer() {
+            return;
+        }
+        self.build_upper_recursively_if_needed()
+            .unwrap()
+            .set_ctime(time);
+    }
+
     // Returns the top valid inode who must exist.
     fn get_top_valid_inode(&self) -> Arc<dyn Inode> {
         if let Some(upper) = self.upper() {
@@ -632,6 +684,13 @@ impl OverlayInode {
 
     fn overlay_fs(&self) -> Arc<OverlayFs> {
         self.fs.upgrade().unwrap()
+    }
+
+    fn ensure_writable(&self) -> Result<()> {
+        if !self.overlay_fs().has_upper_layer() {
+            return_errno!(Errno::EROFS);
+        }
+        Ok(())
     }
 
     /// Lookups the target regular inodes in a layered manner then
@@ -796,6 +855,7 @@ impl OverlayInode {
             return Ok(upper.clone());
         }
 
+        self.ensure_writable()?;
         debug_assert!(self.parent.is_some());
         // FIXME: Should we hold every upper locks from lower to upper
         // for such a long period?
@@ -1036,7 +1096,7 @@ impl DirentVisitor for OverlayDirVisitor {
             return Ok(());
         }
 
-        let unique_offset = UniqueNoGenerator::gen_unique_offset(self.cur_layer, fs_offset)?;
+        let mut unique_offset = UniqueNoGenerator::gen_unique_offset(self.cur_layer, fs_offset)?;
         let unique_ino = UniqueNoGenerator::gen_unique_ino(self.cur_layer, fs_ino)?;
 
         if self.dir_set.contains(name) || self.whiteout_set.contains(name) {
@@ -1055,7 +1115,10 @@ impl DirentVisitor for OverlayDirVisitor {
             self.visited_files += 1;
         }
 
-        debug_assert!(!self.dir_map.contains_key(&unique_offset));
+        // Preserve both merged entries if lower filesystems report colliding cookies.
+        while self.dir_map.contains_key(&unique_offset) {
+            unique_offset = UniqueNoGenerator::next_unique_offset(unique_offset)?;
+        }
         let _ = self
             .dir_map
             .insert(unique_offset, (name, unique_ino, type_));
@@ -1134,6 +1197,14 @@ impl UniqueNoGenerator {
         let offset = offset & Self::LOWER_MASK;
         (layer, offset)
     }
+
+    pub fn next_unique_offset(offset: usize) -> Result<usize> {
+        let (layer, fs_offset) = Self::parse_unique_offset(offset);
+        let Some(next_fs_offset) = fs_offset.checked_add(1) else {
+            return_errno_with_message!(Errno::EOVERFLOW, "overlay offset overflow");
+        };
+        Self::gen_unique_offset(layer, next_fs_offset)
+    }
 }
 
 /// Holds various mode settings and feature toggles.
@@ -1169,24 +1240,23 @@ impl FsType for OverlayFsType {
 
     fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         let mut lower = Vec::new();
-        let mut upper = "";
-        let mut work = "";
+        let mut upper = None;
+        let mut work = None;
 
         let args = fs_creation_ctx.args().ok_or(Error::new(Errno::EINVAL))?;
         let args = args.to_string_lossy();
         let entries = args.split(',');
 
         for entry in entries {
-            let mut parts = entry.split('=');
-            match (parts.next(), parts.next()) {
+            match entry.split_once('=') {
                 // Handle lowerdir, split by ':'
-                (Some("upperdir"), Some(path)) => {
+                Some(("upperdir", path)) => {
                     if path.is_empty() {
                         return_errno_with_message!(Errno::ENOENT, "upperdir is empty");
                     }
-                    upper = path;
+                    upper = Some(path);
                 }
-                (Some("lowerdir"), Some(paths)) => {
+                Some(("lowerdir", paths)) => {
                     for path in paths.split(':') {
                         if path.is_empty() {
                             return_errno_with_message!(Errno::ENOENT, "lowerdir is empty");
@@ -1194,14 +1264,18 @@ impl FsType for OverlayFsType {
                         lower.push(path);
                     }
                 }
-                (Some("workdir"), Some(path)) => {
+                Some(("workdir", path)) => {
                     if path.is_empty() {
                         return_errno_with_message!(Errno::ENOENT, "workdir is empty");
                     }
-                    work = path;
+                    work = Some(path);
                 }
                 _ => (),
             }
+        }
+
+        if lower.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "lowerdir is required");
         }
 
         let task = Task::current().unwrap();
@@ -1209,12 +1283,16 @@ impl FsType for OverlayFsType {
         let fs_ref = thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();
 
-        let upper = path_resolver.lookup(&FsPath::try_from(upper)?)?;
+        let upper = upper
+            .map(|upper| path_resolver.lookup(&FsPath::try_from(upper)?))
+            .transpose()?;
         let lower = lower
             .iter()
             .map(|&lower| path_resolver.lookup(&FsPath::try_from(lower)?))
             .collect::<Result<Vec<_>>>()?;
-        let work = path_resolver.lookup(&FsPath::try_from(work)?)?;
+        let work = work
+            .map(|work| path_resolver.lookup(&FsPath::try_from(work)?))
+            .transpose()?;
 
         Ok(OverlayFs::new(upper, lower, work)?)
     }
@@ -1287,7 +1365,7 @@ mod tests {
         };
         let work = upper.clone();
 
-        let fs = OverlayFs::new(upper, lower, work).unwrap();
+        let fs = OverlayFs::new(Some(upper), lower, Some(work)).unwrap();
         assert_eq!(fs.sb().magic, OVERLAY_FS_MAGIC);
         fs
     }
@@ -1301,7 +1379,7 @@ mod tests {
         let lower = vec![Path::new_fs_root(new_dummy_mount())];
         let work = Path::new_fs_root(new_dummy_mount());
 
-        let Err(e) = OverlayFs::new(upper, lower, work) else {
+        let Err(e) = OverlayFs::new(Some(upper), lower, Some(work)) else {
             panic!("OverlayFs::new should fail when work and upper are not in the same mount");
         };
         assert_eq!(e.error(), Errno::EINVAL);
@@ -1321,10 +1399,37 @@ mod tests {
         let lower = vec![Path::new_fs_root(new_dummy_mount())];
         let work = upper.clone();
 
-        let Err(e) = OverlayFs::new(upper, lower, work) else {
+        let Err(e) = OverlayFs::new(Some(upper), lower, Some(work)) else {
             panic!("OverlayFs::new should fail when work is not empty");
         };
         assert_eq!(e.error(), Errno::EINVAL);
+    }
+
+    #[ktest]
+    fn lower_only_overlay_should_be_read_only() {
+        crate::time::clocks::init_for_ktest();
+        crate::fs::vfs::init();
+
+        let mode = InodeMode::all();
+        let lower = {
+            let l1 = Path::new_fs_root(new_dummy_mount());
+            l1.new_fs_child("top", InodeType::File, mode).unwrap();
+
+            let l2 = Path::new_fs_root(new_dummy_mount());
+            l2.new_fs_child("bottom", InodeType::File, mode).unwrap();
+            vec![l1, l2]
+        };
+
+        let fs = OverlayFs::new(None, lower, None).unwrap();
+        let root = fs.root_inode();
+
+        assert_eq!(root.lookup("top").unwrap().type_(), InodeType::File);
+        assert_eq!(root.lookup("bottom").unwrap().type_(), InodeType::File);
+
+        let Err(err) = root.create("new", InodeType::File, mode) else {
+            panic!("lower-only overlay should reject writes");
+        };
+        assert_eq!(err.error(), Errno::EROFS);
     }
 
     #[ktest]
@@ -1371,7 +1476,7 @@ mod tests {
         };
         let work = root.new_fs_child("work", InodeType::Dir, mode).unwrap();
 
-        let fs = OverlayFs::new(upper, lower, work).unwrap();
+        let fs = OverlayFs::new(Some(upper), lower, Some(work)).unwrap();
         let root = fs.root_inode();
 
         let f1 = root.lookup("f1").unwrap();

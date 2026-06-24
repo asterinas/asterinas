@@ -5,8 +5,15 @@
 set -e
 
 SCRIPT_DIR=/test
+REGRESSION_ONLY_DIR=${REGRESSION_ONLY_DIR:-}
 
 for dir in $(find -L "${SCRIPT_DIR}" -mindepth 1 -maxdepth 1 -type d); do
+    if [ -n "$REGRESSION_ONLY_DIR" ] &&
+        [ "$(basename "$dir")" != "$REGRESSION_ONLY_DIR" ]; then
+        echo "Skipping $dir (REGRESSION_ONLY_DIR=$REGRESSION_ONLY_DIR)"
+        continue
+    fi
+
     if [ -x "${dir}/run_test.sh" ]; then
         echo "Running test in $dir"
         (cd "$dir" && ./run_test.sh)

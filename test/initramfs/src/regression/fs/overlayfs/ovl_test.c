@@ -103,10 +103,55 @@ void mount_overlayfs()
 	}
 }
 
+void mount_read_only_overlayfs()
+{
+	char options[512];
+	snprintf(options, sizeof(options), "lowerdir=%s:%s", LOWERDIR1,
+		 LOWERDIR2);
+	printf("Read-only mount options: %s\n", options);
+
+	if (mount("overlay", MERGEDDIR, "overlay", 0, options) == -1) {
+		handle_error("mount read-only overlay");
+	}
+}
+
 void unlink_if_exists(const char *path)
 {
 	if (unlink(path) == -1 && errno != ENOENT) {
 		handle_error("unlink");
+	}
+}
+
+void assert_write_fails_rofs(const char *path)
+{
+	int fd = open(path, O_WRONLY);
+	if (fd != -1) {
+		close(fd);
+		fprintf(stderr, "open should fail on read-only overlay: %s\n",
+			path);
+		handle_error("open");
+	}
+	if (errno != EROFS) {
+		handle_error("open read-only overlay");
+	}
+}
+
+void assert_overlay_dir_reports_own_dev_id(const char *lower_path,
+					   const char *merged_path)
+{
+	struct stat lower_stat;
+	struct stat merged_stat;
+
+	if (stat(lower_path, &lower_stat) == -1) {
+		handle_error("stat lower");
+	}
+	if (stat(merged_path, &merged_stat) == -1) {
+		handle_error("stat merged");
+	}
+	if (lower_stat.st_dev == merged_stat.st_dev) {
+		fprintf(stderr,
+			"overlay directory should not expose lower st_dev\n");
+		handle_error("stat overlay dir st_dev");
 	}
 }
 
@@ -147,13 +192,28 @@ int main()
 	write_to_file(LOWERDIR2 "/d1/f11", "another file in lower2 d1");
 	write_to_file(LOWERDIR2 "/d1/f12", "another file in lower2 d1 f12");
 
+	printf("Mounting read-only lower-only OverlayFS\n");
+	mount_read_only_overlayfs();
+
+	char buffer[1024];
+
+	printf("Reading /overlay/merged/f2 from read-only overlay:\n");
+	read_file(MERGEDDIR "/f2", buffer, sizeof(buffer));
+	assert_eq(buffer, "88", "Content of /overlay/merged/f2 should be '88'");
+	assert_overlay_dir_reports_own_dev_id(LOWERDIR1 "/d1", MERGEDDIR "/d1");
+
+	printf("Writing to /overlay/merged/f2 should fail on read-only overlay\n");
+	assert_write_fails_rofs(MERGEDDIR "/f2");
+
+	if (umount(MERGEDDIR) == -1) {
+		handle_error("umount read-only overlay");
+	}
+
 	printf("Mounting OverlayFS\n");
 	// Mount OverlayFS
 	mount_overlayfs();
 
 	// Read and verify the contents of the merged directory
-	char buffer[1024];
-
 	printf("Reading /overlay/merged/f2:\n");
 	read_file(MERGEDDIR "/f2", buffer, sizeof(buffer));
 	assert_eq(buffer, "88", "Content of /overlay/merged/f2 should be '88'");
