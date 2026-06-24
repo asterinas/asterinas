@@ -35,6 +35,8 @@ pub struct MountNamespace {
     owner: Arc<UserNamespace>,
     /// The stashed dentry in nsfs.
     stashed_dentry: StashedDentry,
+    /// Live mounts that belong to this namespace, keyed by [`Mount::unique_id`].
+    mounts: SpinLock<BTreeMap<u64, Weak<Mount>>>,
 }
 
 impl PartialEq for MountNamespace {
@@ -71,10 +73,16 @@ impl MountNamespace {
             root: None,
             owner,
             stashed_dentry: StashedDentry::new(),
+            mounts: SpinLock::new(BTreeMap::new()),
         });
         let root = build_root_fn(&UniqueArc::downgrade(&new_ns))?;
         new_ns.root = Some(root);
-        Ok(UniqueArc::into_arc(new_ns))
+        let ns = UniqueArc::into_arc(new_ns);
+        // Mounts created inside `build_root_fn` saw a `Weak` to a
+        // `UniqueArc`, whose `upgrade` returns `None`; they could not
+        // self-register at construction. Register the finished tree.
+        ns.register_existing_mount_tree();
+        Ok(ns)
     }
 
     /// Returns a reference to the singleton initial mount namespace.
@@ -132,6 +140,83 @@ impl MountNamespace {
                 MountNsFileCopying::Skip,
             )
         })
+    }
+
+    /// Records that `mount` is now part of this namespace's mount tree.
+    pub(super) fn register_mount(&self, mount: &Arc<Mount>) {
+        self.mounts
+            .lock()
+            .insert(mount.unique_id(), Arc::downgrade(mount));
+    }
+
+    /// Removes `unique_id` from this namespace's lookup table.
+    pub(super) fn deregister_mount(&self, unique_id: u64) {
+        self.mounts.lock().remove(&unique_id);
+    }
+
+    /// Looks up a live mount in this namespace by its unique 64-bit ID.
+    ///
+    /// No recyclable-`id` counterpart exists: the 32-bit ID space is reused
+    /// on drop, so a keyed lookup would race the next allocation.
+    pub fn lookup_by_unique_id(&self, unique_id: u64) -> Option<Arc<Mount>> {
+        self.mounts.lock().get(&unique_id).and_then(Weak::upgrade)
+    }
+
+    /// Returns the unique IDs of mounts in this namespace that are strict
+    /// descendants of `parent`, ordered by `unique_id`.
+    ///
+    /// `after` is exclusive: entries with `unique_id == after` are skipped;
+    /// passing `0` yields the whole namespace. With `reverse = true` the order
+    /// is reversed and `after` becomes the strict upper bound. At most `limit`
+    /// IDs are returned.
+    ///
+    /// Ancestry is checked outside the `mounts` lock so that the per-`Mount`
+    /// parent locks are never acquired while the table lock is held.
+    pub fn descendant_ids_of(
+        &self,
+        parent: &Arc<Mount>,
+        after: u64,
+        reverse: bool,
+        limit: usize,
+    ) -> Vec<u64> {
+        use core::ops::Bound;
+
+        let snapshot: Vec<(u64, Arc<Mount>)> = {
+            let guard = self.mounts.lock();
+            let iter: Box<dyn Iterator<Item = (&u64, &Weak<Mount>)>> = if reverse {
+                if after == 0 {
+                    Box::new(guard.iter().rev())
+                } else {
+                    Box::new(guard.range(..after).rev())
+                }
+            } else {
+                Box::new(guard.range((Bound::Excluded(&after), Bound::Unbounded)))
+            };
+            iter.filter_map(|(&id, weak)| weak.upgrade().map(|m| (id, m)))
+                .collect()
+        };
+
+        snapshot
+            .into_iter()
+            .filter(|(_, m)| !Arc::ptr_eq(m, parent) && m.is_equal_or_descendant_of(parent))
+            .map(|(id, _)| id)
+            .take(limit)
+            .collect()
+    }
+
+    /// Walks the in-place mount tree and registers every mount in
+    /// [`Self::mounts`].
+    ///
+    /// The `children` read guard is released before the next iteration so
+    /// that `register_mount` (which takes `mounts.lock`) is never called
+    /// under a per-`Mount` lock.
+    fn register_existing_mount_tree(self: &Arc<Self>) {
+        let mut stack = vec![self.root().clone()];
+        while let Some(mount) = stack.pop() {
+            self.register_mount(&mount);
+            let children: Vec<_> = mount.children.read().values().cloned().collect();
+            stack.extend(children);
+        }
     }
 
     /// Flushes all pending filesystem metadata and cached file data to the device

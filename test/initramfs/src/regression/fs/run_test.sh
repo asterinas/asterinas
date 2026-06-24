@@ -123,6 +123,7 @@ echo "All mount bind file test passed."
 ./isolation/pivot_root
 
 ./mount/mount_move
+./mount/listmount
 
 ./overlayfs/ovl_test
 ./overlayfs/readdir_small_buffer
