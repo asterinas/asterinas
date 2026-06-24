@@ -1,0 +1,45 @@
+# This is the configuration for lychee to check invalid or broken links.
+# See https://lychee.cli.rs/guides/config/ for the meanings.
+
+# Verbose program output
+# Accepts log level: "error", "warn", "info", "debug", "trace"
+verbose = "error"
+
+# Output format of final status report.
+format = "detailed"
+
+# Don't show interactive progress bar while checking links.
+no_progress = true
+
+# Proceed for server connections considered insecure (invalid TLS).
+insecure = true
+
+# Exclude the paths from getting checked. The values are treated as regular expressions.
+exclude_path = [
+  "SUMMARY.md", # The valid empty links are flagged out by lychee.
+]
+
+# Request method
+method = "get"
+
+# Custom request headers
+header = { "accept" = "text/html" }
+
+user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
+
+# Enable link caching. This can be helpful to avoid checking the same links on multiple runs.
+# .lycheecache will be generated.
+cache = true
+
+# Discard all cached requests older than this duration.
+max_cache_age = "90d"
+
+# Number of threads to utilize. Defaults to number of cores available to the system if omitted.
+threads = 1
+# Maximum number of concurrent link checks.
+max_concurrency = 3
+
+# More strictly limit the access rate to gnu websites.
+[hosts."www.gnu.org"]
+concurrency = 1
+request_interval = "2s"

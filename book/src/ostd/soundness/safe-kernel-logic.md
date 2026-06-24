@@ -26,9 +26,9 @@ OSTD prevents this unconditionally:
 > **Safety Invariant.** A task cannot sleep while in atomic mode.
 
 OSTD tracks atomic mode using guard types.
-[`DisabledPreemptGuard`](https://asterinas.github.io/api-docs/0.17.1/ostd/task/struct.DisabledPreemptGuard.html)
+[`DisabledPreemptGuard`](https://asterinas.github.io/api-docs/0.18.0/ostd/task/struct.DisabledPreemptGuard.html)
 disables preemption for its lifetime,
-and [`DisabledLocalIrqGuard`](https://asterinas.github.io/api-docs/0.17.1/ostd/irq/struct.DisabledLocalIrqGuard.html)
+and [`DisabledLocalIrqGuard`](https://asterinas.github.io/api-docs/0.18.0/ostd/irq/struct.DisabledLocalIrqGuard.html)
 disables local IRQs
 (which also implies preemption is disabled).
 Both guards are `!Send` —
@@ -45,7 +45,7 @@ so any attempt to sleep while holding a spinlock is caught.
 ## Synchronization Primitives
 
 OSTD provides six synchronization primitives:
-[`SpinLock`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.SpinLock.html), [`Mutex`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.Mutex.html), [`RwLock`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.RwLock.html), [`RwMutex`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.RwMutex.html), [`Rcu`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.Rcu.html), and [`WaitQueue`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.WaitQueue.html).
+[`SpinLock`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/struct.SpinLock.html), [`Mutex`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/struct.Mutex.html), [`RwLock`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/struct.RwLock.html), [`RwMutex`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/struct.RwMutex.html), [`Rcu`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/struct.Rcu.html), and [`WaitQueue`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/struct.WaitQueue.html).
 Their soundness rests on two design principles:
 
 **Principle 1: Guards are `!Send`.**
@@ -58,7 +58,7 @@ which would corrupt the CPU-local preemption state
 is tied to the acquiring CPU).
 
 **Principle 2: Atomic mode is entered before lock acquisition.**
-[`SpinLock::lock()`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.SpinLock.html#method.lock)
+[`SpinLock::lock()`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/struct.SpinLock.html#method.lock)
 disables preemption (or IRQs) *before* entering the CAS loop.
 If the order were reversed (acquire lock, then disable preemption),
 there would be a window where the lock is held
@@ -68,22 +68,22 @@ and if the interrupt handler tries to acquire the same lock,
 a deadlock results.
 
 The kind of guard —
-preemption-only ([`PreemptDisabled`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.PreemptDisabled.html))
-or IRQ-disabled ([`LocalIrqDisabled`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.LocalIrqDisabled.html)) —
+preemption-only ([`PreemptDisabled`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/enum.PreemptDisabled.html))
+or IRQ-disabled ([`LocalIrqDisabled`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/enum.LocalIrqDisabled.html)) —
 is chosen at lock declaration time
 and statically enforced by the type system,
 ensuring consistent usage throughout the lock's lifetime.
 
 ### RCU (Read-Copy-Update)
 
-[`Rcu<P>`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.Rcu.html) provides lock-free read access with deferred reclamation:
+[`Rcu<P>`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/struct.Rcu.html) provides lock-free read access with deferred reclamation:
 
 - **Read side**:
-  [`Rcu::read()`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.Rcu.html#method.read) disables preemption
+  [`Rcu::read()`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/struct.Rcu.html#method.read) disables preemption
   and loads the pointer with `Acquire` ordering.
   The read-side critical section is non-preemptible.
 - **Write side**:
-  [`Rcu::update(new_ptr)`](https://asterinas.github.io/api-docs/0.17.1/ostd/sync/struct.Rcu.html#method.update) atomically swaps the pointer
+  [`Rcu::update(new_ptr)`](https://asterinas.github.io/api-docs/0.18.0/ostd/sync/struct.Rcu.html#method.update) atomically swaps the pointer
   and enqueues the old value for deferred drop.
 - **Grace period**:
   OSTD detects when all CPUs have left
@@ -108,14 +108,14 @@ OSTD provides two CPU-local storage mechanisms:
 
 **`cpu_local!` (static variables)**:
 Access requires a `DisabledLocalIrqGuard`
-via [`CpuLocal::get_with(&irq_guard)`](https://asterinas.github.io/api-docs/0.17.1/ostd/cpu/local/struct.CpuLocal.html#method.get_with).
+via [`CpuLocal::get_with(&irq_guard)`](https://asterinas.github.io/api-docs/0.18.0/ostd/cpu/local/struct.CpuLocal.html#method.get_with).
 This ensures two properties:
 - The task is pinned to the current CPU
   (IRQs disabled implies no preemption and no migration).
 - No interrupt handler can observe a partially-modified state.
 
 For `Sync` types,
-[`CpuLocal::get_on_cpu(target_cpu)`](https://asterinas.github.io/api-docs/0.17.1/ostd/cpu/local/struct.CpuLocal.html#method.get_on_cpu) allows remote access without a guard
+[`CpuLocal::get_on_cpu(target_cpu)`](https://asterinas.github.io/api-docs/0.18.0/ostd/cpu/local/struct.CpuLocal.html#method.get_on_cpu) allows remote access without a guard
 (since `Sync` types are safe to share across threads).
 
 **`cpu_local_cell!` (cell variables)**:

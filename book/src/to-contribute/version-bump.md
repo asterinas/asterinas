@@ -40,19 +40,20 @@ except during the version bump process.
 
 ## How to Bump Versions
 
-We recommend a three-commit procedure to bump versions:
+We recommend a four-commit procedure to bump versions:
 1. **Commit 1 "Bump the Docker image version"** triggers the generation of a new Docker image.
 2. **Commit 2 "Switch to a new Docker image"** makes the codebase use the new Docker image.
 3. **Commit 3 "Bump the project version"** triggers the release of new crates.
+4. **Commit 4 "Update API doc hyperlinks in the Book"** updates all Book links to use the latest API doc version.
 
 Depending on your exact purpose,
-you may complete the version bump process with at most three commits within two PRs.
+you may complete the version bump process with at most four commits within two or three PRs.
 * **To make non-breaking changes to the Docker images**,
 submit Commit 1 in a PR, then Commit 2 in another.
 * **To make breaking changes to the Docker images and the crates' APIs**,
-submit Commit 1 in a PR, then Commit 2 and 3 in another.
+submit Commit 1 in the first PR, then Commits 2 and 3 in the second, and Commit 4 in the third.
 
-Across the three commits,
+Across the four commits,
 you will be assisted with a convenient utility script, `tools/bump_version.sh`,
 
 ### Commit 1: "Bump the Docker image version"
@@ -104,3 +105,15 @@ Pack these changes into a third commit and
 submit the last two commits in a single PR.
 After the PR is merged into the `main` branch,
 the CI will automatically publish the new crate versions.
+
+### Commit 4: "Update API doc hyperlinks in the Book"
+
+After new API docs are published, run:
+
+```
+./bump_version.sh --api_doc_hyperlinks_in_book
+```
+
+This command mechanically updates API doc hyperlinks in Book pages
+to point to the current project version.
+Submit the changes in a single-commit PR.

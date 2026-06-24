@@ -35,7 +35,7 @@ because no external entity can access them.
 **Untyped frames** are raw byte buffers.
 They do not host Rust objects.
 They are accessed exclusively through
-a POD (Plain Old Data) copy interface ([`VmReader`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/io/struct.VmReader.html)/[`VmWriter`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/io/struct.VmWriter.html))
+a POD (Plain Old Data) copy interface ([`VmReader`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/io/struct.VmReader.html)/[`VmWriter`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/io/struct.VmWriter.html))
 that **never creates Rust references to the frame contents**.
 
 > **Safety Invariant:** Untyped frames are never accessed via Rust references.
@@ -68,16 +68,16 @@ since user-space accesses may trigger page faults.
 
 ## Type-Level Encoding
 
-[`Frame<M>`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/frame/struct.Frame.html) is parameterized by a metadata type `M`.
+[`Frame<M>`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/frame/struct.Frame.html) is parameterized by a metadata type `M`.
 Clients associate custom metadata with each frame by choosing `M` —
 for example, page table nodes store `PageTablePageMeta`
 and heap slabs store `SlabMeta`.
-[`Frame::meta()`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/frame/struct.Frame.html#method.meta) provides typed access to the per-frame metadata.
+[`Frame::meta()`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/frame/struct.Frame.html#method.meta) provides typed access to the per-frame metadata.
 
 The same type parameter enforces the typed/untyped distinction
 at compile time.
 `VmReader`/`VmWriter` access to frame contents
-is gated on `M` implementing [`AnyUFrameMeta`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/frame/untyped/trait.AnyUFrameMeta.html):
+is gated on `M` implementing [`AnyUFrameMeta`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/frame/untyped/trait.AnyUFrameMeta.html):
 
 ```rust
 // Only untyped frames expose reader()/writer()
@@ -108,7 +108,7 @@ type UFrame = Frame<dyn AnyUFrameMeta>;
 type USegment = Segment<dyn AnyUFrameMeta>;
 ```
 
-[`AnyFrameMeta`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/frame/meta/trait.AnyFrameMeta.html) is `unsafe`,
+[`AnyFrameMeta`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/frame/meta/trait.AnyFrameMeta.html) is `unsafe`,
 preventing clients from implementing it directly
 (kernel code enforces `#![deny(unsafe_code)]`).
 Instead, OSTD provides safe macros —
@@ -117,7 +117,7 @@ and [`impl_untyped_frame_meta_for!`](https://github.com/asterinas/asterinas/blob
 that produce correct implementations.
 A client cannot misclassify a frame's sensitivity
 because only the macros can set the
-[`AnyFrameMeta::is_untyped()`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/frame/meta/trait.AnyFrameMeta.html#method.is_untyped) return value.
+[`AnyFrameMeta::is_untyped()`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/frame/meta/trait.AnyFrameMeta.html#method.is_untyped) return value.
 
 ## The Frame Lifecycle
 
@@ -143,7 +143,7 @@ stateDiagram-v2
 Special states:
 - [`REF_COUNT_UNUSED`](https://github.com/asterinas/asterinas/blob/9ea44ed2b60bc81a5efb18af79e41fc07bf3d523/ostd/src/mm/frame/meta.rs#L124) (`u64::MAX`):
   Frame is not in use.
-  Only [`Frame::from_unused(paddr, metadata)`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/frame/struct.Frame.html#method.from_unused) can transition out.
+  Only [`Frame::from_unused(paddr, metadata)`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/frame/struct.Frame.html#method.from_unused) can transition out.
 - `0`: Busy —
   frame is being constructed or destructed.
   No concurrent access permitted.

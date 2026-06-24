@@ -16,10 +16,10 @@ catastrophic for memory safety.
 OSTD provides two DMA abstractions,
 both restricted to untyped memory:
 
-* **[`DmaCoherent`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/dma/struct.DmaCoherent.html)**: Cache-coherent DMA mapping.
-  Created from a [`Segment<()>`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/frame/segment/struct.Segment.html) (untyped).
-* **[`DmaStream`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/dma/struct.DmaStream.html)**: Streaming DMA mapping.
-  Created from a [`USegment`](https://asterinas.github.io/api-docs/0.17.1/ostd/mm/frame/segment/type.USegment.html) (untyped).
+* **[`DmaCoherent`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/dma/struct.DmaCoherent.html)**: Cache-coherent DMA mapping.
+  Created from a [`Segment<()>`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/frame/segment/struct.Segment.html) (untyped).
+* **[`DmaStream`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/dma/struct.DmaStream.html)**: Streaming DMA mapping.
+  Created from a [`USegment`](https://asterinas.github.io/api-docs/0.18.0/ostd/mm/frame/segment/type.USegment.html) (untyped).
 
 **IOMMU enforcement**:
 When IOMMU DMA remapping is enabled (the default on x86),
@@ -73,7 +73,7 @@ by reading/writing specific physical addresses.
 Some MMIO regions are sensitive (APIC, IOMMU registers)
 and must not be accessible to device drivers.
 
-OSTD's [`IoMem`](https://asterinas.github.io/api-docs/0.17.1/ostd/io/struct.IoMem.html) type has two sensitivity levels,
+OSTD's [`IoMem`](https://asterinas.github.io/api-docs/0.18.0/ostd/io/struct.IoMem.html) type has two sensitivity levels,
 enforced at the type level:
 
 ```rust
@@ -87,7 +87,7 @@ pub struct IoMem<S: SecuritySensitivity> { ... }
 - `IoMem<Insensitive>`:
   Provides safe `reader()` and `writer()` methods
   via the `HasVmReaderWriter` trait.
-  Available to device drivers via [`IoMem::acquire(range)`](https://asterinas.github.io/api-docs/0.17.1/ostd/io/struct.IoMem.html#method.acquire).
+  Available to device drivers via [`IoMem::acquire(range)`](https://asterinas.github.io/api-docs/0.18.0/ostd/io/struct.IoMem.html#method.acquire).
 
 The [`IoMemAllocator`](https://github.com/asterinas/asterinas/blob/9ea44ed2b60bc81a5efb18af79e41fc07bf3d523/ostd/src/io/io_mem/allocator.rs#L18) enforces the boundary:
 1. At initialization,
@@ -107,13 +107,13 @@ it cannot access kernel-critical hardware.
 ## I/O Port Access Control (x86)
 
 I/O ports,
-represented as [`IoPort`](https://asterinas.github.io/api-docs/0.17.1/ostd/io/struct.IoPort.html),
+represented as [`IoPort`](https://asterinas.github.io/api-docs/0.18.0/ostd/io/struct.IoPort.html),
 are an x86-specific mechanism for device communication.
 The same sensitivity distinction applies:
 
 - `IoPort::new(port)` is `pub(crate) unsafe` —
   for OSTD-internal use only.
-- [`IoPort::acquire(port)`](https://asterinas.github.io/api-docs/0.17.1/ostd/io/struct.IoPort.html#method.acquire) is the safe public API.
+- [`IoPort::acquire(port)`](https://asterinas.github.io/api-docs/0.18.0/ostd/io/struct.IoPort.html#method.acquire) is the safe public API.
   It requests the port from the [`IoPortAllocator`](https://github.com/asterinas/asterinas/blob/9ea44ed2b60bc81a5efb18af79e41fc07bf3d523/ostd/src/io/io_port/allocator.rs#L17).
 
 The `IoPortAllocator` removes sensitive ports at initialization.
@@ -130,7 +130,7 @@ before clients can access it.
 
 ## Interrupt Handling
 
-Device interrupts are managed through the [`IrqLine`](https://asterinas.github.io/api-docs/0.17.1/ostd/irq/struct.IrqLine.html) abstraction.
+Device interrupts are managed through the [`IrqLine`](https://asterinas.github.io/api-docs/0.18.0/ostd/irq/struct.IrqLine.html) abstraction.
 Clients register callbacks
 but cannot manipulate the IDT, APIC, or interrupt routing directly.
 All interrupt configuration is mediated by OSTD's safe APIs.

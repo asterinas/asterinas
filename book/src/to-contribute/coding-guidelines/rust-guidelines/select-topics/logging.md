@@ -10,7 +10,7 @@ provided by the [`ostd::log`] module:
 `debug!`, `info!`, `notice!`, `warn!`, `error!`,
 `crit!`, `alert!`, `emerg!`.
 Import them via `use ostd::prelude::*`
-or `use ostd::log::{info, warn, ...}`.
+or `use ostd::{info, warn, ...}`.
 
 Do not use the third-party [`log`](https://docs.rs/log) crate directly.
 OSTD provides a bridge that forwards messages
@@ -34,7 +34,7 @@ log::info!("VirtIO block device initialized: {} sectors", num_sectors);
 println!("VirtIO block device initialized: {} sectors", num_sectors);
 ```
 
-[`ostd::log`]: https://asterinas.github.io/ostd/ostd/log/
+[`ostd::log`]: https://asterinas.github.io/api-docs/0.18.0/ostd/log/
 
 ### Choose appropriate log levels (`log-levels`) {#log-levels}
 
