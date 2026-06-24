@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file::{InodeType, file_table::RawFileDesc},
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, RenameMode, SplitPath},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -28,10 +28,9 @@ pub fn sys_renameat2(
     let Some(flags) = Flags::from_bits(flags) else {
         return_errno_with_message!(Errno::EINVAL, "invalid flags");
     };
-    // TODO: Add support for handling the `NOREPLACE`, `EXCHANGE`, and `WHITEOUT` flags.
-    if !flags.is_empty() {
-        warn!("unsupported flags: {:?}", flags);
-        return_errno_with_message!(Errno::EINVAL, "unsupported flags");
+    // TODO: Add support for handling the `WHITEOUT` flag.
+    if flags.contains(Flags::WHITEOUT) || flags.contains(Flags::NOREPLACE | Flags::EXCHANGE) {
+        return_errno_with_message!(Errno::EINVAL, "invalid renameat2 flag combination");
     }
 
     let fs_ref = ctx.thread_local.borrow_fs();
@@ -51,9 +50,6 @@ pub fn sys_renameat2(
 
     let new_path_name = new_path_name.to_string_lossy();
     let (new_parent_path, new_name) = {
-        if old_path.type_() != InodeType::Dir && new_path_name.ends_with('/') {
-            return_errno_with_message!(Errno::EISDIR, "the new path is a directory");
-        }
         let (new_parent_path_name, new_name) = new_path_name.split_dirname_and_basename()?;
         let new_parent_fs_path =
             FsPath::from_fd_at(new_dirfd, new_parent_path_name, EmptyPathStr::Reject)?;
@@ -63,14 +59,63 @@ pub fn sys_renameat2(
         )
     };
 
-    if old_path.type_() == InodeType::Dir && new_parent_path.is_equal_or_descendant_of(&old_path) {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "the new path is inside the old directory or its subtree"
-        );
+    // Check for new path existence and type for exchange mode
+    if flags.contains(Flags::EXCHANGE) {
+        // Try to lookup new path
+        let new_path_result = path_resolver.lookup_at_path(&new_parent_path, &new_name);
+        let Ok(new_path) = new_path_result else {
+            return_errno_with_message!(Errno::ENOENT, "the new path does not exist");
+        };
+        // Check type compatibility
+        if (old_path.type_() == InodeType::Dir) != (new_path.type_() == InodeType::Dir) {
+            if old_path.type_() == InodeType::Dir {
+                return_errno_with_message!(Errno::ENOTDIR, "the new path is not a directory");
+            } else {
+                return_errno_with_message!(Errno::EISDIR, "the new path is a directory");
+            }
+        }
+        // Check for circularity: old path cannot be an ancestor of new parent
+        if old_path.type_() == InodeType::Dir
+            && new_parent_path.is_equal_or_descendant_of(&old_path)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the new path is inside the old directory or its subtree"
+            );
+        }
+        // Check for circularity: new path cannot be an ancestor of old parent
+        if new_path.type_() == InodeType::Dir
+            && old_parent_path.is_equal_or_descendant_of(&new_path)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the old path is inside the new directory or its subtree"
+            );
+        }
+    } else {
+        // Original checks for non-exchange modes
+        if old_path.type_() != InodeType::Dir && new_path_name.ends_with('/') {
+            return_errno_with_message!(Errno::EISDIR, "the new path is a directory");
+        }
+        if old_path.type_() == InodeType::Dir
+            && new_parent_path.is_equal_or_descendant_of(&old_path)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the new path is inside the old directory or its subtree"
+            );
+        }
     }
 
-    old_parent_path.rename(old_name, &new_parent_path, &new_name)?;
+    let rename_mode = if flags.contains(Flags::EXCHANGE) {
+        RenameMode::Exchange
+    } else if flags.contains(Flags::NOREPLACE) {
+        RenameMode::NoReplace
+    } else {
+        RenameMode::Replace
+    };
+
+    old_parent_path.rename(old_name, &new_parent_path, &new_name, rename_mode)?;
 
     Ok(SyscallReturn::Return(0))
 }

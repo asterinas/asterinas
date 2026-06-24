@@ -35,6 +35,17 @@ mod mount;
 mod mount_namespace;
 mod resolver;
 
+/// Specifies the behavior of `renameat2()` when renaming a path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RenameMode {
+    /// Replaces the destination if it already exists.
+    Replace,
+    /// Fails with `EEXIST` if the destination already exists.
+    NoReplace,
+    /// Exchanges the source and destination paths.
+    Exchange,
+}
+
 /// A `Path` is used to represent an exact location in the VFS tree.
 ///
 /// Each `Path` corresponds to a node in the VFS tree, and a single node
@@ -549,12 +560,22 @@ impl Path {
     }
 
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
-    pub fn rename(&self, old_name: &str, new_dir: &Self, new_name: &str) -> Result<()> {
+    ///
+    /// The `mode` parameter controls the rename semantics:
+    /// - [`RenameMode::Replace`]: replaces the target if it exists (default).
+    /// - [`RenameMode::NoReplace`]: fails with `EEXIST` if the target exists.
+    pub fn rename(
+        &self,
+        old_name: &str,
+        new_dir: &Self,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
         if !Arc::ptr_eq(&self.mount, &new_dir.mount) {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name)
+        DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name, mode)
     }
 }
 

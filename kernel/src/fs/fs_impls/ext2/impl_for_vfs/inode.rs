@@ -21,6 +21,7 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FallocMode, FileOps, Inode, Metadata, MknodType, SymbolicLink},
+            path::RenameMode,
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -207,11 +208,18 @@ impl Inode for Ext2Inode {
         self.rmdir(name)
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
         let target = target
             .downcast_ref::<Ext2Inode>()
             .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
-        self.rename(old_name, target, new_name)
+        // Use fully qualified syntax to call the inherent method, not the trait method
+        Ext2Inode::rename(self, old_name, target, new_name, mode)
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {

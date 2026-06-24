@@ -30,7 +30,7 @@ use crate::{
                 Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
                 SymbolicLink,
             },
-            path::{is_dot, is_dot_or_dotdot, is_dotdot},
+            path::{RenameMode, is_dot, is_dot_or_dotdot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -1093,7 +1093,13 @@ impl Inode for RamInode {
         Ok(inode as _)
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
         if is_dot_or_dotdot(old_name) {
             return_errno_with_message!(Errno::EISDIR, "old_name is . or ..");
         }
@@ -1145,77 +1151,100 @@ impl Inode for RamInode {
                 Ok(())
             };
 
-        // Rename in the same directory
-        if self.ino == target.ino {
-            let mut self_dir = self.inner.as_direntry().unwrap().write();
-            let (src_idx, src_inode) = self_dir
-                .get_entry(old_name)
-                .ok_or(Error::new(Errno::ENOENT))?;
-            let is_dir = src_inode.typ == InodeType::Dir;
+        // Check for exchange compatibility
+        let check_exchange_inode = |inode1: &Arc<RamInode>, inode2: &Arc<RamInode>| -> Result<()> {
+            if inode1.ino == inode2.ino {
+                return Ok(());
+            }
 
-            if let Some((dst_idx, dst_inode)) = self_dir.get_entry(new_name) {
-                check_replace_inode(&src_inode, &dst_inode)?;
-                self_dir.remove_entry(dst_idx);
-                self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
+            // For exchange, both must be either directories or non-directories
+            if (inode1.typ == InodeType::Dir) != (inode2.typ == InodeType::Dir) {
+                if inode1.typ == InodeType::Dir {
+                    return_errno_with_message!(Errno::ENOTDIR, "new path is not a directory");
+                } else {
+                    return_errno_with_message!(Errno::EISDIR, "new path is a directory");
+                }
+            }
+            Ok(())
+        };
+
+        if mode == RenameMode::Exchange {
+            // Exchange mode
+            if self.ino == target.ino {
+                // Exchange in the same directory
+                let mut self_dir = self.inner.as_direntry().unwrap().write();
+                let (src_idx, src_inode) = self_dir
+                    .get_entry(old_name)
+                    .ok_or(Error::new(Errno::ENOENT))?;
+                let (dst_idx, dst_inode) = self_dir
+                    .get_entry(new_name)
+                    .ok_or(Error::new(Errno::ENOENT))?;
+
+                check_exchange_inode(&src_inode, &dst_inode)?;
+
+                // Exchange the entries
+                let old_entry = self_dir.remove_entry(src_idx).unwrap();
+                let new_entry = self_dir.remove_entry(dst_idx).unwrap();
+
+                self_dir.append_entry(old_name, new_entry.1.clone());
+                self_dir.append_entry(new_name, old_entry.1.clone());
+
                 drop(self_dir);
 
                 let now = now();
                 let mut self_meta = self.metadata.lock();
-                self_meta.dec_size();
-                if is_dir {
-                    self_meta.dec_nlinks();
-                }
                 self_meta.set_mtime(now);
                 self_meta.set_ctime(now);
                 drop(self_meta);
                 src_inode.set_ctime(now);
                 dst_inode.set_ctime(now);
-            } else {
-                self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
-                drop(self_dir);
-                let now = now();
-                let mut self_meta = self.metadata.lock();
-                self_meta.set_mtime(now);
-                self_meta.set_ctime(now);
-                drop(self_meta);
-                src_inode.set_ctime(now);
-            }
-        }
-        // Or rename across different directories
-        else {
-            let (mut self_dir, mut target_dir) = write_lock_two_direntries_by_ino(
-                (self.ino, self.inner.as_direntry().unwrap()),
-                (target.ino, target.inner.as_direntry().unwrap()),
-            );
-            let self_inode_arc = self.this.upgrade().unwrap();
-            let target_inode_arc = target.this.upgrade().unwrap();
-            let (src_idx, src_inode) = self_dir
-                .get_entry(old_name)
-                .ok_or(Error::new(Errno::ENOENT))?;
-            // Avoid renaming a directory to a subdirectory of itself
-            if Arc::ptr_eq(&src_inode, &target_inode_arc) {
-                return_errno!(Errno::EINVAL);
-            }
-            let is_dir = src_inode.typ == InodeType::Dir;
 
-            if let Some((dst_idx, dst_inode)) = target_dir.get_entry(new_name) {
-                // Avoid renaming a subdirectory to a directory.
-                if Arc::ptr_eq(&self_inode_arc, &dst_inode) {
-                    return_errno!(Errno::ENOTEMPTY);
+                // If exchanging directories, update their parent pointers
+                let _src_is_dir = src_inode.typ == InodeType::Dir;
+                let _dst_is_dir = dst_inode.typ == InodeType::Dir;
+                // Since we're in same directory, no need to change parent pointers
+                // but we should update ctime regardless
+            } else {
+                // Exchange across different directories
+                let (mut self_dir, mut target_dir) = write_lock_two_direntries_by_ino(
+                    (self.ino, self.inner.as_direntry().unwrap()),
+                    (target.ino, target.inner.as_direntry().unwrap()),
+                );
+                let self_inode_arc = self.this.upgrade().unwrap();
+                let target_inode_arc = target.this.upgrade().unwrap();
+                let (src_idx, src_inode) = self_dir
+                    .get_entry(old_name)
+                    .ok_or(Error::new(Errno::ENOENT))?;
+                let (dst_idx, dst_inode) = target_dir
+                    .get_entry(new_name)
+                    .ok_or(Error::new(Errno::ENOENT))?;
+
+                // Check for circular references
+                let src_is_dir = src_inode.typ == InodeType::Dir;
+                let dst_is_dir = dst_inode.typ == InodeType::Dir;
+
+                // Check if swapping would create a circular reference
+                if src_is_dir && Arc::ptr_eq(&target_inode_arc, &src_inode) {
+                    return_errno!(Errno::EINVAL);
                 }
-                check_replace_inode(&src_inode, &dst_inode)?;
-                self_dir.remove_entry(src_idx);
-                target_dir.remove_entry(dst_idx);
-                target_dir.append_entry(new_name, src_inode.clone());
+                if dst_is_dir && Arc::ptr_eq(&self_inode_arc, &dst_inode) {
+                    return_errno!(Errno::EINVAL);
+                }
+
+                check_exchange_inode(&src_inode, &dst_inode)?;
+
+                // Exchange the entries
+                let src_entry = self_dir.remove_entry(src_idx).unwrap();
+                let dst_entry = target_dir.remove_entry(dst_idx).unwrap();
+
+                target_dir.append_entry(new_name, src_entry.1.clone());
+                self_dir.append_entry(old_name, dst_entry.1.clone());
+
                 drop(self_dir);
                 drop(target_dir);
 
                 let now = now();
                 let mut self_meta = self.metadata.lock();
-                self_meta.dec_size();
-                if is_dir {
-                    self_meta.dec_nlinks();
-                }
                 self_meta.set_mtime(now);
                 self_meta.set_ctime(now);
                 drop(self_meta);
@@ -1223,42 +1252,146 @@ impl Inode for RamInode {
                 target_meta.set_mtime(now);
                 target_meta.set_ctime(now);
                 drop(target_meta);
+                src_inode.set_ctime(now);
                 dst_inode.set_ctime(now);
-                src_inode.set_ctime(now);
-            } else {
-                self_dir.remove_entry(src_idx);
-                target_dir.append_entry(new_name, src_inode.clone());
-                drop(self_dir);
-                drop(target_dir);
 
-                let now = now();
-                let mut self_meta = self.metadata.lock();
-                self_meta.dec_size();
-                if is_dir {
-                    self_meta.dec_nlinks();
+                // Update directory parent pointers if needed
+                if src_is_dir {
+                    src_inode
+                        .inner
+                        .as_direntry()
+                        .unwrap()
+                        .write()
+                        .set_parent(target.this.clone());
                 }
-                self_meta.set_mtime(now);
-                self_meta.set_ctime(now);
-                drop(self_meta);
-
-                let mut target_meta = target.metadata.lock();
-                target_meta.inc_size();
-                if is_dir {
-                    target_meta.inc_nlinks();
+                if dst_is_dir {
+                    dst_inode
+                        .inner
+                        .as_direntry()
+                        .unwrap()
+                        .write()
+                        .set_parent(self.this.clone());
                 }
-                target_meta.set_mtime(now);
-                target_meta.set_ctime(now);
-                drop(target_meta);
-                src_inode.set_ctime(now);
             }
+        } else {
+            // Original non-exchange mode logic
+            // Rename in the same directory
+            if self.ino == target.ino {
+                let mut self_dir = self.inner.as_direntry().unwrap().write();
+                let (src_idx, src_inode) = self_dir
+                    .get_entry(old_name)
+                    .ok_or(Error::new(Errno::ENOENT))?;
+                let is_dir = src_inode.typ == InodeType::Dir;
 
-            if is_dir {
-                src_inode
-                    .inner
-                    .as_direntry()
-                    .unwrap()
-                    .write()
-                    .set_parent(target.this.clone());
+                if let Some((dst_idx, dst_inode)) = self_dir.get_entry(new_name) {
+                    check_replace_inode(&src_inode, &dst_inode)?;
+                    self_dir.remove_entry(dst_idx);
+                    self_dir
+                        .substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
+                    drop(self_dir);
+
+                    let now = now();
+                    let mut self_meta = self.metadata.lock();
+                    self_meta.dec_size();
+                    if is_dir {
+                        self_meta.dec_nlinks();
+                    }
+                    self_meta.set_mtime(now);
+                    self_meta.set_ctime(now);
+                    drop(self_meta);
+                    src_inode.set_ctime(now);
+                    dst_inode.set_ctime(now);
+                } else {
+                    self_dir
+                        .substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
+                    drop(self_dir);
+                    let now = now();
+                    let mut self_meta = self.metadata.lock();
+                    self_meta.set_mtime(now);
+                    self_meta.set_ctime(now);
+                    drop(self_meta);
+                    src_inode.set_ctime(now);
+                }
+            }
+            // Or rename across different directories
+            else {
+                let (mut self_dir, mut target_dir) = write_lock_two_direntries_by_ino(
+                    (self.ino, self.inner.as_direntry().unwrap()),
+                    (target.ino, target.inner.as_direntry().unwrap()),
+                );
+                let self_inode_arc = self.this.upgrade().unwrap();
+                let target_inode_arc = target.this.upgrade().unwrap();
+                let (src_idx, src_inode) = self_dir
+                    .get_entry(old_name)
+                    .ok_or(Error::new(Errno::ENOENT))?;
+                // Avoid renaming a directory to a subdirectory of itself
+                if Arc::ptr_eq(&src_inode, &target_inode_arc) {
+                    return_errno!(Errno::EINVAL);
+                }
+                let is_dir = src_inode.typ == InodeType::Dir;
+
+                if let Some((dst_idx, dst_inode)) = target_dir.get_entry(new_name) {
+                    // Avoid renaming a subdirectory to a directory.
+                    if Arc::ptr_eq(&self_inode_arc, &dst_inode) {
+                        return_errno!(Errno::ENOTEMPTY);
+                    }
+                    check_replace_inode(&src_inode, &dst_inode)?;
+                    self_dir.remove_entry(src_idx);
+                    target_dir.remove_entry(dst_idx);
+                    target_dir.append_entry(new_name, src_inode.clone());
+                    drop(self_dir);
+                    drop(target_dir);
+
+                    let now = now();
+                    let mut self_meta = self.metadata.lock();
+                    self_meta.dec_size();
+                    if is_dir {
+                        self_meta.dec_nlinks();
+                    }
+                    self_meta.set_mtime(now);
+                    self_meta.set_ctime(now);
+                    drop(self_meta);
+                    let mut target_meta = target.metadata.lock();
+                    target_meta.set_mtime(now);
+                    target_meta.set_ctime(now);
+                    drop(target_meta);
+                    dst_inode.set_ctime(now);
+                    src_inode.set_ctime(now);
+                } else {
+                    self_dir.remove_entry(src_idx);
+                    target_dir.append_entry(new_name, src_inode.clone());
+                    drop(self_dir);
+                    drop(target_dir);
+
+                    let now = now();
+                    let mut self_meta = self.metadata.lock();
+                    self_meta.dec_size();
+                    if is_dir {
+                        self_meta.dec_nlinks();
+                    }
+                    self_meta.set_mtime(now);
+                    self_meta.set_ctime(now);
+                    drop(self_meta);
+
+                    let mut target_meta = target.metadata.lock();
+                    target_meta.inc_size();
+                    if is_dir {
+                        target_meta.inc_nlinks();
+                    }
+                    target_meta.set_mtime(now);
+                    target_meta.set_ctime(now);
+                    drop(target_meta);
+                    src_inode.set_ctime(now);
+                }
+
+                if is_dir {
+                    src_inode
+                        .inner
+                        .as_direntry()
+                        .unwrap()
+                        .write()
+                        .set_parent(target.this.clone());
+                }
             }
         }
         Ok(())

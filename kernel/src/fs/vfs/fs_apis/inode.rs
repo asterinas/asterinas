@@ -19,7 +19,7 @@ use crate::{
     fs::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags},
         utils::DirentVisitor,
-        vfs::path::Path,
+        vfs::path::{Path, RenameMode},
     },
     prelude::*,
     process::{
@@ -419,7 +419,13 @@ pub trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 

@@ -16,7 +16,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, SuperBlock},
             inode::{Extension, FileOps, Inode, Metadata, MknodType, RevalidationPolicy},
-            path::{is_dot, is_dotdot},
+            path::{RenameMode, is_dot, is_dotdot},
         },
     },
     prelude::*,
@@ -214,7 +214,13 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
         self.inner.lookup_child(self, name)
     }
 
-    fn rename(&self, _old_name: &str, _target: &Arc<dyn Inode>, _new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        _old_name: &str,
+        _target: &Arc<dyn Inode>,
+        _new_name: &str,
+        _mode: RenameMode,
+    ) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 

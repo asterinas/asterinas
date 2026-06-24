@@ -8,7 +8,7 @@ use core::{
 use hashbrown::HashMap;
 use ostd::sync::{RwMutexUpgradeableGuard, RwMutexWriteGuard};
 
-use super::{is_dot, is_dot_or_dotdot, is_dotdot};
+use super::{RenameMode, is_dot, is_dot_or_dotdot, is_dotdot};
 use crate::{
     fs::{
         self,
@@ -677,66 +677,194 @@ impl DirDentry<'_> {
     }
 
     /// Renames a `Dentry` to the new `Dentry` by `rename()` the inner inode.
+    ///
+    /// When `mode` is `RenameMode::NoReplace`, the operation fails with
+    /// `EEXIST` if the target `new_name` already exists. This check is
+    /// performed under the dentry write lock to avoid TOCTOU races.
     pub(super) fn rename(
         old_dir_arc: &Arc<Dentry>,
         old_name: &str,
         new_dir_arc: &Arc<Dentry>,
         new_name: &str,
+        mode: RenameMode,
     ) -> Result<()> {
         let old_dir = old_dir_arc.as_dir_dentry_or_err()?;
         let new_dir = new_dir_arc.as_dir_dentry_or_err()?;
 
-        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
-            return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
+        if is_dot_or_dotdot(old_name) {
+            return_errno_with_message!(Errno::EBUSY, "old_name is . or ..");
+        }
+        if is_dot_or_dotdot(new_name) {
+            let errno = if mode == RenameMode::NoReplace {
+                Errno::EEXIST
+            } else {
+                Errno::EBUSY
+            };
+            return_errno_with_message!(errno, "new_name is . or ..");
         }
 
         let old_dir_inode = old_dir.inode();
         let new_dir_inode = new_dir.inode();
 
-        // The two are the same dentry, we just modify the name
-        if Arc::ptr_eq(old_dir_arc, new_dir_arc) {
-            if old_name == new_name {
-                return Ok(());
-            }
+        if mode == RenameMode::Exchange {
+            // The two are the same dentry, exchange two names
+            if Arc::ptr_eq(old_dir_arc, new_dir_arc) {
+                if old_name == new_name {
+                    return Ok(());
+                }
 
-            let mut children = old_dir.children.write();
-            children.check_mountpoint(new_name)?;
-            let old_dentry = children.probe_cached_child_for_rename(&old_dir, old_name)?;
+                let mut children = old_dir.children.write();
+                children.check_mountpoint(old_name)?;
+                children.check_mountpoint(new_name)?;
+                let old_dentry = children.probe_cached_child_for_rename(&old_dir, old_name)?;
+                let new_dentry = children.probe_cached_child_for_rename(&old_dir, new_name)?;
 
-            old_dir_inode.rename(old_name, old_dir_inode, new_name)?;
+                old_dir_inode.rename(old_name, old_dir_inode, new_name, mode)?;
 
-            match old_dentry.as_ref() {
-                Some(dentry) => {
+                // Update dentries: swap their positions
+                if let (Some(old_dentry), Some(new_dentry)) =
+                    (old_dentry.as_ref(), new_dentry.as_ref())
+                {
+                    // Remove both from the cache
                     children.delete(old_name);
-                    dentry
+                    children.delete(new_name);
+                    // Swap names and parents (though same parent)
+                    old_dentry
                         .name_and_parent
                         .set(new_name, old_dir_arc.clone())
                         .unwrap();
-                    old_dir.insert_positive_child(&mut children, new_name, dentry.clone());
-                }
-                None => {
+                    new_dentry
+                        .name_and_parent
+                        .set(old_name, old_dir_arc.clone())
+                        .unwrap();
+                    // Reinsert them with swapped names
+                    old_dir.insert_positive_child(&mut children, new_name, old_dentry.clone());
+                    old_dir.insert_positive_child(&mut children, old_name, new_dentry.clone());
+                } else {
+                    // Handle cases where one or both weren't cached
+                    // Just remove both cached entries (if any) to let them be re-looked up
+                    children.remove(old_name);
                     children.remove(new_name);
                 }
-            }
-        } else {
-            // The two are different dentries
-            let (mut self_children, mut new_dir_children) =
-                write_lock_children_on_two_dentries(&old_dir, &new_dir);
-            let old_dentry = self_children.probe_cached_child_for_rename(&old_dir, old_name)?;
-            new_dir_children.check_mountpoint(new_name)?;
+            } else {
+                // The two are different dentries, exchange across them
+                let (mut self_children, mut new_dir_children) =
+                    write_lock_children_on_two_dentries(&old_dir, &new_dir);
+                let old_dentry = self_children.probe_cached_child_for_rename(&old_dir, old_name)?;
+                let new_dentry =
+                    new_dir_children.probe_cached_child_for_rename(&new_dir, new_name)?;
+                self_children.check_mountpoint(old_name)?;
+                new_dir_children.check_mountpoint(new_name)?;
 
-            old_dir_inode.rename(old_name, new_dir_inode, new_name)?;
-            match old_dentry.as_ref() {
-                Some(dentry) => {
+                old_dir_inode.rename(old_name, new_dir_inode, new_name, mode)?;
+
+                // Update dentries: swap their positions
+                if let (Some(old_dentry), Some(new_dentry)) =
+                    (old_dentry.as_ref(), new_dentry.as_ref())
+                {
+                    // Remove both from the cache
                     self_children.delete(old_name);
-                    dentry
+                    new_dir_children.delete(new_name);
+                    // Swap names and parents
+                    old_dentry
                         .name_and_parent
                         .set(new_name, new_dir_arc.clone())
                         .unwrap();
-                    new_dir.insert_positive_child(&mut new_dir_children, new_name, dentry.clone());
-                }
-                None => {
+                    new_dentry
+                        .name_and_parent
+                        .set(old_name, old_dir_arc.clone())
+                        .unwrap();
+                    // Reinsert them in new locations
+                    new_dir.insert_positive_child(
+                        &mut new_dir_children,
+                        new_name,
+                        old_dentry.clone(),
+                    );
+                    old_dir.insert_positive_child(&mut self_children, old_name, new_dentry.clone());
+                } else {
+                    // Handle cases where one or both weren't cached
+                    self_children.remove(old_name);
                     new_dir_children.remove(new_name);
+                }
+            }
+        } else {
+            // Original non-exchange mode logic
+            // The two are the same dentry, we just modify the name
+            if Arc::ptr_eq(old_dir_arc, new_dir_arc) {
+                if old_name == new_name {
+                    match mode {
+                        RenameMode::Replace => return Ok(()),
+                        RenameMode::NoReplace => {
+                            return_errno_with_message!(
+                                Errno::EEXIST,
+                                "the new path already exists"
+                            );
+                        }
+                        RenameMode::Exchange => unreachable!(),
+                    };
+                }
+
+                let mut children = old_dir.children.write();
+                children.check_mountpoint(new_name)?;
+                if mode == RenameMode::NoReplace {
+                    let target_exists = match children.find(new_name) {
+                        Some(entry) => entry.is_positive(),
+                        None => old_dir_inode.lookup(new_name).is_ok(),
+                    };
+                    if target_exists {
+                        return_errno_with_message!(Errno::EEXIST, "the new path already exists");
+                    }
+                }
+                let old_dentry = children.probe_cached_child_for_rename(&old_dir, old_name)?;
+
+                old_dir_inode.rename(old_name, old_dir_inode, new_name, mode)?;
+
+                match old_dentry.as_ref() {
+                    Some(dentry) => {
+                        children.delete(old_name);
+                        dentry
+                            .name_and_parent
+                            .set(new_name, old_dir_arc.clone())
+                            .unwrap();
+                        old_dir.insert_positive_child(&mut children, new_name, dentry.clone());
+                    }
+                    None => {
+                        children.remove(new_name);
+                    }
+                }
+            } else {
+                // The two are different dentries
+                let (mut self_children, mut new_dir_children) =
+                    write_lock_children_on_two_dentries(&old_dir, &new_dir);
+                let old_dentry = self_children.probe_cached_child_for_rename(&old_dir, old_name)?;
+                new_dir_children.check_mountpoint(new_name)?;
+                if mode == RenameMode::NoReplace {
+                    let target_exists = match new_dir_children.find(new_name) {
+                        Some(entry) => entry.is_positive(),
+                        None => new_dir_inode.lookup(new_name).is_ok(),
+                    };
+                    if target_exists {
+                        return_errno_with_message!(Errno::EEXIST, "the new path already exists");
+                    }
+                }
+
+                old_dir_inode.rename(old_name, new_dir_inode, new_name, mode)?;
+                match old_dentry.as_ref() {
+                    Some(dentry) => {
+                        self_children.delete(old_name);
+                        dentry
+                            .name_and_parent
+                            .set(new_name, new_dir_arc.clone())
+                            .unwrap();
+                        new_dir.insert_positive_child(
+                            &mut new_dir_children,
+                            new_name,
+                            dentry.clone(),
+                        );
+                    }
+                    None => {
+                        new_dir_children.remove(new_name);
+                    }
                 }
             }
         }

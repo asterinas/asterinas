@@ -17,6 +17,7 @@ use crate::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RevalidationPolicy,
                 SymbolicLink,
             },
+            path::RenameMode,
         },
     },
     prelude::*,
@@ -548,6 +549,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         _old_name: &str,
         _target: &Arc<dyn Inode>,
         _new_name: &str,
+        _mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }

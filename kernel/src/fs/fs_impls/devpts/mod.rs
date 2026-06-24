@@ -18,6 +18,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{Extension, FileOps, Inode, Metadata, MknodType, RevalidationPolicy},
+            path::RenameMode,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
@@ -350,7 +351,13 @@ impl Inode for RootInode {
         Ok(inode)
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        _mode: RenameMode,
+    ) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 

@@ -25,7 +25,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{Extension, FallocMode, FileOps, Inode, Metadata, MknodType, SymbolicLink},
-            path::{FsPath, Path},
+            path::{FsPath, Path, RenameMode},
             registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -524,7 +524,13 @@ impl OverlayInode {
         upper.write_link(target)
     }
 
-    pub fn rename(&self, _old_name: &str, _target: &Arc<dyn Inode>, _new_name: &str) -> Result<()> {
+    pub fn rename(
+        &self,
+        _old_name: &str,
+        _target: &Arc<dyn Inode>,
+        _new_name: &str,
+        _mode: RenameMode,
+    ) -> Result<()> {
         // TODO: Support the rename operation based on the `redirect_mode` feature,
         // rename the upper only may unexpectedly reveal the lower inodes.
         return_errno_with_message!(
@@ -993,7 +999,13 @@ impl Inode for OverlayInode {
     fn unlink(&self, name: &str) -> Result<()>;
     fn rmdir(&self, name: &str) -> Result<()>;
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>>;
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()>;
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()>;
     fn read_link(&self) -> Result<SymbolicLink>;
     fn write_link(&self, target: &str) -> Result<()>;
     fn sync_all(&self) -> Result<()>;

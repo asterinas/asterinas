@@ -32,7 +32,7 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FileOps, Inode, Metadata, MknodType, SymbolicLink},
-            path::{is_dot, is_dot_or_dotdot, is_dotdot},
+            path::{RenameMode, is_dot, is_dot_or_dotdot, is_dotdot},
         },
     },
     prelude::*,
@@ -1283,16 +1283,23 @@ fn is_block_aligned(off: usize) -> bool {
 fn check_corner_cases_for_rename(
     old_inode: &Arc<ExfatInode>,
     exist_inode: &Arc<ExfatInode>,
+    is_exchange: bool,
 ) -> Result<()> {
     // Check for two corner cases here.
     let old_inode_is_dir = old_inode.inner.read().inode_type.is_directory();
-    // If old_inode represents a directory, the exist 'new_name' must represents a empty directory.
-    if old_inode_is_dir && !exist_inode.inner.read().is_empty_dir()? {
-        return_errno!(Errno::ENOTEMPTY)
+    let exist_inode_is_dir = exist_inode.inner.read().inode_type.is_directory();
+    // Type must match for both modes
+    if old_inode_is_dir != exist_inode_is_dir {
+        if old_inode_is_dir {
+            return_errno!(Errno::ENOTDIR)
+        } else {
+            return_errno!(Errno::EISDIR)
+        }
     }
-    // If old_inode represents a file, the exist 'new_name' must also represents a file.
-    if !old_inode_is_dir && exist_inode.inner.read().inode_type.is_directory() {
-        return_errno!(Errno::EISDIR)
+    // If not exchange mode, and old_inode represents a directory,
+    // the exist 'new_name' must represents a empty directory.
+    if !is_exchange && old_inode_is_dir && !exist_inode.inner.read().is_empty_dir()? {
+        return_errno!(Errno::ENOTEMPTY)
     }
     Ok(())
 }
@@ -1644,7 +1651,13 @@ impl Inode for ExfatInode {
         Ok(inode)
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
         if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno!(Errno::EISDIR);
         }
@@ -1674,42 +1687,103 @@ impl Inode for ExfatInode {
             .inner
             .read()
             .lookup_by_name(old_name, true, &fs_guard)?;
-        // FIXME: Users may be confused, since inode with the same upper case name will be removed.
-        let lookup_exist_result = target_
-            .inner
-            .read()
-            .lookup_by_name(new_name, false, &fs_guard);
-        // Check for the corner cases.
-        if let Ok(ref exist_inode) = lookup_exist_result {
-            check_corner_cases_for_rename(&old_inode, exist_inode)?;
-        }
 
-        // All checks are done here. This is a valid rename and it needs to modify the metadata.
-        self.delete_inode(old_inode.clone(), false, &fs_guard)?;
-        // Create the new dentries.
-        let new_inode =
-            target_.add_entry(new_name, old_inode.type_(), old_inode.mode()?, &fs_guard)?;
-        // Update metadata.
-        old_inode.copy_metadata_from(new_inode);
-        // Update its children's parent_hash.
-        old_inode.update_subdir_parent_hash(&fs_guard)?;
-        // Insert back.
-        let _ = fs.insert_inode(old_inode.clone());
-        // Remove the exist 'new_name' file.
-        if let Ok(exist_inode) = lookup_exist_result {
-            target_.delete_inode(exist_inode, true, &fs_guard)?;
+        if mode == RenameMode::Exchange {
+            // FIXME: Users may be confused, since inode with the same upper case name will be removed.
+            // Exchange mode: new_name must exist
+            let exist_inode = target_
+                .inner
+                .read()
+                .lookup_by_name(new_name, true, &fs_guard)?;
+            check_corner_cases_for_rename(&old_inode, &exist_inode, true)?;
+
+            // Perform exchange
+            // Step 1: Delete both entries from their parents (without freeing inodes)
+            self.delete_inode(old_inode.clone(), false, &fs_guard)?;
+            target_.delete_inode(exist_inode.clone(), false, &fs_guard)?;
+
+            // Step 2: Add them back in swapped positions
+            // Create the new dentries.
+            let new_old_inode =
+                target_.add_entry(new_name, old_inode.type_(), old_inode.mode()?, &fs_guard)?;
+            let new_exist_inode = self.add_entry(
+                old_name,
+                exist_inode.type_(),
+                exist_inode.mode()?,
+                &fs_guard,
+            )?;
+
+            // Step 3: Update metadata
+            old_inode.copy_metadata_from(new_old_inode);
+            exist_inode.copy_metadata_from(new_exist_inode);
+
+            // Step 4: Update children's parent_hash if needed
+            // Update its children's parent_hash.
+            old_inode.update_subdir_parent_hash(&fs_guard)?;
+            exist_inode.update_subdir_parent_hash(&fs_guard)?;
+
+            // Step 5: Insert back into inode cache
+            // Insert back.
+            let _ = fs.insert_inode(old_inode.clone());
+            let _ = fs.insert_inode(exist_inode.clone());
+
+            // Step 6: Update times
+            // Update the times.
+            self.inner.write().update_atime_and_mtime()?;
+            target_.inner.write().update_atime_and_mtime()?;
+            old_inode.inner.write().update_atime_and_mtime()?;
+            exist_inode.inner.write().update_atime_and_mtime()?;
+
+            // Step 7: Sync if needed
+            // Sync
+            if self.inner.read().is_sync() || target_.inner.read().is_sync() {
+                // TODO: what if fs crashed between syncing?
+                old_inode.inner.read().sync_all(&fs_guard)?;
+                exist_inode.inner.read().sync_all(&fs_guard)?;
+                target_.inner.read().sync_all(&fs_guard)?;
+                self.inner.read().sync_all(&fs_guard)?;
+            }
+
+            Ok(())
+        } else {
+            // Normal rename mode
+            // FIXME: Users may be confused, since inode with the same upper case name will be removed.
+            let lookup_exist_result = target_
+                .inner
+                .read()
+                .lookup_by_name(new_name, false, &fs_guard);
+            // Check for the corner cases.
+            if let Ok(ref exist_inode) = lookup_exist_result {
+                check_corner_cases_for_rename(&old_inode, exist_inode, false)?;
+            }
+
+            // All checks are done here. This is a valid rename and it needs to modify the metadata.
+            self.delete_inode(old_inode.clone(), false, &fs_guard)?;
+            // Create the new dentries.
+            let new_inode =
+                target_.add_entry(new_name, old_inode.type_(), old_inode.mode()?, &fs_guard)?;
+            // Update metadata.
+            old_inode.copy_metadata_from(new_inode);
+            // Update its children's parent_hash.
+            old_inode.update_subdir_parent_hash(&fs_guard)?;
+            // Insert back.
+            let _ = fs.insert_inode(old_inode.clone());
+            // Remove the exist 'new_name' file.
+            if let Ok(exist_inode) = lookup_exist_result {
+                target_.delete_inode(exist_inode, true, &fs_guard)?;
+            }
+            // Update the times.
+            self.inner.write().update_atime_and_mtime()?;
+            target_.inner.write().update_atime_and_mtime()?;
+            // Sync
+            if self.inner.read().is_sync() || target_.inner.read().is_sync() {
+                // TODO: what if fs crashed between syncing?
+                old_inode.inner.read().sync_all(&fs_guard)?;
+                target_.inner.read().sync_all(&fs_guard)?;
+                self.inner.read().sync_all(&fs_guard)?;
+            }
+            Ok(())
         }
-        // Update the times.
-        self.inner.write().update_atime_and_mtime()?;
-        target_.inner.write().update_atime_and_mtime()?;
-        // Sync
-        if self.inner.read().is_sync() || target_.inner.read().is_sync() {
-            // TODO: what if fs crashed between syncing?
-            old_inode.inner.read().sync_all(&fs_guard)?;
-            target_.inner.read().sync_all(&fs_guard)?;
-            self.inner.read().sync_all(&fs_guard)?;
-        }
-        Ok(())
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {
