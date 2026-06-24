@@ -1,17 +1,8 @@
 OpenTest.AppendConcurrentWrite
-OpenTest.CanTruncateReadOnly
 OpenTest.CanTruncateReadOnlyNoWritePermission
-OpenTest.CanTruncateReadOnlyNoWritePermission_NoRandomSave
 OpenTest.CanTruncateWithStrangePermissions
-OpenTest.CanTruncateWriteOnlyNoReadPermission_NoRandomSave
 OpenTest.DirectoryDirectFails
-OpenTest.FileNotDirectory
-OpenTest.MustCreateExisting
-OpenTest.NameTooLong
-OpenTest.Null
-OpenTest.OCreateDirectory
 OpenTest.OpenNoFollowStillFollowsLinksInPath
-OpenTest.OpenNonDirectoryWithTrailingSlash
 OpenTest.OpenWithStrangeFlags
 OpenTest.OTrunc
 OpenTest.OTruncAndReadOnlyDir
