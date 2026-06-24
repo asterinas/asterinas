@@ -6,8 +6,9 @@ use super::{RawSocketOption, impl_raw_sock_option_get_only, impl_raw_socket_opti
 use crate::{
     context::current_userspace,
     net::socket::options::{
-        AcceptConn, Broadcast, Error, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
-        RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+        AcceptConn, Broadcast, Error, KeepAlive, Linger, PassCred, PassSec, PeerCred, PeerGroups,
+        Priority, RecvBuf, RecvBufForce, RecvTimeout, ReuseAddr, ReusePort, SendBuf, SendBufForce,
+        SendTimeout, SocketOption, SocketType, Timestamp, TimestampNs, Timestamping,
     },
     prelude::*,
     process::Gid,
@@ -38,13 +39,22 @@ enum CSocketOptionName {
     REUSEPORT = 15,
     PASSCRED = 16,
     PEERCRED = 17,
+    RCVTIMEO_OLD = 20,
+    SNDTIMEO_OLD = 21,
     ATTACH_FILTER = 26,
     DETACH_FILTER = 27,
+    TIMESTAMP_OLD = 29,
     ACCPETCONN = 30,
     PEERSEC = 31,
     SNDBUFFORCE = 32,
     RCVBUFFORCE = 33,
+    PASSSEC = 34,
+    TIMESTAMPNS_OLD = 35,
+    TIMESTAMPING_OLD = 37,
     PEERGROUPS = 59,
+    TIMESTAMP_NEW = 63,
+    TIMESTAMPNS_NEW = 64,
+    TIMESTAMPING_NEW = 65,
     RCVTIMEO_NEW = 66,
     SNDTIMEO_NEW = 67,
 }
@@ -53,6 +63,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     let name = CSocketOptionName::try_from(name).map_err(|_| Errno::ENOPROTOOPT)?;
     match name {
         CSocketOptionName::REUSEADDR => Ok(Box::new(ReuseAddr::new())),
+        CSocketOptionName::TYPE => Ok(Box::new(SocketType::new())),
         CSocketOptionName::ERROR => Ok(Box::new(Error::new())),
         CSocketOptionName::BROADCAST => Ok(Box::new(Broadcast::new())),
         CSocketOptionName::SNDBUF => Ok(Box::new(SendBuf::new())),
@@ -62,6 +73,22 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
         CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
         CSocketOptionName::PASSCRED => Ok(Box::new(PassCred::new())),
+        CSocketOptionName::TIMESTAMP_OLD | CSocketOptionName::TIMESTAMP_NEW => {
+            Ok(Box::new(Timestamp::new()))
+        }
+        CSocketOptionName::TIMESTAMPNS_OLD | CSocketOptionName::TIMESTAMPNS_NEW => {
+            Ok(Box::new(TimestampNs::new()))
+        }
+        CSocketOptionName::TIMESTAMPING_OLD | CSocketOptionName::TIMESTAMPING_NEW => {
+            Ok(Box::new(Timestamping::new()))
+        }
+        CSocketOptionName::PASSSEC => Ok(Box::new(PassSec::new())),
+        CSocketOptionName::RCVTIMEO_OLD | CSocketOptionName::RCVTIMEO_NEW => {
+            Ok(Box::new(RecvTimeout::new()))
+        }
+        CSocketOptionName::SNDTIMEO_OLD | CSocketOptionName::SNDTIMEO_NEW => {
+            Ok(Box::new(SendTimeout::new()))
+        }
         CSocketOptionName::PEERCRED => Ok(Box::new(PeerCred::new())),
         CSocketOptionName::ACCPETCONN => Ok(Box::new(AcceptConn::new())),
         CSocketOptionName::SNDBUFFORCE => Ok(Box::new(SendBufForce::new())),
@@ -72,6 +99,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
 }
 
 impl_raw_socket_option!(ReuseAddr);
+impl_raw_sock_option_get_only!(SocketType);
 impl_raw_sock_option_get_only!(Error);
 impl_raw_socket_option!(Broadcast);
 impl_raw_socket_option!(SendBuf);
@@ -81,6 +109,12 @@ impl_raw_socket_option!(Priority);
 impl_raw_socket_option!(Linger);
 impl_raw_socket_option!(ReusePort);
 impl_raw_socket_option!(PassCred);
+impl_raw_socket_option!(Timestamp);
+impl_raw_socket_option!(TimestampNs);
+impl_raw_socket_option!(Timestamping);
+impl_raw_socket_option!(PassSec);
+impl_raw_socket_option!(RecvTimeout);
+impl_raw_socket_option!(SendTimeout);
 impl_raw_sock_option_get_only!(PeerCred);
 impl_raw_sock_option_get_only!(AcceptConn);
 impl_raw_socket_option!(SendBufForce);

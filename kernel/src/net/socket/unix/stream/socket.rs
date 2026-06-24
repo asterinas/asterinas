@@ -16,7 +16,8 @@ use crate::{
     net::socket::{
         Socket,
         options::{
-            Error as SocketError, PeerCred, PeerGroups, SocketOption, macros::sock_option_mut,
+            Error as SocketError, PeerCred, PeerGroups, SocketOption, SocketType,
+            macros::sock_option_mut,
         },
         private::SocketPrivate,
         unix::{CUserCred, UnixSocketAddr, cred::SocketCred, ctrl_msg::AuxiliaryData},
@@ -30,7 +31,7 @@ use crate::{
         Gid,
         signal::{PollHandle, Pollable, Pollee},
     },
-    util::{MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, net::SockType},
 };
 
 pub struct UnixStreamSocket {
@@ -424,7 +425,7 @@ impl Socket for UnixStreamSocket {
         let options = self.options.read();
 
         // Deal with UNIX-socket-specific socket-level options
-        match do_unix_getsockopt(option, state.as_ref()) {
+        match do_unix_getsockopt(option, state.as_ref(), self.is_seqpacket) {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res,
         }
@@ -519,7 +520,11 @@ impl Socket for UnixStreamSocket {
     }
 }
 
-fn do_unix_getsockopt(option: &mut dyn SocketOption, state: &State) -> Result<()> {
+fn do_unix_getsockopt(
+    option: &mut dyn SocketOption,
+    state: &State,
+    is_seqpacket: bool,
+) -> Result<()> {
     sock_option_mut!(match option {
         socket_peer_cred @ PeerCred => {
             let peer_cred = state.peer_cred().unwrap_or_else(CUserCred::new_invalid);
@@ -528,6 +533,14 @@ fn do_unix_getsockopt(option: &mut dyn SocketOption, state: &State) -> Result<()
         socket_peer_groups @ PeerGroups => {
             let groups = state.peer_groups()?;
             socket_peer_groups.set(groups);
+        }
+        socket_type @ SocketType => {
+            let type_ = if is_seqpacket {
+                SockType::SOCK_SEQPACKET
+            } else {
+                SockType::SOCK_STREAM
+            };
+            socket_type.set(type_ as i32);
         }
         _ => return_errno_with_message!(
             Errno::ENOPROTOOPT,

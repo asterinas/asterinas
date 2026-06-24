@@ -7,7 +7,7 @@ use crate::{
         vsock::{
             addr::{VMADDR_CID_HOST, VMADDR_PORT_ANY, VsockSocketAddr},
             stream::{ConnectingStream, ListenStream},
-            transport::BoundPort,
+            transport::{self, BoundPort},
         },
     },
     prelude::*,
@@ -73,7 +73,8 @@ impl InitStream {
         remote_addr: VsockSocketAddr,
         pollee: &Pollee,
     ) -> Result<ConnectingStream, (Error, Self)> {
-        if remote_addr.cid != VMADDR_CID_HOST {
+        if remote_addr.cid != VMADDR_CID_HOST && !transport::can_connect_remote_cid(remote_addr.cid)
+        {
             return Err((
                 Error::with_message(Errno::ENETUNREACH, "only the host vsock CID is supported"),
                 self,

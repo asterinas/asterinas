@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::time::Duration;
+
 use macros::impl_socket_options;
 
 use super::util::LingerOption;
@@ -16,6 +18,7 @@ pub trait SocketOption: Any + Send + Sync + Debug {
 
 impl_socket_options!(
     pub struct ReuseAddr(bool);
+    pub struct SocketType(i32);
     pub struct Error(Option<crate::error::Error>);
     pub struct Broadcast(bool);
     pub struct SendBuf(u32);
@@ -25,6 +28,12 @@ impl_socket_options!(
     pub struct Linger(LingerOption);
     pub struct ReusePort(bool);
     pub struct PassCred(bool);
+    pub struct Timestamp(bool);
+    pub struct TimestampNs(bool);
+    pub struct Timestamping(bool);
+    pub struct PassSec(bool);
+    pub struct RecvTimeout(Duration);
+    pub struct SendTimeout(Duration);
     pub struct PeerCred(CUserCred);
     pub struct AcceptConn(bool);
     pub struct SendBufForce(u32);

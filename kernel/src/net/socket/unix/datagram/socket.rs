@@ -10,7 +10,9 @@ use crate::{
     fs::{pseudofs::SockFs, vfs::path::Path},
     net::socket::{
         Socket,
-        options::{Error as SocketError, PeerCred, SocketOption, macros::sock_option_mut},
+        options::{
+            Error as SocketError, PeerCred, SocketOption, SocketType, macros::sock_option_mut,
+        },
         private::SocketPrivate,
         unix::{CUserCred, UnixSocketAddr, cred::SocketCred, ctrl_msg::AuxiliaryData},
         util::{
@@ -20,7 +22,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    util::{MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, net::SockType},
 };
 
 pub struct UnixDatagramSocket {
@@ -312,6 +314,9 @@ fn do_unix_getsockopt(option: &mut dyn SocketOption, socket: &UnixDatagramSocket
                 .map(SocketCred::to_effective_c_cred)
                 .unwrap_or_else(CUserCred::new_invalid);
             socket_peer_cred.set(peer_cred);
+        }
+        socket_type @ SocketType => {
+            socket_type.set(SockType::SOCK_DGRAM as i32);
         }
         _ => return_errno_with_message!(
             Errno::ENOPROTOOPT,

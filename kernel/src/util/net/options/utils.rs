@@ -12,6 +12,7 @@ use crate::{
         util::LingerOption,
     },
     prelude::*,
+    time::timeval_t,
 };
 
 /// Create an object by reading its C counterpart from the user space.
@@ -79,6 +80,31 @@ impl WriteToUser for bool {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
         let val = if *self { 1i32 } else { 0i32 };
         val.write_to_user(addr, max_len)
+    }
+}
+
+impl ReadFromUser for Duration {
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
+        if (max_len as usize) < size_of::<timeval_t>() {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        }
+
+        let timeval = current_userspace!().read_val::<timeval_t>(addr)?;
+        Duration::try_from(timeval)
+    }
+}
+
+impl WriteToUser for Duration {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+        let write_len = size_of::<timeval_t>();
+
+        if (max_len as usize) < write_len {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        }
+
+        let timeval = timeval_t::from(*self);
+        current_userspace!().write_val(addr, &timeval)?;
+        Ok(write_len)
     }
 }
 

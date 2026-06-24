@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::RangeInclusive;
+use core::{ops::RangeInclusive, time::Duration};
 
 use aster_bigtcp::socket::{
     NeedIfacePoll, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
@@ -11,8 +11,9 @@ use crate::{
     net::socket::{
         netlink::NETLINK_DEFAULT_BUF_SIZE,
         options::{
-            AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
-            RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+            AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PassSec, PeerCred, PeerGroups,
+            Priority, RecvBuf, RecvBufForce, RecvTimeout, ReuseAddr, ReusePort, SendBuf,
+            SendBufForce, SendTimeout, SocketOption, Timestamp, TimestampNs, Timestamping,
             macros::{sock_option_mut, sock_option_ref},
         },
         unix::{CUserCred, UNIX_DATAGRAM_DEFAULT_BUF_SIZE, UNIX_STREAM_DEFAULT_BUF_SIZE},
@@ -35,6 +36,12 @@ pub struct SocketOptionSet {
     linger: LingerOption,
     reuse_port: bool,
     pass_cred: bool,
+    timestamp: bool,
+    timestamp_ns: bool,
+    timestamping: bool,
+    pass_sec: bool,
+    recv_timeout: Duration,
+    send_timeout: Duration,
 }
 
 impl Default for SocketOptionSet {
@@ -49,6 +56,12 @@ impl Default for SocketOptionSet {
             linger: LingerOption::default(),
             reuse_port: false,
             pass_cred: false,
+            timestamp: false,
+            timestamp_ns: false,
+            timestamping: false,
+            pass_sec: false,
+            recv_timeout: Duration::ZERO,
+            send_timeout: Duration::ZERO,
         }
     }
 }
@@ -147,6 +160,24 @@ impl SocketOptionSet {
                 let pass_cred = self.pass_cred();
                 socket_pass_cred.set(pass_cred);
             }
+            socket_timestamp @ Timestamp => {
+                socket_timestamp.set(self.timestamp());
+            }
+            socket_timestamp_ns @ TimestampNs => {
+                socket_timestamp_ns.set(self.timestamp_ns());
+            }
+            socket_timestamping @ Timestamping => {
+                socket_timestamping.set(self.timestamping());
+            }
+            socket_pass_sec @ PassSec => {
+                socket_pass_sec.set(self.pass_sec());
+            }
+            socket_recv_timeout @ RecvTimeout => {
+                socket_recv_timeout.set(self.recv_timeout());
+            }
+            socket_send_timeout @ SendTimeout => {
+                socket_send_timeout.set(self.send_timeout());
+            }
             socket_peer_cred @ PeerCred => {
                 let peer_cred = CUserCred::new_invalid();
                 socket_peer_cred.set(peer_cred);
@@ -232,6 +263,24 @@ impl SocketOptionSet {
                 let pass_cred = socket_pass_cred.get().unwrap();
                 self.set_pass_cred(*pass_cred);
                 socket.set_pass_cred(*pass_cred);
+            }
+            socket_timestamp @ Timestamp => {
+                self.set_timestamp(*socket_timestamp.get().unwrap());
+            }
+            socket_timestamp_ns @ TimestampNs => {
+                self.set_timestamp_ns(*socket_timestamp_ns.get().unwrap());
+            }
+            socket_timestamping @ Timestamping => {
+                self.set_timestamping(*socket_timestamping.get().unwrap());
+            }
+            socket_pass_sec @ PassSec => {
+                self.set_pass_sec(*socket_pass_sec.get().unwrap());
+            }
+            socket_recv_timeout @ RecvTimeout => {
+                self.set_recv_timeout(*socket_recv_timeout.get().unwrap());
+            }
+            socket_send_timeout @ SendTimeout => {
+                self.set_send_timeout(*socket_send_timeout.get().unwrap());
             }
             socket_sendbuf_force @ SendBufForce => {
                 check_current_privileged()?;
