@@ -4,14 +4,16 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - VERSION
       - book/**
-      - .github/workflows/update-website.yml
+      - .github/workflows/publish_website.yml
   push:
     branches:
       - main
     paths:
+      - VERSION
       - book/**
-      - .github/workflows/update-website.yml
+      - .github/workflows/publish_website.yml
 
 jobs:
   build_and_deploy:
@@ -23,12 +25,29 @@ jobs:
         with:
           repository: 'asterinas/asterinas'
           path: 'asterinas'
-      
+
+      - name: Cache .lycheecache
+        uses: actions/cache@v6
+        with:
+          path: asterinas/book/.lycheecache
+          key: lychee-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
+          # Cache lookup strategy:
+          # 1) Exact key (os + ref_name + sha), hit on rerun of the same commit.
+          # 2) If exact key misses, restore by os + ref_name prefix; newest match wins.
+          # 3) Final fallback is os-only prefix; newest match wins.
+          # Multiple restore-keys lines are intentional for progressive fallback (from specific to broad).
+          restore-keys: |
+            lychee-${{ runner.os }}-${{ github.ref_name }}
+            lychee-${{ runner.os }}-
+
       - name: Build the website
+        env:
+          # Avoid hitting rate limit when lychee accesses github links.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           cd asterinas/book
-          mdbook-mermaid install
-          mdbook build
+          make check
+          make
 
       - name: Deploy website
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

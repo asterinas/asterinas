@@ -397,13 +397,6 @@ docs: $(CARGO_OSDK)
 		cd ostd/libs/linux-bzimage/setup && RUSTDOCFLAGS="-Dwarnings" cargo osdk doc --no-deps; \
 	fi
 
-.PHONY: book
-book: book/mermaid.min.js book/mermaid-init.js
-	@cd book && mdbook build
-
-book/mermaid.min.js book/mermaid-init.js:
-	@mdbook-mermaid install book/
-
 .PHONY: format
 format:
 	@./tools/format_all.sh
