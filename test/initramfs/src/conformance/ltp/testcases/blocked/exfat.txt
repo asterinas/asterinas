@@ -23,9 +23,10 @@ ftruncate01
 ftruncate01_64
 getcwd03
 lchown01
-link01
 link02
+link04
 link05
+link08
 linkat01
 lstat01
 lstat01_64
@@ -58,5 +59,6 @@ truncate02
 truncate02_64
 umask01
 unlink05
+unlink08
 utime07
 statx02

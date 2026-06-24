@@ -1,5 +1,1 @@
-SymlinkTest.CannotCreateSymlinkInReadOnlyDir
-SymlinkTest.PwriteToSymlink
 SymlinkTest.FollowUpdatesATime
-AbsAndRelTarget/ParamSymlinkTest.CreatLinkCreatesTarget/0
-AbsAndRelTarget/ParamSymlinkTest.CreatLinkCreatesTarget/1
