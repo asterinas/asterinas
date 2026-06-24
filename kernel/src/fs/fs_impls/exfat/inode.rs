@@ -110,8 +110,10 @@ struct ExfatInodeInner {
     atime: DosTimestamp,
     /// Modification time, updated only on write.
     mtime: DosTimestamp,
-    /// Creation time.
+    /// Metadata change time.
     ctime: DosTimestamp,
+    /// Creation time.
+    crtime: DosTimestamp,
 
     /// Number of sub inodes.
     num_sub_inodes: u32,
@@ -335,10 +337,10 @@ impl ExfatInodeInner {
 
         file_dentry.attribute = self.attr.bits();
 
-        file_dentry.create_utc_offset = self.ctime.utc_offset;
-        file_dentry.create_date = self.ctime.date;
-        file_dentry.create_time = self.ctime.time;
-        file_dentry.create_time_cs = self.ctime.increment_10ms;
+        file_dentry.create_utc_offset = self.crtime.utc_offset;
+        file_dentry.create_date = self.crtime.date;
+        file_dentry.create_time = self.crtime.time;
+        file_dentry.create_time_cs = self.crtime.increment_10ms;
 
         file_dentry.modify_utc_offset = self.mtime.utc_offset;
         file_dentry.modify_date = self.mtime.date;
@@ -621,10 +623,11 @@ impl ExfatInodeInner {
         Ok(())
     }
 
-    fn update_atime_and_mtime(&mut self) -> Result<()> {
+    fn update_atime_mtime_and_ctime(&mut self) -> Result<()> {
         let now = DosTimestamp::now()?;
         self.atime = now;
         self.mtime = now;
+        self.ctime = now;
         Ok(())
     }
 }
@@ -729,7 +732,7 @@ impl ExfatInode {
         {
             let mut inner = inner.upgrade();
 
-            inner.update_atime_and_mtime()?;
+            inner.update_atime_mtime_and_ctime()?;
             inner.size = new_size;
         }
 
@@ -809,7 +812,7 @@ impl ExfatInode {
 
         {
             let mut inner = inner.upgrade();
-            inner.update_atime_and_mtime()?;
+            inner.update_atime_mtime_and_ctime()?;
             inner.size = new_size;
         }
 
@@ -860,7 +863,7 @@ impl ExfatInode {
 
         let inode_type = InodeType::Dir;
 
-        let ctime = DosTimestamp::now()?;
+        let timestamp = DosTimestamp::now()?;
 
         let size = root_chain.num_clusters() as usize * sb.cluster_size as usize;
 
@@ -876,9 +879,10 @@ impl ExfatInode {
                 start_chain: root_chain,
                 size,
                 size_allocated: size,
-                atime: ctime,
-                mtime: ctime,
-                ctime,
+                atime: timestamp,
+                mtime: timestamp,
+                ctime: timestamp,
+                crtime: timestamp,
                 num_sub_inodes: 0,
                 num_sub_dirs: 0,
                 name,
@@ -933,7 +937,7 @@ impl ExfatInode {
             InodeType::File
         };
 
-        let ctime = DosTimestamp::new(
+        let crtime = DosTimestamp::new(
             file.create_time,
             file.create_date,
             file.create_time_cs,
@@ -988,7 +992,8 @@ impl ExfatInode {
                 size_allocated,
                 atime,
                 mtime,
-                ctime,
+                ctime: mtime,
+                crtime,
                 num_sub_inodes: 0,
                 num_sub_dirs: 0,
                 name,
@@ -1186,19 +1191,17 @@ impl ExfatInode {
         Ok(())
     }
 
-    /// Copy metadata from the given inode.
+    /// Copies dentry placement from the given inode.
     /// There will be no deadlock since this function is only used in rename and the arg "inode".
     /// is a temporary inode which is only accessible to current thread.
-    fn copy_metadata_from(&self, inode: Arc<ExfatInode>) {
+    fn copy_dentry_position_from(&self, inode: Arc<ExfatInode>) {
         let mut self_inner = self.inner.write();
         let other_inner = inode.inner.read();
 
         self_inner.dentry_set_position = other_inner.dentry_set_position.clone();
         self_inner.dentry_set_size = other_inner.dentry_set_size;
         self_inner.dentry_entry = other_inner.dentry_entry;
-        self_inner.atime = other_inner.atime;
         self_inner.ctime = other_inner.ctime;
-        self_inner.mtime = other_inner.mtime;
         self_inner.name = other_inner.name.clone();
         self_inner.is_deleted = other_inner.is_deleted;
         self_inner.parent_hash = other_inner.parent_hash;
@@ -1445,6 +1448,7 @@ impl Inode for ExfatInode {
             gid: Gid::new(inner.fs().mount_option().fs_gid as u32),
             container_dev_id: inner.fs().container_device_id(),
             self_dev_id: None,
+            birth_at: inner.crtime.as_duration().unwrap_or_default(),
         }
     }
 
@@ -1535,7 +1539,7 @@ impl Inode for ExfatInode {
         let result = self.add_entry(name, type_, mode, &fs_guard)?;
         let _ = fs.insert_inode(result.clone());
 
-        self.inner.write().update_atime_and_mtime()?;
+        self.inner.write().update_atime_mtime_and_ctime()?;
 
         let inner = self.inner.read();
 
@@ -1575,7 +1579,7 @@ impl Inode for ExfatInode {
             return_errno!(Errno::EISDIR)
         }
         self.delete_inode(inode, true, &fs_guard)?;
-        self.inner.write().update_atime_and_mtime()?;
+        self.inner.write().update_atime_mtime_and_ctime()?;
 
         let inner = self.inner.read();
         if inner.is_sync() {
@@ -1611,7 +1615,7 @@ impl Inode for ExfatInode {
             return_errno!(Errno::ENOTEMPTY)
         }
         self.delete_inode(inode, true, &fs_guard)?;
-        self.inner.write().update_atime_and_mtime()?;
+        self.inner.write().update_atime_mtime_and_ctime()?;
 
         let inner = self.inner.read();
         // Sync this inode since size has changed.
@@ -1690,7 +1694,7 @@ impl Inode for ExfatInode {
         let new_inode =
             target_.add_entry(new_name, old_inode.type_(), old_inode.mode()?, &fs_guard)?;
         // Update metadata.
-        old_inode.copy_metadata_from(new_inode);
+        old_inode.copy_dentry_position_from(new_inode);
         // Update its children's parent_hash.
         old_inode.update_subdir_parent_hash(&fs_guard)?;
         // Insert back.
@@ -1700,8 +1704,8 @@ impl Inode for ExfatInode {
             target_.delete_inode(exist_inode, true, &fs_guard)?;
         }
         // Update the times.
-        self.inner.write().update_atime_and_mtime()?;
-        target_.inner.write().update_atime_and_mtime()?;
+        self.inner.write().update_atime_mtime_and_ctime()?;
+        target_.inner.write().update_atime_mtime_and_ctime()?;
         // Sync
         if self.inner.read().is_sync() || target_.inner.read().is_sync() {
             // TODO: what if fs crashed between syncing?

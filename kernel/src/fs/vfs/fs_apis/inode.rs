@@ -122,6 +122,14 @@ pub struct Metadata {
     ///
     /// Corresponds to `st_rdev`.
     pub self_dev_id: Option<DeviceId>,
+
+    /// The timestamp of the file's creation (birth time).
+    ///
+    /// For filesystems that do not record birth time (e.g., ext2), this is
+    /// [`Duration::ZERO`].
+    ///
+    /// Corresponds to `stx_btime`.
+    pub birth_at: Duration,
 }
 
 /// Describes whether an inode may get new hard links.
@@ -155,6 +163,7 @@ impl Metadata {
             gid: Gid::new_root(),
             container_dev_id,
             self_dev_id: None,
+            birth_at: Duration::ZERO,
         }
     }
 
@@ -180,6 +189,7 @@ impl Metadata {
             gid: Gid::new_root(),
             container_dev_id,
             self_dev_id: None,
+            birth_at: Duration::ZERO,
         }
     }
 
@@ -205,6 +215,7 @@ impl Metadata {
             gid: Gid::new_root(),
             container_dev_id,
             self_dev_id: None,
+            birth_at: Duration::ZERO,
         }
     }
 
@@ -231,6 +242,7 @@ impl Metadata {
             gid: Gid::new_root(),
             container_dev_id,
             self_dev_id: Some(device.id()),
+            birth_at: Duration::ZERO,
         }
     }
 }
