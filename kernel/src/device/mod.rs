@@ -167,6 +167,7 @@ pub fn init_in_first_kthread() {
     misc::init_in_first_kthread();
     evdev::init_in_first_kthread();
     fb::init_in_first_kthread();
+    aster_block::init_in_first_kthread();
 }
 
 /// Initializes the device nodes in devtmpfs after mounting rootfs.

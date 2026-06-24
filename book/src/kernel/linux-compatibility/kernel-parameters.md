@@ -4,19 +4,64 @@ This section documents kernel command-line parameters supported by Asterinas.
 
 ## Inherited from Linux
 
-### `init`
+### `rdinit`
 
-Run the specified binary as `init`.
+Run the specified initramfs binary as the first userspace process.
 
 Example:
 ```text
-init=/bin/busybox
+rdinit=/bin/busybox
 ```
 
 Notes:
-- The value is the path to the executable.
-- If omitted, Asterinas will try to execute from the following paths in order:
-  `/sbin/init`, `/etc/init`, `/bin/init`, `/bin/sh`.
+- The value is the path to the executable in the initramfs root.
+- If omitted, Asterinas will try to execute `/init` from the initramfs root.
+
+### `root`
+
+Mount the specified block device as the real root filesystem when no initramfs
+init is selected to run.
+
+Example:
+```text
+root=/dev/vda2
+```
+
+Notes:
+- The value currently must name a registered block device under `/dev`, such as
+  `/dev/vda2`.
+- By default, the initramfs init is `/init`; `rdinit` overrides it with another
+  path.
+- If the selected initramfs init is present, that program is responsible for
+  switching to the real root filesystem.
+
+### `rootfstype`
+
+Select the filesystem type used for the real root filesystem.
+
+Example:
+```text
+root=/dev/vda2 rootfstype=ext2
+```
+
+Valid values:
+- `ext2`
+
+### `init`
+
+Run the specified executable as the first userspace process from the real root
+filesystem.
+
+Example:
+```text
+root=/dev/vda2 rootfstype=ext2 init=/nix/var/nix/profiles/system/init
+```
+
+Notes:
+- `init` is used only after Asterinas mounts the real root filesystem via
+  `root=`.
+- If omitted, Asterinas tries `/sbin/init`, `/etc/init`, `/bin/init`, and
+  `/bin/sh`, in that order.
 
 ### `console`
 

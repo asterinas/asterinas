@@ -12,7 +12,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        Credentials, ProcessVm, UserNamespace, pid_table,
+        Credentials, NsProxy, NsProxyBuilder, ProcessVm, UserNamespace, pid_table,
         posix_thread::{PosixThreadBuilder, ThreadName, allocate_posix_tid},
         program_loader::ProgramToLoad,
         rlimit::new_resource_limits_for_init,
@@ -25,19 +25,17 @@ use crate::{
 
 /// Creates and schedules the init process to run.
 pub fn spawn_init_process(
-    executable_path: Option<&str>,
+    mnt_ns: Arc<MountNamespace>,
+    executable_path: &str,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
-    let process = if let Some(executable_path) = executable_path {
-        create_init_process(
-            executable_path,
-            with_init_argv0(executable_path, argv),
-            envp,
-        )?
-    } else {
-        create_default_init_process(argv, envp)?
-    };
+    let process = create_init_process(
+        mnt_ns,
+        executable_path,
+        with_init_argv0(executable_path, argv),
+        envp,
+    )?;
 
     // Linux starts the init process without placing it in a process group or session.
     // It joins one only after userspace first calls `setsid()`.
@@ -53,28 +51,6 @@ pub fn spawn_init_process(
     Ok(process)
 }
 
-fn create_default_init_process(argv: Vec<CString>, envp: Vec<CString>) -> Result<Arc<Process>> {
-    // Linux probes the fallback init executables in this order:
-    // <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1634>.
-    const DEFAULT_INIT_EXEC_PATHS: &[&str] = &["/sbin/init", "/etc/init", "/bin/init", "/bin/sh"];
-
-    let mut last_error = None;
-
-    for default_init_exec_path in DEFAULT_INIT_EXEC_PATHS {
-        // FIXME: Avoid cloning `argv` and `envp` for each fallback candidate.
-        match create_init_process(
-            default_init_exec_path,
-            with_init_argv0(default_init_exec_path, argv.clone()),
-            envp.clone(),
-        ) {
-            Ok(process) => return Ok(process),
-            Err(error) => last_error = Some(error),
-        }
-    }
-
-    Err(last_error.unwrap())
-}
-
 fn with_init_argv0(executable_path: &str, mut argv: Vec<CString>) -> Vec<CString> {
     // Linux prepends the init executable path as `argv[0]`.
     // Reference: <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1491>.
@@ -83,12 +59,13 @@ fn with_init_argv0(executable_path: &str, mut argv: Vec<CString>) -> Vec<CString
 }
 
 fn create_init_process(
+    mnt_ns: Arc<MountNamespace>,
     executable_path: &str,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
     let fs = {
-        let fs_resolver = MountNamespace::get_init_singleton().new_path_resolver();
+        let fs_resolver = mnt_ns.new_path_resolver();
         ThreadFsInfo::new(fs_resolver)
     };
     let fs_path = FsPath::try_from(executable_path)?;
@@ -112,7 +89,7 @@ fn create_init_process(
         user_ns,
     );
 
-    let init_task = create_init_task(pid, &init_proc, fs, vmar, elf_path, argv, envp)?;
+    let init_task = create_init_task(pid, &init_proc, mnt_ns, fs, vmar, elf_path, argv, envp)?;
     init_proc.tasks().lock().insert(init_task).unwrap();
 
     Ok(init_proc)
@@ -133,9 +110,11 @@ fn set_bootstrap_session_and_group(process: &Arc<Process>) {
 }
 
 /// Creates the init task from the given executable file.
+#[expect(clippy::too_many_arguments)]
 fn create_init_task(
     tid: Tid,
     process: &Arc<Process>,
+    mnt_ns: Arc<MountNamespace>,
     fs: ThreadFsInfo,
     vmar: VmarHandle,
     elf_path: Path,
@@ -162,9 +141,18 @@ fn create_init_task(
 
     let thread_name = ThreadName::new_from_executable_path(&elf_abs_path);
 
+    let ns_proxy = {
+        let mut builder = NsProxyBuilder::new(NsProxy::get_init_singleton());
+        builder.mnt_ns(mnt_ns);
+        Arc::new(builder.build())
+    };
+    let user_ns = process.user_ns().lock().clone();
+
     let thread_builder =
         PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials, vmar)
             .process(Arc::downgrade(process))
+            .user_ns(user_ns)
+            .ns_proxy(ns_proxy)
             .fs(Arc::new(fs));
     Ok(thread_builder.build())
 }

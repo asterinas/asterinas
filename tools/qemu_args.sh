@@ -15,6 +15,7 @@
 #  - VIRTIOFS: "off" or "on";
 #  - VIRTIOFS_TAG: mount tag for virtio-fs device;
 #  - VIRTIOFS_SOCKET: vhost-user socket path for the virtio-fs server.
+#  - INITRAMFS: "on" or "off"; when "off", attach `rootfs.img` as an extra block device.
 #  - CONSOLE: "hvc0" to enable virtio console;
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
@@ -69,10 +70,20 @@ else
     CONSOLE_ARGS="-serial chardev:mux"
 fi
 
+if [ "$INITRAMFS" = "off" ]; then
+    ROOTFS_DRIVE_ARGS="-drive if=none,format=raw,id=rootfs,file=./test/initramfs/build/rootfs.img"
+fi
+
 if [ "$1" = "riscv" ]; then
     # NOTE: The `/etc/profile.d/init.sh` assumes that `ext2.img` appears as the first block device (`/dev/vda`).
-    # The ordering below ensures `x1` (ext2.img) is discovered before `x0`, maintaining this assumption.
+    # The ordering below ensures `x0` (ext2.img) is discovered before `x1`, maintaining this assumption.
+    # When booting without initramfs, `rootfs.img` appears before `x1` and `x0` in the QEMU
+    # device arguments, so the RISC-V virtio-mmio probing order exposes it as `/dev/vdc`.
     # TODO: Once UUID-based mounting is implemented, this strict ordering will no longer be required.
+    if [ "$INITRAMFS" = "off" ]; then
+        ROOTFS_RISCV_DEVICE_ARGS="-device virtio-blk-device,drive=rootfs"
+    fi
+
     QEMU_ARGS="\
         -cpu rv64,svpbmt=true,zkr=true \
         -machine virt \
@@ -83,8 +94,10 @@ if [ "$1" = "riscv" ]; then
         -display none \
         -monitor chardev:mux \
         -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
+        $ROOTFS_DRIVE_ARGS \
         -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
         -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
+        $ROOTFS_RISCV_DEVICE_ARGS \
         -device virtio-blk-device,drive=x1 \
         -device virtio-blk-device,drive=x0 \
         -device virtio-keyboard-device \
@@ -97,6 +110,9 @@ fi
 
 if [ "$1" = "tdx" ]; then
     TDX_OBJECT='{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "1", "port": "4050" } }'
+    if [ "$INITRAMFS" = "off" ]; then
+        ROOTFS_TDX_DEVICE_ARGS="-device virtio-blk-pci,bus=pcie.0,addr=0xb,drive=rootfs,serial=vrootfs,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off"
+    fi
 
     QEMU_ARGS="\
         -m ${MEM:-8G} \
@@ -111,8 +127,10 @@ if [ "$1" = "tdx" ]; then
         -object '$TDX_OBJECT' \
         -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
         -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
+        $ROOTFS_DRIVE_ARGS \
         -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
         -device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
+        $ROOTFS_TDX_DEVICE_ARGS \
         -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES \
         -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
         $NETDEV_ARGS \
@@ -142,6 +160,7 @@ COMMON_QEMU_ARGS="\
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
     -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
+    $ROOTFS_DRIVE_ARGS \
 "
 
 # Add xfstests drives when the selected conformance suite is `xfstests`.
@@ -165,6 +184,11 @@ if [ "$1" = "iommu" ]; then
     # TODO: Add support for enabling IOMMU on AMD platforms
 fi
 
+if [ "$INITRAMFS" = "off" ]; then
+    ROOTFS_MICROVM_DEVICE_ARGS="-device virtio-blk-device,drive=rootfs,serial=vrootfs"
+    ROOTFS_Q35_DEVICE_ARGS="-device virtio-blk-pci,bus=pcie.0,addr=0xb,drive=rootfs,serial=vrootfs,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA"
+fi
+
 if [ "$1" = "microvm" ]; then
     QEMU_ARGS="\
         $COMMON_QEMU_ARGS \
@@ -173,6 +197,7 @@ if [ "$1" = "microvm" ]; then
         -no-user-config \
         -device virtio-blk-device,drive=x0,serial=vext2 \
         -device virtio-blk-device,drive=x1,serial=vexfat \
+        $ROOTFS_MICROVM_DEVICE_ARGS \
         -device virtio-keyboard-device \
         -device virtio-net-device,netdev=net01 \
         -device virtio-serial-device \
@@ -184,6 +209,7 @@ else
         -machine q35,kernel-irqchip=split \
         -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
         -device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        $ROOTFS_Q35_DEVICE_ARGS \
         -object rng-random,id=rng0,filename=/dev/urandom \
         -device virtio-rng-pci,bus=pcie.0,addr=0x8,disable-legacy=on,disable-modern=off,rng=rng0,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
         -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
