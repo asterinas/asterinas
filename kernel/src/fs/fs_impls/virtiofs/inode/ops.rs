@@ -351,6 +351,7 @@ impl VirtioFsInode {
             OpenOperation::new(OpenReq::new((access_mode as u32) | status_flags.bits())),
         )?;
         let cache_policy = if self.inner.read().page_cache().is_some()
+            && !status_flags.contains(StatusFlags::O_DIRECT)
             && !open_out
                 .open_flags()
                 .contains(FuseOpenFlags::FOPEN_DIRECT_IO)
