@@ -1,6 +1,26 @@
 { config, lib, pkgs, ... }:
 
 let
+  busyboxRoot = pkgs.runCommand "kata-busybox-root" { } ''
+    mkdir -p "$out/bin"
+    cp ${pkgs.pkgsStatic.busybox}/bin/busybox "$out/bin/busybox"
+    chmod 0755 "$out/bin/busybox"
+    ln -s busybox "$out/bin/sh"
+  '';
+
+  busyboxImage = pkgs.dockerTools.buildImage {
+    name = "busybox";
+    tag = "latest";
+    copyToRoot = busyboxRoot;
+    config = {
+      Cmd = [ "/bin/sh" ];
+    };
+  };
+
+  registryProxy = "http://10.0.2.2:18089";
+  registryNoProxy = "localhost,127.0.0.1,::1,10.0.2.2";
+  registryPullImages = "docker.io/library/busybox:latest docker.m.daocloud.io/library/busybox:latest";
+
   qemuWrapper = pkgs.writeShellScriptBin "kata-qemu-wrapper" ''
     out_dir="''${KATA_DEBUG_OUT:-/tmp/kata-debug-out}"
     mkdir -p "$out_dir" 2>/dev/null || out_dir=/tmp
@@ -114,6 +134,14 @@ let
           print "valid_hypervisor_paths = [\"${qemuWrapper}/bin/kata-qemu-wrapper\"]"
           next
         }
+        section == "qemu" && /^#?default_vcpus = / {
+          print "default_vcpus = 1"
+          next
+        }
+        section == "qemu" && /^#?default_maxvcpus = / {
+          print "default_maxvcpus = 1"
+          next
+        }
         { print }
       ' "$cfg" > "$cfg.tmp"
       mv "$cfg.tmp" "$cfg"
@@ -140,6 +168,8 @@ in
   };
 
   environment.systemPackages = with pkgs; [
+    curl
+    iproute2
     kataRuntimeRs
     kata-runtime.passthru.kata-images
     qemuWrapper
@@ -165,10 +195,31 @@ in
     (writeShellScriptBin "kata-debug-run-all" ''
       exec sh /etc/kata-debug/guest/10-run-all.sh "$@"
     '')
+    (writeShellScriptBin "kata-debug-run-image-probe" ''
+      exec sh /etc/kata-debug/guest/20-run-image-probe.sh "$@"
+    '')
+    (writeShellScriptBin "kata-debug-run-image" ''
+      exec sh /etc/kata-debug/guest/11-run-image-all.sh "$@"
+    '')
+    (writeShellScriptBin "kata-debug-pull-image" ''
+      exec sh /etc/kata-debug/guest/21-pull-image.sh "$@"
+    '')
     (writeShellScriptBin "kata-debug-stop" ''
       exec sh /etc/kata-debug/guest/99-stop-containerd-debug.sh "$@"
     '')
   ];
+
+  environment.variables = {
+    HTTP_PROXY = registryProxy;
+    HTTPS_PROXY = registryProxy;
+    ALL_PROXY = registryProxy;
+    KATA_PULL_IMAGES = registryPullImages;
+    NO_PROXY = registryNoProxy;
+    http_proxy = registryProxy;
+    https_proxy = registryProxy;
+    all_proxy = registryProxy;
+    no_proxy = registryNoProxy;
+  };
 
   environment.pathsToLink = [
     "/share/kata-containers"
@@ -178,9 +229,21 @@ in
     "${kataRuntimeRs}/share/defaults/kata-containers/runtime-rs/configuration.toml";
 
   environment.etc."kata-debug/guest".source = extraFileDir + "/guest-scripts";
+  environment.etc."kata-debug/busybox.tar".source = busyboxImage;
 
   systemd.services.containerd = {
-    environment.KATA_CONF_FILE = "/etc/kata-containers/configuration.toml";
+    environment = {
+      KATA_CONF_FILE = "/etc/kata-containers/configuration.toml";
+      HTTP_PROXY = registryProxy;
+      HTTPS_PROXY = registryProxy;
+      ALL_PROXY = registryProxy;
+      KATA_PULL_IMAGES = registryPullImages;
+      NO_PROXY = registryNoProxy;
+      http_proxy = registryProxy;
+      https_proxy = registryProxy;
+      all_proxy = registryProxy;
+      no_proxy = registryNoProxy;
+    };
     path = [
       kataRuntimeRs
       pkgs.qemu_test

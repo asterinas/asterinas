@@ -6,13 +6,47 @@ use nixos_test_framework::*;
 
 nixos_test_main!();
 
+fn wait_for_containerd_ready(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd(
+        "rm -f /tmp/containerd-ready.state /tmp/containerd-ready.log
+         i=0
+         ready=0
+         while [ \"$i\" -lt 90 ]; do
+           state=$(systemctl is-active containerd 2>&1 || true)
+           if [ \"$state\" = active ] && [ -S /run/containerd/containerd.sock ]; then
+             echo ready > /tmp/containerd-ready.state
+             ready=1
+             break
+           fi
+           echo \"$state\" >> /tmp/containerd-ready.log
+           i=$((i + 1))
+           sleep 2
+         done
+         if [ \"$ready\" -ne 1 ]; then
+           echo unavailable > /tmp/containerd-ready.state
+           {
+             systemctl show containerd \
+               -p ActiveState -p SubState -p ExecMainPID -p MainPID -p Result \
+               -p NotifyAccess -p Type -p TimeoutStartUSec 2>&1 || true
+             systemctl status containerd --no-pager -l 2>&1 || true
+             ls -ld /run/containerd /run/containerd/containerd.sock 2>&1 || true
+           } >> /tmp/containerd-ready.log
+         fi",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "if grep -qx ready /tmp/containerd-ready.state; then
+           printf 'CONTAINERD%s\n' '_STATE_READY'
+         else
+           echo CONTAINERD_STATE_UNAVAILABLE
+           tail -120 /tmp/containerd-ready.log 2>/dev/null || true
+         fi",
+        "CONTAINERD_STATE_READY",
+    )
+}
+
 #[nixos_test]
 fn containerd_service_basic(nixos_shell: &mut Session) -> Result<(), Error> {
-    nixos_shell.run_cmd_and_expect("systemctl is-active containerd", "active")?;
-    nixos_shell.run_cmd_and_expect(
-        "test -S /run/containerd/containerd.sock && echo ready",
-        "ready",
-    )?;
+    wait_for_containerd_ready(nixos_shell)?;
     nixos_shell.run_cmd_and_expect("ctr version", "Server:")?;
 
     nixos_shell.run_cmd(
@@ -28,6 +62,7 @@ fn containerd_service_basic(nixos_shell: &mut Session) -> Result<(), Error> {
 
 #[nixos_test]
 fn kata_runtime_registered(nixos_shell: &mut Session) -> Result<(), Error> {
+    wait_for_containerd_ready(nixos_shell)?;
     nixos_shell.run_cmd_and_expect(
         "command -v containerd-shim-kata-v2",
         "/run/current-system/sw/bin/containerd-shim-kata-v2",
@@ -41,9 +76,23 @@ fn kata_runtime_registered(nixos_shell: &mut Session) -> Result<(), Error> {
         "kata-rs-config-ready",
     )?;
     nixos_shell.run_cmd_and_expect("command -v kata-debug-run-all", "kata-debug-run-all")?;
+    nixos_shell.run_cmd_and_expect("command -v kata-debug-run-image", "kata-debug-run-image")?;
+    nixos_shell.run_cmd_and_expect("command -v kata-debug-pull-image", "kata-debug-pull-image")?;
     nixos_shell.run_cmd_and_expect(
         "test -r /etc/kata-debug/guest/10-run-all.sh && echo kata-debug-ready",
         "kata-debug-ready",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "test -r /etc/kata-debug/guest/20-run-image-probe.sh && echo kata-image-debug-ready",
+        "kata-image-debug-ready",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "test -r /etc/kata-debug/guest/21-pull-image.sh && echo kata-pull-debug-ready",
+        "kata-pull-debug-ready",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "test -r /etc/kata-debug/busybox.tar && echo kata-image-tar-ready",
+        "kata-image-tar-ready",
     )?;
 
     nixos_shell.run_cmd(
@@ -51,6 +100,76 @@ fn kata_runtime_registered(nixos_shell: &mut Session) -> Result<(), Error> {
     )?;
     nixos_shell.run_cmd_and_expect("cat /tmp/kata-runtime-config.txt", "io.containerd.kata.v2")?;
 
+    Ok(())
+}
+
+/// Captures the early `containerd.service` startup state without waiting for
+/// the image-path test to time out. This is useful when containerd remains in
+/// `activating` before `/run/containerd/containerd.sock` appears.
+#[nixos_test]
+fn containerd_hang_diag(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd(
+        r#"cat > /tmp/containerd-hang-diag.sh <<'EOF'
+#!/bin/sh
+set +e
+
+sample() {
+    label=$1
+    echo "===DIAG_SAMPLE_${label}==="
+
+    echo "--- service show ---"
+    timeout 10s systemctl show containerd \
+        -p ActiveState -p SubState -p ExecMainPID -p MainPID -p Result \
+        -p NotifyAccess -p Type -p TimeoutStartUSec 2>&1 || true
+
+    echo "--- service status ---"
+    timeout 10s systemctl status containerd --no-pager -l 2>&1 | head -80 || true
+
+    echo "--- socket state ---"
+    ls -ld /run/containerd /run/containerd/containerd.sock 2>&1 || true
+    timeout 5s find /run/containerd -maxdepth 2 -ls 2>&1 || true
+
+    echo "--- process list ---"
+    ps -e -o pid,ppid,stat,wchan:28,args 2>/dev/null \
+        | grep -iE 'containerd|shim|runc|kata' \
+        | grep -v grep || true
+
+    echo "--- proc details ---"
+    for d in /proc/[0-9]*; do
+        c=$(tr '\0' ' ' < "$d/cmdline" 2>/dev/null)
+        case "$c" in
+            *containerd*|*shim*|*runc*)
+            p=${d#/proc/}
+            echo "--- PID $p : $c"
+            grep -E '^State|^PPid' "$d/status" 2>/dev/null || true
+            echo "wchan=$(cat "$d/wchan" 2>/dev/null)"
+            echo "syscall=$(cat "$d/syscall" 2>/dev/null)"
+            echo children:
+            cat "$d/task/$p/children" 2>/dev/null || true
+            echo fds:
+            ls -l "$d/fd" 2>&1 | head -40 || true
+                ;;
+        esac
+    done
+
+    echo "--- journal containerd ---"
+    timeout 10s journalctl -u containerd -b --no-pager -n 80 2>&1 || true
+
+}
+
+last=0
+for at in 5 30 60 120; do
+    sleep $((at - last))
+    sample "$at"
+    last=$at
+done
+
+echo ===DIAG_END===
+exit 0
+EOF"#,
+    )?;
+    nixos_shell.run_cmd("chmod +x /tmp/containerd-hang-diag.sh")?;
+    nixos_shell.run_cmd_and_expect("/tmp/containerd-hang-diag.sh", "===DIAG_END===")?;
     Ok(())
 }
 
@@ -189,5 +308,66 @@ fn kata_rootfs_exit_code_propagation(nixos_shell: &mut Session) -> Result<(), Er
     nixos_shell.run_cmd_and_expect("cat /tmp/kata-run.txt", "HI-FROM-CTR")?;
     // The file write inside the container's rootfs is also visible on the host.
     nixos_shell.run_cmd_and_expect("cat /tmp/kata-rootfs/testout.txt", "HI-FROM-CTR")?;
+    Ok(())
+}
+
+/// Validates the real container image path: import an offline busybox image into
+/// containerd, let containerd prepare the snapshot rootfs, then run it through
+/// the Kata runtime without `--rootfs`.
+#[nixos_test]
+fn kata_image_run_busybox(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd(
+        "rm -rf /tmp/kata-debug-out /tmp/kata-debug-run-image.stdout \
+         /tmp/kata-debug-run-image.status /tmp/kata-run.txt /tmp/kata-image-run.txt \
+         /tmp/kata-image-import.txt /tmp/containerd-debug.sock /tmp/containerd-root \
+         /tmp/containerd-state",
+    )?;
+    nixos_shell.run_cmd(
+        "(timeout 1080s kata-debug-run-image; echo $? > /tmp/kata-debug-run-image.status) \
+         2>&1 | tee /tmp/kata-debug-run-image.stdout; \
+         echo run-image-exit:$(cat /tmp/kata-debug-run-image.status) \
+           >> /tmp/kata-debug-run-image.stdout",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "grep -E '^run-image-exit:' /tmp/kata-debug-run-image.stdout; \
+         tail -180 /tmp/kata-debug-run-image.stdout; \
+         ls -la /tmp/kata-debug-out/ 2>/dev/null; \
+         echo BUSYBOX_DIAG_END",
+        "BUSYBOX_DIAG_END",
+    )?;
+    nixos_shell.run_cmd_and_expect("cat /tmp/kata-image-run.txt", "HI-IMG")?;
+    nixos_shell.run_cmd_and_expect("cat /tmp/kata-image-run.txt", "exit:7")?;
+    Ok(())
+}
+
+/// Validates the online registry path: pull busybox through the guest network,
+/// then run the pulled image through the Kata runtime without `--rootfs`.
+#[nixos_test]
+fn kata_image_pull_busybox(nixos_shell: &mut Session) -> Result<(), Error> {
+    wait_for_containerd_ready(nixos_shell)?;
+    nixos_shell.run_cmd(
+        "rm -f /tmp/kata-image-pull.log /tmp/kata-image-pull-run.txt \
+         /tmp/kata-image-pull-step.out",
+    )?;
+    nixos_shell.run_cmd(
+        "timeout 1500s kata-debug-pull-image; \
+         echo pull-script-exit:$? | tee -a /tmp/kata-image-pull.log",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "grep -E '^=== (pull|run) |^pull_rc:|^PULL_RESULT=|^pull-script-exit:|^HI-PULL$|^exit:' \
+           /tmp/kata-image-pull.log || true; \
+         echo PULL_DIAG_END",
+        "PULL_DIAG_END",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "grep -E '^PULL_RESULT=ok( |$)' /tmp/kata-image-pull.log",
+        "PULL_RESULT=ok",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "grep -x 'pull-script-exit:0' /tmp/kata-image-pull.log",
+        "pull-script-exit:0",
+    )?;
+    nixos_shell.run_cmd_and_expect("grep -x 'HI-PULL' /tmp/kata-image-pull-run.txt", "HI-PULL")?;
+    nixos_shell.run_cmd_and_expect("grep -x 'exit:7' /tmp/kata-image-pull-run.txt", "exit:7")?;
     Ok(())
 }

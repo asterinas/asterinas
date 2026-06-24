@@ -61,8 +61,16 @@ done
 } > "$SOCKET_LOG"
 
 {
-  echo "=== kata run exit ==="
+  echo "=== kata rootfs run exit ==="
   tail -40 /tmp/kata-run.txt 2>/dev/null || true
+
+  echo
+  echo "=== kata image run exit ==="
+  tail -80 /tmp/kata-image-run.txt 2>/dev/null || true
+
+  echo
+  echo "=== image probe log ==="
+  cat "$OUT_DIR/image-probe.log" 2>/dev/null || true
 
   echo
   echo "=== qemu wrapper stderr ==="
@@ -105,6 +113,14 @@ done
   echo
   echo "=== live rootfs/share state ==="
   tail -260 "$OUT_DIR/rootfs-live-state.log" 2>/dev/null || true
+
+  echo
+  echo "=== image state ==="
+  cat "$OUT_DIR/image-state.log" 2>/dev/null || true
+
+  echo
+  echo "=== live image state ==="
+  tail -260 "$OUT_DIR/image-live-state.log" 2>/dev/null || true
 
   echo
   echo "=== interesting runtime lines ==="

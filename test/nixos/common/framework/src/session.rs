@@ -78,7 +78,7 @@ impl Session {
     fn marker_print_command(marker: &str) -> String {
         let split_at = marker.len() / 2;
         let (head, tail) = marker.split_at(split_at);
-        format!("printf '\\n%s%s\\n' '{}' '{}'", head, tail)
+        format!(" printf '\\n%s%s\\n' '{}' '{}'", head, tail)
     }
 
     /// Executes a command in the current session.
