@@ -1309,6 +1309,7 @@ impl Inode for RamInode {
             } else {
                 DeviceId::from_encoded_u64(rdev)
             },
+            birth_at: Duration::ZERO,
         }
     }
 

@@ -87,6 +87,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             gid: Gid::new_root(),
             container_dev_id: sb.container_dev_id,
             self_dev_id: None,
+            birth_at: Duration::ZERO,
         }
     }
 
