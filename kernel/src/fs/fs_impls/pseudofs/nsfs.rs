@@ -388,9 +388,7 @@ pub enum NsType {
     Cgroup,
     Ipc,
     Mnt,
-    #[expect(unused)]
     Net,
-    #[expect(unused)]
     Pid,
     #[expect(unused)]
     Time,

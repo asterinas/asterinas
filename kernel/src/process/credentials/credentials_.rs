@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
@@ -75,6 +75,9 @@ pub(super) struct Credentials_ {
 
     /// Secure bits.
     securebits: AtomicSecureBits,
+
+    /// Whether this task disallows gaining new privileges across `execve`.
+    no_new_privs: AtomicBool,
 }
 
 impl Credentials_ {
@@ -100,6 +103,7 @@ impl Credentials_ {
             effective_capset: AtomicCapSet::new(capset),
             bounding_capset: AtomicCapSet::new(CapSet::all()),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
+            no_new_privs: AtomicBool::new(false),
         }
     }
 
@@ -589,6 +593,14 @@ impl Credentials_ {
 
         self.securebits.try_store(securebits, Ordering::Relaxed)
     }
+
+    pub(super) fn no_new_privs(&self) -> bool {
+        self.no_new_privs.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn set_no_new_privs(&self) {
+        self.no_new_privs.store(true, Ordering::Relaxed);
+    }
 }
 
 impl Clone for Credentials_ {
@@ -608,6 +620,7 @@ impl Clone for Credentials_ {
             effective_capset: self.effective_capset.clone(),
             bounding_capset: self.bounding_capset.clone(),
             securebits: self.securebits.clone(),
+            no_new_privs: AtomicBool::new(self.no_new_privs()),
         }
     }
 }

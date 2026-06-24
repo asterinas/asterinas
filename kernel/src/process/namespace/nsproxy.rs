@@ -7,7 +7,7 @@ use crate::{
     ipc::IpcNamespace,
     net::uts_ns::UtsNamespace,
     prelude::*,
-    process::{CloneFlags, Process, UserNamespace, posix_thread::PosixThread},
+    process::{CloneFlags, NetNamespace, Process, UserNamespace, posix_thread::PosixThread},
 };
 
 /// A struct that acts as a per-thread proxy to give access to most namespaces.
@@ -21,6 +21,7 @@ pub struct NsProxy {
     cgroup_ns: Arc<CgroupNamespace>,
     ipc_ns: Arc<IpcNamespace>,
     mnt_ns: Arc<MountNamespace>,
+    net_ns: Arc<NetNamespace>,
     uts_ns: Arc<UtsNamespace>,
 }
 
@@ -33,6 +34,7 @@ impl NsProxy {
                 cgroup_ns: CgroupNamespace::get_init_singleton().clone(),
                 ipc_ns: IpcNamespace::get_init_singleton().clone(),
                 mnt_ns: MountNamespace::get_init_singleton().clone(),
+                net_ns: NetNamespace::get_init_singleton().clone(),
                 uts_ns: UtsNamespace::get_init_singleton().clone(),
             })
         })
@@ -86,6 +88,11 @@ impl NsProxy {
             builder.mnt_ns(new_mnt_ns);
         }
 
+        if clone_ns_flags.contains(CloneFlags::CLONE_NEWNET) {
+            let new_net_ns = NetNamespace::new_clone(user_ns.clone(), posix_thread)?;
+            builder.net_ns(new_net_ns);
+        }
+
         if clone_ns_flags.contains(CloneFlags::CLONE_NEWUTS) {
             let new_uts_ns = self.uts_ns.new_clone(user_ns.clone(), posix_thread)?;
             builder.uts_ns(new_uts_ns);
@@ -111,6 +118,11 @@ impl NsProxy {
         &self.mnt_ns
     }
 
+    /// Returns the associated network namespace.
+    pub fn net_ns(&self) -> &Arc<NetNamespace> {
+        &self.net_ns
+    }
+
     /// Returns the associated UTS namespace.
     pub fn uts_ns(&self) -> &Arc<UtsNamespace> {
         &self.uts_ns
@@ -126,6 +138,7 @@ pub struct NsProxyBuilder<'a> {
     cgroup_ns: Option<Arc<CgroupNamespace>>,
     ipc_ns: Option<Arc<IpcNamespace>>,
     mnt_ns: Option<Arc<MountNamespace>>,
+    net_ns: Option<Arc<NetNamespace>>,
     uts_ns: Option<Arc<UtsNamespace>>,
 }
 
@@ -137,6 +150,7 @@ impl<'a> NsProxyBuilder<'a> {
             cgroup_ns: None,
             ipc_ns: None,
             mnt_ns: None,
+            net_ns: None,
             uts_ns: None,
         }
     }
@@ -159,6 +173,12 @@ impl<'a> NsProxyBuilder<'a> {
         self
     }
 
+    /// Sets the new network namespace for the context being built.
+    pub fn net_ns(&mut self, net_ns: Arc<NetNamespace>) -> &mut Self {
+        self.net_ns = Some(net_ns);
+        self
+    }
+
     /// Sets the new UTS namespace for the context being built.
     pub fn uts_ns(&mut self, uts_ns: Arc<UtsNamespace>) -> &mut Self {
         self.uts_ns = Some(uts_ns);
@@ -172,18 +192,21 @@ impl<'a> NsProxyBuilder<'a> {
             cgroup_ns: new_cgroup,
             ipc_ns: new_ipc,
             mnt_ns: new_mnt,
+            net_ns: new_net,
             uts_ns: new_uts,
         } = self;
 
         let new_cgroup = new_cgroup.unwrap_or_else(|| old_proxy.cgroup_ns.clone());
         let new_ipc = new_ipc.unwrap_or_else(|| old_proxy.ipc_ns.clone());
         let new_mnt = new_mnt.unwrap_or_else(|| old_proxy.mnt_ns.clone());
+        let new_net = new_net.unwrap_or_else(|| old_proxy.net_ns.clone());
         let new_uts = new_uts.unwrap_or_else(|| old_proxy.uts_ns.clone());
 
         NsProxy {
             cgroup_ns: new_cgroup,
             ipc_ns: new_ipc,
             mnt_ns: new_mnt,
+            net_ns: new_net,
             uts_ns: new_uts,
         }
     }
@@ -196,6 +219,7 @@ pub fn check_unsupported_ns_flags(flags: CloneFlags) -> Result<()> {
     const SUPPORTED_FLAGS: CloneFlags = CloneFlags::CLONE_NEWCGROUP
         .union(CloneFlags::CLONE_NEWIPC)
         .union(CloneFlags::CLONE_NEWNS)
+        .union(CloneFlags::CLONE_NEWNET)
         .union(CloneFlags::CLONE_NEWUTS);
 
     let unsupported_flags =
@@ -204,7 +228,10 @@ pub fn check_unsupported_ns_flags(flags: CloneFlags) -> Result<()> {
         return Ok(());
     }
 
-    warn!("unsupported clone ns flags: {:?}", unsupported_flags);
+    error!(
+        "unsupported clone namespace flags requested: requested={:?}, unsupported={:?}, supported={:?}",
+        flags, unsupported_flags, SUPPORTED_FLAGS
+    );
     return_errno_with_message!(Errno::EINVAL, "unsupported clone namespace flags");
 }
 

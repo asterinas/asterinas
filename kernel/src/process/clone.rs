@@ -795,8 +795,13 @@ fn clone_pidfd(
         Ok(()) => Ok(()),
         Err(err) => {
             let file_table = ctx.thread_local.borrow_file_table();
-            let mut file_table_locked = file_table.unwrap().write();
-            file_table_locked.close_file(fd);
+            let closed_file = {
+                let mut file_table_locked = file_table.unwrap().write();
+                file_table_locked.close_file(fd)
+            };
+            if let Some(file) = &closed_file {
+                crate::fs::file::file_table::FileTable::release_range_locks_for_close(file);
+            }
             Err(err.into())
         }
     }

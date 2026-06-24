@@ -22,7 +22,7 @@ use crate::{
     ipc::IpcNamespace,
     net::uts_ns::UtsNamespace,
     prelude::*,
-    process::{NsProxy, UserNamespace, posix_thread::AsPosixThread},
+    process::{NetNamespace, NsProxy, PidNamespace, UserNamespace, posix_thread::AsPosixThread},
     thread::Thread,
 };
 
@@ -52,13 +52,24 @@ enum NsProxyEntry {
     Ipc,
     /// The mount namespace.
     Mnt,
+    /// The network namespace.
+    Net,
+    /// The PID namespace.
+    Pid,
     /// The UTS namespace.
     Uts,
 }
 
 impl NsProxyEntry {
     /// All supported `NsProxy`-backed namespace entries.
-    const ALL: &[Self] = &[Self::Cgroup, Self::Ipc, Self::Mnt, Self::Uts];
+    const ALL: &[Self] = &[
+        Self::Cgroup,
+        Self::Ipc,
+        Self::Mnt,
+        Self::Net,
+        Self::Pid,
+        Self::Uts,
+    ];
 
     /// Returns the filename of this namespace entry under `/proc/[pid]/ns/`.
     fn as_str(self) -> &'static str {
@@ -66,6 +77,8 @@ impl NsProxyEntry {
             Self::Cgroup => "cgroup",
             Self::Ipc => "ipc",
             Self::Mnt => "mnt",
+            Self::Net => "net",
+            Self::Pid => "pid",
             Self::Uts => "uts",
         }
     }
@@ -76,6 +89,8 @@ impl NsProxyEntry {
             "cgroup" => Some(Self::Cgroup),
             "ipc" => Some(Self::Ipc),
             "mnt" => Some(Self::Mnt),
+            "net" => Some(Self::Net),
+            "pid" => Some(Self::Pid),
             "uts" => Some(Self::Uts),
             _ => None,
         }
@@ -104,11 +119,33 @@ impl NsProxyEntry {
                 ns_proxy.mnt_ns().get_path(),
                 parent,
             ),
+            Self::Net => NsSymOps::<NetNamespace>::new_inode(
+                dir.clone(),
+                ns_proxy.net_ns().get_path(),
+                parent,
+            ),
+            Self::Pid => NsSymOps::<PidNamespace>::new_inode(
+                dir.clone(),
+                PidNamespace::get_init_singleton().get_path(),
+                parent,
+            ),
             Self::Uts => NsSymOps::<UtsNamespace>::new_inode(
                 dir.clone(),
                 ns_proxy.uts_ns().get_path(),
                 parent,
             ),
+        }
+    }
+
+    /// Returns the current namespace path for this entry.
+    fn current_path(self, ns_proxy: &NsProxy) -> Path {
+        match self {
+            Self::Cgroup => ns_proxy.cgroup_ns().get_path(),
+            Self::Ipc => IpcNamespace::get_init_singleton().get_path(),
+            Self::Mnt => ns_proxy.mnt_ns().get_path(),
+            Self::Net => ns_proxy.net_ns().get_path(),
+            Self::Pid => PidNamespace::get_init_singleton().get_path(),
+            Self::Uts => ns_proxy.uts_ns().get_path(),
         }
     }
 }
@@ -124,6 +161,12 @@ fn cached_ns_path(inode: &dyn Inode) -> Option<&Path> {
         return Some(&sym.inner().ns_path);
     }
     if let Some(sym) = inode.downcast_ref::<NsSymlink<MountNamespace>>() {
+        return Some(&sym.inner().ns_path);
+    }
+    if let Some(sym) = inode.downcast_ref::<NsSymlink<NetNamespace>>() {
+        return Some(&sym.inner().ns_path);
+    }
+    if let Some(sym) = inode.downcast_ref::<NsSymlink<PidNamespace>>() {
         return Some(&sym.inner().ns_path);
     }
     if let Some(sym) = inode.downcast_ref::<NsSymlink<UserNamespace>>() {
@@ -230,8 +273,20 @@ impl ProcDirOps for NsDirOps {
             return cached_path == &ns_proxy.cgroup_ns().get_path();
         }
 
+        if child.downcast_ref::<NsSymlink<IpcNamespace>>().is_some() {
+            return cached_path == &IpcNamespace::get_init_singleton().get_path();
+        }
+
         if child.downcast_ref::<NsSymlink<MountNamespace>>().is_some() {
             return cached_path == &ns_proxy.mnt_ns().get_path();
+        }
+
+        if child.downcast_ref::<NsSymlink<NetNamespace>>().is_some() {
+            return cached_path == &ns_proxy.net_ns().get_path();
+        }
+
+        if child.downcast_ref::<NsSymlink<PidNamespace>>().is_some() {
+            return cached_path == &PidNamespace::get_init_singleton().get_path();
         }
 
         if child.downcast_ref::<NsSymlink<UtsNamespace>>().is_some() {
