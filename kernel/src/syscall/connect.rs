@@ -16,8 +16,10 @@ pub fn sys_connect(
     let socket_addr = read_socket_addr_from_user(sockaddr_ptr, addr_len as _)?;
     debug!("fd = {sockfd}, socket_addr = {socket_addr:?}");
 
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd.try_into()?);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, sockfd.try_into()?).into_owned()
+    };
     let socket = file.as_socket_or_err()?;
 
     socket

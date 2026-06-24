@@ -25,8 +25,10 @@ pub fn sys_recvmsg(
         sockfd, c_user_msghdr, flags
     );
 
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd.try_into()?);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, sockfd.try_into()?).into_owned()
+    };
     let socket = file.as_socket_or_err()?;
 
     let (total_bytes, message_header) = {
@@ -39,10 +41,6 @@ pub fn sys_recvmsg(
                 _ => err,
             })?
     };
-
-    // Writing control messages may access the file table, so it should be called after dropping
-    // the file table borrow.
-    drop(file_table);
 
     let addr = message_header.addr();
     c_user_msghdr.msg_namelen = c_user_msghdr.write_socket_addr_to_user(addr)?;

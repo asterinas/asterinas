@@ -28,18 +28,15 @@ pub fn sys_ioctl(
         return Ok(SyscallReturn::Return(0));
     }
 
-    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?).into_owned();
+    drop(file_table);
 
     // Then, handle the ioctl command the affects the file description.
-    let res = if let Some(res) = handle_file_ioctl(&**file, raw_ioctl) {
+    let res = if let Some(res) = handle_file_ioctl(&*file, raw_ioctl) {
         res?;
         0
     } else {
-        let file_owned = file.into_owned();
-        // We have to drop `file_table` because some I/O command will modify the file table
-        // (e.g., TIOCGPTPEER).
-        drop(file_table);
-        file_owned.ioctl(raw_ioctl)?
+        file.ioctl(raw_ioctl)?
     };
 
     Ok(SyscallReturn::Return(res as _))

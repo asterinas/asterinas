@@ -34,11 +34,13 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
         FdFlags::empty()
     };
 
-    let file_table = ctx.thread_local.borrow_file_table();
-    let mut file_table_locked = file_table.unwrap().write();
-
-    let reader_fd = file_table_locked.insert(pipe_reader, fd_flags);
-    let writer_fd = file_table_locked.insert(pipe_writer, fd_flags);
+    let (reader_fd, writer_fd) = {
+        let file_table = ctx.thread_local.borrow_file_table();
+        let mut file_table_locked = file_table.unwrap().write();
+        let reader_fd = file_table_locked.insert(pipe_reader, fd_flags);
+        let writer_fd = file_table_locked.insert(pipe_writer, fd_flags);
+        (reader_fd, writer_fd)
+    };
     let pipe_fds = PipeFds {
         reader_raw_fd: reader_fd.into(),
         writer_raw_fd: writer_fd.into(),
@@ -46,8 +48,17 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
     debug!("pipe_fds: {:?}", pipe_fds);
 
     if let Err(err) = ctx.user_space().write_val(fds, &pipe_fds) {
-        file_table_locked.close_file(reader_fd).unwrap();
-        file_table_locked.close_file(writer_fd).unwrap();
+        let closed_files = {
+            let file_table = ctx.thread_local.borrow_file_table();
+            let mut file_table_locked = file_table.unwrap().write();
+            vec![
+                file_table_locked.close_file(reader_fd).unwrap(),
+                file_table_locked.close_file(writer_fd).unwrap(),
+            ]
+        };
+        for file in &closed_files {
+            crate::fs::file::file_table::FileTable::release_range_locks_for_close(file);
+        }
         return Err(err.into());
     }
 

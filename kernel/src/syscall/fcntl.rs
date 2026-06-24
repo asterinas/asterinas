@@ -71,8 +71,10 @@ fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
 }
 
 fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, fd).into_owned()
+    };
     let status_flags = file.status_flags();
     let access_mode = file.access_mode();
     Ok(SyscallReturn::Return(
@@ -81,8 +83,10 @@ fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
 }
 
 fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, fd).into_owned()
+    };
     let valid_flags_mask = StatusFlags::O_APPEND
         | StatusFlags::O_ASYNC
         | StatusFlags::O_DIRECT
@@ -96,15 +100,17 @@ fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
 }
 
 fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, fd).into_owned()
+    };
     let lock_mut_ptr = arg as Vaddr;
     let mut lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
     if lock_type == RangeLockType::Unlock {
         return_errno_with_message!(Errno::EINVAL, "invalid flock type for getlk");
     }
-    let mut lock = RangeLockItem::new(lock_type, from_c_flock_and_file(&lock_mut_c, &**file)?);
+    let mut lock = RangeLockItem::new(lock_type, from_c_flock_and_file(&lock_mut_c, &*file)?);
     let inode_file = file.as_inode_handle_or_err()?;
     lock = inode_file.test_range_lock(lock)?;
     lock_mut_c.copy_from_range_lock(&lock);
@@ -118,12 +124,14 @@ fn handle_setlk(
     is_nonblocking: bool,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, fd).into_owned()
+    };
     let lock_mut_ptr = arg as Vaddr;
     let lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
-    let lock = RangeLockItem::new(lock_type, from_c_flock_and_file(&lock_mut_c, &**file)?);
+    let lock = RangeLockItem::new(lock_type, from_c_flock_and_file(&lock_mut_c, &*file)?);
     let inode_file = file.as_inode_handle_or_err()?;
     inode_file.set_range_lock(&lock, is_nonblocking)?;
     Ok(SyscallReturn::Return(0))
@@ -170,8 +178,10 @@ fn handle_addseal(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn
     let new_seals = FileSeals::from_bits(arg as u32)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid seals"))?;
 
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, fd).into_owned()
+    };
 
     file.as_inode_handle_or_err()?.add_seals(new_seals)?;
 
@@ -179,8 +189,10 @@ fn handle_addseal(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn
 }
 
 fn handle_getseal(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, fd).into_owned()
+    };
 
     let file_seals = file.as_inode_handle_or_err()?.get_seals()?;
 

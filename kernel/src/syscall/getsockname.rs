@@ -15,8 +15,10 @@ pub fn sys_getsockname(
 ) -> Result<SyscallReturn> {
     debug!("sockfd = {sockfd}, addr = 0x{addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, sockfd.try_into()?);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, sockfd.try_into()?).into_owned()
+    };
     let socket = file.as_socket_or_err()?;
 
     let socket_addr = socket.addr()?;

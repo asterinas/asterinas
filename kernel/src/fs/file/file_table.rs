@@ -179,14 +179,17 @@ impl FileTable {
 
     pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
         let removed_entry = self.table.remove(fd.into())?;
+        Some(removed_entry.file)
+    }
+
+    pub fn release_range_locks_for_close(file: &Arc<dyn FileLike>) {
         // POSIX record locks are process-associated and Linux drops them when any fd for the inode is
         // closed by that process, even if duplicated descriptors still exist.
         //
         // Reference: <https://man7.org/linux/man-pages/man2/fcntl_locking.2.html>
-        if let Ok(inode_handle) = removed_entry.file.as_inode_handle_or_err() {
+        if let Ok(inode_handle) = file.as_inode_handle_or_err() {
             inode_handle.release_range_locks();
         }
-        Some(removed_entry.file)
     }
 
     pub fn close_files_on_exec(&mut self) -> Vec<Arc<dyn FileLike>> {

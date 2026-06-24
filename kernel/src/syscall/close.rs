@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         self,
-        file::file_table::{FdFlags, RawFileDesc},
+        file::file_table::{FdFlags, FileTable, RawFileDesc},
     },
     prelude::*,
     process::ContextUnshareAdminApi,
@@ -30,6 +30,7 @@ pub fn sys_close(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
         file_table_locked.close_file(fd).unwrap()
     };
 
+    FileTable::release_range_locks_for_close(&file);
     fs::vfs::notify::on_close(&file);
 
     // Cleanup work needs to be done in the `Drop` impl.
@@ -99,6 +100,9 @@ pub fn sys_close_range(
         }
     }
 
+    for file in &files_to_drop {
+        FileTable::release_range_locks_for_close(file);
+    }
     drop(files_to_drop);
 
     Ok(SyscallReturn::Return(0))

@@ -18,8 +18,10 @@ pub fn sys_write(
         raw_fd, user_buf_ptr, user_buf_len
     );
 
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, raw_fd.try_into()?).into_owned()
+    };
 
     // According to <https://man7.org/linux/man-pages/man2/write.2.html>, if
     // the user specified an empty buffer, we should detect errors by checking

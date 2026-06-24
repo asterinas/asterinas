@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{FdFlags, FileDesc, RawFileDesc, get_file_fast},
+    fs::file::file_table::{FdFlags, FileDesc, FileTable, RawFileDesc, get_file_fast},
     prelude::*,
     process::ResourceType,
 };
@@ -75,6 +75,9 @@ fn do_dup3(
         let mut file_table_locked = file_table.unwrap().write();
         file_table_locked.dup_exact(old_fd, new_fd, flags)?
     };
+    if let Some(file) = &replaced_file {
+        FileTable::release_range_locks_for_close(file);
+    }
     drop(replaced_file);
 
     Ok(SyscallReturn::Return(new_fd.into()))

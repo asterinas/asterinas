@@ -23,8 +23,10 @@ pub fn sys_pread64(
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
 
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+    let file = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        get_file_fast!(&mut file_table, raw_fd.try_into()?).into_owned()
+    };
 
     if offset.checked_add(user_buf_len as i64).is_none() {
         return_errno_with_message!(Errno::EINVAL, "offset + user_buf_len overflow");
