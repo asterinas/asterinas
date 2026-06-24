@@ -4,7 +4,6 @@
 
 #include <dirent.h>
 #include <fcntl.h>
-#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -22,20 +21,7 @@
 #define DATA "hello from tmpfile"
 #define DATA_LEN (sizeof(DATA) - 1)
 
-#define RAW_O_TMPFILE 020000000
-
-/* O_TMPFILE may not be defined on older glibc. */
-#ifndef __O_TMPFILE
-#define __O_TMPFILE RAW_O_TMPFILE
-#endif
-
-#ifndef O_TMPFILE
-#define O_TMPFILE (__O_TMPFILE | O_DIRECTORY)
-#endif
-
-#ifndef AT_EMPTY_PATH
-#define AT_EMPTY_PATH 0x1000
-#endif
+#define RAW_O_TMPFILE (O_TMPFILE & ~O_DIRECTORY)
 
 static void cleanup_test_files(void)
 {
@@ -116,7 +102,6 @@ FN_TEST(tmpfile_open_with_o_path_yields_path_fd)
 
 	fd = TEST_SUCC(open(TEST_DIR, O_TMPFILE | O_PATH | O_RDWR, 0666));
 	TEST_ERRNO(read(fd, buf, sizeof(buf)), EBADF);
-
 	TEST_SUCC(close(fd));
 }
 END_TEST()

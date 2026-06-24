@@ -12,10 +12,6 @@
 
 #define BASE_DIR "/ext2/fallocate"
 
-#ifndef FALLOC_FL_KEEP_SIZE
-#define FALLOC_FL_KEEP_SIZE 0x01
-#endif
-
 FN_SETUP(prepare_base_dir)
 {
 	CHECK_WITH(mkdir(BASE_DIR, 0755), _ret == 0 || errno == EEXIST);

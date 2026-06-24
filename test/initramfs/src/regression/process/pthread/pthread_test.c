@@ -7,11 +7,12 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+
+// SYS_gettid only exists in certain architectures.
 #ifndef SYS_gettid
-#error "SYS_gettid unavailable on this system"
+#error "SYS_gettid is unavailable for this architecture"
 #endif
 
 #define gettid() ((pid_t)syscall(SYS_gettid))
