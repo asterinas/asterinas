@@ -215,5 +215,6 @@ pub(in crate::fs::fs_impls::virtiofs) fn metadata_from_attr(
         } else {
             DeviceId::from_encoded_u64(attr.rdev() as u64)
         },
+        birth_at: Duration::ZERO,
     }
 }
