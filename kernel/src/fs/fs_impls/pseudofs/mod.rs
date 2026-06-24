@@ -270,8 +270,8 @@ impl Inode for PseudoInode {
         return_errno_with_message!(Errno::EINVAL, "pseudo inodes can not be resized");
     }
 
-    fn metadata(&self) -> Metadata {
-        *self.metadata.lock()
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(*self.metadata.lock())
     }
 
     fn extension(&self) -> &Extension {

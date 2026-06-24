@@ -68,8 +68,8 @@ impl Inode for PtySlaveInode {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn metadata(&self) -> Metadata {
-        *self.metadata.read()
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(*self.metadata.read())
     }
 
     fn extension(&self) -> &Extension {

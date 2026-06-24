@@ -345,7 +345,15 @@ pub trait Inode: Any + FileOps + Send + Sync {
 
     fn resize(&self, new_size: usize) -> Result<()>;
 
-    fn metadata(&self) -> Metadata;
+    /// Returns a snapshot of the inode metadata.
+    ///
+    /// Convenience metadata getters such as `size`, `ino`, `type_`, `mode`,
+    /// `owner`, `group`, and timestamp getters return cached values.
+    ///
+    /// Callers must not assume that this operation is always cheap.
+    /// For example, remote filesystems may need to perform I/O when
+    /// getting or setting metadata, and such operations may fail.
+    fn metadata(&self) -> Result<Metadata>;
 
     fn ino(&self) -> u64;
 
@@ -544,7 +552,7 @@ pub trait Inode: Any + FileOps + Send + Sync {
         };
 
         let creds = posix_thread.credentials();
-        let metadata = self.metadata();
+        let metadata = self.metadata()?;
         let mode = metadata.mode;
 
         // With DAC_OVERRIDE capability, the user can bypass some permission checks.
