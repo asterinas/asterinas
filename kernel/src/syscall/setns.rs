@@ -21,7 +21,7 @@ use crate::{
     net::uts_ns::UtsNamespace,
     prelude::*,
     process::{
-        CloneFlags, ContextSetNsAdminApi, NsProxy, NsProxyBuilder, PidFile,
+        CloneFlags, ContextSetNsAdminApi, NetNamespace, NsProxy, NsProxyBuilder, PidFile,
         check_unsupported_ns_flags, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
     },
     security::lsm::hooks as lsm_hooks,
@@ -100,6 +100,11 @@ fn build_proxy_from_pid_file(
         set_mnt_ns(&mut builder, target_ns, ctx)?;
     }
 
+    if flags.contains(CloneFlags::CLONE_NEWNET) {
+        let target_ns = target_proxy.net_ns();
+        set_net_ns(&mut builder, target_ns, ctx)?;
+    }
+
     if flags.contains(CloneFlags::CLONE_NEWUTS) {
         let target_ns = target_proxy.uts_ns();
         set_uts_ns(&mut builder, target_ns, ctx)?;
@@ -140,6 +145,9 @@ fn build_proxy_from_ns_file(
         })?
         || try_apply_ns_from_inode::<MountNamespace>(inode_handle, flags, |ns| {
             set_mnt_ns(&mut builder, &ns, ctx)
+        })?
+        || try_apply_ns_from_inode::<NetNamespace>(inode_handle, flags, |ns| {
+            set_net_ns(&mut builder, &ns, ctx)
         })?
         || try_apply_ns_from_inode::<UtsNamespace>(inode_handle, flags, |ns| {
             set_uts_ns(&mut builder, &ns, ctx)
@@ -214,6 +222,18 @@ fn set_mnt_ns(
     // TODO: Are the checks above sufficient?
 
     builder.mnt_ns(target_ns.clone());
+
+    Ok(())
+}
+
+fn set_net_ns(
+    builder: &mut NsProxyBuilder,
+    target_ns: &Arc<NetNamespace>,
+    ctx: &Context,
+) -> Result<()> {
+    check_set_ns_perms(target_ns, ctx)?;
+
+    builder.net_ns(target_ns.clone());
 
     Ok(())
 }

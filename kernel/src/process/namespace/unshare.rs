@@ -43,6 +43,10 @@ impl ContextUnshareAdminApi for Context<'_> {
 
     fn unshare_namespaces(&self, flags: CloneFlags) -> Result<()> {
         if flags.contains(CloneFlags::CLONE_NEWUSER) {
+            error!(
+                "unshare requested unsupported user namespace: flags={:?}",
+                flags
+            );
             return_errno_with_message!(
                 Errno::EINVAL,
                 "cloning a new user namespace is not supported"
@@ -56,19 +60,32 @@ impl ContextUnshareAdminApi for Context<'_> {
         let mut thread_local_ns_proxy_ref = self.thread_local.borrow_ns_proxy_mut();
         let thread_local_ns_proxy = thread_local_ns_proxy_ref.unwrap();
 
-        let new_ns_proxy = thread_local_ns_proxy.new_clone(
-            &user_ns_ref,
-            self.process.as_ref(),
-            self.posix_thread,
-            flags,
-        )?;
+        let new_ns_proxy = thread_local_ns_proxy
+            .new_clone(
+                &user_ns_ref,
+                self.process.as_ref(),
+                self.posix_thread,
+                flags,
+            )
+            .map_err(|err| {
+                error!(
+                    "failed to unshare namespaces: flags={:?}, err={:?}",
+                    flags, err
+                );
+                err
+            })?;
 
         if flags.contains(CloneFlags::CLONE_NEWNS) {
-            self.thread_local
-                .borrow_fs()
-                .resolver()
-                .write()
-                .switch_to_mnt_ns(new_ns_proxy.mnt_ns())?;
+            let fs = self.thread_local.borrow_fs();
+            let mut resolver = fs.resolver().write();
+            if let Err(err) = resolver.switch_to_mnt_ns(new_ns_proxy.mnt_ns()) {
+                warn!(
+                    "failed to map root/cwd into new mount namespace after unshare; \
+                     falling back to namespace root: flags={:?}, err={:?}",
+                    flags, err
+                );
+                *resolver = new_ns_proxy.mnt_ns().new_path_resolver();
+            }
         }
 
         *pthread_ns_proxy = Some(new_ns_proxy.clone());

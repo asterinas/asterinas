@@ -372,11 +372,16 @@ fn reset_vfork_child(process: &Process) {
 fn unshare_and_close_files(ctx: &Context) {
     ctx.unshare_files();
 
-    ctx.thread_local
+    let closed_files = ctx
+        .thread_local
         .borrow_file_table()
         .unwrap()
         .write()
         .close_files_on_exec();
+
+    for file in &closed_files {
+        crate::fs::file::file_table::FileTable::release_range_locks_for_close(file);
+    }
 }
 
 fn unshare_and_reset_sigdispositions(process: &Process) {
