@@ -433,6 +433,7 @@ impl Path {
             recursive,
             MountNsFileCopying::Copy,
         )?;
+        new_mount.set_bind_master(&self.mount, recursive);
         new_mount.graft_mount_tree(dst_path);
         Ok(())
     }

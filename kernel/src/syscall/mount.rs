@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::format;
+
 use super::SyscallReturn;
 use crate::{
     fs::{
@@ -34,6 +36,41 @@ pub fn sys_mount(
         "src_name_addr = 0x{:x}, dst_name = {:?}, fstype = 0x{:x}, flags = {:?}, data_addr = 0x{:x}",
         src_name_addr, dst_name, fs_type_addr, mount_flags, data_addr,
     );
+    let src_name_for_log = if src_name_addr == 0 {
+        "<null>".into()
+    } else {
+        ctx.user_space()
+            .read_cstring(src_name_addr, MAX_FILENAME_LEN)
+            .map(|src| src.to_string_lossy().into_owned())
+            .unwrap_or_else(|err| format!("<read-error:{err:?}>"))
+    };
+    let fs_type_for_log = if fs_type_addr == 0 {
+        "<null>".into()
+    } else {
+        ctx.user_space()
+            .read_cstring(fs_type_addr, MAX_FILENAME_LEN)
+            .map(|fs_type| fs_type.to_string_lossy().into_owned())
+            .unwrap_or_else(|err| format!("<read-error:{err:?}>"))
+    };
+    if fs_type_for_log == "overlay" {
+        let data_for_log = if data_addr == 0 {
+            "<null>".into()
+        } else {
+            ctx.user_space()
+                .read_cstring(data_addr, MAX_FILENAME_LEN)
+                .map(|data| data.to_string_lossy().into_owned())
+                .unwrap_or_else(|err| format!("<read-error:{err:?}>"))
+        };
+        debug!(
+            "sys_mount: src={:?}, dst={:?}, fstype={:?}, flags={:?}, data={:?}",
+            src_name_for_log, dst_name, fs_type_for_log, mount_flags, data_for_log
+        );
+    } else {
+        debug!(
+            "sys_mount: src={:?}, dst={:?}, fstype={:?}, flags={:?}",
+            src_name_for_log, dst_name, fs_type_for_log, mount_flags
+        );
+    }
 
     let dst_path = {
         let dst_name = dst_name.to_string_lossy();
@@ -115,6 +152,7 @@ fn do_bind_mount(
         let src_name = ctx
             .user_space()
             .read_cstring(src_name_addr, MAX_FILENAME_LEN)?;
+        debug!("do_bind_mount: src={:?}, recursive={}", src_name, recursive);
         let src_name = src_name.to_string_lossy();
         let fs_path = FsPath::from_fd_at(AT_FDCWD, &src_name, EmptyPathStr::Reject)?;
         ctx.thread_local
@@ -124,7 +162,9 @@ fn do_bind_mount(
             .lookup(&fs_path)?
     };
 
-    src_path.bind_mount_to(&dst_path, recursive, ctx)?;
+    let bind_result = src_path.bind_mount_to(&dst_path, recursive, ctx);
+    debug!("do_bind_mount: result={:?}", bind_result);
+    bind_result?;
     Ok(())
 }
 
@@ -152,9 +192,18 @@ fn do_change_type(target_path: Path, flags: MountFlags, ctx: &Context) -> Result
         );
     }
 
+    let recursive = flags.contains(MountFlags::MS_REC);
     if flags.contains(MountFlags::MS_PRIVATE) {
-        let recursive = flags.contains(MountFlags::MS_REC);
         target_path.set_mount_propagation(MountPropType::Private, recursive, ctx)?;
+        Ok(())
+    } else if flags.contains(MountFlags::MS_SHARED) {
+        target_path.set_mount_propagation(MountPropType::Shared, recursive, ctx)?;
+        Ok(())
+    } else if flags.contains(MountFlags::MS_SLAVE) {
+        target_path.set_mount_propagation(MountPropType::Slave, recursive, ctx)?;
+        Ok(())
+    } else if flags.contains(MountFlags::MS_UNBINDABLE) {
+        target_path.set_mount_propagation(MountPropType::Unbindable, recursive, ctx)?;
         Ok(())
     } else {
         return_errno_with_message!(Errno::EINVAL, "the mount propagation type is unsupported");
