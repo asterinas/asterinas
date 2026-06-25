@@ -72,6 +72,27 @@ FN_TEST(seek_end_matches_block_device_size)
 }
 END_TEST()
 
+// Verifies that block devices report Linux-compatible logical and physical
+// block sizes.
+FN_TEST(block_size_ioctls)
+{
+	int fd;
+	int logical_sector_size = 0;
+	int physical_block_size = 0;
+
+	fd = TEST_SUCC(open_block_device());
+
+	TEST_SUCC(ioctl(fd, BLKSSZGET, &logical_sector_size));
+	TEST_RES(0, logical_sector_size > 0 &&
+			    logical_sector_size % SECTOR_SIZE == 0);
+	TEST_SUCC(ioctl(fd, BLKPBSZGET, &physical_block_size));
+	TEST_RES(0, physical_block_size >= logical_sector_size &&
+			    physical_block_size % logical_sector_size == 0);
+
+	TEST_SUCC(close_block_device(fd));
+}
+END_TEST()
+
 // Verifies that short and non-sector-aligned block-device reads return the
 // requested byte range instead of leaking sector-sized read internals.
 FN_TEST(short_unaligned_pread_matches_sector_bytes)

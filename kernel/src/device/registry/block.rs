@@ -87,6 +87,9 @@ mod ioctl_defs {
     /// ioctl must return that larger value. Otherwise user programs will align
     /// correctly for the device but still hit `EINVAL` at the filesystem.
     pub(super) type BlkGetSectorSize = ioc!(BLKSSZGET, 0x12, 104, NoData);
+
+    /// Returns the physical block size of the block device.
+    pub(super) type BlkGetPhysicalBlockSize = ioc!(BLKPBSZGET, 0x12, 123, NoData);
 }
 
 /// Represents a block device inode in the filesystem.
@@ -213,6 +216,13 @@ impl PerOpenFileOps for OpenBlockFile {
         use ioctl_defs::*;
 
         dispatch_ioctl!(match raw_ioctl {
+            _cmd @ BlkGetPhysicalBlockSize => {
+                // Block devices currently expose a single effective I/O granularity, so use the
+                // same value as the reported logical block size.
+                let physical_block_size = SECTOR_SIZE.max(BLOCK_SIZE) as i32;
+                current_userspace!().write_val(raw_ioctl.arg(), &physical_block_size)?;
+                Ok(0)
+            }
             _cmd @ BlkGetSectorSize => {
                 // TODO: Query the per-device logical block size once block device metadata
                 // exposes it. For now, report the effective minimum I/O granularity enforced
