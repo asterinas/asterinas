@@ -8,7 +8,10 @@ use core::fmt::Display;
 
 use ostd::io::IoMem;
 
-use super::{AccessMode, InodeHandle, StatusFlags, file_table::FdFlags, inode_handle::SeekFrom};
+use super::{
+    AccessMode, CreationFlags, InodeHandle, LINUX_O_LARGEFILE, StatusFlags, file_table::FdFlags,
+    inode_handle::SeekFrom,
+};
 use crate::{
     fs::vfs::{inode::FallocMode, path::Path},
     net::socket::Socket,
@@ -17,6 +20,32 @@ use crate::{
     util::ioctl::RawIoctl,
     vm::page_cache::Vmo,
 };
+
+/// Returns the Linux-compatible `flags:` field for `/proc/[pid]/fdinfo/[n]`.
+pub fn proc_fdinfo_flags(
+    status_flags: StatusFlags,
+    access_mode: AccessMode,
+    fd_flags: FdFlags,
+) -> u32 {
+    proc_fdinfo_flags_with_largefile(status_flags, access_mode, fd_flags, false)
+}
+
+/// Returns the Linux-compatible `flags:` field with an explicit `O_LARGEFILE` policy.
+pub fn proc_fdinfo_flags_with_largefile(
+    status_flags: StatusFlags,
+    access_mode: AccessMode,
+    fd_flags: FdFlags,
+    report_largefile: bool,
+) -> u32 {
+    let mut flags = status_flags.bits() | access_mode as u32;
+    if report_largefile {
+        flags |= LINUX_O_LARGEFILE;
+    }
+    if fd_flags.contains(FdFlags::CLOEXEC) {
+        flags |= CreationFlags::O_CLOEXEC.bits();
+    }
+    flags
+}
 
 /// The basic operations defined on a file
 pub trait FileLike: Pollable + Send + Sync + Any {

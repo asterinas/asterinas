@@ -12,8 +12,9 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{
-            AccessMode, CreationFlags, FileLike,
+            AccessMode, FileLike,
             file_table::{FdFlags, FileDesc, get_file_fast},
+            proc_fdinfo_flags,
         },
         pseudofs::AnonInodeFs,
         vfs::path::Path,
@@ -282,10 +283,11 @@ impl FileLike for EpollFile {
 
         impl Display for FdInfo {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let mut flags = self.inner.status_flags().bits() | self.inner.access_mode() as u32;
-                if self.fd_flags.contains(FdFlags::CLOEXEC) {
-                    flags |= CreationFlags::O_CLOEXEC.bits();
-                }
+                let flags = proc_fdinfo_flags(
+                    self.inner.status_flags(),
+                    self.inner.access_mode(),
+                    self.fd_flags,
+                );
 
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", flags)?;

@@ -7,7 +7,7 @@ use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
 
 use crate::{
     fs::{
-        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, FileLike, StatusFlags, file_table::FdFlags, proc_fdinfo_flags},
         pseudofs::SockFs,
         vfs::path::Path,
     },
@@ -197,10 +197,7 @@ impl<T: Socket + 'static> FileLike for T {
             }
         }
 
-        let mut flags = self.status_flags().bits() | self.access_mode() as u32;
-        if fd_flags.contains(FdFlags::CLOEXEC) {
-            flags |= CreationFlags::O_CLOEXEC.bits();
-        }
+        let flags = proc_fdinfo_flags(self.status_flags(), self.access_mode(), fd_flags);
 
         Box::new(FdInfo {
             flags,

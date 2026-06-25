@@ -21,6 +21,7 @@ use crate::{
         file::{
             AccessMode, CreationFlags, FileLike, StatusFlags,
             file_table::{FdFlags, RawFileDesc, get_file_fast},
+            proc_fdinfo_flags,
         },
         pseudofs::AnonInodeFs,
         vfs::path::Path,
@@ -286,10 +287,7 @@ impl FileLike for SignalFile {
             }
         }
 
-        let mut flags = self.status_flags().bits() | self.access_mode() as u32;
-        if fd_flags.contains(FdFlags::CLOEXEC) {
-            flags |= CreationFlags::O_CLOEXEC.bits();
-        }
+        let flags = proc_fdinfo_flags(self.status_flags(), self.access_mode(), fd_flags);
 
         Box::new(FdInfo {
             flags,

@@ -7,8 +7,8 @@ use core::{fmt::Display, sync::atomic::Ordering};
 use aster_rights::Rights;
 
 use super::{
-    AccessMode, AtomicStatusFlags, CreationFlags, FileLike, InodeType, Mappable, StatusFlags,
-    file_table::FdFlags, flock::FlockItem,
+    AccessMode, AtomicStatusFlags, FileLike, InodeType, Mappable, StatusFlags, file_table::FdFlags,
+    flock::FlockItem, proc_fdinfo_flags_with_largefile,
 };
 use crate::{
     events::IoEvents,
@@ -74,6 +74,10 @@ impl InodeHandle {
             status_flags: AtomicStatusFlags::new(status_flags),
             rights,
         })
+    }
+
+    pub fn reports_largefile_bit(&self) -> bool {
+        !self.status_flags().contains(StatusFlags::O_PATH) && self.path.fs().name() != "pipefs"
     }
 
     pub fn path(&self) -> &Path {
@@ -479,10 +483,12 @@ impl FileLike for InodeHandle {
 
         impl Display for FdInfo {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let mut flags = self.inner.status_flags().bits() | self.inner.access_mode() as u32;
-                if self.fd_flags.contains(FdFlags::CLOEXEC) {
-                    flags |= CreationFlags::O_CLOEXEC.bits();
-                }
+                let flags = proc_fdinfo_flags_with_largefile(
+                    self.inner.status_flags(),
+                    self.inner.access_mode(),
+                    self.fd_flags,
+                    self.inner.reports_largefile_bit(),
+                );
 
                 writeln!(f, "pos:\t{}", self.inner.offset())?;
                 writeln!(f, "flags:\t0{:o}", flags)?;

@@ -12,7 +12,7 @@ use hashbrown::HashMap;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, FileLike, StatusFlags, file_table::FdFlags, proc_fdinfo_flags},
         pseudofs::AnonInodeFs,
         vfs::{
             inode::{FallocMode, Inode},
@@ -382,10 +382,11 @@ impl FileLike for InotifyFile {
 
         impl Display for FdInfo {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let mut flags = self.inner.status_flags().bits() | self.inner.access_mode() as u32;
-                if self.fd_flags.contains(FdFlags::CLOEXEC) {
-                    flags |= CreationFlags::O_CLOEXEC.bits();
-                }
+                let flags = proc_fdinfo_flags(
+                    self.inner.status_flags(),
+                    self.inner.access_mode(),
+                    self.fd_flags,
+                );
 
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", flags)?;

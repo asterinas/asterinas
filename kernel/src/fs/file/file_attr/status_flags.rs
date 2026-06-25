@@ -5,6 +5,12 @@ use core::sync::atomic::AtomicU32;
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use bitflags::bitflags;
 
+/// The internal Linux `O_LARGEFILE` bit reported by `fcntl(F_GETFL)` and proc fdinfo.
+///
+/// On x86_64, userspace `O_LARGEFILE` is defined as zero, so this bit is not
+/// accepted from open flags and is not represented as a `StatusFlags` bit.
+pub const LINUX_O_LARGEFILE: u32 = 0o100000;
+
 bitflags! {
     pub struct StatusFlags: u32 {
         /// append on each write
@@ -17,7 +23,6 @@ bitflags! {
         const O_ASYNC = 1 << 13;
         /// direct I/O
         const O_DIRECT = 1 << 14;
-        /// on x86_64, O_LARGEFILE is 0
         /// not update st_atime
         const O_NOATIME = 1 << 18;
         /// synchronized I/O, data and metadata

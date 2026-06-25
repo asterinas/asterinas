@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file::{
-            FileLike, StatusFlags,
+            FileLike, InodeHandle, LINUX_O_LARGEFILE, StatusFlags,
             file_table::{FdFlags, FileDesc, RawFileDesc, WithFileTable, get_file_fast},
         },
         ramfs::memfd::{FileSeals, MemfdInodeHandle},
@@ -75,9 +75,18 @@ fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let file = get_file_fast!(&mut file_table, fd);
     let status_flags = file.status_flags();
     let access_mode = file.access_mode();
-    Ok(SyscallReturn::Return(
-        (status_flags.bits() | access_mode as u32) as _,
-    ))
+    let mut flags = status_flags.bits() | access_mode as u32;
+    if should_report_largefile_bit(file.as_ref().as_ref(), status_flags) {
+        flags |= LINUX_O_LARGEFILE;
+    }
+    Ok(SyscallReturn::Return(flags as _))
+}
+
+fn should_report_largefile_bit(file: &dyn FileLike, status_flags: StatusFlags) -> bool {
+    !status_flags.contains(StatusFlags::O_PATH)
+        && file
+            .downcast_ref::<InodeHandle>()
+            .is_some_and(InodeHandle::reports_largefile_bit)
 }
 
 fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
