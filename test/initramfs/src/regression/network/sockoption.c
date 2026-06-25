@@ -122,6 +122,35 @@ FN_TEST(socket_error)
 }
 END_TEST()
 
+FN_TEST(short_getsockopt_int)
+{
+	int option = 1;
+	unsigned char keepalive[sizeof(int)] = { 0xaa, 0xaa, 0xaa, 0xaa };
+	unsigned char expected[sizeof(int)];
+	int expected_value = 1;
+	int error = 0x12345678;
+	socklen_t keepalive_len = 2;
+	socklen_t error_len = 0;
+
+	memcpy(expected, &expected_value, sizeof(expected));
+
+	TEST_SUCC(setsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, &option,
+			     sizeof(option)));
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, keepalive,
+			    &keepalive_len),
+		 keepalive_len == 2);
+	TEST_RES(memcmp(keepalive, expected, keepalive_len), _ret == 0);
+	TEST_RES(0, keepalive[2] == 0xaa && keepalive[3] == 0xaa);
+
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_ERROR, &error,
+			    &error_len),
+		 error_len == 0 && error == 0x12345678);
+	TEST_ERRNO(setsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, &option,
+			      2),
+		   EINVAL);
+}
+END_TEST()
+
 FN_TEST(nagle)
 {
 	int option = 1;
