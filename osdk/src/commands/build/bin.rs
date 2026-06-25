@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::{
-    fs::{File, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
@@ -13,7 +13,7 @@ use linux_bzimage_builder::{
 use crate::{
     arch::Arch,
     bundle::{
-        bin::{AsterBin, AsterBinType, AsterBzImageMeta},
+        bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
         file::BundleFile,
     },
     util::{get_current_crates, hard_link_or_copy, new_command_checked_exists},
@@ -77,6 +77,53 @@ pub fn make_install_bzimage(
         }),
         aster_elf.version().clone(),
         aster_elf.stripped(),
+    )
+}
+
+pub fn make_linux64_direct_elf(install_dir: impl AsRef<Path>, elf: &AsterBin) -> AsterBin {
+    // `Elf64_Ehdr` field offsets.
+    // <https://refspecs.linuxfoundation.org/elf/gabi4+/ch4.eheader.html>.
+    const ELF_ENTRY_OFFSET: u64 = 24;
+    // The Linux 64-bit boot protocol entry point `__linux64_boot` is fixed at address 0x8001200,
+    // as defined in ostd/src/arch/x86/boot/bsp_boot.S.
+    const X86_64_LINUX64_BOOT_ENTRY: u64 = 0x0800_1200;
+
+    assert_eq!(
+        elf.arch(),
+        Arch::X86_64,
+        "Linux64 direct boot is only supported for x86_64"
+    );
+
+    let result_elf_path = {
+        let elf_name = elf.path().file_name().unwrap().to_str().unwrap();
+        let elf_name = elf_name.strip_suffix(".qemu_elf").unwrap_or(elf_name);
+        install_dir.as_ref().join(format!("{elf_name}.direct_elf"))
+    };
+
+    fs::copy(elf.path(), &result_elf_path).unwrap();
+
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&result_elf_path)
+        .unwrap();
+
+    file.seek(SeekFrom::Start(ELF_ENTRY_OFFSET)).unwrap();
+    file.write_all(&X86_64_LINUX64_BOOT_ENTRY.to_le_bytes())
+        .unwrap();
+    file.flush().unwrap();
+
+    AsterBin::new(
+        &result_elf_path,
+        elf.arch(),
+        AsterBinType::Elf(AsterElfMeta {
+            has_linux_header: false,
+            has_pvh_header: false,
+            has_multiboot_header: false,
+            has_multiboot2_header: false,
+        }),
+        elf.version().clone(),
+        elf.stripped(),
     )
 }
 

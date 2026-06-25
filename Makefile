@@ -160,6 +160,8 @@ endif
 
 ifeq ($(SCHEME), microvm)
 BOOT_METHOD = qemu-direct
+else ifeq ($(SCHEME), directvm)
+BOOT_METHOD = linux64-direct
 endif
 
 ifeq ($(SCHEME), "")

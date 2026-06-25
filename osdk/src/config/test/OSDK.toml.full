@@ -38,6 +38,11 @@ qemu.args = """\
     -device ioh3420,id=pcie.0,chassis=1\
 """
 
+[scheme."directvm"]
+supported_archs = ["x86_64"]
+boot.method = "linux64-direct"
+build.strip_elf = true
+
 [scheme."tdx"]
 supported_archs = ["x86_64"]
 build.features = ["cvm_guest"]

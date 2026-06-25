@@ -21,6 +21,8 @@ pub struct BootScheme {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum BootMethod {
+    /// Build an uncompressed x86-64 ELF that enters through the Linux 64-bit boot path.
+    Linux64Direct,
     /// Boot the kernel by making a rescue CD image.
     GrubRescueIso,
     /// Boot the kernel by making a Qcow2 image with Grub as the bootloader.
