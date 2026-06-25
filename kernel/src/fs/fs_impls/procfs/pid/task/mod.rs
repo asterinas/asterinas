@@ -9,7 +9,7 @@ use crate::{
             pid::task::{
                 auxv::AuxvFileOps, cgroup::CgroupFileOps, cmdline::CmdlineFileOps,
                 comm::CommFileOps, environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps,
-                gid_map::GidMapFileOps, maps::MapsFileOps, mem::MemFileOps,
+                gid_map::GidMapFileOps, limits::LimitsFileOps, maps::MapsFileOps, mem::MemFileOps,
                 mountinfo::MountInfoFileOps, mounts::MountsFileOps, mountstats::MountStatsFileOps,
                 ns::NsDirOps, oom_score_adj::OomScoreAdjFileOps, stat::StatFileOps,
                 status::StatusFileOps, uid_map::UidMapFileOps,
@@ -35,6 +35,7 @@ mod environ;
 mod exe;
 mod fd;
 mod gid_map;
+mod limits;
 mod maps;
 mod mem;
 mod mountinfo;
@@ -113,6 +114,7 @@ impl TidDirOps {
             FdDirOps::<fd::FileInfoOps>::new_inode,
         ),
         ("gid_map", InodeType::File, GidMapFileOps::new_inode),
+        ("limits", InodeType::File, LimitsFileOps::new_inode),
         ("mem", InodeType::File, MemFileOps::new_inode),
         ("mountinfo", InodeType::File, MountInfoFileOps::new_inode),
         ("mountstats", InodeType::File, MountStatsFileOps::new_inode),

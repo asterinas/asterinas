@@ -130,6 +130,7 @@ echo "All mount bind file test passed."
 ./procfs/dentry_cache
 ./procfs/fd
 ./procfs/getdents
+./procfs/limits
 ./procfs/mountstats
 ./procfs/pid_mem
 ./procfs/proc_fd_open_fifo_after_setid
