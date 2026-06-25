@@ -6,7 +6,6 @@ Proc.Statfs
 ProcCpuinfo.RequiredFieldsArePresent
 ProcCpuinfo.DeniesWriteNonRoot
 ProcFilesystems.OverflowID
-ProcFilesystems.PresenceOfShmMaxMniAll
 ProcPid.AccessDeny
 ProcPidCwd.Subprocess
 ProcPidRoot.Subprocess

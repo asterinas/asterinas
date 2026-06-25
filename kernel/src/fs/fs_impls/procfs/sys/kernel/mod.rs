@@ -6,7 +6,10 @@ use crate::{
         procfs::{
             ProcDir, StaticEntry,
             sys::kernel::{
-                cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps, yama::YamaDirOps,
+                cap_last_cap::CapLastCapFileOps,
+                pid_max::PidMaxFileOps,
+                shm::{ShmAllFileOps, ShmMaxFileOps, ShmMniFileOps},
+                yama::YamaDirOps,
             },
             template::{
                 ListedEntry, ProcDirOps, ReaddirEntry, listed_entries_from_table,
@@ -21,6 +24,7 @@ use crate::{
 
 mod cap_last_cap;
 mod pid_max;
+mod shm;
 mod yama;
 
 /// Represents the inode at `/proc/sys/kernel`.
@@ -41,6 +45,9 @@ impl KernelDirOps {
             CapLastCapFileOps::new_inode,
         ),
         ("pid_max", InodeType::File, PidMaxFileOps::new_inode),
+        ("shmall", InodeType::File, ShmAllFileOps::new_inode),
+        ("shmmax", InodeType::File, ShmMaxFileOps::new_inode),
+        ("shmmni", InodeType::File, ShmMniFileOps::new_inode),
     ];
 }
 
