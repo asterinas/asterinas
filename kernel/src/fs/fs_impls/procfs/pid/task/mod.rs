@@ -8,8 +8,8 @@ use crate::{
             StaticEntryWithOps,
             pid::task::{
                 auxv::AuxvFileOps, cgroup::CgroupFileOps, cmdline::CmdlineFileOps,
-                comm::CommFileOps, environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps,
-                gid_map::GidMapFileOps, maps::MapsFileOps, mem::MemFileOps,
+                comm::CommFileOps, cwd::CwdSymOps, environ::EnvironFileOps, exe::ExeSymOps,
+                fd::FdDirOps, gid_map::GidMapFileOps, maps::MapsFileOps, mem::MemFileOps,
                 mountinfo::MountInfoFileOps, mounts::MountsFileOps, mountstats::MountStatsFileOps,
                 ns::NsDirOps, oom_score_adj::OomScoreAdjFileOps, stat::StatFileOps,
                 status::StatusFileOps, uid_map::UidMapFileOps,
@@ -31,6 +31,7 @@ mod auxv;
 mod cgroup;
 mod cmdline;
 mod comm;
+mod cwd;
 mod environ;
 mod exe;
 mod fd;
@@ -104,6 +105,7 @@ impl TidDirOps {
         ("cgroup", InodeType::File, CgroupFileOps::new_inode),
         ("cmdline", InodeType::File, CmdlineFileOps::new_inode),
         ("comm", InodeType::File, CommFileOps::new_inode),
+        ("cwd", InodeType::SymLink, CwdSymOps::new_inode),
         ("environ", InodeType::File, EnvironFileOps::new_inode),
         ("exe", InodeType::SymLink, ExeSymOps::new_inode),
         ("fd", InodeType::Dir, FdDirOps::<fd::FileSymOps>::new_inode),

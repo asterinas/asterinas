@@ -8,7 +8,6 @@ ProcCpuinfo.DeniesWriteNonRoot
 ProcFilesystems.OverflowID
 ProcFilesystems.PresenceOfShmMaxMniAll
 ProcPid.AccessDeny
-ProcPidCwd.Subprocess
 ProcPidRoot.Subprocess
 ProcPidEnviron.MatchesEnviron
 # TODO: Support `ptrace`.
@@ -23,7 +22,6 @@ ProcPidSymlink.SubprocessZombied
 ProcPidSymlink.SubprocessExited
 ProcSelfAuxv.EntryPresence
 ProcSelfAuxv.EntryValues
-ProcSelfCwd.Absolute
 ProcSelfFd.OpenFd
 # TODO: Support `O_LARGEFILE` flag.
 ProcSelfFdInfo.Flags
