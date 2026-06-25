@@ -396,16 +396,16 @@ impl DeviceInner {
             let token = queue
                 .add_dma_bufs(&[&req_slice], outputs.as_slice())
                 .expect("add queue failed");
-            if queue.should_notify() {
-                queue.notify();
-            }
-
-            // Records the submitted request
+            // Record the submitted request before notifying the device so the
+            // driver-side state is published before the device can complete it.
             let submitted_request = SubmittedRequest::new(id as u16, bio_request);
             self.submitted_requests
                 .disable_irq()
                 .lock()
                 .insert(token, submitted_request);
+            if queue.should_notify() {
+                queue.notify();
+            }
             return;
         }
     }
@@ -466,16 +466,16 @@ impl DeviceInner {
             let token = queue
                 .add_dma_bufs(inputs.as_slice(), &[&resp_slice])
                 .expect("add queue failed");
-            if queue.should_notify() {
-                queue.notify();
-            }
-
-            // Records the submitted request
+            // Record the submitted request before notifying the device so the
+            // driver-side state is published before the device can complete it.
             let submitted_request = SubmittedRequest::new(id as u16, bio_request);
             self.submitted_requests
                 .disable_irq()
                 .lock()
                 .insert(token, submitted_request);
+            if queue.should_notify() {
+                queue.notify();
+            }
             return;
         }
     }
@@ -521,16 +521,16 @@ impl DeviceInner {
             let token = queue
                 .add_dma_bufs(&[&req_slice], &[&resp_slice])
                 .expect("add queue failed");
-            if queue.should_notify() {
-                queue.notify();
-            }
-
-            // Records the submitted request
+            // Record the submitted request before notifying the device so the
+            // driver-side state is published before the device can complete it.
             let submitted_request = SubmittedRequest::new(id as u16, bio_request);
             self.submitted_requests
                 .disable_irq()
                 .lock()
                 .insert(token, submitted_request);
+            if queue.should_notify() {
+                queue.notify();
+            }
             return;
         }
     }
