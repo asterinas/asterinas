@@ -68,7 +68,7 @@ const PROC_MAGIC: u64 = 0x9fa0;
 /// Root Inode ID.
 const PROC_ROOT_INO: u64 = 1;
 /// Block size.
-const BLOCK_SIZE: usize = 1024;
+const BLOCK_SIZE: usize = PAGE_SIZE;
 
 struct ProcFs {
     _anon_device_id: AnonDeviceId,

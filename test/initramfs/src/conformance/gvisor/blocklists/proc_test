@@ -2,7 +2,6 @@ Proc.GetdentsEnoent
 Proc.PidReuse
 Proc.PidTidIOAccounting
 Proc.RegressionTestB236035339
-Proc.Statfs
 ProcCpuinfo.RequiredFieldsArePresent
 ProcCpuinfo.DeniesWriteNonRoot
 ProcFilesystems.OverflowID
