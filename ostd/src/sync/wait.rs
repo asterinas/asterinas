@@ -4,7 +4,9 @@ use alloc::{collections::VecDeque, sync::Arc};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::{LocalIrqDisabled, SpinLock};
-use crate::task::{Task, scheduler};
+use crate::task::{scheduler, Task};
+
+const STALE_WAKER_PRUNE_THRESHOLD: usize = 1024;
 
 // # Explanation on the memory orders
 //
@@ -95,9 +97,10 @@ impl WaitQueue {
         loop {
             let mut wakers = self.wakers.lock();
             let Some(waker) = wakers.pop_front() else {
+                self.sync_num_wakers(&wakers);
                 return false;
             };
-            self.num_wakers.fetch_sub(1, Ordering::Release);
+            self.sync_num_wakers(&wakers);
             // Avoid holding lock when calling `wake_up`
             drop(wakers);
 
@@ -119,9 +122,10 @@ impl WaitQueue {
         loop {
             let mut wakers = self.wakers.lock();
             let Some(waker) = wakers.pop_front() else {
+                self.sync_num_wakers(&wakers);
                 break;
             };
-            self.num_wakers.fetch_sub(1, Ordering::Release);
+            self.sync_num_wakers(&wakers);
             // Avoid holding lock when calling `wake_up`
             drop(wakers);
 
@@ -144,8 +148,29 @@ impl WaitQueue {
     #[doc(hidden)]
     pub fn enqueue(&self, waker: Arc<Waker>) {
         let mut wakers = self.wakers.lock();
+        Self::prune_closed_front_wakers(&mut wakers);
+        if wakers.len() >= STALE_WAKER_PRUNE_THRESHOLD {
+            Self::prune_closed_wakers(&mut wakers);
+        }
         wakers.push_back(waker);
-        self.num_wakers.fetch_add(1, Ordering::Acquire);
+        self.sync_num_wakers(&wakers);
+    }
+
+    fn prune_closed_front_wakers(wakers: &mut VecDeque<Arc<Waker>>) {
+        while wakers.front().is_some_and(|waker| waker.is_closed()) {
+            wakers.pop_front();
+        }
+    }
+
+    fn prune_closed_wakers(wakers: &mut VecDeque<Arc<Waker>>) {
+        wakers.retain(|waker| !waker.is_closed());
+    }
+
+    fn sync_num_wakers(&self, wakers: &VecDeque<Arc<Waker>>) {
+        self.num_wakers.store(
+            wakers.len().try_into().unwrap_or(u32::MAX),
+            Ordering::Release,
+        );
     }
 }
 
@@ -280,6 +305,10 @@ impl Waker {
         // the memory order explanation at the top of the file for details.
         let _ = self.has_woken.swap(true, Ordering::Acquire);
     }
+
+    fn is_closed(&self) -> bool {
+        self.has_woken.load(Ordering::Acquire)
+    }
 }
 
 #[cfg(ktest)]
@@ -324,6 +353,43 @@ mod test {
         queue_wake(|queue| {
             queue.wake_all();
         });
+    }
+
+    #[ktest]
+    fn queue_prunes_closed_front_wakers_on_enqueue() {
+        let queue = WaitQueue::new();
+
+        let (waiter, waker) = Waiter::new_pair();
+        queue.enqueue(waker);
+        drop(waiter);
+
+        assert_eq!(queue.num_wakers.load(Ordering::Acquire), 1);
+
+        let (_live_waiter, live_waker) = Waiter::new_pair();
+        queue.enqueue(live_waker);
+
+        assert_eq!(queue.num_wakers.load(Ordering::Acquire), 1);
+        assert!(queue.wake_one());
+        assert!(queue.is_empty());
+    }
+
+    #[ktest]
+    fn queue_prunes_closed_wakers_above_threshold() {
+        let queue = WaitQueue::new();
+
+        let (_live_waiter, live_waker) = Waiter::new_pair();
+        queue.enqueue(live_waker);
+
+        for _ in 0..(STALE_WAKER_PRUNE_THRESHOLD * 2) {
+            let (waiter, waker) = Waiter::new_pair();
+            queue.enqueue(waker);
+            drop(waiter);
+        }
+
+        let num_wakers = queue.num_wakers.load(Ordering::Acquire);
+        assert!(num_wakers > 0);
+        assert!(num_wakers <= STALE_WAKER_PRUNE_THRESHOLD as u32 + 1);
+        assert!(queue.wake_one());
     }
 
     #[ktest]
