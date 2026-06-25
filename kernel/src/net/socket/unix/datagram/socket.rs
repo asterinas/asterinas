@@ -301,6 +301,10 @@ impl Socket for UnixDatagramSocket {
     fn pseudo_path(&self) -> &Path {
         &self.pseudo_path
     }
+
+    fn num_bytes_to_read(&self) -> Result<usize> {
+        Ok(self.local_receiver.num_bytes_to_read())
+    }
 }
 
 fn do_unix_getsockopt(option: &mut dyn SocketOption, socket: &UnixDatagramSocket) -> Result<()> {

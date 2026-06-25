@@ -332,6 +332,10 @@ impl Connected {
         self.inner.this_end().is_pass_cred.load(Ordering::Relaxed)
     }
 
+    pub(super) fn num_bytes_to_read(&self) -> usize {
+        self.inner.this_end().reader.lock().len()
+    }
+
     pub(super) fn check_io_events(&self) -> IoEvents {
         let this_end = self.inner.this_end();
         let mut events = IoEvents::empty();

@@ -2,7 +2,6 @@
 AllUnixDomainSockets/UnixSocketPairTest.RecvmmsgTimeoutAfterRecv/*
 
 # TODO: Support `ioctl` operations on sockets
-AllUnixDomainSockets/UnixSocketPairTest.TIOCINQSucceeds/*
 AllUnixDomainSockets/UnixSocketPairTest.TIOCOUTQSucceeds/*
 AllUnixDomainSockets/UnixSocketPairTest.NetdeviceIoctlsSucceed/*
 

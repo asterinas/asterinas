@@ -517,6 +517,13 @@ impl Socket for UnixStreamSocket {
     fn pseudo_path(&self) -> &Path {
         &self.pseudo_path
     }
+
+    fn num_bytes_to_read(&self) -> Result<usize> {
+        match self.state.read().as_ref() {
+            State::Connected(connected) => Ok(connected.num_bytes_to_read()),
+            State::Init(_) | State::Listen(_) => Ok(0),
+        }
+    }
 }
 
 fn do_unix_getsockopt(option: &mut dyn SocketOption, state: &State) -> Result<()> {

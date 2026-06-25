@@ -12,7 +12,10 @@ use crate::{
         vfs::path::Path,
     },
     prelude::*,
-    util::{MultiRead, MultiWrite},
+    util::{
+        MultiRead, MultiWrite,
+        ioctl::{RawIoctl, dispatch_ioctl},
+    },
 };
 
 pub mod ip;
@@ -127,6 +130,11 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
 
     /// Returns a reference to the pseudo path associated with this socket.
     fn pseudo_path(&self) -> &Path;
+
+    /// Returns the number of bytes that can be read without blocking.
+    fn num_bytes_to_read(&self) -> Result<usize> {
+        return_errno_with_message!(Errno::ENOTTY, "the socket does not support FIONREAD")
+    }
 }
 
 impl<T: Socket + 'static> FileLike for T {
@@ -167,6 +175,22 @@ impl<T: Socket + 'static> FileLike for T {
             self.set_nonblocking(false);
         }
         Ok(())
+    }
+
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        use crate::util::ioctl::common_defs::GetNumBytesToRead;
+
+        dispatch_ioctl!(match raw_ioctl {
+            cmd @ GetNumBytesToRead => {
+                let bytes_to_read = i32::try_from(self.num_bytes_to_read()?).map_err(|_| {
+                    Error::with_message(Errno::EOVERFLOW, "the readable byte count is too large")
+                })?;
+
+                cmd.write(&bytes_to_read)?;
+                Ok(0)
+            }
+            _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+        })
     }
 
     fn access_mode(&self) -> AccessMode {

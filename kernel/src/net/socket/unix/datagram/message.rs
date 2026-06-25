@@ -218,6 +218,15 @@ impl MessageReceiver {
         &self.queue
     }
 
+    pub(super) fn num_bytes_to_read(&self) -> usize {
+        self.queue
+            .inner
+            .lock()
+            .as_ref()
+            .and_then(|inner| inner.messages.front().map(|msg| msg.bytes.len()))
+            .unwrap_or(0)
+    }
+
     pub(super) fn pollee(&self) -> &Pollee {
         &self.queue.pollee
     }
