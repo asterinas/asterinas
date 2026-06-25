@@ -2,7 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{RawFileDesc, get_file_fast},
+    fs::file::{
+        StatusFlags,
+        file_table::{RawFileDesc, get_file_fast},
+    },
     prelude::*,
 };
 
@@ -18,6 +21,13 @@ pub fn sys_syncfs(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+    if file.status_flags().contains(StatusFlags::O_PATH) {
+        return_errno_with_message!(
+            Errno::EBADF,
+            "syncfs does not support O_PATH file descriptors"
+        );
+    }
+
     file.path().fs().sync()?;
     Ok(SyscallReturn::Return(0))
 }

@@ -145,6 +145,8 @@ echo "All mount bind file test passed."
 
 ./statx/btime
 
+./syncfs/syncfs
+
 ./symlink/symlink
 
 ./tmpfile/tmpfile

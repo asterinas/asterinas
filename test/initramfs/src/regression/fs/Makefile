@@ -11,6 +11,7 @@ SUBDIRS := \
 	procfs \
 	pseudofs \
 	statx \
+	syncfs \
 	symlink \
 	tmpfile \
 	utimensat \
