@@ -41,11 +41,6 @@ ProcSysVmMaxmapCount.HasNumericValue
 ProcSysVmMmapMinAddr.HasNumericValue
 ProcSysVmOvercommitMemory.HasNumericValue
 ProcTask.ChildTaskDir
-ProcTask.CommCanSetPeerThreadName
-ProcTask.CommCanSetSelfThreadName
-ProcTask.CommCannotSetAnotherProcessThreadName
-ProcTask.CommContainsThreadNameAndTrailingNewline
-ProcTask.CommLenLimited
 ProcTask.TaskDirCannotBeDeleted
 ProcTask.VerifyTaskChildren
 ProcTask.VerifyTaskDir

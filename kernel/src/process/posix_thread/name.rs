@@ -26,6 +26,10 @@ impl ThreadName {
         self.set_name_as_bytes(name.to_bytes());
     }
 
+    pub fn set_name_from_bytes(&mut self, name_as_bytes: &[u8]) {
+        self.set_name_as_bytes(name_as_bytes);
+    }
+
     fn set_name_as_bytes(&mut self, name_as_bytes: &[u8]) {
         let name_len = name_as_bytes.len().min(MAX_THREAD_NAME_LEN - 1);
         self.0[..name_len].copy_from_slice(&name_as_bytes[..name_len]);

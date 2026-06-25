@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::task::Task;
+
 use super::TidDirOps;
 use crate::{
     fs::{
@@ -8,7 +10,7 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
+    process::posix_thread::{AsPosixThread, MAX_THREAD_NAME_LEN},
     thread::Thread,
 };
 
@@ -32,7 +34,9 @@ impl ProcFileOps for CommFileOps {
             return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
         };
 
-        let posix_thread = thread.as_posix_thread().unwrap();
+        let Some(posix_thread) = thread.as_posix_thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
         let mut comm = posix_thread.thread_name().lock().name().to_bytes().to_vec();
         comm.push(b'\n');
 
@@ -42,11 +46,36 @@ impl ProcFileOps for CommFileOps {
         Ok(bytes_read)
     }
 
-    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
-        warn!("writing to `/proc/[pid]/comm` is not supported");
-        return_errno_with_message!(
-            Errno::EOPNOTSUPP,
-            "writing to `/proc/[pid]/comm` is not supported"
-        );
+    fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let write_len = reader.remain();
+
+        let Some((thread, process)) = self.0.thread_and_process() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
+
+        let Some(current_task) = Task::current() else {
+            return_errno_with_message!(Errno::ESRCH, "the current thread does not exist");
+        };
+        let Some(current_posix_thread) = current_task.as_posix_thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the current thread does not exist");
+        };
+        let current_process = current_posix_thread.process();
+        if !Arc::ptr_eq(&current_process, &process) {
+            return_errno_with_message!(Errno::EINVAL, "the thread group is different");
+        }
+
+        let mut name_buf = [0; MAX_THREAD_NAME_LEN - 1];
+        let read_len = write_len.min(name_buf.len());
+        reader.read_fallible(&mut VmWriter::from(&mut name_buf[..read_len]))?;
+
+        let Some(posix_thread) = thread.as_posix_thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
+        posix_thread
+            .thread_name()
+            .lock()
+            .set_name_from_bytes(&name_buf[..read_len]);
+
+        Ok(write_len)
     }
 }
