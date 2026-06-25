@@ -2,8 +2,6 @@ IoctlTest.BadFileDescriptor
 IoctlTest.InvalidControlNumber
 IoctlTest.IoctlWithOpath
 IoctlTest.FIONBIOSucceeds
-IoctlTest.FIONBIOFails
-IoctlTest.FIOASYNCFails
 IoctlTest.FIOASYNCHandlesFuseFD
 IoctlTest.FIOASYNCSucceeds
 IoctlTest.FIOASYNCNoTarget

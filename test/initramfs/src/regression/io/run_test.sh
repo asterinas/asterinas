@@ -15,4 +15,5 @@ set -e
 ./file_io/block_device
 ./file_io/fcntl_lock
 ./file_io/file_err
+./file_io/ioctl_null_arg
 ./file_io/iovec_err
