@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 
 #include "../../common/test.h"
+#include <fcntl.h>
 #include <signal.h>
 #include <string.h>
 #include <sys/poll.h>
@@ -15,6 +16,29 @@ FN_SETUP()
 	signal(SIGPIPE, SIG_IGN);
 }
 END_SETUP()
+
+FN_TEST(fcntl_getpipe_sz)
+{
+	int fildes[2];
+	int file_fd;
+	int size;
+
+	TEST_SUCC(pipe(fildes));
+
+	size = TEST_SUCC(fcntl(fildes[0], F_GETPIPE_SZ));
+	TEST_RES(size, _ret > 0);
+	TEST_RES(fcntl(fildes[1], F_GETPIPE_SZ), _ret == size);
+
+	file_fd = TEST_SUCC(
+		open("/tmp_f_getpipe_sz", O_CREAT | O_RDWR | O_TRUNC, 0600));
+	TEST_ERRNO(fcntl(file_fd, F_GETPIPE_SZ), EBADF);
+
+	TEST_SUCC(close(file_fd));
+	TEST_SUCC(unlink("/tmp_f_getpipe_sz"));
+	TEST_SUCC(close(fildes[0]));
+	TEST_SUCC(close(fildes[1]));
+}
+END_TEST()
 
 FN_TEST(close_without_data_then_read)
 {

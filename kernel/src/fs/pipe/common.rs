@@ -10,7 +10,7 @@ use ostd::sync::WaitQueue;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, PerOpenFileOps, StatusFlags},
+        file::{AccessMode, FileLike, InodeHandle, PerOpenFileOps, StatusFlags},
         utils::{Endpoint, EndpointState},
         vfs::inode::FileOps,
     },
@@ -60,6 +60,19 @@ impl PipeHandle {
     fn bytes_to_read(&self) -> usize {
         self.inner.reader.buffer_len()
     }
+
+    fn capacity(&self) -> usize {
+        self.inner.reader.capacity()
+    }
+}
+
+pub(crate) fn pipe_size(file: &dyn FileLike) -> Option<usize> {
+    let inode_handle = file.downcast_ref::<InodeHandle>()?;
+    let Ok(Some(pipe_handle)) = inode_handle.downcast_open_file::<PipeHandle>() else {
+        return None;
+    };
+
+    Some(pipe_handle.capacity())
 }
 
 impl Pollable for PipeHandle {
@@ -409,6 +422,10 @@ impl PipeReader {
 
     fn buffer_len(&self) -> usize {
         self.consumer.lock().len()
+    }
+
+    fn capacity(&self) -> usize {
+        self.consumer.lock().capacity()
     }
 
     fn peer_shutdown(&self) {

@@ -1,2 +1,0 @@
-# TODO: Support `F_GETPIPE_SZ` for `fcntl` syscall.
-SendFileTest.SendPipeBlocks
