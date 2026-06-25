@@ -32,8 +32,6 @@ ProcSelfMaps.Map2
 ProcSelfMaps.MapUnmap
 ProcSelfRoot.IsRoot
 ProcSelfStat.PopulateWriteRSS
-ProcSysKernelHostname.Exists
-ProcSysKernelHostname.MatchesUname
 ProcSysKernelKeysMax.Exists
 ProcSysKernelKeysMax.InvalidMaxKeysValue
 ProcSysKernelKeysMax.SetMaxKeys

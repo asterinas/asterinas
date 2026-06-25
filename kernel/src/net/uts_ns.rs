@@ -206,6 +206,11 @@ impl UtsName {
             }
         }
     };
+
+    /// Returns the host name.
+    pub fn hostname(&self) -> &CStr {
+        CStr::from_bytes_until_nul(&self.nodename).unwrap()
+    }
 }
 
 impl NsCommonOps for UtsNamespace {
