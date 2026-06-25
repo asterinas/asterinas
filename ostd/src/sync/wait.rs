@@ -4,7 +4,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::{LocalIrqDisabled, SpinLock};
-use crate::task::{scheduler, Task};
+use crate::task::{Task, scheduler};
 
 const STALE_WAKER_PRUNE_THRESHOLD: usize = 1024;
 
