@@ -207,6 +207,9 @@ FN_TEST(path)
 	TEST_ERRNO(write(fd, buf, sizeof(buf)), EBADF);
 	TEST_ERRNO(lseek(fd, 0, SEEK_SET), EBADF);
 	TEST_ERRNO(lseek(fd, 0, SEEK_END), EBADF);
+	TEST_ERRNO(ioctl(fd, FIONBIO, &fd), EBADF);
+	TEST_ERRNO(ioctl(fd, FIONCLEX), EBADF);
+	TEST_ERRNO(ioctl(fd, FIOCLEX), EBADF);
 	TEST_ERRNO(ioctl(fd, TCGETS), EBADF);
 	TEST_ERRNO(ftruncate(fd, 1), EBADF);
 	TEST_ERRNO(fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, 1), EBADF);

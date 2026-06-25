@@ -21,6 +21,16 @@ pub fn sys_ioctl(
     debug!("raw_fd = {}, raw_ioctl = {:#x?}", raw_fd, raw_ioctl,);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let fd = raw_fd.try_into()?;
+
+    let file = get_file_fast!(&mut file_table, fd);
+    if file.status_flags().contains(StatusFlags::O_PATH) {
+        return_errno_with_message!(
+            Errno::EBADF,
+            "ioctl does not support O_PATH file descriptors"
+        );
+    }
+    drop(file);
 
     // First, handle the ioctl command that affects the file descriptor.
     if let Some(res) = handle_fd_ioctl(&mut file_table, raw_fd, raw_ioctl) {
@@ -28,7 +38,7 @@ pub fn sys_ioctl(
         return Ok(SyscallReturn::Return(0));
     }
 
-    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+    let file = get_file_fast!(&mut file_table, fd);
 
     // Then, handle the ioctl command the affects the file description.
     let res = if let Some(res) = handle_file_ioctl(&**file, raw_ioctl) {
