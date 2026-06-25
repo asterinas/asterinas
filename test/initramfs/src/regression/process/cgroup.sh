@@ -293,8 +293,12 @@ USAGE_DELTA=$((USAGE_AFTER - USAGE_BEFORE))
 USER_DELTA=$((USER_AFTER - USER_BEFORE))
 echo "cpu.stat delta: usage_usec=$USAGE_DELTA user_usec=$USER_DELTA"
 
-if [ "$USAGE_DELTA" -lt 1900000 ] || [ "$USER_DELTA" -lt 1900000 ]; then
+# The helper can be preempted heavily in VMs and shared CI runners. Require a
+# substantial increase instead of assuming it receives nearly all two seconds.
+MIN_BUSY_USEC=500000
+if [ "$USAGE_DELTA" -lt "$MIN_BUSY_USEC" ] || [ "$USER_DELTA" -lt "$MIN_BUSY_USEC" ]; then
     echo "Error: cpu.stat did not charge enough busy CPU time"
+    echo "Expected both deltas to be at least $MIN_BUSY_USEC usec"
     exit 1
 else
     echo "Verified"
