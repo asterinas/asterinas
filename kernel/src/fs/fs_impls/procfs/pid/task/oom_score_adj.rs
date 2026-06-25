@@ -65,4 +65,4 @@ impl ProcFileOps for OomScoreAdjFileOps {
 
 // FIXME: Support OOM killer and move these constants to a more appropriate place.
 const OOM_SCORE_ADJ_MIN: i32 = -1000;
-const OOM_SCORE_ADJ_MAX: i32 = 1000;
+pub(super) const OOM_SCORE_ADJ_MAX: i32 = 1000;

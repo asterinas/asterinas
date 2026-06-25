@@ -131,6 +131,7 @@ echo "All mount bind file test passed."
 ./procfs/fd
 ./procfs/getdents
 ./procfs/mountstats
+./procfs/oom_score
 ./procfs/pid_mem
 ./procfs/proc_fd_open_fifo_after_setid
 ./procfs/tid
