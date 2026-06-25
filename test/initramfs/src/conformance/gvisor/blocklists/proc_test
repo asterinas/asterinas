@@ -5,7 +5,6 @@ Proc.RegressionTestB236035339
 Proc.Statfs
 ProcCpuinfo.RequiredFieldsArePresent
 ProcCpuinfo.DeniesWriteNonRoot
-ProcFilesystems.OverflowID
 ProcFilesystems.PresenceOfShmMaxMniAll
 ProcPid.AccessDeny
 ProcPidCwd.Subprocess
