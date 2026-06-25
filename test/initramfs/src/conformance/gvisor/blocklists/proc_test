@@ -37,9 +37,6 @@ ProcSysKernelHostname.MatchesUname
 ProcSysKernelKeysMax.Exists
 ProcSysKernelKeysMax.InvalidMaxKeysValue
 ProcSysKernelKeysMax.SetMaxKeys
-ProcSysVmMaxmapCount.HasNumericValue
-ProcSysVmMmapMinAddr.HasNumericValue
-ProcSysVmOvercommitMemory.HasNumericValue
 ProcTask.ChildTaskDir
 ProcTask.CommCanSetPeerThreadName
 ProcTask.CommCanSetSelfThreadName

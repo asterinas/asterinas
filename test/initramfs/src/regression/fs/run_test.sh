@@ -133,6 +133,7 @@ echo "All mount bind file test passed."
 ./procfs/mountstats
 ./procfs/pid_mem
 ./procfs/proc_fd_open_fifo_after_setid
+./procfs/sys_vm
 ./procfs/tid
 
 ./pseudofs/fallocate
