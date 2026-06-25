@@ -34,9 +34,6 @@ ProcSelfRoot.IsRoot
 ProcSelfStat.PopulateWriteRSS
 ProcSysKernelHostname.Exists
 ProcSysKernelHostname.MatchesUname
-ProcSysKernelKeysMax.Exists
-ProcSysKernelKeysMax.InvalidMaxKeysValue
-ProcSysKernelKeysMax.SetMaxKeys
 ProcSysVmMaxmapCount.HasNumericValue
 ProcSysVmMmapMinAddr.HasNumericValue
 ProcSysVmOvercommitMemory.HasNumericValue

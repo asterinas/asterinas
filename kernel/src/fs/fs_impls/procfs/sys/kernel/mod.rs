@@ -6,7 +6,8 @@ use crate::{
         procfs::{
             ProcDir, StaticEntry,
             sys::kernel::{
-                cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps, yama::YamaDirOps,
+                cap_last_cap::CapLastCapFileOps, keys::KeysDirOps, pid_max::PidMaxFileOps,
+                yama::YamaDirOps,
             },
             template::{
                 ListedEntry, ProcDirOps, ReaddirEntry, listed_entries_from_table,
@@ -20,6 +21,7 @@ use crate::{
 };
 
 mod cap_last_cap;
+mod keys;
 mod pid_max;
 mod yama;
 
@@ -40,6 +42,7 @@ impl KernelDirOps {
             InodeType::File,
             CapLastCapFileOps::new_inode,
         ),
+        ("keys", InodeType::Dir, KeysDirOps::new_inode),
         ("pid_max", InodeType::File, PidMaxFileOps::new_inode),
     ];
 }
