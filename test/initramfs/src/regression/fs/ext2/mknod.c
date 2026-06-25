@@ -11,6 +11,8 @@
 #define NULL_DEVICE_PATH "/ext2/my_null_device"
 #define ZERO_DEVICE_PATH "/ext2/my_zero_device"
 #define FIFO_PATH "/ext2/myfifo.fifo"
+#define EXISTING_FILE_PATH "/ext2/mknod_existing_file"
+#define EXISTING_SYMLINK_PATH "/ext2/mknod_existing_symlink"
 
 FN_TEST(make_device_node)
 {
@@ -56,5 +58,19 @@ FN_TEST(make_fifo_node)
 	TEST_SUCC(close(reader_fd));
 	TEST_SUCC(close(writer_fd));
 	TEST_SUCC(unlink(FIFO_PATH));
+}
+END_TEST()
+
+FN_TEST(mknod_on_existing_paths_returns_eexist)
+{
+	int fd = TEST_SUCC(open(EXISTING_FILE_PATH, O_CREAT | O_RDWR, 0666));
+	TEST_SUCC(close(fd));
+	TEST_SUCC(symlink(EXISTING_FILE_PATH, EXISTING_SYMLINK_PATH));
+
+	TEST_ERRNO(mknod(EXISTING_FILE_PATH, S_IFIFO, 0), EEXIST);
+	TEST_ERRNO(mknod(EXISTING_SYMLINK_PATH, S_IFIFO, 0), EEXIST);
+
+	TEST_SUCC(unlink(EXISTING_SYMLINK_PATH));
+	TEST_SUCC(unlink(EXISTING_FILE_PATH));
 }
 END_TEST()
