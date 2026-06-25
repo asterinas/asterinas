@@ -90,6 +90,12 @@ FN_TEST(open_rdwr_on_dir_returns_eisdir)
 }
 END_TEST()
 
+FN_TEST(open_direct_on_dir_returns_einval)
+{
+	TEST_ERRNO(open(TARGET_DIR, O_RDONLY | O_DIRECT), EINVAL);
+}
+END_TEST()
+
 FN_SETUP(cleanup)
 {
 	CHECK(rmdir(TARGET_DIR));

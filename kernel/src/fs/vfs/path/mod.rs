@@ -160,6 +160,12 @@ impl Path {
                 "O_DIRECTORY is specified but the file is not a directory"
             );
         }
+        if inode_type == InodeType::Dir
+            && status_flags.contains(StatusFlags::O_DIRECT)
+            && !status_flags.contains(StatusFlags::O_PATH)
+        {
+            return_errno_with_message!(Errno::EINVAL, "O_DIRECT cannot open a directory");
+        }
 
         if inode_type.is_regular_file()
             && creation_flags.contains(CreationFlags::O_TRUNC)
