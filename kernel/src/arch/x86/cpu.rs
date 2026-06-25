@@ -823,9 +823,7 @@ impl fmt::Display for CpuInformation {
             writeln!(f, "cpu MHz\t\t: Unknown")?;
         }
 
-        if let Some(cache_size) = self.cache_size {
-            writeln!(f, "cache size\t: {} KB", cache_size)?;
-        }
+        writeln!(f, "cache size\t: {} KB", self.cache_size.unwrap_or(0))?;
 
         // Note that we don't support NUMA now, so we assume that all CPUs are on the same package
         // (i.e., their physical IDs are all zeros).
@@ -865,7 +863,13 @@ impl fmt::Display for CpuInformation {
              bugs\t\t:\n"
         )?;
 
-        // TODO: Add the `bogomips` field.
+        let bogomips_x100 = self.cpu_khz.map(|cpu_khz| cpu_khz / 5).unwrap_or(0);
+        writeln!(
+            f,
+            "bogomips\t: {}.{:02}",
+            bogomips_x100 / 100,
+            bogomips_x100 % 100
+        )?;
 
         if let Some(tlb_size) = self.tlb_size {
             writeln!(f, "TLB size\t: {} 4K pages", tlb_size)?;

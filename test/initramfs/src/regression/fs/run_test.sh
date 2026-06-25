@@ -128,6 +128,7 @@ echo "All mount bind file test passed."
 ./overlayfs/readdir_small_buffer
 
 ./procfs/dentry_cache
+./procfs/cpuinfo_required_fields
 ./procfs/fd
 ./procfs/getdents
 ./procfs/mountstats
