@@ -25,7 +25,7 @@ use super::super::{
     BprmCheckContext, BprmCommittedCredsContext, CapableContext, FileCreateContext,
     FileDeleteContext, FileLinkContext, FileOpenContext, FileRenameContext, FileSetattrContext,
     LsmFlags, LsmModule,
-    hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook, LsmInodeHook},
+    hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook},
 };
 use crate::{prelude::*, process::posix_thread::AsPosixThread, thread::Thread};
 
@@ -164,8 +164,6 @@ impl LsmFileHook for AppArmorLsm {
         )
     }
 }
-
-impl LsmInodeHook for AppArmorLsm {}
 
 /// Loads, replaces, or removes an AppArmor profile from policy text.
 pub fn load_policy(policy_text: &str) -> Result<()> {

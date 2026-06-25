@@ -6,7 +6,7 @@ use crate::{
     fs::{
         file::{
             AccessMode, CreationFlags, FileLike, InodeHandle, InodeMode, InodeType, OpenArgs,
-            Permission, StatusFlags,
+            StatusFlags,
             file_table::{FdFlags, RawFileDesc},
         },
         vfs::{
@@ -112,13 +112,7 @@ fn do_open(
             }
 
             let (parent, tail_name) = result.into_parent_and_basename();
-            if parent
-                .inode()
-                .check_permission(Permission::MAY_WRITE)
-                .is_err()
-            {
-                return_errno!(Errno::EACCES);
-            }
+            super::check_parent_write_permission(&parent)?;
 
             security::file_create(
                 &parent,

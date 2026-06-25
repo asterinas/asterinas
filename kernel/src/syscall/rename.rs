@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::{InodeType, Permission, file_table::RawFileDesc},
+        file::{InodeType, file_table::RawFileDesc},
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath},
     },
     prelude::*,
@@ -71,17 +71,8 @@ pub fn sys_renameat2(
         );
     }
 
-    if old_parent_path
-        .inode()
-        .check_permission(Permission::MAY_WRITE)
-        .is_err()
-        || new_parent_path
-            .inode()
-            .check_permission(Permission::MAY_WRITE)
-            .is_err()
-    {
-        return_errno!(Errno::EACCES);
-    }
+    super::check_parent_write_permission(&old_parent_path)?;
+    super::check_parent_write_permission(&new_parent_path)?;
     security::file_rename(
         &old_path,
         &old_parent_path,

@@ -868,7 +868,9 @@ fn decode_linux_abi_version(version: u32) -> u32 {
 }
 
 fn aligned_blob_payload_offset(content_start: usize, content_end: usize) -> Result<usize> {
-    let unaligned = content_start - (content_end & 7);
+    let Some(unaligned) = content_start.checked_sub(content_end & 7) else {
+        return_errno_with_message!(Errno::EINVAL, "the AppArmor DFA blob is invalid");
+    };
     let aligned = align_up(unaligned, 8)?;
     Ok(aligned - unaligned)
 }

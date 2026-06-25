@@ -18,7 +18,7 @@ pub use self::lsm::{
 };
 use crate::{
     fs::{
-        file::{AccessMode, InodeMode, Permission, StatusFlags},
+        file::{AccessMode, StatusFlags},
         vfs::path::{Path, PathResolver},
     },
     prelude::*,
@@ -136,13 +136,22 @@ pub fn set_current_apparmor_profile(profile_name: &str) -> Result<()> {
         return_errno_with_message!(Errno::ENOENT, "the AppArmor LSM is not enabled");
     }
 
-    let task_state = lsm::apparmor_task_state_for_profile(profile_name)?;
     let current_thread = current_thread!();
     let Some(posix_thread) = current_thread.as_posix_thread() else {
         return_errno_with_message!(Errno::ESRCH, "the current thread is not a POSIX thread");
     };
 
-    posix_thread.set_apparmor_task_state(task_state);
+    let task_state = posix_thread.credentials().apparmor_task_state();
+    let target_state = lsm::apparmor_task_state_for_profile(profile_name)?;
+    let target_profile = target_state.current_profile().clone();
+    if !task_state.is_unconfined() && &target_profile != task_state.current_profile() {
+        return_errno_with_message!(
+            Errno::EACCES,
+            "AppArmor change_profile mediation is not supported"
+        );
+    }
+
+    posix_thread.set_apparmor_task_state(target_state);
     Ok(())
 }
 
@@ -191,19 +200,6 @@ pub fn bprm_committed_creds(
         path,
         path_resolver,
         credentials,
-    ))
-}
-
-/// Runs the LSM stack for a DAC override decision on an inode.
-pub fn inode_dac_override(
-    mode: InodeMode,
-    permission: Permission,
-    posix_thread: &PosixThread,
-) -> Result<Permission> {
-    lsm::inode_dac_override(&lsm::InodeDacOverrideContext::new(
-        mode,
-        permission,
-        posix_thread,
     ))
 }
 

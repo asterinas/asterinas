@@ -330,8 +330,27 @@ impl AppArmorPolicy {
         path_view: &AppArmorPathView,
         permissions: AppArmorFilePermission,
     ) -> Result<PathAccessOutcome> {
-        let outcome = profile.evaluate_file_access(path_view, permissions)?;
         let mode = effective_mode(task_mode, profile.mode());
+        if !path_view.is_reachable() {
+            warn!(
+                "AppArmor denied file access to unreachable path: profile={} path={} requested={:#x}",
+                profile.name().as_str(),
+                path_view.as_str(),
+                permissions.bits()
+            );
+
+            if mode == AppArmorMode::Complain {
+                return Ok(PathAccessOutcome {
+                    denied: permissions,
+                    exec_transition: AppArmorExecTransition::Inherit,
+                    mode,
+                });
+            }
+
+            return_errno_with_message!(Errno::EACCES, "AppArmor path is unreachable");
+        }
+
+        let outcome = profile.evaluate_file_access(path_view, permissions)?;
         let _audit = outcome.audit;
 
         Ok(PathAccessOutcome {

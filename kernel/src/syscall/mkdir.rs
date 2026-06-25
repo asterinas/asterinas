@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file::{InodeMode, InodeType, Permission, StatusFlags, file_table::RawFileDesc},
+        file::{InodeMode, InodeType, StatusFlags, file_table::RawFileDesc},
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
@@ -35,13 +35,7 @@ pub fn sys_mkdirat(
         let mask_mode = mode & !fs_ref.umask().get();
         InodeMode::from_bits_truncate(mask_mode)
     };
-    if dir_path
-        .inode()
-        .check_permission(Permission::MAY_WRITE)
-        .is_err()
-    {
-        return_errno!(Errno::EACCES);
-    }
+    super::check_parent_write_permission(&dir_path)?;
     security::file_create(
         &dir_path,
         &name,

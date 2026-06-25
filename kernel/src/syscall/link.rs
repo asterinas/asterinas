@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::{InodeType, Permission, file_table::RawFileDesc},
+        file::{InodeType, file_table::RawFileDesc},
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
@@ -56,13 +56,7 @@ pub fn sys_linkat(
         .lookup_unresolved_no_follow(&new_fs_path)?
         .into_parent_and_filename()?;
 
-    if new_path
-        .inode()
-        .check_permission(Permission::MAY_WRITE)
-        .is_err()
-    {
-        return_errno!(Errno::EACCES);
-    }
+    super::check_parent_write_permission(&new_path)?;
     security::file_link(&old_path, &new_path, &new_name, &path_resolver)?;
 
     new_path.link(&old_path, &new_name)?;

@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         self,
-        file::{InodeMode, InodeType, Permission, StatusFlags, file_table::RawFileDesc},
+        file::{InodeMode, InodeType, StatusFlags, file_table::RawFileDesc},
         vfs::{
             inode::MknodType,
             path::{AT_FDCWD, EmptyPathStr, FsPath},
@@ -43,13 +43,7 @@ pub fn sys_mknodat(
             .into_parent_and_filename()?
     };
 
-    if dir_path
-        .inode()
-        .check_permission(Permission::MAY_WRITE)
-        .is_err()
-    {
-        return_errno!(Errno::EACCES);
-    }
+    super::check_parent_write_permission(&dir_path)?;
 
     let create_kind = match inode_type {
         InodeType::File => FileCreateKind::Regular,

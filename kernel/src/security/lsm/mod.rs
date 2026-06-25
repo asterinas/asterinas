@@ -26,17 +26,17 @@ pub mod apparmor {
     };
 }
 
-use self::hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook, LsmInodeHook};
+use self::hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook};
 pub use self::{
     apparmor::{AppArmorMode, AppArmorPolicyOperation, AppArmorProfileName, AppArmorTaskState},
     hooks::{
         BprmCheckContext, BprmCommittedCredsContext, CapableContext, FileCreateContext,
         FileCreateKind, FileDeleteContext, FileDeleteKind, FileLinkContext, FileOpenContext,
-        FileRenameContext, FileSetattrContext, FileSetattrKind, InodeDacOverrideContext,
+        FileRenameContext, FileSetattrContext, FileSetattrKind,
     },
     yama::YamaScope,
 };
-use crate::{fs::file::Permission, prelude::*, process::posix_thread::PosixThread};
+use crate::{prelude::*, process::posix_thread::PosixThread};
 
 bitflags! {
     /// LSM module flags.
@@ -49,9 +49,7 @@ bitflags! {
 }
 
 /// The common interface for built-in LSM modules.
-trait LsmModule:
-    LsmAlienAccessHook + LsmBprmHook + LsmCapabilityHook + LsmFileHook + LsmInodeHook + Sync
-{
+trait LsmModule: LsmAlienAccessHook + LsmBprmHook + LsmCapabilityHook + LsmFileHook + Sync {
     /// Returns the module name.
     fn name(&self) -> &'static str;
 
@@ -135,11 +133,6 @@ pub fn bprm_check_security(context: &BprmCheckContext<'_>) -> Result<()> {
 /// Runs the LSM stack after executable credentials are committed.
 pub fn bprm_committed_creds(context: &BprmCommittedCredsContext<'_>) -> Result<()> {
     hooks::on_bprm_committed_creds(context)
-}
-
-/// Runs the LSM stack for a DAC override decision on an inode.
-pub fn inode_dac_override(context: &InodeDacOverrideContext) -> Result<Permission> {
-    hooks::on_inode_dac_override(context)
 }
 
 /// Runs the LSM stack for a file open check.

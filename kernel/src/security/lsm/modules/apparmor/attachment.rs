@@ -47,6 +47,10 @@ impl AppArmorAttachment {
 
     /// Returns whether the attachment selects a profile for `path_view`.
     pub(super) fn matches(&self, path_view: &AppArmorPathView) -> bool {
+        if !path_view.is_reachable() {
+            return false;
+        }
+
         if let Some(policy) = &self.policy
             && policy.matches_path(path_view)
         {

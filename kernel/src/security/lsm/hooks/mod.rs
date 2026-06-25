@@ -6,7 +6,6 @@ mod alien_access;
 mod bprm;
 mod capability;
 mod file;
-mod inode;
 
 pub use self::{
     alien_access::{AlienAccessContext, on_alien_access},
@@ -20,9 +19,8 @@ pub use self::{
         FileOpenContext, FileRenameContext, FileSetattrContext, FileSetattrKind, on_file_create,
         on_file_delete, on_file_link, on_file_open, on_file_rename, on_file_setattr,
     },
-    inode::{InodeDacOverrideContext, on_inode_dac_override},
 };
-use crate::{fs::file::Permission, prelude::*};
+use crate::prelude::*;
 
 pub(super) trait LsmAlienAccessHook: Sync {
     /// Handles an alien access attempt.
@@ -79,12 +77,5 @@ pub(super) trait LsmFileHook: Sync {
     /// Checks whether file attributes may be changed.
     fn on_file_setattr(&self, _context: &FileSetattrContext<'_>) -> Result<()> {
         Ok(())
-    }
-}
-
-pub(super) trait LsmInodeHook: Sync {
-    /// Returns which requested DAC permissions may be bypassed on an inode.
-    fn on_inode_dac_override(&self, _context: &InodeDacOverrideContext) -> Result<Permission> {
-        Ok(Permission::empty())
     }
 }

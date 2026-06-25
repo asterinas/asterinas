@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::{Permission, file_table::RawFileDesc},
+        file::file_table::RawFileDesc,
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath},
     },
     prelude::*,
@@ -32,13 +32,7 @@ pub(super) fn sys_rmdirat(
         (path_resolver.lookup(&fs_path)?, target_name)
     };
 
-    if dir_path
-        .inode()
-        .check_permission(Permission::MAY_WRITE)
-        .is_err()
-    {
-        return_errno!(Errno::EACCES);
-    }
+    super::check_parent_write_permission(&dir_path)?;
     security::file_delete(&dir_path, name, &path_resolver, FileDeleteKind::Directory)?;
     dir_path.rmdir(name)?;
     Ok(SyscallReturn::Return(0))

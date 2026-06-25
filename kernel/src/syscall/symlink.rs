@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file::{InodeType, Permission, StatusFlags, file_table::RawFileDesc, mkmod},
+        file::{InodeType, StatusFlags, file_table::RawFileDesc, mkmod},
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
@@ -41,13 +41,7 @@ pub fn sys_symlinkat(
             .into_parent_and_filename()?
     };
 
-    if dir_path
-        .inode()
-        .check_permission(Permission::MAY_WRITE)
-        .is_err()
-    {
-        return_errno!(Errno::EACCES);
-    }
+    super::check_parent_write_permission(&dir_path)?;
     security::file_create(
         &dir_path,
         &link_name,
