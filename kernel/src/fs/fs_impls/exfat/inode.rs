@@ -1254,13 +1254,12 @@ impl ExfatInode {
         // Delete directory contents directly.
         let is_dir = inode.inner.read().inode_type.is_directory();
         if delete_contents {
-            if is_dir {
-                let mut inner = inode.inner.write();
-                inner.page_cache.resize(0, inner.size)?;
-                inner.resize(0, fs_guard)?;
-            }
+            let mut inner = inode.inner.write();
+            inner.page_cache.resize(0, inner.size)?;
+            inner.resize(0, fs_guard)?;
+
             // Set the delete flag.
-            inode.inner.write().is_deleted = true;
+            inner.is_deleted = true;
         }
         // Remove the inode.
         self.inner.read().fs().remove_inode(inode.hash_index());

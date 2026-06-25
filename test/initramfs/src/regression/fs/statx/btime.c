@@ -29,6 +29,9 @@
 #define EXFAT_TEST_FILE EXFAT_MOUNT_POINT "/statx_btime_test_file"
 #define EXFAT_TEST_FILE_NOT_REQ \
 	EXFAT_MOUNT_POINT "/statx_btime_test_file_not_req"
+#define EXFAT_RECLAIM_FILE EXFAT_MOUNT_POINT "/statx_btime_reclaim_file"
+#define EXFAT_RECLAIM_CHUNK_SIZE (1024 * 1024)
+#define EXFAT_RECLAIM_TARGET_SIZE (500 * 1024 * 1024)
 
 #ifndef __asterinas__
 #define EXFAT_IMAGE "/tmp/statx_btime_exfat.img"
@@ -44,6 +47,8 @@ static int created_exfat_mount_point;
 static int loop_fd = -1;
 static char loop_path[64];
 #endif
+
+static char reclaim_buf[EXFAT_RECLAIM_CHUNK_SIZE];
 
 static void make_ramfs_mount_point(void)
 {
@@ -89,6 +94,42 @@ static void attach_loop_device(void)
 	CHECK(close(image_fd));
 }
 #endif
+
+static off_t write_reclaim_file(const char *path, off_t target_size)
+{
+	int fd = CHECK(open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644));
+	off_t total = 0;
+
+	while (total < target_size) {
+		size_t write_size = EXFAT_RECLAIM_CHUNK_SIZE;
+		ssize_t ret;
+
+		if (target_size - total < (off_t)write_size) {
+			write_size = target_size - total;
+		}
+
+		ret = write(fd, reclaim_buf, write_size);
+		if (ret < 0) {
+			if (errno == ENOSPC) {
+				break;
+			}
+			fprintf(stderr, "fatal error: write(%s): %s\n", path,
+				strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+		if (ret == 0) {
+			break;
+		}
+
+		total += ret;
+		if ((size_t)ret < write_size) {
+			break;
+		}
+	}
+
+	CHECK(close(fd));
+	return total;
+}
 
 FN_SETUP(prepare)
 {
@@ -163,12 +204,33 @@ FN_TEST(exfat_statx_reports_birth_time)
 }
 END_TEST()
 
+FN_TEST(exfat_unlink_reclaims_file_clusters)
+{
+	off_t first_write;
+	off_t second_write;
+
+	memset(reclaim_buf, 0x5a, sizeof(reclaim_buf));
+
+	first_write =
+		write_reclaim_file(EXFAT_RECLAIM_FILE, EXFAT_RECLAIM_TARGET_SIZE);
+	TEST_RES(0, first_write >= EXFAT_RECLAIM_CHUNK_SIZE);
+	TEST_SUCC(unlink(EXFAT_RECLAIM_FILE));
+	sync();
+
+	second_write =
+		write_reclaim_file(EXFAT_RECLAIM_FILE, EXFAT_RECLAIM_TARGET_SIZE);
+	TEST_RES(0, second_write >= first_write);
+	TEST_SUCC(unlink(EXFAT_RECLAIM_FILE));
+}
+END_TEST()
+
 FN_SETUP(cleanup)
 {
 	CHECK(close(fd));
 	CHECK(unlink(RAMFS_TEST_FILE));
 	CHECK(unlink(EXFAT_TEST_FILE));
 	CHECK(unlink(EXFAT_TEST_FILE_NOT_REQ));
+	CHECK_WITH(unlink(EXFAT_RECLAIM_FILE), _ret == 0 || errno == ENOENT);
 	CHECK(umount(EXFAT_MOUNT_POINT));
 	CHECK(umount(RAMFS_MOUNT_POINT));
 
