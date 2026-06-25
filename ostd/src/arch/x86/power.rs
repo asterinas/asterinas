@@ -49,7 +49,7 @@ mod qemu_isa_debug {
 pub(super) fn init() {
     use super::cpu::cpuid;
 
-    if !cpuid::query_is_running_in_qemu() {
+    if !cpuid::query_if_running_in_qemu() {
         return;
     }
 
