@@ -211,14 +211,14 @@ FN_TEST(exfat_unlink_reclaims_file_clusters)
 
 	memset(reclaim_buf, 0x5a, sizeof(reclaim_buf));
 
-	first_write =
-		write_reclaim_file(EXFAT_RECLAIM_FILE, EXFAT_RECLAIM_TARGET_SIZE);
+	first_write = write_reclaim_file(EXFAT_RECLAIM_FILE,
+					 EXFAT_RECLAIM_TARGET_SIZE);
 	TEST_RES(0, first_write >= EXFAT_RECLAIM_CHUNK_SIZE);
 	TEST_SUCC(unlink(EXFAT_RECLAIM_FILE));
 	sync();
 
-	second_write =
-		write_reclaim_file(EXFAT_RECLAIM_FILE, EXFAT_RECLAIM_TARGET_SIZE);
+	second_write = write_reclaim_file(EXFAT_RECLAIM_FILE,
+					  EXFAT_RECLAIM_TARGET_SIZE);
 	TEST_RES(0, second_write >= first_write);
 	TEST_SUCC(unlink(EXFAT_RECLAIM_FILE));
 }
