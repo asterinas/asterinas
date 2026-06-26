@@ -22,7 +22,7 @@ use ostd::{
 use crate::{
     device::{VirtioDeviceError, entropy},
     queue::VirtQueue,
-    transport::VirtioTransport,
+    transport::DeviceTransport,
 };
 
 static ENTROPY_DEVICE_ID: AtomicUsize = AtomicUsize::new(0);
@@ -44,7 +44,7 @@ const ENTROPY_BUFFER_SIZE: usize = PAGE_SIZE;
 
 /// Entropy devices, which supply high-quality randomness for guest use.
 pub struct EntropyDevice {
-    transport: SpinLock<Box<dyn VirtioTransport>>,
+    transport: SpinLock<DeviceTransport>,
     inner: SpinLock<EntropyDeviceInner, LocalIrqDisabled>,
     /// A filled DMA buffer drained by user-space reads.
     cache: Mutex<EntropyCache>,
@@ -52,12 +52,14 @@ pub struct EntropyDevice {
 }
 
 impl EntropyDevice {
-    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let queue = VirtQueue::new(0, ENTROPY_QUEUE_SIZE, transport.as_mut())?;
+    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
+        let queue = VirtQueue::new(0, ENTROPY_QUEUE_SIZE, device_transport.as_mut())?;
+        let inner = EntropyDeviceInner::new(queue)?;
+        let cache = EntropyCache::new()?;
         let device = Arc::new(EntropyDevice {
-            transport: SpinLock::new(transport),
-            inner: SpinLock::new(EntropyDeviceInner::new(queue)?),
-            cache: Mutex::new(EntropyCache::new()?),
+            transport: SpinLock::new(device_transport),
+            inner: SpinLock::new(inner),
+            cache: Mutex::new(cache),
             wait_queue: WaitQueue::new(),
         });
 

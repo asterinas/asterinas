@@ -244,14 +244,6 @@ impl VirtioTransport for VirtioPciLegacyTransport {
         Ok(())
     }
 
-    // Set to driver ok status
-    fn finish_init(&mut self) {
-        self.write_device_status(
-            DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER | DeviceStatus::DRIVER_OK,
-        )
-        .unwrap();
-    }
-
     fn max_queue_size(&self, idx: u16) -> Result<u16, VirtioTransportError> {
         self.config_bar
             .write_once(QUEUE_SELECT_OFFSET, idx)

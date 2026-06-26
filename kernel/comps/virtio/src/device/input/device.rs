@@ -28,7 +28,7 @@ use ostd_pod::IntoBytes;
 
 use super::{InputConfigSelect, QUEUE_EVENT, QUEUE_STATUS, VirtioInputConfig, VirtioInputEvent};
 use crate::{
-    device::VirtioDeviceError, dma_buf::DmaBuf, queue::VirtQueue, transport::VirtioTransport,
+    device::VirtioDeviceError, dma_buf::DmaBuf, queue::VirtQueue, transport::DeviceTransport,
 };
 
 bitflags! {
@@ -65,7 +65,7 @@ pub struct InputDevice {
     event_queue: SpinLock<VirtQueue>,
     status_queue: VirtQueue,
     event_table: EventTable,
-    transport: SpinLock<Box<dyn VirtioTransport>>,
+    transport: SpinLock<DeviceTransport>,
     device_name: String,
     device_phys: String,
     device_uniq: String,
@@ -76,9 +76,9 @@ pub struct InputDevice {
 impl InputDevice {
     /// Create a new VirtIO-Input driver.
     /// msix_vector_left should at least have one element or n elements where n is the virtqueue amount
-    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, transport.as_mut())?;
-        let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, transport.as_mut())?;
+    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
+        let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, device_transport.as_mut())?;
+        let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, device_transport.as_mut())?;
 
         let event_table = EventTable::new(QUEUE_SIZE as usize)?;
         for i in 0..event_table.num_events() {
@@ -87,17 +87,13 @@ impl InputDevice {
             assert_eq!(token as usize, i);
         }
 
-        if event_queue.should_notify() {
-            event_queue.notify();
-        }
-
         let device = {
             let mut device = Self {
-                config: VirtioInputConfig::new(transport.as_mut()),
+                config: VirtioInputConfig::new(device_transport.as_ref()),
                 event_queue: SpinLock::new(event_queue),
                 status_queue,
                 event_table,
-                transport: SpinLock::new(transport),
+                transport: SpinLock::new(device_transport),
                 // Default name, will be updated with actual device name from config.
                 device_name: "virtio_input".to_string(),
                 // Physical path for virtio devices.
@@ -136,7 +132,6 @@ impl InputDevice {
             debug!("input device config space change");
         }
         transport.register_cfg_callback(Box::new(config_space_change))?;
-        transport.finish_init();
         drop(transport);
 
         // Register with the input subsystem.
@@ -148,10 +143,16 @@ impl InputDevice {
             let device = device.clone();
             move |_: &TrapFrame| device.handle_irq(&registered_device)
         };
-        transport
-            .register_queue_callback(QUEUE_EVENT, Box::new(handle_input), false)
-            .unwrap();
+        transport.register_queue_callback(QUEUE_EVENT, Box::new(handle_input), false)?;
+        transport.finish_init();
         drop(transport);
+
+        {
+            let mut event_queue = device.event_queue.disable_irq().lock();
+            if event_queue.should_notify() {
+                event_queue.notify();
+            }
+        }
 
         Ok(())
     }

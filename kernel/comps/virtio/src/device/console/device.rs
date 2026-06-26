@@ -16,12 +16,12 @@ use super::{DEVICE_NAME, config::VirtioConsoleConfig};
 use crate::{
     device::{VirtioDeviceError, console::config::ConsoleFeatures},
     queue::VirtQueue,
-    transport::{ConfigManager, VirtioTransport},
+    transport::{ConfigManager, DeviceTransport},
 };
 
 pub struct ConsoleDevice {
     config_manager: ConfigManager<VirtioConsoleConfig>,
-    transport: SpinLock<Box<dyn VirtioTransport>>,
+    transport: SpinLock<DeviceTransport>,
     receive_queue: SpinLock<VirtQueue>,
     transmit_queue: SpinLock<VirtQueue>,
     send_buffer: DmaStream,
@@ -85,18 +85,21 @@ impl ConsoleDevice {
         features.bits()
     }
 
-    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioConsoleConfig::new_manager(transport.as_ref());
+    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
+        let config_manager = VirtioConsoleConfig::new_manager(device_transport.as_ref());
         debug!("virtio_console_config = {:?}", config_manager.read_config());
 
         const RECV0_QUEUE_INDEX: u16 = 0;
         const TRANSMIT0_QUEUE_INDEX: u16 = 1;
-        let receive_queue =
-            SpinLock::new(VirtQueue::new(RECV0_QUEUE_INDEX, 2, transport.as_mut())?);
+        let receive_queue = SpinLock::new(VirtQueue::new(
+            RECV0_QUEUE_INDEX,
+            2,
+            device_transport.as_mut(),
+        )?);
         let transmit_queue = SpinLock::new(VirtQueue::new(
             TRANSMIT0_QUEUE_INDEX,
             2,
-            transport.as_mut(),
+            device_transport.as_mut(),
         )?);
 
         let send_buffer = DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?;
@@ -105,7 +108,7 @@ impl ConsoleDevice {
 
         let device = Arc::new(Self {
             config_manager,
-            transport: SpinLock::new(transport),
+            transport: SpinLock::new(device_transport),
             receive_queue,
             transmit_queue,
             send_buffer,
@@ -131,6 +134,8 @@ impl ConsoleDevice {
         transport.finish_init();
         drop(transport);
 
+        Self::notify_receive_queue(&mut device.receive_queue.disable_irq().lock());
+
         aster_console::register_device(DEVICE_NAME.to_string(), device);
 
         Ok(())
@@ -155,6 +160,7 @@ impl ConsoleDevice {
         drop(callbacks);
 
         self.activate_receive_buffer(&mut receive_queue);
+        Self::notify_receive_queue(&mut receive_queue);
     }
 
     fn activate_receive_buffer(&self, receive_queue: &mut VirtQueue) {
@@ -168,7 +174,9 @@ impl ConsoleDevice {
             // <https://lore.kernel.org/qemu-devel/20240707111940.232549-3-lrh2000@pku.edu.cn/T/#u>.
             .add_output_bufs(&[&Slice::new(&self.receive_buffer, 0..1)])
             .unwrap();
+    }
 
+    fn notify_receive_queue(receive_queue: &mut VirtQueue) {
         if receive_queue.should_notify() {
             receive_queue.notify();
         }
