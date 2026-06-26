@@ -12,9 +12,10 @@ use crate::{
         vfs::path::Path,
     },
     prelude::*,
-    util::{MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, ioctl::RawIoctl},
 };
 
+mod ioctl;
 pub mod ip;
 pub mod netlink;
 pub mod options;
@@ -167,6 +168,10 @@ impl<T: Socket + 'static> FileLike for T {
             self.set_nonblocking(false);
         }
         Ok(())
+    }
+
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        ioctl::socket_ioctl(raw_ioctl)
     }
 
     fn access_mode(&self) -> AccessMode {
