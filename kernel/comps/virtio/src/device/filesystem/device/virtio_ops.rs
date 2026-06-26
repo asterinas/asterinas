@@ -25,7 +25,7 @@ use crate::{
         },
     },
     queue::VirtQueue,
-    transport::VirtioTransport,
+    transport::{DeviceTransport, VirtioTransport},
 };
 
 impl FileSystemDevice {
@@ -39,12 +39,12 @@ impl FileSystemDevice {
     }
 
     /// Initializes one virtio-fs device from its virtio transport.
-    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioFsConfig::new_manager(transport.as_ref());
+    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
+        let config_manager = VirtioFsConfig::new_manager(device_transport.as_ref());
         let config = config_manager.read_config();
 
         let negotiated_features = FileSystemFeatures::from_bits_truncate(Self::negotiate_features(
-            transport.read_device_features(),
+            device_transport.read_device_features(),
         ));
         let notify_supported = negotiated_features.contains(FileSystemFeatures::NOTIFICATION);
         // Queue layout:
@@ -53,7 +53,7 @@ impl FileSystemDevice {
         // - Remaining queues: request queues.
         let request_queue_start_idx = if notify_supported { 2 } else { 1 };
 
-        let total_queues = transport.num_queues();
+        let total_queues = device_transport.num_queues();
         if total_queues <= request_queue_start_idx {
             return Err(VirtioDeviceError::UnsupportedConfig);
         }
@@ -69,20 +69,22 @@ impl FileSystemDevice {
         }
 
         let device = {
-            let hiprio_queue =
-                FsRequestQueue::new(Self::new_queue(HIPRIO_QUEUE_INDEX, transport.as_mut())?);
+            let hiprio_queue = FsRequestQueue::new(Self::new_queue(
+                HIPRIO_QUEUE_INDEX,
+                device_transport.as_mut(),
+            )?);
 
             let mut request_queues = Vec::with_capacity(request_queue_count);
             for idx in 0..request_queue_count {
                 let queue_index = request_queue_start_idx + idx as u16;
                 request_queues.push(FsRequestQueue::new(Self::new_queue(
                     queue_index,
-                    transport.as_mut(),
+                    device_transport.as_mut(),
                 )?));
             }
 
             Arc::new(Self::new(
-                transport,
+                device_transport,
                 hiprio_queue,
                 request_queues,
                 config.parse_tag().to_string(),

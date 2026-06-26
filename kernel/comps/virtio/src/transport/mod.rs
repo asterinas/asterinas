@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, sync::Arc};
-use core::fmt::Debug;
+use core::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
 
 use aster_pci::cfg_space::BarAccess;
 use aster_util::safe_ptr::SafePtr;
@@ -45,17 +48,6 @@ pub trait VirtioTransport: Sync + Send + Debug {
 
     /// Set device status.
     fn write_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError>;
-
-    // Set to driver ok status
-    fn finish_init(&mut self) {
-        self.write_device_status(
-            DeviceStatus::ACKNOWLEDGE
-                | DeviceStatus::DRIVER
-                | DeviceStatus::FEATURES_OK
-                | DeviceStatus::DRIVER_OK,
-        )
-        .unwrap();
-    }
 
     /// Get access to the device config memory.
     fn device_config_mem(&self) -> Option<IoMem>;
@@ -250,6 +242,69 @@ bitflags::bitflags! {
         /// Indicates that the device has experienced an error from which it
         /// can’t recover.
         const DEVICE_NEEDS_RESET = 64;
+    }
+}
+
+/// A wrapper around [`Box<dyn VirtioTransport>`] that sets the device status to FAILED
+/// on drop unless [`Self::finish_init`] has been called.
+///
+/// This ensures that the FAILED status bit is set whenever a device initialization
+/// is aborted before completion, as required by the VirtIO specification.
+///
+/// The `DeviceTransport` is stored in the device struct and held for the device's
+/// lifetime. During initialization it acts as a sentinel: if init fails (the struct
+/// is dropped without [`finish_init`] being called), [`Drop`] sets `FAILED`. Once
+/// `finish_init` is called, the FAILED bit is no longer set on drop.
+#[derive(Debug)]
+pub struct DeviceTransport {
+    inner: Box<dyn VirtioTransport>,
+    is_completed: bool,
+}
+
+impl DeviceTransport {
+    /// Creates a new wrapper around `transport`.
+    ///
+    /// The wrapper will set the device status to [`DeviceStatus::FAILED`] on drop
+    /// unless [`Self::finish_init`] is called first.
+    pub fn new(transport: Box<dyn VirtioTransport>) -> Self {
+        Self {
+            inner: transport,
+            is_completed: false,
+        }
+    }
+
+    /// Marks initialization as complete and sets the device status to `DRIVER_OK`.
+    ///
+    /// After this call, the wrapper will NOT set `FAILED` on drop.
+    pub fn finish_init(&mut self) {
+        self.is_completed = true;
+        let status = self.inner.read_device_status() | DeviceStatus::DRIVER_OK;
+        self.inner.write_device_status(status).unwrap();
+    }
+}
+
+impl Deref for DeviceTransport {
+    type Target = Box<dyn VirtioTransport>;
+
+    fn deref(&self) -> &Box<dyn VirtioTransport> {
+        &self.inner
+    }
+}
+
+impl DerefMut for DeviceTransport {
+    fn deref_mut(&mut self) -> &mut Box<dyn VirtioTransport> {
+        &mut self.inner
+    }
+}
+
+impl Drop for DeviceTransport {
+    fn drop(&mut self) {
+        if !self.is_completed {
+            let status = self.inner.read_device_status();
+            let _ = self
+                .inner
+                .write_device_status(status | DeviceStatus::FAILED);
+        }
     }
 }
 

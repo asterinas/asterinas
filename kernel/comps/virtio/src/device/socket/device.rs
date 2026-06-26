@@ -23,7 +23,7 @@ use crate::{
             queue::{EventQueue, RxQueue, TxQueue},
         },
     },
-    transport::{ConfigManager, VirtioTransport},
+    transport::{ConfigManager, DeviceTransport},
 };
 
 /// Socket devices, which facilitate data transfer between the guest and device without using the
@@ -36,7 +36,7 @@ pub struct SocketDevice {
     rx_callback: Once<fn()>,
     event_queue: SpinLock<EventQueue, BottomHalfDisabled>,
     event_callback: Once<fn()>,
-    transport: SpinLock<Box<dyn VirtioTransport>>,
+    transport: SpinLock<DeviceTransport>,
 }
 
 impl SocketDevice {
@@ -46,13 +46,13 @@ impl SocketDevice {
     }
 
     /// Initializes a virtio-vsock device from `transport` and registers it globally.
-    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioVsockConfig::new_manager(transport.as_ref());
+    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
+        let config_manager = VirtioVsockConfig::new_manager(device_transport.as_ref());
         let guest_cid = VirtioVsockConfig::read_guest_cid(&config_manager);
 
-        let tx_queue = TxQueue::new(transport.as_mut())?;
-        let rx_queue = RxQueue::new(transport.as_mut())?;
-        let event_queue = EventQueue::new(transport.as_mut())?;
+        let tx_queue = TxQueue::new(device_transport.as_mut())?;
+        let rx_queue = RxQueue::new(device_transport.as_mut())?;
+        let event_queue = EventQueue::new(device_transport.as_mut())?;
 
         let device = Arc::new(Self {
             config_manager,
@@ -62,7 +62,7 @@ impl SocketDevice {
             rx_callback: Once::new(),
             event_queue: SpinLock::new(event_queue),
             event_callback: Once::new(),
-            transport: SpinLock::new(transport),
+            transport: SpinLock::new(device_transport),
         });
 
         let mut transport = device.transport.lock();
@@ -87,6 +87,9 @@ impl SocketDevice {
         transport.register_cfg_callback(Box::new(config_space_change))?;
         transport.finish_init();
         drop(transport);
+
+        device.rx_queue.lock().notify_if_needed();
+        device.event_queue.lock().notify_if_needed();
 
         // Reload the guest CID after initialization to prevent race conditions if the CID changes
         // at the same time.

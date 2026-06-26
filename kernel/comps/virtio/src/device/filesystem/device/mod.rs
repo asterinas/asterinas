@@ -12,7 +12,7 @@ mod session;
 mod virtio_ops;
 mod waiter;
 
-use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
+use alloc::{string::String, sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use aster_fuse::{
@@ -35,7 +35,7 @@ use waiter::{FuseWaiter, ReplyBufs};
 pub use self::session::{AttrVersion, FuseSession};
 use crate::{
     device::filesystem::pool::{FuseDataBuf, FuseReplyBuf, FuseRequestBuf, SizeClassedDmaPool},
-    transport::VirtioTransport,
+    transport::DeviceTransport,
 };
 
 static FILESYSTEM_DEVICES: Once<SpinLock<Vec<Arc<FileSystemDevice>>, LocalIrqDisabled>> =
@@ -49,7 +49,7 @@ static FILESYSTEM_DEVICES: Once<SpinLock<Vec<Arc<FileSystemDevice>>, LocalIrqDis
 /// guards. The request path takes virtio-fs locks in this order:
 /// VFS sleepable guard -> selected request queue `SpinLock`.
 pub struct FileSystemDevice {
-    transport: SpinLock<Box<dyn VirtioTransport>, LocalIrqDisabled>,
+    transport: SpinLock<DeviceTransport, LocalIrqDisabled>,
     hiprio_queue: Arc<FsRequestQueue>,
     request_queues: Vec<Arc<FsRequestQueue>>,
     to_device_pool: Arc<SizeClassedDmaPool<ToDevice>>,
@@ -61,7 +61,7 @@ pub struct FileSystemDevice {
 
 impl FileSystemDevice {
     fn new(
-        transport: Box<dyn VirtioTransport>,
+        transport: DeviceTransport,
         hiprio_queue: Arc<FsRequestQueue>,
         request_queues: Vec<Arc<FsRequestQueue>>,
         tag: String,

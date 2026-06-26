@@ -23,7 +23,7 @@ use ostd::{error, warn};
 use spin::Once;
 use transport::{DeviceStatus, mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER};
 
-use crate::transport::VirtioTransport;
+use crate::transport::{DeviceTransport, VirtioTransport};
 
 // Set this crate's log prefix for `ostd::log`.
 macro_rules! __log_prefix {
@@ -52,7 +52,12 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
     device::socket::init();
 
     while let Some(mut transport) = pop_device_transport() {
-        // Reset device
+        let device_type = transport.device_type();
+
+        // Follow VirtIO 1.3, 3.1.1 "Driver Requirements: Device Initialization".
+        // Reference: <https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html#x1-1230001>
+
+        // Reset the device.
         transport
             .write_device_status(DeviceStatus::empty())
             .unwrap();
@@ -60,29 +65,48 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
             spin_loop();
         }
 
-        // Set to acknowledge
+        // Set `ACKNOWLEDGE` to report that the guest OS has noticed the device.
+        transport
+            .write_device_status(DeviceStatus::ACKNOWLEDGE)
+            .unwrap();
+
+        // Set `DRIVER` to report that the guest OS knows how to drive the device.
         transport
             .write_device_status(DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER)
             .unwrap();
-        // negotiate features
+
+        // Negotiate the feature subset supported by the driver.
         negotiate_features(&mut transport);
 
         if !transport.is_legacy_version() {
-            // change to features ok status
+            // Set `FEATURES_OK` to report that feature negotiation is complete.
             let status =
                 DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER | DeviceStatus::FEATURES_OK;
             transport.write_device_status(status).unwrap();
+
+            let status = transport.read_device_status();
+            if !status.contains(DeviceStatus::FEATURES_OK) {
+                error!(
+                    "Device rejected negotiated features, device type: {:?}",
+                    device_type
+                );
+                transport
+                    .write_device_status(status | DeviceStatus::FAILED)
+                    .unwrap();
+                continue;
+            }
         }
 
-        let device_type = transport.device_type();
-        let res = match transport.device_type() {
-            VirtioDeviceType::Block => BlockDevice::init(transport),
-            VirtioDeviceType::Console => ConsoleDevice::init(transport),
-            VirtioDeviceType::Entropy => EntropyDevice::init(transport),
-            VirtioDeviceType::Input => InputDevice::init(transport),
-            VirtioDeviceType::Network => NetworkDevice::init(transport),
-            VirtioDeviceType::Socket => SocketDevice::init(transport),
-            VirtioDeviceType::FileSystem => FileSystemDevice::init(transport),
+        let device_transport = DeviceTransport::new(transport);
+
+        let res = match device_type {
+            VirtioDeviceType::Block => BlockDevice::init(device_transport),
+            VirtioDeviceType::Console => ConsoleDevice::init(device_transport),
+            VirtioDeviceType::Entropy => EntropyDevice::init(device_transport),
+            VirtioDeviceType::Input => InputDevice::init(device_transport),
+            VirtioDeviceType::Network => NetworkDevice::init(device_transport),
+            VirtioDeviceType::Socket => SocketDevice::init(device_transport),
+            VirtioDeviceType::FileSystem => FileSystemDevice::init(device_transport),
             _ => {
                 warn!("Found unimplemented device: {:?}", device_type);
                 Ok(())
