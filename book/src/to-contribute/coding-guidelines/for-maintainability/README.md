@@ -9,15 +9,21 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 
 ## Index
 
+**[Design](design.md)**
+- [`single-responsibility`](design.md#single-responsibility): Each module, type, or function has one reason to change; keep functions small and one concept per file.
+- [`dry`](design.md#dry): Give every piece of knowledge a single representation; eliminate duplication once a pattern recurs.
+- [`information-hiding`](design.md#information-hiding): Hide details behind interfaces; expose only what consumers need.
+- [`open-closed`](design.md#open-closed): Extend stable modules through existing interfaces; don't add extension points preemptively.
+- [`least-surprise`](design.md#least-surprise): Names, types, and APIs behave as they suggest; prefer conventions users already know from Rust and Linux.
+- [`coupling-cohesion`](design.md#coupling-cohesion): Keep inter-module connections small and visible; keep each module focused on one purpose.
+- [`consistency`](design.md#consistency): Do similar things the same way; follow an existing convention rather than coining a competing one.
+- [`rust-native`](design.md#rust-native): Learn from Linux's design, not its C idioms; write idiomatic Rust.
+
 **[Process](process.md)**
 - [`imperative-subject`](process.md#imperative-subject): Write each commit subject in the imperative mood, ≤72 chars, verb-first ("Fix", "Add", "Remove"); backtick identifiers.
 - [`atomic-commits`](process.md#atomic-commits): One logical change per commit; don't mix unrelated changes.
 - [`refactor-then-feature`](process.md#refactor-then-feature): Put preparatory refactoring in its own earlier commit(s), separate from the feature.
 - [`focused-prs`](process.md#focused-prs): Keep a PR on a single topic; ensure CI passes before requesting review.
-
-**[Design](design.md)**
-- [`familiar-conventions`](design.md#familiar-conventions): Prefer names and API shapes users know from Rust and Linux; don't coin new terms for known operations.
-- [`hide-impl-details`](design.md#hide-impl-details): Expose only what consumers need; keep implementation details out of the public API.
 
 **[Naming](naming.md)**
 - [`descriptive-names`](naming.md#descriptive-names): Names convey meaning at the point of use; avoid single letters and ambiguous abbreviations.
@@ -27,9 +33,7 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 - [`error-message-format`](naming.md#error-message-format): Lowercase start (unless a proper noun), specific, Linux man-page style for syscall errors.
 
 **[Layout](layout.md)**
-- [`one-concept-per-file`](layout.md#one-concept-per-file): Split a long or multi-concept file into one file per major abstraction.
 - [`top-down-reading`](layout.md#top-down-reading): Order a file top-down: entry points and core flow first, detail below.
-- [`small-functions`](design.md#small-functions): Each function does one thing at one level of abstraction; push detail into helpers.
 - [`logical-paragraphs`](layout.md#logical-paragraphs): Group related statements into blank-line-separated paragraphs, each one sub-step.
 
 **[Comments](comments.md)**
