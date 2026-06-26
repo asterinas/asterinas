@@ -23,6 +23,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsFlags},
             inode::{HardLinkability, Inode, Metadata, MknodType},
+            registry::FsAndRoot,
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -291,7 +292,7 @@ impl Path {
     /// in the current mount namespace.
     pub fn mount(
         &self,
-        fs: Arc<dyn FileSystem>,
+        fs_and_root: FsAndRoot,
         flags: PerMountFlags,
         source: Option<String>,
         ctx: &Context,
@@ -313,7 +314,9 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
 
-        let child_mount = self.mount.do_mount(fs, flags, &self.dentry, source)?;
+        let child_mount = self
+            .mount
+            .do_mount(fs_and_root, flags, &self.dentry, source)?;
 
         Ok(child_mount)
     }

@@ -5,9 +5,9 @@ use crate::{
     fs::{
         file::InodeType,
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FsFlags,
             path::{AT_FDCWD, EmptyPathStr, FsPath, MountPropType, Path, PerMountFlags},
-            registry::{FsCreationCtx, FsType},
+            registry::{DynFsType, FsAndRoot, FsCreationCtx},
         },
     },
     prelude::*,
@@ -222,8 +222,8 @@ fn do_new_mount(
         Some(source)
     };
 
-    let fs = open_fs(source.as_deref(), flags, fs_type, data_addr, ctx)?;
-    target_path.mount(fs, flags.into(), source, ctx)?;
+    let fs_and_root = open_fs(source.as_deref(), flags, fs_type, data_addr, ctx)?;
+    target_path.mount(fs_and_root, flags.into(), source, ctx)?;
     Ok(())
 }
 
@@ -231,10 +231,10 @@ fn do_new_mount(
 fn open_fs(
     source: Option<&str>,
     flags: MountFlags,
-    fs_type: &dyn FsType,
+    fs_type: &dyn DynFsType,
     data_addr: Vaddr,
     ctx: &Context,
-) -> Result<Arc<dyn FileSystem>> {
+) -> Result<FsAndRoot> {
     let user_space = ctx.user_space();
     let data = if data_addr == 0 {
         None
@@ -243,7 +243,7 @@ fn open_fs(
     };
 
     let fs_creation_ctx = FsCreationCtx::new(source, flags.into(), data.as_deref(), ctx);
-    fs_type.create(&fs_creation_ctx)
+    fs_type.get_or_create(&fs_creation_ctx)
 }
 
 bitflags! {

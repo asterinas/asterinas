@@ -1413,6 +1413,8 @@ fn now() -> Duration {
 pub(super) struct RamFsType;
 
 impl FsType for RamFsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "ramfs"
     }

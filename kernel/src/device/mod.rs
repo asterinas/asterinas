@@ -23,6 +23,7 @@ use crate::{
         vfs::{
             inode::MknodType,
             path::{FsPath, Path, PathResolver, PerMountFlags},
+            registry::FsAndRoot,
         },
     },
     prelude::*,
@@ -177,7 +178,7 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     // Mount devtmpfs.
     let dev_path = path_resolver.lookup(&FsPath::try_from("/dev")?)?;
     dev_path.mount(
-        RamFs::new(),
+        FsAndRoot::new(RamFs::new()),
         PerMountFlags::default(),
         Some("ramfs".to_string()),
         ctx,

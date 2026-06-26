@@ -10,8 +10,8 @@ mod super_block;
 mod upcase_table;
 mod utils;
 
-use crate::fs::exfat::fs::ExfatType;
+use crate::fs::exfat::fs::EXFAT_TYPE;
 
 pub(super) fn init() {
-    crate::fs::vfs::registry::register(&ExfatType).unwrap();
+    crate::fs::vfs::registry::register(&EXFAT_TYPE).unwrap();
 }
