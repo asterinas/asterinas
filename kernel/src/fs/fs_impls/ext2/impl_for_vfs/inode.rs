@@ -20,7 +20,10 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FallocMode, FileOps, Inode, Metadata, MknodType, SymbolicLink},
+            inode::{
+                Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
+                SymbolicLink,
+            },
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -207,7 +210,17 @@ impl Inode for Ext2Inode {
         self.rmdir(name)
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
+        if mode == RenameMode::Exchange {
+            return_errno_with_message!(Errno::EINVAL, "RENAME_EXCHANGE is not supported on ext2");
+        }
+
         let target = target
             .downcast_ref::<Ext2Inode>()
             .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;

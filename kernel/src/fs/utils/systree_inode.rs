@@ -14,8 +14,8 @@ use crate::{
         vfs::{
             file_system::{FileSystem, SuperBlock},
             inode::{
-                Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RevalidationPolicy,
-                SymbolicLink,
+                Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
+                RevalidationPolicy, SymbolicLink,
             },
         },
     },
@@ -549,6 +549,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         _old_name: &str,
         _target: &Arc<dyn Inode>,
         _new_name: &str,
+        _mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
