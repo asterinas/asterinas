@@ -1,13 +1,5 @@
 # Layout
 
-### One concept per file (`one-concept-per-file`) {#one-concept-per-file}
-
-When a file grows long or contains multiple distinct concepts,
-split it.
-Each major data structure, each subsystem entry point,
-each significant abstraction
-deserves its own file.
-
 ### Organize code for top-down reading (`top-down-reading`) {#top-down-reading}
 
 A source file should read from top to bottom.
