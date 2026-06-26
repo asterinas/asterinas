@@ -22,7 +22,7 @@ use ostd::{
 use crate::{
     device::{VirtioDeviceError, entropy},
     queue::VirtQueue,
-    transport::VirtioTransport,
+    transport::{TransportGuard, VirtioTransport},
 };
 
 static ENTROPY_DEVICE_ID: AtomicUsize = AtomicUsize::new(0);
@@ -52,12 +52,15 @@ pub struct EntropyDevice {
 }
 
 impl EntropyDevice {
-    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let queue = VirtQueue::new(0, ENTROPY_QUEUE_SIZE, transport.as_mut())?;
+    pub(crate) fn init(mut transport_guard: TransportGuard) -> Result<(), VirtioDeviceError> {
+        let queue = VirtQueue::new(0, ENTROPY_QUEUE_SIZE, transport_guard.as_mut())?;
+        let inner = EntropyDeviceInner::new(queue)?;
+        let cache = EntropyCache::new()?;
+        let transport = transport_guard.into_transport();
         let device = Arc::new(EntropyDevice {
             transport: SpinLock::new(transport),
-            inner: SpinLock::new(EntropyDeviceInner::new(queue)?),
-            cache: Mutex::new(EntropyCache::new()?),
+            inner: SpinLock::new(inner),
+            cache: Mutex::new(cache),
             wait_queue: WaitQueue::new(),
         });
 

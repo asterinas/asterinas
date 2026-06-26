@@ -23,7 +23,7 @@ use crate::{
             queue::{EventQueue, RxQueue, TxQueue},
         },
     },
-    transport::{ConfigManager, VirtioTransport},
+    transport::{ConfigManager, TransportGuard, VirtioTransport},
 };
 
 /// Socket devices, which facilitate data transfer between the guest and device without using the
@@ -46,14 +46,15 @@ impl SocketDevice {
     }
 
     /// Initializes a virtio-vsock device from `transport` and registers it globally.
-    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioVsockConfig::new_manager(transport.as_ref());
+    pub(crate) fn init(mut transport_guard: TransportGuard) -> Result<(), VirtioDeviceError> {
+        let config_manager = VirtioVsockConfig::new_manager(transport_guard.as_ref());
         let guest_cid = VirtioVsockConfig::read_guest_cid(&config_manager);
 
-        let tx_queue = TxQueue::new(transport.as_mut())?;
-        let rx_queue = RxQueue::new(transport.as_mut())?;
-        let event_queue = EventQueue::new(transport.as_mut())?;
+        let tx_queue = TxQueue::new(transport_guard.as_mut())?;
+        let rx_queue = RxQueue::new(transport_guard.as_mut())?;
+        let event_queue = EventQueue::new(transport_guard.as_mut())?;
 
+        let transport = transport_guard.into_transport();
         let device = Arc::new(Self {
             config_manager,
             guest_cid: AtomicU64::new(guest_cid),
@@ -87,6 +88,9 @@ impl SocketDevice {
         transport.register_cfg_callback(Box::new(config_space_change))?;
         transport.finish_init();
         drop(transport);
+
+        device.rx_queue.lock().notify_if_needed();
+        device.event_queue.lock().notify_if_needed();
 
         // Reload the guest CID after initialization to prevent race conditions if the CID changes
         // at the same time.
