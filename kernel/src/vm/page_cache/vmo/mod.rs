@@ -261,6 +261,19 @@ impl Vmo {
             .map(|(_, page)| page)
     }
 
+    /// Returns whether the page at the target offset in the VMO has been committed.
+    pub fn is_committed_page(&self, offset: usize) -> bool {
+        if offset >= self.size() {
+            return false;
+        }
+
+        let page_idx = offset / PAGE_SIZE;
+        let guard = disable_preempt();
+        let mut cursor = self.pages.cursor(&guard, page_idx as u64);
+
+        cursor.load().is_some()
+    }
+
     fn try_commit_with_cursor(
         &self,
         cursor: &mut Cursor<'_, CachePage>,
