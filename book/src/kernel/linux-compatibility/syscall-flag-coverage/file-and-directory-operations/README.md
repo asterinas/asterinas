@@ -27,9 +27,7 @@ Silently-ignored flags:
 
 Partially-supported flags:
 * `O_PATH`
-
-Unsupported flags:
-* `O_TMPFILE`
+* `O_TMPFILE` (only on file systems that support unnamed temporary files, e.g. ramfs)
 
 Supported and unsupported functionality of `openat` are the same as `open`.
 The SCML rules are omitted for brevity.
