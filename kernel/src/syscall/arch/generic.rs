@@ -376,7 +376,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_BRK = 214                    => sys_brk(args[..1]);
             SYS_MUNMAP = 215                 => sys_munmap(args[..2]);
             SYS_MREMAP = 216                 => sys_mremap(args[..5]);
-            SYS_CLONE = 220                  => sys_clone(args[..5], &user_ctx);
+            SYS_CLONE = 220                  => sys_clone(args[..5], &mut user_ctx);
             SYS_EXECVE = 221                 => sys_execve(args[..3], &mut user_ctx);
             SYS_MMAP = 222                   => sys_mmap(args[..6]);
             SYS_FADVISE64 = 223              => sys_fadvise64(args[..4]);
@@ -400,7 +400,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_STATX = 291                  => sys_statx(args[..5]);
             SYS_PIDFD_SEND_SIGNAL = 424      => sys_pidfd_send_signal(args[..4]);
             SYS_PIDFD_OPEN = 434             => sys_pidfd_open(args[..2]);
-            SYS_CLONE3 = 435                 => sys_clone3(args[..2], &user_ctx);
+            SYS_CLONE3 = 435                 => sys_clone3(args[..2], &mut user_ctx);
             SYS_CLOSE_RANGE = 436            => sys_close_range(args[..3]);
             SYS_PIDFD_GETFD = 438            => sys_pidfd_getfd(args[..3]);
             SYS_FACCESSAT2 = 439             => sys_faccessat2(args[..4]);
