@@ -80,6 +80,28 @@ impl dyn BlockDevice {
         let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
+
+    /// Issues a discard (TRIM) request for the given sector-aligned range.
+    ///
+    /// Both `offset` and `len` must be sector-aligned. An empty length is a no-op.
+    pub fn discard(&self, offset: usize, len: usize) -> ostd::Result<()> {
+        if len == 0 {
+            return Ok(());
+        }
+
+        if !is_sector_aligned(offset) || !is_sector_aligned(len) {
+            return Err(ostd::Error::InvalidArgs);
+        }
+
+        let nr_sectors = len / SECTOR_SIZE;
+        let start_sid = Sid::from_offset(offset);
+        let bio = Bio::discard(start_sid, nr_sectors, None);
+        let status = bio.submit_and_wait(self)?;
+        match status {
+            BioStatus::Complete => Ok(()),
+            _ => Err(ostd::Error::IoError),
+        }
+    }
 }
 
 impl VmIo for dyn BlockDevice {
