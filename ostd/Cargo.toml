@@ -20,7 +20,6 @@ align_ext.workspace = true
 bit_field.workspace = true
 bitflags.workspace = true
 bitvec.workspace = true
-cfg-if.workspace = true
 gimli.workspace = true
 id-alloc.workspace = true
 inherit-methods-macro.workspace = true
