@@ -15,7 +15,9 @@ use crate::{
     fs::vfs::{inode::Inode, path::Path},
     prelude::*,
     process::{
-        ContextUnshareAdminApi, Credentials, Process, pid_table,
+        ContextUnshareAdminApi, Credentials, Process,
+        credentials::capabilities::CapSet,
+        pid_table,
         posix_thread::{
             AsPosixThread, ContextPthreadAdminApi, ThreadLocal, ThreadName, ptrace::PtraceEvent,
             sigkill_other_threads,
@@ -311,6 +313,13 @@ fn apply_caps_from_exec(
     credentials: Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
+    // Clear the ambient capability set when executing a privileged file.
+    // Currently, only setuid/setgid files are considered privileged.
+    // TODO: Also clear ambient capabilities when executing files with file capabilities
+    // (security.capability xattr) once file capabilities are supported.
+    if elf_inode.mode()?.has_set_uid() || elf_inode.mode()?.has_set_gid() {
+        credentials.set_ambient_capset(CapSet::empty());
+    }
     set_uid_from_elf(process, &credentials, elf_inode)?;
     set_gid_from_elf(process, &credentials, elf_inode)?;
     credentials.set_keep_capabilities(false)?;
