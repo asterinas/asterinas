@@ -1,0 +1,28 @@
+# Native Codex config for the benchmark,
+# seeded into a private CODEX_HOME by run.sh (see codex.json).
+# Read by the orchestrator AND every nested `codex exec` persona pass (they inherit CODEX_HOME),
+# so model/effort propagate through the fan-out.
+#
+# `model` is PINNED for reproducibility
+# — a profile documents one exact, known-good configuration.
+# It must be a model your Codex account can serve
+# (model availability differs by account:
+# e.g. a ChatGPT-account login exposes "gpt-5.5",
+# an API key may expose "gpt-5-codex").
+# Change it to pin a different config.
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+
+# Least privilege the review still needs:
+# confine writes to the worktree + TMPDIR
+# (a derailed agent cannot touch $HOME, /etc, or other repos),
+# and never pause for approval.
+# This REPLACES the old `danger-full-access`,
+# which threw write-confinement away for mere convenience.
+# `network_access` (docs/spec lookups during verification)
+# belongs under a [sandbox_workspace_write] table,
+# but run_agent.sh's config seeder is flat-only,
+# so the profile's `codex exec` passes it on the CLI:
+# `-c sandbox_workspace_write.network_access=true` (see agent_profiles/codex/profile.json).
+sandbox_mode = "workspace-write"
+approval_policy = "never"

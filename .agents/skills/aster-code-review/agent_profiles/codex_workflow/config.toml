@@ -1,0 +1,45 @@
+# Codex config for the GitHub PR-review workflow
+# (see .github/workflows/invoke_aster_code_review.yml).
+# Auth is the OPENAI_API_KEY secret, inherited from the workflow env
+# — so, unlike the `codex` profile, there is no `inherit` of a ChatGPT `auth.json`.
+#
+# API-KEY AUTH.
+# codex's built-in `openai` provider authenticates as a ChatGPT account
+# (a websocket transport to /v1/responses) and never attaches the API key,
+# so with only OPENAI_API_KEY it fails with 401 "missing bearer".
+# We therefore define an explicit provider that authenticates with the key:
+# `env_key` names the env var sent as `Authorization: Bearer`,
+# and `wire_api = "responses"`
+# (codex v0.142 removed "chat", leaving "responses" as the only wire API)
+# routes over HTTPS /v1/responses.
+# `model_provider` selects it.
+#
+# `model` is PINNED for reproducibility;
+# gpt-5.5 is served by the API key.
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+model_provider = "openai_apikey"
+
+# SANDBOX.
+# Unlike the `codex` profile (workspace-write, for a dev machine),
+# the CI job runs inside an ephemeral GitHub Actions container
+# that is ALREADY the isolation boundary
+# — and codex's own `workspace-write` sandbox cannot run there:
+# it shells out via bubblewrap,
+# which needs unprivileged user namespaces that the container disables
+# ("bwrap: ... kernel does not allow non-privileged user namespaces"),
+# so every command codex runs is rejected.
+# We therefore disable codex's in-container sandbox and let the container confine it.
+# `approval_policy` stays `never` (no human in CI).
+# Network is fully available (needed for the API and for docs/spec lookups during verification).
+sandbox_mode = "danger-full-access"
+approval_policy = "never"
+
+# The API-key provider:
+# same OpenAI endpoint, but authenticated with the key rather than a ChatGPT session.
+# run_agent.sh seeds this table verbatim into CODEX_HOME.
+[model_providers.openai_apikey]
+name = "OpenAI (API key)"
+base_url = "https://api.openai.com/v1"
+wire_api = "responses"
+env_key = "OPENAI_API_KEY"

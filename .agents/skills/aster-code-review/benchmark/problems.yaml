@@ -1,0 +1,273 @@
+# benchmark/problems.yaml — the review-problem suite (one queryable file).
+#
+# Schema: see ../spec/benchmark.md ("Schema").
+# Conventions:
+#   * Prose fields (source, desc, fix, expectation) are block scalars (>) and may
+#     use Markdown `backticks` around code — literal text in YAML.
+#   * `commit` (REQUIRED, top-level) is the snapshot every problem checks out (detached HEAD).
+#     `remote` (OPTIONAL, top-level) is where to fetch `commit` from if it is not already local;
+#     it defaults to https://github.com/asterinas/asterinas.
+#       - In `diff` mode `commit` must be a full 40-char SHA (it is fetched by SHA:
+#         PR-derived commits already sit on upstream main, synthetic ones are dangling
+#         on the fork).
+#       - In `files` mode `commit` may be any local commit-ish (e.g. `<fix>^`).
+#   * review_mode has EXACTLY ONE of `diff` or `files`:
+#       diff  -> {base}: review the change `base..HEAD` (each commit's message + diff).
+#                `base` is a ref relative to the checkout; for a single introducing
+#                commit it is `HEAD^` (the commit's parent).
+#       files -> a list of paths reviewed at `commit`.
+#   * Each defect carries: desc (what is wrong), expectation (the criterion the
+#     grader matches a review comment against), severity (informative), and a `fix`
+#     unless `is_negative: true`.
+#   * INTEGRITY: the `defects` (and `source`) are ground truth for the GRADER only —
+#     the harness never shows them to the review agent.
+
+- problem_id: 0001-mprotect-merge-unwrap
+  commit: 7feb803eaba2a70eb884e7984d4ce11ece5d85f9
+  source: >
+    PR-derived. Introduced by `7feb803ea` ("Fix cases where some pages are not
+    mapped"); fixed by `c7b633e9b`, which replaced the `unwrap` with a `let-else
+    continue`. The change under review is the introducing commit itself, fetched
+    by full SHA from upstream `main` (no local patch).
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/src/vm/vmar/vmar_impls/protect.rs }
+      persona: development
+      grounding: "Reachable panic"
+      severity: critical
+      desc: >
+        The protect loop snapshots the intersecting mappings; for each it skips
+        any whose perms already equal the target (`perms == stored & ALL_PERMS`),
+        else it `remove`s the entry, protects it, and re-inserts with
+        `insert_try_merge`. A merge coalesces an adjacent mapping that has equal
+        perms — including a not-yet-processed snapshot entry — removing its B-tree
+        key, after which the loop's later `inner.remove(&start).unwrap()` on that
+        key panics. It is reachable from userspace: `mprotect` builds `VmPerms`
+        via `from_bits_truncate(perms)` without masking to `ALL_PERMS`, so a caller
+        can set a `MAY_*` bit (e.g. `mprotect(p, len, PROT_READ | 0x8)`) that
+        defeats the perms-equality skip for the absorbed neighbour while still
+        letting the merge fire.
+      fix: >
+        Do not `unwrap()` a `remove` whose key a merge may already have absorbed —
+        skip a missing entry with a `let-else`/match (as `c7b633e9b` did) — and
+        mask user `prot` to `ALL_PERMS` in `mprotect` so a `MAY_*` bit cannot
+        defeat the perms-equality skip.
+      expectation: >
+        A reviewer should flag the `remove(...).unwrap()` as a reachable panic
+        (bonus: the missing prot-bit masking in `mprotect`).
+
+- problem_id: 0002-fair-weight-race
+  commit: 4571fabc7a0b8cb34e2cc82fdd7fc2d50a36d0f3
+  source: >
+    PR-derived. Introduced by `4571fabc7` ("Fix integer overflow due to fair
+    weight change"); fixed by `4f772901f`, which serializes updates behind a
+    `SpinLock`. The change under review is the introducing commit itself, fetched
+    by full SHA from upstream `main` (no local patch).
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/src/sched/sched_class/fair.rs }
+      persona: development
+      grounding: careful-atomics
+      severity: major
+      desc: >
+        The change implements weight updates with an ad-hoc lock-free scheme
+        across two independent atomics (`weight` with a `HAS_PENDING` bit and
+        `pending_weight`) plus a `compare_exchange_weak` loop. The store of
+        `pending_weight` and the OR-in of the pending bit are not atomic together,
+        so a concurrent update can be lost or a stale `pending_weight` read.
+      fix: >
+        Replace the ad-hoc multi-atomic protocol with a single atomic word or a
+        lock (the fix serializes updates behind a `SpinLock`).
+      expectation: >
+        A reviewer should flag the multi-word lock-free protocol as unsound and
+        ask for a single atomic or a lock.
+
+- problem_id: 0003-semop-timeout-toctou
+  commit: c4f3a1b30^
+  source: >
+    Fix-anchored. `commit` is the parent of the fix `c4f3a1b30`; the TOCTOU
+    is present at this snapshot and nothing in the file names it (leak-free). The
+    bug postdates a clean introducing commit, so files mode is used instead of a
+    patch.
+  review_mode:
+    files:
+      - kernel/src/ipc/semaphore/system_v/sem.rs
+  defects:
+    - target: { kind: file, path: kernel/src/ipc/semaphore/system_v/sem.rs }
+      persona: development
+      grounding: atomic-critical-sections
+      severity: major
+      desc: >
+        After the waiter wakes, `sem_op` reloads the operation's status and then
+        acts on it in steps that are not atomic with respect to a concurrent
+        removal or wakeup: the status it observed can change before it is acted
+        upon, so an operation that should have completed is reported as a spurious
+        `EAGAIN` (or the pending entry is mishandled).
+      fix: >
+        Make the post-wait status load and the action it drives atomic —
+        re-validate under the sem-set lock before acting (as `c4f3a1b30` does).
+      expectation: >
+        A reviewer should flag the check-then-act spanning the wait as a race.
+
+- problem_id: 0004-semop-dead-timer-retain
+  commit: 6ce50fab1c47a33960861675bb3627e9d9e2fbf8
+  source: >
+    PR-derived. Introduced by `6ce50fab1` ("Refactor semaphore to support atomic
+    semop"); fixed by `11a639f09`. The change under review is the introducing
+    commit itself — it carries TWO distinct defects — fetched by full SHA from
+    upstream `main` (no local patch).
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/src/ipc/semaphore/system_v/sem.rs }
+      persona: development
+      grounding: raii
+      severity: critical
+      desc: >
+        The `JiffiesTimer` created for the timeout is bound to a local that is
+        dropped at the end of its scope, so the timer never fires and `semop`
+        timeouts are effectively ignored.
+      fix: >
+        Keep the timer alive across the wait — store the `Arc<Timer>` for the
+        duration of `waiter.wait()` (the fix stores it so it outlives the wait).
+      expectation: >
+        A reviewer should flag the timer/guard that is constructed but never kept
+        alive.
+    - target: { kind: file, path: kernel/src/ipc/semaphore/system_v/sem.rs }
+      persona: development
+      grounding: "Over-broad removal"
+      severity: major
+      desc: >
+        Cleanup uses `pending_ops.retain(|op| op.pid != pid)`, which removes ALL
+        pending ops for that PID instead of the one specific op, corrupting other
+        in-flight operations.
+      fix: >
+        Match the specific timed-out op by identity, e.g.
+        `!Arc::ptr_eq(&op.status, &status)`.
+      expectation: >
+        A reviewer should flag the over-broad predicate.
+
+- problem_id: 0005-virtio-blk-flush-desc-count
+  commit: 32572e22d9d9c7f49826a577484a0c57a6154f1e
+  source: >
+    PR-derived. Introduced by `32572e22d` ("Implement flush for virtio-blk");
+    fixed by `5f6520d99`, which sets the descriptor count to 2. The change under
+    review is the introducing commit itself, fetched by full SHA from upstream
+    `main` (no local patch).
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/comps/virtio/src/device/block/device.rs }
+      persona: development
+      grounding: "Off by one"
+      severity: major
+      desc: >
+        `flush` submits two descriptors (a `req_slice` input and a `resp_slice`
+        output) but hardcodes `let num_used_descs = 1;`, so the
+        `num_used_descs > queue.available_desc()` guard can pass with only one free
+        slot, exhausting the virtqueue.
+      fix: >
+        Set `num_used_descs = 2` to match the two descriptors enqueued.
+      expectation: >
+        A reviewer should flag that the descriptor count does not match the number
+        of buffers enqueued.
+
+- problem_id: 0006-trapframe-pad-alignment
+  commit: f4e29d67c^
+  source: >
+    Fix-anchored. `commit` is the parent of the fix `f4e29d67c` (which
+    restored `_pad` and added the alignment `const_assert!`). Leak-free: at this
+    snapshot nothing in the files names the defect.
+  review_mode:
+    files:
+      - ostd/src/arch/x86/trap/mod.rs
+      - ostd/src/arch/x86/trap/trap.S
+  defects:
+    - target: { kind: file, path: ostd/src/arch/x86/trap/mod.rs }
+      persona: hardware
+      grounding: 16b-align-rsp-before-call
+      severity: critical
+      desc: >
+        `TrapFrame` is not a multiple of 16 bytes, so when the kernel trap path
+        materializes one on the stack and `call`s the Rust trap handler, `%rsp` is
+        misaligned by 8 at the call boundary, violating the System V AMD64 ABI (UB
+        for SSE instructions such as `movaps`).
+      fix: >
+        Restore the padding so `size_of::<TrapFrame>()` is a multiple of 16, and
+        add a `const_assert!` to enforce the invariant.
+      expectation: >
+        A reviewer should flag the struct's size / stack misalignment against the
+        trap-entry path as an ABI/soundness violation — reasoning from the code
+        alone, since at this commit no comment or `const_assert!` points at the
+        invariant. A matching comment may come from the Hardware persona or from
+        the Security persona (as an `unsafe` / soundness hazard).
+
+- problem_id: 0007-getcwd-erange
+  commit: 6678565c80bb615b90ba124ce47beb0642738492
+  source: >
+    Manual. A handcrafted regression of a real historical bug (it predates the
+    current crate layout, so it cannot be sourced from its introducing commit):
+    the commit reintroduces `getcwd` truncating into an undersized user buffer
+    instead of returning `ERANGE`, onto a sound base where `getcwd` is correct. It
+    touches only `getcwd.rs` and leaves the regression test in place, so the change
+    under review contains no hint of the defect. The commit is synthesized and
+    pushed to the fork as a dangling commit; because a fork shares GitHub's object
+    store with upstream, it is fetchable by full SHA from upstream too (no local
+    patch, no `remote` needed).
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/getcwd.rs }
+      persona: security
+      grounding: validate-at-boundaries
+      severity: major
+      desc: >
+        The code clamps the user buffer with `let write_len = len.min(bytes.len())`
+        and writes a truncated path, returning the truncated length, instead of
+        returning `ERANGE` when the user buffer is too small (the Linux `getcwd`
+        contract).
+      fix: >
+        Return `ERANGE` when `bytes.len() > len` instead of clamping with `min()`
+        and truncating.
+      expectation: >
+        A reviewer should flag that silently clamping a user-supplied length hides
+        the "buffer too small" error the syscall must report. A matching comment
+        may come from the Security persona or the Development persona (incorrect
+        error semantics).
+
+- problem_id: 0008-noncompliant-commit-message
+  commit: d4508b8f51a849c1fbb8f5314db49b956a58a60b
+  source: >
+    Manual. A handcrafted commit whose code change is benign but whose subject
+    ("made some changes to getcwd") is vague and past-tense — to exercise
+    commit-message review in `diff` mode. Synthesized commit (not from history),
+    pushed to the fork as a dangling commit; it is fetchable by full SHA from
+    upstream via GitHub's shared fork object store (no local patch, no `remote`
+    needed).
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target:
+        kind: commit_message
+      persona: maintainability
+      grounding: imperative-subject
+      severity: minor
+      desc: >
+        The commit subject "made some changes to getcwd" is past-tense and vague:
+        it does not summarize *what* the change does in the imperative mood, as
+        Asterinas requires. (The code change itself — a clarifying comment — is
+        fine; the message is the defect.)
+      fix: >
+        Rewrite the subject in the imperative mood, naming the actual change, e.g.
+        "Document sys_getcwd's user-buffer behavior".
+      expectation: >
+        A reviewer should flag the non-imperative, non-descriptive subject and ask
+        for a specific imperative summary.
