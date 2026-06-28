@@ -83,6 +83,18 @@ pub fn sys_prctl(
             let credentials = ctx.credentials_mut();
             credentials.drop_bounding_capability(capability)?;
         }
+        PrctlCmd::PR_CAP_AMBIENT(cmd) => match cmd {
+            CapAmbientCmd::IsSet(_capability) => {
+                return Ok(SyscallReturn::Return(0));
+            }
+            CapAmbientCmd::Raise(_capability) => {
+                return_errno_with_message!(
+                    Errno::EPERM,
+                    "raising ambient capabilities is not supported"
+                );
+            }
+            CapAmbientCmd::Lower | CapAmbientCmd::ClearAll => {}
+        },
         PrctlCmd::PR_GET_SECUREBITS => {
             let credentials = ctx.posix_thread.credentials();
             let securebits = credentials.securebits();
@@ -142,6 +154,12 @@ const PR_SET_TIMERSLACK: i32 = 29;
 const PR_GET_TIMERSLACK: i32 = 30;
 const PR_SET_CHILD_SUBREAPER: i32 = 36;
 const PR_GET_CHILD_SUBREAPER: i32 = 37;
+const PR_CAP_AMBIENT: i32 = 47;
+
+const PR_CAP_AMBIENT_IS_SET: u64 = 1;
+const PR_CAP_AMBIENT_RAISE: u64 = 2;
+const PR_CAP_AMBIENT_LOWER: u64 = 3;
+const PR_CAP_AMBIENT_CLEAR_ALL: u64 = 4;
 
 #[expect(non_camel_case_types)]
 #[derive(Clone, Copy, Debug)]
@@ -156,12 +174,21 @@ pub enum PrctlCmd {
     PR_GET_NAME(Vaddr),
     PR_CAPBSET_READ(CapSet),
     PR_CAPBSET_DROP(CapSet),
+    PR_CAP_AMBIENT(CapAmbientCmd),
     PR_GET_SECUREBITS,
     PR_SET_SECUREBITS(SecureBits),
     PR_SET_TIMERSLACK(u64),
     PR_GET_TIMERSLACK,
     PR_SET_CHILD_SUBREAPER(bool),
     PR_GET_CHILD_SUBREAPER(Vaddr),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CapAmbientCmd {
+    IsSet(CapSet),
+    Raise(CapSet),
+    Lower,
+    ClearAll,
 }
 
 #[repr(u64)]
@@ -173,7 +200,7 @@ pub enum Dumpable {
 }
 
 impl PrctlCmd {
-    fn from_args(option: i32, arg2: u64, _arg3: u64, _arg4: u64, _arg5: u64) -> Result<PrctlCmd> {
+    fn from_args(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Result<PrctlCmd> {
         match option {
             PR_SET_PDEATHSIG => {
                 let signum = SigNum::try_from(arg2 as u8)?;
@@ -188,6 +215,9 @@ impl PrctlCmd {
             PR_GET_NAME => Ok(PrctlCmd::PR_GET_NAME(arg2 as _)),
             PR_CAPBSET_READ => Ok(PrctlCmd::PR_CAPBSET_READ(parse_capability(arg2)?)),
             PR_CAPBSET_DROP => Ok(PrctlCmd::PR_CAPBSET_DROP(parse_capability(arg2)?)),
+            PR_CAP_AMBIENT => Ok(PrctlCmd::PR_CAP_AMBIENT(CapAmbientCmd::from_args(
+                arg2, arg3, arg4, arg5,
+            )?)),
             PR_GET_SECUREBITS => Ok(PrctlCmd::PR_GET_SECUREBITS),
             PR_SET_SECUREBITS => Ok(PrctlCmd::PR_SET_SECUREBITS(SecureBits::try_from(
                 arg2 as u16,
@@ -200,6 +230,33 @@ impl PrctlCmd {
                 debug!("prctl cmd number: {}", option);
                 return_errno_with_message!(Errno::EINVAL, "unsupported prctl command");
             }
+        }
+    }
+}
+
+impl CapAmbientCmd {
+    fn from_args(operation: u64, capability: u64, arg4: u64, arg5: u64) -> Result<Self> {
+        if arg4 != 0 || arg5 != 0 {
+            return_errno_with_message!(Errno::EINVAL, "unused PR_CAP_AMBIENT arguments are not 0");
+        }
+
+        match operation {
+            PR_CAP_AMBIENT_IS_SET => Ok(Self::IsSet(parse_capability(capability)?)),
+            PR_CAP_AMBIENT_RAISE => Ok(Self::Raise(parse_capability(capability)?)),
+            PR_CAP_AMBIENT_LOWER => {
+                parse_capability(capability)?;
+                Ok(Self::Lower)
+            }
+            PR_CAP_AMBIENT_CLEAR_ALL => {
+                if capability != 0 {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "PR_CAP_AMBIENT_CLEAR_ALL requires capability to be 0"
+                    );
+                }
+                Ok(Self::ClearAll)
+            }
+            _ => return_errno_with_message!(Errno::EINVAL, "invalid PR_CAP_AMBIENT operation"),
         }
     }
 }
