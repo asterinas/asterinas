@@ -56,7 +56,8 @@ pub fn spawn_init_process(
 fn create_default_init_process(argv: Vec<CString>, envp: Vec<CString>) -> Result<Arc<Process>> {
     // Linux probes the fallback init executables in this order:
     // <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1634>.
-    const DEFAULT_INIT_EXEC_PATHS: &[&str] = &["/sbin/init", "/etc/init", "/bin/init", "/bin/sh"];
+    const DEFAULT_INIT_EXEC_PATHS: &[&str] =
+        &["/init", "/sbin/init", "/etc/init", "/bin/init", "/bin/sh"];
 
     let mut last_error = None;
 
