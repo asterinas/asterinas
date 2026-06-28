@@ -2,7 +2,6 @@
 
 use core::ops::Range;
 
-use cfg_if::cfg_if;
 pub(crate) use util::{
     __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
 };
@@ -179,12 +178,13 @@ macro_rules! parse_flags {
 }
 
 impl PageTableEntry {
-    cfg_if! {
-        if #[cfg(feature = "cvm_guest")] {
+    cfg_select! {
+        feature = "cvm_guest" => {
             const PHYS_ADDR_MASK_LVL1: usize = 0x7_ffff_ffff_f000;
             const PHYS_ADDR_MASK_LVL2: usize = 0x7_ffff_ffe0_0000;
             const PHYS_ADDR_MASK_LVL3: usize = 0x7_ffff_c000_0000;
-        } else {
+        }
+        _ => {
             const PHYS_ADDR_MASK_LVL1: usize = 0xf_ffff_ffff_f000;
             const PHYS_ADDR_MASK_LVL2: usize = 0xf_ffff_ffe0_0000;
             const PHYS_ADDR_MASK_LVL3: usize = 0xf_ffff_c000_0000;

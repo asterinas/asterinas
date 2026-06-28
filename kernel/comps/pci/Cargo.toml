@@ -8,7 +8,6 @@ edition.workspace = true
 [dependencies]
 align_ext.workspace = true
 bitflags.workspace = true
-cfg-if.workspace = true
 component.workspace = true
 int-to-c-enum.workspace = true
 ostd.workspace = true
