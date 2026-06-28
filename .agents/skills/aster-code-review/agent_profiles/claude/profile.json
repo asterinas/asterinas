@@ -1,0 +1,3 @@
+{
+  "command": ["claude", "-p", "--allowedTools", "Bash Read Write Edit Task Glob Grep WebFetch WebSearch", "--model", "opus", "--effort", "high", "{prompt}"]
+}
