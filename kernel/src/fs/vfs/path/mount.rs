@@ -42,7 +42,12 @@ pub enum MountPropType {
     /// do not propagate to or from the private mounts.
     #[default]
     Private,
-    // TODO: Implement other propagation types.
+    /// A shared mount propagates mount and unmount events to peer mounts.
+    Shared,
+    /// A slave mount receives propagation events from its master.
+    Slave,
+    /// An unbindable mount cannot be bind-mounted.
+    Unbindable,
 }
 
 static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
