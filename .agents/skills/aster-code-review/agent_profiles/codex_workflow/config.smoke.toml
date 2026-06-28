@@ -1,0 +1,4 @@
+# Smoke overlay for the CI profile.
+# Shallow-merged over config.toml when ACR_PROFILE_VARIANT=smoke (a smoke key wins).
+# Low reasoning effort keeps `make smoke` quick (2 problems, no grading).
+model_reasoning_effort = "low"

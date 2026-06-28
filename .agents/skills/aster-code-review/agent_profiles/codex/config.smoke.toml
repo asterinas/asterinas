@@ -1,0 +1,6 @@
+# Smoke-test overlay for codex/config.toml — a faster, cheaper config for speed.
+# Merged over config.toml (shallow, per-key): keys here win.
+# See spec/benchmark.md.
+# (The benchmark stays pinned to config.toml's gpt-5.5/high; this is smoke-only.)
+model = "gpt-5.4-mini"
+model_reasoning_effort = "low"
