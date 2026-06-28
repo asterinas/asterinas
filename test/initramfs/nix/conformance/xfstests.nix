@@ -1,6 +1,10 @@
 { lib, stdenvNoCC, pkgs, conformanceSrc }:
 
 let
+  xfstestsPackage = pkgs.xfstests.overrideAttrs (oldAttrs: {
+    NIX_CFLAGS_COMPILE = (oldAttrs.NIX_CFLAGS_COMPILE or "") + " -std=gnu17";
+  });
+
   standaloneCoreutils = pkgs.coreutils.override { singleBinary = false; };
 
   runtimeDeps = with pkgs; [
@@ -31,7 +35,7 @@ in stdenvNoCC.mkDerivation {
 
   buildCommand = ''
     mkdir -p $out/xfstests
-    cp -r ${pkgs.xfstests}/lib/xfstests/* $out/xfstests/
+    cp -r ${xfstestsPackage}/lib/xfstests/* $out/xfstests/
     cp ${conformanceSrc}/xfstests/run_xfstests.sh $out/xfstests/
     sed -i "s|__RUNTIME_PATH__|${runtimePath}|" $out/xfstests/run_xfstests.sh
     chmod +x $out/xfstests/run_xfstests.sh
