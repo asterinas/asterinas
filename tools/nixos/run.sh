@@ -46,7 +46,7 @@ case "$MODE" in
         ;;
     iso)
         ASTER_IMAGE_PATH=${ASTERINAS_DIR}/target/nixos/asterinas.img
-        NIXOS_DISK_SIZE_IN_MB=${NIXOS_DISK_SIZE_IN_MB:-8192}
+        NIXOS_DISK_SIZE_IN_MB=${NIXOS_DISK_SIZE_IN_MB:-12288}
         ISO_IMAGE_PATH=$(find "${ASTERINAS_DIR}/target/nixos/iso_image/iso" -name "*.iso" | head -n 1)
 
         if [ ! -f "$ISO_IMAGE_PATH" ]; then

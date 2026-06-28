@@ -1,0 +1,137 @@
+--- a/src/basic/process-util.c
++++ b/src/basic/process-util.c
+@@ -2006,6 +2006,32 @@
+ 
+ DEFINE_TRIVIAL_CLEANUP_FUNC_FULL(posix_spawnattr_t*, posix_spawnattr_destroy, NULL);
+ 
++static bool spawn_errno_is_fallback(int r) {
++        return ERRNO_IS_NOT_SUPPORTED(r) || ERRNO_IS_PRIVILEGE(r) || IN_SET(r, -EINVAL, EINVAL);
++}
++
++static int fork_execve_wrapper(
++                const char *path,
++                char * const *argv,
++                char * const *envp,
++                const sigset_t *mask,
++                PidRef *ret_pidref) {
++        pid_t pid;
++
++        pid = fork();
++        if (pid < 0)
++                return -errno;
++        if (pid == 0) {
++                if (sigprocmask(SIG_SETMASK, mask, NULL) < 0)
++                        _exit(EXIT_FAILURE);
++                execve(path, argv, envp);
++                _exit(EXIT_FAILURE);
++        }
++
++        *ret_pidref = PIDREF_MAKE_FROM_PID(pid);
++        return 0;
++}
++
+ int posix_spawn_wrapper(
+                 const char *path,
+                 char * const *argv,
+@@ -2050,22 +2076,36 @@
+                 _cleanup_free_ char *resolved_cgroup = NULL;
+ 
+                 r = cg_get_path(cgroup, /* suffix= */ NULL, &resolved_cgroup);
+-                if (r < 0)
+-                        return r;
+-
+-                cgroup_fd = open(resolved_cgroup, O_PATH|O_DIRECTORY|O_CLOEXEC);
+-                if (cgroup_fd < 0)
+-                        return -errno;
+-
+-                r = posix_spawnattr_setcgroup_np(&attr, cgroup_fd);
+-                if (r != 0)
+-                        return -r;
+-
+-                flags |= POSIX_SPAWN_SETCGROUP;
++                if (r < 0) {
++                        if (!spawn_errno_is_fallback(r))
++                                return r;
++                        have_clone_into_cgroup = false;
++                } else {
++                        cgroup_fd = open(resolved_cgroup, O_PATH|O_DIRECTORY|O_CLOEXEC);
++                        if (cgroup_fd < 0) {
++                                r = -errno;
++                                if (!spawn_errno_is_fallback(r))
++                                        return r;
++                                have_clone_into_cgroup = false;
++                        } else {
++                                r = posix_spawnattr_setcgroup_np(&attr, cgroup_fd);
++                                if (r != 0) {
++                                        if (!spawn_errno_is_fallback(r))
++                                                return -r;
++                                        have_clone_into_cgroup = false;
++                                } else
++                                        flags |= POSIX_SPAWN_SETCGROUP;
++                        }
++                }
+         }
+ #endif
+ 
+         r = posix_spawnattr_setflags(&attr, flags);
++        if (r != 0 && FLAGS_SET(flags, POSIX_SPAWN_SETCGROUP) && spawn_errno_is_fallback(r)) {
++                have_clone_into_cgroup = false;
++                flags &= ~POSIX_SPAWN_SETCGROUP;
++                r = posix_spawnattr_setflags(&attr, flags);
++        }
+         if (r != 0)
+                 return -r;
+         r = posix_spawnattr_setsigmask(&attr, &mask);
+@@ -2075,11 +2115,16 @@
+ #if HAVE_PIDFD_SPAWN
+         _cleanup_close_ int pidfd = -EBADF;
+ 
++        /* Asterinas does not provide pidfd semantics that systemd can use for
++         * tracking the executor. Avoid pidfd_spawn() entirely so that PID 1
++         * never has to recover after an already-spawned but untracked child. */
++        goto fallback_posix_spawn;
++
+         r = pidfd_spawn(&pidfd, path, NULL, &attr, argv, envp);
+         if (ERRNO_IS_NOT_SUPPORTED(r) && FLAGS_SET(flags, POSIX_SPAWN_SETCGROUP) && cg_is_threaded(cgroup) > 0)
+                 return -EUCLEAN; /* clone3() could also return EOPNOTSUPP if the target cgroup is in threaded mode,
+                                     turn that into something recognizable */
+-        if ((ERRNO_IS_NOT_SUPPORTED(r) || ERRNO_IS_PRIVILEGE(r)) &&
++        if (spawn_errno_is_fallback(r) &&
+             FLAGS_SET(flags, POSIX_SPAWN_SETCGROUP)) {
+                 /* Compiled on a newer host, or seccomp&friends blocking clone3()? Fallback, but
+                  * need to disable POSIX_SPAWN_SETCGROUP, which is what redirects to clone3().
+@@ -2096,6 +2141,8 @@
+ 
+                 r = pidfd_spawn(&pidfd, path, NULL, &attr, argv, envp);
+         }
++        if (spawn_errno_is_fallback(r))
++                goto fallback_posix_spawn;
+         if (r != 0)
+                 return -r;
+ 
+@@ -2104,19 +2151,22 @@
+                 return r;
+ 
+         return FLAGS_SET(flags, POSIX_SPAWN_SETCGROUP);
+-#else
++
++fallback_posix_spawn:
++#endif
+         pid_t pid;
+ 
+         r = posix_spawn(&pid, path, NULL, &attr, argv, envp);
++        if (spawn_errno_is_fallback(r))
++                return fork_execve_wrapper(path, argv, envp, &mask, ret_pidref);
+         if (r != 0)
+                 return -r;
+ 
+         r = pidref_set_pid(ret_pidref, pid);
+         if (r < 0)
+-                return r;
++                *ret_pidref = PIDREF_MAKE_FROM_PID(pid);
+ 
+         return 0; /* We did not use CLONE_INTO_CGROUP so return 0, the caller will have to move the child */
+-#endif
+ }
+ 
+ int proc_dir_open(DIR **ret) {

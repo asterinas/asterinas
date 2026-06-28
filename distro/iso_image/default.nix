@@ -1,4 +1,4 @@
-{ pkgs ? import <nixpkgs> { }, autoInstall ? false, extra-substituters ? ""
+{ pkgs ? import ../nixpkgs.nix { }, autoInstall ? false, extra-substituters ? ""
 , config-file-name ? "configuration.nix", extra-trusted-public-keys ? ""
 , target_platform ? "x86_64-linux", version ? "", ... }:
 let

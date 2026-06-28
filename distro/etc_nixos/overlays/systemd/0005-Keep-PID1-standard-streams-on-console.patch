@@ -1,0 +1,37 @@
+From c94c383262a165ed347a5a58f7cf8b61fb99e939 Mon Sep 17 00:00:00 2001
+From: Chen Chengjun <chenchengjun.ccj@antgroup.com>
+Date: Sat, 27 Jun 2026 13:20:00 +0000
+Subject: [PATCH] Keep PID1 standard streams on console
+
+Asterinas starts the first userspace process with stdin, stdout, and
+stderr already connected to /dev/console. This is useful for early boot
+diagnostics and is also how the previous NixOS image reached the login
+shell.
+
+systemd 260 redirects PID1's standard streams to /dev/null during early
+startup. On Asterinas this closes the inherited hvc0 stderr stream and
+can leave the boot without visible progress before getty starts. Keep
+the inherited console descriptors instead.
+---
+ src/core/main.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/src/core/main.c b/src/core/main.c
+index 5350e4579e..e5a46a3407 100644
+--- a/src/core/main.c
++++ b/src/core/main.c
+@@ -3220,9 +3220,8 @@
+                  * instances since they never log into the console. */
+                 log_show_color(colors_enabled());
+ 
+-                r = make_null_stdio();
+-                if (r < 0)
+-                        log_warning_errno(r, "Failed to redirect standard streams to /dev/null, ignoring: %m");
++                /* Keep Asterinas' inherited /dev/console descriptors so early
++                 * PID1 and getty diagnostics remain visible on hvc0. */
+ 
+                 /* Load the kernel modules early. */
+                 if (!skip_setup)
+                         (void) kmod_setup();
+-- 
+2.50.1

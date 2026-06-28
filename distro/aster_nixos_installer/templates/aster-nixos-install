@@ -137,6 +137,7 @@ COMMON_NIX_ARGS=(
 )
 
 NIX_SYSTEM="@aster-target-platform@"
+NIXPKGS_PATH="@aster-nixpkgs@"
 
 # Pre-build the NixOS system closure on the host
 # so that the result is cached in the host's Nix store.
@@ -144,7 +145,7 @@ NIX_SYSTEM="@aster-target-platform@"
 # causing redundant downloads after every `make clean`.
 #
 # See: https://www.mankier.com/8/nixos-install#--system
-SYSTEM_CLOSURE=$(nix-build '<nixpkgs/nixos>' -A system \
+SYSTEM_CLOSURE=$(nix-build "${NIXPKGS_PATH}/nixos" -A system \
     --option extra-platforms "${NIX_SYSTEM}" \
     --argstr system "${NIX_SYSTEM}" \
     -I "nixos-config=${BUILD_DIR}/etc/nixos/configuration.nix" \

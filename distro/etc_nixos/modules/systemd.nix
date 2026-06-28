@@ -3,9 +3,10 @@
 {
   systemd.package = pkgs.aster_systemd;
 
-  # TODO: The following services currently do not work and 
-  # may affect systemd startup or cause performance issues. 
+  # TODO: The following services currently do not work and
+  # may affect systemd startup or cause performance issues.
   # Enable them after they can run successfully.
+  networking.resolvconf.enable = false;
   systemd.coredump.enable = false;
   systemd.oomd.enable = false;
   systemd.services.logrotate.enable = false;
@@ -23,20 +24,16 @@
     hashedPassword = null;
   };
 
-  systemd.targets.getty.wants =
-    # tty1: provide text login ONLY when X server is disabled.
-    # Other VTs: always provide text logins
-    (lib.optional (!config.services.xserver.enable) "autovt@tty1.service") ++ [
-      "autovt@hvc0.service"
-      "autovt@tty2.service"
-      "autovt@tty3.service"
-      "autovt@tty4.service"
-      "autovt@tty5.service"
-      "autovt@tty6.service"
-    ];
+  systemd.targets.getty.wants = lib.mkForce (
+    # tty1: provide text login on the virtual console when X server is disabled.
+    (lib.optional
+      (!config.services.xserver.enable && config.aster_nixos.console == "tty0")
+      "autovt@tty1.service")
+    ++ lib.optional (config.aster_nixos.console == "hvc0")
+    "getty@hvc0.service");
 
-  systemd.extraConfig = ''
-    LogLevel=crit      
-    ShowStatus=no
-  '';
+  systemd.settings.Manager = {
+    LogLevel = "crit";
+    ShowStatus = "no";
+  };
 }

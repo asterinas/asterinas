@@ -4,6 +4,8 @@ final: prev: {
       ./0001-Skip-mount-state-checking.patch
       ./0002-Disable-loop-too-fast-warning.patch
       ./0003-Switch-MS_SLAVE-to-MS_PRIVATE.patch
+      ./0004-Fallback-from-pidfd_spawn-to-posix_spawn.patch
+      ./0005-Keep-PID1-standard-streams-on-console.patch
     ];
 
     postInstall = ''
@@ -71,6 +73,15 @@ final: prev: {
       # placeholder for $out
       [Unit]
       Description=placeholder systemd-random-seed
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/true
+      EOF
+
+            cat > "$out/example/systemd/system/systemd-vconsole-setup.service" <<'EOF'
+      # placeholder for $out
+      [Unit]
+      Description=placeholder systemd-vconsole-setup
       [Service]
       Type=oneshot
       ExecStart=/bin/true

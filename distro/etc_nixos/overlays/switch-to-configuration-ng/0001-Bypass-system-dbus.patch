@@ -3,76 +3,77 @@ From: vvsv <vvsv_7169@163.com>
 Date: Wed, 10 Dec 2025 17:54:18 +0800
 Subject: [PATCH] Bypass system dbus
 
-The commented-out code connects to the system DBus, reading systemd state via DBus,
-computes the unit diff, and then reports activation results back over DBus.
+The bypass keeps the non-DBus activation path while avoiding unit-diff,
+reload, restart, and status reporting logic that depends on systemd over DBus.
 
 TODO: Remove this patch once system DBus support is implemented.
 ---
- src/main.rs        | 9 +++++++++
- 1 file changed, 9 insertions(+)
+ src/main.rs | 45 +++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 45 insertions(+)
 
 diff --git a/src/main.rs b/src/main.rs
-index 8baf5924a7db..bb1a60fd69f6 100644
+index e9cc48b7..20b2f840 100644
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -1,6 +1,9 @@
+@@ -1,6 +1,10 @@
  #![deny(clippy::all)]
  #![allow(clippy::too_many_arguments)]
  #![allow(clippy::type_complexity)]
 +#![allow(dead_code)]
++#![allow(unreachable_code)]
 +#![allow(unused_imports)]
 +#![allow(unused_variables)]
-
+ 
  use std::{
      cell::RefCell,
-@@ -932,6 +935,7 @@ fn do_user_switch(parent_exe: String) -> anyhow::Result<()> {
+@@ -1336,6 +1340,8 @@ fn do_user_switch(parent_exe: String) -> anyhow::Result<()> {
          die();
      }
-
-+/*
-     let dbus_conn = LocalConnection::new_session().context("Failed to open dbus connection")?;
-     let (systemd, _) = new_dbus_proxies(&dbus_conn);
-
-@@ -968,6 +972,7 @@ fn do_user_switch(parent_exe: String) -> anyhow::Result<()> {
-     dbus_conn
-         .remove_match(jobs_token)
-         .context("Failed to remove jobs token")?;
-+*/
-
-     Ok(())
- }
-@@ -1106,6 +1111,7 @@ won't take effect until you reboot the system.
+ 
++    return Ok(());
++
+     let toplevel = PathBuf::from(required_env("TOPLEVEL")?);
+     let old_toplevel = PathBuf::from(required_env("OLD_TOPLEVEL")?);
+     let action = Action::from_str(&required_env("NIXOS_ACTION")?)?;
+@@ -1882,6 +1888,39 @@ won't take effect until you reboot the system.
      let handler = SigHandler::Handler(handle_sigpipe);
      unsafe { signal::signal(Signal::SIGPIPE, handler) }.context("Failed to set SIGPIPE handler")?;
-
-+/*
+ 
++    let mut exit_code = 0;
++
++    // Activate the new configuration without using systemd over DBus.
++    eprintln!("activating the configuration...");
++    match std::process::Command::new(out.join("activate"))
++        .arg(&out)
++        .spawn()
++        .map(|mut child| child.wait())
++    {
++        Ok(Ok(status)) if status.success() => {}
++        Err(_) => {
++            // allow toplevel to not have an activation script
++        }
++        _ => {
++            eprintln!("Failed to run activate script");
++            exit_code = 2;
++        }
++    }
++
++    if exit_code == 0 {
++        log::info!(
++            "finished switching to system configuration {}",
++            toplevel.display()
++        );
++    } else {
++        log::error!(
++            "switching to system configuration {} failed (status {})",
++            toplevel.display(),
++            exit_code
++        );
++    }
++    std::process::exit(exit_code);
++
      let mut units_to_stop = HashMap::new();
      let mut units_to_skip = HashMap::new();
      let mut units_to_filter = HashMap::new(); // units not shown
-@@ -1539,6 +1545,7 @@ won't take effect until you reboot the system.
-
-     // Wait for all stop jobs to finish
-     block_on_jobs(&dbus_conn, &submitted_jobs);
-+*/
-
-     let mut exit_code = 0;
-
-@@ -1558,6 +1565,7 @@ won't take effect until you reboot the system.
-             exit_code = 2;
-         }
-     }
-+/*
-
-     // Handle the activation script requesting the restart or reload of a unit.
-     for unit in std::fs::read_to_string(RESTART_BY_ACTIVATION_LIST_FILE)
-@@ -1934,6 +1942,7 @@ won't take effect until you reboot the system.
-
-         exit_code = 4;
-     }
-+*/
-
-     if exit_code == 0 {
-         log::info!(
---
+-- 
 2.39.5
-

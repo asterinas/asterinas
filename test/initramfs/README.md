@@ -93,7 +93,7 @@ These benchmarks are precompiled and packaged into the Docker image for convenie
 
 ## Adding New Benchmarks
 
-We recommend utilizing `Nix` when adding new benchmarks. To check if a benchmark is already available, use the [`Nix Package Search`](https://search.nixos.org/packages?channel=25.05). If a package exists in the Nix channel, you can directly use it or modify it if necessary.
+We recommend utilizing `Nix` when adding new benchmarks. To check if a benchmark is already available, use the [`Nix Package Search`](https://search.nixos.org/packages?channel=26.05). If a package exists in the Nix channel, you can directly use it or modify it if necessary.
 
 If the desired benchmark is not available or cannot be easily adapted, you can add a custom `.nix` file to package it manually. Place the `.nix` files under the `test/initramfs/nix/benchmark` directory.
 

@@ -78,7 +78,7 @@ in {
   # TODO: Fix errors and warnings from systemd and remove this setting.
   environment.sessionVariables = { SYSTEMD_LOG_LEVEL = "crit"; };
   system.systemBuilderCommands = ''
-    echo "PATH=/bin:/nix/var/nix/profiles/system/sw/bin ostd.log_level=${config.aster_nixos.log-level} console=${config.aster_nixos.console} -- sh /init root=/dev/vda2 init=/nix/var/nix/profiles/system/stage-2-init rd.break=${
+    echo "PATH=/bin:/nix/var/nix/profiles/system/sw/bin ostd.log_level=${config.aster_nixos.log-level} console=${config.aster_nixos.console} systemd.getty_auto=no -- sh /init root=/dev/vda2 init=/nix/var/nix/profiles/system/stage-2-init rd.break=${
       if config.aster_nixos.break-into-stage-1-shell then "1" else "0"
     }"  > $out/kernel-params
     mv $out/init $out/stage-2-init
@@ -94,8 +94,9 @@ in {
   '';
   system.activationScripts.modprobe = lib.mkForce "";
 
-  nix.nixPath = options.nix.nixPath.default
-    ++ [ "nixpkgs-overlays=/etc/nixos/overlays" ];
+  nix.nixPath = [ "nixpkgs=${pkgs.path}" ]
+    ++ builtins.filter (entry: !(lib.hasPrefix "nixpkgs=" entry))
+    options.nix.nixPath.default ++ [ "nixpkgs-overlays=/etc/nixos/overlays" ];
   nix.settings = {
     filter-syscalls = false;
     require-sigs = false;

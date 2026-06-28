@@ -70,7 +70,7 @@ DNS_SERVER ?= none
 # End of network settings
 
 # NixOS settings
-NIXOS_DISK_SIZE_IN_MB ?= 8192
+NIXOS_DISK_SIZE_IN_MB ?= 12288
 NIXOS_DISABLE_SYSTEMD ?= false
 # The following option is only effective when NIXOS_DISABLE_SYSTEMD is set to 'true'.
 # Use a login shell to ensure that environment variables are initialized correctly.
