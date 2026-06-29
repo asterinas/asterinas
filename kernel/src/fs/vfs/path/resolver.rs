@@ -913,44 +913,28 @@ impl<'a> TryFrom<&'a str> for FsPath<'a> {
 
 /// Utilities to split a string into its path components.
 pub trait SplitPath {
-    /// Splits a path into the parent directory name and the final component name, which is
-    /// expected to be a file (not a directory).
-    ///
-    /// If the final component refers to a directory, an error will be returned. Aside from the
-    /// constraint on the final component, this is similar to [`Self::split_dirname_and_basename`].
-    fn split_dirname_and_filename(&self) -> Result<(&Self, &Self)>;
-
     /// Splits a path into the parent directory name and the final component name.
     ///
     /// This behaves in a similar way to the POSIX C functions [`dirname()` and
     /// `basename()`](https://man7.org/linux/man-pages/man3/basename.3.html). Trailing slashes
-    /// (`/`) are trimmed from returned names unless the name refers to the root directory. In that
-    /// case, the name contains a single slash.
-    ///
-    /// If the original path is an empty string, an error will be returned.
+    /// (`/`) are trimmed from returned names unless the name refers to the root directory.
     ///
     /// If the original path directly points to the root directory (e.g., `/` or `//`, but not `/.`
-    /// or `/./`), an error will be returned.
-    fn split_dirname_and_basename(&self) -> Result<(&Self, &Self)>;
+    /// or `/./`), [`SplitPathError::Root`] will be returned.
+    ///
+    /// If the original path is an empty string, [`SplitPathError::Empty`] will be returned.
+    fn split_dirname_and_basename(&self) -> core::result::Result<(&Self, &Self), SplitPathError>;
 }
 
 impl SplitPath for str {
-    fn split_dirname_and_filename(&self) -> Result<(&Self, &Self)> {
-        if self.ends_with('/') {
-            return_errno_with_message!(Errno::EISDIR, "the path is a directory");
-        }
-
-        self.split_dirname_and_basename()
-    }
-
-    fn split_dirname_and_basename(&self) -> Result<(&Self, &Self)> {
+    fn split_dirname_and_basename(&self) -> core::result::Result<(&Self, &Self), SplitPathError> {
         if self.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "the path is empty");
+            return Err(SplitPathError::Empty);
         }
 
         let trimmed = self.trim_end_matches('/');
         if trimmed.is_empty() {
-            return_errno_with_message!(Errno::EBUSY, "the path is the root directory");
+            return Err(SplitPathError::Root);
         }
 
         if let Some(pos) = trimmed.rfind('/') {
@@ -965,72 +949,66 @@ impl SplitPath for str {
     }
 }
 
+/// Lexical path-splitting errors reported by [`SplitPath`].
+///
+/// These errors intentionally describe only what the path string looks like.
+/// Callers are responsible for translating them into syscall- or subsystem-specific `Errno`s.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SplitPathError {
+    /// The path to be split is empty (``).
+    Empty,
+    /// The path to be split is root
+    /// (any number of consecutive slashes such `/` or `////`).
+    Root,
+}
+
+impl SplitPathError {
+    /// Converts the error into an [`Error`], rejecting a root path as [`Errno::EBUSY`].
+    pub fn reject_root_as_busy(self) -> Error {
+        match self {
+            Self::Empty => Error::with_message(Errno::ENOENT, "the path is empty"),
+            Self::Root => {
+                Error::with_message(Errno::EBUSY, "the path refers to the root directory")
+            }
+        }
+    }
+
+    /// Converts the error into an [`Error`], rejecting a root path as [`Errno::EISDIR`].
+    pub fn reject_root_as_is_dir(self) -> Error {
+        match self {
+            Self::Empty => Error::with_message(Errno::ENOENT, "the path is empty"),
+            Self::Root => {
+                Error::with_message(Errno::EISDIR, "the path refers to the root directory")
+            }
+        }
+    }
+}
+
 #[cfg(ktest)]
 mod test {
     use ostd::prelude::ktest;
 
     use super::*;
 
-    type SplitResult = Result<(&'static str, &'static str), Errno>;
+    type SplitResult = Result<(&'static str, &'static str), SplitPathError>;
 
     #[track_caller]
     fn assert_split_results(
         cases: &Vec<(&'static str, SplitResult)>,
-        split: impl Fn(&str) -> Result<(&str, &str)>,
+        split: impl Fn(&str) -> Result<(&str, &str), SplitPathError>,
     ) {
         for case in cases.iter() {
             let result = split(case.0);
-            assert_eq!(
-                result.map_err(|err| err.error()),
-                case.1,
-                "splitting '{}' failed",
-                case.0
-            );
+            assert_eq!(result, case.1, "splitting '{}' failed", case.0);
         }
-    }
-
-    #[ktest]
-    fn path_split_filename() {
-        let cases = vec![
-            ("", Err(Errno::ENOENT)),
-            ("/", Err(Errno::EISDIR)),
-            ("///", Err(Errno::EISDIR)),
-            ("///.", Ok(("/", "."))),
-            ("//./", Err(Errno::EISDIR)),
-            ("a", Ok((".", "a"))),
-            ("/a", Ok(("/", "a"))),
-            ("b/a", Ok(("b", "a"))),
-            ("/b/a", Ok(("/b", "a"))),
-            ("a", Ok((".", "a"))),
-            ("//a", Ok(("/", "a"))),
-            ("b//a", Ok(("b", "a"))),
-            ("//b//a", Ok(("//b", "a"))),
-            ("a/", Err(Errno::EISDIR)),
-            ("/a/", Err(Errno::EISDIR)),
-            ("b/a/", Err(Errno::EISDIR)),
-            ("/b/a/", Err(Errno::EISDIR)),
-            ("a//", Err(Errno::EISDIR)),
-            ("/a//", Err(Errno::EISDIR)),
-            ("b/a//", Err(Errno::EISDIR)),
-            ("/b/a//", Err(Errno::EISDIR)),
-            (" a ", Ok((".", " a "))),
-            (" //a ", Ok((" ", "a "))),
-            (" b//a ", Ok((" b", "a "))),
-            (" //b//a ", Ok((" //b", "a "))),
-            (" a/ ", Ok((" a", " "))),
-            (" //a/ ", Ok((" //a", " "))),
-            (" b//a/ ", Ok((" b//a", " "))),
-            (" //b//a/ ", Ok((" //b//a", " "))),
-        ];
-        assert_split_results(&cases, SplitPath::split_dirname_and_filename);
     }
 
     #[ktest]
     fn path_split_basename() {
         let cases = vec![
-            ("", Err(Errno::ENOENT)),
-            ("/", Err(Errno::EBUSY)),
-            ("///", Err(Errno::EBUSY)),
+            ("", Err(SplitPathError::Empty)),
+            ("/", Err(SplitPathError::Root)),
+            ("///", Err(SplitPathError::Root)),
             ("///.", Ok(("/", "."))),
             ("//./", Ok(("/", "."))),
             ("a", Ok((".", "a"))),
