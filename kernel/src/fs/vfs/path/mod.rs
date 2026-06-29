@@ -171,11 +171,6 @@ impl Path {
         InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
     }
 
-    /// Gets the real name of the `Path` from its dentry.
-    pub fn name(&self) -> String {
-        self.dentry.name()
-    }
-
     /// Gets the parent `Path` within the same mount.
     ///
     /// This method returns the parent path within the same filesystem/mount.
@@ -519,6 +514,7 @@ impl Path {
 impl Path {
     pub fn inode(&self) -> &Arc<dyn Inode>;
     pub fn type_(&self) -> InodeType;
+    pub fn name(&self) -> String;
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
@@ -556,13 +552,6 @@ impl Path {
 
         DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name)
     }
-
-    /// Resizes the file.
-    pub fn resize(&self, size: usize) -> Result<()> {
-        let inode = self.inode();
-        inode.check_permission(Permission::MAY_WRITE)?;
-        inode.resize(size)
-    }
 }
 
 // Methods inherited from `Inode`.
@@ -598,6 +587,13 @@ impl Path {
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
     pub fn remove_xattr(&self, name: XattrName) -> Result<()>;
+
+    /// Resizes the file.
+    pub fn resize(&self, size: usize) -> Result<()> {
+        let inode = self.inode();
+        inode.check_permission(Permission::MAY_WRITE)?;
+        inode.resize(size)
+    }
 }
 
 /// Checks if the file name is ".", indicating it's the current directory.
