@@ -3,6 +3,8 @@
 //! PCI device common definitions or functions.
 
 use ostd::Result;
+#[cfg(target_arch = "riscv64")]
+pub use ostd::arch::irq::MappedIrqLine as MappedPciIrqLine;
 
 use crate::{
     capability::{RawCapabilities, msix::CapabilityMsixData, vendor::CapabilityVndrData},
@@ -62,6 +64,17 @@ impl PciCommonDevice {
     pub fn write_command(&self, command: Command) {
         self.location
             .write16(PciCommonCfgOffset::Command as u16, command.bits())
+    }
+
+    /// Enables legacy PCI INTx interrupts.
+    pub fn enable_intx_interrupt(&self) {
+        self.write_command(self.read_command() & !Command::INTERRUPT_DISABLE)
+    }
+
+    /// Maps the legacy PCI INTx interrupt pin to an IRQ line.
+    #[cfg(target_arch = "riscv64")]
+    pub fn map_intx_interrupt(&self) -> Result<MappedPciIrqLine> {
+        crate::arch::map_intx_interrupt(&self.location)
     }
 
     /// Reads the PCI status.
