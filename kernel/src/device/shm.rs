@@ -15,11 +15,11 @@ pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Res
 
     let dev_path = path_resolver.lookup(&FsPath::try_from("/dev")?)?;
 
-    // Create the "shm" directory under "/dev" and mount a ramfs on it.
+    // Create the "shm" directory under "/dev" and mount a tmpfs on it.
     let shm_path =
         dev_path.new_fs_child("shm", InodeType::Dir, chmod!(InodeMode::S_ISVTX, a+rwx))?;
     shm_path.mount(
-        RamFs::new(),
+        RamFs::new_tmpfs(),
         PerMountFlags::default(),
         Some("tmpfs".to_string()),
         ctx,
