@@ -7,7 +7,7 @@
 
 use aster_bigtcp::{
     iface::InterfaceType,
-    wire::{IpAddress, Ipv4Address, Ipv4Cidr, Ipv6Cidr},
+    wire::{IpAddress, IpEndpoint, Ipv4Address, Ipv4Cidr, Ipv6Cidr},
 };
 use spin::Once;
 
@@ -182,6 +182,24 @@ pub fn lookup_local_iface(ip_addr: &IpAddress) -> Result<Arc<Iface>> {
     iface_by_index(route.oif_index()).ok_or_else(|| {
         Error::with_message(Errno::ENODEV, "the local route output iface does not exist")
     })
+}
+
+/// Determines if the endpoint is routed to an IPv4 broadcast address.
+///
+/// Broadcast addresses are represented as `RTN_BROADCAST` entries in the local
+/// route table. Keeping this check on top of route lookup avoids a second,
+/// stale copy of interface broadcast addresses.
+pub fn is_broadcast_endpoint(endpoint: &IpEndpoint) -> bool {
+    let IpAddress::Ipv4(ipv4_addr) = endpoint.addr else {
+        return false;
+    };
+
+    ROUTE_MANAGER
+        .get()
+        .unwrap()
+        .read()
+        .lookup_entry(&RouteLookupKey::new_dst(ipv4_addr.into()))
+        .is_ok_and(|route| route.type_() == RouteType::Broadcast)
 }
 
 /// Returns an interface by index.
