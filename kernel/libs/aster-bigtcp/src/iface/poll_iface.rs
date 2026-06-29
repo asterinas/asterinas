@@ -60,6 +60,23 @@ impl<E: Ext> PollableIface<E> {
     pub(super) fn next_poll_at_ms(&self) -> Option<u64> {
         self.pending_conns.next_poll_at_ms()
     }
+
+    /// Sets the IPv4 CIDR of the interface, replacing the existing IPv4 address.
+    pub(super) fn set_ipv4_cidr(&mut self, cidr: smoltcp::wire::Ipv4Cidr) {
+        self.interface.update_ip_addrs(|ip_addrs| {
+            for addr in ip_addrs.iter_mut() {
+                if let smoltcp::wire::IpCidr::Ipv4(_) = addr {
+                    *addr = smoltcp::wire::IpCidr::Ipv4(cidr);
+                    return;
+                }
+            }
+        });
+    }
+
+    /// Sets the default IPv4 gateway.
+    pub(super) fn set_ipv4_gateway(&mut self, gateway: smoltcp::wire::Ipv4Address) {
+        self.interface.routes_mut().add_default_ipv4_route(gateway).ok();
+    }
 }
 
 impl<E: Ext> PollableIface<E> {

@@ -4,7 +4,7 @@ use super::{Attribute, CAttrHeader};
 use crate::{net::socket::netlink::message::ContinueRead, prelude::*, util::MultiRead};
 
 /// A special type indicates that a segment cannot have attributes.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum NoAttr {}
 
 impl Attribute for NoAttr {

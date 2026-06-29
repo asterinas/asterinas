@@ -27,7 +27,7 @@ enum AddrAttrClass {
     TARGET_NETNSID = 10,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum AddrAttr {
     Address([u8; 4]),
     Local([u8; 4]),
@@ -61,27 +61,22 @@ impl Attribute for AddrAttr {
     where
         Self: Sized,
     {
+        let attr_type = AddrAttrClass::try_from(header.type_()).ok();
         let payload_len = header.payload_len();
-        reader.skip_some(payload_len);
 
-        // GETADDR only supports dump requests. These requests do not have any attributes.
-        // According to the Linux behavior, we should just ignore all the attributes.
-
-        Ok(ContinueRead::Skipped)
-    }
-
-    fn read_all_from(
-        reader: &mut dyn MultiRead,
-        total_len: usize,
-    ) -> Result<ContinueRead<Vec<Self>>>
-    where
-        Self: Sized,
-    {
-        reader.skip_some(total_len);
-
-        // GETADDR only supports dump requests. These requests do not have any attributes.
-        // According to the Linux behavior, we should just ignore all the attributes.
-
-        Ok(ContinueRead::Skipped)
+        match attr_type {
+            Some(AddrAttrClass::ADDRESS) if payload_len == 4 => {
+                let octets: [u8; 4] = reader.read_val_opt()?.unwrap();
+                Ok(ContinueRead::Parsed(AddrAttr::Address(octets)))
+            }
+            Some(AddrAttrClass::LOCAL) if payload_len == 4 => {
+                let octets: [u8; 4] = reader.read_val_opt()?.unwrap();
+                Ok(ContinueRead::Parsed(AddrAttr::Local(octets)))
+            }
+            _ => {
+                reader.skip_some(payload_len);
+                Ok(ContinueRead::Skipped)
+            }
+        }
     }
 }

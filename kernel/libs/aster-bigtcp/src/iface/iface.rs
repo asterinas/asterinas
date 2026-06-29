@@ -104,6 +104,16 @@ impl<E: Ext> dyn Iface<E> {
         cidr.broadcast()
     }
 
+    /// Sets the IPv4 CIDR of the interface.
+    pub fn set_ipv4_cidr(&self, cidr: smoltcp::wire::Ipv4Cidr) {
+        self.common().set_ipv4_cidr(cidr);
+    }
+
+    /// Sets the default IPv4 gateway.
+    pub fn set_ipv4_gateway(&self, gateway: smoltcp::wire::Ipv4Address) {
+        self.common().set_ipv4_gateway(gateway);
+    }
+
     /// Returns a reference to the associated [`ScheduleNextPoll`].
     ///
     /// [`ScheduleNextPoll`]: crate::iface::sched::ScheduleNextPoll

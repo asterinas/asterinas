@@ -17,6 +17,7 @@ use crate::{
 
 mod addr;
 mod link;
+mod route;
 mod util;
 
 pub(super) struct NetlinkRouteKernelSocket {
@@ -36,8 +37,11 @@ impl NetlinkRouteKernelSocket {
         let request_header = request.header();
 
         let response_segments = match request {
+            RtnlSegment::NewRoute(request_segment) => route::do_new_route(request_segment),
+            RtnlSegment::NewLink(request_segment) => link::do_new_link(request_segment),
             RtnlSegment::GetLink(request_segment) => link::do_get_link(request_segment),
             RtnlSegment::GetAddr(request_segment) => addr::do_get_addr(request_segment),
+            RtnlSegment::NewAddr(request_segment) => addr::do_new_addr(request_segment),
             _ => Err(Error::with_message(
                 Errno::EOPNOTSUPP,
                 "the netlink route request is not supported",

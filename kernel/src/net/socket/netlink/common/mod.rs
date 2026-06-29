@@ -95,11 +95,12 @@ where
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, SocketAddr)> {
-        let recv_bytes = self
+        let result = self
             .inner
             .read()
             .try_recv(writer, flags)
-            .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()))?;
+            .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()));
+        let recv_bytes = result?;
         self.pollee.invalidate();
 
         Ok(recv_bytes)

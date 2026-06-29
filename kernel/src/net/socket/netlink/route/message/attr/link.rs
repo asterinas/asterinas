@@ -82,7 +82,7 @@ enum LinkAttrClass {
     PARENT_DEV_BUS_NAME = 57,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum LinkAttr {
     Name(CString),
     Mtu(u32),
