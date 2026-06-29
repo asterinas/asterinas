@@ -318,6 +318,43 @@ impl Path {
         Ok(child_mount)
     }
 
+    /// Attaches a detached mount tree to the current path.
+    pub(crate) fn attach_detached_mount(
+        &self,
+        detached_mount: &Arc<Mount>,
+        ctx: &Context,
+    ) -> Result<()> {
+        if self.type_() != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
+        }
+
+        let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
+        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        if !current_mnt_ns.owns(detached_mount) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the detached mount is not in this mount namespace"
+            );
+        }
+        if !current_mnt_ns.owns(&self.mount) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the destination path is not in this mount namespace"
+            );
+        }
+
+        current_mnt_ns.check_no_mnt_ns_loop_in_tree(detached_mount)?;
+        if self.mount_node().is_equal_or_descendant_of(detached_mount) {
+            return_errno_with_message!(
+                Errno::ELOOP,
+                "the destination path is inside the mount subtree being moved"
+            );
+        }
+
+        detached_mount.graft_mount_tree(self);
+        Ok(())
+    }
+
     /// Unmounts the filesystem mounted at the current path.
     ///
     /// Returns the unmounted child mount on success.

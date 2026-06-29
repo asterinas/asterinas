@@ -230,6 +230,16 @@ impl Mount {
         Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new(), None)
     }
 
+    /// Creates a mount node that is not attached to the mount tree.
+    pub(crate) fn new_detached(
+        fs: Arc<dyn FileSystem>,
+        flags: PerMountFlags,
+        mnt_ns: Weak<MountNamespace>,
+        source: Option<String>,
+    ) -> Result<Arc<Self>> {
+        Self::new(fs, flags, None, mnt_ns, source)
+    }
+
     /// The internal constructor.
     ///
     /// A root mount node has no mountpoint, while other mount nodes must have one.
