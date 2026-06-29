@@ -66,7 +66,7 @@ impl RamFs {
 
     // TODO: Remove this tmpfs-specific constructor once `TmpFs` no longer
     // aliases `RamFs`.
-    pub(in crate::fs) fn new_tmpfs() -> Arc<Self> {
+    pub fn new_tmpfs() -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for tmpfs");
         let sb = {
             let mut super_block =
