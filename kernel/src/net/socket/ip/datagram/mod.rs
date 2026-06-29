@@ -12,7 +12,7 @@ use crate::{
         pseudofs::SockFs,
     },
     net::{
-        iface::is_broadcast_endpoint,
+        route::is_broadcast_endpoint,
         socket::{
             Socket,
             ip::options::{IpOptionSet, SetIpLevelOption},

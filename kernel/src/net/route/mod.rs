@@ -9,7 +9,7 @@ use core::num::NonZeroU32;
 
 use aster_bigtcp::{
     iface::InterfaceType,
-    wire::{IpAddress, Ipv4Address, Ipv4Cidr, Ipv6Cidr},
+    wire::{IpAddress, IpEndpoint, Ipv4Cidr, Ipv6Cidr},
 };
 use spin::Once;
 
@@ -25,8 +25,7 @@ mod table;
 pub use entry::{RouteEntry, RouteProtocol, RouteScope, RouteTableId, RouteType};
 pub use manager::{RouteLookupKey, RouteTableEntry};
 
-static ROUTE_MANAGER: Once<RwMutex<RouteManager>> = Once::new();
-const LIMITED_BROADCAST_ADDR: Ipv4Address = Ipv4Address::new(255, 255, 255, 255);
+static ROUTE_MANAGER: Once<RouteManager> = Once::new();
 
 /// Initializes routes from the currently configured interfaces.
 pub fn init() {
@@ -46,7 +45,7 @@ pub fn init() {
             .flatten()
             .collect();
 
-        RwMutex::new(RouteManager::new(routes))
+        RouteManager::new(routes)
     });
 }
 
@@ -58,26 +57,9 @@ fn bootstrap_routes_for_iface(iface: &Arc<Iface>) -> Result<Vec<RouteTableEntry>
     if let Some(iface_cidr) = iface.ipv4_cidr() {
         let ipv4_addr = iface_cidr.address();
         routes.push(RouteTableEntry::new(
-            RouteTableId::MAIN,
-            RouteEntry::new(
-                iface_cidr.network().into(),
-                RouteProtocol::KERNEL,
-                RouteScope::LINK,
-                RouteType::Unicast,
-                Some(oif_index),
-                None,
-            )?,
-        ));
-
-        let local_dst = if iface.type_() == InterfaceType::LOOPBACK {
-            iface_cidr.network()
-        } else {
-            Ipv4Cidr::new(ipv4_addr, 32)
-        };
-        routes.push(RouteTableEntry::new(
             RouteTableId::LOCAL,
             RouteEntry::new(
-                local_dst.into(),
+                Ipv4Cidr::new(ipv4_addr, 32).into(),
                 RouteProtocol::KERNEL,
                 RouteScope::HOST,
                 RouteType::Local,
@@ -86,17 +68,31 @@ fn bootstrap_routes_for_iface(iface: &Arc<Iface>) -> Result<Vec<RouteTableEntry>
             )?,
         ));
 
-        routes.push(RouteTableEntry::new(
-            RouteTableId::LOCAL,
-            RouteEntry::new(
-                Ipv4Cidr::new(LIMITED_BROADCAST_ADDR, 32).into(),
-                RouteProtocol::KERNEL,
-                RouteScope::LINK,
-                RouteType::Broadcast,
-                Some(oif_index),
-                None,
-            )?,
-        ));
+        if iface.type_() == InterfaceType::LOOPBACK {
+            routes.push(RouteTableEntry::new(
+                RouteTableId::LOCAL,
+                RouteEntry::new(
+                    iface_cidr.network().into(),
+                    RouteProtocol::KERNEL,
+                    RouteScope::HOST,
+                    RouteType::Local,
+                    Some(oif_index),
+                    None,
+                )?,
+            ));
+        } else {
+            routes.push(RouteTableEntry::new(
+                RouteTableId::MAIN,
+                RouteEntry::new(
+                    iface_cidr.network().into(),
+                    RouteProtocol::KERNEL,
+                    RouteScope::LINK,
+                    RouteType::Unicast,
+                    Some(oif_index),
+                    None,
+                )?,
+            ));
+        }
 
         if let Some(broadcast_addr) = iface.broadcast_addr() {
             routes.push(RouteTableEntry::new(
@@ -111,46 +107,43 @@ fn bootstrap_routes_for_iface(iface: &Arc<Iface>) -> Result<Vec<RouteTableEntry>
                 )?,
             ));
         }
-
-        for (dst, gateway) in iface.routes() {
-            routes.push(RouteTableEntry::new(
-                RouteTableId::MAIN,
-                RouteEntry::new(
-                    dst,
-                    RouteProtocol::BOOT,
-                    RouteScope::UNIVERSE,
-                    RouteType::Unicast,
-                    Some(oif_index),
-                    Some(gateway),
-                )?,
-            ));
-        }
     }
 
-    if let Some(ipv6_cidr) = iface.ipv6_cidr() {
+    for (dst, gateway) in iface.routes() {
         routes.push(RouteTableEntry::new(
             RouteTableId::MAIN,
             RouteEntry::new(
-                ipv6_cidr.into(),
-                RouteProtocol::KERNEL,
-                RouteScope::LINK,
+                dst,
+                RouteProtocol::BOOT,
+                RouteScope::UNIVERSE,
                 RouteType::Unicast,
                 Some(oif_index),
-                None,
+                Some(gateway),
             )?,
         ));
+    }
 
-        let local_dst = if iface.type_() == InterfaceType::LOOPBACK {
-            ipv6_cidr
-        } else {
-            Ipv6Cidr::new(ipv6_cidr.address(), 128)
-        };
+    if let Some(ipv6_cidr) = iface.ipv6_cidr() {
+        if iface.type_() != InterfaceType::LOOPBACK {
+            routes.push(RouteTableEntry::new(
+                RouteTableId::MAIN,
+                RouteEntry::new(
+                    ipv6_cidr.into(),
+                    RouteProtocol::KERNEL,
+                    RouteScope::UNIVERSE,
+                    RouteType::Unicast,
+                    Some(oif_index),
+                    None,
+                )?,
+            ));
+        }
+
         routes.push(RouteTableEntry::new(
             RouteTableId::LOCAL,
             RouteEntry::new(
-                local_dst.into(),
+                Ipv6Cidr::new(ipv6_cidr.address(), 128).into(),
                 RouteProtocol::KERNEL,
-                RouteScope::HOST,
+                RouteScope::UNIVERSE,
                 RouteType::Local,
                 Some(oif_index),
                 None,
@@ -162,18 +155,18 @@ fn bootstrap_routes_for_iface(iface: &Arc<Iface>) -> Result<Vec<RouteTableEntry>
 }
 
 /// Dumps IP routes.
-pub fn dump(table_filter: Option<RouteTableId>) -> Vec<RouteTableEntry> {
-    ROUTE_MANAGER.get().unwrap().read().dump(table_filter)
+pub fn dump(table_filter: Option<RouteTableId>) -> Result<Vec<RouteTableEntry>> {
+    ROUTE_MANAGER.get().unwrap().dump(table_filter)
 }
 
 /// Looks up an IP route.
 pub fn lookup(key: RouteLookupKey) -> Result<RouteTableEntry> {
-    ROUTE_MANAGER.get().unwrap().read().lookup_entry(&key)
+    ROUTE_MANAGER.get().unwrap().lookup_entry(&key)
 }
 
 /// Looks up the interface that owns a local IP address.
 pub fn lookup_local_iface(ip_addr: &IpAddress) -> Result<Arc<Iface>> {
-    let manager = ROUTE_MANAGER.get().unwrap().read();
+    let manager = ROUTE_MANAGER.get().unwrap();
     let route = manager
         .get_local_table()
         .lookup_with_key(&RouteLookupKey::new_dst(*ip_addr))
@@ -197,6 +190,26 @@ pub fn lookup_local_iface(ip_addr: &IpAddress) -> Result<Arc<Iface>> {
     iface_by_index(oif_index).ok_or_else(|| {
         Error::with_message(Errno::ENODEV, "the local route output iface does not exist")
     })
+}
+
+/// Determines if the endpoint is routed to an IPv4 broadcast address.
+///
+/// Limited broadcast is an address-level special case. Directed broadcasts
+/// are represented as `RTN_BROADCAST` entries in the local route table.
+pub fn is_broadcast_endpoint(endpoint: &IpEndpoint) -> bool {
+    let IpAddress::Ipv4(ipv4_addr) = endpoint.addr else {
+        return false;
+    };
+
+    if ipv4_addr.is_broadcast() {
+        return true;
+    }
+
+    ROUTE_MANAGER
+        .get()
+        .unwrap()
+        .lookup_entry(&RouteLookupKey::new_dst(ipv4_addr.into()))
+        .is_ok_and(|route| route.route().type_() == RouteType::Broadcast)
 }
 
 /// Returns an interface by index.
