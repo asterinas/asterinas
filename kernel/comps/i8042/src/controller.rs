@@ -15,6 +15,12 @@ use ostd::{
 };
 use spin::Once;
 
+/// The I/O port for the i8042 data register.
+pub(super) const DATA_PORT_ADDR: u16 = 0x60;
+
+/// The I/O port for the i8042 command/status register.
+pub(super) const STATUS_OR_COMMAND_PORT_ADDR: u16 = 0x64;
+
 /// The `I8042Controller` singleton.
 pub(super) static I8042_CONTROLLER: Once<SpinLock<I8042Controller, LocalIrqDisabled>> = Once::new();
 
@@ -128,8 +134,6 @@ pub(super) struct I8042Controller {
 
 impl I8042Controller {
     fn new() -> Result<Self, I8042ControllerError> {
-        const DATA_PORT_ADDR: u16 = 0x60;
-        const STATUS_OR_COMMAND_PORT_ADDR: u16 = 0x64;
 
         if !Self::is_present_acpi() {
             // The PS/2 controller does not exist. See:
@@ -275,6 +279,16 @@ impl I8042Controller {
     fn flush_output_buffer(&mut self) {
         while self.receive_data().is_some() {}
     }
+
+    /// Pulses the CPU reset line via the i8042 controller.
+    ///
+    /// This is a best-effort, panic-free operation. If the input buffer is full,
+    /// the command is skipped.
+    pub(super) fn reset_cpu(&mut self) {
+        if !self.read_status().contains(Status::INPUT_BUFFER_IS_FULL) {
+            self.write_command(Command::CpuReset as u8);
+        }
+    }
 }
 
 /// Timeout in milliseconds for sending commands or receiving data.
@@ -337,7 +351,7 @@ pub(super) enum I8042ControllerError {
 /// Reference: <https://wiki.osdev.org/I8042_PS/2_Controller#PS/2_Controller_Commands>.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug)]
-enum Command {
+pub(super) enum Command {
     ReadConfiguration = 0x20,
     WriteConfiguration = 0x60,
     DisableSecondPort = 0xA7,
@@ -348,6 +362,7 @@ enum Command {
     DisableFirstPort = 0xAD,
     EnableFirstPort = 0xAE,
     WriteToSecondPort = 0xD4,
+    CpuReset = 0xFE,
 }
 
 bitflags! {
