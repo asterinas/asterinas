@@ -147,6 +147,8 @@ echo "All mount bind file test passed."
 
 ./symlink/symlink
 
+./sync/sync
+
 ./tmpfile/tmpfile
 
 ./utimensat/utimensat
