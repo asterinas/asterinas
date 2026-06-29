@@ -110,6 +110,9 @@ impl MountInfoFileOps {
             let mount_id = mount.id();
             let parent = mount.parent().and_then(|parent| parent.upgrade());
             let parent_id = parent.as_ref().map_or(mount_id, |p| p.id());
+            let container_dev_id = mount.fs().sb().container_dev_id;
+            let major = container_dev_id.major().get() as u32;
+            let minor = container_dev_id.minor().get();
             let is_resolver_root_mount = Arc::ptr_eq(&mount, path_resolver.root().mount_node());
             let root = if is_resolver_root_mount {
                 path_resolver.root().dentry().path_name()
@@ -126,10 +129,6 @@ impl MountInfoFileOps {
             let fs_type = mount.fs().name();
             let source = mount.source().unwrap_or("none");
             let fs_flags = mount.fs().flags();
-
-            // The following fields are dummy for now.
-            let major = 0;
-            let minor = 0;
 
             let entry = MountInfoEntry {
                 mount_id,
