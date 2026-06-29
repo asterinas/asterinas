@@ -289,15 +289,12 @@ impl FileLike for InodeHandle {
 
         let mut offset = self.offset.lock();
 
-        // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
-        if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
-            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
-            // is writing to the file concurrently.
-            *offset = self.path.size();
-        }
-
         let len = file_ops.write_at(*offset, reader, status_flags)?;
-        *offset += len;
+        if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
+            *offset = self.path.size();
+        } else {
+            *offset += len;
+        }
 
         Ok(len)
     }
@@ -313,21 +310,13 @@ impl FileLike for InodeHandle {
         file_ops.read_at(offset, writer, status_flags)
     }
 
-    fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let file_ops = self.file_ops_for_positional_io()?;
         if !self.rights.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
 
         let status_flags = self.status_flags();
-
-        // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
-        if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
-            // If the file has the `O_APPEND` flag, the offset is ignored.
-            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
-            // is writing to the file concurrently.
-            offset = self.path.size();
-        }
 
         file_ops.write_at(offset, reader, status_flags)
     }

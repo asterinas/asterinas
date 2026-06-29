@@ -50,9 +50,9 @@ impl FileOps for Ext2Inode {
         status_flags: StatusFlags,
     ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_DIRECT) {
-            self.write_direct_at(offset, reader)
+            self.write_direct_at(offset, reader, status_flags)
         } else {
-            self.write_at(offset, reader)
+            self.write_at(offset, reader, status_flags)
         }
     }
 
