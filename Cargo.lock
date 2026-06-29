@@ -86,7 +86,7 @@ dependencies = [
  "jhash",
  "ostd",
  "smoltcp",
- "spin",
+ "spin 0.9.8",
  "takeable",
 ]
 
@@ -104,7 +104,7 @@ dependencies = [
  "io-util",
  "ostd",
  "ostd-pod",
- "spin",
+ "spin 0.9.8",
  "zerocopy",
 ]
 
@@ -115,7 +115,7 @@ dependencies = [
  "component",
  "inventory",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -124,7 +124,7 @@ version = "0.1.0"
 dependencies = [
  "component",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -138,7 +138,7 @@ dependencies = [
  "font8x8",
  "int-to-c-enum",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -161,7 +161,7 @@ dependencies = [
  "bitflags 2.9.1",
  "component",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -173,7 +173,7 @@ dependencies = [
  "component",
  "ostd",
  "ostd-pod",
- "spin",
+ "spin 0.9.8",
  "zerocopy",
 ]
 
@@ -212,6 +212,9 @@ dependencies = [
  "cpio-decoder",
  "device-id",
  "getset",
+ "hadris-fat",
+ "hadris-io",
+ "hadris-iso",
  "hashbrown 0.14.5",
  "id-alloc",
  "inherit-methods-macro",
@@ -234,7 +237,7 @@ dependencies = [
  "ring-buffer",
  "riscv",
  "smallvec",
- "spin",
+ "spin 0.9.8",
  "takeable",
  "tdx-guest",
  "time",
@@ -288,7 +291,7 @@ dependencies = [
  "component",
  "ostd",
  "ostd-pod",
- "spin",
+ "spin 0.9.8",
  "zerocopy",
 ]
 
@@ -304,7 +307,7 @@ dependencies = [
  "io-util",
  "ostd",
  "ostd-pod",
- "spin",
+ "spin 0.9.8",
  "zerocopy",
 ]
 
@@ -319,7 +322,7 @@ dependencies = [
  "fdt",
  "int-to-c-enum",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -349,7 +352,7 @@ dependencies = [
  "component",
  "intrusive-collections",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -361,7 +364,7 @@ dependencies = [
  "component",
  "inherit-methods-macro",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -373,7 +376,7 @@ dependencies = [
  "chrono",
  "component",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -385,7 +388,7 @@ dependencies = [
  "fdt",
  "inherit-methods-macro",
  "ostd",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -426,7 +429,7 @@ dependencies = [
  "ostd",
  "ostd-pod",
  "smallvec",
- "spin",
+ "spin 0.9.8",
  "tdx-guest",
  "typeflags-util",
  "zerocopy",
@@ -473,6 +476,9 @@ name = "bitflags"
 version = "2.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "bittle"
@@ -490,6 +496,26 @@ dependencies = [
  "radium",
  "tap",
  "wyz",
+]
+
+[[package]]
+name = "bytemuck"
+version = "1.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
+dependencies = [
+ "bytemuck_derive",
+]
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9abbd1bc6865053c427f7198e6af43bfdedc55ab791faed4fbd361d789575ff"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
 ]
 
 [[package]]
@@ -735,7 +761,7 @@ name = "device-id"
 version = "0.1.0"
 dependencies = [
  "aster-util",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -749,6 +775,16 @@ name = "embedded-hal"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
+
+[[package]]
+name = "endian-num"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b4a54dfedecb1dc004776a597db0c858cf6c31579296734511309291b8399ce"
+dependencies = [
+ "bytemuck",
+ "bytemuck_derive",
+]
 
 [[package]]
 name = "equivalent"
@@ -883,6 +919,80 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
+name = "hadris-common"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d61420d5162c676024b7fab4ad79100f906f0e4ed86fbffbdef94a507697d5ea"
+dependencies = [
+ "bytemuck",
+ "hadris-io",
+ "noalloc",
+ "zerocopy",
+]
+
+[[package]]
+name = "hadris-fat"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea467d002f378a50495a684f6a49796c0def6d03b374ce8c3db9245af168f765"
+dependencies = [
+ "bitflags 2.9.1",
+ "bytemuck",
+ "chrono",
+ "hadris-common",
+ "hadris-io",
+ "hadris-macros",
+ "parse-size",
+ "spin 0.10.0",
+]
+
+[[package]]
+name = "hadris-io"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69c4b18afaa991f1d1a2b90b3ec6144f956dac5bcd00fb9c245c3996dc33254d"
+dependencies = [
+ "bytemuck",
+ "cfg-if",
+]
+
+[[package]]
+name = "hadris-iso"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ff7c040f72939353e60b43e523d4760f2a4a68e3c01e000fb690379f9990375"
+dependencies = [
+ "bitflags 2.9.1",
+ "bytemuck",
+ "hadris-common",
+ "hadris-io",
+ "hadris-macros",
+ "hadris-part",
+ "spin 0.10.0",
+]
+
+[[package]]
+name = "hadris-macros"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae6aa7d2c5aab41cb4f4d825c71e08b7a61e6d9e9ea78a9b3ef5ef3eeac9efac"
+dependencies = [
+ "proc-macro2",
+]
+
+[[package]]
+name = "hadris-part"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83db7c5a6d4bd428c30fedaa9882b50baaf4cdc1831a948e1bd6de593e3f48ea"
+dependencies = [
+ "bytemuck",
+ "endian-num",
+ "hadris-io",
+ "hadris-macros",
+]
+
+[[package]]
 name = "hash32"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -938,7 +1048,7 @@ dependencies = [
  "hash32 0.2.1",
  "rustc_version",
  "serde",
- "spin",
+ "spin 0.9.8",
  "stable_deref_trait",
 ]
 
@@ -1065,7 +1175,7 @@ version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 dependencies = [
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -1284,6 +1394,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "noalloc"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a2537501480803dd22fbd79a39ea83318caba3ba936f7554f7139f4180faa94"
+
+[[package]]
 name = "nougat"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1384,7 +1500,7 @@ dependencies = [
  "riscv",
  "sbi-rt",
  "smallvec",
- "spin",
+ "spin 0.9.8",
  "tdx-guest",
  "unwinding",
  "volatile 0.6.1",
@@ -1442,6 +1558,12 @@ dependencies = [
  "syn 2.0.101",
  "zerocopy",
 ]
+
+[[package]]
+name = "parse-size"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "487f2ccd1e17ce8c1bfab3a65c89525af41cfad4c8659021a1e9a2aacd73b89b"
 
 [[package]]
 name = "paste"
@@ -1791,6 +1913,15 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
+name = "spin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
 dependencies = [
  "lock_api",
 ]

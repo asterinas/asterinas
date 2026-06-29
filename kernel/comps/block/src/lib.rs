@@ -79,6 +79,11 @@ pub trait BlockDevice: Send + Sync + Any + Debug {
         false
     }
 
+    /// Returns the partition start sector if the block device is a partition.
+    fn partition_start_sector(&self) -> Option<u64> {
+        None
+    }
+
     /// Sets the partitions of the block device.
     fn set_partitions(&self, _infos: Vec<Option<PartitionInfo>>) {}
 
@@ -147,6 +152,12 @@ pub fn collect_all() -> Vec<Arc<dyn BlockDevice>> {
 /// Looks up a block device of a given device ID.
 pub fn lookup(id: DeviceId) -> Option<Arc<dyn BlockDevice>> {
     DEVICE_REGISTRY.lock().get(&id.to_raw()).cloned()
+}
+
+/// Re-reads the partition table of the block device.
+pub fn reread_partitions(device: &Arc<dyn BlockDevice>) {
+    let partition_info = partition::parse(device).unwrap_or_default();
+    device.set_partitions(partition_info);
 }
 
 static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn BlockDevice>>> = Mutex::new(BTreeMap::new());

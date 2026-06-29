@@ -20,6 +20,20 @@ use crate::{
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
+/// Legacy Linux disk geometry returned by `HDIO_GETGEO`.
+///
+/// GRUB uses the `start` field to map Linux partition devices back to GRUB
+/// partitions when sysfs does not expose `/sys/dev/block/<major>:<minor>/start`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+struct HdGeometry {
+    heads: u8,
+    sectors: u8,
+    cylinders: u16,
+    _padding: u32,
+    start: u64,
+}
+
 pub(super) fn init_in_first_kthread() {
     for device in aster_block::collect_all() {
         if device.is_partition() {
@@ -66,27 +80,37 @@ pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> 
 }
 
 mod ioctl_defs {
+    use super::HdGeometry;
     use crate::util::ioctl::{NoData, OutData, ioc};
 
+    // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/hdreg.h>
+
+    /// Returns legacy disk geometry.
+    pub(super) type HdIoGetGeo = ioc!(HDIO_GETGEO, 0x0301, OutData<HdGeometry>);
+
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fs.h>
+
+    /// Returns the device size in 512-byte sectors.
+    pub(super) type BlkGetSize = ioc!(BLKGETSIZE, 0x1260, OutData<u64>);
 
     /// Returns the device size in bytes.
     pub(super) type BlkGetSize64 = ioc!(BLKGETSIZE64, 0x12, 114, OutData<u64>);
 
-    /// Returns the logical sector size of the block device.
+    /// Returns the direct-I/O alignment size reported for the block device.
     ///
-    /// This is the smallest unit of I/O the device can address and,
-    /// importantly, the minimum alignment required for `O_DIRECT` I/O on
-    /// files backed by this device. Both buffer address and offset must be a
-    /// multiple of this value.
-    ///
-    /// Benchmarks and filesystem tests (for example, `xfstests`, LTP
-    /// `preadv03`/`pwritev03`) rely on this ioctl to size `O_DIRECT` buffers.
-    /// If the effective alignment enforced by the filesystem layered on top
-    /// is larger than the hardware sector, such as `ext2`'s 4 KiB block, this
-    /// ioctl must return that larger value. Otherwise user programs will align
-    /// correctly for the device but still hit `EINVAL` at the filesystem.
+    /// Asterinas block I/O is currently backed by page-sized blocks, so
+    /// reporting the 512-byte sector size would make tools issue `O_DIRECT`
+    /// I/O that the filesystem layer rejects.
     pub(super) type BlkGetSectorSize = ioc!(BLKSSZGET, 0x12, 104, NoData);
+
+    /// Re-reads the partition table.
+    pub(super) type BlkRrPart = ioc!(BLKRRPART, 0x12, 95, NoData);
+
+    /// Partition table modification.
+    pub(super) type BlkPg = ioc!(BLKPG, 0x12, 105, NoData);
+
+    /// Flushes buffers.
+    pub(super) type BlkFlsBuf = ioc!(BLKFLSBUF, 0x12, 97, NoData);
 }
 
 /// Represents a block device inode in the filesystem.
@@ -214,12 +238,19 @@ impl PerOpenFileOps for OpenBlockFile {
 
         dispatch_ioctl!(match raw_ioctl {
             _cmd @ BlkGetSectorSize => {
-                // TODO: Query the per-device logical block size once block device metadata
-                // exposes it. For now, report the effective minimum I/O granularity enforced
-                // by Asterinas filesystems so userspace can use `BLKSSZGET` for `O_DIRECT`
-                // alignment.
+                // TODO: Report the per-device logical sector size once both block-device and
+                // filesystem direct I/O paths support sub-page alignment.
                 let sector_size = SECTOR_SIZE.max(BLOCK_SIZE) as i32;
                 current_userspace!().write_val(raw_ioctl.arg(), &sector_size)?;
+                Ok(0)
+            }
+            cmd @ HdIoGetGeo => {
+                cmd.write(&self.hd_geometry())?;
+                Ok(0)
+            }
+            cmd @ BlkGetSize => {
+                let size = self.0.metadata().nr_sectors as u64;
+                cmd.write(&size)?;
                 Ok(0)
             }
             cmd @ BlkGetSize64 => {
@@ -227,11 +258,67 @@ impl PerOpenFileOps for OpenBlockFile {
                 cmd.write(&size)?;
                 Ok(0)
             }
+            _cmd @ BlkRrPart => {
+                self.reread_and_register_partitions();
+                Ok(0)
+            }
+            _cmd @ BlkPg => {
+                self.reread_and_register_partitions();
+                Ok(0)
+            }
+            _cmd @ BlkFlsBuf => {
+                Ok(0)
+            }
             _ => return_errno_with_message!(
                 Errno::ENOTTY,
                 "the ioctl command is not supported by block devices"
             ),
         })
+    }
+}
+
+impl OpenBlockFile {
+    /// Collects legacy disk geometry for Linux-compatible tooling.
+    fn hd_geometry(&self) -> HdGeometry {
+        const HEADS: u8 = 255;
+        const SECTORS: u8 = 63;
+
+        let nr_sectors = u64::try_from(self.0.metadata().nr_sectors).unwrap_or(u64::MAX);
+        let sectors_per_cylinder = u64::from(HEADS) * u64::from(SECTORS);
+        let cylinders = nr_sectors / sectors_per_cylinder;
+        let cylinders = cylinders.min(u64::from(u16::MAX)) as u16;
+
+        HdGeometry {
+            heads: HEADS,
+            sectors: SECTORS,
+            cylinders,
+            _padding: 0,
+            start: self.0.partition_start_sector().unwrap_or(0),
+        }
+    }
+
+    /// Re-reads the partition table and registers any new partitions in devtmpfs.
+    fn reread_and_register_partitions(&self) {
+        aster_block::reread_partitions(&self.0);
+        if let Some(partitions) = self.0.partitions() {
+            let task = ostd::task::Task::current().unwrap();
+            let thread_local = task.as_thread_local().unwrap();
+            let fs_ref = thread_local.borrow_fs();
+            let path_resolver = fs_ref.resolver().read();
+
+            for partition in partitions {
+                let block_file = Arc::new(BlockFile::new(partition));
+                if let Some(devtmpfs_meta) = block_file.devtmpfs_meta() {
+                    let dev_id = block_file.0.id().as_encoded_u64();
+                    if let Err(e) =
+                        add_node(DeviceType::Block, dev_id, &devtmpfs_meta, &path_resolver)
+                        && e.error() != Errno::EEXIST
+                    {
+                        ostd::warn!("Failed to add partition node: {:?}", e);
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -61,6 +61,26 @@ pub enum DeviceType {
     Block,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct DeviceClass {
+    major: u16,
+    name: String,
+}
+
+impl DeviceClass {
+    fn new(major: u16, name: String) -> Self {
+        Self { major, name }
+    }
+
+    pub(crate) fn major(&self) -> u16 {
+        self.major
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 /// The metadata that describes a device inode in devtmpfs.
 ///
 /// The metadata contains the inode path relative to `/dev` and the
@@ -159,6 +179,43 @@ pub fn add_node(
     }
 
     Ok(dev_path)
+}
+
+pub(crate) fn registered_char_device_classes() -> Vec<DeviceClass> {
+    let mut classes = BTreeSet::new();
+    for device in registry::char::collect_all() {
+        let Some(meta) = device.devtmpfs_meta() else {
+            continue;
+        };
+        let class_name = meta.path().trim_start_matches('/').to_string();
+        classes.insert(DeviceClass::new(device.id().major().get(), class_name));
+    }
+
+    classes.into_iter().collect()
+}
+
+pub(crate) fn registered_block_device_classes() -> Vec<DeviceClass> {
+    let mut classes = BTreeMap::new();
+    for device in aster_block::collect_all() {
+        let major = device.id().major().get();
+        classes
+            .entry(major)
+            .or_insert_with(|| block_device_class_name(device.name(), major));
+    }
+
+    classes
+        .into_iter()
+        .map(|(major, name)| DeviceClass::new(major, name))
+        .collect()
+}
+
+fn block_device_class_name(device_name: &str, major: u16) -> String {
+    match major {
+        259 => "blkext".to_string(),
+        _ if device_name.starts_with("vd") => "virtblk".to_string(),
+        _ if device_name.starts_with("nvme") => "nvme".to_string(),
+        _ => device_name.to_string(),
+    }
 }
 
 pub fn init_in_first_kthread() {

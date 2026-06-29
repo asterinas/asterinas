@@ -211,20 +211,27 @@ fn parse_gpt(device: &Arc<dyn BlockDevice>) -> Vec<Option<PartitionInfo>> {
     let mut partitions = Vec::new();
 
     // The primary GPT Header must be located in LBA 1.
-    let gpt = device.read_val::<GptHeader>(SECTOR_SIZE).unwrap();
-
-    if !gpt.check_signature() {
+    // Try LBA 1 with 512-byte sector size first, then try 4096-byte sector size.
+    let (gpt, sector_size) = if let Ok(gpt) = device.read_val::<GptHeader>(512)
+        && gpt.check_signature()
+    {
+        (gpt, 512)
+    } else if let Ok(gpt) = device.read_val::<GptHeader>(4096)
+        && gpt.check_signature()
+    {
+        (gpt, 4096)
+    } else {
         return partitions;
-    }
+    };
 
     // TODO: Check the CRC32 of the header and the partition entries, check the backup GPT header.
 
     let entry_size = gpt.size_of_partition_entry as usize;
-    let entries_per_sector = SECTOR_SIZE / entry_size;
+    let entries_per_sector = sector_size / entry_size;
     let total_sectors = gpt.nr_partition_entries as usize / entries_per_sector;
     for i in 0..total_sectors {
-        let mut buf = [0u8; SECTOR_SIZE];
-        let offset = (gpt.partition_entry_lba as usize + i) * SECTOR_SIZE;
+        let mut buf = vec![0u8; sector_size];
+        let offset = (gpt.partition_entry_lba as usize + i) * sector_size;
         device.read_bytes(offset, buf.as_mut_slice()).unwrap();
 
         for j in 0..entries_per_sector {
@@ -267,6 +274,14 @@ impl BlockDevice for PartitionNode {
 
     fn id(&self) -> DeviceId {
         self.id
+    }
+
+    fn is_partition(&self) -> bool {
+        true
+    }
+
+    fn partition_start_sector(&self) -> Option<u64> {
+        Some(self.info.start_sector())
     }
 }
 

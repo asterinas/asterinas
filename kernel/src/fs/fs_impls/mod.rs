@@ -9,6 +9,7 @@ pub mod configfs;
 pub mod devpts;
 pub mod exfat;
 pub mod ext2;
+pub mod hadris;
 pub mod overlayfs;
 pub mod procfs;
 pub mod pseudofs;
@@ -29,6 +30,7 @@ pub(super) fn init() {
 
     ext2::init();
     exfat::init();
+    hadris::init();
     overlayfs::init();
     virtiofs::init();
 }
