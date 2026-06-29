@@ -53,10 +53,27 @@ CONFORMANCE_TEST_WORKDIR ?= /tmp
 #   directory, and appends that file directly.
 EXTRA_BLOCKLISTS ?= ""
 # Parameters for xfstests.
-XFSTESTS_RUNLIST ?= /opt/xfstests/short.list
+XFSTESTS_BACKEND ?= block
 XFSTESTS_DISK_SIZE ?= 12G
+ifeq ($(XFSTESTS_BACKEND), virtiofs)
+VIRTIOFS ?= on
+VIRTIOFS_TAG ?= xfstest
+VIRTIOFS_SCRATCH ?= on
+VIRTIOFS_SCRATCH_TAG ?= xfsscratch
+XFSTESTS_RUNLIST ?= /opt/xfstests/virtiofs.list
+XFSTESTS_TEST_DEV ?= $(VIRTIOFS_TAG)
+XFSTESTS_SCRATCH_DEV ?= $(VIRTIOFS_SCRATCH_TAG)
+else
+VIRTIOFS ?= off
+XFSTESTS_RUNLIST ?= /opt/xfstests/short.list
 XFSTESTS_TEST_DEV ?= /dev/vdc
 XFSTESTS_SCRATCH_DEV ?= /dev/vdd
+endif
+VIRTIOFS_SOCKET ?= /tmp/vhostqemu/vfs.sock
+VIRTIOFS_SCRATCH_SOCKET ?= /tmp/vhostqemu/vfs-scratch.sock
+VIRTIOFS_SHARED_DIR ?= $(abspath test/initramfs/build/virtiofs-test)
+VIRTIOFS_SCRATCH_SHARED_DIR ?= $(abspath test/initramfs/build/virtiofs-scratch)
+VIRTIOFSD ?= /usr/libexec/virtiofsd
 # Specify whether to build regression tests under `test/initramfs/src/regression`.
 ENABLE_REGRESSION_TEST ?= false
 # End of auto test features.
@@ -112,9 +129,13 @@ CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_SUITE=$(CONFORMANCE_TEST_
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_WORKDIR=$(CONFORMANCE_TEST_WORKDIR)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="EXTRA_BLOCKLISTS=$(EXTRA_BLOCKLISTS)"
 ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_BACKEND=$(XFSTESTS_BACKEND)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_RUNLIST=$(XFSTESTS_RUNLIST)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_TEST_DEV=$(XFSTESTS_TEST_DEV)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_SCRATCH_DEV=$(XFSTESTS_SCRATCH_DEV)"
+ifeq ($(XFSTESTS_BACKEND), virtiofs)
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="VIRTIOFS_TAG=$(VIRTIOFS_TAG)"
+endif
 endif
 CARGO_OSDK_BUILD_ARGS += --init-args="/opt/run_conformance_test.sh"
 else ifeq ($(AUTO_TEST), regression)
@@ -270,7 +291,13 @@ kernel: initramfs $(CARGO_OSDK)
 # Build the kernel with an initramfs and then run it
 .PHONY: run_kernel
 run_kernel: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
+	@if [ "$(AUTO_TEST)" = "conformance" ] && \
+	    [ "$(CONFORMANCE_TEST_SUITE)" = "xfstests" ] && \
+	    [ "$(XFSTESTS_BACKEND)" = "virtiofs" ]; then \
+		./tools/run_with_virtiofsd.sh sh -c 'cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)'; \
+	else \
+		cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS); \
+	fi
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), conformance)
 	@tail --lines 100 qemu.log | grep -q "^All conformance tests passed." \

@@ -50,6 +50,9 @@ inputs:
     required: false
 
   # Xfstest-specific parameters
+  xfstests_backend:
+    description: 'The backend for xfstests'
+    required: false
   xfstests_disk_size:
     description: 'The disk size for xfstests'
     required: false
@@ -103,6 +106,7 @@ runs:
         [[ -n "${{ inputs.conformance_test_workdir }}" ]] && CMD+=" CONFORMANCE_TEST_WORKDIR=${{ inputs.conformance_test_workdir }}"
         [[ -n "${{ inputs.boot_protocol }}" ]] && CMD+=" BOOT_PROTOCOL=${{ inputs.boot_protocol }}"
         [[ -n "${{ inputs.mem }}" ]] && CMD+=" MEM=${{ inputs.mem }}"
+        [[ -n "${{ inputs.xfstests_backend }}" ]] && CMD+=" XFSTESTS_BACKEND=${{ inputs.xfstests_backend }}"
         [[ -n "${{ inputs.xfstests_disk_size }}" ]] && CMD+=" XFSTESTS_DISK_SIZE=${{ inputs.xfstests_disk_size }}"
         [[ -n "${{ inputs.xfstests_runlist }}" ]] && CMD+=" XFSTESTS_RUNLIST=${{ inputs.xfstests_runlist }}"
         

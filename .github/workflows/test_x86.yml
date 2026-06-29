@@ -182,16 +182,28 @@ jobs:
         - /usr/local/lib/android:/usr/local/lib/android
         - /usr/share/dotnet:/usr/share/dotnet
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ext2
+            xfstests_backend: block
+            xfstests_disk_size: '2G'
+            xfstests_runlist: '/opt/xfstests/short.list'
+          - name: virtio-fs
+            xfstests_backend: virtiofs
+            xfstests_runlist: '/opt/xfstests/virtiofs.list'
     steps:
       - name: Free disk space
         run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
       - uses: actions/checkout@v4
-      - name: Run xfstests
+      - name: Run xfstests (${{ matrix.name }})
         uses: ./.github/actions/test
         with:
           auto_test: 'conformance'
           conformance_test_suite: 'xfstests'
           release: true
           mem: '12G'
-          xfstests_disk_size: '2G'
-          xfstests_runlist: '/opt/xfstests/short.list'
+          xfstests_backend: ${{ matrix.xfstests_backend }}
+          xfstests_disk_size: ${{ matrix.xfstests_disk_size }}
+          xfstests_runlist: ${{ matrix.xfstests_runlist }}
