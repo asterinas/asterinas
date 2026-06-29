@@ -11,6 +11,7 @@ pub use mount::{Mount, MountPropType, PerMountFlags};
 pub use mount_namespace::MountNamespace;
 pub use resolver::{
     AT_FDCWD, AbsPathResult, EmptyPathStr, FsPath, LookupResult, PathResolver, SplitPath,
+    SplitPathError,
 };
 
 use crate::{

@@ -3,8 +3,8 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::file_table::RawFileDesc,
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath},
+        file::{InodeType, file_table::RawFileDesc},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath, SplitPathError},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -27,16 +27,31 @@ pub fn sys_unlinkat(
 
     let path_name = path_name.to_string_lossy();
     let (dir_path, name) = {
-        let (parent_path_name, target_name) = path_name.split_dirname_and_filename()?;
-        let fs_path = FsPath::from_fd_at(dirfd, parent_path_name, EmptyPathStr::Reject)?;
-        (
-            ctx.thread_local
-                .borrow_fs()
-                .resolver()
-                .read()
-                .lookup(&fs_path)?,
-            target_name,
-        )
+        let (parent_path_name, target_name) = path_name
+            .split_dirname_and_basename()
+            .map_err(SplitPathError::reject_root_as_is_dir)?;
+
+        let fs_ref = ctx.thread_local.borrow_fs();
+        let path_resolver = fs_ref.resolver().read();
+
+        let parent_fs_path = FsPath::from_fd_at(dirfd, parent_path_name, EmptyPathStr::Reject)?;
+        let dir_path = path_resolver.lookup(&parent_fs_path)?;
+
+        // A trailing slash makes the unlink fail in one of two ways:
+        // `dir/` with `EISDIR`, `file/` with `ENOTDIR`.
+        if path_name.ends_with('/') {
+            let target = path_resolver.lookup_at_path(&dir_path, target_name)?;
+            if target.type_() == InodeType::Dir {
+                return_errno_with_message!(Errno::EISDIR, "a directory cannot be unlinked");
+            } else {
+                return_errno_with_message!(
+                    Errno::ENOTDIR,
+                    "the path ends with a slash but is not a directory"
+                );
+            }
+        }
+
+        (dir_path, target_name)
     };
 
     dir_path.unlink(name)?;

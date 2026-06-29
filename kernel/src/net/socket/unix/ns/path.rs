@@ -5,7 +5,7 @@ use ostd::task::Task;
 use crate::{
     fs::{
         file::{InodeType, Permission, mkmod},
-        vfs::path::{FsPath, Path, SplitPath},
+        vfs::path::{FsPath, Path},
     },
     prelude::*,
 };
@@ -38,23 +38,24 @@ pub fn lookup_socket_file(path: &str) -> Result<Path> {
 }
 
 pub fn create_socket_file(path_name: &str) -> Result<Path> {
-    let (parent_path_name, file_name) = path_name.split_dirname_and_filename()?;
-
-    let parent = {
+    let result = (|| {
         let current = Task::current().unwrap();
         let fs_ref = current.as_thread_local().unwrap().borrow_fs();
         let path_resolver = fs_ref.resolver().read();
-        let parent_path = FsPath::try_from(parent_path_name)?;
-        path_resolver.lookup(&parent_path)?
-    };
 
-    parent
-        .new_fs_child(file_name, InodeType::Socket, mkmod!(u+rw))
-        .map_err(|err| {
-            if err.error() == Errno::EEXIST {
-                Error::with_message(Errno::EADDRINUSE, "the socket file already exists")
-            } else {
-                err
-            }
-        })
+        let fs_path = FsPath::try_from(path_name)?;
+        let (parent, file_name) = path_resolver
+            .lookup_unresolved_no_follow(&fs_path)?
+            .into_parent_and_filename()?;
+
+        parent.new_fs_child(&file_name, InodeType::Socket, mkmod!(u+rw))
+    })();
+
+    result.map_err(|err| {
+        if err.error() == Errno::EEXIST {
+            Error::with_message(Errno::EADDRINUSE, "the socket file already exists")
+        } else {
+            err
+        }
+    })
 }
