@@ -329,9 +329,11 @@ fn set_uid_from_elf(
 ) -> Result<()> {
     if elf_inode.mode()?.has_set_uid() {
         let uid = elf_inode.owner()?;
-        credentials.set_euid(uid);
-
-        current.clear_parent_death_signal();
+        // Ignore suid if the UID has no valid mapping (e.g., raw_uid == -1 on disk).
+        if uid.has_valid_mapping() {
+            credentials.set_euid(uid);
+            current.clear_parent_death_signal();
+        }
     }
 
     // No matter whether the ELF inode has `set_uid` bit, SUID should be reset.
@@ -350,9 +352,11 @@ fn set_gid_from_elf(
 ) -> Result<()> {
     if elf_inode.mode()?.has_set_gid() {
         let gid = elf_inode.group()?;
-        credentials.set_egid(gid);
-
-        current.clear_parent_death_signal();
+        // Ignore sgid if the GID has no valid mapping (e.g., raw_gid == -1 on disk).
+        if gid.has_valid_mapping() {
+            credentials.set_egid(gid);
+            current.clear_parent_death_signal();
+        }
     }
 
     // No matter whether the ELF inode has `set_gid` bit, SGID should be reset.

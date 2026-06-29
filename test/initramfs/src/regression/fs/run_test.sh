@@ -112,6 +112,8 @@ echo "Start mount bind file test......"
 test_mount_bind_file
 echo "All mount bind file test passed."
 
+./chown/chown
+
 ./getcwd/getcwd
 
 ./inotify/inotify_align

@@ -35,13 +35,7 @@ impl ProcFileOps for GidMapFileOps {
         // This is the default GID map for the initial user namespace.
         // TODO: Retrieve the GID map from the user namespace of the current process
         // instead of returning this hard-coded value.
-        writeln!(
-            printer,
-            "{:>10} {:>10} {:>10}",
-            0,
-            0,
-            u32::from(Gid::INVALID)
-        )?;
+        writeln!(printer, "{:>10} {:>10} {:>10}", 0, 0, Gid::RAW_INVALID)?;
 
         Ok(printer.bytes_written())
     }

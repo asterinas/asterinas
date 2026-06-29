@@ -584,7 +584,7 @@ impl Ext2 {
             return true;
         }
 
-        let reserved_gid_value = Gid::from(reserved_gid);
+        let reserved_gid_value = Gid::from_raw(reserved_gid);
         if !reserved_gid_value.is_root() {
             if credentials.fsgid() == reserved_gid_value {
                 return true;

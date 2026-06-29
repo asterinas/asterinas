@@ -100,8 +100,12 @@ impl PriorityTarget {
             Which::PRIO_USER => {
                 let uid = if who == 0 {
                     ctx.posix_thread.credentials().ruid()
+                } else if let Some(uid) = Uid::new(who) {
+                    uid
                 } else {
-                    Uid::new(who)
+                    // Linux does not validate the UID here. An invalid UID
+                    // simply finds no matching processes and returns `ESRCH`.
+                    return_errno_with_message!(Errno::ESRCH, "invalid UID");
                 };
                 Self::User(uid)
             }

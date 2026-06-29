@@ -3,15 +3,11 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{Gid, posix_thread::ContextPthreadAdminApi},
+    process::{Gid, RawGid, posix_thread::ContextPthreadAdminApi},
 };
 
-pub fn sys_setfsgid(gid: i32, ctx: &Context) -> Result<SyscallReturn> {
-    let fsgid = if gid >= 0 {
-        Some(Gid::new(gid.cast_unsigned()))
-    } else {
-        None
-    };
+pub fn sys_setfsgid(raw_gid: RawGid, ctx: &Context) -> Result<SyscallReturn> {
+    let fsgid = Gid::new(raw_gid);
 
     debug!("fsgid = {:?}", fsgid);
 

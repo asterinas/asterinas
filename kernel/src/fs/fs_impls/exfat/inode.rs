@@ -1444,8 +1444,8 @@ impl Inode for ExfatInode {
             type_: inner.inode_type,
             mode: inner.make_mode(),
             nr_hard_links: nlinks,
-            uid: Uid::new(inner.fs().mount_option().fs_uid as u32),
-            gid: Gid::new(inner.fs().mount_option().fs_gid as u32),
+            uid: Uid::from_raw(inner.fs().mount_option().fs_uid as u32),
+            gid: Gid::from_raw(inner.fs().mount_option().fs_gid as u32),
             container_dev_id: inner.fs().container_device_id(),
             self_dev_id: None,
             birth_at: inner.crtime.as_duration().unwrap_or_default(),
@@ -1490,7 +1490,7 @@ impl Inode for ExfatInode {
     }
 
     fn owner(&self) -> Result<Uid> {
-        Ok(Uid::new(
+        Ok(Uid::from_raw(
             self.inner.read().fs().mount_option().fs_uid as u32,
         ))
     }
@@ -1501,7 +1501,7 @@ impl Inode for ExfatInode {
     }
 
     fn group(&self) -> Result<Gid> {
-        Ok(Gid::new(
+        Ok(Gid::from_raw(
             self.inner.read().fs().mount_option().fs_gid as u32,
         ))
     }
