@@ -1448,7 +1448,7 @@ impl Inode for ExfatInode {
             gid: Gid::new(inner.fs().mount_option().fs_gid as u32),
             container_dev_id: inner.fs().container_device_id(),
             self_dev_id: None,
-            birth_at: inner.crtime.as_duration().unwrap_or_default(),
+            birth_at: Some(inner.crtime.as_duration().unwrap_or_default()),
         }
     }
 

@@ -138,16 +138,18 @@ impl Statx {
             stx_attributes |= STATX_ATTR_MOUNT_ROOT;
         }
 
-        // Build `stx_mask` based on what's supported and what was requested
+        // Build `stx_mask` based on what's supported and what was requested.
+        // TODO: Pass the request `stx_mask` to the filesystem. It can determine which information
+        // to return and omit the information that is not requested and expensive to query.
         let mut stx_mask = StatxMask::STATX_BASIC_STATS.bits() | StatxMask::STATX_MNT_ID.bits();
 
-        // Include `STATX_BTIME` if the birth time is available
-        // TODO: The filesystem supports populating `stx_mask`
-        if !info.birth_at.is_zero() {
+        // Include `STATX_BTIME` if the birth time is available.
+        let stx_btime = if let Some(birth_at) = info.birth_at {
             stx_mask |= StatxMask::STATX_BTIME.bits();
-        }
-
-        let stx_btime = StatxTimestamp::from(info.birth_at);
+            StatxTimestamp::from(birth_at)
+        } else {
+            StatxTimestamp::default()
+        };
 
         Self {
             // FIXME: All zero fields below are dummy implementations that need to be improved in the future.
