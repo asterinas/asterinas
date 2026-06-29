@@ -11,7 +11,7 @@ use crate::{
     events::IoEvents,
     fs::{pseudofs::SockFs, vfs::path::Path},
     net::{
-        iface::is_broadcast_endpoint,
+        route::is_broadcast_endpoint,
         socket::{
             Socket,
             ip::options::{IpOptionSet, SetIpLevelOption},
