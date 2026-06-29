@@ -12,6 +12,7 @@ SUBDIRS := \
 	pseudofs \
 	statx \
 	symlink \
+	sync \
 	tmpfile \
 	utimensat \
 
