@@ -108,7 +108,9 @@ impl UnixDatagramSocket {
         let res = if self.is_nonblocking() {
             queue.try_send(reader, &mut aux_data, &self.local_receiver)
         } else {
-            queue.block_send(|| queue.try_send(reader, &mut aux_data, &self.local_receiver))
+            queue.block_send(self.send_timeout(), || {
+                queue.try_send(reader, &mut aux_data, &self.local_receiver)
+            })
         };
 
         // A connected socket will automatically be disconnected if the remote has been closed.
@@ -291,7 +293,9 @@ impl Socket for UnixDatagramSocket {
         }
 
         let (received_bytes, control_messages, peer_addr) =
-            self.block_on(IoEvents::IN, || self.local_receiver.try_recv(writer, flags))?;
+            self.block_on_timeout(IoEvents::IN, self.recv_timeout(), || {
+                self.local_receiver.try_recv(writer, flags)
+            })?;
 
         let message_header = MessageHeader::new(Some(peer_addr.into()), control_messages);
 
@@ -300,6 +304,14 @@ impl Socket for UnixDatagramSocket {
 
     fn pseudo_path(&self) -> &Path {
         &self.pseudo_path
+    }
+
+    fn recv_timeout(&self) -> Option<core::time::Duration> {
+        self.options.read().socket.recv_timeout_duration()
+    }
+
+    fn send_timeout(&self) -> Option<core::time::Duration> {
+        self.options.read().socket.send_timeout_duration()
     }
 }
 

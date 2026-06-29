@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <stdio.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -100,6 +101,22 @@ static int mark_filde_mayblock(int flide)
 
 static char buffer[4096] = "Hello, world";
 
+static int set_send_timeout(int sockfd, suseconds_t usec)
+{
+	struct timeval timeout = {
+		.tv_sec = 0,
+		.tv_usec = usec,
+	};
+
+	if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+		       sizeof(timeout)) < 0) {
+		perror("set_send_timeout: setsockopt(SO_SNDTIMEO)");
+		return -1;
+	}
+
+	return 0;
+}
+
 static ssize_t receive_all(int sockfd)
 {
 	size_t recv_len = 0;
@@ -179,6 +196,33 @@ int test_full_send_buffer(struct sockaddr_in *addr)
 	if (mark_filde_mayblock(sendfd) < 0) {
 		fprintf(stderr,
 			"Test failed: Error occurs in mark_filde_mayblock\n");
+		goto out;
+	}
+
+	if (set_send_timeout(sendfd, 100000) < 0) {
+		fprintf(stderr,
+			"Test failed: Error occurs in set_send_timeout\n");
+		goto out;
+	}
+
+	for (;;) {
+		sent = send(sendfd, buffer, sizeof(buffer), 0);
+		if (sent < 0 && errno == EAGAIN)
+			break;
+
+		if (sent < 0) {
+			perror("send");
+			fprintf(stderr,
+				"Test failed: Error occurs in timeout send\n");
+			goto out;
+		}
+
+		sent_len += sent;
+	}
+
+	if (set_send_timeout(sendfd, 0) < 0) {
+		fprintf(stderr,
+			"Test failed: Error occurs in resetting send timeout\n");
 		goto out;
 	}
 

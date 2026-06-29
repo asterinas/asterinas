@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <unistd.h>
@@ -119,6 +120,114 @@ FN_TEST(socket_error)
 	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_ERROR, &error,
 			    &error_len),
 		 error_len == sizeof(error) && error == 0);
+}
+END_TEST()
+
+FN_TEST(socket_timeout)
+{
+	struct timeval timeout;
+	struct timeval result;
+	socklen_t timeout_len = sizeof(timeout);
+	char buf;
+
+	timeout_len = sizeof(result);
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_RCVTIMEO, &result,
+			    &timeout_len),
+		 result.tv_sec == 0 && result.tv_usec == 0 &&
+			 timeout_len == sizeof(result));
+
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 200000;
+	TEST_SUCC(setsockopt(sk_connected, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+			     sizeof(timeout)));
+
+	result.tv_sec = -1;
+	result.tv_usec = -1;
+	timeout_len = sizeof(result);
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_RCVTIMEO, &result,
+			    &timeout_len),
+		 result.tv_sec == 0 && result.tv_usec == 200000 &&
+			 timeout_len == sizeof(result));
+
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 100000;
+	TEST_SUCC(setsockopt(sk_connected, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+			     sizeof(timeout)));
+
+	result.tv_sec = -1;
+	result.tv_usec = -1;
+	timeout_len = sizeof(result);
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_SNDTIMEO, &result,
+			    &timeout_len),
+		 result.tv_sec == 0 && result.tv_usec == 100000 &&
+			 timeout_len == sizeof(result));
+
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 300000;
+	TEST_SUCC(setsockopt(sk_listen, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+			     sizeof(timeout)));
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 400000;
+	TEST_SUCC(setsockopt(sk_listen, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+			     sizeof(timeout)));
+	TEST_SUCC(refresh_connection());
+
+	result.tv_sec = -1;
+	result.tv_usec = -1;
+	timeout_len = sizeof(result);
+	TEST_RES(getsockopt(sk_accepted, SOL_SOCKET, SO_RCVTIMEO, &result,
+			    &timeout_len),
+		 result.tv_sec == 0 && result.tv_usec == 300000 &&
+			 timeout_len == sizeof(result));
+
+	result.tv_sec = -1;
+	result.tv_usec = -1;
+	timeout_len = sizeof(result);
+	TEST_RES(getsockopt(sk_accepted, SOL_SOCKET, SO_SNDTIMEO, &result,
+			    &timeout_len),
+		 result.tv_sec == 0 && result.tv_usec == 400000 &&
+			 timeout_len == sizeof(result));
+
+	timeout.tv_sec = -1;
+	timeout.tv_usec = 0;
+	TEST_SUCC(setsockopt(sk_connected, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+			     sizeof(timeout)));
+	result.tv_sec = -1;
+	result.tv_usec = -1;
+	timeout_len = sizeof(result);
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_RCVTIMEO, &result,
+			    &timeout_len),
+		 result.tv_sec == 0 && result.tv_usec == 0 &&
+			 timeout_len == sizeof(result));
+
+	timeout.tv_sec = 0;
+	timeout.tv_usec = -1;
+	TEST_ERRNO(setsockopt(sk_connected, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+			      sizeof(timeout)),
+		   EDOM);
+
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 1000000;
+	TEST_ERRNO(setsockopt(sk_connected, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+			      sizeof(timeout)),
+		   EDOM);
+
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 200000;
+	TEST_SUCC(setsockopt(sk_connected, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+			     sizeof(timeout)));
+	TEST_ERRNO(recv(sk_connected, &buf, sizeof(buf), 0), EAGAIN);
+
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 0;
+	TEST_SUCC(setsockopt(sk_connected, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+			     sizeof(timeout)));
+	TEST_SUCC(setsockopt(sk_connected, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+			     sizeof(timeout)));
+	TEST_SUCC(setsockopt(sk_listen, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+			     sizeof(timeout)));
+	TEST_SUCC(setsockopt(sk_listen, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+			     sizeof(timeout)));
 }
 END_TEST()
 

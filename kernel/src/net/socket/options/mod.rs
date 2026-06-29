@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::time::Duration;
+
 use macros::impl_socket_options;
 
 use super::util::LingerOption;
@@ -23,6 +25,8 @@ impl_socket_options!(
     pub struct KeepAlive(bool);
     pub struct Priority(i32);
     pub struct Linger(LingerOption);
+    pub struct RecvTimeout(Duration);
+    pub struct SendTimeout(Duration);
     pub struct ReusePort(bool);
     pub struct PassCred(bool);
     pub struct PeerCred(CUserCred);

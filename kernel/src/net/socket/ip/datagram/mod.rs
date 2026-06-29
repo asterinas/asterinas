@@ -229,7 +229,9 @@ impl Socket for DatagramSocket {
         }
 
         let (received_bytes, peer_addr) =
-            self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+            self.block_on_timeout(IoEvents::IN, self.recv_timeout(), || {
+                self.try_recv(writer, flags)
+            })?;
 
         // TODO: Receive control message
 
@@ -290,6 +292,14 @@ impl Socket for DatagramSocket {
         }
 
         Ok(())
+    }
+
+    fn recv_timeout(&self) -> Option<core::time::Duration> {
+        self.options.read().socket.recv_timeout_duration()
+    }
+
+    fn send_timeout(&self) -> Option<core::time::Duration> {
+        self.options.read().socket.send_timeout_duration()
     }
 
     fn pseudo_path(&self) -> &Path {
