@@ -233,6 +233,11 @@ impl<D: TtyDriver> Tty<D> {
 
                 cmd.write(&termios)?;
             }
+            cmd @ GetTermios2 => {
+                let termios = self.ldisc.lock().termios2();
+
+                cmd.write(&termios)?;
+            }
             cmd @ SetTermios => {
                 let termios = cmd.read()?;
 
@@ -240,6 +245,15 @@ impl<D: TtyDriver> Tty<D> {
                 let old_termios = ldisc.termios();
                 self.driver().on_termios_change(old_termios, &termios);
                 ldisc.set_termios(termios);
+            }
+            cmd @ SetTermios2 => {
+                let termios2 = cmd.read()?;
+                let termios = termios2.termios();
+
+                let mut ldisc = self.ldisc.lock();
+                let old_termios = ldisc.termios();
+                self.driver().on_termios_change(old_termios, &termios);
+                ldisc.set_termios2(termios2);
             }
             cmd @ SetTermiosWait => {
                 let termios = cmd.read()?;
@@ -255,6 +269,16 @@ impl<D: TtyDriver> Tty<D> {
                 self.driver().on_termios_change(old_termios, &termios);
                 ldisc.set_termios(termios);
             }
+            cmd @ SetTermiosWait2 => {
+                let termios2 = cmd.read()?;
+                let termios = termios2.termios();
+
+                // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
+                let mut ldisc = self.ldisc.lock();
+                let old_termios = ldisc.termios();
+                self.driver().on_termios_change(old_termios, &termios);
+                ldisc.set_termios2(termios2);
+            }
             cmd @ SetTermiosFlush => {
                 let termios = cmd.read()?;
 
@@ -263,6 +287,19 @@ impl<D: TtyDriver> Tty<D> {
                 let old_termios = ldisc.termios();
                 self.driver().on_termios_change(old_termios, &termios);
                 ldisc.set_termios(termios);
+                ldisc.drain_input();
+
+                self.pollee.invalidate();
+            }
+            cmd @ SetTermiosFlush2 => {
+                let termios2 = cmd.read()?;
+                let termios = termios2.termios();
+
+                // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
+                let mut ldisc = self.ldisc.lock();
+                let old_termios = ldisc.termios();
+                self.driver().on_termios_change(old_termios, &termios);
+                ldisc.set_termios2(termios2);
                 ldisc.drain_input();
 
                 self.pollee.invalidate();
@@ -276,6 +313,11 @@ impl<D: TtyDriver> Tty<D> {
                 let winsize = cmd.read()?;
 
                 self.ldisc.lock().set_window_size(winsize);
+            }
+            HangUp => {
+                // A full TTY hangup would notify the controlling session and close peer state.
+                // Systemd uses this during getty setup to clear stale line state; treating it as
+                // a successful no-op keeps startup compatible until full hangup semantics exist.
             }
             cmd @ GetNumBytesToRead => {
                 if self.tty_flags.is_other_closed() {
