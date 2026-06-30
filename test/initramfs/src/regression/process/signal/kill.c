@@ -79,7 +79,8 @@ FN_TEST(kill_dead_thread)
 	cpid = TEST_SUCC(fork());
 	if (cpid == 0) {
 		pthread_t tid;
-		CHECK(pthread_create(&tid, NULL, background_thread, NULL));
+		CHECK_WITH(pthread_create(&tid, NULL, background_thread, NULL),
+			   _ret == 0);
 		syscall(SYS_exit, 0);
 	}
 	usleep(200 * 1000);

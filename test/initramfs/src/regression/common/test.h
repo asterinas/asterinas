@@ -38,6 +38,7 @@
  */
 
 #include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,13 +53,13 @@
 /** Ends the definition of a setup function. */
 #define END_SETUP() }
 
-#define __CHECK(func, cond)                                                     \
+#define __CHECK(func, func_str, cond)                                           \
 	errno = 0;                                                              \
 	__auto_type _ret = (func);                                              \
 	if (!(cond)) {                                                          \
 		fprintf(stderr,                                                 \
 			"fatal error: %s: `%s` is false after `%s` [got %s]\n", \
-			__func__, #cond, #func, strerror(errno));               \
+			__func__, #cond, func_str, strerror(errno));            \
 		exit(EXIT_FAILURE);                                             \
 	}
 
@@ -67,10 +68,10 @@
  *
  * The execution will be aborted if the check fails.
  */
-#define CHECK(func)                       \
-	({                                \
-		__CHECK(func, _ret >= 0); \
-		_ret;                     \
+#define CHECK(func)                              \
+	({                                       \
+		__CHECK(func, #func, _ret >= 0); \
+		_ret;                            \
 	})
 
 /**
@@ -81,10 +82,10 @@
  * The return value of the function can be accessed with a local variable named
  * _ret.
  */
-#define CHECK_WITH(func, cond)       \
-	({                           \
-		__CHECK(func, cond); \
-		_ret;                \
+#define CHECK_WITH(func, cond)              \
+	({                                  \
+		__CHECK(func, #func, cond); \
+		_ret;                       \
 	})
 
 static int __total_failures;
@@ -119,22 +120,22 @@ static int __total_failures;
 		}                                                     \
 	})
 
-#define __TEST(func, err, cond)                                                \
+#define __TEST(func, func_str, err, cond)                                      \
 	errno = 0;                                                             \
 	__auto_type _ret = (func);                                             \
 	if (errno != (err)) {                                                  \
 		__tests_failed++;                                              \
 		fprintf(stderr, "%s: `%s` failed [got %s, but expected %s]\n", \
-			__func__, #func, strerror(errno), strerror(err));      \
+			__func__, func_str, strerror(errno), strerror(err));   \
 	} else if (!(cond)) {                                                  \
 		__tests_failed++;                                              \
 		fprintf(stderr,                                                \
 			"%s: `%s` failed [got %s, but `%s` is false]\n",       \
-			__func__, #func, strerror(errno), #cond);              \
+			__func__, func_str, strerror(errno), #cond);           \
 	} else {                                                               \
 		__tests_passed++;                                              \
-		fprintf(stderr, "%s: `%s` passed [got %s]\n", __func__, #func, \
-			strerror(errno));                                      \
+		fprintf(stderr, "%s: `%s` passed [got %s]\n", __func__,        \
+			func_str, strerror(errno));                            \
 	}
 
 /**
@@ -146,10 +147,10 @@ static int __total_failures;
  * The return value of the function can be accessed with a local variable named
  * _ret.
  */
-#define TEST(func, err, cond)            \
-	({                               \
-		__TEST(func, err, cond); \
-		_ret;                    \
+#define TEST(func, err, cond)                   \
+	({                                      \
+		__TEST(func, #func, err, cond); \
+		_ret;                           \
 	})
 /**
  * Makes a function call and checks whether it succeeds.
@@ -176,6 +177,45 @@ static int __total_failures;
  * _ret.
  */
 #define TEST_RES(func, cond) TEST(func, 0, cond)
+
+/*
+ * pthread APIs return error numbers directly. Wrap the small set used by
+ * regression tests so TEST_*() can keep using errno conventions while the
+ * original pthread error numbers remain available through `_ret`.
+ */
+#define __PTHREAD_ERRNO(func)         \
+	({                            \
+		int _ret = (func);    \
+		if (_ret != 0) {      \
+			errno = _ret; \
+		} else {              \
+			errno = 0;    \
+		}                     \
+		_ret;                 \
+	})
+
+#define pthread_create(thread, attr, start_routine, arg) \
+	__PTHREAD_ERRNO(pthread_create(thread, attr, start_routine, arg))
+
+#define pthread_join(thread, retval) \
+	__PTHREAD_ERRNO(pthread_join(thread, retval))
+
+#define pthread_barrier_init(barrier, attr, count) \
+	__PTHREAD_ERRNO(pthread_barrier_init(barrier, attr, count))
+
+#define pthread_barrier_destroy(barrier) \
+	__PTHREAD_ERRNO(pthread_barrier_destroy(barrier))
+
+#define pthread_barrier_wait(barrier)                                     \
+	({                                                                \
+		int _ret = pthread_barrier_wait(barrier);                 \
+		if (_ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD) { \
+			errno = 0;                                        \
+		} else {                                                  \
+			errno = _ret;                                     \
+		}                                                         \
+		_ret;                                                     \
+	})
 
 int main(void)
 {

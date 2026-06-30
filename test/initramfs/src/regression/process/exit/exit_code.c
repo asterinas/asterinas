@@ -35,7 +35,7 @@ static void *thread_master(void *info_)
 	struct exit_info *info = info_;
 	pthread_t tid;
 
-	CHECK(pthread_create(&tid, NULL, &thread_slave, info));
+	CHECK_WITH(pthread_create(&tid, NULL, &thread_slave, info), _ret == 0);
 
 	if (!info->should_exit_master_first) {
 		if (info->should_use_exit_group)

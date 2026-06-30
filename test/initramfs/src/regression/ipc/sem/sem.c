@@ -115,14 +115,7 @@ static void *timed_semop_thread(void *data)
 static int start_timed_semop_thread(pthread_t *thread,
 				    struct timed_semop_args *args)
 {
-	int error = pthread_create(thread, NULL, &timed_semop_thread, args);
-
-	if (error != 0) {
-		errno = error;
-		return -1;
-	}
-
-	return 0;
+	return pthread_create(thread, NULL, &timed_semop_thread, args);
 }
 
 static int join_timed_semop_thread(pthread_t thread,
@@ -131,10 +124,8 @@ static int join_timed_semop_thread(pthread_t thread,
 	int error = pthread_join(thread, NULL);
 
 	if (error != 0) {
-		errno = error;
-		return -1;
+		return error;
 	}
-
 	return args->error;
 }
 
