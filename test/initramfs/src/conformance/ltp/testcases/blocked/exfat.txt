@@ -19,7 +19,6 @@ fchownat01
 fchownat02
 fstat02
 fstat02_64
-fsync02
 ftruncate01
 ftruncate01_64
 getcwd03
@@ -38,7 +37,6 @@ mknod02
 mknod06
 open07
 open15
-openat01
 pipeio_1
 pipeio_2
 pipeio_5
