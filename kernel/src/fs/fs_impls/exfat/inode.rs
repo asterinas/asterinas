@@ -1536,6 +1536,10 @@ impl Inode for ExfatInode {
             }
         }
 
+        if type_ == InodeType::SymLink {
+            return_errno!(Errno::EPERM)
+        }
+
         let result = self.add_entry(name, type_, mode, &fs_guard)?;
         let _ = fs.insert_inode(result.clone());
 

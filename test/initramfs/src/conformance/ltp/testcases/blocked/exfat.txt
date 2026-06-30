@@ -52,9 +52,6 @@ setfsuid04
 setresuid04
 setreuid07
 setuid04
-symlink02
-symlink03
-symlink04
 symlinkat01
 truncate02
 truncate02_64
