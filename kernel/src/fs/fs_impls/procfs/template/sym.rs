@@ -11,7 +11,7 @@ use crate::{
         procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, SymbolicLink},
+            inode::{Extension, FileOps, Inode, Metadata, SymbolicLink, WriteOffset},
         },
     },
     prelude::*,
@@ -57,7 +57,7 @@ impl<S: ProcSymOps + 'static> FileOps for ProcSym<S> {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {

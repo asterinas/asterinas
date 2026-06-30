@@ -31,7 +31,10 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, MknodType, RenameMode, SymbolicLink},
+            inode::{
+                Extension, FileOps, Inode, Metadata, MknodType, RenameMode, SymbolicLink,
+                WriteOffset,
+            },
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
         },
     },
@@ -703,7 +706,7 @@ impl ExfatInode {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {
@@ -717,11 +720,7 @@ impl ExfatInode {
 
             let file_size = inner.size;
             let file_allocated_size = inner.size_allocated;
-            let offset = if status_flags.contains(StatusFlags::O_APPEND) {
-                file_size
-            } else {
-                offset
-            };
+            let offset = offset.resolve(file_size);
             let new_size = offset
                 .checked_add(write_len)
                 .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
@@ -762,9 +761,9 @@ impl ExfatInode {
 
     fn write_direct_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
-        status_flags: StatusFlags,
+        _status_flags: StatusFlags,
     ) -> Result<usize> {
         let write_len = reader.remain();
         let inner = self.inner.upread();
@@ -773,11 +772,7 @@ impl ExfatInode {
         }
         let file_size = inner.size;
         let file_allocated_size = inner.size_allocated;
-        let offset = if status_flags.contains(StatusFlags::O_APPEND) {
-            file_size
-        } else {
-            offset
-        };
+        let offset = offset.resolve(file_size);
         if !is_block_aligned(offset) || !is_block_aligned(write_len) {
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
         }
@@ -1339,7 +1334,7 @@ impl FileOps for ExfatInode {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {

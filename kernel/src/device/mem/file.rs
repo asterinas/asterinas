@@ -4,7 +4,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{PerOpenFileOps, StatusFlags},
-        vfs::inode::FileOps,
+        vfs::inode::{FileOps, WriteOffset},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -118,7 +118,7 @@ impl FileOps for MemFile {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {

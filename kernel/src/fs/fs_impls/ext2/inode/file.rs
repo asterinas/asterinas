@@ -13,7 +13,7 @@ use super::{super::Ext2, FileFlags, Inode, InodeInner, io_range::IoRange};
 use crate::fs::{
     ext2::{prelude::*, utils},
     file::StatusFlags,
-    vfs::inode::FallocMode,
+    vfs::inode::{FallocMode, WriteOffset},
 };
 
 impl Inode {
@@ -41,9 +41,9 @@ impl Inode {
     /// Writes file data at `offset` through the page cache.
     pub(in crate::fs::fs_impls::ext2) fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
-        status_flags: StatusFlags,
+        _status_flags: StatusFlags,
     ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
@@ -56,11 +56,7 @@ impl Inode {
 
         let fs = self.fs()?;
         let mut inner = self.inner.write();
-        let offset = if status_flags.contains(StatusFlags::O_APPEND) {
-            inner.file_size()
-        } else {
-            offset
-        };
+        let offset = offset.resolve(inner.file_size());
         inner.write_at(&fs, offset, reader)
     }
 
@@ -94,9 +90,9 @@ impl Inode {
     /// Direct-I/O write path with pre-allocation and rollback.
     pub(in crate::fs::fs_impls::ext2) fn write_direct_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
-        status_flags: StatusFlags,
+        _status_flags: StatusFlags,
     ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
@@ -109,11 +105,7 @@ impl Inode {
 
         let fs = self.fs()?;
         let mut inner = self.inner.write();
-        let offset = if status_flags.contains(StatusFlags::O_APPEND) {
-            inner.file_size()
-        } else {
-            offset
-        };
+        let offset = offset.resolve(inner.file_size());
         if !is_block_aligned(offset) || !is_block_aligned(write_len) {
             // TODO: Implement a fallback mechanism.
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
@@ -514,7 +506,7 @@ mod test {
         let base_data = vec![0x44u8; BLOCK_SIZE];
 
         let mut reader = VmReader::from(base_data.as_slice()).to_fallible();
-        file.write_direct_at(0, &mut reader, StatusFlags::empty())
+        file.write_direct_at(WriteOffset::Absolute(0), &mut reader, StatusFlags::empty())
             .unwrap();
         let free_before_fail = f.ext2.super_block().free_blocks_count();
         assert_eq!(free_before_fail, 1);
@@ -522,7 +514,11 @@ mod test {
         let fail_payload = vec![0x66u8; BLOCK_SIZE * 2];
         let mut fail_reader = VmReader::from(fail_payload.as_slice()).to_fallible();
         assert_errno!(
-            file.write_direct_at(BLOCK_SIZE, &mut fail_reader, StatusFlags::empty()),
+            file.write_direct_at(
+                WriteOffset::Absolute(BLOCK_SIZE),
+                &mut fail_reader,
+                StatusFlags::empty(),
+            ),
             Errno::ENOSPC
         );
 
