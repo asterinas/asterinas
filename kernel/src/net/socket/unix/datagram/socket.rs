@@ -20,7 +20,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    util::{MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, net::SockType},
 };
 
 pub struct UnixDatagramSocket {
@@ -323,6 +323,10 @@ fn do_unix_getsockopt(option: &mut dyn SocketOption, socket: &UnixDatagramSocket
 }
 
 impl GetSocketLevelOption for MessageReceiver {
+    fn socket_type(&self) -> SockType {
+        SockType::SOCK_DGRAM
+    }
+
     fn is_listening(&self) -> bool {
         false
     }

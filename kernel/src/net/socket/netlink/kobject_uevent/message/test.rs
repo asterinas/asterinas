@@ -22,6 +22,7 @@ use crate::{
         util::{SendRecvFlags, SocketAddr},
     },
     prelude::*,
+    util::net::SockType,
 };
 
 #[ktest]
@@ -53,7 +54,7 @@ fn multicast_synthetic_uevent() {
     crate::net::socket::netlink::init();
 
     // Creates a new netlink uevent socket and joins the group for kobject uevents.
-    let socket = NetlinkUeventSocket::new(true);
+    let socket = NetlinkUeventSocket::new(true, SockType::SOCK_DGRAM);
     let socket_addr = SocketAddr::Netlink(NetlinkSocketAddr::new(100, GroupIdSet::new(0x1)));
     socket.bind(socket_addr).unwrap();
 
