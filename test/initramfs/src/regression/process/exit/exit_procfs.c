@@ -59,7 +59,7 @@ static void thread_master(void *arg)
 {
 	pthread_t tid;
 
-	CHECK(pthread_create(&tid, NULL, &thread_slave, arg));
+	CHECK_PTHREAD(pthread_create(&tid, NULL, &thread_slave, arg));
 
 	if (arg == EXIT_PARENT_FIRST) {
 		CHECK_WITH(
@@ -133,7 +133,8 @@ FN_TEST(task_status_reports_threads_for_non_leader)
 	char status_buf[2048];
 	int task_dir_fd, tid_dir_fd, status_fd;
 
-	TEST_SUCC(pthread_create(&pthread, NULL, status_thread_slave, &state));
+	TEST_PTHREAD(
+		pthread_create(&pthread, NULL, status_thread_slave, &state));
 	while (state.tid == 0) {
 		usleep(10 * 1000);
 	}
@@ -166,7 +167,7 @@ FN_TEST(task_status_reports_threads_for_non_leader)
 	TEST_SUCC(close(task_dir_fd));
 
 	state.should_exit = 1;
-	TEST_SUCC(pthread_join(pthread, NULL));
+	TEST_PTHREAD(pthread_join(pthread, NULL));
 }
 END_TEST()
 

@@ -201,10 +201,10 @@ static void *unshare_cgroup_ns_thread(void *arg)
 
 	probe->tid = CHECK(syscall(SYS_gettid));
 	CHECK(unshare(CLONE_NEWCGROUP));
-	CHECK_WITH(pthread_barrier_wait(&probe->ready),
-		   _ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD);
-	CHECK_WITH(pthread_barrier_wait(&probe->release),
-		   _ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD);
+	CHECK_PTHREAD_WITH(pthread_barrier_wait(&probe->ready),
+			   _ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD);
+	CHECK_PTHREAD_WITH(pthread_barrier_wait(&probe->release),
+			   _ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD);
 
 	return NULL;
 }
@@ -235,24 +235,26 @@ FN_TEST(cgroup_namespace_stays_thread_local)
 
 	TEST_SUCC(read_self_cgroup_ns_inode(&main_before));
 
-	TEST_RES(pthread_barrier_init(&probe.ready, NULL, 2), _ret == 0);
-	TEST_RES(pthread_barrier_init(&probe.release, NULL, 2), _ret == 0);
-	TEST_RES(pthread_create(&thread, NULL, unshare_cgroup_ns_thread,
-				&probe),
-		 _ret == 0);
+	TEST_PTHREAD_RES(pthread_barrier_init(&probe.ready, NULL, 2),
+			 _ret == 0);
+	TEST_PTHREAD_RES(pthread_barrier_init(&probe.release, NULL, 2),
+			 _ret == 0);
+	TEST_PTHREAD_RES(pthread_create(&thread, NULL, unshare_cgroup_ns_thread,
+					&probe),
+			 _ret == 0);
 
-	TEST_RES(pthread_barrier_wait(&probe.ready),
-		 _ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD);
+	TEST_PTHREAD_RES(pthread_barrier_wait(&probe.ready),
+			 _ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD);
 	TEST_RES(read_self_cgroup_ns_inode(&main_after),
 		 main_before == main_after);
 	TEST_RES(read_task_cgroup_ns_inode(probe.tid, &worker_ns),
 		 worker_ns != main_after);
-	TEST_RES(pthread_barrier_wait(&probe.release),
-		 _ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD);
+	TEST_PTHREAD_RES(pthread_barrier_wait(&probe.release),
+			 _ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD);
 
-	TEST_RES(pthread_join(thread, NULL), _ret == 0);
-	TEST_RES(pthread_barrier_destroy(&probe.ready), _ret == 0);
-	TEST_RES(pthread_barrier_destroy(&probe.release), _ret == 0);
+	TEST_PTHREAD_RES(pthread_join(thread, NULL), _ret == 0);
+	TEST_PTHREAD_RES(pthread_barrier_destroy(&probe.ready), _ret == 0);
+	TEST_PTHREAD_RES(pthread_barrier_destroy(&probe.release), _ret == 0);
 }
 END_TEST()
 

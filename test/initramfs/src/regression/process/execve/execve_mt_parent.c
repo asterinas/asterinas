@@ -103,9 +103,11 @@ FN_TEST(exec_in_main_thread)
 		struct info info = { .should_sleep = true };
 
 		pthread_t tid1;
-		CHECK(pthread_create(&tid1, NULL, &thread_slave, &info));
+		CHECK_PTHREAD(
+			pthread_create(&tid1, NULL, &thread_slave, &info));
 		pthread_t tid2;
-		CHECK(pthread_create(&tid2, NULL, &thread_slave, &info));
+		CHECK_PTHREAD(
+			pthread_create(&tid2, NULL, &thread_slave, &info));
 
 		exec_child();
 	}
@@ -126,10 +128,12 @@ FN_TEST(exec_in_slave_thread)
 
 		pthread_t tid1;
 		struct info info1 = { .should_sleep = true };
-		CHECK(pthread_create(&tid1, NULL, &thread_slave, &info1));
+		CHECK_PTHREAD(
+			pthread_create(&tid1, NULL, &thread_slave, &info1));
 		pthread_t tid2;
 		struct info info2 = { .should_sleep = false };
-		CHECK(pthread_create(&tid2, NULL, &thread_slave, &info2));
+		CHECK_PTHREAD(
+			pthread_create(&tid2, NULL, &thread_slave, &info2));
 
 		pthread_join(tid1, NULL);
 		pthread_join(tid2, NULL);
@@ -184,9 +188,11 @@ FN_TEST(clone_files)
 
 		struct info info = { .should_sleep = false };
 		pthread_t tid1;
-		CHECK(pthread_create(&tid1, NULL, &thread_slave, &info));
+		CHECK_PTHREAD(
+			pthread_create(&tid1, NULL, &thread_slave, &info));
 		pthread_t tid2;
-		CHECK(pthread_create(&tid2, NULL, &thread_slave, &info));
+		CHECK_PTHREAD(
+			pthread_create(&tid2, NULL, &thread_slave, &info));
 
 		pthread_join(tid1, NULL);
 		pthread_join(tid2, NULL);

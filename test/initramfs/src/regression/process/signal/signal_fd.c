@@ -194,7 +194,7 @@ void *thread_func(void *arg)
 FN_TEST(tgkill_other_thread)
 {
 	pthread_t tid;
-	TEST_SUCC(pthread_create(&tid, NULL, thread_func, NULL));
+	TEST_PTHREAD(pthread_create(&tid, NULL, thread_func, NULL));
 	sleep(1);
 	struct signalfd_siginfo fdsi;
 	TEST_RES(read(sfd, &fdsi, sizeof(fdsi)),
@@ -232,7 +232,7 @@ FN_TEST(blocking_syscall_dequeue_ignored_signals)
 	TEST_SUCC(sigprocmask(SIG_SETMASK, &mask2, NULL));
 
 	pthread_t tid;
-	TEST_SUCC(pthread_create(&tid, NULL, thread_func2, (void *)pipefds));
+	TEST_PTHREAD(pthread_create(&tid, NULL, thread_func2, (void *)pipefds));
 
 	TEST_SUCC(signal(SIGUSR2, SIG_IGN));
 
@@ -252,7 +252,7 @@ FN_TEST(blocking_syscall_dequeue_ignored_signals)
 
 	char buf[1] = { 'a' };
 	TEST_RES(write(pipefds[1], buf, sizeof(buf)), _ret == 1);
-	TEST_SUCC(pthread_join(tid, NULL));
+	TEST_PTHREAD(pthread_join(tid, NULL));
 
 	TEST_SUCC(close(pipefds[0]));
 	TEST_SUCC(close(pipefds[1]));

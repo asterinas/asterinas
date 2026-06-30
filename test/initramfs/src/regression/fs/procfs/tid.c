@@ -53,7 +53,7 @@ FN_TEST(proc_root_tid_entry)
 	/* Keep a non-leader thread alive while probing its procfs entry. */
 	TEST_SUCC(pipe(context.ready_pipe));
 	TEST_SUCC(pipe(context.exit_pipe));
-	TEST_SUCC(pthread_create(&thread, NULL, thread_fn, &context));
+	TEST_PTHREAD(pthread_create(&thread, NULL, thread_fn, &context));
 	TEST_RES(read(context.ready_pipe[0], &ch, 1),
 		 _ret == 1 && ch == 'R' && context.tid > 0 &&
 			 context.tid != pid);
@@ -80,7 +80,7 @@ FN_TEST(proc_root_tid_entry)
 
 	/* Release the thread after all /proc/<tid> observations are done. */
 	TEST_RES(write(context.exit_pipe[1], "X", 1), _ret == 1);
-	TEST_SUCC(pthread_join(thread, NULL));
+	TEST_PTHREAD(pthread_join(thread, NULL));
 	TEST_SUCC(close(context.ready_pipe[0]));
 	TEST_SUCC(close(context.ready_pipe[1]));
 	TEST_SUCC(close(context.exit_pipe[0]));

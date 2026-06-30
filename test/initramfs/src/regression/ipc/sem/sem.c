@@ -122,6 +122,7 @@ static int start_timed_semop_thread(pthread_t *thread,
 		return -1;
 	}
 
+	errno = 0;
 	return 0;
 }
 
@@ -135,6 +136,7 @@ static int join_timed_semop_thread(pthread_t thread,
 		return -1;
 	}
 
+	errno = 0;
 	return args->error;
 }
 

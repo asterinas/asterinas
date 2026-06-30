@@ -87,6 +87,39 @@
 		_ret;                \
 	})
 
+#define __CHECK_PTHREAD(func, cond)                                       \
+	__auto_type _ret = (func);                                        \
+	if (!(cond)) {                                                    \
+		fprintf(stderr,                                           \
+			"fatal error: %s: `%s` is false after `%s` [got " \
+			"%s]\n",                                          \
+			__func__, #cond, #func,                           \
+			_ret == 0 ? "Success" : strerror(_ret));          \
+		exit(EXIT_FAILURE);                                       \
+	}
+
+/**
+ * Makes a pthread API call and checks whether it succeeds.
+ *
+ * The execution will be aborted if the call returns a non-zero error number.
+ */
+#define CHECK_PTHREAD(func)                       \
+	({                                        \
+		__CHECK_PTHREAD(func, _ret == 0); \
+		_ret;                             \
+	})
+
+/**
+ * Makes a pthread API call and checks its result with the specified condition.
+ *
+ * The execution will be aborted if the condition does not meet.
+ */
+#define CHECK_PTHREAD_WITH(func, cond)       \
+	({                                   \
+		__CHECK_PTHREAD(func, cond); \
+		_ret;                        \
+	})
+
 static int __total_failures;
 
 #define __TEST_SUMMARY()                                                  \
@@ -146,6 +179,21 @@ static int __total_failures;
  * The return value of the function can be accessed with a local variable named
  * _ret.
  */
+
+#define __TEST_PTHREAD(func, cond)                                             \
+	__auto_type _ret = (func);                                             \
+	if (!(cond)) {                                                         \
+		__tests_failed++;                                              \
+		fprintf(stderr,                                                \
+			"%s: `%s` failed [got %s, but `%s` is false]\n",       \
+			__func__, #func,                                       \
+			_ret == 0 ? "Success" : strerror(_ret), #cond);        \
+	} else {                                                               \
+		__tests_passed++;                                              \
+		fprintf(stderr, "%s: `%s` passed [got %s]\n", __func__, #func, \
+			_ret == 0 ? "Success" : strerror(_ret));               \
+	}
+
 #define TEST(func, err, cond)            \
 	({                               \
 		__TEST(func, err, cond); \
@@ -176,6 +224,29 @@ static int __total_failures;
  * _ret.
  */
 #define TEST_RES(func, cond) TEST(func, 0, cond)
+
+/**
+ * Makes a pthread API call and checks whether it succeeds.
+ *
+ * pthread APIs return the error number directly and may leave `errno`
+ * unspecified, so they cannot be checked with TEST_SUCC().
+ */
+#define TEST_PTHREAD(func)                       \
+	({                                       \
+		__TEST_PTHREAD(func, _ret == 0); \
+		_ret;                            \
+	})
+
+/**
+ * Makes a pthread API call and checks whether it produces expected results.
+ *
+ * A test failure will be reported if the specified condition does not meet.
+ */
+#define TEST_PTHREAD_RES(func, cond)        \
+	({                                  \
+		__TEST_PTHREAD(func, cond); \
+		_ret;                       \
+	})
 
 int main(void)
 {

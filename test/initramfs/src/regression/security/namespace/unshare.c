@@ -37,13 +37,13 @@ FN_TEST(single_thread_flags)
 	TEST_SUCC(unshare(CLONE_VM | CLONE_SIGHAND | CLONE_THREAD));
 
 	pthread_t thread_id;
-	TEST_SUCC(pthread_create(&thread_id, NULL, sleep_1s_thread, NULL));
+	TEST_PTHREAD(pthread_create(&thread_id, NULL, sleep_1s_thread, NULL));
 
 	TEST_ERRNO(unshare(CLONE_VM), EINVAL);
 	TEST_ERRNO(unshare(CLONE_SIGHAND), EINVAL);
 	TEST_ERRNO(unshare(CLONE_THREAD), EINVAL);
 
-	TEST_SUCC(pthread_join(thread_id, NULL));
+	TEST_PTHREAD(pthread_join(thread_id, NULL));
 
 	TEST_SUCC(unshare(CLONE_VM));
 	TEST_SUCC(unshare(CLONE_SIGHAND));
@@ -88,9 +88,9 @@ FN_TEST(unshare_files)
 		open(TEST_FILENAME, O_CREAT | O_RDWR | O_TRUNC, 0644));
 	TEST_SUCC(fstat(test_fd, &stat1));
 
-	TEST_SUCC(pthread_create(&thread_id, NULL, unshare_files_thread,
-				 (void *)(intptr_t)test_fd));
-	TEST_SUCC(pthread_join(thread_id, NULL));
+	TEST_PTHREAD(pthread_create(&thread_id, NULL, unshare_files_thread,
+				    (void *)(intptr_t)test_fd));
+	TEST_PTHREAD(pthread_join(thread_id, NULL));
 
 	TEST_RES(fstat(test_fd, &stat2), stat1.st_ino == stat2.st_ino);
 	TEST_SUCC(close(test_fd));
@@ -119,11 +119,11 @@ FN_TEST(unshare_fs)
 	TEST_RES(getcwd(cwd_buf1, CWD_BUF_SIZE),
 		 strcmp(cwd_buf1, THREAD_CWD) != 0);
 
-	TEST_SUCC(pthread_create(&thread_id, NULL, unshare_fs_thread,
-				 (void *)cwd_buf2));
+	TEST_PTHREAD(pthread_create(&thread_id, NULL, unshare_fs_thread,
+				    (void *)cwd_buf2));
 
-	TEST_RES(pthread_join(thread_id, NULL),
-		 strcmp(cwd_buf2, THREAD_CWD) == 0);
+	TEST_PTHREAD_RES(pthread_join(thread_id, NULL),
+			 strcmp(cwd_buf2, THREAD_CWD) == 0);
 
 	TEST_RES(getcwd(cwd_buf2, CWD_BUF_SIZE),
 		 strcmp(cwd_buf1, cwd_buf2) == 0);

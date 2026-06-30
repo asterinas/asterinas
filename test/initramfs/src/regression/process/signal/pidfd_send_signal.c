@@ -210,10 +210,10 @@ FN_TEST(pidfd_send_signal_self_thread_group)
 
 	pid = TEST_SUCC(fork());
 	if (pid == 0) {
-		CHECK(pthread_create(&thread, NULL,
-				     &pidfd_send_signal_self_child_thread,
-				     NULL));
-		CHECK(pthread_join(thread, NULL));
+		CHECK_PTHREAD(pthread_create(
+			&thread, NULL, &pidfd_send_signal_self_child_thread,
+			NULL));
+		CHECK_PTHREAD(pthread_join(thread, NULL));
 
 		exit(0);
 	}
@@ -247,11 +247,11 @@ FN_TEST(pidfd_send_signal_self_process_group_non_main_thread)
 	if (pid == 0) {
 		CHECK(setpgid(0, 0));
 
-		CHECK(pthread_create(
+		CHECK_PTHREAD(pthread_create(
 			&thread, NULL,
 			pidfd_send_signal_self_process_group_child_thread,
 			NULL));
-		CHECK(pthread_join(thread, NULL));
+		CHECK_PTHREAD(pthread_join(thread, NULL));
 
 		exit(0);
 	}
@@ -296,7 +296,7 @@ FN_SETUP(create_thread)
 {
 	static char path[256];
 
-	CHECK(pthread_create(&thread, NULL, thread_func, NULL));
+	CHECK_PTHREAD(pthread_create(&thread, NULL, thread_func, NULL));
 
 	while (thread_tid == 0) {
 		usleep(100);
@@ -315,7 +315,7 @@ FN_TEST(pidfd_send_signal_thread)
 	TEST_ERRNO(pidfd_send_signal(proc_task_fd, sig, &siginfo, 0), EBADF);
 
 	TEST_SUCC(pidfd_send_signal(proc_fd, sig, &siginfo, 0));
-	TEST_SUCC(pthread_join(thread, NULL));
+	TEST_PTHREAD(pthread_join(thread, NULL));
 }
 END_TEST()
 

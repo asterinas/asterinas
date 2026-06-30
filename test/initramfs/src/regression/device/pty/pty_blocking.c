@@ -78,16 +78,17 @@ static int read_all(int fd, char c)
                                                        \
 		return PTR_VOID_TRUE;                  \
 	}
-#define RUN_BLOCKING_TEST(name)                                                \
-	{                                                                      \
-		pthread_t __thd;                                               \
-		void *__res;                                                   \
-		TEST_SUCC(pthread_create(&__thd, NULL, blocking_##name,        \
-					 PTR_VOID_TRUE));                      \
-		TEST_SUCC(blocking_##name(PTR_VOID_FALSE) == PTR_VOID_TRUE ?   \
-				  0 :                                          \
-				  -1);                                         \
-		TEST_RES(pthread_join(__thd, &__res), __res == PTR_VOID_TRUE); \
+#define RUN_BLOCKING_TEST(name)                                              \
+	{                                                                    \
+		pthread_t __thd;                                             \
+		void *__res;                                                 \
+		TEST_PTHREAD(pthread_create(&__thd, NULL, blocking_##name,   \
+					    PTR_VOID_TRUE));                 \
+		TEST_SUCC(blocking_##name(PTR_VOID_FALSE) == PTR_VOID_TRUE ? \
+				  0 :                                        \
+				  -1);                                       \
+		TEST_PTHREAD_RES(pthread_join(__thd, &__res),                \
+				 __res == PTR_VOID_TRUE);                    \
 	}
 
 DECLARE_BLOCKING_TEST(write_slave, write_repeat(slave, 'a', 1),
