@@ -263,10 +263,11 @@ int test_handle_sigsegv()
 // ============================================================================
 // Test SIGCHLD signal
 // ============================================================================
-int sigchld = 0;
+static volatile sig_atomic_t sigchld = 0;
 
-void proc_exit()
+static void proc_exit(int signum)
 {
+	(void)signum;
 	sigchld = 1;
 }
 

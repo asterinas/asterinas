@@ -1,0 +1,44 @@
+diff --git a/testcases/kernel/syscalls/listmount/listmount04.c b/testcases/kernel/syscalls/listmount/listmount04.c
+index a52bad0..823ed35 100644
+--- a/testcases/kernel/syscalls/listmount/listmount04.c
++++ b/testcases/kernel/syscalls/listmount/listmount04.c
+@@ -26,7 +26,7 @@ static uint64_t mnt_ids[MNT_SIZE];
+ static struct tcase {
+ 	int req_usage;
+ 	uint32_t size;
+-	uint32_t spare;
++	uint32_t reserved;
+ 	uint64_t mnt_id;
+ 	uint64_t param;
+ 	uint64_t *mnt_ids;
+@@ -73,12 +73,16 @@ static struct tcase {
+ 	{
+ 		.req_usage = 1,
+ 		.size = MNT_ID_REQ_SIZE_VER0,
+-		.spare = -1,
++		.reserved = -1,
+ 		.mnt_id = LSMT_ROOT,
+ 		.mnt_ids = mnt_ids,
+ 		.nr_mnt_ids = MNT_SIZE,
+ 		.exp_errno = EINVAL,
++#ifdef MNT_ID_REQ_SIZE_VER1
++		.msg = "invalid mnt_id_req.mnt_ns_fd",
++#else
+ 		.msg = "invalid mnt_id_req.spare",
++#endif
+ 	},
+ 	{
+ 		.req_usage = 1,
+@@ -122,7 +126,11 @@ static void run(unsigned int n)
+ 		req->mnt_id = tc->mnt_id;
+ 		req->param = tc->param;
+ 		req->size = tc->size;
+-		req->spare = tc->spare;
++#ifdef MNT_ID_REQ_SIZE_VER1
++		req->mnt_ns_fd = tc->reserved;
++#else
++		req->spare = tc->reserved;
++#endif
+ 	}
+ 
+ 	TST_EXP_FAIL(tst_syscall(__NR_listmount, req, tc->mnt_ids,

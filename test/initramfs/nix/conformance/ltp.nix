@@ -9,6 +9,8 @@ stdenv.mkDerivation rec {
     hash = "sha256-vmsC4QRM4U1MoRjLbRsodX4jAolWeifaP9zetwIbWl4";
   };
 
+  patches = [ ./patches/ltp-listmount04-mnt-id-req.patch ];
+
   # Clear `CFLAGS` and `DEBUG_CFLAGS` to prevent `-g` from being automatically added.
   CFLAGS = "";
   DEBUG_CFLAGS = "";
