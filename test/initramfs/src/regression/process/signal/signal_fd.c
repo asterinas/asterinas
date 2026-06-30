@@ -199,7 +199,7 @@ FN_TEST(tgkill_other_thread)
 	struct signalfd_siginfo fdsi;
 	TEST_RES(read(sfd, &fdsi, sizeof(fdsi)),
 		 _ret == sizeof(fdsi) && fdsi.ssi_signo == SIGUSR1);
-	pthread_join(tid, NULL);
+	TEST_SUCC(pthread_join(tid, NULL));
 }
 END_TEST()
 

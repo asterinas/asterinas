@@ -59,7 +59,7 @@ static void thread_master(void *arg)
 {
 	pthread_t tid;
 
-	CHECK(pthread_create(&tid, NULL, &thread_slave, arg));
+	CHECK_WITH(pthread_create(&tid, NULL, &thread_slave, arg), _ret == 0);
 
 	if (arg == EXIT_PARENT_FIRST) {
 		CHECK_WITH(

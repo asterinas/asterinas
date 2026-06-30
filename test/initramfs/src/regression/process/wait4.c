@@ -188,8 +188,8 @@ void child_process()
 {
 	pthread_t t1, t2;
 
-	CHECK(pthread_create(&t1, NULL, thread_func, NULL));
-	CHECK(pthread_create(&t2, NULL, thread_func, NULL));
+	CHECK_WITH(pthread_create(&t1, NULL, thread_func, NULL), _ret == 0);
+	CHECK_WITH(pthread_create(&t2, NULL, thread_func, NULL), _ret == 0);
 
 	pthread_join(t1, NULL);
 	pthread_join(t2, NULL);
