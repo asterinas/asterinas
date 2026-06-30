@@ -32,7 +32,7 @@ use crate::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{
                 Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
-                SymbolicLink,
+                SymbolicLink, WriteOffset,
             },
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
@@ -675,9 +675,9 @@ impl RamInode {
 
     pub(super) fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
-        status_flags: StatusFlags,
+        _status_flags: StatusFlags,
         seals: Option<FileSeals>,
     ) -> Result<usize> {
         if self.typ != InodeType::File {
@@ -687,11 +687,7 @@ impl RamInode {
         let page_cache = self.inner.as_file().unwrap().lock();
         let mut inode_meta = self.metadata.lock();
         let file_size = inode_meta.size;
-        let offset = if status_flags.contains(StatusFlags::O_APPEND) {
-            file_size
-        } else {
-            offset
-        };
+        let offset = offset.resolve(file_size);
 
         if let Some(seals) = seals {
             if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE) {
@@ -897,7 +893,7 @@ impl FileOps for RamInode {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {

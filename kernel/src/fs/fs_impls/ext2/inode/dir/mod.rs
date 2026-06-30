@@ -802,6 +802,7 @@ mod test {
             test_utils::{assert_errno, create_file, default_fixture},
         },
         file::StatusFlags,
+        vfs::inode::WriteOffset,
     };
 
     #[ktest]
@@ -812,8 +813,12 @@ mod test {
         let old_ino = old.ino();
         let payload = vec![0x6au8; BLOCK_SIZE];
         let mut payload_reader = VmReader::from(payload.as_slice()).to_fallible();
-        old.write_direct_at(0, &mut payload_reader, StatusFlags::empty())
-            .unwrap();
+        old.write_direct_at(
+            WriteOffset::Absolute(0),
+            &mut payload_reader,
+            StatusFlags::empty(),
+        )
+        .unwrap();
 
         let free_blocks_before = f.ext2.super_block().free_blocks_count();
         root.unlink("old").unwrap();

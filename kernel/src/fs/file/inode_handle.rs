@@ -16,7 +16,7 @@ use crate::{
         pipe::PipeHandle,
         utils::DirentVisitor,
         vfs::{
-            inode::{FallocMode, FileOps},
+            inode::{FallocMode, FileOps, WriteOffset},
             inode_ext::InodeExt,
             path::Path,
             range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
@@ -284,13 +284,18 @@ impl FileLike for InodeHandle {
         let status_flags = self.status_flags();
 
         if !is_offset_aware {
-            return file_ops.write_at(0, reader, status_flags);
+            return file_ops.write_at(WriteOffset::Absolute(0), reader, status_flags);
         }
 
         let mut offset = self.offset.lock();
+        let write_offset = if status_flags.contains(StatusFlags::O_APPEND) {
+            WriteOffset::Append
+        } else {
+            WriteOffset::Absolute(*offset)
+        };
 
-        let len = file_ops.write_at(*offset, reader, status_flags)?;
-        if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
+        let len = file_ops.write_at(write_offset, reader, status_flags)?;
+        if status_flags.contains(StatusFlags::O_APPEND) {
             *offset = self.path.size();
         } else {
             *offset += len;
@@ -317,8 +322,13 @@ impl FileLike for InodeHandle {
         }
 
         let status_flags = self.status_flags();
+        let write_offset = if status_flags.contains(StatusFlags::O_APPEND) {
+            WriteOffset::Append
+        } else {
+            WriteOffset::Absolute(offset)
+        };
 
-        file_ops.write_at(offset, reader, status_flags)
+        file_ops.write_at(write_offset, reader, status_flags)
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {

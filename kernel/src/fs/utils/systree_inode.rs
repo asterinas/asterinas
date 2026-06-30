@@ -15,7 +15,7 @@ use crate::{
             file_system::{FileSystem, SuperBlock},
             inode::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RevalidationPolicy,
-                SymbolicLink,
+                SymbolicLink, WriteOffset,
             },
         },
     },
@@ -329,7 +329,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
 
     default fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         buf: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
@@ -337,6 +337,9 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
             return Err(Error::new(Errno::EINVAL));
         };
 
+        let WriteOffset::Absolute(offset) = offset else {
+            return_errno_with_message!(Errno::EINVAL, "append write is not supported");
+        };
         let len = if offset == 0 {
             leaf.write_attr(attr.name(), buf)?
         } else {

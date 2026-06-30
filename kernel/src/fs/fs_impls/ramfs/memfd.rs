@@ -16,7 +16,7 @@ use crate::{
         tmpfs::TmpFs,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FallocMode, FileOps, Inode, Metadata},
+            inode::{Extension, FallocMode, FileOps, Inode, Metadata, WriteOffset},
             path::{Mount, Path},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -105,7 +105,7 @@ impl FileOps for MemfdInode {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {
