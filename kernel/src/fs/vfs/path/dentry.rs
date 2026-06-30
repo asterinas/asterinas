@@ -215,8 +215,13 @@ impl Dentry {
     /// Creates a new anonymous `Dentry` with the given inode and parent.
     ///
     /// See the [`Dentry`] type-level documentation for what "anonymous" means.
-    pub(super) fn new_anonymous(inode: Arc<dyn Inode>, parent: Arc<Dentry>) -> Arc<Self> {
-        Self::new(inode, DentryOptions::Anonymous { parent })
+    pub(super) fn new_anonymous(inode: Arc<dyn Inode>, parent: &DirDentry) -> Arc<Self> {
+        Self::new(
+            inode,
+            DentryOptions::Anonymous {
+                parent: parent.this(),
+            },
+        )
     }
 
     /// Creates a new pseudo `Dentry` with the given inode and name function.
@@ -576,7 +581,7 @@ impl DirDentry<'_> {
     /// Deletes a `Dentry` by `unlink()` the inner inode.
     pub(super) fn unlink(&self, name: &str) -> Result<()> {
         if is_dot_or_dotdot(name) {
-            return_errno_with_message!(Errno::EINVAL, "unlink on . or ..");
+            return_errno_with_message!(Errno::EISDIR, "unlink on . or ..");
         }
 
         let dir_inode = self.inode();
@@ -676,43 +681,33 @@ impl DirDentry<'_> {
         Ok(child_inode)
     }
 
-    /// Renames a `Dentry` to the new `Dentry` by `rename()` the inner inode.
-    pub(super) fn rename(
-        old_dir_arc: &Arc<Dentry>,
-        old_name: &str,
-        new_dir_arc: &Arc<Dentry>,
-        new_name: &str,
-    ) -> Result<()> {
-        let old_dir = old_dir_arc.as_dir_dentry_or_err()?;
-        let new_dir = new_dir_arc.as_dir_dentry_or_err()?;
-
+    /// Renames the `old_name` entry in this directory to the `new_name` entry
+    /// in `new_dir`.
+    pub(super) fn rename(&self, old_name: &str, new_dir: &DirDentry, new_name: &str) -> Result<()> {
         if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
         }
 
-        let old_dir_inode = old_dir.inode();
+        let old_dir_inode = self.inode();
         let new_dir_inode = new_dir.inode();
 
         // The two are the same dentry, we just modify the name
-        if Arc::ptr_eq(old_dir_arc, new_dir_arc) {
+        if core::ptr::eq(self.inner, new_dir.inner) {
             if old_name == new_name {
                 return Ok(());
             }
 
-            let mut children = old_dir.children.write();
+            let mut children = self.children.write();
             children.check_mountpoint(new_name)?;
-            let old_dentry = children.probe_cached_child_for_rename(&old_dir, old_name)?;
+            let old_dentry = children.probe_cached_child_for_rename(self, old_name)?;
 
             old_dir_inode.rename(old_name, old_dir_inode, new_name)?;
 
             match old_dentry.as_ref() {
                 Some(dentry) => {
                     children.delete(old_name);
-                    dentry
-                        .name_and_parent
-                        .set(new_name, old_dir_arc.clone())
-                        .unwrap();
-                    old_dir.insert_positive_child(&mut children, new_name, dentry.clone());
+                    dentry.name_and_parent.set(new_name, self.this()).unwrap();
+                    self.insert_positive_child(&mut children, new_name, dentry.clone());
                 }
                 None => {
                     children.remove(new_name);
@@ -721,8 +716,8 @@ impl DirDentry<'_> {
         } else {
             // The two are different dentries
             let (mut self_children, mut new_dir_children) =
-                write_lock_children_on_two_dentries(&old_dir, &new_dir);
-            let old_dentry = self_children.probe_cached_child_for_rename(&old_dir, old_name)?;
+                write_lock_children_on_two_dentries(self, new_dir);
+            let old_dentry = self_children.probe_cached_child_for_rename(self, old_name)?;
             new_dir_children.check_mountpoint(new_name)?;
 
             old_dir_inode.rename(old_name, new_dir_inode, new_name)?;
@@ -731,7 +726,7 @@ impl DirDentry<'_> {
                     self_children.delete(old_name);
                     dentry
                         .name_and_parent
-                        .set(new_name, new_dir_arc.clone())
+                        .set(new_name, new_dir.this())
                         .unwrap();
                     new_dir.insert_positive_child(&mut new_dir_children, new_name, dentry.clone());
                 }

@@ -137,12 +137,6 @@ fn do_open_tmpfile(
     } else {
         path_resolver.lookup_no_follow(fs_path)?
     };
-    if dir_path.type_() != InodeType::Dir {
-        return_errno_with_message!(
-            Errno::ENOTDIR,
-            "O_TMPFILE requires the path to be a directory"
-        );
-    }
 
     // `O_EXCL` with `O_TMPFILE` is allowed by Linux, but it prevents the tmpfile
     // from being linked later by `linkat(..., AT_EMPTY_PATH)`.

@@ -5,7 +5,6 @@
 use core::time::Duration;
 
 pub(in crate::fs) use dentry::Dentry;
-use dentry::DirDentry;
 use inherit_methods_macro::inherit_methods;
 use mount::MountNsFileCopying;
 pub use mount::{Mount, MountPropType, PerMountFlags};
@@ -27,7 +26,10 @@ use crate::{
         },
     },
     prelude::*,
-    process::{Gid, Uid},
+    process::{
+        Gid, Uid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
+    },
+    security::lsm::hooks as lsm_hooks,
 };
 
 mod dentry;
@@ -62,17 +64,9 @@ impl Path {
 
     /// Creates a new `Path` to represent the child directory of a file system.
     pub fn new_fs_child(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
-        if self
-            .inode()
-            .check_permission(Permission::MAY_WRITE)
-            .is_err()
-        {
-            return_errno!(Errno::EACCES);
-        }
-        let new_child_dentry = self
-            .dentry
-            .as_dir_dentry_or_err()?
-            .create(name, type_, mode)?;
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+        self.check_dir_entry_mutation()?;
+        let new_child_dentry = dir_dentry.create(name, type_, mode)?;
         Ok(Self::new(self.mount.clone(), new_child_dentry))
     }
 
@@ -86,15 +80,10 @@ impl Path {
         mode: InodeMode,
         hard_linkability: HardLinkability,
     ) -> Result<Self> {
-        if self
-            .inode()
-            .check_permission(Permission::MAY_WRITE)
-            .is_err()
-        {
-            return_errno!(Errno::EACCES);
-        }
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+        self.check_dir_entry_mutation()?;
         let tmp_inode = self.inode().create_tmpfile(mode, hard_linkability)?;
-        let tmp_dentry = Dentry::new_anonymous(tmp_inode, self.dentry.clone());
+        let tmp_dentry = Dentry::new_anonymous(tmp_inode, &dir_dentry);
         Ok(Self::new(self.mount.clone(), tmp_dentry))
     }
 
@@ -260,6 +249,78 @@ impl Path {
 
     fn this(&self) -> Self {
         self.clone()
+    }
+
+    /// Checks whether the path is on a writable mount and filesystem.
+    fn check_mount_writable(&self) -> Result<()> {
+        if self.mount.flags().contains(PerMountFlags::RDONLY)
+            || self.fs().flags().contains(FsFlags::RDONLY)
+        {
+            return_errno_with_message!(Errno::EROFS, "the mount or filesystem is read-only");
+        }
+
+        Ok(())
+    }
+
+    /// Checks whether a directory entry may be modified in this directory.
+    fn check_dir_entry_mutation(&self) -> Result<()> {
+        self.check_mount_writable()?;
+        self.inode()
+            .check_permission(Permission::MAY_WRITE | Permission::MAY_EXEC)
+    }
+
+    /// Checks whether an inode may be used as the source of a hard link.
+    fn check_hardlink_source(&self) -> Result<()> {
+        let current_thread = current_thread!();
+        let Some(posix_thread) = current_thread.as_posix_thread() else {
+            return Ok(());
+        };
+
+        let metadata = self.metadata();
+        let fsuid = posix_thread.credentials().fsuid();
+
+        // The source inode owner can hardlink all they like.
+        if fsuid == metadata.uid {
+            return Ok(());
+        }
+
+        // Hardlinking to unreadable or unwritable sources is dangerous.
+        if self
+            .inode()
+            .check_permission(Permission::MAY_READ | Permission::MAY_WRITE)
+            .is_err()
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the source is not permitted to be hard-linked"
+            );
+        }
+
+        // Non-owners may only hard-link regular files.
+        if self.type_() != InodeType::File {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the source is not permitted to be hard-linked"
+            );
+        }
+
+        // Hardlinking to setuid or executable setgid files requires CAP_FOWNER.
+        if (metadata.mode.has_set_uid()
+            || (metadata.mode.has_set_gid() && metadata.mode.is_group_executable()))
+            && lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                UserNamespace::get_init_singleton().as_ref(),
+                posix_thread,
+                CapSet::FOWNER,
+            ))
+            .is_err()
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the source is not permitted to be hard-linked"
+            );
+        }
+
+        Ok(())
     }
 }
 
@@ -518,10 +579,9 @@ impl Path {
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
-        let inner = self
-            .dentry
-            .as_dir_dentry_or_err()?
-            .mknod(name, mode, type_)?;
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+        self.check_dir_entry_mutation()?;
+        let inner = dir_dentry.mknod(name, mode, type_)?;
         Ok(Self::new(self.mount.clone(), inner))
     }
 
@@ -531,17 +591,24 @@ impl Path {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        self.dentry.as_dir_dentry_or_err()?.link(old.inode(), name)
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+        old.check_hardlink_source()?;
+        self.check_dir_entry_mutation()?;
+        dir_dentry.link(old.inode(), name)
     }
 
     /// Unlinks a name from the `Path`.
     pub fn unlink(&self, name: &str) -> Result<()> {
-        self.dentry.as_dir_dentry_or_err()?.unlink(name)
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+        self.check_dir_entry_mutation()?;
+        dir_dentry.unlink(name)
     }
 
     /// Removes a directory by `rmdir()` the inner inode.
     pub fn rmdir(&self, name: &str) -> Result<()> {
-        self.dentry.as_dir_dentry_or_err()?.rmdir(name)
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+        self.check_dir_entry_mutation()?;
+        dir_dentry.rmdir(name)
     }
 
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
@@ -550,7 +617,15 @@ impl Path {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name)
+        let old_dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+        let new_dir_dentry = new_dir.dentry.as_dir_dentry_or_err()?;
+
+        self.check_dir_entry_mutation()?;
+        if !Arc::ptr_eq(&self.dentry, &new_dir.dentry) {
+            new_dir.check_dir_entry_mutation()?;
+        }
+
+        old_dir_dentry.rename(old_name, &new_dir_dentry, new_name)
     }
 }
 
