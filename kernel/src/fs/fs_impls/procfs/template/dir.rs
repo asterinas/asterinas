@@ -15,7 +15,9 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::{FileSystem, SuperBlock},
-            inode::{Extension, FileOps, Inode, Metadata, MknodType, RevalidationPolicy},
+            inode::{
+                Extension, FileOps, Inode, Metadata, MknodType, RevalidationPolicy, WriteOffset,
+            },
             path::{is_dot, is_dotdot},
         },
     },
@@ -103,7 +105,7 @@ impl<D: ProcDirOps + 'static> FileOps for ProcDir<D> {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {

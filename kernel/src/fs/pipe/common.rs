@@ -12,7 +12,7 @@ use crate::{
     fs::{
         file::{AccessMode, PerOpenFileOps, StatusFlags},
         utils::{Endpoint, EndpointState},
-        vfs::inode::FileOps,
+        vfs::inode::{FileOps, WriteOffset},
     },
     prelude::*,
     process::{
@@ -118,7 +118,7 @@ impl FileOps for PipeHandle {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {
@@ -659,7 +659,7 @@ mod test {
 
     fn write(writer: &dyn PerOpenFileOps, buf: &[u8]) -> crate::prelude::Result<usize> {
         writer.write_at(
-            0,
+            WriteOffset::Absolute(0),
             &mut VmReader::from(buf).to_fallible(),
             StatusFlags::empty(),
         )

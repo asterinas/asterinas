@@ -5,7 +5,6 @@
 use alloc::format;
 use core::time::Duration;
 
-use align_ext::AlignExt;
 use aster_rights::Rights;
 use inherit_methods_macro::inherit_methods;
 use spin::Once;
@@ -17,7 +16,7 @@ use crate::{
         tmpfs::TmpFs,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FallocMode, FileOps, Inode, Metadata},
+            inode::{Extension, FallocMode, FileOps, Inode, Metadata, WriteOffset},
             path::{Mount, Path},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -106,7 +105,7 @@ impl FileOps for MemfdInode {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {
@@ -115,34 +114,8 @@ impl FileOps for MemfdInode {
         }
 
         let seals = self.seals.lock();
-        if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE) {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
-        }
-
-        if seals.contains(FileSeals::F_SEAL_GROW) {
-            // For a memfd sealed with `F_SEAL_GROW`, if a write that would grow the file occurs,
-            // the entire write within the page containing the EOF is rejected. Writes before
-            // the EOF page are not affected.
-            //
-            // For detailed explanation, please see:
-            // <https://github.com/asterinas/asterinas/pull/2555#discussion_r2509179520>
-            //
-            // Reference:
-            // <https://elixir.bootlin.com/linux/v6.16.5/source/mm/shmem.c#L3309-L3310>
-            // <https://github.com/google/gvisor/blob/6db745970118635edec4c973f47df2363924d3a7/test/syscalls/linux/memfd.cc#L261-L280>
-            let old_size = self.inode.size();
-            let new_size = offset.saturating_add(reader.remain());
-            if new_size > old_size {
-                let eof_page = old_size.align_down(PAGE_SIZE);
-                if offset >= eof_page {
-                    return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
-                } else {
-                    reader.limit(eof_page - offset);
-                }
-            }
-        }
-
-        self.inode.write_at(offset, reader, status_flags)
+        self.inode
+            .write_at(offset, reader, status_flags, Some(*seals))
     }
 }
 
@@ -177,15 +150,7 @@ impl Inode for MemfdInode {
 
     fn resize(&self, new_size: usize) -> Result<()> {
         let seals = self.seals.lock();
-        let old_size = self.inode.size();
-        if seals.contains(FileSeals::F_SEAL_SHRINK) && new_size < old_size {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against shrinking");
-        }
-        if seals.contains(FileSeals::F_SEAL_GROW) && new_size > old_size {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
-        }
-
-        self.inode.resize(new_size)
+        self.inode.resize(new_size, Some(*seals))
     }
 
     fn set_mode(&self, mode: InodeMode) -> Result<()> {
@@ -204,16 +169,7 @@ impl Inode for MemfdInode {
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
         let seals = self.seals.lock();
-        if seals.contains(FileSeals::F_SEAL_GROW) && offset + len > self.inode.size() {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
-        }
-        if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE)
-            && mode == FallocMode::PunchHoleKeepSize
-        {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
-        }
-
-        self.inode.fallocate(mode, offset, len)
+        self.inode.fallocate(mode, offset, len, Some(*seals))
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

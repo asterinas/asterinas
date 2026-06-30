@@ -5,15 +5,12 @@
 use aster_fuse::FuseOpenFlags;
 use ostd::warn;
 
-use super::{
-    inode::{VirtioFsInode, WriteOffset},
-    open_handle::VirtioFsOpenHandle,
-};
+use super::{inode::VirtioFsInode, open_handle::VirtioFsOpenHandle};
 use crate::{
     events::IoEvents,
     fs::{
         file::{PerOpenFileOps, StatusFlags},
-        vfs::inode::FileOps,
+        vfs::inode::{FileOps, WriteOffset},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -101,16 +98,13 @@ impl FileOps for VirtioFsFile {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {
-        let write_offset = if status_flags.contains(StatusFlags::O_APPEND) {
+        if offset == WriteOffset::Append {
             self.inode.revalidate_attr(self.open_handle.fh())?;
-            WriteOffset::Append
-        } else {
-            WriteOffset::Absolute(offset)
-        };
+        }
 
         // FIXME: Cached writeback currently submits whole-page writes with the
         // original open flags. With `O_APPEND`, the server may append cached
@@ -120,14 +114,14 @@ impl FileOps for VirtioFsFile {
         if self.cache_policy == CachePolicy::Cached && !status_flags.contains(StatusFlags::O_APPEND)
         {
             self.inode.cached_write_at(
-                write_offset,
+                offset,
                 reader,
                 self.open_handle.fh(),
                 self.open_handle.file_flags(),
             )
         } else {
             self.inode.direct_write_at(
-                write_offset,
+                offset,
                 reader,
                 self.open_handle.fh(),
                 self.open_handle.file_flags(),
