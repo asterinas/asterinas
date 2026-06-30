@@ -48,7 +48,7 @@ pub enum Protocol {
 /// From <https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/net.h>.
 #[expect(non_camel_case_types)]
 #[repr(i32)]
-#[derive(Clone, Copy, Debug, TryFromInt)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
 pub enum SockType {
     /// Stream socket
     SOCK_STREAM = 1,

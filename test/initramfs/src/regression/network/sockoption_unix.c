@@ -82,6 +82,34 @@ FN_TEST(acceptconn)
 }
 END_TEST()
 
+FN_TEST(socket_type)
+{
+	int type = -1;
+	socklen_t type_len = sizeof(type);
+
+	TEST_ERRNO(setsockopt(sk_unbound, SOL_SOCKET, SO_TYPE, &type, type_len),
+		   ENOPROTOOPT);
+
+	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_TYPE, &type, &type_len),
+		 type == SOCK_STREAM && type_len == sizeof(type));
+
+	int sk_dgram =
+		TEST_SUCC(socket(PF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	TEST_RES(getsockopt(sk_dgram, SOL_SOCKET, SO_TYPE, &type, &type_len),
+		 type == SOCK_DGRAM && type_len == sizeof(type));
+	TEST_SUCC(close(sk_dgram));
+
+	int seqpacket_fds[2];
+	TEST_SUCC(socketpair(PF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK, 0,
+			     seqpacket_fds));
+	TEST_RES(getsockopt(seqpacket_fds[0], SOL_SOCKET, SO_TYPE, &type,
+			    &type_len),
+		 type == SOCK_SEQPACKET && type_len == sizeof(type));
+	TEST_SUCC(close(seqpacket_fds[0]));
+	TEST_SUCC(close(seqpacket_fds[1]));
+}
+END_TEST()
+
 FN_TEST(pass_cred)
 {
 	int val = 0;

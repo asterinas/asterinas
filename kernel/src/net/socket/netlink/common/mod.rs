@@ -25,7 +25,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    util::{MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, net::SockType},
 };
 
 mod bound;
@@ -34,6 +34,7 @@ mod unbound;
 pub struct NetlinkSocket<P: SupportedNetlinkProtocol> {
     inner: RwMutex<Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>>,
     options: RwLock<OptionSet>,
+    socket_type: SockType,
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
@@ -57,11 +58,14 @@ impl<P: SupportedNetlinkProtocol> NetlinkSocket<P>
 where
     BoundNetlink<P::Message>: Bound<Endpoint = NetlinkSocketAddr>,
 {
-    pub fn new(is_nonblocking: bool) -> Arc<Self> {
+    pub fn new(is_nonblocking: bool, socket_type: SockType) -> Arc<Self> {
+        debug_assert!(socket_type == SockType::SOCK_RAW || socket_type == SockType::SOCK_DGRAM);
+
         let unbound = UnboundNetlink::new();
         Arc::new(Self {
             inner: RwMutex::new(Inner::Unbound(unbound)),
             options: RwLock::new(OptionSet::new()),
+            socket_type,
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
             pseudo_path: SockFs::new_path(),
@@ -200,7 +204,9 @@ where
         let options = self.options.read();
 
         // Deal with socket-level options
-        options.socket.get_option(option, &*inner)
+        options
+            .socket
+            .get_option(option, &(&*inner, self.socket_type))
 
         // TODO: Deal with netlink-level options
     }
@@ -250,8 +256,15 @@ where
 }
 
 impl<P: SupportedNetlinkProtocol> GetSocketLevelOption
-    for Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>
+    for (
+        &Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>,
+        SockType,
+    )
 {
+    fn socket_type(&self) -> SockType {
+        self.1
+    }
+
     fn is_listening(&self) -> bool {
         false
     }

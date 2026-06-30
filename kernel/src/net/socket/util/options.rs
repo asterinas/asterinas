@@ -13,6 +13,7 @@ use crate::{
         options::{
             AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
             RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+            SocketType,
             macros::{sock_option_mut, sock_option_ref},
         },
         unix::{CUserCred, UNIX_DATAGRAM_DEFAULT_BUF_SIZE, UNIX_STREAM_DEFAULT_BUF_SIZE},
@@ -20,6 +21,7 @@ use crate::{
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     security::lsm::hooks as lsm_hooks,
+    util::net::SockType,
 };
 
 #[derive(Clone, CopyGetters, Debug, Setters)]
@@ -112,6 +114,9 @@ impl SocketOptionSet {
             socket_reuse_addr @ ReuseAddr => {
                 let reuse_addr = self.reuse_addr();
                 socket_reuse_addr.set(reuse_addr);
+            }
+            socket_type @ SocketType => {
+                socket_type.set(socket.socket_type());
             }
             socket_broadcast @ Broadcast => {
                 let broadcast = self.broadcast();
@@ -286,6 +291,9 @@ pub const MIN_RECVBUF: u32 = 2304;
 
 /// A trait used for getting socket level options on actual sockets.
 pub(in crate::net) trait GetSocketLevelOption {
+    /// Returns the socket type.
+    fn socket_type(&self) -> SockType;
+
     /// Returns whether the socket is in listening state.
     fn is_listening(&self) -> bool;
 }

@@ -12,6 +12,7 @@ use crate::{
         util::LingerOption,
     },
     prelude::*,
+    util::net::SockType,
 };
 
 /// Create an object by reading its C counterpart from the user space.
@@ -197,6 +198,12 @@ impl WriteToUser for CongestionControl {
         current_userspace!().write_bytes(addr, &bytes[..write_len])?;
 
         Ok(write_len)
+    }
+}
+
+impl WriteToUser for SockType {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+        (*self as i32).write_to_user(addr, max_len)
     }
 }
 
