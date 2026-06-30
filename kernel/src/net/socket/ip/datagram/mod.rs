@@ -26,7 +26,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    util::{MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, net::SockType},
 };
 
 mod bound;
@@ -298,6 +298,10 @@ impl Socket for DatagramSocket {
 }
 
 impl GetSocketLevelOption for Inner<UnboundDatagram, BoundDatagram> {
+    fn socket_type(&self) -> SockType {
+        SockType::SOCK_DGRAM
+    }
+
     fn is_listening(&self) -> bool {
         false
     }

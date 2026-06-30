@@ -44,7 +44,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    util::{MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, net::SockType},
 };
 
 mod connected;
@@ -913,6 +913,10 @@ impl State {
 }
 
 impl GetSocketLevelOption for State {
+    fn socket_type(&self) -> SockType {
+        SockType::SOCK_STREAM
+    }
+
     fn is_listening(&self) -> bool {
         matches!(self, Self::Listen(_))
     }

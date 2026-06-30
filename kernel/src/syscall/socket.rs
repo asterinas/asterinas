@@ -27,10 +27,10 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32, ctx: &Context) -> Resu
     let is_nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
     let file_like = match (domain, sock_type) {
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM) => {
-            UnixStreamSocket::new(is_nonblocking, false) as Arc<dyn FileLike>
+            UnixStreamSocket::new(is_nonblocking, sock_type) as Arc<dyn FileLike>
         }
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_SEQPACKET) => {
-            UnixStreamSocket::new(is_nonblocking, true) as Arc<dyn FileLike>
+            UnixStreamSocket::new(is_nonblocking, sock_type) as Arc<dyn FileLike>
         }
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_RAW | SockType::SOCK_DGRAM) => {
             UnixDatagramSocket::new(is_nonblocking) as Arc<dyn FileLike>
@@ -65,10 +65,10 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32, ctx: &Context) -> Resu
             debug!("netlink family = {:?}", netlink_family);
             match netlink_family {
                 Ok(StandardNetlinkProtocol::ROUTE) => {
-                    NetlinkRouteSocket::new(is_nonblocking) as Arc<dyn FileLike>
+                    NetlinkRouteSocket::new(is_nonblocking, sock_type) as Arc<dyn FileLike>
                 }
                 Ok(StandardNetlinkProtocol::KOBJECT_UEVENT) => {
-                    NetlinkUeventSocket::new(is_nonblocking) as Arc<dyn FileLike>
+                    NetlinkUeventSocket::new(is_nonblocking, sock_type) as Arc<dyn FileLike>
                 }
                 Ok(_) => {
                     return_errno_with_message!(
