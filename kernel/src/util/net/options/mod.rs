@@ -52,11 +52,13 @@
 //!
 
 use ip::new_ip_option;
+use ipv6::new_ipv6_option;
 use netlink::new_netlink_option;
 
 use crate::{net::socket::options::SocketOption, prelude::*};
 
 mod ip;
+mod ipv6;
 mod netlink;
 mod socket;
 mod tcp;
@@ -169,6 +171,7 @@ pub fn new_raw_socket_option(
     match level {
         CSocketOptionLevel::SOL_SOCKET => new_socket_option(name),
         CSocketOptionLevel::SOL_IP => new_ip_option(name),
+        CSocketOptionLevel::SOL_IPV6 => new_ipv6_option(name),
         CSocketOptionLevel::SOL_TCP => new_tcp_option(name),
         CSocketOptionLevel::SOL_NETLINK => new_netlink_option(name),
         _ => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported option level"),

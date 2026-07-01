@@ -21,7 +21,8 @@ use takeable::Takeable;
 use util::{Retrans, TcpOptionSet};
 
 use super::{
-    addr::IpAddressFamily,
+    addr::{IpAddressFamily, present_to_user, validate_endpoint},
+    ipv6_options::Ipv6OptionSet,
     options::{IpOptionSet, SetIpLevelOption},
 };
 use crate::{
@@ -62,6 +63,7 @@ pub struct StreamSocket {
     state: RwLock<Takeable<State>>,
     options: RwLock<OptionSet>,
 
+    family: IpAddressFamily,
     is_nonblocking: AtomicBool,
     pollee: Pollee,
     pseudo_path: Path,
@@ -82,6 +84,7 @@ enum State {
 struct OptionSet {
     socket: SocketOptionSet,
     ip: IpOptionSet,
+    ipv6: Ipv6OptionSet,
     tcp: TcpOptionSet,
 }
 
@@ -89,8 +92,14 @@ impl OptionSet {
     fn new() -> Self {
         let socket = SocketOptionSet::new_tcp();
         let ip = IpOptionSet::new_tcp();
+        let ipv6 = Ipv6OptionSet::new();
         let tcp = TcpOptionSet::new();
-        OptionSet { socket, ip, tcp }
+        OptionSet {
+            socket,
+            ip,
+            ipv6,
+            tcp,
+        }
     }
 
     fn raw(&self) -> RawTcpOption {
@@ -109,13 +118,18 @@ impl StreamSocket {
         Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Init(init_stream))),
             options: RwLock::new(OptionSet::new()),
+            family,
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
             pseudo_path: SockFs::new_path(),
         })
     }
 
-    fn new_accepted(connected_stream: ConnectedStream, listener_options: &OptionSet) -> Arc<Self> {
+    fn new_accepted(
+        connected_stream: ConnectedStream,
+        family: IpAddressFamily,
+        listener_options: &OptionSet,
+    ) -> Arc<Self> {
         let options = connected_stream.raw_with(|raw_tcp_socket| {
             let mut options = OptionSet::new();
 
@@ -153,6 +167,7 @@ impl StreamSocket {
         Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
             options: RwLock::new(options),
+            family,
             is_nonblocking: AtomicBool::new(false),
             pollee,
             pseudo_path: SockFs::new_path(),
@@ -322,8 +337,10 @@ impl StreamSocket {
         let accepted = listen_stream.try_accept().map(|connected_stream| {
             let remote_endpoint = connected_stream.remote_endpoint();
             let listener_options = self.options.read();
-            let accepted_socket = Self::new_accepted(connected_stream, &listener_options);
-            (accepted_socket as _, remote_endpoint.into())
+            let accepted_socket =
+                Self::new_accepted(connected_stream, self.family, &listener_options);
+            let remote_addr = self.present_addr(remote_endpoint);
+            (accepted_socket as _, remote_addr)
         });
         let iface_to_poll = listen_stream.iface().clone();
 
@@ -368,7 +385,7 @@ impl StreamSocket {
             iface.poll();
         }
 
-        Ok((recv_bytes, remote_endpoint.into()))
+        Ok((recv_bytes, self.present_addr(remote_endpoint)))
     }
 
     fn try_send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
@@ -427,6 +444,27 @@ impl StreamSocket {
         self.pollee.invalidate();
         error
     }
+
+    /// Normalizes and validates the endpoint for the socket's address family.
+    /// Returns `Err` if the endpoint is incompatible with the socket.
+    ///
+    /// The `IPV6_V6ONLY` option is read under `options.read()` and the lock is
+    /// released before the actual bind/connect. Another thread may change
+    /// `IPV6_V6ONLY` in between — this is intentional and matches Linux
+    /// semantics, where the option takes effect on the next bind/connect call.
+    fn prepare_endpoint(&self, endpoint: IpEndpoint) -> Result<IpEndpoint> {
+        let v6only = if self.family == IpAddressFamily::IPv6 {
+            self.options.read().ipv6.v6only()
+        } else {
+            false
+        };
+        validate_endpoint(self.family, v6only, endpoint)
+    }
+
+    /// Presents a stored endpoint to the user per RFC 4038.
+    fn present_addr(&self, endpoint: IpEndpoint) -> SocketAddr {
+        present_to_user(self.family, endpoint)
+    }
 }
 
 impl Pollable for StreamSocket {
@@ -448,7 +486,8 @@ impl SocketPrivate for StreamSocket {
 
 impl Socket for StreamSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
-        let endpoint = socket_addr.try_into()?;
+        let endpoint: IpEndpoint = socket_addr.try_into()?;
+        let endpoint = self.prepare_endpoint(endpoint)?;
 
         let mut state = self.write_updated_state();
         let State::Init(init_stream) = state.as_mut() else {
@@ -460,12 +499,11 @@ impl Socket for StreamSocket {
     }
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
-        let remote_endpoint = socket_addr.try_into()?;
-
+        let remote_endpoint: IpEndpoint = socket_addr.try_into()?;
+        let remote_endpoint = self.prepare_endpoint(remote_endpoint)?;
         if let Some(result) = self.start_connect(&remote_endpoint) {
             return result;
         }
-
         self.wait_events(IoEvents::OUT, None, || self.check_connect())
     }
 
@@ -537,12 +575,12 @@ impl Socket for StreamSocket {
         let local_endpoint = match state.as_ref() {
             State::Init(init_stream) => init_stream
                 .local_endpoint()
-                .unwrap_or_else(|| init_stream.family().unspecified_endpoint()),
+                .unwrap_or_else(|| self.family.unspecified_endpoint()),
             State::Connecting(connecting_stream) => connecting_stream.local_endpoint(),
             State::Listen(listen_stream) => listen_stream.local_endpoint(),
             State::Connected(connected_stream) => connected_stream.local_endpoint(),
         };
-        Ok(local_endpoint.into())
+        Ok(self.present_addr(local_endpoint))
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
@@ -554,7 +592,7 @@ impl Socket for StreamSocket {
             State::Connecting(connecting_stream) => connecting_stream.remote_endpoint(),
             State::Connected(connected_stream) => connected_stream.remote_endpoint(),
         };
-        Ok(remote_endpoint.into())
+        Ok(self.present_addr(remote_endpoint))
     }
 
     fn sendmsg(
@@ -629,6 +667,14 @@ impl Socket for StreamSocket {
         match options.ip.get_option(option) {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res,
+        }
+
+        // Deal with IPv6-level options (only for AF_INET6 sockets)
+        if self.family == IpAddressFamily::IPv6 {
+            match options.ipv6.get_option(option) {
+                Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+                res => return res,
+            }
         }
 
         // Deal with TCP-level options
@@ -714,13 +760,18 @@ impl Socket for StreamSocket {
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // Deal with IP-level options
                 match options.ip.set_option(option, state.as_ref()) {
-                    Err(err) if err.error() == Errno::ENOPROTOOPT => {
-                        // Deal with TCP-level options
-                        do_tcp_setsockopt(option, &mut options, state.as_mut())?
-                    }
-                    Err(err) => return Err(err),
-                    Ok(need_iface_poll) => need_iface_poll,
+                    Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+                    res => return res.map(|_| ()),
                 }
+                // Deal with IPv6-level options (only for AF_INET6 sockets)
+                if self.family == IpAddressFamily::IPv6 {
+                    match options.ipv6.set_option(option) {
+                        Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+                        res => return res.map(|_| ()),
+                    }
+                }
+                // Deal with TCP-level options
+                do_tcp_setsockopt(option, &mut options, state.as_mut())?
             }
             Err(err) => return Err(err),
             Ok(need_iface_poll) => need_iface_poll,

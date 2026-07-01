@@ -110,6 +110,7 @@ impl_socket_options!(
     pub struct Ttl(IpTtl);
     pub struct Hdrincl(bool);
     pub struct Recverr(bool);
+    pub struct Ipv6V6only(bool);
 );
 
 #[derive(Clone, Copy, Debug)]
