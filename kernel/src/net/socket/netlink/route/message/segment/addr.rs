@@ -4,9 +4,12 @@ use core::num::NonZeroU32;
 
 use super::legacy::CRtGenMsg;
 use crate::{
-    net::socket::netlink::{
-        message::{SegmentBody, SegmentCommon},
-        route::message::attr::addr::AddrAttr,
+    net::{
+        route::RouteScope,
+        socket::netlink::{
+            message::{SegmentBody, SegmentCommon},
+            route::message::attr::addr::AddrAttr,
+        },
     },
     prelude::*,
 };
@@ -40,7 +43,7 @@ pub struct AddrSegmentBody {
     pub family: i32,
     pub prefix_len: u8,
     pub flags: AddrMessageFlags,
-    pub scope: RtScope,
+    pub scope: RouteScope,
     pub index: Option<NonZeroU32>,
 }
 
@@ -50,7 +53,7 @@ impl TryFrom<CIfaddrMsg> for AddrSegmentBody {
     fn try_from(value: CIfaddrMsg) -> Result<Self> {
         // TODO: If the attribute IFA_FLAGS exists, the flags in header should be ignored.
         let flags = AddrMessageFlags::from_bits_truncate(value.flags as u32);
-        let scope = RtScope::try_from(value.scope)?;
+        let scope = RouteScope::new(value.scope);
         let index = NonZeroU32::new(value.index);
 
         Ok(Self {
@@ -74,7 +77,7 @@ impl From<AddrSegmentBody> for CIfaddrMsg {
             family: value.family as u8,
             prefix_len: value.prefix_len,
             flags: value.flags.bits() as u8,
-            scope: value.scope as _,
+            scope: value.scope.get(),
             index,
         }
     }
@@ -98,19 +101,4 @@ bitflags! {
         const MCAUTOJOIN	 = 0x400;
         const STABLE_PRIVACY = 0x800;
     }
-}
-
-/// `rt_scope_t` in Linux.
-///
-/// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L320>.
-#[expect(clippy::upper_case_acronyms)]
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum RtScope {
-    UNIVERSE = 0,
-    // User defined values
-    SITE = 200,
-    LINK = 253,
-    HOST = 254,
-    NOWHERE = 255,
 }

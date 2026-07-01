@@ -8,11 +8,12 @@
 mod attr;
 mod segment;
 
-pub(super) use attr::{addr::AddrAttr, link::LinkAttr};
+pub(super) use attr::{addr::AddrAttr, link::LinkAttr, route::RouteAttr};
 pub(super) use segment::{
     RtnlSegment,
-    addr::{AddrMessageFlags, AddrSegment, AddrSegmentBody, RtScope},
+    addr::{AddrMessageFlags, AddrSegment, AddrSegmentBody},
     link::{LinkSegment, LinkSegmentBody},
+    route::{RouteFlags, RouteSegment, RouteSegmentBody},
 };
 
 use crate::net::socket::netlink::message::Message;

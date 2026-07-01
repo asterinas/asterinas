@@ -35,5 +35,6 @@ sleep 0.2
 ./unix_stream_err
 
 ./netlink_route
+./netlink_route_table
 ./rtnl_err
 ./uevent_err
