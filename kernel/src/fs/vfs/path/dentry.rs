@@ -8,7 +8,7 @@ use core::{
 use hashbrown::HashMap;
 use ostd::sync::{RwMutexUpgradeableGuard, RwMutexWriteGuard};
 
-use super::{is_dot, is_dot_or_dotdot, is_dotdot};
+use super::{RenameMode, is_dot, is_dot_or_dotdot, is_dotdot};
 use crate::{
     fs::{
         self,
@@ -19,6 +19,8 @@ use crate::{
         },
     },
     prelude::*,
+    process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    security::lsm::hooks as lsm_hooks,
 };
 
 /// A `Dentry` represents a cached filesystem node in the VFS tree.
@@ -458,6 +460,63 @@ impl DirDentry<'_> {
         child
     }
 
+    fn has_sticky_bit(&self) -> bool {
+        self.inode.metadata().mode.has_sticky_bit()
+    }
+
+    fn check_sticky_bit_permission(&self, child_inode: &Arc<dyn Inode>) -> Result<()> {
+        let current_thread = current_thread!();
+        let Some(posix_thread) = current_thread.as_posix_thread() else {
+            return Ok(());
+        };
+
+        let dir_metadata = self.inode.metadata();
+        let child_metadata = child_inode.metadata();
+        let fsuid = posix_thread.credentials().fsuid();
+        if fsuid == dir_metadata.uid || fsuid == child_metadata.uid {
+            return Ok(());
+        }
+
+        lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+            UserNamespace::get_init_singleton().as_ref(),
+            posix_thread,
+            CapSet::FOWNER,
+        ))
+    }
+
+    /// Resolves a child dentry for a rename operation.
+    ///
+    /// Probes the cache with revalidation and mountpoint checks, then falls
+    /// back to a filesystem lookup and caches the result.
+    fn resolve_child_for_rename(
+        &self,
+        children: &mut DentryChildren,
+        name: &str,
+    ) -> Result<Arc<Dentry>> {
+        if let Some(cached_entry) = children.find(name) {
+            if !self.revalidate_cached_entry(name, &cached_entry) {
+                let _ = children.remove(name);
+            } else if cached_entry.is_mountpoint() {
+                return_errno_with_message!(Errno::EBUSY, "dentry is mountpoint");
+            } else {
+                return match cached_entry {
+                    CachedDentry::Positive { dentry } => Ok(dentry),
+                    CachedDentry::Negative => {
+                        return_errno_with_message!(Errno::ENOENT, "found a negative dentry")
+                    }
+                };
+            }
+        }
+
+        self.inode.lookup(name).map(|inode| {
+            let dentry = Dentry::new(
+                inode,
+                DentryOptions::Named((String::from(name), self.this())),
+            );
+            self.insert_positive_child(children, name, dentry)
+        })
+    }
+
     /// Periodically revalidates cached positive children in this directory.
     //
     // TODO: This is a workaround to keep large `DentryChildren` caches from retaining stale
@@ -682,65 +741,168 @@ impl DirDentry<'_> {
         old_name: &str,
         new_dir_arc: &Arc<Dentry>,
         new_name: &str,
+        mode: RenameMode,
     ) -> Result<()> {
         let old_dir = old_dir_arc.as_dir_dentry_or_err()?;
         let new_dir = new_dir_arc.as_dir_dentry_or_err()?;
 
-        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
-            return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
+        if is_dot_or_dotdot(old_name) {
+            return_errno_with_message!(Errno::EBUSY, "old_name is . or ..");
+        }
+        if is_dot_or_dotdot(new_name) {
+            if mode == RenameMode::NoReplace {
+                return_errno_with_message!(Errno::EEXIST, "new_name is . or ..");
+            } else {
+                return_errno_with_message!(Errno::EBUSY, "new_name is . or ..");
+            }
         }
 
         let old_dir_inode = old_dir.inode();
         let new_dir_inode = new_dir.inode();
+        let max_namelen = old_dir_inode.fs().sb().namelen;
+        if old_name.len() > max_namelen || new_name.len() > max_namelen {
+            return_errno_with_message!(Errno::ENAMETOOLONG, "old_name or new_name is too long");
+        }
 
-        // The two are the same dentry, we just modify the name
         if Arc::ptr_eq(old_dir_arc, new_dir_arc) {
+            // The two are the same dentry, we just modify the name
             if old_name == new_name {
-                return Ok(());
+                match mode {
+                    RenameMode::Replace | RenameMode::Exchange => return Ok(()),
+                    RenameMode::NoReplace => {
+                        return_errno_with_message!(Errno::EEXIST, "the new path already exists");
+                    }
+                }
             }
 
             let mut children = old_dir.children.write();
-            children.check_mountpoint(new_name)?;
-            let old_dentry = children.probe_cached_child_for_rename(&old_dir, old_name)?;
 
-            old_dir_inode.rename(old_name, old_dir_inode, new_name)?;
+            let old_dentry = old_dir.resolve_child_for_rename(&mut children, old_name)?;
+            let new_dentry = match old_dir.resolve_child_for_rename(&mut children, new_name) {
+                Ok(dentry) => Some(dentry),
+                Err(e) if e.error() == Errno::ENOENT => None,
+                Err(e) => return Err(e),
+            };
 
-            match old_dentry.as_ref() {
-                Some(dentry) => {
+            Self::check_rename_mode(mode, new_dentry.as_ref())?;
+
+            if old_dir.has_sticky_bit() {
+                old_dir.check_sticky_bit_permission(old_dentry.inode())?;
+                if let Some(new_dentry) = new_dentry.as_ref() {
+                    old_dir.check_sticky_bit_permission(new_dentry.inode())?;
+                }
+            }
+
+            old_dir_inode.rename(old_name, old_dir_inode, new_name, mode)?;
+
+            match mode {
+                RenameMode::Replace | RenameMode::NoReplace => {
                     children.delete(old_name);
-                    dentry
+                    old_dentry
                         .name_and_parent
                         .set(new_name, old_dir_arc.clone())
                         .unwrap();
-                    old_dir.insert_positive_child(&mut children, new_name, dentry.clone());
+                    old_dir.insert_positive_child(&mut children, new_name, old_dentry);
                 }
-                None => {
-                    children.remove(new_name);
+                RenameMode::Exchange => {
+                    let new_dentry = new_dentry.unwrap();
+                    old_dentry
+                        .name_and_parent
+                        .set(new_name, old_dir_arc.clone())
+                        .unwrap();
+                    new_dentry
+                        .name_and_parent
+                        .set(old_name, old_dir_arc.clone())
+                        .unwrap();
+                    old_dir.insert_positive_child(&mut children, new_name, old_dentry);
+                    old_dir.insert_positive_child(&mut children, old_name, new_dentry);
                 }
             }
         } else {
             // The two are different dentries
-            let (mut self_children, mut new_dir_children) =
+            let (mut old_children, mut new_children) =
                 write_lock_children_on_two_dentries(&old_dir, &new_dir);
-            let old_dentry = self_children.probe_cached_child_for_rename(&old_dir, old_name)?;
-            new_dir_children.check_mountpoint(new_name)?;
 
-            old_dir_inode.rename(old_name, new_dir_inode, new_name)?;
-            match old_dentry.as_ref() {
-                Some(dentry) => {
-                    self_children.delete(old_name);
-                    dentry
+            let old_dentry = old_dir.resolve_child_for_rename(&mut old_children, old_name)?;
+            let new_dentry = match new_dir.resolve_child_for_rename(&mut new_children, new_name) {
+                Ok(dentry) => Some(dentry),
+                Err(e) if e.error() == Errno::ENOENT => None,
+                Err(e) => return Err(e),
+            };
+
+            Self::check_rename_mode(mode, new_dentry.as_ref())?;
+            Self::check_rename_cycle(mode, &old_dir, &old_dentry, &new_dir, new_dentry.as_ref())?;
+
+            if old_dir.has_sticky_bit() {
+                old_dir.check_sticky_bit_permission(old_dentry.inode())?;
+            }
+            if new_dir.has_sticky_bit()
+                && let Some(new_dentry) = new_dentry.as_ref()
+            {
+                new_dir.check_sticky_bit_permission(new_dentry.inode())?;
+            }
+
+            old_dir_inode.rename(old_name, new_dir_inode, new_name, mode)?;
+
+            match mode {
+                RenameMode::Replace | RenameMode::NoReplace => {
+                    old_children.delete(old_name);
+                    old_dentry
                         .name_and_parent
                         .set(new_name, new_dir_arc.clone())
                         .unwrap();
-                    new_dir.insert_positive_child(&mut new_dir_children, new_name, dentry.clone());
+                    new_dir.insert_positive_child(&mut new_children, new_name, old_dentry);
                 }
-                None => {
-                    new_dir_children.remove(new_name);
+                RenameMode::Exchange => {
+                    let new_dentry = new_dentry.unwrap();
+                    old_dentry
+                        .name_and_parent
+                        .set(new_name, new_dir_arc.clone())
+                        .unwrap();
+                    new_dentry
+                        .name_and_parent
+                        .set(old_name, old_dir_arc.clone())
+                        .unwrap();
+                    new_dir.insert_positive_child(&mut new_children, new_name, old_dentry);
+                    old_dir.insert_positive_child(&mut old_children, old_name, new_dentry);
                 }
             }
         }
         Ok(())
+    }
+
+    fn check_rename_cycle(
+        mode: RenameMode,
+        old_dir: &DirDentry<'_>,
+        old_dentry: &Arc<Dentry>,
+        new_dir: &DirDentry<'_>,
+        new_dentry: Option<&Arc<Dentry>>,
+    ) -> Result<()> {
+        if old_dentry.type_() == InodeType::Dir && new_dir.is_equal_or_descendant_of(old_dentry) {
+            return_errno_with_message!(Errno::EINVAL, "the new path is inside the old directory");
+        }
+
+        if mode == RenameMode::Exchange
+            && let Some(new_dentry) = new_dentry
+            && new_dentry.type_() == InodeType::Dir
+            && old_dir.is_equal_or_descendant_of(new_dentry)
+        {
+            return_errno_with_message!(Errno::EINVAL, "the old path is inside the new directory");
+        }
+
+        Ok(())
+    }
+
+    fn check_rename_mode(mode: RenameMode, new_dentry: Option<&Arc<Dentry>>) -> Result<()> {
+        match mode {
+            RenameMode::NoReplace if new_dentry.is_some() => {
+                return_errno_with_message!(Errno::EEXIST, "the new path already exists");
+            }
+            RenameMode::Exchange if new_dentry.is_none() => {
+                return_errno_with_message!(Errno::ENOENT, "the new path does not exist");
+            }
+            _ => Ok(()),
+        }
     }
 
     /// Revalidates a cached entry.
@@ -972,50 +1134,6 @@ impl DentryChildren {
         }
 
         removed_entry.and_then(CachedDentry::into_dentry)
-    }
-
-    /// Checks whether the dentry is a mount point. Returns an error if it is.
-    fn check_mountpoint(&self, name: &str) -> Result<()> {
-        if let Some(entry) = self.entries.get(name)
-            && entry.is_mountpoint()
-        {
-            return_errno_with_message!(Errno::EBUSY, "dentry is mountpoint");
-        }
-
-        Ok(())
-    }
-
-    /// Probes a cached child `Dentry` before a rename operation.
-    ///
-    /// Returns:
-    /// - `Ok(Some(entry))` for a valid positive dentry,
-    /// - `Ok(None)` for a cache miss or a stale entry,
-    /// - `Err(ENOENT)` for a valid negative dentry,
-    /// - `Err(EBUSY)` for a dentry that is a mountpoint.
-    fn probe_cached_child_for_rename(
-        &mut self,
-        dir: &DirDentry<'_>,
-        name: &str,
-    ) -> Result<Option<Arc<Dentry>>> {
-        let Some(cached_entry) = self.find(name) else {
-            return Ok(None);
-        };
-
-        if !dir.revalidate_cached_entry(name, &cached_entry) {
-            let _ = self.remove(name);
-            return Ok(None);
-        }
-
-        if cached_entry.is_mountpoint() {
-            return_errno_with_message!(Errno::EBUSY, "dentry is mountpoint");
-        }
-
-        match cached_entry {
-            CachedDentry::Positive { dentry } => Ok(Some(dentry)),
-            CachedDentry::Negative => {
-                return_errno_with_message!(Errno::ENOENT, "found a negative dentry")
-            }
-        }
     }
 
     fn revalidate_positive_entries(&mut self, dir: &DirDentry<'_>) {

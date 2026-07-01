@@ -431,7 +431,13 @@ pub trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
@@ -740,4 +746,15 @@ pub enum FallocMode {
     CollapseRange,
     /// Inserts space within a file without overwriting existing data.
     InsertRange,
+}
+
+/// The behavior of rename operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RenameMode {
+    /// Replaces the destination if it already exists.
+    Replace,
+    /// Fails with `EEXIST` if the destination already exists.
+    NoReplace,
+    /// Exchanges the source and destination paths.
+    Exchange,
 }

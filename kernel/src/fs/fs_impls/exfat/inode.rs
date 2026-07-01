@@ -31,7 +31,7 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, MknodType, SymbolicLink},
+            inode::{Extension, FileOps, Inode, Metadata, MknodType, RenameMode, SymbolicLink},
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
         },
     },
@@ -1648,7 +1648,16 @@ impl Inode for ExfatInode {
         Ok(inode)
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
+        if mode == RenameMode::Exchange {
+            return_errno_with_message!(Errno::EINVAL, "RENAME_EXCHANGE is not supported on exfat");
+        }
         if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno!(Errno::EISDIR);
         }

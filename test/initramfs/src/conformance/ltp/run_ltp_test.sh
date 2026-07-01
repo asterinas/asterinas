@@ -7,6 +7,8 @@ TEST_TMP_DIR=${CONFORMANCE_TEST_WORKDIR:-/tmp}
 LOG_FILE=$TEST_TMP_DIR/result.log
 RESULT=0
 
+# Some test cases require a block device. Select the first one by default.
+export LTP_DEV=${LTP_DEV:-/dev/vda}
 export LTP_TIMEOUT_MUL=5
 
 rm -f $LOG_FILE

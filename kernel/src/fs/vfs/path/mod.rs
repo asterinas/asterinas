@@ -22,7 +22,7 @@ use crate::{
         pseudofs::NsInode,
         vfs::{
             file_system::{FileSystem, FsFlags},
-            inode::{HardLinkability, Inode, Metadata, MknodType},
+            inode::{HardLinkability, Inode, Metadata, MknodType, RenameMode},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -201,13 +201,6 @@ impl Path {
         }
 
         self
-    }
-
-    /// Returns whether this path is the same as or a descendant of `ancestor`
-    /// within the same mount.
-    pub fn is_equal_or_descendant_of(&self, ancestor: &Path) -> bool {
-        self.mount.id() == ancestor.mount.id()
-            && self.dentry.is_equal_or_descendant_of(&ancestor.dentry)
     }
 
     /// Finds the corresponding `Path` in the given mount namespace.
@@ -545,12 +538,18 @@ impl Path {
     }
 
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
-    pub fn rename(&self, old_name: &str, new_dir: &Self, new_name: &str) -> Result<()> {
+    pub fn rename(
+        &self,
+        old_name: &str,
+        new_dir: &Self,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
         if !Arc::ptr_eq(&self.mount, &new_dir.mount) {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
 
-        DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name)
+        DirDentry::rename(&self.dentry, old_name, &new_dir.dentry, new_name, mode)
     }
 }
 

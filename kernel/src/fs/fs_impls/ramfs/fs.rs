@@ -28,7 +28,7 @@ use crate::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{
                 Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
-                SymbolicLink,
+                RenameMode, SymbolicLink,
             },
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
@@ -36,7 +36,8 @@ use crate::{
         },
     },
     prelude::*,
-    process::{Gid, Uid},
+    process::{Gid, Uid, posix_thread::AsPosixThread},
+    thread::Thread,
     time::clocks::RealTimeCoarseClock,
     vm::page_cache::PageCache,
 };
@@ -463,6 +464,18 @@ impl DirEntry {
         Some(substitute)
     }
 
+    fn exchange_entry_inodes(&mut self, idx_a: usize, idx_b: usize) {
+        assert!(idx_a >= NUM_SPECIAL_ENTRIES && idx_b >= NUM_SPECIAL_ENTRIES);
+        let child_idx_a = idx_a - NUM_SPECIAL_ENTRIES;
+        let child_idx_b = idx_b - NUM_SPECIAL_ENTRIES;
+
+        let (name_a, inode_a) = self.children.remove(child_idx_a).unwrap();
+        let (name_b, inode_b) = self.children.remove(child_idx_b).unwrap();
+
+        self.children.put_at(child_idx_a, (name_a, inode_b));
+        self.children.put_at(child_idx_b, (name_b, inode_a));
+    }
+
     fn visit_entry(&self, idx: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let try_visit = |idx: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
             // Read the two special entries("." and "..").
@@ -667,6 +680,14 @@ impl RamInode {
             .get_entry(name)
             .ok_or(Error::new(Errno::ENOENT))?;
         Ok(inode)
+    }
+
+    fn set_parent_if_dir(&self, parent: Weak<RamInode>) {
+        if self.typ != InodeType::Dir {
+            return;
+        }
+
+        self.inner.as_direntry().unwrap().write().set_parent(parent);
     }
 }
 
@@ -923,15 +944,18 @@ impl Inode for RamInode {
         }
 
         let fs = self.fs.upgrade().unwrap();
+        let (uid, gid) = Thread::current()
+            .and_then(|thread| {
+                let posix_thread = thread.as_posix_thread()?;
+                let credentials = posix_thread.credentials();
+                Some((credentials.fsuid(), credentials.fsgid()))
+            })
+            .unwrap_or((Uid::new_root(), Gid::new_root()));
         let new_inode = match type_ {
-            InodeType::File => RamInode::new_file(&fs, mode, Uid::new_root(), Gid::new_root()),
-            InodeType::SymLink => {
-                RamInode::new_symlink(&fs, mode, Uid::new_root(), Gid::new_root())
-            }
-            InodeType::Socket => RamInode::new_socket(&fs, mode, Uid::new_root(), Gid::new_root()),
-            InodeType::Dir => {
-                RamInode::new_dir(&fs, mode, Uid::new_root(), Gid::new_root(), &self.this)
-            }
+            InodeType::File => RamInode::new_file(&fs, mode, uid, gid),
+            InodeType::SymLink => RamInode::new_symlink(&fs, mode, uid, gid),
+            InodeType::Socket => RamInode::new_socket(&fs, mode, uid, gid),
+            InodeType::Dir => RamInode::new_dir(&fs, mode, uid, gid, &self.this),
             _ => {
                 panic!("unsupported inode type");
             }
@@ -1093,28 +1117,13 @@ impl Inode for RamInode {
         Ok(inode as _)
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        if is_dot_or_dotdot(old_name) {
-            return_errno_with_message!(Errno::EISDIR, "old_name is . or ..");
-        }
-        if is_dot_or_dotdot(new_name) {
-            return_errno_with_message!(Errno::EISDIR, "new_name is . or ..");
-        }
-
-        let target = target
-            .downcast_ref::<RamInode>()
-            .ok_or(Error::new(Errno::EXDEV))?;
-
-        if !Arc::ptr_eq(&self.fs(), &target.fs()) {
-            return_errno_with_message!(Errno::EXDEV, "not same fs");
-        }
-        if self.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
-        }
-        if target.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "target is not dir");
-        }
-
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
         // Perform necessary checks to ensure that `dst_inode` can be replaced by `src_inode`.
         let check_replace_inode =
             |src_inode: &Arc<RamInode>, dst_inode: &Arc<RamInode>| -> Result<()> {
@@ -1145,39 +1154,40 @@ impl Inode for RamInode {
                 Ok(())
             };
 
+        let target = target.downcast_ref::<RamInode>().unwrap();
+
         // Rename in the same directory
         if self.ino == target.ino {
             let mut self_dir = self.inner.as_direntry().unwrap().write();
-            let (src_idx, src_inode) = self_dir
-                .get_entry(old_name)
-                .ok_or(Error::new(Errno::ENOENT))?;
-            let is_dir = src_inode.typ == InodeType::Dir;
+            // The source is guaranteed to exist (checked by VFS layer).
+            let (src_idx, src_inode) = self_dir.get_entry(old_name).unwrap();
 
-            if let Some((dst_idx, dst_inode)) = self_dir.get_entry(new_name) {
+            if mode == RenameMode::Exchange {
+                // The destination is guaranteed to exist for `RenameMode::Exchange` (checked by VFS layer).
+                let (dst_idx, dst_inode) = self_dir.get_entry(new_name).unwrap();
+                self_dir.exchange_entry_inodes(src_idx, dst_idx);
+                drop(self_dir);
+
+                let now = now();
+                DirChange::touch().apply(self, now);
+                src_inode.set_ctime(now);
+                dst_inode.set_ctime(now);
+            } else if let Some((dst_idx, dst_inode)) = self_dir.get_entry(new_name) {
                 check_replace_inode(&src_inode, &dst_inode)?;
                 self_dir.remove_entry(dst_idx);
                 self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
                 drop(self_dir);
 
                 let now = now();
-                let mut self_meta = self.metadata.lock();
-                self_meta.dec_size();
-                if is_dir {
-                    self_meta.dec_nlinks();
-                }
-                self_meta.set_mtime(now);
-                self_meta.set_ctime(now);
-                drop(self_meta);
+                DirChange::del(&src_inode).apply(self, now);
                 src_inode.set_ctime(now);
                 dst_inode.set_ctime(now);
             } else {
                 self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
                 drop(self_dir);
+
                 let now = now();
-                let mut self_meta = self.metadata.lock();
-                self_meta.set_mtime(now);
-                self_meta.set_ctime(now);
-                drop(self_meta);
+                DirChange::touch().apply(self, now);
                 src_inode.set_ctime(now);
             }
         }
@@ -1188,17 +1198,28 @@ impl Inode for RamInode {
                 (target.ino, target.inner.as_direntry().unwrap()),
             );
             let self_inode_arc = self.this.upgrade().unwrap();
-            let target_inode_arc = target.this.upgrade().unwrap();
-            let (src_idx, src_inode) = self_dir
-                .get_entry(old_name)
-                .ok_or(Error::new(Errno::ENOENT))?;
-            // Avoid renaming a directory to a subdirectory of itself
-            if Arc::ptr_eq(&src_inode, &target_inode_arc) {
-                return_errno!(Errno::EINVAL);
-            }
-            let is_dir = src_inode.typ == InodeType::Dir;
+            // The source is guaranteed to exist (checked by VFS layer).
+            let (src_idx, src_inode) = self_dir.get_entry(old_name).unwrap();
 
-            if let Some((dst_idx, dst_inode)) = target_dir.get_entry(new_name) {
+            if mode == RenameMode::Exchange {
+                // The destination is guaranteed to exist for `RenameMode::Exchange` (checked by VFS layer).
+                let (dst_idx, dst_inode) = target_dir.get_entry(new_name).unwrap();
+
+                self_dir.remove_entry(src_idx);
+                target_dir.remove_entry(dst_idx);
+                self_dir.append_entry(old_name, dst_inode.clone());
+                target_dir.append_entry(new_name, src_inode.clone());
+                drop(self_dir);
+                drop(target_dir);
+
+                let now = now();
+                DirChange::exchange(&src_inode, &dst_inode).apply(self, now);
+                DirChange::exchange(&dst_inode, &src_inode).apply(target, now);
+                src_inode.set_ctime(now);
+                dst_inode.set_ctime(now);
+
+                dst_inode.set_parent_if_dir(self.this.clone());
+            } else if let Some((dst_idx, dst_inode)) = target_dir.get_entry(new_name) {
                 // Avoid renaming a subdirectory to a directory.
                 if Arc::ptr_eq(&self_inode_arc, &dst_inode) {
                     return_errno!(Errno::ENOTEMPTY);
@@ -1211,18 +1232,8 @@ impl Inode for RamInode {
                 drop(target_dir);
 
                 let now = now();
-                let mut self_meta = self.metadata.lock();
-                self_meta.dec_size();
-                if is_dir {
-                    self_meta.dec_nlinks();
-                }
-                self_meta.set_mtime(now);
-                self_meta.set_ctime(now);
-                drop(self_meta);
-                let mut target_meta = target.metadata.lock();
-                target_meta.set_mtime(now);
-                target_meta.set_ctime(now);
-                drop(target_meta);
+                DirChange::del(&src_inode).apply(self, now);
+                DirChange::exchange(&dst_inode, &src_inode).apply(target, now);
                 dst_inode.set_ctime(now);
                 src_inode.set_ctime(now);
             } else {
@@ -1232,34 +1243,12 @@ impl Inode for RamInode {
                 drop(target_dir);
 
                 let now = now();
-                let mut self_meta = self.metadata.lock();
-                self_meta.dec_size();
-                if is_dir {
-                    self_meta.dec_nlinks();
-                }
-                self_meta.set_mtime(now);
-                self_meta.set_ctime(now);
-                drop(self_meta);
-
-                let mut target_meta = target.metadata.lock();
-                target_meta.inc_size();
-                if is_dir {
-                    target_meta.inc_nlinks();
-                }
-                target_meta.set_mtime(now);
-                target_meta.set_ctime(now);
-                drop(target_meta);
+                DirChange::del(&src_inode).apply(self, now);
+                DirChange::add(&src_inode).apply(target, now);
                 src_inode.set_ctime(now);
             }
 
-            if is_dir {
-                src_inode
-                    .inner
-                    .as_direntry()
-                    .unwrap()
-                    .write()
-                    .set_parent(target.this.clone());
-            }
+            src_inode.set_parent_if_dir(target.this.clone());
         }
         Ok(())
     }
@@ -1385,6 +1374,70 @@ impl Inode for RamInode {
         RamXattr::check_file_type_for_xattr(self.typ)?;
         self.check_permission(Permission::MAY_WRITE)?;
         self.xattr.remove(name)
+    }
+}
+
+/// Describes how a single entry slot of a directory changed during a rename,
+/// for metadata accounting.
+///
+/// `old_type` is the type of the entry that left the slot (if any) and
+/// `new_type` is the type of the entry that took its place (if any).
+struct DirChange {
+    new_type: Option<InodeType>,
+    old_type: Option<InodeType>,
+}
+
+impl DirChange {
+    /// An entry of `inode`'s type was added to the directory.
+    fn add(inode: &RamInode) -> Self {
+        Self {
+            new_type: Some(inode.typ),
+            old_type: None,
+        }
+    }
+
+    /// An entry of `inode`'s type was removed from the directory.
+    fn del(inode: &RamInode) -> Self {
+        Self {
+            new_type: None,
+            old_type: Some(inode.typ),
+        }
+    }
+
+    /// The `old` entry of the directory was replaced in place by the `new` entry.
+    fn exchange(old: &RamInode, new: &RamInode) -> Self {
+        Self {
+            new_type: Some(new.typ),
+            old_type: Some(old.typ),
+        }
+    }
+
+    /// No entry was added or removed; the directory is only touched (e.g., an
+    /// in-place rename).
+    fn touch() -> Self {
+        Self {
+            new_type: None,
+            old_type: None,
+        }
+    }
+
+    /// Applies this change to `dir`'s own metadata, also bumping its mtime/ctime
+    /// to `now`.
+    fn apply(self, dir: &RamInode, now: Duration) {
+        let mut meta = dir.metadata.lock();
+        match (self.old_type, self.new_type) {
+            (Some(_), None) => meta.dec_size(),
+            (None, Some(_)) => meta.inc_size(),
+            _ => {}
+        }
+        if self.old_type == Some(InodeType::Dir) {
+            meta.dec_nlinks();
+        }
+        if self.new_type == Some(InodeType::Dir) {
+            meta.inc_nlinks();
+        }
+        meta.set_mtime(now);
+        meta.set_ctime(now);
     }
 }
 
