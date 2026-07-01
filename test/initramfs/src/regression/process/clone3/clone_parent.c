@@ -98,7 +98,7 @@ END_TEST()
 int pipefds[2];
 // A stack for the new thread
 #define STACK_SIZE (1024 * 1024) // 1MB stack
-char child_stack[STACK_SIZE];
+char child_stack[2][STACK_SIZE];
 
 int child_function(void *arg)
 {
@@ -113,13 +113,13 @@ FN_TEST(clone_thread)
 	TEST_SUCC((pipe(pipefds)));
 
 	// Clone
-	TEST_SUCC(clone(child_function, child_stack + STACK_SIZE,
+	TEST_SUCC(clone(child_function, child_stack[0] + STACK_SIZE,
 			CLONE_PARENT | CLONE_THREAD | CLONE_VM | CLONE_SIGHAND,
 			NULL));
 	TEST_RES(read(pipefds[0], buf, 1), buf[0] == 'a');
 
 	// Clone
-	TEST_SUCC(clone(child_function, child_stack + STACK_SIZE,
+	TEST_SUCC(clone(child_function, child_stack[1] + STACK_SIZE,
 			CLONE_PARENT | CLONE_THREAD | CLONE_VM | CLONE_SIGHAND |
 				SIGCHLD,
 			NULL));
