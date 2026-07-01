@@ -6,7 +6,10 @@ use crate::{
     fs::{
         file::file_table::{RawFileDesc, get_file_fast},
         utils::PATH_MAX,
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
+        vfs::{
+            path::{AT_FDCWD, EmptyPathStr, FsPath},
+            xattr::clear_file_priv,
+        },
     },
     prelude::*,
     process::ResourceType,
@@ -39,6 +42,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<Syscal
             .read()
             .lookup(&fs_path)?
     };
+    clear_file_priv(dir_path.inode().as_ref())?;
     dir_path.resize(len as usize)?;
     fs::vfs::notify::on_change(&dir_path);
     Ok(SyscallReturn::Return(0))

@@ -5,7 +5,10 @@ use crate::{
     fs::{
         file::file_table::{RawFileDesc, get_file_fast},
         utils::PATH_MAX,
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
+        vfs::{
+            path::{AT_FDCWD, EmptyPathStr, FsPath},
+            xattr::clear_file_priv,
+        },
     },
     prelude::*,
     process::{Gid, Uid},
@@ -29,6 +32,7 @@ pub fn sys_fchown(raw_fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Res
     if let Some(gid) = gid {
         path.set_group(gid)?;
     }
+    clear_file_priv(path.inode().as_ref())?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -93,6 +97,7 @@ pub fn sys_fchownat(
     if let Some(gid) = gid {
         path.set_group(gid)?;
     }
+    clear_file_priv(path.inode().as_ref())?;
     Ok(SyscallReturn::Return(0))
 }
 

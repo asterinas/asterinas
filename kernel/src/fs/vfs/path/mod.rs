@@ -23,7 +23,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsFlags},
             inode::{HardLinkability, Inode, Metadata, MknodType},
-            xattr::{XattrName, XattrNamespace, XattrSetFlags},
+            xattr::{XattrName, XattrNamespace, XattrSetFlags, clear_file_priv},
         },
     },
     prelude::*,
@@ -165,6 +165,7 @@ impl Path {
             && creation_flags.contains(CreationFlags::O_TRUNC)
             && !status_flags.contains(StatusFlags::O_PATH)
         {
+            clear_file_priv(inode)?;
             self.resize(0)?;
         }
 

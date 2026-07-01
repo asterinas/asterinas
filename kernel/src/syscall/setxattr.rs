@@ -13,12 +13,16 @@ use crate::{
         vfs::{
             path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
             xattr::{
-                XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags,
+                self, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace,
+                XattrSetFlags,
             },
         },
     },
     prelude::*,
-    process::{UserNamespace, credentials::capabilities::CapSet},
+    process::{
+        UserNamespace,
+        credentials::{FileCapabilities, capabilities::CapSet},
+    },
     security::lsm::hooks as lsm_hooks,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -116,9 +120,10 @@ fn setxattr(
     if value_len > XATTR_VALUE_MAX_LEN {
         return_errno_with_message!(Errno::E2BIG, "xattr value too long");
     }
-    let mut value_reader = user_space.reader(value_ptr, value_len)?;
+    check_write_file_cap(&xattr_name, value_ptr, value_len, user_space, ctx)?;
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
+    let mut value_reader = user_space.reader(value_ptr, value_len)?;
     path.set_xattr(xattr_name, &mut value_reader, flags)?;
     fs::vfs::notify::on_attr_change(&path);
     Ok(())
@@ -211,5 +216,44 @@ pub(super) fn check_xattr_namespace(namespace: XattrNamespace, ctx: &Context) ->
         UserNamespace::get_init_singleton().as_ref(),
         ctx.posix_thread,
         CapSet::SYS_ADMIN,
+    ))
+}
+
+pub(super) fn check_write_file_cap(
+    xattr_name: &XattrName<'_>,
+    value_ptr: Vaddr,
+    value_len: usize,
+    user_space: &CurrentUserSpace,
+    ctx: &Context,
+) -> Result<()> {
+    if xattr_name.full_name() != xattr::SECURITY_CAPABILITY_XATTR_NAME {
+        return Ok(());
+    }
+
+    if value_len < size_of::<u32>() {
+        return_errno_with_message!(Errno::EINVAL, "file capability xattr is truncated");
+    }
+
+    let mut header = [0u8; size_of::<u32>()];
+    let mut value_reader = user_space.reader(value_ptr, header.len())?;
+    value_reader.read_fallible(&mut VmWriter::from(header.as_mut_slice()))?;
+    FileCapabilities::parse_header(u32::from_le_bytes(header), value_len)?;
+
+    // FIXME: Convert between V2 and V3 file capability xattrs when user namespace mappings make
+    // the root ID representation differ from the value supplied by user space.
+    check_file_cap_permission(xattr_name, ctx)
+}
+
+pub(super) fn check_file_cap_permission(xattr_name: &XattrName<'_>, ctx: &Context) -> Result<()> {
+    if xattr_name.full_name() != xattr::SECURITY_CAPABILITY_XATTR_NAME {
+        return Ok(());
+    }
+
+    // FIXME: Also verify that the inode owner and group have valid mappings in the current
+    // user namespace before accepting `security.capability` modifications.
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        ctx.thread_local.borrow_user_ns().as_ref(),
+        ctx.posix_thread,
+        CapSet::SETFCAP,
     ))
 }
