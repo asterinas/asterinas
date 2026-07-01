@@ -198,6 +198,11 @@ RUN apt update \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install claude
+RUN curl -fsSL https://claude.ai/install.sh | bash
+# Install codex
+RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh
+
 # Install Rust with both nightly and stable
 ENV PATH="/root/.cargo/bin:${PATH}"
 ARG ASTER_RUST_VERSION
