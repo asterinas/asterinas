@@ -75,9 +75,20 @@ fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let file = get_file_fast!(&mut file_table, fd);
     let status_flags = file.status_flags();
     let access_mode = file.access_mode();
-    Ok(SyscallReturn::Return(
-        (status_flags.bits() | access_mode as u32) as _,
-    ))
+
+    // Linux behavior: O_LARGEFILE is not returned for certain file types.
+    // - O_PATH file descriptors: Return only status_flags (no access mode, no O_LARGEFILE)
+    // - Anonymous pipes (pipefs): Return status_flags | access_mode (no O_LARGEFILE)
+    // - Named pipes and regular files: Return status_flags | access_mode | O_LARGEFILE
+    let result = if status_flags.contains(StatusFlags::O_PATH) {
+        status_flags.bits()
+    } else if file.path().inode().fs().name() == "pipefs" {
+        status_flags.bits() | access_mode as u32
+    } else {
+        status_flags.bits() | access_mode as u32 | StatusFlags::O_LARGEFILE.bits()
+    };
+
+    Ok(SyscallReturn::Return(result as _))
 }
 
 fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
