@@ -39,8 +39,7 @@ pub fn sys_sendto(
     let send_size = socket
         .sendmsg(&mut reader, message_header, flags)
         .map_err(|err| match err.error() {
-            // FIXME: `sendto` should not be restarted if a timeout has been set on the socket using `setsockopt`.
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            Errno::EINTR if socket.send_timeout().is_none() => Error::new(Errno::ERESTARTSYS),
             _ => err,
         })?;
 

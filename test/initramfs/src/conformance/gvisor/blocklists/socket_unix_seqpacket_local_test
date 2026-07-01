@@ -2,7 +2,7 @@
 SeqpacketUnixSockets/NonStreamSocketPairTest.SplitRecv/*
 SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgTruncPeekDontwaitZeroLen/*
 
-# TODO: Support `SO_SNDTIMEO`
+# TODO: Support `SO_SNDTIMEO` for the seqpacket send-timeout case
 SeqpacketUnixSockets/UnixNonStreamSocketPairTest.SendTimeout/*
 
 # TODO: Support `MSG_TRUNC`

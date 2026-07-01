@@ -177,7 +177,9 @@ where
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)> {
-        let (received_len, addr) = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+        let (received_len, addr) = self.block_on(IoEvents::IN, self.recv_timeout(), || {
+            self.try_recv(writer, flags)
+        })?;
 
         // TODO: Receive control message
 
@@ -219,6 +221,10 @@ where
 
         // Deal with netlink-level options
         do_netlink_setsockopt(option, &mut inner)
+    }
+
+    fn recv_timeout(&self) -> Option<core::time::Duration> {
+        self.options.read().socket.recv_timeout_duration()
     }
 
     fn pseudo_path(&self) -> &Path {

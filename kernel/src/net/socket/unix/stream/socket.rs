@@ -126,7 +126,7 @@ pub(super) struct OptionSet {
 }
 
 impl OptionSet {
-    pub(self) fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             socket: SocketOptionSet::new_unix_stream(),
         }
@@ -141,8 +141,14 @@ impl OptionSet {
     /// Reference:
     /// <https://elixir.bootlin.com/linux/v6.18.6/source/net/unix/af_unix.c#L1765>
     /// <https://elixir.bootlin.com/linux/v6.18.6/source/include/net/sock.h#L543-L550>
-    pub(super) fn new_accepted(is_pass_cred: bool) -> Self {
+    pub(super) fn new_accepted(listener_options: &Self, is_pass_cred: bool) -> Self {
         let mut result = Self::new();
+        if let Some(recv_timeout) = listener_options.socket.recv_timeout_duration() {
+            result.socket.set_recv_timeout(recv_timeout);
+        }
+        if let Some(send_timeout) = listener_options.socket.send_timeout_duration() {
+            result.socket.set_send_timeout(send_timeout);
+        }
         if is_pass_cred {
             result.socket.set_pass_cred(is_pass_cred);
         }
@@ -331,7 +337,7 @@ impl Socket for UnixStreamSocket {
         if self.is_nonblocking() {
             self.try_connect(&backlog)
         } else {
-            backlog.block_connect(|| self.try_connect(&backlog))
+            backlog.block_connect(self.send_timeout(), || self.try_connect(&backlog))
         }
     }
 
@@ -369,6 +375,7 @@ impl Socket for UnixStreamSocket {
                     return (State::Init(init), Err(err));
                 }
             };
+            listener.set_options(&self.options.read());
             self.options.read().apply_to_listener(&listener);
 
             (State::Listen(listener), Ok(()))
@@ -376,7 +383,7 @@ impl Socket for UnixStreamSocket {
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        self.block_on(IoEvents::IN, || self.try_accept())
+        self.block_on(IoEvents::IN, self.recv_timeout(), || self.try_accept())
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
@@ -454,7 +461,12 @@ impl Socket for UnixStreamSocket {
                     "the socket option to get is unknown"
                 )
             }
-            res => res.map(|_need_iface_poll| ()),
+            res => res.map(|_need_iface_poll| {
+                if let State::Listen(listener) = state.as_ref() {
+                    listener.set_options(&options);
+                    options.apply_to_listener(listener);
+                }
+            }),
         }
     }
 
@@ -491,7 +503,7 @@ impl Socket for UnixStreamSocket {
         }
         let mut auxiliary_data = AuxiliaryData::from_control(control_messages)?;
 
-        self.block_on(IoEvents::OUT, || {
+        self.block_on(IoEvents::OUT, self.send_timeout(), || {
             self.try_send(reader, &mut auxiliary_data, flags)
         })
     }
@@ -507,7 +519,9 @@ impl Socket for UnixStreamSocket {
         }
 
         let (received_bytes, control_messages) =
-            self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+            self.block_on(IoEvents::IN, self.recv_timeout(), || {
+                self.try_recv(writer, flags)
+            })?;
 
         let message_header = MessageHeader::new(None, control_messages);
 
@@ -516,6 +530,14 @@ impl Socket for UnixStreamSocket {
 
     fn pseudo_path(&self) -> &Path {
         &self.pseudo_path
+    }
+
+    fn recv_timeout(&self) -> Option<core::time::Duration> {
+        self.options.read().socket.recv_timeout_duration()
+    }
+
+    fn send_timeout(&self) -> Option<core::time::Duration> {
+        self.options.read().socket.send_timeout_duration()
     }
 }
 

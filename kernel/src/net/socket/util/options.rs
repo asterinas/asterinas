@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::RangeInclusive;
+use core::{ops::RangeInclusive, time::Duration};
 
 use aster_bigtcp::socket::{
     NeedIfacePoll, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
@@ -12,7 +12,8 @@ use crate::{
         netlink::NETLINK_DEFAULT_BUF_SIZE,
         options::{
             AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
-            RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+            RecvBuf, RecvBufForce, RecvTimeout, ReuseAddr, ReusePort, SendBuf, SendBufForce,
+            SendTimeout, SocketOption,
             macros::{sock_option_mut, sock_option_ref},
         },
         unix::{CUserCred, UNIX_DATAGRAM_DEFAULT_BUF_SIZE, UNIX_STREAM_DEFAULT_BUF_SIZE},
@@ -33,6 +34,8 @@ pub struct SocketOptionSet {
     keep_alive: bool,
     priority: i32,
     linger: LingerOption,
+    recv_timeout: Duration,
+    send_timeout: Duration,
     reuse_port: bool,
     pass_cred: bool,
 }
@@ -47,6 +50,8 @@ impl Default for SocketOptionSet {
             keep_alive: false,
             priority: 0,
             linger: LingerOption::default(),
+            recv_timeout: Duration::ZERO,
+            send_timeout: Duration::ZERO,
             reuse_port: false,
             pass_cred: false,
         }
@@ -137,6 +142,14 @@ impl SocketOptionSet {
                 let linger = self.linger();
                 socket_linger.set(linger);
             }
+            socket_recv_timeout @ RecvTimeout => {
+                let recv_timeout = self.recv_timeout();
+                socket_recv_timeout.set(recv_timeout);
+            }
+            socket_send_timeout @ SendTimeout => {
+                let send_timeout = self.send_timeout();
+                socket_send_timeout.set(send_timeout);
+            }
             socket_reuse_port @ ReusePort => {
                 let reuse_port = self.reuse_port();
                 socket_reuse_port.set(reuse_port);
@@ -222,6 +235,14 @@ impl SocketOptionSet {
                 let linger = socket_linger.get().unwrap();
                 self.set_linger(*linger);
             }
+            socket_recv_timeout @ RecvTimeout => {
+                let recv_timeout = socket_recv_timeout.get().unwrap();
+                self.set_recv_timeout(*recv_timeout);
+            }
+            socket_send_timeout @ SendTimeout => {
+                let send_timeout = socket_send_timeout.get().unwrap();
+                self.set_send_timeout(*send_timeout);
+            }
             socket_reuse_port @ ReusePort => {
                 let reuse_port = socket_reuse_port.get().unwrap();
                 self.set_reuse_port(*reuse_port);
@@ -258,6 +279,16 @@ impl SocketOptionSet {
         });
 
         Ok(NeedIfacePoll::FALSE)
+    }
+
+    /// Returns the receive timeout, or `None` if it is disabled.
+    pub fn recv_timeout_duration(&self) -> Option<Duration> {
+        (!self.recv_timeout.is_zero()).then_some(self.recv_timeout)
+    }
+
+    /// Returns the send timeout, or `None` if it is disabled.
+    pub fn send_timeout_duration(&self) -> Option<Duration> {
+        (!self.send_timeout.is_zero()).then_some(self.send_timeout)
     }
 }
 

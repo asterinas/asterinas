@@ -8,6 +8,7 @@ use spin::Once;
 use crate::{
     events::IoEvents,
     net::socket::{
+        map_wait_timeout_to_eagain,
         unix::{
             UnixSocketAddr,
             addr::{UnixSocketAddrBound, UnixSocketAddrKey},
@@ -102,14 +103,23 @@ impl MessageQueue {
     }
 
     /// Blocks until the buffer is free and the `try_send` succeeds, or until interrupted.
-    pub(super) fn block_send<F, R>(&self, mut try_send: F) -> Result<R>
+    pub(super) fn block_send<F, R>(
+        &self,
+        timeout: Option<core::time::Duration>,
+        mut try_send: F,
+    ) -> Result<R>
     where
         F: FnMut() -> Result<R>,
     {
-        self.send_wait_queue.pause_until(|| match try_send() {
-            Err(err) if err.error() == Errno::EAGAIN => None,
-            result => Some(result),
-        })?
+        self.send_wait_queue
+            .pause_until_or_timeout(
+                || match try_send() {
+                    Err(err) if err.error() == Errno::EAGAIN => None,
+                    result => Some(result),
+                },
+                timeout.as_ref(),
+            )
+            .map_err(map_wait_timeout_to_eagain)?
     }
 }
 

@@ -2,7 +2,7 @@
 DgramUnixSockets/NonStreamSocketPairTest.SplitRecv/*
 DgramUnixSockets/NonStreamSocketPairTest.RecvmsgTruncPeekDontwaitZeroLen/*
 
-# TODO: Support `SO_SNDTIMEO`
+# TODO: Support `SO_SNDTIMEO` for the datagram send-timeout case
 DgramUnixSockets/UnixNonStreamSocketPairTest.SendTimeout/*
 
 # TODO: Support `MSG_TRUNC`

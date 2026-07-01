@@ -1,4 +1,4 @@
-# TODO: Support the `SO_RCVTIMEO` socket option
+# TODO: Support the `SO_RCVTIMEO` socket option for this recvmsg case
 AllUnixDomainSockets/StreamUnixSocketPairTest.RecvmsgOneSideClosed/*
 
 # TODO: Support `ECONNRESET` errors on UNIX sockets

@@ -34,7 +34,13 @@ pub fn sys_read(
         }
     }
     .map_err(|err| match err.error() {
-        Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+        Errno::EINTR
+            if file
+                .as_socket()
+                .is_none_or(|socket| socket.recv_timeout().is_none()) =>
+        {
+            Error::new(Errno::ERESTARTSYS)
+        }
         _ => err,
     })?;
 

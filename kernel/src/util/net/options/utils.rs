@@ -12,6 +12,7 @@ use crate::{
         util::LingerOption,
     },
     prelude::*,
+    time::timeval_t,
 };
 
 /// Create an object by reading its C counterpart from the user space.
@@ -161,6 +162,54 @@ impl WriteToUser for LingerOption {
 
         let linger = CLinger::from(*self);
         current_userspace!().write_val(addr, &linger)?;
+        Ok(write_len)
+    }
+}
+
+pub struct SocketTimeout(Duration);
+
+impl SocketTimeout {
+    pub fn new(duration: Duration) -> Self {
+        Self(duration)
+    }
+
+    pub fn into_inner(self) -> Duration {
+        self.0
+    }
+}
+
+impl ReadFromUser for SocketTimeout {
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
+        if (max_len as usize) < size_of::<timeval_t>() {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        }
+
+        let timeval = current_userspace!().read_val::<timeval_t>(addr)?;
+        if timeval.usec < 0 || timeval.usec >= 1_000_000 {
+            return_errno_with_message!(Errno::EDOM, "usec is out of range");
+        }
+        if timeval.sec < 0 {
+            return Ok(Self(Duration::ZERO));
+        }
+
+        Ok(Self(Duration::new(
+            timeval.sec as u64,
+            (timeval.usec as u32) * 1_000,
+        )))
+    }
+}
+
+impl WriteToUser for SocketTimeout {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+        let write_len = size_of::<timeval_t>();
+
+        if (max_len as usize) < write_len {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        }
+
+        let timeval = timeval_t::from(self.0);
+        current_userspace!().write_val(addr, &timeval)?;
+
         Ok(write_len)
     }
 }

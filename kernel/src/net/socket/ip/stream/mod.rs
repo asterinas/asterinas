@@ -30,7 +30,7 @@ use crate::{
     net::{
         iface::Iface,
         socket::{
-            Socket,
+            Socket, map_wait_timeout_to_einprogress,
             options::{
                 Error as SocketError, SocketOption,
                 macros::{sock_option_mut, sock_option_ref},
@@ -122,12 +122,20 @@ impl StreamSocket {
             // Inherit socket options from `raw_tcp_socket` first, then fall
             // back to `listener_options` for options the raw socket cannot
             // expose.
+            // Timeout options are part of the inherited socket state as well.
             //
             // The raw socket is created when a connection arrives, before
             // `accept()` returns it. If the listener's options are changed
             // after that but before `accept()` returns, using only
             // `listener_options` would give the accepted socket "new" options
             // while its raw socket still has the "old" ones.
+
+            options
+                .socket
+                .set_recv_timeout(listener_options.socket.recv_timeout());
+            options
+                .socket
+                .set_send_timeout(listener_options.socket.send_timeout());
 
             if let Some(interval) = raw_tcp_socket.keep_alive() {
                 options.socket.set_keep_alive(true);
@@ -466,7 +474,9 @@ impl Socket for StreamSocket {
             return result;
         }
 
-        self.wait_events(IoEvents::OUT, None, || self.check_connect())
+        let timeout = self.send_timeout();
+        self.wait_events(IoEvents::OUT, timeout.as_ref(), || self.check_connect())
+            .map_err(map_wait_timeout_to_einprogress)
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
@@ -509,7 +519,7 @@ impl Socket for StreamSocket {
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        self.block_on(IoEvents::IN, || self.try_accept())
+        self.block_on(IoEvents::IN, self.recv_timeout(), || self.try_accept())
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
@@ -581,7 +591,9 @@ impl Socket for StreamSocket {
             warn!("sending control message is not supported");
         }
 
-        self.block_on(IoEvents::OUT, || self.try_send(reader, flags))
+        self.block_on(IoEvents::OUT, self.send_timeout(), || {
+            self.try_send(reader, flags)
+        })
 
         // TODO: Trigger `SIGPIPE` if the error code is `EPIPE` and `MSG_NOSIGNAL` is not specified
     }
@@ -596,7 +608,9 @@ impl Socket for StreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, _) = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+        let (received_bytes, _) = self.block_on(IoEvents::IN, self.recv_timeout(), || {
+            self.try_recv(writer, flags)
+        })?;
 
         // TODO: Receive control message
 
@@ -736,6 +750,14 @@ impl Socket for StreamSocket {
         }
 
         Ok(())
+    }
+
+    fn recv_timeout(&self) -> Option<core::time::Duration> {
+        self.options.read().socket.recv_timeout_duration()
+    }
+
+    fn send_timeout(&self) -> Option<core::time::Duration> {
+        self.options.read().socket.send_timeout_duration()
     }
 
     fn pseudo_path(&self) -> &Path {

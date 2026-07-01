@@ -52,8 +52,7 @@ fn do_accept(
 
     let (connected_socket, socket_addr) = {
         socket.accept().map_err(|err| match err.error() {
-            // FIXME: `accept` should not be restarted if a timeout has been set on the socket using `setsockopt`.
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            Errno::EINTR if socket.recv_timeout().is_none() => Error::new(Errno::ERESTARTSYS),
             _ => err,
         })?
     };

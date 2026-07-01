@@ -15,7 +15,7 @@ use crate::{
     events::IoEvents,
     fs::file::FileLike,
     net::socket::{
-        SocketAddr,
+        SocketAddr, map_wait_timeout_to_eagain,
         unix::{
             addr::{UnixSocketAddrBound, UnixSocketAddrKey},
             cred::SocketCred,
@@ -29,6 +29,7 @@ use crate::{
 
 pub(super) struct Listener {
     backlog: Arc<Backlog>,
+    options: RwLock<OptionSet>,
     is_write_shutdown: AtomicBool,
 }
 
@@ -47,6 +48,7 @@ impl Listener {
 
         Self {
             backlog,
+            options: RwLock::new(OptionSet::new()),
             is_write_shutdown: AtomicBool::new(is_write_shutdown),
         }
     }
@@ -59,10 +61,15 @@ impl Listener {
         let connected = self.backlog.pop_incoming()?;
 
         let peer_addr = connected.peer_addr().into();
-        let options = OptionSet::new_accepted(connected.is_pass_cred());
+        let listener_options = self.options.read();
+        let options = OptionSet::new_accepted(&listener_options, connected.is_pass_cred());
 
         let socket = UnixStreamSocket::new_connected(connected, options, false, is_seqpacket);
         Ok((socket, peer_addr))
+    }
+
+    pub(super) fn set_options(&self, options: &OptionSet) {
+        *self.options.write() = options.clone();
     }
 
     pub(super) fn listen(&self, backlog: usize) {
@@ -315,15 +322,23 @@ impl Backlog {
     }
 
     /// Blocks until the backlogs are free and the `try_connect` succeeds, or until interrupted.
-    pub(super) fn block_connect<F>(&self, mut try_connect: F) -> Result<()>
+    pub(super) fn block_connect<F>(
+        &self,
+        timeout: Option<core::time::Duration>,
+        mut try_connect: F,
+    ) -> Result<()>
     where
         F: FnMut() -> Result<()>,
     {
         self.connect_wait_queue
-            .pause_until(|| match try_connect() {
-                Err(err) if err.error() == Errno::EAGAIN => None,
-                result => Some(result),
-            })?
+            .pause_until_or_timeout(
+                || match try_connect() {
+                    Err(err) if err.error() == Errno::EAGAIN => None,
+                    result => Some(result),
+                },
+                timeout.as_ref(),
+            )
+            .map_err(map_wait_timeout_to_eagain)?
     }
 }
 
