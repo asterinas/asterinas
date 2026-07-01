@@ -69,6 +69,9 @@ pub fn create_new_user_task(
             crate::init::on_first_process_startup(&ctx);
         }
 
+        // Handle any signals already pending before the first return to user space.
+        handle_pending_signal(user_mode.context_mut(), &ctx);
+
         while !current_thread.is_exited() {
             // Execute the user code
             let return_reason = user_mode.execute(has_kernel_event_fn);
