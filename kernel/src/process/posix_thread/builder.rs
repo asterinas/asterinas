@@ -19,6 +19,7 @@ use crate::{
     process::{
         Credentials, NsProxy, Process, UserNamespace,
         posix_thread::{name::ThreadName, thread_local::SuppUserContext},
+        seccomp::SeccompState,
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
     sched::{Nice, SchedPolicy},
@@ -49,6 +50,7 @@ pub struct PosixThreadBuilder {
     user_ns: Option<Arc<UserNamespace>>,
     ns_proxy: Option<Arc<NsProxy>>,
     default_timer_slack_ns: u64,
+    seccomp: SeccompState,
 }
 
 impl PosixThreadBuilder {
@@ -77,6 +79,7 @@ impl PosixThreadBuilder {
             user_ns: None,
             ns_proxy: None,
             default_timer_slack_ns: 50_000, // 50 usec default slack
+            seccomp: SeccompState::new(),
         }
     }
 
@@ -148,6 +151,11 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn seccomp(mut self, seccomp: SeccompState) -> Self {
+        self.seccomp = seccomp;
+        self
+    }
+
     pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
@@ -167,6 +175,7 @@ impl PosixThreadBuilder {
             user_ns,
             ns_proxy,
             default_timer_slack_ns,
+            seccomp,
         } = self;
 
         let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new()));
@@ -206,6 +215,7 @@ impl PosixThreadBuilder {
                     tracees: Once::new(),
                     exit_code: AtomicU32::new(0),
                     personality: AtomicU32::new(0),
+                    seccomp,
                 }
             };
 

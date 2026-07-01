@@ -15,6 +15,7 @@ mod process_filter;
 mod process_vm;
 mod program_loader;
 pub mod rlimit;
+pub mod seccomp;
 pub mod signal;
 mod stats;
 mod status;

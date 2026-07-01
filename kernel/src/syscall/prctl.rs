@@ -8,6 +8,7 @@ use crate::{
     process::{
         credentials::{SecureBits, capabilities::CapSet},
         posix_thread::{ContextPthreadAdminApi, MAX_THREAD_NAME_LEN},
+        seccomp::{SECCOMP_MODE_FILTER, SECCOMP_MODE_STRICT},
         signal::sig_num::SigNum,
     },
 };
@@ -121,6 +122,30 @@ pub fn sys_prctl(
             ctx.user_space()
                 .write_val(write_addr, &(process.is_child_subreaper() as u32))?;
         }
+        PrctlCmd::PR_SET_NO_NEW_PRIVS => {
+            ctx.posix_thread.set_no_new_privs();
+        }
+        PrctlCmd::PR_GET_NO_NEW_PRIVS => {
+            return Ok(SyscallReturn::Return(ctx.posix_thread.no_new_privs() as _));
+        }
+        PrctlCmd::PR_SET_SECCOMP(mode, filter_addr) => match mode {
+            SECCOMP_MODE_STRICT => {
+                if filter_addr != 0 {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "strict seccomp mode does not take a filter"
+                    );
+                }
+                ctx.posix_thread.enable_seccomp_strict()?;
+            }
+            SECCOMP_MODE_FILTER => super::seccomp::install_filter(0, filter_addr, ctx)?,
+            _ => return_errno_with_message!(Errno::EINVAL, "invalid seccomp mode"),
+        },
+        PrctlCmd::PR_GET_SECCOMP => {
+            return Ok(SyscallReturn::Return(
+                ctx.posix_thread.seccomp_mode().as_u32() as _,
+            ));
+        }
     }
 
     Ok(SyscallReturn::Return(0))
@@ -134,6 +159,8 @@ const PR_GET_KEEPCAPS: i32 = 7;
 const PR_SET_KEEPCAPS: i32 = 8;
 const PR_SET_NAME: i32 = 15;
 const PR_GET_NAME: i32 = 16;
+const PR_GET_SECCOMP: i32 = 21;
+const PR_SET_SECCOMP: i32 = 22;
 const PR_CAPBSET_READ: i32 = 23;
 const PR_CAPBSET_DROP: i32 = 24;
 const PR_GET_SECUREBITS: i32 = 27;
@@ -142,6 +169,8 @@ const PR_SET_TIMERSLACK: i32 = 29;
 const PR_GET_TIMERSLACK: i32 = 30;
 const PR_SET_CHILD_SUBREAPER: i32 = 36;
 const PR_GET_CHILD_SUBREAPER: i32 = 37;
+const PR_SET_NO_NEW_PRIVS: i32 = 38;
+const PR_GET_NO_NEW_PRIVS: i32 = 39;
 
 #[expect(non_camel_case_types)]
 #[derive(Clone, Copy, Debug)]
@@ -162,6 +191,10 @@ pub enum PrctlCmd {
     PR_GET_TIMERSLACK,
     PR_SET_CHILD_SUBREAPER(bool),
     PR_GET_CHILD_SUBREAPER(Vaddr),
+    PR_SET_NO_NEW_PRIVS,
+    PR_GET_NO_NEW_PRIVS,
+    PR_SET_SECCOMP(u32, Vaddr),
+    PR_GET_SECCOMP,
 }
 
 #[repr(u64)]
@@ -173,7 +206,15 @@ pub enum Dumpable {
 }
 
 impl PrctlCmd {
-    fn from_args(option: i32, arg2: u64, _arg3: u64, _arg4: u64, _arg5: u64) -> Result<PrctlCmd> {
+    fn from_args(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Result<PrctlCmd> {
+        if matches!(
+            option,
+            PR_SET_NO_NEW_PRIVS | PR_GET_NO_NEW_PRIVS | PR_GET_SECCOMP
+        ) && (arg3 != 0 || arg4 != 0 || arg5 != 0)
+        {
+            return_errno_with_message!(Errno::EINVAL, "unused prctl arguments must be zero");
+        }
+
         match option {
             PR_SET_PDEATHSIG => {
                 let signum = SigNum::try_from(arg2 as u8)?;
@@ -196,6 +237,33 @@ impl PrctlCmd {
             PR_GET_TIMERSLACK => Ok(PrctlCmd::PR_GET_TIMERSLACK),
             PR_SET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_SET_CHILD_SUBREAPER(arg2 > 0)),
             PR_GET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_GET_CHILD_SUBREAPER(arg2 as _)),
+            PR_SET_NO_NEW_PRIVS => {
+                if arg2 != 1 {
+                    return_errno_with_message!(Errno::EINVAL, "invalid no_new_privs value");
+                }
+                Ok(PrctlCmd::PR_SET_NO_NEW_PRIVS)
+            }
+            PR_GET_NO_NEW_PRIVS => {
+                if arg2 != 0 {
+                    return_errno_with_message!(Errno::EINVAL, "unused prctl argument must be zero");
+                }
+                Ok(PrctlCmd::PR_GET_NO_NEW_PRIVS)
+            }
+            PR_SET_SECCOMP => {
+                if arg4 != 0 || arg5 != 0 {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "unused prctl arguments must be zero"
+                    );
+                }
+                Ok(PrctlCmd::PR_SET_SECCOMP(arg2 as u32, arg3 as _))
+            }
+            PR_GET_SECCOMP => {
+                if arg2 != 0 {
+                    return_errno_with_message!(Errno::EINVAL, "unused prctl argument must be zero");
+                }
+                Ok(PrctlCmd::PR_GET_SECCOMP)
+            }
             _ => {
                 debug!("prctl cmd number: {}", option);
                 return_errno_with_message!(Errno::EINVAL, "unsupported prctl command");

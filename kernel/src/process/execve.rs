@@ -168,7 +168,12 @@ fn do_execve_no_return(
     // This prevents race conditions when checking access permissions while opening
     // `/proc/[pid]/mem` or `/proc/[pid]/maps`.
     let (vmar_guard, old_vmar) = activate_vmar(ctx, new_vmar);
-    apply_caps_from_exec(process, ctx.credentials_mut(), elf_file.inode())?;
+    apply_caps_from_exec(
+        process,
+        posix_thread.no_new_privs(),
+        ctx.credentials_mut(),
+        elf_file.inode(),
+    )?;
     drop(vmar_guard);
     drop(old_vmar);
 
@@ -308,11 +313,12 @@ fn set_cpu_context(
 /// The capabilities will be updated accordingly.
 fn apply_caps_from_exec(
     process: &Process,
+    no_new_privs: bool,
     credentials: Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    set_uid_from_elf(process, &credentials, elf_inode)?;
-    set_gid_from_elf(process, &credentials, elf_inode)?;
+    set_uid_from_elf(process, no_new_privs, &credentials, elf_inode)?;
+    set_gid_from_elf(process, no_new_privs, &credentials, elf_inode)?;
     credentials.set_keep_capabilities(false)?;
 
     Ok(())
@@ -324,10 +330,11 @@ fn apply_caps_from_exec(
 /// inode's UID.
 fn set_uid_from_elf(
     current: &Process,
+    no_new_privs: bool,
     credentials: &Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    if elf_inode.mode()?.has_set_uid() {
+    if !no_new_privs && elf_inode.mode()?.has_set_uid() {
         let uid = elf_inode.owner()?;
         credentials.set_euid(uid);
 
@@ -345,10 +352,11 @@ fn set_uid_from_elf(
 /// inode's GID.
 fn set_gid_from_elf(
     current: &Process,
+    no_new_privs: bool,
     credentials: &Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    if elf_inode.mode()?.has_set_gid() {
+    if !no_new_privs && elf_inode.mode()?.has_set_gid() {
         let gid = elf_inode.group()?;
         credentials.set_egid(gid);
 

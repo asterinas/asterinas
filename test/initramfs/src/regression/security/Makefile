@@ -4,5 +4,6 @@ SUBDIRS := \
 	capability \
 	lsm \
 	namespace \
+	seccomp \
 
 include ../common/Makefile

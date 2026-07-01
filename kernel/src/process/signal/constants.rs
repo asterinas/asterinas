@@ -112,3 +112,5 @@ pub const TRAP_BRANCH: i32 = 3;
 pub const TRAP_HWBKPT: i32 = 4;
 pub const TRAP_UNK: i32 = 5;
 pub const TRAP_PERF: i32 = 6;
+
+pub const SYS_SECCOMP: i32 = 1;

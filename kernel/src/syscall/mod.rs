@@ -134,6 +134,7 @@ mod sched_setattr;
 mod sched_setparam;
 mod sched_setscheduler;
 mod sched_yield;
+mod seccomp;
 mod select;
 mod semctl;
 mod semget;
@@ -373,12 +374,21 @@ impl SyscallArgument {
 
 pub fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
     let syscall_frame = SyscallArgument::new_from_context(user_ctx);
-    let syscall_return = arch::syscall_dispatch(
+    let syscall_return = match seccomp::check(
         syscall_frame.syscall_number,
-        syscall_frame.args,
+        &syscall_frame.args,
         ctx,
         user_ctx,
-    );
+    ) {
+        Ok(Some(return_value)) => Ok(return_value),
+        Ok(None) => arch::syscall_dispatch(
+            syscall_frame.syscall_number,
+            syscall_frame.args,
+            ctx,
+            user_ctx,
+        ),
+        Err(err) => Err(err),
+    };
 
     match syscall_return {
         Ok(return_value) => {
