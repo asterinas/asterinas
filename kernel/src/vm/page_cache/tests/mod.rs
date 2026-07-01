@@ -5,10 +5,13 @@
 
 use alloc::vec;
 
-use ostd::{mm::VmIo, prelude::ktest};
+use ostd::{
+    mm::{VmIo, io::util::HasVmReaderWriter},
+    prelude::ktest,
+};
 
 use self::utils::{IoCompletion, IoKind, MockPageCacheBackend, wait_until};
-use super::{PageCache, PageCacheBackend, VmoCommitError};
+use super::{PageCache, PageCacheBackend, Vmo, VmoCommitError, VmoMapMode};
 use crate::{prelude::*, thread::kernel_thread::ThreadOptions};
 
 mod utils;
@@ -17,6 +20,33 @@ mod utils;
 fn new_backend_page_cache(backend: &Arc<MockPageCacheBackend>, num_pages: usize) -> PageCache {
     let backend_dyn: Arc<dyn PageCacheBackend> = backend.clone();
     PageCache::new_with_backend(num_pages * PAGE_SIZE, Arc::downgrade(&backend_dyn)).unwrap()
+}
+
+/// Creates a locked page cache that models the inode-level lock held by
+/// filesystem callers before touching the page cache.
+fn new_locked_backend_page_cache(
+    backend: &Arc<MockPageCacheBackend>,
+    num_pages: usize,
+) -> Arc<RwMutex<PageCache>> {
+    Arc::new(RwMutex::new(new_backend_page_cache(backend, num_pages)))
+}
+
+/// Simulates stores through a shared writable VMO mapping.
+///
+/// A store page fault first commits page 0 for shared writes, which marks an
+/// up-to-date backend page dirty. The actual byte copy then writes the
+/// committed frame directly, matching mapped-memory stores without routing
+/// through the page-cache write API.
+fn write_vmo_bytes(vmo: &Vmo, bytes: &[u8]) {
+    assert!(!bytes.is_empty());
+    assert!(bytes.len() <= PAGE_SIZE);
+
+    vmo.commit_on(0, VmoMapMode::SharedWrite).unwrap();
+    let (page, _) = vmo.try_commit_page(0, VmoMapMode::SharedWrite).unwrap();
+
+    let mut reader = VmReader::from(bytes);
+    let mut writer = page.writer();
+    assert_eq!(writer.write(&mut reader), bytes.len());
 }
 
 /// Serializes a cold read and a later overwrite with the caller-provided
@@ -30,8 +60,7 @@ fn concurrent_read_and_write() {
     let new_pattern = vec![0xa5; PAGE_SIZE];
     backend.set_persisted_page_bytes(0, &old_pattern);
 
-    let page_cache = new_backend_page_cache(&backend, 1);
-    let io_lock = Arc::new(Mutex::new(()));
+    let page_cache = Arc::new(Mutex::new(new_backend_page_cache(&backend, 1)));
     let observed_read_result = Arc::new(Mutex::new(None::<Vec<u8>>));
     let writer_started = Arc::new(Mutex::new(false));
     let writer_finished = Arc::new(Mutex::new(false));
@@ -40,10 +69,9 @@ fn concurrent_read_and_write() {
     // caller-provided buffered-I/O lock while the writer attempts to enter.
     let read_thread = {
         let page_cache = page_cache.clone();
-        let io_lock = io_lock.clone();
         let observed_read_result = observed_read_result.clone();
         ThreadOptions::new(move || {
-            let _io_guard = io_lock.lock();
+            let page_cache = page_cache.lock();
             let mut read_buffer = vec![0; PAGE_SIZE];
             page_cache.read_bytes(0, &mut read_buffer).unwrap();
             *observed_read_result.lock() = Some(read_buffer);
@@ -60,13 +88,12 @@ fn concurrent_read_and_write() {
     // has completed.
     let write_thread = {
         let page_cache = page_cache.clone();
-        let io_lock = io_lock.clone();
         let writer_started = writer_started.clone();
         let writer_finished = writer_finished.clone();
         let new_pattern = new_pattern.clone();
         ThreadOptions::new(move || {
             *writer_started.lock() = true;
-            let _io_guard = io_lock.lock();
+            let page_cache = page_cache.lock();
             page_cache.write_bytes(0, &new_pattern).unwrap();
             *writer_finished.lock() = true;
         })
@@ -87,7 +114,7 @@ fn concurrent_read_and_write() {
     assert_eq!(backend.read_count(0), 1);
 
     let mut read_buffer = vec![0; PAGE_SIZE];
-    page_cache.read_bytes(0, &mut read_buffer).unwrap();
+    page_cache.lock().read_bytes(0, &mut read_buffer).unwrap();
     assert_eq!(read_buffer, new_pattern);
 }
 
@@ -98,10 +125,14 @@ fn concurrent_write_and_flush() {
     let backend = MockPageCacheBackend::new(1);
     backend.set_completion(IoKind::Write, IoCompletion::Deferred);
 
-    let page_cache = new_backend_page_cache(&backend, 1);
+    let page_cache = new_locked_backend_page_cache(&backend, 1);
+    let vmo = page_cache.read().as_vmo().clone();
     let first_dirty_pattern = vec![0x11; PAGE_SIZE];
     let latest_dirty_pattern = vec![0x22; PAGE_SIZE];
-    page_cache.write_bytes(0, &first_dirty_pattern).unwrap();
+    page_cache
+        .write()
+        .write_bytes(0, &first_dirty_pattern)
+        .unwrap();
 
     let flush_result = Arc::new(Mutex::new(None::<Result<()>>));
     let writer_finished = Arc::new(Mutex::new(false));
@@ -112,7 +143,7 @@ fn concurrent_write_and_flush() {
         let page_cache = page_cache.clone();
         let flush_result = flush_result.clone();
         ThreadOptions::new(move || {
-            *flush_result.lock() = Some(page_cache.flush_range(0..PAGE_SIZE));
+            *flush_result.lock() = Some(page_cache.read().flush_range(0..PAGE_SIZE));
         })
         .spawn()
     };
@@ -122,11 +153,11 @@ fn concurrent_write_and_flush() {
     // Re-dirty the same page while the first writeback is in flight. A later
     // flush must persist this newest version instead of silently dropping it.
     let writer_thread = {
-        let page_cache = page_cache.clone();
+        let vmo = vmo.clone();
         let writer_finished = writer_finished.clone();
         let latest_dirty_pattern = latest_dirty_pattern.clone();
         ThreadOptions::new(move || {
-            page_cache.write_bytes(0, &latest_dirty_pattern).unwrap();
+            write_vmo_bytes(&vmo, &latest_dirty_pattern);
             *writer_finished.lock() = true;
         })
         .spawn()
@@ -142,10 +173,10 @@ fn concurrent_write_and_flush() {
     assert!(flush_result.lock().take().unwrap().is_ok());
 
     backend.set_completion(IoKind::Write, IoCompletion::Immediate);
-    page_cache.flush_range(0..PAGE_SIZE).unwrap();
+    page_cache.read().flush_range(0..PAGE_SIZE).unwrap();
 
     let mut read_buffer = vec![0; PAGE_SIZE];
-    page_cache.read_bytes(0, &mut read_buffer).unwrap();
+    page_cache.read().read_bytes(0, &mut read_buffer).unwrap();
     assert_eq!(read_buffer, latest_dirty_pattern);
     assert_eq!(backend.write_count(0), 2);
     assert_eq!(backend.persisted_page_bytes(0), latest_dirty_pattern);
@@ -158,10 +189,14 @@ fn concurrent_write_and_evict() {
     let backend = MockPageCacheBackend::new(1);
     backend.set_completion(IoKind::Write, IoCompletion::Deferred);
 
-    let page_cache = new_backend_page_cache(&backend, 1);
+    let page_cache = new_locked_backend_page_cache(&backend, 1);
+    let vmo = page_cache.read().as_vmo().clone();
     let first_dirty_pattern = vec![0x52; PAGE_SIZE];
     let latest_dirty_pattern = vec![0x7d; PAGE_SIZE];
-    page_cache.write_bytes(0, &first_dirty_pattern).unwrap();
+    page_cache
+        .write()
+        .write_bytes(0, &first_dirty_pattern)
+        .unwrap();
 
     // Race a flush+evict sequence against a new writer after writeback has
     // already started. This checks that a page re-dirtied before eviction
@@ -171,6 +206,7 @@ fn concurrent_write_and_evict() {
         let page_cache = page_cache.clone();
         let flush_and_evict_result = flush_and_evict_result.clone();
         ThreadOptions::new(move || {
+            let page_cache = page_cache.read();
             let result = page_cache
                 .flush_range(0..PAGE_SIZE)
                 .and_then(|()| page_cache.evict_range(0..PAGE_SIZE));
@@ -184,10 +220,10 @@ fn concurrent_write_and_evict() {
     // Dirty the page again before the first writeback completes. Eviction
     // should leave this newest dirty page resident in cache.
     let writer_thread = {
-        let page_cache = page_cache.clone();
+        let vmo = vmo.clone();
         let latest_dirty_pattern = latest_dirty_pattern.clone();
         ThreadOptions::new(move || {
-            page_cache.write_bytes(0, &latest_dirty_pattern).unwrap();
+            write_vmo_bytes(&vmo, &latest_dirty_pattern);
         })
         .spawn()
     };
@@ -201,12 +237,12 @@ fn concurrent_write_and_evict() {
     assert!(flush_and_evict_result.lock().take().unwrap().is_ok());
 
     let mut read_buffer = vec![0; PAGE_SIZE];
-    page_cache.read_bytes(0, &mut read_buffer).unwrap();
+    page_cache.read().read_bytes(0, &mut read_buffer).unwrap();
     assert_eq!(read_buffer, latest_dirty_pattern);
     assert_eq!(backend.read_count(0), 0);
 
     backend.set_completion(IoKind::Write, IoCompletion::Immediate);
-    page_cache.flush_range(0..PAGE_SIZE).unwrap();
+    page_cache.read().flush_range(0..PAGE_SIZE).unwrap();
     assert_eq!(backend.write_count(0), 2);
     assert_eq!(backend.persisted_page_bytes(0), latest_dirty_pattern);
 }
@@ -219,7 +255,8 @@ fn concurrent_commit_and_truncate() {
     backend.set_completion(IoKind::Read, IoCompletion::Deferred);
     backend.set_persisted_page_bytes(1, &[0x9b; PAGE_SIZE]);
 
-    let page_cache = new_backend_page_cache(&backend, 2);
+    let page_cache = new_locked_backend_page_cache(&backend, 2);
+    let vmo = page_cache.read().as_vmo().clone();
     let commit_second_page_result = Arc::new(Mutex::new(None::<Result<()>>));
     let resize_result = Arc::new(Mutex::new(None::<Result<()>>));
     let resize_started = Arc::new(Mutex::new(false));
@@ -228,10 +265,11 @@ fn concurrent_commit_and_truncate() {
     // Commit page 1 and pause its backend read so truncate can shrink the VMO
     // while that commit is still waiting for initialization to finish.
     let commit_thread = {
-        let vmo = page_cache.as_vmo().clone();
+        let vmo = vmo.clone();
         let commit_second_page_result = commit_second_page_result.clone();
         ThreadOptions::new(move || {
-            *commit_second_page_result.lock() = Some(vmo.commit_on(1).map(|_| ()));
+            *commit_second_page_result.lock() =
+                Some(vmo.commit_on(1, VmoMapMode::SharedRead).map(|_| ()));
         })
         .spawn()
     };
@@ -245,7 +283,7 @@ fn concurrent_commit_and_truncate() {
         let resize_finished = resize_finished.clone();
         ThreadOptions::new(move || {
             *resize_started.lock() = true;
-            *resize_result.lock() = Some(page_cache.resize(PAGE_SIZE, 2 * PAGE_SIZE));
+            *resize_result.lock() = Some(page_cache.write().resize(PAGE_SIZE, 2 * PAGE_SIZE));
             *resize_finished.lock() = true;
         })
         .spawn()
@@ -263,12 +301,17 @@ fn concurrent_commit_and_truncate() {
     assert!(commit_second_page_result.lock().take().unwrap().is_ok());
     assert!(resize_result.lock().take().unwrap().is_ok());
     assert_eq!(
-        page_cache.as_vmo().commit_on(1).unwrap_err().error(),
+        vmo.commit_on(1, VmoMapMode::SharedRead)
+            .unwrap_err()
+            .error(),
         Errno::EINVAL
     );
 
     let mut read_buffer = vec![0; PAGE_SIZE];
-    page_cache.read_bytes(PAGE_SIZE, &mut read_buffer).unwrap();
+    page_cache
+        .read()
+        .read_bytes(PAGE_SIZE, &mut read_buffer)
+        .unwrap();
     assert_eq!(read_buffer, vec![0; PAGE_SIZE]);
 }
 
@@ -281,11 +324,11 @@ fn concurrent_page_faults() {
     backend.set_persisted_page_bytes(0, &[0x6b; PAGE_SIZE]);
 
     let page_cache = new_backend_page_cache(&backend, 1);
-    let vmo = page_cache.as_vmo();
+    let vmo = page_cache.as_vmo().clone();
     // The first page-fault style probe should report that backend I/O is
     // needed because the page has not been committed yet.
     assert!(matches!(
-        vmo.try_commit_page(0),
+        vmo.try_commit_page(0, VmoMapMode::SharedRead),
         Err(VmoCommitError::NeedIo { index: 0 })
     ));
 
@@ -298,15 +341,15 @@ fn concurrent_page_faults() {
         let vmo = vmo.clone();
         let first_commit_finished = first_commit_finished.clone();
         ThreadOptions::new(move || {
-            vmo.commit_on(0).unwrap();
+            vmo.commit_on(0, VmoMapMode::SharedRead).unwrap();
             *first_commit_finished.lock() = true;
         })
         .spawn()
     };
 
     backend.wait_for_deferred_bios(IoKind::Read, 1);
-    match vmo.try_commit_page(0) {
-        Err(VmoCommitError::WaitUntilInit { index: 0, .. }) => {}
+    match vmo.try_commit_page(0, VmoMapMode::SharedRead) {
+        Err(VmoCommitError::NeedIo { index: 0 }) => {}
         other => panic!("unexpected page-fault state: {other:?}"),
     }
 
@@ -316,7 +359,7 @@ fn concurrent_page_faults() {
         let vmo = vmo.clone();
         let second_commit_finished = second_commit_finished.clone();
         ThreadOptions::new(move || {
-            vmo.commit_on(0).unwrap();
+            vmo.commit_on(0, VmoMapMode::SharedRead).unwrap();
             *second_commit_finished.lock() = true;
         })
         .spawn()
@@ -350,7 +393,7 @@ fn persistent_backend_errors() {
     backend.set_completion(IoKind::Read, IoCompletion::Deferred);
 
     let page_cache = new_backend_page_cache(&backend, 1);
-    let vmo = page_cache.as_vmo();
+    let vmo = page_cache.as_vmo().clone();
     let first_error = Arc::new(Mutex::new(None::<Errno>));
     let second_error = Arc::new(Mutex::new(None::<Errno>));
 
@@ -361,7 +404,11 @@ fn persistent_backend_errors() {
         let vmo = vmo.clone();
         let first_error = first_error.clone();
         ThreadOptions::new(move || {
-            *first_error.lock() = Some(vmo.commit_on(0).unwrap_err().error());
+            *first_error.lock() = Some(
+                vmo.commit_on(0, VmoMapMode::SharedRead)
+                    .unwrap_err()
+                    .error(),
+            );
         })
         .spawn()
     };
@@ -372,7 +419,11 @@ fn persistent_backend_errors() {
         let vmo = vmo.clone();
         let second_error = second_error.clone();
         ThreadOptions::new(move || {
-            *second_error.lock() = Some(vmo.commit_on(0).unwrap_err().error());
+            *second_error.lock() = Some(
+                vmo.commit_on(0, VmoMapMode::SharedRead)
+                    .unwrap_err()
+                    .error(),
+            );
         })
         .spawn()
     };
@@ -404,7 +455,8 @@ fn delayed_io_completion() {
     let latest_dirty_pattern = vec![0x33; PAGE_SIZE];
     backend.set_persisted_page_bytes(0, &persisted_pattern);
 
-    let page_cache = new_backend_page_cache(&backend, 1);
+    let page_cache = new_locked_backend_page_cache(&backend, 1);
+    let vmo = page_cache.read().as_vmo().clone();
     let first_read_result = Arc::new(Mutex::new(None::<Vec<u8>>));
     let second_read_result = Arc::new(Mutex::new(None::<Vec<u8>>));
 
@@ -415,7 +467,7 @@ fn delayed_io_completion() {
         let first_read_result = first_read_result.clone();
         ThreadOptions::new(move || {
             let mut read_buffer = vec![0; PAGE_SIZE];
-            page_cache.read_bytes(0, &mut read_buffer).unwrap();
+            page_cache.read().read_bytes(0, &mut read_buffer).unwrap();
             *first_read_result.lock() = Some(read_buffer);
         })
         .spawn()
@@ -425,7 +477,7 @@ fn delayed_io_completion() {
         let second_read_result = second_read_result.clone();
         ThreadOptions::new(move || {
             let mut read_buffer = vec![0; PAGE_SIZE];
-            page_cache.read_bytes(0, &mut read_buffer).unwrap();
+            page_cache.read().read_bytes(0, &mut read_buffer).unwrap();
             *second_read_result.lock() = Some(read_buffer);
         })
         .spawn()
@@ -443,7 +495,10 @@ fn delayed_io_completion() {
 
     // Start one deferred writeback, then dirty the page again before it
     // completes so a second flush must wait for `is_writing_back` to clear.
-    page_cache.write_bytes(0, &first_dirty_pattern).unwrap();
+    page_cache
+        .write()
+        .write_bytes(0, &first_dirty_pattern)
+        .unwrap();
 
     let first_flush_result = Arc::new(Mutex::new(None::<Result<()>>));
     let second_flush_result = Arc::new(Mutex::new(None::<Result<()>>));
@@ -454,14 +509,14 @@ fn delayed_io_completion() {
         let page_cache = page_cache.clone();
         let first_flush_result = first_flush_result.clone();
         ThreadOptions::new(move || {
-            *first_flush_result.lock() = Some(page_cache.flush_range(0..PAGE_SIZE));
+            *first_flush_result.lock() = Some(page_cache.read().flush_range(0..PAGE_SIZE));
         })
         .spawn()
     };
 
     backend.wait_for_deferred_bios(IoKind::Write, 1);
 
-    page_cache.write_bytes(0, &latest_dirty_pattern).unwrap();
+    write_vmo_bytes(&vmo, &latest_dirty_pattern);
 
     let second_flush_thread = {
         let page_cache = page_cache.clone();
@@ -470,7 +525,7 @@ fn delayed_io_completion() {
         let second_flush_finished = second_flush_finished.clone();
         ThreadOptions::new(move || {
             *second_flush_started.lock() = true;
-            *second_flush_result.lock() = Some(page_cache.flush_range(0..PAGE_SIZE));
+            *second_flush_result.lock() = Some(page_cache.read().flush_range(0..PAGE_SIZE));
             *second_flush_finished.lock() = true;
         })
         .spawn()

@@ -32,7 +32,7 @@ use crate::{
         clocks::MonotonicClock,
         timer::{Timeout, TimerGuard},
     },
-    vm::page_cache::{Vmo, VmoOptions},
+    vm::page_cache::{Vmo, VmoMapMode, VmoOptions},
 };
 
 const CLOCK_TAI: usize = 11;
@@ -257,7 +257,9 @@ impl Vdso {
                 .write(VDSO_VMO_LAYOUT.text_segment_offset, &mut reader)
                 .unwrap();
 
-            let data_frame = vdso_vmo.try_commit_page(0).unwrap();
+            let (data_frame, _) = vdso_vmo
+                .try_commit_page(0, VmoMapMode::SharedWrite)
+                .unwrap();
             (vdso_vmo, data_frame)
         };
 

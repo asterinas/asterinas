@@ -38,7 +38,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
-    vm::page_cache::PageCache,
+    vm::page_cache::{PageCache, Vmo},
 };
 
 /// A volatile file system whose data and metadata exists only in memory.
@@ -707,7 +707,7 @@ impl FileOps for RamInode {
             InodeType::File => {
                 let now = now();
 
-                let page_cache = self.inner.as_file().unwrap().lock();
+                let mut page_cache = self.inner.as_file().unwrap().lock();
 
                 let mut inode_meta = self.metadata.lock();
                 let file_size = inode_meta.size;
@@ -754,10 +754,10 @@ impl FileOps for RamInode {
 }
 
 impl Inode for RamInode {
-    fn page_cache(&self) -> Option<PageCache> {
+    fn page_cache(&self) -> Option<Arc<Vmo>> {
         self.inner
             .as_file()
-            .map(|page_cache| page_cache.lock().clone())
+            .map(|page_cache| page_cache.lock().as_vmo().clone())
     }
 
     fn size(&self) -> usize {
@@ -772,7 +772,7 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EINVAL, "the inode is not a regular file");
         }
 
-        let page_cache = self.inner.as_file().unwrap().lock();
+        let mut page_cache = self.inner.as_file().unwrap().lock();
         let mut inode_meta = self.metadata.lock();
         let file_size = inode_meta.size;
         if file_size == new_size {

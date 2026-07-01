@@ -24,7 +24,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::{page_cache::PageCache, perms::VmPerms},
+    vm::{page_cache::Vmo, perms::VmPerms},
 };
 
 pub(super) fn init() {
@@ -163,7 +163,7 @@ impl Inode for MemfdInode {
     fn set_owner(&self, uid: Uid) -> Result<()>;
     fn group(&self) -> Result<Gid>;
     fn set_group(&self, gid: Gid) -> Result<()>;
-    fn page_cache(&self) -> Option<PageCache>;
+    fn page_cache(&self) -> Option<Arc<Vmo>>;
     fn extension(&self) -> &Extension;
     fn set_xattr(
         &self,
