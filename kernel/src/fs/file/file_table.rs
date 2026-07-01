@@ -2,7 +2,7 @@
 
 use core::{
     fmt::Display,
-    sync::atomic::{AtomicU8, Ordering},
+    sync::atomic::{AtomicU8, AtomicU32, Ordering},
 };
 
 use aster_util::{ranged_integer::RangedU32, slot_vec::SlotVec};
@@ -14,7 +14,7 @@ use crate::{
     process::{
         Pid, Process,
         posix_thread::FileTableRefMut,
-        signal::{PollAdaptor, constants::SIGIO},
+        signal::{PollAdaptor, constants::SIGIO, sig_num::SigNum},
     },
 };
 
@@ -322,6 +322,7 @@ pub struct FileTableEntry {
     file: Arc<dyn FileLike>,
     flags: AtomicU8,
     owner: Option<Owner>,
+    sigio_signal: Arc<AtomicU32>,
 }
 
 impl FileTableEntry {
@@ -330,6 +331,7 @@ impl FileTableEntry {
             file,
             flags: AtomicU8::new(flags.bits()),
             owner: None,
+            sigio_signal: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -339,6 +341,14 @@ impl FileTableEntry {
 
     pub fn owner(&self) -> Option<Pid> {
         self.owner.as_ref().map(|(pid, _)| *pid)
+    }
+
+    pub fn sigio_signal(&self) -> u32 {
+        self.sigio_signal.load(Ordering::Relaxed)
+    }
+
+    pub fn set_sigio_signal(&self, signal: u32) {
+        self.sigio_signal.store(signal, Ordering::Relaxed)
     }
 
     /// Set a process (group) as owner of the file descriptor.
@@ -355,6 +365,7 @@ impl FileTableEntry {
         let mut poller = PollAdaptor::with_observer(OwnerObserver::new(
             self.file.clone(),
             Arc::downgrade(process),
+            self.sigio_signal.clone(),
         ));
         self.file
             .poll(IoEvents::IN | IoEvents::OUT, Some(poller.as_handle_mut()));
@@ -379,6 +390,7 @@ impl Clone for FileTableEntry {
             file: self.file.clone(),
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             owner: None,
+            sigio_signal: self.sigio_signal.clone(),
         }
     }
 }
@@ -395,18 +407,33 @@ type Owner = (Pid, PollAdaptor<OwnerObserver>);
 struct OwnerObserver {
     file: Arc<dyn FileLike>,
     owner: Weak<Process>,
+    sigio_signal: Arc<AtomicU32>,
 }
 
 impl OwnerObserver {
-    pub fn new(file: Arc<dyn FileLike>, owner: Weak<Process>) -> Self {
-        Self { file, owner }
+    pub fn new(
+        file: Arc<dyn FileLike>,
+        owner: Weak<Process>,
+        sigio_signal: Arc<AtomicU32>,
+    ) -> Self {
+        Self {
+            file,
+            owner,
+            sigio_signal,
+        }
     }
 }
 
 impl Observer<IoEvents> for OwnerObserver {
     fn on_events(&self, _events: &IoEvents) {
         if self.file.status_flags().contains(StatusFlags::O_ASYNC) {
-            crate::process::enqueue_signal_async(self.owner.clone(), SIGIO);
+            let signal_num = self.sigio_signal.load(Ordering::Relaxed);
+            let signal = if signal_num == 0 {
+                SIGIO
+            } else {
+                SigNum::from_u8(signal_num as u8)
+            };
+            crate::process::enqueue_signal_async(self.owner.clone(), signal);
         }
     }
 }
