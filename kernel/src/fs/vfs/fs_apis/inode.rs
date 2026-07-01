@@ -163,7 +163,7 @@ impl Metadata {
             gid: Gid::new_root(),
             container_dev_id,
             self_dev_id: None,
-            birth_at: None,
+            birth_at: Some(now),
         }
     }
 
@@ -189,7 +189,7 @@ impl Metadata {
             gid: Gid::new_root(),
             container_dev_id,
             self_dev_id: None,
-            birth_at: None,
+            birth_at: Some(now),
         }
     }
 
@@ -215,7 +215,7 @@ impl Metadata {
             gid: Gid::new_root(),
             container_dev_id,
             self_dev_id: None,
-            birth_at: None,
+            birth_at: Some(now),
         }
     }
 
@@ -242,7 +242,7 @@ impl Metadata {
             gid: Gid::new_root(),
             container_dev_id,
             self_dev_id: Some(device.id()),
-            birth_at: None,
+            birth_at: Some(now),
         }
     }
 }

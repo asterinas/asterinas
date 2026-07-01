@@ -152,7 +152,6 @@ impl Statx {
         };
 
         Self {
-            // FIXME: All zero fields below are dummy implementations that need to be improved in the future.
             stx_mask,
             stx_blksize: info.optimal_block_size as u32,
             stx_attributes,

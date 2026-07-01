@@ -224,7 +224,7 @@ impl PseudoInode {
             gid,
             container_dev_id: dev_id,
             self_dev_id: None,
-            birth_at: None,
+            birth_at: Some(now),
         };
 
         PseudoInode {
