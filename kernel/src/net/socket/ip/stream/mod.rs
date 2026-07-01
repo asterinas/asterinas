@@ -30,13 +30,12 @@ use crate::{
     net::{
         iface::Iface,
         socket::{
-            Socket,
+            Socket, map_wait_timeout_to_einprogress,
             options::{
                 Error as SocketError, SocketOption,
                 macros::{sock_option_mut, sock_option_ref},
             },
             private::SocketPrivate,
-            socket_timeout_to_einprogress,
             util::{
                 MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
                 options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
@@ -123,6 +122,7 @@ impl StreamSocket {
             // Inherit socket options from `raw_tcp_socket` first, then fall
             // back to `listener_options` for options the raw socket cannot
             // expose.
+            // Timeout options are part of the inherited socket state as well.
             //
             // The raw socket is created when a connection arrives, before
             // `accept()` returns it. If the listener's options are changed
@@ -476,7 +476,7 @@ impl Socket for StreamSocket {
 
         let timeout = self.send_timeout();
         self.wait_events(IoEvents::OUT, timeout.as_ref(), || self.check_connect())
-            .map_err(socket_timeout_to_einprogress)
+            .map_err(map_wait_timeout_to_einprogress)
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
@@ -519,7 +519,7 @@ impl Socket for StreamSocket {
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        self.block_on_timeout(IoEvents::IN, self.recv_timeout(), || self.try_accept())
+        self.block_on(IoEvents::IN, self.recv_timeout(), || self.try_accept())
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
@@ -591,7 +591,7 @@ impl Socket for StreamSocket {
             warn!("sending control message is not supported");
         }
 
-        self.block_on_timeout(IoEvents::OUT, self.send_timeout(), || {
+        self.block_on(IoEvents::OUT, self.send_timeout(), || {
             self.try_send(reader, flags)
         })
 
@@ -608,10 +608,9 @@ impl Socket for StreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, _) =
-            self.block_on_timeout(IoEvents::IN, self.recv_timeout(), || {
-                self.try_recv(writer, flags)
-            })?;
+        let (received_bytes, _) = self.block_on(IoEvents::IN, self.recv_timeout(), || {
+            self.try_recv(writer, flags)
+        })?;
 
         // TODO: Receive control message
 

@@ -22,7 +22,7 @@ pub mod unix;
 pub mod util;
 pub mod vsock;
 
-pub(in crate::net) fn socket_timeout_to_eagain(err: Error) -> Error {
+pub(in crate::net) fn map_wait_timeout_to_eagain(err: Error) -> Error {
     if err.error() == Errno::ETIME {
         Error::with_message(Errno::EAGAIN, "the socket timeout expired")
     } else {
@@ -30,7 +30,7 @@ pub(in crate::net) fn socket_timeout_to_eagain(err: Error) -> Error {
     }
 }
 
-pub(in crate::net) fn socket_timeout_to_einprogress(err: Error) -> Error {
+pub(in crate::net) fn map_wait_timeout_to_einprogress(err: Error) -> Error {
     if err.error() == Errno::ETIME {
         Error::with_message(Errno::EINPROGRESS, "the socket timeout expired")
     } else {
@@ -39,7 +39,7 @@ pub(in crate::net) fn socket_timeout_to_einprogress(err: Error) -> Error {
 }
 
 mod private {
-    use super::socket_timeout_to_eagain;
+    use super::map_wait_timeout_to_eagain;
     use crate::{events::IoEvents, prelude::*, process::signal::Pollable};
 
     /// Common methods for sockets, but private to the network module.
@@ -53,9 +53,9 @@ mod private {
         /// Sets whether the socket is in non-blocking mode.
         fn set_nonblocking(&self, nonblocking: bool);
 
-        /// Blocks until the operation can complete or the socket timeout expires.
+        /// Blocks until the operation can complete or the timeout expires.
         #[track_caller]
-        fn block_on_timeout<F, R>(
+        fn block_on<F, R>(
             &self,
             events: IoEvents,
             timeout: Option<core::time::Duration>,
@@ -68,34 +68,9 @@ mod private {
             if self.is_nonblocking() {
                 try_op()
             } else {
-                self.wait_events_timeout(events, timeout, try_op)
+                self.wait_events(events, timeout.as_ref(), try_op)
+                    .map_err(map_wait_timeout_to_eagain)
             }
-        }
-
-        /// Blocks until the operation can complete.
-        #[track_caller]
-        fn block_on<F, R>(&self, events: IoEvents, try_op: F) -> Result<R>
-        where
-            Self: Sized,
-            F: FnMut() -> Result<R>,
-        {
-            self.block_on_timeout(events, None, try_op)
-        }
-
-        /// Waits for events and maps internal timeout errors to socket errno.
-        #[track_caller]
-        fn wait_events_timeout<F, R>(
-            &self,
-            events: IoEvents,
-            timeout: Option<core::time::Duration>,
-            try_op: F,
-        ) -> Result<R>
-        where
-            Self: Sized,
-            F: FnMut() -> Result<R>,
-        {
-            self.wait_events(events, timeout.as_ref(), try_op)
-                .map_err(socket_timeout_to_eagain)
         }
     }
 }
@@ -149,12 +124,12 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
         return_errno_with_message!(Errno::EOPNOTSUPP, "setsockopt() is not supported");
     }
 
-    /// Returns the receive timeout, or `None` if it is disabled.
+    /// Returns the receive timeout, or `None` if it is disabled or unsupported.
     fn recv_timeout(&self) -> Option<Duration> {
         None
     }
 
-    /// Returns the send timeout, or `None` if it is disabled.
+    /// Returns the send timeout, or `None` if it is disabled or unsupported.
     fn send_timeout(&self) -> Option<Duration> {
         None
     }

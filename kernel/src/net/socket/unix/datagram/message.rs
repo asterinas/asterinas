@@ -8,7 +8,7 @@ use spin::Once;
 use crate::{
     events::IoEvents,
     net::socket::{
-        socket_timeout_to_eagain,
+        map_wait_timeout_to_eagain,
         unix::{
             UnixSocketAddr,
             addr::{UnixSocketAddrBound, UnixSocketAddrKey},
@@ -119,7 +119,7 @@ impl MessageQueue {
                 },
                 timeout.as_ref(),
             )
-            .map_err(socket_timeout_to_eagain)?
+            .map_err(map_wait_timeout_to_eagain)?
     }
 }
 

@@ -3,7 +3,8 @@
 use ostd::mm::VmIo;
 
 use super::{
-    RawSocketOption, impl_raw_sock_option_get_only, impl_raw_socket_option, utils::SocketTimeout,
+    RawSocketOption, impl_raw_sock_option_get_only, impl_raw_socket_option,
+    utils::{ReadFromUser, SocketTimeout, WriteToUser},
 };
 use crate::{
     context::current_userspace,
@@ -97,55 +98,33 @@ impl_raw_sock_option_get_only!(AcceptConn);
 impl_raw_socket_option!(SendBufForce);
 impl_raw_socket_option!(RecvBufForce);
 
-impl RawSocketOption for RecvTimeout {
-    fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()> {
-        use crate::util::net::options::utils::ReadFromUser;
+macro_rules! impl_raw_socket_timeout_option {
+    ($option:ty) => {
+        impl RawSocketOption for $option {
+            fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()> {
+                let timeout = SocketTimeout::read_from_user(addr, max_len)?;
+                self.set(timeout.into_inner());
+                Ok(())
+            }
 
-        let timeout = SocketTimeout::read_from_user(addr, max_len)?;
-        self.set(timeout.into_inner());
-        Ok(())
-    }
+            fn write_to_user(&self, addr: Vaddr, max_len: &mut u32) -> Result<usize> {
+                let output = SocketTimeout::new(*self.get().unwrap());
+                output.write_to_user(addr, *max_len)
+            }
 
-    fn write_to_user(&self, addr: Vaddr, max_len: &mut u32) -> Result<usize> {
-        use crate::util::net::options::utils::WriteToUser;
+            fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {
+                self
+            }
 
-        let output = self.get().unwrap();
-        output.write_to_user(addr, *max_len)
-    }
-
-    fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {
-        self
-    }
-
-    fn as_sock_option(&self) -> &dyn SocketOption {
-        self
-    }
+            fn as_sock_option(&self) -> &dyn SocketOption {
+                self
+            }
+        }
+    };
 }
 
-impl RawSocketOption for SendTimeout {
-    fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()> {
-        use crate::util::net::options::utils::ReadFromUser;
-
-        let timeout = SocketTimeout::read_from_user(addr, max_len)?;
-        self.set(timeout.into_inner());
-        Ok(())
-    }
-
-    fn write_to_user(&self, addr: Vaddr, max_len: &mut u32) -> Result<usize> {
-        use crate::util::net::options::utils::WriteToUser;
-
-        let output = self.get().unwrap();
-        output.write_to_user(addr, *max_len)
-    }
-
-    fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {
-        self
-    }
-
-    fn as_sock_option(&self) -> &dyn SocketOption {
-        self
-    }
-}
+impl_raw_socket_timeout_option!(RecvTimeout);
+impl_raw_socket_timeout_option!(SendTimeout);
 
 // SO_PEERGROUPS is a read-only option. However, calling setsockopt on SO_PEERGROUPS will return EINVAL
 // instead of ENOPROTOOPT like other options. Therefore, we manually implement `RawSocketOption` for it.

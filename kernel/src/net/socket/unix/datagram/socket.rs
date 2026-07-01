@@ -293,7 +293,7 @@ impl Socket for UnixDatagramSocket {
         }
 
         let (received_bytes, control_messages, peer_addr) =
-            self.block_on_timeout(IoEvents::IN, self.recv_timeout(), || {
+            self.block_on(IoEvents::IN, self.recv_timeout(), || {
                 self.local_receiver.try_recv(writer, flags)
             })?;
 

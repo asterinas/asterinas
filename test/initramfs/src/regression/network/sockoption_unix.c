@@ -106,7 +106,7 @@ FN_TEST(socket_timeout)
 	result.tv_usec = -1;
 	TEST_RES(getsockopt(sk_server, SOL_SOCKET, SO_RCVTIMEO, &result,
 			    &timeout_len),
-		 result.tv_sec == 0 && result.tv_usec == 0 &&
+		 result.tv_sec == 0 && result.tv_usec == 100000 &&
 			 timeout_len == sizeof(result));
 
 	result.tv_sec = -1;
@@ -114,7 +114,7 @@ FN_TEST(socket_timeout)
 	timeout_len = sizeof(result);
 	TEST_RES(getsockopt(sk_server, SOL_SOCKET, SO_SNDTIMEO, &result,
 			    &timeout_len),
-		 result.tv_sec == 0 && result.tv_usec == 0 &&
+		 result.tv_sec == 0 && result.tv_usec == 200000 &&
 			 timeout_len == sizeof(result));
 
 	TEST_SUCC(close(sk_client));
