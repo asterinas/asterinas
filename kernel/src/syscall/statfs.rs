@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use bitflags::bitflags;
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
@@ -7,7 +8,10 @@ use crate::{
     fs::{
         file::file_table::{RawFileDesc, get_file_fast},
         utils::PATH_MAX,
-        vfs::{file_system::SuperBlock, path::FsPath},
+        vfs::{
+            file_system::FsFlags,
+            path::{FsPath, Mount, PerMountFlags},
+        },
     },
     prelude::*,
 };
@@ -20,7 +24,7 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Resu
         path_name, statfs_buf_ptr,
     );
 
-    let fs = {
+    let statfs = {
         let path_name = path_name.to_string_lossy();
         let fs_path = FsPath::try_from(path_name.as_ref())?;
         let path = ctx
@@ -29,10 +33,8 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Resu
             .resolver()
             .read()
             .lookup(&fs_path)?;
-        path.fs()
+        Statfs::new(path.mount_node())
     };
-
-    let statfs = Statfs::from(fs.sb());
     user_space.write_val(statfs_buf_ptr, &statfs)?;
     Ok(SyscallReturn::Return(0))
 }
@@ -47,13 +49,11 @@ pub fn sys_fstatfs(
         raw_fd, statfs_buf_ptr
     );
 
-    let fs = {
+    let statfs = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
-        file.path().fs()
+        Statfs::new(file.path().mount_node())
     };
-
-    let statfs = Statfs::from(fs.sb());
     ctx.user_space().write_val(statfs_buf_ptr, &statfs)?;
     Ok(SyscallReturn::Return(0))
 }
@@ -88,8 +88,13 @@ struct Statfs {
     f_spare: [u64; 4],
 }
 
-impl From<SuperBlock> for Statfs {
-    fn from(sb: SuperBlock) -> Self {
+impl Statfs {
+    fn new(mount: &Mount) -> Self {
+        let sb = mount.fs().sb();
+        // TODO: Make `SuperBlock` correctly implement and maintain `FsFlags`,
+        // so they can be retrieved directly here.
+        let statfs_flags =
+            StatfsFlags::new(mount.flags(), FsFlags::from_bits_truncate(sb.flags as u32));
         Self {
             f_type: sb.magic,
             f_bsize: sb.bsize,
@@ -101,8 +106,56 @@ impl From<SuperBlock> for Statfs {
             f_fsid: sb.fsid,
             f_namelen: sb.namelen,
             f_frsize: sb.frsize,
-            f_flags: sb.flags,
+            f_flags: statfs_flags.bits() as u64,
             f_spare: [0u64; 4],
         }
+    }
+}
+
+bitflags! {
+    /// User-visible flags in [`Statfs`].
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/linux/statfs.h#L31>
+    struct StatfsFlags: u32 {
+        /// Mount read-only.
+        const ST_RDONLY = 1 << 0;
+        /// Ignore suid and sgid bits.
+        const ST_NOSUID = 1 << 1;
+        /// Disallow access to device special files.
+        const ST_NODEV = 1 << 2;
+        /// Disallow program execution.
+        const ST_NOEXEC = 1 << 3;
+        /// Writes are synced at once.
+        const ST_SYNCHRONOUS = 1 << 4;
+        /// Allow mandatory locks on an FS.
+        const ST_MANDLOCK = 1 << 6;
+        /// Do not update access times.
+        const ST_NOATIME = 1 << 10;
+        /// Do not update directory access times.
+        const ST_NODIRATIME = 1 << 11;
+        /// Update atime relative to mtime/ctime.
+        const ST_RELATIME = 1 << 12;
+        /// Do not follow symlinks.
+        const ST_NOSYMFOLLOW = 1 << 13;
+    }
+}
+
+impl StatfsFlags {
+    fn new(per_mount_flags: PerMountFlags, fs_flags: FsFlags) -> Self {
+        let mut statfs_flags = StatfsFlags::from_bits_truncate(per_mount_flags.bits());
+        statfs_flags |= StatfsFlags::from_bits_truncate(fs_flags.bits());
+
+        // Some bits in `StatfsFlags` do not correspond directly to bits in
+        // `PerMountFlags` and `FsFlags`, so we need to populate them manually.
+        // These manually added bits do not exist in `PerMountFlags` or `FsFlags`,
+        // so they will not be populated incorrectly before.
+        if per_mount_flags.contains(PerMountFlags::NOSYMFOLLOW) {
+            statfs_flags |= StatfsFlags::ST_NOSYMFOLLOW;
+        }
+        if per_mount_flags.contains(PerMountFlags::RELATIME) {
+            statfs_flags |= StatfsFlags::ST_RELATIME;
+        }
+
+        statfs_flags
     }
 }

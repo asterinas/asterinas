@@ -80,6 +80,8 @@ bitflags! {
         const NODEV          = 1 << 2;
         /// Disallow program execution.
         const NOEXEC         = 1 << 3;
+        /// Do not follow symlinks.
+        const NOSYMFOLLOW    = 1 << 8;
         /// Do not update access times.
         const NOATIME        = 1 << 10;
         /// Do not update directory access times.
@@ -565,11 +567,12 @@ impl Mount {
     }
 
     /// Gets the associated FS.
-    pub(in crate::fs) fn fs(&self) -> &Arc<dyn FileSystem> {
+    pub fn fs(&self) -> &Arc<dyn FileSystem> {
         &self.fs
     }
 
-    pub(in crate::fs) fn flags(&self) -> PerMountFlags {
+    /// Gets the associated mount flags.
+    pub fn flags(&self) -> PerMountFlags {
         self.flags.load(Ordering::Relaxed)
     }
 
