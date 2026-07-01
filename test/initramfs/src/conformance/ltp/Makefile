@@ -18,10 +18,27 @@ $(TARGET_DIR): $(RUN_BASH) $(ALL_TESTS) $(EXT2_BLOCKLIST) $(EXFAT_BLOCKLIST)
 	@# Prepare tests dir for test binaries
 	@mkdir -p $@/testcases/bin
 	@mkdir -p $@/runtest
-	@awk '!/^#/ && NF' $(ALL_TESTS) > $@/all.txt
-	@if [ "$(CONFORMANCE_TEST_WORKDIR)" = "/ext2" ]; then \
+	@# Use the explicit selection verbatim (it may name tests disabled in
+	@# all.txt), otherwise fall back to the default enabled set.
+	@if [ -n "$(CONFORMANCE_TESTS)" ]; then \
+		echo "$(CONFORMANCE_TESTS)" | tr ',' '\n' | grep -v '^$$' > $@/all.txt; \
+	else \
+		awk '!/^#/ && NF' $(ALL_TESTS) > $@/all.txt; \
+	fi
+	@# Then subtract the blocklist when it should be applied
+	@# (same should_apply logic as run_conformance_test.sh).
+	@if [ "$(CONFORMANCE_BLOCKLIST_MODE)" = "apply" ]; then \
+		should_apply=1; \
+	elif [ "$(CONFORMANCE_BLOCKLIST_MODE)" = "ignore" ]; then \
+		should_apply=0; \
+	elif [ -z "$(CONFORMANCE_TESTS)" ]; then \
+		should_apply=1; \
+	else \
+		should_apply=0; \
+	fi; \
+	if [ "$$should_apply" = "1" ] && [ "$(CONFORMANCE_TEST_WORKDIR)" = "/ext2" ]; then \
 		grep -vxF -f $(EXT2_BLOCKLIST) $@/all.txt > $@/filtered.txt; \
-	elif [ "$(CONFORMANCE_TEST_WORKDIR)" = "/exfat" ]; then \
+	elif [ "$$should_apply" = "1" ] && [ "$(CONFORMANCE_TEST_WORKDIR)" = "/exfat" ]; then \
 		grep -vxF -f $(EXFAT_BLOCKLIST) $@/all.txt > $@/filtered.txt; \
 	else \
 		cp -f $@/all.txt $@/filtered.txt; \

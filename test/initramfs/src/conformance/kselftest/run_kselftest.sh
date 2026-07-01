@@ -31,54 +31,68 @@ else
     echo "Found $available_count available test cases"
 fi
 
-if [ ! -r "$DEFAULT_BLOCKLISTS" ]; then
-    echo "$0: missing $DEFAULT_BLOCKLISTS; kselftest blocklist is broken" >&2
-    exit 1
-fi
-
-cat "$DEFAULT_BLOCKLISTS" > "$COMBINED_BLOCKLISTS"
-for extra_file in $EXTRA_BLOCKLISTS ; do
-    extra_blocklists="$KSELFTEST_DIR/$extra_file"
-    if [ -r "$extra_blocklists" ]; then
-        printf '\n' >> "$COMBINED_BLOCKLISTS"
-        cat "$extra_blocklists" >> "$COMBINED_BLOCKLISTS"
-    else
-        echo "Warning: extra blocklist not found: $extra_blocklists" >&2
-    fi
-done
-
-echo "Processing blocklists..."
-while IFS= read -r line || [ -n "$line" ]; do
-    line=${line#"${line%%[![:space:]]*}"}
-    line=${line%"${line##*[![:space:]]}"}
-    case "$line" in
-        "" | "#"*)
-            continue ;;
-        *:*)
-            dir="${line%%:*}"
-            command="${line#*:}"
-            if [ "$command" = "*" ]; then
-                awk -F: -v d="$dir" '$1 == d { print }' "$TESTS" >> "$RESOLVED_BLOCKLISTS"
-            else
-                printf '%s\n' "$line" >> "$RESOLVED_BLOCKLISTS"
-            fi
-            ;;
-        *)
-            echo "Error: Invalid format in blocklist: $line" >&2
-            exit 1
-            ;;
-    esac
-done < "$COMBINED_BLOCKLISTS"
-
-sort -u -o "$RESOLVED_BLOCKLISTS" "$RESOLVED_BLOCKLISTS"
-if [ -s "$RESOLVED_BLOCKLISTS" ]; then
-    blocked_count=$(wc -l < "$RESOLVED_BLOCKLISTS")
-    grep -vxFf "$RESOLVED_BLOCKLISTS" "$TESTS" | grep -v '^$' > "$AVAILABLE_TESTS"
+# Determine which tests to run
+if [ -n "$CONFORMANCE_TESTS" ]; then
+    # Convert comma-separated to newline-separated and write to AVAILABLE_TESTS
+    echo "$CONFORMANCE_TESTS" | tr ',' '\n' | grep -v '^$' > "$AVAILABLE_TESTS"
+    run_count=$(wc -l < "$AVAILABLE_TESTS")
+    echo "Test cases explicitly selected: $run_count"
 else
-    blocked_count=0
+    # Use all tests
     grep -v '^$' "$TESTS" > "$AVAILABLE_TESTS"
 fi
-echo "Total blocklist entries processed: $blocked_count"
+
+# Process blocklists only if needed
+if [ "$CONFORMANCE_APPLY_BLOCKLISTS" = "1" ]; then
+    if [ ! -r "$DEFAULT_BLOCKLISTS" ]; then
+        echo "$0: missing $DEFAULT_BLOCKLISTS; kselftest blocklist is broken" >&2
+        exit 1
+    fi
+
+    cat "$DEFAULT_BLOCKLISTS" > "$COMBINED_BLOCKLISTS"
+    for extra_file in $EXTRA_BLOCKLISTS ; do
+        extra_blocklists="$KSELFTEST_DIR/$extra_file"
+        if [ -r "$extra_blocklists" ]; then
+            printf '\n' >> "$COMBINED_BLOCKLISTS"
+            cat "$extra_blocklists" >> "$COMBINED_BLOCKLISTS"
+        else
+            echo "Warning: extra blocklist not found: $extra_blocklists" >&2
+        fi
+    done
+
+    echo "Processing blocklists..."
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line#"${line%%[![:space:]]*}"}
+        line=${line%"${line##*[![:space:]]}"}
+        case "$line" in
+            "" | "#"*)
+                continue ;;
+            *:*)
+                dir="${line%%:*}"
+                command="${line#*:}"
+                if [ "$command" = "*" ]; then
+                    awk -F: -v d="$dir" '$1 == d { print }' "$TESTS" >> "$RESOLVED_BLOCKLISTS"
+                else
+                    printf '%s\n' "$line" >> "$RESOLVED_BLOCKLISTS"
+                fi
+                ;;
+            *)
+                echo "Error: Invalid format in blocklist: $line" >&2
+                exit 1
+                ;;
+        esac
+    done < "$COMBINED_BLOCKLISTS"
+
+    sort -u -o "$RESOLVED_BLOCKLISTS" "$RESOLVED_BLOCKLISTS"
+    if [ -s "$RESOLVED_BLOCKLISTS" ]; then
+        blocked_count=$(wc -l < "$RESOLVED_BLOCKLISTS")
+        grep -vxFf "$RESOLVED_BLOCKLISTS" "$AVAILABLE_TESTS" | grep -v '^$' > "$AVAILABLE_TESTS.tmp"
+        mv "$AVAILABLE_TESTS.tmp" "$AVAILABLE_TESTS"
+    else
+        blocked_count=0
+    fi
+    echo "Total blocklist entries processed: $blocked_count"
+fi
 
 run_count=$(wc -l < "$AVAILABLE_TESTS")
 if [ "$run_count" -eq 0 ]; then

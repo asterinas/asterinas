@@ -5,10 +5,26 @@
 set -e
 
 CONFORMANCE_TEST_SUITE=${CONFORMANCE_TEST_SUITE:-ltp}
+CONFORMANCE_BLOCKLIST_MODE=${CONFORMANCE_BLOCKLIST_MODE:-auto}
+CONFORMANCE_TESTS=${CONFORMANCE_TESTS:-}
 LTP_DIR=/opt/ltp
 GVISOR_DIR=/opt/gvisor
 KSELFTEST_DIR=/opt/kselftest
 XFSTESTS_DIR=/opt/xfstests
+
+should_apply_blocklists() {
+    case "$CONFORMANCE_BLOCKLIST_MODE" in
+        apply)  return 0 ;;
+        ignore) return 1 ;;
+        auto|*) [ -z "$CONFORMANCE_TESTS" ] ;;
+    esac
+}
+
+if should_apply_blocklists; then
+    export CONFORMANCE_APPLY_BLOCKLISTS=1
+else
+    export CONFORMANCE_APPLY_BLOCKLISTS=0
+fi
 
 if [ "${CONFORMANCE_TEST_SUITE}" = "ltp" ]; then
     echo "Running LTP syscall tests..."

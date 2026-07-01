@@ -1,6 +1,7 @@
 { target ? "x86_64", enableBenchmarkTest ? false, enableConformanceTest ? false
 , enableRegressionTest ? false, conformanceTestSuite ? "ltp"
-, conformanceTestWorkDir ? "/tmp", regressionTestPlatform ? "asterinas"
+, conformanceTestWorkDir ? "/tmp", conformanceTests ? ""
+, conformanceBlocklistMode ? "auto", regressionTestPlatform ? "asterinas"
 , dnsServer ? "none", smp ? 1, initramfsCompressed ? true, }:
 let
   crossSystem.config = if target == "x86_64" then
@@ -29,6 +30,8 @@ in rec {
     inherit smp;
     testSuite = conformanceTestSuite;
     workDir = conformanceTestWorkDir;
+    tests = conformanceTests;
+    blocklistMode = conformanceBlocklistMode;
   };
   regression =
     pkgs.callPackage ./regression { testPlatform = regressionTestPlatform; };

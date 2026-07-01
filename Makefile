@@ -52,6 +52,25 @@ CONFORMANCE_TEST_WORKDIR ?= /tmp
 # - `kselftest` treats each entry as a blocklist file relative to its runner
 #   directory, and appends that file directly.
 EXTRA_BLOCKLISTS ?= ""
+
+# Comma-separated tests to run within the selected conformance suite.
+# - gvisor:    a test *binary* name, e.g. `epoll_test` (optionally narrow the
+#              cases inside it with `GVISOR_GTEST_FILTER`).
+# - kselftest: a `<collection>:<case>` entry, e.g. `timers:posix_timers`.
+# - ltp:       a syscall testcase id, e.g. `rename01`.
+# - xfstests:  a test id, e.g. `generic/001`.
+CONFORMANCE_TESTS ?= ""
+
+# Controls whether conformance blocklists are applied.
+# Values:
+# - auto: apply blocklists for full-suite runs, ignore blocklists for explicit selections.
+# - apply: always apply blocklists.
+# - ignore: never apply blocklists.
+CONFORMANCE_BLOCKLIST_MODE ?= auto
+
+# gVisor-only positive gtest filter, used inside one selected gVisor test binary.
+GVISOR_GTEST_FILTER ?= ""
+
 # Parameters for xfstests.
 XFSTESTS_RUNLIST ?= /opt/xfstests/short.list
 XFSTESTS_DISK_SIZE ?= 12G
@@ -111,7 +130,11 @@ ENABLE_CONFORMANCE_TEST := true
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_SUITE=$(CONFORMANCE_TEST_SUITE)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_WORKDIR=$(CONFORMANCE_TEST_WORKDIR)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="EXTRA_BLOCKLISTS=$(EXTRA_BLOCKLISTS)"
-ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TESTS=$(CONFORMANCE_TESTS)"
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_BLOCKLIST_MODE=$(CONFORMANCE_BLOCKLIST_MODE)"
+ifeq ($(CONFORMANCE_TEST_SUITE), gvisor)
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="GVISOR_GTEST_FILTER=$(GVISOR_GTEST_FILTER)"
+else ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_RUNLIST=$(XFSTESTS_RUNLIST)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_TEST_DEV=$(XFSTESTS_TEST_DEV)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_SCRATCH_DEV=$(XFSTESTS_SCRATCH_DEV)"
