@@ -70,6 +70,7 @@ use super::{
     lseek::sys_lseek,
     madvise::sys_madvise,
     memfd_create::sys_memfd_create,
+    mincore::sys_mincore,
     mkdir::{sys_mkdir, sys_mkdirat},
     mknod::{sys_mknod, sys_mknodat},
     mmap::sys_mmap,
@@ -207,6 +208,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SELECT = 23            => sys_select(args[..5]);
     SYS_MREMAP = 25            => sys_mremap(args[..5]);
     SYS_MSYNC = 26             => sys_msync(args[..3]);
+    SYS_MINCORE = 27           => sys_mincore(args[..3]);
     SYS_SCHED_YIELD = 24       => sys_sched_yield(args[..0]);
     SYS_MADVISE = 28           => sys_madvise(args[..3]);
     SYS_DUP = 32               => sys_dup(args[..1]);

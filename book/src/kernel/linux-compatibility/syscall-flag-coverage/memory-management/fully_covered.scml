@@ -1,2 +1,5 @@
 // Change data segment size
 brk(addr);
+
+// Query which pages of a mapping are resident in memory
+mincore(addr, length, vec);
