@@ -35,3 +35,38 @@ jobs:
       - name : Run Asterinas NixOS
         run: |
           make run_nixos NIXOS_TEST_SUITE=hello
+
+  iso-test-asterinas-kernel:
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/asterinas:0.18.0-20260618
+      options: -v /dev:/dev --privileged
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Asterinas NixOS ISO installer image with Asterinas kernel
+        run: |
+          AUTO_INSTALL=false USE_ASTERINAS_KERNEL=true make iso NIXOS_TEST_SUITE=hello
+      - name: Run ISO image with Asterinas kernel
+        run: |
+          set -e
+          mkfifo qemu.input
+          (
+            sleep 900
+            echo uname -a
+            sleep 10
+            echo poweroff
+          ) > qemu.input &
+          input_pid=$!
+          trap 'kill "${input_pid}" 2>/dev/null || true; rm -f qemu.input' EXIT
+
+          ENABLE_KVM=0 timeout 30m make run_iso < qemu.input || true
+          if ! grep -a -q "Linux nixos 5.13.0 .* x86_64 GNU/Linux" qemu.log; then
+            echo "Test ISO failed"
+            echo "===== qemu.log ====="
+            tail --lines 200 qemu.log
+            echo "===== qemu-serial.log ====="
+            tail --lines 200 qemu-serial.log || true
+            exit 1
+          fi
+          echo "Test ISO succeeds!"
