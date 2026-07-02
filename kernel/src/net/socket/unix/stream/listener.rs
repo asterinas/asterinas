@@ -25,6 +25,7 @@ use crate::{
     },
     prelude::*,
     process::signal::Pollee,
+    util::net::SockType,
 };
 
 pub(super) struct Listener {
@@ -55,13 +56,20 @@ impl Listener {
         self.backlog.addr()
     }
 
-    pub(super) fn try_accept(&self, is_seqpacket: bool) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+    pub(super) fn try_accept(
+        &self,
+        socket_type: SockType,
+    ) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+        debug_assert!(
+            socket_type == SockType::SOCK_STREAM || socket_type == SockType::SOCK_SEQPACKET
+        );
+
         let connected = self.backlog.pop_incoming()?;
 
         let peer_addr = connected.peer_addr().into();
         let options = OptionSet::new_accepted(connected.is_pass_cred());
 
-        let socket = UnixStreamSocket::new_connected(connected, options, false, is_seqpacket);
+        let socket = UnixStreamSocket::new_connected(connected, options, false, socket_type);
         Ok((socket, peer_addr))
     }
 

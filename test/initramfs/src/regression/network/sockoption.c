@@ -122,6 +122,22 @@ FN_TEST(socket_error)
 }
 END_TEST()
 
+FN_TEST(socket_type)
+{
+	int type = -1;
+	socklen_t type_len = sizeof(type);
+
+	TEST_ERRNO(setsockopt(sk_unbound, SOL_SOCKET, SO_TYPE, &type, type_len),
+		   ENOPROTOOPT);
+
+	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_TYPE, &type, &type_len),
+		 type == SOCK_STREAM && type_len == sizeof(type));
+
+	TEST_RES(getsockopt(sk_udp, SOL_SOCKET, SO_TYPE, &type, &type_len),
+		 type == SOCK_DGRAM && type_len == sizeof(type));
+}
+END_TEST()
+
 FN_TEST(nagle)
 {
 	int option = 1;

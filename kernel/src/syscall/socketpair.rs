@@ -39,10 +39,10 @@ pub fn sys_socketpair(
     let nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
     let (socket_a, socket_b) = match (domain, sock_type) {
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM) => {
-            file_pair!(UnixStreamSocket::new_pair(nonblocking, false))
+            file_pair!(UnixStreamSocket::new_pair(nonblocking, sock_type))
         }
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_SEQPACKET) => {
-            file_pair!(UnixStreamSocket::new_pair(nonblocking, true))
+            file_pair!(UnixStreamSocket::new_pair(nonblocking, sock_type))
         }
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_RAW | SockType::SOCK_DGRAM) => {
             file_pair!(UnixDatagramSocket::new_pair(nonblocking))

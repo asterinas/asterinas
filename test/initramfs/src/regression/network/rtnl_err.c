@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #include <netlink/netlink.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "../common/test.h"
@@ -76,6 +77,22 @@ FN_TEST(getpeername)
 
 	TEST_RES(getpeername(sk_connected, psaddr, &addrlen),
 		 addrlen == sizeof(saddr) && saddr.nl_pid == S_PORT);
+}
+END_TEST()
+
+FN_TEST(socket_type)
+{
+	int type = -1;
+	socklen_t type_len = sizeof(type);
+
+	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_TYPE, &type, &type_len),
+		 type == SOCK_DGRAM && type_len == sizeof(type));
+
+	int sk_raw = TEST_SUCC(
+		socket(PF_NETLINK, SOCK_RAW | SOCK_NONBLOCK, NETLINK_ROUTE));
+	TEST_RES(getsockopt(sk_raw, SOL_SOCKET, SO_TYPE, &type, &type_len),
+		 type == SOCK_RAW && type_len == sizeof(type));
+	TEST_SUCC(close(sk_raw));
 }
 END_TEST()
 
