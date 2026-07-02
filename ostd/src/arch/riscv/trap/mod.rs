@@ -55,9 +55,8 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
     let scause = riscv::register::scause::read();
     let Ok(cause) = Trap::<Interrupt, Exception>::try_from(scause.cause()) else {
         panic!(
-            "Cannot handle unknown trap, scause: {:#x}, trapframe: {:#x?}.",
-            scause.bits(),
-            f
+            "Cannot handle unknown trap: {:#x?}; trapframe: {:#x?}",
+            scause, f
         );
     };
 
@@ -86,7 +85,7 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
         }
         _ => {
             panic!(
-                "Cannot handle kernel exception, exception: {:#x?}, trapframe: {:#x?}.",
+                "Cannot handle kernel CPU exception: {:#x?}; trapframe: {:#x?}",
                 exception, f
             );
         }
