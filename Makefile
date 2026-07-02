@@ -55,8 +55,8 @@ EXTRA_BLOCKLISTS ?= ""
 # Parameters for xfstests.
 XFSTESTS_RUNLIST ?= /opt/xfstests/short.list
 XFSTESTS_DISK_SIZE ?= 12G
-XFSTESTS_TEST_DEV ?= /dev/vdc
-XFSTESTS_SCRATCH_DEV ?= /dev/vdd
+XFSTESTS_TEST_DEV ?= /dev/vdd
+XFSTESTS_SCRATCH_DEV ?= /dev/vde
 # Specify whether to build regression tests under `test/initramfs/src/regression`.
 ENABLE_REGRESSION_TEST ?= false
 # End of auto test features.

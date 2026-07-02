@@ -10,8 +10,8 @@ export PATH=__RUNTIME_PATH__
 XFSTESTS_DIR=/opt/xfstests
 cd "$XFSTESTS_DIR"
 
-TEST_DEV=${XFSTESTS_TEST_DEV:-/dev/vdc}
-SCRATCH_DEV=${XFSTESTS_SCRATCH_DEV:-/dev/vdd}
+TEST_DEV=${XFSTESTS_TEST_DEV:-/dev/vdd}
+SCRATCH_DEV=${XFSTESTS_SCRATCH_DEV:-/dev/vde}
 export TEST_DEV SCRATCH_DEV
 
 # Mount xfstests images with explicit error checking so a mount failure is not
