@@ -6,6 +6,8 @@ VERBOSE ?= 1
 ENABLE_CONFORMANCE_TEST ?= false
 CONFORMANCE_TEST_SUITE ?= ltp
 CONFORMANCE_TEST_WORKDIR ?= /tmp
+CONFORMANCE_TESTS ?=
+CONFORMANCE_BLOCKLIST_MODE ?= auto
 ENABLE_REGRESSION_TEST ?= false
 # Specify platform macros when building regression tests (supported: asterinas, linux).
 # - asterinas: Define both `__asterinas__` and `__linux__`. Tests may fail in Linux.
@@ -77,6 +79,8 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 		--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
 		--argstr conformanceTestSuite $(CONFORMANCE_TEST_SUITE) \
 		--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
+		--argstr conformanceTests "$(CONFORMANCE_TESTS)" \
+		--argstr conformanceBlocklistMode $(CONFORMANCE_BLOCKLIST_MODE) \
 		--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
 		--argstr dnsServer ${DNS_SERVER} \
 		--arg initramfsCompressed $(INITRAMFS_COMPRESSED) \
@@ -94,6 +98,8 @@ $(INITRAMFS):
 		--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
 		--argstr conformanceTestSuite $(CONFORMANCE_TEST_SUITE) \
 		--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
+		--argstr conformanceTests "$(CONFORMANCE_TESTS)" \
+		--argstr conformanceBlocklistMode $(CONFORMANCE_BLOCKLIST_MODE) \
 		--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
 		--argstr dnsServer ${DNS_SERVER} \
 		--arg smp $(SMP) \
