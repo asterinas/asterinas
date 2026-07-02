@@ -16,9 +16,7 @@ use x86_64::{
 use crate::mm::{
     PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
     dma::DmaDirection,
-    page_prop::{
-        CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
-    },
+    page_prop::{PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags},
     page_table::{PteScalar, PteTrait},
 };
 
@@ -135,26 +133,13 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(_range: Range<Vaddr>) {
 
 /// Activates the given root-level page table.
 ///
-/// The cache policy of the root page table node is controlled by `root_pt_cache`.
-///
 /// # Safety
 ///
 /// Changing the root-level page table is unsafe, because it's possible to violate memory safety by
 /// changing the page mapping.
-pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, root_pt_cache: CachePolicy) {
+pub(crate) unsafe fn activate_page_table(root_paddr: Paddr) {
     let addr = PhysFrame::from_start_address(x86_64::PhysAddr::new(root_paddr as u64)).unwrap();
-    let flags = match root_pt_cache {
-        CachePolicy::Writeback => x86_64::registers::control::Cr3Flags::empty(),
-        CachePolicy::Writethrough => x86_64::registers::control::Cr3Flags::PAGE_LEVEL_WRITETHROUGH,
-        CachePolicy::Uncacheable => x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
-        // Write-combining and write-protected are not supported for root page table (CR3)
-        // as CR3 only supports WB, WT, and UC via PCD/PWT bits
-        _ => {
-            panic!(
-                "unsupported cache policy for the root page table (only WB, WT, and UC are allowed)"
-            )
-        }
-    };
+    let flags = x86_64::registers::control::Cr3Flags::empty();
 
     // SAFETY: The safety is upheld by the caller.
     unsafe { x86_64::registers::control::Cr3::write(addr, flags) };
