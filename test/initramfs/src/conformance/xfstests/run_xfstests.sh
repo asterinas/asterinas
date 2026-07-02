@@ -7,31 +7,38 @@ set -eu
 # RUNTIME_PATH is substituted by the Nix build.
 export PATH=__RUNTIME_PATH__
 
+XFSTESTS_FS_TYPE=${XFSTESTS_FS_TYPE:-ext2}
+export FSTYP="$XFSTESTS_FS_TYPE"
+
 XFSTESTS_DIR=/opt/xfstests
+XFSTESTS_FS_DIR="$XFSTESTS_DIR/$XFSTESTS_FS_TYPE"
+XFSTESTS_CONFIG="$XFSTESTS_FS_DIR/config/xfstests.config"
+XFSTESTS_PREPARE="$XFSTESTS_FS_DIR/prepare.sh"
+XFSTESTS_BLOCK_LIST="$XFSTESTS_FS_DIR/run_list/block.list"
 cd "$XFSTESTS_DIR"
 
-TEST_DEV=${XFSTESTS_TEST_DEV:-/dev/vdc}
-SCRATCH_DEV=${XFSTESTS_SCRATCH_DEV:-/dev/vdd}
-export TEST_DEV SCRATCH_DEV
+if [ ! -d "$XFSTESTS_FS_DIR" ]; then
+    echo "Unsupported xfstests filesystem type: $XFSTESTS_FS_TYPE" >&2
+    exit 2
+fi
+if [ ! -f "$XFSTESTS_CONFIG" ]; then
+    echo "Missing xfstests config: $XFSTESTS_CONFIG" >&2
+    exit 2
+fi
+if [ ! -f "$XFSTESTS_PREPARE" ]; then
+    echo "Missing xfstests preparation script: $XFSTESTS_PREPARE" >&2
+    exit 2
+fi
 
-# Mount xfstests images with explicit error checking so a mount failure is not
-# silently skipped (which would cause ./check to run against empty directories
-# and still print the "all passed" success line).
-for entry in "$TEST_DEV:$XFSTESTS_DIR/test:test" "$SCRATCH_DEV:$XFSTESTS_DIR/scratch:scratch"; do
-    dev="${entry%%:*}"; rest="${entry#*:}"; mnt="${rest%%:*}"; role="${rest##*:}"
-    if [ ! -b "$dev" ]; then
-        echo "Expected $dev to be a block device for xfstests $role" >&2
-        exit 1
-    fi
-    if ! mount -t ext2 "$dev" "$mnt"; then
-        echo "Failed to mount $dev on $mnt ($role)" >&2
-        exit 1
-    fi
-    if ! mountpoint -q "$mnt"; then
-        echo "$mnt is not a mountpoint after mount(8) succeeded ($role)" >&2
-        exit 1
-    fi
-done
+export HOST_OPTIONS="$XFSTESTS_CONFIG"
+
+# Prepare scripts consume the same filesystem variables that `./check` later
+# loads through `HOST_OPTIONS`.
+# shellcheck source=/dev/null
+. "$XFSTESTS_CONFIG"
+
+# shellcheck source=/dev/null
+. "$XFSTESTS_PREPARE"
 
 RUNLIST_FILE=""
 TEST_ARGS=""
@@ -67,16 +74,18 @@ if [ -n "$RUNLIST_FILE" ]; then
     exit 2
   fi
   while IFS= read -r test; do
+    test=${test%%#*}
     case "$test" in
-      ""|\#*) continue ;;
+      *[![:space:]]*) ;;
+      *) continue ;;
     esac
     TEST_ARGS="$TEST_ARGS $test"
   done < "$RUNLIST_FILE"
 fi
 
 # Prepend block-list exclusion so blocked tests are skipped.
-if [ -f "$XFSTESTS_DIR/block.list" ]; then
-    TEST_ARGS="-E $XFSTESTS_DIR/block.list $TEST_ARGS"
+if [ -f "$XFSTESTS_BLOCK_LIST" ]; then
+    TEST_ARGS="-E $XFSTESTS_BLOCK_LIST $TEST_ARGS"
 fi
 
 # Word-splitting is intentional here: TEST_ARGS contains only test names

@@ -33,19 +33,28 @@ SSD_IMAGE := $(BUILD_DIR)/nvme0n1.img
 XFSTESTS_TEST_IMAGE := $(BUILD_DIR)/xfstests_test.img
 XFSTESTS_SCRATCH_IMAGE := $(BUILD_DIR)/xfstests_scratch.img
 XFSTESTS_DISK_SIZE ?= 12G
+XFSTESTS_FS_TYPE ?= ext2
+XFSTESTS_FS_DIR := $(CUR_DIR)/src/conformance/xfstests/$(XFSTESTS_FS_TYPE)
+XFSTESTS_BUILD_CONFIG := $(XFSTESTS_FS_DIR)/config/build_config.mk
+XFSTESTS_NEEDS_BLOCK_DEVICES := false
+XFSTESTS_MKFS :=
+ifeq ($(ENABLE_CONFORMANCE_TEST), true)
+ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
+ifeq ($(wildcard $(XFSTESTS_FS_DIR)),)
+$(error Unsupported XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE))
+endif
+ifeq ($(wildcard $(XFSTESTS_BUILD_CONFIG)),)
+$(error Missing xfstests build config: $(XFSTESTS_BUILD_CONFIG))
+endif
+include $(XFSTESTS_BUILD_CONFIG)
+endif
+endif
 
 # Include benchmark, if BENCHMARK is set.
 ifeq ($(BENCHMARK), none)
 ENABLE_BENCHMARK_TEST = false
 else
 ENABLE_BENCHMARK_TEST = true
-endif
-
-BUILD_XFSTESTS_IMAGES = false
-ifeq ($(ENABLE_CONFORMANCE_TEST), true)
-ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
-BUILD_XFSTESTS_IMAGES = true
-endif
 endif
 
 # Decreases the level of verbosity of diagnostic messages from Nix.
@@ -61,7 +70,7 @@ ifeq ($(TARGET_ARCH), loongarch64)
 build: $(EXT2_IMAGE) $(EXFAT_IMAGE)
 	@echo "For loongarch, we generate a fake initramfs to successfully test or build."
 	@touch $(INITRAMFS_IMAGE)
-else ifeq ($(BUILD_XFSTESTS_IMAGES), true)
+else ifeq ($(XFSTESTS_NEEDS_BLOCK_DEVICES), true)
 build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(SSD_IMAGE) $(XFSTESTS_TEST_IMAGE) $(XFSTESTS_SCRATCH_IMAGE)
 else
 build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(SSD_IMAGE)
@@ -183,13 +192,19 @@ $(SSD_IMAGE):
 
 $(XFSTESTS_TEST_IMAGE):
 	@mkdir -p $(BUILD_DIR)
-	@truncate -s $(XFSTESTS_DISK_SIZE) $(XFSTESTS_TEST_IMAGE)
-	@mkfs.ext2 $(XFSTESTS_TEST_IMAGE)
+ifeq ($(strip $(XFSTESTS_MKFS)),)
+	$(error Missing mkfs command for XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE))
+endif
+	@truncate -s $(XFSTESTS_DISK_SIZE) $@
+	@$(XFSTESTS_MKFS) $@
 
 $(XFSTESTS_SCRATCH_IMAGE):
 	@mkdir -p $(BUILD_DIR)
-	@truncate -s $(XFSTESTS_DISK_SIZE) $(XFSTESTS_SCRATCH_IMAGE)
-	@mkfs.ext2 $(XFSTESTS_SCRATCH_IMAGE)
+ifeq ($(strip $(XFSTESTS_MKFS)),)
+	$(error Missing mkfs command for XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE))
+endif
+	@truncate -s $(XFSTESTS_DISK_SIZE) $@
+	@$(XFSTESTS_MKFS) $@
 
 .PHONY: format
 format:
