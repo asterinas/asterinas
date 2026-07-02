@@ -506,12 +506,13 @@ impl Path {
     ///
     /// # Errors
     ///
-    /// Returns `ENOTDIR` if the `dst_path` is not a directory.
-    ///
     /// Returns `EINVAL` in the following cases:
     /// - The current path is not a mount root.
     /// - The mount of the current path is the root mount.
-    /// - Either source or destination path is not in the current mount namespace.
+    /// - The source is a non-root mount in a detached mount tree.
+    /// - The destination is in a detached mount tree while the source is not.
+    /// - The source and destination are in the same detached mount tree.
+    /// - One of the source and destination is a directory and the other is not.
     ///
     /// Returns `ELOOP` in the following cases:
     /// - The destination path is inside the subtree being moved.
@@ -520,12 +521,12 @@ impl Path {
         if !self.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
         };
-        if self.mount_node().parent().is_none() {
-            return_errno_with_message!(Errno::EINVAL, "the root mount can not be moved");
-        }
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        if self.mount.id() == current_mnt_ns.root().id() {
+            return_errno_with_message!(Errno::EINVAL, "the root mount can not be moved");
+        }
         if !current_mnt_ns.owns(&self.mount) {
             return_errno_with_message!(
                 Errno::EINVAL,
@@ -538,7 +539,48 @@ impl Path {
                 "the destination path is not in this mount namespace"
             );
         }
+
         let mut topology_guard = MountTopology::write_lock();
+        let source_tree_root = mount_tree_root(self.mount_node());
+        let target_tree_root = mount_tree_root(dst_path.mount_node());
+        let current_tree_root = current_mnt_ns.root();
+        let source_is_detached = source_tree_root.id() != current_tree_root.id();
+        let target_is_detached = target_tree_root.id() != current_tree_root.id();
+
+        // Since Linux v6.15, a detached anonymous-namespace root can be
+        // moved onto either the current mount namespace or an acceptable
+        // anonymous namespace. Asterinas does not model anonymous mount
+        // namespaces yet, so compare detached mount tree roots instead.
+        // TODO: Once anonymous mount namespaces are modeled, determine
+        // detachedness from the mount namespace directly instead of inferring it
+        // from whether the mount tree root is the current namespace root.
+        if source_is_detached && self.mount.id() != source_tree_root.id() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "only a detached mount tree root can be moved out of the detached tree"
+            );
+        }
+        if !source_is_detached && target_is_detached {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the destination path is in a detached mount tree"
+            );
+        }
+        if source_is_detached && source_tree_root.id() == target_tree_root.id() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the source and destination are in the same detached mount tree"
+            );
+        }
+        let source_is_dir = self.type_() == InodeType::Dir;
+        let target_is_dir = dst_path.type_() == InodeType::Dir;
+        if source_is_dir != target_is_dir {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the source and destination must both be directories or both be non-directories"
+            );
+        }
+
         current_mnt_ns.check_no_mnt_ns_loop_in_tree(self.mount_node(), &topology_guard)?;
         if dst_path
             .mount_node()
@@ -580,6 +622,15 @@ impl Path {
 
         Ok(())
     }
+}
+
+fn mount_tree_root(mount: &Arc<Mount>) -> Arc<Mount> {
+    let mut root = mount.clone();
+    while let Some(parent) = root.parent().and_then(|parent| parent.upgrade()) {
+        root = parent;
+    }
+
+    root
 }
 
 // Methods inherited from `Dentry`.

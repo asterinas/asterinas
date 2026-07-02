@@ -332,7 +332,7 @@ impl Mount {
     ///
     /// If the source is provided by user, it will be recorded in the new mount.
     ///
-    /// Return the mounted child mount.
+    /// Returns the mounted child mount.
     pub(super) fn do_mount(
         self: &Arc<Self>,
         fs: Arc<dyn FileSystem>,

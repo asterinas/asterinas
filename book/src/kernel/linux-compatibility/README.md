@@ -344,6 +344,7 @@ which are summarized in the table below.
 | 328     | pwritev2               | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#preadv2-and-pwritev2) |
 | 332     | statx                  | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#statx) |
 | 424     | pidfd_send_signal      | ✅             | 💯 |
+| 429     | move_mount             | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#move_mount) |
 | 430     | fsopen                 | ✅             | 💯 |
 | 431     | fsconfig               | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#fsconfig) |
 | 432     | fsmount                | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#fsmount) |

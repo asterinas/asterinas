@@ -269,7 +269,6 @@ impl DetachedMountFile {
     }
 
     /// Returns the detached mount.
-    #[expect(dead_code)]
     pub fn mount(&self) -> Arc<Mount> {
         self.mount.clone()
     }
