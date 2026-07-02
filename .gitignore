@@ -34,6 +34,10 @@ aster-kernel-profile-*.svg
 # distro results
 distro/result
 
+# nix build results
+/result
+/result-*
+
 # cachix package list
 cachix.list
 
