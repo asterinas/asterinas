@@ -70,7 +70,6 @@ impl InodeMode {
         self.contains(Self::S_IXOTH)
     }
 
-    #[expect(dead_code)]
     pub fn has_sticky_bit(&self) -> bool {
         self.contains(Self::S_ISVTX)
     }
