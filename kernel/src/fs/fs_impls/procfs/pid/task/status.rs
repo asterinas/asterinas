@@ -10,10 +10,7 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    process::{
-        credentials::AMBIENT_CAPSET,
-        posix_thread::{AsPosixThread, SleepingState},
-    },
+    process::posix_thread::{AsPosixThread, SleepingState},
     thread::Thread,
     vm::vmar::RssType,
 };
@@ -191,7 +188,11 @@ impl ProcFileOps for StatusFileOps {
             "CapBnd:\t{:016x}",
             credentials.bounding_capset().bits()
         )?;
-        writeln!(printer, "CapAmb:\t{:016x}", AMBIENT_CAPSET.bits())?;
+        writeln!(
+            printer,
+            "CapAmb:\t{:016x}",
+            credentials.ambient_capset().bits()
+        )?;
 
         Ok(printer.bytes_written())
     }

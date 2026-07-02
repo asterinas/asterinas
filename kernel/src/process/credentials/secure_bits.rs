@@ -67,10 +67,7 @@ impl SecureBits {
         self.contains(SecureBits::NO_SETUID_FIXUP)
     }
 
-    // Currently, ambient capabilities and the PR_CAP_AMBIENT_RAISE operation are not supported.
-    // Therefore, this flag is not used.
-    #[expect(dead_code)]
-    pub(super) fn no_cap_ambient_raise(&self) -> bool {
+    pub fn no_cap_ambient_raise(&self) -> bool {
         self.contains(SecureBits::NO_CAP_AMBIENT_RAISE)
     }
 }

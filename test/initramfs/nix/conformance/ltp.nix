@@ -1,4 +1,4 @@
-{ stdenv, fetchFromGitHub, hostPlatform, pkgsBuildBuild, }:
+{ stdenv, fetchFromGitHub, hostPlatform, libcap, pkgsBuildBuild, }:
 stdenv.mkDerivation rec {
   pname = "ltp";
   version = "20250930";
@@ -22,6 +22,7 @@ stdenv.mkDerivation rec {
     makeWrapper
     pkg-config
   ];
+  buildInputs = [ libcap ];
   configurePhase = ''
     runHook preConfigure
 
