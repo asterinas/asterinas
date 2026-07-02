@@ -127,7 +127,7 @@ macro_rules! define_kv_param_early {
 ///
 /// The stored value type `S::Value` must implement
 /// [`crate::parse::ParseRepeatableParamValue`]. This crate provides a default
-/// implementation for `Vec<T>` where `T: FromStr`.
+/// implementation for `Vec<T>` where `T: ParseParamValue`.
 ///
 /// # Examples
 ///

@@ -6,7 +6,7 @@
 //! command lines so users of this framework don't need to rewrite them.
 
 use alloc::vec::Vec;
-use core::num::NonZeroU32;
+use core::num::{NonZeroU32, NonZeroUsize};
 
 use crate::parse::{ParamError, ParseParamValue};
 
@@ -208,6 +208,113 @@ fn parse_u32(s: &str) -> Result<u32, ParamError> {
     s.parse::<u32>().map_err(|_| ParamError::InvalidValue)
 }
 
+/// Linux-style MMIO device descriptor.
+///
+/// This type parses values in the form `<size>@<base>:<irq>[:<id>]`.
+/// `size` supports binary suffixes (`K`, `M`, `G`, and `T`), while `base`,
+/// `irq`, and `id` may be decimal or hexadecimal with a `0x` prefix.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MmioDevice {
+    base: usize,
+    size: NonZeroUsize,
+    irq: NonZeroU32,
+    id: Option<u32>,
+}
+
+impl MmioDevice {
+    /// Returns the base address of the MMIO region.
+    pub fn base(&self) -> usize {
+        self.base
+    }
+
+    /// Returns the size of the MMIO region.
+    pub fn size(&self) -> NonZeroUsize {
+        self.size
+    }
+
+    /// Returns the interrupt line described by the command-line value.
+    pub fn irq(&self) -> NonZeroU32 {
+        self.irq
+    }
+
+    /// Returns the optional device ID.
+    pub fn id(&self) -> Option<u32> {
+        self.id
+    }
+}
+
+impl ParseParamValue for MmioDevice {
+    fn parse_param(value: &str) -> Result<Self, ParamError> {
+        parse_mmio_device(value).ok_or(ParamError::InvalidValue)
+    }
+}
+
+fn parse_mmio_device(value: &str) -> Option<MmioDevice> {
+    let (size, rest) = value.split_once('@')?;
+    let mut rest_segments = rest.split(':');
+
+    let base = parse_usize_with_hex_prefix(rest_segments.next()?)?;
+    let irq = NonZeroU32::new(parse_u32_with_hex_prefix(rest_segments.next()?)?)?;
+    let id = match rest_segments.next() {
+        Some(device_id) => Some(parse_u32_with_hex_prefix(device_id)?),
+        None => None,
+    };
+    if rest_segments.next().is_some() {
+        return None;
+    }
+
+    let size = NonZeroUsize::new(parse_size(size)?)?;
+
+    Some(MmioDevice {
+        base,
+        size,
+        irq,
+        id,
+    })
+}
+
+fn parse_size(value: &str) -> Option<usize> {
+    let (number, shift) = match value.as_bytes().last()? {
+        b'k' | b'K' => (&value[..value.len() - 1], 10),
+        b'm' | b'M' => (&value[..value.len() - 1], 20),
+        b'g' | b'G' => (&value[..value.len() - 1], 30),
+        b't' | b'T' => (&value[..value.len() - 1], 40),
+        _ => (value, 0),
+    };
+
+    parse_usize_with_hex_prefix(number)?.checked_mul(1usize.checked_shl(shift)?)
+}
+
+fn parse_usize_with_hex_prefix(value: &str) -> Option<usize> {
+    if value.is_empty() {
+        return None;
+    }
+
+    if let Some(value) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        usize::from_str_radix(value, 16).ok()
+    } else {
+        value.parse().ok()
+    }
+}
+
+fn parse_u32_with_hex_prefix(value: &str) -> Option<u32> {
+    if value.is_empty() {
+        return None;
+    }
+
+    if let Some(value) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        u32::from_str_radix(value, 16).ok()
+    } else {
+        value.parse().ok()
+    }
+}
+
 /// Linux-style metric-suffixed u64 value.
 ///
 /// Supports binary multiples (KiB-style):
@@ -258,6 +365,36 @@ mod test {
     use ostd::prelude::*;
 
     use super::*;
+
+    #[ktest]
+    fn mmio_device_parse_ok() {
+        let dev = MmioDevice::parse_param("0x200@0x5950f000:10").unwrap();
+        assert_eq!(dev.base(), 0x5950_f000);
+        assert_eq!(dev.size().get(), 0x200);
+        assert_eq!(dev.irq().get(), 10);
+        assert_eq!(dev.id(), None);
+
+        let dev = MmioDevice::parse_param("1K@0x1001e000:74:2").unwrap();
+        assert_eq!(dev.base(), 0x1001_e000);
+        assert_eq!(dev.size().get(), 1024);
+        assert_eq!(dev.irq().get(), 74);
+        assert_eq!(dev.id(), Some(2));
+    }
+
+    #[ktest]
+    fn mmio_device_parse_err() {
+        for value in [
+            "",
+            "0x200@0x1000",
+            "0x200@0x1000:0",
+            "0@0x1000:1",
+            "1K@0x1000:1:2:3",
+            "1Z@0x1000:1",
+            "virtio_mmio.device=0x200@0x1000:1",
+        ] {
+            assert!(MmioDevice::parse_param(value).is_err());
+        }
+    }
 
     #[ktest]
     fn metric_u64_parse_ok() {

@@ -408,6 +408,7 @@ version = "0.1.0"
 dependencies = [
  "aster-bigtcp",
  "aster-block",
+ "aster-cmdline",
  "aster-console",
  "aster-fuse",
  "aster-input",

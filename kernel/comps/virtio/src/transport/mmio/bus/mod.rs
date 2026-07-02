@@ -97,7 +97,7 @@ where
     Ok(())
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum MmioRegisterError {
     /// MMIO region not available.
     MmioUnavailable,
