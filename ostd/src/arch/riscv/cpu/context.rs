@@ -185,10 +185,14 @@ impl UserContextApiInternal for UserContext {
             let Ok(cause) = Trap::<Interrupt, Exception>::try_from(scause.cause()) else {
                 match scause.cause() {
                     Trap::Interrupt(i) => {
-                        panic!("Unknown interrupt in user mode: {:?}", i);
+                        panic!(
+                            "Cannot handle unknown interrupt: {:#x?}; trapframe: {:#x?}",
+                            i,
+                            self.as_trap_frame()
+                        );
                     }
                     Trap::Exception(e) => {
-                        crate::info!("Unknown exception in user mode: {:?}", e);
+                        crate::info!("Unknown CPU exception in user mode: {:#x?}", e);
                         self.exception = Some(CpuException::Unknown);
                         break ReturnReason::UserException;
                     }
@@ -230,14 +234,6 @@ impl UserContextApiInternal for UserContext {
 }
 
 impl UserContextApi for UserContext {
-    fn trap_number(&self) -> usize {
-        todo!()
-    }
-
-    fn trap_error_code(&self) -> usize {
-        todo!()
-    }
-
     fn instruction_pointer(&self) -> usize {
         self.user_context.sepc
     }

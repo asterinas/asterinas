@@ -92,10 +92,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
     ///
     /// Only top-level page tables can be activated using this function.
     pub(super) unsafe fn activate(&self) {
-        use crate::{
-            arch::mm::{activate_page_table, current_page_table_paddr},
-            mm::CachePolicy,
-        };
+        use crate::arch::mm::{activate_page_table, current_page_table_paddr};
 
         assert_eq!(self.level(), C::NR_LEVELS);
 
@@ -105,7 +102,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
         }
 
         // SAFETY: The safety is upheld by the caller.
-        unsafe { activate_page_table(self.clone().into_raw(), CachePolicy::Writeback) };
+        unsafe { activate_page_table(self.clone().into_raw()) };
 
         // Restore and drop the last activated page table.
         // SAFETY: The physical address is valid and points to a forgotten page table node.
@@ -117,10 +114,10 @@ impl<C: PageTableConfig> PageTableNode<C> {
     /// It will not try dropping the last activate page table. It is the same
     /// with [`Self::activate()`] in other senses.
     pub(super) unsafe fn first_activate(&self) {
-        use crate::{arch::mm::activate_page_table, mm::CachePolicy};
+        use crate::arch::mm::activate_page_table;
 
         // SAFETY: The safety is upheld by the caller.
-        unsafe { activate_page_table(self.clone().into_raw(), CachePolicy::Writeback) };
+        unsafe { activate_page_table(self.clone().into_raw()) };
     }
 }
 

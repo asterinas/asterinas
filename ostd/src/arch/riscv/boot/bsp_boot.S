@@ -50,7 +50,7 @@ _start:
     beq    t0, t1, bsp_flush_tlb
 
     # Try loading the Sv39 page table.
-    lla     t0, sv39_boot_l3pt
+    lla    t0, sv39_boot_l3pt
     li     t1, SATP_MODE_SV39
     srli   t0, t0, PAGE_SHIFT - SATP_PPN_SHIFT
     or     t0, t0, t1
@@ -83,7 +83,7 @@ sv48_boot_l4pt:
     .zero 255 * PTE_SIZE
     .quad (0x0 << PTE_PPN_SHIFT) | PTE_VRWX  # linear 0~512 GiB
     .zero 254 * PTE_SIZE
-    .quad 0                                      # TBA (-> boot_l3pt)
+    .quad 0                                  # TBA (-> boot_l3pt)
 sv48_boot_l3pt:  # 0xffff_ffff_0000_0000 -> 0x0000_0000_0000_0000
     .zero 508 * PTE_SIZE
     .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRWX  # code 0~1 GiB

@@ -48,9 +48,9 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
+    /// Possible flags for a page table entry.
     #[repr(C)]
     #[derive(Pod)]
-    /// Possible flags for a page table entry.
     pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame or page table is valid.
         const VALID =           1 << 0;
@@ -95,7 +95,8 @@ pub(crate) fn tlb_flush_addr_range(range: &Range<Vaddr>) {
 }
 
 pub(crate) fn tlb_flush_all_excluding_global() {
-    // TODO: excluding global?
+    // RISC-V does not provide a way to exclude global pages and flush all
+    // other TLB entries. Therefore, we flush all, including global pages.
     riscv::asm::sfence_vma_all()
 }
 
@@ -153,14 +154,11 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(range: Range<Vaddr>) {
 
 /// Activates the given root-level page table.
 ///
-/// "satp" register doesn't have a field that encodes the cache policy,
-/// so `_root_pt_cache` is ignored.
-///
 /// # Safety
 ///
 /// Changing the root-level page table is unsafe, because it's possible to violate memory safety by
 /// changing the page mapping.
-pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: CachePolicy) {
+pub(crate) unsafe fn activate_page_table(root_paddr: Paddr) {
     assert!(root_paddr.is_multiple_of(PagingConsts::BASE_PAGE_SIZE));
     let ppn = root_paddr >> 12;
 
@@ -169,9 +167,8 @@ pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: Cach
     #[cfg(feature = "riscv_sv39_mode")]
     let mode = riscv::register::satp::Mode::Sv39;
 
-    unsafe {
-        riscv::register::satp::set(mode, 0, ppn);
-    }
+    // SAFETY: The safety is upheld by the caller.
+    unsafe { riscv::register::satp::set(mode, 0, ppn) };
 }
 
 pub(crate) fn current_page_table_paddr() -> Paddr {
