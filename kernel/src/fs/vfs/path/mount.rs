@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use hashbrown::HashMap;
 use id_alloc::IdAlloc;
+use ostd::sync::{RwMutexReadGuard, RwMutexWriteGuard};
 use spin::Once;
 
 use super::try_get_mnt_ns_inode;
@@ -22,6 +23,35 @@ use crate::{
     },
     prelude::*,
 };
+
+/// Provides synchronized access to mount topology.
+pub(super) struct MountTopology {
+    _private: (),
+}
+
+fn global_mount_topology() -> &'static RwMutex<MountTopology> {
+    static MOUNT_TOPOLOGY: RwMutex<MountTopology> = RwMutex::new(MountTopology { _private: () });
+    &MOUNT_TOPOLOGY
+}
+
+impl MountTopology {
+    /// Acquires the write side of the mount topology lock.
+    ///
+    /// Use this for operations that may change the mount topology,
+    /// including the parent-child links, mountpoints, mount propagation state,
+    /// or namespace-visible mount trees.
+    pub(super) fn write_lock() -> RwMutexWriteGuard<'static, Self> {
+        global_mount_topology().write()
+    }
+
+    /// Acquires the read side of the mount topology lock.
+    ///
+    /// Use this for operations that need a stable view of mount topology
+    /// without changing it.
+    pub(super) fn read_lock() -> RwMutexReadGuard<'static, Self> {
+        global_mount_topology().read()
+    }
+}
 
 /// Controls how recursive mount-tree cloning handles mount-namespace files.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -293,6 +323,7 @@ impl Mount {
         flags: PerMountFlags,
         mountpoint: &Arc<Dentry>,
         source: Option<String>,
+        _topology: &mut MountTopology,
     ) -> Result<Arc<Self>> {
         if mountpoint.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
@@ -315,14 +346,18 @@ impl Mount {
     /// Unmounts a child mount node from the mountpoint and returns it.
     ///
     /// The mountpoint should belong to this mount node, or an error is returned.
-    pub(super) fn do_unmount(&self, mountpoint: &Dentry) -> Result<Arc<Self>> {
+    pub(super) fn do_unmount(
+        &self,
+        mountpoint: &Dentry,
+        topology: &mut MountTopology,
+    ) -> Result<Arc<Self>> {
         let child_mount = self
             .children
             .write()
             .remove(&mountpoint.key())
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "can not find child mount"))?;
 
-        child_mount.clear_mountpoint();
+        child_mount.clear_topology_link(topology);
 
         Ok(child_mount)
     }
@@ -374,6 +409,7 @@ impl Mount {
         new_ns: &Weak<MountNamespace>,
         recursive: bool,
         mnt_ns_file_copying: MountNsFileCopying,
+        _topology: &MountTopology,
     ) -> Result<Arc<Self>> {
         let new_root_mount = self.clone_mount(root_dentry, new_ns)?;
         if !recursive {
@@ -414,7 +450,12 @@ impl Mount {
     }
 
     /// Sets the propagation type of this mount.
-    pub(super) fn set_propagation(&self, prop: MountPropType, recursive: bool) {
+    pub(super) fn set_propagation(
+        &self,
+        prop: MountPropType,
+        recursive: bool,
+        _topology: &mut MountTopology,
+    ) {
         *self.propagation.write() = prop;
         if !recursive {
             return;
@@ -428,7 +469,7 @@ impl Mount {
     }
 
     /// Detaches the mount node from the parent mount node.
-    pub(super) fn detach_from_parent(&self) {
+    pub(super) fn detach_from_parent(&self, topology: &mut MountTopology) {
         if let Some(parent) = self.parent() {
             let parent = parent.upgrade().unwrap();
             let child = parent
@@ -437,13 +478,24 @@ impl Mount {
                 .remove(&self.mountpoint().unwrap().key());
 
             if let Some(child) = child {
-                child.clear_mountpoint();
+                child.clear_topology_link(topology);
             }
         }
     }
 
+    /// Clears this mount node's topology link.
+    ///
+    /// The parent pointer and mountpoint describe the same topology edge, so
+    /// they must be cleared together while holding the mount topology lock.
+    ///
+    /// This only mutates this mount node's own link state.
+    pub(super) fn clear_topology_link(&self, _topology: &mut MountTopology) {
+        self.set_parent(None);
+        self.clear_mountpoint();
+    }
+
     /// Attaches the mount node to the mountpoint.
-    fn attach_to_path(&self, target_path: &Path) {
+    fn attach_to_path(&self, target_path: &Path, _topology: &mut MountTopology) {
         let key = target_path.dentry.key();
         target_path
             .mount_node()
@@ -455,9 +507,9 @@ impl Mount {
     }
 
     /// Grafts the mount node tree to the mountpoint.
-    pub(super) fn graft_mount_tree(&self, target_path: &Path) {
-        self.detach_from_parent();
-        self.attach_to_path(target_path);
+    pub(super) fn graft_mount_tree(&self, target_path: &Path, topology: &mut MountTopology) {
+        self.detach_from_parent(topology);
+        self.attach_to_path(target_path, topology);
     }
 
     /// Gets a child mount node from the mountpoint if any.
@@ -476,7 +528,7 @@ impl Mount {
     }
 
     /// Sets the mountpoint.
-    pub(super) fn set_mountpoint(&self, dentry: &Arc<Dentry>) {
+    fn set_mountpoint(&self, dentry: &Arc<Dentry>) {
         let mut mountpoint = self.mountpoint.write();
         if let Some(mountpoint) = mountpoint.as_deref() {
             mountpoint.dec_mount_count();
@@ -487,7 +539,7 @@ impl Mount {
     }
 
     /// Clears the mountpoint.
-    pub(super) fn clear_mountpoint(&self) {
+    fn clear_mountpoint(&self) {
         let mut mountpoint = self.mountpoint.write();
         if let Some(mountpoint) = mountpoint.as_deref() {
             mountpoint.dec_mount_count();
@@ -508,13 +560,8 @@ impl Mount {
         fs_flags: Option<FsFlags>,
         data: Option<CString>,
         ctx: &Context,
+        _topology: &mut MountTopology,
     ) -> Result<()> {
-        // TODO: This lock is a workaround to guarantee the atomicity of remount operation.
-        // We need to re-design the lock mechanism of `Mount` and file system in the future.
-        static REMOUNT_LOCK: Mutex<()> = Mutex::new(());
-
-        let _guard = REMOUNT_LOCK.lock();
-
         if let Some(flags) = fs_flags {
             self.fs.set_fs_flags(flags, data, ctx)?;
         }
@@ -547,7 +594,11 @@ impl Mount {
     }
 
     /// Returns whether `self` is `ancestor` or a descendant of it in the mount tree.
-    pub(super) fn is_equal_or_descendant_of(&self, ancestor: &Arc<Self>) -> bool {
+    pub(super) fn is_equal_or_descendant_of(
+        &self,
+        ancestor: &Arc<Self>,
+        _topology: &MountTopology,
+    ) -> bool {
         let mut current = self.this();
         loop {
             if Arc::ptr_eq(&current, ancestor) {
@@ -580,7 +631,7 @@ impl Mount {
     ///
     /// In some cases we may need to reset the parent of
     /// the created Mount, such as move mount.
-    pub(super) fn set_parent(&self, mount: Option<&Arc<Mount>>) {
+    fn set_parent(&self, mount: Option<&Arc<Mount>>) {
         let mut parent = self.parent.write();
         *parent = mount.map(Arc::downgrade);
     }
@@ -589,6 +640,7 @@ impl Mount {
     pub(super) fn find_corresponding_mount(
         &self,
         mnt_ns: &Arc<MountNamespace>,
+        _topology: &MountTopology,
     ) -> Option<Arc<Self>> {
         // Collect the ancestors from self to the root mount (The root mount is not included).
         let mut ancestors = VecDeque::new();

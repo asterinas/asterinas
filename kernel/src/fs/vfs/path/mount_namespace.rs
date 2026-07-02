@@ -4,7 +4,10 @@ use alloc::sync::UniqueArc;
 
 use spin::Once;
 
-use super::{mount::MountNsFileCopying, try_get_mnt_ns_inode};
+use super::{
+    mount::{MountNsFileCopying, MountTopology},
+    try_get_mnt_ns_inode,
+};
 use crate::{
     fs::{
         fs_impls::ramfs::RamFs,
@@ -123,6 +126,8 @@ impl MountNamespace {
             CapSet::SYS_ADMIN,
         ))?;
 
+        let topology_guard = MountTopology::read_lock();
+
         let root_mount = self.root();
         Self::new_with_root(owner, |weak_ns| {
             root_mount.clone_mount_tree(
@@ -130,6 +135,7 @@ impl MountNamespace {
                 weak_ns,
                 true,
                 MountNsFileCopying::Skip,
+                &topology_guard,
             )
         })
     }
@@ -174,7 +180,11 @@ impl MountNamespace {
 
     /// Ensures that importing the mount subtree rooted at `root_mount` into this
     /// mount namespace would not form a mount-namespace loop.
-    pub(super) fn check_no_mnt_ns_loop_in_tree(&self, root_mount: &Arc<Mount>) -> Result<()> {
+    pub(super) fn check_no_mnt_ns_loop_in_tree(
+        &self,
+        root_mount: &Arc<Mount>,
+        _topology: &MountTopology,
+    ) -> Result<()> {
         let mut worklist = VecDeque::new();
         worklist.push_back(root_mount.clone());
 
@@ -208,13 +218,15 @@ impl Drop for MountNamespace {
             // and thus the subsequent cleanup logic can be skipped.
             return;
         };
+
+        let mut topology_guard = MountTopology::write_lock();
+
         let mut worklist = VecDeque::new();
         worklist.push_back(root.clone());
         while let Some(current_mount) = worklist.pop_front() {
             let mut children = current_mount.children.write();
             for (_, child) in children.drain() {
-                child.set_parent(None);
-                child.clear_mountpoint();
+                child.clear_topology_link(&mut topology_guard);
                 worklist.push_back(child);
             }
         }

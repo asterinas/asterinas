@@ -4,7 +4,7 @@ use alloc::str;
 
 use ostd::task::Task;
 
-use super::{Mount, Path};
+use super::{Mount, Path, mount::MountTopology};
 use crate::{
     fs::{
         file::{
@@ -334,18 +334,26 @@ impl PathResolver {
             return Ok(());
         }
 
-        let new_root = self.root.find_corresponding_mount(mnt_ns).ok_or_else(|| {
-            Error::with_message(
-                Errno::EINVAL,
-                "the root directory does not exist in the target mount namespace",
-            )
-        })?;
-        let new_cwd = self.cwd.find_corresponding_mount(mnt_ns).ok_or_else(|| {
-            Error::with_message(
-                Errno::EINVAL,
-                "the current working directory does not exist in the target mount namespace",
-            )
-        })?;
+        let topology_guard = MountTopology::read_lock();
+
+        let new_root = self
+            .root
+            .find_corresponding_mount(mnt_ns, &topology_guard)
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::EINVAL,
+                    "the root directory does not exist in the target mount namespace",
+                )
+            })?;
+        let new_cwd = self
+            .cwd
+            .find_corresponding_mount(mnt_ns, &topology_guard)
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::EINVAL,
+                    "the current working directory does not exist in the target mount namespace",
+                )
+            })?;
 
         self.root = new_root;
         self.cwd = new_cwd;
@@ -411,13 +419,15 @@ impl PathResolver {
                 "`new_root` or the current root is on the rootfs mount"
             );
         }
-        if !put_old_path.is_reachable_from(&new_root_path) {
+        let mut topology_guard = MountTopology::write_lock();
+
+        if !put_old_path.is_reachable_from(&new_root_path, &topology_guard) {
             return_errno_with_message!(
                 Errno::EINVAL,
                 "`put_old` is not at or underneath `new_root`"
             );
         }
-        if !new_root_path.is_reachable_from(&self.root) {
+        if !new_root_path.is_reachable_from(&self.root, &topology_guard) {
             return_errno_with_message!(
                 Errno::EINVAL,
                 "`new_root` is not at or underneath the current root"
@@ -430,8 +440,15 @@ impl PathResolver {
             Path::new(parent_mount, mountpoint)
         };
 
-        self.root.mount.graft_mount_tree(&put_old_path);
-        new_root_path.mount.graft_mount_tree(&parent_path);
+        self.root
+            .mount
+            .graft_mount_tree(&put_old_path, &mut topology_guard);
+        new_root_path
+            .mount
+            .graft_mount_tree(&parent_path, &mut topology_guard);
+
+        // Release the mount topology lock before taking other threads' resolver locks.
+        drop(topology_guard);
 
         // TODO: This method should only iterate threads in the current PID namespace instead of
         // the whole PID table.
@@ -501,6 +518,7 @@ impl PathResolver {
     ///
     /// The mounts are collected in depth-first order.
     pub(in crate::fs) fn collect_visible_mounts(&self) -> Vec<Arc<Mount>> {
+        let _topology_guard = MountTopology::read_lock();
         let mut visible = Vec::new();
         let mut stack = vec![self.root.mount.clone()];
         let is_root_mount_root = self.root.is_mount_root();

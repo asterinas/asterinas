@@ -6,8 +6,8 @@ use core::time::Duration;
 
 pub(in crate::fs) use dentry::Dentry;
 use inherit_methods_macro::inherit_methods;
-use mount::MountNsFileCopying;
 pub use mount::{Mount, MountPropType, PerMountFlags};
+use mount::{MountNsFileCopying, MountTopology};
 pub use mount_namespace::MountNamespace;
 pub use resolver::{
     AT_FDCWD, AbsPathResult, EmptyPathStr, FsPath, LookupResult, PathResolver, SplitPath,
@@ -201,8 +201,12 @@ impl Path {
     }
 
     /// Finds the corresponding `Path` in the given mount namespace.
-    fn find_corresponding_mount(&self, mnt_ns: &Arc<MountNamespace>) -> Option<Self> {
-        let corresponding_mount = self.mount.find_corresponding_mount(mnt_ns)?;
+    fn find_corresponding_mount(
+        &self,
+        mnt_ns: &Arc<MountNamespace>,
+        topology: &MountTopology,
+    ) -> Option<Self> {
+        let corresponding_mount = self.mount.find_corresponding_mount(mnt_ns, topology)?;
         let corresponding_path = Self::new(corresponding_mount, self.dentry.clone());
 
         Some(corresponding_path)
@@ -214,7 +218,7 @@ impl Path {
     /// of the `root` path. The check traverses upwards from the current path,
     /// crossing mount point boundaries as necessary, until it either finds
     /// the `root` path or reaches the global root.
-    fn is_reachable_from(&self, root: &Path) -> bool {
+    fn is_reachable_from(&self, root: &Path, _topology: &MountTopology) -> bool {
         let mut owned;
         let mut current = self;
 
@@ -370,7 +374,10 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
 
-        let child_mount = self.mount.do_mount(fs, flags, &self.dentry, source)?;
+        let mut topology_guard = MountTopology::write_lock();
+        let child_mount =
+            self.mount
+                .do_mount(fs, flags, &self.dentry, source, &mut topology_guard)?;
 
         Ok(child_mount)
     }
@@ -390,7 +397,7 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
         }
 
-        let Some(mountpoint) = self.mount.mountpoint() else {
+        let Some(_mountpoint) = self.mount.mountpoint() else {
             return_errno_with_message!(Errno::EINVAL, "the root mount cannot be unmounted");
         };
 
@@ -402,8 +409,12 @@ impl Path {
 
         self.mount.sync()?;
 
+        let mut topology_guard = MountTopology::write_lock();
+        let Some(mountpoint) = self.mount.mountpoint() else {
+            return_errno_with_message!(Errno::EINVAL, "the mount has been detached");
+        };
         let parent_mount = self.mount.parent().unwrap().upgrade().unwrap();
-        let child_mount = parent_mount.do_unmount(&mountpoint)?;
+        let child_mount = parent_mount.do_unmount(&mountpoint, &mut topology_guard)?;
 
         Ok(child_mount)
     }
@@ -435,7 +446,9 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
 
-        self.mount.remount(mount_flags, fs_flags, data, ctx)
+        let mut topology_guard = MountTopology::write_lock();
+        self.mount
+            .remount(mount_flags, fs_flags, data, ctx, &mut topology_guard)
     }
 
     /// Creates a bind mount from the current path to the destination path.
@@ -483,14 +496,16 @@ impl Path {
             );
         }
 
+        let mut topology_guard = MountTopology::write_lock();
         let current_mnt_ns_weak = Arc::downgrade(current_mnt_ns);
         let new_mount = self.mount.clone_mount_tree(
             &self.dentry,
             &current_mnt_ns_weak,
             recursive,
             MountNsFileCopying::Copy,
+            &topology_guard,
         )?;
-        new_mount.graft_mount_tree(dst_path);
+        new_mount.graft_mount_tree(dst_path, &mut topology_guard);
         Ok(())
     }
 
@@ -530,10 +545,11 @@ impl Path {
                 "the destination path is not in this mount namespace"
             );
         }
-        current_mnt_ns.check_no_mnt_ns_loop_in_tree(self.mount_node())?;
+        let mut topology_guard = MountTopology::write_lock();
+        current_mnt_ns.check_no_mnt_ns_loop_in_tree(self.mount_node(), &topology_guard)?;
         if dst_path
             .mount_node()
-            .is_equal_or_descendant_of(self.mount_node())
+            .is_equal_or_descendant_of(self.mount_node(), &topology_guard)
         {
             // Reject moves that would place a mount beneath itself, because the mount tree
             // must remain acyclic.
@@ -543,7 +559,7 @@ impl Path {
             );
         }
 
-        self.mount.graft_mount_tree(dst_path);
+        self.mount.graft_mount_tree(dst_path, &mut topology_guard);
 
         Ok(())
     }
@@ -565,7 +581,9 @@ impl Path {
             return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
 
-        self.mount.set_propagation(prop, recursive);
+        let mut topology_guard = MountTopology::write_lock();
+        self.mount
+            .set_propagation(prop, recursive, &mut topology_guard);
 
         Ok(())
     }
