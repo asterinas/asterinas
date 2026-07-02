@@ -40,9 +40,9 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
+    /// Possible flags for a page table entry.
     #[repr(C)]
     #[derive(Pod)]
-    /// Possible flags for a page table entry.
     pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame or page table is loaded in memory.
         const PRESENT =         1 << 0;
@@ -81,7 +81,7 @@ bitflags::bitflags! {
     }
 }
 
-/// Flush any TLB entry that contains the map of the given virtual address.
+/// Flushes any TLB entry that contains the map of the given virtual address.
 ///
 /// This flush performs regardless of the global-page bit. So it can flush both global
 /// and non-global entries.
@@ -89,21 +89,21 @@ pub(crate) fn tlb_flush_addr(vaddr: Vaddr) {
     tlb::flush(VirtAddr::new(vaddr as u64));
 }
 
-/// Flush any TLB entry that intersects with the given address range.
+/// Flushes any TLB entry that intersects with the given address range.
 pub(crate) fn tlb_flush_addr_range(range: &Range<Vaddr>) {
     for vaddr in range.clone().step_by(PAGE_SIZE) {
         tlb_flush_addr(vaddr);
     }
 }
 
-/// Flush all TLB entries except for the global-page entries.
+/// Flushes all TLB entries, except for the global-page entries.
 pub(crate) fn tlb_flush_all_excluding_global() {
     tlb::flush_all();
 }
 
-/// Flush all TLB entries, including global-page entries.
+/// Flushes all TLB entries, including the global-page entries.
 pub(crate) fn tlb_flush_all_including_global() {
-    // SAFETY: updates to CR4 here only change the global-page bit, the side effect
+    // SAFETY: Updates to CR4 here only change the global-page bit. The side effect
     // is only to invalidate the TLB, which doesn't affect the memory safety.
     unsafe {
         // To invalidate all entries, including global-page
@@ -203,8 +203,8 @@ impl PageTableEntry {
     }
 
     fn is_present(&self) -> bool {
-        // For PT child, `PRESENT` should be set; for huge page, `HUGE` should
-        // be set; for the leaf child page, `PAT`, which is the same bit as
+        // For PT children, `PRESENT` should be set; for huge pages, `HUGE`
+        // should be set; for leaf child pages, `PAT`, which is the same bit as
         // the `HUGE` bit in upper levels, should be set.
         self.0 & PteFlags::PRESENT.bits() != 0 || self.0 & PteFlags::HUGE.bits() != 0
     }
