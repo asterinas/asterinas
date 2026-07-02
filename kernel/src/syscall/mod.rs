@@ -47,6 +47,7 @@ mod fallocate;
 mod fcntl;
 mod flock;
 mod fork;
+mod fsopen;
 mod fsync;
 mod futex;
 mod get_ioprio;

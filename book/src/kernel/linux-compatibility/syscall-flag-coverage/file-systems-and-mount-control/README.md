@@ -60,6 +60,8 @@ Silently-ignored flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/umount.2.html).
 
+## New mount API
+
 ## Event notifications
 
 ### `inotify_init` and `inotify_init1`
