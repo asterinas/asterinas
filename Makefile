@@ -416,7 +416,7 @@ format:
 	@
 	@# Format the code using various tools
 	@./tools/format_all.sh
-	@nixfmt ./distro
+	@nixfmt flake.nix ./distro ./nix
 	@$(MAKE) --no-print-directory -C test/initramfs format
 	@$(MAKE) --no-print-directory -C test/nixos format
 
@@ -445,8 +445,8 @@ check: $(CARGO_OSDK)
 	@# Check compilation of the Rust code
 	@./tools/clippy_check.sh workspace
 	@
-	@# Check formatting issues of Nix files under distro directory
-	@nixfmt --check ./distro
+	@# Check Nix formatting
+	@nixfmt --check flake.nix ./distro ./nix
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)
 	@$(MAKE) --no-print-directory -C test/initramfs check
