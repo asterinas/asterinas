@@ -17,7 +17,7 @@ pub use file_attr::{
     status_flags::{AtomicStatusFlags, StatusFlags},
 };
 pub use file_handle::{FileLike, Mappable};
-pub(crate) use fs_config_file::FsConfigFile;
+pub(crate) use fs_config_file::{DetachedMountFile, FsConfigFile};
 pub(crate) use inode_attr::mode::{
     chmod, mkmod, perms_to_mask, who_and_perms_to_mask, who_to_mask,
 };

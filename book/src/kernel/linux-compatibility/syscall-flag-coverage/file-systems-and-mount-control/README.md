@@ -90,6 +90,17 @@ Unsupported commands:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/fsconfig.2.html).
 
+### `fsmount`
+
+Supported functionality in SCML:
+
+```c
+{{#include fsmount.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/fsmount.2.html).
+
 ## Event notifications
 
 ### `inotify_init` and `inotify_init1`

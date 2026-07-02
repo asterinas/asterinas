@@ -74,7 +74,7 @@ use super::{
     mknod::{sys_mknod, sys_mknodat},
     mmap::sys_mmap,
     mount::sys_mount,
-    mount_api::{sys_fsconfig, sys_fsopen},
+    mount_api::{sys_fsconfig, sys_fsmount, sys_fsopen},
     mprotect::sys_mprotect,
     mremap::sys_mremap,
     msync::sys_msync,
@@ -417,6 +417,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PIDFD_SEND_SIGNAL = 424 => sys_pidfd_send_signal(args[..4]);
     SYS_FSOPEN = 430           => sys_fsopen(args[..2]);
     SYS_FSCONFIG = 431         => sys_fsconfig(args[..5]);
+    SYS_FSMOUNT = 432          => sys_fsmount(args[..3]);
     SYS_PIDFD_OPEN = 434       => sys_pidfd_open(args[..2]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
     SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);

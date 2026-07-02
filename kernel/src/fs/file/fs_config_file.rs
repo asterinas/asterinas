@@ -10,7 +10,7 @@ use crate::{
         pseudofs::AnonInodeFs,
         vfs::{
             file_system::{FileSystem, FsFlags},
-            path::Path,
+            path::{Mount, Path},
             registry::{FsCreationCtx, FsType},
         },
     },
@@ -171,6 +171,48 @@ impl FileLike for FsConfigFile {
 
     fn path(&self) -> &Path {
         &self.pseudo_path
+    }
+
+    fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
+        Box::new(MountApiFdInfo {
+            access_mode: self.access_mode(),
+            fd_flags,
+        })
+    }
+}
+
+/// Represents a detached mount returned by `fsmount`.
+pub(crate) struct DetachedMountFile {
+    mount: Arc<Mount>,
+    root_path: Path,
+}
+
+impl DetachedMountFile {
+    /// Creates a detached mount file.
+    pub(crate) fn new(mount: Arc<Mount>) -> Self {
+        let root_path = Path::new_fs_root(mount.clone());
+        Self { mount, root_path }
+    }
+
+    /// Returns the detached mount.
+    pub(crate) fn mount(&self) -> Arc<Mount> {
+        self.mount.clone()
+    }
+}
+
+impl Pollable for DetachedMountFile {
+    fn poll(&self, _mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
+        IoEvents::empty()
+    }
+}
+
+impl FileLike for DetachedMountFile {
+    fn access_mode(&self) -> AccessMode {
+        AccessMode::O_RDONLY
+    }
+
+    fn path(&self) -> &Path {
+        &self.root_path
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
