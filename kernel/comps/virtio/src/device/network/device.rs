@@ -18,7 +18,7 @@ use crate::{
         },
     },
     queue::{self, VirtQueue},
-    transport::{ConfigManager, VirtioTransport},
+    transport::{ConfigManager, TransportGuard, VirtioTransport},
 };
 
 pub struct NetworkDevice {
@@ -70,22 +70,22 @@ impl NetworkDevice {
         network_features.bits()
     }
 
-    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioNetConfig::new_manager(transport.as_ref());
+    pub(crate) fn init(mut transport_guard: TransportGuard) -> Result<(), VirtioDeviceError> {
+        let config_manager = VirtioNetConfig::new_manager(transport_guard.as_ref());
         let config = config_manager.read_config();
         debug!("virtio_net_config = {:?}", config);
         let mac_addr = config.mac;
         let features = NetworkFeatures::from_bits_truncate(Self::negotiate_features(
-            transport.read_device_features(),
+            transport_guard.read_device_features(),
         ));
         debug!("features = {:?}", features);
 
         let caps = init_caps(&features, &config);
 
-        let mut send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport.as_mut())?;
+        let mut send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport_guard.as_mut())?;
         send_queue.disable_callback();
 
-        let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport.as_mut())?;
+        let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport_guard.as_mut())?;
 
         let tx_buffers = (0..QUEUE_SIZE).map(|_| None).collect();
 
@@ -99,11 +99,7 @@ impl NetworkDevice {
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
         }
 
-        if recv_queue.should_notify() {
-            debug!("notify receive queue");
-            recv_queue.notify();
-        }
-
+        let transport = transport_guard.into_transport();
         let mut device = Self {
             config_manager,
             caps,
@@ -142,6 +138,10 @@ impl NetworkDevice {
             .register_queue_callback(QUEUE_RECV, Box::new(handle_recv_event), true)?;
 
         device.transport.finish_init();
+        if device.recv_queue.should_notify() {
+            debug!("notify receive queue");
+            device.recv_queue.notify();
+        }
 
         aster_network::register_device(
             super::DEVICE_NAME.to_string(),

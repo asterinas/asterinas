@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, sync::Arc};
-use core::fmt::Debug;
+use core::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
 
 use aster_pci::cfg_space::BarAccess;
 use aster_util::safe_ptr::SafePtr;
@@ -48,13 +51,8 @@ pub trait VirtioTransport: Sync + Send + Debug {
 
     // Set to driver ok status
     fn finish_init(&mut self) {
-        self.write_device_status(
-            DeviceStatus::ACKNOWLEDGE
-                | DeviceStatus::DRIVER
-                | DeviceStatus::FEATURES_OK
-                | DeviceStatus::DRIVER_OK,
-        )
-        .unwrap();
+        let status = self.read_device_status() | DeviceStatus::DRIVER_OK;
+        self.write_device_status(status).unwrap();
     }
 
     /// Get access to the device config memory.
@@ -250,6 +248,62 @@ bitflags::bitflags! {
         /// Indicates that the device has experienced an error from which it
         /// can’t recover.
         const DEVICE_NEEDS_RESET = 64;
+    }
+}
+
+/// A wrapper around [`Box<dyn VirtioTransport>`] that sets the device status to FAILED
+/// on drop unless [`Self::into_transport`] has been called.
+///
+/// This ensures that the FAILED status bit is set whenever a device initialization
+/// is aborted before completion, as required by the VirtIO specification.
+pub struct TransportGuard {
+    inner: Option<Box<dyn VirtioTransport>>,
+    is_completed: bool,
+}
+
+impl TransportGuard {
+    /// Creates a new handle wrapping `transport`.
+    ///
+    /// The handle will set the device status to [`DeviceStatus::FAILED`] on drop
+    /// unless [`Self::into_transport`] is called first.
+    pub fn new(transport: Box<dyn VirtioTransport>) -> Self {
+        Self {
+            inner: Some(transport),
+            is_completed: false,
+        }
+    }
+
+    /// Marks the initialization as completed and returns the inner transport.
+    ///
+    /// After this call, the handle will NOT set FAILED on drop.
+    pub fn into_transport(mut self) -> Box<dyn VirtioTransport> {
+        self.is_completed = true;
+        self.inner.take().unwrap()
+    }
+}
+
+impl Deref for TransportGuard {
+    type Target = Box<dyn VirtioTransport>;
+
+    fn deref(&self) -> &Box<dyn VirtioTransport> {
+        self.inner.as_ref().unwrap()
+    }
+}
+
+impl DerefMut for TransportGuard {
+    fn deref_mut(&mut self) -> &mut Box<dyn VirtioTransport> {
+        self.inner.as_mut().unwrap()
+    }
+}
+
+impl Drop for TransportGuard {
+    fn drop(&mut self) {
+        if !self.is_completed
+            && let Some(transport) = self.inner.as_mut()
+        {
+            let status = transport.read_device_status();
+            let _ = transport.write_device_status(status | DeviceStatus::FAILED);
+        }
     }
 }
 

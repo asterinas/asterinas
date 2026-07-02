@@ -36,7 +36,7 @@ use crate::{
     },
     id_alloc::SyncIdAlloc,
     queue::VirtQueue,
-    transport::{ConfigManager, VirtioTransport},
+    transport::{ConfigManager, TransportGuard, VirtioTransport},
 };
 
 /// The number of minor device numbers allocated for each virtio disk,
@@ -82,8 +82,8 @@ impl BlockDevice {
     }
 
     /// Creates a new VirtIO-Block driver and registers it.
-    pub(crate) fn init(transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let device = DeviceInner::init(transport)?;
+    pub(crate) fn init(transport_guard: TransportGuard) -> Result<(), VirtioDeviceError> {
+        let device = DeviceInner::init(transport_guard)?;
 
         let index = NR_BLOCK_DEVICE.fetch_add(1, Ordering::Relaxed);
         let id = DeviceId::new(
@@ -210,13 +210,14 @@ impl DeviceInner {
     const QUEUE_SIZE: u16 = 64;
 
     /// Creates and inits the device.
-    fn init(mut transport: Box<dyn VirtioTransport>) -> Result<Arc<Self>, VirtioDeviceError> {
-        let config_manager = VirtioBlockConfig::new_manager(transport.as_ref());
+    fn init(mut transport_guard: TransportGuard) -> Result<Arc<Self>, VirtioDeviceError> {
+        let config_manager = VirtioBlockConfig::new_manager(transport_guard.as_ref());
 
         let config = config_manager.read_config();
         debug!("virio_blk_config = {:?}", config);
 
-        let features = BlockFeatures::negotiated_with_device(transport.read_device_features());
+        let features =
+            BlockFeatures::negotiated_with_device(transport_guard.read_device_features());
 
         let block_size = if features.contains(BlockFeatures::BLK_SIZE) {
             config_manager.block_size()
@@ -231,7 +232,7 @@ impl DeviceInner {
             return Err(VirtioDeviceError::UnsupportedConfig);
         }
 
-        let num_queues = transport.num_queues();
+        let num_queues = transport_guard.num_queues();
         if num_queues != 1 {
             // TODO: Support Multi-Queue Block IO Queueing Mechanism
             // (`BlkFeatures::MQ`) to accelerate multi-processor requests for
@@ -241,7 +242,7 @@ impl DeviceInner {
             );
         }
 
-        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, transport.as_mut())?;
+        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, transport_guard.as_mut())?;
 
         let block_requests =
             Arc::new(DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?);
@@ -252,6 +253,7 @@ impl DeviceInner {
             assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= PAGE_SIZE);
         }
 
+        let transport = transport_guard.into_transport();
         let device = Arc::new(Self {
             config_manager,
             features,
