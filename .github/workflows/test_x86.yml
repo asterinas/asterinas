@@ -11,7 +11,7 @@ jobs:
   basic-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/asterinas:0.18.0-20260701
+      image: asterinas/asterinas:0.18.0-20260702
       options: -v /dev:/dev --privileged
       volumes:
         # Map the following directories on the host into the container so that
@@ -43,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ['asterinas/asterinas:0.18.0-20260701', 'asterinas/osdk:0.18.0-20260701']
+        image: ['asterinas/asterinas:0.18.0-20260702', 'asterinas/osdk:0.18.0-20260702']
     steps:
       - uses: actions/checkout@v4
       - name: Run OSDK tests
@@ -55,7 +55,7 @@ jobs:
   boot-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/asterinas:0.18.0-20260701
+      image: asterinas/asterinas:0.18.0-20260702
       options: -v /dev:/dev --privileged
     strategy:
       fail-fast: false
@@ -75,7 +75,7 @@ jobs:
   regression-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/asterinas:0.18.0-20260701
+      image: asterinas/asterinas:0.18.0-20260702
       options: -v /dev:/dev --privileged
       volumes:
         # Map the following directories on the host into the container so that
@@ -106,7 +106,7 @@ jobs:
   conformance-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/asterinas:0.18.0-20260701
+      image: asterinas/asterinas:0.18.0-20260702
       options: -v /dev:/dev --privileged
       volumes:
         # Map the following directories on the host into the container so that
@@ -158,7 +158,7 @@ jobs:
         include:
           - name: arm-cross-boot
             runs_on: ubuntu-24.04-arm
-            image: asterinas/asterinas:0.18.0-20260701
+            image: asterinas/asterinas:0.18.0-20260702
             auto_test: boot
             enable_kvm: false
     runs-on: ${{ matrix.runs_on }}
@@ -175,7 +175,7 @@ jobs:
   xfstests:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/asterinas:0.18.0-20260701
+      image: asterinas/asterinas:0.18.0-20260702
       options: -v /dev:/dev --privileged
       volumes:
         - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
