@@ -16,6 +16,7 @@ use crate::{
     },
     prelude::*,
     process::{pid_table::PidTable, posix_thread::AsPosixThread},
+    time::clocks::RealTimeCoarseClock,
 };
 
 /// The file descriptor of the current working directory.
@@ -692,6 +693,8 @@ impl PathResolver {
                     return_errno_with_message!(Errno::ELOOP, "there are too many symlinks");
                 }
                 let read_link_res = next_path.inode().read_link()?;
+                // Update the symlink's atime after following it.
+                next_path.set_atime(RealTimeCoarseClock::get().read_time());
                 match read_link_res {
                     SymbolicLink::Plain(mut tmp_link_path) => {
                         let link_path_remain = {
