@@ -62,6 +62,24 @@ see [the man page](https://man7.org/linux/man-pages/man2/umount.2.html).
 
 ## New mount API
 
+### `fsconfig`
+
+Supported functionality in SCML:
+
+```c
+{{#include fsconfig.scml}}
+```
+
+Unsupported commands:
+* `FSCONFIG_SET_BINARY`
+* `FSCONFIG_SET_PATH`
+* `FSCONFIG_SET_PATH_EMPTY`
+* `FSCONFIG_SET_FD`
+* `FSCONFIG_CMD_CREATE_EXCL`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/fsconfig.2.html).
+
 ## Event notifications
 
 ### `inotify_init` and `inotify_init1`
