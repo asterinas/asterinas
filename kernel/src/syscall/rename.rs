@@ -4,7 +4,10 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file::{InodeType, file_table::RawFileDesc},
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath, SplitPathError},
+        vfs::{
+            inode::RenameMode,
+            path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath, SplitPathError},
+        },
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -26,13 +29,22 @@ pub fn sys_renameat2(
         old_dirfd, old_path_name, new_dirfd, new_path_name
     );
     let Some(flags) = Flags::from_bits(flags) else {
-        return_errno_with_message!(Errno::EINVAL, "invalid flags");
+        return_errno_with_message!(Errno::EINVAL, "invalid renameat2 flags");
     };
-    // TODO: Add support for handling the `NOREPLACE`, `EXCHANGE`, and `WHITEOUT` flags.
-    if !flags.is_empty() {
-        warn!("unsupported flags: {:?}", flags);
-        return_errno_with_message!(Errno::EINVAL, "unsupported flags");
+    if flags.contains(Flags::NOREPLACE | Flags::EXCHANGE) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "NOREPLACE and EXCHANGE cannot be used together"
+        );
     }
+
+    let mode = if flags.contains(Flags::NOREPLACE) {
+        RenameMode::NoReplace
+    } else if flags.contains(Flags::EXCHANGE) {
+        RenameMode::Exchange
+    } else {
+        RenameMode::Replace
+    };
 
     let fs_ref = ctx.thread_local.borrow_fs();
     let path_resolver = fs_ref.resolver().read();
@@ -67,14 +79,7 @@ pub fn sys_renameat2(
         )
     };
 
-    if old_path.type_() == InodeType::Dir && new_parent_path.is_equal_or_descendant_of(&old_path) {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "the new path is inside the old directory or its subtree"
-        );
-    }
-
-    old_parent_path.rename(old_name, &new_parent_path, &new_name)?;
+    old_parent_path.rename(old_name, &new_parent_path, &new_name, mode)?;
 
     Ok(SyscallReturn::Return(0))
 }
@@ -104,6 +109,7 @@ bitflags! {
     struct Flags: u32 {
         const NOREPLACE = 1 << 0;
         const EXCHANGE  = 1 << 1;
-        const WHITEOUT  = 1 << 2;
+        // TODO: Add support for handling the `WHITEOUT` flag.
+        // const WHITEOUT  = 1 << 2;
     }
 }
