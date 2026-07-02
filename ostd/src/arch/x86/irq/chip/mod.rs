@@ -4,8 +4,13 @@ use alloc::{boxed::Box, vec::Vec};
 use core::{
     fmt,
     ops::{Deref, DerefMut},
+    pin::Pin,
 };
 
+use acpi::{
+    AcpiTable,
+    madt::{Madt, MadtEntry},
+};
 use ioapic::IoApic;
 use spin::Once;
 
@@ -160,9 +165,27 @@ impl Drop for MappedIrqLine {
 /// The [`IrqChip`] singleton.
 pub static IRQ_CHIP: Once<IrqChip> = Once::new();
 
-pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
-    use acpi::madt::{Madt, MadtEntry};
+fn should_init_and_disable_pic(madt_table: Pin<&Madt>) -> bool {
+    // "A one indicates that the system also has a PC-AT-compatible dual-8259 setup. The 8259
+    // vectors must be disabled (that is, masked) when enabling the ACPI APIC operation."
+    const PCAT_COMPAT: u32 = 1;
 
+    if madt_table.flags & PCAT_COMPAT != 0 {
+        return true;
+    }
+
+    has_firecracker_pic_quirk(madt_table)
+}
+
+fn has_firecracker_pic_quirk(madt_table: Pin<&Madt>) -> bool {
+    const FIRECRACKER_MADT_OEM_TABLE_ID: [u8; 8] = *b"FCVMMADT";
+
+    // Firecracker creates an in-kernel PIC and routes ExtINT through LAPIC LINT0, but its MADT
+    // leaves PCAT_COMPAT clear. Keep the PIC remapped away from CPU exception vectors and masked.
+    madt_table.header().oem_table_id == FIRECRACKER_MADT_OEM_TABLE_ID
+}
+
+pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
     // If there are no ACPI tables, or the ACPI tables do not provide us with information about
     // the I/O APIC, we may need to find another way to determine the I/O APIC address
     // correctly and reliably (e.g., by parsing the MultiProcessor Specification, which has
@@ -170,10 +193,7 @@ pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
     let acpi_tables = get_acpi_tables().unwrap();
     let madt_table = acpi_tables.find_table::<Madt>().unwrap();
 
-    // "A one indicates that the system also has a PC-AT-compatible dual-8259 setup. The 8259
-    // vectors must be disabled (that is, masked) when enabling the ACPI APIC operation"
-    const PCAT_COMPAT: u32 = 1;
-    if madt_table.get().flags & PCAT_COMPAT != 0 {
+    if should_init_and_disable_pic(madt_table.get()) {
         pic::init_and_disable();
     }
 

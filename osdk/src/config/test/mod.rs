@@ -3,6 +3,7 @@
 use std::fs::{self, File};
 
 use super::*;
+use crate::config::scheme::BootMethod;
 
 #[test]
 fn deserialize_toml_manifest() {
@@ -47,6 +48,14 @@ fn conditional_manifest() {
             .unwrap()
             .contains(&String::from("-device ioh3420,id=pcie.0,chassis=1",))
     );
+
+    // Linux64 direct
+    let scheme = toml_manifest.get_scheme(Some("directvm".to_owned()));
+    assert_eq!(
+        scheme.boot.as_ref().unwrap().method,
+        Some(BootMethod::Linux64Direct)
+    );
+    assert!(scheme.build.as_ref().unwrap().strip_elf);
 
     // Tdx
     let scheme = toml_manifest.get_scheme(Some("tdx".to_owned()));

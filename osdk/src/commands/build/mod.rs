@@ -11,7 +11,9 @@ use std::{
     time::SystemTime,
 };
 
-use bin::{make_elf_for_qemu, make_install_bzimage, make_stripped_boot_elf};
+use bin::{
+    make_elf_for_qemu, make_install_bzimage, make_linux64_direct_elf, make_stripped_boot_elf,
+};
 
 use super::util::{COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH, cargo, profile_name_adapter};
 use crate::{
@@ -195,6 +197,10 @@ pub fn do_cached_build(
                 ),
                 _ => make_elf_for_qemu(boot_elf),
             };
+            bundle.consume_aster_bin(aster_bin);
+        }
+        BootMethod::Linux64Direct => {
+            let aster_bin = make_linux64_direct_elf(&osdk_output_directory, &boot_elf);
             bundle.consume_aster_bin(aster_bin);
         }
     }

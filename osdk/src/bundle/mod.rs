@@ -177,6 +177,11 @@ impl Bundle {
 
         // Checkout if the files on disk supports the boot method
         match config_action.boot.method {
+            BootMethod::Linux64Direct => {
+                if self.manifest.aster_bin.is_none() {
+                    return Err("Kernel binary is required for Linux64 direct booting".to_owned());
+                };
+            }
             BootMethod::QemuDirect => {
                 if self.manifest.aster_bin.is_none() {
                     return Err("Kernel binary is required for direct QEMU booting".to_owned());
@@ -266,6 +271,10 @@ impl Bundle {
         qemu_cmd.current_dir(&config.work_dir);
 
         match action.boot.method {
+            BootMethod::Linux64Direct => {
+                error_msg!("Linux64 direct boot bundles cannot be run with QEMU");
+                std::process::exit(Errno::RunBundle as _);
+            }
             BootMethod::QemuDirect => {
                 let aster_bin = self.manifest.aster_bin.as_ref().unwrap();
                 qemu_cmd

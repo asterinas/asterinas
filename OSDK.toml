@@ -35,6 +35,11 @@ boot.method = "qemu-direct"
 build.strip_elf = true
 qemu.args = "$(./tools/qemu_args.sh microvm)"
 
+[scheme."directvm"]
+supported_archs = ["x86_64"]
+boot.method = "linux64-direct"
+build.strip_elf = true
+
 [scheme."iommu"]
 supported_archs = ["x86_64"]
 qemu.args = "$(./tools/qemu_args.sh iommu)"
