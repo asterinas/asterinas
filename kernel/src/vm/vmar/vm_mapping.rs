@@ -155,6 +155,11 @@ impl VmMapping {
         self.path.as_ref().map(|path| path.inode())
     }
 
+    /// Returns the file path that backs the mapping.
+    pub(super) fn path(&self) -> Option<&Path> {
+        self.path.as_ref()
+    }
+
     /// Returns a reference to the VMO if this mapping is VMO-backed.
     pub(super) fn vmo(&self) -> Option<&MappedVmo> {
         match &self.mapped_mem {

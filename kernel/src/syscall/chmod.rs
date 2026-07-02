@@ -12,15 +12,22 @@ use crate::{
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
+    security::{self, FileSetattrKind},
 };
 
 pub fn sys_fchmod(raw_fd: RawFileDesc, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
     debug!("raw_fd = {}, mode = 0o{:o}", raw_fd, mode);
 
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
-    file.path().set_mode(InodeMode::from_bits_truncate(mode))?;
-    fs::vfs::notify::on_attr_change(file.path());
+    let path = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+        file.path().clone()
+    };
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
+    security::file_setattr(&path, &path_resolver, FileSetattrKind::Mode)?;
+    path.set_mode(InodeMode::from_bits_truncate(mode))?;
+    fs::vfs::notify::on_attr_change(&path);
     Ok(SyscallReturn::Return(0))
 }
 
@@ -64,20 +71,18 @@ fn do_fchmodat(
         dirfd, path_name, mode, flags,
     );
 
-    let path = {
-        let path_name = path_name.to_string_lossy();
-        let fs_path =
-            FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::AllowIfFlag(flags.bits()))?;
+    let path_name = path_name.to_string_lossy();
+    let fs_path = FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::AllowIfFlag(flags.bits()))?;
 
-        let fs_ref = ctx.thread_local.borrow_fs();
-        let path_resolver = fs_ref.resolver().read();
-        if flags.contains(ChmodFlags::AT_SYMLINK_NOFOLLOW) {
-            path_resolver.lookup_no_follow(&fs_path)?
-        } else {
-            path_resolver.lookup(&fs_path)?
-        }
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
+    let path = if flags.contains(ChmodFlags::AT_SYMLINK_NOFOLLOW) {
+        path_resolver.lookup_no_follow(&fs_path)?
+    } else {
+        path_resolver.lookup(&fs_path)?
     };
 
+    security::file_setattr(&path, &path_resolver, FileSetattrKind::Mode)?;
     path.set_mode(InodeMode::from_bits_truncate(mode))?;
     fs::vfs::notify::on_attr_change(&path);
     Ok(SyscallReturn::Return(0))

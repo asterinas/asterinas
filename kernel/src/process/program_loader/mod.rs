@@ -16,6 +16,7 @@ use crate::{
         },
     },
     prelude::*,
+    security,
     vm::vmar::Vmar,
 };
 
@@ -40,6 +41,7 @@ impl ProgramToLoad {
         envp: Vec<CString>,
     ) -> Result<Self> {
         check_executable_inode(elf_file.inode().as_ref())?;
+        security::bprm_check_security(&elf_file, path_resolver)?;
 
         // A limit to the recursion depth of shebang executables.
         //
@@ -70,6 +72,7 @@ impl ProgramToLoad {
                 path_resolver.lookup(&fs_path)?
             };
             check_executable_inode(interpreter.inode().as_ref())?;
+            security::bprm_check_security(&interpreter, path_resolver)?;
 
             // Update the argument list and the executable inode. Then, try again.
             new_argv.extend(argv);

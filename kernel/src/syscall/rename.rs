@@ -7,6 +7,7 @@ use crate::{
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath, SplitPathError},
     },
     prelude::*,
+    security,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -73,6 +74,10 @@ pub fn sys_renameat2(
             "the new path is inside the old directory or its subtree"
         );
     }
+
+    super::check_parent_write_permission(&old_parent_path)?;
+    super::check_parent_write_permission(&new_parent_path)?;
+    security::file_rename(&old_path, &new_parent_path, &new_name, &path_resolver)?;
 
     old_parent_path.rename(old_name, &new_parent_path, &new_name)?;
 
