@@ -691,6 +691,11 @@ impl DirDentry<'_> {
         let old_dir_inode = self.inode();
         let new_dir_inode = new_dir.inode();
 
+        let max_namelen = old_dir_inode.fs().sb().namelen;
+        if old_name.len() > max_namelen || new_name.len() > max_namelen {
+            return_errno_with_message!(Errno::ENAMETOOLONG, "old_name or new_name is too long");
+        }
+
         // The two are the same dentry, we just modify the name
         if core::ptr::eq(self.inner, new_dir.inner) {
             if old_name == new_name {
