@@ -1,0 +1,2 @@
+// Move or attach a mount object to the filesystem
+move_mount(from_dfd, from_path, to_dfd, to_path, flags = MOVE_MOUNT_F_EMPTY_PATH);

@@ -90,6 +90,7 @@ mod mkdir;
 mod mknod;
 mod mmap;
 mod mount;
+mod move_mount;
 mod mprotect;
 mod mremap;
 mod msync;
