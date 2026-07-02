@@ -136,9 +136,25 @@ impl FileOps for OpenBlockFile {
         _status_flags: StatusFlags,
     ) -> Result<usize> {
         let total = writer.avail();
-        self.0.read(offset, writer)?;
-        let avail = writer.avail();
-        Ok(total - avail)
+        if total == 0 {
+            return Ok(0);
+        }
+
+        let device_size = self.0.metadata().nr_sectors * SECTOR_SIZE;
+        if offset >= device_size {
+            return Ok(0);
+        }
+
+        let read_len = total.min(device_size - offset);
+        {
+            // `VmIo::read` does not allow short writes,
+            // so the writer must be precisely limited here.
+            let mut limited_writer = writer.clone_exclusive();
+            limited_writer.limit(read_len);
+            self.0.read(offset, &mut limited_writer)?;
+        }
+        writer.skip(read_len);
+        Ok(read_len)
     }
 
     fn write_at(
@@ -148,9 +164,28 @@ impl FileOps for OpenBlockFile {
         _status_flags: StatusFlags,
     ) -> Result<usize> {
         let total = reader.remain();
-        self.0.write(offset, reader)?;
-        let remain = reader.remain();
-        Ok(total - remain)
+        if total == 0 {
+            return Ok(0);
+        }
+
+        let device_size = self.0.metadata().nr_sectors * SECTOR_SIZE;
+        if offset >= device_size {
+            return_errno_with_message!(
+                Errno::ENOSPC,
+                "the write offset is beyond the block device"
+            );
+        }
+
+        let write_len = total.min(device_size - offset);
+        {
+            // `VmIo::write` does not allow short writes,
+            // so the reader must be precisely limited here.
+            let mut limited_reader = reader.clone();
+            limited_reader.limit(write_len);
+            self.0.write(offset, &mut limited_reader)?;
+        }
+        reader.skip(write_len);
+        Ok(write_len)
     }
 }
 
@@ -168,6 +203,10 @@ impl PerOpenFileOps for OpenBlockFile {
 
     fn is_offset_aware(&self) -> bool {
         true
+    }
+
+    fn seek_end(&self) -> Result<Option<usize>> {
+        Ok(Some(self.0.metadata().nr_sectors * SECTOR_SIZE))
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {

@@ -3,8 +3,8 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::file_table::RawFileDesc,
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath},
+        file::{InodeType, file_table::RawFileDesc},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath, SplitPathError},
     },
     prelude::*,
     security::{self, FileDeleteKind},
@@ -30,9 +30,28 @@ pub fn sys_unlinkat(
     let fs_ref = ctx.thread_local.borrow_fs();
     let path_resolver = fs_ref.resolver().read();
     let (dir_path, name) = {
-        let (parent_path_name, target_name) = path_name.split_dirname_and_filename()?;
-        let fs_path = FsPath::from_fd_at(dirfd, parent_path_name, EmptyPathStr::Reject)?;
-        (path_resolver.lookup(&fs_path)?, target_name)
+        let (parent_path_name, target_name) = path_name
+            .split_dirname_and_basename()
+            .map_err(SplitPathError::reject_root_as_is_dir)?;
+
+        let parent_fs_path = FsPath::from_fd_at(dirfd, parent_path_name, EmptyPathStr::Reject)?;
+        let dir_path = path_resolver.lookup(&parent_fs_path)?;
+
+        // A trailing slash makes the unlink fail in one of two ways:
+        // `dir/` with `EISDIR`, `file/` with `ENOTDIR`.
+        if path_name.ends_with('/') {
+            let target = path_resolver.lookup_at_path(&dir_path, target_name)?;
+            if target.type_() == InodeType::Dir {
+                return_errno_with_message!(Errno::EISDIR, "a directory cannot be unlinked");
+            } else {
+                return_errno_with_message!(
+                    Errno::ENOTDIR,
+                    "the path ends with a slash but is not a directory"
+                );
+            }
+        }
+
+        (dir_path, target_name)
     };
 
     super::check_parent_write_permission(&dir_path)?;

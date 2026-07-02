@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file::file_table::RawFileDesc,
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath, SplitPathError},
     },
     prelude::*,
     security::{self, FileDeleteKind},
@@ -27,7 +27,9 @@ pub(super) fn sys_rmdirat(
     let fs_ref = ctx.thread_local.borrow_fs();
     let path_resolver = fs_ref.resolver().read();
     let (dir_path, name) = {
-        let (parent_path_name, target_name) = path_name.split_dirname_and_basename()?;
+        let (parent_path_name, target_name) = path_name
+            .split_dirname_and_basename()
+            .map_err(SplitPathError::reject_root_as_busy)?;
         let fs_path = FsPath::from_fd_at(dirfd, parent_path_name, EmptyPathStr::Reject)?;
         (path_resolver.lookup(&fs_path)?, target_name)
     };

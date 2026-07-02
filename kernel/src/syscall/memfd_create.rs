@@ -10,12 +10,16 @@ use crate::{
 };
 
 pub fn sys_memfd_create(name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
-    // FIXME: When `name` is too long, `read_cstring` returns `EFAULT`. However,
-    // according to <https://man7.org/linux/man-pages/man2/memfd_create.2.html>,
-    // we should return `EINVAL` in this case.
     let name = ctx
         .user_space()
-        .read_cstring(name_addr, MAX_MEMFD_NAME_LEN + 1)?;
+        .read_cstring(name_addr, MAX_MEMFD_NAME_LEN + 1)
+        .map_err(|err| {
+            if err.error() == Errno::ENAMETOOLONG {
+                Error::with_message(Errno::EINVAL, "the memfd name is too long")
+            } else {
+                err
+            }
+        })?;
     debug!("sys_memfd_create: name = {:?}, flags = {}", name, flags);
 
     let fd = {

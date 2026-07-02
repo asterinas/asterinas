@@ -51,7 +51,7 @@ RUN set -eux; \
 
 # Build the gvisor syscall test binaries
 WORKDIR /root
-RUN git clone -b release-20251215.0 --single-branch --depth 1 https://github.com/google/gvisor.git
+RUN git clone -b release-20260622.0 --single-branch --depth 1 https://github.com/google/gvisor.git
 WORKDIR /root/gvisor
 RUN bazel build --test_tag_filters=native //test/syscalls/... && \
     mkdir -p /root/syscall_test_bins && \

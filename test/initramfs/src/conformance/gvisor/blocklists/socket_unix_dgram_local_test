@@ -1,6 +1,5 @@
-# TODO: Support `MSG_DONTWAIT` and `MSG_PEEK`
+# TODO: Support `MSG_DONTWAIT`
 DgramUnixSockets/NonStreamSocketPairTest.SplitRecv/*
-DgramUnixSockets/NonStreamSocketPairTest.SinglePeek/*
 DgramUnixSockets/NonStreamSocketPairTest.RecvmsgTruncPeekDontwaitZeroLen/*
 
 # TODO: Support `SO_SNDTIMEO`

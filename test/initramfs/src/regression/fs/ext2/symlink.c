@@ -39,9 +39,9 @@ FN_TEST(symlink_short_roundtrip)
 	const char *link = BASE_DIR "/short_link";
 	const char *data = "hello symlink";
 
-	int fd = CHECK(open(file, O_CREAT | O_WRONLY, 0644));
-	CHECK(write(fd, data, strlen(data)));
-	CHECK(close(fd));
+	int fd = TEST_SUCC(open(file, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(write(fd, data, strlen(data)));
+	TEST_SUCC(close(fd));
 
 	TEST_SUCC(symlink(file, link));
 
@@ -83,8 +83,8 @@ FN_TEST(symlink_long_roundtrip)
 	for (int i = 0; i < (int)(sizeof(dirs) / sizeof(dirs[0])); i++)
 		ensure_dir(dirs[i]);
 
-	int fd = CHECK(open(target, O_CREAT | O_WRONLY, 0644));
-	CHECK(close(fd));
+	int fd = TEST_SUCC(open(target, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(close(fd));
 
 	// Verify the target path is indeed > 60 chars
 	CHECK_WITH(strlen(target), _ret > 60);
@@ -123,8 +123,8 @@ FN_TEST(readlink_regular_file_einval)
 {
 	const char *file = BASE_DIR "/regular_file";
 
-	int fd = CHECK(open(file, O_CREAT | O_WRONLY, 0644));
-	CHECK(close(fd));
+	int fd = TEST_SUCC(open(file, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(close(fd));
 
 	char buf[PATH_MAX];
 	TEST_ERRNO(readlink(file, buf, sizeof(buf)), EINVAL);

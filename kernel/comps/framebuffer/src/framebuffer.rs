@@ -11,7 +11,7 @@ use ostd::{
 };
 use spin::Once;
 
-use crate::{Pixel, PixelFormat, RenderedPixel};
+use crate::pixel::{Pixel, PixelFormat, RenderedPixel};
 
 /// Maximum number of colormap entries (standard 8-bit palette)
 pub const MAX_CMAP_SIZE: usize = 256;

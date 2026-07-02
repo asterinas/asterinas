@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Sub;
-
 use super::message::UeventMessage;
 use crate::{
     events::IoEvents,
@@ -62,8 +60,8 @@ impl datagram_common::Bound for BoundNetlinkUevent {
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, Self::Endpoint)> {
-        // TODO: Deal with other flags. Only MSG_PEEK is handled here.
-        if !flags.sub(SendRecvFlags::MSG_PEEK).is_all_supported() {
+        // TODO: Deal with other flags.
+        if !flags.is_all_supported() {
             warn!("unsupported flags: {:?}", flags);
         }
 
@@ -75,7 +73,7 @@ impl datagram_common::Bound for BoundNetlinkUevent {
 
             let remote = *response.src_addr();
 
-            let should_dequeue = !flags.contains(SendRecvFlags::MSG_PEEK);
+            let should_dequeue = flags.receive_behavior().will_consume_data();
             Ok((should_dequeue, (len, remote)))
         })
     }

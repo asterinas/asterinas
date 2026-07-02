@@ -677,15 +677,15 @@ impl VmMapping {
         let left_size = at - self.map_to_addr;
         let right_size = self.map_size.get() - left_size;
         let left = Self {
-            map_to_addr: self.map_to_addr,
             map_size: NonZeroUsize::new(left_size).unwrap(),
+            map_to_addr: self.map_to_addr,
             mapped_mem: l_mapped_mem,
             path: self.path.clone(),
             ..self
         };
         let right = Self {
-            map_to_addr: at,
             map_size: NonZeroUsize::new(right_size).unwrap(),
+            map_to_addr: at,
             mapped_mem: r_mapped_mem,
             ..self
         };

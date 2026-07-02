@@ -8,7 +8,6 @@ mod indirect_block_manager;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use aster_block::bio::BioCompleteFn;
-use ostd::mm::io::util::HasVmReaderWriter;
 
 use self::block_ptr_tree::ResolvedBlockRange;
 pub(super) use self::block_ptr_tree::{BlockPtrTree, RawBlockPtrs};
@@ -86,7 +85,7 @@ impl InodeBlockManager {
         let fs = match self.fs() {
             Ok(fs) => fs,
             Err(err) => {
-                error!("ext2 truncate: failed to get fs reference, err: {:?}", err);
+                error!("truncate: failed to get fs reference, err: {:?}", err);
                 return;
             }
         };
@@ -100,14 +99,9 @@ impl InodeBlockManager {
     }
 
     /// Allocates missing data blocks that cover the requested logical block range.
-    pub(super) fn allocate_range_blocks(
-        &self,
-        start_block: usize,
-        end_block: usize,
-    ) -> Result<Vec<Range<Ext2Bid>>> {
+    pub(super) fn allocate_range_blocks(&self, start_block: usize, end_block: usize) -> Result<()> {
         let fs = self.fs()?;
         let mut tree = self.block_ptr_tree.write();
-        let mut new_blocks = Vec::new();
         let mut current_block = start_block;
         while current_block < end_block {
             let iblock = Iblock::try_from(current_block)
@@ -124,11 +118,10 @@ impl InodeBlockManager {
                 ResolvedBlockRange::NewlyAllocated(range) => {
                     debug_assert!(!range.is_empty());
                     current_block += range.len();
-                    new_blocks.push(range);
                 }
             }
         }
-        Ok(new_blocks)
+        Ok(())
     }
 
     /// Updates the cached page-cache capacity bound.
@@ -157,11 +150,7 @@ impl BlockAsPageCacheBackend for InodeBlockManager {
             }
             None => {
                 // Encountered a hole, zero fill the page.
-                let mut segment_writer = bio_segment.inner_dma_slice().writer().map_err(|_| {
-                    Error::with_message(Errno::EIO, "failed to access zero-fill bio segment")
-                })?;
-                segment_writer.fill_zeros(bio_segment.nbytes());
-                complete_fn(BioStatus::Complete);
+                complete_fn(BioStatus::Zeros);
                 Ok(())
             }
         }

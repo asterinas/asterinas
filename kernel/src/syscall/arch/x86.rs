@@ -268,7 +268,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FCHOWN = 93            => sys_fchown(args[..3]);
     SYS_LCHOWN = 94            => sys_lchown(args[..3]);
     SYS_UMASK = 95             => sys_umask(args[..1]);
-    SYS_GETTIMEOFDAY = 96      => sys_gettimeofday(args[..1]);
+    SYS_GETTIMEOFDAY = 96      => sys_gettimeofday(args[..2]);
     SYS_GETRLIMIT = 97         => sys_getrlimit(args[..2]);
     SYS_GETRUSAGE = 98         => sys_getrusage(args[..2]);
     SYS_SYSINFO = 99           => sys_sysinfo(args[..1]);
@@ -419,6 +419,6 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);
     SYS_PIDFD_GETFD = 438      => sys_pidfd_getfd(args[..3]);
     SYS_FACCESSAT2 = 439       => sys_faccessat2(args[..4]);
-    SYS_EPOLL_PWAIT2 = 441     => sys_epoll_pwait2(args[..5]);
+    SYS_EPOLL_PWAIT2 = 441     => sys_epoll_pwait2(args[..6]);
     SYS_FCHMODAT2 = 452        => sys_fchmodat2(args[..4]);
 }

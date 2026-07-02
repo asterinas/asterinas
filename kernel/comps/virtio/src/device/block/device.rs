@@ -27,7 +27,7 @@ use ostd::{
     sync::SpinLock,
 };
 
-use super::{BlockFeatures, VirtioBlockConfig, VirtioBlockFeature};
+use super::{BlockFeatures, VirtioBlockConfig};
 use crate::{
     VIRTIO_BLOCK_MAJOR_ID,
     device::{
@@ -124,10 +124,8 @@ impl BlockDevice {
     }
 
     /// Negotiate features for the device specified bits 0~23
-    pub(crate) fn negotiate_features(features: u64) -> u64 {
-        let mut support_features = BlockFeatures::from_bits_truncate(features);
-        support_features.remove(BlockFeatures::MQ);
-        support_features.bits
+    pub(crate) fn negotiate_features(device_features: u64) -> u64 {
+        BlockFeatures::negotiated_with_device(device_features).bits()
     }
 }
 
@@ -199,7 +197,7 @@ impl aster_block::BlockDevice for BlockDevice {
 #[derive(Debug)]
 struct DeviceInner {
     config_manager: ConfigManager<VirtioBlockConfig>,
-    features: VirtioBlockFeature,
+    features: BlockFeatures,
     queue: SpinLock<VirtQueue>,
     transport: SpinLock<Box<dyn VirtioTransport>>,
     block_requests: Arc<DmaStream>,
@@ -218,7 +216,16 @@ impl DeviceInner {
         let config = config_manager.read_config();
         debug!("virio_blk_config = {:?}", config);
 
-        let block_size = config_manager.block_size();
+        let features = BlockFeatures::negotiated_with_device(transport.read_device_features());
+
+        let block_size = if features.contains(BlockFeatures::BLK_SIZE) {
+            config_manager.block_size()
+        } else {
+            // Fall back to standard sector size SECTOR_SIZE (512 bytes)
+            // Reference:
+            // <https://docs.oasis-open.org/virtio/virtio/v1.2/virtio-v1.2.html#x1-2790004>
+            VirtioBlockConfig::sector_size()
+        };
         if block_size != VirtioBlockConfig::sector_size() {
             ostd::error!("block size {} is not supported yet", block_size);
             return Err(VirtioDeviceError::UnsupportedConfig);
@@ -233,8 +240,6 @@ impl DeviceInner {
                 "Multi-Queue Block IO Queueing Mechanism is not supported yet; using the first queue"
             );
         }
-
-        let features = VirtioBlockFeature::new(transport.as_ref());
 
         let queue = VirtQueue::new(0, Self::QUEUE_SIZE, transport.as_mut())?;
 
@@ -440,7 +445,10 @@ impl DeviceInner {
                     .iter()
                     .map(|segment| segment.inner_dma_slice())
             });
-            inputs.extend(dma_slices_iter);
+            for dma_slice in dma_slices_iter {
+                dma_slice.sync_to_device().unwrap();
+                inputs.push(dma_slice);
+            }
             inputs
         };
 
@@ -474,7 +482,7 @@ impl DeviceInner {
     /// Flushes any cached data from the guest to the persistent storage on the host.
     /// This will be ignored if the device doesn't support the `VIRTIO_BLK_F_FLUSH` feature.
     fn flush(&self, bio_request: BioRequest) {
-        if !self.features.support_flush {
+        if !self.features.contains(BlockFeatures::FLUSH) {
             bio_request.into_bios().for_each(|bio| {
                 bio.complete(BioStatus::Complete);
             });

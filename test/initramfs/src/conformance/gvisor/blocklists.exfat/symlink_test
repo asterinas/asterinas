@@ -2,6 +2,8 @@ AbsAndRelTarget/ParamSymlinkTest.CreateExistingParentLink/0
 AbsAndRelTarget/ParamSymlinkTest.CreateExistingParentLink/1
 AbsAndRelTarget/ParamSymlinkTest.CreateExistingSelfLink/0
 AbsAndRelTarget/ParamSymlinkTest.CreateExistingSelfLink/1
+AbsAndRelTarget/ParamSymlinkTest.CreatLinkCreatesTarget/0
+AbsAndRelTarget/ParamSymlinkTest.CreatLinkCreatesTarget/1
 AbsAndRelTarget/ParamSymlinkTest.OpenLinkCreatesTarget/0
 AbsAndRelTarget/ParamSymlinkTest.OpenLinkCreatesTarget/1
 AbsAndRelTarget/ParamSymlinkTest.OpenLinkExclFails/0
@@ -13,9 +15,11 @@ SymlinkTest.CanCreateSymlinkDir
 SymlinkTest.CanCreateSymlinkFile
 SymlinkTest.CanCreateSymlinkWithCachedSourceDirent
 SymlinkTest.CanEvaluateLink
+SymlinkTest.CannotCreateSymlinkInReadOnlyDir
 SymlinkTest.ChmodSymlink
 SymlinkTest.OldnameIsDangling
 SymlinkTest.PreadFromSymlink
+SymlinkTest.PwriteToSymlink
 SymlinkTest.ReadlinkAtDegradedPermissions
 SymlinkTest.ReadlinkAtDirWithOpath
 SymlinkTest.SymlinkAtDegradedPermissions

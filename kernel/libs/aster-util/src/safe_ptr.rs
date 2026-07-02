@@ -164,8 +164,8 @@ impl<T, M> SafePtr<T, M> {
     /// `Dup`.
     pub fn new(vm_obj: M, offset: usize) -> Self {
         Self {
-            vm_obj,
             offset,
+            vm_obj,
             rights: TRightSet(<TRights![Dup, Read, Write, Exec, Signal]>::new()),
             phantom: PhantomData,
         }

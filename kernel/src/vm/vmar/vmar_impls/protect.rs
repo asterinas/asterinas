@@ -57,7 +57,12 @@ impl Vmar {
                 security::file_mmap(path, FilePermission::MMAP)?;
             }
 
-            let vm_mapping = inner.remove(&vm_mapping_range.start).unwrap();
+            let Some(vm_mapping) = inner.remove(&vm_mapping_range.start) else {
+                // This can happen only if the mapping is merged to the previous one (just
+                // protected before). We can skip this mapping because its property is already
+                // correct.
+                continue;
+            };
             let vm_mapping_range = vm_mapping.range();
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 

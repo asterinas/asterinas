@@ -345,7 +345,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_UMASK = 166                  => sys_umask(args[..1]);
             SYS_PRCTL = 167                  => sys_prctl(args[..5]);
             SYS_GETCPU = 168                 => sys_getcpu(args[..3]);
-            SYS_GETTIMEOFDAY = 169           => sys_gettimeofday(args[..1]);
+            SYS_GETTIMEOFDAY = 169           => sys_gettimeofday(args[..2]);
             SYS_GETPID = 172                 => sys_getpid(args[..0]);
             SYS_GETPPID = 173                => sys_getppid(args[..0]);
             SYS_GETUID = 174                 => sys_getuid(args[..0]);
@@ -404,7 +404,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_CLOSE_RANGE = 436            => sys_close_range(args[..3]);
             SYS_PIDFD_GETFD = 438            => sys_pidfd_getfd(args[..3]);
             SYS_FACCESSAT2 = 439             => sys_faccessat2(args[..4]);
-            SYS_EPOLL_PWAIT2 = 441           => sys_epoll_pwait2(args[..5]);
+            SYS_EPOLL_PWAIT2 = 441           => sys_epoll_pwait2(args[..6]);
             SYS_FCHMODAT2 = 452              => sys_fchmodat2(args[..4]);
             // Architecture-specific syscalls
             $( $name = $num => $handler $args );*

@@ -72,11 +72,13 @@ impl ConnectedStream {
     pub(super) fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        _flags: SendRecvFlags,
+        flags: SendRecvFlags,
     ) -> Result<(usize, NeedIfacePoll)> {
         let result = self
             .tcp_conn
-            .recv(|socket_buffer| writer.write(&mut VmReader::from(&*socket_buffer)));
+            .recv(flags.receive_behavior(), |socket_buffer| {
+                writer.write(&mut VmReader::from(socket_buffer))
+            });
 
         match result {
             Ok((recv_bytes, need_poll)) => Ok((recv_bytes.get(), need_poll)),

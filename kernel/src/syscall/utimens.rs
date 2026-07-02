@@ -8,7 +8,10 @@ use super::{SyscallReturn, constants::MAX_FILENAME_LEN};
 use crate::{
     fs,
     fs::{
-        file::file_table::RawFileDesc,
+        file::{
+            StatusFlags,
+            file_table::{RawFileDesc, get_file_fast},
+        },
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
     },
     prelude::*,
@@ -172,22 +175,30 @@ fn do_utimes(
         Some(pathname.to_string_lossy().into_owned())
     };
 
-    let fs_path = if let Some(pathname) = pathname.as_ref() {
-        FsPath::from_fd_at(dirfd, pathname, EmptyPathStr::AllowIfFlag(flags.bits()))?
-    } else {
-        // Matches Linux `do_utimes_fd`: no flags are accepted when pathname is NULL.
-        if !flags.is_empty() {
-            return_errno_with_message!(Errno::EINVAL, "flags must be zero when pathname is NULL");
-        }
-        FsPath::from_fd(dirfd)?
-    };
-
     let fs_ref = ctx.thread_local.borrow_fs();
     let path_resolver = fs_ref.resolver().read();
-    let path = if flags.contains(UtimensFlags::AT_SYMLINK_NOFOLLOW) {
-        path_resolver.lookup_no_follow(&fs_path)?
+    let path = if let Some(pathname) = pathname.as_ref() {
+        let fs_path = FsPath::from_fd_at(dirfd, pathname, EmptyPathStr::AllowIfFlag(flags.bits()))?;
+        if flags.contains(UtimensFlags::AT_SYMLINK_NOFOLLOW) {
+            path_resolver.lookup_no_follow(&fs_path)?
+        } else {
+            path_resolver.lookup(&fs_path)?
+        }
     } else {
-        path_resolver.lookup(&fs_path)?
+        // Linux will reject non-zero flags and `O_PATH` files if the pathname is null.
+        // Reference: <https://elixir.bootlin.com/linux/v7.1/source/fs/utimes.c#L108>
+        if !flags.is_empty() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "flags must be zero when the pathname is NULL"
+            );
+        }
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        let file = get_file_fast!(&mut file_table, dirfd.try_into()?);
+        if file.status_flags().contains(StatusFlags::O_PATH) {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+        file.path().clone()
     };
 
     security::file_setattr(&path, &path_resolver, FileSetattrKind::Times)?;
@@ -211,7 +222,7 @@ fn do_futimesat(
             || mutime.usec < 0
             || mutime.sec < 0
         {
-            return_errno_with_message!(Errno::EINVAL, "Invalid time");
+            return_errno_with_message!(Errno::EINVAL, "invalid time");
         }
         let (autime, mutime) = (timespec_t::from(autime), timespec_t::from(mutime));
         Some(TimeSpecPair {

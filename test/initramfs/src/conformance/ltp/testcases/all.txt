@@ -738,9 +738,9 @@ lchown01
 # lgetxattr02
 
 link02
-# link04
+link04
 link05
-# link08
+link08
 
 #linkat test cases
 linkat01
@@ -1740,9 +1740,9 @@ uname02
 
 unlink05
 unlink07
-# unlink08
+unlink08
 # unlink09
-# unlink10
+unlink10
 
 #unlinkat test cases
 unlinkat01

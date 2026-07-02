@@ -2,8 +2,10 @@
 
 use alloc::sync::Arc;
 
-use aster_console::mode::{KeyboardMode, KeyboardModeFlags};
-use aster_framebuffer::FRAMEBUFFER;
+use aster_framebuffer::{
+    framebuffer::FRAMEBUFFER,
+    mode::{KeyboardMode, KeyboardModeFlags},
+};
 use aster_input::{
     event_type_codes::{KeyCode, KeyStatus},
     input_dev::{InputDevice, InputEvent},

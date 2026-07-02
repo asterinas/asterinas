@@ -70,6 +70,21 @@ FN_TEST(legacy_null_pathname_with_nonzero_flag_returns_einval)
 }
 END_TEST()
 
+FN_TEST(utimensat_null_pathname_with_o_path_returns_ebadf)
+{
+	int opath_fd = TEST_SUCC(open(TEST_FILE, O_PATH));
+	struct timespec times[2] = {
+		{ .tv_sec = 10, .tv_nsec = 0 },
+		{ .tv_sec = 20, .tv_nsec = 0 },
+	};
+
+	TEST_ERRNO(syscall(SYS_utimensat, opath_fd, NULL, times, 0), EBADF);
+	TEST_SUCC(syscall(SYS_utimensat, opath_fd, "", times, AT_EMPTY_PATH));
+
+	TEST_SUCC(close(opath_fd));
+}
+END_TEST()
+
 FN_TEST(at_empty_path_on_o_path_symlink_updates_symlink)
 {
 	const char *symlink_path = "/tmp/utimensat_symlink";

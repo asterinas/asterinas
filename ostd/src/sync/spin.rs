@@ -74,8 +74,8 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
         let inner_guard = G::guard();
         self.acquire_lock();
         SpinLockGuard {
-            lock: self,
             guard: inner_guard,
+            lock: self,
         }
     }
 
@@ -84,8 +84,8 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
         let inner_guard = G::guard();
         if self.try_acquire_lock() {
             let lock_guard = SpinLockGuard {
-                lock: self,
                 guard: inner_guard,
+                lock: self,
             };
             return Some(lock_guard);
         }

@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>

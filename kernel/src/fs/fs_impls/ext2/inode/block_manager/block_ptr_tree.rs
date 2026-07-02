@@ -3,6 +3,7 @@
 //! Logical-to-physical block translation via the ext2 block-pointer tree.
 
 use device_id::{decode_device_numbers, encode_device_numbers};
+use ostd::mm::io::util::HasVmReaderWriter;
 use smallvec::SmallVec;
 
 use super::indirect_block_manager::{IndirectBlock, IndirectBlockManager};
@@ -112,7 +113,7 @@ impl BlockPtrTree {
     // and allocate. A cursor over the leaf block could eliminate the second walk.
     pub(in crate::fs::fs_impls::ext2::inode) fn resolve_block_range(
         &mut self,
-        fs: &Arc<Ext2>,
+        fs: &Ext2,
         iblock: Iblock,
         max_blocks: u32,
     ) -> Result<ResolvedBlockRange> {
@@ -140,9 +141,10 @@ impl BlockPtrTree {
 
     /// Truncates blocks to the new byte length (best-effort).
     ///
-    /// Like Linux's `ext2_truncate_blocks`, this is a best-effort operation.
-    /// Errors are logged but not propagated — leaked blocks from partial
-    /// failures are recoverable by e2fsck.
+    /// This is a best-effort operation. Errors are logged but not propagated.
+    /// Leaked blocks from partial failures are recoverable by e2fsck. Linux
+    /// also follows this practice (see
+    /// <https://elixir.bootlin.com/linux/v7.0/source/fs/ext2/inode.c#L1172>).
     pub(in crate::fs::fs_impls::ext2::inode) fn truncate_to_byte_len(
         &mut self,
         fs: &Ext2,
@@ -152,10 +154,7 @@ impl BlockPtrTree {
         let iblock = match Iblock::try_from(new_size.div_ceil(BLOCK_SIZE)) {
             Ok(ib) => ib,
             Err(_) => {
-                error!(
-                    "ext2 truncate: size exceeds ext2 limits, new_size={}",
-                    new_size
-                );
+                error!("truncate: size exceeds ext2 limits, new_size={}", new_size);
                 return;
             }
         };
@@ -163,26 +162,17 @@ impl BlockPtrTree {
         let walk = match self.walk_at(iblock) {
             Ok(w) => w,
             Err(err) => {
-                error!(
-                    "ext2 truncate: failed to compute block walk, err: {:?}",
-                    err
-                );
+                error!("truncate: failed to compute block walk, err: {:?}", err);
                 return;
             }
         };
 
         if walk.is_direct_data_block() {
             if let Err(err) = self.truncate_direct_slots(fs, walk.root_slot() as usize) {
-                error!(
-                    "ext2 truncate: truncate_direct_slots failed, err: {:?}",
-                    err
-                );
+                error!("truncate: truncate_direct_slots failed, err: {:?}", err);
             }
         } else if let Err(err) = self.truncate_indirect_path(fs, &walk) {
-            error!(
-                "ext2 truncate: truncate_indirect_path failed, err: {:?}",
-                err
-            );
+            error!("truncate: truncate_indirect_path failed, err: {:?}", err);
         }
 
         self.free_indirect_roots_after(fs, walk.root_slot() as usize);
@@ -344,7 +334,7 @@ impl BlockPtrTree {
         detach_level: usize,
     ) -> Result<Option<Ext2Bid>> {
         let detached_bid = if detach_level == 0 {
-            // Subtree root is referenced directly from inode.block_ptrs[].
+            // Subtree root is referenced directly from `inode.block_ptrs[]`.
             let slot = walk.root_slot() as usize;
             let bid = self.raw_block_ptrs.block_ptrs[slot];
             self.raw_block_ptrs.block_ptrs[slot] = 0;
@@ -604,7 +594,7 @@ impl BlockPtrTree {
             if let Err(err) = fs.free_blocks(block_bid, 1) {
                 // Best-effort free path logs errors and proceeds.
                 error!(
-                    "ext2: free_block_subtree: failed to free data block {}: {:?}",
+                    "free_block_subtree: failed to free data block {}: {:?}",
                     block_bid, err
                 );
                 return;
@@ -627,7 +617,7 @@ impl BlockPtrTree {
                     // Skip the damaged subtree after logging the read failure so
                     // cleanup can continue for the remaining subtree.
                     error!(
-                        "ext2: free_block_subtree: failed to read indirect block {} (indirect_levels {})",
+                        "free_block_subtree: failed to read indirect block {} (indirect_levels {})",
                         block_bid, indirect_levels
                     );
                     return;
@@ -641,7 +631,7 @@ impl BlockPtrTree {
 
         if let Err(err) = fs.free_blocks(block_bid, 1) {
             error!(
-                "ext2: free_block_subtree: failed to free indirect block {}: {:?}",
+                "free_block_subtree: failed to free indirect block {}: {:?}",
                 block_bid, err
             );
             return;
@@ -658,48 +648,62 @@ impl BlockPtrTree {
     /// placed near the newly allocated metadata when possible. The returned
     /// guard frees all allocated blocks on drop unless `commit` is called after
     /// the blocks have been spliced into the tree.
-    fn allocate_blocks(
+    fn allocate_blocks<'a>(
         &self,
-        fs: &Arc<Ext2>,
+        fs: &'a Ext2,
         indirect_blks: u32,
         data_blks: u32,
         walk: &BlockPointerWalk,
-    ) -> Result<BlockAllocGuard> {
+    ) -> Result<BlockAllocGuard<'a>> {
         let mut alloc_goal = walk
             .visited_entries
             .last()
             .copied()
             .unwrap_or(self.raw_block_ptrs.block_ptrs[0]);
 
-        let mut guard = BlockAllocGuard::new(fs.clone());
         // Allocate the missing indirect metadata first, then place data blocks
         // immediately after the metadata run when possible.
-        let mut indirect_blocks = Vec::with_capacity(indirect_blks as usize);
+        let mut guard = BlockAllocGuard::new(fs, indirect_blks);
 
-        while (indirect_blocks.len() as u32) < indirect_blks {
-            let remaining_indirect_blks = indirect_blks - indirect_blocks.len() as u32;
+        let mut remaining_indirect_blks = indirect_blks;
+        while remaining_indirect_blks > 0 {
             let allocated = fs.alloc_blocks(remaining_indirect_blks, alloc_goal)?;
             debug_assert!(allocated.end >= allocated.start);
             let allocated_count = allocated.end - allocated.start;
             debug_assert!(allocated_count > 0 && allocated_count <= remaining_indirect_blks);
 
-            indirect_blocks.extend(allocated.clone());
             alloc_goal = allocated.end;
+            remaining_indirect_blks -= allocated_count;
+            guard.extend_indirect_blocks(allocated);
         }
 
-        let data_goal = indirect_blocks
-            .last()
-            .copied()
-            .map_or(alloc_goal, |last_metadata| last_metadata + 1);
-        guard.track_indirect_blocks(indirect_blocks);
-
-        let data_blocks_range = fs.alloc_blocks(data_blks, data_goal)?;
+        let data_blocks_range = fs.alloc_blocks(data_blks, alloc_goal)?;
         debug_assert!(data_blocks_range.end >= data_blocks_range.start);
         let allocated_count = data_blocks_range.end - data_blocks_range.start;
-        guard.track_data_blocks(data_blocks_range);
+        guard.track_data_blocks(data_blocks_range.clone());
         debug_assert!(allocated_count > 0 && allocated_count <= data_blks);
 
+        // We must wait until the blocks are initialized before we can proceed.
+        // Otherwise, concurrent page faults may see uninitialized blocks.
+        //
+        // TODO: In the write path, if the entire block is going to be
+        // overwritten, we should write the real payload instead of zeroing it.
+        Self::zero_new_blocks(fs, &data_blocks_range)?;
+
         Ok(guard)
+    }
+
+    /// Zeroes newly allocated data blocks before exposing them via mapped reads.
+    fn zero_new_blocks(fs: &Ext2, block_range: &Range<Ext2Bid>) -> Result<()> {
+        let mut io_batch = IoBatch::with_capacity(1);
+
+        let bio_segment = BioSegment::alloc(block_range.len(), BioDirection::ToDevice);
+        let mut segment_writer = bio_segment.writer().unwrap();
+        segment_writer.fill_zeros(block_range.len() * BLOCK_SIZE);
+        fs.write_blocks_async(block_range.start, bio_segment, None, &mut io_batch)?;
+
+        io_batch.wait_all()?;
+        Ok(())
     }
 
     /// Splices allocated blocks into the block-pointer tree.
@@ -1134,26 +1138,25 @@ impl BlockPointerWalk {
 
 /// Rollback guard for metadata and data blocks allocated through the block-pointer tree.
 #[derive(Debug)]
-struct BlockAllocGuard {
-    fs: Arc<Ext2>,
+struct BlockAllocGuard<'a> {
+    fs: &'a Ext2,
     indirect_blocks: Vec<Ext2Bid>,
     data_blocks: Range<Ext2Bid>,
     committed: bool,
 }
 
-impl BlockAllocGuard {
-    fn new(fs: Arc<Ext2>) -> Self {
+impl<'a> BlockAllocGuard<'a> {
+    fn new(fs: &'a Ext2, indirect_blocks: u32) -> Self {
         Self {
             fs,
-            indirect_blocks: Vec::new(),
+            indirect_blocks: Vec::with_capacity(indirect_blocks as usize),
             data_blocks: Range { start: 0, end: 0 },
             committed: false,
         }
     }
 
-    fn track_indirect_blocks(&mut self, indirect_blocks: Vec<Ext2Bid>) {
-        debug_assert!(self.indirect_blocks.is_empty());
-        self.indirect_blocks = indirect_blocks;
+    fn extend_indirect_blocks(&mut self, indirect_blocks: Range<Ext2Bid>) {
+        self.indirect_blocks.extend(indirect_blocks);
     }
 
     fn track_data_blocks(&mut self, data_blocks: Range<Ext2Bid>) {
@@ -1166,7 +1169,7 @@ impl BlockAllocGuard {
     }
 }
 
-impl Drop for BlockAllocGuard {
+impl Drop for BlockAllocGuard<'_> {
     fn drop(&mut self) {
         if self.committed {
             return;
@@ -1204,11 +1207,7 @@ mod test {
         time::clocks,
     };
 
-    fn alloc_single_block(
-        tree: &mut BlockPtrTree,
-        fs: &Arc<Ext2>,
-        iblock: Iblock,
-    ) -> Result<Ext2Bid> {
+    fn alloc_single_block(tree: &mut BlockPtrTree, fs: &Ext2, iblock: Iblock) -> Result<Ext2Bid> {
         let step = tree.resolve_block_range(fs, iblock, 1)?;
         let range = match step {
             ResolvedBlockRange::Existing(r) | ResolvedBlockRange::NewlyAllocated(r) => r,

@@ -19,14 +19,14 @@ fchownat01
 fchownat02
 fstat02
 fstat02_64
-fsync02
 ftruncate01
 ftruncate01_64
 getcwd03
 lchown01
-link01
 link02
+link04
 link05
+link08
 linkat01
 lstat01
 lstat01_64
@@ -38,7 +38,6 @@ mknod02
 mknod06
 open07
 open15
-openat01
 pipeio_1
 pipeio_2
 pipeio_5
@@ -60,5 +59,6 @@ truncate02
 truncate02_64
 umask01
 unlink05
+unlink08
 utime07
 statx02

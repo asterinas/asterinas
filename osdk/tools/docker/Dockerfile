@@ -198,6 +198,11 @@ RUN apt update \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install claude
+RUN curl -fsSL https://claude.ai/install.sh | bash
+# Install codex
+RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh
+
 # Install Rust with both nightly and stable
 ENV PATH="/root/.cargo/bin:${PATH}"
 ARG ASTER_RUST_VERSION
@@ -217,6 +222,7 @@ RUN mkdir -p /github/home \
 RUN cargo install --locked \
     cargo-binutils \
     cargo-expand@1.0.122 \
+    lychee@0.24.2 \
     mdbook@0.5.2 \
     mdbook-mermaid@0.17.0 \
     typos-cli@1.39.0

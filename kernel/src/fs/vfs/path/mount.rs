@@ -80,6 +80,8 @@ bitflags! {
         const NODEV          = 1 << 2;
         /// Disallow program execution.
         const NOEXEC         = 1 << 3;
+        /// Do not follow symlinks.
+        const NOSYMFOLLOW    = 1 << 8;
         /// Do not update access times.
         const NOATIME        = 1 << 10;
         /// Do not update directory access times.
@@ -251,12 +253,12 @@ impl Mount {
             id,
             root_dentry: Dentry::new_root(fs.root_inode()),
             mountpoint: RwLock::new(None),
-            parent: RwLock::new(parent_mount),
-            children: RwLock::new(HashMap::new()),
-            propagation: RwLock::new(MountPropType::default()),
             fs,
             source,
+            parent: RwLock::new(parent_mount),
+            children: RwLock::new(HashMap::new()),
             mnt_ns,
+            propagation: RwLock::new(MountPropType::default()),
             flags: AtomicPerMountFlags::new(flags),
             this: weak_self.clone(),
         }))
@@ -342,12 +344,12 @@ impl Mount {
             id,
             root_dentry: root_dentry.clone(),
             mountpoint: RwLock::new(None),
-            parent: RwLock::new(None),
-            children: RwLock::new(HashMap::new()),
-            propagation: RwLock::new(MountPropType::default()),
             fs: self.fs.clone(),
             source: self.source.clone(),
+            parent: RwLock::new(None),
+            children: RwLock::new(HashMap::new()),
             mnt_ns: new_ns.clone(),
+            propagation: RwLock::new(MountPropType::default()),
             flags: AtomicPerMountFlags::new(self.flags.load(Ordering::Relaxed)),
             this: weak_self.clone(),
         }))
@@ -565,11 +567,12 @@ impl Mount {
     }
 
     /// Gets the associated FS.
-    pub(in crate::fs) fn fs(&self) -> &Arc<dyn FileSystem> {
+    pub fn fs(&self) -> &Arc<dyn FileSystem> {
         &self.fs
     }
 
-    pub(in crate::fs) fn flags(&self) -> PerMountFlags {
+    /// Gets the associated mount flags.
+    pub fn flags(&self) -> PerMountFlags {
         self.flags.load(Ordering::Relaxed)
     }
 

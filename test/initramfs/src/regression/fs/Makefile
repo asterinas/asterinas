@@ -10,7 +10,9 @@ SUBDIRS := \
 	overlayfs \
 	procfs \
 	pseudofs \
+	statx \
 	symlink \
+	sync \
 	tmpfile \
 	utimensat \
 

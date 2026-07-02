@@ -240,10 +240,10 @@ impl TaskOptions {
             local_data: ForceSync::new(self.local_data.unwrap_or_else(|| Box::new(()))),
             ctx: SyncUnsafeCell::new(ctx),
             kstack,
+            switched_to_cpu: AtomicBool::new(false),
             schedule_info: TaskScheduleInfo {
                 cpu: AtomicCpuId::default(),
             },
-            switched_to_cpu: AtomicBool::new(false),
         };
 
         Ok(new_task)

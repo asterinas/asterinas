@@ -13,7 +13,7 @@ use crate::{
             addr::{UnixSocketAddrBound, UnixSocketAddrKey},
             ctrl_msg::AuxiliaryData,
         },
-        util::ControlMessage,
+        util::{ControlMessage, SendRecvFlags},
     },
     prelude::*,
     process::signal::Pollee,
@@ -134,9 +134,9 @@ impl MessageReceiver {
         let queue = MessageQueue {
             addr: Once::new(),
             inner: Mutex::new(Some(inner)),
+            is_pass_cred: AtomicBool::new(false),
             pollee: Pollee::new(),
             send_wait_queue: WaitQueue::new(),
-            is_pass_cred: AtomicBool::new(false),
         };
 
         Self {
@@ -163,6 +163,7 @@ impl MessageReceiver {
     pub(super) fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
+        flags: SendRecvFlags,
     ) -> Result<(usize, Vec<ControlMessage>, UnixSocketAddr)> {
         let mut inner = self.queue.inner.lock();
         let inner = inner.as_mut().unwrap();
@@ -180,18 +181,26 @@ impl MessageReceiver {
             warn!("setting MSG_TRUNC is not supported");
         }
 
-        let mut msg = inner.messages.pop_front().unwrap();
-        inner.total_length -= msg.bytes.len();
-
         let is_pass_cred = self.queue.is_pass_cred.load(Ordering::Relaxed);
-        let ctrl_msgs = msg.aux.generate_control(is_pass_cred);
+        let src = msg.src.clone();
 
-        self.queue.pollee.invalidate();
-        // A writer may still fail if the free space is not enough.
-        // So we have to wake up all the writers here.
-        self.queue.send_wait_queue.wake_all();
+        let behavior = flags.receive_behavior();
+        let ctrl_msgs = if behavior.will_consume_data() {
+            let mut message = inner.messages.pop_front().unwrap();
+            inner.total_length -= message.bytes.len();
 
-        Ok((len, ctrl_msgs, msg.src))
+            self.queue.pollee.invalidate();
+            // A writer may still fail if the free space is not enough.
+            // So we have to wake up all the writers here.
+            self.queue.send_wait_queue.wake_all();
+
+            message.aux.generate_control(behavior, is_pass_cred)
+        } else {
+            let message = inner.messages.front_mut().unwrap();
+            message.aux.generate_control(behavior, is_pass_cred)
+        };
+
+        Ok((len, ctrl_msgs, src))
     }
 
     pub(super) fn shutdown(&self) {

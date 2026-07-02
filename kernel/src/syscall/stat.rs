@@ -180,6 +180,10 @@ struct Stat {
 }
 
 impl From<Metadata> for Stat {
+    #[cfg_attr(
+        not(target_arch = "x86_64"),
+        expect(clippy::inconsistent_struct_constructor)
+    )]
     fn from(info: Metadata) -> Self {
         Self {
             st_dev: info.container_dev_id.as_encoded_u64(),

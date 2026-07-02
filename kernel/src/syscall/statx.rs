@@ -141,9 +141,18 @@ impl Statx {
             stx_attributes |= STATX_ATTR_MOUNT_ROOT;
         }
 
-        let stx_mask = StatxMask::STATX_BASIC_STATS.bits()
-            | StatxMask::STATX_BTIME.bits()
-            | StatxMask::STATX_MNT_ID.bits();
+        // Build `stx_mask` based on what's supported and what was requested.
+        // TODO: Pass the request `stx_mask` to the filesystem. It can determine which information
+        // to return and omit the information that is not requested and expensive to query.
+        let mut stx_mask = StatxMask::STATX_BASIC_STATS.bits() | StatxMask::STATX_MNT_ID.bits();
+
+        // Include `STATX_BTIME` if the birth time is available.
+        let stx_btime = if let Some(birth_at) = info.birth_at {
+            stx_mask |= StatxMask::STATX_BTIME.bits();
+            StatxTimestamp::from(birth_at)
+        } else {
+            StatxTimestamp::default()
+        };
 
         Self {
             // FIXME: All zero fields below are dummy implementations that need to be improved in the future.
@@ -160,7 +169,7 @@ impl Statx {
             stx_blocks: info.nr_sectors_allocated as u64,
             stx_attributes_mask,
             stx_atime: StatxTimestamp::from(info.last_access_at),
-            stx_btime: StatxTimestamp::from(Duration::ZERO), // TODO: Metadata do not track birth time for now.
+            stx_btime,
             stx_ctime: StatxTimestamp::from(info.last_meta_change_at),
             stx_mtime: StatxTimestamp::from(info.last_modify_at),
             stx_rdev_major,

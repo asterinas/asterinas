@@ -418,8 +418,8 @@ impl Default for QFpuContext {
     fn default() -> Self {
         Self {
             f: [0; 64],
-            fcsr: 0,
             __pad1: [0; _],
+            fcsr: 0,
             __pad2: [0; _],
         }
     }

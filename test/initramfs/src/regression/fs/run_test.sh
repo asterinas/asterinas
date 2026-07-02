@@ -115,6 +115,7 @@ echo "All mount bind file test passed."
 ./getcwd/getcwd
 
 ./inotify/inotify_align
+./inotify/inotify_o_path
 ./inotify/inotify_poll
 ./inotify/inotify_unlink
 
@@ -134,13 +135,19 @@ echo "All mount bind file test passed."
 ./procfs/proc_fd_open_fifo_after_setid
 ./procfs/tid
 
+./pseudofs/fallocate
 ./pseudofs/memfd_access_err
+./pseudofs/memfd_create
 ./pseudofs/pseudo_dentry
 ./pseudofs/pseudo_dev_id
 ./pseudofs/pseudo_inode
 ./pseudofs/pseudo_mount
 
+./statx/btime
+
 ./symlink/symlink
+
+./sync/sync
 
 ./tmpfile/tmpfile
 

@@ -891,8 +891,8 @@ impl<L: BlockLog> AppendDataBuf<L> {
             node_queue: Vec::with_capacity(node_queue_cap),
             node_queue_cap,
             entry_queue: Vec::with_capacity(entry_queue_cap),
-            start_pos,
             entry_queue_cap,
+            start_pos,
             storage,
         }
     }

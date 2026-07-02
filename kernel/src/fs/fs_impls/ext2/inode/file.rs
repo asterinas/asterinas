@@ -10,12 +10,9 @@
 use ostd::mm::io::util::HasVmReaderWriter;
 
 use super::{super::Ext2, FileFlags, Inode, InodeInner, io_range::IoRange};
-use crate::{
-    fs::{
-        ext2::{prelude::*, utils},
-        vfs::inode::FallocMode,
-    },
-    vm::page_cache::CachePageExt,
+use crate::fs::{
+    ext2::{prelude::*, utils},
+    vfs::inode::FallocMode,
 };
 
 impl Inode {
@@ -72,6 +69,7 @@ impl Inode {
 
         let read_len = writer.avail();
         if !is_block_aligned(offset) || !is_block_aligned(read_len) {
+            // TODO: Implement a fallback mechanism.
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
         }
         if read_len == 0 {
@@ -102,7 +100,7 @@ impl Inode {
         }
 
         if !is_block_aligned(offset) || !is_block_aligned(write_len) {
-            // TODO: fallback to buffer_io like Linux.
+            // TODO: Implement a fallback mechanism.
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
         }
 
@@ -169,14 +167,7 @@ impl Inode {
 
         match mode {
             FallocMode::Allocate => {
-                let allocated_block_ranges = match inner.allocate_range_blocks(offset, end) {
-                    Ok(ranges) => ranges,
-                    Err(err) => {
-                        inner.rollback_fallocate(old_size);
-                        return Err(err);
-                    }
-                };
-                if let Err(err) = inner.zero_new_blocks(&fs, &allocated_block_ranges) {
+                if let Err(err) = inner.allocate_range_blocks(offset, end) {
                     inner.rollback_fallocate(old_size);
                     return Err(err);
                 }
@@ -188,14 +179,7 @@ impl Inode {
                 }
             }
             FallocMode::AllocateKeepSize => {
-                let allocated_block_ranges = match inner.allocate_range_blocks(offset, end) {
-                    Ok(ranges) => ranges,
-                    Err(err) => {
-                        inner.rollback_fallocate(old_size);
-                        return Err(err);
-                    }
-                };
-                if let Err(err) = inner.zero_new_blocks(&fs, &allocated_block_ranges) {
+                if let Err(err) = inner.allocate_range_blocks(offset, end) {
                     inner.rollback_fallocate(old_size);
                     return Err(err);
                 }
@@ -232,20 +216,6 @@ impl InodeInner {
             self.resize_page_cache(end, old_size)?;
         }
 
-        // Note: zero-filling runs before block allocation, and dirty pages are
-        // never evicted by memory pressure (no capacity-based eviction yet), so
-        // concurrent mmap readers always see zeros or valid data from the page
-        // cache. If capacity-based eviction is added in the future, per-page
-        // locks (like Linux's folio lock) will be needed to prevent stale reads
-        // from newly allocated blocks whose zero-filled page has been evicted.
-
-        // If the write extends EOF, zero the partial tail of the old EOF block.
-        if offset > old_size {
-            self.zero_eof_tail(old_size)?;
-        }
-
-        // Treat the write end as the new partial EOF boundary.
-        self.zero_partial_writes(offset, end)?;
         self.allocate_range_blocks(offset, end)?;
         Ok(())
     }
@@ -257,7 +227,7 @@ impl InodeInner {
         }
         if let Err(err) = self.resize_page_cache(old_size, end) {
             error!(
-                "ext2: write_at cleanup page cache resize failed: old_size={}, err={:?}",
+                "write_at: cleanup page cache resize failed: old_size={}, err={:?}",
                 old_size, err
             );
         }
@@ -420,7 +390,7 @@ impl InodeInner {
     ) -> Result<()> {
         let write_len = reader.remain();
         debug_assert_eq!(write_len % BLOCK_SIZE, 0);
-        // end is already checked in `InodeInner::write_direct_at`.
+        // `end` is already checked in `InodeInner::write_direct_at`.
         let end = offset + write_len;
         let iblock_start = Iblock::try_from(offset / BLOCK_SIZE)
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
@@ -435,7 +405,7 @@ impl InodeInner {
                 IoRange::Mapped(device_range) => {
                     let nblocks = device_range.len();
                     let bio_segment = BioSegment::alloc(nblocks, BioDirection::ToDevice);
-                    bio_segment.writer()?.write_fallible(reader)?;
+                    bio_segment.writer().unwrap().write_fallible(reader)?;
                     fs.write_blocks_async(device_range.start, bio_segment, None, &mut io_batch)?;
                 }
                 IoRange::Hole(_) => {
@@ -459,11 +429,8 @@ impl InodeInner {
         let old_size = self.desc.size as usize;
 
         self.resize_page_cache(new_size, old_size)?;
-
         self.block_manager()?.truncate_to_byte_len(new_size);
 
-        // Fill the partial tail of the new EOF block.
-        self.zero_eof_tail(new_size)?;
         self.set_file_size(new_size);
         Ok(())
     }
@@ -477,101 +444,16 @@ impl InodeInner {
         self.ensure_size_within_limit(fs, new_size)?;
         self.resize_page_cache(new_size, old_size)?;
 
-        // Zero the partial tail of the old EOF block and the new EOF block.
-        self.zero_eof_tail(old_size)?;
-        self.zero_eof_tail(new_size)?;
         self.set_file_size(new_size);
         Ok(())
     }
 
-    // NOTE: Make sure the page cache is already resized before calling this function.
-    // When the file expands or shrinks, zero the partial tail of the old EOF block. EOF
-    // cleanup belongs to the operation that changes the file size, such as
-    // write, shrink, expand, or fallocate.
-    fn zero_eof_tail(&self, eof_offset: usize) -> Result<()> {
-        if !eof_offset.is_multiple_of(BLOCK_SIZE) {
-            let block_end = eof_offset.align_up(BLOCK_SIZE);
-            self.page_cache().fill_zeros(eof_offset..block_end)?;
-        }
-        Ok(())
-    }
-
-    // NOTE: Make sure the page cache is already resized before calling this function.
-    // Use this only on write paths for file data, symlinks, and directories.
-    // Conditionally fill zeros for:
-    // 1. The partial start block when it is a hole.
-    // 2. The partial end block when it is a hole.
-    fn zero_partial_writes(&mut self, start: usize, end: usize) -> Result<()> {
-        let start_iblock = Iblock::try_from(start / BLOCK_SIZE)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
-        let end_iblock = Iblock::try_from(end / BLOCK_SIZE)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
-
-        if !start.is_multiple_of(BLOCK_SIZE) {
-            let block_start = start.align_down(BLOCK_SIZE);
-            self.zero_partial_block_edge(start_iblock, block_start..start)?;
-        }
-
-        if !end.is_multiple_of(BLOCK_SIZE) {
-            let block_end = end.align_up(BLOCK_SIZE);
-            self.zero_partial_block_edge(end_iblock, end..block_end)?;
-        }
-
-        Ok(())
-    }
-
-    /// Zeroes part of a block at a boundary.
-    ///
-    /// This only touches holes whose page-cache page is still clean (i.e. not
-    /// yet written by `mmap`). It prevents stale data exposure without
-    /// clobbering valid dirty data.
-    fn zero_partial_block_edge(&mut self, iblock: u32, zero_range: Range<usize>) -> Result<()> {
-        if self.block_manager()?.lookup_block(iblock)?.is_some() {
-            return Ok(());
-        }
-        let page_idx = zero_range.start / PAGE_SIZE;
-        let page_cache = self.page_cache();
-        let page = page_cache.as_vmo().commit_on(page_idx)?;
-        if !page.is_dirty() {
-            page_cache.fill_zeros(zero_range)?;
-        }
-        Ok(())
-    }
-
     /// Allocates any missing data blocks covering the requested file byte range.
-    ///
-    /// Because holes in sparse files may gap the allocated blocks, the result is
-    /// returned as a `Vec<Range<Ext2Bid>>` rather than a single contiguous range.
-    fn allocate_range_blocks(&mut self, offset: usize, end: usize) -> Result<Vec<Range<Ext2Bid>>> {
+    fn allocate_range_blocks(&mut self, offset: usize, end: usize) -> Result<()> {
         let start_block = offset / BLOCK_SIZE;
         let end_block = end.div_ceil(BLOCK_SIZE);
-        let new_blocks = self
-            .block_manager()?
-            .allocate_range_blocks(start_block, end_block)?;
-        Ok(new_blocks)
-    }
-
-    /// Zeroes newly allocated data blocks before exposing them via mapped reads.
-    fn zero_new_blocks(&self, fs: &Ext2, ranges: &[Range<Ext2Bid>]) -> Result<()> {
-        if ranges.is_empty() {
-            return Ok(());
-        }
-
-        let mut io_batch = IoBatch::new();
-        for block_range in ranges {
-            if block_range.is_empty() {
-                continue;
-            }
-            let bio_segment = BioSegment::alloc(block_range.len(), BioDirection::ToDevice);
-            let mut segment_writer = bio_segment.writer().map_err(|_| {
-                Error::with_message(Errno::EIO, "failed to access zero-write bio segment")
-            })?;
-            segment_writer.fill_zeros(block_range.len() * BLOCK_SIZE);
-            fs.write_blocks_async(block_range.start, bio_segment, None, &mut io_batch)?;
-        }
-
-        io_batch.wait_all()?;
-        Ok(())
+        self.block_manager()?
+            .allocate_range_blocks(start_block, end_block)
     }
 
     /// Rejects growth beyond the ext2-representable size limit before mutating state.

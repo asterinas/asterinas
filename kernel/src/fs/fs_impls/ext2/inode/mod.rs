@@ -145,25 +145,29 @@ impl Inode {
         block_group_idx: usize,
         fs: Weak<Ext2>,
     ) -> Arc<Self> {
-        Arc::new_cyclic(|weak_self: &Weak<Self>| Self {
-            ino,
-            type_,
-            block_group_idx,
-            xattr: match type_ {
+        Arc::new_cyclic(|weak_self: &Weak<Self>| {
+            let xattr = match type_ {
                 InodeType::Dir | InodeType::File => Some(Xattr::new(
                     inode_desc.file_acl,
                     weak_self.clone(),
                     fs.clone(),
                 )),
                 _ => None,
-            },
-            pipe: match type_ {
+            };
+            let pipe = match type_ {
                 InodeType::NamedPipe => Some(Pipe::new()),
                 _ => None,
-            },
-            inner: RwMutex::new(InodeInner::new(inode_desc, fs.clone())),
-            fs,
-            extension: Extension::new(),
+            };
+            Self {
+                ino,
+                type_,
+                inner: RwMutex::new(InodeInner::new(inode_desc, fs.clone())),
+                block_group_idx,
+                fs,
+                xattr,
+                pipe,
+                extension: Extension::new(),
+            }
         })
     }
 
@@ -214,7 +218,7 @@ impl Drop for Inode {
     fn drop(&mut self) {
         if let Err(err) = self.try_reclaim_deleted_inode() {
             debug!(
-                "ext2: failed to reclaim deleted inode {} during drop: {:?}",
+                "failed to reclaim deleted inode {} during drop: {:?}",
                 self.ino, err
             );
         }
@@ -300,7 +304,7 @@ impl TryFrom<&RawInode> for InodeDesc {
             size |= (raw.size_high as u64) << 32;
         }
 
-        // Aligned with Linux, Linux stores nul in symlink, so the max size is BLOCK_SIZE - 1;
+        // Linux stores the nul byte in symlink, so the maximum size is `BLOCK_SIZE - 1`.
         if type_ == InodeType::SymLink && size >= BLOCK_SIZE as u64 {
             return_errno_with_message!(Errno::EUCLEAN, "corrupted symlink on disk");
         }

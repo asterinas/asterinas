@@ -34,18 +34,18 @@ impl UserSignal {
     pub fn new(num: SigNum, kind: UserSignalKind, pid: Pid, uid: Uid) -> Self {
         Self {
             num,
-            kind,
             pid,
             uid,
+            kind,
         }
     }
 
     pub fn new_kill(num: SigNum, ctx: &Context) -> Self {
         Self {
             num,
-            kind: UserSignalKind::Kill,
             pid: ctx.process.pid(),
             uid: ctx.posix_thread.credentials().ruid(),
+            kind: UserSignalKind::Kill,
         }
     }
 

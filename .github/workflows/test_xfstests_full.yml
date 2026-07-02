@@ -10,7 +10,7 @@ jobs:
   xfstests-full:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:
-      image: asterinas/asterinas:0.18.0-20260603
+      image: asterinas/asterinas:0.18.0-20260701
       options: --device=/dev/kvm --privileged
     timeout-minutes: 90
     steps:
