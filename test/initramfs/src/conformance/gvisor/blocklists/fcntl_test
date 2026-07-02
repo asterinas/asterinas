@@ -6,7 +6,6 @@ FcntlTest.GetO_ASYNC
 FcntlTest.RegularFileOAsync
 FcntlTest.SetFdO_ASYNC
 FcntlTest.SetFileStatusFlagWithOpath
-FcntlTest.SetFlags
 FcntlTest.SetFlO_ASYNC
 FcntlTest.SetFlSetOwnSetSigDoNotRace
 FcntlTest.SetSig
