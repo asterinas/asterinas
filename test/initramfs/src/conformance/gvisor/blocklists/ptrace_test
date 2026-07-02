@@ -4,6 +4,7 @@ PtraceTest.Prctl*
 PtraceTest.GetSigMask
 PtraceTest.GetSiginfo_SetSiginfo_SignalInjection
 PtraceTest.GetRegSet
+PtraceTest.GetRegSetPartialRead
 PtraceTest.ChangeRegSetInOptSyscall
 PtraceTest.ExitWhenParentIsNotTracer_Syscall_TraceVfork_TraceVforkDone
 PtraceTest.Int3

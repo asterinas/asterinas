@@ -18,6 +18,8 @@ Inotify.ExcludeUnlinkMultipleChildren_NoRandomSave
 # TODO: Generate `DELETE_SELF`/`IGNORED` after closing the last FD.
 Inotify.IncludeUnlinkedFile
 Inotify.IncludeUnlinkedFile_NoRandomSave
+Inotify.RmdirGeneratesDeleteSelfBeforeParentDelete
+Inotify.RmdirWithOpenDirFdDefersDeleteSelfUntilClose
 
 # TODO: Report `MOVE_*` events at the `rename()` system call.
 Inotify.MoveGeneratesEvents
@@ -29,3 +31,6 @@ Inotify.SpliceOnWatchTarget
 
 # TODO: Correct event generation at the `untimensat()` system call.
 Inotify.Utimensat
+
+# TODO: Generate `MODIFY` events when truncating an existing file at `open()`.
+Inotify.OpenWithTruncGeneratesModify
