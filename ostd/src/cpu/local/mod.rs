@@ -289,8 +289,8 @@ mod is_used {
     //!
     //! [`copy_bsp_for_ap`]: super::copy_bsp_for_ap
 
-    cfg_if::cfg_if! {
-        if #[cfg(debug_assertions)] {
+    cfg_select! {
+        debug_assertions => {
             use core::sync::atomic::{AtomicBool, Ordering};
 
             static IS_USED: AtomicBool = AtomicBool::new(false);
@@ -302,7 +302,8 @@ mod is_used {
             pub fn debug_assert_false() {
                 debug_assert!(!IS_USED.load(Ordering::Relaxed));
             }
-        } else {
+        }
+        _ => {
             pub fn debug_set_true() {}
 
             pub fn debug_assert_false() {}

@@ -20,7 +20,6 @@ pub(super) mod gdt;
 mod idt;
 mod syscall;
 
-use cfg_if::cfg_if;
 use spin::Once;
 
 use super::cpu::context::GeneralRegs;
@@ -35,8 +34,8 @@ use crate::{
     mm::MAX_USERSPACE_VADDR,
 };
 
-cfg_if! {
-    if #[cfg(feature = "cvm_guest")] {
+cfg_select! {
+    feature = "cvm_guest" => {
         use tdx_guest::{tdcall, handle_virtual_exception};
         use crate::arch::tdx_guest::TrapFrameWrapper;
     }

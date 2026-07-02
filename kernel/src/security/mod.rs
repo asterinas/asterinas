@@ -2,13 +2,12 @@
 
 pub mod lsm;
 
-use cfg_if::cfg_if;
-
-cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
+cfg_select! {
+    all(target_arch = "x86_64", feature = "cvm_guest") => {
         mod tsm;
         mod tsm_mr;
     }
+    _ => {}
 }
 
 pub(super) fn init() {
