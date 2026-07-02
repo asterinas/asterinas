@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod devices;
 mod fs;
 mod inode;
 mod kernel;
@@ -17,6 +18,7 @@ use crate::{fs::vfs::registry, prelude::*};
 pub fn init() {
     registry::register(&SysFsType).unwrap();
 
+    devices::init();
     kernel::init();
 }
 
