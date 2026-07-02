@@ -112,11 +112,9 @@ fn do_epoll_pwait2(
     };
 
     if sigmask_addr != 0 {
-        if sigmask_size != size_of::<SigMask>() {
-            return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
-        }
+        let checked_size = SigMask::check_full_size(sigmask_size)?;
 
-        let sigmask = ctx.user_space().read_val::<SigMask>(sigmask_addr)?;
+        let sigmask = checked_size.read_val(&ctx.user_space(), sigmask_addr)?;
         ctx.save_and_set_sig_mask(sigmask);
     }
 

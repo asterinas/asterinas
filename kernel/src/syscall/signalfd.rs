@@ -12,7 +12,6 @@ use core::{
 };
 
 use bitflags::bitflags;
-use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
@@ -60,11 +59,9 @@ pub fn sys_signalfd4(
         raw_fd, mask_ptr, sizemask, flags
     );
 
-    if sizemask != size_of::<SigMask>() {
-        return Err(Error::with_message(Errno::EINVAL, "invalid mask size"));
-    }
+    let checked_size = SigMask::check_full_size(sizemask)?;
 
-    let mut mask = ctx.user_space().read_val::<SigMask>(mask_ptr)?;
+    let mut mask = checked_size.read_val(&ctx.user_space(), mask_ptr)?;
     mask -= SIGKILL;
     mask -= SIGSTOP;
 

@@ -33,11 +33,9 @@ pub fn sys_pselect6(
     if sigmask_addr != 0 {
         let sigmask_with_size = user_space.read_val::<SigMaskWithSize>(sigmask_addr)?;
         if sigmask_with_size.addr != 0 {
-            if sigmask_with_size.size != size_of::<SigMask>() {
-                return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
-            }
+            let checked_size = SigMask::check_full_size(sigmask_with_size.size)?;
 
-            let sigmask = user_space.read_val::<SigMask>(sigmask_with_size.addr)?;
+            let sigmask = checked_size.read_val(&user_space, sigmask_with_size.addr)?;
             ctx.save_and_set_sig_mask(sigmask);
         }
     }
