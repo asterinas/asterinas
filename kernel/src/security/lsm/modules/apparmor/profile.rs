@@ -192,7 +192,7 @@ pub(super) enum AppArmorFilePolicy {
     /// The temporary Asterinas text/debug loader rule list.
     PathRules(Vec<AppArmorPathRule>),
     /// Linux AppArmor DFA policy decoded from binary policy.
-    Dfa(AppArmorDfaFilePolicy),
+    Dfa(Box<AppArmorDfaFilePolicy>),
 }
 
 /// A file-access decision from a profile.

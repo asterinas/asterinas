@@ -6,7 +6,7 @@ use crate::prelude::*;
 /// A policy update decoded from a user-space policy payload.
 pub(super) enum AppArmorPolicyUpdate {
     /// Inserts or replaces a profile.
-    Replace(AppArmorProfile),
+    Replace(Box<AppArmorProfile>),
     /// Inserts or replaces multiple profiles decoded from one binary payload.
     ReplaceMany(Vec<AppArmorProfile>),
     /// Removes a profile.

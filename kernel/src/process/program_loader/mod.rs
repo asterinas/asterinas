@@ -90,11 +90,6 @@ impl ProgramToLoad {
         })
     }
 
-    /// Returns the ELF file that will actually be executed.
-    pub(super) fn elf_file(&self) -> &Path {
-        &self.elf_file
-    }
-
     /// Loads the executable into the specified virtual memory space.
     ///
     /// Returns the information about the ELF loading process.

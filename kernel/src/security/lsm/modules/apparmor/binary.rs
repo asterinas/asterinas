@@ -153,7 +153,7 @@ fn unpack_asterinas_binary_policy(
             for _ in 0..rule_count {
                 rules.push(read_asterinas_rule(&mut reader)?);
             }
-            AppArmorPolicyUpdate::Replace(AppArmorProfile::new(profile_name, mode, rules))
+            AppArmorPolicyUpdate::Replace(Box::new(AppArmorProfile::new(profile_name, mode, rules)))
         }
         AppArmorPolicyOperation::Remove => {
             if mode.is_some() || rule_count != 0 {
@@ -535,7 +535,7 @@ impl<'a> LinuxPolicyReader<'a> {
         let Some(policy) = self.read_policydb(false, true)? else {
             return Ok(AppArmorFilePolicy::PathRules(Vec::new()));
         };
-        Ok(AppArmorFilePolicy::Dfa(policy))
+        Ok(AppArmorFilePolicy::Dfa(Box::new(policy)))
     }
 
     fn read_policydb(
@@ -686,10 +686,7 @@ impl<'a> LinuxPolicyReader<'a> {
             return Ok(());
         }
 
-        loop {
-            let Some(_key) = self.read_optional_string_any_name()? else {
-                break;
-            };
+        while let Some(_key) = self.read_optional_string_any_name()? {
             let _ = self.read_optional_blob_any_name()?;
         }
         self.expect_name_code(LinuxCode::StructEnd, None)
@@ -791,14 +788,14 @@ impl<'a> LinuxPolicyReader<'a> {
         if self.peek_code()? == Some(LinuxCode::Name) {
             self.offset += 1;
             let tag = self.read_tag_name()?;
-            if let Some(expected_name) = name {
-                if tag != expected_name {
-                    self.offset = position;
-                    return_errno_with_message!(
-                        Errno::EINVAL,
-                        "the AppArmor policy field name is invalid"
-                    );
-                }
+            if let Some(expected_name) = name
+                && tag != expected_name
+            {
+                self.offset = position;
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the AppArmor policy field name is invalid"
+                );
             }
         } else if name.is_some() {
             self.offset = position;

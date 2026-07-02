@@ -17,7 +17,7 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    security::lsm::{is_apparmor_enabled, is_yama_enabled},
+    security,
 };
 
 mod apparmor;
@@ -54,11 +54,11 @@ impl ProcDirOps for KernelDirOps {
             return Ok(child);
         }
 
-        if name == "yama" && is_yama_enabled() {
+        if name == "yama" && security::is_yama_enabled() {
             return Ok(YamaDirOps::new_inode(this_dir.this_weak().clone()));
         }
 
-        if name == "apparmor" && is_apparmor_enabled() {
+        if name == "apparmor" && security::is_apparmor_enabled() {
             return Ok(AppArmorDirOps::new_inode(this_dir.this_weak().clone()));
         }
 
@@ -69,9 +69,10 @@ impl ProcDirOps for KernelDirOps {
     where
         F: FnMut(ReaddirEntry<'a>) -> Result<()>,
     {
-        let yama_entry = is_yama_enabled().then(|| ListedEntry::new("yama", InodeType::Dir));
+        let yama_entry =
+            security::is_yama_enabled().then(|| ListedEntry::new("yama", InodeType::Dir));
         let apparmor_entry =
-            is_apparmor_enabled().then(|| ListedEntry::new("apparmor", InodeType::Dir));
+            security::is_apparmor_enabled().then(|| ListedEntry::new("apparmor", InodeType::Dir));
 
         visit_listed_entries(
             offset,

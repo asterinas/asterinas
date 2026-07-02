@@ -93,15 +93,7 @@ impl LsmFileHook for AppArmorLsm {
             return Ok(());
         };
 
-        POLICY.check_file_create(
-            &task_state,
-            context.path_resolver(),
-            context.parent(),
-            context.name(),
-            context.kind(),
-            context.access_mode(),
-            context.status_flags(),
-        )
+        POLICY.check_file_create(&task_state, context)
     }
 
     fn on_file_delete(&self, context: &FileDeleteContext<'_>) -> Result<()> {
@@ -255,7 +247,7 @@ pub fn has_binary_policy_magic(policy: &[u8]) -> bool {
 fn apply_policy_update(update: AppArmorPolicyUpdate) -> Result<()> {
     match update {
         AppArmorPolicyUpdate::Replace(profile) => {
-            POLICY.replace_profile(profile);
+            POLICY.replace_profile(*profile);
             Ok(())
         }
         AppArmorPolicyUpdate::ReplaceMany(profiles) => {

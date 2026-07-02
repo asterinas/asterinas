@@ -59,11 +59,13 @@ pub fn is_yama_enabled() -> bool {
 }
 
 /// Returns the Yama ptrace scope.
+#[expect(dead_code, reason = "keeps the top-level security facade complete")]
 pub fn get_yama_scope() -> YamaScope {
     lsm::yama::get_scope()
 }
 
 /// Sets the Yama ptrace scope.
+#[expect(dead_code, reason = "keeps the top-level security facade complete")]
 pub fn set_yama_scope(new_scope: YamaScope) -> Result<()> {
     lsm::yama::set_scope(new_scope)
 }

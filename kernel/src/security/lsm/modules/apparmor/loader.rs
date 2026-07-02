@@ -55,7 +55,7 @@ pub(super) fn parse_policy_load(policy_text: &str) -> Result<AppArmorPolicyUpdat
     }
 
     let attachment = AppArmorAttachment::from_profile(&profile_name, None, None);
-    Ok(AppArmorPolicyUpdate::Replace(
+    Ok(AppArmorPolicyUpdate::Replace(Box::new(
         AppArmorProfile::new_with_transition_policy(
             profile_name,
             attachment,
@@ -64,7 +64,7 @@ pub(super) fn parse_policy_load(policy_text: &str) -> Result<AppArmorPolicyUpdat
             AppArmorCapabilityPolicy::new(allowed_capabilities, CapSet::empty(), CapSet::empty()),
             AppArmorProfileTransitionPolicy::new(change_profile_targets, change_onexec_targets),
         ),
-    ))
+    )))
 }
 
 fn parse_remove_header(header: &str) -> Result<AppArmorProfileName> {

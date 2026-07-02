@@ -13,7 +13,7 @@ use crate::{
     },
     prelude::*,
     process::credentials::capabilities::CapSet,
-    security::{FileCreateKind, FileDeleteKind, FilePermission, FileSetattrKind},
+    security::{FileDeleteKind, FilePermission, FileSetattrKind, lsm::FileCreateContext},
 };
 
 /// The in-kernel AppArmor policy store.
@@ -66,15 +66,20 @@ impl AppArmorPolicy {
     pub fn check_file_create(
         &self,
         task_state: &AppArmorTaskState,
-        path_resolver: &PathResolver,
-        parent: &Path,
-        name: &str,
-        kind: FileCreateKind,
-        access_mode: Option<AccessMode>,
-        status_flags: StatusFlags,
+        context: &FileCreateContext<'_>,
     ) -> Result<()> {
-        let permissions = AppArmorFilePermission::for_create(kind, access_mode, status_flags);
-        self.check_child_path_access(task_state, path_resolver, parent, name, permissions)
+        let permissions = AppArmorFilePermission::for_create(
+            context.kind(),
+            context.access_mode(),
+            context.status_flags(),
+        );
+        self.check_child_path_access(
+            task_state,
+            context.path_resolver(),
+            context.parent(),
+            context.name(),
+            permissions,
+        )
     }
 
     /// Checks whether the task may delete a filesystem object.
