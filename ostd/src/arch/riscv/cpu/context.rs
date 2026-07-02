@@ -427,30 +427,39 @@ impl Default for QFpuContext {
 
 impl FFpuContext {
     fn save(&mut self) {
+        // SAFETY: It is safe to save FPU registers.
         unsafe { save_fpu_context_f(self as *mut _) };
     }
 
     fn load(&self) {
+        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
+        // memory safety.
         unsafe { load_fpu_context_f(self as *const _) };
     }
 }
 
 impl DFpuContext {
     fn save(&mut self) {
+        // SAFETY: It is safe to save FPU registers.
         unsafe { save_fpu_context_d(self as *mut _) };
     }
 
     fn load(&self) {
+        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
+        // memory safety.
         unsafe { load_fpu_context_d(self as *const _) };
     }
 }
 
 impl QFpuContext {
     fn save(&mut self) {
+        // SAFETY: It is safe to save FPU registers.
         unsafe { save_fpu_context_q(self as *mut _) };
     }
 
     fn load(&self) {
+        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
+        // memory safety.
         unsafe { load_fpu_context_q(self as *const _) };
     }
 }

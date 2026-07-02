@@ -15,15 +15,18 @@ use crate::{arch::irq as arch_irq, sync::GuardTransfer, task::atomic_mode::InAto
 ///
 /// [`SpinLock`]: crate::sync::SpinLock
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
+/// # fn work_with_irq_disabled() {}
+/// #
 /// use ostd::irq;
 ///
-/// {
-///     let _ = irq::disable_local();
-///     todo!("do something when irqs are disabled");
-/// }
+/// let guard = irq::disable_local();
+/// // Do something with IRQs disabled.
+/// work_with_irq_disabled();
+/// // Re-enable IRQs if they were previously enabled.
+/// drop(guard);
 /// ```
 pub fn disable_local() -> DisabledLocalIrqGuard {
     DisabledLocalIrqGuard::new()
