@@ -15,7 +15,10 @@ ostd.workspace = true
 spin.workspace = true
 
 [target.loongarch64-unknown-none-softfloat.dependencies]
-fdt = { version = "0.1.5", features = ["pretty-printing"] }
+fdt.workspace = true
+
+[target.riscv64imac-unknown-none-elf.dependencies]
+fdt.workspace = true
 
 [lints]
 workspace = true
