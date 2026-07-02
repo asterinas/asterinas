@@ -48,6 +48,7 @@ mod fcntl;
 mod flock;
 mod fork;
 mod fsconfig;
+mod fsmount;
 mod fsopen;
 mod fsync;
 mod futex;
