@@ -1,0 +1,3 @@
+// Open a filesystem context
+fsopen(fs_name, flags = 0);
+fsopen(fs_name, flags = FSOPEN_CLOEXEC);

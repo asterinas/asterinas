@@ -74,6 +74,7 @@ macro_rules! import_generic_syscall_entries {
             mknod::sys_mknodat,
             mmap::sys_mmap,
             mount::sys_mount,
+            mount_api::sys_fsopen,
             mprotect::sys_mprotect,
             mremap::sys_mremap,
             msync::sys_msync,
@@ -399,6 +400,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_PWRITEV2 = 287               => sys_pwritev2(args[..6]);
             SYS_STATX = 291                  => sys_statx(args[..5]);
             SYS_PIDFD_SEND_SIGNAL = 424      => sys_pidfd_send_signal(args[..4]);
+            SYS_FSOPEN = 430                 => sys_fsopen(args[..2]);
             SYS_PIDFD_OPEN = 434             => sys_pidfd_open(args[..2]);
             SYS_CLONE3 = 435                 => sys_clone3(args[..2], &user_ctx);
             SYS_CLOSE_RANGE = 436            => sys_close_range(args[..3]);

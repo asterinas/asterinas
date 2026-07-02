@@ -60,6 +60,19 @@ Silently-ignored flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/umount.2.html).
 
+## New mount API
+
+### `fsopen`
+
+Supported functionality in SCML:
+
+```c
+{{#include fsopen.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/fsopen.2.html).
+
 ## Event notifications
 
 ### `inotify_init` and `inotify_init1`
