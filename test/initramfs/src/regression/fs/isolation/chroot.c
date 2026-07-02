@@ -15,7 +15,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "../../common/test.h"
+#include "../../common/capability.h"
 
 FN_SETUP(create_chroot_env)
 {
@@ -63,6 +63,20 @@ static int file_contains(const char *filepath, const char *substring)
 			 _ret == pid && WIFEXITED(status) && \
 				 WEXITSTATUS(status) == 0);  \
 	} while (0)
+
+FN_TEST(chroot_requires_cap_sys_chroot)
+{
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_SYS_CHROOT);
+		CHECK_WITH(chroot("/foo"), _ret == -1 && errno == EPERM);
+
+		exit(EXIT_SUCCESS);
+	} else {
+		WAIT_AND_CHECK_CHILD(pid);
+	}
+}
+END_TEST()
 
 FN_TEST(chroot_getcwd)
 {
