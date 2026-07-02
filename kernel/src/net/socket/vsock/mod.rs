@@ -15,6 +15,8 @@
 //!   userspace-facing system calls.
 //!
 
+use alloc::vec::Vec;
+
 mod addr;
 mod stream;
 mod transport;
@@ -24,4 +26,14 @@ pub use stream::VsockStreamSocket;
 
 pub(in crate::net) fn init() {
     transport::init();
+}
+
+pub(crate) fn handle_vhost_packet(
+    _header: aster_virtio::device::socket::header::VirtioVsockHdr,
+    _payload: Vec<u8>,
+) -> crate::prelude::Result<()> {
+    crate::prelude::return_errno_with_message!(
+        crate::prelude::Errno::ENODEV,
+        "no vhost-vsock transport is available"
+    )
 }
