@@ -49,11 +49,24 @@ impl<E: Ext> PollableIface<E> {
         })
     }
 
-    pub(super) fn prefix_len(&self) -> Option<u8> {
-        self.interface
-            .ip_addrs()
-            .first()
-            .map(|ip_addr| ip_addr.prefix_len())
+    pub(super) fn ipv4_prefix_len(&self) -> Option<u8> {
+        self.interface.ip_addrs().iter().find_map(|cidr| {
+            if let smoltcp::wire::IpCidr::Ipv4(ipv4_cidr) = cidr {
+                Some(ipv4_cidr.prefix_len())
+            } else {
+                None
+            }
+        })
+    }
+
+    pub(super) fn ipv6_prefix_len(&self) -> Option<u8> {
+        self.interface.ip_addrs().iter().find_map(|cidr| {
+            if let smoltcp::wire::IpCidr::Ipv6(ipv6_cidr) = cidr {
+                Some(ipv6_cidr.prefix_len())
+            } else {
+                None
+            }
+        })
     }
 
     /// Returns the next poll time.

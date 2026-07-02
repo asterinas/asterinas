@@ -122,6 +122,41 @@ FN_TEST(socket_error)
 }
 END_TEST()
 
+FN_TEST(ipv6_v6only)
+{
+	// `IPV6_V6ONLY` is a per-socket switch on an `AF_INET6` socket that
+	// selects between dual-stack (also accepts IPv4-mapped traffic) and
+	// IPv6-only operation. It is carried as a 4-byte integer.
+	int sk = TEST_SUCC(socket(AF_INET6, SOCK_DGRAM, 0));
+	int val;
+	socklen_t len = sizeof(val);
+
+	// Enabling restricts the socket to IPv6.
+	val = 1;
+	TEST_SUCC(setsockopt(sk, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val)));
+	val = 0;
+	TEST_RES(getsockopt(sk, IPPROTO_IPV6, IPV6_V6ONLY, &val, &len),
+		 val == 1 && len == sizeof(int));
+
+	// Clearing it restores dual-stack behavior.
+	val = 0;
+	TEST_SUCC(setsockopt(sk, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val)));
+	TEST_RES(getsockopt(sk, IPPROTO_IPV6, IPV6_V6ONLY, &val, &len),
+		 val == 0 && len == sizeof(int));
+
+	TEST_SUCC(close(sk));
+
+	// The option is meaningless on an `AF_INET` socket and is rejected.
+	val = 0;
+	len = sizeof(val);
+	TEST_ERRNO(getsockopt(sk_udp, IPPROTO_IPV6, IPV6_V6ONLY, &val, &len),
+		   EOPNOTSUPP);
+	TEST_ERRNO(setsockopt(sk_udp, IPPROTO_IPV6, IPV6_V6ONLY, &val,
+			      sizeof(val)),
+		   ENOPROTOOPT);
+}
+END_TEST()
+
 FN_TEST(nagle)
 {
 	int option = 1;

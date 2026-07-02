@@ -31,7 +31,7 @@ pub(super) fn do_get_addr(request_segment: &AddrSegment) -> Result<Vec<RtnlSegme
 
     let mut response_segments: Vec<RtnlSegment> = iter_all_ifaces()
         // GETADDR only supports dump mode, so we're going to report all addresses.
-        .filter_map(|iface| iface_to_new_addr(request_segment.header(), iface))
+        .flat_map(|iface| iface_to_new_addr(request_segment.header(), iface))
         .map(RtnlSegment::NewAddr)
         .collect();
 
@@ -40,9 +40,41 @@ pub(super) fn do_get_addr(request_segment: &AddrSegment) -> Result<Vec<RtnlSegme
     Ok(response_segments)
 }
 
-fn iface_to_new_addr(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> Option<AddrSegment> {
-    let ipv4_addr = iface.ipv4_addr()?;
+fn iface_to_new_addr(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> Vec<AddrSegment> {
+    let mut segments = Vec::new();
 
+    if let Some(ipv4_addr) = iface.ipv4_addr() {
+        let prefix_len = iface.ipv4_prefix_len().unwrap();
+        segments.push(new_addr_segment(
+            request_header,
+            iface,
+            CSocketAddrFamily::AF_INET,
+            prefix_len,
+            ipv4_addr.octets().to_vec(),
+        ));
+    }
+
+    if let Some(ipv6_addr) = iface.ipv6_addr() {
+        let prefix_len = iface.ipv6_prefix_len().unwrap();
+        segments.push(new_addr_segment(
+            request_header,
+            iface,
+            CSocketAddrFamily::AF_INET6,
+            prefix_len,
+            ipv6_addr.octets().to_vec(),
+        ));
+    }
+
+    segments
+}
+
+fn new_addr_segment(
+    request_header: &CMsgSegHdr,
+    iface: &Arc<Iface>,
+    family: CSocketAddrFamily,
+    prefix_len: u8,
+    address: Vec<u8>,
+) -> AddrSegment {
     let header = CMsgSegHdr {
         len: 0,
         type_: CSegmentType::NEWADDR as _,
@@ -52,18 +84,24 @@ fn iface_to_new_addr(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> Option<
     };
 
     let addr_message = AddrSegmentBody {
-        family: CSocketAddrFamily::AF_INET as _,
-        prefix_len: iface.prefix_len().unwrap(),
+        family: family as _,
+        prefix_len,
         flags: AddrMessageFlags::PERMANENT,
         scope: RtScope::HOST,
         index: NonZeroU32::new(iface.index()),
     };
 
-    let attrs = vec![
-        AddrAttr::Address(ipv4_addr.octets()),
-        AddrAttr::Label(iface.name().to_owned()),
-        AddrAttr::Local(ipv4_addr.octets()),
-    ];
+    // Linux reports `IFA_ADDRESS`, `IFA_LOCAL` and `IFA_LABEL` for IPv4 addresses
+    // (`inet_fill_ifaddr`) but only `IFA_ADDRESS` for IPv6 addresses
+    // (`inet6_fill_ifaddr`).
+    let attrs = match family {
+        CSocketAddrFamily::AF_INET6 => vec![AddrAttr::Address(address)],
+        _ => vec![
+            AddrAttr::Address(address.clone()),
+            AddrAttr::Label(iface.name().to_owned()),
+            AddrAttr::Local(address),
+        ],
+    };
 
-    Some(AddrSegment::new(header, addr_message, attrs))
+    AddrSegment::new(header, addr_message, attrs)
 }

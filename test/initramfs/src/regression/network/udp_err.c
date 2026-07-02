@@ -6,6 +6,7 @@
 #include <sys/poll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <net/if.h>
 #include <fcntl.h>
 
 #include "../common/test.h"
@@ -70,6 +71,309 @@ FN_TEST(getsockname)
 
 	TEST_RES(getsockname(sk_connected, psaddr, &addrlen),
 		 addrlen == sizeof(saddr) && saddr.sin_port != C_PORT);
+}
+END_TEST()
+
+FN_TEST(ipv6_getsockname)
+{
+	int sk = TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	struct sockaddr_in6 saddr = { .sin6_port = 0xbeef };
+	struct sockaddr *psaddr = (struct sockaddr *)&saddr;
+	socklen_t addrlen = sizeof(saddr);
+
+	TEST_RES(getsockname(sk, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin6_family == AF_INET6 &&
+			 saddr.sin6_port == 0 &&
+			 memcmp(&saddr.sin6_addr, &in6addr_any,
+				sizeof(in6addr_any)) == 0);
+
+	TEST_SUCC(close(sk));
+}
+END_TEST()
+
+FN_TEST(ipv6_send_and_recv)
+{
+	int receiver =
+		TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	int sender = TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	struct sockaddr_in6 receiver_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8084),
+		.sin6_addr = IN6ADDR_LOOPBACK_INIT,
+	};
+	struct sockaddr_in6 peer_addr = { 0 };
+	socklen_t peer_len = sizeof(peer_addr);
+	char send_buf[] = "v6";
+	char recv_buf[sizeof(send_buf)] = { 0 };
+
+	TEST_SUCC(bind(receiver, (struct sockaddr *)&receiver_addr,
+		       sizeof(receiver_addr)));
+	TEST_RES(sendto(sender, send_buf, sizeof(send_buf), 0,
+			(struct sockaddr *)&receiver_addr,
+			sizeof(receiver_addr)),
+		 _ret == sizeof(send_buf));
+	TEST_RES(recvfrom(receiver, recv_buf, sizeof(recv_buf), 0,
+			  (struct sockaddr *)&peer_addr, &peer_len),
+		 _ret == sizeof(send_buf) && peer_len == sizeof(peer_addr) &&
+			 peer_addr.sin6_family == AF_INET6 &&
+			 memcmp(recv_buf, send_buf, sizeof(send_buf)) == 0);
+
+	TEST_SUCC(close(sender));
+	TEST_SUCC(close(receiver));
+}
+END_TEST()
+
+FN_TEST(ipv6_eth0_send_and_recv)
+{
+#ifndef __asterinas__
+	SKIP_TEST_IF(1);
+#endif
+	int receiver =
+		TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	int sender = TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	unsigned int eth0_index = if_nametoindex("eth0");
+	struct sockaddr_in6 receiver_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8086),
+	};
+	struct sockaddr_in6 peer_addr = { 0 };
+	socklen_t peer_len = sizeof(peer_addr);
+	char send_buf[] = "eth0-v6";
+	char recv_buf[sizeof(send_buf)] = { 0 };
+
+	TEST_RES(0, eth0_index != 0);
+	TEST_SUCC(inet_pton(AF_INET6, "fec0::15", &receiver_addr.sin6_addr));
+	TEST_SUCC(bind(receiver, (struct sockaddr *)&receiver_addr,
+		       sizeof(receiver_addr)));
+	TEST_RES(sendto(sender, send_buf, sizeof(send_buf), 0,
+			(struct sockaddr *)&receiver_addr,
+			sizeof(receiver_addr)),
+		 _ret == sizeof(send_buf));
+	TEST_RES(recvfrom(receiver, recv_buf, sizeof(recv_buf), 0,
+			  (struct sockaddr *)&peer_addr, &peer_len),
+		 _ret == sizeof(send_buf) && peer_len == sizeof(peer_addr) &&
+			 peer_addr.sin6_family == AF_INET6 &&
+			 memcmp(recv_buf, send_buf, sizeof(send_buf)) == 0);
+
+	TEST_SUCC(close(sender));
+	TEST_SUCC(close(receiver));
+}
+END_TEST()
+
+FN_TEST(ipv6_v6only)
+{
+	int sk = TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	int bound_sk =
+		TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	struct sockaddr_in6 mapped_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8091),
+		.sin6_addr = { .s6_addr = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff,
+					    0xff, 127, 0, 0, 1 } },
+	};
+	struct sockaddr_in6 bound_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = 0,
+		.sin6_addr = IN6ADDR_LOOPBACK_INIT,
+	};
+	int v6only = -1;
+	socklen_t optlen = sizeof(v6only);
+
+	TEST_RES(getsockopt(sk, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, &optlen),
+		 optlen == sizeof(v6only) && v6only == 0);
+
+	v6only = 1;
+	TEST_SUCC(setsockopt(sk, IPPROTO_IPV6, IPV6_V6ONLY, &v6only,
+			     sizeof(v6only)));
+	TEST_RES(getsockopt(sk, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, &optlen),
+		 optlen == sizeof(v6only) && v6only == 1);
+
+	TEST_ERRNO(bind(sk, (struct sockaddr *)&mapped_addr,
+			sizeof(mapped_addr)),
+		   EINVAL);
+
+	TEST_SUCC(bind(bound_sk, (struct sockaddr *)&bound_addr,
+		       sizeof(bound_addr)));
+	TEST_ERRNO(setsockopt(bound_sk, IPPROTO_IPV6, IPV6_V6ONLY, &v6only,
+			      sizeof(v6only)),
+		   EINVAL);
+
+	// Reaching an IPv4-mapped address from a v6only socket fails with
+	// ENETUNREACH on connect() and sendto(), unlike bind() which uses EINVAL.
+	char send_buf[] = "mapped";
+	TEST_ERRNO(connect(sk, (struct sockaddr *)&mapped_addr,
+			   sizeof(mapped_addr)),
+		   ENETUNREACH);
+	TEST_ERRNO(sendto(sk, send_buf, sizeof(send_buf), 0,
+			  (struct sockaddr *)&mapped_addr, sizeof(mapped_addr)),
+		   ENETUNREACH);
+
+	TEST_SUCC(close(bound_sk));
+	TEST_SUCC(close(sk));
+}
+END_TEST()
+
+FN_TEST(ipv6_mapped_ipv4_send_and_recv)
+{
+	int receiver =
+		TEST_SUCC(socket(PF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	int sender = TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	struct sockaddr_in receiver_addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(8087),
+	};
+	struct sockaddr_in6 mapped_receiver_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8087),
+		.sin6_addr = { .s6_addr = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff,
+					    0xff, 127, 0, 0, 1 } },
+	};
+	struct sockaddr_in peer_addr = { 0 };
+	socklen_t peer_len = sizeof(peer_addr);
+	struct sockaddr_in6 sender_addr = { 0 };
+	socklen_t sender_len = sizeof(sender_addr);
+	char send_buf[] = "mapped";
+	char recv_buf[sizeof(send_buf)] = { 0 };
+
+	TEST_SUCC(inet_aton("127.0.0.1", &receiver_addr.sin_addr));
+	TEST_SUCC(bind(receiver, (struct sockaddr *)&receiver_addr,
+		       sizeof(receiver_addr)));
+	TEST_RES(sendto(sender, send_buf, sizeof(send_buf), 0,
+			(struct sockaddr *)&mapped_receiver_addr,
+			sizeof(mapped_receiver_addr)),
+		 _ret == sizeof(send_buf));
+	TEST_RES(recvfrom(receiver, recv_buf, sizeof(recv_buf), 0,
+			  (struct sockaddr *)&peer_addr, &peer_len),
+		 _ret == sizeof(send_buf) && peer_len == sizeof(peer_addr) &&
+			 peer_addr.sin_family == AF_INET &&
+			 memcmp(recv_buf, send_buf, sizeof(send_buf)) == 0);
+	// After `sendto()` on an unconnected socket, the local address is left
+	// unspecified (only an ephemeral port is auto-assigned), so we check that
+	// the reported address is an IPv6 endpoint with a non-zero port rather than
+	// asserting a specific local address.
+	TEST_RES(getsockname(sender, (struct sockaddr *)&sender_addr,
+			     &sender_len),
+		 sender_len == sizeof(sender_addr) &&
+			 sender_addr.sin6_family == AF_INET6 &&
+			 sender_addr.sin6_port != 0);
+
+	TEST_SUCC(close(sender));
+	TEST_SUCC(close(receiver));
+}
+END_TEST()
+
+FN_TEST(ipv6_wildcard_receives_ipv4)
+{
+	int receiver =
+		TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	int sender = TEST_SUCC(socket(PF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	struct sockaddr_in6 receiver_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8088),
+		.sin6_addr = IN6ADDR_ANY_INIT,
+	};
+	struct sockaddr_in send_addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(8088),
+	};
+	struct sockaddr_in6 peer_addr = { 0 };
+	socklen_t peer_len = sizeof(peer_addr);
+	char send_buf[] = "dual";
+	char recv_buf[sizeof(send_buf)] = { 0 };
+
+	TEST_SUCC(inet_aton("127.0.0.1", &send_addr.sin_addr));
+	TEST_SUCC(bind(receiver, (struct sockaddr *)&receiver_addr,
+		       sizeof(receiver_addr)));
+	TEST_RES(sendto(sender, send_buf, sizeof(send_buf), 0,
+			(struct sockaddr *)&send_addr, sizeof(send_addr)),
+		 _ret == sizeof(send_buf));
+	TEST_RES(recvfrom(receiver, recv_buf, sizeof(recv_buf), 0,
+			  (struct sockaddr *)&peer_addr, &peer_len),
+		 _ret == sizeof(send_buf) && peer_len == sizeof(peer_addr) &&
+			 peer_addr.sin6_family == AF_INET6 &&
+			 IN6_IS_ADDR_V4MAPPED(&peer_addr.sin6_addr) &&
+			 memcmp(recv_buf, send_buf, sizeof(send_buf)) == 0);
+
+	TEST_SUCC(close(sender));
+	TEST_SUCC(close(receiver));
+}
+END_TEST()
+
+FN_TEST(ipv6_wildcard_port_conflict)
+{
+	int ipv6_sk =
+		TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	int ipv4_sk = TEST_SUCC(socket(PF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	struct sockaddr_in6 ipv6_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8089),
+		.sin6_addr = IN6ADDR_ANY_INIT,
+	};
+	struct sockaddr_in ipv4_addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(8089),
+	};
+
+	TEST_SUCC(inet_aton("127.0.0.1", &ipv4_addr.sin_addr));
+	TEST_SUCC(bind(ipv6_sk, (struct sockaddr *)&ipv6_addr,
+		       sizeof(ipv6_addr)));
+	TEST_ERRNO(bind(ipv4_sk, (struct sockaddr *)&ipv4_addr,
+			sizeof(ipv4_addr)),
+		   EADDRINUSE);
+
+	TEST_SUCC(close(ipv4_sk));
+	TEST_SUCC(close(ipv6_sk));
+}
+END_TEST()
+
+FN_TEST(ipv6_v6only_wildcard_port_isolated)
+{
+	int ipv6_sk =
+		TEST_SUCC(socket(PF_INET6, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	int ipv4_sk = TEST_SUCC(socket(PF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	struct sockaddr_in6 ipv6_addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8090),
+		.sin6_addr = IN6ADDR_ANY_INIT,
+	};
+	struct sockaddr_in ipv4_addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(8090),
+	};
+	int v6only = 1;
+
+	TEST_SUCC(inet_aton("127.0.0.1", &ipv4_addr.sin_addr));
+	TEST_SUCC(setsockopt(ipv6_sk, IPPROTO_IPV6, IPV6_V6ONLY, &v6only,
+			     sizeof(v6only)));
+	TEST_SUCC(bind(ipv6_sk, (struct sockaddr *)&ipv6_addr,
+		       sizeof(ipv6_addr)));
+	TEST_SUCC(bind(ipv4_sk, (struct sockaddr *)&ipv4_addr,
+		       sizeof(ipv4_addr)));
+
+	TEST_SUCC(close(ipv4_sk));
+	TEST_SUCC(close(ipv6_sk));
+}
+END_TEST()
+
+FN_TEST(address_family_mismatch)
+{
+	int sk = TEST_SUCC(socket(PF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+	struct sockaddr_in6 addr = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8085),
+		.sin6_addr = IN6ADDR_LOOPBACK_INIT,
+	};
+	char buf = 'x';
+
+	TEST_ERRNO(bind(sk, (struct sockaddr *)&addr, sizeof(addr)),
+		   EAFNOSUPPORT);
+	TEST_ERRNO(connect(sk, (struct sockaddr *)&addr, sizeof(addr)),
+		   EAFNOSUPPORT);
+	TEST_ERRNO(sendto(sk, &buf, sizeof(buf), 0, (struct sockaddr *)&addr,
+			  sizeof(addr)),
+		   EAFNOSUPPORT);
+
+	TEST_SUCC(close(sk));
 }
 END_TEST()
 

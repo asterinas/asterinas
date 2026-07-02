@@ -128,6 +128,57 @@ FN_TEST(get_loopback_address)
 }
 END_TEST()
 
+void find_eth0_ipv6_address(struct nl_object *obj, void *arg)
+{
+	int *found_eth0_ipv6 = (int *)arg;
+	struct rtnl_addr *addr = (struct rtnl_addr *)obj;
+	struct nl_addr *local;
+	char buf[INET6_ADDRSTRLEN + 4];
+
+	int family = rtnl_addr_get_family(addr);
+	if (family != AF_INET6) {
+		return;
+	}
+
+	// IPv6 addresses are reported via IFA_ADDRESS only (as on Linux); libnl
+	// exposes it through rtnl_addr_get_local() when IFA_LOCAL is absent.
+	local = rtnl_addr_get_local(addr);
+	if (local) {
+		nl_addr2str(local, buf, sizeof(buf));
+		if (strcmp(buf, "fec0::15/64") == 0) {
+			*found_eth0_ipv6 = 1;
+		}
+	}
+}
+
+FN_TEST(get_eth0_ipv6_address)
+{
+#ifndef __asterinas__
+	SKIP_TEST_IF(1);
+#endif
+	struct nl_sock *sock;
+	struct nl_cache *addr_cache;
+
+	// 1. Create netlink socket and connect
+	sock = nl_socket_alloc();
+	TEST_RES(nl_connect(sock, NETLINK_ROUTE), _ret >= 0);
+
+	// 2. Allocate and retrieve address cache
+	TEST_RES(rtnl_addr_alloc_cache(sock, &addr_cache), _ret >= 0);
+
+	// 3. Iterate over all addresses to find eth0 IPv6 address
+	int found_eth0_ipv6 = 0;
+	TEST_RES(SUCC(nl_cache_foreach(addr_cache, find_eth0_ipv6_address,
+				       &found_eth0_ipv6)),
+		 found_eth0_ipv6 == 1);
+
+	// 4. Cleanup
+	nl_cache_free(addr_cache);
+	nl_close(sock);
+	nl_socket_free(sock);
+}
+END_TEST()
+
 int find_new_addr_until_done(char *buffer, size_t len, int *found_new_addr)
 {
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buffer;

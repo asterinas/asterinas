@@ -19,6 +19,7 @@ use crate::{
 pub(super) struct ConnectingStream {
     tcp_conn: TcpConnection,
     remote_endpoint: IpEndpoint,
+    family: IpAddressFamily,
 }
 
 pub(super) enum ConnResult {
@@ -33,6 +34,7 @@ impl ConnectingStream {
         remote_endpoint: IpEndpoint,
         option: &RawTcpOption,
         observer: StreamObserver,
+        family: IpAddressFamily,
     ) -> Result<Self, (Error, BoundTcpPort)> {
         let tcp_conn =
             match TcpConnection::new_connect(bound_port, remote_endpoint, option, observer) {
@@ -64,6 +66,7 @@ impl ConnectingStream {
         Ok(Self {
             tcp_conn,
             remote_endpoint,
+            family,
         })
     }
 
@@ -87,8 +90,7 @@ impl ConnectingStream {
             )),
             ConnectState::Refused => {
                 let bound_port = self.tcp_conn.into_bound_port().unwrap();
-                let family = IpAddressFamily::from(*bound_port.addr());
-                ConnResult::Refused(InitStream::new_refused(bound_port, family))
+                ConnResult::Refused(InitStream::new_refused(bound_port, self.family))
             }
         }
     }
