@@ -274,9 +274,7 @@ impl Vdso {
         data.update_high_res_instant(instant, instant_cycles);
 
         // Update begins.
-        self.data_frame
-            .write_once(vdso_data_field_offset!(seq), &1)
-            .unwrap();
+        self.begin_update_data_frame(&mut data);
 
         self.data_frame
             .write_val(vdso_data_field_offset!(last_cycles), &instant_cycles)
@@ -286,11 +284,7 @@ impl Vdso {
         }
 
         // Update finishes.
-        // FIXME: To synchronize with the vDSO library, this needs to be an atomic write with the
-        // Release memory order.
-        self.data_frame
-            .write_once(vdso_data_field_offset!(seq), &0)
-            .unwrap();
+        self.finish_update_data_frame(&mut data);
     }
 
     fn update_coarse_res_instant(&self, instant: Instant) {
@@ -299,19 +293,22 @@ impl Vdso {
         data.update_coarse_res_instant(instant);
 
         // Update begins.
-        self.data_frame
-            .write_once(vdso_data_field_offset!(seq), &1)
-            .unwrap();
+        self.begin_update_data_frame(&mut data);
 
         for clock_id in COARSE_RES_CLOCK_IDS {
             self.update_data_frame_instant(clock_id, &mut data);
         }
 
         // Update finishes.
-        // FIXME: To synchronize with the vDSO library, this needs to be an atomic write with the
-        // Release memory order.
+        self.finish_update_data_frame(&mut data);
+    }
+
+    fn begin_update_data_frame(&self, data: &mut VdsoData) {
+        debug_assert!(data.seq.is_multiple_of(2));
+
+        data.seq = data.seq.wrapping_add(1);
         self.data_frame
-            .write_once(vdso_data_field_offset!(seq), &0)
+            .write_once(vdso_data_field_offset!(seq), &data.seq)
             .unwrap();
     }
 
@@ -329,6 +326,17 @@ impl Vdso {
             .unwrap();
         self.data_frame
             .write_val(nanos_info_offset, &data.basetime[clock_index].nanos_info)
+            .unwrap();
+    }
+
+    fn finish_update_data_frame(&self, data: &mut VdsoData) {
+        debug_assert!(!data.seq.is_multiple_of(2));
+
+        data.seq = data.seq.wrapping_add(1);
+        // FIXME: To synchronize with the vDSO library, this needs to be an atomic write with the
+        // Release memory order.
+        self.data_frame
+            .write_once(vdso_data_field_offset!(seq), &data.seq)
             .unwrap();
     }
 }

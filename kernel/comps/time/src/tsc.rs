@@ -66,14 +66,13 @@ fn update_clocksource() {
 static TSC_UPDATE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn init_timer() {
-    // The `max_delay_secs` should be set as `clock.max_delay_secs() >> 1` or something much smaller than `max_delay_secs`.
-    // This is because the initialization of this timer occurs during system startup,
-    // and the system will also undergo other initialization processes, during which time interrupts are disabled.
-    // This results in the actual trigger time of the timer being delayed by about 5 seconds compared to the set time.
-    // If without KVM, the delayed time will be larger.
-    // TODO: This is a temporary solution, and should be modified in the future.
-    let max_delay_secs = CLOCK.get().unwrap().max_delay_secs() >> 1;
-    let delay_counts = TIMER_FREQ * max_delay_secs;
+    // This must be frequent enough to provide values accurate to the second
+    // for the time fields in vDSO. We choose 10 Hz, which results in a
+    // worst-case staleness of ~100 ms.
+    // TODO: Implement a more complete and efficient timekeeping mechanism,
+    // then align this update frequency with Linux.
+    const VDSO_UPDATE_FREQ: u64 = 10;
+    let delay_counts = TIMER_FREQ / VDSO_UPDATE_FREQ;
 
     let update = move || {
         let counter = TSC_UPDATE_COUNTER.fetch_add(1, Ordering::Relaxed);
