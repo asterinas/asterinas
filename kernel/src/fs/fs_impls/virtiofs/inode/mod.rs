@@ -43,7 +43,9 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, RevalidationPolicy, SymbolicLink},
+            inode::{
+                Extension, FileOps, Inode, Metadata, RenameMode, RevalidationPolicy, SymbolicLink,
+            },
         },
     },
     prelude::*,
@@ -450,7 +452,20 @@ impl Inode for VirtioFsInode {
         Ok(())
     }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+    fn rename(
+        &self,
+        old_name: &str,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        mode: RenameMode,
+    ) -> Result<()> {
+        if mode == RenameMode::Exchange {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "RENAME_EXCHANGE is not supported on virtiofs"
+            );
+        }
+
         let target = target.downcast_ref::<VirtioFsInode>().unwrap();
 
         let fs = self.fs_ref();
