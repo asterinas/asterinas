@@ -35,6 +35,7 @@ fn parse_initramfs() -> Option<&'static [u8]> {
 
     let base_va = paddr_to_vaddr(start);
     let length = end - start;
+    // SAFETY: The command line is safe to read because of the contract with the loader.
     Some(unsafe { core::slice::from_raw_parts(base_va as *const u8, length) })
 }
 
@@ -114,15 +115,19 @@ unsafe extern "C" fn loongarch_boot(
     check_cpu_config();
 
     let systab_ptr = paddr_to_vaddr(systab_paddr) as *const EfiSystemTable;
+    // SAFETY: The caller ensures the correctness of `systab_paddr`.
     let systab = unsafe { &*(systab_ptr) };
     EFI_SYSTEM_TABLE.call_once(|| systab);
 
     let device_tree_ptr =
         paddr_to_vaddr(systab.device_tree().expect("device tree not found")) as *const u8;
+    // SAFETY: The caller ensures the correctness of `systab_paddr`, which then provides a correct
+    // `device_tree_ptr`.
     let fdt = unsafe { Fdt::from_ptr(device_tree_ptr).unwrap() };
     DEVICE_TREE.call_once(|| fdt);
 
     let cmdline_ptr = paddr_to_vaddr(cmdline_paddr) as *const i8;
+    // SAFETY: The caller ensures the correctness of `cmdline_paddr`.
     let cmdline = unsafe { CStr::from_ptr(cmdline_ptr) }.to_str();
 
     use crate::boot::{EARLY_INFO, EarlyBootInfo, start_kernel};

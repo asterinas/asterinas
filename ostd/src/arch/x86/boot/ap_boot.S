@@ -152,7 +152,7 @@ __ap_boot_cpu_id_tail:
 .code64
 
 ap_long_mode:
-    // Argument passed to ap_early_entry: rdi = cpu_id
+    // Atomically update the CPU ID tail and load the previous value to RDI.
     mov rdi, 1
     lock xadd [__ap_boot_cpu_id_tail], rdi
 
@@ -171,6 +171,7 @@ ap_long_mode:
     wrmsr
 
     // Go to Rust code.
+    // Pass CPU ID as the first argument.
 .extern ap_early_entry
     xor rbp, rbp
     mov rax, offset ap_early_entry

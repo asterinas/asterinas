@@ -4,6 +4,7 @@
 
 pub(crate) fn get_base() -> u64 {
     let mut gp;
+    // SAFETY: It is safe to read the register containing the CPU-local base.
     unsafe {
         core::arch::asm!(
             "mv {gp}, gp",
