@@ -375,6 +375,60 @@ impl Path {
         Ok(child_mount)
     }
 
+    /// Attaches a detached mount tree to the current path.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ENOTDIR` if one of the detached mount root and destination is a
+    /// directory and the other is not.
+    ///
+    /// Returns `EINVAL` if either path is not in the current mount namespace.
+    ///
+    /// Returns `ELOOP` if the destination path is inside the detached mount
+    /// subtree or the mount tree contains a mount namespace file that would
+    /// create a namespace loop.
+    pub(crate) fn attach_detached_mount(
+        &self,
+        detached_mount: &Arc<Mount>,
+        ctx: &Context,
+    ) -> Result<()> {
+        let detached_root = Path::new_fs_root(detached_mount.clone());
+        let source_is_dir = detached_root.type_() == InodeType::Dir;
+        let target_is_dir = self.type_() == InodeType::Dir;
+        if source_is_dir != target_is_dir {
+            return_errno_with_message!(
+                Errno::ENOTDIR,
+                "the source and destination must both be directories or both be non-directories"
+            );
+        }
+
+        let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
+        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        if !current_mnt_ns.owns(detached_mount) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the detached mount is not in this mount namespace"
+            );
+        }
+        if !current_mnt_ns.owns(&self.mount) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the destination path is not in this mount namespace"
+            );
+        }
+
+        current_mnt_ns.check_no_mnt_ns_loop_in_tree(detached_mount)?;
+        if self.mount_node().is_equal_or_descendant_of(detached_mount) {
+            return_errno_with_message!(
+                Errno::ELOOP,
+                "the destination path is inside the mount subtree being moved"
+            );
+        }
+
+        detached_mount.graft_mount_tree(self);
+        Ok(())
+    }
+
     /// Unmounts the filesystem mounted at the current path.
     ///
     /// Returns the unmounted child mount on success.

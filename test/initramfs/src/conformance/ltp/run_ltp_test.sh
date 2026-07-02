@@ -8,6 +8,7 @@ LOG_FILE=$TEST_TMP_DIR/result.log
 RESULT=0
 
 export LTP_TIMEOUT_MUL=5
+export LTP_DEV=/dev/vdc
 
 rm -f $LOG_FILE
 CREATE_ENTRIES=1 $LTP_DIR/runltp -f syscalls -Q -p -d $TEST_TMP_DIR -l $LOG_FILE

@@ -87,6 +87,7 @@ mod mkdir;
 mod mknod;
 mod mmap;
 mod mount;
+mod mount_api;
 mod mprotect;
 mod mremap;
 mod msync;
