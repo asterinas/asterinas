@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{num::NonZeroU8, time::Duration};
+use core::{cmp::min, num::NonZeroU8, time::Duration};
 
 use ostd::mm::VmIo;
 
@@ -38,6 +38,23 @@ pub trait WriteToUser {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize>;
 }
 
+/// Writes the C counterpart of a socket option to the user space, truncating it
+/// to fit the user-provided buffer length if necessary.
+///
+/// This follows the Linux `getsockopt(2)` semantics: the kernel copies
+/// `min(max_len, real_len)` bytes to `optval` and reports `min(max_len, real_len)`
+/// as the number of bytes that the user's `optlen` should be updated to. In
+/// particular, the value written back to `optlen` is the *truncated* length, not
+/// the real option length (e.g. requesting `optlen == 0` copies nothing and
+/// reports a length of `0`).
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.13/source/net/core/sock.c#L1888>.
+fn write_bytes_partial_to_user(addr: Vaddr, bytes: &[u8], max_len: u32) -> Result<usize> {
+    let write_len = min(max_len as usize, bytes.len());
+    current_userspace!().write_bytes(addr, &bytes[..write_len])?;
+    Ok(write_len)
+}
+
 /// This macro is used to implement `ReadFromUser` and `WriteToUser` for u32 and i32.
 macro_rules! impl_read_write_for_32bit_type {
     ($pod_ty: ty) => {
@@ -52,14 +69,7 @@ macro_rules! impl_read_write_for_32bit_type {
 
         impl WriteToUser for $pod_ty {
             fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-                let write_len = size_of::<$pod_ty>();
-
-                if (max_len as usize) < write_len {
-                    return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-                }
-
-                crate::context::current_userspace!().write_val(addr, self)?;
-                Ok(write_len)
+                write_bytes_partial_to_user(addr, self.as_bytes(), max_len)
             }
         }
     };
@@ -123,19 +133,12 @@ impl WriteToUser for IpTtl {
 
 impl WriteToUser for Option<Error> {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = size_of::<i32>();
-
-        if (max_len as usize) < write_len {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        }
-
         let val = match self {
             None => 0i32,
             Some(error) => error.error() as i32,
         };
 
-        current_userspace!().write_val(addr, &val)?;
-        Ok(write_len)
+        val.write_to_user(addr, max_len)
     }
 }
 
@@ -153,15 +156,8 @@ impl ReadFromUser for LingerOption {
 
 impl WriteToUser for LingerOption {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = size_of::<CLinger>();
-
-        if (max_len as usize) < write_len {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        }
-
         let linger = CLinger::from(*self);
-        current_userspace!().write_val(addr, &linger)?;
-        Ok(write_len)
+        write_bytes_partial_to_user(addr, linger.as_bytes(), max_len)
     }
 }
 
@@ -192,7 +188,7 @@ impl WriteToUser for CongestionControl {
         let name_len = name_bytes.len();
         bytes[..name_len].copy_from_slice(name_bytes);
 
-        let write_len = TCP_CONGESTION_NAME_MAX.min(max_len) as usize;
+        let write_len = min(max_len as usize, bytes.len());
 
         current_userspace!().write_bytes(addr, &bytes[..write_len])?;
 
@@ -227,14 +223,6 @@ impl From<CLinger> for LingerOption {
 
 impl WriteToUser for CUserCred {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = size_of::<CUserCred>();
-
-        if (max_len as usize) < write_len {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        };
-
-        current_userspace!().write_val(addr, self)?;
-
-        Ok(write_len)
+        write_bytes_partial_to_user(addr, self.as_bytes(), max_len)
     }
 }

@@ -122,6 +122,46 @@ FN_TEST(socket_error)
 }
 END_TEST()
 
+FN_TEST(getsockopt_partial_copy)
+{
+	// Linux `getsockopt(2)` copies `min(optlen, real_len)` bytes into the user
+	// buffer and writes that same (possibly truncated) length back to
+	// `*optlen`, instead of failing with `EINVAL` (see issue #3374).
+	// `SO_REUSEADDR` is reported as a 4-byte integer.
+	unsigned char buf[8];
+	socklen_t len;
+	int val = 0x12345678;
+
+	TEST_SUCC(setsockopt(sk_unbound, SOL_SOCKET, SO_REUSEADDR, &val,
+			     sizeof(val)));
+
+	// A buffer shorter than the option receives only the leading bytes, and
+	// `*optlen` reports the number of bytes actually copied.
+	memset(buf, 0xcc, sizeof(buf));
+	len = 1;
+	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_REUSEADDR, buf, &len),
+		 len == 1 && buf[0] == 1 && buf[1] == 0xcc);
+
+	// A zero-length buffer copies nothing and reports a length of zero.
+	memset(buf, 0xcc, sizeof(buf));
+	len = 0;
+	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_REUSEADDR, buf, &len),
+		 len == 0 && buf[0] == 0xcc);
+
+	// A buffer that exactly fits receives the whole option.
+	memset(buf, 0xcc, sizeof(buf));
+	len = sizeof(int);
+	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_REUSEADDR, buf, &len),
+		 len == sizeof(int) && buf[0] == 1 && buf[4] == 0xcc);
+
+	// A buffer larger than the option has `*optlen` clamped down to the real
+	// length.
+	len = sizeof(buf);
+	TEST_RES(getsockopt(sk_unbound, SOL_SOCKET, SO_REUSEADDR, buf, &len),
+		 len == sizeof(int));
+}
+END_TEST()
+
 FN_TEST(nagle)
 {
 	int option = 1;
