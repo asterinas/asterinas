@@ -43,6 +43,7 @@ in pkgs.stdenv.mkDerivation {
     cp -L ${etc-nixos}/${config-file-name} $out/etc_nixos/configuration.nix
     cp -r ${etc-nixos}/modules $out/etc_nixos/modules
     cp -r ${etc-nixos}/overlays $out/etc_nixos/overlays
+    cp -r ${etc-nixos}/pkgs $out/etc_nixos/pkgs
     ln -s ${aster-kernel} $out/kernel
   '';
 }
