@@ -560,12 +560,6 @@ impl Mount {
         ctx: &Context,
         _topology: &mut MountTopology,
     ) -> Result<()> {
-        // TODO: This lock is a workaround to guarantee the atomicity of remount operation.
-        // We need to re-design the lock mechanism of `Mount` and file system in the future.
-        static REMOUNT_LOCK: Mutex<()> = Mutex::new(());
-
-        let _guard = REMOUNT_LOCK.lock();
-
         if let Some(flags) = fs_flags {
             self.fs.set_fs_flags(flags, data, ctx)?;
         }
