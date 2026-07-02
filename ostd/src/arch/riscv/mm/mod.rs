@@ -48,9 +48,9 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
+    /// Possible flags for a page table entry.
     #[repr(C)]
     #[derive(Pod)]
-    /// Possible flags for a page table entry.
     pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame or page table is valid.
         const VALID =           1 << 0;
@@ -70,16 +70,16 @@ bitflags::bitflags! {
         /// Whether the memory area represented by this entry is modified.
         const DIRTY =           1 << 7;
 
-        // First bit ignored by MMU.
+        /// First bit ignored by MMU.
         const RSV1 =            1 << 8;
-        // Second bit ignored by MMU.
+        /// Second bit ignored by MMU.
         const RSV2 =            1 << 9;
 
-        // PBMT: Non-cacheable, idempotent, weakly-ordered (RVWMO), main memory
+        /// PBMT: Non-cacheable, idempotent, weakly-ordered (RVWMO), main memory.
         const PBMT_NC =         1 << 61;
-        // PBMT: Non-cacheable, non-idempotent, strongly-ordered (I/O ordering), I/O
+        /// PBMT: Non-cacheable, non-idempotent, strongly-ordered (I/O ordering), I/O.
         const PBMT_IO =         1 << 62;
-        /// Naturally aligned power-of-2
+        /// Naturally aligned power-of-2.
         const NAPOT =           1 << 63;
     }
 }

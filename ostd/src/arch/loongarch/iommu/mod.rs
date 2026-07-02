@@ -11,10 +11,11 @@ pub(crate) enum IommuError {
     NoIommu,
 }
 
-///
 /// # Safety
 ///
-/// Mapping an incorrect address may lead to a kernel data leak.
+/// While the physical address is mapped as the device address (i.e. from calling this method to
+/// calling [`unmap`]), it must point to an untyped memory page. Otherwise, the device may corrupt
+/// kernel data, which could lead to memory safety issues.
 pub(crate) unsafe fn map(_daddr: Daddr, _paddr: Paddr) -> Result<(), IommuError> {
     Err(IommuError::NoIommu)
 }

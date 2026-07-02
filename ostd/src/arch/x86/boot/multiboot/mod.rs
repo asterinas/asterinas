@@ -55,7 +55,10 @@ fn parse_initramfs(mb1_info: &MultibootLegacyInfo) -> Option<&[u8]> {
     let ptr = paddr_to_vaddr(start as usize) as *const u8;
     let len = (end - start) as usize;
 
-    // SAFETY: The initramfs is safe to read because of the contract with the loader.
+    // SAFETY:
+    // 1. The initramfs is safe to read because of the contract with the loader.
+    // 2. We reserve the initramfs region in `parse_memory_regions`, so it will live as an immutable
+    //    reference for `'static`.
     Some(unsafe { core::slice::from_raw_parts(ptr, len) })
 }
 

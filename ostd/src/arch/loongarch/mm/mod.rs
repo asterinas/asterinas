@@ -19,15 +19,15 @@ impl PagingConstsTrait for PagingConsts {
     const NR_LEVELS: PagingLevel = 4;
     const ADDRESS_WIDTH: usize = 48;
     const VA_SIGN_EXT: bool = true;
-    // TODO: Support huge page
+    // TODO: Set a correct `HIGHEST_TRANSLATION_LEVEL` to enable huge pages
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 1;
     const PTE_SIZE: usize = size_of::<PageTableEntry>();
 }
 
 bitflags::bitflags! {
+    /// Possible flags for a page table entry.
     #[repr(C)]
     #[derive(Pod)]
-    /// Possible flags for a page table entry.
     pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame is valid.
         const VALID =           1 << 0;
@@ -57,11 +57,11 @@ bitflags::bitflags! {
         /// Controls whether writes to the mapped frames are allowed.
         /// This flag does not fill in TLB.
         const WRITABLE =        1 << 8;
-        // Whether this entry is a basic page table entry.
+        /// Whether this entry is a basic page table entry.
         const IS_BASIC =        1 << 9;
-        // First bit ignored by MMU.
+        /// First bit ignored by MMU.
         const RSV1 =            1 << 10;
-        // Second bit ignored by MMU.
+        /// Second bit ignored by MMU.
         const RSV2 =            1 << 11;
         /// If this entry is a huge page table entry, it is `GLOBAL`.
         const GLOBAL_IN_HUGE =  1 << 12;
@@ -69,12 +69,14 @@ bitflags::bitflags! {
         const NOT_READABLE =    1 << 61;
         /// Controls whether execution code in the mapped frames are not allowed.
         const NOT_EXECUTABLE =  1 << 62;
-        /// Whether the `PageTableEntry` can only be accessed by the privileged level `PLV` field inferred
+        /// Whether the `PageTableEntry` can only be accessed by the privileged level specified in
+        /// the `PLV` field.
         const RPLV =            1 << 63;
     }
 }
 
 pub(crate) fn tlb_flush_addr(vaddr: Vaddr) {
+    // SAFETY: This invalidates the TLB, which doesn't affect the memory safety.
     unsafe {
         asm!(
             "invtlb 0, $zero, {}",
@@ -90,15 +92,13 @@ pub(crate) fn tlb_flush_addr_range(range: &Range<Vaddr>) {
 }
 
 pub(crate) fn tlb_flush_all_excluding_global() {
-    unsafe {
-        asm!("invtlb 3, $zero, $zero");
-    }
+    // SAFETY: This invalidates the TLB, which doesn't affect the memory safety.
+    unsafe { asm!("invtlb 3, $zero, $zero") };
 }
 
 pub(crate) fn tlb_flush_all_including_global() {
-    unsafe {
-        asm!("invtlb 0, $zero, $zero");
-    }
+    // SAFETY: This invalidates the TLB, which doesn't affect the memory safety.
+    unsafe { asm!("invtlb 0, $zero, $zero") };
 }
 
 pub(crate) fn can_sync_dma() -> bool {
@@ -191,10 +191,10 @@ impl PageTableEntry {
     }
 
     fn prop(&self) -> PageProperty {
-        let flags = parse_flags!(!(self.0), PteFlags::NOT_READABLE, PageFlags::R)
+        let flags = parse_flags!(!self.0, PteFlags::NOT_READABLE, PageFlags::R)
             | parse_flags!(self.0, PteFlags::WRITABLE, PageFlags::W)
-            | parse_flags!(!(self.0), PteFlags::NOT_EXECUTABLE, PageFlags::X)
-            // TODO: How to get the accessed bit in loongarch?
+            | parse_flags!(!self.0, PteFlags::NOT_EXECUTABLE, PageFlags::X)
+            // TODO: How to get the `ACCESSED` bit in LoongArch?
             | parse_flags!(self.0, PteFlags::PRESENT, PageFlags::ACCESSED)
             | parse_flags!(self.0, PteFlags::DIRTY, PageFlags::DIRTY)
             | parse_flags!(self.0, PteFlags::RSV2, PageFlags::AVAIL2);
@@ -231,8 +231,8 @@ impl PageTableEntry {
 
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
         let mut flags = PteFlags::VALID.bits()
-            // FIXME: To avoid the PageModifyFault exception,
-            // we set the DIRTY bit to 1 all the time.
+            // FIXME: To avoid the Page Modify Exception,
+            // we set the `DIRTY` bit to 1 all the time.
             | PteFlags::DIRTY.bits()
             | parse_flags!(
                 !prop.flags.bits(),
@@ -246,7 +246,7 @@ impl PageTableEntry {
                 PteFlags::NOT_EXECUTABLE
             )
             | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PteFlags::DIRTY)
-            // TODO: How to get the accessed bit in loongarch?
+            // TODO: How to get the `ACCESSED` bit in LoongArch?
             | parse_flags!(prop.flags.bits(), PageFlags::ACCESSED, PteFlags::PRESENT)
             | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PteFlags::RSV2);
         flags |= parse_flags!(prop.priv_flags.bits(), PrivFlags::AVAIL1, PteFlags::RSV1);
