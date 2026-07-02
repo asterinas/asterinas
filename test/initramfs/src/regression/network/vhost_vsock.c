@@ -32,7 +32,7 @@
 #define RX_PAYLOAD_LEN 128
 #define TX_PAYLOAD_LEN 128
 #define PAGE_SIZE 4096
-#define ALIGN_UP(value, align) (((value) + (align)-1) & ~((align)-1))
+#define ALIGN_UP(value, align) (((value) + (align) - 1) & ~((align) - 1))
 
 struct vhost_vsock_ring {
 	struct vring_desc desc[RING_SIZE];
@@ -68,7 +68,8 @@ struct vhost_vsock_fixture {
 
 static int vhost_fd;
 static struct vhost_vsock_fixture fixture __attribute__((aligned(PAGE_SIZE)));
-static struct vhost_vsock_fixture second_fixture __attribute__((aligned(PAGE_SIZE)));
+static struct vhost_vsock_fixture second_fixture
+	__attribute__((aligned(PAGE_SIZE)));
 static uint8_t mem_table_page[PAGE_SIZE] __attribute__((aligned(PAGE_SIZE)));
 
 static int open_vhost_vsock(void)
@@ -125,7 +126,8 @@ static void setup_rx_buffer_chain(struct vhost_vsock_fixture *f)
 {
 	f->rx.desc[RX_HEADER_DESC].addr = (uintptr_t)&f->rx_header;
 	f->rx.desc[RX_HEADER_DESC].len = RX_HEADER_LEN;
-	f->rx.desc[RX_HEADER_DESC].flags = VRING_DESC_F_NEXT | VRING_DESC_F_WRITE;
+	f->rx.desc[RX_HEADER_DESC].flags = VRING_DESC_F_NEXT |
+					   VRING_DESC_F_WRITE;
 	f->rx.desc[RX_HEADER_DESC].next = RX_PAYLOAD_DESC;
 	f->rx.desc[RX_PAYLOAD_DESC].addr = (uintptr_t)f->rx_payload;
 	f->rx.desc[RX_PAYLOAD_DESC].len = sizeof(f->rx_payload);
@@ -165,8 +167,9 @@ static void setup_tx_packet(struct vhost_vsock_fixture *f, uint64_t src_cid,
 	f->tx.avail.idx++;
 }
 
-static void configure_vhost_device_without_running(struct vhost_vsock_fixture *f,
-						   uint64_t guest_cid)
+static void
+configure_vhost_device_without_running(struct vhost_vsock_fixture *f,
+				       uint64_t guest_cid)
 {
 	uint64_t features = 0;
 	struct vhost_vring_state state = { 0 };
@@ -341,7 +344,8 @@ static int expect_rx_packet(uint16_t op, uint32_t dst_port, const char *payload)
 	if (fixture.rx.used.idx != fixture.rx.avail.idx ||
 	    fixture.rx_header.src_cid != VMADDR_CID_HOST ||
 	    fixture.rx_header.dst_cid != GUEST_CID ||
-	    fixture.rx_header.dst_port != dst_port || fixture.rx_header.op != op) {
+	    fixture.rx_header.dst_port != dst_port ||
+	    fixture.rx_header.op != op) {
 		errno = EPROTO;
 		return -1;
 	}
@@ -613,7 +617,8 @@ FN_TEST(duplicate_running_guest_cid)
 	reset_fixture();
 	reset_vhost_fixture(&second_fixture);
 	configure_vhost_device(&fixture, guest_cid);
-	TEST_ERRNO(ioctl(fixture.fd, VHOST_VSOCK_SET_GUEST_CID, &other_guest_cid),
+	TEST_ERRNO(ioctl(fixture.fd, VHOST_VSOCK_SET_GUEST_CID,
+			 &other_guest_cid),
 		   EBUSY);
 
 	configure_vhost_device_without_running(&second_fixture, guest_cid);
@@ -701,8 +706,8 @@ FN_TEST(connect_send_and_cid_validation)
 	TEST_SUCC(shutdown(socket_fd, SHUT_RDWR));
 	TEST_SUCC(kick_eventfd(fixture.rx_kick));
 	TEST_SUCC(expect_rx_packet(VIRTIO_VSOCK_OP_SHUTDOWN, PEER_PORT, NULL));
-	setup_tx_packet(&fixture, GUEST_CID, PEER_PORT, host_port, VIRTIO_VSOCK_OP_RST,
-			NULL, 0);
+	setup_tx_packet(&fixture, GUEST_CID, PEER_PORT, host_port,
+			VIRTIO_VSOCK_OP_RST, NULL, 0);
 	TEST_SUCC(kick_eventfd(fixture.tx_kick));
 	TEST_SUCC(wait_eventfd(fixture.tx_call));
 	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 3);
