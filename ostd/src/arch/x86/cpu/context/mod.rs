@@ -337,7 +337,7 @@ impl UserContextApiInternal for UserContext {
                 }
                 Some(exception) => {
                     panic!(
-                        "cannot handle user CPU exception: {:?}, trapframe: {:?}",
+                        "Cannot handle user CPU exception: {:?}; trapframe: {:?}",
                         exception,
                         self.as_trap_frame()
                     );
