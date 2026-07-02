@@ -221,6 +221,7 @@ impl Pollable for FsConfigFile {
 
 impl FileLike for FsConfigFile {
     fn access_mode(&self) -> AccessMode {
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/fsopen.c#L97>.
         AccessMode::O_RDWR
     }
 
@@ -282,6 +283,7 @@ impl Pollable for DetachedMountFile {
 
 impl FileLike for DetachedMountFile {
     fn access_mode(&self) -> AccessMode {
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/namespace.c#L4497>.
         AccessMode::O_RDONLY
     }
 
