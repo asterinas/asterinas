@@ -189,7 +189,7 @@ jobs:
         timeout-minutes: ${{ matrix.test.timeout_minutes || 30 }}
         uses: maus007/docker-run-action-fork@v1
         with:
-          image: asterinas/asterinas:0.18.0-20260701
+          image: asterinas/asterinas:0.18.0-20260702
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
           run: |
             make nixos NIXOS_TEST_SUITE=${{ matrix.test.name }} NIXOS_DISK_SIZE_IN_MB=${{ matrix.test.disk_size }}

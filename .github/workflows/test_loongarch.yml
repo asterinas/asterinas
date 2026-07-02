@@ -11,7 +11,7 @@ jobs:
   basic-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/asterinas:0.18.0-20260701
+      image: asterinas/asterinas:0.18.0-20260702
       options: -v /dev:/dev --privileged
     strategy:
       matrix:
