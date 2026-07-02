@@ -262,6 +262,22 @@ impl Mount {
         Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new(), None)
     }
 
+    /// Creates a mount node that is not attached to the mount tree.
+    //
+    // FIXME: Linux creates detached mounts in an anonymous mount namespace
+    // and moves them into the target namespace when they are attached. Asterinas
+    // currently records the caller's namespace here because `Mount::mnt_ns` is
+    // immutable. This should be changed once mount namespaces can be updated
+    // during attach.
+    pub fn new_detached(
+        fs: Arc<dyn FileSystem>,
+        flags: PerMountFlags,
+        mnt_ns: Weak<MountNamespace>,
+        source: Option<String>,
+    ) -> Result<Arc<Self>> {
+        Self::new(fs, flags, None, mnt_ns, source)
+    }
+
     /// The internal constructor.
     ///
     /// A root mount node has no mountpoint, while other mount nodes must have one.

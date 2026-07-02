@@ -34,6 +34,7 @@ use super::{
     flock::sys_flock,
     fork::{sys_fork, sys_vfork},
     fsconfig::sys_fsconfig,
+    fsmount::sys_fsmount,
     fsopen::sys_fsopen,
     fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
@@ -418,6 +419,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PIDFD_SEND_SIGNAL = 424 => sys_pidfd_send_signal(args[..4]);
     SYS_FSOPEN = 430           => sys_fsopen(args[..2]);
     SYS_FSCONFIG = 431         => sys_fsconfig(args[..5]);
+    SYS_FSMOUNT = 432          => sys_fsmount(args[..3]);
     SYS_PIDFD_OPEN = 434       => sys_pidfd_open(args[..2]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
     SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);

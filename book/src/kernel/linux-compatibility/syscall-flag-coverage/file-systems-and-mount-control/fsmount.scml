@@ -1,0 +1,7 @@
+mount_attrs = MOUNT_ATTR_RDONLY | MOUNT_ATTR_NOSUID | MOUNT_ATTR_NODEV |
+              MOUNT_ATTR_NOEXEC | MOUNT_ATTR_RELATIME | MOUNT_ATTR_NOATIME |
+              MOUNT_ATTR_STRICTATIME | MOUNT_ATTR_NODIRATIME |
+              MOUNT_ATTR_NOSYMFOLLOW;
+
+// Create a mount object from a filesystem context
+fsmount(fs_fd, flags = FSMOUNT_CLOEXEC, mount_attrs = <mount_attrs>);
