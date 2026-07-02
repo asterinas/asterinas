@@ -439,6 +439,14 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         self.metadata().size
     }
 
+    default fn seek_end(&self) -> Option<usize> {
+        if self.type_() == InodeType::File {
+            Some(self.size())
+        } else {
+            None
+        }
+    }
+
     default fn resize(&self, _new_size: usize) -> Result<()> {
         // The `resize` operation should be ignored by kernelfs inodes,
         // and should not incur an error.

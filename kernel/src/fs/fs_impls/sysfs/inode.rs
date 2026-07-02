@@ -98,4 +98,12 @@ impl Inode for SysFsInode {
             "file creation under sysfs is not allowed",
         ))
     }
+
+    fn seek_end(&self) -> Option<usize> {
+        match self.metadata.type_ {
+            InodeType::Dir => Some(0),
+            InodeType::File => Some(self.metadata.size),
+            _ => None,
+        }
+    }
 }
