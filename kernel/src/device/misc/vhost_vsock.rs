@@ -51,11 +51,13 @@ const VHOST_VSOCK_MAX_QUEUE_BYTES: usize = 256 * 1024;
 const VHOST_VSOCK_MAX_VRING_NUM: u32 = 32768;
 const VHOST_VSOCK_MAX_MEMORY_REGIONS: usize = 64;
 
+type VhostVsockBackendRegistry = Arc<SpinLock<BTreeMap<u64, Arc<VhostVsockBackend>>>>;
+
 /// Active QEMU-owned vhost-vsock backends keyed by guest CID.
 ///
 /// The AF_VSOCK transport uses this registry to route host-initiated packets
 /// to the matching guest virtqueue backend.
-static BACKEND_REGISTRY: Once<Arc<SpinLock<BTreeMap<u64, Arc<VhostVsockBackend>>>>> = Once::new();
+static BACKEND_REGISTRY: Once<VhostVsockBackendRegistry> = Once::new();
 
 #[derive(Debug)]
 struct VhostVsockDevice {
@@ -851,9 +853,9 @@ fn validate_memory_region(region: &VhostMemoryRegion) -> Result<()> {
     if region.memory_size == 0 {
         return_errno_with_message!(Errno::EINVAL, "vhost memory region size is zero");
     }
-    if region.guest_phys_addr % VHOST_VSOCK_PAGE_SIZE != 0
-        || region.userspace_addr % VHOST_VSOCK_PAGE_SIZE != 0
-        || region.memory_size % VHOST_VSOCK_PAGE_SIZE != 0
+    if !region.guest_phys_addr.is_multiple_of(VHOST_VSOCK_PAGE_SIZE)
+        || !region.userspace_addr.is_multiple_of(VHOST_VSOCK_PAGE_SIZE)
+        || !region.memory_size.is_multiple_of(VHOST_VSOCK_PAGE_SIZE)
     {
         return_errno_with_message!(Errno::EINVAL, "vhost memory region is not page aligned");
     }
@@ -1215,10 +1217,8 @@ fn process_tx(backend: &VhostVsockBackend, last_avail: &mut u16) -> Result<()> {
         consumed_any = true;
     }
 
-    if consumed_any {
-        if let Some(call) = call {
-            signal_eventfd(call.as_ref());
-        }
+    if consumed_any && let Some(call) = call {
+        signal_eventfd(call.as_ref());
     }
 
     Ok(())
@@ -1348,7 +1348,7 @@ fn write_indirect_rx_chain(
     payload: &[u8],
 ) -> Result<()> {
     let table_len = first_desc.len as usize;
-    if table_len == 0 || table_len % size_of::<VirtqDesc>() != 0 {
+    if table_len == 0 || !table_len.is_multiple_of(size_of::<VirtqDesc>()) {
         return_errno_with_message!(
             Errno::EINVAL,
             "vhost-vsock RX indirect descriptor table has invalid length"
@@ -1487,7 +1487,7 @@ fn read_indirect_tx_chain(
     first_desc: VirtqDesc,
 ) -> Result<TxChain> {
     let table_len = first_desc.len as usize;
-    if table_len == 0 || table_len % size_of::<VirtqDesc>() != 0 {
+    if table_len == 0 || !table_len.is_multiple_of(size_of::<VirtqDesc>()) {
         return_errno_with_message!(
             Errno::EINVAL,
             "vhost-vsock TX indirect descriptor table has invalid length"
@@ -1851,7 +1851,7 @@ struct VirtioVsockHdr {
 const VIRTIO_VSOCK_HDR_SIZE: usize = 44;
 
 impl VirtioVsockHdr {
-    fn to_bytes(&self) -> [u8; VIRTIO_VSOCK_HDR_SIZE] {
+    fn to_bytes(self) -> [u8; VIRTIO_VSOCK_HDR_SIZE] {
         let mut b = [0u8; VIRTIO_VSOCK_HDR_SIZE];
         b[0..8].copy_from_slice(&self.src_cid.to_le_bytes());
         b[8..16].copy_from_slice(&self.dst_cid.to_le_bytes());
