@@ -56,6 +56,7 @@ pub struct AppArmorProfile {
     mode: AppArmorMode,
     file_policy: AppArmorFilePolicy,
     capability_policy: AppArmorCapabilityPolicy,
+    transition_policy: AppArmorProfileTransitionPolicy,
 }
 
 impl AppArmorProfile {
@@ -92,12 +93,32 @@ impl AppArmorProfile {
         file_policy: AppArmorFilePolicy,
         capability_policy: AppArmorCapabilityPolicy,
     ) -> Self {
+        Self::new_with_transition_policy(
+            name,
+            attachment,
+            mode,
+            file_policy,
+            capability_policy,
+            AppArmorProfileTransitionPolicy::default(),
+        )
+    }
+
+    /// Creates a profile with explicit policy backends and transition rules.
+    pub(super) fn new_with_transition_policy(
+        name: AppArmorProfileName,
+        attachment: AppArmorAttachment,
+        mode: AppArmorMode,
+        file_policy: AppArmorFilePolicy,
+        capability_policy: AppArmorCapabilityPolicy,
+        transition_policy: AppArmorProfileTransitionPolicy,
+    ) -> Self {
         Self {
             name,
             attachment,
             mode,
             file_policy,
             capability_policy,
+            transition_policy,
         }
     }
 
@@ -109,6 +130,7 @@ impl AppArmorProfile {
             mode: AppArmorMode::Enforce,
             file_policy: AppArmorFilePolicy::PathRules(Vec::new()),
             capability_policy: AppArmorCapabilityPolicy::default(),
+            transition_policy: AppArmorProfileTransitionPolicy::default(),
         }
     }
 
@@ -153,6 +175,15 @@ impl AppArmorProfile {
             },
         }
     }
+
+    /// Returns whether this profile allows changing to `target`.
+    pub fn allows_profile_transition(
+        &self,
+        target: &AppArmorProfileName,
+        kind: AppArmorProfileTransitionKind,
+    ) -> bool {
+        self.transition_policy.allows(target, kind)
+    }
 }
 
 /// The file-policy backend used by an AppArmor profile.
@@ -178,6 +209,44 @@ pub struct AppArmorFileAccessOutcome {
 pub struct AppArmorCapabilityOutcome {
     /// Capabilities denied by the policy.
     pub denied: CapSet,
+}
+
+/// A task profile transition requested through procfs attributes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AppArmorProfileTransitionKind {
+    /// Immediately changes the current task profile.
+    ChangeProfile,
+    /// Sets the profile to apply at the next successful `execve`.
+    ChangeOnexec,
+}
+
+/// Profile-to-profile transition rules attached to an AppArmor profile.
+#[derive(Clone, Debug, Default)]
+pub(super) struct AppArmorProfileTransitionPolicy {
+    change_profile: Vec<AppArmorProfileName>,
+    change_onexec: Vec<AppArmorProfileName>,
+}
+
+impl AppArmorProfileTransitionPolicy {
+    /// Creates a profile transition policy.
+    pub(super) fn new(
+        change_profile: Vec<AppArmorProfileName>,
+        change_onexec: Vec<AppArmorProfileName>,
+    ) -> Self {
+        Self {
+            change_profile,
+            change_onexec,
+        }
+    }
+
+    fn allows(&self, target: &AppArmorProfileName, kind: AppArmorProfileTransitionKind) -> bool {
+        let allowed_targets = match kind {
+            AppArmorProfileTransitionKind::ChangeProfile => &self.change_profile,
+            AppArmorProfileTransitionKind::ChangeOnexec => &self.change_onexec,
+        };
+
+        allowed_targets.iter().any(|allowed| allowed == target)
+    }
 }
 
 impl From<AppArmorDfaAccessOutcome> for AppArmorFileAccessOutcome {

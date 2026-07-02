@@ -3,7 +3,7 @@
 use super::{
     namespace::AppArmorPolicyNamespace,
     path::{AppArmorExecTransition, AppArmorFilePermission, AppArmorPathView},
-    profile::{AppArmorProfile, AppArmorProfileName},
+    profile::{AppArmorProfile, AppArmorProfileName, AppArmorProfileTransitionKind},
     state::{AppArmorMode, AppArmorTaskState},
 };
 use crate::{
@@ -13,7 +13,7 @@ use crate::{
     },
     prelude::*,
     process::credentials::capabilities::CapSet,
-    security::{FileCreateKind, FileDeleteKind, FileSetattrKind},
+    security::{FileCreateKind, FileDeleteKind, FilePermission, FileSetattrKind},
 };
 
 /// The in-kernel AppArmor policy store.
@@ -42,11 +42,6 @@ impl AppArmorPolicy {
     /// Returns summaries of the implicit and loaded profiles.
     pub fn profile_summaries(&self) -> Vec<(AppArmorProfileName, AppArmorMode)> {
         self.root_namespace.profile_summaries()
-    }
-
-    /// Returns the enforcement mode of a profile.
-    pub fn profile_mode(&self, name: &AppArmorProfileName) -> Option<AppArmorMode> {
-        self.root_namespace.profile_mode(name)
     }
 
     /// Returns the root policy namespace name.
@@ -157,8 +152,56 @@ impl AppArmorPolicy {
         self.check_path_access(task_state, path_resolver, path, permissions)
     }
 
-    /// Checks whether the task may execute a file.
-    pub fn check_execute(
+    /// Revalidates access through an existing opened file.
+    pub fn check_file_permission(
+        &self,
+        task_state: &AppArmorTaskState,
+        path_resolver: &PathResolver,
+        path: &Path,
+        permissions: FilePermission,
+    ) -> Result<()> {
+        let permissions = AppArmorFilePermission::from_file_permission(permissions);
+        self.check_path_access(task_state, path_resolver, path, permissions)
+    }
+
+    /// Checks whether the task may map a file.
+    pub fn check_file_mmap(
+        &self,
+        task_state: &AppArmorTaskState,
+        path_resolver: &PathResolver,
+        path: &Path,
+        permissions: FilePermission,
+    ) -> Result<()> {
+        let permissions = AppArmorFilePermission::from_file_permission(permissions);
+        self.check_path_access(task_state, path_resolver, path, permissions)
+    }
+
+    /// Checks whether the task may receive a file descriptor.
+    pub fn check_file_receive(
+        &self,
+        task_state: &AppArmorTaskState,
+        path_resolver: &PathResolver,
+        path: &Path,
+        permissions: FilePermission,
+    ) -> Result<()> {
+        let permissions = AppArmorFilePermission::from_file_permission(permissions);
+        self.check_path_access(task_state, path_resolver, path, permissions)
+    }
+
+    /// Checks whether the task may lock a file.
+    pub fn check_file_lock(
+        &self,
+        task_state: &AppArmorTaskState,
+        path_resolver: &PathResolver,
+        path: &Path,
+        permissions: FilePermission,
+    ) -> Result<()> {
+        let permissions = AppArmorFilePermission::from_file_permission(permissions);
+        self.check_path_access(task_state, path_resolver, path, permissions)
+    }
+
+    /// Checks whether the task may query file metadata.
+    pub fn check_file_getattr(
         &self,
         task_state: &AppArmorTaskState,
         path_resolver: &PathResolver,
@@ -168,8 +211,68 @@ impl AppArmorPolicy {
             task_state,
             path_resolver,
             path,
-            AppArmorFilePermission::for_execute(),
+            AppArmorFilePermission::READ,
         )
+    }
+
+    /// Checks whether the task may execute a file.
+    pub fn check_execute(
+        &self,
+        task_state: &AppArmorTaskState,
+        path_resolver: &PathResolver,
+        path: &Path,
+    ) -> Result<()> {
+        if task_state.is_unconfined() {
+            if let Some(onexec_profile) = task_state.onexec_profile() {
+                self.require_loaded_profile(onexec_profile)?;
+            }
+            return Ok(());
+        }
+
+        let Some(profile) = self.profile(task_state.current_profile()) else {
+            return_errno_with_message!(Errno::EACCES, "the AppArmor profile is not loaded");
+        };
+
+        let path_view = AppArmorPathView::from_path(path_resolver, path);
+        let outcome = self.check_profile_path_access(
+            &profile,
+            task_state.mode(),
+            &path_view,
+            AppArmorFilePermission::for_execute(),
+        )?;
+
+        if let Some(onexec_profile) = task_state.onexec_profile() {
+            self.require_loaded_profile(onexec_profile)?;
+            return Ok(());
+        }
+
+        self.check_exec_transition_target(&outcome.exec_transition)
+    }
+
+    /// Returns whether executing a file requests secure-execution mode.
+    pub fn requires_secure_exec(
+        &self,
+        task_state: &AppArmorTaskState,
+        path_resolver: &PathResolver,
+        path: &Path,
+    ) -> Result<bool> {
+        if task_state.is_unconfined() || task_state.onexec_profile().is_some() {
+            return Ok(false);
+        }
+
+        let Some(profile) = self.profile(task_state.current_profile()) else {
+            return_errno_with_message!(Errno::EACCES, "the AppArmor profile is not loaded");
+        };
+
+        let path_view = AppArmorPathView::from_path(path_resolver, path);
+        let outcome = self.check_profile_path_access(
+            &profile,
+            task_state.mode(),
+            &path_view,
+            AppArmorFilePermission::for_execute(),
+        )?;
+
+        Ok(outcome.exec_transition.requires_secure_exec())
     }
 
     /// Checks whether the task may use a capability.
@@ -242,6 +345,44 @@ impl AppArmorPolicy {
         self.transition_state_to_profile(task_state, target_profile)
     }
 
+    /// Computes task state after an immediate profile change.
+    pub fn change_profile_state(
+        &self,
+        task_state: &AppArmorTaskState,
+        target_profile: AppArmorProfileName,
+    ) -> Result<AppArmorTaskState> {
+        self.check_profile_transition(
+            task_state,
+            &target_profile,
+            AppArmorProfileTransitionKind::ChangeProfile,
+        )?;
+        let target = self.require_loaded_profile(&target_profile)?;
+
+        Ok(task_state.change_to(target.name().clone(), target.mode()))
+    }
+
+    /// Computes task state after setting a profile for the next `execve`.
+    pub fn change_onexec_state(
+        &self,
+        task_state: &AppArmorTaskState,
+        target_profile: Option<AppArmorProfileName>,
+    ) -> Result<AppArmorTaskState> {
+        let Some(target_profile) = target_profile else {
+            return Ok(task_state.clone().with_onexec_profile(None));
+        };
+
+        self.check_profile_transition(
+            task_state,
+            &target_profile,
+            AppArmorProfileTransitionKind::ChangeOnexec,
+        )?;
+        let target = self.require_loaded_profile(&target_profile)?;
+
+        Ok(task_state
+            .clone()
+            .with_onexec_profile(Some(target.name().clone())))
+    }
+
     fn check_path_access(
         &self,
         task_state: &AppArmorTaskState,
@@ -259,6 +400,7 @@ impl AppArmorPolicy {
 
         let path_view = AppArmorPathView::from_path(path_resolver, path);
         self.check_profile_path_access(&profile, task_state.mode(), &path_view, permissions)
+            .map(|_| ())
     }
 
     fn check_child_path_access(
@@ -279,6 +421,7 @@ impl AppArmorPolicy {
 
         let path_view = AppArmorPathView::from_child_name(path_resolver, parent, name);
         self.check_profile_path_access(&profile, task_state.mode(), &path_view, permissions)
+            .map(|_| ())
     }
 
     fn profile(&self, name: &AppArmorProfileName) -> Option<Arc<AppArmorProfile>> {
@@ -290,9 +433,7 @@ impl AppArmorPolicy {
         task_state: &AppArmorTaskState,
         profile_name: AppArmorProfileName,
     ) -> Result<AppArmorTaskState> {
-        let Some(target) = self.profile(&profile_name) else {
-            return_errno_with_message!(Errno::EACCES, "the AppArmor target profile is not loaded");
-        };
+        let target = self.require_loaded_profile(&profile_name)?;
 
         Ok(task_state.transition_to(target.name().clone(), target.mode()))
     }
@@ -303,14 +444,15 @@ impl AppArmorPolicy {
         task_mode: AppArmorMode,
         path_view: &AppArmorPathView,
         permissions: AppArmorFilePermission,
-    ) -> Result<()> {
+    ) -> Result<PathAccessOutcome> {
+        let mode = effective_mode(task_mode, profile.mode());
         if permissions.is_empty() {
-            return Ok(());
+            return Ok(PathAccessOutcome::allowed(mode));
         }
 
         let outcome = self.evaluate_path_access(profile, task_mode, path_view, permissions)?;
         if outcome.is_allowed() || outcome.mode == AppArmorMode::Complain {
-            return Ok(());
+            return Ok(outcome);
         }
 
         warn!(
@@ -321,6 +463,54 @@ impl AppArmorPolicy {
             outcome.denied.bits()
         );
         return_errno_with_message!(Errno::EACCES, "AppArmor policy denied access");
+    }
+
+    fn check_profile_transition(
+        &self,
+        task_state: &AppArmorTaskState,
+        target_profile: &AppArmorProfileName,
+        kind: AppArmorProfileTransitionKind,
+    ) -> Result<()> {
+        self.require_loaded_profile(target_profile)?;
+        if task_state.is_unconfined() || target_profile == task_state.current_profile() {
+            return Ok(());
+        }
+
+        let Some(profile) = self.profile(task_state.current_profile()) else {
+            return_errno_with_message!(Errno::EACCES, "the AppArmor profile is not loaded");
+        };
+        let mode = effective_mode(task_state.mode(), profile.mode());
+        if profile.allows_profile_transition(target_profile, kind) || mode == AppArmorMode::Complain
+        {
+            return Ok(());
+        }
+
+        warn!(
+            "AppArmor denied profile transition: profile={} target={} kind={:?}",
+            profile.name().as_str(),
+            target_profile.as_str(),
+            kind
+        );
+        return_errno_with_message!(Errno::EACCES, "AppArmor policy denied profile transition");
+    }
+
+    fn check_exec_transition_target(&self, transition: &AppArmorExecTransition) -> Result<()> {
+        let Some(target_profile) = transition.target_profile() else {
+            return Ok(());
+        };
+
+        self.require_loaded_profile(&target_profile).map(|_| ())
+    }
+
+    fn require_loaded_profile(
+        &self,
+        profile_name: &AppArmorProfileName,
+    ) -> Result<Arc<AppArmorProfile>> {
+        let Some(profile) = self.profile(profile_name) else {
+            return_errno_with_message!(Errno::EACCES, "the AppArmor target profile is not loaded");
+        };
+
+        Ok(profile)
     }
 
     fn evaluate_path_access(
@@ -376,6 +566,14 @@ struct PathAccessOutcome {
 }
 
 impl PathAccessOutcome {
+    fn allowed(mode: AppArmorMode) -> Self {
+        Self {
+            denied: AppArmorFilePermission::empty(),
+            exec_transition: AppArmorExecTransition::Inherit,
+            mode,
+        }
+    }
+
     fn is_allowed(&self) -> bool {
         self.denied.is_empty()
     }

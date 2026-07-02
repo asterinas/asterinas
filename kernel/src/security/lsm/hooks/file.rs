@@ -63,6 +63,67 @@ pub fn on_file_setattr(context: &FileSetattrContext<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Runs file permission revalidation hooks in module order.
+pub fn on_file_permission(context: &FilePermissionContext<'_>) -> Result<()> {
+    for module in modules::active_modules() {
+        module.on_file_permission(context)?;
+    }
+
+    Ok(())
+}
+
+/// Runs file mmap hooks in module order.
+pub fn on_file_mmap(context: &FileMmapContext<'_>) -> Result<()> {
+    for module in modules::active_modules() {
+        module.on_file_mmap(context)?;
+    }
+
+    Ok(())
+}
+
+/// Runs file receive hooks in module order.
+pub fn on_file_receive(context: &FileReceiveContext<'_>) -> Result<()> {
+    for module in modules::active_modules() {
+        module.on_file_receive(context)?;
+    }
+
+    Ok(())
+}
+
+/// Runs file lock hooks in module order.
+pub fn on_file_lock(context: &FileLockContext<'_>) -> Result<()> {
+    for module in modules::active_modules() {
+        module.on_file_lock(context)?;
+    }
+
+    Ok(())
+}
+
+/// Runs file metadata query hooks in module order.
+pub fn on_file_getattr(context: &FileGetattrContext<'_>) -> Result<()> {
+    for module in modules::active_modules() {
+        module.on_file_getattr(context)?;
+    }
+
+    Ok(())
+}
+
+bitflags! {
+    /// File permissions requested from LSM file hooks.
+    pub struct FilePermission: u32 {
+        /// Reads file contents, directory entries, or file metadata.
+        const READ = 1 << 0;
+        /// Writes file contents.
+        const WRITE = 1 << 1;
+        /// Executes file contents.
+        const EXECUTE = 1 << 2;
+        /// Appends file contents.
+        const APPEND = 1 << 3;
+        /// Creates executable file mappings.
+        const MMAP = 1 << 4;
+    }
+}
+
 /// The inputs for checking a newly opened file.
 pub struct FileOpenContext<'a> {
     path: &'a Path,
@@ -105,6 +166,180 @@ impl<'a> FileOpenContext<'a> {
     /// Returns the open status flags.
     pub const fn status_flags(&self) -> StatusFlags {
         self.status_flags
+    }
+}
+
+/// The inputs for checking access through an existing opened file.
+pub struct FilePermissionContext<'a> {
+    path: &'a Path,
+    path_resolver: &'a PathResolver,
+    permissions: FilePermission,
+}
+
+impl<'a> FilePermissionContext<'a> {
+    /// Creates a file permission context.
+    pub const fn new(
+        path: &'a Path,
+        path_resolver: &'a PathResolver,
+        permissions: FilePermission,
+    ) -> Self {
+        Self {
+            path,
+            path_resolver,
+            permissions,
+        }
+    }
+
+    /// Returns the path being accessed.
+    pub const fn path(&self) -> &'a Path {
+        self.path
+    }
+
+    /// Returns the resolver that defines the caller-visible path namespace.
+    pub const fn path_resolver(&self) -> &'a PathResolver {
+        self.path_resolver
+    }
+
+    /// Returns the requested permissions.
+    pub const fn permissions(&self) -> FilePermission {
+        self.permissions
+    }
+}
+
+/// The inputs for checking a file-backed mapping.
+pub struct FileMmapContext<'a> {
+    path: &'a Path,
+    path_resolver: &'a PathResolver,
+    permissions: FilePermission,
+}
+
+impl<'a> FileMmapContext<'a> {
+    /// Creates a file mmap context.
+    pub const fn new(
+        path: &'a Path,
+        path_resolver: &'a PathResolver,
+        permissions: FilePermission,
+    ) -> Self {
+        Self {
+            path,
+            path_resolver,
+            permissions,
+        }
+    }
+
+    /// Returns the path being mapped.
+    pub const fn path(&self) -> &'a Path {
+        self.path
+    }
+
+    /// Returns the resolver that defines the caller-visible path namespace.
+    pub const fn path_resolver(&self) -> &'a PathResolver {
+        self.path_resolver
+    }
+
+    /// Returns the requested permissions.
+    pub const fn permissions(&self) -> FilePermission {
+        self.permissions
+    }
+}
+
+/// The inputs for checking a file descriptor received from another task.
+pub struct FileReceiveContext<'a> {
+    path: &'a Path,
+    path_resolver: &'a PathResolver,
+    permissions: FilePermission,
+}
+
+impl<'a> FileReceiveContext<'a> {
+    /// Creates a file receive context.
+    pub const fn new(
+        path: &'a Path,
+        path_resolver: &'a PathResolver,
+        permissions: FilePermission,
+    ) -> Self {
+        Self {
+            path,
+            path_resolver,
+            permissions,
+        }
+    }
+
+    /// Returns the received file's path.
+    pub const fn path(&self) -> &'a Path {
+        self.path
+    }
+
+    /// Returns the resolver that defines the caller-visible path namespace.
+    pub const fn path_resolver(&self) -> &'a PathResolver {
+        self.path_resolver
+    }
+
+    /// Returns the permissions carried by the received file.
+    pub const fn permissions(&self) -> FilePermission {
+        self.permissions
+    }
+}
+
+/// The inputs for checking a file lock operation.
+pub struct FileLockContext<'a> {
+    path: &'a Path,
+    path_resolver: &'a PathResolver,
+    permissions: FilePermission,
+}
+
+impl<'a> FileLockContext<'a> {
+    /// Creates a file lock context.
+    pub const fn new(
+        path: &'a Path,
+        path_resolver: &'a PathResolver,
+        permissions: FilePermission,
+    ) -> Self {
+        Self {
+            path,
+            path_resolver,
+            permissions,
+        }
+    }
+
+    /// Returns the locked file's path.
+    pub const fn path(&self) -> &'a Path {
+        self.path
+    }
+
+    /// Returns the resolver that defines the caller-visible path namespace.
+    pub const fn path_resolver(&self) -> &'a PathResolver {
+        self.path_resolver
+    }
+
+    /// Returns the permissions needed for the lock.
+    pub const fn permissions(&self) -> FilePermission {
+        self.permissions
+    }
+}
+
+/// The inputs for checking a file metadata query.
+pub struct FileGetattrContext<'a> {
+    path: &'a Path,
+    path_resolver: &'a PathResolver,
+}
+
+impl<'a> FileGetattrContext<'a> {
+    /// Creates a file metadata query context.
+    pub const fn new(path: &'a Path, path_resolver: &'a PathResolver) -> Self {
+        Self {
+            path,
+            path_resolver,
+        }
+    }
+
+    /// Returns the queried file's path.
+    pub const fn path(&self) -> &'a Path {
+        self.path
+    }
+
+    /// Returns the resolver that defines the caller-visible path namespace.
+    pub const fn path_resolver(&self) -> &'a PathResolver {
+        self.path_resolver
     }
 }
 
@@ -336,8 +571,6 @@ impl<'a> FileLinkContext<'a> {
 /// The inputs for checking a rename operation.
 pub struct FileRenameContext<'a> {
     source: &'a Path,
-    old_parent: &'a Path,
-    old_name: &'a str,
     new_parent: &'a Path,
     new_name: &'a str,
     path_resolver: &'a PathResolver,
@@ -347,16 +580,12 @@ impl<'a> FileRenameContext<'a> {
     /// Creates a file rename context.
     pub const fn new(
         source: &'a Path,
-        old_parent: &'a Path,
-        old_name: &'a str,
         new_parent: &'a Path,
         new_name: &'a str,
         path_resolver: &'a PathResolver,
     ) -> Self {
         Self {
             source,
-            old_parent,
-            old_name,
             new_parent,
             new_name,
             path_resolver,
@@ -366,16 +595,6 @@ impl<'a> FileRenameContext<'a> {
     /// Returns the source path.
     pub const fn source(&self) -> &'a Path {
         self.source
-    }
-
-    /// Returns the source parent directory path.
-    pub const fn old_parent(&self) -> &'a Path {
-        self.old_parent
-    }
-
-    /// Returns the source basename.
-    pub const fn old_name(&self) -> &'a str {
-        self.old_name
     }
 
     /// Returns the target parent directory path.

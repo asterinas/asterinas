@@ -6,7 +6,10 @@ use super::{
     attachment::AppArmorAttachment,
     capability::AppArmorCapabilityPolicy,
     dfa::{AppArmorDfa, AppArmorDfaFilePolicy, AppArmorDfaPermissions},
-    path::{AppArmorExecTransition, AppArmorFilePermission, AppArmorPathPattern, AppArmorPathRule},
+    path::{
+        AppArmorExecMode, AppArmorExecTransition, AppArmorFilePermission, AppArmorPathPattern,
+        AppArmorPathRule,
+    },
     policy_update::AppArmorPolicyUpdate,
     profile::{AppArmorFilePolicy, AppArmorProfile, AppArmorProfileName},
     state::AppArmorMode,
@@ -248,11 +251,12 @@ fn read_asterinas_rule(reader: &mut BinaryReader<'_>) -> Result<AppArmorPathRule
                     "unconfined AppArmor transitions must not name a target profile"
                 );
             }
-            AppArmorExecTransition::Unconfined
+            AppArmorExecTransition::unconfined(AppArmorExecMode::Unsafe)
         }
-        ASTERINAS_TRANSITION_PROFILE => {
-            AppArmorExecTransition::Profile(AppArmorProfileName::new(target)?)
-        }
+        ASTERINAS_TRANSITION_PROFILE => AppArmorExecTransition::profile(
+            AppArmorProfileName::new(target)?,
+            AppArmorExecMode::Unsafe,
+        ),
         _ => return_errno_with_message!(Errno::EINVAL, "the AppArmor exec transition is invalid"),
     };
 
@@ -887,10 +891,11 @@ fn parse_linux_transition_target(target: String) -> Result<AppArmorExecTransitio
         return Ok(AppArmorExecTransition::Inherit);
     }
     if target == "unconfined" {
-        return Ok(AppArmorExecTransition::Unconfined);
+        return Ok(AppArmorExecTransition::unconfined(AppArmorExecMode::Unsafe));
     }
 
-    AppArmorProfileName::new(target).map(AppArmorExecTransition::Profile)
+    AppArmorProfileName::new(target)
+        .map(|profile_name| AppArmorExecTransition::profile(profile_name, AppArmorExecMode::Unsafe))
 }
 
 struct BinaryReader<'a> {

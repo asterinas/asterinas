@@ -7,7 +7,7 @@ use crate::{
         vfs::path::{AbsPathResult, Path, PathResolver},
     },
     prelude::*,
-    security::{FileCreateKind, FileDeleteKind, FileSetattrKind},
+    security::{FileCreateKind, FileDeleteKind, FilePermission, FileSetattrKind},
 };
 
 bitflags! {
@@ -125,6 +125,29 @@ impl AppArmorFilePermission {
             | FileSetattrKind::Size
             | FileSetattrKind::Times => Self::SETATTR,
         }
+    }
+
+    /// Creates file permissions from generic LSM file permissions.
+    pub fn from_file_permission(permissions: FilePermission) -> Self {
+        let mut apparmor_permissions = Self::empty();
+
+        if permissions.contains(FilePermission::READ) {
+            apparmor_permissions |= Self::READ;
+        }
+        if permissions.contains(FilePermission::WRITE) {
+            apparmor_permissions |= Self::WRITE;
+        }
+        if permissions.contains(FilePermission::EXECUTE) {
+            apparmor_permissions |= Self::EXECUTE;
+        }
+        if permissions.contains(FilePermission::APPEND) {
+            apparmor_permissions |= Self::APPEND;
+        }
+        if permissions.contains(FilePermission::MMAP) {
+            apparmor_permissions |= Self::MMAP;
+        }
+
+        apparmor_permissions
     }
 
     /// Converts Linux AppArmor permission bits into local file permissions.
@@ -291,19 +314,76 @@ pub enum AppArmorExecTransition {
     /// Keeps the current profile.
     Inherit,
     /// Switches to the unconfined profile.
-    Unconfined,
+    Unconfined {
+        /// The exec mode requested by the rule qualifier.
+        mode: AppArmorExecMode,
+    },
     /// Switches to a named profile.
-    Profile(AppArmorProfileName),
+    Profile {
+        /// The profile selected by the rule qualifier.
+        profile_name: AppArmorProfileName,
+        /// The exec mode requested by the rule qualifier.
+        mode: AppArmorExecMode,
+    },
+    /// Switches to a child profile.
+    Child {
+        /// The child profile selected by the rule qualifier.
+        profile_name: AppArmorProfileName,
+        /// The exec mode requested by the rule qualifier.
+        mode: AppArmorExecMode,
+    },
+}
+
+/// The safety mode requested by an AppArmor exec qualifier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AppArmorExecMode {
+    /// Lowercase qualifiers such as `px`, `cx`, and `ux`.
+    Unsafe,
+    /// Uppercase qualifiers such as `Px`, `Cx`, and `Ux`.
+    Safe,
 }
 
 impl AppArmorExecTransition {
+    /// Creates an unconfined transition.
+    pub fn unconfined(mode: AppArmorExecMode) -> Self {
+        Self::Unconfined { mode }
+    }
+
+    /// Creates a named-profile transition.
+    pub fn profile(profile_name: AppArmorProfileName, mode: AppArmorExecMode) -> Self {
+        Self::Profile { profile_name, mode }
+    }
+
+    /// Creates a child-profile transition.
+    pub fn child(profile_name: AppArmorProfileName, mode: AppArmorExecMode) -> Self {
+        Self::Child { profile_name, mode }
+    }
+
     /// Returns the target profile name for transitions that change profile.
     pub fn target_profile(&self) -> Option<AppArmorProfileName> {
         match self {
             Self::Inherit => None,
-            Self::Unconfined => Some(AppArmorProfileName::new_unconfined()),
-            Self::Profile(profile_name) => Some(profile_name.clone()),
+            Self::Unconfined { .. } => Some(AppArmorProfileName::new_unconfined()),
+            Self::Profile { profile_name, .. } | Self::Child { profile_name, .. } => {
+                Some(profile_name.clone())
+            }
         }
+    }
+
+    /// Returns whether this transition requested safe exec handling.
+    pub const fn requires_secure_exec(&self) -> bool {
+        matches!(
+            self,
+            Self::Unconfined {
+                mode: AppArmorExecMode::Safe
+            } | Self::Profile {
+                mode: AppArmorExecMode::Safe,
+                ..
+            } | Self::Child {
+                mode: AppArmorExecMode::Safe,
+                ..
+            }
+        )
     }
 }
 
@@ -318,22 +398,6 @@ pub struct AppArmorPathRule {
 }
 
 impl AppArmorPathRule {
-    /// Creates a path rule.
-    pub fn new(
-        pattern: AppArmorPathPattern,
-        permissions: AppArmorFilePermission,
-        audit: bool,
-        deny: bool,
-    ) -> Self {
-        Self::new_with_transition(
-            pattern,
-            permissions,
-            AppArmorExecTransition::Inherit,
-            audit,
-            deny,
-        )
-    }
-
     /// Creates a path rule with an executable transition.
     pub fn new_with_transition(
         pattern: AppArmorPathPattern,
@@ -349,11 +413,6 @@ impl AppArmorPathRule {
             audit,
             deny,
         }
-    }
-
-    /// Returns the path pattern.
-    pub fn pattern(&self) -> &AppArmorPathPattern {
-        &self.pattern
     }
 
     /// Returns the rule permissions.

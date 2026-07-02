@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    path::{AppArmorExecTransition, AppArmorFilePermission, AppArmorPathView},
+    path::{AppArmorExecMode, AppArmorExecTransition, AppArmorFilePermission, AppArmorPathView},
     profile::AppArmorProfileName,
 };
 use crate::prelude::*;
@@ -145,13 +145,14 @@ impl AppArmorDfaFilePolicy {
             return Ok(AppArmorExecTransition::Inherit);
         }
         if xindex & AA_X_UNCONFINED != 0 {
-            return Ok(AppArmorExecTransition::Unconfined);
+            return Ok(AppArmorExecTransition::unconfined(AppArmorExecMode::Unsafe));
         }
 
         match xindex & AA_X_TYPE_MASK {
-            AA_X_NAME => Ok(AppArmorExecTransition::Profile(AppArmorProfileName::new(
-                path_view.as_str().to_string(),
-            )?)),
+            AA_X_NAME => Ok(AppArmorExecTransition::profile(
+                AppArmorProfileName::new(path_view.as_str().to_string())?,
+                AppArmorExecMode::Unsafe,
+            )),
             AA_X_TABLE => {
                 let index = (xindex & AA_X_INDEX_MASK) as usize;
                 let Some(transition) = self.transitions.get(index) else {

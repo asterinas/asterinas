@@ -73,14 +73,7 @@ pub fn sys_renameat2(
 
     super::check_parent_write_permission(&old_parent_path)?;
     super::check_parent_write_permission(&new_parent_path)?;
-    security::file_rename(
-        &old_path,
-        &old_parent_path,
-        old_name,
-        &new_parent_path,
-        &new_name,
-        &path_resolver,
-    )?;
+    security::file_rename(&old_path, &new_parent_path, &new_name, &path_resolver)?;
 
     old_parent_path.rename(old_name, &new_parent_path, &new_name)?;
 

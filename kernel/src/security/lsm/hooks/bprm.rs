@@ -27,6 +27,16 @@ pub fn on_bprm_committed_creds(context: &BprmCommittedCredsContext<'_>) -> Resul
     Ok(())
 }
 
+/// Returns whether the executable should run in secure-execution mode.
+pub fn on_bprm_secureexec(context: &BprmCheckContext<'_>) -> Result<bool> {
+    let mut secureexec = false;
+    for module in modules::active_modules() {
+        secureexec |= module.on_bprm_secureexec(context)?;
+    }
+
+    Ok(secureexec)
+}
+
 /// The inputs for an executable image security check.
 pub struct BprmCheckContext<'a> {
     executable: &'a Path,

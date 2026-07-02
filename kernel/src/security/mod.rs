@@ -14,7 +14,7 @@ cfg_if! {
 
 pub use self::lsm::{
     AppArmorMode, AppArmorPolicyOperation, AppArmorProfileName, AppArmorTaskState, FileCreateKind,
-    FileDeleteKind, FileSetattrKind, YamaScope,
+    FileDeleteKind, FilePermission, FileSetattrKind, YamaScope,
 };
 use crate::{
     fs::{
@@ -27,6 +27,7 @@ use crate::{
         credentials::capabilities::CapSet,
         posix_thread::{AsPosixThread, PosixThread},
     },
+    thread::Thread,
 };
 
 pub(super) fn init() {
@@ -142,15 +143,7 @@ pub fn set_current_apparmor_profile(profile_name: &str) -> Result<()> {
     };
 
     let task_state = posix_thread.credentials().apparmor_task_state();
-    let target_state = lsm::apparmor_task_state_for_profile(profile_name)?;
-    let target_profile = target_state.current_profile().clone();
-    if !task_state.is_unconfined() && &target_profile != task_state.current_profile() {
-        return_errno_with_message!(
-            Errno::EACCES,
-            "AppArmor change_profile mediation is not supported"
-        );
-    }
-
+    let target_state = lsm::apparmor_change_profile_state(&task_state, profile_name)?;
     posix_thread.set_apparmor_task_state(target_state);
     Ok(())
 }
@@ -167,21 +160,8 @@ pub fn set_current_apparmor_onexec_profile(profile_name: Option<&str>) -> Result
     };
 
     let task_state = posix_thread.credentials().apparmor_task_state();
-    let Some(profile_name) = profile_name else {
-        posix_thread.set_apparmor_task_state(task_state.with_onexec_profile(None));
-        return Ok(());
-    };
-
-    let target_state = lsm::apparmor_task_state_for_profile(profile_name)?;
-    let target_profile = target_state.current_profile().clone();
-    if !task_state.is_unconfined() && &target_profile != task_state.current_profile() {
-        return_errno_with_message!(
-            Errno::EACCES,
-            "AppArmor change_onexec mediation is not supported"
-        );
-    }
-
-    posix_thread.set_apparmor_task_state(task_state.with_onexec_profile(Some(target_profile)));
+    let target_state = lsm::apparmor_change_onexec_state(&task_state, profile_name)?;
+    posix_thread.set_apparmor_task_state(target_state);
     Ok(())
 }
 
@@ -201,6 +181,11 @@ pub fn bprm_committed_creds(
         path_resolver,
         credentials,
     ))
+}
+
+/// Returns whether the executable should run in secure-execution mode.
+pub fn bprm_secureexec(path: &Path, path_resolver: &PathResolver) -> Result<bool> {
+    lsm::bprm_secureexec(&lsm::BprmCheckContext::new(path, path_resolver))
 }
 
 /// Runs the LSM stack for a file open check.
@@ -270,16 +255,12 @@ pub fn file_link(
 /// Runs the LSM stack before renaming a filesystem object.
 pub fn file_rename(
     source: &Path,
-    old_parent: &Path,
-    old_name: &str,
     new_parent: &Path,
     new_name: &str,
     path_resolver: &PathResolver,
 ) -> Result<()> {
     lsm::file_rename(&lsm::FileRenameContext::new(
         source,
-        old_parent,
-        old_name,
         new_parent,
         new_name,
         path_resolver,
@@ -293,4 +274,86 @@ pub fn file_setattr(
     kind: FileSetattrKind,
 ) -> Result<()> {
     lsm::file_setattr(&lsm::FileSetattrContext::new(path, path_resolver, kind))
+}
+
+/// Runs the LSM stack for access through an existing opened file.
+pub fn file_permission(path: &Path, permissions: FilePermission) -> Result<()> {
+    let Some(path_resolver) = current_path_resolver() else {
+        return Ok(());
+    };
+
+    file_permission_at(path, &path_resolver, permissions)
+}
+
+/// Runs the LSM stack for path access through an existing file-like operation.
+pub fn file_permission_at(
+    path: &Path,
+    path_resolver: &PathResolver,
+    permissions: FilePermission,
+) -> Result<()> {
+    lsm::file_permission(&lsm::FilePermissionContext::new(
+        path,
+        path_resolver,
+        permissions,
+    ))
+}
+
+/// Runs the LSM stack for mapping a file.
+pub fn file_mmap(path: &Path, permissions: FilePermission) -> Result<()> {
+    let Some(path_resolver) = current_path_resolver() else {
+        return Ok(());
+    };
+
+    lsm::file_mmap(&lsm::FileMmapContext::new(
+        path,
+        &path_resolver,
+        permissions,
+    ))
+}
+
+/// Runs the LSM stack for receiving a file descriptor.
+pub fn file_receive(path: &Path, permissions: FilePermission) -> Result<()> {
+    let Some(path_resolver) = current_path_resolver() else {
+        return Ok(());
+    };
+
+    lsm::file_receive(&lsm::FileReceiveContext::new(
+        path,
+        &path_resolver,
+        permissions,
+    ))
+}
+
+/// Runs the LSM stack for locking a file.
+pub fn file_lock(path: &Path, permissions: FilePermission) -> Result<()> {
+    let Some(path_resolver) = current_path_resolver() else {
+        return Ok(());
+    };
+
+    lsm::file_lock(&lsm::FileLockContext::new(
+        path,
+        &path_resolver,
+        permissions,
+    ))
+}
+
+/// Runs the LSM stack before querying file metadata.
+pub fn file_getattr(path: &Path, path_resolver: &PathResolver) -> Result<()> {
+    lsm::file_getattr(&lsm::FileGetattrContext::new(path, path_resolver))
+}
+
+/// Runs the LSM stack before querying metadata through an opened file.
+pub fn file_getattr_current(path: &Path) -> Result<()> {
+    let Some(path_resolver) = current_path_resolver() else {
+        return Ok(());
+    };
+
+    file_getattr(path, &path_resolver)
+}
+
+fn current_path_resolver() -> Option<PathResolver> {
+    let thread = Thread::current()?;
+    let posix_thread = thread.as_posix_thread()?;
+    let fs = posix_thread.read_fs();
+    Some(fs.resolver().read().clone())
 }

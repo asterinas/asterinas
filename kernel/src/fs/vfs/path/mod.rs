@@ -177,6 +177,7 @@ impl Path {
             && creation_flags.contains(CreationFlags::O_TRUNC)
             && !status_flags.contains(StatusFlags::O_PATH)
         {
+            security::file_setattr(self, path_resolver, security::FileSetattrKind::Size)?;
             self.resize(0)?;
         }
 

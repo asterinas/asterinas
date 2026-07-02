@@ -11,6 +11,7 @@ use crate::{
         vfs::path::{EmptyPathStr, FsPath, Path},
     },
     prelude::*,
+    security,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -55,11 +56,13 @@ pub fn sys_statx(
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();
-        if flags.contains(StatxFlags::AT_SYMLINK_NOFOLLOW) {
+        let path = if flags.contains(StatxFlags::AT_SYMLINK_NOFOLLOW) {
             path_resolver.lookup_no_follow(&fs_path)?
         } else {
             path_resolver.lookup(&fs_path)?
-        }
+        };
+        security::file_getattr(&path, &path_resolver)?;
+        path
     };
 
     let statx = Statx::new(&path);

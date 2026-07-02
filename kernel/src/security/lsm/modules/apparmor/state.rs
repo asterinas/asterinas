@@ -23,16 +23,6 @@ impl AppArmorTaskState {
         }
     }
 
-    /// Creates task state for a confined profile.
-    pub fn new(current_profile: AppArmorProfileName, mode: AppArmorMode) -> Self {
-        Self {
-            label: AppArmorLabel::new_single(current_profile),
-            onexec_profile: None,
-            previous_profile: None,
-            mode,
-        }
-    }
-
     /// Creates a copy with a profile requested for the next `execve`.
     pub fn with_onexec_profile(mut self, profile_name: Option<AppArmorProfileName>) -> Self {
         self.onexec_profile = profile_name;
@@ -47,6 +37,11 @@ impl AppArmorTaskState {
             previous_profile: Some(self.current_profile().clone()),
             mode,
         }
+    }
+
+    /// Creates task state after an immediate profile change.
+    pub fn change_to(&self, profile_name: AppArmorProfileName, mode: AppArmorMode) -> Self {
+        self.transition_to(profile_name, mode)
     }
 
     /// Returns the current profile.

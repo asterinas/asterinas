@@ -131,7 +131,7 @@ struct CurrentFileOps(TidDirOps);
 impl CurrentFileOps {
     pub fn new_inode(dir: &AttrDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L2775>
-        ProcFile::new(Self(dir.0.clone()), parent, mkmod!(a+r))
+        ProcFile::new(Self(dir.0.clone()), parent, mkmod!(a+r, u+w))
     }
 }
 
@@ -147,6 +147,21 @@ impl ProcFileOps for CurrentFileOps {
         writeln!(printer, "{}", task_state.current_profile().as_str())?;
 
         Ok(printer.bytes_written())
+    }
+
+    fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let Some(thread) = self.0.thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
+        ensure_current_thread(&thread)?;
+
+        let (profile_name, read_bytes) = read_profile_name_from(reader)?;
+        let Some(profile_name) = profile_name else {
+            return_errno_with_message!(Errno::EINVAL, "the AppArmor profile name is empty");
+        };
+        security::set_current_apparmor_profile(&profile_name)?;
+
+        Ok(read_bytes)
     }
 }
 

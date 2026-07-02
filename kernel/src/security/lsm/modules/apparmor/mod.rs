@@ -23,8 +23,9 @@ pub use self::{
 use self::{policy::AppArmorPolicy, policy_update::AppArmorPolicyUpdate};
 use super::super::{
     BprmCheckContext, BprmCommittedCredsContext, CapableContext, FileCreateContext,
-    FileDeleteContext, FileLinkContext, FileOpenContext, FileRenameContext, FileSetattrContext,
-    LsmFlags, LsmModule,
+    FileDeleteContext, FileGetattrContext, FileLinkContext, FileLockContext, FileMmapContext,
+    FileOpenContext, FilePermissionContext, FileReceiveContext, FileRenameContext,
+    FileSetattrContext, LsmFlags, LsmModule,
     hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook},
 };
 use crate::{prelude::*, process::posix_thread::AsPosixThread, thread::Thread};
@@ -68,6 +69,14 @@ impl LsmBprmHook for AppArmorLsm {
             .credentials()
             .set_apparmor_task_state(new_task_state);
         Ok(())
+    }
+
+    fn on_bprm_secureexec(&self, context: &BprmCheckContext<'_>) -> Result<bool> {
+        let Some(task_state) = current_task_state() else {
+            return Ok(false);
+        };
+
+        POLICY.requires_secure_exec(&task_state, context.path_resolver(), context.executable())
     }
 }
 
@@ -163,6 +172,66 @@ impl LsmFileHook for AppArmorLsm {
             context.kind(),
         )
     }
+
+    fn on_file_permission(&self, context: &FilePermissionContext<'_>) -> Result<()> {
+        let Some(task_state) = current_task_state() else {
+            return Ok(());
+        };
+
+        POLICY.check_file_permission(
+            &task_state,
+            context.path_resolver(),
+            context.path(),
+            context.permissions(),
+        )
+    }
+
+    fn on_file_mmap(&self, context: &FileMmapContext<'_>) -> Result<()> {
+        let Some(task_state) = current_task_state() else {
+            return Ok(());
+        };
+
+        POLICY.check_file_mmap(
+            &task_state,
+            context.path_resolver(),
+            context.path(),
+            context.permissions(),
+        )
+    }
+
+    fn on_file_receive(&self, context: &FileReceiveContext<'_>) -> Result<()> {
+        let Some(task_state) = current_task_state() else {
+            return Ok(());
+        };
+
+        POLICY.check_file_receive(
+            &task_state,
+            context.path_resolver(),
+            context.path(),
+            context.permissions(),
+        )
+    }
+
+    fn on_file_lock(&self, context: &FileLockContext<'_>) -> Result<()> {
+        let Some(task_state) = current_task_state() else {
+            return Ok(());
+        };
+
+        POLICY.check_file_lock(
+            &task_state,
+            context.path_resolver(),
+            context.path(),
+            context.permissions(),
+        )
+    }
+
+    fn on_file_getattr(&self, context: &FileGetattrContext<'_>) -> Result<()> {
+        let Some(task_state) = current_task_state() else {
+            return Ok(());
+        };
+
+        POLICY.check_file_getattr(&task_state, context.path_resolver(), context.path())
+    }
 }
 
 /// Loads, replaces, or removes an AppArmor profile from policy text.
@@ -214,14 +283,24 @@ pub fn root_namespace_name() -> &'static str {
     POLICY.root_namespace_name()
 }
 
-/// Creates task state for a loaded AppArmor profile name.
-pub fn task_state_for_profile(profile_name: &str) -> Result<AppArmorTaskState> {
+/// Creates task state after a mediated immediate profile change.
+pub fn change_profile_state(
+    task_state: &AppArmorTaskState,
+    profile_name: &str,
+) -> Result<AppArmorTaskState> {
     let profile_name = AppArmorProfileName::new(profile_name.to_string())?;
-    let Some(mode) = POLICY.profile_mode(&profile_name) else {
-        return_errno_with_message!(Errno::EACCES, "the AppArmor profile is not loaded");
-    };
+    POLICY.change_profile_state(task_state, profile_name)
+}
 
-    Ok(AppArmorTaskState::new(profile_name, mode))
+/// Creates task state after a mediated change-on-exec request.
+pub fn change_onexec_state(
+    task_state: &AppArmorTaskState,
+    profile_name: Option<&str>,
+) -> Result<AppArmorTaskState> {
+    let profile_name = profile_name
+        .map(|profile_name| AppArmorProfileName::new(profile_name.to_string()))
+        .transpose()?;
+    POLICY.change_onexec_state(task_state, profile_name)
 }
 
 /// Removes a loaded AppArmor profile by name.

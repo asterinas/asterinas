@@ -78,9 +78,4 @@ impl AppArmorPolicyNamespace {
 
         summaries
     }
-
-    /// Returns the enforcement mode of a profile.
-    pub fn profile_mode(&self, name: &AppArmorProfileName) -> Option<AppArmorMode> {
-        self.profile(name).map(|profile| profile.mode())
-    }
 }

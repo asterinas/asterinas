@@ -21,8 +21,8 @@ pub mod yama {
 pub mod apparmor {
     pub use super::modules::apparmor::{
         AppArmorMode, AppArmorPolicyOperation, AppArmorProfileName, AppArmorTaskState,
-        has_binary_policy_magic, load_binary_policy, load_policy, profile_summaries,
-        remove_profile_by_name, root_namespace_name, task_state_for_profile,
+        change_onexec_state, change_profile_state, has_binary_policy_magic, load_binary_policy,
+        load_policy, profile_summaries, remove_profile_by_name, root_namespace_name,
     };
 }
 
@@ -31,8 +31,9 @@ pub use self::{
     apparmor::{AppArmorMode, AppArmorPolicyOperation, AppArmorProfileName, AppArmorTaskState},
     hooks::{
         BprmCheckContext, BprmCommittedCredsContext, CapableContext, FileCreateContext,
-        FileCreateKind, FileDeleteContext, FileDeleteKind, FileLinkContext, FileOpenContext,
-        FileRenameContext, FileSetattrContext, FileSetattrKind,
+        FileCreateKind, FileDeleteContext, FileDeleteKind, FileGetattrContext, FileLinkContext,
+        FileLockContext, FileMmapContext, FileOpenContext, FilePermission, FilePermissionContext,
+        FileReceiveContext, FileRenameContext, FileSetattrContext, FileSetattrKind,
     },
     yama::YamaScope,
 };
@@ -109,9 +110,20 @@ pub fn apparmor_root_namespace_name() -> &'static str {
     apparmor::root_namespace_name()
 }
 
-/// Creates task state for a loaded AppArmor profile name.
-pub fn apparmor_task_state_for_profile(profile_name: &str) -> Result<AppArmorTaskState> {
-    apparmor::task_state_for_profile(profile_name)
+/// Creates task state after a mediated immediate AppArmor profile change.
+pub fn apparmor_change_profile_state(
+    task_state: &AppArmorTaskState,
+    profile_name: &str,
+) -> Result<AppArmorTaskState> {
+    apparmor::change_profile_state(task_state, profile_name)
+}
+
+/// Creates task state after a mediated AppArmor change-on-exec request.
+pub fn apparmor_change_onexec_state(
+    task_state: &AppArmorTaskState,
+    profile_name: Option<&str>,
+) -> Result<AppArmorTaskState> {
+    apparmor::change_onexec_state(task_state, profile_name)
 }
 
 pub(super) fn init() {
@@ -133,6 +145,11 @@ pub fn bprm_check_security(context: &BprmCheckContext<'_>) -> Result<()> {
 /// Runs the LSM stack after executable credentials are committed.
 pub fn bprm_committed_creds(context: &BprmCommittedCredsContext<'_>) -> Result<()> {
     hooks::on_bprm_committed_creds(context)
+}
+
+/// Returns whether the executable should run in secure-execution mode.
+pub fn bprm_secureexec(context: &BprmCheckContext<'_>) -> Result<bool> {
+    hooks::on_bprm_secureexec(context)
 }
 
 /// Runs the LSM stack for a file open check.
@@ -163,4 +180,29 @@ pub fn file_rename(context: &FileRenameContext<'_>) -> Result<()> {
 /// Runs the LSM stack for a file attribute-change check.
 pub fn file_setattr(context: &FileSetattrContext<'_>) -> Result<()> {
     hooks::on_file_setattr(context)
+}
+
+/// Runs the LSM stack for a file permission revalidation check.
+pub fn file_permission(context: &FilePermissionContext<'_>) -> Result<()> {
+    hooks::on_file_permission(context)
+}
+
+/// Runs the LSM stack for a file mmap check.
+pub fn file_mmap(context: &FileMmapContext<'_>) -> Result<()> {
+    hooks::on_file_mmap(context)
+}
+
+/// Runs the LSM stack for a file receive check.
+pub fn file_receive(context: &FileReceiveContext<'_>) -> Result<()> {
+    hooks::on_file_receive(context)
+}
+
+/// Runs the LSM stack for a file lock check.
+pub fn file_lock(context: &FileLockContext<'_>) -> Result<()> {
+    hooks::on_file_lock(context)
+}
+
+/// Runs the LSM stack for a file metadata query check.
+pub fn file_getattr(context: &FileGetattrContext<'_>) -> Result<()> {
+    hooks::on_file_getattr(context)
 }
