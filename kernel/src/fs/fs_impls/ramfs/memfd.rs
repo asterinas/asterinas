@@ -174,7 +174,6 @@ impl Inode for MemfdInode {
     fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize>;
     fn remove_xattr(&self, name: XattrName) -> Result<()>;
-
     fn resize(&self, new_size: usize) -> Result<()> {
         let seals = self.seals.lock();
         let old_size = self.inode.size();

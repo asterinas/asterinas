@@ -5,7 +5,8 @@ use core::sync::atomic::Ordering;
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{
-    Gid, SecureBits, Uid, group::AtomicGid, secure_bits::AtomicSecureBits, user::AtomicUid,
+    FileCapabilities, Gid, SecureBits, Uid, group::AtomicGid, secure_bits::AtomicSecureBits,
+    user::AtomicUid,
 };
 use crate::{
     prelude::*,
@@ -75,6 +76,21 @@ pub(super) struct Credentials_ {
 
     /// Secure bits.
     securebits: AtomicSecureBits,
+}
+
+/// Credentials computed for a pending `execve()`.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::process) struct ExecCred {
+    setuid: Option<Uid>,
+    setgid: Option<Gid>,
+    permitted: CapSet,
+    effective: CapSet,
+}
+
+impl ExecCred {
+    pub(in crate::process) const fn will_change_ids(&self) -> bool {
+        self.setuid.is_some() || self.setgid.is_some()
+    }
 }
 
 impl Credentials_ {
@@ -185,34 +201,6 @@ impl Credentials_ {
 
     pub(super) fn set_suid(&self, suid: Uid) {
         self.set_resuid_unchecked(None, None, Some(suid));
-
-        // Begin to adjust capabilities.
-        // Reference: The "Transformation of capabilities during execve()" section and
-        // the "Capabilities and execution of programs by root" section in
-        // <https://man7.org/linux/man-pages/man7/capabilities.7.html>.
-
-        let (file_permitted, file_inheritable) =
-            if (self.euid().is_root() || self.ruid().is_root()) && !self.securebits().no_root() {
-                (CapSet::all(), CapSet::all())
-            } else {
-                // TODO: Get the file capabilities from the file system.
-                (CapSet::empty(), CapSet::empty())
-            };
-
-        let file_effective = if self.euid().is_root() && !self.securebits().no_root() {
-            CapSet::all()
-        } else {
-            // TODO: Get the file capabilities from the file system.
-            CapSet::empty()
-        };
-
-        let new_permitted = (self.inheritable_capset() & file_inheritable)
-            | (file_permitted & self.bounding_capset())
-            | AMBIENT_CAPSET;
-        let new_effective = (file_effective & new_permitted) | (!file_effective & AMBIENT_CAPSET);
-
-        self.set_permitted_capset(new_permitted);
-        self.set_effective_capset(new_effective);
     }
 
     // For `setreuid`, the real UID can *NOT* be set to the old saved-set user ID,
@@ -307,7 +295,6 @@ impl Credentials_ {
         let all_nonroot = !new_ruid.is_root() && !new_euid.is_root() && !new_suid.is_root();
         if had_root && all_nonroot && !self.keep_capabilities() {
             self.set_permitted_capset(CapSet::empty());
-            self.set_inheritable_capset(CapSet::empty());
             // TODO: Clear ambient capabilities when we support it. Note that ambient capabilities
             // should be cleared even if `keep_capabilities` is true.
         }
@@ -426,6 +413,109 @@ impl Credentials_ {
 
     pub(super) fn set_sgid(&self, sgid: Gid) {
         self.set_resgid_unchecked(None, None, Some(sgid));
+    }
+
+    /// Calculates and validates credentials for `execve()`.
+    pub(super) fn prepare_exec_cred(
+        &self,
+        file_capabilities: Option<FileCapabilities>,
+        setuid: Option<Uid>,
+        setgid: Option<Gid>,
+    ) -> Result<ExecCred> {
+        let exec_euid = setuid.unwrap_or_else(|| self.euid());
+        let (permitted, effective) = self.calculate_capsets_for_exec(file_capabilities, exec_euid);
+
+        // Linux performs this safety check only for capability-dumb binaries, which use the
+        // effective flag to request that every permitted file capability becomes effective.
+        let Some(file_capabilities) =
+            file_capabilities.filter(|file_capabilities| file_capabilities.has_effective_flag())
+        else {
+            return Ok(ExecCred {
+                setuid,
+                setgid,
+                permitted,
+                effective,
+            });
+        };
+
+        if !permitted.contains(file_capabilities.permitted()) {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the executable requests file capabilities outside the current bounding set"
+            );
+        }
+
+        Ok(ExecCred {
+            setuid,
+            setgid,
+            permitted,
+            effective,
+        })
+    }
+
+    /// Applies previously computed credentials for `execve()`.
+    pub(super) fn apply_exec_cred(&self, exec_cred: ExecCred) -> Result<()> {
+        if let Some(euid) = exec_cred.setuid {
+            self.set_euid(euid);
+        }
+        self.set_suid(self.euid());
+
+        if let Some(egid) = exec_cred.setgid {
+            self.set_egid(egid);
+        }
+        self.set_sgid(self.egid());
+
+        self.set_permitted_capset(exec_cred.permitted);
+        self.set_effective_capset(exec_cred.effective);
+        self.set_keep_capabilities(false)?;
+
+        Ok(())
+    }
+
+    fn calculate_capsets_for_exec(
+        &self,
+        file_capabilities: Option<FileCapabilities>,
+        exec_euid: Uid,
+    ) -> (CapSet, CapSet) {
+        // Reference: The "Transformation of capabilities during execve()" section and
+        // the "Capabilities and execution of programs by root" section in
+        // <https://man7.org/linux/man-pages/man7/capabilities.7.html>.
+        let no_root = self.securebits().no_root();
+        let has_file_capabilities = file_capabilities.is_some();
+
+        // Linux treats root specially when the executable has no file capabilities, or when the
+        // real UID is root. The setuid-root + file-capability exception is handled by excluding
+        // the `euid == 0` fast path when a file capability xattr is present.
+        let grant_root_capability_sets =
+            !no_root && (self.ruid().is_root() || (!has_file_capabilities && exec_euid.is_root()));
+
+        let file_permitted = if grant_root_capability_sets {
+            CapSet::all()
+        } else {
+            file_capabilities.map_or(CapSet::empty(), FileCapabilities::permitted)
+        };
+        let file_inheritable = if grant_root_capability_sets {
+            CapSet::all()
+        } else {
+            file_capabilities.map_or(CapSet::empty(), FileCapabilities::inheritable)
+        };
+
+        let grant_root_effective_set = !no_root && !has_file_capabilities && exec_euid.is_root();
+        let file_effective = if grant_root_effective_set
+            || file_capabilities.is_some_and(FileCapabilities::has_effective_flag)
+        {
+            CapSet::all()
+        } else {
+            CapSet::empty()
+        };
+
+        let new_permitted = (self.inheritable_capset() & file_inheritable)
+            | (file_permitted & self.bounding_capset())
+            | AMBIENT_CAPSET;
+
+        let new_effective = (file_effective & new_permitted) | (!file_effective & AMBIENT_CAPSET);
+
+        (new_permitted, new_effective)
     }
 
     // For `setregid`, the real GID can *NOT* be set to the old saved-set GID,

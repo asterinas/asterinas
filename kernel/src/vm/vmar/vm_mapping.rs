@@ -23,6 +23,7 @@ use crate::{
     fs::vfs::{
         inode::Inode,
         path::{Path, PathResolver},
+        xattr::clear_file_priv,
     },
     prelude::*,
     process::LockedHeap,
@@ -330,6 +331,25 @@ impl VmMapping {
     fn is_cow(&self) -> bool {
         !self.is_shared && self.perms.contains(VmPerms::MAY_WRITE)
     }
+
+    fn clears_file_priv_on_write(&self) -> bool {
+        self.is_shared
+            && self.perms.contains(VmPerms::MAY_WRITE)
+            && self.path.is_some()
+            && matches!(self.mapped_mem, MappedMemory::Vmo(_))
+    }
+
+    fn clear_file_priv_on_write(&self) -> Result<()> {
+        if !self.clears_file_priv_on_write() {
+            return Ok(());
+        }
+
+        let Some(path) = &self.path else {
+            return Ok(());
+        };
+
+        clear_file_priv(path.inode().as_ref())
+    }
 }
 
 /****************************** Page faults **********************************/
@@ -419,6 +439,11 @@ impl VmMapping {
         required_perms: VmPerms,
         rss_delta: &mut RssDelta,
     ) -> Result<()> {
+        let is_write = required_perms.contains(VmPerms::WRITE);
+        if is_write {
+            self.clear_file_priv_on_write()?;
+        }
+
         'retry: loop {
             let preempt_guard = disable_preempt();
             let mut cursor = vm_space.cursor_mut(
@@ -427,7 +452,6 @@ impl VmMapping {
             )?;
 
             let (va, item) = cursor.query().unwrap();
-            let is_write = required_perms.contains(VmPerms::WRITE);
             match item {
                 Some(VmQueriedItem::MappedRam { frame, mut prop }) => {
                     if VmPerms::from(prop.flags).contains(required_perms) {
@@ -554,8 +578,8 @@ impl VmMapping {
             // Operations to shared mapping or read access to private VMO-backed mapping.
             // If read access to private VMO-backed mapping triggers a page fault,
             // the map should be readonly. If user next tries to write to the frame,
-            // another page fault will be triggered which will performs a COW (Copy-On-Write).
-            is_readonly = !self.is_shared;
+            // another page fault will be triggered which will perform COW (Copy-On-Write).
+            is_readonly = !self.is_shared || (!write && self.clears_file_priv_on_write());
             Ok((page, is_readonly))
         }
     }
@@ -782,6 +806,9 @@ impl VmMapping {
     pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms) -> Self {
         let mut new_flags = PageFlags::from(perms);
         if self.is_cow() && !self.perms.contains(VmPerms::WRITE) {
+            new_flags.remove(PageFlags::W);
+        }
+        if self.clears_file_priv_on_write() && perms.contains(VmPerms::WRITE) {
             new_flags.remove(PageFlags::W);
         }
 
