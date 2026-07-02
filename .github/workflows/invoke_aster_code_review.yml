@@ -1,0 +1,386 @@
+name: "Invoke the aster-code-review skill" 
+
+# A `/aster-code-review …` PR comment (or workflow_dispatch) drives
+# the `aster-code-review` skill on this PR to review the PR
+# and post inline review comments:
+#
+#   /aster-code-review                      review the PR diff (alias for `diff`)
+#   /aster-code-review diff                 review the PR diff
+#   /aster-code-review files <p1> … <pN>    review those files
+#
+# Alternatively, such a PR comment can trigger the CI to run tests for the skill:
+#
+#   /aster-code-review smoke     [--problems="<id1> … <idN>"]   run the smoke test
+#   /aster-code-review benchmark [--problems="<id1> … <idN>"]   run the benchmark
+#
+# where each `<idX>` is a benchmark problem's four-digit id (e.g. `0002`); omit
+# `--problems` to run the full set. A status comment is posted when the test finishes.
+#
+# All of it runs the PR's OWN skill + coding guidelines
+# (not those of the main branch).
+#
+# TWO JOBS:
+#   triage — fast, on the host runner (no container), so it replies to the comment
+#            PROMPTLY. It decides who/what is allowed and posts a human-friendly
+#            reply: a "no permission" note, a "bad command" note with usage, or an
+#            "accepted" note with a link to this run. It parses the command with a
+#            TRUSTED copy of the parser (the one checked out at the default-branch
+#            SHA that triggered the workflow — never the PR's copy), and hands the
+#            `run` job only a validated plan.
+#   run    — the heavy lifting, inside the Asterinas dev image; only starts when
+#            triage says `proceed=true`. It checks out the PR head and runs the
+#            PR's own skill against it.
+#
+# SECURITY. The comment body is read via an env var, never interpolated into a
+# shell with ${{ }} (that would be an Actions injection). `triage` runs the trusted
+# (default-branch) parser and gates on author_association, so a PR-modified parser
+# never runs in a privileged context and cannot widen what the `run` job does.
+# `run` additionally RE-VALIDATES every value (paths, problem ids) before it reaches
+# a command — defence in depth. The trigger is gated to write-access roles only
+# (owner/member/collaborator); NOT CONTRIBUTOR, which merely means "has had a PR
+# merged" — no write access, a wide and largely-untrusted set. Anyone else gets a
+# polite "no permission" reply.
+#
+# FIXME(security): SECRET EXFILTRATION — KNOWN, NOT YET FIXED. The `run` job checks
+# out the PR head and executes the PR's OWN skill scripts and reads its OWN coding
+# guidelines with OPENAI_API_KEY (and GH_TOKEN) in the environment, so a malicious
+# fork PR can edit those in-tree files to leak the secret (see the "Review the PR"
+# step). The gate to write-access members limits WHO can trigger it, but not what
+# the checked-out code does once triggered. The intended fix (deferred) is to run a
+# TRUSTED skill, not the PR's: check out the base repo's default branch, overlay its
+# skill onto the PR workspace (benchmark/overlay_skill.sh) and point
+# ACR_GUIDELINE_ROOT at its guidelines, repoint the review + post steps at that
+# trusted copy, and review the PR's code only as data. Self-tests (smoke/benchmark)
+# must run the PR's skill by design, so they keep this risk regardless.
+#
+# NOTE: auto-running smoke on skill/guideline changes is deferred — `pull_request`
+# gives fork PRs no secrets (no OPENAI_API_KEY). Use `/aster-code-review smoke`.
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number"
+        required: true
+        type: number
+      command:
+        description: "Command args, e.g. 'smoke' or 'benchmark --problems=\"0002\"' (empty = diff review)"
+        required: false
+        type: string
+
+env:
+  SKILL_DIR: .agents/skills/aster-code-review
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # --- triage: fast reply + trusted parse, no container -----------------------
+  triage:
+    # Fire on any dispatch, or a PR comment that mentions the trigger token. The
+    # strict line-start check and the privilege check happen INSIDE the job so we
+    # can reply with a reason (a member gate in `if:` would just silently skip).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/aster-code-review'))
+    runs-on: ubuntu-latest      # host runner: gh preinstalled, starts in seconds
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      proceed:   ${{ steps.triage.outputs.proceed }}
+      kind:      ${{ steps.triage.outputs.kind }}
+      mode:      ${{ steps.triage.outputs.mode }}
+      paths:     ${{ steps.triage.outputs.paths }}
+      target:    ${{ steps.triage.outputs.target }}
+      problems:  ${{ steps.triage.outputs.problems }}
+      pr_number: ${{ steps.triage.outputs.pr_number }}
+      head_sha:  ${{ steps.triage.outputs.head_sha }}
+      head_repo: ${{ steps.triage.outputs.head_repo }}
+      base_sha:  ${{ steps.triage.outputs.base_sha }}
+      base_ref:  ${{ steps.triage.outputs.base_ref }}
+    steps:
+      # Check out the code that TRIGGERED the workflow (the default-branch SHA for
+      # an issue_comment). Its parser is trusted; the PR's copy is never run here.
+      - uses: actions/checkout@v4
+
+      - name: Triage the command
+        id: triage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          AUTHOR_ASSOC: ${{ github.event.comment.author_association }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          DISPATCH_PR: ${{ inputs.pr_number }}
+          DISPATCH_CMD: ${{ inputs.command }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          echo "proceed=false" >> "$GITHUB_OUTPUT"   # default; overwritten on accept
+          reply() { gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$1" || true; }
+
+          # 1) Command source + PR number, and the privilege verdict.
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            PR_NUMBER="$DISPATCH_PR"
+            SRC="/aster-code-review ${DISPATCH_CMD}"
+            privileged=1                              # dispatch already requires write access
+          else
+            PR_NUMBER="$ISSUE_NUMBER"
+            SRC="$COMMENT_BODY"
+            # Only a real command (trigger token starting a line) does anything; a
+            # passing mention is ignored silently (no reply — it was not a command).
+            if ! printf '%s\n' "$SRC" | grep -qE '^[[:space:]]*/aster-code-review([[:space:]]|$)'; then
+              echo "::notice::No /aster-code-review command at the start of a line; ignoring."
+              exit 0
+            fi
+            # Write-access roles only. NOT CONTRIBUTOR: that just means the author
+            # has had a PR merged before — no write access — so it is a wide,
+            # largely-untrusted audience we must not hand a secret-bearing run to.
+            case "$AUTHOR_ASSOC" in
+              OWNER|MEMBER|COLLABORATOR) privileged=1 ;;
+              *) privileged=0 ;;
+            esac
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+          # 2) Privilege: reply and stop if the author cannot run it.
+          if [ "$privileged" != 1 ]; then
+            {
+              echo "👋 Thanks for the ping! The \`/aster-code-review\` command runs the review bot on this PR, but it is limited to the repository's members and collaborators, so I can't start it for you."
+              echo
+              echo "If you'd like a review, please ask a maintainer to run \`/aster-code-review\` on this PR."
+            } > msg.md
+            reply msg.md
+            exit 0
+          fi
+
+          # 3) Parse with the TRUSTED (default-branch) parser. On error, reply usage.
+          if ! PLAN=$(printf '%s' "$SRC" | "$SKILL_DIR/scripts/parse_pr_command.sh" 2>parse.err); then
+            {
+              echo "🛑 I couldn't understand that \`/aster-code-review\` command:"
+              echo
+              echo '```'
+              cat parse.err
+              echo '```'
+              echo
+              echo "**Usage**"
+              echo '```'
+              echo '/aster-code-review                     review the PR diff'
+              echo '/aster-code-review diff                review the PR diff'
+              echo '/aster-code-review files <p1> ... <pN> review those files'
+              echo '/aster-code-review smoke     [--problems="0002 0006"]   run the skill smoke test'
+              echo '/aster-code-review benchmark [--problems="0002 0006"]   run the recall benchmark'
+              echo '```'
+            } > msg.md
+            reply msg.md
+            exit 0
+          fi
+          printf 'plan:\n%s\n' "$PLAN"
+          printf '%s\n' "$PLAN" >> "$GITHUB_OUTPUT"
+
+          # 4) PR coordinates for the run job. Use gh's built-in jq (gojq): the dev
+          #    image's system jq rejects some valid GitHub JSON, but this host step
+          #    uses gh directly so we stay consistent with the run job.
+          gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '
+            "head_sha=\(.head.sha)",
+            "head_repo=\(.head.repo.full_name)",
+            "base_sha=\(.base.sha)",
+            "base_ref=\(.base.ref)"' >> "$GITHUB_OUTPUT"
+
+          # 5) Accept: describe what will run, link this run, and let the run job go.
+          #    PLAN is trusted `key=value` lines; pull each with sed (a paths value
+          #    may contain spaces, so capture the whole rest of the line).
+          kind=$(printf '%s\n' "$PLAN"     | sed -n 's/^kind=//p')
+          mode=$(printf '%s\n' "$PLAN"     | sed -n 's/^mode=//p')
+          target=$(printf '%s\n' "$PLAN"   | sed -n 's/^target=//p')
+          paths=$(printf '%s\n' "$PLAN"    | sed -n 's/^paths=//p')
+          problems=$(printf '%s\n' "$PLAN" | sed -n 's/^problems=//p')
+          if [ "$kind" = review ]; then
+            if [ "$mode" = files ]; then desc="review the files: $paths"; else desc="review the PR diff"; fi
+          else
+            desc="run the $target self-test"; [ -n "$problems" ] && desc="$desc on problems $problems"
+          fi
+          {
+            echo "✅ On it! I'll $desc, running the PR's own \`aster-code-review\` skill and coding guidelines."
+            echo
+            echo "Track progress here: $RUN_URL"
+            echo
+            echo "I'll post the results back on this PR when the run finishes."
+          } > msg.md
+          reply msg.md
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
+  # --- run: the actual review / self-test, inside the dev image ---------------
+  run:
+    needs: triage
+    if: needs.triage.outputs.proceed == 'true'
+    # This is the expensive half (a container plus an LLM review), so cap it to ONE
+    # per PR. The group is job-scoped, not workflow-scoped, so the cheap `triage`
+    # job still runs — and replies — promptly for every comment, even while a review
+    # is in flight. cancel-in-progress is true: a newer request supersedes an
+    # in-flight review for the same PR (typically the author re-triggered after a
+    # push), so the stale run is cancelled and only the latest state is reviewed.
+    concurrency:
+      group: aster-code-review-run-pr-${{ github.event.issue.number || inputs.pr_number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    # Run inside the Asterinas dev image, which ships Codex (and Claude) preinstalled
+    # on PATH (/root/.local/bin) plus python3 + yq — everything the skill and its
+    # benchmark need. This is why there is no Codex-install step. The one tool the
+    # image lacks is the GitHub CLI, installed below.
+    container:
+      image: asterinas/asterinas:0.18.0-20260701
+    timeout-minutes: 60          # headroom for a full `benchmark`; review/smoke finish far sooner
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # TODO: Pre-install Github CLI inside the Asterinas development Docker image.
+      - name: Install GitHub CLI
+        # The dev image has no `gh`; fetch the latest release binary (curl + tar are present).
+        run: |
+          set -eux
+          tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cli/cli/releases/latest | sed 's#.*/tag/v##')
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${tag}/gh_${tag}_linux_amd64.tar.gz" | tar -xz -C /tmp
+          install -m 0755 "/tmp/gh_${tag}_linux_amd64/bin/gh" /usr/local/bin/gh
+          gh --version
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.triage.outputs.head_repo }}
+          ref: ${{ needs.triage.outputs.head_sha }}
+          fetch-depth: 0
+
+      - name: Trust the checked-out workspace (container git)
+        # In a container job the checkout is owned by a different UID than the
+        # container user, so raw `git` in later run-steps aborts with "dubious
+        # ownership". Mark repos safe once; it persists (via $HOME) to every later
+        # step, including the scratch worktrees the benchmark creates under /tmp.
+        run: git config --global --add safe.directory '*'
+
+      # For fork PRs the base branch tip may not be in the fork's history; fetch
+      # it so `diff <base>` (and the benchmark) can find merge-bases.
+      - name: Fetch base ref for fork PRs
+        if: needs.triage.outputs.head_repo != github.repository
+        run: |
+          git remote add base-repo "${{ github.server_url }}/${{ github.repository }}.git"
+          git fetch base-repo "${{ needs.triage.outputs.base_ref }}"
+
+      # The benchmark's schema check and grader read problems.yaml with PyYAML, but
+      # the dev image's system python3 may lack it (yq ships its own isolated venv).
+      # Bootstrap it once, before any self-test runs.
+      - name: Ensure PyYAML (self-test only)
+        if: needs.triage.outputs.kind == 'test'
+        run: |
+          set -e
+          if python3 -c 'import yaml' 2>/dev/null; then echo "PyYAML already present"; exit 0; fi
+          echo "Installing PyYAML…"
+          if command -v pip3 >/dev/null 2>&1 && pip3 install --break-system-packages pyyaml; then :
+          elif apt-get update && apt-get install -y python3-yaml; then :
+          else echo "could not install PyYAML" >&2; exit 1; fi
+          python3 -c 'import yaml' && echo "PyYAML ready"
+
+      # --- review modes: run the skill, post inline comments ------------------
+      # FIXME(security): this step runs the PR's OWN aster_code_review.sh (and the
+      # scripts + guidelines it pulls in) with OPENAI_API_KEY in the environment, so
+      # a malicious fork PR can exfiltrate the secret. Deferred; see the SECURITY /
+      # SECRET EXFILTRATION note in the header for the intended trusted-skill fix.
+      - name: Review the PR
+        if: needs.triage.outputs.kind == 'review'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ACR_AGENT_PROFILE: codex_workflow
+          MODE: ${{ needs.triage.outputs.mode }}
+          PATHS: ${{ needs.triage.outputs.paths }}
+          BASE_SHA: ${{ needs.triage.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$MODE" = files ]; then
+            # Re-validate each path (trusted): safe charset, no traversal, tracked in the checkout.
+            set -- $PATHS
+            for p in "$@"; do
+              printf '%s' "$p" | grep -qE '^[A-Za-z0-9._/-]+$' || { echo "unsafe path: $p" >&2; exit 1; }
+              case "$p" in *..*) echo "path traversal: $p" >&2; exit 1 ;; esac
+              git ls-files --error-unmatch "$p" >/dev/null 2>&1 || { echo "not a tracked file: $p" >&2; exit 1; }
+            done
+            "$SKILL_DIR/aster_code_review.sh" files "$@" review.md --per-persona-context=no
+          else
+            "$SKILL_DIR/aster_code_review.sh" diff "$BASE_SHA" review.md --per-persona-context=no
+          fi
+
+      - name: Post review comments
+        if: needs.triage.outputs.kind == 'review'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.triage.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.triage.outputs.head_sha }}
+        run: |
+          if [ ! -s review.md ]; then
+            echo "No review produced; nothing to post."; exit 0
+          fi
+          "$SKILL_DIR/scripts/post_reviews_to_github.sh" \
+            --repo "$REPO" --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" \
+            --finalize --event comment review.md
+
+      # --- test modes: run make, then post a human-friendly status comment ----
+      - name: Run skill self-test
+        if: needs.triage.outputs.kind == 'test'
+        id: selftest
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TARGET: ${{ needs.triage.outputs.target }}
+          PROBLEMS: ${{ needs.triage.outputs.problems }}
+        run: |
+          set -uo pipefail
+          # Re-validate PROBLEMS (trusted): empty, or space-separated problem numbers.
+          if [ -n "$PROBLEMS" ] && ! printf '%s' "$PROBLEMS" | grep -qE '^[0-9]{1,4}( [0-9]{1,4})*$'; then
+            echo "invalid PROBLEMS: $PROBLEMS" >&2; exit 1
+          fi
+          cd "$SKILL_DIR"
+          # Don't let a non-zero make abort the step (default shell is `bash -eo pipefail`);
+          # capture the code so the report step always runs and the verdict is posted.
+          set +e
+          if [ "$TARGET" = smoke ]; then
+            make smoke ACR_AGENT_PROFILE=codex_workflow PROBLEMS="$PROBLEMS" 2>&1 | tee "$GITHUB_WORKSPACE/run.log"
+          else
+            # informational: report recall, don't fail the check on <100% (codex_workflow != reference config)
+            make benchmark ACR_AGENT_PROFILE=codex_workflow MIN_RECALL=1 PROBLEMS="$PROBLEMS" 2>&1 | tee "$GITHUB_WORKSPACE/run.log"
+          fi
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Report self-test result
+        if: needs.triage.outputs.kind == 'test'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.triage.outputs.pr_number }}
+          TARGET: ${{ needs.triage.outputs.target }}
+          PROBLEMS: ${{ needs.triage.outputs.problems }}
+          RC: ${{ steps.selftest.outputs.rc }}
+        run: |
+          log="$GITHUB_WORKSPACE/run.log"
+          summary="$(grep -E '^(smoke:|recall:)' "$log" 2>/dev/null | tail -1 || true)"
+          [ -n "$summary" ] || summary="(no summary line — see the run log below)"
+          if [ "${RC:-1}" = 0 ]; then icon='✅'; verdict='passed'; else icon='❌'; verdict='failed'; fi
+          # Echo the command back in the CLI style the user typed (--problems=…),
+          # not the internal make knob (PROBLEMS=…).
+          probs=""; [ -n "$PROBLEMS" ] && probs=" --problems=\"$PROBLEMS\""
+          {
+            echo "$icon \`aster-code-review $TARGET$probs\`  $verdict — ran the PR's skill + coding guidelines."
+            echo; echo '```'; echo "$summary"; echo '```'
+            echo; echo '<details><summary>run log (tail)</summary>'; echo
+            echo '```'; tail -n 40 "$log" 2>/dev/null; echo '```'
+            echo '</details>'
+          } > report.md
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file report.md
+          exit "${RC:-1}"
