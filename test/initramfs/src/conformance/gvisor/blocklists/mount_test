@@ -28,6 +28,7 @@ MountTest.MountFailsOnPseudoFilesystemMountpoint
 MountTest.MountFuseFilesystem
 MountTest.MountFuseFilesystemNoDevice
 MountTest.MountInfo
+MountTest.MountMoveSharedParent
 MountTest.MountNamespacePropagation
 MountTest.MountNamespaceSetns
 MountTest.MountNamespaceSlavesNewUserNamespace
@@ -40,6 +41,7 @@ MountTest.MountTmpfs
 MountTest.MountTmpfsMagicValIgnored
 MountTest.MProtectWithNoExecProtFailsOnNoExecFile
 MountTest.OpenFileBusy
+MountTest.OverlayfsDirectoryRenameInUserNamespace
 MountTest.PrivateMasterUnslaves
 MountTest.PropagateChildUmountEvent
 MountTest.PropagateMountEvent

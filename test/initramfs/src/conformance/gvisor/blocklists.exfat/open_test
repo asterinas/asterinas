@@ -16,4 +16,5 @@ OpenTest.ReadOnly
 OpenTest.ReadWrite
 OpenTest.RelPath
 OpenTest.SymlinkDirectory
+OpenTest.TruncateSizeChangeUpdatesTimestamps
 OpenTest.WriteOnly

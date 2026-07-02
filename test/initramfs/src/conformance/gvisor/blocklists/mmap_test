@@ -6,6 +6,7 @@ MMapTest.FixedAlignment
 MMapTest.InvalidLength
 MMapTest.ProtWriteOnlyReadable
 MMapTest.MprotectNotPageAligned
+MMapTest.MprotectProtNone
 MMapTest.MprotectHugeLength
 MMapTest.HugeLength
 MMapTest.ExceedLimit*

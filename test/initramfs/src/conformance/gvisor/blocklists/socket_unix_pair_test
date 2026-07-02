@@ -17,3 +17,6 @@ AllUnixDomainSockets/UnixSocketPairCmsgTest.CredPassTruncatedMsgCtrunc/*
 
 # TODO: Support `MSG_CMSG_CLOEXEC`
 AllUnixDomainSockets/UnixSocketPairCmsgTest.CloexecRecvFDPass/*
+
+AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAcrossPIDNamespace/0
+AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAcrossPIDNamespace/6

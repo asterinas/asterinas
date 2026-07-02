@@ -18,6 +18,8 @@ AllInetTests/SimpleTcpSocketTest.SynRcvdOnListenerShutdown/*
 AllInetTests/TcpSocketTest.ClosedReadBlockingSocket/*
 AllInetTests/TcpSocketTest.ClosedWriteBlockingSocket/*
 AllInetTests/TcpSocketTest.FullBuffer/*
+AllInetTests/TcpSocketTest.IntegerOptGetsockoptSmallBuffer/0
+AllInetTests/TcpSocketTest.IntegerOptGetsockoptSmallBuffer/1
 AllInetTests/TcpSocketTest.MsgTrunc/*
 AllInetTests/TcpSocketTest.MsgTruncLargeSize/*
 AllInetTests/TcpSocketTest.MsgTruncPeek/*

@@ -1,5 +1,6 @@
 IntervalTimerTest.AlreadyPendingSignal
 IntervalTimerTest.IgnoredSignalCountsAsOverrun
+IntervalTimerTest.NegativeInterval
 IntervalTimerTest.PeriodicSilent
 IntervalTimerTest.PeriodicThreadDirectedSignal
 IntervalTimerTest.RealTimeSignalsAreNotDuplicated
