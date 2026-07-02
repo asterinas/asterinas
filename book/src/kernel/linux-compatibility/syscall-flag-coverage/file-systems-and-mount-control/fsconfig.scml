@@ -1,0 +1,7 @@
+// Configure a filesystem context
+fsconfig(
+    fs_fd,
+    cmd = FSCONFIG_SET_FLAG | FSCONFIG_SET_STRING |
+          FSCONFIG_CMD_CREATE | FSCONFIG_CMD_RECONFIGURE,
+    key, value, aux
+);

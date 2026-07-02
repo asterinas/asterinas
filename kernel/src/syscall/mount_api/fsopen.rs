@@ -22,14 +22,14 @@ pub fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<Sysc
     let fs_name = fs_name
         .to_str()
         .map_err(|_| Error::with_message(Errno::EINVAL, "invalid file system name"))?;
-    if look_up(fs_name).is_none() {
-        return_errno_with_message!(
+    let fs_type = look_up(fs_name).ok_or_else(|| {
+        Error::with_message(
             Errno::ENODEV,
-            "the filesystem is not configured in the kernel"
-        );
-    }
+            "the filesystem is not configured in the kernel",
+        )
+    })?;
 
-    let file = Arc::new(FsConfigFile::new()) as Arc<dyn FileLike>;
+    let file = Arc::new(FsConfigFile::new(fs_type)) as Arc<dyn FileLike>;
     let fd_flags = if flags.contains(FsOpenFlags::FSOPEN_CLOEXEC) {
         FdFlags::CLOEXEC
     } else {
