@@ -344,6 +344,7 @@ which are summarized in the table below.
 | 328     | pwritev2               | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#preadv2-and-pwritev2) |
 | 332     | statx                  | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#statx) |
 | 424     | pidfd_send_signal      | ✅             | 💯 |
+| 430     | fsopen                 | ✅             | 💯 |
 | 434     | pidfd_open             | ✅             | 💯 |
 | 435     | clone3                 | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#clone-and-clone3) |
 | 436     | close_range            | ✅             | 💯 |

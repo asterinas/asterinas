@@ -12,6 +12,9 @@ syncfs(fd);
 // Change root directory
 chroot(path);
 
+// Open a filesystem context
+fsopen(fs_name, flags = FSOPEN_CLOEXEC);
+
 // Remove a watch from an inotify instance
 inotify_rm_watch(fd, wd);
 
