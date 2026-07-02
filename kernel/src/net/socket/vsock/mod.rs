@@ -29,11 +29,8 @@ pub(in crate::net) fn init() {
 }
 
 pub(crate) fn handle_vhost_packet(
-    _header: aster_virtio::device::socket::header::VirtioVsockHdr,
-    _payload: Vec<u8>,
+    header: aster_virtio::device::socket::header::VirtioVsockHdr,
+    payload: Vec<u8>,
 ) -> crate::prelude::Result<()> {
-    crate::prelude::return_errno_with_message!(
-        crate::prelude::Errno::ENODEV,
-        "no vhost-vsock transport is available"
-    )
+    transport::handle_vhost_packet(header, payload)
 }
