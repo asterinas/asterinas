@@ -494,11 +494,9 @@ impl VsockSpace {
 
                 true
             }
-            VsockBackend::Vhost => match crate::device::misc::vhost_vsock::send_packet(header, &[])
-            {
-                Ok(sent) => sent,
-                Err(_) => false,
-            },
+            VsockBackend::Vhost => {
+                crate::device::misc::vhost_vsock::send_packet(header, &[]).unwrap_or_default()
+            }
         }
     }
 
