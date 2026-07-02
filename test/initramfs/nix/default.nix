@@ -11,6 +11,7 @@
   smp ? 1,
   initramfsCompressed ? true,
   benchmarkName ? "none",
+  system ? builtins.currentSystem,
 }:
 let
   crossSystem.config =
@@ -26,7 +27,7 @@ let
   pkgs = import ../../../distro/nixpkgs.nix {
     config = { };
     overlays = [ ];
-    inherit crossSystem;
+    inherit system crossSystem;
   };
 in
 rec {
