@@ -345,6 +345,7 @@ which are summarized in the table below.
 | 332     | statx                  | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#statx) |
 | 424     | pidfd_send_signal      | ✅             | 💯 |
 | 430     | fsopen                 | ✅             | 💯 |
+| 431     | fsconfig               | ✅             | [⚠️](syscall-flag-coverage/file-systems-and-mount-control/#fsconfig) |
 | 434     | pidfd_open             | ✅             | 💯 |
 | 435     | clone3                 | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#clone-and-clone3) |
 | 436     | close_range            | ✅             | 💯 |
