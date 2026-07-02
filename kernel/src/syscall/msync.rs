@@ -9,12 +9,8 @@ pub fn sys_msync(addr: Vaddr, len: usize, flag: i32, ctx: &Context) -> Result<Sy
     let flags = MsyncFlags::from_bits(flag)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!("addr = 0x{:x}, len = {}, flags = {:?}", addr, len, flags);
-
     if flags.contains(MsyncFlags::MS_ASYNC | MsyncFlags::MS_SYNC) {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "MS_ASYNC and MS_SYNC cannot be specified together"
-        );
+        return_errno!(Errno::EINVAL);
     }
 
     if !addr.is_multiple_of(PAGE_SIZE) {
@@ -32,21 +28,17 @@ pub fn sys_msync(addr: Vaddr, len: usize, flag: i32, ctx: &Context) -> Result<Sy
 
     let user_space = ctx.user_space();
     let vmar = user_space.vmar();
-    let query_guard = vmar.query(addr_range.clone());
 
-    // Check if the range is fully mapped.
-    if !query_guard.is_fully_mapped() {
-        return_errno_with_message!(
-            Errno::ENOMEM,
-            "the range contains pages that are not mapped"
-        );
-    }
+    let mut inodes = Vec::new();
 
-    // Do nothing if not file-backed, as <https://pubs.opengroup.org/onlinepubs/9699919799/> says.
-    let inodes = query_guard
-        .iter()
-        .filter_map(|m| m.inode().cloned())
-        .collect::<Vec<_>>();
+    vmar.for_each_mapping(addr_range.clone(), true, |mapping| {
+        // Do nothing if not file-backed, as <https://pubs.opengroup.org/onlinepubs/9699919799/> says.
+        if let Some(inode) = mapping.inode() {
+            inodes.push(inode.clone());
+        }
+    })
+    .map_err(|_| Error::with_message(Errno::ENOMEM, "msync on unmapped memory range"))?;
+
     let task_fn = move || {
         for inode in inodes {
             // TODO: Sync a necessary range instead of syncing the whole inode.

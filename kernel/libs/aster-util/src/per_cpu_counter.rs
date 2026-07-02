@@ -26,6 +26,15 @@ impl PerCpuCounter {
         }
     }
 
+    /// Resets the counter to zero on all CPUs.
+    pub fn reset_all_zero(&self) {
+        for cpu in all_cpus() {
+            self.per_cpu_counter
+                .get_on_cpu(cpu)
+                .store(0, Ordering::Relaxed);
+        }
+    }
+
     /// Adds `increment` to the counter on the given CPU.
     pub fn add_on_cpu(&self, on_cpu: CpuId, increment: isize) {
         self.per_cpu_counter

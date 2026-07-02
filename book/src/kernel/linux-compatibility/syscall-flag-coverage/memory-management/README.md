@@ -23,10 +23,6 @@ Silently-ignored flags:
 * `MAP_LOCKED`
 * `MAP_NONBLOCK`
 * `MAP_NORESERVE`
-* `MAP_POPULATE`
-
-Partially supported flags:
-* `MAP_FIXED_NOREPLACE` is treated as `MAP_FIXED`
 
 Unsupported flags:
 * `MAP_32BIT`
