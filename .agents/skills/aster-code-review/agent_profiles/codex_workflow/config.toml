@@ -1,0 +1,14 @@
+# Codex config for the GitHub PR-review workflow
+# (see .github/workflows/review_pr_with_codex.yml).
+# Auth is the OPENAI_API_KEY secret, inherited from the workflow env
+# — so, unlike the `codex` profile, there is no `inherit` of a ChatGPT `auth.json`.
+#
+# `model` is PINNED for reproducibility.
+# gpt-5.3-codex is served by an API key.
+model = "gpt-5.3-codex"
+model_reasoning_effort = "high"
+
+# CI runs in an ephemeral, already-sandboxed runner and must write the review file,
+# so let Codex read/write freely and never pause for approval.
+sandbox_mode = "danger-full-access"
+approval_policy = "never"

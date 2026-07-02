@@ -1,0 +1,3 @@
+{
+  "command": ["claude", "-p", "--dangerously-skip-permissions", "--model", "opus", "--effort", "high", "{prompt}"]
+}

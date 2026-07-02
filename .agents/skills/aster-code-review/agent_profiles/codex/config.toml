@@ -1,0 +1,19 @@
+# Native Codex config for the benchmark,
+# seeded into a private CODEX_HOME by run.sh (see codex.json).
+# Read by the orchestrator AND every nested `codex exec` persona pass (they inherit CODEX_HOME),
+# so model/effort propagate through the fan-out.
+#
+# `model` is PINNED for reproducibility
+# — a profile documents one exact, known-good configuration.
+# It must be a model your Codex account can serve
+# (model availability differs by account:
+# e.g. a ChatGPT-account login exposes "gpt-5.5",
+# an API key may expose "gpt-5-codex").
+# Change it to pin a different config.
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+
+# The benchmark runs in a throwaway worktree inside an already-sandboxed harness,
+# so let Codex read/write freely and never pause for approval.
+sandbox_mode = "danger-full-access"
+approval_policy = "never"

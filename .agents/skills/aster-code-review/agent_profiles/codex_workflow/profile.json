@@ -1,0 +1,4 @@
+{
+  "command": ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "{prompt}"],
+  "env": { "CODEX_HOME": "{workdir}" }
+}

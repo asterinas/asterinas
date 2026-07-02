@@ -1,0 +1,235 @@
+name: aster-code-review
+
+# A `/aster-code-review …` PR comment (or workflow_dispatch) drives the
+# aster-code-review skill on this PR. One command, mirroring the skill interface:
+#
+#   /aster-code-review                      review the PR diff        (alias for `diff`)
+#   /aster-code-review diff                 review the PR diff
+#   /aster-code-review files <p1> … <pN>    review those files
+#   /aster-code-review smoke     [PROBLEMS="0002 0006"]   run `make smoke`     (does the skill run?)
+#   /aster-code-review benchmark [PROBLEMS="0002 0006"]   run `make benchmark` (recall, informational)
+#
+# review-modes post inline review comments; test-modes post a status comment.
+# All of it runs the PR's OWN skill + coding guidelines (they evolve with the code).
+#
+# SECURITY. The comment body is read via an env var, never interpolated into a
+# shell with ${{ }} (that would be an Actions injection). The skill's parser
+# (scripts/parse-pr-command.sh) allowlists the command, and every value that
+# reaches a shell command is RE-VALIDATED here in the trusted workflow before use,
+# so a PR-modified parser cannot widen what runs. The trigger is gated to
+# members/collaborators/contributors.
+#
+# NOTE: auto-running smoke on skill/guideline changes is deferred — `pull_request`
+# gives fork PRs no secrets (no OPENAI_API_KEY). Use `/aster-code-review smoke`.
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number"
+        required: true
+        type: number
+      command:
+        description: "Command args, e.g. 'smoke' or 'benchmark PROBLEMS=\"0002\"' (empty = diff review)"
+        required: false
+        type: string
+
+concurrency:
+  group: aster-code-review-pr-${{ github.event.issue.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+env:
+  SKILL_DIR: .agents/skills/aster-code-review
+
+jobs:
+  run:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/aster-code-review') &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR' ||
+        github.event.comment.author_association == 'CONTRIBUTOR'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60          # headroom for a full `benchmark`; review/smoke finish far sooner
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Validate trigger command
+        if: github.event_name == 'issue_comment'
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          # "/aster-code-review" must start a line (ignore blockquotes / inline code / mid-sentence).
+          if ! printf '%s\n' "$COMMENT_BODY" | grep -qE '^\s*/aster-code-review($|\s)'; then
+            echo "::notice::No valid /aster-code-review command at the start of a line."
+            exit 1
+          fi
+
+      - name: React to trigger comment
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            --method POST -f content='eyes'
+
+      - name: Get PR info
+        id: pr_info
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PR_NUMBER="${{ inputs.pr_number }}"
+          else
+            PR_NUMBER="${{ github.event.issue.number }}"
+          fi
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+
+          PR_JSON=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}")
+          echo "head_sha=$(echo "$PR_JSON" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
+          echo "head_repo=$(echo "$PR_JSON" | jq -r .head.repo.full_name)" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$(echo "$PR_JSON" | jq -r .base.sha)" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$(echo "$PR_JSON" | jq -r .base.ref)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr_info.outputs.head_repo }}
+          ref: ${{ steps.pr_info.outputs.head_sha }}
+          fetch-depth: 0
+
+      # For fork PRs the base branch tip may not be in the fork's history; fetch
+      # it so `diff <base>` (and the benchmark) can find merge-bases.
+      - name: Fetch base ref for fork PRs
+        if: steps.pr_info.outputs.head_repo != github.repository
+        run: |
+          git remote add base-repo "https://github.com/${{ github.repository }}.git"
+          git fetch base-repo "${{ steps.pr_info.outputs.base_ref }}"
+
+      # Parse the command with the (PR's) skill parser. The body arrives via an env
+      # var, never inline ${{ }}. On a parse error, tell the author and stop.
+      - name: Parse command
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr_info.outputs.pr_number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          DISPATCH_CMD: ${{ inputs.command }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SRC="/aster-code-review ${DISPATCH_CMD}"
+          else
+            SRC="$COMMENT_BODY"
+          fi
+          if ! PLAN=$(printf '%s' "$SRC" | "$SKILL_DIR/scripts/parse-pr-command.sh" 2>parse.err); then
+            {
+              echo "🛑 **aster-code-review** couldn't parse that command:"
+              echo; echo '```'; cat parse.err; echo '```'; echo
+              echo 'Usage: `/aster-code-review [diff | files <paths> | smoke | benchmark] [PROBLEMS="0002 0006"]`'
+            } > parse.msg
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file parse.msg || true
+            exit 1
+          fi
+          printf '%s\n' "$PLAN"
+          printf '%s\n' "$PLAN" >> "$GITHUB_OUTPUT"
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      # --- review modes: run the skill, post inline comments ------------------
+      - name: Review the PR
+        if: steps.plan.outputs.kind == 'review'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ACR_AGENT_PROFILE: codex_workflow
+          MODE: ${{ steps.plan.outputs.mode }}
+          PATHS: ${{ steps.plan.outputs.paths }}
+          BASE_SHA: ${{ steps.pr_info.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$MODE" = files ]; then
+            # Re-validate each path (trusted): safe charset, no traversal, tracked in the checkout.
+            set -- $PATHS
+            for p in "$@"; do
+              printf '%s' "$p" | grep -qE '^[A-Za-z0-9._/-]+$' || { echo "unsafe path: $p" >&2; exit 1; }
+              case "$p" in *..*) echo "path traversal: $p" >&2; exit 1 ;; esac
+              git ls-files --error-unmatch "$p" >/dev/null 2>&1 || { echo "not a tracked file: $p" >&2; exit 1; }
+            done
+            "$SKILL_DIR/aster-code-review.sh" files "$@" review.md --per-persona-context=no
+          else
+            "$SKILL_DIR/aster-code-review.sh" diff "$BASE_SHA" review.md --per-persona-context=no
+          fi
+
+      - name: Post review comments
+        if: steps.plan.outputs.kind == 'review'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr_info.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.pr_info.outputs.head_sha }}
+        run: |
+          if [ ! -s review.md ]; then
+            echo "No review produced; nothing to post."; exit 0
+          fi
+          "$SKILL_DIR/scripts/post_reviews_to_github.sh" \
+            --repo "$REPO" --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" \
+            --finalize --event comment review.md
+
+      # --- test modes: run make, then post a human-friendly status comment ----
+      - name: Run skill self-test
+        if: steps.plan.outputs.kind == 'test'
+        id: selftest
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TARGET: ${{ steps.plan.outputs.target }}
+          PROBLEMS: ${{ steps.plan.outputs.problems }}
+        run: |
+          set -uo pipefail
+          # Re-validate PROBLEMS (trusted): empty, or space-separated problem numbers.
+          if [ -n "$PROBLEMS" ] && ! printf '%s' "$PROBLEMS" | grep -qE '^[0-9]{1,4}( [0-9]{1,4})*$'; then
+            echo "invalid PROBLEMS: $PROBLEMS" >&2; exit 1
+          fi
+          cd "$SKILL_DIR"
+          # Don't let a non-zero make abort the step (default shell is `bash -eo pipefail`);
+          # capture the code so the report step always runs and the verdict is posted.
+          set +e
+          if [ "$TARGET" = smoke ]; then
+            make smoke ACR_AGENT_PROFILE=codex_workflow PROBLEMS="$PROBLEMS" 2>&1 | tee "$GITHUB_WORKSPACE/run.log"
+          else
+            # informational: report recall, don't fail the check on <100% (codex_workflow != reference config)
+            make benchmark ACR_AGENT_PROFILE=codex_workflow MIN_RECALL=1 PROBLEMS="$PROBLEMS" 2>&1 | tee "$GITHUB_WORKSPACE/run.log"
+          fi
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Report self-test result
+        if: steps.plan.outputs.kind == 'test'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr_info.outputs.pr_number }}
+          TARGET: ${{ steps.plan.outputs.target }}
+          PROBLEMS: ${{ steps.plan.outputs.problems }}
+          RC: ${{ steps.selftest.outputs.rc }}
+        run: |
+          log="$GITHUB_WORKSPACE/run.log"
+          summary="$(grep -E '^(smoke:|recall:)' "$log" 2>/dev/null | tail -1 || true)"
+          [ -n "$summary" ] || summary="(no summary line — see the run log below)"
+          if [ "${RC:-1}" = 0 ]; then icon='✅'; verdict='passed'; else icon='❌'; verdict='failed'; fi
+          probs=""; [ -n "$PROBLEMS" ] && probs=" \`PROBLEMS=\"$PROBLEMS\"\`"
+          {
+            echo "$icon **aster-code-review \`$TARGET\`$probs $verdict** — ran the PR's skill + coding guidelines."
+            echo; echo '```'; echo "$summary"; echo '```'
+            echo; echo '<details><summary>run log (tail)</summary>'; echo
+            echo '```'; tail -n 40 "$log" 2>/dev/null; echo '```'
+            echo '</details>'
+          } > report.md
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file report.md
+          exit "${RC:-1}"
