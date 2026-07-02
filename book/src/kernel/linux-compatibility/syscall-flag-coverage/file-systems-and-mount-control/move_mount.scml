@@ -1,0 +1,2 @@
+move_mount(from_dfd, from_path, to_dfd, to_path, flags = 0);
+move_mount(from_dfd, from_path, to_dfd, to_path, flags = MOVE_MOUNT_F_EMPTY_PATH);

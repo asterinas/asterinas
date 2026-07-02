@@ -101,6 +101,26 @@ Supported functionality in SCML:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/fsmount.2.html).
 
+### `move_mount`
+
+Supported functionality in SCML:
+
+```c
+{{#include move_mount.scml}}
+```
+
+Unsupported flags:
+* `MOVE_MOUNT_F_SYMLINKS`
+* `MOVE_MOUNT_F_AUTOMOUNTS`
+* `MOVE_MOUNT_T_SYMLINKS`
+* `MOVE_MOUNT_T_AUTOMOUNTS`
+* `MOVE_MOUNT_T_EMPTY_PATH`
+* `MOVE_MOUNT_SET_GROUP`
+* `MOVE_MOUNT_BENEATH`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/move_mount.2.html).
+
 ## Event notifications
 
 ### `inotify_init` and `inotify_init1`
