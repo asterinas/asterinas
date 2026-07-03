@@ -49,6 +49,8 @@ impl ProcFileOps for MemInfoFileOps {
         writeln!(printer, "MemTotal:\t{} kB", total)?;
         writeln!(printer, "MemFree:\t{} kB", available)?;
         writeln!(printer, "MemAvailable:\t{} kB", available)?;
+        writeln!(printer, "SwapTotal:\t0 kB")?;
+        writeln!(printer, "SwapFree:\t0 kB")?;
 
         Ok(printer.bytes_written())
     }
