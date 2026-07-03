@@ -24,11 +24,20 @@ pub(super) fn probe_for_device() {
         let mmio_end = mmio_start + mmio_region.size.unwrap();
 
         let interrupt_source_in_fdt = InterruptSourceInFdt {
-            interrupt: node.interrupts().unwrap().next().unwrap() as u32,
             interrupt_parent: node
                 .property("interrupt-parent")
                 .and_then(|prop| prop.as_usize())
                 .unwrap() as u32,
+            arguments: node
+                .property("interrupts")
+                .unwrap()
+                .value
+                .as_chunks::<{ size_of::<u32>() }>()
+                .0
+                .iter()
+                .map(|chunk| u32::from_be_bytes(*chunk))
+                .next_chunk()
+                .unwrap(),
         };
 
         let _ = super::try_register_mmio_device(mmio_start..mmio_end, |irq_line| {
