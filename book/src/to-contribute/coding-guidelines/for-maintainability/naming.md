@@ -78,6 +78,42 @@ Where it cannot, the name must carry the information.
 See also:
 PR [#2796](https://github.com/asterinas/asterinas/pull/2796#discussion_r2646889913).
 
+### No magic number (`no-magic-number`) {#no-magic-number}
+
+Numeric literals must be meaningful at the point of use.
+When a number represents a non-local invariant,
+an external contract,
+or a domain-specific meaning
+beyond its immediate arithmetic value,
+give that meaning a name.
+Use a constant,
+typed value,
+enum variant,
+or helper function,
+whichever best expresses the invariant.
+
+```rust
+// Good — the flag's meaning is explicit.
+const NEEDS_ACK_FLAG: u8 = 0b0000_0100;
+let needs_ack = (packet_flags & NEEDS_ACK_FLAG) != 0;
+
+// Bad — the reader must infer why this bit is special.
+let needs_ack = (packet_flags & 0b0000_0100) != 0;
+```
+
+Prefer deriving related values from the named source
+instead of repeating the same number in multiple places.
+If the name alone does not explain where the value comes from,
+add a short comment or cite the relevant specification.
+
+Do not introduce names for numbers
+whose meaning is already obvious locally,
+such as `0`, `1`, or `2`
+in ordinary arithmetic,
+indexing,
+small ranges,
+or direct comparisons.
+
 ### Use assertion-style boolean names (`bool-names`) {#bool-names}
 
 Boolean variables and functions
