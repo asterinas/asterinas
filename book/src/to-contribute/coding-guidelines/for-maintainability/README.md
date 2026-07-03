@@ -28,6 +28,7 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 **[Naming](naming.md)**
 - [`descriptive-names`](naming.md#descriptive-names): Names convey meaning at the point of use; avoid single letters and ambiguous abbreviations.
 - [`accurate-names`](naming.md#accurate-names): Avoid names that mislead about meaning, behavior, or side effects.
+- [`no-magic-number`](naming.md#no-magic-number): Give semantic names to numbers that encode rules, limits, units, masks, or external constants.
 - [`encode-units`](naming.md#encode-units): When the type doesn't carry the unit, put it in the name (`timeout_ns`, `size_pages`).
 - [`bool-names`](naming.md#bool-names): Name booleans as positive assertions (`is_`/`has_`/`can_`/…); avoid negation.
 - [`error-message-format`](naming.md#error-message-format): Lowercase start (unless a proper noun), specific, Linux man-page style for syscall errors.
