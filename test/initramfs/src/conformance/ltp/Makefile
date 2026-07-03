@@ -40,8 +40,11 @@ $(TARGET_DIR): $(RUN_BASH) $(ALL_TESTS) $(EXT2_BLOCKLIST) $(EXFAT_BLOCKLIST)
 	@# Remove intermediate files
 	@rm -f $@/all.txt $@/filtered.txt
 	@# Copy bash scripts
-	@cp -r $(LTP_PREBUILT_DIR)/bin $@
-	@cp -f $(LTP_PREBUILT_DIR)/runltp $@
+	@if [ -d $(LTP_PREBUILT_DIR)/bin ]; then \
+		cp -r $(LTP_PREBUILT_DIR)/bin $@; \
+	fi
+	@cp -r $(LTP_PREBUILT_DIR)/libkirk $@
+	@cp -f $(LTP_PREBUILT_DIR)/kirk $@
 	@cp -f $(LTP_PREBUILT_DIR)/Version $@
 	@cp -f $(LTP_PREBUILT_DIR)/ver_linux $@
 	@cp -f $(LTP_PREBUILT_DIR)/IDcheck.sh $@
