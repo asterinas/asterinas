@@ -2,7 +2,10 @@
 
 //! CPU execution context control.
 
+use alloc::boxed::Box;
 use core::{arch::asm, fmt::Debug};
+
+use zerocopy::IntoBytes;
 
 use crate::{
     arch::trap::{RawUserContext, TrapFrame},
@@ -346,3 +349,77 @@ cpu_context_impl_getter_setter!(
     [x29, set_x29],
     [x30, set_x30]
 );
+
+/// The FPU context of user task.
+#[derive(Clone, Debug)]
+pub struct FpuContext {
+    fpsimd: Box<FpSimdContext>,
+}
+
+impl FpuContext {
+    // TODO: This is for Linux compatibility and is Linux-specific.
+    // It should be defined outside of OSTD.
+    //
+    // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/arm64/include/uapi/asm/sigcontext.h#L75>
+    const FPSIMD_MAGIC: u32 = 0x46508001;
+
+    /// Creates a new FPU context.
+    pub fn new() -> Self {
+        let mut fpsimd = Box::new(FpSimdContext::default());
+
+        fpsimd.magic = Self::FPSIMD_MAGIC;
+        fpsimd.size = size_of::<FpSimdContext>() as u32;
+
+        Self { fpsimd }
+    }
+
+    /// Saves CPU's current FPU context to this instance.
+    pub fn save(&mut self) {
+        // SAFETY: It is safe to save FPU registers.
+        unsafe { save_fpsimd_context(self.fpsimd.as_mut()) };
+    }
+
+    /// Loads CPU's FPU context from this instance.
+    pub fn load(&self) {
+        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
+        // memory safety.
+        unsafe { load_fpsimd_context(self.fpsimd.as_ref()) };
+    }
+
+    /// Returns the FPU context as a byte slice.
+    pub fn as_bytes(&self) -> &[u8] {
+        self.fpsimd.as_bytes()
+    }
+
+    /// Returns the FPU context as a mutable byte slice.
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        self.fpsimd.as_mut_bytes()
+    }
+}
+
+impl Default for FpuContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Float-point and SIMD context.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+struct FpSimdContext {
+    // Header.
+    magic: u32,
+    size: u32,
+
+    // Float-point and SMID registers.
+    fpsr: u32,
+    fpcr: u32,
+    vregs: [u128; 32],
+}
+
+core::arch::global_asm!(include_str!("fpu.S"));
+
+unsafe extern "C" {
+    unsafe fn save_fpsimd_context(ctx: *mut FpSimdContext);
+    unsafe fn load_fpsimd_context(ctx: *const FpSimdContext);
+}

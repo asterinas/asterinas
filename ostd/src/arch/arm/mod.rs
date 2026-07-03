@@ -88,4 +88,20 @@ pub fn read_random() -> Option<u64> {
     None
 }
 
-pub(crate) fn enable_cpu_features() {}
+pub(crate) fn enable_cpu_features() {
+    use core::arch::asm;
+
+    // SAFETY: It is safe to enable access to the FPU, as the FPU state does not
+    // affect the kernel's memory safety.
+    unsafe {
+        // Architectural Feature Access Control Register (CPACR).
+        // FPEN, bits [21:20] = 11: Instructions that use the registers associated
+        // with Advanced SIMD and floating-point execution can be used at EL0/EL1.
+        asm!(
+            "mov {tmp}, #(3 << 20)",
+            "msr cpacr_el1, {tmp}",
+            "isb",
+            tmp = out(reg) _,
+        );
+    }
+}
