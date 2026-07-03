@@ -3,6 +3,7 @@ prot = PROT_NONE |
     PROT_READ |
     PROT_WRITE;
 opt_flags =
+    MAP_32BIT |
     MAP_ANONYMOUS |
     MAP_FIXED |
     MAP_FIXED_NOREPLACE |

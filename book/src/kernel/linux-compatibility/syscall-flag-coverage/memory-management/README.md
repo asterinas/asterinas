@@ -29,7 +29,6 @@ Partially supported flags:
 * `MAP_FIXED_NOREPLACE` is treated as `MAP_FIXED`
 
 Unsupported flags:
-* `MAP_32BIT`
 * `MAP_HUGE_1GB`
 * `MAP_HUGE_2MB`
 * `MAP_UNINITIALIZED`
