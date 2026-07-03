@@ -272,6 +272,66 @@
         A reviewer should flag the non-imperative, non-descriptive subject and ask
         for a specific imperative summary.
 
+- problem_id: 0009-tmpfs-statfs
+  commit: 3749ab3327d1f065fadd1f384db31c06c6c7f761
+  source: >
+    PR-derived. The reviewed change updates `TmpFs::sb` to override tmpfs-visible
+    superblock fields and adds helper functions for default tmpfs limits.
+    The helpers encode the default capacity policy with an unnamed denominator.
+    The change under review is the reviewed commit itself, fetched by full SHA
+    from upstream `asterinas/asterinas` (no local patch).
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/src/fs/fs_impls/tmpfs/fs.rs }
+      persona: maintainability
+      grounding: no-magic-number
+      severity: minor
+      desc: >
+        The literal `2` encodes the tmpfs default capacity policy in both
+        `default_max_blocks` and `default_max_inodes`, but the policy has no
+        semantic name, making the "50% of memory" rule easy to miss or
+        accidentally change inconsistently.
+      fix: >
+        Introduce a named constant for the policy and use it in both helpers, for
+        example `TMPFS_DEFAULT_CAPACITY_DENOMINATOR`.
+      expectation: >
+        A reviewer should flag the duplicated literal `2` in the tmpfs default
+        block and inode limit helpers as an unnamed capacity policy and ask for a
+        named constant.
+    - target: { kind: file, path: kernel/src/fs/fs_impls/tmpfs/fs.rs }
+      persona: maintainability
+      grounding: backtick-identifiers
+      severity: minor
+      desc: >
+        The new `TmpFs::sb` workaround comment names implementation concepts such
+        as Tmpfs and RamFs as plain prose instead of formatting those identifiers
+        with Markdown backticks, which makes the code-oriented comment
+        inconsistent with the local comment style.
+      fix: >
+        Wrap the code identifiers in backticks in the TODO comment, for example
+        using `TmpFs`/`RamFs` consistently where the comment refers to the Rust
+        types or filesystem implementation names.
+      expectation: >
+        A reviewer should flag that the new tmpfs workaround comment leaves
+        code identifiers such as `RamFs` unformatted and ask for backticks around
+        them.
+    - target: { kind: file, path: kernel/src/fs/vfs/path/mod.rs }
+      persona: maintainability
+      grounding: consistency
+      severity: minor
+      desc: >
+        `Path::fs` is a new public method, but its summary is written as a plain
+        `//` comment, so it will not appear in rustdoc with the rest of the
+        public `Path` API.
+      fix: >
+        Change the summary to a rustdoc comment, for example by replacing the
+        `//` summary with a `///` summary that documents the returned filesystem.
+      expectation: >
+        A reviewer should flag that the public `Path::fs` method uses a plain
+        `//` summary instead of `///` and ask for a rustdoc comment.
+
 - problem_id: 0100-cmdline-maintainability-issues
   commit: 46bb6b9c58fc3236ea66f8f93fa08fe8744457ae
   source: >
