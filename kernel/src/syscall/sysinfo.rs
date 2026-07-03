@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_time::read_monotonic_time;
+use aster_util::fixed_point::FixedU64;
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::pid_table};
+use crate::{prelude::*, process::pid_table, sched::loadavg};
 
 #[padding_struct]
 #[repr(C)]
@@ -25,8 +26,16 @@ struct SysInfo {
 }
 
 pub fn sys_sysinfo(sysinfo_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+    type SysinfoLoadAvg = FixedU64<16>;
+
+    let loadavg = loadavg::get_loadavg();
     let info = SysInfo {
         uptime: read_monotonic_time().as_secs() as i64,
+        loads: [
+            SysinfoLoadAvg::from(loadavg[0]).raw(),
+            SysinfoLoadAvg::from(loadavg[1]).raw(),
+            SysinfoLoadAvg::from(loadavg[2]).raw(),
+        ],
         totalram: crate::vm::mem_total() as u64,
         freeram: osdk_frame_allocator::load_total_free_size() as u64,
         procs: pid_table::pid_table_mut().process_count() as u16,
