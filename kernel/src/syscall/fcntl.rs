@@ -75,9 +75,25 @@ fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let file = get_file_fast!(&mut file_table, fd);
     let status_flags = file.status_flags();
     let access_mode = file.access_mode();
-    Ok(SyscallReturn::Return(
-        (status_flags.bits() | access_mode as u32) as _,
-    ))
+
+    // Linux `F_GETFL` returns `status_flags | access_mode`, with `O_LARGEFILE`
+    // conditionally included based on file type:
+    // - O_PATH descriptors: return `status_flags` only (no access mode, no `O_LARGEFILE`).
+    // - Anonymous pipes (pipefs): return `status_flags | access_mode` (no `O_LARGEFILE`).
+    // - All other files: ensure `O_LARGEFILE` is present in the returned flags.
+    //   In Linux, `force_o_largefile()` adds `O_LARGEFILE` automatically on open
+    //   for most architectures; we enforce it here to guarantee consistent behavior.
+    //   Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/open.c#L1458>
+    //   Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/linux/fcntl.h#L25>
+    let result = if status_flags.contains(StatusFlags::O_PATH) {
+        status_flags.bits()
+    } else if file.path().inode().fs().name() == "pipefs" {
+        status_flags.bits() | access_mode as u32
+    } else {
+        status_flags.bits() | access_mode as u32 | StatusFlags::O_LARGEFILE.bits()
+    };
+
+    Ok(SyscallReturn::Return(result as _))
 }
 
 fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {

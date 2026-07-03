@@ -5,6 +5,25 @@ use core::sync::atomic::AtomicU32;
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use bitflags::bitflags;
 
+// O_LARGEFILE values from Linux kernel headers:
+// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/asm-generic/fcntl.h#L50>
+// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/arm64/include/uapi/asm/fcntl.h#L26>
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "riscv64",
+    target_arch = "loongarch64"
+))]
+const O_LARGEFILE_VALUE: u32 = 1 << 15;
+#[cfg(target_arch = "aarch64")]
+const O_LARGEFILE_VALUE: u32 = 1 << 17;
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "riscv64",
+    target_arch = "loongarch64",
+    target_arch = "aarch64"
+)))]
+const O_LARGEFILE_VALUE: u32 = 0;
+
 bitflags! {
     pub struct StatusFlags: u32 {
         /// append on each write
@@ -17,7 +36,8 @@ bitflags! {
         const O_ASYNC = 1 << 13;
         /// direct I/O
         const O_DIRECT = 1 << 14;
-        /// on x86_64, O_LARGEFILE is 0
+        /// enable large file support (x86_64/riscv64/loongarch64: 1<<15, arm64: 1<<17)
+        const O_LARGEFILE = O_LARGEFILE_VALUE;
         /// not update st_atime
         const O_NOATIME = 1 << 18;
         /// synchronized I/O, data and metadata
