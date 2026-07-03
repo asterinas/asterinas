@@ -351,7 +351,31 @@ impl VmarInner {
         // exist in `ResourceLimits`.
         let high_limit = VMAR_CAP_ADDR - INIT_STACK_SIZE - PAGE_SIZE * 2048;
         let low_limit = VMAR_LOWEST_ADDR;
+        self.alloc_free_region_in_range(size, align, high_limit, low_limit)
+    }
 
+    /// Allocates a free region for mapping that resides below 2 GiB,
+    /// used for the `MAP_32BIT` mmap flag.
+    fn alloc_free_region_below_2gib(
+        &mut self,
+        size: usize,
+        align: usize,
+    ) -> Result<Range<Vaddr>> {
+        const MAP_32BIT_HIGH_LIMIT: Vaddr = 0x8000_0000;
+        let high_limit = MAP_32BIT_HIGH_LIMIT.min(VMAR_CAP_ADDR);
+        let low_limit = VMAR_LOWEST_ADDR;
+        self.alloc_free_region_in_range(size, align, high_limit, low_limit)
+    }
+
+    /// Core logic for [`alloc_free_region`] and [`alloc_free_region_below_2gib`].
+    /// Searches for a free region in [`low_limit`, `high_limit`), from high to low.
+    fn alloc_free_region_in_range(
+        &mut self,
+        size: usize,
+        align: usize,
+        high_limit: Vaddr,
+        low_limit: Vaddr,
+    ) -> Result<Range<Vaddr>> {
         fn try_alloc_in_hole(
             hole_start: Vaddr,
             hole_end: Vaddr,
