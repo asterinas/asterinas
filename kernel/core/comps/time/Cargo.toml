@@ -19,5 +19,9 @@ fdt-util.workspace = true
 [target.loongarch64-unknown-none-softfloat.dependencies]
 fdt-util.workspace = true
 
+[target.aarch64-unknown-none-softfloat.dependencies]
+chrono.workspace = true
+fdt-util.workspace = true
+
 [lints]
 workspace = true
