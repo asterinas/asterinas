@@ -7,4 +7,9 @@
 # See the group(5) man page for additional information about this file.
 ##
 root:x:0:
+# Both daemon and users groups are required by the LTP conformance tests chmod07
+# and fchmod02. The tests look up the "users" group first and fallback to "daemon"
+# (via SAFE_GETGRNAM_FALLBACK("users", "daemon")).
+daemon:x:1:
+users:x:100:
 nogroup:x:65534:
