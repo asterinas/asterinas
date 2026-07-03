@@ -38,6 +38,9 @@ tdx-guest = { workspace = true, optional = true }
 [target.riscv64imac-unknown-none-elf.dependencies]
 fdt-util.workspace = true
 
+[target.aarch64-unknown-none-softfloat.dependencies]
+fdt-util.workspace = true
+
 [features]
 all = ["cvm_guest"]
 cvm_guest = ["dep:tdx-guest", "ostd/cvm_guest"]
