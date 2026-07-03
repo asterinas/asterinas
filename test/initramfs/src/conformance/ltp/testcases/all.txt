@@ -827,7 +827,7 @@ mknod02
 # mknod05
 mknod06
 # mknod07
-# mknod08
+mknod08
 mknod09
 
 #mknodat test cases

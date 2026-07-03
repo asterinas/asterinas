@@ -894,24 +894,22 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
 
+        let (uid, gid) = current_fs_ids();
         let new_inode = match type_ {
             MknodType::CharDevice(dev_id) | MknodType::BlockDevice(dev_id) => {
                 let dev_type = type_.device_type().unwrap();
                 RamInode::new_device(
                     &self.fs.upgrade().unwrap(),
                     mode,
-                    Uid::new_root(),
-                    Gid::new_root(),
+                    uid,
+                    gid,
                     dev_type,
                     dev_id,
                 )
             }
-            MknodType::NamedPipe => RamInode::new_named_pipe(
-                &self.fs.upgrade().unwrap(),
-                mode,
-                Uid::new_root(),
-                Gid::new_root(),
-            ),
+            MknodType::NamedPipe => {
+                RamInode::new_named_pipe(&self.fs.upgrade().unwrap(), mode, uid, gid)
+            }
         };
 
         let mut self_dir = self_dir.upgrade();
@@ -944,13 +942,7 @@ impl Inode for RamInode {
         }
 
         let fs = self.fs.upgrade().unwrap();
-        let (uid, gid) = Thread::current()
-            .and_then(|thread| {
-                let posix_thread = thread.as_posix_thread()?;
-                let credentials = posix_thread.credentials();
-                Some((credentials.fsuid(), credentials.fsgid()))
-            })
-            .unwrap_or((Uid::new_root(), Gid::new_root()));
+        let (uid, gid) = current_fs_ids();
         let new_inode = match type_ {
             InodeType::File => RamInode::new_file(&fs, mode, uid, gid),
             InodeType::SymLink => RamInode::new_symlink(&fs, mode, uid, gid),
@@ -987,13 +979,8 @@ impl Inode for RamInode {
         }
 
         let fs = self.fs.upgrade().unwrap();
-        Ok(RamInode::new_tmpfile(
-            &fs,
-            mode,
-            Uid::new_root(),
-            Gid::new_root(),
-            hard_linkability,
-        ))
+        let (uid, gid) = current_fs_ids();
+        Ok(RamInode::new_tmpfile(&fs, mode, uid, gid, hard_linkability))
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
@@ -1461,6 +1448,16 @@ fn write_lock_two_direntries_by_ino<'a>(
 
 fn now() -> Duration {
     RealTimeCoarseClock::get().read_time()
+}
+
+fn current_fs_ids() -> (Uid, Gid) {
+    Thread::current()
+        .and_then(|thread| {
+            let posix_thread = thread.as_posix_thread()?;
+            let credentials = posix_thread.credentials();
+            Some((credentials.fsuid(), credentials.fsgid()))
+        })
+        .unwrap_or((Uid::new_root(), Gid::new_root()))
 }
 
 pub(super) struct RamFsType;
