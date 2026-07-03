@@ -49,6 +49,23 @@ pub struct SystemTime {
     pub nanos: u64,
 }
 
+#[cfg(target_arch = "riscv64")]
+impl From<chrono::NaiveDateTime> for SystemTime {
+    fn from(time: chrono::NaiveDateTime) -> Self {
+        use chrono::{Datelike, Timelike};
+
+        Self {
+            year: time.year() as u16,
+            month: time.month() as u8,
+            day: time.day() as u8,
+            hour: time.hour() as u8,
+            minute: time.minute() as u8,
+            second: time.second() as u8,
+            nanos: time.nanosecond() as u64,
+        }
+    }
+}
+
 static START_TIME: Once<SystemTime> = Once::new();
 
 /// Returns the `START_TIME`, which is the system time when calibrating.
