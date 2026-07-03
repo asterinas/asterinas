@@ -2,6 +2,10 @@
 
 use core::{arch::asm, ops::Range};
 
+pub(crate) use util::{
+    __atomic_cmpxchg_fallible, __atomic_load_fallible, __memcpy_fallible, __memset_fallible,
+};
+
 use crate::mm::{
     PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
     dma::DmaDirection,
@@ -10,6 +14,8 @@ use crate::mm::{
     },
     page_table::{PteScalar, PteTrait},
 };
+
+mod util;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PagingConsts {}
