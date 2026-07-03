@@ -11,159 +11,164 @@ use core::{
     ops::{Add, Div, Mul, Sub},
 };
 
-/// A generic fixed-point number with `FRAC_BITS` fractional bits.
-///
-/// This type represents a non-negative real number using a `u32` for storage,
-/// with the lower `FRAC_BITS` representing the fractional part.
-///
-/// **Standard arithmetic operations can overflow and wrap around.** This follows
-/// Rust's default integer overflow behavior.
-///
-/// For safer arithmetic that prevents overflow, use the `saturating_*` methods:
-/// - [`saturating_add`](Self::saturating_add)
-/// - [`saturating_sub`](Self::saturating_sub)
-/// - [`saturating_mul`](Self::saturating_mul)
-/// - [`saturating_div`](Self::saturating_div)
-///
-/// # Examples
-///
-/// ```rust
-/// use fixed_point::FixedU32;
-///
-/// type FixedU32_8 = FixedU32<8>;
-/// let max_val = FixedU32_8::from_raw(u32::MAX);
-/// let one = FixedU32_8::saturating_from_num(1);
-///
-/// // Standard operations can overflow.
-/// let wrapped = max_val + one;
-///
-/// // Saturating operations prevent overflow.
-/// let saturated = max_val.saturating_add(one);
-/// assert_eq!(saturated, max_val); // Stays at maximum.
-/// ```
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct FixedU32<const FRAC_BITS: u32>(u32);
+macro_rules! define_fixed_unsigned {
+    ($name:ident, $raw:ty, $wide:ty) => {
+        /// A generic fixed-point number with `FRAC_BITS` fractional bits.
+        ///
+        /// This type represents a non-negative real number using an unsigned
+        /// integer for storage, with the lower `FRAC_BITS` representing the
+        /// fractional part.
+        ///
+        /// **Standard arithmetic operations can overflow and wrap around.**
+        /// This follows Rust's default integer overflow behavior.
+        ///
+        /// For safer arithmetic that prevents overflow, use the
+        /// `saturating_*` methods.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub struct $name<const FRAC_BITS: u32>($raw);
 
-impl<const FRAC_BITS: u32> FixedU32<FRAC_BITS> {
-    const FRAC_SCALE: u32 = {
-        // Do not remove or rewrite the const expression below.
-        // It implicitly prevents users from giving invalid values of `FRAC_BITS` greater
-        // than 31 because doing so would cause integer overflow during const evaluation.
-        1 << FRAC_BITS
+        impl<const FRAC_BITS: u32> $name<FRAC_BITS> {
+            const FRAC_SCALE: $raw = {
+                // Do not remove or rewrite the const expression below.
+                // It implicitly prevents users from giving invalid values of
+                // `FRAC_BITS` greater than or equal to the raw integer width
+                // because doing so would cause integer overflow during const
+                // evaluation.
+                1 << FRAC_BITS
+            };
+
+            pub const ZERO: Self = Self(0);
+            pub const ONE: Self = Self(Self::FRAC_SCALE);
+            const MAX_INT: $raw = <$raw>::MAX >> FRAC_BITS;
+
+            /// Creates a fixed-point number from an integer.
+            ///
+            /// If the value is too large to be represented, it will saturate
+            /// at the maximum representable value.
+            pub const fn saturating_from_num(val: $raw) -> Self {
+                if val > Self::MAX_INT {
+                    Self(<$raw>::MAX)
+                } else {
+                    Self(val << FRAC_BITS)
+                }
+            }
+
+            /// Creates a fixed-point number from raw bits.
+            pub const fn from_raw(raw: $raw) -> Self {
+                Self(raw)
+            }
+
+            /// Returns the raw underlying fixed-point value.
+            pub const fn raw(self) -> $raw {
+                self.0
+            }
+
+            /// Adds two fixed-point numbers, saturating on overflow.
+            pub const fn saturating_add(self, other: Self) -> Self {
+                Self(self.0.saturating_add(other.0))
+            }
+
+            /// Subtracts two fixed-point numbers, saturating on underflow.
+            pub const fn saturating_sub(self, other: Self) -> Self {
+                Self(self.0.saturating_sub(other.0))
+            }
+
+            /// Multiplies two fixed-point numbers, saturating on overflow.
+            pub const fn saturating_mul(self, other: Self) -> Self {
+                let result = (self.0 as $wide * other.0 as $wide) >> FRAC_BITS;
+                Self(if result > <$raw>::MAX as $wide {
+                    <$raw>::MAX
+                } else {
+                    result as $raw
+                })
+            }
+
+            /// Divides two fixed-point numbers, saturating on overflow.
+            ///
+            /// Returns `None` if division by zero is attempted.
+            pub const fn saturating_div(self, other: Self) -> Option<Self> {
+                if other.0 == 0 {
+                    return None;
+                }
+
+                let result = ((self.0 as $wide) << FRAC_BITS) / other.0 as $wide;
+                Some(Self(if result > <$raw>::MAX as $wide {
+                    <$raw>::MAX
+                } else {
+                    result as $raw
+                }))
+            }
+        }
+
+        impl<const FRAC_BITS: u32> Add for $name<FRAC_BITS> {
+            type Output = Self;
+
+            fn add(self, rhs: Self) -> Self::Output {
+                Self(self.0 + rhs.0)
+            }
+        }
+
+        impl<const FRAC_BITS: u32> Sub for $name<FRAC_BITS> {
+            type Output = Self;
+
+            fn sub(self, rhs: Self) -> Self::Output {
+                Self(self.0 - rhs.0)
+            }
+        }
+
+        impl<const FRAC_BITS: u32> Mul for $name<FRAC_BITS> {
+            type Output = Self;
+
+            fn mul(self, rhs: Self) -> Self::Output {
+                let result = (self.0 as $wide * rhs.0 as $wide) >> FRAC_BITS;
+                debug_assert!(
+                    result <= <$raw>::MAX as $wide,
+                    "attempt to multiply with overflow"
+                );
+                Self(result as $raw)
+            }
+        }
+
+        impl<const FRAC_BITS: u32> Div for $name<FRAC_BITS> {
+            type Output = Self;
+
+            fn div(self, rhs: Self) -> Self::Output {
+                let result = ((self.0 as $wide) << FRAC_BITS) / rhs.0 as $wide;
+                debug_assert!(
+                    result <= <$raw>::MAX as $wide,
+                    "attempt to divide with overflow"
+                );
+                Self(result as $raw)
+            }
+        }
+
+        impl<const FRAC_BITS: u32> fmt::Display for $name<FRAC_BITS> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(
+                    f,
+                    "{}.{:>03}",
+                    self.0 >> FRAC_BITS,
+                    ((self.0 % Self::FRAC_SCALE) as $wide) * 1000 / Self::FRAC_SCALE as $wide
+                )?;
+                Ok(())
+            }
+        }
     };
+}
 
-    pub const ZERO: Self = Self(0);
-    pub const ONE: Self = Self(Self::FRAC_SCALE);
-    const MAX_INT: u32 = u32::MAX >> FRAC_BITS;
+define_fixed_unsigned!(FixedU32, u32, u64);
+define_fixed_unsigned!(FixedU64, u64, u128);
 
-    /// Creates a fixed-point number from an integer.
-    ///
-    /// If the value is too large to be represented, it will saturate
-    /// at the maximum representable value.
-    pub const fn saturating_from_num(val: u32) -> Self {
-        if val > Self::MAX_INT {
-            Self(u32::MAX)
-        } else {
-            Self(val << FRAC_BITS)
-        }
-    }
-
-    /// Creates a fixed-point number from raw bits.
-    pub const fn from_raw(raw: u32) -> Self {
-        Self(raw)
-    }
-
-    /// Gets the raw underlying value.
-    #[cfg(ktest)]
-    const fn raw(self) -> u32 {
-        self.0
-    }
-
-    /// Adds two fixed-point numbers, saturating on overflow.
-    pub const fn saturating_add(self, other: Self) -> Self {
-        Self(self.0.saturating_add(other.0))
-    }
-
-    /// Subtracts two fixed-point numbers, saturating on underflow.
-    pub const fn saturating_sub(self, other: Self) -> Self {
-        Self(self.0.saturating_sub(other.0))
-    }
-
-    /// Multiplies two fixed-point numbers, saturating on overflow.
-    pub const fn saturating_mul(self, other: Self) -> Self {
-        let result = (self.0 as u64 * other.0 as u64) >> FRAC_BITS;
-        Self(if result > u32::MAX as u64 {
-            u32::MAX
-        } else {
-            result as u32
-        })
-    }
-
-    /// Divides two fixed-point numbers, saturating on overflow.
-    ///
-    /// Returns `None` if division by zero is attempted.
-    pub const fn saturating_div(self, other: Self) -> Option<Self> {
-        if other.0 == 0 {
-            return None;
+impl<const FROM_FRAC_BITS: u32, const TO_FRAC_BITS: u32> From<FixedU32<FROM_FRAC_BITS>>
+    for FixedU64<TO_FRAC_BITS>
+{
+    fn from(value: FixedU32<FROM_FRAC_BITS>) -> Self {
+        const {
+            assert!(TO_FRAC_BITS >= FROM_FRAC_BITS);
+            assert!(u64::BITS - TO_FRAC_BITS >= u32::BITS - FROM_FRAC_BITS);
         }
 
-        let result = ((self.0 as u64) << FRAC_BITS) / other.0 as u64;
-        Some(Self(if result > u32::MAX as u64 {
-            u32::MAX
-        } else {
-            result as u32
-        }))
-    }
-}
-
-impl<const FRAC_BITS: u32> Add for FixedU32<FRAC_BITS> {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl<const FRAC_BITS: u32> Sub for FixedU32<FRAC_BITS> {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
-    }
-}
-
-impl<const FRAC_BITS: u32> Mul for FixedU32<FRAC_BITS> {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        let result = (self.0 as u64 * rhs.0 as u64) >> FRAC_BITS;
-        debug_assert!(
-            result <= u32::MAX as u64,
-            "attempt to multiply with overflow"
-        );
-        Self(result as u32)
-    }
-}
-
-impl<const FRAC_BITS: u32> Div for FixedU32<FRAC_BITS> {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        let result = ((self.0 as u64) << FRAC_BITS) / rhs.0 as u64;
-        debug_assert!(result <= u32::MAX as u64, "attempt to divide with overflow");
-        Self(result as u32)
-    }
-}
-
-impl<const FRAC_BITS: u32> fmt::Display for FixedU32<FRAC_BITS> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}.{:>03}",
-            self.0 >> FRAC_BITS,
-            ((self.0 % Self::FRAC_SCALE) as u64) * 1000 / Self::FRAC_SCALE as u64
-        )?;
-        Ok(())
+        Self::from_raw((value.raw() as u64) << (TO_FRAC_BITS - FROM_FRAC_BITS))
     }
 }
 
@@ -268,6 +273,14 @@ mod tests {
         let high_precision = FixedU32_16::from_raw(98304); // 1.5 in 16.16 format
         let display_str = format!("{}", high_precision);
         assert_eq!(display_str, "1.500");
+    }
+
+    #[ktest]
+    fn fixed_u32_to_fixed_u64_conversion() {
+        let value = FixedU32_8::from_raw(0x1234);
+        let converted = FixedU64::<16>::from(value);
+
+        assert_eq!(converted.raw(), 0x1234u64 << 8);
     }
 
     #[expect(clippy::eq_op)]
