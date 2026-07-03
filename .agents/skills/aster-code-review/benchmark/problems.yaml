@@ -271,3 +271,86 @@
       expectation: >
         A reviewer should flag the non-imperative, non-descriptive subject and ask
         for a specific imperative summary.
+
+- problem_id: 0100-cmdline-maintainability-issues
+  commit: 46bb6b9c58fc3236ea66f8f93fa08fe8744457ae
+  source: >
+    PR-review-derived. Review comments
+    https://github.com/asterinas/asterinas/pull/3010#discussion_r2901089317
+    and
+    https://github.com/asterinas/asterinas/pull/3010#discussion_r2901089321
+    flagged PR commit `46bb6b9c5` ("Add `kernel-parameters` document") for
+    declaring the new `inventory` dependency directly in the member crate instead
+    of through workspace dependencies, for suppressing `dead_code` across the
+    whole cmdline `types` module. The same diff also exposes parsed
+    `CpuListSegment` invariants through public fields. The change under review is
+    that commit, fetched by full SHA from upstream (no local patch), diffed
+    against the supplied base commit `b205cacbf`; the diff adds these
+    maintainability defects but contains no note naming them.
+  review_mode:
+    diff:
+      base: b205cacbf5e5406172e5c7216179c2559c091885
+  defects:
+    - target:
+        kind: file
+        path: kernel/comps/cmdline/Cargo.toml
+        lines: "13"
+      persona: maintainability
+      grounding: workspace-deps
+      severity: minor
+      desc: >
+        `kernel/comps/cmdline/Cargo.toml` declares `inventory` directly with a
+        Git URL and revision. Shared dependencies should be declared once in the
+        workspace `[workspace.dependencies]` table and referenced from member
+        crates with `.workspace = true`; this is especially important here
+        because the same `inventory` crate is already used elsewhere with the
+        same source.
+      fix: >
+        Add `inventory` to the workspace `[workspace.dependencies]` table with
+        the shared Git URL/revision, then use `inventory.workspace = true` in
+        `kernel/comps/cmdline/Cargo.toml` and any other member crate that depends
+        on the same crate.
+      expectation: >
+        A reviewer should flag the direct `inventory` dependency in the member
+        crate and ask for a workspace dependency referenced with
+        `inventory.workspace = true`.
+    - target:
+        kind: file
+        path: kernel/comps/cmdline/src/types.rs
+        lines: "8"
+      persona: maintainability
+      grounding: narrow-lint-suppression
+      severity: minor
+      desc: >
+        `kernel/comps/cmdline/src/types.rs` adds `#![allow(dead_code)]` at module
+        scope, suppressing `dead_code` for every item in the new `types` module.
+        That hides unused-code warnings not only for the currently intentional
+        parser helpers, but also for future accidental additions to the module,
+        making the lint suppression broader than the code that needs it.
+      fix: >
+        Narrow the suppression to the specific item or small block that currently
+        needs it, preferably with `#[expect(dead_code)]` and a short reason if the
+        code is intentionally staged for later use.
+      expectation: >
+        A reviewer should flag the module-wide `#![allow(dead_code)]` and ask for
+        the `dead_code` suppression to be narrowed to the specific item that needs
+        it.
+    - target:
+        kind: file
+        path: kernel/comps/cmdline/src/types.rs
+        lines: "31"
+      persona: maintainability
+      grounding: getter-encapsulation
+      severity: minor
+      desc: >
+        `CpuListSegment` exposes `start`, `end`, `stride`, and `group` as public
+        fields even though the parser enforces invariants such as `start <= end`,
+        nonzero `stride`, and nonzero `group`. Public fields let external code
+        construct invalid segments and make the representation part of the API.
+      fix: >
+        Make the fields private and expose getters, plus a checked constructor if
+        external code needs to construct `CpuListSegment` values.
+      expectation: >
+        A reviewer should flag the public fields on `CpuListSegment` and ask for
+        private fields with getters or another checked interface that preserves
+        the parser invariants.
