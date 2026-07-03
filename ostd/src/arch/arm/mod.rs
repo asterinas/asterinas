@@ -42,6 +42,8 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     irq::chip::init(&mut io_mem_builder);
 
+    timer::init();
+
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
