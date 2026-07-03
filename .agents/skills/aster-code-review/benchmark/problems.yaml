@@ -354,3 +354,176 @@
         A reviewer should flag the public fields on `CpuListSegment` and ask for
         private fields with getters or another checked interface that preserves
         the parser invariants.
+
+- problem_id: 0300-file-cap-setuid-root-effective
+  commit: f5fc357bbb33de3e2667f217572e65d4bd6fe7e8
+  source: >
+    PR-review-derived. Review comments
+    https://github.com/asterinas/asterinas/pull/3365#discussion_r3458393524
+    and
+    https://github.com/asterinas/asterinas/pull/3365#discussion_r3459392413
+    flagged PR commit `f5fc357b` for deriving exec-time capability sets from a
+    setuid-root transition even when file capabilities are present, and for
+    loading `security.capability` through a normal readable-file xattr path.
+    The current branch also computes capability sets from one executable
+    metadata snapshot and later applies setuid/setgid from a fresh metadata
+    read. The change under review is that
+    original PR commit, fetched by full SHA from upstream; the diff adds these
+    security defects but contains no later corrected condition or regression test
+    naming them.
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/src/process/credentials/credentials_.rs }
+      persona: security
+      grounding: "Privilege escalation"
+      severity: critical
+      desc: >
+        `calculate_capsets_for_exec` computes `file_effective` with `(!no_root
+        && exec_euid.is_root()) || file_capabilities.has_effective_flag()`.
+        That grants a full effective capability set whenever exec makes the
+        effective UID root, even if the executable also carries file
+        capabilities. Linux treats the setuid-root plus file-capability case
+        specially: for a non-root caller executing such a file, the file
+        capabilities suppress the legacy setuid-root full-capability grant,
+        and only the file-capability effective flag should make the permitted
+        set effective.
+      fix: >
+        Base `file_effective` on the same root-special-case predicate used for
+        the permitted and inheritable file sets, so `exec_euid == 0` grants
+        full effective capabilities only when the legacy root rule actually
+        applies. If file capabilities are present for a non-root caller, use
+        the xattr effective flag to decide whether the resulting permitted set
+        becomes effective.
+      expectation: >
+        A reviewer should flag that setuid-root must not grant a full
+        effective capability set when file capabilities are present for a
+        non-root caller; only the file effective flag should make the
+        permitted set effective.
+    - target: { kind: file, path: kernel/src/process/credentials/file_capabilities.rs }
+      persona: security
+      grounding: "Incorrect permission check"
+      severity: major
+      desc: >
+        `FileCapabilities::read_from_inode` now calls `inode.get_xattr(...)`
+        to read `security.capability`. The filesystem `Inode::get_xattr`
+        implementations, such as ext2, perform a normal `MAY_READ` DAC check
+        before looking up the xattr. That check is inappropriate for exec-time
+        file-capability loading: a file can be executable without being
+        readable, for example mode `0111`, and an execute-only file with no
+        `security.capability` xattr should execute normally. With the new
+        path, the read permission check returns `EACCES` before the xattr
+        lookup can return `ENODATA`, so `execve` rejects such programs.
+      fix: >
+        Keep exec-time file-capability lookup on a permission-bypassing xattr
+        path, or provide an internal helper that reads `security.capability`
+        without applying the caller's ordinary file read permission check.
+        Continue treating `ENODATA` and `EOPNOTSUPP` as absence of file
+        capabilities.
+      expectation: >
+        A reviewer should flag that loading `security.capability` during
+        `execve` must not require the executable to be readable; execute-only
+        files without file capabilities must reach the xattr absence case and
+        execute successfully.
+    - target: { kind: file, path: kernel/src/process/execve.rs }
+      persona: security
+      grounding: "TOCTOU race"
+      severity: major
+      desc: >
+        `do_execve` computes `exec_euid` from `elf_file.mode()` and
+        `elf_file.owner()` before the irreversible exec phase, and
+        `prepare_capsets_for_exec` turns that value into cached
+        `ExecCapSets`. Later, `apply_caps_from_exec` calls
+        `set_uid_from_elf` and `set_gid_from_elf`, which re-read the inode
+        mode, owner, and group before installing the already-computed
+        capability sets. If the executable metadata changes between these
+        reads, the final effective UID/GID and the installed capability sets
+        can be derived from different file states.
+      fix: >
+        Use one consistent executable metadata snapshot for both the
+        setuid/setgid credential transition and capability calculation, or
+        recompute the final capability sets after applying the actual UID/GID
+        changes that will be committed. The pre-irreversible phase may still
+        validate file-capability failures, but the no-return phase must not
+        install capability sets derived from stale mode/owner metadata.
+      expectation: >
+        A reviewer should flag that exec capability sets are prepared from one
+        executable mode/owner snapshot while the setuid/setgid transition later
+        re-reads inode metadata, so concurrent metadata changes can make the
+        installed capabilities inconsistent with the final credentials.
+
+- problem_id: 0301-rt-sigprocmask-unblockable-signals
+  commit: 2154124dc46a5e2a1d768ed67dfbe5655da9987a
+  source: >
+    PR-body-derived from PR #2288
+    `https://github.com/asterinas/asterinas/pull/2288#issue-3268551599`. The
+    PR fixes `rt_sigprocmask` so user space cannot block `SIGKILL` or
+    `SIGSTOP`. Files mode uses `2154124dc46a5e2a1d768ed67dfbe5655da9987a`, the
+    parent of mainline fixing commit `8a801676ab2f827e1d6e4d1ec6803261b5e7859c`,
+    because it is the newest buggy snapshot before the `SetMask` branch starts
+    filtering unblockable signals. The same snapshot also decodes `how` before
+    checking whether the user supplied a new mask, and exposes the syscall-local
+    `MaskOp` decode enum unnecessarily.
+  review_mode:
+    files:
+      - kernel/src/syscall/rt_sigprocmask.rs
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/rt_sigprocmask.rs }
+      persona: development
+      grounding: "Incorrect signal semantics"
+      severity: critical
+      desc: >
+        `sys_rt_sigprocmask` sanitizes `read_mask` for `MaskOp::Block`, but
+        the `MaskOp::SetMask` arm stores the user-provided mask verbatim with
+        `sig_mask_ref.store(read_mask, Ordering::Relaxed)`. A caller using
+        `SIG_SETMASK` can therefore place `SIGKILL` or `SIGSTOP` in the
+        thread's blocked signal mask. Linux requires attempts to block these
+        two signals to be silently ignored, so accepting them in the set-mask
+        path can make user tasks unkillable or unstoppable and breaks signal
+        semantics.
+      fix: >
+        Remove `SIGKILL` and `SIGSTOP` from the mask before storing it in the
+        `MaskOp::SetMask` branch. The operation should still return success,
+        matching Linux's silently-ignore behavior for attempts to block these
+        signals.
+      expectation: >
+        A reviewer should flag that every path installing a blocked signal
+        mask, including `SIG_SETMASK`, must preserve the invariant that
+        `SIGKILL` and `SIGSTOP` cannot be blocked.
+    - target: { kind: file, path: kernel/src/syscall/rt_sigprocmask.rs }
+      persona: development
+      grounding: "Incorrect argument validation"
+      severity: major
+      desc: >
+        `sys_rt_sigprocmask` converts `how` with `MaskOp::try_from(how)?`
+        before it checks whether `set_ptr` is null. Linux ignores the `how`
+        argument when `set` is `NULL`, because that call only reads the current
+        signal mask through `oldset`. A call such as
+        `rt_sigprocmask(999, NULL, oldset, 8)` should therefore succeed and
+        report the old mask, but this implementation returns `EINVAL` before
+        it reaches the `oldset_ptr` write.
+      fix: >
+        Delay converting `how` to `MaskOp` until the `set_ptr != 0` path, or
+        pass an `Option<MaskOp>` into the helper so the read-only
+        `set_ptr == 0` case writes `oldset` without validating `how`.
+      expectation: >
+        A reviewer should flag that `rt_sigprocmask` must ignore invalid
+        `how` values when `set` is `NULL`; only calls that install or change a
+        signal mask should validate the operation.
+    - target: { kind: file, path: kernel/src/syscall/rt_sigprocmask.rs }
+      persona: maintainability
+      grounding: narrow-visibility
+      severity: minor
+      desc: >
+        `MaskOp` is declared `pub`, but it is only used inside
+        `kernel/src/syscall/rt_sigprocmask.rs` to decode the syscall's `how`
+        argument. Exposing this syscall-local enum creates an unnecessary
+        module interface for an implementation detail that no other module
+        needs to name.
+      fix: >
+        Make `MaskOp` private unless another module actually needs to use the
+        enum type directly.
+      expectation: >
+        A reviewer should flag that syscall-local decode enums should not be
+        public when all uses are contained in the same source file.
