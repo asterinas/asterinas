@@ -10,6 +10,20 @@ prctl(op = PR_GET_KEEPCAPS);
 // Configure permitted capabilities retention after `UID` changes
 prctl(op = PR_SET_KEEPCAPS, state);
 
+// Query whether a capability is in the bounding set
+prctl(op = PR_CAPBSET_READ, capability);
+
+// Drop a capability from the bounding set
+prctl(op = PR_CAPBSET_DROP, capability);
+
+// Query or change the ambient capability set
+prctl(
+    op = PR_CAP_AMBIENT,
+    subcmd = PR_CAP_AMBIENT_IS_SET | PR_CAP_AMBIENT_RAISE |
+             PR_CAP_AMBIENT_LOWER | PR_CAP_AMBIENT_CLEAR_ALL,
+    capability
+);
+
 // Retrieve or set "child subreaper" attribute
 prctl(op = PR_GET_CHILD_SUBREAPER | PR_SET_CHILD_SUBREAPER, isset);
 

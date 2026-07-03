@@ -54,6 +54,12 @@ FN_TEST(set_multiple_bits)
 }
 END_TEST()
 
+FN_TEST(set_invalid_bits)
+{
+	TEST_ERRNO(prctl(PR_SET_SECUREBITS, 1ULL << 30), EPERM);
+}
+END_TEST()
+
 FN_TEST(lock_keep_caps_bit)
 {
 	int initial_bits;

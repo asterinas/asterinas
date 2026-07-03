@@ -121,6 +121,25 @@ pub fn sys_prctl(
             ctx.user_space()
                 .write_val(write_addr, &(process.is_child_subreaper() as u32))?;
         }
+        PrctlCmd::PR_CAP_AMBIENT(cmd) => match cmd {
+            CapAmbientCmd::IsSet(capability) => {
+                let credentials = ctx.posix_thread.credentials();
+                let is_set = credentials.ambient_capset().contains(capability);
+                return Ok(SyscallReturn::Return(if is_set { 1 } else { 0 }));
+            }
+            CapAmbientCmd::Raise(capability) => {
+                let credentials = ctx.credentials_mut();
+                credentials.raise_ambient_capability(capability)?;
+            }
+            CapAmbientCmd::Lower(capability) => {
+                let credentials = ctx.credentials_mut();
+                credentials.lower_ambient_capability(capability);
+            }
+            CapAmbientCmd::ClearAll => {
+                let credentials = ctx.credentials_mut();
+                credentials.clear_ambient_capset();
+            }
+        },
     }
 
     Ok(SyscallReturn::Return(0))
@@ -142,10 +161,11 @@ const PR_SET_TIMERSLACK: i32 = 29;
 const PR_GET_TIMERSLACK: i32 = 30;
 const PR_SET_CHILD_SUBREAPER: i32 = 36;
 const PR_GET_CHILD_SUBREAPER: i32 = 37;
+const PR_CAP_AMBIENT: i32 = 47;
 
 #[expect(non_camel_case_types)]
 #[derive(Clone, Copy, Debug)]
-pub enum PrctlCmd {
+enum PrctlCmd {
     PR_SET_PDEATHSIG(SigNum),
     PR_GET_PDEATHSIG(Vaddr),
     PR_GET_DUMPABLE,
@@ -162,18 +182,32 @@ pub enum PrctlCmd {
     PR_GET_TIMERSLACK,
     PR_SET_CHILD_SUBREAPER(bool),
     PR_GET_CHILD_SUBREAPER(Vaddr),
+    PR_CAP_AMBIENT(CapAmbientCmd),
+}
+
+const PR_CAP_AMBIENT_IS_SET: u64 = 1;
+const PR_CAP_AMBIENT_RAISE: u64 = 2;
+const PR_CAP_AMBIENT_LOWER: u64 = 3;
+const PR_CAP_AMBIENT_CLEAR_ALL: u64 = 4;
+
+#[derive(Clone, Copy, Debug)]
+enum CapAmbientCmd {
+    IsSet(CapSet),
+    Raise(CapSet),
+    Lower(CapSet),
+    ClearAll,
 }
 
 #[repr(u64)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum Dumpable {
+enum Dumpable {
     Disable = 0, /* No setuid dumping */
     User = 1,    /* Dump as user of process */
     Root = 2,    /* Dump as root */
 }
 
 impl PrctlCmd {
-    fn from_args(option: i32, arg2: u64, _arg3: u64, _arg4: u64, _arg5: u64) -> Result<PrctlCmd> {
+    fn from_args(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Result<PrctlCmd> {
         match option {
             PR_SET_PDEATHSIG => {
                 let signum = SigNum::try_from(arg2 as u8)?;
@@ -189,17 +223,49 @@ impl PrctlCmd {
             PR_CAPBSET_READ => Ok(PrctlCmd::PR_CAPBSET_READ(parse_capability(arg2)?)),
             PR_CAPBSET_DROP => Ok(PrctlCmd::PR_CAPBSET_DROP(parse_capability(arg2)?)),
             PR_GET_SECUREBITS => Ok(PrctlCmd::PR_GET_SECUREBITS),
-            PR_SET_SECUREBITS => Ok(PrctlCmd::PR_SET_SECUREBITS(SecureBits::try_from(
-                arg2 as u16,
-            )?)),
+            PR_SET_SECUREBITS => {
+                let securebits = u16::try_from(arg2).map_err(|_| {
+                    Error::with_message(Errno::EPERM, "the bits are not valid secure bits")
+                })?;
+                Ok(PrctlCmd::PR_SET_SECUREBITS(SecureBits::try_from(
+                    securebits,
+                )?))
+            }
             PR_SET_TIMERSLACK => Ok(PrctlCmd::PR_SET_TIMERSLACK(arg2)),
             PR_GET_TIMERSLACK => Ok(PrctlCmd::PR_GET_TIMERSLACK),
             PR_SET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_SET_CHILD_SUBREAPER(arg2 > 0)),
             PR_GET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_GET_CHILD_SUBREAPER(arg2 as _)),
+            PR_CAP_AMBIENT => Ok(PrctlCmd::PR_CAP_AMBIENT(CapAmbientCmd::from_args(
+                arg2, arg3, arg4, arg5,
+            )?)),
             _ => {
                 debug!("prctl cmd number: {}", option);
                 return_errno_with_message!(Errno::EINVAL, "unsupported prctl command");
             }
+        }
+    }
+}
+
+impl CapAmbientCmd {
+    fn from_args(operation: u64, capability: u64, arg4: u64, arg5: u64) -> Result<Self> {
+        if arg4 != 0 || arg5 != 0 {
+            return_errno_with_message!(Errno::EINVAL, "unused PR_CAP_AMBIENT arguments are not 0");
+        }
+
+        match operation {
+            PR_CAP_AMBIENT_IS_SET => Ok(Self::IsSet(parse_capability(capability)?)),
+            PR_CAP_AMBIENT_RAISE => Ok(Self::Raise(parse_capability(capability)?)),
+            PR_CAP_AMBIENT_LOWER => Ok(Self::Lower(parse_capability(capability)?)),
+            PR_CAP_AMBIENT_CLEAR_ALL => {
+                if capability != 0 {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "PR_CAP_AMBIENT_CLEAR_ALL requires capability to be 0"
+                    );
+                }
+                Ok(Self::ClearAll)
+            }
+            _ => return_errno_with_message!(Errno::EINVAL, "invalid PR_CAP_AMBIENT operation"),
         }
     }
 }

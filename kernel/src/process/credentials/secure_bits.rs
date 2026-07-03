@@ -67,9 +67,6 @@ impl SecureBits {
         self.contains(SecureBits::NO_SETUID_FIXUP)
     }
 
-    // Currently, ambient capabilities and the PR_CAP_AMBIENT_RAISE operation are not supported.
-    // Therefore, this flag is not used.
-    #[expect(dead_code)]
     pub(super) fn no_cap_ambient_raise(&self) -> bool {
         self.contains(SecureBits::NO_CAP_AMBIENT_RAISE)
     }
@@ -80,7 +77,7 @@ impl TryFrom<u16> for SecureBits {
 
     fn try_from(value: u16) -> Result<Self> {
         if value & !SecureBits::ALL_VALID_BITS != 0 {
-            return_errno_with_message!(Errno::EINVAL, "the bits are not valid secure bits");
+            return_errno_with_message!(Errno::EPERM, "the bits are not valid secure bits");
         }
 
         Ok(SecureBits { bits: value })

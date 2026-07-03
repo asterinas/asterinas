@@ -15,7 +15,7 @@ use crate::{
     fs::vfs::{inode::Inode, path::Path},
     prelude::*,
     process::{
-        ContextUnshareAdminApi, Credentials, Process, pid_table,
+        ContextUnshareAdminApi, Credentials, Gid, Process, Uid, pid_table,
         posix_thread::{
             AsPosixThread, ContextPthreadAdminApi, ThreadLocal, ThreadName, ptrace::PtraceEvent,
             sigkill_other_threads,
@@ -311,53 +311,58 @@ fn apply_caps_from_exec(
     credentials: Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    set_uid_from_elf(process, &credentials, elf_inode)?;
-    set_gid_from_elf(process, &credentials, elf_inode)?;
+    let mode = elf_inode.mode()?;
+    let set_uid = if mode.has_set_uid() {
+        Some(elf_inode.owner()?)
+    } else {
+        None
+    };
+    let set_gid = if mode.has_set_gid() {
+        Some(elf_inode.group()?)
+    } else {
+        None
+    };
+
+    // Clear the ambient capability set when executing a privileged file.
+    // Currently, only setuid/setgid files are considered privileged.
+    // TODO: Also clear ambient capabilities when executing files with file capabilities
+    // (security.capability xattr) once file capabilities are supported.
+    if set_uid.is_some() || set_gid.is_some() {
+        credentials.clear_ambient_capset();
+    }
+    apply_set_uid(process, &credentials, set_uid);
+    apply_set_gid(process, &credentials, set_gid);
     credentials.set_keep_capabilities(false)?;
 
     Ok(())
 }
 
-/// Sets the UID in the credentials according to the ELF inode.
+/// Applies the set-user-ID effect to the credentials.
 ///
-/// If the ELF inode has the `set_uid` bit, the effective UID is set to the same value as the ELF
-/// inode's UID.
-fn set_uid_from_elf(
-    current: &Process,
-    credentials: &Credentials<ReadWriteOp>,
-    elf_inode: &Arc<dyn Inode>,
-) -> Result<()> {
-    if elf_inode.mode()?.has_set_uid() {
-        let uid = elf_inode.owner()?;
-        credentials.set_euid(uid);
+/// If `set_uid` is `Some`, the effective UID is set to the given UID.
+fn apply_set_uid(current: &Process, credentials: &Credentials<ReadWriteOp>, set_uid: Option<Uid>) {
+    if let Some(owner) = set_uid {
+        credentials.set_euid(owner);
 
         current.clear_parent_death_signal();
     }
 
-    // No matter whether the ELF inode has `set_uid` bit, SUID should be reset.
+    // No matter whether the file has the set-user-ID bit, SUID should be reset.
     credentials.reset_suid();
-    Ok(())
 }
 
-/// Sets the GID in the credentials according to the ELF inode.
+/// Applies the set-group-ID effect to the credentials.
 ///
-/// If the ELF inode has the `set_gid` bit, the effective GID is set to the same value as the ELF
-/// inode's GID.
-fn set_gid_from_elf(
-    current: &Process,
-    credentials: &Credentials<ReadWriteOp>,
-    elf_inode: &Arc<dyn Inode>,
-) -> Result<()> {
-    if elf_inode.mode()?.has_set_gid() {
-        let gid = elf_inode.group()?;
-        credentials.set_egid(gid);
+/// If `set_gid` is `Some`, the effective GID is set to the given GID.
+fn apply_set_gid(current: &Process, credentials: &Credentials<ReadWriteOp>, set_gid: Option<Gid>) {
+    if let Some(group) = set_gid {
+        credentials.set_egid(group);
 
         current.clear_parent_death_signal();
     }
 
-    // No matter whether the ELF inode has `set_gid` bit, SGID should be reset.
+    // No matter whether the file has the set-group-ID bit, SGID should be reset.
     credentials.reset_sgid();
-    Ok(())
 }
 
 fn reset_vfork_child(process: &Process) {

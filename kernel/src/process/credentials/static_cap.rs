@@ -323,6 +323,38 @@ impl<R: TRights> Credentials<R> {
         self.0.set_effective_capset(effective_capset);
     }
 
+    /// Gets the ambient capability set.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn ambient_capset(&self) -> CapSet {
+        self.0.ambient_capset()
+    }
+
+    /// Raises a capability in the ambient capability set.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn raise_ambient_capability(&self, capability: CapSet) -> Result<()> {
+        self.0.raise_ambient_capability(capability)
+    }
+
+    /// Lowers a capability in the ambient capability set.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn lower_ambient_capability(&self, capability: CapSet) {
+        self.0.lower_ambient_capability(capability);
+    }
+
+    /// Clears the ambient capability set.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn clear_ambient_capset(&self) {
+        self.0.clear_ambient_capset();
+    }
+
     /// Drops one capability from the capability bounding set.
     ///
     /// If the caller does not have the `CAP_SETPCAP` capability, this method returns an error.
