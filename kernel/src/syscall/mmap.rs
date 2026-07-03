@@ -85,10 +85,14 @@ fn do_sys_mmap(
                 options = options.offset(VmarMapOffset::FixedReplace(addr));
             }
         } else {
+            #[cfg(target_arch = "x86_64")]
             if option.flags().contains(MMapFlags::MAP_32BIT) {
-                // TODO: MAP_32BIT requires the mapping address to be below 2 GiB.
-                warn!("MAP_32BIT is not supported");
+                let addr_hint = if addr != 0 { Some(addr) } else { None };
+                options = options.offset(VmarMapOffset::Map32Bit(addr_hint));
+            } else if addr != 0 {
+                options = options.offset(VmarMapOffset::Hint(addr))
             }
+            #[cfg(not(target_arch = "x86_64"))]
             if addr != 0 {
                 options = options.offset(VmarMapOffset::Hint(addr))
             }
@@ -239,6 +243,7 @@ bitflags! {
     struct MMapFlags : u32 {
         const MAP_FIXED           = 0x10;
         const MAP_ANONYMOUS       = 0x20;
+        #[cfg(target_arch = "x86_64")]
         const MAP_32BIT           = 0x40;
         const MAP_GROWSDOWN       = 0x100;
         const MAP_DENYWRITE       = 0x800;
@@ -253,10 +258,15 @@ bitflags! {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
+const ARCH_LEGACY_MMAP_FLAGS: MMapFlags = MMapFlags::MAP_32BIT;
+
+#[cfg(not(target_arch = "x86_64"))]
+const ARCH_LEGACY_MMAP_FLAGS: MMapFlags = MMapFlags::empty();
+
 // Reference: <https://elixir.bootlin.com/linux/v6.18.1/source/include/linux/mman.h#L35-L59>
 const LEGACY_MMAP_FLAGS: MMapFlags = MMapFlags::MAP_FIXED
     .union(MMapFlags::MAP_ANONYMOUS)
-    .union(MMapFlags::MAP_32BIT)
     .union(MMapFlags::MAP_GROWSDOWN)
     .union(MMapFlags::MAP_DENYWRITE)
     .union(MMapFlags::MAP_EXECUTABLE)
@@ -265,7 +275,8 @@ const LEGACY_MMAP_FLAGS: MMapFlags = MMapFlags::MAP_FIXED
     .union(MMapFlags::MAP_POPULATE)
     .union(MMapFlags::MAP_NONBLOCK)
     .union(MMapFlags::MAP_STACK)
-    .union(MMapFlags::MAP_HUGETLB);
+    .union(MMapFlags::MAP_HUGETLB)
+    .union(ARCH_LEGACY_MMAP_FLAGS);
 
 impl MMapFlags {
     pub(self) fn is_fixed(self) -> bool {

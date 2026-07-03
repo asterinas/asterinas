@@ -90,6 +90,14 @@ pub enum VmarMapOffset {
     /// Otherwise, it can be placed at any available offset where there are no
     /// conflict mappings.
     Hint(usize),
+    /// The new mapping will be placed in the first 2 GiB of the address space.
+    ///
+    /// If the hint is `Some(addr)`, the allocator tries `addr` first, then
+    /// falls back to a constrained search if it fails (provided the region
+    /// `[addr, addr + size)` is within the first 2 GiB; otherwise, an error
+    /// is returned). If `None`, it directly searches below 2 GiB.
+    #[cfg(target_arch = "x86_64")]
+    Map32Bit(Option<usize>),
     /// The new mapping can be placed at any available offset where there are
     /// no conflict mappings.
     Any,
@@ -320,6 +328,20 @@ impl<'a> VmarMapOptions<'a> {
                     inner.alloc_free_region(map_size, align)?.start
                 }
             }
+            #[cfg(target_arch = "x86_64")]
+            VmarMapOffset::Map32Bit(addr_hint) => {
+                use super::{MAP_32BIT_HIGH_LIMIT, VMAR_LOWEST_ADDR};
+
+                if let Some(addr) = addr_hint
+                    && (VMAR_LOWEST_ADDR..MAP_32BIT_HIGH_LIMIT).contains(&addr)
+                    && map_size <= MAP_32BIT_HIGH_LIMIT - addr
+                    && inner.alloc_free_region_exact(addr, map_size).is_ok()
+                {
+                    addr
+                } else {
+                    inner.alloc_free_region_below_2gib(map_size, align)?.start
+                }
+            }
             VmarMapOffset::Any => inner.alloc_free_region(map_size, align)?.start,
         };
 
@@ -399,6 +421,17 @@ impl<'a> VmarMapOptions<'a> {
             VmarMapOffset::FixedReplace(offset)
             | VmarMapOffset::FixedNoReplace(offset)
             | VmarMapOffset::Hint(offset) => {
+                debug_assert!(offset.is_multiple_of(self.align));
+                if !offset.is_multiple_of(self.align) {
+                    return_errno_with_message!(Errno::EINVAL, "invalid offset");
+                }
+            }
+            #[cfg(target_arch = "x86_64")]
+            VmarMapOffset::Map32Bit(offset_opt) => {
+                let Some(offset) = offset_opt else {
+                    return Ok(());
+                };
+
                 debug_assert!(offset.is_multiple_of(self.align));
                 if !offset.is_multiple_of(self.align) {
                     return_errno_with_message!(Errno::EINVAL, "invalid offset");
