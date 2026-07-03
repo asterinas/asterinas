@@ -9,10 +9,7 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::credentials::{
-        AMBIENT_CAPSET,
-        capabilities::{AtomicCapSet, CapSet},
-    },
+    process::credentials::capabilities::{AtomicCapSet, CapSet},
 };
 
 #[derive(Debug)]
@@ -72,6 +69,9 @@ pub(super) struct Credentials_ {
     /// Capabilities that limit privileges granted during `execve()` and may be added to the
     /// inheritable set.
     bounding_capset: AtomicCapSet,
+    /// Capabilities that are preserved across non-privileged `execve()` and automatically added to
+    /// the permitted and effective sets for the new program.
+    ambient_capset: AtomicCapSet,
 
     /// Secure bits.
     securebits: AtomicSecureBits,
@@ -99,6 +99,7 @@ impl Credentials_ {
             permitted_capset: AtomicCapSet::new(capset),
             effective_capset: AtomicCapSet::new(capset),
             bounding_capset: AtomicCapSet::new(CapSet::all()),
+            ambient_capset: AtomicCapSet::new(CapSet::empty()),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
         }
     }
@@ -208,8 +209,9 @@ impl Credentials_ {
 
         let new_permitted = (self.inheritable_capset() & file_inheritable)
             | (file_permitted & self.bounding_capset())
-            | AMBIENT_CAPSET;
-        let new_effective = (file_effective & new_permitted) | (!file_effective & AMBIENT_CAPSET);
+            | self.ambient_capset();
+        let new_effective =
+            (file_effective & new_permitted) | (!file_effective & self.ambient_capset());
 
         self.set_permitted_capset(new_permitted);
         self.set_effective_capset(new_effective);
@@ -305,11 +307,12 @@ impl Credentials_ {
 
         let had_root = old_ruid.is_root() || old_euid.is_root() || old_suid.is_root();
         let all_nonroot = !new_ruid.is_root() && !new_euid.is_root() && !new_suid.is_root();
-        if had_root && all_nonroot && !self.keep_capabilities() {
-            self.set_permitted_capset(CapSet::empty());
-            self.set_inheritable_capset(CapSet::empty());
-            // TODO: Clear ambient capabilities when we support it. Note that ambient capabilities
-            // should be cleared even if `keep_capabilities` is true.
+        if had_root && all_nonroot {
+            self.clear_ambient_capset();
+            if !self.keep_capabilities() {
+                self.set_permitted_capset(CapSet::empty());
+                self.set_inheritable_capset(CapSet::empty());
+            }
         }
 
         if old_euid.is_root() && !new_euid.is_root() {
@@ -528,16 +531,59 @@ impl Credentials_ {
     pub(super) fn set_inheritable_capset(&self, inheritable_capset: CapSet) {
         self.inheritable_capset
             .store(inheritable_capset, Ordering::Relaxed);
+        self.ambient_capset.store(
+            self.ambient_capset() & inheritable_capset,
+            Ordering::Relaxed,
+        );
     }
 
     pub(super) fn set_permitted_capset(&self, permitted_capset: CapSet) {
         self.permitted_capset
             .store(permitted_capset, Ordering::Relaxed);
+        self.ambient_capset
+            .store(self.ambient_capset() & permitted_capset, Ordering::Relaxed);
     }
 
     pub(super) fn set_effective_capset(&self, effective_capset: CapSet) {
         self.effective_capset
             .store(effective_capset, Ordering::Relaxed);
+    }
+
+    pub(super) fn ambient_capset(&self) -> CapSet {
+        self.ambient_capset.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn raise_ambient_capability(&self, capability: CapSet) -> Result<()> {
+        if self.securebits().no_cap_ambient_raise() {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "raising ambient capabilities is forbidden by securebits"
+            );
+        }
+
+        if !self.permitted_capset().contains(capability)
+            || !self.inheritable_capset().contains(capability)
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "capability must be present in both permitted and inheritable sets"
+            );
+        }
+
+        self.ambient_capset
+            .store(self.ambient_capset() | capability, Ordering::Relaxed);
+
+        Ok(())
+    }
+
+    pub(super) fn lower_ambient_capability(&self, capability: CapSet) {
+        self.ambient_capset
+            .store(self.ambient_capset() - capability, Ordering::Relaxed);
+    }
+
+    pub(super) fn clear_ambient_capset(&self) {
+        self.ambient_capset
+            .store(CapSet::empty(), Ordering::Relaxed);
     }
 
     fn set_bounding_capset(&self, bounding_capset: CapSet) {
@@ -607,6 +653,7 @@ impl Clone for Credentials_ {
             permitted_capset: self.permitted_capset.clone(),
             effective_capset: self.effective_capset.clone(),
             bounding_capset: self.bounding_capset.clone(),
+            ambient_capset: self.ambient_capset.clone(),
             securebits: self.securebits.clone(),
         }
     }

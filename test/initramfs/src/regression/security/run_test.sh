@@ -4,6 +4,7 @@
 
 set -e
 
+./capability/ambient
 ./capability/capabilities
 ./capability/capset
 ./capability/execve
