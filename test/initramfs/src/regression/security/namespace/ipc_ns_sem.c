@@ -20,6 +20,10 @@
 
 // A unique key for semaphore creation.
 #define SEM_KEY_BASE 0x1234
+#define SETNS_PARENT_SEM_KEY (SEM_KEY_BASE + 100)
+#define SETNS_CHILD_SEM_KEY (SEM_KEY_BASE + 101)
+#define SETNS_NSFS_PARENT_SEM_KEY (SEM_KEY_BASE + 102)
+#define SETNS_NSFS_CHILD_SEM_KEY (SEM_KEY_BASE + 103)
 
 union semun {
 	int val;
@@ -247,6 +251,112 @@ FN_TEST(sem_same_key_across_namespaces)
 
 	free(stack1);
 	free(stack2);
+}
+END_TEST()
+
+FN_TEST(sem_setns_via_pidfd)
+{
+	int initial_ipc_ns_fd = TEST_SUCC(open("/proc/self/ns/ipc", O_RDONLY));
+
+	int parent_semid = TEST_SUCC(create_sem(SETNS_PARENT_SEM_KEY));
+	TEST_SUCC(set_sem_val(parent_semid, 33));
+
+	int pipefd[2];
+	TEST_SUCC(pipe(pipefd));
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		CHECK(close(pipefd[0]));
+		CHECK(unshare(CLONE_NEWIPC));
+
+		int child_semid = CHECK(create_sem(SETNS_CHILD_SEM_KEY));
+		CHECK(set_sem_val(child_semid, 88));
+
+		char ok = 'K';
+		CHECK(write(pipefd[1], &ok, 1));
+		CHECK(close(pipefd[1]));
+
+		pause();
+		_exit(0);
+	}
+
+	TEST_SUCC(close(pipefd[1]));
+	char ok;
+	TEST_RES(read(pipefd[0], &ok, 1), _ret == 1 && ok == 'K');
+	TEST_SUCC(close(pipefd[0]));
+
+	TEST_ERRNO(get_sem(SETNS_CHILD_SEM_KEY), ENOENT);
+
+	int pidfd = TEST_SUCC(syscall(SYS_pidfd_open, pid, 0));
+	TEST_SUCC(setns(pidfd, CLONE_NEWIPC));
+
+	TEST_ERRNO(get_sem(SETNS_PARENT_SEM_KEY), ENOENT);
+	int joined_child_semid = TEST_SUCC(get_sem(SETNS_CHILD_SEM_KEY));
+	TEST_RES(get_sem_val(joined_child_semid), _ret == 88);
+	TEST_SUCC(remove_sem(joined_child_semid));
+
+	TEST_SUCC(setns(initial_ipc_ns_fd, CLONE_NEWIPC));
+	TEST_RES(get_sem_val(parent_semid), _ret == 33);
+
+	TEST_SUCC(remove_sem(parent_semid));
+	TEST_SUCC(close(pidfd));
+	TEST_SUCC(close(initial_ipc_ns_fd));
+	TEST_SUCC(kill(pid, SIGKILL));
+	TEST_SUCC(waitpid(pid, NULL, 0));
+}
+END_TEST()
+
+FN_TEST(sem_setns_via_nsfs)
+{
+	int initial_ipc_ns_fd = TEST_SUCC(open("/proc/self/ns/ipc", O_RDONLY));
+
+	int parent_semid = TEST_SUCC(create_sem(SETNS_NSFS_PARENT_SEM_KEY));
+	TEST_SUCC(set_sem_val(parent_semid, 44));
+
+	int pipefd[2];
+	TEST_SUCC(pipe(pipefd));
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		CHECK(close(pipefd[0]));
+		CHECK(unshare(CLONE_NEWIPC));
+
+		int child_semid = CHECK(create_sem(SETNS_NSFS_CHILD_SEM_KEY));
+		CHECK(set_sem_val(child_semid, 99));
+
+		char ok = 'K';
+		CHECK(write(pipefd[1], &ok, 1));
+		CHECK(close(pipefd[1]));
+
+		pause();
+		_exit(0);
+	}
+
+	TEST_SUCC(close(pipefd[1]));
+	char ok;
+	TEST_RES(read(pipefd[0], &ok, 1), _ret == 1 && ok == 'K');
+	TEST_SUCC(close(pipefd[0]));
+
+	TEST_ERRNO(get_sem(SETNS_NSFS_CHILD_SEM_KEY), ENOENT);
+
+	char ns_path[64];
+	snprintf(ns_path, sizeof(ns_path), "/proc/%d/ns/ipc", pid);
+	int child_ipc_ns_fd = TEST_SUCC(open(ns_path, O_RDONLY));
+	TEST_SUCC(setns(child_ipc_ns_fd, CLONE_NEWIPC));
+
+	TEST_ERRNO(get_sem(SETNS_NSFS_PARENT_SEM_KEY), ENOENT);
+	int joined_child_semid = TEST_SUCC(get_sem(SETNS_NSFS_CHILD_SEM_KEY));
+	TEST_RES(get_sem_val(joined_child_semid), _ret == 99);
+	TEST_SUCC(remove_sem(joined_child_semid));
+
+	TEST_SUCC(setns(initial_ipc_ns_fd, CLONE_NEWIPC));
+	TEST_RES(get_sem_val(parent_semid), _ret == 44);
+
+	TEST_SUCC(remove_sem(parent_semid));
+	TEST_SUCC(close(child_ipc_ns_fd));
+	TEST_SUCC(close(initial_ipc_ns_fd));
+	TEST_SUCC(kill(pid, SIGKILL));
+	TEST_SUCC(waitpid(pid, NULL, 0));
 }
 END_TEST()
 

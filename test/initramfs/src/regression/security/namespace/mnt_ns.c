@@ -3,14 +3,26 @@
 #define _GNU_SOURCE
 #include <fcntl.h>
 #include <sched.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <sys/mount.h>
-#include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 
+#include "../../common/capability.h"
 #include "../../common/test.h"
 
 #define STACK_SIZE (1024 * 1024)
+
+static int mkdir_if_absent(const char *pathname, mode_t mode)
+{
+	if (mkdir(pathname, mode) < 0 && errno != EEXIST)
+		return -1;
+
+	errno = 0;
+	return 0;
+}
 
 // --- Test for unshare(CLONE_NEWNS) ---
 
@@ -38,8 +50,8 @@ static int unshare_child_fn(void)
 FN_TEST(unshare_newns)
 {
 	// Setup
-	CHECK_WITH(mkdir("/mnt", 0755), _ret >= 0 || errno == EEXIST);
-	CHECK_WITH(mkdir(UNSHARE_MNT, 0755), _ret >= 0 || errno == EEXIST);
+	TEST_SUCC(mkdir_if_absent("/mnt", 0755));
+	TEST_SUCC(mkdir_if_absent(UNSHARE_MNT, 0755));
 
 	TEST_ERRNO(access(UNSHARE_FILE, F_OK), ENOENT);
 
@@ -89,9 +101,9 @@ static int clone_child_fn(void *arg)
 FN_TEST(clone_newns)
 {
 	// Setup
-	CHECK_WITH(mkdir("/mnt", 0755), _ret >= 0 || errno == EEXIST);
-	CHECK_WITH(mkdir(CLONE_PARENT_MNT, 0755), _ret >= 0 || errno == EEXIST);
-	CHECK_WITH(mkdir(CLONE_CHILD_MNT, 0755), _ret >= 0 || errno == EEXIST);
+	TEST_SUCC(mkdir_if_absent("/mnt", 0755));
+	TEST_SUCC(mkdir_if_absent(CLONE_PARENT_MNT, 0755));
+	TEST_SUCC(mkdir_if_absent(CLONE_CHILD_MNT, 0755));
 
 	TEST_SUCC(mount("ramfs_parent", CLONE_PARENT_MNT, "ramfs", 0, ""));
 	int fd = TEST_SUCC(open(PARENT_FILE, O_CREAT | O_WRONLY, 0644));
@@ -145,11 +157,20 @@ static int setns_target_fn(int pipe_write_fd)
 	return 0;
 }
 
+static int setns_shared_fs_child_fn(void *arg)
+{
+	int pid_fd = *(int *)arg;
+
+	CHECK_WITH(setns(pid_fd, CLONE_NEWNS), _ret < 0 && errno == EINVAL);
+
+	return 0;
+}
+
 FN_TEST(setns_newns)
 {
 	// Setup
-	CHECK_WITH(mkdir("/mnt", 0755), _ret >= 0 || errno == EEXIST);
-	CHECK_WITH(mkdir(SETNS_MNT, 0755), _ret >= 0 || errno == EEXIST);
+	TEST_SUCC(mkdir_if_absent("/mnt", 0755));
+	TEST_SUCC(mkdir_if_absent(SETNS_MNT, 0755));
 
 	int pipefd[2];
 	TEST_SUCC(pipe(pipefd));
@@ -157,15 +178,15 @@ FN_TEST(setns_newns)
 	pid_t child_pid = TEST_SUCC(fork());
 
 	if (child_pid == 0) {
-		close(pipefd[0]);
+		CHECK(close(pipefd[0]));
 		exit(setns_target_fn(pipefd[1]));
 	}
 
-	close(pipefd[1]);
+	TEST_SUCC(close(pipefd[1]));
 
 	char buf[10];
 	TEST_SUCC(read(pipefd[0], &buf, 1));
-	close(pipefd[0]);
+	TEST_SUCC(close(pipefd[0]));
 
 	int pid_fd = TEST_SUCC(syscall(SYS_pidfd_open, child_pid, 0));
 
@@ -192,6 +213,145 @@ FN_TEST(setns_newns)
 }
 END_TEST()
 
+FN_TEST(setns_newns_from_ns_file)
+{
+	// Setup
+	TEST_SUCC(mkdir_if_absent("/mnt", 0755));
+	TEST_SUCC(mkdir_if_absent(SETNS_MNT, 0755));
+	int initial_mnt_ns_fd = TEST_SUCC(open("/proc/self/ns/mnt", O_RDONLY));
+
+	int pipefd[2];
+	TEST_SUCC(pipe(pipefd));
+
+	pid_t child_pid = TEST_SUCC(fork());
+
+	if (child_pid == 0) {
+		CHECK(close(pipefd[0]));
+		exit(setns_target_fn(pipefd[1]));
+	}
+
+	TEST_SUCC(close(pipefd[1]));
+
+	char ok;
+	TEST_RES(read(pipefd[0], &ok, 1), _ret == 1 && ok == 'K');
+	TEST_SUCC(close(pipefd[0]));
+
+	char buf[64];
+	snprintf(buf, sizeof(buf), "/proc/%d/ns/mnt", child_pid);
+	int ns_fd = TEST_SUCC(open(buf, O_RDONLY));
+
+	TEST_SUCC(chdir("/mnt"));
+	TEST_SUCC(setns(ns_fd, CLONE_NEWNS));
+	TEST_RES(getcwd(buf, sizeof(buf)), strcmp(buf, "/") == 0);
+
+	TEST_SUCC(close(ns_fd));
+
+	// Check if we can see the file created by the child in its namespace.
+	TEST_SUCC(access(SETNS_FILE, F_OK));
+
+	// Teardown
+	TEST_SUCC(kill(child_pid, SIGKILL));
+	TEST_SUCC(waitpid(child_pid, NULL, 0));
+
+	TEST_SUCC(umount(SETNS_MNT));
+	TEST_SUCC(setns(initial_mnt_ns_fd, CLONE_NEWNS));
+	TEST_SUCC(close(initial_mnt_ns_fd));
+	TEST_SUCC(rmdir(SETNS_MNT));
+}
+END_TEST()
+
+FN_TEST(setns_newns_rejects_shared_fs)
+{
+	// Setup
+	TEST_SUCC(mkdir_if_absent("/mnt", 0755));
+	TEST_SUCC(mkdir_if_absent(SETNS_MNT, 0755));
+
+	int pipefd[2];
+	TEST_SUCC(pipe(pipefd));
+
+	pid_t child_pid = TEST_SUCC(fork());
+
+	if (child_pid == 0) {
+		CHECK(close(pipefd[0]));
+		exit(setns_target_fn(pipefd[1]));
+	}
+
+	TEST_SUCC(close(pipefd[1]));
+
+	char ok;
+	TEST_RES(read(pipefd[0], &ok, 1), _ret == 1 && ok == 'K');
+	TEST_SUCC(close(pipefd[0]));
+
+	int pid_fd = TEST_SUCC(syscall(SYS_pidfd_open, child_pid, 0));
+
+	char *stack = TEST_SUCC(malloc(STACK_SIZE));
+	char *stack_top = stack + STACK_SIZE;
+	pid_t test_pid = TEST_SUCC(clone(setns_shared_fs_child_fn, stack_top,
+					 CLONE_FS | SIGCHLD, &pid_fd));
+
+	int status;
+	TEST_RES(waitpid(test_pid, &status, 0),
+		 _ret == test_pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == 0);
+
+	TEST_SUCC(close(pid_fd));
+
+	// Teardown
+	free(stack);
+	TEST_SUCC(kill(child_pid, SIGKILL));
+	TEST_SUCC(waitpid(child_pid, NULL, 0));
+
+	TEST_SUCC(rmdir(SETNS_MNT));
+}
+END_TEST()
+
+FN_TEST(setns_newns_requires_cap_sys_chroot)
+{
+	// Setup
+	TEST_SUCC(mkdir_if_absent("/mnt", 0755));
+	TEST_SUCC(mkdir_if_absent(SETNS_MNT, 0755));
+
+	int pipefd[2];
+	TEST_SUCC(pipe(pipefd));
+
+	pid_t child_pid = TEST_SUCC(fork());
+
+	if (child_pid == 0) {
+		CHECK(close(pipefd[0]));
+		exit(setns_target_fn(pipefd[1]));
+	}
+
+	TEST_SUCC(close(pipefd[1]));
+
+	char ok;
+	TEST_RES(read(pipefd[0], &ok, 1), _ret == 1 && ok == 'K');
+	TEST_SUCC(close(pipefd[0]));
+
+	int pid_fd = TEST_SUCC(syscall(SYS_pidfd_open, child_pid, 0));
+
+	pid_t test_pid = TEST_SUCC(fork());
+	if (test_pid == 0) {
+		drop_capability(CAP_SYS_CHROOT);
+		CHECK_WITH(setns(pid_fd, CLONE_NEWNS),
+			   _ret < 0 && errno == EPERM);
+		exit(0);
+	}
+
+	int status;
+	TEST_RES(waitpid(test_pid, &status, 0),
+		 _ret == test_pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == 0);
+
+	TEST_SUCC(close(pid_fd));
+
+	// Teardown
+	TEST_SUCC(kill(child_pid, SIGKILL));
+	TEST_SUCC(waitpid(child_pid, NULL, 0));
+
+	TEST_SUCC(rmdir(SETNS_MNT));
+}
+END_TEST()
+
 #define COMPLEX_BASE "/test0"
 #define COMPLEX_CONTENT "/test0/content"
 #define COMPLEX_FILE "/test0/content/hello.txt"
@@ -199,7 +359,7 @@ END_TEST()
 FN_TEST(complex_mount_tree_unshare)
 {
 	// Setup: Create directory structure
-	CHECK_WITH(mkdir(COMPLEX_BASE, 0755), _ret >= 0 || errno == EEXIST);
+	TEST_SUCC(mkdir_if_absent(COMPLEX_BASE, 0755));
 
 	// Mount tmpfs on test0 (first layer)
 	TEST_SUCC(mount("none", COMPLEX_BASE, "tmpfs", 0, ""));
@@ -225,21 +385,21 @@ FN_TEST(complex_mount_tree_unshare)
 	pid_t pid = TEST_SUCC(fork());
 
 	if (pid == 0) {
-		TEST_SUCC(unshare(CLONE_NEWNS));
+		CHECK(unshare(CLONE_NEWNS));
 
 		// Try to read the file created in the parent's mount tree
 		int fd = CHECK(open(COMPLEX_FILE, O_RDONLY));
 
 		char buf[32] = { 0 };
-		TEST_SUCC(read(fd, buf, sizeof(buf) - 1));
-		TEST_SUCC(close(fd));
+		CHECK(read(fd, buf, sizeof(buf) - 1));
+		CHECK(close(fd));
 
 		// Verify the content
 		CHECK_WITH(strcmp(buf, "hello world\n"), _ret == 0);
 
 		// Verify we can still access the nested mount structure
-		TEST_SUCC(access(COMPLEX_CONTENT, F_OK));
-		TEST_SUCC(access(COMPLEX_BASE, F_OK));
+		CHECK(access(COMPLEX_CONTENT, F_OK));
+		CHECK(access(COMPLEX_BASE, F_OK));
 
 		exit(0);
 	} else {
