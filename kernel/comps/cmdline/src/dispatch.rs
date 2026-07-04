@@ -16,6 +16,8 @@ use alloc::{
 use component::{ComponentInitError, init_component};
 use spin::Once;
 
+use crate::early::is_early_param;
+
 /// The arguments passed to the init process, extracted from the kernel command line.
 #[derive(Debug, PartialEq)]
 pub struct InitprocArgs {
@@ -146,6 +148,9 @@ fn dispatch_params(cmdline: &str) -> InitprocArgs {
                     occurrences.1 = pos;
                 })
                 .or_insert_with(|| (vec![value], pos));
+        } else if is_early_param(normalized.as_str()) {
+            // Handled by OSTD during bootstrap: do not forward to init
+            continue;
         } else {
             // Unknown parameter: forward to init
             if key.contains('.') {
@@ -217,6 +222,13 @@ mod tests {
 
         assert_eq!(args.argv.len(), 1);
         assert_eq!(args.argv[0].to_bytes(), b"unknown_key");
+    }
+
+    #[ktest]
+    fn early_params_not_forwarded() {
+        let args = dispatch_params("earlycon loglevel=3");
+        assert!(args.argv().is_empty());
+        assert!(args.envp().is_empty());
     }
 
     #[ktest]
