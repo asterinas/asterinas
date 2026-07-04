@@ -4,6 +4,13 @@
 
 KERNEL_VMA             = 0xffffffff00000000
 
+# The base address of the DRAM.
+#
+# This is necessary because the AArch64 Linux boot protocol only allows the
+# text offset to be specified relative to the DRAM base. We may want to figure
+# out a better way since this constant is likely specific to QEMU.
+DRAM_BASE              = 0x40000000
+
 # Translation Control Register (TCR)
 #
 # Bits separated for:    [  TTBR1  ]   [  TTBR0  ]
@@ -35,9 +42,49 @@ PTE_SIZE               = 8
 
 .section ".boot", "awx", @progbits
 
+# AArch64 Linux Boot Protocol
+# Reference: <https://www.kernel.org/doc/html/v7.1/arch/arm64/booting.html#call-the-kernel-image>
+_header:
+    bl      _start               // Executable code
+_header_4:
+    .long   0                    // Executable code
+    .quad   _header - DRAM_BASE  // Image load offset, little endian
+.extern __kernel_size
+    .quad   __kernel_size        // Effective image size, little endian
+    .quad   0b0010               // Kernel flags, little endian
+                                 //   Endianness: LE (Bit 0, value 0)
+                                 //   Page size: 4K (Bit 1-2, value 1)
+                                 //   Physical placement: close to the DRAM base (Bit 3, value 0)
+    .quad   0                    // Reserved
+    .quad   0                    // Reserved
+    .quad   0                    // Reserved
+    .long   0x644d5241           // Magic number, little endian, "ARM\x64"
+    .long   0                    // Reserved
+
 # `_start` is also the entrypoint specified in the linker script.
 .global _start
 _start:
+    # Arguments passed from the boot loader:
+    #   x0 = physical address of device tree blob (dtb) in system RAM
+    #   x1 = 0 (reserved for future use)
+    #   x2 = 0 (reserved for future use)
+    #   x3 = 0 (reserved for future use)
+    # We do not touch them here. They are passed to the Rust entrypoint `arm_boot`.
+
+    # Die if the kernel is loaded at a wrong address.
+    # We need to relocate, which is not supported.
+    ldr     x4, =_header_4
+    cmp     x4, x30
+die_load_address:
+    b.ne    die_load_address
+
+    # Die if the kernel is executed at a wrong exception level.
+    # We do not support exception levels other than EL1.
+    mrs     x4, currentel
+    cmp     x4, #(0b01 << 2)  // EL, bits [3:2]: 01 = EL1
+die_exception_level:
+    b.ne    die_exception_level
+
     # Set up translation control.
     ldr     x4, =(TCR_TG_4K | TCR_SH_INNER | TCR_ORGN_WBWA | TCR_IRGN_WBWA | TCR_TSZ_48 | TCR_IPS_48)
     msr     tcr_el1, x4
