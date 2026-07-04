@@ -53,82 +53,22 @@ Set `TARGET_ARCH` to `x86_64` (default), `riscv64`, or `loongarch64`.
 
 ## Coding Guidelines
 
-The full coding guidelines live in
-`book/src/to-contribute/coding-guidelines/`.
-Below is a condensed summary of the most important rules.
+The coding guidelines are the authoritative standard
+for both **writing** and **reviewing** code.
+The guidelines are organized by **persona**:
+five durable engineering roles,
+each a page whose Index doubles as that persona's review checklist.
+Consult the persona whose concern matches your change.
+Each Index lists every guideline as a stable `short-name` paired with a one-line gist,
+so you can grasp a rule from the table and open its full text only when needed.
 
-### General
-
-- **Be descriptive.** No single-letter names or ambiguous abbreviations.
-- **Explain why, not what.** Comments that restate code are noise.
-- **One concept per file.** Split when files grow long.
-- **Organize for top-down reading.** High-level entry points first.
-- **Hide implementation details.** Narrowest visibility by default.
-- **Validate at boundaries, trust internally.**
-  Validate at syscall entry; trust already-validated values inside.
-
-### Rust
-
-- **Naming:** CamelCase with title-cased acronyms (`IoMemoryArea`).
-  Closure variables end in `_fn`.
-- **Functions:** Keep small and focused; minimize nesting (max 3 levels);
-  use early returns, `let...else`, and `?`.
-  Avoid boolean arguments — use an enum or split into two functions.
-- **Types:** Use types to enforce invariants.
-  Prefer enums over trait objects for closed sets.
-  Encapsulate fields behind getters.
-- **Unsafety:**
-  - Every `unsafe` block requires a `// SAFETY:` comment.
-  - Every `unsafe fn` or `unsafe trait` requires a `# Safety` doc section.
-  - All crates under `kernel/` must have `#![deny(unsafe_code)]`.
-    Only `ostd/` may contain unsafe code.
-- **Modules:** Default to `pub(super)` or `pub(crate)`;
-  use `pub` only when truly needed.
-  Import free functions and statics via parent module
-  (`use std::mem;` then `mem::replace()`),
-  not directly (`use std::mem::replace;` then `replace()`).
-  Always use `workspace.dependencies`.
-- **Error handling:** Propagate errors with `?`.
-  Do not `.unwrap()` where failure is possible.
-- **Logging:** Use OSTD logging macros only (`debug!`..`emerg!`).
-  Import via `use ostd::prelude::*`. No `println!` in production code.
-- **Concurrency:** Establish and document lock order.
-  Never do I/O or blocking under a spinlock.
-  Avoid casual use of atomics.
-- **Performance:** Avoid O(n) on hot paths.
-  Minimize unnecessary copies, allocations, and `Arc::clone`s.
-  No premature optimization without benchmark evidence.
-- **Macros and attributes:** Prefer functions over macros.
-  Suppress lints at the narrowest scope.
-  Prefer `#[expect(...)]` over `#[allow(...)]`.
-  Sort non-derive outer attributes alphabetically;
-  place `#[derive(...)]` last with traits sorted alphabetically.
-- **Doc comments:** First line uses third-person singular present
-  ("Returns", "Creates"). End sentence comments with punctuation.
-  Wrap identifiers in backticks.
-- **Arithmetic:** Use checked or saturating arithmetic.
-
-### Git
-
-- **Subject line:** Imperative mood, at or below 72 characters.
-  Common prefixes: `Fix`, `Add`, `Remove`, `Refactor`, `Rename`,
-  `Implement`, `Enable`, `Clean up`, `Bump`.
-- **Atomic commits:** One logical change per commit.
-- **Separate refactoring from features** into distinct commits.
-- **Focused PRs:** One topic per PR. Ensure CI passes before review.
-
-### Testing
-
-- **Add regression tests for every bug fix** (with issue reference).
-- **Test user-visible behavior** through public APIs, not internals.
-- **Use assertion macros**, not manual output inspection.
-- **Clean up resources** after every test (fds, temp files, child processes).
-
-### Assembly
-
-- Use `.balign` over `.align` for unambiguous byte-count alignment.
-- Add `.type` and `.size` for Rust-callable functions.
-- Use unique label prefixes to avoid name clashes in `global_asm!`.
+| Persona | Focus | Index |
+|---|---|---|
+| Project maintainer | Is the code well-shaped and understandable? | [For Maintainability](book/src/to-contribute/coding-guidelines/for-maintainability/README.md) |
+| Kernel developer | Is it correct and efficient? | [For Development](book/src/to-contribute/coding-guidelines/for-development/README.md) |
+| Security expert | Is it safe and secure? | [For Security](book/src/to-contribute/coding-guidelines/for-security/README.md) |
+| Hardware expert | Is it correct against the hardware contract? | [For Hardware](book/src/to-contribute/coding-guidelines/for-hardware/README.md) |
+| Documentation writer | Are the user-facing docs well-written? | [For Documentation](book/src/to-contribute/coding-guidelines/for-documentation/README.md) |
 
 ## Architecture Notes
 
