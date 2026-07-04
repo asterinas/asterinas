@@ -1,2 +1,2 @@
 // Reassociate thread with a namespace
-setns(fd, ns_type = CLONE_NEWNS | CLONE_NEWUTS);
+setns(fd, ns_type = CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWUTS);
