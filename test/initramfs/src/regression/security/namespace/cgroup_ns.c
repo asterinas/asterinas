@@ -323,6 +323,37 @@ FN_TEST(setns_revirtualizes_proc_cgroup)
 END_TEST()
 
 /*
+ * Joining a cgroup namespace through its nsfs fd should have the same
+ * re-virtualization effect as joining through a pidfd.
+ */
+FN_TEST(setns_nsfs_revirtualizes_proc_cgroup)
+{
+	char ns_path[64];
+	ino_t child_ns;
+	ino_t joined_ns;
+	pid_t child;
+	int nsfd;
+
+	TEST_SUCC(move_pid_to_cgroup(TEST_BASE_CGROUP, getpid()));
+	TEST_SUCC(check_proc_cgroup(getpid(), "0::/cgns-base\n"));
+
+	child = spawn_paused_process(TEST_BASE_CGROUP, MOVE_TO_NEW_CGROUP_NS);
+	TEST_SUCC(read_process_cgroup_ns_inode(child, &child_ns));
+
+	snprintf(ns_path, sizeof(ns_path), "/proc/%d/ns/cgroup", child);
+	nsfd = TEST_SUCC(open(ns_path, O_RDONLY));
+	TEST_SUCC(setns(nsfd, CLONE_NEWCGROUP));
+
+	TEST_RES(read_self_cgroup_ns_inode(&joined_ns), joined_ns == child_ns);
+	TEST_SUCC(check_proc_cgroup(getpid(), "0::/\n"));
+
+	TEST_SUCC(reset_self());
+	TEST_SUCC(close(nsfd));
+	kill_paused_process(child);
+}
+END_TEST()
+
+/*
  * A fresh `cgroup2` mount inside a cgroup namespace starts at the namespace
  * root, so descendants below that root stay visible and siblings above it do
  * not appear in the mount tree.

@@ -365,6 +365,7 @@ FN_TEST(lifetime)
 	user_ns_fd = TEST_SUCC(ioctl(nsfd, NS_GET_USERNS));
 	TEST_SUCC(close(user_ns_fd));
 	TEST_SUCC(setns(nsfd, 0));
+	TEST_SUCC(setns(nsfd, CLONE_NEWUTS));
 
 	TEST_SUCC(close(nsfd));
 }
