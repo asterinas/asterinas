@@ -119,74 +119,14 @@ pub use self::{
         __write_log_record, Log, Record, STATIC_MAX_LEVEL, inject_logger, max_level, set_max_level,
     },
 };
+use crate::boot::EarlyCmdline;
 
 /// Initializes the OSTD logging subsystem.
 ///
-/// Parses the `ostd.log_level` kernel command line parameter, sets the
-/// runtime max level, and registers the `log` crate bridge.
-pub(crate) fn init() {
-    let filter = parse_log_level_from_cmdline().unwrap_or(LevelFilter::Off);
-    set_max_level(filter);
-
+/// Sets the runtime max level from [`EarlyCmdline::log_level`] and
+/// registers the `log` crate bridge.
+pub(crate) fn init(early_cmdline: &EarlyCmdline) {
+    set_max_level(early_cmdline.log_level);
     static BRIDGE: LogCrateBridge = LogCrateBridge;
     let _ = ::log::set_logger(&BRIDGE);
-}
-
-fn parse_log_level_from_cmdline() -> Option<LevelFilter> {
-    let kcmdline = crate::boot::EARLY_INFO.get()?.kernel_cmdline;
-
-    let value = kcmdline
-        .split(' ')
-        .find(|arg| arg.starts_with("ostd.log_level="))
-        .map(|arg| arg.split('=').next_back().unwrap_or_default())?;
-
-    parse_level_str(value)
-}
-
-/// Parses a log level string into a [`LevelFilter`].
-///
-/// Accepts: `"off"`, `"emerg"`, `"alert"`, `"crit"`, `"error"`,
-/// `"warn"` / `"warning"`, `"notice"`, `"info"`, `"debug"`.
-/// Returns `None` for unrecognized strings.
-fn parse_level_str(s: &str) -> Option<LevelFilter> {
-    match s {
-        "off" => Some(LevelFilter::Off),
-        "emerg" => Some(LevelFilter::Emerg),
-        "alert" => Some(LevelFilter::Alert),
-        "crit" => Some(LevelFilter::Crit),
-        "error" => Some(LevelFilter::Error),
-        "warn" | "warning" => Some(LevelFilter::Warning),
-        "notice" => Some(LevelFilter::Notice),
-        "info" => Some(LevelFilter::Info),
-        "debug" => Some(LevelFilter::Debug),
-        _ => None,
-    }
-}
-
-#[cfg(ktest)]
-mod test {
-    use super::*;
-    use crate::prelude::*;
-
-    #[ktest]
-    fn parse_level_str_valid() {
-        assert_eq!(parse_level_str("off"), Some(LevelFilter::Off));
-        assert_eq!(parse_level_str("emerg"), Some(LevelFilter::Emerg));
-        assert_eq!(parse_level_str("alert"), Some(LevelFilter::Alert));
-        assert_eq!(parse_level_str("crit"), Some(LevelFilter::Crit));
-        assert_eq!(parse_level_str("error"), Some(LevelFilter::Error));
-        assert_eq!(parse_level_str("warn"), Some(LevelFilter::Warning));
-        assert_eq!(parse_level_str("warning"), Some(LevelFilter::Warning));
-        assert_eq!(parse_level_str("notice"), Some(LevelFilter::Notice));
-        assert_eq!(parse_level_str("info"), Some(LevelFilter::Info));
-        assert_eq!(parse_level_str("debug"), Some(LevelFilter::Debug));
-    }
-
-    #[ktest]
-    fn parse_level_str_invalid() {
-        assert_eq!(parse_level_str("trace"), None);
-        assert_eq!(parse_level_str(""), None);
-        assert_eq!(parse_level_str("INFO"), None);
-        assert_eq!(parse_level_str("garbage"), None);
-    }
 }

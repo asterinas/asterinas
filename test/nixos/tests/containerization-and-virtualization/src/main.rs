@@ -107,7 +107,7 @@ fn qemu_tcg_run_aster(nixos_shell: &mut Session) -> Result<(), Error> {
         "-initrd /run/current-system/initrd ",
         "-device isa-debug-exit,iobase=0xf4,iosize=0x04 ",
         "-nographic -no-reboot ",
-        "-append 'console=ttyS0 panic=-1 init=/bin/echo Entered userspace' ",
+        "-append 'earlycon console=ttyS0 panic=-1 init=/bin/echo Entered userspace' ",
         "| grep -v /bin/echo"
     );
     nixos_shell.run_cmd_and_expect(CMD, "Entered userspace")?;

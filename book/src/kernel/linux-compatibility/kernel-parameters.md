@@ -58,26 +58,58 @@ virtio_mmio.device=1K@0x1001e000:74
 ```
 
 ## Asterinas-specific
+### `earlycon`
 
-### `ostd.log_level`
-
-Set the verbosity level for Asterinas's logs.
-
-Valid values (from most to least severe):
-- `off`
-- `emerg`
-- `alert`
-- `crit`
-- `error`
-- `warn` (alias: `warning`)
-- `notice`
-- `info`
-- `debug`
+Enable the early console to output logs during the early stages of system boot.
+The name follows Linux's `earlycon` parameter.
+Asterinas currently supports a simplified form.
 
 Example:
 ```text
-ostd.log_level=error
+earlycon
 ```
+
+Notes:
+- If omitted, the early console stays disabled.
+- Only the bare `earlycon` token is supported;
+  complex Linux forms such as `earlycon=uart8250,io,0x3f8,115200` are not supported yet.
+
+### `loglevel`
+
+Control how verbose kernel log output is on the console.
+Set either a numeric value (`0` to `8`) or a lowercase level name.
+
+Each value acts as a cutoff: messages at that severity and all more urgent levels are printed.
+For example, `loglevel=4` shows emergencies through errors, but not warnings or routine info.
+
+This uses the same `0`–`8` scale as the Linux kernel `loglevel` parameter,
+with string aliases for convenience.
+
+| Value | Name(s)            | Messages shown              |
+|------:|--------------------|-----------------------------|
+| `0`   | `off`              | None                        |
+| `1`   | `emerg`            | Emerg only                  |
+| `2`   | `alert`            | Emerg through Alert         |
+| `3`   | `crit`             | Emerg through Crit          |
+| `4`   | `error`, `err`     | Emerg through Error         |
+| `5`   | `warning`, `warn`  | Emerg through Warning       |
+| `6`   | `notice`           | Emerg through Notice        |
+| `7`   | `info`             | Emerg through Info          |
+| `8`   | `debug`            | All levels (most verbose)   |
+
+Example:
+```text
+loglevel=4
+loglevel=error
+```
+
+Notes:
+- Level names are case-sensitive; use lowercase names.
+- If omitted, the default is `8` (`debug`). Invalid values are ignored.
+- Use `warn` for normal operation, `info`/`debug` when troubleshooting, 
+  and `error` or lower for a quieter console.
+
+## Asterinas-specific
 
 ### `i8042.exist`
 
