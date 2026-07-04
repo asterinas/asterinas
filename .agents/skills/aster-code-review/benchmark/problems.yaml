@@ -415,6 +415,82 @@
         private fields with getters or another checked interface that preserves
         the parser invariants.
 
+- problem_id: 0200-i8042-keyboard-controller-protocol
+  commit: 2c4da30fe3dbccef31e92bd940361fb86b4f9f58
+  source: >
+    PR-derived. PR #2054 added i8042 controller support in `2c4da30fe`; review
+    comment `r2158245414` identified that controller I/O is performed without
+    checking the status register before reads or writes. This expanded variant
+    uses the same reviewed surface and covers three protocol/concurrency defects
+    in that diff: the controller error predicate misses single hardware error
+    bits, the IRQ input parser reads port `0x60` before checking for available
+    data, and the IRQ callback path invokes callbacks while holding an
+    IRQ-disabling spinlock. The reviewed surface is that real intermediate
+    commit, fetched by full SHA from the default upstream; the later
+    wait/send/receive helpers are outside the reviewer input.
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/comps/keyboard/src/i8042_chip/controller.rs }
+      persona: development
+      grounding: "Wrong predicate"
+      severity: major
+      desc: >
+        `Status::has_error` uses
+        `contains(Self::SYSTEM_FLAG | Self::TIME_OUT_ERROR | Self::PARITY_ERROR)`.
+        In `bitflags`, `contains` only returns true when all requested bits are
+        set, so a status with only `TIME_OUT_ERROR` or only `PARITY_ERROR` is
+        treated as clean. The expression also includes `SYSTEM_FLAG`, which is a
+        normal POST/status bit rather than an I/O error bit.
+      fix: >
+        Check only real error bits and use an any-bit predicate, for example
+        `self.intersects(Self::TIME_OUT_ERROR | Self::PARITY_ERROR)`, so either
+        hardware error rejects the scancode or controller reply.
+      expectation: >
+        A reviewer should flag that `Status::has_error` uses `contains` over
+        `SYSTEM_FLAG | TIME_OUT_ERROR | PARITY_ERROR`, thereby missing isolated
+        timeout or parity errors and mixing a normal status bit into error
+        detection.
+    - target: { kind: file, path: kernel/comps/keyboard/src/i8042_chip/keyboard.rs }
+      persona: development
+      grounding: "Invalid read"
+      severity: major
+      desc: >
+        `parse_inputkey` reads `DATA_PORT` before checking
+        `status.has_data_to_read()`. On a spurious IRQ1 or any interrupt where
+        the i8042 output buffer is empty, the code reads port `0x60` first and
+        only then notices that no data was available, consuming an undefined or
+        stale byte before returning `InputKey::Ign`.
+      fix: >
+        Read the status register first. Return before touching `DATA_PORT` when
+        the output buffer is empty or the status reports an error, then read the
+        scan code and validate the scan-code error value.
+      expectation: >
+        A reviewer should flag that the IRQ parser reads from port `0x60` before
+        checking `OUTPUT_BUFFER_IS_FULL` and should require the output-buffer
+        status check to happen before `ScanCode::read`.
+    - target: { kind: file, path: kernel/comps/keyboard/src/i8042_chip/keyboard.rs }
+      persona: development
+      grounding: no-io-under-spinlock
+      severity: major
+      desc: >
+        `handle_keyboard_input` iterates `KEYBOARD_CALLBACKS.lock().iter()` and
+        invokes arbitrary callbacks while holding the callback-list spinlock with
+        local IRQs disabled. The registered framebuffer callback can enter the
+        TTY path and echo input back through `FramebufferConsole::send`, so
+        framebuffer/console work can run while the keyboard callback spinlock is
+        held in interrupt context.
+      fix: >
+        Do not call keyboard callbacks while holding the callback-list spinlock.
+        Store callbacks in an RCU/snapshot-friendly structure, or copy stable
+        callback references out under the lock, drop the guard, and then invoke
+        the callbacks.
+      expectation: >
+        A reviewer should flag that the keyboard IRQ handler invokes callbacks
+        under `KEYBOARD_CALLBACKS`'s IRQ-disabling spinlock and require callback
+        dispatch to happen after releasing that lock.
+
 - problem_id: 0300-file-cap-setuid-root-effective
   commit: f5fc357bbb33de3e2667f217572e65d4bd6fe7e8
   source: >
