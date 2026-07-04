@@ -103,4 +103,5 @@ SECTIONS
     }
 
     __kernel_end = .;
+    __kernel_size = . - __kernel_start;
 }
