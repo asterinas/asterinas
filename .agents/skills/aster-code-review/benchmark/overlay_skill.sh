@@ -9,10 +9,12 @@
 # The overlaid files (.agents, .claude) are untracked at the historical base,
 # so they do NOT show up in a `diff`-mode review.
 #
-# Guideline pages are deliberately NOT copied here:
+# Guideline pages are deliberately NOT copied into the worktree's tracked book/:
 # overwriting the snapshot's tracked book/ would pollute a `diff`-mode review.
-# The harness instead points the skill at current guidelines via ACR_GUIDELINE_ROOT
-# (a guidelines-only tree).
+# Instead, bundle a guidelines-only snapshot inside the overlaid skill package.
+# build_pass_prompt.sh uses that snapshot by default, so the review still uses
+# current guidelines even if the review agent does not preserve ACR_GUIDELINE_ROOT
+# when it later runs shell commands.
 #
 # CRITICAL (benchmark integrity):
 # this EXCLUDES benchmark/, which holds problems.yaml — the answer key.
@@ -26,6 +28,10 @@ rm -rf "$wt/.agents" "$wt/.claude"
 mkdir -p "$wt/.agents/skills"
 cp -r "$SKILL" "$wt/.agents/skills/aster-code-review"
 rm -rf "$wt/.agents/skills/aster-code-review/benchmark"   # <-- drop the answer key
+rm -rf "$wt/.agents/skills/aster-code-review/guideline-root"
+mkdir -p "$wt/.agents/skills/aster-code-review/guideline-root/book/src/to-contribute"
+cp -r "$HERE/../../../../book/src/to-contribute/coding-guidelines" \
+    "$wt/.agents/skills/aster-code-review/guideline-root/book/src/to-contribute/"
 
 # Claude Code discovers skills under .claude/skills; mirror the repo's symlink layout.
 mkdir -p "$wt/.claude/skills"
