@@ -204,14 +204,14 @@ fn set_mnt_ns(
 ) -> Result<()> {
     check_set_ns_perms(target_ns, ctx)?;
 
+    check_current_user_ns_cap(ctx, CapSet::SYS_CHROOT)?;
+
     if ctx.thread_local.is_fs_shared() {
         return_errno_with_message!(
             Errno::EINVAL,
             "setting a mount namespace is not allowed with shared filesystem information"
         );
     }
-
-    // TODO: Are the checks above sufficient?
 
     builder.mnt_ns(target_ns.clone());
 
@@ -231,8 +231,8 @@ fn set_uts_ns(
 }
 
 fn check_set_ns_perms<T: NsCommonOps>(target_ns: &Arc<T>, ctx: &Context) -> Result<()> {
-    // Verify the thread has SYS_ADMIN capability in the target namespace's owner
-    // and the current user namespace.
+    // Verify the thread has `SYS_ADMIN` capability in the target namespace's
+    // owner and in its current user namespace.
     lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
         target_ns.owner_user_ns().unwrap().as_ref(),
         ctx.posix_thread,
@@ -244,7 +244,13 @@ fn check_set_ns_perms<T: NsCommonOps>(target_ns: &Arc<T>, ctx: &Context) -> Resu
         CapSet::SYS_ADMIN,
     ))?;
 
-    // TODO: Are the checks above sufficient?
-
     Ok(())
+}
+
+fn check_current_user_ns_cap(ctx: &Context, cap: CapSet) -> Result<()> {
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        ctx.thread_local.borrow_user_ns().as_ref(),
+        ctx.posix_thread,
+        cap,
+    ))
 }
