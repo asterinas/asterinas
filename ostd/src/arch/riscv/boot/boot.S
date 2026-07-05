@@ -140,16 +140,34 @@ _start:
     add    t2, t1, t2
     sd     t0, 0(t2)
 
-    // L4[511] -> boot_l3pt (non-leaf, V+A).
+    // L4[511] -> boot_l3pt (non-leaf, V only — no A on non-leaf PTE).
+    // Entry 510 is replaced below with a non-leaf pointer to boot_l2_kernel,
+    // a table of 2 MiB leaf pages that QEMU handles correctly in Sv48.
     lla    t0, boot_l3pt
     slli   t0, t0, 32
     srli   t0, t0, 32
     srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
-    ori    t0, t0, PTE_V | PTE_A
+    ori    t0, t0, PTE_V
     // offset = 511 * 8 = 4088.
     li     t2, 4088
     add    t2, t1, t2
     sd     t0, 0(t2)             // L4[511]
+
+    // Replace L3[510]'s 1 GiB leaf with a non-leaf pointer to
+    // boot_l2_kernel.  QEMU 9.x can reject 1 GiB leaf PTEs in Sv48.
+    lla    t0, boot_l2_kernel
+    slli   t0, t0, 32
+    srli   t0, t0, 32
+    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori    t0, t0, PTE_V
+
+    lla    t1, boot_l3pt
+    slli   t1, t1, 32
+    srli   t1, t1, 32
+    // offset = 510 * 8 = 4080.
+    li     t2, 4080
+    add    t2, t1, t2
+    sd     t0, 0(t2)             // L3[510]
 
     SBI_PUTCHAR 'D'
     SBI_SET_TIMER (60 * TIMER_FREQ)
@@ -157,18 +175,20 @@ _start:
     // Synchronise page-table writes before turning on the MMU.
     sfence.vma
 
-    // Emit all markers BEFORE enabling the MMU.  QEMU 8.2.2 has a bug
-    // where Sv48 page walks after an ecall return can fail.  Printing
-    // markers here (with MMU off) avoids triggering that bug.
+    // Emit all markers BEFORE enabling the MMU.
     SBI_PUTCHAR 'J'
     SBI_PUTCHAR 'B'
 
-    // Try Sv48 first — the linear-mapping base (0xFFFF800000000000)
-    // is only canonical under Sv48 and above.
-    lla    t0, boot_l4pt
+    // Try Sv39 first — it works reliably across all QEMU versions.
+    // Sv48 is tried as a fallback for real hardware that requires it.
+    // Under Sv39, paddr_to_vaddr() produces non-canonical addresses,
+    // so early boot uses identity mapping (riscv_boot accesses the DTB
+    // by physical address).  call_ostd_main() replaces the boot page
+    // table with the full kernel PT, after which paddr_to_vaddr() works.
+    lla    t0, boot_l3pt_sv39
     slli   t0, t0, 32
     srli   t0, t0, 32
-    li     t1, SATP_MODE_SV48
+    li     t1, SATP_MODE_SV39
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
     csrw   satp, t0
@@ -178,11 +198,11 @@ _start:
     beq    t0, t1, .Lmmu_ok
     SBI_SET_TIMER (60 * TIMER_FREQ)
 
-    // Try Sv39 fallback.
-    lla    t0, boot_l3pt_sv39
+    // Try Sv48 fallback.
+    lla    t0, boot_l4pt
     slli   t0, t0, 32
     srli   t0, t0, 32
-    li     t1, SATP_MODE_SV39
+    li     t1, SATP_MODE_SV48
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
     csrw   satp, t0
@@ -202,40 +222,48 @@ _start:
 1:  j      1b
 
 .Lmmu_ok:
-    // MMU is now on.  QEMU 8.2.2 / 9.2.4 can both fail Sv48 page walks
-    // for 1 GiB leaf pages after ecall returns.  Work around this by
-    // jumping to riscv_boot at its IDENTITY address (physical == virtual
-    // for the first 128 GiB).  call_ostd_main() replaces the boot page
-    // table with the full kernel PT (4 KiB leaves), after which the
-    // VMA-based linked addresses and paddr_to_vaddr() both work correctly.
+    // MMU is now on.  Kernel VMA uses 2 MiB leaf pages (boot_l2_kernel)
+    // which QEMU 9.2.4 handles correctly including ecall returns.
     SBI_SET_TIMER (90 * TIMER_FREQ)
 
-    // Keep the early trap handler at the PHYSICAL address.  The identity
-    // mapping covers the entire kernel binary, so _early_trap can still
-    // be reached via its physical address.
-    // (stvec was already set to the physical address before MMU on.)
+    // Emit a UART marker 'W' while still using identity mapping.
+    // This confirms the identity PT is valid after MMU enable.
+    // We use a different UART address path (through identity)
+    // to distinguish from the VMA UART marker.
+    li     t2, 0x10000000
+    li     t3, 'W'
+    sb     t3, 0(t2)
 
-    // Use the identity-mapped (physical) addresses for SP, GP, and PC.
-    // These are all below 128 GiB, so the identity mapping works.
+    // Now switch to VMA for the Rust jump.
+    // Move early trap handler to virtual address.
+    lla    t0, _early_trap
+    li     t2, KERNEL_VMA_OFFSET
+    or     t0, t0, t2
+    csrw   stvec, t0
+
+    // Switch SP/PC to the high-half virtual addresses.
+    li     t1, KERNEL_VMA_OFFSET
+
     lla    sp, boot_stack_top
-    slli   sp, sp, 32
-    srli   sp, sp, 32
+    or     sp, sp, t1
 
     lla    gp, __cpu_local_start
-    slli   gp, gp, 32
-    srli   gp, gp, 32
+    or     gp, gp, t1
 
-    // Jump to riscv_boot at its physical (identity-mapped) address.
     lla    t0, riscv_boot
-    slli   t0, t0, 32
-    srli   t0, t0, 32
+    or     t0, t0, t1
     mv     a0, s0
     mv     a1, s1
 
-    // Emit a UART marker right before the jump.
+    // UART marker 'X' before VMA jump.
+    // We're now executing from VMA, so this exercises the kernel
+    // high-half page table via UART MMIO.
     li     t2, 0x10000000
     li     t3, 'X'
     sb     t3, 0(t2)
+
+    // SBI marker 'V' via ecall - QEMU 9.2.4 handles this.
+    SBI_PUTCHAR 'V'
 
     jr     t0
 
@@ -296,15 +324,29 @@ boot_idpt:
     .zero (512 - 128) * PTE_SIZE
 
 // High-half mapping for the kernel.
-// L4[511] selects this table; only the last four entries are populated to
-// cover VA range 0xffffffff00000000..0xffffffffffffffff.
+// L4[511] selects this table.
+// All 512 entries (VPN[2]=0..511) are 1 GiB identity leaves.
+// Entries 0..507 cover VA 0xfffffff000000000..0xfffffffee0000000 -> phys 0..508 GiB
+// Entry 510 is set at runtime to point to boot_l2_kernel (2 MiB leaves)
+// to avoid QEMU 9.x Sv48 1 GiB leaf PTE bugs in the kernel VMA region.
 .balign 4096
 boot_l3pt:
-    .zero 508 * PTE_SIZE
-    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff00000000 -> 0 GiB
-    .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff40000000 -> 1 GiB
-    .quad (0x80000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff80000000 -> 2 GiB (kernel)
-    .quad (0xc0000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffffc0000000 -> 3 GiB
+    .set i, 0
+    .rept 512
+    .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .set i, i + 1
+    .endr
+
+// 2 MiB leaf pages for the kernel VMA region (VPN[2]=510, covering
+// VA 0xffffffff80000000-0xffffffffbfffffff -> phys 0x80000000-0xbfffffff).
+// 512 entries, each covering 2 MiB.
+.balign 4096
+boot_l2_kernel:
+    .set i, 0
+    .rept 512
+    .quad (((0x80000000 >> 21) + i) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .set i, i + 1
+    .endr
 
 // ---- Sv39 fallback page table ----------------------------------------------
 .balign 4096
