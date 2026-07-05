@@ -49,6 +49,8 @@ impl LsmCapabilityHook for SmackLsm {}
 
 impl LsmBprmHook for SmackLsm {
     fn on_bprm_check_security(&self, context: &BprmCheckContext<'_>) -> Result<()> {
+        let _ = xattr::exec_label(context.executable().inode())?;
+
         let Some(thread) = Thread::current() else {
             return Ok(());
         };
