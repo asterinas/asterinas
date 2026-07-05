@@ -292,7 +292,8 @@ impl AppArmorPolicy {
             return Ok(());
         }
 
-        self.check_exec_transition_target(&outcome.exec_transition)
+        self.exec_transition_target(task_state, &outcome.exec_transition)?;
+        Ok(())
     }
 
     /// Returns whether executing a file requests secure-execution mode.
@@ -318,6 +319,7 @@ impl AppArmorPolicy {
             AppArmorFilePermission::for_execute(),
         )?;
 
+        self.exec_transition_target(task_state, &outcome.exec_transition)?;
         Ok(outcome.exec_transition.requires_secure_exec())
     }
 
@@ -404,11 +406,13 @@ impl AppArmorPolicy {
             AppArmorFilePermission::for_execute(),
         )?;
 
-        let Some(target_profile) = outcome.exec_transition.target_profile() else {
+        let Some(target_profile) =
+            self.exec_transition_target(task_state, &outcome.exec_transition)?
+        else {
             return Ok(task_state.clone());
         };
 
-        self.transition_state_to_profile(task_state, target_profile)
+        Ok(task_state.transition_to(target_profile.name().clone(), target_profile.mode()))
     }
 
     /// Computes task state after an immediate profile change.
@@ -583,12 +587,25 @@ impl AppArmorPolicy {
         return_errno_with_message!(Errno::EACCES, "AppArmor policy denied profile transition");
     }
 
-    fn check_exec_transition_target(&self, transition: &AppArmorExecTransition) -> Result<()> {
+    fn exec_transition_target(
+        &self,
+        task_state: &AppArmorTaskState,
+        transition: &AppArmorExecTransition,
+    ) -> Result<Option<Arc<AppArmorProfile>>> {
+        if let AppArmorExecTransition::Child { profile_name, .. } = transition
+            && !is_child_profile(task_state.current_profile(), profile_name)
+        {
+            return_errno_with_message!(
+                Errno::EACCES,
+                "AppArmor child exec transition target is not a child profile"
+            );
+        }
+
         let Some(target_profile) = transition.target_profile() else {
-            return Ok(());
+            return Ok(None);
         };
 
-        self.require_loaded_profile(&target_profile).map(|_| ())
+        self.require_loaded_profile(&target_profile).map(Some)
     }
 
     fn require_loaded_profile(
@@ -651,6 +668,14 @@ fn effective_mode(task_mode: AppArmorMode, profile_mode: AppArmorMode) -> AppArm
     } else {
         AppArmorMode::Enforce
     }
+}
+
+fn is_child_profile(parent: &AppArmorProfileName, child: &AppArmorProfileName) -> bool {
+    let Some(suffix) = child.as_str().strip_prefix(parent.as_str()) else {
+        return false;
+    };
+
+    suffix.starts_with("//") && suffix.len() > 2
 }
 
 struct PathAccessOutcome {
