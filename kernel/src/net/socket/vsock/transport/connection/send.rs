@@ -3,7 +3,7 @@
 use core::sync::atomic::Ordering;
 
 use aster_virtio::device::socket::{
-    header::VirtioVsockOp,
+    header::{VirtioVsockHdr, VirtioVsockOp},
     packet::{TxPacket, TxPacketBuilder},
     queue::TxCompletion,
 };
@@ -21,11 +21,15 @@ use crate::{
     util::MultiRead,
 };
 
+const VHOST_VSOCK_MAX_PAYLOAD_SIZE: usize =
+    DEFAULT_TX_BUF_SIZE.saturating_sub(size_of::<VirtioVsockHdr>());
+
 impl Connection {
     /// Copies data from `reader` into TX packets and queues them for transmission.
     ///
-    /// The method respects both peer receive credit and the connection's pending-byte budget. It
-    /// may return `EAGAIN` when either resource is exhausted.
+    /// The method respects both peer receive credit
+    /// and the connection's pending-byte budget.
+    /// It may return `EAGAIN` when either resource is exhausted.
     pub(in crate::net::socket::vsock) fn try_send(
         &mut self,
         reader: &mut dyn MultiRead,
@@ -74,7 +78,7 @@ impl Connection {
             }
 
             max_bytes
-                .min(DEFAULT_TX_BUF_SIZE)
+                .min(VHOST_VSOCK_MAX_PAYLOAD_SIZE)
                 .min(state.check_peer_credit(&self.inner)?)
         };
         if num_bytes == 0 {

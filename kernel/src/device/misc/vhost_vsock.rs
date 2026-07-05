@@ -2,11 +2,12 @@
 
 //! Linux-compatible `/dev/vhost-vsock` ABI surface.
 //!
-//! This module registers the vhost-vsock misc device and bridges vhost
-//! virtqueues to Asterinas' AF_VSOCK transport.
+//! This module registers the vhost-vsock misc device
+//! and bridges vhost virtqueues to Asterinas' AF_VSOCK transport.
 
 use core::{
     hint::spin_loop,
+    mem,
     sync::atomic::{AtomicBool, AtomicU16, Ordering},
 };
 
@@ -16,7 +17,7 @@ use ostd::{mm::VmIo, task::Task};
 use spin::Once;
 
 use crate::{
-    device::{Device, DeviceType, DevtmpfsInodeMeta, registry::char::register},
+    device::{Device, DeviceType, DevtmpfsInodeMeta, registry::char},
     events::{IoEvents, Observer},
     fs::{
         file::{
@@ -26,14 +27,11 @@ use crate::{
         vfs::inode::FileOps,
     },
     prelude::*,
-    process::{
-        Process,
-        posix_thread::AsPosixThread,
-        signal::{PollAdaptor, PollHandle, Pollable, Pollee, Poller},
-    },
+    process::signal::{PollAdaptor, PollHandle, Pollable, Pollee, Poller},
+    syscall,
     thread::{Thread, kernel_thread::ThreadOptions},
     util::ioctl::{RawIoctl, dispatch_ioctl},
-    vm::vmar::Vmar,
+    vm::vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar},
 };
 
 const VHOST_VSOCK_MINOR: u32 = 241;
@@ -50,6 +48,10 @@ const VHOST_VSOCK_MAX_TX_CHAIN_BYTES: usize = 1024 * 1024;
 const VHOST_VSOCK_MAX_QUEUE_BYTES: usize = 256 * 1024;
 const VHOST_VSOCK_MAX_VRING_NUM: u32 = 32768;
 const VHOST_VSOCK_MAX_MEMORY_REGIONS: usize = 64;
+const VIRTQ_AVAIL_RING_OFFSET: usize = size_of::<VirtqAvailHeader>();
+const VIRTQ_USED_RING_OFFSET: usize = size_of::<VirtqUsedHeader>();
+const RX_VRING_INDEX: usize = 0;
+const TX_VRING_INDEX: usize = 1;
 
 type VhostVsockBackendRegistry = Arc<SpinLock<BTreeMap<u64, Arc<VhostVsockBackend>>>>;
 
@@ -96,11 +98,7 @@ impl Device for VhostVsockDevice {
 #[derive(Default)]
 struct VhostVsockState {
     owner_set: bool,
-    /// Process that owns the vhost device, captured at `SET_OWNER`.
-    ///
-    /// The worker uses this process' address space to read and write the
-    /// userspace virtqueue addresses configured by vhost ioctls.
-    owner_process: Option<Arc<Process>>,
+    /// Address space that may configure the vhost device after `SET_OWNER`.
     owner_vmar: Option<Arc<Vmar>>,
     features: u64,
     backend_features: u64,
@@ -112,11 +110,32 @@ struct VhostVsockState {
     vring_kick: [Option<Arc<dyn FileLike>>; VHOST_VSOCK_VRING_COUNT],
     vring_call: [Option<Arc<dyn FileLike>>; VHOST_VSOCK_VRING_COUNT],
     vring_err: [Option<Arc<dyn FileLike>>; VHOST_VSOCK_VRING_COUNT],
-    /// Set when a worker has been spawned for this device.
-    worker_started: bool,
-    worker_stop: Option<Arc<AtomicBool>>,
-    worker_thread: Option<Arc<Thread>>,
-    backend: Option<Arc<VhostVsockBackend>>,
+    worker: VhostWorkerState,
+}
+
+enum VhostWorkerState {
+    Stopped,
+    Running {
+        stop: Arc<AtomicBool>,
+        thread: Arc<Thread>,
+        backend: Arc<VhostVsockBackend>,
+    },
+    Stopping {
+        thread: Arc<Thread>,
+        backend: Arc<VhostVsockBackend>,
+    },
+}
+
+impl Default for VhostWorkerState {
+    fn default() -> Self {
+        Self::Stopped
+    }
+}
+
+impl VhostWorkerState {
+    fn is_busy(&self) -> bool {
+        !matches!(self, Self::Stopped)
+    }
 }
 
 impl VhostVsockState {
@@ -124,15 +143,28 @@ impl VhostVsockState {
         &self,
         stop: Arc<AtomicBool>,
         rx_queue: Arc<VhostRxQueue>,
-    ) -> Option<WorkerInputs> {
-        let owner_vmar = self.owner_vmar.clone()?;
-        Some(WorkerInputs {
+    ) -> Result<WorkerInputs> {
+        let owner_vmar = self
+            .owner_vmar
+            .clone()
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock owner VMAR not set"))?;
+        let guest_cid = self
+            .guest_cid
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock guest CID not set"))?;
+        let rx_addr = self.vring_addr[RX_VRING_INDEX].ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "vhost-vsock RX vring addr not set")
+        })?;
+        let tx_addr = self.vring_addr[TX_VRING_INDEX].ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "vhost-vsock TX vring addr not set")
+        })?;
+
+        Ok(WorkerInputs {
             owner_vmar,
-            guest_cid: self.guest_cid,
+            guest_cid,
             mem_regions: self.memory_regions.clone(),
             vring_num: self.vring_num,
             vring_base: self.vring_base,
-            vring_addr: self.vring_addr,
+            vring_addr: [rx_addr, tx_addr],
             vring_kick: self.vring_kick.clone(),
             vring_call: self.vring_call.clone(),
             rx_queue,
@@ -155,20 +187,21 @@ impl VhostVsockState {
             if self.vring_addr[index].is_none() {
                 return_errno_with_message!(Errno::EINVAL, "vhost-vsock vring addr not set");
             }
-            if self.vring_kick[index].is_none() {
-                return_errno_with_message!(Errno::EINVAL, "vhost-vsock vring kick eventfd not set");
-            }
-            if self.vring_call[index].is_none() {
-                return_errno_with_message!(Errno::EINVAL, "vhost-vsock vring call eventfd not set");
-            }
         }
 
         Ok(())
     }
 
     fn ensure_owner_set(&self) -> Result<()> {
-        if !self.owner_set || self.owner_vmar.is_none() {
+        let Some(owner_vmar) = self.owner_vmar.as_ref() else {
             return_errno_with_message!(Errno::EPERM, "vhost-vsock owner is not set");
+        };
+        if !self.owner_set {
+            return_errno_with_message!(Errno::EPERM, "vhost-vsock owner is not set");
+        }
+        let current_vmar = VhostVsockFile::current_vmar()?;
+        if !Arc::ptr_eq(owner_vmar, &current_vmar) {
+            return_errno_with_message!(Errno::EPERM, "vhost-vsock caller is not the owner");
         }
 
         Ok(())
@@ -176,44 +209,59 @@ impl VhostVsockState {
 
     fn ensure_configurable(&self) -> Result<()> {
         self.ensure_owner_set()?;
-        if self.worker_started {
+        if self.worker.is_busy() {
             return_errno_with_message!(Errno::EBUSY, "vhost-vsock is running");
         }
 
         Ok(())
     }
 
-    fn stop_worker(&mut self) -> Option<StoppedWorker> {
-        let backend = self.backend.take();
-        if let Some(backend) = backend.as_ref() {
-            self.vring_base[0] = backend.rx_last_avail.load(Ordering::Acquire) as u32;
-            self.vring_base[1] = backend.tx_last_avail.load(Ordering::Acquire) as u32;
-        }
-        if let Some(stop) = self.worker_stop.take() {
+    fn stop_worker(&mut self) -> Result<Option<StoppedWorker>> {
+        let worker = mem::replace(&mut self.worker, VhostWorkerState::Stopped);
+        let (stop, thread, backend) = match worker {
+            VhostWorkerState::Stopped => return Ok(None),
+            VhostWorkerState::Running {
+                stop,
+                thread,
+                backend,
+            } => (stop, thread, backend),
+            VhostWorkerState::Stopping { thread, backend } => {
+                self.worker = VhostWorkerState::Stopping { thread, backend };
+                return_errno_with_message!(Errno::EBUSY, "vhost-vsock worker is stopping");
+            }
+        };
+
+        self.worker = VhostWorkerState::Stopping {
+            thread: thread.clone(),
+            backend: backend.clone(),
+        };
+        {
             stop.store(true, Ordering::Release);
         }
-        if let Some(backend) = backend.as_ref() {
-            backend.inputs.rx_queue.notify_worker();
-        }
-        self.worker_started = false;
-        let thread = self.worker_thread.take()?;
-        Some(StoppedWorker { thread, backend })
+        backend.inputs.rx_queue.close();
+        backend.inputs.rx_queue.notify_worker();
+        Ok(Some(StoppedWorker { thread, backend }))
+    }
+
+    fn begin_reset_owner(&mut self) -> Result<Option<StoppedWorker>> {
+        self.ensure_owner_set()?;
+        self.stop_worker()
     }
 }
 
 struct StoppedWorker {
     thread: Arc<Thread>,
-    backend: Option<Arc<VhostVsockBackend>>,
+    backend: Arc<VhostVsockBackend>,
 }
 
 #[derive(Clone)]
 struct WorkerInputs {
     owner_vmar: Arc<Vmar>,
-    guest_cid: Option<u64>,
+    guest_cid: u64,
     mem_regions: Vec<VhostMemoryRegion>,
     vring_num: [u32; VHOST_VSOCK_VRING_COUNT],
     vring_base: [u32; VHOST_VSOCK_VRING_COUNT],
-    vring_addr: [Option<VhostVringAddr>; VHOST_VSOCK_VRING_COUNT],
+    vring_addr: [VhostVringAddr; VHOST_VSOCK_VRING_COUNT],
     vring_kick: [Option<Arc<dyn FileLike>>; VHOST_VSOCK_VRING_COUNT],
     vring_call: [Option<Arc<dyn FileLike>>; VHOST_VSOCK_VRING_COUNT],
     rx_queue: Arc<VhostRxQueue>,
@@ -232,28 +280,33 @@ struct VhostVsockBackend {
 impl VhostVsockBackend {
     fn new(inputs: WorkerInputs) -> Self {
         let kick_pollers = register_kick_pollers(&inputs);
+        let rx_base = inputs.vring_base[RX_VRING_INDEX] as u16;
+        let tx_base = inputs.vring_base[TX_VRING_INDEX] as u16;
         Self {
             inputs,
             _kick_pollers: kick_pollers,
-            rx_last_avail: AtomicU16::new(0),
+            rx_last_avail: AtomicU16::new(rx_base),
             rx_inject_busy: AtomicBool::new(false),
-            tx_last_avail: AtomicU16::new(0),
+            tx_last_avail: AtomicU16::new(tx_base),
         }
     }
 
-    fn inject(&self, packet: VhostVsockPacket<'_>) -> Result<()> {
+    fn inject(&self, packet: VhostVsockPacket<'_>) -> Result<bool> {
         self.inputs.rx_queue.push(packet.into())
     }
 
     fn drain_rx_queue(&self) -> RxDrainResult {
         while let Some(packet) = self.inputs.rx_queue.pop_front() {
             match self.inject_now(packet.as_packet()) {
-                Ok(()) => (),
+                Ok(()) => self.inputs.rx_queue.commit_popped(&packet),
                 Err(err) if err.error() == Errno::EAGAIN => {
                     self.inputs.rx_queue.push_front(packet);
                     return RxDrainResult::Blocked;
                 }
-                Err(_) => return RxDrainResult::Stopped,
+                Err(_) => {
+                    self.inputs.rx_queue.commit_popped(&packet);
+                    return RxDrainResult::Stopped;
+                }
             }
         }
 
@@ -279,9 +332,9 @@ impl VhostVsockBackend {
 
     fn process_tx(&self) -> Result<()> {
         let mut tx_last_avail = self.tx_last_avail.load(Ordering::Relaxed);
-        process_tx(self, &mut tx_last_avail)?;
+        let result = process_tx(self, &mut tx_last_avail);
         self.tx_last_avail.store(tx_last_avail, Ordering::Relaxed);
-        Ok(())
+        result
     }
 }
 
@@ -383,6 +436,7 @@ struct VhostRxQueue {
 struct VhostRxQueueInner {
     packets: VecDeque<QueuedVhostVsockPacket>,
     bytes: usize,
+    closed: bool,
 }
 
 impl VhostRxQueue {
@@ -391,15 +445,19 @@ impl VhostRxQueue {
             inner: SpinLock::new(VhostRxQueueInner {
                 packets: VecDeque::new(),
                 bytes: 0,
+                closed: false,
             }),
             wake_pending: AtomicBool::new(false),
             pollee: Pollee::new(),
         }
     }
 
-    fn push(&self, packet: QueuedVhostVsockPacket) -> Result<()> {
+    fn push(&self, packet: QueuedVhostVsockPacket) -> Result<bool> {
         let packet_len = packet.total_len();
         let mut inner = self.inner.lock();
+        if inner.closed {
+            return Ok(false);
+        }
         let next_bytes = inner.bytes.checked_add(packet_len).ok_or_else(|| {
             Error::with_message(Errno::EAGAIN, "vhost-vsock RX queue byte count overflow")
         })?;
@@ -411,21 +469,20 @@ impl VhostRxQueue {
         drop(inner);
 
         self.notify_worker();
-        Ok(())
+        Ok(true)
     }
 
     fn pop_front(&self) -> Option<QueuedVhostVsockPacket> {
+        self.inner.lock().packets.pop_front()
+    }
+
+    fn commit_popped(&self, packet: &QueuedVhostVsockPacket) {
         let mut inner = self.inner.lock();
-        let packet = inner.packets.pop_front()?;
         inner.bytes = inner.bytes.saturating_sub(packet.total_len());
-        Some(packet)
     }
 
     fn push_front(&self, packet: QueuedVhostVsockPacket) {
-        let packet_len = packet.total_len();
-        let mut inner = self.inner.lock();
-        inner.bytes = inner.bytes.saturating_add(packet_len);
-        inner.packets.push_front(packet);
+        self.inner.lock().packets.push_front(packet);
     }
 
     fn has_packets(&self) -> bool {
@@ -454,6 +511,11 @@ impl VhostRxQueue {
     fn notify_worker(&self) {
         self.wake_pending.store(true, Ordering::Release);
         self.pollee.notify(IoEvents::IN);
+    }
+
+    fn close(&self) {
+        self.inner.lock().closed = true;
+        self.notify_worker();
     }
 }
 
@@ -517,20 +579,23 @@ impl VhostVsockFile {
         Ok(regions)
     }
 
-    /// Starts the data-plane worker once. The worker observes the guest's
-    /// virtqueue activity via cross-process `Vmar::read_alien` reads.
+    /// Starts the data-plane worker once.
+    /// The worker observes the guest's virtqueue activity
+    /// via cross-process `Vmar::read_alien` reads.
     /// Returns `Ok(())` if the worker was started or is already running.
     fn ensure_worker_started(&self) -> Result<()> {
         let mut state = self.state.lock();
-        if state.worker_started {
-            if state
-                .backend
-                .as_ref()
-                .is_some_and(|backend| backend.inputs.stop.load(Ordering::Acquire))
-            {
-                return_errno_with_message!(Errno::EIO, "vhost-vsock worker has stopped");
+        match &state.worker {
+            VhostWorkerState::Stopped => (),
+            VhostWorkerState::Running { backend, .. } => {
+                if backend.inputs.stop.load(Ordering::Acquire) {
+                    return_errno_with_message!(Errno::EIO, "vhost-vsock worker has stopped");
+                }
+                return Ok(());
             }
-            return Ok(());
+            VhostWorkerState::Stopping { .. } => {
+                return_errno_with_message!(Errno::EBUSY, "vhost-vsock worker is stopping");
+            }
         }
         state.validate_ready_to_run()?;
         let guest_cid = state
@@ -538,36 +603,67 @@ impl VhostVsockFile {
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock guest CID not set"))?;
         let stop = Arc::new(AtomicBool::new(false));
         let rx_queue = Arc::new(VhostRxQueue::new());
-        let Some(inputs) = state.snapshot_for_worker(stop.clone(), rx_queue.clone()) else {
-            return_errno_with_message!(Errno::EINVAL, "vhost-vsock owner process not captured yet");
-        };
+        let inputs = state.snapshot_for_worker(stop.clone(), rx_queue.clone())?;
         let backend = Arc::new(VhostVsockBackend::new(inputs));
         register_backend(guest_cid, backend.clone())?;
-        let worker = ThreadOptions::new(move || worker_loop(backend)).spawn();
-        state.worker_started = true;
-        state.worker_stop = Some(stop);
-        state.worker_thread = Some(worker);
-        state.backend = backend_for_guest(guest_cid);
+        let worker_backend = backend.clone();
+        let worker = ThreadOptions::new(move || worker_loop(worker_backend)).spawn();
+        state.worker = VhostWorkerState::Running {
+            stop,
+            thread: worker,
+            backend,
+        };
         Ok(())
     }
 
-    fn stop_worker(&self) {
-        let stopped = self.state.lock().stop_worker();
+    fn stop_worker(&self) -> Result<()> {
+        let stopped = self.state.lock().stop_worker()?;
         if let Some(stopped) = stopped {
             stopped.thread.join();
-            if let Some(backend) = stopped.backend.as_ref() {
-                unregister_backend_if_matches(backend);
-            }
+            self.finish_stopped_worker(stopped);
         }
+        Ok(())
     }
 
-    /// Captures the calling task's process at `VHOST_SET_OWNER` time.
-    fn capture_caller_owner() -> Option<(Arc<Process>, Arc<Vmar>)> {
+    fn reset_owner(&self) -> Result<()> {
+        let stopped = self.state.lock().begin_reset_owner()?;
+        if let Some(stopped) = stopped {
+            stopped.thread.join();
+            unregister_backend_if_matches(&stopped.backend);
+        }
+        *self.state.lock() = VhostVsockState::default();
+        Ok(())
+    }
+
+    fn finish_stopped_worker(&self, stopped: StoppedWorker) {
+        let mut state = self.state.lock();
+        state.vring_base[RX_VRING_INDEX] =
+            stopped.backend.rx_last_avail.load(Ordering::Acquire) as u32;
+        state.vring_base[TX_VRING_INDEX] =
+            stopped.backend.tx_last_avail.load(Ordering::Acquire) as u32;
+        unregister_backend_if_matches(&stopped.backend);
+        state.worker = VhostWorkerState::Stopped;
+    }
+
+    fn current_vmar() -> Result<Arc<Vmar>> {
+        let task =
+            Task::current().ok_or_else(|| Error::with_message(Errno::ESRCH, "no current task"))?;
+        let thread_local = task.as_thread_local().ok_or_else(|| {
+            Error::with_message(Errno::EFAULT, "current task has no thread local")
+        })?;
+        thread_local
+            .vmar()
+            .borrow()
+            .as_ref()
+            .map(|vmar| vmar.clone_arc())
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "current task has no VMAR"))
+    }
+
+    /// Captures the calling task's address space at `VHOST_SET_OWNER` time.
+    fn capture_caller_owner() -> Option<Arc<Vmar>> {
         let task = Task::current()?;
-        let posix_thread = task.as_posix_thread()?;
         let thread_local = task.as_thread_local()?;
-        let vmar = thread_local.vmar().borrow().as_ref()?.clone_arc();
-        Some((posix_thread.process(), vmar))
+        Some(thread_local.vmar().borrow().as_ref()?.clone_arc())
     }
 
     fn get_event_file(raw_fd: RawFileDesc) -> Result<Option<Arc<dyn FileLike>>> {
@@ -582,7 +678,11 @@ impl VhostVsockFile {
             Error::with_message(Errno::EFAULT, "current task has no thread local")
         })?;
         let mut file_table = thread_local.borrow_file_table_mut();
-        Ok(Some(get_file_fast!(&mut file_table, fd).into_owned()))
+        let file = get_file_fast!(&mut file_table, fd).into_owned();
+        if !syscall::is_event_file(file.as_ref()) {
+            return_errno_with_message!(Errno::EINVAL, "vhost-vsock vring file is not an eventfd");
+        }
+        Ok(Some(file))
     }
 }
 
@@ -648,20 +748,18 @@ impl PerOpenFileOps for VhostVsockFile {
                 if state.owner_set {
                     return_errno_with_message!(Errno::EBUSY, "vhost-vsock owner is already set");
                 }
-                let Some((process, vmar)) = Self::capture_caller_owner() else {
+                let Some(vmar) = Self::capture_caller_owner() else {
                     return_errno_with_message!(
                         Errno::EINVAL,
-                        "vhost-vsock owner process cannot be captured"
+                        "vhost-vsock owner address space cannot be captured"
                     );
                 };
                 state.owner_set = true;
-                state.owner_process = Some(process);
                 state.owner_vmar = Some(vmar);
                 Ok(0)
             }
             ResetOwner => {
-                self.stop_worker();
-                *self.state.lock() = VhostVsockState::default();
+                self.reset_owner()?;
                 Ok(0)
             }
             cmd @ SetMemTable => {
@@ -703,6 +801,7 @@ impl PerOpenFileOps for VhostVsockFile {
             cmd @ SetVringBase => {
                 let vring_state = cmd.read()?;
                 let index = Self::check_vring_index(vring_state.index)?;
+                validate_vring_base(vring_state.num)?;
                 let mut state = self.state.lock();
                 state.ensure_configurable()?;
                 state.vring_base[index] = vring_state.num;
@@ -713,14 +812,16 @@ impl PerOpenFileOps for VhostVsockFile {
                 let index = Self::check_vring_index(vring_state.index)?;
                 let state = self.state.lock();
                 state.ensure_owner_set()?;
-                vring_state.num = state
-                    .backend
-                    .as_ref()
-                    .map(|backend| match index {
+                vring_state.num = match &state.worker {
+                    VhostWorkerState::Stopped => state.vring_base[index],
+                    VhostWorkerState::Running { backend, .. } => match index {
                         0 => backend.rx_last_avail.load(Ordering::Acquire) as u32,
                         _ => backend.tx_last_avail.load(Ordering::Acquire) as u32,
-                    })
-                    .unwrap_or(state.vring_base[index]);
+                    },
+                    VhostWorkerState::Stopping { .. } => {
+                        return_errno_with_message!(Errno::EBUSY, "vhost-vsock worker is stopping");
+                    }
+                };
                 cmd.write(&vring_state)?;
                 Ok(0)
             }
@@ -785,7 +886,8 @@ impl PerOpenFileOps for VhostVsockFile {
                     self.ensure_worker_started()?;
                     Ok(0)
                 } else {
-                    self.stop_worker();
+                    self.state.lock().ensure_owner_set()?;
+                    self.stop_worker()?;
                     Ok(0)
                 }
             }
@@ -796,12 +898,11 @@ impl PerOpenFileOps for VhostVsockFile {
 
 impl Drop for VhostVsockFile {
     fn drop(&mut self) {
-        let stopped = self.state.lock().stop_worker();
-        if let Some(stopped) = stopped {
+        if let Ok(stopped) = self.state.lock().stop_worker()
+            && let Some(stopped) = stopped
+        {
             stopped.thread.join();
-            if let Some(backend) = stopped.backend.as_ref() {
-                unregister_backend_if_matches(backend);
-            }
+            unregister_backend_if_matches(&stopped.backend);
         }
     }
 }
@@ -830,9 +931,7 @@ fn register_backend(guest_cid: u64, backend: Arc<VhostVsockBackend>) -> Result<(
 }
 
 fn unregister_backend_if_matches(backend: &Arc<VhostVsockBackend>) {
-    let Some(guest_cid) = backend.inputs.guest_cid else {
-        return;
-    };
+    let guest_cid = backend.inputs.guest_cid;
     let mut registry = backend_registry().lock();
     if registry
         .get(&guest_cid)
@@ -863,18 +962,24 @@ fn validate_memory_region(region: &VhostMemoryRegion) -> Result<()> {
         .guest_phys_addr
         .checked_add(region.memory_size)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost memory GPA range overflow"))?;
-    region
-        .userspace_addr
-        .checked_add(region.memory_size)
-        .ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "vhost memory userspace range overflow")
-        })?;
+    checked_userspace_range(
+        region.userspace_addr,
+        region.memory_size,
+        "vhost memory userspace range is invalid",
+    )?;
     Ok(())
 }
 
 fn validate_vring_num(num: u32) -> Result<()> {
     if num == 0 || num > VHOST_VSOCK_MAX_VRING_NUM || !num.is_power_of_two() {
         return_errno_with_message!(Errno::EINVAL, "vhost-vsock vring size is invalid");
+    }
+    Ok(())
+}
+
+fn validate_vring_base(base: u32) -> Result<()> {
+    if base > u16::MAX as u32 {
+        return_errno_with_message!(Errno::EINVAL, "vhost-vsock vring base is too large");
     }
     Ok(())
 }
@@ -890,6 +995,20 @@ fn validate_vring_addr(addr: &VhostVringAddr, vring_num: u32) -> Result<()> {
         vring_num as usize
     };
     let last_index = num - 1;
+    let desc_len = num
+        .checked_mul(size_of::<VirtqDesc>())
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock desc table overflow"))?;
+    let avail_len = VIRTQ_AVAIL_RING_OFFSET
+        .checked_add(num.checked_mul(size_of::<u16>()).ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "vhost-vsock available ring overflow")
+        })?)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock available ring overflow"))?;
+    let used_len =
+        VIRTQ_USED_RING_OFFSET
+            .checked_add(num.checked_mul(size_of::<VirtqUsedElem>()).ok_or_else(|| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock used ring overflow")
+            })?)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock used ring overflow"))?;
 
     checked_user_elem_addr(
         addr.desc_user_addr,
@@ -900,17 +1019,32 @@ fn validate_vring_addr(addr: &VhostVringAddr, vring_num: u32) -> Result<()> {
     )?;
     checked_user_elem_addr(
         addr.avail_user_addr,
-        4,
+        VIRTQ_AVAIL_RING_OFFSET,
         last_index,
         size_of::<u16>(),
         "vhost-vsock available ring address overflow",
     )?;
     checked_user_elem_addr(
         addr.used_user_addr,
-        4,
+        VIRTQ_USED_RING_OFFSET,
         last_index,
         size_of::<VirtqUsedElem>(),
         "vhost-vsock used ring address overflow",
+    )?;
+    checked_userspace_range(
+        addr.desc_user_addr,
+        desc_len as u64,
+        "vhost-vsock descriptor table range is invalid",
+    )?;
+    checked_userspace_range(
+        addr.avail_user_addr,
+        avail_len as u64,
+        "vhost-vsock available ring range is invalid",
+    )?;
+    checked_userspace_range(
+        addr.used_user_addr,
+        used_len as u64,
+        "vhost-vsock used ring range is invalid",
     )?;
 
     Ok(())
@@ -926,22 +1060,15 @@ fn validate_guest_cid(guest_cid: u64) -> Result<()> {
 /// Runs the per-device data-plane worker.
 fn worker_loop(backend: Arc<VhostVsockBackend>) {
     let inputs = &backend.inputs;
-    backend
-        .rx_last_avail
-        .store(inputs.vring_base[0] as u16, Ordering::Relaxed);
-    backend
-        .tx_last_avail
-        .store(inputs.vring_base[1] as u16, Ordering::Relaxed);
-
-    let kick_tx = inputs.vring_kick[1].clone();
-    let kick_rx = inputs.vring_kick[0].clone();
+    let kick_tx = inputs.vring_kick[TX_VRING_INDEX].clone();
+    let kick_rx = inputs.vring_kick[RX_VRING_INDEX].clone();
     let mut rx_blocked = false;
 
     while !inputs.stop.load(Ordering::Acquire) {
         inputs.rx_queue.take_worker_wake();
 
-        if let Some(k) = kick_tx.as_ref() {
-            consume_eventfd(k.as_ref());
+        if let Some(kick) = kick_tx.as_ref() {
+            consume_eventfd(kick.as_ref());
         }
         if kick_rx
             .as_ref()
@@ -986,18 +1113,71 @@ fn wait_for_worker_wake(inputs: &WorkerInputs) {
     }
 }
 
-/// Translates a guest physical address to a userspace address using the memory table.
-fn gpa_to_uva(regions: &[VhostMemoryRegion], gpa: u64, len: usize) -> Option<usize> {
-    let end = gpa.checked_add(len as u64)?;
-    for r in regions {
-        let region_end = r.guest_phys_addr.checked_add(r.memory_size)?;
-        if gpa >= r.guest_phys_addr && end <= region_end {
-            let offset = gpa - r.guest_phys_addr;
-            let userspace_addr = r.userspace_addr.checked_add(offset)?;
-            return usize::try_from(userspace_addr).ok();
-        }
+struct VhostMemorySegment {
+    userspace_addr: usize,
+    len: usize,
+}
+
+fn read_gpa_bytes(
+    vmar: &Vmar,
+    regions: &[VhostMemoryRegion],
+    gpa: u64,
+    len: usize,
+) -> Result<Vec<u8>> {
+    let segments = gpa_to_uva_segments(regions, gpa, len).ok_or_else(|| {
+        Error::with_message(
+            Errno::EFAULT,
+            "vhost-vsock GPA range not covered by mem table",
+        )
+    })?;
+    let mut bytes = vec![0; len];
+    read_gpa_segments(vmar, segments.as_slice(), bytes.as_mut_slice())?;
+    Ok(bytes)
+}
+
+fn read_gpa_segments(vmar: &Vmar, segments: &[VhostMemorySegment], bytes: &mut [u8]) -> Result<()> {
+    let mut offset = 0usize;
+    for segment in segments {
+        let end = offset.checked_add(segment.len).ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "vhost-vsock segment offset overflow")
+        })?;
+        let mut writer = VmWriter::from(&mut bytes[offset..end]).to_fallible();
+        vmar.read_alien(segment.userspace_addr, &mut writer)
+            .map_err(|(e, _)| e)?;
+        offset = end;
     }
-    None
+    Ok(())
+}
+
+fn gpa_to_uva_segments(
+    regions: &[VhostMemoryRegion],
+    gpa: u64,
+    len: usize,
+) -> Option<Vec<VhostMemorySegment>> {
+    let end = gpa.checked_add(u64::try_from(len).ok()?)?;
+    let mut current = gpa;
+    let mut segments = Vec::new();
+
+    while current < end {
+        let region = regions.iter().find(|region| {
+            let Some(region_end) = region.guest_phys_addr.checked_add(region.memory_size) else {
+                return false;
+            };
+            current >= region.guest_phys_addr && current < region_end
+        })?;
+        let region_end = region.guest_phys_addr.checked_add(region.memory_size)?;
+        let segment_end = region_end.min(end);
+        let segment_len = usize::try_from(segment_end - current).ok()?;
+        let offset = current - region.guest_phys_addr;
+        let userspace_addr = region.userspace_addr.checked_add(offset)?;
+        segments.push(VhostMemorySegment {
+            userspace_addr: usize::try_from(userspace_addr).ok()?,
+            len: segment_len,
+        });
+        current = segment_end;
+    }
+
+    Some(segments)
 }
 
 /// Injects a host-to-guest virtio-vsock packet into the RX queue.
@@ -1006,20 +1186,13 @@ fn inject_packet(
     last_avail: &mut u16,
     packet: VhostVsockPacket<'_>,
 ) -> Result<()> {
-    const RX_RING: usize = 0;
-
-    let addr = inputs.vring_addr[RX_RING]
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock RX vring addr not set"))?;
-    let num = inputs.vring_num[RX_RING] as usize;
+    let addr = inputs.vring_addr[RX_VRING_INDEX];
+    let num = inputs.vring_num[RX_VRING_INDEX] as usize;
     if num == 0 {
         return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX vring num is zero");
     }
-    let guest_cid = inputs
-        .guest_cid
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "guest CID not set"))?;
-    let call = inputs.vring_call[RX_RING]
-        .clone()
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "RX call eventfd not set"))?;
+    let guest_cid = inputs.guest_cid;
+    let call = inputs.vring_call[RX_VRING_INDEX].clone();
 
     let vmar = inputs.owner_vmar.as_ref();
 
@@ -1035,10 +1208,17 @@ fn inject_packet(
     )
     .map_err(|(e, _)| e)?;
 
-    if *last_avail == avail.idx {
+    let avail_delta = avail.idx.wrapping_sub(*last_avail) as usize;
+    if avail_delta == 0 {
         return_errno_with_message!(
             Errno::EAGAIN,
             "vhost-vsock RX has no buffer published by guest yet"
+        );
+    }
+    if avail_delta > num {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "vhost-vsock RX avail ring delta exceeds queue size"
         );
     }
 
@@ -1048,7 +1228,7 @@ fn inject_packet(
     vmar.read_alien(
         checked_user_elem_addr(
             addr.avail_user_addr,
-            4,
+            VIRTQ_AVAIL_RING_OFFSET,
             avail_slot,
             size_of::<u16>(),
             "vhost-vsock RX avail ring address overflow",
@@ -1107,7 +1287,7 @@ fn inject_packet(
     vmar.write_alien(
         checked_user_elem_addr(
             addr.used_user_addr,
-            4,
+            VIRTQ_USED_RING_OFFSET,
             used_slot,
             size_of::<VirtqUsedElem>(),
             "vhost-vsock RX used ring address overflow",
@@ -1130,22 +1310,22 @@ fn inject_packet(
 
     *last_avail = last_avail.wrapping_add(1);
 
-    signal_eventfd(call.as_ref());
+    if let Some(call) = call.as_ref() {
+        signal_eventfd(call.as_ref());
+    }
 
     Ok(())
 }
 
 /// Drains new entries from the TX queue.
 fn process_tx(backend: &VhostVsockBackend, last_avail: &mut u16) -> Result<()> {
-    const TX_RING: usize = 1;
     let inputs = &backend.inputs;
-    let addr = inputs.vring_addr[TX_RING]
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock TX vring addr not set"))?;
-    let num = inputs.vring_num[TX_RING] as usize;
+    let addr = inputs.vring_addr[TX_VRING_INDEX];
+    let num = inputs.vring_num[TX_VRING_INDEX] as usize;
     if num == 0 {
         return_errno_with_message!(Errno::EINVAL, "vhost-vsock TX vring num is zero");
     }
-    let call = inputs.vring_call[TX_RING].clone();
+    let call = inputs.vring_call[TX_VRING_INDEX].clone();
 
     let vmar = inputs.owner_vmar.as_ref();
 
@@ -1162,66 +1342,74 @@ fn process_tx(backend: &VhostVsockBackend, last_avail: &mut u16) -> Result<()> {
     .map_err(|(e, _)| e)?;
 
     let mut consumed_any = false;
-    while *last_avail != avail_hdr.idx {
-        let slot = *last_avail as usize % num;
-        let mut head_le: u16 = 0;
-        let mut writer = VmWriter::from(head_le.as_mut_bytes()).to_fallible();
-        vmar.read_alien(
-            checked_user_elem_addr(
-                addr.avail_user_addr,
-                4,
-                slot,
-                size_of::<u16>(),
-                "vhost-vsock TX avail ring address overflow",
-            )?,
-            &mut writer,
-        )
-        .map_err(|(e, _)| e)?;
-        let head = head_le as usize;
-        if head >= num {
-            return_errno_with_message!(Errno::EINVAL, "vhost-vsock TX head out of range");
+    let result = (|| -> Result<()> {
+        let avail_delta = avail_hdr.idx.wrapping_sub(*last_avail) as usize;
+        if avail_delta > num {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "vhost-vsock TX avail ring delta exceeds queue size"
+            );
         }
 
-        let chain = read_tx_chain(vmar, addr, &inputs.mem_regions, num, head)?;
-        if chain.bytes.len() >= VIRTIO_VSOCK_HDR_SIZE {
-            let hdr = VirtioVsockHdr::from_bytes(&chain.bytes[..VIRTIO_VSOCK_HDR_SIZE]);
-            let payload_len = hdr.len as usize;
-            let packet_len = VIRTIO_VSOCK_HDR_SIZE
-                .checked_add(payload_len)
-                .ok_or_else(|| {
-                    Error::with_message(Errno::EINVAL, "vhost-vsock TX packet too large")
-                })?;
-            if chain.bytes.len() < packet_len {
-                publish_tx_used(vmar, &addr, num, head, chain.total_len)?;
-                *last_avail = last_avail.wrapping_add(1);
+        for _ in 0..avail_delta {
+            let slot = *last_avail as usize % num;
+            let mut head_le: u16 = 0;
+            let mut writer = VmWriter::from(head_le.as_mut_bytes()).to_fallible();
+            vmar.read_alien(
+                checked_user_elem_addr(
+                    addr.avail_user_addr,
+                    VIRTQ_AVAIL_RING_OFFSET,
+                    slot,
+                    size_of::<u16>(),
+                    "vhost-vsock TX avail ring address overflow",
+                )?,
+                &mut writer,
+            )
+            .map_err(|(e, _)| e)?;
+            let head = head_le as usize;
+            if head >= num {
+                return_errno_with_message!(Errno::EINVAL, "vhost-vsock TX head out of range");
+            }
+
+            let chain = read_tx_chain(vmar, addr, &inputs.mem_regions, num, head)?;
+            if chain.bytes.len() >= VIRTIO_VSOCK_HDR_SIZE {
+                let hdr = VirtioVsockHdr::from_bytes(&chain.bytes[..VIRTIO_VSOCK_HDR_SIZE])?;
+                let payload_len = hdr.len as usize;
+                let packet_len =
+                    VIRTIO_VSOCK_HDR_SIZE
+                        .checked_add(payload_len)
+                        .ok_or_else(|| {
+                            Error::with_message(Errno::EINVAL, "vhost-vsock TX packet too large")
+                        })?;
+                if chain.bytes.len() < packet_len {
+                    complete_tx_chain(vmar, &addr, num, head, last_avail)?;
+                    consumed_any = true;
+                    continue;
+                }
+                let payload = chain.bytes[VIRTIO_VSOCK_HDR_SIZE..packet_len].to_vec();
+                if !validate_tx_header_for_backend(backend, &hdr) {
+                    complete_tx_chain(vmar, &addr, num, head, last_avail)?;
+                    consumed_any = true;
+                    continue;
+                }
+                deliver_tx_packet(backend, hdr, payload)?;
+                complete_tx_chain(vmar, &addr, num, head, last_avail)?;
                 consumed_any = true;
                 continue;
             }
-            let payload = chain.bytes[VIRTIO_VSOCK_HDR_SIZE..packet_len].to_vec();
-            if !validate_tx_header_for_backend(backend, &hdr) {
-                publish_tx_used(vmar, &addr, num, head, chain.total_len)?;
-                *last_avail = last_avail.wrapping_add(1);
-                consumed_any = true;
-                continue;
-            }
-            deliver_tx_packet(backend, hdr, payload)?;
-            publish_tx_used(vmar, &addr, num, head, chain.total_len)?;
-            *last_avail = last_avail.wrapping_add(1);
+
+            complete_tx_chain(vmar, &addr, num, head, last_avail)?;
             consumed_any = true;
-            continue;
         }
 
-        publish_tx_used(vmar, &addr, num, head, chain.total_len)?;
+        Ok(())
+    })();
 
-        *last_avail = last_avail.wrapping_add(1);
-        consumed_any = true;
-    }
-
-    if consumed_any && let Some(call) = call {
+    if consumed_any && let Some(call) = call.as_ref() {
         signal_eventfd(call.as_ref());
     }
 
-    Ok(())
+    result
 }
 
 /// Best-effort drain of an eventfd counter (8 bytes).
@@ -1232,16 +1420,14 @@ fn consume_eventfd(file: &dyn FileLike) -> bool {
 
     let mut buf = [0u8; 8];
     let mut writer = VmWriter::from(buf.as_mut_slice()).to_fallible();
-    file.read(&mut writer).is_ok()
+    syscall::read_event_file_nonblocking(file, &mut writer).is_ok()
 }
 
 fn signal_eventfd(file: &dyn FileLike) {
     if file.poll(IoEvents::OUT, None).is_empty() {
         return;
     }
-    let counter: u64 = 1;
-    let mut reader = VmReader::from(counter.as_bytes()).to_fallible();
-    let _ = file.write(&mut reader);
+    let _ = syscall::write_event_file_nonblocking(file, 1);
 }
 
 pub(crate) fn send_packet(header: &TransportVsockHdr, payload: &[u8]) -> Result<bool> {
@@ -1263,7 +1449,7 @@ pub(crate) fn send_packet(header: &TransportVsockHdr, payload: &[u8]) -> Result<
 
     if backend.inputs.stop.load(Ordering::Acquire)
         || src_cid != HOST_CID
-        || Some(dst_cid) != backend.inputs.guest_cid
+        || dst_cid != backend.inputs.guest_cid
     {
         return Ok(false);
     }
@@ -1276,13 +1462,11 @@ pub(crate) fn send_packet(header: &TransportVsockHdr, payload: &[u8]) -> Result<
         payload,
         buf_alloc,
         fwd_cnt,
-    })?;
-    Ok(true)
+    })
 }
 
 struct TxChain {
     bytes: Vec<u8>,
-    total_len: u32,
 }
 
 fn read_tx_chain(
@@ -1297,7 +1481,7 @@ fn read_tx_chain(
         return_errno_with_message!(Errno::EINVAL, "vhost-vsock TX descriptor is writable");
     }
     if first_desc.flags & VIRTQ_DESC_F_INDIRECT != 0 {
-        return read_indirect_tx_chain(vmar, mem_regions, first_desc);
+        return read_indirect_tx_chain(vmar, mem_regions, num, first_desc);
     }
 
     read_direct_tx_chain(vmar, addr, mem_regions, num, first_desc)
@@ -1314,7 +1498,7 @@ fn write_rx_chain(
 ) -> Result<()> {
     let first_desc = read_vring_desc(vmar, addr.desc_user_addr, num, head)?;
     if first_desc.flags & VIRTQ_DESC_F_INDIRECT != 0 {
-        return write_indirect_rx_chain(vmar, mem_regions, first_desc, header, payload);
+        return write_indirect_rx_chain(vmar, mem_regions, num, first_desc, header, payload);
     }
 
     write_direct_rx_chain(vmar, addr, mem_regions, num, first_desc, header, payload)
@@ -1343,6 +1527,7 @@ fn write_direct_rx_chain(
 fn write_indirect_rx_chain(
     vmar: &Vmar,
     mem_regions: &[VhostMemoryRegion],
+    queue_num: usize,
     first_desc: VirtqDesc,
     header: &[u8],
     payload: &[u8],
@@ -1355,14 +1540,15 @@ fn write_indirect_rx_chain(
         );
     }
     let table_num = table_len / size_of::<VirtqDesc>();
-    let table_uva = gpa_to_uva(mem_regions, first_desc.addr, table_len).ok_or_else(|| {
-        Error::with_message(
-            Errno::EFAULT,
-            "vhost-vsock RX indirect table not covered by mem table",
-        )
-    })?;
+    if table_num > queue_num {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "vhost-vsock RX indirect descriptor table is too large"
+        );
+    }
+    let table = read_gpa_bytes(vmar, mem_regions, first_desc.addr, table_len)?;
 
-    let first_indirect_desc = read_indirect_desc(vmar, table_uva, table_num, 0)?;
+    let first_indirect_desc = read_indirect_desc(table.as_slice(), table_num, 0)?;
     write_rx_desc_chain(
         vmar,
         mem_regions,
@@ -1370,7 +1556,7 @@ fn write_indirect_rx_chain(
         table_num,
         header,
         payload,
-        |index| read_indirect_desc(vmar, table_uva, table_num, index),
+        |index| read_indirect_desc(table.as_slice(), table_num, index),
     )
 }
 
@@ -1399,16 +1585,16 @@ fn write_rx_desc_chain(
         }
 
         let desc_len = desc.len as usize;
-        let desc_uva = gpa_to_uva(mem_regions, desc.addr, desc_len).ok_or_else(|| {
-            Error::with_message(
-                Errno::EFAULT,
-                "vhost-vsock RX desc.addr not covered by mem table",
-            )
-        })?;
+        let desc_segments =
+            gpa_to_uva_segments(mem_regions, desc.addr, desc_len).ok_or_else(|| {
+                Error::with_message(
+                    Errno::EFAULT,
+                    "vhost-vsock RX desc.addr not covered by mem table",
+                )
+            })?;
         let written = write_rx_desc_bytes(
             vmar,
-            desc_uva,
-            desc_len,
+            desc_segments.as_slice(),
             &mut remaining_header,
             &mut remaining_payload,
         )?;
@@ -1438,35 +1624,44 @@ fn write_rx_desc_chain(
 
 fn write_rx_desc_bytes(
     vmar: &Vmar,
-    mut user_addr: usize,
-    mut desc_len: usize,
+    segments: &[VhostMemorySegment],
     remaining_header: &mut &[u8],
     remaining_payload: &mut &[u8],
 ) -> Result<usize> {
-    let original_len = desc_len;
+    let mut written = 0;
 
-    let header_len = desc_len.min(remaining_header.len());
-    if header_len != 0 {
-        let mut reader = VmReader::from(&remaining_header[..header_len]).to_fallible();
-        vmar.write_alien(user_addr, &mut reader)
-            .map_err(|(e, _)| e)?;
-        *remaining_header = &remaining_header[header_len..];
-        user_addr = user_addr.checked_add(header_len).ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "vhost-vsock RX descriptor address overflow")
-        })?;
-        desc_len -= header_len;
+    for segment in segments {
+        let mut user_addr = segment.userspace_addr;
+        let mut segment_len = segment.len;
+
+        let header_len = segment_len.min(remaining_header.len());
+        if header_len != 0 {
+            let mut reader = VmReader::from(&remaining_header[..header_len]).to_fallible();
+            vmar.write_alien(user_addr, &mut reader)
+                .map_err(|(e, _)| e)?;
+            *remaining_header = &remaining_header[header_len..];
+            user_addr = user_addr.checked_add(header_len).ok_or_else(|| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock RX descriptor address overflow")
+            })?;
+            segment_len -= header_len;
+            written += header_len;
+        }
+
+        let payload_len = segment_len.min(remaining_payload.len());
+        if payload_len != 0 {
+            let mut reader = VmReader::from(&remaining_payload[..payload_len]).to_fallible();
+            vmar.write_alien(user_addr, &mut reader)
+                .map_err(|(e, _)| e)?;
+            *remaining_payload = &remaining_payload[payload_len..];
+            written += payload_len;
+        }
+
+        if remaining_header.is_empty() && remaining_payload.is_empty() {
+            break;
+        }
     }
 
-    let payload_len = desc_len.min(remaining_payload.len());
-    if payload_len != 0 {
-        let mut reader = VmReader::from(&remaining_payload[..payload_len]).to_fallible();
-        vmar.write_alien(user_addr, &mut reader)
-            .map_err(|(e, _)| e)?;
-        *remaining_payload = &remaining_payload[payload_len..];
-        desc_len -= payload_len;
-    }
-
-    Ok(original_len - desc_len)
+    Ok(written)
 }
 
 fn read_direct_tx_chain(
@@ -1484,6 +1679,7 @@ fn read_direct_tx_chain(
 fn read_indirect_tx_chain(
     vmar: &Vmar,
     mem_regions: &[VhostMemoryRegion],
+    queue_num: usize,
     first_desc: VirtqDesc,
 ) -> Result<TxChain> {
     let table_len = first_desc.len as usize;
@@ -1494,16 +1690,17 @@ fn read_indirect_tx_chain(
         );
     }
     let table_num = table_len / size_of::<VirtqDesc>();
-    let table_uva = gpa_to_uva(mem_regions, first_desc.addr, table_len).ok_or_else(|| {
-        Error::with_message(
-            Errno::EFAULT,
-            "vhost-vsock TX indirect table not covered by mem table",
-        )
-    })?;
+    if table_num > queue_num {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "vhost-vsock TX indirect descriptor table is too large"
+        );
+    }
+    let table = read_gpa_bytes(vmar, mem_regions, first_desc.addr, table_len)?;
 
-    let first_indirect_desc = read_indirect_desc(vmar, table_uva, table_num, 0)?;
+    let first_indirect_desc = read_indirect_desc(table.as_slice(), table_num, 0)?;
     read_tx_desc_chain(vmar, mem_regions, first_indirect_desc, table_num, |index| {
-        read_indirect_desc(vmar, table_uva, table_num, index)
+        read_indirect_desc(table.as_slice(), table_num, index)
     })
 }
 
@@ -1515,7 +1712,6 @@ fn read_tx_desc_chain(
     mut read_desc: impl FnMut(usize) -> Result<VirtqDesc>,
 ) -> Result<TxChain> {
     let mut bytes = Vec::new();
-    let mut total_len: u32 = 0;
     let mut desc = start_desc;
 
     for _ in 0..num {
@@ -1530,12 +1726,9 @@ fn read_tx_desc_chain(
         }
 
         append_tx_desc_bytes(vmar, mem_regions, desc, &mut bytes)?;
-        total_len = total_len.checked_add(desc.len).ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "vhost-vsock TX descriptor chain too large")
-        })?;
 
         if desc.flags & VIRTQ_DESC_F_NEXT == 0 {
-            return Ok(TxChain { bytes, total_len });
+            return Ok(TxChain { bytes });
         }
 
         let next = desc.next as usize;
@@ -1573,12 +1766,7 @@ fn read_vring_desc(
     )
 }
 
-fn read_indirect_desc(
-    vmar: &Vmar,
-    table_uva: usize,
-    table_num: usize,
-    index: usize,
-) -> Result<VirtqDesc> {
+fn read_indirect_desc(table: &[u8], table_num: usize, index: usize) -> Result<VirtqDesc> {
     if index >= table_num {
         return_errno_with_message!(
             Errno::EINVAL,
@@ -1586,15 +1774,21 @@ fn read_indirect_desc(
         );
     }
 
-    read_desc_at(
-        vmar,
-        checked_table_elem_addr(
-            table_uva,
-            index,
-            size_of::<VirtqDesc>(),
-            "vhost-vsock indirect descriptor table address overflow",
-        )?,
-    )
+    let offset = index.checked_mul(size_of::<VirtqDesc>()).ok_or_else(|| {
+        Error::with_message(
+            Errno::EINVAL,
+            "vhost-vsock indirect descriptor table overflow",
+        )
+    })?;
+    let desc_bytes = table
+        .get(offset..offset + size_of::<VirtqDesc>())
+        .ok_or_else(|| {
+            Error::with_message(
+                Errno::EINVAL,
+                "vhost-vsock indirect descriptor table overflow",
+            )
+        })?;
+    VirtqDesc::from_bytes(desc_bytes)
 }
 
 fn read_desc_at(vmar: &Vmar, user_addr: usize) -> Result<VirtqDesc> {
@@ -1619,7 +1813,7 @@ fn append_tx_desc_bytes(
     if new_len > VHOST_VSOCK_MAX_TX_CHAIN_BYTES {
         return_errno_with_message!(Errno::EINVAL, "vhost-vsock TX chain exceeds size limit");
     }
-    let desc_uva = gpa_to_uva(mem_regions, desc.addr, desc_len).ok_or_else(|| {
+    let desc_segments = gpa_to_uva_segments(mem_regions, desc.addr, desc_len).ok_or_else(|| {
         Error::with_message(
             Errno::EFAULT,
             "vhost-vsock TX desc.addr not covered by mem table",
@@ -1627,13 +1821,12 @@ fn append_tx_desc_bytes(
     })?;
     let old_len = bytes.len();
     bytes.resize(new_len, 0);
-    let mut writer = VmWriter::from(&mut bytes[old_len..]).to_fallible();
-    vmar.read_alien(desc_uva, &mut writer).map_err(|(e, _)| e)?;
+    read_gpa_segments(vmar, desc_segments.as_slice(), &mut bytes[old_len..])?;
     Ok(())
 }
 
 fn validate_tx_header_for_backend(backend: &VhostVsockBackend, hdr: &VirtioVsockHdr) -> bool {
-    hdr.dst_cid == HOST_CID && Some(hdr.src_cid) == backend.inputs.guest_cid
+    hdr.dst_cid == HOST_CID && hdr.src_cid == backend.inputs.guest_cid
 }
 
 fn deliver_tx_packet(
@@ -1664,13 +1857,19 @@ fn deliver_tx_packet(
     Ok(())
 }
 
-fn publish_tx_used(
+fn complete_tx_chain(
     vmar: &Vmar,
     addr: &VhostVringAddr,
     num: usize,
     head: usize,
-    len: u32,
+    last_avail: &mut u16,
 ) -> Result<()> {
+    publish_tx_used(vmar, addr, num, head)?;
+    *last_avail = last_avail.wrapping_add(1);
+    Ok(())
+}
+
+fn publish_tx_used(vmar: &Vmar, addr: &VhostVringAddr, num: usize, head: usize) -> Result<()> {
     let mut used = VirtqUsedHeader::default();
     let mut writer = VmWriter::from(used.as_mut_bytes()).to_fallible();
     vmar.read_alien(
@@ -1685,13 +1884,13 @@ fn publish_tx_used(
     let used_slot = used.idx as usize % num;
     let used_elem = VirtqUsedElem {
         id: head as u32,
-        len,
+        len: 0,
     };
     let mut reader = VmReader::from(used_elem.as_bytes()).to_fallible();
     vmar.write_alien(
         checked_user_elem_addr(
             addr.used_user_addr,
-            4,
+            VIRTQ_USED_RING_OFFSET,
             used_slot,
             size_of::<VirtqUsedElem>(),
             "vhost-vsock TX used ring address overflow",
@@ -1710,6 +1909,19 @@ fn publish_tx_used(
         &mut reader,
     )
     .map_err(|(e, _)| e)?;
+    Ok(())
+}
+
+fn checked_userspace_range(base: u64, len: u64, message: &'static str) -> Result<()> {
+    let base = usize::try_from(base).map_err(|_| Error::with_message(Errno::EINVAL, message))?;
+    let len = usize::try_from(len).map_err(|_| Error::with_message(Errno::EINVAL, message))?;
+    if base < VMAR_LOWEST_ADDR
+        || VMAR_CAP_ADDR
+            .checked_sub(base)
+            .is_none_or(|remaining| remaining < len)
+    {
+        return_errno_with_message!(Errno::EINVAL, message);
+    }
     Ok(())
 }
 
@@ -1735,21 +1947,8 @@ fn checked_user_elem_addr(
     checked_user_addr(base, offset, message)
 }
 
-fn checked_table_elem_addr(
-    base: usize,
-    index: usize,
-    elem_size: usize,
-    message: &'static str,
-) -> Result<usize> {
-    let offset = index
-        .checked_mul(elem_size)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, message))?;
-    base.checked_add(offset)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, message))
-}
-
 pub(super) fn init() -> Result<()> {
-    register(VhostVsockDevice::new())
+    char::register(VhostVsockDevice::new())
 }
 
 const VHOST_VSOCK_VRING_COUNT: usize = 2;
@@ -1795,7 +1994,8 @@ struct VhostVringAddr {
     log_guest_addr: u64,
 }
 
-// virtio split-virtqueue layout structures.
+// Virtio split-virtqueue layout structures, as specified by the OASIS Virtio
+// split virtqueue format and mirrored by Linux UAPI `virtio_ring.h`.
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
@@ -1804,6 +2004,29 @@ struct VirtqDesc {
     len: u32,
     flags: u16,
     next: u16,
+}
+
+impl VirtqDesc {
+    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let bytes = bytes.get(..size_of::<Self>()).ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "vhost-vsock descriptor is truncated")
+        })?;
+
+        Ok(Self {
+            addr: u64::from_le_bytes(bytes[0..8].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock descriptor addr is malformed")
+            })?),
+            len: u32::from_le_bytes(bytes[8..12].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock descriptor len is malformed")
+            })?),
+            flags: u16::from_le_bytes(bytes[12..14].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock descriptor flags are malformed")
+            })?),
+            next: u16::from_le_bytes(bytes[14..16].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock descriptor next is malformed")
+            })?),
+        })
+    }
 }
 
 #[repr(C)]
@@ -1829,9 +2052,10 @@ struct VirtqUsedElem {
 
 /// virtio-vsock packet header (44 bytes, all little-endian).
 ///
-/// We build/serialize this as a flat byte buffer to side-step `Pod`'s
-/// no-padding requirement (the natural `repr(C)` layout has 4 bytes of
-/// trailing padding for u64 alignment).
+/// We build/serialize this as a flat byte buffer
+/// to side-step `Pod`'s no-padding requirement.
+/// The natural `repr(C)` layout has 4 bytes of trailing padding
+/// for `u64` alignment.
 ///
 /// Reference: Linux `include/uapi/linux/virtio_vsock.h`.
 #[derive(Clone, Copy, Debug, Default)]
@@ -1869,19 +2093,49 @@ impl VirtioVsockHdr {
 
 const VIRTIO_VSOCK_TYPE_STREAM: u16 = 1;
 impl VirtioVsockHdr {
-    fn from_bytes(b: &[u8]) -> Self {
-        Self {
-            src_cid: u64::from_le_bytes(b[0..8].try_into().unwrap()),
-            dst_cid: u64::from_le_bytes(b[8..16].try_into().unwrap()),
-            src_port: u32::from_le_bytes(b[16..20].try_into().unwrap()),
-            dst_port: u32::from_le_bytes(b[20..24].try_into().unwrap()),
-            len: u32::from_le_bytes(b[24..28].try_into().unwrap()),
-            type_: u16::from_le_bytes(b[28..30].try_into().unwrap()),
-            op: u16::from_le_bytes(b[30..32].try_into().unwrap()),
-            flags: u32::from_le_bytes(b[32..36].try_into().unwrap()),
-            buf_alloc: u32::from_le_bytes(b[36..40].try_into().unwrap()),
-            fwd_cnt: u32::from_le_bytes(b[40..44].try_into().unwrap()),
-        }
+    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let bytes = bytes.get(..VIRTIO_VSOCK_HDR_SIZE).ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "vhost-vsock packet header is truncated")
+        })?;
+
+        Ok(Self {
+            src_cid: u64::from_le_bytes(bytes[0..8].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock packet src CID is malformed")
+            })?),
+            dst_cid: u64::from_le_bytes(bytes[8..16].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock packet dst CID is malformed")
+            })?),
+            src_port: u32::from_le_bytes(bytes[16..20].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock packet src port is malformed")
+            })?),
+            dst_port: u32::from_le_bytes(bytes[20..24].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock packet dst port is malformed")
+            })?),
+            len: u32::from_le_bytes(bytes[24..28].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock packet length is malformed")
+            })?),
+            type_: u16::from_le_bytes(bytes[28..30].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock packet type is malformed")
+            })?),
+            op: u16::from_le_bytes(bytes[30..32].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock packet op is malformed")
+            })?),
+            flags: u32::from_le_bytes(bytes[32..36].try_into().map_err(|_| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock packet flags are malformed")
+            })?),
+            buf_alloc: u32::from_le_bytes(bytes[36..40].try_into().map_err(|_| {
+                Error::with_message(
+                    Errno::EINVAL,
+                    "vhost-vsock packet buffer alloc is malformed",
+                )
+            })?),
+            fwd_cnt: u32::from_le_bytes(bytes[40..44].try_into().map_err(|_| {
+                Error::with_message(
+                    Errno::EINVAL,
+                    "vhost-vsock packet forward count is malformed",
+                )
+            })?),
+        })
     }
 }
 

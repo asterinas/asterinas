@@ -7,13 +7,15 @@
 #include <linux/virtio_ring.h>
 #include <linux/virtio_vsock.h>
 #include <poll.h>
-#include <stdint.h>
 #include <limits.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <linux/vm_sockets.h>
 
@@ -33,6 +35,7 @@
 #define TX_PAYLOAD_LEN 128
 #define PAGE_SIZE 4096
 #define ALIGN_UP(value, align) (((value) + (align) - 1) & ~((align) - 1))
+#define INDIRECT_TABLE_LEN ((RING_SIZE + 1) * sizeof(struct vring_desc))
 
 struct vhost_vsock_ring {
 	struct vring_desc desc[RING_SIZE];
@@ -59,6 +62,7 @@ struct vhost_vsock_fixture {
 	uint8_t rx_payload[RX_PAYLOAD_LEN];
 	struct virtio_vsock_hdr tx_header;
 	uint8_t tx_payload[TX_PAYLOAD_LEN];
+	struct vring_desc indirect_desc[RING_SIZE + 1];
 	int fd;
 	int rx_kick;
 	int rx_call;
@@ -71,11 +75,44 @@ static struct vhost_vsock_fixture fixture __attribute__((aligned(PAGE_SIZE)));
 static struct vhost_vsock_fixture second_fixture
 	__attribute__((aligned(PAGE_SIZE)));
 static uint8_t mem_table_page[PAGE_SIZE] __attribute__((aligned(PAGE_SIZE)));
+static uint8_t split_mem[2 * PAGE_SIZE] __attribute__((aligned(PAGE_SIZE)));
 
 static int open_vhost_vsock(void)
 {
 	return open("/dev/vhost-vsock", O_RDWR | O_CLOEXEC);
 }
+
+FN_SETUP(exec_owner_child)
+{
+	const char *fd_env = getenv("VHOST_VSOCK_EXEC_OWNER_FD");
+	char *endptr;
+	long fd_long;
+	uint64_t features = 0;
+	int set_ret;
+	int set_errno;
+	int reset_ret;
+	int reset_errno;
+
+	if (fd_env == NULL)
+		return;
+
+	fd_long = strtol(fd_env, &endptr, 10);
+	if (*fd_env == '\0' || *endptr != '\0' || fd_long < 0 ||
+	    fd_long > INT_MAX)
+		_exit(2);
+
+	set_ret = ioctl((int)fd_long, VHOST_SET_FEATURES, &features);
+	set_errno = errno;
+	reset_ret = ioctl((int)fd_long, VHOST_RESET_OWNER);
+	reset_errno = errno;
+
+	if (set_ret < 0 && set_errno == EPERM && reset_ret < 0 &&
+	    reset_errno == EPERM)
+		_exit(0);
+
+	_exit(1);
+}
+END_SETUP()
 
 static void close_fd_if_open(int *fd)
 {
@@ -167,9 +204,8 @@ static void setup_tx_packet(struct vhost_vsock_fixture *f, uint64_t src_cid,
 	f->tx.avail.idx++;
 }
 
-static void
-configure_vhost_device_without_running(struct vhost_vsock_fixture *f,
-				       uint64_t guest_cid)
+static void configure_vhost_device_without_running_with_eventfd_flags(
+	struct vhost_vsock_fixture *f, uint64_t guest_cid, int eventfd_flags)
 {
 	uint64_t features = 0;
 	struct vhost_vring_state state = { 0 };
@@ -177,10 +213,10 @@ configure_vhost_device_without_running(struct vhost_vsock_fixture *f,
 	struct vhost_vring_file file = { 0 };
 
 	f->fd = CHECK(open_vhost_vsock());
-	f->rx_kick = CHECK(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
-	f->rx_call = CHECK(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
-	f->tx_kick = CHECK(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
-	f->tx_call = CHECK(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
+	f->rx_kick = CHECK(eventfd(0, eventfd_flags));
+	f->rx_call = CHECK(eventfd(0, eventfd_flags));
+	f->tx_kick = CHECK(eventfd(0, eventfd_flags));
+	f->tx_call = CHECK(eventfd(0, eventfd_flags));
 
 	f->mem.memory.nregions = 1;
 	f->mem.region.guest_phys_addr = (uintptr_t)f;
@@ -223,6 +259,14 @@ configure_vhost_device_without_running(struct vhost_vsock_fixture *f,
 	CHECK(ioctl(f->fd, VHOST_SET_VRING_CALL, &file));
 
 	CHECK(ioctl(f->fd, VHOST_VSOCK_SET_GUEST_CID, &guest_cid));
+}
+
+static void
+configure_vhost_device_without_running(struct vhost_vsock_fixture *f,
+				       uint64_t guest_cid)
+{
+	configure_vhost_device_without_running_with_eventfd_flags(
+		f, guest_cid, EFD_CLOEXEC | EFD_NONBLOCK);
 }
 
 static void start_vhost_device(struct vhost_vsock_fixture *f)
@@ -337,15 +381,15 @@ static int wait_worker_stopped(int fd)
 	return -1;
 }
 
-static int expect_rx_packet(uint16_t op, uint32_t dst_port, const char *payload)
+static int expect_rx_packet(struct vhost_vsock_fixture *f, uint16_t op,
+			    uint32_t dst_port, const char *payload)
 {
-	if (wait_eventfd(fixture.rx_call) < 0)
+	if (wait_eventfd(f->rx_call) < 0)
 		return -1;
-	if (fixture.rx.used.idx != fixture.rx.avail.idx ||
-	    fixture.rx_header.src_cid != VMADDR_CID_HOST ||
-	    fixture.rx_header.dst_cid != GUEST_CID ||
-	    fixture.rx_header.dst_port != dst_port ||
-	    fixture.rx_header.op != op) {
+	if (f->rx.used.idx != f->rx.avail.idx ||
+	    f->rx_header.src_cid != VMADDR_CID_HOST ||
+	    f->rx_header.dst_cid != GUEST_CID ||
+	    f->rx_header.dst_port != dst_port || f->rx_header.op != op) {
 		errno = EPROTO;
 		return -1;
 	}
@@ -353,8 +397,8 @@ static int expect_rx_packet(uint16_t op, uint32_t dst_port, const char *payload)
 	if (payload != NULL) {
 		size_t payload_len = strlen(payload);
 
-		if (fixture.rx_header.len != payload_len ||
-		    memcmp(fixture.rx_payload, payload, payload_len) != 0) {
+		if (f->rx_header.len != payload_len ||
+		    memcmp(f->rx_payload, payload, payload_len) != 0) {
 			errno = EPROTO;
 			return -1;
 		}
@@ -441,6 +485,70 @@ FN_TEST(owner_lifecycle)
 }
 END_TEST()
 
+FN_TEST(owner_process_required)
+{
+	int fd = TEST_SUCC(open_vhost_vsock());
+	uint64_t features = 0;
+	int status = 0;
+	pid_t child;
+
+	TEST_SUCC(ioctl(fd, VHOST_SET_OWNER));
+	child = TEST_SUCC(fork());
+	if (child == 0) {
+		if (ioctl(fd, VHOST_SET_FEATURES, &features) < 0 &&
+		    errno == EPERM && ioctl(fd, VHOST_RESET_OWNER) < 0 &&
+		    errno == EPERM) {
+			_exit(0);
+		}
+		_exit(1);
+	}
+
+	TEST_RES(waitpid(child, &status, 0), _ret == child &&
+						     WIFEXITED(status) &&
+						     WEXITSTATUS(status) == 0);
+	TEST_SUCC(ioctl(fd, VHOST_RESET_OWNER));
+	TEST_SUCC(close(fd));
+}
+END_TEST()
+
+FN_TEST(owner_address_space_required_after_exec)
+{
+	int fd = TEST_SUCC(open_vhost_vsock());
+	char fd_env[64];
+	char self_path[PATH_MAX];
+	ssize_t len;
+	int flags;
+	int status = 0;
+	pid_t child;
+
+	flags = TEST_SUCC(fcntl(fd, F_GETFD));
+	TEST_SUCC(fcntl(fd, F_SETFD, flags & ~FD_CLOEXEC));
+	TEST_SUCC(ioctl(fd, VHOST_SET_OWNER));
+
+	len = TEST_SUCC(
+		readlink("/proc/self/exe", self_path, sizeof(self_path) - 1));
+	self_path[len] = '\0';
+	TEST_RES(snprintf(fd_env, sizeof(fd_env),
+			  "VHOST_VSOCK_EXEC_OWNER_FD=%d", fd),
+		 _ret > 0 && (size_t)_ret < sizeof(fd_env));
+
+	child = TEST_SUCC(fork());
+	if (child == 0) {
+		char *const argv[] = { self_path, NULL };
+		char *const envp[] = { fd_env, NULL };
+
+		execve(self_path, argv, envp);
+		_exit(127);
+	}
+
+	TEST_RES(waitpid(child, &status, 0), _ret == child &&
+						     WIFEXITED(status) &&
+						     WEXITSTATUS(status) == 0);
+	TEST_SUCC(ioctl(fd, VHOST_RESET_OWNER));
+	TEST_SUCC(close(fd));
+}
+END_TEST()
+
 FN_TEST(guest_cid_validation)
 {
 	uint64_t reserved_cid = 2;
@@ -460,6 +568,7 @@ END_TEST()
 
 FN_TEST(vring_index_validation)
 {
+	int regular_fd;
 	struct vhost_vring_state state = {
 		.index = 2,
 		.num = 8,
@@ -491,12 +600,24 @@ FN_TEST(vring_index_validation)
 	TEST_SUCC(ioctl(vhost_fd, VHOST_SET_VRING_NUM, &state));
 	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_VRING_ADDR, &addr), EINVAL);
 
+	addr.desc_user_addr = 0;
+	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_VRING_ADDR, &addr), EINVAL);
+
 	addr.desc_user_addr = (uintptr_t)fixture.rx.desc;
 	addr.flags = 1;
 	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_VRING_ADDR, &addr), EINVAL);
 	addr.flags = 0;
 	addr.log_guest_addr = (uintptr_t)mem_table_page;
 	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_VRING_ADDR, &addr), EINVAL);
+
+	state.num = (uint32_t)UINT16_MAX + 1;
+	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_VRING_BASE, &state), EINVAL);
+
+	regular_fd = TEST_SUCC(open("/dev/null", O_RDONLY | O_CLOEXEC));
+	file.index = 0;
+	file.fd = regular_fd;
+	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_VRING_KICK, &file), EINVAL);
+	TEST_SUCC(close(regular_fd));
 }
 END_TEST()
 
@@ -525,9 +646,29 @@ FN_TEST(mem_table_validation)
 	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_MEM_TABLE, &table.memory), EINVAL);
 
 	table.region.guest_phys_addr = (uintptr_t)mem_table_page;
+	table.region.userspace_addr = 0;
+	table.region.memory_size = sizeof(mem_table_page);
+	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_MEM_TABLE, &table.memory), EINVAL);
+
+	table.region.guest_phys_addr = (uintptr_t)mem_table_page;
 	table.region.userspace_addr = (uintptr_t)mem_table_page;
 	table.region.memory_size = sizeof(mem_table_page);
 	TEST_SUCC(ioctl(vhost_fd, VHOST_SET_MEM_TABLE, &table.memory));
+}
+END_TEST()
+
+FN_TEST(vring_call_eventfd_can_be_unbound)
+{
+	struct vhost_vring_file file = {
+		.index = 0,
+		.fd = VHOST_FILE_UNBIND,
+	};
+
+	reset_fixture();
+	configure_vhost_device_without_running(&fixture, GUEST_CID);
+	TEST_SUCC(ioctl(fixture.fd, VHOST_SET_VRING_CALL, &file));
+	start_vhost_device(&fixture);
+	TEST_SUCC(teardown_vhost_device(&fixture));
 }
 END_TEST()
 
@@ -572,6 +713,47 @@ FN_TEST(reconfigure_while_running)
 }
 END_TEST()
 
+FN_TEST(vring_base_preserved_across_start_stop)
+{
+	struct vhost_vring_state state = { 0 };
+	int running = 0;
+
+	reset_fixture();
+	configure_vhost_device_without_running(&fixture, GUEST_CID);
+
+	state.index = 0;
+	state.num = 3;
+	TEST_SUCC(ioctl(fixture.fd, VHOST_SET_VRING_BASE, &state));
+	state.index = 1;
+	state.num = 5;
+	TEST_SUCC(ioctl(fixture.fd, VHOST_SET_VRING_BASE, &state));
+
+	start_vhost_device(&fixture);
+
+	state.index = 0;
+	state.num = 0;
+	TEST_SUCC(ioctl(fixture.fd, VHOST_GET_VRING_BASE, &state));
+	TEST_RES(state.num, state.num == 3);
+	state.index = 1;
+	state.num = 0;
+	TEST_SUCC(ioctl(fixture.fd, VHOST_GET_VRING_BASE, &state));
+	TEST_RES(state.num, state.num == 5);
+
+	TEST_SUCC(ioctl(fixture.fd, VHOST_VSOCK_SET_RUNNING, &running));
+
+	state.index = 0;
+	state.num = 0;
+	TEST_SUCC(ioctl(fixture.fd, VHOST_GET_VRING_BASE, &state));
+	TEST_RES(state.num, state.num == 3);
+	state.index = 1;
+	state.num = 0;
+	TEST_SUCC(ioctl(fixture.fd, VHOST_GET_VRING_BASE, &state));
+	TEST_RES(state.num, state.num == 5);
+
+	TEST_SUCC(teardown_vhost_device(&fixture));
+}
+END_TEST()
+
 FN_TEST(worker_failure_releases_guest_cid)
 {
 	int running = 0;
@@ -592,12 +774,186 @@ FN_TEST(worker_failure_releases_guest_cid)
 }
 END_TEST()
 
+FN_TEST(tx_progress_preserved_after_partial_failure)
+{
+	struct vhost_vring_state state = {
+		.index = 1,
+	};
+	int running = 0;
+
+	reset_fixture();
+	setup_tx_packet(&fixture, GUEST_CID + 1, PEER_PORT, PEER_PORT,
+			VIRTIO_VSOCK_OP_RESPONSE, NULL, 0);
+	fixture.tx.avail.ring[fixture.tx.avail.idx % RING_SIZE] = RING_SIZE;
+	fixture.tx.avail.idx++;
+
+	configure_vhost_device(&fixture, GUEST_CID);
+	TEST_SUCC(kick_eventfd(fixture.tx_kick));
+	TEST_SUCC(wait_eventfd(fixture.tx_call));
+	TEST_SUCC(wait_worker_stopped(fixture.fd));
+	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 1);
+	TEST_RES(fixture.tx.used.ring[0].len, fixture.tx.used.ring[0].len == 0);
+
+	TEST_SUCC(ioctl(fixture.fd, VHOST_GET_VRING_BASE, &state));
+	TEST_RES(state.num, state.num == 1);
+
+	TEST_SUCC(ioctl(fixture.fd, VHOST_VSOCK_SET_RUNNING, &running));
+	TEST_SUCC(teardown_vhost_device(&fixture));
+}
+END_TEST()
+
+FN_TEST(tx_avail_delta_too_large_releases_guest_cid)
+{
+	int running = 0;
+
+	reset_fixture();
+	reset_vhost_fixture(&second_fixture);
+	fixture.tx.avail.idx = RING_SIZE + 1;
+
+	configure_vhost_device(&fixture, GUEST_CID);
+	TEST_SUCC(kick_eventfd(fixture.tx_kick));
+	TEST_SUCC(wait_worker_stopped(fixture.fd));
+	TEST_SUCC(ioctl(fixture.fd, VHOST_VSOCK_SET_RUNNING, &running));
+
+	configure_vhost_device(&second_fixture, GUEST_CID);
+	TEST_SUCC(teardown_vhost_device(&second_fixture));
+	TEST_SUCC(teardown_vhost_device(&fixture));
+}
+END_TEST()
+
+FN_TEST(rx_avail_delta_too_large_releases_guest_cid)
+{
+	int running = 0;
+	int socket_fd;
+
+	reset_fixture();
+	reset_vhost_fixture(&second_fixture);
+	fixture.rx.avail.idx = RING_SIZE + 1;
+
+	configure_vhost_device(&fixture, GUEST_CID);
+	socket_fd = TEST_SUCC(connect_to_guest(PEER_PORT));
+	TEST_SUCC(kick_eventfd(fixture.rx_kick));
+	TEST_SUCC(wait_worker_stopped(fixture.fd));
+	TEST_SUCC(ioctl(fixture.fd, VHOST_VSOCK_SET_RUNNING, &running));
+
+	TEST_SUCC(close(socket_fd));
+	configure_vhost_device(&second_fixture, GUEST_CID);
+	TEST_SUCC(teardown_vhost_device(&second_fixture));
+	TEST_SUCC(teardown_vhost_device(&fixture));
+}
+END_TEST()
+
+FN_TEST(tx_descriptor_can_span_memory_regions)
+{
+	struct {
+		struct vhost_memory memory;
+		struct vhost_memory_region region[2];
+	} table = { 0 };
+	uint8_t *split_header = split_mem + PAGE_SIZE - 16;
+
+	reset_fixture();
+	memset(split_mem, 0, sizeof(split_mem));
+	setup_tx_packet(&fixture, GUEST_CID + 1, PEER_PORT, PEER_PORT,
+			VIRTIO_VSOCK_OP_RESPONSE, NULL, 0);
+	memcpy(split_header, &fixture.tx_header, sizeof(fixture.tx_header));
+	fixture.tx.desc[TX_HEADER_DESC].addr = (uintptr_t)split_header;
+	fixture.tx.desc[TX_HEADER_DESC].len = sizeof(fixture.tx_header);
+	fixture.tx.desc[TX_HEADER_DESC].flags = 0;
+
+	configure_vhost_device_without_running(&fixture, GUEST_CID);
+
+	table.memory.nregions = 2;
+	table.region[0].guest_phys_addr = (uintptr_t)split_mem;
+	table.region[0].memory_size = PAGE_SIZE;
+	table.region[0].userspace_addr = (uintptr_t)split_mem;
+	table.region[1].guest_phys_addr = (uintptr_t)split_mem + PAGE_SIZE;
+	table.region[1].memory_size = PAGE_SIZE;
+	table.region[1].userspace_addr = (uintptr_t)split_mem + PAGE_SIZE;
+	TEST_SUCC(ioctl(fixture.fd, VHOST_SET_MEM_TABLE, &table.memory));
+
+	start_vhost_device(&fixture);
+	TEST_SUCC(kick_eventfd(fixture.tx_kick));
+	TEST_SUCC(wait_eventfd(fixture.tx_call));
+	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 1);
+	TEST_RES(fixture.tx.used.ring[0].len, fixture.tx.used.ring[0].len == 0);
+
+	TEST_SUCC(teardown_vhost_device(&fixture));
+}
+END_TEST()
+
+FN_TEST(indirect_tx_table_too_large_releases_guest_cid)
+{
+	int running = 0;
+
+	reset_fixture();
+	reset_vhost_fixture(&second_fixture);
+	setup_tx_packet(&fixture, GUEST_CID, PEER_PORT, PEER_PORT,
+			VIRTIO_VSOCK_OP_RW, NULL, 0);
+	fixture.tx.desc[TX_HEADER_DESC].addr = (uintptr_t)fixture.indirect_desc;
+	fixture.tx.desc[TX_HEADER_DESC].len = INDIRECT_TABLE_LEN;
+	fixture.tx.desc[TX_HEADER_DESC].flags = VRING_DESC_F_INDIRECT;
+	fixture.indirect_desc[0].addr = (uintptr_t)&fixture.tx_header;
+	fixture.indirect_desc[0].len = sizeof(fixture.tx_header);
+
+	configure_vhost_device(&fixture, GUEST_CID);
+	TEST_SUCC(kick_eventfd(fixture.tx_kick));
+	TEST_SUCC(wait_worker_stopped(fixture.fd));
+	TEST_SUCC(ioctl(fixture.fd, VHOST_VSOCK_SET_RUNNING, &running));
+
+	configure_vhost_device(&second_fixture, GUEST_CID);
+	TEST_SUCC(teardown_vhost_device(&second_fixture));
+	TEST_SUCC(teardown_vhost_device(&fixture));
+}
+END_TEST()
+
+FN_TEST(indirect_rx_table_too_large_releases_guest_cid)
+{
+	int running = 0;
+	int socket_fd;
+
+	reset_fixture();
+	reset_vhost_fixture(&second_fixture);
+	fixture.rx.desc[RX_HEADER_DESC].addr = (uintptr_t)fixture.indirect_desc;
+	fixture.rx.desc[RX_HEADER_DESC].len = INDIRECT_TABLE_LEN;
+	fixture.rx.desc[RX_HEADER_DESC].flags = VRING_DESC_F_INDIRECT;
+	fixture.rx.avail.ring[fixture.rx.avail.idx % RING_SIZE] = RX_HEAD;
+	fixture.rx.avail.idx++;
+
+	configure_vhost_device(&fixture, GUEST_CID);
+	socket_fd = TEST_SUCC(connect_to_guest(PEER_PORT));
+	TEST_SUCC(kick_eventfd(fixture.rx_kick));
+	TEST_SUCC(wait_worker_stopped(fixture.fd));
+	TEST_SUCC(ioctl(fixture.fd, VHOST_VSOCK_SET_RUNNING, &running));
+
+	TEST_SUCC(close(socket_fd));
+	configure_vhost_device(&second_fixture, GUEST_CID);
+	TEST_SUCC(teardown_vhost_device(&second_fixture));
+	TEST_SUCC(teardown_vhost_device(&fixture));
+}
+END_TEST()
+
 FN_TEST(unregistered_guest_cid_connect)
 {
 	int socket_fd = socket(AF_VSOCK, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	struct sockaddr_vm addr = {
 		.svm_family = AF_VSOCK,
 		.svm_cid = GUEST_CID,
+		.svm_port = PEER_PORT,
+	};
+
+	TEST_RES(socket_fd, socket_fd >= 0);
+	TEST_ERRNO(connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)),
+		   ENETUNREACH);
+	CHECK(close(socket_fd));
+}
+END_TEST()
+
+FN_TEST(host_cid_connect)
+{
+	int socket_fd = socket(AF_VSOCK, SOCK_STREAM | SOCK_NONBLOCK, 0);
+	struct sockaddr_vm addr = {
+		.svm_family = AF_VSOCK,
+		.svm_cid = VMADDR_CID_HOST,
 		.svm_port = PEER_PORT,
 	};
 
@@ -680,7 +1036,8 @@ FN_TEST(connect_send_and_cid_validation)
 
 	socket_fd = TEST_SUCC(connect_to_guest(PEER_PORT));
 	TEST_SUCC(kick_eventfd(fixture.rx_kick));
-	TEST_SUCC(expect_rx_packet(VIRTIO_VSOCK_OP_REQUEST, PEER_PORT, NULL));
+	TEST_SUCC(expect_rx_packet(&fixture, VIRTIO_VSOCK_OP_REQUEST, PEER_PORT,
+				   NULL));
 	host_port = fixture.rx_header.src_port;
 
 	setup_tx_packet(&fixture, GUEST_CID + 1, PEER_PORT, host_port,
@@ -688,29 +1045,70 @@ FN_TEST(connect_send_and_cid_validation)
 	TEST_SUCC(kick_eventfd(fixture.tx_kick));
 	TEST_SUCC(wait_eventfd(fixture.tx_call));
 	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 1);
+	TEST_RES(fixture.tx.used.ring[0].len, fixture.tx.used.ring[0].len == 0);
 
 	setup_tx_packet(&fixture, GUEST_CID, PEER_PORT, host_port,
 			VIRTIO_VSOCK_OP_RESPONSE, NULL, 0);
 	TEST_SUCC(kick_eventfd(fixture.tx_kick));
 	TEST_SUCC(wait_eventfd(fixture.tx_call));
 	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 2);
+	TEST_RES(fixture.tx.used.ring[1].len, fixture.tx.used.ring[1].len == 0);
 	TEST_SUCC(wait_socket_writable(socket_fd));
 
 	setup_rx_buffer_chain(&fixture);
 	TEST_RES(send(socket_fd, payload, strlen(payload), 0),
 		 _ret == (ssize_t)strlen(payload));
 	TEST_SUCC(kick_eventfd(fixture.rx_kick));
-	TEST_SUCC(expect_rx_packet(VIRTIO_VSOCK_OP_RW, PEER_PORT, payload));
+	TEST_SUCC(expect_rx_packet(&fixture, VIRTIO_VSOCK_OP_RW, PEER_PORT,
+				   payload));
 
 	setup_rx_buffer_chain(&fixture);
 	TEST_SUCC(shutdown(socket_fd, SHUT_RDWR));
 	TEST_SUCC(kick_eventfd(fixture.rx_kick));
-	TEST_SUCC(expect_rx_packet(VIRTIO_VSOCK_OP_SHUTDOWN, PEER_PORT, NULL));
+	TEST_SUCC(expect_rx_packet(&fixture, VIRTIO_VSOCK_OP_SHUTDOWN,
+				   PEER_PORT, NULL));
 	setup_tx_packet(&fixture, GUEST_CID, PEER_PORT, host_port,
 			VIRTIO_VSOCK_OP_RST, NULL, 0);
 	TEST_SUCC(kick_eventfd(fixture.tx_kick));
 	TEST_SUCC(wait_eventfd(fixture.tx_call));
 	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 3);
+	TEST_RES(fixture.tx.used.ring[2].len, fixture.tx.used.ring[2].len == 0);
+
+	TEST_SUCC(close(socket_fd));
+	TEST_SUCC(teardown_vhost_device(&fixture));
+}
+END_TEST()
+
+FN_TEST(blocking_eventfds_connect_send)
+{
+	const char payload[] = "blocking-eventfd";
+	int socket_fd;
+	uint32_t host_port;
+
+	reset_fixture();
+	setup_rx_buffer_chain(&fixture);
+	configure_vhost_device_without_running_with_eventfd_flags(
+		&fixture, GUEST_CID, EFD_CLOEXEC);
+	start_vhost_device(&fixture);
+
+	socket_fd = TEST_SUCC(connect_to_guest(PEER_PORT));
+	TEST_SUCC(kick_eventfd(fixture.rx_kick));
+	TEST_SUCC(expect_rx_packet(&fixture, VIRTIO_VSOCK_OP_REQUEST, PEER_PORT,
+				   NULL));
+	host_port = fixture.rx_header.src_port;
+
+	setup_tx_packet(&fixture, GUEST_CID, PEER_PORT, host_port,
+			VIRTIO_VSOCK_OP_RESPONSE, NULL, 0);
+	TEST_SUCC(kick_eventfd(fixture.tx_kick));
+	TEST_SUCC(wait_eventfd(fixture.tx_call));
+	TEST_SUCC(wait_socket_writable(socket_fd));
+
+	setup_rx_buffer_chain(&fixture);
+	TEST_RES(send(socket_fd, payload, strlen(payload), 0),
+		 _ret == (ssize_t)strlen(payload));
+	TEST_SUCC(kick_eventfd(fixture.rx_kick));
+	TEST_SUCC(expect_rx_packet(&fixture, VIRTIO_VSOCK_OP_RW, PEER_PORT,
+				   payload));
 
 	TEST_SUCC(close(socket_fd));
 	TEST_SUCC(teardown_vhost_device(&fixture));
