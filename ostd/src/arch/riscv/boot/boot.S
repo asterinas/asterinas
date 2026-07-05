@@ -54,7 +54,7 @@ TIMER_FREQ = 1000000
 
 // Reset the board via SBI system reset (EID = 0x53525354). Clobbers a0/a1/a6/a7.
 .macro SBI_RESET
-    li     a0, 0                   // reset_type = cold reset
+    li     a0, 1                   // reset_type = cold reboot
     li     a1, 0                   // reset_reason = 0
     li     a6, 0
     li     a7, 0x53525354          // SBI system reset EID
@@ -72,8 +72,9 @@ _start:
     // with the MMU off) and arm the watchdog timer. If anything hangs during
     // early boot, the timer will reset the board.
     lla    t0, _early_trap
-    li     t1, KERNEL_VMA_OFFSET
-    sub    t0, t0, t1
+    // Convert linked virtual address to physical (clear top 32 bits).
+    slli   t0, t0, 32
+    srli   t0, t0, 32
     csrw   stvec, t0
     SBI_SET_TIMER (60 * TIMER_FREQ)
     li     t0, 0x20
@@ -81,7 +82,10 @@ _start:
     csrsi  sstatus, 0x2            // SIE
 
     // Validate DTB pointer; fall back to the address we usually load it at.
-    li     t0, 0xedfe0dd0          // FDT magic (little-endian)
+    li     t0, 0xedfe0dd0          // FDT magic (little-endian load of big-endian 0xd00dfeed)
+    // `li` sign-extends; zero-extend to 64 bits so it matches `lwu`.
+    slli   t0, t0, 32
+    srli   t0, t0, 32
     li     t2, 0x80000000
     bltu   a1, t2, .Luse_default_dtb
     lwu    t1, 0(a1)
@@ -113,12 +117,13 @@ _start:
     // L4[256] -> 512 GiB linear leaf mapping physical 0
     // L4[511] -> boot_l3pt (high-half mapping for the kernel VMA)
     // All page-table symbols are linked high; convert to physical addresses.
-    li     t4, KERNEL_VMA_OFFSET
     lla    t1, boot_l4pt
-    sub    t1, t1, t4
+    slli   t1, t1, 32
+    srli   t1, t1, 32
 
     lla    t0, boot_l3pt
-    sub    t0, t0, t4
+    slli   t0, t0, 32
+    srli   t0, t0, 32
     srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
     ori    t0, t0, PTE_V | PTE_A  // non-leaf PTE: V+A (A may be required by HW walker)
     li     t2, 511 * PTE_SIZE
@@ -133,8 +138,8 @@ _start:
 
     // Try Sv48.
     lla    t0, boot_l4pt
-    li     t1, KERNEL_VMA_OFFSET
-    sub    t0, t0, t1
+    slli   t0, t0, 32
+    srli   t0, t0, 32
     li     t1, SATP_MODE_SV48
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
@@ -148,8 +153,8 @@ _start:
 
     // Try Sv39 fallback.
     lla    t0, boot_l3pt_sv39
-    li     t1, KERNEL_VMA_OFFSET
-    sub    t0, t0, t1
+    slli   t0, t0, 32
+    srli   t0, t0, 32
     li     t1, SATP_MODE_SV39
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
@@ -162,6 +167,9 @@ _start:
     beq    t0, t1, .Lmmu_ok
 
 .Ldtb_hang:
+    SBI_PUTCHAR '@'
+1:  j      1b
+
 .Lmmu_hang:
     SBI_PUTCHAR '!'
 1:  j      1b
