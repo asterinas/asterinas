@@ -34,6 +34,16 @@ cleanup() {
     if [ -f "$BOOT_S_ORIG" ]; then
         mv "$BOOT_S_ORIG" "$BOOT_S"
         echo "[+] Restored $BOOT_S"
+        # The QEMU build left a patched ELF in target/. Rebuild with the
+        # original UART base so the default target ELF is suitable for the
+        # real board again.
+        echo "[+] Rebuilding board ELF to overwrite QEMU-patched binary ..."
+        touch "$BOOT_S"
+        (
+            cd "$REPO_ROOT"
+            export OSDK_LOCAL_DEV=1
+            cargo osdk build --scheme milkv-megrez --target-arch riscv64 >/tmp/aster-board-rebuild.log 2>&1
+        ) || echo "[!] Board rebuild failed; see /tmp/aster-board-rebuild.log" >&2
     fi
 }
 trap cleanup EXIT
