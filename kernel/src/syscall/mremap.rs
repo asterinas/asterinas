@@ -3,7 +3,7 @@
 use align_ext::AlignExt;
 
 use super::SyscallReturn;
-use crate::prelude::*;
+use crate::{prelude::*, vm::vmar::RemapOldMappingAction};
 
 pub fn sys_mremap(
     old_addr: Vaddr,
@@ -28,33 +28,62 @@ fn do_sys_mremap(
     ctx: &Context,
 ) -> Result<Vaddr> {
     debug!(
-        "mremap: old_addr = 0x{:x}, old_size = {}, new_size = {}, flags = {:?}, new_addr = 0x{:x}",
+        "old_addr = 0x{:x}, old_size = {}, new_size = {}, flags = {:?}, new_addr = 0x{:x}",
         old_addr, old_size, new_size, flags, new_addr,
     );
 
     if !old_addr.is_multiple_of(PAGE_SIZE) {
-        return_errno_with_message!(Errno::EINVAL, "mremap: `old_addr` must be page-aligned");
+        return_errno_with_message!(Errno::EINVAL, "old_addr must be page-aligned");
     }
     if new_size == 0 {
-        return_errno_with_message!(Errno::EINVAL, "mremap: `new_size` cannot be zero");
+        return_errno_with_message!(Errno::EINVAL, "new_size cannot be zero");
     }
     if old_size == 0 {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "mremap: copying shareable mapping is not supported"
-        );
+        return_errno_with_message!(Errno::EINVAL, "copying shareable mapping is not supported");
     }
 
     if old_size.checked_add(PAGE_SIZE).is_none() || new_size.checked_add(PAGE_SIZE).is_none() {
-        return_errno_with_message!(Errno::EINVAL, "mremap: the size overflows")
+        return_errno_with_message!(Errno::EINVAL, "the size overflows")
     }
+
+    // `MREMAP_DONTUNMAP` keeps the old VMA in the tree as an anonymous
+    // zero-fill-on-demand mapping; we must move pages even when the sizes
+    // are equal.  `MREMAP_MAYMOVE` is required because the mapping cannot
+    // stay at its current address (the physical pages must be relocated).
+    if flags.contains(MremapFlags::MREMAP_DONTUNMAP) {
+        if !flags.contains(MremapFlags::MREMAP_MAYMOVE) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "MREMAP_DONTUNMAP must be combined with MREMAP_MAYMOVE"
+            );
+        }
+        if new_size != old_size {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "MREMAP_DONTUNMAP requires new_size to equal old_size"
+            );
+        }
+    }
+
+    // Align `old_size` and `new_size` after checking them.
     let old_size = old_size.align_up(PAGE_SIZE);
     let new_size = new_size.align_up(PAGE_SIZE);
+
+    let action = if flags.contains(MremapFlags::MREMAP_DONTUNMAP) {
+        RemapOldMappingAction::Keep
+    } else {
+        RemapOldMappingAction::Unmap
+    };
 
     let user_space = ctx.user_space();
     let vmar = user_space.vmar();
 
-    if !flags.contains(MremapFlags::MREMAP_FIXED) && new_size <= old_size {
+    // When `MREMAP_DONTUNMAP` is set, we must move the mapping rather than
+    // shrinking in place, even though `new_size` == `old_size`.
+    if !flags.contains(MremapFlags::MREMAP_FIXED)
+        && new_size <= old_size
+        && action == RemapOldMappingAction::Unmap
+    {
         // We can shrink a old range which spans multiple mappings. See
         // <https://github.com/google/gvisor/blob/95d875276806484f974ce9e95556a561331f8e22/test/syscalls/linux/mremap.cc#L100-L117>.
         vmar.resize_mapping(old_addr, old_size, new_size, false)?;
@@ -63,25 +92,20 @@ fn do_sys_mremap(
 
     if flags.contains(MremapFlags::MREMAP_MAYMOVE) {
         if flags.contains(MremapFlags::MREMAP_FIXED) {
-            vmar.remap(old_addr, old_size, Some(new_addr), new_size)
+            vmar.remap(old_addr, old_size, Some(new_addr), new_size, action)
         } else {
-            vmar.remap(old_addr, old_size, None, new_size)
+            vmar.remap(old_addr, old_size, None, new_size, action)
         }
     } else {
         if flags.contains(MremapFlags::MREMAP_FIXED) {
             return_errno_with_message!(
                 Errno::EINVAL,
-                "mremap: `MREMAP_FIXED` specified without also specifying `MREMAP_MAYMOVE`"
+                "MREMAP_FIXED specified without also specifying MREMAP_MAYMOVE"
             );
         }
         // We can ensure that `new_size > old_size` here. Since we are enlarging
         // the old mapping, it is necessary to check whether the old range lies
         // in a single mapping.
-        //
-        // FIXME: According to <https://man7.org/linux/man-pages/man2/mremap.2.html>,
-        // if the `MREMAP_MAYMOVE` flag is not set, and the mapping cannot
-        // be expanded at the current `Vaddr`, we should return an `ENOMEM`.
-        // However, `resize_mapping` returns a `EACCES` in this case.
         vmar.resize_mapping(old_addr, old_size, new_size, true)?;
         Ok(old_addr)
     }
@@ -91,7 +115,6 @@ bitflags! {
     struct MremapFlags: i32 {
         const MREMAP_MAYMOVE = 1 << 0;
         const MREMAP_FIXED = 1 << 1;
-        // TODO: Add support for this flag, which exists since Linux 5.7.
-        // const MREMAP_DONTUNMAP = 1 << 2;
+        const MREMAP_DONTUNMAP = 1 << 2;
     }
 }

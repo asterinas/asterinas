@@ -5,6 +5,17 @@ use ostd::{mm::vm_space::VmQueriedItem, task::disable_preempt};
 use super::{RssDelta, Vmar, util::is_intersected};
 use crate::{prelude::*, vm::vmar::is_userspace_vaddr_range};
 
+/// Controls how the old mapping is handled during a `remap` operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemapOldMappingAction {
+    /// Remove the old mapping after moving pages.
+    Unmap,
+    /// Keep the old address range mapped with its original properties.
+    /// Its physical pages are moved away, so subsequent page faults at
+    /// the old address will allocate fresh pages.
+    Keep,
+}
+
 impl Vmar {
     /// Resizes the original mapping.
     ///
@@ -59,9 +70,14 @@ impl Vmar {
     /// - If `new_addr` is `None`, a new range of size `new_size` will be
     ///   allocated, and the original mapping will be moved there.
     ///
+    /// When `action` is [`RemapOldMappingAction::Keep`], the old mapping
+    /// stays in the tree with its original properties; see
+    /// [`RemapOldMappingAction::Keep`] for details.
+    ///
     /// # Panics
     ///
-    /// This method panics if `new_addr` is `None` and `new_size <= old_size`.
+    /// This method panics if `new_addr` is `None` and `new_size <= old_size`
+    /// (unless `action` is [`RemapOldMappingAction::Keep`]).
     /// Use `resize_mapping` instead in this case.
     pub fn remap(
         &self,
@@ -69,6 +85,7 @@ impl Vmar {
         old_size: usize,
         new_addr: Option<Vaddr>,
         new_size: usize,
+        action: RemapOldMappingAction,
     ) -> Result<Vaddr> {
         debug_assert_eq!(old_addr % PAGE_SIZE, 0);
         debug_assert_eq!(old_size % PAGE_SIZE, 0);
@@ -131,10 +148,11 @@ impl Vmar {
                 &mut rss_delta,
             )?
         } else {
-            debug_assert!(new_size > old_size);
-
-            // Fast path: expand the old mapping in place to the new size
-            if is_userspace_vaddr_range(old_addr, new_size)
+            // Fast path: expand the old mapping in place to the new size.
+            // Skip when `action` is `RemapOldMappingAction::Keep` since we must
+            // actually move pages and keep the old mapping in the tree.
+            if action == RemapOldMappingAction::Unmap
+                && is_userspace_vaddr_range(old_addr, new_size)
                 && inner
                     .alloc_free_region_exact(old_range.end, new_size - old_size)
                     .is_ok()
@@ -149,9 +167,9 @@ impl Vmar {
             inner.alloc_free_region(new_size, PAGE_SIZE)?
         };
 
-        // Create a new `VmMapping`.
-        let old_mapping = {
-            let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
+        // Create a new `VmMapping` at the target address.
+        let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
+        let new_mapping = if action == RemapOldMappingAction::Unmap {
             let vm_mapping = inner.remove(&old_mapping_addr).unwrap();
             let (left, old_mapping, right) = vm_mapping.split_range(&old_range);
             if let Some(left) = left {
@@ -160,10 +178,13 @@ impl Vmar {
             if let Some(right) = right {
                 inner.insert_without_try_merge(right);
             }
-            old_mapping
+            // Note that we have ensured that `new_size >= old_size` at the beginning.
+            old_mapping.clone_for_remap_at(new_range.start)
+        } else {
+            let old_mapping = inner.vm_mappings.find_one(&old_mapping_addr).unwrap();
+            old_mapping.clone_range_for_remap_at(old_addr..old_addr + old_size, new_range.start)
         };
-        // Note that we have ensured that `new_size >= old_size` at the beginning.
-        let new_mapping = old_mapping.clone_for_remap_at(new_range.start);
+
         inner.insert_try_merge(new_mapping.enlarge(new_size - old_size));
 
         let preempt_guard = disable_preempt();

@@ -3,7 +3,7 @@ mremap(
     old_address,
     old_size,
     new_size,
-    flags = MREMAP_MAYMOVE
+    flags = MREMAP_DONTUNMAP | MREMAP_MAYMOVE
 );
 
 // Resize an existing memory mapping and force relocation to a specified location.
@@ -11,6 +11,6 @@ mremap(
     old_address,
     old_size,
     new_size,
-    flags = MREMAP_MAYMOVE | MREMAP_FIXED,
+    flags = MREMAP_DONTUNMAP | MREMAP_MAYMOVE | MREMAP_FIXED,
     new_address
 );
