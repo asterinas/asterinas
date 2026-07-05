@@ -118,7 +118,7 @@ pub(crate) fn tlb_flush_all_including_global() {
 }
 
 pub(crate) fn can_sync_dma() -> bool {
-    false
+    true
 }
 
 /// # Safety
@@ -127,8 +127,43 @@ pub(crate) fn can_sync_dma() -> bool {
 ///  - the virtual address range and DMA direction correspond correctly to a
 ///    DMA region;
 ///  - `can_sync_dma()` is `true`.
-pub(crate) unsafe fn sync_dma_range(_range: Range<Vaddr>, _is_from_device: bool) {
-    unreachable!("`can_sync_dma()` never returns `true`");
+pub(crate) unsafe fn sync_dma_range(mut range: Range<Vaddr>, is_from_device: bool) {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    static CACHE_LINE_SIZE: AtomicUsize = AtomicUsize::new(0);
+
+    let mut cache_line_size = CACHE_LINE_SIZE.load(Ordering::Relaxed);
+    if cache_line_size == 0 {
+        let dmin_line = {
+            let ctr: usize;
+            // SAFETY: It is safe to read the Cache Type Register (CTR).
+            unsafe { asm!("mrs {}, ctr_el0", out(reg) ctr) };
+            // DminLine, bits [19:16]: Log2 of the number of words in the smallest cache line.
+            (ctr >> 16) & 0xf
+        };
+        // A word contains 4 bytes.
+        cache_line_size = 4 << dmin_line;
+        assert!(cache_line_size <= PAGE_SIZE);
+        CACHE_LINE_SIZE.store(cache_line_size, Ordering::Relaxed);
+    }
+
+    // Start at an aligned address, so the following loop can cover every byte in the range.
+    range.start &= !(cache_line_size - 1);
+
+    for vaddr in range.step_by(cache_line_size) {
+        // Performing cache maintenance operations is required for correctness
+        // on systems with non-coherent DMA.
+        // SAFETY: The caller ensures that the virtual address range corresponds
+        // to a DMA region. So the underlying memory is untyped and the operations
+        // are safe to perform.
+        unsafe {
+            if is_from_device {
+                asm!("dc ivac, {}", in(reg) vaddr);
+            } else {
+                asm!("dc cvac, {}", in(reg) vaddr);
+            }
+        }
+    }
 }
 
 /// Activates the given root-level page table.
