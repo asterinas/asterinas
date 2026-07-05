@@ -8,7 +8,6 @@ mod protect;
 mod query;
 mod remap;
 mod unmap;
-
 use core::{
     array,
     ops::Range,
@@ -18,6 +17,7 @@ use core::{
 use align_ext::AlignExt;
 use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{cpu::CpuId, mm::VmSpace};
+pub use remap::RemapOldMappingAction;
 
 use super::{
     VMAR_CAP_ADDR, VMAR_LOWEST_ADDR,

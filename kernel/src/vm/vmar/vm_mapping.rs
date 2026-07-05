@@ -130,6 +130,17 @@ impl VmMapping {
         vm_mapping
     }
 
+    pub(super) fn clone_range_for_remap_at(&self, range: Range<Vaddr>, va: Vaddr) -> VmMapping {
+        let offset_in_mapping = range.start - self.map_to_addr;
+        VmMapping {
+            map_size: NonZeroUsize::new(range.end - range.start).unwrap(),
+            map_to_addr: va,
+            mapped_mem: self.mapped_mem.dup_at_offset(offset_in_mapping),
+            path: self.path.clone(),
+            ..*self
+        }
+    }
+
     /// Returns the mapping's start address.
     pub fn map_to_addr(&self) -> Vaddr {
         self.map_to_addr
@@ -653,24 +664,12 @@ impl VmMapping {
         debug_assert!(self.map_to_addr < at && at < self.map_end());
         debug_assert!(at.is_multiple_of(PAGE_SIZE));
 
-        let (l_mapped_mem, r_mapped_mem) = match self.mapped_mem {
-            MappedMemory::Vmo(vmo) => {
-                let at_offset = vmo.offset() + (at - self.map_to_addr);
-                let r_mapped_vmo = vmo.dup_at_offset(at_offset);
-                (MappedMemory::Vmo(vmo), MappedMemory::Vmo(r_mapped_vmo))
-            }
-            MappedMemory::Anonymous => {
-                // For anonymous mappings, we create new anonymous mappings for the split parts
-                (MappedMemory::Anonymous, MappedMemory::Anonymous)
-            }
-            MappedMemory::Device => {
-                // For device memory mappings, we create new device memory mappings for the split parts
-                (MappedMemory::Device, MappedMemory::Device)
-            }
-        };
-
         let left_size = at - self.map_to_addr;
         let right_size = self.map_size.get() - left_size;
+
+        let r_mapped_mem = self.mapped_mem.dup_at_offset(left_size);
+        let l_mapped_mem = self.mapped_mem;
+
         let left = Self {
             map_size: NonZeroUsize::new(left_size).unwrap(),
             map_to_addr: self.map_to_addr,
@@ -831,6 +830,26 @@ impl MappedMemory {
         match self {
             MappedMemory::Anonymous => MappedMemory::Anonymous,
             MappedMemory::Vmo(v) => MappedMemory::Vmo(v.dup()),
+            MappedMemory::Device => MappedMemory::Device,
+        }
+    }
+
+    /// Duplicates the mapped memory capability for a sub-range.
+    ///
+    /// The `offset` is relative to the start of the mapping, and must be
+    /// page-aligned.
+    fn dup_at_offset(&self, offset: usize) -> Self {
+        debug_assert!(offset.is_multiple_of(PAGE_SIZE));
+
+        match self {
+            MappedMemory::Anonymous => MappedMemory::Anonymous,
+            MappedMemory::Vmo(vmo) => {
+                let new_offset = vmo
+                    .offset()
+                    .checked_add(offset)
+                    .expect("mapped VMO offset should not overflow");
+                MappedMemory::Vmo(vmo.dup_at_offset(new_offset))
+            }
             MappedMemory::Device => MappedMemory::Device,
         }
     }
