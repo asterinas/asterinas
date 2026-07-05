@@ -317,7 +317,7 @@ impl VmMapping {
                 return Some(Cow::Borrowed("[heap]"));
             }
 
-            #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+            #[cfg(not(target_arch = "loongarch64"))]
             if let Some(vmo) = self.vmo() {
                 use crate::vdso::{VDSO_VMO_LAYOUT, vdso_vmo};
 
