@@ -337,16 +337,36 @@ impl AppArmorPolicy {
 
         let outcome = profile.evaluate_capability_access(required_cap);
         let mode = effective_mode(task_state.mode(), profile.mode());
-        if outcome.denied.is_empty() || mode == AppArmorMode::Complain {
+        if outcome.denied.is_empty() {
+            if outcome.audit {
+                info!(
+                    "AppArmor audited capability use: profile={} requested={:#x}",
+                    profile.name().as_str(),
+                    required_cap.bits()
+                );
+            }
             return Ok(());
         }
 
-        warn!(
-            "AppArmor denied capability use: profile={} requested={:#x} denied={:#x}",
-            profile.name().as_str(),
-            required_cap.bits(),
-            outcome.denied.bits()
-        );
+        if outcome.audit || !outcome.quiet {
+            let message = if mode == AppArmorMode::Complain {
+                "AppArmor would deny capability use"
+            } else {
+                "AppArmor denied capability use"
+            };
+            warn!(
+                "{}: profile={} requested={:#x} denied={:#x}",
+                message,
+                profile.name().as_str(),
+                required_cap.bits(),
+                outcome.denied.bits()
+            );
+        }
+
+        if mode == AppArmorMode::Complain {
+            return Ok(());
+        }
+
         return_errno_with_message!(Errno::EACCES, "AppArmor policy denied capability use");
     }
 
@@ -497,17 +517,40 @@ impl AppArmorPolicy {
         }
 
         let outcome = self.evaluate_path_access(profile, task_mode, path_view, permissions)?;
-        if outcome.is_allowed() || outcome.mode == AppArmorMode::Complain {
+        if outcome.is_allowed() {
+            if outcome.audit {
+                info!(
+                    "AppArmor audited file access: profile={} path={} requested={:#x}",
+                    profile.name().as_str(),
+                    path_view.as_str(),
+                    permissions.bits()
+                );
+            }
             return Ok(outcome);
         }
 
-        warn!(
-            "AppArmor denied file access: profile={} path={} requested={:#x} denied={:#x}",
-            profile.name().as_str(),
-            path_view.as_str(),
-            permissions.bits(),
-            outcome.denied.bits()
-        );
+        let enforce_denial =
+            outcome.mode != AppArmorMode::Complain || !outcome.explicit_denied.is_empty();
+        if outcome.audit || !outcome.quiet {
+            let message = if enforce_denial {
+                "AppArmor denied file access"
+            } else {
+                "AppArmor would deny file access"
+            };
+            warn!(
+                "{}: profile={} path={} requested={:#x} denied={:#x}",
+                message,
+                profile.name().as_str(),
+                path_view.as_str(),
+                permissions.bits(),
+                outcome.denied.bits()
+            );
+        }
+
+        if !enforce_denial {
+            return Ok(outcome);
+        }
+
         return_errno_with_message!(Errno::EACCES, "AppArmor policy denied access");
     }
 
@@ -578,7 +621,10 @@ impl AppArmorPolicy {
             if mode == AppArmorMode::Complain {
                 return Ok(PathAccessOutcome {
                     denied: permissions,
+                    explicit_denied: AppArmorFilePermission::empty(),
                     exec_transition: AppArmorExecTransition::Inherit,
+                    audit: false,
+                    quiet: false,
                     mode,
                 });
             }
@@ -587,11 +633,13 @@ impl AppArmorPolicy {
         }
 
         let outcome = profile.evaluate_file_access(path_view, permissions)?;
-        let _audit = outcome.audit;
 
         Ok(PathAccessOutcome {
             denied: outcome.denied,
+            explicit_denied: outcome.explicit_denied,
             exec_transition: outcome.exec_transition,
+            audit: outcome.audit,
+            quiet: outcome.quiet,
             mode,
         })
     }
@@ -607,7 +655,10 @@ fn effective_mode(task_mode: AppArmorMode, profile_mode: AppArmorMode) -> AppArm
 
 struct PathAccessOutcome {
     denied: AppArmorFilePermission,
+    explicit_denied: AppArmorFilePermission,
     exec_transition: AppArmorExecTransition,
+    audit: bool,
+    quiet: bool,
     mode: AppArmorMode,
 }
 
@@ -615,7 +666,10 @@ impl PathAccessOutcome {
     fn allowed(mode: AppArmorMode) -> Self {
         Self {
             denied: AppArmorFilePermission::empty(),
+            explicit_denied: AppArmorFilePermission::empty(),
             exec_transition: AppArmorExecTransition::Inherit,
+            audit: false,
+            quiet: false,
             mode,
         }
     }

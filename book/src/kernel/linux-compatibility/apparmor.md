@@ -46,7 +46,7 @@ namespace.
 
 The feature ABI currently exposes:
 - `features/abi`
-- `features/policy/versions/{v5,v6,v7}`
+- `features/policy/versions/{v5,v6,v7,v8,v9}`
 - `features/policy/set_load`
 - `features/policy/permstable32`
 - `features/policy/permstable32_version`
@@ -55,6 +55,10 @@ The feature ABI currently exposes:
 - `features/domain/change_profile`
 - `features/domain/change_onexec`
 - `features/domain/version`
+
+The `features/abi` file reports the supported Asterinas AppArmor ABI subset,
+including the Linux policy ABI range, file audit/quiet support, capability
+audit support, and complain-mode support.
 
 ## Procfs interfaces
 
@@ -109,8 +113,8 @@ this AppArmor subset yet.
 
 Profiles may run in enforce or complain mode.
 In enforce mode, denied accesses fail.
-In complain mode, denied accesses are recorded through the AppArmor decision
-path but are allowed to continue.
+In complain mode, implicit denials are recorded through the AppArmor decision
+path but are allowed to continue. Explicit deny rules remain enforced.
 
 The file policy is conservative: an access is allowed only when the current
 profile grants the requested permissions, and explicit deny rules take

@@ -167,12 +167,15 @@ impl AppArmorProfile {
 
     /// Evaluates capability access for this profile.
     pub fn evaluate_capability_access(&self, capabilities: CapSet) -> AppArmorCapabilityOutcome {
+        let denied = if self.capability_policy.allows(capabilities) {
+            CapSet::empty()
+        } else {
+            capabilities
+        };
         AppArmorCapabilityOutcome {
-            denied: if self.capability_policy.allows(capabilities) {
-                CapSet::empty()
-            } else {
-                capabilities
-            },
+            denied,
+            audit: !(capabilities & self.capability_policy.audit()).is_empty(),
+            quiet: !denied.is_empty() && self.capability_policy.quiet().contains(denied),
         }
     }
 
@@ -199,16 +202,24 @@ pub(super) enum AppArmorFilePolicy {
 pub struct AppArmorFileAccessOutcome {
     /// Permissions denied by the policy.
     pub denied: AppArmorFilePermission,
+    /// Permissions denied by an explicit `deny` rule.
+    pub explicit_denied: AppArmorFilePermission,
     /// Executable profile transition selected by the matching rule.
     pub exec_transition: AppArmorExecTransition,
     /// Whether matching permissions requested auditing.
     pub audit: bool,
+    /// Whether denied permissions should be kept out of routine audit logs.
+    pub quiet: bool,
 }
 
 /// A capability-access decision from a profile.
 pub struct AppArmorCapabilityOutcome {
     /// Capabilities denied by the policy.
     pub denied: CapSet,
+    /// Whether the capability request should be audited.
+    pub audit: bool,
+    /// Whether denied capabilities should be kept out of routine audit logs.
+    pub quiet: bool,
 }
 
 /// A task profile transition requested through procfs attributes.
@@ -253,8 +264,10 @@ impl From<AppArmorDfaAccessOutcome> for AppArmorFileAccessOutcome {
     fn from(outcome: AppArmorDfaAccessOutcome) -> Self {
         Self {
             denied: outcome.denied,
+            explicit_denied: outcome.explicit_denied,
             exec_transition: outcome.exec_transition,
             audit: outcome.audit,
+            quiet: outcome.quiet,
         }
     }
 }
@@ -265,7 +278,7 @@ fn evaluate_path_rules(
     permissions: AppArmorFilePermission,
 ) -> AppArmorFileAccessOutcome {
     let mut allowed = AppArmorFilePermission::empty();
-    let mut denied = AppArmorFilePermission::empty();
+    let mut explicit_denied = AppArmorFilePermission::empty();
     let mut exec_transition = AppArmorExecTransition::Inherit;
     let mut audit = false;
 
@@ -281,7 +294,7 @@ fn evaluate_path_rules(
 
         audit |= rule.audit();
         if rule.deny() {
-            denied |= matched_permissions;
+            explicit_denied |= matched_permissions;
             continue;
         }
 
@@ -293,8 +306,10 @@ fn evaluate_path_rules(
 
     let missing = permissions - allowed;
     AppArmorFileAccessOutcome {
-        denied: denied | missing,
+        denied: explicit_denied | missing,
+        explicit_denied,
         exec_transition,
         audit,
+        quiet: false,
     }
 }

@@ -109,12 +109,15 @@ impl AppArmorDfaFilePolicy {
         let missing = requested_bits & !permissions.allow;
         let denied_bits = explicitly_denied | missing;
         let denied = AppArmorFilePermission::from_linux_bits(denied_bits);
+        let explicit_denied = AppArmorFilePermission::from_linux_bits(explicitly_denied);
         let exec_transition = self.exec_transition(permissions, path_view)?;
 
         Ok(AppArmorDfaAccessOutcome {
             denied,
+            explicit_denied,
             exec_transition,
             audit: requested_bits & permissions.audit != 0,
+            quiet: denied_bits != 0 && denied_bits & !permissions.quiet == 0,
         })
     }
 
@@ -172,26 +175,34 @@ impl AppArmorDfaFilePolicy {
 pub struct AppArmorDfaAccessOutcome {
     /// Permissions denied by the policy.
     pub denied: AppArmorFilePermission,
+    /// Permissions denied by an explicit `deny` rule.
+    pub explicit_denied: AppArmorFilePermission,
     /// Executable profile transition selected by the matching state.
     pub exec_transition: AppArmorExecTransition,
     /// Whether matching permissions requested auditing.
     pub audit: bool,
+    /// Whether denied permissions should be kept out of routine audit logs.
+    pub quiet: bool,
 }
 
 impl AppArmorDfaAccessOutcome {
     fn allow() -> Self {
         Self {
             denied: AppArmorFilePermission::empty(),
+            explicit_denied: AppArmorFilePermission::empty(),
             exec_transition: AppArmorExecTransition::Inherit,
             audit: false,
+            quiet: false,
         }
     }
 
     fn deny(permissions: AppArmorFilePermission) -> Self {
         Self {
             denied: permissions,
+            explicit_denied: AppArmorFilePermission::empty(),
             exec_transition: AppArmorExecTransition::Inherit,
             audit: false,
+            quiet: false,
         }
     }
 }
@@ -202,16 +213,18 @@ pub(super) struct AppArmorDfaPermissions {
     pub allow: u32,
     pub deny: u32,
     pub audit: u32,
+    pub quiet: u32,
     pub xindex: u32,
 }
 
 impl AppArmorDfaPermissions {
     /// Creates a permission entry from a Linux AppArmor permstable row.
-    pub(super) fn new(allow: u32, deny: u32, audit: u32, xindex: u32) -> Self {
+    pub(super) fn new(allow: u32, deny: u32, audit: u32, quiet: u32, xindex: u32) -> Self {
         Self {
             allow,
             deny,
             audit,
+            quiet,
             xindex,
         }
     }
@@ -418,6 +431,7 @@ impl AppArmorDfa {
                 map_legacy_file_permissions_to_linux_bits(legacy_user_allow(accept)),
                 0,
                 map_legacy_file_permissions_to_linux_bits(legacy_user_audit(accept2)),
+                0,
                 map_legacy_xindex(accept & OLD_PERM_EXEC_MASK),
             ));
         }

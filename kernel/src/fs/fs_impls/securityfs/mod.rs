@@ -231,6 +231,8 @@ impl SecurityFsInode {
                 SecurityFsEntry::new("v5", SecurityFsNodeKind::FeaturePolicyVersionV5),
                 SecurityFsEntry::new("v6", SecurityFsNodeKind::FeaturePolicyVersionV6),
                 SecurityFsEntry::new("v7", SecurityFsNodeKind::FeaturePolicyVersionV7),
+                SecurityFsEntry::new("v8", SecurityFsNodeKind::FeaturePolicyVersionV8),
+                SecurityFsEntry::new("v9", SecurityFsNodeKind::FeaturePolicyVersionV9),
             ],
             SecurityFsNodeKind::FeatureFileDir => {
                 vec![SecurityFsEntry::new(
@@ -289,26 +291,33 @@ impl FileOps for SecurityFsInode {
                     "root_namespace={}",
                     security::apparmor_root_namespace_name()?
                 )?;
+                writeln!(printer, "policy_abi=linux-v5-v9-subset")?;
+                writeln!(printer, "file_audit=yes")?;
+                writeln!(printer, "file_quiet=yes")?;
+                writeln!(printer, "capability_audit=yes")?;
+                writeln!(printer, "complain=yes")?;
             }
             SecurityFsNodeKind::FeaturePolicySetLoad
             | SecurityFsNodeKind::FeaturePolicyVersionV5
             | SecurityFsNodeKind::FeaturePolicyVersionV6
             | SecurityFsNodeKind::FeaturePolicyVersionV7
+            | SecurityFsNodeKind::FeaturePolicyVersionV8
+            | SecurityFsNodeKind::FeaturePolicyVersionV9
             | SecurityFsNodeKind::FeatureDomainChangeProfile
             | SecurityFsNodeKind::FeatureDomainChangeOnexec => {
                 writeln!(printer, "yes")?;
             }
             SecurityFsNodeKind::FeaturePolicyPermstable32 => {
-                writeln!(
-                    printer,
-                    "allow deny subtree cond kill complain prompt audit quiet hide xindex tag label"
-                )?;
+                writeln!(printer, "allow deny audit quiet xindex")?;
             }
             SecurityFsNodeKind::FeaturePolicyPermstable32Version => {
                 writeln!(printer, "0x000002")?;
             }
             SecurityFsNodeKind::FeatureFileMask => {
-                writeln!(printer, "create read write exec append mmap_exec link")?;
+                writeln!(
+                    printer,
+                    "create read write exec append delete rename setattr mmap_exec link"
+                )?;
             }
             SecurityFsNodeKind::FeatureCapsMask => {
                 writeln!(
@@ -589,6 +598,8 @@ enum SecurityFsNodeKind {
     FeaturePolicyVersionV5,
     FeaturePolicyVersionV6,
     FeaturePolicyVersionV7,
+    FeaturePolicyVersionV8,
+    FeaturePolicyVersionV9,
     FeatureFileDir,
     FeatureFileMask,
     FeatureCapsDir,
@@ -621,6 +632,8 @@ impl SecurityFsNodeKind {
             | Self::FeaturePolicyVersionV5
             | Self::FeaturePolicyVersionV6
             | Self::FeaturePolicyVersionV7
+            | Self::FeaturePolicyVersionV8
+            | Self::FeaturePolicyVersionV9
             | Self::FeatureFileMask
             | Self::FeatureCapsMask
             | Self::FeatureDomainChangeProfile
@@ -647,6 +660,8 @@ impl SecurityFsNodeKind {
             | Self::FeaturePolicyVersionV5
             | Self::FeaturePolicyVersionV6
             | Self::FeaturePolicyVersionV7
+            | Self::FeaturePolicyVersionV8
+            | Self::FeaturePolicyVersionV9
             | Self::FeatureFileMask
             | Self::FeatureCapsMask
             | Self::FeatureDomainChangeProfile

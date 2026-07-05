@@ -26,13 +26,11 @@ impl AppArmorCapabilityPolicy {
     }
 
     /// Returns capability audit mask.
-    #[expect(dead_code, reason = "AppArmor audit logging is not wired yet")]
     pub const fn audit(self) -> CapSet {
         self.audit
     }
 
     /// Returns capability quiet mask.
-    #[expect(dead_code, reason = "AppArmor audit logging is not wired yet")]
     pub const fn quiet(self) -> CapSet {
         self.quiet
     }

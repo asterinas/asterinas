@@ -607,7 +607,7 @@ impl<'a> LinuxPolicyReader<'a> {
             let _complain = self.read_u32(None)?;
             let _prompt = self.read_u32(None)?;
             let audit = self.read_u32(None)?;
-            let _quiet = self.read_u32(None)?;
+            let quiet = self.read_u32(None)?;
             let _hide = self.read_u32(None)?;
             let xindex = self.read_u32(None)?;
             let tag = self.read_u32(None)?;
@@ -618,7 +618,9 @@ impl<'a> LinuxPolicyReader<'a> {
                     "AppArmor tagged permissions are not supported"
                 );
             }
-            permissions.push(AppArmorDfaPermissions::new(allow, deny, audit, xindex));
+            permissions.push(AppArmorDfaPermissions::new(
+                allow, deny, audit, quiet, xindex,
+            ));
         }
         self.expect_name_code(LinuxCode::ArrayEnd, None)?;
         self.expect_name_code(LinuxCode::StructEnd, None)?;
