@@ -5,8 +5,14 @@
 // Assumptions:
 //   - Entered in S-mode from U-Boot `booti` with a0=hartid, a1=DTB paddr.
 //   - Do NOT read mhartid: it traps on EIC7700 in S-mode.
-//   - U-Boot has initialised the UART at 0x50900000; we can write THR directly.
+//   - SBI is still available (OpenSBI remains resident in M-mode).
 //   - The kernel is loaded at physical 0x80200000 and linked at 0xffffffff80200000.
+//
+// Safety net:
+//   A supervisor-timer interrupt is armed early. If anything hangs before the
+//   kernel installs its own timer/trap handling, the timer fires into the tiny
+//   trap handler below and the board is reset via SBI. This avoids requiring a
+//   physical reset during early bring-up.
 
 SATP_MODE_SV39 = 8 << 60
 SATP_MODE_SV48 = 9 << 60
@@ -24,17 +30,55 @@ PAGE_SHIFT    = 12
 
 KERNEL_VMA_OFFSET = 0xffffffff00000000
 
+// OpenSBI timebase on Milk-V Megrez is 1 MHz.
+TIMER_FREQ = 1000000
+
 .section ".text.entry", "ax", @progbits
 
-.macro UART_CH c
-    li t3, 0x50900000
-    li t4, \c
-    sb t4, 0(t3)
+// SBI legacy console putchar (EID = 0x01). Clobbers a0/a7.
+.macro SBI_PUTCHAR ch
+    li     a0, \ch
+    li     a7, 0x01
+    ecall
+.endm
+
+// Set the supervisor timer to (rdtime + delta). Clobbers a0/a6/a7/t0/t1.
+.macro SBI_SET_TIMER delta
+    rdtime t0
+    li     t1, \delta
+    add    a0, t0, t1
+    li     a6, 0
+    li     a7, 0x54494D45          // SBI set_timer EID
+    ecall
+.endm
+
+// Reset the board via SBI system reset (EID = 0x53525354). Clobbers a0/a1/a6/a7.
+.macro SBI_RESET
+    li     a0, 0                   // reset_type = cold reset
+    li     a1, 0                   // reset_reason = 0
+    li     a6, 0
+    li     a7, 0x53525354          // SBI system reset EID
+    ecall
 .endm
 
 .global _start
 _start:
     // a0 = hart id, a1 = DTB paddr (from U-Boot / SBI).
+    // Preserve them in callee-saved registers so SBI calls don't clobber them.
+    mv     s0, a0
+    mv     s1, a1
+
+    // Install the tiny trap handler (physical address: we are still running
+    // with the MMU off) and arm the watchdog timer. If anything hangs during
+    // early boot, the timer will reset the board.
+    lla    t0, _early_trap
+    li     t1, KERNEL_VMA_OFFSET
+    sub    t0, t0, t1
+    csrw   stvec, t0
+    SBI_SET_TIMER (60 * TIMER_FREQ)
+    li     t0, 0x20
+    csrrs  t1, sie, t0             // STIE
+    csrsi  sstatus, 0x2            // SIE
 
     // Validate DTB pointer; fall back to the address we usually load it at.
     li     t0, 0xedfe0dd0          // FDT magic (little-endian)
@@ -47,40 +91,50 @@ _start:
     lwu    t1, 0(a1)
     bne    t0, t1, .Ldtb_hang
 .Ldtb_ok:
-    UART_CH 'A'
-
-    // Install a tiny physical-mode trap handler so we can see scause if
-    // something faults before the kernel installs its own stvec.
-    lla    t0, _early_trap
-    csrw   stvec, t0
-    UART_CH 'E'
+    // SBI calls clobber a0/a1; restore the originals before proceeding.
+    mv     a0, s0
+    mv     a1, s1
+    SBI_PUTCHAR 'A'
+    SBI_SET_TIMER (60 * TIMER_FREQ)
 
     // Sanity-check that satp is accessible in S-mode.
     csrw   satp, zero
-    UART_CH 'F'
+    SBI_PUTCHAR 'E'
+    SBI_SET_TIMER (60 * TIMER_FREQ)
     csrr   t1, satp
-    UART_CH 'G'
+    SBI_PUTCHAR 'F'
+    SBI_SET_TIMER (60 * TIMER_FREQ)
+    csrr   t1, satp
+    SBI_PUTCHAR 'G'
+    SBI_SET_TIMER (60 * TIMER_FREQ)
 
     // --- Build the Sv48 page table ------------------------------------------
     // L4[0]   -> 512 GiB identity leaf mapping physical 0
     // L4[256] -> 512 GiB linear leaf mapping physical 0
     // L4[511] -> boot_l3pt (high-half mapping for the kernel VMA)
+    // All page-table symbols are linked high; convert to physical addresses.
+    li     t4, KERNEL_VMA_OFFSET
     lla    t1, boot_l4pt
+    sub    t1, t1, t4
 
     lla    t0, boot_l3pt
+    sub    t0, t0, t4
     srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
     ori    t0, t0, PTE_V | PTE_A  // non-leaf PTE: V+A (A may be required by HW walker)
     li     t2, 511 * PTE_SIZE
     add    t1, t1, t2
     sd     t0, 0(t1)               // L4[511]
 
-    UART_CH 'D'
+    SBI_PUTCHAR 'D'
+    SBI_SET_TIMER (60 * TIMER_FREQ)
 
     // Synchronise page-table writes before turning on the MMU.
     sfence.vma
 
     // Try Sv48.
     lla    t0, boot_l4pt
+    li     t1, KERNEL_VMA_OFFSET
+    sub    t0, t0, t1
     li     t1, SATP_MODE_SV48
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
@@ -88,11 +142,14 @@ _start:
     sfence.vma
 
     csrr   t1, satp
-    UART_CH 'H'
+    SBI_PUTCHAR 'H'
+    SBI_SET_TIMER (60 * TIMER_FREQ)
     beq    t0, t1, .Lmmu_ok
 
     // Try Sv39 fallback.
     lla    t0, boot_l3pt_sv39
+    li     t1, KERNEL_VMA_OFFSET
+    sub    t0, t0, t1
     li     t1, SATP_MODE_SV39
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
@@ -100,16 +157,25 @@ _start:
     sfence.vma
 
     csrr   t1, satp
-    UART_CH 'h'
+    SBI_PUTCHAR 'h'
+    SBI_SET_TIMER (60 * TIMER_FREQ)
     beq    t0, t1, .Lmmu_ok
 
 .Ldtb_hang:
 .Lmmu_hang:
-    UART_CH '!'
+    SBI_PUTCHAR '!'
 1:  j      1b
 
 .Lmmu_ok:
-    UART_CH 'B'
+    SBI_PUTCHAR 'B'
+    SBI_SET_TIMER (90 * TIMER_FREQ)   // cover early Rust code as well
+
+    // The kernel is about to run at its linked virtual address; move the
+    // early trap handler to the virtual address as well.
+    lla    t0, _early_trap
+    li     t2, KERNEL_VMA_OFFSET
+    or     t0, t0, t2
+    csrw   stvec, t0
 
     // Switch SP/PC to the high-half virtual addresses.
     li     t1, KERNEL_VMA_OFFSET
@@ -122,16 +188,23 @@ _start:
 
     lla    t0, riscv_boot
     or     t0, t0, t1
+    // Restore the original hartid/DTB arguments for riscv_boot.
+    mv     a0, s0
+    mv     a1, s1
     jr     t0
 
-// Tiny trap handler: prints 'T' followed by the low nibble of scause.
+// Tiny trap handler:
+//   - Supervisor timer interrupt -> reset the board (safety net).
+//   - Anything else            -> print 'T' + low nibble of scause and loop.
 .balign 4
 _early_trap:
     csrr   t0, scause
-    andi   t0, t0, 0x7f
-    li     t3, 0x50900000
-    li     t4, 'T'
-    sb     t4, 0(t3)
+    li     t1, 0x8000000000000005    // supervisor timer interrupt
+    beq    t0, t1, .Ltimer_reset
+
+    li     a0, 'T'
+    li     a7, 0x01
+    ecall
     andi   t4, t0, 0xf
     li     t5, 9
     ble    t4, t5, 1f
@@ -140,9 +213,14 @@ _early_trap:
 1:
     addi   t4, t4, '0'
 2:
-    sb     t4, 0(t3)
+    mv     a0, t4
+    li     a7, 0x01
+    ecall
 3:
     j      3b
+
+.Ltimer_reset:
+    SBI_RESET
 
 PTE_VRXWAD = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
 

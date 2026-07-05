@@ -106,11 +106,12 @@ def main():
         send_cmd(ser, "ext4load mmc 1:1 0x80200000 /aster-nix.booti", "=>")
         send_cmd(ser, "booti 0x80200000 - 0xf0000000", None)
 
-        print("[*] Capturing Asterinas boot output (up to 90s) ...", flush=True)
-        deadline = time.time() + 90
+        print("[*] Capturing Asterinas boot output (up to 300s) ...", flush=True)
+        deadline = time.time() + 300
         buf = bytearray()
         markers = ["A", "E", "F", "G", "D", "H", "B"]
         found = ""
+        reset_seen = False
         while time.time() < deadline:
             chunk = ser.read(4096)
             if chunk:
@@ -118,15 +119,19 @@ def main():
                 text = chunk.decode("utf-8", errors="replace")
                 log.write(text)
                 print(text, end="", flush=True)
-                # Track marker prefix in the last part of the buffer
                 decoded = buf.decode("utf-8", errors="replace")
                 for m in markers:
                     if m in decoded and m not in found:
                         found += m
+                if "U-Boot" in decoded and not reset_seen:
+                    reset_seen = True
+                    print("\n[*] Board appears to have reset (U-Boot banner seen).", flush=True)
             else:
                 time.sleep(0.1)
 
         print(f"\n[*] Capture finished. Marker prefix seen so far: {found!r}", flush=True)
+        if reset_seen:
+            print("[*] SBI timer reset was triggered.", flush=True)
 
 
 if __name__ == "__main__":
