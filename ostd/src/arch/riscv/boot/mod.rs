@@ -42,12 +42,10 @@ fn parse_initramfs() -> Option<&'static [u8]> {
 }
 
 fn parse_acpi_arg() -> BootloaderAcpiArg {
-    // TDDO: Add ACPI support for RISC-V, maybe.
     BootloaderAcpiArg::NotProvided
 }
 
 fn parse_framebuffer_info() -> Option<BootloaderFramebufferArg> {
-    // TODO: Parse framebuffer info from device tree.
     None
 }
 
@@ -82,10 +80,8 @@ fn parse_memory_regions() -> MemoryRegionArray {
         }
     }
 
-    // Add the kernel region.
     regions.push(MemoryRegion::kernel()).unwrap();
 
-    // Add the initramfs region.
     if let Some((start, end)) = parse_initramfs_range() {
         regions
             .push(MemoryRegion::new(
@@ -109,17 +105,11 @@ fn parse_initramfs_range() -> Option<(usize, usize)> {
 /// The entry point of the Rust code portion of Asterinas.
 #[no_mangle]
 pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
-    // Parse the DTB through the identity mapping.
-    // Physical address == virtual address for all early-boot addresses
-    // because the boot page table maps phys 0-128 GiB 1:1 (identity).
+    // Parse DTB through identity mapping (paddr == vaddr in boot PT).
     let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_paddr as *const u8).unwrap() };
     DEVICE_TREE.call_once(|| fdt);
 
-    // NOTE: Do NOT call early_println! or any SBI ecall here.
-    // QEMU 8.2.2 has a bug where Sv48 page walks after ecall return
-    // fail.  The kernel page table setup in call_ostd_main()
-    // replaces the early boot PT with the full kernel PT, after which
-    // ecall works correctly.
+    early_println!("[Asterinas] riscv_boot: DTB parsed OK");
 
     use crate::boot::{call_ostd_main, EarlyBootInfo, EARLY_INFO};
 

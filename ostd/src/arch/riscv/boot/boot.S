@@ -202,37 +202,37 @@ _start:
 1:  j      1b
 
 .Lmmu_ok:
-    // MMU is now on.  On QEMU 8.2.2, Sv48 ecall returns can trigger
-    // spurious page faults.  The kernel page table (set up later by
-    // call_ostd_main) uses 4 KiB leaves and works correctly with SBI.
-    // Stay quiet until the full kernel PT is active.
+    // MMU is now on.  QEMU 8.2.2 / 9.2.4 can both fail Sv48 page walks
+    // for 1 GiB leaf pages after ecall returns.  Work around this by
+    // jumping to riscv_boot at its IDENTITY address (physical == virtual
+    // for the first 128 GiB).  call_ostd_main() replaces the boot page
+    // table with the full kernel PT (4 KiB leaves), after which the
+    // VMA-based linked addresses and paddr_to_vaddr() both work correctly.
     SBI_SET_TIMER (90 * TIMER_FREQ)
 
-    // Move early trap handler to virtual address.
-    lla    t0, _early_trap
-    li     t2, KERNEL_VMA_OFFSET
-    or     t0, t0, t2
-    csrw   stvec, t0
+    // Keep the early trap handler at the PHYSICAL address.  The identity
+    // mapping covers the entire kernel binary, so _early_trap can still
+    // be reached via its physical address.
+    // (stvec was already set to the physical address before MMU on.)
 
-    // Switch SP/PC to the high-half virtual addresses.
-    li     t1, KERNEL_VMA_OFFSET
-
+    // Use the identity-mapped (physical) addresses for SP, GP, and PC.
+    // These are all below 128 GiB, so the identity mapping works.
     lla    sp, boot_stack_top
-    or     sp, sp, t1
+    slli   sp, sp, 32
+    srli   sp, sp, 32
 
     lla    gp, __cpu_local_start
-    or     gp, gp, t1
+    slli   gp, gp, 32
+    srli   gp, gp, 32
 
+    // Jump to riscv_boot at its physical (identity-mapped) address.
     lla    t0, riscv_boot
-    or     t0, t0, t1
+    slli   t0, t0, 32
+    srli   t0, t0, 32
     mv     a0, s0
     mv     a1, s1
 
-    // Emit a final marker via UART (not SBI), so we can confirm the
-    // virtual-mode jump landed.  QEMU virt has NS16550 at 0x10000000;
-    // the real Megrez has dw-apb-uart at 0x50900000.  We write the
-    // UART_THR regardless — on QEMU this gives us visibility; on
-    // real hardware it may not produce output but is harmless.
+    // Emit a UART marker right before the jump.
     li     t2, 0x10000000
     li     t3, 'X'
     sb     t3, 0(t2)
@@ -271,7 +271,7 @@ _early_trap:
 .Ltimer_reset:
     SBI_RESET
 
-PTE_VRXWAD = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
+PTE_VRXWAD = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A
 PTE_VRXW  = PTE_V | PTE_R | PTE_W | PTE_X
 
 // ---- Sv48 page tables ------------------------------------------------------
