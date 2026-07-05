@@ -59,8 +59,8 @@ mod syscall;
 mod thread;
 mod time;
 pub mod util;
-// TODO: Add vDSO support for other architectures.
-#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+// TODO: Add vDSO support for LoongArch.
+#[cfg(not(target_arch = "loongarch64"))]
 mod vdso;
 pub mod vm;
 
