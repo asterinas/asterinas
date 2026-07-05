@@ -1,0 +1,14 @@
+// Lock pages in the process address space.
+mlock(addr, len);
+
+// Unlock pages in the process address space.
+munlock(addr, len);
+
+mlockall_flags = MCL_CURRENT |
+    MCL_FUTURE;
+
+// Lock all current and/or future mappings in the process address space.
+mlockall(flags = <mlockall_flags>);
+
+// Unlock all locked mappings in the process address space.
+munlockall();

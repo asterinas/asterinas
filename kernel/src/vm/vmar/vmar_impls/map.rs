@@ -65,6 +65,7 @@ pub struct VmarMapOptions<'a> {
     size: usize,
     offset: VmarMapOffset,
     align: usize,
+    memlock_limit: Option<usize>,
     // Whether the mapping is mapped with `MAP_SHARED`.
     is_shared: bool,
     // Whether the mapping needs to handle surrounding pages when handling
@@ -109,6 +110,7 @@ impl<'a> VmarMapOptions<'a> {
             size,
             offset: VmarMapOffset::Any,
             align: PAGE_SIZE,
+            memlock_limit: None,
             is_shared: false,
             handle_page_faults_around: false,
         }
@@ -197,6 +199,12 @@ impl<'a> VmarMapOptions<'a> {
         self
     }
 
+    /// Sets the `RLIMIT_MEMLOCK` limit for locking this new mapping.
+    pub fn memlock_limit(mut self, memlock_limit: Option<usize>) -> Self {
+        self.memlock_limit = memlock_limit;
+        self
+    }
+
     /// Sets the mapping's offset inside the VMAR.
     ///
     /// The offset must satisfy the alignment requirement.
@@ -274,11 +282,13 @@ impl<'a> VmarMapOptions<'a> {
             size: map_size,
             offset,
             align,
+            memlock_limit,
             is_shared,
             handle_page_faults_around,
         } = self;
 
         let mut inner = parent.inner.write();
+        let lock_new_mapping = inner.future_memory_lock.is_enabled();
 
         inner
             .check_extra_size_fits_rlimit(map_size)
@@ -292,6 +302,25 @@ impl<'a> VmarMapOptions<'a> {
                     Err(err)
                 }
             })?;
+        if lock_new_mapping {
+            let replaced_locked_size = match offset {
+                VmarMapOffset::FixedReplace(map_to_addr) => map_to_addr
+                    .checked_add(map_size)
+                    .map_or(0, |map_end| inner.locked_size(&(map_to_addr..map_end))),
+                _ => 0,
+            };
+            inner
+                .check_extra_lock_size_fits_limit(map_size - replaced_locked_size, memlock_limit)?;
+            if let VmarMapOffset::FixedReplace(map_to_addr) = offset
+                && let Some(map_end) = map_to_addr.checked_add(map_size)
+                && inner.count_overlap_size(map_to_addr..map_end) > 0
+            {
+                return_errno_with_message!(
+                    Errno::ENOMEM,
+                    "map: replacing mappings with a locked fixed mapping is not supported"
+                );
+            }
+        }
 
         // Allocates a free region.
         debug!(
@@ -353,7 +382,7 @@ impl<'a> VmarMapOptions<'a> {
         };
 
         // Build the mapping.
-        let vm_mapping = VmMapping::new(
+        let mut vm_mapping = VmMapping::new(
             NonZeroUsize::new(map_size).unwrap(),
             map_to_addr,
             mapped_mem,
@@ -362,6 +391,9 @@ impl<'a> VmarMapOptions<'a> {
             handle_page_faults_around,
             perms | may_perms,
         );
+        if lock_new_mapping {
+            vm_mapping = vm_mapping.set_locked(true);
+        }
 
         // Populate device memory if needed before adding to VMAR.
         //
@@ -375,6 +407,17 @@ impl<'a> VmarMapOptions<'a> {
 
         // Add the mapping to the VMAR.
         inner.insert_try_merge(vm_mapping);
+        if lock_new_mapping {
+            inner.locked_vm += map_size;
+            let mut rss_delta = RssDelta::new(parent);
+            let map_range = map_to_addr..map_to_addr + map_size;
+            inner.populate_range_or_rollback(
+                parent.vm_space(),
+                map_range.clone(),
+                map_range,
+                &mut rss_delta,
+            )?;
+        }
 
         Ok(map_to_addr)
     }

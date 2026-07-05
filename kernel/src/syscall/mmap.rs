@@ -2,7 +2,7 @@
 
 use align_ext::AlignExt;
 
-use super::SyscallReturn;
+use super::{SyscallReturn, mlock};
 use crate::{
     fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
@@ -77,6 +77,7 @@ fn do_sys_mmap(
     let vmar = user_space.vmar();
     let vm_map_options = {
         let mut options = vmar.new_map(len, vm_perms)?;
+        options = options.memlock_limit(mlock::memlock_limit(ctx));
 
         if option.flags().is_fixed() {
             if option.flags().contains(MMapFlags::MAP_FIXED_NOREPLACE) {

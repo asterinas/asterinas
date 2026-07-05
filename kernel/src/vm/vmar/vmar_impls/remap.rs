@@ -31,6 +31,7 @@ impl Vmar {
         old_size: usize,
         new_size: usize,
         check_single_mapping: bool,
+        memlock_limit: Option<usize>,
     ) -> Result<()> {
         let mut inner = self.inner.write();
         let mut rss_delta = RssDelta::new(self);
@@ -44,7 +45,14 @@ impl Vmar {
         // `map_addr..map_addr + old_size` have a mapping. If not,
         // we should return an `Err`.
 
-        inner.resize_mapping(&self.vm_space, map_addr, old_size, new_size, &mut rss_delta)
+        inner.resize_mapping(
+            &self.vm_space,
+            map_addr,
+            old_size,
+            new_size,
+            &mut rss_delta,
+            memlock_limit,
+        )
     }
 
     /// Remaps the original mapping to a new address and/or size.
@@ -69,6 +77,7 @@ impl Vmar {
         old_size: usize,
         new_addr: Option<Vaddr>,
         new_size: usize,
+        memlock_limit: Option<usize>,
     ) -> Result<Vaddr> {
         debug_assert_eq!(old_addr % PAGE_SIZE, 0);
         debug_assert_eq!(old_size % PAGE_SIZE, 0);
@@ -76,7 +85,6 @@ impl Vmar {
 
         let mut inner = self.inner.write();
         let mut rss_delta = RssDelta::new(self);
-
         let Some(old_mapping) = inner.vm_mappings.find_one(&old_addr) else {
             return_errno_with_message!(
                 Errno::EFAULT,
@@ -90,7 +98,26 @@ impl Vmar {
                     "remap: device mappings cannot be expanded"
                 );
             }
-            inner.check_extra_size_fits_rlimit(new_size - old_size)?;
+            let expand_size = new_size - old_size;
+            inner.check_extra_size_fits_rlimit(expand_size)?;
+            let lock_expanded_range =
+                old_mapping.is_locked() || inner.future_memory_lock.is_enabled();
+            if lock_expanded_range {
+                inner.check_extra_lock_size_fits_limit(expand_size, memlock_limit)?;
+            }
+            if let Some(new_addr) = new_addr
+                && lock_expanded_range
+                && is_userspace_vaddr_range(new_addr, new_size)
+                && let Some(new_end) = new_addr.checked_add(new_size)
+                && let Some(old_end) = old_addr.checked_add(old_size)
+                && !is_intersected(&(old_addr..old_end), &(new_addr..new_end))
+                && inner.count_overlap_size(new_addr..new_end) > 0
+            {
+                return_errno_with_message!(
+                    Errno::ENOMEM,
+                    "remap: replacing mappings with a locked fixed expansion is not supported"
+                );
+            }
         }
 
         // Shrink the old mapping first.
@@ -140,31 +167,93 @@ impl Vmar {
                     .is_ok()
             {
                 let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
-                let old_mapping = inner.remove(&old_mapping_addr).unwrap();
-                let new_mapping = old_mapping.enlarge(new_size - old_size);
-                inner.insert_try_merge(new_mapping);
+                let expand_size = new_size - old_size;
+                let lock_expanded_range = {
+                    let old_mapping = inner.vm_mappings.find_one(&old_mapping_addr).unwrap();
+                    old_mapping.is_locked() || inner.future_memory_lock.is_enabled()
+                };
+                let expanded_range = inner.expand_mapping_with_lock_policy(
+                    old_mapping_addr,
+                    old_range.end,
+                    expand_size,
+                    lock_expanded_range,
+                );
+                if lock_expanded_range {
+                    inner.populate_range_or_rollback(
+                        &self.vm_space,
+                        expanded_range.clone(),
+                        expanded_range,
+                        &mut rss_delta,
+                    )?;
+                }
                 return Ok(old_range.start);
             }
 
             inner.alloc_free_region(new_size, PAGE_SIZE)?
         };
 
-        // Create a new `VmMapping`.
+        let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
         let old_mapping = {
-            let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
-            let vm_mapping = inner.remove(&old_mapping_addr).unwrap();
-            let (left, old_mapping, right) = vm_mapping.split_range(&old_range);
-            if let Some(left) = left {
-                inner.insert_without_try_merge(left);
-            }
-            if let Some(right) = right {
-                inner.insert_without_try_merge(right);
-            }
+            let vm_mapping = inner.vm_mappings.find_one(&old_mapping_addr).unwrap();
+            let (_, old_mapping, _) = vm_mapping.dup().split_range(&old_range);
             old_mapping
         };
+
         // Note that we have ensured that `new_size >= old_size` at the beginning.
+        let expand_size = new_size - old_size;
         let new_mapping = old_mapping.clone_for_remap_at(new_range.start);
-        inner.insert_try_merge(new_mapping.enlarge(new_size - old_size));
+        let split_addr = new_range.start + old_size;
+        let (new_mapping, expanded_mapping, lock_expanded_range) = if expand_size == 0 {
+            (new_mapping, None, false)
+        } else {
+            let lock_expanded_range =
+                old_mapping.is_locked() || inner.future_memory_lock.is_enabled();
+            let (new_mapping, expanded_mapping) = if new_mapping.is_locked() == lock_expanded_range
+            {
+                (new_mapping.enlarge(expand_size), None)
+            } else {
+                let expanded_mapping = new_mapping.enlarge(expand_size);
+                let split_addr = new_range.start + old_size;
+                let (old_mapping, expanded_mapping) = expanded_mapping.split(split_addr);
+                (
+                    old_mapping,
+                    Some(expanded_mapping.set_locked(lock_expanded_range)),
+                )
+            };
+            if lock_expanded_range {
+                inner.locked_vm += expand_size;
+            }
+            (new_mapping, expanded_mapping, lock_expanded_range)
+        };
+
+        if lock_expanded_range {
+            let (_, temporary_expanded_mapping) = old_mapping
+                .clone_for_remap_at(new_range.start)
+                .enlarge(expand_size)
+                .split(split_addr);
+            inner.insert_without_try_merge(temporary_expanded_mapping.set_locked(true));
+            let expanded_range = split_addr..split_addr + expand_size;
+            inner.populate_range_or_rollback(
+                &self.vm_space,
+                expanded_range,
+                split_addr..split_addr + expand_size,
+                &mut rss_delta,
+            )?;
+            let _ = inner.remove(&split_addr);
+        }
+
+        let vm_mapping = inner.remove(&old_mapping_addr).unwrap();
+        let (left, _, right) = vm_mapping.split_range(&old_range);
+        if let Some(left) = left {
+            inner.insert_without_try_merge(left);
+        }
+        if let Some(right) = right {
+            inner.insert_without_try_merge(right);
+        }
+        inner.insert_try_merge(new_mapping);
+        if let Some(expanded_mapping) = expanded_mapping {
+            inner.insert_try_merge(expanded_mapping);
+        }
 
         let preempt_guard = disable_preempt();
         let total_range = old_range.start.min(new_range.start)..old_range.end.max(new_range.end);

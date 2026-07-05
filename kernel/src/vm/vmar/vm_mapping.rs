@@ -81,6 +81,8 @@ pub struct VmMapping {
     /// Whether the mapping needs to handle surrounding pages when handling
     /// page fault.
     handle_page_faults_around: bool,
+    /// Whether this mapping is locked in memory by `mlock` or `mlockall`.
+    is_locked: bool,
     /// The permissions of pages in the mapping.
     ///
     /// All pages within the same `VmMapping` have the same permissions.
@@ -112,11 +114,22 @@ impl VmMapping {
             path,
             is_shared,
             handle_page_faults_around,
+            is_locked: false,
             perms,
         }
     }
 
     pub(super) fn new_fork(&self) -> VmMapping {
+        VmMapping {
+            mapped_mem: self.mapped_mem.dup(),
+            path: self.path.clone(),
+            is_locked: false,
+            ..*self
+        }
+    }
+
+    /// Duplicates the mapping metadata while preserving its lock state.
+    pub(super) fn dup(&self) -> VmMapping {
         VmMapping {
             mapped_mem: self.mapped_mem.dup(),
             path: self.path.clone(),
@@ -127,6 +140,7 @@ impl VmMapping {
     pub(super) fn clone_for_remap_at(&self, va: Vaddr) -> VmMapping {
         let mut vm_mapping = self.new_fork();
         vm_mapping.map_to_addr = va;
+        vm_mapping.is_locked = self.is_locked;
         vm_mapping
     }
 
@@ -148,6 +162,11 @@ impl VmMapping {
     /// Returns the permissions of pages in the mapping.
     pub fn perms(&self) -> VmPerms {
         self.perms
+    }
+
+    /// Returns whether this mapping is locked in memory.
+    pub fn is_locked(&self) -> bool {
+        self.is_locked
     }
 
     /// Returns the inode of the file that backs the mapping.
@@ -335,6 +354,36 @@ impl VmMapping {
 /****************************** Page faults **********************************/
 
 impl VmMapping {
+    /// Populates pages in the specified range of this mapping.
+    ///
+    /// The range must be page-aligned and contained in this mapping.
+    pub(super) fn populate_range(
+        &self,
+        vm_space: &VmSpace,
+        range: &Range<Vaddr>,
+        rss_delta: &mut RssDelta,
+    ) -> Result<()> {
+        debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
+        debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
+        debug_assert!(self.range().start <= range.start && range.end <= self.range().end);
+
+        for addr in range.clone().step_by(PAGE_SIZE) {
+            let preempt_guard = disable_preempt();
+            let mut cursor = vm_space.cursor(&preempt_guard, &(addr..addr + PAGE_SIZE))?;
+            let (_, item) = cursor.query().unwrap();
+            if item.is_some() {
+                continue;
+            }
+            drop(cursor);
+            drop(preempt_guard);
+
+            let page_fault_info = PageFaultInfo::new(addr, VmPerms::READ).force();
+            self.handle_page_fault(vm_space, &page_fault_info, rss_delta)?;
+        }
+
+        Ok(())
+    }
+
     /// Handles a page fault.
     pub(super) fn handle_page_fault(
         &self,
@@ -759,6 +808,11 @@ impl VmMapping {
             (self, None)
         }
     }
+
+    /// Changes whether the mapping is locked in memory.
+    pub(super) fn set_locked(self, is_locked: bool) -> Self {
+        Self { is_locked, ..self }
+    }
 }
 
 /************************** VM Space operations ******************************/
@@ -962,6 +1016,7 @@ fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     let is_adjacent = left.map_end() == right.map_to_addr();
     let is_type_equal = left.is_shared == right.is_shared
         && left.handle_page_faults_around == right.handle_page_faults_around
+        && left.is_locked == right.is_locked
         && left.perms == right.perms;
 
     if !is_adjacent || !is_type_equal {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{prelude::*, syscall::SyscallReturn};
+use super::{SyscallReturn, mlock};
+use crate::prelude::*;
 
 /// expand the user heap to new heap end, returns the new heap end if expansion succeeds.
 pub fn sys_brk(heap_end: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -13,10 +14,11 @@ pub fn sys_brk(heap_end: u64, ctx: &Context) -> Result<SyscallReturn> {
 
     let user_space = ctx.user_space();
     let user_heap = user_space.vmar().process_vm().heap();
+    let memlock_limit = mlock::memlock_limit(ctx);
 
     let current_heap_end = match new_heap_end {
         Some(addr) => user_heap
-            .modify_heap_end(addr, ctx)
+            .modify_heap_end(addr, ctx, memlock_limit)
             .unwrap_or_else(|cur_heap_end| cur_heap_end),
         None => user_heap.lock().heap_range().end,
     };

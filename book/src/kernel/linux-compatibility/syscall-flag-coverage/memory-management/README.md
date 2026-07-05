@@ -79,6 +79,20 @@ Silently-ignored protection flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/mprotect.2.html).
 
+### `mlock`, `munlock`, `mlockall`, and `munlockall`
+
+Supported functionality in SCML:
+
+```c
+{{#include mlock.scml}}
+```
+
+Unsupported flags:
+* `MCL_ONFAULT`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/mlock.2.html).
+
 ### `madvise`
 
 Supported functionality in SCML:

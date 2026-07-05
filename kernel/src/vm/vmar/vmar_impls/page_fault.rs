@@ -59,7 +59,7 @@ impl PageFaultInfo {
     }
 
     /// Marks this page fault as forced.
-    pub(super) fn force(mut self) -> Self {
+    pub(in crate::vm::vmar) fn force(mut self) -> Self {
         self.is_forced = true;
         self
     }

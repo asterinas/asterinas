@@ -17,6 +17,7 @@ impl Vmar {
     pub(super) fn clear(&self) {
         let mut inner = self.inner.write();
         inner.vm_mappings.clear();
+        inner.locked_vm = 0;
 
         // Keep `inner` locked to avoid race conditions.
         let preempt_guard = disable_preempt();

@@ -31,6 +31,22 @@ use crate::{
     vm::vmar::{Vmar, VmarHandle},
 };
 
+/// The memory lock policy for future mappings.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FutureMemoryLock {
+    /// Future mappings should not be locked.
+    Disabled,
+    /// Future mappings should be locked.
+    Enabled,
+}
+
+impl FutureMemoryLock {
+    /// Returns whether future mappings should be locked.
+    pub fn is_enabled(self) -> bool {
+        self == Self::Enabled
+    }
+}
+
 /*
  * The user's virtual memory space layout looks like below.
  *
