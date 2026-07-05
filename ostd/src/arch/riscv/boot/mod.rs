@@ -109,34 +109,17 @@ fn parse_initramfs_range() -> Option<(usize, usize)> {
 /// The entry point of the Rust code portion of Asterinas.
 #[no_mangle]
 pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
-    // Minimal inline asm SBI putchar to confirm Rust entry.
-    // Do NOT call early_println! here — it pulls in formatting infrastructure
-    // that may touch unmapped addresses through LINEAR_MAPPING.
-    // We must first parse the DTB and set up the kernel page table.
-    unsafe {
-        core::arch::asm!(
-            "li a0, 'R'",
-            "li a7, 0x01",
-            "ecall",
-        );
-    }
-
-    // Access the DTB through the identity mapping (physical address).
-    // paddr_to_vaddr() would use the linear-mapping base (0xFFFF800000000000)
-    // which is only canonical under Sv48/Sv57, not Sv39.  The boot page
-    // tables set up a 1:1 identity mapping covering the first 128 GiB.
+    // Parse the DTB through the identity mapping.
+    // Physical address == virtual address for all early-boot addresses
+    // because the boot page table maps phys 0-128 GiB 1:1 (identity).
     let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_paddr as *const u8).unwrap() };
     DEVICE_TREE.call_once(|| fdt);
 
-    unsafe {
-        core::arch::asm!(
-            "li a0, 'D'",
-            "li a7, 0x01",
-            "ecall",
-        );
-    }
-
-    early_println!("Enter riscv_boot");
+    // NOTE: Do NOT call early_println! or any SBI ecall here.
+    // QEMU 8.2.2 has a bug where Sv48 page walks after ecall return
+    // fail.  The kernel page table setup in call_ostd_main()
+    // replaces the early boot PT with the full kernel PT, after which
+    // ecall works correctly.
 
     use crate::boot::{call_ostd_main, EarlyBootInfo, EARLY_INFO};
 

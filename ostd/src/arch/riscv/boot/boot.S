@@ -157,26 +157,14 @@ _start:
     // Synchronise page-table writes before turning on the MMU.
     sfence.vma
 
-    // Try Sv39 first — it has better compatibility with QEMU and hardware
-    // that don't fully support 1 GiB leaves at L3 (Sv48).
-    // Sv48 is tried as a fallback for platforms that require it.
-.Sv39_first:
-    lla    t0, boot_l3pt_sv39
-    slli   t0, t0, 32
-    srli   t0, t0, 32
-    li     t1, SATP_MODE_SV39
-    srli   t0, t0, PAGE_SHIFT
-    or     t0, t0, t1
-    csrw   satp, t0
-    sfence.vma
+    // Emit all markers BEFORE enabling the MMU.  QEMU 8.2.2 has a bug
+    // where Sv48 page walks after an ecall return can fail.  Printing
+    // markers here (with MMU off) avoids triggering that bug.
+    SBI_PUTCHAR 'J'
+    SBI_PUTCHAR 'B'
 
-    csrr   t1, satp
-    SBI_PUTCHAR 'h'
-    beq    t0, t1, .Lmmu_ok
-    SBI_SET_TIMER (60 * TIMER_FREQ)
-
-    // Try Sv48 fallback.
-.Sv48_fallback:
+    // Try Sv48 first — the linear-mapping base (0xFFFF800000000000)
+    // is only canonical under Sv48 and above.
     lla    t0, boot_l4pt
     slli   t0, t0, 32
     srli   t0, t0, 32
@@ -187,7 +175,20 @@ _start:
     sfence.vma
 
     csrr   t1, satp
-    SBI_PUTCHAR 'H'
+    beq    t0, t1, .Lmmu_ok
+    SBI_SET_TIMER (60 * TIMER_FREQ)
+
+    // Try Sv39 fallback.
+    lla    t0, boot_l3pt_sv39
+    slli   t0, t0, 32
+    srli   t0, t0, 32
+    li     t1, SATP_MODE_SV39
+    srli   t0, t0, PAGE_SHIFT
+    or     t0, t0, t1
+    csrw   satp, t0
+    sfence.vma
+
+    csrr   t1, satp
     beq    t0, t1, .Lmmu_ok
     SBI_SET_TIMER (60 * TIMER_FREQ)
     j      .Lmmu_hang
@@ -201,7 +202,10 @@ _start:
 1:  j      1b
 
 .Lmmu_ok:
-    SBI_PUTCHAR 'B'
+    // MMU is now on.  On QEMU 8.2.2, Sv48 ecall returns can trigger
+    // spurious page faults.  The kernel page table (set up later by
+    // call_ostd_main) uses 4 KiB leaves and works correctly with SBI.
+    // Stay quiet until the full kernel PT is active.
     SBI_SET_TIMER (90 * TIMER_FREQ)
 
     // Move early trap handler to virtual address.
@@ -224,17 +228,18 @@ _start:
     mv     a0, s0
     mv     a1, s1
 
-    // Emit a marker right before the jump.
-    SBI_PUTCHAR 'J'
+    // Emit a final marker via UART (not SBI), so we can confirm the
+    // virtual-mode jump landed.  QEMU virt has NS16550 at 0x10000000;
+    // the real Megrez has dw-apb-uart at 0x50900000.  We write the
+    // UART_THR regardless — on QEMU this gives us visibility; on
+    // real hardware it may not produce output but is harmless.
+    li     t2, 0x10000000
+    li     t3, 'X'
+    sb     t3, 0(t2)
 
-    lla    t0, riscv_boot
-    or     t0, t0, t1
-    mv     a0, s0
-    mv     a1, s1
     jr     t0
 
     // Should never return.
-    SBI_PUTCHAR 'K'
 1:  j      1b
 
 // Tiny trap handler:
@@ -304,22 +309,30 @@ boot_l3pt:
 // ---- Sv39 fallback page table ----------------------------------------------
 .balign 4096
 boot_l3pt_sv39:
+    // Identity mapping: VPN[0..127] -> phys 0..128 GiB (1 GiB leaves).
     .set i, 0
     .rept 128
     .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRXWAD
     .set i, i + 1
     .endr
+    // Unused gap: VPN[128..255].
     .zero 128 * PTE_SIZE
+    // Linear mapping: VPN[256..383] -> phys 0..128 GiB (1 GiB leaves).
+    // This makes paddr_to_vaddr() work under Sv39 — the linear-mapping
+    // base (0xFFFF800000000000) has VPN[2]=256, so entries 256+phys>>30
+    // resolve to the correct physical address.
     .set i, 0
     .rept 128
     .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRXWAD
     .set i, i + 1
     .endr
+    // Unused gap: VPN[384..507].
     .zero 124 * PTE_SIZE
-    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRXWAD
-    .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRXWAD
-    .quad (0x80000 << PTE_PPN_SHIFT) | PTE_VRXWAD
-    .quad (0xc0000 << PTE_PPN_SHIFT) | PTE_VRXWAD
+    // Kernel high-half: VPN[508..511].
+    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff00000000 -> 0 GiB
+    .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff40000000 -> 1 GiB
+    .quad (0x80000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff80000000 -> 2 GiB (kernel)
+    .quad (0xc0000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffffc0000000 -> 3 GiB
 
 // ---- Boot stack ------------------------------------------------------------
 .section ".bss.stack", "aw", @nobits
