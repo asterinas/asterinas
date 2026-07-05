@@ -7,8 +7,9 @@
 //! inspect common hook contexts before allowing or rejecting an operation.
 //!
 //! This module defines the common LSM traits and hook contexts shared by
-//! built-in modules such as `capability` and `yama`. Module selection follows
-//! the `lsm=` and legacy `security=` kernel command-line parameters.
+//! built-in modules such as `capability`, `yama`, and `smack`. Module
+//! selection follows the `lsm=` and legacy `security=` kernel command-line
+//! parameters.
 
 pub mod hooks;
 mod modules;
@@ -17,7 +18,18 @@ pub mod yama {
     pub use super::modules::yama::{YamaScope, get_scope, set_scope};
 }
 
-use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook};
+pub mod smack {
+    pub use super::modules::smack::{
+        SmackTaskState, check_xattr_removal, check_xattr_update, is_smack_xattr, set_current_label,
+        task_state,
+    };
+}
+
+use self::hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook};
+pub use self::{
+    hooks::{BprmCheckContext, BprmCommittedCredsContext},
+    smack::SmackTaskState,
+};
 use crate::prelude::*;
 
 bitflags! {
@@ -31,7 +43,7 @@ bitflags! {
 }
 
 /// The common interface for built-in LSM modules.
-trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
+trait LsmModule: LsmAlienAccessHook + LsmBprmHook + LsmCapabilityHook + Sync {
     /// Returns the module name.
     fn name(&self) -> &'static str;
 
@@ -46,8 +58,25 @@ pub fn is_yama_enabled() -> bool {
         .any(|module| module.name() == "yama")
 }
 
+/// Returns whether the Smack LSM is enabled.
+pub fn is_smack_enabled() -> bool {
+    modules::active_modules()
+        .iter()
+        .any(|module| module.name() == "smack")
+}
+
 pub(super) fn init() {
     for module in modules::active_modules() {
         info!("[kernel] LSM module enabled: {}", module.name());
     }
+}
+
+/// Runs the LSM stack for an executable image check.
+pub fn bprm_check_security(context: &BprmCheckContext<'_>) -> Result<()> {
+    hooks::on_bprm_check_security(context)
+}
+
+/// Runs the LSM stack after executable credentials are committed.
+pub fn bprm_committed_creds(context: &BprmCommittedCredsContext<'_>) -> Result<()> {
+    hooks::on_bprm_committed_creds(context)
 }

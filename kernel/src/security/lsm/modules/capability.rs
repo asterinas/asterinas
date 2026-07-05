@@ -2,7 +2,9 @@
 
 use super::super::{
     LsmFlags, LsmModule,
-    hooks::{AlienAccessContext, CapableContext, LsmAlienAccessHook, LsmCapabilityHook},
+    hooks::{
+        AlienAccessContext, CapableContext, LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook,
+    },
 };
 use crate::{
     prelude::*,
@@ -46,6 +48,8 @@ impl LsmCapabilityHook for CapabilityLsm {
         );
     }
 }
+
+impl LsmBprmHook for CapabilityLsm {}
 
 impl LsmAlienAccessHook for CapabilityLsm {
     fn on_alien_access(&self, context: &AlienAccessContext) -> Result<()> {
