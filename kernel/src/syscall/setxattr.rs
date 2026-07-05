@@ -19,7 +19,7 @@ use crate::{
     },
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet},
-    security::lsm::hooks as lsm_hooks,
+    security::{self, lsm::hooks as lsm_hooks},
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -116,9 +116,13 @@ fn setxattr(
     if value_len > XATTR_VALUE_MAX_LEN {
         return_errno_with_message!(Errno::E2BIG, "xattr value too long");
     }
-    let mut value_reader = user_space.reader(value_ptr, value_len)?;
+    let mut value = vec![0u8; value_len];
+    let mut user_value_reader = user_space.reader(value_ptr, value_len)?;
+    user_value_reader.read_fallible(&mut VmWriter::from(value.as_mut_slice()))?;
+    security::check_smack_xattr_update(ctx.posix_thread, xattr_name.full_name(), &value)?;
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
+    let mut value_reader = VmReader::from(value.as_slice()).to_fallible();
     path.set_xattr(xattr_name, &mut value_reader, flags)?;
     fs::vfs::notify::on_attr_change(&path);
     Ok(())

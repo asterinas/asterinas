@@ -11,6 +11,7 @@ use crate::{
     fs,
     fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
+    security,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -56,6 +57,7 @@ fn removexattr(
     let name_str = name_cstr.to_string_lossy();
     let xattr_name = parse_xattr_name(name_str.as_ref())?;
     check_xattr_namespace(xattr_name.namespace(), ctx)?;
+    security::check_smack_xattr_removal(ctx.posix_thread, xattr_name.full_name())?;
 
     match lookup_path_for_xattr(&file_ctx, ctx) {
         Ok(path) => {
