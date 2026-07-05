@@ -24,6 +24,17 @@ impl<'a> BoxedReader<'a> {
     }
 }
 
+struct GzipReader<'a>(libflate::gzip::Decoder<&'a [u8]>);
+
+impl<'a> Read for GzipReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> core2::io::Result<usize> {
+        use no_std_io2::io::Read as _;
+        self.0
+            .read(buf)
+            .map_err(|_| core2::io::Error::new(core2::io::ErrorKind::Other, "gzip decode error"))
+    }
+}
+
 impl Read for BoxedReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> core2::io::Result<usize> {
         self.0.read(buf)
@@ -43,7 +54,7 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
                 initramfs_suffix = ".gz";
                 let gzip_decoder = GZipDecoder::new(initramfs_buf)
                     .map_err(|_| Error::with_message(Errno::EINVAL, "invalid gzip buffer"))?;
-                BoxedReader::new(Box::new(gzip_decoder))
+                BoxedReader::new(Box::new(GzipReader(gzip_decoder)))
             }
             _ => BoxedReader::new(Box::new(Cursor::new(initramfs_buf))),
         };

@@ -628,7 +628,7 @@ impl<Fallibility> VmReader<'_, Fallibility> {
     /// Returns the number of bytes for the remaining data.
     pub const fn remain(&self) -> usize {
         // SAFETY: the end is equal to or greater than the cursor.
-        unsafe { self.end.sub_ptr(self.cursor) }
+        unsafe { self.end.offset_from_unsigned(self.cursor) }
     }
 
     /// Returns the cursor pointer, which refers to the address of the next byte to read.
@@ -892,7 +892,7 @@ impl<Fallibility> VmWriter<'_, Fallibility> {
     /// Returns the number of bytes for the available space.
     pub const fn avail(&self) -> usize {
         // SAFETY: the end is equal to or greater than the cursor.
-        unsafe { self.end.sub_ptr(self.cursor) }
+        unsafe { self.end.offset_from_unsigned(self.cursor) }
     }
 
     /// Returns the cursor pointer, which refers to the address of the next byte to write.

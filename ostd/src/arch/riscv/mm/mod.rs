@@ -84,6 +84,23 @@ pub(crate) fn tlb_flush_all_including_global() {
     riscv::asm::sfence_vma_all()
 }
 
+/// The maximum ASID value supported by the hardware.
+pub const ASID_CAP: u16 = 1;
+
+/// Flushes all non-global TLB entries.
+pub unsafe fn invpcid_all_excluding_global() {
+    tlb_flush_all_excluding_global();
+}
+
+/// Activates the page table with the given ASID.
+pub unsafe fn activate_page_table_with_asid(
+    root_paddr: Paddr,
+    _asid: u16,
+    root_pt_cache: CachePolicy,
+) {
+    activate_page_table(root_paddr, root_pt_cache);
+}
+
 #[derive(Clone, Copy, Pod, Default)]
 #[repr(C)]
 pub struct PageTableEntry(usize);

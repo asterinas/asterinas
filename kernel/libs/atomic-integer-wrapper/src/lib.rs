@@ -45,7 +45,6 @@
 //! ```
 //!
 
-#![feature(let_chains)]
 #![feature(proc_macro_diagnostic)]
 
 use proc_macro::TokenStream;
@@ -110,10 +109,17 @@ pub fn define_atomic_version_of_integer_like_type(input: TokenStream) -> TokenSt
     } = parse_macro_input!(input as Input);
 
     let atomic_wrapper = item.ident.clone();
-    let atomic_integer_type = if let Fields::Unnamed(ref fields_unnamed) = item.fields
-        && fields_unnamed.unnamed.len() == 1
-    {
-        fields_unnamed.unnamed.first().unwrap().ty.clone()
+    let atomic_integer_type = if let Fields::Unnamed(ref fields_unnamed) = item.fields {
+        if fields_unnamed.unnamed.len() == 1 {
+            fields_unnamed.unnamed.first().unwrap().ty.clone()
+        } else {
+            item.fields
+                .span()
+                .unwrap()
+                .error("Expected a parenthesized struct like `struct AtomicFoo(AtomicU8)`")
+                .emit();
+            return TokenStream::new();
+        }
     } else {
         item.fields
             .span()

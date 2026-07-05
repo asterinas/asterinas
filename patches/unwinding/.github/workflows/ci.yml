@@ -1,0 +1,38 @@
+name: CI
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - i686-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - riscv64gc-unknown-linux-gnu
+          - riscv32gc-unknown-linux-gnu
+          - loongarch64-unknown-linux-gnu
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install Rust
+      run: |
+        rustup update nightly
+        rustup default nightly
+    - name: Install cross-compilation tools
+      uses: taiki-e/setup-cross-toolchain-action@v1
+      with:
+        target: ${{ matrix.target }}
+
+    - name: Build library
+      run: cargo build --release $BUILD_STD
+      env:
+        RUSTFLAGS: -Zcrate-attr=feature(non_exhaustive_omitted_patterns_lint)
+
+    - name: Run tests
+      run: cargo test --release $BUILD_STD

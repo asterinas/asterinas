@@ -68,5 +68,12 @@ qemu.args = """\
     -device virtio-blk-device,drive=x0 \
     -device virtio-keyboard-device \
     -device virtio-serial-device \
-    -device virtconsole,chardev=mux \
+    -device virtconsole,chardev:mux \
 """
+
+[scheme."milkv-megrez"]
+supported_archs = ["riscv64"]
+boot.method = "qemu-direct"
+build.strip_elf = false
+# No qemu.args: this scheme is for building the ELF that is loaded on the
+# real Milk-V Megrez board via U-Boot. Use `cargo osdk build --scheme milkv-megrez`.

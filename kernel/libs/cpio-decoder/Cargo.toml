@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
-core2 = { version = "0.4", default-features = false, features = ["alloc"] }
+core2 = { git = "https://github.com/bbqsrc/core2", rev = "545e84bcb0f235b12e21351e0c69767958efe2a7", default-features = false, features = ["alloc"] }
 lending-iterator = "0.1.7"
 
 [lints]

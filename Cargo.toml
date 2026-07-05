@@ -72,3 +72,8 @@ lto = true
 panic = "abort"
 # set codegen-units as the smallest number
 codegen-units = 1
+
+[patch.crates-io]
+core2 = { git = 'https://github.com/bbqsrc/core2', rev = '545e84bcb0f235b12e21351e0c69767958efe2a7' }
+unwinding = { path = 'patches/unwinding' }
+ostd = { path = 'ostd' }

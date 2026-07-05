@@ -15,7 +15,6 @@
 #![feature(format_args_nl)]
 #![feature(int_roundings)]
 #![feature(integer_sign_cast)]
-#![feature(let_chains)]
 #![feature(linked_list_cursors)]
 #![feature(linked_list_remove)]
 #![feature(linked_list_retain)]
@@ -25,6 +24,7 @@
 #![feature(step_trait)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
+#![feature(let_chains)]
 #![feature(associated_type_defaults)]
 #![register_tool(component_access_control)]
 

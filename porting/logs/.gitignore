@@ -1,0 +1,7 @@
+# Ignore large/binary log dumps by default.
+# Keep representative samples and documentation.
+*
+!.gitignore
+!README.md
+!*.sample.log
+!*.sample.txt

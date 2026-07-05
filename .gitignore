@@ -29,3 +29,14 @@ virtio-net.pcap
 aster-nix-profile-*.json
 aster-nix-profile-*.folded
 aster-nix-profile-*.svg
+
+# Build / install logs
+build.log
+osdk-install.log
+rustup-install.log
+
+# Rust compiler ICE dumps
+rustc-ice-*.txt
+
+# Generated boot images
+*.booti

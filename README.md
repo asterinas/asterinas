@@ -1,81 +1,64 @@
-<p align="center">
-    <img src="docs/src/images/logo_en.svg" alt="asterinas-logo" width="620"><br>
-    A secure, fast, and general-purpose OS kernel written in Rust and compatible with Linux<br/>
-    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml/badge.svg?event=push" alt="Test x86-64" style="max-width: 100%;"></a>
-    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_riscv.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_riscv.yml/badge.svg?event=push" alt="Test riscv64" style="max-width: 100%;"></a>
-    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_x86_tdx.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_x86_tdx.yml/badge.svg" alt="Test Intel TDX" style="max-width: 100%;"></a>
-    <a href="https://asterinas.github.io/benchmark/x86-64/"><img src="https://github.com/asterinas/asterinas/actions/workflows/benchmark_x86.yml/badge.svg" alt="Benchmark x86-64" style="max-width: 100%;"></a>
-    <br/>
-</p>
+# Asterinas RISC-V Port for Milk-V Megrez
 
-English | [中文版](README_CN.md) | [日本語](README_JP.md)
+This repository is a working tree for porting [Asterinas](https://github.com/asterinas/asterinas) to the **Milk-V Megrez** development board, which is based on the **ESWIN EIC7700** RISC-V SoC.
 
-**NEWS: [USENIX ATC'25](https://www.usenix.org/conference/atc25) accepted two research papers on Asterinas: (1) _Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB_ and (2) _Converos: Practical Model Checking for Verifying Rust OS Kernel Concurrency_. Congratulations to the Asterinas community🎉🎉🎉**
+## Repository Layout
 
-## Introducing Asterinas
+This repo has two main areas:
 
-Asterinas is a _secure_, _fast_, and _general-purpose_ OS kernel
-that provides _Linux-compatible_ ABI.
-It can serve as a seamless replacement for Linux
-while enhancing _memory safety_ and _developer friendliness_.
+1. **Asterinas source code** — located at the repository root (`kernel/`, `ostd/`, `osdk/`, `test/`, `tools/`, etc.). This is the upstream-derived codebase being ported.
+2. **Porting notes and tooling** — located under [`porting/`](porting/). This contains setup guides, boot recipes, issue records, helper scripts, and hardware-specific artifacts accumulated during the port.
 
-* Asterinas prioritizes memory safety
-by employing Rust as its sole programming language
-and limiting the use of _unsafe Rust_
-to a clearly defined and minimal Trusted Computing Base (TCB).
-This innovative approach,
-known as [the framekernel architecture](https://asterinas.github.io/book/kernel/the-framekernel-architecture.html),
-establishes Asterinas as a more secure and dependable kernel option.
+## Quick Start
 
-* Asterinas surpasses Linux in terms of developer friendliness.
-It empowers kernel developers to
-(1) utilize the more productive Rust programming language,
-(2) leverage a purpose-built toolkit called [OSDK](https://asterinas.github.io/book/osdk/guide/index.html) to streamline their workflows,
-and (3) choose between releasing their kernel modules as open source
-or keeping them proprietary,
-thanks to the flexibility offered by [MPL](#License).
-
-While the journey towards a production-grade OS kernel is challenging,
-we are steadfastly progressing towards this goal.
-Over the course of 2024,
-we significantly enhanced Asterinas's maturity,
-as detailed in [our end-year report](https://asterinas.github.io/2025/01/20/asterinas-in-2024.html).
-In 2025, our primary goal is to make Asterinas production-ready on x86-64 virtual machines
-and attract real users!
-
-## Getting Started
-
-Get yourself an x86-64 Linux machine with Docker installed.
-Follow the three simple steps below to get Asterinas up and running.
-
-1. Download the latest source code.
+### Build the RISC-V Kernel
 
 ```bash
-git clone https://github.com/asterinas/asterinas
+export OSDK_LOCAL_DEV=1
+cargo osdk build --scheme riscv --target-arch riscv64
 ```
 
-2. Run a Docker container as the development environment.
+### Create a U-Boot Bootable Image
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.14.1-20250507
+python3 porting/scripts/mkimage.py \
+    target/riscv64gc-unknown-none-elf/debug/aster-nix-osdk-bin \
+    aster-nix.booti
 ```
 
-3. Inside the container, go to the project folder to build and run Asterinas.
+### Boot on the Board
 
-```bash
-make build
-make run
-```
+See [`porting/boot.md`](porting/boot.md) for the full U-Boot command sequence.
 
-If everything goes well, Asterinas is now up and running inside a VM.
+## Documentation
 
-## The Book
+| Document | Purpose |
+|----------|---------|
+| [`porting/README.md`](porting/README.md) | Porting project overview and status |
+| [`porting/setup.md`](porting/setup.md) | Serial, network, SSH, and Linux boot setup |
+| [`porting/boot.md`](porting/boot.md) | Building and booting Asterinas on Megrez |
+| [`porting/testing.md`](porting/testing.md) | Local testing before touching the real board |
+| [`porting/issues/`](porting/issues/) | Issue-by-issue debugging records |
+| [`porting/scripts/`](porting/scripts/) | Build and automation helpers |
+| [`porting/hardware/`](porting/hardware/) | Boot/linker source files for the board |
 
-See [The Asterinas Book](https://asterinas.github.io/book/) to learn more about the project.
+## Current Status
+
+- ✅ Serial console access via FTDI USB-UART
+- ✅ Debian Linux boots from SD card
+- ✅ Ethernet and SSH key login work through Windows ICS
+- ✅ Asterinas builds for RISC-V
+- ✅ Dedicated `[scheme."milkv-megrez"]` for board builds
+- ✅ Local QEMU run reaches the MMU-enabled boot markers (`AEFGDHB`)
+- ✅ `booti` image generation produces a valid RISC-V Linux Image header
+- ✅ Asterinas `booti` image loads in U-Boot
+- 🔄 **In progress:** getting Asterinas to run past early MMU setup on real hardware
+
+See [`porting/issues/03-asterinas-mmu-hang-at-AEFGD.md`](porting/issues/03-asterinas-mmu-hang-at-AEFGD.md) for the latest blocker.
 
 ## License
 
-Asterinas's source code and documentation primarily use the 
-[Mozilla Public License (MPL), Version 2.0](https://github.com/asterinas/asterinas/blob/main/LICENSE-MPL).
-Select components are under more permissive licenses,
-detailed [here](https://github.com/asterinas/asterinas/blob/main/.licenserc.yaml). For the rationales behind the choice of MPL, see [here](https://asterinas.github.io/book/index.html#licensing).
+Asterinas's source code and documentation primarily use the
+[Mozilla Public License (MPL), Version 2.0](LICENSE-MPL).
+Porting notes and scripts in `porting/` follow the same license unless otherwise
+noted.

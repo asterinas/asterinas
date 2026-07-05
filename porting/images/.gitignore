@@ -1,0 +1,5 @@
+# Ignore generated binary images (kernel boot images, SD card images, etc.).
+# Keep documentation only.
+*
+!.gitignore
+!README.md

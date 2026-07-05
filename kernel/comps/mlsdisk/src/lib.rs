@@ -2,9 +2,9 @@
 
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(let_chains)]
 #![feature(negative_impls)]
 #![feature(slice_as_chunks)]
+#![feature(let_chains)]
 #![expect(dead_code, unused_imports)]
 
 mod error;

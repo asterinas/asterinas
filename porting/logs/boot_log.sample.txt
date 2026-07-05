@@ -1,0 +1,7 @@
+2026-07-04 18:24:29 Opening COM7
+2026-07-04 18:24:29 Port opened
+2026-07-04 18:24:30 Sending: bootm 0x80200000 - ${fdtcontroladdr}
+2026-07-04 18:24:30 Capturing output for 30 seconds...
+2026-07-04 18:25:00 Output:
+bootm 0x80200000 - ${fdtcontrolad
+2026-07-04 18:25:00 Done

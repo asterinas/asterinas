@@ -321,8 +321,8 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let package_name = std::env::var("CARGO_PKG_NAME").unwrap();
     let span = proc_macro::Span::call_site();
-    let source = span.source_file().path();
-    let source = source.to_str().unwrap();
+    let source = span.file();
+    // source is already a String/&static str via quote
     let line = span.line();
     let col = span.column();
 
