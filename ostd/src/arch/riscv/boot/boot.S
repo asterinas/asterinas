@@ -11,8 +11,7 @@
 // Safety net:
 //   A supervisor-timer interrupt is armed early. If anything hangs before the
 //   kernel installs its own timer/trap handling, the timer fires into the tiny
-//   trap handler below and the board is reset via SBI. This avoids requiring a
-//   physical reset during early bring-up.
+//   trap handler below and the board is reset via SBI.
 
 SATP_MODE_SV39 = 8 << 60
 SATP_MODE_SV48 = 9 << 60
@@ -43,6 +42,8 @@ TIMER_FREQ = 1000000
 .endm
 
 // Set the supervisor timer to (rdtime + delta). Clobbers a0/a6/a7/t0/t1.
+// IMPORTANT: do NOT use t0/t1 after this macro without reloading them —
+// both are clobbered by rdtime and the immediate load.
 .macro SBI_SET_TIMER delta
     rdtime t0
     li     t1, \delta
@@ -52,10 +53,10 @@ TIMER_FREQ = 1000000
     ecall
 .endm
 
-// Reset the board via SBI system reset (EID = 0x53525354). Clobbers a0/a1/a6/a7.
+// Reset the board via SBI system reset (EID = 0x53525354).
 .macro SBI_RESET
     li     a0, 1                   // reset_type = cold reboot
-    li     a1, 0                   // reset_reason = 0
+    li     a1, 0
     li     a6, 0
     li     a7, 0x53525354          // SBI system reset EID
     ecall
@@ -64,15 +65,11 @@ TIMER_FREQ = 1000000
 .global _start
 _start:
     // a0 = hart id, a1 = DTB paddr (from U-Boot / SBI).
-    // Preserve them in callee-saved registers so SBI calls don't clobber them.
     mv     s0, a0
     mv     s1, a1
 
-    // Install the tiny trap handler (physical address: we are still running
-    // with the MMU off) and arm the watchdog timer. If anything hangs during
-    // early boot, the timer will reset the board.
+    // Install the tiny trap handler at its physical address.
     lla    t0, _early_trap
-    // Convert linked virtual address to physical (clear top 32 bits).
     slli   t0, t0, 32
     srli   t0, t0, 32
     csrw   stvec, t0
@@ -81,25 +78,26 @@ _start:
     csrrs  t1, sie, t0             // STIE
     csrsi  sstatus, 0x2            // SIE
 
-    // Validate DTB pointer; fall back to the address we usually load it at.
-    li     t0, 0xedfe0dd0          // FDT magic (little-endian load of big-endian 0xd00dfeed)
-    // `li` sign-extends; zero-extend to 64 bits so it matches `lwu`.
+    // --- DTB validation -------------------------------------------------------
+    // Prefer 0xf0000000 (U-Boot's load address on real Megrez).
+    // Fall back to firmware-provided pointer (a1 from OpenSBI / U-Boot).
+    li     t0, 0xedfe0dd0          // FDT magic (little-endian of 0xd00dfeed)
     slli   t0, t0, 32
     srli   t0, t0, 32
-    li     t2, 0x80000000
-    bltu   a1, t2, .Luse_default_dtb
-    lwu    t1, 0(a1)
+
+    li     s1, 0xf0000000
+    lwu    t1, 0(s1)
     beq    t0, t1, .Ldtb_ok
-.Luse_default_dtb:
-    li     a1, 0xf0000000
+
+    li     t2, 0x80000000
+    bltu   a1, t2, .Ldtb_hang
     lwu    t1, 0(a1)
     bne    t0, t1, .Ldtb_hang
+    mv     s1, a1
 .Ldtb_ok:
-    // SBI calls clobber a0/a1; restore the originals before proceeding.
     mv     a0, s0
     mv     a1, s1
     SBI_PUTCHAR 'A'
-    SBI_SET_TIMER (60 * TIMER_FREQ)
 
     // Sanity-check that satp is accessible in S-mode.
     csrw   satp, zero
@@ -113,22 +111,45 @@ _start:
     SBI_SET_TIMER (60 * TIMER_FREQ)
 
     // --- Build the Sv48 page table ------------------------------------------
-    // L4[0]   -> 512 GiB identity leaf mapping physical 0
-    // L4[256] -> 512 GiB linear leaf mapping physical 0
-    // L4[511] -> boot_l3pt (high-half mapping for the kernel VMA)
-    // All page-table symbols are linked high; convert to physical addresses.
+    // Virtual address layout:
+    //   IDENTITY:  0x00000000_00000000  -> phys,  L4[0]   -> boot_idpt
+    //   LINEAR:    0xffff8000_00000000  -> phys,  L4[256] -> boot_idpt (shared)
+    //   KERNEL:    0xffffffff_80000000  -> phys,  L4[511] -> boot_l3pt
+    //
+    // L4[0] and L4[256] share boot_idpt — VPN[2] of the linear base is 0,
+    // so both L4 entries resolve to the same physical address via the same
+    // 1 GiB leaf at boot_idpt[VPN[2]].  Avoid 512 GiB leaves at L4 because
+    // QEMU (and some hardware) reject them.
+
+    // L4[0] and L4[256] -> boot_idpt (non-leaf, V only).
+    lla    t0, boot_idpt
+    slli   t0, t0, 32
+    srli   t0, t0, 32
+    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori    t0, t0, PTE_V
+
     lla    t1, boot_l4pt
     slli   t1, t1, 32
     srli   t1, t1, 32
+    // L4[0]
+    sd     t0, 0(t1)
+    // L4[256]: offset = 256 * 8 = 2048.
+    // sd's 12-bit signed immediate only reaches [-2048, 2047]; use
+    // base+base+add to reach the entry.
+    li     t2, 2048
+    add    t2, t1, t2
+    sd     t0, 0(t2)
 
+    // L4[511] -> boot_l3pt (non-leaf, V+A).
     lla    t0, boot_l3pt
     slli   t0, t0, 32
     srli   t0, t0, 32
     srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
-    ori    t0, t0, PTE_V | PTE_A  // non-leaf PTE: V+A (A may be required by HW walker)
-    li     t2, 511 * PTE_SIZE
-    add    t1, t1, t2
-    sd     t0, 0(t1)               // L4[511]
+    ori    t0, t0, PTE_V | PTE_A
+    // offset = 511 * 8 = 4088.
+    li     t2, 4088
+    add    t2, t1, t2
+    sd     t0, 0(t2)             // L4[511]
 
     SBI_PUTCHAR 'D'
     SBI_SET_TIMER (60 * TIMER_FREQ)
@@ -136,22 +157,10 @@ _start:
     // Synchronise page-table writes before turning on the MMU.
     sfence.vma
 
-    // Try Sv48.
-    lla    t0, boot_l4pt
-    slli   t0, t0, 32
-    srli   t0, t0, 32
-    li     t1, SATP_MODE_SV48
-    srli   t0, t0, PAGE_SHIFT
-    or     t0, t0, t1
-    csrw   satp, t0
-    sfence.vma
-
-    csrr   t1, satp
-    SBI_PUTCHAR 'H'
-    SBI_SET_TIMER (60 * TIMER_FREQ)
-    beq    t0, t1, .Lmmu_ok
-
-    // Try Sv39 fallback.
+    // Try Sv39 first — it has better compatibility with QEMU and hardware
+    // that don't fully support 1 GiB leaves at L3 (Sv48).
+    // Sv48 is tried as a fallback for platforms that require it.
+.Sv39_first:
     lla    t0, boot_l3pt_sv39
     slli   t0, t0, 32
     srli   t0, t0, 32
@@ -163,8 +172,25 @@ _start:
 
     csrr   t1, satp
     SBI_PUTCHAR 'h'
-    SBI_SET_TIMER (60 * TIMER_FREQ)
     beq    t0, t1, .Lmmu_ok
+    SBI_SET_TIMER (60 * TIMER_FREQ)
+
+    // Try Sv48 fallback.
+.Sv48_fallback:
+    lla    t0, boot_l4pt
+    slli   t0, t0, 32
+    srli   t0, t0, 32
+    li     t1, SATP_MODE_SV48
+    srli   t0, t0, PAGE_SHIFT
+    or     t0, t0, t1
+    csrw   satp, t0
+    sfence.vma
+
+    csrr   t1, satp
+    SBI_PUTCHAR 'H'
+    beq    t0, t1, .Lmmu_ok
+    SBI_SET_TIMER (60 * TIMER_FREQ)
+    j      .Lmmu_hang
 
 .Ldtb_hang:
     SBI_PUTCHAR '@'
@@ -176,10 +202,9 @@ _start:
 
 .Lmmu_ok:
     SBI_PUTCHAR 'B'
-    SBI_SET_TIMER (90 * TIMER_FREQ)   // cover early Rust code as well
+    SBI_SET_TIMER (90 * TIMER_FREQ)
 
-    // The kernel is about to run at its linked virtual address; move the
-    // early trap handler to the virtual address as well.
+    // Move early trap handler to virtual address.
     lla    t0, _early_trap
     li     t2, KERNEL_VMA_OFFSET
     or     t0, t0, t2
@@ -196,18 +221,29 @@ _start:
 
     lla    t0, riscv_boot
     or     t0, t0, t1
-    // Restore the original hartid/DTB arguments for riscv_boot.
+    mv     a0, s0
+    mv     a1, s1
+
+    // Emit a marker right before the jump.
+    SBI_PUTCHAR 'J'
+
+    lla    t0, riscv_boot
+    or     t0, t0, t1
     mv     a0, s0
     mv     a1, s1
     jr     t0
 
+    // Should never return.
+    SBI_PUTCHAR 'K'
+1:  j      1b
+
 // Tiny trap handler:
 //   - Supervisor timer interrupt -> reset the board (safety net).
-//   - Anything else            -> print 'T' + low nibble of scause and loop.
+//   - Anything else -> print 'T' + low nibble of scause and loop.
 .balign 4
 _early_trap:
     csrr   t0, scause
-    li     t1, 0x8000000000000005    // supervisor timer interrupt
+    li     t1, 0x8000000000000005
     beq    t0, t1, .Ltimer_reset
 
     li     a0, 'T'
@@ -231,21 +267,34 @@ _early_trap:
     SBI_RESET
 
 PTE_VRXWAD = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
+PTE_VRXW  = PTE_V | PTE_R | PTE_W | PTE_X
 
 // ---- Sv48 page tables ------------------------------------------------------
 .balign 4096
 boot_l4pt:
-    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // L4[0]: identity 0-512 GiB
-    .zero 255 * PTE_SIZE
-    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // L4[256]: linear 0-512 GiB
-    .zero 254 * PTE_SIZE
-    .quad 0                                          // L4[511]: -> boot_l3pt
+    .zero 1 * PTE_SIZE           // L4[0]: set at runtime -> boot_idpt
+    .zero 255 * PTE_SIZE         // L4[1..255]: unused
+    .zero 1 * PTE_SIZE           // L4[256]: set at runtime -> boot_idpt
+    .zero 254 * PTE_SIZE         // L4[257..510]: unused
+    .zero 1 * PTE_SIZE           // L4[511]: set at runtime -> boot_l3pt
 
+// Identity and linear mappings share this table.
+// Entries VPN[0..127] -> phys 0..128 GiB via 1 GiB leaf pages.
+// Entries VPN[128..511] are left zero (unmapped).
+.balign 4096
+boot_idpt:
+    .set i, 0
+    .rept 128
+    .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .set i, i + 1
+    .endr
+    .zero (512 - 128) * PTE_SIZE
+
+// High-half mapping for the kernel.
+// L4[511] selects this table; only the last four entries are populated to
+// cover VA range 0xffffffff00000000..0xffffffffffffffff.
+.balign 4096
 boot_l3pt:
-    // For KERNEL_VMA = 0xffffffff80200000 under Sv48:
-    //   VPN3 = 511, VPN2 = 510 -> region base 0xffffffff80000000.
-    //   Map that 1 GiB region to physical 0x80000000 (2 GiB) so that
-    //   virtual 0xffffffff80200000 resolves to physical 0x80200000.
     .zero 508 * PTE_SIZE
     .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff00000000 -> 0 GiB
     .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff40000000 -> 1 GiB
@@ -255,20 +304,17 @@ boot_l3pt:
 // ---- Sv39 fallback page table ----------------------------------------------
 .balign 4096
 boot_l3pt_sv39:
-    // Identity mapping 0-128 GiB.
     .set i, 0
     .rept 128
     .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRXWAD
     .set i, i + 1
     .endr
     .zero 128 * PTE_SIZE
-    // Linear 0-128 GiB.
     .set i, 0
     .rept 128
     .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRXWAD
     .set i, i + 1
     .endr
-    // High-half mapping for 0xffffffff80200000 (Sv39 root index 510 -> phys 2 GiB).
     .zero 124 * PTE_SIZE
     .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRXWAD
     .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRXWAD

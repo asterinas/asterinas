@@ -109,6 +109,33 @@ fn parse_initramfs_range() -> Option<(usize, usize)> {
 /// The entry point of the Rust code portion of Asterinas.
 #[no_mangle]
 pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
+    // Minimal inline asm SBI putchar to confirm Rust entry.
+    // Do NOT call early_println! here — it pulls in formatting infrastructure
+    // that may touch unmapped addresses through LINEAR_MAPPING.
+    // We must first parse the DTB and set up the kernel page table.
+    unsafe {
+        core::arch::asm!(
+            "li a0, 'R'",
+            "li a7, 0x01",
+            "ecall",
+        );
+    }
+
+    let device_tree_ptr = paddr_to_vaddr(device_tree_paddr) as *const u8;
+
+    // Parse the DTB — this reads through the linear mapping, which now
+    // uses a proper non-leaf L4 -> 1 GiB L3 layout.
+    let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_ptr).unwrap() };
+    DEVICE_TREE.call_once(|| fdt);
+
+    unsafe {
+        core::arch::asm!(
+            "li a0, 'D'",
+            "li a7, 0x01",
+            "ecall",
+        );
+    }
+
     early_println!("Enter riscv_boot");
 
     let device_tree_ptr = paddr_to_vaddr(device_tree_paddr) as *const u8;
