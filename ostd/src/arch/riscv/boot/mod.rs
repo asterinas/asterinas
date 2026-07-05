@@ -121,11 +121,11 @@ pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
         );
     }
 
-    let device_tree_ptr = paddr_to_vaddr(device_tree_paddr) as *const u8;
-
-    // Parse the DTB — this reads through the linear mapping, which now
-    // uses a proper non-leaf L4 -> 1 GiB L3 layout.
-    let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_ptr).unwrap() };
+    // Access the DTB through the identity mapping (physical address).
+    // paddr_to_vaddr() would use the linear-mapping base (0xFFFF800000000000)
+    // which is only canonical under Sv48/Sv57, not Sv39.  The boot page
+    // tables set up a 1:1 identity mapping covering the first 128 GiB.
+    let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_paddr as *const u8).unwrap() };
     DEVICE_TREE.call_once(|| fdt);
 
     unsafe {
@@ -137,10 +137,6 @@ pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
     }
 
     early_println!("Enter riscv_boot");
-
-    let device_tree_ptr = paddr_to_vaddr(device_tree_paddr) as *const u8;
-    let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_ptr).unwrap() };
-    DEVICE_TREE.call_once(|| fdt);
 
     use crate::boot::{call_ostd_main, EarlyBootInfo, EARLY_INFO};
 
