@@ -28,6 +28,10 @@ impl PageCacheBackend for VirtioFsInode {
         let session = self.fs_ref().session().clone();
         let cache_page = locked_page.deref().clone();
         let data_buf = FuseReplyBuf::new_map(Segment::from(cache_page.clone()).into())?;
+        // FIXME: Page-cache I/O should use the current `InodeHandle` status
+        // flags instead of the flags captured in the cached FUSE handle. The
+        // page-cache backend currently receives only the inode, so it cannot
+        // observe per-open status flag changes.
         let read_req = ReadReq::new(
             handle.fh(),
             page_offset(idx)? as u64,
@@ -111,6 +115,10 @@ impl PageCacheBackend for VirtioFsInode {
         let nodeid = self.nodeid();
         let session = fs.session().clone();
         let complete_page = page.clone();
+        // FIXME: Page-cache I/O should use the current `InodeHandle` status
+        // flags instead of the flags captured in the cached FUSE handle. The
+        // page-cache backend currently receives only the inode, so it cannot
+        // observe per-open status flag changes.
         let write_req = WriteReq::new(
             handle.fh(),
             page_start as u64,
