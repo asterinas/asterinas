@@ -43,6 +43,10 @@ pub fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
 
     early_println!("Non-resettable panic! {:#?}", info);
 
+    // skip _Unwind_Backtrace on riscv64 — it triggers an illegal
+    // instruction in OpenSBI 1.5.1's M-mode handler.  The full stack
+    // trace is a debug nicety, not critical for boot completion.
+    #[cfg(not(target_arch = "riscv64"))]
     print_stack_trace();
     abort();
 }
