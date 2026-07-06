@@ -50,6 +50,7 @@ mod error;
 mod events;
 mod fs;
 mod init;
+mod io_uring;
 mod ipc;
 mod net;
 mod prelude;
