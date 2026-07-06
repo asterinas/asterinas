@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod recv;
+mod recvmsg;
 mod send;
+mod sendmsg;
 
 pub(super) use recv::IoUringRecvRequest;
+pub(super) use recvmsg::IoUringRecvMsgRequest;
 pub(super) use send::IoUringSendRequest;
+pub(super) use sendmsg::IoUringSendMsgRequest;

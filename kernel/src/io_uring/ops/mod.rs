@@ -47,6 +47,16 @@ pub(super) fn build_op_request(
             sqe,
             force_async,
         )?)),
+        IoUringOpcode::SendMsg => Ok(Arc::new(net::IoUringSendMsgRequest::new(
+            context,
+            sqe,
+            force_async,
+        )?)),
+        IoUringOpcode::RecvMsg => Ok(Arc::new(net::IoUringRecvMsgRequest::new(
+            context,
+            sqe,
+            force_async,
+        )?)),
         IoUringOpcode::Send => Ok(Arc::new(net::IoUringSendRequest::new(
             context,
             sqe,
