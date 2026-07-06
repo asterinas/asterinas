@@ -10,7 +10,9 @@
 
 use alloc::sync::Arc;
 
-use aster_fuse::{FuseCompleteFn, FuseCompletion, FuseNodeId, FuseUnique, ReplyHeader};
+use aster_fuse::{
+    FuseCompleteFn, FuseCompletion, FuseNodeId, FuseUnique, ReplyExpectation, ReplyHeader,
+};
 use ostd::mm::io::util::HasVmReaderWriter;
 use smallvec::SmallVec;
 
@@ -24,6 +26,7 @@ pub(super) type RequestBufs = SmallVec<[FuseRequestBuf; 2]>;
 pub(super) struct FuseRequest {
     unique: FuseUnique,
     nodeid: FuseNodeId,
+    reply_expectation: ReplyExpectation,
     request_bufs: RequestBufs,
     waiter: Arc<FuseWaiter>,
     complete_fn: Option<FuseCompleteFn>,
@@ -38,6 +41,7 @@ impl FuseRequest {
     pub(super) fn new(
         unique: FuseUnique,
         nodeid: FuseNodeId,
+        reply_expectation: ReplyExpectation,
         request_bufs: RequestBufs,
         reply_bufs: ReplyBufs,
         complete_fn: Option<FuseCompleteFn>,
@@ -45,6 +49,7 @@ impl FuseRequest {
         Self {
             unique,
             nodeid,
+            reply_expectation,
             request_bufs,
             waiter: Arc::new(FuseWaiter::new(reply_bufs)),
             complete_fn,
@@ -107,10 +112,11 @@ impl FuseRequest {
             return FuseCompletion::MalformedResponse;
         };
 
-        // TODO: Short `FUSE_READ` and `FUSE_READDIR` replies are not supported
-        // here. If `ReplyHeader::len` reports fewer bytes than the virtqueue used
-        // length, the response is treated as malformed.
-        if reply_header.len() as usize != reply_len || reply_header.unique() != self.unique {
+        if reply_header.unique() != self.unique {
+            return FuseCompletion::MalformedResponse;
+        }
+
+        if !self.is_reply_shape_valid(&reply_header, reply_len) {
             return FuseCompletion::MalformedResponse;
         }
 
@@ -118,12 +124,36 @@ impl FuseRequest {
             return FuseCompletion::RemoteError(reply_header.error());
         }
 
-        if let Some(payload_len) =
-            (reply_header.len() as usize).checked_sub(size_of::<ReplyHeader>())
-        {
-            FuseCompletion::Complete(payload_len)
-        } else {
-            FuseCompletion::MalformedResponse
+        let payload_len = reply_header.len() as usize - size_of::<ReplyHeader>();
+        FuseCompletion::Complete(payload_len)
+    }
+
+    fn is_reply_shape_valid(&self, reply_header: &ReplyHeader, reply_len: usize) -> bool {
+        let reply_header_len = reply_header.len() as usize;
+
+        if reply_header_len != reply_len {
+            return false;
+        }
+
+        let declared_payload_len = reply_header_len - size_of::<ReplyHeader>();
+
+        // A request error reply contains only the common reply header.
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/fs/fuse/dev.c#L2250-L2253>
+        if reply_header.error() != 0 {
+            return declared_payload_len == 0;
+        }
+
+        match self.reply_expectation {
+            // No-reply requests return before parsing a reply header, so reaching this arm
+            // indicates inconsistent request state.
+            ReplyExpectation::None => false,
+            ReplyExpectation::HeaderOnly => declared_payload_len == 0,
+            ReplyExpectation::FixedPayload(expected_payload_len) => {
+                declared_payload_len == expected_payload_len.get()
+            }
+            ReplyExpectation::VariablePayload(max_payload_len) => {
+                declared_payload_len <= max_payload_len.get()
+            }
         }
     }
 }

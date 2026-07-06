@@ -121,6 +121,7 @@ impl FileSystemDevice {
         complete_fn: Option<FuseCompleteFn>,
     ) -> Result<FuseRequest, FuseError> {
         let unique = self.alloc_unique();
+        let reply_expectation = operation.reply_expectation();
 
         let data_buf_len = match data_buf.as_ref() {
             Some(FuseDataBuf::Write(data_buf)) => data_buf.len(),
@@ -133,12 +134,12 @@ impl FileSystemDevice {
         let (request_bufs, reply_bufs) = match data_buf {
             Some(FuseDataBuf::Read(data_buf)) => (
                 smallvec![request_buf],
-                self.alloc_reply_bufs(operation.reply_expectation(), Some(data_buf))?,
+                self.alloc_reply_bufs(reply_expectation, Some(data_buf))?,
             ),
             Some(FuseDataBuf::Write(data_buf)) => {
                 data_buf.sync_to_device().unwrap();
 
-                let reply_bufs = self.alloc_reply_bufs(operation.reply_expectation(), None)?;
+                let reply_bufs = self.alloc_reply_bufs(reply_expectation, None)?;
                 if reply_bufs.header().is_none() {
                     return Err(FuseError::MalformedResponse);
                 }
@@ -146,7 +147,7 @@ impl FileSystemDevice {
                 (smallvec![request_buf, data_buf], reply_bufs)
             }
             None => {
-                let reply_bufs = self.alloc_reply_bufs(operation.reply_expectation(), None)?;
+                let reply_bufs = self.alloc_reply_bufs(reply_expectation, None)?;
 
                 (smallvec![request_buf], reply_bufs)
             }
@@ -155,6 +156,7 @@ impl FileSystemDevice {
         Ok(FuseRequest::new(
             unique,
             nodeid,
+            reply_expectation,
             request_bufs,
             reply_bufs,
             complete_fn,
@@ -226,11 +228,19 @@ impl FileSystemDevice {
             (ReplyExpectation::HeaderOnly, None) => {
                 Ok(ReplyBufs::new_header_only(self.alloc_reply_header_buf()?))
             }
-            (ReplyExpectation::Payload(payload_size), None) => Ok(ReplyBufs::new_with_payload(
+            (
+                ReplyExpectation::FixedPayload(payload_size)
+                | ReplyExpectation::VariablePayload(payload_size),
+                None,
+            ) => Ok(ReplyBufs::new_with_payload(
                 self.alloc_reply_header_buf()?,
                 self.alloc_reply_payload_buf(payload_size.get())?,
             )),
-            (ReplyExpectation::Payload(payload_size), Some(data_buf)) => {
+            (
+                ReplyExpectation::FixedPayload(payload_size)
+                | ReplyExpectation::VariablePayload(payload_size),
+                Some(data_buf),
+            ) => {
                 if payload_size.get() > data_buf.len() {
                     return Err(FuseError::BufferTooSmall);
                 }

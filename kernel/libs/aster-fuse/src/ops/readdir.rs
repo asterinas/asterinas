@@ -97,7 +97,7 @@ impl FuseOperation for ReaddirOperation {
     }
 
     fn reply_expectation(&self) -> ReplyExpectation {
-        ReplyExpectation::payload(self.read_req.size() as usize)
+        ReplyExpectation::variable_payload(self.read_req.size() as usize)
     }
 
     fn parse_reply(
