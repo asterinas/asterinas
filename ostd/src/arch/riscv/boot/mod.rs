@@ -5,6 +5,7 @@
 pub mod smp;
 
 use core::arch::global_asm;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use fdt::Fdt;
 use spin::Once;
@@ -19,6 +20,12 @@ use crate::{
 };
 
 global_asm!(include_str!("boot.S"));
+
+/// Whether the full kernel page table is active.  During early boot
+/// (before init_kernel_page_table), the boot page table may not
+/// support LINEAR mapping (QEMU 9.2.4 Sv48 bug), so paddr_to_vaddr()
+/// must use identity mapping instead.
+pub static KERNEL_PT_READY: AtomicBool = AtomicBool::new(false);
 
 /// The Flattened Device Tree of the platform.
 pub static DEVICE_TREE: Once<Fdt> = Once::new();

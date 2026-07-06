@@ -105,6 +105,16 @@ pub const LINEAR_MAPPING_VADDR_RANGE: Range<Vaddr> = LINEAR_MAPPING_BASE_VADDR..
 /// Convert physical address to virtual address using offset, only available inside `ostd`
 pub fn paddr_to_vaddr(pa: Paddr) -> usize {
     debug_assert!(pa < VMALLOC_BASE_VADDR - LINEAR_MAPPING_BASE_VADDR);
+    #[cfg(target_arch = "riscv64")]
+    {
+        // Use identity mapping during early boot if the full kernel
+        // page table is not yet active.  The boot page table (Sv39
+        // or Sv48 with 2 MiB leaves) always provides a 1:1 identity
+        // mapping for the first 4 GiB of physical memory.
+        if !crate::arch::boot::KERNEL_PT_READY.load(core::sync::atomic::Ordering::Relaxed) {
+            return pa;
+        }
+    }
     pa + LINEAR_MAPPING_BASE_VADDR
 }
 
@@ -221,6 +231,12 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     }
 
     KERNEL_PAGE_TABLE.call_once(|| kpt);
+
+    // On RISC-V, mark the kernel page table as ready so that
+    // paddr_to_vaddr() switches from identity mapping to the
+    // proper LINEAR mapping.
+    #[cfg(target_arch = "riscv64")]
+    crate::arch::boot::KERNEL_PT_READY.store(true, core::sync::atomic::Ordering::Relaxed);
 }
 
 /// Activates the kernel page table.
