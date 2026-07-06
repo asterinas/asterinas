@@ -9,9 +9,9 @@ use crate::prelude::*;
 
 /// A kernel space I/O vector.
 #[derive(Clone, Copy, Debug)]
-struct IoVec {
-    base: Vaddr,
-    len: usize,
+pub struct IoVec {
+    pub base: Vaddr,
+    pub len: usize,
 }
 
 /// A user space I/O vector.

@@ -266,4 +266,6 @@ pub const IORING_OFF_SQES: usize = 0x1000_0000;
 #[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 pub enum IoUringOpcode {
     Nop = 0,
+    Read = 22,
+    Write = 23,
 }

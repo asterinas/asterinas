@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod file;
 mod nop;
+
+use ostd::task::Task;
 
 use super::{
     c_types::{IoUringOpcode, IoUringSqe, IoUringSqeFlags},
     io_context::IoUringContext,
 };
-use crate::{io_uring::utils::Completion, prelude::*};
+use crate::{
+    fs::file::{FileLike, file_table::FileDesc},
+    io_uring::utils::Completion,
+    prelude::*,
+};
 
 pub(super) trait IoUringOp: Send + Sync {
     // Normal operation for io_uring is to try and issue an sqe as
@@ -29,6 +36,16 @@ pub(super) fn build_op_request(
             sqe,
             force_async,
         ))),
+        IoUringOpcode::Read => Ok(Arc::new(file::IoUringReadRequest::new(
+            context,
+            sqe,
+            force_async,
+        )?)),
+        IoUringOpcode::Write => Ok(Arc::new(file::IoUringWriteRequest::new(
+            context,
+            sqe,
+            force_async,
+        )?)),
     }
 }
 
@@ -38,6 +55,21 @@ fn completion_from_result(result: Result<usize>, user_data: u64) -> Completion {
         Err(err) => -(err.error() as i32),
     };
     Completion::new(user_data, result, 0)
+}
+
+fn check_rw_flags(sqe: &IoUringSqe) -> Result<()> {
+    if sqe.rw_flags != 0 {
+        return_errno_with_message!(Errno::EINVAL, "SQE read/write flags are unsupported");
+    }
+    Ok(())
+}
+
+fn get_file(fd: i32) -> Result<Arc<dyn FileLike>> {
+    let file_desc: FileDesc = fd.try_into()?;
+    let task = Task::current().unwrap();
+    let thread_local = task.as_thread_local().unwrap();
+    let file_table = thread_local.borrow_file_table();
+    Ok(file_table.unwrap().read().get_file(file_desc)?.clone())
 }
 
 fn check_sqe_flags(sqe: &IoUringSqe) -> Result<IoUringSqeFlags> {
