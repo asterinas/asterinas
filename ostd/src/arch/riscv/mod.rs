@@ -62,8 +62,11 @@ pub fn read_random() -> Option<u64> {
 
 pub(crate) fn enable_cpu_features() {
     unsafe {
-        // We adopt a lazy approach to enable the floating-point unit; it's not
-        // enabled before the first FPU trap.
-        riscv::register::sstatus::set_fs(riscv::register::sstatus::FS::Off);
+        // Enable the floating-point unit eagerly.  The "lazy" approach
+        // (FS::Off) relies on a trap handler that initialises FP state
+        // on the first FP access, but the RISC-V port does not yet
+        // have such a handler.  Without FS set to Initial or Clean,
+        // any FP instruction causes an illegal-instruction trap.
+        riscv::register::sstatus::set_fs(riscv::register::sstatus::FS::Initial);
     }
 }
