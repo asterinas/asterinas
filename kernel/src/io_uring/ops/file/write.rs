@@ -6,7 +6,7 @@ use super::CURRENT_FILE_OFFSET;
 use crate::{
     fs::{self, file::FileLike},
     io_uring::{
-        c_types::IoUringSqe,
+        c_types::{IoUringOpcode, IoUringSqe},
         io_context::IoUringContext,
         ops::{IoUringOp, check_rw_flags, completion_from_result, get_file},
         utils::Completion,
@@ -25,21 +25,31 @@ pub(in crate::io_uring::ops) struct IoUringWriteRequest {
 
 impl IoUringWriteRequest {
     pub(in crate::io_uring::ops) fn new(
-        _context: &IoUringContext,
+        context: &IoUringContext,
         sqe: &IoUringSqe,
         force_async: bool,
     ) -> Result<Self> {
         check_rw_flags(sqe)?;
+
+        let buffer = match IoUringOpcode::try_from(sqe.opcode)? {
+            IoUringOpcode::Write => IoVec {
+                base: sqe.addr as Vaddr,
+                len: sqe.len as usize,
+            },
+            IoUringOpcode::WriteFixed => {
+                context.get_registered_buffer(sqe.buf_index, sqe.addr as Vaddr, sqe.len as usize)?
+            }
+            _ => {
+                return_errno_with_message!(Errno::EINVAL, "SQE opcode is not a write operation")
+            }
+        };
 
         Ok(Self {
             user_data: sqe.user_data,
             force_async,
             file: get_file(sqe.fd)?,
             offset: sqe.off,
-            buffer: IoVec {
-                base: sqe.addr as Vaddr,
-                len: sqe.len as usize,
-            },
+            buffer,
         })
     }
 }

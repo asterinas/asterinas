@@ -36,12 +36,12 @@ pub(super) fn build_op_request(
             sqe,
             force_async,
         ))),
-        IoUringOpcode::Read => Ok(Arc::new(file::IoUringReadRequest::new(
+        IoUringOpcode::Read | IoUringOpcode::ReadFixed => Ok(Arc::new(file::IoUringReadRequest::new(
             context,
             sqe,
             force_async,
         )?)),
-        IoUringOpcode::Write => Ok(Arc::new(file::IoUringWriteRequest::new(
+        IoUringOpcode::Write | IoUringOpcode::WriteFixed => Ok(Arc::new(file::IoUringWriteRequest::new(
             context,
             sqe,
             force_async,
