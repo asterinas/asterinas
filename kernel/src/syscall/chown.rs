@@ -8,14 +8,22 @@ use crate::{
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
-    process::{Gid, Uid},
+    process::{Gid, RawGid, RawUid, Uid},
 };
 
-pub fn sys_fchown(raw_fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("raw_fd = {}, uid = {}, gid = {}", raw_fd, uid, gid);
+pub fn sys_fchown(
+    raw_fd: RawFileDesc,
+    raw_uid: RawUid,
+    raw_gid: RawGid,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    debug!(
+        "raw_fd = {}, raw_uid = {}, raw_gid = {}",
+        raw_fd, raw_uid, raw_gid
+    );
 
-    let uid = to_optional_id(uid, Uid::new)?;
-    let gid = to_optional_id(gid, Gid::new)?;
+    let uid = Uid::new(raw_uid);
+    let gid = Gid::new(raw_gid);
     if uid.is_none() && gid.is_none() {
         return Ok(SyscallReturn::Return(0));
     }
@@ -32,16 +40,26 @@ pub fn sys_fchown(raw_fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Res
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_chown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
-    sys_fchownat(AT_FDCWD, path_ptr, uid, gid, 0, ctx)
+pub fn sys_chown(
+    path_ptr: Vaddr,
+    raw_uid: RawUid,
+    raw_gid: RawGid,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    sys_fchownat(AT_FDCWD, path_ptr, raw_uid, raw_gid, 0, ctx)
 }
 
-pub fn sys_lchown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_lchown(
+    path_ptr: Vaddr,
+    raw_uid: RawUid,
+    raw_gid: RawGid,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     sys_fchownat(
         AT_FDCWD,
         path_ptr,
-        uid,
-        gid,
+        raw_uid,
+        raw_gid,
         ChownFlags::AT_SYMLINK_NOFOLLOW.bits(),
         ctx,
     )
@@ -50,8 +68,8 @@ pub fn sys_lchown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<
 pub fn sys_fchownat(
     dirfd: RawFileDesc,
     path_ptr: Vaddr,
-    uid: i32,
-    gid: i32,
+    raw_uid: RawUid,
+    raw_gid: RawGid,
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
@@ -59,16 +77,16 @@ pub fn sys_fchownat(
     let flags = ChownFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!(
-        "dirfd = {}, path = {:?}, uid = {}, gid = {}, flags = {:?}",
-        dirfd, path_name, uid, gid, flags
+        "dirfd = {}, path = {:?}, raw_uid = {}, raw_gid = {}, flags = {:?}",
+        dirfd, path_name, raw_uid, raw_gid, flags
     );
 
     if flags.contains(ChownFlags::AT_EMPTY_PATH) && path_name.is_empty() {
-        return sys_fchown(dirfd, uid, gid, ctx);
+        return sys_fchown(dirfd, raw_uid, raw_gid, ctx);
     }
 
-    let uid = to_optional_id(uid, Uid::new)?;
-    let gid = to_optional_id(gid, Gid::new)?;
+    let uid = Uid::new(raw_uid);
+    let gid = Gid::new(raw_gid);
     if uid.is_none() && gid.is_none() {
         return Ok(SyscallReturn::Return(0));
     }
@@ -94,19 +112,6 @@ pub fn sys_fchownat(
         path.set_group(gid)?;
     }
     Ok(SyscallReturn::Return(0))
-}
-
-fn to_optional_id<T>(id: i32, f: impl Fn(u32) -> T) -> Result<Option<T>> {
-    let id = if id >= 0 {
-        Some(f(id as u32))
-    } else if id == -1 {
-        // If the owner or group is specified as -1, then that ID is not changed.
-        None
-    } else {
-        return_errno!(Errno::EINVAL);
-    };
-
-    Ok(id)
 }
 
 bitflags! {

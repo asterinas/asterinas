@@ -3,21 +3,12 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{Uid, posix_thread::ContextPthreadAdminApi},
+    process::{RawUid, Uid, posix_thread::ContextPthreadAdminApi},
 };
 
-pub fn sys_setreuid(ruid: i32, euid: i32, ctx: &Context) -> Result<SyscallReturn> {
-    let ruid = if ruid >= 0 {
-        Some(Uid::new(ruid.cast_unsigned()))
-    } else {
-        None
-    };
-
-    let euid = if euid >= 0 {
-        Some(Uid::new(euid.cast_unsigned()))
-    } else {
-        None
-    };
+pub fn sys_setreuid(ruid: RawUid, euid: RawUid, ctx: &Context) -> Result<SyscallReturn> {
+    let ruid = Uid::new(ruid);
+    let euid = Uid::new(euid);
 
     debug!("ruid = {:?}, euid = {:?}", ruid, euid);
 

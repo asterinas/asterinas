@@ -35,13 +35,7 @@ impl ProcFileOps for UidMapFileOps {
         // This is the default UID map for the initial user namespace.
         // TODO: Retrieve the UID map from the user namespace of the current process
         // instead of returning this hard-coded value.
-        writeln!(
-            printer,
-            "{:>10} {:>10} {:>10}",
-            0,
-            0,
-            u32::from(Uid::INVALID)
-        )?;
+        writeln!(printer, "{:>10} {:>10} {:>10}", 0, 0, Uid::RAW_INVALID)?;
 
         Ok(printer.bytes_written())
     }

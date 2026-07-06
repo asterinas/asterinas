@@ -11,9 +11,9 @@ mod user;
 use aster_rights::FullOp;
 use capabilities::CapSet;
 use credentials_::Credentials_;
-pub use group::Gid;
+pub use group::{Gid, RawGid};
 pub use secure_bits::SecureBits;
-pub use user::Uid;
+pub use user::{RawUid, Uid};
 
 use crate::prelude::*;
 

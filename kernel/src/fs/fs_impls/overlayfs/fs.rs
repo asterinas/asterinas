@@ -1286,7 +1286,7 @@ mod tests {
                     StatusFlags::empty(),
                 )
                 .unwrap();
-            f2_inode.set_group(Gid::new(77)).unwrap();
+            f2_inode.set_group(Gid::from_raw(77)).unwrap();
             f2_inode
                 .set_xattr(
                     XattrName::try_from_full_name("trusted.f2_xattr_name").unwrap(),
@@ -1489,7 +1489,7 @@ mod tests {
         f2.read_bytes_at(0, data.as_mut_slice()).unwrap();
         assert_eq!(data, [8u8, 8, 9, 9]);
 
-        assert_eq!(f2.group().unwrap(), Gid::new(77));
+        assert_eq!(f2.group().unwrap(), Gid::from_raw(77));
 
         let mut xattr_value = [0u8; 14];
         f2.get_xattr(

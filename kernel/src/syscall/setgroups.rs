@@ -5,7 +5,9 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{Gid, credentials::capabilities::CapSet, posix_thread::ContextPthreadAdminApi},
+    process::{
+        Gid, RawGid, credentials::capabilities::CapSet, posix_thread::ContextPthreadAdminApi,
+    },
     security::lsm::hooks as lsm_hooks,
 };
 
@@ -24,8 +26,9 @@ pub fn sys_setgroups(size: usize, group_list_addr: Vaddr, ctx: &Context) -> Resu
 
     let mut new_groups = BTreeSet::new();
     for idx in 0..size {
-        let addr = group_list_addr + idx * size_of::<Gid>();
-        let gid = ctx.user_space().read_val(addr)?;
+        let addr = group_list_addr + idx * size_of::<RawGid>();
+        let raw_gid: RawGid = ctx.user_space().read_val(addr)?;
+        let gid = Gid::try_from(raw_gid)?;
         new_groups.insert(gid);
     }
 

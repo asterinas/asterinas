@@ -94,7 +94,7 @@ impl Inode for Ext2Inode {
     }
 
     fn owner(&self) -> Result<Uid> {
-        Ok(Uid::new(self.uid()))
+        Ok(Uid::from_raw(self.uid()))
     }
 
     fn set_owner(&self, uid: Uid) -> Result<()> {
@@ -102,7 +102,7 @@ impl Inode for Ext2Inode {
     }
 
     fn group(&self) -> Result<Gid> {
-        Ok(Gid::new(self.gid()))
+        Ok(Gid::from_raw(self.gid()))
     }
 
     fn set_group(&self, gid: Gid) -> Result<()> {

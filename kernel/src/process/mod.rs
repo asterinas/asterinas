@@ -24,7 +24,7 @@ mod term_status;
 mod wait;
 
 pub use clone::{CloneArgs, CloneFlags, clone_child};
-pub use credentials::{Credentials, Gid, Uid};
+pub use credentials::{Credentials, Gid, RawGid, RawUid, Uid};
 pub use execve::do_execve;
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use namespace::{

@@ -207,8 +207,8 @@ pub(in crate::fs::fs_impls::virtiofs) fn metadata_from_attr(
         type_: InodeType::from_raw_mode(attr.mode() as u16).unwrap_or(InodeType::Unknown),
         mode: InodeMode::from_bits_truncate(attr.mode() as u16),
         nr_hard_links: attr.nlink() as usize,
-        uid: Uid::new(attr.uid()),
-        gid: Gid::new(attr.gid()),
+        uid: Uid::from_raw(attr.uid()),
+        gid: Gid::from_raw(attr.gid()),
         container_dev_id,
         self_dev_id: if attr.rdev() == 0 {
             None
