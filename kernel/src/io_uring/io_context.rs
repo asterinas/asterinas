@@ -14,6 +14,7 @@ use super::{
         IoUringCqe, IoUringFeatures, IoUringParams, IoUringSetupFlags, IoUringSqe,
         MAX_CQ_ENTRIES, MAX_SQ_ENTRIES, SqRingOffsets,
     },
+    ops,
     utils::Completion,
 };
 use crate::{
@@ -156,8 +157,18 @@ impl IoUringContext {
     }
 
     fn submit_sqe(&self, sqe: IoUringSqe) -> Result<()> {
-        let err = Error::with_message(Errno::EINVAL, "unsupported io_uring opcode");
-        self.post_completion(Completion::with_error(sqe.user_data, err))
+        match ops::build_op_request(self, &sqe) {
+            Ok(request) => {
+                if let Some(completion) = request.try_execute_nonblock() {
+                    self.post_completion(completion)?;
+                } else {
+                    self.post_completion(request.execute())?;
+                }
+            }
+            Err(err) => self.post_completion(Completion::with_error(sqe.user_data, err))?,
+        }
+
+        Ok(())
     }
 
     fn mmap_region(&self, offset: usize) -> Option<(Arc<Vmo>, usize)> {
