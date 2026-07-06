@@ -206,14 +206,14 @@ _start:
     SBI_PUTCHAR 'J'
     SBI_PUTCHAR 'B'
 
-    // Try Sv48 — QEMU 10.0.0 has the Sv48 TLB fix
+    // Try Sv39 — QEMU 9.2.4 Sv48 TLB walker has a confirmed bug
 
     // KERNEL_PT_READY=false → paddr_to_vaddr uses identity during early boot.
 
-    lla    t0, boot_l4pt
+    lla    t0, boot_l3pt_sv39
     slli   t0, t0, 32
     srli   t0, t0, 32
-    li     t1, SATP_MODE_SV48
+    li     t1, SATP_MODE_SV39
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
     csrw   satp, t0
