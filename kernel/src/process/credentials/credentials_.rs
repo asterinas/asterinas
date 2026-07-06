@@ -308,10 +308,11 @@ impl Credentials_ {
         let had_root = old_ruid.is_root() || old_euid.is_root() || old_suid.is_root();
         let all_nonroot = !new_ruid.is_root() && !new_euid.is_root() && !new_suid.is_root();
         if had_root && all_nonroot {
-            self.clear_ambient_capset();
             if !self.keep_capabilities() {
                 self.set_permitted_capset(CapSet::empty());
-                self.set_inheritable_capset(CapSet::empty());
+                self.set_effective_capset(CapSet::empty());
+            } else {
+                self.clear_ambient_capset();
             }
         }
 
