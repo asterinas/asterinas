@@ -709,7 +709,7 @@ impl PathResolver {
                 if follows >= SYMLINKS_MAX {
                     return_errno_with_message!(Errno::ELOOP, "there are too many symlinks");
                 }
-                let read_link_res = next_path.inode().read_link()?;
+                let read_link_res = next_path.read_link()?;
                 match read_link_res {
                     SymbolicLink::Plain(mut tmp_link_path) => {
                         let link_path_remain = {

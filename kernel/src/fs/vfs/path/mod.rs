@@ -22,7 +22,7 @@ use crate::{
         pseudofs::NsInode,
         vfs::{
             file_system::{FileSystem, FsFlags},
-            inode::{HardLinkability, Inode, Metadata, MknodType, RenameMode},
+            inode::{HardLinkability, Inode, Metadata, MknodType, RenameMode, SymbolicLink},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -31,7 +31,11 @@ use crate::{
         Gid, Uid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
     },
     security::lsm::hooks as lsm_hooks,
+    time::clocks::RealTimeCoarseClock,
 };
+
+/// One day in seconds, used by the `relatime` atime policy.
+const RELATIME_DAY_SECS: u64 = 86400;
 
 mod dentry;
 mod mount;
@@ -319,6 +323,60 @@ impl Path {
         }
 
         Ok(())
+    }
+
+    /// Updates the access time of the inode if the mount's atime policy requires it.
+    ///
+    /// This is the unified VFS-level atime update entry point.
+    /// It checks the mount's atime policy (`noatime`, `relatime`,
+    /// or `strictatime`) and the inode type, and only performs the actual update
+    /// when necessary.
+    ///
+    /// The check is intentionally performed without holding the inode lock, making
+    /// the fast path (no update needed) completely lock-free. Races on the timestamp
+    /// fields are benign: a stale read may cause a spurious update or a missed one,
+    /// neither of which affects correctness.
+    pub fn touch_atime(&self) {
+        let mount_flags = self.mount.flags();
+
+        // `noatime`: never update atime.
+        if mount_flags.contains(PerMountFlags::NOATIME) {
+            return;
+        }
+
+        // `nodiratime`: skip atime update for directories.
+        if mount_flags.contains(PerMountFlags::NODIRATIME) && self.type_() == InodeType::Dir {
+            return;
+        }
+
+        let now = RealTimeCoarseClock::get().read_time();
+        let current_atime = self.atime();
+
+        // If the atime is already equal to (or newer than) the current time,
+        // no update is needed.
+        if current_atime >= now {
+            return;
+        }
+
+        // `relatime` (default): only update atime if the current atime is earlier
+        // than or equal to the mtime or ctime, or if atime has not been updated
+        // for over a day.
+        // Reference: <https://elixir.bootlin.com/linux/latest/source/fs/inode.c#L2060>
+        if !mount_flags.contains(PerMountFlags::STRICTATIME) {
+            let mtime = self.mtime();
+            let ctime = self.ctime();
+
+            let mtime_younger_or_equal = current_atime <= mtime;
+            let ctime_younger_or_equal = current_atime <= ctime;
+            let atime_is_older_than_a_day =
+                now.as_secs().saturating_sub(current_atime.as_secs()) >= RELATIME_DAY_SECS;
+
+            if !mtime_younger_or_equal && !ctime_younger_or_equal && !atime_is_older_than_a_day {
+                return;
+            }
+        }
+
+        self.set_atime(now);
     }
 }
 
@@ -680,6 +738,12 @@ impl Path {
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
     pub fn remove_xattr(&self, name: XattrName) -> Result<()>;
+
+    /// Reads the symbolic link target and updates the access time.
+    pub fn read_link(&self) -> Result<SymbolicLink> {
+        self.touch_atime();
+        self.inode().read_link()
+    }
 
     /// Resizes the file.
     pub fn resize(&self, size: usize) -> Result<()> {

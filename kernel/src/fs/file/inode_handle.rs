@@ -131,6 +131,11 @@ impl InodeHandle {
         let mut offset = self.offset.lock();
         let read_cnt = file_ops.readdir_at(*offset, visitor)?;
         *offset += read_cnt;
+
+        if read_cnt > 0 && !self.status_flags().contains(StatusFlags::O_NOATIME) {
+            self.path.touch_atime();
+        }
+
         Ok(read_cnt)
     }
 
@@ -264,13 +269,21 @@ impl FileLike for InodeHandle {
         let status_flags = self.status_flags();
 
         if !is_offset_aware {
-            return file_ops.read_at(0, writer, status_flags);
+            let len = file_ops.read_at(0, writer, status_flags)?;
+            if len > 0 && !status_flags.contains(StatusFlags::O_NOATIME) {
+                self.path.touch_atime();
+            }
+            return Ok(len);
         }
 
         let mut offset = self.offset.lock();
 
         let len = file_ops.read_at(*offset, writer, status_flags)?;
         *offset += len;
+
+        if len > 0 && !status_flags.contains(StatusFlags::O_NOATIME) {
+            self.path.touch_atime();
+        }
 
         Ok(len)
     }
@@ -310,7 +323,11 @@ impl FileLike for InodeHandle {
 
         let status_flags = self.status_flags();
 
-        file_ops.read_at(offset, writer, status_flags)
+        let len = file_ops.read_at(offset, writer, status_flags)?;
+        if len > 0 && !status_flags.contains(StatusFlags::O_NOATIME) {
+            self.path.touch_atime();
+        }
+        Ok(len)
     }
 
     fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {

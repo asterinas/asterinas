@@ -17,6 +17,7 @@ SymlinkTest.CanCreateSymlinkWithCachedSourceDirent
 SymlinkTest.CanEvaluateLink
 SymlinkTest.CannotCreateSymlinkInReadOnlyDir
 SymlinkTest.ChmodSymlink
+SymlinkTest.FollowUpdatesATime
 SymlinkTest.OldnameIsDangling
 SymlinkTest.PreadFromSymlink
 SymlinkTest.PwriteToSymlink
