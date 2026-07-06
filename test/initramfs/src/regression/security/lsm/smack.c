@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -21,16 +23,18 @@
 #define SMACK_ATTR_CURRENT_MAX_LEN (SMACK_LABEL_MAX_LEN + 1)
 #define SMACK_XATTR_ACCESS "security.SMACK64"
 #define SMACK_XATTR_EXEC "security.SMACK64EXEC"
+#define SMACK_XATTR_MMAP "security.SMACK64MMAP"
 #define SMACK_XATTR_TRANSMUTE "security.SMACK64TRANSMUTE"
+#define SMACK_LOAD_PATH "/proc/smack/load"
 
-static void build_attr_current_path(char *buf, size_t size)
+static void build_attr_path(char *buf, size_t size, const char *name)
 {
-	CHECK_WITH(snprintf(buf, size, "/proc/%ld/task/%ld/attr/current",
-			    (long)getpid(), (long)syscall(SYS_gettid)),
+	CHECK_WITH(snprintf(buf, size, "/proc/%ld/task/%ld/attr/%s",
+			    (long)getpid(), (long)syscall(SYS_gettid), name),
 		   _ret > 0 && (size_t)_ret < size);
 }
 
-static int read_current_label(char *buf, size_t size)
+static int read_attr_label(const char *name, char *buf, size_t size)
 {
 	char path[128];
 	int saved_errno;
@@ -38,7 +42,7 @@ static int read_current_label(char *buf, size_t size)
 	ssize_t len;
 	char *newline;
 
-	build_attr_current_path(path, sizeof(path));
+	build_attr_path(path, sizeof(path), name);
 	fd = open(path, O_RDONLY);
 	if (fd < 0) {
 		return -1;
@@ -61,7 +65,7 @@ static int read_current_label(char *buf, size_t size)
 	return 0;
 }
 
-static int write_current_label(const char *label)
+static int write_attr_label(const char *name, const char *label)
 {
 	char path[128];
 	size_t len = strlen(label);
@@ -69,7 +73,7 @@ static int write_current_label(const char *label)
 	ssize_t written;
 	int saved_errno;
 
-	build_attr_current_path(path, sizeof(path));
+	build_attr_path(path, sizeof(path), name);
 	fd = open(path, O_WRONLY);
 	if (fd < 0) {
 		return -1;
@@ -85,6 +89,16 @@ static int write_current_label(const char *label)
 	}
 
 	return 0;
+}
+
+static int read_current_label(char *buf, size_t size)
+{
+	return read_attr_label("current", buf, size);
+}
+
+static int write_current_label(const char *label)
+{
+	return write_attr_label("current", label);
 }
 
 static bool smack_is_disabled(void)
@@ -115,6 +129,40 @@ static int write_all(int fd, const void *buf, size_t len)
 		len -= written;
 	}
 
+	return 0;
+}
+
+static int write_text_file(const char *path, const char *text)
+{
+	int fd = open(path, O_WRONLY);
+	int saved_errno;
+	int ret;
+
+	if (fd < 0) {
+		return -1;
+	}
+
+	ret = write_all(fd, text, strlen(text));
+	saved_errno = errno;
+	close(fd);
+	errno = saved_errno;
+	return ret;
+}
+
+static int load_smack_rule(const char *rule)
+{
+	return write_text_file(SMACK_LOAD_PATH, rule);
+}
+
+static int read_xattr_label(const char *path, const char *name, char *buf,
+			    size_t size)
+{
+	ssize_t len = getxattr(path, name, buf, size - 1);
+
+	if (len < 0) {
+		return -1;
+	}
+	buf[len] = '\0';
 	return 0;
 }
 
@@ -162,7 +210,8 @@ static int copy_self_to(const char *path)
 	return chmod(path, 0755);
 }
 
-static void run_exec_helper_if_requested(void) __attribute__((constructor(101)));
+static void run_exec_helper_if_requested(void)
+	__attribute__((constructor(101)));
 
 static void run_exec_helper_if_requested(void)
 {
@@ -210,6 +259,37 @@ FN_TEST(attr_current_roundtrip)
 }
 END_TEST()
 
+FN_TEST(attr_full_roundtrip)
+{
+	char label[SMACK_ATTR_CURRENT_MAX_LEN] = {};
+
+	SKIP_TEST_IF(smack_is_disabled());
+
+	CHECK(write_current_label("smack_attr_a\n"));
+	CHECK(write_current_label("smack_attr_b\n"));
+	CHECK(read_attr_label("prev", label, sizeof(label)));
+	CHECK_WITH(strcmp(label, "smack_attr_a"), _ret == 0);
+
+	CHECK(write_attr_label("exec", "smack_attr_exec\n"));
+	CHECK(read_attr_label("exec", label, sizeof(label)));
+	CHECK_WITH(strcmp(label, "smack_attr_exec"), _ret == 0);
+	CHECK(write_attr_label("exec", "-\n"));
+	CHECK(read_attr_label("exec", label, sizeof(label)));
+	CHECK_WITH(strcmp(label, ""), _ret == 0);
+
+	CHECK(write_attr_label("fscreate", "smack_attr_fs\n"));
+	CHECK(read_attr_label("fscreate", label, sizeof(label)));
+	CHECK_WITH(strcmp(label, "smack_attr_fs"), _ret == 0);
+	CHECK(write_attr_label("fscreate", "-\n"));
+
+	CHECK(write_attr_label("sockcreate", "smack_attr_sock\n"));
+	CHECK(read_attr_label("sockcreate", label, sizeof(label)));
+	CHECK_WITH(strcmp(label, "smack_attr_sock"), _ret == 0);
+	CHECK(write_attr_label("sockcreate", "-\n"));
+	CHECK(write_current_label("_\n"));
+}
+END_TEST()
+
 FN_TEST(xattr_validation_and_capability)
 {
 	pid_t pid;
@@ -223,13 +303,13 @@ FN_TEST(xattr_validation_and_capability)
 		int file = CHECK(mkstemp(file_template));
 
 		CHECK(close(file));
-		CHECK_WITH(setxattr(file_template, SMACK_XATTR_ACCESS, "bad/name",
-				    strlen("bad/name"), 0),
+		CHECK_WITH(setxattr(file_template, SMACK_XATTR_ACCESS,
+				    "bad/name", strlen("bad/name"), 0),
 			   _ret == -1 && errno == EINVAL);
 		CHECK(setxattr(file_template, SMACK_XATTR_ACCESS, "smack_file",
 			       strlen("smack_file"), 0));
-		CHECK_WITH(setxattr(file_template, SMACK_XATTR_TRANSMUTE, "FALSE",
-				    strlen("FALSE"), 0),
+		CHECK_WITH(setxattr(file_template, SMACK_XATTR_TRANSMUTE,
+				    "FALSE", strlen("FALSE"), 0),
 			   _ret == -1 && errno == EINVAL);
 		CHECK(setxattr(file_template, SMACK_XATTR_TRANSMUTE, "TRUE",
 			       strlen("TRUE"), 0));
@@ -252,6 +332,210 @@ FN_TEST(xattr_validation_and_capability)
 	TEST_RES(waitpid(pid, &status, 0),
 		 _ret == pid && WIFEXITED(status) &&
 			 WEXITSTATUS(status) == EXIT_SUCCESS);
+}
+END_TEST()
+
+FN_TEST(policy_load_and_file_access)
+{
+	char file_template[] = "/tmp/smack_accessXXXXXX";
+	int fd = TEST_SUCC(mkstemp(file_template));
+	pid_t pid;
+	int status;
+
+	SKIP_TEST_IF(smack_is_disabled());
+
+	TEST_SUCC(write_all(fd, "content", strlen("content")));
+	TEST_SUCC(close(fd));
+	TEST_SUCC(setxattr(file_template, SMACK_XATTR_ACCESS, "smack_object",
+			   strlen("smack_object"), 0));
+	TEST_SUCC(write_current_label("smack_subject\n"));
+	TEST_SUCC(load_smack_rule("smack_subject smack_object r\n"));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_MAC_OVERRIDE);
+
+		int readable = CHECK(open(file_template, O_RDONLY));
+		CHECK(close(readable));
+
+		errno = 0;
+		CHECK_WITH(open(file_template, O_WRONLY),
+			   _ret == -1 && errno == EACCES);
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+	TEST_SUCC(unlink(file_template));
+	TEST_SUCC(write_current_label("_\n"));
+}
+END_TEST()
+
+FN_TEST(fscreate_and_transmute_labels)
+{
+	char file_template[] = "/tmp/smack_fscreateXXXXXX";
+	char dir_template[] = "/tmp/smack_transmuteXXXXXX";
+	char child_path[128];
+	char label[SMACK_ATTR_CURRENT_MAX_LEN] = {};
+	int fd;
+
+	SKIP_TEST_IF(smack_is_disabled());
+
+	TEST_SUCC(write_attr_label("fscreate", "smack_fscreate\n"));
+	fd = TEST_SUCC(mkstemp(file_template));
+	TEST_SUCC(close(fd));
+	TEST_SUCC(read_xattr_label(file_template, SMACK_XATTR_ACCESS, label,
+				   sizeof(label)));
+	TEST_RES(strcmp(label, "smack_fscreate"), _ret == 0);
+	TEST_SUCC(write_attr_label("fscreate", "-\n"));
+	TEST_SUCC(unlink(file_template));
+
+	CHECK_WITH(mkdtemp(dir_template), _ret == dir_template);
+	TEST_SUCC(setxattr(dir_template, SMACK_XATTR_ACCESS, "smack_parent",
+			   strlen("smack_parent"), 0));
+	TEST_SUCC(setxattr(dir_template, SMACK_XATTR_TRANSMUTE, "TRUE",
+			   strlen("TRUE"), 0));
+	TEST_SUCC(write_current_label("smack_transmuter\n"));
+	TEST_SUCC(load_smack_rule("smack_transmuter smack_parent t\n"));
+	CHECK_WITH(snprintf(child_path, sizeof(child_path), "%s/child",
+			    dir_template),
+		   _ret > 0 && (size_t)_ret < sizeof(child_path));
+	fd = TEST_SUCC(open(child_path, O_CREAT | O_RDWR, 0600));
+	TEST_SUCC(close(fd));
+	TEST_SUCC(read_xattr_label(child_path, SMACK_XATTR_ACCESS, label,
+				   sizeof(label)));
+	TEST_RES(strcmp(label, "smack_parent"), _ret == 0);
+
+	TEST_SUCC(unlink(child_path));
+	TEST_SUCC(rmdir(dir_template));
+	TEST_SUCC(write_current_label("_\n"));
+}
+END_TEST()
+
+FN_TEST(mmap_label_access)
+{
+	char file_template[] = "/tmp/smack_mmapXXXXXX";
+	int fd = TEST_SUCC(mkstemp(file_template));
+	pid_t pid;
+	int status;
+
+	SKIP_TEST_IF(smack_is_disabled());
+
+	TEST_SUCC(write_all(fd, "page", strlen("page")));
+	TEST_SUCC(close(fd));
+	TEST_SUCC(setxattr(file_template, SMACK_XATTR_ACCESS, "smack_mmap_file",
+			   strlen("smack_mmap_file"), 0));
+	TEST_SUCC(setxattr(file_template, SMACK_XATTR_MMAP, "smack_mmap_guard",
+			   strlen("smack_mmap_guard"), 0));
+	{
+		char label[SMACK_ATTR_CURRENT_MAX_LEN] = {};
+
+		TEST_SUCC(read_xattr_label(file_template, SMACK_XATTR_MMAP,
+					   label, sizeof(label)));
+		TEST_RES(strcmp(label, "smack_mmap_guard"), _ret == 0);
+	}
+	TEST_SUCC(write_current_label("smack_mmap_subject\n"));
+	TEST_SUCC(load_smack_rule("smack_mmap_subject smack_mmap_file r\n"));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_MAC_OVERRIDE);
+		fd = CHECK(open(file_template, O_RDONLY));
+		CHECK_WITH(mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, fd, 0),
+			   _ret == MAP_FAILED && errno == EACCES);
+		CHECK(close(fd));
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+
+	TEST_SUCC(load_smack_rule("smack_mmap_subject smack_mmap_guard r\n"));
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		void *addr;
+
+		drop_capability(CAP_MAC_OVERRIDE);
+		fd = CHECK(open(file_template, O_RDONLY));
+		addr = CHECK_WITH(mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, fd,
+				       0),
+				  _ret != MAP_FAILED);
+		CHECK(munmap(addr, 4096));
+		CHECK(close(fd));
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+	TEST_SUCC(unlink(file_template));
+	TEST_SUCC(write_current_label("_\n"));
+}
+END_TEST()
+
+FN_TEST(unlink_requires_object_write)
+{
+	char file_template[] = "/tmp/smack_unlinkXXXXXX";
+	int fd = TEST_SUCC(mkstemp(file_template));
+	pid_t pid;
+	int status;
+
+	SKIP_TEST_IF(smack_is_disabled());
+
+	TEST_SUCC(close(fd));
+	TEST_SUCC(setxattr(file_template, SMACK_XATTR_ACCESS,
+			   "smack_unlink_obj", strlen("smack_unlink_obj"), 0));
+	TEST_SUCC(write_current_label("smack_unlink_subject\n"));
+	TEST_SUCC(load_smack_rule("smack_unlink_subject _ w\n"));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_MAC_OVERRIDE);
+
+		errno = 0;
+		CHECK_WITH(unlink(file_template),
+			   _ret == -1 && errno == EACCES);
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+	TEST_SUCC(unlink(file_template));
+	TEST_SUCC(write_current_label("_\n"));
+}
+END_TEST()
+
+FN_TEST(sockcreate_label_access)
+{
+	int sv[2];
+	pid_t pid;
+	int status;
+
+	SKIP_TEST_IF(smack_is_disabled());
+
+	TEST_SUCC(write_current_label("smack_sock_subject\n"));
+	TEST_SUCC(write_attr_label("sockcreate", "smack_sock_object\n"));
+	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM, 0, sv));
+	TEST_SUCC(write_attr_label("sockcreate", "-\n"));
+	TEST_SUCC(load_smack_rule("smack_sock_subject _ w\n"));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_MAC_OVERRIDE);
+		errno = 0;
+		CHECK_WITH(write(sv[0], "x", 1), _ret == -1 && errno == EACCES);
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+	TEST_SUCC(close(sv[0]));
+	TEST_SUCC(close(sv[1]));
+	TEST_SUCC(write_current_label("_\n"));
 }
 END_TEST()
 
@@ -279,7 +563,8 @@ FN_TEST(exec_label_transition)
 		char fd_string[16];
 
 		CHECK(close(pipefd[0]));
-		CHECK_WITH(snprintf(fd_string, sizeof(fd_string), "%d", pipefd[1]),
+		CHECK_WITH(snprintf(fd_string, sizeof(fd_string), "%d",
+				    pipefd[1]),
 			   _ret > 0 && (size_t)_ret < sizeof(fd_string));
 		CHECK(setenv("SMACK_HELPER_FD", fd_string, 1));
 		execl(helper_path, helper_path, NULL);
