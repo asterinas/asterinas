@@ -113,7 +113,9 @@ struct VhostVsockState {
     worker: VhostWorkerState,
 }
 
+#[derive(Default)]
 enum VhostWorkerState {
+    #[default]
     Stopped,
     Running {
         stop: Arc<AtomicBool>,
@@ -124,12 +126,6 @@ enum VhostWorkerState {
         thread: Arc<Thread>,
         backend: Arc<VhostVsockBackend>,
     },
-}
-
-impl Default for VhostWorkerState {
-    fn default() -> Self {
-        Self::Stopped
-    }
 }
 
 impl VhostWorkerState {
