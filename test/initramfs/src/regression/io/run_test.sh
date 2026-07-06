@@ -16,3 +16,7 @@ set -e
 ./file_io/fcntl_lock
 ./file_io/file_err
 ./file_io/iovec_err
+
+./liburing/file
+./liburing/net
+./liburing/sqpoll

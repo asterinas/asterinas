@@ -24,6 +24,10 @@ let
   tdxAttest = callPackage ./tdx-attest.nix { };
 
   allPkgs = lib.genAttrs subDirs commonBuild // {
+    io = callPackage ./common.nix (commonArgs // {
+      dir = "io";
+      extraBuildInputs = [ pkgs.liburing ];
+    });
     network = callPackage ./common.nix (commonArgs // {
       dir = "network";
       extraAttrs = { C_FLAGS = "-I${pkgs.libnl.dev}/include/libnl3"; };
