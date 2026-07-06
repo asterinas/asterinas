@@ -51,13 +51,13 @@ impl OptionSet {
 }
 
 impl UnixDatagramSocket {
-    pub fn new(is_nonblocking: bool) -> Arc<Self> {
-        Arc::new(Self::new_raw(is_nonblocking))
+    pub fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
+        Ok(Arc::new(Self::new_raw(is_nonblocking)?))
     }
 
-    pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
-        let mut socket_a = Self::new_raw(is_nonblocking);
-        let mut socket_b = Self::new_raw(is_nonblocking);
+    pub fn new_pair(is_nonblocking: bool) -> Result<(Arc<Self>, Arc<Self>)> {
+        let mut socket_a = Self::new_raw(is_nonblocking)?;
+        let mut socket_b = Self::new_raw(is_nonblocking)?;
 
         let cred = SocketCred::<ReadDupOp>::new_current();
         socket_a.peer_cred = Some(cred.dup().restrict());
@@ -69,19 +69,19 @@ impl UnixDatagramSocket {
         *remote_queue_a = Some(socket_b.local_receiver.queue().clone());
         *remote_queue_b = Some(socket_a.local_receiver.queue().clone());
 
-        (Arc::new(socket_a), Arc::new(socket_b))
+        Ok((Arc::new(socket_a), Arc::new(socket_b)))
     }
 
-    fn new_raw(is_nonblocking: bool) -> Self {
-        Self {
+    fn new_raw(is_nonblocking: bool) -> Result<Self> {
+        Ok(Self {
             local_receiver: MessageReceiver::new(),
             remote_queue: RwLock::new(None),
             options: RwLock::new(OptionSet::new()),
             peer_cred: None,
             is_nonblocking: AtomicBool::new(is_nonblocking),
             is_write_shutdown: AtomicBool::new(false),
-            pseudo_path: SockFs::new_path(),
-        }
+            pseudo_path: SockFs::new_path()?,
+        })
     }
 
     fn do_send(

@@ -58,18 +58,18 @@ impl<P: SupportedNetlinkProtocol> NetlinkSocket<P>
 where
     BoundNetlink<P::Message>: Bound<Endpoint = NetlinkSocketAddr>,
 {
-    pub fn new(is_nonblocking: bool, socket_type: SockType) -> Arc<Self> {
+    pub fn new(is_nonblocking: bool, socket_type: SockType) -> Result<Arc<Self>> {
         debug_assert!(socket_type == SockType::SOCK_RAW || socket_type == SockType::SOCK_DGRAM);
 
         let unbound = UnboundNetlink::new();
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             inner: RwMutex::new(Inner::Unbound(unbound)),
             options: RwLock::new(OptionSet::new()),
             socket_type,
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            pseudo_path: SockFs::new_path(),
-        })
+            pseudo_path: SockFs::new_path()?,
+        }))
     }
 
     fn try_send(

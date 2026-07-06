@@ -20,12 +20,16 @@ pub mod yama {
 
 pub mod smack {
     pub use super::modules::smack::{
-        SmackTaskState, check_xattr_removal, check_xattr_update, is_smack_xattr, set_current_label,
+        SmackTaskState, check_xattr_removal, check_xattr_update, is_smack_xattr, load_rules,
+        rules_as_text, set_current_label, set_exec_label, set_fscreate_label, set_sockcreate_label,
         task_state,
     };
 }
 
-use self::hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook};
+use self::hooks::{
+    LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook, LsmInodeHook, LsmMmapHook,
+    LsmPathHook, LsmSocketHook,
+};
 pub use self::{
     hooks::{BprmCheckContext, BprmCommittedCredsContext},
     smack::SmackTaskState,
@@ -43,7 +47,17 @@ bitflags! {
 }
 
 /// The common interface for built-in LSM modules.
-trait LsmModule: LsmAlienAccessHook + LsmBprmHook + LsmCapabilityHook + Sync {
+trait LsmModule:
+    LsmAlienAccessHook
+    + LsmBprmHook
+    + LsmCapabilityHook
+    + LsmInodeHook
+    + LsmFileHook
+    + LsmPathHook
+    + LsmMmapHook
+    + LsmSocketHook
+    + Sync
+{
     /// Returns the module name.
     fn name(&self) -> &'static str;
 

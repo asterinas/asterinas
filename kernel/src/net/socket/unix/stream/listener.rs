@@ -69,7 +69,7 @@ impl Listener {
         let peer_addr = connected.peer_addr().into();
         let options = OptionSet::new_accepted(connected.is_pass_cred());
 
-        let socket = UnixStreamSocket::new_connected(connected, options, false, socket_type);
+        let socket = UnixStreamSocket::new_connected(connected, options, false, socket_type)?;
         Ok((socket, peer_addr))
     }
 

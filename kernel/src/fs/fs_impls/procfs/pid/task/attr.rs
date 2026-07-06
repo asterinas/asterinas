@@ -32,8 +32,13 @@ impl AttrDirOps {
         ProcDir::new(Self(dir.clone()), parent, mkmod!(a+rx))
     }
 
-    const STATIC_ENTRIES: &'static [StaticEntryWithOps<AttrDirOps>] =
-        &[("current", InodeType::File, CurrentFileOps::new_inode)];
+    const STATIC_ENTRIES: &'static [StaticEntryWithOps<AttrDirOps>] = &[
+        ("current", InodeType::File, CurrentFileOps::new_inode),
+        ("exec", InodeType::File, ExecFileOps::new_inode),
+        ("prev", InodeType::File, PrevFileOps::new_inode),
+        ("fscreate", InodeType::File, FscreateFileOps::new_inode),
+        ("sockcreate", InodeType::File, SockcreateFileOps::new_inode),
+    ];
 }
 
 impl ProcDirOps for AttrDirOps {
@@ -158,6 +163,146 @@ impl ProcFileOps for CurrentFileOps {
 
         let (label, read_bytes) = read_label_from(reader)?;
         security::set_current_smack_label(&label)?;
+
+        Ok(read_bytes)
+    }
+}
+
+/// Represents the inode at `/proc/[pid]/task/[tid]/attr/exec`.
+struct ExecFileOps(TidDirOps);
+
+impl ExecFileOps {
+    pub fn new_inode(dir: &AttrDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        ProcFile::new(Self(dir.0.clone()), parent, mkmod!(a+r, u+w))
+    }
+}
+
+impl ProcFileOps for ExecFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        if let Some(label) = task_state_of(&self.0)?.exec_label() {
+            write!(printer, "{}", label.as_str())?;
+        }
+        writeln!(printer)?;
+
+        Ok(printer.bytes_written())
+    }
+
+    fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let Some(thread) = self.0.thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
+        ensure_current_thread(&thread)?;
+
+        let (label, read_bytes) = read_label_from(reader)?;
+        security::set_current_smack_exec_label(&label)?;
+
+        Ok(read_bytes)
+    }
+}
+
+/// Represents the inode at `/proc/[pid]/task/[tid]/attr/prev`.
+struct PrevFileOps(TidDirOps);
+
+impl PrevFileOps {
+    pub fn new_inode(dir: &AttrDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        ProcFile::new(Self(dir.0.clone()), parent, mkmod!(a+r))
+    }
+}
+
+impl ProcFileOps for PrevFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        if let Some(label) = task_state_of(&self.0)?.previous_label() {
+            write!(printer, "{}", label.as_str())?;
+        }
+        writeln!(printer)?;
+
+        Ok(printer.bytes_written())
+    }
+}
+
+/// Represents the inode at `/proc/[pid]/task/[tid]/attr/fscreate`.
+struct FscreateFileOps(TidDirOps);
+
+impl FscreateFileOps {
+    pub fn new_inode(dir: &AttrDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        ProcFile::new(Self(dir.0.clone()), parent, mkmod!(a+r, u+w))
+    }
+}
+
+impl ProcFileOps for FscreateFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        if let Some(label) = task_state_of(&self.0)?.fscreate_label() {
+            write!(printer, "{}", label.as_str())?;
+        }
+        writeln!(printer)?;
+
+        Ok(printer.bytes_written())
+    }
+
+    fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let Some(thread) = self.0.thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
+        ensure_current_thread(&thread)?;
+
+        let (label, read_bytes) = read_label_from(reader)?;
+        security::set_current_smack_fscreate_label(&label)?;
+
+        Ok(read_bytes)
+    }
+}
+
+/// Represents the inode at `/proc/[pid]/task/[tid]/attr/sockcreate`.
+struct SockcreateFileOps(TidDirOps);
+
+impl SockcreateFileOps {
+    pub fn new_inode(dir: &AttrDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        ProcFile::new(Self(dir.0.clone()), parent, mkmod!(a+r, u+w))
+    }
+}
+
+impl ProcFileOps for SockcreateFileOps {
+    fn owner_thread(&self) -> Option<Arc<Thread>> {
+        self.0.thread()
+    }
+
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut printer = VmPrinter::new_skip(writer, offset);
+
+        if let Some(label) = task_state_of(&self.0)?.sockcreate_label() {
+            write!(printer, "{}", label.as_str())?;
+        }
+        writeln!(printer)?;
+
+        Ok(printer.bytes_written())
+    }
+
+    fn write_at(&self, _offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let Some(thread) = self.0.thread() else {
+            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+        };
+        ensure_current_thread(&thread)?;
+
+        let (label, read_bytes) = read_label_from(reader)?;
+        security::set_current_smack_sockcreate_label(&label)?;
 
         Ok(read_bytes)
     }

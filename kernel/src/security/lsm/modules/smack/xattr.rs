@@ -2,7 +2,10 @@
 
 use super::label::{MAX_LABEL_LEN, SmackLabel};
 use crate::{
-    fs::vfs::{inode::Inode, xattr::XattrName},
+    fs::vfs::{
+        inode::Inode,
+        xattr::{XattrName, XattrSetFlags},
+    },
     prelude::*,
 };
 
@@ -80,16 +83,49 @@ pub fn validate_update(name: XattrName<'_>, value: &[u8]) -> Result<()> {
 }
 
 /// Returns the Smack access label attached to an inode.
-pub fn access_label(inode: &Arc<dyn Inode>) -> Result<SmackLabel> {
+pub fn access_label(inode: &dyn Inode) -> Result<SmackLabel> {
     read_label(inode, SMACK64).map(|label| label.unwrap_or_else(SmackLabel::floor))
 }
 
 /// Returns the Smack exec label attached to an inode.
-pub fn exec_label(inode: &Arc<dyn Inode>) -> Result<Option<SmackLabel>> {
+pub fn exec_label(inode: &dyn Inode) -> Result<Option<SmackLabel>> {
     read_label(inode, SMACK64EXEC)
 }
 
-fn read_label(inode: &Arc<dyn Inode>, name: &'static str) -> Result<Option<SmackLabel>> {
+/// Returns the Smack mmap label attached to an inode.
+pub fn mmap_label(inode: &dyn Inode) -> Result<Option<SmackLabel>> {
+    read_label(inode, SMACK64MMAP)
+}
+
+/// Returns whether a directory carries the Smack transmute marker.
+pub fn is_transmuting_directory(inode: &dyn Inode) -> Result<bool> {
+    let Some(xattr_name) = XattrName::try_from_full_name(SMACK64TRANSMUTE) else {
+        return_errno_with_message!(Errno::EOPNOTSUPP, "invalid xattr namespace");
+    };
+    let mut value = vec![0u8; b"TRUE".len()];
+    let mut value_writer = VmWriter::from(value.as_mut_slice()).to_fallible();
+    match inode.get_xattr(xattr_name, &mut value_writer) {
+        Ok(value_len) => Ok(value_len == b"TRUE".len() && value == b"TRUE"),
+        Err(error) if is_absent_or_unsupported_xattr_error(&error) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+/// Updates the Smack access label attached to an inode if the filesystem supports it.
+pub fn set_access_label(inode: &dyn Inode, label: &SmackLabel) -> Result<()> {
+    let Some(xattr_name) = XattrName::try_from_full_name(SMACK64) else {
+        return_errno_with_message!(Errno::EOPNOTSUPP, "invalid xattr namespace");
+    };
+    let mut value_reader = VmReader::from(label.as_str().as_bytes()).to_fallible();
+
+    match inode.set_xattr(xattr_name, &mut value_reader, XattrSetFlags::empty()) {
+        Ok(()) => Ok(()),
+        Err(error) if is_unsupported_xattr_error(&error) => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn read_label(inode: &dyn Inode, name: &'static str) -> Result<Option<SmackLabel>> {
     let Some(xattr_name) = XattrName::try_from_full_name(name) else {
         return_errno_with_message!(Errno::EOPNOTSUPP, "invalid xattr namespace");
     };
@@ -97,7 +133,7 @@ fn read_label(inode: &Arc<dyn Inode>, name: &'static str) -> Result<Option<Smack
     let mut empty_writer = VmWriter::from(empty.as_mut_slice()).to_fallible();
     let value_len = match inode.get_xattr(xattr_name, &mut empty_writer) {
         Ok(value_len) => value_len,
-        Err(error) if matches!(error.error(), Errno::ENODATA | Errno::EOPNOTSUPP) => {
+        Err(error) if is_absent_or_unsupported_xattr_error(&error) => {
             return Ok(None);
         }
         Err(error) => return Err(error),
@@ -115,4 +151,13 @@ fn read_label(inode: &Arc<dyn Inode>, name: &'static str) -> Result<Option<Smack
     inode.get_xattr(xattr_name, &mut value_writer)?;
 
     SmackLabel::parse_xattr_value(&value).map(Some)
+}
+
+fn is_absent_or_unsupported_xattr_error(error: &Error) -> bool {
+    matches!(error.error(), Errno::ENODATA) || is_unsupported_xattr_error(error)
+}
+
+fn is_unsupported_xattr_error(error: &Error) -> bool {
+    // Ramfs reports unsupported file types, such as symlinks, with `EPERM`.
+    matches!(error.error(), Errno::EOPNOTSUPP | Errno::EPERM)
 }

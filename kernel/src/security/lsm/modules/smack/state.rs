@@ -32,9 +32,50 @@ impl SmackTaskState {
         state
     }
 
+    /// Creates a copy with a new exec label.
+    pub fn with_exec_label(&self, label: Option<SmackLabel>) -> Self {
+        let mut state = self.clone();
+        state.exec_label = label;
+        state
+    }
+
+    /// Creates a copy with a new filesystem creation label.
+    pub fn with_fscreate_label(&self, label: Option<SmackLabel>) -> Self {
+        let mut state = self.clone();
+        state.fscreate_label = label;
+        state
+    }
+
+    /// Creates a copy with a new socket creation label.
+    pub fn with_sockcreate_label(&self, label: Option<SmackLabel>) -> Self {
+        let mut state = self.clone();
+        state.sockcreate_label = label;
+        state
+    }
+
     /// Returns the current Smack label.
     pub fn current_label(&self) -> &SmackLabel {
         &self.current_label
+    }
+
+    /// Returns the exec label.
+    pub fn exec_label(&self) -> Option<&SmackLabel> {
+        self.exec_label.as_ref()
+    }
+
+    /// Returns the filesystem creation label.
+    pub fn fscreate_label(&self) -> Option<&SmackLabel> {
+        self.fscreate_label.as_ref()
+    }
+
+    /// Returns the previous current label.
+    pub fn previous_label(&self) -> Option<&SmackLabel> {
+        self.previous_label.as_ref()
+    }
+
+    /// Returns the socket creation label.
+    pub fn sockcreate_label(&self) -> Option<&SmackLabel> {
+        self.sockcreate_label.as_ref()
     }
 }
 

@@ -59,15 +59,15 @@ impl OptionSet {
 }
 
 impl DatagramSocket {
-    pub fn new(is_nonblocking: bool) -> Arc<Self> {
+    pub fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
         let unbound_datagram = UnboundDatagram::new();
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             inner: RwMutex::new(Inner::Unbound(unbound_datagram)),
             options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            pseudo_path: SockFs::new_path(),
-        })
+            pseudo_path: SockFs::new_path()?,
+        }))
     }
 
     fn try_recv(

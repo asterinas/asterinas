@@ -2,8 +2,12 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{RawFileDesc, get_file_fast},
+    fs::file::{
+        Permission,
+        file_table::{RawFileDesc, get_file_fast},
+    },
     prelude::*,
+    security,
 };
 
 pub fn sys_listen(sockfd: RawFileDesc, backlog: i32, ctx: &Context) -> Result<SyscallReturn> {
@@ -13,6 +17,7 @@ pub fn sys_listen(sockfd: RawFileDesc, backlog: i32, ctx: &Context) -> Result<Sy
     let file = get_file_fast!(&mut file_table, sockfd.try_into()?);
     let socket = file.as_socket_or_err()?;
 
+    security::socket_message(socket.pseudo_path(), Permission::MAY_WRITE)?;
     socket.listen(backlog as usize)?;
 
     Ok(SyscallReturn::Return(0))

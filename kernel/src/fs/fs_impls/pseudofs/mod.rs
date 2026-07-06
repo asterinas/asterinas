@@ -44,6 +44,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{Extension, FileOps, Inode, Metadata},
+            xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
     prelude::*,
@@ -192,6 +193,7 @@ impl From<PseudoInodeType> for InodeType {
 pub struct PseudoInode {
     metadata: SpinLock<Metadata>,
     extension: Extension,
+    xattrs: RwMutex<BTreeMap<String, Vec<u8>>>,
     fs: Weak<NaivePseudoFs>,
     is_anon: bool,
 }
@@ -230,6 +232,7 @@ impl PseudoInode {
         PseudoInode {
             metadata: SpinLock::new(metadata),
             extension: Extension::new(),
+            xattrs: RwMutex::new(BTreeMap::new()),
             fs,
             is_anon: type_ == InodeType::Unknown,
         }
@@ -365,8 +368,85 @@ impl Inode for PseudoInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
     }
+
+    fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()> {
+        let mut xattrs = self.xattrs.write();
+        let name = name.full_name();
+        if flags.contains(XattrSetFlags::CREATE_ONLY) && xattrs.contains_key(name) {
+            return_errno_with_message!(Errno::EEXIST, "the target xattr already exists");
+        }
+        if flags.contains(XattrSetFlags::REPLACE_ONLY) && !xattrs.contains_key(name) {
+            return_errno_with_message!(Errno::ENODATA, "the target xattr does not exist");
+        }
+
+        let mut value = vec![0u8; value_reader.remain()];
+        value_reader.read_fallible(&mut VmWriter::from(value.as_mut_slice()))?;
+        xattrs.insert(name.to_string(), value);
+        Ok(())
+    }
+
+    fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
+        let xattrs = self.xattrs.read();
+        let value = xattrs.get(name.full_name()).ok_or_else(|| {
+            Error::with_message(Errno::ENODATA, "the target xattr does not exist")
+        })?;
+        let value_len = value.len();
+
+        let value_avail_len = value_writer.avail();
+        if value_avail_len == 0 {
+            return Ok(value_len);
+        }
+        if value_len > value_avail_len {
+            return_errno_with_message!(Errno::ERANGE, "the xattr value buffer is too small");
+        }
+
+        value_writer.write_fallible(&mut VmReader::from(value.as_slice()))?;
+        Ok(value_len)
+    }
+
+    fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
+        let xattrs = self.xattrs.read();
+        let list_len = xattrs
+            .keys()
+            .filter(|name| xattr_namespace_matches(name, namespace))
+            .map(|name| name.len() + 1)
+            .sum();
+        let list_avail_len = list_writer.avail();
+        if list_avail_len == 0 {
+            return Ok(list_len);
+        }
+        if list_len > list_avail_len {
+            return_errno_with_message!(Errno::ERANGE, "the xattr list buffer is too small");
+        }
+
+        for name in xattrs
+            .keys()
+            .filter(|name| xattr_namespace_matches(name, namespace))
+        {
+            list_writer.write_fallible(&mut VmReader::from(name.as_bytes()))?;
+            list_writer.write_val(&0u8)?;
+        }
+        Ok(list_len)
+    }
+
+    fn remove_xattr(&self, name: XattrName) -> Result<()> {
+        self.xattrs
+            .write()
+            .remove(name.full_name())
+            .ok_or_else(|| Error::with_message(Errno::ENODATA, "the target xattr does not exist"))
+            .map(|_| ())
+    }
 }
 
 fn now() -> Duration {
     RealTimeCoarseClock::get().read_time()
+}
+
+fn xattr_namespace_matches(full_name: &str, namespace: XattrNamespace) -> bool {
+    XattrNamespace::try_from_full_name(full_name) == Some(namespace)
 }

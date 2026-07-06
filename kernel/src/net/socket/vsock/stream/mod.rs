@@ -50,7 +50,7 @@ impl VsockStreamSocket {
             state: Mutex::new(Takeable::new(State::Init(InitStream::new()))),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            pseudo_path: SockFs::new_path(),
+            pseudo_path: SockFs::new_path()?,
         }))
     }
 
@@ -151,7 +151,7 @@ impl VsockStreamSocket {
             state: Mutex::new(Takeable::new(State::Connected(connected))),
             is_nonblocking: AtomicBool::new(false),
             pollee,
-            pseudo_path: SockFs::new_path(),
+            pseudo_path: SockFs::new_path()?,
         });
 
         Ok((accepted, peer_addr))

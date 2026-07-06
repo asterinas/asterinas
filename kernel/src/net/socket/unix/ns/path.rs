@@ -8,6 +8,7 @@ use crate::{
         vfs::path::{FsPath, Path},
     },
     prelude::*,
+    security,
 };
 
 pub fn lookup_socket_file(path: &str) -> Result<Path> {
@@ -26,6 +27,10 @@ pub fn lookup_socket_file(path: &str) -> Result<Path> {
     {
         return_errno_with_message!(Errno::EACCES, "the socket file cannot be read or written")
     }
+    security::inode_permission(
+        path.inode().as_ref(),
+        Permission::MAY_READ | Permission::MAY_WRITE,
+    )?;
 
     if path.type_() != InodeType::Socket {
         return_errno_with_message!(

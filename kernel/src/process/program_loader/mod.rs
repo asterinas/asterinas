@@ -132,6 +132,7 @@ fn check_executable_inode(inode: &dyn Inode) -> Result<()> {
     if inode.check_permission(Permission::MAY_EXEC).is_err() {
         return_errno_with_message!(Errno::EACCES, "the inode is not executable");
     }
+    security::inode_permission(inode, Permission::MAY_EXEC)?;
 
     Ok(())
 }

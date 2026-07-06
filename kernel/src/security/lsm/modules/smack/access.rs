@@ -34,7 +34,6 @@ static ACCESS_RULES: Once<RwMutex<BTreeMap<RuleKey, SmackAccess>>> = Once::new()
 
 impl SmackAccess {
     /// Parses a Smack access string.
-    #[expect(dead_code, reason = "Smack rule loading will use this parser.")]
     pub fn parse(access: &str) -> Result<Self> {
         let mut parsed = Self::empty();
         for byte in access.bytes() {
@@ -52,17 +51,70 @@ impl SmackAccess {
 
         Ok(parsed)
     }
+
+    /// Returns the canonical rule text for this access set.
+    pub fn as_rule_text(self) -> String {
+        let mut text = String::with_capacity(6);
+        for (access, name) in [
+            (Self::READ, 'r'),
+            (Self::WRITE, 'w'),
+            (Self::EXECUTE, 'x'),
+            (Self::APPEND, 'a'),
+            (Self::TRANSMUTE, 't'),
+            (Self::BRINGUP, 'b'),
+        ] {
+            if self.contains(access) {
+                text.push(name);
+            }
+        }
+
+        if text.is_empty() {
+            text.push('-');
+        }
+
+        text
+    }
 }
 
 /// Adds or replaces a Smack access rule.
-#[expect(
-    dead_code,
-    reason = "Smack rule loading will install policy with this helper."
-)]
 pub fn set_rule(subject: SmackLabel, object: SmackLabel, access: SmackAccess) {
     access_rules()
         .write()
         .insert(RuleKey { subject, object }, access);
+}
+
+/// Loads newline-delimited Smack access rules.
+pub fn load_rules(policy: &str) -> Result<usize> {
+    let mut parsed_rules = Vec::new();
+    for line in policy.lines() {
+        let Some(rule) = parse_rule_line(line)? else {
+            continue;
+        };
+        parsed_rules.push(rule);
+    }
+
+    let parsed_rule_count = parsed_rules.len();
+    for rule in parsed_rules {
+        set_rule(rule.subject, rule.object, rule.access);
+    }
+
+    Ok(parsed_rule_count)
+}
+
+/// Returns all loaded Smack access rules in deterministic order.
+pub fn rules_as_text() -> String {
+    let mut text = String::new();
+    let rules = access_rules().read();
+    for (key, access) in rules.iter() {
+        text.push_str(key.subject.as_str());
+        text.push(' ');
+        text.push_str(key.object.as_str());
+        text.push(' ');
+        text.push_str(&access.as_rule_text());
+        text.push('\n');
+    }
+
+    text
 }
 
 /// Checks whether a Smack subject can access an object.
@@ -106,6 +158,39 @@ fn is_allowed(subject: &SmackLabel, object: &SmackLabel, requested: SmackAccess)
     rules
         .get(&key)
         .is_some_and(|allowed| allowed.contains(requested))
+}
+
+struct ParsedRule {
+    subject: SmackLabel,
+    object: SmackLabel,
+    access: SmackAccess,
+}
+
+fn parse_rule_line(line: &str) -> Result<Option<ParsedRule>> {
+    let line = line.split('#').next().unwrap_or("").trim();
+    if line.is_empty() {
+        return Ok(None);
+    }
+
+    let mut fields = line.split_whitespace();
+    let Some(subject) = fields.next() else {
+        return Ok(None);
+    };
+    let Some(object) = fields.next() else {
+        return_errno_with_message!(Errno::EINVAL, "the Smack rule object label is missing");
+    };
+    let Some(access) = fields.next() else {
+        return_errno_with_message!(Errno::EINVAL, "the Smack rule access mode is missing");
+    };
+    if fields.next().is_some() {
+        return_errno_with_message!(Errno::EINVAL, "the Smack rule has too many fields");
+    }
+
+    Ok(Some(ParsedRule {
+        subject: SmackLabel::parse(subject)?,
+        object: SmackLabel::parse(object)?,
+        access: SmackAccess::parse(access)?,
+    }))
 }
 
 fn access_rules() -> &'static RwMutex<BTreeMap<RuleKey, SmackAccess>> {

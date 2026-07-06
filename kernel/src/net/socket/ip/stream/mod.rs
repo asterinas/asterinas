@@ -104,18 +104,21 @@ impl OptionSet {
 }
 
 impl StreamSocket {
-    pub fn new(is_nonblocking: bool, family: IpAddressFamily) -> Arc<Self> {
+    pub fn new(is_nonblocking: bool, family: IpAddressFamily) -> Result<Arc<Self>> {
         let init_stream = InitStream::new(family);
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Init(init_stream))),
             options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            pseudo_path: SockFs::new_path(),
-        })
+            pseudo_path: SockFs::new_path()?,
+        }))
     }
 
-    fn new_accepted(connected_stream: ConnectedStream, listener_options: &OptionSet) -> Arc<Self> {
+    fn new_accepted(
+        connected_stream: ConnectedStream,
+        listener_options: &OptionSet,
+    ) -> Result<Arc<Self>> {
         let options = connected_stream.raw_with(|raw_tcp_socket| {
             let mut options = OptionSet::new();
 
@@ -150,13 +153,13 @@ impl StreamSocket {
         let pollee = Pollee::new();
         connected_stream.init_observer(StreamObserver::new(pollee.clone()));
 
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
             options: RwLock::new(options),
             is_nonblocking: AtomicBool::new(false),
             pollee,
-            pseudo_path: SockFs::new_path(),
-        })
+            pseudo_path: SockFs::new_path()?,
+        }))
     }
 
     /// Ensures that the socket state is up to date and obtains a read lock on it.
@@ -319,11 +322,11 @@ impl StreamSocket {
             return_errno_with_message!(Errno::EINVAL, "the socket is not listening");
         };
 
-        let accepted = listen_stream.try_accept().map(|connected_stream| {
+        let accepted = listen_stream.try_accept().and_then(|connected_stream| {
             let remote_endpoint = connected_stream.remote_endpoint();
             let listener_options = self.options.read();
-            let accepted_socket = Self::new_accepted(connected_stream, &listener_options);
-            (accepted_socket as _, remote_endpoint.into())
+            let accepted_socket = Self::new_accepted(connected_stream, &listener_options)?;
+            Ok((accepted_socket as _, remote_endpoint.into()))
         });
         let iface_to_poll = listen_stream.iface().clone();
 

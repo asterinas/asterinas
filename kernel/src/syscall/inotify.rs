@@ -13,6 +13,7 @@ use crate::{
         },
     },
     prelude::*,
+    security,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -93,6 +94,7 @@ pub fn sys_inotify_add_watch(
     // Verify caller has read permissions on the inode.
     let inode = dentry.inode();
     inode.check_permission(Permission::MAY_READ)?;
+    security::inode_permission(inode.as_ref(), Permission::MAY_READ)?;
 
     if options.contains(InotifyControls::ONLYDIR) && inode.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "path is not a directory");

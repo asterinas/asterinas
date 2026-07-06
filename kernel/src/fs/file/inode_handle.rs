@@ -7,8 +7,8 @@ use core::{fmt::Display, sync::atomic::Ordering};
 use aster_rights::Rights;
 
 use super::{
-    AccessMode, AtomicStatusFlags, CreationFlags, FileLike, InodeType, Mappable, StatusFlags,
-    file_table::FdFlags, flock::FlockItem,
+    AccessMode, AtomicStatusFlags, CreationFlags, FileLike, InodeType, Mappable, Permission,
+    StatusFlags, file_table::FdFlags, flock::FlockItem,
 };
 use crate::{
     events::IoEvents,
@@ -24,6 +24,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    security,
     util::ioctl::RawIoctl,
 };
 
@@ -45,7 +46,9 @@ impl InodeHandle {
             // "Opening a file or directory with the O_PATH flag requires no permissions on the
             // object itself".
             // Reference: <https://man7.org/linux/man-pages/man2/openat.2.html>
-            inode.check_permission(access_mode.into())?;
+            let permission = access_mode.into();
+            inode.check_permission(permission)?;
+            security::inode_permission(inode.as_ref(), permission)?;
         }
 
         Self::new_unchecked_access(path, access_mode, status_flags)
@@ -122,6 +125,7 @@ impl InodeHandle {
         if !self.rights.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
+        security::file_permission(&self.path, Permission::MAY_READ)?;
 
         let file_ops: &dyn FileOps = if let Some(ref open_file) = self.open_file {
             open_file.as_ref()
@@ -259,6 +263,7 @@ impl FileLike for InodeHandle {
         if !self.rights.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
+        security::file_permission(&self.path, Permission::MAY_READ)?;
 
         let (file_ops, is_offset_aware) = self.file_ops_and_is_offset_aware();
         let status_flags = self.status_flags();
@@ -282,6 +287,7 @@ impl FileLike for InodeHandle {
 
         let (file_ops, is_offset_aware) = self.file_ops_and_is_offset_aware();
         let status_flags = self.status_flags();
+        security::file_permission(&self.path, write_permission(status_flags))?;
 
         if !is_offset_aware {
             return file_ops.write_at(0, reader, status_flags);
@@ -307,6 +313,7 @@ impl FileLike for InodeHandle {
         if !self.rights.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
+        security::file_permission(&self.path, Permission::MAY_READ)?;
 
         let status_flags = self.status_flags();
 
@@ -320,6 +327,7 @@ impl FileLike for InodeHandle {
         }
 
         let status_flags = self.status_flags();
+        security::file_permission(&self.path, write_permission(status_flags))?;
 
         // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
         if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
@@ -375,6 +383,7 @@ impl FileLike for InodeHandle {
             // FIXME: It's allowed to `ftruncate` an append-only file on Linux.
             return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
         }
+        security::path_setattr(&self.path)?;
         self.path.inode().resize(new_size)
     }
 
@@ -464,6 +473,7 @@ impl FileLike for InodeHandle {
             );
         }
 
+        security::file_permission(&self.path, Permission::MAY_WRITE)?;
         inode.fallocate(mode, offset, len)
     }
 
@@ -495,6 +505,14 @@ impl FileLike for InodeHandle {
             inner: self,
             fd_flags,
         })
+    }
+}
+
+fn write_permission(status_flags: StatusFlags) -> Permission {
+    if status_flags.contains(StatusFlags::O_APPEND) {
+        Permission::MAY_APPEND
+    } else {
+        Permission::MAY_WRITE
     }
 }
 

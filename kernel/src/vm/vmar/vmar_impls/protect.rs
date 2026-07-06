@@ -3,7 +3,7 @@
 use core::ops::Range;
 
 use super::{Interval, Vmar, util::get_intersected_range};
-use crate::{prelude::*, vm::perms::VmPerms};
+use crate::{prelude::*, security, vm::perms::VmPerms};
 
 impl Vmar {
     /// Change the permissions of the memory mappings in the specified range.
@@ -24,11 +24,15 @@ impl Vmar {
         let mut protect_mappings = Vec::new();
 
         for vm_mapping in inner.vm_mappings.find(&range) {
-            protect_mappings.push((vm_mapping.range(), vm_mapping.perms()))
+            protect_mappings.push((
+                vm_mapping.range(),
+                vm_mapping.perms(),
+                vm_mapping.path().cloned(),
+            ))
         }
 
         let mut last_mapping_end = range.start;
-        for (vm_mapping_range, vm_mapping_perms) in protect_mappings {
+        for (vm_mapping_range, vm_mapping_perms, vm_mapping_path) in protect_mappings {
             if last_mapping_end < vm_mapping_range.start {
                 return_errno_with_message!(
                     Errno::ENOMEM,
@@ -42,6 +46,9 @@ impl Vmar {
             }
             let new_perms = perms | (vm_mapping_perms & VmPerms::ALL_MAY_PERMS);
             new_perms.check()?;
+            if let Some(path) = vm_mapping_path {
+                security::mmap_file(&path, perms)?;
+            }
 
             let Some(vm_mapping) = inner.remove(&vm_mapping_range.start) else {
                 // This can happen only if the mapping is merged to the previous one (just

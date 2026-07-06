@@ -8,6 +8,7 @@ use crate::{
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
+    security,
 };
 
 pub fn sys_faccessat(
@@ -100,12 +101,15 @@ fn do_faccessat(
     // F_OK is represented by `AccessMode::empty()`, which does not perform permission checks.
     if mode.contains(AccessMode::R_OK) {
         inode.check_permission(Permission::MAY_READ)?;
+        security::inode_permission(inode.as_ref(), Permission::MAY_READ)?;
     }
     if mode.contains(AccessMode::W_OK) {
         inode.check_permission(Permission::MAY_WRITE)?;
+        security::inode_permission(inode.as_ref(), Permission::MAY_WRITE)?;
     }
     if mode.contains(AccessMode::X_OK) {
         inode.check_permission(Permission::MAY_EXEC)?;
+        security::inode_permission(inode.as_ref(), Permission::MAY_EXEC)?;
     }
 
     Ok(SyscallReturn::Return(0))

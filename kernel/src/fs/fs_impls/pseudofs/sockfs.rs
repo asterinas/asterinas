@@ -16,6 +16,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    security,
 };
 
 pub(super) fn init() {
@@ -36,7 +37,7 @@ impl SockFs {
     }
 
     /// Creates a pseudo `Path` for a socket.
-    pub fn new_path() -> Path {
+    pub fn new_path() -> Result<Path> {
         let socket_inode = Arc::new(Self::singleton().alloc_inode(
             PseudoInodeType::Socket,
             mkmod!(a+rwx),
@@ -44,9 +45,12 @@ impl SockFs {
             Gid::new_root(),
         ));
 
-        Path::new_pseudo(Self::mount_node().clone(), socket_inode, |inode| {
+        let path = Path::new_pseudo(Self::mount_node().clone(), socket_inode, |inode| {
             format!("socket:[{}]", inode.ino())
-        })
+        });
+        security::socket_create(&path)?;
+
+        Ok(path)
     }
 
     /// Returns the pseudo mount node of the socket file system.

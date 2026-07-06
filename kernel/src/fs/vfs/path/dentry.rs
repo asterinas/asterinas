@@ -639,12 +639,23 @@ impl DirDentry<'_> {
 
     /// Deletes a `Dentry` by `unlink()` the inner inode.
     pub(super) fn unlink(&self, name: &str) -> Result<()> {
+        self.unlink_with_check(name, |_| Ok(()))
+    }
+
+    /// Deletes a `Dentry` after checking the child selected under the dentry lock.
+    pub(super) fn unlink_with_check(
+        &self,
+        name: &str,
+        check_child_fn: impl FnOnce(&Arc<dyn Inode>) -> Result<()>,
+    ) -> Result<()> {
         if is_dot_or_dotdot(name) {
             return_errno_with_message!(Errno::EISDIR, "unlink on . or ..");
         }
 
         let dir_inode = self.inode();
-        let child_inode = self.remove_child(name, |dir_inode, name| dir_inode.unlink(name))?;
+        let child_inode = self.remove_child(name, check_child_fn, |dir_inode, name| {
+            dir_inode.unlink(name)
+        })?;
 
         let nlinks = child_inode.metadata().nr_hard_links;
         fs::vfs::notify::on_link_count(&child_inode);
@@ -669,6 +680,15 @@ impl DirDentry<'_> {
 
     /// Deletes a directory `Dentry` by `rmdir()` the inner inode.
     pub(super) fn rmdir(&self, name: &str) -> Result<()> {
+        self.rmdir_with_check(name, |_| Ok(()))
+    }
+
+    /// Deletes a directory after checking the child selected under the dentry lock.
+    pub(super) fn rmdir_with_check(
+        &self,
+        name: &str,
+        check_child_fn: impl FnOnce(&Arc<dyn Inode>) -> Result<()>,
+    ) -> Result<()> {
         if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .");
         }
@@ -677,7 +697,9 @@ impl DirDentry<'_> {
         }
 
         let dir_inode = self.inode();
-        let child_inode = self.remove_child(name, |dir_inode, name| dir_inode.rmdir(name))?;
+        let child_inode = self.remove_child(name, check_child_fn, |dir_inode, name| {
+            dir_inode.rmdir(name)
+        })?;
 
         let nlinks = child_inode.metadata().nr_hard_links;
         if nlinks == 0 {
@@ -702,6 +724,7 @@ impl DirDentry<'_> {
     fn remove_child(
         &self,
         name: &str,
+        check_child_fn: impl FnOnce(&Arc<dyn Inode>) -> Result<()>,
         remove_child_fn: impl FnOnce(&dyn Inode, &str) -> Result<()>,
     ) -> Result<Arc<dyn Inode>> {
         let dir_inode = self.inode();
@@ -733,6 +756,7 @@ impl DirDentry<'_> {
             None => dir_inode.lookup(name)?,
         };
 
+        check_child_fn(&child_inode)?;
         remove_child_fn(dir_inode.as_ref(), name)?;
         if cached_child.is_some() {
             children.upgrade().delete(name);
@@ -748,6 +772,18 @@ impl DirDentry<'_> {
         new_dir: &DirDentry,
         new_name: &str,
         mode: RenameMode,
+    ) -> Result<()> {
+        self.rename_with_check(old_name, new_dir, new_name, mode, |_, _| Ok(()))
+    }
+
+    /// Renames a `Dentry` after checking selected children under the dentry locks.
+    pub(super) fn rename_with_check(
+        &self,
+        old_name: &str,
+        new_dir: &DirDentry,
+        new_name: &str,
+        mode: RenameMode,
+        check_rename_fn: impl FnOnce(&dyn Inode, Option<&dyn Inode>) -> Result<()>,
     ) -> Result<()> {
         if is_dot_or_dotdot(old_name) {
             return_errno_with_message!(Errno::EBUSY, "old_name is . or ..");
@@ -797,6 +833,11 @@ impl DirDentry<'_> {
                 }
             }
 
+            check_rename_fn(
+                old_dentry.inode().as_ref(),
+                new_dentry.as_ref().map(|dentry| dentry.inode().as_ref()),
+            )?;
+
             old_dir_inode.rename(old_name, old_dir_inode, new_name, mode)?;
 
             match mode {
@@ -845,6 +886,11 @@ impl DirDentry<'_> {
             {
                 new_dir.check_sticky_bit_permission(new_dentry.inode())?;
             }
+
+            check_rename_fn(
+                old_dentry.inode().as_ref(),
+                new_dentry.as_ref().map(|dentry| dentry.inode().as_ref()),
+            )?;
 
             old_dir_inode.rename(old_name, new_dir_inode, new_name, mode)?;
 
