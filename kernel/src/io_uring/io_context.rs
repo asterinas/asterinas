@@ -4,20 +4,25 @@ use core::{
     cmp::min,
     fmt::Display,
     sync::atomic::{Ordering, fence},
+    time::Duration,
 };
 
-use ostd::sync::WaitQueue;
+use ostd::{
+    cpu::{CpuId, CpuSet},
+    sync::WaitQueue,
+};
 
 use super::{
     c_types::{
         CqRingOffsets, IORING_OFF_CQ_RING, IORING_OFF_SQ_RING, IORING_OFF_SQES, IoRingMeta,
-        IoUringCqe, IoUringFeatures, IoUringParams, IoUringRegisterOpcode, IoUringSetupFlags, IoUringSqe,
-        MAX_CQ_ENTRIES, MAX_SQ_ENTRIES, SqRingOffsets,
+        IoUringCqe, IoUringFeatures, IoUringParams, IoUringRegisterOpcode, IoUringSetupFlags,
+        IoUringSqe, MAX_CQ_ENTRIES, MAX_SQ_ENTRIES, SqRingFlags, SqRingOffsets,
     },
     io_wq::IoWq,
     ops,
     register::RegisteredResource,
-    utils::{resolve_registered_buffers, Completion},
+    sqpoll::SqPoll,
+    utils::{Completion, resolve_registered_buffers},
 };
 use crate::{
     events::IoEvents,
@@ -32,7 +37,7 @@ use crate::{
     vm::page_cache::{Vmo, VmoOptions},
 };
 
-/// Owns the file-facing state, rings, and wait state for one `io_uring` instance.
+/// Owns the file-facing state, rings, and execution state for one `io_uring` instance.
 pub struct IoUringContext {
     sq_ring: Mutex<SqRing>,
     cq_ring: Mutex<CqRing>,
@@ -40,9 +45,10 @@ pub struct IoUringContext {
     sqes_region: SqeRegion,
 
     io_wq: Arc<IoWq>,
-
     registered_resource: RegisteredResource,
+    sqpoll: Option<Arc<SqPoll>>,
 
+    // `IORING_ENTER_SQ_WAIT` waits here until the SQPOLL thread advances SQ head.
     sq_wait_queue: WaitQueue,
     pollee: Pollee,
     pseudo_path: Path,
@@ -81,7 +87,7 @@ struct SqeRegion {
 }
 
 impl IoUringContext {
-    pub fn new(config: &IoUringSetupConfig, _ctx: &Context) -> Result<Arc<Self>> {
+    pub fn new(config: &IoUringSetupConfig, ctx: &Context) -> Result<Arc<Self>> {
         let ring_region = RingRegion::new(config.ring_size, config.sq_array_offset)?;
         let sqes_region = SqeRegion::new(config.sqes_size)?;
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[io_uring]".to_string());
@@ -92,6 +98,9 @@ impl IoUringContext {
             sqes_region,
             registered_resource: RegisteredResource::new(),
             io_wq: Arc::new(IoWq::new(context.clone())),
+            sqpoll: config
+                .is_sqpoll_mode
+                .then(|| Arc::new(SqPoll::new(context.clone()))),
             sq_wait_queue: WaitQueue::new(),
             pollee: Pollee::new(),
             pseudo_path,
@@ -101,6 +110,14 @@ impl IoUringContext {
         context.ring_region.write_meta(&ring_meta)?;
 
         context.io_wq.start_thread(ctx);
+
+        if let Some(sqpoll) = &context.sqpoll {
+            sqpoll.start_thread(
+                ctx,
+                config.sqpoll_cpu_affinity.clone(),
+                config.sqpoll_idle_timeout,
+            );
+        }
 
         Ok(context)
     }
@@ -150,6 +167,18 @@ impl IoUringContext {
                     "not enough io_uring completions",
                 ))
             }
+        })
+    }
+
+    pub fn wait_for_sq_space(&self) -> Result<()> {
+        self.sq_wait_queue.wait_until(|| {
+            self.sq_ring
+                .lock()
+                .has_avaliable_entries(&self.ring_region)
+                .map_or_else(
+                    |err| Some(Err(err)),
+                    |has_avaliable_entries| has_avaliable_entries.then_some(Ok(())),
+                )
         })
     }
 
@@ -277,6 +306,41 @@ impl IoUringContext {
     }
 }
 
+impl IoUringContext {
+    pub fn is_sqpoll_mode(&self) -> bool {
+        self.sqpoll.is_some()
+    }
+
+    pub fn wake_sqpoll_thread(&self) -> Result<()> {
+        let Some(sqpoll) = &self.sqpoll else {
+            return_errno_with_message!(Errno::EOWNERDEAD, "the SQPOLL thread is not available");
+        };
+
+        self.set_sq_need_wakeup(false)?;
+        sqpoll.wake();
+        Ok(())
+    }
+
+    pub(super) fn set_sq_need_wakeup(&self, need_wakeup: bool) -> Result<()> {
+        let flags = self.ring_region.read_sq_flags()?;
+        let new_flags = if need_wakeup {
+            flags | SqRingFlags::NEED_WAKEUP
+        } else {
+            flags & !SqRingFlags::NEED_WAKEUP
+        };
+
+        self.ring_region.write_sq_flags(new_flags)
+    }
+}
+
+impl Drop for IoUringContext {
+    fn drop(&mut self) {
+        if let Some(sqpoll) = &self.sqpoll {
+            sqpoll.stop();
+        }
+    }
+}
+
 impl Pollable for IoUringContext {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee.invalidate();
@@ -367,6 +431,10 @@ impl SqRing {
         ring_region.write_sq_head(self.cached_head)?;
         sq_wait_queue.wake_all();
         Ok(())
+    }
+
+    fn has_avaliable_entries(&self, ring_region: &RingRegion) -> Result<bool> {
+        Ok(self.pending_entry_count(ring_region)? < self.entries)
     }
 }
 
@@ -526,6 +594,16 @@ impl RingRegion {
         self.write_val(core::mem::offset_of!(IoRingMeta, cq_tail), &cq_tail)
     }
 
+    fn read_sq_flags(&self) -> Result<SqRingFlags> {
+        let flags_bits: u32 = self.read_val(core::mem::offset_of!(IoRingMeta, sq_flags))?;
+        Ok(SqRingFlags::from_bits_truncate(flags_bits))
+    }
+
+    fn write_sq_flags(&self, flags: SqRingFlags) -> Result<()> {
+        let flags_bits = flags.bits();
+        self.write_val(core::mem::offset_of!(IoRingMeta, sq_flags), &flags_bits)
+    }
+
     fn increment_sq_dropped(&self) -> Result<()> {
         let dropped: u32 = self.read_val(core::mem::offset_of!(IoRingMeta, sq_dropped))?;
         self.write_val(
@@ -621,6 +699,9 @@ pub struct IoUringSetupConfig {
     ring_size: usize,
     sq_array_offset: usize,
     sqes_size: usize,
+    is_sqpoll_mode: bool,
+    sqpoll_cpu_affinity: CpuSet,
+    sqpoll_idle_timeout: Duration,
 }
 
 impl IoUringSetupConfig {
@@ -633,6 +714,14 @@ impl IoUringSetupConfig {
         }
 
         let flags = IoUringSetupFlags::from_user_bits(params.flags)?;
+
+        if flags.contains(IoUringSetupFlags::SQ_AFF) && !flags.contains(IoUringSetupFlags::SQPOLL) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "SQPOLL CPU affinity requires the SQPOLL setup flag"
+            );
+        }
+
         let is_clamp = flags.contains(IoUringSetupFlags::CLAMP);
         let sq_entries = calculate_entries(entries, MAX_SQ_ENTRIES, is_clamp)?;
         let cq_entries = if flags.contains(IoUringSetupFlags::CQSIZE) {
@@ -653,12 +742,24 @@ impl IoUringSetupConfig {
         let ring_size = sq_array_offset + sq_entries as usize * size_of::<u32>();
         let sqes_size = sq_entries as usize * size_of::<IoUringSqe>();
 
+        let sqpoll_cpu_affinity = if flags.contains(IoUringSetupFlags::SQ_AFF) {
+            CpuId::try_from(params.sq_thread_cpu as usize)
+                .map_err(|_| Error::with_message(Errno::EINVAL, "SQPOLL CPU is invalid"))?
+                .into()
+        } else {
+            CpuSet::new_full()
+        };
+        let sqpoll_idle_timeout = Duration::from_millis(params.sq_thread_idle as u64);
+
         Ok(Self {
             sq_entries,
             cq_entries,
             ring_size,
             sq_array_offset,
             sqes_size,
+            is_sqpoll_mode: flags.contains(IoUringSetupFlags::SQPOLL),
+            sqpoll_cpu_affinity,
+            sqpoll_idle_timeout,
         })
     }
 

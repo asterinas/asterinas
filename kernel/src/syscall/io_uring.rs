@@ -53,7 +53,18 @@ pub fn sys_io_uring_enter(
 
     let ring_file = get_ring_file(raw_fd, ctx)?;
     let ring = ring_context(&ring_file)?;
-    let submitted = ring.submit_sqes(to_submit)?;
+    let submitted = if ring.is_sqpoll_mode() {
+        if enter_flags.contains(IoUringEnterFlags::SQ_WAKEUP) {
+            ring.wake_sqpoll_thread()?;
+        }
+        if enter_flags.contains(IoUringEnterFlags::SQ_WAIT) {
+            ring.wait_for_sq_space()?;
+        }
+
+        to_submit
+    } else {
+        ring.submit_sqes(to_submit)?
+    };
 
     if enter_flags.contains(IoUringEnterFlags::GETEVENTS) && min_complete > 0 {
         if sig_addr != 0 {

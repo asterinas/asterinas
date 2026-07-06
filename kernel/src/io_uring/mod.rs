@@ -5,6 +5,7 @@ mod io_context;
 mod io_wq;
 mod ops;
 mod register;
+mod sqpoll;
 mod thread;
 mod utils;
 

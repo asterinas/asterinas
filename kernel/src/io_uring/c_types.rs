@@ -29,7 +29,9 @@ bitflags! {
         const SQE_MIXED = 1 << 19;
         const SQ_REWIND = 1 << 20;
 
-        const SUPPORTED = Self::CQSIZE.bits
+        const SUPPORTED = Self::SQPOLL.bits
+            | Self::SQ_AFF.bits
+            | Self::CQSIZE.bits
             | Self::CLAMP.bits
             | Self::SUBMIT_ALL.bits;
     }
@@ -60,9 +62,7 @@ bitflags! {
         const EXT_ARG_REG = 1 << 6;
         const NO_IOWAIT = 1 << 7;
 
-        const UNSUPPORTED = Self::SQ_WAKEUP.bits
-            | Self::SQ_WAIT.bits
-            | Self::EXT_ARG.bits
+        const UNSUPPORTED = Self::EXT_ARG.bits
             | Self::REGISTERED_RING.bits
             | Self::ABS_TIMER.bits
             | Self::EXT_ARG_REG.bits
@@ -258,6 +258,17 @@ pub const MAX_CQ_ENTRIES: u32 = 2 * MAX_SQ_ENTRIES;
 pub const IORING_OFF_SQ_RING: usize = 0;
 pub const IORING_OFF_CQ_RING: usize = 0x0800_0000;
 pub const IORING_OFF_SQES: usize = 0x1000_0000;
+
+bitflags! {
+    /// `sq_ring->flags` bits in Linux.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v7.1.2/source/include/uapi/linux/io_uring.h#L576-L578>.
+    pub struct SqRingFlags: u32 {
+        const NEED_WAKEUP = 1 << 0;
+        const CQ_OVERFLOW = 1 << 1;
+        const TASKRUN = 1 << 2;
+    }
+}
 
 /// `enum io_uring_op` in Linux.
 ///
