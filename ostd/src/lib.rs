@@ -95,12 +95,12 @@ unsafe fn init() {
     // 3. No CPU-local objects have been accessed yet.
     unsafe { cpu::init_on_bsp() };
 
-    // On RISC-V, fill EARLY_INFO now.  paddr_to_vaddr() needs the full
-    // kernel page table (built by init_kernel_page_table below), but
-    // fill_early_info() only reads the already-parsed DTB headers —
-    // it does NOT dereference paddr_to_vaddr results.  The paddr_to_vaddr
-    // call in parse_initramfs is conditional on the DTB having a
-    // chosen/linux,initrd-start property; Megrez DTB does not have one.
+    // On RISC-V, fill EARLY_INFO before meta::init().
+    // fill_early_info() reads DTB through identity mapping —
+    // it does NOT use paddr_to_vaddr() for memory access.
+    // The only paddr_to_vaddr() call is in parse_initramfs(), which
+    // is only reached when the DTB has chosen/linux,initrd-start;
+    // Megrez DTB has no such property.
     #[cfg(target_arch = "riscv64")]
     arch::boot::fill_early_info();
 
@@ -111,6 +111,14 @@ unsafe fn init() {
     unsafe { mm::frame::allocator::init() };
 
     mm::kspace::init_kernel_page_table(meta_pages);
+
+    // On RISC-V, fill EARLY_INFO after the kernel page table is ready.
+    // The boot page table does not provide a working LINEAR mapping
+    // (QEMU 9.2.4 rejects leaf PTEs on the L4[256]->boot_idpt path).
+    // init_kernel_page_table replaces the boot PT with a full Sv48
+    // kernel PT using 4 KiB pages, which handles LINEAR correctly.
+    #[cfg(target_arch = "riscv64")]
+    arch::boot::fill_early_info();
 
     sync::init();
 

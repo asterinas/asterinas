@@ -102,9 +102,11 @@ fn parse_initramfs_range() -> Option<(usize, usize)> {
     Some((initrd_start, initrd_end))
 }
 
-/// Fill the global EARLY_INFO structure.  Must be called AFTER
-/// init_kernel_page_table() because paddr_to_vaddr() requires the
-/// LINEAR mapping, which the boot page table cannot provide reliably.
+/// Fill the global EARLY_INFO structure.  Called early in crate::init(),
+/// before any function that reads EARLY_INFO.  All parse functions here
+/// access the already-parsed DTB through identity mapping — they never
+/// call paddr_to_vaddr() except in parse_initramfs(), and that path is
+/// only entered when the DTB has a chosen/linux,initrd-start property.
 #[doc(hidden)]
 pub fn fill_early_info() {
     use crate::boot::{EarlyBootInfo, EARLY_INFO};
