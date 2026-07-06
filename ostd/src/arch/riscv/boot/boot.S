@@ -122,23 +122,50 @@ _start:
     // QEMU (and some hardware) reject them.
 
     // L4[0] and L4[256] -> boot_idpt (non-leaf, V only).
+    // Also fill boot_idpt[0..3] with non-leaf -> boot_l2_id_0..3.
     lla    t0, boot_idpt
     slli   t0, t0, 32
     srli   t0, t0, 32
+    // Save boot_idpt phys addr for filling its entries.
+    mv     s2, t0
+
+    // Write boot_idpt entries 0..3.
+    // Entry format: (phys_addr_of_L2 >> (PAGE_SHIFT - PTE_PPN_SHIFT)) | PTE_V
+
+    lla    t0, boot_l2_id_0
+    slli   t0, t0, 32; srli   t0, t0, 32
     srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori    t0, t0, PTE_V
+    sd     t0,  0(s2)
+
+    lla    t0, boot_l2_id_1
+    slli   t0, t0, 32; srli   t0, t0, 32
+    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori    t0, t0, PTE_V
+    sd     t0,  8(s2)
+
+    lla    t0, boot_l2_id_2
+    slli   t0, t0, 32; srli   t0, t0, 32
+    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori    t0, t0, PTE_V
+    sd     t0, 16(s2)
+
+    lla    t0, boot_l2_id_3
+    slli   t0, t0, 32; srli   t0, t0, 32
+    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori    t0, t0, PTE_V
+    sd     t0, 24(s2)
+
+    // Write L4[0] and L4[256] pointing to boot_idpt.
+    srli   t0, s2, PAGE_SHIFT - PTE_PPN_SHIFT
     ori    t0, t0, PTE_V
 
     lla    t1, boot_l4pt
-    slli   t1, t1, 32
-    srli   t1, t1, 32
-    // L4[0]
-    sd     t0, 0(t1)
-    // L4[256]: offset = 256 * 8 = 2048.
-    // sd's 12-bit signed immediate only reaches [-2048, 2047]; use
-    // base+base+add to reach the entry.
+    slli   t1, t1, 32; srli   t1, t1, 32
+    sd     t0, 0(t1)               // L4[0]
     li     t2, 2048
     add    t2, t1, t2
-    sd     t0, 0(t2)
+    sd     t0, 0(t2)               // L4[256]
 
     // L4[511] -> boot_l3pt (non-leaf, V only — no A on non-leaf PTE).
     // Entry 510 is replaced below with a non-leaf pointer to boot_l2_kernel,
@@ -312,16 +339,46 @@ boot_l4pt:
     .zero 1 * PTE_SIZE           // L4[511]: set at runtime -> boot_l3pt
 
 // Identity and linear mappings share this table.
-// Entries VPN[0..127] -> phys 0..128 GiB via 1 GiB leaf pages.
-// Entries VPN[128..511] are left zero (unmapped).
+// Entries VPN[0..3] are set at runtime to point to boot_l2_id_* tables
+// (2 MiB leaf pages) covering phys 0..4 GiB.
+// Entries VPN[4..511] are left zero (unmapped).
 .balign 4096
 boot_idpt:
+    .zero 512 * PTE_SIZE
+
+// Four L2 tables, each covering 1 GiB with 512 x 2 MiB leaf PTEs.
+// Maps phys i*1GiB .. (i+1)*1GiB - 1 for identity/linear access.
+.balign 4096
+boot_l2_id_0:
     .set i, 0
-    .rept 128
-    .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .rept 512
+    .quad (((0x00000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
     .set i, i + 1
     .endr
-    .zero (512 - 128) * PTE_SIZE
+
+.balign 4096
+boot_l2_id_1:
+    .set i, 0
+    .rept 512
+    .quad (((0x40000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .set i, i + 1
+    .endr
+
+.balign 4096
+boot_l2_id_2:
+    .set i, 0
+    .rept 512
+    .quad (((0x80000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .set i, i + 1
+    .endr
+
+.balign 4096
+boot_l2_id_3:
+    .set i, 0
+    .rept 512
+    .quad (((0xC0000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .set i, i + 1
+    .endr
 
 // High-half mapping for the kernel.
 // L4[511] selects this table.
@@ -344,7 +401,7 @@ boot_l3pt:
 boot_l2_kernel:
     .set i, 0
     .rept 512
-    .quad (((0x80000000 >> 21) + i) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .quad (((0x80000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
     .set i, i + 1
     .endr
 
