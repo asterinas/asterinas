@@ -57,7 +57,6 @@ virtio_mmio.device=0x200@0x5950f000:10
 virtio_mmio.device=1K@0x1001e000:74
 ```
 
-## Asterinas-specific
 ### `earlycon`
 
 Enable the early console to output logs during the early stages of system boot.
