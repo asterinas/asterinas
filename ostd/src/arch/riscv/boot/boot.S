@@ -206,13 +206,14 @@ _start:
     SBI_PUTCHAR 'J'
     SBI_PUTCHAR 'B'
 
-    // Try Sv48 first — the LINEAR mapping base (0xFFFF800000000000)
-    // is only canonical under Sv48 and above.  The boot page table
-    // uses 2 MiB leaf pages everywhere for QEMU 9.2.4 compatibility.
-    lla    t0, boot_l4pt
+    // Try Sv39 — QEMU 9.2.4 Sv48 TLB walker has a confirmed bug
+    // on non-trivial page table paths.  Sv39 works correctly.
+    // KERNEL_PT_READY = false → paddr_to_vaddr uses identity.
+    // Sv39 boot_l3pt_sv39 maps phys 0..128 GiB 1:1.
+    lla    t0, boot_l3pt_sv39
     slli   t0, t0, 32
     srli   t0, t0, 32
-    li     t1, SATP_MODE_SV48
+    li     t1, SATP_MODE_SV39
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
     csrw   satp, t0
