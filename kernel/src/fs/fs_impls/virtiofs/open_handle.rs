@@ -71,6 +71,9 @@ impl Drop for VirtioFsOpenHandle {
         let fs = self.fs.clone();
         let nodeid = self.nodeid;
         let fh = self.fh;
+        // FIXME: `FUSE_RELEASE` should use the current status flags from the
+        // owning file description. `VirtioFsOpenHandle` can outlive that
+        // context, so release currently uses the flags captured at open time.
         let file_flags = self.file_flags();
         let release_options = self.release_options;
 

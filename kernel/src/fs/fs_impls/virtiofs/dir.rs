@@ -57,6 +57,9 @@ impl FileOps for VirtioFsDir {
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        // FIXME: `readdir_at` should pass current status flags to the
+        // server, while `FileOps` interface currently does not expose them,
+        // so `FUSE_READDIR` uses the flags captured at open time.
         self.inode.readdir(
             self.open_handle.fh(),
             offset,

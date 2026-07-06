@@ -532,7 +532,7 @@ impl FileOps for VirtioFsInode {
         &self,
         offset: usize,
         writer: &mut VmWriter,
-        _status_flags: StatusFlags,
+        status_flags: StatusFlags,
     ) -> Result<usize> {
         if self.type_ != InodeType::File {
             return_errno_with_message!(
@@ -545,7 +545,8 @@ impl FileOps for VirtioFsInode {
         // normal file-open path. Open a transient handle so FUSE I/O still has
         // a server-provided file handle when this inode has no cached open.
         let handle = self.open_transient_handle(AccessMode::O_RDONLY)?;
-        self.direct_read_at(offset, writer, handle.fh(), handle.file_flags())
+        let file_flags = AccessMode::O_RDONLY as u32 | status_flags.bits();
+        self.direct_read_at(offset, writer, handle.fh(), file_flags)
     }
 
     fn write_at(
@@ -589,6 +590,9 @@ impl FileOps for VirtioFsInode {
 
         // FIXME: `readdir_at` exposes the delta-based interface, while
         // FUSE readdir offsets are opaque continuation cookies.
+        // FIXME: `readdir_at` should pass current status flags to the
+        // filesystem backend. The `FileOps` interface currently does not
+        // expose them, so `FUSE_READDIR` uses the transient handle flags.
         self.readdir(dir_handle.fh(), offset, dir_handle.file_flags(), visitor)
     }
 }
