@@ -75,6 +75,13 @@ pub use self::{error::Error, prelude::Result};
 unsafe fn init() {
     arch::enable_cpu_features();
 
+    // On RISC-V, EARLY_INFO must be filled here — before any function
+    // that reads memory_regions (init_early_allocator, meta::init, ...).
+    // fill_early_info() only accesses the already-parsed DTB through
+    // the identity mapping; no paddr_to_vaddr() calls on this path.
+    #[cfg(target_arch = "riscv64")]
+    arch::boot::fill_early_info();
+
     // SAFETY: This function is called only once, before `allocator::init`
     // and after memory regions are initialized.
     unsafe { mm::frame::allocator::init_early_allocator() };
@@ -95,15 +102,6 @@ unsafe fn init() {
     // 3. No CPU-local objects have been accessed yet.
     unsafe { cpu::init_on_bsp() };
 
-    // On RISC-V, fill EARLY_INFO before meta::init().
-    // fill_early_info() reads DTB through identity mapping —
-    // it does NOT use paddr_to_vaddr() for memory access.
-    // The only paddr_to_vaddr() call is in parse_initramfs(), which
-    // is only reached when the DTB has chosen/linux,initrd-start;
-    // Megrez DTB has no such property.
-    #[cfg(target_arch = "riscv64")]
-    arch::boot::fill_early_info();
-
     let meta_pages = unsafe { mm::frame::meta::init() };
     // The frame allocator should be initialized immediately after the metadata
     // is initialized. Otherwise the boot page table can't allocate frames.
@@ -111,14 +109,6 @@ unsafe fn init() {
     unsafe { mm::frame::allocator::init() };
 
     mm::kspace::init_kernel_page_table(meta_pages);
-
-    // On RISC-V, fill EARLY_INFO after the kernel page table is ready.
-    // The boot page table does not provide a working LINEAR mapping
-    // (QEMU 9.2.4 rejects leaf PTEs on the L4[256]->boot_idpt path).
-    // init_kernel_page_table replaces the boot PT with a full Sv48
-    // kernel PT using 4 KiB pages, which handles LINEAR correctly.
-    #[cfg(target_arch = "riscv64")]
-    arch::boot::fill_early_info();
 
     sync::init();
 
