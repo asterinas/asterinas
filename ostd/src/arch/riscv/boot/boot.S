@@ -208,8 +208,8 @@ _start:
 
     // Try Sv39 — QEMU 9.2.4 Sv48 TLB walker has a confirmed bug
     // on non-trivial page table paths.  Sv39 works correctly.
-    // KERNEL_PT_READY = false → paddr_to_vaddr uses identity.
-    // Sv39 boot_l3pt_sv39 maps phys 0..128 GiB 1:1.
+    // KERNEL_PT_READY=false → paddr_to_vaddr uses identity during early boot.
+
     lla    t0, boot_l3pt_sv39
     slli   t0, t0, 32
     srli   t0, t0, 32
