@@ -103,6 +103,15 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::ENODEV, "the file is not mappable");
     }
 
+    /// Resolves the mappable object and its internal offset for an `mmap` offset.
+    ///
+    /// Most files map one object directly, so the mmap offset is also the VMO
+    /// or device offset. Special files may use Linux-style magic mmap offsets
+    /// to select one of multiple internal objects.
+    fn mappable_at(&self, offset: usize) -> Result<(Mappable, usize)> {
+        Ok((self.mappable()?, offset))
+    }
+
     fn resize(&self, new_size: usize) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "resize is not supported");
     }
