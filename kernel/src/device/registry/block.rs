@@ -73,6 +73,9 @@ mod ioctl_defs {
     /// Returns the device size in bytes.
     pub(super) type BlkGetSize64 = ioc!(BLKGETSIZE64, 0x12, 114, OutData<u64>);
 
+    /// Returns the physical block size of the block device.
+    pub(super) type BlkGetPhysicalBlockSize = ioc!(BLKPBSZGET, 0x12, 123, NoData);
+
     /// Returns the logical sector size of the block device.
     ///
     /// This is the smallest unit of I/O the device can address and,
@@ -213,6 +216,15 @@ impl PerOpenFileOps for OpenBlockFile {
         use ioctl_defs::*;
 
         dispatch_ioctl!(match raw_ioctl {
+            _cmd @ BlkGetPhysicalBlockSize => {
+                // TODO: Query the per-device physical block size once block device
+                // metadata exposes it. For now, report the same effective
+                // granularity as `BLKSSZGET` to keep the advertised block
+                // geometry consistent.
+                let physical_block_size = SECTOR_SIZE.max(BLOCK_SIZE) as i32;
+                current_userspace!().write_val(raw_ioctl.arg(), &physical_block_size)?;
+                Ok(0)
+            }
             _cmd @ BlkGetSectorSize => {
                 // TODO: Query the per-device logical block size once block device metadata
                 // exposes it. For now, report the effective minimum I/O granularity enforced
