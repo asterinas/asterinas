@@ -57,6 +57,11 @@ pub(super) fn build_op_request(
             sqe,
             force_async,
         )?)),
+        IoUringOpcode::Accept => Ok(Arc::new(net::IoUringAcceptRequest::new(
+            context,
+            sqe,
+            force_async,
+        )?)),
         IoUringOpcode::Send => Ok(Arc::new(net::IoUringSendRequest::new(
             context,
             sqe,

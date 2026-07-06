@@ -3,9 +3,10 @@
 use super::SyscallReturn;
 use crate::{
     fs::file::{
-        CreationFlags, StatusFlags,
-        file_table::{FdFlags, RawFileDesc, get_file_fast},
+        StatusFlags,
+        file_table::{RawFileDesc, get_file_fast},
     },
+    net::socket::util::AcceptFlags,
     prelude::*,
     util::net::write_socket_addr_to_user,
 };
@@ -18,7 +19,7 @@ pub fn sys_accept(
 ) -> Result<SyscallReturn> {
     debug!("sockfd = {sockfd}, sockaddr_ptr = 0x{sockaddr_ptr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
-    do_accept(sockfd, sockaddr_ptr, addrlen_ptr, Flags::empty(), ctx)
+    do_accept(sockfd, sockaddr_ptr, addrlen_ptr, AcceptFlags::empty(), ctx)
 }
 
 pub fn sys_accept4(
@@ -29,7 +30,7 @@ pub fn sys_accept4(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!("raw flags = 0x{:x}", flags);
-    let flags = Flags::from_bits(flags)
+    let flags = AcceptFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid accept4 flags"))?;
     debug!(
         "sockfd = {}, sockaddr_ptr = 0x{:x}, addrlen_ptr = 0x{:x}, flags = {:?}",
@@ -43,7 +44,7 @@ fn do_accept(
     sockfd: RawFileDesc,
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
-    flags: Flags,
+    flags: AcceptFlags,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
@@ -58,15 +59,9 @@ fn do_accept(
         })?
     };
 
-    if flags.contains(Flags::SOCK_NONBLOCK) {
+    if flags.is_nonblocking() {
         connected_socket.set_status_flags(StatusFlags::O_NONBLOCK)?;
     }
-
-    let fd_flags = if flags.contains(Flags::SOCK_CLOEXEC) {
-        FdFlags::CLOEXEC
-    } else {
-        FdFlags::empty()
-    };
 
     if sockaddr_ptr != 0 {
         write_socket_addr_to_user(&socket_addr, sockaddr_ptr, addrlen_ptr)?;
@@ -74,18 +69,8 @@ fn do_accept(
 
     let fd = {
         let mut file_table_locked = file_table.unwrap().write();
-        file_table_locked.insert(connected_socket, fd_flags)
+        file_table_locked.insert(connected_socket, flags.fd_flags())
     };
 
     Ok(SyscallReturn::Return(fd.into()))
 }
-
-bitflags! {
-    struct Flags: u32 {
-        const SOCK_NONBLOCK = NONBLOCK;
-        const SOCK_CLOEXEC = CLOEXEC;
-    }
-}
-
-const NONBLOCK: u32 = StatusFlags::O_NONBLOCK.bits();
-const CLOEXEC: u32 = CreationFlags::O_CLOEXEC.bits();

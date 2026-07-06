@@ -281,6 +281,7 @@ pub enum IoUringOpcode {
     WriteFixed = 5,
     SendMsg = 9,
     RecvMsg = 10,
+    Accept = 13,
     Read = 22,
     Write = 23,
     Send = 26,

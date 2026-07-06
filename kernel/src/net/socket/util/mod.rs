@@ -13,6 +13,6 @@ pub use linger_option::LingerOption;
 pub(super) use message_header::CControlHeader;
 pub use message_header::{ControlMessage, MessageHeader};
 pub(super) use port_privilege::check_port_privilege;
-pub use send_recv_flags::SendRecvFlags;
+pub use send_recv_flags::{AcceptFlags, SendRecvFlags};
 pub use shutdown_cmd::SockShutdownCmd;
 pub use socket_addr::SocketAddr;
