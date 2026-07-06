@@ -206,16 +206,14 @@ _start:
     SBI_PUTCHAR 'J'
     SBI_PUTCHAR 'B'
 
-    // Try Sv39 first — it works reliably across all QEMU versions.
-    // Sv48 is tried as a fallback for real hardware that requires it.
-    // Under Sv39, paddr_to_vaddr() produces non-canonical addresses,
-    // so early boot uses identity mapping (riscv_boot accesses the DTB
-    // by physical address).  call_ostd_main() replaces the boot page
-    // table with the full kernel PT, after which paddr_to_vaddr() works.
-    lla    t0, boot_l3pt_sv39
+    // Try Sv48 first — LINEAR mapping (0xFFFF800000000000) is only
+    // canonical under Sv48.  The boot page table now uses 2 MiB leaf
+    // pages everywhere (boot_idpt + boot_l2_kernel), which QEMU 9.2.4
+    // handles correctly.
+    lla    t0, boot_l4pt
     slli   t0, t0, 32
     srli   t0, t0, 32
-    li     t1, SATP_MODE_SV39
+    li     t1, SATP_MODE_SV48
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
     csrw   satp, t0
@@ -225,11 +223,11 @@ _start:
     beq    t0, t1, .Lmmu_ok
     SBI_SET_TIMER (60 * TIMER_FREQ)
 
-    // Try Sv48 fallback.
-    lla    t0, boot_l4pt
+    // Try Sv39 fallback.
+    lla    t0, boot_l3pt_sv39
     slli   t0, t0, 32
     srli   t0, t0, 32
-    li     t1, SATP_MODE_SV48
+    li     t1, SATP_MODE_SV39
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
     csrw   satp, t0
@@ -327,7 +325,7 @@ _early_trap:
     SBI_RESET
 
 PTE_VRXWAD = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A
-PTE_VRXW  = PTE_V | PTE_R | PTE_W | PTE_X
+PTE_VRXW   = PTE_V | PTE_R | PTE_W | PTE_X        // no A/D — let HW set them
 
 // ---- Sv48 page tables ------------------------------------------------------
 .balign 4096
@@ -350,9 +348,11 @@ boot_idpt:
 // Maps phys i*1GiB .. (i+1)*1GiB - 1 for identity/linear access.
 .balign 4096
 boot_l2_id_0:
+    PTE_TMP_VRXWAD = PTE_VRXW
+    .set PTE_VRXW, PTE_VRXW
     .set i, 0
     .rept 512
-    .quad (((0x00000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .quad (((0x00000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXW
     .set i, i + 1
     .endr
 
@@ -360,7 +360,7 @@ boot_l2_id_0:
 boot_l2_id_1:
     .set i, 0
     .rept 512
-    .quad (((0x40000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .quad (((0x40000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXW
     .set i, i + 1
     .endr
 
@@ -368,7 +368,7 @@ boot_l2_id_1:
 boot_l2_id_2:
     .set i, 0
     .rept 512
-    .quad (((0x80000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .quad (((0x80000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXW
     .set i, i + 1
     .endr
 
@@ -376,7 +376,7 @@ boot_l2_id_2:
 boot_l2_id_3:
     .set i, 0
     .rept 512
-    .quad (((0xC0000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .quad (((0xC0000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXW
     .set i, i + 1
     .endr
 
@@ -401,7 +401,7 @@ boot_l3pt:
 boot_l2_kernel:
     .set i, 0
     .rept 512
-    .quad (((0x80000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .quad (((0x80000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXW
     .set i, i + 1
     .endr
 

@@ -102,17 +102,12 @@ fn parse_initramfs_range() -> Option<(usize, usize)> {
     Some((initrd_start, initrd_end))
 }
 
-/// The entry point of the Rust code portion of Asterinas.
-#[no_mangle]
-pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
-    // Parse DTB through identity mapping (paddr == vaddr in boot PT).
-    let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_paddr as *const u8).unwrap() };
-    DEVICE_TREE.call_once(|| fdt);
-
-    early_println!("[Asterinas] riscv_boot: DTB parsed OK");
-
-    use crate::boot::{call_ostd_main, EarlyBootInfo, EARLY_INFO};
-
+/// Fill the global EARLY_INFO structure.  Must be called AFTER
+/// init_kernel_page_table() because paddr_to_vaddr() requires the
+/// LINEAR mapping, which the boot page table cannot provide reliably.
+#[doc(hidden)]
+pub fn fill_early_info() {
+    use crate::boot::{EarlyBootInfo, EARLY_INFO};
     EARLY_INFO.call_once(|| EarlyBootInfo {
         bootloader_name: parse_bootloader_name(),
         kernel_cmdline: parse_kernel_commandline(),
@@ -121,6 +116,17 @@ pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
         framebuffer_arg: parse_framebuffer_info(),
         memory_regions: parse_memory_regions(),
     });
+}
 
+/// The entry point of the Rust code portion of Asterinas.
+#[no_mangle]
+pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
+    // Parse DTB through identity mapping.  EARLY_INFO is deferred to
+    // fill_early_info() inside crate::init() — called between
+    // init_kernel_page_table() and init_after_heap().
+    let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_paddr as *const u8).unwrap() };
+    DEVICE_TREE.call_once(|| fdt);
+
+    use crate::boot::call_ostd_main;
     call_ostd_main();
 }

@@ -95,7 +95,15 @@ unsafe fn init() {
     // 3. No CPU-local objects have been accessed yet.
     unsafe { cpu::init_on_bsp() };
 
-    // SAFETY: We are on the BSP and APs are not yet started.
+    // On RISC-V, fill EARLY_INFO now.  paddr_to_vaddr() needs the full
+    // kernel page table (built by init_kernel_page_table below), but
+    // fill_early_info() only reads the already-parsed DTB headers —
+    // it does NOT dereference paddr_to_vaddr results.  The paddr_to_vaddr
+    // call in parse_initramfs is conditional on the DTB having a
+    // chosen/linux,initrd-start property; Megrez DTB does not have one.
+    #[cfg(target_arch = "riscv64")]
+    arch::boot::fill_early_info();
+
     let meta_pages = unsafe { mm::frame::meta::init() };
     // The frame allocator should be initialized immediately after the metadata
     // is initialized. Otherwise the boot page table can't allocate frames.
