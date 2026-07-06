@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #include <stdint.h>
+#include <stdlib.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <linux/capability.h>
@@ -28,6 +30,36 @@ FN_TEST(capget)
 		 _ret == CAPS_NONE);
 
 	TEST_SUCC(syscall(SYS_capset, &caphdr, &capdat));
+}
+END_TEST()
+
+FN_TEST(capset_inheritable_across_uid_transition)
+{
+	pid_t pid;
+	int status;
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		struct __user_cap_data_struct child_capdat[2] = {};
+
+		CHECK(syscall(SYS_capget, &caphdr, child_capdat));
+		child_capdat[0].inheritable |= 1 << CAP_NET_BIND_SERVICE;
+		CHECK(syscall(SYS_capset, &caphdr, child_capdat));
+
+		CHECK(setuid(65534));
+		CHECK(syscall(SYS_capget, &caphdr, child_capdat));
+
+		CHECK_WITH(child_capdat[0].permitted, _ret == 0);
+		CHECK_WITH(child_capdat[0].effective, _ret == 0);
+		CHECK_WITH(child_capdat[0].inheritable &
+				   (1 << CAP_NET_BIND_SERVICE),
+			   _ret != 0);
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
 }
 END_TEST()
 
