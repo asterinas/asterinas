@@ -206,25 +206,9 @@ _start:
     SBI_PUTCHAR 'J'
     SBI_PUTCHAR 'B'
 
-    // Try Sv39 first — works correctly in QEMU 9.2.4 and all known
-    // versions.  LINEAR mapping (0xFFFF800000000000) is non-canonical
-    // under Sv39, so early boot uses identity mapping exclusively.
-    // call_ostd_main() builds the full kernel PT (Sv48, 4 KiB leaves)
-    // after which LINEAR works and paddr_to_vaddr() is safe.
-    lla    t0, boot_l3pt_sv39
-    slli   t0, t0, 32
-    srli   t0, t0, 32
-    li     t1, SATP_MODE_SV39
-    srli   t0, t0, PAGE_SHIFT
-    or     t0, t0, t1
-    csrw   satp, t0
-    sfence.vma
-
-    csrr   t1, satp
-    beq    t0, t1, .Lmmu_ok
-    SBI_SET_TIMER (60 * TIMER_FREQ)
-
-    // Try Sv48 fallback.
+    // Try Sv48 first — the LINEAR mapping base (0xFFFF800000000000)
+    // is only canonical under Sv48 and above.  The boot page table
+    // uses 2 MiB leaf pages everywhere for QEMU 9.2.4 compatibility.
     lla    t0, boot_l4pt
     slli   t0, t0, 32
     srli   t0, t0, 32
