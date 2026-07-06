@@ -69,6 +69,25 @@ pub fn sys_io_uring_enter(
     Ok(SyscallReturn::Return(submitted as _))
 }
 
+pub fn sys_io_uring_register(
+    raw_fd: RawFileDesc,
+    opcode: u32,
+    arg_addr: Vaddr,
+    nr_args: u32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    let ring_file = get_ring_file(raw_fd, ctx)?;
+    let ring = ring_context(&ring_file)?;
+    debug!(
+        "raw_fd = {}, opcode = {}, nr_args = {}",
+        raw_fd, opcode, nr_args
+    );
+
+    ring.register(opcode, arg_addr, nr_args)?;
+
+    Ok(SyscallReturn::Return(0))
+}
+
 fn get_ring_file(raw_fd: RawFileDesc, ctx: &Context) -> Result<Arc<dyn FileLike>> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?).into_owned();

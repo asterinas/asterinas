@@ -11,12 +11,13 @@ use ostd::sync::WaitQueue;
 use super::{
     c_types::{
         CqRingOffsets, IORING_OFF_CQ_RING, IORING_OFF_SQ_RING, IORING_OFF_SQES, IoRingMeta,
-        IoUringCqe, IoUringFeatures, IoUringParams, IoUringSetupFlags, IoUringSqe,
+        IoUringCqe, IoUringFeatures, IoUringParams, IoUringRegisterOpcode, IoUringSetupFlags, IoUringSqe,
         MAX_CQ_ENTRIES, MAX_SQ_ENTRIES, SqRingOffsets,
     },
     io_wq::IoWq,
     ops,
-    utils::Completion,
+    register::RegisteredResource,
+    utils::{resolve_registered_buffers, Completion},
 };
 use crate::{
     events::IoEvents,
@@ -27,6 +28,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
+    util::IoVec,
     vm::page_cache::{Vmo, VmoOptions},
 };
 
@@ -38,6 +40,8 @@ pub struct IoUringContext {
     sqes_region: SqeRegion,
 
     io_wq: Arc<IoWq>,
+
+    registered_resource: RegisteredResource,
 
     sq_wait_queue: WaitQueue,
     pollee: Pollee,
@@ -86,6 +90,7 @@ impl IoUringContext {
             cq_ring: Mutex::new(CqRing::new(config)),
             ring_region,
             sqes_region,
+            registered_resource: RegisteredResource::new(),
             io_wq: Arc::new(IoWq::new(context.clone())),
             sq_wait_queue: WaitQueue::new(),
             pollee: Pollee::new(),
@@ -189,6 +194,7 @@ impl IoUringContext {
     }
 
     fn write_fdinfo(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let user_buffers = self.registered_resource.buffer_count();
         let sq_ring = self.sq_ring.lock();
         let cq_ring = self.cq_ring.lock();
         let sq_head = self
@@ -230,9 +236,44 @@ impl IoUringContext {
         writeln!(f, "SqTotalTime:\t{}", 0)?;
         writeln!(f, "SqWorkTime:\t{}", 0)?;
         writeln!(f, "UserFiles:\t{}", 0)?;
-        writeln!(f, "UserBufs:\t{}", 0)?;
+        writeln!(f, "UserBufs:\t{}", user_buffers)?;
         writeln!(f, "PollList:")?;
         writeln!(f, "CqOverflowList:")
+    }
+}
+
+impl IoUringContext {
+    pub fn register(&self, opcode: u32, arg_addr: Vaddr, nr_args: u32) -> Result<()> {
+        match IoUringRegisterOpcode::try_from(opcode)? {
+            IoUringRegisterOpcode::RegisterBuffers => self.register_buffers(arg_addr, nr_args),
+            IoUringRegisterOpcode::UnregisterBuffers => {
+                self.unregister_buffers();
+                Ok(())
+            }
+        }
+    }
+
+    fn register_buffers(&self, arg_addr: Vaddr, nr_args: u32) -> Result<()> {
+        if nr_args == 0 {
+            return_errno_with_message!(Errno::EINVAL, "no io_uring buffers were provided");
+        }
+
+        self.registered_resource.check_buffers_available()?;
+        let buffers = resolve_registered_buffers(arg_addr, nr_args as usize)?;
+        self.registered_resource.register_buffers(buffers)
+    }
+
+    fn unregister_buffers(&self) {
+        self.registered_resource.unregister_buffers();
+    }
+
+    pub(super) fn get_registered_buffer(
+        &self,
+        index: u16,
+        addr: usize,
+        len: usize,
+    ) -> Result<IoVec> {
+        self.registered_resource.get_fixed_buffer(index, addr, len)
     }
 }
 

@@ -269,3 +269,13 @@ pub enum IoUringOpcode {
     Read = 22,
     Write = 23,
 }
+
+/// `enum io_uring_register_op` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v7.1.2/source/include/uapi/linux/io_uring.h#L652-L730>.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
+pub enum IoUringRegisterOpcode {
+    RegisterBuffers = 0,
+    UnregisterBuffers = 1,
+}
