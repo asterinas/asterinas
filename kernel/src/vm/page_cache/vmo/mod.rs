@@ -175,16 +175,6 @@ pub enum VmoCommitError {
     WaitUntilInit { index: usize, page: CachePage },
 }
 
-impl VmoCommitError {
-    /// Returns the page index whose commit is pending on I/O or initialization.
-    pub fn pending_index(&self) -> Result<usize> {
-        match self {
-            Self::NeedIo { index } | Self::WaitUntilInit { index, .. } => Ok(*index),
-            Self::Err(e) => Err(*e),
-        }
-    }
-}
-
 impl From<Error> for VmoCommitError {
     fn from(e: Error) -> Self {
         VmoCommitError::Err(e)
@@ -287,6 +277,10 @@ impl Vmo {
     ///
     /// Once a commit operation needs to perform I/O, it will return a
     /// [`VmoCommitError::NeedIo`].
+    // TODO: Currently handling surrounding pages upon page faults do not
+    // utilize fast iteration of VMOs provided by this function. We should
+    // further optimize it.
+    #[expect(dead_code)]
     pub fn try_operate_on_range<F>(
         &self,
         range: &Range<usize>,

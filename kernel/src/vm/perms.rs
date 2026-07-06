@@ -9,7 +9,7 @@ use crate::prelude::*;
 bitflags! {
     /// The memory access permissions of memory mappings.
     // NOTE: `check` hardcodes `MAY_READ >> 3 == READ`, and so for r/w/x bits.
-    pub struct VmPerms: u32 {
+    pub struct VmPerms: u8 {
         /// Readable.
         const READ    = 1 << 0;
         /// Writable.
@@ -45,8 +45,8 @@ impl VmPerms {
 
     /// Parses `bits` as requested permissions from user programs and returns errors
     /// if there are unknown permissions.
-    pub fn from_user_bits(bits: u32) -> Result<Self> {
-        if let Some(vm_perms) = VmPerms::from_bits(bits)
+    pub fn from_user_bits(bits: u64) -> Result<Self> {
+        if let Some(vm_perms) = VmPerms::from_bits(bits.try_into().or(Err(Errno::EINVAL))?)
             && Self::ALL_PERMS.contains(vm_perms)
         {
             Ok(vm_perms)
@@ -57,8 +57,8 @@ impl VmPerms {
 
     /// Parses `bits` as requested permissions from user programs and ignores any
     /// unknown permissions.
-    pub fn from_user_bits_truncate(bits: u32) -> Self {
-        VmPerms::from_bits_truncate(bits) & Self::ALL_PERMS
+    pub fn from_user_bits_truncate(bits: u64) -> Self {
+        VmPerms::from_bits_truncate(bits as u8) & Self::ALL_PERMS
     }
 }
 
