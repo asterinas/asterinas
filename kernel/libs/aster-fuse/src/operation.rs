@@ -52,20 +52,33 @@ pub enum ReplyExpectation {
     None,
     /// A reply contains only a `ReplyHeader` and no payload bytes.
     HeaderOnly,
-    /// A reply contains a `ReplyHeader` and a payload up to the given payload bytes.
-    Payload(NonZeroUsize),
+    /// A reply contains a `ReplyHeader` and a fixed-size payload.
+    FixedPayload(NonZeroUsize),
+    /// A reply contains a `ReplyHeader` and up to the given payload bytes.
+    VariablePayload(NonZeroUsize),
 }
 
 impl ReplyExpectation {
-    /// Returns a payload-bearing reply expectation.
+    /// Returns a fixed-size payload reply expectation.
     ///
     /// A zero payload size is returned as [`Self::HeaderOnly`] so
-    /// [`Self::Payload`] cannot encode the same wire shape.
+    /// [`Self::FixedPayload`] cannot encode the same wire shape.
     pub fn payload(payload_size: usize) -> Self {
         let Some(payload_size) = NonZeroUsize::new(payload_size) else {
             return Self::HeaderOnly;
         };
-        Self::Payload(payload_size)
+        Self::FixedPayload(payload_size)
+    }
+
+    /// Returns a variable-size payload reply expectation.
+    ///
+    /// A zero maximum payload size is returned as [`Self::HeaderOnly`] so
+    /// [`Self::VariablePayload`] cannot encode the same wire shape.
+    pub fn variable_payload(max_payload_size: usize) -> Self {
+        let Some(max_payload_size) = NonZeroUsize::new(max_payload_size) else {
+            return Self::HeaderOnly;
+        };
+        Self::VariablePayload(max_payload_size)
     }
 }
 
