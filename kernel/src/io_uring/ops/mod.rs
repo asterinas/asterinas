@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod file;
+mod net;
 mod nop;
 
 use ostd::task::Task;
@@ -42,6 +43,16 @@ pub(super) fn build_op_request(
             force_async,
         )?)),
         IoUringOpcode::Write | IoUringOpcode::WriteFixed => Ok(Arc::new(file::IoUringWriteRequest::new(
+            context,
+            sqe,
+            force_async,
+        )?)),
+        IoUringOpcode::Send => Ok(Arc::new(net::IoUringSendRequest::new(
+            context,
+            sqe,
+            force_async,
+        )?)),
+        IoUringOpcode::Recv => Ok(Arc::new(net::IoUringRecvRequest::new(
             context,
             sqe,
             force_async,

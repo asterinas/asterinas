@@ -281,6 +281,8 @@ pub enum IoUringOpcode {
     WriteFixed = 5,
     Read = 22,
     Write = 23,
+    Send = 26,
+    Recv = 27,
 }
 
 /// `enum io_uring_register_op` in Linux.
