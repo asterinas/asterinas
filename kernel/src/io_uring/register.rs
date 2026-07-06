@@ -47,12 +47,7 @@ impl RegisteredResource {
         *self.buffers.lock() = None;
     }
 
-    pub(super) fn get_fixed_buffer(
-        &self,
-        index: u16,
-        addr: Vaddr,
-        len: usize,
-    ) -> Result<IoVec> {
+    pub(super) fn get_fixed_buffer(&self, index: u16, addr: Vaddr, len: usize) -> Result<IoVec> {
         let registered_buffers = self.buffers.lock();
         let Some(buffer) = registered_buffers
             .as_ref()
