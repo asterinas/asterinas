@@ -14,6 +14,7 @@ use super::{
         IoUringCqe, IoUringFeatures, IoUringParams, IoUringSetupFlags, IoUringSqe,
         MAX_CQ_ENTRIES, MAX_SQ_ENTRIES, SqRingOffsets,
     },
+    io_wq::IoWq,
     ops,
     utils::Completion,
 };
@@ -35,6 +36,8 @@ pub struct IoUringContext {
     cq_ring: Mutex<CqRing>,
     ring_region: RingRegion,
     sqes_region: SqeRegion,
+
+    io_wq: Arc<IoWq>,
 
     sq_wait_queue: WaitQueue,
     pollee: Pollee,
@@ -78,11 +81,12 @@ impl IoUringContext {
         let ring_region = RingRegion::new(config.ring_size, config.sq_array_offset)?;
         let sqes_region = SqeRegion::new(config.sqes_size)?;
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[io_uring]".to_string());
-        let context = Arc::new(Self {
+        let context = Arc::new_cyclic(|context| Self {
             sq_ring: Mutex::new(SqRing::new(config)),
             cq_ring: Mutex::new(CqRing::new(config)),
             ring_region,
             sqes_region,
+            io_wq: Arc::new(IoWq::new(context.clone())),
             sq_wait_queue: WaitQueue::new(),
             pollee: Pollee::new(),
             pseudo_path,
@@ -90,6 +94,8 @@ impl IoUringContext {
 
         let ring_meta = IoRingMeta::new(config.sq_entries, config.cq_entries);
         context.ring_region.write_meta(&ring_meta)?;
+
+        context.io_wq.start_thread(ctx);
 
         Ok(context)
     }
@@ -162,7 +168,7 @@ impl IoUringContext {
                 if let Some(completion) = request.try_execute_nonblock() {
                     self.post_completion(completion)?;
                 } else {
-                    self.post_completion(request.execute())?;
+                    self.io_wq.enqueue(request);
                 }
             }
             Err(err) => self.post_completion(Completion::with_error(sqe.user_data, err))?,

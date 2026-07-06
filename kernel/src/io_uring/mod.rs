@@ -2,7 +2,9 @@
 
 mod c_types;
 mod io_context;
+mod io_wq;
 mod ops;
+mod thread;
 mod utils;
 
 pub(crate) use c_types::{IoUringEnterFlags, IoUringParams};
