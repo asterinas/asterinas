@@ -62,7 +62,7 @@ use super::{
     getxattr::{sys_fgetxattr, sys_getxattr, sys_lgetxattr},
     impl_syscall_nums_and_dispatch_fn,
     inotify::{sys_inotify_add_watch, sys_inotify_init, sys_inotify_init1, sys_inotify_rm_watch},
-    io_uring::sys_io_uring_setup,
+    io_uring::{sys_io_uring_enter, sys_io_uring_setup},
     ioctl::sys_ioctl,
     kill::sys_kill,
     link::{sys_link, sys_linkat},
@@ -416,6 +416,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_STATX = 332            => sys_statx(args[..5]);
     SYS_PIDFD_SEND_SIGNAL = 424 => sys_pidfd_send_signal(args[..4]);
     SYS_IO_URING_SETUP = 425   => sys_io_uring_setup(args[..2]);
+    SYS_IO_URING_ENTER = 426   => sys_io_uring_enter(args[..6]);
     SYS_PIDFD_OPEN = 434       => sys_pidfd_open(args[..2]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
     SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);

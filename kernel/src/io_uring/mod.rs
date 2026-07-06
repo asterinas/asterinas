@@ -2,6 +2,7 @@
 
 mod c_types;
 mod io_context;
+mod utils;
 
-pub(crate) use c_types::IoUringParams;
+pub(crate) use c_types::{IoUringEnterFlags, IoUringParams};
 pub(crate) use io_context::{IoUringContext, IoUringSetupConfig};
