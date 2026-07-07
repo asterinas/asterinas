@@ -61,7 +61,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ -n "$RUNLIST_FILE" ]; then
+# If CONFORMANCE_TEST_SELECTOR is set, use it instead of the runlist or other args
+if [ -n "$CONFORMANCE_TEST_SELECTOR" ]; then
+    # Convert comma-separated to space-separated
+    TEST_ARGS=$(echo "$CONFORMANCE_TEST_SELECTOR" | tr ',' ' ')
+fi
+
+if [ -z "$TEST_ARGS" ] && [ -n "$RUNLIST_FILE" ]; then
   if [ ! -f "$RUNLIST_FILE" ]; then
     echo "Run list file not found: $RUNLIST_FILE" >&2
     exit 2
@@ -74,8 +80,8 @@ if [ -n "$RUNLIST_FILE" ]; then
   done < "$RUNLIST_FILE"
 fi
 
-# Prepend block-list exclusion so blocked tests are skipped.
-if [ -f "$XFSTESTS_DIR/block.list" ]; then
+# Prepend block-list exclusion so blocked tests are skipped, if needed
+if [ "$CONFORMANCE_APPLY_BLOCKLISTS" = "1" ] && [ -f "$XFSTESTS_DIR/block.list" ]; then
     TEST_ARGS="-E $XFSTESTS_DIR/block.list $TEST_ARGS"
 fi
 
