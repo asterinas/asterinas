@@ -70,7 +70,7 @@ FN_TEST(legacy_null_pathname_with_nonzero_flag_returns_einval)
 }
 END_TEST()
 
-FN_TEST(utimensat_null_pathname_with_o_path_returns_ebadf)
+FN_TEST(legacy_null_pathname_with_o_path_returns_ebadf)
 {
 	int opath_fd = TEST_SUCC(open(TEST_FILE, O_PATH));
 	struct timespec times[2] = {

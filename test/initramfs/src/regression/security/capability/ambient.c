@@ -84,10 +84,11 @@ FN_TEST(ambient_raise_and_query)
 {
 	TEST_SUCC(reset_capability_state());
 
-	// CAP_SYS_ADMIN must be in both permitted and inheritable to raise.
-	// As root, permitted already has it. Add it to inheritable.
+	// CAP_SYS_ADMIN must be both permitted and inheritable to raise.
+	// As root, the permitted set already has it. Make it inheritable.
 	TEST_SUCC(add_inheritable(CAP_SYS_ADMIN));
 
+	// Raise the capability.
 	TEST_SUCC(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SYS_ADMIN, 0,
 			0));
 	TEST_RES(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_SYS_ADMIN, 0,
@@ -104,10 +105,13 @@ END_TEST()
 FN_TEST(ambient_lower)
 {
 	TEST_SUCC(reset_capability_state());
+
+	// Raise the capability first.
 	TEST_SUCC(add_inheritable(CAP_SYS_ADMIN));
 	TEST_SUCC(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SYS_ADMIN, 0,
 			0));
 
+	// Lower the capability.
 	TEST_SUCC(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_LOWER, CAP_SYS_ADMIN, 0,
 			0));
 	TEST_RES(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_SYS_ADMIN, 0,
@@ -127,13 +131,15 @@ FN_TEST(ambient_clear_all)
 	// Raise a few capabilities first.
 	TEST_SUCC(add_inheritable(CAP_SYS_ADMIN));
 	TEST_SUCC(add_inheritable(CAP_NET_BIND_SERVICE));
-
 	TEST_SUCC(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SYS_ADMIN, 0,
 			0));
 	TEST_SUCC(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE,
 			CAP_NET_BIND_SERVICE, 0, 0));
 	TEST_RES(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_SYS_ADMIN, 0,
 		       0),
+		 _ret == 1);
+	TEST_RES(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET,
+		       CAP_NET_BIND_SERVICE, 0, 0),
 		 _ret == 1);
 
 	// Clear all.
@@ -153,9 +159,8 @@ FN_TEST(ambient_raise_requires_inheritable)
 {
 	TEST_SUCC(reset_capability_state());
 
-	// Remove CAP_NET_RAW from inheritable, then try to raise it.
+	// Remove CAP_NET_RAW from the inheritable set, then try to raise it.
 	TEST_SUCC(remove_inheritable(CAP_NET_RAW));
-
 	TEST_ERRNO(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_NET_RAW, 0,
 			 0),
 		   EPERM);
@@ -190,7 +195,7 @@ FN_TEST(ambient_cleared_on_inheritable_drop)
 {
 	TEST_SUCC(reset_capability_state());
 
-	// Raise CAP_NET_BIND_SERVICE into ambient.
+	// Raise CAP_NET_BIND_SERVICE into the ambient set.
 	TEST_SUCC(add_inheritable(CAP_NET_BIND_SERVICE));
 	TEST_SUCC(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE,
 			CAP_NET_BIND_SERVICE, 0, 0));
@@ -198,8 +203,8 @@ FN_TEST(ambient_cleared_on_inheritable_drop)
 		       CAP_NET_BIND_SERVICE, 0, 0),
 		 _ret == 1);
 
-	// Remove it from inheritable; it should automatically vanish from
-	// ambient.
+	// Remove it from the inheritable set. It should automatically
+	// vanish from the ambient set.
 	TEST_SUCC(remove_inheritable(CAP_NET_BIND_SERVICE));
 	TEST_RES(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET,
 		       CAP_NET_BIND_SERVICE, 0, 0),
@@ -241,12 +246,12 @@ FN_TEST(ambient_inherited_across_fork)
 
 	pid = TEST_SUCC(fork());
 	if (pid == 0) {
-		// Child should inherit the parent's ambient set.
+		// Child should inherit parent's ambient set.
 		CHECK_WITH(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET,
 				 CAP_NET_BIND_SERVICE, 0, 0),
 			   _ret == 1);
 
-		// Child clears its ambient; parent should be unaffected.
+		// Child clears its ambient set; parent should be unaffected.
 		CHECK(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0));
 		CHECK_WITH(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET,
 				 CAP_NET_BIND_SERVICE, 0, 0),
@@ -281,7 +286,8 @@ FN_TEST(ambient_cleared_on_uid_transition)
 		CHECK(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE,
 			    CAP_NET_BIND_SERVICE, 0, 0));
 
-		// Transition root -> nobody; ambient must be cleared.
+		// The ambient set must be cleared on the user transition
+		// (root -> nobody).
 		CHECK(setuid(65534));
 		CHECK_WITH(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET,
 				 CAP_NET_BIND_SERVICE, 0, 0),
@@ -306,8 +312,9 @@ FN_TEST(ambient_not_protected_by_keep_caps)
 		CHECK(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE,
 			    CAP_NET_BIND_SERVICE, 0, 0));
 
-		// Enable KEEP_CAPS. Ambient should still be cleared on
-		// root -> nobody because KEEP_CAPS does not protect ambient.
+		// Enable KEEPCAPS. The ambient set should still be cleared
+		// on the user transition (root -> nobody) because KEEPCAPS
+		// does not protect ambient capabilities.
 		CHECK(prctl(PR_SET_KEEPCAPS, 1));
 		CHECK(setuid(65534));
 		CHECK_WITH(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET,
@@ -333,14 +340,14 @@ FN_TEST(ambient_raise_requires_permitted)
 
 		CHECK(add_inheritable(CAP_NET_RAW));
 
-		// Drop CAP_NET_RAW from effective and permitted.
+		// Drop CAP_NET_RAW from effective and permitted sets.
 		read_cap_data(cap_data);
 		cap_data[0].permitted &= ~(1U << CAP_NET_RAW);
 		cap_data[0].effective &= ~(1U << CAP_NET_RAW);
 		write_cap_data(cap_data);
 
-		// RAISE should fail because the capability is not in
-		// the permitted set.
+		// PR_CAP_AMBIENT_RAISE should fail because the capability
+		// is not in the permitted set.
 		CHECK_WITH(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE,
 				 CAP_NET_RAW, 0, 0),
 			   _ret == -1 && errno == EPERM);
@@ -374,11 +381,11 @@ FN_TEST(ambient_procfs_reflects_state)
 {
 	TEST_SUCC(reset_capability_state());
 
-	// Raise a capability and verify /proc/self/status reflects it.
 	TEST_SUCC(add_inheritable(CAP_NET_BIND_SERVICE));
+
+	// Raise a capability and verify /proc/self/status reflects it.
 	TEST_SUCC(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE,
 			CAP_NET_BIND_SERVICE, 0, 0));
-
 	TEST_RES(read_proc_capamb(),
 		 (_ret & (1ULL << CAP_NET_BIND_SERVICE)) != 0);
 

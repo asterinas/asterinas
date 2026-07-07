@@ -558,7 +558,7 @@ impl Credentials_ {
         if self.securebits().no_cap_ambient_raise() {
             return_errno_with_message!(
                 Errno::EPERM,
-                "raising ambient capabilities is forbidden by securebits"
+                "raising ambient capabilities is forbidden by secure bits"
             );
         }
 
@@ -567,7 +567,7 @@ impl Credentials_ {
         {
             return_errno_with_message!(
                 Errno::EPERM,
-                "capability must be present in both permitted and inheritable sets"
+                "an ambient capability must be both permitted and inheritable"
             );
         }
 
