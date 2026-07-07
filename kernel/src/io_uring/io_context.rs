@@ -7,6 +7,7 @@ use core::{
     time::Duration,
 };
 
+use align_ext::AlignExt;
 use ostd::{
     cpu::{CpuId, CpuSet},
     sync::WaitQueue,
@@ -74,7 +75,7 @@ struct CqRing {
 /// Backs the shared SQ/CQ ring mapping visible to userspace.
 ///
 /// The region contains the fixed `IoRingMeta` header first, followed by the
-/// CQE array (`cqes`) and then the SQ array.
+/// CQE array (`cqes`) and then the cacheline-aligned SQ array.
 struct RingRegion {
     size: usize,
     sq_array_offset: usize,
@@ -737,8 +738,9 @@ impl IoUringSetupConfig {
             sq_entries * 2
         };
 
+        // TODO: add global "get cache alignment" method instead of using 64
         let sq_array_offset =
-            size_of::<IoRingMeta>() + cq_entries as usize * size_of::<IoUringCqe>();
+            (size_of::<IoRingMeta>() + cq_entries as usize * size_of::<IoUringCqe>()).align_up(64);
         let ring_size = sq_array_offset + sq_entries as usize * size_of::<u32>();
         let sqes_size = sq_entries as usize * size_of::<IoUringSqe>();
 
