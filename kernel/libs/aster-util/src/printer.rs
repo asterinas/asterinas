@@ -69,7 +69,8 @@ impl<'a, 'b> VmPrinter<'a, 'b> {
         Write::write_fmt(self, args).map_err(|_| VmPrinterError::PageFault)
     }
 
-    fn write_bytes(&mut self, bytes: &[u8]) -> core::fmt::Result {
+    /// Writes raw bytes to the underlying writer.
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), VmPrinterError> {
         if self.bytes_to_skip >= bytes.len() {
             self.bytes_to_skip -= bytes.len();
             return Ok(());
@@ -84,7 +85,7 @@ impl<'a, 'b> VmPrinter<'a, 'b> {
         let written_len = self
             .writer
             .write_fallible(&mut reader)
-            .map_err(|_| core::fmt::Error)?;
+            .map_err(|_| VmPrinterError::PageFault)?;
 
         self.bytes_written += written_len;
 
@@ -94,7 +95,7 @@ impl<'a, 'b> VmPrinter<'a, 'b> {
 
 impl Write for VmPrinter<'_, '_> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        self.write_bytes(s.as_bytes())
+        self.write_bytes(s.as_bytes()).map_err(|_| core::fmt::Error)
     }
 }
 

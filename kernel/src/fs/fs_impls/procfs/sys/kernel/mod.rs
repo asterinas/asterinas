@@ -6,7 +6,11 @@ use crate::{
         procfs::{
             ProcDir, StaticEntry,
             sys::kernel::{
-                cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps, yama::YamaDirOps,
+                cap_last_cap::CapLastCapFileOps,
+                pid_max::PidMaxFileOps,
+                tainted::TaintedFileOps,
+                uts::{DomainnameFileOps, HostnameFileOps, OsReleaseFileOps, VersionFileOps},
+                yama::YamaDirOps,
             },
             template::{
                 ListedEntry, ProcDirOps, ReaddirEntry, listed_entries_from_table,
@@ -21,6 +25,8 @@ use crate::{
 
 mod cap_last_cap;
 mod pid_max;
+mod tainted;
+mod uts;
 mod yama;
 
 /// Represents the inode at `/proc/sys/kernel`.
@@ -40,7 +46,12 @@ impl KernelDirOps {
             InodeType::File,
             CapLastCapFileOps::new_inode,
         ),
+        ("domainname", InodeType::File, DomainnameFileOps::new_inode),
+        ("hostname", InodeType::File, HostnameFileOps::new_inode),
+        ("osrelease", InodeType::File, OsReleaseFileOps::new_inode),
         ("pid_max", InodeType::File, PidMaxFileOps::new_inode),
+        ("tainted", InodeType::File, TaintedFileOps::new_inode),
+        ("version", InodeType::File, VersionFileOps::new_inode),
     ];
 }
 

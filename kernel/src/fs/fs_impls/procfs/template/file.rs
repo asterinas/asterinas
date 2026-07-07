@@ -197,3 +197,22 @@ pub fn read_i32_from(reader: &mut VmReader) -> Result<(i32, usize)> {
 
     Ok((val, read_bytes))
 }
+
+/// Reads a string from `reader` and parses it as a `u64`.
+pub fn read_u64_from(reader: &mut VmReader) -> Result<(u64, usize)> {
+    /// Worst case buffer size needed for holding a `u64`.
+    ///
+    /// The longest possible string is `"18446744073709551615\n\0"`,
+    /// whose length is 23 bytes.
+    const BUF_SIZE_U64: usize = 23;
+
+    let (cstr, read_bytes) = reader.read_cstring_until_end(BUF_SIZE_U64 - 1)?;
+    let val = cstr
+        .to_str()
+        .ok()
+        .map(|str| str.trim())
+        .and_then(|str| str.parse::<u64>().ok())
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the value is not a valid integer"))?;
+
+    Ok((val, read_bytes))
+}
