@@ -3,7 +3,7 @@
 //! Hardware RNG misc-device support.
 //!
 //! This module registers the `/dev/hwrng` character device and tracks the
-//! currently selected [`EntropyDevice`] backend.
+//! currently selected hardware RNG provider.
 
 use aster_virtio::device::entropy::{self, device::EntropyDevice};
 use device_id::{DeviceId, MinorId};
@@ -17,15 +17,39 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    thread::kernel_thread::ThreadOptions,
+    util::random,
 };
 
 const HWRNG_MINOR: u32 = 183;
+const HWRNG_READ_BUFFER_SIZE: usize = 64;
+const HWRNG_FEED_BUFFER_SIZE: usize = 64;
 
-/// The currently in-use hardware RNG device.
+enum ReadMode {
+    Blocking,
+    Nonblocking,
+}
+
+/// A hardware RNG provider registered with the hwrng core.
+trait HwrngProvider: Send + Sync {
+    /// Reads hardware-generated random bytes.
+    fn read_bytes(&self, dst: &mut [u8], mode: ReadMode) -> Result<Option<usize>>;
+}
+
+impl HwrngProvider for EntropyDevice {
+    fn read_bytes(&self, dst: &mut [u8], mode: ReadMode) -> Result<Option<usize>> {
+        match mode {
+            ReadMode::Nonblocking => Ok(EntropyDevice::try_read_bytes(self, dst)?),
+            ReadMode::Blocking => Ok(Some(EntropyDevice::read_bytes(self, dst)?)),
+        }
+    }
+}
+
+/// The currently in-use hardware RNG provider.
 //
 // TODO: Users can select a device by writing its name to `/sys/class/misc/hw_random/rng_current`,
 // which is not supported yet.
-static RNG_CURRENT: Mutex<Option<Arc<EntropyDevice>>> = Mutex::new(None);
+static RNG_CURRENT: Mutex<Option<Arc<dyn HwrngProvider>>> = Mutex::new(None);
 
 /// The `/dev/hwrng` device.
 #[derive(Debug)]
@@ -85,39 +109,46 @@ impl FileOps for HwRngFile {
     ) -> Result<usize> {
         // Linux looks up the selected device at `read()`.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/core.c#L215>.
-        let dev = current_device()?;
+        let provider = current_provider()?;
         let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
 
         let mut total_copied: usize = 0;
+        let mut buffer = [0u8; HWRNG_READ_BUFFER_SIZE];
         while writer.avail() > 0 {
-            // Clone the writer to keep the cursor at the correct position in case a page fault
-            // occurs later.
-            let mut new_writer = writer.clone_exclusive();
+            let read_len = writer.avail().min(buffer.len());
+            let read_buffer = &mut buffer[..read_len];
 
-            let res = if is_nonblocking {
-                match dev.try_read(&mut new_writer)? {
-                    Some(copied) => Ok(copied),
-                    None => return_errno_with_message!(Errno::EAGAIN, "no entropy is available"),
-                }
+            let mode = if is_nonblocking {
+                ReadMode::Nonblocking
             } else {
-                dev.wait_queue()
-                    .wait_until(|| match dev.try_read(&mut new_writer) {
-                        Ok(Some(copied)) => Some(Ok(copied)),
-                        Ok(None) => None,
-                        Err(err) => Some(Err(err)),
-                    })
+                ReadMode::Blocking
             };
 
-            match res {
-                Ok(copied) => {
-                    writer.skip(copied);
-                    total_copied += copied;
+            let copied = match provider.read_bytes(read_buffer, mode) {
+                Ok(Some(copied)) => copied,
+                Ok(None) => {
+                    debug_assert!(is_nonblocking);
+                    if total_copied > 0 {
+                        return Ok(total_copied);
+                    }
+                    return_errno_with_message!(Errno::EAGAIN, "no entropy is available");
                 }
                 Err(err) => {
-                    if total_copied == 0 {
+                    if total_copied > 0 {
+                        return Ok(total_copied);
+                    }
+                    return Err(err);
+                }
+            };
+
+            match writer.write_fallible(&mut buffer[..copied].into()) {
+                Ok(written) => total_copied = total_copied.saturating_add(written),
+                Err((err, written)) => {
+                    let total_written = total_copied.saturating_add(written);
+                    if total_written == 0 {
                         return Err(err.into());
                     }
-                    break;
+                    return Ok(total_written);
                 }
             }
         }
@@ -150,7 +181,7 @@ impl PerOpenFileOps for HwRngFile {
     }
 }
 
-fn current_device() -> Result<Arc<EntropyDevice>> {
+fn current_provider() -> Result<Arc<dyn HwrngProvider>> {
     let Some(rng) = RNG_CURRENT.lock().clone() else {
         return_errno_with_message!(Errno::ENODEV, "no current hardware RNG device is selected");
     };
@@ -159,8 +190,38 @@ fn current_device() -> Result<Arc<EntropyDevice>> {
 
 pub(super) fn init_in_first_kthread() {
     if let Some(device) = entropy::first_device() {
-        *RNG_CURRENT.lock() = Some(device);
+        let provider: Arc<dyn HwrngProvider> = device;
+        *RNG_CURRENT.lock() = Some(provider.clone());
+        start_random_feeder(provider);
     }
 
     char::register(HwRngDevice::new()).unwrap();
+}
+
+fn start_random_feeder(provider: Arc<dyn HwrngProvider>) {
+    if random::is_ready() {
+        return;
+    }
+
+    ThreadOptions::new(move || feed_random_until_ready(provider)).spawn();
+}
+
+fn feed_random_until_ready(provider: Arc<dyn HwrngProvider>) {
+    let mut buffer = [0u8; HWRNG_FEED_BUFFER_SIZE];
+
+    while !random::is_ready() {
+        let res = provider.read_bytes(&mut buffer, ReadMode::Blocking);
+
+        match res {
+            Ok(Some(0)) => {}
+            Ok(Some(read_len)) => {
+                random::add_entropy(&buffer[..read_len], read_len.saturating_mul(8))
+            }
+            Ok(None) => {}
+            Err(err) => {
+                warn!("failed to feed hardware RNG entropy: {err:?}");
+                break;
+            }
+        }
+    }
 }
