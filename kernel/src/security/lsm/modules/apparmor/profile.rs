@@ -6,6 +6,7 @@ use super::{
     dfa::{AppArmorDfaAccessOutcome, AppArmorDfaFilePolicy},
     path::{AppArmorExecTransition, AppArmorFilePermission, AppArmorPathRule, AppArmorPathView},
     state::AppArmorMode,
+    task::{AppArmorTaskAccessOutcome, AppArmorTaskPermission, AppArmorTaskPolicy},
 };
 use crate::{prelude::*, process::credentials::capabilities::CapSet};
 
@@ -57,6 +58,7 @@ pub struct AppArmorProfile {
     file_policy: AppArmorFilePolicy,
     capability_policy: AppArmorCapabilityPolicy,
     transition_policy: AppArmorProfileTransitionPolicy,
+    task_policy: AppArmorTaskPolicy,
 }
 
 impl AppArmorProfile {
@@ -100,6 +102,7 @@ impl AppArmorProfile {
             file_policy,
             capability_policy,
             AppArmorProfileTransitionPolicy::default(),
+            AppArmorTaskPolicy::default(),
         )
     }
 
@@ -111,6 +114,7 @@ impl AppArmorProfile {
         file_policy: AppArmorFilePolicy,
         capability_policy: AppArmorCapabilityPolicy,
         transition_policy: AppArmorProfileTransitionPolicy,
+        task_policy: AppArmorTaskPolicy,
     ) -> Self {
         Self {
             name,
@@ -119,6 +123,7 @@ impl AppArmorProfile {
             file_policy,
             capability_policy,
             transition_policy,
+            task_policy,
         }
     }
 
@@ -131,6 +136,7 @@ impl AppArmorProfile {
             file_policy: AppArmorFilePolicy::PathRules(Vec::new()),
             capability_policy: AppArmorCapabilityPolicy::default(),
             transition_policy: AppArmorProfileTransitionPolicy::default(),
+            task_policy: AppArmorTaskPolicy::default(),
         }
     }
 
@@ -186,6 +192,15 @@ impl AppArmorProfile {
         kind: AppArmorProfileTransitionKind,
     ) -> bool {
         self.transition_policy.allows(target, kind)
+    }
+
+    /// Evaluates task-to-task access for this profile.
+    pub(super) fn evaluate_task_access(
+        &self,
+        peer_profile: &AppArmorProfileName,
+        permissions: AppArmorTaskPermission,
+    ) -> AppArmorTaskAccessOutcome {
+        self.task_policy.evaluate_access(peer_profile, permissions)
     }
 }
 

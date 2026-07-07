@@ -5,6 +5,7 @@ use super::{
     path::{AppArmorExecTransition, AppArmorFilePermission, AppArmorPathView},
     profile::{AppArmorProfile, AppArmorProfileName, AppArmorProfileTransitionKind},
     state::{AppArmorMode, AppArmorTaskState},
+    task::AppArmorTaskPermission,
 };
 use crate::{
     fs::{
@@ -15,7 +16,11 @@ use crate::{
         },
     },
     prelude::*,
-    process::credentials::capabilities::CapSet,
+    process::{
+        credentials::capabilities::CapSet,
+        posix_thread::alien_access::{AlienAccessKind, AlienAccessMode},
+        signal::sig_num::SigNum,
+    },
     security::{
         FileDeleteKind, FilePermission, FileSetattrKind,
         lsm::{FileCreateContext, FileRenameContext},
@@ -372,6 +377,36 @@ impl AppArmorPolicy {
         return_errno_with_message!(Errno::EACCES, "AppArmor policy denied capability use");
     }
 
+    /// Checks whether a task may access another task through alien-access paths.
+    pub fn check_alien_access(
+        &self,
+        accessor_state: &AppArmorTaskState,
+        target_state: &AppArmorTaskState,
+        mode: AlienAccessMode,
+    ) -> Result<()> {
+        let permissions = match mode.kind() {
+            AlienAccessKind::Read => AppArmorTaskPermission::PTRACE_READ,
+            AlienAccessKind::Attach => AppArmorTaskPermission::PTRACE_TRACE,
+        };
+
+        self.check_task_access(accessor_state, target_state, permissions, "ptrace")
+    }
+
+    /// Checks whether a task may signal another task.
+    pub fn check_signal(
+        &self,
+        sender_state: &AppArmorTaskState,
+        target_state: &AppArmorTaskState,
+        _signum: Option<SigNum>,
+    ) -> Result<()> {
+        self.check_task_access(
+            sender_state,
+            target_state,
+            AppArmorTaskPermission::SIGNAL,
+            "signal",
+        )
+    }
+
     /// Computes task state after a successful `execve`.
     pub fn committed_exec_state(
         &self,
@@ -492,6 +527,51 @@ impl AppArmorPolicy {
         let path_view = AppArmorPathView::from_child_name(path_resolver, parent, name);
         self.check_profile_path_access(&profile, task_state.mode(), &path_view, permissions)
             .map(|_| ())
+    }
+
+    fn check_task_access(
+        &self,
+        accessor_state: &AppArmorTaskState,
+        target_state: &AppArmorTaskState,
+        permissions: AppArmorTaskPermission,
+        operation: &'static str,
+    ) -> Result<()> {
+        if accessor_state.is_unconfined()
+            || accessor_state.current_profile() == target_state.current_profile()
+        {
+            return Ok(());
+        }
+
+        let Some(profile) = self.profile(accessor_state.current_profile()) else {
+            return_errno_with_message!(Errno::EACCES, "the AppArmor profile is not loaded");
+        };
+
+        let mode = effective_mode(accessor_state.mode(), profile.mode());
+        let outcome = profile.evaluate_task_access(target_state.current_profile(), permissions);
+        if outcome.denied.is_empty() {
+            return Ok(());
+        }
+
+        let message = if mode == AppArmorMode::Complain {
+            "AppArmor would deny task access"
+        } else {
+            "AppArmor denied task access"
+        };
+        warn!(
+            "{}: profile={} peer={} operation={} requested={:#x} denied={:#x}",
+            message,
+            profile.name().as_str(),
+            target_state.current_profile().as_str(),
+            operation,
+            permissions.bits(),
+            outcome.denied.bits()
+        );
+
+        if mode == AppArmorMode::Complain {
+            return Ok(());
+        }
+
+        return_errno_with_message!(Errno::EACCES, "AppArmor policy denied task access");
     }
 
     fn profile(&self, name: &AppArmorProfileName) -> Option<Arc<AppArmorProfile>> {

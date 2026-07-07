@@ -26,7 +26,7 @@ pub mod apparmor {
     };
 }
 
-use self::hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook};
+use self::hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook, LsmSignalHook};
 pub use self::{
     apparmor::{AppArmorMode, AppArmorPolicyOperation, AppArmorProfileName, AppArmorTaskState},
     hooks::{
@@ -50,7 +50,9 @@ bitflags! {
 }
 
 /// The common interface for built-in LSM modules.
-trait LsmModule: LsmAlienAccessHook + LsmBprmHook + LsmCapabilityHook + LsmFileHook + Sync {
+trait LsmModule:
+    LsmAlienAccessHook + LsmBprmHook + LsmCapabilityHook + LsmFileHook + LsmSignalHook + Sync
+{
     /// Returns the module name.
     fn name(&self) -> &'static str;
 

@@ -12,6 +12,7 @@ use super::{
         AppArmorFilePolicy, AppArmorProfile, AppArmorProfileName, AppArmorProfileTransitionPolicy,
     },
     state::AppArmorMode,
+    task::{AppArmorTaskPeer, AppArmorTaskPermission, AppArmorTaskPolicy, AppArmorTaskRule},
 };
 use crate::{prelude::*, process::credentials::capabilities::CapSet};
 
@@ -41,6 +42,7 @@ pub(super) fn parse_policy_load(policy_text: &str) -> Result<AppArmorPolicyUpdat
     let mut allowed_capabilities = CapSet::empty();
     let mut change_profile_targets = Vec::new();
     let mut change_onexec_targets = Vec::new();
+    let mut task_rules = Vec::new();
     for line in lines {
         match parse_rule(line)? {
             AppArmorTextRule::File(rule) => file_rules.push(rule),
@@ -51,6 +53,7 @@ pub(super) fn parse_policy_load(policy_text: &str) -> Result<AppArmorPolicyUpdat
             AppArmorTextRule::ChangeOnexec(profile_name) => {
                 change_onexec_targets.push(profile_name);
             }
+            AppArmorTextRule::Task(rule) => task_rules.push(rule),
         }
     }
 
@@ -63,6 +66,7 @@ pub(super) fn parse_policy_load(policy_text: &str) -> Result<AppArmorPolicyUpdat
             AppArmorFilePolicy::PathRules(file_rules),
             AppArmorCapabilityPolicy::new(allowed_capabilities, CapSet::empty(), CapSet::empty()),
             AppArmorProfileTransitionPolicy::new(change_profile_targets, change_onexec_targets),
+            AppArmorTaskPolicy::new(task_rules),
         ),
     )))
 }
@@ -129,6 +133,7 @@ enum AppArmorTextRule {
     Capability(CapSet),
     ChangeProfile(AppArmorProfileName),
     ChangeOnexec(AppArmorProfileName),
+    Task(AppArmorTaskRule),
 }
 
 fn parse_rule(line: &str) -> Result<AppArmorTextRule> {
@@ -150,6 +155,9 @@ fn parse_rule(line: &str) -> Result<AppArmorTextRule> {
     }
     if tokens.clone().next() == Some("change_onexec") {
         return parse_profile_transition_rule(tokens, deny, false);
+    }
+    if matches!(tokens.clone().next(), Some("ptrace" | "signal")) {
+        return parse_task_rule(tokens, deny);
     }
 
     let Some(pattern) = tokens.next() else {
@@ -204,6 +212,51 @@ fn parse_rule(line: &str) -> Result<AppArmorTextRule> {
     ))
 }
 
+fn parse_task_rule<'a>(
+    mut tokens: impl Iterator<Item = &'a str>,
+    deny: bool,
+) -> Result<AppArmorTextRule> {
+    if deny {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "deny task rules are not supported by the text AppArmor loader"
+        );
+    }
+
+    let Some(rule_name) = tokens.next() else {
+        return_errno_with_message!(Errno::EINVAL, "the AppArmor task rule is invalid");
+    };
+    let (permissions, peer_text) = match rule_name {
+        "ptrace" => {
+            let Some(permissions_text) = tokens.next() else {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the AppArmor ptrace permissions are missing"
+                );
+            };
+            let Some(peer_text) = tokens.next() else {
+                return_errno_with_message!(Errno::EINVAL, "the AppArmor ptrace peer is missing");
+            };
+            (parse_task_permissions(permissions_text)?, peer_text)
+        }
+        "signal" => {
+            let Some(peer_text) = tokens.next() else {
+                return_errno_with_message!(Errno::EINVAL, "the AppArmor signal peer is missing");
+            };
+            (AppArmorTaskPermission::SIGNAL, peer_text)
+        }
+        _ => return_errno_with_message!(Errno::EINVAL, "the AppArmor task rule is invalid"),
+    };
+    if tokens.next().is_some() {
+        return_errno_with_message!(Errno::EINVAL, "the AppArmor task rule has extra fields");
+    }
+
+    Ok(AppArmorTextRule::Task(AppArmorTaskRule::new(
+        parse_task_peer(peer_text)?,
+        permissions,
+    )))
+}
+
 fn parse_profile_transition_rule<'a>(
     mut tokens: impl Iterator<Item = &'a str>,
     deny: bool,
@@ -247,6 +300,43 @@ fn parse_profile_transition_rule<'a>(
     } else {
         Ok(AppArmorTextRule::ChangeOnexec(profile_name))
     }
+}
+
+fn parse_task_peer(peer_text: &str) -> Result<AppArmorTaskPeer> {
+    if peer_text == "all" {
+        return Ok(AppArmorTaskPeer::Any);
+    }
+
+    Ok(AppArmorTaskPeer::Profile(AppArmorProfileName::new(
+        peer_text.to_string(),
+    )?))
+}
+
+fn parse_task_permissions(permissions_text: &str) -> Result<AppArmorTaskPermission> {
+    let mut permissions = AppArmorTaskPermission::empty();
+
+    for permission_text in permissions_text.split(',') {
+        if permission_text.is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "the AppArmor task permission is empty");
+        }
+        permissions |= match permission_text {
+            "all" => AppArmorTaskPermission::PTRACE_READ | AppArmorTaskPermission::PTRACE_TRACE,
+            "read" => AppArmorTaskPermission::PTRACE_READ,
+            "trace" => AppArmorTaskPermission::PTRACE_TRACE,
+            _ => {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the AppArmor task permission is invalid"
+                );
+            }
+        };
+    }
+
+    if permissions.is_empty() {
+        return_errno_with_message!(Errno::EINVAL, "the AppArmor task permissions are empty");
+    }
+
+    Ok(permissions)
 }
 
 fn parse_capability_rule<'a>(

@@ -6,6 +6,7 @@ mod alien_access;
 mod bprm;
 mod capability;
 mod file;
+mod signal;
 
 pub use self::{
     alien_access::{AlienAccessContext, on_alien_access},
@@ -22,6 +23,7 @@ pub use self::{
         on_file_lock, on_file_mmap, on_file_open, on_file_permission, on_file_receive,
         on_file_rename, on_file_setattr,
     },
+    signal::{SignalContext, on_signal},
 };
 use crate::prelude::*;
 
@@ -35,6 +37,13 @@ pub(super) trait LsmAlienAccessHook: Sync {
 pub(super) trait LsmCapabilityHook: Sync {
     /// Checks whether a thread holds a capability in a user namespace.
     fn on_capable(&self, _context: &CapableContext) -> Result<()> {
+        Ok(())
+    }
+}
+
+pub(super) trait LsmSignalHook: Sync {
+    /// Checks whether a thread may signal another thread.
+    fn on_signal(&self, _context: &SignalContext<'_>) -> Result<()> {
         Ok(())
     }
 }

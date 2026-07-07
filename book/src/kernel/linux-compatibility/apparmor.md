@@ -106,8 +106,12 @@ File mediation covers path-based operations including:
 Capability mediation covers capability checks that flow through
 `security::capable`.
 
-Network, mount, ptrace, signal, D-Bus, and rlimit mediation are not covered by
-this AppArmor subset yet.
+Task interaction mediation covers:
+- ptrace-style cross-task inspection and attach checks
+- signal permission checks
+
+Network, mount, D-Bus, and rlimit mediation are not covered by this AppArmor
+subset yet.
 
 ## Policy behavior
 

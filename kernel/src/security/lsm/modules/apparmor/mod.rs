@@ -14,6 +14,7 @@ mod policy;
 mod policy_update;
 mod profile;
 mod state;
+mod task;
 
 pub use self::{
     binary::AppArmorPolicyOperation,
@@ -26,7 +27,10 @@ use super::super::{
     FileDeleteContext, FileGetattrContext, FileLinkContext, FileLockContext, FileMmapContext,
     FileOpenContext, FilePermissionContext, FileReceiveContext, FileRenameContext,
     FileSetattrContext, LsmFlags, LsmModule,
-    hooks::{LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook},
+    hooks::{
+        AlienAccessContext, LsmAlienAccessHook, LsmBprmHook, LsmCapabilityHook, LsmFileHook,
+        LsmSignalHook, SignalContext,
+    },
 };
 use crate::{prelude::*, process::posix_thread::AsPosixThread, thread::Thread};
 
@@ -47,7 +51,14 @@ impl LsmModule for AppArmorLsm {
     }
 }
 
-impl LsmAlienAccessHook for AppArmorLsm {}
+impl LsmAlienAccessHook for AppArmorLsm {
+    fn on_alien_access(&self, context: &AlienAccessContext<'_>) -> Result<()> {
+        let accessor_state = context.accessor().credentials().apparmor_task_state();
+        let target_state = context.target().credentials().apparmor_task_state();
+
+        POLICY.check_alien_access(&accessor_state, &target_state, context.mode())
+    }
+}
 
 impl LsmBprmHook for AppArmorLsm {
     fn on_bprm_check_security(&self, context: &BprmCheckContext<'_>) -> Result<()> {
@@ -84,6 +95,15 @@ impl LsmCapabilityHook for AppArmorLsm {
     fn on_capable(&self, context: &CapableContext<'_>) -> Result<()> {
         let task_state = context.posix_thread().credentials().apparmor_task_state();
         POLICY.check_capability(&task_state, context.required_cap())
+    }
+}
+
+impl LsmSignalHook for AppArmorLsm {
+    fn on_signal(&self, context: &SignalContext<'_>) -> Result<()> {
+        let sender_state = context.sender().credentials().apparmor_task_state();
+        let target_state = context.target().credentials().apparmor_task_state();
+
+        POLICY.check_signal(&sender_state, &target_state, context.signum())
     }
 }
 

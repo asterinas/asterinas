@@ -5,6 +5,7 @@
 #include "../../common/test.h"
 #include <ctype.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/mman.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -113,6 +114,16 @@ static const char *EXEC_CHILD_SECURE_PATH = "/tmp/aa-child-secure";
 static const char *EXEC_CX_OUTPUT_PATH = "/tmp/aa-cx-current";
 static const char *EXEC_CX_SECURE_PATH = "/tmp/aa-cx-secure";
 static const char *EXEC_DENIED_OUTPUT_PATH = "/tmp/aa-denied-current";
+static const char *TASK_TARGET_PROFILE_NAME = "asterinas-aa-task-target";
+static const char *TASK_SIGNAL_DENY_PROFILE_NAME =
+	"asterinas-aa-task-signal-deny";
+static const char *TASK_SIGNAL_ALLOW_PROFILE_NAME =
+	"asterinas-aa-task-signal-allow";
+static const char *TASK_PTRACE_DENY_PROFILE_NAME =
+	"asterinas-aa-task-ptrace-deny";
+static const char *TASK_PTRACE_ALLOW_PROFILE_NAME =
+	"asterinas-aa-task-ptrace-allow";
+static const char *TASK_COMPLAIN_PROFILE_NAME = "asterinas-aa-task-complain";
 
 static void read_cmdline(char cmdline[CMDLINE_BUFFER_SIZE])
 {
@@ -588,6 +599,145 @@ static int wait_for_child_success(pid_t pid)
 	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
 		errno = ECHILD;
 		return -1;
+	}
+
+	return 0;
+}
+
+static int try_open_proc_mem(pid_t target)
+{
+	char path[64];
+	int fd;
+
+	CHECK_WITH(snprintf(path, sizeof(path), "/proc/%d/mem", (int)target),
+		   _ret >= 0 && _ret < (int)sizeof(path));
+	errno = 0;
+	fd = open(path, O_RDWR);
+	if (fd < 0) {
+		return errno;
+	}
+
+	CHECK(close(fd));
+
+	return 0;
+}
+
+static pid_t spawn_profiled_task_target(const char *profile_name, int *block_fd)
+{
+	int ready_pipe[2];
+	int block_pipe[2];
+	char byte;
+	pid_t pid;
+
+	CHECK(pipe(ready_pipe));
+	CHECK(pipe(block_pipe));
+
+	pid = CHECK(fork());
+	if (pid == 0) {
+		CHECK(close(ready_pipe[0]));
+		CHECK(close(block_pipe[1]));
+		CHECK(setpgid(0, 0));
+		CHECK(write_text_file(APPARMOR_ATTR_CURRENT_PATH,
+				      profile_name));
+		CHECK(write(ready_pipe[1], "R", 1));
+		CHECK(close(ready_pipe[1]));
+		CHECK(read(block_pipe[0], &byte, 1));
+		CHECK(close(block_pipe[0]));
+		exit(EXIT_SUCCESS);
+	}
+
+	CHECK(close(ready_pipe[1]));
+	CHECK(close(block_pipe[0]));
+	CHECK(read(ready_pipe[0], &byte, 1));
+	CHECK(close(ready_pipe[0]));
+	*block_fd = block_pipe[1];
+
+	return pid;
+}
+
+static int stop_profiled_task_target(pid_t target, int block_fd)
+{
+	if (write(block_fd, "X", 1) != 1) {
+		return -1;
+	}
+	if (close(block_fd) < 0) {
+		return -1;
+	}
+
+	return wait_for_child_success(target);
+}
+
+static int run_task_signal_child(const char *profile_name, bool expect_denied)
+{
+	int block_fd;
+	pid_t target;
+	int ret;
+
+	target =
+		spawn_profiled_task_target(TASK_TARGET_PROFILE_NAME, &block_fd);
+	if (write_text_file(APPARMOR_ATTR_CURRENT_PATH, profile_name) < 0) {
+		return 1;
+	}
+
+	errno = 0;
+	ret = kill(target, 0);
+	if (expect_denied) {
+		if (ret == 0) {
+			stop_profiled_task_target(target, block_fd);
+			return 2;
+		}
+		if (errno != EACCES) {
+			stop_profiled_task_target(target, block_fd);
+			return 3;
+		}
+	} else if (ret < 0) {
+		stop_profiled_task_target(target, block_fd);
+		return 4;
+	}
+
+	errno = 0;
+	ret = kill(-target, 0);
+	if (ret < 0) {
+		stop_profiled_task_target(target, block_fd);
+		return 5;
+	}
+
+	if (stop_profiled_task_target(target, block_fd) < 0) {
+		return 6;
+	}
+
+	return 0;
+}
+
+static int run_task_ptrace_child(const char *profile_name, bool expect_denied)
+{
+	int block_fd;
+	pid_t target;
+	int ret;
+
+	target =
+		spawn_profiled_task_target(TASK_TARGET_PROFILE_NAME, &block_fd);
+	if (write_text_file(APPARMOR_ATTR_CURRENT_PATH, profile_name) < 0) {
+		return 1;
+	}
+
+	ret = try_open_proc_mem(target);
+	if (expect_denied) {
+		if (ret == 0) {
+			stop_profiled_task_target(target, block_fd);
+			return 2;
+		}
+		if (ret != EACCES) {
+			stop_profiled_task_target(target, block_fd);
+			return 3;
+		}
+	} else if (ret != 0) {
+		stop_profiled_task_target(target, block_fd);
+		return 4;
+	}
+
+	if (stop_profiled_task_target(target, block_fd) < 0) {
+		return 5;
 	}
 
 	return 0;
@@ -1086,6 +1236,96 @@ FN_TEST(profile_change_and_exec_transition)
 	unlink(EXEC_CX_OUTPUT_PATH);
 	unlink(EXEC_CX_SECURE_PATH);
 	unlink(EXEC_DENIED_OUTPUT_PATH);
+}
+END_TEST()
+
+FN_TEST(task_interaction_mediation)
+{
+	static const char target_policy[] =
+		"profile asterinas-aa-task-target enforce\n"
+		"allow capability all\n"
+		"allow /** all\n";
+	static const char signal_deny_policy[] =
+		"profile asterinas-aa-task-signal-deny enforce\n"
+		"allow capability all\n"
+		"allow /** all\n";
+	static const char signal_allow_policy[] =
+		"profile asterinas-aa-task-signal-allow enforce\n"
+		"allow capability all\n"
+		"allow /** all\n"
+		"allow signal asterinas-aa-task-target\n";
+	static const char ptrace_deny_policy[] =
+		"profile asterinas-aa-task-ptrace-deny enforce\n"
+		"allow capability all\n"
+		"allow /** all\n";
+	static const char ptrace_allow_policy[] =
+		"profile asterinas-aa-task-ptrace-allow enforce\n"
+		"allow capability all\n"
+		"allow /** all\n"
+		"allow ptrace trace asterinas-aa-task-target\n";
+	static const char complain_policy[] =
+		"profile asterinas-aa-task-complain complain\n"
+		"allow capability all\n"
+		"allow /** all\n";
+	pid_t child;
+	bool expect_apparmor = expect_apparmor_enabled();
+
+	SKIP_TEST_IF(!expect_apparmor);
+
+	TEST_SUCC(write_text_file(APPARMOR_PROC_LOAD_PATH, target_policy));
+	TEST_SUCC(write_text_file(APPARMOR_PROC_LOAD_PATH, signal_deny_policy));
+	TEST_SUCC(
+		write_text_file(APPARMOR_PROC_LOAD_PATH, signal_allow_policy));
+	TEST_SUCC(write_text_file(APPARMOR_PROC_LOAD_PATH, ptrace_deny_policy));
+	TEST_SUCC(
+		write_text_file(APPARMOR_PROC_LOAD_PATH, ptrace_allow_policy));
+	TEST_SUCC(write_text_file(APPARMOR_PROC_LOAD_PATH, complain_policy));
+
+	child = fork();
+	TEST(child, 0, _ret >= 0);
+	if (child == 0) {
+		_exit(run_task_signal_child(TASK_SIGNAL_DENY_PROFILE_NAME,
+					    true));
+	}
+	TEST_SUCC(wait_for_child_success(child));
+
+	child = fork();
+	TEST(child, 0, _ret >= 0);
+	if (child == 0) {
+		_exit(run_task_signal_child(TASK_SIGNAL_ALLOW_PROFILE_NAME,
+					    false));
+	}
+	TEST_SUCC(wait_for_child_success(child));
+
+	child = fork();
+	TEST(child, 0, _ret >= 0);
+	if (child == 0) {
+		_exit(run_task_signal_child(TASK_COMPLAIN_PROFILE_NAME, false));
+	}
+	TEST_SUCC(wait_for_child_success(child));
+
+	child = fork();
+	TEST(child, 0, _ret >= 0);
+	if (child == 0) {
+		_exit(run_task_ptrace_child(TASK_PTRACE_DENY_PROFILE_NAME,
+					    true));
+	}
+	TEST_SUCC(wait_for_child_success(child));
+
+	child = fork();
+	TEST(child, 0, _ret >= 0);
+	if (child == 0) {
+		_exit(run_task_ptrace_child(TASK_PTRACE_ALLOW_PROFILE_NAME,
+					    false));
+	}
+	TEST_SUCC(wait_for_child_success(child));
+
+	child = fork();
+	TEST(child, 0, _ret >= 0);
+	if (child == 0) {
+		_exit(run_task_ptrace_child(TASK_COMPLAIN_PROFILE_NAME, false));
+	}
+	TEST_SUCC(wait_for_child_success(child));
 }
 END_TEST()
 
