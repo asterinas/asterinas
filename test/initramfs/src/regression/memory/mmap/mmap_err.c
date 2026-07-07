@@ -9,15 +9,21 @@
 
 #define PAGE_SIZE 4096
 
-// The value in `/proc/sys/vm/mmap_min_addr`.
-#define MMAP_MIN_ADDR ((void *)65536)
-
+static void *mmap_min_addr;
 static void *valid_addr;
 static void *avail_addr;
 static int fd;
 
 FN_SETUP(init)
 {
+	FILE *fp;
+	unsigned long val;
+
+	fp = CHECK_WITH(fopen("/proc/sys/vm/mmap_min_addr", "r"), _ret != NULL);
+	CHECK_WITH(fscanf(fp, "%lu", &val), _ret == 1);
+	CHECK(fclose(fp));
+	mmap_min_addr = (void *)val;
+
 	valid_addr = CHECK_WITH(mmap(NULL, PAGE_SIZE * 4, PROT_READ,
 				     MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
 				_ret != MAP_FAILED);
@@ -116,19 +122,19 @@ FN_TEST(underflow_addr)
 	void *addr2;
 
 	// `mmap` without MAP_FIXED. The hint address will be rounded
-	// to MMAP_MIN_ADDR, unless it is in the first page, in which
+	// to `mmap_min_addr`, unless it is in the first page, in which
 	// case the hint will be ignored.
 	addr2 = TEST_RES(mmap(addr, PAGE_SIZE, PROT_READ,
 			      MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
-			 _ret == MMAP_MIN_ADDR);
+			 _ret == mmap_min_addr);
 	TEST_SUCC(munmap(addr2, PAGE_SIZE));
 	addr2 = TEST_RES(mmap(addr + 1, PAGE_SIZE, PROT_READ,
 			      MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
-			 _ret == MMAP_MIN_ADDR);
+			 _ret == mmap_min_addr);
 	TEST_SUCC(munmap(addr2, PAGE_SIZE));
 	addr2 = TEST_RES(mmap(addr - 1, PAGE_SIZE, PROT_READ,
 			      MAP_PRIVATE | MAP_ANONYMOUS, 0, 0),
-			 _ret != MMAP_MIN_ADDR);
+			 _ret != mmap_min_addr);
 	TEST_SUCC(munmap(addr2, PAGE_SIZE));
 
 	TEST_ERRNO(mmap(addr, PAGE_SIZE, PROT_READ,
