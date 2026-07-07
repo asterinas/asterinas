@@ -115,7 +115,7 @@ fn do_clock_nanosleep(
 
     match res {
         Err(e) if e.error() == Errno::ETIME => Ok(SyscallReturn::Return(0)),
-        Err(e) if e.error() == Errno::EINTR => {
+        Err(e) if e.error() == Errno::ERESTARTSYS => {
             let end_time = read_clock(clockid, ctx)?;
 
             if end_time >= start_time + duration {
