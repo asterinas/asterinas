@@ -229,17 +229,30 @@ impl<D: TtyDriver> Tty<D> {
 
         dispatch_ioctl!(match raw_ioctl {
             cmd @ GetTermios => {
-                let termios = *self.ldisc.lock().termios();
+                let ldisc = self.ldisc.lock();
+                let termios = ldisc.termios();
 
-                cmd.write(&termios)?;
+                cmd.write(termios)?;
+            }
+            cmd @ GetTermios2 => {
+                let ldisc = self.ldisc.lock();
+                let termios = ldisc.termios();
+
+                cmd.write(termios)?;
             }
             cmd @ SetTermios => {
                 let termios = cmd.read()?;
 
                 let mut ldisc = self.ldisc.lock();
-                let old_termios = ldisc.termios();
-                self.driver().on_termios_change(old_termios, &termios);
+                self.driver().on_termios_change(ldisc.termios(), &termios);
                 ldisc.set_termios(termios);
+            }
+            cmd @ SetTermios2 => {
+                let termios2 = cmd.read()?;
+
+                let mut ldisc = self.ldisc.lock();
+                self.driver().on_termios_change(ldisc.termios(), &termios2);
+                ldisc.set_termios2(termios2);
             }
             cmd @ SetTermiosWait => {
                 let termios = cmd.read()?;
@@ -251,8 +264,7 @@ impl<D: TtyDriver> Tty<D> {
                 //    <https://elixir.bootlin.com/linux/v5.10.247/source/drivers/tty/pty.c#L137-L148>.
                 //  - We don't currently have an output buffer for other TTYs.
                 let mut ldisc = self.ldisc.lock();
-                let old_termios = ldisc.termios();
-                self.driver().on_termios_change(old_termios, &termios);
+                self.driver().on_termios_change(ldisc.termios(), &termios);
                 ldisc.set_termios(termios);
             }
             cmd @ SetTermiosFlush => {
@@ -260,8 +272,7 @@ impl<D: TtyDriver> Tty<D> {
 
                 // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
                 let mut ldisc = self.ldisc.lock();
-                let old_termios = ldisc.termios();
-                self.driver().on_termios_change(old_termios, &termios);
+                self.driver().on_termios_change(ldisc.termios(), &termios);
                 ldisc.set_termios(termios);
                 ldisc.drain_input();
 

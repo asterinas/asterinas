@@ -26,7 +26,6 @@ PtyTest.SwitchTwiceMultiline
 PtyTest.TCFLSH*
 PtyTest.TCSBRKSucceeds
 PtyTest.Termios2
-PtyTest.TermiosFault
 PtyTest.TermiosICANONEOF
 PtyTest.TermiosICANONNewline
 PtyTest.TermiosIGNCR

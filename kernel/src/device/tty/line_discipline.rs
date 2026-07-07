@@ -2,7 +2,7 @@
 
 use ostd::const_assert;
 
-use super::termio::{CCtrlCharId, CTermios, CWinSize};
+use super::termio::{CCtrlCharId, CTermios, CTermios2, CTermiosSpeeds, CWinSize};
 use crate::{
     device::tty::termio::{CInputFlags, CLocalFlags},
     prelude::*,
@@ -30,7 +30,7 @@ pub struct LineDiscipline {
     /// Read buffer
     read_buffer: RingBuffer<u8>,
     /// Termios
-    termios: CTermios,
+    termios: CTermios2,
     /// Window size
     winsize: CWinSize,
 }
@@ -87,7 +87,7 @@ impl LineDiscipline {
         Self {
             current_line: CurrentLine::default(),
             read_buffer: RingBuffer::new(BUFFER_CAPACITY),
-            termios: CTermios::default(),
+            termios: CTermios2::default(),
             winsize: CWinSize::default(),
         }
     }
@@ -232,12 +232,20 @@ impl LineDiscipline {
         self.read_buffer.len() + self.current_line.len() >= self.read_buffer.capacity()
     }
 
-    pub fn termios(&self) -> &CTermios {
+    pub fn termios(&self) -> &CTermios2 {
         &self.termios
     }
 
     pub fn set_termios(&mut self, termios: CTermios) {
-        self.termios = termios;
+        let termios2 = CTermios2::new(
+            termios,
+            CTermiosSpeeds::from_termios(&termios, *self.termios.speeds()),
+        );
+        self.set_termios2(termios2);
+    }
+
+    pub fn set_termios2(&mut self, termios2: CTermios2) {
+        self.termios = termios2;
 
         // When switching to raw mode, any pending input bytes should become immediately available.
         // Note that `unwrap()` below won't fail because we checked `is_full()` in `push_char`.

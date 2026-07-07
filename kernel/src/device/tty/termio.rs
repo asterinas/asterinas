@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ops::Deref;
+
 use crate::prelude::*;
 
 /// A control character; the `cc_t` type in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h#L5>.
 type CCtrlChar = u8;
+
+/// A terminal speed; the `speed_t` type in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h#L6>.
+type CSpeed = u32;
 
 bitflags! {
     /// The input flags; `c_iflags` bits in Linux.
@@ -77,13 +84,32 @@ impl Default for CCtrlFlags {
 
 impl CCtrlFlags {
     const BAUD_MASK: u32 = 0x0000100f;
+    const INPUT_BAUD_SHIFT: u32 = 16;
     const SIZE_MASK: u32 = 0x00000030;
     const READ_BIT: u32 = 0x00000080;
 
-    #[expect(dead_code)]
-    pub(super) fn baud(&self) -> Result<CCtrlBaud> {
+    fn output_baud(&self) -> CCtrlBaud {
         let baud = self.0 & Self::BAUD_MASK;
-        Ok(CCtrlBaud::try_from(baud)?)
+        CCtrlBaud::try_from(baud).unwrap()
+    }
+
+    fn input_baud(&self) -> CCtrlBaud {
+        let baud = (self.0 >> Self::INPUT_BAUD_SHIFT) & Self::BAUD_MASK;
+        CCtrlBaud::try_from(baud).unwrap()
+    }
+
+    fn output_speed(&self, raw_speeds: CTermiosSpeeds) -> CSpeed {
+        let baud = self.output_baud();
+        baud.speed().unwrap_or(raw_speeds.output)
+    }
+
+    fn input_speed(&self, raw_speeds: CTermiosSpeeds, output_speed: CSpeed) -> CSpeed {
+        let baud = self.input_baud();
+        if baud == CCtrlBaud::B0 {
+            output_speed
+        } else {
+            baud.speed().unwrap_or(raw_speeds.input)
+        }
     }
 
     #[expect(dead_code)]
@@ -111,7 +137,7 @@ pub(super) enum CCtrlSize {
 
 /// The baud part of the control flags ([`CCtrlFlags`]).
 #[repr(u32)]
-#[derive(Clone, Copy, Debug, TryFromInt)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromInt)]
 pub(super) enum CCtrlBaud {
     // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h#L30
     B0 = 0x00000000, /* hang up */
@@ -130,6 +156,62 @@ pub(super) enum CCtrlBaud {
     B9600 = 0x0000000d,
     B19200 = 0x0000000e,
     B38400 = 0x0000000f,
+    // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L108
+    BOther = 0x00001000,
+    B57600 = 0x00001001,
+    B115200 = 0x00001002,
+    B230400 = 0x00001003,
+    B460800 = 0x00001004,
+    B500000 = 0x00001005,
+    B576000 = 0x00001006,
+    B921600 = 0x00001007,
+    B1000000 = 0x00001008,
+    B1152000 = 0x00001009,
+    B1500000 = 0x0000100a,
+    B2000000 = 0x0000100b,
+    B2500000 = 0x0000100c,
+    B3000000 = 0x0000100d,
+    B3500000 = 0x0000100e,
+    B4000000 = 0x0000100f,
+}
+
+impl CCtrlBaud {
+    const fn speed(self) -> Option<CSpeed> {
+        match self {
+            Self::B0 => Some(0),
+            Self::B50 => Some(50),
+            Self::B75 => Some(75),
+            Self::B110 => Some(110),
+            Self::B134 => Some(134),
+            Self::B150 => Some(150),
+            Self::B200 => Some(200),
+            Self::B300 => Some(300),
+            Self::B600 => Some(600),
+            Self::B1200 => Some(1200),
+            Self::B1800 => Some(1800),
+            Self::B2400 => Some(2400),
+            Self::B4800 => Some(4800),
+            Self::B9600 => Some(9600),
+            Self::B19200 => Some(19200),
+            Self::B38400 => Some(38400),
+            Self::BOther => None,
+            Self::B57600 => Some(57600),
+            Self::B115200 => Some(115200),
+            Self::B230400 => Some(230400),
+            Self::B460800 => Some(460800),
+            Self::B500000 => Some(500000),
+            Self::B576000 => Some(576000),
+            Self::B921600 => Some(921600),
+            Self::B1000000 => Some(1000000),
+            Self::B1152000 => Some(1152000),
+            Self::B1500000 => Some(1500000),
+            Self::B2000000 => Some(2000000),
+            Self::B2500000 => Some(2500000),
+            Self::B3000000 => Some(3000000),
+            Self::B3500000 => Some(3500000),
+            Self::B4000000 => Some(4000000),
+        }
+    }
 }
 
 bitflags! {
@@ -300,6 +382,62 @@ impl CTermios {
     /// Returns the local flags.
     pub fn local_flags(&self) -> &CLocalFlags {
         &self.c_lflags
+    }
+}
+
+/// The speeds stored outside legacy `struct termios`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct CTermiosSpeeds {
+    input: CSpeed,
+    output: CSpeed,
+}
+
+impl Default for CTermiosSpeeds {
+    fn default() -> Self {
+        Self {
+            input: Self::DEFAULT_SPEED,
+            output: Self::DEFAULT_SPEED,
+        }
+    }
+}
+
+impl CTermiosSpeeds {
+    const DEFAULT_SPEED: CSpeed = 38400;
+
+    pub(super) fn from_termios(termios: &CTermios, raw_speeds: Self) -> Self {
+        let output = termios.c_cflags.output_speed(raw_speeds);
+        let input = termios.c_cflags.input_speed(raw_speeds, output);
+
+        Self { input, output }
+    }
+}
+
+/// The extended termios; `struct termios2` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L19>.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+pub struct CTermios2 {
+    termios: CTermios,
+    speeds: CTermiosSpeeds,
+}
+
+impl CTermios2 {
+    pub(super) fn new(termios: CTermios, speeds: CTermiosSpeeds) -> Self {
+        Self { termios, speeds }
+    }
+
+    pub(super) fn speeds(&self) -> &CTermiosSpeeds {
+        &self.speeds
+    }
+}
+
+impl Deref for CTermios2 {
+    type Target = CTermios;
+
+    fn deref(&self) -> &Self::Target {
+        &self.termios
     }
 }
 
