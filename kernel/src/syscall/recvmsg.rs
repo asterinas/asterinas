@@ -31,13 +31,7 @@ pub fn sys_recvmsg(
 
     let (output, message_header) = {
         let mut io_vec_writer = c_user_msghdr.copy_writer_array_from_user(&user_space)?;
-        socket
-            .recvmsg(&mut io_vec_writer, flags)
-            .map_err(|err| match err.error() {
-                // FIXME: `recvmsg` should not be restarted if a timeout has been set on the socket using `setsockopt`.
-                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
-                _ => err,
-            })?
+        socket.recvmsg(&mut io_vec_writer, flags)?
     };
 
     // Writing control messages may access the file table, so it should be called after dropping

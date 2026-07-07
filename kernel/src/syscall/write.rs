@@ -32,11 +32,7 @@ pub fn sys_write(
         } else {
             file.write_bytes(&[])
         }
-    }
-    .map_err(|err| match err.error() {
-        Errno::EINTR => Error::new(Errno::ERESTARTSYS),
-        _ => err,
-    })?;
+    }?;
 
     if write_len > 0 {
         fs::vfs::notify::on_modify(&file);

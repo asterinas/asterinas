@@ -10,7 +10,12 @@ pub fn sys_pause(_ctx: &Context) -> Result<SyscallReturn> {
     // handler or terminate current process
     let waiter = Waiter::new_pair().0;
 
-    waiter.pause_until(|| None)?;
+    waiter
+        .pause_until(|| None::<()>)
+        .map_err(|err| match err.error() {
+            Errno::ERESTARTSYS => Error::with_message(Errno::EINTR, "pause was interrupted"),
+            _ => err,
+        })?;
 
     unreachable!("[Internal Error] pause should always return EINTR");
 }
