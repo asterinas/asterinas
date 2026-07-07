@@ -138,7 +138,6 @@ pub(super) fn sys_futex(
     }
     .map_err(|err| match err.error() {
         Errno::ETIME => errno!(ETIMEDOUT),
-        Errno::EINTR => errno!(ERESTARTSYS),
         _ => err,
     })?;
 

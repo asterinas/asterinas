@@ -135,14 +135,21 @@ impl VtManager {
 
         drop(state_lock);
 
-        self.vt_active_wq.pause_until(|| {
-            let state_lock = self.state.lock();
-            if state_lock.gens[target.to_zero_based()] != start_gen {
-                Some(())
-            } else {
-                None
-            }
-        })?;
+        self.vt_active_wq
+            .pause_until(|| {
+                let state_lock = self.state.lock();
+                if state_lock.gens[target.to_zero_based()] != start_gen {
+                    Some(())
+                } else {
+                    None
+                }
+            })
+            .map_err(|err| match err.error() {
+                // Linux interrupts VT_WAITACTIVE even when the handler has SA_RESTART.
+                // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt_ioctl.c#L230>.
+                Errno::ERESTARTSYS => errno!(EINTR),
+                _ => err,
+            })?;
 
         Ok(())
     }
