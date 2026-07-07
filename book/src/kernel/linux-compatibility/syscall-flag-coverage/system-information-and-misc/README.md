@@ -44,8 +44,10 @@ Supported functionality in SCML:
 {{#include getrandom.scml}}
 ```
 
-Silently-ignored flags:
-* `GRND_NONBLOCK` because the underlying operation never blocks
+Notes:
+* `GRND_NONBLOCK` returns `EAGAIN` if the secure random stream is not ready.
+* `GRND_INSECURE` returns best-effort random bytes without waiting for readiness.
+* `GRND_INSECURE | GRND_RANDOM` is rejected with `EINVAL`.
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/getrandom.2.html).

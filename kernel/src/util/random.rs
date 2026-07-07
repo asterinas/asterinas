@@ -161,6 +161,9 @@ pub fn try_wait_until_ready() -> Result<()> {
     return_errno_with_message!(Errno::EAGAIN, "secure random data is not ready");
 }
 
+// TODO: Reseed the CRNG after readiness. Currently, entropy added after the
+// random subsystem is ready is mixed into the input pool, but it does not
+// affect subsequent `crng` output.
 pub fn add_entropy(bytes: &[u8], credit_bits: usize) {
     let random = RANDOM.get().unwrap();
     let became_ready = random
