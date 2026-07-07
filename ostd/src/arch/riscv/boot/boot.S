@@ -199,16 +199,16 @@ _start:
     add    t2, t1, t2
     sd     t0, 0(t2)             // L3[510]
 
-    // Zero out L3 entry 448 so map_base_page's alloc_child can
-    // create the entire subtree for FRAME_METADATA_BASE_VADDR.
-    // The 1GiB leaf (static) maps PA=448GiB which doesn't exist.
-    // A non-leaf pointer to boot_l2_kernel would have the same PA
-    // mismatch problem — boot_l2_kernel covers PA 0x80000000.
-    // Let alloc_child allocate fresh L2/L1 tables that map the
-    // actual metadata frame PAs from early_alloc.
-    li     t2, 3584                // offset = 448 * 8
-    add    t2, t1, t2
-    sd     zero, 0(t2)             // L3[448] = 0 (not present)
+    // Zero out L3 entries 448 through 455 to cover the full
+    // FRAME_METADATA_BASE_VADDR range (0xffffe00000000000+).
+    // Static 1GiB leaves map PA 448-455 GiB which doesn't exist.
+    // Let alloc_child create fresh L2/L1 tables with correct PA.
+    li     t3, 3584                // offset = 448 * 8
+    li     t4, 3648                // offset = 456 * 8 (end)
+1:  add    t2, t1, t3
+    sd     zero, 0(t2)
+    addi   t3, t3, 8
+    blt    t3, t4, 1b
 
     SBI_PUTCHAR 'D'
     SBI_SET_TIMER (60 * TIMER_FREQ)

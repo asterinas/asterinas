@@ -472,7 +472,6 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
 
     // Map the metadata frames.
     boot_pt::with_borrow(|boot_pt| {
-        #[cfg(not(target_arch = "riscv64"))]
         for i in 0..nr_meta_pages {
             let frame_paddr = meta_pages + i * PAGE_SIZE;
             let vaddr = mapping::frame_to_meta::<PagingConsts>(0) + i * PAGE_SIZE;
