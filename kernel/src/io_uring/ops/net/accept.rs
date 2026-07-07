@@ -36,7 +36,7 @@ impl IoUringAcceptRequest {
             file: get_file(sqe.fd)?,
             sockaddr_ptr: sqe.addr as Vaddr,
             addrlen_ptr: sqe.off as Vaddr,
-            flags: AcceptFlags::from_bits(sqe.rw_flags)
+            flags: AcceptFlags::from_bits(sqe.op_flags)
                 .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid accept flags"))?,
         })
     }

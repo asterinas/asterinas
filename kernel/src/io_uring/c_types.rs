@@ -213,7 +213,7 @@ pub struct IoUringSqe {
     pub off: u64,
     pub addr: u64,
     pub len: u32,
-    pub rw_flags: u32,
+    pub op_flags: u32,
     pub user_data: u64,
     pub buf_index: u16,
     pub personality: u16,
@@ -236,6 +236,18 @@ bitflags! {
         const CQE_SKIP_SUCCESS = 1 << 6;
 
         const SUPPORTED = Self::ASYNC.bits;
+    }
+}
+
+impl IoUringSqeFlags {
+    pub fn from_user_bits(bits: u8) -> Result<Self> {
+        let flags = IoUringSqeFlags::from_bits(bits)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown SQE flags"))?;
+        if !flags.difference(IoUringSqeFlags::SUPPORTED).is_empty() {
+            return_errno_with_message!(Errno::EINVAL, "SQE flags are unsupported");
+        }
+
+        Ok(flags)
     }
 }
 

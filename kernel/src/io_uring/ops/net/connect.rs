@@ -5,7 +5,7 @@ use crate::{
     io_uring::{
         c_types::IoUringSqe,
         io_context::IoUringContext,
-        ops::{IoUringOp, check_rw_flags, completion_from_result, get_file},
+        ops::{IoUringOp, completion_from_result, get_file},
         utils::Completion,
     },
     net::socket::util::SocketAddr,
@@ -26,8 +26,6 @@ impl IoUringConnectRequest {
         sqe: &IoUringSqe,
         force_async: bool,
     ) -> Result<Self> {
-        check_rw_flags(sqe)?;
-
         let addr_len = usize::try_from(sqe.off).map_err(|_| {
             Error::with_message(Errno::EINVAL, "the socket address length is invalid")
         })?;

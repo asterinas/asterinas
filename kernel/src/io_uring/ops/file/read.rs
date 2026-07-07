@@ -8,7 +8,7 @@ use crate::{
     io_uring::{
         c_types::{IoUringOpcode, IoUringSqe},
         io_context::IoUringContext,
-        ops::{IoUringOp, check_rw_flags, completion_from_result, get_file},
+        ops::{IoUringOp, completion_from_result, get_file},
         utils::Completion,
     },
     prelude::*,
@@ -29,8 +29,6 @@ impl IoUringReadRequest {
         sqe: &IoUringSqe,
         force_async: bool,
     ) -> Result<Self> {
-        check_rw_flags(sqe)?;
-
         let buffer = match IoUringOpcode::try_from(sqe.opcode)? {
             IoUringOpcode::Read => IoVec {
                 base: sqe.addr as Vaddr,
@@ -101,8 +99,6 @@ impl IoUringReadVRequest {
         sqe: &IoUringSqe,
         force_async: bool,
     ) -> Result<Self> {
-        check_rw_flags(sqe)?;
-
         Ok(Self {
             user_data: sqe.user_data,
             force_async,

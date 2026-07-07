@@ -28,8 +28,12 @@ pub(super) fn build_op_request(
     context: &IoUringContext,
     sqe: &IoUringSqe,
 ) -> Result<Arc<dyn IoUringOp>> {
-    let flags = check_sqe_flags(sqe)?;
-    let force_async = flags.contains(IoUringSqeFlags::ASYNC);
+    let sqe_flags = IoUringSqeFlags::from_user_bits(sqe.flags)?;
+    let force_async = sqe_flags.contains(IoUringSqeFlags::ASYNC);
+
+    if sqe.ioprio != 0 {
+        return_errno_with_message!(Errno::EINVAL, "SQE ioprio is unsupported");
+    }
 
     match IoUringOpcode::try_from(sqe.opcode)? {
         IoUringOpcode::Nop => Ok(Arc::new(nop::IoUringNopRequest::new(
@@ -94,27 +98,10 @@ fn completion_from_result(result: Result<usize>, user_data: u64) -> Completion {
     Completion::new(user_data, result, 0)
 }
 
-fn check_rw_flags(sqe: &IoUringSqe) -> Result<()> {
-    if sqe.rw_flags != 0 {
-        return_errno_with_message!(Errno::EINVAL, "SQE read/write flags are unsupported");
-    }
-    Ok(())
-}
-
 fn get_file(fd: i32) -> Result<Arc<dyn FileLike>> {
     let file_desc: FileDesc = fd.try_into()?;
     let task = Task::current().unwrap();
     let thread_local = task.as_thread_local().unwrap();
     let file_table = thread_local.borrow_file_table();
     Ok(file_table.unwrap().read().get_file(file_desc)?.clone())
-}
-
-fn check_sqe_flags(sqe: &IoUringSqe) -> Result<IoUringSqeFlags> {
-    let flags = IoUringSqeFlags::from_bits(sqe.flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown SQE flags"))?;
-    if !flags.difference(IoUringSqeFlags::SUPPORTED).is_empty() {
-        return_errno_with_message!(Errno::EINVAL, "SQE flags are unsupported");
-    }
-
-    Ok(flags)
 }

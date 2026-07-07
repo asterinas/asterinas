@@ -48,7 +48,7 @@ impl IoUringSendMsgRequest {
             file: get_file(sqe.fd)?,
             c_user_msghdr,
             addr,
-            flags: SendRecvFlags::from_bits_truncate(sqe.rw_flags as i32),
+            flags: SendRecvFlags::from_bits_truncate(sqe.op_flags as i32),
         })
     }
 }

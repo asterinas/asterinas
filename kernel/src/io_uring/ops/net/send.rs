@@ -37,7 +37,7 @@ impl IoUringSendRequest {
                 base: sqe.addr as Vaddr,
                 len: sqe.len as usize,
             },
-            flags: SendRecvFlags::from_bits_truncate(sqe.rw_flags as i32),
+            flags: SendRecvFlags::from_bits_truncate(sqe.op_flags as i32),
         })
     }
 }
