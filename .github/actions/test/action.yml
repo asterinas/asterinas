@@ -56,6 +56,9 @@ inputs:
   xfstests_runlist:
     description: 'Run list file for xfstests'
     required: false
+  xfstests_fs_type:
+    description: 'Filesystem type for xfstests (ext2, tmpfs, etc.)'
+    required: false
 
 runs:
   using: 'composite'
@@ -105,6 +108,7 @@ runs:
         [[ -n "${{ inputs.mem }}" ]] && CMD+=" MEM=${{ inputs.mem }}"
         [[ -n "${{ inputs.xfstests_disk_size }}" ]] && CMD+=" XFSTESTS_DISK_SIZE=${{ inputs.xfstests_disk_size }}"
         [[ -n "${{ inputs.xfstests_runlist }}" ]] && CMD+=" XFSTESTS_RUNLIST=${{ inputs.xfstests_runlist }}"
+        [[ -n "${{ inputs.xfstests_fs_type }}" ]] && CMD+=" XFSTESTS_FS_TYPE=${{ inputs.xfstests_fs_type }}"
         
         echo "Executing: $CMD"
         eval $CMD
