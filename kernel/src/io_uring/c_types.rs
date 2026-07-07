@@ -277,6 +277,8 @@ bitflags! {
 #[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
 pub enum IoUringOpcode {
     Nop = 0,
+    Readv = 1,
+    Writev = 2,
     ReadFixed = 4,
     WriteFixed = 5,
     SendMsg = 9,

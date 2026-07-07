@@ -40,9 +40,19 @@ pub(super) fn build_op_request(
         IoUringOpcode::Read | IoUringOpcode::ReadFixed => Ok(Arc::new(
             file::IoUringReadRequest::new(context, sqe, force_async)?,
         )),
+        IoUringOpcode::Readv => Ok(Arc::new(file::IoUringReadVRequest::new(
+            context,
+            sqe,
+            force_async,
+        )?)),
         IoUringOpcode::Write | IoUringOpcode::WriteFixed => Ok(Arc::new(
             file::IoUringWriteRequest::new(context, sqe, force_async)?,
         )),
+        IoUringOpcode::Writev => Ok(Arc::new(file::IoUringWriteVRequest::new(
+            context,
+            sqe,
+            force_async,
+        )?)),
         IoUringOpcode::SendMsg => Ok(Arc::new(net::IoUringSendMsgRequest::new(
             context,
             sqe,
