@@ -93,9 +93,10 @@ pub fn sys_semctl(
             // In `SEM_SETVAL`, the argument is parsed as an `i32`.
             let val = arg as i32;
 
-            ipc_ns.with_sem_set(semid, PermissionMode::ALTER, |sem_set| {
+            let cleared_token = ipc_ns.with_sem_set(semid, PermissionMode::ALTER, |sem_set| {
                 sem_set.setval(semnum as usize, val, ctx.process.pid())
             })?;
+            ipc_ns.clear_sem_undo_entries(semid, cleared_token, semnum as usize);
         }
     }
 

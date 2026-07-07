@@ -12,6 +12,7 @@ use ostd::sync::{Waiter, Waker};
 use super::{
     PermissionMode,
     sem_set::{SEMVMX, SemSetInner},
+    sem_undo::{SemUndoList, SemUndoOp, SemUndoToken},
 };
 use crate::{
     ipc::{IpcFlags, IpcId, IpcNamespace},
@@ -54,6 +55,7 @@ pub(super) struct PendingOp {
     sops: Vec<SemBuf>,
     status: Arc<AtomicStatus>,
     waker: Option<Arc<Waker>>,
+    sem_undo_token: Arc<Mutex<Option<SemUndoToken>>>,
     pid: Pid,
 }
 
@@ -65,14 +67,15 @@ pub(super) enum PendingBlocker {
 }
 
 impl PendingOp {
-    fn new(sops: Vec<SemBuf>, pid: Pid, num_sems: usize) -> Result<Self> {
+    fn new(
+        sops: Vec<SemBuf>,
+        pid: Pid,
+        num_sems: usize,
+        sem_undo_token: Arc<Mutex<Option<SemUndoToken>>>,
+    ) -> Result<Self> {
         for op in sops.iter() {
             if op.sem_num as usize >= num_sems {
                 return_errno_with_message!(Errno::EFBIG, "the semaphore number is out of bounds");
-            }
-            if IpcFlags::from_bits_truncate(op.sem_flags as u32).contains(IpcFlags::SEM_UNDO) {
-                // TODO: Add support for the `SEM_UNDO` flag
-                return_errno_with_message!(Errno::EINVAL, "SEM_UNDO is not supported yet");
             }
         }
 
@@ -80,6 +83,7 @@ impl PendingOp {
             sops,
             status: Arc::new(AtomicStatus::new(Status::Pending)),
             waker: None,
+            sem_undo_token,
             pid,
         })
     }
@@ -90,6 +94,10 @@ impl PendingOp {
 
     pub(super) fn set_status(&self, status: Status) {
         self.status.store(status, Ordering::Relaxed);
+    }
+
+    fn set_sem_undo_token(&self, token: SemUndoToken) {
+        *self.sem_undo_token.lock() = Some(token);
     }
 
     pub(super) fn waker(&self) -> Option<&Arc<Waker>> {
@@ -195,6 +203,8 @@ pub fn sem_op(
     }
 
     let is_alter = check_alter_sop(&sops);
+    let undo_ops = collect_undo_ops(&sops);
+    let sem_undo_list = (!undo_ops.is_empty()).then(|| ctx.process.sem_undo_list());
 
     // TODO: Support permission check
     warn!("Semaphore operation doesn't support permission check now");
@@ -202,26 +212,40 @@ pub fn sem_op(
     enum SemOpResult {
         Completed {
             status: Status,
+            token: Option<SemUndoToken>,
         },
         Pending {
             status: Arc<AtomicStatus>,
             waiter: Waiter,
+            token: Arc<Mutex<Option<SemUndoToken>>>,
         },
     }
 
     let sem_op_result = ipc_ns.with_sem_set(sem_id, PermissionMode::empty(), |sem_set| {
-        let mut pending_op = PendingOp::new(sops, ctx.process.pid(), sem_set.num_sems())?;
+        let sem_undo_token = Arc::new(Mutex::new(None));
+        let mut pending_op = PendingOp::new(
+            sops,
+            ctx.process.pid(),
+            sem_set.num_sems(),
+            sem_undo_token.clone(),
+        )?;
 
         let mut inner = sem_set.inner();
 
         // Try to perform the operation without blocking
         if let Some(status) = perform_atomic_semop(&mut inner.sems, &mut pending_op) {
             if status != Status::Normal {
-                return Ok(SemOpResult::Completed { status });
+                return Ok(SemOpResult::Completed {
+                    status,
+                    token: None,
+                });
             }
 
+            let token = sem_set.sem_undo_token();
+            pending_op.set_sem_undo_token(token);
+
             if is_alter {
-                let wake_queue = do_smart_update(&mut inner, &pending_op);
+                let wake_queue = do_smart_update(&mut inner, &pending_op, token);
                 for wake_op in wake_queue {
                     if let Some(waker) = wake_op.waker {
                         waker.wake_up();
@@ -231,7 +255,10 @@ pub fn sem_op(
 
             sem_set.update_otime();
 
-            return Ok(SemOpResult::Completed { status });
+            return Ok(SemOpResult::Completed {
+                status,
+                token: Some(token),
+            });
         }
 
         // Prepare to wait
@@ -246,12 +273,29 @@ pub fn sem_op(
             inner.pending_const.push_back(pending_op);
         }
 
-        Ok(SemOpResult::Pending { status, waiter })
+        Ok(SemOpResult::Pending {
+            status,
+            waiter,
+            token: sem_undo_token,
+        })
     })?;
 
-    fn map_status_to_result(status: Status, waiter_error: Option<Error>) -> Result<()> {
+    fn finish_sem_op(
+        status: Status,
+        waiter_error: Option<Error>,
+        sem_undo_list: Option<&Arc<SemUndoList>>,
+        ipc_ns: &Arc<IpcNamespace>,
+        sem_id: IpcId,
+        token: Option<SemUndoToken>,
+        undo_ops: &[SemUndoOp],
+    ) -> Result<()> {
         match status {
-            Status::Normal => Ok(()),
+            Status::Normal => {
+                if let (Some(sem_undo_list), Some(token)) = (sem_undo_list, token) {
+                    sem_undo_list.record(ipc_ns.clone(), sem_id, token, undo_ops);
+                }
+                Ok(())
+            }
             Status::Removed => {
                 return_errno_with_message!(Errno::EIDRM, "the semaphore set is removed");
             }
@@ -276,11 +320,25 @@ pub fn sem_op(
         }
     }
 
-    let (waiter_result, status) = match sem_op_result {
-        SemOpResult::Completed { status } => return map_status_to_result(status, None),
-        SemOpResult::Pending { status, waiter } => {
+    let (waiter_result, status, token) = match sem_op_result {
+        SemOpResult::Completed { status, token } => {
+            return finish_sem_op(
+                status,
+                None,
+                sem_undo_list.as_ref(),
+                ipc_ns,
+                sem_id,
+                token,
+                &undo_ops,
+            );
+        }
+        SemOpResult::Pending {
+            status,
+            waiter,
+            token,
+        } => {
             let result = waiter.pause_timeout(&timeout.as_ref().into());
-            (result, status)
+            (result, status, token)
         }
     };
 
@@ -300,7 +358,28 @@ pub fn sem_op(
         });
     }
 
-    map_status_to_result(status.load(Ordering::Relaxed), waiter_result.err())
+    finish_sem_op(
+        status.load(Ordering::Relaxed),
+        waiter_result.err(),
+        sem_undo_list.as_ref(),
+        ipc_ns,
+        sem_id,
+        *token.lock(),
+        &undo_ops,
+    )
+}
+
+fn collect_undo_ops(sops: &[SemBuf]) -> Vec<SemUndoOp> {
+    sops.iter()
+        .filter_map(|op| {
+            let flags = IpcFlags::from_bits_truncate(op.sem_flags as u32);
+            if !flags.contains(IpcFlags::SEM_UNDO) || op.sem_op == 0 {
+                return None;
+            }
+
+            Some(SemUndoOp::new(op.sem_num as usize, -i32::from(op.sem_op)))
+        })
+        .collect()
 }
 
 /// Checks whether there are two operations that will operate on the same semaphore and the first
@@ -342,16 +421,20 @@ fn check_alter_sop(sops: &[SemBuf]) -> bool {
 /// them.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L1029>
-fn do_smart_update(inner: &mut SemSetInner, pending_op: &PendingOp) -> LinkedList<PendingOp> {
+fn do_smart_update(
+    inner: &mut SemSetInner,
+    pending_op: &PendingOp,
+    token: SemUndoToken,
+) -> LinkedList<PendingOp> {
     let mut wake_queue = LinkedList::new();
 
     let (sems, pending_alter, pending_const) = inner.field_mut();
 
     if !pending_const.is_empty() {
-        do_smart_wakeup_zero(sems, pending_const, pending_op, &mut wake_queue);
+        do_smart_wakeup_zero(sems, pending_const, pending_op, token, &mut wake_queue);
     }
     if !pending_alter.is_empty() {
-        let _ = update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
+        let _ = update_pending_alter(sems, pending_alter, pending_const, token, &mut wake_queue);
     }
 
     wake_queue
@@ -368,6 +451,7 @@ pub(super) fn update_pending_alter(
     sems: &mut [Semaphore],
     pending_alter: &mut LinkedList<PendingOp>,
     pending_const: &mut LinkedList<PendingOp>,
+    token: SemUndoToken,
     wake_queue: &mut LinkedList<PendingOp>,
 ) -> bool {
     let mut has_completed = false;
@@ -379,6 +463,9 @@ pub(super) fn update_pending_alter(
             continue;
         };
         alter_op.set_status(status);
+        if status == Status::Normal {
+            alter_op.set_sem_undo_token(token);
+        }
 
         let mut alter_op = cursor.remove_current_as_list().unwrap();
         if status != Status::Normal {
@@ -387,7 +474,13 @@ pub(super) fn update_pending_alter(
         }
         has_completed = true;
 
-        do_smart_wakeup_zero(sems, pending_const, alter_op.front().unwrap(), wake_queue);
+        do_smart_wakeup_zero(
+            sems,
+            pending_const,
+            alter_op.front().unwrap(),
+            token,
+            wake_queue,
+        );
         wake_queue.append(&mut alter_op);
 
         // Retry from the beginning since we've performed some alteration.
@@ -405,11 +498,12 @@ fn do_smart_wakeup_zero(
     sems: &mut [Semaphore],
     pending_const: &mut LinkedList<PendingOp>,
     pending_op: &PendingOp,
+    token: SemUndoToken,
     wake_queue: &mut LinkedList<PendingOp>,
 ) {
     for sop in pending_op.sops_iter() {
         if sems.get(sop.sem_num as usize).unwrap().val == 0 {
-            let _ = wake_const_ops(sems, pending_const, wake_queue);
+            let _ = wake_const_ops(sems, pending_const, token, wake_queue);
             return;
         }
     }
@@ -425,6 +519,7 @@ fn do_smart_wakeup_zero(
 pub(super) fn wake_const_ops(
     sems: &mut [Semaphore],
     pending_const: &mut LinkedList<PendingOp>,
+    token: SemUndoToken,
     wake_queue: &mut LinkedList<PendingOp>,
 ) -> bool {
     let mut has_completed = false;
@@ -434,6 +529,9 @@ pub(super) fn wake_const_ops(
         if let Some(status) = perform_atomic_semop(sems, const_op) {
             has_completed |= status == Status::Normal;
             const_op.set_status(status);
+            if status == Status::Normal {
+                const_op.set_sem_undo_token(token);
+            }
             wake_queue.append(&mut cursor.remove_current_as_list().unwrap());
         } else {
             cursor.move_next();

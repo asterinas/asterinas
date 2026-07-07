@@ -24,6 +24,7 @@ use super::{
 use crate::{
     events::IoEvents,
     fs::cgroupfs::CgroupNode,
+    ipc::semaphore::system_v::sem_undo::SemUndoList,
     prelude::*,
     process::{
         UserNamespace, WaitOptions,
@@ -154,10 +155,13 @@ pub struct Process {
     // Namespaces
     /// The user namespace
     user_ns: Mutex<Arc<UserNamespace>>,
+    /// The System V semaphore undo list.
+    sem_undo_list: Mutex<Arc<SemUndoList>>,
 }
 
 impl Drop for Process {
     fn drop(&mut self) {
+        self.apply_sem_undo_on_exit();
         self.pidfile_pollee.notify(IoEvents::HUP);
     }
 }
@@ -268,6 +272,7 @@ impl Process {
                 timer_manager,
                 start_time: Jiffies::elapsed(),
                 user_ns: Mutex::new(user_ns),
+                sem_undo_list: Mutex::new(SemUndoList::new()),
             }
         })
     }
@@ -312,6 +317,30 @@ impl Process {
 
     pub fn resource_limits(&self) -> &ResourceLimits {
         &self.resource_limits
+    }
+
+    pub fn sem_undo_list(&self) -> Arc<SemUndoList> {
+        self.sem_undo_list.lock().clone()
+    }
+
+    pub(super) fn apply_sem_undo_on_exit(&self) {
+        let sem_undo_list = self.replace_sem_undo_list(SemUndoList::new());
+        sem_undo_list.remove_holder(self.pid);
+    }
+
+    pub(super) fn unshare_sem_undo_list(&self) {
+        let sem_undo_list = self.replace_sem_undo_list(SemUndoList::new());
+        sem_undo_list.remove_holder(self.pid);
+    }
+
+    pub(super) fn set_sem_undo_list(&self, sem_undo_list: Arc<SemUndoList>) {
+        sem_undo_list.add_holder();
+        let old_sem_undo_list = self.replace_sem_undo_list(sem_undo_list);
+        old_sem_undo_list.remove_holder(self.pid);
+    }
+
+    fn replace_sem_undo_list(&self, sem_undo_list: Arc<SemUndoList>) -> Arc<SemUndoList> {
+        core::mem::replace(&mut *self.sem_undo_list.lock(), sem_undo_list)
     }
 
     pub fn nice(&self) -> &AtomicNice {

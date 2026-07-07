@@ -18,13 +18,15 @@ use super::{
     semaphore::system_v::{
         PermissionMode,
         sem_set::{SEMMNI, SemaphoreSet},
+        sem_undo::{SemUndoList, SemUndoToken},
     },
 };
 use crate::{
     fs::pseudofs::{NsCommonOps, NsType, StashedDentry},
     prelude::*,
     process::{
-        Credentials, UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread,
+        Credentials, Pid, UserNamespace, credentials::capabilities::CapSet,
+        posix_thread::PosixThread,
     },
     security::lsm::hooks as lsm_hooks,
 };
@@ -41,6 +43,8 @@ use crate::{
 pub struct IpcNamespace {
     /// Semaphore sets within this namespace.
     sem_ids: IpcIds<SemaphoreSet>,
+    /// Semaphore undo lists that have entries for this namespace.
+    sem_undo_lists: Mutex<Vec<Weak<SemUndoList>>>,
     /// Owner user namespace.
     owner: Arc<UserNamespace>,
     /// Stashed dentry for nsfs.
@@ -69,6 +73,7 @@ impl IpcNamespace {
 
         Arc::new(Self {
             sem_ids,
+            sem_undo_lists: Mutex::new(Vec::new()),
             owner,
             stashed_dentry,
         })
@@ -111,7 +116,73 @@ impl IpcNamespace {
     where
         F: FnOnce(&SemaphoreSet) -> Result<()>,
     {
-        self.sem_ids.remove(semid, may_remove)
+        let token = self.sem_ids.remove(semid, |sem_set| {
+            may_remove(sem_set)?;
+            Ok(sem_set.sem_undo_token())
+        })?;
+        self.clear_sem_undo_set(semid, token);
+        Ok(())
+    }
+
+    /// Registers a semaphore undo list for later `SEM_SETVAL` and `IPC_RMID` cleanup.
+    pub fn register_sem_undo_list(&self, sem_undo_list: &Arc<SemUndoList>) {
+        let mut sem_undo_lists = self.sem_undo_lists.lock();
+        let mut exists = false;
+
+        sem_undo_lists.retain(|weak_list| {
+            let Some(list) = weak_list.upgrade() else {
+                return false;
+            };
+
+            if Arc::ptr_eq(&list, sem_undo_list) {
+                exists = true;
+            }
+            true
+        });
+
+        if !exists {
+            sem_undo_lists.push(Arc::downgrade(sem_undo_list));
+        }
+    }
+
+    /// Clears all undo entries for one semaphore.
+    pub fn clear_sem_undo_entries(&self, semid: IpcId, token: SemUndoToken, sem_num: usize) {
+        self.visit_sem_undo_lists(|list| list.clear_sem(self, semid, token, sem_num));
+    }
+
+    /// Applies one semaphore undo adjustment.
+    pub fn apply_sem_undo(
+        &self,
+        semid: IpcId,
+        token: SemUndoToken,
+        sem_num: usize,
+        adjustment: i32,
+        pid: Pid,
+    ) {
+        let _ = self.sem_ids.with(semid, |sem_set| {
+            sem_set.apply_undo(token, sem_num, adjustment, pid);
+        });
+    }
+
+    pub fn sem_undo_token_matches(&self, semid: IpcId, token: SemUndoToken) -> bool {
+        self.sem_ids
+            .with(semid, |sem_set| sem_set.sem_undo_token() == token)
+            .unwrap_or(false)
+    }
+
+    fn clear_sem_undo_set(&self, semid: IpcId, token: SemUndoToken) {
+        self.visit_sem_undo_lists(|list| list.clear_set(self, semid, token));
+    }
+
+    fn visit_sem_undo_lists(&self, mut visit: impl FnMut(&SemUndoList)) {
+        self.sem_undo_lists.lock().retain(|weak_list| {
+            let Some(list) = weak_list.upgrade() else {
+                return false;
+            };
+
+            visit(&list);
+            true
+        });
     }
 
     /// Returns the existing semaphore set or creates a new one.
