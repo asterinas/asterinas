@@ -18,16 +18,17 @@ pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32, ctx: &Context) -> Res
         );
     }
 
-    // Currently we don't really generate true randomness by collecting environment noise, so we
-    // will never block.
-    // TODO: Support `GRND_NONBLOCK` and `GRND_INSECURE`.
-
     let user_space = ctx.user_space();
     let mut writer = user_space.writer(buf, count)?;
-    let read_len = if flags.contains(GetRandomFlags::GRND_RANDOM) {
-        device::getrandom(&mut writer)?
-    } else {
+    let read_len = if flags.contains(GetRandomFlags::GRND_INSECURE) {
         device::geturandom(&mut writer)?
+    } else {
+        let mode = if flags.contains(GetRandomFlags::GRND_NONBLOCK) {
+            device::RandomReadMode::Nonblocking
+        } else {
+            device::RandomReadMode::Blocking
+        };
+        device::getrandom(&mut writer, mode)?
     };
     Ok(SyscallReturn::Return(read_len as isize))
 }
