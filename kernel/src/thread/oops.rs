@@ -121,7 +121,11 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     }
 
     if info.can_unwind() {
+        // _Unwind_Backtrace triggers an illegal instruction on riscv64.
+        #[cfg(not(target_arch = "riscv64"))]
         panic::print_stack_trace();
+        #[cfg(target_arch = "riscv64")]
+        log::error!("[Ostd panic] Backtrace skipped on riscv64");
     } else {
         log::error!("Backtrace is disabled.");
     }

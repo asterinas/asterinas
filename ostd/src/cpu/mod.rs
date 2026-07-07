@@ -167,6 +167,7 @@ pub(crate) unsafe fn init_on_bsp() {
         // See its implementation for details.
         init_num_cpus(num_cpus);
     }
+
 }
 
 /// # Safety

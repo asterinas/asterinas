@@ -130,10 +130,56 @@ pub fn fill_early_info() {
 /// The entry point of the Rust code portion of Asterinas.
 #[no_mangle]
 pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
-    // Parse DTB through identity mapping.  EARLY_INFO is deferred to
-    // fill_early_info() inside crate::init() — called between
-    // init_kernel_page_table() and init_after_heap().
-    let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_paddr as *const u8).unwrap() };
+    // Save DTB address BEFORE any SBI ecall — ecall clobbers a0/a1 (sbiret).
+    // RISC-V calling convention: a0=hart_id, a1=device_tree_paddr.
+    // The compiler doesn't know ecall clobbers a1, so we must save it manually.
+    let dtb: usize;
+    unsafe {
+        core::arch::asm!(
+            "mv {}, a1",
+            out(reg) dtb,
+        );
+    }
+
+    // Marker 'C': confirms Rust entry with VMA active.
+    // Declare all caller-saved regs as clobbered to prevent compiler
+    // from reusing a1 (which holds the DTB address).
+    unsafe {
+        core::arch::asm!(
+            "li a0, 'C'",
+            "li a7, 0x01",
+            "ecall",
+            out("a0") _,
+            out("a1") _,
+            out("a7") _,
+        );
+    }
+
+    // Disable the early-boot safety-net timer from boot.S.
+    unsafe {
+        core::arch::asm!(
+            "li a0, -1",
+            "li a7, 0x54494D45",
+            "ecall",
+            out("a0") _,
+            out("a1") _,
+            out("a7") _,
+        );
+    }
+
+    // Parse DTB through identity mapping.
+    let fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8).unwrap() };
+    // Marker 'R': DTB parsed successfully.
+    unsafe {
+        core::arch::asm!(
+            "li a0, 'R'",
+            "li a7, 0x01",
+            "ecall",
+            out("a0") _,
+            out("a1") _,
+            out("a7") _,
+        );
+    }
     DEVICE_TREE.call_once(|| fdt);
 
     use crate::boot::call_ostd_main;
