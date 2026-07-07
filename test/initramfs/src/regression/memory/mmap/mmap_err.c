@@ -182,30 +182,6 @@ FN_TEST(unaligned_addr)
 }
 END_TEST()
 
-FN_TEST(overflow_offset)
-{
-	size_t offset = -(size_t)PAGE_SIZE - PAGE_SIZE;
-	int i;
-	void *addr;
-
-	for (i = -1; i <= 1; ++i) {
-		TEST_ERRNO(mmap(valid_addr, PAGE_SIZE + i, PROT_READ,
-				MAP_PRIVATE, fd, offset),
-			   EOVERFLOW);
-		TEST_ERRNO(mmap(valid_addr, PAGE_SIZE * 2 + i, PROT_READ,
-				MAP_PRIVATE, fd, offset),
-			   EOVERFLOW);
-
-		addr = TEST_SUCC(mmap(valid_addr, PAGE_SIZE + i, PROT_READ,
-				      MAP_PRIVATE | MAP_ANONYMOUS, fd, offset));
-		TEST_SUCC(munmap(addr, PAGE_SIZE + i));
-		addr = TEST_SUCC(mmap(valid_addr, PAGE_SIZE * 2 + i, PROT_READ,
-				      MAP_PRIVATE | MAP_ANONYMOUS, fd, offset));
-		TEST_SUCC(munmap(addr, PAGE_SIZE * 2 + i));
-	}
-}
-END_TEST()
-
 FN_TEST(kernel_addr)
 {
 	void *addr = (void *)0xffffffffffff0000ul;
@@ -233,6 +209,30 @@ FN_TEST(kernel_addr)
 	TEST_ERRNO(mmap(valid_addr - 1, 512, PROT_NONE,
 			MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, 0, 0),
 		   EINVAL);
+}
+END_TEST()
+
+FN_TEST(overflow_offset)
+{
+	size_t offset = -(size_t)PAGE_SIZE - PAGE_SIZE;
+	int i;
+	void *addr;
+
+	for (i = -1; i <= 1; ++i) {
+		TEST_ERRNO(mmap(valid_addr, PAGE_SIZE + i, PROT_READ,
+				MAP_PRIVATE, fd, offset),
+			   EOVERFLOW);
+		TEST_ERRNO(mmap(valid_addr, PAGE_SIZE * 2 + i, PROT_READ,
+				MAP_PRIVATE, fd, offset),
+			   EOVERFLOW);
+
+		addr = TEST_SUCC(mmap(valid_addr, PAGE_SIZE + i, PROT_READ,
+				      MAP_PRIVATE | MAP_ANONYMOUS, fd, offset));
+		TEST_SUCC(munmap(addr, PAGE_SIZE + i));
+		addr = TEST_SUCC(mmap(valid_addr, PAGE_SIZE * 2 + i, PROT_READ,
+				      MAP_PRIVATE | MAP_ANONYMOUS, fd, offset));
+		TEST_SUCC(munmap(addr, PAGE_SIZE * 2 + i));
+	}
 }
 END_TEST()
 

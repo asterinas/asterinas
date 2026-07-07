@@ -185,10 +185,13 @@ enum PrctlCmd {
     PR_CAP_AMBIENT(CapAmbientCmd),
 }
 
-const PR_CAP_AMBIENT_IS_SET: u64 = 1;
-const PR_CAP_AMBIENT_RAISE: u64 = 2;
-const PR_CAP_AMBIENT_LOWER: u64 = 3;
-const PR_CAP_AMBIENT_CLEAR_ALL: u64 = 4;
+#[repr(u64)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
+enum Dumpable {
+    Disable = 0, /* No setuid dumping */
+    User = 1,    /* Dump as user of process */
+    Root = 2,    /* Dump as root */
+}
 
 #[derive(Clone, Copy, Debug)]
 enum CapAmbientCmd {
@@ -196,14 +199,6 @@ enum CapAmbientCmd {
     Raise(CapSet),
     Lower(CapSet),
     ClearAll,
-}
-
-#[repr(u64)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-enum Dumpable {
-    Disable = 0, /* No setuid dumping */
-    User = 1,    /* Dump as user of process */
-    Root = 2,    /* Dump as root */
 }
 
 impl PrctlCmd {
@@ -247,20 +242,26 @@ impl PrctlCmd {
 }
 
 impl CapAmbientCmd {
+    // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/uapi/linux/prctl.h#L196-L199>
+    const PR_CAP_AMBIENT_IS_SET: u64 = 1;
+    const PR_CAP_AMBIENT_RAISE: u64 = 2;
+    const PR_CAP_AMBIENT_LOWER: u64 = 3;
+    const PR_CAP_AMBIENT_CLEAR_ALL: u64 = 4;
+
     fn from_args(operation: u64, capability: u64, arg4: u64, arg5: u64) -> Result<Self> {
         if arg4 != 0 || arg5 != 0 {
             return_errno_with_message!(Errno::EINVAL, "unused PR_CAP_AMBIENT arguments are not 0");
         }
 
         match operation {
-            PR_CAP_AMBIENT_IS_SET => Ok(Self::IsSet(parse_capability(capability)?)),
-            PR_CAP_AMBIENT_RAISE => Ok(Self::Raise(parse_capability(capability)?)),
-            PR_CAP_AMBIENT_LOWER => Ok(Self::Lower(parse_capability(capability)?)),
-            PR_CAP_AMBIENT_CLEAR_ALL => {
+            Self::PR_CAP_AMBIENT_IS_SET => Ok(Self::IsSet(parse_capability(capability)?)),
+            Self::PR_CAP_AMBIENT_RAISE => Ok(Self::Raise(parse_capability(capability)?)),
+            Self::PR_CAP_AMBIENT_LOWER => Ok(Self::Lower(parse_capability(capability)?)),
+            Self::PR_CAP_AMBIENT_CLEAR_ALL => {
                 if capability != 0 {
                     return_errno_with_message!(
                         Errno::EINVAL,
-                        "PR_CAP_AMBIENT_CLEAR_ALL requires capability to be 0"
+                        "PR_CAP_AMBIENT_CLEAR_ALL requires all arguments to be 0"
                     );
                 }
                 Ok(Self::ClearAll)
