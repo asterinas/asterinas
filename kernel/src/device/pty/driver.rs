@@ -128,12 +128,7 @@ impl TtyDriver for PtyDriver {
 
         let mut len = 0;
         for ch in chs {
-            // TODO: This is termios-specific behavior and should be part of the TTY implementation
-            // instead of the TTY driver implementation. See the ONLCR flag for more details.
-            if *ch == b'\n' && output.capacity() - output.len() >= 2 {
-                output.push(b'\r').unwrap();
-                output.push(b'\n').unwrap();
-            } else if *ch != b'\n' && !output.is_full() {
+            if !output.is_full() {
                 output.push(*ch).unwrap();
             } else if len == 0 {
                 return_errno_with_message!(Errno::EAGAIN, "the output buffer is full");
@@ -164,8 +159,7 @@ impl TtyDriver for PtyDriver {
     }
 
     fn can_push(&self) -> bool {
-        let output = self.output.lock();
-        output.capacity() - output.len() >= 2
+        !self.output.lock().is_full()
     }
 
     fn notify_input(&self) {
