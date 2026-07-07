@@ -1736,7 +1736,7 @@ umask01
 
 uname01
 uname02
-# uname04
+uname04
 
 unlink05
 unlink07

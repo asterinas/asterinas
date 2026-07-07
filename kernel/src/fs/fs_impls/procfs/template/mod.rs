@@ -8,7 +8,7 @@ pub(super) use self::{
         listed_entries_from_table, lookup_child_from_table, sequential_readdir_entries,
         visit_listed_entries, visit_readdir_entries,
     },
-    file::{ProcFile, ProcFileOps, ProcFileOpsByHandle, read_i32_from},
+    file::{ProcFile, ProcFileOps, ProcFileOpsByHandle, read_i32_from, read_u64_from},
     sym::{ProcSym, ProcSymOps},
 };
 use crate::{
