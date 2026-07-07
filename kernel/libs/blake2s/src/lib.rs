@@ -169,6 +169,7 @@ impl Blake2s {
         }
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn g(
         work: &mut [u32; 16],
         message: &[u32; 16],
