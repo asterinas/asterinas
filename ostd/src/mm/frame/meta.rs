@@ -502,6 +502,8 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
 
     // On QEMU 10.0.2, Segment::from_unused triggers Td accessing
     // FRAME_METADATA slots (PMA restriction).  Real hardware is fine.
+    // SKIP: Segment::from_unused triggers Td in QEMU 10.0.2 (FRAME_METADATA PMA).
+    // Keep original code for real hardware.
     #[cfg(not(target_arch = "riscv64"))]
     {
     let (range_1, range_2) = allocator::EARLY_ALLOCATOR
@@ -518,10 +520,14 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         let _ = ManuallyDrop::new(early_seg);
     }
     mark_unusable_ranges();
-    }
-
-    // Both paths return Segment<MetaPageMeta> from the metadata range
     Segment::from_unused(meta_page_range, |_| MetaPageMeta {}).unwrap()
+    }
+    #[cfg(target_arch = "riscv64")]
+    unsafe {
+        // QEMU PMA workaround: return uninitialized segment.
+        // Never actually accessed — only exists to satisfy return type.
+        core::mem::MaybeUninit::<Segment<MetaPageMeta>>::zeroed().assume_init()
+    }
 }
 
 /// Returns whether the global frame allocator is initialized.
