@@ -471,7 +471,11 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
     let (nr_meta_pages, meta_pages) = alloc_meta_frames(tot_nr_frames);
 
     // Map the metadata frames.
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'0') };
     boot_pt::with_borrow(|boot_pt| {
+        #[cfg(target_arch = "riscv64")]
+        unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'1') };
         for i in 0..nr_meta_pages {
             let frame_paddr = meta_pages + i * PAGE_SIZE;
             let vaddr = mapping::frame_to_meta::<PagingConsts>(0) + i * PAGE_SIZE;
@@ -485,8 +489,12 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         }
     })
     .unwrap();
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'2') };
     // Now the metadata frames are mapped, we can initialize the metadata.
     super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'3') };
 
     let meta_page_range = meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE;
 

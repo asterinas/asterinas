@@ -73,7 +73,11 @@ pub use self::{error::Error, prelude::Result};
 // boot stage only global variables.
 #[doc(hidden)]
 unsafe fn init() {
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'a') };
     arch::enable_cpu_features();
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'b') };
 
     // On RISC-V, EARLY_INFO must be filled here — before any function
     // that reads memory_regions (init_early_allocator, meta::init, ...).
@@ -81,10 +85,14 @@ unsafe fn init() {
     // the identity mapping; no paddr_to_vaddr() calls on this path.
     #[cfg(target_arch = "riscv64")]
     arch::boot::fill_early_info();
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'c') };
 
     // SAFETY: This function is called only once, before `allocator::init`
     // and after memory regions are initialized.
     unsafe { mm::frame::allocator::init_early_allocator() };
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'd') };
 
     #[cfg(target_arch = "x86_64")]
     arch::if_tdx_enabled!({
@@ -93,16 +101,24 @@ unsafe fn init() {
     });
     #[cfg(not(target_arch = "x86_64"))]
     arch::serial::init();
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'e') };
 
     logger::init();
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'f') };
 
     // SAFETY:
     // 1. They are only called once in the boot context of the BSP.
     // 2. The number of CPUs are available because ACPI has been initialized.
     // 3. No CPU-local objects have been accessed yet.
     unsafe { cpu::init_on_bsp() };
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'g') };
 
     let meta_pages = unsafe { mm::frame::meta::init() };
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'h') };
     // The frame allocator should be initialized immediately after the metadata
     // is initialized. Otherwise the boot page table can't allocate frames.
     // SAFETY: This function is called only once.
