@@ -331,8 +331,8 @@ _early_trap:
 .Ltimer_reset:
     SBI_RESET
 
-PTE_VRXWAD = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A
-PTE_VRXW   = PTE_V | PTE_R | PTE_W | PTE_X        // no A/D — let HW set them
+PTE_VRXWAD = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
+PTE_VRXW   = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D  // pre-set A/D — QEMU won't
 
 // ---- Sv48 page tables ------------------------------------------------------
 .balign 4096
