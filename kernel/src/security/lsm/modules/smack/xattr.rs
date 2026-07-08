@@ -84,7 +84,16 @@ pub fn validate_update(name: XattrName<'_>, value: &[u8]) -> Result<()> {
 
 /// Returns the Smack access label attached to an inode.
 pub fn access_label(inode: &dyn Inode) -> Result<SmackLabel> {
-    read_label(inode, SMACK64).map(|label| label.unwrap_or_else(SmackLabel::floor))
+    read_label(inode, SMACK64).map(|label| {
+        label.unwrap_or_else(|| {
+            let default_label = inode.fs().sb().smack.default_label();
+            if default_label.is_floor() {
+                super::access::ambient_label()
+            } else {
+                default_label
+            }
+        })
+    })
 }
 
 /// Returns the Smack exec label attached to an inode.
@@ -117,6 +126,20 @@ pub fn set_access_label(inode: &dyn Inode, label: &SmackLabel) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "invalid xattr namespace");
     };
     let mut value_reader = VmReader::from(label.as_str().as_bytes()).to_fallible();
+
+    match inode.set_xattr(xattr_name, &mut value_reader, XattrSetFlags::empty()) {
+        Ok(()) => Ok(()),
+        Err(error) if is_unsupported_xattr_error(&error) => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+/// Marks an inode as a transmuting directory if the filesystem supports it.
+pub fn set_transmute(inode: &dyn Inode) -> Result<()> {
+    let Some(xattr_name) = XattrName::try_from_full_name(SMACK64TRANSMUTE) else {
+        return_errno_with_message!(Errno::EOPNOTSUPP, "invalid xattr namespace");
+    };
+    let mut value_reader = VmReader::from(&b"TRUE"[..]).to_fallible();
 
     match inode.set_xattr(xattr_name, &mut value_reader, XattrSetFlags::empty()) {
         Ok(()) => Ok(()),

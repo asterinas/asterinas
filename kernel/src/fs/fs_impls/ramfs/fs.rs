@@ -37,6 +37,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid, posix_thread::AsPosixThread},
+    security::{self, SmackMountLabels},
     thread::Thread,
     time::clocks::RealTimeCoarseClock,
     vm::page_cache::PageCache,
@@ -61,17 +62,36 @@ impl RamFs {
         Self::new_internal("ramfs")
     }
 
+    pub(in crate::fs) fn new_with_mount_args(args: Option<&CStr>) -> Result<Arc<Self>> {
+        let smack_mount_labels = security::smack_mount_labels_from_options(args)?;
+        let fs = Self::new_internal_with_smack_labels("ramfs", smack_mount_labels);
+        security::apply_smack_mount_labels(fs.as_ref())?;
+        Ok(fs)
+    }
+
     pub(in crate::fs) fn new_rootfs() -> Arc<Self> {
         Self::new_internal("rootfs")
     }
 
     // TODO: Remove this tmpfs-specific constructor once `TmpFs` no longer
     // aliases `RamFs`.
-    pub fn new_tmpfs() -> Arc<Self> {
+    pub(in crate::fs) fn new_tmpfs() -> Arc<Self> {
+        Self::new_tmpfs_with_smack_labels(SmackMountLabels::default())
+    }
+
+    pub(in crate::fs) fn new_tmpfs_with_mount_args(args: Option<&CStr>) -> Result<Arc<Self>> {
+        let smack_mount_labels = security::smack_mount_labels_from_options(args)?;
+        let fs = Self::new_tmpfs_with_smack_labels(smack_mount_labels);
+        security::apply_smack_mount_labels(fs.as_ref())?;
+        Ok(fs)
+    }
+
+    fn new_tmpfs_with_smack_labels(smack_mount_labels: SmackMountLabels) -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for tmpfs");
         let sb = {
             let mut super_block =
                 SuperBlock::new(TMPFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+            super_block.smack = smack_mount_labels;
             let max_blocks = tmpfs::default_max_blocks();
             let max_inodes = tmpfs::default_max_inodes();
             super_block.blocks = max_blocks;
@@ -85,8 +105,16 @@ impl RamFs {
     }
 
     fn new_internal(name: &'static str) -> Arc<Self> {
+        Self::new_internal_with_smack_labels(name, SmackMountLabels::default())
+    }
+
+    fn new_internal_with_smack_labels(
+        name: &'static str,
+        smack_mount_labels: SmackMountLabels,
+    ) -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for ramfs");
-        let sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        let mut sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        sb.smack = smack_mount_labels;
         Self::new_internal_with_sb(name, anon_device_id, sb)
     }
 
@@ -1474,8 +1502,8 @@ impl FsType for RamFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(RamFs::new())
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+        Ok(RamFs::new_with_mount_args(fs_creation_ctx.args())?)
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

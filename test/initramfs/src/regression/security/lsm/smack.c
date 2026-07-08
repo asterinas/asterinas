@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mount.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -26,6 +27,13 @@
 #define SMACK_XATTR_MMAP "security.SMACK64MMAP"
 #define SMACK_XATTR_TRANSMUTE "security.SMACK64TRANSMUTE"
 #define SMACK_LOAD_PATH "/proc/smack/load"
+#define SMACK_LOAD2_PATH "/proc/smack/load2"
+#define SMACK_ACCESS2_PATH "/proc/smack/access2"
+#define SMACK_CHANGE_RULE_PATH "/proc/smack/change-rule"
+#define SMACK_REVOKE_SUBJECT_PATH "/proc/smack/revoke-subject"
+#define SMACK_AMBIENT_PATH "/proc/smack/ambient"
+#define SMACK_ONLYCAP_PATH "/proc/smack/onlycap"
+#define SMACK_LOGGING_PATH "/proc/smack/logging"
 
 static void build_attr_path(char *buf, size_t size, const char *name)
 {
@@ -147,6 +155,28 @@ static int write_text_file(const char *path, const char *text)
 	close(fd);
 	errno = saved_errno;
 	return ret;
+}
+
+static int read_text_file(const char *path, char *buf, size_t size)
+{
+	int fd = open(path, O_RDONLY);
+	int saved_errno;
+	ssize_t len;
+
+	if (fd < 0) {
+		return -1;
+	}
+
+	len = read(fd, buf, size - 1);
+	saved_errno = errno;
+	close(fd);
+	errno = saved_errno;
+	if (len < 0) {
+		return -1;
+	}
+
+	buf[len] = '\0';
+	return 0;
 }
 
 static int load_smack_rule(const char *rule)
@@ -290,6 +320,98 @@ FN_TEST(attr_full_roundtrip)
 }
 END_TEST()
 
+FN_TEST(policy_abi_management)
+{
+	char buf[256] = {};
+	char ready;
+	int pipefd[2];
+	pid_t pid;
+	int status;
+
+	SKIP_TEST_IF(smack_is_disabled());
+
+	TEST_SUCC(write_current_label("smack_policy_admin\n"));
+	TEST_SUCC(write_text_file(
+		SMACK_LOAD2_PATH,
+		"smack_policy_subject smack_policy_object rwxat\n"));
+	TEST_SUCC(write_text_file(
+		SMACK_ACCESS2_PATH,
+		"smack_policy_subject smack_policy_object rw\n"));
+	TEST_SUCC(read_text_file(SMACK_ACCESS2_PATH, buf, sizeof(buf)));
+	TEST_RES(strcmp(buf, "1\n"), _ret == 0);
+	TEST_SUCC(
+		write_text_file(SMACK_ACCESS2_PATH,
+				"smack_policy_subject smack_policy_other r\n"));
+	TEST_SUCC(read_text_file(SMACK_ACCESS2_PATH, buf, sizeof(buf)));
+	TEST_RES(strcmp(buf, "0\n"), _ret == 0);
+
+	TEST_SUCC(write_text_file(
+		SMACK_CHANGE_RULE_PATH,
+		"smack_policy_subject smack_policy_object - rwxat\n"));
+	TEST_SUCC(write_text_file(
+		SMACK_ACCESS2_PATH,
+		"smack_policy_subject smack_policy_object r\n"));
+	TEST_SUCC(read_text_file(SMACK_ACCESS2_PATH, buf, sizeof(buf)));
+	TEST_RES(strcmp(buf, "0\n"), _ret == 0);
+
+	TEST_SUCC(write_text_file(
+		SMACK_LOAD2_PATH,
+		"smack_revoke_subject smack_revoke_object r\n"));
+	TEST_SUCC(write_text_file(
+		SMACK_ACCESS2_PATH,
+		"smack_revoke_subject smack_revoke_object r\n"));
+	TEST_SUCC(read_text_file(SMACK_ACCESS2_PATH, buf, sizeof(buf)));
+	TEST_RES(strcmp(buf, "1\n"), _ret == 0);
+	TEST_SUCC(write_text_file(SMACK_REVOKE_SUBJECT_PATH,
+				  "smack_revoke_subject\n"));
+	TEST_SUCC(write_text_file(
+		SMACK_ACCESS2_PATH,
+		"smack_revoke_subject smack_revoke_object r\n"));
+	TEST_SUCC(read_text_file(SMACK_ACCESS2_PATH, buf, sizeof(buf)));
+	TEST_RES(strcmp(buf, "0\n"), _ret == 0);
+
+	TEST_SUCC(write_text_file(SMACK_AMBIENT_PATH, "smack_ambient\n"));
+	TEST_SUCC(read_text_file(SMACK_AMBIENT_PATH, buf, sizeof(buf)));
+	TEST_RES(strcmp(buf, "smack_ambient\n"), _ret == 0);
+	TEST_SUCC(write_text_file(SMACK_AMBIENT_PATH, "_\n"));
+
+	TEST_SUCC(write_text_file(SMACK_LOGGING_PATH, "3\n"));
+	TEST_SUCC(read_text_file(SMACK_LOGGING_PATH, buf, sizeof(buf)));
+	TEST_RES(strcmp(buf, "3\n"), _ret == 0);
+	TEST_SUCC(write_text_file(SMACK_LOGGING_PATH, "1\n"));
+
+	TEST_SUCC(write_current_label("smack_onlycap_admin\n"));
+	TEST_SUCC(write_text_file(SMACK_LOAD2_PATH,
+				  "smack_onlycap_user _ rwxat\n"));
+	TEST_SUCC(write_text_file(SMACK_ONLYCAP_PATH, "smack_onlycap_admin\n"));
+	TEST_SUCC(pipe(pipefd));
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		CHECK(close(pipefd[1]));
+		CHECK_WITH(read(pipefd[0], &ready, sizeof(ready)),
+			   _ret == sizeof(ready));
+		CHECK(close(pipefd[0]));
+		CHECK(write_current_label("smack_onlycap_user\n"));
+		errno = 0;
+		CHECK_WITH(
+			write_text_file(
+				SMACK_LOAD2_PATH,
+				"smack_onlycap_user smack_onlycap_object r\n"),
+			_ret == -1 && errno == EPERM);
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_SUCC(close(pipefd[0]));
+	TEST_SUCC(write_all(pipefd[1], "x", 1));
+	TEST_SUCC(close(pipefd[1]));
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+	TEST_SUCC(write_text_file(SMACK_ONLYCAP_PATH, "-\n"));
+	TEST_SUCC(write_current_label("_\n"));
+}
+END_TEST()
+
 FN_TEST(xattr_validation_and_capability)
 {
 	pid_t pid;
@@ -368,6 +490,92 @@ FN_TEST(policy_load_and_file_access)
 		 _ret == pid && WIFEXITED(status) &&
 			 WEXITSTATUS(status) == EXIT_SUCCESS);
 	TEST_SUCC(unlink(file_template));
+	TEST_SUCC(write_current_label("_\n"));
+}
+END_TEST()
+
+FN_TEST(mount_label_options)
+{
+	char default_mount_template[] = "/tmp/smack_mnt_defXXXXXX";
+	char root_mount_template[] = "/tmp/smack_mnt_rootXXXXXX";
+	char child_path[128];
+	char label[SMACK_ATTR_CURRENT_MAX_LEN] = {};
+	char transmute[sizeof("TRUE")] = {};
+	pid_t pid;
+	int status;
+	int fd;
+
+	SKIP_TEST_IF(smack_is_disabled());
+
+	CHECK_WITH(mkdtemp(default_mount_template),
+		   _ret == default_mount_template);
+	TEST_SUCC(write_current_label("smack_mount_subject\n"));
+	TEST_SUCC(mount("none", default_mount_template, "ramfs", 0,
+			"smackfsdef=smack_mount_default"));
+	CHECK_WITH(snprintf(child_path, sizeof(child_path), "%s/child",
+			    default_mount_template),
+		   _ret > 0 && (size_t)_ret < sizeof(child_path));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_MAC_OVERRIDE);
+		errno = 0;
+		CHECK_WITH(open(child_path, O_CREAT | O_RDWR, 0600),
+			   _ret == -1 && errno == EACCES);
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+	TEST_SUCC(
+		load_smack_rule("smack_mount_subject smack_mount_default w\n"));
+	fd = TEST_SUCC(open(child_path, O_CREAT | O_RDWR, 0600));
+	TEST_SUCC(close(fd));
+	TEST_SUCC(removexattr(child_path, SMACK_XATTR_ACCESS));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_MAC_OVERRIDE);
+		errno = 0;
+		CHECK_WITH(open(child_path, O_RDONLY),
+			   _ret == -1 && errno == EACCES);
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+	TEST_SUCC(load_smack_rule(
+		"smack_mount_subject smack_mount_default rwxat\n"));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_MAC_OVERRIDE);
+		fd = CHECK(open(child_path, O_RDONLY));
+		CHECK(close(fd));
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+	TEST_SUCC(unlink(child_path));
+	TEST_SUCC(umount(default_mount_template));
+	TEST_SUCC(rmdir(default_mount_template));
+
+	CHECK_WITH(mkdtemp(root_mount_template), _ret == root_mount_template);
+	TEST_SUCC(mount(
+		"none", root_mount_template, "ramfs", 0,
+		"smackfsroot=smack_mount_root,smackfstransmute=smack_mount_transmute"));
+	TEST_SUCC(read_xattr_label(root_mount_template, SMACK_XATTR_ACCESS,
+				   label, sizeof(label)));
+	TEST_RES(strcmp(label, "smack_mount_transmute"), _ret == 0);
+	TEST_SUCC(read_xattr_label(root_mount_template, SMACK_XATTR_TRANSMUTE,
+				   transmute, sizeof(transmute)));
+	TEST_RES(strcmp(transmute, "TRUE"), _ret == 0);
+	TEST_SUCC(umount(root_mount_template));
+	TEST_SUCC(rmdir(root_mount_template));
 	TEST_SUCC(write_current_label("_\n"));
 }
 END_TEST()

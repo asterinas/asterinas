@@ -33,7 +33,7 @@ use super::{
 use crate::{
     fs::{ext2::utils, vfs::file_system::FsEventSubscriberStats},
     process::{Gid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
-    security::lsm::hooks as lsm_hooks,
+    security::{self, SmackMountLabels, lsm::hooks as lsm_hooks},
     thread::Thread,
 };
 
@@ -59,6 +59,8 @@ pub struct Ext2 {
     group_descriptors_segment: USegment,
     /// Runtime mount options that affect block-count reporting.
     mount_options: Ext2MountOptions,
+    /// Smack labels supplied through mount options.
+    smack_mount_labels: SmackMountLabels,
     /// FS event stats for VFS.
     fs_event_subscriber_stats: FsEventSubscriberStats,
     /// Per-filesystem inode generation counter.
@@ -122,6 +124,7 @@ impl Ext2 {
         }
 
         let mount_options = Ext2MountOptions::parse(data);
+        let smack_mount_labels = security::smack_mount_labels_from_options(data)?;
 
         let nr_inodes_per_group = super_block.nr_inodes_per_group();
 
@@ -174,10 +177,13 @@ impl Ext2 {
             nr_inodes_per_group,
             group_descriptors_segment,
             mount_options,
+            smack_mount_labels,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             next_generation: AtomicU32::new(utils::duration_to_ext2_secs(utils::now())),
             self_ref: weak_self.clone(),
         });
+
+        security::apply_smack_mount_labels(ext2.as_ref())?;
 
         Ok(ext2)
     }
@@ -218,6 +224,11 @@ impl Ext2 {
     /// Returns the fs event subscriber stats.
     pub(super) fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
         &self.fs_event_subscriber_stats
+    }
+
+    /// Returns Smack labels supplied through mount options.
+    pub(super) fn smack_mount_labels(&self) -> SmackMountLabels {
+        self.smack_mount_labels.clone()
     }
 
     /// Returns the root inode.

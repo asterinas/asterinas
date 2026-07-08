@@ -4,11 +4,13 @@
 
 mod access;
 mod label;
+mod mount;
 mod state;
 mod xattr;
 
 pub use self::{
-    access::SmackAccess, label::SmackLabel, state::SmackTaskState, xattr::is_smack_xattr,
+    access::SmackAccess, label::SmackLabel, mount::SmackMountLabels, state::SmackTaskState,
+    xattr::is_smack_xattr,
 };
 use super::super::{
     LsmFlags, LsmModule,
@@ -50,7 +52,31 @@ impl LsmModule for SmackLsm {
 
 impl LsmAlienAccessHook for SmackLsm {}
 
-impl LsmCapabilityHook for SmackLsm {}
+impl LsmCapabilityHook for SmackLsm {
+    fn on_capable(&self, context: &CapableContext) -> Result<()> {
+        if !context
+            .required_cap()
+            .intersects(CapSet::MAC_ADMIN | CapSet::MAC_OVERRIDE)
+        {
+            return Ok(());
+        }
+
+        let subject = context
+            .posix_thread()
+            .credentials()
+            .smack_task_state()
+            .current_label()
+            .clone();
+        if access::subject_has_onlycap(&subject) {
+            return Ok(());
+        }
+
+        return_errno_with_message!(
+            Errno::EPERM,
+            "Smack onlycap policy denies the requested capability"
+        );
+    }
+}
 
 impl LsmBprmHook for SmackLsm {
     fn on_bprm_check_security(&self, context: &BprmCheckContext<'_>) -> Result<()> {
@@ -187,9 +213,80 @@ pub fn load_rules(policy: &str) -> Result<usize> {
     access::load_rules(policy)
 }
 
+/// Enables and disables access bits in one Smack access rule.
+pub fn change_rule(rule: &str) -> Result<()> {
+    current_thread_may_admin()?;
+    access::change_rule(rule)
+}
+
+/// Removes Smack access rules for a subject.
+pub fn revoke_subject(subject: &str) -> Result<usize> {
+    current_thread_may_admin()?;
+    access::revoke_subject(subject)
+}
+
+/// Queries whether a Smack access request would be allowed.
+pub fn query_access(query: &str) -> Result<bool> {
+    current_thread_may_admin()?;
+    access::query_access(query)
+}
+
+/// Returns the last Smack access query result.
+pub fn access_query_result_as_text() -> String {
+    access::access_query_result_as_text()
+}
+
 /// Returns loaded Smack access rules.
 pub fn rules_as_text() -> String {
     access::rules_as_text()
+}
+
+/// Returns the current ambient label.
+pub fn ambient_label_as_text() -> String {
+    access::ambient_label_as_text()
+}
+
+/// Sets the current ambient label.
+pub fn set_ambient_label(label: &str) -> Result<()> {
+    current_thread_may_admin()?;
+    access::set_ambient_label(label)
+}
+
+/// Returns labels allowed to exercise Smack MAC capabilities.
+pub fn onlycap_labels_as_text() -> String {
+    access::onlycap_labels_as_text()
+}
+
+/// Replaces labels allowed to exercise Smack MAC capabilities.
+pub fn set_onlycap_labels(labels: &str) -> Result<()> {
+    current_thread_may_admin()?;
+    access::set_onlycap_labels(labels)
+}
+
+/// Returns the current access logging mode.
+pub fn logging_mode_as_text() -> String {
+    access::logging_mode_as_text()
+}
+
+/// Sets the current access logging mode.
+pub fn set_logging_mode(mode: &str) -> Result<()> {
+    current_thread_may_admin()?;
+    access::set_logging_mode(mode)
+}
+
+/// Parses Smack mount labels from mount options.
+pub fn mount_labels_from_options(args: Option<&CStr>) -> Result<SmackMountLabels> {
+    let (labels, found_smack_option) = SmackMountLabels::parse(args)?;
+    if found_smack_option {
+        current_thread_may_admin()?;
+    }
+
+    Ok(labels)
+}
+
+/// Applies root-specific Smack mount labels to a filesystem.
+pub fn apply_mount_labels(fs: &dyn crate::fs::vfs::file_system::FileSystem) -> Result<()> {
+    mount::apply_root_labels(fs)
 }
 
 /// Checks whether a Smack xattr may be updated.
@@ -383,17 +480,7 @@ fn current_thread_may_admin() -> Result<()> {
 }
 
 fn current_thread_has_mac_override() -> bool {
-    let Some(thread) = Thread::current() else {
-        return false;
-    };
-    let Some(posix_thread) = thread.as_posix_thread() else {
-        return false;
-    };
-
-    posix_thread
-        .credentials()
-        .effective_capset()
-        .contains(CapSet::MAC_OVERRIDE)
+    current_thread_has_capability(CapSet::MAC_OVERRIDE)
 }
 
 fn current_subject_label() -> Option<SmackLabel> {
@@ -414,4 +501,20 @@ fn current_socket_create_label() -> Option<SmackLabel> {
         .smack_task_state()
         .sockcreate_label()
         .cloned()
+}
+
+fn current_thread_has_capability(capability: CapSet) -> bool {
+    let Some(thread) = Thread::current() else {
+        return false;
+    };
+    let Some(posix_thread) = thread.as_posix_thread() else {
+        return false;
+    };
+
+    lsm_hooks::on_capable(CapableContext::new(
+        UserNamespace::get_init_singleton().as_ref(),
+        posix_thread,
+        capability,
+    ))
+    .is_ok()
 }

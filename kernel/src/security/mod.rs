@@ -12,11 +12,11 @@ cfg_if! {
     }
 }
 
-pub use self::lsm::SmackTaskState;
+pub use self::lsm::{SmackMountLabels, SmackTaskState};
 use crate::{
     fs::{
         file::Permission,
-        vfs::{inode::Inode, path::Path},
+        vfs::{file_system::FileSystem, inode::Inode, path::Path},
     },
     prelude::*,
     process::{Credentials, posix_thread::PosixThread},
@@ -88,6 +88,42 @@ pub fn load_smack_rules(policy: &str) -> Result<usize> {
     lsm::smack::load_rules(policy)
 }
 
+/// Enables and disables access bits in one Smack access rule.
+pub fn change_smack_rule(rule: &str) -> Result<()> {
+    if !is_smack_enabled() {
+        return_errno_with_message!(Errno::ENOENT, "the Smack LSM is not enabled");
+    }
+
+    lsm::smack::change_rule(rule)
+}
+
+/// Removes Smack access rules for a subject.
+pub fn revoke_smack_subject(subject: &str) -> Result<usize> {
+    if !is_smack_enabled() {
+        return_errno_with_message!(Errno::ENOENT, "the Smack LSM is not enabled");
+    }
+
+    lsm::smack::revoke_subject(subject)
+}
+
+/// Queries whether a Smack access request would be allowed.
+pub fn query_smack_access(query: &str) -> Result<bool> {
+    if !is_smack_enabled() {
+        return_errno_with_message!(Errno::ENOENT, "the Smack LSM is not enabled");
+    }
+
+    lsm::smack::query_access(query)
+}
+
+/// Returns the last Smack access query result.
+pub fn smack_access_query_result_as_text() -> Result<String> {
+    if !is_smack_enabled() {
+        return_errno_with_message!(Errno::ENOENT, "the Smack LSM is not enabled");
+    }
+
+    Ok(lsm::smack::access_query_result_as_text())
+}
+
 /// Returns loaded Smack access rules.
 pub fn smack_rules_as_text() -> Result<String> {
     if !is_smack_enabled() {
@@ -95,6 +131,78 @@ pub fn smack_rules_as_text() -> Result<String> {
     }
 
     Ok(lsm::smack::rules_as_text())
+}
+
+/// Returns the current Smack ambient label.
+pub fn smack_ambient_label_as_text() -> Result<String> {
+    if !is_smack_enabled() {
+        return_errno_with_message!(Errno::ENOENT, "the Smack LSM is not enabled");
+    }
+
+    Ok(lsm::smack::ambient_label_as_text())
+}
+
+/// Sets the current Smack ambient label.
+pub fn set_smack_ambient_label(label: &str) -> Result<()> {
+    if !is_smack_enabled() {
+        return_errno_with_message!(Errno::ENOENT, "the Smack LSM is not enabled");
+    }
+
+    lsm::smack::set_ambient_label(label)
+}
+
+/// Returns the Smack `onlycap` label set.
+pub fn smack_onlycap_labels_as_text() -> Result<String> {
+    if !is_smack_enabled() {
+        return_errno_with_message!(Errno::ENOENT, "the Smack LSM is not enabled");
+    }
+
+    Ok(lsm::smack::onlycap_labels_as_text())
+}
+
+/// Sets the Smack `onlycap` label set.
+pub fn set_smack_onlycap_labels(labels: &str) -> Result<()> {
+    if !is_smack_enabled() {
+        return_errno_with_message!(Errno::ENOENT, "the Smack LSM is not enabled");
+    }
+
+    lsm::smack::set_onlycap_labels(labels)
+}
+
+/// Returns the current Smack logging mode.
+pub fn smack_logging_mode_as_text() -> Result<String> {
+    if !is_smack_enabled() {
+        return_errno_with_message!(Errno::ENOENT, "the Smack LSM is not enabled");
+    }
+
+    Ok(lsm::smack::logging_mode_as_text())
+}
+
+/// Sets the current Smack logging mode.
+pub fn set_smack_logging_mode(mode: &str) -> Result<()> {
+    if !is_smack_enabled() {
+        return_errno_with_message!(Errno::ENOENT, "the Smack LSM is not enabled");
+    }
+
+    lsm::smack::set_logging_mode(mode)
+}
+
+/// Parses Smack mount labels from mount options.
+pub fn smack_mount_labels_from_options(args: Option<&CStr>) -> Result<SmackMountLabels> {
+    if !is_smack_enabled() {
+        return Ok(SmackMountLabels::default());
+    }
+
+    lsm::smack::mount_labels_from_options(args)
+}
+
+/// Applies root-specific Smack mount labels to a filesystem.
+pub fn apply_smack_mount_labels(fs: &dyn FileSystem) -> Result<()> {
+    if !is_smack_enabled() {
+        return Ok(());
+    }
+
+    lsm::smack::apply_mount_labels(fs)
 }
 
 /// Checks whether a Smack xattr update is permitted and valid.

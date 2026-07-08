@@ -40,8 +40,8 @@ impl FsType for TmpFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(TmpFs::new_tmpfs())
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+        Ok(TmpFs::new_tmpfs_with_mount_args(fs_creation_ctx.args())?)
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

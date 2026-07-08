@@ -6,7 +6,7 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use device_id::DeviceId;
 
 use super::inode::Inode;
-use crate::prelude::*;
+use crate::{prelude::*, security::SmackMountLabels};
 
 /// Common interface implemented by each concrete file system instance.
 pub trait FileSystem: Any + Sync + Send {
@@ -79,6 +79,7 @@ pub struct SuperBlock {
     pub frsize: usize,
     pub flags: u64,
     pub container_dev_id: DeviceId,
+    pub smack: SmackMountLabels,
 }
 
 impl SuperBlock {
@@ -96,6 +97,7 @@ impl SuperBlock {
             frsize: block_size,
             flags: 0,
             container_dev_id: dev_id,
+            smack: SmackMountLabels::default(),
         }
     }
 }

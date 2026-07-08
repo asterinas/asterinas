@@ -20,9 +20,12 @@ pub mod yama {
 
 pub mod smack {
     pub use super::modules::smack::{
-        SmackTaskState, check_xattr_removal, check_xattr_update, is_smack_xattr, load_rules,
-        rules_as_text, set_current_label, set_exec_label, set_fscreate_label, set_sockcreate_label,
-        task_state,
+        SmackMountLabels, SmackTaskState, access_query_result_as_text, ambient_label_as_text,
+        apply_mount_labels, change_rule, check_xattr_removal, check_xattr_update, is_smack_xattr,
+        load_rules, logging_mode_as_text, mount_labels_from_options, onlycap_labels_as_text,
+        query_access, revoke_subject, rules_as_text, set_ambient_label, set_current_label,
+        set_exec_label, set_fscreate_label, set_logging_mode, set_onlycap_labels,
+        set_sockcreate_label, task_state,
     };
 }
 
@@ -32,7 +35,7 @@ use self::hooks::{
 };
 pub use self::{
     hooks::{BprmCheckContext, BprmCommittedCredsContext},
-    smack::SmackTaskState,
+    smack::{SmackMountLabels, SmackTaskState},
 };
 use crate::prelude::*;
 
