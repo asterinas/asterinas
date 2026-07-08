@@ -150,6 +150,14 @@ impl ProcFileOps for StatusFileOps {
                 .unwrap_or(0)
         )?;
 
+        // Reference:
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/array.c#L199>
+        write!(printer, "Groups:\t")?;
+        for gid in credentials.groups().iter() {
+            write!(printer, "{} ", u32::from(*gid))?;
+        }
+        writeln!(printer)?;
+
         if let Some(vmar_ref) = process.lock_vmar().as_ref() {
             let vsize = vmar_ref.get_mappings_total_size();
             let anon = vmar_ref.get_rss_counter(RssType::Anon) * (PAGE_SIZE / 1024);
