@@ -450,6 +450,9 @@ impl_frame_meta_for!(MetaPageMeta);
 /// This function should be called only once and only on the BSP,
 /// before any APs are started.
 pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'0') };
+
     let max_paddr = {
         let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
         regions
@@ -465,10 +468,19 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         max_paddr
     );
 
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'1') };
+
     add_temp_linear_mapping(max_paddr);
+
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'2') };
 
     let tot_nr_frames = max_paddr / page_size::<PagingConsts>(1);
     let (nr_meta_pages, meta_pages) = alloc_meta_frames(tot_nr_frames);
+
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'3') };
 
     // Map the metadata frames.
     boot_pt::with_borrow(|boot_pt| {
@@ -483,8 +495,19 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
             // SAFETY: we are doing the metadata mappings for the kernel.
             unsafe { boot_pt.map_base_page(vaddr, frame_paddr / PAGE_SIZE, prop) };
         }
+        // RISC-V TLB coherence: sfence.vma ensures the MMU sees the newly
+        // written PTEs.  Without this, QEMU 8.2.2 can serve stale TLB
+        // entries for the FRAME_METADATA range, leading to Load Page Faults.
+        #[cfg(target_arch = "riscv64")]
+        unsafe {
+            riscv::asm::sfence_vma_all();
+        }
     })
     .unwrap();
+
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'4') };
+
     // Now the metadata frames are mapped, we can initialize the metadata.
     super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
 

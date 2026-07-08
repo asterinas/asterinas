@@ -210,6 +210,15 @@ impl PageTableEntryTrait for PageTableEntry {
             | parse_flags!(prop.flags.bits(), PageFlags::AVAIL1, PageTableFlags::RSV1)
             | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PageTableFlags::RSV2);
 
+        // QEMU does not auto-set A/D bits for data-only pages.
+        // Pre-set them so LR/SC atomics work on the first access.
+        let rwx = PageTableFlags::READABLE
+            | PageTableFlags::WRITABLE
+            | PageTableFlags::EXECUTABLE;
+        if (flags & rwx.bits()) != 0 {
+            flags |= PageTableFlags::ACCESSED.bits() | PageTableFlags::DIRTY.bits();
+        }
+
         match prop.cache {
             CachePolicy::Writeback => (),
             CachePolicy::Uncacheable => {

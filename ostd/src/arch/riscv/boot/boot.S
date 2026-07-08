@@ -117,98 +117,59 @@ _start:
     // Virtual address layout:
     //   IDENTITY:  0x00000000_00000000  -> phys,  L4[0]   -> boot_idpt
     //   LINEAR:    0xffff8000_00000000  -> phys,  L4[256] -> boot_idpt (shared)
+    //   META:      0xffffe000_00000000  -> phys,  L4[448] -> boot_meta_l3pt
     //   KERNEL:    0xffffffff_80000000  -> phys,  L4[511] -> boot_l3pt
     //
-    // L4[0] and L4[256] share boot_idpt — VPN[2] of the linear base is 0,
-    // so both L4 entries resolve to the same physical address via the same
-    // 1 GiB leaf at boot_idpt[VPN[2]].  Avoid 512 GiB leaves at L4 because
-    // QEMU (and some hardware) reject them.
-
-    // L4[0] and L4[256] -> boot_idpt (non-leaf, V only).
-    // Also fill boot_idpt[0..3] with non-leaf -> boot_l2_id_0..3.
-    lla    t0, boot_idpt
-    slli   t0, t0, 32
-    srli   t0, t0, 32
-    // Save boot_idpt phys addr for filling its entries.
-    mv     s2, t0
-
-    // Write boot_idpt entries 0..3.
-    // Entry format: (phys_addr_of_L2 >> (PAGE_SHIFT - PTE_PPN_SHIFT)) | PTE_V
-
-    lla    t0, boot_l2_id_0
-    slli   t0, t0, 32; srli   t0, t0, 32
-    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
-    ori    t0, t0, PTE_V
-    sd     t0,  0(s2)
-
-    lla    t0, boot_l2_id_1
-    slli   t0, t0, 32; srli   t0, t0, 32
-    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
-    ori    t0, t0, PTE_V
-    sd     t0,  8(s2)
-
-    lla    t0, boot_l2_id_2
-    slli   t0, t0, 32; srli   t0, t0, 32
-    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
-    ori    t0, t0, PTE_V
-    sd     t0, 16(s2)
-
-    lla    t0, boot_l2_id_3
-    slli   t0, t0, 32; srli   t0, t0, 32
-    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
-    ori    t0, t0, PTE_V
-    sd     t0, 24(s2)
-
-    // Write L4[0] and L4[256] pointing to boot_idpt.
-    srli   t0, s2, PAGE_SHIFT - PTE_PPN_SHIFT
-    ori    t0, t0, PTE_V
+    // boot_idpt: 512 × 1 GiB leaf PTEs covering PA 0..512 GiB.
+    // Sv48 mandates gigapage support; QEMU 8.2.2+ handles them correctly.
+    //
+    // L4[0] and L4[256] share boot_idpt — VPN[2] of the linear base is 0.
 
     lla    t1, boot_l4pt
-    slli   t1, t1, 32; srli   t1, t1, 32
-    sd     t0, 0(t1)               // L4[0]
-    li     t2, 2048
-    add    t2, t1, t2
-    sd     t0, 0(t2)               // L4[256]
+    slli   t1, t1, 32
+    srli   t1, t1, 32
 
-    // L4[511] -> boot_l3pt (non-leaf, V only — no A on non-leaf PTE).
-    // Entry 510 is replaced below with a non-leaf pointer to boot_l2_kernel,
-    // a table of 2 MiB leaf pages that QEMU handles correctly in Sv48.
-    lla    t0, boot_l3pt
-    slli   t0, t0, 32
-    srli   t0, t0, 32
-    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
-    ori    t0, t0, PTE_V
-    // offset = 511 * 8 = 4088.
-    li     t2, 4088
-    add    t2, t1, t2
-    sd     t0, 0(t2)             // L4[511]
+    // Helper: t0 = (physical_addr_of_label >> 2) | PTE_V  (PPN shift 10, 12-10=2)
+    .macro L4_PTE dst_reg, label
+        lla    \dst_reg, \label
+        slli   \dst_reg, \dst_reg, 32
+        srli   \dst_reg, \dst_reg, 32
+        srli   \dst_reg, \dst_reg, PAGE_SHIFT - PTE_PPN_SHIFT
+        ori    \dst_reg, \dst_reg, PTE_V
+    .endm
+
+    // L4[0]   -> boot_idpt (identity mapping)
+    L4_PTE   t0, boot_idpt
+    sd       t0, 0(t1)
+
+    // L4[256] -> boot_idpt (linear mapping, shared with identity)
+    li       t2, 2048
+    add      t2, t1, t2
+    sd       t0, 0(t2)
+
+    // L4[448] -> boot_meta_l3pt (FRAME_METADATA region, 0xffffe00000000000+)
+    L4_PTE   t0, boot_meta_l3pt
+    li       t2, 3584
+    add      t2, t1, t2
+    sd       t0, 0(t2)
+
+    // L4[511] -> boot_l3pt (kernel high-half, 0xffffffff00000000+)
+    L4_PTE   t0, boot_l3pt
+    li       t2, 4088
+    add      t2, t1, t2
+    sd       t0, 0(t2)
 
     // Replace L3[510]'s 1 GiB leaf with a non-leaf pointer to
     // boot_l2_kernel.  QEMU 9.x can reject 1 GiB leaf PTEs in Sv48.
-    lla    t0, boot_l2_kernel
-    slli   t0, t0, 32
-    srli   t0, t0, 32
-    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
-    ori    t0, t0, PTE_V
+    // boot_l2_kernel uses 2 MiB leaf pages covering 0x80000000-0xbfffffff.
+    L4_PTE   t0, boot_l2_kernel
 
-    lla    t1, boot_l3pt
-    slli   t1, t1, 32
-    srli   t1, t1, 32
-    // offset = 510 * 8 = 4080.
-    li     t2, 4080
-    add    t2, t1, t2
-    sd     t0, 0(t2)             // L3[510]
-
-    // Zero out L3 entries 448 through 455 to cover the full
-    // FRAME_METADATA_BASE_VADDR range (0xffffe00000000000+).
-    // Static 1GiB leaves map PA 448-455 GiB which doesn't exist.
-    // Let alloc_child create fresh L2/L1 tables with correct PA.
-    li     t3, 3584                // offset = 448 * 8
-    li     t4, 3648                // offset = 456 * 8 (end)
-1:  add    t2, t1, t3
-    sd     zero, 0(t2)
-    addi   t3, t3, 8
-    blt    t3, t4, 1b
+    lla      t1, boot_l3pt
+    slli     t1, t1, 32
+    srli     t1, t1, 32
+    li       t2, 4080
+    add      t2, t1, t2
+    sd       t0, 0(t2)
 
     SBI_PUTCHAR 'D'
     SBI_SET_TIMER (60 * TIMER_FREQ)
@@ -292,13 +253,15 @@ _start:
 
 // Tiny trap handler:
 //   - Supervisor timer interrupt -> reset the board (safety net).
-//   - Anything else -> print 'T' + low nibble of scause and loop.
+//   - Trap during early boot -> print 'T' + scause nibble + ':' + stval[39:32] nibble.
+//     This reveals the faulting VA's VPN[3] (the L4 index) for page faults.
 .balign 4
 _early_trap:
     csrr   t0, scause
     li     t1, 0x8000000000000005
     beq    t0, t1, .Ltimer_reset
 
+    // Print 'T' then scause low nibble
     li     a0, 'T'
     li     a7, 0x01
     ecall
@@ -313,8 +276,29 @@ _early_trap:
     mv     a0, t4
     li     a7, 0x01
     ecall
+
+    // Print ':' separator
+    li     a0, ':'
+    li     a7, 0x01
+    ecall
+
+    // Print VPN[3] top nibble of stval (VA[47:44]) as hex nibble
+    // VPN[3]=0→'0', 256→'8', 448→'e', 511→'f'
+    csrr   t3, stval
+    srli   t3, t3, 44
+    andi   t4, t3, 0xf
+    li     t5, 9
+    ble    t4, t5, 3f
+    addi   t4, t4, 'a' - 10
+    j      4f
 3:
-    j      3b
+    addi   t4, t4, '0'
+4:
+    mv     a0, t4
+    li     a7, 0x01
+    ecall
+5:
+    j      5b
 
 .Ltimer_reset:
     SBI_RESET
@@ -325,62 +309,34 @@ PTE_VRXW   = PTE_V | PTE_R | PTE_W | PTE_X        // no A/D — let HW set them
 // ---- Sv48 page tables ------------------------------------------------------
 .balign 4096
 boot_l4pt:
-    .zero 1 * PTE_SIZE           // L4[0]: set at runtime -> boot_idpt
+    .zero 1 * PTE_SIZE           // L4[0]:   set at runtime -> boot_idpt
     .zero 255 * PTE_SIZE         // L4[1..255]: unused
     .zero 1 * PTE_SIZE           // L4[256]: set at runtime -> boot_idpt
-    .zero 254 * PTE_SIZE         // L4[257..510]: unused
+    .zero 191 * PTE_SIZE         // L4[257..447]: unused
+    .zero 1 * PTE_SIZE           // L4[448]: set at runtime -> boot_meta_l3pt
+    .zero 62 * PTE_SIZE          // L4[449..510]: unused
     .zero 1 * PTE_SIZE           // L4[511]: set at runtime -> boot_l3pt
 
 // Identity and linear mappings share this table.
-// Entries VPN[0..3] are set at runtime to point to boot_l2_id_* tables
-// (2 MiB leaf pages) covering phys 0..4 GiB.
-// Entries VPN[4..511] are left zero (unmapped).
+// 512 × 1 GiB leaf PTEs (gigapages) covering PA 0..512 GiB.
+// Sv48 mandates gigapage support; QEMU 8.2.2+ handles them correctly.
 .balign 4096
 boot_idpt:
+    .set i, 0
+    .rept 512
+    .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .set i, i + 1
+    .endr
+
+// L3 page table for FRAME_METADATA region (L4[448] points here).
+// Zero-initialized: map_base_page allocates L2/L1 tables on demand.
+.balign 4096
+boot_meta_l3pt:
     .zero 512 * PTE_SIZE
 
-// Four L2 tables, each covering 1 GiB with 512 x 2 MiB leaf PTEs.
-// Maps phys i*1GiB .. (i+1)*1GiB - 1 for identity/linear access.
-.balign 4096
-boot_l2_id_0:
-    PTE_TMP_VRXWAD = PTE_VRXW
-    .set PTE_VRXW, PTE_VRXW
-    .set i, 0
-    .rept 512
-    .quad (((0x00000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXW
-    .set i, i + 1
-    .endr
-
-.balign 4096
-boot_l2_id_1:
-    .set i, 0
-    .rept 512
-    .quad (((0x40000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXW
-    .set i, i + 1
-    .endr
-
-.balign 4096
-boot_l2_id_2:
-    .set i, 0
-    .rept 512
-    .quad (((0x80000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXW
-    .set i, i + 1
-    .endr
-
-.balign 4096
-boot_l2_id_3:
-    .set i, 0
-    .rept 512
-    .quad (((0xC0000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXW
-    .set i, i + 1
-    .endr
-
-// High-half mapping for the kernel.
-// L4[511] selects this table.
-// All 512 entries (VPN[2]=0..511) are 1 GiB identity leaves.
-// Entries 0..507 cover VA 0xfffffff000000000..0xfffffffee0000000 -> phys 0..508 GiB
-// Entry 510 is set at runtime to point to boot_l2_kernel (2 MiB leaves)
-// to avoid QEMU 9.x Sv48 1 GiB leaf PTE bugs in the kernel VMA region.
+// High-half kernel mapping table (L4[511] selects this).
+// 512 entries, each a 1 GiB identity leaf.
+// Entry 510 replaced at runtime → non-leaf → boot_l2_kernel (2 MiB leaves).
 .balign 4096
 boot_l3pt:
     .set i, 0
@@ -389,9 +345,8 @@ boot_l3pt:
     .set i, i + 1
     .endr
 
-// 2 MiB leaf pages for the kernel VMA region (VPN[2]=510, covering
-// VA 0xffffffff80000000-0xffffffffbfffffff -> phys 0x80000000-0xbfffffff).
-// 512 entries, each covering 2 MiB.
+// 2 MiB leaf pages for the kernel VMA region (L3[510] → this table,
+// VA 0xffffffff80000000-0xffffffffbfffffff → phys 0x80000000-0xbfffffff).
 .balign 4096
 boot_l2_kernel:
     .set i, 0
