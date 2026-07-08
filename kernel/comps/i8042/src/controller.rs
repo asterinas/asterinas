@@ -25,97 +25,46 @@ pub(super) const STATUS_OR_COMMAND_PORT_ADDR: u16 = 0x64;
 pub(super) static I8042_CONTROLLER: Once<SpinLock<I8042Controller, LocalIrqDisabled>> = Once::new();
 
 pub(super) fn init() -> Result<(), I8042ControllerError> {
-    const SELF_TEST_OK: u8 = 0x55;
-    const PORT_TEST_OK: u8 = 0x00;
-
     let mut controller = I8042Controller::new()?;
 
     // The steps to initialize the i8042 controller are from:
     // <https://wiki.osdev.org/I8042_PS/2_Controller#Initialising_the_PS/2_Controller>.
 
-    // Disable devices so that they won't send data at the wrong time and mess up initialization.
-    controller.wait_and_send_command(Command::DisableFirstPort)?;
-    controller.wait_and_send_command(Command::DisableSecondPort)?;
+    // Initialization sequence.
+    let mut config = controller.initialize_controller()?;
 
-    // Flush the output buffer by reading from the data port and discarding the data.
-    controller.flush_output_buffer();
-
-    // Set the controller configuration byte.
-    let mut config = controller.read_configuration()?;
-    config.remove(
-        Configuration::FIRST_PORT_INTERRUPT_ENABLED
-            | Configuration::FIRST_PORT_TRANSLATION_ENABLED
-            | Configuration::SECOND_PORT_INTERRUPT_ENABLED,
-    );
-    controller.write_configuration(&config)?;
-
-    // Perform controller self-test.
-    controller.wait_and_send_command(Command::TestController)?;
-    let result = controller.wait_and_recv_data()?;
-    if result != SELF_TEST_OK {
-        // Any value other than `SELF_TEST_OK` indicates a self-test fail.
-        return Err(I8042ControllerError::ControllerTestFailed);
-    }
-    // The self-test may reset the controller. Restore the original configuration.
-    controller.write_configuration(&config)?;
-    // The ports may have been enabled if the controller was reset. Flush the output buffer.
-    controller.flush_output_buffer();
-
-    // Determine if there are two channels.
-    controller.wait_and_send_command(Command::EnableSecondPort)?;
-    let has_second_port = config.contains(Configuration::SECOND_PORT_CLOCK_DISABLED)
-        && !controller
-            .read_configuration()?
-            .contains(Configuration::SECOND_PORT_CLOCK_DISABLED);
-    controller.wait_and_send_command(Command::DisableSecondPort)?;
-    // Flush the output buffer again since we may have enabled the second port.
-    controller.flush_output_buffer();
-
-    // Perform interface tests to the first PS/2 port.
-    controller.wait_and_send_command(Command::TestFirstPort)?;
-    let result = controller.wait_and_recv_data()?;
-    if result != PORT_TEST_OK {
-        return Err(I8042ControllerError::FirstPortTestFailed);
+    // Skip the controller self-test at boot unless `i8042.reset` is set. Some platforms
+    // drop the self-test command silently — running it unconditionally would abort.
+    // Linux defaults to ON_S2RAM (self-test off).
+    // Reference: <https://elixir.bootlin.com/linux/v7.0/source/drivers/input/serio/i8042.c#L1541>
+    if I8042_RESET.load(Ordering::Relaxed) {
+        controller.self_test(&config)?;
     }
 
-    // Perform interface tests to the second PS/2 port (if it exists).
-    if has_second_port {
-        controller.wait_and_send_command(Command::TestSecondPort)?;
-        let result = controller.wait_and_recv_data()?;
-        if result != PORT_TEST_OK {
-            return Err(I8042ControllerError::SecondPortTestFailed);
-        }
-    }
+    // Detect the optional second (aux/mouse) port.
+    let has_second_port = controller.detect_second_port(&config)?;
 
-    // Enable the first PS/2 port (keyboard).
+    // Bring up devices.
     controller.wait_and_send_command(Command::EnableFirstPort)?;
-    if let Err(err) = super::keyboard::init(&mut controller) {
-        ostd::warn!("i8042 keyboard initialization failed: {:?}", err);
-    } else {
-        config.remove(Configuration::FIRST_PORT_CLOCK_DISABLED);
-        config.insert(
-            Configuration::FIRST_PORT_INTERRUPT_ENABLED
-                | Configuration::FIRST_PORT_TRANSLATION_ENABLED,
-        );
-    }
+    super::keyboard::init(&mut controller)?;
+    config.enable_first_port();
     // Temporarily disable the first PS/2 port to avoid interference.
     controller.wait_and_send_command(Command::DisableFirstPort)?;
     controller.flush_output_buffer();
 
-    // Enable the second PS/2 port (mouse) if it exists.
     if has_second_port {
         controller.wait_and_send_command(Command::EnableSecondPort)?;
         if let Err(err) = super::mouse::init(&mut controller) {
             ostd::warn!("i8042 mouse initialization failed: {:?}", err);
         } else {
-            config.remove(Configuration::SECOND_PORT_CLOCK_DISABLED);
-            config.insert(Configuration::SECOND_PORT_INTERRUPT_ENABLED);
+            config.enable_second_port();
         }
         // Temporarily disable the second PS/2 port to avoid interference.
-        controller.wait_and_send_command(Command::DisableFirstPort)?;
+        controller.wait_and_send_command(Command::DisableSecondPort)?;
         controller.flush_output_buffer();
     }
 
+    // Publish the controller and enable interrupts.
     I8042_CONTROLLER.call_once(|| SpinLock::new(controller));
     let mut controller = I8042_CONTROLLER.get().unwrap().lock();
     // Write the new configuration to enable the interrupts after setting up `I8042_CONTROLLER`.
@@ -134,7 +83,6 @@ pub(super) struct I8042Controller {
 
 impl I8042Controller {
     fn new() -> Result<Self, I8042ControllerError> {
-
         if !Self::is_present_acpi() {
             // The PS/2 controller does not exist. See:
             // <https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html#ia-pc-boot-architecture-flags>.
@@ -192,6 +140,62 @@ impl I8042Controller {
     fn write_configuration(&mut self, config: &Configuration) -> Result<(), I8042ControllerError> {
         self.wait_and_send_command(Command::WriteConfiguration)?;
         self.wait_and_send_data(config.bits())
+    }
+
+    /// Brings the controller to a quiescent, known state.
+    fn initialize_controller(&mut self) -> Result<Configuration, I8042ControllerError> {
+        // Disable devices so that they won't send data at the wrong time and mess up initialization.
+        self.wait_and_send_command(Command::DisableFirstPort)?;
+        self.wait_and_send_command(Command::DisableSecondPort)?;
+
+        // Flush the output buffer by reading from the data port and discarding the data.
+        self.flush_output_buffer();
+
+        // Set the controller configuration byte.
+        let mut config = self.read_configuration()?;
+        config.remove(
+            Configuration::FIRST_PORT_INTERRUPT_ENABLED
+                | Configuration::FIRST_PORT_TRANSLATION_ENABLED
+                | Configuration::SECOND_PORT_INTERRUPT_ENABLED,
+        );
+        self.write_configuration(&config)?;
+        self.flush_output_buffer();
+        Ok(config)
+    }
+
+    /// Detects whether a second (aux/mouse) PS/2 port exists.
+    fn detect_second_port(&mut self, config: &Configuration) -> Result<bool, I8042ControllerError> {
+        if !config.contains(Configuration::SECOND_PORT_CLOCK_DISABLED) {
+            return Ok(false);
+        }
+
+        // Determine if there are two channels.
+        self.wait_and_send_command(Command::EnableSecondPort)?;
+        let has_second_port = !self
+            .read_configuration()?
+            .contains(Configuration::SECOND_PORT_CLOCK_DISABLED);
+        self.wait_and_send_command(Command::DisableSecondPort)?;
+
+        // Flush the output buffer again since we may have enabled the second port.
+        self.flush_output_buffer();
+        Ok(has_second_port)
+    }
+
+    /// Performs controller self-test.
+    fn self_test(&mut self, config: &Configuration) -> Result<(), I8042ControllerError> {
+        const SELF_TEST_OK: u8 = 0x55;
+
+        // Perform controller self-test.
+        self.wait_and_send_command(Command::TestController)?;
+        let result = self.wait_and_recv_data()?;
+        if result != SELF_TEST_OK {
+            return Err(I8042ControllerError::ControllerTestFailed);
+        }
+        // The self-test may reset the controller. Restore the original configuration.
+        self.write_configuration(config)?;
+        // The ports may have been enabled if the controller was reset. Flush the output buffer.
+        self.flush_output_buffer();
+        Ok(())
     }
 
     fn wait_and_send_command(&mut self, command: Command) -> Result<(), I8042ControllerError> {
@@ -337,8 +341,6 @@ where
 pub(super) enum I8042ControllerError {
     NotPresent,
     ControllerTestFailed,
-    FirstPortTestFailed,
-    SecondPortTestFailed,
     OutputBusy,
     NoInput,
     DeviceResetFailed,
@@ -356,9 +358,7 @@ pub(super) enum Command {
     WriteConfiguration = 0x60,
     DisableSecondPort = 0xA7,
     EnableSecondPort = 0xA8,
-    TestSecondPort = 0xA9,
     TestController = 0xAA,
-    TestFirstPort = 0xAB,
     DisableFirstPort = 0xAD,
     EnableFirstPort = 0xAE,
     WriteToSecondPort = 0xD4,
@@ -369,7 +369,7 @@ bitflags! {
     /// The configuration of the PS/2 controller.
     ///
     /// Reference: <https://wiki.osdev.org/I8042_PS/2_Controller#PS/2_Controller_Configuration_Byte>.
-    struct Configuration: u8 {
+    pub(super) struct Configuration: u8 {
         /// First PS/2 port interrupt (1 = enabled, 0 = disabled)
         const FIRST_PORT_INTERRUPT_ENABLED = 1 << 0;
         /// Second PS/2 port interrupt (1 = enabled, 0 = disabled, only if 2 PS/2 ports supported)
@@ -382,6 +382,24 @@ bitflags! {
         const SECOND_PORT_CLOCK_DISABLED = 1 << 5;
         /// First PS/2 port translation (1 = enabled, 0 = disabled)
         const FIRST_PORT_TRANSLATION_ENABLED = 1 << 6;
+    }
+}
+
+impl Configuration {
+    /// Enables the first PS/2 port: clears its clock-disabled bit and turns on its
+    /// interrupt and scan-code translation.
+    fn enable_first_port(&mut self) {
+        self.remove(Configuration::FIRST_PORT_CLOCK_DISABLED);
+        self.insert(
+            Configuration::FIRST_PORT_INTERRUPT_ENABLED
+                | Configuration::FIRST_PORT_TRANSLATION_ENABLED,
+        );
+    }
+
+    /// Enables the second PS/2 port: clears its clock-disabled bit and turns on its interrupt.
+    fn enable_second_port(&mut self) {
+        self.remove(Configuration::SECOND_PORT_CLOCK_DISABLED);
+        self.insert(Configuration::SECOND_PORT_INTERRUPT_ENABLED);
     }
 }
 
@@ -412,3 +430,13 @@ bitflags! {
 
 static I8042_EXIST: AtomicBool = AtomicBool::new(false);
 aster_cmdline::define_flag_param!("i8042.exist", I8042_EXIST);
+
+/// Whether to force the controller self-test during i8042 initialization.
+///
+/// The self-test is not needed for normal operation and may be unsupported on some platforms,
+/// so it is off by default. Set `i8042.reset` (or `i8042.reset=1`) to run it on hardware
+/// where the controller is suspected to be faulty.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v7.0/source/drivers/input/serio/i8042.c#L57>
+static I8042_RESET: AtomicBool = AtomicBool::new(false);
+aster_cmdline::define_flag_param!("i8042.reset", I8042_RESET);
