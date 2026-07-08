@@ -57,7 +57,7 @@ impl BioRequestSingleQueue {
     ///
     /// This method will wake up the waiter if a new `BioRequest` is enqueued.
     pub fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
-        if bio.segments().len() >= self.max_nr_segments_per_bio {
+        if bio.segments().len() > self.max_nr_segments_per_bio {
             return Err(BioEnqueueError::TooBig);
         }
 
@@ -240,5 +240,87 @@ impl From<SubmittedBio> for BioRequest {
                 bios
             },
         }
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use device_id::DeviceId;
+    use io_util::batch::IoBatch;
+    use ostd::prelude::ktest;
+
+    use super::BioRequestSingleQueue;
+    use crate::{
+        BlockDevice, BlockDeviceMeta,
+        bio::{Bio, BioDirection, BioEnqueueError, BioSegment, BioType, SubmittedBio},
+        id::Sid,
+    };
+
+    #[derive(Debug)]
+    struct QueueBlockDevice {
+        queue: BioRequestSingleQueue,
+    }
+
+    impl QueueBlockDevice {
+        fn new(max_nr_segments_per_bio: usize) -> Self {
+            Self {
+                queue: BioRequestSingleQueue::with_max_nr_segments_per_bio(max_nr_segments_per_bio),
+            }
+        }
+    }
+
+    impl BlockDevice for QueueBlockDevice {
+        fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
+            self.queue.enqueue(bio)
+        }
+
+        fn metadata(&self) -> BlockDeviceMeta {
+            BlockDeviceMeta {
+                max_nr_segments_per_bio: self.queue.max_nr_segments_per_bio(),
+                nr_sectors: usize::MAX,
+            }
+        }
+
+        fn name(&self) -> &str {
+            "request-queue-test"
+        }
+
+        fn id(&self) -> DeviceId {
+            DeviceId::null()
+        }
+    }
+
+    fn bio_with_segments(nr_segments: usize) -> Bio {
+        let segments = (0..nr_segments)
+            .map(|_| BioSegment::alloc(1, BioDirection::FromDevice))
+            .collect();
+
+        Bio::new(BioType::Read, Sid::new(0), segments, None)
+    }
+
+    #[ktest]
+    fn bio_with_max_segments_can_be_enqueued() {
+        let device = QueueBlockDevice::new(2);
+        let mut io_batch = IoBatch::with_capacity(1);
+        let bio = bio_with_segments(2);
+
+        assert_eq!(bio.submit(&device, &mut io_batch), Ok(()));
+        assert_eq!(io_batch.len(), 1);
+
+        let request = device.queue.dequeue();
+        assert_eq!(request.num_segments(), 2);
+    }
+
+    #[ktest]
+    fn bio_larger_than_max_segments_is_rejected() {
+        let device = QueueBlockDevice::new(2);
+        let mut io_batch = IoBatch::with_capacity(1);
+        let bio = bio_with_segments(3);
+
+        assert_eq!(
+            bio.submit(&device, &mut io_batch),
+            Err(BioEnqueueError::TooBig)
+        );
+        assert!(io_batch.is_empty());
     }
 }
