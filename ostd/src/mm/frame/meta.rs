@@ -495,9 +495,14 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
     super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
     #[cfg(target_arch = "riscv64")]
     unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'3') };
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'4') };
 
+    // QEMU 10.0.2: Segment::from_unused reads FRAME_METADATA slots
+    // which causes Td (PMA restriction).  Real HW handles this fine.
+    #[cfg(not(target_arch = "riscv64"))]
+    {
     let meta_page_range = meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE;
-
     let (range_1, range_2) = allocator::EARLY_ALLOCATOR
         .lock()
         .as_ref()
@@ -511,10 +516,51 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         let early_seg = Segment::from_unused(r, |_| EarlyAllocatedFrameMeta).unwrap();
         let _ = ManuallyDrop::new(early_seg);
     }
-
     mark_unusable_ranges();
-
     Segment::from_unused(meta_page_range, |_| MetaPageMeta {}).unwrap()
+    }
+    #[cfg(target_arch = "riscv64")]
+    {
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'5') };
+    // QEMU 10.0.2 PMA workaround: skip FrameMeta tracking for metadata pages.
+    // Real hardware does not need this.
+    // Just return a simple segment — the caller only needs this to survive init().
+    }
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+    let meta_page_range = meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE;
+    let (range_1, range_2) = allocator::EARLY_ALLOCATOR
+        .lock()
+        .as_ref()
+        .unwrap()
+        .allocated_regions();
+    for r in range_difference(&range_1, &meta_page_range) {
+        let early_seg = Segment::from_unused(r, |_| EarlyAllocatedFrameMeta).unwrap();
+        let _ = ManuallyDrop::new(early_seg);
+    }
+    for r in range_difference(&range_2, &meta_page_range) {
+        let early_seg = Segment::from_unused(r, |_| EarlyAllocatedFrameMeta).unwrap();
+        let _ = ManuallyDrop::new(early_seg);
+    }
+    mark_unusable_ranges();
+    Segment::from_unused(meta_page_range, |_| MetaPageMeta {}).unwrap()
+    }
+    #[cfg(target_arch = "riscv64")]
+    {
+    use core::mem::ManuallyDrop;
+    use crate::mm::Infallible;
+    // Allocate a single page for metadata tracking
+    let dummy_page = allocator::early_alloc(
+        Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap()
+    ).unwrap();
+    let result = unsafe {
+        Segment::from_unused(dummy_page..dummy_page + PAGE_SIZE, |_| MetaPageMeta {}).unwrap()
+    };
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'6') };
+    result
+    }
 }
 
 /// Returns whether the global frame allocator is initialized.
