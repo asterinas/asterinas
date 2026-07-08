@@ -143,14 +143,23 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingC
 pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     info!("Initializing the kernel page table");
 
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'j') };
+
     // Start to initialize the kernel page table.
     let kpt = PageTable::<KernelMode>::empty();
+
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'1') };
 
     // Make shared the page tables mapped by the root table in the kernel space.
     {
         let pte_index_max = nr_subpage_per_huge::<PagingConsts>();
         kpt.make_shared_tables(pte_index_max / 2..pte_index_max);
     }
+
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'2') };
 
     // Do linear mappings for the kernel.
     {
@@ -167,6 +176,9 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             kpt.map(&from, &to, prop).unwrap();
         }
     }
+
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'3') };
 
     // Map the metadata pages.
     {
@@ -185,6 +197,9 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             }
         }
     }
+
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'4') };
 
     // Map for the I/O area.
     // TODO: we need to have an allocator to allocate kernel space for

@@ -511,10 +511,6 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
     // Now the metadata frames are mapped, we can initialize the metadata.
     super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
 
-    // QEMU 10.0.2: Segment::from_unused triggers Td accessing FRAME_METADATA.
-    // Real hardware (SiFive P550) handles this correctly.
-    #[cfg(not(target_arch = "riscv64"))]
-    {
     let meta_page_range = meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE;
 
     let (range_1, range_2) = allocator::EARLY_ALLOCATOR
@@ -534,13 +530,6 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
     mark_unusable_ranges();
 
     Segment::from_unused(meta_page_range, |_| MetaPageMeta {}).unwrap()
-    }
-    #[cfg(target_arch = "riscv64")]
-    {
-    // QEMU PMA workaround: use kernel ELF load address (identity-mapped)
-    // for the metadata segment placeholder. Never actually used.
-    Segment::from_unused(0x80200000..0x80201000, |_| MetaPageMeta {}).unwrap()
-    }
 }
 
 /// Returns whether the global frame allocator is initialized.
