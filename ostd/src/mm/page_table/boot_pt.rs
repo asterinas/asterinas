@@ -134,11 +134,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     /// by the firmware, loader or the setup code.
     unsafe fn from_current_pt() -> Self {
         let root_pt = crate::arch::mm::current_page_table_paddr() / C::BASE_PAGE_SIZE;
-        // Skip dfs_walk_on_leave on riscv64: set_prop writes to non-leaf
-        // PTEs trigger Illegal Instruction (Tc) in QEMU 10.0.2 due to RSV1
-        // bit handling.  Real hardware (SiFive P550) does not need this skip.
-        #[cfg(not(target_arch = "riscv64"))]
-        {
+        // Make sure the 2 available bits are not set for firmware page tables.
         dfs_walk_on_leave::<E, C>(root_pt, C::NR_LEVELS, &mut |pte: &mut E| {
             let prop = pte.prop();
             pte.set_prop(PageProperty::new(
@@ -146,7 +142,6 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
                 prop.cache,
             ));
         });
-        }
         Self {
             root_pt,
             _pretend_to_use: core::marker::PhantomData,

@@ -471,11 +471,7 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
     let (nr_meta_pages, meta_pages) = alloc_meta_frames(tot_nr_frames);
 
     // Map the metadata frames.
-    #[cfg(target_arch = "riscv64")]
-    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'0') };
     boot_pt::with_borrow(|boot_pt| {
-        #[cfg(target_arch = "riscv64")]
-        unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'1') };
         for i in 0..nr_meta_pages {
             let frame_paddr = meta_pages + i * PAGE_SIZE;
             let vaddr = mapping::frame_to_meta::<PagingConsts>(0) + i * PAGE_SIZE;
@@ -489,23 +485,12 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         }
     })
     .unwrap();
-    #[cfg(target_arch = "riscv64")]
-    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'2') };
+
     // Now the metadata frames are mapped, we can initialize the metadata.
     super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
-    #[cfg(target_arch = "riscv64")]
-    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'3') };
-    #[cfg(target_arch = "riscv64")]
-    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'4') };
 
-        let meta_page_range = meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE;
+    let meta_page_range = meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE;
 
-    // On QEMU 10.0.2, Segment::from_unused triggers Td accessing
-    // FRAME_METADATA slots (PMA restriction).  Real hardware is fine.
-    // SKIP: Segment::from_unused triggers Td in QEMU 10.0.2 (FRAME_METADATA PMA).
-    // Keep original code for real hardware.
-    #[cfg(not(target_arch = "riscv64"))]
-    {
     let (range_1, range_2) = allocator::EARLY_ALLOCATOR
         .lock()
         .as_ref()
@@ -519,15 +504,10 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         let early_seg = Segment::from_unused(r, |_| EarlyAllocatedFrameMeta).unwrap();
         let _ = ManuallyDrop::new(early_seg);
     }
+
     mark_unusable_ranges();
+
     Segment::from_unused(meta_page_range, |_| MetaPageMeta {}).unwrap()
-    }
-    #[cfg(target_arch = "riscv64")]
-    unsafe {
-        // QEMU PMA workaround: return uninitialized segment.
-        // Never actually accessed — only exists to satisfy return type.
-        core::mem::MaybeUninit::<Segment<MetaPageMeta>>::zeroed().assume_init()
-    }
 }
 
 /// Returns whether the global frame allocator is initialized.
@@ -636,15 +616,8 @@ fn add_temp_linear_mapping(max_paddr: Paddr) {
     };
 
     // SAFETY: we are doing the linear mapping for the kernel.
-    unsafe {    #[cfg(target_arch = "riscv64")]
-    boot_pt::with_borrow(|boot_pt| {
-        // FIXME: PagingConsts uses Sv48 but boot.S uses Sv39.
-        // map_base_page walks wrong PTE indices and panics.
-        // Skipping metadata frame mapping for now.
-        #[cfg(target_arch = "riscv64")]
-        return;
-        /* SKIP:
-        */
+    unsafe {
+        boot_pt::with_borrow(|boot_pt| {
             for paddr in prange.step_by(PAGE_SIZE) {
                 let vaddr = LINEAR_MAPPING_BASE_VADDR + paddr;
                 boot_pt.map_base_page(vaddr, paddr / PAGE_SIZE, prop);

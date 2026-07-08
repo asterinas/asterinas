@@ -65,8 +65,7 @@ TIMER_FREQ = 1000000
 .global _start
 _start:
     // a0 = hart id, a1 = DTB paddr (from U-Boot / SBI).
-    // Save a1 to s2 BEFORE any SBI ecall: the SBI sbiret struct
-    // (a0=error, a1=value) clobbers the firmware DTB pointer.
+    // Save a1 to s2 BEFORE any SBI ecall: sbiret clobbers a1.
     mv     s0, a0
     mv     s1, a1
     mv     s2, a1
@@ -83,7 +82,7 @@ _start:
 
     // --- DTB validation -------------------------------------------------------
     // Prefer 0xf0000000 (U-Boot's load address on real Megrez).
-    // Fall back to s2 (original a1 snapshot, preserved across SBI ecalls).
+    // Fall back to firmware-provided pointer (a1 from OpenSBI / U-Boot).
     li     t0, 0xedfe0dd0          // FDT magic (little-endian of 0xd00dfeed)
     slli   t0, t0, 32
     srli   t0, t0, 32
@@ -199,17 +198,6 @@ _start:
     add    t2, t1, t2
     sd     t0, 0(t2)             // L3[510]
 
-    // Zero out L3 entries 448 through 455 to cover the full
-    // FRAME_METADATA_BASE_VADDR range (0xffffe00000000000+).
-    // Static 1GiB leaves map PA 448-455 GiB which doesn't exist.
-    // Let alloc_child create fresh L2/L1 tables with correct PA.
-    li     t3, 3584                // offset = 448 * 8
-    li     t4, 3648                // offset = 456 * 8 (end)
-1:  add    t2, t1, t3
-    sd     zero, 0(t2)
-    addi   t3, t3, 8
-    blt    t3, t4, 1b
-
     SBI_PUTCHAR 'D'
     SBI_SET_TIMER (60 * TIMER_FREQ)
 
@@ -220,22 +208,14 @@ _start:
     SBI_PUTCHAR 'J'
     SBI_PUTCHAR 'B'
 
-    // Disable the early safety-net timer before enabling the MMU.
-    // SBI set_timer(u64::MAX) stops the supervisor timer interrupt
-    // that would fire after 60s/6s and reset the board.
-    li     a0, -1
-    li     a7, 0x54494D45             // SBI set_timer EID
-    ecall
-
-    // Use Sv48 — matches PagingConsts (NR_LEVELS=4, ADDRESS_WIDTH=48).
-    // boot_l4pt and boot_l3pt already use 2MiB leaves throughout.
-
+    // Try Sv39 — QEMU 9.2.4 Sv48 TLB walker has a confirmed bug
+    // on non-trivial page table paths.  Sv39 works correctly.
     // KERNEL_PT_READY=false → paddr_to_vaddr uses identity during early boot.
 
-    lla    t0, boot_l4pt
+    lla    t0, boot_l3pt_sv39
     slli   t0, t0, 32
     srli   t0, t0, 32
-    li     t1, SATP_MODE_SV48
+    li     t1, SATP_MODE_SV39
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
     csrw   satp, t0
@@ -255,10 +235,17 @@ _start:
 1:  j      1b
 
 .Lmmu_ok:
-    // MMU is now on.  Kernel VMA uses 2 MiB leaf pages (boot_l2_kernel).
-    // SBI marker 'W' is emitted via ecall — works on both QEMU and real HW.
+    // MMU is now on.  Kernel VMA uses 2 MiB leaf pages (boot_l2_kernel)
+    // which QEMU 9.2.4 handles correctly including ecall returns.
     SBI_SET_TIMER (90 * TIMER_FREQ)
-    SBI_PUTCHAR 'W'
+
+    // Emit a UART marker 'W' while still using identity mapping.
+    // This confirms the identity PT is valid after MMU enable.
+    // We use a different UART address path (through identity)
+    // to distinguish from the VMA UART marker.
+    li     t2, 0x10000000
+    li     t3, 'W'
+    sb     t3, 0(t2)
 
     // Now switch to VMA for the Rust jump.
     // Move early trap handler to virtual address.
@@ -281,8 +268,14 @@ _start:
     mv     a0, s0
     mv     a1, s1
 
-    // SBI marker 'X' before VMA jump — confirms VMA page table works.
-    SBI_PUTCHAR 'X'
+    // UART marker 'X' before VMA jump.
+    // We're now executing from VMA, so this exercises the kernel
+    // high-half page table via UART MMIO.
+    li     t2, 0x10000000
+    li     t3, 'X'
+    sb     t3, 0(t2)
+
+    // SBI marker 'V' via ecall - QEMU 9.2.4 handles this.
     SBI_PUTCHAR 'V'
 
     jr     t0
@@ -411,18 +404,21 @@ boot_l3pt_sv39:
     .endr
     // Unused gap: VPN[128..255].
     .zero 128 * PTE_SIZE
-    // Linear mapping: VPN[256..383] — filled at runtime (non-leaf or zero).
-    // Entries 256-259 → non-leaf to boot_l2_id_* (set at runtime).
-    // Entries 260+ stay zero — map_base_page allocates L2 tables on demand.
-    .zero 128 * PTE_SIZE
+    // Linear mapping: VPN[256..383] -> phys 0..128 GiB (1 GiB leaves).
+    // This makes paddr_to_vaddr() work under Sv39 — the linear-mapping
+    // base (0xFFFF800000000000) has VPN[2]=256, so entries 256+phys>>30
+    // resolve to the correct physical address.
+    .set i, 0
+    .rept 128
+    .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRXWAD
+    .set i, i + 1
+    .endr
     // Unused gap: VPN[384..507].
     .zero 124 * PTE_SIZE
     // Kernel high-half: VPN[508..511].
     .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff00000000 -> 0 GiB
     .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff40000000 -> 1 GiB
-    // Entry 510: filled at runtime — non-leaf → boot_l2_kernel (2 MiB leaves).
-    // QEMU 8.2.2 does NOT support Sv39 1 GiB gigapages (optional per spec).
-    .quad 0
+    .quad (0x80000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff80000000 -> 2 GiB (kernel)
     .quad (0xc0000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffffc0000000 -> 3 GiB
 
 // ---- Boot stack ------------------------------------------------------------
