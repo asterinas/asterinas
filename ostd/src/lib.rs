@@ -123,7 +123,10 @@ unsafe fn init() {
     // is initialized. Otherwise the boot page table can't allocate frames.
     // SAFETY: This function is called only once.
     #[cfg(not(target_arch = "riscv64"))]
+    #[cfg(not(target_arch = "riscv64"))]
     unsafe { mm::frame::allocator::init() };
+    #[cfg(target_arch = "riscv64")]
+    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'i') };
     #[cfg(target_arch = "riscv64")]
     unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'i') };
 
