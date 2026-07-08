@@ -17,6 +17,7 @@ use crate::{
         process_vm::{AuxKey, AuxVec},
         program_loader::check_executable_inode,
     },
+    security,
     util::random::getrandom,
     vm::{
         perms::VmPerms,
@@ -62,7 +63,7 @@ pub fn load_elf_to_vmar(
         expect(unused_mut)
     )]
     let (elf_mapped_info, entry_point, mut aux_vec) =
-        map_vmos_and_build_aux_vec(vmar, ldso, &elf_headers, &elf_file)?;
+        map_vmos_and_build_aux_vec(vmar, ldso, &elf_headers, &elf_file, path_resolver)?;
     vmar.process_vm()
         .set_code_range(elf_mapped_info.code_range.clone());
     vmar.process_vm()
@@ -142,6 +143,7 @@ fn map_vmos_and_build_aux_vec(
     ldso: Option<(Path, ElfHeaders)>,
     parsed_elf: &ElfHeaders,
     elf_file: &Path,
+    path_resolver: &PathResolver,
 ) -> Result<(ElfMappedInfo, Vaddr, AuxVec)> {
     let ldso_load_info = if let Some((ldso_file, ldso_elf)) = ldso {
         Some(load_ldso(vmar, &ldso_file, &ldso_elf)?)
@@ -160,7 +162,10 @@ fn map_vmos_and_build_aux_vec(
 
     // Set AT_SECURE based on setuid/setgid bits of the executable file.
     let mode = elf_file.inode().mode()?;
-    let secure = if mode.has_set_uid() || mode.has_set_gid() {
+    let secure = if mode.has_set_uid()
+        || mode.has_set_gid()
+        || security::bprm_secureexec(elf_file, path_resolver)?
+    {
         1
     } else {
         0

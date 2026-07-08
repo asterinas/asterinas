@@ -10,6 +10,7 @@ use crate::{
         },
     },
     prelude::*,
+    security,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -78,6 +79,22 @@ pub fn sys_renameat2(
             new_name.to_string(),
         )
     };
+
+    super::check_parent_write_permission(&old_parent_path)?;
+    super::check_parent_write_permission(&new_parent_path)?;
+    let target_path = match path_resolver.lookup_at_path(&new_parent_path, &new_name) {
+        Ok(path) => Some(path),
+        Err(error) if error.error() == Errno::ENOENT => None,
+        Err(error) => return Err(error),
+    };
+    security::file_rename(
+        &old_path,
+        &new_parent_path,
+        &new_name,
+        target_path.as_ref(),
+        &path_resolver,
+        mode,
+    )?;
 
     old_parent_path.rename(old_name, &new_parent_path, &new_name, mode)?;
 

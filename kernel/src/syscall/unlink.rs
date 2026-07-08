@@ -7,6 +7,7 @@ use crate::{
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath, SplitPathError},
     },
     prelude::*,
+    security::{self, FileDeleteKind},
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -26,13 +27,12 @@ pub fn sys_unlinkat(
     debug!("dirfd = {}, path = {:?}", dirfd, path_name);
 
     let path_name = path_name.to_string_lossy();
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
     let (dir_path, name) = {
         let (parent_path_name, target_name) = path_name
             .split_dirname_and_basename()
             .map_err(SplitPathError::reject_root_as_is_dir)?;
-
-        let fs_ref = ctx.thread_local.borrow_fs();
-        let path_resolver = fs_ref.resolver().read();
 
         let parent_fs_path = FsPath::from_fd_at(dirfd, parent_path_name, EmptyPathStr::Reject)?;
         let dir_path = path_resolver.lookup(&parent_fs_path)?;
@@ -54,6 +54,13 @@ pub fn sys_unlinkat(
         (dir_path, target_name)
     };
 
+    super::check_parent_write_permission(&dir_path)?;
+    security::file_delete(
+        &dir_path,
+        name,
+        &path_resolver,
+        FileDeleteKind::NonDirectory,
+    )?;
     dir_path.unlink(name)?;
     Ok(SyscallReturn::Return(0))
 }

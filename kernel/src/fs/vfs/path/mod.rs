@@ -30,7 +30,7 @@ use crate::{
     process::{
         Gid, Uid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
     },
-    security::lsm::hooks as lsm_hooks,
+    security::{self, lsm::hooks as lsm_hooks},
 };
 
 mod dentry;
@@ -120,7 +120,7 @@ impl Path {
     /// Opens the `Path` with the given `OpenArgs`.
     ///
     /// Returns an `InodeHandle` on success.
-    pub fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
+    pub fn open(&self, open_args: OpenArgs, path_resolver: &PathResolver) -> Result<InodeHandle> {
         let inode = self.inode().as_ref();
         let inode_type = inode.type_();
         let creation_flags = &open_args.creation_flags;
@@ -151,14 +151,26 @@ impl Path {
             );
         }
 
+        if !status_flags.contains(StatusFlags::O_PATH) {
+            inode.check_permission(open_args.access_mode.into())?;
+        }
+
+        security::file_open(
+            self,
+            path_resolver,
+            open_args.access_mode,
+            open_args.status_flags,
+        )?;
+
         if inode_type.is_regular_file()
             && creation_flags.contains(CreationFlags::O_TRUNC)
             && !status_flags.contains(StatusFlags::O_PATH)
         {
+            security::file_setattr(self, path_resolver, security::FileSetattrKind::Size)?;
             self.resize(0)?;
         }
 
-        InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
+        InodeHandle::new_unchecked_access(self.clone(), open_args.access_mode, *status_flags)
     }
 
     /// Gets the parent `Path` within the same mount.
@@ -598,7 +610,7 @@ impl Path {
     }
 
     /// Links a new name for the `Path`.
-    pub fn link(&self, old: &Self, name: &str) -> Result<()> {
+    pub fn link(&self, old: &Self, name: &str, path_resolver: &PathResolver) -> Result<()> {
         if !Arc::ptr_eq(&old.mount, &self.mount) {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
@@ -606,6 +618,7 @@ impl Path {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         old.check_hardlink_source()?;
         self.check_dir_entry_mutation()?;
+        security::file_link(old, self, name, path_resolver)?;
         dir_dentry.link(old.inode(), name)
     }
 

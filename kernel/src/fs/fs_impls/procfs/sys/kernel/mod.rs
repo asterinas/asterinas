@@ -6,7 +6,8 @@ use crate::{
         procfs::{
             ProcDir, StaticEntry,
             sys::kernel::{
-                cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps, yama::YamaDirOps,
+                apparmor::AppArmorDirOps, cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps,
+                yama::YamaDirOps,
             },
             template::{
                 ListedEntry, ProcDirOps, ReaddirEntry, listed_entries_from_table,
@@ -16,9 +17,10 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    security::lsm::is_yama_enabled,
+    security,
 };
 
+mod apparmor;
 mod cap_last_cap;
 mod pid_max;
 mod yama;
@@ -52,8 +54,12 @@ impl ProcDirOps for KernelDirOps {
             return Ok(child);
         }
 
-        if name == "yama" && is_yama_enabled() {
+        if name == "yama" && security::is_yama_enabled() {
             return Ok(YamaDirOps::new_inode(this_dir.this_weak().clone()));
+        }
+
+        if name == "apparmor" && security::is_apparmor_enabled() {
+            return Ok(AppArmorDirOps::new_inode(this_dir.this_weak().clone()));
         }
 
         return_errno_with_message!(Errno::ENOENT, "the file does not exist");
@@ -63,11 +69,16 @@ impl ProcDirOps for KernelDirOps {
     where
         F: FnMut(ReaddirEntry<'a>) -> Result<()>,
     {
-        let yama_entry = is_yama_enabled().then(|| ListedEntry::new("yama", InodeType::Dir));
+        let yama_entry =
+            security::is_yama_enabled().then(|| ListedEntry::new("yama", InodeType::Dir));
+        let apparmor_entry =
+            security::is_apparmor_enabled().then(|| ListedEntry::new("apparmor", InodeType::Dir));
 
         visit_listed_entries(
             offset,
-            listed_entries_from_table(Self::STATIC_ENTRIES).chain(yama_entry),
+            listed_entries_from_table(Self::STATIC_ENTRIES)
+                .chain(yama_entry)
+                .chain(apparmor_entry),
             visit_fn,
         )
     }

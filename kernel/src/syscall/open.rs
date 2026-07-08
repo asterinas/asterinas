@@ -15,6 +15,7 @@ use crate::{
         },
     },
     prelude::*,
+    security::{self, FileCreateKind},
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -96,7 +97,7 @@ fn do_open(
     };
 
     let file_handle: Arc<dyn FileLike> = match lookup_res {
-        LookupResult::Resolved(path) => Arc::new(path.open(open_args)?),
+        LookupResult::Resolved(path) => Arc::new(path.open(open_args, path_resolver)?),
         LookupResult::AtParent(result) => {
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT)
                 || open_args.status_flags.contains(StatusFlags::O_PATH)
@@ -111,6 +112,17 @@ fn do_open(
             }
 
             let (parent, tail_name) = result.into_parent_and_basename();
+            super::check_parent_write_permission(&parent)?;
+
+            security::file_create(
+                &parent,
+                Some(&tail_name),
+                path_resolver,
+                FileCreateKind::Regular,
+                Some(open_args.access_mode),
+                open_args.status_flags,
+            )?;
+
             let new_path =
                 parent.new_fs_child(&tail_name, InodeType::File, open_args.inode_mode)?;
             fs::vfs::notify::on_create(&parent, || tail_name.clone());
@@ -146,6 +158,16 @@ fn do_open_tmpfile(
     } else {
         HardLinkability::Linkable
     };
+    super::check_parent_write_permission(&dir_path)?;
+    security::file_create(
+        &dir_path,
+        None,
+        path_resolver,
+        FileCreateKind::Regular,
+        Some(open_args.access_mode),
+        open_args.status_flags,
+    )?;
+
     let tmpfile_path = dir_path.create_tmpfile(open_args.inode_mode, hard_linkability)?;
 
     Ok(Arc::new(InodeHandle::new_unchecked_access(

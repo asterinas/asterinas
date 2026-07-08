@@ -12,6 +12,7 @@ use crate::{
         },
     },
     prelude::*,
+    security,
     syscall::constants::MAX_FILENAME_LEN,
     time::timespec_t,
 };
@@ -22,6 +23,7 @@ pub fn sys_fstat(raw_fd: RawFileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Res
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
+    security::file_getattr_current(file.path())?;
     let stat = Stat::from(file.path().metadata());
     ctx.user_space().write_val(stat_buf_ptr, &stat)?;
 
@@ -69,11 +71,13 @@ pub fn sys_fstatat(
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();
-        if flags.contains(StatFlags::AT_SYMLINK_NOFOLLOW) {
+        let path = if flags.contains(StatFlags::AT_SYMLINK_NOFOLLOW) {
             path_resolver.lookup_no_follow(&fs_path)?
         } else {
             path_resolver.lookup(&fs_path)?
-        }
+        };
+        security::file_getattr(&path, &path_resolver)?;
+        path
     };
 
     let stat = Stat::from(path.metadata());

@@ -11,7 +11,11 @@ pub use clock_gettime::ClockId;
 use ostd::arch::cpu::context::UserContext;
 pub use timer_create::create_timer;
 
-use crate::{cpu::LinuxAbi, prelude::*};
+use crate::{
+    cpu::LinuxAbi,
+    fs::{file::Permission, vfs::path::Path},
+    prelude::*,
+};
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv.rs")]
@@ -191,6 +195,18 @@ mod utimens;
 mod wait4;
 mod waitid;
 mod write;
+
+fn check_parent_write_permission(parent_path: &Path) -> Result<()> {
+    if parent_path
+        .inode()
+        .check_permission(Permission::MAY_WRITE)
+        .is_err()
+    {
+        return_errno!(Errno::EACCES);
+    }
+
+    Ok(())
+}
 
 /// This macro is used to define syscall handler.
 /// The first param is the number of parameters,

@@ -4,10 +4,11 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file::{InodeType, file_table::RawFileDesc, mkmod},
+        file::{InodeType, StatusFlags, file_table::RawFileDesc, mkmod},
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
+    security::{self, FileCreateKind},
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -30,16 +31,25 @@ pub fn sys_symlinkat(
         return_errno_with_message!(Errno::ENOENT, "the symlink path is empty");
     }
 
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
     let (dir_path, link_name) = {
         let link_path_name = link_path_name.to_string_lossy();
         let fs_path = FsPath::from_fd_at(dirfd, &link_path_name, EmptyPathStr::Reject)?;
-        ctx.thread_local
-            .borrow_fs()
-            .resolver()
-            .read()
+        path_resolver
             .lookup_unresolved_no_follow(&fs_path)?
             .into_parent_and_filename()?
     };
+
+    super::check_parent_write_permission(&dir_path)?;
+    security::file_create(
+        &dir_path,
+        Some(&link_name),
+        &path_resolver,
+        FileCreateKind::Symlink,
+        None,
+        StatusFlags::empty(),
+    )?;
 
     let new_path = dir_path.new_fs_child(&link_name, InodeType::SymLink, mkmod!(a+rwx))?;
     new_path.inode().write_link(&target)?;

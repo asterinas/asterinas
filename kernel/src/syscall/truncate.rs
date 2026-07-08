@@ -10,6 +10,7 @@ use crate::{
     },
     prelude::*,
     process::ResourceType,
+    security::{self, FileSetattrKind},
 };
 
 pub fn sys_ftruncate(raw_fd: RawFileDesc, len: isize, ctx: &Context) -> Result<SyscallReturn> {
@@ -19,8 +20,12 @@ pub fn sys_ftruncate(raw_fd: RawFileDesc, len: isize, ctx: &Context) -> Result<S
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+    let path = file.path().clone();
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
+    security::file_setattr(&path, &path_resolver, FileSetattrKind::Size)?;
     file.resize(len as usize)?;
-    fs::vfs::notify::on_change(file.path());
+    fs::vfs::notify::on_change(&path);
     Ok(SyscallReturn::Return(0))
 }
 
@@ -30,15 +35,12 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<Syscal
 
     check_length(len, ctx)?;
 
-    let dir_path = {
-        let path_name = path_name.to_string_lossy();
-        let fs_path = FsPath::from_fd_at(AT_FDCWD, &path_name, EmptyPathStr::Reject)?;
-        ctx.thread_local
-            .borrow_fs()
-            .resolver()
-            .read()
-            .lookup(&fs_path)?
-    };
+    let path_name = path_name.to_string_lossy();
+    let fs_path = FsPath::from_fd_at(AT_FDCWD, &path_name, EmptyPathStr::Reject)?;
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
+    let dir_path = path_resolver.lookup(&fs_path)?;
+    security::file_setattr(&dir_path, &path_resolver, FileSetattrKind::Size)?;
     dir_path.resize(len as usize)?;
     fs::vfs::notify::on_change(&dir_path);
     Ok(SyscallReturn::Return(0))
