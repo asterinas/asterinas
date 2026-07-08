@@ -466,6 +466,33 @@ FN_TEST(semop_sem_undo)
 }
 END_TEST()
 
+FN_TEST(sem_undo_records_blocked_semop)
+{
+	struct sembuf op = {
+		.sem_num = 0,
+		.sem_op = -1,
+		.sem_flg = SEM_UNDO,
+	};
+	int semid = TEST_SUCC(create_sem_set(1));
+	pid_t child = TEST_SUCC(fork());
+	int status;
+
+	if (child == 0) {
+		CHECK(semop(semid, &op, 1));
+		CHECK_WITH(semctl(semid, 0, GETVAL), _ret == 0);
+		_exit(0);
+	}
+
+	sleep_ms(SETTLE_MS);
+	TEST_SUCC(set_sem_val(semid, 0, 1));
+	TEST_RES(waitpid(child, &status, 0),
+		 WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	TEST_RES(get_sem_val(semid, 0), _ret == 1);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
 FN_TEST(sem_undo_is_not_inherited_by_fork)
 {
 	struct sembuf op = {

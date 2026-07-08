@@ -98,10 +98,6 @@ impl SemUndoList {
         ipc_ns.register_sem_undo_list(self);
 
         let mut entries = self.entries.lock();
-        if !ipc_ns.sem_undo_token_matches(sem_id, token) {
-            return;
-        }
-
         for op in undo_ops {
             if op.adjustment == 0 {
                 continue;

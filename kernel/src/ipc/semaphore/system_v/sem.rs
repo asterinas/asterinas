@@ -55,8 +55,15 @@ pub(super) struct PendingOp {
     sops: Vec<SemBuf>,
     status: Arc<AtomicStatus>,
     waker: Option<Arc<Waker>>,
-    sem_undo_token: Arc<Mutex<Option<SemUndoToken>>>,
+    sem_undo_record: Option<SemUndoRecord>,
     pid: Pid,
+}
+
+struct SemUndoRecord {
+    list: Arc<SemUndoList>,
+    ipc_ns: Arc<IpcNamespace>,
+    sem_id: IpcId,
+    ops: Vec<SemUndoOp>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,7 +78,7 @@ impl PendingOp {
         sops: Vec<SemBuf>,
         pid: Pid,
         num_sems: usize,
-        sem_undo_token: Arc<Mutex<Option<SemUndoToken>>>,
+        sem_undo_record: Option<SemUndoRecord>,
     ) -> Result<Self> {
         for op in sops.iter() {
             if op.sem_num as usize >= num_sems {
@@ -83,7 +90,7 @@ impl PendingOp {
             sops,
             status: Arc::new(AtomicStatus::new(Status::Pending)),
             waker: None,
-            sem_undo_token,
+            sem_undo_record,
             pid,
         })
     }
@@ -96,8 +103,12 @@ impl PendingOp {
         self.status.store(status, Ordering::Relaxed);
     }
 
-    fn set_sem_undo_token(&self, token: SemUndoToken) {
-        *self.sem_undo_token.lock() = Some(token);
+    fn record_sem_undo(&self, token: SemUndoToken) {
+        if let Some(record) = &self.sem_undo_record {
+            record
+                .list
+                .record(record.ipc_ns.clone(), record.sem_id, token, &record.ops);
+        }
     }
 
     pub(super) fn waker(&self) -> Option<&Arc<Waker>> {
@@ -204,7 +215,12 @@ pub fn sem_op(
 
     let is_alter = check_alter_sop(&sops);
     let undo_ops = collect_undo_ops(&sops);
-    let sem_undo_list = (!undo_ops.is_empty()).then(|| ctx.process.sem_undo_list());
+    let sem_undo_record = (!undo_ops.is_empty()).then(|| SemUndoRecord {
+        list: ctx.process.sem_undo_list(),
+        ipc_ns: ipc_ns.clone(),
+        sem_id,
+        ops: undo_ops,
+    });
 
     // TODO: Support permission check
     warn!("Semaphore operation doesn't support permission check now");
@@ -212,37 +228,27 @@ pub fn sem_op(
     enum SemOpResult {
         Completed {
             status: Status,
-            token: Option<SemUndoToken>,
         },
         Pending {
             status: Arc<AtomicStatus>,
             waiter: Waiter,
-            token: Arc<Mutex<Option<SemUndoToken>>>,
         },
     }
 
     let sem_op_result = ipc_ns.with_sem_set(sem_id, PermissionMode::empty(), |sem_set| {
-        let sem_undo_token = Arc::new(Mutex::new(None));
-        let mut pending_op = PendingOp::new(
-            sops,
-            ctx.process.pid(),
-            sem_set.num_sems(),
-            sem_undo_token.clone(),
-        )?;
+        let mut pending_op =
+            PendingOp::new(sops, ctx.process.pid(), sem_set.num_sems(), sem_undo_record)?;
 
         let mut inner = sem_set.inner();
 
         // Try to perform the operation without blocking
         if let Some(status) = perform_atomic_semop(&mut inner.sems, &mut pending_op) {
             if status != Status::Normal {
-                return Ok(SemOpResult::Completed {
-                    status,
-                    token: None,
-                });
+                return Ok(SemOpResult::Completed { status });
             }
 
             let token = sem_set.sem_undo_token();
-            pending_op.set_sem_undo_token(token);
+            pending_op.record_sem_undo(token);
 
             if is_alter {
                 let wake_queue = do_smart_update(&mut inner, &pending_op, token);
@@ -255,10 +261,7 @@ pub fn sem_op(
 
             sem_set.update_otime();
 
-            return Ok(SemOpResult::Completed {
-                status,
-                token: Some(token),
-            });
+            return Ok(SemOpResult::Completed { status });
         }
 
         // Prepare to wait
@@ -273,29 +276,12 @@ pub fn sem_op(
             inner.pending_const.push_back(pending_op);
         }
 
-        Ok(SemOpResult::Pending {
-            status,
-            waiter,
-            token: sem_undo_token,
-        })
+        Ok(SemOpResult::Pending { status, waiter })
     })?;
 
-    fn finish_sem_op(
-        status: Status,
-        waiter_error: Option<Error>,
-        sem_undo_list: Option<&Arc<SemUndoList>>,
-        ipc_ns: &Arc<IpcNamespace>,
-        sem_id: IpcId,
-        token: Option<SemUndoToken>,
-        undo_ops: &[SemUndoOp],
-    ) -> Result<()> {
+    fn finish_sem_op(status: Status, waiter_error: Option<Error>) -> Result<()> {
         match status {
-            Status::Normal => {
-                if let (Some(sem_undo_list), Some(token)) = (sem_undo_list, token) {
-                    sem_undo_list.record(ipc_ns.clone(), sem_id, token, undo_ops);
-                }
-                Ok(())
-            }
+            Status::Normal => Ok(()),
             Status::Removed => {
                 return_errno_with_message!(Errno::EIDRM, "the semaphore set is removed");
             }
@@ -320,25 +306,13 @@ pub fn sem_op(
         }
     }
 
-    let (waiter_result, status, token) = match sem_op_result {
-        SemOpResult::Completed { status, token } => {
-            return finish_sem_op(
-                status,
-                None,
-                sem_undo_list.as_ref(),
-                ipc_ns,
-                sem_id,
-                token,
-                &undo_ops,
-            );
+    let (waiter_result, status) = match sem_op_result {
+        SemOpResult::Completed { status } => {
+            return finish_sem_op(status, None);
         }
-        SemOpResult::Pending {
-            status,
-            waiter,
-            token,
-        } => {
+        SemOpResult::Pending { status, waiter } => {
             let result = waiter.pause_timeout(&timeout.as_ref().into());
-            (result, status, token)
+            (result, status)
         }
     };
 
@@ -358,15 +332,7 @@ pub fn sem_op(
         });
     }
 
-    finish_sem_op(
-        status.load(Ordering::Relaxed),
-        waiter_result.err(),
-        sem_undo_list.as_ref(),
-        ipc_ns,
-        sem_id,
-        *token.lock(),
-        &undo_ops,
-    )
+    finish_sem_op(status.load(Ordering::Relaxed), waiter_result.err())
 }
 
 fn collect_undo_ops(sops: &[SemBuf]) -> Vec<SemUndoOp> {
@@ -464,7 +430,7 @@ pub(super) fn update_pending_alter(
         };
         alter_op.set_status(status);
         if status == Status::Normal {
-            alter_op.set_sem_undo_token(token);
+            alter_op.record_sem_undo(token);
         }
 
         let mut alter_op = cursor.remove_current_as_list().unwrap();
@@ -530,7 +496,7 @@ pub(super) fn wake_const_ops(
             has_completed |= status == Status::Normal;
             const_op.set_status(status);
             if status == Status::Normal {
-                const_op.set_sem_undo_token(token);
+                const_op.record_sem_undo(token);
             }
             wake_queue.append(&mut cursor.remove_current_as_list().unwrap());
         } else {

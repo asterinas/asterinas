@@ -164,12 +164,6 @@ impl IpcNamespace {
         });
     }
 
-    pub fn sem_undo_token_matches(&self, semid: IpcId, token: SemUndoToken) -> bool {
-        self.sem_ids
-            .with(semid, |sem_set| sem_set.sem_undo_token() == token)
-            .unwrap_or(false)
-    }
-
     fn clear_sem_undo_set(&self, semid: IpcId, token: SemUndoToken) {
         self.visit_sem_undo_lists(|list| list.clear_set(self, semid, token));
     }
