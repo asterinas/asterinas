@@ -6,6 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
+    security,
     vm::{
         page_cache::VmoOptions,
         perms::VmPerms,
@@ -129,6 +130,7 @@ fn do_sys_mmap(
                 vm_may_perms.remove(VmPerms::MAY_WRITE);
             }
 
+            security::mmap_file(file.path(), vm_perms)?;
             options = options
                 .may_perms(vm_may_perms)
                 .mappable(file.as_ref().as_ref())?

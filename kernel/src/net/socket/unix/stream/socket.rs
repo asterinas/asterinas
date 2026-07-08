@@ -163,7 +163,7 @@ impl OptionSet {
 }
 
 impl UnixStreamSocket {
-    pub fn new(is_nonblocking: bool, socket_type: SockType) -> Arc<Self> {
+    pub fn new(is_nonblocking: bool, socket_type: SockType) -> Result<Arc<Self>> {
         debug_assert!(
             socket_type == SockType::SOCK_STREAM || socket_type == SockType::SOCK_SEQPACKET
         );
@@ -171,18 +171,21 @@ impl UnixStreamSocket {
         Self::new_init(Init::new(), is_nonblocking, socket_type)
     }
 
-    fn new_init(init: Init, is_nonblocking: bool, socket_type: SockType) -> Arc<Self> {
-        Arc::new(Self {
+    fn new_init(init: Init, is_nonblocking: bool, socket_type: SockType) -> Result<Arc<Self>> {
+        Ok(Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Init(init))),
             options: RwLock::new(OptionSet::new()),
             pollee: Pollee::new(),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             socket_type,
-            pseudo_path: SockFs::new_path(),
-        })
+            pseudo_path: SockFs::new_path()?,
+        }))
     }
 
-    pub fn new_pair(is_nonblocking: bool, socket_type: SockType) -> (Arc<Self>, Arc<Self>) {
+    pub fn new_pair(
+        is_nonblocking: bool,
+        socket_type: SockType,
+    ) -> Result<(Arc<Self>, Arc<Self>)> {
         debug_assert!(
             socket_type == SockType::SOCK_STREAM || socket_type == SockType::SOCK_SEQPACKET
         );
@@ -197,10 +200,9 @@ impl UnixStreamSocket {
             cred.dup().restrict(),
             cred.restrict(),
         );
-        (
-            Self::new_connected(conn_a, OptionSet::new(), is_nonblocking, socket_type),
-            Self::new_connected(conn_b, OptionSet::new(), is_nonblocking, socket_type),
-        )
+        let socket_a = Self::new_connected(conn_a, OptionSet::new(), is_nonblocking, socket_type)?;
+        let socket_b = Self::new_connected(conn_b, OptionSet::new(), is_nonblocking, socket_type)?;
+        Ok((socket_a, socket_b))
     }
 
     pub(super) fn new_connected(
@@ -208,16 +210,16 @@ impl UnixStreamSocket {
         options: OptionSet,
         is_nonblocking: bool,
         socket_type: SockType,
-    ) -> Arc<Self> {
+    ) -> Result<Arc<Self>> {
         let cloned_pollee = connected.cloned_pollee();
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Connected(connected))),
             options: RwLock::new(options),
             pollee: cloned_pollee,
             is_nonblocking: AtomicBool::new(is_nonblocking),
             socket_type,
-            pseudo_path: SockFs::new_path(),
-        })
+            pseudo_path: SockFs::new_path()?,
+        }))
     }
 
     fn try_send(

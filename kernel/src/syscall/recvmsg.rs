@@ -4,9 +4,13 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{RawFileDesc, get_file_fast},
+    fs::file::{
+        Permission,
+        file_table::{RawFileDesc, get_file_fast},
+    },
     net::socket::util::SendRecvFlags,
     prelude::*,
+    security,
     util::net::CUserMsgHdr,
 };
 
@@ -28,6 +32,7 @@ pub fn sys_recvmsg(
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, sockfd.try_into()?);
     let socket = file.as_socket_or_err()?;
+    security::socket_message(socket.pseudo_path(), Permission::MAY_READ)?;
 
     let (total_bytes, message_header) = {
         let mut io_vec_writer = c_user_msghdr.copy_writer_array_from_user(&user_space)?;

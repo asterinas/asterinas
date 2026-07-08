@@ -58,6 +58,7 @@ impl FileSystem for Ext2 {
             frsize: sb.fragment_size(),
             flags: 0,
             container_dev_id: self.container_device_id(),
+            smack: self.smack_mount_labels(),
         }
     }
 

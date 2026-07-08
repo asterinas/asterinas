@@ -28,6 +28,7 @@ use crate::{
             signals::kernel::KernelSignal,
         },
     },
+    security,
     vm::vmar::VmarHandle,
 };
 
@@ -59,8 +60,9 @@ pub fn do_execve(
 
     let program_to_load =
         ProgramToLoad::build_from_file(elf_file.clone(), &path_resolver, argv, envp)?;
+    let loaded_elf_file = program_to_load.elf_file().clone();
 
-    let new_vmar = VmarHandle::new(ProcessVm::new(elf_file.clone()));
+    let new_vmar = VmarHandle::new(ProcessVm::new(loaded_elf_file.clone()));
     let elf_load_info = program_to_load.load_to_vmar(&new_vmar, &path_resolver)?;
 
     // Ensure no other thread is concurrently performing exit_group or execve.
@@ -86,7 +88,7 @@ pub fn do_execve(
     let res = do_execve_no_return(
         ctx,
         user_context,
-        elf_file,
+        loaded_elf_file,
         thread_name,
         new_vmar,
         &elf_load_info,
@@ -168,7 +170,9 @@ fn do_execve_no_return(
     // This prevents race conditions when checking access permissions while opening
     // `/proc/[pid]/mem` or `/proc/[pid]/maps`.
     let (vmar_guard, old_vmar) = activate_vmar(ctx, new_vmar);
-    apply_caps_from_exec(process, ctx.credentials_mut(), elf_file.inode())?;
+    let credentials = ctx.credentials_mut();
+    apply_caps_from_exec(process, &credentials, elf_file.inode())?;
+    security::bprm_committed_creds(&elf_file, &credentials)?;
     drop(vmar_guard);
     drop(old_vmar);
 
@@ -308,7 +312,7 @@ fn set_cpu_context(
 /// The capabilities will be updated accordingly.
 fn apply_caps_from_exec(
     process: &Process,
-    credentials: Credentials<ReadWriteOp>,
+    credentials: &Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
     let mode = elf_inode.mode()?;

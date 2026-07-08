@@ -16,6 +16,7 @@ use crate::{
     },
     prelude::*,
     process::{pid_table::PidTable, posix_thread::AsPosixThread},
+    security,
 };
 
 /// The file descriptor of the current working directory.
@@ -558,6 +559,7 @@ impl PathResolver {
         if path.inode().check_permission(Permission::MAY_EXEC).is_err() {
             return_errno_with_message!(Errno::EACCES, "the path cannot be looked up");
         }
+        security::inode_permission(path.inode().as_ref(), Permission::MAY_EXEC)?;
         if name.len() > NAME_MAX {
             return_errno_with_message!(Errno::ENAMETOOLONG, "the path name is too long");
         }

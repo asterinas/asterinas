@@ -57,6 +57,46 @@ virtio_mmio.device=0x200@0x5950f000:10
 virtio_mmio.device=1K@0x1001e000:74
 ```
 
+### `lsm`
+
+Select the optional Linux Security Modules (LSMs) to enable,
+in the order they should run after mandatory capability checks.
+
+Valid module names:
+- `yama`
+- `smack`
+
+If omitted,
+Asterinas enables the default optional module stack,
+which currently contains `yama`.
+Unknown names are ignored with a warning.
+Duplicate names are ignored after their first occurrence.
+If multiple exclusive major modules are listed,
+only the first one is enabled.
+
+Examples:
+```text
+lsm=smack
+lsm=yama,smack
+```
+
+### `security`
+
+Select one legacy major LSM.
+
+Valid values:
+- `smack`
+
+If `lsm=` is also specified,
+`security=` is ignored.
+If only `security=smack` is specified,
+the default optional module stack remains enabled and Smack is added.
+
+Example:
+```text
+security=smack
+```
+
 ## Asterinas-specific
 ### `earlycon`
 

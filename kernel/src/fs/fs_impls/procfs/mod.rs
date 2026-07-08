@@ -16,6 +16,7 @@ use self::{
     mounts::MountsSymOps,
     pid::{PidDirOps, TidDirOps},
     self_::SelfSymOps,
+    smack::SmackDirOps,
     sys::SysDirOps,
     thread_self::ThreadSelfSymOps,
     uptime::UptimeFileOps,
@@ -38,6 +39,7 @@ use crate::{
         Pid,
         pid_table::{self, PidEntryType},
     },
+    security,
 };
 
 mod cmdline;
@@ -48,6 +50,7 @@ mod meminfo;
 mod mounts;
 mod pid;
 mod self_;
+mod smack;
 mod stat;
 mod sys;
 mod template;
@@ -199,6 +202,10 @@ impl ProcDirOps for RootDirOps {
             return Ok(child);
         }
 
+        if name == "smack" && security::is_smack_enabled() {
+            return Ok(SmackDirOps::new_inode(this_dir.this_weak().clone()));
+        }
+
         return_errno_with_message!(Errno::ENOENT, "the file does not exist");
     }
 
@@ -211,6 +218,16 @@ impl ProcDirOps for RootDirOps {
             sequential_readdir_entries(offset, 2, listed_entries_from_table(Self::STATIC_ENTRIES)),
             &mut visit_fn,
         )?;
+        if security::is_smack_enabled() {
+            visit_readdir_entries(
+                sequential_readdir_entries(
+                    offset,
+                    2 + RootDirOps::STATIC_ENTRIES.len(),
+                    [ListedEntry::new("smack", InodeType::Dir)],
+                ),
+                &mut visit_fn,
+            )?;
+        }
 
         // Collect PIDs before visiting entries, as `visit_fn` may copy data to user memory.
         let process_pids = {

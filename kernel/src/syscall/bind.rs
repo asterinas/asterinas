@@ -2,8 +2,12 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{RawFileDesc, get_file_fast},
+    fs::file::{
+        Permission,
+        file_table::{RawFileDesc, get_file_fast},
+    },
     prelude::*,
+    security,
     util::net::read_socket_addr_from_user,
 };
 
@@ -20,6 +24,7 @@ pub fn sys_bind(
     let file = get_file_fast!(&mut file_table, sockfd.try_into()?);
     let socket = file.as_socket_or_err()?;
 
+    security::socket_message(socket.pseudo_path(), Permission::MAY_WRITE)?;
     socket.bind(socket_addr)?;
 
     Ok(SyscallReturn::Return(0))

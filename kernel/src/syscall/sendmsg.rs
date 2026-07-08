@@ -4,12 +4,13 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::RawFileDesc,
+    fs::file::{Permission, file_table::RawFileDesc},
     net::socket::{
         Socket,
         util::{MessageHeader, SendRecvFlags},
     },
     prelude::*,
+    security,
     util::net::CUserMsgHdr,
 };
 
@@ -36,6 +37,7 @@ pub fn sys_sendmsg(
         file_table_locked.get_file(sockfd.try_into()?)?.clone()
     };
     let socket = file.as_socket_or_err()?;
+    security::socket_message(socket.pseudo_path(), Permission::MAY_WRITE)?;
 
     let total_bytes = send_one_message(socket, &c_user_msghdr, &user_space, flags)?;
 

@@ -5,7 +5,7 @@ use aster_rights_proc::require;
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{Credentials, Gid, SecureBits, Uid, capabilities::CapSet, credentials_::Credentials_};
-use crate::prelude::*;
+use crate::{prelude::*, security::SmackTaskState};
 
 impl<R: TRights> Credentials<R> {
     /// Creates a root `Credentials`.
@@ -402,5 +402,23 @@ impl<R: TRights> Credentials<R> {
     #[require(R > Write)]
     pub fn set_securebits(&self, securebits: SecureBits) -> Result<()> {
         self.0.set_securebits(securebits)
+    }
+
+    // *********** Smack methods **********
+
+    /// Gets the Smack task state.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn smack_task_state(&self) -> SmackTaskState {
+        self.0.smack_task_state()
+    }
+
+    /// Sets the Smack task state.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn set_smack_task_state(&self, task_state: SmackTaskState) {
+        self.0.set_smack_task_state(task_state);
     }
 }

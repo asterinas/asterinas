@@ -7,11 +7,12 @@ use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
 
 use crate::{
     fs::{
-        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, CreationFlags, FileLike, Permission, StatusFlags, file_table::FdFlags},
         pseudofs::SockFs,
         vfs::path::Path,
     },
     prelude::*,
+    security,
     util::{MultiRead, MultiWrite},
 };
 
@@ -136,12 +137,14 @@ impl<T: Socket + 'static> FileLike for T {
             return Ok(0);
         }
 
+        security::socket_message(self.pseudo_path(), Permission::MAY_READ)?;
         // TODO: Set correct flags
         self.recvmsg(writer, SendRecvFlags::empty())
             .map(|(len, _)| len)
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        security::socket_message(self.pseudo_path(), Permission::MAY_WRITE)?;
         // TODO: Set correct flags
         self.sendmsg(
             reader,

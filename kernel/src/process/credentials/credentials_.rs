@@ -9,7 +9,11 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::credentials::capabilities::{AtomicCapSet, CapSet},
+    process::credentials::{
+        AMBIENT_CAPSET,
+        capabilities::{AtomicCapSet, CapSet},
+    },
+    security::SmackTaskState,
 };
 
 #[derive(Debug)]
@@ -75,6 +79,9 @@ pub(super) struct Credentials_ {
 
     /// Secure bits.
     securebits: AtomicSecureBits,
+
+    /// Smack task state.
+    smack: RwLock<SmackTaskState>,
 }
 
 impl Credentials_ {
@@ -101,6 +108,7 @@ impl Credentials_ {
             bounding_capset: AtomicCapSet::new(CapSet::all()),
             ambient_capset: AtomicCapSet::new(CapSet::empty()),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
+            smack: RwLock::new(SmackTaskState::default()),
         }
     }
 
@@ -636,6 +644,16 @@ impl Credentials_ {
 
         self.securebits.try_store(securebits, Ordering::Relaxed)
     }
+
+    //  ******* Smack methods *******
+
+    pub(super) fn smack_task_state(&self) -> SmackTaskState {
+        self.smack.read().clone()
+    }
+
+    pub(super) fn set_smack_task_state(&self, task_state: SmackTaskState) {
+        *self.smack.write() = task_state;
+    }
 }
 
 impl Clone for Credentials_ {
@@ -656,6 +674,7 @@ impl Clone for Credentials_ {
             bounding_capset: self.bounding_capset.clone(),
             ambient_capset: self.ambient_capset.clone(),
             securebits: self.securebits.clone(),
+            smack: RwLock::new(self.smack.read().clone()),
         }
     }
 }

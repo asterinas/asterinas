@@ -3,10 +3,11 @@
 use super::SyscallReturn;
 use crate::{
     fs::file::{
-        CreationFlags, StatusFlags,
+        CreationFlags, Permission, StatusFlags,
         file_table::{FdFlags, RawFileDesc, get_file_fast},
     },
     prelude::*,
+    security,
     util::net::write_socket_addr_to_user,
 };
 
@@ -50,6 +51,7 @@ fn do_accept(
     let file = get_file_fast!(&mut file_table, sockfd.try_into()?);
     let socket = file.as_socket_or_err()?;
 
+    security::socket_message(socket.pseudo_path(), Permission::MAY_READ)?;
     let (connected_socket, socket_addr) = {
         socket.accept().map_err(|err| match err.error() {
             // FIXME: `accept` should not be restarted if a timeout has been set on the socket using `setsockopt`.

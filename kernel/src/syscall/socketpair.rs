@@ -31,7 +31,7 @@ pub fn sys_socketpair(
 
     macro_rules! file_pair {
         ($expr:expr) => {{
-            let (socket_a, socket_b) = $expr;
+            let (socket_a, socket_b) = $expr?;
             (socket_a as Arc<dyn FileLike>, socket_b as Arc<dyn FileLike>)
         }};
     }

@@ -30,7 +30,7 @@ use crate::{
     process::{
         Gid, Uid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
     },
-    security::lsm::hooks as lsm_hooks,
+    security::{self, lsm::hooks as lsm_hooks},
 };
 
 mod dentry;
@@ -67,8 +67,14 @@ impl Path {
     pub fn new_fs_child(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
+        security::path_create(self)?;
         let new_child_dentry = dir_dentry.create(name, type_, mode)?;
-        Ok(Self::new(self.mount.clone(), new_child_dentry))
+        let new_child = Self::new(self.mount.clone(), new_child_dentry);
+        if let Err(error) = security::path_post_create(self, &new_child) {
+            self.remove_child_after_failed_post_create(name, type_.is_directory());
+            return Err(error);
+        }
+        Ok(new_child)
     }
 
     /// Creates a new `Path` to represent an unnamed temporary file.
@@ -83,9 +89,12 @@ impl Path {
     ) -> Result<Self> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
+        security::path_create(self)?;
         let tmp_inode = self.inode().create_tmpfile(mode, hard_linkability)?;
         let tmp_dentry = Dentry::new_anonymous(tmp_inode, &dir_dentry);
-        Ok(Self::new(self.mount.clone(), tmp_dentry))
+        let tmpfile_path = Self::new(self.mount.clone(), tmp_dentry);
+        security::path_post_create(self, &tmpfile_path)?;
+        Ok(tmpfile_path)
     }
 
     /// Creates a new pseudo `Path`.
@@ -593,8 +602,14 @@ impl Path {
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
+        security::path_create(self)?;
         let inner = dir_dentry.mknod(name, mode, type_)?;
-        Ok(Self::new(self.mount.clone(), inner))
+        let new_child = Self::new(self.mount.clone(), inner);
+        if let Err(error) = security::path_post_create(self, &new_child) {
+            self.remove_child_after_failed_post_create(name, false);
+            return Err(error);
+        }
+        Ok(new_child)
     }
 
     /// Links a new name for the `Path`.
@@ -606,6 +621,7 @@ impl Path {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         old.check_hardlink_source()?;
         self.check_dir_entry_mutation()?;
+        security::path_link(old, self)?;
         dir_dentry.link(old.inode(), name)
     }
 
@@ -613,14 +629,16 @@ impl Path {
     pub fn unlink(&self, name: &str) -> Result<()> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
-        dir_dentry.unlink(name)
+        dir_dentry
+            .unlink_with_check(name, |child| security::path_unlink(self, child.as_ref()))
     }
 
     /// Removes a directory by `rmdir()` the inner inode.
     pub fn rmdir(&self, name: &str) -> Result<()> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
-        dir_dentry.rmdir(name)
+        dir_dentry
+            .rmdir_with_check(name, |child| security::path_unlink(self, child.as_ref()))
     }
 
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
@@ -643,7 +661,76 @@ impl Path {
             new_dir.check_dir_entry_mutation()?;
         }
 
-        old_dir_dentry.rename(old_name, &new_dir_dentry, new_name, mode)
+        old_dir_dentry.rename_with_check(
+            old_name,
+            &new_dir_dentry,
+            new_name,
+            mode,
+            |old_child, new_child| security::path_rename(self, old_child, new_dir, new_child),
+        )
+    }
+
+    fn remove_child_after_failed_post_create(&self, name: &str, is_dir: bool) {
+        let Ok(parent) = self.dentry.as_dir_dentry_or_err() else {
+            return;
+        };
+
+        let result = if is_dir {
+            parent.rmdir(name)
+        } else {
+            parent.unlink(name)
+        };
+        if let Err(error) = result {
+            warn!(
+                "failed to clean up `{}` after security post-create failure: {:?}",
+                name, error
+            );
+        }
+    }
+}
+
+impl Path {
+    /// Sets the inode mode after LSM metadata checks.
+    pub fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        security::path_setattr(self)?;
+        self.inode().set_mode(mode)
+    }
+
+    /// Resizes the inode after LSM metadata checks.
+    pub fn resize(&self, size: usize) -> Result<()> {
+        let inode = self.inode();
+        inode.check_permission(Permission::MAY_WRITE)?;
+        security::path_setattr(self)?;
+        inode.resize(size)
+    }
+
+    /// Sets the inode owner after LSM metadata checks.
+    pub fn set_owner(&self, uid: Uid) -> Result<()> {
+        security::path_setattr(self)?;
+        self.inode().set_owner(uid)
+    }
+
+    /// Sets the inode group after LSM metadata checks.
+    pub fn set_group(&self, gid: Gid) -> Result<()> {
+        security::path_setattr(self)?;
+        self.inode().set_group(gid)
+    }
+
+    /// Sets an xattr after LSM metadata checks.
+    pub fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()> {
+        security::path_setattr(self)?;
+        self.inode().set_xattr(name, value_reader, flags)
+    }
+
+    /// Removes an xattr after LSM metadata checks.
+    pub fn remove_xattr(&self, name: XattrName) -> Result<()> {
+        security::path_setattr(self)?;
+        self.inode().remove_xattr(name)
     }
 }
 
@@ -655,38 +742,21 @@ impl Path {
     pub fn sync_data(&self) -> Result<()>;
     pub fn metadata(&self) -> Metadata;
     pub fn mode(&self) -> Result<InodeMode>;
-    pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
     pub fn size(&self) -> usize;
     pub fn owner(&self) -> Result<Uid>;
-    pub fn set_owner(&self, uid: Uid) -> Result<()>;
     pub fn group(&self) -> Result<Gid>;
-    pub fn set_group(&self, gid: Gid) -> Result<()>;
     pub fn atime(&self) -> Duration;
     pub fn set_atime(&self, time: Duration);
     pub fn mtime(&self) -> Duration;
     pub fn set_mtime(&self, time: Duration);
     pub fn ctime(&self) -> Duration;
     pub fn set_ctime(&self, time: Duration);
-    pub fn set_xattr(
-        &self,
-        name: XattrName,
-        value_reader: &mut VmReader,
-        flags: XattrSetFlags,
-    ) -> Result<()>;
     pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
     pub fn list_xattr(
         &self,
         namespace: XattrNamespace,
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
-    pub fn remove_xattr(&self, name: XattrName) -> Result<()>;
-
-    /// Resizes the file.
-    pub fn resize(&self, size: usize) -> Result<()> {
-        let inode = self.inode();
-        inode.check_permission(Permission::MAY_WRITE)?;
-        inode.resize(size)
-    }
 }
 
 /// Checks if the file name is ".", indicating it's the current directory.

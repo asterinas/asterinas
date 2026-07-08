@@ -14,6 +14,7 @@ set -e
 ./capability/trusted_xattr
 
 ./lsm/module_selection
+./lsm/smack
 ./lsm/yama
 
 ./namespace/cgroup_ns
