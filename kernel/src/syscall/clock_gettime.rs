@@ -3,7 +3,7 @@
 use core::time::Duration;
 
 use int_to_c_enum::TryFromInt;
-use ostd::mm::VmIo;
+use ostd::{mm::VmIo, timer::TIMER_FREQ};
 
 use super::SyscallReturn;
 use crate::{
@@ -30,6 +30,22 @@ pub fn sys_clock_gettime(
 
     let timespec = timespec_t::from(time_duration);
     ctx.user_space().write_val(timespec_addr, &timespec)?;
+
+    Ok(SyscallReturn::Return(0))
+}
+
+pub fn sys_clock_getres(
+    clockid: clockid_t,
+    timespec_addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    debug!("clockid = {:?}", clockid);
+
+    let resolution = clock_resolution(clockid, ctx)?;
+    if timespec_addr != 0 {
+        let timespec = timespec_t::from(resolution);
+        ctx.user_space().write_val(timespec_addr, &timespec)?;
+    }
 
     Ok(SyscallReturn::Return(0))
 }
@@ -104,6 +120,21 @@ pub enum DynamicClockType {
     Virtual = 1,
     Scheduling = 2,
     FD = 3,
+}
+
+fn clock_resolution(clockid: clockid_t, ctx: &Context) -> Result<Duration> {
+    if clockid >= 0 {
+        let clock_id = ClockId::try_from(clockid)?;
+        return Ok(match clock_id {
+            ClockId::CLOCK_REALTIME_COARSE | ClockId::CLOCK_MONOTONIC_COARSE => {
+                Duration::from_nanos(1_000_000_000 / TIMER_FREQ)
+            }
+            _ => Duration::from_nanos(1),
+        });
+    }
+
+    read_clock(clockid, ctx)?;
+    Ok(Duration::from_nanos(1))
 }
 
 /// Reads the time of a clock specified by the input clock ID.
