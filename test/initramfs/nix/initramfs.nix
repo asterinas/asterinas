@@ -1,6 +1,13 @@
 { lib, pkgs, stdenvNoCC, fetchFromGitHub, hostPlatform, writeClosure, busybox
-, benchmark, conformance, regression, dnsServer, }:
+, benchmark, conformance, regression, dnsServer, apparmorSmokePolicy ? null, }:
 let
+  apparmor_smoke =
+    builtins.path { path = ./../../../tools/apparmor/run-smoke-test.sh; };
+  apparmor_smoke_policy = if apparmorSmokePolicy == null then
+    null
+  else
+    builtins.path { path = apparmorSmokePolicy; };
+  apparmor_smoke_busybox = pkgs.pkgsStatic.busybox;
   boot_hello = builtins.path { path = ./../src/boot_hello.sh; };
   init = builtins.path { path = ./../src/init; };
   etc = lib.fileset.toSource {
@@ -17,7 +24,6 @@ let
   resolv_conf = pkgs.callPackage ./resolv_conf.nix { dnsServer = dnsServer; };
   # Whether the initramfs should include evtest, a common tool to debug input devices (`/dev/input/eventX`)
   is_evtest_included = false;
-
   all_pkgs = [ busybox etc resolv_conf ]
     ++ lib.optionals (benchmark != null) [ benchmark.package ]
     ++ lib.optionals (conformance != null) [ conformance.package ]
@@ -40,6 +46,12 @@ in stdenvNoCC.mkDerivation {
 
     cp ${boot_hello} $out/test/boot_hello.sh
     cp ${init} $out/init
+
+    ${lib.optionalString (apparmorSmokePolicy != null) ''
+      cp ${apparmor_smoke} $out/test/apparmor-smoke.sh
+      cp ${apparmor_smoke_policy} $out/test/apparmor-smoke.bin
+      cp ${apparmor_smoke_busybox}/bin/busybox $out/test/apparmor-busybox
+    ''}
 
     cp -r ${etc}/* $out/etc/
 

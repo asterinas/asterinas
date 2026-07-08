@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: MPL-2.0
+
+profile asterinas-aa-smoke {
+  capability dac_override,
+  capability dac_read_search,
+  capability mac_admin,
+  /** mr,
+  /dev/null rw,
+  deny /tmp/asterinas-aa-denied r,
+}

@@ -12,6 +12,8 @@ ENABLE_REGRESSION_TEST ?= false
 # - linux: Define only `__linux__`. Tests may fail in Asterinas.
 REGRESSION_TEST_PLATFORM ?= asterinas
 DNS_SERVER ?= none
+ENABLE_APPARMOR_SMOKE_TEST ?= false
+APPARMOR_SMOKE_POLICY ?=
 # Set Nix's cached tarballs to be live for a longer period of time (30 days) to avoid network traffics.
 # Nix's default value is rather small (1 hour or 3600 seconds).
 NIXPKGS_CACHE_TTL := 2592000 # In seconds
@@ -48,6 +50,14 @@ BUILD_XFSTESTS_IMAGES = true
 endif
 endif
 
+APPARMOR_SMOKE_POLICY_ARG := null
+ifeq ($(ENABLE_APPARMOR_SMOKE_TEST), true)
+ifeq ($(APPARMOR_SMOKE_POLICY),)
+$(error APPARMOR_SMOKE_POLICY must be set when ENABLE_APPARMOR_SMOKE_TEST is true)
+endif
+APPARMOR_SMOKE_POLICY_ARG := $(APPARMOR_SMOKE_POLICY)
+endif
+
 # Decreases the level of verbosity of diagnostic messages from Nix.
 ifeq ($(VERBOSE), 0)
 NIX_QUIET = --quiet -Q
@@ -79,6 +89,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 		--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
 		--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
 		--argstr dnsServer ${DNS_SERVER} \
+		--arg apparmorSmokePolicy $(APPARMOR_SMOKE_POLICY_ARG) \
 		--arg initramfsCompressed $(INITRAMFS_COMPRESSED) \
 		--arg smp $(SMP) \
 		--out-link $@ \
@@ -96,6 +107,7 @@ $(INITRAMFS):
 		--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
 		--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
 		--argstr dnsServer ${DNS_SERVER} \
+		--arg apparmorSmokePolicy $(APPARMOR_SMOKE_POLICY_ARG) \
 		--arg smp $(SMP) \
 		--out-link $@ \
 		nix -A initramfs
