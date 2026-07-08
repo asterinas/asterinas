@@ -171,6 +171,34 @@ _start:
     add      t2, t1, t2
     sd       t0, 0(t2)
 
+    // Pre-fill boot_meta_l3pt[0] → boot_meta_l2 (non-leaf, V-only).
+    L4_PTE   t0, boot_meta_l2
+    lla      t1, boot_meta_l3pt
+    slli     t1, t1, 32
+    srli     t1, t1, 32
+    sd       t0, 0(t1)
+
+    // Pre-fill boot_meta_l2[0..63] → boot_meta_l1_* (non-leaf, V-only).
+    // Each L1 table covers 512 × 4 KiB = 2 MiB of FRAME_METADATA space.
+    lla      t1, boot_meta_l2
+    slli     t1, t1, 32
+    srli     t1, t1, 32
+    lla      t2, boot_meta_l1_0
+    slli     t2, t2, 32
+    srli     t2, t2, 32
+    li       t4, 64                        // 64 L1 tables to fill
+    li       t5, 0                         // byte offset in boot_meta_l2
+.Lmeta_fill_l2:
+    srli     t3, t2, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori      t3, t3, PTE_V
+    add      t0, t1, t5
+    sd       t3, 0(t0)
+    li       t6, 4096
+    add      t2, t2, t6                    // next L1 table PA
+    addi     t5, t5, 8                     // next L2 entry offset
+    addi     t4, t4, -1
+    bnez     t4, .Lmeta_fill_l2
+
     SBI_PUTCHAR 'D'
     SBI_SET_TIMER (60 * TIMER_FREQ)
 
@@ -329,10 +357,152 @@ boot_idpt:
     .endr
 
 // L3 page table for FRAME_METADATA region (L4[448] points here).
-// Zero-initialized: map_base_page allocates L2/L1 tables on demand.
+// L3[0] is pre-filled at runtime with a non-leaf PTE → boot_meta_l2.
+// All other L3 entries (1..511) are zero — the FRAME_METADATA region
+// only uses VPN[3]=0 (first 512 GiB of the 0xffffe00000000000 range).
 .balign 4096
 boot_meta_l3pt:
     .zero 512 * PTE_SIZE
+
+// L2 page table for FRAME_METADATA (L3[0] → boot_meta_l2).
+// 64 entries (0..63) are pre-filled at runtime with non-leaf PTEs
+// pointing to boot_meta_l1_0 .. boot_meta_l1_63.
+// Each L1 table covers 2 MiB of FRAME_METADATA VA space (512 × 4K pages).
+.balign 4096
+boot_meta_l2:
+    .zero 512 * PTE_SIZE
+
+// 64 L1 page tables for FRAME_METADATA leaves (one per 2 MiB region).
+// Each is zero-initialized — map_base_page writes the actual 4K leaf PTEs.
+// Total: 64 × 4 KiB = 256 KiB.
+.balign 4096
+boot_meta_l1_0:  .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_1:  .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_2:  .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_3:  .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_4:  .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_5:  .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_6:  .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_7:  .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_8:  .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_9:  .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_10: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_11: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_12: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_13: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_14: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_15: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_16: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_17: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_18: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_19: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_20: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_21: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_22: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_23: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_24: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_25: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_26: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_27: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_28: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_29: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_30: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_31: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_32: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_33: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_34: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_35: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_36: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_37: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_38: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_39: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_40: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_41: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_42: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_43: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_44: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_45: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_46: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_47: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_48: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_49: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_50: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_51: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_52: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_53: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_54: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_55: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_56: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_57: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_58: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_59: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_60: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_61: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_62: .zero 512 * PTE_SIZE
+.balign 4096
+boot_meta_l1_63: .zero 512 * PTE_SIZE
 
 // High-half kernel mapping table (L4[511] selects this).
 // 512 entries, each a 1 GiB identity leaf.
