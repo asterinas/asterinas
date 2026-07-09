@@ -29,37 +29,33 @@ pub fn sys_linkat(
         old_dirfd, old_path_name, new_dirfd, new_path_name, flags
     );
 
-    let (old_path, new_path, new_name) = {
-        let old_path_name = old_path_name.to_string_lossy();
-        let new_path_name = new_path_name.to_string_lossy();
+    let old_path_name = old_path_name.to_string_lossy();
+    let new_path_name = new_path_name.to_string_lossy();
 
-        let old_fs_path = FsPath::from_fd_at(
-            old_dirfd,
-            &old_path_name,
-            EmptyPathStr::AllowIfFlag(flags.bits()),
-        )?;
-        let new_fs_path = FsPath::from_fd_at(new_dirfd, &new_path_name, EmptyPathStr::Reject)?;
+    let old_fs_path = FsPath::from_fd_at(
+        old_dirfd,
+        &old_path_name,
+        EmptyPathStr::AllowIfFlag(flags.bits()),
+    )?;
+    let new_fs_path = FsPath::from_fd_at(new_dirfd, &new_path_name, EmptyPathStr::Reject)?;
 
-        let fs_ref = ctx.thread_local.borrow_fs();
-        let path_resolver = fs_ref.resolver().read();
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
 
-        let old_path = if flags.contains(LinkFlags::AT_SYMLINK_FOLLOW) {
-            path_resolver.lookup(&old_fs_path)?
-        } else {
-            path_resolver.lookup_no_follow(&old_fs_path)?
-        };
-        if old_path.type_() == InodeType::Dir {
-            return_errno_with_message!(Errno::EPERM, "the link path is a directory");
-        }
-
-        let (new_path, new_name) = path_resolver
-            .lookup_unresolved_no_follow(&new_fs_path)?
-            .into_parent_and_filename()?;
-
-        (old_path, new_path, new_name)
+    let old_path = if flags.contains(LinkFlags::AT_SYMLINK_FOLLOW) {
+        path_resolver.lookup(&old_fs_path)?
+    } else {
+        path_resolver.lookup_no_follow(&old_fs_path)?
     };
+    if old_path.type_() == InodeType::Dir {
+        return_errno_with_message!(Errno::EPERM, "the link path is a directory");
+    }
 
-    new_path.link(&old_path, &new_name)?;
+    let (new_path, new_name) = path_resolver
+        .lookup_unresolved_no_follow(&new_fs_path)?
+        .into_parent_and_filename()?;
+
+    new_path.link(&old_path, &new_name, &path_resolver)?;
     Ok(SyscallReturn::Return(0))
 }
 

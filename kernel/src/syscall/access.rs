@@ -8,6 +8,7 @@ use crate::{
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
+    security::{self, FilePermission},
 };
 
 pub fn sys_faccessat(
@@ -81,31 +82,35 @@ fn do_faccessat(
         dirfd, path_name, mode, flags
     );
 
-    let path = {
-        let path_name = path_name.to_string_lossy();
-        let fs_path =
-            FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::AllowIfFlag(flags.bits()))?;
+    let path_name = path_name.to_string_lossy();
+    let fs_path = FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::AllowIfFlag(flags.bits()))?;
 
-        let fs_ref = ctx.thread_local.borrow_fs();
-        let path_resolver = fs_ref.resolver().read();
-        if flags.contains(FaccessatFlags::AT_SYMLINK_NOFOLLOW) {
-            path_resolver.lookup_no_follow(&fs_path)?
-        } else {
-            path_resolver.lookup(&fs_path)?
-        }
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
+    let path = if flags.contains(FaccessatFlags::AT_SYMLINK_NOFOLLOW) {
+        path_resolver.lookup_no_follow(&fs_path)?
+    } else {
+        path_resolver.lookup(&fs_path)?
     };
 
     let inode = path.inode();
+    let mut permissions = FilePermission::empty();
 
     // F_OK is represented by `AccessMode::empty()`, which does not perform permission checks.
     if mode.contains(AccessMode::R_OK) {
         inode.check_permission(Permission::MAY_READ)?;
+        permissions |= FilePermission::READ;
     }
     if mode.contains(AccessMode::W_OK) {
         inode.check_permission(Permission::MAY_WRITE)?;
+        permissions |= FilePermission::WRITE;
     }
     if mode.contains(AccessMode::X_OK) {
         inode.check_permission(Permission::MAY_EXEC)?;
+        permissions |= FilePermission::EXECUTE;
+    }
+    if !permissions.is_empty() {
+        security::file_permission_at(&path, &path_resolver, permissions)?;
     }
 
     Ok(SyscallReturn::Return(0))

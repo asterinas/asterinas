@@ -23,6 +23,7 @@ use crate::{
         posix_thread::ptrace::TraceeStatus,
         signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
+    security::AppArmorTaskState,
     thread::{Thread, Tid},
     time::{Timer, TimerManager, clocks::ProfClock, timer::TimerGuard},
 };
@@ -306,6 +307,11 @@ impl PosixThread {
     /// Gets the duplicatable read-only credentials of the thread.
     pub fn credentials_dup(&self) -> Credentials<ReadDupOp> {
         self.credentials.dup().restrict()
+    }
+
+    /// Sets the AppArmor task state attached to this thread's credentials.
+    pub(crate) fn set_apparmor_task_state(&self, task_state: AppArmorTaskState) {
+        self.credentials.set_apparmor_task_state(task_state);
     }
 
     /// Returns the I/O priority value of the thread.

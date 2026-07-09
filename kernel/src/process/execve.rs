@@ -28,6 +28,7 @@ use crate::{
             signals::kernel::KernelSignal,
         },
     },
+    security,
     vm::vmar::VmarHandle,
 };
 
@@ -167,8 +168,12 @@ fn do_execve_no_return(
     // while holding the process VMAR lock.
     // This prevents race conditions when checking access permissions while opening
     // `/proc/[pid]/mem` or `/proc/[pid]/maps`.
+    let fs_ref = thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
     let (vmar_guard, old_vmar) = activate_vmar(ctx, new_vmar);
-    apply_caps_from_exec(process, ctx.credentials_mut(), elf_file.inode())?;
+    let credentials = ctx.credentials_mut();
+    apply_caps_from_exec(process, &credentials, elf_file.inode())?;
+    security::bprm_committed_creds(&elf_file, &path_resolver, &credentials)?;
     drop(vmar_guard);
     drop(old_vmar);
 
@@ -308,7 +313,7 @@ fn set_cpu_context(
 /// The capabilities will be updated accordingly.
 fn apply_caps_from_exec(
     process: &Process,
-    credentials: Credentials<ReadWriteOp>,
+    credentials: &Credentials<ReadWriteOp>,
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
     let mode = elf_inode.mode()?;
@@ -330,8 +335,8 @@ fn apply_caps_from_exec(
     if set_uid.is_some() || set_gid.is_some() {
         credentials.clear_ambient_capset();
     }
-    apply_set_uid(process, &credentials, set_uid);
-    apply_set_gid(process, &credentials, set_gid);
+    apply_set_uid(process, credentials, set_uid);
+    apply_set_gid(process, credentials, set_gid);
     credentials.set_keep_capabilities(false)?;
 
     Ok(())

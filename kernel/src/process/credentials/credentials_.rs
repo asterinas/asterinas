@@ -10,6 +10,7 @@ use super::{
 use crate::{
     prelude::*,
     process::credentials::capabilities::{AtomicCapSet, CapSet},
+    security::AppArmorTaskState,
 };
 
 #[derive(Debug)]
@@ -75,6 +76,9 @@ pub(super) struct Credentials_ {
 
     /// Secure bits.
     securebits: AtomicSecureBits,
+
+    /// The AppArmor task confinement state.
+    apparmor: RwLock<AppArmorTaskState>,
 }
 
 impl Credentials_ {
@@ -101,6 +105,7 @@ impl Credentials_ {
             bounding_capset: AtomicCapSet::new(CapSet::all()),
             ambient_capset: AtomicCapSet::new(CapSet::empty()),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
+            apparmor: RwLock::new(AppArmorTaskState::default()),
         }
     }
 
@@ -636,6 +641,16 @@ impl Credentials_ {
 
         self.securebits.try_store(securebits, Ordering::Relaxed)
     }
+
+    //  ******* AppArmor methods *******
+
+    pub(super) fn apparmor_task_state(&self) -> AppArmorTaskState {
+        self.apparmor.read().clone()
+    }
+
+    pub(super) fn set_apparmor_task_state(&self, task_state: AppArmorTaskState) {
+        *self.apparmor.write() = task_state;
+    }
 }
 
 impl Clone for Credentials_ {
@@ -656,6 +671,7 @@ impl Clone for Credentials_ {
             bounding_capset: self.bounding_capset.clone(),
             ambient_capset: self.ambient_capset.clone(),
             securebits: self.securebits.clone(),
+            apparmor: RwLock::new(self.apparmor.read().clone()),
         }
     }
 }

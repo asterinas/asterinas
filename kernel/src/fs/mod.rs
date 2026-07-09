@@ -44,7 +44,7 @@ pub fn init_in_first_process(ctx: &Context) {
         path_resolver
             .lookup(&tty_path)
             .unwrap()
-            .open(open_args)
+            .open(open_args, &path_resolver)
             .unwrap()
     };
     let stdout = {
@@ -52,7 +52,7 @@ pub fn init_in_first_process(ctx: &Context) {
         path_resolver
             .lookup(&tty_path)
             .unwrap()
-            .open(open_args)
+            .open(open_args, &path_resolver)
             .unwrap()
     };
     let stderr = {
@@ -60,7 +60,7 @@ pub fn init_in_first_process(ctx: &Context) {
         path_resolver
             .lookup(&tty_path)
             .unwrap()
-            .open(open_args)
+            .open(open_args, &path_resolver)
             .unwrap()
     };
 
