@@ -28,7 +28,7 @@ in stdenv.mkDerivation {
       cp ${host_resolv_conf} $RESOLV_CONF_FILE
       echo "resolv.conf is generated from the host's /etc/resolv.conf"
     else
-      echo "Warning: the host's /etc/resolv.conf is not valid for the guest VM (containing lookback addresses)." >&2
+      echo "Warning: the host's /etc/resolv.conf is not valid for the guest VM (containing loopback addresses)." >&2
       echo "Fall back to Cloudflare's public DNS servers (1.1.1.1)." >&2
       echo "Consider using the DNS_SERVER Makefile variable to specify DNS server explicitly." >&2
       echo "For example: make DNS_SERVER=\"192.168.1.1\"" >&2
