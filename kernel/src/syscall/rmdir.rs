@@ -7,6 +7,7 @@ use crate::{
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, SplitPath, SplitPathError},
     },
     prelude::*,
+    security::{self, FileDeleteKind},
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -23,21 +24,18 @@ pub(super) fn sys_rmdirat(
     debug!("dirfd = {}, path_addr = {:?}", dirfd, path_addr);
 
     let path_name = path_name.to_string_lossy();
+    let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
     let (dir_path, name) = {
         let (parent_path_name, target_name) = path_name
             .split_dirname_and_basename()
             .map_err(SplitPathError::reject_root_as_busy)?;
         let fs_path = FsPath::from_fd_at(dirfd, parent_path_name, EmptyPathStr::Reject)?;
-        (
-            ctx.thread_local
-                .borrow_fs()
-                .resolver()
-                .read()
-                .lookup(&fs_path)?,
-            target_name,
-        )
+        (path_resolver.lookup(&fs_path)?, target_name)
     };
 
+    super::check_parent_write_permission(&dir_path)?;
+    security::file_delete(&dir_path, name, &path_resolver, FileDeleteKind::Directory)?;
     dir_path.rmdir(name)?;
     Ok(SyscallReturn::Return(0))
 }

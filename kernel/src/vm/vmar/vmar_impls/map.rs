@@ -10,6 +10,7 @@ use crate::{
         vfs::path::Path,
     },
     prelude::*,
+    security::{self, FilePermission},
     vm::{page_cache::Vmo, perms::VmPerms},
 };
 
@@ -256,6 +257,10 @@ impl<'a> VmarMapOptions<'a> {
         }
         if self.path.is_some() {
             panic!("Cannot set `mappable` when `path` is already set");
+        }
+
+        if self.perms.contains(VmPerms::EXEC) {
+            security::file_mmap(file.path(), FilePermission::MMAP)?;
         }
 
         let mappable = file.mappable()?;

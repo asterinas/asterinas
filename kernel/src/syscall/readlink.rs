@@ -12,6 +12,7 @@ use crate::{
         },
     },
     prelude::*,
+    security::{self, FilePermission},
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -40,6 +41,7 @@ pub fn sys_readlinkat(
         let path_name = path_name.to_string_lossy();
         let fs_path = FsPath::from_fd_at(dirfd, &path_name, EmptyPathStr::Allow)?;
         let path = path_resolver.lookup_no_follow(&fs_path)?;
+        security::file_permission_at(&path, &path_resolver, FilePermission::READ)?;
 
         match path.inode().read_link()? {
             SymbolicLink::Plain(s) => s,

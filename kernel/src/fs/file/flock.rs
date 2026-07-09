@@ -41,6 +41,11 @@ impl FlockItem {
         Weak::upgrade(&self.lock.owner)
     }
 
+    /// Returns the lock type.
+    pub fn type_(&self) -> FlockType {
+        self.lock.type_
+    }
+
     /// Checks if this lock has the same owner as another lock.
     pub fn same_owner_with(&self, other: &Self) -> bool {
         self.lock.owner.ptr_eq(&other.lock.owner)

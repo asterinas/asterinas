@@ -549,6 +549,20 @@ impl OverlayInode {
     pub fn sync_data(&self) -> Result<()> {
         self.upper().map_or(Ok(()), |upper| upper.sync_data())
     }
+
+    pub fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()> {
+        self.build_upper_recursively_if_needed()?
+            .set_xattr(name, value_reader, flags)
+    }
+
+    pub fn remove_xattr(&self, name: XattrName) -> Result<()> {
+        self.build_upper_recursively_if_needed()?.remove_xattr(name)
+    }
 }
 
 #[inherit_methods(from = "self.get_top_valid_inode()")]

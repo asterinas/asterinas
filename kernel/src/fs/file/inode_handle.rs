@@ -24,6 +24,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    security::{self, FilePermission},
     util::ioctl::RawIoctl,
 };
 
@@ -122,6 +123,7 @@ impl InodeHandle {
         if !self.rights.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
+        security::file_permission(&self.path, FilePermission::READ)?;
 
         let file_ops: &dyn FileOps = if let Some(ref open_file) = self.open_file {
             open_file.as_ref()
@@ -160,11 +162,13 @@ impl InodeHandle {
                 if !self.rights.contains(Rights::READ) {
                     return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
                 }
+                security::file_lock(&self.path, FilePermission::READ)?;
             }
             RangeLockType::WriteLock => {
                 if !self.rights.contains(Rights::WRITE) {
                     return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
                 }
+                security::file_lock(&self.path, file_write_permission(self.status_flags()))?;
             }
             RangeLockType::Unlock => {
                 if self.rights.is_empty() {
@@ -209,6 +213,11 @@ impl InodeHandle {
         if self.rights.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
+        let permissions = match lock.type_() {
+            super::flock::FlockType::SharedLock => FilePermission::READ,
+            super::flock::FlockType::ExclusiveLock => file_write_permission(self.status_flags()),
+        };
+        security::file_lock(&self.path, permissions)?;
 
         let flock_list = self.path.inode().fs_lock_context_or_init().flock_list();
         flock_list.set_lock(lock, is_nonblocking)
@@ -259,6 +268,7 @@ impl FileLike for InodeHandle {
         if !self.rights.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
+        security::file_permission(&self.path, FilePermission::READ)?;
 
         let (file_ops, is_offset_aware) = self.file_ops_and_is_offset_aware();
         let status_flags = self.status_flags();
@@ -282,6 +292,7 @@ impl FileLike for InodeHandle {
 
         let (file_ops, is_offset_aware) = self.file_ops_and_is_offset_aware();
         let status_flags = self.status_flags();
+        security::file_permission(&self.path, file_write_permission(status_flags))?;
 
         if !is_offset_aware {
             return file_ops.write_at(0, reader, status_flags);
@@ -307,6 +318,7 @@ impl FileLike for InodeHandle {
         if !self.rights.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
+        security::file_permission(&self.path, FilePermission::READ)?;
 
         let status_flags = self.status_flags();
 
@@ -320,6 +332,7 @@ impl FileLike for InodeHandle {
         }
 
         let status_flags = self.status_flags();
+        security::file_permission(&self.path, file_write_permission(status_flags))?;
 
         // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
         if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
@@ -429,6 +442,7 @@ impl FileLike for InodeHandle {
         if !self.rights.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
+        security::file_permission(&self.path, file_write_permission(self.status_flags()))?;
 
         let inode = self.path.inode().as_ref();
         let inode_type = inode.type_();
@@ -513,6 +527,14 @@ impl Debug for InodeHandle {
             .field("status_flags", &self.status_flags())
             .field("rights", &self.rights)
             .finish_non_exhaustive()
+    }
+}
+
+fn file_write_permission(status_flags: StatusFlags) -> FilePermission {
+    if status_flags.contains(StatusFlags::O_APPEND) {
+        FilePermission::APPEND
+    } else {
+        FilePermission::WRITE
     }
 }
 

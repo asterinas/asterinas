@@ -15,7 +15,7 @@ use crate::{
     net::socket::util::{CControlHeader, ControlMessage},
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
-    security::lsm::hooks as lsm_hooks,
+    security::{self, FilePermission, lsm::hooks as lsm_hooks},
     util::net::CSocketOptionLevel,
 };
 
@@ -132,6 +132,7 @@ impl FileMessage {
         let current = Task::current().unwrap();
         let file_table = current.as_thread_local().unwrap().borrow_file_table();
         for file in self.files[..nfiles].iter() {
+            security::file_receive(file.path(), file_permissions_for_receive(file.as_ref()))?;
             // TODO: Deal with the `O_CLOEXEC` flag.
             let fd = file_table
                 .unwrap()
@@ -145,6 +146,27 @@ impl FileMessage {
 
         Ok(header)
     }
+}
+
+fn file_permissions_for_receive(file: &dyn FileLike) -> FilePermission {
+    let access_mode = file.access_mode();
+    let mut permissions = FilePermission::empty();
+
+    if access_mode.is_readable() {
+        permissions |= FilePermission::READ;
+    }
+    if access_mode.is_writable() {
+        if file
+            .status_flags()
+            .contains(crate::fs::file::StatusFlags::O_APPEND)
+        {
+            permissions |= FilePermission::APPEND;
+        } else {
+            permissions |= FilePermission::WRITE;
+        }
+    }
+
+    permissions
 }
 
 #[derive(Debug)]

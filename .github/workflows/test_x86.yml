@@ -33,7 +33,6 @@ jobs:
         uses: ./.github/actions/test
         with:
           auto_test: 'general'
-          runs_on: 'ubuntu-latest'
 
   osdk-test:
     runs-on: ubuntu-latest

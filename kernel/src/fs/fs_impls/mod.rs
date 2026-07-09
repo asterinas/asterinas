@@ -13,6 +13,7 @@ pub mod overlayfs;
 pub mod procfs;
 pub mod pseudofs;
 pub mod ramfs;
+pub mod securityfs;
 pub mod sysfs;
 pub mod tmpfs;
 pub mod virtiofs;
@@ -22,6 +23,7 @@ pub(super) fn init() {
     procfs::init();
     cgroupfs::init();
     configfs::init();
+    securityfs::init();
     ramfs::init();
     tmpfs::init();
     devpts::init();

@@ -4,10 +4,11 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file::{InodeMode, InodeType, file_table::RawFileDesc},
+        file::{InodeMode, InodeType, StatusFlags, file_table::RawFileDesc},
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
+    security::{self, FileCreateKind},
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -21,12 +22,11 @@ pub fn sys_mkdirat(
     debug!("dirfd = {}, path = {:?}, mode = {}", dirfd, path, mode);
 
     let fs_ref = ctx.thread_local.borrow_fs();
+    let path_resolver = fs_ref.resolver().read();
     let (dir_path, name) = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::from_fd_at(dirfd, &path, EmptyPathStr::Reject)?;
-        fs_ref
-            .resolver()
-            .read()
+        path_resolver
             .lookup_unresolved_no_follow(&fs_path)?
             .into_parent_and_basename()?
     };
@@ -35,6 +35,15 @@ pub fn sys_mkdirat(
         let mask_mode = mode & !fs_ref.umask().get();
         InodeMode::from_bits_truncate(mask_mode)
     };
+    super::check_parent_write_permission(&dir_path)?;
+    security::file_create(
+        &dir_path,
+        Some(&name),
+        &path_resolver,
+        FileCreateKind::Directory,
+        None,
+        StatusFlags::empty(),
+    )?;
     dir_path.new_fs_child(&name, InodeType::Dir, inode_mode)?;
     fs::vfs::notify::on_mkdir(&dir_path, || name);
     Ok(SyscallReturn::Return(0))

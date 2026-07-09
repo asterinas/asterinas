@@ -42,6 +42,8 @@ GDB_PROFILE_INTERVAL ?= 0.1
 # mode using the kernel command line.
 # Here are the options for the auto test feature.
 AUTO_TEST ?= none
+APPARMOR_SMOKE_POLICY ?= $(abspath target/apparmor/smoke-profile.bin)
+ENABLE_APPARMOR_SMOKE_TEST ?= false
 # Specify whether to build conformance tests under `test/initramfs/src/conformance`.
 ENABLE_CONFORMANCE_TEST ?= false
 CONFORMANCE_TEST_SUITE ?= ltp
@@ -124,6 +126,10 @@ CARGO_OSDK_BUILD_ARGS += --kcmd-args="INTEL_TDX=$(INTEL_TDX)"
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_regression_test.sh"
 else ifeq ($(AUTO_TEST), boot)
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/boot_hello.sh"
+else ifeq ($(AUTO_TEST), apparmor)
+ENABLE_APPARMOR_SMOKE_TEST := true
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="security=apparmor"
+CARGO_OSDK_BUILD_ARGS += --init-args="/test/apparmor-smoke.sh /test/apparmor-smoke.bin"
 else ifeq ($(AUTO_TEST), vsock)
 ENABLE_REGRESSION_TEST := true
 export VSOCK=on
@@ -259,9 +265,22 @@ check_vdso:
 		exit 1; \
 	fi
 
+.PHONY: apparmor_smoke_policy
+apparmor_smoke_policy:
+	@mkdir -p $(dir $(APPARMOR_SMOKE_POLICY))
+	@sh tools/apparmor/compile-policy.sh \
+		tools/apparmor/smoke-profile.apparmor \
+		$(APPARMOR_SMOKE_POLICY)
+
+ifeq ($(AUTO_TEST), apparmor)
+initramfs: apparmor_smoke_policy
+endif
+
 .PHONY: initramfs
 initramfs: check_vdso
-	@$(MAKE) --no-print-directory -C test/initramfs
+	@$(MAKE) --no-print-directory -C test/initramfs \
+		ENABLE_APPARMOR_SMOKE_TEST=$(ENABLE_APPARMOR_SMOKE_TEST) \
+		APPARMOR_SMOKE_POLICY=$(APPARMOR_SMOKE_POLICY)
 
 # Build the kernel with an initramfs
 .PHONY: kernel
@@ -282,6 +301,9 @@ else ifeq ($(AUTO_TEST), regression)
 else ifeq ($(AUTO_TEST), boot)
 	@tail --lines 100 qemu.log | grep -q "^Successfully booted." \
 		|| (echo "Boot test failed" && exit 1)
+else ifeq ($(AUTO_TEST), apparmor)
+	@tail --lines 100 qemu.log | grep -q "^apparmor smoke: passed" \
+		|| (echo "AppArmor smoke test failed" && exit 1)
 else ifeq ($(AUTO_TEST), vsock)
 	@tail --lines 100 qemu.log | grep -q "^Vsock test passed." \
 		|| (echo "Vsock test failed" && exit 1)

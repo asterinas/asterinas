@@ -65,7 +65,7 @@ pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Contex
             signal.clone().map(|s| Box::new(s) as Box<dyn Signal>),
             ctx,
         );
-        if res.is_err_and(|err| err.error() != Errno::EPERM) {
+        if res.is_err_and(|err| !matches!(err.error(), Errno::EPERM | Errno::EACCES)) {
             result = res;
         }
     }
@@ -137,7 +137,7 @@ pub fn kill_all<S: Signal + Clone>(signal: Option<S>, ctx: &Context) -> Result<(
             signal.clone().map(|s| Box::new(s) as Box<dyn Signal>),
             ctx,
         );
-        if res.is_err_and(|err| err.error() != Errno::EPERM) {
+        if res.is_err_and(|err| !matches!(err.error(), Errno::EPERM | Errno::EACCES)) {
             result = res;
         }
     }
@@ -167,32 +167,37 @@ fn check_signal_perm(target: &PosixThread, ctx: &Context, signum: Option<SigNum>
 
     let current_cred = ctx.posix_thread.credentials();
     let target_cred = target.credentials();
-    if current_cred.euid() == target_cred.suid()
+    let mut allowed = current_cred.euid() == target_cred.suid()
         || current_cred.euid() == target_cred.ruid()
         || current_cred.ruid() == target_cred.suid()
-        || current_cred.ruid() == target_cred.ruid()
-    {
-        return Ok(());
+        || current_cred.ruid() == target_cred.ruid();
+
+    if !allowed {
+        allowed = lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+            target_process.user_ns().lock().as_ref(),
+            ctx.posix_thread,
+            CapSet::KILL,
+        ))
+        .is_ok();
     }
 
-    if lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
-        target_process.user_ns().lock().as_ref(),
-        ctx.posix_thread,
-        CapSet::KILL,
-    ))
-    .is_ok()
-    {
-        return Ok(());
-    }
-
-    if let Some(signum) = signum
+    if !allowed
+        && let Some(signum) = signum
         && signum == SIGCONT
     {
         let target_sid = target_process.sid();
         let current_sid = ctx.process.sid();
         if target_sid == current_sid {
-            return Ok(());
+            allowed = true;
         }
+    }
+
+    if allowed {
+        return lsm_hooks::on_signal(&lsm_hooks::SignalContext::new(
+            ctx.posix_thread,
+            target,
+            signum,
+        ));
     }
 
     return_errno_with_message!(

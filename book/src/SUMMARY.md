@@ -30,6 +30,7 @@
     * [Intel TDX](kernel/intel-tdx.md)
 * [The Framekernel Architecture](kernel/the-framekernel-architecture.md)
 * [Linux Compatibility](kernel/linux-compatibility/README.md)
+    * [AppArmor](kernel/linux-compatibility/apparmor.md)
     * [Syscall Flag Coverage](kernel/linux-compatibility/syscall-flag-coverage/README.md)
         * [System Call Matching Language (SCML)](kernel/linux-compatibility/syscall-flag-coverage/system-call-matching-language.md)
         * [Process and thread management](kernel/linux-compatibility/syscall-flag-coverage/process-and-thread-management/README.md)
