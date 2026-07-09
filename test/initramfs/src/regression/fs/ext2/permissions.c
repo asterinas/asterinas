@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#define _GNU_SOURCE
+
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -9,6 +11,7 @@
 
 #define BASE_DIR "/ext2/perm_test"
 #define TEST_FILE BASE_DIR "/testfile"
+#define TEST_DIR BASE_DIR "/testdir"
 
 FN_SETUP(create_base_dir)
 {
@@ -30,6 +33,27 @@ FN_TEST(chown_changes_owner)
 	// Restore ownership to root before cleanup
 	TEST_SUCC(chown(TEST_FILE, 0, 0));
 	TEST_SUCC(unlink(TEST_FILE));
+}
+END_TEST()
+
+FN_TEST(fchown_rejects_opath_fd)
+{
+	int file_fd = TEST_SUCC(open(TEST_FILE, O_CREAT | O_RDWR, 0644));
+	TEST_SUCC(close(file_fd));
+	file_fd = TEST_SUCC(open(TEST_FILE, O_PATH));
+	TEST_ERRNO(fchown(file_fd, geteuid(), getegid()), EBADF);
+	TEST_ERRNO(fchown(file_fd, -1, -1), EBADF);
+	TEST_SUCC(fchownat(file_fd, "", geteuid(), getegid(), AT_EMPTY_PATH));
+	TEST_SUCC(fchownat(file_fd, "", -1, -1, AT_EMPTY_PATH));
+	TEST_SUCC(close(file_fd));
+	TEST_SUCC(unlink(TEST_FILE));
+
+	TEST_SUCC(mkdir(TEST_DIR, 0755));
+	int dir_fd = TEST_SUCC(open(TEST_DIR, O_PATH | O_DIRECTORY));
+	TEST_ERRNO(fchown(dir_fd, geteuid(), getegid()), EBADF);
+	TEST_SUCC(fchownat(dir_fd, "", geteuid(), getegid(), AT_EMPTY_PATH));
+	TEST_SUCC(close(dir_fd));
+	TEST_SUCC(rmdir(TEST_DIR));
 }
 END_TEST()
 
