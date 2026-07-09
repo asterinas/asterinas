@@ -36,6 +36,7 @@ fi
 ./personality/personality
 
 ./prctl/capbset
+./prctl/no_new_privs
 ./prctl/secure_bits
 ./prctl/subreaper
 ./prctl/thread_name

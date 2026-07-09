@@ -5,6 +5,7 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
+use ostd::task::Task;
 
 use super::{
     elf_file::{ElfHeaders, LoadablePhdr},
@@ -14,6 +15,7 @@ use crate::{
     fs::vfs::path::{FsPath, Path, PathResolver},
     prelude::*,
     process::{
+        posix_thread::AsPosixThread,
         process_vm::{AuxKey, AuxVec},
         program_loader::check_executable_inode,
     },
@@ -158,10 +160,17 @@ fn map_vmos_and_build_aux_vec(
         init_aux_vec(parsed_elf, &elf_mapped_info.full_range, ldso_base)?
     };
 
-    // Set AT_SECURE based on setuid/setgid bits of the executable file.
+    // Set AT_SECURE based on setuid/setgid bits and `no_new_privs`.
+    //
+    // FIXME: We should fetch the setuid/setgid bits and `no_new_privs` from
+    // the execve entry and pass them here, rather than re-fetching them here.
     let mode = elf_file.inode().mode()?;
     let secure = if mode.has_set_uid() || mode.has_set_gid() {
-        1
+        let task = Task::current().unwrap();
+        match task.as_posix_thread() {
+            Some(posix_thread) if !posix_thread.credentials().no_new_privs() => 1,
+            _ => 0,
+        }
     } else {
         0
     };

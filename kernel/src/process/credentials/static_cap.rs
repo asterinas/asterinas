@@ -403,4 +403,20 @@ impl<R: TRights> Credentials<R> {
     pub fn set_securebits(&self, securebits: SecureBits) -> Result<()> {
         self.0.set_securebits(securebits)
     }
+
+    /// Gets the no-new-privileges flag.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn no_new_privs(&self) -> bool {
+        self.0.no_new_privs()
+    }
+
+    /// Sets the no-new-privileges flag.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn set_no_new_privs(&self) {
+        self.0.set_no_new_privs();
+    }
 }
