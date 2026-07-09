@@ -611,6 +611,7 @@ impl DirDentry<'_> {
         type_: MknodType,
     ) -> Result<Arc<Dentry>> {
         let children = self.validate_child_absent(name)?;
+        Self::check_mknod_capability(&type_)?;
         let inode = self.inode.mknod(name, mode, type_)?;
         let new_child = Dentry::new(
             inode,
@@ -619,6 +620,23 @@ impl DirDentry<'_> {
         let mut children = children.upgrade();
 
         Ok(self.insert_positive_child(&mut children, name, new_child))
+    }
+
+    fn check_mknod_capability(type_: &MknodType) -> Result<()> {
+        if !matches!(type_, MknodType::CharDevice(_) | MknodType::BlockDevice(_)) {
+            return Ok(());
+        }
+
+        let current_thread = current_thread!();
+        let Some(posix_thread) = current_thread.as_posix_thread() else {
+            return Ok(());
+        };
+
+        lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+            UserNamespace::get_init_singleton().as_ref(),
+            posix_thread,
+            CapSet::MKNOD,
+        ))
     }
 
     /// Links a new `Dentry` by `link()` the old inode.
