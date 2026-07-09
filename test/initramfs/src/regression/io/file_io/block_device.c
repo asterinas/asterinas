@@ -54,6 +54,24 @@ static int close_block_device(int fd)
 }
 #endif
 
+// Verifies that the block device reports a physical block size compatible
+// with its logical sector size.
+FN_TEST(get_physical_block_size)
+{
+	int fd;
+	int logical_sector_size;
+	int physical_block_size;
+
+	fd = TEST_SUCC(open_block_device());
+
+	TEST_SUCC(ioctl(fd, BLKSSZGET, &logical_sector_size));
+	TEST_SUCC(ioctl(fd, BLKPBSZGET, &physical_block_size));
+	TEST_RES(physical_block_size, _ret >= logical_sector_size);
+
+	TEST_SUCC(close_block_device(fd));
+}
+END_TEST()
+
 // Verifies that seeking to the end of a block device reports the same
 // byte-granular size that the block-device ioctl reports.
 FN_TEST(seek_end_matches_block_device_size)
