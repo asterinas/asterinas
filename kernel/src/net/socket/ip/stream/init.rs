@@ -7,7 +7,10 @@ use core::{
 
 use aster_bigtcp::{socket::RawTcpOption, wire::IpEndpoint};
 
-use super::{connecting::ConnectingStream, listen::ListenStream, observer::StreamObserver};
+use super::{
+    super::unmap_ipv4_addr, connecting::ConnectingStream, listen::ListenStream,
+    observer::StreamObserver,
+};
 use crate::{
     events::IoEvents,
     net::{
@@ -80,18 +83,17 @@ impl InitStream {
         }
     }
 
-    /// Returns the address family of this socket.
-    pub(super) fn family(&self) -> IpAddressFamily {
-        self.family
-    }
-
     pub(super) fn bind(&mut self, endpoint: &IpEndpoint, can_reuse: bool) -> Result<()> {
         if self.bound_port.is_some() {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
         }
 
-        // When we support `IPV6_V6ONLY` and if it is set, we should also reject IPv4-mapped
-        // IPv6 addresses.
+        // The endpoint must already be validated by the caller
+        // (`StreamSocket::bind` validates under the state write lock).
+        debug_assert!(
+            IpAddressFamily::from(endpoint.addr) == self.family,
+            "bind: endpoint family mismatch (caller must validate first)"
+        );
         if IpAddressFamily::from(endpoint.addr) != self.family {
             return_errno_with_message!(
                 Errno::EAFNOSUPPORT,
@@ -120,8 +122,10 @@ impl InitStream {
             "`finish_last_connect()` should be called before calling `connect()`"
         );
 
-        // When we support `IPV6_V6ONLY` and if it is set, we should also reject IPv4-mapped
-        // IPv6 addresses.
+        debug_assert!(
+            IpAddressFamily::from(remote_endpoint.addr) == self.family,
+            "connect: endpoint family mismatch (caller must validate first)"
+        );
         if IpAddressFamily::from(remote_endpoint.addr) != self.family {
             return Err((
                 Error::with_message(
@@ -135,6 +139,8 @@ impl InitStream {
         let bound_port = if let Some(bound_port) = self.bound_port {
             bound_port
         } else {
+            // `get_ephemeral_endpoint` internally calls `unmap_ipv4_addr`,
+            // so it handles both bare IPv4 and IPv4-mapped IPv6 correctly.
             let endpoint = match get_ephemeral_endpoint(remote_endpoint) {
                 Some(ep) => ep,
                 None => {
@@ -153,7 +159,14 @@ impl InitStream {
             }
         };
 
-        ConnectingStream::new(bound_port, *remote_endpoint, option, observer).map_err(
+        // `ConnectingStream` expects a bare IPv4 address (mapped addresses are
+        // not understood by the low-level network stack). The caller in
+        // `StreamSocket::start_connect` already validated the address.
+        // We unmap here to ensure the low-level stack always sees native addresses.
+        let remote_endpoint =
+            IpEndpoint::new(unmap_ipv4_addr(remote_endpoint.addr), remote_endpoint.port);
+
+        ConnectingStream::new(bound_port, remote_endpoint, option, observer).map_err(
             |(err, bound_port)| {
                 if err.error() == Errno::ECONNREFUSED {
                     (err, InitStream::new_refused(bound_port, self.family))

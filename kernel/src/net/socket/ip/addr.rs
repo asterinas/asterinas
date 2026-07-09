@@ -58,9 +58,100 @@ impl IpAddressFamily {
     }
 }
 
-// Note: This does not handle IPv4-mapped IPv6 addresses. When `IPV6_V6ONLY` is set,
-// IPv4-mapped addresses are not permitted, so this function cannot be used to determine
-// whether such an address is acceptable.
+/// Returns `true` if the address is an IPv4-mapped IPv6 address (`::ffff:x.x.x.x`).
+pub(super) fn is_ipv4_mapped(addr: IpAddress) -> bool {
+    matches!(addr, IpAddress::Ipv6(v6) if v6.to_ipv4_mapped().is_some())
+}
+
+/// Maps a bare IPv4 endpoint to an IPv4-mapped IPv6 [`SocketAddr`].
+///
+/// Native IPv6 endpoints pass through unchanged.
+// Used by `present_to_user` to present dual-stack addresses
+// to the user in IPv4-mapped IPv6 form per RFC 4038.
+pub(super) fn ipv4_to_ipv4_mapped(endpoint: IpEndpoint) -> SocketAddr {
+    if let IpAddress::Ipv4(ipv4) = endpoint.addr {
+        let mapped = IpAddress::Ipv6(ipv4.to_ipv6_mapped());
+        return SocketAddr::from(IpEndpoint::new(mapped, endpoint.port));
+    }
+    SocketAddr::from(endpoint)
+}
+
+/// Strips the IPv4-mapped prefix (`::ffff:x.x.x.x` → `x.x.x.x`).
+///
+/// Native IPv4 and native IPv6 pass through unchanged.
+/// Must be called before handing an address to smoltcp, which does not
+/// understand mapped addresses. Idempotent — safe to call defensively.
+pub(crate) fn unmap_ipv4_addr(addr: IpAddress) -> IpAddress {
+    match addr {
+        IpAddress::Ipv6(addr) => match addr.to_ipv4_mapped() {
+            Some(ipv4) => IpAddress::Ipv4(ipv4),
+            None => IpAddress::Ipv6(addr),
+        },
+        other => other,
+    }
+}
+
+/// Normalizes an endpoint for a socket's address family.
+///
+/// In dual-stack mode (IPv6 + !v6only), maps bare IPv4 addresses to
+/// IPv4-mapped IPv6 so the socket layer can process them uniformly.
+pub(super) fn normalize_endpoint(
+    family: IpAddressFamily,
+    v6only: bool,
+    endpoint: IpEndpoint,
+) -> IpEndpoint {
+    if family == IpAddressFamily::IPv6
+        && !v6only
+        && let IpAddress::Ipv4(ipv4) = endpoint.addr
+    {
+        return IpEndpoint::new(IpAddress::Ipv6(ipv4.to_ipv6_mapped()), endpoint.port);
+    }
+    endpoint
+}
+
+/// Normalizes and validates the endpoint for a socket's address family.
+/// Returns `Err` if the endpoint is incompatible with the socket.
+pub(super) fn validate_endpoint(
+    family: IpAddressFamily,
+    v6only: bool,
+    endpoint: IpEndpoint,
+) -> Result<IpEndpoint> {
+    let endpoint = normalize_endpoint(family, v6only, endpoint);
+
+    if is_ipv4_mapped(endpoint.addr) && v6only {
+        return_errno_with_message!(
+            Errno::EAFNOSUPPORT,
+            "IPv4-mapped IPv6 addresses are not allowed when IPV6_V6ONLY is set"
+        );
+    }
+
+    if IpAddressFamily::from(endpoint.addr) != family {
+        return_errno_with_message!(
+            Errno::EAFNOSUPPORT,
+            "the protocol family does not match the address family"
+        );
+    }
+
+    Ok(endpoint)
+}
+
+/// Presents a stored endpoint to the user per RFC 4038.
+///
+/// For AF_INET6 sockets, bare IPv4 addresses are mapped to IPv4-mapped IPv6 form.
+/// The `IPV6_V6ONLY` setting is intentionally **ignored** — per RFC 4038,
+/// `getsockname`/`getpeername` always present dual-stack addresses in mapped form
+/// regardless of the `IPV6_V6ONLY` socket option.
+pub(super) fn present_to_user(family: IpAddressFamily, endpoint: IpEndpoint) -> SocketAddr {
+    if family == IpAddressFamily::IPv6 && matches!(endpoint.addr, IpAddress::Ipv4(_)) {
+        return ipv4_to_ipv4_mapped(endpoint);
+    }
+    SocketAddr::from(endpoint)
+}
+
+// Note: This does not handle IPv4-mapped IPv6 addresses — it returns `IPv6`
+// for them. Callers that need to reject IPv4-mapped addresses when
+// `IPV6_V6ONLY` is set must combine this with an explicit `is_ipv4_mapped`
+// check (see `validate_endpoint`).
 impl From<IpAddress> for IpAddressFamily {
     fn from(addr: IpAddress) -> Self {
         match addr {
