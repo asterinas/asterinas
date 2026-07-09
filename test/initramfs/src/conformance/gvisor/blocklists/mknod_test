@@ -1,6 +1,4 @@
 # Broken support or no support at all.
-MknodTest.BlockDeviceRequiresCapMknod
-MknodTest.CharacterDeviceRequiresCapMknod
 MknodTest.Socket
 MknodTest.Fifo
 MknodTest.FifoOtrunc
