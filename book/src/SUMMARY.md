@@ -120,4 +120,5 @@
 * [RFC Overview](rfcs/README.md)
   * [RFC-0001: RFC Process](rfcs/0001-rfc-process.md)
   * [RFC-0002: Asterinas NixOS](rfcs/0002-asterinas-nixos.md)
+  * [RFC-0003: Hypervisor Support](rfcs/0003-hypervisor-support.md)
 * [RFC Template](rfcs/rfc-template.md)
