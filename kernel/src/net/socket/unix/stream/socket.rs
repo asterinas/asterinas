@@ -22,7 +22,9 @@ use crate::{
         unix::{CUserCred, UnixSocketAddr, cred::SocketCred, ctrl_msg::AuxiliaryData},
         util::{
             ControlMessage, MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
-            options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
+            options::{
+                GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
+            },
         },
     },
     prelude::*,
@@ -37,6 +39,7 @@ pub struct UnixStreamSocket {
     // Lock order: `state` first, `options` second
     state: RwMutex<Takeable<State>>,
     options: RwLock<OptionSet>,
+    timeouts: SocketTimeouts,
 
     pollee: Pollee,
     is_nonblocking: AtomicBool,
@@ -175,6 +178,7 @@ impl UnixStreamSocket {
         Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Init(init))),
             options: RwLock::new(OptionSet::new()),
+            timeouts: SocketTimeouts::new(),
             pollee: Pollee::new(),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             socket_type,
@@ -213,6 +217,7 @@ impl UnixStreamSocket {
         Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Connected(connected))),
             options: RwLock::new(options),
+            timeouts: SocketTimeouts::new(),
             pollee: cloned_pollee,
             is_nonblocking: AtomicBool::new(is_nonblocking),
             socket_type,
@@ -343,7 +348,8 @@ impl Socket for UnixStreamSocket {
         if self.is_nonblocking() {
             self.try_connect(&backlog)
         } else {
-            backlog.block_connect(|| self.try_connect(&backlog))
+            let timeout = self.timeouts.send_timeout();
+            backlog.block_connect(timeout, || self.try_connect(&backlog))
         }
     }
 
@@ -388,7 +394,9 @@ impl Socket for UnixStreamSocket {
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        self.block_on(IoEvents::IN, || self.try_accept())
+        self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
+            self.try_accept()
+        })
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
@@ -444,7 +452,7 @@ impl Socket for UnixStreamSocket {
         let options = self.options.read();
         match options
             .socket
-            .get_option(option, &(state.as_ref(), self.socket_type))
+            .get_option(option, &(state.as_ref(), self.socket_type, &self.timeouts))
         {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res,
@@ -459,8 +467,10 @@ impl Socket for UnixStreamSocket {
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
         let state = self.state.read();
         let mut options = self.options.write();
-
-        match options.socket.set_option(option, state.as_ref()) {
+        match options
+            .socket
+            .set_option(option, &(state.as_ref(), &self.timeouts))
+        {
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // TODO: Deal with socket options from other levels
                 warn!("only socket-level options are supported");
@@ -506,7 +516,7 @@ impl Socket for UnixStreamSocket {
         }
         let mut auxiliary_data = AuxiliaryData::from_control(control_messages)?;
 
-        self.block_on(IoEvents::OUT, || {
+        self.block_on(IoEvents::OUT, self.timeouts.send_timeout(), || {
             self.try_send(reader, &mut auxiliary_data, flags)
         })
     }
@@ -522,7 +532,9 @@ impl Socket for UnixStreamSocket {
         }
 
         let (received_bytes, control_messages) =
-            self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+            self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
+                self.try_recv(writer, flags)
+            })?;
 
         let message_header = MessageHeader::new(None, control_messages);
 
@@ -553,7 +565,7 @@ fn do_unix_getsockopt(option: &mut dyn SocketOption, state: &State) -> Result<()
     Ok(())
 }
 
-impl GetSocketLevelOption for (&State, SockType) {
+impl GetSocketLevelOption for (&State, SockType, &SocketTimeouts) {
     fn socket_type(&self) -> SockType {
         self.1
     }
@@ -561,19 +573,27 @@ impl GetSocketLevelOption for (&State, SockType) {
     fn is_listening(&self) -> bool {
         matches!(self.0, State::Listen(_))
     }
+
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        Some(self.2)
+    }
 }
 
-impl SetSocketLevelOption for State {
+impl SetSocketLevelOption for (&State, &SocketTimeouts) {
     fn set_pass_cred(&self, pass_cred: bool) {
-        match self {
-            Self::Init(_) => {
+        match self.0 {
+            State::Init(_) => {
                 // TODO: According to the Linux man pages, "When this option is set and the socket
                 // is not yet connected, a unique name in the abstract namespace will be generated
                 // automatically." See <https://man7.org/linux/man-pages/man7/unix.7.html> for
                 // details.
             }
-            Self::Listen(listener) => listener.set_pass_cred(pass_cred),
-            Self::Connected(connected) => connected.set_pass_cred(pass_cred),
+            State::Listen(listener) => listener.set_pass_cred(pass_cred),
+            State::Connected(connected) => connected.set_pass_cred(pass_cred),
         }
+    }
+
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        Some(self.1)
     }
 }

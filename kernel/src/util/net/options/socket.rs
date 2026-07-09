@@ -7,8 +7,8 @@ use crate::{
     context::current_userspace,
     net::socket::options::{
         AcceptConn, Broadcast, Error, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
-        RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
-        SocketType,
+        RecvBuf, RecvBufForce, RecvTimeout, ReuseAddr, ReusePort, SendBuf, SendBufForce,
+        SendTimeout, SocketOption, SocketType,
     },
     prelude::*,
     process::Gid,
@@ -39,6 +39,8 @@ enum CSocketOptionName {
     REUSEPORT = 15,
     PASSCRED = 16,
     PEERCRED = 17,
+    RCVTIMEO_OLD = 20,
+    SNDTIMEO_OLD = 21,
     ATTACH_FILTER = 26,
     DETACH_FILTER = 27,
     ACCPETCONN = 30,
@@ -62,6 +64,15 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
         CSocketOptionName::PRIORITY => Ok(Box::new(Priority::new())),
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
+        // On 64-bit systems, the old and new timeout options share the same
+        // `timeval_t` layout and can use the same handlers. A 32-bit userspace
+        // ABI would need separate handlers for the old and new layouts.
+        CSocketOptionName::RCVTIMEO_OLD | CSocketOptionName::RCVTIMEO_NEW => {
+            Ok(Box::new(RecvTimeout::new()))
+        }
+        CSocketOptionName::SNDTIMEO_OLD | CSocketOptionName::SNDTIMEO_NEW => {
+            Ok(Box::new(SendTimeout::new()))
+        }
         CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
         CSocketOptionName::PASSCRED => Ok(Box::new(PassCred::new())),
         CSocketOptionName::PEERCRED => Ok(Box::new(PeerCred::new())),
@@ -82,6 +93,8 @@ impl_raw_socket_option!(RecvBuf);
 impl_raw_socket_option!(KeepAlive);
 impl_raw_socket_option!(Priority);
 impl_raw_socket_option!(Linger);
+impl_raw_socket_option!(RecvTimeout);
+impl_raw_socket_option!(SendTimeout);
 impl_raw_socket_option!(ReusePort);
 impl_raw_socket_option!(PassCred);
 impl_raw_sock_option_get_only!(PeerCred);

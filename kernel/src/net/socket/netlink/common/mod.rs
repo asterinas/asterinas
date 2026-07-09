@@ -20,7 +20,9 @@ use crate::{
         util::{
             MessageHeader, SendRecvFlags, SocketAddr,
             datagram_common::{Bound, Inner, select_remote_and_bind},
-            options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
+            options::{
+                GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
+            },
         },
     },
     prelude::*,
@@ -35,6 +37,7 @@ pub struct NetlinkSocket<P: SupportedNetlinkProtocol> {
     inner: RwMutex<Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>>,
     options: RwLock<OptionSet>,
     socket_type: SockType,
+    timeouts: SocketTimeouts,
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
@@ -66,6 +69,7 @@ where
             inner: RwMutex::new(Inner::Unbound(unbound)),
             options: RwLock::new(OptionSet::new()),
             socket_type,
+            timeouts: SocketTimeouts::new(),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
             pseudo_path: SockFs::new_path(),
@@ -181,7 +185,10 @@ where
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)> {
-        let (received_len, addr) = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+        let (received_len, addr) =
+            self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
+                self.try_recv(writer, flags)
+            })?;
 
         // TODO: Receive control message
 
@@ -206,7 +213,7 @@ where
         // Deal with socket-level options
         options
             .socket
-            .get_option(option, &(&*inner, self.socket_type))
+            .get_option(option, &(&*inner, self.socket_type, &self.timeouts))
 
         // TODO: Deal with netlink-level options
     }
@@ -216,7 +223,10 @@ where
 
         // Deal with socket-level options
         let mut options = self.options.write();
-        match options.socket.set_option(option, &*inner) {
+        match options
+            .socket
+            .set_option(option, &(&*inner, &self.timeouts))
+        {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res.map(|_need_iface_poll| ()),
         }
@@ -259,6 +269,7 @@ impl<P: SupportedNetlinkProtocol> GetSocketLevelOption
     for (
         &Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>,
         SockType,
+        &SocketTimeouts,
     )
 {
     fn socket_type(&self) -> SockType {
@@ -268,11 +279,21 @@ impl<P: SupportedNetlinkProtocol> GetSocketLevelOption
     fn is_listening(&self) -> bool {
         false
     }
+
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        Some(self.2)
+    }
 }
 
 impl<P: SupportedNetlinkProtocol> SetSocketLevelOption
-    for Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>
+    for (
+        &Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>,
+        &SocketTimeouts,
+    )
 {
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        Some(self.1)
+    }
 }
 
 impl<P: SupportedNetlinkProtocol> Inner<UnboundNetlink<P>, BoundNetlink<P::Message>> {

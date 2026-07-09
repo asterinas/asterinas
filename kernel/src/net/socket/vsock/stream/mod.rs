@@ -301,7 +301,7 @@ impl Socket for VsockStreamSocket {
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        self.block_on(IoEvents::IN, || self.try_accept())
+        self.block_on(IoEvents::IN, None, || self.try_accept())
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
@@ -399,7 +399,7 @@ impl Socket for VsockStreamSocket {
             warn!("sending control message is not supported");
         }
 
-        self.block_on(IoEvents::OUT, || self.try_send(reader, flags))
+        self.block_on(IoEvents::OUT, None, || self.try_send(reader, flags))
 
         // TODO: Trigger `SIGPIPE` if the error code is `EPIPE` and `MSG_NOSIGNAL` is not specified
     }
@@ -414,7 +414,7 @@ impl Socket for VsockStreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let received_bytes = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+        let received_bytes = self.block_on(IoEvents::IN, None, || self.try_recv(writer, flags))?;
 
         // TODO: Receive control message
         let message_header = MessageHeader::new(None, Vec::new());

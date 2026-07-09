@@ -1,6 +1,3 @@
-# TODO: Support the `SO_RCVTIMEO` socket option
-AllUnixDomainSockets/StreamUnixSocketPairTest.RecvmsgOneSideClosed/*
-
 # TODO: Support `ECONNRESET` errors on UNIX sockets
 AllUnixDomainSockets/StreamUnixSocketPairTest.ReadOneSideClosedWithUnreadData/*
 

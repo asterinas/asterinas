@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use ostd::sync::WaitQueue;
 use spin::Once;
@@ -102,14 +105,22 @@ impl MessageQueue {
     }
 
     /// Blocks until the buffer is free and the `try_send` succeeds, or until interrupted.
-    pub(super) fn block_send<F, R>(&self, mut try_send: F) -> Result<R>
+    pub(super) fn block_send<F, R>(&self, timeout: Option<Duration>, mut try_send: F) -> Result<R>
     where
         F: FnMut() -> Result<R>,
     {
-        self.send_wait_queue.pause_until(|| match try_send() {
-            Err(err) if err.error() == Errno::EAGAIN => None,
-            result => Some(result),
-        })?
+        self.send_wait_queue
+            .pause_until_or_timeout(
+                || match try_send() {
+                    Err(err) if err.error() == Errno::EAGAIN => None,
+                    result => Some(result),
+                },
+                timeout.as_ref(),
+            )
+            .map_err(|err| match err.error() {
+                Errno::ETIME => Error::with_message(Errno::EAGAIN, "the socket timeout expired"),
+                _ => err,
+            })?
     }
 }
 

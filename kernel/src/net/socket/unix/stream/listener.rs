@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::{
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    time::Duration,
+};
 
 use aster_rights::ReadDupOp;
 use ostd::sync::WaitQueue;
@@ -323,14 +326,25 @@ impl Backlog {
     }
 
     /// Blocks until the backlogs are free and the `try_connect` succeeds, or until interrupted.
-    pub(super) fn block_connect<F>(&self, mut try_connect: F) -> Result<()>
+    pub(super) fn block_connect<F>(
+        &self,
+        timeout: Option<Duration>,
+        mut try_connect: F,
+    ) -> Result<()>
     where
         F: FnMut() -> Result<()>,
     {
         self.connect_wait_queue
-            .pause_until(|| match try_connect() {
-                Err(err) if err.error() == Errno::EAGAIN => None,
-                result => Some(result),
+            .pause_until_or_timeout(
+                || match try_connect() {
+                    Err(err) if err.error() == Errno::EAGAIN => None,
+                    result => Some(result),
+                },
+                timeout.as_ref(),
+            )
+            .map_err(|err| match err.error() {
+                Errno::ETIME => Error::with_message(Errno::EAGAIN, "the socket timeout expired"),
+                _ => err,
             })?
     }
 }

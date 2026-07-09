@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use aster_rights::ReadDupOp;
 
@@ -15,7 +18,9 @@ use crate::{
         unix::{CUserCred, UnixSocketAddr, cred::SocketCred, ctrl_msg::AuxiliaryData},
         util::{
             MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
-            options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
+            options::{
+                GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
+            },
         },
     },
     prelude::*,
@@ -27,6 +32,7 @@ pub struct UnixDatagramSocket {
     local_receiver: MessageReceiver,
     remote_queue: RwLock<Option<Arc<MessageQueue>>>,
     options: RwLock<OptionSet>,
+    timeouts: SocketTimeouts,
     // Since datagram sockets are not connection-oriented, they typically lack well-defined peer
     // credentials. According to the Linux implementation, however, peer credentials are recorded
     // when a socket pair is created using the `socketpair` system call.
@@ -77,6 +83,7 @@ impl UnixDatagramSocket {
             local_receiver: MessageReceiver::new(),
             remote_queue: RwLock::new(None),
             options: RwLock::new(OptionSet::new()),
+            timeouts: SocketTimeouts::new(),
             peer_cred: None,
             is_nonblocking: AtomicBool::new(is_nonblocking),
             is_write_shutdown: AtomicBool::new(false),
@@ -90,6 +97,7 @@ impl UnixDatagramSocket {
         mut aux_data: AuxiliaryData,
         remote: Option<UnixSocketAddr>,
         _flags: SendRecvFlags,
+        timeout: Option<Duration>,
     ) -> Result<usize> {
         if self.is_write_shutdown.load(Ordering::Relaxed) {
             return_errno_with_message!(Errno::EPIPE, "the socket is shut down for writing");
@@ -108,7 +116,9 @@ impl UnixDatagramSocket {
         let res = if self.is_nonblocking() {
             queue.try_send(reader, &mut aux_data, &self.local_receiver)
         } else {
-            queue.block_send(|| queue.try_send(reader, &mut aux_data, &self.local_receiver))
+            queue.block_send(timeout, || {
+                queue.try_send(reader, &mut aux_data, &self.local_receiver)
+            })
         };
 
         // A connected socket will automatically be disconnected if the remote has been closed.
@@ -227,7 +237,10 @@ impl Socket for UnixDatagramSocket {
         let options = self.options.read();
 
         // Deal with socket-level options
-        match options.socket.get_option(option, &self.local_receiver) {
+        match options
+            .socket
+            .get_option(option, &(&self.local_receiver, &self.timeouts))
+        {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res,
         }
@@ -241,7 +254,10 @@ impl Socket for UnixDatagramSocket {
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
         let mut options = self.options.write();
 
-        match options.socket.set_option(option, &self.local_receiver) {
+        match options
+            .socket
+            .set_option(option, &(&self.local_receiver, &self.timeouts))
+        {
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // TODO: Deal with socket options from other levels
                 warn!("only socket-level options are supported");
@@ -277,7 +293,13 @@ impl Socket for UnixDatagramSocket {
 
         let auxiliary_data = AuxiliaryData::from_control(control_messages)?;
 
-        self.do_send(reader, auxiliary_data, remote_addr, flags)
+        self.do_send(
+            reader,
+            auxiliary_data,
+            remote_addr,
+            flags,
+            self.timeouts.send_timeout(),
+        )
     }
 
     fn recvmsg(
@@ -291,7 +313,9 @@ impl Socket for UnixDatagramSocket {
         }
 
         let (received_bytes, control_messages, peer_addr) =
-            self.block_on(IoEvents::IN, || self.local_receiver.try_recv(writer, flags))?;
+            self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
+                self.local_receiver.try_recv(writer, flags)
+            })?;
 
         let message_header = MessageHeader::new(Some(peer_addr.into()), control_messages);
 
@@ -322,7 +346,7 @@ fn do_unix_getsockopt(option: &mut dyn SocketOption, socket: &UnixDatagramSocket
     Ok(())
 }
 
-impl GetSocketLevelOption for MessageReceiver {
+impl GetSocketLevelOption for (&MessageReceiver, &SocketTimeouts) {
     fn socket_type(&self) -> SockType {
         SockType::SOCK_DGRAM
     }
@@ -330,15 +354,23 @@ impl GetSocketLevelOption for MessageReceiver {
     fn is_listening(&self) -> bool {
         false
     }
+
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        Some(self.1)
+    }
 }
 
-impl SetSocketLevelOption for MessageReceiver {
+impl SetSocketLevelOption for (&MessageReceiver, &SocketTimeouts) {
     fn set_pass_cred(&self, pass_cred: bool) {
         // TODO: According to the Linux man pages, "When this option is set and the socket
         // is not yet connected, a unique name in the abstract namespace will be generated
         // automatically." See <https://man7.org/linux/man-pages/man7/unix.7.html> for
         // details.
 
-        self.set_pass_cred(pass_cred);
+        self.0.set_pass_cred(pass_cred);
+    }
+
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        Some(self.1)
     }
 }
