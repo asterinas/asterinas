@@ -10,6 +10,7 @@ resolver = "2"
 # These crates share a single workspace
 # so their `Cargo.toml` files do not need to repeat common settings.
 members = [
+    "test/aarch64-boot",
     "osdk/deps/frame-allocator",
     "osdk/deps/heap-allocator",
     "osdk/deps/test-kernel",

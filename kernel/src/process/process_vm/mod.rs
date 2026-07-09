@@ -13,7 +13,7 @@ mod heap;
 mod init_stack;
 
 use core::ops::Range;
-#[cfg(target_arch = "riscv64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use ostd::task::disable_preempt;
@@ -78,7 +78,7 @@ pub struct ProcessVm {
     /// The executable file.
     executable_file: Path,
     /// The base address for vDSO segment
-    #[cfg(target_arch = "riscv64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
     vdso_base: AtomicUsize,
 }
 
@@ -91,7 +91,7 @@ impl ProcessVm {
             code_range: SpinLock::new(0..0),
             data_range: SpinLock::new(0..0),
             executable_file,
-            #[cfg(target_arch = "riscv64")]
+            #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
             vdso_base: AtomicUsize::new(0),
         }
     }
@@ -104,7 +104,7 @@ impl ProcessVm {
             code_range: SpinLock::new(process_vm.code_range.lock().clone()),
             data_range: SpinLock::new(process_vm.data_range.lock().clone()),
             executable_file: process_vm.executable_file.clone(),
-            #[cfg(target_arch = "riscv64")]
+            #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
             vdso_base: AtomicUsize::new(process_vm.vdso_base.load(Ordering::Relaxed)),
         }
     }
@@ -167,13 +167,13 @@ impl ProcessVm {
     }
 
     /// Returns the base address for vDSO segment.
-    #[cfg(target_arch = "riscv64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
     pub(super) fn vdso_base(&self) -> Vaddr {
         self.vdso_base.load(Ordering::Relaxed)
     }
 
     /// Sets the base address for vDSO segment.
-    #[cfg(target_arch = "riscv64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
     pub(super) fn set_vdso_base(&self, addr: Vaddr) {
         self.vdso_base.store(addr, Ordering::Relaxed);
     }

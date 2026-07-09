@@ -17,5 +17,8 @@ spin.workspace = true
 [target.loongarch64-unknown-none-softfloat.dependencies]
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
 
+[target.aarch64-unknown-none-softfloat.dependencies]
+fdt = { version = "0.1.5", features = ["pretty-printing"] }
+
 [lints]
 workspace = true

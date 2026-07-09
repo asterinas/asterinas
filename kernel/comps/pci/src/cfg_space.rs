@@ -421,10 +421,11 @@ impl MemoryBar {
         let size = decode_size(size_encoded64, BarKind::Memory);
 
         // Restore the original base address.
-        #[cfg(not(target_arch = "loongarch64"))]
+        #[cfg(not(any(target_arch = "loongarch64", target_arch = "aarch64")))]
         let base = raw64 & MEMORY_ADDRESS_MASK;
-        // In LoongArch, the BAR base address needs to be allocated manually.
-        #[cfg(target_arch = "loongarch64")]
+        // On LoongArch and AArch64, no firmware assigns PCI BAR addresses, so
+        // they must be allocated manually from the host bridge's MMIO window.
+        #[cfg(any(target_arch = "loongarch64", target_arch = "aarch64"))]
         let base = {
             use core::alloc::Layout;
             crate::arch::alloc_mmio(Layout::from_size_align(size as usize, size as usize).unwrap())

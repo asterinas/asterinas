@@ -1,0 +1,222 @@
+<title>AArch64 QEMU Machine Compatibility</title>
+<style>
+  :root{
+    --bg:#eef2f7; --surface:#ffffff; --surface-2:#e7edf5; --border:#d6dfea;
+    --ink:#141b26; --ink-soft:#525f6e; --ink-faint:#8492a1;
+    --accent:#2f6bd8; --accent-soft:#e6eefc;
+    --pass:#16824f; --pass-bg:#dff2e7; --pass-line:#16824f;
+    --load:#2f6bd8; --load-bg:#e3ecfb; --load-line:#5b8def;
+    --reject:#9a6212; --reject-bg:#f6ecd9;
+    --noout:#5b6672; --noout-bg:#e4e9f0;
+    --shadow:0 1px 2px rgba(16,29,48,.06),0 8px 24px -12px rgba(16,29,48,.18);
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0c1119; --surface:#141c27; --surface-2:#1b2531; --border:#28323f;
+      --ink:#e8eef5; --ink-soft:#a2b1c1; --ink-faint:#6c7c8d;
+      --accent:#6ba1ff; --accent-soft:#17263f;
+      --pass:#3ecb83; --pass-bg:#123024; --pass-line:#3ecb83;
+      --load:#6ba1ff; --load-bg:#16233b; --load-line:#4f80d6;
+      --reject:#e0b25a; --reject-bg:#332a17;
+      --noout:#93a2b2; --noout-bg:#1e2733;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px -14px rgba(0,0,0,.55);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#eef2f7; --surface:#ffffff; --surface-2:#e7edf5; --border:#d6dfea;
+    --ink:#141b26; --ink-soft:#525f6e; --ink-faint:#8492a1;
+    --accent:#2f6bd8; --accent-soft:#e6eefc;
+    --pass:#16824f; --pass-bg:#dff2e7; --pass-line:#16824f;
+    --load:#2f6bd8; --load-bg:#e3ecfb; --load-line:#5b8def;
+    --reject:#9a6212; --reject-bg:#f6ecd9; --noout:#5b6672; --noout-bg:#e4e9f0;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0c1119; --surface:#141c27; --surface-2:#1b2531; --border:#28323f;
+    --ink:#e8eef5; --ink-soft:#a2b1c1; --ink-faint:#6c7c8d;
+    --accent:#6ba1ff; --accent-soft:#17263f;
+    --pass:#3ecb83; --pass-bg:#123024; --pass-line:#3ecb83;
+    --load:#6ba1ff; --load-bg:#16233b; --load-line:#4f80d6;
+    --reject:#e0b25a; --reject-bg:#332a17; --noout:#93a2b2; --noout-bg:#1e2733;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.5;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(120% 90% at 50% -10%,var(--accent-soft),transparent 60%);}
+  .wrap{max-width:1000px;margin:0 auto;padding:clamp(20px,4vw,56px) clamp(16px,4vw,32px) 72px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent);font-weight:600;margin:0 0 10px}
+  h1{font-size:clamp(26px,4.4vw,40px);line-height:1.08;letter-spacing:-.02em;margin:0 0 12px;
+    text-wrap:balance;font-weight:700}
+  .lede{max-width:66ch;color:var(--ink-soft);font-size:clamp(15px,1.6vw,17px);margin:0}
+  .lede code{font-family:var(--mono);font-size:.9em;background:var(--surface-2);
+    padding:1px 6px;border-radius:5px;color:var(--ink)}
+
+  .summary{margin:34px 0 8px;display:grid;gap:18px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:16px 18px;box-shadow:var(--shadow)}
+  .tile .n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:30px;
+    font-weight:600;letter-spacing:-.02em;line-height:1}
+  .tile .n.pass{color:var(--pass)}
+  .tile .n.load{color:var(--load)}
+  .tile .l{margin-top:8px;color:var(--ink-soft);font-size:12.5px}
+  .tile .l strong{color:var(--ink);font-weight:600}
+
+  .barcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:18px 20px;box-shadow:var(--shadow)}
+  .bar{display:flex;height:16px;border-radius:6px;overflow:hidden;background:var(--surface-2)}
+  .bar span{display:block;height:100%}
+  .bar .s-pass{background:var(--pass-line)}
+  .bar .s-load{background:var(--load-line)}
+  .bar .s-reject{background:var(--reject)}
+  .legend{display:flex;flex-wrap:wrap;gap:16px 22px;margin-top:14px;font-size:13px;color:var(--ink-soft)}
+  .legend b{color:var(--ink);font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:baseline}
+
+  .callout{margin:18px 0 0;background:var(--surface);border:1px solid var(--border);
+    border-left:3px solid var(--accent);border-radius:10px;padding:14px 18px;box-shadow:var(--shadow);
+    font-size:14px;color:var(--ink-soft);max-width:none}
+  .callout b{color:var(--ink);font-weight:600}
+  .callout code{font-family:var(--mono);font-size:.88em;background:var(--surface-2);padding:1px 6px;border-radius:5px;color:var(--ink)}
+
+  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:30px 0 14px}
+  .search{flex:1 1 200px;min-width:180px;display:flex;align-items:center;gap:8px;
+    background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 12px}
+  .search input{border:0;background:transparent;color:var(--ink);font:inherit;font-size:14px;width:100%;outline:none}
+  .search svg{flex:none;color:var(--ink-faint)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font:inherit;font-size:13px;cursor:pointer;border:1px solid var(--border);
+    background:var(--surface);color:var(--ink-soft);border-radius:99px;padding:6px 13px;
+    display:inline-flex;align-items:center;gap:7px;transition:.14s}
+  .chip:hover{border-color:var(--accent);color:var(--ink)}
+  .chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  .chip .c{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11.5px;opacity:.8}
+  .chip[aria-pressed="true"] .c{opacity:.9}
+
+  .tablecard{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    box-shadow:var(--shadow);overflow:hidden}
+  .scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px;min-width:660px}
+  thead th{position:sticky;top:0;background:var(--surface);z-index:2;text-align:left;
+    font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);
+    font-weight:600;padding:13px 18px;border-bottom:1px solid var(--border)}
+  tbody td{padding:12px 18px;border-bottom:1px solid var(--border);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr.pass td:first-child{box-shadow:inset 3px 0 0 var(--pass-line)}
+  tbody tr.load td:first-child{box-shadow:inset 3px 0 0 var(--load-line)}
+  tbody tr:hover td{background:var(--surface-2)}
+  .machine{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--ink);white-space:nowrap}
+  .machine .v{color:var(--ink-faint)}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+    padding:3px 10px;border-radius:99px;white-space:nowrap}
+  .pill.pass{background:var(--pass-bg);color:var(--pass)}
+  .pill.load{background:var(--load-bg);color:var(--load)}
+  .pill.fail{background:var(--reject-bg);color:var(--reject)}
+  .pill::before{content:"";width:6px;height:6px;border-radius:99px;background:currentColor}
+  .cat{font-size:12.5px;color:var(--ink-soft);white-space:nowrap}
+  .smp{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:600;
+    color:var(--load);background:var(--load-bg);border-radius:5px;padding:1px 6px;margin-left:7px;
+    vertical-align:middle;white-space:nowrap}
+  .note{color:var(--ink-soft);font-size:13px;min-width:240px}
+  .empty{padding:34px;text-align:center;color:var(--ink-faint)}
+  .foot{margin-top:26px;color:var(--ink-faint);font-size:12.5px;max-width:74ch}
+  .foot code{font-family:var(--mono);background:var(--surface-2);padding:1px 5px;border-radius:4px;color:var(--ink-soft)}
+  @media (max-width:560px){ th.h-cat,td.c-cat{display:none} }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Asterinas &middot; AArch64 port</p>
+  <h1>QEMU machine-type compatibility</h1>
+  <p class="lede">Every one of <code>qemu-system-aarch64</code>'s 109 machine types, booted with the same full Asterinas kernel and initramfs. A <b>pass</b> means the kernel reached userspace and a signal handler returned through the vDSO. Boards that demand multiple cores were re-run <b>with the cores they require</b> &mdash; SMP is verified working (4 cores boot, schedule, and do TLB shootdowns). The port targets the paravirtual <code>virt</code> board.</p>
+
+  <div class="summary">
+    <div class="tiles">
+      <div class="tile"><div class="n">109</div><div class="l">machine types <strong>tested</strong></div></div>
+      <div class="tile"><div class="n pass">18</div><div class="l">booted to <strong>userspace</strong> + signals</div></div>
+      <div class="tile"><div class="n load">12</div><div class="l">other <strong>AArch64</strong> boards load &mdash; need a driver</div></div>
+      <div class="tile"><div class="n">18 / 18</div><div class="l">every <strong>virt</strong> version passed</div></div>
+    </div>
+    <div class="barcard">
+      <div class="bar" role="img" aria-label="18 booted to userspace, 12 AArch64 boards load but need a driver, 79 different or incompatible hardware">
+        <span class="s-pass" style="width:16.5%"></span>
+        <span class="s-load" style="width:11.0%"></span>
+        <span class="s-reject" style="width:72.5%"></span>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--pass-line)"></span>Booted to userspace <b>18</b></span>
+        <span><span class="dot" style="background:var(--load-line)"></span>AArch64, loads &mdash; needs a board driver <b>12</b></span>
+        <span><span class="dot" style="background:var(--reject)"></span>Different / incompatible hardware <b>79</b></span>
+      </div>
+    </div>
+    <p class="callout"><b>SMP is not the blocker.</b> 33 machines were first flagged &ldquo;requires SMP&rdquo; only because the harness passed <code>-smp 1</code>. Re-run with the cores each board demands, none failed <em>on</em> SMP: they are 32-bit ARMv7 SoCs (image rejected), Cortex-M microcontrollers, or genuine AArch64 boards that load but lack a PL011 UART at virt's <code>0x0900_0000</code>. The <span style="color:var(--load);font-weight:600">12 blue rows</span> &mdash; incl. <code>raspi3b</code>, <code>raspi4b</code>, and <code>sbsa-ref</code> &mdash; are the real next-target candidates.</p>
+  </div>
+
+  <div class="controls">
+    <label class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="q" type="text" placeholder="Filter machine types&hellip;" aria-label="Filter machine types">
+    </label>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="tablecard">
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th>Machine type</th><th>Result</th><th class="h-cat">Reason</th><th>Notes</th>
+        </tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="empty" hidden>No machine types match that filter.</div>
+  </div>
+
+  <p class="foot">Base run: <code>-cpu cortex-a72 -m 2G -kernel &lt;elf&gt;</code> with the initramfs via <code>-device loader</code>. Boards that reject that CPU or demand a core count were re-run with their native CPU and <code>-smp N</code> (N shown per row). A machine outside <code>virt</code> fails because it is different hardware &mdash; a 32-bit CPU, a Cortex-M core, a fixed RAM size, or a distinct SoC memory map with no PL011 at <code>0x0900_0000</code> &mdash; not because of any missing kernel capability. This mirrors how the upstream x86 / RISC-V / LoongArch ports each target one board.</p>
+</div>
+
+<script>
+const DATA=[{"m":"amd-versal2-virt","status":"fail","cat":"AArch64, other SoC","note":"Boots with the cores it demands; genuine AArch64 (Cortex-A78) board, but no PL011 UART at virt's 0x0900_0000 — needs a board driver.","ver":"","smp":"18"},{"m":"amd-versal-virt","status":"fail","cat":"AArch64, other SoC","note":"Boots with the cores it demands; genuine AArch64 (Cortex-A72) board, but no PL011 UART at virt's 0x0900_0000 — needs a board driver.","ver":"","smp":"4"},{"m":"ast1030-evb","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"ast2500-evb","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"ast2600-evb","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"ast2700a0-evb","status":"fail","cat":"AArch64, other SoC","note":"Boots with the cores it demands; genuine AArch64 (Cortex-A35) board, but no PL011 UART at virt's 0x0900_0000 — needs a board driver.","ver":"","smp":"4"},{"m":"ast2700a1-evb","status":"fail","cat":"AArch64, other SoC","note":"Boots with the cores it demands; genuine AArch64 (Cortex-A35) board, but no PL011 UART at virt's 0x0900_0000 — needs a board driver.","ver":"","smp":"4"},{"m":"ast2700fc","status":"fail","cat":"AArch64, other SoC","note":"Boots with the cores it demands; genuine AArch64 (Cortex-A35) board, but no PL011 UART at virt's 0x0900_0000 — needs a board driver.","ver":"","smp":"6"},{"m":"b-l475e-iot01a","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"bletchley-bmc","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"bpim2u","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"4"},{"m":"canon-a1100","status":"fail","cat":"Fixed RAM size","note":"Invalid RAM size, should be 64 MiB.","ver":"","smp":""},{"m":"catalina-bmc","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"collie","status":"fail","cat":"Fixed RAM size","note":"Invalid RAM size, should be 512 MiB.","ver":"","smp":""},{"m":"cubieboard","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"emcraft-sf2","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"fby35","status":"fail","cat":"Cortex-M board","note":"Deprecated multi-SoC; boot core is Cortex-M — faults into a HardFault lockup.","ver":"","smp":"3"},{"m":"fby35-bmc","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"fp5280g2-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"fuji-bmc","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"g220a-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"gb200nvl-bmc","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"highbank","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"imx25-pdk","status":"fail","cat":"Fixed RAM size","note":"RAM size more than 512 MiB is not supported.","ver":"","smp":""},{"m":"imx8mp-evk","status":"fail","cat":"AArch64, other SoC","note":"Boots with the cores it demands; genuine AArch64 (Cortex-A53) board, but no PL011 UART at virt's 0x0900_0000 — needs a board driver.","ver":"","smp":""},{"m":"integratorcp","status":"fail","cat":"No serial output","note":"Loads but the board's memory map/UART differ from virt — nothing on ttyS0.","ver":"","smp":""},{"m":"kudo-bmc","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"kzm","status":"fail","cat":"Fixed RAM size","note":"RAM size more than 512 MiB is not supported.","ver":"","smp":""},{"m":"lm3s6965evb","status":"fail","cat":"Cortex-M board","note":"Microcontroller board (no MMU / AArch64 EL1).","ver":"","smp":""},{"m":"lm3s811evb","status":"fail","cat":"Cortex-M board","note":"Microcontroller board (no MMU / AArch64 EL1).","ver":"","smp":""},{"m":"max78000fthr","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"mcimx6ul-evk","status":"fail","cat":"ELF not loadable","note":"Kernel image can't load at this board's addresses.","ver":"","smp":""},{"m":"mcimx7d-sabre","status":"fail","cat":"ELF not loadable","note":"Kernel image can't load at this board's addresses.","ver":"","smp":""},{"m":"microbit","status":"fail","cat":"ELF not loadable","note":"Kernel image can't load at this board's addresses.","ver":"","smp":""},{"m":"midway","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"mori-bmc","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"mps2-an385","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"mps2-an386","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"mps2-an500","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"mps2-an505","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"mps2-an511","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"mps2-an521","status":"fail","cat":"Cortex-M board","note":"Cortex-M microcontroller (no MMU / AArch64 EL1) — the kernel image can't load.","ver":"","smp":"2"},{"m":"mps3-an524","status":"fail","cat":"Cortex-M board","note":"Cortex-M microcontroller (no MMU / AArch64 EL1) — the kernel image can't load.","ver":"","smp":"2"},{"m":"mps3-an536","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"mps3-an547","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"musca-a","status":"fail","cat":"Cortex-M board","note":"Cortex-M microcontroller (no MMU / AArch64 EL1) — the kernel image can't load.","ver":"","smp":"2"},{"m":"musca-b1","status":"fail","cat":"Cortex-M board","note":"Cortex-M microcontroller (no MMU / AArch64 EL1) — the kernel image can't load.","ver":"","smp":"2"},{"m":"musicpal","status":"fail","cat":"Fixed RAM size","note":"Invalid RAM size, should be 32 MiB.","ver":"","smp":""},{"m":"netduino2","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"netduinoplus2","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"npcm750-evb","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"npcm845-evb","status":"fail","cat":"AArch64, other SoC","note":"Boots with the cores it demands; genuine AArch64 (Cortex-A35) board, but no PL011 UART at virt's 0x0900_0000 — needs a board driver.","ver":"","smp":"4"},{"m":"nuri","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"olimex-stm32-h405","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"orangepi-pc","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"4"},{"m":"palmetto-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"qcom-dc-scm-v1-bmc","status":"fail","cat":"32-bit board","note":"Deprecated alias of ast2600 — 32-bit ARMv7; AArch64 image rejected.","ver":"","smp":"2"},{"m":"qcom-firework-bmc","status":"fail","cat":"32-bit board","note":"Deprecated alias of ast2600 — 32-bit ARMv7; AArch64 image rejected.","ver":"","smp":"2"},{"m":"quanta-gbs-bmc","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"quanta-gsj","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"quanta-q71l-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"rainier-bmc","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"raspi0","status":"fail","cat":"Fixed RAM size","note":"Invalid RAM size, should be 512 MiB.","ver":"","smp":""},{"m":"raspi1ap","status":"fail","cat":"Fixed RAM size","note":"Invalid RAM size, should be 512 MiB.","ver":"","smp":""},{"m":"raspi2b","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"4"},{"m":"raspi3ap","status":"fail","cat":"AArch64, other SoC","note":"Boots with -smp 4; real Raspberry Pi 3 (Cortex-A53) — needs the BCM2837 mini-UART/mailbox drivers.","ver":"","smp":"4"},{"m":"raspi3b","status":"fail","cat":"AArch64, other SoC","note":"Boots with -smp 4; real Raspberry Pi 3 (Cortex-A53) — needs the BCM2837 mini-UART/mailbox drivers.","ver":"","smp":"4"},{"m":"raspi4b","status":"fail","cat":"AArch64, other SoC","note":"Boots with -smp 4; real Raspberry Pi 4 (Cortex-A72) — needs the BCM2711 PL011/GIC-400 drivers.","ver":"","smp":"4"},{"m":"realview-eb","status":"fail","cat":"No serial output","note":"Loads but the board's memory map/UART differ from virt — nothing on ttyS0.","ver":"","smp":""},{"m":"realview-eb-mpcore","status":"fail","cat":"No serial output","note":"Loads but the board's memory map/UART differ from virt — nothing on ttyS0.","ver":"","smp":""},{"m":"realview-pb-a8","status":"fail","cat":"No serial output","note":"Loads but the board's memory map/UART differ from virt — nothing on ttyS0.","ver":"","smp":""},{"m":"realview-pbx-a9","status":"fail","cat":"Config rejected","note":"Cortex-A9MPCore peripheral can only use Cortex-A9 CPU.","ver":"","smp":""},{"m":"romulus-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"sabrelite","status":"fail","cat":"ELF not loadable","note":"Kernel image can't load at this board's addresses.","ver":"","smp":""},{"m":"sbsa-ref","status":"fail","cat":"AArch64, other SoC","note":"Loads; the standardized ARM SBSA server board (GICv3 + PCIe + ACPI) — the most worthwhile non-virt target. Needs GICv3 and its memory map.","ver":"","smp":""},{"m":"smdkc210","status":"fail","cat":"32-bit board","note":"ARMv7 (32-bit) SoC — QEMU rejects the AArch64 kernel image (incompatible architecture).","ver":"","smp":"2"},{"m":"sonorapass-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"stm32vldiscovery","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"supermicrox11-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"supermicro-x11spi-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"sx1","status":"fail","cat":"Fixed RAM size","note":"Invalid RAM size, should be 32 MiB.","ver":"","smp":""},{"m":"sx1-v1","status":"fail","cat":"Fixed RAM size","note":"Invalid RAM size, should be 32 MiB.","ver":"","smp":""},{"m":"tiogapass-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"versatileab","status":"fail","cat":"Config rejected","note":"versatilepb: memory size must not exceed 256MB.","ver":"","smp":""},{"m":"versatilepb","status":"fail","cat":"Config rejected","note":"versatilepb: memory size must not exceed 256MB.","ver":"","smp":""},{"m":"vexpress-a15","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"vexpress-a9","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"virt-10.0","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"10.0","smp":""},{"m":"virt-10.1","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"10.1","smp":""},{"m":"virt-10.2","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"10.2","smp":""},{"m":"virt-5.0","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"5.0","smp":""},{"m":"virt-5.1","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"5.1","smp":""},{"m":"virt-5.2","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"5.2","smp":""},{"m":"virt-6.0","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"6.0","smp":""},{"m":"virt-6.1","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"6.1","smp":""},{"m":"virt-6.2","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"6.2","smp":""},{"m":"virt-7.0","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"7.0","smp":""},{"m":"virt-7.1","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"7.1","smp":""},{"m":"virt-7.2","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"7.2","smp":""},{"m":"virt-8.0","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"8.0","smp":""},{"m":"virt-8.1","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"8.1","smp":""},{"m":"virt-8.2","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"8.2","smp":""},{"m":"virt-9.0","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"9.0","smp":""},{"m":"virt-9.1","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"9.1","smp":""},{"m":"virt-9.2","status":"pass","cat":"virt (paravirtual)","note":"Boots to userspace; signal handler returns via vDSO.","ver":"9.2","smp":""},{"m":"witherspoon-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"xilinx-zynq-a9","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""},{"m":"xlnx-zcu102","status":"fail","cat":"AArch64, other SoC","note":"Boots with the cores it demands; genuine AArch64 (Cortex-A53 — Zynq UltraScale+) board, but no PL011 UART at virt's 0x0900_0000 — needs a board driver.","ver":"","smp":""},{"m":"yosemitev2-bmc","status":"fail","cat":"Incompatible CPU","note":"Board fixes its own CPU; rejects cortex-a72 (usually a 32-bit or SoC core).","ver":"","smp":""}];
+const catCounts={};
+for(const r of DATA){const k=r.status==='pass'?'Pass':r.cat;catCounts[k]=(catCounts[k]||0)+1;}
+const order=['All','Pass','AArch64, other SoC','32-bit board','Incompatible CPU','Fixed RAM size','Cortex-M board','ELF not loadable','No serial output','Config rejected'];
+let active='All', query='';
+const chips=document.getElementById('chips');
+order.forEach(name=>{
+  const c=name==='All'?DATA.length:(catCounts[name]||0);
+  if(name!=='All'&&!c) return;
+  const b=document.createElement('button');
+  b.className='chip';b.type='button';b.setAttribute('aria-pressed',name==='All');
+  b.innerHTML=name+' <span class="c">'+c+'</span>';
+  b.onclick=()=>{active=name;[...chips.children].forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');render();};
+  chips.appendChild(b);
+});
+const tb=document.getElementById('tb'), empty=document.getElementById('empty');
+function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function render(){
+  const rows=DATA.filter(r=>{
+    const okCat=active==='All'||(active==='Pass'?r.status==='pass':r.cat===active);
+    const okQ=!query||r.m.toLowerCase().includes(query);
+    return okCat&&okQ;
+  });
+  tb.innerHTML=rows.map(r=>{
+    const isLoad=r.cat==='AArch64, other SoC';
+    const cls=r.status==='pass'?'pass':(isLoad?'load':'fail');
+    const name=r.ver?'virt-<span class="v">'+r.ver+'</span>':esc(r.m);
+    const pill=r.status==='pass'
+      ?'<span class="pill pass">Userspace</span>'
+      :(isLoad?'<span class="pill load">Loads</span>':'<span class="pill fail">Unsupported</span>');
+    const smp=r.smp?'<span class="smp" title="re-run with this many cores">-smp '+r.smp+'</span>':'';
+    return '<tr class="'+cls+'">'+
+      '<td class="machine">'+name+smp+'</td>'+
+      '<td>'+pill+'</td>'+
+      '<td class="c-cat cat">'+(r.status==='pass'?'&mdash;':esc(r.cat))+'</td>'+
+      '<td class="note">'+esc(r.note)+'</td></tr>';
+  }).join('');
+  empty.hidden=rows.length>0;
+}
+document.getElementById('q').addEventListener('input',e=>{query=e.target.value.trim().toLowerCase();render();});
+render();
+</script>

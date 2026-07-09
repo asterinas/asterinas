@@ -287,18 +287,31 @@ impl VirtioPciModernTransport {
         let mut notify = None;
         let mut common_cfg = None;
         let mut device_cfg = None;
+        // A capability may point at a BAR that is unmapped on platforms that do
+        // not assign PCI BARs (e.g. AArch64 without firmware BAR allocation). In
+        // that case the device is skipped after the borrow of `common_device`
+        // ends, rather than panicking.
+        let mut unmapped_bar = false;
         let (vndr_caps, bar_manager) = common_device.iter_vndr_capability_with_bar_manager();
         for vndr_cap in vndr_caps {
             let data = VirtioPciCapabilityData::new(bar_manager, vndr_cap);
             match data.typ() {
                 VirtioPciCpabilityType::CommonCfg => {
+                    if data.memory_bar().is_none() {
+                        unmapped_bar = true;
+                        break;
+                    }
                     common_cfg = Some(VirtioPciCommonCfg::new(&data));
                 }
                 VirtioPciCpabilityType::NotifyCfg => {
+                    let Some(bar) = data.memory_bar() else {
+                        unmapped_bar = true;
+                        break;
+                    };
                     notify = Some(VirtioPciNotify {
                         offset_multiplier: data.option_value().unwrap(),
                         offset: data.offset(),
-                        io_memory: data.memory_bar().unwrap().clone(),
+                        io_memory: bar.clone(),
                     });
                 }
                 VirtioPciCpabilityType::IsrCfg => {}
@@ -308,12 +321,21 @@ impl VirtioPciModernTransport {
                 VirtioPciCpabilityType::PciCfg => {}
             }
         }
-        let notify = notify.unwrap();
-        let common_cfg = common_cfg.unwrap();
-        let device_cfg = device_cfg.unwrap();
+        if unmapped_bar {
+            warn!("virtio-pci device has an unmapped BAR; skipping");
+            return Err((BusProbeError::DeviceNotMatch, common_device));
+        }
+        let (Some(notify), Some(common_cfg), Some(device_cfg)) = (notify, common_cfg, device_cfg)
+        else {
+            warn!("virtio-pci device is missing required capabilities; skipping");
+            return Err((BusProbeError::DeviceNotMatch, common_device));
+        };
 
         // TODO: Support interrupt without MSI-X.
-        let msix = common_device.acquire_msix_capability().unwrap().unwrap();
+        let Ok(Some(msix)) = common_device.acquire_msix_capability() else {
+            warn!("virtio-pci device has no MSI-X capability; skipping");
+            return Err((BusProbeError::DeviceNotMatch, common_device));
+        };
         let msix_manager = VirtioMsixManager::new(msix);
 
         Ok(Self {

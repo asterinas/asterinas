@@ -168,6 +168,8 @@ ifeq ($(SCHEME), "")
 	SCHEME = riscv
 	else ifeq ($(TARGET_ARCH), loongarch64)
 	SCHEME = loongarch
+	else ifeq ($(TARGET_ARCH), aarch64)
+	SCHEME = aarch64
 	endif
 endif
 

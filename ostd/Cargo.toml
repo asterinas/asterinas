@@ -70,6 +70,10 @@ unwinding = { version = "=0.2.8", default-features = false, features = ["fde-sta
 loongArch64 = "0.2.5"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
 
+[target.aarch64-unknown-none-softfloat.dependencies]
+fdt = { version = "0.1.5", features = ["pretty-printing"] }
+unwinding = { version = "=0.2.8", default-features = false, features = ["fde-static", "hide-trace", "panic", "personality", "unwinder"] }
+
 [features]
 default = ["cvm_guest"]
 # The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX

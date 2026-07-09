@@ -226,6 +226,10 @@ const PREBUILT_VDSO_LIB: &[u8] =
 #[cfg(target_arch = "riscv64")]
 const PREBUILT_VDSO_LIB: &[u8] =
     include_bytes!(concat!(env!("VDSO_LIBRARY_DIR"), "/vdso_riscv64.so"));
+// The AArch64 vDSO is a small hand-written assembly stub (no C/libc) built in
+// tree; see `tools/build_vdso_aarch64.sh`.
+#[cfg(target_arch = "aarch64")]
+const PREBUILT_VDSO_LIB: &[u8] = include_bytes!("vdso_aarch64.so");
 
 /// The offset from the vDSO base to the `__vdso_rt_sigreturn` function.
 ///
@@ -233,6 +237,8 @@ const PREBUILT_VDSO_LIB: &[u8] =
 /// `readelf -s vdso_riscv64.so | grep '__vdso_rt_sigreturn'`.
 #[cfg(target_arch = "riscv64")]
 pub const __VDSO_RT_SIGRETURN_OFFSET: usize = 0x5b0;
+#[cfg(target_arch = "aarch64")]
+pub const __VDSO_RT_SIGRETURN_OFFSET: usize = 0x2b0;
 
 impl Vdso {
     /// Constructs a new `Vdso`, including an initialized `VdsoData` and a VMO of the vDSO.
@@ -416,6 +422,17 @@ pub const VDSO_VMO_LAYOUT: VdsoVmoLayout = VdsoVmoLayout {
     text_segment_offset: 2 * PAGE_SIZE,
     text_segment_size: PAGE_SIZE,
     // https://elixir.bootlin.com/linux/v6.2.10/source/arch/riscv/kernel/vdso.c#L47
+    data_offset: 0,
+
+    size: 3 * PAGE_SIZE,
+};
+
+#[cfg(target_arch = "aarch64")]
+pub const VDSO_VMO_LAYOUT: VdsoVmoLayout = VdsoVmoLayout {
+    data_segment_offset: 0,
+    data_segment_size: PAGE_SIZE,
+    text_segment_offset: 2 * PAGE_SIZE,
+    text_segment_size: PAGE_SIZE,
     data_offset: 0,
 
     size: 3 * PAGE_SIZE,

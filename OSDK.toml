@@ -71,6 +71,25 @@ qemu.args = """\
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log
 """
 
+[scheme."aarch64"]
+supported_archs = ["aarch64"]
+boot.method = "qemu-direct"
+build.strip_elf = false
+
+qemu.args = """\
+    -machine virt,gic-version=2 \
+    -cpu cortex-a72 \
+    -m 2G \
+    -smp 1 \
+    --no-reboot \
+    -nographic \
+    -display none \
+    -serial chardev:mux \
+    -monitor chardev:mux \
+    -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
+    -rtc base=utc
+"""
+
 [scheme."loongarch"]
 boot.method = "qemu-direct"
 build.strip_elf = false
