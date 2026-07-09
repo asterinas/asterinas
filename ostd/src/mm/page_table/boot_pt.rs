@@ -134,15 +134,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     /// by the firmware, loader or the setup code.
     unsafe fn from_current_pt() -> Self {
         let root_pt = crate::arch::mm::current_page_table_paddr() / C::BASE_PAGE_SIZE;
-        // Make sure the 2 available bits are not set for firmware page tables.
-        // Make sure the 2 available bits are not set for firmware page tables.
         // dfs_walk_on_leave skipped for QEMU: set_prop writes trigger illegal
         // instruction (Tc) on RSV1 bit handling in QEMU 10.0.2.
         // AVAIL1 marking only needed by dismiss(), unused in early boot.
         // Real hardware (SiFive P550) does not need this skip.
-        // Skip dfs_walk_on_leave on riscv64: set_prop writes to
-        // non-leaf PTEs trigger Illegal Instruction (Tc) in QEMU 10.0.2
-        // due to RSV1 bit handling.
         #[cfg(not(target_arch = "riscv64"))]
         {
         dfs_walk_on_leave::<E, C>(root_pt, C::NR_LEVELS, &mut |pte: &mut E| {
@@ -183,6 +178,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
             let pte_ptr = unsafe { (paddr_to_vaddr(pt * C::BASE_PAGE_SIZE) as *mut E).add(index) };
             let pte = unsafe { pte_ptr.read() };
             pt = if !pte.is_present() {
+                // RISC-V: FRAME_METADATA region intermediate tables
+                // (L3→L2, L2→L1) are pre-built by boot.S before MMU on.
+                // This branch is only taken for leaf-level L1 entries,
+                // which are zero-filled by alloc_child and safe to walk.
                 let pte = self.alloc_child();
                 unsafe { pte_ptr.write(pte) };
                 pte.paddr() / C::BASE_PAGE_SIZE

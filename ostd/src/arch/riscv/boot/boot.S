@@ -8,12 +8,17 @@
 //   - SBI is still available (OpenSBI remains resident in M-mode).
 //   - The kernel is loaded at physical 0x80200000 and linked at 0xffffffff80200000.
 //
+// Page table philosophy (shared with x86):
+//   boot.S builds the MINIMAL page table needed to reach Rust.  All further
+//   mappings — kernel VMA, FRAME_METADATA, linear extensions — are done
+//   dynamically in Rust via `boot_pt::map_base_page()` and later the proper
+//   kernel page table.  This keeps assembly small and auditable.
+//
 // Safety net:
 //   A supervisor-timer interrupt is armed early. If anything hangs before the
 //   kernel installs its own timer/trap handling, the timer fires into the tiny
 //   trap handler below and the board is reset via SBI.
 
-SATP_MODE_SV39 = 8 << 60
 SATP_MODE_SV48 = 9 << 60
 
 PTE_V  = 0x01
@@ -31,6 +36,8 @@ KERNEL_VMA_OFFSET = 0xffffffff00000000
 
 // OpenSBI timebase on Milk-V Megrez is 1 MHz.
 TIMER_FREQ = 1000000
+
+PTE_VRXWAD = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
 
 .section ".text.entry", "ax", @progbits
 
@@ -62,10 +69,29 @@ TIMER_FREQ = 1000000
     ecall
 .endm
 
+// Build a non-leaf PTE pointing to a sub-table.  The assembler sees VMA
+// addresses for labels; we must strip the high 32 bits to get physical
+// addresses (KERNEL_VMA_OFFSET = 0xffffffff00000000).
+// Result in \dst_reg: (PA >> 2) | PTE_V.
+.macro NONLEAF_PTE dst_reg, label
+    lla    \dst_reg, \label
+    slli   \dst_reg, \dst_reg, 32
+    srli   \dst_reg, \dst_reg, 32
+    srli   \dst_reg, \dst_reg, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori    \dst_reg, \dst_reg, PTE_V
+.endm
+
+// Helper: get physical address of \label into \dst_reg.
+.macro LABEL_PA dst_reg, label
+    lla    \dst_reg, \label
+    slli   \dst_reg, \dst_reg, 32
+    srli   \dst_reg, \dst_reg, 32
+.endm
+
 .global _start
 _start:
     // a0 = hart id, a1 = DTB paddr (from U-Boot / SBI).
-    // Save a1 to s2 BEFORE any SBI ecall: the SBI sbiret struct
+    // Save a1 to s1/s2 BEFORE any SBI ecall: the SBI sbiret struct
     // (a0=error, a1=value) clobbers the firmware DTB pointer.
     mv     s0, a0
     mv     s1, a1
@@ -113,92 +139,54 @@ _start:
     SBI_PUTCHAR 'G'
     SBI_SET_TIMER (60 * TIMER_FREQ)
 
-    // --- Build the Sv48 page table ------------------------------------------
-    // Virtual address layout:
-    //   IDENTITY:  0x00000000_00000000  -> phys,  L4[0]   -> boot_idpt
-    //   LINEAR:    0xffff8000_00000000  -> phys,  L4[256] -> boot_idpt (shared)
-    //   META:      0xffffe000_00000000  -> phys,  L4[448] -> boot_meta_l3pt
-    //   KERNEL:    0xffffffff_80000000  -> phys,  L4[511] -> boot_l3pt
+    // --- Build the minimal Sv48 boot page table -------------------------------
     //
-    // boot_idpt: 512 × 1 GiB leaf PTEs covering PA 0..512 GiB.
-    // Sv48 mandates gigapage support; QEMU 8.2.2+ handles them correctly.
+    // Three L4 entries to reach Rust:
+    //   L4[0]   -> boot_idpt      — identity mapping (PA 0..512 GiB)
+    //   L4[256] -> boot_idpt      — linear mapping (shared)
+    //   L4[511] -> boot_l3pt      — kernel high-half (1 GiB identity leaves)
     //
-    // L4[0] and L4[256] share boot_idpt — VPN[2] of the linear base is 0.
+    // L4[448] is set to boot_meta_l3pt — a single zero-filled L3 that lets
+    // the MMU walk past L4 into the FRAME_METADATA region after paging is
+    // enabled.  All deeper tables (L2→L1, leaf PTEs) are created dynamically
+    // in Rust by boot_pt::map_base_page().
+    //
+    // boot_idpt uses 512 × 1 GiB gigapages.  Sv48 mandates gigapage support;
+    // QEMU 8.2.2+ and SiFive P550 both handle them correctly.
 
-    lla    t1, boot_l4pt
-    slli   t1, t1, 32
-    srli   t1, t1, 32
+    LABEL_PA t1, boot_l4pt
 
-    // Helper: t0 = (physical_addr_of_label >> 2) | PTE_V  (PPN shift 10, 12-10=2)
-    .macro L4_PTE dst_reg, label
-        lla    \dst_reg, \label
-        slli   \dst_reg, \dst_reg, 32
-        srli   \dst_reg, \dst_reg, 32
-        srli   \dst_reg, \dst_reg, PAGE_SHIFT - PTE_PPN_SHIFT
-        ori    \dst_reg, \dst_reg, PTE_V
-    .endm
-
-    // L4[0]   -> boot_idpt (identity mapping)
-    L4_PTE   t0, boot_idpt
+    // L4[0] -> boot_idpt (identity mapping)
+    NONLEAF_PTE t0, boot_idpt
     sd       t0, 0(t1)
 
     // L4[256] -> boot_idpt (linear mapping, shared with identity)
-    li       t2, 2048
+    li       t2, 256 * PTE_SIZE
     add      t2, t1, t2
     sd       t0, 0(t2)
 
-    // L4[448] -> boot_meta_l3pt (FRAME_METADATA region, 0xffffe00000000000+)
-    L4_PTE   t0, boot_meta_l3pt
-    li       t2, 3584
+    // L4[511] -> boot_l3pt (kernel high-half)
+    NONLEAF_PTE t0, boot_l3pt
+    li       t2, 511 * PTE_SIZE
     add      t2, t1, t2
     sd       t0, 0(t2)
 
-    // L4[511] -> boot_l3pt (kernel high-half, 0xffffffff00000000+)
-    L4_PTE   t0, boot_l3pt
-    li       t2, 4088
+    // L4[448] -> boot_meta_l3pt (FRAME_METADATA region).
+    // Must be set BEFORE the MMU is enabled so the page-table walker
+    // doesn't fault on L4[448] when map_base_page first accesses it.
+    NONLEAF_PTE t0, boot_meta_l3pt
+    li       t2, 448 * PTE_SIZE
     add      t2, t1, t2
     sd       t0, 0(t2)
 
-    // Replace L3[510]'s 1 GiB leaf with a non-leaf pointer to
-    // boot_l2_kernel.  QEMU 9.x can reject 1 GiB leaf PTEs in Sv48.
-    // boot_l2_kernel uses 2 MiB leaf pages covering 0x80000000-0xbfffffff.
-    L4_PTE   t0, boot_l2_kernel
-
-    lla      t1, boot_l3pt
-    slli     t1, t1, 32
-    srli     t1, t1, 32
-    li       t2, 4080
+    // Replace boot_l3pt[510]'s 1 GiB leaf with a non-leaf pointer to
+    // boot_l2_kernel (2 MiB leaves covering 0x80000000-0xbfffffff).
+    // QEMU 9.x can reject 1 GiB leaf PTEs in Sv48 for kernel VMA.
+    NONLEAF_PTE t0, boot_l2_kernel
+    LABEL_PA t1, boot_l3pt
+    li       t2, 510 * PTE_SIZE
     add      t2, t1, t2
     sd       t0, 0(t2)
-
-    // Pre-fill boot_meta_l3pt[0] → boot_meta_l2 (non-leaf, V-only).
-    L4_PTE   t0, boot_meta_l2
-    lla      t1, boot_meta_l3pt
-    slli     t1, t1, 32
-    srli     t1, t1, 32
-    sd       t0, 0(t1)
-
-    // Pre-fill boot_meta_l2[0..79] → boot_meta_l1_* (non-leaf, V-only).
-    // Each L1 table covers 512 × 4 KiB = 2 MiB of FRAME_METADATA space.
-    // 80 L1 tables = 160 MiB — enough for 8 GiB QEMU RAM (2,621,440 frames × 64 B).
-    lla      t1, boot_meta_l2
-    slli     t1, t1, 32
-    srli     t1, t1, 32
-    lla      t2, boot_meta_l1_0
-    slli     t2, t2, 32
-    srli     t2, t2, 32
-    li       t4, 80                        // 80 L1 tables to fill
-    li       t5, 0                         // byte offset in boot_meta_l2
-.Lmeta_fill_l2:
-    srli     t3, t2, PAGE_SHIFT - PTE_PPN_SHIFT
-    ori      t3, t3, PTE_V
-    add      t0, t1, t5
-    sd       t3, 0(t0)
-    li       t6, 4096
-    add      t2, t2, t6                    // next L1 table PA
-    addi     t5, t5, 8                     // next L2 entry offset
-    addi     t4, t4, -1
-    bnez     t4, .Lmeta_fill_l2
 
     SBI_PUTCHAR 'D'
     SBI_SET_TIMER (60 * TIMER_FREQ)
@@ -206,25 +194,19 @@ _start:
     // Synchronise page-table writes before turning on the MMU.
     sfence.vma
 
-    // Emit all markers BEFORE enabling the MMU.
+    // Emit markers BEFORE enabling the MMU (safe via SBI ecall).
     SBI_PUTCHAR 'J'
     SBI_PUTCHAR 'B'
 
-    // Disable the early safety-net timer before enabling the MMU.
-    // SBI set_timer(u64::MAX) stops the supervisor timer interrupt
-    // that would fire after 60s/6s and reset the board.
+    // Disable the early safety-net timer.
     li     a0, -1
     li     a7, 0x54494D45             // SBI set_timer EID
     ecall
 
-    // Use Sv48 — matches PagingConsts (NR_LEVELS=4, ADDRESS_WIDTH=48).
-    // boot_l4pt and boot_l3pt already use 2MiB leaves throughout.
-
-    // KERNEL_PT_READY=false → paddr_to_vaddr uses identity during early boot.
-
-    lla    t0, boot_l4pt
-    slli   t0, t0, 32
-    srli   t0, t0, 32
+    // Enable Sv48 paging.
+    // KERNEL_PT_READY=false → paddr_to_vaddr() uses identity mapping
+    // during early boot, which boot_idpt fully supports.
+    LABEL_PA t0, boot_l4pt
     li     t1, SATP_MODE_SV48
     srli   t0, t0, PAGE_SHIFT
     or     t0, t0, t1
@@ -245,33 +227,32 @@ _start:
 1:  j      1b
 
 .Lmmu_ok:
-    // MMU is now on.  Kernel VMA uses 2 MiB leaf pages (boot_l2_kernel).
-    // SBI marker 'W' is emitted via ecall — works on both QEMU and real HW.
+    // MMU is now on.  SBI ecall still works (OpenSBI in M-mode).
     SBI_SET_TIMER (90 * TIMER_FREQ)
     SBI_PUTCHAR 'W'
 
-    // Now switch to VMA for the Rust jump.
-    // Move early trap handler to virtual address.
-    lla    t0, _early_trap
-    li     t2, KERNEL_VMA_OFFSET
-    or     t0, t0, t2
-    csrw   stvec, t0
-
-    // Switch SP/PC to the high-half virtual addresses.
+    // Switch to high-half virtual addresses.
     li     t1, KERNEL_VMA_OFFSET
 
+    // Move early trap handler to virtual address.
+    lla    t0, _early_trap
+    or     t0, t0, t1
+    csrw   stvec, t0
+
+    // Switch stack pointer.
     lla    sp, boot_stack_top
     or     sp, sp, t1
 
+    // Switch GP (CPU-local storage base).
     lla    gp, __cpu_local_start
     or     gp, gp, t1
 
+    // Jump to Rust entry with VMA.
     lla    t0, riscv_boot
     or     t0, t0, t1
-    mv     a0, s0
-    mv     a1, s1
+    mv     a0, s0                    // hart_id
+    mv     a1, s1                    // DTB paddr
 
-    // SBI marker 'X' before VMA jump — confirms VMA page table works.
     SBI_PUTCHAR 'X'
     SBI_PUTCHAR 'V'
 
@@ -280,10 +261,11 @@ _start:
     // Should never return.
 1:  j      1b
 
-// Tiny trap handler:
-//   - Supervisor timer interrupt -> reset the board (safety net).
-//   - Trap during early boot -> print 'T' + scause nibble + ':' + stval[39:32] nibble.
-//     This reveals the faulting VA's VPN[3] (the L4 index) for page faults.
+// Tiny trap handler for the early-boot safety net.
+//   - Supervisor timer interrupt → reset the board.
+//   - Any other trap → print 'T' + scause low nibble + ':' + stval VPN[3] nibble,
+//     then spin.  The hex nibbles are sufficient to diagnose page faults
+//     (scause=0x0c/0x0d/0x0f), illegal instructions (0x02), and bus errors.
 .balign 4
 _early_trap:
     csrr   t0, scause
@@ -311,8 +293,7 @@ _early_trap:
     li     a7, 0x01
     ecall
 
-    // Print VPN[3] top nibble of stval (VA[47:44]) as hex nibble
-    // VPN[3]=0→'0', 256→'8', 448→'e', 511→'f'
+    // Print VPN[3] of stval (VA[47:44])
     csrr   t3, stval
     srli   t3, t3, 44
     andi   t4, t3, 0xf
@@ -332,23 +313,18 @@ _early_trap:
 .Ltimer_reset:
     SBI_RESET
 
-PTE_VRXWAD = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
-PTE_VRXW   = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D  // pre-set A/D — QEMU won't
-
 // ---- Sv48 page tables ------------------------------------------------------
+
 .balign 4096
 boot_l4pt:
-    .zero 1 * PTE_SIZE           // L4[0]:   set at runtime -> boot_idpt
-    .zero 255 * PTE_SIZE         // L4[1..255]: unused
-    .zero 1 * PTE_SIZE           // L4[256]: set at runtime -> boot_idpt
-    .zero 191 * PTE_SIZE         // L4[257..447]: unused
-    .zero 1 * PTE_SIZE           // L4[448]: set at runtime -> boot_meta_l3pt
-    .zero 62 * PTE_SIZE          // L4[449..510]: unused
-    .zero 1 * PTE_SIZE           // L4[511]: set at runtime -> boot_l3pt
+    // All entries initially zero.  L4[0], L4[256], L4[511] are filled at
+    // runtime.  L4[448] stays zero — FRAME_METADATA mappings are created
+    // dynamically by boot_pt::map_base_page() in Rust.
+    .zero 512 * PTE_SIZE
 
 // Identity and linear mappings share this table.
 // 512 × 1 GiB leaf PTEs (gigapages) covering PA 0..512 GiB.
-// Sv48 mandates gigapage support; QEMU 8.2.2+ handles them correctly.
+// Sv48 mandates gigapage support.
 .balign 4096
 boot_idpt:
     .set i, 0
@@ -357,189 +333,15 @@ boot_idpt:
     .set i, i + 1
     .endr
 
-// L3 page table for FRAME_METADATA region (L4[448] points here).
-// L3[0] is pre-filled at runtime with a non-leaf PTE → boot_meta_l2.
-// All other L3 entries (1..511) are zero — the FRAME_METADATA region
-// only uses VPN[3]=0 (first 512 GiB of the 0xffffe00000000000 range).
+// Single zero-filled L3 for FRAME_METADATA (L4[448] points here).
+// boot_pt::map_base_page() dynamically creates L2/L1 tables on demand.
 .balign 4096
 boot_meta_l3pt:
     .zero 512 * PTE_SIZE
 
-// L2 page table for FRAME_METADATA (L3[0] → boot_meta_l2).
-// 80 entries (0..79) are pre-filled at runtime with non-leaf PTEs
-// pointing to boot_meta_l1_0 .. boot_meta_l1_79.
-// Each L1 table covers 2 MiB of FRAME_METADATA VA space (512 × 4K pages).
-.balign 4096
-boot_meta_l2:
-    .zero 512 * PTE_SIZE
-
-// 80 L1 page tables for FRAME_METADATA leaves (one per 2 MiB region).
-// Each is zero-initialized — map_base_page writes the actual 4K leaf PTEs.
-// Total: 80 × 4 KiB = 320 KiB, covering 160 MiB of slot VA (8 GiB RAM).
-.balign 4096
-boot_meta_l1_0:  .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_1:  .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_2:  .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_3:  .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_4:  .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_5:  .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_6:  .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_7:  .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_8:  .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_9:  .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_10: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_11: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_12: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_13: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_14: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_15: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_16: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_17: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_18: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_19: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_20: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_21: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_22: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_23: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_24: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_25: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_26: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_27: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_28: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_29: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_30: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_31: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_32: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_33: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_34: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_35: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_36: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_37: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_38: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_39: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_40: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_41: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_42: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_43: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_44: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_45: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_46: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_47: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_48: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_49: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_50: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_51: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_52: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_53: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_54: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_55: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_56: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_57: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_58: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_59: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_60: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_61: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_62: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_63: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_64: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_65: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_66: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_67: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_68: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_69: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_70: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_71: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_72: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_73: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_74: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_75: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_76: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_77: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_78: .zero 512 * PTE_SIZE
-.balign 4096
-boot_meta_l1_79: .zero 512 * PTE_SIZE
-
 // High-half kernel mapping table (L4[511] selects this).
 // 512 entries, each a 1 GiB identity leaf.
-// Entry 510 replaced at runtime → non-leaf → boot_l2_kernel (2 MiB leaves).
+// Entry 510 is replaced at runtime with a non-leaf pointer to boot_l2_kernel.
 .balign 4096
 boot_l3pt:
     .set i, 0
@@ -554,34 +356,9 @@ boot_l3pt:
 boot_l2_kernel:
     .set i, 0
     .rept 512
-    .quad (((0x80000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXW
+    .quad (((0x80000000 >> 12) + i * (0x200000 >> 12)) << PTE_PPN_SHIFT) | PTE_VRXWAD
     .set i, i + 1
     .endr
-
-// ---- Sv39 fallback page table ----------------------------------------------
-.balign 4096
-boot_l3pt_sv39:
-    // Identity mapping: VPN[0..127] -> phys 0..128 GiB (1 GiB leaves).
-    .set i, 0
-    .rept 128
-    .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRXWAD
-    .set i, i + 1
-    .endr
-    // Unused gap: VPN[128..255].
-    .zero 128 * PTE_SIZE
-    // Linear mapping: VPN[256..383] — filled at runtime (non-leaf or zero).
-    // Entries 256-259 → non-leaf to boot_l2_id_* (set at runtime).
-    // Entries 260+ stay zero — map_base_page allocates L2 tables on demand.
-    .zero 128 * PTE_SIZE
-    // Unused gap: VPN[384..507].
-    .zero 124 * PTE_SIZE
-    // Kernel high-half: VPN[508..511].
-    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff00000000 -> 0 GiB
-    .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffff40000000 -> 1 GiB
-    // Entry 510: filled at runtime — non-leaf → boot_l2_kernel (2 MiB leaves).
-    // QEMU 8.2.2 does NOT support Sv39 1 GiB gigapages (optional per spec).
-    .quad 0
-    .quad (0xc0000 << PTE_PPN_SHIFT) | PTE_VRXWAD  // 0xffffffffc0000000 -> 3 GiB
 
 // ---- Boot stack ------------------------------------------------------------
 .section ".bss.stack", "aw", @nobits

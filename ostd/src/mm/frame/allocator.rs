@@ -197,20 +197,11 @@ pub(super) fn get_global_frame_allocator() -> &'static dyn GlobalFrameAllocator 
 ///
 /// This function should be called only once.
 pub(crate) unsafe fn init() {
-    #[cfg(target_arch = "riscv64")]
-    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'5') };
-
     let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
-
-    #[cfg(target_arch = "riscv64")]
-    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'6') };
 
     // Retire the early allocator.
     let early_allocator = EARLY_ALLOCATOR.lock().take().unwrap();
     let (range_1, range_2) = early_allocator.allocated_regions();
-
-    #[cfg(target_arch = "riscv64")]
-    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'7') };
 
     for region in regions.iter() {
         if region.typ() == MemoryRegionType::Usable {
@@ -227,9 +218,6 @@ pub(crate) unsafe fn init() {
             }
         }
     }
-
-    #[cfg(target_arch = "riscv64")]
-    unsafe { core::ptr::write_volatile(0x10000000 as *mut u8, b'8') };
 }
 
 /// An allocator in the early boot phase when frame metadata is not available.
