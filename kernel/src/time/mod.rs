@@ -118,7 +118,7 @@ impl TryFrom<timeval_t> for Duration {
         if timeval.sec < 0 || timeval.usec < 0 {
             return_errno_with_message!(Errno::EINVAL, "timeval_t cannot be negative");
         }
-        if timeval.usec > USEC_PER_SEC {
+        if timeval.usec >= USEC_PER_SEC {
             // The value of microsecond cannot exceed 10^6,
             // otherwise the value for seconds should be set.
             return_errno_with_message!(Errno::EINVAL, "nsec is not normalized");

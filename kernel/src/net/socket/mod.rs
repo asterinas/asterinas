@@ -23,6 +23,8 @@ pub mod util;
 pub mod vsock;
 
 mod private {
+    use core::time::Duration;
+
     use crate::{events::IoEvents, prelude::*, process::signal::Pollable};
 
     /// Common methods for sockets, but private to the network module.
@@ -43,7 +45,12 @@ mod private {
         ///
         /// [`EAGAIN`]: crate::error::Errno::EAGAIN
         #[track_caller]
-        fn block_on<F, R>(&self, events: IoEvents, mut try_op: F) -> Result<R>
+        fn block_on<F, R>(
+            &self,
+            events: IoEvents,
+            timeout: Option<Duration>,
+            mut try_op: F,
+        ) -> Result<R>
         where
             Self: Sized,
             F: FnMut() -> Result<R>,
@@ -51,7 +58,13 @@ mod private {
             if self.is_nonblocking() {
                 try_op()
             } else {
-                self.wait_events(events, None, try_op)
+                self.wait_events(events, timeout.as_ref(), try_op)
+                    .map_err(|err| match err.error() {
+                        Errno::ETIME => {
+                            Error::with_message(Errno::EAGAIN, "the socket timeout expired")
+                        }
+                        _ => err,
+                    })
             }
         }
     }

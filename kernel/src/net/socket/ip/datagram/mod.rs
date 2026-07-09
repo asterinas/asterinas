@@ -20,7 +20,9 @@ use crate::{
             util::{
                 MessageHeader, SendRecvFlags, SocketAddr,
                 datagram_common::{Bound, Inner, select_remote_and_bind},
-                options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
+                options::{
+                    GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
+                },
             },
         },
     },
@@ -37,6 +39,7 @@ pub struct DatagramSocket {
     // Lock order: `inner` first, `options` second
     inner: RwMutex<Inner<UnboundDatagram, BoundDatagram>>,
     options: RwLock<OptionSet>,
+    timeouts: SocketTimeouts,
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
@@ -64,6 +67,7 @@ impl DatagramSocket {
         Arc::new(Self {
             inner: RwMutex::new(Inner::Unbound(unbound_datagram)),
             options: RwLock::new(OptionSet::new()),
+            timeouts: SocketTimeouts::new(),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
             pseudo_path: SockFs::new_path(),
@@ -229,7 +233,9 @@ impl Socket for DatagramSocket {
         }
 
         let (received_bytes, peer_addr) =
-            self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+            self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
+                self.try_recv(writer, flags)
+            })?;
 
         // TODO: Receive control message
 
@@ -252,7 +258,10 @@ impl Socket for DatagramSocket {
         let options = self.options.read();
 
         // Deal with socket-level options
-        match options.socket.get_option(option, &*inner) {
+        match options
+            .socket
+            .get_option(option, &(&*inner, &self.timeouts))
+        {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res,
         }
@@ -266,7 +275,10 @@ impl Socket for DatagramSocket {
         let mut options = self.options.write();
 
         // Deal with socket-level options
-        let need_iface_poll = match options.socket.set_option(option, &*inner) {
+        let need_iface_poll = match options
+            .socket
+            .set_option(option, &(&*inner, &self.timeouts))
+        {
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // Deal with IP-level options
                 options.ip.set_option(option, &*inner)?
@@ -297,7 +309,7 @@ impl Socket for DatagramSocket {
     }
 }
 
-impl GetSocketLevelOption for Inner<UnboundDatagram, BoundDatagram> {
+impl GetSocketLevelOption for (&Inner<UnboundDatagram, BoundDatagram>, &SocketTimeouts) {
     fn socket_type(&self) -> SockType {
         SockType::SOCK_DGRAM
     }
@@ -305,15 +317,23 @@ impl GetSocketLevelOption for Inner<UnboundDatagram, BoundDatagram> {
     fn is_listening(&self) -> bool {
         false
     }
+
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        Some(self.1)
+    }
 }
 
-impl SetSocketLevelOption for Inner<UnboundDatagram, BoundDatagram> {
+impl SetSocketLevelOption for (&Inner<UnboundDatagram, BoundDatagram>, &SocketTimeouts) {
     fn set_reuse_addr(&self, reuse_addr: bool) {
-        let Inner::Bound(bound) = self else {
+        let Inner::Bound(bound) = self.0 else {
             return;
         };
 
         bound.bound_port().set_can_reuse(reuse_addr);
+    }
+
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        Some(self.1)
     }
 }
 

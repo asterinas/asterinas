@@ -9,9 +9,10 @@ use crate::{
     net::socket::{
         ip::{options::IpTtl, stream_options::CongestionControl},
         unix::CUserCred,
-        util::LingerOption,
+        util::{LingerOption, SocketTimeout},
     },
     prelude::*,
+    time::timeval_t,
     util::net::SockType,
 };
 
@@ -162,6 +163,39 @@ impl WriteToUser for LingerOption {
 
         let linger = CLinger::from(*self);
         current_userspace!().write_val(addr, &linger)?;
+        Ok(write_len)
+    }
+}
+
+impl ReadFromUser for SocketTimeout {
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
+        if (max_len as usize) < size_of::<timeval_t>() {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        }
+
+        let timeval = current_userspace!().read_val::<timeval_t>(addr)?;
+        if timeval.sec < 0 {
+            return Ok(Self::new(None));
+        }
+
+        let duration: Duration = timeval
+            .try_into()
+            .map_err(|_| Error::with_message(Errno::EDOM, "usec is out of range"))?;
+        Ok(Self::new((!duration.is_zero()).then_some(duration)))
+    }
+}
+
+impl WriteToUser for SocketTimeout {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+        let write_len = size_of::<timeval_t>();
+
+        if (max_len as usize) < write_len {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        }
+
+        let timeval = timeval_t::from(self.duration().unwrap_or_default());
+        current_userspace!().write_val(addr, &timeval)?;
+
         Ok(write_len)
     }
 }

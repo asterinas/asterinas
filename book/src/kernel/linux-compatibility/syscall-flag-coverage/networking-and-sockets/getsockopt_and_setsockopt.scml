@@ -1,7 +1,9 @@
 socket_options = SO_SNDBUF | SO_RCVBUF | SO_REUSEADDR | SO_REUSEPORT |
                  SO_PRIORITY | SO_LINGER | SO_PASSCRED | SO_KEEPALIVE |
                  SO_SNDBUFFORCE | SO_RCVBUFFORCE | SO_ERROR |
-                 SO_PEERCRED | SO_ACCEPTCONN | SO_PEERGROUPS;
+                 SO_PEERCRED | SO_ACCEPTCONN | SO_PEERGROUPS |
+                 SO_RCVTIMEO_OLD | SO_RCVTIMEO | SO_SNDTIMEO_OLD |
+                 SO_SNDTIMEO;
 
 ip_options = IP_TOS | IP_TTL | IP_HDRINCL;
 

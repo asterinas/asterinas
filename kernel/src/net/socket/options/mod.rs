@@ -2,7 +2,7 @@
 
 use macros::impl_socket_options;
 
-use super::util::LingerOption;
+use super::util::{LingerOption, SocketTimeout};
 use crate::{net::socket::unix::CUserCred, prelude::*, process::Gid, util::net::SockType};
 
 pub(in crate::net) mod macros;
@@ -24,6 +24,8 @@ impl_socket_options!(
     pub struct KeepAlive(bool);
     pub struct Priority(i32);
     pub struct Linger(LingerOption);
+    pub struct RecvTimeout(SocketTimeout);
+    pub struct SendTimeout(SocketTimeout);
     pub struct ReusePort(bool);
     pub struct PassCred(bool);
     pub struct PeerCred(CUserCred);

@@ -8,6 +8,7 @@ mod port_privilege;
 mod send_recv_flags;
 mod shutdown_cmd;
 mod socket_addr;
+mod socket_timeout;
 
 pub use linger_option::LingerOption;
 pub(super) use message_header::CControlHeader;
@@ -16,3 +17,4 @@ pub(super) use port_privilege::check_port_privilege;
 pub use send_recv_flags::SendRecvFlags;
 pub use shutdown_cmd::SockShutdownCmd;
 pub use socket_addr::SocketAddr;
+pub use socket_timeout::SocketTimeout;

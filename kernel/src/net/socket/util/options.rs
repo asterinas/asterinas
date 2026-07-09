@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::RangeInclusive;
+use core::{
+    ops::RangeInclusive,
+    sync::atomic::{AtomicU32, AtomicU64, Ordering},
+    time::Duration,
+};
 
 use aster_bigtcp::socket::{
     NeedIfacePoll, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
 };
 
-use super::LingerOption;
+use super::{LingerOption, SocketTimeout};
 use crate::{
     net::socket::{
         netlink::NETLINK_DEFAULT_BUF_SIZE,
         options::{
             AcceptConn, Broadcast, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority,
-            RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
-            SocketType,
+            RecvBuf, RecvBufForce, RecvTimeout, ReuseAddr, ReusePort, SendBuf, SendBufForce,
+            SendTimeout, SocketOption, SocketType,
             macros::{sock_option_mut, sock_option_ref},
         },
         unix::{CUserCred, UNIX_DATAGRAM_DEFAULT_BUF_SIZE, UNIX_STREAM_DEFAULT_BUF_SIZE},
@@ -142,6 +146,12 @@ impl SocketOptionSet {
                 let linger = self.linger();
                 socket_linger.set(linger);
             }
+            socket_recv_timeout @ RecvTimeout => {
+                socket_recv_timeout.set(SocketTimeout::new(socket.recv_timeout()));
+            }
+            socket_send_timeout @ SendTimeout => {
+                socket_send_timeout.set(SocketTimeout::new(socket.send_timeout()));
+            }
             socket_reuse_port @ ReusePort => {
                 let reuse_port = self.reuse_port();
                 socket_reuse_port.set(reuse_port);
@@ -227,6 +237,14 @@ impl SocketOptionSet {
                 let linger = socket_linger.get().unwrap();
                 self.set_linger(*linger);
             }
+            socket_recv_timeout @ RecvTimeout => {
+                let recv_timeout = socket_recv_timeout.get().unwrap();
+                socket.set_recv_timeout(recv_timeout.duration());
+            }
+            socket_send_timeout @ SendTimeout => {
+                let send_timeout = socket_send_timeout.get().unwrap();
+                socket.set_send_timeout(send_timeout.duration());
+            }
             socket_reuse_port @ ReusePort => {
                 let reuse_port = socket_reuse_port.get().unwrap();
                 self.set_reuse_port(*reuse_port);
@@ -266,6 +284,78 @@ impl SocketOptionSet {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct SocketTimeouts {
+    recv_timeout: DurationCell,
+    send_timeout: DurationCell,
+}
+
+impl Clone for SocketTimeouts {
+    fn clone(&self) -> Self {
+        Self {
+            recv_timeout: DurationCell::new(self.recv_timeout.load()),
+            send_timeout: DurationCell::new(self.send_timeout.load()),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct DurationCell {
+    seconds: AtomicU64,
+    nanoseconds: AtomicU32,
+}
+
+impl DurationCell {
+    /// Creates a new duration cell.
+    fn new(duration: Duration) -> Self {
+        Self {
+            seconds: AtomicU64::new(duration.as_secs()),
+            nanoseconds: AtomicU32::new(duration.subsec_nanos()),
+        }
+    }
+
+    /// Loads the current duration.
+    ///
+    /// The returned value is not guaranteed to be a snapshot of a single previous `store` call.
+    fn load(&self) -> Duration {
+        Duration::new(
+            self.seconds.load(Ordering::Relaxed),
+            self.nanoseconds.load(Ordering::Relaxed),
+        )
+    }
+
+    /// Stores a new duration.
+    fn store(&self, duration: Duration) {
+        self.seconds.store(duration.as_secs(), Ordering::Relaxed);
+        self.nanoseconds
+            .store(duration.subsec_nanos(), Ordering::Relaxed);
+    }
+}
+
+impl SocketTimeouts {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set_recv_timeout(&self, recv_timeout: Option<Duration>) {
+        self.recv_timeout.store(recv_timeout.unwrap_or_default());
+    }
+
+    pub fn set_send_timeout(&self, send_timeout: Option<Duration>) {
+        self.send_timeout.store(send_timeout.unwrap_or_default());
+    }
+
+    pub fn recv_timeout(&self) -> Option<Duration> {
+        let timeout = self.recv_timeout.load();
+        (!timeout.is_zero()).then_some(timeout)
+    }
+
+    pub fn send_timeout(&self) -> Option<Duration> {
+        let timeout = self.send_timeout.load();
+        (!timeout.is_zero()).then_some(timeout)
+    }
+}
+
 fn check_current_privileged() -> Result<()> {
     let current = current_thread!();
     let posix_thread = current.as_posix_thread().unwrap();
@@ -296,6 +386,23 @@ pub(in crate::net) trait GetSocketLevelOption {
 
     /// Returns whether the socket is in listening state.
     fn is_listening(&self) -> bool;
+
+    /// Returns timeout values for blocking socket operations.
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        None
+    }
+
+    /// Returns the receive timeout.
+    fn recv_timeout(&self) -> Option<Duration> {
+        self.socket_timeouts()
+            .and_then(SocketTimeouts::recv_timeout)
+    }
+
+    /// Returns the send timeout.
+    fn send_timeout(&self) -> Option<Duration> {
+        self.socket_timeouts()
+            .and_then(SocketTimeouts::send_timeout)
+    }
 }
 
 /// A trait used for setting socket level options on actual sockets.
@@ -309,4 +416,23 @@ pub(in crate::net) trait SetSocketLevelOption {
     }
     /// Sets whether receipt of the credentials of the sending process is enabled.
     fn set_pass_cred(&self, _pass_cred: bool) {}
+
+    /// Returns timeout values for blocking socket operations.
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        None
+    }
+
+    /// Sets the receive timeout.
+    fn set_recv_timeout(&self, recv_timeout: Option<Duration>) {
+        if let Some(timeouts) = self.socket_timeouts() {
+            timeouts.set_recv_timeout(recv_timeout);
+        }
+    }
+
+    /// Sets the send timeout.
+    fn set_send_timeout(&self, send_timeout: Option<Duration>) {
+        if let Some(timeouts) = self.socket_timeouts() {
+            timeouts.set_send_timeout(send_timeout);
+        }
+    }
 }

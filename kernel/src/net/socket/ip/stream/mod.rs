@@ -38,7 +38,9 @@ use crate::{
             private::SocketPrivate,
             util::{
                 MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
-                options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
+                options::{
+                    GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
+                },
             },
         },
     },
@@ -61,6 +63,7 @@ pub struct StreamSocket {
     // and other locks in `aster-bigtcp`), which will break the atomic mode.
     state: RwLock<Takeable<State>>,
     options: RwLock<OptionSet>,
+    timeouts: SocketTimeouts,
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
@@ -109,13 +112,18 @@ impl StreamSocket {
         Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Init(init_stream))),
             options: RwLock::new(OptionSet::new()),
+            timeouts: SocketTimeouts::new(),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
             pseudo_path: SockFs::new_path(),
         })
     }
 
-    fn new_accepted(connected_stream: ConnectedStream, listener_options: &OptionSet) -> Arc<Self> {
+    fn new_accepted(
+        connected_stream: ConnectedStream,
+        listener_options: &OptionSet,
+        listener_timeouts: &SocketTimeouts,
+    ) -> Arc<Self> {
         let options = connected_stream.raw_with(|raw_tcp_socket| {
             let mut options = OptionSet::new();
 
@@ -153,6 +161,7 @@ impl StreamSocket {
         Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
             options: RwLock::new(options),
+            timeouts: listener_timeouts.clone(),
             is_nonblocking: AtomicBool::new(false),
             pollee,
             pseudo_path: SockFs::new_path(),
@@ -322,7 +331,8 @@ impl StreamSocket {
         let accepted = listen_stream.try_accept().map(|connected_stream| {
             let remote_endpoint = connected_stream.remote_endpoint();
             let listener_options = self.options.read();
-            let accepted_socket = Self::new_accepted(connected_stream, &listener_options);
+            let accepted_socket =
+                Self::new_accepted(connected_stream, &listener_options, &self.timeouts);
             (accepted_socket as _, remote_endpoint.into())
         });
         let iface_to_poll = listen_stream.iface().clone();
@@ -466,7 +476,14 @@ impl Socket for StreamSocket {
             return result;
         }
 
-        self.wait_events(IoEvents::OUT, None, || self.check_connect())
+        let send_timeout = self.timeouts.send_timeout();
+        self.wait_events(IoEvents::OUT, send_timeout.as_ref(), || {
+            self.check_connect()
+        })
+        .map_err(|err| match err.error() {
+            Errno::ETIME => Error::with_message(Errno::EINPROGRESS, "the socket timeout expired"),
+            _ => err,
+        })
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
@@ -509,7 +526,9 @@ impl Socket for StreamSocket {
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        self.block_on(IoEvents::IN, || self.try_accept())
+        self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
+            self.try_accept()
+        })
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
@@ -581,7 +600,9 @@ impl Socket for StreamSocket {
             warn!("sending control message is not supported");
         }
 
-        self.block_on(IoEvents::OUT, || self.try_send(reader, flags))
+        self.block_on(IoEvents::OUT, self.timeouts.send_timeout(), || {
+            self.try_send(reader, flags)
+        })
 
         // TODO: Trigger `SIGPIPE` if the error code is `EPIPE` and `MSG_NOSIGNAL` is not specified
     }
@@ -596,7 +617,10 @@ impl Socket for StreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, _) = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+        let (received_bytes, _) =
+            self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
+                self.try_recv(writer, flags)
+            })?;
 
         // TODO: Receive control message
 
@@ -620,7 +644,10 @@ impl Socket for StreamSocket {
         let options = self.options.read();
 
         // Deal with socket-level options
-        match options.socket.get_option(option, state.as_ref()) {
+        match options
+            .socket
+            .get_option(option, &(state.as_ref(), &self.timeouts))
+        {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res,
         }
@@ -707,7 +734,7 @@ impl Socket for StreamSocket {
         // Deal with socket-level options
         let socket_option_result = {
             let OptionSet { socket, tcp, .. } = &mut *options;
-            socket.set_option(option, &(state.as_ref(), &*tcp))
+            socket.set_option(option, &(state.as_ref(), &*tcp, &self.timeouts))
         };
 
         let need_iface_poll = match socket_option_result {
@@ -912,23 +939,31 @@ impl State {
     }
 }
 
-impl GetSocketLevelOption for State {
+impl GetSocketLevelOption for (&State, &SocketTimeouts) {
     fn socket_type(&self) -> SockType {
         SockType::SOCK_STREAM
     }
 
     fn is_listening(&self) -> bool {
-        matches!(self, Self::Listen(_))
+        matches!(self.0, State::Listen(_))
+    }
+
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        Some(self.1)
     }
 }
 
-impl SetSocketLevelOption for (&State, &TcpOptionSet) {
+impl SetSocketLevelOption for (&State, &TcpOptionSet, &SocketTimeouts) {
     fn set_reuse_addr(&self, reuse_addr: bool) {
         self.0.set_reuse_addr(reuse_addr);
     }
 
     fn set_keep_alive(&self, keep_alive: bool) -> NeedIfacePoll {
         self.0.set_keep_alive(keep_alive, self.1.keep_intvl())
+    }
+
+    fn socket_timeouts(&self) -> Option<&SocketTimeouts> {
+        Some(self.2)
     }
 }
 
