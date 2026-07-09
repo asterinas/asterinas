@@ -312,12 +312,13 @@ fn apply_caps_from_exec(
     elf_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
     let mode = elf_inode.mode()?;
-    let set_uid = if mode.has_set_uid() {
+    let no_new_privs = credentials.no_new_privs();
+    let set_uid = if mode.has_set_uid() && !no_new_privs {
         Some(elf_inode.owner()?)
     } else {
         None
     };
-    let set_gid = if mode.has_set_gid() {
+    let set_gid = if mode.has_set_gid() && !no_new_privs {
         Some(elf_inode.group()?)
     } else {
         None

@@ -121,6 +121,14 @@ pub fn sys_prctl(
             ctx.user_space()
                 .write_val(write_addr, &(process.is_child_subreaper() as u32))?;
         }
+        PrctlCmd::PR_SET_NO_NEW_PRIVS => {
+            let credentials = ctx.credentials_mut();
+            credentials.set_no_new_privs();
+        }
+        PrctlCmd::PR_GET_NO_NEW_PRIVS => {
+            let credentials = ctx.posix_thread.credentials();
+            return Ok(SyscallReturn::Return(credentials.no_new_privs() as _));
+        }
         PrctlCmd::PR_CAP_AMBIENT(cmd) => match cmd {
             CapAmbientCmd::IsSet(capability) => {
                 let credentials = ctx.posix_thread.credentials();
@@ -161,6 +169,8 @@ const PR_SET_TIMERSLACK: i32 = 29;
 const PR_GET_TIMERSLACK: i32 = 30;
 const PR_SET_CHILD_SUBREAPER: i32 = 36;
 const PR_GET_CHILD_SUBREAPER: i32 = 37;
+const PR_SET_NO_NEW_PRIVS: i32 = 38;
+const PR_GET_NO_NEW_PRIVS: i32 = 39;
 const PR_CAP_AMBIENT: i32 = 47;
 
 #[expect(non_camel_case_types)]
@@ -182,6 +192,8 @@ enum PrctlCmd {
     PR_GET_TIMERSLACK,
     PR_SET_CHILD_SUBREAPER(bool),
     PR_GET_CHILD_SUBREAPER(Vaddr),
+    PR_SET_NO_NEW_PRIVS,
+    PR_GET_NO_NEW_PRIVS,
     PR_CAP_AMBIENT(CapAmbientCmd),
 }
 
@@ -230,6 +242,24 @@ impl PrctlCmd {
             PR_GET_TIMERSLACK => Ok(PrctlCmd::PR_GET_TIMERSLACK),
             PR_SET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_SET_CHILD_SUBREAPER(arg2 > 0)),
             PR_GET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_GET_CHILD_SUBREAPER(arg2 as _)),
+            PR_SET_NO_NEW_PRIVS => {
+                if arg2 != 1 || arg3 != 0 || arg4 != 0 || arg5 != 0 {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "invalid PR_SET_NO_NEW_PRIVS arguments"
+                    );
+                }
+                Ok(PrctlCmd::PR_SET_NO_NEW_PRIVS)
+            }
+            PR_GET_NO_NEW_PRIVS => {
+                if arg2 != 0 || arg3 != 0 || arg4 != 0 || arg5 != 0 {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "invalid PR_GET_NO_NEW_PRIVS arguments"
+                    );
+                }
+                Ok(PrctlCmd::PR_GET_NO_NEW_PRIVS)
+            }
             PR_CAP_AMBIENT => Ok(PrctlCmd::PR_CAP_AMBIENT(CapAmbientCmd::from_args(
                 arg2, arg3, arg4, arg5,
             )?)),
