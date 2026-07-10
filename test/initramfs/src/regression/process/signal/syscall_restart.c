@@ -4,6 +4,8 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -114,6 +116,64 @@ FN_TEST(poll_does_not_restart_with_sa_restart)
 
 	TEST_SUCC(close(pipefds[0]));
 	TEST_SUCC(close(pipefds[1]));
+	TEST_SUCC(alarm(0));
+}
+END_TEST()
+
+FN_TEST(socket_read_without_timeout_restarts)
+{
+	signal_count = 0;
+	TEST_SUCC(alarm(TEST_TIMEOUT_SECONDS));
+
+	int sockets[2];
+	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets));
+
+	pid_t parent = getpid();
+	pid_t child = TEST_SUCC(fork());
+	if (child == 0) {
+		CHECK(close(sockets[0]));
+		sleep(1);
+		CHECK(kill(parent, SIGUSR1));
+		sleep(1);
+		CHECK(write(sockets[1], "a", 1));
+		_exit(0);
+	}
+
+	TEST_SUCC(close(sockets[1]));
+
+	char byte = 0;
+	TEST_RES(read(sockets[0], &byte, sizeof(byte)),
+		 _ret == 1 && byte == 'a' && signal_count > 0);
+
+	int status = 0;
+	TEST_RES(waitpid(child, &status, 0), _ret == child &&
+						     WIFEXITED(status) &&
+						     WEXITSTATUS(status) == 0);
+	TEST_SUCC(close(sockets[0]));
+	TEST_SUCC(alarm(0));
+}
+END_TEST()
+
+FN_TEST(socket_read_with_timeout_does_not_restart)
+{
+	signal_count = 0;
+	TEST_SUCC(alarm(TEST_TIMEOUT_SECONDS));
+
+	int sockets[2];
+	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets));
+
+	struct timeval timeout = { .tv_sec = 5 };
+	TEST_SUCC(setsockopt(sockets[0], SOL_SOCKET, SO_RCVTIMEO, &timeout,
+			     sizeof(timeout)));
+
+	char byte = 0;
+	TEST_SUCC(timer_settime(signal_timer, 0, &periodic_timer, NULL));
+	TEST(read(sockets[0], &byte, sizeof(byte)), EINTR,
+	     _ret == -1 && signal_count > 0);
+	TEST_SUCC(timer_settime(signal_timer, 0, &stopped_timer, NULL));
+
+	TEST_SUCC(close(sockets[0]));
+	TEST_SUCC(close(sockets[1]));
 	TEST_SUCC(alarm(0));
 }
 END_TEST()
