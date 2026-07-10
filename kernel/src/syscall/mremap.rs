@@ -2,7 +2,7 @@
 
 use align_ext::AlignExt;
 
-use super::SyscallReturn;
+use super::{SyscallReturn, mlock};
 use crate::prelude::*;
 
 pub fn sys_mremap(
@@ -53,19 +53,20 @@ fn do_sys_mremap(
 
     let user_space = ctx.user_space();
     let vmar = user_space.vmar();
+    let memlock_limit = mlock::memlock_limit(ctx);
 
     if !flags.contains(MremapFlags::MREMAP_FIXED) && new_size <= old_size {
         // We can shrink a old range which spans multiple mappings. See
         // <https://github.com/google/gvisor/blob/95d875276806484f974ce9e95556a561331f8e22/test/syscalls/linux/mremap.cc#L100-L117>.
-        vmar.resize_mapping(old_addr, old_size, new_size, false)?;
+        vmar.resize_mapping(old_addr, old_size, new_size, false, memlock_limit)?;
         return Ok(old_addr);
     }
 
     if flags.contains(MremapFlags::MREMAP_MAYMOVE) {
         if flags.contains(MremapFlags::MREMAP_FIXED) {
-            vmar.remap(old_addr, old_size, Some(new_addr), new_size)
+            vmar.remap(old_addr, old_size, Some(new_addr), new_size, memlock_limit)
         } else {
-            vmar.remap(old_addr, old_size, None, new_size)
+            vmar.remap(old_addr, old_size, None, new_size, memlock_limit)
         }
     } else {
         if flags.contains(MremapFlags::MREMAP_FIXED) {
@@ -82,7 +83,7 @@ fn do_sys_mremap(
         // if the `MREMAP_MAYMOVE` flag is not set, and the mapping cannot
         // be expanded at the current `Vaddr`, we should return an `ENOMEM`.
         // However, `resize_mapping` returns a `EACCES` in this case.
-        vmar.resize_mapping(old_addr, old_size, new_size, true)?;
+        vmar.resize_mapping(old_addr, old_size, new_size, true, memlock_limit)?;
         Ok(old_addr)
     }
 }

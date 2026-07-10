@@ -169,10 +169,10 @@ which are summarized in the table below.
 | 146     | sched_get_priority_max | ✅             | 💯 |
 | 147     | sched_get_priority_min | ✅             | 💯 |
 | 148     | sched_rr_get_interval  | ❌             | N/A |
-| 149     | mlock                  | ❌             | N/A |
-| 150     | munlock                | ❌             | N/A |
-| 151     | mlockall               | ❌             | N/A |
-| 152     | munlockall             | ❌             | N/A |
+| 149     | mlock                  | ✅             | 💯 |
+| 150     | munlock                | ✅             | 💯 |
+| 151     | mlockall               | ✅             | 🚧 |
+| 152     | munlockall             | ✅             | 💯 |
 | 153     | vhangup                | ❌             | N/A |
 | 154     | modify_ldt             | ❌             | N/A |
 | 155     | pivot_root             | ✅             | 💯 |

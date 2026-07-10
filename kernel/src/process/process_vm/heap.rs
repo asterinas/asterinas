@@ -104,7 +104,12 @@ impl Heap {
     /// This behavior is consistent with the Linux `brk` syscall.
     //
     // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/mm/mmap.c#L115>
-    pub fn modify_heap_end(&self, new_heap_end: Vaddr, ctx: &Context) -> Result<Vaddr, Vaddr> {
+    pub fn modify_heap_end(
+        &self,
+        new_heap_end: Vaddr,
+        ctx: &Context,
+        memlock_limit: Option<usize>,
+    ) -> Result<Vaddr, Vaddr> {
         let user_space = ctx.user_space();
         let vmar = user_space.vmar();
 
@@ -140,7 +145,7 @@ impl Heap {
         // the heap mapping.
         // For simplicity, we set `check_single_mapping` to `true` to ensure that the
         // heap region contains only a single mapping.
-        vmar.resize_mapping(heap_start, old_size, new_size, true)
+        vmar.resize_mapping(heap_start, old_size, new_size, true, memlock_limit)
             .map_err(|_| current_heap_end)?;
 
         inner.heap_range = new_heap_range;

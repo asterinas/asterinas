@@ -72,6 +72,7 @@ use super::{
     memfd_create::sys_memfd_create,
     mkdir::{sys_mkdir, sys_mkdirat},
     mknod::{sys_mknod, sys_mknodat},
+    mlock::{sys_mlock, sys_mlockall, sys_munlock, sys_munlockall},
     mmap::sys_mmap,
     mount::sys_mount,
     mprotect::sys_mprotect,
@@ -209,6 +210,10 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_MSYNC = 26             => sys_msync(args[..3]);
     SYS_SCHED_YIELD = 24       => sys_sched_yield(args[..0]);
     SYS_MADVISE = 28           => sys_madvise(args[..3]);
+    SYS_MLOCK = 149            => sys_mlock(args[..2]);
+    SYS_MUNLOCK = 150          => sys_munlock(args[..2]);
+    SYS_MLOCKALL = 151         => sys_mlockall(args[..1]);
+    SYS_MUNLOCKALL = 152       => sys_munlockall(args[..0]);
     SYS_DUP = 32               => sys_dup(args[..1]);
     SYS_DUP2 = 33              => sys_dup2(args[..2]);
     SYS_PAUSE = 34             => sys_pause(args[..0]);

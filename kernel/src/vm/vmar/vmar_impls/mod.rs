@@ -2,6 +2,7 @@
 
 mod access_alien;
 mod fork;
+mod lock;
 pub(super) mod map;
 pub(super) mod page_fault;
 mod protect;
@@ -28,7 +29,7 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::{INIT_STACK_SIZE, Process, ProcessVm, ResourceType},
+    process::{FutureMemoryLock, INIT_STACK_SIZE, Process, ProcessVm, ResourceType},
     vm::vmar::is_userspace_vaddr_range,
 };
 
@@ -176,6 +177,10 @@ struct VmarInner {
     vm_mappings: IntervalSet<Vaddr, VmMapping>,
     /// The total mapped memory in bytes.
     total_vm: usize,
+    /// The total locked memory in bytes.
+    locked_vm: usize,
+    /// Whether future mappings should be locked in memory.
+    future_memory_lock: FutureMemoryLock,
 }
 
 impl VmarInner {
@@ -183,6 +188,8 @@ impl VmarInner {
         Self {
             vm_mappings: IntervalSet::new(),
             total_vm: 0,
+            locked_vm: 0,
+            future_memory_lock: FutureMemoryLock::Disabled,
         }
     }
 
@@ -270,6 +277,58 @@ impl VmarInner {
         Some(vm_mapping)
     }
 
+    fn populate_range_or_rollback(
+        &mut self,
+        vm_space: &VmSpace,
+        populate_range: Range<Vaddr>,
+        rollback_range: Range<Vaddr>,
+        rss_delta: &mut RssDelta,
+    ) -> Result<()> {
+        let populate_result = {
+            let vm_mapping = self.vm_mappings.find_one(&populate_range.start).unwrap();
+            debug_assert!(vm_mapping.range().start <= populate_range.start);
+            debug_assert!(populate_range.end <= vm_mapping.range().end);
+
+            vm_mapping.populate_range(vm_space, &populate_range, rss_delta)
+        };
+
+        if let Err(error) = populate_result {
+            let _ = self.alloc_free_region_exact_truncate(
+                vm_space,
+                rollback_range.start,
+                rollback_range.len(),
+                rss_delta,
+            );
+            return Err(error);
+        }
+
+        Ok(())
+    }
+
+    fn expand_mapping_with_lock_policy(
+        &mut self,
+        mapping_addr: Vaddr,
+        split_addr: Vaddr,
+        expand_size: usize,
+        lock_expanded_range: bool,
+    ) -> Range<Vaddr> {
+        let vm_mapping = self.remove(&mapping_addr).unwrap();
+        if vm_mapping.is_locked() == lock_expanded_range {
+            self.insert_try_merge(vm_mapping.enlarge(expand_size));
+        } else {
+            let expanded_mapping = vm_mapping.enlarge(expand_size);
+            let (old_mapping, expanded_mapping) = expanded_mapping.split(split_addr);
+            self.insert_try_merge(old_mapping);
+            self.insert_try_merge(expanded_mapping.set_locked(lock_expanded_range));
+        }
+
+        if lock_expanded_range {
+            self.locked_vm += expand_size;
+        }
+
+        split_addr..split_addr + expand_size
+    }
+
     /// Finds a set of [`VmMapping`]s that intersect with the provided range.
     fn query(&self, range: &Range<Vaddr>) -> impl Iterator<Item = &VmMapping> {
         self.vm_mappings.find(range)
@@ -336,6 +395,9 @@ impl VmarInner {
                 self.insert_without_try_merge(right);
             }
 
+            if taken.is_locked() {
+                self.locked_vm = self.locked_vm.saturating_sub(taken.map_size());
+            }
             rss_delta.add(taken.rss_type(), -(taken.unmap(vm_space) as isize));
         }
 
@@ -428,6 +490,7 @@ impl VmarInner {
         old_size: usize,
         new_size: usize,
         rss_delta: &mut RssDelta,
+        memlock_limit: Option<usize>,
     ) -> Result<()> {
         debug_assert_eq!(map_addr % PAGE_SIZE, 0);
         debug_assert_eq!(old_size % PAGE_SIZE, 0);
@@ -477,10 +540,27 @@ impl VmarInner {
             return_errno_with_message!(Errno::EFAULT, "device mappings cannot be expanded");
         }
 
-        self.check_extra_size_fits_rlimit(new_size - old_size)?;
-        let last_mapping = self.remove(&last_mapping_addr).unwrap();
-        let last_mapping = last_mapping.enlarge(new_size - old_size);
-        self.insert_try_merge(last_mapping);
+        let expand_size = new_size - old_size;
+        self.check_extra_size_fits_rlimit(expand_size)?;
+        let lock_expanded_range = last_mapping.is_locked() || self.future_memory_lock.is_enabled();
+        if lock_expanded_range {
+            self.check_extra_lock_size_fits_limit(expand_size, memlock_limit)?;
+        }
+
+        let expanded_range = self.expand_mapping_with_lock_policy(
+            last_mapping_addr,
+            old_map_end,
+            expand_size,
+            lock_expanded_range,
+        );
+        if lock_expanded_range {
+            self.populate_range_or_rollback(
+                vm_space,
+                expanded_range.clone(),
+                expanded_range,
+                rss_delta,
+            )?;
+        }
         Ok(())
     }
 }
