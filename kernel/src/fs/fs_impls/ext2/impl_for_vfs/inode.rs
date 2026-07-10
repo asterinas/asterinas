@@ -217,14 +217,10 @@ impl Inode for Ext2Inode {
         new_name: &str,
         mode: RenameMode,
     ) -> Result<()> {
-        if mode == RenameMode::Exchange {
-            return_errno_with_message!(Errno::EINVAL, "RENAME_EXCHANGE is not supported on ext2");
-        }
-
         let target = target
             .downcast_ref::<Ext2Inode>()
             .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
-        self.rename(old_name, target, new_name)
+        self.rename(old_name, target, new_name, mode)
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {
