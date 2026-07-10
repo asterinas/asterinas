@@ -17,6 +17,7 @@ use crate::{
         process_vm::{AuxKey, AuxVec},
         program_loader::check_executable_inode,
     },
+    time::util::USER_HZ,
     util::random::getrandom,
     vm::{
         perms::VmPerms,
@@ -455,6 +456,7 @@ fn init_aux_vec(
     let mut aux_vec = AuxVec::new();
 
     aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _);
+    aux_vec.set(AuxKey::AT_CLKTCK, USER_HZ);
 
     let Some(ph_vaddr) = elf_map_range.relocated_addr_of(elf.find_vaddr_of_phdrs()?) else {
         return_errno_with_message!(

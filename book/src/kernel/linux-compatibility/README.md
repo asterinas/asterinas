@@ -120,7 +120,7 @@ which are summarized in the table below.
 | 97      | getrlimit              | ✅             | 💯 |
 | 98      | getrusage              | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#getrusage) |
 | 99      | sysinfo                | ✅             | 💯 |
-| 100     | times                  | ❌             | N/A |
+| 100     | times                  | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#times) |
 | 101     | ptrace                 | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#ptrace) |
 | 102     | getuid                 | ✅             | 💯 |
 | 103     | syslog                 | ❌             | N/A |

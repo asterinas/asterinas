@@ -50,6 +50,17 @@ Silently-ignored flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/getrandom.2.html).
 
+### `times`
+
+Supported functionality in SCML:
+
+```c
+{{#include times.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/times.2.html).
+
 ### `reboot`
 
 Supported functionality in SCML:
