@@ -12,9 +12,11 @@ use core::{
 };
 
 use bitflags::bitflags;
-use ostd::mm::VmIo;
 
-use super::SyscallReturn;
+use super::{
+    SyscallReturn,
+    rt_sigprocmask::{RequireFullSize, UserSigSetPtr},
+};
 use crate::{
     events::IoEvents,
     fs::{
@@ -60,11 +62,11 @@ pub fn sys_signalfd4(
         raw_fd, mask_ptr, sizemask, flags
     );
 
-    if sizemask != size_of::<SigMask>() {
-        return Err(Error::with_message(Errno::EINVAL, "invalid mask size"));
-    }
+    let size_policy = RequireFullSize::new(sizemask)?;
 
-    let mut mask = ctx.user_space().read_val::<SigMask>(mask_ptr)?;
+    let user_space = ctx.user_space();
+    let sigmask_ptr = UserSigSetPtr::new(&user_space, mask_ptr, size_policy);
+    let mut mask = sigmask_ptr.read_val()?;
     mask -= SIGKILL;
     mask -= SIGSTOP;
 
