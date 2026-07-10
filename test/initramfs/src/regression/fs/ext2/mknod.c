@@ -17,6 +17,7 @@
 #define NO_CAP_BLOCK_DEVICE_PATH "/ext2/no_cap_block_device"
 #define NO_CAP_EXISTING_PATH "/ext2/no_cap_existing"
 #define NO_CAP_FIFO_PATH "/ext2/no_cap_fifo"
+#define SOCKET_PATH "/ext2/mknod.socket"
 
 FN_TEST(make_device_node)
 {
@@ -98,5 +99,16 @@ FN_TEST(make_fifo_node)
 	TEST_SUCC(close(reader_fd));
 	TEST_SUCC(close(writer_fd));
 	TEST_SUCC(unlink(FIFO_PATH));
+}
+END_TEST()
+
+FN_TEST(make_socket_node)
+{
+	struct stat statbuf;
+
+	TEST_SUCC(mknod(SOCKET_PATH, S_IFSOCK | 0600, 0));
+	TEST_RES(lstat(SOCKET_PATH, &statbuf),
+		 _ret == 0 && S_ISSOCK(statbuf.st_mode));
+	TEST_SUCC(unlink(SOCKET_PATH));
 }
 END_TEST()
