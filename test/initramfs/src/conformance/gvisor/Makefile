@@ -23,6 +23,7 @@ TESTS ?= \
 	getdents_test \
 	inotify_test \
 	ioctl_test \
+	iouring_test \
 	link_test \
 	lseek_test \
 	memfd_test \

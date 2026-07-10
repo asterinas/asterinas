@@ -135,8 +135,8 @@ fn do_sys_mmap(
 
             options = options
                 .may_perms(vm_may_perms)
-                .mappable(file.as_ref().as_ref())?
                 .vmo_offset(offset)
+                .mappable(file.as_ref().as_ref())?
                 .handle_page_faults_around();
         }
 

@@ -46,7 +46,7 @@ pub use name::{MAX_THREAD_NAME_LEN, ThreadName};
 pub use personality::Personality;
 pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
-pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
+pub use thread_local::{AsThreadLocal, FileTableRefMut, SuppUserContext, ThreadLocal};
 
 pub struct PosixThread {
     // Immutable part

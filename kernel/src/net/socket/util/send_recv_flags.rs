@@ -2,7 +2,10 @@
 
 use aster_bigtcp::socket::ReceiveBehavior;
 
-use crate::prelude::*;
+use crate::{
+    fs::file::{CreationFlags, StatusFlags, file_table::FdFlags},
+    prelude::*,
+};
 
 bitflags! {
     /// Flags used for send/recv.
@@ -53,6 +56,30 @@ impl SendRecvFlags {
             ReceiveBehavior::Peek
         } else {
             ReceiveBehavior::Recv
+        }
+    }
+}
+
+const NONBLOCK: u32 = StatusFlags::O_NONBLOCK.bits();
+const CLOEXEC: u32 = CreationFlags::O_CLOEXEC.bits();
+
+bitflags! {
+    pub struct AcceptFlags: u32 {
+        const SOCK_NONBLOCK = NONBLOCK;
+        const SOCK_CLOEXEC = CLOEXEC;
+    }
+}
+
+impl AcceptFlags {
+    pub fn is_nonblocking(&self) -> bool {
+        self.contains(Self::SOCK_NONBLOCK)
+    }
+
+    pub fn fd_flags(&self) -> FdFlags {
+        if self.contains(Self::SOCK_CLOEXEC) {
+            FdFlags::CLOEXEC
+        } else {
+            FdFlags::empty()
         }
     }
 }

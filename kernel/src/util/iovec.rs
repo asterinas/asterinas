@@ -9,9 +9,9 @@ use crate::prelude::*;
 
 /// A kernel space I/O vector.
 #[derive(Clone, Copy, Debug)]
-struct IoVec {
-    base: Vaddr,
-    len: usize,
+pub struct IoVec {
+    pub base: Vaddr,
+    pub len: usize,
 }
 
 /// A user space I/O vector.
@@ -76,7 +76,7 @@ pub(super) const MAX_IO_VECTOR_LENGTH: usize = 1024;
 const MAX_TOTAL_IOV_BYTES: usize = isize::MAX as usize;
 
 /// The util function for create [`VmReader`]/[`VmWriter`]s.
-fn copy_iovs_and_convert<'a, T: 'a>(
+pub fn copy_iovs_and_convert<'a, T: 'a>(
     user_space: &'a CurrentUserSpace<'a>,
     start_addr: Vaddr,
     count: usize,
