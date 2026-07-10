@@ -98,7 +98,8 @@ FN_TEST(short_optlen)
 
 	memset(value, 0xa5, sizeof(value));
 	len = 2;
-	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, value, &len),
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, value,
+			    &len),
 		 _ret == 0 && len == 2);
 	TEST_RES(memcmp(value, &expected, len), _ret == 0);
 	TEST_RES(value[2], _ret == 0xa5);
@@ -106,7 +107,8 @@ FN_TEST(short_optlen)
 
 	memset(value, 0xa5, sizeof(value));
 	len = 0;
-	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, value, &len),
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, value,
+			    &len),
 		 _ret == 0 && len == 0);
 	TEST_RES(value[0], _ret == 0xa5);
 }
