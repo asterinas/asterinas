@@ -9,6 +9,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#define FD_TO_CLOCKID(fd) ((~(clockid_t)(fd) << 3) | 3)
+
 FN_TEST(clock_getres_supported_clocks)
 {
 	struct timespec res = { 0 };
@@ -50,5 +52,13 @@ FN_TEST(clock_getres_invalid_clock)
 	struct timespec res = { 0 };
 
 	TEST_ERRNO(syscall(SYS_clock_getres, 0x7fffffff, &res), EINVAL);
+}
+END_TEST()
+
+FN_TEST(clock_getres_dynamic_fd_clock)
+{
+	struct timespec res = { 0 };
+
+	TEST_ERRNO(syscall(SYS_clock_getres, FD_TO_CLOCKID(0), &res), EINVAL);
 }
 END_TEST()

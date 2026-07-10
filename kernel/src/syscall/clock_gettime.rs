@@ -3,7 +3,7 @@
 use core::time::Duration;
 
 use int_to_c_enum::TryFromInt;
-use ostd::{mm::VmIo, timer::TIMER_FREQ};
+use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
@@ -126,15 +126,52 @@ fn clock_resolution(clockid: clockid_t, ctx: &Context) -> Result<Duration> {
     if clockid >= 0 {
         let clock_id = ClockId::try_from(clockid)?;
         return Ok(match clock_id {
-            ClockId::CLOCK_REALTIME_COARSE | ClockId::CLOCK_MONOTONIC_COARSE => {
-                Duration::from_nanos(1_000_000_000 / TIMER_FREQ)
-            }
-            _ => Duration::from_nanos(1),
+            ClockId::CLOCK_REALTIME => RealTimeClock::get().resolution(),
+            ClockId::CLOCK_MONOTONIC => MonotonicClock::get().resolution(),
+            ClockId::CLOCK_MONOTONIC_RAW => MonotonicRawClock::get().resolution(),
+            ClockId::CLOCK_REALTIME_COARSE => RealTimeCoarseClock::get().resolution(),
+            ClockId::CLOCK_MONOTONIC_COARSE => MonotonicCoarseClock::get().resolution(),
+            ClockId::CLOCK_BOOTTIME => BootTimeClock::get().resolution(),
+            ClockId::CLOCK_PROCESS_CPUTIME_ID => ctx.process.prof_clock().resolution(),
+            ClockId::CLOCK_THREAD_CPUTIME_ID => ctx.posix_thread.prof_clock().resolution(),
         });
     }
 
-    read_clock(clockid, ctx)?;
-    Ok(Duration::from_nanos(1))
+    let dynamic_clockid_info = DynamicClockIdInfo::try_from(clockid)?;
+    match dynamic_clockid_info {
+        DynamicClockIdInfo::Pid(pid, clock_type) => {
+            let process = pid_table::pid_table_mut()
+                .get_process(pid)
+                .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
+            match clock_type {
+                DynamicClockType::Profiling => Ok(process.prof_clock().resolution()),
+                DynamicClockType::Virtual => Ok(process.prof_clock().user_clock().resolution()),
+                DynamicClockType::Scheduling => {
+                    return_errno_with_message!(Errno::EINVAL, "unsupported clock ID")
+                }
+                DynamicClockType::FD => unreachable!(),
+            }
+        }
+        DynamicClockIdInfo::Tid(tid, clock_type) => {
+            let thread = pid_table::pid_table_mut()
+                .get_thread(tid)
+                .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
+            let posix_thread = thread.as_posix_thread().unwrap();
+            match clock_type {
+                DynamicClockType::Profiling => Ok(posix_thread.prof_clock().resolution()),
+                DynamicClockType::Virtual => {
+                    Ok(posix_thread.prof_clock().user_clock().resolution())
+                }
+                DynamicClockType::Scheduling => {
+                    return_errno_with_message!(Errno::EINVAL, "unsupported clock ID")
+                }
+                DynamicClockType::FD => unreachable!(),
+            }
+        }
+        DynamicClockIdInfo::Fd(_) => {
+            return_errno_with_message!(Errno::EINVAL, "unsupported clock ID")
+        }
+    }
 }
 
 /// Reads the time of a clock specified by the input clock ID.

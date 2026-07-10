@@ -147,6 +147,10 @@ impl Clock for JiffiesClock {
     fn read_time(&self) -> Duration {
         Jiffies::elapsed().as_duration()
     }
+
+    fn resolution(&self) -> Duration {
+        Jiffies::new(1).as_duration()
+    }
 }
 
 impl Clock for RealTimeClock {
@@ -167,11 +171,19 @@ impl Clock for RealTimeCoarseClock {
     fn read_time(&self) -> Duration {
         *Self::current_ref().get().unwrap().disable_irq().lock()
     }
+
+    fn resolution(&self) -> Duration {
+        Jiffies::new(1).as_duration()
+    }
 }
 
 impl Clock for MonotonicCoarseClock {
     fn read_time(&self) -> Duration {
         RealTimeCoarseClock::get().read_time() - *START_TIME_AS_DURATION.get().unwrap()
+    }
+
+    fn resolution(&self) -> Duration {
+        Jiffies::new(1).as_duration()
     }
 }
 

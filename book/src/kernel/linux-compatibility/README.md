@@ -249,7 +249,7 @@ which are summarized in the table below.
 | 226     | timer_delete           | ✅             | 💯 |
 | 227     | clock_settime          | ❌             | N/A |
 | 228     | clock_gettime          | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#clock_gettime) |
-| 229     | clock_getres           | ❌             | N/A |
+| 229     | clock_getres           | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#clock_getres) |
 | 230     | clock_nanosleep        | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#clock_nanosleep) |
 | 231     | exit_group             | ✅             | 💯 |
 | 232     | epoll_wait             | ✅             | 💯 |
