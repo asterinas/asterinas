@@ -80,9 +80,6 @@ Unsupported flags:
 * `CLONE_NEWTIME`
 * `CLONE_NEWUSER`
 
-Silently-ignored flags:
-* `CLONE_SYSVSEM`
-
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/unshare.2.html).
 

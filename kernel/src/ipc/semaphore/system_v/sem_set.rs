@@ -4,8 +4,9 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use aster_rights::ReadOp;
 
-use super::sem::{
-    PendingBlocker, PendingOp, Semaphore, Status, update_pending_alter, wake_const_ops,
+use super::{
+    sem::{PendingBlocker, PendingOp, Semaphore, Status, update_pending_alter, wake_const_ops},
+    sem_undo::SemUndoToken,
 };
 use crate::{
     ipc::{IpcKey, IpcPermission},
@@ -31,6 +32,8 @@ pub const SEMVMX: i32 = 32767;
 #[expect(dead_code)]
 pub const SEMAEM: i32 = SEMVMX;
 
+static NEXT_SEM_UNDO_KEY: AtomicU64 = AtomicU64::new(1);
+
 #[derive(Debug)]
 pub struct SemaphoreSet {
     /// Number of semaphores in the set
@@ -43,6 +46,10 @@ pub struct SemaphoreSet {
     sem_ctime: AtomicU64,
     /// Last `semop` time
     sem_otime: AtomicU64,
+    /// Unique key used to distinguish reused semaphore IDs in `SEM_UNDO` entries.
+    sem_undo_key: u64,
+    /// Epoch bumped whenever older `SEM_UNDO` entries must be invalidated.
+    sem_undo_epoch: AtomicU64,
 }
 
 // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ipcbuf.h#L22>.
@@ -162,7 +169,7 @@ impl SemaphoreSet {
         self.num_sems
     }
 
-    pub fn setval(&self, sem_num: usize, val: i32, pid: Pid) -> Result<()> {
+    pub fn setval(&self, sem_num: usize, val: i32, pid: Pid) -> Result<SemUndoToken> {
         if !(0..=SEMVMX).contains(&val) {
             return_errno_with_message!(Errno::ERANGE, "the semaphore value exceeds SEMVMX");
         }
@@ -173,16 +180,23 @@ impl SemaphoreSet {
             return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
         };
 
+        let cleared_token = self.advance_sem_undo_epoch();
         sem.set_val(val);
         sem.set_latest_modified_pid(pid);
 
         let mut wake_queue = LinkedList::new();
         let mut has_completed_op = false;
         if val == 0 {
-            has_completed_op |= wake_const_ops(sems, pending_const, &mut wake_queue);
+            has_completed_op |=
+                wake_const_ops(sems, pending_const, self.sem_undo_token(), &mut wake_queue);
         }
-        has_completed_op |=
-            update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
+        has_completed_op |= update_pending_alter(
+            sems,
+            pending_alter,
+            pending_const,
+            self.sem_undo_token(),
+            &mut wake_queue,
+        );
 
         for wake_op in wake_queue {
             if let Some(waker) = wake_op.waker() {
@@ -195,7 +209,45 @@ impl SemaphoreSet {
             self.update_otime();
         }
 
-        Ok(())
+        Ok(cleared_token)
+    }
+
+    pub fn apply_undo(&self, token: SemUndoToken, sem_num: usize, adjustment: i32, pid: Pid) {
+        if self.sem_undo_token() != token {
+            return;
+        }
+
+        let mut inner = self.inner();
+        if self.sem_undo_token() != token {
+            return;
+        }
+
+        let (sems, pending_alter, pending_const) = inner.field_mut();
+        let Some(sem) = sems.get_mut(sem_num) else {
+            return;
+        };
+
+        let val = sem.val().saturating_add(adjustment).clamp(0, SEMVMX);
+        sem.set_val(val);
+        sem.set_latest_modified_pid(pid);
+
+        let mut wake_queue = LinkedList::new();
+        let mut has_completed_op = false;
+        if val == 0 {
+            has_completed_op |= wake_const_ops(sems, pending_const, token, &mut wake_queue);
+        }
+        has_completed_op |=
+            update_pending_alter(sems, pending_alter, pending_const, token, &mut wake_queue);
+
+        for wake_op in wake_queue {
+            if let Some(waker) = wake_op.waker() {
+                waker.wake_up();
+            }
+        }
+
+        if has_completed_op || adjustment != 0 {
+            self.update_otime();
+        }
     }
 
     pub fn get<T>(&self, sem_num: usize, func: fn(&Semaphore) -> T) -> Result<T> {
@@ -230,6 +282,18 @@ impl SemaphoreSet {
         self.inner.lock()
     }
 
+    pub(in crate::ipc) fn sem_undo_token(&self) -> SemUndoToken {
+        SemUndoToken::new(
+            self.sem_undo_key,
+            self.sem_undo_epoch.load(Ordering::Relaxed),
+        )
+    }
+
+    fn advance_sem_undo_epoch(&self) -> SemUndoToken {
+        let epoch = self.sem_undo_epoch.fetch_add(1, Ordering::Relaxed);
+        SemUndoToken::new(self.sem_undo_key, epoch)
+    }
+
     pub(in crate::ipc) fn new(
         key: IpcKey,
         num_sems: usize,
@@ -261,6 +325,8 @@ impl SemaphoreSet {
             permission,
             sem_ctime: AtomicU64::new(RealTimeCoarseClock::get().read_time().as_secs()),
             sem_otime: AtomicU64::new(0),
+            sem_undo_key: NEXT_SEM_UNDO_KEY.fetch_add(1, Ordering::Relaxed),
+            sem_undo_epoch: AtomicU64::new(0),
         })
     }
 

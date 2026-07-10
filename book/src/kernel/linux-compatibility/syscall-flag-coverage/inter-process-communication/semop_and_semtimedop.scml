@@ -1,5 +1,5 @@
 struct sembuf = {
-    sem_flg = IPC_NOWAIT,
+    sem_flg = IPC_NOWAIT | SEM_UNDO,
     ..
 };
 

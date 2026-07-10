@@ -46,9 +46,6 @@ Supported functionality in SCML:
 {{#include semop_and_semtimedop.scml}}
 ```
 
-Unsupported semaphore flags:
-* `SEM_UNDO`
-
 Supported and unsupported functionality of `semtimedop` are the same as `semop`.
 The SCML rules are omitted for brevity.
 

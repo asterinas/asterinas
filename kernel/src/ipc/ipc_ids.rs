@@ -45,9 +45,9 @@ impl<T> IpcIds<T> {
     }
 
     /// Removes the object identified by `id`.
-    pub(super) fn remove<F>(&self, id: IpcId, may_remove: F) -> Result<()>
+    pub(super) fn remove<R, F>(&self, id: IpcId, may_remove: F) -> Result<R>
     where
-        F: FnOnce(&T) -> Result<()>,
+        F: FnOnce(&T) -> Result<R>,
     {
         use alloc::collections::btree_map::Entry;
 
@@ -57,12 +57,12 @@ impl<T> IpcIds<T> {
             return_errno_with_message!(Errno::EINVAL, "the ID does not exist");
         };
 
-        may_remove(entry.get())?;
+        let result = may_remove(entry.get())?;
         entry.remove();
 
         self.id_allocator.lock().free(id.get() as usize);
 
-        Ok(())
+        Ok(result)
     }
 
     /// Inserts a new object with an automatically allocated ID.

@@ -6,6 +6,7 @@ use bitflags::bitflags;
 
 pub mod sem;
 pub mod sem_set;
+pub mod sem_undo;
 
 bitflags! {
     pub struct PermissionMode: u16{

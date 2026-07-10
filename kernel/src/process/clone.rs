@@ -378,9 +378,6 @@ fn clone_child_task(
         ..
     } = ctx;
 
-    // Clone system V semaphore
-    clone_sysvsem(clone_flags)?;
-
     // Clone VMAR
     let child_vmar = thread_local
         .vmar()
@@ -527,9 +524,6 @@ fn clone_child_process(
     // Clone signal dispositions
     let child_sig_dispositions = clone_sighand(process.sig_dispositions(), clone_flags);
 
-    // Clone System V semaphore
-    clone_sysvsem(clone_flags)?;
-
     // Clone FPU context
     let child_fpu_context = thread_local.supp_user_context().fpu().get();
 
@@ -619,6 +613,8 @@ fn clone_child_process(
             child_thread_builder,
         )
     };
+
+    clone_sysvsem(process, &child, clone_flags);
 
     clone_pidfd(ctx, &child, clone_flags, clone_args.pidfd)?;
 
@@ -760,11 +756,10 @@ fn clone_sighand(
     }
 }
 
-fn clone_sysvsem(clone_flags: CloneFlags) -> Result<()> {
+fn clone_sysvsem(parent: &Process, child: &Process, clone_flags: CloneFlags) {
     if clone_flags.contains(CloneFlags::CLONE_SYSVSEM) {
-        warn!("CLONE_SYSVSEM is not supported now");
+        child.set_sem_undo_list(parent.sem_undo_list());
     }
-    Ok(())
 }
 
 fn clone_pidfd(

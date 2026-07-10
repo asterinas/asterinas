@@ -17,6 +17,7 @@ use crate::{
 /// [`do_exit_group`]: crate::process::posix_thread::do_exit_group
 pub(super) fn exit_process(current_process: &Process) {
     current_process.status().set_vfork_child(false);
+    current_process.apply_sem_undo_on_exit();
 
     // Drop fields in `Process`.
     drop_after!(current_process.lock_vmar().set_vmar(None));

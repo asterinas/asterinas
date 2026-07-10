@@ -4,7 +4,9 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <sched.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <sys/syscall.h>
@@ -24,6 +26,7 @@
 #define SETTLE_MS 100
 #define SHORT_TIMEOUT_MS 1000
 #define LONG_TIMEOUT_MS 4000
+#define STACK_SIZE (1024 * 1024)
 
 union semun {
 	int val;
@@ -446,18 +449,272 @@ FN_TEST(semop_sem_undo)
 		.sem_flg = SEM_UNDO,
 	};
 	int semid = TEST_SUCC(create_sem_set(1));
+	pid_t child = TEST_SUCC(fork());
+	int status;
 
-	/*
-	 * FIXME: Linux applies `SEM_UNDO`, but Asterinas rejects the flag as it
-	 * is not supported.
-	 */
-#ifdef __asterinas__
-	TEST_ERRNO(semop(semid, &op, 1), EINVAL);
+	if (child == 0) {
+		CHECK(semop(semid, &op, 1));
+		CHECK_WITH(semctl(semid, 0, GETVAL), _ret == 1);
+		_exit(0);
+	}
+
+	TEST_RES(waitpid(child, &status, 0),
+		 WIFEXITED(status) && WEXITSTATUS(status) == 0);
 	TEST_RES(get_sem_val(semid, 0), _ret == 0);
-#else
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(sem_undo_records_blocked_semop)
+{
+	struct sembuf op = {
+		.sem_num = 0,
+		.sem_op = -1,
+		.sem_flg = SEM_UNDO,
+	};
+	int semid = TEST_SUCC(create_sem_set(1));
+	pid_t child = TEST_SUCC(fork());
+	int status;
+
+	if (child == 0) {
+		CHECK(semop(semid, &op, 1));
+		CHECK_WITH(semctl(semid, 0, GETVAL), _ret == 0);
+		_exit(0);
+	}
+
+	sleep_ms(SETTLE_MS);
+	TEST_SUCC(set_sem_val(semid, 0, 1));
+	TEST_RES(waitpid(child, &status, 0),
+		 WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	TEST_RES(get_sem_val(semid, 0), _ret == 1);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(sem_undo_is_not_inherited_by_fork)
+{
+	struct sembuf op = {
+		.sem_num = 0,
+		.sem_op = 1,
+		.sem_flg = SEM_UNDO,
+	};
+	int semid = TEST_SUCC(create_sem_set(1));
+	pid_t child;
+	int status;
+
 	TEST_SUCC(semop(semid, &op, 1));
 	TEST_RES(get_sem_val(semid, 0), _ret == 1);
-#endif
+
+	child = TEST_SUCC(fork());
+	if (child == 0)
+		_exit(0);
+
+	TEST_RES(waitpid(child, &status, 0),
+		 WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	TEST_RES(get_sem_val(semid, 0), _ret == 1);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+static int clone_sysvsem_child_fn(void *arg)
+{
+	int semid = *(int *)arg;
+	struct sembuf op = {
+		.sem_num = 0,
+		.sem_op = 1,
+		.sem_flg = SEM_UNDO,
+	};
+
+	CHECK(semop(semid, &op, 1));
+	CHECK_WITH(semctl(semid, 0, GETVAL), _ret == 1);
+	return 0;
+}
+
+FN_TEST(sem_undo_is_shared_by_clone_sysvsem)
+{
+	int semid = TEST_SUCC(create_sem_set(1));
+	pid_t owner = TEST_SUCC(fork());
+	int status;
+
+	if (owner == 0) {
+		char *stack = malloc(STACK_SIZE);
+		char *stack_top = stack + STACK_SIZE;
+		pid_t child = CHECK(clone(clone_sysvsem_child_fn, stack_top,
+					  CLONE_SYSVSEM | SIGCHLD, &semid));
+
+		CHECK_WITH(waitpid(child, &status, 0),
+			   _ret == child && WIFEXITED(status) &&
+				   WEXITSTATUS(status) == 0);
+		CHECK_WITH(semctl(semid, 0, GETVAL), _ret == 1);
+		free(stack);
+		_exit(0);
+	}
+
+	TEST_RES(waitpid(owner, &status, 0),
+		 WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+static int clone_sysvsem_delayed_exit_fn(void *arg)
+{
+	(void)arg;
+
+	sleep_ms(SETTLE_MS * 3);
+	return 0;
+}
+
+FN_TEST(sem_undo_shared_list_ignores_zombie_holder)
+{
+	struct sembuf op = {
+		.sem_num = 0,
+		.sem_op = 1,
+		.sem_flg = SEM_UNDO,
+	};
+	int pipe_fds[2];
+	int semid = TEST_SUCC(create_sem_set(1));
+	pid_t owner;
+	char byte;
+	int status;
+
+	TEST_SUCC(pipe(pipe_fds));
+	owner = TEST_SUCC(fork());
+	if (owner == 0) {
+		char *stack = malloc(STACK_SIZE);
+		char *stack_top = stack + STACK_SIZE;
+
+		CHECK(close(pipe_fds[0]));
+		CHECK(semop(semid, &op, 1));
+		CHECK(clone(clone_sysvsem_delayed_exit_fn, stack_top,
+			    CLONE_SYSVSEM | SIGCHLD, NULL));
+		CHECK_WITH(write(pipe_fds[1], "x", 1), _ret == 1);
+		CHECK(close(pipe_fds[1]));
+		_exit(0);
+	}
+
+	TEST_SUCC(close(pipe_fds[1]));
+	TEST_RES(read(pipe_fds[0], &byte, 1), _ret == 1);
+	TEST_SUCC(close(pipe_fds[0]));
+	sleep_ms(SETTLE_MS * 6);
+
+	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+	TEST_RES(waitpid(owner, &status, 0),
+		 WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+static int unshare_sysvsem_child_fn(void *arg)
+{
+	int semid = *(int *)arg;
+	struct sembuf op = {
+		.sem_num = 0,
+		.sem_op = 1,
+		.sem_flg = SEM_UNDO,
+	};
+
+	CHECK(unshare(CLONE_SYSVSEM));
+	CHECK(semop(semid, &op, 1));
+	CHECK_WITH(semctl(semid, 0, GETVAL), _ret == 2);
+	return 0;
+}
+
+FN_TEST(unshare_sysvsem_applies_last_sem_undo)
+{
+	struct sembuf op = {
+		.sem_num = 0,
+		.sem_op = 1,
+		.sem_flg = SEM_UNDO,
+	};
+	int semid = TEST_SUCC(create_sem_set(1));
+
+	TEST_SUCC(semop(semid, &op, 1));
+	TEST_RES(get_sem_val(semid, 0), _ret == 1);
+
+	TEST_SUCC(unshare(CLONE_SYSVSEM));
+	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(unshare_sysvsem_disassociates_sem_undo)
+{
+	struct sembuf op = {
+		.sem_num = 0,
+		.sem_op = 1,
+		.sem_flg = SEM_UNDO,
+	};
+	int semid = TEST_SUCC(create_sem_set(1));
+	pid_t owner = TEST_SUCC(fork());
+	int status;
+
+	if (owner == 0) {
+		char *stack = malloc(STACK_SIZE);
+		char *stack_top = stack + STACK_SIZE;
+		pid_t child;
+
+		CHECK(semop(semid, &op, 1));
+		CHECK_WITH(semctl(semid, 0, GETVAL), _ret == 1);
+
+		child = CHECK(clone(unshare_sysvsem_child_fn, stack_top,
+				    CLONE_SYSVSEM | SIGCHLD, &semid));
+		CHECK_WITH(waitpid(child, &status, 0),
+			   _ret == child && WIFEXITED(status) &&
+				   WEXITSTATUS(status) == 0);
+		CHECK_WITH(semctl(semid, 0, GETVAL), _ret == 1);
+		free(stack);
+		_exit(0);
+	}
+
+	TEST_RES(waitpid(owner, &status, 0),
+		 WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	TEST_RES(get_sem_val(semid, 0), _ret == 0);
+
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semctl_setval_clears_sem_undo)
+{
+	struct sembuf op = {
+		.sem_num = 0,
+		.sem_op = 1,
+		.sem_flg = SEM_UNDO,
+	};
+	int pipe_fds[2];
+	int semid = TEST_SUCC(create_sem_set(1));
+	pid_t child;
+	char byte;
+	int status;
+
+	TEST_SUCC(pipe(pipe_fds));
+	child = TEST_SUCC(fork());
+	if (child == 0) {
+		CHECK(close(pipe_fds[0]));
+		CHECK(semop(semid, &op, 1));
+		CHECK_WITH(write(pipe_fds[1], "x", 1), _ret == 1);
+		CHECK(close(pipe_fds[1]));
+		pause();
+		_exit(0);
+	}
+
+	TEST_SUCC(close(pipe_fds[1]));
+	TEST_RES(read(pipe_fds[0], &byte, 1), _ret == 1);
+	TEST_SUCC(close(pipe_fds[0]));
+	TEST_RES(get_sem_val(semid, 0), _ret == 1);
+
+	TEST_SUCC(set_sem_val(semid, 0, 3));
+	TEST_SUCC(kill(child, SIGKILL));
+	TEST_RES(waitpid(child, &status, 0),
+		 WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL);
+	TEST_RES(get_sem_val(semid, 0), _ret == 3);
 
 	TEST_SUCC(remove_sem_set(semid));
 }
