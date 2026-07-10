@@ -118,6 +118,9 @@ impl MessageQueue {
                 timeout.as_ref(),
             )
             .map_err(|err| match err.error() {
+                Errno::ERESTARTSYS if timeout.is_some() => {
+                    errno!(EINTR, "the socket operation is interrupted by a signal")
+                }
                 Errno::ETIME => errno!(EAGAIN, "the socket timeout expired"),
                 _ => err,
             })?
