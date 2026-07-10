@@ -15,6 +15,7 @@
 #  - VIRTIOFS: "off" or "on";
 #  - VIRTIOFS_TAG: mount tag for virtio-fs device;
 #  - VIRTIOFS_SOCKET: vhost-user socket path for the virtio-fs server.
+#  - VIRTIO_PCI: "off" or "on" (RISC-V only; "on" attaches virtio devices over PCI instead of MMIO);
 #  - CONSOLE: "hvc0" to enable virtio console;
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
@@ -70,6 +71,21 @@ else
 fi
 
 if [ "$1" = "riscv" ]; then
+    if [ "${VIRTIO_PCI:-off}" = "on" ]; then
+        VIRTIO_DEVICE_ARGS="\
+        -device virtio-blk-pci,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off \
+        -device virtio-blk-pci,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off \
+        -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
+        -device virtio-serial-pci,disable-legacy=on,disable-modern=off \
+        "
+    else
+        VIRTIO_DEVICE_ARGS="\
+        -device virtio-blk-device,drive=x1 \
+        -device virtio-blk-device,drive=x0 \
+        -device virtio-keyboard-device \
+        -device virtio-serial-device \
+        "
+    fi
     # NOTE: The `/etc/profile.d/init.sh` assumes that `ext2.img` appears as the first block device (`/dev/vda`).
     # The ordering below ensures `x1` (ext2.img) is discovered before `x0`, maintaining this assumption.
     # TODO: Once UUID-based mounting is implemented, this strict ordering will no longer be required.
@@ -85,10 +101,7 @@ if [ "$1" = "riscv" ]; then
         -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
         -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
         -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
-        -device virtio-blk-device,drive=x1 \
-        -device virtio-blk-device,drive=x0 \
-        -device virtio-keyboard-device \
-        -device virtio-serial-device \
+        $VIRTIO_DEVICE_ARGS \
         $CONSOLE_ARGS \
     "
     echo $QEMU_ARGS
