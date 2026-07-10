@@ -57,7 +57,7 @@ pub fn sys_mknodat(
             let _ = dir_path.mknod(&name, inode_mode, MknodType::NamedPipe)?;
         }
         InodeType::Socket => {
-            return_errno_with_message!(Errno::EINVAL, "unsupported file types")
+            let _ = dir_path.new_fs_child(&name, InodeType::Socket, inode_mode)?;
         }
         _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),
     }
