@@ -491,6 +491,10 @@ impl Socket for StreamSocket {
             self.check_connect()
         })
         .map_err(|err| match err.error() {
+            Errno::ERESTARTSYS if send_timeout.is_some() => Error::with_message(
+                Errno::EINTR,
+                "the socket operation is interrupted by a signal",
+            ),
             Errno::ETIME => Error::with_message(Errno::EINPROGRESS, "the socket timeout expired"),
             _ => err,
         })
