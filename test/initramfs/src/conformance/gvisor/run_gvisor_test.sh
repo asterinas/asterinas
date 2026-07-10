@@ -7,7 +7,6 @@ TEST_TMP_DIR=${CONFORMANCE_TEST_WORKDIR:-/tmp}
 TEST_BIN_DIR=$SCRIPT_DIR/tests
 BLOCKLIST_DIR=$SCRIPT_DIR/blocklists
 FAIL_CASES=$SCRIPT_DIR/fail_cases
-BLOCK=""
 TESTS=0
 PASSED_TESTS=0
 RESULT=0
@@ -15,16 +14,20 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-get_blocklist_subtests(){
-    if [ -f $BLOCKLIST_DIR/$1 ]; then
-        BLOCK=$(grep -v '^#' $BLOCKLIST_DIR/$1 | tr '\n' ':')
-    else
-        BLOCK=""
+CONFORMANCE_TEST_GVISOR_FILTER=${CONFORMANCE_TEST_GVISOR_FILTER:-}
+
+# Get blocklist for a specific test
+get_blocklist_subtests() {
+    local test_name=$1
+    blocklist=""
+
+    if [ -f "$BLOCKLIST_DIR/$test_name" ]; then
+        blocklist=$(grep -v '^#' "$BLOCKLIST_DIR/$test_name" | tr '\n' ':')
     fi
 
-    for extra_dir in $EXTRA_BLOCKLISTS ; do
-        if [ -f $SCRIPT_DIR/$extra_dir/$1 ]; then
-            BLOCK="${BLOCK}:$(grep -v '^#' $SCRIPT_DIR/$extra_dir/$1 | tr '\n' ':')"
+    for extra_dir in $CONFORMANCE_TEST_EXTRA_BLOCKLISTS ; do
+        if [ -f "$SCRIPT_DIR/$extra_dir/$test_name" ]; then
+            blocklist="${blocklist}:$(grep -v '^#' "$SCRIPT_DIR/$extra_dir/$test_name" | tr '\n' ':')"
         fi
     done
 
@@ -36,9 +39,21 @@ run_one_test(){
     # The gvisor test framework utilizes the "TEST_TMPDIR" environment variable to dictate the directory's location.
     export TEST_TMPDIR=$TEST_TMP_DIR
     ret=0
-    if [ -f $TEST_BIN_DIR/$1 ]; then
-        get_blocklist_subtests $1
-        cd $TEST_BIN_DIR && ./$1 --gtest_filter=-$BLOCK
+    if [ -f "$TEST_BIN_DIR/$1" ]; then
+        local blocked_filter=""
+        if [ -z "$CONFORMANCE_TEST_SELECTOR" ]; then
+            get_blocklist_subtests "$1"
+            blocked_filter="$blocklist"
+        fi
+
+        local selected_filter=${CONFORMANCE_TEST_GVISOR_FILTER:-*}
+        local gtest_filter="$selected_filter"
+
+        if [ -n "$blocked_filter" ]; then
+            gtest_filter="${selected_filter}-${blocked_filter}"
+        fi
+
+        cd "$TEST_BIN_DIR" && "./$1" --gtest_filter="$gtest_filter"
         ret=$?
         #After executing the test, it is necessary to clean the directory to ensure no residual data remains
         rm -rf $TEST_TMP_DIR/*
@@ -53,9 +68,16 @@ run_one_test(){
 rm -f $FAIL_CASES && touch $FAIL_CASES
 rm -rf $TEST_TMP_DIR/*
 
-for syscall_test in $(find $TEST_BIN_DIR/. -name \*_test) ; do
-    test_name=$(basename "$syscall_test")
-    run_one_test $test_name
+# Determine which tests to run
+if [ -n "$CONFORMANCE_TEST_SELECTOR" ]; then
+    # Convert comma-separated to space-separated
+    TEST_LIST=$(echo "$CONFORMANCE_TEST_SELECTOR" | tr ',' ' ')
+else
+    TEST_LIST=$(find "$TEST_BIN_DIR"/. -name \*_test -exec basename {} \;)
+fi
+
+for test_name in $TEST_LIST ; do
+    run_one_test "$test_name"
     if [ $? -eq 0 ] && PASSED_TESTS=$((PASSED_TESTS+1));then
         TESTS=$((TESTS+1))
     else

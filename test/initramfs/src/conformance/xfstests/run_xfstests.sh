@@ -7,6 +7,8 @@ set -eu
 # RUNTIME_PATH is substituted by the Nix build.
 export PATH=__RUNTIME_PATH__
 
+CONFORMANCE_TEST_SELECTOR=${CONFORMANCE_TEST_SELECTOR:-}
+
 XFSTESTS_DIR=/opt/xfstests
 cd "$XFSTESTS_DIR"
 
@@ -61,22 +63,31 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ -n "$RUNLIST_FILE" ]; then
-  if [ ! -f "$RUNLIST_FILE" ]; then
-    echo "Run list file not found: $RUNLIST_FILE" >&2
-    exit 2
-  fi
-  while IFS= read -r test; do
-    case "$test" in
-      ""|\#*) continue ;;
-    esac
-    TEST_ARGS="$TEST_ARGS $test"
-  done < "$RUNLIST_FILE"
-fi
-
-# Prepend block-list exclusion so blocked tests are skipped.
-if [ -f "$XFSTESTS_DIR/block.list" ]; then
-    TEST_ARGS="-E $XFSTESTS_DIR/block.list $TEST_ARGS"
+# Determine which tests to run. The three branches are mutually exclusive:
+# (1) explicit `CONFORMANCE_TEST_SELECTOR` overrides everything and disables
+#     blocklists;
+# (2) a runlist file (`-R`) selects tests with blocklists applied;
+# (3) otherwise the full suite is executed with blocklists applied.
+if [ -n "$CONFORMANCE_TEST_SELECTOR" ]; then
+    TEST_ARGS=$(echo "$CONFORMANCE_TEST_SELECTOR" | tr ',' ' ')
+elif [ -n "$RUNLIST_FILE" ]; then
+    if [ ! -f "$RUNLIST_FILE" ]; then
+        echo "Run list file not found: $RUNLIST_FILE" >&2
+        exit 2
+    fi
+    while IFS= read -r test; do
+        case "$test" in
+            ""|\#*) continue ;;
+        esac
+        TEST_ARGS="$TEST_ARGS $test"
+    done < "$RUNLIST_FILE"
+    if [ -f "$XFSTESTS_DIR/block.list" ]; then
+        TEST_ARGS="-E $XFSTESTS_DIR/block.list $TEST_ARGS"
+    fi
+else
+    if [ -f "$XFSTESTS_DIR/block.list" ]; then
+        TEST_ARGS="-E $XFSTESTS_DIR/block.list"
+    fi
 fi
 
 # Word-splitting is intentional here: TEST_ARGS contains only test names

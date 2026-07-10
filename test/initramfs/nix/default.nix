@@ -1,7 +1,8 @@
 { target ? "x86_64", enableBenchmarkTest ? false, enableConformanceTest ? false
 , enableRegressionTest ? false, conformanceTestSuite ? "ltp"
-, conformanceTestWorkDir ? "/tmp", regressionTestPlatform ? "asterinas"
-, dnsServer ? "none", smp ? 1, initramfsCompressed ? true, }:
+, conformanceTestWorkDir ? "/tmp", conformanceTestSelector ? ""
+, regressionTestPlatform ? "asterinas", dnsServer ? "none", smp ? 1
+, initramfsCompressed ? true, }:
 let
   crossSystem.config = if target == "x86_64" then
     "x86_64-unknown-linux-gnu"
@@ -26,7 +27,7 @@ in rec {
   busybox = pkgs.busybox;
   benchmark = pkgs.callPackage ./benchmark { };
   conformance = pkgs.callPackage ./conformance {
-    inherit smp;
+    inherit smp conformanceTestSelector;
     testSuite = conformanceTestSuite;
     workDir = conformanceTestWorkDir;
   };

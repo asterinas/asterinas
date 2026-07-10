@@ -51,7 +51,22 @@ CONFORMANCE_TEST_WORKDIR ?= /tmp
 #   and loads a per-test blocklist file from that directory.
 # - `kselftest` treats each entry as a blocklist file relative to its runner
 #   directory, and appends that file directly.
-EXTRA_BLOCKLISTS ?= ""
+CONFORMANCE_TEST_EXTRA_BLOCKLISTS ?= ""
+# Comma-separated tests to run within the selected conformance suite.
+#
+# This variable allows one to select one or multiple tests to run.
+# When this environment variable is present,
+# the blocklist of a conformance test will be ignored.
+#
+# - gvisor:    a test *binary* name, e.g. `epoll_test` (optionally narrow the
+#              cases inside it with `CONFORMANCE_TEST_GVISOR_FILTER`).
+# - kselftest: a `<collection>:<case>` entry, e.g. `timers:posix_timers`.
+# - ltp:       a syscall testcase id, e.g. `rename01`.
+# - xfstests:  a test id, e.g. `generic/001`.
+CONFORMANCE_TEST_SELECTOR ?= ""
+# gVisor-only positive gtest filter, used inside one selected gVisor test binary.
+# Follows the Google Test `--gtest_filter` syntax, e.g. `EpollTest.*` or `*Read*:*Write*`.
+CONFORMANCE_TEST_GVISOR_FILTER ?= ""
 # Parameters for xfstests.
 XFSTESTS_RUNLIST ?= /opt/xfstests/short.list
 XFSTESTS_DISK_SIZE ?= 12G
@@ -111,8 +126,11 @@ ifeq ($(AUTO_TEST), conformance)
 ENABLE_CONFORMANCE_TEST := true
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_SUITE=$(CONFORMANCE_TEST_SUITE)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_WORKDIR=$(CONFORMANCE_TEST_WORKDIR)"
-CARGO_OSDK_BUILD_ARGS += --kcmd-args="EXTRA_BLOCKLISTS=$(EXTRA_BLOCKLISTS)"
-ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_EXTRA_BLOCKLISTS=$(CONFORMANCE_TEST_EXTRA_BLOCKLISTS)"
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_SELECTOR=$(CONFORMANCE_TEST_SELECTOR)"
+ifeq ($(CONFORMANCE_TEST_SUITE), gvisor)
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_GVISOR_FILTER=$(CONFORMANCE_TEST_GVISOR_FILTER)"
+else ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_RUNLIST=$(XFSTESTS_RUNLIST)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_TEST_DEV=$(XFSTESTS_TEST_DEV)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_SCRATCH_DEV=$(XFSTESTS_SCRATCH_DEV)"
