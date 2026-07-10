@@ -6,14 +6,21 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use core::{
+    fmt,
     marker::PhantomData,
     num::Wrapping,
-    ops::Deref,
+    ops::{Deref, Range},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{FrameAllocOptions, PAGE_SIZE, Segment, VmIo, io::util::HasVmReaderWriter};
+use ostd::{
+    Error,
+    mm::{
+        FallibleVmRead, FrameAllocOptions, PAGE_SIZE, Segment, VmIo, VmWriter,
+        io::{Fallible, util::HasVmReaderWriter},
+    },
+};
 use ostd_pod::Pod;
 
 /// A lock-free single-producer single-consumer (SPSC) FIFO ring buffer.
@@ -217,6 +224,58 @@ impl<T> RingBuffer<T> {
 }
 
 impl RingBuffer<u8> {
+    /// Returns a formatter that appends text directly to the ring buffer.
+    ///
+    /// The formatter discards the oldest buffered bytes when new formatted
+    /// bytes exceed the available capacity.
+    pub fn formatter(&mut self) -> RingBufferFormatter<'_> {
+        RingBufferFormatter::new(self)
+    }
+
+    /// Picks bytes from the specified absolute ring counter range into `writer`.
+    ///
+    /// This method does not consume bytes from the buffer. The caller must
+    /// ensure that `range` is currently readable. The method handles wraparound
+    /// internally and advances `writer` by the number of bytes copied.
+    pub fn pick_range(
+        &self,
+        range: Range<Wrapping<usize>>,
+        writer: &mut VmWriter<'_, Fallible>,
+    ) -> Result<usize, (Error, usize)> {
+        fn copy_segment_to_writer(
+            segment: &Segment<()>,
+            offset: usize,
+            len: usize,
+            writer: &mut VmWriter<'_, Fallible>,
+        ) -> Result<usize, (Error, usize)> {
+            let mut reader = segment.reader();
+            reader.skip(offset).limit(len);
+            reader.read_fallible(writer)
+        }
+
+        let len = (range.end - range.start).0.min(writer.avail());
+        if len == 0 {
+            return Ok(0);
+        }
+
+        let offset = range.start.0 & (self.capacity - 1);
+        let mut copied = 0;
+        if offset + len > self.capacity {
+            let first_len = self.capacity - offset;
+            let first_copied = copy_segment_to_writer(self.segment(), offset, first_len, writer)
+                .map_err(|(err, copied_len)| (err, copied + copied_len))?;
+            copied += first_copied;
+            let second_copied = copy_segment_to_writer(self.segment(), 0, len - first_len, writer)
+                .map_err(|(err, copied_len)| (err, copied + copied_len))?;
+            copied += second_copied;
+        } else {
+            let segment_copied = copy_segment_to_writer(self.segment(), offset, len, writer)
+                .map_err(|(err, copied_len)| (err, copied + copied_len))?;
+            copied += segment_copied;
+        }
+        Ok(copied)
+    }
+
     /// Commits a read operation by advancing the head pointer.
     ///
     /// This method is intended for advanced use cases where the caller reads
@@ -233,6 +292,83 @@ impl RingBuffer<u8> {
         );
         let head = self.head();
         self.advance_head(head, len);
+    }
+}
+
+/// A formatter that appends UTF-8 bytes directly to a ring buffer.
+///
+/// The formatter writes formatted bytes into the ring buffer. If the ring
+/// buffer does not have enough free space, it discards the oldest buffered
+/// bytes so the new bytes can be written. If one write is larger than the
+/// whole capacity, only the last `capacity` bytes of that write are retained.
+pub struct RingBufferFormatter<'a> {
+    rb: &'a mut RingBuffer<u8>,
+    remaining: usize,
+    bytes_written: usize,
+}
+
+impl<'a> RingBufferFormatter<'a> {
+    /// Creates a formatter for the ring buffer.
+    ///
+    /// When appending would exceed the ring buffer capacity, it discards the
+    /// oldest buffered bytes to make room, so using this formatter may make
+    /// previously unread data unavailable.
+    pub fn new(rb: &'a mut RingBuffer<u8>) -> Self {
+        Self {
+            rb,
+            remaining: usize::MAX,
+            bytes_written: 0,
+        }
+    }
+
+    /// Limits the total number of bytes accepted by this formatter.
+    ///
+    /// If `max_len` is larger than the current limit, this returns `self`
+    /// unchanged.
+    pub fn limit(mut self, max_len: usize) -> Self {
+        self.remaining = self.remaining.min(max_len);
+        self
+    }
+
+    /// Returns the number of bytes accepted by this formatter.
+    ///
+    /// This counts bytes passed through the formatter limit. The bytes may no
+    /// longer be present in the ring buffer if later writes through this
+    /// formatter overwrote older data.
+    pub fn bytes_written(&self) -> usize {
+        self.bytes_written
+    }
+
+    fn push_bytes(&mut self, mut bytes: &[u8]) {
+        let overflow = bytes.len().saturating_sub(self.rb.free_len());
+        if overflow > 0 {
+            let drop_from_buffer = overflow.min(self.rb.len());
+            if drop_from_buffer > 0 {
+                self.rb.commit_read(drop_from_buffer);
+            }
+            let drop_from_input = overflow - drop_from_buffer;
+            if drop_from_input > 0 {
+                bytes = &bytes[drop_from_input..];
+            }
+        }
+
+        self.rb
+            .push_slice(bytes)
+            .expect("`push_slice` must succeed after dropping enough bytes");
+    }
+}
+
+impl fmt::Write for RingBufferFormatter<'_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let mut bytes = s.as_bytes();
+        let len = bytes.len().min(self.remaining);
+        bytes = &bytes[..len];
+        self.remaining -= len;
+        if !bytes.is_empty() {
+            self.push_bytes(bytes);
+            self.bytes_written += bytes.len();
+        }
+        Ok(())
     }
 }
 
