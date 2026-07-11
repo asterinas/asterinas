@@ -27,3 +27,20 @@ kernel crate requires.
 
 Build a single dependency (Linux only): `nix build .#qemu` (also `.#grub`,
 `.#ovmf`, `.#klint`).
+
+## Entering the shell automatically
+
+With [direnv](https://direnv.net/) installed, the shell loads on `cd` instead
+of an explicit `nix develop`. Approve the `.envrc` that ships with the
+repository once:
+
+```sh
+direnv allow
+```
+
+direnv binds that approval to the contents of `.envrc`, so a `git pull` that
+changes the file blocks it until you approve it again. `.envrc` also declares
+the dev shell sources as watched inputs: neither direnv's `use flake` nor
+nix-direnv's replacement looks beyond `flake.nix` and `flake.lock`, so without
+those declarations an edit under `nix/` leaves you in the previously cached
+shell.
