@@ -68,6 +68,7 @@ capset04
 # cachestat04
 
 # chdir01
+chdir02
 chdir04
 
 chmod01
@@ -123,10 +124,13 @@ clone06
 clone07
 # clone08
 # clone09
+clone10
+# clone11
 
 # clone301
 # clone302
 # clone303
+clone304
 
 close01
 close02
@@ -250,6 +254,7 @@ fallocate03
 # file_attr02
 # file_attr03
 # file_attr04
+# file_attr05
 
 #posix_fadvise test cases
 # posix_fadvise01
@@ -618,6 +623,7 @@ getxattr01
 # ioctl_ficlonerange01
 # ioctl_ficlonerange02
 # ioctl_fiemap01
+# ioctl_getlbmd01
 
 # ioctl_pidfd01
 # ioctl_pidfd02
@@ -666,6 +672,7 @@ getxattr01
 # fanotify22
 # fanotify23
 # fanotify24
+# fanotify25
 
 # ioperm01
 # ioperm02
@@ -693,6 +700,7 @@ ioprio_set02
 # io_submit01
 # io_submit02
 # io_submit03
+# io_submit04
 
 # keyctl01
 # keyctl02
@@ -920,6 +928,7 @@ mremap03
 # mremap04
 mremap05
 # mremap06
+mremap07
 
 # mseal01
 # mseal02
@@ -973,6 +982,7 @@ nanosleep02
 
 # name_to_handle_at01
 # name_to_handle_at02
+# name_to_handle_at03
 
 # nftw01
 # nftw6401
@@ -1087,6 +1097,8 @@ pipeio_8
 
 poll01
 # poll02
+poll03
+poll04
 
 ppoll01
 
@@ -1766,6 +1778,11 @@ unshare04
 # umount2_02
 
 # userfaultfd01
+# userfaultfd02
+# userfaultfd03
+# userfaultfd04
+# userfaultfd05
+# userfaultfd06
 
 # ustat01
 # ustat02
@@ -1885,6 +1902,7 @@ statx03
 
 # io_uring01
 # io_uring02
+# io_uring03
 
 # Tests below may cause kernel memory leak
 # perf_event_open03
