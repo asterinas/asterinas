@@ -38,6 +38,9 @@ distro/result
 /result
 /result-*
 
+# direnv cache; nix-direnv also keeps its GC roots here
+/.direnv/
+
 # cachix package list
 cachix.list
 
