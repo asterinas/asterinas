@@ -1,0 +1,73 @@
+name: Test Nix flake
+
+on:
+  pull_request:
+    paths:
+      - flake.nix
+      - flake.lock
+      - nix/**
+      - rust-toolchain.toml
+      - .github/workflows/test_nix_flake.yml
+  push:
+    branches:
+      - main
+    paths:
+      - flake.nix
+      - flake.lock
+      - nix/**
+      - rust-toolchain.toml
+      - .github/workflows/test_nix_flake.yml
+
+env:
+  # The image installs Nix without enabling flakes; opt in here.
+  NIX_CONFIG: "experimental-features = nix-command flakes"
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    container:
+      image: asterinas/asterinas:0.18.0-20260702
+    steps:
+      - uses: actions/checkout@v4
+      # The checkout is owned by another uid, which Nix's fetcher rejects.
+      - name: Fix workspace ownership
+        run: chown -R "$(id -u):$(id -g)" .
+      - name: Check flake
+        run: nix flake check --no-build --all-systems
+
+  build-packages:
+    # Cold QEMU builds need more disk and cores than the free tier offers.
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/asterinas:0.18.0-20260702
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        run: chown -R "$(id -u):$(id -g)" .
+      # Cold-builds from source; a binary cache is a follow-up.
+      - name: Build the boot stack
+        run: nix build .#qemu .#grub .#ovmf .#klint
+
+  dev-shell-smoke:
+    # Entering the shell realizes the same closure as build-packages.
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/asterinas:0.18.0-20260702
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix workspace ownership
+        run: chown -R "$(id -u):$(id -g)" .
+      # Checks the shell activates and its tools run; a full boot smoke
+      # through the dev shell is a follow-up.
+      - name: Smoke-test the dev shell
+        run: |
+          # A scratch HOME gives tools a writable home without exposing
+          # any state under the real one to the smoke test.
+          export HOME="$(mktemp -d)"
+          nix develop --ignore-environment --keep HOME --command bash -c '
+            rustc --version &&
+            typos --version &&
+            qemu-system-x86_64 --version
+          '
