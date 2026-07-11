@@ -1,0 +1,85 @@
+name: Test Nix flake
+
+on:
+  pull_request:
+    paths:
+      - flake.nix
+      - flake.lock
+      - Makefile
+      - test/initramfs/Makefile
+      - test/initramfs/nix/**
+      - test/nixos/Makefile
+      - tools/nixfmt.sh
+      - distro/nixpkgs.nix
+      - tools/dev_env/nix/**
+      - rust-toolchain.toml
+      - tools/dev_env/docker/prebuilt-nix-packages/Dockerfile
+      - .github/workflows/test_nix_flake.yml
+  push:
+    branches:
+      - main
+    paths:
+      - flake.nix
+      - flake.lock
+      - Makefile
+      - test/initramfs/Makefile
+      - test/initramfs/nix/**
+      - test/nixos/Makefile
+      - tools/nixfmt.sh
+      - distro/nixpkgs.nix
+      - tools/dev_env/nix/**
+      - rust-toolchain.toml
+      - tools/dev_env/docker/prebuilt-nix-packages/Dockerfile
+      - .github/workflows/test_nix_flake.yml
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check nixpkgs revisions
+        # These files cannot read flake.lock, so they repeat the locked rev.
+        run: |
+          revision="$(jq -r '.nodes.nixpkgs.locked.rev' flake.lock)"
+
+          for file in \
+            tools/dev_env/docker/prebuilt-nix-packages/Dockerfile \
+            distro/nixpkgs.nix
+          do
+            pinned="$(sed -nE 's#.*NixOS/nixpkgs/archive/([0-9a-f]{40})\.tar\.gz.*#\1#p' "$file" | sort -u | paste -sd ' ')"
+            if [ "$pinned" != "$revision" ]; then
+              echo "$file: expected only nixpkgs $revision, found: ${pinned:-none}" >&2
+              exit 1
+            fi
+          done
+          echo "nixpkgs revision: $revision"
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+      - name: Check flake
+        run: nix flake check --no-build --all-systems --no-update-lock-file
+
+  dev-shell-smoke:
+    name: dev-shell-smoke (${{ matrix.runs_on }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs_on: ubuntu-latest
+            enable_kvm: 1
+          # The kernel is x86-64, so an ARM64 host has to run it under TCG.
+          - runs_on: ubuntu-24.04-arm
+            enable_kvm: 0
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+      - name: Check in Nix dev shell
+        run: |
+          nix develop --ignore-environment --keep HOME \
+            --command make check
+      - name: Build and boot Asterinas
+        run: |
+          nix develop --ignore-environment --keep HOME \
+            --command make run_kernel AUTO_TEST=boot ENABLE_KVM=${{ matrix.enable_kvm }}
