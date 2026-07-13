@@ -11,7 +11,7 @@ use std::{
     time::SystemTime,
 };
 
-use bin::{make_elf_for_qemu, make_install_bzimage, make_stripped_boot_elf};
+use bin::{make_aarch64_image, make_elf_for_qemu, make_install_bzimage, make_stripped_boot_elf};
 
 use super::util::{COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH, cargo, profile_name_adapter};
 use crate::{
@@ -185,15 +185,18 @@ pub fn do_cached_build(
             bundle.consume_aster_bin(aster_elf);
         }
         BootMethod::QemuDirect => {
-            let aster_bin = match grub.boot_protocol {
-                BootProtocol::Linux => make_install_bzimage(
+            let aster_bin = if config.target_arch == Arch::Aarch64 {
+                make_aarch64_image(&osdk_output_directory, &boot_elf)
+            } else if grub.boot_protocol == BootProtocol::Linux {
+                make_install_bzimage(
                     &osdk_output_directory,
                     &osdk_output_directory,
                     &boot_elf,
                     build.linux_x86_legacy_boot,
                     config.build.encoding.clone(),
-                ),
-                _ => make_elf_for_qemu(boot_elf),
+                )
+            } else {
+                make_elf_for_qemu(boot_elf)
             };
             bundle.consume_aster_bin(aster_bin);
         }
