@@ -106,7 +106,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
         guard: &'rcu dyn InAtomicMode,
         va: &Range<Vaddr>,
     ) -> Result<Self, PageTableError> {
-        if !is_valid_range::<C>(va) || va.is_empty() {
+        if va.is_empty() || !is_valid_range::<C>(va) {
             return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
         }
         if !va.start.is_multiple_of(C::BASE_PAGE_SIZE) || !va.end.is_multiple_of(C::BASE_PAGE_SIZE)
