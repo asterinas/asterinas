@@ -23,7 +23,7 @@ prepare_libs() {
 
     # Array of files to download and their URLs
     declare -A files=(
-        ["${LINUX_KERNEL}"]="https://raw.githubusercontent.com/asterinas/linux_binary_cache/24db4ff/vmlinuz-${LINUX_KERNEL_VERSION}"
+        ["${LINUX_KERNEL}"]="https://raw.githubusercontent.com/asterinas/linux_binary_cache/8e6e8ad382aac7e605d7a058811d09bce478cd7d/${LINUX_KERNEL_VERSION}/vmlinuz"
     )
 
     # Download files if they don't exist
