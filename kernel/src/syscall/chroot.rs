@@ -17,9 +17,6 @@ pub fn sys_chroot(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let mut path_resolver = fs_ref.resolver().write();
     let path = {
         let path_name = path_name.to_string_lossy();
-        if path_name.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "path is empty");
-        }
         let fs_path = FsPath::try_from(path_name.as_ref())?;
         path_resolver.lookup(&fs_path)?
     };

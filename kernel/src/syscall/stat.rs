@@ -58,10 +58,6 @@ pub fn sys_fstatat(
         dirfd, filename, stat_buf_ptr, flags
     );
 
-    if flags.contains(StatFlags::AT_EMPTY_PATH) && filename.is_empty() {
-        return sys_fstat(dirfd, stat_buf_ptr, ctx);
-    }
-
     let path = {
         let filename = filename.to_string_lossy();
         let fs_path =

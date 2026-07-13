@@ -63,10 +63,6 @@ pub fn sys_fchownat(
         dirfd, path_name, uid, gid, flags
     );
 
-    if flags.contains(ChownFlags::AT_EMPTY_PATH) && path_name.is_empty() {
-        return sys_fchown(dirfd, uid, gid, ctx);
-    }
-
     let uid = to_optional_id(uid, Uid::new)?;
     let gid = to_optional_id(gid, Gid::new)?;
     if uid.is_none() && gid.is_none() {
