@@ -41,7 +41,8 @@ pub(super) fn do_get_addr(request_segment: &AddrSegment) -> Result<Vec<RtnlSegme
 }
 
 fn iface_to_new_addr(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> Option<AddrSegment> {
-    let ipv4_addr = iface.ipv4_addr()?;
+    let ipv4_cidr = iface.ipv4_cidr()?;
+    let ipv4_addr = ipv4_cidr.address();
 
     let header = CMsgSegHdr {
         len: 0,
@@ -53,7 +54,7 @@ fn iface_to_new_addr(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> Option<
 
     let addr_message = AddrSegmentBody {
         family: CSocketAddrFamily::AF_INET as _,
-        prefix_len: iface.prefix_len().unwrap(),
+        prefix_len: ipv4_cidr.prefix_len(),
         flags: AddrMessageFlags::PERMANENT,
         scope: RtScope::HOST,
         index: NonZeroU32::new(iface.index()),
