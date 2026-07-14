@@ -8,7 +8,10 @@
 mod attr;
 mod segment;
 
-pub(super) use attr::{addr::AddrAttr, link::LinkAttr};
+pub(super) use attr::{
+    addr::{AddrAttr, AddrProtocol},
+    link::LinkAttr,
+};
 pub(super) use segment::{
     RtnlSegment,
     addr::{AddrMessageFlags, AddrSegment, AddrSegmentBody, RtScope},

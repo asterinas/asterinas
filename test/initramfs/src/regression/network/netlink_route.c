@@ -2,6 +2,8 @@
 
 #include <net/if.h>
 #include <netlink/route/addr.h>
+#include <linux/if_addr.h>
+#include <stdint.h>
 #include <stddef.h>
 #include <unistd.h>
 
@@ -9,8 +11,11 @@
 
 #define ETHER_NAME "eth0"
 #define LOOPBACK_NAME "lo"
+#define BUFFER_SIZE 8192
 
 #define SUCC(expr) ((expr), 0)
+
+char buffer[BUFFER_SIZE];
 
 int find_lo_and_eth0_by_libc(struct if_nameindex *if_ni)
 {
@@ -82,28 +87,40 @@ FN_TEST(get_link_by_libnl)
 }
 END_TEST()
 
-void find_loopback_address(struct nl_object *obj, void *arg)
+struct loopback_addresses {
+	int found_ipv4;
+	int found_ipv6;
+};
+
+void find_loopback_addresses(struct nl_object *obj, void *arg)
 {
-	int *found_loopback = (int *)arg;
+	struct loopback_addresses *found = arg;
 	struct rtnl_addr *addr = (struct rtnl_addr *)obj;
-	struct nl_addr *local;
-	char buf[INET_ADDRSTRLEN];
+	struct nl_addr *address;
+	char buf[INET6_ADDRSTRLEN + sizeof("/128")];
 
 	int family = rtnl_addr_get_family(addr);
-	if (family != AF_INET) {
+	if (family != AF_INET && family != AF_INET6) {
 		return;
 	}
 
-	local = rtnl_addr_get_local(addr);
-	if (local) {
-		nl_addr2str(local, buf, sizeof(buf));
+	address = rtnl_addr_get_local(addr);
+
+	if (family == AF_INET && address) {
+		nl_addr2str(address, buf, sizeof(buf));
 		if (strcmp(buf, "127.0.0.1/8") == 0) {
-			*found_loopback = 1;
+			found->found_ipv4 = 1;
+		}
+	} else if (family == AF_INET6 && address) {
+		nl_addr2str(address, buf, sizeof(buf));
+		if (strcmp(buf, "::1") == 0 &&
+		    rtnl_addr_get_prefixlen(addr) == 128) {
+			found->found_ipv6 = 1;
 		}
 	}
 }
 
-FN_TEST(get_loopback_address)
+FN_TEST(get_loopback_addresses)
 {
 	struct nl_sock *sock;
 	struct nl_cache *addr_cache;
@@ -115,16 +132,180 @@ FN_TEST(get_loopback_address)
 	// 2. Allocate and retrieve address cache
 	TEST_RES(rtnl_addr_alloc_cache(sock, &addr_cache), _ret >= 0);
 
-	// 3. Iterate over all addresses to find loopback address
-	int found_loopback = 0;
-	TEST_RES(SUCC(nl_cache_foreach(addr_cache, find_loopback_address,
-				       &found_loopback)),
-		 found_loopback == 1);
+	// 3. Iterate over all addresses to find IPv4 and IPv6 loopback addresses.
+	struct loopback_addresses found = { 0 };
+	TEST_RES(SUCC(nl_cache_foreach(addr_cache, find_loopback_addresses,
+				       &found)),
+		 found.found_ipv4 && found.found_ipv6);
 
 	// 4. Cleanup
 	nl_cache_free(addr_cache);
 	nl_close(sock);
 	nl_socket_free(sock);
+}
+END_TEST()
+
+enum reported_address {
+	REPORTED_ETHERNET_IPV4 = 1 << 0,
+	REPORTED_LOOPBACK_IPV4 = 1 << 1,
+	REPORTED_LOOPBACK_IPV6 = 1 << 2,
+};
+
+static int validate_reported_address_attributes(struct nlmsghdr *nlh)
+{
+	struct ifaddrmsg *ifa = NLMSG_DATA(nlh);
+
+	const unsigned char *address = NULL;
+	size_t address_len = 0;
+	const unsigned char *local = NULL;
+	size_t local_len = 0;
+	const char *label = NULL;
+	const unsigned char *broadcast = NULL;
+	uint32_t flags = 0;
+	uint8_t protocol = IFAPROT_UNSPEC;
+	int attr_len = IFA_PAYLOAD(nlh);
+	struct rtattr *attr;
+
+	for (attr = IFA_RTA(ifa); RTA_OK(attr, attr_len);
+	     attr = RTA_NEXT(attr, attr_len)) {
+		switch (attr->rta_type) {
+		case IFA_ADDRESS:
+			address = RTA_DATA(attr);
+			address_len = RTA_PAYLOAD(attr);
+			break;
+		case IFA_LOCAL:
+			local = RTA_DATA(attr);
+			local_len = RTA_PAYLOAD(attr);
+			break;
+		case IFA_BROADCAST:
+			if (RTA_PAYLOAD(attr) != sizeof(struct in_addr))
+				return -1;
+			broadcast = RTA_DATA(attr);
+			break;
+		case IFA_FLAGS:
+			if (RTA_PAYLOAD(attr) != sizeof(flags))
+				return -1;
+			memcpy(&flags, RTA_DATA(attr), sizeof(flags));
+			break;
+		case IFA_LABEL:
+			if (!memchr(RTA_DATA(attr), '\0', RTA_PAYLOAD(attr)))
+				return -1;
+			label = RTA_DATA(attr);
+			break;
+		case IFA_PROTO:
+			if (RTA_PAYLOAD(attr) != sizeof(protocol))
+				return -1;
+			memcpy(&protocol, RTA_DATA(attr), sizeof(protocol));
+			break;
+		default:
+			break;
+		}
+	}
+	if (attr_len != 0)
+		return -1;
+
+	const unsigned char loopback_ipv4[] = { 127, 0, 0, 1 };
+	const unsigned char ethernet_ipv4[] = { 10, 0, 2, 15 };
+	const unsigned char loopback_ipv6[16] = { [15] = 1 };
+	if (ifa->ifa_family == AF_INET &&
+	    address_len == sizeof(loopback_ipv4) &&
+	    memcmp(address, loopback_ipv4, sizeof(loopback_ipv4)) == 0) {
+		if (local_len != sizeof(loopback_ipv4) ||
+		    memcmp(local, loopback_ipv4, sizeof(loopback_ipv4)) != 0 ||
+		    flags != IFA_F_PERMANENT ||
+		    ifa->ifa_scope != RT_SCOPE_HOST || label == NULL ||
+		    strcmp(label, LOOPBACK_NAME) != 0 || broadcast != NULL)
+			return -1;
+		return REPORTED_LOOPBACK_IPV4;
+	}
+
+	if (ifa->ifa_family == AF_INET &&
+	    address_len == sizeof(ethernet_ipv4) &&
+	    memcmp(address, ethernet_ipv4, sizeof(ethernet_ipv4)) == 0) {
+		const unsigned char expected_broadcast[] = { 10, 0, 2, 255 };
+		if (local_len != sizeof(ethernet_ipv4) ||
+		    memcmp(local, ethernet_ipv4, sizeof(ethernet_ipv4)) != 0 ||
+		    flags != IFA_F_PERMANENT ||
+		    ifa->ifa_scope != RT_SCOPE_UNIVERSE || label == NULL ||
+		    strcmp(label, ETHER_NAME) != 0 || broadcast == NULL ||
+		    memcmp(broadcast, expected_broadcast,
+			   sizeof(expected_broadcast)) != 0)
+			return -1;
+		return REPORTED_ETHERNET_IPV4;
+	}
+
+	if (ifa->ifa_family == AF_INET6 &&
+	    address_len == sizeof(loopback_ipv6) &&
+	    memcmp(address, loopback_ipv6, sizeof(loopback_ipv6)) == 0) {
+		if (flags != IFA_F_PERMANENT ||
+		    ifa->ifa_scope != RT_SCOPE_HOST ||
+		    protocol != IFAPROT_KERNEL_LO)
+			return -1;
+		return REPORTED_LOOPBACK_IPV6;
+	}
+
+	return 0;
+}
+
+static int get_reported_addresses(int sock_fd, int family)
+{
+	struct {
+		struct nlmsghdr hdr;
+		struct ifaddrmsg ifa;
+	} req = {
+		.hdr = {
+			.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg)),
+			.nlmsg_type = RTM_GETADDR,
+			.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP,
+			.nlmsg_seq = family + 1,
+		},
+		.ifa = { .ifa_family = family },
+	};
+	if (send(sock_fd, &req, sizeof(req), 0) != (ssize_t)sizeof(req))
+		return -1;
+
+	int found_reports = 0;
+	for (;;) {
+		ssize_t recv_ret = recv(sock_fd, buffer, BUFFER_SIZE, 0);
+		if (recv_ret <= 0)
+			return -1;
+		size_t recv_len = recv_ret;
+
+		struct nlmsghdr *nlh = (struct nlmsghdr *)buffer;
+
+		for (; NLMSG_OK(nlh, recv_len);
+		     nlh = NLMSG_NEXT(nlh, recv_len)) {
+			if (nlh->nlmsg_type == NLMSG_DONE)
+				return found_reports;
+			if (nlh->nlmsg_type != RTM_NEWADDR)
+				return -1;
+			int report = validate_reported_address_attributes(nlh);
+			if (report < 0)
+				return -1;
+			found_reports |= report;
+		}
+	}
+}
+
+FN_TEST(get_address_attributes)
+{
+	int sock_fd = TEST_SUCC(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+	struct sockaddr_nl sa = { .nl_family = AF_NETLINK };
+	TEST_SUCC(bind(sock_fd, (struct sockaddr *)&sa, sizeof(sa)));
+
+	int expected_ipv4 = REPORTED_LOOPBACK_IPV4;
+#ifdef __asterinas__
+	expected_ipv4 |= REPORTED_ETHERNET_IPV4;
+#endif
+
+	TEST_RES(get_reported_addresses(sock_fd, AF_UNSPEC),
+		 _ret == (expected_ipv4 | REPORTED_LOOPBACK_IPV6));
+	TEST_RES(get_reported_addresses(sock_fd, AF_INET),
+		 _ret == expected_ipv4);
+	TEST_RES(get_reported_addresses(sock_fd, AF_INET6),
+		 _ret == REPORTED_LOOPBACK_IPV6);
+
+	TEST_SUCC(close(sock_fd));
 }
 END_TEST()
 
@@ -146,9 +327,6 @@ int find_new_addr_until_done(char *buffer, size_t len, int *found_new_addr)
 
 	return 0;
 }
-
-#define BUFFER_SIZE 8192
-char buffer[BUFFER_SIZE];
 
 FN_TEST(get_link_error)
 {

@@ -11,6 +11,7 @@
 #![feature(btree_cursors)]
 #![feature(debug_closure_helpers)]
 #![feature(format_args_nl)]
+#![feature(ip_as_octets)]
 #![feature(linked_list_cursors)]
 #![feature(linked_list_retain)]
 #![feature(panic_can_unwind)]
