@@ -63,7 +63,7 @@ macro_rules! __log_prefix {
 pub use fs::Ext2;
 pub use inode::{FilePerm, Inode};
 
-use self::fs_type::Ext2Type;
+use self::fs_type::EXT2_TYPE;
 use crate::fs::vfs::registry;
 
 mod block_group;
@@ -81,5 +81,5 @@ mod test_utils;
 
 /// Registers the ext2 filesystem type with the VFS registry.
 pub(super) fn init() {
-    registry::register(&Ext2Type).unwrap();
+    registry::register(&EXT2_TYPE).unwrap();
 }

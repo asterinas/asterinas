@@ -52,6 +52,8 @@ impl PipeFs {
 pub(super) struct PipeFsType;
 
 impl FsType for PipeFsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "pipefs"
     }

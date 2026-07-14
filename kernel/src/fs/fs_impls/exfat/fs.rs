@@ -29,7 +29,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::Inode,
-            registry::{FsCreationCtx, FsProperties, FsType},
+            registry::{FsCache, FsCreationCtx, FsProperties, FsType},
         },
     },
     prelude::*,
@@ -473,9 +473,19 @@ pub struct ExfatMountOptions {
     pub(super) zero_size_dir: bool,
 }
 
-pub(super) struct ExfatType;
+pub(super) struct ExfatType {
+    cache: FsCache<DeviceId>,
+}
+
+/// The singleton registered with the VFS registry. Shares one exfat
+/// superblock + root dentry per backing block device, matching Linux.
+pub(super) static EXFAT_TYPE: ExfatType = ExfatType {
+    cache: FsCache::new(),
+};
 
 impl FsType for ExfatType {
+    type Key = DeviceId;
+
     fn name(&self) -> &'static str {
         "exfat"
     }
@@ -485,10 +495,19 @@ impl FsType for ExfatType {
     }
 
     fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(ExfatFs::open(
-            fs_creation_ctx.resolve_block_device()?,
-            ExfatMountOptions::default(),
-        )?)
+        let disk = fs_creation_ctx.resolve_block_device()?;
+        Ok(ExfatFs::open(disk, ExfatMountOptions::default())?)
+    }
+
+    fn obtain_key(&self, fs_creation_ctx: &FsCreationCtx) -> Option<DeviceId> {
+        fs_creation_ctx
+            .resolve_block_device()
+            .ok()
+            .map(|disk| disk.id())
+    }
+
+    fn cache(&self) -> Option<&FsCache<DeviceId>> {
+        Some(&self.cache)
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

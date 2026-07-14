@@ -4,7 +4,10 @@ use crate::{
     fs::{
         file::{InodeType, chmod},
         ramfs::RamFs,
-        vfs::path::{FsPath, PathResolver, PerMountFlags},
+        vfs::{
+            path::{FsPath, PathResolver, PerMountFlags},
+            registry::FsAndRoot,
+        },
     },
     prelude::*,
 };
@@ -19,7 +22,7 @@ pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Res
     let shm_path =
         dev_path.new_fs_child("shm", InodeType::Dir, chmod!(InodeMode::S_ISVTX, a+rwx))?;
     shm_path.mount(
-        RamFs::new_tmpfs(),
+        FsAndRoot::new(RamFs::new_tmpfs()),
         PerMountFlags::default(),
         Some("tmpfs".to_string()),
         ctx,

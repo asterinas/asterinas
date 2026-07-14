@@ -1174,6 +1174,8 @@ struct OverlaySB;
 pub(super) struct OverlayFsType;
 
 impl FsType for OverlayFsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "overlay"
     }
