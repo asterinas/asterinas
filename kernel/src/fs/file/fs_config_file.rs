@@ -11,7 +11,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsFlags},
             path::{Mount, MountNamespace, Path, PerMountFlags},
-            registry::{FsCreationCtx, FsType},
+            registry::{DynFsType, FsAndRoot, FsCreationCtx},
         },
     },
     prelude::*,
@@ -49,7 +49,7 @@ use crate::{
 ///                              └────────────────┘
 /// ```
 pub struct FsConfigFile {
-    fs_type: &'static dyn FsType,
+    fs_type: &'static dyn DynFsType,
     config: Mutex<FsConfig>,
     common: FileCommon,
 }
@@ -66,13 +66,13 @@ struct FsConfig {
 enum FsConfigState {
     Configuring,
     Failed,
-    AwaitingMount(Arc<dyn FileSystem>),
+    AwaitingMount(FsAndRoot),
     Reconfiguring(Arc<dyn FileSystem>),
 }
 
 impl FsConfigFile {
     /// Creates a filesystem configuration file for a filesystem type.
-    pub fn new(fs_type: &'static dyn FsType) -> Self {
+    pub fn new(fs_type: &'static dyn DynFsType) -> Self {
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[fscontext]".to_string());
         Self {
             fs_type,
@@ -166,23 +166,13 @@ impl FsConfigFile {
             let args = (!config.extra_options.is_empty()).then_some(config.extra_options.as_str());
             let fs_creation_ctx =
                 FsCreationCtx::new(config.source.as_deref(), config.flags, args, ctx);
-            let fs = self.fs_type.create(&fs_creation_ctx)?;
-            if Arc::strong_count(&fs) > 1 {
-                let extant_readonly = fs.flags().contains(FsFlags::RDONLY);
-                let context_readonly = config.flags.contains(FsFlags::RDONLY);
-                if extant_readonly != context_readonly {
-                    return_errno_with_message!(
-                        Errno::EBUSY,
-                        "the read-only flag of the extant filesystem does not match"
-                    );
-                }
-            }
-            Ok(fs)
+            let fs_and_root = self.fs_type.get_or_create(&fs_creation_ctx)?;
+            Ok(fs_and_root)
         })();
 
         match result {
-            Ok(fs) => {
-                config.state = FsConfigState::AwaitingMount(fs);
+            Ok(fs_and_root) => {
+                config.state = FsConfigState::AwaitingMount(fs_and_root);
                 Ok(())
             }
             Err(err) => {
@@ -203,8 +193,8 @@ impl FsConfigFile {
         mnt_ns: Weak<MountNamespace>,
     ) -> Result<Arc<Mount>> {
         let mut config = self.config.lock();
-        let fs = match &config.state {
-            FsConfigState::AwaitingMount(fs) => fs.clone(),
+        let fs_and_root = match &config.state {
+            FsConfigState::AwaitingMount(fs_and_root) => fs_and_root.clone(),
             FsConfigState::Configuring => {
                 return_errno_with_message!(Errno::EINVAL, "the file system is not created");
             }
@@ -219,7 +209,9 @@ impl FsConfigFile {
             }
         };
 
-        let detached_mount = Mount::new_detached(fs.clone(), flags, mnt_ns, config.source.clone())?;
+        let fs = fs_and_root.fs().clone();
+        let detached_mount =
+            Mount::new_detached(fs_and_root, flags, mnt_ns, config.source.clone())?;
         config.source = None;
         config.flags = fs.flags();
         config.extra_options.clear();
