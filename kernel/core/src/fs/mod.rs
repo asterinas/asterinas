@@ -10,14 +10,18 @@ pub(crate) mod utils;
 pub(crate) mod vfs;
 
 pub(crate) use fs_impls::{
-    cgroupfs, configfs, devpts, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
+    cgroupfs, configfs, devpts, devtmpfs, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
 };
 
 use crate::{
     fs::{
-        file::{AccessMode, OpenArgs, file_table::FdFlags, mkmod},
-        vfs::path::{FsPath, PathResolver},
+        file::{AccessMode, InodeType, OpenArgs, file_table::FdFlags, mkmod},
+        vfs::{
+            path::{FsPath, Path, PathResolver, PerMountFlags},
+            registry::FsAndRoot,
+        },
     },
+    init,
     prelude::*,
 };
 
@@ -31,12 +35,25 @@ pub(crate) fn init_on_each_cpu() {
 }
 
 pub(crate) fn init_in_first_kthread(path_resolver: &PathResolver) {
+    fs_impls::init_in_first_kthread();
     initramfs::init_in_first_kthread(path_resolver).unwrap();
 }
 
 pub(crate) fn init_in_first_process(ctx: &Context) {
     let fs = ctx.thread_local.borrow_fs();
     let path_resolver = fs.resolver().read();
+
+    if init::booted_from_rootfs() {
+        let dev_path = lookup_or_create_dev(&path_resolver).unwrap();
+        dev_path
+            .mount(
+                FsAndRoot::new(devtmpfs::singleton().clone()),
+                PerMountFlags::default(),
+                Some("devtmpfs".to_string()),
+                ctx,
+            )
+            .unwrap();
+    }
 
     // Initialize the file table for the first process.
     let tty_path = FsPath::try_from("/dev/console").unwrap();
@@ -71,4 +88,15 @@ pub(crate) fn init_in_first_process(ctx: &Context) {
     file_table.insert(Arc::new(stdin), FdFlags::empty());
     file_table.insert(Arc::new(stdout), FdFlags::empty());
     file_table.insert(Arc::new(stderr), FdFlags::empty());
+}
+
+fn lookup_or_create_dev(path_resolver: &PathResolver) -> Result<Path> {
+    match path_resolver.lookup(&FsPath::try_from("/dev")?) {
+        Err(error) if error.error() == Errno::ENOENT => {
+            path_resolver
+                .root()
+                .new_fs_child("dev", InodeType::Dir, mkmod!(a+rx, u+w))
+        }
+        result => result,
+    }
 }

@@ -28,10 +28,14 @@ use file::{
 use spin::Once;
 
 use super::{
-    Device, DeviceType, DevtmpfsInodeMeta,
+    Device, DeviceType,
     registry::char::{MajorIdOwner, acquire_major, register, unregister},
 };
-use crate::{fs::file::PerOpenFileOps, prelude::*, util::ring_buffer::RbProducer};
+use crate::{
+    fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
+    prelude::*,
+    util::ring_buffer::RbProducer,
+};
 
 /// Major device number for evdev devices.
 const EVDEV_MAJOR_ID: u16 = 13;
@@ -196,11 +200,8 @@ impl Device for EvdevDevice {
         self.id
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
-        Some(DevtmpfsInodeMeta::new(format!(
-            "input/event{}",
-            self.id.minor().get()
-        )))
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
+        Some(DevtmpfsNodeMeta::new(format!("input/event{}", self.id.minor().get())).unwrap())
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {

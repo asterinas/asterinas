@@ -54,9 +54,10 @@ use tdx_guest::{
 };
 
 use crate::{
-    device::{Device, DeviceType, DevtmpfsInodeMeta, registry::char::register},
+    device::{Device, DeviceType, registry::char::register},
     events::IoEvents,
     fs::{
+        devtmpfs::DevtmpfsNodeMeta,
         file::{PerOpenFileOps, StatusFlags},
         vfs::{inode::FileOps, path::Path},
     },
@@ -92,8 +93,8 @@ impl Device for TdxGuest {
         self.id
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
-        Some(DevtmpfsInodeMeta::new("tdx_guest"))
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
+        Some(DevtmpfsNodeMeta::new("tdx_guest").unwrap())
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {

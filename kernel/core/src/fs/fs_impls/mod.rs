@@ -7,6 +7,7 @@
 pub(crate) mod cgroupfs;
 pub(crate) mod configfs;
 pub(crate) mod devpts;
+pub(crate) mod devtmpfs;
 pub(crate) mod exfat;
 pub(crate) mod ext2;
 pub(crate) mod overlayfs;
@@ -24,6 +25,7 @@ pub(super) fn init() {
     configfs::init();
     ramfs::init();
     tmpfs::init();
+    devtmpfs::init();
     devpts::init();
     pseudofs::init();
 
@@ -35,4 +37,8 @@ pub(super) fn init() {
 
 pub(super) fn init_on_each_cpu() {
     procfs::init_on_each_cpu();
+}
+
+pub(super) fn init_in_first_kthread() {
+    devtmpfs::init_in_first_kthread();
 }
