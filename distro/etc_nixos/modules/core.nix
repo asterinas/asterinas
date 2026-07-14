@@ -40,7 +40,13 @@ let
       exit 1
     fi
 
-    mkdir /sysroot
+    mkdir -p /dev
+    mount -t devtmpfs devtmpfs /dev
+    mkdir -p /dev/pts
+    mount -t devpts devpts /dev/pts
+    chmod 0666 /dev/pts/ptmx
+    ln -s pts/ptmx /dev/ptmx
+    mkdir -p /sysroot
     mount -t ext2 "$NEW_ROOT" /sysroot
     mount -t proc none /sysroot/proc
     mount --move /dev /sysroot/dev
