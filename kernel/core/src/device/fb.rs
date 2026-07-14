@@ -7,11 +7,12 @@ use aster_framebuffer::{
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::mm::{HasPaddr, HasSize, VmIo};
 
-use super::{Device, DeviceType, DevtmpfsInodeMeta, registry::char};
+use super::{Device, DeviceType, registry::char};
 use crate::{
     context::current_userspace,
     events::IoEvents,
     fs::{
+        devtmpfs::DevtmpfsNodeMeta,
         file::{Mappable, PerOpenFileOps, StatusFlags},
         vfs::{inode::FileOps, path::Path},
     },
@@ -227,12 +228,12 @@ impl Device for Fb {
         DeviceId::new(MajorId::new(29), MinorId::new(0))
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
         // Linux names framebuffer device nodes as `fbN`.
         // TODO: We currently expose only one framebuffer device,
         // so the devtmpfs node is fixed to `fb0`.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/video/fbdev/core/fbsysfs.c#L482>.
-        Some(DevtmpfsInodeMeta::new("fb0"))
+        Some(DevtmpfsNodeMeta::new("fb0").unwrap())
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {

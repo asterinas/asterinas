@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::borrow::ToOwned;
+
 use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE};
 use aster_nvme::NvmeBlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
@@ -8,14 +10,12 @@ use ostd::mm::VmIo;
 
 use crate::{
     context::current_userspace,
-    device::{Device, DeviceType, DevtmpfsInodeMeta, add_node},
+    device::{Device, DeviceType},
     events::IoEvents,
     fs::{
+        devtmpfs::{self, DevtmpfsNode, DevtmpfsNodeMeta},
         file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
-        vfs::{
-            inode::FileOps,
-            path::{Path, PathResolver},
-        },
+        vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -60,12 +60,11 @@ pub(super) fn init_in_first_kthread() {
     aster_block::scan_partitions();
 }
 
-pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> {
+pub(super) fn init_in_first_process() -> Result<()> {
     for device in aster_block::collect_all() {
-        let device = Arc::new(BlockFile::new(device));
-        if let Some(devtmpfs_meta) = device.devtmpfs_meta() {
-            let dev_id = device.id().as_encoded_u64();
-            add_node(DeviceType::Block, dev_id, &devtmpfs_meta, path_resolver)?;
+        let device: Arc<dyn Device> = Arc::new(BlockFile::new(device));
+        if let Some(meta) = device.devtmpfs_meta() {
+            devtmpfs::create_node(DevtmpfsNode::new(device.type_(), device.id(), meta))?;
         }
     }
 
@@ -119,8 +118,8 @@ impl Device for BlockFile {
         self.0.id()
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
-        Some(DevtmpfsInodeMeta::new(self.0.name()))
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
+        Some(DevtmpfsNodeMeta::new(self.0.name().to_owned()).unwrap())
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {

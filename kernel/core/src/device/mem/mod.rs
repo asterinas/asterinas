@@ -26,11 +26,14 @@ pub(crate) use file::{getrandom, geturandom};
 use spin::Once;
 
 use super::{
-    Device, DeviceType, DevtmpfsInodeMeta,
+    Device, DeviceType,
     registry::char::{MajorIdOwner, acquire_major, register},
 };
 use crate::{
-    fs::file::{PerOpenFileOps, mkmod},
+    fs::{
+        devtmpfs::DevtmpfsNodeMeta,
+        file::{PerOpenFileOps, mkmod},
+    },
     prelude::*,
 };
 
@@ -62,18 +65,23 @@ impl Device for MemDevice {
         self.id
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
         // Linux's memory-device table uses nonzero modes only for devices
         // that override devtmpfs's default `u+rw` permissions.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/mem.c#L690>.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/mem.c#L734>.
-        Some(match self.file {
-            MemFile::Full | MemFile::Null | MemFile::Random | MemFile::Urandom | MemFile::Zero => {
-                DevtmpfsInodeMeta::with_mode(self.file.name(), mkmod!(a+rw))
+        Some(
+            match self.file {
+                MemFile::Full
+                | MemFile::Null
+                | MemFile::Random
+                | MemFile::Urandom
+                | MemFile::Zero => DevtmpfsNodeMeta::with_mode(self.file.name(), mkmod!(a+rw)),
+                MemFile::Kmsg => DevtmpfsNodeMeta::with_mode(self.file.name(), mkmod!(a+r, u+w)),
+                _ => DevtmpfsNodeMeta::new(self.file.name()),
             }
-            MemFile::Kmsg => DevtmpfsInodeMeta::with_mode(self.file.name(), mkmod!(a+r, u+w)),
-            _ => DevtmpfsInodeMeta::new(self.file.name()),
-        })
+            .unwrap(),
+        )
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
