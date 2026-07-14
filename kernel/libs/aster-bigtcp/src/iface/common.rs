@@ -19,7 +19,7 @@ use ostd::sync::{SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{Context, packet::Packet},
     phy::Device,
-    wire::{IpAddress, IpEndpoint, Ipv4Address, Ipv4Packet, Ipv6Address, Ipv6Packet},
+    wire::{IpAddress, IpEndpoint, Ipv4Cidr, Ipv4Packet, Ipv6Address, Ipv6Cidr, Ipv6Packet},
 };
 
 use super::{
@@ -118,16 +118,12 @@ impl<E: Ext> IfaceCommon<E> {
         self.flags
     }
 
-    pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
-        self.interface.lock().ipv4_addr()
+    pub(super) fn ipv4_cidr(&self) -> Option<Ipv4Cidr> {
+        self.interface.lock().ipv4_cidr()
     }
 
-    pub(super) fn ipv6_addr(&self) -> Option<Ipv6Address> {
-        self.interface.lock().ipv6_addr()
-    }
-
-    pub(super) fn prefix_len(&self) -> Option<u8> {
-        self.interface.lock().prefix_len()
+    pub(super) fn ipv6_cidr(&self) -> Option<Ipv6Cidr> {
+        self.interface.lock().ipv6_cidr()
     }
 
     pub(super) fn sched_poll(&self) -> &E::ScheduleNextPoll {
