@@ -383,6 +383,21 @@ mod segment {
     }
 
     #[ktest]
+    #[should_panic(expected = "segment slice start offset should not overflow")]
+    fn segment_slice_overflow() {
+        let total_frames = 3;
+        let segment = FrameAllocOptions::new()
+            .alloc_segment(total_frames)
+            .expect("Failed to allocate segment");
+
+        // Use a page-aligned offset near `usize::MAX` so the alignment
+        // check passes and execution reaches `checked_add`, which must
+        // detect the overflow when adding the segment's base address.
+        let huge_offset = usize::MAX - (PAGE_SIZE - 1);
+        segment.slice(&(huge_offset..huge_offset));
+    }
+
+    #[ktest]
     fn segment_to_usegment() {
         let options = FrameAllocOptions::new();
         let segment = options.alloc_segment(1).unwrap();
