@@ -23,6 +23,19 @@ mount -t sysfs none /sys
 mount -t proc none /proc
 mount -t cgroup2 none /sys/fs/cgroup
 mount -t configfs none /sys/kernel/config
+if ! grep -q '^[^ ]* /dev devtmpfs ' /proc/mounts; then
+    mount -t devtmpfs devtmpfs /dev
+fi
+mkdir -p /dev/pts /dev/shm
+mount -t tmpfs tmpfs /dev/shm
+chmod 1777 /dev/shm
+mount -t devpts devpts /dev/pts
+# Asterinas currently exposes /dev/ptmx as a symlink to pts/ptmx. This is
+# different from Linux's in-kernel devtmpfs node for /dev/ptmx, but Linux
+# documents this symlink layout as valid.
+# Reference: https://github.com/torvalds/linux/blob/v6.18/Documentation/filesystems/devpts.rst
+chmod 0666 /dev/pts/ptmx
+ln -s pts/ptmx /dev/ptmx
 mount -t ext2 /dev/vda /ext2
 mount -t exfat /dev/vdb /exfat
 
