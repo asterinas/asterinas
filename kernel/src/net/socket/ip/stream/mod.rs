@@ -38,7 +38,7 @@ use crate::{
             },
             private::SocketPrivate,
             util::{
-                MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
+                MessageHeader, RecvFlags, SendFlags, SockShutdownCmd, SocketAddr,
                 options::{
                     GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
                 },
@@ -361,7 +361,7 @@ impl StreamSocket {
     fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, SocketAddr)> {
         let state = self.read_updated_state();
 
@@ -395,7 +395,7 @@ impl StreamSocket {
         Ok((recv_bytes, remote_endpoint.into()))
     }
 
-    fn try_send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
+    fn try_send(&self, reader: &mut dyn MultiRead, flags: SendFlags) -> Result<usize> {
         let state = self.read_updated_state();
 
         let connected_stream = match state.as_ref() {
@@ -590,7 +590,7 @@ impl Socket for StreamSocket {
         &self,
         reader: &mut dyn MultiRead,
         message_header: MessageHeader,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
@@ -620,7 +620,7 @@ impl Socket for StreamSocket {
     fn recvmsg(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, MessageHeader)> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {

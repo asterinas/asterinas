@@ -19,7 +19,7 @@ use crate::{
             options::{Error as SocketError, SocketOption, macros::sock_option_mut},
             private::SocketPrivate,
             util::{
-                MessageHeader, SendRecvFlags, SocketAddr,
+                MessageHeader, RecvFlags, SendFlags, SocketAddr,
                 datagram_common::{Bound, Inner, select_remote_and_bind},
                 options::{
                     GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
@@ -81,7 +81,7 @@ impl DatagramSocket {
     fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, SocketAddr)> {
         let recv_bytes = self
             .inner
@@ -97,7 +97,7 @@ impl DatagramSocket {
         &self,
         reader: &mut dyn MultiRead,
         remote: Option<&IpEndpoint>,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize> {
         let (sent_bytes, iface_to_poll) = select_remote_and_bind(
             &self.inner,
@@ -186,7 +186,7 @@ impl Socket for DatagramSocket {
         &self,
         reader: &mut dyn MultiRead,
         message_header: MessageHeader,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
@@ -225,7 +225,7 @@ impl Socket for DatagramSocket {
     fn recvmsg(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, MessageHeader)> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {

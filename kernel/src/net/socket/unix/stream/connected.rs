@@ -14,7 +14,7 @@ use crate::{
         unix::{
             UnixSocketAddr, addr::UnixSocketAddrBound, cred::SocketCred, ctrl_msg::AuxiliaryData,
         },
-        util::{ControlMessage, SendRecvFlags, SockShutdownCmd},
+        util::{ControlMessage, RecvFlags, SockShutdownCmd},
     },
     prelude::*,
     process::signal::Pollee,
@@ -117,7 +117,7 @@ impl Connected {
         &self,
         writer: &mut dyn MultiWrite,
         is_seqpacket: bool,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, Vec<ControlMessage>)> {
         let is_empty = writer.is_empty();
         if is_empty && !is_seqpacket {

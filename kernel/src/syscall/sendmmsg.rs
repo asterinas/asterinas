@@ -4,7 +4,7 @@ use ostd::mm::VmIo;
 
 use crate::{
     fs::file::file_table::RawFileDesc,
-    net::socket::{Socket, util::SendRecvFlags},
+    net::socket::{Socket, util::SendFlags},
     prelude::*,
     syscall::{SyscallReturn, sendmsg::send_one_message},
     util::net::CUserMsgHdr,
@@ -17,8 +17,8 @@ pub fn sys_sendmmsg(
     flags: i32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = SendRecvFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid send recv flags"))?;
+    let flags = SendFlags::from_bits(flags)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid send flags"))?;
 
     debug!(
         "sockfd = {}, mmsghdrs = {:#x}, count = {}, flags = {:?}",
@@ -58,7 +58,7 @@ fn send_mmsg_hdrs(
     socket: &dyn Socket,
     mmsghdrs_addr: Vaddr,
     count: usize,
-    flags: SendRecvFlags,
+    flags: SendFlags,
     sent_msgs: &mut usize,
     ctx: &Context,
 ) -> Result<()> {

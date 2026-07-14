@@ -16,7 +16,7 @@ use crate::{
             addr::{UnixSocketAddrBound, UnixSocketAddrKey},
             ctrl_msg::AuxiliaryData,
         },
-        util::{ControlMessage, SendRecvFlags},
+        util::{ControlMessage, RecvFlags},
     },
     prelude::*,
     process::signal::Pollee,
@@ -174,7 +174,7 @@ impl MessageReceiver {
     pub(super) fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, Vec<ControlMessage>, UnixSocketAddr)> {
         let mut inner = self.queue.inner.lock();
         let inner = inner.as_mut().unwrap();

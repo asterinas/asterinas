@@ -3,7 +3,7 @@
 use core::fmt::Display;
 
 use options::SocketOption;
-use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
+use util::{MessageHeader, RecvFlags, SendFlags, SockShutdownCmd, SocketAddr};
 
 use crate::{
     fs::{
@@ -123,7 +123,7 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
         &self,
         reader: &mut dyn MultiRead,
         message_header: MessageHeader,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize>;
 
     /// Receives a message from the socket.
@@ -134,7 +134,7 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
     fn recvmsg(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, MessageHeader)>;
 
     /// Returns the common state for this socket.
@@ -149,8 +149,7 @@ impl<T: Socket + 'static> FileLike for T {
         }
 
         // TODO: Set correct flags
-        self.recvmsg(writer, SendRecvFlags::empty())
-            .map(|(len, _)| len)
+        self.recvmsg(writer, RecvFlags::empty()).map(|(len, _)| len)
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
@@ -158,7 +157,7 @@ impl<T: Socket + 'static> FileLike for T {
         self.sendmsg(
             reader,
             MessageHeader::new(None, Vec::new()),
-            SendRecvFlags::empty(),
+            SendFlags::empty(),
         )
     }
 

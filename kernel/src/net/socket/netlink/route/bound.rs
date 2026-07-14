@@ -10,7 +10,7 @@ use crate::{
             message::{ContinueRead, ProtocolSegment},
             route::kernel::get_netlink_route_kernel,
         },
-        util::{SendRecvFlags, datagram_common},
+        util::{RecvFlags, SendFlags, datagram_common},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -41,7 +41,7 @@ impl datagram_common::Bound for BoundNetlinkRoute {
         &self,
         reader: &mut dyn MultiRead,
         remote: &Self::Endpoint,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
@@ -98,7 +98,7 @@ impl datagram_common::Bound for BoundNetlinkRoute {
     fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, NetlinkSocketAddr)> {
         // TODO: Deal with other flags.
         if !flags.is_all_supported() {

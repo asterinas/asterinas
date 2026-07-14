@@ -5,7 +5,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     fs::file::file_table::{RawFileDesc, get_file_fast},
-    net::socket::util::SendRecvFlags,
+    net::socket::util::RecvFlags,
     prelude::*,
     util::net::CUserMsgHdr,
 };
@@ -18,7 +18,7 @@ pub fn sys_recvmsg(
 ) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
     let mut c_user_msghdr: CUserMsgHdr = user_space.read_val(user_msghdr_ptr)?;
-    let flags = SendRecvFlags::from_bits_truncate(flags);
+    let flags = RecvFlags::from_bits_truncate(flags);
 
     debug!(
         "sockfd = {}, user_msghdr = {:x?}, flags = {:?}",

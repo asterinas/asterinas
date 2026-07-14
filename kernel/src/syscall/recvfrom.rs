@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::file::file_table::{RawFileDesc, get_file_fast},
-    net::socket::util::SendRecvFlags,
+    net::socket::util::RecvFlags,
     prelude::*,
     util::net::write_socket_addr_to_user,
 };
@@ -17,7 +17,7 @@ pub fn sys_recvfrom(
     addrlen_ptr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = SendRecvFlags::from_bits_truncate(flags);
+    let flags = RecvFlags::from_bits_truncate(flags);
     debug!(
         "sockfd = {sockfd}, buf = 0x{buf:x}, len = {len}, flags = {flags:?}, src_addr = 0x{src_addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}"
     );

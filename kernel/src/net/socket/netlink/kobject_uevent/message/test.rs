@@ -19,7 +19,7 @@ use crate::{
             },
             table::{NetlinkUeventProtocol, SupportedNetlinkProtocol},
         },
-        util::{SendRecvFlags, SocketAddr},
+        util::{RecvFlags, SocketAddr},
     },
     prelude::*,
     util::net::SockType,
@@ -61,7 +61,7 @@ fn multicast_synthetic_uevent() {
     // Tries to receive and returns EAGAIN if no message is available.
     let mut buffer = vec![0u8; 1024];
     let mut writer = VmWriter::from(buffer.as_mut_slice()).to_fallible();
-    let res = socket.try_recv(&mut writer, SendRecvFlags::empty());
+    let res = socket.try_recv(&mut writer, RecvFlags::empty());
     assert!(res.is_err_and(|err| err.error() == Errno::EAGAIN));
 
     // Broadcasts a uevent message.
@@ -82,9 +82,7 @@ fn multicast_synthetic_uevent() {
         UeventMessage::new(uevent, NetlinkSocketAddr::new(0, GroupIdSet::new(0x1)));
     NetlinkUeventProtocol::multicast(GroupIdSet::new(0x1), uevent_message).unwrap();
 
-    let (len, _) = socket
-        .try_recv(&mut writer, SendRecvFlags::empty())
-        .unwrap();
+    let (len, _) = socket.try_recv(&mut writer, RecvFlags::empty()).unwrap();
     let s = core::str::from_utf8(&buffer[..len]).unwrap();
 
     assert_eq!(

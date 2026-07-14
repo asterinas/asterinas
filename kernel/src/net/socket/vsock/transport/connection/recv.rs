@@ -5,7 +5,7 @@ use aster_virtio::device::socket::{header::VirtioVsockOp, packet::RxPacket};
 
 use crate::{
     net::socket::{
-        util::SendRecvFlags,
+        util::RecvFlags,
         vsock::transport::{
             CREDIT_UPDATE_THRESHOLD, Connection,
             connection::{ConnectionInner, ConnectionState},
@@ -20,7 +20,7 @@ impl Connection {
     pub(in crate::net::socket::vsock) fn try_recv(
         &mut self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<usize> {
         // We use a packet-pool approach here so a receive attempt either completes for the chosen
         // packets or leaves the receive queue unchanged.
