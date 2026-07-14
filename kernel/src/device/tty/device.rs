@@ -11,11 +11,14 @@ use spin::Once;
 
 use crate::{
     device::{
-        Device, DeviceType, DevtmpfsInodeMeta,
+        Device, DeviceType,
         registry::char,
         tty::{hvc::hvc0_device, serial::serial0_device, vt::active_vt},
     },
-    fs::file::{PerOpenFileOps, mkmod},
+    fs::{
+        devtmpfs::DevtmpfsInodeMeta,
+        file::{PerOpenFileOps, mkmod},
+    },
     prelude::*,
 };
 
@@ -32,7 +35,7 @@ impl Device for Tty0Device {
         DeviceId::new(MajorId::new(4), MinorId::new(0))
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'static>> {
         Some(DevtmpfsInodeMeta::new("tty0"))
     }
 
@@ -54,7 +57,7 @@ impl Device for TtyDevice {
         DeviceId::new(MajorId::new(5), MinorId::new(0))
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'static>> {
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/tty/tty_io.c#L3511>.
         Some(DevtmpfsInodeMeta::with_mode("tty", mkmod!(a+rw)))
     }
@@ -114,10 +117,10 @@ impl Device for SystemConsole {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(MajorId::new(5), MinorId::new(1))
+        super::system_console_device_id()
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'static>> {
         Some(DevtmpfsInodeMeta::new("console"))
     }
 

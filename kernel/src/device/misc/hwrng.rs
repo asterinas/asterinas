@@ -9,9 +9,10 @@ use aster_virtio::device::entropy::{self, device::EntropyDevice};
 use device_id::{DeviceId, MinorId};
 
 use crate::{
-    device::{Device, DeviceType, DevtmpfsInodeMeta, registry::char},
+    device::{Device, DeviceType, registry::char},
     events::IoEvents,
     fs::{
+        devtmpfs::DevtmpfsInodeMeta,
         file::{PerOpenFileOps, StatusFlags},
         vfs::inode::FileOps,
     },
@@ -52,7 +53,7 @@ impl Device for HwRngDevice {
         self.id
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'static>> {
         Some(DevtmpfsInodeMeta::new("hwrng"))
     }
 

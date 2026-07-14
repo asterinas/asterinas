@@ -9,11 +9,10 @@ use spin::Once;
 use super::{Tty, TtyDriver};
 use crate::{
     device::{
-        DevtmpfsInodeMeta,
         registry::char,
         tty::{file::TtyFile, termio::CTermios},
     },
-    fs::file::PerOpenFileOps,
+    fs::{devtmpfs::DevtmpfsInodeMeta, file::PerOpenFileOps},
     prelude::*,
 };
 
@@ -27,7 +26,7 @@ impl TtyDriver for HvcDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/Documentation/admin-guide/devices.txt#L2936>.
     const DEVICE_MAJOR_ID: u32 = 229;
 
-    fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsInodeMeta<'_>> {
+    fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsInodeMeta<'static>> {
         Some(DevtmpfsInodeMeta::new(format!("hvc{}", index)))
     }
 

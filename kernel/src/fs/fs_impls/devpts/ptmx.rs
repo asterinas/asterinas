@@ -3,10 +3,7 @@
 use device_id::{DeviceId, MajorId, MinorId};
 
 use super::*;
-use crate::{
-    device::DevtmpfsInodeMeta,
-    fs::file::{AccessMode, PerOpenFileOps},
-};
+use crate::fs::file::PerOpenFileOps;
 
 /// Same major number with Linux.
 const PTMX_MAJOR_NUM: u16 = 5;
@@ -153,10 +150,12 @@ impl Inode for Ptmx {
 
     fn open(
         &self,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
+        path: &Path,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        Some(self.inner.open())
+        let devpts_root = Path::new_fs_root(path.mount_node().clone());
+        Some(self.inner.open_ptmx(devpts_root))
     }
 }
 
@@ -169,12 +168,16 @@ impl Device for Inner {
         DeviceId::new(MajorId::new(PTMX_MAJOR_NUM), MinorId::new(PTMX_MINOR_NUM))
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
-        None
-    }
-
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+        // `Inner` implements `Device` only to populate the ptmx inode's device metadata.
+        // Opening devpts ptmx must go through `Ptmx::open`, which receives the resolved path.
+        unreachable!("devpts ptmx should be opened through its inode");
+    }
+}
+
+impl Inner {
+    fn open_ptmx(&self, devpts_root: Path) -> Result<Box<dyn PerOpenFileOps>> {
         let devpts = self.0.upgrade().unwrap();
-        Ok(devpts.create_master_slave_pair()?.0)
+        Ok(devpts.create_master_slave_pair(devpts_root)?.0)
     }
 }

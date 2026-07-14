@@ -12,7 +12,7 @@ use self::slave::PtySlaveInode;
 use crate::{
     device::{Device, DeviceType, PtyMaster},
     fs::{
-        file::{InodeMode, InodeType, StatusFlags, mkmod},
+        file::{AccessMode, InodeHandle, InodeMode, InodeType, OpenArgs, StatusFlags, mkmod},
         pseudofs::AnonDeviceId,
         utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
         vfs::{
@@ -20,6 +20,7 @@ use crate::{
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
+            path::{Path, PathResolver},
             registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
@@ -70,14 +71,18 @@ impl DevPts {
     }
 
     /// Create the master and slave pair.
-    fn create_master_slave_pair(&self) -> Result<(Box<PtyMaster>, Arc<PtySlaveInode>)> {
+    fn create_master_slave_pair(
+        &self,
+        devpts_root: Path,
+    ) -> Result<(Box<PtyMaster>, Arc<PtySlaveInode>)> {
         let index = self
             .index_alloc
             .lock()
             .alloc()
             .ok_or_else(|| Error::with_message(Errno::EIO, "cannot alloc index"))?;
 
-        let (master, slave) = crate::device::new_pty_pair(index as u32, self.root.ptmx.clone())?;
+        let (master, slave) =
+            crate::device::new_pty_pair(index as u32, self.root.ptmx.clone(), devpts_root)?;
 
         let slave_inode = PtySlaveInode::new(slave, self.this.clone());
         self.root
@@ -99,6 +104,13 @@ impl DevPts {
             .remove_entry_by_name(&index.to_string())?;
         self.index_alloc.lock().free(index as usize);
         Some(removed_slave)
+    }
+
+    pub fn open_slave(&self, index: u32, devpts_root: &Path) -> Result<InodeHandle> {
+        let devpts_resolver = PathResolver::new(devpts_root.clone(), devpts_root.clone());
+        let slave_path = devpts_resolver.lookup_at_path(devpts_root, &index.to_string())?;
+        let open_args = OpenArgs::from_modes(AccessMode::O_RDWR, mkmod!(u+rw));
+        slave_path.open(open_args)
     }
 }
 

@@ -4,6 +4,7 @@
 
 pub use fs::RamFs;
 use fs::RamFsType;
+pub(in crate::fs) use fs::RamInode;
 
 mod fs;
 pub mod memfd;

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::TMPFS_MAGIC;
 use crate::{
     fs::{
-        fs_impls::ramfs::{BLOCK_SIZE, NAME_MAX},
+        fs_impls::ramfs,
         pseudofs::AnonDeviceId,
         ramfs::RamFs,
         vfs::{
@@ -14,6 +13,8 @@ use crate::{
     },
     prelude::*,
 };
+
+const TMPFS_MAGIC: u64 = 0x0102_1994;
 
 /// The temporary file system (tmpfs) structure.
 //
@@ -37,8 +38,12 @@ impl TmpFs {
     ) -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for tmpfs");
         let sb = {
-            let mut super_block =
-                SuperBlock::new(TMPFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+            let mut super_block = SuperBlock::new(
+                TMPFS_MAGIC,
+                ramfs::BLOCK_SIZE,
+                ramfs::NAME_MAX,
+                anon_device_id.id(),
+            );
             let max_blocks = default_max_blocks();
             let max_inodes = default_max_inodes();
             super_block.blocks = max_blocks;

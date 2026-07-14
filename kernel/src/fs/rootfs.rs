@@ -12,13 +12,13 @@ use zune_inflate::DeflateDecoder;
 
 use super::{
     ext2::Ext2,
-    file::{InodeMode, InodeType},
+    file::{InodeMode, InodeType, mkmod},
     vfs::{
         file_system::FileSystem,
         path::{FsPath, Mount, MountNamespace, PathResolver, PerMountFlags, is_dot},
     },
 };
-use crate::{fs::vfs::inode::MknodType, prelude::*, process::UserNamespace};
+use crate::{device::tty, fs::vfs::inode::MknodType, prelude::*, process::UserNamespace};
 
 macro_rules! define_rootfs_types {
     ($($variant:ident => $name:literal),+ $(,)?) => {
@@ -50,32 +50,32 @@ define_rootfs_types! {
 }
 
 pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
-    // Unpack the initramfs CPIO buffer into the bootstrap rootfs.
-    let Some(initramfs_buf) = boot_info().initramfs else {
-        return Ok(());
-    };
+    if let Some(initramfs_buf) = boot_info().initramfs {
+        // Unpack the initramfs CPIO buffer into the bootstrap rootfs.
+        let (reader, suffix) = match &initramfs_buf[..4] {
+            // Gzip magic number: 0x1F 0x8B
+            &[0x1F, 0x8B, _, _] => {
+                let decompressed = DeflateDecoder::new(initramfs_buf)
+                    .decode_gzip()
+                    .map_err(|_| Error::with_message(Errno::EINVAL, "gzip decompression failed"))?;
+                (Cow::Owned(decompressed), ".gz")
+            }
+            _ => (Cow::Borrowed(initramfs_buf), ""),
+        };
 
-    let (reader, suffix) = match &initramfs_buf[..4] {
-        // Gzip magic number: 0x1F 0x8B
-        &[0x1F, 0x8B, _, _] => {
-            let decompressed = DeflateDecoder::new(initramfs_buf)
-                .decode_gzip()
-                .map_err(|_| Error::with_message(Errno::EINVAL, "gzip decompression failed"))?;
-            (Cow::Owned(decompressed), ".gz")
-        }
-        _ => (Cow::Borrowed(initramfs_buf), ""),
-    };
+        println!("[kernel] unpacking initramfs.cpio{} to rootfs ...", suffix);
 
-    println!("[kernel] unpacking initramfs.cpio{} to rootfs ...", suffix);
+        let mut decoder = CpioDecoder::new(Cursor::new(reader));
 
-    let mut decoder = CpioDecoder::new(Cursor::new(reader));
-
-    while let Some(entry_result) = decoder.next() {
-        let mut entry = entry_result?;
-        if let Err(e) = try_append_entry_to_rootfs(&mut entry, path_resolver) {
-            warn!("failed to add entry {} to rootfs: {:?}", entry.name(), e);
+        while let Some(entry_result) = decoder.next() {
+            let mut entry = entry_result?;
+            if let Err(e) = try_append_entry_to_rootfs(&mut entry, path_resolver) {
+                warn!("failed to add entry {} to rootfs: {:?}", entry.name(), e);
+            }
         }
     }
+
+    ensure_dev_console(path_resolver)?;
 
     println!("[kernel] rootfs is ready");
     Ok(())
@@ -196,4 +196,34 @@ fn try_device_id_from_metadata(metadata: &FileMetadata) -> Result<u64> {
     let minor = MinorId::try_from(metadata.rdev_min())
         .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?;
     Ok(DeviceId::new(major, minor).as_encoded_u64())
+}
+
+fn ensure_dev_console(path_resolver: &PathResolver) -> Result<()> {
+    // Linux's default built-in initramfs provides /dev and /dev/console so
+    // early userspace can open the console even if the external initramfs does
+    // not carry this node. Asterinas provides the same default entries after
+    // optional initramfs unpacking.
+    // Reference: <https://elixir.bootlin.com/linux/v6.13/source/usr/default_cpio_list>.
+    let dev_path = match path_resolver.lookup(&FsPath::try_from("/dev")?) {
+        Ok(dev_path) => dev_path,
+        Err(error) if error.error() == Errno::ENOENT => {
+            path_resolver
+                .root()
+                .new_fs_child("dev", InodeType::Dir, mkmod!(a+rx, u+w))?
+        }
+        Err(error) => return Err(error),
+    };
+
+    match path_resolver.lookup(&FsPath::try_from("/dev/console")?) {
+        Ok(_) => Ok(()),
+        Err(error) if error.error() == Errno::ENOENT => {
+            dev_path.mknod(
+                "console",
+                mkmod!(u+rw),
+                MknodType::CharDevice(tty::system_console_device_id().as_encoded_u64()),
+            )?;
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
 }

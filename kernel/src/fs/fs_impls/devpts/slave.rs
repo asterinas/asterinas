@@ -4,10 +4,7 @@
 #![expect(unused_variables)]
 
 use super::*;
-use crate::{
-    device::PtySlave,
-    fs::file::{AccessMode, PerOpenFileOps},
-};
+use crate::{device::PtySlave, fs::file::PerOpenFileOps};
 
 /// Same major number with Linux, the minor number is the index of slave.
 const SLAVE_MAJOR_NUM: u32 = 3;
@@ -141,6 +138,7 @@ impl Inode for PtySlaveInode {
 
     fn open(
         &self,
+        _path: &Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {

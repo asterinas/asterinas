@@ -562,6 +562,7 @@ impl OverlayInode {
     pub fn ctime(&self) -> Duration;
     pub fn open(
         &self,
+        _path: &Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>>;
@@ -995,6 +996,7 @@ impl Inode for OverlayInode {
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>>;
     fn open(
         &self,
+        _path: &Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>>;

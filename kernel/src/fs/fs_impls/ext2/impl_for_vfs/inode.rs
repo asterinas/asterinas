@@ -24,6 +24,7 @@ use crate::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
                 SymbolicLink,
             },
+            path::Path,
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -139,6 +140,7 @@ impl Inode for Ext2Inode {
 
     fn open(
         &self,
+        _path: &Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {

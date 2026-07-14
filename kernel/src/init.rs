@@ -186,6 +186,7 @@ fn first_kthread() {
             })
             .expect("No init executable was found on the root filesystem");
 
+        BOOTED_FROM_ROOTFS.store(true, Ordering::Relaxed);
         BootInit::Rootfs { mnt_ns, init_path }
     };
 
@@ -248,9 +249,9 @@ fn init_in_first_kthread(path_resolver: &PathResolver) {
     // Work queue should be initialized before interrupt is enabled,
     // in case any irq handler uses work queue as bottom half
     crate::thread::work_queue::init_in_first_kthread();
+    crate::fs::init_in_first_kthread(path_resolver);
     crate::device::init_in_first_kthread();
     crate::net::init_in_first_kthread();
-    crate::fs::init_in_first_kthread(path_resolver);
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     crate::vdso::init_in_first_kthread();
 }
@@ -262,8 +263,12 @@ fn print_banner() {
 
 pub(super) fn on_first_process_startup(ctx: &Context) {
     component::init_all(InitStage::Process, component::parse_metadata!()).unwrap();
-    crate::device::init_in_first_process(ctx).unwrap();
+    crate::device::init_in_first_process().unwrap();
     crate::fs::init_in_first_process(ctx);
+}
+
+pub(crate) fn booted_from_rootfs() -> bool {
+    BOOTED_FROM_ROOTFS.load(Ordering::Relaxed)
 }
 
 static RDINIT_PATH: Once<String> = Once::new();
@@ -307,3 +312,5 @@ static RO_PARAM: SetRootMountReadOnly = SetRootMountReadOnly;
 aster_cmdline::define_flag_param!("ro", RO_PARAM);
 static RW_PARAM: SetRootMountReadWrite = SetRootMountReadWrite;
 aster_cmdline::define_flag_param!("rw", RW_PARAM);
+
+static BOOTED_FROM_ROOTFS: AtomicBool = AtomicBool::new(false);

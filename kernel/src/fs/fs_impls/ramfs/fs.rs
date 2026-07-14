@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::{
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::Duration,
 };
 
@@ -29,7 +29,7 @@ use crate::{
                 Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
                 RenameMode, RevalidationPolicy, SymbolicLink,
             },
-            path::{is_dot, is_dot_or_dotdot, is_dotdot},
+            path::{Path, is_dot, is_dot_or_dotdot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -91,6 +91,7 @@ impl RamFs {
                 container_dev_id: root_dev_id,
                 hard_linkability: HardLinkability::Linkable,
                 extension: Extension::new(),
+                kernel_managed: AtomicBool::new(false),
                 xattr: RamXattr::new(),
             }),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
@@ -133,7 +134,7 @@ impl FileSystem for RamFs {
 }
 
 /// An inode of `RamFs`.
-pub(super) struct RamInode {
+pub(in crate::fs) struct RamInode {
     /// Inode inner specifics
     inner: Inner,
     /// Inode metadata
@@ -156,6 +157,13 @@ pub(super) struct RamInode {
     hard_linkability: HardLinkability,
     /// Extensions
     extension: Extension,
+    /// Whether this inode is managed by kernel filesystem logic outside normal
+    /// VFS path operations.
+    ///
+    /// Such inodes may be created or removed without updating VFS dentry
+    /// caches. Filesystems that enable directory-entry revalidation use this
+    /// marker to avoid trusting cached positive dentries for these inodes.
+    kernel_managed: AtomicBool,
     /// Extended attributes
     xattr: RamXattr,
 }
@@ -499,6 +507,109 @@ impl DirEntry {
 }
 
 impl RamInode {
+    pub(in crate::fs) fn mark_kernel_managed(&self) {
+        self.kernel_managed.store(true, Ordering::Relaxed);
+    }
+
+    pub(in crate::fs) fn is_kernel_managed(&self) -> bool {
+        self.kernel_managed.load(Ordering::Relaxed)
+    }
+
+    /// Unlinks entry `name` if `predicate` returns true for the target inode.
+    ///
+    /// The predicate is called while the parent directory is locked.
+    pub(in crate::fs) fn unlink_if<F>(&self, name: &str, predicate: F) -> Result<bool>
+    where
+        F: FnOnce(&Self) -> Result<bool>,
+    {
+        if is_dot_or_dotdot(name) {
+            return_errno_with_message!(Errno::EISDIR, "unlink . or ..");
+        }
+        if self.typ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
+        }
+
+        let mut self_dir = self.inner.as_direntry().unwrap().write();
+        let (idx, target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
+        if !predicate(&target)? {
+            return Ok(false);
+        }
+        if target.typ == InodeType::Dir {
+            return_errno_with_message!(Errno::EISDIR, "unlink on dir");
+        }
+
+        self_dir.remove_entry(idx);
+        drop(self_dir);
+
+        let now = now();
+        let mut self_meta = self.metadata.lock();
+        self_meta.dec_size();
+        self_meta.set_mtime(now);
+        self_meta.set_ctime(now);
+        drop(self_meta);
+        let mut target_meta = target.metadata.lock();
+        target_meta.dec_nlinks();
+        target_meta.set_ctime(now);
+
+        Ok(true)
+    }
+
+    /// Removes directory entry `name` if `predicate` returns true for the target inode.
+    ///
+    /// The predicate is called while the parent and target directories are locked.
+    pub(in crate::fs) fn rmdir_if<F>(&self, name: &str, predicate: F) -> Result<bool>
+    where
+        F: FnOnce(&Self) -> Result<bool>,
+    {
+        if is_dot(name) {
+            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
+        }
+        if is_dotdot(name) {
+            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
+        }
+        if self.typ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
+        }
+
+        let target = self.find(name)?;
+        if target.typ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "rmdir on not dir");
+        }
+
+        let (mut self_dir, target_dir) = write_lock_two_direntries_by_ino(
+            (self.ino, self.inner.as_direntry().unwrap()),
+            (target.ino, target.inner.as_direntry().unwrap()),
+        );
+        if !target_dir.is_empty_children() {
+            return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
+        }
+        let Some((idx, current)) = self_dir.get_entry(name) else {
+            return_errno!(Errno::ENOENT);
+        };
+        if !Arc::ptr_eq(&current, &target) {
+            return_errno!(Errno::ENOENT);
+        }
+        if !predicate(&target)? {
+            return Ok(false);
+        }
+        self_dir.remove_entry(idx);
+        drop(self_dir);
+        drop(target_dir);
+
+        let now = now();
+        let mut self_meta = self.metadata.lock();
+        self_meta.dec_size();
+        self_meta.dec_nlinks();
+        self_meta.set_mtime(now);
+        self_meta.set_ctime(now);
+        drop(self_meta);
+        let mut target_meta = target.metadata.lock();
+        target_meta.dec_nlinks();
+        target_meta.dec_nlinks();
+
+        Ok(true)
+    }
+
     fn new_dir(
         fs: &Arc<RamFs>,
         mode: InodeMode,
@@ -516,6 +627,7 @@ impl RamInode {
             container_dev_id: fs.sb.container_dev_id,
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
+            kernel_managed: AtomicBool::new(false),
             xattr: RamXattr::new(),
         })
     }
@@ -531,6 +643,7 @@ impl RamInode {
             container_dev_id: fs.sb.container_dev_id,
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
+            kernel_managed: AtomicBool::new(false),
             xattr: RamXattr::new(),
         })
     }
@@ -552,6 +665,7 @@ impl RamInode {
             container_dev_id: fs.sb.container_dev_id,
             hard_linkability,
             extension: Extension::new(),
+            kernel_managed: AtomicBool::new(false),
             xattr: RamXattr::new(),
         })
     }
@@ -574,6 +688,7 @@ impl RamInode {
             container_dev_id: dev_id,
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
+            kernel_managed: AtomicBool::new(false),
             xattr: RamXattr::new(),
         }
     }
@@ -589,6 +704,7 @@ impl RamInode {
             container_dev_id: fs.sb.container_dev_id,
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
+            kernel_managed: AtomicBool::new(false),
             xattr: RamXattr::new(),
         })
     }
@@ -616,6 +732,7 @@ impl RamInode {
             container_dev_id: fs.sb.container_dev_id,
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
+            kernel_managed: AtomicBool::new(false),
             xattr: RamXattr::new(),
         })
     }
@@ -631,6 +748,7 @@ impl RamInode {
             container_dev_id: fs.sb.container_dev_id,
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
+            kernel_managed: AtomicBool::new(false),
             xattr: RamXattr::new(),
         })
     }
@@ -646,6 +764,7 @@ impl RamInode {
             container_dev_id: fs.sb.container_dev_id,
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
+            kernel_managed: AtomicBool::new(false),
             xattr: RamXattr::new(),
         })
     }
@@ -907,6 +1026,7 @@ impl Inode for RamInode {
 
     fn open(
         &self,
+        _path: &Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
@@ -1021,77 +1141,12 @@ impl Inode for RamInode {
     }
 
     fn unlink(&self, name: &str) -> Result<()> {
-        if is_dot_or_dotdot(name) {
-            return_errno_with_message!(Errno::EISDIR, "unlink . or ..");
-        }
-
-        let target = self.find(name)?;
-        if target.typ == InodeType::Dir {
-            return_errno_with_message!(Errno::EISDIR, "unlink on dir");
-        }
-
-        // When we got the lock, the dir may have been modified by another thread
-        let mut self_dir = self.inner.as_direntry().unwrap().write();
-        let (idx, new_target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
-        if !Arc::ptr_eq(&new_target, &target) {
-            return_errno!(Errno::ENOENT);
-        }
-        self_dir.remove_entry(idx);
-        drop(self_dir);
-
-        let now = now();
-        let mut self_meta = self.metadata.lock();
-        self_meta.dec_size();
-        self_meta.set_mtime(now);
-        self_meta.set_ctime(now);
-        drop(self_meta);
-        let mut target_meta = target.metadata.lock();
-        target_meta.dec_nlinks();
-        target_meta.set_ctime(now);
-
+        self.unlink_if(name, |_| Ok(true))?;
         Ok(())
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
-        if is_dot(name) {
-            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
-        }
-        if is_dotdot(name) {
-            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
-        }
-
-        let target = self.find(name)?;
-        if target.typ != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "rmdir on not dir");
-        }
-
-        // When we got the lock, the dir may have been modified by another thread
-        let (mut self_dir, target_dir) = write_lock_two_direntries_by_ino(
-            (self.ino, self.inner.as_direntry().unwrap()),
-            (target.ino, target.inner.as_direntry().unwrap()),
-        );
-        if !target_dir.is_empty_children() {
-            return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
-        }
-        let (idx, new_target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
-        if !Arc::ptr_eq(&new_target, &target) {
-            return_errno!(Errno::ENOENT);
-        }
-        self_dir.remove_entry(idx);
-        drop(self_dir);
-        drop(target_dir);
-
-        let now = now();
-        let mut self_meta = self.metadata.lock();
-        self_meta.dec_size();
-        self_meta.dec_nlinks();
-        self_meta.set_mtime(now);
-        self_meta.set_ctime(now);
-        drop(self_meta);
-        let mut target_meta = target.metadata.lock();
-        target_meta.dec_nlinks();
-        target_meta.dec_nlinks();
-
+        self.rmdir_if(name, |_| Ok(true))?;
         Ok(())
     }
 
@@ -1297,6 +1352,17 @@ impl Inode for RamInode {
         } else {
             RevalidationPolicy::empty()
         }
+    }
+
+    fn revalidate_exists(&self, _name: &str, child: &dyn Inode) -> bool {
+        let child = child
+            .downcast_ref::<RamInode>()
+            .expect("ramfs child inode must be a RamInode");
+        !child.is_kernel_managed()
+    }
+
+    fn revalidate_absent(&self, _name: &str) -> bool {
+        false
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {

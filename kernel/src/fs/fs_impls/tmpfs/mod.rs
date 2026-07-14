@@ -7,8 +7,6 @@ use fs::TmpFsType;
 
 mod fs;
 
-pub(super) const TMPFS_MAGIC: u64 = 0x0102_1994;
-
 pub(super) fn init() {
     crate::fs::vfs::registry::register(&TmpFsType).unwrap();
 }

@@ -12,6 +12,7 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FileOps, Inode, Metadata, SymbolicLink},
+            path::Path,
         },
     },
     prelude::*,
@@ -116,6 +117,7 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
 
     fn open(
         &self,
+        _path: &Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {

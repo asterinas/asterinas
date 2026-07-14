@@ -11,7 +11,7 @@ use ostd::mm::VmIo;
 use crate::{
     context::current_userspace,
     device::{
-        Device, DevtmpfsInodeMeta,
+        Device,
         tty::{
             CFontOp, Tty, TtyDriver,
             termio::CTermios,
@@ -23,7 +23,7 @@ use crate::{
             },
         },
     },
-    fs::file::PerOpenFileOps,
+    fs::{devtmpfs::DevtmpfsInodeMeta, file::PerOpenFileOps},
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     security::lsm::hooks as lsm_hooks,
@@ -94,7 +94,7 @@ impl TtyDriver for VtDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
     const DEVICE_MAJOR_ID: u32 = 4;
 
-    fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsInodeMeta<'_>> {
+    fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsInodeMeta<'static>> {
         Some(DevtmpfsInodeMeta::new(format!("tty{}", index)))
     }
 

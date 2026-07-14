@@ -409,6 +409,7 @@ pub trait Inode: Any + FileOps + Send + Sync {
 
     fn open(
         &self,
+        _path: &Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
