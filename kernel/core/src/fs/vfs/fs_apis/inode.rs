@@ -276,12 +276,14 @@ bitflags! {
     /// `create`, `unlink`, `mkdir`, and `rmdir`. This lets the VFS keep its
     /// dentry cache consistent with the underlying filesystem.
     ///
-    /// However, some filesystems create or delete inodes without going through
-    /// the VFS. For example, procfs entries under `/proc` appear and disappear
-    /// as processes are forked and reaped. Networked filesystems may also be
-    /// modified by remote peers. For such filesystems, the VFS must revalidate
-    /// cached entries by asking the parent directory whether a cached child is
-    /// still valid.
+    /// However, some filesystems create or delete inodes outside the VFS
+    /// operation that populated a dentry cache. For example, procfs entries
+    /// under `/proc` appear and disappear as processes are forked and reaped,
+    /// and devtmpfs nodes under `/dev` appear and disappear as devices are
+    /// registered and unregistered. Networked filesystems may also be modified
+    /// by remote peers. For such filesystems, the VFS must revalidate cached
+    /// entries by asking the parent directory whether a cached child is still
+    /// valid.
     ///
     /// # Revalidation protocol
     ///

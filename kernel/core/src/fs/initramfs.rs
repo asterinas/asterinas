@@ -25,10 +25,11 @@ use spin::once::Once;
 use zune_inflate::DeflateDecoder;
 
 use super::{
-    file::{InodeMode, InodeType},
+    file::{InodeMode, InodeType, mkmod},
     vfs::path::{FsPath, Path, PathResolver, is_dot},
 };
 use crate::{
+    device::tty,
     fs::{
         file::StatusFlags,
         vfs::inode::{Inode, MknodType},
@@ -66,8 +67,40 @@ pub(crate) fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> 
         }
     }
 
+    ensure_dev_console(path_resolver)?;
+
     println!("[kernel] initramfs is ready");
     Ok(())
+}
+
+fn ensure_dev_console(path_resolver: &PathResolver) -> Result<()> {
+    // Linux's default built-in initramfs provides /dev and /dev/console so
+    // early userspace can open the console even if the external initramfs does
+    // not carry this node. Asterinas provides the same default entries after
+    // unpacking the supplied initramfs.
+    // Reference: <https://elixir.bootlin.com/linux/v6.13/source/usr/default_cpio_list>.
+    let dev_path = match path_resolver.lookup(&FsPath::try_from("/dev")?) {
+        Ok(dev_path) => dev_path,
+        Err(error) if error.error() == Errno::ENOENT => {
+            path_resolver
+                .root()
+                .new_fs_child("dev", InodeType::Dir, mkmod!(a+rx, u+w))?
+        }
+        Err(error) => return Err(error),
+    };
+
+    match path_resolver.lookup(&FsPath::try_from("/dev/console")?) {
+        Ok(_) => Ok(()),
+        Err(error) if error.error() == Errno::ENOENT => {
+            dev_path.mknod(
+                "console",
+                mkmod!(u+rw),
+                MknodType::CharDevice(tty::console_device_id().as_encoded_u64()),
+            )?;
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// Finds the init program to run from the initramfs.

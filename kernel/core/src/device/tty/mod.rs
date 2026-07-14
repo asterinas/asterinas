@@ -5,9 +5,12 @@ use ostd::sync::LocalIrqDisabled;
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
-    device::{Device, DeviceType, DevtmpfsInodeMeta},
+    device::{Device, DeviceType},
     events::IoEvents,
-    fs::file::{PerOpenFileOps, StatusFlags},
+    fs::{
+        devtmpfs::DevtmpfsInodeMeta,
+        file::{PerOpenFileOps, StatusFlags},
+    },
     prelude::*,
     process::{
         JobControl, Terminal, broadcast_signal_async,
@@ -37,6 +40,10 @@ pub(super) fn init_in_first_process() -> Result<()> {
     vt::init_in_first_process()?;
 
     Ok(())
+}
+
+pub(crate) fn console_device_id() -> DeviceId {
+    DeviceId::new(MajorId::new(5), MinorId::new(1))
 }
 
 const IO_CAPACITY: usize = 4096;
@@ -356,7 +363,7 @@ impl<D: TtyDriver> Device for Tty<D> {
         )
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta> {
         self.driver.devtmpfs_meta(self.index)
     }
 
