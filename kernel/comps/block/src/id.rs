@@ -96,7 +96,17 @@ impl<const N: u16> Step for BlockId<N> {
         u64::forward_checked(start.0, count).map(Self::new)
     }
 
+    fn forward_overflowing(start: Self, count: usize) -> (Self, bool) {
+        let (next, overflow) = u64::forward_overflowing(start.0, count);
+        (Self::new(next), overflow)
+    }
+
     fn backward_checked(start: Self, count: usize) -> Option<Self> {
         u64::backward_checked(start.0, count).map(Self::new)
+    }
+
+    fn backward_overflowing(start: Self, count: usize) -> (Self, bool) {
+        let (prev, overflow) = u64::backward_overflowing(start.0, count);
+        (Self::new(prev), overflow)
     }
 }

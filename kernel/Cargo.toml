@@ -71,7 +71,7 @@ zerocopy.workspace = true
 zune-inflate.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
-tdx-guest = { version = "0.2.4", optional = true }
+tdx-guest = { workspace = true, optional = true }
 x86_64.workspace = true
 
 [target.riscv64imac-unknown-none-elf.dependencies]
