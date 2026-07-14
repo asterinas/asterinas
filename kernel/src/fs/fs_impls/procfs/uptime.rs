@@ -5,6 +5,8 @@
 //!
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_uptime.5.html>
 
+use core::time::Duration;
+
 use aster_util::printer::VmPrinter;
 
 use crate::{
@@ -14,7 +16,7 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    time::cpu_time_stats::CpuTimeStatsManager,
+    time::{NSEC_PER_SEC, cpu_time_stats::CpuTimeStatsManager},
 };
 
 /// Represents the inode at `/proc/uptime`.
@@ -29,18 +31,26 @@ impl UptimeFileOps {
     }
 
     fn print_uptime(printer: &mut VmPrinter) -> Result<()> {
-        let uptime = aster_time::read_monotonic_time().as_secs_f32();
+        let (uptime_secs, uptime_centis) =
+            duration_to_seconds_and_centiseconds(aster_time::read_monotonic_time());
 
         let cpustat = CpuTimeStatsManager::singleton();
-        let idle_time = cpustat
-            .collect_stats_on_all_cpus()
-            .idle
-            .as_duration()
-            .as_secs_f32();
+        let (idle_secs, idle_centis) = duration_to_seconds_and_centiseconds(
+            cpustat.collect_stats_on_all_cpus().idle.as_duration(),
+        );
 
-        writeln!(printer, "{:.2} {:.2}", uptime, idle_time)?;
+        writeln!(
+            printer,
+            "{uptime_secs}.{uptime_centis:02} {idle_secs}.{idle_centis:02}"
+        )?;
         Ok(())
     }
+}
+
+/// Splits a duration into seconds and the centiseconds printed by `/proc/uptime`.
+fn duration_to_seconds_and_centiseconds(duration: Duration) -> (u64, u32) {
+    let centiseconds = duration.subsec_nanos() / (NSEC_PER_SEC as u32 / 100);
+    (duration.as_secs(), centiseconds)
 }
 
 impl ProcFileOps for UptimeFileOps {
@@ -50,5 +60,34 @@ impl ProcFileOps for UptimeFileOps {
         Self::print_uptime(&mut printer)?;
 
         Ok(printer.bytes_written())
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use core::time::Duration;
+
+    use ostd::prelude::ktest;
+
+    use super::duration_to_seconds_and_centiseconds;
+
+    #[ktest]
+    fn uptime_centiseconds_are_truncated() {
+        assert_eq!(
+            duration_to_seconds_and_centiseconds(Duration::new(42, 0)),
+            (42, 0)
+        );
+        assert_eq!(
+            duration_to_seconds_and_centiseconds(Duration::new(42, 9_999_999)),
+            (42, 0)
+        );
+        assert_eq!(
+            duration_to_seconds_and_centiseconds(Duration::new(42, 10_000_000)),
+            (42, 1)
+        );
+        assert_eq!(
+            duration_to_seconds_and_centiseconds(Duration::new(42, 999_999_999)),
+            (42, 99)
+        );
     }
 }
