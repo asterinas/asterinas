@@ -2,16 +2,16 @@
 
 use core::fmt::Display;
 
-use super::{AccessMode, CreationFlags, FileLike, InodeMode};
+use super::{AccessMode, CreationFlags, FileLike};
 use crate::{
     events::IoEvents,
     fs::{
         file::file_table::FdFlags,
         pseudofs::AnonInodeFs,
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FsFlags,
             path::{Mount, MountNamespace, Path, PerMountFlags},
-            registry::{FsCreationCtx, FsType},
+            registry::{DynFsType, FsAndRoot, FsCreationCtx},
         },
     },
     prelude::*,
@@ -24,7 +24,7 @@ use crate::{
 /// filesystem is created. Once creation succeeds, further configuration is
 /// rejected unless it is an explicit reconfiguration request.
 pub struct FsConfigFile {
-    fs_type: &'static dyn FsType,
+    fs_type: &'static dyn DynFsType,
     state: Mutex<FsConfigState>,
     pseudo_path: Path,
 }
@@ -43,14 +43,14 @@ struct FsCreationConfig {
 }
 
 struct CreatedFs {
-    fs: Arc<dyn FileSystem>,
+    fs_and_root: FsAndRoot,
     flags: FsFlags,
     source: Option<String>,
 }
 
 impl FsConfigFile {
     /// Creates a filesystem configuration file for a filesystem type.
-    pub fn new(fs_type: &'static dyn FsType) -> Self {
+    pub fn new(fs_type: &'static dyn DynFsType) -> Self {
         Self {
             fs_type,
             state: Mutex::new(FsConfigState::Configuring(FsCreationConfig {
@@ -131,10 +131,14 @@ impl FsConfigFile {
         let args_ref = args_cstr.as_deref();
         let fs_creation_ctx =
             FsCreationCtx::new(config.source.as_deref(), config.flags, args_ref, ctx);
-        
+        let fs_and_root = self.fs_type.get_or_create(&fs_creation_ctx)?;
         let flags = config.flags;
         let source = config.source.clone();
-        *state = FsConfigState::Created(Some(CreatedFs { fs, flags, source }));
+        *state = FsConfigState::Created(Some(CreatedFs {
+            fs_and_root,
+            flags,
+            source,
+        }));
         Ok(())
     }
 
@@ -147,7 +151,7 @@ impl FsConfigFile {
     pub fn reconfigure_fs(&self, ctx: &Context) -> Result<()> {
         let state = self.state.lock();
         let (fs, flags) = match &*state {
-            FsConfigState::Created(Some(created)) => (&created.fs, created.flags),
+            FsConfigState::Created(Some(created)) => (created.fs_and_root.fs(), created.flags),
             FsConfigState::Created(None) => {
                 return_errno_with_message!(
                     Errno::EBUSY,
@@ -182,7 +186,7 @@ impl FsConfigFile {
         };
 
         let detached_mount = Mount::new_detached(
-            created_fs.fs.clone(),
+            created_fs.fs_and_root.clone(),
             flags,
             mnt_ns,
             created_fs.source.clone(),
