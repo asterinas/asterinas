@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub(super) fn init() {
-    crate::fs::vfs::registry::register(&fs::VirtioFsType).unwrap();
+    crate::fs::vfs::registry::register(&fs::VIRTIOFS_TYPE).unwrap();
 }
 
 impl From<FuseError> for Error {

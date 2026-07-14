@@ -60,6 +60,8 @@ impl SockFs {
 pub(super) struct SockFsType;
 
 impl FsType for SockFsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "sockfs"
     }
