@@ -84,6 +84,8 @@ bitflags! {
     /// Flags in [`CIfaddrMsg`].
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/if_addr.h#L45>.
+    #[repr(C)]
+    #[derive(Pod)]
     pub struct AddrMessageFlags: u32 {
         const SECONDARY      = 0x01;
         const NODAD          = 0x02;
