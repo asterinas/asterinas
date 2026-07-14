@@ -22,13 +22,12 @@ use crate::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags, mkmod},
         pipe::Pipe,
         pseudofs::AnonDeviceId,
-        tmpfs::{self, TMPFS_MAGIC},
         utils::{CStr256, DirentVisitor},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{
                 Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
-                RenameMode, SymbolicLink,
+                RenameMode, RevalidationPolicy, SymbolicLink,
             },
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
@@ -46,6 +45,7 @@ use crate::{
 pub struct RamFs {
     name: &'static str,
     _anon_device_id: AnonDeviceId,
+    revalidation_policy: RevalidationPolicy,
     /// The super block
     sb: SuperBlock,
     /// Root inode
@@ -65,40 +65,17 @@ impl RamFs {
         Self::new_internal("rootfs")
     }
 
-    // TODO: Remove this tmpfs-specific constructor once `TmpFs` no longer
-    // aliases `RamFs`.
-    pub fn new_tmpfs() -> Arc<Self> {
-        let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for tmpfs");
-        let sb = {
-            let mut super_block =
-                SuperBlock::new(TMPFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-            let max_blocks = tmpfs::default_max_blocks();
-            let max_inodes = tmpfs::default_max_inodes();
-            super_block.blocks = max_blocks;
-            super_block.bfree = max_blocks;
-            super_block.bavail = max_blocks;
-            super_block.files = max_inodes;
-            super_block.ffree = max_inodes;
-            super_block
-        };
-        Self::new_internal_with_sb("tmpfs", anon_device_id, sb)
-    }
-
-    fn new_internal(name: &'static str) -> Arc<Self> {
-        let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for ramfs");
-        let sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-        Self::new_internal_with_sb(name, anon_device_id, sb)
-    }
-
-    fn new_internal_with_sb(
+    pub(in crate::fs) fn new_with_sb(
         name: &'static str,
         anon_device_id: AnonDeviceId,
         sb: SuperBlock,
+        revalidation_policy: RevalidationPolicy,
     ) -> Arc<Self> {
         let root_dev_id = anon_device_id.id();
         Arc::new_cyclic(move |weak_fs| Self {
             name,
             _anon_device_id: anon_device_id,
+            revalidation_policy,
             sb,
             root: Arc::new_cyclic(|weak_root| RamInode {
                 inner: Inner::new_dir(weak_root.clone(), weak_root.clone()),
@@ -119,6 +96,12 @@ impl RamFs {
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
+    }
+
+    fn new_internal(name: &'static str) -> Arc<Self> {
+        let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for ramfs");
+        let sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        Self::new_with_sb(name, anon_device_id, sb, RevalidationPolicy::empty())
     }
 
     fn alloc_id(&self) -> u64 {
@@ -1304,6 +1287,16 @@ impl Inode for RamInode {
 
     fn fs(&self) -> Arc<dyn FileSystem> {
         Weak::upgrade(&self.fs).unwrap()
+    }
+
+    fn revalidation_policy(&self) -> RevalidationPolicy {
+        if self.typ == InodeType::Dir {
+            self.fs
+                .upgrade()
+                .map_or_else(RevalidationPolicy::empty, |fs| fs.revalidation_policy)
+        } else {
+            RevalidationPolicy::empty()
+        }
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {

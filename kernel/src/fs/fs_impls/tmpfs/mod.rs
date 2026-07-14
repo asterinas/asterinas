@@ -2,8 +2,8 @@
 
 //! Temporary file system (tmpfs) based on ramfs.
 
+pub(super) use fs::TmpFs;
 use fs::TmpFsType;
-pub(super) use fs::{TmpFs, default_max_blocks, default_max_inodes};
 
 mod fs;
 
