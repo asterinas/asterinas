@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::time::Duration;
+
 use aster_time::read_monotonic_time;
 use aster_util::fixed_point::FixedU64;
 use ostd::mm::VmIo;
@@ -30,7 +32,7 @@ pub fn sys_sysinfo(sysinfo_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> 
 
     let loadavg = loadavg::get_loadavg();
     let info = SysInfo {
-        uptime: read_monotonic_time().as_secs() as i64,
+        uptime: read_monotonic_time().as_secs_round_up() as i64,
         loads: [
             SysinfoLoadAvg::from(loadavg[0]).raw(),
             SysinfoLoadAvg::from(loadavg[1]).raw(),
@@ -46,4 +48,36 @@ pub fn sys_sysinfo(sysinfo_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> 
     };
     ctx.user_space().write_val(sysinfo_addr, &info)?;
     Ok(SyscallReturn::Return(0))
+}
+
+trait RoundUpSeconds {
+    /// Returns the duration in seconds, rounding up a nonzero sub-second part.
+    ///
+    /// This matches the rounding used by Linux `sysinfo`.
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/kernel/sys.c#L2904-L2906>
+    fn as_secs_round_up(&self) -> u64;
+}
+
+impl RoundUpSeconds for Duration {
+    fn as_secs_round_up(&self) -> u64 {
+        self.as_secs()
+            .saturating_add(u64::from(self.subsec_nanos() != 0))
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use core::time::Duration;
+
+    use ostd::prelude::ktest;
+
+    use super::RoundUpSeconds;
+
+    #[ktest]
+    fn as_secs_round_up() {
+        assert_eq!(Duration::new(0, 0).as_secs_round_up(), 0);
+        assert_eq!(Duration::new(42, 0).as_secs_round_up(), 42);
+        assert_eq!(Duration::new(42, 1).as_secs_round_up(), 43);
+        assert_eq!(Duration::new(42, 999_999_999).as_secs_round_up(), 43);
+    }
 }
