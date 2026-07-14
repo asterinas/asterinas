@@ -11,7 +11,7 @@ use aster_virtio::device::socket::{
 use crate::{
     events::IoEvents,
     net::socket::{
-        util::SendRecvFlags,
+        util::SendFlags,
         vsock::transport::{
             Connection, DEFAULT_TX_BUF_SIZE,
             connection::{ConnectionInner, ConnectionState},
@@ -29,7 +29,7 @@ impl Connection {
     pub(in crate::net::socket::vsock) fn try_send(
         &mut self,
         reader: &mut dyn MultiRead,
-        _flags: SendRecvFlags,
+        _flags: SendFlags,
     ) -> Result<usize> {
         // See the comments in `try_recv` to know why we use a packet-pool approach here.
         let mut packet_pool = [const { None }; 8];

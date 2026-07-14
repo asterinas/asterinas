@@ -7,7 +7,7 @@ use crate::{
     fs::file::file_table::RawFileDesc,
     net::socket::{
         Socket,
-        util::{MessageHeader, SendRecvFlags},
+        util::{MessageHeader, SendFlags},
     },
     prelude::*,
     util::net::CUserMsgHdr,
@@ -21,7 +21,7 @@ pub fn sys_sendmsg(
 ) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
     let c_user_msghdr: CUserMsgHdr = user_space.read_val(user_msghdr_ptr)?;
-    let flags = SendRecvFlags::from_bits_truncate(flags);
+    let flags = SendFlags::from_bits_truncate(flags);
 
     debug!(
         "sockfd = {}, user_msghdr = {:x?}, flags = {:?}",
@@ -46,7 +46,7 @@ pub(super) fn send_one_message(
     socket: &dyn Socket,
     c_user_msghdr: &CUserMsgHdr,
     user_space: &CurrentUserSpace,
-    flags: SendRecvFlags,
+    flags: SendFlags,
 ) -> Result<usize> {
     let message_header = {
         let addr = c_user_msghdr.read_socket_addr_from_user()?;

@@ -19,7 +19,7 @@ use crate::{
         },
         private::SocketPrivate,
         util::{
-            MessageHeader, SendRecvFlags, SocketAddr,
+            MessageHeader, RecvFlags, SendFlags, SocketAddr,
             datagram_common::{Bound, Inner, select_remote_and_bind},
             options::{
                 GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
@@ -84,7 +84,7 @@ where
         &self,
         reader: &mut dyn MultiRead,
         remote: Option<&NetlinkSocketAddr>,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize> {
         let sent_bytes = select_remote_and_bind(
             &self.inner,
@@ -105,7 +105,7 @@ where
     pub(super) fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, SocketAddr)> {
         let recv_bytes = self
             .inner
@@ -158,7 +158,7 @@ where
         &self,
         reader: &mut dyn MultiRead,
         message_header: MessageHeader,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize> {
         let MessageHeader {
             addr,
@@ -187,7 +187,7 @@ where
     fn recvmsg(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, MessageHeader)> {
         let (received_len, addr) =
             self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {

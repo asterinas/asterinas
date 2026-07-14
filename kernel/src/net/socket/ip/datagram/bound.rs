@@ -9,7 +9,7 @@ use crate::{
     events::IoEvents,
     net::{
         iface::{BoundUdpPort, Iface, UdpSocket},
-        socket::util::{SendRecvFlags, datagram_common},
+        socket::util::{RecvFlags, SendFlags, datagram_common},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -55,7 +55,7 @@ impl datagram_common::Bound for BoundDatagram {
     fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, Self::Endpoint)> {
         let result = self
             .bound_socket
@@ -83,7 +83,7 @@ impl datagram_common::Bound for BoundDatagram {
         &self,
         reader: &mut dyn MultiRead,
         remote: &Self::Endpoint,
-        _flags: SendRecvFlags,
+        _flags: SendFlags,
     ) -> Result<usize> {
         let result = self
             .bound_socket

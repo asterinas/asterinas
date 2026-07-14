@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SendRecvFlags;
+use super::{RecvFlags, SendFlags};
 use crate::{
     events::IoEvents,
     prelude::*,
@@ -42,13 +42,13 @@ pub trait Bound {
     fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, Self::Endpoint)>;
     fn try_send(
         &self,
         reader: &mut dyn MultiRead,
         remote: &Self::Endpoint,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize>;
 
     fn check_io_events(&self) -> IoEvents;
@@ -136,7 +136,7 @@ where
     pub fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, UnboundSocket::Endpoint)> {
         match self {
             Inner::Unbound(_) => {

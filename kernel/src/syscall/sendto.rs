@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::file::file_table::{RawFileDesc, get_file_fast},
-    net::socket::util::{MessageHeader, SendRecvFlags},
+    net::socket::util::{MessageHeader, SendFlags},
     prelude::*,
     util::net::read_socket_addr_from_user,
 };
@@ -17,7 +17,7 @@ pub fn sys_sendto(
     addrlen: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = SendRecvFlags::from_bits_truncate(flags);
+    let flags = SendFlags::from_bits_truncate(flags);
     let socket_addr = if dest_addr == 0 {
         None
     } else {

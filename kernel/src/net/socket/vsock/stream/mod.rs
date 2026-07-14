@@ -21,7 +21,7 @@ use crate::{
         Socket,
         options::{Error as SocketError, SocketOption, macros::sock_option_mut},
         private::SocketPrivate,
-        util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr},
+        util::{MessageHeader, RecvFlags, SendFlags, SockShutdownCmd, SocketAddr},
         vsock::addr::{UNSPECIFIED_VSOCK_ADDR, VsockSocketAddr},
     },
     prelude::*,
@@ -165,7 +165,7 @@ impl VsockStreamSocket {
         Ok((accepted, peer_addr))
     }
 
-    fn try_send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
+    fn try_send(&self, reader: &mut dyn MultiRead, flags: SendFlags) -> Result<usize> {
         let mut state = self.lock_updated_state();
         let State::Connected(connected_stream) = state.as_mut() else {
             return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
@@ -174,7 +174,7 @@ impl VsockStreamSocket {
         connected_stream.try_send(reader, flags)
     }
 
-    fn try_recv(&self, writer: &mut dyn MultiWrite, flags: SendRecvFlags) -> Result<usize> {
+    fn try_recv(&self, writer: &mut dyn MultiWrite, flags: RecvFlags) -> Result<usize> {
         let mut state = self.lock_updated_state();
         let State::Connected(connected_stream) = state.as_mut() else {
             return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
@@ -364,7 +364,7 @@ impl Socket for VsockStreamSocket {
         &self,
         reader: &mut dyn MultiRead,
         message_header: MessageHeader,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
@@ -411,7 +411,7 @@ impl Socket for VsockStreamSocket {
     fn recvmsg(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, MessageHeader)> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {

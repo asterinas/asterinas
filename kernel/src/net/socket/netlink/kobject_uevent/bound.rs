@@ -5,7 +5,7 @@ use crate::{
     events::IoEvents,
     net::socket::{
         netlink::{NetlinkSocketAddr, common::BoundNetlink},
-        util::{SendRecvFlags, datagram_common},
+        util::{RecvFlags, SendFlags, datagram_common},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -36,7 +36,7 @@ impl datagram_common::Bound for BoundNetlinkUevent {
         &self,
         reader: &mut dyn MultiRead,
         remote: &Self::Endpoint,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
@@ -58,7 +58,7 @@ impl datagram_common::Bound for BoundNetlinkUevent {
     fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, Self::Endpoint)> {
         // TODO: Deal with other flags.
         if !flags.is_all_supported() {

@@ -3,7 +3,7 @@
 use crate::{
     events::IoEvents,
     net::socket::{
-        util::{SendRecvFlags, SockShutdownCmd},
+        util::{RecvFlags, SendFlags, SockShutdownCmd},
         vsock::{addr::VsockSocketAddr, transport::Connection},
     },
     prelude::*,
@@ -27,7 +27,7 @@ impl ConnectedStream {
     pub(super) fn try_send(
         &mut self,
         reader: &mut dyn MultiRead,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize> {
         self.connection.try_send(reader, flags)
     }
@@ -35,7 +35,7 @@ impl ConnectedStream {
     pub(super) fn try_recv(
         &mut self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<usize> {
         self.connection.try_recv(writer, flags)
     }

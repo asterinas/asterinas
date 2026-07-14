@@ -23,7 +23,7 @@ use crate::{
         private::SocketPrivate,
         unix::{CUserCred, UnixSocketAddr, cred::SocketCred, ctrl_msg::AuxiliaryData},
         util::{
-            ControlMessage, MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
+            ControlMessage, MessageHeader, RecvFlags, SendFlags, SockShutdownCmd, SocketAddr,
             options::{
                 GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
             },
@@ -237,7 +237,7 @@ impl UnixStreamSocket {
         &self,
         buf: &mut dyn MultiRead,
         aux_data: &mut AuxiliaryData,
-        _flags: SendRecvFlags,
+        _flags: SendFlags,
     ) -> Result<usize> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_write(buf, aux_data, self.is_seqpacket()),
@@ -250,7 +250,7 @@ impl UnixStreamSocket {
     fn try_recv(
         &self,
         buf: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, Vec<ControlMessage>)> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_read(buf, self.is_seqpacket(), flags),
@@ -491,7 +491,7 @@ impl Socket for UnixStreamSocket {
         &self,
         reader: &mut dyn MultiRead,
         message_header: MessageHeader,
-        flags: SendRecvFlags,
+        flags: SendFlags,
     ) -> Result<usize> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
@@ -528,7 +528,7 @@ impl Socket for UnixStreamSocket {
     fn recvmsg(
         &self,
         writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
+        flags: RecvFlags,
     ) -> Result<(usize, MessageHeader)> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
