@@ -37,7 +37,6 @@ enum FsConfigState {
 struct FsCreationConfig {
     flags: FsFlags,
     source: Option<String>,
-    mode: Option<InodeMode>,
     /// Accumulates filesystem-specific mount options as a comma-separated
     /// string, so they can be forwarded to `FsCreationCtx`.
     extra_options: String,
@@ -57,7 +56,6 @@ impl FsConfigFile {
             state: Mutex::new(FsConfigState::Configuring(FsCreationConfig {
                 flags: FsFlags::empty(),
                 source: None,
-                mode: None,
                 extra_options: String::new(),
             })),
             pseudo_path: AnonInodeFs::new_path(|_| "anon_inode:[fscontext]".to_string()),
@@ -105,10 +103,6 @@ impl FsConfigFile {
                 config.source = Some(value.to_string());
                 Ok(())
             }
-            "mode" => {
-                config.mode = Some(parse_octal_mode(value)?);
-                Ok(())
-            }
             _ => {
                 append_option(&mut config.extra_options, key, Some(value));
                 Ok(())
@@ -137,21 +131,7 @@ impl FsConfigFile {
         let args_ref = args_cstr.as_deref();
         let fs_creation_ctx =
             FsCreationCtx::new(config.source.as_deref(), config.flags, args_ref, ctx);
-        let fs = self.fs_type.create(&fs_creation_ctx)?;
-        if Arc::strong_count(&fs) > 1 {
-            let extant_readonly = fs.flags().contains(FsFlags::RDONLY);
-            let context_readonly = config.flags.contains(FsFlags::RDONLY);
-            if extant_readonly != context_readonly {
-                return_errno_with_message!(
-                    Errno::EBUSY,
-                    "the read-only flag of the extant filesystem does not match"
-                );
-            }
-        } else {
-            if let Some(mode) = config.mode {
-                fs.root_inode().set_mode(mode)?;
-            }
-        }
+        
         let flags = config.flags;
         let source = config.source.clone();
         *state = FsConfigState::Created(Some(CreatedFs { fs, flags, source }));
@@ -316,17 +296,6 @@ impl FileLike for DetachedMountFile {
             fd_flags,
         })
     }
-}
-
-fn parse_octal_mode(value: &str) -> Result<InodeMode> {
-    const MAX_MODE_BITS: u16 = 0o7777;
-
-    let mode = u16::from_str_radix(value, 8)
-        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid octal mode"))?;
-    if mode & !MAX_MODE_BITS != 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid mode bits");
-    }
-    Ok(InodeMode::from_bits_truncate(mode))
 }
 
 fn append_option(options: &mut String, key: &str, value: Option<&str>) {
