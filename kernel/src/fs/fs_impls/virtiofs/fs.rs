@@ -18,7 +18,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::Inode,
-            registry::{FsCreationCtx, FsProperties, FsType},
+            registry::{FsCache, FsCreationCtx, FsProperties, FsType},
         },
     },
     prelude::*,
@@ -31,9 +31,17 @@ const VIRTIOFS_MAGIC: u64 = 0x6573_5546;
 const BLOCK_SIZE: usize = 4096;
 
 /// The `virtiofs` filesystem type.
-pub(super) struct VirtioFsType;
+pub(super) struct VirtioFsType {
+    cache: FsCache<String>,
+}
+
+pub(super) static VIRTIOFS_TYPE: VirtioFsType = VirtioFsType {
+    cache: FsCache::new(),
+};
 
 impl FsType for VirtioFsType {
+    type Key = String;
+
     fn name(&self) -> &'static str {
         "virtiofs"
     }
@@ -52,6 +60,15 @@ impl FsType for VirtioFsType {
             .ok_or_else(|| Error::with_message(Errno::ENODEV, "virtiofs device is not found"))?;
 
         Ok(VirtioFs::new(device, tag)? as Arc<dyn FileSystem>)
+    }
+
+    fn obtain_key_and_cache(
+        &self,
+        fs_creation_ctx: &FsCreationCtx,
+    ) -> Option<(String, &FsCache<String>)> {
+        let key = fs_creation_ctx.source().map(|tag| tag.to_string())?;
+
+        Some((key, &self.cache))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

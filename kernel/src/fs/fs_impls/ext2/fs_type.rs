@@ -6,17 +6,26 @@
 //! discover and mount ext2 volumes by name (`"ext2"`).
 
 use aster_systree::SysNode;
+use device_id::DeviceId;
 
 use super::{fs::Ext2, prelude::*};
 use crate::fs::vfs::{
     file_system::FileSystem,
-    registry::{FsCreationCtx, FsProperties, FsType},
+    registry::{FsCache, FsCreationCtx, FsProperties, FsType},
 };
 
 /// VFS-visible Ext2 filesystem type.
-pub(super) struct Ext2Type;
+pub(super) struct Ext2Type {
+    cache: FsCache<DeviceId>,
+}
+
+pub(super) static EXT2_TYPE: Ext2Type = Ext2Type {
+    cache: FsCache::new(),
+};
 
 impl FsType for Ext2Type {
+    type Key = DeviceId;
+
     fn name(&self) -> &'static str {
         "ext2"
     }
@@ -26,9 +35,21 @@ impl FsType for Ext2Type {
     }
 
     fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        let disk = fs_creation_ctx.resolve_block_device()?;
+        let disk = fs_creation_ctx.resolve_block_device()?.clone();
         let args = fs_creation_ctx.args();
         Ext2::open(disk, args).map(|fs| fs as Arc<dyn FileSystem>)
+    }
+
+    fn obtain_key_and_cache(
+        &self,
+        fs_creation_ctx: &FsCreationCtx,
+    ) -> Option<(DeviceId, &FsCache<DeviceId>)> {
+        let key = fs_creation_ctx
+            .resolve_block_device()
+            .ok()
+            .map(|disk| disk.id())?;
+
+        Some((key, &self.cache))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn SysNode>> {

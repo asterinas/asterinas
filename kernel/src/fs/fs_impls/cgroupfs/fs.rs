@@ -85,6 +85,8 @@ impl FileSystem for CgroupFs {
 pub(super) struct CgroupFsType;
 
 impl FsType for CgroupFsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "cgroup2"
     }

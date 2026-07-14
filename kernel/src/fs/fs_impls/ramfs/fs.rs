@@ -1463,6 +1463,8 @@ fn current_fs_ids() -> (Uid, Gid) {
 pub(super) struct RamFsType;
 
 impl FsType for RamFsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "ramfs"
     }
