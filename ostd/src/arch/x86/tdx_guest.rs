@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use tdx_guest::{
-    SHARED_BIT, SHARED_MASK, TdxTrapFrame,
+    TdxTrapFrame, shared_mask,
     tdcall::{TdCallError, accept_page},
     tdvmcall::{TdVmcallError, map_gpa},
 };
@@ -81,10 +81,7 @@ impl TargetPageState {
     fn as_gpa_mask(self) -> u64 {
         match self {
             Self::Private => 0,
-            Self::Shared => {
-                const { assert!(SHARED_MASK == 1u64 << SHARED_BIT) };
-                SHARED_MASK
-            }
+            Self::Shared => shared_mask(),
         }
     }
 }
