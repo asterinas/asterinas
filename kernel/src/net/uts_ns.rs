@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{const_assert, sync::RwMutexReadGuard};
+use ostd::sync::RwMutexReadGuard;
 use spin::Once;
 
 use crate::{
@@ -159,7 +159,7 @@ impl UtsName {
         const PREEMPT_FLAGS: &str = "";
         const VERSION: &str =
             const_format::formatcp!("#{BUILD_VERSION} {SMP_FLAGS}{PREEMPT_FLAGS}{BUILD_TIMESTAMP}");
-        const_assert!(VERSION.len() <= 64);
+        assert!(VERSION.len() <= UtsField::MAX_BYTES);
         VERSION
     };
 
