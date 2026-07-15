@@ -33,9 +33,7 @@ impl IdAlloc {
         if self.first_available_id < self.bitset.len() {
             let id = self.first_available_id;
             self.bitset.set(id, true);
-            self.first_available_id = (id + 1..self.bitset.len())
-                .find(|&i| !self.bitset[i])
-                .map_or(self.bitset.len(), |i| i);
+            self.update_first_available_id(id + 1);
             Some(id)
         } else {
             None
@@ -86,9 +84,7 @@ impl IdAlloc {
 
         // In case we need to update first_available_id
         if self.is_allocated(self.first_available_id) {
-            self.first_available_id = (allocated_range.end..self.bitset.len())
-                .find(|&i| !self.bitset[i])
-                .map_or(self.bitset.len(), |i| i);
+            self.update_first_available_id(allocated_range.end);
         }
 
         Some(allocated_range)
@@ -129,7 +125,7 @@ impl IdAlloc {
         }
     }
 
-    /// Allocate a specific ID.
+    /// Allocates a specific ID.
     ///
     /// If the ID is already allocated, it returns `None`, otherwise it
     /// returns the allocated ID.
@@ -143,9 +139,7 @@ impl IdAlloc {
         }
         self.bitset.set(id, true);
         if id == self.first_available_id {
-            self.first_available_id = (id + 1..self.bitset.len())
-                .find(|&i| !self.bitset[i])
-                .map_or(self.bitset.len(), |i| i);
+            self.update_first_available_id(id + 1);
         }
         Some(id)
     }
@@ -157,6 +151,19 @@ impl IdAlloc {
     /// If the `id` is out of bounds, this method will panic.
     pub fn is_allocated(&self, id: usize) -> bool {
         self.bitset[id]
+    }
+
+    /// Updates the `first_available_id` field to the first zero index at or after `start`.
+    fn update_first_available_id(&mut self, start: usize) {
+        let len = self.bitset.len();
+        let bit_slice = self
+            .bitset
+            .get(start..len)
+            .expect("start is guaranteed to be valid by the caller");
+        self.first_available_id = bit_slice
+            .first_zero()
+            .map(|offset| start + offset)
+            .unwrap_or(len);
     }
 }
 
