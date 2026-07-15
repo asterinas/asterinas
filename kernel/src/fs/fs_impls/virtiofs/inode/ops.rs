@@ -86,16 +86,8 @@ impl VirtioFsInode {
         fh: FuseFileHandle,
         flags: u32,
     ) -> Result<usize> {
-        // FIXME: Direct reads do not support short reads yet, so `FUSE_READ`
-        // must request the actual bytes to read instead of the caller's maximum
-        // buffer size. Refresh attributes before using the cached file size.
-        self.revalidate_attr(fh)?;
-
         let _inner = self.inner.read();
-        let file_size = self.size();
-        let start = file_size.min(offset);
-        let end = file_size.min(offset.saturating_add(writer.avail()));
-        let read_len = end - start;
+        let read_len = writer.avail();
 
         if read_len == 0 {
             return Ok(0);
@@ -110,7 +102,7 @@ impl VirtioFsInode {
 
         let copied = fs.session().read(
             self.nodeid(),
-            ReadReq::new(fh, start as u64, read_len as u32, flags),
+            ReadReq::new(fh, offset as u64, read_len as u32, flags),
             data_buf.clone(),
         )?;
 
