@@ -30,7 +30,7 @@ jobs:
       - name: Run ISO image and install Asterinas NixOS
         run: |
           make run_iso || true
-          tail --lines 10 qemu.log | grep -q "^Installation finished" || (echo "Test ISO failed" && exit 1)
+          tail --lines 10 qemu.log | grep -q "^Congratulations!" || (echo "Test ISO failed" && exit 1)
           echo "Test ISO succeeds!"
       - name : Run Asterinas NixOS
         run: |
