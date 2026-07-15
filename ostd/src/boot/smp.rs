@@ -26,7 +26,7 @@ struct ApBootInfo {
     /// Raw boot information for each AP.
     per_ap_raw_info: Box<[PerApRawInfo]>,
     /// Boot information for each AP.
-    #[expect(dead_code)]
+    #[cfg_attr(target_arch = "x86_64", expect(dead_code))]
     per_ap_info: Box<[PerApInfo]>,
 }
 
@@ -35,7 +35,7 @@ struct PerApInfo {
     // no longer be used, and the `Segment` can be deallocated (this problem also
     // exists in the boot processor, but the memory it occupies should be returned
     // to the frame allocator).
-    #[expect(dead_code)]
+    #[cfg_attr(target_arch = "x86_64", expect(dead_code))]
     boot_stack_pages: Segment<KernelMeta>,
 }
 
