@@ -1,4 +1,4 @@
-{ lib, stdenvNoCC, callPackage, hostPlatform, pkgsHostTarget
+{ lib, stdenvNoCC, callPackage, hostPlatform, pkgsHostTarget, pkgsBuildBuild
 , benchmarkName ? "none", }: rec {
   # Use `--esx` flag to enable `CONFIG_NO_SHM` and disable `CONFIG_HAVE_TIMERFD_CREATE`.
   fio = pkgsHostTarget.fio.overrideAttrs (_: { configureFlags = [ "--esx" ]; });
@@ -19,6 +19,21 @@
   packWith = pkg: install: { inherit pkg install; };
 
   benchmarkGroups = {
+    # boot measures boot latency and needs no tool binaries, only its scripts
+    # plus size padding. The case name "boot/boot_lat_<N>mb" encodes the pad to
+    # add (N MiB, not the final image size); other boot cases add none. The pad
+    # is a fixed-key AES-CTR keystream: deterministic (so the build stays
+    # reproducible and cacheable) yet incompressible, so both the gzip image and
+    # the unpacked rootfs grow by ~N MiB rather than being squeezed away by gzip.
+    boot = packWith null (_:
+      let m = builtins.match "boot/boot_lat_([0-9]+)mb" benchmarkName;
+      in lib.optionalString (m != null) ''
+        dd if=/dev/zero bs=1M count=${builtins.head m} status=none \
+          | ${pkgsBuildBuild.openssl}/bin/openssl enc -aes-256-ctr -nosalt \
+              -K 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
+              -iv 000102030405060708090a0b0c0d0e0f \
+          > $out/pad.bin
+      '');
     fio = packWith fio (p: "cp -r ${p}/bin/fio $out/bin/");
     hackbench = packWith hackbench (p: "cp -r ${p}/bin/hackbench $out/bin/");
     iperf3 = packWith iperf3 (p: "cp -r ${p}/bin/iperf3 $out/bin/");
