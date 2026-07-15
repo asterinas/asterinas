@@ -20,10 +20,6 @@ AllInetTests/TcpSocketTest.ClosedWriteBlockingSocket/*
 AllInetTests/TcpSocketTest.FullBuffer/*
 AllInetTests/TcpSocketTest.IntegerOptGetsockoptSmallBuffer/0
 AllInetTests/TcpSocketTest.IntegerOptGetsockoptSmallBuffer/1
-AllInetTests/TcpSocketTest.MsgTrunc/*
-AllInetTests/TcpSocketTest.MsgTruncLargeSize/*
-AllInetTests/TcpSocketTest.MsgTruncPeek/*
-AllInetTests/TcpSocketTest.MsgTruncWithCtrunc/*
 AllInetTests/TcpSocketTest.SendUnblocksOnSendBufferIncrease/*
 AllInetTests/TcpSocketTest.SetPMTUD/*
 AllInetTests/TcpSocketTest.TcpInq/*

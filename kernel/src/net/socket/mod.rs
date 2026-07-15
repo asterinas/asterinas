@@ -3,7 +3,7 @@
 use core::fmt::Display;
 
 use options::SocketOption;
-use util::{MessageHeader, RecvFlags, SendFlags, SockShutdownCmd, SocketAddr};
+use util::{MessageHeader, RecvFlags, RecvOutput, SendFlags, SockShutdownCmd, SocketAddr};
 
 use crate::{
     fs::{
@@ -128,14 +128,13 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
 
     /// Receives a message from the socket.
     ///
-    /// If successful, the `io_vecs` buffer will be filled with the received content.
-    /// This method returns the length of the received message,
-    /// and the message header.
+    /// If successful, the `writer` buffer will be filled with the received content.
+    /// This method returns the length, flags, and header of the received message.
     fn recvmsg(
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, MessageHeader)>;
+    ) -> Result<(RecvOutput, MessageHeader)>;
 
     /// Returns the common state for this socket.
     fn common(&self) -> &FileCommon;
@@ -149,7 +148,8 @@ impl<T: Socket + 'static> FileLike for T {
         }
 
         // TODO: Set correct flags
-        self.recvmsg(writer, RecvFlags::empty()).map(|(len, _)| len)
+        self.recvmsg(writer, RecvFlags::empty())
+            .map(|(output, _)| output.len())
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {

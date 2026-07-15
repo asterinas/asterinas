@@ -18,6 +18,7 @@ sleep 0.2
 
 ./listen_backlog
 ./msg_peek
+./msg_trunc
 ./privileged_ports
 ./send_buf_full
 ./sendmmsg

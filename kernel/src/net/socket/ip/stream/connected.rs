@@ -74,10 +74,21 @@ impl ConnectedStream {
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
     ) -> Result<(usize, NeedIfacePoll)> {
+        let mut trunc_len = if flags.contains(RecvFlags::MSG_TRUNC) {
+            Some(writer.sum_lens())
+        } else {
+            None
+        };
         let result = self
             .tcp_conn
             .recv(flags.receive_behavior(), |socket_buffer| {
-                writer.write(&mut VmReader::from(socket_buffer))
+                if let Some(remaining) = trunc_len.as_mut() {
+                    let recv_len = socket_buffer.len().min(*remaining);
+                    *remaining -= recv_len;
+                    Ok(recv_len)
+                } else {
+                    writer.write(&mut VmReader::from(socket_buffer))
+                }
             });
 
         match result {
