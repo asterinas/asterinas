@@ -2,7 +2,7 @@
 
 use align_ext::AlignExt;
 
-use super::SocketAddr;
+use super::{RecvFlags, SocketAddr};
 use crate::{net::socket::unix::UnixControlMessage, prelude::*, util::net::CSocketOptionLevel};
 
 /// Message header used for sendmsg/recvmsg.
@@ -98,21 +98,23 @@ impl ControlMessage {
         }
     }
 
-    pub fn write_all_to(msgs: &[Self], writer: &mut VmWriter) -> usize {
+    pub fn write_all_to(msgs: &[Self], writer: &mut VmWriter) -> (usize, RecvFlags) {
         let mut len = 0;
+        let mut output_flags = RecvFlags::empty();
 
         for msg in msgs.iter() {
-            let header = match msg.write_to(writer) {
-                Ok(header) => header,
+            let (header, message_flags) = match msg.write_to(writer) {
+                Ok(result) => result,
                 // This occurs when the buffer is too short or when some page faults cannot be
                 // handled. However, at this point, there is no good way to report the errors to
                 // user space. According to the Linux implementation, it seems okay to silently
                 // ignore errors here.
                 Err(_) => {
-                    warn!("setting MSG_CTRUNC is not supported");
+                    output_flags |= RecvFlags::MSG_CTRUNC;
                     break;
                 }
             };
+            output_flags |= message_flags;
 
             len += header.total_len();
 
@@ -121,10 +123,10 @@ impl ControlMessage {
             len += padding_len;
         }
 
-        len
+        (len, output_flags)
     }
 
-    fn write_to(&self, writer: &mut VmWriter) -> Result<CControlHeader> {
+    fn write_to(&self, writer: &mut VmWriter) -> Result<(CControlHeader, RecvFlags)> {
         match self {
             Self::Unix(msg) => msg.write_to(writer),
         }

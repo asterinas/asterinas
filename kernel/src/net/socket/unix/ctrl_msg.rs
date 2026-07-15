@@ -12,7 +12,7 @@ use crate::{
         FileLike,
         file_table::{FdFlags, get_file_fast},
     },
-    net::socket::util::{CControlHeader, ControlMessage},
+    net::socket::util::{CControlHeader, ControlMessage, RecvFlags},
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     security::lsm::hooks as lsm_hooks,
@@ -55,7 +55,7 @@ impl UnixControlMessage {
         }
     }
 
-    pub fn write_to(&self, writer: &mut VmWriter) -> Result<CControlHeader> {
+    pub fn write_to(&self, writer: &mut VmWriter) -> Result<(CControlHeader, RecvFlags)> {
         match &self.0 {
             Message::Files(msg) => msg.write_to(writer),
             Message::Cred(msg) => msg.write_to(writer),
@@ -110,7 +110,7 @@ impl FileMessage {
         Ok(FileMessage { files })
     }
 
-    fn write_to(&self, writer: &mut VmWriter) -> Result<CControlHeader> {
+    fn write_to(&self, writer: &mut VmWriter) -> Result<(CControlHeader, RecvFlags)> {
         let nfiles = self
             .files
             .len()
@@ -118,9 +118,11 @@ impl FileMessage {
         if nfiles == 0 {
             return_errno_with_message!(Errno::EINVAL, "the control message buffer is too small");
         }
-        if nfiles < self.files.len() {
-            warn!("setting MSG_CTRUNC is not supported");
-        }
+        let output_flags = if nfiles < self.files.len() {
+            RecvFlags::MSG_CTRUNC
+        } else {
+            RecvFlags::empty()
+        };
 
         let header = CControlHeader::new(
             CSocketOptionLevel::SOL_SOCKET,
@@ -143,7 +145,7 @@ impl FileMessage {
             writer.write_val::<i32>(&(fd.into()))?;
         }
 
-        Ok(header)
+        Ok((header, output_flags))
     }
 }
 
@@ -163,12 +165,14 @@ impl CredMessage {
         Ok(Self { cred })
     }
 
-    fn write_to(&self, writer: &mut VmWriter) -> Result<CControlHeader> {
+    fn write_to(&self, writer: &mut VmWriter) -> Result<(CControlHeader, RecvFlags)> {
         let payload_len =
             size_of::<CUserCred>().min(CControlHeader::payload_len_from_total(writer.avail())?);
-        if payload_len != size_of::<CUserCred>() {
-            warn!("setting MSG_CTRUNC is not supported");
-        }
+        let output_flags = if payload_len != size_of::<CUserCred>() {
+            RecvFlags::MSG_CTRUNC
+        } else {
+            RecvFlags::empty()
+        };
 
         let header = CControlHeader::new(
             CSocketOptionLevel::SOL_SOCKET,
@@ -178,7 +182,7 @@ impl CredMessage {
         writer.write_val(&header)?;
         writer.write_fallible(&mut VmReader::from(self.cred.as_bytes()))?;
 
-        Ok(header)
+        Ok((header, output_flags))
     }
 }
 
