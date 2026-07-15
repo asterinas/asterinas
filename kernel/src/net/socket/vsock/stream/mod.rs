@@ -21,7 +21,7 @@ use crate::{
         Socket,
         options::{Error as SocketError, SocketOption, macros::sock_option_mut},
         private::SocketPrivate,
-        util::{MessageHeader, RecvFlags, SendFlags, SockShutdownCmd, SocketAddr},
+        util::{MessageHeader, RecvFlags, RecvOutput, SendFlags, SockShutdownCmd, SocketAddr},
         vsock::addr::{UNSPECIFIED_VSOCK_ADDR, VsockSocketAddr},
     },
     prelude::*,
@@ -412,7 +412,7 @@ impl Socket for VsockStreamSocket {
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, MessageHeader)> {
+    ) -> Result<(RecvOutput, MessageHeader)> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
             warn!("unsupported flags: {:?}", flags);
@@ -423,7 +423,7 @@ impl Socket for VsockStreamSocket {
         // TODO: Receive control message
         let message_header = MessageHeader::new(None, Vec::new());
 
-        Ok((received_bytes, message_header))
+        Ok((RecvOutput::new_for_stream(received_bytes), message_header))
     }
 
     fn common(&self) -> &FileCommon {

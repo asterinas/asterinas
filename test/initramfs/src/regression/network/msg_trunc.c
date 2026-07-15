@@ -71,3 +71,50 @@ FN_TEST(tcp_msg_trunc)
 	TEST_SUCC(close(recv_fd));
 }
 END_TEST()
+
+FN_TEST(udp_msg_trunc)
+{
+	int send_fd;
+	int recv_fd;
+	int msg_flags = 0;
+	char buf[PAYLOAD_LEN] = {};
+	struct sockaddr_in addr = { .sin_family = AF_INET };
+	socklen_t addr_len = sizeof(addr);
+
+	send_fd = TEST_SUCC(socket(AF_INET, SOCK_DGRAM, 0));
+	recv_fd = TEST_SUCC(socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0));
+
+	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	TEST_SUCC(bind(recv_fd, (struct sockaddr *)&addr, sizeof(addr)));
+	TEST_SUCC(getsockname(recv_fd, (struct sockaddr *)&addr, &addr_len));
+	TEST_SUCC(connect(send_fd, (struct sockaddr *)&addr, addr_len));
+
+	TEST_RES(send(send_fd, PAYLOAD, PAYLOAD_LEN, 0), _ret == PAYLOAD_LEN);
+	TEST_RES(recvmsg_with_flags(recv_fd, 0, buf, SHORT_LEN, &msg_flags),
+		 _ret == SHORT_LEN && (msg_flags & MSG_TRUNC) != 0 &&
+			 memcmp(buf, PAYLOAD, SHORT_LEN) == 0);
+
+	TEST_RES(send(send_fd, PAYLOAD, PAYLOAD_LEN, 0), _ret == PAYLOAD_LEN);
+	memset(buf, 0, sizeof(buf));
+	msg_flags = 0;
+	TEST_RES(recvmsg_with_flags(recv_fd, MSG_TRUNC, buf, SHORT_LEN,
+				    &msg_flags),
+		 _ret == PAYLOAD_LEN && (msg_flags & MSG_TRUNC) != 0 &&
+			 memcmp(buf, PAYLOAD, SHORT_LEN) == 0);
+	TEST_ERRNO(recv(recv_fd, buf, sizeof(buf), 0), EAGAIN);
+
+	TEST_RES(send(send_fd, PAYLOAD, PAYLOAD_LEN, 0), _ret == PAYLOAD_LEN);
+	memset(buf, 0, sizeof(buf));
+	msg_flags = 0;
+	TEST_RES(recvmsg_with_flags(recv_fd, MSG_PEEK | MSG_TRUNC, buf,
+				    SHORT_LEN, &msg_flags),
+		 _ret == PAYLOAD_LEN && (msg_flags & MSG_TRUNC) != 0 &&
+			 memcmp(buf, PAYLOAD, SHORT_LEN) == 0);
+	memset(buf, 0, sizeof(buf));
+	TEST_RES(recv(recv_fd, buf, sizeof(buf), 0),
+		 _ret == PAYLOAD_LEN && memcmp(buf, PAYLOAD, PAYLOAD_LEN) == 0);
+
+	TEST_SUCC(close(send_fd));
+	TEST_SUCC(close(recv_fd));
+}
+END_TEST()
