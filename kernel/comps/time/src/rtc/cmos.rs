@@ -15,10 +15,18 @@
 
 use core::num::NonZeroU8;
 
-use ostd::{arch::{device::io_port::{ReadWriteAccess, WriteOnlyAccess}, kernel::ACPI_INFO}, io::IoPort, sync::SpinLock, warn};
+use ostd::{
+    arch::{
+        device::io_port::{ReadWriteAccess, WriteOnlyAccess},
+        kernel::ACPI_INFO,
+    },
+    io::IoPort,
+    sync::SpinLock,
+    warn,
+};
 
-use crate::SystemTime;
 use super::Driver;
+use crate::SystemTime;
 
 pub struct RtcCmos {
     access: SpinLock<CmosAccess>,
@@ -41,7 +49,10 @@ impl Driver for RtcCmos {
 
         let acpi_info = ACPI_INFO.get().unwrap();
 
-        if acpi_info.boot_flags.is_some_and(|flags| flags.use_time_and_alarm_namespace_for_rtc()) {
+        if acpi_info
+            .boot_flags
+            .is_some_and(|flags| flags.use_time_and_alarm_namespace_for_rtc())
+        {
             // "If set, indicates that the CMOS RTC is either not implemented, or does not exist at
             // the legacy addresses". See:
             // <https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html#ia-pc-boot-architecture-flags>.
@@ -140,7 +151,8 @@ impl CmosAccess {
     }
 
     pub(self) fn read_century(&mut self) -> Option<u8> {
-        self.century_register.map(|r| self.read_register_impl(r.get()))
+        self.century_register
+            .map(|r| self.read_register_impl(r.get()))
     }
 
     pub(self) fn read_status_a(&mut self) -> StatusA {
@@ -181,7 +193,9 @@ impl CmosData {
         let mut now = Self::from_rtc_raw(&mut access);
         // Retry if the new value differs from the old one. An RTC update may occur in the
         // meantime, which would result in an invalid value.
-        while let new = Self::from_rtc_raw(&mut access) && now != new {
+        while let new = Self::from_rtc_raw(&mut access)
+            && now != new
+        {
             now = new;
         }
 
@@ -231,11 +245,14 @@ impl CmosData {
 
         self.second = bcd_to_binary(self.second);
         self.minute = bcd_to_binary(self.minute);
-        self.hour = bcd_to_binary(self.hour & !Self::HOUR_IS_AFTERNOON) | (self.hour & Self::HOUR_IS_AFTERNOON);
+        self.hour = bcd_to_binary(self.hour & !Self::HOUR_IS_AFTERNOON)
+            | (self.hour & Self::HOUR_IS_AFTERNOON);
         self.day = bcd_to_binary(self.day);
         self.month = bcd_to_binary(self.month);
         self.year = bcd_to_binary(self.year as u8) as u16;
-        self.century = self.century.and_then(|c| NonZeroU8::new(bcd_to_binary(c.get())));
+        self.century = self
+            .century
+            .and_then(|c| NonZeroU8::new(bcd_to_binary(c.get())));
     }
 
     const HOUR_IS_AFTERNOON: u8 = 0x80;
@@ -251,7 +268,11 @@ impl CmosData {
     fn modify_year(&mut self) {
         const DEFAULT_21_CENTURY: u8 = 20;
 
-        self.year += (self.century.map(NonZeroU8::get).unwrap_or(DEFAULT_21_CENTURY) as u16) * 100;
+        self.year += (self
+            .century
+            .map(NonZeroU8::get)
+            .unwrap_or(DEFAULT_21_CENTURY) as u16)
+            * 100;
     }
 }
 
