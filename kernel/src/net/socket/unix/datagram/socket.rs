@@ -20,7 +20,7 @@ use crate::{
         private::SocketPrivate,
         unix::{CUserCred, UnixSocketAddr, cred::SocketCred, ctrl_msg::AuxiliaryData},
         util::{
-            MessageHeader, RecvFlags, SendFlags, SockShutdownCmd, SocketAddr,
+            MessageHeader, RecvFlags, RecvOutput, SendFlags, SockShutdownCmd, SocketAddr,
             options::{
                 GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
             },
@@ -308,20 +308,20 @@ impl Socket for UnixDatagramSocket {
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, MessageHeader)> {
+    ) -> Result<(RecvOutput, MessageHeader)> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, control_messages, peer_addr) =
+        let (output, control_messages, peer_addr) =
             self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
                 self.local_receiver.try_recv(writer, flags)
             })?;
 
         let message_header = MessageHeader::new(Some(peer_addr.into()), control_messages);
 
-        Ok((received_bytes, message_header))
+        Ok((output, message_header))
     }
 
     fn common(&self) -> &FileCommon {
