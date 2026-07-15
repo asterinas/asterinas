@@ -3,6 +3,8 @@
 #define _GNU_SOURCE
 
 #include <arpa/inet.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -141,6 +143,53 @@ FN_TEST(unix_record_msg_trunc)
 
 		TEST_SUCC(close(fds[0]));
 		TEST_SUCC(close(fds[1]));
+	}
+}
+END_TEST()
+
+static int send_getlink_request(int fd, unsigned int seq)
+{
+	struct {
+		struct nlmsghdr hdr;
+		struct ifinfomsg info;
+	} req = {
+		.hdr = {
+			.nlmsg_len = sizeof(req),
+			.nlmsg_type = RTM_GETLINK,
+			.nlmsg_flags = NLM_F_REQUEST,
+			.nlmsg_seq = seq,
+		},
+		.info = {
+			.ifi_family = AF_UNSPEC,
+			.ifi_change = 0xffffffff,
+		},
+	};
+
+	return send(fd, &req, sizeof(req), 0) == sizeof(req) ? 0 : -1;
+}
+
+FN_TEST(netlink_msg_trunc)
+{
+	int types[] = { SOCK_RAW, SOCK_DGRAM };
+	struct sockaddr_nl addr = { .nl_family = AF_NETLINK };
+
+	for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
+		int fd;
+		int msg_flags = 0;
+		char buf[sizeof(struct nlmsghdr)] = {};
+
+		fd = TEST_SUCC(socket(AF_NETLINK, types[i] | SOCK_NONBLOCK,
+				      NETLINK_ROUTE));
+		TEST_SUCC(bind(fd, (struct sockaddr *)&addr, sizeof(addr)));
+
+		TEST_RES(send_getlink_request(fd, i + 1), _ret == 0);
+		TEST_RES(recvmsg_with_flags(fd, MSG_TRUNC, buf, sizeof(buf),
+					    &msg_flags),
+			 _ret > (ssize_t)sizeof(buf) &&
+				 (msg_flags & MSG_TRUNC) != 0);
+		TEST_ERRNO(recv(fd, buf, sizeof(buf), 0), EAGAIN);
+
+		TEST_SUCC(close(fd));
 	}
 }
 END_TEST()
