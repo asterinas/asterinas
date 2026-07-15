@@ -119,7 +119,7 @@ which are summarized in the table below.
 | 96      | gettimeofday           | ✅             | 💯 |
 | 97      | getrlimit              | ✅             | 💯 |
 | 98      | getrusage              | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#getrusage) |
-| 99      | sysinfo                | ✅             | 💯 |
+| 99      | sysinfo                | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#sysinfo) |
 | 100     | times                  | ❌             | N/A |
 | 101     | ptrace                 | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#ptrace) |
 | 102     | getuid                 | ✅             | 💯 |
