@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{RecvFlags, SendFlags};
+use super::{RecvFlags, RecvOutput, SendFlags};
 use crate::{
     events::IoEvents,
     prelude::*,
@@ -43,7 +43,7 @@ pub trait Bound {
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, Self::Endpoint)>;
+    ) -> Result<(RecvOutput, Self::Endpoint)>;
     fn try_send(
         &self,
         reader: &mut dyn MultiRead,
@@ -137,7 +137,7 @@ where
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, UnboundSocket::Endpoint)> {
+    ) -> Result<(RecvOutput, UnboundSocket::Endpoint)> {
         match self {
             Inner::Unbound(_) => {
                 return_errno_with_message!(Errno::EAGAIN, "the socket is not bound");

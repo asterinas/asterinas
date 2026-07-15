@@ -9,7 +9,7 @@ use crate::{
     events::IoEvents,
     net::{
         iface::{BoundUdpPort, Iface, UdpSocket},
-        socket::util::{RecvFlags, SendFlags, datagram_common},
+        socket::util::{RecvFlags, RecvOutput, SendFlags, datagram_common},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -56,20 +56,24 @@ impl datagram_common::Bound for BoundDatagram {
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, Self::Endpoint)> {
+    ) -> Result<(RecvOutput, Self::Endpoint)> {
         let result = self
             .bound_socket
             .recv(flags.receive_behavior(), |packet, udp_metadata| {
+                let message_len = packet.len();
                 let copied_res = writer
                     .write(&mut VmReader::from(packet))
                     .map_err(Into::into);
                 let endpoint = udp_metadata.endpoint;
-                (copied_res, endpoint)
+                (copied_res, endpoint, message_len)
             });
 
         match result {
-            Ok((Ok(res), endpoint)) => Ok((res, endpoint)),
-            Ok((Err(e), _)) => Err(e),
+            Ok((Ok(copied_len), endpoint, message_len)) => {
+                let output = RecvOutput::new_for_packet(flags, copied_len, message_len);
+                Ok((output, endpoint))
+            }
+            Ok((Err(e), _, _)) => Err(e),
             Err(RecvError::Exhausted) => {
                 return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
             }

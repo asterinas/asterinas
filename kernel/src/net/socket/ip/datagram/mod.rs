@@ -19,7 +19,7 @@ use crate::{
             options::{Error as SocketError, SocketOption, macros::sock_option_mut},
             private::SocketPrivate,
             util::{
-                MessageHeader, RecvFlags, SendFlags, SocketAddr,
+                MessageHeader, RecvFlags, RecvOutput, SendFlags, SocketAddr,
                 datagram_common::{Bound, Inner, select_remote_and_bind},
                 options::{
                     GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
@@ -82,15 +82,15 @@ impl DatagramSocket {
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, SocketAddr)> {
-        let recv_bytes = self
+    ) -> Result<(RecvOutput, SocketAddr)> {
+        let result = self
             .inner
             .read()
             .try_recv(writer, flags)
-            .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()))?;
+            .map(|(output, remote_endpoint)| (output, remote_endpoint.into()))?;
         self.pollee.invalidate();
 
-        Ok(recv_bytes)
+        Ok(result)
     }
 
     fn try_send(
@@ -226,13 +226,13 @@ impl Socket for DatagramSocket {
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, MessageHeader)> {
+    ) -> Result<(RecvOutput, MessageHeader)> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, peer_addr) =
+        let (output, peer_addr) =
             self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
                 self.try_recv(writer, flags)
             })?;
@@ -241,7 +241,7 @@ impl Socket for DatagramSocket {
 
         let message_header = MessageHeader::new(Some(peer_addr), Vec::new());
 
-        Ok((received_bytes, message_header))
+        Ok((output, message_header))
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
