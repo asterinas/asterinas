@@ -19,7 +19,7 @@ use crate::{
         },
         private::SocketPrivate,
         util::{
-            MessageHeader, RecvFlags, SendFlags, SocketAddr,
+            MessageHeader, RecvFlags, RecvOutput, SendFlags, SocketAddr,
             datagram_common::{Bound, Inner, select_remote_and_bind},
             options::{
                 GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
@@ -106,15 +106,15 @@ where
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, SocketAddr)> {
-        let recv_bytes = self
+    ) -> Result<(RecvOutput, SocketAddr)> {
+        let result = self
             .inner
             .read()
             .try_recv(writer, flags)
-            .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()))?;
+            .map(|(output, remote_endpoint)| (output, remote_endpoint.into()))?;
         self.pollee.invalidate();
 
-        Ok(recv_bytes)
+        Ok(result)
     }
 }
 
@@ -188,17 +188,16 @@ where
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, MessageHeader)> {
-        let (received_len, addr) =
-            self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
-                self.try_recv(writer, flags)
-            })?;
+    ) -> Result<(RecvOutput, MessageHeader)> {
+        let (output, addr) = self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
+            self.try_recv(writer, flags)
+        })?;
 
         // TODO: Receive control message
 
         let message_header = MessageHeader::new(Some(addr), Vec::new());
 
-        Ok((received_len, message_header))
+        Ok((output, message_header))
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
