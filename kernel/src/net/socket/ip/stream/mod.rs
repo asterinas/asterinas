@@ -38,7 +38,7 @@ use crate::{
             },
             private::SocketPrivate,
             util::{
-                MessageHeader, RecvFlags, SendFlags, SockShutdownCmd, SocketAddr,
+                MessageHeader, RecvFlags, RecvOutput, SendFlags, SockShutdownCmd, SocketAddr,
                 options::{
                     GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
                 },
@@ -621,7 +621,7 @@ impl Socket for StreamSocket {
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, MessageHeader)> {
+    ) -> Result<(RecvOutput, MessageHeader)> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
             warn!("unsupported flags: {:?}", flags);
@@ -638,7 +638,7 @@ impl Socket for StreamSocket {
         // peer address is ignored for connected socket.
         let message_header = MessageHeader::new(None, Vec::new());
 
-        Ok((received_bytes, message_header))
+        Ok((RecvOutput::new_for_stream(received_bytes), message_header))
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {

@@ -50,7 +50,7 @@ bitflags! {
         const MSG_SOCK_DEVMEM  = 0x2000000;
         const MSG_CMSG_CLOEXEC = 0x40000000;
 
-        const SUPPORTED        = RecvFlags::MSG_PEEK.bits;
+        const SUPPORTED        = RecvFlags::MSG_PEEK.bits | RecvFlags::MSG_TRUNC.bits;
     }
 }
 
