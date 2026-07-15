@@ -14,7 +14,7 @@ use ostd::mm::Vaddr;
 pub use self::{
     handle::VmarHandle,
     vmar_impls::{
-        RemapOldMappingAction, RssType, Vmar, map::VmarMapOffset, page_fault::PageFaultInfo,
+        RssType, Vmar, map::VmarMapOffset, page_fault::PageFaultInfo, remap::RemapOldMappingAction,
     },
 };
 

@@ -6,8 +6,9 @@ pub(super) mod map;
 pub(super) mod page_fault;
 mod protect;
 mod query;
-mod remap;
+pub(super) mod remap;
 mod unmap;
+
 use core::{
     array,
     ops::Range,
@@ -17,7 +18,6 @@ use core::{
 use align_ext::AlignExt;
 use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{cpu::CpuId, mm::VmSpace};
-pub use remap::RemapOldMappingAction;
 
 use super::{
     VMAR_CAP_ADDR, VMAR_LOWEST_ADDR,
