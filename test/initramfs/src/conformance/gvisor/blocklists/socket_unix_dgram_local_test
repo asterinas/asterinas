@@ -2,11 +2,5 @@
 DgramUnixSockets/NonStreamSocketPairTest.SplitRecv/*
 DgramUnixSockets/NonStreamSocketPairTest.RecvmsgTruncPeekDontwaitZeroLen/*
 
-# TODO: Support `MSG_TRUNC`
-DgramUnixSockets/NonStreamSocketPairTest.MsgTruncTruncation/*
-DgramUnixSockets/NonStreamSocketPairTest.MsgTruncTruncationRecvmsgMsghdrFlagMsgTrunc/*
-DgramUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncZeroLen/*
-DgramUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncMsgPeekZeroLen/*
-
 # TODO: Implement `SO_SNDBUF` behavior
 DgramUnixSockets/DgramUnixSocketPairTest.IncreasedSocketSendBufUnblocksWrites/*

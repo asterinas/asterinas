@@ -118,3 +118,29 @@ FN_TEST(udp_msg_trunc)
 	TEST_SUCC(close(recv_fd));
 }
 END_TEST()
+
+FN_TEST(unix_record_msg_trunc)
+{
+	int types[] = { SOCK_SEQPACKET, SOCK_DGRAM, SOCK_RAW };
+
+	for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
+		int fds[2] = { -1, -1 };
+		int msg_flags = 0;
+		char buf[PAYLOAD_LEN] = {};
+
+		TEST_SUCC(
+			socketpair(AF_UNIX, types[i] | SOCK_NONBLOCK, 0, fds));
+
+		TEST_RES(send(fds[0], PAYLOAD, PAYLOAD_LEN, 0),
+			 _ret == PAYLOAD_LEN);
+		TEST_RES(recvmsg_with_flags(fds[1], MSG_TRUNC, buf, SHORT_LEN,
+					    &msg_flags),
+			 _ret == PAYLOAD_LEN && (msg_flags & MSG_TRUNC) != 0 &&
+				 memcmp(buf, PAYLOAD, SHORT_LEN) == 0);
+		TEST_ERRNO(recv(fds[1], buf, sizeof(buf), 0), EAGAIN);
+
+		TEST_SUCC(close(fds[0]));
+		TEST_SUCC(close(fds[1]));
+	}
+}
+END_TEST()

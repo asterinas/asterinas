@@ -16,7 +16,7 @@ use crate::{
             addr::{UnixSocketAddrBound, UnixSocketAddrKey},
             ctrl_msg::AuxiliaryData,
         },
-        util::{ControlMessage, RecvFlags},
+        util::{ControlMessage, RecvFlags, RecvOutput},
     },
     prelude::*,
     process::signal::Pollee,
@@ -175,7 +175,7 @@ impl MessageReceiver {
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, Vec<ControlMessage>, UnixSocketAddr)> {
+    ) -> Result<(RecvOutput, Vec<ControlMessage>, UnixSocketAddr)> {
         let mut inner = self.queue.inner.lock();
         let inner = inner.as_mut().unwrap();
 
@@ -183,14 +183,16 @@ impl MessageReceiver {
             if !inner.is_shutdown {
                 return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty");
             } else {
-                return Ok((0, Vec::new(), UnixSocketAddr::Unnamed));
+                return Ok((
+                    RecvOutput::new_for_packet(flags, 0, 0),
+                    Vec::new(),
+                    UnixSocketAddr::Unnamed,
+                ));
             }
         };
 
+        let message_len = msg.bytes.len();
         let len = writer.write(&mut VmReader::from(msg.bytes.as_slice()))?;
-        if len != msg.bytes.len() {
-            warn!("setting MSG_TRUNC is not supported");
-        }
 
         let is_pass_cred = self.queue.is_pass_cred.load(Ordering::Relaxed);
         let src = msg.src.clone();
@@ -211,7 +213,8 @@ impl MessageReceiver {
             message.aux.generate_control(behavior, is_pass_cred)
         };
 
-        Ok((len, ctrl_msgs, src))
+        let output = RecvOutput::new_for_packet(flags, len, message_len);
+        Ok((output, ctrl_msgs, src))
     }
 
     pub(super) fn shutdown(&self) {
