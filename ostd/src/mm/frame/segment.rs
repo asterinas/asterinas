@@ -154,22 +154,13 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     /// # Panics
     ///
     /// The function panics if the byte offset range is out of bounds, or if
-    /// any of the ends of the byte offset range is not base-page aligned, or
-    /// if the computed absolute range overflows the address space.
+    /// any of the ends of the byte offset range is not base-page aligned.
     pub fn slice(&self, range: &Range<usize>) -> Self {
         assert!(range.start.is_multiple_of(PAGE_SIZE) && range.end.is_multiple_of(PAGE_SIZE));
-        let start = self
-            .range
-            .start
-            .checked_add(range.start)
-            .expect("segment slice start offset should not overflow");
-        let end = self
-            .range
-            .start
-            .checked_add(range.end)
-            .expect("segment slice end offset should not overflow");
+        assert!(range.start <= range.end && range.end <= self.size());
 
-        assert!(start <= end && end <= self.range.end);
+        let start = self.range.start + range.start;
+        let end = self.range.start + range.end;
 
         for paddr in (start..end).step_by(PAGE_SIZE) {
             // SAFETY: We already have reference counts for the frames since
