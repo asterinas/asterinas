@@ -3,7 +3,7 @@
 use chrono::{DateTime, Datelike, Timelike};
 use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, warn};
 
-use crate::{rtc::Driver, SystemTime};
+use crate::{SystemTime, rtc::Driver};
 
 pub struct RtcGoldfish {
     io_mem: IoMem,
