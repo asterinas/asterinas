@@ -14,7 +14,7 @@ use crate::{
         unix::{
             UnixSocketAddr, addr::UnixSocketAddrBound, cred::SocketCred, ctrl_msg::AuxiliaryData,
         },
-        util::{ControlMessage, RecvFlags, SockShutdownCmd},
+        util::{ControlMessage, RecvFlags, RecvOutput, SockShutdownCmd},
     },
     prelude::*,
     process::signal::Pollee,
@@ -118,13 +118,13 @@ impl Connected {
         writer: &mut dyn MultiWrite,
         is_seqpacket: bool,
         flags: RecvFlags,
-    ) -> Result<(usize, Vec<ControlMessage>)> {
+    ) -> Result<(RecvOutput, Vec<ControlMessage>)> {
         let is_empty = writer.is_empty();
         if is_empty && !is_seqpacket {
             if self.inner.this_end().reader.lock().is_empty() {
                 return_errno_with_message!(Errno::EAGAIN, "the channel is empty");
             }
-            return Ok((0, Vec::new()));
+            return Ok((RecvOutput::new_for_stream(0), Vec::new()));
         }
 
         let this_end = self.inner.this_end();
@@ -157,7 +157,7 @@ impl Connected {
             } else {
                 Vec::new()
             };
-            return Ok((read_len, ctrl_msgs));
+            return Ok((RecvOutput::new_for_stream(read_len), ctrl_msgs));
         }
 
         let mut all_aux = peer_end.all_aux.lock();
@@ -271,7 +271,14 @@ impl Connected {
         };
 
         debug_assert!(is_seqpacket || read_tot_len != 0);
-        Ok((read_tot_len, ctrl_msgs))
+        let output = if is_seqpacket {
+            let message_len = read_tot_len + trunc_len;
+            RecvOutput::new_for_packet(flags, read_tot_len, message_len)
+        } else {
+            RecvOutput::new_for_stream(read_tot_len)
+        };
+
+        Ok((output, ctrl_msgs))
     }
 
     pub(super) fn try_write(
