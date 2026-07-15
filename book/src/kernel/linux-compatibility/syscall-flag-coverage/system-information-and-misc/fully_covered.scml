@@ -1,9 +1,6 @@
 // Set pointer to thread ID
 set_tid_address(tidptr);
 
-// Return system information
-sysinfo(info);
-
 // Get directory entries
 getdents(fd, dirp, count);
 getdents64(fd, dirp, count);
