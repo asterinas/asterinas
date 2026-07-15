@@ -156,4 +156,11 @@ nixos-install --root ${BUILD_DIR} --no-root-passwd \
     --system "${SYSTEM_CLOSURE}" \
     "${COMMON_NIX_ARGS[@]}"
 
+# Retain only the current system generation. Reusing the disk image otherwise
+# preserves old system closures in its Nix store after every installation.
+nix-env --store "${BUILD_DIR}" \
+    -p "${BUILD_DIR}/nix/var/nix/profiles/system" \
+    --delete-generations old
+nix-store --store "${BUILD_DIR}" --gc
+
 echo "Congratulations! Asterinas NixOS has been installed successfully!"
