@@ -69,7 +69,7 @@ bitflags! {
 struct EventFile {
     counter: Mutex<u64>,
     pollee: Pollee,
-    flags: Mutex<Flags>,
+    is_semaphore: bool,
     common: FileCommon,
     write_wait_queue: WaitQueue,
 }
@@ -82,6 +82,7 @@ impl EventFile {
         let pollee = Pollee::new();
         let write_wait_queue = WaitQueue::new();
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[eventfd]".to_string());
+        let is_semaphore = flags.contains(Flags::EFD_SEMAPHORE);
         let status_flags = if flags.contains(Flags::EFD_NONBLOCK) {
             StatusFlags::O_NONBLOCK
         } else {
@@ -90,14 +91,14 @@ impl EventFile {
         Self {
             counter,
             pollee,
-            flags: Mutex::new(flags),
+            is_semaphore,
             common: FileCommon::new(pseudo_path, status_flags),
             write_wait_queue,
         }
     }
 
     fn is_nonblocking(&self) -> bool {
-        self.flags.lock().contains(Flags::EFD_NONBLOCK)
+        self.common.is_nonblocking()
     }
 
     fn check_io_events(&self) -> IoEvents {
@@ -129,7 +130,7 @@ impl EventFile {
         }
 
         // Copy the value from the counter and set the new counter value
-        if self.flags.lock().contains(Flags::EFD_SEMAPHORE) {
+        if self.is_semaphore {
             writer.write_fallible(&mut 1u64.as_bytes().into())?;
             *counter -= 1;
         } else {
