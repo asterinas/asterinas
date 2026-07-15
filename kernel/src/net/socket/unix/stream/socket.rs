@@ -23,7 +23,8 @@ use crate::{
         private::SocketPrivate,
         unix::{CUserCred, UnixSocketAddr, cred::SocketCred, ctrl_msg::AuxiliaryData},
         util::{
-            ControlMessage, MessageHeader, RecvFlags, SendFlags, SockShutdownCmd, SocketAddr,
+            ControlMessage, MessageHeader, RecvFlags, RecvOutput, SendFlags, SockShutdownCmd,
+            SocketAddr,
             options::{
                 GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet, SocketTimeouts,
             },
@@ -251,7 +252,7 @@ impl UnixStreamSocket {
         &self,
         buf: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, Vec<ControlMessage>)> {
+    ) -> Result<(RecvOutput, Vec<ControlMessage>)> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_read(buf, self.is_seqpacket(), flags),
             State::Init(_) | State::Listen(_) => {
@@ -529,20 +530,20 @@ impl Socket for UnixStreamSocket {
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
-    ) -> Result<(usize, MessageHeader)> {
+    ) -> Result<(RecvOutput, MessageHeader)> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, control_messages) =
+        let (output, control_messages) =
             self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
                 self.try_recv(writer, flags)
             })?;
 
         let message_header = MessageHeader::new(None, control_messages);
 
-        Ok((received_bytes, message_header))
+        Ok((output, message_header))
     }
 
     fn common(&self) -> &FileCommon {

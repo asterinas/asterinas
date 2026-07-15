@@ -2,11 +2,5 @@
 SeqpacketUnixSockets/NonStreamSocketPairTest.SplitRecv/*
 SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgTruncPeekDontwaitZeroLen/*
 
-# TODO: Support `MSG_TRUNC`
-SeqpacketUnixSockets/NonStreamSocketPairTest.MsgTruncTruncation/*
-SeqpacketUnixSockets/NonStreamSocketPairTest.MsgTruncTruncationRecvmsgMsghdrFlagMsgTrunc/*
-SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncZeroLen/*
-SeqpacketUnixSockets/NonStreamSocketPairTest.RecvmsgMsgTruncMsgPeekZeroLen/*
-
 # TODO: Implement `SO_SNDBUF` behavior
 SeqpacketUnixSockets/SeqpacketUnixSocketPairTest.IncreasedSocketSendBufUnblocksWrites/*
