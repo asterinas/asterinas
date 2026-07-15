@@ -39,8 +39,7 @@ impl IdBitmap {
             len,
         };
 
-        let bit_slice = bitmap.bit_slice();
-        bitmap.first_available_id = (0..len).find(|&i| !bit_slice[i as usize]).unwrap_or(len);
+        bitmap.update_first_available_id(0);
         bitmap
     }
 
@@ -86,12 +85,7 @@ impl IdBitmap {
         if self.first_available_id < self.len {
             let id = self.first_available_id;
             self.bit_slice_mut().set(id as usize, true);
-
-            let bit_slice = self.bit_slice();
-            self.first_available_id = (id + 1..self.len)
-                .find(|&i| !bit_slice[i as usize])
-                .unwrap_or(self.len);
-
+            self.update_first_available_id(id + 1);
             Some(id)
         } else {
             None
@@ -143,9 +137,7 @@ impl IdBitmap {
         // In case we need to update `first_available_id`.
         let bit_slice = self.bit_slice();
         if bit_slice[self.first_available_id as usize] {
-            self.first_available_id = (allocated_range.end..self.len)
-                .find(|&i| !bit_slice[i as usize])
-                .map_or(self.len, |i| i);
+            self.update_first_available_id(allocated_range.end);
         }
 
         Some(allocated_range)
@@ -185,6 +177,19 @@ impl IdBitmap {
         if range_start < self.first_available_id {
             self.first_available_id = range_start
         }
+    }
+
+    /// Updates the `first_available_id` field to the first zero index at or after `start`.
+    fn update_first_available_id(&mut self, start: u16) {
+        let len = self.len;
+        let bit_slice = self
+            .bit_slice()
+            .get(start as usize..len as usize)
+            .expect("start is guaranteed to be valid by the caller");
+        self.first_available_id = bit_slice
+            .first_zero()
+            .map(|offset| start + offset as u16)
+            .unwrap_or(len);
     }
 }
 
