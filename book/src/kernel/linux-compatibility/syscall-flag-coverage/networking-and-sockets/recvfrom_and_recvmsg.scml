@@ -1,5 +1,5 @@
 // Supported message receive flags
-recv_flags = MSG_PEEK;
+recv_flags = MSG_PEEK | MSG_TRUNC;
 
 // Receive message from a socket
 recvfrom(
