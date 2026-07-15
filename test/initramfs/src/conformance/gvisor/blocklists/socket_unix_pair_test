@@ -6,15 +6,6 @@ AllUnixDomainSockets/UnixSocketPairTest.TIOCINQSucceeds/*
 AllUnixDomainSockets/UnixSocketPairTest.TIOCOUTQSucceeds/*
 AllUnixDomainSockets/UnixSocketPairTest.NetdeviceIoctlsSucceed/*
 
-# TODO: Report `MSG_(C)TRUNC` after truncating the (control) message
-AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicFDPassNoSpaceMsgCtrunc/*
-AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicFDPassNullControlMsgCtrunc/*
-AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicFDPassNotEnoughSpaceMsgCtrunc/*
-AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicThreeFDPassTruncationMsgCtrunc/*
-AllUnixDomainSockets/UnixSocketPairCmsgTest.BasicTwoFDPassUnalignedRecvTruncationMsgTrunc/*
-AllUnixDomainSockets/UnixSocketPairCmsgTest.CredPassNoSpaceMsgCtrunc/*
-AllUnixDomainSockets/UnixSocketPairCmsgTest.CredPassTruncatedMsgCtrunc/*
-
 # TODO: Support `MSG_CMSG_CLOEXEC`
 AllUnixDomainSockets/UnixSocketPairCmsgTest.CloexecRecvFDPass/*
 

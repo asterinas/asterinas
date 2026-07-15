@@ -2,7 +2,7 @@
 
 use super::read_socket_addr_from_user;
 use crate::{
-    net::socket::util::{ControlMessage, SocketAddr},
+    net::socket::util::{ControlMessage, RecvFlags, SocketAddr},
     prelude::*,
     util::{
         VmReaderArray, VmWriterArray, iovec::MAX_IO_VECTOR_LENGTH,
@@ -139,19 +139,21 @@ impl CUserMsgHdr {
         &self,
         control_messages: &[ControlMessage],
         user_space: &CurrentUserSpace,
-    ) -> Result<u32> {
+    ) -> Result<(u32, RecvFlags)> {
         if self.msg_control == 0 {
-            if !control_messages.is_empty() {
-                warn!("setting MSG_CTRUNC is not supported");
-            }
             // The length field will be set even if the control message pointer is NULL.
             // See <https://elixir.bootlin.com/linux/v6.15.6/source/net/socket.c#L2807>.
-            return Ok(0);
+            let output_flags = if control_messages.is_empty() {
+                RecvFlags::empty()
+            } else {
+                RecvFlags::MSG_CTRUNC
+            };
+            return Ok((0, output_flags));
         }
 
         let mut writer = user_space.writer(self.msg_control, self.msg_controllen)?;
-        let write_len = ControlMessage::write_all_to(control_messages, &mut writer) as u32;
-        Ok(write_len)
+        let (write_len, output_flags) = ControlMessage::write_all_to(control_messages, &mut writer);
+        Ok((write_len as u32, output_flags))
     }
 
     pub fn copy_reader_array_from_user<'a>(
