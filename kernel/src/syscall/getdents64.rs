@@ -232,7 +232,7 @@ enum DirentType {
     DT_REG = 8,
     DT_LNK = 10,
     DT_SOCK = 12,
-    #[expect(dead_code)]
+    #[cfg_attr(target_arch = "x86_64", expect(dead_code))]
     DT_WHT = 14,
 }
 
