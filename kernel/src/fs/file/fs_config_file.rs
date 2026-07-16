@@ -2,16 +2,16 @@
 
 use core::fmt::Display;
 
-use super::{AccessMode, CreationFlags, FileLike, InodeMode};
+use super::{AccessMode, CreationFlags, FileLike};
 use crate::{
     events::IoEvents,
     fs::{
         file::file_table::FdFlags,
         pseudofs::AnonInodeFs,
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FsFlags,
             path::{Mount, MountNamespace, Path, PerMountFlags},
-            registry::{FsCreationCtx, FsType},
+            registry::{DynFsType, FsAndRoot, FsCreationCtx},
         },
     },
     prelude::*,
@@ -24,7 +24,7 @@ use crate::{
 /// filesystem is created. Once creation succeeds, further configuration is
 /// rejected unless it is an explicit reconfiguration request.
 pub struct FsConfigFile {
-    fs_type: &'static dyn FsType,
+    fs_type: &'static dyn DynFsType,
     state: Mutex<FsConfigState>,
     pseudo_path: Path,
 }
@@ -37,27 +37,25 @@ enum FsConfigState {
 struct FsCreationConfig {
     flags: FsFlags,
     source: Option<String>,
-    mode: Option<InodeMode>,
     /// Accumulates filesystem-specific mount options as a comma-separated
     /// string, so they can be forwarded to `FsCreationCtx`.
     extra_options: String,
 }
 
 struct CreatedFs {
-    fs: Arc<dyn FileSystem>,
+    fs_and_root: FsAndRoot,
     flags: FsFlags,
     source: Option<String>,
 }
 
 impl FsConfigFile {
     /// Creates a filesystem configuration file for a filesystem type.
-    pub fn new(fs_type: &'static dyn FsType) -> Self {
+    pub fn new(fs_type: &'static dyn DynFsType) -> Self {
         Self {
             fs_type,
             state: Mutex::new(FsConfigState::Configuring(FsCreationConfig {
                 flags: FsFlags::empty(),
                 source: None,
-                mode: None,
                 extra_options: String::new(),
             })),
             pseudo_path: AnonInodeFs::new_path(|_| "anon_inode:[fscontext]".to_string()),
@@ -105,10 +103,6 @@ impl FsConfigFile {
                 config.source = Some(value.to_string());
                 Ok(())
             }
-            "mode" => {
-                config.mode = Some(parse_octal_mode(value)?);
-                Ok(())
-            }
             _ => {
                 append_option(&mut config.extra_options, key, Some(value));
                 Ok(())
@@ -137,24 +131,14 @@ impl FsConfigFile {
         let args_ref = args_cstr.as_deref();
         let fs_creation_ctx =
             FsCreationCtx::new(config.source.as_deref(), config.flags, args_ref, ctx);
-        let fs = self.fs_type.create(&fs_creation_ctx)?;
-        if Arc::strong_count(&fs) > 1 {
-            let extant_readonly = fs.flags().contains(FsFlags::RDONLY);
-            let context_readonly = config.flags.contains(FsFlags::RDONLY);
-            if extant_readonly != context_readonly {
-                return_errno_with_message!(
-                    Errno::EBUSY,
-                    "the read-only flag of the extant filesystem does not match"
-                );
-            }
-        } else {
-            if let Some(mode) = config.mode {
-                fs.root_inode().set_mode(mode)?;
-            }
-        }
+        let fs_and_root = self.fs_type.get_or_create(&fs_creation_ctx)?;
         let flags = config.flags;
         let source = config.source.clone();
-        *state = FsConfigState::Created(Some(CreatedFs { fs, flags, source }));
+        *state = FsConfigState::Created(Some(CreatedFs {
+            fs_and_root,
+            flags,
+            source,
+        }));
         Ok(())
     }
 
@@ -167,7 +151,7 @@ impl FsConfigFile {
     pub fn reconfigure_fs(&self, ctx: &Context) -> Result<()> {
         let state = self.state.lock();
         let (fs, flags) = match &*state {
-            FsConfigState::Created(Some(created)) => (&created.fs, created.flags),
+            FsConfigState::Created(Some(created)) => (created.fs_and_root.fs(), created.flags),
             FsConfigState::Created(None) => {
                 return_errno_with_message!(
                     Errno::EBUSY,
@@ -202,7 +186,7 @@ impl FsConfigFile {
         };
 
         let detached_mount = Mount::new_detached(
-            created_fs.fs.clone(),
+            created_fs.fs_and_root.clone(),
             flags,
             mnt_ns,
             created_fs.source.clone(),
@@ -316,17 +300,6 @@ impl FileLike for DetachedMountFile {
             fd_flags,
         })
     }
-}
-
-fn parse_octal_mode(value: &str) -> Result<InodeMode> {
-    const MAX_MODE_BITS: u16 = 0o7777;
-
-    let mode = u16::from_str_radix(value, 8)
-        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid octal mode"))?;
-    if mode & !MAX_MODE_BITS != 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid mode bits");
-    }
-    Ok(InodeMode::from_bits_truncate(mode))
 }
 
 fn append_option(options: &mut String, key: &str, value: Option<&str>) {

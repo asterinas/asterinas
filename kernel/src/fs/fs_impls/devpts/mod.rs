@@ -127,6 +127,8 @@ impl FileSystem for DevPts {
 struct DevPtsType;
 
 impl FsType for DevPtsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "devpts"
     }

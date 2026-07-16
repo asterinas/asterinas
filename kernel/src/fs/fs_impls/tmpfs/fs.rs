@@ -32,6 +32,8 @@ pub(in crate::fs) fn default_max_inodes() -> usize {
 pub(super) struct TmpFsType;
 
 impl FsType for TmpFsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "tmpfs"
     }

@@ -208,9 +208,8 @@ impl NameAndParent {
 impl Dentry {
     /// Creates a new root `Dentry` with the given inode.
     ///
-    /// It is been created during the construction of the `Mount`.
-    /// The `Mount` holds an arc reference to this root `Dentry`.
-    pub(super) fn new_root(inode: Arc<dyn Inode>) -> Arc<Self> {
+    /// It is created during the construction of a mounted filesystem.
+    pub(in crate::fs) fn new_root(inode: Arc<dyn Inode>) -> Arc<Self> {
         Self::new(inode, DentryOptions::Root)
     }
 

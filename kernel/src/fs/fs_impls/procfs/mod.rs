@@ -121,6 +121,8 @@ impl FileSystem for ProcFs {
 struct ProcFsType;
 
 impl FsType for ProcFsType {
+    type Key = ();
+
     fn name(&self) -> &'static str {
         "proc"
     }

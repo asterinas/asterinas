@@ -19,6 +19,7 @@ use crate::{
                 dentry::{Dentry, DentryKey},
                 mount_namespace::MountNamespace,
             },
+            registry::FsAndRoot,
         },
     },
     prelude::*,
@@ -213,7 +214,7 @@ pub struct Mount {
     /// Mountpoint dentry. A mount node can be mounted on one dentry of another mount node,
     /// which makes the mount being the child of the mount node.
     mountpoint: RwLock<Option<Arc<Dentry>>>,
-    /// The associated FS.
+    /// The associated mounted filesystem.
     fs: Arc<dyn FileSystem>,
     /// The mount source (e.g., a device path like "/dev/vda" or a filesystem name like "proc").
     ///
@@ -251,7 +252,15 @@ impl Mount {
         mnt_ns: Weak<MountNamespace>,
     ) -> Result<Arc<Self>> {
         let source = fs.name().to_string();
-        Self::new(fs, PerMountFlags::default(), None, mnt_ns, Some(source))
+        let root_dentry = Dentry::new_root(fs.root_inode());
+        Self::new(
+            root_dentry,
+            fs,
+            PerMountFlags::default(),
+            None,
+            mnt_ns,
+            Some(source),
+        )
     }
 
     /// Creates a pseudo mount node with an associated FS.
@@ -259,7 +268,15 @@ impl Mount {
     /// This pseudo mount is not mounted on other mount nodes, has no parent, and does not
     /// belong to any mount namespace.
     pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Result<Arc<Self>> {
-        Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new(), None)
+        let root_dentry = Dentry::new_root(fs.root_inode());
+        Self::new(
+            root_dentry,
+            fs,
+            PerMountFlags::KERNMOUNT,
+            None,
+            Weak::new(),
+            None,
+        )
     }
 
     /// Creates a mount node that is not attached to the mount tree.
@@ -270,12 +287,13 @@ impl Mount {
     // immutable. This should be changed once mount namespaces can be updated
     // during attach.
     pub fn new_detached(
-        fs: Arc<dyn FileSystem>,
+        fs_and_root: FsAndRoot,
         flags: PerMountFlags,
         mnt_ns: Weak<MountNamespace>,
         source: Option<String>,
     ) -> Result<Arc<Self>> {
-        Self::new(fs, flags, None, mnt_ns, source)
+        let (fs, root_dentry) = fs_and_root.into_parts();
+        Self::new(root_dentry, fs, flags, None, mnt_ns, source)
     }
 
     /// The internal constructor.
@@ -287,6 +305,7 @@ impl Mount {
     /// exist without a mountpoint, ensuring uniformity and security, while all other
     /// mount nodes must be explicitly assigned a mountpoint to maintain structural integrity.
     fn new(
+        root_dentry: Arc<Dentry>,
         fs: Arc<dyn FileSystem>,
         flags: PerMountFlags,
         parent_mount: Option<Weak<Mount>>,
@@ -297,7 +316,7 @@ impl Mount {
 
         Ok(Arc::new_cyclic(|weak_self| Self {
             id,
-            root_dentry: Dentry::new_root(fs.root_inode()),
+            root_dentry,
             mountpoint: RwLock::new(None),
             fs,
             source,
@@ -335,7 +354,7 @@ impl Mount {
     /// Returns the mounted child mount.
     pub(super) fn do_mount(
         self: &Arc<Self>,
-        fs: Arc<dyn FileSystem>,
+        fs_and_root: FsAndRoot,
         flags: PerMountFlags,
         mountpoint: &Arc<Dentry>,
         source: Option<String>,
@@ -346,7 +365,9 @@ impl Mount {
         }
 
         let key = mountpoint.key();
+        let (fs, root_dentry) = fs_and_root.into_parts();
         let child_mount = Self::new(
+            root_dentry,
             fs,
             flags,
             Some(Arc::downgrade(self)),
