@@ -137,18 +137,18 @@ license = "MPL-2.0"
 edition = "2024"
 
 [workspace.dependencies]
-ostd = { version = "0.18.0", path = "ostd" }
+ostd = { path = "ostd", version = "0.18.0" }
 
 # Crates under ostd/libs
 align_ext = { path = "ostd/libs/align_ext", version = "0.1.0" }
 id-alloc = { path = "ostd/libs/id-alloc", version = "0.1.0" }
 int-to-c-enum = { path = "ostd/libs/int-to-c-enum", version = "0.1.0" }
 int-to-c-enum-derive = { path = "ostd/libs/int-to-c-enum/derive", version = "0.1.0" }
-linux-boot-params = { version = "0.18.0", path = "ostd/libs/linux-bzimage/boot-params" }
-ostd-macros = { version = "0.18.0", path = "ostd/libs/ostd-macros" }
+linux-boot-params = { path = "ostd/libs/linux-bzimage/boot-params", version = "0.18.0" }
+ostd-macros = { path = "ostd/libs/ostd-macros", version = "0.18.0" }
 ostd-pod = { path = "ostd/libs/ostd-pod", version = "0.4.0" }
 ostd-pod-macros = { path = "ostd/libs/ostd-pod/macros", version = "0.4.0" }
-ostd-test = { version = "0.18.0", path = "ostd/libs/ostd-test" }
+ostd-test = { path = "ostd/libs/ostd-test", version = "0.18.0" }
 padding-struct = { path = "ostd/libs/padding-struct", version = "0.2.0" }
 
 # Crates under kernel/comps
