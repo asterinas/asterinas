@@ -24,9 +24,6 @@ cfg-if.workspace = true
 gimli.workspace = true
 id-alloc.workspace = true
 inherit-methods-macro.workspace = true
-int-to-c-enum.workspace = true
-intrusive-collections.workspace = true
-linux-boot-params.workspace = true
 log.workspace = true
 minicov = { workspace = true, optional = true }
 num-traits.workspace = true
@@ -35,7 +32,6 @@ ostd-test.workspace = true
 ostd-pod.workspace = true
 spin.workspace = true
 smallvec.workspace = true
-volatile.workspace = true
 zerocopy.workspace = true
 
 # The targets are chosen to prevent the generated machine code from using any
@@ -49,16 +45,14 @@ zerocopy.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
 acpi.workspace = true
+int-to-c-enum.workspace = true
+linux-boot-params.workspace = true
 multiboot2.workspace = true
 tdx-guest = { workspace = true, optional = true }
 unwinding = { workspace = true, features = ["fde-gnu-eh-frame-hdr"] }
+volatile.workspace = true
 x86.workspace = true
 x86_64.workspace = true
-iced-x86 = { version = "1.21.0", default-features = false, features = [
-    "no_std",
-    "decoder",
-    "gas",
-], optional = true }
 
 [target.riscv64imac-unknown-none-elf.dependencies]
 fdt.workspace = true
@@ -73,7 +67,7 @@ loongArch64.workspace = true
 [features]
 default = ["cvm_guest"]
 # The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX
-cvm_guest = ["dep:tdx-guest", "dep:iced-x86"]
+cvm_guest = ["dep:tdx-guest"]
 coverage = ["minicov"]
 riscv_sv39_mode = []
 
