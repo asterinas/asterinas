@@ -9,7 +9,6 @@ use riscv::{
     interrupt::supervisor::{Exception, Interrupt},
     register::scause::Trap,
 };
-use spin::Once;
 pub use trap::TrapFrame;
 pub(super) use trap::{RawUserContext, SSTATUS_FS_MASK, SSTATUS_SUM};
 
@@ -20,9 +19,7 @@ use crate::{
         timer::TIMER_IRQ,
     },
     cpu::PrivilegeLevel,
-    ex_table::ExTable,
     irq::call_irq_callback_functions,
-    mm::MAX_USERSPACE_VADDR,
 };
 
 /// Initializes interrupt handling on RISC-V.
@@ -58,9 +55,8 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
     let scause = riscv::register::scause::read();
     let Ok(cause) = Trap::<Interrupt, Exception>::try_from(scause.cause()) else {
         panic!(
-            "Cannot handle unknown trap, scause: {:#x}, trapframe: {:#x?}.",
-            scause.bits(),
-            f
+            "Cannot handle unknown trap: {:#x?}; trapframe: {:#x?}",
+            scause, f
         );
     };
 
@@ -85,18 +81,11 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
         CpuException::InstructionPageFault(fault_addr)
         | CpuException::LoadPageFault(fault_addr)
         | CpuException::StorePageFault(fault_addr) => {
-            if (0..MAX_USERSPACE_VADDR).contains(&fault_addr) {
-                handle_user_page_fault(f, &exception);
-            } else {
-                panic!(
-                    "Cannot handle page fault in kernel space, exception: {:#x?}, trapframe: {:#x?}.",
-                    exception, f
-                );
-            }
+            crate::mm::fault::handle_user_page_fault(f, &exception, fault_addr);
         }
         _ => {
             panic!(
-                "Cannot handle kernel exception, exception: {:#x?}, trapframe: {:#x?}.",
+                "Cannot handle kernel CPU exception: {:#x?}; trapframe: {:#x?}",
                 exception, f
             );
         }
@@ -128,37 +117,5 @@ pub(super) fn handle_irq(trap_frame: &TrapFrame, interrupt: Interrupt, priv_leve
                 priv_level,
             );
         }
-    }
-}
-
-#[expect(clippy::type_complexity)]
-static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuException) -> Result<(), ()>> = Once::new();
-
-/// Injects a custom handler for page faults that occur in the kernel and
-/// are caused by user-space address.
-pub fn inject_user_page_fault_handler(handler: fn(info: &CpuException) -> Result<(), ()>) {
-    USER_PAGE_FAULT_HANDLER.call_once(|| handler);
-}
-
-fn handle_user_page_fault(f: &mut TrapFrame, exception: &CpuException) {
-    let handler = USER_PAGE_FAULT_HANDLER
-        .get()
-        .expect("Page fault handler is missing");
-
-    let res = handler(exception);
-    // Copying bytes by bytes can recover directly
-    // if handling the page fault successfully.
-    if res.is_ok() {
-        return;
-    }
-
-    // Use the exception table to recover to normal execution.
-    if let Some(addr) = ExTable::find_recovery_inst_addr(f.sepc) {
-        f.sepc = addr;
-    } else {
-        panic!(
-            "Failed to handle page fault, exception: {:?}, trapframe: {:#x?}.",
-            exception, f
-        )
     }
 }

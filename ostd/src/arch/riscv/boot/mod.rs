@@ -36,6 +36,7 @@ fn parse_initramfs() -> Option<&'static [u8]> {
 
     let base_va = paddr_to_vaddr(start);
     let length = end - start;
+    // SAFETY: The command line is safe to read because of the contract with the loader.
     Some(unsafe { core::slice::from_raw_parts(base_va as *const u8, length) })
 }
 
@@ -125,6 +126,7 @@ unsafe extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
     unsafe { BOOTSTRAP_HART_ID = hart_id as u32 };
 
     let device_tree_ptr = paddr_to_vaddr(device_tree_paddr) as *const u8;
+    // SAFETY: The caller ensures the correctness of `device_tree_ptr`.
     let fdt = unsafe { Fdt::from_ptr(device_tree_ptr).unwrap() };
     DEVICE_TREE.call_once(|| fdt);
 

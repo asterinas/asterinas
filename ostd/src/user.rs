@@ -19,12 +19,6 @@ pub(crate) trait UserContextApiInternal {
 
 /// The common interface that every CPU architecture-specific [`UserContext`] implements.
 pub trait UserContextApi {
-    /// Gets the trap number of this interrupt.
-    fn trap_number(&self) -> usize;
-
-    /// Gets the trap error code of this interrupt.
-    fn trap_error_code(&self) -> usize;
-
     /// Sets the instruction pointer
     fn set_instruction_pointer(&mut self, ip: usize);
 

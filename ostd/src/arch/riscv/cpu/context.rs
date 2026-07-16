@@ -185,10 +185,14 @@ impl UserContextApiInternal for UserContext {
             let Ok(cause) = Trap::<Interrupt, Exception>::try_from(scause.cause()) else {
                 match scause.cause() {
                     Trap::Interrupt(i) => {
-                        panic!("Unknown interrupt in user mode: {:?}", i);
+                        panic!(
+                            "Cannot handle unknown interrupt: {:#x?}; trapframe: {:#x?}",
+                            i,
+                            self.as_trap_frame()
+                        );
                     }
                     Trap::Exception(e) => {
-                        crate::info!("Unknown exception in user mode: {:?}", e);
+                        crate::info!("Unknown CPU exception in user mode: {:#x?}", e);
                         self.exception = Some(CpuException::Unknown);
                         break ReturnReason::UserException;
                     }
@@ -230,14 +234,6 @@ impl UserContextApiInternal for UserContext {
 }
 
 impl UserContextApi for UserContext {
-    fn trap_number(&self) -> usize {
-        todo!()
-    }
-
-    fn trap_error_code(&self) -> usize {
-        todo!()
-    }
-
     fn instruction_pointer(&self) -> usize {
         self.user_context.sepc
     }
@@ -427,30 +423,39 @@ impl Default for QFpuContext {
 
 impl FFpuContext {
     fn save(&mut self) {
+        // SAFETY: It is safe to save FPU registers.
         unsafe { save_fpu_context_f(self as *mut _) };
     }
 
     fn load(&self) {
+        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
+        // memory safety.
         unsafe { load_fpu_context_f(self as *const _) };
     }
 }
 
 impl DFpuContext {
     fn save(&mut self) {
+        // SAFETY: It is safe to save FPU registers.
         unsafe { save_fpu_context_d(self as *mut _) };
     }
 
     fn load(&self) {
+        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
+        // memory safety.
         unsafe { load_fpu_context_d(self as *const _) };
     }
 }
 
 impl QFpuContext {
     fn save(&mut self) {
+        // SAFETY: It is safe to save FPU registers.
         unsafe { save_fpu_context_q(self as *mut _) };
     }
 
     fn load(&self) {
+        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
+        // memory safety.
         unsafe { load_fpu_context_q(self as *const _) };
     }
 }
