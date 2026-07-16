@@ -6,7 +6,7 @@ use crate::{
     device::PtySlave,
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags},
+        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
         vfs::inode::FileOps,
     },
     prelude::*,
@@ -90,5 +90,9 @@ impl PerOpenFileOps for PtySlaveFile {
 
     fn is_offset_aware(&self) -> bool {
         false
+    }
+
+    fn settable_status_flags(&self) -> SettableStatusFlags {
+        SettableStatusFlags::minimal().with_o_async()
     }
 }

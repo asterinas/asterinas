@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
 pub(super) use bound::BoundNetlink;
 use unbound::UnboundNetlink;
 
 use super::{GroupIdSet, NetlinkSocketAddr};
 use crate::{
     events::IoEvents,
-    fs::{pseudofs::SockFs, vfs::path::Path},
+    fs::{
+        file::{FileCommon, StatusFlags},
+        pseudofs::SockFs,
+    },
     net::socket::{
         Socket,
         netlink::{AddMembership, DropMembership, table::SupportedNetlinkProtocol},
@@ -39,9 +40,8 @@ pub struct NetlinkSocket<P: SupportedNetlinkProtocol> {
     socket_type: SockType,
     timeouts: SocketTimeouts,
 
-    is_nonblocking: AtomicBool,
     pollee: Pollee,
-    pseudo_path: Path,
+    common: FileCommon,
 }
 
 #[derive(Clone, Debug)]
@@ -65,14 +65,18 @@ where
         debug_assert!(socket_type == SockType::SOCK_RAW || socket_type == SockType::SOCK_DGRAM);
 
         let unbound = UnboundNetlink::new();
+        let status_flags = if is_nonblocking {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
         Arc::new(Self {
             inner: RwMutex::new(Inner::Unbound(unbound)),
             options: RwLock::new(OptionSet::new()),
             socket_type,
             timeouts: SocketTimeouts::new(),
-            is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            pseudo_path: SockFs::new_path(),
+            common: FileCommon::new(SockFs::new_path(), status_flags),
         })
     }
 
@@ -237,8 +241,8 @@ where
         do_netlink_setsockopt(option, &mut inner)
     }
 
-    fn pseudo_path(&self) -> &Path {
-        &self.pseudo_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 }
 
@@ -247,11 +251,7 @@ where
     BoundNetlink<P::Message>: Bound<Endpoint = NetlinkSocketAddr>,
 {
     fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    fn set_nonblocking(&self, nonblocking: bool) {
-        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
+        self.common.is_nonblocking()
     }
 }
 

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use aster_bigtcp::wire::IpEndpoint;
 use bound::BoundDatagram;
 use unbound::{BindOptions, UnboundDatagram};
@@ -9,7 +7,10 @@ use unbound::{BindOptions, UnboundDatagram};
 use super::addr::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::IoEvents,
-    fs::{pseudofs::SockFs, vfs::path::Path},
+    fs::{
+        file::{FileCommon, StatusFlags},
+        pseudofs::SockFs,
+    },
     net::{
         iface::is_broadcast_endpoint,
         socket::{
@@ -41,9 +42,8 @@ pub struct DatagramSocket {
     options: RwLock<OptionSet>,
     timeouts: SocketTimeouts,
 
-    is_nonblocking: AtomicBool,
     pollee: Pollee,
-    pseudo_path: Path,
+    common: FileCommon,
 }
 
 #[derive(Clone, Debug)]
@@ -64,13 +64,17 @@ impl OptionSet {
 impl DatagramSocket {
     pub fn new(is_nonblocking: bool) -> Arc<Self> {
         let unbound_datagram = UnboundDatagram::new();
+        let status_flags = if is_nonblocking {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
         Arc::new(Self {
             inner: RwMutex::new(Inner::Unbound(unbound_datagram)),
             options: RwLock::new(OptionSet::new()),
             timeouts: SocketTimeouts::new(),
-            is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            pseudo_path: SockFs::new_path(),
+            common: FileCommon::new(SockFs::new_path(), status_flags),
         })
     }
 
@@ -132,11 +136,7 @@ impl Pollable for DatagramSocket {
 
 impl SocketPrivate for DatagramSocket {
     fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    fn set_nonblocking(&self, is_nonblocking: bool) {
-        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
+        self.common.is_nonblocking()
     }
 }
 
@@ -304,8 +304,8 @@ impl Socket for DatagramSocket {
         Ok(())
     }
 
-    fn pseudo_path(&self) -> &Path {
-        &self.pseudo_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 }
 

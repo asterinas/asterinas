@@ -12,7 +12,10 @@ use hashbrown::HashMap;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{
+            AccessMode, CreationFlags, FileCommon, FileLike, SettableStatusFlags, StatusFlags,
+            file_table::FdFlags,
+        },
         pseudofs::AnonInodeFs,
         vfs::{
             inode::{FallocMode, Inode},
@@ -43,18 +46,16 @@ pub struct InotifyFile {
     watch_map: SpinLock<HashMap<u32, SubscriberEntry>>,
     // A mutex to synchronize `read()` operations.
     read_mutex: Mutex<()>,
-    // Whether the file is opened in non-blocking mode.
-    is_nonblocking: AtomicBool,
     // A bounded queue of inotify events.
     event_queue: SpinLock<VecDeque<InotifyEvent>>,
     // The maximum capacity of the event queue.
     queue_capacity: usize,
     // A pollable object for this inotify file.
     pollee: Pollee,
+    // The common state for this inotify file.
+    common: FileCommon,
     // A weak reference to this inotify file.
     this: Weak<InotifyFile>,
-    /// The pseudo path associated with this inotify file.
-    pseudo_path: Path,
 }
 
 impl Drop for InotifyFile {
@@ -91,6 +92,11 @@ impl InotifyFile {
     /// Creates a new inotify file.
     pub fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:inotify".to_string());
+        let status_flags = if is_nonblocking {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
 
         Ok(Arc::new_cyclic(|weak_self| Self {
             // Allocate watch descriptors from 1.
@@ -98,12 +104,11 @@ impl InotifyFile {
             next_wd: AtomicU32::new(1),
             watch_map: SpinLock::new(HashMap::new()),
             read_mutex: Mutex::new(()),
-            is_nonblocking: AtomicBool::new(is_nonblocking),
             event_queue: SpinLock::new(VecDeque::new()),
             queue_capacity: DEFAULT_MAX_QUEUED_EVENTS,
             pollee: Pollee::new(),
+            common: FileCommon::new(pseudo_path, status_flags),
             this: weak_self.clone(),
-            pseudo_path,
         }))
     }
 
@@ -324,7 +329,7 @@ impl Pollable for InotifyFile {
 
 impl FileLike for InotifyFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        if self.is_nonblocking.load(Ordering::Relaxed) {
+        if self.common.is_nonblocking() {
             self.try_read(writer)
         } else {
             self.wait_events(IoEvents::IN, None, || self.try_read(writer))
@@ -345,24 +350,12 @@ impl FileLike for InotifyFile {
         })
     }
 
-    fn status_flags(&self) -> StatusFlags {
-        if self.is_nonblocking.load(Ordering::Relaxed) {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        self.is_nonblocking.store(
-            new_flags.contains(StatusFlags::O_NONBLOCK),
-            Ordering::Relaxed,
-        );
-        Ok(())
-    }
-
     fn fallocate(&self, _mode: FallocMode, _offset: usize, _len: usize) -> Result<()> {
         return_errno_with_message!(Errno::EBADF, "inotify file is not opened writable");
+    }
+
+    fn settable_status_flags(&self) -> SettableStatusFlags {
+        SettableStatusFlags::minimal().with_o_async()
     }
 
     fn access_mode(&self) -> AccessMode {
@@ -370,8 +363,8 @@ impl FileLike for InotifyFile {
         AccessMode::O_RDONLY
     }
 
-    fn path(&self) -> &Path {
-        &self.pseudo_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {

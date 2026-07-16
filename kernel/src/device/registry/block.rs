@@ -11,7 +11,7 @@ use crate::{
     device::{Device, DeviceType, DevtmpfsInodeMeta, add_node},
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags},
+        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
         vfs::{inode::FileOps, path::PathResolver},
     },
     prelude::*,
@@ -232,6 +232,10 @@ impl PerOpenFileOps for OpenBlockFile {
                 "the ioctl command is not supported by block devices"
             ),
         })
+    }
+
+    fn settable_status_flags(&self) -> SettableStatusFlags {
+        SettableStatusFlags::minimal().with_o_direct()
     }
 }
 

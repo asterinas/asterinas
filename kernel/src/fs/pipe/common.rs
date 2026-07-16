@@ -10,7 +10,7 @@ use ostd::sync::WaitQueue;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, PerOpenFileOps, StatusFlags},
+        file::{AccessMode, PerOpenFileOps, SettableStatusFlags, StatusFlags},
         utils::{Endpoint, EndpointState},
         vfs::inode::FileOps,
     },
@@ -157,6 +157,11 @@ impl PerOpenFileOps for PipeHandle {
             }
             _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
         })
+    }
+
+    fn settable_status_flags(&self) -> SettableStatusFlags {
+        // TODO: Support "packet" mode for pipes then `O_DIRECT` can be supported.
+        SettableStatusFlags::minimal().with_o_async()
     }
 }
 

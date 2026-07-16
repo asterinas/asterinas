@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{
-    fmt::Display,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use core::fmt::Display;
 
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::PidfdFs,
-        vfs::path::Path,
     },
     prelude::*,
     process::{
@@ -21,9 +17,7 @@ use crate::{
 
 pub struct PidFile {
     process: Weak<Process>,
-    is_nonblocking: AtomicBool,
-    /// The pseudo path associated with this pid file.
-    pseudo_path: Path,
+    common: FileCommon,
 }
 
 impl Debug for PidFile {
@@ -31,10 +25,7 @@ impl Debug for PidFile {
         let pid = self.process.upgrade().map_or(u32::MAX, |p| p.pid());
         f.debug_struct("PidFile")
             .field("process", &pid)
-            .field(
-                "is_nonblocking",
-                &self.is_nonblocking.load(Ordering::Relaxed),
-            )
+            .field("is_nonblocking", &self.common.is_nonblocking())
             .finish_non_exhaustive()
     }
 }
@@ -42,11 +33,15 @@ impl Debug for PidFile {
 impl PidFile {
     pub fn new(process: Arc<Process>, is_nonblocking: bool) -> Self {
         let pseudo_path = PidfdFs::new_path(|_| "anon_inode:[pidfd]".to_string());
+        let status_flags = if is_nonblocking {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
 
         Self {
             process: Arc::downgrade(&process),
-            is_nonblocking: AtomicBool::new(is_nonblocking),
-            pseudo_path,
+            common: FileCommon::new(pseudo_path, status_flags),
         }
     }
 
@@ -67,7 +62,7 @@ impl PidFile {
     }
 
     pub(super) fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
+        self.common.is_nonblocking()
     }
 
     pub fn process_opt(&self) -> Option<Arc<Process>> {
@@ -90,31 +85,13 @@ impl FileLike for PidFile {
         );
     }
 
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        if new_flags.contains(StatusFlags::O_NONBLOCK) {
-            self.is_nonblocking.store(true, Ordering::Relaxed);
-        } else {
-            self.is_nonblocking.store(false, Ordering::Relaxed);
-        }
-
-        Ok(())
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        if self.is_nonblocking() {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
     fn access_mode(&self) -> AccessMode {
         // Reference: <https://elixir.bootlin.com/linux/v7.0/source/kernel/fork.c#L1898>.
         AccessMode::O_RDWR
     }
 
-    fn path(&self) -> &Path {
-        &self.pseudo_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {

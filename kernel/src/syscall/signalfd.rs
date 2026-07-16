@@ -6,10 +6,7 @@
 //! enabling better integration with event loops.
 //! See <https://man7.org/linux/man-pages/man2/signalfd.2.html>.
 
-use core::{
-    fmt::Display,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use core::{fmt::Display, sync::atomic::Ordering};
 
 use bitflags::bitflags;
 use ostd::mm::VmIo;
@@ -19,11 +16,10 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{
-            AccessMode, CreationFlags, FileLike, StatusFlags,
+            AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags,
             file_table::{FdFlags, RawFileDesc, get_file_fast},
         },
         pseudofs::AnonInodeFs,
-        vfs::path::Path,
     },
     prelude::*,
     process::{
@@ -138,21 +134,23 @@ bitflags! {
 struct SignalFile {
     /// Atomic signal mask for filtering signals
     signals_mask: AtomicSigMask,
-    /// Non-blocking mode flag
-    non_blocking: AtomicBool,
-    /// The pseudo path associated with this signalfd file.
-    pseudo_path: Path,
+    /// The common state for this signalfd file.
+    common: FileCommon,
 }
 
 impl SignalFile {
     /// Create a new signalfd instance
     fn new(mask: AtomicSigMask, non_blocking: bool) -> Self {
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[signalfd]".to_string());
+        let status_flags = if non_blocking {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
 
         Self {
             signals_mask: mask,
-            non_blocking: AtomicBool::new(non_blocking),
-            pseudo_path,
+            common: FileCommon::new(pseudo_path, status_flags),
         }
     }
 
@@ -165,12 +163,12 @@ impl SignalFile {
         Ok(())
     }
 
-    fn set_non_blocking(&self, non_blocking: bool) {
-        self.non_blocking.store(non_blocking, Ordering::Relaxed);
+    fn is_non_blocking(&self) -> bool {
+        self.common.is_nonblocking()
     }
 
-    fn is_non_blocking(&self) -> bool {
-        self.non_blocking.load(Ordering::Relaxed)
+    fn set_non_blocking(&self, non_blocking: bool) {
+        (self as &dyn FileLike).update_status_nonblock(non_blocking);
     }
 
     /// Check current readable I/O events
@@ -248,26 +246,13 @@ impl FileLike for SignalFile {
         }
     }
 
-    fn status_flags(&self) -> StatusFlags {
-        if self.is_non_blocking() {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        self.set_non_blocking(new_flags.contains(StatusFlags::O_NONBLOCK));
-        Ok(())
-    }
-
     fn access_mode(&self) -> AccessMode {
         // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/signalfd.c#L276>.
         AccessMode::O_RDWR
     }
 
-    fn path(&self) -> &Path {
-        &self.pseudo_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {

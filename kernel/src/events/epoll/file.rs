@@ -12,11 +12,10 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{
-            AccessMode, CreationFlags, FileLike,
+            AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags,
             file_table::{FdFlags, FileDesc, get_file_fast},
         },
         pseudofs::AnonInodeFs,
-        vfs::path::Path,
     },
     prelude::*,
     process::{
@@ -46,8 +45,8 @@ pub struct EpollFile {
     // Keep this in a separate `Arc` to avoid dropping `EpollFile` in the observer callback, which
     // may cause deadlocks.
     ready: Arc<ReadySet>,
-    /// The pseudo path associated with this epoll file.
-    pseudo_path: Path,
+    /// The common state for this epoll file.
+    common: FileCommon,
 }
 
 impl EpollFile {
@@ -58,7 +57,7 @@ impl EpollFile {
         Arc::new(Self {
             interest: Mutex::new(BTreeSet::new()),
             ready: Arc::new(ReadySet::new()),
-            pseudo_path,
+            common: FileCommon::new(pseudo_path, StatusFlags::empty()),
         })
     }
 
@@ -270,8 +269,8 @@ impl FileLike for EpollFile {
         AccessMode::O_RDWR
     }
 
-    fn path(&self) -> &Path {
-        &self.pseudo_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
