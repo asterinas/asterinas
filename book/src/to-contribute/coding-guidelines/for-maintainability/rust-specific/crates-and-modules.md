@@ -10,7 +10,7 @@ in member crates.
 ```toml
 # In the workspace root Cargo.toml
 [workspace.dependencies]
-ostd = { version = "0.17.0", path = "ostd" }
+ostd = { path = "ostd", version = "0.17.0" }
 bitflags = "2.6"
 
 # In a member crate's Cargo.toml

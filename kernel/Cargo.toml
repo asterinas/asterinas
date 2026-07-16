@@ -80,7 +80,11 @@ loongArch64.workspace = true
 [features]
 default = ["cvm_guest"]
 coverage = ["ostd/coverage"]
-cvm_guest = ["dep:tdx-guest", "ostd/cvm_guest", "aster-virtio/cvm_guest"]
+cvm_guest = [
+    "dep:tdx-guest",
+    "ostd/cvm_guest",
+    "aster-virtio/cvm_guest",
+]
 # By default we use the Sv48 address translation mode.
 riscv_sv39_mode = ["ostd/riscv_sv39_mode"]
 
