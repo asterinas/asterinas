@@ -8,7 +8,6 @@ edition.workspace = true
 [dependencies]
 aster-bigtcp.workspace = true
 aster-block.workspace = true
-aster-cmdline.workspace = true
 aster-console.workspace = true
 aster-fuse.workspace = true
 aster-input.workspace = true
@@ -16,7 +15,6 @@ aster-network.workspace = true
 aster-pci.workspace = true
 aster-rights.workspace = true
 aster-softirq.workspace = true
-aster-systree.workspace = true
 aster-util.workspace = true
 bitflags.workspace = true
 component.workspace = true
@@ -32,6 +30,7 @@ typeflags-util.workspace = true
 zerocopy.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
+aster-cmdline.workspace = true
 tdx-guest = { workspace = true, optional = true }
 
 [features]
