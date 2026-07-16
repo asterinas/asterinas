@@ -87,6 +87,12 @@ mod ioctl_defs {
     /// ioctl must return that larger value. Otherwise user programs will align
     /// correctly for the device but still hit `EINVAL` at the filesystem.
     pub(super) type BlkGetSectorSize = ioc!(BLKSSZGET, 0x12, 104, NoData);
+
+    /// Discards sectors on a block device.
+    ///
+    /// Argument is a `uint64_t[2]` (`{start_byte, length}`), both
+    /// sector-aligned. Discarded reads return zeroes on supported devices.
+    pub(super) type BlkDiscard = ioc!(BLKDISCARD, 0x12, 119, NoData);
 }
 
 /// Represents a block device inode in the filesystem.
@@ -225,6 +231,19 @@ impl PerOpenFileOps for OpenBlockFile {
             cmd @ BlkGetSize64 => {
                 let size = (self.0.metadata().nr_sectors * SECTOR_SIZE) as u64;
                 cmd.write(&size)?;
+                Ok(0)
+            }
+            _cmd @ BlkDiscard => {
+                let [offset, len]: [u64; 2] = current_userspace!().read_val(raw_ioctl.arg())?;
+                let offset = offset as usize;
+                let len = len as usize;
+                if offset % SECTOR_SIZE != 0 || len % SECTOR_SIZE != 0 || len == 0 {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "offset and length must be sector-aligned and non-zero"
+                    );
+                }
+                self.0.discard(offset, len)?;
                 Ok(0)
             }
             _ => return_errno_with_message!(

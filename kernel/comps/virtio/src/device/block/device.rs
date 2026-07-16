@@ -27,7 +27,7 @@ use ostd::{
     sync::SpinLock,
 };
 
-use super::{BlockFeatures, VirtioBlockConfig};
+use super::{BlockFeatures, DISCARD_REQ_SIZE, VirtioBlockConfig, VirtioBlockDiscardReq};
 use crate::{
     VIRTIO_BLOCK_MAJOR_ID,
     device::{
@@ -120,6 +120,7 @@ impl BlockDevice {
             BioType::Read => self.device.read(request),
             BioType::Write => self.device.write(request),
             BioType::Flush => self.device.flush(request),
+            BioType::Discard => self.device.discard(request),
         }
     }
 
@@ -202,6 +203,7 @@ struct DeviceInner {
     transport: SpinLock<DeviceTransport>,
     block_requests: Arc<DmaStream>,
     block_responses: Arc<DmaStream>,
+    discard_descs: Arc<DmaStream>,
     id_allocator: SyncIdAlloc,
     submitted_requests: SpinLock<BTreeMap<u16, SubmittedRequest>>,
 }
@@ -248,9 +250,12 @@ impl DeviceInner {
             Arc::new(DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?);
         let block_responses =
             Arc::new(DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?);
+        let discard_descs =
+            Arc::new(DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?);
         const {
             assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= PAGE_SIZE);
             assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= PAGE_SIZE);
+            assert!(Self::QUEUE_SIZE as usize * DISCARD_REQ_SIZE <= PAGE_SIZE);
         }
 
         let device = Arc::new(Self {
@@ -260,6 +265,7 @@ impl DeviceInner {
             transport: SpinLock::new(device_transport),
             block_requests,
             block_responses,
+            discard_descs,
             id_allocator: SyncIdAlloc::with_capacity(Self::QUEUE_SIZE as usize),
             submitted_requests: SpinLock::new(BTreeMap::new()),
         });
@@ -465,6 +471,77 @@ impl DeviceInner {
             }
             let token = queue
                 .add_dma_bufs(inputs.as_slice(), &[&resp_slice])
+                .expect("add queue failed");
+            if queue.should_notify() {
+                queue.notify();
+            }
+
+            // Records the submitted request
+            let submitted_request = SubmittedRequest::new(id as u16, bio_request);
+            self.submitted_requests
+                .disable_irq()
+                .lock()
+                .insert(token, submitted_request);
+            return;
+        }
+    }
+
+    /// Discards the specified sectors.
+    fn discard(&self, bio_request: BioRequest) {
+        if !self.features.contains(BlockFeatures::DISCARD) {
+            bio_request.into_bios().for_each(|bio| {
+                bio.complete(BioStatus::Complete);
+            });
+            return;
+        }
+
+        let id = self.id_allocator.alloc();
+        let req_slice = {
+            let req_slice =
+                Slice::new(&self.block_requests, id * REQ_SIZE..(id + 1) * REQ_SIZE);
+            let req = BlockReq {
+                type_: ReqType::Discard as _,
+                reserved: 0,
+                sector: bio_request.sid_range().start.to_raw(),
+            };
+            req_slice.write_val(0, &req).unwrap();
+            req_slice.sync_to_device().unwrap();
+            req_slice
+        };
+
+        let discard_slice = {
+            let discard_slice =
+                Slice::new(&self.discard_descs, id * DISCARD_REQ_SIZE..(id + 1) * DISCARD_REQ_SIZE);
+            let sid_range = bio_request.sid_range();
+            let num_sectors = (sid_range.end.to_raw() - sid_range.start.to_raw()) as u32;
+            let discard_req = VirtioBlockDiscardReq {
+                sector: sid_range.start.to_raw(),
+                num_sectors,
+                flags: 0,
+            };
+            discard_slice.write_val(0, &discard_req).unwrap();
+            discard_slice.sync_to_device().unwrap();
+            discard_slice
+        };
+
+        let resp_slice = {
+            let resp_slice =
+                Slice::new(&self.block_responses, id * RESP_SIZE..(id + 1) * RESP_SIZE);
+            resp_slice.write_val(0, &BlockResp::default()).unwrap();
+            resp_slice.sync_to_device().unwrap();
+            resp_slice
+        };
+
+        // One descriptor for the input `req_slice`, one for the input `discard_slice`,
+        // and one for the output `resp_slice`.
+        let num_used_descs = 3;
+        loop {
+            let mut queue = self.queue.disable_irq().lock();
+            if num_used_descs > queue.available_desc() {
+                continue;
+            }
+            let token = queue
+                .add_dma_bufs(&[&req_slice, &discard_slice], &[&resp_slice])
                 .expect("add queue failed");
             if queue.should_notify() {
                 queue.notify();
