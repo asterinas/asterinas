@@ -408,3 +408,124 @@ impl FsType for DevTmpFsType {
         None
     }
 }
+
+#[cfg(ktest)]
+mod tests {
+    use device_id::{MajorId, MinorId};
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    fn init() {
+        static START: Once<()> = Once::new();
+
+        crate::time::clocks::init_for_ktest();
+        START.call_once(|| {
+            ThreadOptions::new(devtmpfsd).spawn();
+        });
+    }
+
+    fn device_id(major: u16, minor: u32) -> DeviceId {
+        DeviceId::new(MajorId::new(major), MinorId::new(minor))
+    }
+
+    fn char_node(path: &'static str, major: u16, minor: u32) -> DevtmpfsNode {
+        DevtmpfsNode::new(
+            DeviceType::Char,
+            device_id(major, minor),
+            DevtmpfsInodeMeta::with_mode(path, mkmod!(a+rw)),
+        )
+    }
+
+    fn assert_missing(path: &str) {
+        match lookup_relative(path) {
+            Err(error) => assert_eq!(error.error(), Errno::ENOENT),
+            Ok(_) => panic!("path {path} should not exist"),
+        }
+    }
+
+    fn is_kernel_managed(inode: &dyn Inode) -> bool {
+        devtmpfs_backing_inode(inode).is_kernel_managed()
+    }
+
+    #[ktest]
+    fn create_node_creates_marked_dirs_and_device_node() {
+        init();
+
+        let path = "__devtmpfs_ktest_create/input/event0";
+        create_node(char_node(path, 240, 1)).unwrap();
+
+        let top_dir = lookup_relative("__devtmpfs_ktest_create").unwrap();
+        let input_dir = lookup_relative("__devtmpfs_ktest_create/input").unwrap();
+        let event_node = lookup_relative(path).unwrap();
+
+        assert_eq!(top_dir.type_(), InodeType::Dir);
+        assert_eq!(input_dir.type_(), InodeType::Dir);
+        assert_eq!(event_node.type_(), InodeType::CharDevice);
+        assert!(is_kernel_managed(top_dir.as_ref()));
+        assert!(is_kernel_managed(input_dir.as_ref()));
+        assert!(is_kernel_managed(event_node.as_ref()));
+
+        let metadata = event_node.metadata();
+        assert_eq!(metadata.self_dev_id, Some(device_id(240, 1)));
+        assert_eq!(metadata.mode.bits(), mkmod!(a+rw).bits());
+
+        delete_node(char_node(path, 240, 1)).unwrap();
+        assert_missing("__devtmpfs_ktest_create");
+    }
+
+    #[ktest]
+    fn delete_node_keeps_nonempty_parent_dir() {
+        init();
+
+        let node0 = char_node("__devtmpfs_ktest_nonempty/input/event0", 240, 3);
+        let node1 = char_node("__devtmpfs_ktest_nonempty/input/event1", 240, 4);
+        create_node(node0).unwrap();
+        create_node(node1).unwrap();
+
+        delete_node(char_node("__devtmpfs_ktest_nonempty/input/event0", 240, 3)).unwrap();
+        assert_missing("__devtmpfs_ktest_nonempty/input/event0");
+        assert!(lookup_relative("__devtmpfs_ktest_nonempty/input").is_ok());
+        assert!(lookup_relative("__devtmpfs_ktest_nonempty/input/event1").is_ok());
+
+        delete_node(char_node("__devtmpfs_ktest_nonempty/input/event1", 240, 4)).unwrap();
+        assert_missing("__devtmpfs_ktest_nonempty");
+    }
+
+    #[ktest]
+    fn delete_node_keeps_unmarked_node() {
+        init();
+
+        let path = "__devtmpfs_ktest_unmarked";
+        let root = root_inode();
+        root.mknod(
+            path,
+            mkmod!(a+rw),
+            MknodType::CharDevice(device_id(240, 5).as_encoded_u64()),
+        )
+        .unwrap();
+        let inode = root.lookup(path).unwrap();
+        assert!(!is_kernel_managed(inode.as_ref()));
+
+        delete_node(char_node(path, 240, 5)).unwrap();
+
+        let inode = root.lookup(path).unwrap();
+        assert!(!is_kernel_managed(inode.as_ref()));
+        root.unlink(path).unwrap();
+    }
+
+    #[ktest]
+    fn delete_node_keeps_device_id_mismatch() {
+        init();
+
+        let path = "__devtmpfs_ktest_mismatch";
+        create_node(char_node(path, 240, 6)).unwrap();
+
+        delete_node(char_node(path, 240, 7)).unwrap();
+
+        let inode = lookup_relative(path).unwrap();
+        assert!(is_kernel_managed(inode.as_ref()));
+        assert_eq!(inode.metadata().self_dev_id, Some(device_id(240, 6)));
+        delete_node(char_node(path, 240, 6)).unwrap();
+    }
+}
