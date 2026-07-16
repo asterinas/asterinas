@@ -43,7 +43,7 @@ else
     fi
 
     cat "$DEFAULT_BLOCKLISTS" > "$COMBINED_BLOCKLISTS"
-    for extra_file in $EXTRA_BLOCKLISTS ; do
+    for extra_file in $CONFORMANCE_TEST_EXTRA_BLOCKLISTS ; do
         extra_blocklists="$KSELFTEST_DIR/$extra_file"
         if [ -r "$extra_blocklists" ]; then
             printf '\n' >> "$COMBINED_BLOCKLISTS"
