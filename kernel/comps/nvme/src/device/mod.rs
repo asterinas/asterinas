@@ -17,4 +17,5 @@ pub(crate) enum NvmeDeviceError {
     QueueAllocationFailed,
     SubmissionQueueFull,
     DmaAllocationFailed,
+    InvalidIoLength,
 }
