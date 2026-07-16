@@ -2,18 +2,17 @@
 
 //! Opened Inode-backed File Handle
 
-use core::{fmt::Display, sync::atomic::Ordering};
+use core::fmt::Display;
 
 use aster_rights::Rights;
 
 use super::{
-    AccessMode, AtomicStatusFlags, CreationFlags, FileLike, InodeType, Mappable, StatusFlags,
-    file_table::FdFlags, flock::FlockItem,
+    AccessMode, CreationFlags, FileCommon, FileLike, InodeType, Mappable, SettableStatusFlags,
+    StatusFlags, file_table::FdFlags, flock::FlockItem,
 };
 use crate::{
     events::IoEvents,
     fs::{
-        pipe::PipeHandle,
         utils::DirentVisitor,
         vfs::{
             inode::{FallocMode, FileOps},
@@ -28,13 +27,12 @@ use crate::{
 };
 
 pub struct InodeHandle {
-    path: Path,
+    common: FileCommon,
     /// `open_file` is similar to the `file_private` field in Linux's `file` structure. If
     /// `open_file` is `Some(_)`, typical file operations including `read`, `write`, `poll`,
     /// and `ioctl` will be provided by the per-open file object instead of `path`.
     open_file: Option<Box<dyn PerOpenFileOps>>,
     offset: Mutex<usize>,
-    status_flags: AtomicStatusFlags,
     rights: Rights,
 }
 
@@ -68,16 +66,15 @@ impl InodeHandle {
         };
 
         Ok(Self {
-            path,
+            common: FileCommon::new(path, status_flags),
             open_file,
             offset: Mutex::new(0),
-            status_flags: AtomicStatusFlags::new(status_flags),
             rights,
         })
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.common.path()
     }
 
     pub fn offset(&self) -> usize {
@@ -95,7 +92,7 @@ impl InodeHandle {
             return (open_file.as_ref(), is_offset_aware);
         }
 
-        let inode = self.path.inode();
+        let inode = self.path().inode();
         let is_offset_aware = inode.type_().is_seekable();
         (inode.as_ref(), is_offset_aware)
     }
@@ -108,7 +105,7 @@ impl InodeHandle {
             return Ok(open_file.as_ref());
         }
 
-        let inode = self.path.inode();
+        let inode = self.path().inode();
         if !inode.type_().is_seekable() {
             return_errno_with_message!(
                 Errno::ESPIPE,
@@ -126,7 +123,7 @@ impl InodeHandle {
         let file_ops: &dyn FileOps = if let Some(ref open_file) = self.open_file {
             open_file.as_ref()
         } else {
-            self.path.inode().as_ref()
+            self.path().inode().as_ref()
         };
         let mut offset = self.offset.lock();
         let read_cnt = file_ops.readdir_at(*offset, visitor)?;
@@ -140,7 +137,7 @@ impl InodeHandle {
         }
 
         let Some(range_lock_list) = self
-            .path
+            .path()
             .inode()
             .fs_lock_context()
             .map(|c| c.range_lock_list())
@@ -179,7 +176,7 @@ impl InodeHandle {
         }
 
         let range_lock_list = self
-            .path
+            .path()
             .inode()
             .fs_lock_context_or_init()
             .range_lock_list();
@@ -196,7 +193,7 @@ impl InodeHandle {
 
     fn unlock_range_lock(&self, lock: &RangeLockItem) {
         if let Some(range_lock_list) = self
-            .path
+            .path()
             .inode()
             .fs_lock_context()
             .map(|c| c.range_lock_list())
@@ -210,7 +207,7 @@ impl InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 
-        let flock_list = self.path.inode().fs_lock_context_or_init().flock_list();
+        let flock_list = self.path().inode().fs_lock_context_or_init().flock_list();
         flock_list.set_lock(lock, is_nonblocking)
     }
 
@@ -219,7 +216,12 @@ impl InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 
-        if let Some(flock_list) = self.path.inode().fs_lock_context().map(|c| c.flock_list()) {
+        if let Some(flock_list) = self
+            .path()
+            .inode()
+            .fs_lock_context()
+            .map(|c| c.flock_list())
+        {
             flock_list.unlock(self);
         }
 
@@ -293,7 +295,7 @@ impl FileLike for InodeHandle {
         if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
             // FIXME: `O_APPEND` should ensure that new content is appended even if another process
             // is writing to the file concurrently.
-            *offset = self.path.size();
+            *offset = self.path().size();
         }
 
         let len = file_ops.write_at(*offset, reader, status_flags)?;
@@ -326,7 +328,7 @@ impl FileLike for InodeHandle {
             // If the file has the `O_APPEND` flag, the offset is ignored.
             // FIXME: `O_APPEND` should ensure that new content is appended even if another process
             // is writing to the file concurrently.
-            offset = self.path.size();
+            offset = self.path().size();
         }
 
         file_ops.write_at(offset, reader, status_flags)
@@ -349,7 +351,7 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 
-        let inode = self.path.inode();
+        let inode = self.path().inode();
         if let Some(ref page_cache) = inode.page_cache() {
             // If the inode has a page cache, it is a file-backed mapping and
             // we return the VMO as the mappable object.
@@ -375,29 +377,20 @@ impl FileLike for InodeHandle {
             // FIXME: It's allowed to `ftruncate` an append-only file on Linux.
             return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
         }
-        self.path.inode().resize(new_size)
+        self.path().inode().resize(new_size)
     }
 
-    fn status_flags(&self) -> StatusFlags {
-        self.status_flags.load(Ordering::Relaxed)
-    }
-
-    fn set_status_flags(&self, new_status_flags: StatusFlags) -> Result<()> {
-        // TODO: Pipes currently require a special status flag check because
-        // "packet" mode is not yet supported. Remove this check once "packet"
-        // mode is implemented.
-        if self
-            .open_file
-            .as_ref()
-            .and_then(|open_file| (open_file.as_ref() as &dyn Any).downcast_ref::<PipeHandle>())
-            .is_some()
-        {
-            crate::fs::pipe::check_status_flags(new_status_flags)?;
+    fn settable_status_flags(&self) -> SettableStatusFlags {
+        if let Some(ref open_file) = self.open_file {
+            return open_file.settable_status_flags();
         }
 
-        self.status_flags.store(new_status_flags, Ordering::Relaxed);
-
-        Ok(())
+        if self.path().inode().type_().is_regular_file() {
+            // FIXME: This operation should depend on whether the underlying filesystem supports `O_DIRECT`.
+            SettableStatusFlags::minimal().with_o_direct()
+        } else {
+            SettableStatusFlags::minimal()
+        }
     }
 
     fn access_mode(&self) -> AccessMode {
@@ -418,7 +411,7 @@ impl FileLike for InodeHandle {
             }
         }
 
-        let inode = self.path.inode();
+        let inode = self.path().inode();
         if !inode.type_().is_seekable() {
             return_errno_with_message!(Errno::ESPIPE, "seek is not supported");
         }
@@ -430,7 +423,7 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
 
-        let inode = self.path.inode().as_ref();
+        let inode = self.path().inode().as_ref();
         let inode_type = inode.type_();
 
         // TODO: `fallocate` on pipe files also fails with `ESPIPE`.
@@ -467,8 +460,8 @@ impl FileLike for InodeHandle {
         inode.fallocate(mode, offset, len)
     }
 
-    fn path(&self) -> &Path {
-        &self.path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
@@ -486,8 +479,8 @@ impl FileLike for InodeHandle {
 
                 writeln!(f, "pos:\t{}", self.inner.offset())?;
                 writeln!(f, "flags:\t0{:o}", flags)?;
-                writeln!(f, "mnt_id:\t{}", self.inner.path.mount_node().id())?;
-                writeln!(f, "ino:\t{}", self.inner.path.inode().ino())
+                writeln!(f, "mnt_id:\t{}", self.inner.path().mount_node().id())?;
+                writeln!(f, "ino:\t{}", self.inner.path().inode().ino())
             }
         }
 
@@ -508,7 +501,7 @@ impl Drop for InodeHandle {
 impl Debug for InodeHandle {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("InodeHandle")
-            .field("path", &self.path)
+            .field("path", &self.path())
             .field("offset", &self.offset())
             .field("status_flags", &self.status_flags())
             .field("rights", &self.rights)
@@ -568,6 +561,13 @@ pub trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
 
     fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
         return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
+    }
+
+    /// Returns the status flags that can be set for this opened file.
+    fn settable_status_flags(&self) -> SettableStatusFlags {
+        // `O_ASYNC` and `O_DIRECT` can only be set on file descriptions that explicitly
+        // support them.
+        SettableStatusFlags::minimal()
     }
 }
 

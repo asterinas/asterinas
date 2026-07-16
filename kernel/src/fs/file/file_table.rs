@@ -7,16 +7,8 @@ use core::{
 
 use aster_util::{ranged_integer::RangedU32, slot_vec::SlotVec};
 
-use super::{StatusFlags, file_handle::FileLike};
-use crate::{
-    events::{IoEvents, Observer},
-    prelude::*,
-    process::{
-        Pid, Process,
-        posix_thread::FileTableRefMut,
-        signal::{PollAdaptor, constants::SIGIO},
-    },
-};
+use super::file_handle::FileLike;
+use crate::{prelude::*, process::posix_thread::FileTableRefMut};
 
 /// Represents a validated, non-negative file descriptor.
 ///
@@ -321,7 +313,6 @@ pub(crate) use get_file_fast;
 pub struct FileTableEntry {
     file: Arc<dyn FileLike>,
     flags: AtomicU8,
-    owner: Option<Owner>,
 }
 
 impl FileTableEntry {
@@ -329,39 +320,11 @@ impl FileTableEntry {
         Self {
             file,
             flags: AtomicU8::new(flags.bits()),
-            owner: None,
         }
     }
 
     pub fn file(&self) -> &Arc<dyn FileLike> {
         &self.file
-    }
-
-    pub fn owner(&self) -> Option<Pid> {
-        self.owner.as_ref().map(|(pid, _)| *pid)
-    }
-
-    /// Set a process (group) as owner of the file descriptor.
-    ///
-    /// Such that this process (group) will receive `SIGIO` and `SIGURG` signals
-    /// for I/O events on the file descriptor, if `O_ASYNC` status flag is set
-    /// on this file.
-    pub fn set_owner(&mut self, owner: Option<&Arc<Process>>) -> Result<()> {
-        let Some(process) = owner else {
-            self.owner = None;
-            return Ok(());
-        };
-
-        let mut poller = PollAdaptor::with_observer(OwnerObserver::new(
-            self.file.clone(),
-            Arc::downgrade(process),
-        ));
-        self.file
-            .poll(IoEvents::IN | IoEvents::OUT, Some(poller.as_handle_mut()));
-
-        self.owner = Some((process.pid(), poller));
-
-        Ok(())
     }
 
     pub fn flags(&self) -> FdFlags {
@@ -378,7 +341,6 @@ impl Clone for FileTableEntry {
         Self {
             file: self.file.clone(),
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
-            owner: None,
         }
     }
 }
@@ -387,26 +349,5 @@ bitflags! {
     pub struct FdFlags: u8 {
         /// Close on exec
         const CLOEXEC = 1;
-    }
-}
-
-type Owner = (Pid, PollAdaptor<OwnerObserver>);
-
-struct OwnerObserver {
-    file: Arc<dyn FileLike>,
-    owner: Weak<Process>,
-}
-
-impl OwnerObserver {
-    pub fn new(file: Arc<dyn FileLike>, owner: Weak<Process>) -> Self {
-        Self { file, owner }
-    }
-}
-
-impl Observer<IoEvents> for OwnerObserver {
-    fn on_events(&self, _events: &IoEvents) {
-        if self.file.status_flags().contains(StatusFlags::O_ASYNC) {
-            crate::process::enqueue_signal_async(self.owner.clone(), SIGIO);
-        }
     }
 }
