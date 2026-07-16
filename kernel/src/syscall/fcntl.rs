@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file::{
-            FileLike, StatusFlags,
+            FileLike, StatusFlags, StatusFlagsUpdate,
             file_table::{FdFlags, FileDesc, RawFileDesc, WithFileTable, get_file_fast},
         },
         ramfs::memfd::{FileSeals, MemfdInodeHandle},
@@ -83,15 +83,8 @@ fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
 fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
-    let valid_flags_mask = StatusFlags::O_APPEND
-        | StatusFlags::O_ASYNC
-        | StatusFlags::O_DIRECT
-        | StatusFlags::O_NOATIME
-        | StatusFlags::O_NONBLOCK;
-    let mut status_flags = file.status_flags();
-    status_flags.remove(valid_flags_mask);
-    status_flags.insert(StatusFlags::from_bits_truncate(arg as _) & valid_flags_mask);
-    file.set_status_flags(status_flags)?;
+    let new_flags = StatusFlags::from_bits_truncate(arg as _);
+    file.update_status_flags(StatusFlagsUpdate::replace(new_flags))?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -131,10 +124,9 @@ fn handle_setlk(
 
 fn handle_getown(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    file_table.read_with(|inner| {
-        let pid = inner.get_entry(fd)?.owner().unwrap_or(0);
-        Ok(SyscallReturn::Return(pid as _))
-    })
+    let file = get_file_fast!(&mut file_table, fd);
+    let pid = file.common().owner().pid().unwrap_or(0);
+    Ok(SyscallReturn::Return(pid as _))
 }
 
 fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -159,10 +151,9 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
         )
     };
 
-    let file_table = ctx.thread_local.borrow_file_table();
-    let mut file_table_locked = file_table.unwrap().write();
-    let file_entry = file_table_locked.get_entry_mut(fd)?;
-    file_entry.set_owner(owner_process.as_ref())?;
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let file = get_file_fast!(&mut file_table, fd);
+    file.set_owner(owner_process.as_ref());
     Ok(SyscallReturn::Return(0))
 }
 

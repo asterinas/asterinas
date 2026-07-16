@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::file::{
-        FileLike, StatusFlags,
+        FileLike,
         file_table::{FdFlags, RawFileDesc, WithFileTable, get_file_fast},
     },
     prelude::*,
@@ -99,10 +99,8 @@ fn handle_file_ioctl(file: &dyn FileLike, raw_ioctl: RawIoctl) -> Option<Result<
             let handler = || {
                 let is_nonblocking = cmd.read()? != 0;
 
-                let mut flags = file.status_flags();
-                flags.set(StatusFlags::O_NONBLOCK, is_nonblocking);
-                // FIXME: This is racy.
-                file.set_status_flags(flags)
+                file.update_status_nonblock(is_nonblocking);
+                Ok(())
             };
             Some(handler())
         }
@@ -113,10 +111,7 @@ fn handle_file_ioctl(file: &dyn FileLike, raw_ioctl: RawIoctl) -> Option<Result<
                 // Setting the `O_ASYNC` flag will cause the kernel to send the owner process a
                 // `SIGIO` signal when input/output is possible. The user should first call
                 // `fcntl(fd, F_SETOWN, pid)` to specify the process to be notified.
-                let mut flags = file.status_flags();
-                flags.set(StatusFlags::O_ASYNC, is_async);
-                // FIXME: This is racy.
-                file.set_status_flags(flags)
+                file.update_status_async(is_async)
             };
             Some(handler())
         }
