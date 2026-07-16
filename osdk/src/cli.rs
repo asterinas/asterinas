@@ -64,6 +64,7 @@ pub fn main() {
             execute_forwarded_command("clippy", &args.args, args.ktests)
         }
         OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", &args.args, false),
+        OsdkSubcommand::Udeps(args) => execute_forwarded_command("udeps", &args.args, true),
     }
 }
 
@@ -97,10 +98,12 @@ pub enum OsdkSubcommand {
     Test(TestArgs),
     #[command(about = "Check a local package and all of its dependencies for errors")]
     Check(KtestWithForwardedArguments),
-    #[command(about = "Checks a package to catch common mistakes and improve your Rust code")]
+    #[command(about = "Check a package to catch common mistakes and improve your Rust code")]
     Clippy(KtestWithForwardedArguments),
     #[command(about = "Build a package's documentation")]
     Doc(ForwardedArguments),
+    #[command(about = "Check unused dependencies")]
+    Udeps(ForwardedArguments),
 }
 
 #[derive(Debug, Parser)]
