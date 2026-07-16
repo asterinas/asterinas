@@ -300,9 +300,9 @@ impl UnixStreamSocket {
         })
     }
 
-    fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+    fn try_accept(&self, is_nonblocking: bool) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         match self.state.read().as_ref() {
-            State::Listen(listen) => listen.try_accept(self.socket_type) as _,
+            State::Listen(listen) => listen.try_accept(self.socket_type, is_nonblocking) as _,
             State::Init(_) | State::Connected(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is not listening")
             }
@@ -397,9 +397,9 @@ impl Socket for UnixStreamSocket {
         })
     }
 
-    fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+    fn accept(&self, is_nonblocking: bool) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
-            self.try_accept()
+            self.try_accept(is_nonblocking)
         })
     }
 

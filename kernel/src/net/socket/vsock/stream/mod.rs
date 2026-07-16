@@ -140,7 +140,7 @@ impl VsockStreamSocket {
         }
     }
 
-    fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+    fn try_accept(&self, is_nonblocking: bool) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         let state = self.lock_updated_state();
         let State::Listen(listen_stream) = state.as_ref() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not listening");
@@ -150,12 +150,16 @@ impl VsockStreamSocket {
 
         let peer_addr = connected.remote_addr().into();
         let pollee = connected.pollee().clone();
+        let status_flags = if is_nonblocking {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
 
         let accepted = Arc::new(Self {
             state: Mutex::new(Takeable::new(State::Connected(connected))),
-            is_nonblocking: AtomicBool::new(false),
             pollee,
-            pseudo_path: SockFs::new_path(),
+            common: FileCommon::new(SockFs::new_path(), status_flags),
         });
 
         Ok((accepted, peer_addr))
@@ -300,8 +304,8 @@ impl Socket for VsockStreamSocket {
         // The pollee should have already been invalidated in the transport module.
     }
 
-    fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        self.block_on(IoEvents::IN, None, || self.try_accept())
+    fn accept(&self, is_nonblocking: bool) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+        self.block_on(IoEvents::IN, None, || self.try_accept(is_nonblocking))
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {

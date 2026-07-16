@@ -87,7 +87,7 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
     }
 
     /// Accepts a connection on the socket.
-    fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+    fn accept(&self, _is_nonblocking: bool) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "accept() is not supported");
     }
 

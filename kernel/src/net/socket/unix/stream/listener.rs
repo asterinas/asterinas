@@ -62,6 +62,7 @@ impl Listener {
     pub(super) fn try_accept(
         &self,
         socket_type: SockType,
+        is_nonblocking: bool,
     ) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         debug_assert!(
             socket_type == SockType::SOCK_STREAM || socket_type == SockType::SOCK_SEQPACKET
@@ -72,7 +73,8 @@ impl Listener {
         let peer_addr = connected.peer_addr().into();
         let options = OptionSet::new_accepted(connected.is_pass_cred());
 
-        let socket = UnixStreamSocket::new_connected(connected, options, false, socket_type);
+        let socket =
+            UnixStreamSocket::new_connected(connected, options, is_nonblocking, socket_type);
         Ok((socket, peer_addr))
     }
 

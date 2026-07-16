@@ -127,6 +127,7 @@ impl StreamSocket {
         connected_stream: ConnectedStream,
         listener_options: &OptionSet,
         listener_timeouts: &SocketTimeouts,
+        is_nonblocking: bool,
     ) -> Arc<Self> {
         let options = connected_stream.raw_with(|raw_tcp_socket| {
             let mut options = OptionSet::new();
@@ -162,13 +163,18 @@ impl StreamSocket {
         let pollee = Pollee::new();
         connected_stream.init_observer(StreamObserver::new(pollee.clone()));
 
+        let status_flags = if is_nonblocking {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
+
         Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
             options: RwLock::new(options),
             timeouts: listener_timeouts.clone(),
-            is_nonblocking: AtomicBool::new(false),
             pollee,
-            pseudo_path: SockFs::new_path(),
+            common: FileCommon::new(SockFs::new_path(), status_flags),
         })
     }
 
@@ -325,7 +331,7 @@ impl StreamSocket {
         }
     }
 
-    fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+    fn try_accept(&self, is_nonblocking: bool) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         let state = self.read_updated_state();
 
         let State::Listen(listen_stream) = state.as_ref() else {
@@ -335,8 +341,12 @@ impl StreamSocket {
         let accepted = listen_stream.try_accept().map(|connected_stream| {
             let remote_endpoint = connected_stream.remote_endpoint();
             let listener_options = self.options.read();
-            let accepted_socket =
-                Self::new_accepted(connected_stream, &listener_options, &self.timeouts);
+            let accepted_socket = Self::new_accepted(
+                connected_stream,
+                &listener_options,
+                &self.timeouts,
+                is_nonblocking,
+            );
             (accepted_socket as _, remote_endpoint.into())
         });
         let iface_to_poll = listen_stream.iface().clone();
@@ -525,9 +535,9 @@ impl Socket for StreamSocket {
         })
     }
 
-    fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+    fn accept(&self, is_nonblocking: bool) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         self.block_on(IoEvents::IN, self.timeouts.recv_timeout(), || {
-            self.try_accept()
+            self.try_accept(is_nonblocking)
         })
     }
 
