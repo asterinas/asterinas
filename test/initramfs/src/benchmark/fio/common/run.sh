@@ -30,8 +30,6 @@ fi
 # shellcheck source=/dev/null
 . "$FIO_PREPARE"
 
-echo "*** Running the FIO sequential ${FIO_WORKLOAD} test (${FIO_FS_TYPE}) ***"
-
 case "$FIO_WORKLOAD" in
     read)
         FIO_NAME=seqread
@@ -45,7 +43,16 @@ case "$FIO_WORKLOAD" in
         ;;
 esac
 
-/benchmark/bin/fio "-rw=${FIO_WORKLOAD}" "-filename=${FIO_TEST_FILE}" "-name=${FIO_NAME}" \
--size=1G -bs=1M \
--ioengine=sync -direct=1 -numjobs=1 -fsync_on_close=1 \
--time_based=1 -ramp_time=60 -runtime=100
+run_fio() {
+    direct="$1"
+    io_mode="$2"
+
+    echo "*** Running the FIO sequential ${io_mode} ${FIO_WORKLOAD} test (${FIO_FS_TYPE}) ***"
+    /benchmark/bin/fio "-rw=${FIO_WORKLOAD}" "-filename=${FIO_TEST_FILE}" "-name=${FIO_NAME}" \
+        -size=1G -bs=1M \
+        -ioengine=sync "-direct=${direct}" -numjobs=1 -fsync_on_close=1 \
+        -time_based=1 -ramp_time=60 -runtime=100
+}
+
+run_fio 0 cached
+run_fio 1 direct

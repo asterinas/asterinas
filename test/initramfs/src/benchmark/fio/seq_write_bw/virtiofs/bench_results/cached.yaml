@@ -2,11 +2,12 @@ alert:
   bigger_is_better: true
   threshold: 125%
 chart:
-  description: fio -filename=/virtiofs/fio-test -size=1G -bs=1M -direct=1
-  legend: Average file write bandwidth on {system}
-  title: '[virtio-fs] The bandwidth of sequential writes'
+  description: fio -filename=/virtiofs/fio-test -size=1G -bs=1M -direct=0
+  legend: Average cached file write bandwidth on {system}
+  title: '[virtio-fs] The bandwidth of cached sequential writes'
   unit: MB/s
 result_extraction:
+  nth_occurrence: 1
   result_index: 2
   search_pattern: bw=[0-9.]+[KMGT]?i?B/s
 runtime_config:
