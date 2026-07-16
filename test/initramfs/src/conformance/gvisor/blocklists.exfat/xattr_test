@@ -17,7 +17,6 @@ XattrTest.RemoveXattr
 XattrTest.RemoveXattrNonexistentName
 XattrTest.SecurityCapacityXattr
 XattrTest.SetXattrCreateFlag
-XattrTest.SetXattrInvalidFlags
 XattrTest.SetXattrNullValueAndNonzeroSize
 XattrTest.SetXattrNullValueAndZeroSize
 XattrTest.SetXattrReplaceFlag
@@ -28,13 +27,8 @@ XattrTest.SetXattrSizeTooLarge
 XattrTest.SetXattrValueTooLargeButOKSize
 XattrTest.SetXattrZeroSize
 XattrTest.TrustedNamespaceWithoutCapSysAdmin
-XattrTest.XattrEmptyName
-XattrTest.XattrInvalidPrefix
 XattrTest.XattrLargeName
-XattrTest.XattrNonexistentFile
-XattrTest.XattrNullName
 XattrTest.XattrOnDirectory
-XattrTest.XattrOnInvalidFileTypes
 XattrTest.XattrOnSymlink
 XattrTest.XattrReadOnly
 XattrTest.XattrReadOnly_NoRandomSave

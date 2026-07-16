@@ -1,5 +1,0 @@
-MMapFileTest.Bug38498194
-MMapFileTest.WriteSharedTruncatePartialPage
-MMapFileTest.WriteSharedTruncateUp
-MMapNoFixtureTest.MapReadOnlyAfterCreateWriteOnly
-MMapTest.MapDirectory
