@@ -67,6 +67,54 @@ FN_TEST(fsconfig_and_fsmount)
 }
 END_TEST()
 
+FN_TEST(fsconfig_reconfigures_after_fsmount)
+{
+	int fs_fd = TEST_SUCC(syscall(SYS_fsopen, "tmpfs", FSOPEN_CLOEXEC));
+
+	TEST_ERRNO(syscall(SYS_fsconfig, fs_fd, FSCONFIG_CMD_RECONFIGURE, NULL,
+			   NULL, 0),
+		   EBUSY);
+	TEST_SUCC(syscall(SYS_fsconfig, fs_fd, FSCONFIG_SET_STRING, "nr_inodes",
+			  "1024", 0));
+	TEST_SUCC(syscall(SYS_fsconfig, fs_fd, FSCONFIG_CMD_CREATE, NULL, NULL,
+			  0));
+	TEST_ERRNO(syscall(SYS_fsconfig, fs_fd, FSCONFIG_SET_STRING, "size",
+			   "1048576", 0),
+		   EBUSY);
+
+	int mount_fd =
+		TEST_SUCC(syscall(SYS_fsmount, fs_fd, FSMOUNT_CLOEXEC, 0));
+	TEST_ERRNO(syscall(SYS_fsmount, fs_fd, FSMOUNT_CLOEXEC, 0), EBUSY);
+
+	TEST_SUCC(syscall(SYS_fsconfig, fs_fd, FSCONFIG_SET_STRING, "size",
+			  "1048576", 0));
+	TEST_SUCC(syscall(SYS_fsconfig, fs_fd, FSCONFIG_CMD_RECONFIGURE, NULL,
+			  NULL, 0));
+	TEST_SUCC(
+		syscall(SYS_fsconfig, fs_fd, FSCONFIG_SET_FLAG, "ro", NULL, 0));
+	TEST_SUCC(syscall(SYS_fsconfig, fs_fd, FSCONFIG_CMD_RECONFIGURE, NULL,
+			  NULL, 0));
+
+	TEST_SUCC(close(mount_fd));
+	TEST_SUCC(close(fs_fd));
+}
+END_TEST()
+
+FN_TEST(fsconfig_rejects_operations_after_creation_failure)
+{
+	int fs_fd = TEST_SUCC(syscall(SYS_fsopen, "ext2", FSOPEN_CLOEXEC));
+
+	TEST_ERRNO(syscall(SYS_fsconfig, fs_fd, FSCONFIG_CMD_CREATE, NULL, NULL,
+			   0),
+		   EINVAL);
+	TEST_ERRNO(syscall(SYS_fsconfig, fs_fd, FSCONFIG_SET_FLAG, "ro", NULL,
+			   0),
+		   EBUSY);
+
+	TEST_SUCC(close(fs_fd));
+}
+END_TEST()
+
 FN_TEST(move_mount_flags_zero_nonempty_from_path)
 {
 	const char *src = "/tmp/move_mount_flags_zero_src";
