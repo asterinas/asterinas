@@ -75,6 +75,9 @@ run_workspace_clippy() {
         cd "$PROJECT_ROOT"
         RUSTFLAGS="-Dwarnings" cargo osdk clippy -- --no-deps
         RUSTFLAGS="-Dwarnings" cargo osdk clippy --ktests -- --no-deps
+        cargo osdk udeps --target x86_64-unknown-none
+        cargo osdk udeps --target riscv64imac-unknown-none-elf
+        cargo osdk udeps --target loongarch64-unknown-none-softfloat
     )
 
     build_package_args "--non-default-ones" non_default_package_args
@@ -94,6 +97,7 @@ run_workspace_clippy() {
         (
             cd "$PROJECT_ROOT"
             RUSTFLAGS="-Dwarnings" cargo clippy "${filtered_non_default_package_args[@]}" --all-targets --no-deps
+            cargo udeps "${filtered_non_default_package_args[@]}"
         )
     fi
 
