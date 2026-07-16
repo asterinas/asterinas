@@ -8,12 +8,15 @@ use core::fmt::Display;
 
 use ostd::io::IoMem;
 
-use super::{AccessMode, InodeHandle, StatusFlags, file_table::FdFlags, inode_handle::SeekFrom};
+use super::{
+    AccessMode, FileCommon, InodeHandle, SettableStatusFlags, StatusFlags, file_table::FdFlags,
+    inode_handle::SeekFrom,
+};
 use crate::{
     fs::vfs::{inode::FallocMode, path::Path},
     net::socket::Socket,
     prelude::*,
-    process::signal::Pollable,
+    process::{Process, signal::Pollable},
     util::ioctl::RawIoctl,
     vm::page_cache::Vmo,
 };
@@ -108,11 +111,14 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     }
 
     fn status_flags(&self) -> StatusFlags {
-        StatusFlags::empty()
+        self.common().status_flags()
     }
 
-    fn set_status_flags(&self, _new_flags: StatusFlags) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "set_status_flags is not supported");
+    /// Returns the status flags that can be set for this file.
+    fn settable_status_flags(&self) -> SettableStatusFlags {
+        // `O_ASYNC` and `O_DIRECT` can only be set on file descriptions that explicitly
+        // support them.
+        SettableStatusFlags::minimal()
     }
 
     /// Returns the access mode of this file.
@@ -152,7 +158,8 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         None
     }
 
-    fn path(&self) -> &Path;
+    /// Returns the common state shared by file-like objects.
+    fn common(&self) -> &FileCommon;
 
     /// Dumps information to appear in the `fdinfo` file under procfs.
     ///
@@ -169,6 +176,70 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 }
 
 impl dyn FileLike {
+    /// Returns the path associated with the file description.
+    pub fn path(&self) -> &Path {
+        self.common().path()
+    }
+
+    /// Updates file status flags atomically.
+    ///
+    /// `O_ASYNC` is ignored if it is not supported. An attempt to enable
+    /// unsupported `O_DIRECT` returns `EINVAL`.
+    pub fn update_status_flags(&self, mut update: StatusFlagsUpdate) -> Result<()> {
+        let settable_flags = self.settable_status_flags();
+        if update.flags().contains(StatusFlags::O_DIRECT)
+            && !settable_flags.contains(StatusFlags::O_DIRECT)
+        {
+            return_errno_with_message!(Errno::EINVAL, "the `O_DIRECT` flag is not supported");
+        }
+        if !settable_flags.contains(StatusFlags::O_ASYNC) {
+            update.ignore(StatusFlags::O_ASYNC);
+        }
+
+        self.common().update_status_flags(self, update);
+        Ok(())
+    }
+
+    /// Updates the `O_NONBLOCK` status flag.
+    pub fn update_status_nonblock(&self, is_nonblocking: bool) {
+        let update = if is_nonblocking {
+            StatusFlagsUpdate::set(StatusFlags::O_NONBLOCK)
+        } else {
+            StatusFlagsUpdate::unset(StatusFlags::O_NONBLOCK)
+        };
+
+        self.common().update_status_flags(self, update);
+    }
+
+    /// Updates the `O_ASYNC` status flag.
+    ///
+    /// An attempt to enable `O_ASYNC` on a file that does not support it returns
+    /// `ENOTTY`.
+    pub fn update_status_async(&self, is_async: bool) -> Result<()> {
+        let settable_flags = self.settable_status_flags();
+        if is_async && !settable_flags.contains(StatusFlags::O_ASYNC) {
+            return_errno_with_message!(Errno::ENOTTY, "signal-driven I/O is not supported");
+        }
+
+        let update = if is_async {
+            StatusFlagsUpdate::set(StatusFlags::O_ASYNC)
+        } else {
+            StatusFlagsUpdate::unset(StatusFlags::O_ASYNC)
+        };
+
+        self.common().update_status_flags(self, update);
+        Ok(())
+    }
+
+    /// Sets a process as the owner of the file description.
+    ///
+    /// Passing `None` clears the current owner.
+    ///
+    /// The owner receives `SIGIO` for I/O events on the file description when `O_ASYNC` is set.
+    pub fn set_owner(&self, owner: Option<&Arc<Process>>) {
+        self.common().owner().set(self, owner);
+    }
+
     pub fn downcast_ref<T: FileLike>(&self) -> Option<&T> {
         (self as &dyn Any).downcast_ref::<T>()
     }
@@ -203,6 +274,64 @@ impl dyn FileLike {
         self.downcast_ref().ok_or_else(|| {
             Error::with_message(Errno::EINVAL, "the file is not related to an inode")
         })
+    }
+}
+
+/// An atomic update to a subset of file status flags.
+#[derive(Clone, Copy, Debug)]
+pub struct StatusFlagsUpdate {
+    mask: StatusFlags,
+    flags: StatusFlags,
+}
+
+impl StatusFlagsUpdate {
+    /// Creates an update that replaces all updatable flags with `flags`.
+    ///
+    /// Replacing flags outside [`StatusFlags::SETFL_MASK`] is a no-op.
+    pub fn replace(mut flags: StatusFlags) -> Self {
+        flags &= StatusFlags::SETFL_MASK;
+        Self::new(StatusFlags::SETFL_MASK, flags)
+    }
+
+    /// Creates an update that sets `flags`.
+    ///
+    /// Setting flags outside [`StatusFlags::SETFL_MASK`] is a no-op.
+    pub fn set(mut flags: StatusFlags) -> Self {
+        flags &= StatusFlags::SETFL_MASK;
+        Self::new(flags, flags)
+    }
+
+    /// Creates an update that unsets `flags`.
+    ///
+    /// Unsetting flags outside [`StatusFlags::SETFL_MASK`] is a no-op.
+    pub fn unset(mut flags: StatusFlags) -> Self {
+        flags &= StatusFlags::SETFL_MASK;
+        Self::new(flags, StatusFlags::empty())
+    }
+
+    /// Makes this update leave `flags` unchanged.
+    fn ignore(&mut self, flags: StatusFlags) {
+        self.mask.remove(flags);
+        self.flags &= self.mask;
+    }
+
+    fn new(mask: StatusFlags, flags: StatusFlags) -> Self {
+        Self { mask, flags }
+    }
+
+    /// Returns the flags that this update will set.
+    pub(super) fn flags(self) -> StatusFlags {
+        self.flags
+    }
+
+    /// Returns whether this update affects any of the specified flags.
+    pub(super) fn affects(self, flags: StatusFlags) -> bool {
+        self.mask.intersects(flags)
+    }
+
+    /// Applies this update to the current file status flags.
+    pub(super) fn apply(self, current: StatusFlags) -> StatusFlags {
+        (current - self.mask) | self.flags
     }
 }
 
