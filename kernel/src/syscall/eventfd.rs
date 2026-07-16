@@ -22,9 +22,8 @@ use super::SyscallReturn;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::AnonInodeFs,
-        vfs::path::Path,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -71,9 +70,8 @@ struct EventFile {
     counter: Mutex<u64>,
     pollee: Pollee,
     flags: Mutex<Flags>,
+    common: FileCommon,
     write_wait_queue: WaitQueue,
-    /// The pseudo path associated with this eventfd file.
-    pseudo_path: Path,
 }
 
 impl EventFile {
@@ -84,12 +82,17 @@ impl EventFile {
         let pollee = Pollee::new();
         let write_wait_queue = WaitQueue::new();
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[eventfd]".to_string());
+        let status_flags = if flags.contains(Flags::EFD_NONBLOCK) {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
         Self {
             counter,
             pollee,
             flags: Mutex::new(flags),
+            common: FileCommon::new(pseudo_path, status_flags),
             write_wait_queue,
-            pseudo_path,
         }
     }
 
@@ -209,35 +212,13 @@ impl FileLike for EventFile {
         Ok(write_len)
     }
 
-    fn status_flags(&self) -> StatusFlags {
-        if self.is_nonblocking() {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        let mut flags = self.flags.lock();
-
-        if new_flags.contains(StatusFlags::O_NONBLOCK) {
-            *flags |= Flags::EFD_NONBLOCK;
-        } else {
-            *flags &= !Flags::EFD_NONBLOCK;
-        }
-
-        // TODO: Deal with other flags
-
-        Ok(())
-    }
-
     fn access_mode(&self) -> AccessMode {
         // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L401>.
         AccessMode::O_RDWR
     }
 
-    fn path(&self) -> &Path {
-        &self.pseudo_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {

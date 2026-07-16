@@ -16,7 +16,7 @@ use super::EvdevDevice;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags},
+        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
         vfs::inode::FileOps,
     },
     prelude::*,
@@ -496,6 +496,10 @@ impl PerOpenFileOps for EvdevFile {
         });
 
         Ok(0)
+    }
+
+    fn settable_status_flags(&self) -> SettableStatusFlags {
+        SettableStatusFlags::minimal().with_o_async()
     }
 }
 

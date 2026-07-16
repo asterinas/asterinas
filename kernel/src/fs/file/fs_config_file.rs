@@ -2,7 +2,7 @@
 
 use core::fmt::Display;
 
-use super::{AccessMode, CreationFlags, FileLike, InodeMode};
+use super::{AccessMode, CreationFlags, FileCommon, FileLike, InodeMode, StatusFlags};
 use crate::{
     events::IoEvents,
     fs::{
@@ -26,7 +26,7 @@ use crate::{
 pub struct FsConfigFile {
     fs_type: &'static dyn FsType,
     state: Mutex<FsConfigState>,
-    pseudo_path: Path,
+    common: FileCommon,
 }
 
 enum FsConfigState {
@@ -52,6 +52,7 @@ struct CreatedFs {
 impl FsConfigFile {
     /// Creates a filesystem configuration file for a filesystem type.
     pub fn new(fs_type: &'static dyn FsType) -> Self {
+        let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[fscontext]".to_string());
         Self {
             fs_type,
             state: Mutex::new(FsConfigState::Configuring(FsCreationConfig {
@@ -60,7 +61,7 @@ impl FsConfigFile {
                 mode: None,
                 extra_options: String::new(),
             })),
-            pseudo_path: AnonInodeFs::new_path(|_| "anon_inode:[fscontext]".to_string()),
+            common: FileCommon::new(pseudo_path, StatusFlags::empty()),
         }
     }
 
@@ -225,19 +226,20 @@ impl FileLike for FsConfigFile {
         AccessMode::O_RDWR
     }
 
-    fn path(&self) -> &Path {
-        &self.pseudo_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
         struct FdInfo {
             access_mode: AccessMode,
+            status_flags: StatusFlags,
             fd_flags: FdFlags,
         }
 
         impl Display for FdInfo {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let mut flags = self.access_mode as u32;
+                let mut flags = self.status_flags.bits() | self.access_mode as u32;
                 if self.fd_flags.contains(FdFlags::CLOEXEC) {
                     flags |= CreationFlags::O_CLOEXEC.bits();
                 }
@@ -251,6 +253,7 @@ impl FileLike for FsConfigFile {
 
         Box::new(FdInfo {
             access_mode: self.access_mode(),
+            status_flags: self.status_flags(),
             fd_flags,
         })
     }
@@ -259,14 +262,17 @@ impl FileLike for FsConfigFile {
 /// Represents a detached mount returned by `fsmount`.
 pub struct DetachedMountFile {
     mount: Arc<Mount>,
-    root_path: Path,
+    common: FileCommon,
 }
 
 impl DetachedMountFile {
     /// Creates a detached mount file.
     pub fn new(mount: Arc<Mount>) -> Self {
         let root_path = Path::new_fs_root(mount.clone());
-        Self { mount, root_path }
+        Self {
+            mount,
+            common: FileCommon::new(root_path, StatusFlags::empty()),
+        }
     }
 
     /// Returns the detached mount.
@@ -287,19 +293,20 @@ impl FileLike for DetachedMountFile {
         AccessMode::O_RDONLY
     }
 
-    fn path(&self) -> &Path {
-        &self.root_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
         struct FdInfo {
             access_mode: AccessMode,
+            status_flags: StatusFlags,
             fd_flags: FdFlags,
         }
 
         impl Display for FdInfo {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let mut flags = self.access_mode as u32;
+                let mut flags = self.status_flags.bits() | self.access_mode as u32;
                 if self.fd_flags.contains(FdFlags::CLOEXEC) {
                     flags |= CreationFlags::O_CLOEXEC.bits();
                 }
@@ -313,6 +320,7 @@ impl FileLike for DetachedMountFile {
 
         Box::new(FdInfo {
             access_mode: self.access_mode(),
+            status_flags: self.status_flags(),
             fd_flags,
         })
     }

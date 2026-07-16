@@ -10,7 +10,10 @@ use crate::{
     events::IoEvents,
     fs::{
         devpts::Ptmx,
-        file::{AccessMode, OpenArgs, PerOpenFileOps, StatusFlags, file_table::FdFlags, mkmod},
+        file::{
+            AccessMode, OpenArgs, PerOpenFileOps, SettableStatusFlags, StatusFlags,
+            file_table::FdFlags, mkmod,
+        },
         vfs::{inode::FileOps, path::FsPath},
     },
     prelude::*,
@@ -241,6 +244,10 @@ impl PerOpenFileOps for PtyMaster {
         });
 
         Ok(0)
+    }
+
+    fn settable_status_flags(&self) -> SettableStatusFlags {
+        SettableStatusFlags::minimal().with_o_async()
     }
 }
 

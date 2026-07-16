@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use aster_rights::ReadDupOp;
 use takeable::Takeable;
 
@@ -12,7 +10,11 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::{file::FileLike, pseudofs::SockFs, utils::EndpointState, vfs::path::Path},
+    fs::{
+        file::{FileCommon, FileLike, StatusFlags},
+        pseudofs::SockFs,
+        utils::EndpointState,
+    },
     net::socket::{
         Socket,
         options::{
@@ -41,11 +43,9 @@ pub struct UnixStreamSocket {
     options: RwLock<OptionSet>,
     timeouts: SocketTimeouts,
 
-    pollee: Pollee,
-    is_nonblocking: AtomicBool,
-
     socket_type: SockType,
-    pseudo_path: Path,
+    pollee: Pollee,
+    common: FileCommon,
 }
 
 enum State {
@@ -175,14 +175,18 @@ impl UnixStreamSocket {
     }
 
     fn new_init(init: Init, is_nonblocking: bool, socket_type: SockType) -> Arc<Self> {
+        let status_flags = if is_nonblocking {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
         Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Init(init))),
             options: RwLock::new(OptionSet::new()),
             timeouts: SocketTimeouts::new(),
-            pollee: Pollee::new(),
-            is_nonblocking: AtomicBool::new(is_nonblocking),
             socket_type,
-            pseudo_path: SockFs::new_path(),
+            pollee: Pollee::new(),
+            common: FileCommon::new(SockFs::new_path(), status_flags),
         })
     }
 
@@ -214,14 +218,18 @@ impl UnixStreamSocket {
         socket_type: SockType,
     ) -> Arc<Self> {
         let cloned_pollee = connected.cloned_pollee();
+        let status_flags = if is_nonblocking {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
         Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Connected(connected))),
             options: RwLock::new(options),
             timeouts: SocketTimeouts::new(),
-            pollee: cloned_pollee,
-            is_nonblocking: AtomicBool::new(is_nonblocking),
             socket_type,
-            pseudo_path: SockFs::new_path(),
+            pollee: cloned_pollee,
+            common: FileCommon::new(SockFs::new_path(), status_flags),
         })
     }
 
@@ -319,11 +327,7 @@ impl Pollable for UnixStreamSocket {
 
 impl SocketPrivate for UnixStreamSocket {
     fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    fn set_nonblocking(&self, nonblocking: bool) {
-        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
+        self.common.is_nonblocking()
     }
 }
 
@@ -541,8 +545,8 @@ impl Socket for UnixStreamSocket {
         Ok((received_bytes, message_header))
     }
 
-    fn pseudo_path(&self) -> &Path {
-        &self.pseudo_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 }
 

@@ -12,9 +12,8 @@ use super::clockid_t;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, CreationFlags, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::AnonInodeFs,
-        vfs::path::Path,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -31,10 +30,8 @@ pub struct TimerfdFile {
     timer: Arc<Timer>,
     ticks: Arc<AtomicU64>,
     pollee: Pollee,
-    flags: AtomicTFDFlags,
     settime_flags: AtomicTFDSetTimeFlags,
-    /// The pseudo path associated with this timerfd file.
-    pseudo_path: Path,
+    common: FileCommon,
 }
 
 bitflags! {
@@ -60,12 +57,6 @@ impl From<TFDFlags> for u32 {
         value.bits()
     }
 }
-
-define_atomic_version_of_integer_like_type!(TFDFlags, try_from = true, {
-    /// An atomic version of `TFDFlags`.
-    #[derive(Debug, Default)]
-    struct AtomicTFDFlags(AtomicU32);
-});
 
 bitflags! {
     /// The flags used for timerfd settime operations.
@@ -116,15 +107,19 @@ impl TimerfdFile {
         }?;
 
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[timerfd]".to_string());
+        let status_flags = if flags.contains(TFDFlags::TFD_NONBLOCK) {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        };
 
         Ok(TimerfdFile {
             clockid,
             timer,
             ticks,
             pollee,
-            flags: AtomicTFDFlags::new(flags),
             settime_flags: AtomicTFDSetTimeFlags::default(),
-            pseudo_path,
+            common: FileCommon::new(pseudo_path, status_flags),
         })
     }
 
@@ -176,9 +171,7 @@ impl TimerfdFile {
     }
 
     fn is_nonblocking(&self) -> bool {
-        self.flags
-            .load(Ordering::Relaxed)
-            .contains(TFDFlags::TFD_NONBLOCK)
+        self.common.is_nonblocking()
     }
 
     fn try_read(&self, writer: &mut VmWriter) -> Result<()> {
@@ -228,35 +221,13 @@ impl FileLike for TimerfdFile {
         Ok(read_len)
     }
 
-    fn status_flags(&self) -> StatusFlags {
-        if self.is_nonblocking() {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        self.flags
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |flags| {
-                if new_flags.contains(StatusFlags::O_NONBLOCK) {
-                    Some(flags | TFDFlags::TFD_NONBLOCK)
-                } else {
-                    Some(flags & !TFDFlags::TFD_NONBLOCK)
-                }
-            })
-            .unwrap();
-
-        Ok(())
-    }
-
     fn access_mode(&self) -> AccessMode {
         // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/timerfd.c#L436>.
         AccessMode::O_RDWR
     }
 
-    fn path(&self) -> &Path {
-        &self.pseudo_path
+    fn common(&self) -> &FileCommon {
+        &self.common
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
