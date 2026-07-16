@@ -2,7 +2,7 @@
 
 use core::fmt::Display;
 
-use super::{AccessMode, CreationFlags, FileCommon, FileLike, InodeMode, StatusFlags};
+use super::{AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags};
 use crate::{
     events::IoEvents,
     fs::{
@@ -18,35 +18,56 @@ use crate::{
     process::signal::{PollHandle, Pollable},
 };
 
-/// Represents a filesystem configuration context opened by `fsopen`.
+/// Represents a filesystem configuration context.
 ///
-/// The file stores configuration supplied through `fsconfig` until the
-/// filesystem is created. Once creation succeeds, further configuration is
-/// rejected unless it is an explicit reconfiguration request.
+/// The file stores configuration until the filesystem is created. Once creation
+/// succeeds, further configuration is rejected unless it is an explicit
+/// reconfiguration request.
+///
+/// The context has four states:
+///
+/// - `Configuring`: accepts parameters for filesystem creation.
+/// - `AwaitingMount`: contains a created filesystem and accepts a request to
+///   create one detached mount. A failed request leaves the context in this
+///   state so that it can be retried.
+/// - `Reconfiguring`: accepts parameters for reconfiguring the created
+///   filesystem. A successful reconfiguration leaves the context in this state.
+/// - `Failed`: indicates that filesystem creation or reconfiguration failed and
+///   rejects further operations.
+///
+/// The state transitions are:
+///
+/// ```text
+/// ┌─────────────┐  create_fs  ┌───────────────┐  create_detached_mount  ┌───────────────┐
+/// │ Configuring │ ──────────> │ AwaitingMount │ ──────────────────────> │ Reconfiguring │
+/// └──────┬──────┘             └───────────────┘                         └───────┬───────┘
+///        │ create_fs fails                                 reconfigure_fs fails │
+///        └──────────────────────────────┬───────────────────────────────────────┘
+///                                       ▼
+///                              ┌────────────────┐
+///                              │     Failed     │
+///                              └────────────────┘
+/// ```
 pub struct FsConfigFile {
     fs_type: &'static dyn FsType,
-    state: Mutex<FsConfigState>,
+    config: Mutex<FsConfig>,
     common: FileCommon,
 }
 
-enum FsConfigState {
-    Configuring(FsCreationConfig),
-    Created(Option<CreatedFs>),
-}
-
-struct FsCreationConfig {
+struct FsConfig {
     flags: FsFlags,
     source: Option<String>,
-    mode: Option<InodeMode>,
-    /// Accumulates filesystem-specific mount options as a comma-separated
-    /// string, so they can be forwarded to `FsCreationCtx`.
+    /// Accumulates filesystem-specific mount options as a comma-separated string
+    /// until filesystem creation or reconfiguration.
     extra_options: String,
+    state: FsConfigState,
 }
 
-struct CreatedFs {
-    fs: Arc<dyn FileSystem>,
-    flags: FsFlags,
-    source: Option<String>,
+enum FsConfigState {
+    Configuring,
+    Failed,
+    AwaitingMount(Arc<dyn FileSystem>),
+    Reconfiguring(Arc<dyn FileSystem>),
 }
 
 impl FsConfigFile {
@@ -55,154 +76,182 @@ impl FsConfigFile {
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[fscontext]".to_string());
         Self {
             fs_type,
-            state: Mutex::new(FsConfigState::Configuring(FsCreationConfig {
+            config: Mutex::new(FsConfig {
                 flags: FsFlags::empty(),
                 source: None,
-                mode: None,
                 extra_options: String::new(),
-            })),
+                state: FsConfigState::Configuring,
+            }),
             common: FileCommon::new(pseudo_path, StatusFlags::empty()),
         }
     }
 
     /// Sets a flag-style filesystem configuration option.
     ///
-    /// This is only valid while the context is still configuring the filesystem.
-    /// It returns `EBUSY` after the filesystem has been created.
+    /// This is valid in the `Configuring` and `Reconfiguring` states.
     pub fn set_flag(&self, key: &str) -> Result<()> {
-        let mut state = self.state.lock();
-        let FsConfigState::Configuring(config) = &mut *state else {
-            return_errno_with_message!(Errno::EBUSY, "the file system has already been created");
-        };
-
-        match key {
-            "ro" => {
-                config.flags |= FsFlags::RDONLY;
-                Ok(())
+        let mut config = self.config.lock();
+        match &config.state {
+            FsConfigState::Configuring | FsConfigState::Reconfiguring(_) => match key {
+                "ro" => {
+                    config.flags |= FsFlags::RDONLY;
+                    Ok(())
+                }
+                _ => {
+                    // TODO: Validate filesystem-specific mount options when filesystem APIs
+                    // expose their supported options.
+                    append_option(&mut config.extra_options, key, None);
+                    Ok(())
+                }
+            },
+            FsConfigState::AwaitingMount(_) => {
+                return_errno_with_message!(Errno::EBUSY, "the file system is awaiting fsmount");
             }
-            _ => {
-                append_option(&mut config.extra_options, key, None);
-                Ok(())
+            FsConfigState::Failed => {
+                return_errno_with_message!(Errno::EBUSY, "the file system configuration failed");
             }
         }
     }
 
     /// Sets a string filesystem configuration option.
     ///
-    /// This is only valid while the context is still configuring the filesystem.
-    /// It returns `EBUSY` after the filesystem has been created. The `source`
-    /// option may only be specified once.
+    /// This is valid in the `Configuring` and `Reconfiguring` states. The
+    /// `source` option may only be specified once in the `Configuring` state.
     pub fn set_string(&self, key: &str, value: &str) -> Result<()> {
-        let mut state = self.state.lock();
-        let FsConfigState::Configuring(config) = &mut *state else {
-            return_errno_with_message!(Errno::EBUSY, "the file system has already been created");
-        };
-
-        match key {
-            "source" => {
-                if config.source.is_some() {
-                    return_errno_with_message!(Errno::EINVAL, "the source is already specified");
+        let mut config = self.config.lock();
+        match &config.state {
+            FsConfigState::Configuring => match key {
+                "source" => {
+                    if config.source.is_some() {
+                        return_errno_with_message!(
+                            Errno::EINVAL,
+                            "the source is already specified"
+                        );
+                    }
+                    config.source = Some(value.to_string());
+                    Ok(())
                 }
-                config.source = Some(value.to_string());
-                Ok(())
-            }
-            "mode" => {
-                config.mode = Some(parse_octal_mode(value)?);
-                Ok(())
-            }
-            _ => {
+                _ => {
+                    // TODO: Validate filesystem-specific mount options when filesystem APIs
+                    // expose their supported options.
+                    append_option(&mut config.extra_options, key, Some(value));
+                    Ok(())
+                }
+            },
+            FsConfigState::Reconfiguring(_) => {
                 append_option(&mut config.extra_options, key, Some(value));
                 Ok(())
+            }
+            FsConfigState::AwaitingMount(_) => {
+                return_errno_with_message!(Errno::EBUSY, "the file system is awaiting fsmount");
+            }
+            FsConfigState::Failed => {
+                return_errno_with_message!(Errno::EBUSY, "the file system configuration failed");
             }
         }
     }
 
     /// Creates the configured filesystem.
     ///
-    /// This consumes the current creation configuration and moves the context
-    /// into the created state. It returns `EBUSY` if the filesystem has already
-    /// been created.
+    /// This is only valid in the `Configuring` state. Success transitions to
+    /// `AwaitingMount`, while failure transitions to `Failed`. It returns
+    /// `EBUSY` in all other states.
     pub fn create_fs(&self, ctx: &Context) -> Result<()> {
-        let mut state = self.state.lock();
-        let FsConfigState::Configuring(config) = &mut *state else {
+        let mut config = self.config.lock();
+        if !matches!(&config.state, FsConfigState::Configuring) {
             return_errno_with_message!(Errno::EBUSY, "the file system has already been created");
-        };
+        }
 
-        let args = (!config.extra_options.is_empty()).then_some(config.extra_options.as_str());
-        let fs_creation_ctx = FsCreationCtx::new(config.source.as_deref(), config.flags, args, ctx);
-        let fs = self.fs_type.create(&fs_creation_ctx)?;
-        if Arc::strong_count(&fs) > 1 {
-            let extant_readonly = fs.flags().contains(FsFlags::RDONLY);
-            let context_readonly = config.flags.contains(FsFlags::RDONLY);
-            if extant_readonly != context_readonly {
-                return_errno_with_message!(
-                    Errno::EBUSY,
-                    "the read-only flag of the extant filesystem does not match"
-                );
+        let result = (|| {
+            let args = (!config.extra_options.is_empty()).then_some(config.extra_options.as_str());
+            let fs_creation_ctx =
+                FsCreationCtx::new(config.source.as_deref(), config.flags, args, ctx);
+            let fs = self.fs_type.create(&fs_creation_ctx)?;
+            if Arc::strong_count(&fs) > 1 {
+                let extant_readonly = fs.flags().contains(FsFlags::RDONLY);
+                let context_readonly = config.flags.contains(FsFlags::RDONLY);
+                if extant_readonly != context_readonly {
+                    return_errno_with_message!(
+                        Errno::EBUSY,
+                        "the read-only flag of the extant filesystem does not match"
+                    );
+                }
             }
-        } else {
-            if let Some(mode) = config.mode {
-                fs.root_inode().set_mode(mode)?;
+            Ok(fs)
+        })();
+
+        match result {
+            Ok(fs) => {
+                config.state = FsConfigState::AwaitingMount(fs);
+                Ok(())
+            }
+            Err(err) => {
+                config.state = FsConfigState::Failed;
+                Err(err)
             }
         }
-        let flags = config.flags;
-        let source = config.source.clone();
-        *state = FsConfigState::Created(Some(CreatedFs { fs, flags, source }));
-        Ok(())
-    }
-
-    /// Reconfigures the created filesystem with the current flags.
-    ///
-    /// This is only valid after the filesystem has been created and before it
-    /// has been consumed by `create_detached_mount`. It returns `EINVAL` if the
-    /// filesystem has not been created yet, and `EBUSY` if it has already been
-    /// consumed.
-    pub fn reconfigure_fs(&self, ctx: &Context) -> Result<()> {
-        let state = self.state.lock();
-        let (fs, flags) = match &*state {
-            FsConfigState::Created(Some(created)) => (&created.fs, created.flags),
-            FsConfigState::Created(None) => {
-                return_errno_with_message!(
-                    Errno::EBUSY,
-                    "the file system has already been mounted"
-                );
-            }
-            FsConfigState::Configuring(_) => {
-                return_errno_with_message!(Errno::EINVAL, "the file system is not created");
-            }
-        };
-
-        fs.set_fs_flags(flags, None, ctx)
     }
 
     /// Creates a detached mount from the created filesystem.
     ///
-    /// This is only valid after `create_fs` has succeeded and before a
-    /// detached mount has already been created from this file. On success, the
-    /// filesystem is consumed and subsequent calls return `EBUSY`. On failure,
-    /// the filesystem remains available for a later `fsmount`.
+    /// This is only valid in the `AwaitingMount` state. Success transitions to
+    /// `Reconfiguring`, while failure leaves the context in `AwaitingMount` so
+    /// that the operation can be retried.
     pub fn create_detached_mount(
         &self,
         flags: PerMountFlags,
         mnt_ns: Weak<MountNamespace>,
     ) -> Result<Arc<Mount>> {
-        let mut state = self.state.lock();
-        let FsConfigState::Created(created) = &mut *state else {
-            return_errno_with_message!(Errno::EINVAL, "the file system is not created");
-        };
-        let Some(created_fs) = created.as_ref() else {
-            return_errno_with_message!(Errno::EBUSY, "the file system has already been mounted");
+        let mut config = self.config.lock();
+        let fs = match &config.state {
+            FsConfigState::AwaitingMount(fs) => fs.clone(),
+            FsConfigState::Configuring => {
+                return_errno_with_message!(Errno::EINVAL, "the file system is not created");
+            }
+            FsConfigState::Reconfiguring(_) => {
+                return_errno_with_message!(
+                    Errno::EBUSY,
+                    "a detached mount has already been created"
+                );
+            }
+            FsConfigState::Failed => {
+                return_errno_with_message!(Errno::EBUSY, "the file system configuration failed");
+            }
         };
 
-        let detached_mount = Mount::new_detached(
-            created_fs.fs.clone(),
-            flags,
-            mnt_ns,
-            created_fs.source.clone(),
-        )?;
-        *created = None;
+        let detached_mount = Mount::new_detached(fs.clone(), flags, mnt_ns, config.source.clone())?;
+        config.source = None;
+        config.flags = fs.flags();
+        config.extra_options.clear();
+        config.state = FsConfigState::Reconfiguring(fs);
 
         Ok(detached_mount)
+    }
+
+    /// Reconfigures the created filesystem with the current parameters.
+    ///
+    /// This is only valid in the `Reconfiguring` state. Success leaves the
+    /// context in `Reconfiguring`, while failure transitions to `Failed`.
+    pub fn reconfigure_fs(&self, ctx: &Context) -> Result<()> {
+        let mut config = self.config.lock();
+        let FsConfigState::Reconfiguring(fs) = &config.state else {
+            return_errno_with_message!(Errno::EBUSY, "the file system is not reconfiguring");
+        };
+        let fs = fs.clone();
+
+        let data = (!config.extra_options.is_empty()).then_some(config.extra_options.as_str());
+        let result = fs.set_fs_flags(config.flags, data, ctx);
+        if let Err(err) = result {
+            config.state = FsConfigState::Failed;
+            return Err(err);
+        }
+
+        // Discard parameters after a successful reconfiguration.
+        // Reference:
+        // <https://elixir.bootlin.com/linux/v7.0/source/fs/fs_context.c#L536>.
+        config.flags = fs.flags();
+        config.extra_options.clear();
+        Ok(())
     }
 }
 
@@ -251,7 +300,7 @@ impl FileLike for FsConfigFile {
     }
 }
 
-/// Represents a detached mount returned by `fsmount`.
+/// Represents a detached mount.
 pub struct DetachedMountFile {
     mount: Arc<Mount>,
     common: FileCommon,
@@ -316,17 +365,6 @@ impl FileLike for DetachedMountFile {
             fd_flags,
         })
     }
-}
-
-fn parse_octal_mode(value: &str) -> Result<InodeMode> {
-    const MAX_MODE_BITS: u16 = 0o7777;
-
-    let mode = u16::from_str_radix(value, 8)
-        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid octal mode"))?;
-    if mode & !MAX_MODE_BITS != 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid mode bits");
-    }
-    Ok(InodeMode::from_bits_truncate(mode))
 }
 
 fn append_option(options: &mut String, key: &str, value: Option<&str>) {
