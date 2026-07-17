@@ -1,4 +1,4 @@
-# FIXME: Mounting FSes via /etc/profile is fragile (risk of multiple mounts from 
+# FIXME: Mounting FSes via /etc/profile is fragile (risk of multiple mounts from
 # login shells). Throw away this operation when we have a proper initial process.
 
 if [ -f /etc/profile.d/init.sh ]; then

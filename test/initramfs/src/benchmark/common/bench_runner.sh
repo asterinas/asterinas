@@ -60,12 +60,12 @@ prepare_system() {
 }
 
 main() {
-    # Check if the benchmark name is valid  
+    # Check if the benchmark name is valid
     check_benchmark_name
 
     # Prepare the system
     prepare_system
-    
+
     # Message to notify the host script. It must align with the READY_MESSAGE in host_guest_bench_runner.sh.
     # DO NOT REMOVE THIS LINE!!!
     echo "${READY_MESSAGE}"

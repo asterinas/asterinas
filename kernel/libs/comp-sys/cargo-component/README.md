@@ -12,7 +12,7 @@ This will install two binaries `cargo-component` and `component-driver` at `$HOM
 Use `cargo component` or `cargo component check` or `cargo component audit`. The three commands are the same now. For Asterinas, we should use another alias command `cargo component-check`, which was defined in `src/.cargo/config.toml`.
 
 ### Two notes:
-- The directory **where you run the command** should contains a `Components.toml` config file, where defines all components and whitelist. 
+- The directory **where you run the command** should contains a `Components.toml` config file, where defines all components and whitelist.
 - The project checked by cargo-component should use the same rust-toolchain as cargo-component, which was defined in rust-toolchain.toml.
 
 ## Known limitations

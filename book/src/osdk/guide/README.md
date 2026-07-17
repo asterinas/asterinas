@@ -2,13 +2,13 @@
 
 ## Overview
 
-The Asterinas OSDK (short for Operating System Development Kit) 
+The Asterinas OSDK (short for Operating System Development Kit)
 is designed to simplify the development of Rust operating systems.
-It aims to streamline the process 
-by leveraging [the framekernel architecture](../../kernel/the-framekernel-architecture.md). 
+It aims to streamline the process
+by leveraging [the framekernel architecture](../../kernel/the-framekernel-architecture.md).
 
 The OSDK provides a command-line tool `cargo-osdk`,
-which facilitates project management 
+which facilitates project management
 for those developed on the framekernel architecture.
 `cargo-osdk` can be used as a subcommand of Cargo.
 Much like Cargo for Rust projects,

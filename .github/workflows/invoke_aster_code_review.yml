@@ -1,4 +1,4 @@
-name: "Invoke the aster-code-review skill" 
+name: "Invoke the aster-code-review skill"
 
 # A `/aster-code-review …` PR comment (or workflow_dispatch) drives
 # the `aster-code-review` skill on this PR to review the PR

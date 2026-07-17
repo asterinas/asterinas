@@ -15,7 +15,7 @@ labels: C-question
 
 <!-- Let us know what you've tried to do to find an answer to your question. This can include documentation you've reviewed, search engines you've consulted, and so on. -->
 
-### Relevant Documentation or Forum Link 
+### Relevant Documentation or Forum Link
 
 <!-- If there is a part of the documentation or a forum thread that's relevant to your question, please provide a link here. -->
 

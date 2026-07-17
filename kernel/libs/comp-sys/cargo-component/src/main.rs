@@ -11,8 +11,8 @@ const CARGO_COMPONENT_HELP: &str = r#"Checks whether a package violates access c
 Usage:
     cargo component [options]
 Common options:
-    audit   
-    check   
+    audit
+    check
 "#;
 
 fn show_help() {

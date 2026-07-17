@@ -51,7 +51,7 @@ use core::ops::Mul;
 /// ```
 ///
 /// and
-///  
+///
 /// `mult * c` will not result in numeric overflow (i.e., `mult * c` will stay below MAX_U64).
 ///
 /// This is how `Coeff` achieves accuracy and efficiency at the same time.

@@ -14,7 +14,7 @@ stop_guest() {
 # Trap EXIT signal to ensure guest VM is stopped on script exit
 trap stop_guest EXIT
 
-# Warm up: We intentionally run another test for warmup here. 
+# Warm up: We intentionally run another test for warmup here.
 # Note that we can't use -W option for warmup here because it will fail due to receiving timeout.
 echo "Warm up......"
 lat_udp -P 1 -N 10 $GUEST_SERVER_IP_ADDRESS >/dev/null 2>&1

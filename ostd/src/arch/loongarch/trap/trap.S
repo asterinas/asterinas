@@ -127,7 +127,7 @@ run_user: # (regs: &mut RawUserContext)
     move    $sp, $a0
     STORE_SP $t0, 0         # save kernel-sp in UserContext.general.zero
     move    $t0, $sp
-    csrwr   $t0, SAVE_SCRATCH   # SAVE_SCRATCH = bottom of TrapFrame/UserContext       
+    csrwr   $t0, SAVE_SCRATCH   # SAVE_SCRATCH = bottom of TrapFrame/UserContext
 
 _trap_return:
     LOAD_SP $t0, 32         # t0 = prmd

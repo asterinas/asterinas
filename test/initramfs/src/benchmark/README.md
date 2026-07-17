@@ -211,9 +211,9 @@ strategy:
 
 ### Step 5: Test, Validate and Commit
 
-Before committing the changes, it is essential to test the new benchmark job locally to ensure it runs correctly. This step helps identify any issues or errors that may arise during the benchmark execution. 
+Before committing the changes, it is essential to test the new benchmark job locally to ensure it runs correctly. This step helps identify any issues or errors that may arise during the benchmark execution.
 
-Firstly, we can run the benchmark locally to ensure it works as expected. The following command should finally generate the `result_<bench_suite>-<bench_job>.json` under `asterinas/`. 
+Firstly, we can run the benchmark locally to ensure it works as expected. The following command should finally generate the `result_<bench_suite>-<bench_job>.json` under `asterinas/`.
 
 ```bash
 cd asterinas/

@@ -65,7 +65,7 @@ impl CpuTimeStatsManager {
         SINGLETON.get().unwrap()
     }
 
-    /// Collects the time statistics on the specific CPU.  
+    /// Collects the time statistics on the specific CPU.
     pub fn collect_stats_on_cpu(&self, cpu: CpuId) -> CpuTimeStats {
         CpuTimeStats {
             user: Jiffies::new(self.user.get_on_cpu(cpu) as u64),

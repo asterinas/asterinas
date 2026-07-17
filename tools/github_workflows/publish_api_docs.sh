@@ -4,7 +4,7 @@
 
 set -e
 
-# This script is used to build API documentations 
+# This script is used to build API documentations
 # and upload the documentation to self-hosted repos.
 
 # Print help message

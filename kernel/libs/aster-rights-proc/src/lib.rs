@@ -34,13 +34,13 @@
 //!     pub fn write(&self) {}
 //!
 //!     #[require(R > Read | Write)]
-//!     pub fn read_write(&self) {}     
+//!     pub fn read_write(&self) {}
 
 //!     #[require(R > R1)]
 //!     pub fn restrict<R1>(self) -> Channel<R1> where R1: RightSet {
-//!         Channel::new()           
+//!         Channel::new()
 //!     }
-//! }    
+//! }
 //! ```
 //! When we initialize channels with different rights, it can check whether the function
 //! are wrongly used due to lack of capabilities at compilation time.

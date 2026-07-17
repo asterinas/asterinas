@@ -22,7 +22,7 @@ CR4_BIT_PGE       = 1 << 7
     lgdt [boot_gdtr]
 
     // Set the NX bit support in the EFER MSR.
-    mov ecx, IA32_EFER_MSR 
+    mov ecx, IA32_EFER_MSR
     rdmsr
     or eax, IA32_EFER_BIT_NXE
     wrmsr
@@ -105,7 +105,7 @@ ap_protect_mode:
     setup_64bit_gdt_and_page_table eax
 
     // Enable long mode.
-    mov ecx, IA32_EFER_MSR 
+    mov ecx, IA32_EFER_MSR
     rdmsr
     or eax, IA32_EFER_BIT_LME
     wrmsr

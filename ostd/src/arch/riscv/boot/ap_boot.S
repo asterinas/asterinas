@@ -20,10 +20,10 @@ ap_boot_start:
     #  - a0 contains the hart ID;
     #  - a1 is the opaque parameter (not used here);
     #  - We're running in M-mode or S-mode depending on SBI implementation.
-    
+
     # Save hart ID in t4 for later use (t4 is caller-saved but we'll be careful).
     mv      t4, a0
-    
+
     # Load the page table address in Sv48 mode and set SATP.
     lla     t0, __ap_boot_page_table_pointer - KERNEL_VMA_OFFSET
     ld      t1, 0(t0)                   # Load page table physical address.
@@ -55,7 +55,7 @@ ap_unreachable_pa:
 
 ap_flush_tlb:
     sfence.vma                          # Flush TLB.
-    
+
     # Now we need to switch to virtual addressing.
     # Calculate virtual address using the same method as boot.S.
     li      t1, KERNEL_VMA_OFFSET
@@ -78,7 +78,7 @@ __ap_boot_info_array_pointer:
     .quad 0
 
 # This is atomically incremented when a new hart is kicked on. The BSP's ID is
-# 0, and the first AP's ID will be 1. 
+# 0, and the first AP's ID will be 1.
 __ap_boot_cpu_id_tail:
     .quad 1
 
@@ -106,10 +106,10 @@ ap_cmpxchg_load:
     # Load stack top and CPU local storage's base address.
     ld      sp, 0(t3)                   # Load stack_top.
     ld      gp, 8(t3)                   # Load cpu_local pointer.
-    
+
     # Clear frame pointer for clean stack traces.
     li      fp, 0
-    
+
     # Jump to Rust AP entry point.
     # Pass CPU ID as the first argument.
     mv      a0, t1

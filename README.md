@@ -91,7 +91,7 @@ and has launched an experimental distribution,
 
 In 2026, our priority is to advance project maturity toward production readiness,
 specifically targeting standard and confidential virtual machines on x86-64.
-Looking ahead, we will continue to expand functionality and 
+Looking ahead, we will continue to expand functionality and
 harden the system for **mission-critical deployments**
 in data centers, autonomous vehicles, and embodied AI.
 
@@ -178,7 +178,7 @@ build and run Asterinas NixOS in a VM:
     make nixos
     make run_nixos
     ```
-    
+
     This boots into an interactive shell in Asterinas NixOS,
     where you can use Nix to install and try more packages.
 

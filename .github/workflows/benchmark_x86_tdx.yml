@@ -11,7 +11,7 @@ jobs:
     runs-on: self-hosted
     strategy:
       matrix:
-        benchmarks: 
+        benchmarks:
           - sysbench/cpu_lat
           - sysbench/thread_lat
           # Memory-related benchmarks
@@ -74,7 +74,7 @@ jobs:
           - lmbench/tcp_virtio_bw_64k
           - lmbench/tcp_virtio_connect_lat
           - lmbench/tcp_virtio_lat
-          - lmbench/udp_virtio_lat 
+          - lmbench/udp_virtio_lat
           - iperf3/tcp_virtio_bw
           # Scheduler-related benchmarks
           - hackbench/group8_smp1
@@ -107,7 +107,7 @@ jobs:
       # FIXME: Remove the following line after fixing the parallel execution of network benchmarks.
       max-parallel: 1
     timeout-minutes: 60
-    container: 
+    container:
       image: asterinas/asterinas:0.18.0-20260702
       options: -v /dev:/dev --privileged
 
@@ -133,4 +133,4 @@ jobs:
           task: result
           platform: tdx
           benchmark-secret: ${{ secrets.BENCHMARK_SECRET }}
-         
+

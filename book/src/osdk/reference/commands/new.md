@@ -27,7 +27,7 @@ Use the library template. This is the default option.
 
 ## Examples
 
-- Create a new kernel named `myos`: 
+- Create a new kernel named `myos`:
 
 ```bash
 cargo osdk new --kernel myos

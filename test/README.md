@@ -15,6 +15,6 @@ See [`initramfs/README.md`](initramfs/README.md) for details.
 
 ### NixOS-Based Tests ([`nixos/`](nixos/))
 
-Tests running in NixOS environments. 
+Tests running in NixOS environments.
 
 See [`nixos/README.md`](nixos/README.md) for details.

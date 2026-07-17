@@ -487,7 +487,7 @@ pub struct SetMarkError;
 
 impl<P: NonNullPtr + Send + Sync, M: Into<XMark>> CursorMut<'_, P, M> {
     /// Sets the input `mark` for the item at the target index.
-    ///  
+    ///
     /// # Errors
     ///
     /// This method will fail with an error if the target item does not exist.
@@ -507,7 +507,7 @@ impl<P: NonNullPtr + Send + Sync, M: Into<XMark>> CursorMut<'_, P, M> {
     }
 
     /// Unsets the input `mark` for the item at the target index.
-    ///  
+    ///
     /// # Errors
     ///
     /// This method will fail with an error if the target item does not exist.

@@ -18,7 +18,7 @@ use crate::{
 
 /// Create an object by reading its C counterpart from the user space.
 ///
-/// Note that the format of a value in the user space may be different from that  
+/// Note that the format of a value in the user space may be different from that
 /// in the kernel space. For example, the type of a boolean value in the kernel
 /// is expressed as `bool`, whereas that in the user space is `i32`.
 ///
@@ -31,7 +31,7 @@ pub trait ReadFromUser: Sized {
 
 /// Write an object to user space by writing its C counterpart.
 ///
-/// Note that the format of a value in the user space may be different from that  
+/// Note that the format of a value in the user space may be different from that
 /// in the kernel space. But the format should be consistent with `ReadFromUser`, i.e,
 /// if we call `read_from_user` and `write_from_user` for the same type, the read value
 /// and write value in user space should be of same type.

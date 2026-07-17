@@ -83,7 +83,7 @@ use ostd_pod::Pod;
 /// The address can be updated by assigning a new value with the `set_addr` method
 /// or updated incrementally through methods like `add`, `offset`, `byte_addr`,
 /// `byte_offset`.
-///  
+///
 /// The VM object of a safe pointer can also be obtained or updated through the
 /// `vm` and `set_vm` methods. A new safe pointer that is backed by the same
 /// VM object of an existing safe pointer can be obtained through the `borrow_vm`

@@ -2,7 +2,7 @@
 
 SCML specifies matching patterns for system‑call invocations.
 Asterinas developers can easily write SCML rules to describe supported patterns.
-Likewise, users and developers can intuitively read these rules 
+Likewise, users and developers can intuitively read these rules
 to understand which system calls and features are available.
 
 SCML is designed to integrate seamlessly with
@@ -61,7 +61,7 @@ We will use SCML to describe the restricted functionality.
 ### Matching rules for system calls
 
 For example,
-your OS supports the [`open`](https://man7.org/linux/man-pages/man2/openat.2.html) system call 
+your OS supports the [`open`](https://man7.org/linux/man-pages/man2/openat.2.html) system call
 with one or more of the four flags: `O_RDONLY`, `O_WRONLY`, `O_RDWR`, and `O_CLOEXEC`:
 This constraint can be expressed in the following system call matching rule.
 
@@ -70,7 +70,7 @@ open(path, flags = O_RDONLY | O_WRONLY | O_RDWR | O_CLOEXEC);
 ```
 
 To allow file creation,
-you add another matching rule that 
+you add another matching rule that
 includes the `O_CREAT` flag and requires a `mode` argument:
 
 ```c
@@ -329,7 +329,7 @@ Non‑terminals are in angle brackets, terminals in quotes.
 
 ```
 <scml>           ::= { <rule> }
-<rule>           ::= <syscall-rule> ';' 
+<rule>           ::= <syscall-rule> ';'
                    | <struct-rule> ';'
                    | <bitflags-rule> ';'
 

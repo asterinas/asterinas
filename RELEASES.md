@@ -201,7 +201,7 @@ We have made the following key changes to the Asterinas kernel:
         * [Add the input devices `/dev/input/eventX`](https://github.com/asterinas/asterinas/pull/2561)
         * [Add the framebuffer device `/dev/fb0`](https://github.com/asterinas/asterinas/pull/2216)
         * [Add i8042 mouse](https://github.com/asterinas/asterinas/pull/2479)
-        * [Make i8042 initialization stable on real hardware](https://github.com/asterinas/asterinas/pull/2646) 
+        * [Make i8042 initialization stable on real hardware](https://github.com/asterinas/asterinas/pull/2646)
     * TTY and PTY
         * [Add `KDSETMODE`/`KDSKBMODE` ioctls](https://github.com/asterinas/asterinas/pull/2525)
         * [Fix PTY closing behavior](https://github.com/asterinas/asterinas/pull/2550)

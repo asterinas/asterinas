@@ -10,7 +10,7 @@ on:
   push:
     branches:
       - main
-    paths: 
+    paths:
       - VERSION
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           ./tools/github_workflows/publish_osdk_and_ostd.sh --dry-run
-      
+
       - name: Publish OSTD and OSDK
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:

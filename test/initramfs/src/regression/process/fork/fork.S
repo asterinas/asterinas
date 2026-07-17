@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
-# FIXME: WNOHANG option currently does not work properly without preemption, so we have temporarily 
-# removed it. Once preemption is supported, the following macro can be uncommented to add the WNOHANG 
+# FIXME: WNOHANG option currently does not work properly without preemption, so we have temporarily
+# removed it. Once preemption is supported, the following macro can be uncommented to add the WNOHANG
 # option back.
 # #define PREEMPTION_ENABLE
 
@@ -18,10 +18,10 @@ _start:
     jmp     _parent                     # parent process
 _parent:
     call    wait_child
-    call    get_pid 
+    call    get_pid
     call    print_parent_message
     call    exit
-_child: 
+_child:
     call    get_pid
     call    print_child_message
     call    exit
@@ -33,7 +33,7 @@ _loop:
     mov     $0, %rsi                    # exit status address
     mov     $1, %rdx                    # wait option: WNOHANG
     syscall
-    cmp     %rdi, %rax                  # The return value is the pid of child 
+    cmp     %rdi, %rax                  # The return value is the pid of child
     jne _loop
     ret
 #else
@@ -50,7 +50,7 @@ exit:
 get_pid:
     mov     $39, %rax
     syscall
-    ret     
+    ret
 print_hello_world:
     mov     $message, %rsi              # address of message
     mov     $message_end, %rdx
@@ -72,7 +72,7 @@ _print_message:
     mov     $1, %rdi                    # stdout
     syscall
     ret
-.section .rodata        
+.section .rodata
 message:
     .ascii  "Hello, world in fork\n"
 message_end:

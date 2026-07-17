@@ -1,10 +1,10 @@
-# This is the configuration file for github action License Eye Header. The action is used 
-# to check that each source file contains the license header lines. For the configuration 
+# This is the configuration file for github action License Eye Header. The action is used
+# to check that each source file contains the license header lines. For the configuration
 # details, see https://github.com/marketplace/actions/license-eye-header#configurations.
 
 header:
   # Files are licensed under MPL-2.0, by default.
-  - paths: 
+  - paths:
       - '**/*.rs'
       - '**/*.S'
       - '**/*.s'
@@ -19,10 +19,10 @@ header:
     license:
       content: |
         SPDX-License-Identifier: MPL-2.0
-    language: 
+    language:
       # License Eye Header cannot recognize files with extension .S, so we add
       # the definition here.
-      Assembly: 
+      Assembly:
         extensions:
           - ".S"
         comment_style_id: SlashAsterisk
@@ -42,7 +42,7 @@ header:
       - '**/tests/regression_test/**'
       - '**/tests/trait_method_test/**'
       - '**/tests/violate_policy_test/**'
-      
+
     license:
       content: |
         Licensed under the Apache License, Version 2.0 or the MIT License.

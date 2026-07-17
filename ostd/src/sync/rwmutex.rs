@@ -63,7 +63,7 @@ use super::WaitQueue;
 ///     let r2 = mutex.read();
 ///     assert_eq!(*r1, 5);
 ///     assert_eq!(*r2, 5);
-///     
+///
 ///     // Upgradeable read mutex can share access to data with read mutexes
 ///     let r3 = mutex.upread();
 ///     assert_eq!(*r3, 5);
@@ -78,7 +78,7 @@ use super::WaitQueue;
 ///     assert_eq!(*w1, 6);
 /// }   // upread mutex are dropped at this point
 ///
-/// {   
+/// {
 ///     // Only one write mutex can be held at a time
 ///     let mut w2 = mutex.write();
 ///     *w2 += 1;

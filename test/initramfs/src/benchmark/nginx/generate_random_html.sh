@@ -8,7 +8,7 @@
 LEN=$1
 
 # Ensure LEN is numeric and reasonable
-if ! [ "$LEN" -eq "$LEN" ] || [ "$LEN" -lt 120 ]; then 
+if ! [ "$LEN" -eq "$LEN" ] || [ "$LEN" -lt 120 ]; then
     echo "Error: LEN must be a numeric value greater than or equal to 120"
     exit 1
 fi

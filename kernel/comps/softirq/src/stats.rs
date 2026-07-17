@@ -12,7 +12,7 @@ pub(super) const NR_IRQ_LINES: usize = 256;
 /// Counters of each IRQ line for the number of executions.
 pub(super) static IRQ_COUNTERS: Once<[PerCpuCounter; NR_IRQ_LINES]> = Once::new();
 
-/// Iterates all IRQ lines for the number of executions across all CPUs.  
+/// Iterates all IRQ lines for the number of executions across all CPUs.
 pub fn iter_irq_counts_across_all_cpus() -> impl Iterator<Item = usize> {
     let irq_counters = IRQ_COUNTERS.get().unwrap();
     irq_counters.iter().map(|counter| counter.sum_all_cpus())

@@ -8,7 +8,7 @@ should be recognized correctly by both a Markdown renderer and the rustdoc tool.
 
 Procedural macros for the [ostd-pod] crate.
 
-This crate provides procedural macros to simplify working with Plain Old Data (POD) types. 
+This crate provides procedural macros to simplify working with Plain Old Data (POD) types.
 It exports two main macros:
 
 - `#[derive(Pod)]`: An attribute macro that expands into the underlying `zerocopy` traits
@@ -16,7 +16,7 @@ It exports two main macros:
 
 ## The `derive` Macro
 
-The `#[derive(Pod)]` macro is a convenience wrapper that automatically derives the required [zerocopy] traits for POD types. 
+The `#[derive(Pod)]` macro is a convenience wrapper that automatically derives the required [zerocopy] traits for POD types.
 
 Unlike typical derive procedural macros, `derive` in this crate is actually an **attribute** macro that works by shadowing [`::core::prelude::v1::derive`].
 

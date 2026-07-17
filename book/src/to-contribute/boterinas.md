@@ -1,12 +1,12 @@
-# Boterinas 
+# Boterinas
 
 ## Introduction
 
-`@boterinas` is a general-purpose bot designed for a wide variety of tasks in Asterinas. It streamlines maintenance tasks to enhance workflow efficiency. 
+`@boterinas` is a general-purpose bot designed for a wide variety of tasks in Asterinas. It streamlines maintenance tasks to enhance workflow efficiency.
 
-Commands are issued by writing comments that start with the text `@boterinas`. The available commands depend on which repository you are using. The main Asterinas repository contains a `triagebot.toml` file where you can see which features are enabled. 
+Commands are issued by writing comments that start with the text `@boterinas`. The available commands depend on which repository you are using. The main Asterinas repository contains a `triagebot.toml` file where you can see which features are enabled.
 
-Commands for GitHub issues or pull requests should be issued by writing `@boterinas` followed by the command anywhere in the comment. Note that `@boterinas` will ignore commands in Markdown code blocks, inline code spans, or blockquotes. You can enter multiple `@boterinas` commands in a single comment. 
+Commands for GitHub issues or pull requests should be issued by writing `@boterinas` followed by the command anywhere in the comment. Note that `@boterinas` will ignore commands in Markdown code blocks, inline code spans, or blockquotes. You can enter multiple `@boterinas` commands in a single comment.
 
 For example, you can claim an issue and add a label in the same comment.
 ```markdown
@@ -29,33 +29,33 @@ Below, you'll find a comprehensive guide on how to use `@boterinas` effectively.
   Triggers an AI-powered code review of the pull request using OpenAI Codex. The review posts inline comments highlighting potential issues with correctness, performance, security, and maintainability. Only repository members and collaborators can use this command.
 
 ### Issue and Pull Request Management
-- **`@boterinas claim`**  
-  Assigns the issue or pull request to yourself.  
-  
-- **`@boterinas release-assignment`**  
-  Removes the current assignee from an issue or pull request. This command can only be executed by the current assignee or a team member.  
-  
-- **`@boterinas assign @user`**  
-  Assigns a specific user to the issue or pull request. Only team members have permission to assign other users.  
+- **`@boterinas claim`**
+  Assigns the issue or pull request to yourself.
+
+- **`@boterinas release-assignment`**
+  Removes the current assignee from an issue or pull request. This command can only be executed by the current assignee or a team member.
+
+- **`@boterinas assign @user`**
+  Assigns a specific user to the issue or pull request. Only team members have permission to assign other users.
 
 ### Label Management
-- **`@boterinas label <label>`**  
-  Adds a label to the issue or pull request.  
+- **`@boterinas label <label>`**
+  Adds a label to the issue or pull request.
   *Example:* `@boterinas label C-enhancement C-rfc`
-  
-- **`@boterinas label -<label>`**  
-  Removes a label from the issue or pull request.  
+
+- **`@boterinas label -<label>`**
+  Removes a label from the issue or pull request.
   *Example:* `@boterinas label -C-enhancement -C-bug`
 
 ### Status Indicators
-- **`@boterinas author`**  
-  Indicates that a pull request is waiting on the author. It assigns the `S-waiting-on-author` label and removes both `S-waiting-on-review` and `S-blocked`, if present.  
-  
-- **`@boterinas blocked`**  
-  Marks a pull request as blocked on something.  
-  
-- **`@boterinas ready`**  
-  Indicates that a pull request is ready for review. This command can also be invoked with the aliases `@boterinas review` or `@boterinas reviewer`.  
+- **`@boterinas author`**
+  Indicates that a pull request is waiting on the author. It assigns the `S-waiting-on-author` label and removes both `S-waiting-on-review` and `S-blocked`, if present.
+
+- **`@boterinas blocked`**
+  Marks a pull request as blocked on something.
+
+- **`@boterinas ready`**
+  Indicates that a pull request is ready for review. This command can also be invoked with the aliases `@boterinas review` or `@boterinas reviewer`.
 
 ## Notes
 - Only team members can assign users or remove assignments.

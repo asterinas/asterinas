@@ -72,7 +72,7 @@ use crate::task::atomic_mode::AsAtomicModeGuard;
 ///     let r2 = lock.read();
 ///     assert_eq!(*r1, 5);
 ///     assert_eq!(*r2, 5);
-///     
+///
 ///     // Upgradeable read lock can share access to data with read locks
 ///     let r3 = lock.upread();
 ///     assert_eq!(*r3, 5);
@@ -87,7 +87,7 @@ use crate::task::atomic_mode::AsAtomicModeGuard;
 ///     assert_eq!(*w1, 6);
 /// }   // upread lock are dropped at this point
 ///
-/// {   
+/// {
 ///     // Only one write lock can be held at a time
 ///     let mut w2 = lock.write();
 ///     *w2 += 1;
