@@ -661,6 +661,30 @@ mod navigation {
         assert_eq!(va, SECOND_MAP_ADDR);
         assert_eq!(cursor.virt_addr(), SECOND_MAP_ADDR);
     }
+
+    #[ktest]
+    #[should_panic]
+    fn find_next_rejects_overflowing_len() {
+        let (page_table, _, _) = setup_pt_with_two_mappings();
+        let preempt_guard = disable_preempt();
+
+        let mut cursor = page_table
+            .cursor(&preempt_guard, &(0..SECOND_MAP_ADDR + PAGE_SIZE))
+            .unwrap();
+
+        cursor.jump(SECOND_MAP_ADDR).unwrap();
+        assert_eq!(cursor.virt_addr(), SECOND_MAP_ADDR);
+
+        let overflow_len = 0usize.wrapping_sub(SECOND_MAP_ADDR);
+        assert_eq!(overflow_len % PAGE_SIZE, 0);
+        assert_eq!(
+            SECOND_MAP_ADDR.wrapping_add(overflow_len),
+            0,
+            "test setup: va + len must wrap to 0"
+        );
+
+        let _ = cursor.find_next(overflow_len);
+    }
 }
 
 mod unmap {
