@@ -11,7 +11,7 @@ use crate::{
     prelude::*,
     process::{
         Pid, Process,
-        signal::{PollAdaptor, constants::SIGIO},
+        signal::{PollAdaptor, constants::SIGIO, sig_num::SigNum},
     },
 };
 
@@ -60,7 +60,7 @@ impl FileCommon {
         let mut owner_guard = self.owner.inner.lock();
         if let Some(owner) = owner_guard.as_mut() {
             if update.flags().contains(StatusFlags::O_ASYNC) {
-                owner.register_observer(file);
+                owner.register_observer(file, self.owner.sigio_signum.clone());
             } else {
                 owner.unregister_observer();
             }
@@ -84,6 +84,9 @@ impl FileCommon {
 /// The process that receives asynchronous I/O signals for a file description.
 pub struct FileOwner {
     inner: Mutex<Option<Owner>>,
+    /// The signal number for async I/O notifications.
+    /// `None` means no custom signal has been set; the default signal is used.
+    sigio_signum: Arc<Mutex<Option<SigNum>>>,
 }
 
 impl FileOwner {
@@ -91,12 +94,24 @@ impl FileOwner {
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(None),
+            sigio_signum: Arc::new(Mutex::new(None)),
         }
     }
 
     /// Returns the process ID of the current owner.
     pub fn pid(&self) -> Option<Pid> {
         self.inner.lock().as_ref().map(|owner| owner.pid)
+    }
+
+    /// Returns the custom async I/O signal number, or `None` if not set.
+    pub fn sigio_signum(&self) -> Option<SigNum> {
+        *self.sigio_signum.lock()
+    }
+
+    /// Sets the custom async I/O signal number.
+    /// Passing `None` resets to the default behavior.
+    pub fn set_sigio_signum(&self, signal: Option<SigNum>) {
+        *self.sigio_signum.lock() = signal;
     }
 
     pub(super) fn set(&self, file: &dyn FileLike, owner: Option<&Arc<Process>>) {
@@ -109,7 +124,7 @@ impl FileOwner {
 
         let mut owner = Owner::new(process);
         if file.status_flags().contains(StatusFlags::O_ASYNC) {
-            owner.register_observer(file);
+            owner.register_observer(file, self.sigio_signum.clone());
         }
         *owner_guard = Some(owner);
     }
@@ -136,12 +151,13 @@ impl Owner {
         }
     }
 
-    fn register_observer(&mut self, file: &dyn FileLike) {
+    fn register_observer(&mut self, file: &dyn FileLike, sigio_signum: Arc<Mutex<Option<SigNum>>>) {
         if self.poller.is_some() {
             return;
         }
 
-        let mut poller = PollAdaptor::with_observer(OwnerObserver::new(self.process.clone()));
+        let mut poller =
+            PollAdaptor::with_observer(OwnerObserver::new(self.process.clone(), sigio_signum));
         file.poll(IoEvents::IN | IoEvents::OUT, Some(poller.as_handle_mut()));
         self.poller = Some(poller);
     }
@@ -153,16 +169,21 @@ impl Owner {
 
 struct OwnerObserver {
     owner: Weak<Process>,
+    sigio_signum: Arc<Mutex<Option<SigNum>>>,
 }
 
 impl OwnerObserver {
-    fn new(owner: Weak<Process>) -> Self {
-        Self { owner }
+    fn new(owner: Weak<Process>, sigio_signum: Arc<Mutex<Option<SigNum>>>) -> Self {
+        Self {
+            owner,
+            sigio_signum,
+        }
     }
 }
 
 impl Observer<IoEvents> for OwnerObserver {
     fn on_events(&self, _events: &IoEvents) {
-        crate::process::enqueue_signal_async(self.owner.clone(), SIGIO);
+        let signum = self.sigio_signum.lock().unwrap_or(SIGIO);
+        crate::process::enqueue_signal_async(self.owner.clone(), signum);
     }
 }
