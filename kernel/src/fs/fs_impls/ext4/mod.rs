@@ -16,7 +16,7 @@ macro_rules! __log_prefix {
 pub use fs::Ext4;
 pub use inode::{FilePerm, Inode};
 
-use self::fs_type::Ext2Type;
+use self::fs_type::{Ext2Type, Ext4Type};
 use crate::fs::vfs::registry;
 
 mod block_group;
@@ -33,8 +33,9 @@ mod xattr;
 #[cfg(ktest)]
 mod test_utils;
 
-/// Registers the ext2 filesystem type with the VFS registry. The ext4 type
-/// name joins once the extent engine lands.
+/// Registers the ext4 and ext2 filesystem types with the VFS registry; the
+/// one driver serves both names.
 pub(super) fn init() {
+    registry::register(&Ext4Type).unwrap();
     registry::register(&Ext2Type).unwrap();
 }

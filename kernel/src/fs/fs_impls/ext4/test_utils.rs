@@ -227,8 +227,7 @@ impl Ext4FixtureBuilder {
             no_free_inodes: false,
             reserved_inode: None,
             inode_size: INODE_SIZE,
-            // No extent volumes until the extent engine lands.
-            without_extents: true,
+            without_extents: false,
             extra_ro_compat: 0,
             extra_compat: 0,
             flavor: MountFlavor::Ext4,
@@ -250,6 +249,21 @@ impl Ext4FixtureBuilder {
     /// so every inode maps through the indirect engine.
     pub(super) fn without_extents_feature(mut self) -> Self {
         self.without_extents = true;
+        self
+    }
+
+    pub(super) fn with_extra_ro_compat(mut self, bits: u32) -> Self {
+        self.extra_ro_compat = bits;
+        self
+    }
+
+    pub(super) fn with_extra_compat(mut self, bits: u32) -> Self {
+        self.extra_compat = bits;
+        self
+    }
+
+    pub(super) fn with_flavor(mut self, flavor: MountFlavor) -> Self {
+        self.flavor = flavor;
         self
     }
 
@@ -514,18 +528,25 @@ pub(super) fn make_indirect_file_inode(data_block: u32, size: u32) -> RawInode {
     raw
 }
 
-/// Builds an empty regular-file inode: size 0, `i_blocks` 0, and a zeroed
-/// pointer array. Suitable as the target of a fresh buffered write whose
-/// allocation comes from the write path.
+/// Builds an empty regular-file inode: size 0, `i_blocks` 0, and an empty
+/// inline extent root (header with 0 entries). Suitable as the target of a
+/// fresh buffered write whose allocation/extents come from the write path.
 pub(super) fn make_empty_file_inode() -> RawInode {
-    RawInode {
+    let mut raw = RawInode {
         mode: 0o100644, // S_IFREG | 0644
         size_lo: 0,
         link_count: 1,
         sector_count: 0,
+        flags: EXTENTS_FL,
         extra_isize: 32,
         ..Default::default()
-    }
+    };
+    // Empty extent root: 12-byte header (magic 0xF30A, 0 entries, max 4, depth
+    // 0), no extents. Each `i_block` word packs two 16-bit fields.
+    raw.block[0] = 0xF30A; // eh_magic | eh_entries(=0)
+    raw.block[1] = 4; // eh_max=4, eh_depth=0
+    raw.block[2] = 0; // eh_generation
+    raw
 }
 
 /// Writes a single 32-bit block pointer into slot `index` of the on-disk

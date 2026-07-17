@@ -103,10 +103,10 @@ bitflags! {
 
 /// Incompatible features this implementation supports.
 ///
-/// Typed directory entries are supported; the extent engine (and with it the
-/// `EXTENTS` feature) is added by a later commit. A volume requiring any
-/// other incompatible feature is rejected.
-pub(super) const INCOMPAT_SUPP: FeatureIncompatSet = FeatureIncompatSet::FILETYPE;
+/// Typed directory entries and extent block mapping are supported. A volume
+/// requiring any other incompatible feature is rejected.
+pub(super) const INCOMPAT_SUPP: FeatureIncompatSet =
+    FeatureIncompatSet::FILETYPE.union(FeatureIncompatSet::EXTENTS);
 
 /// Read-only compatible features this implementation handles.
 ///

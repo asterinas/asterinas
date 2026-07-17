@@ -9,11 +9,12 @@
 //! layer adds none, so the cross-layer lock order documented in
 //! [`super`] is unchanged.
 
-use super::{super::prelude::*, InodeDesc, RAW_BLOCK_PTRS_LEN};
+use super::{super::prelude::*, InodeDesc, RAW_BLOCK_PTRS_LEN, empty_extent_root};
 
+mod extent;
 mod indirect;
 
-use self::indirect::IndirectManager;
+use self::{extent::ExtentManager, indirect::IndirectManager};
 use super::super::fs::Ext4;
 
 /// State of an allocated logical block.
@@ -21,8 +22,7 @@ use super::super::fs::Ext4;
 pub(super) enum MapState {
     /// Backed by written data on disk.
     Written,
-    /// Allocated but never written; reads as zeros. Only the extent engine
-    /// (to come) produces this state.
+    /// Allocated but never written; reads as zeros.
     Unwritten,
 }
 
@@ -61,6 +61,14 @@ impl Mapping {
         }
     }
 
+    #[cfg(ktest)]
+    pub(super) const fn state(&self) -> Option<MapState> {
+        match self {
+            Self::Mapped { state, .. } => Some(*state),
+            Self::Hole { .. } => None,
+        }
+    }
+
     /// Returns whether reading these blocks must return zeros without device I/O.
     pub(super) const fn reads_as_zeros(&self) -> bool {
         matches!(
@@ -82,6 +90,7 @@ impl Mapping {
 /// bytes. All engine state, including the interior lock, lives in the
 /// variant; callers treat this enum as the engine.
 pub(super) enum BlockMapping {
+    Extent(ExtentManager),
     Indirect(IndirectManager),
 }
 
@@ -90,10 +99,13 @@ impl BlockMapping {
     pub(super) fn new(desc: &InodeDesc, fs: Weak<Ext4>, npages: usize) -> Result<Self> {
         let root = *desc.raw_block();
         let sector_count = desc.sector_count();
-        // The extent engine arrives with ext4-volume support; every inode
-        // maps through the classic indirect pointers for now.
-        let manager = IndirectManager::new(root, sector_count, fs, npages)?;
-        Ok(Self::Indirect(manager))
+        if desc.is_extent_based() {
+            let manager = ExtentManager::new(root, sector_count, fs, npages)?;
+            Ok(Self::Extent(manager))
+        } else {
+            let manager = IndirectManager::new(root, sector_count, fs, npages)?;
+            Ok(Self::Indirect(manager))
+        }
     }
 
     /// Builds a fresh, empty mapping with no blocks allocated, in the
@@ -105,16 +117,21 @@ impl BlockMapping {
     /// bytes with a mapped data block; the inode's current `i_block` holds
     /// those raw bytes and must not be interpreted as a mapping root.
     pub(super) fn new_empty(fs: Weak<Ext4>, extent_based: bool, npages: usize) -> Result<Self> {
-        // `extent_based` is threaded through for the extent engine to come;
-        // only the indirect format exists yet.
-        debug_assert!(!extent_based);
-        let _ = extent_based;
-        Ok(Self::Indirect(IndirectManager::new(
-            [0u32; RAW_BLOCK_PTRS_LEN],
-            0,
-            fs,
-            npages,
-        )?))
+        if extent_based {
+            Ok(Self::Extent(ExtentManager::new(
+                empty_extent_root(),
+                0,
+                fs,
+                npages,
+            )?))
+        } else {
+            Ok(Self::Indirect(IndirectManager::new(
+                [0u32; RAW_BLOCK_PTRS_LEN],
+                0,
+                fs,
+                npages,
+            )?))
+        }
     }
 
     /// Maps logical block `iblock` to a physical run.
@@ -123,6 +140,7 @@ impl BlockMapping {
     /// mapped (or hole) run, so callers can batch contiguous I/O.
     pub(super) fn map_blocks(&self, iblock: Iblock) -> Result<Mapping> {
         match self {
+            Self::Extent(m) => m.map_blocks(iblock),
             Self::Indirect(m) => m.map_blocks(iblock),
         }
     }
@@ -131,6 +149,7 @@ impl BlockMapping {
     /// and records them in the mapping.
     pub(super) fn ensure_allocated(&self, start_iblock: Iblock, end_iblock: Iblock) -> Result<()> {
         match self {
+            Self::Extent(m) => m.ensure_allocated(start_iblock, end_iblock),
             Self::Indirect(m) => {
                 m.allocate_range_blocks(start_iblock as usize, end_iblock as usize)
             }
@@ -145,6 +164,7 @@ impl BlockMapping {
     /// state, so it allocates real zeroed blocks (ext2 semantics).
     pub(super) fn preallocate(&self, start_iblock: Iblock, end_iblock: Iblock) -> Result<()> {
         match self {
+            Self::Extent(m) => m.preallocate(start_iblock, end_iblock),
             Self::Indirect(m) => {
                 m.allocate_range_blocks(start_iblock as usize, end_iblock as usize)
             }
@@ -155,6 +175,7 @@ impl BlockMapping {
     /// or beyond `new_size` bytes, updating `i_blocks`.
     pub(super) fn truncate_to_byte_len(&self, new_size: usize) -> Result<()> {
         match self {
+            Self::Extent(m) => m.truncate_to_byte_len(new_size),
             Self::Indirect(m) => {
                 // The indirect engine truncates best-effort (errors are logged
                 // and the freed prefix is kept); the inode reclaim path relies
@@ -169,6 +190,7 @@ impl BlockMapping {
     /// it (the extent-tree root or the pointer array).
     pub(super) fn root_snapshot(&self) -> [u32; RAW_BLOCK_PTRS_LEN] {
         match self {
+            Self::Extent(m) => m.root_snapshot(),
             Self::Indirect(m) => m.root_snapshot(),
         }
     }
@@ -176,6 +198,7 @@ impl BlockMapping {
     /// Returns the inode's `i_blocks` (512-byte sectors) accounting.
     pub(super) fn sector_count(&self) -> u64 {
         match self {
+            Self::Extent(m) => m.sector_count(),
             Self::Indirect(m) => m.sector_count(),
         }
     }
@@ -189,6 +212,7 @@ impl BlockMapping {
     /// indirect blocks until this point.
     pub(super) fn sync_meta(&self) -> Result<()> {
         match self {
+            Self::Extent(_) => Ok(()),
             Self::Indirect(m) => m.sync_indirect_blocks(),
         }
     }
@@ -196,6 +220,7 @@ impl BlockMapping {
     /// Returns whether the mapping or `i_blocks` changed since last writeback.
     pub(super) fn is_dirty(&self) -> bool {
         match self {
+            Self::Extent(m) => m.is_dirty(),
             Self::Indirect(m) => m.is_dirty(),
         }
     }
@@ -203,6 +228,7 @@ impl BlockMapping {
     /// Clears the dirty flag after a successful inode writeback.
     pub(super) fn clear_dirty(&self) {
         match self {
+            Self::Extent(m) => m.clear_dirty(),
             Self::Indirect(m) => m.clear_dirty(),
         }
     }
@@ -210,6 +236,7 @@ impl BlockMapping {
     /// Updates the cached page-cache capacity bound.
     pub(super) fn set_npages(&self, npages: usize) {
         match self {
+            Self::Extent(m) => m.set_npages(npages),
             Self::Indirect(m) => m.set_npages(npages),
         }
     }
@@ -223,6 +250,10 @@ impl BlockMapping {
     /// the ext2 geometry and `i_blocks` accounting limits.
     pub(super) fn max_file_size(&self) -> usize {
         match self {
+            Self::Extent(_) => {
+                let by_blocks = (u32::MAX as u64) * BLOCK_SIZE as u64;
+                usize::try_from(by_blocks.min(i64::MAX as u64)).unwrap_or(usize::MAX)
+            }
             Self::Indirect(_) => indirect::max_file_size(),
         }
     }
@@ -237,6 +268,7 @@ impl BlockAsPageCacheBackend for BlockMapping {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         match self {
+            Self::Extent(m) => m.submit_read_bio(idx, bio_segment, complete_fn, io_batch),
             Self::Indirect(m) => m.submit_read_bio(idx, bio_segment, complete_fn, io_batch),
         }
     }
@@ -249,6 +281,7 @@ impl BlockAsPageCacheBackend for BlockMapping {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         match self {
+            Self::Extent(m) => m.submit_write_bio(idx, bio_segment, complete_fn, io_batch),
             Self::Indirect(m) => m.submit_write_bio(idx, bio_segment, complete_fn, io_batch),
         }
     }
