@@ -2,7 +2,7 @@
 
 //! Symlink read and write for ext2 inodes.
 //!
-//! Ext2 distinguishes two storage strategies for symbolic link targets:
+//! Ext4 distinguishes two storage strategies for symbolic link targets:
 //!
 //! - **Fast symlink** — targets up to 59 bytes are stored inline in the
 //!   60-byte raw block-pointer area of the inode (`i_block[0..15]`) without
@@ -12,10 +12,10 @@
 //!   through the normal page-cache path.
 
 use super::{
-    super::Ext2, Inode, InodeInner, InodePayload, MAX_FAST_SYMLINK_LEN, RAW_BLOCK_PTRS_LEN,
+    super::Ext4, Inode, InodeInner, InodePayload, MAX_FAST_SYMLINK_LEN, RAW_BLOCK_PTRS_LEN,
     block_manager::RawBlockPtrs,
 };
-use crate::fs::ext2::{prelude::*, utils};
+use crate::fs::ext4::{prelude::*, utils};
 
 /// Inline fast-symlink target stored in the raw `i_block` byte area.
 #[derive(Debug)]
@@ -51,7 +51,7 @@ impl FastSymlinkTarget {
 
 impl Inode {
     /// Reads symbolic link target bytes and decodes them as UTF-8.
-    pub(in crate::fs::fs_impls::ext2) fn read_link(&self) -> Result<String> {
+    pub(in crate::fs::fs_impls::ext4) fn read_link(&self) -> Result<String> {
         if self.type_ != InodeType::SymLink {
             return_errno!(Errno::EINVAL);
         }
@@ -61,7 +61,7 @@ impl Inode {
     }
 
     /// Writes symbolic link target bytes into either fast-inline or slow-page-cache storage.
-    pub(in crate::fs::fs_impls::ext2) fn write_link(&self, target: &str) -> Result<()> {
+    pub(in crate::fs::fs_impls::ext4) fn write_link(&self, target: &str) -> Result<()> {
         if self.type_ != InodeType::SymLink {
             return_errno!(Errno::EINVAL);
         }
@@ -84,7 +84,7 @@ impl InodeInner {
         matches!(self.payload, InodePayload::FastSymlink { .. })
     }
 
-    fn write_link(&mut self, fs: &Arc<Ext2>, target: &str) -> Result<()> {
+    fn write_link(&mut self, fs: &Arc<Ext4>, target: &str) -> Result<()> {
         let target_len = target.len();
 
         // Linux reserves one byte in `i_block` for a trailing NUL.

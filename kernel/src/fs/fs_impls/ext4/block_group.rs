@@ -33,7 +33,7 @@ use aster_block::bio::BioCompleteFn;
 use ostd::const_assert;
 
 use super::{
-    fs::Ext2,
+    fs::Ext4,
     inode::{Inode, InodeDesc, RawInode},
     prelude::*,
     super_block::SuperBlock,
@@ -50,7 +50,7 @@ pub(super) struct BlockGroup {
     group_idx: usize,
     /// Group descriptor and bitmaps, protected by a single lock.
     metadata: RwMutex<BlockGroupMetadata>,
-    /// Backing block device (shared with `Ext2` and other groups).
+    /// Backing block device (shared with `Ext4` and other groups).
     block_device: Arc<dyn BlockDevice>,
     /// Cached geometry: first filesystem-wide block number of this group.
     first_block: u32,
@@ -68,7 +68,7 @@ pub(super) struct BlockGroup {
     inode_table_cache: PageCache,
     /// Per-group inode cache keyed by group-local inode index.
     ///
-    /// Ext2 keeps this cache locally because the VFS layer does not provide
+    /// Ext4 keeps this cache locally because the VFS layer does not provide
     /// a shared inode cache for filesystem implementations.
     inode_cache: RwMutex<BTreeMap<u16, Arc<Inode>>>,
 }
@@ -164,13 +164,13 @@ impl BlockGroup {
     }
 
     /// Returns whether an inode is marked allocated in this group.
-    pub(super) fn is_inode_allocated(&self, ino: Ext2Ino) -> bool {
+    pub(super) fn is_inode_allocated(&self, ino: Ext4Ino) -> bool {
         let inode_idx = self.inode_idx_in_group(ino);
         self.metadata.read().inode_bitmap.is_allocated(inode_idx)
     }
 
     /// Looks up an allocated inode by inode number.
-    pub(super) fn lookup_inode(&self, ino: Ext2Ino, fs: Weak<Ext2>) -> Result<Arc<Inode>> {
+    pub(super) fn lookup_inode(&self, ino: Ext4Ino, fs: Weak<Ext4>) -> Result<Arc<Inode>> {
         let inode_idx = self.inode_idx_in_group(ino);
 
         // Fast path: cache hit under read lock.
@@ -204,7 +204,7 @@ impl BlockGroup {
     }
 
     /// Removes an inode from this group's in-memory cache.
-    pub(super) fn remove_inode(&self, ino: Ext2Ino) -> Option<Arc<Inode>> {
+    pub(super) fn remove_inode(&self, ino: Ext4Ino) -> Option<Arc<Inode>> {
         let inode_idx = self.inode_idx_in_group(ino);
         self.inode_cache.write().remove(&inode_idx)
     }
@@ -272,7 +272,7 @@ impl BlockGroup {
     ///
     /// Returns `Ok(range)` with filesystem-wide block numbers on success, or an empty range
     /// if no allocatable blocks are available. Returns `Err(EIO)` on bitmap corruption.
-    pub(super) fn alloc_blocks(&self, count: u32, sb_free_blocks: u32) -> Result<Range<Ext2Bid>> {
+    pub(super) fn alloc_blocks(&self, count: u32, sb_free_blocks: u32) -> Result<Range<Ext4Bid>> {
         let group_size = self.last_block - self.first_block + 1;
         debug_assert!(group_size <= IdBitmap::capacity() as u32);
 
@@ -372,7 +372,7 @@ impl BlockGroup {
     ///
     /// Returns `Some(inode_idx)` with the 0-based group-relative inode index,
     /// or `None` if no free inode is available in this group.
-    pub(super) fn alloc_ino(&self, inode_type: InodeType) -> Result<Option<Ext2Ino>> {
+    pub(super) fn alloc_ino(&self, inode_type: InodeType) -> Result<Option<Ext4Ino>> {
         let mut metadata = self.metadata.write();
 
         if metadata.desc.free_inodes_count == 0 {
@@ -395,14 +395,14 @@ impl BlockGroup {
             metadata.desc.used_dirs_count += 1;
         }
 
-        Ok(Some(inode_idx as Ext2Ino))
+        Ok(Some(inode_idx as Ext4Ino))
     }
 
     /// Frees one inode within this group.
     ///
     /// Returns `true` if the allocation state transitioned allocated-to-free,
     /// `false` if it was already free (logs warning).
-    pub(super) fn free_inode(&self, ino: Ext2Ino, inode_type: InodeType) -> Result<bool> {
+    pub(super) fn free_inode(&self, ino: Ext4Ino, inode_type: InodeType) -> Result<bool> {
         let inode_idx = self.inode_idx_in_group(ino);
         let mut metadata = self.metadata.write();
 
@@ -449,7 +449,7 @@ impl BlockGroup {
     }
 
     /// Writes an inode descriptor to the group's inode table `PageCache`.
-    pub(super) fn write_back_inode_desc(&self, ino: Ext2Ino, raw: &RawInode) -> Result<()> {
+    pub(super) fn write_back_inode_desc(&self, ino: Ext4Ino, raw: &RawInode) -> Result<()> {
         let inode_idx = self.inode_idx_in_group(ino);
         let offset_bytes = (inode_idx as usize) * self.inode_size;
         self.inode_table_cache.write_val(offset_bytes, raw)?;
@@ -510,7 +510,7 @@ impl BlockGroup {
     }
 
     /// Returns the 0-based group-local inode index.
-    fn inode_idx_in_group(&self, ino: Ext2Ino) -> u16 {
+    fn inode_idx_in_group(&self, ino: Ext4Ino) -> u16 {
         debug_assert!(ino > 0);
         debug_assert_eq!(
             ((ino - 1) / self.nr_inodes_per_group) as usize,
@@ -612,9 +612,9 @@ impl Debug for BlockGroupMetadata {
 /// In-memory block group descriptor.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct BlockGroupDesc {
-    pub block_bitmap_bid: Ext2Bid,
-    pub inode_bitmap_bid: Ext2Bid,
-    pub inode_table_bid: Ext2Bid,
+    pub block_bitmap_bid: Ext4Bid,
+    pub inode_bitmap_bid: Ext4Bid,
+    pub inode_table_bid: Ext4Bid,
     pub free_blocks_count: u16,
     pub free_inodes_count: u16,
     pub used_dirs_count: u16,
@@ -732,7 +732,7 @@ const_assert!(size_of::<RawBlockGroup>() == 32);
 /// Backend of the inode table page cache in one block group.
 struct InodeTableBackend {
     /// Physical block ID of `bg_inode_table`.
-    inode_table_bid: Ext2Bid,
+    inode_table_bid: Ext4Bid,
     /// Total inode table size in bytes (`nr_inodes_per_group * inode_size`).
     raw_inodes_size: usize,
     /// Block device handle for I/O.

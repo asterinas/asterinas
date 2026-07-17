@@ -73,7 +73,7 @@
 
 use core::cmp::Ordering;
 
-use super::{fs::Ext2, inode::Inode, prelude::*};
+use super::{fs::Ext4, inode::Inode, prelude::*};
 use crate::fs::vfs::xattr::{XattrName, XattrNamespace, XattrSetFlags};
 
 const XATTR_NBLOCKS: usize = 1;
@@ -101,7 +101,7 @@ pub(super) struct Xattr {
 
 impl Xattr {
     /// Creates a new xattr handle for the block referenced by `InodeDesc.file_acl`.
-    pub(super) fn new(bid: Ext2Bid, inode: Weak<Inode>, fs: Weak<Ext2>) -> Self {
+    pub(super) fn new(bid: Ext4Bid, inode: Weak<Inode>, fs: Weak<Ext4>) -> Self {
         Self {
             cache: RwMutex::new(XattrCache {
                 block_buf: None,
@@ -115,7 +115,7 @@ impl Xattr {
     }
 
     /// Returns the current xattr block number for `InodeDesc.file_acl`.
-    pub(super) fn bid(&self) -> Ext2Bid {
+    pub(super) fn bid(&self) -> Ext4Bid {
         self.cache.read().bid()
     }
 
@@ -208,18 +208,18 @@ struct XattrCache {
     /// Always populated after the first mutation or query; empty only for an
     /// inode that has never had xattrs and has `bid == 0`.
     entries: Vec<XattrEntryData>,
-    bid: Ext2Bid,
+    bid: Ext4Bid,
     dirty: bool,
     inode: Weak<Inode>,
-    fs: Weak<Ext2>,
+    fs: Weak<Ext4>,
 }
 
 impl XattrCache {
-    fn bid(&self) -> Ext2Bid {
+    fn bid(&self) -> Ext4Bid {
         self.bid
     }
 
-    fn fs(&self) -> Result<Arc<Ext2>> {
+    fn fs(&self) -> Result<Arc<Ext4>> {
         self.fs
             .upgrade()
             .ok_or_else(|| Error::with_message(Errno::EIO, "ext2 instance is unavailable"))

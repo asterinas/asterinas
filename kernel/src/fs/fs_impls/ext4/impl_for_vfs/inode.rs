@@ -16,7 +16,7 @@ use crate::{
     device,
     fs::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags},
-        fs_impls::ext2::{FilePerm, Inode as Ext2Inode},
+        fs_impls::ext4::{FilePerm, Inode as Ext4Inode},
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
@@ -32,7 +32,7 @@ use crate::{
     vm::page_cache::PageCache,
 };
 
-impl FileOps for Ext2Inode {
+impl FileOps for Ext4Inode {
     fn read_at(
         &self,
         offset: usize,
@@ -64,7 +64,7 @@ impl FileOps for Ext2Inode {
     }
 }
 
-impl Inode for Ext2Inode {
+impl Inode for Ext4Inode {
     fn size(&self) -> usize {
         self.file_size()
     }
@@ -197,7 +197,7 @@ impl Inode for Ext2Inode {
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
         let old = old
-            .downcast_ref::<Ext2Inode>()
+            .downcast_ref::<Ext4Inode>()
             .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
         self.link(old, name)
     }
@@ -222,7 +222,7 @@ impl Inode for Ext2Inode {
         }
 
         let target = target
-            .downcast_ref::<Ext2Inode>()
+            .downcast_ref::<Ext4Inode>()
             .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
         self.rename(old_name, target, new_name)
     }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! [`FileSystem`] trait implementation for [`Ext2`].
+//! [`FileSystem`] trait implementation for [`Ext4`].
 //!
 //! Translates VFS-level mount, sync, stat, and root-inode requests into
 //! the corresponding ext2-internal operations.
@@ -9,7 +9,7 @@ use aster_block::{BLOCK_SIZE, bio::BioStatus};
 
 use crate::{
     fs::{
-        fs_impls::ext2::{Ext2, super_block::MAGIC_NUM},
+        fs_impls::ext4::{Ext4, super_block::MAGIC_NUM},
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
@@ -19,7 +19,7 @@ use crate::{
     prelude::*,
 };
 
-impl FileSystem for Ext2 {
+impl FileSystem for Ext4 {
     fn name(&self) -> &'static str {
         "ext2"
     }
