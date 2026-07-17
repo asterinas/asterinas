@@ -424,9 +424,9 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
             0,
             "cursor virtual address not aligned for mapping"
         );
-        let end = self.0.va + size;
+
         assert!(
-            end <= self.0.barrier_va.end,
+            size <= self.0.barrier_va.end - self.0.va,
             "cursor virtual address out-of-bound for mapping"
         );
 
