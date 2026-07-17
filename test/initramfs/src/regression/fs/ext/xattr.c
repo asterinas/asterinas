@@ -7,12 +7,14 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/vfs.h>
 #include <sys/xattr.h>
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/xattr_test"
+#define BASE_DIR EXT_TEST_ROOT "/xattr_test"
 
 static void ensure_base_dir(void)
 {
@@ -58,6 +60,38 @@ FN_TEST(xattr_remove_enodata)
 
 	char buf[64] = { 0 };
 	TEST_ERRNO(getxattr(path, "user.gone", buf, sizeof(buf)), ENODATA);
+
+	TEST_SUCC(unlink(path));
+}
+END_TEST()
+
+FN_TEST(xattr_ea_block_alloc_and_release)
+{
+	const char *path = BASE_DIR "/eablock";
+	int fd = TEST_SUCC(open(path, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(close(fd));
+
+	// Extended attributes always live in a separately allocated EA block
+	// (there is no in-inode xattr storage), so the first attribute consumes
+	// one filesystem block and removing the last one frees it. The EA block
+	// is allocated outside the inode's own block accounting, so it is
+	// observed through the volume's free-block count -- a relative delta
+	// that holds on every image shape, including the 128-byte-inode and
+	// ext2 cells -- rather than the file's st_blocks.
+	struct statfs before;
+	TEST_SUCC(statfs(EXT_TEST_ROOT, &before));
+
+	TEST_SUCC(setxattr(path, "user.eablock", "v", 1, 0));
+
+	struct statfs after_set;
+	TEST_RES(statfs(EXT_TEST_ROOT, &after_set),
+		 after_set.f_bfree == before.f_bfree - 1);
+
+	TEST_SUCC(removexattr(path, "user.eablock"));
+
+	struct statfs after_remove;
+	TEST_RES(statfs(EXT_TEST_ROOT, &after_remove),
+		 after_remove.f_bfree == before.f_bfree);
 
 	TEST_SUCC(unlink(path));
 }

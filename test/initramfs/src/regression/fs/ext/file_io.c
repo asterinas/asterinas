@@ -8,8 +8,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/file_io_test"
+#define BASE_DIR EXT_TEST_ROOT "/file_io_test"
 
 static void ensure_dir(const char *path)
 {

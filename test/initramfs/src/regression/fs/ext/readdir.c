@@ -9,8 +9,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/readdir_test"
+#define BASE_DIR EXT_TEST_ROOT "/readdir_test"
 
 static void ensure_dir(const char *path)
 {
