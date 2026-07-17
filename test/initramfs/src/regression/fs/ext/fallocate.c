@@ -9,8 +9,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/fallocate"
+#define BASE_DIR EXT_TEST_ROOT "/fallocate"
 
 FN_SETUP(prepare_base_dir)
 {

@@ -11,8 +11,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/sparse_test"
+#define BASE_DIR EXT_TEST_ROOT "/sparse_test"
 #define PAGE_SIZE 4096
 
 static void ensure_dir(const char *path)
@@ -146,7 +147,7 @@ FN_TEST(statfs_bavail_reserved)
 {
 	struct statfs st;
 
-	TEST_SUCC(statfs("/ext2", &st));
-	TEST_RES(statfs("/ext2", &st), st.f_bavail <= st.f_bfree);
+	TEST_SUCC(statfs(EXT_TEST_ROOT, &st));
+	TEST_RES(statfs(EXT_TEST_ROOT, &st), st.f_bavail <= st.f_bfree);
 }
 END_TEST()

@@ -6,8 +6,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/perm_test"
+#define BASE_DIR EXT_TEST_ROOT "/perm_test"
 #define TEST_FILE BASE_DIR "/testfile"
 
 FN_SETUP(create_base_dir)
@@ -26,6 +27,26 @@ FN_TEST(chown_changes_owner)
 	struct stat st;
 	TEST_SUCC(stat(TEST_FILE, &st));
 	TEST_RES(stat(TEST_FILE, &st), st.st_uid == 1000 && st.st_gid == 1000);
+
+	// Restore ownership to root before cleanup
+	TEST_SUCC(chown(TEST_FILE, 0, 0));
+	TEST_SUCC(unlink(TEST_FILE));
+}
+END_TEST()
+
+FN_TEST(chown_large_id)
+{
+	int fd = TEST_SUCC(creat(TEST_FILE, 0644));
+	TEST_SUCC(close(fd));
+
+	// A uid/gid beyond 16 bits exercises the inode's high-order owner
+	// halves (the osd2 l_i_uid_high / l_i_gid_high fields), which even the
+	// 128-byte inode layout carries. The value read back must stay intact.
+	TEST_SUCC(chown(TEST_FILE, 100000, 200000));
+
+	struct stat st;
+	TEST_RES(stat(TEST_FILE, &st),
+		 st.st_uid == 100000 && st.st_gid == 200000);
 
 	// Restore ownership to root before cleanup
 	TEST_SUCC(chown(TEST_FILE, 0, 0));

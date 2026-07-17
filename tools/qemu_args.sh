@@ -19,6 +19,7 @@
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
 #  - VNC_PORT: VNC port, default is "42";
+#  - ATTACH_EXT4_IMAGE: "true" or "false", whether to attach the regression-test ext4 image.
 #  - ATTACH_XFSTESTS_IMAGES: "true" or "false", whether to attach xfstests images (xfstests_test.img and xfstests_scratch.img) to the VM. Defaults to auto-detection from ENABLE_CONFORMANCE_TEST + CONFORMANCE_TEST_SUITE.
 
 OVMF=${OVMF:-"on"}
@@ -28,6 +29,7 @@ VIRTIOFS=${VIRTIOFS:-"off"}
 NETDEV=${NETDEV:-"user"}
 CONSOLE=${CONSOLE:-"hvc0"}
 
+ATTACH_EXT4_IMAGE=${ATTACH_EXT4_IMAGE:-false}
 ATTACH_XFSTESTS_IMAGES=${ATTACH_XFSTESTS_IMAGES:-false}
 if [ "${ENABLE_CONFORMANCE_TEST:-"false"}" = "true" ] && \
    [ "${CONFORMANCE_TEST_SUITE:-"ltp"}" = "xfstests" ]; then
@@ -95,6 +97,12 @@ if [ "$1" = "riscv" ]; then
         -device virtio-serial-device \
         $CONSOLE_ARGS \
     "
+    if [ "$ATTACH_EXT4_IMAGE" = "true" ]; then
+        QEMU_ARGS="$QEMU_ARGS \
+            -drive if=none,format=raw,id=x4,file=./test/initramfs/build/ext4.img \
+            -device virtio-blk-device,drive=x4,serial=vext4 \
+        "
+    fi
     echo $QEMU_ARGS
     exit 0
 fi
@@ -130,6 +138,12 @@ if [ "$1" = "tdx" ]; then
         -monitor chardev:mux \
         -d guest_errors \
     "
+    if [ "$ATTACH_EXT4_IMAGE" = "true" ]; then
+        QEMU_ARGS="$QEMU_ARGS \
+            -drive if=none,format=raw,id=x4,file=./test/initramfs/build/ext4.img \
+            -device virtio-blk-pci,bus=pcie.0,addr=0xb,drive=x4,serial=vext4,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
+        "
+    fi
     echo $QEMU_ARGS
     exit 0
 fi
@@ -150,6 +164,20 @@ COMMON_QEMU_ARGS="\
     -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
     -drive if=none,format=raw,id=x2,file=./test/initramfs/build/ltp_dev.img \
 "
+
+if [ "$ATTACH_EXT4_IMAGE" = "true" ]; then
+    COMMON_QEMU_ARGS="$COMMON_QEMU_ARGS \
+        -drive if=none,format=raw,id=x4,file=./test/initramfs/build/ext4.img \
+    "
+    # The ext feature-matrix images (attached as vde..vdk, see below).
+    MATRIX_IDX=0
+    for image in ext2 ext2_i128 ext2_i128_nori ext4_journal ext4_noextents neg_nofiletype neg_rev0 neg_metadata_csum; do
+        COMMON_QEMU_ARGS="$COMMON_QEMU_ARGS \
+            -drive if=none,format=raw,id=mx$MATRIX_IDX,file=./test/initramfs/build/ext_matrix/$image.img \
+        "
+        MATRIX_IDX=$((MATRIX_IDX + 1))
+    done
+fi
 
 # Add xfstests drives when the selected conformance suite is `xfstests`.
 if [ "$ATTACH_XFSTESTS_IMAGES" = "true" ]; then
@@ -202,6 +230,36 @@ else
         $CONSOLE_ARGS \
         $IOMMU_EXTRA_ARGS \
     "
+fi
+
+# Add the ext4 regression-test device after the default filesystem devices.
+if [ "$ATTACH_EXT4_IMAGE" = "true" ]; then
+    if [ "$1" = "microvm" ]; then
+        QEMU_ARGS="$QEMU_ARGS \
+            -device virtio-blk-device,drive=x4,serial=vext4 \
+        "
+    else
+        QEMU_ARGS="$QEMU_ARGS \
+            -device virtio-blk-pci,bus=pcie.0,addr=0xb,drive=x4,serial=vext4,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        "
+    fi
+    # The ext feature-matrix devices attach after every existing disk so the
+    # established vdX names do not shift; they enumerate as vde..vdk.
+    MATRIX_ADDR=12 # 0xc
+    MATRIX_IDX=0
+    for image in ext2 ext2_i128 ext2_i128_nori ext4_journal ext4_noextents neg_nofiletype neg_rev0 neg_metadata_csum; do
+        if [ "$1" = "microvm" ]; then
+            QEMU_ARGS="$QEMU_ARGS \
+                -device virtio-blk-device,drive=mx$MATRIX_IDX,serial=mx_$image \
+            "
+        else
+            QEMU_ARGS="$QEMU_ARGS \
+                -device virtio-blk-pci,bus=pcie.0,addr=$(printf 0x%x $MATRIX_ADDR),drive=mx$MATRIX_IDX,serial=mx_$image,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+            "
+        fi
+        MATRIX_ADDR=$((MATRIX_ADDR + 1))
+        MATRIX_IDX=$((MATRIX_IDX + 1))
+    done
 fi
 
 # Add xfstests devices when the selected conformance suite is `xfstests`.

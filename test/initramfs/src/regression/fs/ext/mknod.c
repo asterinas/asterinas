@@ -8,16 +8,19 @@
 #include <sys/sysmacros.h>
 #include <sys/wait.h>
 #include "../../common/test.h"
+#include "fs_test.h"
 #include "../../common/capability.h"
 
-#define NULL_DEVICE_PATH "/ext2/my_null_device"
-#define ZERO_DEVICE_PATH "/ext2/my_zero_device"
-#define FIFO_PATH "/ext2/myfifo.fifo"
-#define NO_CAP_CHAR_DEVICE_PATH "/ext2/no_cap_char_device"
-#define NO_CAP_BLOCK_DEVICE_PATH "/ext2/no_cap_block_device"
-#define NO_CAP_EXISTING_PATH "/ext2/no_cap_existing"
-#define NO_CAP_FIFO_PATH "/ext2/no_cap_fifo"
-#define SOCKET_PATH "/ext2/mknod.socket"
+#define NULL_DEVICE_PATH EXT_TEST_ROOT "/my_null_device"
+#define ZERO_DEVICE_PATH EXT_TEST_ROOT "/my_zero_device"
+#define FIFO_PATH EXT_TEST_ROOT "/myfifo.fifo"
+#define NO_CAP_CHAR_DEVICE_PATH EXT_TEST_ROOT "/no_cap_char_device"
+#define NO_CAP_BLOCK_DEVICE_PATH EXT_TEST_ROOT "/no_cap_block_device"
+#define NO_CAP_EXISTING_PATH EXT_TEST_ROOT "/no_cap_existing"
+#define NO_CAP_FIFO_PATH EXT_TEST_ROOT "/no_cap_fifo"
+#define SOCKET_PATH EXT_TEST_ROOT "/mknod.socket"
+#define LARGE_CHAR_DEVICE_PATH EXT_TEST_ROOT "/large_char_device"
+#define LARGE_BLOCK_DEVICE_PATH EXT_TEST_ROOT "/large_block_device"
 
 FN_TEST(make_device_node)
 {
@@ -39,6 +42,32 @@ FN_TEST(make_device_node)
 		 _ret == sizeof(buffer) && buffer[0] == 0);
 	TEST_SUCC(close(zero_fd));
 	TEST_SUCC(unlink(ZERO_DEVICE_PATH));
+}
+END_TEST()
+
+FN_TEST(make_large_device_node)
+{
+	// A major above 8 bits and a minor above 8 bits force the wide
+	// device-number encoding (Linux's new_encode_dev packing, stored in
+	// the second inode block word) rather than the legacy 16-bit form.
+	// The node is not opened -- no driver is registered for this number --
+	// so the round-trip is checked through stat alone.
+	dev_t dev = makedev(300, 70000);
+	struct stat statbuf;
+
+	TEST_SUCC(mknod(LARGE_CHAR_DEVICE_PATH, S_IFCHR | 0666, dev));
+	TEST_RES(stat(LARGE_CHAR_DEVICE_PATH, &statbuf),
+		 S_ISCHR(statbuf.st_mode) && statbuf.st_rdev == dev &&
+			 major(statbuf.st_rdev) == 300 &&
+			 minor(statbuf.st_rdev) == 70000);
+	TEST_SUCC(unlink(LARGE_CHAR_DEVICE_PATH));
+
+	TEST_SUCC(mknod(LARGE_BLOCK_DEVICE_PATH, S_IFBLK | 0666, dev));
+	TEST_RES(stat(LARGE_BLOCK_DEVICE_PATH, &statbuf),
+		 S_ISBLK(statbuf.st_mode) && statbuf.st_rdev == dev &&
+			 major(statbuf.st_rdev) == 300 &&
+			 minor(statbuf.st_rdev) == 70000);
+	TEST_SUCC(unlink(LARGE_BLOCK_DEVICE_PATH));
 }
 END_TEST()
 

@@ -23,7 +23,7 @@ check_file_size() {
     fi
 }
 
-test_ext2() {
+test_truncate_large() {
     local ext2_dir="$1"
     local test_file="$2"
 
@@ -85,24 +85,73 @@ test_mount_bind_file() {
     rm -f "$file_a" "$file_b"
 }
 
-echo "Start ext2 fs test......"
-test_ext2 "/ext2" "test_file.txt"
-./ext2/fallocate
-./ext2/file_io
-./ext2/mknod
-./ext2/namei
-./ext2/open_dir
-./ext2/open_unlink
-./ext2/permissions
-./ext2/readdir
-./ext2/rename
-./ext2/rmdir
-./ext2/short_rw
-./ext2/sparse
-./ext2/symlink
-./ext2/unix_socket
-./ext2/xattr
-echo "All ext2 fs test passed."
+# The ext feature matrix: the same shared suite (ext/ext.tests) runs against
+# every image shape x mount-flavor cell the unified driver accepts,
+# bind-mounted onto the common root the test binaries are built around.
+# Serial-numbered matrix disks attach after the established ones, so
+# vda..vdd keep their meaning. (/ext2 itself -- /dev/vda mounted by init with
+# -t ext2 -- is exercised by the fdatasync test below, now served by the
+# unified driver.)
+EXT_TEST_ROOT=/ext-test
+
+run_ext_suite() {
+    local flavor="$1" device="$2" mnt="$3" seed="$4"
+
+    mkdir -p "$mnt" "$EXT_TEST_ROOT"
+    mount -t "$flavor" "$device" "$mnt"
+    mount --bind "$mnt" "$EXT_TEST_ROOT"
+
+    test_truncate_large "$EXT_TEST_ROOT" "matrix_big_file.txt"
+    while read -r name; do
+        case "$name" in ''|'#'*) continue ;; esac
+        # host_seed reads a file mke2fs seeded on the host; only the seeded
+        # image cell carries it.
+        if [ "$name" = "host_seed" ] && [ "$seed" != "seed" ]; then
+            continue
+        fi
+        "./ext/$name"
+    done < ./ext/ext.tests
+
+    umount "$EXT_TEST_ROOT"
+    umount "$mnt"
+}
+
+expect_mount_rejected() {
+    local flavor="$1" device="$2" mnt="$3"
+
+    mkdir -p "$mnt"
+    if mount -t "$flavor" "$device" "$mnt" 2>/dev/null; then
+        echo "ext matrix: unexpectedly mounted $device as $flavor" >&2
+        umount "$mnt"
+        return 1
+    fi
+}
+
+echo "Start ext matrix fs test......"
+# Positive cells: every image under every type name that legally accepts it.
+# ext2-format images (and the extent-free, journal-free ext4_noextents) mount
+# under both names; extent or journaled volumes are ext4-name only.
+run_ext_suite ext4 /dev/vde /ext_mx/ext2 noseed
+run_ext_suite ext2 /dev/vde /ext_mx/ext2 noseed
+run_ext_suite ext4 /dev/vdf /ext_mx/ext2_i128 noseed
+run_ext_suite ext2 /dev/vdf /ext_mx/ext2_i128 noseed
+run_ext_suite ext4 /dev/vdg /ext_mx/ext2_i128_nori noseed
+run_ext_suite ext2 /dev/vdg /ext_mx/ext2_i128_nori noseed
+run_ext_suite ext4 /dev/vdh /ext_mx/ext4_journal noseed
+run_ext_suite ext4 /dev/vdi /ext_mx/ext4_noextents noseed
+run_ext_suite ext2 /dev/vdi /ext_mx/ext4_noextents noseed
+run_ext_suite ext4 /dev/vdd /ext_mx/ext4_seeded seed
+# Negative cells. The ext2 name refuses extent/journaled volumes (Linux's
+# IS_EXT2_SB rule); both names refuse the malformed images and the
+# unsupported-ro-compat (metadata_csum) image.
+expect_mount_rejected ext2 /dev/vdh /ext_mx/ext4_journal
+expect_mount_rejected ext4 /dev/vdj /ext_mx/neg_nofiletype
+expect_mount_rejected ext2 /dev/vdj /ext_mx/neg_nofiletype
+expect_mount_rejected ext4 /dev/vdk /ext_mx/neg_rev0
+expect_mount_rejected ext2 /dev/vdk /ext_mx/neg_rev0
+expect_mount_rejected ext4 /dev/vdl /ext_mx/neg_metadata_csum
+expect_mount_rejected ext2 /dev/vdl /ext_mx/neg_metadata_csum
+echo "All ext matrix fs test passed."
 
 echo "Start fdatasync test......"
 test_fdatasync
