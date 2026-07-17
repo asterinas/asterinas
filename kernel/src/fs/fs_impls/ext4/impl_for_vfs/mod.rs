@@ -1,14 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! VFS trait implementations for the ext2 filesystem.
-//!
-//! This module bridges the ext2-specific types (`Ext4`, `Inode`) to the
-//! generic VFS layer.  The two child modules each contain `impl` blocks for
-//! the corresponding VFS traits:
-//!
-//! * `fs` — `FileSystem` for `Ext4` (mount, sync, stat, root).
-//! * `inode` — `InodeIo` and `Inode` for `Inode` (I/O, metadata,
-//!   lookup, link, rename, symlink, extension slot, xattr).
+//! Wires ext4 types into the VFS trait interfaces (`FileSystem`, `FileOps`,
+//! and `Inode`). The implementations are thin adapters around ext4-internal
+//! operations.
 
 mod fs;
 mod inode;

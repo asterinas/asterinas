@@ -9,9 +9,12 @@
 
 use device_id::DeviceId;
 
+use super::{
+    super::{prelude::*, utils},
+    FilePerm, Inode, InodePayload, RAW_BLOCK_PTRS_LEN, disk,
+};
 use crate::{
     fs::{
-        ext4::{inode::Inode, prelude::*, utils},
         file::InodeMode,
         vfs::{
             inode::Metadata,
@@ -22,13 +25,10 @@ use crate::{
 };
 
 impl Inode {
-    /// Returns the encoded device ID for special files.
+    /// Returns the encoded device ID for special files, 0 otherwise.
     pub(in crate::fs::fs_impls::ext4) fn device_id(&self) -> u64 {
-        debug_assert!(self.type_ == InodeType::CharDevice || self.type_ == InodeType::BlockDevice);
-
-        let inner = self.inner.read();
-        match &inner.payload {
-            super::InodePayload::Device { device_id } => *device_id,
+        match &self.inner.read().payload {
+            InodePayload::Device { device_id } => *device_id,
             _ => 0,
         }
     }
@@ -39,42 +39,48 @@ impl Inode {
             return_errno!(Errno::EINVAL);
         }
         let mut inner = self.inner.write();
-        inner.payload = super::InodePayload::Device { device_id };
+        inner.payload = InodePayload::Device { device_id };
+        // Unlike ext2, whose writeback re-encodes the payload every time, this
+        // module's partial-RMW writeback takes `i_block` from `desc` for
+        // inodes without a block manager — the encoding must land there too,
+        // or it never reaches the disk.
+        let mut block = [0u32; RAW_BLOCK_PTRS_LEN];
+        disk::write_device_id(&mut block, device_id);
+        inner.desc.set_raw_block(block);
         inner.set_ctime(utils::now());
         Ok(())
     }
 
     /// Returns the inode metadata snapshot for stat-like queries.
     pub(in crate::fs::fs_impls::ext4) fn metadata(&self) -> Metadata {
-        let inner = self.inner.read();
-        let block_meta = inner.raw_block_ptrs();
-
-        let container_dev_id = match self.fs.upgrade() {
-            Some(fs) => fs.block_device().id(),
-            None => DeviceId::null(),
+        let container_dev_id = self
+            .fs()
+            .map(|fs| fs.container_device_id())
+            .unwrap_or_else(|_| DeviceId::null());
+        let self_dev_id = if matches!(
+            self.inode_type(),
+            InodeType::CharDevice | InodeType::BlockDevice
+        ) {
+            DeviceId::from_encoded_u64(self.device_id())
+        } else {
+            None
         };
-        let self_dev_id =
-            if self.type_ == InodeType::CharDevice || self.type_ == InodeType::BlockDevice {
-                DeviceId::from_encoded_u64(block_meta.read_device_id())
-            } else {
-                None
-            };
         Metadata {
-            ino: self.ino as u64,
-            size: inner.file_size(),
+            ino: self.ino() as u64,
+            size: self.size(),
             optimal_block_size: BLOCK_SIZE,
-            nr_sectors_allocated: block_meta.sector_count as usize,
-            last_access_at: inner.atime(),
-            last_modify_at: inner.mtime(),
-            last_meta_change_at: inner.ctime(),
-            type_: self.type_,
-            mode: inner.mode(),
-            nr_hard_links: inner.link_count() as usize,
-            uid: Uid::new(inner.uid()),
-            gid: Gid::new(inner.gid()),
+            nr_sectors_allocated: self.sector_count() as usize,
+            last_access_at: self.atime(),
+            last_modify_at: self.mtime(),
+            last_meta_change_at: self.ctime(),
+            type_: self.inode_type(),
+            mode: self.mode(),
+            nr_hard_links: self.link_count() as usize,
+            uid: Uid::new(self.uid()),
+            gid: Gid::new(self.gid()),
             container_dev_id,
             self_dev_id,
-            birth_at: None,
+            birth_at: Some(self.crtime()),
         }
     }
 
@@ -83,74 +89,75 @@ impl Inode {
         self.type_
     }
 
-    /// Returns the file permission mode.
+    pub(in crate::fs::fs_impls::ext4) fn perm(&self) -> FilePerm {
+        self.inner.read().desc.perm()
+    }
+
+    /// Returns the permission bits as a VFS `InodeMode`.
     pub(in crate::fs::fs_impls::ext4) fn mode(&self) -> InodeMode {
-        let inner = self.inner.read();
-        inner.mode()
+        InodeMode::from_bits_truncate(self.perm().bits() as _)
     }
 
-    /// Sets the file permission mode.
-    pub(in crate::fs::fs_impls::ext4) fn set_mode(&self, mode: InodeMode) -> Result<()> {
+    /// Updates the permission bits (chmod) and bumps ctime. Persists on fsync.
+    pub(in crate::fs::fs_impls::ext4) fn set_mode(&self, mode: InodeMode) {
         let mut inner = self.inner.write();
-        inner.set_mode(mode);
-        inner.set_ctime(utils::now());
-        Ok(())
+        inner
+            .desc
+            .set_perm(FilePerm::from_bits_truncate(mode.bits()));
+        inner.desc.set_ctime(utils::now());
     }
 
-    /// Returns the owner user ID.
     pub(in crate::fs::fs_impls::ext4) fn uid(&self) -> u32 {
-        self.inner.read().uid()
+        self.inner.read().desc.uid()
     }
 
-    /// Sets the owner user ID.
-    pub(in crate::fs::fs_impls::ext4) fn set_uid(&self, uid: u32) -> Result<()> {
+    /// Updates the owning uid (chown) and bumps ctime. Persists on fsync.
+    pub(in crate::fs::fs_impls::ext4) fn set_uid(&self, uid: u32) {
         let mut inner = self.inner.write();
-        inner.set_uid(uid);
-        inner.set_ctime(utils::now());
-        Ok(())
+        inner.desc.set_uid(uid);
+        inner.desc.set_ctime(utils::now());
     }
 
-    /// Returns the owner group ID.
     pub(in crate::fs::fs_impls::ext4) fn gid(&self) -> u32 {
-        self.inner.read().gid()
+        self.inner.read().desc.gid()
     }
 
-    /// Sets the owner group ID.
-    pub(in crate::fs::fs_impls::ext4) fn set_gid(&self, gid: u32) -> Result<()> {
+    /// Updates the owning gid (chgrp) and bumps ctime. Persists on fsync.
+    pub(in crate::fs::fs_impls::ext4) fn set_gid(&self, gid: u32) {
         let mut inner = self.inner.write();
-        inner.set_gid(gid);
-        inner.set_ctime(utils::now());
-        Ok(())
+        inner.desc.set_gid(gid);
+        inner.desc.set_ctime(utils::now());
     }
 
-    /// Returns the last access time.
     pub(in crate::fs::fs_impls::ext4) fn atime(&self) -> Duration {
-        self.inner.read().atime()
+        self.inner.read().desc.atime()
     }
 
-    /// Sets the last access time.
+    /// Sets the last-access time. Persists on fsync.
     pub(in crate::fs::fs_impls::ext4) fn set_atime(&self, time: Duration) {
-        self.inner.write().set_atime(time);
+        self.inner.write().desc.set_atime(time);
     }
 
-    /// Returns the last data modification time.
     pub(in crate::fs::fs_impls::ext4) fn mtime(&self) -> Duration {
-        self.inner.read().mtime()
+        self.inner.read().desc.mtime()
     }
 
-    /// Sets the last data modification time.
+    /// Sets the last-modification time. Persists on fsync.
     pub(in crate::fs::fs_impls::ext4) fn set_mtime(&self, time: Duration) {
-        self.inner.write().set_mtime(time);
+        self.inner.write().desc.set_mtime(time);
     }
 
-    /// Returns the last metadata change time.
     pub(in crate::fs::fs_impls::ext4) fn ctime(&self) -> Duration {
-        self.inner.read().ctime()
+        self.inner.read().desc.ctime()
     }
 
-    /// Sets the last metadata change time.
+    /// Sets the last-metadata-change time. Persists on fsync.
     pub(in crate::fs::fs_impls::ext4) fn set_ctime(&self, time: Duration) {
-        self.inner.write().set_ctime(time);
+        self.inner.write().desc.set_ctime(time);
+    }
+
+    pub(in crate::fs::fs_impls::ext4) fn crtime(&self) -> Duration {
+        self.inner.read().desc.crtime()
     }
 
     /// Reads one extended-attribute value and writes it to `value_writer`.
@@ -166,7 +173,8 @@ impl Inode {
         xattr.get_xattr(name, value_writer)
     }
 
-    /// Lists extended attribute names in one namespace and writes them to `list_writer`.
+    /// Lists extended-attribute names in one namespace and writes them to
+    /// `list_writer`.
     pub(in crate::fs::fs_impls::ext4) fn list_xattr(
         &self,
         namespace: XattrNamespace,

@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! [`FileSystem`] trait implementation for [`Ext4`].
-//!
-//! Translates VFS-level mount, sync, stat, and root-inode requests into
-//! the corresponding ext2-internal operations.
+//! `FileSystem` trait implementation for `Ext4`.
 
 use aster_block::{BLOCK_SIZE, bio::BioStatus};
 
@@ -21,10 +18,14 @@ use crate::{
 
 impl FileSystem for Ext4 {
     fn name(&self) -> &'static str {
-        "ext2"
+        self.flavor().name()
     }
 
     fn sync(&self) -> Result<()> {
+        // Flush every cached inode together with the block-side metadata, then
+        // issue a single device barrier. Unmount drives durability through this
+        // hook (`Path::unmount` -> `Mount::sync` -> `FileSystem::sync`), so a
+        // clean unmount flushes every dirty inode and the bitmap consistently.
         self.sync_all()?;
         if self.block_device().sync()? != BioStatus::Complete {
             return_errno_with_message!(Errno::EIO, "failed to flush block device");

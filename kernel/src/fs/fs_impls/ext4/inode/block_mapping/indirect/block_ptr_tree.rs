@@ -2,12 +2,17 @@
 
 //! Logical-to-physical block translation via the ext2 block-pointer tree.
 
-use device_id::{decode_device_numbers, encode_device_numbers};
 use ostd::mm::io::util::HasVmReaderWriter;
 use smallvec::SmallVec;
 
-use super::indirect_block_manager::{IndirectBlock, IndirectBlockManager};
-use crate::fs::ext4::{fs::Ext4, inode::RAW_BLOCK_PTRS_LEN, prelude::*};
+use super::{
+    super::super::{
+        super::{fs::Ext4, prelude::*},
+        RAW_BLOCK_PTRS_LEN,
+    },
+    IndirectBid,
+    indirect_block::{IndirectBlock, IndirectBlockManager},
+};
 
 const PTRS_PER_BLOCK: usize = BLOCK_SIZE / size_of::<u32>();
 const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
@@ -30,17 +35,14 @@ const MAX_BLOCK_POINTER_LEVELS: usize = 4;
 /// Non-zero pointers must refer either to data blocks at the leaf level
 /// or to indirect metadata blocks at the level selected by the slot.
 #[derive(Debug)]
-pub(in crate::fs::fs_impls::ext4::inode) struct BlockPtrTree {
+pub(super) struct BlockPtrTree {
     raw_block_ptrs: Dirty<RawBlockPtrs>,
     indirect_blocks_manager: Mutex<IndirectBlockManager>,
 }
 
 impl BlockPtrTree {
     /// Creates a new block-pointer tree from the on-disk raw pointers.
-    pub(in crate::fs::fs_impls::ext4::inode) fn new(
-        raw_block_ptrs: RawBlockPtrs,
-        fs: Weak<Ext4>,
-    ) -> Self {
+    pub(super) fn new(raw_block_ptrs: RawBlockPtrs, fs: Weak<Ext4>) -> Self {
         Self {
             raw_block_ptrs: Dirty::new(raw_block_ptrs),
             indirect_blocks_manager: Mutex::new(IndirectBlockManager::new(fs)),
@@ -48,7 +50,7 @@ impl BlockPtrTree {
     }
 
     /// Returns a reference to the raw on-disk block pointer state.
-    pub(in crate::fs::fs_impls::ext4::inode) fn raw_block_ptrs(&self) -> &RawBlockPtrs {
+    pub(super) fn raw_block_ptrs(&self) -> &RawBlockPtrs {
         &self.raw_block_ptrs
     }
 
@@ -63,16 +65,16 @@ impl BlockPtrTree {
     }
 
     /// Flushes all dirty cached indirect blocks to the device.
-    pub(in crate::fs::fs_impls::ext4::inode) fn sync_indirect_blocks(&self) -> Result<()> {
+    pub(super) fn sync_indirect_blocks(&self) -> Result<()> {
         self.indirect_blocks_manager.lock().sync()
     }
 
     /// Resolves a logical block to a contiguous physical block range.
-    pub(in crate::fs::fs_impls::ext4::inode) fn lookup_block_range(
+    pub(super) fn lookup_block_range(
         &self,
         iblock: Iblock,
         max_blocks: u32,
-    ) -> Result<Range<Ext4Bid>> {
+    ) -> Result<Range<IndirectBid>> {
         if max_blocks == 0 {
             return_errno_with_message!(Errno::EINVAL, "zero block range requested");
         }
@@ -82,10 +84,7 @@ impl BlockPtrTree {
     }
 
     /// Resolves a logical block to physical block (read-only).
-    pub(in crate::fs::fs_impls::ext4::inode) fn lookup_block(
-        &self,
-        iblock: Iblock,
-    ) -> Result<Option<Ext4Bid>> {
+    pub(super) fn lookup_block(&self, iblock: Iblock) -> Result<Option<IndirectBid>> {
         let range = self.lookup_block_range(iblock, 1)?;
         Ok(if range.is_empty() {
             None
@@ -111,7 +110,7 @@ impl BlockPtrTree {
     // TODO: When a leaf block range is partially allocated, we walk the indirect tree
     // twice: once to discover the existing prefix, then again to find the hole
     // and allocate. A cursor over the leaf block could eliminate the second walk.
-    pub(in crate::fs::fs_impls::ext4::inode) fn resolve_block_range(
+    pub(super) fn resolve_block_range(
         &mut self,
         fs: &Ext4,
         iblock: Iblock,
@@ -145,11 +144,7 @@ impl BlockPtrTree {
     /// Leaked blocks from partial failures are recoverable by e2fsck. Linux
     /// also follows this practice (see
     /// <https://elixir.bootlin.com/linux/v7.0/source/fs/ext2/inode.c#L1172>).
-    pub(in crate::fs::fs_impls::ext4::inode) fn truncate_to_byte_len(
-        &mut self,
-        fs: &Ext4,
-        new_size: usize,
-    ) {
+    pub(super) fn truncate_to_byte_len(&mut self, fs: &Ext4, new_size: usize) {
         // First logical block to free = ceil(new_size / block_size).
         let iblock = match Iblock::try_from(new_size.div_ceil(BLOCK_SIZE)) {
             Ok(ib) => ib,
@@ -185,11 +180,7 @@ impl BlockPtrTree {
     /// Returns `0` if the block is actually allocated. The result may stop
     /// early at a direct/indirect region boundary, but it never overestimates:
     /// every block in the returned interval is known to be unmapped.
-    pub(in crate::fs::fs_impls::ext4::inode) fn approx_hole_blocks(
-        &self,
-        iblock: Iblock,
-        max_blocks: u32,
-    ) -> Result<u32> {
+    pub(super) fn approx_hole_blocks(&self, iblock: Iblock, max_blocks: u32) -> Result<u32> {
         if max_blocks == 0 {
             return Ok(0);
         }
@@ -256,7 +247,7 @@ impl BlockPtrTree {
             if bid == 0 {
                 continue;
             }
-            fs.free_blocks(bid, 1)?;
+            fs.free_blocks(Ext4Bid::from(bid), 1)?;
             self.raw_block_ptrs.block_ptrs[idx] = 0;
             self.raw_block_ptrs.sector_count = self
                 .raw_block_ptrs
@@ -332,7 +323,7 @@ impl BlockPtrTree {
         walk: &BlockPointerWalk,
         trimmed: &BlockPointerWalk,
         detach_level: usize,
-    ) -> Result<Option<Ext4Bid>> {
+    ) -> Result<Option<IndirectBid>> {
         let detached_bid = if detach_level == 0 {
             // Subtree root is referenced directly from `inode.block_ptrs[]`.
             let slot = walk.root_slot() as usize;
@@ -477,7 +468,7 @@ impl BlockPtrTree {
         &self,
         walk: &BlockPointerWalk,
         max_blocks: u32,
-    ) -> Result<Range<Ext4Bid>> {
+    ) -> Result<Range<IndirectBid>> {
         if max_blocks == 0 {
             return_errno_with_message!(Errno::EINVAL, "zero block range requested");
         }
@@ -585,13 +576,13 @@ impl BlockPtrTree {
     }
 
     /// Frees all blocks in a pointer subtree.
-    fn free_block_subtree(&mut self, fs: &Ext4, block_bid: Ext4Bid, indirect_levels: u32) {
+    fn free_block_subtree(&mut self, fs: &Ext4, block_bid: IndirectBid, indirect_levels: u32) {
         if block_bid == 0 {
             return;
         }
 
         if indirect_levels == 0 {
-            if let Err(err) = fs.free_blocks(block_bid, 1) {
+            if let Err(err) = fs.free_blocks(Ext4Bid::from(block_bid), 1) {
                 // Best-effort free path logs errors and proceeds.
                 error!(
                     "free_block_subtree: failed to free data block {}: {:?}",
@@ -629,7 +620,7 @@ impl BlockPtrTree {
             self.free_block_subtree(fs, bid, indirect_levels - 1);
         }
 
-        if let Err(err) = fs.free_blocks(block_bid, 1) {
+        if let Err(err) = fs.free_blocks(Ext4Bid::from(block_bid), 1) {
             error!(
                 "free_block_subtree: failed to free indirect block {}: {:?}",
                 block_bid, err
@@ -667,7 +658,9 @@ impl BlockPtrTree {
 
         let mut remaining_indirect_blks = indirect_blks;
         while remaining_indirect_blks > 0 {
-            let allocated = fs.alloc_blocks(remaining_indirect_blks, alloc_goal)?;
+            let allocated = narrow_block_range(
+                fs.alloc_blocks(remaining_indirect_blks, Ext4Bid::from(alloc_goal))?,
+            )?;
             debug_assert!(allocated.end >= allocated.start);
             let allocated_count = allocated.end - allocated.start;
             debug_assert!(allocated_count > 0 && allocated_count <= remaining_indirect_blks);
@@ -677,7 +670,8 @@ impl BlockPtrTree {
             guard.extend_indirect_blocks(allocated);
         }
 
-        let data_blocks_range = fs.alloc_blocks(data_blks, alloc_goal)?;
+        let data_blocks_range =
+            narrow_block_range(fs.alloc_blocks(data_blks, Ext4Bid::from(alloc_goal))?)?;
         debug_assert!(data_blocks_range.end >= data_blocks_range.start);
         let allocated_count = data_blocks_range.end - data_blocks_range.start;
         guard.track_data_blocks(data_blocks_range.clone());
@@ -694,13 +688,18 @@ impl BlockPtrTree {
     }
 
     /// Zeroes newly allocated data blocks before exposing them via mapped reads.
-    fn zero_new_blocks(fs: &Ext4, block_range: &Range<Ext4Bid>) -> Result<()> {
+    fn zero_new_blocks(fs: &Ext4, block_range: &Range<IndirectBid>) -> Result<()> {
         let mut io_batch = IoBatch::with_capacity(1);
 
         let bio_segment = BioSegment::alloc(block_range.len(), BioDirection::ToDevice);
         let mut segment_writer = bio_segment.writer().unwrap();
         segment_writer.fill_zeros(block_range.len() * BLOCK_SIZE);
-        fs.write_blocks_async(block_range.start, bio_segment, None, &mut io_batch)?;
+        fs.write_blocks_async(
+            Ext4Bid::from(block_range.start),
+            bio_segment,
+            None,
+            &mut io_batch,
+        )?;
 
         io_batch.wait_all()?;
         Ok(())
@@ -743,7 +742,7 @@ impl BlockPtrTree {
     fn fill_existing_leaf_slots(
         &mut self,
         walk: &BlockPointerWalk,
-        data_blocks: &Range<Ext4Bid>,
+        data_blocks: &Range<IndirectBid>,
     ) -> Result<()> {
         let hole_level = walk.hole_level();
 
@@ -764,8 +763,8 @@ impl BlockPtrTree {
     fn link_new_indirect_chain(
         &mut self,
         walk: &BlockPointerWalk,
-        indirect_blocks: &[Ext4Bid],
-        data_blocks: &Range<Ext4Bid>,
+        indirect_blocks: &[IndirectBid],
+        data_blocks: &Range<IndirectBid>,
     ) -> Result<()> {
         let hole_level = walk.hole_level();
         let chain_root_bid = indirect_blocks[0];
@@ -839,7 +838,7 @@ impl BlockPtrTree {
     fn write_data_range_to_direct_slots(
         &mut self,
         start_slot: usize,
-        data_range: &Range<Ext4Bid>,
+        data_range: &Range<IndirectBid>,
     ) -> Result<()> {
         let end_slot = start_slot + data_range.len();
         let slots = &mut self.raw_block_ptrs.block_ptrs[start_slot..end_slot];
@@ -859,7 +858,7 @@ impl BlockPtrTree {
     fn write_data_range_to_indirect_block(
         block: &mut IndirectBlock,
         start_slot: usize,
-        data_range: &Range<Ext4Bid>,
+        data_range: &Range<IndirectBid>,
     ) -> Result<()> {
         let end_slot = start_slot + data_range.len();
 
@@ -869,6 +868,21 @@ impl BlockPtrTree {
         }
         Ok(())
     }
+}
+
+/// Narrows an allocator-returned block range to the on-disk 32-bit pointer
+/// width.
+///
+/// No volume this engine serves can address blocks at or above 2^32 (the
+/// ext2-style pointer format cannot store them), so a failure here means the
+/// allocator state is corrupted; fail closed instead of truncating silently.
+fn narrow_block_range(range: Range<Ext4Bid>) -> Result<Range<IndirectBid>> {
+    let narrow = |bid: Ext4Bid| {
+        IndirectBid::try_from(bid).map_err(|_| {
+            Error::with_message(Errno::EIO, "block number exceeds the 32-bit pointer width")
+        })
+    };
+    Ok(narrow(range.start)?..narrow(range.end)?)
 }
 
 /// On-disk block pointer state mirrored from `RawInode`.
@@ -883,67 +897,28 @@ impl BlockPtrTree {
 /// deadlock. The struct is the authoritative in-memory state and is written
 /// back to the inode on sync.
 #[derive(Clone, Copy, Debug)]
-pub(in crate::fs::fs_impls::ext4::inode) struct RawBlockPtrs {
+pub(super) struct RawBlockPtrs {
     pub sector_count: u32,
     pub block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
 }
 
 impl RawBlockPtrs {
     /// Creates a `RawBlockPtrs` from the given sector count and pointer array.
-    pub(in crate::fs::fs_impls::ext4::inode) fn new(
-        sector_count: u32,
-        block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
-    ) -> Self {
+    pub(super) fn new(sector_count: u32, block_ptrs: [u32; RAW_BLOCK_PTRS_LEN]) -> Self {
         Self {
             sector_count,
             block_ptrs,
-        }
-    }
-
-    /// Reads the ext2 special-file device encoding stored in `i_block`.
-    pub(in crate::fs::fs_impls::ext4::inode) fn read_device_id(&self) -> u64 {
-        let (major, minor) = if self.block_ptrs[0] != 0 {
-            let old_encoded_device = self.block_ptrs[0];
-            // Old_decode_dev: (major << 8) | minor with 8-bit major/minor.
-            (
-                ((old_encoded_device >> 8) & 0xFF),
-                (old_encoded_device & 0xFF),
-            )
-        } else {
-            let encoded_device = self.block_ptrs[1];
-            // Decode the extended major/minor bit layout.
-            (
-                ((encoded_device & 0xFFF00) >> 8),
-                ((encoded_device & 0xFF) | ((encoded_device >> 12) & 0xFFF00)),
-            )
-        };
-
-        encode_device_numbers(major, minor)
-    }
-
-    /// Writes a device ID into the ext2 special-file `i_block` layout.
-    pub(in crate::fs::fs_impls::ext4::inode) fn write_device_id(&mut self, device_id: u64) {
-        let (major, minor) = decode_device_numbers(device_id);
-
-        // Old_valid_dev: MAJOR/MINOR must both fit in 8 bits.
-        if major < 256 && minor < 256 {
-            self.block_ptrs[0] = (major << 8) | minor;
-            self.block_ptrs[1] = 0;
-        } else {
-            self.block_ptrs[0] = 0;
-            self.block_ptrs[1] = (minor & 0xFF) | (major << 8) | ((minor & !0xFF) << 12);
-            self.block_ptrs[2] = 0;
         }
     }
 }
 
 /// Result of resolving a physical block range from a logical block position.
 #[derive(Debug)]
-pub(in crate::fs::fs_impls::ext4::inode) enum ResolvedBlockRange {
+pub(super) enum ResolvedBlockRange {
     /// The physical range already exists on device.
-    Existing(Range<Ext4Bid>),
+    Existing(Range<IndirectBid>),
     /// The physical range was freshly allocated on device.
-    NewlyAllocated(Range<Ext4Bid>),
+    NewlyAllocated(Range<IndirectBid>),
 }
 
 /// Full block-pointer path from `i_block[]` to a logical data block.
@@ -1040,7 +1015,7 @@ struct BlockPointerWalk {
     ///
     /// If the walk is incomplete, the first hole is at
     /// `visited_entries.len()`.
-    visited_entries: SmallVec<[Ext4Bid; MAX_BLOCK_POINTER_LEVELS]>,
+    visited_entries: SmallVec<[IndirectBid; MAX_BLOCK_POINTER_LEVELS]>,
 }
 
 impl BlockPointerWalk {
@@ -1120,12 +1095,12 @@ impl BlockPointerWalk {
         self.is_complete
     }
 
-    fn bid_at(&self, level: usize) -> Ext4Bid {
+    fn bid_at(&self, level: usize) -> IndirectBid {
         debug_assert!(level < self.visited_entries.len());
         self.visited_entries[level]
     }
 
-    fn parent_bid_at(&self, level: usize) -> Ext4Bid {
+    fn parent_bid_at(&self, level: usize) -> IndirectBid {
         debug_assert!(level > 0);
         self.bid_at(level - 1)
     }
@@ -1137,11 +1112,10 @@ impl BlockPointerWalk {
 }
 
 /// Rollback guard for metadata and data blocks allocated through the block-pointer tree.
-#[derive(Debug)]
 struct BlockAllocGuard<'a> {
     fs: &'a Ext4,
-    indirect_blocks: Vec<Ext4Bid>,
-    data_blocks: Range<Ext4Bid>,
+    indirect_blocks: Vec<IndirectBid>,
+    data_blocks: Range<IndirectBid>,
     committed: bool,
 }
 
@@ -1155,11 +1129,11 @@ impl<'a> BlockAllocGuard<'a> {
         }
     }
 
-    fn extend_indirect_blocks(&mut self, indirect_blocks: Range<Ext4Bid>) {
+    fn extend_indirect_blocks(&mut self, indirect_blocks: Range<IndirectBid>) {
         self.indirect_blocks.extend(indirect_blocks);
     }
 
-    fn track_data_blocks(&mut self, data_blocks: Range<Ext4Bid>) {
+    fn track_data_blocks(&mut self, data_blocks: Range<IndirectBid>) {
         debug_assert!(self.data_blocks.is_empty());
         self.data_blocks = data_blocks;
     }
@@ -1176,7 +1150,7 @@ impl Drop for BlockAllocGuard<'_> {
         }
 
         for &bid in self.indirect_blocks.iter() {
-            if let Err(err) = self.fs.free_blocks(bid, 1) {
+            if let Err(err) = self.fs.free_blocks(Ext4Bid::from(bid), 1) {
                 error!(
                     "failed to free indirect block {} in rollback: {:?}",
                     bid, err
@@ -1187,9 +1161,10 @@ impl Drop for BlockAllocGuard<'_> {
         if self.data_blocks.is_empty() {
             return;
         }
-        let free_result = self
-            .fs
-            .free_blocks(self.data_blocks.start, self.data_blocks.len() as u32);
+        let free_result = self.fs.free_blocks(
+            Ext4Bid::from(self.data_blocks.start),
+            self.data_blocks.len() as u32,
+        );
         if let Err(err) = free_result {
             error!("failed to free data blocks in rollback: {:?}", err);
         }
@@ -1207,7 +1182,11 @@ mod test {
         time::clocks,
     };
 
-    fn alloc_single_block(tree: &mut BlockPtrTree, fs: &Ext4, iblock: Iblock) -> Result<Ext4Bid> {
+    fn alloc_single_block(
+        tree: &mut BlockPtrTree,
+        fs: &Ext4,
+        iblock: Iblock,
+    ) -> Result<IndirectBid> {
         let step = tree.resolve_block_range(fs, iblock, 1)?;
         let range = match step {
             ResolvedBlockRange::Existing(r) | ResolvedBlockRange::NewlyAllocated(r) => r,
@@ -1216,7 +1195,7 @@ mod test {
         Ok(range.start)
     }
 
-    fn expect_allocated(step: ResolvedBlockRange) -> Range<Ext4Bid> {
+    fn expect_allocated(step: ResolvedBlockRange) -> Range<IndirectBid> {
         match step {
             ResolvedBlockRange::NewlyAllocated(range) => range,
             ResolvedBlockRange::Existing(range) => {
@@ -1225,7 +1204,7 @@ mod test {
         }
     }
 
-    fn expect_existing(step: ResolvedBlockRange) -> Range<Ext4Bid> {
+    fn expect_existing(step: ResolvedBlockRange) -> Range<IndirectBid> {
         match step {
             ResolvedBlockRange::Existing(range) => range,
             ResolvedBlockRange::NewlyAllocated(range) => {
@@ -1250,7 +1229,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_direct_and_indirect_ok() {
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = Ext4FixtureBuilder::new(2048, 256, 2048).build().unwrap();
         let disk = &f.disk;
 
         let ptrs = PTRS_PER_BLOCK as u32;
@@ -1281,7 +1260,7 @@ mod test {
         block_ptrs[12] = indirect_bid;
         block_ptrs[13] = double_l1_bid;
         block_ptrs[14] = triple_l1_bid;
-        let block_ptr_tree = make_block_ptr_tree(block_ptrs, 0, &f.ext2);
+        let block_ptr_tree = make_block_ptr_tree(block_ptrs, 0, &f.ext4);
 
         // Cover exact transition boundaries across all block-pointer tree levels.
         let direct_walk = block_ptr_tree.walk_at(0).unwrap();
@@ -1361,7 +1340,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_get_block_range_returns_contiguous_runs() {
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = Ext4FixtureBuilder::new(2048, 256, 2048).build().unwrap();
         let disk = &f.disk;
 
         let indirect_bid = 40u32;
@@ -1375,7 +1354,7 @@ mod test {
         block_ptrs[1] = 12;
         block_ptrs[2] = 13;
         block_ptrs[12] = indirect_bid;
-        let block_ptr_tree = make_block_ptr_tree(block_ptrs, 0, &f.ext2);
+        let block_ptr_tree = make_block_ptr_tree(block_ptrs, 0, &f.ext4);
 
         assert_eq!(block_ptr_tree.lookup_block_range(0, 4).unwrap(), 11..14);
         assert_eq!(block_ptr_tree.lookup_block(0).unwrap(), Some(11));
@@ -1386,7 +1365,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_out_of_range_iblock_returns_err() {
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = Ext4FixtureBuilder::new(2048, 256, 2048).build().unwrap();
         let disk = &f.disk;
 
         let ptrs = PTRS_PER_BLOCK as u64;
@@ -1397,7 +1376,7 @@ mod test {
         let max_iblock = direct + indirect + double_blocks + triple_blocks - 1;
         let too_big = (max_iblock + 1) as u32;
 
-        let block_ptr_tree = make_block_ptr_tree([0; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let block_ptr_tree = make_block_ptr_tree([0; RAW_BLOCK_PTRS_LEN], 0, &f.ext4);
 
         // Accept the maximum valid logical block and reject the next one.
         block_ptr_tree.walk_at(max_iblock as u32).unwrap();
@@ -1411,7 +1390,7 @@ mod test {
         // Any zero pointer on the path is treated as a hole (None).
         let mut ptrs_for_indirect_hole = [0u32; RAW_BLOCK_PTRS_LEN];
         ptrs_for_indirect_hole[12] = 40;
-        let indirect_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_indirect_hole, 0, &f.ext2);
+        let indirect_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_indirect_hole, 0, &f.ext4);
         assert_eq!(
             indirect_hole_block_ptr_tree.lookup_block(12 + 7).unwrap(),
             None
@@ -1420,7 +1399,7 @@ mod test {
         let mut ptrs_for_double_hole = [0u32; RAW_BLOCK_PTRS_LEN];
         ptrs_for_double_hole[13] = 41;
         write_indirect_ptr(disk.as_ref(), 41, 3, 0);
-        let double_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_double_hole, 0, &f.ext2);
+        let double_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_double_hole, 0, &f.ext4);
         let double_hole_iblock = 12 + (ptrs as u32) + (3 << ptrs.trailing_zeros()) + 4;
         assert_eq!(
             double_hole_block_ptr_tree
@@ -1433,7 +1412,7 @@ mod test {
         ptrs_for_triple_hole[14] = 43;
         write_indirect_ptr(disk.as_ref(), 43, 2, 44);
         write_indirect_ptr(disk.as_ref(), 44, 3, 0);
-        let triple_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_triple_hole, 0, &f.ext2);
+        let triple_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_triple_hole, 0, &f.ext4);
         let triple_hole_iblock = 12
             + (ptrs as u32)
             + (double_blocks as u32)
@@ -1451,7 +1430,7 @@ mod test {
     #[ktest]
     fn approx_hole_blocks_scans() {
         clocks::init_for_ktest();
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = Ext4FixtureBuilder::new(2048, 256, 2048).build().unwrap();
         let disk = &f.disk;
         let ptrs = PTRS_PER_BLOCK;
         let ptrs_bits = (ptrs as u32).trailing_zeros();
@@ -1460,7 +1439,7 @@ mod test {
         // before the first allocated slot.
         let mut direct_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
         direct_ptrs[2] = 91;
-        let direct_block_ptr_tree = make_block_ptr_tree(direct_ptrs, 0, &f.ext2);
+        let direct_block_ptr_tree = make_block_ptr_tree(direct_ptrs, 0, &f.ext4);
         assert_eq!(direct_block_ptr_tree.approx_hole_blocks(0, 1).unwrap(), 1);
         assert_eq!(direct_block_ptr_tree.approx_hole_blocks(0, 8).unwrap(), 2);
         assert_eq!(direct_block_ptr_tree.approx_hole_blocks(1, 8).unwrap(), 1);
@@ -1472,7 +1451,7 @@ mod test {
         write_indirect_ptr(disk.as_ref(), indirect_bid, 2, 77);
         let mut indirect_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
         indirect_ptrs[12] = indirect_bid;
-        let indirect_block_ptr_tree = make_block_ptr_tree(indirect_ptrs, 0, &f.ext2);
+        let indirect_block_ptr_tree = make_block_ptr_tree(indirect_ptrs, 0, &f.ext4);
         assert_eq!(
             indirect_block_ptr_tree.approx_hole_blocks(12, 1).unwrap(),
             1
@@ -1494,7 +1473,7 @@ mod test {
         // sparse, so the helper can skip it without reading child blocks.
         let double_hole_iblock = 12 + (ptrs as u32) + (3 << ptrs_bits) + 4;
         let expected_double_hole = ptrs.pow(2) as u32 - ((3 * ptrs) as u32 + 4);
-        let missing_double_root_map = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let missing_double_root_map = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext4);
         assert_eq!(
             missing_double_root_map
                 .approx_hole_blocks(double_hole_iblock, expected_double_hole + 1)
@@ -1508,7 +1487,7 @@ mod test {
         write_indirect_ptr(disk.as_ref(), double_l1_bid, 3, 0);
         let mut double_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
         double_ptrs[13] = double_l1_bid;
-        let double_middle_hole_map = make_block_ptr_tree(double_ptrs, 0, &f.ext2);
+        let double_middle_hole_map = make_block_ptr_tree(double_ptrs, 0, &f.ext4);
         assert_eq!(
             double_middle_hole_map
                 .approx_hole_blocks(double_hole_iblock, ptrs as u32)
@@ -1522,7 +1501,7 @@ mod test {
             12 + ptrs as u32 + ptrs.pow(2) as u32 + (2 << (ptrs_bits * 2)) + (3 << ptrs_bits) + 4;
         let expected_triple_top_hole =
             ptrs.pow(3) as u32 - ((2 * ptrs.pow(2)) as u32 + (3 * ptrs) as u32 + 4);
-        let missing_triple_root_map = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let missing_triple_root_map = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext4);
         assert_eq!(
             missing_triple_root_map
                 .approx_hole_blocks(triple_hole_iblock, expected_triple_top_hole + 1)
@@ -1536,7 +1515,7 @@ mod test {
         write_indirect_ptr(disk.as_ref(), triple_l1_bid, 2, 0);
         let mut triple_l1_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
         triple_l1_ptrs[14] = triple_l1_bid;
-        let triple_l1_hole_map = make_block_ptr_tree(triple_l1_ptrs, 0, &f.ext2);
+        let triple_l1_hole_map = make_block_ptr_tree(triple_l1_ptrs, 0, &f.ext4);
         let expected_triple_l1_hole = ptrs.pow(2) as u32 - ((3 * ptrs) as u32 + 4);
         assert_eq!(
             triple_l1_hole_map
@@ -1550,7 +1529,7 @@ mod test {
         let triple_l2_bid = 43u32;
         write_indirect_ptr(disk.as_ref(), triple_l1_bid, 2, triple_l2_bid);
         write_indirect_ptr(disk.as_ref(), triple_l2_bid, 3, 0);
-        let triple_l2_hole_map = make_block_ptr_tree(triple_l1_ptrs, 0, &f.ext2);
+        let triple_l2_hole_map = make_block_ptr_tree(triple_l1_ptrs, 0, &f.ext4);
         assert_eq!(
             triple_l2_hole_map
                 .approx_hole_blocks(triple_hole_iblock, ptrs as u32)
@@ -1561,17 +1540,17 @@ mod test {
 
     #[ktest]
     fn block_alloc_direct_range_ok() {
-        let f = Ext4FixtureBuilder::new(1, 256)
-            .with_free_blocks(64, 64)
+        let f = Ext4FixtureBuilder::new(2048, 256, 2048)
+            .with_free_blocks(64)
             .build()
             .unwrap();
-        let ext2 = &f.ext2;
+        let ext4 = &f.ext4;
 
-        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
-        let free_before = ext2.super_block().free_blocks_count();
+        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext4);
+        let free_before = ext4.super_block().free_blocks_count();
         let allocated_range =
-            expect_allocated(block_ptr_tree.resolve_block_range(ext2, 0, 3).unwrap());
-        let free_after = ext2.super_block().free_blocks_count();
+            expect_allocated(block_ptr_tree.resolve_block_range(ext4, 0, 3).unwrap());
+        let free_after = ext4.super_block().free_blocks_count();
 
         assert_eq!(allocated_range.end - allocated_range.start, 3);
         assert_eq!(
@@ -1591,7 +1570,7 @@ mod test {
             allocated_range.clone()
         );
         assert_eq!(
-            expect_existing(block_ptr_tree.resolve_block_range(ext2, 0, 1).unwrap()).start,
+            expect_existing(block_ptr_tree.resolve_block_range(ext4, 0, 1).unwrap()).start,
             allocated_range.start
         );
         assert_eq!(
@@ -1603,17 +1582,17 @@ mod test {
 
     #[ktest]
     fn block_alloc_indirect_range_ok() {
-        let f = Ext4FixtureBuilder::new(1, 256)
-            .with_free_blocks(64, 64)
+        let f = Ext4FixtureBuilder::new(2048, 256, 2048)
+            .with_free_blocks(64)
             .build()
             .unwrap();
-        let ext2 = &f.ext2;
+        let ext4 = &f.ext4;
 
-        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
-        let free_before = ext2.super_block().free_blocks_count();
+        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext4);
+        let free_before = ext4.super_block().free_blocks_count();
         let allocated_range =
-            expect_allocated(block_ptr_tree.resolve_block_range(ext2, 12, 4).unwrap());
-        let free_after = ext2.super_block().free_blocks_count();
+            expect_allocated(block_ptr_tree.resolve_block_range(ext4, 12, 4).unwrap());
+        let free_after = ext4.super_block().free_blocks_count();
 
         assert_ne!(block_ptr_tree.raw_block_ptrs.block_ptrs[12], 0);
         assert_eq!(allocated_range.end - allocated_range.start, 4);
@@ -1634,20 +1613,20 @@ mod test {
 
     #[ktest]
     fn truncate_indirect_frees_shared_path() {
-        let f = Ext4FixtureBuilder::new(1, 256)
-            .with_free_blocks(64, 64)
+        let f = Ext4FixtureBuilder::new(2048, 256, 2048)
+            .with_free_blocks(64)
             .build()
             .unwrap();
-        let ext2 = &f.ext2;
+        let ext4 = &f.ext4;
         let ptrs = PTRS_PER_BLOCK as u32;
         let first_double_iblock = 12 + ptrs;
 
-        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
-        alloc_single_block(&mut block_ptr_tree, ext2, first_double_iblock).unwrap();
-        alloc_single_block(&mut block_ptr_tree, ext2, first_double_iblock + 1).unwrap();
-        alloc_single_block(&mut block_ptr_tree, ext2, first_double_iblock + 2).unwrap();
+        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext4);
+        alloc_single_block(&mut block_ptr_tree, ext4, first_double_iblock).unwrap();
+        alloc_single_block(&mut block_ptr_tree, ext4, first_double_iblock + 1).unwrap();
+        alloc_single_block(&mut block_ptr_tree, ext4, first_double_iblock + 2).unwrap();
 
-        block_ptr_tree.truncate_to_byte_len(ext2, (first_double_iblock as usize + 1) * BLOCK_SIZE);
+        block_ptr_tree.truncate_to_byte_len(ext4, (first_double_iblock as usize + 1) * BLOCK_SIZE);
         assert!(
             block_ptr_tree
                 .lookup_block(first_double_iblock)
@@ -1670,24 +1649,24 @@ mod test {
 
     #[ktest]
     fn truncate_releases_all_indirect_blocks() {
-        let f = Ext4FixtureBuilder::new(1, 256)
-            .with_free_blocks(64, 64)
+        let f = Ext4FixtureBuilder::new(2048, 256, 2048)
+            .with_free_blocks(64)
             .build()
             .unwrap();
-        let ext2 = &f.ext2;
+        let ext4 = &f.ext4;
         let ptrs = PTRS_PER_BLOCK as u32;
         let first_double_iblock = 12 + ptrs;
         let first_triple_iblock = 12 + ptrs + (1u32 << (ptrs.trailing_zeros() * 2));
 
-        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
-        alloc_single_block(&mut block_ptr_tree, ext2, 12).unwrap();
-        alloc_single_block(&mut block_ptr_tree, ext2, first_double_iblock).unwrap();
-        alloc_single_block(&mut block_ptr_tree, ext2, first_triple_iblock).unwrap();
+        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext4);
+        alloc_single_block(&mut block_ptr_tree, ext4, 12).unwrap();
+        alloc_single_block(&mut block_ptr_tree, ext4, first_double_iblock).unwrap();
+        alloc_single_block(&mut block_ptr_tree, ext4, first_triple_iblock).unwrap();
         assert_ne!(block_ptr_tree.raw_block_ptrs.block_ptrs[12], 0);
         assert_ne!(block_ptr_tree.raw_block_ptrs.block_ptrs[13], 0);
         assert_ne!(block_ptr_tree.raw_block_ptrs.block_ptrs[14], 0);
 
-        block_ptr_tree.truncate_to_byte_len(ext2, 0);
+        block_ptr_tree.truncate_to_byte_len(ext4, 0);
         assert_eq!(block_ptr_tree.raw_block_ptrs.block_ptrs[12], 0);
         assert_eq!(block_ptr_tree.raw_block_ptrs.block_ptrs[13], 0);
         assert_eq!(block_ptr_tree.raw_block_ptrs.block_ptrs[14], 0);
@@ -1705,17 +1684,17 @@ mod test {
 
     #[ktest]
     fn free_block_subtree_recursively_releases_blocks() {
-        let f = Ext4FixtureBuilder::new(1, 256)
-            .with_free_blocks(64, 64)
+        let f = Ext4FixtureBuilder::new(2048, 256, 2048)
+            .with_free_blocks(64)
             .build()
             .unwrap();
-        let ext2 = &f.ext2;
+        let ext4 = &f.ext4;
 
         let ptrs = PTRS_PER_BLOCK as u32;
         let first_triple_iblock = 12 + ptrs + (1u32 << (ptrs.trailing_zeros() * 2));
 
-        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
-        alloc_single_block(&mut block_ptr_tree, ext2, first_triple_iblock).unwrap();
+        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext4);
+        alloc_single_block(&mut block_ptr_tree, ext4, first_triple_iblock).unwrap();
         let root = block_ptr_tree.raw_block_ptrs.block_ptrs[14];
         assert_ne!(root, 0);
         assert_eq!(
@@ -1723,10 +1702,10 @@ mod test {
             SECTORS_PER_BLOCK * 4
         );
 
-        let free_before = ext2.super_block().free_blocks_count();
-        block_ptr_tree.free_block_subtree(ext2, root, 3);
+        let free_before = ext4.super_block().free_blocks_count();
+        block_ptr_tree.free_block_subtree(ext4, root, 3);
         block_ptr_tree.raw_block_ptrs.block_ptrs[14] = 0;
-        let free_after = ext2.super_block().free_blocks_count();
+        let free_after = ext4.super_block().free_blocks_count();
 
         assert_eq!(free_after - free_before, 4);
         assert_eq!(block_ptr_tree.raw_block_ptrs.sector_count, 0);

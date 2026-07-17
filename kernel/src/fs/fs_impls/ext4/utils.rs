@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Small helpers shared across the ext2 module.
+//! Small helpers shared across the ext4 module.
 //!
-//! - `Dirty` — a wrapper that tracks whether its inner value has been
-//!   mutated, for writeback scheduling.
-//! - `IsPowerOf` — a trait for testing whether a number is a power of
-//!   another (used by sparse-superblock backup-group selection).
-//! - `now` — a convenience function that reads the real-time coarse clock.
-//! - `duration_to_ext2_secs` — converts kernel durations to clamped ext2
-//!   timestamp seconds.
+//! - `Dirty` — a wrapper that tracks whether its inner value has been mutated,
+//!   for writeback scheduling.
+//! - `IsPowerOf` — a trait for testing whether a number is a power of another
+//!   (used by sparse-superblock backup-group selection).
+//! - `now` — reads the real-time coarse clock.
+//!
+//! Ext4 timestamp encoding (epoch + nanoseconds in the inode `*_extra`
+//! fields) differs from ext2's truncated seconds; that helper lands with the
+//! inode code in a later task.
 
 use core::ops::MulAssign;
 
@@ -108,7 +110,11 @@ pub(super) fn now() -> Duration {
     crate::time::clocks::RealTimeCoarseClock::get().read_time()
 }
 
-/// Converts a `Duration` to a 32-bit ext2 timestamp, clamping to `u32::MAX`.
-pub(super) fn duration_to_ext2_secs(d: Duration) -> u32 {
-    u32::try_from(d.as_secs()).unwrap_or(u32::MAX)
+/// Converts a filesystem block number to a checked byte offset.
+pub(super) fn block_offset(block: Ext4Bid, block_size: usize) -> Result<usize> {
+    let block = usize::try_from(block)
+        .map_err(|_| Error::with_message(Errno::EOVERFLOW, "block number does not fit usize"))?;
+    block
+        .checked_mul(block_size)
+        .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "block offset overflow"))
 }

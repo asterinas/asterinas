@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Re-exports used throughout the ext2 module.
+//! Re-exports used throughout the ext4 module.
 
 pub(super) use core::{
     ops::{Deref, DerefMut, Range},
@@ -10,23 +10,24 @@ pub(super) use core::{
 pub(super) use align_ext::AlignExt;
 pub(super) use aster_block::{
     BLOCK_SIZE, BlockDevice, SECTOR_SIZE,
-    bio::{BioDirection, BioSegment, BioStatus},
+    bio::{BioCompleteFn, BioDirection, BioSegment, BioStatus},
     id::Bid,
 };
 pub(super) use io_util::batch::IoBatch;
 pub(super) use ostd::{
-    mm::{Frame, FrameAllocOptions, Segment, USegment, VmIo, VmIoFill},
-    sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
+    const_assert,
+    mm::{Frame, FrameAllocOptions, PAGE_SIZE, Segment, USegment, VmIo, VmIoFill, VmWriter},
+    sync::{Mutex, MutexGuard, RwMutex, RwMutexReadGuard},
 };
 
 pub(super) use super::{
     inode::{Ext4Bid, Ext4Ino, Iblock},
-    utils::{Dirty, IsPowerOf},
+    utils::Dirty,
 };
 pub(super) use crate::{
     fs::{
         file::InodeType,
-        utils::{DirentVisitor, Str16, Str64},
+        utils::{DirentVisitor, IdBitmap, Str16, Str64},
     },
     prelude::*,
     time::UnixTime,
