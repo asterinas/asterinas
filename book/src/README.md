@@ -39,7 +39,7 @@ The Asterinas Kernel is built on this very OSTD.
 #### [Part 4: Asterinas OSDK](osdk/guide/)
 
 The OSDK is a command-line tool
-that streamlines the workflow to 
+that streamlines the workflow to
 create, build, test, and run Rust OS projects
 that are built upon Asterinas OSTD.
 Developed specifically for OS developers,
@@ -61,7 +61,7 @@ and archives all approvaed RFCs.
 
 ## Licensing
 
-Asterinas's source code and documentation primarily use the 
+Asterinas's source code and documentation primarily use the
 [Mozilla Public License (MPL), Version 2.0](https://github.com/asterinas/asterinas/blob/main/LICENSE-MPL).
 Select components are under more permissive licenses,
 detailed [here](https://github.com/asterinas/asterinas/blob/main/.licenserc.yaml).

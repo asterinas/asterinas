@@ -20,7 +20,7 @@ header_start:
     .long MB2_CHECKSUM
 
     // Tag: entry address
-entry_address_tag_start:        
+entry_address_tag_start:
     .short 3
     .short 1                // Optional
     .long  entry_address_tag_end - entry_address_tag_start

@@ -1,6 +1,6 @@
 [package]
 name = "ostd-pod"
-# REMINDER: Whenever you change this number, 
+# REMINDER: Whenever you change this number,
 # update all occurrences of the version in README
 # (e.g., in external links and in the sample Cargo.toml).
 version = "0.4.0"

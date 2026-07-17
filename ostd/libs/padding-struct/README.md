@@ -10,9 +10,9 @@ A Rust procedural macro for automatically adding explicit padding fields to `#[r
 
 ## Overview
 
-When working with `#[repr(C)]` structs, 
-the Rust compiler automatically adds padding bytes to ensure proper alignment. 
-The `#[padding_struct]` macro makes these padding bytes explicit 
+When working with `#[repr(C)]` structs,
+the Rust compiler automatically adds padding bytes to ensure proper alignment.
+The `#[padding_struct]` macro makes these padding bytes explicit
 by automatically generating padding fields in your struct definitions.
 
 ### Basic Example

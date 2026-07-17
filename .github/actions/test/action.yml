@@ -71,7 +71,7 @@ runs:
           echo "RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static" >> $GITHUB_ENV
           echo "RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup" >> $GITHUB_ENV
         fi
-        
+
     - name: Run basic tests
       if: ${{ inputs.auto_test == 'general' }}
       shell: bash
@@ -82,10 +82,10 @@ runs:
         [[ "${{ matrix.id }}" == "usermode_test" ]] && CMD+="make test"
         [[ "${{ matrix.id }}" == "ktest" ]] && CMD+="make ktest NETDEV=tap"
         [[ -n "${{ inputs.arch }}" ]] && CMD+=" TARGET_ARCH=${{ inputs.arch }}"
-        
+
         echo "Executing: $CMD"
         eval $CMD
- 
+
     - name: Run integration test
       if: ${{ !(inputs.auto_test == 'general' || inputs.auto_test == 'osdk') }}
       shell: bash
@@ -105,7 +105,7 @@ runs:
         [[ -n "${{ inputs.mem }}" ]] && CMD+=" MEM=${{ inputs.mem }}"
         [[ -n "${{ inputs.xfstests_disk_size }}" ]] && CMD+=" XFSTESTS_DISK_SIZE=${{ inputs.xfstests_disk_size }}"
         [[ -n "${{ inputs.xfstests_runlist }}" ]] && CMD+=" XFSTESTS_RUNLIST=${{ inputs.xfstests_runlist }}"
-        
+
         echo "Executing: $CMD"
         eval $CMD
 

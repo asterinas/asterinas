@@ -41,8 +41,8 @@ pub mod non_null;
 /// multiple readers to access shared data simultaneously without contention,
 /// while writers can update the data safely in a way that does not disrupt
 /// ongoing reads. RCU is particularly suited for situations where reads are
-/// far more frequent than writes.  
-///  
+/// far more frequent than writes.
+///
 /// The original design and implementation of RCU is described in paper _The
 /// Read-Copy-Update Mechanism for Supporting Real-Time Applications on Shared-
 /// Memory Multiprocessor Systems with Linux_ published on IBM Systems Journal
@@ -72,7 +72,7 @@ pub struct Rcu<P: NonNullPtr>(RcuInner<P>);
 #[must_use]
 pub struct RcuReadGuard<'a, P: NonNullPtr>(RcuReadGuardInner<'a, P>);
 
-/// A Read-Copy Update (RCU) cell for sharing a _nullable_ pointer.  
+/// A Read-Copy Update (RCU) cell for sharing a _nullable_ pointer.
 ///
 /// This is a variant of [`Rcu`] that allows the contained pointer to be null.
 /// So that it can implement `Rcu<Option<P>>` where `P` is not a nullable

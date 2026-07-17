@@ -3,8 +3,8 @@
 <!--
 Put system calls such as
 
-socket, socketpair, bind, listen, accept, connect, getsockname, getpeername, 
-sendto, recvfrom, sendmsg, recvmsg, shutdown, setsockopt, getsockopt, 
+socket, socketpair, bind, listen, accept, connect, getsockname, getpeername,
+sendto, recvfrom, sendmsg, recvmsg, shutdown, setsockopt, getsockopt,
 sendmmsg, recvmmsg, accept4, recvmsg, and socketcall
 under this category.
 -->

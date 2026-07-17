@@ -13,15 +13,15 @@ OSDK (short for Operating System Development Kit) is designed to simplify the de
 
 #### Requirements
 
-Currently, `cargo-osdk` only supports x86_64 ubuntu system. 
+Currently, `cargo-osdk` only supports x86_64 ubuntu system.
 
-To run a kernel with QEMU, `cargo-osdk` requires the following tools to be installed: 
+To run a kernel with QEMU, `cargo-osdk` requires the following tools to be installed:
 - Rust >= 1.75.0
 - cargo-binutils
 - gcc
 - qemu-system-x86_64
 - grub-mkrescue
-- ovmf 
+- ovmf
 - xorriso
 
 About how to install Rust, you can refer to the [official site](https://www.rust-lang.org/tools/install).
@@ -36,12 +36,12 @@ Other tools can be installed by
 apt install build-essential grub2-common qemu-system-x86 ovmf xorriso
 ```
 
-#### Install 
+#### Install
 
 Then, `cargo-osdk` can be installed by
 ```bash
 cargo install cargo-osdk
-``` 
+```
 
 #### Upgrade
 
@@ -64,7 +64,7 @@ Then, you can run the kernel with
 cd my-first-os && cargo osdk run
 ```
 
-You will see `Hello world from guest kernel!` from your console. 
+You will see `Hello world from guest kernel!` from your console.
 
 ### Basic usage
 

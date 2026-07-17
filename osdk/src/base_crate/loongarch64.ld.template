@@ -33,7 +33,7 @@ SECTIONS
         *(.text .text.*)
         PROVIDE(__etext = .);
     }
-    
+
     # The section to store exception table (ExTable).
     # This table is used for recovering from specific exception handling faults
     # occurring at known points in the code.
@@ -71,7 +71,7 @@ SECTIONS
         KEEP(*(SORT(.init_array .init_array.*)))
         __einit_array = .;
     }
-    
+
     # A list of the sensitive IoPort ranges in OSTD which will be used during
     # the initialization of IoPortAllocator.
     .sensitive_io_ports     : AT(ADDR(.sensitive_io_ports) - KERNEL_VMA_OFFSET) {

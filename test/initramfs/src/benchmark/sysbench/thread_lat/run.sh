@@ -13,4 +13,4 @@ echo "*** Doing sysbench with ${TEST_THREADS} threads for ${TEST_TIME} seconds *
     --threads=${TEST_THREADS} \
     --thread-yields=100 \
     --thread-locks=4 \
-    --time=${TEST_TIME} run 
+    --time=${TEST_TIME} run

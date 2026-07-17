@@ -1,8 +1,8 @@
 # Memory Management
 
 <!--
-Put system calls such as 
-brk, mmap, munmap, mprotect, mremap, msync, mincore, madvise, 
+Put system calls such as
+brk, mmap, munmap, mprotect, mremap, msync, mincore, madvise,
 shmget, shmat, shmctl, mlock, munlock, mbind, and set_mempolicy
 under this part.
 -->

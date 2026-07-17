@@ -90,7 +90,7 @@ If your test requires additional packages or system configuration, edit `extra_c
         vim
         git
     ];
-    
+
     # Configure system services
     virtualisation.podman.enable = true;
 }

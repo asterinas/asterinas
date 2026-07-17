@@ -13,4 +13,3 @@ echo "*** Doing sysbench CPU test with ${TEST_THREADS} threads for ${TEST_TIME} 
     --threads=${TEST_THREADS} \
     --time=${TEST_TIME} \
     --cpu-max-prime=20000 run
-    

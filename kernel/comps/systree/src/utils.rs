@@ -669,8 +669,8 @@ pub trait _InheritSysSymlinkNode<T: SysSymlink> {
 /// Users must ensures the target field is a [`SymlinkNodeFields`] type.
 ///
 /// The parameters and requirements of this macro are similar to [`inherit_sys_leaf_node`],
-/// except that the third parameter is optional. This macro follows the same override rules  
-/// as the [`SysObj`] component in `inherit_sys_leaf_node`, allowing users to use it  
+/// except that the third parameter is optional. This macro follows the same override rules
+/// as the [`SysObj`] component in `inherit_sys_leaf_node`, allowing users to use it
 /// without implementing or overriding any methods.
 ///
 /// ## Examples

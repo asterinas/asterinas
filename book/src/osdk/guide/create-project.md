@@ -26,7 +26,7 @@ cargo osdk new mylib
 
 ## Generated files
 
-Next, we will introduce 
+Next, we will introduce
 the contents of the generated project in detail.
 If you don't wish to delve into the details,
 you can skip the following sections.
@@ -53,8 +53,8 @@ myos/
 The `src/lib.rs` file contains the code for a simple kernel.
 The function marked with the `#[ostd::main]` macro
 is considered the kernel entry point by OSDK.
-The kernel 
-will print `Hello world from the guest kernel!`to the console 
+The kernel
+will print `Hello world from the guest kernel!`to the console
 and then abort.
 
 ```rust
@@ -86,7 +86,7 @@ git = "https://github.com/asterinas/asterinas"
 branch = "main"
 ```
 
-OSDK will also exclude the directory 
+OSDK will also exclude the directory
 which is used to generate temporary files.
 ```toml
 [workspace]

@@ -8,8 +8,8 @@ should be recognized correctly by both a Markdown renderer and the rustdoc tool.
 
 A trait and macros for Plain Old Data (POD) types.
 
-This crate provides the [`Pod`] trait, 
-which marks types that can be safely converted to and from arbitrary byte sequences. 
+This crate provides the [`Pod`] trait,
+which marks types that can be safely converted to and from arbitrary byte sequences.
 It's built on top of the mature [zerocopy] crate to ensure type safety.
 
 ## Features
@@ -24,19 +24,19 @@ It's built on top of the mature [zerocopy] crate to ensure type safety.
 
 ## What is a POD Type?
 
-A POD (Plain Old Data) type is a type 
-that can be safely converted to and from an arbitrary byte sequence. 
-For example, primitive types like `u8` and `i16` are POD types; 
-yet, `bool` is not a POD type. 
-A struct whose fields are POD types is also considered a POD. 
-A union whose fields are all POD types is also a POD. 
+A POD (Plain Old Data) type is a type
+that can be safely converted to and from an arbitrary byte sequence.
+For example, primitive types like `u8` and `i16` are POD types;
+yet, `bool` is not a POD type.
+A struct whose fields are POD types is also considered a POD.
+A union whose fields are all POD types is also a POD.
 The memory layout of any POD type is `#[repr(C)]`.
 
 ## Quick Start
 
 ### Step 1: Edit your `Cargo.toml`
 
-Add these dependencies to your `Cargo.toml`. 
+Add these dependencies to your `Cargo.toml`.
 
 ```toml
 [dependencies]
@@ -45,7 +45,7 @@ zerocopy = { version = "0.8.34", features = ["derive" ] }
 ```
 
 `zerocopy` must be explicitly specified as a dependency
-because `ostd-pod` relies on its procedural macros, 
+because `ostd-pod` relies on its procedural macros,
 which expand to compile-time checks that reference internal `zerocopy`
 types hardcoded to the `zerocopy` crate name.
 
@@ -126,7 +126,7 @@ fn main() {
 
 ### Automatic Padding Handling
 
-When a struct has fields with different sizes, 
+When a struct has fields with different sizes,
 there may be implicit padding bytes between fields.
 The [`padding_struct`] macro automatically inserts explicit padding fields
 so the struct can be safely used as a POD type.

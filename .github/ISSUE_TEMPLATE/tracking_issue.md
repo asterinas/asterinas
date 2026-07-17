@@ -13,6 +13,6 @@ labels: C-tracking-issue
 
 <!-- Describe the current status or progress of the task or feature -->
 
-### Additional Information 
+### Additional Information
 
 <!-- Add any other relevant information, links, or context related to the tracking issue -->

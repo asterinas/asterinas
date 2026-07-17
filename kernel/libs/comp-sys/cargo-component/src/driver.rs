@@ -123,8 +123,8 @@ Checks whether a package violates access control policy.
 Usage:
     cargo component [options]
 Common options:
-    audit   
-    check   
+    audit
+    check
     "
     );
 }

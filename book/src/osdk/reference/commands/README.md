@@ -17,5 +17,5 @@ Currently, OSDK supports the following subcommands:
 
 The **new**, **build**, **run**, **test** and **debug** subcommands
 can accept additional options,
-while the **check** and **clippy** subcommands can only accept arguments 
+while the **check** and **clippy** subcommands can only accept arguments
 that are compatible with the corresponding Cargo subcommands.

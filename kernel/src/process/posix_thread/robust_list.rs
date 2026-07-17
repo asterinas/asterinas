@@ -132,7 +132,7 @@ const FUTEX_TID_MASK: u32 = 0x3FFF_FFFF;
 /// Attempts to wake a robust futex owned by the given thread.
 ///
 /// If the futex at `futex_addr` is still owned by `tid`, it is marked with
-/// `FUTEX_OWNER_DIED` and one waiter (if any) is woken.  
+/// `FUTEX_OWNER_DIED` and one waiter (if any) is woken.
 /// If the futex is owned by another thread, the operation is canceled.
 pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
     if !futex_addr.is_multiple_of(align_of::<u32>()) {

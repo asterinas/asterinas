@@ -7,7 +7,7 @@
 > 子曰：
 > "从心所欲，不逾矩。"
 
-With the Asterinas OSTD (Operating System Standard Library), 
+With the Asterinas OSTD (Operating System Standard Library),
 you don't have to learn the dark art of unsafe Rust programming
 and risk shooting yourself in the foot.
 You will be doing whatever your heart desires,
@@ -58,7 +58,7 @@ by leveraging OSTD.
 Adopting a minimalist philosophy,
 OSTD has a small codebase.
 At its core lies the `ostd` crate,
-currently encompassing about 10K lines of code - a figure 
+currently encompassing about 10K lines of code - a figure
 that is even smaller than those of many microkernels.
 As OSTD evolves,
 its codebase will expand,
@@ -79,6 +79,6 @@ it requires considerable resources and time
 and is not an immediate priority.
 As a more pragmatic approach,
 we will explain why the high-level design is sound
-in the soundness analysis and rely on the many 
-eyes of the community to catch any potential flaws 
+in the soundness analysis and rely on the many
+eyes of the community to catch any potential flaws
 in the implementation.

@@ -2,9 +2,9 @@
 
 <!--
 Put system calls such as
-open, openat, creat, close, read, write, readv, writev, pread64, 
-pwrite64, lseek, stat, fstat, lstat, statx, mkdir, rmdir, link, 
-unlink, rename, symlink, readlink, chmod, fchmod, chown, fchown, 
+open, openat, creat, close, read, write, readv, writev, pread64,
+pwrite64, lseek, stat, fstat, lstat, statx, mkdir, rmdir, link,
+unlink, rename, symlink, readlink, chmod, fchmod, chown, fchown,
 utime, and utimensat
 under this category.
 -->

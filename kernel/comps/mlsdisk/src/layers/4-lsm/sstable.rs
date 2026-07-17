@@ -193,7 +193,7 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
             .ok_or(Error::with_msg(NotFound, "target value not found in SST"))
     }
 
-    /// Range query.    
+    /// Range query.
     ///
     /// # Panics
     ///

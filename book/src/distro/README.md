@@ -71,12 +71,12 @@ to customize the NixOS system to be installed:
     ```bash
     vim configuration.nix
     ```
-    
+
     The complete syntax and guidance for the `configuration.nix` file
     can be found in [the NixOS manual](https://nixos.org/manual/nixos/stable/#ch-configuration).
     If you are not familiar with NixOS,
     you can simply skip this step.
-    
+
     Not all combinations of settings in `configuration.nix` are supported by Asterinas NixOS yet.
     The ones that have been tested are documented in the subsequent chapters.
 
@@ -85,7 +85,7 @@ to customize the NixOS system to be installed:
     ```bash
     aster-nixos-install --config configuration.nix --disk /dev/vda --force-format-disk
     ```
-    
+
     The installation process involves downloading packages
     and may take around 30 minutes to complete,
     depending on your network speed.
@@ -95,7 +95,7 @@ to customize the NixOS system to be installed:
     ```bash
     poweroff
     ```
-    
+
     Now Asterinas NixOS is installed in `aster_nixos_disk.img`.
 
 9. Start a VM to boot the newly installed Asterinas NixOS:
@@ -114,7 +114,7 @@ to customize the NixOS system to be installed:
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -nographic -display vnc=127.0.0.1:21
     ```
-    
+
     If a desktop environment is enabled in the `configuration.nix` file,
     you can view the graphical interface using a VNC client.
 
@@ -131,7 +131,7 @@ generate a disk image with Asterinas NixOS installed using this command:
     ```
 
     or this command:
-    
+
     ```bash
     make iso && make run_iso
     ```
@@ -142,7 +142,7 @@ generate a disk image with Asterinas NixOS installed using this command:
     (see the [previous section](#end-users))
     by running a VM.
     Using either method results in a disk image with an Asterinas NixOS installation.
-    
+
 3. Start a VM to run the installed Asterinas NixOS:
 
     ```bash

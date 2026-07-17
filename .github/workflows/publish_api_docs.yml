@@ -15,14 +15,14 @@ on:
       - main
     paths:
       - VERSION
-  
-jobs: 
+
+jobs:
   check_api_docs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container: asterinas/asterinas:0.18.0-20260702
 
-    steps: 
+    steps:
       - uses: actions/checkout@v4
 
       - name: Check API docs of crates to publish
@@ -39,7 +39,7 @@ jobs:
         run: |
           KEY_FILE=./api_docs_nightly_publish_key
           echo "$API_DOCS_NIGHTLY_PUBLISH_KEY\n" > ${KEY_FILE}
-          ./tools/github_workflows/publish_api_docs.sh nightly ${KEY_FILE} 
+          ./tools/github_workflows/publish_api_docs.sh nightly ${KEY_FILE}
 
       - name: Build & Upload Release API Docs
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -48,4 +48,4 @@ jobs:
         run: |
           KEY_FILE=./api_docs_publish_key
           echo "$API_DOCS_PUBLISH_KEY\n" > ${KEY_FILE}
-          ./tools/github_workflows/publish_api_docs.sh release ${KEY_FILE} 
+          ./tools/github_workflows/publish_api_docs.sh release ${KEY_FILE}

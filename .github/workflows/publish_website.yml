@@ -23,7 +23,7 @@ jobs:
         with:
           repository: 'asterinas/asterinas'
           path: 'asterinas'
-      
+
       - name: Build the website
         run: |
           cd asterinas/book

@@ -26,15 +26,15 @@ cc = ["@grief8"]
 # Shortcuts are simple commands for performing common tasks.
 # https://forge.rust-lang.org/triagebot/shortcuts.html
 # @boterinas author - This indicates that a PR is waiting on the author. This assigns the S-waiting-on-author label on the pull request and removes both S-waiting-on-review and S-blocked if present.
-# @boterinas blocked - This indicates that a PR is blocked on something. 
-# @boterinas ready - This indicates that a PR is ready for review. 
+# @boterinas blocked - This indicates that a PR is blocked on something.
+# @boterinas ready - This indicates that a PR is ready for review.
 # @boterinas review or @boterinas reviewer are aliases for ready.
 
 # This feature will automatically adjust the labels on a pull request when a reviewer sends a review with changes requested.
 [review-submitted]
 # This label is added when clicking the “Request Changes” option.
 reviewed_label = "S-waiting-on-author"
-# These labels are removed when clicking the “Request Changes” option. 
+# These labels are removed when clicking the “Request Changes” option.
 review_labels = ["S-waiting-on-review"]
 
 [review-requested]

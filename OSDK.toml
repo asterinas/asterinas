@@ -1,4 +1,4 @@
-# The OSDK manifest at the Asterinas root virtual workspace 
+# The OSDK manifest at the Asterinas root virtual workspace
 # provides default OSDK settings for all packages.
 
 # The common options for build, run and test

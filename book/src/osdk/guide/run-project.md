@@ -21,7 +21,7 @@ cargo osdk build
 ```
 
 The initial build of an OSDK project
-may take a considerable amount of time 
+may take a considerable amount of time
 as it involves downloading the Rust toolchain used by the framekernel.
 However, this is a one-time process.
 
@@ -47,8 +47,8 @@ library projects cannot.
 
 ## Test the project
 
-Suppose you have created a new library project named `mylib` 
-which contains a default test case 
+Suppose you have created a new library project named `mylib`
+which contains a default test case
 and you are in the project directory.
 
 ```bash
@@ -63,7 +63,7 @@ cargo osdk test
 
 OSDK will run all the kernel mode tests in the crate.
 
-Test cases can be added not only in library projects 
+Test cases can be added not only in library projects
 but also in kernel projects.
 
 If you want to run a specific test with a given name,

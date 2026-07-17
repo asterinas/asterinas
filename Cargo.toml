@@ -122,10 +122,10 @@ allow_attributes = "warn"
 inconsistent_struct_constructor = "warn"
 redundant_test_prefix = "warn"
 
-# Keys under `workspace.package` and the `package` section of each crate 
-# follow the ordering suggested at: 
+# Keys under `workspace.package` and the `package` section of each crate
+# follow the ordering suggested at:
 # https://github.com/crate-ci/cargo-cargofmt/issues/29#issuecomment-3647516745
-# 
+#
 # FIXME: The current key order is not yet finalized.
 # Once `cargo-cargofmt` becomes stable, we will use it to enforce a consistent key order.
 [workspace.package]
@@ -249,7 +249,7 @@ spin = "0.9.4"
 x86_64 = "0.15.5"
 tdx-guest = "0.4.0"
 xmas-elf = "0.10.0"
-# Note: when updating the zerocopy version, 
+# Note: when updating the zerocopy version,
 # also update it in `ostd/libs/ostd-pod/README.md`.
 zerocopy = { version = "0.8.34", features = [ "derive" ] }
 zune-inflate = { version = "0.2", default-features = false, features = ["gzip", "zlib"] }
@@ -259,7 +259,7 @@ proc-macro2 = { version = "1.0.95", features = ["span-locations"] }
 quote = "1.0.35"
 syn = { version = "2.0.77", features = ["full", "parsing", "fold"] }
 
-# Cargo only looks at the profile settings 
+# Cargo only looks at the profile settings
 # in the Cargo.toml manifest at the root of the workspace
 
 [profile.dev]
@@ -271,7 +271,7 @@ panic = "unwind"
 
 # Release profile configuration with Link Time Optimization (LTO) enabled.
 #
-# This profile is optimized for maximum runtime performance, 
+# This profile is optimized for maximum runtime performance,
 # (achieving a 2% reduction in latency for the getpid system call).
 # However, enabling LTO significantly increases compilation times,
 # approximately doubling them compared to when LTO is not enabled.

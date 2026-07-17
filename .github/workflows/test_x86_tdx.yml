@@ -1,4 +1,4 @@
-name: Test Intel TDX 
+name: Test Intel TDX
 
 on:
   workflow_dispatch:

@@ -2,7 +2,7 @@ name: Check licenses
 on:
   pull_request:
   push:
-    branches: 
+    branches:
       - main
 jobs:
   check-license-lines:

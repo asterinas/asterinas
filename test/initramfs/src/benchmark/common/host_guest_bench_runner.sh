@@ -17,7 +17,7 @@ READY_MESSAGE="The VM is ready for the benchmark."
 BENCHMARK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)/../"
 source "${BENCHMARK_ROOT}/common/prepare_host.sh"
 
-if [[ "$BENCHMARK_PATH" =~ "iperf" ]]; then 
+if [[ "$BENCHMARK_PATH" =~ "iperf" ]]; then
     # Persist Iperf port
     export IPERF_PORT=5201
 elif [[ "$BENCHMARK_PATH" =~ "nginx" ]]; then
@@ -50,7 +50,7 @@ run_benchmark() {
     local ready_message=$4
 
     echo "Running the benchmark on the VM..."
-    eval "${guest_cmd}" | tee "${guest_log_file}" & 
+    eval "${guest_cmd}" | tee "${guest_log_file}" &
 
     # Monitor the log file for the ready message
     echo "Waiting for the ready message: ${ready_message}"
@@ -69,14 +69,14 @@ run_benchmark() {
     export GUEST_SERVER_IP_ADDRESS=10.0.2.15
 
     # Run the host command and save the output to the specified file.
-    bash "${BENCHMARK_PATH}/host.sh" 2>&1 | tee "${output_file}"  
+    bash "${BENCHMARK_PATH}/host.sh" 2>&1 | tee "${output_file}"
 
     # Clean up the log file
     rm -f "${guest_log_file}"
 }
 
 # Run the benchmark on the Asterinas VM
-run_benchmark "${ASTERINAS_GUEST_CMD}" "${ASTERINAS_OUTPUT}" "/tmp/asterinas.log" "${READY_MESSAGE}" 
+run_benchmark "${ASTERINAS_GUEST_CMD}" "${ASTERINAS_OUTPUT}" "/tmp/asterinas.log" "${READY_MESSAGE}"
 
 # Wait for the Asterinas QEMU process to exit
 wait

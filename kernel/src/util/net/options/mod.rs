@@ -23,7 +23,7 @@
 //! Suppose we want to add a new option `TcpNodelay`.
 //!
 //! First, the option should be added in the net module for the TCP socket.
-//!  
+//!
 //! ```rust no_run
 //! impl_socket_option!(TcpNodelay(bool));
 //! ```
