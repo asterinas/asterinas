@@ -426,7 +426,7 @@ impl Path {
         &self,
         mount_flags: PerMountFlags,
         fs_flags: Option<FsFlags>,
-        data: Option<CString>,
+        data: Option<&str>,
         ctx: &Context,
     ) -> Result<()> {
         if !self.is_mount_root() {

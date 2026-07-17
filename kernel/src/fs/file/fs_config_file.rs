@@ -128,16 +128,8 @@ impl FsConfigFile {
             return_errno_with_message!(Errno::EBUSY, "the file system has already been created");
         };
 
-        let args_cstr = if config.extra_options.is_empty() {
-            None
-        } else {
-            Some(CString::new(config.extra_options.as_str()).map_err(|_| {
-                Error::with_message(Errno::EINVAL, "mount options contain null byte")
-            })?)
-        };
-        let args_ref = args_cstr.as_deref();
-        let fs_creation_ctx =
-            FsCreationCtx::new(config.source.as_deref(), config.flags, args_ref, ctx);
+        let args = (!config.extra_options.is_empty()).then_some(config.extra_options.as_str());
+        let fs_creation_ctx = FsCreationCtx::new(config.source.as_deref(), config.flags, args, ctx);
         let fs = self.fs_type.create(&fs_creation_ctx)?;
         if Arc::strong_count(&fs) > 1 {
             let extant_readonly = fs.flags().contains(FsFlags::RDONLY);

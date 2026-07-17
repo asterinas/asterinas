@@ -1188,7 +1188,6 @@ impl FsType for OverlayFsType {
         let mut work = "";
 
         let args = fs_creation_ctx.args().ok_or(Error::new(Errno::EINVAL))?;
-        let args = args.to_string_lossy();
         let entries = args.split(',');
 
         for entry in entries {
