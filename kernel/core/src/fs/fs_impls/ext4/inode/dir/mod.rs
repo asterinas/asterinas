@@ -7,13 +7,13 @@
 //! lookup, creation, hard links, rename, removal, and iteration while keeping
 //! directory entries and link counts consistent.
 
-#![short_vis_path::add(ext2)]
+#![short_vis_path::add(ext4)]
 
 mod dir_entry;
 
 use self::dir_entry::{DOT_BYTE, DOT_DOT_BYTE, DirBlockView, DirEntryFileType, DirEntryHeader};
-use super::{super::Ext2, FileFlags, FilePerm, Inode, InodeInner, MAX_LINK_COUNT};
-use crate::fs::ext2::{prelude::*, utils};
+use super::{super::Ext4, FileFlags, FilePerm, Inode, InodeInner, MAX_LINK_COUNT};
+use crate::fs::ext4::{prelude::*, utils};
 
 /// Information about a candidate directory entry slot.
 #[derive(Clone, Copy, Debug)]
@@ -30,7 +30,7 @@ struct DirSlotInfo {
 #[derive(Clone, Copy, Debug)]
 struct DirEntryInfo {
     /// Inode number of the located entry.
-    ino: Ext2Ino,
+    ino: Ext4Ino,
     /// Byte offset of the entry within the directory.
     dir_offset: usize,
     /// `rec_len` of the entry.
@@ -39,7 +39,7 @@ struct DirEntryInfo {
 
 impl Inode {
     /// Looks up a directory entry by name and returns the referenced inode.
-    pub(in ext2) fn lookup(&self, name: &str) -> Result<Arc<Inode>> {
+    pub(in ext4) fn lookup(&self, name: &str) -> Result<Arc<Inode>> {
         let ino = {
             let inner = self.inner.read();
             inner.find_entry_info(name)?.ino
@@ -49,7 +49,7 @@ impl Inode {
     }
 
     /// Iterates directory entries starting at `offset` and feeds them to `visitor`.
-    pub(in ext2) fn readdir_at(
+    pub(in ext4) fn readdir_at(
         &self,
         offset: usize,
         visitor: &mut dyn DirentVisitor,
@@ -63,7 +63,7 @@ impl Inode {
     }
 
     /// Removes an empty sub-directory.
-    pub(in ext2) fn rmdir(&self, name: &str, child: &Inode) -> Result<()> {
+    pub(in ext4) fn rmdir(&self, name: &str, child: &Inode) -> Result<()> {
         let fs = self.fs()?;
         let lock_targets = [self, child];
 
@@ -103,7 +103,7 @@ impl Inode {
     /// Creates a child inode and directory entry under this directory.
     ///
     /// To create a symbolic link, use [`Inode::create_symlink`] instead.
-    pub(in ext2) fn create(
+    pub(in ext4) fn create(
         &self,
         name: &str,
         type_: InodeType,
@@ -129,7 +129,7 @@ impl Inode {
         name: &str,
         type_: InodeType,
         perm: FilePerm,
-        init_child_fn: impl FnOnce(&Arc<Ext2>, &Inode) -> Result<()>,
+        init_child_fn: impl FnOnce(&Arc<Ext4>, &Inode) -> Result<()>,
     ) -> Result<Arc<Inode>> {
         let dir_entry_file_type = DirEntryFileType::from(type_);
 
@@ -171,7 +171,7 @@ impl Inode {
     }
 
     /// Adds a hard link in this directory to an existing non-directory inode.
-    pub(in ext2) fn link(&self, old: &Inode, name: &str) -> Result<()> {
+    pub(in ext4) fn link(&self, old: &Inode, name: &str) -> Result<()> {
         let fs = self.fs()?;
         let dir_entry_file_type = DirEntryFileType::from(old.type_);
         let lock_targets = [self, old];
@@ -196,7 +196,7 @@ impl Inode {
     }
 
     /// Removes a non-directory entry from this directory.
-    pub(in ext2) fn unlink(&self, name: &str, child: &Inode) -> Result<()> {
+    pub(in ext4) fn unlink(&self, name: &str, child: &Inode) -> Result<()> {
         let fs = self.fs()?;
 
         // The `DirDentry.children` lock in the VFS layer keeps the parent
@@ -231,7 +231,7 @@ impl Inode {
     }
 
     /// Renames or moves an entry from this directory to directory referred by `new_dir_inode`.
-    pub(in ext2) fn rename(
+    pub(in ext4) fn rename(
         &self,
         old_name: &str,
         old_inode: &Inode,
@@ -394,7 +394,7 @@ impl Inode {
 
 impl InodeInner {
     /// Initializes an empty directory with `.` and `..` entries.
-    fn make_empty(&mut self, fs: &Ext2, ino: Ext2Ino, parent_ino: Ext2Ino) -> Result<()> {
+    fn make_empty(&mut self, fs: &Ext4, ino: Ext4Ino, parent_ino: Ext4Ino) -> Result<()> {
         // Allocate one block for the directory.
         self.prepare_write(fs, 0, BLOCK_SIZE)?;
 
@@ -436,7 +436,7 @@ impl InodeInner {
     fn overwrite_entry(
         &mut self,
         name: &str,
-        new_ino: Ext2Ino,
+        new_ino: Ext4Ino,
         new_file_type: DirEntryFileType,
     ) -> Result<()> {
         let entry_info = self.find_entry_info(name)?;
@@ -446,9 +446,9 @@ impl InodeInner {
     /// Inserts a new directory entry, growing the directory by one block if needed.
     fn add_new_entry(
         &mut self,
-        fs: &Ext2,
+        fs: &Ext4,
         name: &str,
-        ino: Ext2Ino,
+        ino: Ext4Ino,
         file_type: DirEntryFileType,
     ) -> Result<()> {
         let slot = match self.find_dir_slot(name.len())? {
@@ -459,7 +459,7 @@ impl InodeInner {
     }
 
     /// Checks whether this directory contains only `.` and `..` as live entries.
-    fn empty_dir(&self, self_ino: Ext2Ino) -> bool {
+    fn empty_dir(&self, self_ino: Ext4Ino) -> bool {
         if self.inode_type() != InodeType::Dir {
             return false;
         }
@@ -612,7 +612,7 @@ impl InodeInner {
     }
 
     /// Grows the directory by one data block.
-    fn grow_dir_block(&mut self, fs: &Ext2) -> Result<DirSlotInfo> {
+    fn grow_dir_block(&mut self, fs: &Ext4) -> Result<DirSlotInfo> {
         let old_size = self.file_size();
         let new_size = old_size + BLOCK_SIZE;
         self.prepare_write(fs, old_size, new_size)?;
@@ -630,7 +630,7 @@ impl InodeInner {
         &self,
         slot: &DirSlotInfo,
         name: &str,
-        ino: Ext2Ino,
+        ino: Ext4Ino,
         file_type: DirEntryFileType,
     ) -> Result<()> {
         debug_assert_ne!(ino, 0);
@@ -709,7 +709,7 @@ impl InodeInner {
     fn set_entry_target(
         &self,
         entry: &DirEntryInfo,
-        new_ino: Ext2Ino,
+        new_ino: Ext4Ino,
         new_file_type: DirEntryFileType,
     ) -> Result<()> {
         let block_base = (entry.dir_offset / BLOCK_SIZE) * BLOCK_SIZE;
@@ -756,7 +756,7 @@ impl<'a> MultiInodeInnerGuards<'a> {
         Self { entries, len }
     }
 
-    fn inner(&self, ino: Ext2Ino) -> &InodeInner {
+    fn inner(&self, ino: Ext4Ino) -> &InodeInner {
         let (_, guard) = self.entries[..self.len]
             .iter()
             .flatten()
@@ -765,7 +765,7 @@ impl<'a> MultiInodeInnerGuards<'a> {
         guard
     }
 
-    fn inner_mut(&mut self, ino: Ext2Ino) -> &mut InodeInner {
+    fn inner_mut(&mut self, ino: Ext4Ino) -> &mut InodeInner {
         let (_, guard) = self.entries[..self.len]
             .iter_mut()
             .flatten()
@@ -780,7 +780,7 @@ mod test {
     use ostd::prelude::ktest;
 
     use super::*;
-    use crate::fs::ext2::{
+    use crate::fs::ext4::{
         inode::test::read_raw_inode_from_disk,
         test_utils::{assert_errno, create_file, default_fixture},
     };

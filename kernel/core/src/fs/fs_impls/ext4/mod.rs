@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Ext2 filesystem implementation, providing file I/O, directory operations,
+//! Ext4 filesystem implementation, providing file I/O, directory operations,
 //! symlinks, and extended attributes through the Asterinas VFS trait interfaces.
 //!
 //! This module is the entry point for ext2 support in Asterinas. A caller
-//! registers `Ext2` as a filesystem type via `init`, after which the VFS
+//! registers `Ext4` as a filesystem type via `init`, after which the VFS
 //! can mount ext2 volumes and operate on them through the standard
 //! filesystem trait interfaces. Buffered I/O is delegated to the
 //! `PageCache` subsystem; this module does not cache block data itself.
@@ -60,7 +60,7 @@ macro_rules! __log_prefix {
     };
 }
 
-pub(crate) use fs::Ext2;
+pub(crate) use fs::Ext4;
 pub(crate) use inode::{FilePerm, Inode};
 
 pub(in crate::fs) use self::fs_type::EXT2_TYPE;

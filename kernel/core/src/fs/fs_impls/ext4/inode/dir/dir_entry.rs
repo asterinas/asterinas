@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Ext2 directory entry layout, validation, and page-cache access.
+//! Ext4 directory entry layout, validation, and page-cache access.
 //!
-//! Ext2 stores directory contents as a flat linear list of variable-length
+//! Ext4 stores directory contents as a flat linear list of variable-length
 //! records packed into ordinary data blocks. Each record begins with an
 //! 8-byte `DirEntryHeader` followed immediately by the entry's name bytes.
 //! The `inode` module's directory operations (lookup, create, unlink, readdir)
 //! access these records through `DirBlockView`, which provides a bounded view
-//! into one Ext2 directory block.
+//! into one Ext4 directory block.
 //! A view may cover a whole block or a sub-range used for a single write,
-//! but it never crosses the block boundary because Ext2 directory entries
+//! but it never crosses the block boundary because Ext4 directory entries
 //! cannot span blocks.
 //!
 //! # On-disk format
@@ -44,7 +44,7 @@
 
 use ostd::const_assert;
 
-use crate::fs::{ext2::prelude::*, utils::NAME_MAX};
+use crate::fs::{ext4::prelude::*, utils::NAME_MAX};
 
 pub(super) const DOT_BYTE: &[u8] = b".";
 pub(super) const DOT_DOT_BYTE: &[u8] = b"..";
@@ -124,9 +124,9 @@ impl DirEntryHeader {
     }
 }
 
-/// A bounded view into one Ext2 directory block in the page cache.
+/// A bounded view into one Ext4 directory block in the page cache.
 ///
-/// Ext2 directory entries cannot cross block boundaries.
+/// Ext4 directory entries cannot cross block boundaries.
 /// `from_index` creates a block-aligned view for iteration and deletion;
 /// `create_view` creates a temporary sub-view for writing inside one block.
 pub(super) struct DirBlockView<'a> {
@@ -280,7 +280,7 @@ impl<'a> DirBlockView<'a> {
     }
 
     /// Overwrites the inode number field at an entry offset.
-    pub(super) fn set_inode(&self, entry_offset: usize, ino: Ext2Ino) -> Result<()> {
+    pub(super) fn set_inode(&self, entry_offset: usize, ino: Ext4Ino) -> Result<()> {
         let entry_abs_offset = self.offset + entry_offset;
         self.page_cache.write_val(entry_abs_offset, &ino.to_le())?;
         Ok(())
@@ -370,7 +370,7 @@ mod test {
     use ostd::prelude::*;
 
     use super::*;
-    use crate::fs::ext2::test_utils::assert_errno;
+    use crate::fs::ext4::test_utils::assert_errno;
 
     #[ktest]
     fn min_rec_len_ok() {

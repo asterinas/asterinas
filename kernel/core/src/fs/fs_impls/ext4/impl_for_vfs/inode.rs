@@ -16,7 +16,7 @@ use crate::{
     device,
     fs::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, SyncMode},
-        fs_impls::ext2::{FilePerm, Inode as Ext2Inode},
+        fs_impls::ext4::{FilePerm, Inode as Ext4Inode},
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
@@ -32,7 +32,7 @@ use crate::{
     vm::page_cache::Vmo,
 };
 
-impl FileOps for Ext2Inode {
+impl FileOps for Ext4Inode {
     fn read_at(
         &self,
         offset: usize,
@@ -64,7 +64,7 @@ impl FileOps for Ext2Inode {
     }
 }
 
-impl Inode for Ext2Inode {
+impl Inode for Ext4Inode {
     fn size(&self) -> usize {
         self.file_size()
     }
@@ -200,17 +200,17 @@ impl Inode for Ext2Inode {
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
-        let old = old.downcast_ref::<Ext2Inode>().unwrap();
+        let old = old.downcast_ref::<Ext4Inode>().unwrap();
         self.link(old, name)
     }
 
     fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
-        let child = child.downcast_ref::<Ext2Inode>().unwrap();
+        let child = child.downcast_ref::<Ext4Inode>().unwrap();
         self.unlink(name, child)
     }
 
     fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
-        let child = child.downcast_ref::<Ext2Inode>().unwrap();
+        let child = child.downcast_ref::<Ext4Inode>().unwrap();
         self.rmdir(name, child)
     }
 
@@ -227,9 +227,9 @@ impl Inode for Ext2Inode {
             return_errno_with_message!(Errno::EINVAL, "RENAME_EXCHANGE is not supported on ext2");
         }
 
-        let new_dir_inode = new_dir_inode.downcast_ref::<Ext2Inode>().unwrap();
-        let old_inode = old_inode.downcast_ref::<Ext2Inode>().unwrap();
-        let replaced_inode = replaced_inode.map(|inode| inode.downcast_ref::<Ext2Inode>().unwrap());
+        let new_dir_inode = new_dir_inode.downcast_ref::<Ext4Inode>().unwrap();
+        let old_inode = old_inode.downcast_ref::<Ext4Inode>().unwrap();
+        let replaced_inode = replaced_inode.map(|inode| inode.downcast_ref::<Ext4Inode>().unwrap());
 
         self.rename(old_name, old_inode, new_dir_inode, new_name, replaced_inode)
     }
