@@ -4,7 +4,10 @@
 
 use hashbrown::HashMap;
 
-use crate::fs::fs_impls::ext4::{Ext4, prelude::*};
+use super::{
+    super::super::super::{fs::Ext4, prelude::*},
+    IndirectBid,
+};
 
 /// Inode-local cache for ext2 indirect metadata blocks.
 ///
@@ -19,7 +22,7 @@ use crate::fs::fs_impls::ext4::{Ext4, prelude::*};
 ///   discarded as part of freeing their owning subtree.
 #[derive(Debug)]
 pub(super) struct IndirectBlockManager {
-    cache: HashMap<Ext4Bid, IndirectBlock>,
+    cache: HashMap<IndirectBid, IndirectBlock>,
     fs: Weak<Ext4>,
 }
 
@@ -33,7 +36,7 @@ impl IndirectBlockManager {
     }
 
     /// Returns a shared reference to the indirect block at `bid`, loading it if needed.
-    pub(super) fn find(&mut self, bid: Ext4Bid) -> Result<&IndirectBlock> {
+    pub(super) fn find(&mut self, bid: IndirectBid) -> Result<&IndirectBlock> {
         self.ensure_cached(bid)?;
         Ok(self
             .cache
@@ -42,7 +45,7 @@ impl IndirectBlockManager {
     }
 
     /// Returns a mutable reference to the indirect block at `bid`, loading it if needed.
-    pub(super) fn find_mut(&mut self, bid: Ext4Bid) -> Result<&mut IndirectBlock> {
+    pub(super) fn find_mut(&mut self, bid: IndirectBid) -> Result<&mut IndirectBlock> {
         self.ensure_cached(bid)?;
         Ok(self
             .cache
@@ -51,7 +54,7 @@ impl IndirectBlockManager {
     }
 
     /// Reads all non-zero child block pointers from an indirect block.
-    pub(super) fn read_child_bids(&mut self, bid: Ext4Bid) -> Result<Vec<Ext4Bid>> {
+    pub(super) fn read_child_bids(&mut self, bid: IndirectBid) -> Result<Vec<IndirectBid>> {
         let ptrs_per_block = BLOCK_SIZE / size_of::<u32>();
         let block = self.find(bid)?;
         let mut child_bids = Vec::new();
@@ -72,14 +75,14 @@ impl IndirectBlockManager {
     }
 
     /// Removes an indirect block from the cache without writing it back.
-    pub(super) fn remove(&mut self, bid: Ext4Bid) -> Option<IndirectBlock> {
+    pub(super) fn remove(&mut self, bid: IndirectBid) -> Option<IndirectBlock> {
         self.cache.remove(&bid)
     }
 
     /// Writes all dirty cached indirect blocks back to the device.
     pub(super) fn sync(&mut self) -> Result<()> {
         let fs = self.fs()?;
-        let dirty_bids: Vec<Ext4Bid> = self
+        let dirty_bids: Vec<IndirectBid> = self
             .cache
             .iter()
             .filter_map(|(bid, block)| block.is_dirty().then_some(*bid))
@@ -97,7 +100,7 @@ impl IndirectBlockManager {
         Ok(())
     }
 
-    fn ensure_cached(&mut self, bid: Ext4Bid) -> Result<()> {
+    fn ensure_cached(&mut self, bid: IndirectBid) -> Result<()> {
         if !self.cache.contains_key(&bid) {
             let block = self.load_block(bid)?;
             self.cache.insert(bid, block);
@@ -105,7 +108,7 @@ impl IndirectBlockManager {
         Ok(())
     }
 
-    fn load_block(&self, bid: Ext4Bid) -> Result<IndirectBlock> {
+    fn load_block(&self, bid: IndirectBid) -> Result<IndirectBlock> {
         let fs = self.fs()?;
         let mut block = IndirectBlock::alloc_uninit()?;
         block.set_bid(bid);
@@ -113,7 +116,7 @@ impl IndirectBlockManager {
             Segment::<()>::from(block.frame().clone()).into(),
             BioDirection::FromDevice,
         );
-        fs.read_blocks(bid, bio_segment)
+        fs.read_blocks(Ext4Bid::from(bid), bio_segment)
             .map_err(|_| Error::with_message(Errno::EIO, "failed to submit indirect block read"))?;
         block.mark_clean();
         Ok(block)
@@ -128,9 +131,10 @@ impl IndirectBlockManager {
             Segment::<()>::from(block.frame().clone()).into(),
             BioDirection::ToDevice,
         );
-        fs.write_blocks(block.bid(), bio_segment).map_err(|_| {
-            Error::with_message(Errno::EIO, "failed to submit indirect block writeback")
-        })?;
+        fs.write_blocks(Ext4Bid::from(block.bid()), bio_segment)
+            .map_err(|_| {
+                Error::with_message(Errno::EIO, "failed to submit indirect block writeback")
+            })?;
 
         block.mark_clean();
         Ok(())
@@ -152,7 +156,7 @@ impl IndirectBlockManager {
 #[derive(Debug)]
 pub(super) struct IndirectBlock {
     block: Frame<()>,
-    bid: Ext4Bid,
+    bid: IndirectBid,
     dirty: bool,
 }
 
@@ -167,7 +171,7 @@ impl IndirectBlock {
     }
 
     /// Allocates a zeroed indirect block and marks it dirty.
-    pub(super) fn alloc_new(bid: Ext4Bid) -> Result<Self> {
+    pub(super) fn alloc_new(bid: IndirectBid) -> Result<Self> {
         Ok(Self {
             block: FrameAllocOptions::new().alloc_frame()?,
             bid,
@@ -176,7 +180,7 @@ impl IndirectBlock {
     }
 
     /// Reads the block pointer at slot `idx`.
-    pub(super) fn read_bid(&self, idx: usize) -> Result<Ext4Bid> {
+    pub(super) fn read_bid(&self, idx: usize) -> Result<IndirectBid> {
         let slot_offset = self.slot_offset(idx);
         self.block
             .read_val(slot_offset)
@@ -184,7 +188,7 @@ impl IndirectBlock {
     }
 
     /// Writes a block pointer at slot `idx` and marks the block dirty.
-    pub(super) fn write_bid(&mut self, idx: usize, bid: Ext4Bid) -> Result<()> {
+    pub(super) fn write_bid(&mut self, idx: usize, bid: IndirectBid) -> Result<()> {
         let slot_offset = self.slot_offset(idx);
         self.block
             .write_val(slot_offset, &bid)
@@ -199,7 +203,7 @@ impl IndirectBlock {
     }
 
     /// Returns the device block address of this indirect block.
-    pub(super) fn bid(&self) -> Ext4Bid {
+    pub(super) fn bid(&self) -> IndirectBid {
         self.bid
     }
 
@@ -211,12 +215,12 @@ impl IndirectBlock {
         self.dirty = false;
     }
 
-    fn set_bid(&mut self, bid: Ext4Bid) {
+    fn set_bid(&mut self, bid: IndirectBid) {
         self.bid = bid;
     }
 
     fn slot_offset(&self, idx: usize) -> usize {
-        debug_assert!(idx < BLOCK_SIZE / size_of::<Ext4Bid>());
-        idx * size_of::<Ext4Bid>()
+        debug_assert!(idx < BLOCK_SIZE / size_of::<IndirectBid>());
+        idx * size_of::<IndirectBid>()
     }
 }
