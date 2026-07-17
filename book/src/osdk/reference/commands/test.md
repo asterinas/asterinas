@@ -5,10 +5,10 @@ execute kernel mode unit test by starting QEMU.
 The usage is as follows:
 
 ```bash
-cargo osdk test [TESTNAME] [OPTIONS] 
+cargo osdk test [TESTNAME] [OPTIONS]
 ```
 
-## Arguments 
+## Arguments
 
 `TESTNAME`:
 Only run tests containing this string in their names
@@ -20,7 +20,7 @@ Refer to the [documentation](build.md) of `cargo osdk build`
 for more details.
 
 ## Examples
-- Execute tests that include *foo* in their names 
+- Execute tests that include *foo* in their names
 using QEMU with 3GB of memory
 
 ```bash
