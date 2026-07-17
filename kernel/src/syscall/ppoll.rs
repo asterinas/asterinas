@@ -4,12 +4,12 @@ use core::time::Duration;
 
 use ostd::mm::VmIo;
 
-use super::{SyscallReturn, poll::do_sys_poll};
-use crate::{
-    prelude::*,
-    process::{posix_thread::ContextPthreadAdminApi, signal::sig_mask::SigMask},
-    time::timespec_t,
+use super::{
+    SyscallReturn,
+    poll::do_sys_poll,
+    rt_sigprocmask::{RequireFullSize, UserSigSetPtr},
 };
+use crate::{prelude::*, process::posix_thread::ContextPthreadAdminApi, time::timespec_t};
 
 pub fn sys_ppoll(
     fds: Vaddr,
@@ -29,11 +29,10 @@ pub fn sys_ppoll(
     };
 
     if sigmask_addr != 0 {
-        if sigmask_size != size_of::<SigMask>() {
-            return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
-        }
+        let size_policy = RequireFullSize::new(sigmask_size)?;
 
-        let sigmask = user_space.read_val::<SigMask>(sigmask_addr)?;
+        let sigmask_ptr = UserSigSetPtr::new(&user_space, sigmask_addr, size_policy);
+        let sigmask = sigmask_ptr.read_val()?;
         ctx.save_and_set_sig_mask(sigmask);
     }
 

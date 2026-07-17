@@ -4,7 +4,11 @@ use core::time::Duration;
 
 use ostd::mm::VmIo;
 
-use super::{SyscallReturn, select::do_sys_select};
+use super::{
+    SyscallReturn,
+    rt_sigprocmask::{RequireFullSize, UserSigSetPtr},
+    select::do_sys_select,
+};
 use crate::{
     fs::file::file_table::RawFileDesc,
     prelude::*,
@@ -33,11 +37,10 @@ pub fn sys_pselect6(
     if sigmask_addr != 0 {
         let sigmask_with_size = user_space.read_val::<SigMaskWithSize>(sigmask_addr)?;
         if sigmask_with_size.addr != 0 {
-            if sigmask_with_size.size != size_of::<SigMask>() {
-                return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
-            }
+            let size_policy = RequireFullSize::new(sigmask_with_size.size)?;
 
-            let sigmask = user_space.read_val::<SigMask>(sigmask_with_size.addr)?;
+            let sigmask_ptr = UserSigSetPtr::new(&user_space, sigmask_with_size.addr, size_policy);
+            let sigmask: SigMask = sigmask_ptr.read_val()?;
             ctx.save_and_set_sig_mask(sigmask);
         }
     }
