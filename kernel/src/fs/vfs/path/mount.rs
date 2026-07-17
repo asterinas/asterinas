@@ -574,7 +574,7 @@ impl Mount {
         &self,
         mount_flags: PerMountFlags,
         fs_flags: Option<FsFlags>,
-        data: Option<CString>,
+        data: Option<&str>,
         ctx: &Context,
         _topology: &mut MountTopology,
     ) -> Result<()> {

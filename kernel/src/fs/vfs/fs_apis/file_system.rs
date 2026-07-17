@@ -40,7 +40,7 @@ pub trait FileSystem: Any + Sync + Send {
     }
 
     /// Sets the flags of this file system.
-    fn set_fs_flags(&self, _flags: FsFlags, _data: Option<CString>, _ctx: &Context) -> Result<()> {
+    fn set_fs_flags(&self, _flags: FsFlags, _data: Option<&str>, _ctx: &Context) -> Result<()> {
         // TODO: Remove the default empty implementation in the future.
         warn!("setting file system flags is not implemented");
         Ok(())

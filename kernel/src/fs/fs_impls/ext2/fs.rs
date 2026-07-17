@@ -90,13 +90,12 @@ struct Ext2MountOptions {
 
 impl Ext2MountOptions {
     /// Parses ext2 mount options that control block-count reporting.
-    fn parse(data: Option<&CStr>) -> Self {
+    fn parse(data: Option<&str>) -> Self {
         let mut options = Self::default();
         let Some(data) = data else {
             return options;
         };
 
-        let data = data.to_string_lossy();
         for token in data.split(',') {
             match token.trim() {
                 "bsddf" => options.stat_block_accounting = StatBlockAccounting::ExcludeOverhead,
@@ -111,7 +110,7 @@ impl Ext2MountOptions {
 
 impl Ext2 {
     /// Opens and loads an Ext2 filesystem from a block device.
-    pub(super) fn open(device: Arc<dyn BlockDevice>, data: Option<&CStr>) -> Result<Arc<Self>> {
+    pub(super) fn open(device: Arc<dyn BlockDevice>, data: Option<&str>) -> Result<Arc<Self>> {
         let super_block = {
             let raw_super_block = device.read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)?;
             SuperBlock::try_from(raw_super_block)?
@@ -722,13 +721,7 @@ mod test {
     #[ktest]
     fn stat_minixdf_reports_total() {
         let f = Ext2FixtureBuilder::new(3, 512).build().unwrap();
-        let minixdf = CString::new("minixdf").unwrap();
-
-        let ext2 = Ext2::open(
-            f.disk.clone() as Arc<dyn BlockDevice>,
-            Some(minixdf.as_c_str()),
-        )
-        .unwrap();
+        let ext2 = Ext2::open(f.disk.clone() as Arc<dyn BlockDevice>, Some("minixdf")).unwrap();
 
         let stat = FileSystemTrait::sb(ext2.as_ref());
         assert_eq!(stat.blocks, f.sb.total_blocks() as usize);

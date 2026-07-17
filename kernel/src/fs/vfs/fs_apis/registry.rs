@@ -44,7 +44,7 @@ pub trait FsType: Send + Sync + 'static {
 pub struct FsCreationCtx<'a> {
     source: Option<&'a str>,
     flags: FsFlags,
-    args: Option<&'a CStr>,
+    args: Option<&'a str>,
     task_ctx: &'a Context<'a>,
 }
 
@@ -53,7 +53,7 @@ impl<'a> FsCreationCtx<'a> {
     pub fn new(
         source: Option<&'a str>,
         flags: FsFlags,
-        args: Option<&'a CStr>,
+        args: Option<&'a str>,
         task_ctx: &'a Context<'a>,
     ) -> Self {
         Self {
@@ -76,7 +76,7 @@ impl<'a> FsCreationCtx<'a> {
     }
 
     /// Returns the filesystem-specific mount arguments.
-    pub(in crate::fs) fn args(&self) -> Option<&CStr> {
+    pub(in crate::fs) fn args(&self) -> Option<&str> {
         self.args
     }
 

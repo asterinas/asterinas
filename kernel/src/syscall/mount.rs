@@ -97,8 +97,9 @@ fn do_remount_mnt_and_fs(
     } else {
         Some(ctx.user_space().read_cstring(data_addr, MAX_FILENAME_LEN)?)
     };
+    let data = data.as_deref().map(CStr::to_string_lossy);
 
-    path.remount(per_mount_flags, Some(fs_flags), data, ctx)
+    path.remount(per_mount_flags, Some(fs_flags), data.as_deref(), ctx)
 }
 
 /// Binds a mount to a dst location.
@@ -241,6 +242,7 @@ fn open_fs(
     } else {
         Some(user_space.read_cstring(data_addr, MAX_FILENAME_LEN)?)
     };
+    let data = data.as_deref().map(CStr::to_string_lossy);
 
     let fs_creation_ctx = FsCreationCtx::new(source, flags.into(), data.as_deref(), ctx);
     fs_type.create(&fs_creation_ctx)
