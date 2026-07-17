@@ -59,9 +59,6 @@ pub struct Ext4 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum MountFlavor {
     Ext2,
-    // Constructed once the ext4 type name is registered; the kernel tests
-    // already mount under it.
-    #[cfg_attr(not(ktest), expect(dead_code))]
     Ext4,
 }
 
@@ -204,7 +201,7 @@ impl Ext4 {
         &self.fs_event_subscriber_stats
     }
 
-    #[expect(dead_code)]
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(super) fn this(&self) -> Weak<Ext4> {
         self.self_ref.clone()
     }
@@ -921,6 +918,43 @@ mod tests {
         assert_eq!(n, data.len());
     }
 
+    /// Returns whether physical block `pblock` is marked allocated in group 0.
+    fn block_is_allocated(f: &super::super::test_utils::Ext4Fixture, pblock: Ext4Bid) -> bool {
+        let group = f.ext4.block_group(0);
+        group
+            .metadata()
+            .block_bitmap
+            .is_allocated((pblock - group.first_block()) as u16)
+    }
+
+    /// Parses the inline depth-0 extent root and returns the physical block that
+    /// logical block `lblock` maps to, if any. Only handles the single-contiguous
+    /// extent shape these tests build.
+    fn ondisk_pblock_of(raw: &RawInode, lblock: u32) -> Option<Ext4Bid> {
+        let entries = (raw.block[0] >> 16) & 0xFFFF;
+        let depth = (raw.block[1] >> 16) & 0xFFFF;
+        if depth != 0 {
+            return None;
+        }
+        for i in 0..entries as usize {
+            let ee_block = raw.block[3 + i * 3];
+            let raw_len = raw.block[4 + i * 3] & 0xFFFF;
+            // An unwritten extent biases its length by 32768; mask it off.
+            let len = if raw_len > 32768 {
+                raw_len - 32768
+            } else {
+                raw_len
+            };
+            let ee_start = raw.block[5 + i * 3] as Ext4Bid;
+            if lblock >= ee_block && lblock < ee_block + len {
+                return Some(ee_start + (lblock - ee_block) as Ext4Bid);
+            }
+        }
+        None
+    }
+
+    /// `read_inode` returns the same `Arc<Inode>` for repeated reads of one ino:
+    /// the per-group inode cache gives the inode a stable identity.
     #[ktest]
     fn read_inode_returns_same_arc_identity() {
         let f = Ext4FixtureBuilder::new(2048, 256, 2048)
@@ -961,6 +995,63 @@ mod tests {
         let raw = f.read_raw_inode(11);
         assert_eq!(raw.size_lo, BLOCK_SIZE as u32);
         assert_eq!(raw.sector_count as u64, SECTORS_PER_BLOCK);
+    }
+
+    /// The corruption fix: a truncate on inode B that frees blocks must leave the
+    /// on-disk inode and the block bitmap mutually consistent after `sync_all`.
+    ///
+    /// File A is written and fsync'd (its blocks persist). Then a *separate*
+    /// inode B is truncated, freeing trailing blocks — dirtying the global bitmap
+    /// and B's in-memory inode but persisting neither yet. `fs.sync_all()` (the
+    /// clean-unmount path) must flush B's trimmed inode together with the bitmap:
+    /// on disk, B's size reflects the truncate, every block B's extents still
+    /// reference is allocated, and the freed trailing block is marked free.
+    #[ktest]
+    fn cross_inode_truncate_consistent_after_sync_all() {
+        crate::time::clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(2048, 256, 2048)
+            .with_block_bitmap_metadata_marked()
+            .build()
+            .unwrap();
+        f.write_raw_inode(11, &make_empty_file_inode()); // file A
+        f.write_raw_inode(12, &make_empty_file_inode()); // file B
+
+        // File A: write one block and fsync it (allocations persist to disk).
+        let a = f.ext4.read_inode(11).unwrap();
+        write_all(&a, 0, &[0xAA; BLOCK_SIZE]);
+        a.sync_data_and_meta().unwrap();
+
+        // File B: a 3-block file, then truncate to 1 block, freeing 2 trailing
+        // blocks. The truncate updates the in-memory inode + the global bitmap
+        // but does not, on its own, write B's inode back to disk.
+        let b = f.ext4.read_inode(12).unwrap();
+        write_all(&b, 0, &[0xBB; 3 * BLOCK_SIZE]);
+        b.sync_data_and_meta().unwrap(); // B's 3 blocks are on disk and allocated
+
+        let b2_pblock = ondisk_pblock_of(&f.read_raw_inode(12), 2).unwrap();
+        assert!(block_is_allocated(&f, b2_pblock));
+
+        b.resize(BLOCK_SIZE).unwrap();
+        assert_eq!(b.size(), BLOCK_SIZE);
+
+        // The clean-unmount path: flush all inodes + the block-side metadata.
+        f.ext4.sync_all().unwrap();
+
+        // B's on-disk inode reflects the truncate.
+        let raw_b = f.read_raw_inode(12);
+        assert_eq!(raw_b.size_lo, BLOCK_SIZE as u32);
+        assert_eq!(raw_b.sector_count as u64, SECTORS_PER_BLOCK);
+
+        // Consistency: every block B's on-disk extents still reference is marked
+        // allocated, and the freed trailing block is now free in the bitmap.
+        let b0_pblock = ondisk_pblock_of(&raw_b, 0).unwrap();
+        assert!(block_is_allocated(&f, b0_pblock));
+        assert!(ondisk_pblock_of(&raw_b, 2).is_none());
+        assert!(!block_is_allocated(&f, b2_pblock));
+
+        // A is untouched: its single block is still mapped and allocated.
+        let a0_pblock = ondisk_pblock_of(&f.read_raw_inode(11), 0).unwrap();
+        assert!(block_is_allocated(&f, a0_pblock));
     }
 
     /// alloc_ino then free_inode restores the group and superblock free-inode
@@ -1108,6 +1199,59 @@ mod tests {
         assert_eq!(after.tail.0[0], 0xAB);
         assert_eq!(after.tail.0[7], 0xCD);
         assert_eq!(after.mtime, 7777);
+    }
+
+    /// The mount-flavor decision matrix: an `ext2` mount accepts only true
+    /// ext2-format volumes (Linux's `IS_EXT2_SB` rule); extent-mapped or
+    /// journaled volumes must be mounted as `ext4` instead. The `ext4` name
+    /// accepts both formats (a clean journal is ignored). The historic
+    /// `btree_dir` read-only-compat bit stays accepted under either name.
+    #[ktest]
+    fn mount_flavor_decision_matrix() {
+        // An ext2-format volume (no EXTENTS): both names accept it.
+        Ext4FixtureBuilder::new(2048, 256, 2048)
+            .without_extents_feature()
+            .build()
+            .unwrap();
+        Ext4FixtureBuilder::new(2048, 256, 2048)
+            .without_extents_feature()
+            .with_flavor(MountFlavor::Ext2)
+            .build()
+            .unwrap();
+
+        // An extent volume is rejected under the ext2 name.
+        let err = match Ext4FixtureBuilder::new(2048, 256, 2048)
+            .with_flavor(MountFlavor::Ext2)
+            .build()
+        {
+            Err(err) => err,
+            Ok(_) => panic!("an extent volume must not mount as ext2"),
+        };
+        assert_eq!(err.error(), Errno::EINVAL);
+
+        // A journaled volume mounts as ext4 (journal ignored) but is
+        // rejected under the ext2 name.
+        Ext4FixtureBuilder::new(2048, 256, 2048)
+            .with_extra_compat(0x4) // COMPAT_HAS_JOURNAL
+            .build()
+            .unwrap();
+        let err = match Ext4FixtureBuilder::new(2048, 256, 2048)
+            .without_extents_feature()
+            .with_extra_compat(0x4)
+            .with_flavor(MountFlavor::Ext2)
+            .build()
+        {
+            Err(err) => err,
+            Ok(_) => panic!("a journaled volume must not mount as ext2"),
+        };
+        assert_eq!(err.error(), Errno::EINVAL);
+
+        // The historic BTREE_DIR read-only-compat bit predates the checksum
+        // features and stays accepted under either name (ext2-driver parity).
+        Ext4FixtureBuilder::new(2048, 256, 2048)
+            .with_extra_ro_compat(0x4) // RO_COMPAT_BTREE_DIR
+            .build()
+            .unwrap();
     }
 
     /// An ext2-format volume (no EXTENTS feature) mounts, creates ext2-format

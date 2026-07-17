@@ -16,6 +16,29 @@ use crate::{
     prelude::*,
 };
 
+/// VFS-visible ext4 filesystem type.
+pub(super) struct Ext4Type;
+
+impl FsType for Ext4Type {
+    fn name(&self) -> &'static str {
+        "ext4"
+    }
+
+    fn properties(&self) -> FsProperties {
+        FsProperties::NEED_DISK
+    }
+
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+        let disk = fs_creation_ctx.resolve_block_device()?;
+        let args = fs_creation_ctx.args();
+        Ext4::open(disk, MountFlavor::Ext4, args).map(|fs| fs as Arc<dyn FileSystem>)
+    }
+
+    fn sysnode(&self) -> Option<Arc<dyn SysNode>> {
+        None
+    }
+}
+
 /// VFS-visible ext2 filesystem type, served by the same driver.
 ///
 /// Mirrors Linux, where the ext4 driver can serve `ext2` mounts

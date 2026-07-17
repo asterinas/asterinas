@@ -73,9 +73,7 @@ pub(super) type Ext4Ino = u32;
 pub(super) const EXTENTS_FL: u32 = 0x0008_0000;
 
 pub use self::disk::FilePerm;
-#[cfg(ktest)]
-pub(super) use self::disk::empty_extent_root;
-pub(super) use self::disk::{FileFlags, InodeDesc, RawInode};
+pub(super) use self::disk::{FileFlags, InodeDesc, RawInode, empty_extent_root};
 
 /// A single ext4 inode: shared metadata plus type-specific payload.
 pub struct Inode {
