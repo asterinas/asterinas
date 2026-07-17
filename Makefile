@@ -407,6 +407,14 @@ book/mermaid.min.js book/mermaid-init.js:
 
 .PHONY: format
 format:
+	@# Trim trailing whitespace from all git-tracked, non-patch files
+	@# NOTE: `--git-dir` will suppress "detected dubious ownership in repository" errors
+	@git --git-dir=$$PWD/.git ls-files --no-directory | \
+		grep -v '[.]patch$$' | \
+		grep -v '^.claude/skills/aster-code-review$$' `# This is a symbolic link` | \
+		xargs sed -i 's/ *$$//'
+	@
+	@# Format the code using various tools
 	@./tools/format_all.sh
 	@nixfmt ./distro
 	@$(MAKE) --no-print-directory -C test/initramfs format
@@ -416,8 +424,12 @@ format:
 check: private WORKSPACE_MEMBER_DIRS = \
     $(shell ./tools/print_workspace_members.sh)
 check: $(CARGO_OSDK)
-	@# Check formatting issues of the Rust code
-	@./tools/format_all.sh --check
+	@# Check if any git-tracked, non-patch files contain trailing whitespace
+	@# NOTE: `--git-dir` will suppress "detected dubious ownership in repository" errors
+	@if git --git-dir=$$PWD/.git ls-files | grep -v '[.]patch$$' | xargs grep -d skip ' $$' ; then \
+		echo "Error: Files (as listed above) contain trailing whitespaces"; \
+		exit 1; \
+	fi
 	@
 	@# Check if all workspace members enable workspace lints
 	@for dir in $(WORKSPACE_MEMBER_DIRS); do \
@@ -427,8 +439,14 @@ check: $(CARGO_OSDK)
 		fi; \
 	done
 	@
+	@# Check formatting issues of the Rust code
+	@./tools/format_all.sh --check
+	@
 	@# Check compilation of the Rust code
 	@./tools/clippy_check.sh workspace
+	@
+	@# Check formatting issues of Nix files under distro directory
+	@nixfmt --check ./distro
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)
 	@$(MAKE) --no-print-directory -C test/initramfs check
@@ -438,8 +456,6 @@ check: $(CARGO_OSDK)
 	@
 	@# Check typos
 	@typos
-	@# Check formatting issues of Nix files under distro directory
-	@nixfmt --check ./distro
 
 .PHONY: clean
 clean:
