@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::fmt::Display;
+use core::{fmt::Display, time::Duration};
 
 use options::SocketOption;
 use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
@@ -116,6 +116,23 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
     /// Sets options on the socket.
     fn set_option(&self, _option: &dyn SocketOption) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "setsockopt() is not supported");
+    }
+
+    /// Returns the receive timeout (`SO_RCVTIMEO`) for this socket.
+    ///
+    /// A return value of `None` means no timeout is set (blocking calls wait
+    /// indefinitely). Socket implementations that support timeouts should
+    /// override this method.
+    fn recv_timeout(&self) -> Option<Duration> {
+        None
+    }
+
+    /// Returns the send timeout (`SO_SNDTIMEO`) for this socket.
+    ///
+    /// A return value of `None` means no timeout is set. Socket
+    /// implementations that support timeouts should override this method.
+    fn send_timeout(&self) -> Option<Duration> {
+        None
     }
 
     /// Sends a message on the socket.

@@ -327,6 +327,14 @@ impl Socket for UnixDatagramSocket {
     fn common(&self) -> &FileCommon {
         &self.common
     }
+
+    fn recv_timeout(&self) -> Option<Duration> {
+        self.timeouts.recv_timeout()
+    }
+
+    fn send_timeout(&self) -> Option<Duration> {
+        self.timeouts.send_timeout()
+    }
 }
 
 fn do_unix_getsockopt(option: &mut dyn SocketOption, socket: &UnixDatagramSocket) -> Result<()> {

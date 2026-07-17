@@ -778,6 +778,14 @@ impl Socket for StreamSocket {
     fn common(&self) -> &FileCommon {
         &self.common
     }
+
+    fn recv_timeout(&self) -> Option<Duration> {
+        self.timeouts.recv_timeout()
+    }
+
+    fn send_timeout(&self) -> Option<Duration> {
+        self.timeouts.send_timeout()
+    }
 }
 
 fn do_tcp_setsockopt(
