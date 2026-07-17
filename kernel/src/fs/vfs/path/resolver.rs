@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::str;
-
 use ostd::task::Task;
 
 use super::{Mount, Path, mount::MountTopology};
@@ -188,14 +186,24 @@ impl PathResolver {
     /// For pseudo paths, the returned string is simply the path's name. For other
     /// unreachable paths, the returned string starts with `/` but represents a partial
     /// path that could not reach the root.
-    pub fn make_abs_path(&self, path: &Path) -> AbsPathResult {
+    pub fn make_abs_path(&self, path: &Path) -> Result<AbsPathResult> {
+        let buf = PathBuffer::with_capacity(PATH_MAX);
+        self.make_abs_path_into(path, buf).ok_or_else(|| {
+            Error::with_message(Errno::ENAMETOOLONG, "the absolute path is too long")
+        })
+    }
+
+    fn make_abs_path_into(&self, path: &Path, mut buf: PathBuffer) -> Option<AbsPathResult> {
         // Handle the root path.
         if path == &self.root {
-            return AbsPathResult::Reachable("/".to_string());
+            buf.prepend_slash().then_some(())?;
+            return Some(AbsPathResult::Reachable(buf));
         }
         // Handle pseudo paths.
         if path.is_pseudo() {
-            return AbsPathResult::Unreachable(path.name());
+            let name = path.name();
+            buf.prepend_bytes(name.as_bytes()).then_some(())?;
+            return Some(AbsPathResult::Unreachable(buf));
         }
 
         // TODO: The paths reported via `/proc/<pid>/fd/<fd>` are currently
@@ -210,37 +218,32 @@ impl PathResolver {
         // the pseudo-path special-case above); the anonymous side is wired up
         // together with the `O_TMPFILE` open path in PR #3185.
 
-        let mut components = VecDeque::new();
-        components.push_front(self.resolve_name(path));
+        buf.prepend_component(&self.resolve_name(path))
+            .then_some(())?;
 
         let mut parent_path = self.resolve_parent(path);
         let mut reach_resolver_root = false;
 
         while let Some(parent_dir) = parent_path {
-            // Stop if we reach the resolver's root.
             if parent_dir == self.root {
                 reach_resolver_root = true;
                 break;
             }
 
             let parent_name = self.resolve_name(&parent_dir);
-            // Stop if we reach an absolute root.
             if parent_name == "/" {
                 break;
             }
 
-            components.push_front(parent_name);
+            buf.prepend_component(&parent_name).then_some(())?;
 
             parent_path = self.resolve_parent(&parent_dir);
         }
 
-        let path_name = alloc::format!("/{}", components.make_contiguous().join("/"));
-        debug_assert!(path_name.starts_with('/'));
-
         if reach_resolver_root {
-            AbsPathResult::Reachable(path_name)
+            Some(AbsPathResult::Reachable(buf))
         } else {
-            AbsPathResult::Unreachable(path_name)
+            Some(AbsPathResult::Unreachable(buf))
         }
     }
 
@@ -486,22 +489,90 @@ impl PathResolver {
     }
 }
 
+/// A buffer that builds an absolute path by prepending components from back to front.
+pub struct PathBuffer {
+    bytes: Vec<u8>,
+    start: usize,
+}
+
+impl PathBuffer {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            bytes: vec![0u8; capacity],
+            start: capacity,
+        }
+    }
+
+    /// Returns `false` if there is not enough room.
+    pub fn prepend_bytes(&mut self, data: &[u8]) -> bool {
+        if data.len() > self.start {
+            return false;
+        }
+        self.start -= data.len();
+        self.bytes[self.start..self.start + data.len()].copy_from_slice(data);
+        true
+    }
+
+    fn prepend_component(&mut self, name: &str) -> bool {
+        let name_bytes = name.as_bytes();
+        if name_bytes.len() + 1 > self.start {
+            return false;
+        }
+        self.start -= name_bytes.len();
+        self.bytes[self.start..self.start + name_bytes.len()].copy_from_slice(name_bytes);
+        self.start -= 1;
+        self.bytes[self.start] = b'/';
+        true
+    }
+
+    fn prepend_slash(&mut self) -> bool {
+        self.prepend_bytes(b"/")
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes[self.start..]
+    }
+
+    pub fn as_str(&self) -> &str {
+        core::str::from_utf8(self.as_bytes()).expect("path is valid UTF-8")
+    }
+}
+
+impl Debug for PathBuffer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("PathBuffer").field(&self.as_str()).finish()
+    }
+}
+
+impl core::fmt::Display for PathBuffer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// The result of resolving an absolute path name.
 ///
 /// If the path can be traced back to the root of the resolver, it is `Reachable`.
 /// Otherwise, it is `Unreachable`.
-#[derive(Clone, Debug)]
 pub enum AbsPathResult {
-    Reachable(String),
-    Unreachable(String),
+    Reachable(PathBuffer),
+    Unreachable(PathBuffer),
+}
+
+impl Debug for AbsPathResult {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            AbsPathResult::Reachable(buf) => f.debug_tuple("Reachable").field(buf).finish(),
+            AbsPathResult::Unreachable(buf) => f.debug_tuple("Unreachable").field(buf).finish(),
+        }
+    }
 }
 
 impl AbsPathResult {
-    /// Converts the `AbsPathResult` into a `String`.
-    pub fn into_string(self) -> String {
+    /// Unwraps the inner [`PathBuffer`] regardless of reachability.
+    pub fn into_path_buf(self) -> PathBuffer {
         match self {
-            AbsPathResult::Reachable(s) => s,
-            AbsPathResult::Unreachable(s) => s,
+            AbsPathResult::Reachable(buf) | AbsPathResult::Unreachable(buf) => buf,
         }
     }
 }
