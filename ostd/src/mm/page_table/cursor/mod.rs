@@ -189,9 +189,10 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
         split_huge: bool,
     ) -> Option<Vaddr> {
         assert_eq!(len % C::BASE_PAGE_SIZE, 0);
+        assert!(self.va <= self.barrier_va.end);
+        assert!(len <= self.barrier_va.end - self.va);
 
         let end = self.va + len;
-        assert!(end <= self.barrier_va.end);
         debug_assert_eq!(end % C::BASE_PAGE_SIZE, 0);
 
         let rcu_guard = self.rcu_guard;
