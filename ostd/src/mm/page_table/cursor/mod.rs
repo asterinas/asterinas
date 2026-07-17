@@ -190,7 +190,10 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     ) -> Option<Vaddr> {
         assert_eq!(len % C::BASE_PAGE_SIZE, 0);
         assert!(self.va <= self.barrier_va.end);
-        assert!(len <= self.barrier_va.end - self.va);
+        assert!(
+            len <= self.barrier_va.end - self.va,
+            "len exceeds remaining cursor range"
+        );
 
         let end = self.va + len;
         debug_assert_eq!(end % C::BASE_PAGE_SIZE, 0);

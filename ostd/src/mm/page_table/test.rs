@@ -663,7 +663,7 @@ mod navigation {
     }
 
     #[ktest]
-    #[should_panic]
+    #[should_panic(expected = "len exceeds remaining cursor range")]
     fn find_next_rejects_overflowing_len() {
         let (page_table, _, _) = setup_pt_with_two_mappings();
         let preempt_guard = disable_preempt();
