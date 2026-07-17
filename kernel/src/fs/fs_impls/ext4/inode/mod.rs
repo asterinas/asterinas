@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Ext2 inode implementation.
+//! Ext4 inode implementation.
 //!
 //! The central type, `Inode`, represents one in-memory ext2 inode and is the
 //! concrete inode object exposed to the VFS adapter.
@@ -8,8 +8,8 @@
 //! # Type aliases
 //!
 //! - `Iblock` — logical block index within a file (0-based).
-//! - `Ext2Bid` — physical block address on the backing device.
-//! - `Ext2Ino` — on-disk inode number (ext2 format is 32-bit; the VFS widens
+//! - `Ext4Bid` — physical block address on the backing device.
+//! - `Ext4Ino` — on-disk inode number (ext2 format is 32-bit; the VFS widens
 //!   to `u64`).
 //!
 //! # Data model
@@ -58,11 +58,11 @@
 //! in ascending `ino` order and coalesce duplicates first.
 //!
 //! Data-backed inode operations that allocate or free blocks call into
-//! filesystem-level methods (`Ext2::alloc_blocks`, `Ext2::free_blocks`). The
+//! filesystem-level methods (`Ext4::alloc_blocks`, `Ext4::free_blocks`). The
 //! full cross-layer ordering is:
 //!
 //! ```text
-//! Inode::inner → BlockPtrTree → Ext2::super_block → BlockGroup::metadata
+//! Inode::inner → BlockPtrTree → Ext4::super_block → BlockGroup::metadata
 //! ```
 //!
 //! `BlockGroup::inode_cache` is independent: it is never held while
@@ -82,8 +82,8 @@ use self::{
     block_manager::{BlockPtrTree, InodeBlockManager, RawBlockPtrs},
     symlink::FastSymlinkTarget,
 };
-use super::{fs::Ext2, prelude::*, xattr::Xattr};
-use crate::fs::{ext2::utils, file::InodeMode, pipe::Pipe, vfs::inode::Extension};
+use super::{fs::Ext4, prelude::*, xattr::Xattr};
+use crate::fs::{ext4::utils, file::InodeMode, pipe::Pipe, vfs::inode::Extension};
 
 const MAX_LINK_COUNT: u16 = 32000;
 /// Size of the ext2 inode `i_block` byte area used by fast symlinks.
@@ -93,11 +93,11 @@ pub(super) const RAW_BLOCK_PTRS_LEN: usize = 15;
 /// Logical block index within a file (0-based).
 pub(super) type Iblock = u32;
 /// Physical block address on the device.
-pub(super) type Ext2Bid = u32;
+pub(super) type Ext4Bid = u32;
 /// On-disk inode number (ext2 format is 32-bit; the VFS widens to u64).
-pub(super) type Ext2Ino = u32;
+pub(super) type Ext4Ino = u32;
 
-/// Ext2 file permission bits (lower 12 bits of `i_mode`).
+/// Ext4 file permission bits (lower 12 bits of `i_mode`).
 #[derive(Clone, Copy, Debug)]
 pub struct FilePerm(u16);
 
@@ -122,15 +122,15 @@ impl FilePerm {
 ///
 /// An `Inode` owns the cached descriptor and its type-specific payload. Only
 /// data-backed payloads own data pages and block-mapping state; block-group
-/// bitmaps belong to the parent `Ext2` and `BlockGroup`. See the module-level
+/// bitmaps belong to the parent `Ext4` and `BlockGroup`. See the module-level
 /// documentation, especially the `Locking` section, for the full lock ordering
 /// across inode, filesystem, and block-group layers.
 pub struct Inode {
-    ino: Ext2Ino,
+    ino: Ext4Ino,
     type_: InodeType,
     inner: RwMutex<InodeInner>,
     block_group_idx: usize,
-    fs: Weak<Ext2>,
+    fs: Weak<Ext4>,
     xattr: Option<Xattr>,
     pipe: Option<Pipe>,
     extension: Extension,
@@ -139,11 +139,11 @@ pub struct Inode {
 impl Inode {
     /// Creates a new `Inode` and returns it wrapped in `Arc`.
     pub(super) fn new(
-        ino: Ext2Ino,
+        ino: Ext4Ino,
         type_: InodeType,
         inode_desc: Dirty<InodeDesc>,
         block_group_idx: usize,
-        fs: Weak<Ext2>,
+        fs: Weak<Ext4>,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self: &Weak<Self>| {
             let xattr = match type_ {
@@ -172,7 +172,7 @@ impl Inode {
     }
 
     /// Returns the ext2 inode number.
-    pub(super) fn ino(&self) -> Ext2Ino {
+    pub(super) fn ino(&self) -> Ext4Ino {
         self.ino
     }
 
@@ -186,8 +186,8 @@ impl Inode {
         self.inner.read().link_count()
     }
 
-    /// Returns a reference to the owning `Ext2` filesystem.
-    pub(super) fn fs(&self) -> Result<Arc<Ext2>> {
+    /// Returns a reference to the owning `Ext4` filesystem.
+    pub(super) fn fs(&self) -> Result<Arc<Ext4>> {
         self.fs
             .upgrade()
             .ok_or_else(|| Error::with_message(Errno::EIO, "filesystem already dropped"))
@@ -204,7 +204,7 @@ impl Inode {
     }
 
     /// Returns a reference to the pipe if this is a named-pipe inode.
-    pub(in crate::fs::fs_impls::ext2) fn pipe(&self) -> Option<&Pipe> {
+    pub(in crate::fs::fs_impls::ext4) fn pipe(&self) -> Option<&Pipe> {
         self.pipe.as_ref()
     }
 
@@ -435,7 +435,7 @@ enum InodePayload {
 }
 
 impl InodeInner {
-    fn new(inode_desc: Dirty<InodeDesc>, fs: Weak<Ext2>) -> Self {
+    fn new(inode_desc: Dirty<InodeDesc>, fs: Weak<Ext4>) -> Self {
         let payload = InodePayload::new(&inode_desc, fs);
 
         Self {
@@ -587,7 +587,7 @@ impl InodeInner {
 }
 
 impl InodePayload {
-    fn new(inode_desc: &Dirty<InodeDesc>, fs: Weak<Ext2>) -> Self {
+    fn new(inode_desc: &Dirty<InodeDesc>, fs: Weak<Ext4>) -> Self {
         let raw_block_ptrs = RawBlockPtrs::new(inode_desc.sector_count, inode_desc.block_ptrs);
         match inode_desc.type_ {
             InodeType::File | InodeType::Dir => {
@@ -606,7 +606,7 @@ impl InodePayload {
         }
     }
 
-    fn new_data_backed(size: usize, raw_block_ptrs: RawBlockPtrs, fs: Weak<Ext2>) -> Self {
+    fn new_data_backed(size: usize, raw_block_ptrs: RawBlockPtrs, fs: Weak<Ext4>) -> Self {
         let page_cache_size = size.align_up(PAGE_SIZE);
         let page_count = page_cache_size / PAGE_SIZE;
         let block_ptr_tree = BlockPtrTree::new(raw_block_ptrs, fs.clone());
@@ -720,12 +720,12 @@ bitflags! {
 mod test {
     use super::*;
     use crate::{
-        fs::fs_impls::ext2::test_utils::{self, RawInodeBuilder},
+        fs::fs_impls::ext4::test_utils::{self, RawInodeBuilder},
         prelude::*,
     };
 
     /// Reads a `RawInode` directly from the test fixture's disk image.
-    pub(super) fn read_raw_inode_from_disk(f: &test_utils::Ext2Fixture, ino: u32) -> RawInode {
+    pub(super) fn read_raw_inode_from_disk(f: &test_utils::Ext4Fixture, ino: u32) -> RawInode {
         let nr_inodes_per_group = f.sb.nr_inodes_per_group();
         let group_idx = ((ino - 1) / nr_inodes_per_group) as usize;
         let inode_idx = (ino - 1) % nr_inodes_per_group;
@@ -742,7 +742,7 @@ mod test {
 
     /// Builds a live in-memory file inode (not on disk) for low-level tests.
     pub(super) fn make_live_file_inode(
-        ext2: &Arc<Ext2>,
+        ext2: &Arc<Ext4>,
         ino: u32,
         size: usize,
         sector_count: u32,

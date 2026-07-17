@@ -17,14 +17,14 @@ use ostd::mm::{FrameAllocOptions, HasSize, Segment, VmIo, io::util::HasVmReaderW
 
 use super::{
     block_group::RawBlockGroup,
-    fs::{Ext2, ROOT_INO},
+    fs::{Ext4, ROOT_INO},
     inode::{FilePerm, Inode, RAW_BLOCK_PTRS_LEN, RawInode},
     super_block::{
         ErrorsBehavior, FsState, MAGIC_NUM, OsId, RawSuperBlock, RevLevel, SUPER_BLOCK_OFFSET,
     },
 };
 use crate::{
-    fs::{file::InodeType, fs_impls::ext2::super_block::SuperBlock},
+    fs::{file::InodeType, fs_impls::ext4::super_block::SuperBlock},
     prelude::{return_errno_with_message, *},
     time::clocks,
 };
@@ -61,13 +61,13 @@ pub(super) fn set_bit_lsb0(buf: &mut [u8], bit: usize) {
 // Layer 1: Mock devices
 // ===========================================================================
 
-pub(super) struct Ext2MemoryDisk {
+pub(super) struct Ext4MemoryDisk {
     segment: Segment<()>,
     flush_count: AtomicUsize,
     fail_flush: AtomicBool,
 }
 
-impl Ext2MemoryDisk {
+impl Ext4MemoryDisk {
     pub(super) fn new(nblocks: usize) -> Self {
         let npages = (nblocks * BLOCK_SIZE).div_ceil(PAGE_SIZE);
         let segment = FrameAllocOptions::new()
@@ -98,15 +98,15 @@ impl Ext2MemoryDisk {
     }
 }
 
-impl Debug for Ext2MemoryDisk {
+impl Debug for Ext4MemoryDisk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Ext2MemoryDisk")
+        f.debug_struct("Ext4MemoryDisk")
             .field("bytes", &self.segment.size())
             .finish()
     }
 }
 
-impl BlockDevice for Ext2MemoryDisk {
+impl BlockDevice for Ext4MemoryDisk {
     fn enqueue(&self, bio: SubmittedBio) -> core::result::Result<(), BioEnqueueError> {
         if bio.type_() == BioType::Flush {
             self.flush_count.fetch_add(1, Ordering::Relaxed);
@@ -287,7 +287,7 @@ impl RawInodeBuilder {
 // Layer 3: Disk layout writers
 // ===========================================================================
 
-pub(super) fn write_indirect_ptr(disk: &Ext2MemoryDisk, bid: u32, index: u32, next: u32) {
+pub(super) fn write_indirect_ptr(disk: &Ext4MemoryDisk, bid: u32, index: u32, next: u32) {
     let offset = Bid::new(bid as u64).to_offset() + (index as usize) * size_of::<u32>();
     disk.segment().write_val(offset, &next).unwrap();
 }
@@ -297,7 +297,7 @@ pub(super) fn write_raw_inode_to_disk(
     descs: &[RawBlockGroup],
     ino: u32,
     raw: &RawInode,
-    disk: &Ext2MemoryDisk,
+    disk: &Ext4MemoryDisk,
 ) {
     let nr_inodes_per_group = sb.nr_inodes_per_group();
     let group_idx = ((ino - 1) / nr_inodes_per_group) as usize;
@@ -421,7 +421,7 @@ fn make_root_raw_inode(root_bid: u32) -> RawInode {
         .build()
 }
 
-pub(super) fn write_simple_root_dir_block(disk: &Ext2MemoryDisk, root_bid: u32) {
+pub(super) fn write_simple_root_dir_block(disk: &Ext4MemoryDisk, root_bid: u32) {
     let mut block = vec![0u8; BLOCK_SIZE];
 
     // '.'
@@ -444,7 +444,7 @@ pub(super) fn write_simple_root_dir_block(disk: &Ext2MemoryDisk, root_bid: u32) 
 }
 
 // ===========================================================================
-// Layer 4: Fixture — strategy enums, Ext2Fixture, Ext2FixtureBuilder
+// Layer 4: Fixture — strategy enums, Ext4Fixture, Ext4FixtureBuilder
 // ===========================================================================
 
 #[derive(Clone)]
@@ -467,9 +467,9 @@ pub(super) enum InodeBitmapInit {
     Full,
 }
 
-pub(super) struct Ext2Fixture {
-    pub disk: Arc<Ext2MemoryDisk>,
-    pub ext2: Arc<Ext2>,
+pub(super) struct Ext4Fixture {
+    pub disk: Arc<Ext4MemoryDisk>,
+    pub ext2: Arc<Ext4>,
     pub sb: SuperBlock,
     pub descs: Vec<RawBlockGroup>,
 }
@@ -478,17 +478,17 @@ type PreparedFixture = (
     RawSuperBlock,
     SuperBlock,
     Vec<RawBlockGroup>,
-    Arc<Ext2MemoryDisk>,
+    Arc<Ext4MemoryDisk>,
     Group0Layout,
 );
 
-impl Ext2Fixture {
+impl Ext4Fixture {
     pub(super) fn root(&self) -> Arc<Inode> {
         self.ext2.read_inode(ROOT_INO).unwrap()
     }
 }
 
-pub(super) struct Ext2FixtureBuilder {
+pub(super) struct Ext4FixtureBuilder {
     groups: u32,
     nblocks: usize,
     sb_free_blocks: Option<u32>,
@@ -502,7 +502,7 @@ pub(super) struct Ext2FixtureBuilder {
     custom_device: Option<Arc<dyn BlockDevice>>,
 }
 
-impl Ext2FixtureBuilder {
+impl Ext4FixtureBuilder {
     pub(super) fn new(groups: u32, nblocks: usize) -> Self {
         Self {
             groups,
@@ -577,7 +577,7 @@ impl Ext2FixtureBuilder {
         }
 
         let disk_blocks = self.nblocks.max(sb.total_blocks() as usize);
-        let disk = Arc::new(Ext2MemoryDisk::new(disk_blocks));
+        let disk = Arc::new(Ext4MemoryDisk::new(disk_blocks));
         disk.write_super_block(&raw_sb);
         disk.write_group_desc_table(&sb, &descs);
 
@@ -619,7 +619,7 @@ impl Ext2FixtureBuilder {
         &self,
         sb: &SuperBlock,
         descs: &[RawBlockGroup],
-        disk: &Ext2MemoryDisk,
+        disk: &Ext4MemoryDisk,
         layout: &Group0Layout,
     ) {
         let root_bid = layout.first_data_bid.saturating_add(1);
@@ -715,7 +715,7 @@ impl Ext2FixtureBuilder {
         }
     }
 
-    pub(super) fn build(self) -> Result<Ext2Fixture> {
+    pub(super) fn build(self) -> Result<Ext4Fixture> {
         let (_, sb, descs, disk, layout) = self.prepare()?;
         self.write_bitmaps(&sb, &descs, &disk, &layout);
 
@@ -728,9 +728,9 @@ impl Ext2FixtureBuilder {
         let device: Arc<dyn BlockDevice> = self
             .custom_device
             .unwrap_or_else(|| disk.clone() as Arc<dyn BlockDevice>);
-        let ext2 = Ext2::open(device, None)?;
+        let ext2 = Ext4::open(device, None)?;
 
-        Ok(Ext2Fixture {
+        Ok(Ext4Fixture {
             disk,
             ext2,
             sb,
@@ -748,9 +748,9 @@ pub(super) fn create_file(dir: &Arc<Inode>, name: &str) -> Arc<Inode> {
         .unwrap()
 }
 
-pub(super) fn default_fixture() -> (Ext2Fixture, Arc<Inode>) {
+pub(super) fn default_fixture() -> (Ext4Fixture, Arc<Inode>) {
     clocks::init_for_ktest();
-    let f = Ext2FixtureBuilder::new(1, 256)
+    let f = Ext4FixtureBuilder::new(1, 256)
         .with_free_blocks(64, 64)
         .with_free_inodes(1000, 1000)
         .with_group0_used_dirs(1)

@@ -7,15 +7,15 @@
 //! metadata, and inode-table state ordered consistently; reclaim must release
 //! all storage owned by a zero-link inode exactly once.
 
-use super::{super::Ext2, Inode, InodeInner, RawInode};
-use crate::fs::ext2::{prelude::*, utils};
+use super::{super::Ext4, Inode, InodeInner, RawInode};
+use crate::fs::ext4::{prelude::*, utils};
 
 impl Inode {
     /// Flushes all dirty state owned by the inode.
     ///
     /// Writes xattrs, data pages, and indirect blocks back before staging dirty
     /// inode metadata in the block group's inode-table page cache.
-    pub(in crate::fs::fs_impls::ext2) fn sync_all(&self) -> Result<()> {
+    pub(in crate::fs::fs_impls::ext4) fn sync_all(&self) -> Result<()> {
         // Step 1: flush the xattr.
         if let Some(xattr) = &self.xattr {
             xattr.flush()?;
@@ -38,7 +38,7 @@ impl Inode {
     /// Writes data pages and indirect blocks back before staging dirty inode
     /// metadata in the block group's inode-table page cache. This does not flush
     /// xattrs.
-    pub(in crate::fs::fs_impls::ext2) fn sync_data(&self) -> Result<()> {
+    pub(in crate::fs::fs_impls::ext4) fn sync_data(&self) -> Result<()> {
         let fs = self.fs()?;
         let mut inner = self.inner.write();
 
@@ -91,7 +91,7 @@ impl Inode {
 
 impl InodeInner {
     /// Serializes the descriptor to inode-table page cache if dirty and clears dirty state.
-    pub(super) fn write_back_inode_desc(&mut self, fs: &Ext2, ino: Ext2Ino) -> Result<()> {
+    pub(super) fn write_back_inode_desc(&mut self, fs: &Ext4, ino: Ext4Ino) -> Result<()> {
         if !self.is_dirty() {
             return Ok(());
         }

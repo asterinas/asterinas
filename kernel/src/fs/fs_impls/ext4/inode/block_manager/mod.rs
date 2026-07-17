@@ -12,7 +12,7 @@ use aster_block::bio::BioCompleteFn;
 use self::block_ptr_tree::ResolvedBlockRange;
 pub(super) use self::block_ptr_tree::{BlockPtrTree, RawBlockPtrs};
 use super::io_range::IoRangeIter;
-use crate::fs::ext2::{fs::Ext2, prelude::*};
+use crate::fs::ext4::{fs::Ext4, prelude::*};
 
 /// Bridges the inode's logical file view and the physical block device.
 ///
@@ -29,12 +29,12 @@ pub(super) struct InodeBlockManager {
     /// Cached `npages` bound for `PageCache`.
     npages: AtomicUsize,
     /// File system handle for indirect I/O and BIO submission.
-    fs: Weak<Ext2>,
+    fs: Weak<Ext4>,
 }
 
 impl InodeBlockManager {
     /// Creates a new block manager wrapping the given block-pointer tree.
-    pub(super) fn new(block_ptr_tree: BlockPtrTree, fs: Weak<Ext2>, npages: usize) -> Self {
+    pub(super) fn new(block_ptr_tree: BlockPtrTree, fs: Weak<Ext4>, npages: usize) -> Self {
         Self {
             block_ptr_tree: RwMutex::new(block_ptr_tree),
             npages: AtomicUsize::new(npages),
@@ -43,14 +43,14 @@ impl InodeBlockManager {
     }
 
     /// Returns a strong reference to the owning filesystem.
-    pub(super) fn fs(&self) -> Result<Arc<Ext2>> {
+    pub(super) fn fs(&self) -> Result<Arc<Ext4>> {
         self.fs
             .upgrade()
             .ok_or_else(|| Error::with_message(Errno::EIO, "filesystem already dropped"))
     }
 
     /// Looks up a single logical block -> physical block.
-    pub(super) fn lookup_block(&self, iblock: Iblock) -> Result<Option<Ext2Bid>> {
+    pub(super) fn lookup_block(&self, iblock: Iblock) -> Result<Option<Ext4Bid>> {
         let tree = self.block_ptr_tree.read();
         tree.lookup_block(iblock)
     }

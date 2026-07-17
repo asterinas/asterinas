@@ -3,13 +3,13 @@
 //! Classification of logical block ranges as mapped runs or sparse holes.
 
 use super::block_manager::BlockPtrTree;
-use crate::fs::ext2::prelude::*;
+use crate::fs::ext4::prelude::*;
 
 /// Direct-I/O block-range classification for the current logical interval.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum IoRange {
     /// A contiguous mapped device-block range.
-    Mapped(Range<Ext2Bid>),
+    Mapped(Range<Ext4Bid>),
     /// A hole in the file expressed as a logical-block interval.
     Hole(Range<Iblock>),
 }
@@ -79,9 +79,9 @@ mod test {
 
     use super::*;
     use crate::{
-        fs::fs_impls::ext2::{
+        fs::fs_impls::ext4::{
             inode::{RAW_BLOCK_PTRS_LEN, block_manager::RawBlockPtrs},
-            test_utils::Ext2FixtureBuilder,
+            test_utils::Ext4FixtureBuilder,
         },
         prelude::*,
         time::clocks,
@@ -90,7 +90,7 @@ mod test {
     fn make_block_ptr_tree(
         block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
         sector_count: u32,
-        fs: &Arc<crate::fs::fs_impls::ext2::fs::Ext2>,
+        fs: &Arc<crate::fs::fs_impls::ext4::fs::Ext4>,
     ) -> BlockPtrTree {
         BlockPtrTree::new(
             RawBlockPtrs::new(sector_count, block_ptrs),
@@ -101,7 +101,7 @@ mod test {
     #[ktest]
     fn io_range_iter_yields_mapped_and_holes() {
         clocks::init_for_ktest();
-        let f = Ext2FixtureBuilder::new(2, 256).build().unwrap();
+        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
 
         // Set up direct pointers: blocks 0-2 mapped, 3-6 holes, 7-8 mapped.
         let mut block_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];

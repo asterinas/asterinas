@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Ext2 superblock: on-disk layout, in-memory representation, and mount validation.
+//! Ext4 superblock: on-disk layout, in-memory representation, and mount validation.
 //!
 //! The superblock is the filesystem-wide metadata record that describes the
 //! overall layout and global state of an ext2 volume. It is stored at a
@@ -27,14 +27,14 @@
 //!
 //! # Superblock copies
 //!
-//! Ext2 stores backup superblock copies in selected block groups. Asterinas
+//! Ext4 stores backup superblock copies in selected block groups. Asterinas
 //! reads the primary copy during mount and writes both the primary copy and
 //! all supported backup copies during metadata sync.
 
 use ostd::const_assert;
 
 use super::{block_group::RawBlockGroup, prelude::*};
-use crate::fs::ext2::utils;
+use crate::fs::ext4::utils;
 
 /// The ext2 magic number.
 pub(super) const MAGIC_NUM: u16 = 0xef53;
@@ -58,7 +58,7 @@ pub(super) struct SuperBlock {
     /// Total number of free inodes.
     free_inodes_count: u32,
     /// First data block.
-    first_data_block: Ext2Bid,
+    first_data_block: Ext4Bid,
     /// Block size.
     block_size: usize,
     /// Fragment size.
@@ -439,7 +439,7 @@ impl SuperBlock {
     }
 
     /// Returns the first data block number.
-    pub(super) const fn first_data_block(&self) -> Ext2Bid {
+    pub(super) const fn first_data_block(&self) -> Ext4Bid {
         self.first_data_block
     }
 
@@ -589,7 +589,7 @@ impl SuperBlock {
     /// Returns the starting block ID of the superblock copy inside the block
     /// group identified by `block_group_idx`.
     ///
-    pub(super) fn bid(&self, block_group_idx: usize) -> Ext2Bid {
+    pub(super) fn bid(&self, block_group_idx: usize) -> Ext4Bid {
         if block_group_idx == 0 {
             return (SUPER_BLOCK_OFFSET / self.block_size) as u32;
         }
@@ -599,7 +599,7 @@ impl SuperBlock {
 
     /// Returns the starting block ID of the block-group descriptor table inside
     /// the block group identified by `block_group_idx`.
-    pub(super) fn group_descriptors_bid(&self, block_group_idx: usize) -> Ext2Bid {
+    pub(super) fn group_descriptors_bid(&self, block_group_idx: usize) -> Ext4Bid {
         let sb_bid = self.bid(block_group_idx);
         sb_bid + (SUPER_BLOCK_SIZE.div_ceil(self.block_size) as u32)
     }
@@ -868,7 +868,7 @@ mod test {
     use ostd::prelude::*;
 
     use super::*;
-    use crate::fs::fs_impls::ext2::test_utils::make_valid_raw_super_block;
+    use crate::fs::fs_impls::ext4::test_utils::make_valid_raw_super_block;
 
     #[ktest]
     fn max_file_size_matches_ext2_4k_limit() {
