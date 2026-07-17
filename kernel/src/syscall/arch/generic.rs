@@ -167,6 +167,7 @@ macro_rules! import_generic_syscall_entries {
             timerfd_create::sys_timerfd_create,
             timerfd_gettime::sys_timerfd_gettime,
             timerfd_settime::sys_timerfd_settime,
+            times::sys_times,
             truncate::{sys_ftruncate, sys_truncate},
             umask::sys_umask,
             umount::sys_umount,
@@ -334,6 +335,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_GETRESGID = 150              => sys_getresgid(args[..3]);
             SYS_SETFSUID = 151               => sys_setfsuid(args[..1]);
             SYS_SETFSGID = 152               => sys_setfsgid(args[..1]);
+            SYS_TIMES = 153                  => sys_times(args[..1]);
             SYS_SETPGID = 154                => sys_setpgid(args[..2]);
             SYS_GETPGID = 155                => sys_getpgid(args[..1]);
             SYS_GETSID = 156                 => sys_getsid(args[..1]);

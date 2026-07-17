@@ -1,0 +1,5 @@
+// Store process times in the user buffer and return elapsed clock ticks
+times(buf);
+
+// Return elapsed clock ticks without storing process times
+times(buf = NULL);

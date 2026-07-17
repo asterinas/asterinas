@@ -7,6 +7,7 @@ use inherit_methods_macro::inherit_methods;
 use ostd::arch::cpu::context::UserContext;
 
 use super::sig_num::SigNum;
+pub use crate::time::util::clock_t;
 use crate::{
     arch::cpu::SigContext,
     prelude::*,
@@ -14,8 +15,6 @@ use crate::{
 };
 
 pub type sigset_t = u64;
-// FIXME: this type should be put at suitable place
-pub type clock_t = i64;
 
 #[padding_struct]
 #[repr(C)]

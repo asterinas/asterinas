@@ -5,5 +5,6 @@ SUBDIRS := \
 	clock_nanosleep \
 	gettimeofday \
 	itimer \
+	times \
 
 include ../common/Makefile

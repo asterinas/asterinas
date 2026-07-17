@@ -185,6 +185,7 @@ mod timer_settime;
 mod timerfd_create;
 mod timerfd_gettime;
 mod timerfd_settime;
+mod times;
 mod truncate;
 mod umask;
 mod umount;
