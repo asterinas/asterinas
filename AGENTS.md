@@ -72,15 +72,27 @@ so you can grasp a rule from the table and open its full text only when needed.
 
 ## Architecture Notes
 
-- **Framekernel:** The kernel is split into a safe upper half (`kernel/`)
-  and an unsafe lower half (`ostd/`).
-  This is a hard architectural boundary — never add `unsafe` to `kernel/`.
-- **Components** (`kernel/comps/`): block, console, network, PCI, virtio, etc.
-  Each is a separate crate.
-- **OSTD** (`ostd/`): memory management, page tables, interrupt handling,
-  synchronization primitives, task scheduling, boot, and arch-specific code.
-- **Architectures:** x86-64 (primary), RISC-V 64, LoongArch 64.
-  Arch-specific code lives in `ostd/src/arch/` and `kernel/src/arch/`.
+Asterinas is a framekernel
+comprising a safe upper half (`kernel/`)
+and an unsafe lower half (`ostd/`).
+
+The `ostd` crate is a minimal Rust OS development framework
+that encapsulates `unsafe` Rust code within safe APIs.
+`unsafe` Rust code is confined to OSTD (`ostd/`);
+kernel code under `kernel/` must remain safe Rust.
+
+The kernel code under `kernel/` is written using `ostd` APIs
+and is organized as an acyclic graph of kernel crates
+arranged in layers, from highest to lowest:
+
+1. The assembler crate (`kernel/src/`).
+2. High-level component crates (`kernel/comps/`).
+3. The `aster-core` crate (`kernel/core/`).
+4. Low-level component crates (`kernel/core/comps/`).
+5. Kernel libraries (`kernel/libs/`).
+
+A kernel crate may depend on crates in the same layer
+or any lower layer.
 
 ## CI
 
