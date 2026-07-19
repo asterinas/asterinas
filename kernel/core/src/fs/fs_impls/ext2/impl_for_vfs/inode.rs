@@ -15,7 +15,7 @@ use device_id::DeviceId;
 use crate::{
     device,
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags},
         fs_impls::ext2::{FilePerm, Inode as Ext2Inode},
         utils::DirentVisitor,
         vfs::{
@@ -276,22 +276,18 @@ impl Inode for Ext2Inode {
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
     ) -> Result<()> {
-        self.check_permission(Permission::MAY_WRITE)?;
         self.set_xattr(name, value_reader, flags)
     }
 
     fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
-        self.check_permission(Permission::MAY_READ)?;
         self.get_xattr(name, value_writer)
     }
 
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
-        self.check_permission(Permission::MAY_ACCESS)?;
         self.list_xattr(namespace, list_writer)
     }
 
     fn remove_xattr(&self, name: XattrName) -> Result<()> {
-        self.check_permission(Permission::MAY_WRITE)?;
         self.remove_xattr(name)
     }
 }

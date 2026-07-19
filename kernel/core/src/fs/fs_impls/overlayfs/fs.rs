@@ -1382,12 +1382,15 @@ mod tests {
                 r1.new_fs_child("f1", InodeType::Dir, mode).unwrap();
                 r1.new_fs_child("f2", InodeType::File, mode).unwrap();
                 let d1 = r1.new_fs_child("d1", InodeType::Dir, mode).unwrap();
-                d1.set_xattr(
-                    XattrName::try_from_full_name(OPAQUE_DIR_XATTR_NAME).unwrap(),
-                    &mut VmReader::from(WHITEOUT_AND_OPAQUE_XATTR_VALUE.as_slice()).to_fallible(),
-                    XattrSetFlags::CREATE_ONLY,
-                )
-                .unwrap();
+                // Set internal OverlayFS metadata while constructing the synthetic lower layer.
+                d1.inode()
+                    .set_xattr(
+                        XattrName::try_from_full_name(OPAQUE_DIR_XATTR_NAME).unwrap(),
+                        &mut VmReader::from(WHITEOUT_AND_OPAQUE_XATTR_VALUE.as_slice())
+                            .to_fallible(),
+                        XattrSetFlags::CREATE_ONLY,
+                    )
+                    .unwrap();
                 r1.new_fs_child("d2", InodeType::File, mode).unwrap();
                 r1.new_fs_child("d3", InodeType::Dir, mode).unwrap();
                 r1
