@@ -177,8 +177,8 @@ pub fn define_atomic_version_of_integer_like_type(input: TokenStream) -> TokenSt
                 .map_err(|val| val.#from_integer)
         }
     };
-    let fn_fetch_update = quote! {
-        pub fn fetch_update<F>(
+    let fn_try_update = quote! {
+        pub fn try_update<F>(
             &self,
             set_order: core::sync::atomic::Ordering,
             fetch_order: core::sync::atomic::Ordering,
@@ -188,7 +188,7 @@ pub fn define_atomic_version_of_integer_like_type(input: TokenStream) -> TokenSt
             F: FnMut(#integer_like_type) -> Option<#integer_like_type>,
         {
             self.0
-                .fetch_update(
+                .try_update(
                     set_order,
                     fetch_order,
                     |old| f(old.#from_integer).map(<#integer_like_type>::into)
@@ -231,9 +231,9 @@ pub fn define_atomic_version_of_integer_like_type(input: TokenStream) -> TokenSt
 
             #fn_compare_exchange
 
-            #fn_fetch_update
-
             #fn_update
+
+            #fn_try_update
         }
     };
 

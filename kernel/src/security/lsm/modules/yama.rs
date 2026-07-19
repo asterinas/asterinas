@@ -86,7 +86,7 @@ pub fn set_scope(new_scope: YamaScope) -> Result<()> {
     ))?;
 
     YAMA_SCOPE
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current_scope| {
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |current_scope| {
             let is_downgrading_from_no_attach =
                 current_scope == YamaScope::NoAttach && new_scope != YamaScope::NoAttach;
             (!is_downgrading_from_no_attach).then_some(new_scope)
