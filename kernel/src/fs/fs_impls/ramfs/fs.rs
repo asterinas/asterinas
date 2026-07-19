@@ -19,7 +19,7 @@ use super::{memfd::MemfdInode, xattr::RamXattr, *};
 use crate::{
     device::{self, DeviceType},
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         pipe::Pipe,
         pseudofs::AnonDeviceId,
         tmpfs::{self, TMPFS_MAGIC},
@@ -1336,14 +1336,12 @@ impl Inode for RamInode {
         flags: XattrSetFlags,
     ) -> Result<()> {
         RamXattr::check_file_type_for_xattr(self.typ)?;
-        self.check_permission(Permission::MAY_WRITE)?;
         self.xattr.set(name, value_reader, flags)
     }
 
     fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
         RamXattr::check_file_type_for_xattr(self.typ)
             .map_err(|_| Error::with_message(Errno::ENODATA, "no available xattrs"))?;
-        self.check_permission(Permission::MAY_READ)?;
         self.xattr.get(name, value_writer)
     }
 
@@ -1351,15 +1349,11 @@ impl Inode for RamInode {
         if RamXattr::check_file_type_for_xattr(self.typ).is_err() {
             return Ok(0);
         }
-        if self.check_permission(Permission::MAY_ACCESS).is_err() {
-            return Ok(0);
-        }
         self.xattr.list(namespace, list_writer)
     }
 
     fn remove_xattr(&self, name: XattrName) -> Result<()> {
         RamXattr::check_file_type_for_xattr(self.typ)?;
-        self.check_permission(Permission::MAY_WRITE)?;
         self.xattr.remove(name)
     }
 }
