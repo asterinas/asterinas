@@ -11,6 +11,7 @@ mod user;
 
 use aster_rights::FullOp;
 use credentials_::Credentials_;
+pub(super) use credentials_::ExecCred;
 pub use file_capabilities::FileCapabilities;
 pub use group::Gid;
 pub use secure_bits::SecureBits;
