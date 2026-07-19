@@ -56,14 +56,31 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
 pub static I8042_CONTROLLER: ...
 ```
 
-Inside the `aster-kernel` crate, `pub(crate)` and `pub` are equivalent,
-as the crate has no downstream consumers.
-Prefer the shorter `pub`.
+The `asterinas` assembler crate does not expose any `pub` Rust items.
 
-See also:
-PR [#2951](https://github.com/asterinas/asterinas/pull/2951),
-[#2605](https://github.com/asterinas/asterinas/pull/2605#discussion_r2720506912),
-and [#3154](https://github.com/asterinas/asterinas/pull/3154#discussion_r3100905375).
+### Keep the kernel crate graph layered and acyclic (`layered-kernel-crates`) {#layered-kernel-crates}
+
+For modularity,
+the Asterinas kernel under `kernel/` is decomposed into
+an acyclic graph of kernel crates arranged in layers.
+A kernel crate may depend on crates in the same layer or any lower layer.
+The layers are, from highest to lowest:
+
+1. The assembler crate (`kernel/src/`).
+2. High-level component crates (`kernel/comps/`).
+3. The `aster-core` crate (`kernel/core/`).
+4. Low-level component crates (`kernel/core/comps/`).
+5. Kernel libraries (`kernel/libs/`).
+
+A new kernel subsystem, driver, or utility type
+should be added as a separate crate outside `aster-core` by default.
+Add new code directly to `aster-core` only when necessary.
+
+All these kernel crates may depend on OSTD.
+
+When lower-layer code needs behavior implemented above it,
+define the interface and registration mechanism in the lower layer
+and let the higher component register its implementation.
 
 ### Restrict subsystem visibility with a short name (`short-vis-path`) {#short-vis-path}
 
