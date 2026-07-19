@@ -267,7 +267,7 @@ pub(super) fn capable_modify_file_cap(inode: &dyn Inode, ctx: &Context) -> Resul
 
     // With the currently supported identity user-namespace mapping, only invalid IDs are
     // unmapped. Replace this with mount-idmap-aware namespace mapping checks when supported.
-    let metadata = inode.metadata();
+    let metadata = inode.metadata()?;
     if metadata.uid == Uid::INVALID || metadata.gid == Gid::INVALID {
         return_errno_with_message!(
             Errno::EPERM,
