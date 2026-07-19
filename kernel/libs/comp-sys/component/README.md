@@ -3,6 +3,20 @@
 ## Overview
 This crate is used for the initialization of the component system, which provides a priority initialization scheme based on the inventory crate.
 
+## Asterinas repository integration
+
+Existing low-level components live under `kernel/core/comps/`.
+`kernel/comps/` is reserved for high-level components that depend on
+`aster-core`; no high-level component or generic assembler-level selection
+mechanism is currently implemented. See the
+[kernel component documentation](../../../../book/src/kernel/the-approach/components.md)
+for the dependency rules.
+
+The workspace-root `Components.toml` lists packages accepted by
+`parse_metadata!` as metadata participants. The Cargo dependency graph, rather
+than `Components.toml`, determines which packages are included in the build.
+Adding an entry to `Components.toml` does not select a component.
+
 ## Initialization Stages
 The component system supports three distinct initialization stages that execute in a specific order during system boot:
 1. **Bootstrap**: The earliest stage, called after OSTD initialization is complete but before kernel subsystem initialization begins. This stage runs on the BSP (Bootstrap Processor) only, before SMP (Symmetric Multi-Processing) is enabled. Components in this stage can initialize core kernel services that other components depend on.
@@ -65,6 +79,12 @@ fn main(){
 
 ## Notes
 
-- Currently, initialization requires the presence of a `Components.toml` file, which stores some information about components and access control. The [tests](tests/kernel/Components.toml) provides a sample file of it. If the components declared inside `Components.toml` is inconsistent with the component found by `parse_metadata` macro (i.e. A crate depends on the component library but is not declared in `Components.toml`), then a compilation error will occur.
+- Initialization requires a `Components.toml` file with a
+  `[components]` table. The
+  [tests](tests/kernel/Components.toml) provide a sample. The
+  `parse_metadata!` macro reports an error if a workspace crate that depends
+  on `component` is missing from that table.
 
-- The `parse_metadata` macro will generate the information of all components. But ultimately which functions are called still depends on which `#[init_component]` macros are extended. If you want to test a component. Then, other components with a lower priority than it or other unused high-priority components will not be initialized at runtime.
+- `parse_metadata!` generates component path and priority information from
+  Cargo metadata. Only functions submitted with `#[init_component]` are
+  invoked, and only in the stage declared by each function.

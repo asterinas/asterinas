@@ -114,9 +114,9 @@ RANGES := RANGE ("," RANGE)*
 RANGE  := N | N "-" M           # 1-based, inclusive, N ≤ M
 ```
 
-- `kernel/src/sched/fair.rs` — review the whole file.
-- `kernel/src/sched/fair.rs:120-180` — review only lines 120–180.
-- `kernel/src/sched/fair.rs:120-180,240-260` — two ranges in one file.
+- `kernel/core/src/sched/sched_class/fair.rs` — review the whole file.
+- `kernel/core/src/sched/sched_class/fair.rs:120-180` — review only lines 120–180.
+- `kernel/core/src/sched/sched_class/fair.rs:120-180,240-260` — two ranges in one file.
 - Repeating a path is allowed; its ranges are unioned, and overlapping ranges are merged.
 
 The named lines are the **review scope**;
