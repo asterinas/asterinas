@@ -27,6 +27,7 @@ members = [
     "ostd/libs/ostd-test",
     "ostd/libs/padding-struct",
     "kernel",
+    "kernel/core",
     "kernel/comps/block",
     "kernel/comps/cmdline",
     "kernel/comps/console",
@@ -74,6 +75,7 @@ default-members = [
     "osdk/deps/test-kernel",
     "ostd",
     "kernel",
+    "kernel/core",
     "kernel/comps/block",
     "kernel/comps/cmdline",
     "kernel/comps/console",
@@ -136,6 +138,9 @@ edition = "2024"
 
 [workspace.dependencies]
 ostd = { version = "0.18.0", path = "ostd" }
+
+# Crates under kernel/core
+aster-core = { path = "kernel/core", default-features = false }
 
 # Crates under ostd/libs
 align_ext = { path = "ostd/libs/align_ext", version = "0.1.0" }

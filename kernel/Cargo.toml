@@ -1,91 +1,17 @@
 [package]
-name = "aster-kernel"
+name = "asterinas"
 version = "0.1.0"
 edition.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-align_ext.workspace = true
-aster-bigtcp.workspace = true
-aster-block.workspace = true
-aster-cmdline.workspace = true
-aster-console.workspace = true
-aster-framebuffer.workspace = true
-aster-fuse.workspace = true
-aster-i8042.workspace = true
-aster-input.workspace = true
-aster-logger.workspace = true
-aster-mlsdisk.workspace = true
-aster-network.workspace = true
-aster-nvme.workspace = true
-aster-rights.workspace = true
-aster-rights-proc.workspace = true
-aster-softirq.workspace = true
-aster-systree.workspace = true
-aster-time.workspace = true
-aster-uart.workspace = true
-aster-util.workspace = true
-aster-virtio.workspace = true
-atomic-integer-wrapper.workspace = true
-bitflags.workspace = true
-bitvec.workspace = true
-cfg-if.workspace = true
-component.workspace = true
-const_format.workspace = true
-controlled.workspace = true
-cpio-decoder.workspace = true
-device-id.workspace = true
-getset.workspace = true
-hashbrown.workspace = true
-id-alloc.workspace = true
-inherit-methods-macro.workspace = true
-intrusive-collections.workspace = true
-int-to-c-enum.workspace = true
-io-util.workspace = true
-jhash.workspace = true
-keyable-arc.workspace = true
-lending-iterator.workspace = true
-logo-ascii-art.workspace = true
-lru.workspace = true
-no_std_io2.workspace = true
-osdk-frame-allocator.workspace = true
-osdk-heap-allocator.workspace = true
+aster-core.workspace = true
 ostd.workspace = true
-ostd-pod.workspace = true
-paste.workspace = true
-rand = { workspace = true, features = [
-    "small_rng",
-    "std_rng",
-] }
-ring-buffer.workspace = true
-smallvec.workspace = true
-spin.workspace = true
-takeable.workspace = true
-time.workspace = true
-typeflags.workspace = true
-typeflags-util.workspace = true
-xarray.workspace = true
-xmas-elf.workspace = true
-zerocopy.workspace = true
-zune-inflate.workspace = true
-
-[target.x86_64-unknown-none.dependencies]
-tdx-guest = { version = "0.2.4", optional = true }
-x86_64.workspace = true
-
-[target.riscv64imac-unknown-none-elf.dependencies]
-riscv = { version = "0.15.0", features = ["s-mode"] }
-
-[target.loongarch64-unknown-none-softfloat.dependencies]
-loongArch64 = "0.2.5"
 
 [features]
 default = ["cvm_guest"]
-coverage = ["ostd/coverage"]
-cvm_guest = ["dep:tdx-guest", "ostd/cvm_guest", "aster-virtio/cvm_guest"]
-# By default we use the Sv48 address translation mode.
-riscv_sv39_mode = ["ostd/riscv_sv39_mode"]
+coverage = ["aster-core/coverage"]
+cvm_guest = ["aster-core/cvm_guest"]
+riscv_sv39_mode = ["aster-core/riscv_sv39_mode"]
 
 [lints]
 workspace = true

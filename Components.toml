@@ -3,10 +3,10 @@
 block = { name = "aster-block" }
 cmdline = { name = "aster-cmdline" }
 console = { name = "aster-console" }
+core = { name = "aster-core" }
 framebuffer = { name = "aster-framebuffer" }
 i8042 = { name = "aster-i8042" }
 input = { name = "aster-input" }
-kernel = { name = "aster-kernel" }
 logger = { name = "aster-logger" }
 mlsdisk = { name = "aster-mlsdisk" }
 network = { name = "aster-network" }
