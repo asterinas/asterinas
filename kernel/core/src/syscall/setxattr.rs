@@ -13,12 +13,16 @@ use crate::{
         vfs::{
             path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
             xattr::{
-                XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags,
+                self, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace,
+                XattrSetFlags,
             },
         },
     },
     prelude::*,
-    process::{UserNamespace, credentials::capabilities::CapSet},
+    process::{
+        UserNamespace,
+        credentials::{FileCapabilities, Uid, VfsCapRevision, capabilities::CapSet},
+    },
     security::lsm::hooks as lsm_hooks,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -119,7 +123,41 @@ fn setxattr(
     let mut value_reader = user_space.reader(value_ptr, value_len)?;
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
-    path.set_xattr(xattr_name, &mut value_reader, flags)?;
+    if xattr_name.full_name() != xattr::SECURITY_CAPABILITY_XATTR_NAME {
+        path.set_xattr(xattr_name, &mut value_reader, flags, ctx)?;
+    } else {
+        if value_len > FileCapabilities::MAX_XATTR_SIZE {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the length of file capabilities does not match its revision"
+            );
+        }
+
+        let mut value = [0u8; FileCapabilities::MAX_XATTR_SIZE];
+        value_reader.read_fallible(&mut VmWriter::from(&mut value[..value_len]))?;
+        let raw_value = &value[..value_len];
+
+        let (revision, _) = FileCapabilities::parse_header(raw_value)?;
+        if revision == VfsCapRevision::V1 {
+            return_errno_with_message!(Errno::EINVAL, "v1 file capabilities cannot be written");
+        }
+        if revision == VfsCapRevision::V3
+            && FileCapabilities::read_v3_uid(raw_value)? == Uid::INVALID
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "v3 file capabilities contain an invalid root UID"
+            );
+        }
+
+        // With only the initial user namespace and no ID-mapped mounts, valid V2/V3 values use
+        // the same representation in the caller and filesystem namespaces.
+        //
+        // FIXME: Convert V2/V3 root IDs when user namespaces or ID-mapped mounts are supported.
+        // Reference: <https://elixir.bootlin.com/linux/v7.1/source/security/commoncap.c#L550>.
+        let mut value_reader = VmReader::from(raw_value).to_fallible();
+        path.set_xattr(xattr_name, &mut value_reader, flags, ctx)?;
+    }
     fs::vfs::notify::on_attr_change(&path);
     Ok(())
 }

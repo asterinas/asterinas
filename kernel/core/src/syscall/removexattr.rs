@@ -67,7 +67,7 @@ fn removexattr(
 
     match lookup_path_for_xattr(&file_ctx, ctx) {
         Ok(path) => {
-            path.remove_xattr(xattr_name)?;
+            path.remove_xattr(xattr_name, ctx)?;
             fs::vfs::notify::on_attr_change(&path);
             Ok(())
         }

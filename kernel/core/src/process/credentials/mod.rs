@@ -3,6 +3,7 @@
 pub(crate) mod c_types;
 pub(crate) mod capabilities;
 mod credentials_;
+mod file_capabilities;
 mod group;
 mod secure_bits;
 mod static_cap;
@@ -10,6 +11,7 @@ mod user;
 
 use aster_rights::FullOp;
 use credentials_::Credentials_;
+pub(crate) use file_capabilities::{FileCapabilities, VfsCapRevision};
 pub(crate) use group::Gid;
 pub(crate) use secure_bits::SecureBits;
 pub(crate) use user::Uid;

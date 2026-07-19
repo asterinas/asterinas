@@ -24,7 +24,7 @@ use crate::{
             file_system::{FileSystem, FsFlags},
             inode::{HardLinkability, Inode, Metadata, MknodType, RenameMode},
             registry::FsAndRoot,
-            xattr::{XattrName, XattrNamespace, XattrSetFlags},
+            xattr::{self, XattrName, XattrNamespace, XattrSetFlags},
         },
     },
     prelude::*,
@@ -745,9 +745,14 @@ impl Path {
         name: XattrName,
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
+        ctx: &Context,
     ) -> Result<()> {
         let inode = self.inode();
-        inode.check_permission(Permission::MAY_WRITE)?;
+        if name.full_name() == xattr::SECURITY_CAPABILITY_XATTR_NAME {
+            capable_modify_file_cap(inode.as_ref(), ctx)?;
+        } else {
+            inode.check_permission(Permission::MAY_WRITE)?;
+        }
         inode.set_xattr(name, value_reader, flags)
     }
 
@@ -770,9 +775,13 @@ impl Path {
         inode.list_xattr(namespace, list_writer)
     }
 
-    pub(crate) fn remove_xattr(&self, name: XattrName) -> Result<()> {
+    pub(crate) fn remove_xattr(&self, name: XattrName, ctx: &Context) -> Result<()> {
         let inode = self.inode();
-        inode.check_permission(Permission::MAY_WRITE)?;
+        if name.full_name() == xattr::SECURITY_CAPABILITY_XATTR_NAME {
+            capable_modify_file_cap(inode.as_ref(), ctx)?;
+        } else {
+            inode.check_permission(Permission::MAY_WRITE)?;
+        }
         inode.remove_xattr(name)
     }
 
@@ -782,6 +791,26 @@ impl Path {
         inode.check_permission(Permission::MAY_WRITE)?;
         inode.resize(size)
     }
+}
+
+fn capable_modify_file_cap(inode: &dyn Inode, ctx: &Context) -> Result<()> {
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        ctx.thread_local.borrow_user_ns().as_ref(),
+        ctx.posix_thread,
+        CapSet::SETFCAP,
+    ))?;
+
+    // With the currently supported identity user-namespace mapping, only invalid IDs are
+    // unmapped. Replace this with mount-idmap-aware namespace mapping checks when supported.
+    let metadata = inode.metadata()?;
+    if metadata.uid == Uid::INVALID || metadata.gid == Gid::INVALID {
+        return_errno_with_message!(
+            Errno::EPERM,
+            "the inode owner or group is not mapped in the current user namespace"
+        );
+    }
+
+    Ok(())
 }
 
 /// Checks if the file name is ".", indicating it's the current directory.
