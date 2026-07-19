@@ -916,7 +916,7 @@ impl WritableMappingStatus {
     pub fn map(&self) -> Result<()> {
         // Increase unless negative
         self.0
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
                 (v >= 0).then(|| v + 1)
             })
             .map_err(|_| Error::with_message(Errno::EPERM, "writable mappings have been denied"))?;
@@ -929,7 +929,7 @@ impl WritableMappingStatus {
     pub fn deny(&self) -> Result<()> {
         // Decrease unless positive
         self.0
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
                 (v <= 0).then_some(-1)
             })
             .map_err(|_| {
