@@ -11,6 +11,7 @@ mod user;
 
 use aster_rights::FullOp;
 use credentials_::Credentials_;
+pub(super) use credentials_::ExecCred;
 pub(crate) use file_capabilities::{FileCapabilities, VfsCapRevision};
 pub(crate) use group::Gid;
 pub(crate) use secure_bits::SecureBits;
