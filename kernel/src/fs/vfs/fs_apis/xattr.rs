@@ -5,6 +5,7 @@ use crate::prelude::*;
 pub const XATTR_NAME_MAX_LEN: usize = 255;
 pub const XATTR_VALUE_MAX_LEN: usize = 65536;
 pub const XATTR_LIST_MAX_LEN: usize = 65536;
+pub const SECURITY_CAPABILITY_XATTR_NAME: &str = "security.capability";
 
 /// Represents different namespaces with different capabilities
 /// for extended attributes (xattrs).

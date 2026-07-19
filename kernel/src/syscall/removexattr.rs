@@ -3,13 +3,16 @@
 use super::{
     SyscallReturn,
     setxattr::{
-        XattrFileCtx, check_xattr_namespace, lookup_path_for_xattr, parse_xattr_name,
-        read_xattr_name_cstr_from_user,
+        XattrFileCtx, capable_modify_file_cap, check_xattr_namespace, lookup_path_for_xattr,
+        parse_xattr_name, read_xattr_name_cstr_from_user,
     },
 };
 use crate::{
     fs,
-    fs::file::file_table::{RawFileDesc, get_file_fast},
+    fs::{
+        file::file_table::{RawFileDesc, get_file_fast},
+        vfs::xattr,
+    },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -59,7 +62,15 @@ fn removexattr(
 
     match lookup_path_for_xattr(&file_ctx, ctx) {
         Ok(path) => {
-            path.remove_xattr(xattr_name)?;
+            if xattr_name.full_name() == xattr::SECURITY_CAPABILITY_XATTR_NAME {
+                let inode = path.inode();
+                capable_modify_file_cap(inode.as_ref(), ctx)?;
+                // As with setting `security.capability`, Linux relies on the capability hook
+                // instead of ordinary DAC write permission for removal.
+                inode.remove_xattr(xattr_name)?;
+            } else {
+                path.remove_xattr(xattr_name)?;
+            }
             fs::vfs::notify::on_attr_change(&path);
             Ok(())
         }
