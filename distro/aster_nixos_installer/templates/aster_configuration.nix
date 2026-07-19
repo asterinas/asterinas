@@ -45,7 +45,7 @@
     aster_nixos = {
       kernel = lib.mkOption {
         type = lib.types.path;
-        default = "@aster-kernel@";
+        default = "@asterinas@";
         description = "The path to the kernel image.";
       };
       disable-systemd = lib.mkOption {

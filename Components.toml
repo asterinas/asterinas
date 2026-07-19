@@ -19,5 +19,3 @@ uart = { name = "aster-uart" }
 virtio = { name = "aster-virtio" }
 
 [whitelist]
-[whitelist.nix.main]
-main = true

@@ -27,9 +27,9 @@ virtio-net.pcap
 /result_*.json
 
 # profile results
-aster-kernel-profile-*.json
-aster-kernel-profile-*.folded
-aster-kernel-profile-*.svg
+asterinas-profile-*.json
+asterinas-profile-*.folded
+asterinas-profile-*.svg
 
 # distro results
 distro/result

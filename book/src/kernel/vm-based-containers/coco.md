@@ -202,11 +202,19 @@ cat /proc/cmdline
 cat /etc/alpine-release
 ```
 
-The `/proc/cmdline` output should contain the Asterinas kernel image path.
-Look for the keyword:
+The `/proc/cmdline` output should contain the Asterinas kernel image path. If
+you are using the kernel bundled in `asterinas/coco:0.18.0-20260603`, look for:
 
 ```text
 aster-kernel-osdk-bin
+```
+
+The pinned image tag predates this source-tree package rename and retains its
+documented old artifact name. If you configured a kernel built from the current
+source in Step 4, look for:
+
+```text
+asterinas-osdk-bin
 ```
 
 This is the most direct check that CoCo booted an Asterinas guest kernel.
@@ -240,14 +248,14 @@ Build the kernel and verify the output images:
 cd /root/asterinas && make kernel BOOT_METHOD=qemu-direct
 
 # Verify the regular build output
-ls /root/asterinas/target/osdk/aster-kernel-osdk-bin.qemu_elf
+ls /root/asterinas/target/osdk/asterinas-osdk-bin.qemu_elf
 
 # Build the TDX guest kernel (only needed for the CVM path)
 cd /root/asterinas && make kernel BOOT_METHOD=qemu-direct INTEL_TDX=1
 
 # Verify the TDX build output
 # (Note that the TDX kernel uses a bzImage format without the `.qemu_elf` extension.)
-ls /root/asterinas/target/osdk/aster-kernel-osdk-bin
+ls /root/asterinas/target/osdk/asterinas-osdk-bin
 ```
 
 Then adjust the CoCo runtime configuration to point to the locally built Asterinas kernel.
@@ -260,7 +268,7 @@ and set `kernel` under `[hypervisor.qemu]`:
 
 ```toml
 [hypervisor.qemu]
-kernel = "/root/asterinas/target/osdk/aster-kernel-osdk-bin.qemu_elf"
+kernel = "/root/asterinas/target/osdk/asterinas-osdk-bin.qemu_elf"
 ```
 
 For the TDX runtime, edit:
@@ -271,7 +279,7 @@ and set `kernel` under `[hypervisor.qemu]`:
 
 ```toml
 [hypervisor.qemu]
-kernel = "/root/asterinas/target/osdk/aster-kernel-osdk-bin"
+kernel = "/root/asterinas/target/osdk/asterinas-osdk-bin"
 ```
 
 The configuration takes effect immediately — no service restart is needed.

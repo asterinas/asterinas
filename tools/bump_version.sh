@@ -158,7 +158,7 @@ update_project_dependencies() {
     update_dep_version ${OSDK_CARGO_TOML_PATH} linux-bzimage-builder
 
     # Automatically bump Cargo.lock files
-    cargo update -p aster-kernel --precise $new_version # For Cargo.lock
+    cargo update -p asterinas --precise $new_version # For Cargo.lock
     cd ${OSDK_DIR} && cargo update -p cargo-osdk --precise $new_version # For osdk/Cargo.lock
     cd ${SCTRACE_DIR} && cargo update -p sctrace --precise $new_version # For tools/sctrace/Cargo.lock
 }

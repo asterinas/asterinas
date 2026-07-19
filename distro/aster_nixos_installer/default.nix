@@ -3,16 +3,16 @@
 , config-file-name ? "configuration.nix", target_platform ? "x86_64-linux"
 , pkgs ? import <nixpkgs> { } }:
 let
-  aster-kernel = builtins.path {
-    name = "aster-kernel-osdk-bin";
-    path = ../../target/osdk/iso_root/boot/aster-kernel-osdk-bin;
+  asterinas = builtins.path {
+    name = "asterinas-osdk-bin";
+    path = ../../target/osdk/iso_root/boot/asterinas-osdk-bin;
   };
   etc-nixos = builtins.path { path = ../etc_nixos; };
 
   aster_configuration = pkgs.replaceVarsWith {
     src = ./templates/aster_configuration.nix;
     replacements = {
-      aster-kernel = aster-kernel;
+      asterinas = asterinas;
       aster-disable-systemd = disable-systemd;
       aster-stage-2-hook = stage-2-hook;
       aster-log-level = log-level;
@@ -43,7 +43,7 @@ in pkgs.stdenv.mkDerivation {
     cp -L ${etc-nixos}/${config-file-name} $out/etc_nixos/configuration.nix
     cp -r ${etc-nixos}/modules $out/etc_nixos/modules
     cp -r ${etc-nixos}/overlays $out/etc_nixos/overlays
-    ln -s ${aster-kernel} $out/kernel
+    ln -s ${asterinas} $out/kernel
   '';
 }
 
