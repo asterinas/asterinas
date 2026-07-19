@@ -3,8 +3,8 @@
 use super::{
     SyscallReturn,
     setxattr::{
-        XattrFileCtx, check_xattr_namespace, lookup_path_for_xattr, parse_xattr_name,
-        read_xattr_name_cstr_from_user,
+        XattrFileCtx, check_file_cap_permission, check_xattr_namespace, lookup_path_for_xattr,
+        parse_xattr_name, read_xattr_name_cstr_from_user,
     },
 };
 use crate::{
@@ -56,6 +56,7 @@ fn removexattr(
     let name_str = name_cstr.to_string_lossy();
     let xattr_name = parse_xattr_name(name_str.as_ref())?;
     check_xattr_namespace(xattr_name.namespace(), ctx)?;
+    check_file_cap_permission(&xattr_name, ctx)?;
 
     match lookup_path_for_xattr(&file_ctx, ctx) {
         Ok(path) => {
