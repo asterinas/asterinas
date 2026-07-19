@@ -189,7 +189,6 @@ xarray = { path = "kernel/libs/xarray" }
 
 # Crates under kernel/libs/comp-sys
 component = { path = "kernel/libs/comp-sys/component" }
-controlled = { path = "kernel/libs/comp-sys/controlled" }
 
 # Crates under osdk/deps
 osdk-frame-allocator = { path = "osdk/deps/frame-allocator" }
