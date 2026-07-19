@@ -38,22 +38,22 @@
 /kernel/                        @StevenJiang1110 @lrh2000
 
 # Sub-system code owners
-/kernel/src/fs/                 @lucassong-mh
-/kernel/src/net/                @StevenJiang1110 @lrh2000
-/kernel/src/time/               @cchanging
-/kernel/src/vm/                 @cchanging @junyang-zh
+/kernel/core/src/fs/            @lucassong-mh
+/kernel/core/src/net/           @StevenJiang1110 @lrh2000
+/kernel/core/src/time/          @cchanging
+/kernel/core/src/vm/            @cchanging @junyang-zh
 
 # Component code owners
-/kernel/comps/block/            @lucassong-mh
-/kernel/comps/framebuffer/      @cqs21 @lrh2000
-/kernel/comps/i8042/            @cqs21 @lrh2000
-/kernel/comps/logger/           @cchanging
-/kernel/comps/mlsdisk/          @cqs21 @lucassong-mh
-/kernel/comps/network/          @StevenJiang1110 @lrh2000
-/kernel/comps/pci/              @sdww0
-/kernel/comps/softirq/          @cchanging
-/kernel/comps/time/             @cchanging
-/kernel/comps/virtio/           @sdww0
+/kernel/core/comps/block/       @lucassong-mh
+/kernel/core/comps/framebuffer/ @cqs21 @lrh2000
+/kernel/core/comps/i8042/       @cqs21 @lrh2000
+/kernel/core/comps/logger/      @cchanging
+/kernel/core/comps/mlsdisk/     @cqs21 @lucassong-mh
+/kernel/core/comps/network/     @StevenJiang1110 @lrh2000
+/kernel/core/comps/pci/         @sdww0
+/kernel/core/comps/softirq/     @cchanging
+/kernel/core/comps/time/        @cchanging
+/kernel/core/comps/virtio/      @sdww0
 
 # Library code owners
 /kernel/libs/aster-bigtcp/      @StevenJiang1110 @lrh2000
