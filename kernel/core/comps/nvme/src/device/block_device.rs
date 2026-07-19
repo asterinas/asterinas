@@ -5,7 +5,7 @@
 //! Implements the [`aster_block::BlockDevice`] trait on top of the NVMe transport.
 //! BIOs are staged in [`BioRequestSingleQueue`] and drained by repeated calls to
 //! [`NvmeBlockDevice::handle_requests`] from the kernel registry's per-device
-//! kthread (see `kernel/src/device/registry/block.rs`). Reads, writes, and flushes
+//! kthread (see `kernel/core/src/device/registry/block.rs`). Reads, writes, and flushes
 //! issue synchronously to I/O queue [`IO_QID`] and wait on a per-queue `WaitQueue` driven
 //! by the MSI-X completion interrupt.
 //!

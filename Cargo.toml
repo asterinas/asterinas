@@ -28,22 +28,22 @@ members = [
     "ostd/libs/padding-struct",
     "kernel",
     "kernel/core",
-    "kernel/comps/block",
-    "kernel/comps/cmdline",
-    "kernel/comps/console",
-    "kernel/comps/framebuffer",
-    "kernel/comps/i8042",
-    "kernel/comps/input",
-    "kernel/comps/logger",
-    "kernel/comps/mlsdisk",
-    "kernel/comps/network",
-    "kernel/comps/nvme",
-    "kernel/comps/pci",
-    "kernel/comps/softirq",
-    "kernel/comps/systree",
-    "kernel/comps/time",
-    "kernel/comps/uart",
-    "kernel/comps/virtio",
+    "kernel/core/comps/block",
+    "kernel/core/comps/cmdline",
+    "kernel/core/comps/console",
+    "kernel/core/comps/framebuffer",
+    "kernel/core/comps/i8042",
+    "kernel/core/comps/input",
+    "kernel/core/comps/logger",
+    "kernel/core/comps/mlsdisk",
+    "kernel/core/comps/network",
+    "kernel/core/comps/nvme",
+    "kernel/core/comps/pci",
+    "kernel/core/comps/softirq",
+    "kernel/core/comps/systree",
+    "kernel/core/comps/time",
+    "kernel/core/comps/uart",
+    "kernel/core/comps/virtio",
     "kernel/libs/aster-bigtcp",
     "kernel/libs/aster-fuse",
     "kernel/libs/aster-rights",
@@ -76,22 +76,22 @@ default-members = [
     "ostd",
     "kernel",
     "kernel/core",
-    "kernel/comps/block",
-    "kernel/comps/cmdline",
-    "kernel/comps/console",
-    "kernel/comps/framebuffer",
-    "kernel/comps/i8042",
-    "kernel/comps/input",
-    "kernel/comps/logger",
-    "kernel/comps/mlsdisk",
-    "kernel/comps/network",
-    "kernel/comps/nvme",
-    "kernel/comps/pci",
-    "kernel/comps/softirq",
-    "kernel/comps/systree",
-    "kernel/comps/time",
-    "kernel/comps/uart",
-    "kernel/comps/virtio",
+    "kernel/core/comps/block",
+    "kernel/core/comps/cmdline",
+    "kernel/core/comps/console",
+    "kernel/core/comps/framebuffer",
+    "kernel/core/comps/i8042",
+    "kernel/core/comps/input",
+    "kernel/core/comps/logger",
+    "kernel/core/comps/mlsdisk",
+    "kernel/core/comps/network",
+    "kernel/core/comps/nvme",
+    "kernel/core/comps/pci",
+    "kernel/core/comps/softirq",
+    "kernel/core/comps/systree",
+    "kernel/core/comps/time",
+    "kernel/core/comps/uart",
+    "kernel/core/comps/virtio",
     "kernel/libs/aster-bigtcp",
     "kernel/libs/aster-fuse",
     "kernel/libs/aster-util",
@@ -151,23 +151,23 @@ ostd-macros = { version = "0.18.0", path = "ostd/libs/ostd-macros" }
 ostd-pod = { path = "ostd/libs/ostd-pod", version = "0.4.0" }
 ostd-test = { version = "0.18.0", path = "ostd/libs/ostd-test" }
 
-# Crates under kernel/comps
-aster-block = { path = "kernel/comps/block" }
-aster-cmdline = { path = "kernel/comps/cmdline" }
-aster-console = { path = "kernel/comps/console" }
-aster-framebuffer = { path = "kernel/comps/framebuffer" }
-aster-i8042 = { path = "kernel/comps/i8042" }
-aster-input = { path = "kernel/comps/input" }
-aster-logger = { path = "kernel/comps/logger" }
-aster-mlsdisk = { path = "kernel/comps/mlsdisk" }
-aster-network = { path = "kernel/comps/network" }
-aster-nvme = { path = "kernel/comps/nvme" }
-aster-pci = { path = "kernel/comps/pci" }
-aster-softirq = { path = "kernel/comps/softirq" }
-aster-systree = { path = "kernel/comps/systree" }
-aster-time = { path = "kernel/comps/time" }
-aster-uart = { path = "kernel/comps/uart" }
-aster-virtio = { path = "kernel/comps/virtio" }
+# Crates under kernel/core/comps
+aster-block = { path = "kernel/core/comps/block" }
+aster-cmdline = { path = "kernel/core/comps/cmdline" }
+aster-console = { path = "kernel/core/comps/console" }
+aster-framebuffer = { path = "kernel/core/comps/framebuffer" }
+aster-i8042 = { path = "kernel/core/comps/i8042" }
+aster-input = { path = "kernel/core/comps/input" }
+aster-logger = { path = "kernel/core/comps/logger" }
+aster-mlsdisk = { path = "kernel/core/comps/mlsdisk" }
+aster-network = { path = "kernel/core/comps/network" }
+aster-nvme = { path = "kernel/core/comps/nvme" }
+aster-pci = { path = "kernel/core/comps/pci" }
+aster-softirq = { path = "kernel/core/comps/softirq" }
+aster-systree = { path = "kernel/core/comps/systree" }
+aster-time = { path = "kernel/core/comps/time" }
+aster-uart = { path = "kernel/core/comps/uart" }
+aster-virtio = { path = "kernel/core/comps/virtio" }
 
 # Crates under kernel/libs
 aster-bigtcp = { path = "kernel/libs/aster-bigtcp" }
