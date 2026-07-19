@@ -74,13 +74,24 @@ so you can grasp a rule from the table and open its full text only when needed.
 
 - **Framekernel:** The kernel is split into a safe upper half (`kernel/`)
   and an unsafe lower half (`ostd/`).
-  This is a hard architectural boundary — never add `unsafe` to `kernel/`.
-- **Components** (`kernel/comps/`): block, console, network, PCI, virtio, etc.
-  Each is a separate crate.
+  This is a hard architectural boundary: never add `unsafe` to `kernel/`.
+- **Assembler** (`kernel/`, crate `asterinas`): owns the OSDK entry point
+  and delegates boot to `aster_core::boot()`. Keep it limited to wiring.
+- **Core** (`kernel/core/`, crate `aster-core`): implements the Linux ABI
+  and the core kernel mechanisms. Its public API is available to crates above it.
+- **Low-level components** (`kernel/core/comps/`): initialization-bearing
+  crates that `aster-core` consumes by name. They must not depend on
+  `aster-core`.
+- **Planned high-level components** (`kernel/comps/`): the reserved location
+  for future components that depend on `aster-core`. This directory currently
+  contains no component crate, and generic selection and wiring are not yet
+  implemented.
+- **Libraries** (`kernel/libs/`): reusable crates outside the component
+  initialization graph.
 - **OSTD** (`ostd/`): memory management, page tables, interrupt handling,
   synchronization primitives, task scheduling, boot, and arch-specific code.
 - **Architectures:** x86-64 (primary), RISC-V 64, LoongArch 64.
-  Arch-specific code lives in `ostd/src/arch/` and `kernel/src/arch/`.
+  Arch-specific code lives in `ostd/src/arch/` and `kernel/core/src/arch/`.
 
 ## CI
 

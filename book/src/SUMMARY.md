@@ -29,6 +29,8 @@
 * [Advanced Build and Test Instructions](kernel/advanced-instructions.md)
     * [Intel TDX](kernel/intel-tdx.md)
 * [The Framekernel Architecture](kernel/the-framekernel-architecture.md)
+* [The Kernel's Crate Architecture](kernel/the-kernel-crate-architecture.md)
+    * [Components](kernel/the-approach/components.md)
 * [Linux Compatibility](kernel/linux-compatibility/README.md)
     * [Syscall Flag Coverage](kernel/linux-compatibility/syscall-flag-coverage/README.md)
         * [System Call Matching Language (SCML)](kernel/linux-compatibility/syscall-flag-coverage/system-call-matching-language.md)

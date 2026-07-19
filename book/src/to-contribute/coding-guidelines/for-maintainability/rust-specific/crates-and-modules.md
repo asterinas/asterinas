@@ -56,14 +56,49 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
 pub static I8042_CONTROLLER: ...
 ```
 
-Inside the `aster-kernel` crate, `pub(crate)` and `pub` are equivalent,
-as the crate has no downstream consumers.
-Prefer the shorter `pub`.
+In `aster-core`, do not assume that `pub` and `pub(crate)` are
+interchangeable. A private parent module may currently limit reachability, but
+a `pub` item is intended for an API that downstream component crates can use.
+Keep an item `pub(crate)` or narrower until an actual downstream consumer
+requires it, then expose and document the contract deliberately.
+
+The `asterinas` assembler is not a reusable API crate. Keep its entry point
+and component wiring private.
 
 See also:
 PR [#2951](https://github.com/asterinas/asterinas/pull/2951),
 [#2605](https://github.com/asterinas/asterinas/pull/2605#discussion_r2720506912),
 and [#3154](https://github.com/asterinas/asterinas/pull/3154#discussion_r3100905375).
+
+### Preserve the kernel crate dependency direction (`kernel-dependency-direction`) {#kernel-dependency-direction}
+
+Cargo dependencies must point down the kernel crate graph:
+the assembler may depend on high-level components,
+high-level components may depend on `aster-core`,
+and `aster-core` may depend on low-level components and libraries.
+A lower layer must not name a higher-layer crate.
+
+The high-level component layer is a rule for future migrations. The current
+tree has no high-level component and no generic assembler-level selection or
+wiring mechanism.
+
+When lower code needs behavior implemented above it,
+define the interface and registry in the lower layer
+and let the higher component register its implementation.
+Do not introduce a reverse Cargo dependency.
+
+### Place components relative to the core (`component-placement`) {#component-placement}
+
+For a future migration, put a component that needs `aster-core` APIs under
+`kernel/comps/`.
+Put an initialization-bearing component that the core consumes by name
+and that needs no core API under `kernel/core/comps/`.
+Put reusable code that does not participate in component initialization
+under `kernel/libs/`.
+
+Add code directly to `aster-core` only when code at or below the core
+must reach it by name and an interface cannot reasonably invert that edge.
+Explain that dependency requirement in the pull request.
 
 ### Qualify function calls with the parent module (`qualified-fn-imports`) {#qualified-fn-imports}
 

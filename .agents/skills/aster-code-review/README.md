@@ -40,7 +40,7 @@ This skill supports both Claude Code and Codex.
 
 - **Claude Code:** `/aster-code-review diff main review.md`,
   or just ask: *"Use aster-code-review to review what this branch added over main, into review.md."*
-- **Codex:** *"Use the aster-code-review skill to review kernel/src/sched/fair.rs into review.md."*
+- **Codex:** *"Use the aster-code-review skill to review kernel/core/src/sched/sched_class/fair.rs into review.md."*
 
 See [the interface spec](spec/interface.md) for the full argument semantics.
 
