@@ -25,10 +25,10 @@ pub enum BootMethod {
     GrubRescueIso,
     /// Boot the kernel by making a Qcow2 image with Grub as the bootloader.
     GrubQcow2,
-    /// Use the [QEMU direct boot](https://qemu-project.gitlab.io/qemu/system/linuxboot.html)
-    /// to boot the kernel with QEMU's built-in Seabios and Coreboot utilities.
+    /// Boot the kernel by supplying the kernel image directly to the VMM,
+    /// without a GRUB boot device.
     #[default]
-    QemuDirect,
+    VmmDirect,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -65,7 +65,7 @@ impl BootScheme {
         Boot {
             kcmdline,
             initramfs: self.initramfs,
-            method: self.method.unwrap_or(BootMethod::QemuDirect),
+            method: self.method.unwrap_or(BootMethod::VmmDirect),
         }
     }
 }
