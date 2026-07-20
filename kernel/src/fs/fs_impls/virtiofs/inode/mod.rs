@@ -46,6 +46,7 @@ use crate::{
             inode::{
                 Extension, FileOps, Inode, Metadata, RenameMode, RevalidationPolicy, SymbolicLink,
             },
+            path::Path,
         },
     },
     prelude::*,
@@ -342,6 +343,7 @@ impl Inode for VirtioFsInode {
 
     fn open(
         &self,
+        _path: &Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {

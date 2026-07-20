@@ -12,6 +12,7 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FileOps, Inode, Metadata},
+            path::Path,
         },
     },
     prelude::*,
@@ -98,6 +99,7 @@ impl Inode for AnonPipeInode {
 
     fn open(
         &self,
+        _path: &Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {

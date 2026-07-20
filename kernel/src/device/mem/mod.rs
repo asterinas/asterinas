@@ -26,11 +26,14 @@ pub use file::{getrandom, geturandom};
 use spin::Once;
 
 use super::{
-    Device, DeviceType, DevtmpfsInodeMeta,
+    Device, DeviceType,
     registry::char::{MajorIdOwner, acquire_major, register},
 };
 use crate::{
-    fs::file::{PerOpenFileOps, mkmod},
+    fs::{
+        devtmpfs::DevtmpfsInodeMeta,
+        file::{PerOpenFileOps, mkmod},
+    },
     prelude::*,
 };
 
@@ -62,7 +65,7 @@ impl Device for MemDevice {
         self.id
     }
 
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'static>> {
         // Linux's memory-device table uses nonzero modes only for devices
         // that override devtmpfs's default `u+rw` permissions.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/mem.c#L690>.

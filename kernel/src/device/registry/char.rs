@@ -7,8 +7,8 @@ use core::ops::Range;
 use device_id::{DeviceId, MajorId};
 
 use crate::{
-    device::{Device, DeviceType, add_node},
-    fs::vfs::path::PathResolver,
+    device::Device,
+    fs::devtmpfs::{self, DevtmpfsNode},
     prelude::*,
 };
 
@@ -21,22 +21,35 @@ pub fn register(device: Arc<dyn Device>) -> Result<()> {
     if registry.contains_key(&id) {
         return_errno_with_message!(Errno::EEXIST, "the char device already exists");
     }
-    registry.insert(id, device);
+    registry.insert(id, device.clone());
 
+    if let Some(meta) = device.devtmpfs_meta()
+        && let Err(error) =
+            devtmpfs::create_node(DevtmpfsNode::new(device.type_(), device.id(), meta))
+    {
+        registry.remove(&id);
+        return Err(error);
+    }
     Ok(())
 }
 
 /// Unregisters an existing char device, returning the device if found.
 pub fn unregister(id: DeviceId) -> Result<Arc<dyn Device>> {
-    DEVICE_REGISTRY
-        .lock()
+    let mut registry = DEVICE_REGISTRY.lock();
+    let device = registry
         .remove(&id.to_raw())
-        .ok_or_else(|| Error::with_message(Errno::ENOENT, "the char device does not exist"))
-}
+        .ok_or_else(|| Error::with_message(Errno::ENOENT, "the char device does not exist"))?;
 
-/// Collects all char devices.
-pub fn collect_all() -> Vec<Arc<dyn Device>> {
-    DEVICE_REGISTRY.lock().values().cloned().collect()
+    if let Some(meta) = device.devtmpfs_meta()
+        && let Err(error) =
+            devtmpfs::delete_node(DevtmpfsNode::new(device.type_(), device.id(), meta))
+    {
+        warn!(
+            "failed to delete devtmpfs node for char device {:?}: {:?}",
+            id, error
+        );
+    }
+    Ok(device)
 }
 
 /// Looks up a char device of a given device ID.
@@ -108,15 +121,4 @@ impl Drop for MajorIdOwner {
     fn drop(&mut self) {
         MAJORS.lock().remove(&self.0.get());
     }
-}
-
-pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> {
-    for device in collect_all() {
-        if let Some(devtmpfs_meta) = device.devtmpfs_meta() {
-            let dev_id = device.id().as_encoded_u64();
-            add_node(DeviceType::Char, dev_id, &devtmpfs_meta, path_resolver)?;
-        }
-    }
-
-    Ok(())
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::borrow::Cow;
+use core::str::FromStr;
 
 use cpio_decoder::{CpioDecoder, CpioEntry, FileMetadata, FileType};
 use device_id::{DeviceId, MajorId, MinorId};
@@ -10,41 +11,120 @@ use ostd::boot::boot_info;
 use zune_inflate::DeflateDecoder;
 
 use super::{
-    file::{InodeMode, InodeType},
-    vfs::path::{FsPath, PathResolver, is_dot},
+    ext2::Ext2,
+    file::{InodeMode, InodeType, mkmod},
+    vfs::{
+        file_system::FileSystem,
+        path::{FsPath, Mount, MountNamespace, PathResolver, PerMountFlags, is_dot},
+    },
 };
-use crate::{fs::vfs::inode::MknodType, prelude::*};
+use crate::{device::tty, fs::vfs::inode::MknodType, prelude::*, process::UserNamespace};
 
-/// Unpack and prepare the rootfs from the initramfs CPIO buffer.
-pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
-    let initramfs_buf = boot_info()
-        .initramfs
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "no initramfs found"))?;
-
-    let (reader, suffix) = match &initramfs_buf[..4] {
-        // Gzip magic number: 0x1F 0x8B
-        &[0x1F, 0x8B, _, _] => {
-            let decompressed = DeflateDecoder::new(initramfs_buf)
-                .decode_gzip()
-                .map_err(|_| Error::with_message(Errno::EINVAL, "gzip decompression failed"))?;
-            (Cow::Owned(decompressed), ".gz")
+macro_rules! define_rootfs_types {
+    ($($variant:ident => $name:literal),+ $(,)?) => {
+        /// Identifies a root filesystem type candidate.
+        pub enum RootFsType {
+            $($variant),+
         }
-        _ => (Cow::Borrowed(initramfs_buf), ""),
+
+        impl RootFsType {
+            /// Contains all supported root filesystem types.
+            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
+        }
+
+        impl FromStr for RootFsType {
+            type Err = core::convert::Infallible;
+
+            fn from_str(type_name: &str) -> Result<Self, Self::Err> {
+                match type_name {
+                    $($name => Ok(Self::$variant),)+
+                    _ => panic!("unsupported root filesystem type '{}'", type_name),
+                }
+            }
+        }
     };
+}
 
-    println!("[kernel] unpacking initramfs.cpio{} to rootfs ...", suffix);
+define_rootfs_types! {
+    Ext2 => "ext2",
+}
 
-    let mut decoder = CpioDecoder::new(Cursor::new(reader));
+pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
+    if let Some(initramfs_buf) = boot_info().initramfs {
+        // Unpack the initramfs CPIO buffer into the bootstrap rootfs.
+        let (reader, suffix) = match &initramfs_buf[..4] {
+            // Gzip magic number: 0x1F 0x8B
+            &[0x1F, 0x8B, _, _] => {
+                let decompressed = DeflateDecoder::new(initramfs_buf)
+                    .decode_gzip()
+                    .map_err(|_| Error::with_message(Errno::EINVAL, "gzip decompression failed"))?;
+                (Cow::Owned(decompressed), ".gz")
+            }
+            _ => (Cow::Borrowed(initramfs_buf), ""),
+        };
 
-    while let Some(entry_result) = decoder.next() {
-        let mut entry = entry_result?;
-        if let Err(e) = try_append_entry_to_rootfs(&mut entry, path_resolver) {
-            warn!("failed to add entry {} to rootfs: {:?}", entry.name(), e);
+        println!("[kernel] unpacking initramfs.cpio{} to rootfs ...", suffix);
+
+        let mut decoder = CpioDecoder::new(Cursor::new(reader));
+
+        while let Some(entry_result) = decoder.next() {
+            let mut entry = entry_result?;
+            if let Err(e) = try_append_entry_to_rootfs(&mut entry, path_resolver) {
+                warn!("failed to add entry {} to rootfs: {:?}", entry.name(), e);
+            }
         }
     }
 
+    ensure_dev_console(path_resolver)?;
+
     println!("[kernel] rootfs is ready");
     Ok(())
+}
+
+/// Mounts the specified block device as a root filesystem in a new mount namespace.
+pub fn mount(
+    root: &str,
+    rootfs_types: &[RootFsType],
+    mount_flags: PerMountFlags,
+) -> Result<Arc<MountNamespace>> {
+    // Treat `root=/dev/...` as a Linux-compatible root device spec, not as a
+    // VFS path lookup. Linux also mounts the root filesystem before
+    // auto-mounting devtmpfs on `/dev`.
+    // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/base/devtmpfs.c#L358-L359>.
+    let device_name = root
+        .strip_prefix("/dev/")
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "root must name a /dev block device"))?;
+    let device = aster_block::lookup_by_name(device_name)
+        .ok_or_else(|| Error::with_message(Errno::ENODEV, "root block device not found"))?;
+    let fs = open_rootfs_from_candidates(device, rootfs_types)?;
+
+    let owner = UserNamespace::get_init_singleton().clone();
+    let mount_namespace = MountNamespace::new_with_root(owner, |weak_ns| {
+        Mount::new_root_with_flags(fs, mount_flags, weak_ns.clone())
+    })?;
+    println!("[kernel] mounted {} as the root filesystem", root);
+    Ok(mount_namespace)
+}
+
+fn open_rootfs_from_candidates(
+    device: Arc<dyn aster_block::BlockDevice>,
+    rootfs_types: &[RootFsType],
+) -> Result<Arc<dyn FileSystem>> {
+    for rootfs_type in rootfs_types {
+        let result = match rootfs_type {
+            RootFsType::Ext2 => {
+                Ext2::open(device.clone(), None).map(|fs| fs as Arc<dyn FileSystem>)
+            }
+        };
+
+        match result {
+            Ok(fs) => return Ok(fs),
+            Err(err) if err.error() == Errno::EINVAL => continue,
+            Err(err) => return Err(err),
+        }
+    }
+
+    return_errno_with_message!(Errno::ENODEV, "no root filesystem type could mount root")
 }
 
 fn try_append_entry_to_rootfs<R: Read>(
@@ -116,4 +196,34 @@ fn try_device_id_from_metadata(metadata: &FileMetadata) -> Result<u64> {
     let minor = MinorId::try_from(metadata.rdev_min())
         .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?;
     Ok(DeviceId::new(major, minor).as_encoded_u64())
+}
+
+fn ensure_dev_console(path_resolver: &PathResolver) -> Result<()> {
+    // Linux's default built-in initramfs provides /dev and /dev/console so
+    // early userspace can open the console even if the external initramfs does
+    // not carry this node. Asterinas provides the same default entries after
+    // optional initramfs unpacking.
+    // Reference: <https://elixir.bootlin.com/linux/v6.13/source/usr/default_cpio_list>.
+    let dev_path = match path_resolver.lookup(&FsPath::try_from("/dev")?) {
+        Ok(dev_path) => dev_path,
+        Err(error) if error.error() == Errno::ENOENT => {
+            path_resolver
+                .root()
+                .new_fs_child("dev", InodeType::Dir, mkmod!(a+rx, u+w))?
+        }
+        Err(error) => return Err(error),
+    };
+
+    match path_resolver.lookup(&FsPath::try_from("/dev/console")?) {
+        Ok(_) => Ok(()),
+        Err(error) if error.error() == Errno::ENOENT => {
+            dev_path.mknod(
+                "console",
+                mkmod!(u+rw),
+                MknodType::CharDevice(tty::system_console_device_id().as_encoded_u64()),
+            )?;
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
 }

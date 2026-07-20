@@ -34,7 +34,9 @@ jobs:
       matrix:
         include:
           - { variant: 'handover64' }
+          - { variant: 'handover64-rootfs', rootfs_boot: true }
           - { variant: 'handover64-tap-smp4', netdev: 'tap', smp: 4 }
+          - { variant: 'handover64-tap-smp4-rootfs', netdev: 'tap', smp: 4, rootfs_boot: true }
     steps:
       - uses: actions/checkout@v4
       - name: Run TDX boot test (${{ matrix.variant }})
@@ -46,6 +48,7 @@ jobs:
           boot_protocol: 'linux-efi-handover64'
           netdev: ${{ matrix.netdev || 'tap' }}
           smp: ${{ matrix.smp }}
+          rootfs_boot: ${{ matrix.rootfs_boot }}
 
   regression-test:
     runs-on: self-hosted

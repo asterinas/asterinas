@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::format;
-
 use ostd::task::Task;
 
 use super::{PtySlave, driver::PtyDriver};
@@ -10,11 +8,8 @@ use crate::{
     events::IoEvents,
     fs::{
         devpts::Ptmx,
-        file::{
-            AccessMode, OpenArgs, PerOpenFileOps, SettableStatusFlags, StatusFlags,
-            file_table::FdFlags, mkmod,
-        },
-        vfs::{inode::FileOps, path::FsPath},
+        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags, file_table::FdFlags},
+        vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
     process::{
@@ -37,14 +32,19 @@ const IO_CAPACITY: usize = 4096;
 /// [`Tty`]: crate::device::tty::Tty
 pub struct PtyMaster {
     ptmx: Arc<Ptmx>,
+    devpts_root: Path,
     slave: Arc<PtySlave>,
 }
 
 impl PtyMaster {
-    pub(super) fn new(ptmx: Arc<Ptmx>, index: u32) -> Box<Self> {
+    pub(super) fn new(ptmx: Arc<Ptmx>, index: u32, devpts_root: Path) -> Box<Self> {
         let slave = PtySlave::new(index, PtyDriver::new());
 
-        Box::new(Self { ptmx, slave })
+        Box::new(Self {
+            ptmx,
+            devpts_root,
+            slave,
+        })
     }
 
     pub(super) fn slave(&self) -> &Arc<PtySlave> {
@@ -185,23 +185,11 @@ impl PerOpenFileOps for PtyMaster {
 
                 // TODO: Deal with `open()` flags.
                 let slave = {
-                    let fs_ref = thread_local.borrow_fs();
-                    let path_resolver = fs_ref.resolver().read();
-
-                    let slave_name = {
-                        let devpts_path = path_resolver
-                            .make_abs_path(super::DEV_PTS.get().unwrap())
-                            .into_string();
-                        format!("{}/{}", devpts_path, self.slave.index())
-                    };
-
-                    let fs_path = FsPath::try_from(slave_name.as_str())?;
-
-                    let inode_handle = {
-                        let open_args = OpenArgs::from_modes(AccessMode::O_RDWR, mkmod!(u+rw));
-                        path_resolver.lookup(&fs_path)?.open(open_args)?
-                    };
-                    Arc::new(inode_handle)
+                    let devpts = self
+                        .ptmx
+                        .devpts()
+                        .expect("devpts should outlive its ptmx inode");
+                    Arc::new(devpts.open_slave(self.slave.index(), &self.devpts_root)?)
                 };
 
                 let fd = {

@@ -146,7 +146,7 @@ pub struct PathResolver {
 
 impl PathResolver {
     /// Creates a new `PathResolver` with the given `root` and `cwd`.
-    pub(super) fn new(root: Path, cwd: Path) -> Self {
+    pub(in crate::fs) fn new(root: Path, cwd: Path) -> Self {
         Self { root, cwd }
     }
 

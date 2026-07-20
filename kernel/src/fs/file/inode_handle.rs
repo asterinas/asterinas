@@ -60,7 +60,7 @@ impl InodeHandle {
         } else if inode.type_() == InodeType::Dir && access_mode.is_writable() {
             return_errno_with_message!(Errno::EISDIR, "a directory cannot be opened writable");
         } else {
-            let open_file = inode.open(access_mode, status_flags).transpose()?;
+            let open_file = inode.open(&path, access_mode, status_flags).transpose()?;
             let rights = Rights::from(access_mode);
             (open_file, rights)
         };

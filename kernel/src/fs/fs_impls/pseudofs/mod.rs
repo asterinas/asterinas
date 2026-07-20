@@ -44,6 +44,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{Extension, FileOps, Inode, Metadata},
+            path::Path,
         },
     },
     prelude::*,
@@ -353,6 +354,7 @@ impl Inode for PseudoInode {
 
     fn open(
         &self,
+        _path: &Path,
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {

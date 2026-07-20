@@ -20,6 +20,8 @@ OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
 COVERAGE ?= 0
+INITRAMFS ?= on
+CMDLINE ?=
 
 # Specify the primary system console (supported: tty0, ttyS0, hvc0).
 # - tty0: The active virtual terminal (VT).
@@ -105,6 +107,9 @@ CARGO_OSDK_COMMON_ARGS :=
 CARGO_OSDK_BUILD_ARGS := --kcmd-args="loglevel=$(LOG_LEVEL)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="earlycon"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="console=$(CONSOLE)"
+ifneq ($(CMDLINE),)
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="$(CMDLINE)"
+endif
 CARGO_OSDK_TEST_ARGS :=
 
 ifeq ($(AUTO_TEST), conformance)
@@ -209,6 +214,11 @@ endif
 # Skip GZIP to make encoding and decoding of initramfs faster
 ifeq ($(INITRAMFS_SKIP_GZIP),1)
 CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(abspath test/initramfs/build/initramfs.cpio)
+else
+CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(abspath test/initramfs/build/initramfs.cpio.gz)
+endif
+
+ifeq ($(INITRAMFS),on)
 CARGO_OSDK_COMMON_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
 endif
 
@@ -261,16 +271,32 @@ check_vdso:
 
 .PHONY: initramfs
 initramfs: check_vdso
-	@$(MAKE) --no-print-directory -C test/initramfs
+	@$(MAKE) --no-print-directory -C test/initramfs initramfs-boot-images
+
+.PHONY: rootfs
+rootfs: check_vdso
+	@$(MAKE) --no-print-directory -C test/initramfs rootfs-boot-images
 
 # Build the kernel with an initramfs
 .PHONY: kernel
-kernel: initramfs $(CARGO_OSDK)
+kernel: $(CARGO_OSDK)
+ifeq ($(INITRAMFS),on)
+kernel: initramfs
+else
+kernel: rootfs
+endif
+kernel:
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
 
 # Build the kernel with an initramfs and then run it
 .PHONY: run_kernel
-run_kernel: initramfs $(CARGO_OSDK)
+run_kernel: $(CARGO_OSDK)
+ifeq ($(INITRAMFS),on)
+run_kernel: initramfs
+else
+run_kernel: rootfs
+endif
+run_kernel:
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), conformance)

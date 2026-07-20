@@ -124,6 +124,7 @@ impl<T: NsCommonOps> Inode for NsInode<T> {
 
     fn open(
         &self,
+        _path: &Path,
         access_mode: AccessMode,
         _status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {

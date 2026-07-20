@@ -17,6 +17,7 @@ use crate::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
                 RevalidationPolicy, SymbolicLink,
             },
+            path::Path,
         },
     },
     prelude::*,
@@ -596,6 +597,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn open(
         &self,
+        _path: &Path,
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
