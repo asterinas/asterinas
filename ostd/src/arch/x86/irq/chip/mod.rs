@@ -170,12 +170,14 @@ pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
     let acpi_tables = get_acpi_tables().unwrap();
     let madt_table = acpi_tables.find_table::<Madt>().unwrap();
 
-    // "A one indicates that the system also has a PC-AT-compatible dual-8259 setup. The 8259
-    // vectors must be disabled (that is, masked) when enabling the ACPI APIC operation"
-    const PCAT_COMPAT: u32 = 1;
-    if madt_table.get().flags & PCAT_COMPAT != 0 {
-        pic::init_and_disable();
-    }
+    // A dual-8259 PIC, if present, must be remapped and masked before enabling APIC operation, or
+    // its interrupts may be delivered alongside the I/O APIC's. The MADT PCAT_COMPAT flag is meant
+    // to indicate whether such a PIC is present, but it cannot be relied upon: a VMM may leave an
+    // uninitialized 8259 in place without setting the flag (e.g., Firecracker reports the flag as
+    // clear while KVM still provides a PIC whose reset-state vector offset is 0, so its IRQ 5 would
+    // arrive as the #BR exception). Remap and mask the PIC unconditionally; doing so on a system
+    // that has no PIC is harmless, since the writes to its I/O ports are simply ignored.
+    pic::init_and_disable();
 
     let mut io_apics = Vec::with_capacity(2);
     let mut isa_overrides = Vec::new();
