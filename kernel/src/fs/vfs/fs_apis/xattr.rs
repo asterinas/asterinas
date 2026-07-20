@@ -1,11 +1,57 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
+use crate::{
+    fs::{
+        file::{InodeMode, InodeType},
+        vfs::inode::Inode,
+    },
+    prelude::*,
+};
 
 pub const XATTR_NAME_MAX_LEN: usize = 255;
 pub const XATTR_VALUE_MAX_LEN: usize = 65536;
 pub const XATTR_LIST_MAX_LEN: usize = 65536;
 pub const SECURITY_CAPABILITY_XATTR_NAME: &str = "security.capability";
+
+/// Clears file privileges after an operation modifies file contents.
+pub fn clear_file_priv(inode: &dyn Inode) -> Result<()> {
+    if inode.type_() != InodeType::File {
+        return Ok(());
+    }
+
+    let xattr_name = XattrName::try_from_full_name(SECURITY_CAPABILITY_XATTR_NAME).unwrap();
+
+    // Avoid an xattr mutation when no file capability exists, matching Linux's
+    // `cap_inode_need_killpriv()`/`cap_inode_killpriv()` split.
+    let mut empty_writer = VmWriter::from([].as_mut_slice()).to_fallible();
+    let has_file_capabilities = match inode.get_xattr(xattr_name, &mut empty_writer) {
+        Ok(_) => true,
+        Err(error) if matches!(error.error(), Errno::ENODATA | Errno::EOPNOTSUPP) => false,
+        Err(error) => return Err(error),
+    };
+
+    if has_file_capabilities {
+        let xattr_name = XattrName::try_from_full_name(SECURITY_CAPABILITY_XATTR_NAME).unwrap();
+        match inode.remove_xattr(xattr_name) {
+            Ok(()) => Ok(()),
+            Err(error) if matches!(error.error(), Errno::ENODATA | Errno::EOPNOTSUPP) => Ok(()),
+            Err(error) => Err(error),
+        }?;
+    }
+
+    clear_set_id_bits(inode)
+}
+
+fn clear_set_id_bits(inode: &dyn Inode) -> Result<()> {
+    let mut mode = inode.mode()?;
+    let set_id_bits = InodeMode::S_ISUID | InodeMode::S_ISGID;
+    if !mode.intersects(set_id_bits) {
+        return Ok(());
+    }
+
+    mode.remove(set_id_bits);
+    inode.set_mode(mode)
+}
 
 /// Represents different namespaces with different capabilities
 /// for extended attributes (xattrs).
