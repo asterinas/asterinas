@@ -153,7 +153,7 @@ which are summarized in the table below.
 | 130     | rt_sigsuspend          | ✅             | 💯 |
 | 131     | sigaltstack            | ✅             | 💯 |
 | 132     | utime                  | ✅             | 💯 |
-| 133     | mknod                  | ✅             | 💯 |
+| 133     | mknod                  | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#mknod-and-mknodat) |
 | 134     | uselib                 | ❌             | N/A |
 | 135     | personality            | ❌             | N/A |
 | 136     | ustat                  | ❌             | N/A |
@@ -279,7 +279,7 @@ which are summarized in the table below.
 | 256     | migrate_pages          | ❌             | N/A |
 | 257     | openat                 | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#open-and-openat) |
 | 258     | mkdirat                | ✅             | 💯 |
-| 259     | mknodat                | ✅             | 💯 |
+| 259     | mknodat                | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#mknod-and-mknodat) |
 | 260     | fchownat               | ✅             | 💯 |
 | 261     | futimesat              | ✅             | 💯 |
 | 262     | newfstatat             | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#newfstatat) |

@@ -87,10 +87,6 @@ umask(mask);
 utime(path, times);
 utimes(path, times);
 
-// Create a filesystem node
-mknod(path, mode, dev);
-mknodat(dirfd, path, mode, dev);
-
 // Change timestamps of a file relative to a directory file descriptor
 futimesat(dirfd, path, times);
 
