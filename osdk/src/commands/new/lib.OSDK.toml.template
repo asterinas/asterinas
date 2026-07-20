@@ -1,7 +1,7 @@
 project_type = "library"
 
 [boot]
-method = "qemu-direct"
+method = "direct-elf"
 
 [qemu]
 args = """\
