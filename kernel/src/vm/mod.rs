@@ -38,3 +38,12 @@ pub fn mem_total() -> usize {
         .map(|region| region.len())
         .sum::<usize>()
 }
+
+/// Total memory (in bytes) committed to the kernel heap.
+///
+/// This includes both slab pages and large allocations managed by the kernel
+/// heap allocator. It replaces Linux's `Slab` / `SReclaimable` / `SUnreclaim`
+/// fields because Asterinas does not implement slab reclaim.
+pub fn mem_kernel_heap() -> usize {
+    osdk_heap_allocator::load_total_heap_size()
+}
