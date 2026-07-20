@@ -155,7 +155,6 @@ impl Path {
             && creation_flags.contains(CreationFlags::O_TRUNC)
             && !status_flags.contains(StatusFlags::O_PATH)
         {
-            inode.check_permission(Permission::MAY_WRITE)?;
             self.resize(0)?;
         }
 
@@ -752,9 +751,10 @@ impl Path {
         inode.remove_xattr(name)
     }
 
-    /// Resizes the file after the caller has authorized the operation.
+    /// Resizes the file.
     pub fn resize(&self, size: usize) -> Result<()> {
         let inode = self.inode();
+        inode.check_permission(Permission::MAY_WRITE)?;
         clear_file_priv(inode.as_ref())?;
         inode.resize(size)
     }

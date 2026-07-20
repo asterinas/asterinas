@@ -384,7 +384,9 @@ impl FileLike for InodeHandle {
             // FIXME: It's allowed to `ftruncate` an append-only file on Linux.
             return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
         }
-        self.path().resize(new_size)
+        let inode = self.path().inode();
+        clear_file_priv(inode.as_ref())?;
+        inode.resize(new_size)
     }
 
     fn settable_status_flags(&self) -> SettableStatusFlags {

@@ -5,6 +5,7 @@
 #include "../../common/capability.h"
 #include <fcntl.h>
 #include <linux/falloc.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
@@ -114,6 +115,39 @@ static char *create_exec_with_file_caps(const void *xattr_value,
 	CHECK(setxattr(exec_path, SECURITY_CAPABILITY_XATTR, xattr_value,
 		       xattr_size, 0));
 	return exec_path;
+}
+
+static mode_t setid_bits_after_child_pwrite(mode_t mode, gid_t file_gid,
+					    bool drop_fsetid,
+					    bool clear_supplementary_groups)
+{
+	char file_path[] = "/tmp/file_caps_setidXXXXXX";
+	struct stat stat_buf;
+	int fd = CHECK(mkstemp(file_path));
+	pid_t pid;
+	int status;
+
+	CHECK(fchown(fd, -1, file_gid));
+	CHECK(fchmod(fd, mode));
+
+	pid = CHECK(fork());
+	if (pid == 0) {
+		if (clear_supplementary_groups) {
+			CHECK(syscall(SYS_setgroups, 0, NULL));
+		}
+		if (drop_fsetid) {
+			drop_capability(CAP_FSETID);
+		}
+		CHECK_WITH(pwrite(fd, "\x7f", 1, 0), _ret == 1);
+		_exit(EXIT_SUCCESS);
+	}
+
+	CHECK_WITH(waitpid(pid, &status, 0), _ret == pid && WIFEXITED(status) &&
+						     WEXITSTATUS(status) == 0);
+	CHECK(fstat(fd, &stat_buf));
+	CHECK(close(fd));
+	CHECK(unlink(file_path));
+	return stat_buf.st_mode & (S_ISUID | S_ISGID);
 }
 
 FN_SETUP(child_path)
@@ -808,42 +842,15 @@ FN_TEST(file_caps_preserved_after_failed_open_trunc)
 }
 END_TEST()
 
-FN_TEST(file_caps_cleared_after_chown)
+FN_TEST(file_caps_setid_clearing_honors_fsetid_and_file_group)
 {
-	const struct ast_vfs_cap_data_v2 file_caps = {
-		.magic_etc = AST_VFS_CAP_REVISION_2 |
-			     AST_VFS_CAP_FLAGS_EFFECTIVE,
-		.permitted_low = 1U << CAP_NET_BIND_SERVICE,
-	};
-	char *exec_path =
-		create_exec_with_file_caps(&file_caps, sizeof(file_caps));
-
-	TEST_SUCC(chown(exec_path, nobody, -1));
-	TEST_ERRNO(getxattr(exec_path, SECURITY_CAPABILITY_XATTR, NULL, 0),
-		   ENODATA);
-
-	TEST_SUCC(unlink(exec_path));
-	free(exec_path);
-}
-END_TEST()
-
-FN_TEST(file_caps_cleared_after_fchown)
-{
-	const struct ast_vfs_cap_data_v2 file_caps = {
-		.magic_etc = AST_VFS_CAP_REVISION_2 |
-			     AST_VFS_CAP_FLAGS_EFFECTIVE,
-		.permitted_low = 1U << CAP_NET_BIND_SERVICE,
-	};
-	char *exec_path =
-		create_exec_with_file_caps(&file_caps, sizeof(file_caps));
-	int fd = TEST_SUCC(open(exec_path, O_RDONLY));
-
-	TEST_SUCC(fchown(fd, nobody, -1));
-	TEST_ERRNO(getxattr(exec_path, SECURITY_CAPABILITY_XATTR, NULL, 0),
-		   ENODATA);
-
-	TEST_SUCC(close(fd));
-	TEST_SUCC(unlink(exec_path));
-	free(exec_path);
+	TEST_RES(setid_bits_after_child_pwrite(06750, getegid(), false, false),
+		 _ret == (S_ISUID | S_ISGID));
+	TEST_RES(setid_bits_after_child_pwrite(06750, getegid(), true, false),
+		 _ret == 0);
+	TEST_RES(setid_bits_after_child_pwrite(02640, getegid(), true, false),
+		 _ret == S_ISGID);
+	TEST_RES(setid_bits_after_child_pwrite(02640, nobody, true, true),
+		 _ret == 0);
 }
 END_TEST()

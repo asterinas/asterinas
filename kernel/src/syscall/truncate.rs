@@ -4,10 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs,
     fs::{
-        file::{
-            Permission,
-            file_table::{RawFileDesc, get_file_fast},
-        },
+        file::file_table::{RawFileDesc, get_file_fast},
         utils::PATH_MAX,
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
@@ -42,7 +39,6 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<Syscal
             .read()
             .lookup(&fs_path)?
     };
-    dir_path.inode().check_permission(Permission::MAY_WRITE)?;
     dir_path.resize(len as usize)?;
     fs::vfs::notify::on_change(&dir_path);
     Ok(SyscallReturn::Return(0))
