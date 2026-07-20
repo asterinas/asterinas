@@ -23,6 +23,20 @@ VCPU=${VCPU:-2}
 MEM=${MEM:-1024}
 FC_CONFIG_FILE=${FC_CONFIG_FILE:-/tmp/fc-vm.json}
 
+do_install_fc()
+{
+    TARGETARCH=amd64
+    if [ "${TARGETARCH}" = "amd64" ]; then \
+        curl -L "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz" \
+        | tar -xz && \
+        mv -f release-v1.16.1-x86_64/firecracker-v1.16.1-x86_64 /usr/local/bin/firecracker && \
+        chmod +x /usr/local/bin/firecracker && \
+        rm -rf release-v1.16.1-x86_64; \
+    fi
+}
+
+do_install_fc >/dev/null 2>&1
+
 # Generate the VM configuration JSON as a side effect.
 cat > "$FC_CONFIG_FILE" << EOF
 {
