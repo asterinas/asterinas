@@ -5,6 +5,7 @@
 use core::{
     alloc::{AllocError, Layout},
     cell::RefCell,
+    sync::atomic::Ordering,
 };
 
 use ostd::{
@@ -292,7 +293,10 @@ pub struct HeapAllocator;
 impl GlobalHeapAllocator for HeapAllocator {
     fn alloc(&self, layout: Layout) -> Result<HeapSlot, AllocError> {
         let Some(class) = CommonSizeClass::from_layout(layout) else {
-            return HeapSlot::alloc_large(layout.size().div_ceil(PAGE_SIZE) * PAGE_SIZE);
+            let size = layout.size().div_ceil(PAGE_SIZE) * PAGE_SIZE;
+            let slot = HeapSlot::alloc_large(size)?;
+            crate::TOTAL_HEAP_ALLOCATED.fetch_add(size, Ordering::Relaxed);
+            return Ok(slot);
         };
 
         let irq_guard = irq::disable_local();
@@ -304,7 +308,9 @@ impl GlobalHeapAllocator for HeapAllocator {
 
     fn dealloc(&self, slot: HeapSlot) -> Result<(), AllocError> {
         let Some(class) = CommonSizeClass::from_size(slot.size()) else {
+            let size = slot.size();
             slot.dealloc_large();
+            crate::TOTAL_HEAP_ALLOCATED.fetch_sub(size, Ordering::Relaxed);
             return Ok(());
         };
 
