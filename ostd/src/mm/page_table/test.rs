@@ -260,7 +260,10 @@ mod range_checks {
     fn range_check() {
         let page_table = PageTable::<UserPtConfig>::empty();
         let valid_va = 0..PAGE_SIZE;
-        let invalid_va = 0..(PAGE_SIZE + 1);
+        let unalign_va = 0..(PAGE_SIZE + 1);
+        let empty_va = 0..0;
+        #[expect(clippy::reversed_empty_ranges)]
+        let overflow_va = PAGE_SIZE..0;
         let kernel_va = LINEAR_MAPPING_BASE_VADDR..(LINEAR_MAPPING_BASE_VADDR + PAGE_SIZE);
         let preempt_guard = disable_preempt();
 
@@ -268,7 +271,9 @@ mod range_checks {
         assert!(page_table.cursor_mut(&preempt_guard, &valid_va).is_ok());
 
         // Invalid ranges fail.
-        assert!(page_table.cursor_mut(&preempt_guard, &invalid_va).is_err());
+        assert!(page_table.cursor_mut(&preempt_guard, &unalign_va).is_err());
+        assert!(page_table.cursor_mut(&preempt_guard, &empty_va).is_err());
+        assert!(page_table.cursor_mut(&preempt_guard, &overflow_va).is_err());
         assert!(page_table.cursor_mut(&preempt_guard, &kernel_va).is_err());
     }
 
@@ -663,6 +668,38 @@ mod navigation {
     }
 
     #[ktest]
+    fn find_next_keeps_va_around_barrier() {
+        let page_table = PageTable::<TestPtConfig>::empty();
+        let preempt_guard = disable_preempt();
+
+        const HUGE_PAGE_SIZE: usize = PAGE_SIZE * 512; // 2M
+
+        const BARRIER_START: Vaddr = HUGE_PAGE_SIZE - PAGE_SIZE;
+        const BARRIER_END: Vaddr = HUGE_PAGE_SIZE + PAGE_SIZE;
+        const OUTSIDE: Vaddr = HUGE_PAGE_SIZE * 2;
+
+        unsafe {
+            page_table
+                .cursor_mut(&preempt_guard, &(OUTSIDE..OUTSIDE + PAGE_SIZE))
+                .unwrap()
+                .map((
+                    0,
+                    1,
+                    PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback),
+                ));
+        }
+
+        let mut cursor = page_table
+            .cursor(&preempt_guard, &(BARRIER_START..BARRIER_END))
+            .unwrap();
+
+        // The page table entry spans from `HUGE_PAGE_SIZE` to `HUGE_PAGE_SIZE * 2`,
+        // but `cursor.find_next()` should still stop at `BARRIER_END`.
+        assert!(cursor.find_next(BARRIER_END - BARRIER_START).is_none());
+        assert_eq!(cursor.virt_addr(), BARRIER_END);
+    }
+
+    #[ktest]
     #[should_panic(expected = "len exceeds remaining cursor range")]
     fn find_next_rejects_overflowing_len() {
         let (page_table, _, _) = setup_pt_with_two_mappings();
@@ -676,13 +713,6 @@ mod navigation {
         assert_eq!(cursor.virt_addr(), SECOND_MAP_ADDR);
 
         let overflow_len = 0usize.wrapping_sub(SECOND_MAP_ADDR);
-        assert_eq!(overflow_len % PAGE_SIZE, 0);
-        assert_eq!(
-            SECOND_MAP_ADDR.wrapping_add(overflow_len),
-            0,
-            "test setup: va + len must wrap to 0"
-        );
-
         let _ = cursor.find_next(overflow_len);
     }
 }

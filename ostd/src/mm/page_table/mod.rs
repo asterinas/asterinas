@@ -206,9 +206,7 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
     assert_eq!(va % C::BASE_PAGE_SIZE, 0);
     assert_eq!(pa % C::BASE_PAGE_SIZE, 0);
     assert_eq!(len % C::BASE_PAGE_SIZE, 0);
-
-    let end = va.checked_add(len).expect("va + len overflow");
-    assert!(is_valid_range::<C>(&(va..end)));
+    assert!(is_valid_range::<C>(&(va..(va + len))));
 
     core::iter::from_fn(move || {
         if len == 0 {
@@ -286,11 +284,7 @@ pub(super) const fn vaddr_range<C: PageTableConfig>() -> RangeInclusive<Vaddr> {
 /// Checks if the given range is covered by the valid range of the page table.
 const fn is_valid_range<C: PageTableConfig>(r: &Range<Vaddr>) -> bool {
     let va_range = vaddr_range::<C>();
-    if r.end == 0 {
-        r.start == 0
-    } else {
-        *va_range.start() <= r.start && r.end - 1 <= *va_range.end()
-    }
+    r.start < r.end && (*va_range.start() <= r.start && r.end - 1 <= *va_range.end())
 }
 
 // Here are some const values that are determined by the paging constants.
