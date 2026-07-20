@@ -73,6 +73,7 @@ macro_rules! import_generic_syscall_entries {
             lseek::sys_lseek,
             madvise::sys_madvise,
             memfd_create::sys_memfd_create,
+            mincore::sys_mincore,
             mkdir::sys_mkdirat,
             mknod::sys_mknodat,
             mmap::sys_mmap,
@@ -386,6 +387,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_FADVISE64 = 223              => sys_fadvise64(args[..4]);
             SYS_MPROTECT = 226               => sys_mprotect(args[..3]);
             SYS_MSYNC = 227                  => sys_msync(args[..3]);
+            SYS_MINCORE = 232                => sys_mincore(args[..3]);
             SYS_MADVISE = 233                => sys_madvise(args[..3]);
             SYS_ACCEPT4 = 242                => sys_accept4(args[..4]);
             SYS_WAIT4 = 260                  => sys_wait4(args[..4]);

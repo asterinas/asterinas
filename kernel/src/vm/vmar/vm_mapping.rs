@@ -232,6 +232,57 @@ impl VmMapping {
         cursor.map_iomem(io_mem, io_page_prop, self.map_size.get(), vmo_offset);
     }
 
+    /// Fills a `mincore` result vector for the specified sub-range.
+    pub fn fill_mincore_vec(
+        &self,
+        vm_space: &VmSpace,
+        range: Range<Vaddr>,
+        vec: &mut [u8],
+    ) -> Result<()> {
+        debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
+        debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
+        debug_assert!(range.start >= self.map_to_addr);
+        debug_assert!(range.end <= self.map_end());
+        debug_assert_eq!(range.len() / PAGE_SIZE, vec.len());
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = vm_space.cursor(&preempt_guard, &range)?;
+        let end_va = range.end;
+        let mut remain_size = range.len();
+        while let Some(mapped_va) = cursor.find_next(remain_size) {
+            let (va, Some(_item)) = cursor.query().unwrap() else {
+                panic!("Found mapped page but query failed");
+            };
+            debug_assert_eq!(mapped_va, va.start);
+
+            let idx = (mapped_va - range.start) / PAGE_SIZE;
+            vec[idx] = 1;
+
+            if mapped_va + PAGE_SIZE == end_va {
+                break;
+            }
+            cursor.jump(mapped_va + PAGE_SIZE).unwrap();
+            remain_size = end_va - cursor.virt_addr();
+        }
+
+        if let MappedMemory::Vmo(vmo) = &self.mapped_mem {
+            // For file-backed mappings, a page is considered resident
+            // if its page cache is already committed,
+            // even when the page is not mapped in the page table yet.
+            //
+            // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/mincore.c#L84>
+            for (idx, page_addr) in range.step_by(PAGE_SIZE).enumerate() {
+                if vec[idx] == 1 {
+                    continue;
+                }
+
+                vec[idx] = vmo.is_committed_frame(page_addr - self.map_to_addr).into();
+            }
+        }
+
+        Ok(())
+    }
+
     /// Prints the mapping information in the format of `/proc/[pid]/maps`.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/task_mmu.c#L304-L359>
@@ -900,6 +951,12 @@ impl MappedVmo {
         self.vmo
             .try_commit_page(self.offset + page_offset)
             .map(|frame| frame.into())
+    }
+
+    /// Returns whether there is a committed frame at the input offset in the mapped VMO.
+    fn is_committed_frame(&self, page_offset: usize) -> bool {
+        debug_assert!(page_offset.is_multiple_of(PAGE_SIZE));
+        self.vmo.is_committed_page(self.offset + page_offset)
     }
 
     /// Commits a page at a specific page index.
