@@ -4,10 +4,13 @@ use alloc::{boxed::Box, vec::Vec};
 use core::{
     fmt,
     ops::{Deref, DerefMut},
+    pin::Pin,
 };
 
+use acpi::madt::{Madt, MadtEntry};
 use ioapic::IoApic;
 use spin::Once;
+use x86_64::instructions::port::{PortGeneric, ReadOnlyAccess, WriteOnlyAccess};
 
 use crate::{
     Error, Result, arch::kernel::acpi::get_acpi_tables, info, io::IoMemAllocatorBuilder,
@@ -160,9 +163,53 @@ impl Drop for MappedIrqLine {
 /// The [`IrqChip`] singleton.
 pub static IRQ_CHIP: Once<IrqChip> = Once::new();
 
-pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
-    use acpi::madt::{Madt, MadtEntry};
+fn should_init_and_disable_pic(madt_table: Pin<&Madt>) -> bool {
+    // "A one indicates that the system also has a PC-AT-compatible dual-8259 setup. The 8259
+    // vectors must be disabled (that is, masked) when enabling the ACPI APIC operation."
+    const PCAT_COMPAT: u32 = 1;
+    if madt_table.flags & PCAT_COMPAT != 0 {
+        return true;
+    }
 
+    is_legacy_pic_present()
+}
+
+/// Detects whether a legacy 8259A PIC is present via I/O port probing.
+///
+/// If the I/O ports return the written mask value, we assume the PIC is present.
+/// This serves as a fallback when MADT does not declare `PCAT_COMPAT` but the hardware
+/// (e.g., in some Hypervisors like Firecracker) still emulates it.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/i8259.c#L306>
+fn is_legacy_pic_present() -> bool {
+    // Mask all except cascade (IRQ 2) on master IMR.
+    const PROBE_VAL: u8 = 0xFB;
+
+    unsafe {
+        // SAFETY: We are in early boot and writing to the legacy PIC ports (0x21, 0xA1) is safe
+        // as long as we verify they respond correctly.
+
+        // Mask slave PIC first to avoid interrupts during probe
+        let mut slave_port = PortGeneric::<u8, WriteOnlyAccess>::new(0xA1);
+        slave_port.write(0xFF);
+
+        // Mask master PIC except cascade (IRQ 2)
+        let mut master_write_port = PortGeneric::<u8, WriteOnlyAccess>::new(0x21);
+        master_write_port.write(PROBE_VAL);
+
+        // Read back from master PIC. If the port exists, it returns what we wrote.
+        // If it's a memory hole (no PIC), it usually returns 0xFF or 0x00.
+        let mut master_read_port = PortGeneric::<u8, ReadOnlyAccess>::new(0x21);
+        let read_val = master_read_port.read();
+
+        if read_val == PROBE_VAL {
+            return true;
+        }
+    }
+    false
+}
+
+pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
     // If there are no ACPI tables, or the ACPI tables do not provide us with information about
     // the I/O APIC, we may need to find another way to determine the I/O APIC address
     // correctly and reliably (e.g., by parsing the MultiProcessor Specification, which has
@@ -170,10 +217,7 @@ pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
     let acpi_tables = get_acpi_tables().unwrap();
     let madt_table = acpi_tables.find_table::<Madt>().unwrap();
 
-    // "A one indicates that the system also has a PC-AT-compatible dual-8259 setup. The 8259
-    // vectors must be disabled (that is, masked) when enabling the ACPI APIC operation"
-    const PCAT_COMPAT: u32 = 1;
-    if madt_table.get().flags & PCAT_COMPAT != 0 {
+    if should_init_and_disable_pic(madt_table.get()) {
         pic::init_and_disable();
     }
 
