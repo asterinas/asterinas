@@ -22,7 +22,9 @@ use crate::{
         pseudofs::NsInode,
         vfs::{
             file_system::{FileSystem, FsFlags},
-            inode::{HardLinkability, Inode, Metadata, MknodType, RenameMode},
+            inode::{
+                HardLinkability, Inode, Metadata, MknodType, RenameMode, resize as resize_inode,
+            },
             registry::FsAndRoot,
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -760,7 +762,7 @@ impl Path {
     pub fn resize(&self, size: usize) -> Result<()> {
         let inode = self.inode();
         inode.check_permission(Permission::MAY_WRITE)?;
-        inode.resize(size)
+        resize_inode(inode.as_ref(), size)
     }
 }
 
