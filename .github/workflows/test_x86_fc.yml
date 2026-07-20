@@ -1,0 +1,45 @@
+name: "Test x86-64 (Firecracker)"
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  boot-test:
+    runs-on: ubuntu-latest
+    container:
+      image: asterinas/asterinas:0.18.0-20260702
+      options: -v /dev:/dev --privileged
+    env:
+      FC_SERIAL_LOG: /var/log/fc-serial.log
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build kernel
+        run: make kernel BOOT_METHOD=direct-elf
+
+      - name: Run boot test with Firecracker
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'kill $FC_PID 2>/dev/null || true; wait $FC_PID 2>/dev/null || true' EXIT
+
+          firecracker $(./tools/firecracker_args.sh boot) > "$FC_SERIAL_LOG" 2>&1 &
+          FC_PID=$!
+
+          TIMEOUT=60
+          for i in $(seq 1 $TIMEOUT); do
+              if grep -q "^Entered userspace" "$FC_SERIAL_LOG" 2>/dev/null; then
+                  echo "Firecracker boot test passed"
+                  exit 0
+              fi
+              sleep 1
+          done
+
+          echo "Firecracker boot test failed (timeout)"
+          echo "--- Firecracker serial log ---"
+          cat "$FC_SERIAL_LOG"
+          exit 1
