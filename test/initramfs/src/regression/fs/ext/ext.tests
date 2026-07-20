@@ -1,0 +1,19 @@
+# Binaries the runner executes against /ext-test, one per line.
+# The host_seed entry only runs on the image cell seeded by the host
+# (the runner skips it elsewhere).
+fallocate
+file_io
+host_seed
+mknod
+namei
+open_dir
+open_unlink
+permissions
+readdir
+rename
+rmdir
+short_rw
+sparse
+symlink
+unix_socket
+xattr

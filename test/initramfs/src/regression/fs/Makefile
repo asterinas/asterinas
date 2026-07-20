@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 SUBDIRS := \
-	ext2 \
+	ext \
 	fdatasync \
 	getcwd \
 	inotify \

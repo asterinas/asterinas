@@ -8,9 +8,7 @@ pub mod thread_info;
 pub mod utils;
 pub mod vfs;
 
-pub use fs_impls::{
-    cgroupfs, configfs, devpts, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
-};
+pub use fs_impls::{cgroupfs, configfs, devpts, exfat, procfs, pseudofs, ramfs, sysfs, tmpfs};
 
 use crate::{
     fs::{

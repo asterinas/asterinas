@@ -82,6 +82,7 @@ impl IdBitmap {
     /// Allocates and returns a new `id`.
     ///
     /// If allocation is not possible, it returns `None`.
+    #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn alloc(&mut self) -> Option<u16> {
         if self.first_available_id < self.len {
             let id = self.first_available_id;
