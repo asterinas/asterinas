@@ -19,6 +19,7 @@ use crate::{
             inode_ext::InodeExt,
             path::Path,
             range_lock::{RangeLockItem, RangeLockOwner, RangeLockType},
+            xattr::clear_file_priv,
         },
     },
     prelude::*,
@@ -292,6 +293,9 @@ impl FileLike for InodeHandle {
         if !self.rights.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
+        if reader.remain() > 0 {
+            clear_file_priv(self.path().inode().as_ref())?;
+        }
 
         let (file_ops, is_offset_aware) = self.file_ops_and_is_offset_aware();
         let status_flags = self.status_flags();
@@ -330,6 +334,9 @@ impl FileLike for InodeHandle {
         let file_ops = self.file_ops_for_positional_io()?;
         if !self.rights.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
+        }
+        if reader.remain() > 0 {
+            clear_file_priv(self.path().inode().as_ref())?;
         }
 
         let status_flags = self.status_flags();
@@ -388,7 +395,9 @@ impl FileLike for InodeHandle {
             // FIXME: It's allowed to `ftruncate` an append-only file on Linux.
             return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
         }
-        self.path().inode().resize(new_size)
+        // `ftruncate` uses the descriptor's write mode and must not recheck current inode
+        // permissions. See <https://man7.org/linux/man-pages/man2/truncate.2.html>.
+        self.path().resize_unchecked_access(new_size)
     }
 
     fn settable_status_flags(&self) -> SettableStatusFlags {
@@ -468,6 +477,7 @@ impl FileLike for InodeHandle {
             );
         }
 
+        clear_file_priv(inode)?;
         inode.fallocate(mode, offset, len)
     }
 

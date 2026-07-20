@@ -740,6 +740,26 @@ impl Path {
     pub(crate) fn set_mtime(&self, time: Duration);
     pub(crate) fn ctime(&self) -> Duration;
     pub(crate) fn set_ctime(&self, time: Duration);
+    pub(crate) fn list_xattr(
+        &self,
+        namespace: XattrNamespace,
+        list_writer: &mut VmWriter,
+    ) -> Result<usize>;
+
+    /// Resizes the file.
+    pub(crate) fn resize(&self, size: usize) -> Result<()> {
+        self.inode().check_permission(Permission::MAY_WRITE)?;
+        self.resize_unchecked_access(size)
+    }
+
+    /// Resizes the file without permission checks.
+    pub(in crate::fs) fn resize_unchecked_access(&self, size: usize) -> Result<()> {
+        let inode = self.inode();
+        xattr::clear_file_priv(inode.as_ref())?;
+        inode.resize(size)
+    }
+
+    /// Sets an xattr of the file.
     pub(crate) fn set_xattr(
         &self,
         name: XattrName,
@@ -756,25 +776,14 @@ impl Path {
         inode.set_xattr(name, value_reader, flags)
     }
 
-    pub(crate) fn get_xattr(
-        &self,
-        name: XattrName,
-        value_writer: &mut VmWriter,
-    ) -> Result<usize> {
+    /// Gets an xattr of the file.
+    pub(crate) fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
         let inode = self.inode();
         inode.check_permission(Permission::MAY_READ)?;
         inode.get_xattr(name, value_writer)
     }
 
-    pub(crate) fn list_xattr(
-        &self,
-        namespace: XattrNamespace,
-        list_writer: &mut VmWriter,
-    ) -> Result<usize> {
-        let inode = self.inode();
-        inode.list_xattr(namespace, list_writer)
-    }
-
+    /// Removes an xattr of the file.
     pub(crate) fn remove_xattr(&self, name: XattrName, ctx: &Context) -> Result<()> {
         let inode = self.inode();
         if name.full_name() == xattr::SECURITY_CAPABILITY_XATTR_NAME {
@@ -783,13 +792,6 @@ impl Path {
             inode.check_permission(Permission::MAY_WRITE)?;
         }
         inode.remove_xattr(name)
-    }
-
-    /// Resizes the file.
-    pub(crate) fn resize(&self, size: usize) -> Result<()> {
-        let inode = self.inode();
-        inode.check_permission(Permission::MAY_WRITE)?;
-        inode.resize(size)
     }
 }
 
