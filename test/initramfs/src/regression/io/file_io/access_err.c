@@ -380,6 +380,39 @@ FN_TEST(truncation_requires_write_permission)
 }
 END_TEST()
 
+FN_TEST(ftruncate_after_write_permission_removed)
+{
+	struct stat st;
+	pid_t pid;
+	int status;
+	int fd;
+
+	/*
+	 * A writable file descriptor keeps its ftruncate authority after the
+	 * inode's write mode bits are removed.
+	 */
+	TEST_SUCC(chmod(FILENAME, 0666));
+	fd = TEST_SUCC(open(FILENAME, O_WRONLY));
+	TEST_SUCC(ftruncate(fd, 0));
+	TEST_SUCC(chmod(FILENAME, S_IRUSR | S_IRGRP));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_DAC_OVERRIDE);
+		CHECK(ftruncate(fd, 1));
+		CHECK(close(fd));
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+	TEST_SUCC(chmod(FILENAME, 0666));
+	TEST_RES(fstat(fd, &st), _ret == 0 && st.st_size == 1);
+	TEST_SUCC(close(fd));
+}
+END_TEST()
+
 FN_SETUP(unlink)
 {
 	CHECK(unlink(FILENAME));

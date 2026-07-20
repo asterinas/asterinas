@@ -1,11 +1,75 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
+use crate::{
+    fs::{
+        file::{InodeMode, InodeType},
+        vfs::inode::Inode,
+    },
+    prelude::*,
+    process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    security::lsm::hooks as lsm_hooks,
+};
 
 pub(crate) const XATTR_NAME_MAX_LEN: usize = 255;
 pub(crate) const XATTR_VALUE_MAX_LEN: usize = 65536;
 pub(crate) const XATTR_LIST_MAX_LEN: usize = 65536;
 pub(crate) const SECURITY_CAPABILITY_XATTR_NAME: &str = "security.capability";
+
+/// Clears file privileges after an operation modifies file contents.
+pub(in crate::fs) fn clear_file_priv(inode: &dyn Inode) -> Result<()> {
+    if inode.type_() != InodeType::File {
+        return Ok(());
+    }
+
+    let xattr_name = XattrName::try_from_full_name(SECURITY_CAPABILITY_XATTR_NAME).unwrap();
+    match inode.remove_xattr(xattr_name) {
+        Ok(()) => Ok(()),
+        Err(error) if matches!(error.error(), Errno::ENODATA | Errno::EOPNOTSUPP) => Ok(()),
+        Err(error) => Err(error),
+    }?;
+
+    clear_set_id_bits(inode)
+}
+
+fn clear_set_id_bits(inode: &dyn Inode) -> Result<()> {
+    let mut mode = inode.mode()?;
+    if !mode.intersects(InodeMode::S_ISUID | InodeMode::S_ISGID) {
+        return Ok(());
+    }
+
+    let current_thread = current_thread!();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
+
+    // Callers with `CAP_FSETID` may preserve both set-ID bits across content changes.
+    if lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        UserNamespace::get_init_singleton().as_ref(),
+        posix_thread,
+        CapSet::FSETID,
+    ))
+    .is_ok()
+    {
+        return Ok(());
+    }
+
+    let original_mode = mode;
+    mode.remove(InodeMode::S_ISUID);
+
+    if mode.contains(InodeMode::S_ISGID) {
+        let inode_gid = inode.group()?;
+        let credentials = posix_thread.credentials();
+        let retain_sgid = !mode.contains(InodeMode::S_IXGRP)
+            && (credentials.fsgid() == inode_gid || credentials.groups().contains(&inode_gid));
+
+        if !retain_sgid {
+            mode.remove(InodeMode::S_ISGID);
+        }
+    }
+
+    if mode == original_mode {
+        return Ok(());
+    }
+    inode.set_mode(mode)
+}
 
 /// Represents different namespaces with different capabilities
 /// for extended attributes (xattrs).
