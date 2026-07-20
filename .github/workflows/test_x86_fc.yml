@@ -39,4 +39,6 @@ jobs:
           done
 
           echo "Firecracker boot test failed (timeout)"
+          echo "--- Firecracker serial log ---"
+          cat "$FC_SERIAL_LOG"
           exit 1
