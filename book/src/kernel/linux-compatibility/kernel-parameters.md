@@ -16,6 +16,10 @@ rdinit=/bin/busybox
 Notes:
 - The value is the path to the executable in the initramfs root.
 - If omitted, Asterinas will try to execute `/init` from the initramfs root.
+- When an initramfs init is selected, either by `rdinit` or by the default
+  `/init` lookup, the kernel does not automatically mount `devtmpfs` on `/dev`.
+  The selected initramfs init program is responsible for mounting `devtmpfs`
+  and any required `devpts` and `/dev/shm` filesystems.
 
 ### `root`
 
@@ -33,7 +37,7 @@ Notes:
 - By default, the initramfs init is `/init`; `rdinit` overrides it with another
   path.
 - If the selected initramfs init is present, that program is responsible for
-  switching to the real root filesystem.
+  mounting device filesystems and switching to the real root filesystem.
 
 ### `rootfstype`
 
@@ -60,6 +64,9 @@ root=/dev/vda2 rootfstype=ext2 init=/nix/var/nix/profiles/system/init
 Notes:
 - `init` is used only after Asterinas mounts the real root filesystem via
   `root=`.
+- Before running the real-root init, Asterinas automatically mounts `devtmpfs`
+  on `/dev`. The real-root init is still responsible for mounting any required
+  `devpts` and `/dev/shm` filesystems.
 - If omitted, Asterinas tries `/sbin/init`, `/etc/init`, `/bin/init`, and
   `/bin/sh`, in that order.
 
