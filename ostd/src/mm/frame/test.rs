@@ -372,7 +372,7 @@ mod segment {
     }
 
     #[ktest]
-    #[should_panic]
+    #[should_panic(expected = "segment virtual address out-of-bound for splitting")]
     fn invalid_segment_split() {
         let total_frames = 2;
         let segment = FrameAllocOptions::new()
@@ -383,7 +383,7 @@ mod segment {
     }
 
     #[ktest]
-    #[should_panic]
+    #[should_panic(expected = "segment virtual address out-of-bound for slicing")]
     fn segment_slice_out_of_bounds() {
         let total_frames = 3;
         let segment = FrameAllocOptions::new()
