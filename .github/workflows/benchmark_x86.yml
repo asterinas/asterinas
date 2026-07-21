@@ -55,10 +55,12 @@ jobs:
           - lmbench/ext2_create_delete_files_0k_ops
           - lmbench/ext2_create_delete_files_10k_ops
           - lmbench/ext2_copy_files_bw
-          - fio/ext2_seq_write_bw
-          - fio/ext2_seq_read_bw
-          - fio/ext2_seq_write_bw_no_iommu
-          - fio/ext2_seq_read_bw_no_iommu
+          - fio/seq_write_bw/ext2
+          - fio/seq_read_bw/ext2
+          - fio/seq_write_bw/ext2_no_iommu
+          - fio/seq_read_bw/ext2_no_iommu
+          - fio/seq_write_bw/virtiofs
+          - fio/seq_read_bw/virtiofs
           # Loopback-related network benchmarks
           - lmbench/tcp_loopback_bw_128
           - lmbench/tcp_loopback_bw_4k
