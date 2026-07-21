@@ -239,8 +239,8 @@ run_one() { # <wt> <id> <mode> <co> <remote> <arg> <n_real> <n_neg>
     "$REVIEW_CMD" "$wt" "$off" "$skillargs --per-persona-context=no" >&2 || return 1
     [[ -s "$off" ]] || return 1
     read -r c t <<<"$("$GRADE_CMD" "$df" "$off")"
-    if [[ "${c:-}" =~ ^[0-9]+$ && "${t:-}" =~ ^[0-9]+$ && "$c" == "$t" && "$t" -gt 0 ]]; then
-        printf 'OFF %s %s\n' "$c" "$t"; return 0
+    if [[ "${c:-}" =~ ^[0-9]+$ && "${t:-}" =~ ^[0-9]+$ && "$c" -eq "$nreal" && "$nreal" -gt 0 ]]; then
+        printf 'OFF %s %s\n' "$c" "$nreal"; return 0
     fi
     on="$wt.on.md"; rm -f "$on"
     "$REVIEW_CMD" "$wt" "$on" "$skillargs --per-persona-context=yes" >&2 || return 1
@@ -266,13 +266,16 @@ while IFS=$'\t' read -r id mode co remote arg nreal nneg <&3; do
             [[ "$verdict" == *PASS* ]] && neg_pass=$((neg_pass + 1))
             printf '%-34s precision %s\n' "$id" "$verdict" ;;
         OFF\ *|ON\ *)
-            tier="${result%% *}"; read -r caught defects <<<"${result#* }"
-            if ! [[ "${caught:-}" =~ ^[0-9]+$ && "${defects:-}" =~ ^[0-9]+$ ]]; then
+            tier="${result%% *}"; read -r caught grader_total <<<"${result#* }"
+            if ! [[ "${caught:-}" =~ ^[0-9]+$ && "${grader_total:-}" =~ ^[0-9]+$ ]]; then
                 printf '%-34s recall  ?/?  (unparseable grader output: %q)\n' "$id" "$result"; harness_errors=$((harness_errors + 1)); continue
             fi
-            problems=$((problems + 1)); total_caught=$((total_caught + caught)); total_defects=$((total_defects + defects))
+            if [[ "$caught" -gt "$nreal" ]]; then
+                printf '%-34s recall  ?/?  (grader caught %s > expected %s)\n' "$id" "$caught" "$nreal"; harness_errors=$((harness_errors + 1)); continue
+            fi
+            problems=$((problems + 1)); total_caught=$((total_caught + caught)); total_defects=$((total_defects + nreal))
             if [[ "$tier" == OFF ]]; then off_ok=$((off_ok + 1)); label=combined; else escalated=$((escalated + 1)); label=fan-out; fi
-            printf '%-34s recall %s/%s [%s]\n' "$id" "$caught" "$defects" "$label" ;;
+            printf '%-34s recall %s/%s [%s]\n' "$id" "$caught" "$nreal" "$label" ;;
         *)  printf '%-34s recall  ?/?  (unexpected: %q)\n' "$id" "$result"; harness_errors=$((harness_errors + 1)) ;;
     esac
 done 3< <(emit)
