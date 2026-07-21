@@ -44,8 +44,8 @@ impl NetlinkRouteKernelSocket {
             )),
         };
 
-        let response = match response_segments {
-            Ok(segments) => RtnlMessage::new(segments),
+        let mut response_segments = match response_segments {
+            Ok(segments) => segments,
             Err(error) => {
                 // TODO: Deal with the `NetlinkMessageCommonFlags::ACK` flag.
                 // Should we return `ErrorSegment` if ACK flag does not exist?
@@ -56,9 +56,29 @@ impl NetlinkRouteKernelSocket {
             }
         };
 
-        debug!("netlink route response: {:?}", response);
+        // Modern Linux may place the `NLMSG_DONE` segment
+        // in the same message as the preceding segments,
+        // depending on the message type.
+        // Legacy Linux generally delivered the `NLMSG_DONE` segment
+        // in a separate message.
+        // We follow the legacy Linux behavior here because it is simpler.
+        // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/core/rtnetlink.c#L6870>.
+        let done_segments = if matches!(response_segments.last(), Some(RtnlSegment::Done(_))) {
+            response_segments.split_off(response_segments.len() - 1)
+        } else {
+            Vec::new()
+        };
 
-        NetlinkRouteProtocol::unicast(dst_port, response).unwrap();
+        for segments in [response_segments, done_segments] {
+            if segments.is_empty() {
+                continue;
+            }
+
+            let response = RtnlMessage::new(segments);
+            debug!("netlink route response: {:?}", response);
+
+            NetlinkRouteProtocol::unicast(dst_port, response).unwrap();
+        }
     }
 
     pub(super) fn report_error(&self, err_segment: ErrorSegment, dst_port: PortNum) {
