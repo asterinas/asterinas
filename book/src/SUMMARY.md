@@ -47,6 +47,7 @@
 * [VM-based Containers](kernel/vm-based-containers/README.md)
     * [Kata Containers](kernel/vm-based-containers/kata.md)
     * [Confidential Containers (CoCo)](kernel/vm-based-containers/coco.md)
+* [Debugging the Kernel with GDB](kernel/debugging-with-gdb.md)
 * [Roadmap](kernel/roadmap.md)
 
 # Asterinas OSTD

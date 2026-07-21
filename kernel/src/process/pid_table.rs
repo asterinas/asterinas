@@ -16,6 +16,7 @@ use crate::{
     thread::{Thread, Tid},
 };
 
+// COUPLED: scripts/gdb/helper/kernel.py
 static PID_TABLE: Mutex<PidTable> = Mutex::new(PidTable::new());
 
 /// The unified PID table.

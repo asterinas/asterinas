@@ -22,6 +22,7 @@ use crate::{
 ///
 /// For system performance reasons, this rate cannot be set too high, otherwise most of the time is
 /// spent in executing timer code.
+// COUPLED: scripts/gdb/helper/kernel.py
 pub const TIMER_FREQ: u64 = 1000;
 
 type InterruptCallback = Box<dyn Fn() + Sync + Send>;

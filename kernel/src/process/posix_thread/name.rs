@@ -2,6 +2,7 @@
 
 use crate::prelude::*;
 
+// COUPLED: scripts/gdb/helper/kernel.py
 pub const MAX_THREAD_NAME_LEN: usize = 16;
 
 #[derive(Clone, Debug)]

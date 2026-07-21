@@ -347,6 +347,10 @@ gdb_server: initramfs $(CARGO_OSDK)
 gdb_client: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk debug $(CARGO_OSDK_BUILD_ARGS) --remote :$(GDB_TCP_PORT)
 
+.PHONY: gdb-smoke-test
+gdb-smoke-test: kernel
+	@bash scripts/gdb/test/run_smoke.sh $(CARGO_OSDK_BUILD_ARGS)
+
 .PHONY: profile_server
 profile_server: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS) --gdb-server addr=:$(GDB_TCP_PORT)
