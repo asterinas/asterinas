@@ -18,6 +18,8 @@ macro_rules! __log_prefix {
 mod allocator;
 mod cpu_local_allocator;
 mod slab_cache;
+#[cfg(ktest)]
+mod test;
 
 pub use allocator::{HeapAllocator, type_from_layout};
 pub use cpu_local_allocator::{CpuLocalBox, alloc_cpu_local};

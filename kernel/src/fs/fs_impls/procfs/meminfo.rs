@@ -6,11 +6,7 @@
 //!
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_meminfo.5.html>
 //!
-//! TODO: Implement remaining /proc/meminfo fields:
-//!   P0: AnonPages, PageTables, KernelStack
-//!   P1: Buffers, Cached, Mapped, Active, Inactive, Shmem, DirectMap*
-//!   P2: Dirty, Writeback, KReclaimable
-//!   P3: LazyFree
+//! TODO: Implement remaining `/proc/meminfo` fields (AnonPages, PageTables, KernelStack, etc.).
 
 use aster_util::printer::VmPrinter;
 
