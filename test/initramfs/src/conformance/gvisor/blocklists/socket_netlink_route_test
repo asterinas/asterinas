@@ -25,7 +25,6 @@ NetlinkRouteTest.NonGetRequestsRequireCapNetAdmin
 NetlinkRouteTest.NoPasscredNoCreds
 NetlinkRouteTest.PasscredCreds
 NetlinkRouteTest.ProcNetDevStableAcrossCalls
-NetlinkRouteTest.RecvmsgTrunc
 NetlinkRouteTest.RemoveLinkByNameNotFound
 NetlinkRouteTest.SpliceFromPipe
 NetlinkRouteTest.VethAdd
