@@ -15,7 +15,11 @@ use ostd::{
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
-use super::{memfd::MemfdInode, xattr::RamXattr, *};
+use super::{
+    memfd::{FileSeals, MemfdInode},
+    xattr::RamXattr,
+    *,
+};
 use crate::{
     device::{self, DeviceType},
     fs::{
@@ -28,7 +32,7 @@ use crate::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{
                 Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
-                RenameMode, SymbolicLink,
+                RenameMode, SymbolicLink, WriteOffset,
             },
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
@@ -689,6 +693,196 @@ impl RamInode {
 
         self.inner.as_direntry().unwrap().write().set_parent(parent);
     }
+
+    pub(super) fn write_at(
+        &self,
+        offset: WriteOffset,
+        reader: &mut VmReader,
+        _status_flags: StatusFlags,
+        seals: Option<FileSeals>,
+    ) -> Result<usize> {
+        if self.typ != InodeType::File {
+            return_errno_with_message!(Errno::EISDIR, "write is not supported");
+        }
+
+        let page_cache = self.inner.as_file().unwrap().lock();
+        let mut inode_meta = self.metadata.lock();
+        let file_size = inode_meta.size;
+        let offset = offset.resolve(file_size);
+
+        if let Some(seals) = seals {
+            if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE) {
+                return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
+            }
+            if seals.contains(FileSeals::F_SEAL_GROW) {
+                let new_size = offset
+                    .checked_add(reader.remain())
+                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
+                if new_size > file_size {
+                    // For a memfd sealed with `F_SEAL_GROW`, if a write that would grow the file occurs,
+                    // the entire write within the page containing the EOF is rejected. Writes before
+                    // the EOF page are not affected.
+                    //
+                    // For detailed explanation, please see:
+                    // <https://github.com/asterinas/asterinas/pull/2555#discussion_r2509179520>
+                    //
+                    // Reference:
+                    // <https://elixir.bootlin.com/linux/v6.16.5/source/mm/shmem.c#L3309-L3310>
+                    // <https://github.com/google/gvisor/blob/6db745970118635edec4c973f47df2363924d3a7/test/syscalls/linux/memfd.cc#L261-L280>
+                    let eof_page = file_size.align_down(PAGE_SIZE);
+                    if offset >= eof_page {
+                        return_errno_with_message!(
+                            Errno::EPERM,
+                            "the file is sealed against growing"
+                        );
+                    }
+                    reader.limit(eof_page - offset);
+                }
+            }
+        }
+
+        let write_len = reader.remain();
+        let new_size = offset
+            .checked_add(write_len)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
+        let should_expand_size = new_size > file_size;
+        let new_size_aligned = new_size.align_up(BLOCK_SIZE);
+
+        let now = now();
+        inode_meta.set_mtime(now);
+        inode_meta.set_ctime(now);
+
+        if should_expand_size {
+            inode_meta.size = new_size;
+            inode_meta.blocks = new_size_aligned / BLOCK_SIZE;
+        }
+        drop(inode_meta);
+
+        if should_expand_size {
+            page_cache.resize(new_size_aligned, file_size)?;
+        }
+        page_cache.write(offset, reader)?;
+
+        Ok(write_len)
+    }
+
+    pub(super) fn resize(&self, new_size: usize, seals: Option<FileSeals>) -> Result<()> {
+        if self.typ == InodeType::Dir {
+            return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
+        }
+        if self.typ != InodeType::File {
+            return_errno_with_message!(Errno::EINVAL, "the inode is not a regular file");
+        }
+
+        let page_cache = self.inner.as_file().unwrap().lock();
+        let inode_meta = self.metadata.lock();
+        let file_size = inode_meta.size;
+
+        if let Some(seals) = seals {
+            if seals.contains(FileSeals::F_SEAL_SHRINK) && new_size < file_size {
+                return_errno_with_message!(Errno::EPERM, "the file is sealed against shrinking");
+            }
+            if seals.contains(FileSeals::F_SEAL_GROW) && new_size > file_size {
+                return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+            }
+        }
+
+        self.resize_file_locked(page_cache, inode_meta, file_size, new_size)
+    }
+
+    pub(super) fn fallocate(
+        &self,
+        mode: FallocMode,
+        offset: usize,
+        len: usize,
+        seals: Option<FileSeals>,
+    ) -> Result<()> {
+        if self.typ == InodeType::Dir {
+            return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
+        }
+        if self.typ != InodeType::File {
+            return_errno_with_message!(Errno::EINVAL, "the inode is not a regular file");
+        }
+
+        let end = offset
+            .checked_add(len)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "fallocate range overflow"))?;
+        let page_cache = self.inner.as_file().unwrap().lock();
+        let inode_meta = self.metadata.lock();
+        let file_size = inode_meta.size;
+
+        match mode {
+            FallocMode::Allocate => {
+                if let Some(seals) = seals
+                    && seals.contains(FileSeals::F_SEAL_GROW)
+                    && end > file_size
+                {
+                    return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+                }
+                if end <= file_size {
+                    return Ok(());
+                }
+                self.resize_file_locked(page_cache, inode_meta, file_size, end)
+            }
+            FallocMode::AllocateKeepSize => {
+                if let Some(seals) = seals
+                    && seals.contains(FileSeals::F_SEAL_GROW)
+                    && end > file_size
+                {
+                    return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+                }
+                Ok(())
+            }
+            FallocMode::PunchHoleKeepSize => {
+                if let Some(seals) = seals
+                    && seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE)
+                {
+                    return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
+                }
+                if offset >= file_size {
+                    return Ok(());
+                }
+                let range = offset..file_size.min(end);
+                drop(inode_meta);
+                page_cache.fill_zeros(range)
+            }
+            _ => {
+                return_errno_with_message!(
+                    Errno::EOPNOTSUPP,
+                    "fallocate with the specified flags is not supported"
+                );
+            }
+        }
+    }
+
+    fn resize_file_locked(
+        &self,
+        page_cache: MutexGuard<'_, PageCache>,
+        mut inode_meta: SpinLockGuard<'_, InodeMeta, PreemptDisabled>,
+        file_size: usize,
+        new_size: usize,
+    ) -> Result<()> {
+        if file_size == new_size {
+            return Ok(());
+        }
+
+        let now = now();
+        inode_meta.set_mtime(now);
+        inode_meta.set_ctime(now);
+
+        if new_size > file_size {
+            inode_meta.resize(new_size);
+            drop(inode_meta);
+            page_cache.resize(new_size, file_size)?;
+        } else {
+            drop(inode_meta);
+            page_cache.resize(new_size, file_size)?;
+            let mut inode_meta = self.metadata.lock();
+            inode_meta.resize(new_size);
+        }
+
+        Ok(())
+    }
 }
 
 impl FileOps for RamInode {
@@ -720,40 +914,11 @@ impl FileOps for RamInode {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
-        _status_flags: StatusFlags,
+        status_flags: StatusFlags,
     ) -> Result<usize> {
-        let written_len = match self.typ {
-            InodeType::File => {
-                let now = now();
-
-                let page_cache = self.inner.as_file().unwrap().lock();
-
-                let mut inode_meta = self.metadata.lock();
-                let file_size = inode_meta.size;
-                let write_len = reader.remain();
-                let new_size = offset + write_len;
-                let should_expand_size = new_size > file_size;
-                let new_size_aligned = new_size.align_up(BLOCK_SIZE);
-                inode_meta.set_mtime(now);
-                inode_meta.set_ctime(now);
-                if should_expand_size {
-                    inode_meta.size = new_size;
-                    inode_meta.blocks = new_size_aligned / BLOCK_SIZE;
-                }
-                drop(inode_meta);
-
-                if should_expand_size {
-                    page_cache.resize(new_size_aligned, file_size)?;
-                }
-                page_cache.write(offset, reader)?;
-
-                write_len
-            }
-            _ => return_errno_with_message!(Errno::EISDIR, "write is not supported"),
-        };
-        Ok(written_len)
+        self.write_at(offset, reader, status_flags, None)
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -786,34 +951,7 @@ impl Inode for RamInode {
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
-        if self.typ == InodeType::Dir {
-            return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
-        }
-        if self.typ != InodeType::File {
-            return_errno_with_message!(Errno::EINVAL, "the inode is not a regular file");
-        }
-
-        let page_cache = self.inner.as_file().unwrap().lock();
-        let mut inode_meta = self.metadata.lock();
-        let file_size = inode_meta.size;
-        if file_size == new_size {
-            return Ok(());
-        }
-        let now = now();
-        inode_meta.set_mtime(now);
-        inode_meta.set_ctime(now);
-
-        if new_size > file_size {
-            inode_meta.resize(new_size);
-            drop(inode_meta);
-            page_cache.resize(new_size, file_size)?;
-        } else {
-            drop(inode_meta);
-            page_cache.resize(new_size, file_size)?;
-            self.metadata.lock().resize(new_size);
-        }
-
-        Ok(())
+        self.resize(new_size, None)
     }
 
     fn atime(&self) -> Duration {
@@ -1294,35 +1432,7 @@ impl Inode for RamInode {
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        // The support for flags is consistent with Linux
-        match mode {
-            FallocMode::Allocate => {
-                let new_size = offset + len;
-                if new_size > self.size() {
-                    self.resize(new_size)?;
-                }
-                Ok(())
-            }
-            FallocMode::AllocateKeepSize => {
-                // Do nothing
-                Ok(())
-            }
-            FallocMode::PunchHoleKeepSize => {
-                let file_size = self.size();
-                if offset >= file_size {
-                    return Ok(());
-                }
-                let range = offset..file_size.min(offset + len);
-                // TODO: Think of a more light-weight approach
-                self.inner.as_file().unwrap().lock().fill_zeros(range)
-            }
-            _ => {
-                return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
-                    "fallocate with the specified flags is not supported"
-                );
-            }
-        }
+        self.fallocate(mode, offset, len, None)
     }
 
     fn extension(&self) -> &Extension {

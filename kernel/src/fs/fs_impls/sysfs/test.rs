@@ -16,7 +16,7 @@ use crate::{
         file::{InodeType, StatusFlags, mkmod},
         sysfs::{self, fs::SysFs},
         utils::DirentVisitor,
-        vfs::file_system::FileSystem,
+        vfs::{file_system::FileSystem, inode::WriteOffset},
     },
     prelude::*,
     time::clocks::init_for_ktest as time_init_for_ktest,
@@ -391,7 +391,7 @@ fn write_attr() {
     let new_val = "new_value";
     let mut reader = VmReader::from(new_val.as_bytes()).to_fallible();
     let bytes_written = rw_attr_inode
-        .write_at(0, &mut reader, StatusFlags::empty())
+        .write_at(WriteOffset::Absolute(0), &mut reader, StatusFlags::empty())
         .expect("write_at failed");
     assert_eq!(bytes_written, new_val.len());
 
@@ -406,12 +406,13 @@ fn write_attr() {
 
     // Write to r_attr1 (should fail - EIO expected from underlying PermissionDenied)
     let mut reader = VmReader::from("attempt_write".as_bytes()).to_fallible();
-    let result = r_attr_inode.write_at(0, &mut reader, StatusFlags::empty());
+    let result = r_attr_inode.write_at(WriteOffset::Absolute(0), &mut reader, StatusFlags::empty());
     assert!(result.is_err());
 
     // Writing to a directory should fail (expect EINVAL as per inode.rs)
     let mut reader = VmReader::from("attempt_write".as_bytes()).to_fallible();
-    let result = leaf1_dir_inode.write_at(0, &mut reader, StatusFlags::empty());
+    let result =
+        leaf1_dir_inode.write_at(WriteOffset::Absolute(0), &mut reader, StatusFlags::empty());
     assert!(result.is_err());
 }
 

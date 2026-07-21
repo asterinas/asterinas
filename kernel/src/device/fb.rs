@@ -13,7 +13,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{Mappable, PerOpenFileOps, StatusFlags},
-        vfs::inode::FileOps,
+        vfs::inode::{FileOps, WriteOffset},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -447,7 +447,7 @@ impl FileOps for FbHandle {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
@@ -457,6 +457,9 @@ impl FileOps for FbHandle {
 
         let io_mem = self.framebuffer.io_mem();
         let size = io_mem.size();
+        let WriteOffset::Absolute(offset) = offset else {
+            return_errno_with_message!(Errno::EINVAL, "append write is not supported");
+        };
         if offset >= size {
             return_errno_with_message!(
                 Errno::ENOSPC,

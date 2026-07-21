@@ -14,7 +14,10 @@ use crate::{
             AccessMode, OpenArgs, PerOpenFileOps, SettableStatusFlags, StatusFlags,
             file_table::FdFlags, mkmod,
         },
-        vfs::{inode::FileOps, path::FsPath},
+        vfs::{
+            inode::{FileOps, WriteOffset},
+            path::FsPath,
+        },
     },
     prelude::*,
     process::{
@@ -120,7 +123,7 @@ impl FileOps for PtyMaster {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {

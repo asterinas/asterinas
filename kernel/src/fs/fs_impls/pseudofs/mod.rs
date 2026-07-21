@@ -43,7 +43,7 @@ use crate::{
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            inode::{Extension, FileOps, Inode, Metadata},
+            inode::{Extension, FileOps, Inode, Metadata, WriteOffset},
         },
     },
     prelude::*,
@@ -251,7 +251,7 @@ impl FileOps for PseudoInode {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         _reader: &mut VmReader,
         _status: StatusFlags,
     ) -> Result<usize> {

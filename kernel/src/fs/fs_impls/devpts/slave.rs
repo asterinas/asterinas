@@ -51,7 +51,7 @@ impl FileOps for PtySlaveInode {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {

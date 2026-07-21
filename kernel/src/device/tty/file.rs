@@ -7,7 +7,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
-        vfs::inode::FileOps,
+        vfs::inode::{FileOps, WriteOffset},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -39,7 +39,7 @@ impl<D: TtyDriver> FileOps for TtyFile<D> {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {

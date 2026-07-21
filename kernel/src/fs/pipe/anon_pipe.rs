@@ -11,7 +11,7 @@ use crate::{
         pseudofs::{PipeFs, PseudoInode, PseudoInodeType},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata},
+            inode::{Extension, FileOps, Inode, Metadata, WriteOffset},
         },
     },
     prelude::*,
@@ -68,7 +68,7 @@ impl FileOps for AnonPipeInode {
     ) -> Result<usize>;
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         _reader: &mut VmReader,
         _status: StatusFlags,
     ) -> Result<usize>;
