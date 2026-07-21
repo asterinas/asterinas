@@ -335,7 +335,7 @@ impl Session {
             .send_line(&self.desc.exit_cmd)
             .map_err(Error::from)?;
 
-        self.pty_session.process.wait().map_err(Error::from)?;
+        self.pty_session.process().wait().map_err(Error::from)?;
 
         Ok(())
     }

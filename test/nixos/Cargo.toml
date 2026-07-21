@@ -16,7 +16,7 @@ proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "2.0", features = ["full"] }
 inventory = "0.3"
-rexpect = "0.6"
+rexpect = "0.7.1"
 strip-ansi-escapes = "0.2"
 uuid = { version = "1.18", features = ["v4"] }
 nixos-test-framework = { path = "common/framework" }
