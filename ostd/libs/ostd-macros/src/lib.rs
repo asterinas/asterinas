@@ -394,7 +394,7 @@ pub fn ktest(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let fn_name = &input.sig.ident;
     let fn_ktest_item_name = Ident::new(
-        &format!("{}_ktest_item_{}", &input.sig.ident, &fn_id),
+        &format!("{}_ktest_item_{}", input.sig.ident, fn_id),
         proc_macro2::Span::call_site(),
     );
 

@@ -287,7 +287,9 @@ impl Plic {
                         .property("interrupts-extended")
                         .expect("Failed to read 'interrupts-extended' property from PLIC node")
                         .value
-                        .chunks_exact(8)
+                        .as_chunks::<8>()
+                        .0
+                        .iter()
                         .enumerate()
                         .filter_map(|(idx, chunk)| {
                             let target = [

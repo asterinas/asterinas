@@ -973,6 +973,7 @@ impl<L: BlockLog> AppendDataBuf<L> {
         self.flush_node_queue()?;
         debug_assert!(self.node_queue.is_empty());
 
+        #[expect(clippy::drain_collect, reason = "keep `entry_queue`'s capacity")]
         let all_cached_entries: Vec<MhtNodeEntry> = self.entry_queue.drain(..).collect();
         self.start_pos += all_cached_entries.len();
         Ok(all_cached_entries)

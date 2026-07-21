@@ -522,7 +522,10 @@ mod test {
     use ostd::prelude::*;
 
     use super::*;
-    use crate::thread::{Thread, kernel_thread::ThreadOptions};
+    use crate::{
+        prelude::Result,
+        thread::{Thread, kernel_thread::ThreadOptions},
+    };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Ordering {
@@ -654,7 +657,7 @@ mod test {
         );
     }
 
-    fn read(reader: &dyn PerOpenFileOps, buf: &mut [u8]) -> crate::prelude::Result<usize> {
+    fn read(reader: &dyn PerOpenFileOps, buf: &mut [u8]) -> Result<usize> {
         reader.read_at(
             0,
             &mut VmWriter::from(buf).to_fallible(),
@@ -662,7 +665,7 @@ mod test {
         )
     }
 
-    fn write(writer: &dyn PerOpenFileOps, buf: &[u8]) -> crate::prelude::Result<usize> {
+    fn write(writer: &dyn PerOpenFileOps, buf: &[u8]) -> Result<usize> {
         writer.write_at(
             0,
             &mut VmReader::from(buf).to_fallible(),
