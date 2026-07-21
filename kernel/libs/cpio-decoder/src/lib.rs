@@ -96,11 +96,12 @@ where
 
 /// A file entry in the CPIO.
 #[derive(Debug)]
-pub struct CpioEntry<'a, R> {
+pub struct CpioEntry<'a, R: Read> {
     metadata: FileMetadata,
     name: String,
     reader: &'a mut R,
-    data_padding_len: usize,
+    // The entry's data (plus padding) that has not been consumed yet.
+    unread_data: usize,
 }
 
 impl<'a, R> CpioEntry<'a, R>
@@ -108,7 +109,7 @@ where
     R: Read,
 {
     fn new(reader: &'a mut R) -> Result<Self> {
-        let (metadata, name, data_padding_len) = {
+        let (metadata, name) = {
             let header = Header::new(reader)?;
             let name = {
                 let name_size = read_hex_bytes_to_u32(&header.name_size)? as usize;
@@ -123,22 +124,23 @@ where
             } else {
                 FileMetadata::new(&header)?
             };
-            let data_padding_len = {
-                let header_padding_len = align_up_pad(header.len() + name.len() + 1, 4);
-                if header_padding_len > 0 {
-                    let mut pad_buf = vec![0u8; header_padding_len];
-                    reader.read_exact(&mut pad_buf)?;
-                }
-                align_up_pad(metadata.size() as usize, 4)
-            };
+            // The header (and file name) is padded up to a 4-byte boundary
+            // before the file data begins.
+            let header_padding_len = align_up_pad(header.len() + name.len() + 1, 4);
+            if header_padding_len > 0 {
+                let mut pad_buf = vec![0u8; header_padding_len];
+                reader.read_exact(&mut pad_buf)?;
+            }
 
-            (metadata, name, data_padding_len)
+            (metadata, name)
         };
+        // The data and its padding are unconsumed until `read_all` (or drop).
+        let unread_data = metadata.size() as usize + align_up_pad(metadata.size() as usize, 4);
         Ok(Self {
             metadata,
             name,
             reader,
-            data_padding_len,
+            unread_data,
         })
     }
 
@@ -158,6 +160,7 @@ where
         W: Write,
     {
         let data_len = self.metadata().size() as usize;
+        let data_padding_len = align_up_pad(data_len, 4);
         let mut send_len = 0;
         let mut buffer = vec![0u8; 0x1000];
         while send_len < data_len {
@@ -165,16 +168,35 @@ where
             self.reader.read_exact(&mut buffer[..len])?;
             writer.write_all(&buffer[..len])?;
             send_len += len;
+            self.unread_data -= len;
         }
-        if self.data_padding_len > 0 {
-            self.reader
-                .read_exact(&mut buffer[..self.data_padding_len])?;
+        if data_padding_len > 0 {
+            self.reader.read_exact(&mut buffer[..data_padding_len])?;
+            self.unread_data -= data_padding_len;
         }
         Ok(())
     }
 
     pub fn is_trailer(&self) -> bool {
         self.name == TRAILER_NAME
+    }
+}
+
+impl<R: Read> Drop for CpioEntry<'_, R> {
+    /// Skips any data the caller did not read, leaving the reader aligned to the
+    /// next header. `read_all` keeps `unread_data` accurate even on a partial
+    /// read, so this never over-skips. On a read error the stream cannot be
+    /// realigned, so it stops; the next `next()` observes the desynchronized
+    /// stream and reports it.
+    fn drop(&mut self) {
+        let mut buffer = [0u8; 0x1000];
+        while self.unread_data > 0 {
+            let chunk = min(buffer.len(), self.unread_data);
+            if self.reader.read_exact(&mut buffer[..chunk]).is_err() {
+                break;
+            }
+            self.unread_data -= chunk;
+        }
     }
 }
 

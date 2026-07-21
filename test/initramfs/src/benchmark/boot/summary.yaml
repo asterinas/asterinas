@@ -1,0 +1,4 @@
+benchmarks:
+  - boot_lat
+  - boot_lat_100mb
+  - boot_lat_500mb

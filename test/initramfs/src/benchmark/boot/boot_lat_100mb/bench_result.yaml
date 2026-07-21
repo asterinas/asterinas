@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 150%
+chart:
+  description: 'Boot latency with a ~100mb-padded initramfs (measured via /proc/uptime)'
+  legend: 'Boot latency (~100mb pad) on {system}'
+  title: '[Boot] Boot latency (~100mb pad)'
+  unit: sec
+result_extraction:
+  result_index: 3
+  search_pattern: 'Boot time: [0-9.]+'

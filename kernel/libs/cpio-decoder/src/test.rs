@@ -32,13 +32,12 @@ fn decoder() {
 
     let mut decoder = CpioDecoder::new(buffer.as_slice());
     // 1st entry must be the root entry
-    let entry = {
-        let entry_result = decoder.next().unwrap();
-        entry_result.unwrap()
-    };
-    assert_eq!(entry.name(), manifest_path.as_os_str());
-    assert!(entry.metadata().file_type() == FileType::Dir);
-    assert!(entry.metadata().ino() > 0);
+    {
+        let entry = decoder.next().unwrap().unwrap();
+        assert_eq!(entry.name(), manifest_path.as_os_str());
+        assert!(entry.metadata().file_type() == FileType::Dir);
+        assert!(entry.metadata().ino() > 0);
+    }
 
     // Other entries
     while let Some(decode_result) = decoder.next() {

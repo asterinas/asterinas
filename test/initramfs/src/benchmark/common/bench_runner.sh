@@ -44,6 +44,7 @@ prepare_system() {
     if [ "$SYSTEM" = "linux" ]; then
         # Mount necessary fs
         mount -t devtmpfs devtmpfs /dev
+        mount -t proc proc /proc
         # Enable network
         ip link set lo up
         ip link set eth0 up
