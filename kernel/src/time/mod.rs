@@ -179,3 +179,15 @@ pub struct timezone_t {
     pub tz_minuteswest: i32,
     pub tz_dsttime: i32,
 }
+
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub(super) fn sleep_for(duration: Duration) {
+    use crate::time::clocks::MonotonicClock;
+    let waiter = ostd::sync::Waiter::new_pair().0;
+    let timer_manager = MonotonicClock::timer_manager();
+    let timeout = wait::ManagedTimeout::new_with_manager(
+        timer::Timeout::After(duration),
+        timer_manager,
+    );
+    let _ = waiter.wait_until_or_timeout(|| None::<()>, timeout);
+}

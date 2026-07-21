@@ -157,6 +157,16 @@ fn init_in_first_kthread(path_resolver: &PathResolver) {
     crate::fs::init_in_first_kthread(path_resolver);
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     crate::vdso::init_in_first_kthread();
+
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    ostd::mm::frame::spawn_background_accept_worker(
+        |task_fn| {
+            ThreadOptions::new(task_fn).spawn();
+        },
+        |duration: core::time::Duration| {
+            crate::time::sleep_for(duration);
+        },
+    );
 }
 
 fn print_banner() {

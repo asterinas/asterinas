@@ -52,6 +52,13 @@ impl ProcFileOps for MemInfoFileOps {
         writeln!(printer, "SwapTotal:\t0 kB")?;
         writeln!(printer, "SwapFree:\t0 kB")?;
 
+        #[cfg(feature = "cvm_guest")]
+        writeln!(
+            printer,
+            "Unaccepted:\t{} kB",
+            ostd::mm::frame::load_total_unaccepted_bytes() / 1024
+        )?;
+
         Ok(printer.bytes_written())
     }
 }

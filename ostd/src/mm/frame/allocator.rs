@@ -6,7 +6,11 @@ use core::{alloc::Layout, ops::Range};
 
 use align_ext::AlignExt;
 
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+use super::unaccepted;
 use super::{Frame, meta::AnyFrameMeta, segment::Segment};
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+use crate::if_tdx_enabled;
 use crate::{
     boot::memory_region::MemoryRegionType,
     error::Error,
@@ -53,10 +57,9 @@ impl FrameAllocOptions {
     /// Allocates a single frame with additional metadata.
     pub fn alloc_frame_with<M: AnyFrameMeta>(&self, metadata: M) -> Result<Frame<M>> {
         let single_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-        let frame = get_global_frame_allocator()
-            .alloc(single_layout)
-            .map(|paddr| Frame::from_unused(paddr, metadata).unwrap())
-            .ok_or(Error::NoMemory)?;
+        let paddr = alloc_usable_memory(single_layout)?;
+
+        let frame = Frame::from_unused(paddr, metadata).unwrap();
 
         if self.zeroed {
             let addr = paddr_to_vaddr(frame.paddr()) as *mut u8;
@@ -87,13 +90,11 @@ impl FrameAllocOptions {
         if nframes == 0 {
             return Err(Error::InvalidArgs);
         }
-        let layout = Layout::from_size_align(nframes * PAGE_SIZE, PAGE_SIZE).unwrap();
-        let segment = get_global_frame_allocator()
-            .alloc(layout)
-            .map(|start| {
-                Segment::from_unused(start..start + nframes * PAGE_SIZE, metadata_fn).unwrap()
-            })
-            .ok_or(Error::NoMemory)?;
+        let total_size = nframes * PAGE_SIZE;
+        let layout = Layout::from_size_align(total_size, PAGE_SIZE).unwrap();
+        let start = alloc_usable_memory(layout)?;
+
+        let segment = Segment::from_unused(start..start + total_size, metadata_fn).unwrap();
 
         if self.zeroed {
             let addr = paddr_to_vaddr(segment.paddr()) as *mut u8;
@@ -212,6 +213,19 @@ pub(crate) unsafe fn init() {
             // Truncate the early allocated frames if there is an overlap.
             for r1 in range_difference(&(region.base()..region.end()), &range_1) {
                 for r2 in range_difference(&r1, &range_2) {
+                    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+                    if matches!(
+                        if_tdx_enabled!({
+                            unaccepted::try_defer_usable_memory(r2.start, r2.len())
+                        } else {
+                            unaccepted::DeferOutcome::NotUnaccepted
+                        }),
+                        unaccepted::DeferOutcome::Deferred
+                    ) {
+                        crate::info!("Deferring unaccepted frames from usable range: {:x?}", r2);
+                        continue;
+                    }
+
                     crate::info!("Adding free frames to the allocator: {:x?}", r2);
                     get_global_frame_allocator().add_free_memory(r2.start, r2.len());
                 }
@@ -302,12 +316,31 @@ impl EarlyFrameAllocator {
             (&mut self.under_4g_end, self.under_4g_range.end),
             (&mut self.max_end, self.max_range.end),
         ] {
-            let allocated = tail.align_up(align);
-            if let Some(allocated_end) = allocated.checked_add(size)
-                && allocated_end <= end
-            {
-                *tail = allocated_end;
-                return Some(allocated);
+            let mut cursor = *tail;
+            while cursor < end {
+                let allocated = cursor.align_up(align);
+                let Some(allocated_end) = allocated.checked_add(size) else {
+                    break;
+                };
+                if allocated_end > end {
+                    break;
+                }
+
+                #[cfg(feature = "cvm_guest")]
+                let ready = super::accept_unaccepted_memory(allocated, size).is_ok();
+                #[cfg(not(feature = "cvm_guest"))]
+                let ready = true;
+
+                if ready {
+                    *tail = allocated_end;
+                    return Some(allocated);
+                }
+
+                let Some(next_cursor) = allocated.checked_add(PAGE_SIZE) else {
+                    break;
+                };
+                *tail = next_cursor;
+                cursor = next_cursor;
             }
         }
 
@@ -356,6 +389,44 @@ pub(crate) fn early_alloc(layout: Layout) -> Option<Paddr> {
 ///
 /// This function should be called only once after the memory regions are ready.
 pub(crate) unsafe fn init_early_allocator() {
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    if_tdx_enabled!({ unaccepted::init() });
     let mut early_allocator = EARLY_ALLOCATOR.lock();
     *early_allocator = Some(EarlyFrameAllocator::new());
+}
+
+fn alloc_usable_memory(layout: Layout) -> Result<Paddr> {
+    let paddr = get_global_frame_allocator()
+        .alloc(layout)
+        .or_else(|| try_alloc_after_refill(layout))
+        .ok_or(Error::NoMemory)?;
+
+    #[cfg(feature = "cvm_guest")]
+    {
+        super::accept_unaccepted_memory(paddr, layout.size()).map_err(|_| Error::NoMemory)?;
+    }
+
+    Ok(paddr)
+}
+
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+fn try_alloc_after_refill(layout: Layout) -> Option<Paddr> {
+    crate::if_tdx_enabled!({
+        match unaccepted::try_refill_for_allocation(layout) {
+            Ok(true) => get_global_frame_allocator().alloc(layout),
+            Ok(false) => None,
+            Err(err) => {
+                crate::warn!("Adaptive refill failed: {:?}", err);
+                None
+            }
+        }
+    } else {
+        None
+    })
+}
+
+#[cfg(not(all(target_arch = "x86_64", feature = "cvm_guest")))]
+fn try_alloc_after_refill(layout: Layout) -> Option<Paddr> {
+    let _ = layout;
+    None
 }
