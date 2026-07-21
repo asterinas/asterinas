@@ -2,18 +2,23 @@
 
 //! Kernel virtual memory allocation
 
+use alloc::sync::Arc;
 use core::ops::Range;
 
 use self::allocator::kvirt_area_allocator;
 use super::{KERNEL_PAGE_TABLE, KernelPtConfig, MappedItem};
 use crate::{
+    cpu::{AtomicCpuSet, CpuSet},
     irq,
     mm::{
         HasSize, PAGE_SIZE, Paddr, Split, Vaddr,
         frame::{Frame, meta::AnyFrameMeta},
         page_prop::PageProperty,
-        page_table::largest_pages,
+        page_table::{PageTableFrag, largest_pages},
+        tlb::{TlbFlushOp, TlbFlusher},
     },
+    sync::RcuDrop,
+    task::disable_preempt,
 };
 
 mod allocator {
@@ -35,6 +40,22 @@ mod allocator {
     /// disabled. This requires extra care.
     pub(super) fn kvirt_area_allocator(_guard: &DisabledLocalIrqGuard) -> &RangeAllocator {
         &KVIRT_AREA_ALLOCATOR
+    }
+}
+
+/// Frees a kvirt range on drop; a flusher holds it until the flush completes.
+struct KVirtRangeReclaim(Range<Vaddr>);
+
+impl KVirtRangeReclaim {
+    fn new(range: Range<Vaddr>) -> Arc<Self> {
+        Arc::new(Self(range))
+    }
+}
+
+impl Drop for KVirtRangeReclaim {
+    fn drop(&mut self) {
+        let guard = irq::disable_local();
+        kvirt_area_allocator(&guard).free(self.0.clone());
     }
 }
 
@@ -202,21 +223,51 @@ impl KVirtArea {
 impl Drop for KVirtArea {
     fn drop(&mut self) {
         let irq_guard = irq::disable_local();
-
-        // 1. Unmap all mapped pages.
-        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let range = self.start()..self.end();
-        let mut cursor = page_table.cursor_mut(&irq_guard, &range).unwrap();
-        loop {
-            // SAFETY: The range is under `KVirtArea` so it is safe to unmap.
-            // FIXME: Need to ensure that the unmapped item outlives the TLB entries.
-            let Some(frag) = (unsafe { cursor.take_next(self.end() - cursor.virt_addr()) }) else {
-                break;
-            };
-            drop(frag);
+
+        // The kernel page table is shared, so any CPU may hold stale entries.
+        let target_cpus = AtomicCpuSet::new(CpuSet::new_full());
+        let mut flusher = TlbFlusher::new(&target_cpus, disable_preempt());
+
+        // 1. Unmap all pages, keeping the items alive until the flush completes.
+        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+        {
+            let mut cursor = page_table.cursor_mut(&irq_guard, &range).unwrap();
+            loop {
+                // SAFETY: The range is under `KVirtArea` so it is safe to unmap.
+                let Some(frag) = (unsafe { cursor.take_next(self.end() - cursor.virt_addr()) })
+                else {
+                    break;
+                };
+                match frag {
+                    PageTableFrag::Mapped { va, item } => {
+                        // SAFETY: The item is kept alive until the flush completes.
+                        let (item, panic_guard) = unsafe { RcuDrop::into_inner(item) };
+                        match item {
+                            MappedItem::Tracked(frame, _) => {
+                                let rcu_frame = RcuDrop::new(frame);
+                                panic_guard.forget();
+                                flusher.issue_tlb_flush_with(TlbFlushOp::for_single(va), rcu_frame);
+                            }
+                            MappedItem::Untracked(..) => {
+                                panic_guard.forget();
+                                flusher.issue_tlb_flush(TlbFlushOp::for_single(va));
+                            }
+                        }
+                    }
+                    PageTableFrag::StrayPageTable { pt, va, len, .. } => {
+                        flusher.issue_tlb_flush_with(
+                            TlbFlushOp::for_range(va..va + len),
+                            Frame::rcu_from_unsized(pt),
+                        );
+                    }
+                }
+            }
         }
 
-        // 2. Free the virtual block.
-        kvirt_area_allocator(&irq_guard).free(range);
+        // 2. Free the range once the flush completes.
+        let keep = KVirtRangeReclaim::new(range.start..range.end);
+        flusher.issue_tlb_flush_with_resource(TlbFlushOp::for_range(range), keep);
+        flusher.dispatch_tlb_flush();
     }
 }

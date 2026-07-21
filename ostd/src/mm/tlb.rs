@@ -2,7 +2,7 @@
 
 //! TLB flush operations.
 
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 use core::{
     mem::MaybeUninit,
     ops::Range,
@@ -76,6 +76,14 @@ impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
         drop_after_flush: RcuDrop<Frame<dyn AnyFrameMeta>>,
     ) {
         self.ops_stack.push(op, Some(drop_after_flush));
+    }
+
+    /// Issues a flush that keeps `keep` alive until it completes.
+    ///
+    /// Like [`Self::issue_tlb_flush_with`], but for an arbitrary resource
+    /// (e.g. a freed virtual address range) instead of a frame.
+    pub fn issue_tlb_flush_with_resource(&mut self, op: TlbFlushOp, keep: Arc<dyn Send + Sync>) {
+        self.ops_stack.push_resource(op, keep);
     }
 
     /// Dispatches all the pending TLB flush requests.
@@ -309,6 +317,8 @@ struct OpsStack {
     /// The elements cannot be modified after being pushed. And they must be
     /// dropped after the RCU grace period and the TLB flushes.
     frame_keeper: Vec<Frame<dyn AnyFrameMeta>>,
+    /// Like `frame_keeper`, but for arbitrary resources.
+    resource_keeper: Vec<Arc<dyn Send + Sync>>,
 }
 
 impl OpsStack {
@@ -318,6 +328,7 @@ impl OpsStack {
             num_ops: 0,
             num_pages_to_flush: 0,
             frame_keeper: Vec::new(),
+            resource_keeper: Vec::new(),
         }
     }
 
@@ -337,7 +348,15 @@ impl OpsStack {
             self.frame_keeper.push(frame);
             panic_guard.forget();
         }
+        self.account_op(op);
+    }
 
+    fn push_resource(&mut self, op: TlbFlushOp, keep: Arc<dyn Send + Sync>) {
+        self.resource_keeper.push(keep);
+        self.account_op(op);
+    }
+
+    fn account_op(&mut self, op: TlbFlushOp) {
         if self.need_flush_all() {
             return;
         }
@@ -357,6 +376,8 @@ impl OpsStack {
 
     fn push_from(&mut self, other: &OpsStack) {
         self.frame_keeper.extend(other.frame_keeper.iter().cloned());
+        self.resource_keeper
+            .extend(other.resource_keeper.iter().cloned());
 
         if self.need_flush_all() {
             return;
@@ -395,6 +416,9 @@ impl OpsStack {
         if !self.frame_keeper.is_empty() {
             let _ = RcuDrop::new(core::mem::take(&mut self.frame_keeper));
         }
+        if !self.resource_keeper.is_empty() {
+            let _ = RcuDrop::new(core::mem::take(&mut self.resource_keeper));
+        }
     }
 
     fn ops_iter(&self) -> impl Iterator<Item = &TlbFlushOp> {
@@ -409,6 +433,9 @@ impl Drop for OpsStack {
     fn drop(&mut self) {
         if !self.frame_keeper.is_empty() {
             let _ = RcuDrop::new(core::mem::take(&mut self.frame_keeper));
+        }
+        if !self.resource_keeper.is_empty() {
+            let _ = RcuDrop::new(core::mem::take(&mut self.resource_keeper));
         }
     }
 }
