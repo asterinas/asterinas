@@ -42,12 +42,7 @@ impl core::fmt::Display for MountEntry<'_> {
         write!(
             f,
             "{} {} {} {} {} {}",
-            &self.source,
-            &self.mount_point,
-            &self.fs_type,
-            &self.mount_flags,
-            &self.dump,
-            &self.pass,
+            self.source, self.mount_point, self.fs_type, self.mount_flags, self.dump, self.pass,
         )
     }
 }

@@ -81,12 +81,11 @@ fn read_seed_from(
 ) -> Option<<StdRng as SeedableRng>::Seed> {
     let mut seed = <StdRng as SeedableRng>::Seed::default();
 
-    let mut chunks = seed.as_mut().chunks_exact_mut(size_of::<u64>());
-    for chunk in chunks.by_ref() {
+    let (chunks, tail) = seed.as_mut().as_chunks_mut::<{ size_of::<u64>() }>();
+    for chunk in chunks {
         let val = next_random()?;
         chunk.copy_from_slice(&val.to_ne_bytes());
     }
-    let tail = chunks.into_remainder();
     if !tail.is_empty() {
         let val = next_random()?;
         tail.copy_from_slice(&val.to_ne_bytes()[..tail.len()]);

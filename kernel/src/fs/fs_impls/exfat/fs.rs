@@ -3,7 +3,11 @@
 #![expect(dead_code)]
 #![expect(unused_variables)]
 
-use core::{num::NonZeroUsize, ops::Range, sync::atomic::AtomicU64};
+use core::{
+    num::NonZeroUsize,
+    ops::Range,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use aster_block::{
     BlockDevice,
@@ -126,8 +130,7 @@ impl ExfatFs {
     }
 
     pub(super) fn alloc_inode_number(&self) -> Ino {
-        self.highest_inode_number
-            .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+        self.highest_inode_number.fetch_add(1, Ordering::Relaxed)
     }
 
     pub(super) fn find_opened_inode(&self, hash: usize) -> Option<Arc<ExfatInode>> {

@@ -253,7 +253,7 @@ impl Connected {
             let ctrl_msgs = aux_data.data.generate_control(behavior, is_pass_cred);
             if behavior.will_consume_data() {
                 let remaining_aux_count = all_aux.len() - (aux_pos - 1);
-                all_aux.truncate_front(remaining_aux_count);
+                all_aux.retain_back(remaining_aux_count);
                 let consume_len = read_tot_len + trunc_len;
                 if (all_aux.front().unwrap().end - read_base).0 <= consume_len {
                     all_aux.pop_front();

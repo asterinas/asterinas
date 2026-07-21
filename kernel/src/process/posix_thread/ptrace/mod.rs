@@ -314,7 +314,7 @@ impl PosixThread {
 
         // Lock order: tracer.tracees -> tracee.tracee_status
         let tracees = tracees.lock();
-        for (_, tracee_thread) in tracees.iter() {
+        for tracee_thread in tracees.values() {
             let tracee = tracee_thread.as_posix_thread().unwrap();
             let mut needs_kill = false;
             tracee.detach_tracer_with(|state| {

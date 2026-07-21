@@ -75,12 +75,12 @@ impl core::fmt::Display for MountInfoEntry<'_> {
             self.parent_id,
             self.major,
             self.minor,
-            &self.root,
-            &self.mount_point,
-            &self.mount_flags,
-            &self.fs_type,
-            &self.source,
-            &self.fs_flags,
+            self.root,
+            self.mount_point,
+            self.mount_flags,
+            self.fs_type,
+            self.source,
+            self.fs_flags,
         )
     }
 }
