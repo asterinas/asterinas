@@ -142,12 +142,25 @@ retyping it breaks the byte-identical prefix the prompt cache relies on (see [`e
 A pass reads only the persona block(s) it is given (selective exposure),
 reviews the **REVIEW INPUT** at the foot of the prompt,
 and returns a JSON array of comments per that schema.
+Each persona block contains the persona's complete short-name/gist catalog,
+not every rule body.
+On a concrete suspected violation,
+the pass batches the relevant short-names through
+the root-pinned command printed in that persona's prompt block:
+`ACR_GUIDELINE_ROOT=<resolved-guideline-root> python3 .agents/skills/aster-code-review/scripts/print_guidelines.py <persona> <short-name>...`
+and reads those exact authored rule chunks before citing them.
+The print tool selects the same current or benchmark-snapshotted guideline corpus
+that built the catalog.
+
+`ACR_GUIDELINE_DISCLOSURE=full` is an internal benchmark/rollback switch
+that restores eager subpage inlining;
+the default is `progressive` and the switch is not part of the user interface.
 
 ## Spawning a pass
 
 Build every pass prompt with `"$SKILL/scripts/build_pass_prompt.sh" <input-file> <persona>...`
 and spawn the sub-agent with its **exact** output
-— only a script keeps the prompt's stable head (contract + guideline) byte-identical across passes and reviews,
+— only a script keeps the prompt's stable head (contract + persona/catalog) byte-identical across passes and reviews,
 which is what lets the prompt cache reuse it (see [`execution_model.md`](spec/execution_model.md)).
 
 **Default (`per_persona_context` = `yes`/`auto`)**

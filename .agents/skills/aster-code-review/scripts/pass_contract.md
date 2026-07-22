@@ -14,8 +14,32 @@ For each persona block below,
 work that persona's concerns in the order its file gives.
 For each candidate rule,
 read its one-line gist first
-and drill into the full rule (its linked subsections) only on a suspected violation.
+and drill into the full rule only on a suspected violation.
 Stay within the remit of the persona(s) you are given.
+
+In the default progressive prompt,
+each `GUIDELINE_CATALOG` is the complete rule inventory for one persona.
+After finding concrete evidence of a possible guideline violation,
+collect the candidate short-names for that concern phase and fetch them in one call:
+
+Use the root-pinned `print_guidelines.py` command printed in the persona block:
+
+```sh
+ACR_GUIDELINE_ROOT=<resolved-guideline-root> python3 \
+    .agents/skills/aster-code-review/scripts/print_guidelines.py \
+    <persona> <short-name>...
+```
+
+Replace `<short-name>...` with one or more candidate short-names, and keep the
+`ACR_GUIDELINE_ROOT` assignment intact.
+Read the returned exact rule chunks before deciding whether to report the candidate.
+Every guideline short-name used as a finding's `grounding` must have been fetched first.
+Do not query every rule preemptively;
+the complete gist catalog defines the search surface and exact chunks validate concrete candidates.
+Do not read `book/src/to-contribute/coding-guidelines/` directly:
+the print tool selects the authoritative current or benchmark-snapshotted corpus.
+If the prompt instead contains fully inlined guideline subpages (the explicit full rollback mode),
+use those exact rule texts and do not query them again.
 
 Each persona searches only for defects whose failure belongs to that persona.
 Do not run a general bug sweep from every persona.
