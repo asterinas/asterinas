@@ -1383,6 +1383,7 @@ dependencies = [
  "smallvec",
  "spin",
  "tdx-guest",
+ "uefi-raw 0.14.0",
  "unwinding",
  "volatile 0.6.1",
  "x86",
@@ -1859,8 +1860,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 [[package]]
 name = "tdx-guest"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c35264485a8a3c1e254d6a31c9bda6d7776aafba9515c3db604d51c564e5e629"
+source = "git+https://github.com/Hsy-Intel/tdx-guest?rev=a92798cef7b2f312b4d968f59cee3bf58cb2c1fe#a92798cef7b2f312b4d968f59cee3bf58cb2c1fe"
 dependencies = [
  "bitflags 1.3.2",
  "iced-x86",
