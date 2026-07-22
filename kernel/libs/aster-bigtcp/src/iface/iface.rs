@@ -3,7 +3,7 @@
 use alloc::sync::Arc;
 use core::ffi::CStr;
 
-use smoltcp::wire::{Ipv4Address, Ipv4Cidr, Ipv6Cidr};
+use smoltcp::wire::{EthernetAddress, Ipv4Address, Ipv4Cidr, Ipv6Cidr};
 
 use super::{BindPortConfig, BoundTcpPort, BoundUdpPort, InterfaceFlags, InterfaceType};
 use crate::{errors::BindError, ext::Ext};
@@ -15,6 +15,9 @@ use crate::{errors::BindError, ext::Ext};
 /// wireless adapters. They can also be virtual interfaces created by software, such as virtual
 /// private network (VPN) connections.
 pub trait Iface<E>: internal::IfaceInternal<E> + Send + Sync {
+    /// Returns the Ethernet address, if the interface uses Ethernet framing.
+    fn ethernet_addr(&self) -> Option<EthernetAddress>;
+
     /// Transmits or receives packets queued in the iface, and updates socket status accordingly.
     fn poll(&self);
 
