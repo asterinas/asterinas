@@ -5,7 +5,7 @@ use alloc::{ffi::CString, sync::Arc};
 use smoltcp::{
     iface::Config,
     phy::{Device, TxToken},
-    wire::{self, Ipv4Cidr, Ipv4Packet, Ipv6Cidr, Ipv6Packet},
+    wire::{self, EthernetAddress, Ipv4Cidr, Ipv4Packet, Ipv6Cidr, Ipv6Packet},
 };
 
 use crate::{
@@ -63,6 +63,10 @@ impl<D, E: Ext> IfaceInternal<E> for IpIface<D, E> {
 }
 
 impl<D: WithDevice + 'static, E: Ext> Iface<E> for IpIface<D, E> {
+    fn ethernet_addr(&self) -> Option<EthernetAddress> {
+        None
+    }
+
     fn poll(&self) {
         self.driver.with(|device| {
             let next_poll = self.common.poll(
