@@ -95,11 +95,16 @@ fn efi_phase_boot(boot_params: &mut BootParams) {
         fill_screen_info(&mut boot_params.screen_info);
     }
 
+    fill_efi_info(boot_params);
+
     // Decode the payload and load it as an ELF file.
     uefi::println!("[EFI stub] Decoding the kernel payload");
     let kernel = decode_payload(crate::x86::payload());
     uefi::println!("[EFI stub] Loading the payload as an ELF file");
     crate::loader::load_elf(&kernel);
+
+    #[cfg(feature = "cvm_guest")]
+    super::unaccepted_memory::setup_unaccepted_memory();
 }
 
 fn load_cmdline() -> Option<&'static CStr> {
@@ -110,14 +115,14 @@ fn load_cmdline() -> Option<&'static CStr> {
             .unwrap();
 
     let Some(load_options) = loaded_image.load_options_as_bytes() else {
-        uefi::println!("[EFI stub] Warning: No cmdline is available!");
+        uefi::println!("[EFI stub] warning: command line is unavailable");
         return None;
     };
 
     if !load_options.len().is_multiple_of(2)
         || load_options.iter().skip(1).step_by(2).any(|c| *c != 0)
     {
-        uefi::println!("[EFI stub] Warning: The cmdline contains non-ASCII characters!");
+        uefi::println!("[EFI stub] warning: command line contains non-ASCII characters");
         return None;
     }
 
@@ -171,12 +176,12 @@ fn load_initrd() -> Option<&'static [u8]> {
     };
 
     let Ok(handle) = boot::locate_device_path::<LoadFile2>(&mut device_path) else {
-        uefi::println!("[EFI stub] Warning: Failed to locate the initrd device!");
+        uefi::println!("[EFI stub] warning: failed to locate initrd device");
         return None;
     };
 
     let Ok(mut load_file2) = open_protocol_exclusive::<LoadFile2>(handle) else {
-        uefi::println!("[EFI stub] Warning: Failed to open the initrd protocol!");
+        uefi::println!("[EFI stub] warning: failed to open initrd protocol");
         return None;
     };
 
@@ -192,7 +197,7 @@ fn load_initrd() -> Option<&'static [u8]> {
         )
     };
     if status != Status::BUFFER_TOO_SMALL {
-        uefi::println!("[EFI stub] Warning: Failed to get the initrd size!");
+        uefi::println!("[EFI stub] warning: failed to get initrd size");
         return None;
     }
 
@@ -208,7 +213,7 @@ fn load_initrd() -> Option<&'static [u8]> {
         )
     };
     if status.is_error() {
-        uefi::println!("[EFI stub] Warning: Failed to load the initrd!");
+        uefi::println!("[EFI stub] warning: failed to load initrd");
         return None;
     }
     assert_eq!(
@@ -243,7 +248,7 @@ fn find_rsdp_addr() -> Option<*const ()> {
         }
     }
 
-    uefi::println!("[EFI stub] Warning: Failed to find the ACPI RSDP address!");
+    uefi::println!("[EFI stub] warning: failed to find ACPI RSDP address");
 
     None
 }
@@ -255,7 +260,7 @@ fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
     };
 
     let Ok(handle) = boot::get_handle_for_protocol::<GraphicsOutput>() else {
-        uefi::println!("[EFI stub] Warning: Failed to locate the graphics handle!");
+        uefi::println!("[EFI stub] warning: failed to locate graphics handle");
         return;
     };
 
@@ -279,7 +284,7 @@ fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
             OpenProtocolAttributes::GetProtocol,
         )
     }) else {
-        uefi::println!("[EFI stub] Warning: Failed to open the graphics protocol!");
+        uefi::println!("[EFI stub] warning: failed to open graphics protocol");
         return;
     };
 
@@ -288,7 +293,7 @@ fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
         PixelFormat::Rgb | PixelFormat::Bgr
     ) {
         uefi::println!(
-            "[EFI stub] Warning: Ignored the framebuffer as the pixel format is not supported!"
+            "[EFI stub] warning: ignored framebuffer because pixel format is unsupported"
         );
         return;
     }
@@ -312,6 +317,34 @@ fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
     );
 }
 
+fn fill_efi_info(boot_params: &mut BootParams) {
+    let Some(system_table) = uefi::table::system_table_raw() else {
+        uefi::println!("[EFI stub] warning: EFI system table is unavailable");
+        return;
+    };
+
+    let systab_addr = system_table.as_ptr().addr() as u64;
+
+    boot_params.efi_info.efi_systab = systab_addr as u32;
+    boot_params.efi_info.efi_systab_hi = (systab_addr >> 32) as u32;
+    boot_params.efi_info.efi_loader_signature = u32::from_le_bytes(*b"EL64");
+
+    #[cfg(feature = "debug_print")]
+    {
+        let (efi_systab, efi_systab_hi) = (
+            boot_params.efi_info.efi_systab,
+            boot_params.efi_info.efi_systab_hi,
+        );
+
+        uefi::println!(
+            "[EFI stub] EFI systab set to {:#x} (lo={:#x}, hi={:#x})",
+            systab_addr,
+            efi_systab,
+            efi_systab_hi
+        );
+    }
+}
+
 unsafe fn efi_phase_runtime(boot_params: &mut BootParams) -> ! {
     uefi::println!("[EFI stub] Exiting EFI boot services");
     // SAFETY: The safety is upheld by the caller.
@@ -321,61 +354,8 @@ unsafe fn efi_phase_runtime(boot_params: &mut BootParams) -> ! {
         "[EFI stub] Processing {} memory map entries",
         memory_map.entries().len()
     );
-    #[cfg(feature = "debug_print")]
-    {
-        memory_map.entries().for_each(|entry| {
-            crate::println!(
-                "    [{:#x}] {:#x} (size={:#x}) {{flags={:#x}}}",
-                entry.ty.0,
-                entry.phys_start,
-                entry.page_count,
-                entry.att.bits()
-            );
-        })
-    }
 
-    // Write the memory map to the E820 table in `boot_params`.
-    let e820_table = &mut boot_params.e820_table;
-    let mut num_entries = 0usize;
-    for entry in memory_map.entries() {
-        let typ = if let Some(e820_type) = parse_memory_type(entry.ty) {
-            e820_type
-        } else {
-            // The memory region is unaccepted (i.e., `MemoryType::UNACCEPTED`).
-            crate::println!("[EFI stub] Accepting pending pages");
-            for page_idx in 0..entry.page_count {
-                // SAFETY: The page to accept represents a page that has not been accepted
-                // (according to the memory map returned by the UEFI firmware).
-                unsafe {
-                    tdx_guest::tdcall::accept_page(0, entry.phys_start + page_idx * PAGE_SIZE)
-                        .unwrap();
-                }
-            }
-            linux_boot_params::E820Type::Ram
-        };
-
-        if num_entries != 0 {
-            let last_entry = &mut e820_table[num_entries - 1];
-            let last_typ = last_entry.typ;
-            if last_typ == typ && last_entry.addr + last_entry.size == entry.phys_start {
-                last_entry.size += entry.page_count * PAGE_SIZE;
-                continue;
-            }
-        }
-
-        if num_entries >= e820_table.len() {
-            crate::println!("[EFI stub] Warning: The number of E820 entries exceeded 128!");
-            break;
-        }
-
-        e820_table[num_entries] = linux_boot_params::BootE820Entry {
-            addr: entry.phys_start,
-            size: entry.page_count * PAGE_SIZE,
-            typ,
-        };
-        num_entries += 1;
-    }
-    boot_params.e820_entries = num_entries as u8;
+    populate_e820_from_memory_map(boot_params, &memory_map);
 
     crate::println!(
         "[EFI stub] Entering the Asterinas entry point at {:p}",
@@ -387,7 +367,47 @@ unsafe fn efi_phase_runtime(boot_params: &mut BootParams) -> ! {
     unsafe { super::call_aster_entrypoint(super::ASTER_ENTRY_POINT, boot_params) }
 }
 
-fn parse_memory_type(mem_type: boot::MemoryType) -> Option<linux_boot_params::E820Type> {
+fn populate_e820_from_memory_map<M: MemoryMap>(boot_params: &mut BootParams, memory_map: &M) {
+    let e820_table = &mut boot_params.e820_table;
+    let mut num_entries = 0usize;
+
+    for entry in memory_map.entries() {
+        #[cfg(feature = "debug_print")]
+        crate::println!(
+            "    [{:#x}] {:#x} (size={:#x}) {{flags={:#x}}}",
+            entry.ty.0,
+            entry.phys_start,
+            entry.page_count,
+            entry.att.bits()
+        );
+
+        let typ = parse_memory_type(entry.ty);
+
+        if num_entries != 0 {
+            let last_entry = &mut e820_table[num_entries - 1];
+            let last_typ = last_entry.typ;
+            if last_typ == typ && last_entry.addr + last_entry.size == entry.phys_start {
+                last_entry.size += entry.page_count * PAGE_SIZE;
+                continue;
+            }
+        }
+
+        if num_entries >= e820_table.len() {
+            crate::println!("[EFI stub] warning: number of E820 entries exceeded 128");
+            break;
+        }
+
+        e820_table[num_entries] = linux_boot_params::BootE820Entry {
+            addr: entry.phys_start,
+            size: entry.page_count * PAGE_SIZE,
+            typ,
+        };
+        num_entries += 1;
+    }
+    boot_params.e820_entries = num_entries as u8;
+}
+
+fn parse_memory_type(mem_type: boot::MemoryType) -> linux_boot_params::E820Type {
     use linux_boot_params::E820Type;
     use uefi::boot::MemoryType;
 
@@ -405,21 +425,31 @@ fn parse_memory_type(mem_type: boot::MemoryType) -> Option<linux_boot_params::E8
         | MemoryType::LOADER_DATA
         | MemoryType::BOOT_SERVICES_CODE
         | MemoryType::BOOT_SERVICES_DATA
-        | MemoryType::CONVENTIONAL => Some(E820Type::Ram),
+        | MemoryType::CONVENTIONAL => E820Type::Ram,
 
         // Some memory types have special meanings.
-        MemoryType::PERSISTENT_MEMORY => Some(E820Type::Pmem),
-        MemoryType::ACPI_RECLAIM => Some(E820Type::Acpi),
-        MemoryType::ACPI_NON_VOLATILE => Some(E820Type::Nvs),
-        MemoryType::UNUSABLE => Some(E820Type::Unusable),
-        MemoryType::UNACCEPTED => None,
+        MemoryType::PERSISTENT_MEMORY => E820Type::Pmem,
+        MemoryType::ACPI_RECLAIM => E820Type::Acpi,
+        MemoryType::ACPI_NON_VOLATILE => E820Type::Nvs,
+        MemoryType::UNUSABLE => E820Type::Unusable,
+        MemoryType::UNACCEPTED => {
+            #[cfg(feature = "cvm_guest")]
+            if tdx_guest::is_tdx_guest_early() {
+                return E820Type::Ram;
+            }
+
+            crate::println!(
+                "[EFI stub] warning: UNACCEPTED memory is unsupported outside a confidential VM"
+            );
+            E820Type::Reserved
+        }
 
         // Other memory types are treated as reserved.
         MemoryType::RESERVED
         | MemoryType::RUNTIME_SERVICES_CODE
         | MemoryType::RUNTIME_SERVICES_DATA
         | MemoryType::MMIO
-        | MemoryType::MMIO_PORT_SPACE => Some(E820Type::Reserved),
-        _ => Some(E820Type::Reserved),
+        | MemoryType::MMIO_PORT_SPACE => E820Type::Reserved,
+        _ => E820Type::Reserved,
     }
 }

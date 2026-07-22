@@ -267,7 +267,7 @@ no_std_io2 = { version = "0.9.3", default-features = false, features = ["alloc",
 rand = { version = "0.9.2", default-features = false }
 riscv = { version = "0.15.0", features = ["s-mode"] }
 spin = "0.9.4"
-tdx-guest = "0.4.0"
+tdx-guest = { git = "https://github.com/Hsy-Intel/tdx-guest", rev = "9779b27fb0a1463832bacbd472cb216810aac73f" }
 unwinding = { version = "0.2.10", default-features = false, features = ["hide-trace", "panic", "personality", "unwinder"] }
 x86_64 = "0.15.5"
 xmas-elf = "0.10.0"

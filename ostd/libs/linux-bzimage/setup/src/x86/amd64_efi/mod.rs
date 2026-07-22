@@ -3,6 +3,8 @@
 pub(super) mod alloc;
 mod decoder;
 mod efi;
+#[cfg(feature = "cvm_guest")]
+mod unaccepted_memory;
 
 use core::arch::{asm, global_asm};
 

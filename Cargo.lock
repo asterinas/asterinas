@@ -1253,7 +1253,7 @@ dependencies = [
  "bitflags 2.13.0",
  "log",
  "multiboot2-common",
- "ptr_meta 0.3.1",
+ "ptr_meta",
  "thiserror",
  "uefi-raw 0.12.0",
 ]
@@ -1264,7 +1264,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6892f2795001adb0f6e4c124de90b68f9edc4bf52b8d81b14dac45cb361f1cca"
 dependencies = [
- "ptr_meta 0.3.1",
+ "ptr_meta",
  "thiserror",
 ]
 
@@ -1383,6 +1383,7 @@ dependencies = [
  "smallvec",
  "spin",
  "tdx-guest",
+ "uefi-raw 0.14.0",
  "unwinding",
  "volatile 0.6.1",
  "x86",
@@ -1511,31 +1512,11 @@ dependencies = [
 
 [[package]]
 name = "ptr_meta"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcada80daa06c42ed5f48c9a043865edea5dc44cbf9ac009fda3b89526e28607"
-dependencies = [
- "ptr_meta_derive 0.2.0",
-]
-
-[[package]]
-name = "ptr_meta"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b9a0cf95a1196af61d4f1cbdab967179516d9a4a4312af1f31948f8f6224a79"
 dependencies = [
- "ptr_meta_derive 0.3.1",
-]
-
-[[package]]
-name = "ptr_meta_derive"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bca9224df2e20e7c5548aeb5f110a0f3b77ef05f8585139b7148b59056168ed2"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
+ "ptr_meta_derive",
 ]
 
 [[package]]
@@ -1859,14 +1840,13 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 [[package]]
 name = "tdx-guest"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c35264485a8a3c1e254d6a31c9bda6d7776aafba9515c3db604d51c564e5e629"
+source = "git+https://github.com/Hsy-Intel/tdx-guest?rev=9779b27fb0a1463832bacbd472cb216810aac73f#9779b27fb0a1463832bacbd472cb216810aac73f"
 dependencies = [
  "bitflags 1.3.2",
  "iced-x86",
  "log",
  "raw-cpuid",
- "uefi-raw 0.8.0",
+ "uefi-raw 0.14.0",
  "x86_64",
 ]
 
@@ -1993,7 +1973,7 @@ dependencies = [
  "bitflags 2.13.0",
  "cfg-if",
  "log",
- "ptr_meta 0.3.1",
+ "ptr_meta",
  "qemu-exit",
  "ucs2",
  "uefi-macros",
@@ -2010,17 +1990,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
-]
-
-[[package]]
-name = "uefi-raw"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b463030b802e1265a3800fab24df95d3229c202c2e408832a206f05b4d1496ca"
-dependencies = [
- "bitflags 2.13.0",
- "ptr_meta 0.2.0",
- "uguid",
 ]
 
 [[package]]
