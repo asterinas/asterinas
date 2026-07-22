@@ -203,6 +203,13 @@ pub(crate) unsafe fn init() {
     let early_allocator = EARLY_ALLOCATOR.lock().take().unwrap();
     let (range_1, range_2) = early_allocator.allocated_regions();
 
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    EARLY_ALLOCATED_RANGES.call_once(|| (range_1.clone(), range_2.clone()));
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    let acceptance_range = crate::if_tdx_enabled!({ super::unaccepted::get_acceptance_range() } else {
+        None
+    });
+
     for region in regions.iter() {
         if region.typ() == MemoryRegionType::Usable {
             debug_assert!(region.base().is_multiple_of(PAGE_SIZE));
@@ -212,8 +219,46 @@ pub(crate) unsafe fn init() {
             // Truncate the early allocated frames if there is an overlap.
             for r1 in range_difference(&(region.base()..region.end()), &range_1) {
                 for r2 in range_difference(&r1, &range_2) {
-                    crate::info!("Adding free frames to the allocator: {:x?}", r2);
-                    get_global_frame_allocator().add_free_memory(r2.start, r2.len());
+                    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+                    if let Some(acceptance_range) = &acceptance_range {
+                        for accepted_range in range_difference(&r2, acceptance_range) {
+                            get_global_frame_allocator().add_free_memory(
+                                accepted_range.start,
+                                accepted_range.end - accepted_range.start,
+                            );
+                        }
+                        continue;
+                    }
+
+                    get_global_frame_allocator().add_free_memory(r2.start, r2.end - r2.start);
+                }
+            }
+        }
+    }
+}
+
+/// Publishes memory withheld until parallel early acceptance completed.
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub(crate) fn publish_accepted_memory() {
+    let Some(acceptance_range) = super::unaccepted::get_acceptance_range() else {
+        return;
+    };
+    let (range_1, range_2) = EARLY_ALLOCATED_RANGES
+        .get()
+        .expect("early allocated ranges are unavailable");
+    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
+
+    for region in regions.iter() {
+        if region.typ() != MemoryRegionType::Usable {
+            continue;
+        }
+
+        for r1 in range_difference(&(region.base()..region.end()), range_1) {
+            for r2 in range_difference(&r1, range_2) {
+                let start = r2.start.max(acceptance_range.start);
+                let end = r2.end.min(acceptance_range.end);
+                if start < end {
+                    get_global_frame_allocator().add_free_memory(start, end - start);
                 }
             }
         }
@@ -246,6 +291,9 @@ pub(super) struct EarlyFrameAllocator {
 /// this allocator.
 pub(super) static EARLY_ALLOCATOR: spin::Mutex<Option<EarlyFrameAllocator>> =
     spin::Mutex::new(None);
+
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+static EARLY_ALLOCATED_RANGES: spin::Once<(Range<Paddr>, Range<Paddr>)> = spin::Once::new();
 
 impl EarlyFrameAllocator {
     /// Creates a new early frame allocator.
@@ -344,7 +392,21 @@ impl_frame_meta_for!(EarlyAllocatedFrameMeta);
 ///  - or if is called after [`init`].
 pub(crate) fn early_alloc(layout: Layout) -> Option<Paddr> {
     let mut early_allocator = EARLY_ALLOCATOR.lock();
-    early_allocator.as_mut().unwrap().alloc(layout)
+    let paddr = early_allocator.as_mut().unwrap().alloc(layout)?;
+
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    crate::if_tdx_enabled!({
+        let start = u64::try_from(paddr).unwrap();
+        let size = layout.size().align_up(PAGE_SIZE);
+        let end = u64::try_from(
+            paddr
+                .checked_add(size)
+                .expect("early allocated physical address range overflowed"),
+        )
+        .unwrap();
+        super::unaccepted::accept_early_allocated_range(start, end);
+    });
+    Some(paddr)
 }
 
 /// Initializes the early frame allocator.

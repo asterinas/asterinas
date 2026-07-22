@@ -13,6 +13,12 @@
 /// Magic stored in the boot protocol header.
 pub const LINUX_BOOT_HEADER_MAGIC: u32 = 0x53726448;
 
+/// Physical address where the application processor boot code is copied.
+pub const AP_BOOT_START_PA: u64 = 0x8000;
+
+/// Size of the reserved physical region for the application processor boot code.
+pub const AP_BOOT_REGION_SIZE: u64 = 0x1000;
+
 /// Linux 32/64-bit Boot Protocol parameter struct.
 ///
 /// Originally defined in the linux source tree:
