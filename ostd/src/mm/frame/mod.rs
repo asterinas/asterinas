@@ -38,6 +38,9 @@ pub mod segment;
 pub mod unique;
 pub mod untyped;
 
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub(crate) mod unaccepted;
+
 mod frame_ref;
 pub use frame_ref::FrameRef;
 

@@ -498,17 +498,16 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
 
     let meta_page_range = meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE;
 
-    let (range_1, range_2) = allocator::EARLY_ALLOCATOR
+    let early_allocated_ranges = allocator::EARLY_ALLOCATOR
         .lock()
         .as_ref()
         .unwrap()
         .allocated_regions();
-    for r in range_difference(&range_1, &meta_page_range) {
-        let early_seg = Segment::from_unused(r, |_| EarlyAllocatedFrameMeta).unwrap();
-        let _ = ManuallyDrop::new(early_seg);
-    }
-    for r in range_difference(&range_2, &meta_page_range) {
-        let early_seg = Segment::from_unused(r, |_| EarlyAllocatedFrameMeta).unwrap();
+    for range in early_allocated_ranges
+        .iter()
+        .flat_map(|range| range_difference(range, &meta_page_range))
+    {
+        let early_seg = Segment::from_unused(range, |_| EarlyAllocatedFrameMeta).unwrap();
         let _ = ManuallyDrop::new(early_seg);
     }
 
