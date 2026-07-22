@@ -28,6 +28,7 @@
 //! describes the optional enabled stack. If neither parameter is specified, the
 //! mandatory modules plus the default optional stack are used.
 
+pub(super) mod apparmor;
 mod capability;
 pub mod yama;
 
@@ -46,7 +47,11 @@ aster_cmdline::define_kv_param!("security", LEGACY_SECURITY_PARAM);
 static MANDATORY_MODULES: [&'static dyn LsmModule; 1] = [&capability::CAPABILITY_LSM];
 
 /// All LSM modules compiled into the kernel.
-static ALL_MODULES: [&'static dyn LsmModule; 2] = [&capability::CAPABILITY_LSM, &yama::YAMA_LSM];
+static ALL_MODULES: [&'static dyn LsmModule; 3] = [
+    &capability::CAPABILITY_LSM,
+    &yama::YAMA_LSM,
+    &apparmor::APPARMOR_LSM,
+];
 
 /// The fallback optional LSM stack used when no boot-time selector is specified.
 pub(super) static DEFAULT_OPTIONAL_MODULES: [&'static dyn LsmModule; 1] = [&yama::YAMA_LSM];
@@ -79,12 +84,24 @@ impl ModuleSelection {
     fn select_from_boot_params(
         modules_by_name: &BTreeMap<&'static str, &'static dyn LsmModule>,
     ) -> Self {
+        Self::select(
+            modules_by_name,
+            LSM_PARAM.get().map(String::as_str),
+            LEGACY_SECURITY_PARAM.get().map(String::as_str),
+        )
+    }
+
+    fn select(
+        modules_by_name: &BTreeMap<&'static str, &'static dyn LsmModule>,
+        lsm_param: Option<&str>,
+        security_param: Option<&str>,
+    ) -> Self {
         let mut selection = Self::default();
         for module in MANDATORY_MODULES {
             selection.push(module);
         }
 
-        match (LSM_PARAM.get(), LEGACY_SECURITY_PARAM.get()) {
+        match (lsm_param, security_param) {
             (Some(lsm_param), security_param) => {
                 if security_param.is_some() {
                     warn!("`security=` is ignored because `lsm=` is specified");
@@ -173,5 +190,66 @@ impl ModuleSelection {
         }
 
         self.selected_modules.push(module);
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use ostd::prelude::*;
+
+    use super::*;
+
+    fn modules_by_name() -> BTreeMap<&'static str, &'static dyn LsmModule> {
+        ALL_MODULES
+            .iter()
+            .map(|module| (module.name(), *module))
+            .collect()
+    }
+
+    fn selected_names(lsm_param: Option<&str>, security_param: Option<&str>) -> Vec<&'static str> {
+        ModuleSelection::select(&modules_by_name(), lsm_param, security_param)
+            .into_modules()
+            .iter()
+            .map(|module| module.name())
+            .collect()
+    }
+
+    #[ktest]
+    fn default_selection_enables_capability_and_yama() {
+        assert_eq!(selected_names(None, None), vec!["capability", "yama"]);
+    }
+
+    #[ktest]
+    fn lsm_parameter_selects_apparmor_in_order() {
+        assert_eq!(
+            selected_names(Some("apparmor,yama"), None),
+            vec!["capability", "apparmor", "yama"]
+        );
+    }
+
+    #[ktest]
+    fn security_parameter_selects_apparmor_after_defaults() {
+        assert_eq!(
+            selected_names(None, Some("apparmor")),
+            vec!["capability", "yama", "apparmor"]
+        );
+    }
+
+    #[ktest]
+    fn lsm_parameter_takes_precedence_over_security() {
+        assert_eq!(
+            selected_names(Some("yama"), Some("apparmor")),
+            vec!["capability", "yama"]
+        );
+    }
+
+    #[ktest]
+    fn modules_only_expose_hooks_that_they_implement() {
+        assert!(capability::CAPABILITY_LSM.alien_access_hook().is_some());
+        assert!(capability::CAPABILITY_LSM.capability_hook().is_some());
+        assert!(yama::YAMA_LSM.alien_access_hook().is_some());
+        assert!(yama::YAMA_LSM.capability_hook().is_none());
+        assert!(apparmor::APPARMOR_LSM.alien_access_hook().is_none());
+        assert!(apparmor::APPARMOR_LSM.capability_hook().is_none());
     }
 }

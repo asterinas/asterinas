@@ -35,6 +35,54 @@ console=ttyS0
 console=ttyS0 console=hvc0
 ```
 
+### `lsm`
+
+Select optional built-in Linux Security Modules in order.
+The mandatory `capability` module is always enabled.
+It precedes modules named in this parameter.
+
+Supported module names:
+
+- `apparmor`
+- `capability`
+- `yama`
+
+Notes:
+
+- Unknown module names are ignored with a warning.
+- Duplicate module names are ignored after their first selection.
+- `apparmor` is an exclusive major LSM.
+  If multiple exclusive modules are selected,
+  the first selected exclusive module is kept.
+- If `lsm=` is specified, `security=` is ignored.
+- This initial AppArmor integration does not load or enforce policies.
+
+Examples:
+```text
+lsm=apparmor,yama
+```
+
+### `security`
+
+Select one legacy major LSM.
+This parameter is provided for Linux compatibility.
+
+Supported value:
+
+- `apparmor`
+
+Notes:
+
+- `security=` is ignored when `lsm=` is also specified.
+- The default optional LSM stack is still enabled.
+  It precedes the selected legacy major LSM.
+- This initial AppArmor integration does not load or enforce policies.
+
+Example:
+```text
+security=apparmor
+```
+
 ### `virtio_mmio.device`
 
 Register a VirtIO-MMIO device from the kernel command line.

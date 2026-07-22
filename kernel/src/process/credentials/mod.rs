@@ -25,5 +25,6 @@ use crate::prelude::*;
 /// - filesystem user ID and group ID (Linux-specific);
 /// - supplementary group IDs;
 /// - Linux capabilities;
-/// - secure bits.
+/// - secure bits;
+/// - Linux Security Module state.
 pub struct Credentials<R = FullOp>(Arc<Credentials_>, R);

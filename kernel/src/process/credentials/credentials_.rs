@@ -10,6 +10,7 @@ use super::{
 use crate::{
     prelude::*,
     process::credentials::capabilities::{AtomicCapSet, CapSet},
+    security::lsm::LsmCredentialState,
 };
 
 #[derive(Debug)]
@@ -78,6 +79,8 @@ pub(super) struct Credentials_ {
 
     /// Whether `execve()` is forbidden from granting new privileges.
     no_new_privs: AtomicBool,
+    /// The Linux Security Module state.
+    lsm: LsmCredentialState,
 }
 
 impl Credentials_ {
@@ -105,6 +108,7 @@ impl Credentials_ {
             ambient_capset: AtomicCapSet::new(CapSet::empty()),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
             no_new_privs: AtomicBool::new(false),
+            lsm: LsmCredentialState::new(),
         }
     }
 
@@ -648,6 +652,10 @@ impl Credentials_ {
     pub(super) fn set_no_new_privs(&self) {
         self.no_new_privs.store(true, Ordering::Relaxed);
     }
+
+    pub(super) fn lsm_state(&self) -> &LsmCredentialState {
+        &self.lsm
+    }
 }
 
 impl Clone for Credentials_ {
@@ -669,6 +677,7 @@ impl Clone for Credentials_ {
             ambient_capset: self.ambient_capset.clone(),
             securebits: self.securebits.clone(),
             no_new_privs: AtomicBool::new(self.no_new_privs()),
+            lsm: self.lsm.clone(),
         }
     }
 }
