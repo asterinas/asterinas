@@ -490,9 +490,10 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// # Safety
     ///
     /// The caller should ensure that:
-    ///  - the range being unmapped does not affect kernel's memory safety.
-    ///  - the items mapped in `PageTableFrag` must outlive any TLB entries
-    ///    that cache the mappings.
+    ///  - the range being unmapped does not affect kernel's memory safety;
+    ///  - there is no memory access to the unmapped range after dropping the
+    ///    items in `PageTableFrag` but before flushing TLB entries that cache
+    ///    the mappings.
     ///
     /// # Panics
     ///

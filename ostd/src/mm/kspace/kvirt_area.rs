@@ -208,8 +208,10 @@ impl Drop for KVirtArea {
         let range = self.start()..self.end();
         let mut cursor = page_table.cursor_mut(&irq_guard, &range).unwrap();
         loop {
-            // SAFETY: The range is under `KVirtArea` so it is safe to unmap.
-            // FIXME: Need to ensure that the unmapped item outlives the TLB entries.
+            // SAFETY:
+            // 1. The range is under `KVirtArea`, so it is safe to unmap.
+            // 2. The caller of `KVirtArea` will ensure TLB conherence when the range is used again,
+            //    so the unmapped items are safe to be dropped immediately.
             let Some(frag) = (unsafe { cursor.take_next(self.end() - cursor.virt_addr()) }) else {
                 break;
             };
