@@ -265,7 +265,7 @@ int test_handle_sigsegv()
 // ============================================================================
 int sigchld = 0;
 
-void proc_exit()
+void proc_exit(int signum)
 {
 	sigchld = 1;
 }

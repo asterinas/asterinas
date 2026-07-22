@@ -10,11 +10,11 @@ let
   else
     throw "Target arch ${target} not yet supported.";
 
-  # Pinned nixpkgs (nix version: 2.29.1, channel: nixos-25.05, release date: 2025-07-01)
+  # Pinned nixpkgs (nix version: 2.34.7, channel: nixos-26.05)
   nixpkgs = fetchTarball {
     url =
-      "https://github.com/NixOS/nixpkgs/archive/c0bebd16e69e631ac6e52d6eb439daba28ac50cd.tar.gz";
-    sha256 = "1fbhkqm8cnsxszw4d4g0402vwsi75yazxkpfx3rdvln4n6s68saf";
+      "https://github.com/NixOS/nixpkgs/archive/fd1462031fdee08f65fd0b4c6b64e22239a77870.tar.gz";
+    sha256 = "0h0snjjawavy0gl176iyxqdcmv85vx3nlm0aalwr1q8m2960ly4z";
   };
   pkgs = import nixpkgs {
     config = { };

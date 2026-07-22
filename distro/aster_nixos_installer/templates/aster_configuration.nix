@@ -32,12 +32,13 @@
   # please refer to https://nixos.org/manual/nixpkgs/stable/#sec-overlays-definition.
   config.nixpkgs.overlays = [
     (import ./overlays/desktop/default.nix)
+    (import ./overlays/fastfetch/default.nix)
     (import ./overlays/hello-asterinas/default.nix)
+    (import ./overlays/nixos-rebuild-ng/default.nix)
     (import ./overlays/podman/default.nix)
     (import ./overlays/switch-to-configuration-ng/default.nix)
     (import ./overlays/systemd/default.nix)
     (import ./overlays/jtreg/default.nix)
-    (import ./overlays/codex/default.nix)
   ];
 
   # The Asterinas NixOS special options.

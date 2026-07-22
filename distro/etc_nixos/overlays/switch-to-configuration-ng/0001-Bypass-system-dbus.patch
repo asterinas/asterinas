@@ -1,6 +1,6 @@
-From 5ae18b1b7c670208c1b44f16bcf77ac3148ae355 Mon Sep 17 00:00:00 2001
+From 5595e1491eaf633b67af43ffa0757dcfbf752267 Mon Sep 17 00:00:00 2001
 From: vvsv <vvsv_7169@163.com>
-Date: Wed, 10 Dec 2025 17:54:18 +0800
+Date: Wed, 22 Jul 2026 13:36:55 +0800
 Subject: [PATCH] Bypass system dbus
 
 The commented-out code connects to the system DBus, reading systemd state via DBus,
@@ -8,71 +8,83 @@ computes the unit diff, and then reports activation results back over DBus.
 
 TODO: Remove this patch once system DBus support is implemented.
 ---
- src/main.rs        | 9 +++++++++
- 1 file changed, 9 insertions(+)
+ src/main.rs | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
 
 diff --git a/src/main.rs b/src/main.rs
-index 8baf5924a7db..bb1a60fd69f6 100644
+index 2d582a7d479c..c7289d3b12e2 100644
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -1,6 +1,9 @@
+@@ -1,6 +1,10 @@
  #![deny(clippy::all)]
  #![allow(clippy::too_many_arguments)]
  #![allow(clippy::type_complexity)]
 +#![allow(dead_code)]
++#![allow(unused_mut)]
 +#![allow(unused_imports)]
 +#![allow(unused_variables)]
-
+ 
  use std::{
      cell::RefCell,
-@@ -932,6 +935,7 @@ fn do_user_switch(parent_exe: String) -> anyhow::Result<()> {
-         die();
-     }
-
+@@ -1353,6 +1357,7 @@ fn do_user_switch(parent_exe: String) -> anyhow::Result<()> {
+     let restart_list = scope.restart_list_file();
+     let reload_list = scope.reload_list_file();
+ 
 +/*
      let dbus_conn = LocalConnection::new_session().context("Failed to open dbus connection")?;
-     let (systemd, _) = new_dbus_proxies(&dbus_conn);
-
-@@ -968,6 +972,7 @@ fn do_user_switch(parent_exe: String) -> anyhow::Result<()> {
+     let systemd = systemd1_proxy(&dbus_conn);
+ 
+@@ -1518,8 +1523,10 @@ fn do_user_switch(parent_exe: String) -> anyhow::Result<()> {
+         );
+         return Ok(());
+     }
++*/
+ 
+     let mut exit_code = 0;
++/*
+ 
+     // Stop units before reexec so that ExecStop runs with the old definition.
+     print_units("stopping", &units_to_stop);
+@@ -1738,6 +1745,7 @@ fn do_user_switch(parent_exe: String) -> anyhow::Result<()> {
      dbus_conn
          .remove_match(jobs_token)
          .context("Failed to remove jobs token")?;
 +*/
-
-     Ok(())
+ 
+     std::process::exit(exit_code);
  }
-@@ -1106,6 +1111,7 @@ won't take effect until you reboot the system.
+@@ -1882,6 +1890,7 @@ won't take effect until you reboot the system.
      let handler = SigHandler::Handler(handle_sigpipe);
      unsafe { signal::signal(Signal::SIGPIPE, handler) }.context("Failed to set SIGPIPE handler")?;
-
+ 
 +/*
      let mut units_to_stop = HashMap::new();
      let mut units_to_skip = HashMap::new();
      let mut units_to_filter = HashMap::new(); // units not shown
-@@ -1539,6 +1545,7 @@ won't take effect until you reboot the system.
-
+@@ -2222,6 +2231,7 @@ won't take effect until you reboot the system.
+ 
      // Wait for all stop jobs to finish
-     block_on_jobs(&dbus_conn, &submitted_jobs);
+     block_on_jobs(&dbus_conn, &submitted_jobs)?;
 +*/
-
+ 
      let mut exit_code = 0;
-
-@@ -1558,6 +1565,7 @@ won't take effect until you reboot the system.
+ 
+@@ -2241,6 +2251,7 @@ won't take effect until you reboot the system.
              exit_code = 2;
          }
      }
 +/*
-
-     // Handle the activation script requesting the restart or reload of a unit.
-     for unit in std::fs::read_to_string(RESTART_BY_ACTIVATION_LIST_FILE)
-@@ -1934,6 +1942,7 @@ won't take effect until you reboot the system.
-
+ 
+     if std::fs::exists(RESTART_BY_ACTIVATION_LIST_FILE)?
+         || std::fs::exists(RELOAD_BY_ACTIVATION_LIST_FILE)?
+@@ -2667,6 +2678,7 @@ won't take effect until you reboot the system.
+ 
          exit_code = 4;
      }
 +*/
-
+ 
      if exit_code == 0 {
          log::info!(
---
-2.39.5
+-- 
+2.47.3
 
