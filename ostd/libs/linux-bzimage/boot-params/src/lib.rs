@@ -206,6 +206,16 @@ pub struct EfiInfo {
     pub efi_memmap_hi: u32,
 }
 
+impl EfiInfo {
+    /// Asterinas EFI loader signature (`AS64`).
+    ///
+    /// With this signature, `efi_systab` holds the physical address of the
+    /// unaccepted-memory table (header and bitmap), or zero if absent, rather
+    /// than an EFI system table. The address is below 4 GiB and `efi_systab_hi`
+    /// is zero.
+    pub const ASTERINAS_LOADER_SIGNATURE: u32 = u32::from_le_bytes(*b"AS64");
+}
+
 /// The E820 types known to the kernel.
 ///
 /// Originally defined in the linux source tree:
