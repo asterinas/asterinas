@@ -2,8 +2,6 @@ NetlinkRouteTest.AddAddr
 NetlinkRouteTest.AddAndRemoveAddr
 NetlinkRouteTest.ChangeNetnsAndOtherAttrsTogether
 NetlinkRouteTest.ControlMessageIgnored
-NetlinkRouteTest.GetLinkByIndex
-NetlinkRouteTest.GetLinkByName
 NetlinkRouteTest.GetRouteDump
 NetlinkRouteTest.GetRouteRequest
 NetlinkRouteTest.GetRuleDump

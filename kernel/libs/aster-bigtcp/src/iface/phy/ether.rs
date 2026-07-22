@@ -78,6 +78,10 @@ impl<D: WithDevice + 'static, E: Ext> Iface<E> for EtherIface<D, E>
 where
     D::Device: NotifyDevice,
 {
+    fn ethernet_addr(&self) -> Option<EthernetAddress> {
+        Some(self.ether_addr)
+    }
+
     fn poll(&self) {
         self.driver.with(|device| {
             let next_poll = self.common.poll(
