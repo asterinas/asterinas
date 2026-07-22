@@ -7,8 +7,10 @@ in {
 
   environment.systemPackages = (lib.optionals (config.services.xserver.enable
     && config.services.xserver.desktopManager.xfce.enable) [ startXfce ])
-    ++ (lib.optionals config.services.xserver.enable
-      [ pkgs.xorg.xf86videofbdev ]);
+    ++ (lib.optionals config.services.xserver.enable [
+      pkgs.xf86-video-fbdev
+      pkgs.xkeyboard-config
+    ]);
 
   services.displayManager.autoLogin.enable = false;
   services.xserver.displayManager.lightdm.enable = false;
