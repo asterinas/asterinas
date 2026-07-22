@@ -15,7 +15,9 @@ use crate::{
 /// Runs alien access hooks in module order.
 pub fn on_alien_access(context: AlienAccessContext) -> Result<()> {
     for module in modules::active_modules() {
-        module.on_alien_access(&context)?;
+        if let Some(hook) = module.alien_access_hook() {
+            hook.on_alien_access(&context)?;
+        }
     }
 
     Ok(())

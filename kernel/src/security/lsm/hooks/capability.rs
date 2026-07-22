@@ -9,7 +9,9 @@ use crate::{
 /// Runs capability hooks in module order.
 pub fn on_capable(context: CapableContext) -> Result<()> {
     for module in modules::active_modules() {
-        module.on_capable(&context)?;
+        if let Some(hook) = module.capability_hook() {
+            hook.on_capable(&context)?;
+        }
     }
 
     Ok(())

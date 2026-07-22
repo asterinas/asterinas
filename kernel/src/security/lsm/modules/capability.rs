@@ -22,6 +22,14 @@ impl LsmModule for CapabilityLsm {
     fn flags(&self) -> LsmFlags {
         LsmFlags::empty()
     }
+
+    fn alien_access_hook(&self) -> Option<&dyn LsmAlienAccessHook> {
+        Some(self)
+    }
+
+    fn capability_hook(&self) -> Option<&dyn LsmCapabilityHook> {
+        Some(self)
+    }
 }
 
 impl LsmCapabilityHook for CapabilityLsm {

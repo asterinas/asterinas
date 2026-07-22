@@ -68,9 +68,15 @@ impl LsmModule for YamaLsm {
     fn flags(&self) -> LsmFlags {
         LsmFlags::empty()
     }
-}
 
-impl LsmCapabilityHook for YamaLsm {}
+    fn alien_access_hook(&self) -> Option<&dyn LsmAlienAccessHook> {
+        Some(self)
+    }
+
+    fn capability_hook(&self) -> Option<&dyn LsmCapabilityHook> {
+        None
+    }
+}
 
 /// Returns the current Yama scope for alien access.
 pub fn get_scope() -> YamaScope {

@@ -31,12 +31,18 @@ bitflags! {
 }
 
 /// The common interface for built-in LSM modules.
-trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
+trait LsmModule: Sync {
     /// Returns the module name.
     fn name(&self) -> &'static str;
 
     /// Returns the module flags.
     fn flags(&self) -> LsmFlags;
+
+    /// Returns the module's alien-access hooks, if provided.
+    fn alien_access_hook(&self) -> Option<&dyn LsmAlienAccessHook>;
+
+    /// Returns the module's capability hooks, if provided.
+    fn capability_hook(&self) -> Option<&dyn LsmCapabilityHook>;
 }
 
 /// Returns whether the Yama LSM is enabled.
