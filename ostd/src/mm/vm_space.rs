@@ -467,8 +467,9 @@ impl<'a> CursorMut<'a> {
         let end_va = self.virt_addr() + len;
         let mut num_unmapped: usize = 0;
         loop {
-            // SAFETY: It is safe to un-map memory in the userspace. And the
-            // un-mapped items are dropped after TLB flushes.
+            // SAFETY:
+            // 1. It is safe to unmap memory in the userspace.
+            // 2. We drop the unmapped items only after flushing TLB entries, which is safe.
             let Some(frag) = (unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) })
             else {
                 break; // No more mappings in the range.
