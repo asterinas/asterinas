@@ -1,5 +1,13 @@
 # Pass contract
 
+This is an internal persona review pass of an already-running `aster-code-review` workflow.
+Do not load or invoke the top-level `aster-code-review` skill,
+do not read its `SKILL.md`,
+and do not resolve targets, activate or spawn personas, assemble fragments,
+verify the merged review, or write the final review file.
+The prompt already contains the complete contract, persona scope, guideline catalog,
+and canonical review input needed by this pass.
+
 You are a reviewer applying the persona guideline(s) included below to the change or files under review
 (the **REVIEW INPUT** at the very end of this prompt).
 Find as many real defects as possible within the included persona(s)' remit
@@ -14,8 +22,28 @@ For each persona block below,
 work that persona's concerns in the order its file gives.
 For each candidate rule,
 read its one-line gist first
-and drill into the full rule (its linked subsections) only on a suspected violation.
+and drill into the full rule only on a suspected violation.
 Stay within the remit of the persona(s) you are given.
+
+In the default progressive prompt,
+each `GUIDELINE_CATALOG` is the complete rule inventory for one persona.
+After finding concrete evidence of a possible guideline violation,
+collect the candidate short-names for that concern phase and fetch them in one call:
+
+```sh
+python3 .agents/skills/aster-code-review/scripts/guideline_query.py show \
+    --expect-digest <catalog-digest> <persona> <short-name> [<short-name> ...]
+```
+
+Copy `<catalog-digest>` from that persona's `GUIDELINE_CATALOG` header.
+Read the returned exact rule chunks before deciding whether to report the candidate.
+Every guideline short-name used as a finding's `grounding` must have been fetched first.
+Do not query every rule preemptively;
+the complete gist catalog defines the search surface and exact chunks validate concrete candidates.
+Do not read `book/src/to-contribute/coding-guidelines/` directly:
+the query tool selects the authoritative current or benchmark-snapshotted corpus.
+If the prompt instead contains fully inlined guideline subpages (the explicit full rollback mode),
+use those exact rule texts and do not query them again.
 
 Each persona searches only for defects whose failure belongs to that persona.
 Do not run a general bug sweep from every persona.
