@@ -111,7 +111,7 @@ impl FileOps for VirtioFsFile {
         let file_flags = self.open_handle.access_mode() as u32 | status_flags.bits();
 
         let write_offset = if status_flags.contains(StatusFlags::O_APPEND) {
-            self.inode.revalidate_attr(fh)?;
+            self.inode.revalidate_attr(Some(fh))?;
             WriteOffset::Append
         } else {
             WriteOffset::Absolute(offset)
@@ -153,7 +153,7 @@ impl PerOpenFileOps for VirtioFsFile {
     fn seek_end(&self) -> Result<Option<usize>> {
         // The cached inode size may be stale. Refreshing attributes here keeps
         // `SEEK_END` consistent with the latest file size on the server.
-        self.inode.revalidate_attr(self.open_handle.fh())?;
+        self.inode.revalidate_attr(Some(self.open_handle.fh()))?;
 
         Ok(Some(self.inode.size()))
     }
