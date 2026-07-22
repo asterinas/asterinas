@@ -1,40 +1,36 @@
-From fd4389860594a0bab956a5a51647f3818a279c69 Mon Sep 17 00:00:00 2001
+From b03d88cb1b0951027768692c1c209e24f324d239 Mon Sep 17 00:00:00 2001
 From: jiangjianfeng <jiangjianfeng.jjf@antgroup.com>
-Date: Fri, 5 Dec 2025 09:14:57 +0000
+Date: Mon, 27 Jul 2026 21:54:00 +0800
 Subject: [PATCH] runc: Disable creating /dev/mqueue
 
 ---
- libcontainer/rootfs_linux.go | 11 ++++++-----
- 1 file changed, 6 insertions(+), 5 deletions(-)
+ libcontainer/rootfs_linux.go | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
 
 diff --git a/libcontainer/rootfs_linux.go b/libcontainer/rootfs_linux.go
-index 930bc34f..18f8b7d1 100644
+index 7aaa70d..910fb4f 100644
 --- a/libcontainer/rootfs_linux.go
 +++ b/libcontainer/rootfs_linux.go
-@@ -482,7 +482,7 @@ func mountToRootfs(m *configs.Mount, c *mountConfig) error {
- 	}
- 
- 	mountFd := c.fd
--	dest, err := createMountpoint(rootfs, m, mountFd, m.Source)
-+	_, err := createMountpoint(rootfs, m, mountFd, m.Source)
- 	if err != nil {
- 		return fmt.Errorf("create mount destination for %s mount: %w", m.Destination, err)
- 	}
-@@ -490,10 +490,11 @@ func mountToRootfs(m *configs.Mount, c *mountConfig) error {
+@@ -634,12 +634,13 @@ func mountToRootfs(c *mountConfig, m mountEntry) error {
  
  	switch m.Device {
  	case "mqueue":
--		if err := mountPropagate(m, rootfs, "", nil); err != nil {
+-		if err := m.mountPropagate(rootfs, ""); err != nil {
 -			return err
 -		}
--		return label.SetFileLabel(dest, mountLabel)
-+		// if err := mountPropagate(m, rootfs, "", nil); err != nil {
+-		return utils.WithProcfdFile(m.dstFile, func(dstFd string) error {
+-			return label.SetFileLabel(dstFd, mountLabel)
+-		})
++		// if err := m.mountPropagate(rootfs, ""); err != nil {
 +		// 	return err
 +		// }
-+		// return label.SetFileLabel(dest, mountLabel)
++		// return utils.WithProcfdFile(m.dstFile, func(dstFd string) error {
++		// 	return label.SetFileLabel(dstFd, mountLabel)
++		// })
 +		return nil
  	case "tmpfs":
+ 		var err error
  		if m.Extensions&configs.EXT_COPYUP == configs.EXT_COPYUP {
- 			err = doTmpfsCopyUp(m, rootfs, mountLabel)
 -- 
-2.34.1
+2.54.0
+

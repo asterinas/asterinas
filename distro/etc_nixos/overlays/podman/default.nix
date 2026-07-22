@@ -4,7 +4,6 @@ final: prev: {
       ./runc-Disable-container-state-check.patch
       ./runc-Disable-creating-dev-mqueue.patch
       ./runc-Disable-eBPF-for-device-filtering.patch
-      ./runc-Disable-user-and-capability-setup-checks.patch
       ./runc-Switch-MS_SLAVE-to-MS_PRIVATE.patch
     ];
   });
