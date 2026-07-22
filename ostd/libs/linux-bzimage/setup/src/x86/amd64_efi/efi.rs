@@ -313,6 +313,10 @@ fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
 }
 
 unsafe fn efi_phase_runtime(boot_params: &mut BootParams) -> ! {
+    #[cfg(feature = "cvm_guest")]
+    let unaccepted_memory_builder =
+        super::unaccepted_memory::prepare_unaccepted_memory(boot_params);
+
     uefi::println!("[EFI stub] Exiting EFI boot services");
     // SAFETY: The safety is upheld by the caller.
     let memory_map = unsafe { boot::exit_boot_services(Some(boot::MemoryType::LOADER_DATA)) };
@@ -321,38 +325,42 @@ unsafe fn efi_phase_runtime(boot_params: &mut BootParams) -> ! {
         "[EFI stub] Processing {} memory map entries",
         memory_map.entries().len()
     );
-    #[cfg(feature = "debug_print")]
-    {
-        memory_map.entries().for_each(|entry| {
-            crate::println!(
-                "    [{:#x}] {:#x} (size={:#x}) {{flags={:#x}}}",
-                entry.ty.0,
-                entry.phys_start,
-                entry.page_count,
-                entry.att.bits()
-            );
-        })
-    }
 
-    // Write the memory map to the E820 table in `boot_params`.
+    #[cfg(feature = "cvm_guest")]
+    super::unaccepted_memory::finish_unaccepted_memory(
+        boot_params,
+        unaccepted_memory_builder,
+        &memory_map,
+    );
+
+    populate_e820_from_memory_map(boot_params, &memory_map);
+
+    crate::println!(
+        "[EFI stub] Entering the Asterinas entry point at {:p}",
+        super::ASTER_ENTRY_POINT,
+    );
+    // SAFETY:
+    // 1. The entry point address is correct and matches the kernel ELF file.
+    // 2. The boot parameter pointer is valid and points to the correct boot parameters.
+    unsafe { super::call_aster_entrypoint(super::ASTER_ENTRY_POINT, boot_params) }
+}
+
+// Convert the EFI memory map into the E820 table in `boot_params`.
+fn populate_e820_from_memory_map<M: MemoryMap>(boot_params: &mut BootParams, memory_map: &M) {
     let e820_table = &mut boot_params.e820_table;
     let mut num_entries = 0usize;
+
     for entry in memory_map.entries() {
-        let typ = if let Some(e820_type) = parse_memory_type(entry.ty) {
-            e820_type
-        } else {
-            // The memory region is unaccepted (i.e., `MemoryType::UNACCEPTED`).
-            crate::println!("[EFI stub] Accepting pending pages");
-            for page_idx in 0..entry.page_count {
-                // SAFETY: The page to accept represents a page that has not been accepted
-                // (according to the memory map returned by the UEFI firmware).
-                unsafe {
-                    tdx_guest::tdcall::accept_page(0, entry.phys_start + page_idx * PAGE_SIZE)
-                        .unwrap();
-                }
-            }
-            linux_boot_params::E820Type::Ram
-        };
+        #[cfg(feature = "debug_print")]
+        crate::println!(
+            "    [{:#x}] {:#x} (size={:#x}) {{flags={:#x}}}",
+            entry.ty.0,
+            entry.phys_start,
+            entry.page_count,
+            entry.att.bits()
+        );
+
+        let typ = parse_memory_type(entry.ty);
 
         if num_entries != 0 {
             let last_entry = &mut e820_table[num_entries - 1];
@@ -376,18 +384,9 @@ unsafe fn efi_phase_runtime(boot_params: &mut BootParams) -> ! {
         num_entries += 1;
     }
     boot_params.e820_entries = num_entries as u8;
-
-    crate::println!(
-        "[EFI stub] Entering the Asterinas entry point at {:p}",
-        super::ASTER_ENTRY_POINT,
-    );
-    // SAFETY:
-    // 1. The entry point address is correct and matches the kernel ELF file.
-    // 2. The boot parameter pointer is valid and points to the correct boot parameters.
-    unsafe { super::call_aster_entrypoint(super::ASTER_ENTRY_POINT, boot_params) }
 }
 
-fn parse_memory_type(mem_type: boot::MemoryType) -> Option<linux_boot_params::E820Type> {
+fn parse_memory_type(mem_type: boot::MemoryType) -> linux_boot_params::E820Type {
     use linux_boot_params::E820Type;
     use uefi::boot::MemoryType;
 
@@ -405,21 +404,31 @@ fn parse_memory_type(mem_type: boot::MemoryType) -> Option<linux_boot_params::E8
         | MemoryType::LOADER_DATA
         | MemoryType::BOOT_SERVICES_CODE
         | MemoryType::BOOT_SERVICES_DATA
-        | MemoryType::CONVENTIONAL => Some(E820Type::Ram),
+        | MemoryType::CONVENTIONAL => E820Type::Ram,
 
         // Some memory types have special meanings.
-        MemoryType::PERSISTENT_MEMORY => Some(E820Type::Pmem),
-        MemoryType::ACPI_RECLAIM => Some(E820Type::Acpi),
-        MemoryType::ACPI_NON_VOLATILE => Some(E820Type::Nvs),
-        MemoryType::UNUSABLE => Some(E820Type::Unusable),
-        MemoryType::UNACCEPTED => None,
+        MemoryType::PERSISTENT_MEMORY => E820Type::Pmem,
+        MemoryType::ACPI_RECLAIM => E820Type::Acpi,
+        MemoryType::ACPI_NON_VOLATILE => E820Type::Nvs,
+        MemoryType::UNUSABLE => E820Type::Unusable,
+        MemoryType::UNACCEPTED => {
+            #[cfg(feature = "cvm_guest")]
+            if tdx_guest::is_tdx_guest_early() {
+                return E820Type::Ram;
+            }
+
+            crate::println!(
+                "[EFI stub] Warning: UNACCEPTED memory is unsupported outside a confidential VM!"
+            );
+            E820Type::Reserved
+        }
 
         // Other memory types are treated as reserved.
         MemoryType::RESERVED
         | MemoryType::RUNTIME_SERVICES_CODE
         | MemoryType::RUNTIME_SERVICES_DATA
         | MemoryType::MMIO
-        | MemoryType::MMIO_PORT_SPACE => Some(E820Type::Reserved),
-        _ => Some(E820Type::Reserved),
+        | MemoryType::MMIO_PORT_SPACE => E820Type::Reserved,
+        _ => E820Type::Reserved,
     }
 }
