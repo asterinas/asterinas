@@ -169,6 +169,13 @@ pub(crate) unsafe extern "C" fn ap_early_entry(cpu_id: u32) -> ! {
     // TLB coherence because the BSP may not be able to send IPIs to flush the
     // TLBs. Do not perform complex operations during this period.
     report_online_and_hw_cpu_id(cpu_id);
+
+    #[cfg(target_arch = "x86_64")]
+    crate::if_tdx_enabled!({
+        // SAFETY: This is called only once on this AP in the boot context.
+        unsafe { crate::mm::frame::unaccepted::accept_memory_on_ap() };
+    });
+
     let ap_late_entry = AP_LATE_ENTRY.wait();
     crate::arch::mm::tlb_flush_all_excluding_global();
 

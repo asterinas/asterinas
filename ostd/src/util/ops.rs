@@ -12,7 +12,7 @@ use core::ops::Range;
 pub fn range_difference<T: Ord + Copy>(
     a: &Range<T>,
     b: &Range<T>,
-) -> impl Iterator<Item = Range<T>> {
+) -> impl Iterator<Item = Range<T>> + use<T> {
     use core::cmp::{max, min};
 
     let r = if b.is_empty() {
@@ -22,6 +22,14 @@ pub fn range_difference<T: Ord + Copy>(
     };
 
     r.into_iter().filter(|v| !v.is_empty())
+}
+
+/// Calculates the intersection of two [`Range`]s.
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub(crate) fn range_intersection<T: Ord + Copy>(a: &Range<T>, b: &Range<T>) -> Option<Range<T>> {
+    let start = a.start.max(b.start);
+    let end = a.end.min(b.end);
+    (start < end).then_some(start..end)
 }
 
 #[cfg(ktest)]
@@ -78,5 +86,28 @@ mod test {
     #[ktest]
     fn range_difference_right_intersected() {
         assert_range_difference(5..10, 6..12, [5..6]);
+    }
+
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    #[ktest]
+    fn range_intersection_overlapping() {
+        assert_eq!(range_intersection(&(0..10), &(5..15)), Some(5..10));
+    }
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    #[ktest]
+    fn range_intersection_contained() {
+        assert_eq!(range_intersection(&(0..10), &(3..7)), Some(3..7));
+    }
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    #[ktest]
+    fn range_intersection_disjoint() {
+        assert_eq!(range_intersection(&(0..5), &(5..10)), None);
+        assert_eq!(range_intersection(&(6..10), &(0..5)), None);
+    }
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    #[ktest]
+    fn range_intersection_empty() {
+        assert_eq!(range_intersection(&(3..3), &(0..10)), None);
+        assert_eq!(range_intersection(&(0..10), &(3..3)), None);
     }
 }
