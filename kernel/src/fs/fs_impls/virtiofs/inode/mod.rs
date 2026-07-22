@@ -273,6 +273,7 @@ impl Inode for VirtioFsInode {
     }
 
     fn metadata(&self) -> Result<Metadata> {
+        self.revalidate_attr(None)?;
         Ok(self.inner.read().metadata)
     }
 

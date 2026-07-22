@@ -58,7 +58,7 @@ impl VirtioFsInode {
         // so cached reads refresh attributes before checking the cached file size.
         // If this flag becomes optional, reads that stay below EOF should be allowed
         // to use still-valid cached attributes.
-        self.revalidate_attr(fh)?;
+        self.revalidate_attr(Some(fh))?;
 
         let inner = self.inner.read();
         let file_size = self.size();
@@ -89,7 +89,7 @@ impl VirtioFsInode {
         // FIXME: Direct reads do not support short reads yet, so `FUSE_READ`
         // must request the actual bytes to read instead of the caller's maximum
         // buffer size. Refresh attributes before using the cached file size.
-        self.revalidate_attr(fh)?;
+        self.revalidate_attr(Some(fh))?;
 
         let _inner = self.inner.read();
         let file_size = self.size();
@@ -605,7 +605,7 @@ impl VirtioFsInode {
     /// so the server may return handle-specific attributes.
     pub(in crate::fs::fs_impls::virtiofs) fn revalidate_attr(
         &self,
-        fh: FuseFileHandle,
+        fh: Option<FuseFileHandle>,
     ) -> Result<()> {
         let now = MonotonicCoarseClock::get().read_time();
         if self.inner.read().is_attr_valid(now) {
@@ -614,10 +614,13 @@ impl VirtioFsInode {
 
         let fs = self.fs_ref();
         let request_attr_version = fs.session().snapshot_attr_version();
-        let attr_reply = fs.session().do_fuse_op(
-            self.nodeid(),
-            GetattrOperation::new(GetattrReq::new(GetattrFlags::GETATTR_FH, fh)),
-        )?;
+        let getattr_req = match fh {
+            Some(fh) => GetattrReq::new(GetattrFlags::GETATTR_FH, fh),
+            None => GetattrReq::new(GetattrFlags::empty(), FuseFileHandle::new(0)),
+        };
+        let attr_reply = fs
+            .session()
+            .do_fuse_op(self.nodeid(), GetattrOperation::new(getattr_req))?;
 
         self.commit_attr_reply(attr_reply, request_attr_version, StaleAttrAction::Discard)?;
 
