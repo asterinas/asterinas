@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #define _GNU_SOURCE
+#include <linux/futex.h>
 #include <poll.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
@@ -117,6 +121,72 @@ FN_TEST(poll_does_not_restart_with_sa_restart)
 	TEST_SUCC(close(pipefds[0]));
 	TEST_SUCC(close(pipefds[1]));
 	TEST_SUCC(alarm(0));
+}
+END_TEST()
+
+FN_TEST(futex_wait_without_timeout_restarts)
+{
+	signal_count = 0;
+	TEST_SUCC(alarm(TEST_TIMEOUT_SECONDS));
+
+	uint32_t *futex_word =
+		TEST_RES(mmap(NULL, sizeof(*futex_word), PROT_READ | PROT_WRITE,
+			      MAP_SHARED | MAP_ANONYMOUS, -1, 0),
+			 _ret != MAP_FAILED);
+	*futex_word = 0;
+
+	pid_t parent = getpid();
+	pid_t child = TEST_SUCC(fork());
+	if (child == 0) {
+		CHECK(alarm(TEST_TIMEOUT_SECONDS));
+		sleep(1);
+		CHECK(kill(parent, SIGUSR1));
+		sleep(1);
+		// Keep the value unchanged and wait for the parent to reenter FUTEX_WAIT.
+		while (CHECK(syscall(SYS_futex, futex_word, FUTEX_WAKE, 1, NULL,
+				     NULL, 0)) == 0)
+			CHECK(usleep(SIGNAL_INTERVAL_NS / 1000));
+		_exit(0);
+	}
+
+	TEST_RES(syscall(SYS_futex, futex_word, FUTEX_WAIT, 0, NULL, NULL, 0),
+		 _ret == 0 && signal_count > 0);
+
+	int status = 0;
+	TEST_RES(waitpid(child, &status, 0), _ret == child &&
+						     WIFEXITED(status) &&
+						     WEXITSTATUS(status) == 0);
+	TEST_SUCC(munmap(futex_word, sizeof(*futex_word)));
+	TEST_SUCC(alarm(0));
+}
+END_TEST()
+
+FN_TEST(futex_wait_with_timeout_does_not_restart)
+{
+	for (int wait_bitset = 0; wait_bitset <= 1; wait_bitset++) {
+		signal_count = 0;
+		TEST_SUCC(alarm(TEST_TIMEOUT_SECONDS));
+		uint32_t futex_word = 0;
+		struct timespec timeout;
+		if (wait_bitset) {
+			TEST_SUCC(clock_gettime(CLOCK_MONOTONIC, &timeout));
+			timeout.tv_sec += 3;
+		} else {
+			timeout.tv_sec = 3;
+			timeout.tv_nsec = 0;
+		}
+
+		int futex_op = wait_bitset ? FUTEX_WAIT_BITSET_PRIVATE :
+					     FUTEX_WAIT_PRIVATE;
+		uint32_t bitset = wait_bitset ? FUTEX_BITSET_MATCH_ANY : 0;
+		TEST_SUCC(
+			timer_settime(signal_timer, 0, &periodic_timer, NULL));
+		TEST(syscall(SYS_futex, &futex_word, futex_op, 0, &timeout,
+			     NULL, bitset),
+		     EINTR, _ret == -1 && signal_count > 0);
+		TEST_SUCC(timer_settime(signal_timer, 0, &stopped_timer, NULL));
+		TEST_SUCC(alarm(0));
+	}
 }
 END_TEST()
 
