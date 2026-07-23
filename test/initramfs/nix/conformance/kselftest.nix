@@ -31,17 +31,18 @@ in stdenv.mkDerivation rec {
   # a regression in an unlisted subsystem upstream cannot silently change our conformance surface.
   # To enable a new subsystem,
   # add it here and triage any resulting build/run failures before landing.
-  baseKselftestTargets =
-    [ "exec" "lsm" "proc" "signal" "splice" "timers" "vDSO" ];
+  baseKselftestTargets = [ "lsm" "proc" "signal" "splice" "timers" "vDSO" ];
 
   kselftestTargets = lib.concatStringsSep " " (baseKselftestTargets
-    ++ lib.optionals stdenv.hostPlatform.isx86_64 [ "x86" ]);
+    ++ lib.optionals stdenv.hostPlatform.isx86_64 [ "exec" "x86" ]);
 
   enableParallelBuilding = true;
 
   nativeBuildInputs = with pkgsBuildBuild; [ rsync ];
 
-  buildInputs = with pkgs; [ glibc_multi.static libcap.dev ];
+  buildInputs = with pkgs;
+    [ libcap.dev ]
+    ++ lib.optionals stdenv.hostPlatform.isx86_64 [ glibc_multi.static ];
 
   buildPhase = ''
     runHook preBuild
