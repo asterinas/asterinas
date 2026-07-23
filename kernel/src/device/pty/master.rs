@@ -156,7 +156,8 @@ impl PerOpenFileOps for PtyMaster {
 
         dispatch_ioctl!(match raw_ioctl {
             GetTermios | GetTermios2 | SetTermios | SetTermios2 | SetTermiosWait
-            | SetTermiosFlush | GetWinSize | SetWinSize | GetPtyNumber => {
+            | SetTermios2Wait | SetTermiosFlush | SetTermios2Flush | GetWinSize | SetWinSize
+            | GetPtyNumber => {
                 return self.slave.ioctl(raw_ioctl);
             }
 

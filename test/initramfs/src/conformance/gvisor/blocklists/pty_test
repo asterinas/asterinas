@@ -25,7 +25,6 @@ PtyTest.SwitchNoncanonToCanonNoNewlineBig
 PtyTest.SwitchTwiceMultiline
 PtyTest.TCFLSH*
 PtyTest.TCSBRKSucceeds
-PtyTest.Termios2
 PtyTest.TermiosICANONEOF
 PtyTest.TermiosICANONNewline
 PtyTest.TermiosIGNCR
