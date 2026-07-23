@@ -267,14 +267,33 @@ impl<D: TtyDriver> Tty<D> {
                 self.driver().on_termios_change(ldisc.termios(), &termios);
                 ldisc.set_termios(termios);
             }
+            cmd @ SetTermios2Wait => {
+                let termios2 = cmd.read()?;
+
+                // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
+                let mut ldisc = self.ldisc.lock();
+                self.driver().on_termios_change(ldisc.termios(), &termios2);
+                ldisc.set_termios2(termios2);
+            }
             cmd @ SetTermiosFlush => {
                 let termios = cmd.read()?;
 
                 // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
                 let mut ldisc = self.ldisc.lock();
+                ldisc.drain_input();
                 self.driver().on_termios_change(ldisc.termios(), &termios);
                 ldisc.set_termios(termios);
+
+                self.pollee.invalidate();
+            }
+            cmd @ SetTermios2Flush => {
+                let termios2 = cmd.read()?;
+
+                // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
+                let mut ldisc = self.ldisc.lock();
                 ldisc.drain_input();
+                self.driver().on_termios_change(ldisc.termios(), &termios2);
+                ldisc.set_termios2(termios2);
 
                 self.pollee.invalidate();
             }
