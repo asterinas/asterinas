@@ -73,8 +73,8 @@ impl Inode for Ext2Inode {
         self.resize(new_size)
     }
 
-    fn metadata(&self) -> Metadata {
-        self.metadata()
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(self.metadata())
     }
 
     fn ino(&self) -> u64 {
