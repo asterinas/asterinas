@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(vsock)]
+
 use core::sync::atomic::Ordering;
 
 use crate::{
@@ -14,7 +16,7 @@ use crate::{
 
 impl Connection {
     /// Returns the local address bound to this connection.
-    pub(in crate::net::socket::vsock) fn local_addr(&self) -> VsockSocketAddr {
+    pub(in vsock) fn local_addr(&self) -> VsockSocketAddr {
         VsockSocketAddr {
             cid: self.inner.conn_id.local_cid as u32,
             port: self.inner.conn_id.local_port,
@@ -22,7 +24,7 @@ impl Connection {
     }
 
     /// Returns the remote address connected to this connection.
-    pub(in crate::net::socket::vsock) fn remote_addr(&self) -> VsockSocketAddr {
+    pub(in vsock) fn remote_addr(&self) -> VsockSocketAddr {
         VsockSocketAddr {
             cid: self.inner.conn_id.peer_cid as u32,
             port: self.inner.conn_id.peer_port,
@@ -30,13 +32,13 @@ impl Connection {
     }
 
     /// Returns and clears the pending transport error, if any.
-    pub(in crate::net::socket::vsock) fn test_and_clear_error(&self) -> Result<()> {
+    pub(in vsock) fn test_and_clear_error(&self) -> Result<()> {
         let mut state = self.inner.state.lock();
         state.test_and_clear_error(&self.inner)
     }
 
     /// Returns the currently observable I/O readiness for the connection.
-    pub(in crate::net::socket::vsock) fn check_io_events(&self) -> IoEvents {
+    pub(in vsock) fn check_io_events(&self) -> IoEvents {
         // The socket layer handles the `Connecting` and `ConnectFailed` phases. The `Closing`
         // phase indicates that the socket file has been closed. None of them will reach this
         // method.
@@ -88,7 +90,7 @@ impl Connection {
     }
 
     /// Returns the `Pollee` used to I/O notification.
-    pub(in crate::net::socket::vsock) fn pollee(&self) -> &Pollee {
+    pub(in vsock) fn pollee(&self) -> &Pollee {
         &self.inner.pollee
     }
 }

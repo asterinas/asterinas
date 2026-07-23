@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(vt)]
+
 use alloc::sync::Weak;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -16,7 +18,7 @@ use crate::{
 };
 
 /// The virtual terminal console.
-pub(in crate::device::tty::vt) struct VtConsole {
+pub(in vt) struct VtConsole {
     keyboard: SpinLock<VtKeyboard, LocalIrqDisabled>,
     is_allocated: AtomicBool,
     backend: SpinLock<VtConsoleBackend, LocalIrqDisabled>,
@@ -33,7 +35,7 @@ enum VtConsoleBackend {
 }
 
 /// The inner of [`VtConsole`].
-pub(in crate::device::tty::vt) struct VtConsoleInner {
+pub(in vt) struct VtConsoleInner {
     mode: VtMode,
     process: Option<Weak<Process>>,
     console_mode: ConsoleMode,
@@ -49,14 +51,14 @@ impl VtConsoleInner {
     }
 
     /// Gets the VT mode configuration.
-    pub(in crate::device::tty::vt) fn vt_mode(&self) -> &VtMode {
+    pub(in vt) fn vt_mode(&self) -> &VtMode {
         &self.mode
     }
 }
 
 /// The VT mode configuration.
 #[derive(Clone, Copy, Debug)]
-pub(in crate::device::tty::vt) struct VtMode {
+pub(in vt) struct VtMode {
     mode_type: VtModeType,
     wait_on_inactive: bool,
     release_signal: Option<SigNum>,
@@ -73,7 +75,7 @@ impl VtMode {
 /// The VT mode type.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub(in crate::device::tty::vt) enum VtModeType {
+pub(in vt) enum VtModeType {
     /// Kernel-controlled switching.
     ///
     /// In this mode, the VT automatically switches without notifying any process.
@@ -148,7 +150,7 @@ impl core::fmt::Debug for VtConsole {
 
 impl VtConsole {
     /// Creates a new VT console with none backend.
-    pub(in crate::device::tty::vt) fn new() -> Self {
+    pub(in vt) fn new() -> Self {
         Self {
             keyboard: SpinLock::new(VtKeyboard::default()),
             is_allocated: AtomicBool::new(false),
@@ -158,27 +160,23 @@ impl VtConsole {
     }
 
     /// Locks the inner and gets a guard.
-    pub(in crate::device::tty::vt) fn lock_inner(
-        &self,
-    ) -> SpinLockGuard<'_, VtConsoleInner, LocalIrqDisabled> {
+    pub(in vt) fn lock_inner(&self) -> SpinLockGuard<'_, VtConsoleInner, LocalIrqDisabled> {
         self.inner.lock()
     }
 
     /// Locks the keyboard and gets a guard.
-    pub(in crate::device::tty::vt) fn lock_keyboard(
-        &self,
-    ) -> SpinLockGuard<'_, VtKeyboard, LocalIrqDisabled> {
+    pub(in vt) fn lock_keyboard(&self) -> SpinLockGuard<'_, VtKeyboard, LocalIrqDisabled> {
         self.keyboard.lock()
     }
 
     /// Gets the console mode.
-    pub(in crate::device::tty::vt) fn mode(&self) -> ConsoleMode {
+    pub(in vt) fn mode(&self) -> ConsoleMode {
         let inner = self.inner.lock();
         inner.console_mode
     }
 
     /// Sends the given buffer to this console.
-    pub(in crate::device::tty::vt) fn send(&self, buf: &[u8]) {
+    pub(in vt) fn send(&self, buf: &[u8]) {
         let mut backend = self.backend.lock();
         match &mut *backend {
             VtConsoleBackend::Framebuffer(c) => c.send(buf),
@@ -187,10 +185,7 @@ impl VtConsole {
     }
 
     /// Sets the console font.
-    pub(in crate::device::tty::vt) fn set_font(
-        &self,
-        font: BitmapFont,
-    ) -> crate::prelude::Result<()> {
+    pub(in vt) fn set_font(&self, font: BitmapFont) -> crate::prelude::Result<()> {
         let mut backend = self.backend.lock();
         match &mut *backend {
             VtConsoleBackend::Framebuffer(c) => c.set_font(font).map_err(|_| {
