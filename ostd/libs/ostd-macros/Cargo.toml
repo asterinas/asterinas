@@ -14,7 +14,7 @@ proc-macro = true
 [dependencies]
 proc-macro2.workspace = true
 quote.workspace = true
-rand = { workspace = true, features = [ "thread_rng" ] }
+rand = { workspace = true, features = ["thread_rng"] }
 syn.workspace = true
 
 [lints]

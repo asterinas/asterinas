@@ -13,7 +13,7 @@ ostd.workspace = true
 spin.workspace = true
 
 [target.riscv64imac-unknown-none-elf.dependencies]
-chrono = { version = "0.4.38", default-features = false }
+chrono.workspace = true
 
 [lints]
 workspace = true
