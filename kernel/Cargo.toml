@@ -11,6 +11,7 @@ aster-bigtcp.workspace = true
 aster-block.workspace = true
 aster-cmdline.workspace = true
 aster-console.workspace = true
+aster-device-mapper.workspace = true
 aster-framebuffer.workspace = true
 aster-fuse.workspace = true
 aster-i8042.workspace = true

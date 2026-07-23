@@ -3,6 +3,7 @@
 block = { name = "aster-block" }
 cmdline = { name = "aster-cmdline" }
 console = { name = "aster-console" }
+device_mapper = { name = "aster-device-mapper" }
 framebuffer = { name = "aster-framebuffer" }
 i8042 = { name = "aster-i8042" }
 input = { name = "aster-input" }
