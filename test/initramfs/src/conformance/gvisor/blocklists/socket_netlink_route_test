@@ -2,8 +2,6 @@ NetlinkRouteTest.AddAddr
 NetlinkRouteTest.AddAndRemoveAddr
 NetlinkRouteTest.ChangeNetnsAndOtherAttrsTogether
 NetlinkRouteTest.ControlMessageIgnored
-NetlinkRouteTest.GetLinkByIndex
-NetlinkRouteTest.GetLinkByName
 NetlinkRouteTest.GetRouteDump
 NetlinkRouteTest.GetRouteRequest
 NetlinkRouteTest.GetRuleDump
@@ -25,7 +23,6 @@ NetlinkRouteTest.NonGetRequestsRequireCapNetAdmin
 NetlinkRouteTest.NoPasscredNoCreds
 NetlinkRouteTest.PasscredCreds
 NetlinkRouteTest.ProcNetDevStableAcrossCalls
-NetlinkRouteTest.RecvmsgTrunc
 NetlinkRouteTest.RemoveLinkByNameNotFound
 NetlinkRouteTest.SpliceFromPipe
 NetlinkRouteTest.VethAdd

@@ -3,7 +3,7 @@
 use alloc::sync::Arc;
 use core::ffi::CStr;
 
-use smoltcp::wire::{Ipv4Address, Ipv4Cidr, Ipv6Address};
+use smoltcp::wire::{EthernetAddress, Ipv4Address, Ipv4Cidr, Ipv6Cidr};
 
 use super::{BindPortConfig, BoundTcpPort, BoundUdpPort, InterfaceFlags, InterfaceType};
 use crate::{errors::BindError, ext::Ext};
@@ -15,6 +15,9 @@ use crate::{errors::BindError, ext::Ext};
 /// wireless adapters. They can also be virtual interfaces created by software, such as virtual
 /// private network (VPN) connections.
 pub trait Iface<E>: internal::IfaceInternal<E> + Send + Sync {
+    /// Returns the Ethernet address, if the interface uses Ethernet framing.
+    fn ethernet_addr(&self) -> Option<EthernetAddress>;
+
     /// Transmits or receives packets queued in the iface, and updates socket status accordingly.
     fn poll(&self);
 
@@ -73,35 +76,24 @@ impl<E: Ext> dyn Iface<E> {
         self.common().flags()
     }
 
-    /// Gets the IPv4 address of the iface, if any.
-    //
-    // FIXME: One iface may have multiple IPv4 addresses.
-    pub fn ipv4_addr(&self) -> Option<Ipv4Address> {
-        self.common().ipv4_addr()
+    // FIXME: Linux and smoltcp allow multiple IP CIDRs per interface, while the
+    // address-related APIs below only account for the first CIDR of each family.
+
+    /// Gets the IPv4 CIDR of the iface, if any.
+    pub fn ipv4_cidr(&self) -> Option<Ipv4Cidr> {
+        self.common().ipv4_cidr()
     }
 
-    /// Gets the IPv6 address of the iface, if any.
-    pub fn ipv6_addr(&self) -> Option<Ipv6Address> {
-        self.common().ipv6_addr()
+    /// Gets the IPv6 CIDR of the iface, if any.
+    pub fn ipv6_cidr(&self) -> Option<Ipv6Cidr> {
+        self.common().ipv6_cidr()
     }
 
-    /// Retrieves the prefix length of the interface's IPv4 address.
+    /// Gets the IPv4 broadcast address of the iface, if any.
     ///
-    /// Both `Self::ipv4_addr` and this method will either return `Some(_)`
-    /// or both will return `None`.
-    pub fn prefix_len(&self) -> Option<u8> {
-        self.common().prefix_len()
-    }
-
-    /// Gets the broadcast address of the iface, if any.
+    /// IPv6 does not define broadcast addresses and uses multicast instead.
     pub fn broadcast_addr(&self) -> Option<Ipv4Address> {
-        let cidr = {
-            let common = self.common();
-            let ipv4_addr = common.ipv4_addr()?;
-            let prefix_len = common.prefix_len()?;
-            Ipv4Cidr::new(ipv4_addr, prefix_len)
-        };
-        cidr.broadcast()
+        self.common().ipv4_cidr()?.broadcast()
     }
 
     /// Returns a reference to the associated [`ScheduleNextPoll`].

@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::net::{IpAddr, Ipv4Addr};
+
+use zerocopy::Immutable;
+
 use crate::{
-    net::socket::netlink::message::{Attribute, CAttrHeader, ContinueRead},
+    net::socket::netlink::{
+        message::{Attribute, CAttrHeader, ContinueRead},
+        route::message::AddrMessageFlags,
+    },
     prelude::*,
     util::MultiRead,
 };
@@ -25,21 +32,47 @@ enum AddrAttrClass {
     FLAGS = 8,
     RT_PRIORITY = 9,
     TARGET_NETNSID = 10,
+    PROTO = 11,
+}
+
+/// The source protocol of an interface address.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v7.1/source/include/uapi/linux/if_addr.h#L73>.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Immutable, IntoBytes)]
+pub enum AddrProtocol {
+    /// An unspecified address source.
+    #[expect(dead_code)]
+    Unspecified = 0,
+    /// A loopback address configured by the kernel.
+    KernelLoopback = 1,
+    /// An address configured by the kernel from a Router Advertisement.
+    #[expect(dead_code)]
+    KernelRouterAdvertisement = 2,
+    /// A link-local address configured by the kernel.
+    #[expect(dead_code)]
+    KernelLinkLocal = 3,
 }
 
 #[derive(Debug)]
 pub enum AddrAttr {
-    Address([u8; 4]),
-    Local([u8; 4]),
+    Address(IpAddr),
+    Broadcast(Ipv4Addr),
+    Flags(AddrMessageFlags),
     Label(CString),
+    Local(IpAddr),
+    Protocol(AddrProtocol),
 }
 
 impl AddrAttr {
     fn class(&self) -> AddrAttrClass {
         match self {
             AddrAttr::Address(_) => AddrAttrClass::ADDRESS,
-            AddrAttr::Local(_) => AddrAttrClass::LOCAL,
+            AddrAttr::Broadcast(_) => AddrAttrClass::BROADCAST,
+            AddrAttr::Flags(_) => AddrAttrClass::FLAGS,
             AddrAttr::Label(_) => AddrAttrClass::LABEL,
+            AddrAttr::Local(_) => AddrAttrClass::LOCAL,
+            AddrAttr::Protocol(_) => AddrAttrClass::PROTO,
         }
     }
 }
@@ -51,9 +84,12 @@ impl Attribute for AddrAttr {
 
     fn payload_as_bytes(&self) -> &[u8] {
         match self {
-            AddrAttr::Address(address) => address,
-            AddrAttr::Local(local) => local,
+            AddrAttr::Address(address) => address.as_octets(),
+            AddrAttr::Broadcast(address) => address.as_octets(),
+            AddrAttr::Flags(flags) => flags.as_bytes(),
             AddrAttr::Label(label) => label.as_bytes_with_nul(),
+            AddrAttr::Local(address) => address.as_octets(),
+            AddrAttr::Protocol(protocol) => protocol.as_bytes(),
         }
     }
 

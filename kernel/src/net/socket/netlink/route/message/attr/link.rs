@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_bigtcp::wire::EthernetAddress;
+
 use super::IFNAME_SIZE;
 use crate::{
     net::socket::netlink::message::{Attribute, CAttrHeader, ContinueRead},
@@ -84,6 +86,11 @@ enum LinkAttrClass {
 
 #[derive(Debug)]
 pub enum LinkAttr {
+    // FIXME: Linux link-layer addresses have device-specific lengths.
+    // Using `EthernetAddress` may be inappropriate
+    // once Asterinas supports other network device types.
+    Address(EthernetAddress),
+    Broadcast(EthernetAddress),
     Name(CString),
     Mtu(u32),
     TxqLen(u32),
@@ -94,6 +101,8 @@ pub enum LinkAttr {
 impl LinkAttr {
     fn class(&self) -> LinkAttrClass {
         match self {
+            LinkAttr::Address(_) => LinkAttrClass::ADDRESS,
+            LinkAttr::Broadcast(_) => LinkAttrClass::BROADCAST,
             LinkAttr::Name(_) => LinkAttrClass::IFNAME,
             LinkAttr::Mtu(_) => LinkAttrClass::MTU,
             LinkAttr::TxqLen(_) => LinkAttrClass::TXQLEN,
@@ -110,6 +119,8 @@ impl Attribute for LinkAttr {
 
     fn payload_as_bytes(&self) -> &[u8] {
         match self {
+            LinkAttr::Address(address) => &address.0,
+            LinkAttr::Broadcast(address) => &address.0,
             LinkAttr::Name(name) => name.as_bytes_with_nul(),
             LinkAttr::Mtu(mtu) => mtu.as_bytes(),
             LinkAttr::TxqLen(txq_len) => txq_len.as_bytes(),
