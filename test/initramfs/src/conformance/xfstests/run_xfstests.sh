@@ -61,22 +61,29 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ -n "$RUNLIST_FILE" ]; then
-  if [ ! -f "$RUNLIST_FILE" ]; then
-    echo "Run list file not found: $RUNLIST_FILE" >&2
-    exit 2
-  fi
-  while IFS= read -r test; do
-    case "$test" in
-      ""|\#*) continue ;;
-    esac
-    TEST_ARGS="$TEST_ARGS $test"
-  done < "$RUNLIST_FILE"
-fi
+# When a selector is set, run only the selected test ids and ignore the blocklist.
+CONFORMANCE_TEST_SELECTOR=${CONFORMANCE_TEST_SELECTOR:-}
 
-# Prepend block-list exclusion so blocked tests are skipped.
-if [ -f "$XFSTESTS_DIR/block.list" ]; then
-    TEST_ARGS="-E $XFSTESTS_DIR/block.list $TEST_ARGS"
+if [ -n "$CONFORMANCE_TEST_SELECTOR" ]; then
+    TEST_ARGS=$(echo "$CONFORMANCE_TEST_SELECTOR" | tr ',' ' ')
+else
+    if [ -n "$RUNLIST_FILE" ]; then
+        if [ ! -f "$RUNLIST_FILE" ]; then
+            echo "Run list file not found: $RUNLIST_FILE" >&2
+            exit 2
+        fi
+        while IFS= read -r test; do
+            case "$test" in
+                ""|\#*) continue ;;
+            esac
+            TEST_ARGS="$TEST_ARGS $test"
+        done < "$RUNLIST_FILE"
+    fi
+
+    # Prepend block-list exclusion so blocked tests are skipped.
+    if [ -f "$XFSTESTS_DIR/block.list" ]; then
+        TEST_ARGS="-E $XFSTESTS_DIR/block.list $TEST_ARGS"
+    fi
 fi
 
 # Word-splitting is intentional here: TEST_ARGS contains only test names

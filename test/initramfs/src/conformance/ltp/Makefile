@@ -18,13 +18,15 @@ $(TARGET_DIR): $(RUN_BASH) $(ALL_TESTS) $(EXT2_BLOCKLIST) $(EXFAT_BLOCKLIST)
 	@# Prepare tests dir for test binaries
 	@mkdir -p $@/testcases/bin
 	@mkdir -p $@/runtest
-	@awk '!/^#/ && NF' $(ALL_TESTS) > $@/all.txt
-	@if [ "$(CONFORMANCE_TEST_WORKDIR)" = "/ext2" ]; then \
-		grep -vxF -f $(EXT2_BLOCKLIST) $@/all.txt > $@/filtered.txt; \
+	@# When a selector is set, package only the selected tests and ignore the blocklist.
+	@if [ -n "$(CONFORMANCE_TEST_SELECTOR)" ]; then \
+		echo "$(CONFORMANCE_TEST_SELECTOR)" | tr ',' '\n' | grep -v '^$$' > $@/filtered.txt; \
+	elif [ "$(CONFORMANCE_TEST_WORKDIR)" = "/ext2" ]; then \
+		awk '!/^#/ && NF' $(ALL_TESTS) | grep -vxF -f $(EXT2_BLOCKLIST) > $@/filtered.txt; \
 	elif [ "$(CONFORMANCE_TEST_WORKDIR)" = "/exfat" ]; then \
-		grep -vxF -f $(EXFAT_BLOCKLIST) $@/all.txt > $@/filtered.txt; \
+		awk '!/^#/ && NF' $(ALL_TESTS) | grep -vxF -f $(EXFAT_BLOCKLIST) > $@/filtered.txt; \
 	else \
-		cp -f $@/all.txt $@/filtered.txt; \
+		awk '!/^#/ && NF' $(ALL_TESTS) > $@/filtered.txt; \
 	fi;
 	@# Process syscall testcases and copy binaries
 	@while read -r syscall binary params; do \
@@ -38,7 +40,7 @@ $(TARGET_DIR): $(RUN_BASH) $(ALL_TESTS) $(EXT2_BLOCKLIST) $(EXFAT_BLOCKLIST)
 		fi; \
 	done < $(LTP_PREBUILT_DIR)/runtest/syscalls
 	@# Remove intermediate files
-	@rm -f $@/all.txt $@/filtered.txt
+	@rm -f $@/filtered.txt
 	@# Copy bash scripts
 	@if [ -d $(LTP_PREBUILT_DIR)/bin ]; then \
 		cp -r $(LTP_PREBUILT_DIR)/bin $@; \

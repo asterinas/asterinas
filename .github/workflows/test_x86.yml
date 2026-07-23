@@ -127,9 +127,9 @@ jobs:
           - 'multiboot2-smp4'
         include:
           - { variant: 'debug', release: false, boot_protocol: 'linux-efi-pe64' }
-          - { variant: 'ext2-microvm', scheme: 'microvm', extra_blocklists: 'blocklists.ext2', conformance_test_workdir: '/ext2' }
-          - { variant: 'ext2-iommu-debug', scheme: 'iommu', extra_blocklists: 'blocklists.ext2', conformance_test_workdir: '/ext2', release: false }
-          - { variant: 'exfat-multiboot2-nokvm', boot_protocol: 'multiboot2', enable_kvm: false, extra_blocklists: 'blocklists.exfat', conformance_test_workdir: '/exfat' }
+          - { variant: 'ext2-microvm', scheme: 'microvm', conformance_test_extra_blocklists: 'blocklists.ext2', conformance_test_workdir: '/ext2' }
+          - { variant: 'ext2-iommu-debug', scheme: 'iommu', conformance_test_extra_blocklists: 'blocklists.ext2', conformance_test_workdir: '/ext2', release: false }
+          - { variant: 'exfat-multiboot2-nokvm', boot_protocol: 'multiboot2', enable_kvm: false, conformance_test_extra_blocklists: 'blocklists.exfat', conformance_test_workdir: '/exfat' }
           - { variant: 'multiboot2-smp4', boot_protocol: 'multiboot2', smp: 4 }
     steps:
       - name: Free disk space
@@ -145,7 +145,7 @@ jobs:
           smp: ${{ matrix.smp }}
           netdev: ${{ matrix.netdev || 'tap' }}
           scheme: ${{ matrix.scheme }}
-          extra_blocklists: ${{ matrix.extra_blocklists }}
+          conformance_test_extra_blocklists: ${{ matrix.conformance_test_extra_blocklists }}
           conformance_test_suite: ${{ matrix.suite }}
           conformance_test_workdir: ${{ matrix.conformance_test_workdir }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
