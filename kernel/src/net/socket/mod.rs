@@ -14,9 +14,10 @@ use crate::{
         pseudofs::SockFs,
     },
     prelude::*,
-    util::{MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, ioctl::RawIoctl},
 };
 
+mod ioctl;
 pub mod ip;
 pub mod netlink;
 pub mod options;
@@ -163,6 +164,10 @@ impl<T: Socket + 'static> FileLike for T {
 
     fn settable_status_flags(&self) -> SettableStatusFlags {
         SettableStatusFlags::minimal().with_o_async()
+    }
+
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        ioctl::socket_ioctl(raw_ioctl)
     }
 
     fn access_mode(&self) -> AccessMode {
