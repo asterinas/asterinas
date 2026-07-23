@@ -164,20 +164,12 @@ impl UtsName {
     };
 
     /// The machine name.
-    pub const MACHINE: &str = {
-        cfg_if::cfg_if! {
-            if #[cfg(target_arch = "x86_64")] {
-                "x86_64"
-            } else if #[cfg(target_arch = "riscv64")] {
-                "riscv64"
-            } else if #[cfg(target_arch = "loongarch64")] {
-                "loongarch64"
-            } else if #[cfg(target_arch = "aarch64")] {
-                "aarch64"
-            } else {
-                compile_error!("unsupported target")
-            }
-        }
+    pub const MACHINE: &str = cfg_select! {
+        target_arch = "x86_64" => "x86_64",
+        target_arch = "riscv64" => "riscv64",
+        target_arch = "loongarch64" => "loongarch64",
+        target_arch = "aarch64" => "aarch64",
+        _ => compile_error!("unsupported target"),
     };
 
     /// Returns the hostname.

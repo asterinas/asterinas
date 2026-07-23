@@ -365,8 +365,8 @@ pub fn handle_user_signal(
     let fpu_context_bytes = fpu_context.as_bytes();
     supp.fpu().set(FpuContext::new());
 
-    cfg_if::cfg_if! {
-        if #[cfg(target_arch = "x86_64")] {
+    cfg_select! {
+        target_arch = "x86_64" => {
             // Align the FPU context address to the 64-byte boundary so that the
             // user program can use the XSAVE/XRSTOR instructions at that address,
             // if necessary.
@@ -383,7 +383,8 @@ pub fn handle_user_signal(
 
             const UC_FP_XSTATE: u64 = 1 << 0;
             ucontext.uc_flags = UC_FP_XSTATE;
-        } else if #[cfg(target_arch = "riscv64")] {
+        }
+        target_arch = "riscv64" => {
             // Reference:
             // <https://elixir.bootlin.com/linux/v6.17.5/source/arch/riscv/include/uapi/asm/ptrace.h#L94-L98>,
             // <https://elixir.bootlin.com/linux/v6.17.5/source/arch/riscv/include/uapi/asm/ptrace.h#L69-L77>.
@@ -396,7 +397,8 @@ pub fn handle_user_signal(
                 align_of::<ucontext_t>(),
             );
             let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
-        } else if #[cfg(target_arch = "loongarch64")] {
+        }
+        target_arch = "loongarch64" => {
             // FIXME: It seems that we need to allocate an `sctx_info` structure.
             // Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/kernel/signal.c#L848>
             let ucontext_addr = alloc_aligned_in_user_stack(
@@ -407,7 +409,8 @@ pub fn handle_user_signal(
             // TODO: Set the flags in the context structure.
             // Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/kernel/signal.c#L805>
             let fpu_context_addr = (ucontext_addr as usize) + size_of::<ucontext_t>();
-        } else {
+        }
+        _ => {
             compile_error!("unsupported target");
         }
     }
@@ -423,11 +426,12 @@ pub fn handle_user_signal(
     let retaddr = if flags.contains(SigActionFlags::SA_RESTORER) {
         restorer_addr
     } else {
-        cfg_if::cfg_if! {
-            if #[cfg(target_arch = "riscv64")] {
+        cfg_select! {
+            target_arch = "riscv64" => {
                 ctx.user_space().vmar().process_vm().vdso_base()
                     + crate::vdso::__VDSO_RT_SIGRETURN_OFFSET
-            } else {
+            }
+            _ => {
                 // Note that this should already be rejected at the `rt_sigaction` system call.
                 return_errno_with_message!(
                     Errno::EINVAL,
@@ -436,12 +440,14 @@ pub fn handle_user_signal(
             }
         }
     };
-    cfg_if::cfg_if! {
-        if #[cfg(target_arch = "x86_64")] {
+    cfg_select! {
+        target_arch = "x86_64" => {
             stack_pointer = write_u64_to_user_stack(stack_pointer, retaddr as u64)?;
-        } else if #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))] {
+        }
+        any(target_arch = "riscv64", target_arch = "loongarch64") => {
             user_ctx.set_ra(retaddr);
-        } else {
+        }
+        _ => {
             compile_error!("unsupported target");
         }
     }
@@ -461,12 +467,13 @@ pub fn handle_user_signal(
         user_ctx.set_arguments(sig_num, 0, 0);
     }
     // Perform CPU architecture-dependent logic.
-    cfg_if::cfg_if! {
-        if #[cfg(target_arch = "x86_64")] {
+    cfg_select! {
+        target_arch = "x86_64" => {
             // Clear the DF flag. This is to conform to x86-64 calling conventions.
             const X86_RFLAGS_DF: usize = 1 << 10; // Bit 10 is the DF flag.
             user_ctx.general_regs_mut().rflags &= !X86_RFLAGS_DF;
         }
+        _ => {},
     }
 
     Ok(())

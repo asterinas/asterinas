@@ -4,7 +4,6 @@
 
 use crate::early_println;
 
-extern crate cfg_if;
 extern crate gimli;
 
 /// The default panic handler for OSTD based kernels.
@@ -119,22 +118,17 @@ pub fn print_stack_trace() {
         // Print the first 8 general registers for any architecture. The register number follows
         // the DWARF standard.
         for i in 0..8u16 {
-            let reg_i = _Unwind_GetGR(unwind_ctx, i as i32);
-            cfg_if::cfg_if! {
-                if #[cfg(target_arch = "x86_64")] {
-                    let reg_name = gimli::X86_64::register_name(Register(i)).unwrap_or("unknown");
-                } else if #[cfg(target_arch = "riscv64")] {
-                    let reg_name = gimli::RiscV::register_name(Register(i)).unwrap_or("unknown");
-                } else if #[cfg(target_arch = "aarch64")] {
-                    let reg_name = gimli::AArch64::register_name(Register(i)).unwrap_or("unknown");
-                } else {
-                    let reg_name = "unknown";
-                }
-            }
+            let reg_name = cfg_select! {
+                target_arch = "x86_64" => gimli::X86_64::register_name(Register(i)),
+                target_arch = "riscv64" => gimli::RiscV::register_name(Register(i)),
+                target_arch = "aarch64" => gimli::AArch64::register_name(Register(i)),
+                _ => None,
+            };
+            let reg_val = _Unwind_GetGR(unwind_ctx, i as i32);
             if i.is_multiple_of(4) {
                 early_print!("\n    ");
             }
-            early_print!(" {} {:#18x};", reg_name, reg_i);
+            early_print!(" {} {:#18x};", reg_name.unwrap_or("unknown"), reg_val);
         }
         early_print!("\n\n");
         UnwindReasonCode::NO_REASON
