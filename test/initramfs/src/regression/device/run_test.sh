@@ -4,6 +4,10 @@
 
 set -e
 
+./drm/device_node
+./drm/get_info
+./drm/access_control
+
 ./pty/close_pty
 ./pty/open_ptmx
 ./pty/open_pty
