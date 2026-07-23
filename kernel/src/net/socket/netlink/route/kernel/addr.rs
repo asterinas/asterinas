@@ -9,10 +9,11 @@ use super::util::finish_response;
 use crate::{
     net::{
         iface::{Iface, iter_all_ifaces},
+        route::RouteScope,
         socket::netlink::{
             message::{CMsgSegHdr, CSegmentType, GetRequestFlags, SegHdrCommonFlags},
             route::message::{
-                AddrAttr, AddrMessageFlags, AddrSegment, AddrSegmentBody, RtScope, RtnlSegment,
+                AddrAttr, AddrMessageFlags, AddrSegment, AddrSegmentBody, RtnlSegment,
             },
         },
     },
@@ -55,7 +56,7 @@ fn iface_to_new_addr(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> Option<
         family: CSocketAddrFamily::AF_INET as _,
         prefix_len: iface.prefix_len().unwrap(),
         flags: AddrMessageFlags::PERMANENT,
-        scope: RtScope::HOST,
+        scope: RouteScope::HOST,
         index: NonZeroU32::new(iface.index()),
     };
 

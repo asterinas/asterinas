@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::ffi::CStr;
 
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr, Ipv6Address};
@@ -85,12 +85,25 @@ impl<E: Ext> dyn Iface<E> {
         self.common().ipv6_addr()
     }
 
+    /// Retrieves the prefix length of the interface's IPv6 address.
+    ///
+    /// Both `Self::ipv6_addr` and this method will either return `Some(_)`
+    /// or both will return `None`.
+    pub fn ipv6_prefix_len(&self) -> Option<u8> {
+        self.common().ipv6_prefix_len()
+    }
+
     /// Retrieves the prefix length of the interface's IPv4 address.
     ///
     /// Both `Self::ipv4_addr` and this method will either return `Some(_)`
     /// or both will return `None`.
     pub fn prefix_len(&self) -> Option<u8> {
         self.common().prefix_len()
+    }
+
+    /// Returns IPv4 routes currently installed in the iface.
+    pub fn ipv4_routes(&self) -> Vec<(Ipv4Cidr, Ipv4Address)> {
+        self.common().ipv4_routes()
     }
 
     /// Gets the broadcast address of the iface, if any.

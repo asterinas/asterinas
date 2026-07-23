@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub mod iface;
+pub mod route;
 pub mod socket;
 pub mod uts_ns;
 
 pub fn init() {
     iface::init();
+    route::init();
     socket::netlink::init();
     socket::vsock::init();
 }
