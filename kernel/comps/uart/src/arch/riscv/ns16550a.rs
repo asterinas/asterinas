@@ -66,10 +66,7 @@ pub(super) fn init(fdt_node: FdtNode) {
 
     let Ok(mut irq_line) = IrqLine::alloc().and_then(|irq_line| {
         IRQ_CHIP.get().unwrap().map_fdt_pin_to(
-            InterruptSourceInFdt {
-                interrupt_parent: intr_parent as u32,
-                interrupt: intr as u32,
-            },
+            InterruptSourceInFdt::new(intr_parent as u32, intr),
             irq_line,
         )
     }) else {

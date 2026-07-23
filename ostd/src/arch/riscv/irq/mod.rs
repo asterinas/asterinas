@@ -35,6 +35,7 @@ pub(super) enum InterruptSource {
     Timer,
     #[expect(private_interfaces)]
     External(InterruptSourceOnChip),
+    Message,
     Software,
 }
 
@@ -49,7 +50,7 @@ impl HwIrqLine {
 
     pub(crate) fn ack(&self) {
         match &self.source {
-            InterruptSource::Timer => {}
+            InterruptSource::Timer | InterruptSource::Message => {}
             InterruptSource::External(interrupt_source_on_chip) => {
                 IRQ_CHIP.get().unwrap().complete_interrupt(
                     // No races because we are in IRQs.
