@@ -7,6 +7,8 @@
 //! lookup, creation, hard links, rename, removal, and iteration while keeping
 //! directory entries and link counts consistent.
 
+#![short_vis_path::add(ext2)]
+
 mod dir_entry;
 
 use self::dir_entry::{DOT_BYTE, DOT_DOT_BYTE, DirBlockView, DirEntryFileType, DirEntryHeader};
@@ -37,7 +39,7 @@ struct DirEntryInfo {
 
 impl Inode {
     /// Looks up a directory entry by name and returns the referenced inode.
-    pub(in crate::fs::fs_impls::ext2) fn lookup(&self, name: &str) -> Result<Arc<Inode>> {
+    pub(in ext2) fn lookup(&self, name: &str) -> Result<Arc<Inode>> {
         let ino = {
             let inner = self.inner.read();
             inner.find_entry_info(name)?.ino
@@ -47,7 +49,7 @@ impl Inode {
     }
 
     /// Iterates directory entries starting at `offset` and feeds them to `visitor`.
-    pub(in crate::fs::fs_impls::ext2) fn readdir_at(
+    pub(in ext2) fn readdir_at(
         &self,
         offset: usize,
         visitor: &mut dyn DirentVisitor,
@@ -61,7 +63,7 @@ impl Inode {
     }
 
     /// Removes an empty sub-directory.
-    pub(in crate::fs::fs_impls::ext2) fn rmdir(&self, name: &str) -> Result<()> {
+    pub(in ext2) fn rmdir(&self, name: &str) -> Result<()> {
         let entry_info = {
             let parent_inner = self.inner.read();
             parent_inner.find_entry_info(name)?
@@ -101,7 +103,7 @@ impl Inode {
     }
 
     /// Creates a child inode and directory entry under this directory.
-    pub(in crate::fs::fs_impls::ext2) fn create(
+    pub(in ext2) fn create(
         &self,
         name: &str,
         type_: InodeType,
@@ -169,7 +171,7 @@ impl Inode {
     }
 
     /// Adds a hard link in this directory to an existing non-directory inode.
-    pub(in crate::fs::fs_impls::ext2) fn link(&self, old: &Inode, name: &str) -> Result<()> {
+    pub(in ext2) fn link(&self, old: &Inode, name: &str) -> Result<()> {
         let fs = self.fs()?;
         let dir_entry_file_type = DirEntryFileType::from(old.type_);
         let lock_targets = [self, old];
@@ -194,7 +196,7 @@ impl Inode {
     }
 
     /// Removes a non-directory entry from this directory.
-    pub(in crate::fs::fs_impls::ext2) fn unlink(&self, name: &str) -> Result<()> {
+    pub(in ext2) fn unlink(&self, name: &str) -> Result<()> {
         let entry_info = {
             let parent_inner = self.inner.read();
             parent_inner.find_entry_info(name)?
@@ -230,12 +232,7 @@ impl Inode {
     }
 
     /// Renames or moves an entry from this directory to `target` directory.
-    pub(in crate::fs::fs_impls::ext2) fn rename(
-        &self,
-        old_name: &str,
-        target: &Inode,
-        new_name: &str,
-    ) -> Result<()> {
+    pub(in ext2) fn rename(&self, old_name: &str, target: &Inode, new_name: &str) -> Result<()> {
         let fs = self.fs()?;
         let is_same_dir = self.ino == target.ino;
         if is_same_dir && old_name == new_name {

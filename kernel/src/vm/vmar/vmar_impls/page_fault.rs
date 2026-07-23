@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(vmar)]
+
 use super::{Interval, RssDelta, Vmar};
 use crate::{prelude::*, vm::perms::VmPerms};
 
@@ -32,11 +34,11 @@ impl Vmar {
 #[derive(Debug)]
 pub struct PageFaultInfo {
     /// The virtual address where a page fault occurred.
-    pub(in crate::vm::vmar) address: Vaddr,
+    pub(in vmar) address: Vaddr,
 
     /// The [`VmPerms`] required by the memory operation that causes page fault.
     /// For example, a "store" operation may require `VmPerms::WRITE`.
-    pub(in crate::vm::vmar) required_perms: VmPerms,
+    pub(in vmar) required_perms: VmPerms,
 
     /// Whether this page fault is forced (e.g., manually triggered by `ptrace`).
     /// A forced page fault may bypass some permission checks.
@@ -54,7 +56,7 @@ impl PageFaultInfo {
     }
 
     /// Returns whether this page fault is forced.
-    pub(in crate::vm::vmar) fn is_forced(&self) -> bool {
+    pub(in vmar) fn is_forced(&self) -> bool {
         self.is_forced
     }
 

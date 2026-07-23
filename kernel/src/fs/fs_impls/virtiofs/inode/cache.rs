@@ -2,6 +2,8 @@
 
 //! Inode cache for `virtiofs`.
 
+#![short_vis_path::add(virtiofs)]
+
 use aster_fuse::{EntryReply, FuseNodeId};
 use aster_virtio::device::filesystem::device::AttrVersion;
 use hashbrown::HashMap;
@@ -10,18 +12,18 @@ use super::{VirtioFs, VirtioFsInode};
 use crate::prelude::*;
 
 /// In-memory inode cache keyed by FUSE node ID.
-pub(in crate::fs::fs_impls::virtiofs) struct InodeCache {
+pub(in virtiofs) struct InodeCache {
     inodes: RwMutex<HashMap<FuseNodeId, Weak<VirtioFsInode>>>,
 }
 
 impl InodeCache {
-    pub(in crate::fs::fs_impls::virtiofs) fn new(root: &Arc<VirtioFsInode>) -> Self {
+    pub(in virtiofs) fn new(root: &Arc<VirtioFsInode>) -> Self {
         let inodes = RwMutex::new(HashMap::from_iter([(root.nodeid(), Arc::downgrade(root))]));
         Self { inodes }
     }
 
     /// Looks up an inode by FUSE node ID and validates its generation.
-    pub(in crate::fs::fs_impls::virtiofs) fn lookup_inode(
+    pub(in virtiofs) fn lookup_inode(
         &self,
         lookup_reply: EntryReply,
         request_attr_version: AttrVersion,
@@ -69,16 +71,13 @@ impl InodeCache {
     }
 
     /// Inserts an inode by FUSE node ID.
-    pub(in crate::fs::fs_impls::virtiofs) fn insert_inode(&self, inode: &Arc<VirtioFsInode>) {
+    pub(in virtiofs) fn insert_inode(&self, inode: &Arc<VirtioFsInode>) {
         self.inodes
             .write()
             .insert(inode.nodeid(), Arc::downgrade(inode));
     }
 
-    pub(in crate::fs::fs_impls::virtiofs) fn remove_inode(
-        &self,
-        inode: &VirtioFsInode,
-    ) -> Option<Weak<VirtioFsInode>> {
+    pub(in virtiofs) fn remove_inode(&self, inode: &VirtioFsInode) -> Option<Weak<VirtioFsInode>> {
         let nodeid = inode.nodeid();
         let mut inodes = self.inodes.write();
 

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(vsock)]
+
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use aster_softirq::BottomHalfDisabled;
@@ -15,7 +17,7 @@ use crate::{
 };
 
 /// A uniquely owned vsock listener handle; dropping it will close the listener.
-pub(in crate::net::socket::vsock) struct Listener {
+pub(in vsock) struct Listener {
     inner: Arc<ListenerInner>,
 }
 
@@ -25,22 +27,22 @@ impl Listener {
     }
 
     /// Accepts one pending connection.
-    pub(in crate::net::socket::vsock) fn try_accept(&self) -> Result<Connection> {
+    pub(in vsock) fn try_accept(&self) -> Result<Connection> {
         self.inner.pop_incoming().map(Connection::new)
     }
 
     /// Updates the listen backlog.
-    pub(in crate::net::socket::vsock) fn set_backlog(&self, backlog: usize) {
+    pub(in vsock) fn set_backlog(&self, backlog: usize) {
         self.inner.set_backlog(backlog);
     }
 
     /// Returns the local listening address.
-    pub(in crate::net::socket::vsock) fn local_addr(&self) -> VsockSocketAddr {
+    pub(in vsock) fn local_addr(&self) -> VsockSocketAddr {
         self.inner.bound_port.local_addr()
     }
 
     /// Returns the currently observable I/O readiness for the listener.
-    pub(in crate::net::socket::vsock) fn check_io_events(&self) -> IoEvents {
+    pub(in vsock) fn check_io_events(&self) -> IoEvents {
         self.inner.check_io_events()
     }
 }
