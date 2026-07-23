@@ -32,11 +32,7 @@ pub fn sys_read(
         } else {
             file.read_bytes(&mut [])
         }
-    }
-    .map_err(|err| match err.error() {
-        Errno::EINTR => Error::new(Errno::ERESTARTSYS),
-        _ => err,
-    })?;
+    }?;
 
     if read_len > 0 {
         fs::vfs::notify::on_access(&file);

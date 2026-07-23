@@ -306,9 +306,9 @@ impl Poller {
 
     /// Waits until some interesting events happen since the last wait.
     ///
-    /// This method will fail with [`EINTR`] if interrupted by signals or [`ETIME`] on timeout.
+    /// This method will fail with [`ERESTARTSYS`] if interrupted by signals or [`ETIME`] on timeout.
     ///
-    /// [`EINTR`]: crate::error::Errno::EINTR
+    /// [`ERESTARTSYS`]: crate::error::Errno::ERESTARTSYS
     /// [`ETIME`]: crate::error::Errno::ETIME
     pub fn wait(&self) -> Result<()> {
         self.waiter.pause_timeout(&self.timeout)
@@ -346,6 +346,7 @@ pub trait Pollable {
     ///
     /// This method will fail with `ETIME` if the timeout is specified and the event does not occur
     /// before the timeout expires.
+    /// This method will fail with `ERESTARTSYS` if interrupted by a signal.
     ///
     /// The user must ensure that a call to `try_op()` does not fail with `EAGAIN` when the
     /// interesting events occur. However, it is allowed to have spurious `EAGAIN` failures due to

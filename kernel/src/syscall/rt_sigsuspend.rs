@@ -27,7 +27,14 @@ pub fn sys_rt_sigsuspend(
 
     // Wait until receiving any signal
     let waiter = Waiter::new_pair().0;
-    waiter.pause_until(|| None::<()>)?;
+    waiter
+        .pause_until(|| None::<()>)
+        .map_err(|err| match err.error() {
+            Errno::ERESTARTSYS => {
+                Error::with_message(Errno::EINTR, "rt_sigsuspend was interrupted")
+            }
+            _ => err,
+        })?;
 
     // This syscall should always return `Err(EINTR)`. This path should never be reached.
     unreachable!("rt_sigsuspend always return EINTR");
