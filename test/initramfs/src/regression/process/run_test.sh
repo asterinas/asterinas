@@ -62,6 +62,10 @@ fi
 ./signal/signal_fd
 ./signal/signal_test2
 
+if [ "$(uname -m)" = "riscv64" ]; then
+    ./signal/riscv_fpu
+fi
+
 if [ "$(uname -m)" = "x86_64" ]; then
     ./signal/fault_signals
     ./signal/sigaltstack

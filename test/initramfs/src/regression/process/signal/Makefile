@@ -10,4 +10,9 @@ C_OBJS_FILTER += \
 	sigtrap
 endif
 
+ifneq ($(HOST_PLATFORM), riscv64-linux)
+C_OBJS_FILTER += \
+	riscv_fpu
+endif
+
 include ../../common/Makefile
