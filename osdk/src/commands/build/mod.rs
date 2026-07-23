@@ -184,7 +184,7 @@ pub fn do_cached_build(
             }
             bundle.consume_aster_bin(aster_elf);
         }
-        BootMethod::QemuDirect => {
+        BootMethod::DirectElf => {
             let aster_bin = match grub.boot_protocol {
                 BootProtocol::Linux => make_install_bzimage(
                     &osdk_output_directory,

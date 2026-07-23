@@ -18,7 +18,7 @@ boot.init_args = ["sh", "-l"]
 boot.initramfs = "/tmp/osdk_test_file"
 
 [test]
-boot.method = "qemu-direct"
+boot.method = "direct-elf"
 
 [grub]
 boot_protocol = "multiboot2"

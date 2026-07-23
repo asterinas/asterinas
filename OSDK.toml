@@ -31,7 +31,7 @@ args = "$(./tools/qemu_args.sh test)"
 # Other Schemes
 
 [scheme."microvm"]
-boot.method = "qemu-direct"
+boot.method = "direct-elf"
 build.strip_elf = true
 qemu.args = "$(./tools/qemu_args.sh microvm)"
 
@@ -48,14 +48,14 @@ qemu.args = "$(./tools/qemu_args.sh tdx)"
 
 [scheme."riscv"]
 supported_archs = ["riscv64"]
-boot.method = "qemu-direct"
+boot.method = "direct-elf"
 build.strip_elf = false
 qemu.args = "$(./tools/qemu_args.sh riscv)"
 
 [scheme."sifive_u"]
 supported_archs = ["riscv64"]
 build.features = ["riscv_sv39_mode"]
-boot.method = "qemu-direct"
+boot.method = "direct-elf"
 build.strip_elf = false
 qemu.with_monitor = true
 
@@ -72,7 +72,7 @@ qemu.args = """\
 """
 
 [scheme."loongarch"]
-boot.method = "qemu-direct"
+boot.method = "direct-elf"
 build.strip_elf = false
 
 qemu.args = """\

@@ -93,7 +93,7 @@ pub fn make_stripped_boot_elf(
             .to_str()
             .unwrap()
             .to_string();
-        install_dir.as_ref().join(elf_name + ".qemu_elf")
+        install_dir.as_ref().join(elf_name + ".elf")
     };
 
     if strip {

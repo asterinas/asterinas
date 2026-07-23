@@ -38,7 +38,7 @@ profile = "dev"                             # <5>
 strip_elf = false                           # <6>
 encoding = "raw"                            # <7>
 [boot]                                      # <8>
-method = "qemu-direct"                      # <9>
+method = "direct-elf"                       # <9>
 kcmd_args = ["SHELL=/bin/sh", "HOME=/"]     # <10>
 init_args = ["sh", "-l"]                    # <11>
 initramfs = "path/to/it"                    # <12>
@@ -123,9 +123,12 @@ Here are some additional notes for the fields:
 
 9. The boot method.
 
-    Optional. The default value is `qemu-direct`.
+    Optional. The default value is `direct-elf`.
 
-    Possible values are `grub-rescue-iso`, `grub-qcow2` and `qemu-direct`.
+    Possible values are `direct-elf`, `grub-rescue-iso`, and `grub-qcow2`.
+
+    The `direct-elf` method builds an ELF kernel image for loaders or VMMs
+    that can load a kernel image directly, without creating a GRUB boot device.
 
 10. The arguments provided will be passed to the guest kernel.
 

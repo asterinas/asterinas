@@ -26,6 +26,7 @@ ENTRYTYPE_MULTIBOOT     = 1
 ENTRYTYPE_MULTIBOOT2    = 2
 ENTRYTYPE_LINUX_32      = 3
 ENTRYTYPE_LINUX_64      = 4
+ENTRYTYPE_PVH           = 5
 
 MULTIBOOT_ENTRY_MAGIC   = 0x2BADB002
 MULTIBOOT2_ENTRY_MAGIC  = 0x36D76289
@@ -78,6 +79,29 @@ __linux64_boot:
     // Switch to our own temporary GDT.
     lgdt [boot_gdtr]
     retf
+
+// The PVH entry point.
+//
+// The PVH boot protocol hands off in 32-bit protected mode with paging
+// disabled, flat segments, and EBX holding the physical address of the
+// `hvm_start_info` structure. Unlike the entry points above, its address is
+// not fixed by the ABI: it is advertised to the VMM through the PVH ELF note
+// (see `pvh/note.S`), which refers to this symbol.
+.code32
+.global __pvh_boot
+__pvh_boot:
+    cli
+    cld
+
+    // Set the kernel call stack.
+    mov esp, offset boot_stack_top
+
+    push 0      // Upper 32-bits.
+    push ebx    // `hvm_start_info` ptr
+    push 0      // Upper 32-bits.
+    push ENTRYTYPE_PVH
+
+    jmp initial_boot_setup
 
 // The multiboot & multiboot2 entry point.
 .code32
@@ -349,12 +373,15 @@ long_mode:
     je entry_type_linux
     cmp rax, ENTRYTYPE_LINUX_64
     je entry_type_linux
+    cmp rax, ENTRYTYPE_PVH
+    je entry_type_pvh
     // Unreachable!
     jmp halt
 
 .extern __linux_boot
 .extern __multiboot_entry
 .extern __multiboot2_entry
+.extern __pvh_entry
 
 entry_type_linux:
     pop rdi // boot_params ptr
@@ -376,6 +403,13 @@ entry_type_multiboot2:
     pop rdi // multiboot magic
 
     lea  rax, [rip + __multiboot2_entry]  // jump into Rust code
+    call rax
+    jmp halt
+
+entry_type_pvh:
+    pop rdi // the address of `hvm_start_info`
+
+    lea  rax, [rip + __pvh_entry]  // jump into Rust code
     call rax
     jmp halt
 

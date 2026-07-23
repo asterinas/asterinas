@@ -7,7 +7,7 @@
 #  - scheme: "normal", "test", "microvm" or "iommu";
 # Other arguments are configured via environmental variables:
 #  - OVMF: "on" or "off";
-#  - BOOT_METHOD: "qemu-direct", "grub-rescue-iso" or "grub-qcow2";
+#  - BOOT_METHOD: "direct-elf", "grub-rescue-iso" or "grub-qcow2";
 #  - BOOT_PROTOCOL: "multiboot", "multiboot2", "linux-legacy32", "linux-efi-pe64" or "linux-efi-handover64";
 #  - NETDEV: "user" or "tap";
 #  - VHOST: "off" or "on";
@@ -245,9 +245,9 @@ if [ "$VSOCK" = "on" ]; then
     fi
 fi
 
-# When using qemu-direct boot, OVMF depends on the boot protocol:
+# When using direct ELF boot, OVMF depends on the boot protocol:
 # linux-efi-* protocols require OVMF; other protocols (e.g. multiboot) do not.
-if [ "$BOOT_METHOD" = "qemu-direct" ]; then
+if [ "$BOOT_METHOD" = "direct-elf" ]; then
     if [ "$BOOT_PROTOCOL" = "linux-efi-pe64" ] || [ "$BOOT_PROTOCOL" = "linux-efi-handover64" ]; then
         OVMF="on"
     else
