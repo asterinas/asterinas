@@ -126,8 +126,14 @@ impl<M: AnyFrameMeta> Segment<M> {
 
 impl<M: AnyFrameMeta + ?Sized> Split for Segment<M> {
     fn split(self, offset: usize) -> (Self, Self) {
-        assert!(offset.is_multiple_of(PAGE_SIZE));
-        assert!(0 < offset && offset < self.size());
+        assert!(
+            offset.is_multiple_of(PAGE_SIZE),
+            "segment virtual address not aligned for splitting"
+        );
+        assert!(
+            0 < offset && offset < self.size(),
+            "segment virtual address out-of-bound for splitting"
+        );
 
         let old = ManuallyDrop::new(self);
         let at = old.range.start + offset;
@@ -156,8 +162,14 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     /// The function panics if the byte offset range is out of bounds, or if
     /// any of the ends of the byte offset range is not base-page aligned.
     pub fn slice(&self, range: &Range<usize>) -> Self {
-        assert!(range.start.is_multiple_of(PAGE_SIZE) && range.end.is_multiple_of(PAGE_SIZE));
-        assert!(range.start <= range.end && range.end <= self.size());
+        assert!(
+            range.start.is_multiple_of(PAGE_SIZE) && range.end.is_multiple_of(PAGE_SIZE),
+            "segment virtual address not aligned for slicing"
+        );
+        assert!(
+            range.start <= range.end && range.end <= self.size(),
+            "segment virtual address out-of-bound for slicing"
+        );
 
         let start = self.range.start + range.start;
         let end = self.range.start + range.end;
