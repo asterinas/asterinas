@@ -274,6 +274,24 @@ pub struct Mount {
 }
 
 impl Mount {
+    /// Visits this mount subtree in depth-first order.
+    pub(super) fn try_walk_tree(
+        self: &Arc<Self>,
+        mut visit_fn: impl FnMut(Arc<Self>) -> Result<()>,
+    ) -> Result<()> {
+        let mut pending = vec![self.clone()];
+
+        while let Some(mount) = pending.pop() {
+            let children = mount.children.read();
+            pending.extend(children.values().cloned());
+            drop(children);
+
+            visit_fn(mount)?;
+        }
+
+        Ok(())
+    }
+
     /// Creates a root mount node with an associated FS.
     ///
     /// The root mount node is not mounted on other mount nodes (which means it has no

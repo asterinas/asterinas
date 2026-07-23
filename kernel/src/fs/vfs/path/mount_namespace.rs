@@ -226,22 +226,17 @@ impl MountNamespace {
     /// Flushes all pending filesystem metadata and cached file data to the device
     /// for all mounted filesystems in this mount namespace.
     pub fn sync(&self) -> Result<()> {
-        let mut mount_queue = VecDeque::new();
         let mut visited_filesystems = hashbrown::HashSet::new();
-        mount_queue.push_back(self.root().clone());
 
-        while let Some(current_mount) = mount_queue.pop_front() {
+        self.root().try_walk_tree(|current_mount| {
             let fs_ptr = Arc::as_ptr(current_mount.fs());
             // Only sync each filesystem once.
             if visited_filesystems.insert(fs_ptr) {
                 current_mount.sync()?;
             }
 
-            let children = current_mount.children.read();
-            for child_mount in children.values() {
-                mount_queue.push_back(child_mount.clone());
-            }
-        }
+            Ok(())
+        })?;
 
         Ok(())
     }
@@ -268,12 +263,9 @@ impl MountNamespace {
         root_mount: &Arc<Mount>,
         _topology: &MountTopology,
     ) -> Result<()> {
-        let mut worklist = VecDeque::new();
-        worklist.push_back(root_mount.clone());
-
         let mut checked_root_dentries = BTreeSet::new();
 
-        while let Some(mount) = worklist.pop_front() {
+        root_mount.try_walk_tree(|mount| {
             let root_dentry = mount.root_dentry();
             if checked_root_dentries.insert(root_dentry.key())
                 && self.would_form_mnt_ns_loop(root_dentry)
@@ -283,9 +275,8 @@ impl MountNamespace {
                     "the mount tree contains a mount namespace file that would create a namespace loop"
                 );
             }
-            let children = mount.children.read();
-            worklist.extend(children.values().cloned());
-        }
+            Ok(())
+        })?;
 
         Ok(())
     }
