@@ -89,17 +89,57 @@ else
     BOOT_DEVICE="${DISK}1"
     ROOT_DEVICE="${DISK}2"
 fi
-if [ ! -b "${BOOT_DEVICE}" ] && [ ! -b "${ROOT_DEVICE}" ]; then
+
+partition_info() {
+    awk -v name="${1#/dev/}" '$4 == name {print $1, $2}' /proc/partitions
+}
+
+partition_exists() {
+    [ -n "$(partition_info "$1")" ]
+}
+
+ensure_partition_device() {
+    DEVICE_PATH="$1"
+    PARTITION_INFO=$(partition_info "${DEVICE_PATH}")
+    if [ -z "${PARTITION_INFO}" ]; then
+        echo "Error: Partition ${DEVICE_PATH} does not exist in /proc/partitions" >&2
+        exit 1
+    fi
+
+    set -- ${PARTITION_INFO}
+    EXPECTED_MAJOR=$(printf '%x' "$1")
+    EXPECTED_MINOR=$(printf '%x' "$2")
+
+    if [ -b "${DEVICE_PATH}" ]; then
+        DEVICE_MAJOR=$(stat -c '%t' "${DEVICE_PATH}")
+        DEVICE_MINOR=$(stat -c '%T' "${DEVICE_PATH}")
+        if [ "${DEVICE_MAJOR}" = "${EXPECTED_MAJOR}" ] && [ "${DEVICE_MINOR}" = "${EXPECTED_MINOR}" ]; then
+            return
+        fi
+        rm -f "${DEVICE_PATH}"
+    fi
+
+    mknod "${DEVICE_PATH}" b "$1" "$2"
+}
+
+if ! partition_exists "${BOOT_DEVICE}" || ! partition_exists "${ROOT_DEVICE}"; then
+    rm -f "${BOOT_DEVICE}" "${ROOT_DEVICE}"
     parted ${DISK} -- mklabel gpt
     parted ${DISK} -- mkpart ESP fat32 1MB 512MB
     parted ${DISK} -- mkpart root ext2 512MB 100%
     parted ${DISK} -- set 1 esp on
+    partx -a ${DISK} 2>/dev/null || true
     echo "partition finished"
+
+    ensure_partition_device "${BOOT_DEVICE}"
+    ensure_partition_device "${ROOT_DEVICE}"
 
     mkfs.fat -F 32 -n boot "${BOOT_DEVICE}"
     mkfs.ext2 -L nixos "${ROOT_DEVICE}"
     echo "mkfs finished"
 else
+    ensure_partition_device "${BOOT_DEVICE}"
+    ensure_partition_device "${ROOT_DEVICE}"
     echo "Partitions ${BOOT_DEVICE} and ${ROOT_DEVICE} already exist — skipping partitioning and mkfs"
 fi
 
@@ -130,6 +170,7 @@ cp $CONFIG_PATH ${BUILD_DIR}/etc/nixos/configuration.nix
 cp @aster-configuration@ ${BUILD_DIR}/etc/nixos/aster_configuration.nix
 cp -r @aster-etc-nixos@/modules ${BUILD_DIR}/etc/nixos
 cp -r @aster-etc-nixos@/overlays ${BUILD_DIR}/etc/nixos
+cp -r @aster-etc-nixos@/pkgs ${BUILD_DIR}/etc/nixos
 
 COMMON_NIX_ARGS=(
     --option extra-substituters "@aster-substituters@"
