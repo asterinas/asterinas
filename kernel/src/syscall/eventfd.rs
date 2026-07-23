@@ -66,6 +66,38 @@ bitflags! {
     }
 }
 
+pub(crate) fn is_event_file(file: &dyn FileLike) -> bool {
+    file.downcast_ref::<EventFile>().is_some()
+}
+
+pub(crate) fn read_event_file_nonblocking(
+    file: &dyn FileLike,
+    writer: &mut VmWriter,
+) -> Result<usize> {
+    let event_file = file
+        .downcast_ref::<EventFile>()
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not an eventfd"))?;
+    let read_len = size_of::<u64>();
+    if writer.avail() < read_len {
+        return_errno_with_message!(Errno::EINVAL, "the event buffer is too small");
+    }
+
+    event_file.try_read(writer)?;
+    Ok(read_len)
+}
+
+pub(crate) fn write_event_file_nonblocking(file: &dyn FileLike, value: u64) -> Result<usize> {
+    let event_file = file
+        .downcast_ref::<EventFile>()
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not an eventfd"))?;
+    if value > EventFile::MAX_COUNTER_VALUE {
+        return_errno_with_message!(Errno::EINVAL, "the written value exceeds MAX_COUNTER_VALUE");
+    }
+
+    event_file.add_counter_val(value)?;
+    Ok(size_of::<u64>())
+}
+
 struct EventFile {
     counter: Mutex<u64>,
     pollee: Pollee,

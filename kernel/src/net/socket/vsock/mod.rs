@@ -15,6 +15,8 @@
 //!   userspace-facing system calls.
 //!
 
+use alloc::vec::Vec;
+
 mod addr;
 mod stream;
 mod transport;
@@ -24,4 +26,11 @@ pub use stream::VsockStreamSocket;
 
 pub(in crate::net) fn init() {
     transport::init();
+}
+
+pub(crate) fn handle_vhost_packet(
+    header: aster_virtio::device::socket::header::VirtioVsockHdr,
+    payload: Vec<u8>,
+) -> crate::prelude::Result<()> {
+    transport::handle_vhost_packet(header, payload)
 }

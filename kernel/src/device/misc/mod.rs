@@ -12,6 +12,7 @@ use super::registry::char::{MajorIdOwner, acquire_major};
 mod hwrng;
 #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
 pub mod tdxguest;
+pub(crate) mod vhost_vsock;
 
 static MISC_MAJOR: Once<MajorIdOwner> = Once::new();
 
@@ -24,4 +25,6 @@ pub(super) fn init_in_first_kthread() {
     ostd::if_tdx_enabled!({
         tdxguest::init().unwrap();
     });
+
+    vhost_vsock::init().unwrap();
 }

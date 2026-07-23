@@ -25,8 +25,10 @@ mod port;
 mod space;
 mod timer;
 
+use alloc::vec::Vec;
 use core::time::Duration;
 
+use aster_virtio::device::socket::header::VirtioVsockHdr;
 pub(super) use connection::{Connection, connect::ConnectResult};
 pub(super) use listener::Listener;
 pub(super) use port::BoundPort;
@@ -60,13 +62,26 @@ fn process_event_callback() {
 pub(super) fn init() {
     use aster_virtio::device::socket::DEVICE_NAME;
 
-    let Some(device) = aster_virtio::device::socket::get_device(DEVICE_NAME) else {
-        return;
-    };
-
-    device.init_rx_callback(process_rx_callback);
-    device.init_event_callback(process_event_callback);
-    space::init(device);
+    if let Some(device) = aster_virtio::device::socket::get_device(DEVICE_NAME) {
+        device.init_rx_callback(process_rx_callback);
+        device.init_event_callback(process_event_callback);
+        space::init(device);
+    } else {
+        space::init_host_vhost();
+    }
 
     timer::init();
+}
+
+pub(crate) fn handle_vhost_packet(
+    header: VirtioVsockHdr,
+    payload: Vec<u8>,
+) -> crate::prelude::Result<()> {
+    space::vsock_space()?.process_vhost_packet(header, payload)
+}
+
+pub(super) fn can_connect_remote_cid(cid: u32) -> bool {
+    space::vsock_space()
+        .map(|vsock_space| vsock_space.can_connect_remote_cid(cid))
+        .unwrap_or(false)
 }

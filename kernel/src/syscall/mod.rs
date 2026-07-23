@@ -39,6 +39,9 @@ mod constants;
 mod dup;
 mod epoll;
 mod eventfd;
+pub(crate) use eventfd::{
+    is_event_file, read_event_file_nonblocking, write_event_file_nonblocking,
+};
 mod execve;
 mod exit;
 mod exit_group;

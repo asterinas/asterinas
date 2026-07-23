@@ -3,7 +3,7 @@
 use core::sync::atomic::Ordering;
 
 use aster_virtio::device::socket::{
-    header::VirtioVsockOp,
+    header::{VirtioVsockHdr, VirtioVsockOp},
     packet::{TxPacket, TxPacketBuilder},
     queue::TxCompletion,
 };
@@ -21,16 +21,24 @@ use crate::{
     util::MultiRead,
 };
 
+const VHOST_VSOCK_MAX_PAYLOAD_SIZE: usize =
+    DEFAULT_TX_BUF_SIZE.saturating_sub(size_of::<VirtioVsockHdr>());
+
 impl Connection {
     /// Copies data from `reader` into TX packets and queues them for transmission.
     ///
-    /// The method respects both peer receive credit and the connection's pending-byte budget. It
-    /// may return `EAGAIN` when either resource is exhausted.
+    /// The method respects both peer receive credit
+    /// and the connection's pending-byte budget.
+    /// It may return `EAGAIN` when either resource is exhausted.
     pub(in crate::net::socket::vsock) fn try_send(
         &mut self,
         reader: &mut dyn MultiRead,
         _flags: SendFlags,
     ) -> Result<usize> {
+        if self.inner.bound_port.vsock_space().is_vhost_backend() {
+            return self.try_send_vhost(reader);
+        }
+
         // See the comments in `try_recv` to know why we use a packet-pool approach here.
         let mut packet_pool = [const { None }; 8];
 
@@ -52,6 +60,79 @@ impl Connection {
         self.inner.pollee.invalidate();
 
         Ok(num_bytes)
+    }
+
+    fn try_send_vhost(&mut self, reader: &mut dyn MultiRead) -> Result<usize> {
+        let max_bytes = reader.sum_lens();
+        let num_bytes = {
+            let mut state = self.inner.state.lock();
+
+            state.test_and_clear_error(&self.inner)?;
+
+            if state.shutdown.local_write_closed || state.shutdown.peer_read_closed {
+                return_errno_with_message!(Errno::EPIPE, "the connection is closed for writing");
+            }
+
+            if max_bytes == 0 {
+                return Ok(0);
+            }
+
+            max_bytes
+                .min(VHOST_VSOCK_MAX_PAYLOAD_SIZE)
+                .min(state.check_peer_credit(&self.inner)?)
+        };
+        if num_bytes == 0 {
+            return Ok(0);
+        }
+
+        let mut payload = vec![0u8; num_bytes];
+        let mut writer = VmWriter::from(payload.as_mut_slice());
+        let read_len = reader
+            .read(&mut writer)
+            .map_err(|(err, _)| Error::from(err))?;
+        payload.truncate(read_len);
+
+        if read_len == 0 {
+            return Ok(0);
+        }
+
+        let header = {
+            let mut state = self.inner.state.lock();
+            if state.shutdown.local_write_closed || state.shutdown.peer_read_closed {
+                return_errno_with_message!(Errno::EPIPE, "the connection is closed for writing");
+            }
+
+            let available = state.check_peer_credit(&self.inner)?;
+            if available < payload.len() {
+                payload.truncate(available);
+            }
+            if payload.is_empty() {
+                return Ok(0);
+            }
+            let header = state.make_data_header(&self.inner, payload.len());
+            state.consume_peer_credit(payload.len());
+            header
+        };
+        let send_result = self
+            .inner
+            .bound_port
+            .vsock_space()
+            .send_payload(&header, &payload);
+        match send_result {
+            Ok(true) => (),
+            Ok(false) => {
+                self.inner.state.lock().refund_peer_credit(payload.len());
+                return_errno_with_message!(Errno::ENODEV, "no vhost-vsock backend is available");
+            }
+            Err(err) => {
+                self.inner.state.lock().refund_peer_credit(payload.len());
+                return Err(err);
+            }
+        }
+
+        self.inner.pollee.invalidate();
+
+        Ok(payload.len())
     }
 
     fn alloc_send_buffers(
@@ -128,8 +209,10 @@ impl Connection {
             return_errno_with_message!(Errno::EPIPE, "the connection is closed for writing");
         }
 
-        let vsock_space = self.inner.bound_port.vsock_space();
-        let mut tx = vsock_space.device().lock_tx();
+        let Some(device) = self.inner.bound_port.vsock_space().virtio_device() else {
+            return_errno_with_message!(Errno::ENODEV, "no virtio-vsock device is available");
+        };
+        let mut tx = device.lock_tx();
 
         let mut num_bytes = 0;
         let mut num_bytes_in_pending = 0;
@@ -193,8 +276,12 @@ impl ConnectionState {
         alloc.saturating_sub(used) as usize
     }
 
-    fn consume_peer_credit(&mut self, num_bytes: usize) {
+    pub(super) fn consume_peer_credit(&mut self, num_bytes: usize) {
         self.credit.tx_cnt = self.credit.tx_cnt.wrapping_add(num_bytes as u32);
+    }
+
+    pub(super) fn refund_peer_credit(&mut self, num_bytes: usize) {
+        self.credit.tx_cnt = self.credit.tx_cnt.wrapping_sub(num_bytes as u32);
     }
 }
 
