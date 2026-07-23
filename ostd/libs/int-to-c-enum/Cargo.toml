@@ -10,7 +10,7 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-int-to-c-enum-derive = { path = "derive", optional = true, version = "0.1.0"}
+int-to-c-enum-derive = { workspace = true, optional = true }
 
 [features]
 default = ["derive"]

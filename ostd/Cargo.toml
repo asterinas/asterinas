@@ -48,27 +48,27 @@ zerocopy.workspace = true
 # - `loongarch64-unknown-none-softfloat` is rather self-explaining.
 
 [target.x86_64-unknown-none.dependencies]
+acpi.workspace = true
+multiboot2.workspace = true
+tdx-guest = { workspace = true, optional = true }
+unwinding = { workspace = true, features = ["fde-gnu-eh-frame-hdr"] }
+x86.workspace = true
 x86_64.workspace = true
-x86 = "0.52.0"
-acpi = "=5.2.0" # This upstream often bump minor versions with API changes
-multiboot2 = "0.24.0"
 iced-x86 = { version = "1.21.0", default-features = false, features = [
     "no_std",
     "decoder",
     "gas",
 ], optional = true }
-tdx-guest = { workspace = true, optional = true }
-unwinding = { version = "=0.2.9", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 
 [target.riscv64imac-unknown-none-elf.dependencies]
-riscv = { version = "0.15.0", features = ["s-mode"] }
-sbi-rt = "0.0.3"
-fdt = { version = "0.1.5", features = ["pretty-printing"] }
-unwinding = { version = "=0.2.9", default-features = false, features = ["fde-static", "hide-trace", "panic", "personality", "unwinder"] }
+fdt.workspace = true
+riscv.workspace = true
+sbi-rt.workspace = true
+unwinding = { workspace = true, features = ["fde-static"] }
 
 [target.loongarch64-unknown-none-softfloat.dependencies]
-loongArch64 = "0.2.5"
-fdt = { version = "0.1.5", features = ["pretty-printing"] }
+fdt.workspace = true
+loongArch64.workspace = true
 
 [features]
 default = ["cvm_guest"]

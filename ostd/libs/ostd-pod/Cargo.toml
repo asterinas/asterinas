@@ -13,8 +13,8 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ostd-pod-macros = { path = "macros", version = "0.4.0", optional = true }
-padding-struct = { path = "../padding-struct", version = "0.2.0", optional = true }
+ostd-pod-macros = { workspace = true, optional = true }
+padding-struct = { workspace = true, optional = true }
 zerocopy.workspace = true
 
 [features]

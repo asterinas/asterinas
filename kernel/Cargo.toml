@@ -76,10 +76,10 @@ tdx-guest = { workspace = true, optional = true }
 x86_64.workspace = true
 
 [target.riscv64imac-unknown-none-elf.dependencies]
-riscv = { version = "0.15.0", features = ["s-mode"] }
+riscv.workspace = true
 
 [target.loongarch64-unknown-none-softfloat.dependencies]
-loongArch64 = "0.2.5"
+loongArch64.workspace = true
 
 [features]
 default = ["cvm_guest"]
