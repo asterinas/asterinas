@@ -145,10 +145,6 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(range: Range<Vaddr>) {
             }
         }
     }
-
-    // Ensure that all cache operations have completed before proceeding.
-    // SAFETY: Performing a memory fence is always safe.
-    unsafe { core::arch::asm!("fence rw, rw", options(nostack)) };
 }
 
 /// Activates the given root-level page table.
