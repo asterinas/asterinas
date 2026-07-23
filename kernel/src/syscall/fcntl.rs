@@ -13,7 +13,10 @@ use crate::{
         vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
     },
     prelude::*,
-    process::{Pid, pid_table},
+    process::{
+        Pid, pid_table,
+        signal::{constants::SIGRTMAX, sig_num::SigNum},
+    },
 };
 
 pub fn sys_fcntl(raw_fd: RawFileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -35,6 +38,8 @@ pub fn sys_fcntl(raw_fd: RawFileDesc, cmd: i32, arg: u64, ctx: &Context) -> Resu
         }),
         FcntlCmd::F_GETOWN => handle_getown(fd, ctx),
         FcntlCmd::F_SETOWN => handle_setown(fd, arg, ctx),
+        FcntlCmd::F_GETSIG => handle_getsig(fd, ctx),
+        FcntlCmd::F_SETSIG => handle_setsig(fd, arg, ctx),
         FcntlCmd::F_ADD_SEALS => handle_addseal(fd, arg, ctx),
         FcntlCmd::F_GET_SEALS => handle_getseal(fd, ctx),
     }
@@ -178,6 +183,39 @@ fn handle_getseal(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(file_seals.bits() as _))
 }
 
+fn handle_getsig(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let file = get_file_fast!(&mut file_table, fd);
+    let sig = file
+        .common()
+        .owner()
+        .sigio_signum()
+        .map(|s| s.as_u8())
+        .unwrap_or(0);
+    Ok(SyscallReturn::Return(sig as _))
+}
+
+fn handle_setsig(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+    // 0 resets to default; 1..=SIGRTMAX are valid custom signals.
+    if arg > SIGRTMAX.as_u8() as u64 {
+        // 64 is SIGRTMAX; see signal::constants::SIGRTMAX.
+        return_errno_with_message!(Errno::EINVAL, "signal number must be in 0..=64");
+    }
+    let signal = arg as u8;
+
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let file = get_file_fast!(&mut file_table, fd);
+
+    if signal == 0 {
+        file.common().owner().set_sigio_signum(None);
+    } else {
+        file.common()
+            .owner()
+            .set_sigio_signum(Some(SigNum::try_from(signal)?));
+    }
+    Ok(SyscallReturn::Return(0))
+}
+
 #[expect(non_camel_case_types)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
@@ -192,6 +230,8 @@ enum FcntlCmd {
     F_SETLKW = 7,
     F_SETOWN = 8,
     F_GETOWN = 9,
+    F_SETSIG = 10,
+    F_GETSIG = 11,
     F_DUPFD_CLOEXEC = 1030,
     F_ADD_SEALS = 1033,
     F_GET_SEALS = 1034,

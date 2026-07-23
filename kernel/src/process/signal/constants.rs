@@ -60,6 +60,8 @@ define_std_signums! {
     SIGSYS    = 31, // Bad system call (SVr4); see also seccomp(2)
 }
 
+pub const SIGRTMAX: SigNum = SigNum::from_u8(MAX_RT_SIG_NUM);
+
 pub const SI_ASYNCNL: i32 = -60;
 pub const SI_TKILL: i32 = -6;
 pub const SI_SIGIO: i32 = -5;

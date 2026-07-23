@@ -4,9 +4,9 @@ can_change_flags = O_APPEND | O_ASYNC | O_DIRECT | O_NOATIME | O_NONBLOCK;
 // Duplicate a file descriptor
 fcntl(fd, cmd = F_DUPFD | F_DUPFD_CLOEXEC, arg);
 
-// Retrieve file descriptor flags (F_GETFD), file status flags (F_GETFL)
-// or SIGIO/SIGURG owner process (F_GETOWN)
-fcntl(fd, cmd = F_GETFD | F_GETFL | F_GETOWN);
+// Retrieve file descriptor flags (F_GETFD), file status flags (F_GETFL),
+// SIGIO/SIGURG owner process (F_GETOWN), or the async I/O signal number (F_GETSIG)
+fcntl(fd, cmd = F_GETFD | F_GETFL | F_GETOWN | F_GETSIG);
 
 // Set file descriptor flags
 fcntl(fd, cmd = F_SETFD, arg = FD_CLOEXEC);
@@ -19,6 +19,9 @@ fcntl(fd, cmd = F_GETLK | F_SETLK | F_SETLKW, arg);
 
 // Assign SIGIO/SIGURG owner process
 fcntl(fd, cmd = F_SETOWN, arg);
+
+// Set the signal sent when async I/O is possible (0 = default SIGIO)
+fcntl(fd, cmd = F_SETSIG, arg);
 
 // Add seals to the inode referred to
 fcntl(fd, cmd = F_ADD_SEALS, arg = F_SEAL_SEAL | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE | F_SEAL_FUTURE_WRITE);
