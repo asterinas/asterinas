@@ -1,0 +1,2 @@
+# Intentionally discard lock files for testing projects.
+Cargo.lock
