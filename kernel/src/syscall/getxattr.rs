@@ -10,9 +10,10 @@ use super::{
 use crate::{
     fs::{
         file::file_table::{RawFileDesc, get_file_fast},
-        vfs::xattr::XATTR_VALUE_MAX_LEN,
+        vfs::xattr::{self, XATTR_VALUE_MAX_LEN},
     },
     prelude::*,
+    process::credentials::FileCapabilities,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -96,8 +97,26 @@ fn getxattr(
     let xattr_name = parse_xattr_name(name_str.as_ref())?;
     check_xattr_namespace(xattr_name.namespace(), ctx).map_err(|_| Error::new(Errno::ENODATA))?;
 
-    let mut value_writer = user_space.writer(value_ptr, value_len.min(XATTR_VALUE_MAX_LEN))?;
-
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
+    if xattr_name.full_name() == xattr::SECURITY_CAPABILITY_XATTR_NAME {
+        let mut raw_value = [0u8; FileCapabilities::MAX_XATTR_SIZE];
+        let mut raw_value_writer = VmWriter::from(raw_value.as_mut_slice()).to_fallible();
+        let raw_value_len = path.get_xattr(xattr_name, &mut raw_value_writer)?;
+        let converted_len =
+            FileCapabilities::convert_for_getxattr(&mut raw_value[..raw_value_len])?;
+
+        if value_len == 0 {
+            return Ok(converted_len);
+        }
+        if value_len < converted_len {
+            return_errno_with_message!(Errno::ERANGE, "the xattr value buffer is too small");
+        }
+
+        let mut value_writer = user_space.writer(value_ptr, converted_len)?;
+        value_writer.write_fallible(&mut VmReader::from(&raw_value[..converted_len]))?;
+        return Ok(converted_len);
+    }
+
+    let mut value_writer = user_space.writer(value_ptr, value_len.min(XATTR_VALUE_MAX_LEN))?;
     path.get_xattr(xattr_name, &mut value_writer)
 }

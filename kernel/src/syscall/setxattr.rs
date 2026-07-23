@@ -13,12 +13,16 @@ use crate::{
         vfs::{
             path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
             xattr::{
-                XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags,
+                self, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace,
+                XattrSetFlags,
             },
         },
     },
     prelude::*,
-    process::{UserNamespace, credentials::capabilities::CapSet},
+    process::{
+        UserNamespace,
+        credentials::{FileCapabilities, capabilities::CapSet},
+    },
     security::lsm::hooks as lsm_hooks,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -116,10 +120,26 @@ fn setxattr(
     if value_len > XATTR_VALUE_MAX_LEN {
         return_errno_with_message!(Errno::E2BIG, "xattr value too long");
     }
-    let mut value_reader = user_space.reader(value_ptr, value_len)?;
+    let file_cap_value = check_write_file_cap(&xattr_name, value_ptr, value_len, user_space, ctx)?;
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
-    path.set_xattr(xattr_name, &mut value_reader, flags)?;
+    if let Some((header, mut user_value_reader)) = file_cap_value {
+        // Keep the validated header and read only the remaining bytes from the same user reader.
+        // This ensures that the filesystem writes the header that was actually validated.
+        let mut value = [0u8; FileCapabilities::MAX_XATTR_SIZE];
+        value[..header.len()].copy_from_slice(&header);
+        let value_tail = value
+            .get_mut(header.len()..value_len)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid file capability xattr"))?;
+        user_value_reader.read_fallible(&mut VmWriter::from(value_tail))?;
+        FileCapabilities::validate_write_root_uid(&value[..value_len])?;
+
+        let mut value_reader = VmReader::from(&value[..value_len]).to_fallible();
+        path.set_xattr(xattr_name, &mut value_reader, flags)?;
+    } else {
+        let mut value_reader = user_space.reader(value_ptr, value_len)?;
+        path.set_xattr(xattr_name, &mut value_reader, flags)?;
+    }
     fs::vfs::notify::on_attr_change(&path);
     Ok(())
 }
@@ -211,5 +231,49 @@ pub(super) fn check_xattr_namespace(namespace: XattrNamespace, ctx: &Context) ->
         UserNamespace::get_init_singleton().as_ref(),
         ctx.posix_thread,
         CapSet::SYS_ADMIN,
+    ))
+}
+
+pub(super) fn check_write_file_cap<'a>(
+    xattr_name: &XattrName<'_>,
+    value_ptr: Vaddr,
+    value_len: usize,
+    user_space: &'a CurrentUserSpace<'_>,
+    ctx: &Context,
+) -> Result<Option<([u8; size_of::<u32>()], VmReader<'a>)>> {
+    if xattr_name.full_name() != xattr::SECURITY_CAPABILITY_XATTR_NAME {
+        return Ok(None);
+    }
+
+    if value_len < size_of::<u32>() {
+        return_errno_with_message!(Errno::EINVAL, "file capability xattr is truncated");
+    }
+
+    let mut header = [0u8; size_of::<u32>()];
+    let mut value_reader = user_space.reader(value_ptr, value_len)?;
+    value_reader.read_fallible(&mut VmWriter::from(header.as_mut_slice()))?;
+    FileCapabilities::validate_write_header(u32::from_le_bytes(header), value_len)?;
+
+    // Linux rewrites V2/V3 values only when user-namespace or idmapped-mount mappings change the
+    // root ID. Asterinas supports only the initial user namespace and has no idmapped mounts, so
+    // the supplied representation is already the correct on-disk representation. See Linux's
+    // `cap_convert_nscap`:
+    // <https://github.com/torvalds/linux/blob/980ab36ae5972c83f683b939e50c469c4947229e/security/commoncap.c#L551-L630>.
+    check_file_cap_permission(xattr_name, ctx)?;
+
+    Ok(Some((header, value_reader)))
+}
+
+pub(super) fn check_file_cap_permission(xattr_name: &XattrName<'_>, ctx: &Context) -> Result<()> {
+    if xattr_name.full_name() != xattr::SECURITY_CAPABILITY_XATTR_NAME {
+        return Ok(());
+    }
+
+    // FIXME: Also verify that the inode owner and group have valid mappings in the current
+    // user namespace before accepting `security.capability` modifications.
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        ctx.thread_local.borrow_user_ns().as_ref(),
+        ctx.posix_thread,
+        CapSet::SETFCAP,
     ))
 }

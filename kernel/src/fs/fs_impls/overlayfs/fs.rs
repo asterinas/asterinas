@@ -580,6 +580,7 @@ impl OverlayInode {
     pub fn set_owner(&self, uid: Uid) -> Result<()>;
     pub fn set_group(&self, gid: Gid) -> Result<()>;
     pub fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()>;
+    pub fn remove_xattr(&self, name: XattrName) -> Result<()>;
 }
 
 #[inherit_methods(from = "self.build_upper_recursively_if_needed().unwrap()")]

@@ -23,7 +23,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsFlags},
             inode::{HardLinkability, Inode, Metadata, MknodType, RenameMode},
-            xattr::{XattrName, XattrNamespace, XattrSetFlags},
+            xattr::{XattrName, XattrNamespace, XattrSetFlags, clear_file_priv},
         },
     },
     prelude::*,
@@ -723,19 +723,39 @@ impl Path {
         name: XattrName,
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
-    ) -> Result<()>;
-    pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
+    ) -> Result<()> {
+        let inode = self.inode();
+        inode.check_permission(Permission::MAY_WRITE)?;
+        inode.set_xattr(name, value_reader, flags)
+    }
+
+    pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
+        let inode = self.inode();
+        inode.check_permission(Permission::MAY_READ)?;
+        inode.get_xattr(name, value_writer)
+    }
+
     pub fn list_xattr(
         &self,
         namespace: XattrNamespace,
         list_writer: &mut VmWriter,
-    ) -> Result<usize>;
-    pub fn remove_xattr(&self, name: XattrName) -> Result<()>;
+    ) -> Result<usize> {
+        let inode = self.inode();
+        inode.check_permission(Permission::MAY_ACCESS)?;
+        inode.list_xattr(namespace, list_writer)
+    }
+
+    pub fn remove_xattr(&self, name: XattrName) -> Result<()> {
+        let inode = self.inode();
+        inode.check_permission(Permission::MAY_WRITE)?;
+        inode.remove_xattr(name)
+    }
 
     /// Resizes the file.
     pub fn resize(&self, size: usize) -> Result<()> {
         let inode = self.inode();
         inode.check_permission(Permission::MAY_WRITE)?;
+        clear_file_priv(inode.as_ref())?;
         inode.resize(size)
     }
 }
