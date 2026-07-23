@@ -96,6 +96,7 @@ test_ext2 "/ext2" "test_file.txt"
 ./ext2/permissions
 ./ext2/readdir
 ./ext2/rename
+./ext2/renameat2
 ./ext2/rmdir
 ./ext2/short_rw
 ./ext2/sparse
