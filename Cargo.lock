@@ -382,6 +382,7 @@ name = "aster-uart"
 version = "0.1.0"
 dependencies = [
  "aster-console",
+ "aster-util",
  "component",
  "fdt",
  "inherit-methods-macro",
