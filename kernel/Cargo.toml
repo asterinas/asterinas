@@ -54,13 +54,14 @@ ostd-pod.workspace = true
 paste.workspace = true
 rand = { workspace = true, features = ["small_rng", "std_rng"] }
 ring-buffer.workspace = true
+short-vis-path.workspace = true
 smallvec.workspace = true
 sparse-id-alloc.workspace = true
 spin.workspace = true
 takeable.workspace = true
 time.workspace = true
-typeflags.workspace = true
 typeflags-util.workspace = true
+typeflags.workspace = true
 xarray.workspace = true
 xmas-elf.workspace = true
 zerocopy.workspace = true
