@@ -8,13 +8,13 @@ use crate::{
     process::{CloneArgs, clone_child},
 };
 
-pub fn sys_fork(ctx: &Context, parent_context: &UserContext) -> Result<SyscallReturn> {
+pub fn sys_fork(ctx: &Context, parent_context: &mut UserContext) -> Result<SyscallReturn> {
     let clone_args = CloneArgs::for_fork();
     let child_pid = clone_child(ctx, parent_context, clone_args)?;
     Ok(SyscallReturn::Return(child_pid as _))
 }
 
-pub fn sys_vfork(ctx: &Context, parent_context: &UserContext) -> Result<SyscallReturn> {
+pub fn sys_vfork(ctx: &Context, parent_context: &mut UserContext) -> Result<SyscallReturn> {
     let clone_args = CloneArgs::for_vfork();
     let child_pid = clone_child(ctx, parent_context, clone_args)?;
     Ok(SyscallReturn::Return(child_pid as _))

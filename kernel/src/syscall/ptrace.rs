@@ -164,7 +164,7 @@ fn do_ptrace_attach(tracer_thread: &Arc<Thread>, tracee_thread: Arc<Thread>) -> 
 
     tracee.check_alien_access_from(tracer, AlienAccessMode::ATTACH_WITH_REAL_CREDS)?;
 
-    tracer.attach_to(tracer_thread, tracee_thread)
+    tracer.attach_to(tracer_thread, tracee_thread, None)
 }
 
 fn parse_ptrace_injected_signal(data: usize) -> Result<Option<SigNum>> {
