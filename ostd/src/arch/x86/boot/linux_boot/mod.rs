@@ -3,7 +3,15 @@
 //! The Linux 64-bit Boot Protocol supporting module.
 //!
 
+#[cfg(feature = "cvm_guest")]
+use core::{ptr::NonNull, sync::atomic::AtomicU64};
+
 use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
+#[cfg(feature = "cvm_guest")]
+use tdx_guest::unaccepted_memory::{
+    EfiUnacceptedMemory, LINUX_EFI_UNACCEPTED_MEM_TABLE_GUID,
+    LINUX_EFI_UNACCEPTED_MEM_TABLE_VERSION,
+};
 
 #[cfg(feature = "cvm_guest")]
 use crate::arch::init_cvm_guest;
@@ -225,6 +233,13 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     #[cfg(feature = "cvm_guest")]
     init_cvm_guest();
 
+    #[cfg(feature = "cvm_guest")]
+    if_tdx_enabled!({
+        crate::mm::frame::unaccepted::set_unaccepted_memory_table(parse_unaccepted_memory_table(
+            params,
+        ));
+    });
+
     EARLY_INFO.call_once(|| EarlyBootInfo {
         bootloader_name: parse_bootloader_name(params),
         kernel_cmdline: parse_kernel_commandline(params).unwrap_or(""),
@@ -237,4 +252,85 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
     // once after setting up necessary resources.
     unsafe { start_kernel() };
+}
+
+/// Finds the unaccepted-memory table from EFI configuration tables.
+#[cfg(feature = "cvm_guest")]
+fn parse_unaccepted_memory_table(boot_params: &BootParams) -> Option<NonNull<EfiUnacceptedMemory>> {
+    let efi_info = boot_params.efi_info;
+    let systab_addr = u64::from(efi_info.efi_systab) | (u64::from(efi_info.efi_systab_hi) << 32);
+
+    if systab_addr == 0 {
+        return None;
+    }
+
+    // SAFETY: `systab_addr` is valid because it is provided by firmware and we have not yet enabled paging.
+    let systab = unsafe { &*(systab_addr as *const uefi_raw::table::system::SystemTable) };
+
+    if systab.configuration_table.is_null() {
+        return None;
+    }
+
+    // SAFETY: `configuration_table` points to a firmware-provided array in the EFI system table.
+    // An empty slice is safe if `number_of_configuration_table_entries` is zero.
+    let entries = unsafe {
+        core::slice::from_raw_parts(
+            systab.configuration_table,
+            systab.number_of_configuration_table_entries,
+        )
+    };
+
+    let table_ptr = entries
+        .iter()
+        .find(|entry| entry.vendor_guid == LINUX_EFI_UNACCEPTED_MEM_TABLE_GUID)?
+        .vendor_table
+        .cast::<EfiUnacceptedMemory>();
+
+    if table_ptr.is_null() || !table_ptr.is_aligned() {
+        return None;
+    }
+
+    // SAFETY: The pointer is non-null and aligned. The shared reference is only used to read
+    // the firmware-provided header after those checks.
+    let table = unsafe { table_ptr.as_ref()? };
+
+    if table.version() != LINUX_EFI_UNACCEPTED_MEM_TABLE_VERSION {
+        crate::warn!(
+            "Unknown unaccepted memory table version: {}",
+            table.version()
+        );
+        return None;
+    }
+
+    if table.unit_size_bytes() == 0 || !table.unit_size_bytes().is_power_of_two() {
+        crate::warn!(
+            "Invalid unaccepted memory table unit size: {}",
+            table.unit_size_bytes()
+        );
+        return None;
+    }
+
+    let bitmap_addr = table_ptr
+        .addr()
+        .checked_add(size_of::<EfiUnacceptedMemory>())?;
+    if !bitmap_addr.is_multiple_of(align_of::<AtomicU64>())
+        || table.bitmap_size_bytes() == 0
+        || !table
+            .bitmap_size_bytes()
+            .is_multiple_of(size_of::<AtomicU64>() as u64)
+    {
+        crate::warn!(
+            "Invalid unaccepted memory table bitmap size: {}",
+            table.bitmap_size_bytes()
+        );
+        return None;
+    }
+
+    let coverage_size = table.total_coverage_size()?;
+    if table.phys_base().checked_add(coverage_size).is_none() {
+        crate::warn!("Unaccepted memory table coverage overflows");
+        return None;
+    }
+
+    NonNull::new(table_ptr)
 }

@@ -250,7 +250,8 @@ no_std_io2 = { version = "0.9.3", default-features = false, features = ["alloc",
 rand = { version = "0.9.2", default-features = false }
 spin = "0.9.4"
 x86_64 = "0.15.5"
-tdx-guest = "0.4.0"
+tdx-guest = { git = "https://github.com/Hsy-Intel/tdx-guest", rev = "805fd94acae990c6f805d1a4a1d9c7d45db06d26" }
+uefi-raw = "0.14.0"
 xmas-elf = "0.10.0"
 # Note: when updating the zerocopy version,
 # also update it in `ostd/libs/ostd-pod/README.md`.

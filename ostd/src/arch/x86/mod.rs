@@ -96,6 +96,12 @@ pub(crate) unsafe fn late_init_on_bsp() {
     unsafe { crate::boot::smp::boot_all_aps() };
 
     if_tdx_enabled!({
+        crate::mm::frame::unaccepted::accept_memory_slice_on_current_cpu();
+        crate::mm::frame::unaccepted::wait_for_memory_acceptance();
+        crate::mm::frame::allocator::publish_accepted_memory();
+    });
+
+    if_tdx_enabled!({
     } else {
         match iommu::init(&io_mem_builder) {
             Ok(_) => {}
