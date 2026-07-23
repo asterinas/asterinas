@@ -70,7 +70,6 @@ impl<'a> FsCreationCtx<'a> {
     }
 
     /// Returns the user-supplied mount flags.
-    #[expect(dead_code)]
     pub(in crate::fs) fn flags(&self) -> FsFlags {
         self.flags
     }

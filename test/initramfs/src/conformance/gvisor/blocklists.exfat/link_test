@@ -1,7 +1,6 @@
 LinkTest.AbsPathsNonDirFDsWithOpath
 LinkTest.AbsPathsWithNonDirFDs
 LinkTest.CanCreateLinkFile
-LinkTest.CannotLinkDirectory
 LinkTest.HardlinkChangeMode
 LinkTest.LinkatDoesNotFollowSymlinkByDefault
 LinkTest.LinkatWithSymlinkFollow
