@@ -20,16 +20,16 @@ use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{cpu::CpuId, mm::VmSpace};
 
 use super::{
-    VMAR_CAP_ADDR, VMAR_LOWEST_ADDR,
+    Rmap, RmapEntry, VMAR_CAP_ADDR, VMAR_LOWEST_ADDR,
     interval_set::{Interval, IntervalSet},
-    is_userspace_vaddr,
+    is_userspace_vaddr, is_userspace_vaddr_range,
     util::{self, get_intersected_range},
     vm_mapping::{MappedMemory, MappedVmo, VmMapping},
 };
 use crate::{
     prelude::*,
     process::{INIT_STACK_SIZE, Process, ProcessVm, ResourceType},
-    vm::vmar::is_userspace_vaddr_range,
+    vm::page_cache::Vmo,
 };
 
 /// The upper bound for allocations under the `MAP_32BIT` mmap flag.
@@ -51,6 +51,8 @@ pub struct Vmar {
     process_vm: ProcessVm,
     /// The number of handles that this `Vmar` has (see [`super::VmarHandle`])
     num_handles: AtomicUsize,
+    /// Weak self reference
+    weak_self: Weak<Self>,
 }
 
 impl Vmar {
@@ -61,12 +63,13 @@ impl Vmar {
         let inner = VmarInner::new();
         let vm_space = VmSpace::new();
         let rss_counters = array::from_fn(|_| PerCpuCounter::new());
-        Arc::new(Vmar {
+        Arc::new_cyclic(move |weak_self| Vmar {
             inner: RwMutex::new(inner),
             vm_space: Arc::new(vm_space),
             rss_counters,
             process_vm,
             num_handles: AtomicUsize::new(1),
+            weak_self: weak_self.clone(),
         })
     }
 
@@ -167,6 +170,27 @@ impl Drop for RssDelta<'_> {
     }
 }
 
+/// A holder for a reverse mapping entry that is to be removed.
+///
+/// This holds the [`Vmo`] object, so the lock guard for reverse mappings can
+/// have a correct lifetime (see [`Self::remove`]).
+#[must_use]
+struct RmapToRemove {
+    vmo: Option<Arc<Vmo>>,
+}
+
+impl RmapToRemove {
+    pub(self) fn new(vmo: Option<Arc<Vmo>>) -> Self {
+        Self { vmo }
+    }
+
+    pub(self) fn remove(&self, vmar: &Vmar, addr: Vaddr) -> Option<MutexGuard<'_, Rmap>> {
+        let mut rmap = self.vmo.as_ref()?.rmap().lock();
+        rmap.remove(vmar.weak_self.clone(), addr);
+        Some(rmap)
+    }
+}
+
 struct VmarInner {
     /// The mapped pages and associated metadata.
     ///
@@ -227,8 +251,24 @@ impl VmarInner {
     /// any neighboring mappings.
     ///
     /// Make sure the insertion doesn't exceed address space limit.
-    fn insert_without_try_merge(&mut self, vm_mapping: VmMapping) {
+    fn insert_without_try_merge(
+        &mut self,
+        vmar: &Vmar,
+        vm_mapping: VmMapping,
+        rmap: Option<&mut Rmap>,
+    ) {
         self.total_vm += vm_mapping.map_size();
+
+        if let Some(rmap) = rmap {
+            rmap.insert(
+                vmar.weak_self.clone(),
+                RmapEntry {
+                    vaddr: vm_mapping.map_to_addr(),
+                    offset: vm_mapping.vmo().unwrap().offset(),
+                    size: vm_mapping.map_size(),
+                },
+            );
+        }
         self.vm_mappings.insert(vm_mapping);
     }
 
@@ -239,7 +279,12 @@ impl VmarInner {
     /// that are adjacent and compatible, in order to reduce fragmentation.
     ///
     /// Make sure the insertion doesn't exceed address space limit.
-    fn insert_try_merge(&mut self, vm_mapping: VmMapping) {
+    fn insert_try_merge(
+        &mut self,
+        vmar: &Vmar,
+        vm_mapping: VmMapping,
+        mut rmap: Option<&mut Rmap>,
+    ) {
         self.total_vm += vm_mapping.map_size();
         let mut vm_mapping = vm_mapping;
         let addr = vm_mapping.map_to_addr();
@@ -249,6 +294,9 @@ impl VmarInner {
             vm_mapping = new_mapping;
             if let Some(addr) = to_remove {
                 self.vm_mappings.remove(&addr);
+                if let Some(rmap) = rmap.as_deref_mut() {
+                    rmap.remove(vmar.weak_self.clone(), addr);
+                }
             }
         }
 
@@ -257,17 +305,33 @@ impl VmarInner {
             vm_mapping = new_mapping;
             if let Some(addr) = to_remove {
                 self.vm_mappings.remove(&addr);
+                if let Some(rmap) = rmap.as_deref_mut() {
+                    rmap.remove(vmar.weak_self.clone(), addr);
+                }
             }
         }
 
+        if let Some(rmap) = rmap {
+            rmap.insert(
+                vmar.weak_self.clone(),
+                RmapEntry {
+                    vaddr: vm_mapping.map_to_addr(),
+                    offset: vm_mapping.vmo().unwrap().offset(),
+                    size: vm_mapping.map_size(),
+                },
+            );
+        }
         self.vm_mappings.insert(vm_mapping);
     }
 
     /// Removes a `VmMapping` based on the provided key from the `Vmar`.
-    fn remove(&mut self, key: &Vaddr) -> Option<VmMapping> {
+    fn remove(&mut self, key: &Vaddr) -> Option<(VmMapping, RmapToRemove)> {
         let vm_mapping = self.vm_mappings.remove(key)?;
         self.total_vm -= vm_mapping.map_size();
-        Some(vm_mapping)
+
+        let rmap_to_remove = RmapToRemove::new(vm_mapping.vmo_for_rmap().cloned());
+
+        Some((vm_mapping, rmap_to_remove))
     }
 
     /// Finds a set of [`VmMapping`]s that intersect with the provided range.
@@ -312,7 +376,7 @@ impl VmarInner {
     /// the mappings that intersect with the range.
     fn alloc_free_region_exact_truncate(
         &mut self,
-        vm_space: &VmSpace,
+        vmar: &Vmar,
         offset: Vaddr,
         size: usize,
         rss_delta: &mut RssDelta,
@@ -324,19 +388,26 @@ impl VmarInner {
         }
 
         for vm_mapping_addr in mappings_to_remove {
-            let vm_mapping = self.remove(&vm_mapping_addr).unwrap();
+            let (vm_mapping, rmap_to_remove) = self.remove(&vm_mapping_addr).unwrap();
+            let mut rmap = rmap_to_remove.remove(vmar, vm_mapping_addr);
+
             let vm_mapping_range = vm_mapping.range();
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 
             let (left, taken, right) = vm_mapping.split_range(&intersected_range);
             if let Some(left) = left {
-                self.insert_without_try_merge(left);
+                self.insert_without_try_merge(vmar, left, rmap.as_deref_mut());
             }
             if let Some(right) = right {
-                self.insert_without_try_merge(right);
+                self.insert_without_try_merge(vmar, right, rmap.as_deref_mut());
             }
 
-            rss_delta.add(taken.rss_type(), -(taken.unmap(vm_space) as isize));
+            // Note that `rmap` must be dropped before `taken`. Otherwise,
+            // there is a possibility of a deadlock because a device mapping
+            // may attempt to access its reverse mappings in `Drop`.
+            drop(rmap);
+
+            rss_delta.add(taken.rss_type(), -(taken.unmap(&vmar.vm_space) as isize));
         }
 
         Ok(offset..(offset + size))
@@ -423,7 +494,7 @@ impl VmarInner {
     /// Enlarges the last mapping if the new size is larger.
     fn resize_mapping(
         &mut self,
-        vm_space: &VmSpace,
+        vmar: &Vmar,
         map_addr: Vaddr,
         old_size: usize,
         new_size: usize,
@@ -451,7 +522,7 @@ impl VmarInner {
                 return_errno_with_message!(Errno::EINVAL, "the address range overflows");
             }
             self.alloc_free_region_exact_truncate(
-                vm_space,
+                vmar,
                 map_addr + new_size,
                 old_size - new_size,
                 rss_delta,
@@ -478,9 +549,10 @@ impl VmarInner {
         }
 
         self.check_extra_size_fits_rlimit(new_size - old_size)?;
-        let last_mapping = self.remove(&last_mapping_addr).unwrap();
+        let (last_mapping, rmap_to_remove) = self.remove(&last_mapping_addr).unwrap();
+        let mut rmap = rmap_to_remove.remove(vmar, last_mapping_addr);
         let last_mapping = last_mapping.enlarge(new_size - old_size);
-        self.insert_try_merge(last_mapping);
+        self.insert_try_merge(vmar, last_mapping, rmap.as_deref_mut());
         Ok(())
     }
 }

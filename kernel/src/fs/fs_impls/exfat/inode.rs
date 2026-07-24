@@ -26,7 +26,10 @@ use super::{
 };
 use crate::{
     fs::{
-        exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs},
+        exfat::{
+            bitmap::ExfatBitmap, dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs,
+            upcase_table::ExfatUpcaseTable,
+        },
         file::{InodeMode, InodeType, StatusFlags, mkmod},
         utils::DirentVisitor,
         vfs::{
@@ -37,10 +40,10 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::{BlockAsPageCacheBackend, PageCache},
+    vm::page_cache::{BlockAsPageCacheBackend, PageCache, Vmo},
 };
 
-///Inode number
+/// Inode number
 pub type Ino = u64;
 
 bitflags! {
@@ -325,12 +328,14 @@ impl ExfatInodeInner {
         }
 
         let parent = self.get_parent_inode().unwrap_or_else(|| unimplemented!());
-        let page_cache = parent.page_cache().unwrap();
+        let parent_inner = parent.inner.read();
 
         // Need to read the latest dentry set from parent inode.
 
-        let mut dentry_set =
-            ExfatDentrySet::read_from(&page_cache, self.dentry_entry as usize * DENTRY_SIZE)?;
+        let mut dentry_set = ExfatDentrySet::read_from(
+            &parent_inner.page_cache,
+            self.dentry_entry as usize * DENTRY_SIZE,
+        )?;
 
         let mut file_dentry = dentry_set.get_file_dentry();
         let mut stream_dentry = dentry_set.get_stream_dentry();
@@ -364,9 +369,11 @@ impl ExfatInodeInner {
         let start_off = self.dentry_entry as usize * DENTRY_SIZE;
         let bytes = dentry_set.to_le_bytes();
 
-        page_cache.write_bytes(start_off, &bytes)?;
+        parent_inner.page_cache.write_bytes(start_off, &bytes)?;
         if sync {
-            page_cache.flush_range(start_off..start_off + bytes.len())?;
+            parent_inner
+                .page_cache
+                .flush_range(start_off..start_off + bytes.len())?;
         }
 
         Ok(())
@@ -836,7 +843,8 @@ impl ExfatInode {
         let fs = inner.fs();
         let fs_guard = fs.lock();
         let mut inner = self.inner.write();
-        inner.page_cache.resize(0, inner.size)?;
+        let old_size = inner.size;
+        inner.page_cache.resize(0, old_size)?;
         inner.resize(0, &fs_guard)?;
         Ok(())
     }
@@ -1037,6 +1045,37 @@ impl ExfatInode {
             parent_hash,
             fs_guard,
         )
+    }
+
+    pub(super) fn read_bitmap(&self) -> Result<ExfatBitmap> {
+        let inner = self.inner.read();
+        let dentry_iterator = ExfatDentryIterator::new(&inner.page_cache, 0, None)?;
+
+        for dentry_result in dentry_iterator {
+            let dentry = dentry_result?;
+            if let ExfatDentry::Bitmap(bitmap_dentry) = dentry {
+                // If the last bit is 0, it is a valid bitmap.
+                if (bitmap_dentry.flags & 0x1) == 0 {
+                    return ExfatBitmap::load_bitmap_from_dentry(inner.fs.clone(), &bitmap_dentry);
+                }
+            }
+        }
+
+        return_errno_with_message!(Errno::EINVAL, "bitmap not found")
+    }
+
+    pub(super) fn read_upcase_table(&self) -> Result<ExfatUpcaseTable> {
+        let inner = self.inner.read();
+        let dentry_iterator = ExfatDentryIterator::new(&inner.page_cache, 0, None)?;
+
+        for dentry_result in dentry_iterator {
+            let dentry = dentry_result?;
+            if let ExfatDentry::Upcase(upcase_dentry) = dentry {
+                return ExfatUpcaseTable::load_table_from_dentry(inner.fs.clone(), &upcase_dentry);
+            }
+        }
+
+        return_errno_with_message!(Errno::EINVAL, "upcase table not found")
     }
 
     /// Find empty dentry. If not found, expand the cluster chain.
@@ -1256,7 +1295,8 @@ impl ExfatInode {
         if delete_contents {
             if is_dir {
                 let mut inner = inode.inner.write();
-                inner.page_cache.resize(0, inner.size)?;
+                let old_size = inner.size;
+                inner.page_cache.resize(0, old_size)?;
                 inner.resize(0, fs_guard)?;
             }
             // Set the delete flag.
@@ -1515,8 +1555,8 @@ impl Inode for ExfatInode {
         self.inner.read().fs()
     }
 
-    fn page_cache(&self) -> Option<PageCache> {
-        Some(self.inner.read().page_cache.clone())
+    fn page_cache(&self) -> Option<Arc<Vmo>> {
+        Some(self.inner.read().page_cache.as_vmo().clone())
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {

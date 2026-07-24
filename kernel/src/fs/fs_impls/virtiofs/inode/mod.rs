@@ -50,7 +50,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::PageCache,
+    vm::page_cache::{PageCache, Vmo},
 };
 
 /// Represents a cached virtio-fs inode and its kernel-side state.
@@ -253,6 +253,10 @@ impl InodeInner {
     fn page_cache(&self) -> Option<&PageCache> {
         self.page_cache.as_ref()
     }
+
+    fn page_cache_mut(&mut self) -> Option<&mut PageCache> {
+        self.page_cache.as_mut()
+    }
 }
 
 impl Inode for VirtioFsInode {
@@ -336,8 +340,13 @@ impl Inode for VirtioFsInode {
         self.set_time(TimeField::Change, time);
     }
 
-    fn page_cache(&self) -> Option<PageCache> {
-        self.inner.read().page_cache.clone()
+    fn page_cache(&self) -> Option<Arc<Vmo>> {
+        self.inner
+            .read()
+            .page_cache
+            .as_ref()
+            .map(PageCache::as_vmo)
+            .cloned()
     }
 
     fn open(

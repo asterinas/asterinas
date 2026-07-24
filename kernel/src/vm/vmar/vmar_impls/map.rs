@@ -310,7 +310,7 @@ impl<'a> VmarMapOptions<'a> {
             VmarMapOffset::FixedReplace(map_to_addr) => {
                 let mut rss_delta = RssDelta::new(parent);
                 inner.alloc_free_region_exact_truncate(
-                    parent.vm_space(),
+                    parent,
                     map_to_addr,
                     map_size,
                     &mut rss_delta,
@@ -349,10 +349,7 @@ impl<'a> VmarMapOptions<'a> {
         let (mapped_mem, io_mem) = match mappable {
             Some(Mappable::Vmo(vmo)) => {
                 if let Some(ref path) = path {
-                    debug_assert!(Arc::ptr_eq(
-                        &vmo,
-                        &path.inode().page_cache().unwrap().as_vmo().clone()
-                    ));
+                    debug_assert!(Arc::ptr_eq(&vmo, &path.inode().page_cache().unwrap()));
                 }
 
                 let is_writable_tracked = if let Some(ref path) = path
@@ -385,6 +382,9 @@ impl<'a> VmarMapOptions<'a> {
             perms | may_perms,
         );
 
+        let vmo_for_rmap = vm_mapping.vmo_for_rmap().cloned();
+        let mut rmap = vmo_for_rmap.as_ref().map(|vmo| vmo.rmap().lock());
+
         // Populate device memory if needed before adding to VMAR.
         //
         // We have to map before inserting the `VmMapping` into the tree,
@@ -396,7 +396,7 @@ impl<'a> VmarMapOptions<'a> {
         }
 
         // Add the mapping to the VMAR.
-        inner.insert_try_merge(vm_mapping);
+        inner.insert_try_merge(parent, vm_mapping, rmap.as_deref_mut());
 
         Ok(map_to_addr)
     }

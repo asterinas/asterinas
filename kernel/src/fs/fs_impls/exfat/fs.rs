@@ -110,15 +110,11 @@ impl ExfatFs {
 
         let root = ExfatInode::build_root_inode(weak_fs.clone(), root_chain.clone())?;
 
-        let root_page_cache = root.page_cache().unwrap();
-
-        let upcase_table =
-            ExfatUpcaseTable::load(weak_fs.clone(), &root_page_cache, root_chain.clone())?;
-
-        let bitmap = ExfatBitmap::load(weak_fs.clone(), &root_page_cache, root_chain.clone())?;
-
-        *exfat_fs.bitmap.lock() = bitmap;
+        let upcase_table = root.read_upcase_table()?;
         *exfat_fs.upcase_table.lock() = upcase_table;
+
+        let bitmap = root.read_bitmap()?;
+        *exfat_fs.bitmap.lock() = bitmap;
 
         // TODO: Handle UTF-8
 

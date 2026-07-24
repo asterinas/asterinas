@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![expect(dead_code)]
-#![expect(unused_variables)]
 
 use align_ext::AlignExt;
 
 use super::{
     constants::UNICODE_SIZE,
-    dentry::{ExfatDentry, ExfatDentryIterator, ExfatUpcaseDentry, UTF16Char},
+    dentry::{ExfatUpcaseDentry, UTF16Char},
     fat::ExfatChain,
     fs::ExfatFs,
     utils::calc_checksum_32,
 };
-use crate::{fs::exfat::fat::FatChainFlags, prelude::*, vm::page_cache::PageCache};
+use crate::{fs::exfat::fat::FatChainFlags, prelude::*};
 
 const UPCASE_MANDATORY_SIZE: usize = 128;
 
@@ -30,24 +29,10 @@ impl ExfatUpcaseTable {
         }
     }
 
-    pub(super) fn load(
+    pub(super) fn load_table_from_dentry(
         fs_weak: Weak<ExfatFs>,
-        root_page_cache: &PageCache,
-        root_chain: ExfatChain,
+        dentry: &ExfatUpcaseDentry,
     ) -> Result<Self> {
-        let dentry_iterator = ExfatDentryIterator::new(root_page_cache, 0, None)?;
-
-        for dentry_result in dentry_iterator {
-            let dentry = dentry_result?;
-            if let ExfatDentry::Upcase(upcase_dentry) = dentry {
-                return Self::load_table_from_dentry(fs_weak, &upcase_dentry);
-            }
-        }
-
-        return_errno_with_message!(Errno::EINVAL, "Upcase table not found")
-    }
-
-    fn load_table_from_dentry(fs_weak: Weak<ExfatFs>, dentry: &ExfatUpcaseDentry) -> Result<Self> {
         if (dentry.size as usize) < UPCASE_MANDATORY_SIZE * UNICODE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Upcase table too small")
         }

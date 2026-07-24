@@ -9,7 +9,7 @@ use ostd::{
     task::disable_preempt,
 };
 
-use super::{RssDelta, VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, Vmar};
+use super::{RssDelta, Vmar};
 use crate::{prelude::*, process::ProcessVm, vm::vmar::VmarHandle};
 
 impl Vmar {
@@ -25,21 +25,27 @@ impl Vmar {
             let inner = vmar.inner.read();
             let mut new_inner = new_vmar.inner.write();
 
-            // Clone mappings.
-            let preempt_guard = disable_preempt();
-            let range = VMAR_LOWEST_ADDR..VMAR_CAP_ADDR;
-            let new_vmspace = new_vmar.vm_space();
-            let mut new_cursor = new_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
-            let cur_vmspace = vmar.vm_space();
-            let mut cur_cursor = cur_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
             let mut rss_delta = RssDelta::new(&new_vmar);
+            let mut remaining = inner.vm_mappings.len();
 
+            // Clone mappings.
             for vm_mapping in inner.vm_mappings.iter() {
+                remaining -= 1;
+
                 let base = vm_mapping.map_to_addr();
+                let range = base..vm_mapping.map_end();
+
+                let mut rmap = vm_mapping.lock_rmap();
 
                 // Clone the `VmMapping` to the new VMAR.
                 let new_mapping = vm_mapping.new_fork();
-                new_inner.insert_without_try_merge(new_mapping);
+                new_inner.insert_without_try_merge(&new_vmar, new_mapping, rmap.as_deref_mut());
+
+                let preempt_guard = disable_preempt();
+                let new_vmspace = new_vmar.vm_space();
+                let mut new_cursor = new_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
+                let cur_vmspace = vmar.vm_space();
+                let mut cur_cursor = cur_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
 
                 // Protect the mapping and copy to the new page table for COW.
                 cur_cursor.jump(base).unwrap();
@@ -48,12 +54,17 @@ impl Vmar {
                 let num_copied =
                     cow_copy_pt(&mut cur_cursor, &mut new_cursor, vm_mapping.map_size());
 
+                // We need to ensure that no writes can be performed to COW
+                // pages only after `fork()` returns. So we can perform a full
+                // TLB flush only when handling the last mapping.
+                if remaining == 0 {
+                    cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::for_all());
+                    cur_cursor.flusher().dispatch_tlb_flush();
+                    cur_cursor.flusher().sync_tlb_flush();
+                }
+
                 rss_delta.add(vm_mapping.rss_type(), num_copied as isize);
             }
-
-            cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::for_all());
-            cur_cursor.flusher().dispatch_tlb_flush();
-            cur_cursor.flusher().sync_tlb_flush();
         }
 
         Ok(new_vmar)
@@ -105,6 +116,9 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
                 // Manually advance the source cursor.
                 // In the `MappedRam` case, the cursor is advanced by `protect_next`.
                 // However, this does not apply to the `MappedIoMem` case.
+                if mapped_va + PAGE_SIZE >= end_va {
+                    break;
+                }
                 src.jump(mapped_va + PAGE_SIZE).unwrap();
             }
         }

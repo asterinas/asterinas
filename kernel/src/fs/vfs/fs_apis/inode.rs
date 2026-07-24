@@ -29,7 +29,7 @@ use crate::{
     },
     security::lsm::hooks as lsm_hooks,
     time::clocks::RealTimeCoarseClock,
-    vm::page_cache::PageCache,
+    vm::page_cache::Vmo,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -387,7 +387,7 @@ pub trait Inode: Any + FileOps + Send + Sync {
 
     fn set_ctime(&self, time: Duration);
 
-    fn page_cache(&self) -> Option<PageCache> {
+    fn page_cache(&self) -> Option<Arc<Vmo>> {
         None
     }
 

@@ -352,10 +352,10 @@ impl FileLike for InodeHandle {
         }
 
         let inode = self.path().inode();
-        if let Some(ref page_cache) = inode.page_cache() {
+        if let Some(page_cache) = inode.page_cache() {
             // If the inode has a page cache, it is a file-backed mapping and
             // we return the VMO as the mappable object.
-            Ok(Mappable::Vmo(page_cache.as_vmo().clone()))
+            Ok(Mappable::Vmo(page_cache))
         } else if let Some(ref open_file) = self.open_file {
             // Otherwise, it is a special file (e.g. device file) and we should
             // return the file-specific mappable object.
