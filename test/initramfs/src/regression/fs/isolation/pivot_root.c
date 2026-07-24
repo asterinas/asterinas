@@ -8,7 +8,6 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
-#include <sys/wait.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -33,6 +32,12 @@
 #define DOT_EXTRA_DIR "/extra_dir"
 #define DOT_EXTRA_MOUNT "/extra_mount"
 #define DOT_PIVOT_MARKER_FILE "/dot_marker.txt"
+
+// --- Configuration for mount propagation restrictions ---
+#define PROP_CHROOT_DIR "/pivot_prop_chroot"
+#define PROP_PRIVATE_CHROOT_DIR "/pivot_prop_private_chroot"
+#define PROP_NEW_ROOT_DIR "/pivot_prop_new_root"
+#define PROP_PUT_OLD_DIR PROP_NEW_ROOT_DIR "/old_root"
 
 // Helper to create a directory if it doesn't exist.
 static void ensure_dir(const char *path)
@@ -220,5 +225,50 @@ FN_TEST(pivot_root_dot_dot)
 
 	// After unmounting the old root, "." still resolves to the new root.
 	TEST_SUCC(access(DOT_PIVOT_MARKER_FILE, F_OK));
+}
+END_TEST()
+
+FN_TEST(pivot_root_shared_mounts)
+{
+	TEST_SUCC(unshare(CLONE_NEWNS));
+	TEST_SUCC(mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL));
+
+	ensure_dir(PROP_CHROOT_DIR);
+	TEST_SUCC(mount("/", PROP_CHROOT_DIR, NULL, MS_BIND | MS_REC, NULL));
+	TEST_SUCC(mount(NULL, "/", NULL, MS_SHARED, NULL));
+	TEST_SUCC(chroot(PROP_CHROOT_DIR));
+	TEST_SUCC(chdir("/"));
+
+	ensure_dir(PROP_NEW_ROOT_DIR);
+	TEST_SUCC(mount("tmpfs", PROP_NEW_ROOT_DIR, "tmpfs", 0, NULL));
+	ensure_dir(PROP_PUT_OLD_DIR);
+
+	// A shared parent of the current root is rejected.
+	TEST_ERRNO(syscall(SYS_pivot_root, PROP_NEW_ROOT_DIR, PROP_PUT_OLD_DIR),
+		   EINVAL);
+
+	// Enter a nested bind mount whose parent is private for the remaining cases.
+	ensure_dir(PROP_PRIVATE_CHROOT_DIR);
+	TEST_SUCC(mount("/", PROP_PRIVATE_CHROOT_DIR, NULL, MS_BIND | MS_REC,
+			NULL));
+	TEST_SUCC(chroot(PROP_PRIVATE_CHROOT_DIR));
+	TEST_SUCC(chdir("/"));
+
+	// A shared parent of `new_root` is rejected.
+	TEST_SUCC(mount(NULL, "/", NULL, MS_SHARED, NULL));
+	TEST_ERRNO(syscall(SYS_pivot_root, PROP_NEW_ROOT_DIR, PROP_PUT_OLD_DIR),
+		   EINVAL);
+	TEST_SUCC(mount(NULL, "/", NULL, MS_PRIVATE, NULL));
+
+	// A shared mount containing `put_old` is rejected.
+	TEST_SUCC(mount("tmpfs", PROP_PUT_OLD_DIR, "tmpfs", 0, NULL));
+	TEST_SUCC(mount(NULL, PROP_PUT_OLD_DIR, NULL, MS_SHARED, NULL));
+	TEST_ERRNO(syscall(SYS_pivot_root, PROP_NEW_ROOT_DIR, PROP_PUT_OLD_DIR),
+		   EINVAL);
+	TEST_SUCC(mount(NULL, PROP_PUT_OLD_DIR, NULL, MS_PRIVATE, NULL));
+
+	// Test the allowed case last because a successful pivot changes the root.
+	TEST_SUCC(mount(NULL, PROP_NEW_ROOT_DIR, NULL, MS_SHARED, NULL));
+	TEST_SUCC(syscall(SYS_pivot_root, PROP_NEW_ROOT_DIR, PROP_PUT_OLD_DIR));
 }
 END_TEST()

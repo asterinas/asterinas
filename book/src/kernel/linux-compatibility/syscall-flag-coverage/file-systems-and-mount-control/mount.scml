@@ -18,3 +18,10 @@ mount(
     mountflags = MS_BIND | MS_REC,
     data
 );
+
+// Changes the propagation type of the mount
+mount(
+    source, target, filesystemtype,
+    mountflags = MS_PRIVATE | MS_SLAVE | MS_SHARED | MS_UNBINDABLE | MS_REC,
+    data
+);

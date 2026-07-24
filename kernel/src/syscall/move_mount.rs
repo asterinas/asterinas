@@ -51,13 +51,13 @@ pub fn sys_move_mount(
     match source {
         MoveMountSource::Detached(detached_mount) => {
             let detached_root = Path::new_fs_root(detached_mount);
-            detached_root.move_mount_to(&target_path, ctx)?;
+            detached_root.move_mount_to(target_path, ctx)?;
         }
         MoveMountSource::Path(from_path) => {
             let from_path = from_path.to_string_lossy();
             let from_fs_path = FsPath::from_fd_at(from_dfd, &from_path, EmptyPathStr::Reject)?;
             let source_path = path_resolver.lookup(&from_fs_path)?;
-            source_path.move_mount_to(&target_path, ctx)?;
+            source_path.move_mount_to(target_path, ctx)?;
         }
     };
 
