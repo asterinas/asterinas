@@ -4,7 +4,7 @@ use alloc::str;
 
 use ostd::task::Task;
 
-use super::{Mount, Path, mount::MountTopology};
+use super::{Mount, MountTopology, Path};
 use crate::{
     fs::{
         file::{
@@ -378,7 +378,7 @@ impl PathResolver {
         };
 
         self.root.mount.detach_from_parent(&mut topology_guard);
-        new_root_mount.graft_mount_tree(&parent_path, &mut topology_guard);
+        new_root_mount.graft_mount_tree(parent_path, &mut topology_guard);
         drop(topology_guard);
 
         let new_root = Path::new_root(new_root_mount);
