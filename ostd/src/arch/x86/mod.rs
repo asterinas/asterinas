@@ -15,6 +15,7 @@ pub mod serial;
 pub(crate) mod task;
 mod timer;
 pub mod trap;
+pub(crate) mod vm;
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) mod tdx_guest;
