@@ -171,8 +171,13 @@ unsafe impl PageTableConfig for KernelPtConfig {
         }
     }
 
-    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item {
+    unsafe fn item_from_raw(
+        paddr: Paddr,
+        level: PagingLevel,
+        mut prop: PageProperty,
+    ) -> Self::Item {
         if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
+            prop.priv_flags -= PrivilegedPageFlags::AVAIL1;
             debug_assert_eq!(level, 1);
             // SAFETY: The caller ensures safety.
             let frame = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) };
@@ -185,9 +190,10 @@ unsafe impl PageTableConfig for KernelPtConfig {
     unsafe fn item_ref_from_raw<'a>(
         paddr: Paddr,
         level: PagingLevel,
-        prop: PageProperty,
+        mut prop: PageProperty,
     ) -> Self::ItemRef<'a> {
         if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
+            prop.priv_flags -= PrivilegedPageFlags::AVAIL1;
             debug_assert_eq!(level, 1);
             // SAFETY: The caller ensures that the frame outlives `'a` and that
             // the type matches the frame.
