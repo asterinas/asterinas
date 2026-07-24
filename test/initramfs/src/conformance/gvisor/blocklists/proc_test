@@ -16,7 +16,6 @@ ProcPidMem.DifferentUserAttached
 ProcPidFile.SubprocessRunning
 ProcPidFile.SubprocessZombie
 ProcPidFile.SubprocessExited
-ProcPidStatusTest.HasBasicFields
 ProcPidStatTest.VmStats
 ProcPidSymlink.SubprocessRunning
 ProcPidSymlink.SubprocessZombied
