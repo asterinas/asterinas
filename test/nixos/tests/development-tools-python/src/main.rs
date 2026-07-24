@@ -16,7 +16,19 @@ fn python3_regrtest(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.run_cmd("mkdir /tmp/python3-src")?;
     nixos_shell
         .run_cmd("tar xf /tmp/python3-src.tar.xz --strip-components=1 -C /tmp/python3-src")?;
-    nixos_shell.run_cmd("export PYTHONPATH=/tmp/python3-src/Lib")?;
+
+    // On NixOS, the Python interpreter's stdlib lives on the read-only `/nix/store`
+    // bind mount. Some `test.support` helpers `unlink()` `.pyc` files across every
+    // `sys.path` entry, which fails with `EROFS` there. The stdlib `sys.path`
+    // entries are derived from `sys.prefix`, so copying that prefix onto writable
+    // tmpfs moves them off the read-only mount.
+    nixos_shell.run_cmd("mkdir -p /tmp/pyhome")?;
+    nixos_shell.run_cmd("export PREFIX=$(python3 -c 'import sys; print(sys.prefix)')")?;
+    nixos_shell.run_cmd("cp -dR --preserve=mode $PREFIX/lib /tmp/pyhome/lib")?;
+    nixos_shell.run_cmd("cp -dR --preserve=mode $PREFIX/include /tmp/pyhome/include")?;
+    nixos_shell.run_cmd("rm -rf /tmp/pyhome/lib/python3.12/test")?;
+    nixos_shell.run_cmd("cp -a /tmp/python3-src/Lib/test /tmp/pyhome/lib/python3.12")?;
+    nixos_shell.run_cmd("export PYTHONHOME=/tmp/pyhome")?;
 
     // Printed once by regrtest at the end of every run as `Result: {state}`:
     //   https://github.com/python/cpython/blob/v3.12.12/Lib/test/libregrtest/main.py#L455-L456
