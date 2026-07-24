@@ -17,6 +17,7 @@ enum Leaf {
     Tsc = 0x15,
 
     HypervisorBase = 0x40000000,
+    HypervisorTscFreq = 0x40000010,
     ExtBase = 0x80000000,
 }
 
@@ -81,6 +82,28 @@ pub(in crate::arch) fn query_tsc_freq() -> Option<u64> {
     }
 
     Some((crystal_freq as u64) * (numerator as u64) / (denominator as u64))
+}
+
+/// Queries the frequency in Hz of the Time Stamp Counter (TSC) reported by the hypervisor.
+///
+/// Paravirtualized hypervisors following the KVM CPUID convention report the TSC frequency in kHz
+/// in `EAX` of the TSC frequency leaf. This is often the only way to determine the TSC frequency
+/// in a virtual machine, because a VMM may emulate neither the nominal core crystal clock
+/// information leaf (see [`query_tsc_freq`]) nor a Programmable Interval Timer (PIT). Cloud
+/// Hypervisor and Firecracker are two such VMMs.
+///
+/// This method will return `None` if the leaf is not supported or if the hypervisor does not
+/// report the frequency.
+pub(in crate::arch) fn query_tsc_freq_via_hypervisor() -> Option<u64> {
+    let CpuidResult {
+        eax: tsc_freq_khz, ..
+    } = cpuid(Leaf::HypervisorTscFreq as u32, 0)?;
+
+    if tsc_freq_khz == 0 {
+        return None;
+    }
+
+    Some((tsc_freq_khz as u64) * 1_000)
 }
 
 /// Queries the supported XSTATE features, i.e., the supported bits of `XCR0` and `IA32_XSS`.
