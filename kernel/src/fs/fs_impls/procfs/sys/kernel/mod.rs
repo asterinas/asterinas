@@ -8,6 +8,7 @@ use crate::{
             sys::kernel::{
                 cap_last_cap::CapLastCapFileOps,
                 pid_max::PidMaxFileOps,
+                randomize_va_space::RandomizeVaSpaceFileOps,
                 tainted::TaintedFileOps,
                 uts::{DomainnameFileOps, HostnameFileOps, OsReleaseFileOps, VersionFileOps},
                 yama::YamaDirOps,
@@ -25,6 +26,7 @@ use crate::{
 
 mod cap_last_cap;
 mod pid_max;
+mod randomize_va_space;
 mod tainted;
 mod uts;
 mod yama;
@@ -50,6 +52,11 @@ impl KernelDirOps {
         ("hostname", InodeType::File, HostnameFileOps::new_inode),
         ("osrelease", InodeType::File, OsReleaseFileOps::new_inode),
         ("pid_max", InodeType::File, PidMaxFileOps::new_inode),
+        (
+            "randomize_va_space",
+            InodeType::File,
+            RandomizeVaSpaceFileOps::new_inode,
+        ),
         ("tainted", InodeType::File, TaintedFileOps::new_inode),
         ("version", InodeType::File, VersionFileOps::new_inode),
     ];
