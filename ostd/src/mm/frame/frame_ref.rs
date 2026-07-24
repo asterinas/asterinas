@@ -26,7 +26,7 @@ impl<M: AnyFrameMeta + ?Sized> FrameRef<'_, M> {
     ///  - the frame outlives the created reference, so that the reference can
     ///    be seen as borrowed from that frame.
     ///  - the type of the [`FrameRef`] (`M`) matches the borrowed frame.
-    pub(in crate::mm) unsafe fn borrow_paddr(raw: Paddr) -> Self {
+    pub(crate) unsafe fn borrow_paddr(raw: Paddr) -> Self {
         Self {
             // SAFETY: The caller ensures the safety.
             inner: ManuallyDrop::new(unsafe { Frame::from_raw(raw) }),
