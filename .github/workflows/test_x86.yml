@@ -62,7 +62,9 @@ jobs:
       matrix:
         include:
           - { variant: 'legacy32', boot_protocol: 'linux-legacy32', smp: 4 }
+          - { variant: 'legacy32-rootfs', boot_protocol: 'linux-legacy32', smp: 4, rootfs_boot: true }
           - { variant: 'multiboot2-smp4', boot_protocol: 'multiboot', smp: 4 }
+          - { variant: 'multiboot2-smp4-rootfs', boot_protocol: 'multiboot', smp: 4, rootfs_boot: true }
     steps:
       - uses: actions/checkout@v4
       - name: Run boot test (${{ matrix.variant }})
@@ -71,6 +73,7 @@ jobs:
           auto_test: 'boot'
           smp: ${{ matrix.smp }}
           boot_protocol: ${{ matrix.boot_protocol }}
+          rootfs_boot: ${{ matrix.rootfs_boot }}
 
   regression-test:
     runs-on: ubuntu-latest
@@ -161,6 +164,12 @@ jobs:
             image: asterinas/asterinas:0.18.0-20260702
             auto_test: boot
             enable_kvm: false
+          - name: arm-cross-boot-rootfs
+            runs_on: ubuntu-24.04-arm
+            image: asterinas/asterinas:0.18.0-20260702
+            auto_test: boot
+            enable_kvm: false
+            rootfs_boot: true
     runs-on: ${{ matrix.runs_on }}
     container:
       image: ${{ matrix.image }}
@@ -171,6 +180,7 @@ jobs:
         with:
           auto_test: ${{ matrix.auto_test }}
           enable_kvm: ${{ matrix.enable_kvm }}
+          rootfs_boot: ${{ matrix.rootfs_boot }}
 
   xfstests:
     runs-on: ubuntu-latest

@@ -51,6 +51,10 @@ pub(super) fn init_in_first_kthread() {
             ThreadOptions::new(task_fn).spawn();
         }
     }
+
+    // Partition scanning performs synchronous block I/O, so the request
+    // handling threads above must be available first.
+    aster_block::scan_partitions();
 }
 
 pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> {

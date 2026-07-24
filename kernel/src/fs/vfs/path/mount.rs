@@ -285,8 +285,17 @@ impl Mount {
         fs: Arc<dyn FileSystem>,
         mnt_ns: Weak<MountNamespace>,
     ) -> Result<Arc<Self>> {
+        Self::new_root_with_flags(fs, PerMountFlags::default(), mnt_ns)
+    }
+
+    /// Creates a root mount node with an associated FS and mount flags.
+    pub(in crate::fs) fn new_root_with_flags(
+        fs: Arc<dyn FileSystem>,
+        flags: PerMountFlags,
+        mnt_ns: Weak<MountNamespace>,
+    ) -> Result<Arc<Self>> {
         let source = fs.name().to_string();
-        Self::new(fs, PerMountFlags::default(), None, mnt_ns, Some(source))
+        Self::new(fs, flags, None, mnt_ns, Some(source))
     }
 
     /// Creates a pseudo mount node with an associated FS.

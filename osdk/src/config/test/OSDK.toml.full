@@ -12,7 +12,7 @@ boot.kcmd_args = [
     "HOME=/",
     "USER=root",
     "PATH=/bin:/benchmark",
-    "init=/usr/bin/busybox",
+    "rdinit=/usr/bin/busybox",
 ]
 boot.init_args = ["sh", "-l"]
 boot.initramfs = "/tmp/osdk_test_file"
