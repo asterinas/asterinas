@@ -50,7 +50,7 @@ See [the interface spec](spec/interface.md) for the full argument semantics.
 |---|---|
 | [`SKILL.md`](SKILL.md) | The agent-facing entry point: orchestration pipeline, the shared persona-pass contract, and the spawn shim. |
 | [`personas/`](personas/) | One pass template per reviewer persona; each points at its guideline page and lists its ordered concerns. |
-| [`scripts/`](scripts/) | The deterministic primitives — `resolve_target.sh` (parse args → canonical review input), `build_pass_prompt.sh` (cache-ordered persona pass prompt; uses `pass_contract.md`), `assemble_review.sh` (fragments → review file) — plus `run_agent.sh` (shared agent launcher) and `post_reviews_to_github.sh` (post a review file to a PR). |
+| [`scripts/`](scripts/) | The deterministic primitives — `resolve_target.sh` (parse args → canonical review input), `guideline_query.py` (validate persona catalogs and fetch exact rule chunks), `build_pass_prompt.sh` (cache-ordered persona/catalog pass prompt; uses `pass_contract.md`), and `assemble_review.sh` (fragments → review file) — plus `run_agent.sh` (shared agent launcher) and `post_reviews_to_github.sh` (post a review file to a PR). |
 | [`aster_code_review.sh`](aster_code_review.sh) | Headless CLI: run the skill from a shell via an agent profile (`ACR_AGENT_PROFILE`). The one blessed way to run the skill headless — used by the benchmark, the PR-review CI, and one-shot local runs. |
 | [`agent_profiles/`](agent_profiles/) | Per-agent launch configs (`ACR_AGENT_PROFILE=<name>`): `claude`, `codex`, `codex_workflow` (the CI profile). |
 | [`benchmark/`](benchmark/) | The recall benchmark — *review quality* — `problems.yaml` (fixtures cited by commit SHA) and the `run.sh` harness. Agent-agnostic: Claude and Codex both verified. |

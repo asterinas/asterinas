@@ -24,7 +24,8 @@ step 3-4 -- the fan-out (one isolated PASS each):
 │ Maintain. │  Correct. │  Security │  Hardware │    Doc.   │
 │   (pass)  │   (pass)  │   (pass)  │   (pass)  │   (pass)  │
 └───────────┴───────────┴───────────┴───────────┴───────────┘
-each pass reads ONLY its own guideline page + the canonical review input
+each pass reads ONLY its own persona + complete gist catalog + canonical review input,
+then fetches exact rule chunks on concrete suspicion
 ```
 
 Steps 1 and 5 are deterministic scripts; steps 6–8 use the model.
@@ -53,12 +54,12 @@ Activation and every later step treat the two the same; only resolution differs.
 
 ## Fan-out: one isolated pass per persona
 
-A pass is a pure function: `(review_input, persona_page) → comment_fragment`.
-It runs in a **clean context** that loads only its own persona's guideline page.
+A pass is a pure function: `(review_input, persona_catalog, queried_rule_chunks) → comment_fragment`.
+It runs in a **clean context** that initially loads only its own persona and complete gist catalog.
 
 **Why fan out, rather than one prompt that walks all five personas?**
 Because the persona guidelines exist to give a reviewer *selective exposure* (see [`coding_guidelines.md`](coding_guidelines.md)).
-A single shared context would re-accumulate all five guideline pages plus the review input on every turn,
+A single shared context would re-accumulate all five persona catalogs plus the review input on every turn,
 throwing that benefit away — exactly the context bloat the persona structure was built to avoid.
 Fan-out also makes a pass the unit the benchmark can score in isolation.
 
@@ -77,7 +78,7 @@ Turning `auto` into a *measured* heuristic
 Each pass prompt is built by `build_pass_prompt.sh`
 — not retyped by the orchestrator
 — so its prefix is byte-identical across passes and across reviews:
-the **stable** blocks come first (the shared reviewer contract `pass_contract.md`, then each persona's template and its inlined guideline page)
+the **stable** blocks come first (the shared reviewer contract `pass_contract.md`, then each persona's template and complete gist catalog)
 and the **volatile** review input comes last.
 The orchestrator spawns the sub-agent with that exact text,
 which makes the stable head a reusable prompt-cache prefix.
@@ -93,6 +94,15 @@ the token saving is confirmed on the benchmark, not asserted.
 A pass is not a single prompt;
 it works its persona's concerns in dependency order,
 reading each rule's gist first and drilling into the full rule only on a suspected violation.
+The pass gathers candidate short-names for one concern phase and calls
+`guideline_query.py show --expect-digest <catalog-digest> <persona> <short-name>...`
+once for that batch.
+The tool returns the exact authored H3 sections in catalog order;
+the pass must read a rule chunk before using its short-name as a finding's grounding.
+It does not query every rule preemptively,
+and real in-scope defects without a matching guideline continue to use plain-language grounding.
+The query command resolves the same current or benchmark-bundled corpus used to build the catalog,
+so a historical worktree cannot silently supply stale rule text.
 The ordered concerns are the second axis of the design (personas are parallel; concerns are sequential within a pass):
 
 - **Maintainability:** intent & goal → design / interface fit → naming,
@@ -230,6 +240,7 @@ Three commitments keep its behavior identical across agents and reproducible for
 
 - **Deterministic primitives are scripts, not prose.**
   Target resolution (`resolve_target.sh` — argument parsing plus emitting the canonical review input),
+  guideline access (`guideline_query.py` — root resolution, corpus validation, catalogs, and exact rule chunks),
   pass-prompt assembly (`build_pass_prompt.sh` — the cache-ordered stable-then-volatile prompt),
   and review assembly (`assemble_review.sh`) are committed scripts,
   so their behavior is byte-identical across Claude,

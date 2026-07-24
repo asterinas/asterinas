@@ -12,9 +12,12 @@
 # Guideline pages are deliberately NOT copied into the worktree's tracked book/:
 # overwriting the snapshot's tracked book/ would pollute a `diff`-mode review.
 # Instead, bundle a guidelines-only snapshot inside the overlaid skill package.
-# build_pass_prompt.sh uses that snapshot by default, so the review still uses
+# build_pass_prompt.sh and guideline_query.py use that snapshot by default,
+# so catalog construction and later rule queries still use
 # current guidelines even if the review agent does not preserve ACR_GUIDELINE_ROOT
 # when it later runs shell commands.
+# guideline-root.required makes a missing snapshot fail closed instead of
+# silently falling back to the historical worktree's book/ tree.
 #
 # CRITICAL (benchmark integrity):
 # this EXCLUDES benchmark/, which holds problems.yaml — the answer key.
@@ -29,6 +32,7 @@ mkdir -p "$wt/.agents/skills"
 cp -r "$SKILL" "$wt/.agents/skills/aster-code-review"
 rm -rf "$wt/.agents/skills/aster-code-review/benchmark"   # <-- drop the answer key
 rm -rf "$wt/.agents/skills/aster-code-review/guideline-root"
+touch "$wt/.agents/skills/aster-code-review/guideline-root.required"
 mkdir -p "$wt/.agents/skills/aster-code-review/guideline-root/book/src/to-contribute"
 cp -r "$HERE/../../../../book/src/to-contribute/coding-guidelines" \
     "$wt/.agents/skills/aster-code-review/guideline-root/book/src/to-contribute/"
