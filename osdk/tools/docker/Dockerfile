@@ -193,6 +193,7 @@ RUN apt update \
     libnuma1            `# running dependency for QEMU` \
     libpixman-1-dev     `# running dependency for QEMU` \
     libsqlite3-dev      `# used by klint` \
+    libssl-dev          `# used by cargo-deps` \
     mtools              `# used by grub-mkrescue` \
     xorriso \
     && apt clean \
@@ -222,6 +223,7 @@ RUN mkdir -p /github/home \
 RUN cargo install --locked \
     cargo-binutils \
     cargo-expand@1.0.122 \
+    cargo-udeps@0.1.61 \
     lychee@0.24.2 \
     mdbook@0.5.2 \
     mdbook-mermaid@0.17.0 \
