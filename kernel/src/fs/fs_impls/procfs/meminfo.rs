@@ -5,6 +5,8 @@
 //! fields are similar to that of Linux's but there exist differences.
 //!
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_meminfo.5.html>
+//!
+//! TODO: Implement remaining `/proc/meminfo` fields (AnonPages, PageTables, KernelStack, etc.).
 
 use aster_util::printer::VmPrinter;
 
@@ -51,6 +53,10 @@ impl ProcFileOps for MemInfoFileOps {
         writeln!(printer, "MemAvailable:\t{} kB", available)?;
         writeln!(printer, "SwapTotal:\t0 kB")?;
         writeln!(printer, "SwapFree:\t0 kB")?;
+
+        // Kernel heap memory.
+        let kernel_heap = crate::vm::mem_kernel_heap() / 1024;
+        writeln!(printer, "KernelHeap:\t{} kB", kernel_heap)?;
 
         Ok(printer.bytes_written())
     }

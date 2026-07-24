@@ -2,7 +2,7 @@
 
 //! The slab cache that is composed of slabs.
 
-use core::alloc::AllocError;
+use core::{alloc::AllocError, sync::atomic::Ordering};
 
 use ostd::mm::{
     PAGE_SIZE, Paddr,
@@ -66,12 +66,14 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
             log::error!("Failed to allocate a new slab");
             return Err(AllocError);
         };
+        crate::TOTAL_HEAP_ALLOCATED.fetch_add(PAGE_SIZE, Ordering::Relaxed);
         let allocated = allocated_empty.meta_mut().alloc().unwrap();
         self.add_slab(allocated_empty);
 
         // Allocate more empty slabs and push them into the cache.
         for _ in 0..EXPECTED_EMPTY_SLABS {
             if let Ok(allocated_empty) = Slab::new() {
+                crate::TOTAL_HEAP_ALLOCATED.fetch_add(PAGE_SIZE, Ordering::Relaxed);
                 self.empty.push_front(allocated_empty);
             } else {
                 break;
@@ -111,6 +113,7 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
         if self.empty.size() > MAX_EMPTY_SLABS {
             while self.empty.size() > EXPECTED_EMPTY_SLABS {
                 self.empty.pop_front();
+                crate::TOTAL_HEAP_ALLOCATED.fetch_sub(PAGE_SIZE, Ordering::Relaxed);
             }
         }
 
