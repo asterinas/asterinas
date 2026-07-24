@@ -663,3 +663,323 @@
       expectation: >
         A reviewer should flag that syscall-local decode enums should not be
         public when all uses are contained in the same source file.
+
+
+- problem_id: 0400-idle-pick-next-clone-in-hot-path
+  commit: 364d6af7c8e21504ae984e8fa04ef66553a36dc2
+  source: >
+    Fix-anchored. `commit` is the parent of the fix `50ff67a01` ("Eliminate
+    redundant Clone in hot path" from PR #1876), which replaced
+    `self.entity.clone()` with `self.entity.take()` in `IdleClassRq::pick_next`
+    and simplified the `enqueue` check with `debug_assert!`. The defect is
+    present at this snapshot and nothing in the file names it (leak-free).
+    The same fixing commit also renamed the `StopClassRq` field from `thread` to
+    `entity` for consistency, but only `idle.rs` carries the performance defect.
+  review_mode:
+    files:
+      - kernel/src/sched/sched_class/idle.rs
+  defects:
+    - target: { kind: file, path: kernel/src/sched/sched_class/idle.rs }
+      persona: development
+      grounding: "Unnecessary Clone in hot path"
+      severity: minor
+      desc: >
+        `IdleClassRq::pick_next` returns `self.entity.clone()`, which performs an
+        atomic reference-count increment on every scheduling pick in the idle
+        class. Since `pick_next` is expected to hand off the entity from the run
+        queue to the caller (consuming it), the `clone` is redundant —
+        `self.entity.take()` would return the `Option<Arc<Task>>` by moving the
+        value and replacing the slot with `None`, with zero atomic overhead.
+        `StopClassRq::pick_next` already uses `take()` for the same pattern.
+      fix: >
+        Replace `self.entity.clone()` with `self.entity.take()` in
+        `IdleClassRq::pick_next`.
+      expectation: >
+        A reviewer should flag that `self.entity.clone()` in a scheduler hot path
+        performs an unnecessary atomic reference-count increment and should be
+        replaced with `self.entity.take()`.
+
+- problem_id: 0401-pick-next-current-redundant-pointer-check
+  commit: 0d30ce0b2c020228b66e01c1d735911f39534899
+  source: >
+    Fix-anchored. `commit` is the parent of the fix `5d5bc390d` ("Eliminate
+    redundant check in hot path" from PR #1876), which removed the `Arc::as_ptr`
+    pointer comparison and the associated early `return None` in
+    `PerCpuClassRqSet::pick_next_current`. The defect is present at this
+    snapshot and nothing in the file names it (leak-free).
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/src/sched/sched_class/mod.rs }
+      persona: development
+      grounding: "Dead code / impossible branch"
+      severity: minor
+      desc: >
+        `PerCpuClassRqSet::pick_next_current` computes `next_ptr` via
+        `Arc::as_ptr(&next.0)` and compares it with `Arc::as_ptr(&old.0)` to
+        check whether `pick_next_entity` returned the same task that is currently
+        running. If they are equal, the method does an early `return None`.
+        However, `ClassScheduler` maintains the invariant that an `Arc<Task>`
+        appears at most once in a `PerCpuClassRqSet`. Since `pick_next_entity`
+        removes the entity from the class run queue before returning it, `next`
+        can never be the same `Arc` instance as `current`. The pointer-comparison
+        branch is dead code and wastes an `Arc::as_ptr` call plus a branch in the
+        scheduler hot path.
+      fix: >
+        Remove the `let next_ptr = Arc::as_ptr(&next.0)` computation, the
+        `Arc::as_ptr(&old.0) == next_ptr` comparison, and the `return None`
+        early-return that depends on it. The `self.enqueue_entity(old, None)`
+        call must be preserved for the old `current`.
+      expectation: >
+        A reviewer should flag the `Arc::as_ptr` pointer comparison as an
+        impossible branch (dead code) in the scheduler hot path, on the grounds
+        that a task cannot appear twice in the same local run queue, and should
+        recommend removing it.
+
+- problem_id: 0402-setrlimit-nofile-oom
+  commit: 9c4f644bd9287da1815a13115fbdfa914d8426f0
+  source: >
+    Fix-anchored from PR #2783
+    `https://github.com/asterinas/asterinas/pull/2783`, fixing issue #2782
+    ("System exits when calling `poll` with large `nfds`"). Files mode uses
+    `9c4f644bd`, the parent of fixing commit
+    `a683b2e4e739395046b8a54e6a109d8b9c1762f9` ("Fix OOM by adding
+    SYSCTL_NR_OPEN limit for `setrlimit` and `prlimit64`"), because it is the
+    newest buggy snapshot before the `SYSCTL_NR_OPEN` guard was added. The
+    fixing commit and its added check are not visible to the reviewer (only
+    the buggy pre-fix files are reviewed), so nothing can leak the answer.
+  review_mode:
+    files:
+      - kernel/src/syscall/prlimit64.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/syscall/prlimit64.rs
+      persona: development
+      grounding: "Missing system-wide upper bound on RLIMIT_NOFILE enables OOM"
+      severity: critical
+      desc: >
+        `sys_setrlimit` and `sys_prlimit64` accept any `new_raw.max` value
+        for `RLIMIT_NOFILE` as long as `cur <= max`, with no system-wide hard
+        ceiling. A local caller can raise `RLIMIT_NOFILE` to `u64::MAX` (or
+        any huge value like `INT_MAX`), then call `poll()` or other syscalls
+        that use the rlimit as a capacity bound for allocations. These
+        downstream syscalls will allocate memory proportional to the inflated
+        limit — `Vec::with_capacity(nfds)` in `poll()` — and OOM or panic.
+      fix: >
+        Add a constant `SYSCTL_NR_OPEN = 1024 * 1024` (matching Linux's
+        `sysctl_nr_open` default) and check in both `sys_setrlimit` and
+        `sys_prlimit64` that when `resource == RLIMIT_NOFILE`, the new
+        `max` value does not exceed `SYSCTL_NR_OPEN`. Return `EPERM` if
+        the limit is exceeded, matching Linux behavior.
+      expectation: >
+        A reviewer should flag that `setrlimit` and `prlimit64` allow
+        `RLIMIT_NOFILE` to be raised without any system-wide hard ceiling,
+        enabling OOM via downstream syscalls that allocate based on the
+        rlimit value. The reviewer should note that Linux imposes
+        `sysctl_nr_open` as a hard upper bound and that Asterinas needs
+        an equivalent guard.
+
+    - target:
+        kind: file
+        path: kernel/src/syscall/prlimit64.rs
+      persona: maintainability
+      grounding: "Duplicated SYSCTL_NR_OPEN check in setrlimit and prlimit64"
+      severity: minor
+      desc: >
+        The same `RLIMIT_NOFILE` upper-bound check (`new_raw.max >
+        SYSCTL_NR_OPEN`) is duplicated verbatim in `sys_setrlimit` and
+        `sys_prlimit64`. Both syscalls ultimately call `set_cur_and_max`
+        on the same `RLimit64`, and the check belongs at that validation
+        layer — or `sys_setrlimit` should delegate to `sys_prlimit64` —
+        rather than being copy-pasted in two call sites.
+      fix: >
+        Either move the `SYSCTL_NR_OPEN` bound check into
+        `RLimit64::set_cur_and_max` (or a new `set_rlimit` helper that
+        validates resource-type-specific bounds), or refactor
+        `sys_setrlimit` to call through `sys_prlimit64` so the check
+        lives in one place.
+      expectation: >
+        A reviewer should flag that the same resource-limit bound check is
+        duplicated in both `sys_setrlimit` and `sys_prlimit64`, and suggest
+        consolidating it into a shared validation path to avoid future
+        divergence.
+
+- problem_id: 0403-ext2-group-permission-check
+  commit: 1e3403e756ced989ddd44c9f0c81cf71557e962a
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    Fix-anchored from asterinas/asterinas#1702 ("Add support for
+    group-based permission checking in ext2"). `commit` is the parent of
+    the fixing commit `a8c659d3d4d646ecc2c198b7a0e4c4889a597d91`, which
+    introduced a `Permission` request type, added `Inode::check_permission`
+    with current-thread `fsuid`/`fsgid` owner/group/other DAC checks,
+    converted file-open, `access(2)`, path traversal, socket-file, and exec
+    permission checks to use that API, and set new ext2 inode `uid`/`gid`
+    from the creator credentials instead of hard-coding `0`. The benchmark
+    reviews the pre-fix files at `a8c659d3^`: the centralized permission
+    API, corrected ext2 ownership assignment, and unblocked permission tests
+    are not present, so the expected defect is not leaked by the input.
+  review_mode:
+    files:
+      - kernel/src/fs/inode_handle/dyn_cap.rs
+      - kernel/src/fs/path/dentry.rs
+      - kernel/src/syscall/access.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/fs/utils/inode.rs
+      persona: security
+      grounding: "Incorrect POSIX DAC permission checking"
+      severity: major
+      desc: >
+        Permission checks are based on `InodeMode::is_readable`,
+        `is_writable`, and `is_executable`, but those helpers only inspect
+        the owner bits (`S_IRUSR`, `S_IWUSR`, `S_IXUSR`). Callers such as
+        `InodeHandle::new`, `do_faccessat`, and path traversal therefore
+        never compare the inode's `uid`/`gid` with the current thread's
+        `fsuid`/`fsgid` and never select the group or other permission bits.
+        A non-owner can be granted access whenever the owner bit is set
+        (for example, a `0600` file is readable/writable by everyone), while
+        a legitimate group member can be denied when only group bits are set.
+        Ext2 also creates new inodes with `uid: 0` and `gid: 0`, so even a
+        later identity-aware check would not preserve the creating user's
+        ownership information.
+      fix: >
+        Add a request-permission type for read/write/execute checks and a
+        centralized `Inode::check_permission` implementation that obtains the
+        current POSIX-thread credentials, compares inode `uid`/`gid` against
+        `fsuid`/`fsgid`, and enforces owner, group, or other bits accordingly.
+        Replace direct `mode()?.is_readable/is_writable/is_executable` access
+        decisions in open/access/path/exec-related call sites with
+        `inode.check_permission(...)`. In ext2, initialize new inode `uid` and
+        `gid` from the creator's `fsuid` and `fsgid` instead of hard-coding
+        root ownership.
+      expectation: >
+        A reviewer should flag that file permission checks ignore the current
+        credentials and group/other mode bits, effectively treating owner
+        permission bits as global permissions, and should recommend POSIX DAC
+        checks using inode `uid`/`gid` versus the caller's `fsuid`/`fsgid`,
+        plus preserving those ids when creating ext2 inodes.
+
+- problem_id: 0404-pte-privilege-flags
+  commit: ffb40974364c74ee3adaffdf8a7063b575233807
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    Fix-anchored from asterinas/asterinas#2114 ("Keep PTE privilege flags
+    clean if needed"). The supplied PR #2114 is actually about timerfd panics,
+    not PTE flags, but the defect description matches the PTE fix in 
+    commit e669d38d (clears User bits of non-leaf PTEs). Review comments 
+    confirm the intent and final fix. However, the benchmark reviews 
+    the parent commit (e669d38d^), so the corrected priv_flags handling, 
+    direct return, and later rename are not visible.
+  review_mode:
+    files:
+      - ostd/src/mm/page_table/boot_pt.rs
+  defects:
+    - target:
+        kind: file
+        path: ostd/src/mm/page_table/boot_pt.rs
+      persona: security
+      grounding: "PTE privilege flags must preserve user/kernel isolation"
+      severity: critical
+      desc: >
+        BootPageTable::from_current_pt and BootPageTable::alloc_child rebuild 
+        non-leaf PTE properties via PageProperty::new(...). But PageProperty::new 
+        is a user-page constructor: it forces PrivilegedPageFlags::USER and drops 
+        the original privileged flags. As a result, rewriting firmware/kernel page-table 
+        entries can incorrectly set user-accessible bits or lose execute/protection 
+        attributes, potentially exposing kernel mappings or violating page-walk 
+        permission rules. On RISC-V, setting the USER bit on non-leaf PTEs is also invalid.`
+      fix: >
+        Do not rebuild existing boot page-table entries with the user-page
+        `PageProperty::new` constructor. When marking firmware page tables,
+        mutate the existing property in place (`let mut prop = pte.prop();
+        prop.flags |= PTE_POINTS_TO_FIRMWARE_PT; pte.set_prop(prop);`) so
+        `priv_flags` are preserved. In `alloc_child`, return `E::new_pt`
+        directly after zeroing the newly allocated page-table frame instead of
+        round-tripping it through `PageProperty::new`. Optionally rename the
+        constructor to `new_user` so future call sites do not mistake it for a
+        generic PTE-property constructor.
+      expectation: >
+        A reviewer should flag that boot page-table code is using the
+        user-mapping `PageProperty::new` constructor on non-leaf/kernel PTEs,
+        thereby discarding existing privileged flags and forcing the `USER`
+        privilege bit, and should require preserving `prop.priv_flags` or using
+        `E::new_pt` directly instead of reconstructing the PTE as a user page.
+
+- problem_id: 0406-virtio-blk-dma-sync-to-device
+  commit: cdf412ed25b62afe811cdbc19b157be532cc729a
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR #3291 fixes the virtio-blk write path defect: sync_to_device() 
+    was omitted before notifying the device, violating the DmaStream contract.
+    The review is based on parent commit 134ff719^, which lacks 
+    per‑segment sync calls. Comments in the PR only discuss error propagation
+     as a separate follow‑up, not the defect itself.
+  review_mode:
+    files:
+      - kernel/comps/virtio/src/device/block/device.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/comps/virtio/src/device/block/device.rs
+      persona: hardware
+      grounding: "DMA buffers must be synchronized before device consumption"
+      severity: major
+      desc: >
+        In DeviceInner::write, data slices are added to the virtqueue descriptor chain
+         without calling sync_to_device(), unlike the request/response slices. 
+         This violates the DmaStream contract, which requires synchronization before notifying the device. 
+         On non-cache‑coherent or confidential‑VM mappings, the device may read stale data, 
+         causing silent corruption even if the request completes successfully.
+      fix: >
+        Before pushing each BIO segment DMA slice into the virtqueue input list,
+        call `sync_to_device()` on that slice. The PR #3291 fix replaces
+        `inputs.extend(dma_slices_iter)` with a loop that calls
+        `dma_slice.sync_to_device().unwrap(); inputs.push(dma_slice);`. An
+        equivalent fix may propagate or otherwise handle the synchronization
+        error instead of unwrapping, but it must synchronize every write-data
+        DMA slice before `queue.add_dma_bufs` can expose the descriptors to the
+        device.
+      expectation: >
+        A reviewer should flag that the virtio-blk write path submits BIO
+        segment DMA slices as device-readable input descriptors without first
+        calling `sync_to_device()` on each slice. A matching comment should
+        connect the issue to the `DmaStream` streaming-DMA contract and explain
+        that the device may consume stale or unsynchronized write data unless
+        each buffer is synchronized before virtqueue submission.
+
+- problem_id: 0407-msync-ms-invalidate-before-after
+  commit: 525085ab865b3850c0de2d704bab1bba6976a980
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    Commit-derived benchmark case from
+    https://github.com/asterinas/asterinas/commit/525085ab865b3850c0de2d704bab1bba6976a980.
+    The commit introduces `MsyncFlags` while implementing `msync`; its doc comment for
+    `MS_INVALIDATE` says other processes see changes before the `msync` call, which is
+    temporally wrong. The correct wording is "after this `msync` call". The expected
+    review comment is synthesized from this user-specified defect, not copied from a
+    GitHub review comment.
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/syscall/msync.rs
+      persona: documentation
+      grounding: incorrect doc comment
+      severity: minor
+      desc: >
+        The newly added doc comment for `MS_INVALIDATE` says other processes mapping
+        the same file will see changes before the `msync` call. That reverses the
+        temporal relationship: invalidation/synchronization can make changes visible
+        after the `msync` call, not before it.
+      fix: >
+        Change "before this `msync` call" to "after this `msync` call" in the
+        `MS_INVALIDATE` doc comment.
+      expectation: >
+        A reviewer should identify that the `MS_INVALIDATE` doc comment has the
+        wrong temporal direction and should ask to replace "before" with "after".
