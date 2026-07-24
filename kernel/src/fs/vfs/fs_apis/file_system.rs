@@ -3,7 +3,6 @@
 use core::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-use device_id::DeviceId;
 
 use super::inode::Inode;
 use crate::prelude::*;
@@ -65,39 +64,16 @@ impl Debug for dyn FileSystem {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct FsStats {
-    pub magic: u64,
-    pub bsize: usize,
     pub blocks: usize,
     pub bfree: usize,
     pub bavail: usize,
     pub files: usize,
     pub ffree: usize,
     pub fsid: u64,
-    pub namelen: usize,
     pub frsize: usize,
     pub flags: u64,
-    pub container_dev_id: DeviceId,
-}
-
-impl FsStats {
-    pub fn new(magic: u64, block_size: usize, name_max_len: usize, dev_id: DeviceId) -> Self {
-        Self {
-            magic,
-            bsize: block_size,
-            blocks: 0,
-            bfree: 0,
-            bavail: 0,
-            files: 0,
-            ffree: 0,
-            fsid: 0,
-            namelen: name_max_len,
-            frsize: block_size,
-            flags: 0,
-            container_dev_id: dev_id,
-        }
-    }
 }
 
 bitflags! {

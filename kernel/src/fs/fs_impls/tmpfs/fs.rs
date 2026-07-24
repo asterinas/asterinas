@@ -41,7 +41,7 @@ impl FsType for TmpFsType {
     }
 
     fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
-        Ok(SuperBlock::new(TmpFs::new_tmpfs()))
+        Ok(TmpFs::new_tmpfs().into_super_block())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

@@ -4,10 +4,7 @@ use crate::{
     fs::{
         devpts::{DevPts, Ptmx},
         file::{InodeType, mkmod},
-        vfs::{
-            path::{FsPath, Path, PathResolver, PerMountFlags},
-            super_block::SuperBlock,
-        },
+        vfs::path::{FsPath, Path, PathResolver, PerMountFlags},
     },
     prelude::*,
 };
@@ -29,7 +26,7 @@ pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Res
     // Create the "pts" directory and mount devpts on it.
     let devpts_path = dev.new_fs_child("pts", InodeType::Dir, mkmod!(a+rx, u+w))?;
     let devpts_mount = devpts_path.mount(
-        SuperBlock::new(DevPts::new()),
+        DevPts::new().into_super_block(),
         PerMountFlags::default(),
         Some("devpts".to_string()),
         ctx,

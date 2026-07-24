@@ -5,6 +5,7 @@
 use alloc::borrow::Cow;
 use core::time::Duration;
 
+use device_id::DeviceId;
 use inherit_methods_macro::inherit_methods;
 
 use super::Common;
@@ -14,7 +15,7 @@ use crate::{
         procfs::{BLOCK_SIZE, ProcFs},
         utils::DirentVisitor,
         vfs::{
-            file_system::{FileSystem, FsStats},
+            file_system::FileSystem,
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
@@ -44,10 +45,10 @@ impl<D: ProcDirOps> ProcDir<D> {
         dir: D,
         fs: Weak<dyn FileSystem>,
         ino: u64,
-        stats: &FsStats,
+        container_device_id: DeviceId,
         mode: InodeMode,
     ) -> Arc<Self> {
-        let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE, stats.container_dev_id);
+        let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE, container_device_id);
         let common = Common::new(metadata, fs);
 
         Arc::new_cyclic(|weak_self| Self {
@@ -64,8 +65,7 @@ impl<D: ProcDirOps> ProcDir<D> {
             let fs = parent.upgrade().unwrap().fs();
             let procfs = fs.downcast_ref::<ProcFs>().unwrap();
             let ino = procfs.alloc_id();
-            let metadata =
-                Metadata::new_dir(ino, mode, BLOCK_SIZE, procfs.stats().container_dev_id);
+            let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE, procfs.container_device_id());
             Common::new(metadata, Arc::downgrade(&fs))
         };
         Arc::new_cyclic(|weak_self| Self {

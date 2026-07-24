@@ -31,7 +31,7 @@ impl PipeFs {
     pub(in crate::fs) fn singleton() -> &'static Arc<NaivePseudoFs> {
         static PIPEFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
-        NaivePseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
+        NaivePseudoFs::singleton(&PIPEFS, "pipefs")
     }
 
     /// Creates a pseudo `Path` for an anonymous pipe.
@@ -45,8 +45,9 @@ impl PipeFs {
     fn mount_node() -> &'static Arc<Mount> {
         static PIPEFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        PIPEFS_MOUNT
-            .call_once(|| Mount::new_pseudo(SuperBlock::new(Self::singleton().clone())).unwrap())
+        PIPEFS_MOUNT.call_once(|| {
+            Mount::new_pseudo(Self::singleton().clone().into_super_block(PIPEFS_MAGIC)).unwrap()
+        })
     }
 }
 

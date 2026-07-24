@@ -44,6 +44,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::{Extension, FileOps, Inode, Metadata},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -61,8 +62,7 @@ mod sockfs;
 /// A pseudo file system that manages pseudo inodes, such as pipe inodes and socket inodes.
 pub struct NaivePseudoFs {
     name: &'static str,
-    _anon_device_id: AnonDeviceId,
-    stats: FsStats,
+    anon_device_id: AnonDeviceId,
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
     fs_event_subscriber_stats: FsEventSubscriberStats,
@@ -83,7 +83,7 @@ impl FileSystem for NaivePseudoFs {
     }
 
     fn stats(&self) -> FsStats {
-        self.stats.clone()
+        FsStats::default()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -93,11 +93,7 @@ impl FileSystem for NaivePseudoFs {
 
 impl NaivePseudoFs {
     /// Returns a reference to the singleton pseudo file system.
-    fn singleton(
-        fs: &'static Once<Arc<Self>>,
-        name: &'static str,
-        magic: u64,
-    ) -> &'static Arc<Self> {
+    fn singleton(fs: &'static Once<Arc<Self>>, name: &'static str) -> &'static Arc<Self> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/libfs.c#L659-L689>
         fs.call_once(|| {
             let anon_device_id =
@@ -105,8 +101,7 @@ impl NaivePseudoFs {
             let container_dev_id = anon_device_id.id();
             Arc::new_cyclic(move |weak_fs: &Weak<Self>| Self {
                 name,
-                _anon_device_id: anon_device_id,
-                stats: FsStats::new(magic, aster_block::BLOCK_SIZE, NAME_MAX, container_dev_id),
+                anon_device_id,
                 root: Arc::new(PseudoInode::new(
                     ROOT_INO,
                     PseudoInodeType::Root,
@@ -136,7 +131,7 @@ impl NaivePseudoFs {
             uid,
             gid,
             Arc::downgrade(self),
-            self.stats.container_dev_id,
+            self.container_dev_id(),
         )
     }
 
@@ -145,7 +140,18 @@ impl NaivePseudoFs {
     }
 
     pub(super) fn container_dev_id(&self) -> DeviceId {
-        self.stats.container_dev_id
+        self.anon_device_id.id()
+    }
+
+    pub(super) fn into_super_block(self: Arc<Self>, magic: u64) -> Arc<SuperBlock> {
+        let container_device_id = self.container_dev_id();
+        SuperBlock::new(
+            self,
+            magic,
+            aster_block::BLOCK_SIZE,
+            NAME_MAX,
+            container_device_id,
+        )
     }
 }
 

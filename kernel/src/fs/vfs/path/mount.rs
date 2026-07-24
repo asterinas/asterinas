@@ -346,7 +346,7 @@ impl Mount {
 
         let mount = Arc::new_cyclic(|weak_self| Self {
             id,
-            root_dentry: Dentry::new_root(super_block.fs().root_inode()),
+            root_dentry: Dentry::new_root(super_block.fs().root_inode(), &super_block),
             mountpoint: RwLock::new(None),
             super_block,
             source,

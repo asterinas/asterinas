@@ -14,7 +14,6 @@ use super::inode::{InodeCache, VirtioFsInode};
 use crate::{
     fs::{
         pseudofs::AnonDeviceId,
-        utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
@@ -27,9 +26,6 @@ use crate::{
 
 /// Filesystem magic reported for virtio-fs in `statfs`.
 const VIRTIOFS_MAGIC: u64 = 0x6573_5546;
-
-/// Block size reported to `statfs` for virtio-fs.
-const BLOCK_SIZE: usize = 4096;
 
 /// The `virtiofs` filesystem type.
 pub(super) struct VirtioFsType;
@@ -52,7 +48,7 @@ impl FsType for VirtioFsType {
         let device = device::find_device_by_tag(&tag)
             .ok_or_else(|| Error::with_message(Errno::ENODEV, "virtiofs device is not found"))?;
 
-        Ok(SuperBlock::new(VirtioFs::new(device, tag)?))
+        VirtioFs::new_super_block(device, tag)
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
@@ -62,6 +58,7 @@ impl FsType for VirtioFsType {
 
 /// A mounted virtio-fs filesystem.
 pub(super) struct VirtioFs {
+    anon_device_id: AnonDeviceId,
     stats: FsStats,
     root: Arc<VirtioFsInode>,
     tag: String,
@@ -71,7 +68,7 @@ pub(super) struct VirtioFs {
 }
 
 impl VirtioFs {
-    fn new(device: Arc<FileSystemDevice>, tag: String) -> Result<Arc<Self>> {
+    fn new_super_block(device: Arc<FileSystemDevice>, tag: String) -> Result<Arc<SuperBlock>> {
         let session = FuseSession::new(device)
             .map_err(|_| Error::with_message(Errno::EIO, "virtiofs FUSE_INIT failed"))?;
 
@@ -81,13 +78,13 @@ impl VirtioFs {
         let statfs = session.do_fuse_op(FUSE_ROOT_ID, StatfsOperation)?.st();
 
         // TODO: Update the filesystem statistics based on `statfs` replies.
-        // For now, we set only the fields required by VFS when mounting the filesystem.
-        // No update is made for these fields later.
-        let stats = FsStats::from((container_dev_id, statfs));
+        let block_size = statfs.bsize() as usize;
+        let name_max = statfs.namelen() as usize;
+        let stats = FsStats::from(statfs);
 
         let root_entry = session.do_fuse_op(FUSE_ROOT_ID, LookupOperation::new("."))?;
 
-        Ok(Arc::new_cyclic(|weak_fs| {
+        let fs = Arc::new_cyclic(|weak_fs| {
             let root = VirtioFsInode::new_root(
                 root_entry,
                 weak_fs.clone(),
@@ -97,6 +94,7 @@ impl VirtioFs {
             let inode_cache = InodeCache::new(&root);
 
             Self {
+                anon_device_id,
                 stats,
                 root,
                 tag,
@@ -104,7 +102,15 @@ impl VirtioFs {
                 inode_cache,
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             }
-        }))
+        });
+
+        Ok(SuperBlock::new(
+            fs,
+            VIRTIOFS_MAGIC,
+            block_size,
+            name_max,
+            container_dev_id,
+        ))
     }
 
     pub(super) fn session(&self) -> &Arc<FuseSession> {
@@ -113,7 +119,7 @@ impl VirtioFs {
 
     /// Returns the device ID of this virtio-fs mount.
     pub(super) fn container_device_id(&self) -> DeviceId {
-        self.stats.container_dev_id
+        self.anon_device_id.id()
     }
 
     /// Reads an inode from a FUSE entry reply via the inode cache.
@@ -140,19 +146,17 @@ impl VirtioFs {
     }
 }
 
-impl From<(DeviceId, Kstatfs)> for FsStats {
-    fn from((container_dev_id, statfs): (DeviceId, Kstatfs)) -> Self {
-        let mut stats = FsStats::new(VIRTIOFS_MAGIC, BLOCK_SIZE, NAME_MAX, container_dev_id);
-
-        stats.blocks = statfs.blocks() as usize;
-        stats.bfree = statfs.bfree() as usize;
-        stats.bavail = statfs.bavail() as usize;
-        stats.files = statfs.files() as usize;
-        stats.ffree = statfs.ffree() as usize;
-        stats.bsize = statfs.bsize() as usize;
-        stats.namelen = statfs.namelen() as usize;
-        stats.frsize = statfs.frsize() as usize;
-        stats
+impl From<Kstatfs> for FsStats {
+    fn from(statfs: Kstatfs) -> Self {
+        Self {
+            blocks: statfs.blocks() as usize,
+            bfree: statfs.bfree() as usize,
+            bavail: statfs.bavail() as usize,
+            files: statfs.files() as usize,
+            ffree: statfs.ffree() as usize,
+            frsize: statfs.frsize() as usize,
+            ..Default::default()
+        }
     }
 }
 

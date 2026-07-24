@@ -95,7 +95,7 @@ impl Path {
         inode: Arc<dyn Inode>,
         name_fn: fn(&dyn Inode) -> String,
     ) -> Self {
-        let dentry = Dentry::new_pseudo(inode, name_fn);
+        let dentry = Dentry::new_pseudo(inode, name_fn, mount.super_block());
         Self::new(mount, dentry)
     }
 

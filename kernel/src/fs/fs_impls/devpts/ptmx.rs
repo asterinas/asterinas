@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{MajorId, MinorId};
 
 use super::*;
 use crate::{
@@ -27,14 +27,14 @@ pub struct Ptmx {
 struct Inner(Weak<DevPts>);
 
 impl Ptmx {
-    pub fn new(fs: Weak<DevPts>, stats: &FsStats) -> Arc<Self> {
+    pub fn new(fs: Weak<DevPts>, container_device_id: DeviceId) -> Arc<Self> {
         let inner = Inner(fs.clone());
         let metadata = Metadata::new_device(
             PTMX_INO,
             mkmod!(a+rw),
             BLOCK_SIZE,
             &inner,
-            stats.container_dev_id,
+            container_device_id,
         );
         Arc::new(Self {
             inner,

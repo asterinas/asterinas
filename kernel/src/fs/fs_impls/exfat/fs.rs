@@ -437,12 +437,7 @@ impl FileSystem for ExfatFs {
     }
 
     fn stats(&self) -> FsStats {
-        FsStats::new(
-            BOOT_SIGNATURE as u64,
-            self.sector_size(),
-            MAX_NAME_LENGTH,
-            self.block_device.id(),
-        )
+        FsStats::default()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -489,10 +484,19 @@ impl FsType for ExfatType {
     }
 
     fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
-        Ok(SuperBlock::new(ExfatFs::open(
+        let fs = ExfatFs::open(
             fs_creation_ctx.resolve_block_device()?,
             ExfatMountOptions::default(),
-        )?))
+        )?;
+        let block_size = fs.sector_size();
+        let container_device_id = fs.block_device.id();
+        Ok(SuperBlock::new(
+            fs,
+            BOOT_SIGNATURE as u64,
+            block_size,
+            MAX_NAME_LENGTH,
+            container_device_id,
+        ))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

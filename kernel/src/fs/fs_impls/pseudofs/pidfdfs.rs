@@ -9,7 +9,6 @@ use crate::{
         vfs::{
             inode::Inode,
             path::{Mount, Path},
-            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -30,7 +29,7 @@ impl PidfdFs {
     pub fn singleton() -> &'static Arc<NaivePseudoFs> {
         static PIDFDFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
-        NaivePseudoFs::singleton(&PIDFDFS, "pidfdfs", PIDFDFS_MAGIC)
+        NaivePseudoFs::singleton(&PIDFDFS, "pidfdfs")
     }
 
     /// Creates a pseudo `Path` for a pidfd.
@@ -46,8 +45,9 @@ impl PidfdFs {
     pub fn mount_node() -> &'static Arc<Mount> {
         static PIDFDFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        PIDFDFS_MOUNT
-            .call_once(|| Mount::new_pseudo(SuperBlock::new(Self::singleton().clone())).unwrap())
+        PIDFDFS_MOUNT.call_once(|| {
+            Mount::new_pseudo(Self::singleton().clone().into_super_block(PIDFDFS_MAGIC)).unwrap()
+        })
     }
 
     /// Returns the shared inode of the pidfd file system.

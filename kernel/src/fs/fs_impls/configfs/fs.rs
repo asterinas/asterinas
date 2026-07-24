@@ -26,8 +26,7 @@ use crate::fs::{
 /// Unlike sysfs which is primarily read-only and represents existing kernel state,
 /// `ConfigFs` is designed for dynamic creation and configuration of kernel objects.
 pub struct ConfigFs {
-    _anon_device_id: AnonDeviceId,
-    stats: FsStats,
+    anon_device_id: AnonDeviceId,
     root: Arc<dyn Inode>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
 }
@@ -48,15 +47,24 @@ impl ConfigFs {
     fn new(root_node: Arc<ConfigRootNode>) -> Arc<Self> {
         let anon_device_id =
             AnonDeviceId::acquire().expect("no device ID is available for configfs");
-        let stats = FsStats::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-        let root_inode = ConfigInode::new_root(root_node, &stats);
+        let root_inode = ConfigInode::new_root(root_node, anon_device_id.id());
 
         Arc::new(Self {
-            _anon_device_id: anon_device_id,
-            stats,
+            anon_device_id,
             root: root_inode,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
+    }
+
+    fn into_super_block(self: Arc<Self>) -> Arc<SuperBlock> {
+        let container_device_id = self.anon_device_id.id();
+        SuperBlock::new(
+            self,
+            MAGIC_NUMBER,
+            BLOCK_SIZE,
+            NAME_MAX,
+            container_device_id,
+        )
     }
 }
 
@@ -75,7 +83,7 @@ impl FileSystem for ConfigFs {
     }
 
     fn stats(&self) -> FsStats {
-        self.stats.clone()
+        FsStats::default()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -98,7 +106,7 @@ impl FsType for ConfigFsType {
         static SUPER_BLOCK: Once<Arc<SuperBlock>> = Once::new();
 
         Ok(SUPER_BLOCK
-            .call_once(|| SuperBlock::new(ConfigFs::singleton().clone()))
+            .call_once(|| ConfigFs::singleton().clone().into_super_block())
             .clone())
     }
 

@@ -16,6 +16,7 @@ use crate::{
         vfs::{
             inode::{Inode, MknodType, RevalidationPolicy},
             inode_ext::InodeExt,
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -131,6 +132,8 @@ use crate::{
 /// since mounts let a single `Dentry`
 /// appear at several locations in the namespace.
 pub(in crate::fs) struct Dentry {
+    /// A weak reference avoids retaining the superblock through the dentry cache cycle.
+    super_block: Weak<SuperBlock>,
     inode: Arc<dyn Inode>,
     type_: InodeType,
     name_and_parent: NameAndParent,
@@ -210,8 +213,8 @@ impl Dentry {
     ///
     /// It is been created during the construction of the `Mount`.
     /// The `Mount` holds an arc reference to this root `Dentry`.
-    pub(super) fn new_root(inode: Arc<dyn Inode>) -> Arc<Self> {
-        Self::new(inode, DentryOptions::Root)
+    pub(super) fn new_root(inode: Arc<dyn Inode>, super_block: &Arc<SuperBlock>) -> Arc<Self> {
+        Self::new(inode, DentryOptions::Root(Arc::downgrade(super_block)))
     }
 
     /// Creates a new anonymous `Dentry` with the given inode and parent.
@@ -230,18 +233,35 @@ impl Dentry {
     pub(super) fn new_pseudo(
         inode: Arc<dyn Inode>,
         name_fn: fn(&dyn Inode) -> String,
+        super_block: &Arc<SuperBlock>,
     ) -> Arc<Self> {
-        Self::new(inode, DentryOptions::Pseudo(name_fn))
+        Self::new(
+            inode,
+            DentryOptions::Pseudo {
+                name_fn,
+                super_block: Arc::downgrade(super_block),
+            },
+        )
     }
 
     fn new(inode: Arc<dyn Inode>, options: DentryOptions) -> Arc<Self> {
-        let name_and_parent = match options {
-            DentryOptions::Root => NameAndParent::Real(None),
+        let (name_and_parent, super_block) = match options {
+            DentryOptions::Root(super_block) => (NameAndParent::Real(None), super_block),
             DentryOptions::Named(name_and_parent) => {
-                NameAndParent::Real(Some(RwLock::new(name_and_parent)))
+                let super_block = name_and_parent.1.super_block.clone();
+                (
+                    NameAndParent::Real(Some(RwLock::new(name_and_parent))),
+                    super_block,
+                )
             }
-            DentryOptions::Anonymous { parent } => NameAndParent::Anonymous(parent),
-            DentryOptions::Pseudo(name_fn) => NameAndParent::Pseudo(name_fn),
+            DentryOptions::Anonymous { parent } => {
+                let super_block = parent.super_block.clone();
+                (NameAndParent::Anonymous(parent), super_block)
+            }
+            DentryOptions::Pseudo {
+                name_fn,
+                super_block,
+            } => (NameAndParent::Pseudo(name_fn), super_block),
         };
 
         let type_ = inode.type_();
@@ -252,6 +272,7 @@ impl Dentry {
         });
 
         Arc::new_cyclic(|weak_self| Self {
+            super_block,
             inode,
             type_,
             name_and_parent,
@@ -781,7 +802,7 @@ impl DirDentry<'_> {
         let old_dir_inode = self.inode();
         let new_dir_inode = new_dir.inode();
 
-        let max_namelen = old_dir_inode.fs().stats().namelen;
+        let max_namelen = self.super_block.upgrade().unwrap().name_max();
         if old_name.len() > max_namelen || new_name.len() > max_namelen {
             return_errno_with_message!(Errno::ENAMETOOLONG, "old_name or new_name is too long");
         }
@@ -1018,7 +1039,7 @@ bitflags! {
 /// See [`Dentry`] for the taxonomy.
 enum DentryOptions {
     /// Root of a mounted filesystem.
-    Root,
+    Root(Weak<SuperBlock>),
     /// A named entry under a parent directory.
     Named((String, Arc<Dentry>)),
     /// A real inode parented to a directory
@@ -1027,7 +1048,10 @@ enum DentryOptions {
     Anonymous { parent: Arc<Dentry> },
     /// An object with no place in any real filesystem tree;
     /// the `fn` synthesizes its display name for `/proc/<pid>/fd/<n>`.
-    Pseudo(fn(&dyn Inode) -> String),
+    Pseudo {
+        name_fn: fn(&dyn Inode) -> String,
+        super_block: Weak<SuperBlock>,
+    },
 }
 
 /// Manages child dentries in the per-directory cache.

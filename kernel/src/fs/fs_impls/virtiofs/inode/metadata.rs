@@ -12,7 +12,7 @@ use super::{super::valid_until, InodeInner, VirtioFsInode};
 use crate::{
     fs::{
         file::{InodeMode, InodeType},
-        vfs::{file_system::FileSystem, inode::Metadata},
+        vfs::inode::Metadata,
     },
     prelude::*,
     process::{Gid, Uid},
@@ -36,7 +36,7 @@ impl VirtioFsInode {
     ) -> Result<()> {
         let fs = self.fs_ref();
         let now = MonotonicCoarseClock::get().read_time();
-        let metadata = metadata_from_attr(attr_reply.attr(), fs.stats().container_dev_id);
+        let metadata = metadata_from_attr(attr_reply.attr(), fs.container_device_id());
         let attr_valid_until = valid_until(attr_reply.attr_valid(), attr_reply.attr_valid_nsec());
         let session_flags = fs.session().negotiated_flags();
 

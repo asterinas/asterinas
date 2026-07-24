@@ -203,13 +203,7 @@ impl FileSystem for OverlayFs {
     }
 
     fn stats(&self) -> FsStats {
-        // TODO: Fill the super block with valid field values.
-        FsStats::new(
-            OVERLAY_FS_MAGIC,
-            BLOCK_SIZE,
-            NAME_MAX,
-            self.anon_device_id.id(),
-        )
+        FsStats::default()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -1231,7 +1225,15 @@ impl FsType for OverlayFsType {
             .collect::<Result<Vec<_>>>()?;
         let work = path_resolver.lookup(&FsPath::try_from(work)?)?;
 
-        Ok(SuperBlock::new(OverlayFs::new(upper, lower, work)?))
+        let fs = OverlayFs::new(upper, lower, work)?;
+        let container_device_id = fs.anon_device_id.id();
+        Ok(SuperBlock::new(
+            fs,
+            OVERLAY_FS_MAGIC,
+            BLOCK_SIZE,
+            NAME_MAX,
+            container_device_id,
+        ))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
@@ -1252,7 +1254,7 @@ mod tests {
 
     fn new_dummy_mount() -> Arc<Mount> {
         Mount::new_root(
-            SuperBlock::new(RamFs::new()),
+            RamFs::new().into_super_block(),
             Arc::downgrade(MountNamespace::get_init_singleton()),
         )
         .unwrap()
@@ -1302,9 +1304,7 @@ mod tests {
         };
         let work = upper.clone();
 
-        let fs = OverlayFs::new(upper, lower, work).unwrap();
-        assert_eq!(fs.stats().magic, OVERLAY_FS_MAGIC);
-        fs
+        OverlayFs::new(upper, lower, work).unwrap()
     }
 
     #[ktest]

@@ -46,7 +46,7 @@ use crate::{
 /// A volatile file system whose data and metadata exists only in memory.
 pub struct RamFs {
     name: &'static str,
-    _anon_device_id: AnonDeviceId,
+    anon_device_id: AnonDeviceId,
     /// Filesystem statistics.
     stats: FsStats,
     /// Root inode
@@ -71,23 +71,23 @@ impl RamFs {
     pub fn new_tmpfs() -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for tmpfs");
         let stats = {
-            let mut stats = FsStats::new(TMPFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
             let max_blocks = tmpfs::default_max_blocks();
             let max_inodes = tmpfs::default_max_inodes();
-            stats.blocks = max_blocks;
-            stats.bfree = max_blocks;
-            stats.bavail = max_blocks;
-            stats.files = max_inodes;
-            stats.ffree = max_inodes;
-            stats
+            FsStats {
+                blocks: max_blocks,
+                bfree: max_blocks,
+                bavail: max_blocks,
+                files: max_inodes,
+                ffree: max_inodes,
+                ..Default::default()
+            }
         };
         Self::new_internal_with_stats("tmpfs", anon_device_id, stats)
     }
 
     fn new_internal(name: &'static str) -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for ramfs");
-        let stats = FsStats::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-        Self::new_internal_with_stats(name, anon_device_id, stats)
+        Self::new_internal_with_stats(name, anon_device_id, FsStats::default())
     }
 
     fn new_internal_with_stats(
@@ -98,7 +98,7 @@ impl RamFs {
         let root_dev_id = anon_device_id.id();
         Arc::new_cyclic(move |weak_fs| Self {
             name,
-            _anon_device_id: anon_device_id,
+            anon_device_id,
             stats,
             root: Arc::new_cyclic(|weak_root| RamInode {
                 inner: Inner::new_dir(weak_root.clone(), weak_root.clone()),
@@ -123,6 +123,20 @@ impl RamFs {
 
     fn alloc_id(&self) -> u64 {
         self.inode_allocator.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub(super) fn container_device_id(&self) -> DeviceId {
+        self.anon_device_id.id()
+    }
+
+    pub fn into_super_block(self: Arc<Self>) -> Arc<SuperBlock> {
+        let magic = if self.name == "tmpfs" {
+            TMPFS_MAGIC
+        } else {
+            RAMFS_MAGIC
+        };
+        let container_device_id = self.container_device_id();
+        SuperBlock::new(self, magic, BLOCK_SIZE, NAME_MAX, container_device_id)
     }
 }
 
@@ -530,7 +544,7 @@ impl RamInode {
             typ: InodeType::Dir,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
-            container_dev_id: fs.stats.container_dev_id,
+            container_dev_id: fs.container_device_id(),
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
@@ -545,7 +559,7 @@ impl RamInode {
             typ: InodeType::File,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
-            container_dev_id: fs.stats.container_dev_id,
+            container_dev_id: fs.container_device_id(),
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
@@ -566,7 +580,7 @@ impl RamInode {
             typ: InodeType::File,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
-            container_dev_id: fs.stats.container_dev_id,
+            container_dev_id: fs.container_device_id(),
             hard_linkability,
             extension: Extension::new(),
             xattr: RamXattr::new(),
@@ -603,7 +617,7 @@ impl RamInode {
             typ: InodeType::SymLink,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
-            container_dev_id: fs.stats.container_dev_id,
+            container_dev_id: fs.container_device_id(),
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
@@ -630,7 +644,7 @@ impl RamInode {
             typ: dev_type.into(),
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
-            container_dev_id: fs.stats.container_dev_id,
+            container_dev_id: fs.container_device_id(),
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
@@ -645,7 +659,7 @@ impl RamInode {
             typ: InodeType::Socket,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
-            container_dev_id: fs.stats.container_dev_id,
+            container_dev_id: fs.container_device_id(),
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
@@ -660,7 +674,7 @@ impl RamInode {
             typ: InodeType::NamedPipe,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
-            container_dev_id: fs.stats.container_dev_id,
+            container_dev_id: fs.container_device_id(),
             hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             xattr: RamXattr::new(),
@@ -1472,7 +1486,7 @@ impl FsType for RamFsType {
     }
 
     fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
-        Ok(SuperBlock::new(RamFs::new()))
+        Ok(RamFs::new().into_super_block())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

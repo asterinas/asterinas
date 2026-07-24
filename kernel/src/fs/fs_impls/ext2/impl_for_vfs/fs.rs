@@ -5,12 +5,11 @@
 //! Translates VFS-level mount, sync, stat, and root-inode requests into
 //! the corresponding ext2-internal operations.
 
-use aster_block::{BLOCK_SIZE, bio::BioStatus};
+use aster_block::bio::BioStatus;
 
 use crate::{
     fs::{
-        fs_impls::ext2::{Ext2, super_block::MAGIC_NUM},
-        utils::NAME_MAX,
+        fs_impls::ext2::Ext2,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
@@ -44,8 +43,6 @@ impl FileSystem for Ext2 {
             sb.total_blocks().saturating_sub(sb.total_metadata_blocks())
         };
         FsStats {
-            magic: MAGIC_NUM as u64,
-            bsize: BLOCK_SIZE,
             blocks: blocks as usize,
             bfree: sb.free_blocks_count() as usize,
             bavail: sb
@@ -54,10 +51,8 @@ impl FileSystem for Ext2 {
             files: sb.total_inodes() as usize,
             ffree: sb.free_inodes_count() as usize,
             fsid: 0,
-            namelen: NAME_MAX,
             frsize: sb.fragment_size(),
             flags: 0,
-            container_dev_id: self.container_device_id(),
         }
     }
 

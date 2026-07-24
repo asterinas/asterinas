@@ -5,6 +5,7 @@
 use core::time::Duration;
 
 use aster_util::slot_vec::SlotVec;
+use device_id::DeviceId;
 use id_alloc::IdAlloc;
 
 pub use self::ptmx::Ptmx;
@@ -48,8 +49,7 @@ const MAX_PTY_NUM: usize = 4096;
 ///
 /// Actually, the "/dev/ptmx" is a symlink to the real device at "/dev/pts/ptmx".
 pub struct DevPts {
-    _anon_device_id: AnonDeviceId,
-    stats: FsStats,
+    anon_device_id: AnonDeviceId,
     root: Arc<RootInode>,
     index_alloc: Mutex<IdAlloc>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
@@ -59,11 +59,10 @@ pub struct DevPts {
 impl DevPts {
     pub fn new() -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for devpts");
-        let stats = FsStats::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        let container_device_id = anon_device_id.id();
         Arc::new_cyclic(|weak_self| Self {
-            _anon_device_id: anon_device_id,
-            stats: stats.clone(),
-            root: RootInode::new(weak_self.clone(), &stats),
+            anon_device_id,
+            root: RootInode::new(weak_self.clone(), container_device_id),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             this: weak_self.clone(),
@@ -101,6 +100,21 @@ impl DevPts {
         self.index_alloc.lock().free(index as usize);
         Some(removed_slave)
     }
+
+    fn container_device_id(&self) -> DeviceId {
+        self.anon_device_id.id()
+    }
+
+    pub fn into_super_block(self: Arc<Self>) -> Arc<VfsSuperBlock> {
+        let container_device_id = self.container_device_id();
+        VfsSuperBlock::new(
+            self,
+            DEVPTS_MAGIC,
+            BLOCK_SIZE,
+            NAME_MAX,
+            container_device_id,
+        )
+    }
 }
 
 impl FileSystem for DevPts {
@@ -117,7 +131,7 @@ impl FileSystem for DevPts {
     }
 
     fn stats(&self) -> FsStats {
-        self.stats.clone()
+        FsStats::default()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -137,7 +151,7 @@ impl FsType for DevPtsType {
     }
 
     fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<VfsSuperBlock>> {
-        Ok(VfsSuperBlock::new(DevPts::new()))
+        Ok(DevPts::new().into_super_block())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
@@ -158,15 +172,15 @@ struct RootInode {
 }
 
 impl RootInode {
-    pub fn new(fs: Weak<DevPts>, stats: &FsStats) -> Arc<Self> {
+    pub fn new(fs: Weak<DevPts>, container_device_id: DeviceId) -> Arc<Self> {
         Arc::new(Self {
-            ptmx: Ptmx::new(fs.clone(), stats),
+            ptmx: Ptmx::new(fs.clone(), container_device_id),
             slaves: RwLock::new(SlotVec::new()),
             metadata: RwLock::new(Metadata::new_dir(
                 ROOT_INO,
                 mkmod!(a+rx, u+w),
                 BLOCK_SIZE,
-                stats.container_dev_id,
+                container_device_id,
             )),
             extension: Extension::new(),
             fs,

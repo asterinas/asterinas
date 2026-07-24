@@ -32,7 +32,7 @@ impl SockFs {
     pub fn singleton() -> &'static Arc<NaivePseudoFs> {
         static SOCKFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
-        NaivePseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
+        NaivePseudoFs::singleton(&SOCKFS, "sockfs")
     }
 
     /// Creates a pseudo `Path` for a socket.
@@ -53,8 +53,9 @@ impl SockFs {
     pub fn mount_node() -> &'static Arc<Mount> {
         static SOCKFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        SOCKFS_MOUNT
-            .call_once(|| Mount::new_pseudo(SuperBlock::new(Self::singleton().clone())).unwrap())
+        SOCKFS_MOUNT.call_once(|| {
+            Mount::new_pseudo(Self::singleton().clone().into_super_block(SOCKFS_MAGIC)).unwrap()
+        })
     }
 }
 
