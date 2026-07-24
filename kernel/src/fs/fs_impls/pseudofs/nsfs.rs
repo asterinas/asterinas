@@ -20,6 +20,7 @@ use crate::{
             file_system::FileSystem,
             inode::{Extension, FileOps, Inode, Metadata},
             path::{Dentry, Mount, Path},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -63,7 +64,8 @@ impl NsFs {
     /// Returns the pseudo mount node of the ns file system.
     pub(self) fn mount_node() -> &'static Arc<Mount> {
         static NSFS_MOUNT: Once<Arc<Mount>> = Once::new();
-        NSFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        NSFS_MOUNT
+            .call_once(|| Mount::new_pseudo(SuperBlock::new(Self::singleton().clone())).unwrap())
     }
 }
 

@@ -9,9 +9,9 @@ use crate::{
         pipe::AnonPipeInode,
         pseudofs::NaivePseudoFs,
         vfs::{
-            file_system::FileSystem,
             path::{Mount, Path},
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -45,7 +45,8 @@ impl PipeFs {
     fn mount_node() -> &'static Arc<Mount> {
         static PIPEFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        PIPEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        PIPEFS_MOUNT
+            .call_once(|| Mount::new_pseudo(SuperBlock::new(Self::singleton().clone())).unwrap())
     }
 }
 
@@ -60,7 +61,7 @@ impl FsType for PipeFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
         return_errno_with_message!(Errno::EINVAL, "pipefs cannot be mounted");
     }
 

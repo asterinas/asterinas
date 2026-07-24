@@ -12,7 +12,10 @@ use crate::{
     fs::{
         fs_impls::ramfs::RamFs,
         pseudofs::{NsCommonOps, NsType, StashedDentry},
-        vfs::path::{Dentry, Mount, Path, PathResolver},
+        vfs::{
+            path::{Dentry, Mount, Path, PathResolver},
+            super_block::SuperBlock,
+        },
     },
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::PosixThread},
@@ -95,7 +98,7 @@ impl MountNamespace {
 
         INIT.call_once(|| {
             let owner = UserNamespace::get_init_singleton().clone();
-            let rootfs = RamFs::new_rootfs();
+            let rootfs = SuperBlock::new(RamFs::new_rootfs());
 
             Self::new_with_root(owner, |weak_ns| Mount::new_root(rootfs, weak_ns.clone()))
                 .expect("failed to allocate mount ID for the root mount")

@@ -11,6 +11,7 @@ use crate::{
             file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -91,8 +92,12 @@ impl FsType for SysFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(SysFs::singleton().clone())
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
+        static SUPER_BLOCK: Once<Arc<SuperBlock>> = Once::new();
+
+        Ok(SUPER_BLOCK
+            .call_once(|| SuperBlock::new(SysFs::singleton().clone()))
+            .clone())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

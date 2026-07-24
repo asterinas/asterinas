@@ -10,8 +10,9 @@ use crate::{
     fs::{
         fs_impls::sysfs,
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FsFlags,
             path::{AT_FDCWD, EmptyPathStr, FsPath},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -26,7 +27,7 @@ pub trait FsType: Send + Sync + 'static {
     fn properties(&self) -> FsProperties;
 
     /// Creates an instance of this FS type.
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>>;
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>>;
 
     /// Returns a `SysTree` node that represents the FS type.
     ///

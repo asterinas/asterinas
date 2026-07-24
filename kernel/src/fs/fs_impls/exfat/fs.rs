@@ -34,6 +34,7 @@ use crate::{
             file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -487,11 +488,11 @@ impl FsType for ExfatType {
         FsProperties::NEED_DISK
     }
 
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(ExfatFs::open(
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
+        Ok(SuperBlock::new(ExfatFs::open(
             fs_creation_ctx.resolve_block_device()?,
             ExfatMountOptions::default(),
-        )?)
+        )?))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

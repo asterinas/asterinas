@@ -23,6 +23,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsFlags},
             inode::{HardLinkability, Inode, Metadata, MknodType, RenameMode},
+            super_block::SuperBlock,
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -345,7 +346,7 @@ impl Path {
     /// in the current mount namespace.
     pub fn mount(
         &self,
-        fs: Arc<dyn FileSystem>,
+        super_block: Arc<SuperBlock>,
         flags: PerMountFlags,
         source: Option<String>,
         ctx: &Context,
@@ -368,9 +369,13 @@ impl Path {
         }
 
         let mut topology_guard = MountTopology::write_lock();
-        let child_mount =
-            self.mount
-                .do_mount(fs, flags, &self.dentry, source, &mut topology_guard)?;
+        let child_mount = self.mount.do_mount(
+            super_block,
+            flags,
+            &self.dentry,
+            source,
+            &mut topology_guard,
+        )?;
 
         Ok(child_mount)
     }

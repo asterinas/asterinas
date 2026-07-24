@@ -21,6 +21,7 @@ use crate::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock as VfsSuperBlock,
         },
     },
     prelude::*,
@@ -135,8 +136,8 @@ impl FsType for DevPtsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(DevPts::new())
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<VfsSuperBlock>> {
+        Ok(VfsSuperBlock::new(DevPts::new()))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

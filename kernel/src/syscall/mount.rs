@@ -5,9 +5,10 @@ use crate::{
     fs::{
         file::InodeType,
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FsFlags,
             path::{AT_FDCWD, EmptyPathStr, FsPath, MountPropType, Path, PerMountFlags},
             registry::{FsCreationCtx, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -223,19 +224,19 @@ fn do_new_mount(
         Some(source)
     };
 
-    let fs = open_fs(source.as_deref(), flags, fs_type, data_addr, ctx)?;
-    target_path.mount(fs, flags.into(), source, ctx)?;
+    let super_block = open_super_block(source.as_deref(), flags, fs_type, data_addr, ctx)?;
+    target_path.mount(super_block, flags.into(), source, ctx)?;
     Ok(())
 }
 
-/// Gets the filesystem by fs_type and source.
-fn open_fs(
+/// Opens a superblock by filesystem type and source.
+fn open_super_block(
     source: Option<&str>,
     flags: MountFlags,
     fs_type: &dyn FsType,
     data_addr: Vaddr,
     ctx: &Context,
-) -> Result<Arc<dyn FileSystem>> {
+) -> Result<Arc<SuperBlock>> {
     let user_space = ctx.user_space();
     let data = if data_addr == 0 {
         None

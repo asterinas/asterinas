@@ -19,6 +19,7 @@ use crate::{
             file_system::FileSystem,
             inode::{Extension, FallocMode, FileOps, Inode, Metadata},
             path::{Mount, Path},
+            super_block::SuperBlock,
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -330,7 +331,8 @@ impl MemfdTmpFs {
     fn mount_node() -> &'static Arc<Mount> {
         static MEMFD_TMPFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        MEMFD_TMPFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        MEMFD_TMPFS_MOUNT
+            .call_once(|| Mount::new_pseudo(SuperBlock::new(Self::singleton().clone())).unwrap())
     }
 }
 

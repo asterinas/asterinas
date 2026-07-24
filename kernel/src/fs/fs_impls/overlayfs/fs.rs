@@ -30,6 +30,7 @@ use crate::{
             },
             path::{FsPath, Path},
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
             xattr::{XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -1182,7 +1183,7 @@ impl FsType for OverlayFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
         let mut lower = Vec::new();
         let mut upper = "";
         let mut work = "";
@@ -1230,7 +1231,7 @@ impl FsType for OverlayFsType {
             .collect::<Result<Vec<_>>>()?;
         let work = path_resolver.lookup(&FsPath::try_from(work)?)?;
 
-        Ok(OverlayFs::new(upper, lower, work)?)
+        Ok(SuperBlock::new(OverlayFs::new(upper, lower, work)?))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
@@ -1251,7 +1252,7 @@ mod tests {
 
     fn new_dummy_mount() -> Arc<Mount> {
         Mount::new_root(
-            RamFs::new(),
+            SuperBlock::new(RamFs::new()),
             Arc::downgrade(MountNamespace::get_init_singleton()),
         )
         .unwrap()

@@ -32,6 +32,7 @@ use crate::{
             },
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -1470,8 +1471,8 @@ impl FsType for RamFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(RamFs::new())
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
+        Ok(SuperBlock::new(RamFs::new()))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

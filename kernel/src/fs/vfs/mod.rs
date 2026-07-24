@@ -11,7 +11,7 @@ pub mod path;
 pub mod range_lock;
 
 // Re-export commonly used abstractions from `fs_apis`
-pub use fs_apis::{file_system, inode, inode_ext, registry, xattr};
+pub use fs_apis::{file_system, inode, inode_ext, registry, super_block, xattr};
 
 pub(super) fn init() {
     fs_apis::init();

@@ -9,6 +9,7 @@ use crate::{
         vfs::{
             inode::Inode,
             path::{Mount, Path},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -45,7 +46,8 @@ impl AnonInodeFs {
     pub fn mount_node() -> &'static Arc<Mount> {
         static ANON_INODEFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        ANON_INODEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        ANON_INODEFS_MOUNT
+            .call_once(|| Mount::new_pseudo(SuperBlock::new(Self::singleton().clone())).unwrap())
     }
 
     /// Returns the shared inode of the anonymous inode file system singleton.

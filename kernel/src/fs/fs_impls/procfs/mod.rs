@@ -31,6 +31,7 @@ use crate::{
             file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::{Inode, RevalidationPolicy},
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -129,8 +130,8 @@ impl FsType for ProcFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(ProcFs::new())
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
+        Ok(SuperBlock::new(ProcFs::new()))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

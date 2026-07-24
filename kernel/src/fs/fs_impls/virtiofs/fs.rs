@@ -19,6 +19,7 @@ use crate::{
             file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -42,7 +43,7 @@ impl FsType for VirtioFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
         let tag = fs_creation_ctx
             .source()
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "virtiofs source(tag) is required"))?
@@ -51,7 +52,7 @@ impl FsType for VirtioFsType {
         let device = device::find_device_by_tag(&tag)
             .ok_or_else(|| Error::with_message(Errno::ENODEV, "virtiofs device is not found"))?;
 
-        Ok(VirtioFs::new(device, tag)? as Arc<dyn FileSystem>)
+        Ok(SuperBlock::new(VirtioFs::new(device, tag)?))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

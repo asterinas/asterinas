@@ -18,6 +18,7 @@ use crate::{
                 dentry::{Dentry, DentryKey},
                 mount_namespace::MountNamespace,
             },
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -248,8 +249,8 @@ pub struct Mount {
     /// Mountpoint dentry. A mount node can be mounted on one dentry of another mount node,
     /// which makes the mount being the child of the mount node.
     mountpoint: RwLock<Option<Arc<Dentry>>>,
-    /// The associated FS.
-    fs: Arc<dyn FileSystem>,
+    /// The associated superblock.
+    super_block: Arc<SuperBlock>,
     /// The mount source (e.g., a device path like "/dev/vda" or a filesystem name like "proc").
     ///
     /// The source is stored in `Mount` instead of requiring each filesystem to provide it.
@@ -282,19 +283,31 @@ impl Mount {
     /// It is allowed to create a mount node even if the fs has been provided to another
     /// mount node. It is the fs's responsibility to ensure the data consistency.
     pub(in crate::fs) fn new_root(
-        fs: Arc<dyn FileSystem>,
+        super_block: Arc<SuperBlock>,
         mnt_ns: Weak<MountNamespace>,
     ) -> Result<Arc<Self>> {
-        let source = fs.name().to_string();
-        Self::new(fs, PerMountFlags::default(), None, mnt_ns, Some(source))
+        let source = super_block.fs().name().to_string();
+        Self::new(
+            super_block,
+            PerMountFlags::default(),
+            None,
+            mnt_ns,
+            Some(source),
+        )
     }
 
     /// Creates a pseudo mount node with an associated FS.
     ///
     /// This pseudo mount is not mounted on other mount nodes, has no parent, and does not
     /// belong to any mount namespace.
-    pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Result<Arc<Self>> {
-        Self::new(fs, PerMountFlags::KERNMOUNT, None, Weak::new(), None)
+    pub(in crate::fs) fn new_pseudo(super_block: Arc<SuperBlock>) -> Result<Arc<Self>> {
+        Self::new(
+            super_block,
+            PerMountFlags::KERNMOUNT,
+            None,
+            Weak::new(),
+            None,
+        )
     }
 
     /// Creates a mount node that is not attached to the mount tree.
@@ -305,12 +318,12 @@ impl Mount {
     // immutable. This should be changed once mount namespaces can be updated
     // during attach.
     pub fn new_detached(
-        fs: Arc<dyn FileSystem>,
+        super_block: Arc<SuperBlock>,
         flags: PerMountFlags,
         mnt_ns: Weak<MountNamespace>,
         source: Option<String>,
     ) -> Result<Arc<Self>> {
-        Self::new(fs, flags, None, mnt_ns, source)
+        Self::new(super_block, flags, None, mnt_ns, source)
     }
 
     /// The internal constructor.
@@ -322,7 +335,7 @@ impl Mount {
     /// exist without a mountpoint, ensuring uniformity and security, while all other
     /// mount nodes must be explicitly assigned a mountpoint to maintain structural integrity.
     fn new(
-        fs: Arc<dyn FileSystem>,
+        super_block: Arc<SuperBlock>,
         flags: PerMountFlags,
         parent_mount: Option<Weak<Mount>>,
         mnt_ns: Weak<MountNamespace>,
@@ -333,9 +346,9 @@ impl Mount {
 
         let mount = Arc::new_cyclic(|weak_self| Self {
             id,
-            root_dentry: Dentry::new_root(fs.root_inode()),
+            root_dentry: Dentry::new_root(super_block.fs().root_inode()),
             mountpoint: RwLock::new(None),
-            fs,
+            super_block,
             source,
             parent: RwLock::new(parent_mount),
             children: RwLock::new(HashMap::new()),
@@ -369,7 +382,7 @@ impl Mount {
 
     /// Returns the mount source.
     pub(in crate::fs) fn source(&self) -> Option<&str> {
-        self.fs.source().or(self.source.as_deref())
+        self.fs().source().or(self.source.as_deref())
     }
 
     /// Mounts a fs on the mountpoint, it will create a new child mount node.
@@ -387,7 +400,7 @@ impl Mount {
     /// Returns the mounted child mount.
     pub(super) fn do_mount(
         self: &Arc<Self>,
-        fs: Arc<dyn FileSystem>,
+        super_block: Arc<SuperBlock>,
         flags: PerMountFlags,
         mountpoint: &Arc<Dentry>,
         source: Option<String>,
@@ -399,7 +412,7 @@ impl Mount {
 
         let key = mountpoint.key();
         let child_mount = Self::new(
-            fs,
+            super_block,
             flags,
             Some(Arc::downgrade(self)),
             self.mnt_ns.clone(),
@@ -448,7 +461,7 @@ impl Mount {
             id,
             root_dentry: root_dentry.clone(),
             mountpoint: RwLock::new(None),
-            fs: self.fs.clone(),
+            super_block: self.super_block.clone(),
             source: self.source.clone(),
             parent: RwLock::new(None),
             children: RwLock::new(HashMap::new()),
@@ -623,7 +636,7 @@ impl Mount {
 
     /// Flushes all pending filesystem metadata and cached file data to the device.
     pub(super) fn sync(&self) -> Result<()> {
-        self.fs.sync()?;
+        self.fs().sync()?;
         Ok(())
     }
 
@@ -636,7 +649,7 @@ impl Mount {
         _topology: &mut MountTopology,
     ) -> Result<()> {
         if let Some(flags) = fs_flags {
-            self.fs.set_fs_flags(flags, data, ctx)?;
+            self.fs().set_fs_flags(flags, data, ctx)?;
         }
 
         // The logics here are consistent with Linux.
@@ -690,9 +703,14 @@ impl Mount {
         &self.mnt_ns
     }
 
+    /// Gets the associated superblock.
+    pub fn super_block(&self) -> &Arc<SuperBlock> {
+        &self.super_block
+    }
+
     /// Gets the associated FS.
     pub fn fs(&self) -> &Arc<dyn FileSystem> {
-        &self.fs
+        self.super_block().fs()
     }
 
     /// Gets the associated mount flags.
@@ -748,7 +766,7 @@ impl Debug for Mount {
         f.debug_struct("Mount")
             .field("root", &self.root_dentry)
             .field("mountpoint", &self.mountpoint)
-            .field("fs", &self.fs)
+            .field("super_block", &self.super_block)
             .finish()
     }
 }

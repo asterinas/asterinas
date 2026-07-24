@@ -4,8 +4,8 @@ use crate::{
     fs::{
         ramfs::RamFs,
         vfs::{
-            file_system::FileSystem,
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -40,8 +40,8 @@ impl FsType for TmpFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(TmpFs::new_tmpfs())
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
+        Ok(SuperBlock::new(TmpFs::new_tmpfs()))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
