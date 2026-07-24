@@ -54,13 +54,9 @@ macro_rules! impl_read_write_for_32bit_type {
 
         impl WriteToUser for $pod_ty {
             fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-                let write_len = size_of::<$pod_ty>();
-
-                if (max_len as usize) < write_len {
-                    return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-                }
-
-                crate::context::current_userspace!().write_val(addr, self)?;
+                let write_len = size_of::<$pod_ty>().min(max_len as usize);
+                crate::context::current_userspace!()
+                    .write_bytes(addr, &self.as_bytes()[..write_len])?;
                 Ok(write_len)
             }
         }
@@ -125,19 +121,11 @@ impl WriteToUser for IpTtl {
 
 impl WriteToUser for Option<Error> {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = size_of::<i32>();
-
-        if (max_len as usize) < write_len {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        }
-
         let val = match self {
             None => 0i32,
             Some(error) => error.error() as i32,
         };
-
-        current_userspace!().write_val(addr, &val)?;
-        Ok(write_len)
+        val.write_to_user(addr, max_len)
     }
 }
 
