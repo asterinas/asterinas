@@ -12,7 +12,10 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
-        vfs::{inode::FileOps, path::PathResolver},
+        vfs::{
+            inode::FileOps,
+            path::{Path, PathResolver},
+        },
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -209,7 +212,7 @@ impl PerOpenFileOps for OpenBlockFile {
         Ok(Some(self.0.metadata().nr_sectors * SECTOR_SIZE))
     }
 
-    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+    fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 
         dispatch_ioctl!(match raw_ioctl {

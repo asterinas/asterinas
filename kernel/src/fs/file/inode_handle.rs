@@ -347,7 +347,7 @@ impl FileLike for InodeHandle {
         }
 
         if let Some(ref open_file) = self.open_file {
-            return open_file.ioctl(raw_ioctl);
+            return open_file.ioctl(self.common.path(), raw_ioctl);
         }
 
         return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
@@ -565,7 +565,7 @@ pub trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
         return_errno_with_message!(Errno::EINVAL, "the file is not mappable");
     }
 
-    fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
+    fn ioctl(&self, _path: &Path, _raw_ioctl: RawIoctl) -> Result<i32> {
         return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 

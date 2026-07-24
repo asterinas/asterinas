@@ -14,7 +14,10 @@ use crate::{
             AccessMode, OpenArgs, PerOpenFileOps, SettableStatusFlags, StatusFlags,
             file_table::FdFlags, mkmod,
         },
-        vfs::{inode::FileOps, path::FsPath},
+        vfs::{
+            inode::FileOps,
+            path::{FsPath, Path},
+        },
     },
     prelude::*,
     process::{
@@ -150,7 +153,7 @@ impl PerOpenFileOps for PtyMaster {
         false
     }
 
-    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+    fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
         use super::ioctl_defs::*;
         use crate::{device::tty::ioctl_defs::*, util::ioctl::common_defs::GetNumBytesToRead};
 
