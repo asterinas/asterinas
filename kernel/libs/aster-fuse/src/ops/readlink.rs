@@ -30,7 +30,7 @@ impl FuseOperation for ReadlinkOperation {
     }
 
     fn reply_expectation(&self) -> ReplyExpectation {
-        ReplyExpectation::payload(MAX_READLINK_LEN)
+        ReplyExpectation::variable_payload(MAX_READLINK_LEN)
     }
 
     fn parse_reply(
