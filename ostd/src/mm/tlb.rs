@@ -85,11 +85,11 @@ impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
     /// function. But it may not be synchronous. Upon the return of this
     /// function, the TLB entries may not be coherent.
     pub fn dispatch_tlb_flush(&mut self) {
-        let irq_guard = crate::irq::disable_local();
-
         if self.ops_stack.is_empty() {
             return;
         }
+
+        let irq_guard = crate::irq::disable_local();
 
         // `Release` to make sure our modification on the PT is visible to CPUs
         // that are going to activate the PT.
@@ -160,6 +160,14 @@ impl<'a, G: PinCurrentCpu> TlbFlusher<'a, G> {
         }
 
         self.have_unsynced_flush = CpuSet::new_empty();
+    }
+}
+
+impl<G: PinCurrentCpu> Drop for TlbFlusher<'_, G> {
+    fn drop(&mut self) {
+        // This is to ensure that frames issued by `issue_tlb_flush_with` will
+        // not be dropped without flushing.
+        self.dispatch_tlb_flush();
     }
 }
 
