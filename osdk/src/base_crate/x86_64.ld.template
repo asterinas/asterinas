@@ -30,6 +30,11 @@ PHDRS
     # segment to prevent this from happening.
     header PT_LOAD FLAGS(4);      # R__
 
+    # The PVH ELF note. VMMs that support the PVH boot protocol (e.g., Cloud
+    # Hypervisor, Firecracker, QEMU) locate the 32-bit entry point by scanning
+    # PT_NOTE segments, so the note must be covered by one.
+    note PT_NOTE FLAGS(4);        # R__
+
     # Boot segments. Addresses are physical.
     bsp_boot PT_LOAD FLAGS(7);    # RWE
     ap_boot PT_LOAD FLAGS(7);     # RWE
@@ -55,6 +60,13 @@ SECTIONS
     .multiboot2_header      : AT(ADDR(.multiboot2_header) - KERNEL_VMA) {
         KEEP(*(.multiboot2_header))
     } : header
+    # The PVH ELF note advertises the 32-bit entry point (`__pvh_boot`). It is
+    # assigned to both `header` and `note`: the former keeps it in a PT_LOAD
+    # segment (so llvm-strip does not relocate it), the latter provides the
+    # PT_NOTE segment that PVH-capable VMMs scan.
+    .note.Xen               : AT(ADDR(.note.Xen) - KERNEL_VMA) {
+        KEEP(*(.note.Xen))
+    } : header : note
 
 # --------------------------------------------------------------------------- #
 # These are 2 boot sections that need specific physical addresses.            #

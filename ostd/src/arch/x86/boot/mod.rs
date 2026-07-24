@@ -8,6 +8,7 @@
 //!  - Multiboot
 //!  - Multiboot2
 //!  - Linux x86 Boot Protocol
+//!  - PVH
 //!
 //! without any additional configurations.
 //!
@@ -21,6 +22,7 @@
 mod linux_boot;
 mod multiboot;
 mod multiboot2;
+mod pvh;
 
 pub(crate) mod smp;
 
