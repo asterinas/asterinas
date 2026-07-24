@@ -5,7 +5,10 @@
 use device_id::DeviceId;
 
 use super::file_system::{FileSystem, FsStats};
-use crate::prelude::*;
+use crate::{
+    prelude::*,
+    thread::work_queue::{self, WorkPriority},
+};
 
 /// A live filesystem instance shared by one or more mounts.
 #[derive(Debug)]
@@ -59,5 +62,27 @@ impl SuperBlock {
 
     pub fn container_device_id(&self) -> DeviceId {
         self.container_device_id
+    }
+}
+
+impl Drop for SuperBlock {
+    fn drop(&mut self) {
+        let fs = self.fs.clone();
+        let sync_fn = move || {
+            if let Err(err) = fs.sync() {
+                error!(
+                    "failed to sync filesystem {} during final cleanup: {:?}",
+                    fs.name(),
+                    err
+                );
+            }
+        };
+
+        if work_queue::is_initialized() {
+            work_queue::submit_work_func(sync_fn, WorkPriority::Normal);
+        } else {
+            // The initial mount namespace is created before the work queues.
+            sync_fn();
+        }
     }
 }
