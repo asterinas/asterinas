@@ -4,6 +4,8 @@
 
 set -e
 
+./clock_getres/clock_getres
+
 ./clock_nanosleep/nanosleep_err
 
 ./gettimeofday/gettimeofday

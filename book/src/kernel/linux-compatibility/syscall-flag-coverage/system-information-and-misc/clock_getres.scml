@@ -1,0 +1,12 @@
+predefined_clockid = CLOCK_REALTIME | CLOCK_MONOTONIC | CLOCK_MONOTONIC_RAW |
+                     CLOCK_REALTIME_COARSE | CLOCK_MONOTONIC_COARSE | CLOCK_BOOTTIME |
+                     CLOCK_PROCESS_CPUTIME_ID | CLOCK_THREAD_CPUTIME_ID;
+
+// Get the resolution of a clock specified by a static ID
+clock_getres(clockid = <predefined_clockid>, res);
+
+// A null result pointer is allowed
+clock_getres(clockid = <predefined_clockid>, res = NULL);
+
+// Get the resolution of a supported CPU dynamic clock
+clock_getres(clockid = <INTEGER>, res);

@@ -9,4 +9,9 @@ pub mod timer;
 pub trait Clock: Send + Sync {
     /// Read the current time of this clock.
     fn read_time(&self) -> Duration;
+
+    /// Returns the resolution of this clock.
+    fn resolution(&self) -> Duration {
+        Duration::from_nanos(1)
+    }
 }

@@ -47,6 +47,10 @@ impl Clock for CpuClock {
     fn read_time(&self) -> Duration {
         self.read_jiffies().as_duration()
     }
+
+    fn resolution(&self) -> Duration {
+        Jiffies::new(1).as_duration()
+    }
 }
 
 impl ProfClock {
@@ -72,5 +76,9 @@ impl ProfClock {
 impl Clock for ProfClock {
     fn read_time(&self) -> Duration {
         self.user_clock.read_time() + self.kernel_clock.read_time()
+    }
+
+    fn resolution(&self) -> Duration {
+        Jiffies::new(1).as_duration()
     }
 }
