@@ -68,6 +68,8 @@
 //! `BlockGroup::inode_cache` is independent: it is never held while
 //! acquiring `super_block` or `metadata`, nor while holding `Inode::inner`.
 
+#![short_vis_path::add(ext2)]
+
 mod attrs;
 mod block_manager;
 mod dir;
@@ -204,7 +206,7 @@ impl Inode {
     }
 
     /// Returns a reference to the pipe if this is a named-pipe inode.
-    pub(in crate::fs::fs_impls::ext2) fn pipe(&self) -> Option<&Pipe> {
+    pub(in ext2) fn pipe(&self) -> Option<&Pipe> {
         self.pipe.as_ref()
     }
 
@@ -719,10 +721,7 @@ bitflags! {
 #[cfg(ktest)]
 mod test {
     use super::*;
-    use crate::{
-        fs::fs_impls::ext2::test_utils::{self, RawInodeBuilder},
-        prelude::*,
-    };
+    use crate::fs::fs_impls::ext2::test_utils::{self, RawInodeBuilder};
 
     /// Reads a `RawInode` directly from the test fixture's disk image.
     pub(super) fn read_raw_inode_from_disk(f: &test_utils::Ext2Fixture, ino: u32) -> RawInode {

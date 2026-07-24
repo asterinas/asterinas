@@ -1,0 +1,9 @@
+[package]
+name = "syntax-and-behavior"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+short-vis-path = { path = "../../" }
+
+[workspace]

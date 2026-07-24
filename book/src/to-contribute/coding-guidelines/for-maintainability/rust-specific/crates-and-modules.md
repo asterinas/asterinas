@@ -65,6 +65,72 @@ PR [#2951](https://github.com/asterinas/asterinas/pull/2951),
 [#2605](https://github.com/asterinas/asterinas/pull/2605#discussion_r2720506912),
 and [#3154](https://github.com/asterinas/asterinas/pull/3154#discussion_r3100905375).
 
+### Restrict subsystem visibility with a short name (`short-vis-path`) {#short-vis-path}
+
+ It's a good practice to restrict the visibility of a subsystem item to the
+ subsystem itself using the [`pub(in path)`][pub-in-path] syntax. However,
+ writing `pub(in crate::very::long::subsystem)` becomes verbose, reduces
+ readability, and makes the code harder to maintain when renaming a subsystem.
+
+For a kernel subsystem with such long module path, use
+`#![short_vis_path::add(subsystem)]` and `pub(in subsystem)` to restrict an
+item's visibility to that subsystem scope.
+
+The attribute is placed inside the module and rewrites restricted visibility
+paths from the short name to the absolute module path.
+
+```rust
+// In kernel/src/fs/fs_impls/procfs/template/dir.rs
+
+// Good
+#![short_vis_path::add(procfs)]
+pub(in procfs) fn struct ProcDir {}
+
+// Bad: the visibility is not restricted, violating the narrow-visibility guideline.
+pub struct ProcDir {}
+
+// Bad: the visibility path is too long to read.
+pub(in crate::fs::fs_impls::procfs) struct ProcDir {}
+```
+
+When the restricted path is straightforward or used infrequently, keep the
+original long path to avoid overusing this attribute. Only follow this
+guideline when **all** of the following three conditions are met:
+
+* the submodule depth exceeds 2 levels (i.e., the target path contains at least
+  two `::` separators);
+
+```rust
+// In kernel/src/fs/utils/systree_inode.rs
+
+// Good: `fs` is a direct submodule of root, thus it's readable already.
+pub(in crate::fs) struct Dentry {}
+
+// Bad: no need to do this.
+#![short_vis_path::add(fs)]
+pub(in fs) struct Dentry {}
+```
+
+* `pub(super)` and `pub(self)` are inapplicable;
+
+```rust
+// In ostd/src/mm/page_table/mod.rs
+
+// Good
+pub(super) const fn vaddr_range() {}
+
+// Bad
+#![short_vis_path::add(mm)]
+pub(in mm) const fn vaddr_range() {}
+```
+
+* and the restricted visibility path is used at least 2 times.
+
+Refer to [#3188] for the `short-vis-path` design.
+
+[pub-in-path]: https://doc.rust-lang.org/reference/visibility-and-privacy.html#pubin-path-pubcrate-pubsuper-and-pubself
+[#3188]: https://github.com/asterinas/asterinas/issues/3188
+
 ### Qualify function calls with the parent module (`qualified-fn-imports`) {#qualified-fn-imports}
 
 When importing a free function or a static/constant

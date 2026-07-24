@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(netlink)]
+
 use crate::{
     events::IoEvents,
     net::socket::netlink::{
@@ -9,9 +11,9 @@ use crate::{
 };
 
 pub struct BoundNetlink<Message: 'static> {
-    pub(in crate::net::socket::netlink) handle: BoundHandle<Message>,
-    pub(in crate::net::socket::netlink) remote_addr: NetlinkSocketAddr,
-    pub(in crate::net::socket::netlink) receive_queue: Arc<Mutex<MessageQueue<Message>>>,
+    pub(in netlink) handle: BoundHandle<Message>,
+    pub(in netlink) remote_addr: NetlinkSocketAddr,
+    pub(in netlink) receive_queue: Arc<Mutex<MessageQueue<Message>>>,
 }
 
 impl<Message: 'static> BoundNetlink<Message> {
@@ -26,10 +28,7 @@ impl<Message: 'static> BoundNetlink<Message> {
         }
     }
 
-    pub(in crate::net::socket::netlink) fn bind_common(
-        &mut self,
-        endpoint: &NetlinkSocketAddr,
-    ) -> Result<()> {
+    pub(in netlink) fn bind_common(&mut self, endpoint: &NetlinkSocketAddr) -> Result<()> {
         if endpoint.port() != self.handle.port() {
             return_errno_with_message!(
                 Errno::EINVAL,
@@ -43,7 +42,7 @@ impl<Message: 'static> BoundNetlink<Message> {
         Ok(())
     }
 
-    pub(in crate::net::socket::netlink) fn check_io_events_common(&self) -> IoEvents {
+    pub(in netlink) fn check_io_events_common(&self) -> IoEvents {
         let mut events = IoEvents::OUT;
 
         let receive_queue = self.receive_queue.lock();

@@ -2,6 +2,8 @@
 
 //! Methods and constructors for `VirtioFsInode`.
 
+#![short_vis_path::add(virtiofs)]
+
 use core::time::Duration;
 
 use aster_fuse::{
@@ -43,7 +45,7 @@ const FUSE_READDIR_BUF_SIZE: u32 = 4096;
 
 impl VirtioFsInode {
     /// Reads file data through the page cache.
-    pub(in crate::fs::fs_impls::virtiofs) fn cached_read_at(
+    pub(in virtiofs) fn cached_read_at(
         &self,
         offset: usize,
         writer: &mut VmWriter,
@@ -79,7 +81,7 @@ impl VirtioFsInode {
     }
 
     /// Reads file data directly from the server.
-    pub(in crate::fs::fs_impls::virtiofs) fn direct_read_at(
+    pub(in virtiofs) fn direct_read_at(
         &self,
         offset: usize,
         writer: &mut VmWriter,
@@ -128,7 +130,7 @@ impl VirtioFsInode {
     /// Cached writes use write-through semantics: they copy user bytes into the
     /// page cache, flush the dirtied range to the server, and commit metadata
     /// only after writeback succeeds.
-    pub(in crate::fs::fs_impls::virtiofs) fn cached_write_at(
+    pub(in virtiofs) fn cached_write_at(
         &self,
         write_offset: WriteOffset,
         reader: &mut VmReader,
@@ -184,7 +186,7 @@ impl VirtioFsInode {
     }
 
     /// Writes file data directly to the server.
-    pub(in crate::fs::fs_impls::virtiofs) fn direct_write_at(
+    pub(in virtiofs) fn direct_write_at(
         &self,
         write_offset: WriteOffset,
         reader: &mut VmReader,
@@ -442,7 +444,7 @@ impl VirtioFsInode {
     /// `READDIR` does not return a complete attribute reply for the directory,
     /// but successful directory reads may observe server-side changes. Expiring
     /// attributes forces later metadata-sensitive operations to revalidate.
-    pub(in crate::fs::fs_impls::virtiofs) fn readdir(
+    pub(in virtiofs) fn readdir(
         &self,
         fh: FuseFileHandle,
         offset: usize,
@@ -603,10 +605,7 @@ impl VirtioFsInode {
     /// It is a cheap no-op while the cached attributes are still valid. When a
     /// refresh is needed, the supplied FUSE file handle is passed to `GETATTR`
     /// so the server may return handle-specific attributes.
-    pub(in crate::fs::fs_impls::virtiofs) fn revalidate_attr(
-        &self,
-        fh: FuseFileHandle,
-    ) -> Result<()> {
+    pub(in virtiofs) fn revalidate_attr(&self, fh: FuseFileHandle) -> Result<()> {
         let now = MonotonicCoarseClock::get().read_time();
         if self.inner.read().is_attr_valid(now) {
             return Ok(());

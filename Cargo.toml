@@ -21,9 +21,9 @@ members = [
     "ostd/libs/linux-bzimage/boot-params",
     "ostd/libs/linux-bzimage/builder",
     "ostd/libs/linux-bzimage/setup",
+    "ostd/libs/ostd-macros",
     "ostd/libs/ostd-pod",
     "ostd/libs/ostd-pod/macros",
-    "ostd/libs/ostd-macros",
     "ostd/libs/ostd-test",
     "ostd/libs/padding-struct",
     "kernel",
@@ -57,6 +57,7 @@ members = [
     "kernel/libs/logo-ascii-art",
     "kernel/libs/ring-buffer",
     "kernel/libs/sparse-id-alloc",
+    "kernel/libs/short-vis-path",
     "kernel/libs/typeflags",
     "kernel/libs/typeflags-util",
     "kernel/libs/xarray",
@@ -180,6 +181,7 @@ jhash = { path = "kernel/libs/jhash" }
 keyable-arc = { path = "kernel/libs/keyable-arc" }
 logo-ascii-art = { path = "kernel/libs/logo-ascii-art" }
 ring-buffer = { path = "kernel/libs/ring-buffer" }
+short-vis-path = { path = "kernel/libs/short-vis-path" }
 sparse-id-alloc = { path = "kernel/libs/sparse-id-alloc" }
 typeflags = { path = "kernel/libs/typeflags" }
 typeflags-util = { path = "kernel/libs/typeflags-util" }
@@ -260,7 +262,7 @@ zune-inflate = { version = "0.2", default-features = false, features = ["gzip", 
 # Proc-macro dependencies
 proc-macro2 = { version = "1.0.95", features = ["span-locations"] }
 quote = "1.0.35"
-syn = { version = "2.0.77", features = ["full", "parsing", "fold"] }
+syn = { version = "2.0.77", features = ["full", "parsing", "fold", "visit-mut"] }
 
 # Cargo only looks at the profile settings
 # in the Cargo.toml manifest at the root of the workspace
