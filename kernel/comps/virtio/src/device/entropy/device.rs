@@ -3,7 +3,7 @@
 //! Implements virtio-rng device instances.
 //!
 //! This module owns each device's virtqueue state, DMA buffer, IRQ-driven
-//! refill path, and user-visible entropy cache.
+//! refill path, and entropy cache.
 
 use alloc::{boxed::Box, format, sync::Arc};
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -12,7 +12,7 @@ use ostd::{
     Error,
     arch::trap::TrapFrame,
     mm::{
-        Fallible, FallibleVmRead, PAGE_SIZE, VmWriter,
+        FallibleVmRead, PAGE_SIZE, VmWriter,
         dma::{DmaStream, FromDevice},
         io::util::HasVmReaderWriter,
     },
@@ -35,7 +35,7 @@ const ENTROPY_DEVICE_PREFIX: &str = "virtio_rng.";
 
 /// The queue size for in-flight entropy requests.
 ///
-/// A ring depth of 1 is sufficient because `try_read` submits a new entropy
+/// A ring depth of 1 is sufficient because `try_read_bytes` submits a new entropy
 /// request only when none is in flight.
 const ENTROPY_QUEUE_SIZE: u16 = 1;
 
@@ -46,7 +46,7 @@ const ENTROPY_BUFFER_SIZE: usize = PAGE_SIZE;
 pub struct EntropyDevice {
     transport: SpinLock<DeviceTransport>,
     inner: SpinLock<EntropyDeviceInner, LocalIrqDisabled>,
-    /// A filled DMA buffer drained by user-space reads.
+    /// A filled DMA buffer drained by hwrng core reads.
     cache: Mutex<EntropyCache>,
     wait_queue: WaitQueue,
 }
@@ -92,43 +92,58 @@ impl EntropyDevice {
         Ok(())
     }
 
-    /// Attempts to read random data from cache into the given writer without blocking.
+    /// Reads random data from cache into the given buffer, blocking until data is available.
+    ///
+    /// Returns `Ok(n)` with `n > 0` on success, and `Ok(0)` iff `dst.len() == 0`.
+    pub fn read_bytes(&self, dst: &mut [u8]) -> Result<usize, Error> {
+        self.wait_queue()
+            .wait_until(|| match self.try_read_bytes(dst) {
+                Ok(Some(read_len)) => Some(Ok(read_len)),
+                Ok(None) => None,
+                Err(err) => Some(Err(err)),
+            })
+    }
+
+    /// Attempts to read random data from cache into the given buffer without blocking.
     ///
     /// Returns `Ok(Some(n))` with `n > 0` on success, `Ok(Some(0))` iff
-    /// `writer.avail() == 0`, and `Ok(None)` when no entropy is currently
-    /// available. The caller may block on [`Self::wait_queue`] and retry.
-    pub fn try_read(&self, writer: &mut VmWriter<'_, Fallible>) -> Result<Option<usize>, Error> {
-        let mut cache = self.cache.lock();
-
-        // Fast path: drain the cache under the mutex (`cache`) only.
-        if !cache.is_empty() {
-            return Ok(Some(cache.drain_into(writer)?));
+    /// `dst.len() == 0`, and `Ok(None)` when no entropy is currently
+    /// available.
+    pub fn try_read_bytes(&self, dst: &mut [u8]) -> Result<Option<usize>, Error> {
+        if dst.is_empty() {
+            return Ok(Some(0));
         }
 
-        // Slow path: under `inner`, lift a ready buffer into the cache (by
-        // handle swap — no memcpy), or submit a new request.
+        let mut cache = self.cache.lock();
+
+        if cache.is_empty() && !self.fill_cache(&mut cache) {
+            return Ok(None);
+        }
+
+        Ok(Some(cache.drain_into_bytes(dst)?))
+    }
+
+    fn wait_queue(&self) -> &WaitQueue {
+        &self.wait_queue
+    }
+
+    fn fill_cache(&self, cache: &mut EntropyCache) -> bool {
+        debug_assert!(cache.is_empty());
+
         {
             let mut inner = self.inner.lock();
             if inner.ready_len > 0 {
                 let len = core::mem::replace(&mut inner.ready_len, 0);
                 cache.swap_in(&mut inner.dma_buf, len);
-                // Fall through to drain after releasing `inner`.
             } else {
                 if !inner.in_flight {
                     inner.submit();
                 }
-                return Ok(None);
+                return false;
             }
         }
 
-        // The user-space copy runs under the mutex (`cache`) only.
-        Ok(Some(cache.drain_into(writer)?))
-    }
-
-    /// Returns the wait queue callers can wait on; the device wakes it when
-    /// fresh entropy arrives.
-    pub fn wait_queue(&self) -> &WaitQueue {
-        &self.wait_queue
+        true
     }
 
     fn handle_recv_irq(&self) {
@@ -185,7 +200,7 @@ impl EntropyDeviceInner {
     }
 }
 
-/// A filled DMA buffer waiting to be drained into user space.
+/// A filled DMA buffer waiting to be drained by hwrng core.
 ///
 /// Valid bytes live in `dma_buf[0..avail]` and are consumed from the tail.
 struct EntropyCache {
@@ -204,9 +219,10 @@ impl EntropyCache {
         self.avail == 0
     }
 
-    /// Copies random data from the tail of the valid region
-    /// into `writer`, and marks those bytes as consumed.
-    fn drain_into(&mut self, writer: &mut VmWriter<'_, Fallible>) -> Result<usize, Error> {
+    /// Copies random data from the tail of the valid region into `dst`, and
+    /// marks those bytes as consumed.
+    fn drain_into_bytes(&mut self, dst: &mut [u8]) -> Result<usize, Error> {
+        let mut writer = VmWriter::from(dst).to_fallible();
         let to_copy = writer.avail().min(self.avail);
         let start = self.avail - to_copy;
         let copied = self
@@ -215,7 +231,7 @@ impl EntropyCache {
             .unwrap()
             .skip(start)
             .limit(to_copy)
-            .read_fallible(writer)
+            .read_fallible(&mut writer)
             .map_err(|(err, _)| err)?;
         self.avail = start;
         Ok(copied)

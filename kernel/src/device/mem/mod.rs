@@ -22,7 +22,7 @@ mod file;
 
 use device_id::{DeviceId, MajorId, MinorId};
 use file::MemFile;
-pub use file::{getrandom, geturandom};
+pub use file::{RandomReadMode, getrandom, geturandom};
 use spin::Once;
 
 use super::{
