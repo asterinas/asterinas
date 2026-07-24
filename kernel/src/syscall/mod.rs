@@ -38,7 +38,7 @@ mod connect;
 mod constants;
 mod dup;
 mod epoll;
-mod eventfd;
+pub mod eventfd;
 mod execve;
 mod exit;
 mod exit_group;
