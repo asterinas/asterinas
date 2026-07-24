@@ -16,16 +16,29 @@ fn try_acpi_reset(_code: ExitCode) {
     }
 }
 
+/// Attempts to reset the CPU by trying ACPI reset first, then the i8042 keyboard controller.
+///
+/// This follows the same order as the Linux kernel, which tries `acpi_reboot` first and falls
+/// back to `BOOT_KBD` (i8042 pulse reset) if ACPI reset fails.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/reboot.c#L657>
+fn try_reset(code: ExitCode) {
+    try_acpi_reset(code);
+
+    // If ACPI reset worked, the CPU is reset and we never reach here.
+    aster_i8042::try_cpu_reset(code);
+}
+
 pub(super) fn init() {
     let acpi_info = ACPI_INFO.get().unwrap();
-    let Some((reset_port_num, reset_val)) = acpi_info.reset_port_and_val else {
-        return;
-    };
-    let Ok(reset_port) = IoPort::acquire(reset_port_num) else {
-        ostd::warn!("The reset port from ACPI is not available");
-        return;
-    };
 
-    ACPI_RESET_PORT_AND_VAL.call_once(move || (reset_port, reset_val));
-    inject_restart_handler(try_acpi_reset);
+    if let Some((reset_port_num, reset_val)) = acpi_info.reset_port_and_val {
+        if let Ok(reset_port) = IoPort::acquire(reset_port_num) {
+            ACPI_RESET_PORT_AND_VAL.call_once(move || (reset_port, reset_val));
+        } else {
+            ostd::warn!("The reset port from ACPI is not available");
+        }
+    }
+
+    inject_restart_handler(try_reset);
 }

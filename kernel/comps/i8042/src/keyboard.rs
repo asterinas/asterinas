@@ -12,28 +12,19 @@ use aster_input::{
     event_type_codes::{KeyCode, KeyStatus, SynEvent},
     input_dev::{InputCapability, InputDevice, InputEvent, InputId, RegisteredInputDevice},
 };
-use ostd::{
-    arch::{
-        irq::{IRQ_CHIP, MappedIrqLine},
-        trap::TrapFrame,
-    },
-    irq::IrqLine,
-};
+use ostd::{arch::device::io_port::ReadWriteAccess, io::IoPort};
 use spin::Once;
 
 use crate::{
-    controller::{I8042_CONTROLLER, I8042Controller, I8042ControllerError},
+    controller::{
+        DATA_PORT_ADDR, I8042_CONTROLLER, I8042Controller, I8042ControllerError,
+        STATUS_OR_COMMAND_PORT_ADDR,
+    },
     ps2::{Command, CommandCtx},
 };
 
-/// IRQ line for i8042 keyboard.
-static IRQ_LINE: Once<MappedIrqLine> = Once::new();
-
 /// Registered device instance for event submission.
 static REGISTERED_DEVICE: Once<RegisteredInputDevice> = Once::new();
-
-/// ISA interrupt number for i8042 keyboard.
-const ISA_INTR_NUM: u8 = 1;
 
 pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042ControllerError> {
     // Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/drivers/input/serio/libps2.c#L184>
@@ -50,17 +41,6 @@ pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042Controll
         // TODO: Support other kinds of keyboards.
         return Err(I8042ControllerError::DeviceUnknown);
     }
-
-    let mut irq_line = IrqLine::alloc()
-        .and_then(|irq_line| {
-            IRQ_CHIP
-                .get()
-                .unwrap()
-                .map_isa_pin_to(irq_line, ISA_INTR_NUM)
-        })
-        .map_err(|_| I8042ControllerError::DeviceAllocIrqFailed)?;
-    irq_line.on_active(handle_keyboard_input);
-    IRQ_LINE.call_once(|| irq_line);
 
     // Create and register the i8042 keyboard device.
     let keyboard_device = Arc::new(I8042Keyboard::new());
@@ -165,13 +145,66 @@ impl InputDevice for I8042Keyboard {
     }
 }
 
-fn handle_keyboard_input(_trap_frame: &TrapFrame) {
+/// Whether the Ctrl key is currently held.
+///
+/// Tracks the state of both LeftCtrl and RightCtrl. Used as a general-purpose modifier flag.
+static CTRL_HELD: AtomicBool = AtomicBool::new(false);
+
+/// Whether the Alt key is currently held.
+///
+/// Tracks the state of both LeftAlt and RightAlt. Used as a general-purpose modifier flag.
+static ALT_HELD: AtomicBool = AtomicBool::new(false);
+
+/// Dispatches keyboard input events to the input subsystem.
+///
+/// Called by the IRQ handler. Tracks modifier key state and detects key combinations
+/// such as Ctrl+Alt+Del before dispatching events to the input subsystem.
+pub(super) fn dispatch_keyboard_input() {
     let Some(scancode_event) = ScancodeInfo::read() else {
         return;
     };
 
     // Dispatch the input event.
     if let Some(key_code) = scancode_event.to_key_code() {
+        // Track modifier key state.
+        if matches!(key_code, KeyCode::LeftCtrl | KeyCode::RightCtrl) {
+            CTRL_HELD.store(
+                scancode_event.key_status == KeyStatus::Pressed,
+                Ordering::Relaxed,
+            );
+        }
+        if matches!(key_code, KeyCode::LeftAlt | KeyCode::RightAlt) {
+            ALT_HELD.store(
+                scancode_event.key_status == KeyStatus::Pressed,
+                Ordering::Relaxed,
+            );
+        }
+
+        // Detect Ctrl+Alt+Del and trigger a restart.
+        if key_code == KeyCode::Delete
+            && scancode_event.key_status == KeyStatus::Pressed
+            && CTRL_HELD.load(Ordering::Relaxed)
+            && ALT_HELD.load(Ordering::Relaxed)
+        {
+            ostd::warn!("Ctrl+Alt+Del detected, restarting the system");
+            ostd::power::restart(ostd::power::ExitCode::Success);
+        }
+
+        // TODO: Implement virtual terminal switching for Alt+F1–F12 and
+        // spawning a new console for Ctrl+Alt+F1–F12. For now we only log
+        // the key combination and do not perform any VT switching.
+        if scancode_event.key_status == KeyStatus::Pressed
+            && let Some(n) = fn_key_number(key_code)
+        {
+            let ctrl = CTRL_HELD.load(Ordering::Relaxed);
+            let alt = ALT_HELD.load(Ordering::Relaxed);
+            match (ctrl, alt) {
+                (true, true) => ostd::info!("Ctrl+Alt+F{} pressed", n),
+                (false, true) => ostd::info!("Alt+F{} pressed", n),
+                _ => {}
+            }
+        }
+
         if let Some(registered_device) = REGISTERED_DEVICE.get() {
             let events = [
                 InputEvent::from_key_and_status(key_code, scancode_event.key_status),
@@ -233,9 +266,35 @@ impl ScancodeInfo {
     fn read() -> Option<Self> {
         static EXTENDED_KEY: AtomicBool = AtomicBool::new(false);
 
-        let Some(data) = I8042_CONTROLLER.get()?.lock().receive_data() else {
-            ostd::warn!("PS/2 keyboard has no input data");
-            return None;
+        let raw_data = if let Some(controller) = I8042_CONTROLLER.get() {
+            controller.lock().receive_data()
+        } else {
+            read_scancode_from_data_port()
+        }?;
+
+        let data = if I8042_CONTROLLER.get().is_some() {
+            raw_data
+        } else {
+            // When the i8042 controller is not available, we must perform software
+            // Set 2 to Set 1 scancode translation.
+            let is_extended_prefix = raw_data == 0xE0;
+            let is_released = (raw_data & 0x80) != 0;
+            let key = raw_data & 0x7F;
+            if is_extended_prefix {
+                // Extended scancode prefix (e.g. arrow keys, Insert, Delete).
+                // Pass through as-is; the next byte will be translated.
+                0xE0
+            } else if key < 128 {
+                // Normal key: translate Set 2 to Set 1 and preserve release bit.
+                let translated = translate_set2_to_set1(key);
+                if is_released {
+                    translated | 0x80
+                } else {
+                    translated
+                }
+            } else {
+                return None;
+            }
         };
 
         let code = ScanCode(data);
@@ -375,4 +434,65 @@ impl ScancodeInfo {
             _ => return None,
         })
     }
+}
+
+/// Returns the function-key number (1–12) if `key_code` is an F1–F12 key.
+const fn fn_key_number(key_code: KeyCode) -> Option<u8> {
+    match key_code {
+        KeyCode::F1 => Some(1),
+        KeyCode::F2 => Some(2),
+        KeyCode::F3 => Some(3),
+        KeyCode::F4 => Some(4),
+        KeyCode::F5 => Some(5),
+        KeyCode::F6 => Some(6),
+        KeyCode::F7 => Some(7),
+        KeyCode::F8 => Some(8),
+        KeyCode::F9 => Some(9),
+        KeyCode::F10 => Some(10),
+        KeyCode::F11 => Some(11),
+        KeyCode::F12 => Some(12),
+        _ => None,
+    }
+}
+
+/// Reads a single byte from the i8042 data port (0x60) directly.
+///
+/// Used as a fallback when the `I8042_CONTROLLER` singleton is unavailable.
+/// The ports are temporarily acquired and released on each read so they can be reclaimed
+/// if the controller is later initialized.
+fn read_scancode_from_data_port() -> Option<u8> {
+    const OUTPUT_BUFFER_FULL: u8 = 0x01;
+
+    let Ok(status_port) = IoPort::<u8, ReadWriteAccess>::acquire(STATUS_OR_COMMAND_PORT_ADDR)
+    else {
+        return None;
+    };
+
+    // Check if there is data available in the output buffer.
+    if status_port.read() & OUTPUT_BUFFER_FULL == 0 {
+        return None;
+    }
+
+    let Ok(data_port) = IoPort::<u8, ReadWriteAccess>::acquire(DATA_PORT_ADDR) else {
+        return None;
+    };
+
+    Some(data_port.read())
+}
+
+/// Software translation from Set 2 to Set 1 for 7-bit scancode values (0..127).
+const fn translate_set2_to_set1(set2: u8) -> u8 {
+    // Reference: <https://elixir.bootlin.com/linux/v7.0/source/drivers/input/keyboard/atkbd.c#L125>
+    const SET2_TO_SET1: [u8; 128] = [
+        0x00, 0x43, 0x41, 0x3F, 0x3D, 0x3B, 0x3C, 0x58, 0x64, 0x44, 0x42, 0x40, 0x3E, 0x0F, 0x29,
+        0x59, 0x65, 0x38, 0x2A, 0x70, 0x1D, 0x10, 0x02, 0x5A, 0x66, 0x71, 0x2C, 0x1F, 0x1E, 0x11,
+        0x03, 0x5B, 0x67, 0x2E, 0x2D, 0x20, 0x12, 0x05, 0x04, 0x5C, 0x68, 0x39, 0x2F, 0x21, 0x14,
+        0x13, 0x06, 0x5D, 0x69, 0x31, 0x30, 0x23, 0x22, 0x15, 0x07, 0x5E, 0x6A, 0x72, 0x32, 0x24,
+        0x16, 0x08, 0x09, 0x5F, 0x6B, 0x33, 0x25, 0x17, 0x18, 0x0B, 0x0A, 0x60, 0x6C, 0x34, 0x35,
+        0x26, 0x27, 0x19, 0x0C, 0x61, 0x6D, 0x73, 0x28, 0x74, 0x1A, 0x0D, 0x62, 0x6E, 0x3A, 0x36,
+        0x1C, 0x1B, 0x75, 0x2B, 0x63, 0x76, 0x55, 0x56, 0x77, 0x78, 0x79, 0x7A, 0x0E, 0x7B, 0x7C,
+        0x4F, 0x7D, 0x4B, 0x47, 0x7E, 0x7F, 0x6F, 0x52, 0x53, 0x50, 0x4C, 0x4D, 0x48, 0x01, 0x45,
+        0x57, 0x4E, 0x51, 0x4A, 0x37, 0x49, 0x46, 0x54,
+    ];
+    SET2_TO_SET1[set2 as usize]
 }
