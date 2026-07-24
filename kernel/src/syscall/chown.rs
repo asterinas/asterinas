@@ -3,7 +3,10 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::file_table::{RawFileDesc, get_file_fast},
+        file::{
+            StatusFlags,
+            file_table::{RawFileDesc, get_file_fast},
+        },
         utils::PATH_MAX,
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
@@ -16,12 +19,30 @@ pub fn sys_fchown(raw_fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Res
 
     let uid = to_optional_id(uid, Uid::new)?;
     let gid = to_optional_id(gid, Gid::new)?;
+
+    {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+        if file.status_flags().contains(StatusFlags::O_PATH) {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+    }
+
+    do_fchown(raw_fd, uid, gid, ctx)
+}
+
+fn do_fchown(
+    raw_fd: RawFileDesc,
+    uid: Option<Uid>,
+    gid: Option<Gid>,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     if uid.is_none() && gid.is_none() {
         return Ok(SyscallReturn::Return(0));
     }
 
-    let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let path = file.path();
     if let Some(uid) = uid {
         path.set_owner(uid)?;
@@ -65,6 +86,11 @@ pub fn sys_fchownat(
 
     let uid = to_optional_id(uid, Uid::new)?;
     let gid = to_optional_id(gid, Gid::new)?;
+
+    if flags.contains(ChownFlags::AT_EMPTY_PATH) && path_name.is_empty() {
+        return do_fchown(dirfd, uid, gid, ctx);
+    }
+
     if uid.is_none() && gid.is_none() {
         return Ok(SyscallReturn::Return(0));
     }
