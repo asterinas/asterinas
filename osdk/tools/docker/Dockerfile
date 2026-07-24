@@ -227,8 +227,8 @@ RUN cargo install --locked \
     mdbook-mermaid@0.17.0 \
     typos-cli@1.39.0
 
-# Install klint.
-RUN cargo install klint --git https://github.com/Rust-for-Linux/klint --rev 7d7c522
+# Install klint. Pin the Klint commit compatible with the Asterinas toolchain.
+RUN cargo install klint --git https://github.com/Rust-for-Linux/klint --rev d2a4d60
 
 # Install QEMU built from the previous stages
 COPY --from=qemu /usr/local/qemu /usr/local/qemu
