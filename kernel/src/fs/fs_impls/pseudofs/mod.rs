@@ -42,7 +42,7 @@ use crate::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         utils::NAME_MAX,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::{Extension, FileOps, Inode, Metadata},
         },
     },
@@ -62,7 +62,7 @@ mod sockfs;
 pub struct NaivePseudoFs {
     name: &'static str,
     _anon_device_id: AnonDeviceId,
-    sb: SuperBlock,
+    stats: FsStats,
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
     fs_event_subscriber_stats: FsEventSubscriberStats,
@@ -82,8 +82,8 @@ impl FileSystem for NaivePseudoFs {
         self.root.clone()
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        self.stats.clone()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -106,7 +106,7 @@ impl NaivePseudoFs {
             Arc::new_cyclic(move |weak_fs: &Weak<Self>| Self {
                 name,
                 _anon_device_id: anon_device_id,
-                sb: SuperBlock::new(magic, aster_block::BLOCK_SIZE, NAME_MAX, container_dev_id),
+                stats: FsStats::new(magic, aster_block::BLOCK_SIZE, NAME_MAX, container_dev_id),
                 root: Arc::new(PseudoInode::new(
                     ROOT_INO,
                     PseudoInodeType::Root,
@@ -136,7 +136,7 @@ impl NaivePseudoFs {
             uid,
             gid,
             Arc::downgrade(self),
-            self.sb.container_dev_id,
+            self.stats.container_dev_id,
         )
     }
 
@@ -145,7 +145,7 @@ impl NaivePseudoFs {
     }
 
     pub(super) fn container_dev_id(&self) -> DeviceId {
-        self.sb.container_dev_id
+        self.stats.container_dev_id
     }
 }
 

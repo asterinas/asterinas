@@ -13,7 +13,7 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -24,7 +24,7 @@ use crate::{
 /// A file system for managing cgroups.
 pub(super) struct CgroupFs {
     _anon_device_id: AnonDeviceId,
-    sb: SuperBlock,
+    stats: FsStats,
     fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
@@ -44,11 +44,11 @@ impl CgroupFs {
     fn new() -> Arc<Self> {
         let anon_device_id =
             AnonDeviceId::acquire().expect("no device ID is available for cgroupfs");
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        let stats = FsStats::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
 
         Arc::new(Self {
             _anon_device_id: anon_device_id,
-            sb,
+            stats,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
     }
@@ -70,11 +70,11 @@ impl FileSystem for CgroupFs {
         let ns_proxy = thread_local.borrow_ns_proxy();
         let cgroup_namespace = ns_proxy.unwrap().cgroup_ns();
 
-        CgroupInode::new_root(cgroup_namespace.root_node(), &self.sb)
+        CgroupInode::new_root(cgroup_namespace.root_node(), &self.stats)
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        self.stats.clone()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {

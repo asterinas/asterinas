@@ -781,7 +781,7 @@ impl DirDentry<'_> {
         let old_dir_inode = self.inode();
         let new_dir_inode = new_dir.inode();
 
-        let max_namelen = old_dir_inode.fs().sb().namelen;
+        let max_namelen = old_dir_inode.fs().stats().namelen;
         if old_name.len() > max_namelen || new_name.len() > max_namelen {
             return_errno_with_message!(Errno::ENAMETOOLONG, "old_name or new_name is too long");
         }

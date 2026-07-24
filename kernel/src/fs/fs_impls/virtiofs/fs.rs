@@ -16,7 +16,7 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::NAME_MAX,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -61,7 +61,7 @@ impl FsType for VirtioFsType {
 
 /// A mounted virtio-fs filesystem.
 pub(super) struct VirtioFs {
-    sb: SuperBlock,
+    stats: FsStats,
     root: Arc<VirtioFsInode>,
     tag: String,
     session: Arc<FuseSession>,
@@ -79,10 +79,10 @@ impl VirtioFs {
         let container_dev_id = anon_device_id.id();
         let statfs = session.do_fuse_op(FUSE_ROOT_ID, StatfsOperation)?.st();
 
-        // TODO: Update the super block fields based on `statfs` reply.
+        // TODO: Update the filesystem statistics based on `statfs` replies.
         // For now, we set only the fields required by VFS when mounting the filesystem.
         // No update is made for these fields later.
-        let sb = SuperBlock::from((container_dev_id, statfs));
+        let stats = FsStats::from((container_dev_id, statfs));
 
         let root_entry = session.do_fuse_op(FUSE_ROOT_ID, LookupOperation::new("."))?;
 
@@ -96,7 +96,7 @@ impl VirtioFs {
             let inode_cache = InodeCache::new(&root);
 
             Self {
-                sb,
+                stats,
                 root,
                 tag,
                 session,
@@ -112,7 +112,7 @@ impl VirtioFs {
 
     /// Returns the device ID of this virtio-fs mount.
     pub(super) fn container_device_id(&self) -> DeviceId {
-        self.sb.container_dev_id
+        self.stats.container_dev_id
     }
 
     /// Reads an inode from a FUSE entry reply via the inode cache.
@@ -139,19 +139,19 @@ impl VirtioFs {
     }
 }
 
-impl From<(DeviceId, Kstatfs)> for SuperBlock {
+impl From<(DeviceId, Kstatfs)> for FsStats {
     fn from((container_dev_id, statfs): (DeviceId, Kstatfs)) -> Self {
-        let mut sb = SuperBlock::new(VIRTIOFS_MAGIC, BLOCK_SIZE, NAME_MAX, container_dev_id);
+        let mut stats = FsStats::new(VIRTIOFS_MAGIC, BLOCK_SIZE, NAME_MAX, container_dev_id);
 
-        sb.blocks = statfs.blocks() as usize;
-        sb.bfree = statfs.bfree() as usize;
-        sb.bavail = statfs.bavail() as usize;
-        sb.files = statfs.files() as usize;
-        sb.ffree = statfs.ffree() as usize;
-        sb.bsize = statfs.bsize() as usize;
-        sb.namelen = statfs.namelen() as usize;
-        sb.frsize = statfs.frsize() as usize;
-        sb
+        stats.blocks = statfs.blocks() as usize;
+        stats.bfree = statfs.bfree() as usize;
+        stats.bavail = statfs.bavail() as usize;
+        stats.files = statfs.files() as usize;
+        stats.ffree = statfs.ffree() as usize;
+        stats.bsize = statfs.bsize() as usize;
+        stats.namelen = statfs.namelen() as usize;
+        stats.frsize = statfs.frsize() as usize;
+        stats
     }
 }
 
@@ -173,8 +173,8 @@ impl FileSystem for VirtioFs {
         self.root.clone()
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        self.stats.clone()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {

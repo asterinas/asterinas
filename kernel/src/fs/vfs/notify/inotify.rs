@@ -393,7 +393,7 @@ impl FileLike for InotifyFile {
                         continue;
                     };
                     let mask = subscriber.interesting_events().bits();
-                    let sdev = inode.fs().sb().fsid;
+                    let sdev = inode.fs().stats().fsid;
                     writeln!(
                         f,
                         "inotify wd:{} ino:{:x} sdev:{:x} mask:{:x} ignored_mask:0",

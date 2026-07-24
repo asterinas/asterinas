@@ -23,7 +23,7 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::{DirentCounter, DirentVisitor, NAME_MAX},
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
                 SymbolicLink,
@@ -201,9 +201,9 @@ impl FileSystem for OverlayFs {
         Ok(())
     }
 
-    fn sb(&self) -> SuperBlock {
+    fn stats(&self) -> FsStats {
         // TODO: Fill the super block with valid field values.
-        SuperBlock::new(
+        FsStats::new(
             OVERLAY_FS_MAGIC,
             BLOCK_SIZE,
             NAME_MAX,
@@ -1302,7 +1302,7 @@ mod tests {
         let work = upper.clone();
 
         let fs = OverlayFs::new(upper, lower, work).unwrap();
-        assert_eq!(fs.sb().magic, OVERLAY_FS_MAGIC);
+        assert_eq!(fs.stats().magic, OVERLAY_FS_MAGIC);
         fs
     }
 

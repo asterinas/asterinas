@@ -16,7 +16,7 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
@@ -48,7 +48,7 @@ const MAX_PTY_NUM: usize = 4096;
 /// Actually, the "/dev/ptmx" is a symlink to the real device at "/dev/pts/ptmx".
 pub struct DevPts {
     _anon_device_id: AnonDeviceId,
-    sb: SuperBlock,
+    stats: FsStats,
     root: Arc<RootInode>,
     index_alloc: Mutex<IdAlloc>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
@@ -58,11 +58,11 @@ pub struct DevPts {
 impl DevPts {
     pub fn new() -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for devpts");
-        let sb = SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        let stats = FsStats::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         Arc::new_cyclic(|weak_self| Self {
             _anon_device_id: anon_device_id,
-            sb: sb.clone(),
-            root: RootInode::new(weak_self.clone(), &sb),
+            stats: stats.clone(),
+            root: RootInode::new(weak_self.clone(), &stats),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             this: weak_self.clone(),
@@ -115,8 +115,8 @@ impl FileSystem for DevPts {
         self.root.clone()
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        self.stats.clone()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -157,15 +157,15 @@ struct RootInode {
 }
 
 impl RootInode {
-    pub fn new(fs: Weak<DevPts>, sb: &SuperBlock) -> Arc<Self> {
+    pub fn new(fs: Weak<DevPts>, stats: &FsStats) -> Arc<Self> {
         Arc::new(Self {
-            ptmx: Ptmx::new(fs.clone(), sb),
+            ptmx: Ptmx::new(fs.clone(), stats),
             slaves: RwLock::new(SlotVec::new()),
             metadata: RwLock::new(Metadata::new_dir(
                 ROOT_INO,
                 mkmod!(a+rx, u+w),
                 BLOCK_SIZE,
-                sb.container_dev_id,
+                stats.container_dev_id,
             )),
             extension: Extension::new(),
             fs,

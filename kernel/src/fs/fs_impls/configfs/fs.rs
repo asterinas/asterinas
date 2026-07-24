@@ -12,7 +12,7 @@ use crate::fs::{
     pseudofs::AnonDeviceId,
     utils::systree_inode::SysTreeInodeTy,
     vfs::{
-        file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+        file_system::{FileSystem, FsEventSubscriberStats, FsStats},
         inode::Inode,
         registry::{FsCreationCtx, FsProperties, FsType},
     },
@@ -26,7 +26,7 @@ use crate::fs::{
 /// `ConfigFs` is designed for dynamic creation and configuration of kernel objects.
 pub struct ConfigFs {
     _anon_device_id: AnonDeviceId,
-    sb: SuperBlock,
+    stats: FsStats,
     root: Arc<dyn Inode>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
 }
@@ -47,12 +47,12 @@ impl ConfigFs {
     fn new(root_node: Arc<ConfigRootNode>) -> Arc<Self> {
         let anon_device_id =
             AnonDeviceId::acquire().expect("no device ID is available for configfs");
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-        let root_inode = ConfigInode::new_root(root_node, &sb);
+        let stats = FsStats::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        let root_inode = ConfigInode::new_root(root_node, &stats);
 
         Arc::new(Self {
             _anon_device_id: anon_device_id,
-            sb,
+            stats,
             root: root_inode,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
@@ -73,8 +73,8 @@ impl FileSystem for ConfigFs {
         self.root.clone()
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        self.stats.clone()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {

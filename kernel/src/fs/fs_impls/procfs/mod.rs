@@ -28,7 +28,7 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::NAME_MAX,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::{Inode, RevalidationPolicy},
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -72,7 +72,7 @@ const BLOCK_SIZE: usize = 1024;
 
 struct ProcFs {
     _anon_device_id: AnonDeviceId,
-    sb: SuperBlock,
+    stats: FsStats,
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
     fs_event_subscriber_stats: FsEventSubscriberStats,
@@ -81,11 +81,11 @@ struct ProcFs {
 impl ProcFs {
     pub(self) fn new() -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for procfs");
-        let sb = SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        let stats = FsStats::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         Arc::new_cyclic(|weak_fs| Self {
             _anon_device_id: anon_device_id,
-            sb: sb.clone(),
-            root: RootDirOps::new_inode(weak_fs.clone(), &sb),
+            stats: stats.clone(),
+            root: RootDirOps::new_inode(weak_fs.clone(), &stats),
             inode_allocator: AtomicU64::new(PROC_ROOT_INO + 1),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
@@ -109,8 +109,8 @@ impl FileSystem for ProcFs {
         self.root.clone()
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        self.stats.clone()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -142,10 +142,10 @@ impl FsType for ProcFsType {
 struct RootDirOps;
 
 impl RootDirOps {
-    pub fn new_inode(fs: Weak<ProcFs>, sb: &SuperBlock) -> Arc<dyn Inode> {
+    pub fn new_inode(fs: Weak<ProcFs>, stats: &FsStats) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/root.c#L368>
         let fs: Weak<dyn FileSystem> = fs;
-        ProcDir::new_root(Self, fs, PROC_ROOT_INO, sb, mkmod!(a+rx))
+        ProcDir::new_root(Self, fs, PROC_ROOT_INO, stats, mkmod!(a+rx))
     }
 
     const STATIC_ENTRIES: &'static [StaticEntry] = &[

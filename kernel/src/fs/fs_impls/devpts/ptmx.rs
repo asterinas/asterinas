@@ -27,14 +27,14 @@ pub struct Ptmx {
 struct Inner(Weak<DevPts>);
 
 impl Ptmx {
-    pub fn new(fs: Weak<DevPts>, sb: &SuperBlock) -> Arc<Self> {
+    pub fn new(fs: Weak<DevPts>, stats: &FsStats) -> Arc<Self> {
         let inner = Inner(fs.clone());
         let metadata = Metadata::new_device(
             PTMX_INO,
             mkmod!(a+rw),
             BLOCK_SIZE,
             &inner,
-            sb.container_dev_id,
+            stats.container_dev_id,
         );
         Arc::new(Self {
             inner,

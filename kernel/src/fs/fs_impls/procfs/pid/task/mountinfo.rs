@@ -111,7 +111,7 @@ impl MountInfoFileOps {
             let mount_id = mount.id();
             let parent = mount.parent().and_then(|parent| parent.upgrade());
             let parent_id = parent.as_ref().map_or(mount_id, |p| p.id());
-            let container_dev_id = mount.fs().sb().container_dev_id;
+            let container_dev_id = mount.fs().stats().container_dev_id;
             let major = container_dev_id.major().get() as u32;
             let minor = container_dev_id.minor().get();
             let is_resolver_root_mount = Arc::ptr_eq(&mount, path_resolver.root().mount_node());

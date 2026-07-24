@@ -12,7 +12,7 @@ use crate::{
         fs_impls::ext2::{Ext2, super_block::MAGIC_NUM},
         utils::NAME_MAX,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
         },
     },
@@ -36,14 +36,14 @@ impl FileSystem for Ext2 {
         self.root_inode().unwrap()
     }
 
-    fn sb(&self) -> SuperBlock {
+    fn stats(&self) -> FsStats {
         let sb = self.super_block();
         let blocks = if self.uses_minix_df() {
             sb.total_blocks()
         } else {
             sb.total_blocks().saturating_sub(sb.total_metadata_blocks())
         };
-        SuperBlock {
+        FsStats {
             magic: MAGIC_NUM as u64,
             bsize: BLOCK_SIZE,
             blocks: blocks as usize,

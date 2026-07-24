@@ -14,7 +14,7 @@ use crate::{
         procfs::{BLOCK_SIZE, ProcFs},
         utils::DirentVisitor,
         vfs::{
-            file_system::{FileSystem, SuperBlock},
+            file_system::{FileSystem, FsStats},
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
@@ -44,10 +44,10 @@ impl<D: ProcDirOps> ProcDir<D> {
         dir: D,
         fs: Weak<dyn FileSystem>,
         ino: u64,
-        sb: &SuperBlock,
+        stats: &FsStats,
         mode: InodeMode,
     ) -> Arc<Self> {
-        let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE, sb.container_dev_id);
+        let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE, stats.container_dev_id);
         let common = Common::new(metadata, fs);
 
         Arc::new_cyclic(|weak_self| Self {
@@ -64,7 +64,8 @@ impl<D: ProcDirOps> ProcDir<D> {
             let fs = parent.upgrade().unwrap().fs();
             let procfs = fs.downcast_ref::<ProcFs>().unwrap();
             let ino = procfs.alloc_id();
-            let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE, procfs.sb().container_dev_id);
+            let metadata =
+                Metadata::new_dir(ino, mode, BLOCK_SIZE, procfs.stats().container_dev_id);
             Common::new(metadata, Arc::downgrade(&fs))
         };
         Arc::new_cyclic(|weak_self| Self {

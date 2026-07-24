@@ -248,7 +248,7 @@ impl MemfdInodeHandle for InodeHandle {
 
             let ram_inode = RamInode::new_file_detached_in_memfd(
                 weak_self,
-                MemfdTmpFs::singleton().sb().container_dev_id,
+                MemfdTmpFs::singleton().stats().container_dev_id,
                 mode,
                 Uid::new_root(),
                 Gid::new_root(),

@@ -33,7 +33,7 @@ impl<S: ProcSymOps> ProcSym<S> {
                 procfs.alloc_id(),
                 mode,
                 BLOCK_SIZE,
-                procfs.sb().container_dev_id,
+                procfs.stats().container_dev_id,
             );
             Common::new(metadata, Arc::downgrade(&fs))
         };

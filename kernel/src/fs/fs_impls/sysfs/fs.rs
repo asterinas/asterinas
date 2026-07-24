@@ -8,7 +8,7 @@ use crate::{
         sysfs::{self, inode::SysFsInode},
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -20,7 +20,7 @@ use crate::{
 #[derive(Debug)]
 pub(super) struct SysFs {
     _anon_device_id: AnonDeviceId,
-    sb: SuperBlock,
+    stats: FsStats,
     root: Arc<dyn Inode>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
 }
@@ -44,13 +44,13 @@ impl SysFs {
 
     fn new() -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for sysfs");
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        let stats = FsStats::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         let systree_ref = sysfs::systree_singleton();
-        let root_inode = SysFsInode::new_root(systree_ref.root().clone(), &sb);
+        let root_inode = SysFsInode::new_root(systree_ref.root().clone(), &stats);
 
         Arc::new(Self {
             _anon_device_id: anon_device_id,
-            sb,
+            stats,
             root: root_inode,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
@@ -71,8 +71,8 @@ impl FileSystem for SysFs {
         self.root.clone()
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        self.stats.clone()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {

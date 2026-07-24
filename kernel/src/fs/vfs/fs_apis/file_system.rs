@@ -29,8 +29,8 @@ pub trait FileSystem: Any + Sync + Send {
     /// context that performs the syscall.
     fn root_inode(&self) -> Arc<dyn Inode>;
 
-    /// Returns the super block of this file system.
-    fn sb(&self) -> SuperBlock;
+    /// Returns statistics about this file system.
+    fn stats(&self) -> FsStats;
 
     /// Returns the flags of this file system.
     fn flags(&self) -> FsFlags {
@@ -59,14 +59,14 @@ impl dyn FileSystem {
 impl Debug for dyn FileSystem {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("FileSystem")
-            .field("super_block", &self.sb())
+            .field("stats", &self.stats())
             .field("flags", &self.flags())
             .finish()
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct SuperBlock {
+pub struct FsStats {
     pub magic: u64,
     pub bsize: usize,
     pub blocks: usize,
@@ -81,7 +81,7 @@ pub struct SuperBlock {
     pub container_dev_id: DeviceId,
 }
 
-impl SuperBlock {
+impl FsStats {
     pub fn new(magic: u64, block_size: usize, name_max_len: usize, dev_id: DeviceId) -> Self {
         Self {
             magic,

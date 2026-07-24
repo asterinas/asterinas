@@ -28,7 +28,7 @@ impl PtySlaveInode {
             mkmod!(u+rw, g+w),
             BLOCK_SIZE,
             device.as_ref(),
-            devpts.sb().container_dev_id,
+            devpts.stats().container_dev_id,
         );
         Arc::new(Self {
             device,

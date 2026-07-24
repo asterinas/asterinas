@@ -31,7 +31,7 @@ use crate::{
     fs::{
         exfat::{constants::*, inode::Ino},
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -435,8 +435,8 @@ impl FileSystem for ExfatFs {
         self.root_inode()
     }
 
-    fn sb(&self) -> SuperBlock {
-        SuperBlock::new(
+    fn stats(&self) -> FsStats {
+        FsStats::new(
             BOOT_SIGNATURE as u64,
             self.sector_size(),
             MAX_NAME_LENGTH,
