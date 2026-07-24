@@ -2,18 +2,22 @@
 
 //! Posix thread implementation
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    fmt,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
     cpu::{AtomicCpuSet, CpuId, CpuSet},
     irq::DisabledLocalIrqGuard,
+    sync::Rcu,
     task::Task,
 };
 
 use crate::{
     prelude::*,
-    sched::{SchedAttr, SchedPolicy},
+    sched::{self, SchedAttr, SchedPolicy, TaskGroup},
 };
 mod stats;
 use stats::CONTEXT_SWITCH_COUNTER;
@@ -71,7 +75,6 @@ pub(super) fn init() {
 }
 
 /// A thread is a wrapper on top of task.
-#[derive(Debug)]
 pub struct Thread {
     // immutable part
     /// Low-level info
@@ -85,10 +88,22 @@ pub struct Thread {
     /// Thread CPU affinity
     cpu_affinity: AtomicCpuSet,
     sched_attr: SchedAttr,
+    /// The task group this thread belongs to.
+    task_group: Rcu<Arc<TaskGroup>>,
+}
+
+impl Debug for Thread {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Thread")
+            .field("is_exited", &self.is_exited)
+            .field("cpu_affinity", &self.cpu_affinity)
+            .field("sched_attr", &self.sched_attr)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Thread {
-    /// Never call these function directly
+    /// Never call this function directly.
     pub fn new(
         task: Weak<Task>,
         data: impl Send + Sync + Any,
@@ -96,11 +111,12 @@ impl Thread {
         sched_policy: SchedPolicy,
     ) -> Self {
         Thread {
-            task,
+            task: task.clone(),
             data: Box::new(data),
             is_exited: AtomicBool::new(false),
             cpu_affinity: AtomicCpuSet::new(cpu_affinity),
             sched_attr: SchedAttr::new(sched_policy),
+            task_group: Rcu::new(sched::root_task_group().clone()),
         }
     }
 
@@ -140,6 +156,16 @@ impl Thread {
 
     pub fn sched_attr(&self) -> &SchedAttr {
         &self.sched_attr
+    }
+
+    /// Returns the task group this thread belongs to.
+    pub fn task_group(&self) -> Arc<TaskGroup> {
+        self.task_group.read().get().clone()
+    }
+
+    /// Sets the task group for this thread.
+    pub(crate) fn set_task_group(&self, task_group: Arc<TaskGroup>) {
+        self.task_group.update(task_group);
     }
 
     /// Yields the execution to another thread.

@@ -17,8 +17,8 @@ use ostd::{
     },
 };
 
-use super::{CurrentRuntime, SchedAttr, SchedClassRq, time::base_slice_clocks};
-use crate::thread::AsThread;
+use super::{CurrentRuntime, SchedClassRq, time::base_slice_clocks};
+use crate::thread::{AsThread, Thread};
 
 pub type RealTimePriority = RangedU8<1, 99>;
 
@@ -213,13 +213,8 @@ impl SchedClassRq for RealTimeClassRq {
             .inspect(|_| self.nr_running -= 1)
     }
 
-    fn update_current(
-        &mut self,
-        rt: &CurrentRuntime,
-        attr: &SchedAttr,
-        flags: UpdateFlags,
-    ) -> bool {
-        let attr = &attr.real_time;
+    fn update_current(&mut self, rt: &CurrentRuntime, thread: &Thread, flags: UpdateFlags) -> bool {
+        let attr = &thread.sched_attr().real_time;
 
         match flags {
             UpdateFlags::Tick | UpdateFlags::Yield => match attr.time_slice.load(Relaxed) {

@@ -122,6 +122,12 @@ impl Task {
         scheduler::run_new_task(self.clone());
     }
 
+    /// Re-enqueues a parked task through the scheduler.
+    #[track_caller]
+    pub fn wake_up(self: &Arc<Self>) {
+        scheduler::unpark_target(self.clone());
+    }
+
     /// Returns the task data.
     pub fn data(&self) -> &Box<dyn Any + Send + Sync> {
         &self.data

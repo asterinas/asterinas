@@ -29,17 +29,25 @@ use super::{
 use crate::thread::{AsThread, Thread};
 
 mod policy;
+mod task_group;
 mod time;
 
-mod fair;
+pub(crate) mod fair;
 mod idle;
 mod real_time;
 mod stop;
 
-use self::policy::{SchedPolicyKind, SchedPolicyState};
+pub(crate) use self::{
+    fair::DEFAULT_CGROUP_WEIGHT,
+    task_group::{TaskGroup, root_task_group},
+};
 pub use self::{
     policy::{LinuxSchedPolicy, SchedPolicy},
     real_time::{RealTimePolicy, RealTimePriority},
+};
+use self::{
+    policy::{SchedPolicyKind, SchedPolicyState},
+    task_group::init_root_task_group,
 };
 
 type SchedEntity = (Arc<Task>, Arc<Thread>);
@@ -79,7 +87,7 @@ pub struct ClassScheduler {
 struct PerCpuClassRqSet {
     stop: stop::StopClassRq,
     real_time: real_time::RealTimeClassRq,
-    fair: fair::FairClassRq,
+    fair: Arc<SpinLock<fair::FairClassRq>>,
     idle: idle::IdleClassRq,
     current: Option<(SchedEntity, CurrentRuntime)>,
 }
@@ -134,8 +142,7 @@ trait SchedClassRq: Send + fmt::Debug {
     ///
     /// The return value of this method indicates whether there is another task
     /// **in this run queue** to replace the current one.
-    fn update_current(&mut self, rt: &CurrentRuntime, attr: &SchedAttr, flags: UpdateFlags)
-    -> bool;
+    fn update_current(&mut self, rt: &CurrentRuntime, thread: &Thread, flags: UpdateFlags) -> bool;
 }
 
 /// The scheduling attribute for a thread.
@@ -266,11 +273,12 @@ impl Scheduler for ClassScheduler {
 
 impl ClassScheduler {
     pub fn new() -> Self {
+        let root_task_group = init_root_task_group(ostd::cpu::num_cpus());
         let class_rq = |cpu| {
             SpinLock::new(PerCpuClassRqSet {
                 stop: stop::StopClassRq::new(),
                 real_time: real_time::RealTimeClassRq::new(cpu),
-                fair: fair::FairClassRq::new(cpu),
+                fair: root_task_group.fair_queue(cpu).clone(),
                 idle: idle::IdleClassRq::new(),
                 current: None,
             })
@@ -283,10 +291,14 @@ impl ClassScheduler {
 
     // TODO: Implement a better algorithm and replace the current naive implementation.
     fn select_cpu(&self, thread: &Thread, flags: EnqueueFlags) -> CpuId {
-        if let Some(last_cpu) = thread.sched_attr().last_cpu() {
+        let affinity = thread.atomic_cpu_affinity().load(Ordering::Relaxed);
+        let last_cpu = thread.sched_attr().last_cpu();
+        if let Some(last_cpu) = last_cpu
+            && affinity.contains(last_cpu)
+        {
             return last_cpu;
         }
-        debug_assert!(flags == EnqueueFlags::Spawn);
+        debug_assert!(flags == EnqueueFlags::Spawn || last_cpu.is_some());
 
         let guard = disable_local();
 
@@ -304,7 +316,6 @@ impl ClassScheduler {
             }
         };
 
-        let affinity = thread.atomic_cpu_affinity().load(Ordering::Relaxed);
         match self.last_chosen_cpu.get() {
             Some(cpu) => {
                 // Perform a round-robin selection starting after the last chosen CPU.
@@ -338,7 +349,7 @@ impl PerCpuClassRqSet {
     fn pick_next_entity(&mut self) -> Option<SchedEntity> {
         (self.stop.pick_next())
             .or_else(|| self.real_time.pick_next())
-            .or_else(|| self.fair.pick_next())
+            .or_else(|| self.fair.lock().pick_next())
             .or_else(|| self.idle.pick_next())
             .and_then(|task| {
                 let thread = task.as_thread()?.clone();
@@ -350,13 +361,14 @@ impl PerCpuClassRqSet {
         match thread.sched_attr().policy_kind() {
             SchedPolicyKind::Stop => self.stop.enqueue(task, flags),
             SchedPolicyKind::RealTime => self.real_time.enqueue(task, flags),
-            SchedPolicyKind::Fair => self.fair.enqueue(task, flags),
+            SchedPolicyKind::Fair => self.fair.lock().enqueue(task, flags),
             SchedPolicyKind::Idle => self.idle.enqueue(task, flags),
         }
     }
 
     fn load_stats(&self) -> PerCpuLoadStats {
-        let queue_len = (self.stop.len() + self.real_time.len() + self.fair.len()) as u32;
+        let fair_queue_len = self.fair.lock().total_queued_task_count();
+        let queue_len = (self.stop.len() + self.real_time.len() + fair_queue_len) as u32;
         let is_idle = match &self.current {
             Some(((_, thread), _)) => thread.sched_attr().policy_kind() == SchedPolicyKind::Idle,
             None => true,
@@ -387,10 +399,10 @@ impl LocalRunQueue for PerCpuClassRqSet {
             let attr = &cur.sched_attr();
 
             match attr.policy_kind() {
-                SchedPolicyKind::Stop => (self.stop.update_current(rt, attr, flags), 0),
-                SchedPolicyKind::RealTime => (self.real_time.update_current(rt, attr, flags), 1),
-                SchedPolicyKind::Fair => (self.fair.update_current(rt, attr, flags), 2),
-                SchedPolicyKind::Idle => (self.idle.update_current(rt, attr, flags), 3),
+                SchedPolicyKind::Stop => (self.stop.update_current(rt, cur, flags), 0),
+                SchedPolicyKind::RealTime => (self.real_time.update_current(rt, cur, flags), 1),
+                SchedPolicyKind::Fair => (self.fair.lock().update_current(rt, cur, flags), 2),
+                SchedPolicyKind::Idle => (self.idle.update_current(rt, cur, flags), 3),
             }
         } else {
             (false, 4)
@@ -403,7 +415,7 @@ impl LocalRunQueue for PerCpuClassRqSet {
         should_preempt
             || (lookahead >= 1 && !self.stop.is_empty())
             || (lookahead >= 2 && !self.real_time.is_empty())
-            || (lookahead >= 3 && !self.fair.is_empty())
+            || (lookahead >= 3 && !self.fair.lock().is_empty())
             || (lookahead >= 4 && !self.idle.is_empty())
     }
 
@@ -429,10 +441,17 @@ struct PerCpuLoadStats {
 
 impl SchedulerStats for ClassScheduler {
     fn nr_queued_and_running(&self) -> (u32, u32) {
-        self.rqs.iter().fold((0, 0), |(queued, running), rq| {
-            let PerCpuLoadStats { queue_len, is_idle } = rq.lock().load_stats();
-            (queued + queue_len, running + u32::from(!is_idle))
-        })
+        let mut queued = 0u32;
+        let mut running = 0u32;
+        for rq in self.rqs.iter() {
+            let rq = rq.lock();
+            let load_stats = rq.load_stats();
+            queued += load_stats.queue_len;
+            if !load_stats.is_idle {
+                running += 1;
+            }
+        }
+        (queued, running)
     }
 }
 

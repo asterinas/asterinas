@@ -60,7 +60,10 @@ use aster_systree::{
 };
 use aster_util::printer::VmPrinter;
 use inherit_methods_macro::inherit_methods;
-use ostd::sync::{RwMutexReadGuard, RwMutexWriteGuard};
+use ostd::{
+    sync::{RwMutexReadGuard, RwMutexWriteGuard},
+    task::Task,
+};
 use spin::Once;
 
 use crate::{
@@ -165,24 +168,40 @@ impl CgroupMembership {
             None
         };
 
-        // Try to add the process to the new cgroup first.
-        self.add_process_to_node(&process, new_cgroup)?;
+        if !new_cgroup.controller.active_set().is_empty() {
+            return Err(Error::ResourceUnavailable);
+        }
+
+        let new_cgroup = {
+            let mut new_cgroup_inner = new_cgroup.inner.write();
+            let Some(new_cgroup_inner_ref) = new_cgroup_inner.as_mut() else {
+                return Err(Error::IsDead);
+            };
+
+            if new_cgroup_inner_ref.processes.is_empty() {
+                let old_count = new_cgroup.populated_count.fetch_add(1, Ordering::Relaxed);
+                if old_count == 0 {
+                    new_cgroup.propagate_add_populated();
+                }
+            }
+
+            new_cgroup_inner_ref
+                .processes
+                .insert(process.pid(), Arc::downgrade(&process));
+            let new_cgroup = new_cgroup.fields.weak_self().upgrade().unwrap();
+            process.set_cgroup(Some(new_cgroup.clone()));
+            new_cgroup
+        };
+        let queued_tasks = new_cgroup.controller.apply_cpu_control_to_process(&process);
         new_cgroup.controller.charge_pids();
+
+        for task in queued_tasks {
+            task.wake_up();
+        }
 
         // Remove the process from the old cgroup second.
         if let Some(old_cgroup) = old_cgroup {
-            old_cgroup
-                .with_inner_mut(|old_cgroup_processes| {
-                    old_cgroup_processes.remove(&process.pid()).unwrap();
-                    if old_cgroup_processes.is_empty() {
-                        let old_count = old_cgroup.populated_count.fetch_sub(1, Ordering::Relaxed);
-                        if old_count == 1 {
-                            old_cgroup.propagate_sub_populated();
-                        }
-                    }
-                })
-                .unwrap();
-
+            self.remove_process_from_node(&process, &old_cgroup);
             // Uncharge the pids sub-controller for the old cgroup.
             old_cgroup.controller.uncharge_pids();
         }
@@ -225,9 +244,15 @@ impl CgroupMembership {
                 }
 
                 current_processes.insert(process.pid(), Arc::downgrade(process));
-                process.set_cgroup(Some(new_cgroup.fields.weak_self().upgrade().unwrap()));
+                let new_cgroup = new_cgroup.fields.weak_self().upgrade().unwrap();
+                process.set_cgroup(Some(new_cgroup));
             })
             .ok_or(Error::IsDead)?;
+        let queued_tasks = new_cgroup.controller.apply_cpu_control_to_process(process);
+        debug_assert!(queued_tasks.is_empty());
+        for task in queued_tasks {
+            task.wake_up();
+        }
 
         Ok(())
     }
@@ -242,7 +267,123 @@ impl CgroupMembership {
         };
 
         process.set_cgroup(None);
+        let queued_tasks = CgroupSystem::singleton()
+            .controller()
+            .apply_cpu_control_to_process(process);
 
+        for task in queued_tasks {
+            task.wake_up();
+        }
+
+        self.remove_process_from_node(process, &old_cgroup);
+        old_cgroup.controller.uncharge_pids();
+    }
+
+    /// Synchronizes descendant process state after a `cgroup.subtree_control` change.
+    ///
+    /// Returned tasks were dequeued from old fair runqueues and must be woken so
+    /// they can be requeued through the updated CPU control.
+    fn sync_descendant_controls(
+        &self,
+        changed_set: SubCtrlSet,
+        cgroup_node: &dyn CgroupSysNode,
+    ) -> Vec<Arc<Task>> {
+        let sync_set = changed_set & SubCtrlSet::CPU;
+        if sync_set.is_empty() {
+            return Vec::new();
+        }
+
+        let mut queued_tasks = Vec::new();
+        let mut descents = Vec::new();
+        cgroup_node.visit_children_with(0, &mut |child| {
+            descents.push(child.clone());
+            Some(())
+        });
+
+        while let Some(node) = descents.pop() {
+            let cgroup_node = Arc::downcast::<CgroupNode>(node).unwrap();
+            for ctrl_type in sync_set.iter_types() {
+                match ctrl_type {
+                    SubCtrlType::Cpu => {
+                        queued_tasks.extend(self.sync_cpu_control(&cgroup_node));
+                    }
+                    SubCtrlType::CpuSet | SubCtrlType::Memory | SubCtrlType::Pids => {}
+                }
+            }
+            cgroup_node.visit_children_with(0, &mut |child| {
+                descents.push(child.clone());
+                Some(())
+            });
+        }
+
+        queued_tasks
+    }
+
+    fn sync_cpu_control(&self, cgroup_node: &CgroupNode) -> Vec<Arc<Task>> {
+        let Some(processes) = cgroup_node.with_inner(|processes| {
+            processes
+                .values()
+                .filter_map(Weak::upgrade)
+                .collect::<Vec<_>>()
+        }) else {
+            return Vec::new();
+        };
+
+        let mut queued_tasks = Vec::new();
+        cgroup_node.controller.sync_cpu_weight();
+        let cgroup = cgroup_node.fields.weak_self().upgrade().unwrap();
+        for process in processes {
+            process.set_cgroup(Some(cgroup.clone()));
+            queued_tasks.extend(
+                cgroup_node
+                    .controller
+                    .apply_cpu_control_to_process(&process),
+            );
+        }
+
+        queued_tasks
+    }
+
+    fn apply_subtree_control_write(
+        &mut self,
+        cgroup_node: &dyn CgroupSysNode,
+        parent_controller: Option<&Controller>,
+        has_internal_processes: bool,
+        activate_set: SubCtrlSet,
+        deactivate_set: SubCtrlSet,
+    ) -> Result<Vec<Arc<Task>>> {
+        let controller = cgroup_node.controller();
+        let old_active = controller.active_set();
+        let actual_enable = activate_set - old_active;
+        let actual_disable = deactivate_set & old_active;
+        let changed_set = actual_enable | actual_disable;
+
+        if changed_set.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // According to "no internal processes" rule of cgroupv2, if a non-root
+        // cgroup node has bound processes, it cannot activate any sub-control.
+        //
+        // Reference: <https://man7.org/linux/man-pages/man7/cgroups.7.html>
+        if has_internal_processes && !actual_enable.is_empty() {
+            return Err(Error::ResourceUnavailable);
+        }
+
+        controller.validate_subtree_control_change(
+            actual_enable,
+            actual_disable,
+            cgroup_node,
+            parent_controller,
+        )?;
+
+        let new_active = (old_active | actual_enable) - actual_disable;
+        controller.apply_subtree_control_change(new_active, changed_set, cgroup_node, self);
+
+        Ok(self.sync_descendant_controls(changed_set, cgroup_node))
+    }
+
+    fn remove_process_from_node(&self, process: &Process, old_cgroup: &CgroupNode) {
         old_cgroup
             .with_inner_mut(|old_cgroup_processes| {
                 old_cgroup_processes.remove(&process.pid()).unwrap();
@@ -254,9 +395,6 @@ impl CgroupMembership {
                 }
             })
             .unwrap();
-
-        // Uncharge the pids sub-controller for the old cgroup.
-        old_cgroup.controller.uncharge_pids();
     }
 }
 
@@ -601,7 +739,7 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
                     .ok_or(Error::InvalidOperation)?;
 
                 with_process_cgroup_locked(pid, |process, cgroup_membership| {
-                    cgroup_membership.move_process_to_root(&process);
+                    cgroup_membership.move_process_to_root(process.as_ref());
                     Ok(())
                 })?;
 
@@ -611,13 +749,16 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
                 let (activate_set, deactivate_set, len) = read_subtree_control_from_reader(reader)?;
 
                 let mut cgroup_guard = CgroupMembership::write_lock();
-                for ctrl_type in activate_set.iter_types() {
-                    self.controller
-                        .activate(ctrl_type, self, None, &mut cgroup_guard)?;
-                }
-                for ctrl_type in deactivate_set.iter_types() {
-                    self.controller
-                        .deactivate(ctrl_type, self, &mut cgroup_guard)?;
+                let queued_tasks = cgroup_guard.apply_subtree_control_write(
+                    self,
+                    None,
+                    false,
+                    activate_set,
+                    deactivate_set,
+                )?;
+                drop(cgroup_guard);
+                for task in queued_tasks {
+                    task.wake_up();
                 }
 
                 Ok(len)
@@ -742,39 +883,38 @@ inherit_sys_branch_node!(CgroupNode, fields, {
                 let parent_node = self.cgroup_parent().ok_or(Error::IsDead)?;
                 let parent_controller = parent_node.controller();
 
-                self.with_inner(|processes| {
-                    // According to "no internal processes" rule of cgroupv2, if a non-root
-                    // cgroup node has bound processes, it cannot activate any sub-control.
-                    //
-                    // Reference: <https://man7.org/linux/man-pages/man7/cgroups.7.html>
-                    if !processes.is_empty() {
-                        return Err(Error::ResourceUnavailable);
-                    }
-
-                    for ctrl_type in activate_set.iter_types() {
-                        self.controller.activate(
-                            ctrl_type,
+                let queued_tasks = self
+                    .with_inner(|processes| {
+                        cgroup_guard.apply_subtree_control_write(
                             self,
                             Some(parent_controller),
-                            &mut cgroup_guard,
-                        )?;
-                    }
-                    for ctrl_type in deactivate_set.iter_types() {
-                        self.controller
-                            .deactivate(ctrl_type, self, &mut cgroup_guard)?;
-                    }
+                            !processes.is_empty(),
+                            activate_set,
+                            deactivate_set,
+                        )
+                    })
+                    .ok_or(Error::IsDead)?;
+                let queued_tasks = queued_tasks?;
+                drop(cgroup_guard);
+                for task in queued_tasks {
+                    task.wake_up();
+                }
 
-                    Ok(len)
-                })
-                .ok_or(Error::IsDead)?
+                Ok(len)
             }
             // TODO: Add support for writing other attributes.
-            _ => self
+            _ => {
                 // This write may target a stale controller if the cgroup's sub-controllers
                 // are being concurrently updated. It is the duty of user-space programs
                 // to use proper synchronization to avoid such races.
-                .with_inner(|_| self.controller.write_attr(name, reader))
-                .ok_or(Error::IsDead)?,
+                let result = self
+                    .with_inner(|_| self.controller.write_attr(name, reader))
+                    .ok_or(Error::IsDead)?;
+                if name == "cpu.weight" {
+                    self.controller.sync_cpu_weight();
+                }
+                result
+            }
         }
     }
 

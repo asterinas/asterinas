@@ -298,11 +298,13 @@ pub fn clone_child(
     clone_args.check(ctx)?;
 
     if clone_args.flags.contains(CloneFlags::CLONE_THREAD) {
+        let _cgroup_read_guard = CgroupMembership::read_lock();
         let child_task = clone_child_task(ctx, parent_context, clone_args)?;
         let child_thread = child_task.as_thread().unwrap();
+        child_thread.set_task_group(ctx.thread.task_group());
         child_thread.run();
-
         let child_tid = child_thread.as_posix_thread().unwrap().tid();
+
         Ok(child_tid)
     } else {
         // Hold the read lock before charge to ensure the cgroup of current process

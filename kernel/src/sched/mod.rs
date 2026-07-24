@@ -4,6 +4,7 @@ mod nice;
 mod sched_class;
 mod stats;
 
+pub(crate) use self::sched_class::{DEFAULT_CGROUP_WEIGHT, TaskGroup, root_task_group};
 pub use self::{
     nice::{AtomicNice, Nice},
     sched_class::{
