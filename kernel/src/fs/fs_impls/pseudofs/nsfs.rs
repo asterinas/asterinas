@@ -191,7 +191,7 @@ impl<T: NsCommonOps> PerOpenFileOps for NsFile<T> {
         Ok(())
     }
 
-    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+    fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 
         dispatch_ioctl!(match raw_ioctl {

@@ -12,7 +12,7 @@ use crate::{
     fs::{
         file::{AccessMode, PerOpenFileOps, SettableStatusFlags, StatusFlags},
         utils::{Endpoint, EndpointState},
-        vfs::inode::FileOps,
+        vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
     process::{
@@ -145,7 +145,7 @@ impl PerOpenFileOps for PipeHandle {
         false
     }
 
-    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+    fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
         use crate::util::ioctl::common_defs::GetNumBytesToRead;
 
         dispatch_ioctl!(match raw_ioctl {

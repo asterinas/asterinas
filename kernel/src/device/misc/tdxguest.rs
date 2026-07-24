@@ -58,7 +58,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{PerOpenFileOps, StatusFlags},
-        vfs::inode::FileOps,
+        vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -183,7 +183,7 @@ impl PerOpenFileOps for TdxGuestFile {
         false
     }
 
-    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+    fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 
         dispatch_ioctl!(match raw_ioctl {

@@ -15,7 +15,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
-        vfs::inode::FileOps,
+        vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -104,16 +104,17 @@ impl FileOps for VtFile {
     }
 }
 
-#[inherit_methods(from = "self.0")]
 impl PerOpenFileOps for VtFile {
-    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32>;
-
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "the inode is a TTY");
     }
 
     fn is_offset_aware(&self) -> bool {
         false
+    }
+
+    fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
+        self.0.ioctl(raw_ioctl)
     }
 
     fn settable_status_flags(&self) -> SettableStatusFlags {
