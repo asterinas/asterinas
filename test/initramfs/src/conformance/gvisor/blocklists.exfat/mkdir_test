@@ -1,7 +1,1 @@
-MkdirTest.CanCreateWritableDir
 MkdirTest.DirAlreadyExists
-MkdirTest.FailsOnDirWithoutWritePerms
-MkdirTest.HonorsUmask
-MkdirTest.HonorsUmask2
-MkdirTest.MkdirAtEmptyPath
-MkdirTest.TrailingSlash
