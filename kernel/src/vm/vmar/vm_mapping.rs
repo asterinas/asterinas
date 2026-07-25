@@ -466,8 +466,6 @@ impl VmMapping {
                         cursor.protect_next(PAGE_SIZE, |flags, _cache| {
                             *flags |= new_flags;
                         });
-                        cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
-                        cursor.flusher().dispatch_tlb_flush();
                     } else {
                         let new_frame = duplicate_frame(&frame)?;
                         prop.flags |= new_flags;
@@ -479,6 +477,8 @@ impl VmMapping {
                         // We currently do not support this re-classification,
                         // since it will introduce some complexity when unmapping this page.
                     }
+                    cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
+                    cursor.flusher().dispatch_tlb_flush();
                     cursor.flusher().sync_tlb_flush();
                 }
                 Some(VmQueriedItem::MappedIoMem { .. }) => {
