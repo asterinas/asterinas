@@ -53,7 +53,12 @@ pub struct VirtioPciModernTransport {
     device_type: VirtioDeviceType,
     common_device: PciCommonDevice,
     common_cfg: SafePtr<VirtioPciCommonCfg, IoMem>,
-    device_cfg: VirtioPciCapabilityData,
+    /// The device-specific configuration.
+    ///
+    /// This is `None` if the device does not expose a device-specific configuration capability,
+    /// which the VirtIO specification permits for devices that have no device-specific
+    /// configuration layout (e.g., the entropy device).
+    device_cfg: Option<VirtioPciCapabilityData>,
     notify: VirtioPciNotify,
     msix_manager: VirtioMsixManager,
 }
@@ -128,10 +133,10 @@ impl VirtioTransport for VirtioPciModernTransport {
     }
 
     fn device_config_mem(&self) -> Option<IoMem> {
-        let offset = self.device_cfg.offset() as usize;
-        let length = self.device_cfg.length() as usize;
-        let io_mem = self
-            .device_cfg
+        let device_cfg = self.device_cfg.as_ref()?;
+        let offset = device_cfg.offset() as usize;
+        let length = device_cfg.length() as usize;
+        let io_mem = device_cfg
             .memory_bar()
             .unwrap()
             .slice(offset..offset + length);
@@ -310,7 +315,6 @@ impl VirtioPciModernTransport {
         }
         let notify = notify.unwrap();
         let common_cfg = common_cfg.unwrap();
-        let device_cfg = device_cfg.unwrap();
 
         // TODO: Support interrupt without MSI-X.
         let msix = common_device.acquire_msix_capability().unwrap().unwrap();
