@@ -565,7 +565,7 @@ mod vmspace {
                 .cursor_mut(&preempt_guard, &range)
                 .expect("failed to create the mutable cursor");
             // Unmaps the frame.
-            cursor_mut.unmap(range.start);
+            cursor_mut.unmap(range.end);
         }
 
         // Queries to ensure it's unmapped.
@@ -630,14 +630,14 @@ mod vmspace {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("failed to create the mutable cursor");
-            cursor_mut.unmap(range.start);
+            cursor_mut.unmap(range.end);
         }
 
         {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("failed to create the mutable cursor");
-            cursor_mut.unmap(range.start);
+            cursor_mut.unmap(range.end);
         }
 
         let mut cursor = vmspace
@@ -783,7 +783,7 @@ mod vmspace {
             let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
             cursor_mut.map(frame.clone(), prop);
             cursor_mut.jump(range.start).expect("failed to jump cursor");
-            let protected_range = cursor_mut.protect_next(0x1000, |flags, _cache| {
+            let protected_range = cursor_mut.protect_next(range.end, |flags, _cache| {
                 *flags = PageFlags::R;
             });
 
@@ -811,20 +811,20 @@ mod vmspace {
         let mut cursor_mut = vmspace
             .cursor_mut(&preempt_guard, &range)
             .expect("failed to create the mutable cursor");
-        cursor_mut.unmap(0x800); // Not page-aligned.
+        cursor_mut.unmap(0xA800); // Not page-aligned.
     }
 
-    /// Attempts to protect a partial page and expects a panic.
+    /// Attempts to protect outside the cursor range and expects a panic.
     #[ktest]
     #[should_panic]
-    fn protect_out_range_page() {
+    fn protect_out_of_range_panics() {
         let vmspace = VmSpace::new();
         let range = 0xB000..0xC000;
         let preempt_guard = disable_preempt();
         let mut cursor_mut = vmspace
             .cursor_mut(&preempt_guard, &range)
             .expect("failed to create the mutable cursor");
-        cursor_mut.protect_next(0x2000, |_flags, _cache| {}); // Not page-aligned.
+        cursor_mut.protect_next(0xD000, |_flags, _cache| {}); // Outside the cursor range.
     }
 
     /// A very large address (16 TiB) beyond typical physical memory for testing.
@@ -974,7 +974,7 @@ mod vmspace {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("failed to create the mutable cursor");
-            cursor_mut.unmap(0x1000);
+            cursor_mut.unmap(range.end);
         }
 
         // Verifies the `IoMem` is still in the `VmSpace` (persistence).

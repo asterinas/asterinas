@@ -196,7 +196,7 @@ impl Vmar {
         let mut current_offset = 0;
         while current_offset < old_size {
             cursor.jump(old_range.start + current_offset).unwrap();
-            let Some(mapped_va) = cursor.find_next(old_size - current_offset) else {
+            let Some(mapped_va) = cursor.find_next(old_range.end) else {
                 break;
             };
             let (va, Some(item)) = cursor.query().unwrap() else {
@@ -211,13 +211,13 @@ impl Vmar {
                 VmQueriedItem::MappedRam { frame, prop } => {
                     let frame = (*frame).clone();
 
-                    cursor.unmap(PAGE_SIZE);
+                    cursor.unmap(mapped_va + PAGE_SIZE);
                     cursor.jump(new_map_va).unwrap();
 
                     cursor.map(frame, prop);
                 }
                 VmQueriedItem::MappedIoMem { paddr, prop } => {
-                    cursor.unmap(PAGE_SIZE);
+                    cursor.unmap(mapped_va + PAGE_SIZE);
                     cursor.jump(new_map_va).unwrap();
 
                     // For MMIO pages, find the corresponding `IoMem` and map it

@@ -63,9 +63,7 @@ mod test_utils {
     ) {
         let preempt_guard = disable_preempt();
         let mut cursor = page_table.cursor_mut(&preempt_guard, range).unwrap();
-        while let Some(va_range) =
-            unsafe { cursor.protect_next(range.end - cursor.virt_addr(), &mut protect_op) }
-        {
+        while let Some(va_range) = unsafe { cursor.protect_next(range.end, &mut protect_op) } {
             assert!(va_range.start >= range.start);
             assert!(va_range.end <= range.end);
         }
@@ -652,7 +650,7 @@ mod navigation {
 
         cursor.jump(FIRST_MAP_ADDR + PAGE_SIZE).unwrap();
 
-        let Some(va) = cursor.find_next(SECOND_MAP_ADDR - FIRST_MAP_ADDR) else {
+        let Some(va) = cursor.find_next(SECOND_MAP_ADDR + PAGE_SIZE) else {
             panic!("expected to find the next mapping");
         };
         assert_eq!(va, SECOND_MAP_ADDR);
@@ -679,13 +677,13 @@ mod navigation {
 
         // The page table entry spans from `HUGE_PAGE_SIZE` to `HUGE_PAGE_SIZE * 2`,
         // but `cursor.find_next()` should still stop at `BARRIER_END`.
-        assert!(cursor.find_next(BARRIER_END - BARRIER_START).is_none());
+        assert!(cursor.find_next(BARRIER_END).is_none());
         assert_eq!(cursor.virt_addr(), BARRIER_END);
     }
 
     #[ktest]
-    #[should_panic(expected = "len exceeds remaining cursor range")]
-    fn find_next_rejects_overflowing_len() {
+    #[should_panic(expected = "end exceeds cursor range")]
+    fn find_next_rejects_out_of_range_end() {
         let (page_table, _, _) = setup_pt_with_two_mappings();
         let preempt_guard = disable_preempt();
 
@@ -696,8 +694,8 @@ mod navigation {
         cursor.jump(SECOND_MAP_ADDR).unwrap();
         assert_eq!(cursor.virt_addr(), SECOND_MAP_ADDR);
 
-        let overflow_len = 0usize.wrapping_sub(SECOND_MAP_ADDR);
-        let _ = cursor.find_next(overflow_len);
+        let out_of_range_end = SECOND_MAP_ADDR + PAGE_SIZE * 2;
+        let _ = cursor.find_next(out_of_range_end);
     }
 }
 
@@ -718,7 +716,7 @@ mod unmap {
         // Unmaps the range and checks the result.
         let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
         let Some(PageTableFrag::Mapped { va, item }) =
-            (unsafe { cursor.take_next(virt_range.len()) })
+            (unsafe { cursor.take_next(virt_range.end) })
         else {
             panic!("expected to take a mapped item");
         };
@@ -748,7 +746,7 @@ mod unmap {
             va,
             len,
             num_frames,
-        }) = (unsafe { cursor.take_next(large_range.len()) })
+        }) = (unsafe { cursor.take_next(large_range.end) })
         else {
             panic!("expected to take a stray page table");
         };
@@ -788,15 +786,13 @@ mod mapping {
         // Defines a range to unmap (a single page for simplicity with untracked take_next).
         let unmap_va_start = PAGE_SIZE * 13456;
         let unmap_va_range = unmap_va_start..(unmap_va_start + PAGE_SIZE);
-        let unmap_len = PAGE_SIZE;
-
         {
             let mut cursor = pt.cursor_mut(&preempt_guard, &unmap_va_range).unwrap();
             assert_eq!(cursor.virt_addr(), unmap_va_range.start);
 
             // Unmaps the single page.
             let Some(PageTableFrag::Mapped { va: frag_va, item }) =
-                (unsafe { cursor.take_next(unmap_len) })
+                (unsafe { cursor.take_next(unmap_va_range.end) })
             else {
                 panic!("expected to unmap a page, but got `None`");
             };
@@ -997,7 +993,7 @@ mod protection_and_query {
         // Attempts to protect an empty range.
         let mut cursor = page_table.cursor_mut(&preempt_guard, &range).unwrap();
         let result =
-            unsafe { cursor.protect_next(range.len(), &mut |prop| prop.flags = PageFlags::R) };
+            unsafe { cursor.protect_next(range.end, &mut |prop| prop.flags = PageFlags::R) };
 
         // Expects None as nothing was protected.
         assert!(result.is_none());
@@ -1018,7 +1014,7 @@ mod protection_and_query {
         // Attempts to protect the larger range. `protect_next` should traverse.
         let mut cursor = page_table.cursor_mut(&preempt_guard, &range).unwrap();
         let result =
-            unsafe { cursor.protect_next(range.len(), &mut |prop| prop.flags = PageFlags::R) };
+            unsafe { cursor.protect_next(range.end, &mut |prop| prop.flags = PageFlags::R) };
 
         // Expects Some(_) because the mapped page within the range was processed.
         assert_eq!(result.clone().unwrap(), sub_range);

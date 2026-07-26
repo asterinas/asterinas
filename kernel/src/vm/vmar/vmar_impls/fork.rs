@@ -70,15 +70,13 @@ impl Vmar {
 fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) -> usize {
     let start_va = src.virt_addr();
     let end_va = start_va + size;
-    let mut remain_size = size;
-
     let mut num_copied = 0;
 
     let op = |flags: &mut PageFlags, _cache: &mut CachePolicy| {
         *flags -= PageFlags::W;
     };
 
-    while let Some(mapped_va) = src.find_next(remain_size) {
+    while let Some(mapped_va) = src.find_next(end_va) {
         let (va, Some(item)) = src.query().unwrap() else {
             panic!("Found mapped page but query failed");
         };
@@ -88,7 +86,7 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
             VmQueriedItem::MappedRam { frame, mut prop } => {
                 let frame = (*frame).clone();
 
-                src.protect_next(end_va - mapped_va, op).unwrap();
+                src.protect_next(end_va, op).unwrap();
 
                 dst.jump(mapped_va).unwrap();
                 op(&mut prop.flags, &mut prop.cache);
@@ -108,8 +106,6 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
                 src.jump(mapped_va + PAGE_SIZE).unwrap();
             }
         }
-
-        remain_size = end_va - src.virt_addr();
     }
 
     num_copied
@@ -184,7 +180,7 @@ mod test {
         vm_space
             .cursor_mut(&preempt_guard, &map_range)
             .unwrap()
-            .unmap(map_range.len());
+            .unmap(map_range.end);
 
         // Confirms that the child VA remains mapped.
         assert!(matches!(
@@ -226,7 +222,7 @@ mod test {
         child_space
             .cursor_mut(&preempt_guard, &map_range)
             .unwrap()
-            .unmap(map_range.len());
+            .unmap(map_range.end);
 
         // Maps the range in the sibling using the third clone.
         sibling_space
@@ -319,7 +315,7 @@ mod test {
         vm_space
             .cursor_mut(&preempt_guard, &map_range)
             .unwrap()
-            .unmap(map_range.len());
+            .unmap(map_range.end);
 
         // Confirms that the child VA remains mapped.
         assert!(matches!(
@@ -361,7 +357,7 @@ mod test {
         child_space
             .cursor_mut(&preempt_guard, &map_range)
             .unwrap()
-            .unmap(map_range.len());
+            .unmap(map_range.end);
 
         // Maps the range in the sibling using the cloned IoMem.
         sibling_space

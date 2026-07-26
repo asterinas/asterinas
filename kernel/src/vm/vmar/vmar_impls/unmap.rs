@@ -25,7 +25,7 @@ impl Vmar {
             .vm_space
             .cursor_mut(&preempt_guard, &full_range)
             .unwrap();
-        cursor.unmap(full_range.len());
+        cursor.unmap(full_range.end);
         cursor.flusher().sync_tlb_flush();
     }
 
@@ -96,7 +96,7 @@ impl Vmar {
 
             rss_delta.add(
                 vm_mapping.rss_type(),
-                -(cursor.unmap(intersected_range.len()) as isize),
+                -(cursor.unmap(intersected_range.end) as isize),
             );
             cursor.flusher().dispatch_tlb_flush();
             cursor.flusher().sync_tlb_flush();

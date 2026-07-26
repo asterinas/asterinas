@@ -276,18 +276,19 @@ impl Cursor<'_> {
 
     /// Moves the cursor forward to the next mapped virtual address.
     ///
-    /// If there is mapped virtual address following the current address within
-    /// next `len` bytes, it will return that mapped address. In this case,
-    /// the cursor will stop at the mapped address.
+    /// If there is a mapped virtual address at or after the current address
+    /// and before `end`, it will return that mapped address. In this case, the
+    /// cursor will stop at the mapped address.
     ///
-    /// Otherwise, it will return `None`. And the cursor may stop at any
-    /// address after `len` bytes.
+    /// Otherwise, it will return `None`. The cursor may stop at any address
+    /// before `end`.
     ///
     /// # Panics
     ///
-    /// Panics if the length is longer than the remaining range of the cursor.
-    pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
-        self.0.find_next(len)
+    /// Panics if `end` is before the current address, exceeds the cursor's
+    /// range, or is not page-aligned.
+    pub fn find_next(&mut self, end: Vaddr) -> Option<Vaddr> {
+        self.0.find_next(end)
     }
 
     /// Jumps to the virtual address.
@@ -336,8 +337,8 @@ impl<'a> CursorMut<'a> {
     /// Moves the cursor forward to the next mapped virtual address.
     ///
     /// This is the same as [`Cursor::find_next`].
-    pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
-        self.pt_cursor.find_next(len)
+    pub fn find_next(&mut self, end: Vaddr) -> Option<Vaddr> {
+        self.pt_cursor.find_next(end)
     }
 
     /// Jumps to the virtual address.
@@ -444,34 +445,33 @@ impl<'a> CursorMut<'a> {
         self.vmspace.find_iomem_by_paddr(paddr)
     }
 
-    /// Clears the mapping starting from the current slot,
-    /// and returns the number of unmapped pages.
+    /// Clears mappings from the current slot to `end` and returns the number
+    /// of unmapped pages.
     ///
-    /// This method will bring the cursor forward by `len` bytes in the virtual
-    /// address space after the modification.
+    /// This method will bring the cursor forward to `end` after the
+    /// modification.
     ///
     /// Already-absent mappings encountered by the cursor will be skipped. It
     /// is valid to unmap a range that is not mapped.
     ///
     /// It must issue and dispatch a TLB flush after the operation. Otherwise,
     /// the memory safety will be compromised. Please call this function less
-    /// to avoid the overhead of TLB flush. Using a large `len` is wiser than
-    /// splitting the operation into multiple small ones.
+    /// to avoid the overhead of TLB flush. Unmapping one large range is wiser
+    /// than splitting the operation into multiple small ones.
     ///
     /// # Panics
     ///
     /// Panics if:
-    ///  - the length is longer than the remaining range of the cursor;
-    ///  - the length is not page-aligned.
-    pub fn unmap(&mut self, len: usize) -> usize {
-        let end_va = self.virt_addr() + len;
+    ///  - `end` is before the current virtual address;
+    ///  - `end` exceeds the cursor's range;
+    ///  - `end` is not page-aligned.
+    pub fn unmap(&mut self, end: Vaddr) -> usize {
         let mut num_unmapped: usize = 0;
         loop {
             // SAFETY:
             // 1. It is safe to unmap memory in the userspace.
             // 2. We drop the unmapped items only after flushing TLB entries, which is safe.
-            let Some(frag) = (unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) })
-            else {
+            let Some(frag) = (unsafe { self.pt_cursor.take_next(end) }) else {
                 break; // No more mappings in the range.
             };
 
@@ -533,8 +533,7 @@ impl<'a> CursorMut<'a> {
 
     /// Applies the operation to the next slot of mapping within the range.
     ///
-    /// The range to be found in is the current virtual address with the
-    /// provided length.
+    /// The range starts at the current virtual address and ends at `end`.
     ///
     /// The function stops and yields the actually protected range if it has
     /// actually protected a page, no matter if the following pages are also
@@ -550,16 +549,17 @@ impl<'a> CursorMut<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the length is longer than the remaining range of the cursor.
+    /// Panics if `end` is before the current address, exceeds the cursor's
+    /// range, or is not page-aligned.
     pub fn protect_next(
         &mut self,
-        len: usize,
+        end: Vaddr,
         mut op: impl FnMut(&mut PageFlags, &mut CachePolicy),
     ) -> Option<Range<Vaddr>> {
         // SAFETY: It is safe to set `PageFlags` and `CachePolicy` of memory
         // in the userspace.
         unsafe {
-            self.pt_cursor.protect_next(len, &mut |prop| {
+            self.pt_cursor.protect_next(end, &mut |prop| {
                 op(&mut prop.flags, &mut prop.cache);
             })
         }
