@@ -154,20 +154,20 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
 
     /// Moves the cursor forward to the next mapped virtual address.
     ///
-    /// If there is mapped virtual address following the current address within
-    /// next `len` bytes, it will return that mapped address. In this case, the
+    /// If there is a mapped virtual address at or after the current address
+    /// and before `end`, it will return that mapped address. In this case, the
     /// cursor will stop at the mapped address.
     ///
-    /// Otherwise, it will return `None`. And the cursor may stop at any
-    /// address after `len` bytes.
+    /// Otherwise, it will return `None` and stop at `end`.
     ///
     /// # Panics
     ///
     /// Panics if:
-    ///  - the length is longer than the remaining range of the cursor;
-    ///  - the length is not page-aligned.
-    pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
-        self.find_next_impl(len, false, false)
+    ///  - `end` is before the current virtual address;
+    ///  - `end` exceeds the cursor's range;
+    ///  - `end` is not page-aligned.
+    pub fn find_next(&mut self, end: Vaddr) -> Option<Vaddr> {
+        self.find_next_impl(end, false, false)
     }
 
     /// Moves the cursor forward to the next fragment in the range.
@@ -181,21 +181,17 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     /// stop at leaf entries.
     ///
     /// `split_huge` specifies whether the cursor should split huge pages when
-    /// it finds a huge page that is mapped over the required range (`len`).
+    /// it finds a huge page that is mapped over the required range ending at
+    /// `end`.
     fn find_next_impl(
         &mut self,
-        len: usize,
+        end: Vaddr,
         find_unmap_subtree: bool,
         split_huge: bool,
     ) -> Option<Vaddr> {
-        assert_eq!(len % C::BASE_PAGE_SIZE, 0);
-        assert!(
-            len <= self.barrier_va.end - self.va,
-            "len exceeds remaining cursor range"
-        );
-
-        let end = self.va + len;
-        debug_assert_eq!(end % C::BASE_PAGE_SIZE, 0);
+        assert_eq!(end % C::BASE_PAGE_SIZE, 0);
+        assert!(end >= self.va, "end precedes current cursor position");
+        assert!(end <= self.barrier_va.end, "end exceeds cursor range");
 
         let rcu_guard = self.rcu_guard;
 
@@ -244,11 +240,10 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
             }
         }
 
-        // If the last entry is absent or empty, but `barrier_va.end` sits in
-        // the middle, `self.move_forward()` will set `self.va` to exceed
-        // `barrier_va.end`. We fix it and ensure `self.va <= barrier_va.end`.
-        if self.va > self.barrier_va.end {
-            self.va = self.barrier_va.end;
+        // An absent entry may cover addresses beyond the search range.
+        // Keep the cursor at the requested end instead of skipping over it.
+        if self.va > end {
+            self.va = end;
         }
 
         None
@@ -374,8 +369,8 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// Moves the cursor forward to the next mapped virtual address.
     ///
     /// This is the same as [`Cursor::find_next`].
-    pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
-        self.0.find_next(len)
+    pub fn find_next(&mut self, end: Vaddr) -> Option<Vaddr> {
+        self.0.find_next(end)
     }
 
     /// Jumps to the given virtual address.
@@ -474,10 +469,9 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
         self.0.move_forward();
     }
 
-    /// Finds and removes the first page table fragment in the following range.
+    /// Finds and removes the first page table fragment in the range.
     ///
-    /// The range to be found in is the current virtual address with the
-    /// provided length.
+    /// The range is the current virtual address to the provided `end`.
     ///
     /// The function stops and yields the fragment if it has actually removed a
     /// fragment, no matter if the following pages are also required to be
@@ -503,10 +497,11 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// # Panics
     ///
     /// Panics if:
-    ///  - the length is longer than the remaining range of the cursor;
-    ///  - the length is not page-aligned.
-    pub unsafe fn take_next(&mut self, len: usize) -> Option<PageTableFrag<C>> {
-        self.0.find_next_impl(len, true, true)?;
+    ///  - `end` is before the current virtual address;
+    ///  - `end` exceeds the cursor's range;
+    ///  - `end` is not page-aligned.
+    pub unsafe fn take_next(&mut self, end: Vaddr) -> Option<PageTableFrag<C>> {
+        self.0.find_next_impl(end, true, true)?;
 
         let frag = self.replace_cur_entry(PteState::Absent);
 
@@ -517,8 +512,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
 
     /// Applies the operation to the next slot of mapping within the range.
     ///
-    /// The range to be found in is the current virtual address with the
-    /// provided length.
+    /// The range is the current virtual address to the provided `end`.
     ///
     /// The function stops and yields the actually protected range if it has
     /// actually protected a page, no matter if the following pages are also
@@ -539,14 +533,15 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// # Panics
     ///
     /// Panics if:
-    ///  - the length is longer than the remaining range of the cursor;
-    ///  - the length is not page-aligned.
+    ///  - `end` is before the current virtual address;
+    ///  - `end` exceeds the cursor's range;
+    ///  - `end` is not page-aligned.
     pub unsafe fn protect_next(
         &mut self,
-        len: usize,
+        end: Vaddr,
         op: &mut impl FnMut(&mut PageProperty),
     ) -> Option<Range<Vaddr>> {
-        self.0.find_next_impl(len, false, true)?;
+        self.0.find_next_impl(end, false, true)?;
 
         self.0.cur_entry().protect(op);
 
