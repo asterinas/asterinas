@@ -17,6 +17,7 @@ ostd-pod.workspace = true
 smoltcp.workspace = true
 spin.workspace = true
 takeable.workspace = true
+zerocopy.workspace = true
 
 [lints]
 workspace = true
