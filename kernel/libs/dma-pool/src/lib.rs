@@ -13,6 +13,7 @@ use alloc::{
 use core::ops::Range;
 
 use aster_softirq::BottomHalfDisabled;
+use aster_util::mem_obj_slice::Slice;
 use bitvec::array::BitArray;
 use ostd::{
     mm::{
@@ -22,6 +23,10 @@ use ostd::{
     },
     sync::SpinLock,
 };
+
+mod buffer;
+
+pub use self::buffer::DmaBuffer;
 
 /// `DmaPool` is responsible for allocating small streaming DMA segments
 /// (equal to or smaller than `PAGE_SIZE`),
@@ -215,6 +220,13 @@ impl<D: DmaDirection> HasDaddr for DmaSegment<D> {
 impl<D: DmaDirection> DmaSegment<D> {
     pub fn size(&self) -> usize {
         self.page.segment_size
+    }
+
+    pub fn storage(&self) -> Slice<USegment> {
+        Slice::new(
+            self.page.storage.clone(),
+            self.offset..self.offset + self.page.segment_size,
+        )
     }
 
     pub fn reader(&self) -> Result<VmReader<'_, Infallible>, ostd::Error> {

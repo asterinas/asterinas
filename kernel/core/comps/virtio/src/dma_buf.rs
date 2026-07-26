@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use aster_network::{RxBuffer, TxBuffer};
 use aster_util::mem_obj_slice::Slice;
-use dma_pool::DmaSegment;
+use dma_pool::{DmaBuffer, DmaSegment};
 use ostd::mm::{
     HasDaddr, HasSize,
     dma::{DmaCoherent, DmaDirection, DmaStream},
@@ -58,6 +58,12 @@ impl_dma_buf_for!(Arc<DmaCoherent>);
 impl_dma_buf_for!(&Arc<DmaCoherent>);
 
 impl<D: DmaDirection> DmaBuf for DmaSegment<D> {
+    fn len(&self) -> usize {
+        self.size()
+    }
+}
+
+impl<D: DmaDirection> DmaBuf for Slice<DmaBuffer<D>> {
     fn len(&self) -> usize {
         self.size()
     }

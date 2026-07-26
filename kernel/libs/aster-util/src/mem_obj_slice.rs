@@ -77,6 +77,11 @@ impl<MemObj: HasSize> Slice<MemObj> {
     pub fn offset(&self) -> &Range<usize> {
         &self.offset
     }
+
+    /// Decomposes a slice into its components: the memory object and the offset range.
+    pub fn into_parts(self) -> (MemObj, Range<usize>) {
+        (self.inner, self.offset)
+    }
 }
 
 impl<MemObj: HasSize + Clone> Slice<MemObj> {
