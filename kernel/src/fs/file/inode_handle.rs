@@ -15,7 +15,7 @@ use crate::{
     fs::{
         utils::DirentVisitor,
         vfs::{
-            inode::{FallocMode, FileOps},
+            inode::{FallocMode, FileOps, WriteOffset},
             inode_ext::InodeExt,
             path::Path,
             range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
@@ -286,20 +286,22 @@ impl FileLike for InodeHandle {
         let status_flags = self.status_flags();
 
         if !is_offset_aware {
-            return file_ops.write_at(0, reader, status_flags);
+            return file_ops.write_at(WriteOffset::Absolute(0), reader, status_flags);
         }
 
         let mut offset = self.offset.lock();
+        let write_offset = if status_flags.contains(StatusFlags::O_APPEND) {
+            WriteOffset::Append
+        } else {
+            WriteOffset::Absolute(*offset)
+        };
 
-        // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
-        if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
-            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
-            // is writing to the file concurrently.
+        let len = file_ops.write_at(write_offset, reader, status_flags)?;
+        if status_flags.contains(StatusFlags::O_APPEND) {
             *offset = self.path().size();
+        } else {
+            *offset += len;
         }
-
-        let len = file_ops.write_at(*offset, reader, status_flags)?;
-        *offset += len;
 
         Ok(len)
     }
@@ -315,23 +317,20 @@ impl FileLike for InodeHandle {
         file_ops.read_at(offset, writer, status_flags)
     }
 
-    fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let file_ops = self.file_ops_for_positional_io()?;
         if !self.rights.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
 
         let status_flags = self.status_flags();
+        let write_offset = if status_flags.contains(StatusFlags::O_APPEND) {
+            WriteOffset::Append
+        } else {
+            WriteOffset::Absolute(offset)
+        };
 
-        // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
-        if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
-            // If the file has the `O_APPEND` flag, the offset is ignored.
-            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
-            // is writing to the file concurrently.
-            offset = self.path().size();
-        }
-
-        file_ops.write_at(offset, reader, status_flags)
+        file_ops.write_at(write_offset, reader, status_flags)
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {

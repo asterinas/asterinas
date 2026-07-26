@@ -25,13 +25,14 @@ use super::{
         open_handle::VirtioFsOpenHandle,
         valid_until,
     },
-    TimeField, VirtioFsInode, WriteOffset,
+    TimeField, VirtioFsInode,
     metadata::StaleAttrAction,
 };
 use crate::{
     fs::{
         file::{AccessMode, PerOpenFileOps, StatusFlags},
         utils::DirentVisitor,
+        vfs::inode::WriteOffset,
     },
     prelude::*,
     thread::work_queue::{self, WorkPriority},
@@ -221,10 +222,7 @@ impl VirtioFsInode {
     }
 
     fn resolve_write_offset(&self, write_offset: WriteOffset) -> usize {
-        match write_offset {
-            WriteOffset::Absolute(offset) => offset,
-            WriteOffset::Append => self.size(),
-        }
+        write_offset.resolve(self.size())
     }
 
     pub(super) fn open_transient_handle(

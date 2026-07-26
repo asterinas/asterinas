@@ -18,7 +18,7 @@ use crate::{
         pseudofs::{NaivePseudoFs, PseudoInode, PseudoInodeType},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata},
+            inode::{Extension, FileOps, Inode, Metadata, WriteOffset},
             path::{Dentry, Mount, Path},
         },
     },
@@ -159,7 +159,7 @@ impl<T: NsCommonOps> FileOps for NsInode<T> {
     ) -> Result<usize>;
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         _reader: &mut VmReader,
         _status: StatusFlags,
     ) -> Result<usize>;
@@ -261,7 +261,7 @@ impl<T: NsCommonOps> FileOps for NsFile<T> {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {

@@ -8,7 +8,7 @@ use crate::{
     fs::{
         file::{AccessMode, PerOpenFileOps, StatusFlags, mkmod},
         procfs::template::{ProcFile, ProcFileOpsByHandle},
-        vfs::inode::{FileOps, Inode},
+        vfs::inode::{FileOps, Inode, WriteOffset},
     },
     prelude::*,
     process::{
@@ -111,7 +111,7 @@ impl FileOps for MapsFileHandle {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {

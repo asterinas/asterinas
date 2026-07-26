@@ -45,6 +45,7 @@ use crate::{
             file_system::FileSystem,
             inode::{
                 Extension, FileOps, Inode, Metadata, RenameMode, RevalidationPolicy, SymbolicLink,
+                WriteOffset,
             },
         },
     },
@@ -207,15 +208,6 @@ pub(super) enum TimeField {
     Change,
     /// The last content modification timestamp.
     Modify,
-}
-
-/// A write offset resolved while holding the inode inner lock.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum WriteOffset {
-    /// Writes at the caller-provided absolute offset.
-    Absolute(usize),
-    /// Writes at the current end of file.
-    Append,
 }
 
 struct InodeInner {
@@ -566,7 +558,7 @@ impl FileOps for VirtioFsInode {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {

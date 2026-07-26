@@ -11,7 +11,7 @@ use crate::{
         procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, SymbolicLink},
+            inode::{Extension, FileOps, Inode, Metadata, SymbolicLink, WriteOffset},
         },
     },
     prelude::*,
@@ -60,10 +60,14 @@ impl<F: ProcFileOps + 'static> FileOps for ProcFile<F> {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
+        let WriteOffset::Absolute(offset) = offset else {
+            return_errno_with_message!(Errno::EINVAL, "append write is not supported");
+        };
+
         self.inner.write_at(offset, reader)
     }
 }

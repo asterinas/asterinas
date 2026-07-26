@@ -17,7 +17,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
-        vfs::inode::FileOps,
+        vfs::inode::{FileOps, WriteOffset},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -396,7 +396,7 @@ impl FileOps for EvdevFile {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {

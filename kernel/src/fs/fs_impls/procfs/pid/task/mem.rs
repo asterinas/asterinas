@@ -6,7 +6,7 @@ use crate::{
     fs::{
         file::{AccessMode, PerOpenFileOps, StatusFlags, mkmod},
         procfs::template::{ProcFile, ProcFileOpsByHandle},
-        vfs::inode::{FileOps, Inode},
+        vfs::inode::{FileOps, Inode, WriteOffset},
     },
     prelude::*,
     process::{
@@ -99,10 +99,14 @@ impl FileOps for MemFileHandle {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
+        let WriteOffset::Absolute(offset) = offset else {
+            return_errno_with_message!(Errno::EINVAL, "append write is not supported");
+        };
+
         let Some(process) = self.0.process() else {
             // The process does not exist.
             return Ok(0);

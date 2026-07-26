@@ -12,7 +12,10 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
-        vfs::{inode::FileOps, path::PathResolver},
+        vfs::{
+            inode::{FileOps, WriteOffset},
+            path::PathResolver,
+        },
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -159,7 +162,7 @@ impl FileOps for OpenBlockFile {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
@@ -169,6 +172,9 @@ impl FileOps for OpenBlockFile {
         }
 
         let device_size = self.0.metadata().nr_sectors * SECTOR_SIZE;
+        let WriteOffset::Absolute(offset) = offset else {
+            return_errno_with_message!(Errno::EINVAL, "append write is not supported");
+        };
         if offset >= device_size {
             return_errno_with_message!(
                 Errno::ENOSPC,

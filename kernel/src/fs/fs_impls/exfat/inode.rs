@@ -31,7 +31,10 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, FileOps, Inode, Metadata, MknodType, RenameMode, SymbolicLink},
+            inode::{
+                Extension, FileOps, Inode, Metadata, MknodType, RenameMode, SymbolicLink,
+                WriteOffset,
+            },
             path::{is_dot, is_dot_or_dotdot, is_dotdot},
         },
     },
@@ -701,10 +704,15 @@ impl ExfatInode {
         Ok(read_len)
     }
 
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(
+        &self,
+        offset: WriteOffset,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         let write_len = reader.remain();
         // We need to obtain the fs lock to resize the file.
-        let new_size = {
+        let (offset, new_size) = {
             let mut inner = self.inner.write();
             if inner.inode_type.is_directory() {
                 return_errno!(Errno::EISDIR)
@@ -712,7 +720,10 @@ impl ExfatInode {
 
             let file_size = inner.size;
             let file_allocated_size = inner.size_allocated;
-            let new_size = offset + write_len;
+            let offset = offset.resolve(file_size);
+            let new_size = offset
+                .checked_add(write_len)
+                .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
             let fs = inner.fs();
             let fs_guard = fs.lock();
             if new_size > file_size {
@@ -721,7 +732,7 @@ impl ExfatInode {
                 }
                 inner.page_cache.resize(new_size, file_size)?;
             }
-            new_size.max(file_size)
+            (offset, new_size.max(file_size))
         };
 
         // Locks released here, so that file write can be parallelized.
@@ -748,19 +759,26 @@ impl ExfatInode {
         Ok(write_len)
     }
 
-    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_direct_at(
+        &self,
+        offset: WriteOffset,
+        reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let write_len = reader.remain();
         let inner = self.inner.upread();
         if inner.inode_type.is_directory() {
             return_errno!(Errno::EISDIR)
         }
+        let file_size = inner.size;
+        let file_allocated_size = inner.size_allocated;
+        let offset = offset.resolve(file_size);
         if !is_block_aligned(offset) || !is_block_aligned(write_len) {
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
         }
-
-        let file_size = inner.size;
-        let file_allocated_size = inner.size_allocated;
-        let end_offset = offset + write_len;
+        let end_offset = offset
+            .checked_add(write_len)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
 
         let start = offset.min(file_size);
         let end = end_offset.min(file_size);
@@ -1316,14 +1334,14 @@ impl FileOps for ExfatInode {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_DIRECT) {
-            self.write_direct_at(offset, reader)
+            self.write_direct_at(offset, reader, status_flags)
         } else {
-            self.write_at(offset, reader)
+            self.write_at(offset, reader, status_flags)
         }
     }
 

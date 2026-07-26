@@ -19,6 +19,7 @@ use crate::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
+                WriteOffset,
             },
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -185,7 +186,7 @@ impl FileOps for RootInode {
 
     fn write_at(
         &self,
-        _offset: usize,
+        _offset: WriteOffset,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {

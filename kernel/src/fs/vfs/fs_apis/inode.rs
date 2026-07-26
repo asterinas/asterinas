@@ -341,7 +341,7 @@ pub trait FileOps {
     /// Writes data from the given `VmReader` into the file.
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize>;
@@ -349,6 +349,25 @@ pub trait FileOps {
     /// Reads directory entries from the given offset.
     fn readdir_at(&self, _offset: usize, _visitor: &mut dyn DirentVisitor) -> Result<usize> {
         return_errno_with_message!(Errno::ENOTDIR, "readdir is not supported");
+    }
+}
+
+/// A write operation's starting offset.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WriteOffset {
+    /// The caller-provided absolute offset.
+    Absolute(usize),
+    /// The current end of file.
+    Append,
+}
+
+impl WriteOffset {
+    /// Resolves the write offset with the supplied append position.
+    pub fn resolve(self, append_offset: usize) -> usize {
+        match self {
+            Self::Absolute(offset) => offset,
+            Self::Append => append_offset,
+        }
     }
 }
 
@@ -642,7 +661,11 @@ impl dyn Inode {
     #[cfg_attr(not(ktest), expect(dead_code))]
     pub fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
-        self.write_at(offset, &mut reader, StatusFlags::empty())
+        self.write_at(
+            WriteOffset::Absolute(offset),
+            &mut reader,
+            StatusFlags::empty(),
+        )
     }
 }
 
@@ -657,7 +680,11 @@ impl Write for InodeWriter<'_> {
         let mut reader = VmReader::from(buf).to_fallible();
         let write_len = self
             .inner
-            .write_at(self.offset, &mut reader, StatusFlags::empty())
+            .write_at(
+                WriteOffset::Absolute(self.offset),
+                &mut reader,
+                StatusFlags::empty(),
+            )
             .map_err(|_| IoError::new(IoErrorKind::WriteZero, "failed to write buffer"))?;
         self.offset += write_len;
         Ok(write_len)

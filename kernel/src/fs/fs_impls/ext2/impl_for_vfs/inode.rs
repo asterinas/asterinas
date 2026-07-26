@@ -22,7 +22,7 @@ use crate::{
             file_system::FileSystem,
             inode::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
-                SymbolicLink,
+                SymbolicLink, WriteOffset,
             },
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -48,14 +48,14 @@ impl FileOps for Ext2Inode {
 
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_DIRECT) {
-            self.write_direct_at(offset, reader)
+            self.write_direct_at(offset, reader, status_flags)
         } else {
-            self.write_at(offset, reader)
+            self.write_at(offset, reader, status_flags)
         }
     }
 

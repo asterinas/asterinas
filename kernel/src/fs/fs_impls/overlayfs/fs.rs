@@ -26,7 +26,7 @@ use crate::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
-                SymbolicLink,
+                SymbolicLink, WriteOffset,
             },
             path::{FsPath, Path},
             registry::{FsCreationCtx, FsProperties, FsType},
@@ -307,7 +307,7 @@ impl OverlayInode {
     /// The corresponding parent directories will be created also if they do not exist.
     pub fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize> {
@@ -878,7 +878,11 @@ impl OverlayInode {
         let read_len = lower.read_at(0, &mut writer, StatusFlags::empty())?;
 
         let mut reader = data_buf.reader().to_fallible();
-        let _ = upper.write_at(0, reader.limit(read_len), StatusFlags::empty())?;
+        let _ = upper.write_at(
+            WriteOffset::Absolute(0),
+            reader.limit(read_len),
+            StatusFlags::empty(),
+        )?;
         Ok(())
     }
 
@@ -963,7 +967,7 @@ impl FileOps for OverlayInode {
     ) -> Result<usize>;
     fn write_at(
         &self,
-        offset: usize,
+        offset: WriteOffset,
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize>;
@@ -1280,7 +1284,7 @@ mod tests {
             let f2_inode = f2.inode();
             f2_inode
                 .write_at(
-                    0,
+                    WriteOffset::Absolute(0),
                     &mut VmReader::from([8u8; 4].as_slice()).to_fallible(),
                     StatusFlags::empty(),
                 )
