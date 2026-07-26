@@ -212,7 +212,7 @@ impl Drop for KVirtArea {
             // 1. The range is under `KVirtArea`, so it is safe to unmap.
             // 2. The caller of `KVirtArea` will ensure TLB conherence when the range is used again,
             //    so the unmapped items are safe to be dropped immediately.
-            let Some(frag) = (unsafe { cursor.take_next(self.end() - cursor.virt_addr()) }) else {
+            let Some(frag) = (unsafe { cursor.take_next(self.end()) }) else {
                 break;
             };
             drop(frag);

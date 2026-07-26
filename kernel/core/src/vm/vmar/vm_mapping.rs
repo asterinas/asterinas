@@ -515,7 +515,7 @@ impl VmMapping {
                     let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
 
                     if self.is_shared || only_reference {
-                        cursor.protect_next(PAGE_SIZE, |flags, _cache| {
+                        cursor.protect_next(va.end, |flags, _cache| {
                             *flags |= new_flags;
                         });
                         cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
@@ -524,7 +524,7 @@ impl VmMapping {
                         // Perform COW if it is a write access to a private mapping.
                         let new_frame = duplicate_frame(&frame)?;
                         prop.flags |= new_flags;
-                        cursor.unmap(PAGE_SIZE);
+                        cursor.unmap(va.end);
                         cursor.jump(va.start).unwrap();
                         cursor.map(new_frame.into(), prop);
                         // FIXME: Linux re-classifies the page from `File` to `Anon` in RSS,
@@ -841,7 +841,7 @@ impl VmMapping {
         let range = self.range();
         let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
-        let num_unmapped = cursor.unmap(range.len());
+        let num_unmapped = cursor.unmap(range.end);
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
 
@@ -863,7 +863,7 @@ impl VmMapping {
 
         let op = |flags: &mut PageFlags, _cache: &mut CachePolicy| *flags = new_flags;
         while cursor.virt_addr() < range.end {
-            if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
+            if let Some(va) = cursor.protect_next(range.end, op) {
                 cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
             } else {
                 break;
