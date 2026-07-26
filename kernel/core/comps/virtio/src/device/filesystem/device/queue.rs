@@ -12,6 +12,7 @@ use core::mem;
 use aster_fuse::FuseError;
 use aster_softirq::Taskless;
 use aster_util::{mem_obj_slice::Slice, slot_vec::SlotVec};
+use dma_pool::DmaBuffer;
 use ostd::{
     mm::dma::{FromDevice, ToDevice},
     sync::{LocalIrqDisabled, SpinLock, WaitQueue},
@@ -20,7 +21,7 @@ use smallvec::SmallVec;
 use spin::Once;
 
 use super::request::FuseRequest;
-use crate::{device::filesystem::pool::FsDmaStorage, queue::VirtQueue};
+use crate::queue::VirtQueue;
 
 /// Maximum virtqueue descriptors used by one FUSE request.
 ///
@@ -101,13 +102,13 @@ impl FsRequestQueue {
                     .request_bufs()
                     .iter()
                     .map(|buf| buf.as_dma_slice())
-                    .collect::<SmallVec<[&Slice<FsDmaStorage<ToDevice>>; 2]>>();
+                    .collect::<SmallVec<[&Slice<DmaBuffer<ToDevice>>; 2]>>();
                 let reply_bufs = request
                     .waiter()
                     .reply_bufs()
                     .iter()
                     .map(|buf| buf.as_dma_slice())
-                    .collect::<SmallVec<[&Slice<FsDmaStorage<FromDevice>>; 2]>>();
+                    .collect::<SmallVec<[&Slice<DmaBuffer<FromDevice>>; 2]>>();
 
                 inner
                     .queue

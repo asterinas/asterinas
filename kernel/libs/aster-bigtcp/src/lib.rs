@@ -12,10 +12,14 @@
 
 #![no_std]
 #![deny(unsafe_code)]
+#![feature(smart_pointer_try_map)]
 // Rustdoc does not render methods of public type aliases that reference private types,
 // so links pointing to them cannot be resolved.
 // See <https://github.com/rust-lang/rust/issues/132952>.
 #![expect(rustdoc::private_intra_doc_links)]
+
+#[macro_use]
+extern crate ostd_pod;
 
 // Set this crate's log prefix for `ostd::log`.
 macro_rules! __log_prefix {
@@ -29,6 +33,7 @@ pub mod device;
 pub mod errors;
 pub mod ext;
 pub mod iface;
+pub mod packet;
 pub mod socket;
 pub mod socket_table;
 pub mod time;
