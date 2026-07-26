@@ -139,7 +139,7 @@ impl Cursor<'_> {
     ///  - the length is longer than the remaining range of the cursor;
     ///  - the length is not page-aligned.
     pub fn find_next(&mut self, len: usize) -> Option<Gpaddr> {
-        self.0.find_next(len)
+        self.0.find_next(self.gpa().checked_add(len).unwrap())
     }
 
     /// Jumps to the guest physical address.
@@ -186,7 +186,8 @@ impl<'a> CursorMut<'a> {
     ///
     /// This is the same as [`Cursor::find_next`].
     pub fn find_next(&mut self, len: usize) -> Option<Gpaddr> {
-        self.pt_cursor.find_next(len)
+        self.pt_cursor
+            .find_next(self.gpa().checked_add(len).unwrap())
     }
 
     /// Jumps to the guest physical address.
@@ -252,7 +253,9 @@ impl<'a> CursorMut<'a> {
         // SAFETY: It is safe to set `PageFlags` of guest physical memory.
         let range = unsafe {
             self.pt_cursor
-                .protect_next(len, &mut |prop| op(&mut prop.flags))
+                .protect_next(self.gpa().checked_add(len).unwrap(), &mut |prop| {
+                    op(&mut prop.flags)
+                })
         }?;
         self.pending_ipis
             .extend(&invept::invalidate(self.vmx_guard, &[]));
@@ -291,7 +294,7 @@ impl<'a> CursorMut<'a> {
             // 1. It is safe to unmap guest physical memory.
             // 2. Removed frames are retained below, then cloned into each CPU's
             //    invalidation queue before their references here are released.
-            let Some(frag) = (unsafe { self.pt_cursor.take_next(end_gpa - self.gpa()) }) else {
+            let Some(frag) = (unsafe { self.pt_cursor.take_next(end_gpa) }) else {
                 break; // No more mappings in the range.
             };
 

@@ -100,10 +100,7 @@ impl Rmap {
                     .vm_space()
                     .cursor_mut(&preempt_guard, &addr_range)
                     .unwrap();
-                rss_delta.add(
-                    RssType::File,
-                    -(cursor_mut.unmap(addr_range.len()) as isize),
-                );
+                rss_delta.add(RssType::File, -(cursor_mut.unmap(addr_range.end) as isize));
                 cursor_mut.flusher().dispatch_tlb_flush();
                 cursor_mut.flusher().sync_tlb_flush();
             }
@@ -147,9 +144,8 @@ impl Rmap {
                     if addr >= addr_range.end {
                         break;
                     }
-                    let len = addr_range.end - addr;
-                    if let Some(va) =
-                        cursor_mut.protect_next(len, |page_flags, _| *page_flags -= PageFlags::W)
+                    if let Some(va) = cursor_mut
+                        .protect_next(addr_range.end, |page_flags, _| *page_flags -= PageFlags::W)
                     {
                         cursor_mut
                             .flusher()

@@ -332,7 +332,7 @@ impl ContextTable {
             .unwrap();
 
         // SAFETY: This unmaps a page from the context table, which is always safe.
-        let frag = unsafe { cursor.take_next(PAGE_SIZE) };
+        let frag = unsafe { cursor.take_next(daddr + PAGE_SIZE) };
         debug_assert!(frag.is_some());
 
         Ok(())
