@@ -91,6 +91,7 @@ dependencies = [
  "smoltcp",
  "spin",
  "takeable",
+ "zerocopy",
 ]
 
 [[package]]

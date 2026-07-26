@@ -9,6 +9,7 @@ mod poll_iface;
 mod port;
 mod sched;
 mod time;
+mod wire;
 
 const IFNAMESIZE: usize = 16;
 pub type InterfaceName = aster_util::fixed_str::FixedCStr<IFNAMESIZE>;
