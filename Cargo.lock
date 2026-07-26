@@ -86,9 +86,11 @@ dependencies = [
  "int-to-c-enum",
  "jhash",
  "ostd",
+ "ostd-pod",
  "smoltcp",
  "spin",
  "takeable",
+ "zerocopy",
 ]
 
 [[package]]

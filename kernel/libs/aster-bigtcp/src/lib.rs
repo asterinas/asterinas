@@ -17,6 +17,9 @@
 // See <https://github.com/rust-lang/rust/issues/132952>.
 #![expect(rustdoc::private_intra_doc_links)]
 
+#[macro_use]
+extern crate ostd_pod;
+
 // Set this crate's log prefix for `ostd::log`.
 macro_rules! __log_prefix {
     () => {
