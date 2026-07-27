@@ -48,6 +48,7 @@ pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
 pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 
+// COUPLED: scripts/gdb/helper/kernel.py
 pub struct PosixThread {
     // Immutable part
     process: Weak<Process>,

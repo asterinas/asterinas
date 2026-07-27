@@ -70,6 +70,7 @@ pub(super) fn init() {
     ostd::arch::trap::inject_user_page_fault_handler(exception::page_fault_handler);
 }
 
+// COUPLED: scripts/gdb/helper/kernel.py
 /// A thread is a wrapper on top of task.
 #[derive(Debug)]
 pub struct Thread {

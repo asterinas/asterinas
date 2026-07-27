@@ -94,6 +94,7 @@ impl TryFrom<RawFileDesc> for FileDesc {
     }
 }
 
+// COUPLED: scripts/gdb/helper/kernel.py
 #[derive(Clone)]
 pub struct FileTable {
     table: SlotVec<FileTableEntry>,

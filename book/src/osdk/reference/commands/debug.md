@@ -2,10 +2,10 @@
 
 ## Overview
 
-`cargo osdk debug` is used to debug a remote target via GDB. You need to start
-a running server to debug with. This is accomplished by the `run` subcommand
-with `--gdb-server`. Then you can use the following command to attach to the
-server and do debugging.
+`cargo osdk debug` is used to debug a remote target via `rust-gdb`.
+You need to start a running server to debug with. This is accomplished
+by the `run` subcommand with `--gdb-server`. Then you can use the
+following command to attach to the server and do debugging.
 
 ```bash
 cargo osdk debug [OPTIONS]
@@ -13,6 +13,9 @@ cargo osdk debug [OPTIONS]
 
 Note that when KVM is enabled, hardware-assisted break points (`hbreak`) are
 needed instead of the normal break points (`break`/`b`) in GDB.
+
+When run from the Asterinas workspace, this command also loads the
+project GDB helpers from `scripts/gdb/asterinas-gdb.py`.
 
 ## Options
 
