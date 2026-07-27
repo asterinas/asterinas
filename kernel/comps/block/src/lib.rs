@@ -40,6 +40,7 @@ macro_rules! __log_prefix {
 }
 
 pub mod bio;
+mod completion;
 mod device_id;
 pub mod id;
 mod impl_block_device;
@@ -154,6 +155,7 @@ static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn BlockDevice>>> = Mutex::new(
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
     device_id::init();
+    completion::init()?;
 
     Ok(())
 }
