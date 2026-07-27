@@ -3,7 +3,7 @@
 use core::slice::Iter;
 
 use aster_bigtcp::{
-    device::WithDevice,
+    device::{AnyNetworkDevice, WithDevice},
     iface::{InterfaceFlags, InterfaceName, InterfaceType},
 };
 use aster_softirq::BottomHalfDisabled;
@@ -51,7 +51,7 @@ pub(in crate::net) fn init() {
 
 fn new_loopback() -> Arc<Iface> {
     use aster_bigtcp::{
-        device::{Loopback, Medium},
+        device::Loopback,
         iface::IpIface,
         wire::{Ipv4Address, Ipv4Cidr, Ipv6Address, Ipv6Cidr},
     };
@@ -68,10 +68,10 @@ fn new_loopback() -> Arc<Iface> {
 
         fn with<F, R>(&self, f: F) -> R
         where
-            F: FnOnce(&mut Self::Device) -> R,
+            F: FnOnce(&mut dyn AnyNetworkDevice) -> R,
         {
             let mut device = self.0.lock();
-            f(&mut device)
+            f(&mut *device)
         }
     }
 
@@ -83,7 +83,7 @@ fn new_loopback() -> Arc<Iface> {
         | InterfaceFlags::LOWER_UP;
 
     IpIface::new(
-        Wrapper(Mutex::new(Loopback::new(Medium::Ip))),
+        Wrapper(Mutex::new(Loopback::new())),
         Ipv4Cidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN),
         Some(Ipv6Cidr::new(
             LOOPBACK_IPV6_ADDRESS,
@@ -99,9 +99,8 @@ fn new_loopback() -> Arc<Iface> {
 fn new_virtio() -> Option<Arc<Iface>> {
     use aster_bigtcp::{
         iface::EtherIface,
-        wire::{EthernetAddress, Ipv4Address, Ipv4Cidr},
+        wire::{Ipv4Address, Ipv4Cidr},
     };
-    use aster_network::AnyNetworkDevice;
 
     const VIRTIO_ADDRESS: Ipv4Address = Ipv4Address::new(10, 0, 2, 15);
     const VIRTIO_ADDRESS_PREFIX_LEN: u8 = 24; // mask: 255.255.255.0
@@ -109,16 +108,16 @@ fn new_virtio() -> Option<Arc<Iface>> {
 
     let virtio_net = aster_network::get_device(VIRTIO_DEVICE_NAME)?;
 
-    let ether_addr = virtio_net.lock().mac_addr().0;
+    let ether_addr = virtio_net.lock().mac_addr();
 
     struct Wrapper(Arc<SpinLock<dyn AnyNetworkDevice, BottomHalfDisabled>>);
 
     impl WithDevice for Wrapper {
-        type Device = dyn AnyNetworkDevice;
+        type Device = aster_virtio::device::network::device::NetworkDevice;
 
         fn with<F, R>(&self, f: F) -> R
         where
-            F: FnOnce(&mut Self::Device) -> R,
+            F: FnOnce(&mut dyn AnyNetworkDevice) -> R,
         {
             let mut device = self.0.lock();
             f(&mut *device)
@@ -135,7 +134,7 @@ fn new_virtio() -> Option<Arc<Iface>> {
 
     Some(EtherIface::new(
         Wrapper(virtio_net),
-        EthernetAddress(ether_addr),
+        ether_addr,
         Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
         VIRTIO_GATEWAY,
         InterfaceName::from_str_truncated("eth0"),
