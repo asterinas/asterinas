@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE};
+use aster_device_mapper::DmDevice;
 use aster_nvme::NvmeBlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 use device_id::DeviceId;
@@ -54,6 +55,8 @@ pub(super) fn init_in_first_kthread() {
 }
 
 pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> {
+    spawn_device_mapper_threads();
+
     for device in aster_block::collect_all() {
         let device = Arc::new(BlockFile::new(device));
         if let Some(devtmpfs_meta) = device.devtmpfs_meta() {
@@ -63,6 +66,24 @@ pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> 
     }
 
     Ok(())
+}
+
+fn spawn_device_mapper_threads() {
+    for device in aster_block::collect_all() {
+        if device.downcast_ref::<DmDevice>().is_none() {
+            continue;
+        }
+
+        let device_clone = device.clone();
+        let task_fn = move || {
+            info!("spawn the device-mapper block thread");
+            let dm_device = device_clone.downcast_ref::<DmDevice>().unwrap();
+            loop {
+                dm_device.handle_requests();
+            }
+        };
+        ThreadOptions::new(task_fn).spawn();
+    }
 }
 
 mod ioctl_defs {
