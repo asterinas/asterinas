@@ -47,7 +47,7 @@ which are summarized in the table below.
 | 24      | sched_yield            | ✅             | 💯 |
 | 25      | mremap                 | ✅             | [⚠️](syscall-flag-coverage/memory-management/#mremap) |
 | 26      | msync                  | ✅             | [⚠️](syscall-flag-coverage/memory-management/#msync) |
-| 27      | mincore                | ❌             | N/A |
+| 27      | mincore                | ✅             | 💯 |
 | 28      | madvise                | ✅             | [⚠️](syscall-flag-coverage/memory-management/#madvise) |
 | 29      | shmget                 | ❌             | N/A |
 | 30      | shmat                  | ❌             | N/A |
