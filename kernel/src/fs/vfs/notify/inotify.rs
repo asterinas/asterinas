@@ -107,7 +107,8 @@ impl InotifyFile {
             event_queue: SpinLock::new(VecDeque::new()),
             queue_capacity: DEFAULT_MAX_QUEUED_EVENTS,
             pollee: Pollee::new(),
-            common: FileCommon::new(pseudo_path, status_flags),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/notify/inotify/inotify_user.c#L711>.
+            common: FileCommon::new(pseudo_path, AccessMode::O_RDONLY, status_flags),
             this: weak_self.clone(),
         }))
     }
@@ -356,11 +357,6 @@ impl FileLike for InotifyFile {
 
     fn settable_status_flags(&self) -> SettableStatusFlags {
         SettableStatusFlags::minimal().with_o_async()
-    }
-
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/notify/inotify/inotify_user.c#L711>.
-        AccessMode::O_RDONLY
     }
 
     fn common(&self) -> &FileCommon {

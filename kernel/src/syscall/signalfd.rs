@@ -148,7 +148,8 @@ impl SignalFile {
 
         Self {
             signals_mask: mask,
-            common: FileCommon::new(pseudo_path, status_flags),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/signalfd.c#L276>.
+            common: FileCommon::new(pseudo_path, AccessMode::O_RDWR, status_flags),
         }
     }
 
@@ -241,11 +242,6 @@ impl FileLike for SignalFile {
                 res => return res,
             }
         }
-    }
-
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/signalfd.c#L276>.
-        AccessMode::O_RDWR
     }
 
     fn common(&self) -> &FileCommon {

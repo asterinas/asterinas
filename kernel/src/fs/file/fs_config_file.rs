@@ -82,7 +82,8 @@ impl FsConfigFile {
                 extra_options: String::new(),
                 state: FsConfigState::Configuring,
             }),
-            common: FileCommon::new(pseudo_path, StatusFlags::empty()),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/fsopen.c#L97>.
+            common: FileCommon::new(pseudo_path, AccessMode::O_RDWR, StatusFlags::empty()),
         }
     }
 
@@ -262,11 +263,6 @@ impl Pollable for FsConfigFile {
 }
 
 impl FileLike for FsConfigFile {
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/fsopen.c#L97>.
-        AccessMode::O_RDWR
-    }
-
     fn common(&self) -> &FileCommon {
         &self.common
     }
@@ -312,7 +308,8 @@ impl DetachedMountFile {
         let root_path = Path::new_fs_root(mount.clone());
         Self {
             mount,
-            common: FileCommon::new(root_path, StatusFlags::empty()),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/namespace.c#L4497>.
+            common: FileCommon::new(root_path, AccessMode::O_RDONLY, StatusFlags::empty()),
         }
     }
 
@@ -329,11 +326,6 @@ impl Pollable for DetachedMountFile {
 }
 
 impl FileLike for DetachedMountFile {
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/namespace.c#L4497>.
-        AccessMode::O_RDONLY
-    }
-
     fn common(&self) -> &FileCommon {
         &self.common
     }
