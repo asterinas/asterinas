@@ -137,6 +137,8 @@ jobs:
                 exit 1
               fi
             fi
+          elif grep -Fxq 'distro/nixpkgs.nix' /tmp/changed; then
+            matrix="$FULL_TEST_MATRIX"
           else
             matrix="$(
               bash tools/github_workflows/filter_json_array_with_changed_files.sh \
