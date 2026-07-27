@@ -397,10 +397,6 @@ fn map_segment_vmo(
     vmar: &Vmar,
     map_at: Vaddr,
 ) -> Result<()> {
-    let Some(elf_vmo) = elf_file.path().inode().page_cache() else {
-        return_errno_with_message!(Errno::ENOEXEC, "the executable has no page cache");
-    };
-
     let virt_range = loadable_phdr.virt_range();
     let file_range = loadable_phdr.file_range();
     debug!(
@@ -426,8 +422,7 @@ fn map_segment_vmo(
     if segment_size != 0 {
         let vm_map_options = vmar
             .new_map(segment_size, perms)?
-            .vmo(elf_vmo.clone())
-            .path(elf_file.path().clone())
+            .mappable(elf_file)?
             .vmo_offset(segment_offset)
             .offset(VmarMapOffset::FixedReplace(offset))
             .handle_page_faults_around();
