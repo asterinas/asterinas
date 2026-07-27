@@ -119,7 +119,8 @@ impl TimerfdFile {
             ticks,
             pollee,
             settime_flags: AtomicTFDSetTimeFlags::default(),
-            common: FileCommon::new(pseudo_path, status_flags),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/timerfd.c#L436>.
+            common: FileCommon::new(pseudo_path, AccessMode::O_RDWR, status_flags),
         })
     }
 
@@ -221,11 +222,6 @@ impl FileLike for TimerfdFile {
         Ok(read_len)
     }
 
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/timerfd.c#L436>.
-        AccessMode::O_RDWR
-    }
-
     fn common(&self) -> &FileCommon {
         &self.common
     }
@@ -264,7 +260,7 @@ impl FileLike for TimerfdFile {
             }
         }
 
-        let mut flags = self.common.status_flags().bits() | self.access_mode() as u32;
+        let mut flags = self.common.status_flags().bits() | self.common.access_mode() as u32;
         if fd_flags.contains(FdFlags::CLOEXEC) {
             flags |= CreationFlags::O_CLOEXEC.bits();
         }

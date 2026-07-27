@@ -6,13 +6,11 @@ use unbound::UnboundNetlink;
 use super::{GroupIdSet, NetlinkSocketAddr};
 use crate::{
     events::IoEvents,
-    fs::{
-        file::{FileCommon, StatusFlags},
-        pseudofs::SockFs,
-    },
+    fs::file::FileCommon,
     net::socket::{
         Socket,
         netlink::{AddMembership, DropMembership, table::SupportedNetlinkProtocol},
+        new_socket_common,
         options::{
             Error as SocketError, SocketOption,
             macros::{sock_option_mut, sock_option_ref},
@@ -65,18 +63,13 @@ where
         debug_assert!(socket_type == SockType::SOCK_RAW || socket_type == SockType::SOCK_DGRAM);
 
         let unbound = UnboundNetlink::new();
-        let status_flags = if is_nonblocking {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        };
         Arc::new(Self {
             inner: RwMutex::new(Inner::Unbound(unbound)),
             options: RwLock::new(OptionSet::new()),
             socket_type,
             timeouts: SocketTimeouts::new(),
             pollee: Pollee::new(),
-            common: FileCommon::new(SockFs::new_path(), status_flags),
+            common: new_socket_common(is_nonblocking),
         })
     }
 

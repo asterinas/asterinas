@@ -57,7 +57,8 @@ impl EpollFile {
         Arc::new(Self {
             interest: Mutex::new(BTreeSet::new()),
             ready: Arc::new(ReadySet::new()),
-            common: FileCommon::new(pseudo_path, StatusFlags::empty()),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventpoll.c#L2191>.
+            common: FileCommon::new(pseudo_path, AccessMode::O_RDWR, StatusFlags::empty()),
         })
     }
 
@@ -268,11 +269,6 @@ impl FileLike for EpollFile {
         return_errno_with_message!(Errno::ENOTTY, "epoll files do not support ioctl");
     }
 
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventpoll.c#L2191>.
-        AccessMode::O_RDWR
-    }
-
     fn common(&self) -> &FileCommon {
         &self.common
     }
@@ -285,8 +281,8 @@ impl FileLike for EpollFile {
 
         impl Display for FdInfo {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let mut flags =
-                    self.inner.common.status_flags().bits() | self.inner.access_mode() as u32;
+                let mut flags = self.inner.common.status_flags().bits()
+                    | self.inner.common.access_mode() as u32;
                 if self.fd_flags.contains(FdFlags::CLOEXEC) {
                     flags |= CreationFlags::O_CLOEXEC.bits();
                 }
