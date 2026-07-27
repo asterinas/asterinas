@@ -2,7 +2,6 @@
 
 use core::mem::offset_of;
 
-use aster_network::EthernetAddr;
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
 use ostd_pod::FromZeros;
@@ -67,7 +66,7 @@ bitflags! {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct VirtioNetConfig {
-    pub mac: EthernetAddr,
+    pub mac: [u8; 6],
     pub status: Status,
     max_virtqueue_pairs: u16,
     pub mtu: u16,
@@ -93,7 +92,7 @@ impl ConfigManager<VirtioNetConfig> {
         let mut net_config = VirtioNetConfig::new_zeroed();
         // Only following fields are defined in legacy interface.
         for i in 0..6 {
-            net_config.mac.0[i] = self
+            net_config.mac[i] = self
                 .read_once::<u8>(offset_of!(VirtioNetConfig, mac) + i)
                 .unwrap();
         }

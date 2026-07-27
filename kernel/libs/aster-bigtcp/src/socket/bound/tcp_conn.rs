@@ -26,7 +26,7 @@ use crate::{
     define_boolean_value,
     errors::tcp::{ConnectError, IoError, RecvError, SendError},
     ext::Ext,
-    iface::{BoundTcpPort, PollKey, PollableIfaceMut},
+    iface::{BoundTcpPort, PacketSlice, PollKey, PollableIfaceMut},
     socket::{
         event::SocketEvents,
         option::{RawTcpOption, RawTcpSetOption},
@@ -678,6 +678,7 @@ impl<E: Ext> TcpConnectionBg<E> {
         iface: &mut PollableIfaceMut<E>,
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
+        payload: PacketSlice<'_>,
     ) -> (TcpProcessResult, TcpConnBecameDead) {
         let mut socket = self.inner.lock();
 
@@ -728,7 +729,7 @@ impl<E: Ext> TcpConnectionBg<E> {
         // to be queued.
         let mut events = SocketEvents::CAN_RECV | SocketEvents::CAN_SEND;
 
-        let result = match socket.process(iface.context_mut(), ip_repr, tcp_repr) {
+        let result = match socket.process(iface.context_mut(), ip_repr, tcp_repr, payload) {
             None => TcpProcessResult::Processed,
             Some((ip_repr, tcp_repr)) => TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr),
         };
@@ -778,7 +779,12 @@ impl<E: Ext> TcpConnectionBg<E> {
             }
             is_rst |= tcp_repr.control == TcpControl::Rst;
             events |= SocketEvents::CAN_RECV | SocketEvents::CAN_SEND;
-            reply = socket.process(iface.context_mut(), ip_repr, tcp_repr);
+            reply = socket.process(
+                iface.context_mut(),
+                ip_repr,
+                tcp_repr,
+                PacketSlice::from(tcp_repr.payload),
+            );
         }
 
         let (state_events, became_dead) =

@@ -18,7 +18,7 @@ use super::{
 use crate::{
     errors::udp::SendError,
     ext::Ext,
-    iface::BoundUdpPort,
+    iface::{BoundUdpPort, PacketSlice},
     socket::{RawUdpSocket, event::SocketEvents, unbound::new_udp_socket},
 };
 
@@ -51,7 +51,7 @@ impl<E: Ext> UdpSocketBg<E> {
         cx: &mut Context,
         ip_repr: &IpRepr,
         udp_repr: &UdpRepr,
-        udp_payload: &[u8],
+        udp_payload: PacketSlice<'_>,
     ) -> bool {
         let mut socket = self.inner.socket.lock();
 
