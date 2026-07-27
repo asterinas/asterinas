@@ -287,11 +287,6 @@ impl ClosedFile {
             range_lock_owner,
         }
     }
-
-    /// Returns the removed file.
-    pub fn file(&self) -> &Arc<dyn FileLike> {
-        &self.file
-    }
 }
 
 impl Drop for ClosedFile {

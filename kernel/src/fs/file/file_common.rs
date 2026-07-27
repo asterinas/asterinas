@@ -7,7 +7,7 @@ use core::sync::atomic::Ordering;
 use super::{AccessMode, AtomicStatusFlags, FileLike, StatusFlags, file_handle::StatusFlagsUpdate};
 use crate::{
     events::{IoEvents, Observer},
-    fs::vfs::path::Path,
+    fs::vfs::{notify, path::Path},
     prelude::*,
     process::{
         Pid, Process,
@@ -85,6 +85,12 @@ impl FileCommon {
     /// Returns the asynchronous I/O signal owner.
     pub fn owner(&self) -> &FileOwner {
         &self.owner
+    }
+}
+
+impl Drop for FileCommon {
+    fn drop(&mut self) {
+        notify::on_close(self);
     }
 }
 
