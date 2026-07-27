@@ -26,7 +26,7 @@ use super::{
     Iface,
     poll::{FnHelper, PollContext, SocketTableAction},
     poll_iface::PollableIface,
-    port::BindPortConfig,
+    port::{BindPortConfig, BindPortScope},
     time::get_network_timestamp,
 };
 use crate::{
@@ -52,32 +52,6 @@ pub struct IfaceCommon<E: Ext> {
 pub(super) enum IpPacket<'a> {
     Ipv4(Ipv4Packet<&'a [u8]>),
     Ipv6(Ipv6Packet<&'a [u8]>),
-}
-
-/// A normalized IP address for binding purposes.
-///
-/// IPv4 addresses are normalized to IPv4-mapped IPv6 addresses. IPv6 addresses
-/// remain unchanged.
-///
-/// IPv4-mapped IPv6 addresses (`::ffff:x.x.x.x`) should be treated as equivalent
-/// to their IPv4 counterparts for binding purposes. This ensures that binding
-/// to `192.0.2.1:80` and `::ffff:192.0.2.1:80` are treated as the same.
-//
-// TODO: This type currently only handles port binding conflict detection. Full
-// dual-stack support is not yet implemented, including:
-// - Accepting IPv4 connections on IPv6 wildcard socket (binding to `::`).
-// - Returning IPv4-mapped addresses in `accept()` for IPv4 clients.
-// - Proper handling of `IPV6_V6ONLY` socket option.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct NormalizedAddress(Ipv6Address);
-
-impl From<IpAddress> for NormalizedAddress {
-    fn from(value: IpAddress) -> Self {
-        match value {
-            IpAddress::Ipv4(ipv4) => Self(ipv4.to_ipv6_mapped()),
-            IpAddress::Ipv6(ipv6) => Self(ipv6),
-        }
-    }
 }
 
 impl<E: Ext> IfaceCommon<E> {
@@ -126,8 +100,12 @@ impl<E: Ext> IfaceCommon<E> {
         self.interface.lock().ipv6_addr()
     }
 
-    pub(super) fn prefix_len(&self) -> Option<u8> {
-        self.interface.lock().prefix_len()
+    pub(super) fn ipv4_prefix_len(&self) -> Option<u8> {
+        self.interface.lock().ipv4_prefix_len()
+    }
+
+    pub(super) fn ipv6_prefix_len(&self) -> Option<u8> {
+        self.interface.lock().ipv6_prefix_len()
     }
 
     pub(super) fn sched_poll(&self) -> &E::ScheduleNextPoll {
@@ -181,11 +159,11 @@ impl<E: Ext> IfaceCommon<E> {
         config: BindPortConfig,
         protocol: PortProtocol,
     ) -> Result<BoundPort<E>, BindError> {
-        let addr = config.addr();
+        let scope = config.scope();
         let (port, can_reuse) = self.used_ports.lock().bind(config, protocol)?;
         Ok(BoundPort {
             iface,
-            addr,
+            scope,
             port,
             protocol,
             can_reuse: AtomicBool::new(can_reuse),
@@ -193,10 +171,16 @@ impl<E: Ext> IfaceCommon<E> {
     }
 
     /// Releases the port so that it can be used again.
-    fn release_port(&self, addr: IpAddress, port: u16, can_reuse: bool, protocol: PortProtocol) {
+    fn release_port(
+        &self,
+        scope: BindPortScope,
+        port: u16,
+        can_reuse: bool,
+        protocol: PortProtocol,
+    ) {
         self.used_ports
             .lock()
-            .release(addr, port, can_reuse, protocol);
+            .release(scope, port, can_reuse, protocol);
     }
 }
 
@@ -270,7 +254,7 @@ impl<E: Ext> IfaceCommon<E> {
 /// When dropped, the port is automatically released.
 pub struct BoundPort<E: Ext> {
     iface: Arc<dyn Iface<E>>,
-    addr: IpAddress,
+    scope: BindPortScope,
     port: u16,
     protocol: PortProtocol,
     can_reuse: AtomicBool,
@@ -288,13 +272,18 @@ impl<E: Ext> BoundPort<E> {
     }
 
     /// Returns the bound IP address.
-    pub fn addr(&self) -> &IpAddress {
-        &self.addr
+    pub fn addr(&self) -> IpAddress {
+        self.scope.addr()
     }
 
     /// Returns the bound endpoint.
     pub fn endpoint(&self) -> IpEndpoint {
-        IpEndpoint::new(self.addr, self.port)
+        IpEndpoint::new(self.scope.addr(), self.port)
+    }
+
+    /// Returns the scope that the port is bound to.
+    pub(crate) fn scope(&self) -> BindPortScope {
+        self.scope
     }
 
     /// Sets whether the port can be reused.
@@ -308,9 +297,9 @@ impl<E: Ext> BoundPort<E> {
         }
 
         let key = PortKey {
-            addr: NormalizedAddress::from(self.addr),
-            port: self.port,
             protocol: self.protocol,
+            port: self.port,
+            scope: self.scope,
         };
         used_ports.set_can_reuse(key, can_reuse);
 
@@ -321,7 +310,7 @@ impl<E: Ext> BoundPort<E> {
 impl<E: Ext> Drop for BoundPort<E> {
     fn drop(&mut self) {
         self.iface.common().release_port(
-            self.addr,
+            self.scope,
             self.port,
             *self.can_reuse.get_mut(),
             self.protocol,
@@ -347,11 +336,14 @@ impl<E: Ext> Deref for BoundUdpPort<E> {
     }
 }
 
+// The field order matters: keying by `(protocol, port, scope)` keeps all
+// bindings on the same port contiguous in `PortTable::used_ports`, so conflict
+// checks can scan just that port instead of the whole table.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct PortKey {
-    addr: NormalizedAddress,
-    port: u16,
     protocol: PortProtocol,
+    port: u16,
+    scope: BindPortScope,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -390,50 +382,83 @@ impl PortTable {
         }
     }
 
+    /// Iterates over the bindings on the given `(protocol, port)`.
+    ///
+    /// The entries for a single port are contiguous in `used_ports` (see the
+    /// note on [`PortKey`]), so this scans only those entries rather than the
+    /// whole table.
+    fn keys_on_port(
+        &self,
+        protocol: PortProtocol,
+        port: u16,
+    ) -> impl Iterator<Item = (&PortKey, &PortState)> {
+        let lower_bound = PortKey {
+            protocol,
+            port,
+            scope: BindPortScope::Address(IpAddress::Ipv4(core::net::Ipv4Addr::UNSPECIFIED)),
+        };
+        self.used_ports
+            .range(lower_bound..)
+            .take_while(move |(key, _)| key.protocol == protocol && key.port == port)
+    }
+
     fn bind(
         &mut self,
         config: BindPortConfig,
         protocol: PortProtocol,
     ) -> Result<(u16, bool), BindError> {
         let config_can_reuse = config.can_reuse();
-        let addr = NormalizedAddress::from(config.addr());
+        let scope = config.scope();
 
         let port = if let Some(port) = config.port() {
             port
         } else {
-            match self.alloc_ephemeral_port(addr, protocol, config_can_reuse) {
+            match self.alloc_ephemeral_port(scope, protocol, config_can_reuse) {
                 Some(port) => port,
                 None => return Err(BindError::Exhausted),
             }
         };
 
         let key = PortKey {
-            addr,
-            port,
             protocol,
+            port,
+            scope,
         };
+
+        let conflicting_keys = self
+            .keys_on_port(protocol, port)
+            .filter(|(used_key, _)| scopes_conflict(used_key.scope, scope))
+            .map(|(used_key, _)| *used_key)
+            .collect::<Vec<_>>();
+
+        if !conflicting_keys.is_empty() {
+            // FIXME: If the socket is not a backlog socket,
+            // we should check whether there is a listening socket on the port.
+            // If there is, the socket cannot be bound to that port.
+            let can_reuse = config.is_backlog()
+                || (config_can_reuse
+                    && conflicting_keys
+                        .iter()
+                        .all(|key| self.used_ports.get(key).unwrap().can_reuse()));
+
+            if !can_reuse {
+                return Err(BindError::InUse);
+            }
+        };
+
         let entry = self.used_ports.entry(key);
         match entry {
             Entry::Occupied(mut occupied) => {
                 let port_state = occupied.get_mut();
-                // FIXME: If the socket is not a backlog socket,
-                // we should check whether there is a listening socket on the port.
-                // If there is, the socket cannot be bound to that port.
-                let can_reuse = config.is_backlog() || (port_state.can_reuse() & config_can_reuse);
-                if can_reuse {
-                    port_state.nsocket += 1;
-                    if config_can_reuse {
-                        port_state.nreuse += 1;
-                    }
-                } else {
-                    return Err(BindError::InUse);
+                port_state.nsocket += 1;
+                if config_can_reuse {
+                    port_state.nreuse += 1;
                 }
             }
             Entry::Vacant(vacant) => {
-                let port_state = PortState::new(config_can_reuse);
-                vacant.insert(port_state);
+                vacant.insert(PortState::new(config_can_reuse));
             }
-        };
+        }
 
         Ok((port, config_can_reuse))
     }
@@ -450,7 +475,7 @@ impl PortTable {
     /// See <https://en.wikipedia.org/wiki/Ephemeral_port>.
     fn alloc_ephemeral_port(
         &mut self,
-        addr: NormalizedAddress,
+        scope: BindPortScope,
         protocol: PortProtocol,
         _can_reuse: bool,
     ) -> Option<u16> {
@@ -462,16 +487,13 @@ impl PortTable {
             }
         }
 
-        let mut key = PortKey {
-            addr,
-            port: 0,
-            protocol,
-        };
         let start_port = self.next_ephemeral_port;
         let mut port = start_port;
         loop {
-            key.port = port;
-            if !self.used_ports.contains_key(&key) {
+            let in_use = self
+                .keys_on_port(protocol, port)
+                .any(|(used_key, _)| scopes_conflict(used_key.scope, scope));
+            if !in_use {
                 self.next_ephemeral_port = next_ephemeral_port_after(port);
                 return Some(port);
             }
@@ -488,11 +510,17 @@ impl PortTable {
         None
     }
 
-    fn release(&mut self, addr: IpAddress, port: u16, can_reuse: bool, protocol: PortProtocol) {
+    fn release(
+        &mut self,
+        scope: BindPortScope,
+        port: u16,
+        can_reuse: bool,
+        protocol: PortProtocol,
+    ) {
         let key = PortKey {
-            addr: NormalizedAddress::from(addr),
-            port,
             protocol,
+            port,
+            scope,
         };
         let Entry::Occupied(mut occupied) = self.used_ports.entry(key) else {
             return;
@@ -518,6 +546,30 @@ impl PortTable {
         } else {
             port_state.nreuse -= 1;
         }
+    }
+}
+
+fn scopes_conflict(lhs: BindPortScope, rhs: BindPortScope) -> bool {
+    use BindPortScope::*;
+
+    match (lhs, rhs) {
+        (Ipv6DualStackWildcard, Address(IpAddress::Ipv4(_)))
+        | (Address(IpAddress::Ipv4(_)), Ipv6DualStackWildcard)
+        | (Ipv6DualStackWildcard, Ipv4Wildcard)
+        | (Ipv4Wildcard, Ipv6DualStackWildcard)
+        | (Ipv6DualStackWildcard, Ipv6DualStackWildcard)
+        | (Ipv6DualStackWildcard, Ipv6OnlyWildcard)
+        | (Ipv6OnlyWildcard, Ipv6DualStackWildcard)
+        | (Ipv4Wildcard, Address(IpAddress::Ipv4(_)))
+        | (Address(IpAddress::Ipv4(_)), Ipv4Wildcard)
+        | (Ipv4Wildcard, Ipv4Wildcard)
+        | (Ipv6OnlyWildcard, Address(IpAddress::Ipv6(_)))
+        | (Address(IpAddress::Ipv6(_)), Ipv6OnlyWildcard)
+        | (Ipv6OnlyWildcard, Ipv6OnlyWildcard) => true,
+        (Address(left), Address(right)) => left == right,
+        (Ipv6DualStackWildcard, Address(IpAddress::Ipv6(_)))
+        | (Address(IpAddress::Ipv6(_)), Ipv6DualStackWildcard) => true,
+        _ => false,
     }
 }
 

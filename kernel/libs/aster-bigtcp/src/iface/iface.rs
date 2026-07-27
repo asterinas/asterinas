@@ -89,8 +89,13 @@ impl<E: Ext> dyn Iface<E> {
     ///
     /// Both `Self::ipv4_addr` and this method will either return `Some(_)`
     /// or both will return `None`.
-    pub fn prefix_len(&self) -> Option<u8> {
-        self.common().prefix_len()
+    pub fn ipv4_prefix_len(&self) -> Option<u8> {
+        self.common().ipv4_prefix_len()
+    }
+
+    /// Retrieves the prefix length of the interface's IPv6 address.
+    pub fn ipv6_prefix_len(&self) -> Option<u8> {
+        self.common().ipv6_prefix_len()
     }
 
     /// Gets the broadcast address of the iface, if any.
@@ -98,7 +103,7 @@ impl<E: Ext> dyn Iface<E> {
         let cidr = {
             let common = self.common();
             let ipv4_addr = common.ipv4_addr()?;
-            let prefix_len = common.prefix_len()?;
+            let prefix_len = common.ipv4_prefix_len()?;
             Ipv4Cidr::new(ipv4_addr, prefix_len)
         };
         cidr.broadcast()

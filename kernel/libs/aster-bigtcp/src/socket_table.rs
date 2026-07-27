@@ -12,6 +12,7 @@ use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
 
 use crate::{
     ext::Ext,
+    iface::BindPortScope,
     socket::{TcpConnectionBg, TcpListenerBg, UdpSocketBg},
     wire::PortNum,
 };
@@ -272,6 +273,24 @@ impl<E: Ext> SocketTable<E> {
             .listeners
             .iter()
             .find(|listener| listener.listener_key() == key)
+            .or_else(|| {
+                self.listener_buckets
+                    .iter()
+                    .flat_map(|bucket| bucket.listeners.iter())
+                    .find(|listener| listener.can_process_addr(key.addr, key.port))
+            })
+    }
+
+    pub(crate) fn has_listener_conflict(&self, scope: BindPortScope, port: PortNum) -> bool {
+        self.listener_buckets
+            .iter()
+            .flat_map(|bucket| bucket.listeners.iter())
+            .any(|listener| {
+                let key = listener.listener_key();
+                key.port == port
+                    && (scope.matches_addr(key.addr)
+                        || listener.can_process_addr(scope.addr(), port))
+            })
     }
 
     pub(crate) fn lookup_connection(

@@ -8,7 +8,7 @@ use ostd::sync::SpinLock;
 use smoltcp::{
     iface::Context,
     socket::udp::UdpMetadata,
-    wire::{IpRepr, UdpRepr},
+    wire::{IpListenEndpoint, IpRepr, UdpRepr},
 };
 
 use super::{
@@ -55,7 +55,9 @@ impl<E: Ext> UdpSocketBg<E> {
     ) -> bool {
         let mut socket = self.inner.socket.lock();
 
-        if !socket.accepts(cx, ip_repr, udp_repr) {
+        if !self.bound.scope().matches_addr(ip_repr.dst_addr())
+            || !socket.accepts(cx, ip_repr, udp_repr)
+        {
             return false;
         }
 
@@ -114,6 +116,14 @@ impl<E: Ext> UdpSocket<E> {
 
         let socket = {
             let mut socket = new_udp_socket();
+            let local_endpoint = if bound.addr().is_unspecified() {
+                IpListenEndpoint {
+                    addr: None,
+                    port: local_endpoint.port,
+                }
+            } else {
+                local_endpoint.into()
+            };
 
             if let Err(err) = socket.bind(local_endpoint) {
                 return Err((bound, err));

@@ -7,7 +7,7 @@ use ostd::sync::SpinLock;
 use smoltcp::{
     socket::PollAt,
     time::Duration,
-    wire::{IpEndpoint, IpRepr, TcpRepr},
+    wire::{IpEndpoint, IpListenEndpoint, IpRepr, TcpRepr},
 };
 
 use super::{
@@ -81,7 +81,7 @@ impl<E: Ext> TcpListener<E> {
 
         let listener_key = ListenerKey::new(local_endpoint.addr, local_endpoint.port);
 
-        if sockets.lookup_listener(&listener_key).is_some() {
+        if sockets.has_listener_conflict(bound.scope(), local_endpoint.port) {
             return Err((bound, ListenError::AddressInUse));
         }
 
@@ -89,6 +89,15 @@ impl<E: Ext> TcpListener<E> {
             let mut socket = new_tcp_socket();
 
             option.apply(&mut socket);
+
+            let local_endpoint = if bound.addr().is_unspecified() {
+                IpListenEndpoint {
+                    addr: None,
+                    port: local_endpoint.port,
+                }
+            } else {
+                local_endpoint.into()
+            };
 
             if let Err(err) = socket.listen(local_endpoint) {
                 return Err((bound, err.into()));
@@ -197,6 +206,10 @@ impl<E: Ext> TcpListenerBg<E> {
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
     ) -> (TcpProcessResult, Option<Arc<TcpConnectionBg<E>>>) {
+        if !self.can_process_addr(ip_repr.dst_addr(), tcp_repr.dst_port) {
+            return (TcpProcessResult::NotProcessed, None);
+        }
+
         let mut backlog = self.inner.backlog.lock();
 
         if !backlog
@@ -235,7 +248,10 @@ impl<E: Ext> TcpListenerBg<E> {
         let conn = TcpConnection::new_cyclic(
             self.bound
                 .iface()
-                .bind_tcp(BindPortConfig::new_backlog(self.bound.endpoint()))
+                .bind_tcp(BindPortConfig::new_backlog_with_scope(
+                    self.bound.scope(),
+                    self.bound.port(),
+                ))
                 .unwrap(),
             |weak| {
                 TcpConnectionInner::new(

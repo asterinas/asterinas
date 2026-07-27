@@ -107,14 +107,17 @@ fn new_loopback() -> Arc<Iface> {
 
 fn new_virtio() -> Option<Arc<Iface>> {
     use aster_bigtcp::{
-        iface::EtherIface,
-        wire::{EthernetAddress, Ipv4Address, Ipv4Cidr},
+        iface::{EtherIface, EtherIpConfig},
+        wire::{EthernetAddress, Ipv4Address, Ipv4Cidr, Ipv6Address, Ipv6Cidr},
     };
     use aster_network::AnyNetworkDevice;
 
     const VIRTIO_ADDRESS: Ipv4Address = Ipv4Address::new(10, 0, 2, 15);
     const VIRTIO_ADDRESS_PREFIX_LEN: u8 = 24; // mask: 255.255.255.0
     const VIRTIO_GATEWAY: Ipv4Address = Ipv4Address::new(10, 0, 2, 2);
+    const VIRTIO_IPV6_ADDRESS: Ipv6Address = Ipv6Address::new(0xfec0, 0, 0, 0, 0, 0, 0, 0x0015);
+    const VIRTIO_IPV6_PREFIX_LEN: u8 = 64;
+    const VIRTIO_IPV6_GATEWAY: Ipv6Address = Ipv6Address::new(0xfec0, 0, 0, 0, 0, 0, 0, 0x0002);
 
     let virtio_net = aster_network::get_device(VIRTIO_DEVICE_NAME)?;
 
@@ -145,8 +148,12 @@ fn new_virtio() -> Option<Arc<Iface>> {
     Some(EtherIface::new(
         Wrapper(virtio_net),
         EthernetAddress(ether_addr),
-        Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
-        VIRTIO_GATEWAY,
+        EtherIpConfig::new(
+            Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
+            Some(Ipv6Cidr::new(VIRTIO_IPV6_ADDRESS, VIRTIO_IPV6_PREFIX_LEN)),
+            VIRTIO_GATEWAY,
+            Some(VIRTIO_IPV6_GATEWAY),
+        ),
         CString::new("eth0").unwrap(),
         PollScheduler::new(),
         flags,

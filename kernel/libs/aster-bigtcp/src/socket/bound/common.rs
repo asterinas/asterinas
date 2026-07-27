@@ -3,7 +3,7 @@
 use alloc::sync::{Arc, Weak};
 use core::ops::Deref;
 
-use smoltcp::wire::IpEndpoint;
+use smoltcp::wire::{IpAddress, IpEndpoint};
 use spin::once::Once;
 use takeable::Takeable;
 
@@ -139,5 +139,9 @@ impl<T: Inner<E>, E: Ext> SocketBg<T, E> {
     /// The check is intended to be lock-free and fast, but may have false positives.
     pub(crate) fn can_process(&self, dst_port: u16) -> bool {
         self.bound.port() == dst_port
+    }
+
+    pub(crate) fn can_process_addr(&self, dst_addr: IpAddress, dst_port: u16) -> bool {
+        self.bound.port() == dst_port && self.bound.scope().matches_addr(dst_addr)
     }
 }

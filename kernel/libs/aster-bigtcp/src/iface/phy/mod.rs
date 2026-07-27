@@ -3,5 +3,5 @@
 mod ether;
 mod ip;
 
-pub use ether::EtherIface;
+pub use ether::{EtherIface, EtherIpConfig};
 pub use ip::IpIface;
