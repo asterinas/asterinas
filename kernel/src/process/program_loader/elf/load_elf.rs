@@ -12,12 +12,15 @@ use super::{
     relocate::RelocatedRange,
 };
 use crate::{
-    fs::vfs::path::{FsPath, Path, PathResolver},
+    fs::{
+        file::FileLike,
+        vfs::path::{FsPath, PathResolver},
+    },
     prelude::*,
     process::{
         posix_thread::AsPosixThread,
         process_vm::{AuxKey, AuxVec},
-        program_loader::check_executable_inode,
+        program_loader::open_executable_file,
     },
     util::random::getrandom,
     vm::{
@@ -51,7 +54,7 @@ pub struct ElfLoadInfo {
 /// initialize the init stack and heap.
 pub fn load_elf_to_vmar(
     vmar: &Vmar,
-    elf_file: Path,
+    elf_file: Arc<dyn FileLike>,
     path_resolver: &PathResolver,
     elf_headers: ElfHeaders,
     argv: Vec<CString>,
@@ -64,7 +67,7 @@ pub fn load_elf_to_vmar(
         expect(unused_mut)
     )]
     let (elf_mapped_info, entry_point, mut aux_vec) =
-        map_vmos_and_build_aux_vec(vmar, ldso, &elf_headers, &elf_file)?;
+        map_vmos_and_build_aux_vec(vmar, ldso, &elf_headers, elf_file)?;
     vmar.process_vm()
         .set_code_range(elf_mapped_info.code_range.clone());
     vmar.process_vm()
@@ -97,12 +100,12 @@ pub fn load_elf_to_vmar(
 
 fn lookup_and_parse_ldso(
     headers: &ElfHeaders,
-    elf_file: &Path,
+    elf_file: &Arc<dyn FileLike>,
     path_resolver: &PathResolver,
-) -> Result<Option<(Path, ElfHeaders)>> {
+) -> Result<Option<(Arc<dyn FileLike>, ElfHeaders)>> {
     let ldso_file = {
         let ldso_path = if let Some(interp_phdr) = headers.interp_phdr() {
-            interp_phdr.read_ldso_path(elf_file.inode())?
+            interp_phdr.read_ldso_path(elf_file)?
         } else {
             return Ok(None);
         };
@@ -116,15 +119,13 @@ fn lookup_and_parse_ldso(
         })?;
 
         let fs_path = FsPath::try_from(ldso_path.as_str())?;
-        path_resolver.lookup(&fs_path)?
+        let ldso_path = path_resolver.lookup(&fs_path)?;
+        open_executable_file(ldso_path)?
     };
 
     let ldso_elf = {
-        let inode = ldso_file.inode();
-        check_executable_inode(inode.as_ref())?;
-
         let mut buf = Box::new([0u8; PAGE_SIZE]);
-        let len = inode.read_bytes_at(0, &mut *buf)?;
+        let len = ldso_file.read_bytes_at(0, &mut *buf)?;
         if len < ElfHeaders::LEN {
             return_errno_with_message!(Errno::EIO, "the interpreter format is invalid");
         }
@@ -141,16 +142,17 @@ fn lookup_and_parse_ldso(
 /// Returns the mapped information, the entry point, and the auxiliary vector.
 fn map_vmos_and_build_aux_vec(
     vmar: &Vmar,
-    ldso: Option<(Path, ElfHeaders)>,
+    ldso: Option<(Arc<dyn FileLike>, ElfHeaders)>,
     parsed_elf: &ElfHeaders,
-    elf_file: &Path,
+    elf_file: Arc<dyn FileLike>,
 ) -> Result<(ElfMappedInfo, Vaddr, AuxVec)> {
     let ldso_load_info = if let Some((ldso_file, ldso_elf)) = ldso {
-        Some(load_ldso(vmar, &ldso_file, &ldso_elf)?)
+        Some(load_ldso(vmar, ldso_file, &ldso_elf)?)
     } else {
         None
     };
 
+    let mode = elf_file.path().inode().mode()?;
     let elf_mapped_info = map_segment_vmos(parsed_elf, vmar, elf_file, ldso_load_info.is_some())?;
 
     let mut aux_vec = {
@@ -164,7 +166,6 @@ fn map_vmos_and_build_aux_vec(
     //
     // FIXME: We should fetch the setuid/setgid bits and `no_new_privs` from
     // the execve entry and pass them here, rather than re-fetching them here.
-    let mode = elf_file.inode().mode()?;
     let secure = if mode.has_set_uid() || mode.has_set_gid() {
         let task = Task::current().unwrap();
         match task.as_posix_thread() {
@@ -202,7 +203,11 @@ struct LdsoLoadInfo {
     range: RelocatedRange,
 }
 
-fn load_ldso(vmar: &Vmar, ldso_file: &Path, ldso_elf: &ElfHeaders) -> Result<LdsoLoadInfo> {
+fn load_ldso(
+    vmar: &Vmar,
+    ldso_file: Arc<dyn FileLike>,
+    ldso_elf: &ElfHeaders,
+) -> Result<LdsoLoadInfo> {
     let elf_mapped_info = map_segment_vmos(ldso_elf, vmar, ldso_file, false)?;
     let range = elf_mapped_info.full_range;
     let entry_point = range
@@ -239,7 +244,7 @@ struct ElfMappedInfo {
 fn map_segment_vmos(
     elf: &ElfHeaders,
     vmar: &Vmar,
-    elf_file: &Path,
+    elf_file: Arc<dyn FileLike>,
     has_interpreter: bool,
 ) -> Result<ElfMappedInfo> {
     let elf_va_range = elf.calc_total_vaddr_bounds();
@@ -343,12 +348,21 @@ fn map_segment_vmos(
     let relocated_range = RelocatedRange::new(elf_va_range, map_range.start)
         .expect("`map_range` should not overflow");
 
-    for loadable_phdr in elf.loadable_phdrs() {
+    let (last_loadable_phdr, other_loadable_phdrs) = elf
+        .loadable_phdrs()
+        .split_last()
+        .expect("there should be at least one loadable segment");
+    let map_loadable_phdr = |loadable_phdr: &LoadablePhdr, elf_file| {
         let map_at = relocated_range
             .relocated_addr_of(loadable_phdr.virt_range().start)
             .expect("`calc_total_vaddr_bounds()` should cover all segments");
-        map_segment_vmo(loadable_phdr, elf_file, vmar, map_at)?;
+        map_segment_vmo(loadable_phdr, elf_file, vmar, map_at)
+    };
+
+    for loadable_phdr in other_loadable_phdrs {
+        map_loadable_phdr(loadable_phdr, elf_file.clone())?;
     }
+    map_loadable_phdr(last_loadable_phdr, elf_file)?;
 
     // The code range spans all executable loadable segments after relocation.
     let code_range = elf
@@ -388,11 +402,11 @@ fn map_segment_vmos(
 /// this applies to the `.bss` segment.
 fn map_segment_vmo(
     loadable_phdr: &LoadablePhdr,
-    elf_file: &Path,
+    elf_file: Arc<dyn FileLike>,
     vmar: &Vmar,
     map_at: Vaddr,
 ) -> Result<()> {
-    let Some(elf_vmo) = elf_file.inode().page_cache() else {
+    let Some(elf_vmo) = elf_file.path().inode().page_cache() else {
         return_errno_with_message!(Errno::ENOEXEC, "the executable has no page cache");
     };
 
@@ -422,7 +436,7 @@ fn map_segment_vmo(
         let vm_map_options = vmar
             .new_map(segment_size, perms)?
             .vmo(elf_vmo.as_vmo().clone())
-            .path(elf_file.clone())
+            .path(elf_file.path().clone())
             .vmo_offset(segment_offset)
             .offset(VmarMapOffset::FixedReplace(offset))
             .handle_page_faults_around();

@@ -12,7 +12,10 @@ use ostd::{
 
 use super::process_vm::activate_vmar;
 use crate::{
-    fs::vfs::{inode::Inode, path::Path},
+    fs::{
+        file::FileLike,
+        vfs::{inode::Inode, path::Path},
+    },
     prelude::*,
     process::{
         ContextUnshareAdminApi, Credentials, Gid, Process, Uid, pid_table,
@@ -32,7 +35,7 @@ use crate::{
 };
 
 pub fn do_execve(
-    elf_file: Path,
+    executable_file: Arc<dyn FileLike>,
     thread_name: ThreadName,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
@@ -52,15 +55,19 @@ pub fn do_execve(
 
     debug!(
         "file path: {:?}, argv = {:?}, envp = {:?}",
-        path_resolver.make_abs_path(&elf_file).into_string(),
+        path_resolver
+            .make_abs_path(executable_file.path())
+            .into_string(),
         argv,
         envp
     );
 
-    let program_to_load =
-        ProgramToLoad::build_from_file(elf_file.clone(), &path_resolver, argv, envp)?;
+    let executable_path = executable_file.path().clone();
 
-    let new_vmar = VmarHandle::new(ProcessVm::new(elf_file.clone()));
+    let program_to_load =
+        ProgramToLoad::build_from_file(executable_file, &path_resolver, argv, envp)?;
+
+    let new_vmar = VmarHandle::new(ProcessVm::new(executable_path.clone()));
     let elf_load_info = program_to_load.load_to_vmar(&new_vmar, &path_resolver)?;
 
     // Ensure no other thread is concurrently performing exit_group or execve.
@@ -86,7 +93,7 @@ pub fn do_execve(
     let res = do_execve_no_return(
         ctx,
         user_context,
-        elf_file,
+        executable_path,
         thread_name,
         new_vmar,
         &elf_load_info,
