@@ -262,16 +262,33 @@ impl<E: Ext> SocketTable<E> {
     }
 
     pub(crate) fn lookup_listener(&self, key: &ListenerKey) -> Option<&Arc<TcpListenerBg<E>>> {
+        // First: try an exact match on (addr, port).
         let bucket = {
             let hash = key.hash();
             let bucket_index = hash & LISTENER_BUCKET_MASK;
             &self.listener_buckets[bucket_index as usize]
         };
+        if let Some(listener) = bucket.listeners.iter().find(|l| l.listener_key() == key) {
+            return Some(listener);
+        }
 
-        bucket
+        // Fallback: try an INADDR_ANY listener on the same port.
+        // Linux uses a separate hash table keyed by port only for wildcard listeners;
+        // here we reuse the same table with a wildcard key.
+        let wildcard_addr = match key.addr {
+            IpAddress::Ipv4(_) => IpAddress::Ipv4(Ipv4Addr::UNSPECIFIED),
+            IpAddress::Ipv6(_) => IpAddress::Ipv6(smoltcp::wire::Ipv6Address::UNSPECIFIED),
+        };
+        let wildcard_key = ListenerKey::new(wildcard_addr, key.port);
+        let wildcard_bucket = {
+            let hash = wildcard_key.hash();
+            let bucket_index = hash & LISTENER_BUCKET_MASK;
+            &self.listener_buckets[bucket_index as usize]
+        };
+        wildcard_bucket
             .listeners
             .iter()
-            .find(|listener| listener.listener_key() == key)
+            .find(|l| l.listener_key() == &wildcard_key)
     }
 
     pub(crate) fn lookup_connection(

@@ -16,12 +16,34 @@ use crate::{
 
 fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
     match *ip_addr {
-        IpAddress::Ipv4(ipv4_addr) => iter_all_ifaces()
-            .find(|iface| iface.ipv4_addr().is_some_and(|addr| addr == ipv4_addr))
-            .map(Clone::clone),
-        IpAddress::Ipv6(ipv6_addr) => iter_all_ifaces()
-            .find(|iface| iface.ipv6_addr().is_some_and(|addr| addr == ipv6_addr))
-            .map(Clone::clone),
+        IpAddress::Ipv4(ipv4_addr) => {
+            if ipv4_addr.is_unspecified() {
+                // INADDR_ANY: bind to the default outbound iface so the port is
+                // reachable. socket_table dispatch does a wildcard fallback so
+                // this listener receives connections on all interfaces.
+                let iface = if let Some(iface) = virtio_iface() {
+                    iface.clone()
+                } else {
+                    loopback_iface().clone()
+                };
+                return Some(iface);
+            }
+            iter_all_ifaces()
+                .find(|iface| iface.ipv4_addr().is_some_and(|addr| addr == ipv4_addr))
+                .map(Clone::clone)
+        }
+        IpAddress::Ipv6(ipv6_addr) => {
+            if ipv6_addr.is_unspecified() {
+                let iface = virtio_iface()
+                    .filter(|i| i.ipv6_addr().is_some())
+                    .map(|i| i.clone())
+                    .unwrap_or_else(|| loopback_iface().clone());
+                return Some(iface);
+            }
+            iter_all_ifaces()
+                .find(|iface| iface.ipv6_addr().is_some_and(|addr| addr == ipv6_addr))
+                .map(Clone::clone)
+        }
     }
 }
 
