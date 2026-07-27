@@ -15,7 +15,7 @@ use crate::{
         VirtioDeviceError,
         socket::{
             header::{VirtioVsockEvent, VirtioVsockEventId, VirtioVsockHdr},
-            packet::{RxPacket, TxPacket},
+            packet::{RxPacket, RxPacketBuilder, TxPacket},
         },
     },
     queue::VirtQueue,
@@ -146,8 +146,8 @@ impl TxPendingGuard<'_> {
 /// The receive queue of a virtio-vsock device.
 pub struct RxQueue {
     queue: VirtQueue,
-    buffers: SlotVec<RxPacket>,
-    pending: Option<RxPacket>,
+    buffers: SlotVec<RxPacketBuilder>,
+    pending: Option<RxPacketBuilder>,
 }
 
 impl RxQueue {
@@ -159,7 +159,7 @@ impl RxQueue {
 
         let mut buffers = SlotVec::new();
         for index in 0..Self::QUEUE_SIZE {
-            let buffer = RxPacket::new().map_err(VirtioDeviceError::ResourceAlloc)?;
+            let buffer = RxPacket::new_builder().map_err(VirtioDeviceError::ResourceAlloc)?;
             let token = queue.add_output_bufs(&[buffer.inner()]).unwrap();
             assert_eq!(token, index);
             assert_eq!(buffers.put(buffer) as u16, index);
@@ -177,7 +177,7 @@ impl RxQueue {
     /// Packets shorter than the mandatory header are discarded before they reach the caller.
     pub fn recv(&mut self) -> Option<RxPacket> {
         if self.pending.is_none() {
-            self.pending = RxPacket::new().ok();
+            self.pending = RxPacket::new_builder().ok();
         }
         if self.pending.is_none() {
             ostd::warn!("allocating recv packet fails");
@@ -190,17 +190,16 @@ impl RxQueue {
             .queue
             .pop_used_with_min_bytes(size_of::<VirtioVsockHdr>())
             .ok()?;
-        let mut packet = self.buffers.remove(token as usize).unwrap();
-        packet.set_payload_len(len as usize - size_of::<VirtioVsockHdr>());
+        let buffer = self.buffers.remove(token as usize).unwrap();
 
-        let new_packet = self.pending.take().unwrap();
-        let new_token = self.queue.add_output_bufs(&[new_packet.inner()]).unwrap();
+        let new_buffer = self.pending.take().unwrap();
+        let new_token = self.queue.add_output_bufs(&[new_buffer.inner()]).unwrap();
         debug_assert_eq!(new_token, token);
-        self.buffers.put_at(new_token as usize, new_packet);
+        self.buffers.put_at(new_token as usize, new_buffer);
 
         self.notify_if_needed();
 
-        Some(packet)
+        Some(buffer.build(len as usize))
     }
 
     pub(super) fn notify_if_needed(&mut self) {

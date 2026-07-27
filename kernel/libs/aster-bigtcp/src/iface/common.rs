@@ -15,21 +15,22 @@ use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
 use ostd::sync::{SpinLock, SpinLockGuard};
 use smoltcp::{
-    iface::{Context, packet::Packet},
-    phy::Device,
-    wire::{IpAddress, IpEndpoint, Ipv4Cidr, Ipv4Packet, Ipv6Address, Ipv6Cidr, Ipv6Packet},
+    iface::Context,
+    wire::{IpAddress, IpEndpoint, Ipv4Cidr, Ipv6Address, Ipv6Cidr},
 };
 
 use super::{
     Iface, InterfaceName,
-    poll::{FnHelper, PollContext, SocketTableAction},
+    poll::{PollContext, SocketTableAction},
     poll_iface::PollableIface,
     port::BindPortConfig,
     time::get_network_timestamp,
 };
 use crate::{
+    device::AnyNetworkDevice,
     errors::BindError,
     ext::Ext,
+    packet::{AllocatedTxPacket, LinkLayer, NetworkLayer, RxPacket, TxPacket},
     socket::{TcpListenerBg, UdpSocketBg},
     socket_table::SocketTable,
 };
@@ -46,10 +47,32 @@ pub struct IfaceCommon<E: Ext> {
     sched_poll: E::ScheduleNextPoll,
 }
 
-/// An enum representing either an IPv4 or IPv6 packet.
-pub(super) enum IpPacket<'a> {
-    Ipv4(Ipv4Packet<&'a [u8]>),
-    Ipv6(Ipv6Packet<&'a [u8]>),
+pub(super) struct TxPacketWithDst {
+    pub(super) packet: TxPacket<NetworkLayer>,
+    pub(super) dst_addr: IpAddress,
+}
+
+pub(super) enum PhyProcessResult {
+    Ip(RxPacket<NetworkLayer>),
+    Ipv4(RxPacket<NetworkLayer>),
+    Ipv6(RxPacket<NetworkLayer>),
+    Tx(TxPacket<LinkLayer>),
+}
+
+pub(super) trait PollPhy {
+    fn process(
+        &self,
+        packet: RxPacket<LinkLayer>,
+        iface_cx: &mut Context,
+    ) -> Option<PhyProcessResult>;
+
+    fn dispatch(
+        &self,
+        packet: TxPacketWithDst,
+        iface_cx: &mut Context,
+    ) -> Option<TxPacket<LinkLayer>>;
+
+    fn alloc_tx_buffer(&self, payload_len: usize) -> Result<AllocatedTxPacket, ostd::Error>;
 }
 
 /// A normalized IP address for binding purposes.
@@ -214,22 +237,7 @@ impl<E: Ext> IfaceCommon<E> {
 }
 
 impl<E: Ext> IfaceCommon<E> {
-    pub(super) fn poll<D, P, Q>(
-        &self,
-        device: &mut D,
-        mut process_phy: P,
-        mut dispatch_phy: Q,
-    ) -> Option<u64>
-    where
-        D: Device + ?Sized,
-        P: for<'pkt, 'cx, 'tx> FnHelper<
-                &'pkt [u8],
-                &'cx mut Context,
-                D::TxToken<'tx>,
-                Option<(IpPacket<'pkt>, D::TxToken<'tx>)>,
-            >,
-        Q: FnMut(&Packet, &mut Context, D::TxToken<'_>),
-    {
+    pub(super) fn poll(&self, device: &mut dyn AnyNetworkDevice, phy: &dyn PollPhy) -> Option<u64> {
         let mut interface = self.interface();
         interface.context_mut().now = get_network_timestamp();
 
@@ -237,8 +245,8 @@ impl<E: Ext> IfaceCommon<E> {
         let mut socket_actions = Vec::new();
 
         let mut context = PollContext::new(interface.as_mut(), &sockets, &mut socket_actions);
-        context.poll_ingress(device, &mut process_phy, &mut dispatch_phy);
-        context.poll_egress(device, &mut dispatch_phy);
+        context.poll_ingress(device, phy);
+        context.poll_egress(device, phy);
 
         // Insert new connections and remove dead connections.
         for action in socket_actions.into_iter() {

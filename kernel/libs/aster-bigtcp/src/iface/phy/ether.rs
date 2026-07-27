@@ -5,23 +5,24 @@ use alloc::{collections::btree_map::BTreeMap, sync::Arc};
 use aster_softirq::BottomHalfDisabled;
 use ostd::sync::SpinLock;
 use smoltcp::{
-    iface::{Config, Context, packet::Packet},
-    phy::{Device, DeviceCapabilities, TxToken},
+    iface::{Config, Context},
     wire::{
-        self, ArpOperation, ArpPacket, ArpRepr, EthernetAddress, EthernetFrame, EthernetProtocol,
-        EthernetRepr, IpAddress, Ipv4Address, Ipv4AddressExt, Ipv4Cidr, Ipv4Packet, Ipv6Packet,
+        self, ArpOperation, ArpRepr, EthernetAddress, EthernetProtocol, EthernetRepr, IpAddress,
+        Ipv4Address, Ipv4AddressExt, Ipv4Cidr,
     },
 };
 
 use crate::{
-    device::{NotifyDevice, WithDevice},
+    device::{AnyNetworkDevice, WithDevice, new_interface},
     ext::Ext,
     iface::{
         Iface, InterfaceFlags, InterfaceName, ScheduleNextPoll,
-        common::{IfaceCommon, InterfaceType, IpPacket},
+        common::{IfaceCommon, InterfaceType, PhyProcessResult, PollPhy, TxPacketWithDst},
         iface::internal::IfaceInternal,
         time::get_network_timestamp,
+        wire::{arp, ether},
     },
+    packet::{AllocatedTxPacket, LinkLayer, RxPacket, TransportLayer, TxPacket},
 };
 
 pub struct EtherIface<D, E: Ext> {
@@ -45,7 +46,7 @@ impl<D: WithDevice, E: Ext> EtherIface<D, E> {
             let config = Config::new(wire::HardwareAddress::Ethernet(ether_addr));
             let now = get_network_timestamp();
 
-            let mut interface = smoltcp::iface::Interface::new(config, device, now);
+            let mut interface = new_interface(config, device.capabilities(), now);
             interface.update_ip_addrs(|ip_addrs| {
                 debug_assert!(ip_addrs.is_empty());
                 ip_addrs.push(wire::IpCidr::Ipv4(ip_cidr)).unwrap();
@@ -74,21 +75,14 @@ impl<D, E: Ext> IfaceInternal<E> for EtherIface<D, E> {
     }
 }
 
-impl<D: WithDevice + 'static, E: Ext> Iface<E> for EtherIface<D, E>
-where
-    D::Device: NotifyDevice,
-{
+impl<D: WithDevice + 'static, E: Ext> Iface<E> for EtherIface<D, E> {
     fn ethernet_addr(&self) -> Option<EthernetAddress> {
         Some(self.ether_addr)
     }
 
     fn poll(&self) {
         self.driver.with(|device| {
-            let next_poll = self.common.poll(
-                &mut *device,
-                |data, iface_cx, tx_token| self.process(data, iface_cx, tx_token),
-                |pkt, iface_cx, tx_token| self.dispatch(pkt, iface_cx, tx_token),
-            );
+            let next_poll = self.common.poll(device, self);
             device.notify_poll_end();
             self.common.sched_poll().schedule_next_poll(next_poll);
         });
@@ -100,56 +94,57 @@ where
     }
 }
 
-impl<D, E: Ext> EtherIface<D, E> {
-    fn process<'pkt, T: TxToken>(
+impl<D: WithDevice + 'static, E: Ext> PollPhy for EtherIface<D, E> {
+    fn process(
         &self,
-        data: &'pkt [u8],
+        packet: RxPacket<LinkLayer>,
         iface_cx: &mut Context,
-        tx_token: T,
-    ) -> Option<(IpPacket<'pkt>, T)> {
-        match self.parse_ip_or_process_arp(data, iface_cx) {
-            Ok(pkt) => Some((pkt, tx_token)),
-            Err(Some(arp)) => {
-                Self::emit_arp(&arp, tx_token);
-                None
-            }
-            Err(None) => None,
-        }
-    }
-
-    fn parse_ip_or_process_arp<'pkt>(
-        &self,
-        data: &'pkt [u8],
-        iface_cx: &mut Context,
-    ) -> Result<IpPacket<'pkt>, Option<ArpRepr>> {
+    ) -> Option<PhyProcessResult> {
         // Parse the Ethernet header. Ignore the packet if the header is ill-formed.
-        let frame = EthernetFrame::new_checked(data).map_err(|_| None)?;
-        let repr = EthernetRepr::parse(&frame).map_err(|_| None)?;
+        let (packet, repr) = ether::parse(packet)?;
 
         // Ignore the Ethernet frame if it is not sent to us.
         if !repr.dst_addr.is_broadcast() && repr.dst_addr != self.ether_addr {
-            return Err(None);
+            return None;
         }
 
         // Ignore the Ethernet frame if the protocol is not supported.
         match repr.ethertype {
-            EthernetProtocol::Ipv4 => {
-                let pkt = Ipv4Packet::new_checked(frame.payload()).map_err(|_| None)?;
-                Ok(IpPacket::Ipv4(pkt))
-            }
-            EthernetProtocol::Ipv6 => {
-                let pkt = Ipv6Packet::new_checked(frame.payload()).map_err(|_| None)?;
-                Ok(IpPacket::Ipv6(pkt))
-            }
+            EthernetProtocol::Ipv4 => Some(PhyProcessResult::Ipv4(packet)),
+            EthernetProtocol::Ipv6 => Some(PhyProcessResult::Ipv6(packet)),
             EthernetProtocol::Arp => {
-                let pkt = ArpPacket::new_checked(frame.payload()).map_err(|_| None)?;
-                let arp = ArpRepr::parse(&pkt).map_err(|_| None)?;
-                Err(self.process_arp(&arp, iface_cx))
+                let (_, arp_repr) = arp::parse(packet)?;
+                let reply = self.process_arp(&arp_repr, iface_cx)?;
+                match self.alloc_tx_buffer(0) {
+                    Ok(buffer) => Self::emit_arp(&reply, buffer).map(PhyProcessResult::Tx),
+                    Err(err) => {
+                        ostd::error!("failed to allocate a network packet: {:?}", err);
+                        None
+                    }
+                }
             }
-            _ => Err(None),
+            _ => None,
         }
     }
 
+    fn dispatch(
+        &self,
+        packet: TxPacketWithDst,
+        iface_cx: &mut Context,
+    ) -> Option<TxPacket<LinkLayer>> {
+        match self.resolve_ether_or_generate_arp(packet.dst_addr, iface_cx) {
+            Ok(ether_repr) => Some(ether::emit(packet.packet, &ether_repr)),
+            Err(Some(arp_repr)) => Self::emit_arp(&arp_repr, packet.packet.reset_to_allocated()),
+            Err(None) => None,
+        }
+    }
+
+    fn alloc_tx_buffer(&self, payload_len: usize) -> Result<AllocatedTxPacket, ostd::Error> {
+        D::Device::alloc_tx_buffer(payload_len)
+    }
+}
+
+impl<D, E: Ext> EtherIface<D, E> {
     fn process_arp(&self, arp_repr: &ArpRepr, iface_cx: &mut Context) -> Option<ArpRepr> {
         match arp_repr {
             ArpRepr::EthernetIpv4 {
@@ -206,21 +201,13 @@ impl<D, E: Ext> EtherIface<D, E> {
         }
     }
 
-    fn dispatch<T: TxToken>(&self, pkt: &Packet, iface_cx: &mut Context, tx_token: T) {
-        match self.resolve_ether_or_generate_arp(pkt, iface_cx) {
-            Ok(ether) => Self::emit_ip(&ether, pkt, &iface_cx.caps, tx_token),
-            Err(Some(arp)) => Self::emit_arp(&arp, tx_token),
-            Err(None) => (),
-        }
-    }
-
     fn resolve_ether_or_generate_arp(
         &self,
-        pkt: &Packet,
+        dst_addr: IpAddress,
         iface_cx: &mut Context,
     ) -> Result<EthernetRepr, Option<ArpRepr>> {
         // Resolve the next-hop IP address.
-        let next_hop_ip = match iface_cx.route(&pkt.ip_repr().dst_addr(), iface_cx.now()) {
+        let next_hop_ip = match iface_cx.route(&dst_addr, iface_cx.now()) {
             Some(IpAddress::Ipv4(next_hop_ip)) => next_hop_ip,
             Some(IpAddress::Ipv6(_)) => {
                 // FIXME: Currently, we drop outbound IPv6 packets because neighbor discovery is not
@@ -256,32 +243,7 @@ impl<D, E: Ext> EtherIface<D, E> {
         })
     }
 
-    /// Consumes the token and emits an IP packet.
-    fn emit_ip<T: TxToken>(
-        ether_repr: &EthernetRepr,
-        ip_pkt: &Packet,
-        caps: &DeviceCapabilities,
-        tx_token: T,
-    ) {
-        tx_token.consume(
-            ether_repr.buffer_len() + ip_pkt.ip_repr().buffer_len(),
-            |buffer| {
-                let mut frame = EthernetFrame::new_unchecked(buffer);
-                ether_repr.emit(&mut frame);
-
-                let ip_repr = ip_pkt.ip_repr();
-                ip_repr.emit(frame.payload_mut(), &caps.checksum);
-                ip_pkt.emit_payload(
-                    &ip_repr,
-                    &mut frame.payload_mut()[ip_repr.header_len()..],
-                    caps,
-                );
-            },
-        );
-    }
-
-    /// Consumes the token and emits an ARP packet.
-    fn emit_arp<T: TxToken>(arp_repr: &ArpRepr, tx_token: T) {
+    fn emit_arp(arp_repr: &ArpRepr, packet: AllocatedTxPacket) -> Option<TxPacket<LinkLayer>> {
         let ether_repr = match arp_repr {
             ArpRepr::EthernetIpv4 {
                 source_hardware_addr,
@@ -292,15 +254,11 @@ impl<D, E: Ext> EtherIface<D, E> {
                 dst_addr: *target_hardware_addr,
                 ethertype: EthernetProtocol::Arp,
             },
-            _ => return,
+            _ => return None,
         };
 
-        tx_token.consume(ether_repr.buffer_len() + arp_repr.buffer_len(), |buffer| {
-            let mut frame = EthernetFrame::new_unchecked(buffer);
-            ether_repr.emit(&mut frame);
-
-            let mut pkt = ArpPacket::new_unchecked(frame.payload_mut());
-            arp_repr.emit(&mut pkt);
-        });
+        let packet = packet.to_builder_layer::<TransportLayer>().build();
+        let packet = arp::emit(packet, arp_repr);
+        Some(ether::emit(packet, &ether_repr))
     }
 }

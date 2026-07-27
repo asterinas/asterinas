@@ -2,7 +2,8 @@
 
 use alloc::sync::Arc;
 
-use aster_network::{RxBuffer, TxBuffer, dma_pool::DmaSegment};
+use aster_bigtcp::packet::{RxBuffer, TxBuffer};
+use aster_network::dma_pool::DmaSegment;
 use aster_util::mem_obj_slice::Slice;
 use ostd::mm::{
     HasDaddr, HasSize,
