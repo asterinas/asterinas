@@ -166,7 +166,8 @@ impl EventFile {
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[eventfd]".to_string());
         Self {
             kernel_event_file: Arc::new(KernelEventFile::new(init_val, is_semaphore)),
-            common: FileCommon::new(pseudo_path, status_flags),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L401>.
+            common: FileCommon::new(pseudo_path, AccessMode::O_RDWR, status_flags),
         }
     }
 
@@ -253,11 +254,6 @@ impl FileLike for EventFile {
         Ok(write_len)
     }
 
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L401>.
-        AccessMode::O_RDWR
-    }
-
     fn common(&self) -> &FileCommon {
         &self.common
     }
@@ -271,8 +267,8 @@ impl FileLike for EventFile {
 
         impl Display for FdInfo {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let mut flags =
-                    self.inner.common.status_flags().bits() | self.inner.access_mode() as u32;
+                let mut flags = self.inner.common.status_flags().bits()
+                    | self.inner.common.access_mode() as u32;
                 if self.fd_flags.contains(FdFlags::CLOEXEC) {
                     flags |= CreationFlags::O_CLOEXEC.bits();
                 }

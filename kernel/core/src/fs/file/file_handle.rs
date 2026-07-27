@@ -29,17 +29,15 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     /// if the file is not readable,
     /// or `EINVAL` if the file type does not support `read`.
     /// These are distinct conditions:
-    /// [`access_mode`] may say that a file is readable,
+    /// `access_mode` may say that a file is readable,
     /// while the file type still does not support `read`,
     /// as with epoll files and pid files.
     ///
     /// Implementors should override this method if the file type supports reads.
-    /// An overriding implementation must check whether [`access_mode`] is readable
+    /// An overriding implementation must check whether `access_mode` is readable
     /// before performing the operation.
-    ///
-    /// [`access_mode`]: FileLike::access_mode
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        if !self.access_mode().is_readable() {
+        if !self.common().access_mode().is_readable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened for reading");
         }
         return_errno_with_message!(Errno::EINVAL, "read is not supported for this file type");
@@ -51,17 +49,15 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     /// if the file is not writable,
     /// or `EINVAL` if the file type does not support `write`.
     /// These are distinct conditions:
-    /// [`access_mode`] may say that a file is writable,
+    /// `access_mode` may say that a file is writable,
     /// while the file type still does not support `write`,
     /// as with epoll files and pid files.
     ///
     /// Implementors should override this method if the file type supports writes.
-    /// An overriding implementation must check whether [`access_mode`] is writable
+    /// An overriding implementation must check whether `access_mode` is writable
     /// before performing the operation.
-    ///
-    /// [`access_mode`]: FileLike::access_mode
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        if !self.access_mode().is_writable() {
+        if !self.common().access_mode().is_writable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened for writing");
         }
         return_errno_with_message!(Errno::EINVAL, "write is not supported for this file type");
@@ -117,28 +113,6 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
         SettableStatusFlags::minimal()
     }
 
-    /// Returns the access mode of this file.
-    ///
-    /// The access mode indicates whether the file descriptor is readable or writable.
-    /// Readability is required for operations
-    /// such as [`read`], [`read_at`], and read-only memory mappings.
-    /// Writability is required for operations
-    /// such as [`write`], [`write_at`], [`resize`], [`fallocate`],
-    /// and writable memory mappings.
-    ///
-    /// For inode-backed files,
-    /// their access modes are determined dynamically for each opened file.
-    /// For special files such as epoll files, eventfd files, and pid files,
-    /// they are determined statically by the file types.
-    ///
-    /// [`read`]: FileLike::read
-    /// [`read_at`]: FileLike::read_at
-    /// [`write`]: FileLike::write
-    /// [`write_at`]: FileLike::write_at
-    /// [`resize`]: FileLike::resize
-    /// [`fallocate`]: FileLike::fallocate
-    fn access_mode(&self) -> AccessMode;
-
     fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
         return_errno_with_message!(Errno::ESPIPE, "seek is not supported");
     }
@@ -175,6 +149,28 @@ impl dyn FileLike {
     /// Returns the path associated with the file description.
     pub(crate) fn path(&self) -> &Path {
         self.common().path()
+    }
+
+    /// Returns the access mode of this file.
+    ///
+    /// The access mode indicates whether the file descriptor is readable or writable.
+    /// Readability is required for operations
+    /// such as [`read`], [`read_at`], and read-only memory mappings.
+    /// Writability is required for operations
+    /// such as [`write`], [`write_at`], [`resize`], [`fallocate`],
+    /// and writable memory mappings.
+    ///
+    /// The access mode is set when the file description is created
+    /// and remains unchanged for its lifetime.
+    ///
+    /// [`read`]: FileLike::read
+    /// [`read_at`]: FileLike::read_at
+    /// [`write`]: FileLike::write
+    /// [`write_at`]: FileLike::write_at
+    /// [`resize`]: FileLike::resize
+    /// [`fallocate`]: FileLike::fallocate
+    pub fn access_mode(&self) -> AccessMode {
+        self.common().access_mode()
     }
 
     /// Returns the status flags of the file description.

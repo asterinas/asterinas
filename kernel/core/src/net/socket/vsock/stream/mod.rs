@@ -13,12 +13,9 @@ use takeable::Takeable;
 
 use crate::{
     events::IoEvents,
-    fs::{
-        file::{FileCommon, FileLike, StatusFlags},
-        pseudofs::SockFs,
-    },
+    fs::file::{FileCommon, FileLike},
     net::socket::{
-        Socket,
+        Socket, new_socket_common,
         options::{Error as SocketError, SocketOption, macros::sock_option_mut},
         private::SocketPrivate,
         util::{MessageHeader, RecvFlags, RecvOutput, SendFlags, SockShutdownCmd, SocketAddr},
@@ -46,15 +43,10 @@ enum State {
 
 impl VsockStreamSocket {
     pub(crate) fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
-        let status_flags = if is_nonblocking {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        };
         Ok(Arc::new(Self {
             state: Mutex::new(Takeable::new(State::Init(InitStream::new()))),
             pollee: Pollee::new(),
-            common: FileCommon::new(SockFs::new_path(), status_flags),
+            common: new_socket_common(is_nonblocking),
         }))
     }
 
@@ -150,16 +142,11 @@ impl VsockStreamSocket {
 
         let peer_addr = connected.remote_addr().into();
         let pollee = connected.pollee().clone();
-        let status_flags = if is_nonblocking {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        };
 
         let accepted = Arc::new(Self {
             state: Mutex::new(Takeable::new(State::Connected(connected))),
             pollee,
-            common: FileCommon::new(SockFs::new_path(), status_flags),
+            common: new_socket_common(is_nonblocking),
         });
 
         Ok((accepted, peer_addr))

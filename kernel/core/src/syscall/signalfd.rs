@@ -148,7 +148,8 @@ impl SignalFile {
 
         Self {
             signals_mask: mask,
-            common: FileCommon::new(pseudo_path, status_flags),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/signalfd.c#L276>.
+            common: FileCommon::new(pseudo_path, AccessMode::O_RDWR, status_flags),
         }
     }
 
@@ -243,11 +244,6 @@ impl FileLike for SignalFile {
         }
     }
 
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/signalfd.c#L276>.
-        AccessMode::O_RDWR
-    }
-
     fn common(&self) -> &FileCommon {
         &self.common
     }
@@ -268,7 +264,7 @@ impl FileLike for SignalFile {
             }
         }
 
-        let mut flags = self.common.status_flags().bits() | self.access_mode() as u32;
+        let mut flags = self.common.status_flags().bits() | self.common.access_mode() as u32;
         if fd_flags.contains(FdFlags::CLOEXEC) {
             flags |= CreationFlags::O_CLOEXEC.bits();
         }
