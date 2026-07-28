@@ -112,7 +112,7 @@ fn update_existing_signalfd(
         .downcast_ref::<SignalFile>()
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not a signal file"))?;
 
-    if signal_file.mask().load(Ordering::Relaxed) != new_mask {
+    if signal_file.mask() != new_mask {
         signal_file.update_signal_mask(new_mask)?;
     }
     signal_file.set_non_blocking(non_blocking);
@@ -154,8 +154,8 @@ impl SignalFile {
         }
     }
 
-    fn mask(&self) -> &AtomicSigMask {
-        &self.signals_mask
+    fn mask(&self) -> SigMask {
+        self.signals_mask.load(Ordering::Relaxed)
     }
 
     fn update_signal_mask(&self, new_mask: SigMask) -> Result<()> {
@@ -278,7 +278,7 @@ impl FileLike for SignalFile {
 
         Box::new(FdInfo {
             flags,
-            sigmask: self.mask().load(Ordering::Relaxed).into(),
+            sigmask: self.mask().into(),
         })
     }
 }
