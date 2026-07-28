@@ -396,13 +396,15 @@ impl VtKeyboardHandler {
                     vt.push_input(b"\r")
                 };
             }
+            SpecialHandler::Reboot => {
+                ostd::power::restart(ostd::power::ExitCode::Success);
+            }
             SpecialHandler::DecreaseConsole | SpecialHandler::IncreaseConsole => unreachable!(),
             SpecialHandler::ScrollBackward
             | SpecialHandler::ScrollForward
             | SpecialHandler::ShowMem
             | SpecialHandler::ShowState
-            | SpecialHandler::Compose
-            | SpecialHandler::Reboot => {
+            | SpecialHandler::Compose => {
                 ostd::warn!("VT keyboard action {:?} is not implemented yet", handler);
             }
         }
