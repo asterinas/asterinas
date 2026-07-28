@@ -146,12 +146,18 @@ fn create_init_task(
 
     let (elf_load_info, elf_abs_path) = {
         let path_resolver = fs.resolver().read();
+        let elf_abs_path = path_resolver.make_abs_path(&elf_path).into_string();
+        let exec_filename = CString::new(elf_abs_path.clone()).unwrap();
 
-        let program_to_load =
-            ProgramToLoad::build_from_file(elf_path.clone(), &path_resolver, argv, envp)?;
+        let program_to_load = ProgramToLoad::build_from_file(
+            elf_path.clone(),
+            &path_resolver,
+            exec_filename,
+            argv,
+            envp,
+        )?;
         let vmar = process.lock_vmar();
         let elf_load_info = program_to_load.load_to_vmar(vmar.unwrap(), &path_resolver)?;
-        let elf_abs_path = path_resolver.make_abs_path(&elf_path).into_string();
 
         (elf_load_info, elf_abs_path)
     };
