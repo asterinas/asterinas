@@ -36,6 +36,7 @@ impl ProgramToLoad {
     pub(super) fn build_from_file(
         mut elf_file: Path,
         path_resolver: &PathResolver,
+        mut script_path: CString,
         mut argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Self> {
@@ -64,16 +65,24 @@ impl ProgramToLoad {
             }
             recursive_limit -= 1;
 
+            let interpreter_filename = new_argv[0].clone();
             let interpreter = {
-                let filename = new_argv[0].to_str()?.to_string();
-                let fs_path = FsPath::try_from(filename.as_str())?;
+                let filename = interpreter_filename.to_str()?;
+                let fs_path = FsPath::try_from(filename)?;
                 path_resolver.lookup(&fs_path)?
             };
             check_executable_inode(interpreter.inode().as_ref())?;
 
             // Update the argument list and the executable inode. Then, try again.
-            new_argv.extend(argv);
+            //
+            // The interpreter receives the script path as its first argument,
+            // regardless of the caller-supplied `argv[0]`. For example,
+            // `exec -a custom ./script arg` with `#!/bin/sh` must execute
+            // `/bin/sh ./script arg`, not `/bin/sh custom arg`.
+            new_argv.push(script_path);
+            new_argv.extend(argv.into_iter().skip(1));
             argv = new_argv;
+            script_path = interpreter_filename;
             elf_file = interpreter;
         };
 

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::format;
+
 use ostd::arch::cpu::context::UserContext;
 
 use super::{SyscallReturn, constants::*};
@@ -22,7 +24,7 @@ pub fn sys_execve(
     ctx: &Context,
     user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
-    let (elf_file, thread_name) = {
+    let (elf_file, thread_name, shebang_script_path) = {
         let flags = OpenFlags::empty();
         lookup_executable_file(AT_FDCWD, filename_ptr, flags, ctx)?
     };
@@ -30,6 +32,7 @@ pub fn sys_execve(
     do_execve(
         elf_file,
         thread_name,
+        shebang_script_path,
         argv_ptr_ptr,
         envp_ptr_ptr,
         ctx,
@@ -47,7 +50,7 @@ pub fn sys_execveat(
     ctx: &Context,
     user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
-    let (elf_file, thread_name) = {
+    let (elf_file, thread_name, shebang_script_path) = {
         let flags = OpenFlags::from_bits(flags)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
         lookup_executable_file(dfd, filename_ptr, flags, ctx)?
@@ -56,6 +59,7 @@ pub fn sys_execveat(
     do_execve(
         elf_file,
         thread_name,
+        shebang_script_path,
         argv_ptr_ptr,
         envp_ptr_ptr,
         ctx,
@@ -69,7 +73,7 @@ fn lookup_executable_file(
     filename_ptr: Vaddr,
     flags: OpenFlags,
     ctx: &Context,
-) -> Result<(Path, ThreadName)> {
+) -> Result<(Path, ThreadName, CString)> {
     let filename = ctx
         .user_space()
         .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
@@ -96,7 +100,18 @@ fn lookup_executable_file(
         derive_thread_name(&filename)
     };
 
-    Ok((path, thread_name))
+    // Preserve the path that a shebang interpreter must use to reopen the script.
+    // For `execveat` relative to a file descriptor, use a `/dev/fd/...` path.
+    let shebang_script_path = if dfd == AT_FDCWD || filename.starts_with('/') {
+        filename.into_owned()
+    } else if filename.is_empty() {
+        format!("/dev/fd/{dfd}")
+    } else {
+        format!("/dev/fd/{dfd}/{filename}")
+    };
+    let shebang_script_path = CString::new(shebang_script_path).unwrap();
+
+    Ok((path, thread_name, shebang_script_path))
 }
 
 bitflags::bitflags! {
