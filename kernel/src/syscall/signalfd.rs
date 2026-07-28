@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! signalfd implementation for Linux compatibility
+//! signalfd implementation for Linux compatibility.
 //!
 //! The signalfd mechanism allows receiving signals via file descriptor,
 //! enabling better integration with event loops.
@@ -33,7 +33,7 @@ use crate::{
     },
 };
 
-/// Creates a new signalfd or updates an existing one according to the given mask
+/// Creates a new signalfd or updates an existing one according to the given mask.
 pub fn sys_signalfd(
     fd: RawFileDesc,
     mask_ptr: Vaddr,
@@ -43,7 +43,7 @@ pub fn sys_signalfd(
     sys_signalfd4(fd, mask_ptr, sizemask, 0, ctx)
 }
 
-/// Creates a new signalfd or updates an existing one according to the given mask and flags
+/// Creates a new signalfd or updates an existing one according to the given mask and flags.
 pub fn sys_signalfd4(
     raw_fd: RawFileDesc,
     mask_ptr: Vaddr,
@@ -112,34 +112,32 @@ fn update_existing_signalfd(
         .downcast_ref::<SignalFile>()
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not a signal file"))?;
 
-    if signal_file.mask() != new_mask {
-        signal_file.update_signal_mask(new_mask)?;
-    }
+    signal_file.update_signal_mask(new_mask);
     signal_file.set_non_blocking(non_blocking);
     Ok(raw_fd)
 }
 
 bitflags! {
-    /// Signal file descriptor creation flags
+    /// Signal file descriptor creation flags.
     struct SignalFileFlags: u32 {
         const O_CLOEXEC = CreationFlags::O_CLOEXEC.bits();
         const O_NONBLOCK = StatusFlags::O_NONBLOCK.bits();
     }
 }
 
-/// Signal file implementation
+/// Signal file implementation.
 ///
 /// Represents a file that can be used to receive signals
 /// as readable events.
 struct SignalFile {
-    /// Atomic signal mask for filtering signals
+    /// An atomic signal mask for filtering signals.
     signals_mask: AtomicSigMask,
     /// The common state for this signalfd file.
     common: FileCommon,
 }
 
 impl SignalFile {
-    /// Create a new signalfd instance
+    /// Creates a new signalfd instance.
     fn new(mask: AtomicSigMask, non_blocking: bool) -> Self {
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[signalfd]".to_string());
         let status_flags = if non_blocking {
@@ -154,13 +152,12 @@ impl SignalFile {
         }
     }
 
-    fn mask(&self) -> SigMask {
+    fn signal_mask(&self) -> SigMask {
         self.signals_mask.load(Ordering::Relaxed)
     }
 
-    fn update_signal_mask(&self, new_mask: SigMask) -> Result<()> {
+    fn update_signal_mask(&self, new_mask: SigMask) {
         self.signals_mask.store(new_mask, Ordering::Relaxed);
-        Ok(())
     }
 
     fn is_non_blocking(&self) -> bool {
@@ -171,7 +168,7 @@ impl SignalFile {
         (self as &dyn FileLike).update_status_nonblock(non_blocking);
     }
 
-    /// Check current readable I/O events
+    /// Checks current readable I/O events.
     fn check_io_events(&self, posix_thread: &PosixThread) -> IoEvents {
         let mask = self.signals_mask.load(Ordering::Relaxed);
         if posix_thread.pending_signals().intersects(mask) {
@@ -181,9 +178,9 @@ impl SignalFile {
         }
     }
 
-    /// Attempt non-blocking read operation
+    /// Attempts non-blocking read operation.
     fn try_read(&self, writer: &mut VmWriter, thread: &PosixThread) -> Result<usize> {
-        // Mask is inverted to get the signals that are not blocked
+        // We invert `signal_mask` to get the signals that are not blocked.
         let mask = !self.signals_mask.load(Ordering::Relaxed);
         let max_signals = writer.avail() / size_of::<SignalfdSiginfo>();
         let mut count = 0;
@@ -199,7 +196,7 @@ impl SignalFile {
         }
 
         if count == 0 {
-            return_errno!(Errno::EAGAIN);
+            return_errno_with_message!(Errno::EAGAIN, "no signals are pending");
         }
         Ok(count * size_of::<SignalfdSiginfo>())
     }
@@ -278,7 +275,7 @@ impl FileLike for SignalFile {
 
         Box::new(FdInfo {
             flags,
-            sigmask: self.mask().into(),
+            sigmask: self.signal_mask().into(),
         })
     }
 }
