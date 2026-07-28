@@ -32,11 +32,11 @@ using the Asterinas NixOS installer ISO.
     docker run -it --privileged --network=host ubuntu:latest bash
     ```
 
-2. Inside the container, install QEMU:
+2. Inside the container, install QEMU and OVMF:
 
     ```bash
     apt update
-    apt install -y qemu-system-x86 qemu-utils
+    apt install -y qemu-system-x86 qemu-utils ovmf
     ```
 
 3. Download the latest Asterinas NixOS installer ISO from [GitHub Releases](https://github.com/asterinas/asterinas/releases).
@@ -54,12 +54,17 @@ one is the installer CD-ROM and the other is the target disk:
     ```bash
     export INSTALLER_ISO=/path/to/your/downloaded/installer.iso
     qemu-system-x86_64 \
+    -bios /usr/share/qemu/OVMF.fd \
     -cpu host -m 8G -enable-kvm \
+    -machine q35,kernel-irqchip=split \
     -drive file="$INSTALLER_ISO",media=cdrom -boot d \
-    -drive if=virtio,format=raw,file=aster_nixos_disk.img \
+    -drive if=none,format=raw,id=hd0,file=aster_nixos_disk.img \
+    -device virtio-blk-pci,drive=hd0,disable-legacy=on,disable-modern=off \
     -chardev stdio,id=mux,mux=on,logfile=qemu.log \
     -device virtio-serial-pci -device virtconsole,chardev=mux \
     -serial chardev:mux -monitor chardev:mux \
+    -netdev user,id=net0 \
+    -device virtio-net-pci,netdev=net0,disable-legacy=on,disable-modern=off,mrg_rxbuf=off,ctrl_rx=off,ctrl_rx_extra=off,ctrl_vlan=off,ctrl_vq=off,ctrl_guest_offloads=off,ctrl_mac_addr=off,event_idx=off,queue_reset=off,guest_announce=off,indirect_desc=off \
     -nographic
     ```
 
@@ -103,14 +108,15 @@ to customize the NixOS system to be installed:
     ```bash
     qemu-system-x86_64 \
     -cpu host -m 8G -enable-kvm \
+    -machine q35,kernel-irqchip=split \
     -bios /usr/share/qemu/OVMF.fd \
     -drive if=none,format=raw,id=x0,file=aster_nixos_disk.img \
     -device virtio-blk-pci,drive=x0,disable-legacy=on,disable-modern=off \
     -chardev stdio,id=mux,mux=on,logfile=qemu.log \
     -device virtio-serial-pci -device virtconsole,chardev=mux \
     -serial chardev:mux -monitor chardev:mux \
-    -device virtio-net-pci,netdev=net0,disable-legacy=on,disable-modern=off \
     -netdev user,id=net0 \
+    -device virtio-net-pci,netdev=net0,disable-legacy=on,disable-modern=off,mrg_rxbuf=off,ctrl_rx=off,ctrl_rx_extra=off,ctrl_vlan=off,ctrl_vq=off,ctrl_guest_offloads=off,ctrl_mac_addr=off,event_idx=off,queue_reset=off,guest_announce=off,indirect_desc=off \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -nographic -display vnc=127.0.0.1:21
     ```

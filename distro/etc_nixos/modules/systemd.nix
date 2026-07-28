@@ -1,7 +1,7 @@
 { config, lib, pkgs, ... }:
-
-{
-  systemd.package = pkgs.aster_systemd;
+let aster_systemd = import ../pkgs/systemd.nix { inherit pkgs; };
+in {
+  systemd.package = aster_systemd;
 
   # TODO: The following services currently do not work and
   # may affect systemd startup or cause performance issues.
@@ -11,11 +11,22 @@
   systemd.services.logrotate.enable = false;
   systemd.services.network-setup.enable = false;
   systemd.services.resolvconf.enable = false;
+  systemd.services.dhcpcd.enable = false;
   systemd.services.systemd-random-seed.enable = false;
   systemd.services.systemd-tmpfiles-clean.enable = false;
   systemd.services.systemd-tmpfiles-setup.enable = false;
   services.timesyncd.enable = false;
   services.udev.enable = false;
+
+  system.activationScripts.asterinasUnixChkpwdWrapper = {
+    deps = [ "specialfs" ];
+    text = ''
+      ${pkgs.coreutils}/bin/install -D -o 0 -g 0 -m 4755 \
+        ${pkgs.pam}/bin/unix_chkpwd \
+        /run/wrappers/bin/unix_chkpwd
+    '';
+  };
+  systemd.services.suid-sgid-wrappers.enable = false;
 
   services.getty.autologinUser = "root";
   users.users.root = {
