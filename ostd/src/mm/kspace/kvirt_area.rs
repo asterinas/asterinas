@@ -92,14 +92,14 @@ impl KVirtArea {
     }
 
     #[cfg(ktest)]
-    pub fn query<'a, G: crate::task::atomic_mode::AsAtomicModeGuard>(
+    pub(in crate::mm) fn query<'a, G: crate::task::atomic_mode::AsAtomicModeGuard>(
         &'a self,
         guard: &'a G,
         addr: Vaddr,
     ) -> Option<super::MappedItemRef<'a>> {
         use align_ext::AlignExt;
 
-        assert!(self.start() <= addr && self.end() >= addr);
+        assert!(self.range.contains(&addr));
 
         let start = addr.align_down(PAGE_SIZE);
         let vaddr = start..start + PAGE_SIZE;
@@ -141,7 +141,7 @@ impl KVirtArea {
         for frame in frames.into_iter() {
             // SAFETY: The constructor of the `KVirtArea` has already ensured
             // that this mapping does not affect kernel's memory safety.
-            unsafe { cursor.map(MappedItem::Tracked(Frame::from_unsized(frame), prop)) };
+            unsafe { cursor.map(MappedItem::tracked(Frame::from_unsized(frame), prop)) };
         }
 
         Self { range }
@@ -191,7 +191,7 @@ impl KVirtArea {
             for (pa, level) in largest_pages::<KernelPtConfig>(va_range.start, pa_range.start, len)
             {
                 // SAFETY: The caller of `map_untracked_frames` has ensured the safety of this mapping.
-                unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
+                unsafe { cursor.map(MappedItem::untracked(pa, level, prop)) };
             }
         }
 

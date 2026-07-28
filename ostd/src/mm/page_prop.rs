@@ -87,6 +87,15 @@ pub enum CachePolicy {
     Writeback,
 }
 
+/// The kind of access made to a page.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PageAccess {
+    /// A read or instruction fetch.
+    Read,
+    /// A write.
+    Write,
+}
+
 bitflags! {
     /// Page protection permissions and access status.
     pub struct PageFlags: u8 {
@@ -110,6 +119,19 @@ bitflags! {
 
         /// The second bit available for software use.
         const AVAIL2    = 0b10000000;
+    }
+}
+
+impl PageFlags {
+    /// Records an access in the page status flags.
+    ///
+    /// Every access sets [`PageFlags::ACCESSED`]. A [`PageAccess::Write`] also
+    /// sets [`PageFlags::DIRTY`]. All other flags are preserved.
+    pub fn record_access(&mut self, access: PageAccess) {
+        self.insert(Self::ACCESSED);
+        if access == PageAccess::Write {
+            self.insert(Self::DIRTY);
+        }
     }
 }
 
@@ -140,5 +162,44 @@ bitflags! {
         const AVAIL1    = 0b01000000;
         /// The second bit available for software use.
         const AVAIL2    = 0b10000000;
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use super::{PageAccess, PageFlags};
+    use crate::prelude::ktest;
+
+    #[ktest]
+    fn record_access_for_read_preserves_flags_and_sets_accessed() {
+        let mut flags = PageFlags::RX | PageFlags::AVAIL2;
+
+        flags.record_access(PageAccess::Read);
+
+        assert_eq!(
+            flags,
+            PageFlags::RX | PageFlags::AVAIL2 | PageFlags::ACCESSED
+        );
+
+        let mut dirty_flags = PageFlags::RX | PageFlags::AVAIL2 | PageFlags::DIRTY;
+
+        dirty_flags.record_access(PageAccess::Read);
+
+        assert_eq!(
+            dirty_flags,
+            PageFlags::RX | PageFlags::AVAIL2 | PageFlags::ACCESSED | PageFlags::DIRTY
+        );
+    }
+
+    #[ktest]
+    fn record_access_for_write_preserves_flags_and_sets_accessed_and_dirty() {
+        let mut flags = PageFlags::RW | PageFlags::AVAIL2;
+
+        flags.record_access(PageAccess::Write);
+
+        assert_eq!(
+            flags,
+            PageFlags::RW | PageFlags::AVAIL2 | PageFlags::ACCESSED | PageFlags::DIRTY
+        );
     }
 }

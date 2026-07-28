@@ -5,7 +5,7 @@ use ostd_pod::FromZeros;
 use super::*;
 use crate::{
     mm::{
-        FrameAllocOptions, MAX_USERSPACE_VADDR, PAGE_SIZE,
+        self, FrameAllocOptions, MAX_USERSPACE_VADDR, PAGE_SIZE,
         kspace::{KernelPtConfig, LINEAR_MAPPING_BASE_VADDR},
         page_prop::{CachePolicy, PageFlags},
         vm_space::VmItem,
@@ -610,8 +610,11 @@ mod navigation {
 
         // Map a page near the address space end.
         assert_eq!(cursor.virt_addr(), 0usize.wrapping_sub(HUGE_PAGE_SIZE));
+        // SAFETY: The cursor targets an empty test page table, and the
+        // untracked synthetic frame is used only to validate page-table
+        // navigation; it is never dereferenced or given ownership.
         unsafe {
-            cursor.map(MappedItem::Untracked(
+            cursor.map(MappedItem::untracked(
                 0,
                 1,
                 PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback),
@@ -944,6 +947,132 @@ mod mapping {
 
 mod protection_and_query {
     use super::{test_utils::*, *};
+
+    /// Returns the leaf PTE pointer for a mapped virtual address.
+    ///
+    /// # Safety
+    ///
+    /// `root_paddr` must identify a live `C` page table whose traversed nodes
+    /// remain valid and atomically accessed. The returned pointer must not
+    /// outlive or be used after removing its leaf page-table node.
+    unsafe fn mapped_pte_ptr<C: PageTableConfig>(
+        root_paddr: Paddr,
+        vaddr: Vaddr,
+    ) -> (*mut C::E, PagingLevel) {
+        let mut node_vaddr = mm::paddr_to_vaddr(root_paddr);
+        for level in (1..=C::NR_LEVELS).rev() {
+            // SAFETY: The caller guarantees that `root_paddr` owns a live page
+            // table and that the calculated index is in bounds.
+            let pte_ptr = unsafe { (node_vaddr as *mut C::E).add(pte_index::<C>(vaddr, level)) };
+            // SAFETY: The page-table node is alive and all PTE accesses are atomic.
+            let pte = unsafe { load_pte(pte_ptr, Ordering::Acquire) };
+            match pte.to_repr(level) {
+                PteScalar::PageTable(child_paddr, _) => {
+                    node_vaddr = mm::paddr_to_vaddr(child_paddr);
+                }
+                PteScalar::Mapped(_, _) => return (pte_ptr, level),
+                PteScalar::Absent => panic!("mapping is absent"),
+            }
+        }
+
+        panic!("mapping has no leaf PTE");
+    }
+
+    // Regression test for Asterinas issue #3589.
+    #[ktest]
+    fn protect_preserves_concurrent_hardware_status_update() {
+        let page_table = PageTable::<TestPtConfig>::empty();
+        let range = PAGE_SIZE..PAGE_SIZE * 2;
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        map_untracked(&page_table, range.clone(), 0, prop);
+
+        // SAFETY: The local page table owns a live mapping covering
+        // `range.start`, no operation removes it before the pointer's last use,
+        // the cursor locks the range while the pointer is used, and every
+        // pointer access uses the page-table atomic helpers.
+        let (pte_ptr, level) =
+            unsafe { mapped_pte_ptr::<TestPtConfig>(page_table.root_paddr(), range.start) };
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table.cursor_mut(&preempt_guard, &range).unwrap();
+        let mut simulate_hardware_update_fn = |prop: &mut PageProperty| {
+            // Simulate the MMU setting DIRTY after the cursor's initial PTE load.
+            // SAFETY: The pointer remains a live, aligned leaf PTE and all
+            // accesses use the page-table atomic helpers.
+            let hardware_pte = unsafe { load_pte(pte_ptr, Ordering::Acquire) };
+            let PteScalar::Mapped(paddr, mut hardware_prop) = hardware_pte.to_repr(level) else {
+                panic!("leaf PTE stopped mapping a page");
+            };
+            hardware_prop.flags |= PageFlags::DIRTY;
+            let hardware_pte = <TestPtConfig as PageTableConfig>::E::from_repr(
+                &PteScalar::Mapped(paddr, hardware_prop),
+                level,
+            );
+            // SAFETY: The replacement changes only the hardware-managed DIRTY bit.
+            unsafe { store_pte(pte_ptr, hardware_pte, Ordering::Release) };
+
+            prop.flags |= PageFlags::ACCESSED;
+        };
+        // SAFETY: The operation changes only public status flags and does not
+        // alter the mapping identity or its software-reserved ownership bit.
+        let protected =
+            unsafe { cursor.protect_next(range.len(), &mut simulate_hardware_update_fn) };
+        assert_eq!(protected, Some(range.clone()));
+        drop(cursor);
+
+        let (_, protected_prop) = page_table.page_walk(range.start).unwrap();
+        assert_eq!(
+            protected_prop.flags,
+            PageFlags::RW | PageFlags::ACCESSED | PageFlags::DIRTY
+        );
+    }
+
+    // Regression test for Asterinas issue #3589.
+    #[ktest]
+    fn protect_merges_only_new_hardware_status_update() {
+        let page_table = PageTable::<TestPtConfig>::empty();
+        let range = PAGE_SIZE..PAGE_SIZE * 2;
+        let prop =
+            PageProperty::new_user(PageFlags::RW | PageFlags::ACCESSED, CachePolicy::Writeback);
+        map_untracked(&page_table, range.clone(), 0, prop);
+
+        // SAFETY: The local page table owns a live mapping covering
+        // `range.start`, no operation removes it before the pointer's last use,
+        // the cursor locks the range while the pointer is used, and every
+        // pointer access uses the page-table atomic helpers.
+        let (pte_ptr, level) =
+            unsafe { mapped_pte_ptr::<TestPtConfig>(page_table.root_paddr(), range.start) };
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table.cursor_mut(&preempt_guard, &range).unwrap();
+        let mut simulate_hardware_update_fn = |prop: &mut PageProperty| {
+            // Simulate the MMU setting DIRTY after the cursor's initial PTE load.
+            // SAFETY: The pointer remains a live, aligned leaf PTE and all
+            // accesses use the page-table atomic helpers.
+            let hardware_pte = unsafe { load_pte(pte_ptr, Ordering::Acquire) };
+            let PteScalar::Mapped(paddr, mut hardware_prop) = hardware_pte.to_repr(level) else {
+                panic!("leaf PTE stopped mapping a page");
+            };
+            hardware_prop.flags |= PageFlags::DIRTY;
+            let hardware_pte = <TestPtConfig as PageTableConfig>::E::from_repr(
+                &PteScalar::Mapped(paddr, hardware_prop),
+                level,
+            );
+            // SAFETY: The replacement changes only the hardware-managed DIRTY bit.
+            unsafe { store_pte(pte_ptr, hardware_pte, Ordering::Release) };
+
+            prop.flags = PageFlags::R;
+        };
+        // SAFETY: The operation changes only public status and permission flags
+        // and does not alter the mapping identity or software-reserved ownership bit.
+        let protected =
+            unsafe { cursor.protect_next(range.len(), &mut simulate_hardware_update_fn) };
+        assert_eq!(protected, Some(range.clone()));
+        drop(cursor);
+
+        let (_, protected_prop) = page_table.page_walk(range.start).unwrap();
+        assert_eq!(protected_prop.flags, PageFlags::R | PageFlags::DIRTY);
+    }
 
     #[ktest]
     fn base_protect_query() {

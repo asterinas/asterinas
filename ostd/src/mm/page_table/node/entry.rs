@@ -6,7 +6,7 @@ use super::{PageTableGuard, PageTableNode, PteState, PteStateRef, PteTrait};
 use crate::{
     mm::{
         HasPaddr, nr_subpage_per_huge,
-        page_prop::PageProperty,
+        page_prop::{PageFlags, PageProperty},
         page_size,
         page_table::{PageTableConfig, PageTableNodeRef, PteScalar},
     },
@@ -63,14 +63,37 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             return;
         }
 
-        self.pte = C::E::from_repr(&PteScalar::Mapped(pa, new_prop), level);
-
-        // SAFETY:
-        //  1. The index is within the bounds.
-        //  2. We replace the PTE with a new one, which differs only in
-        //     `PageProperty`, so it's in `C` and at the correct paging level.
-        //  3. The child is still owned by the page table node.
-        unsafe { self.node.write_pte(self.idx, self.pte) };
+        loop {
+            let PteScalar::Mapped(_, expected_prop) = self.pte.to_repr(level) else {
+                unreachable!("the protected PTE must keep mapping the same page");
+            };
+            let new_pte = C::E::from_repr(&PteScalar::Mapped(pa, new_prop), level);
+            // SAFETY:
+            //  1. The index is within the bounds.
+            //  2. `self.pte` is a non-owning snapshot of the installed PTE.
+            //  3. The replacement keeps the same mapping and paging level and
+            //     differs only in `PageProperty`.
+            //  4. The node retains ownership of the mapped child regardless of
+            //     whether the comparison succeeds.
+            match unsafe { self.node.compare_exchange_pte(self.idx, self.pte, new_pte) } {
+                Ok(_) => {
+                    self.pte = new_pte;
+                    return;
+                }
+                Err(actual_pte) => {
+                    let PteScalar::Mapped(actual_pa, actual_prop) = actual_pte.to_repr(level)
+                    else {
+                        unreachable!("hardware status updates cannot change the PTE kind");
+                    };
+                    debug_assert_eq!(actual_pa, pa);
+                    let new_hardware_status = actual_prop.flags
+                        & !expected_prop.flags
+                        & (PageFlags::ACCESSED | PageFlags::DIRTY);
+                    new_prop.flags |= new_hardware_status;
+                    self.pte = actual_pte;
+                }
+            }
+        }
     }
 
     /// Replaces the entry with a new child.

@@ -585,7 +585,7 @@ pub(crate) unsafe trait PteTrait:
 ///
 /// # Safety
 ///
-/// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
+/// The safety preconditions are the same as those of [`AtomicUsize::from_ptr`].
 pub unsafe fn load_pte<E: PteTrait>(ptr: *mut E, ordering: Ordering) -> E {
     // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
@@ -597,10 +597,31 @@ pub unsafe fn load_pte<E: PteTrait>(ptr: *mut E, ordering: Ordering) -> E {
 ///
 /// # Safety
 ///
-/// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
+/// The safety preconditions are the same as those of [`AtomicUsize::from_ptr`].
 pub unsafe fn store_pte<E: PteTrait>(ptr: *mut E, new_val: E, ordering: Ordering) {
     let new_raw = new_val.as_usize();
     // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
     atomic.store(new_raw, ordering)
+}
+
+/// Atomically replaces a page table entry if it still matches `current`.
+///
+/// # Safety
+///
+/// The safety preconditions are the same as those of
+/// [`AtomicUsize::from_ptr`].
+pub(in crate::mm::page_table) unsafe fn compare_exchange_pte<E: PteTrait>(
+    ptr: *mut E,
+    current: E,
+    new: E,
+    success: Ordering,
+    failure: Ordering,
+) -> Result<E, E> {
+    // SAFETY: The caller upholds `AtomicUsize::from_ptr`'s requirements.
+    let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
+    atomic
+        .compare_exchange(current.as_usize(), new.as_usize(), success, failure)
+        .map(E::from_usize)
+        .map_err(E::from_usize)
 }
