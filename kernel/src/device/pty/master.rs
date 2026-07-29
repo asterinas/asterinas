@@ -9,8 +9,8 @@ use crate::{
     fs::{
         devpts::Ptmx,
         file::{
-            AccessMode, OpenArgs, PerOpenFileOps, SettableStatusFlags, StatusFlags,
-            file_table::FdFlags, mkmod,
+            CreationFlags, InodeMode, OpenArgs, PerOpenFileOps, SettableStatusFlags, StatusFlags,
+            file_table::FdFlags,
         },
         vfs::{inode::FileOps, path::Path},
     },
@@ -178,23 +178,29 @@ impl PerOpenFileOps for PtyMaster {
 
                 cmd.write(&is_locked)?;
             }
-            _cmd @ OpenPtySlave => {
-                let current_task = Task::current().unwrap();
-                let thread_local = current_task.as_thread_local().unwrap();
+            cmd @ OpenPtySlave => {
+                let flags = cmd.get();
+                let open_args = OpenArgs::from_flags_and_mode(flags, InodeMode::empty())?;
+                let fd_flags = if CreationFlags::from_bits_truncate(flags)
+                    .contains(CreationFlags::O_CLOEXEC)
+                {
+                    FdFlags::CLOEXEC
+                } else {
+                    FdFlags::empty()
+                };
 
-                // TODO: Deal with `open()` flags.
                 let slave = {
                     let devpts_root = Path::new_fs_root(path.mount_node().clone());
                     let slave_path = devpts_root.lookup_child(&self.slave.index().to_string())?;
-                    let open_args = OpenArgs::from_modes(AccessMode::O_RDWR, mkmod!(u+rw));
                     Arc::new(slave_path.open(open_args)?)
                 };
 
                 let fd = {
+                    let current_task = Task::current().unwrap();
+                    let thread_local = current_task.as_thread_local().unwrap();
                     let file_table = thread_local.borrow_file_table();
                     let mut file_table_locked = file_table.unwrap().write();
-                    // TODO: Deal with the `O_CLOEXEC` flag.
-                    file_table_locked.insert(slave, FdFlags::empty())
+                    file_table_locked.insert(slave, fd_flags)
                 };
                 return Ok(fd.into());
             }
