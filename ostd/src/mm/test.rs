@@ -6,8 +6,8 @@ use crate::{
     Error,
     io::IoMem,
     mm::{
-        CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
-        UFrame, VmSpace,
+        CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PAGE_SIZE, PageFlags,
+        PageProperty, UFrame, VmSpace,
         io::{VmIo, VmIoFill, VmReader, VmWriter, util::HasVmReaderWriter},
         tlb::TlbFlushOp,
         vm_space::{VmQueriedItem, get_activated_vm_space},
@@ -830,6 +830,24 @@ mod vmspace {
     /// A very large address (16 TiB) beyond typical physical memory for testing.
     const IOMEM_PADDR: usize = 0x100_000_000_000;
 
+    fn expected_iomem_flags(flags: PageFlags) -> PageFlags {
+        #[cfg(target_arch = "riscv64")]
+        {
+            let mut flags = flags;
+            flags.record_access(if flags.contains(PageFlags::W) {
+                crate::mm::PageAccess::Write
+            } else {
+                crate::mm::PageAccess::Read
+            });
+            flags
+        }
+
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+            flags
+        }
+    }
+
     /// Maps and queries an `IoMem` using `CursorMut`.
     #[ktest]
     fn vmspace_map_query_iomem() {
@@ -865,7 +883,9 @@ mod vmspace {
             assert!(matches!(
                 query_item,
                 Some(VmQueriedItem::MappedIoMem { paddr, prop: query_prop })
-                if paddr == IOMEM_PADDR && query_prop.flags == prop.flags && query_prop.cache == prop.cache
+                if paddr == IOMEM_PADDR
+                    && query_prop.flags == expected_iomem_flags(prop.flags)
+                    && query_prop.cache == prop.cache
             ));
         }
 
@@ -892,6 +912,56 @@ mod vmspace {
                     .is_none()
             );
         }
+    }
+
+    // Regression test for Asterinas issue #3589.
+    #[ktest]
+    fn vmspace_map_query_read_only_iomem() {
+        let vmspace = VmSpace::new();
+        let range = 0x4000..0x5000;
+        let iomem = IoMem::acquire(IOMEM_PADDR + 0x4000..IOMEM_PADDR + 0x5000).unwrap();
+        let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Uncacheable);
+        let preempt_guard = disable_preempt();
+
+        vmspace
+            .cursor_mut(&preempt_guard, &range)
+            .unwrap()
+            .map_iomem(iomem, prop, PAGE_SIZE, 0);
+
+        let mut cursor = vmspace.cursor(&preempt_guard, &range).unwrap();
+        let (_, Some(VmQueriedItem::MappedIoMem { prop, .. })) = cursor.query().unwrap() else {
+            panic!("query did not return the I/O mapping");
+        };
+        assert_eq!(prop.flags, expected_iomem_flags(PageFlags::R));
+        assert!(!prop.flags.contains(PageFlags::DIRTY));
+    }
+
+    // Regression test for Asterinas issue #3589.
+    #[ktest]
+    fn vmspace_protect_iomem_preserves_riscv_status() {
+        let vmspace = VmSpace::new();
+        let range = 0x5000..0x6000;
+        let iomem = IoMem::acquire(IOMEM_PADDR + 0x5000..IOMEM_PADDR + 0x6000).unwrap();
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
+        let preempt_guard = disable_preempt();
+
+        vmspace
+            .cursor_mut(&preempt_guard, &range)
+            .unwrap()
+            .map_iomem(iomem, prop, PAGE_SIZE, 0);
+        let mut cursor = vmspace.cursor_mut(&preempt_guard, &range).unwrap();
+        assert_eq!(
+            cursor.protect_next(PAGE_SIZE, |flags, _| *flags = PageFlags::R),
+            Some(range.clone())
+        );
+        drop(cursor);
+
+        let mut cursor = vmspace.cursor(&preempt_guard, &range).unwrap();
+        let (_, Some(VmQueriedItem::MappedIoMem { prop, .. })) = cursor.query().unwrap() else {
+            panic!("query did not return the protected I/O mapping");
+        };
+        assert_eq!(prop.flags, expected_iomem_flags(PageFlags::R));
+        assert!(!prop.flags.contains(PageFlags::DIRTY));
     }
 
     /// Maps and queries an `IoMem` with an offset using `CursorMut`.
@@ -923,7 +993,9 @@ mod vmspace {
             assert!(matches!(
                 query_item,
                 Some(VmQueriedItem::MappedIoMem { paddr, prop: query_prop })
-                if paddr == IOMEM_PADDR + 0x2000 && query_prop.flags == prop.flags && query_prop.cache == prop.cache
+                if paddr == IOMEM_PADDR + 0x2000
+                    && query_prop.flags == expected_iomem_flags(prop.flags)
+                    && query_prop.cache == prop.cache
             ));
         }
 

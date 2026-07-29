@@ -137,14 +137,28 @@ const NUM_RSS_COUNTERS: usize = 2;
 
 pub(super) struct RssDelta<'a> {
     delta: [isize; NUM_RSS_COUNTERS],
+    #[cfg(not(ktest))]
     operated_vmar: &'a Vmar,
+    #[cfg(ktest)]
+    operated_vmar: Option<&'a Vmar>,
 }
 
 impl<'a> RssDelta<'a> {
     pub(super) fn new(operated_vmar: &'a Vmar) -> Self {
         Self {
             delta: [0; NUM_RSS_COUNTERS],
+            #[cfg(not(ktest))]
             operated_vmar,
+            #[cfg(ktest)]
+            operated_vmar: Some(operated_vmar),
+        }
+    }
+
+    #[cfg(ktest)]
+    pub(super) fn new_for_test() -> Self {
+        Self {
+            delta: [0; NUM_RSS_COUNTERS],
+            operated_vmar: None,
         }
     }
 
@@ -162,7 +176,12 @@ impl Drop for RssDelta<'_> {
         for i in 0..NUM_RSS_COUNTERS {
             let rss_type = RssType::try_from(i as u32).unwrap();
             let delta = self.get(rss_type);
+            #[cfg(not(ktest))]
             self.operated_vmar.add_rss_counter(rss_type, delta);
+            #[cfg(ktest)]
+            if let Some(operated_vmar) = self.operated_vmar {
+                operated_vmar.add_rss_counter(rss_type, delta);
+            }
         }
     }
 }

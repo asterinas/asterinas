@@ -561,6 +561,10 @@ impl<'a> CursorMut<'a> {
         unsafe {
             self.pt_cursor.protect_next(len, &mut |prop| {
                 op(&mut prop.flags, &mut prop.cache);
+                #[cfg(target_arch = "riscv64")]
+                if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
+                    *prop = prepare_user_io_mapping_prop(*prop);
+                }
             })
         }
     }
@@ -640,6 +644,31 @@ enum MappedItemRef<'a> {
     UntrackedIoMem { paddr: Paddr, level: PagingLevel },
 }
 
+/// Applies the architecture policy for a user I/O mapping.
+///
+/// Under RISC-V Svade, accesses fault when A is clear or, for writes, when D
+/// is clear. Device mappings cannot recover these faults, so the required
+/// status bits are preset. See
+/// <https://docs.riscv.org/reference/isa/v20260120/priv/supervisor.html#translation>.
+fn prepare_user_io_mapping_prop(prop: PageProperty) -> PageProperty {
+    #[cfg(target_arch = "riscv64")]
+    {
+        let mut prop = prop;
+        let access = if prop.flags.contains(PageFlags::W) {
+            crate::mm::PageAccess::Write
+        } else {
+            crate::mm::PageAccess::Read
+        };
+        prop.flags.record_access(access);
+        prop
+    }
+
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+        prop
+    }
+}
+
 impl VmItem {
     /// Creates a new `VmItem` that maps a tracked frame.
     pub(super) fn new_tracked(frame: UFrame, prop: PageProperty) -> Self {
@@ -651,9 +680,13 @@ impl VmItem {
 
     /// Creates a new `VmItem` that maps an untracked I/O memory.
     fn new_untracked_io(paddr: Paddr, prop: PageProperty) -> Self {
+        Self::from_untracked_io_raw_parts(paddr, 1, prepare_user_io_mapping_prop(prop))
+    }
+
+    fn from_untracked_io_raw_parts(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
         Self {
             prop,
-            mapped_item: MappedItem::UntrackedIoMem { paddr, level: 1 },
+            mapped_item: MappedItem::UntrackedIoMem { paddr, level },
         }
     }
 }
@@ -712,7 +745,7 @@ unsafe impl PageTableConfig for UserPtConfig {
         debug_assert_eq!(level, 1);
         if prop.priv_flags.contains(PrivilegedPageFlags::AVAIL1) {
             // `AVAIL1` is set, this is I/O memory.
-            VmItem::new_untracked_io(paddr, prop)
+            VmItem::from_untracked_io_raw_parts(paddr, level, prop)
         } else {
             // `AVAIL1` is clear, this is tracked memory.
             // SAFETY: The caller ensures safety.
@@ -743,5 +776,36 @@ unsafe impl PageTableConfig for UserPtConfig {
                 mapped_item: MappedItemRef::TrackedFrame(frame_ref),
             }
         }
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use super::*;
+    use crate::prelude::ktest;
+
+    // Regression test for Asterinas issue #3589.
+    #[ktest]
+    fn user_io_raw_info_preserves_status_flags() {
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
+        let item = VmItem::new_untracked_io(PAGE_SIZE, prop);
+
+        let (_, _, raw_prop) = UserPtConfig::item_raw_info(&item);
+
+        assert_eq!(raw_prop.flags, item.prop.flags);
+    }
+
+    // Regression test for Asterinas issue #3589.
+    #[cfg(target_arch = "riscv64")]
+    #[ktest]
+    fn user_io_raw_restoration_preserves_exact_property() {
+        let mut prop =
+            PageProperty::new_user(PageFlags::RW | PageFlags::AVAIL2, CachePolicy::Uncacheable);
+        prop.priv_flags |= PrivilegedPageFlags::AVAIL1;
+
+        // SAFETY: The aligned address and level describe an untracked I/O item.
+        let restored = unsafe { UserPtConfig::item_from_raw(PAGE_SIZE, 1, prop) };
+
+        assert_eq!(restored.prop, prop);
     }
 }

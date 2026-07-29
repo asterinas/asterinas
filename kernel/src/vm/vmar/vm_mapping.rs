@@ -12,8 +12,11 @@ use aster_util::printer::VmPrinter;
 use ostd::{
     io::IoMem,
     mm::{
-        CachePolicy, Frame, FrameAllocOptions, PageFlags, PageProperty, UFrame, VmSpace,
-        io::util::HasVmReaderWriter, tlb::TlbFlushOp, vm_space::VmQueriedItem,
+        CachePolicy, Frame, FrameAllocOptions, PageAccess, PageFlags, PageProperty, UFrame,
+        VmSpace,
+        io::util::HasVmReaderWriter,
+        tlb::TlbFlushOp,
+        vm_space::{CursorMut, VmQueriedItem},
     },
     task::disable_preempt,
 };
@@ -372,17 +375,15 @@ impl VmMapping {
                 rss_delta,
             );
 
-            // Errors caused by the "around" pages should be ignored, so here we
-            // only return the error if the faulting page is still not mapped.
+            // Errors caused by the "around" pages should be ignored, but the
+            // actual faulting page must still be handled.
             if res.is_err() {
-                let preempt_guard = disable_preempt();
-                let mut cursor = vm_space.cursor(
-                    &preempt_guard,
-                    &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
-                )?;
-                if let (_, Some(_)) = cursor.query().unwrap() {
-                    return Ok(());
-                }
+                return self.handle_single_page_fault(
+                    vm_space,
+                    page_aligned_addr,
+                    page_fault_info.required_perms,
+                    rss_delta,
+                );
             }
 
             return res;
@@ -442,12 +443,15 @@ impl VmMapping {
 
             let (va, item) = cursor.query().unwrap();
             let is_write = required_perms.contains(VmPerms::WRITE);
+            let access = if is_write {
+                PageAccess::Write
+            } else {
+                PageAccess::Read
+            };
             match item {
                 Some(VmQueriedItem::MappedRam { frame, mut prop }) => {
                     if VmPerms::from(prop.flags).contains(required_perms) {
-                        // The page fault is already handled maybe by other threads.
-                        // Just flush the TLB and return.
-                        TlbFlushOp::for_range(va).perform_on_current();
+                        record_page_access(&mut cursor, va, access);
                         return Ok(());
                     }
                     assert!(is_write);
@@ -463,7 +467,8 @@ impl VmMapping {
                     // frame. We can directly map the frame as writable without copying.
                     let only_reference = frame.reference_count() == 1;
 
-                    let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
+                    let mut new_flags = PageFlags::W;
+                    new_flags.record_access(PageAccess::Write);
 
                     if self.is_shared || only_reference {
                         cursor.protect_next(PAGE_SIZE, |flags, _cache| {
@@ -515,11 +520,8 @@ impl VmMapping {
                         perms
                     };
 
-                    let mut page_flags = vm_perms.into();
-                    page_flags |= PageFlags::ACCESSED;
-                    if is_write {
-                        page_flags |= PageFlags::DIRTY;
-                    }
+                    let mut page_flags = PageFlags::from(vm_perms);
+                    page_flags.record_access(access);
                     let map_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
 
                     cursor.map(frame, map_prop);
@@ -614,19 +616,33 @@ impl VmMapping {
             let rss_delta_ref = &mut rss_delta;
             let operate =
                 move |commit_fn: &mut dyn FnMut() -> Result<(usize, CachePage), VmoCommitError>| {
-                    if let (_, None) = cursor.query().unwrap() {
-                        // We regard all the surrounding pages as accessed, no matter
-                        // if it is really so. Then the hardware won't bother to update
-                        // the accessed bit of the page table on following accesses.
-                        let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
-                        let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
-                        let (_, frame) = commit_fn()?;
-                        cursor.map(frame.into(), page_prop);
-                        rss_delta_ref.add(self.rss_type(), 1);
-                    } else {
-                        let next_addr = cursor.virt_addr() + PAGE_SIZE;
-                        if next_addr < end_addr {
-                            let _ = cursor.jump(next_addr);
+                    let current_addr = cursor.virt_addr();
+                    let (_, item) = cursor.query().unwrap();
+                    match item {
+                        None => {
+                            // We regard all the surrounding pages as accessed, no matter
+                            // if it is really so. Then the hardware won't bother to update
+                            // the accessed bit of the page table on following accesses.
+                            let mut page_flags = PageFlags::from(vm_perms);
+                            page_flags.record_access(PageAccess::Read);
+                            let page_prop =
+                                PageProperty::new_user(page_flags, CachePolicy::Writeback);
+                            let (_, frame) = commit_fn()?;
+                            cursor.map(frame.into(), page_prop);
+                            rss_delta_ref.add(self.rss_type(), 1);
+                        }
+                        Some(VmQueriedItem::MappedRam { prop, .. })
+                            if current_addr == page_aligned_addr
+                                && VmPerms::from(prop.flags).contains(required_perms) =>
+                        {
+                            let va = page_aligned_addr..page_aligned_addr + PAGE_SIZE;
+                            record_page_access(&mut cursor, va, PageAccess::Read);
+                        }
+                        Some(_) => {
+                            let next_addr = current_addr + PAGE_SIZE;
+                            if next_addr < end_addr {
+                                let _ = cursor.jump(next_addr);
+                            }
                         }
                     }
                     Ok(())
@@ -646,6 +662,17 @@ impl VmMapping {
             }
         }
     }
+}
+
+fn record_page_access(cursor: &mut CursorMut<'_>, va: Range<Vaddr>, access: PageAccess) {
+    let protected_range = cursor.protect_next(PAGE_SIZE, |flags, _| {
+        flags.record_access(access);
+    });
+    debug_assert_eq!(protected_range, Some(va.clone()));
+
+    cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
+    cursor.flusher().dispatch_tlb_flush();
+    cursor.flusher().sync_tlb_flush();
 }
 
 /**************************** Transformations ********************************/
@@ -1028,4 +1055,239 @@ fn duplicate_frame(src: &UFrame) -> Result<Frame<()>> {
     let new_frame = FrameAllocOptions::new().zeroed(false).alloc_frame()?;
     new_frame.writer().write(&mut src.reader());
     Ok(new_frame)
+}
+
+#[cfg(ktest)]
+mod tests {
+    use io_util::batch::IoBatch;
+    use ostd::prelude::ktest;
+
+    use super::*;
+    use crate::vm::page_cache::{LockedCachePage, PageCacheBackend, VmoOptions};
+
+    struct FailingPageCacheBackend;
+
+    impl PageCacheBackend for FailingPageCacheBackend {
+        fn read_page_async(
+            &self,
+            _idx: usize,
+            _locked_page: LockedCachePage,
+            _io_batch: &mut IoBatch,
+        ) -> Result<()> {
+            Err(Error::with_message(
+                Errno::EIO,
+                "intentional fault-around read failure",
+            ))
+        }
+
+        fn write_page_async(
+            &self,
+            _idx: usize,
+            _locked_page: LockedCachePage,
+            _io_batch: &mut IoBatch,
+        ) -> Result<()> {
+            Err(Error::with_message(
+                Errno::EIO,
+                "intentional fault-around write failure",
+            ))
+        }
+    }
+
+    fn assert_mapping_prop(vm_space: &VmSpace, range: &Range<Vaddr>, expected_flags: PageFlags) {
+        let preempt_guard = disable_preempt();
+        let mut cursor = vm_space.cursor(&preempt_guard, range).unwrap();
+        let (_, Some(VmQueriedItem::MappedRam { prop, .. })) = cursor.query().unwrap() else {
+            panic!("query did not return the RAM mapping");
+        };
+        assert_eq!(prop.flags, expected_flags);
+        assert_eq!(prop.cache, CachePolicy::Writeback);
+    }
+
+    // Regression test for Asterinas issue #3589.
+    #[ktest]
+    fn page_fault_handler_resolves_ad_bit_fault_for_read() {
+        const EXPECTED_VALUE: u8 = 0x5a;
+
+        let vm_space = Arc::new(VmSpace::new());
+        let map_range = PAGE_SIZE..PAGE_SIZE * 2;
+        let frame = FrameAllocOptions::new().alloc_frame().unwrap();
+        frame.writer().write_val(&EXPECTED_VALUE).unwrap();
+        let preempt_guard = disable_preempt();
+        vm_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .map(
+                frame.into(),
+                PageProperty::new_user(PageFlags::RX | PageFlags::AVAIL2, CachePolicy::Writeback),
+            );
+        vm_space.activate();
+
+        let mapping = VmMapping::new(
+            NonZeroUsize::new(PAGE_SIZE).unwrap(),
+            map_range.start,
+            MappedMemory::Anonymous,
+            None,
+            false,
+            false,
+            VmPerms::READ | VmPerms::EXEC,
+        );
+        mapping
+            .handle_page_fault(
+                &vm_space,
+                &PageFaultInfo::new(map_range.start, VmPerms::READ),
+                &mut RssDelta::new_for_test(),
+            )
+            .unwrap();
+
+        assert_mapping_prop(
+            &vm_space,
+            &map_range,
+            PageFlags::RX | PageFlags::AVAIL2 | PageFlags::ACCESSED,
+        );
+        assert_eq!(
+            vm_space
+                .reader(map_range.start, size_of::<u8>())
+                .unwrap()
+                .read_val::<u8>()
+                .unwrap(),
+            EXPECTED_VALUE
+        );
+    }
+
+    // Regression test for Asterinas issue #3589.
+    #[ktest]
+    fn page_fault_handler_resolves_ad_bit_fault_for_write() {
+        const EXPECTED_VALUE: u8 = 0xa5;
+
+        let vm_space = Arc::new(VmSpace::new());
+        let map_range = PAGE_SIZE..PAGE_SIZE * 2;
+        let frame = FrameAllocOptions::new().alloc_frame().unwrap();
+        let preempt_guard = disable_preempt();
+        vm_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .map(
+                frame.clone().into(),
+                PageProperty::new_user(PageFlags::RW | PageFlags::AVAIL2, CachePolicy::Writeback),
+            );
+        vm_space.activate();
+
+        let mapping = VmMapping::new(
+            NonZeroUsize::new(PAGE_SIZE).unwrap(),
+            map_range.start,
+            MappedMemory::Anonymous,
+            None,
+            false,
+            false,
+            VmPerms::READ | VmPerms::WRITE,
+        );
+        mapping
+            .handle_page_fault(
+                &vm_space,
+                &PageFaultInfo::new(map_range.start, VmPerms::WRITE),
+                &mut RssDelta::new_for_test(),
+            )
+            .unwrap();
+
+        assert_mapping_prop(
+            &vm_space,
+            &map_range,
+            PageFlags::RW | PageFlags::AVAIL2 | PageFlags::ACCESSED | PageFlags::DIRTY,
+        );
+        vm_space
+            .writer(map_range.start, size_of::<u8>())
+            .unwrap()
+            .write_val(&EXPECTED_VALUE)
+            .unwrap();
+        assert_eq!(frame.reader().read_val::<u8>().unwrap(), EXPECTED_VALUE);
+    }
+
+    // Regression test for Asterinas issue #3589.
+    #[ktest]
+    fn page_fault_handler_resolves_ad_bit_fault_with_fault_around() {
+        let vm_space = Arc::new(VmSpace::new());
+        let map_range = PAGE_SIZE..PAGE_SIZE * 2;
+        let vmo = VmoOptions::new_anon(PAGE_SIZE).alloc().unwrap();
+        let mapped_vmo = MappedVmo::new(vmo, 0, false).unwrap();
+        let frame = mapped_vmo.get_committed_frame(0).unwrap();
+        let preempt_guard = disable_preempt();
+        vm_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .map(
+                frame,
+                PageProperty::new_user(PageFlags::R | PageFlags::AVAIL2, CachePolicy::Writeback),
+            );
+        vm_space.activate();
+
+        let mapping = VmMapping::new(
+            NonZeroUsize::new(PAGE_SIZE).unwrap(),
+            map_range.start,
+            MappedMemory::Vmo(mapped_vmo),
+            None,
+            false,
+            true,
+            VmPerms::READ,
+        );
+        mapping
+            .handle_page_fault(
+                &vm_space,
+                &PageFaultInfo::new(map_range.start, VmPerms::READ),
+                &mut RssDelta::new_for_test(),
+            )
+            .unwrap();
+
+        assert_mapping_prop(
+            &vm_space,
+            &map_range,
+            PageFlags::R | PageFlags::AVAIL2 | PageFlags::ACCESSED,
+        );
+    }
+
+    // Regression test for Asterinas issue #3589.
+    #[ktest]
+    fn page_fault_handler_repairs_ad_bit_when_fault_around_io_fails() {
+        let vm_space = Arc::new(VmSpace::new());
+        let mapping_start = PAGE_SIZE;
+        let fault_addr = mapping_start + PAGE_SIZE;
+        let fault_range = fault_addr..fault_addr + PAGE_SIZE;
+        let backend: Arc<dyn PageCacheBackend> = Arc::new(FailingPageCacheBackend);
+        let vmo = VmoOptions::new_page_cache(16 * PAGE_SIZE, Arc::downgrade(&backend))
+            .alloc()
+            .unwrap();
+        let mapped_vmo = MappedVmo::new(vmo, 0, false).unwrap();
+        let frame = FrameAllocOptions::new().alloc_frame().unwrap();
+        let preempt_guard = disable_preempt();
+        vm_space
+            .cursor_mut(&preempt_guard, &fault_range)
+            .unwrap()
+            .map(
+                frame.into(),
+                PageProperty::new_user(PageFlags::R | PageFlags::AVAIL2, CachePolicy::Writeback),
+            );
+        vm_space.activate();
+
+        let mapping = VmMapping::new(
+            NonZeroUsize::new(16 * PAGE_SIZE).unwrap(),
+            mapping_start,
+            MappedMemory::Vmo(mapped_vmo),
+            None,
+            false,
+            true,
+            VmPerms::READ,
+        );
+        mapping
+            .handle_page_fault(
+                &vm_space,
+                &PageFaultInfo::new(fault_addr, VmPerms::READ),
+                &mut RssDelta::new_for_test(),
+            )
+            .unwrap();
+
+        assert_mapping_prop(
+            &vm_space,
+            &fault_range,
+            PageFlags::R | PageFlags::AVAIL2 | PageFlags::ACCESSED,
+        );
+    }
 }

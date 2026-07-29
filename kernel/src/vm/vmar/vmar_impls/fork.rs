@@ -125,6 +125,24 @@ mod test {
 
     use super::*;
 
+    fn expected_iomem_flags(flags: PageFlags) -> PageFlags {
+        #[cfg(target_arch = "riscv64")]
+        {
+            let mut flags = flags;
+            flags.record_access(if flags.contains(PageFlags::W) {
+                ostd::mm::PageAccess::Write
+            } else {
+                ostd::mm::PageAccess::Read
+            });
+            flags
+        }
+
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+            flags
+        }
+    }
+
     #[ktest]
     fn cow_copy_pt_basic() {
         let vm_space = VmSpace::new();
@@ -275,7 +293,10 @@ mod test {
         // Confirms the initial mapping.
         assert!(matches!(
             vm_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))  if va.start == map_range.start && paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))
+                if va.start == map_range.start
+                    && paddr == IOMEM_PADDR
+                    && prop.flags == expected_iomem_flags(PageFlags::RW)
         ));
 
         // Creates a child page table with copy-on-write protection.
@@ -324,7 +345,10 @@ mod test {
         // Confirms that the child VA remains mapped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))  if va.start == map_range.start && paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))
+                if va.start == map_range.start
+                    && paddr == IOMEM_PADDR
+                    && prop.flags == expected_iomem_flags(PageFlags::RW)
         ));
 
         // Creates a sibling page table (from the now-modified parent).
@@ -354,7 +378,10 @@ mod test {
         // Confirms that the child VA remains mapped after the parent is dropped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))  if va.start == map_range.start && paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))
+                if va.start == map_range.start
+                    && paddr == IOMEM_PADDR
+                    && prop.flags == expected_iomem_flags(PageFlags::RW)
         ));
 
         // Unmaps the range from the child.
@@ -372,7 +399,10 @@ mod test {
         // Confirms that the sibling mapping points back to the original `IoMem`'s physical address.
         assert!(matches!(
             sibling_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))  if va.start == map_range.start && paddr == IOMEM_PADDR && prop.flags == PageFlags::RW
+            (va, Some(VmQueriedItem::MappedIoMem { paddr, prop }))
+                if va.start == map_range.start
+                    && paddr == IOMEM_PADDR
+                    && prop.flags == expected_iomem_flags(PageFlags::RW)
         ));
 
         // Confirms that the child remains unmapped.
