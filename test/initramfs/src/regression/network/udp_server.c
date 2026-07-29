@@ -7,12 +7,27 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 1234
 #define BUFFER_SIZE 1024
 
-int main()
+static void notify_ready(const char *ready_file)
+{
+	if (ready_file == NULL) {
+		return;
+	}
+
+	int ready_fd = open(ready_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
+	if (ready_fd < 0) {
+		perror("create ready file");
+		exit(EXIT_FAILURE);
+	}
+	close(ready_fd);
+}
+
+int main(int argc, char *argv[])
 {
 	int sock_fd;
 	char buffer[BUFFER_SIZE];
@@ -39,6 +54,7 @@ int main()
 		perror("bind failed");
 		exit(EXIT_FAILURE);
 	}
+	notify_ready(argc > 1 ? argv[1] : NULL);
 
 	// Receive message from client
 	struct sockaddr_in sender_addr;

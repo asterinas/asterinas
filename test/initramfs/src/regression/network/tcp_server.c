@@ -4,11 +4,26 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <arpa/inet.h>
 
 #define PORT 8080
 
-int main()
+static void notify_ready(const char *ready_file)
+{
+	if (ready_file == NULL) {
+		return;
+	}
+
+	int ready_fd = open(ready_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
+	if (ready_fd < 0) {
+		perror("create ready file");
+		exit(EXIT_FAILURE);
+	}
+	close(ready_fd);
+}
+
+int main(int argc, char *argv[])
 {
 	int server_fd, new_socket;
 	struct sockaddr_in address;
@@ -51,6 +66,7 @@ int main()
 		perror("listen failed");
 		exit(EXIT_FAILURE);
 	}
+	notify_ready(argc > 1 ? argv[1] : NULL);
 
 	// Accept the connection
 	if ((new_socket = accept(server_fd, (struct sockaddr *)&address,

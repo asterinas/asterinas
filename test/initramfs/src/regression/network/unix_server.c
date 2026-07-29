@@ -7,11 +7,26 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <fcntl.h>
 
 #define SOCKET_NAME "/tmp/test.sock"
 #define BUFFER_SIZE 128
 
-int main()
+static void notify_ready(const char *ready_file)
+{
+	if (ready_file == NULL) {
+		return;
+	}
+
+	int ready_fd = open(ready_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
+	if (ready_fd < 0) {
+		perror("create ready file");
+		exit(EXIT_FAILURE);
+	}
+	close(ready_fd);
+}
+
+int main(int argc, char *argv[])
 {
 	int server_fd, accepted_fd;
 	struct sockaddr_un server_addr, client_addr;
@@ -41,6 +56,7 @@ int main()
 		perror("listen");
 		exit(EXIT_FAILURE);
 	}
+	notify_ready(argc > 1 ? argv[1] : NULL);
 
 	printf("Server is listening...\n");
 
