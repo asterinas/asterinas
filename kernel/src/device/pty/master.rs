@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::format;
-
 use ostd::task::Task;
 
 use super::{PtySlave, driver::PtyDriver};
@@ -14,10 +12,7 @@ use crate::{
             AccessMode, OpenArgs, PerOpenFileOps, SettableStatusFlags, StatusFlags,
             file_table::FdFlags, mkmod,
         },
-        vfs::{
-            inode::FileOps,
-            path::{FsPath, Path},
-        },
+        vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
     process::{
@@ -153,7 +148,7 @@ impl PerOpenFileOps for PtyMaster {
         false
     }
 
-    fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
+    fn ioctl(&self, path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
         use super::ioctl_defs::*;
         use crate::{device::tty::ioctl_defs::*, util::ioctl::common_defs::GetNumBytesToRead};
 
@@ -189,23 +184,10 @@ impl PerOpenFileOps for PtyMaster {
 
                 // TODO: Deal with `open()` flags.
                 let slave = {
-                    let fs_ref = thread_local.borrow_fs();
-                    let path_resolver = fs_ref.resolver().read();
-
-                    let slave_name = {
-                        let devpts_path = path_resolver
-                            .make_abs_path(super::DEV_PTS.get().unwrap())
-                            .into_string();
-                        format!("{}/{}", devpts_path, self.slave.index())
-                    };
-
-                    let fs_path = FsPath::try_from(slave_name.as_str())?;
-
-                    let inode_handle = {
-                        let open_args = OpenArgs::from_modes(AccessMode::O_RDWR, mkmod!(u+rw));
-                        path_resolver.lookup(&fs_path)?.open(open_args)?
-                    };
-                    Arc::new(inode_handle)
+                    let devpts_root = Path::new_fs_root(path.mount_node().clone());
+                    let slave_path = devpts_root.lookup_child(&self.slave.index().to_string())?;
+                    let open_args = OpenArgs::from_modes(AccessMode::O_RDWR, mkmod!(u+rw));
+                    Arc::new(slave_path.open(open_args)?)
                 };
 
                 let fd = {
