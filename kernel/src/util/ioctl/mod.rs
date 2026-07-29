@@ -389,7 +389,6 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
     Ioctl<MAGIC, NR, IS_MODERN, InOutData<T>>
 {
     /// Reads the ioctl argument from userspace.
-    #[expect(dead_code)]
     pub fn read(&self) -> Result<T> {
         self.with_data_ptr(|ptr| Ok(ptr.read()?))
     }
