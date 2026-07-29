@@ -377,23 +377,23 @@ ktest: initramfs $(CARGO_OSDK)
 .PHONY: docs
 docs: private DEFAULT_PACKAGE_NAMES = \
     $(shell ./tools/print_workspace_members.sh --default-ones --package-names)
-docs: private DEFAULT_NON_KERNEL_PACKAGE_NAMES = \
-    $(filter-out aster-kernel,$(DEFAULT_PACKAGE_NAMES))
+docs: private DEFAULT_NON_CORE_PACKAGE_NAMES = \
+    $(filter-out aster-core,$(DEFAULT_PACKAGE_NAMES))
 docs: private NON_DEFAULT_PACKAGE_NAMES = \
     $(shell ./tools/print_workspace_members.sh --non-default-ones --package-names)
 docs: private DOC_NON_DEFAULT_PACKAGE_NAMES = \
     $(filter-out linux-bzimage-setup,$(NON_DEFAULT_PACKAGE_NAMES))
 docs: $(CARGO_OSDK)
-	@if [ -n "$(DEFAULT_NON_KERNEL_PACKAGE_NAMES)" ]; then \
-		RUSTDOCFLAGS="-Dwarnings" cargo osdk doc $(addprefix -p ,$(DEFAULT_NON_KERNEL_PACKAGE_NAMES)) --no-deps; \
+	@if [ -n "$(DEFAULT_NON_CORE_PACKAGE_NAMES)" ]; then \
+		RUSTDOCFLAGS="-Dwarnings" cargo osdk doc $(addprefix -p ,$(DEFAULT_NON_CORE_PACKAGE_NAMES)) --no-deps; \
 	fi
 	@if [ -n "$(DOC_NON_DEFAULT_PACKAGE_NAMES)" ]; then \
 		RUSTDOCFLAGS="-Dwarnings" cargo doc $(addprefix -p ,$(DOC_NON_DEFAULT_PACKAGE_NAMES)) --no-deps; \
 	fi
-	@# The kernel crate is primarily composed of private items.
+	@# The core crate is primarily composed of private items.
 	@# Include --document-private-items to fully check internal documentation.
 	@RUSTDOCFLAGS="-Dwarnings --document-private-items -Arustdoc::private_intra_doc_links" \
-		cargo osdk doc -p aster-kernel --no-deps
+		cargo osdk doc -p aster-core --no-deps
 	@if [ "$(TARGET_ARCH)" = "x86_64" ]; then \
 		cd ostd/libs/linux-bzimage/setup && RUSTDOCFLAGS="-Dwarnings" cargo osdk doc --no-deps; \
 	fi

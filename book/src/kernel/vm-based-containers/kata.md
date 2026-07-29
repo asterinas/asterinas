@@ -202,11 +202,15 @@ look for:
 /opt/kata/share/kata-containers/aster-kernel-osdk-bin.qemu_elf
 ```
 
+The pinned `asterinas/kata:0.18.0-20260603` tag predates this source-tree
+package rename. Use its documented old artifact name for the bundled kernel.
+Kernels built from the current source use the new name shown below.
+
 If you configured a locally built kernel in Step 4,
 look for:
 
 ```text
-/root/asterinas/target/osdk/aster-kernel-osdk-bin.qemu_elf
+/root/asterinas/target/osdk/asterinas-osdk-bin.qemu_elf
 ```
 
 This is the most direct check that Kata booted an Asterinas guest kernel.
@@ -243,14 +247,14 @@ Build the kernel first:
 Verify that the command produced the kernel image:
 
 ```bash
-ls /root/asterinas/target/osdk/aster-kernel-osdk-bin.qemu_elf
+ls /root/asterinas/target/osdk/asterinas-osdk-bin.qemu_elf
 ```
 
 Pass that path to `tools/kata/kata_env.sh install`:
 
 ```bash
 tools/kata/kata_env.sh install \
-    --kernel /root/asterinas/target/osdk/aster-kernel-osdk-bin.qemu_elf
+    --kernel /root/asterinas/target/osdk/asterinas-osdk-bin.qemu_elf
 ```
 
 Configuring a local kernel re-runs `tools/kata/kata_env.sh install`
