@@ -1,11 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::time::Duration;
+
 use device_id::{DeviceId, MajorId, MinorId};
 
-use super::*;
+use super::{BLOCK_SIZE, DevPts, PTMX_INO};
 use crate::{
-    device::DevtmpfsInodeMeta,
-    fs::file::{AccessMode, PerOpenFileOps},
+    device::{Device, DeviceType, DevtmpfsInodeMeta},
+    fs::{
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
+        vfs::{
+            file_system::{FileSystem, SuperBlock},
+            inode::{Extension, FileOps, Inode, Metadata},
+        },
+    },
+    prelude::*,
+    process::{Gid, Uid},
 };
 
 /// Same major number with Linux.

@@ -3,10 +3,20 @@
 #![expect(dead_code)]
 #![expect(unused_variables)]
 
-use super::*;
+use core::time::Duration;
+
+use super::{BLOCK_SIZE, DevPts, FIRST_SLAVE_INO};
 use crate::{
-    device::PtySlave,
-    fs::file::{AccessMode, PerOpenFileOps},
+    device::{Device, PtySlave},
+    fs::{
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
+        vfs::{
+            file_system::FileSystem,
+            inode::{Extension, FileOps, Inode, Metadata},
+        },
+    },
+    prelude::*,
+    process::{Gid, Uid},
 };
 
 /// Same major number with Linux, the minor number is the index of slave.

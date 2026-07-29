@@ -10,7 +10,7 @@ use id_alloc::IdAlloc;
 pub use self::ptmx::Ptmx;
 use self::slave::PtySlaveInode;
 use crate::{
-    device::{Device, DeviceType, PtyMaster},
+    device::PtyMaster,
     fs::{
         file::{InodeMode, InodeType, StatusFlags, mkmod},
         pseudofs::AnonDeviceId,

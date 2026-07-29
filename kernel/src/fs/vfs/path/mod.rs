@@ -72,6 +72,15 @@ impl Path {
         Ok(Self::new(self.mount.clone(), new_child_dentry))
     }
 
+    /// Looks up a direct child within the current mount.
+    ///
+    /// This does not interpret special names, check search permissions, or traverse mount points.
+    pub fn lookup_child(&self, name: &str) -> Result<Self> {
+        let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
+        let child_dentry = dir_dentry.lookup_child(name)?;
+        Ok(Self::new(self.mount.clone(), child_dentry))
+    }
+
     /// Creates a new `Path` to represent an unnamed temporary file.
     ///
     /// The returned inode has no directory entry and is invisible to `readdir`.
