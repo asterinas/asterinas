@@ -43,7 +43,7 @@ Set `TARGET_ARCH` to `x86_64` (default), `riscv64`, or `loongarch64`.
 
 ## Toolchain
 
-- **Rust nightly** pinned in `rust-toolchain.toml` (nightly-2025-12-06).
+- **Rust nightly** pinned in `rust-toolchain.toml`.
 - **Edition:** 2024.
 - `rustfmt.toml`: imports grouped as Std / External / Crate
   (`imports_granularity = "Crate"`, `group_imports = "StdExternalCrate"`).

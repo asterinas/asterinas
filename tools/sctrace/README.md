@@ -93,7 +93,7 @@ The `sctrace` tool has two prerequisites:
 * [**strace**](https://strace.io/) version 5.15 or higher
     * Install on Debian/Ubuntu: `sudo apt install strace`
     * Install on Fedora/RHEL: `sudo dnf install strace`
-* The Rust toolchain (the version `nightly-2025-12-06` is tested; other versions may be supported as well)
+* The Rust toolchain (the version pinned in [`rust-toolchain.toml`](../../rust-toolchain.toml) is tested; other versions may be supported as well)
     * Install via [Rustup](https://rustup.rs/): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 
 To install the `sctrace` tool, execute the following command:
