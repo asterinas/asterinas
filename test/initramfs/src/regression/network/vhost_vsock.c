@@ -608,7 +608,7 @@ FN_TEST(vring_index_validation)
 	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_VRING_ADDR, &addr), EINVAL);
 	addr.flags = 0;
 	addr.log_guest_addr = (uintptr_t)mem_table_page;
-	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_VRING_ADDR, &addr), EINVAL);
+	TEST_SUCC(ioctl(vhost_fd, VHOST_SET_VRING_ADDR, &addr));
 
 	state.num = (uint32_t)UINT16_MAX + 1;
 	TEST_ERRNO(ioctl(vhost_fd, VHOST_SET_VRING_BASE, &state), EINVAL);

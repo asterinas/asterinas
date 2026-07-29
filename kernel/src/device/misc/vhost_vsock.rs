@@ -981,7 +981,7 @@ fn validate_vring_base(base: u32) -> Result<()> {
 }
 
 fn validate_vring_addr(addr: &VhostVringAddr, vring_num: u32) -> Result<()> {
-    if addr.flags != 0 || addr.log_guest_addr != 0 {
+    if addr.flags != 0 {
         return_errno_with_message!(Errno::EINVAL, "vhost-vsock vring logging is unsupported");
     }
 
