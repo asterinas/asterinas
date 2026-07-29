@@ -57,6 +57,15 @@ FN_TEST(clear_lock_and_open_slave)
 }
 END_TEST()
 
+FN_TEST(open_slave_with_flags)
+{
+	int peer = TEST_SUCC(ioctl(master, TIOCGPTPEER, O_WRONLY | O_CLOEXEC));
+	TEST_RES(fcntl(peer, F_GETFL), (_ret & O_ACCMODE) == O_WRONLY);
+	TEST_RES(fcntl(peer, F_GETFD), (_ret & FD_CLOEXEC) != 0);
+	TEST_SUCC(close(peer));
+}
+END_TEST()
+
 FN_TEST(read_write)
 {
 	// Set master blocking mode
