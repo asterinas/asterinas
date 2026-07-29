@@ -147,6 +147,8 @@ echo "All mount bind file test passed."
 ./pseudofs/pseudo_inode
 ./pseudofs/pseudo_mount
 
+./rename/same_inode
+
 ./statx/btime
 
 ./symlink/symlink
