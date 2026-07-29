@@ -22,7 +22,7 @@ bitflags! {
 pub fn sys_close(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("raw_fd = {}", raw_fd);
 
-    let file = {
+    let closed_file = {
         let fd = raw_fd.try_into()?;
         let file_table = ctx.thread_local.borrow_file_table();
         let mut file_table_locked = file_table.unwrap().write();
@@ -30,14 +30,14 @@ pub fn sys_close(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
         file_table_locked.close_file(fd).unwrap()
     };
 
-    fs::vfs::notify::on_close(&file);
+    fs::vfs::notify::on_close(closed_file.file());
 
     // Cleanup work needs to be done in the `Drop` impl.
     //
     // We don't mind the races between closing the file descriptor and using the file descriptor,
     // because such races are explicitly allowed in the man pages. See the "Multithreaded processes
     // and close()" section in <https://man7.org/linux/man-pages/man2/close.2.html>.
-    drop(file);
+    drop(closed_file);
 
     // Linux has error codes for the close() system call for diagnostic and remedial purposes, but
     // only for a small subset of file systems such as NFS. We currently have no support for such
@@ -58,10 +58,11 @@ pub fn sys_close_range(
     debug!("first = {}, last = {}, flags = {}", first, last, raw_flags);
 
     if last < first {
-        return_errno!(Errno::EINVAL);
+        return_errno_with_message!(Errno::EINVAL, "the range to close is invalid");
     }
 
-    let flags = CloseRangeFlags::from_bits(raw_flags).ok_or_else(|| Error::new(Errno::EINVAL))?;
+    let flags = CloseRangeFlags::from_bits(raw_flags)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid close_range flags"))?;
 
     if flags.contains(CloseRangeFlags::UNSHARE) {
         // FIXME: While directly invoking `unshare_files` is logically correct,

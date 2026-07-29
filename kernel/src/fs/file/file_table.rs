@@ -171,7 +171,7 @@ impl FileTable {
         fd: FileDesc,
         new_fd: FileDesc,
         flags: FdFlags,
-    ) -> Result<Option<Arc<dyn FileLike>>> {
+    ) -> Result<Option<ClosedFile>> {
         let entry = self.duplicate_entry(fd, flags)?;
         let closed_file = self.close_file(new_fd);
         self.table.put_at(new_fd.into(), entry);
@@ -193,23 +193,23 @@ impl FileTable {
         (self.table.put(entry) as RawFileDesc).try_into().unwrap()
     }
 
-    pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
+    pub fn close_file(&mut self, fd: FileDesc) -> Option<ClosedFile> {
         let removed_entry = self.table.remove(fd.into())?;
         // POSIX record locks are process-associated and Linux drops them when any fd for the inode is
         // closed by that process, even if duplicated descriptors still exist.
         //
         // Reference: <https://man7.org/linux/man-pages/man2/fcntl_locking.2.html>
-        if let Ok(inode_handle) = removed_entry.file.as_inode_handle_or_err() {
-            inode_handle.release_range_locks(self.as_range_lock_owner());
-        }
-        Some(removed_entry.file)
+        Some(ClosedFile::new(
+            removed_entry.file,
+            self.as_range_lock_owner(),
+        ))
     }
 
-    pub fn close_files_on_exec(&mut self) -> Vec<Arc<dyn FileLike>> {
+    pub fn close_files_on_exec(&mut self) -> Vec<ClosedFile> {
         self.close_files(|entry| entry.flags().contains(FdFlags::CLOEXEC))
     }
 
-    fn close_files<F>(&mut self, should_close: F) -> Vec<Arc<dyn FileLike>>
+    fn close_files<F>(&mut self, should_close: F) -> Vec<ClosedFile>
     where
         F: Fn(&FileTableEntry) -> bool,
     {
@@ -267,6 +267,37 @@ impl Drop for FileTable {
             if let Ok(inode_handle) = file.as_inode_handle_or_err() {
                 inode_handle.release_range_locks(self.as_range_lock_owner());
             }
+        }
+    }
+}
+
+/// A file removed from a [`FileTable`] whose close cleanup is pending.
+///
+/// Dropping this value may block, so it must be dropped after releasing the file-table lock.
+#[must_use = "close cleanup runs when this value is dropped"]
+pub struct ClosedFile {
+    file: Arc<dyn FileLike>,
+    range_lock_owner: RangeLockOwner,
+}
+
+impl ClosedFile {
+    fn new(file: Arc<dyn FileLike>, range_lock_owner: RangeLockOwner) -> Self {
+        Self {
+            file,
+            range_lock_owner,
+        }
+    }
+
+    /// Returns the removed file.
+    pub fn file(&self) -> &Arc<dyn FileLike> {
+        &self.file
+    }
+}
+
+impl Drop for ClosedFile {
+    fn drop(&mut self) {
+        if let Ok(inode_handle) = self.file.as_inode_handle_or_err() {
+            inode_handle.release_range_locks(self.range_lock_owner);
         }
     }
 }
