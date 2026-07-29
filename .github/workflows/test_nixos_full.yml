@@ -95,7 +95,7 @@ jobs:
           FULL_TEST_MATRIX: >-
             [
               { "name": "system-core", "disk_size": 10240, "timeout_minutes": 45 },
-              { "name": "nix-and-nixos-tools", "disk_size": 8192 },
+              { "name": "nix-and-nixos-tools", "disk_size": 8192, "timeout_minutes": 60, "test_timeout_minutes": 30 },
               { "name": "containerization-and-virtualization", "disk_size": 10240, "timeout_minutes": 45 },
               { "name": "networking", "disk_size": 10240, "timeout_minutes": 45 },
               { "name": "web-servers-and-proxies", "disk_size": 10240, "timeout_minutes": 45 },
@@ -195,4 +195,4 @@ jobs:
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
           run: |
             make nixos NIXOS_TEST_SUITE=${{ matrix.test.name }} NIXOS_DISK_SIZE_IN_MB=${{ matrix.test.disk_size }}
-            make run_nixos NIXOS_TEST_SUITE=${{ matrix.test.name }}
+            make run_nixos NIXOS_TEST_SUITE=${{ matrix.test.name }} NIXOS_TEST_TIMEOUT=${{ matrix.test.test_timeout_minutes || 10 }}min
