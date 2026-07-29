@@ -50,6 +50,11 @@ impl<T> RwArc<T> {
         self.0.data.write()
     }
 
+    /// Returns a raw pointer to the contained value.
+    pub fn as_ptr(&self) -> *const T {
+        self.0.data.as_ptr()
+    }
+
     /// Returns an immutable reference if no other `RwArc` points to the same allocation.
     ///
     /// This method is cheap because it does not acquire a lock.

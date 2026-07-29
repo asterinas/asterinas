@@ -6,9 +6,12 @@ use core::{
 };
 
 use aster_util::{ranged_integer::RangedU32, slot_vec::SlotVec};
+use ostd::sync::RwArc;
 
 use super::file_handle::FileLike;
-use crate::{prelude::*, process::posix_thread::FileTableRefMut};
+use crate::{
+    fs::vfs::range_lock::RangeLockOwner, prelude::*, process::posix_thread::FileTableRefMut,
+};
 
 /// Represents a validated, non-negative file descriptor.
 ///
@@ -94,16 +97,37 @@ impl TryFrom<RawFileDesc> for FileDesc {
     }
 }
 
-#[derive(Clone)]
+/// A file table.
+///
+/// A file table is created within an [`RwArc`] and remains within it (see [`Self::new`] and
+/// [`Self::fork_from`]). The file table's address is used as a [`RangeLockOwner`], so users should
+/// not try to move the file table to a different address.
 pub struct FileTable {
     table: SlotVec<FileTableEntry>,
 }
 
 impl FileTable {
-    pub const fn new() -> Self {
-        Self {
+    /// Creates a new file table.
+    pub fn new() -> RwArc<Self> {
+        RwArc::new(Self {
             table: SlotVec::new(),
-        }
+        })
+    }
+
+    /// Creates a new file table containing clones of all entries in `parent`.
+    pub fn fork_from(parent: &Self) -> RwArc<Self> {
+        RwArc::new(Self {
+            table: parent.table.clone(),
+        })
+    }
+
+    /// Returns the range-lock owner of `file_table`.
+    pub fn range_lock_owner(file_table: &RwArc<Self>) -> RangeLockOwner {
+        RangeLockOwner::from_address(file_table.as_ptr().addr())
+    }
+
+    fn as_range_lock_owner(&self) -> RangeLockOwner {
+        RangeLockOwner::from_address(self as *const Self as usize)
     }
 
     pub fn len(&self) -> usize {
@@ -176,7 +200,7 @@ impl FileTable {
         //
         // Reference: <https://man7.org/linux/man-pages/man2/fcntl_locking.2.html>
         if let Ok(inode_handle) = removed_entry.file.as_inode_handle_or_err() {
-            inode_handle.release_range_locks();
+            inode_handle.release_range_locks(self.as_range_lock_owner());
         }
         Some(removed_entry.file)
     }
@@ -237,9 +261,13 @@ impl FileTable {
     }
 }
 
-impl Default for FileTable {
-    fn default() -> Self {
-        Self::new()
+impl Drop for FileTable {
+    fn drop(&mut self) {
+        for (_, file) in self.fds_and_files() {
+            if let Ok(inode_handle) = file.as_inode_handle_or_err() {
+                inode_handle.release_range_locks(self.as_range_lock_owner());
+            }
+        }
     }
 }
 

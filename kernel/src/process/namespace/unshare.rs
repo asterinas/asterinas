@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::sync::RwArc;
-
-use crate::{prelude::*, process::CloneFlags};
+use crate::{fs::file::file_table::FileTable, prelude::*, process::CloneFlags};
 
 /// Provides administrative APIs for disassociating execution contexts.
 pub trait ContextUnshareAdminApi {
@@ -23,7 +21,7 @@ impl ContextUnshareAdminApi for Context<'_> {
         let mut thread_local_file_table_ref = self.thread_local.borrow_file_table_mut();
         let thread_local_file_table = thread_local_file_table_ref.unwrap();
 
-        let new_file_table = RwArc::new(thread_local_file_table.read().clone());
+        let new_file_table = FileTable::fork_from(&thread_local_file_table.read());
 
         *pthread_file_table = Some(new_file_table.clone_ro());
         *thread_local_file_table = new_file_table;

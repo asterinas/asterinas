@@ -7,7 +7,7 @@ use crate::{
     fs::{
         file::{
             FileLike, StatusFlags, StatusFlagsUpdate,
-            file_table::{FdFlags, FileDesc, RawFileDesc, WithFileTable, get_file_fast},
+            file_table::{FdFlags, FileDesc, FileTable, RawFileDesc, WithFileTable, get_file_fast},
         },
         ramfs::memfd::{FileSeals, MemfdInodeHandle},
         vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
@@ -90,6 +90,7 @@ fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
 
 fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let owner = FileTable::range_lock_owner(file_table.unwrap());
     let file = get_file_fast!(&mut file_table, fd);
     let lock_mut_ptr = arg as Vaddr;
     let mut lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
@@ -97,9 +98,13 @@ fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
     if lock_type == RangeLockType::Unlock {
         return_errno_with_message!(Errno::EINVAL, "invalid flock type for getlk");
     }
-    let mut lock = RangeLockItem::new(lock_type, from_c_flock_and_file(&lock_mut_c, &**file)?);
-    let inode_file = file.as_inode_handle_or_err()?;
-    lock = inode_file.test_range_lock(lock)?;
+    let lock = RangeLockItem::new(
+        owner,
+        ctx.process.pid(),
+        lock_type,
+        from_c_flock_and_file(&lock_mut_c, &**file)?,
+    );
+    let lock = file.as_inode_handle_or_err()?.test_range_lock(lock)?;
     lock_mut_c.copy_from_range_lock(&lock);
     ctx.user_space().write_val(lock_mut_ptr, &lock_mut_c)?;
     Ok(SyscallReturn::Return(0))
@@ -112,13 +117,39 @@ fn handle_setlk(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file = get_file_fast!(&mut file_table, fd);
+    let owner = FileTable::range_lock_owner(file_table.unwrap());
+    let file = get_file_fast!(&mut file_table, fd).into_owned();
     let lock_mut_ptr = arg as Vaddr;
     let lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
-    let lock = RangeLockItem::new(lock_type, from_c_flock_and_file(&lock_mut_c, &**file)?);
+    let lock = RangeLockItem::new(
+        owner,
+        ctx.process.pid(),
+        lock_type,
+        from_c_flock_and_file(&lock_mut_c, &*file)?,
+    );
     let inode_file = file.as_inode_handle_or_err()?;
     inode_file.set_range_lock(&lock, is_nonblocking)?;
+
+    if lock.type_() == RangeLockType::Unlock {
+        return Ok(SyscallReturn::Return(0));
+    }
+    // A concurrent close will release the range locks for this owner and inode
+    // but may miss the new one. If it happens, release the new lock to prevent
+    // it from leaking forever.
+    let file_is_still_open = file_table.read_with(|table| {
+        table
+            .get_file(fd)
+            .is_ok_and(|current_file| Arc::ptr_eq(current_file, &file))
+    });
+    if !file_is_still_open {
+        inode_file.release_range_locks(owner);
+        return_errno_with_message!(
+            Errno::EBADF,
+            "the file descriptor was closed while setting a range lock"
+        );
+    }
+
     Ok(SyscallReturn::Return(0))
 }
 
@@ -237,7 +268,7 @@ impl c_flock {
             } else {
                 lock.range().len() as off_t
             };
-            self.l_pid = lock.owner();
+            self.l_pid = lock.pid();
         }
     }
 }
