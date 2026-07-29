@@ -802,6 +802,26 @@ FN_TEST(tx_progress_preserved_after_partial_failure)
 }
 END_TEST()
 
+FN_TEST(used_index_resumes_from_guest)
+{
+	reset_fixture();
+	fixture.tx.used.idx = 5;
+	setup_tx_packet(&fixture, GUEST_CID + 1, PEER_PORT, PEER_PORT,
+			VIRTIO_VSOCK_OP_RESPONSE, NULL, 0);
+
+	configure_vhost_device(&fixture, GUEST_CID);
+	TEST_SUCC(kick_eventfd(fixture.tx_kick));
+	TEST_SUCC(wait_eventfd(fixture.tx_call));
+	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 6);
+	TEST_RES(fixture.tx.used.ring[5].id,
+		 fixture.tx.used.ring[5].id == TX_HEAD);
+	TEST_RES(fixture.tx.used.ring[5].len,
+		 fixture.tx.used.ring[5].len == 0);
+
+	TEST_SUCC(teardown_vhost_device(&fixture));
+}
+END_TEST()
+
 FN_TEST(tx_avail_delta_too_large_releases_guest_cid)
 {
 	int running = 0;
@@ -876,6 +896,30 @@ FN_TEST(tx_descriptor_can_span_memory_regions)
 	TEST_SUCC(wait_eventfd(fixture.tx_call));
 	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 1);
 	TEST_RES(fixture.tx.used.ring[0].len, fixture.tx.used.ring[0].len == 0);
+
+	TEST_SUCC(teardown_vhost_device(&fixture));
+}
+END_TEST()
+
+FN_TEST(tx_header_can_span_descriptors)
+{
+	reset_fixture();
+	setup_tx_packet(&fixture, GUEST_CID + 1, PEER_PORT, PEER_PORT,
+			VIRTIO_VSOCK_OP_RESPONSE, NULL, 0);
+	fixture.tx.desc[TX_HEADER_DESC].len = 16;
+	fixture.tx.desc[TX_HEADER_DESC].flags = VRING_DESC_F_NEXT;
+	fixture.tx.desc[TX_HEADER_DESC].next = TX_PAYLOAD_DESC;
+	fixture.tx.desc[TX_PAYLOAD_DESC].addr =
+		(uintptr_t)&fixture.tx_header + 16;
+	fixture.tx.desc[TX_PAYLOAD_DESC].len = sizeof(fixture.tx_header) - 16;
+	fixture.tx.desc[TX_PAYLOAD_DESC].flags = 0;
+
+	configure_vhost_device(&fixture, GUEST_CID);
+	TEST_SUCC(kick_eventfd(fixture.tx_kick));
+	TEST_SUCC(wait_eventfd(fixture.tx_call));
+	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 1);
+	TEST_RES(fixture.tx.used.ring[0].len,
+		 fixture.tx.used.ring[0].len == 0);
 
 	TEST_SUCC(teardown_vhost_device(&fixture));
 }

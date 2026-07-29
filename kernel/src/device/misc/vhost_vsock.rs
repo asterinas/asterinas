@@ -7,7 +7,7 @@
 
 use core::{
     mem,
-    sync::atomic::{AtomicBool, AtomicU16, Ordering},
+    sync::atomic::{AtomicBool, AtomicU16, Ordering, fence},
 };
 
 use aster_virtio::device::socket::header::{VirtioVsockHdr as TransportVsockHdr, VirtioVsockOp};
@@ -52,6 +52,7 @@ const VHOST_VSOCK_MAX_VRING_NUM: u32 = 32768;
 const VHOST_VSOCK_MAX_MEMORY_REGIONS: usize = 64;
 const VIRTQ_AVAIL_RING_OFFSET: usize = size_of::<VirtqAvailHeader>();
 const VIRTQ_USED_RING_OFFSET: usize = size_of::<VirtqUsedHeader>();
+const VIRTQ_USED_IDX_OFFSET: usize = size_of::<u16>();
 const RX_VRING_INDEX: usize = 0;
 const TX_VRING_INDEX: usize = 1;
 
@@ -271,20 +272,26 @@ struct VhostVsockBackend {
     /// Keeps kick eventfd observers registered for the backend lifetime.
     _kick_pollers: Vec<PollAdaptor<VhostKickObserver>>,
     rx_last_avail: AtomicU16,
+    rx_last_used: AtomicU16,
     tx_last_avail: AtomicU16,
+    tx_last_used: AtomicU16,
 }
 
 impl VhostVsockBackend {
-    fn new(inputs: WorkerInputs) -> Self {
+    fn new(inputs: WorkerInputs) -> Result<Self> {
+        let rx_last_used = read_used_idx(&inputs, RX_VRING_INDEX)?;
+        let tx_last_used = read_used_idx(&inputs, TX_VRING_INDEX)?;
         let kick_pollers = register_kick_pollers(&inputs);
         let rx_base = inputs.vring_base[RX_VRING_INDEX] as u16;
         let tx_base = inputs.vring_base[TX_VRING_INDEX] as u16;
-        Self {
+        Ok(Self {
             inputs,
             _kick_pollers: kick_pollers,
             rx_last_avail: AtomicU16::new(rx_base),
+            rx_last_used: AtomicU16::new(rx_last_used),
             tx_last_avail: AtomicU16::new(tx_base),
-        }
+            tx_last_used: AtomicU16::new(tx_last_used),
+        })
     }
 
     fn inject(&self, packet: VhostVsockPacket<'_>) -> Result<bool> {
@@ -332,17 +339,21 @@ impl VhostVsockBackend {
 
     fn inject_now(&self, packet: VhostVsockPacket<'_>) -> Result<usize> {
         let mut rx_last_avail = self.rx_last_avail.load(Ordering::Relaxed);
-        let result = inject_packet(&self.inputs, &mut rx_last_avail, packet);
+        let mut rx_last_used = self.rx_last_used.load(Ordering::Relaxed);
+        let result = inject_packet(&self.inputs, &mut rx_last_avail, &mut rx_last_used, packet);
         if result.is_ok() {
             self.rx_last_avail.store(rx_last_avail, Ordering::Relaxed);
+            self.rx_last_used.store(rx_last_used, Ordering::Relaxed);
         }
         result
     }
 
     fn process_tx(&self) -> Result<()> {
         let mut tx_last_avail = self.tx_last_avail.load(Ordering::Relaxed);
-        let result = process_tx(self, &mut tx_last_avail);
+        let mut tx_last_used = self.tx_last_used.load(Ordering::Relaxed);
+        let result = process_tx(self, &mut tx_last_avail, &mut tx_last_used);
         self.tx_last_avail.store(tx_last_avail, Ordering::Relaxed);
+        self.tx_last_used.store(tx_last_used, Ordering::Relaxed);
         result
     }
 }
@@ -655,7 +666,7 @@ impl VhostVsockFile {
         let stop = Arc::new(AtomicBool::new(false));
         let rx_queue = Arc::new(VhostRxQueue::new());
         let inputs = state.snapshot_for_worker(stop.clone(), rx_queue.clone())?;
-        let backend = Arc::new(VhostVsockBackend::new(inputs));
+        let backend = Arc::new(VhostVsockBackend::new(inputs)?);
         register_backend(guest_cid, backend.clone())?;
         let worker_backend = backend.clone();
         let worker = ThreadOptions::new(move || worker_loop(worker_backend)).spawn();
@@ -1186,6 +1197,24 @@ fn read_gpa_bytes(
     Ok(bytes)
 }
 
+fn read_used_idx(inputs: &WorkerInputs, vring_index: usize) -> Result<u16> {
+    let addr = inputs.vring_addr[vring_index];
+    let mut used_idx = 0u16;
+    let mut writer = VmWriter::from(used_idx.as_mut_bytes()).to_fallible();
+    inputs
+        .owner_vmar
+        .read_alien(
+            checked_user_addr(
+                addr.used_user_addr,
+                VIRTQ_USED_IDX_OFFSET,
+                "vhost-vsock used index address overflow",
+            )?,
+            &mut writer,
+        )
+        .map_err(|(e, _)| e)?;
+    Ok(used_idx)
+}
+
 fn read_gpa_segments(vmar: &Vmar, segments: &[VhostMemorySegment], bytes: &mut [u8]) -> Result<()> {
     let mut offset = 0usize;
     for segment in segments {
@@ -1235,6 +1264,7 @@ fn gpa_to_uva_segments(
 fn inject_packet(
     inputs: &WorkerInputs,
     last_avail: &mut u16,
+    last_used: &mut u16,
     packet: VhostVsockPacket<'_>,
 ) -> Result<usize> {
     let addr = inputs.vring_addr[RX_VRING_INDEX];
@@ -1324,13 +1354,25 @@ fn inject_packet(
         &packet.payload[..payload_len],
     )?;
 
-    publish_used(vmar, &addr, num, head, packet_len as u32, last_avail)?;
+    publish_used(
+        vmar,
+        &addr,
+        num,
+        head,
+        packet_len as u32,
+        last_avail,
+        last_used,
+    )?;
 
     Ok(payload_len)
 }
 
 /// Drains new entries from the TX queue.
-fn process_tx(backend: &VhostVsockBackend, last_avail: &mut u16) -> Result<()> {
+fn process_tx(
+    backend: &VhostVsockBackend,
+    last_avail: &mut u16,
+    last_used: &mut u16,
+) -> Result<()> {
     let inputs = &backend.inputs;
     let addr = inputs.vring_addr[TX_VRING_INDEX];
     let num = inputs.vring_num[TX_VRING_INDEX] as usize;
@@ -1384,24 +1426,19 @@ fn process_tx(backend: &VhostVsockBackend, last_avail: &mut u16) -> Result<()> {
             }
 
             let chain = read_tx_chain(vmar, addr, &inputs.mem_regions, num, head)?;
-            if chain.bytes.len() >= VIRTIO_VSOCK_HDR_SIZE {
-                let hdr = VirtioVsockHdr::from_bytes(&chain.bytes[..VIRTIO_VSOCK_HDR_SIZE])?;
+            if chain.header_len == VIRTIO_VSOCK_HDR_SIZE {
+                let hdr = VirtioVsockHdr::from_bytes(&chain.header)?;
                 let payload_len = hdr.len as usize;
-                let packet_len =
-                    VIRTIO_VSOCK_HDR_SIZE
-                        .checked_add(payload_len)
-                        .ok_or_else(|| {
-                            Error::with_message(Errno::EINVAL, "vhost-vsock TX packet too large")
-                        })?;
-                if chain.bytes.len() >= packet_len {
-                    let payload = chain.bytes[VIRTIO_VSOCK_HDR_SIZE..packet_len].to_vec();
+                if chain.payload.len() >= payload_len {
                     if validate_tx_header_for_backend(backend, &hdr) {
+                        let mut payload = chain.payload;
+                        payload.truncate(payload_len);
                         deliver_tx_packet(backend, hdr, payload)?;
                     }
                 }
             }
 
-            complete_tx_chain(vmar, &addr, num, head, last_avail)?;
+            publish_used(vmar, &addr, num, head, 0, last_avail, last_used)?;
             consumed_any = true;
         }
 
@@ -1469,7 +1506,9 @@ pub(crate) fn send_packet(header: &TransportVsockHdr, payload: &[u8]) -> Result<
 }
 
 struct TxChain {
-    bytes: Vec<u8>,
+    header: [u8; VIRTIO_VSOCK_HDR_SIZE],
+    header_len: usize,
+    payload: Vec<u8>,
 }
 
 fn rx_chain_len(
@@ -1796,7 +1835,11 @@ fn read_tx_desc_chain(
     num: usize,
     mut read_desc: impl FnMut(usize) -> Result<VirtqDesc>,
 ) -> Result<TxChain> {
-    let mut bytes = Vec::new();
+    let mut chain = TxChain {
+        header: [0; VIRTIO_VSOCK_HDR_SIZE],
+        header_len: 0,
+        payload: Vec::new(),
+    };
     let mut desc = start_desc;
 
     for _ in 0..num {
@@ -1810,10 +1853,10 @@ fn read_tx_desc_chain(
             return_errno_with_message!(Errno::EINVAL, "vhost-vsock TX descriptor is writable");
         }
 
-        append_tx_desc_bytes(vmar, mem_regions, desc, &mut bytes)?;
+        append_tx_desc_bytes(vmar, mem_regions, desc, &mut chain)?;
 
         if desc.flags & VIRTQ_DESC_F_NEXT == 0 {
-            return Ok(TxChain { bytes });
+            return Ok(chain);
         }
 
         let next = desc.next as usize;
@@ -1888,11 +1931,14 @@ fn append_tx_desc_bytes(
     vmar: &Vmar,
     mem_regions: &[VhostMemoryRegion],
     desc: VirtqDesc,
-    bytes: &mut Vec<u8>,
+    chain: &mut TxChain,
 ) -> Result<()> {
     let desc_len = desc.len as usize;
-    let new_len = bytes
-        .len()
+    let chain_len = chain
+        .header_len
+        .checked_add(chain.payload.len())
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock TX chain too large"))?;
+    let new_len = chain_len
         .checked_add(desc_len)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock TX chain too large"))?;
     if new_len > VHOST_VSOCK_MAX_TX_CHAIN_BYTES {
@@ -1904,9 +1950,35 @@ fn append_tx_desc_bytes(
             "vhost-vsock TX desc.addr not covered by mem table",
         )
     })?;
-    let old_len = bytes.len();
-    bytes.resize(new_len, 0);
-    read_gpa_segments(vmar, desc_segments.as_slice(), &mut bytes[old_len..])?;
+    for segment in desc_segments {
+        let header_len = segment.len.min(VIRTIO_VSOCK_HDR_SIZE - chain.header_len);
+        if header_len != 0 {
+            let header_end = chain.header_len + header_len;
+            let mut writer =
+                VmWriter::from(&mut chain.header[chain.header_len..header_end]).to_fallible();
+            vmar.read_alien(segment.userspace_addr, &mut writer)
+                .map_err(|(e, _)| e)?;
+            chain.header_len = header_end;
+        }
+
+        let payload_len = segment.len - header_len;
+        if payload_len != 0 {
+            let payload_addr = segment
+                .userspace_addr
+                .checked_add(header_len)
+                .ok_or_else(|| {
+                    Error::with_message(Errno::EINVAL, "vhost-vsock TX descriptor address overflow")
+                })?;
+            let payload_start = chain.payload.len();
+            let payload_end = payload_start.checked_add(payload_len).ok_or_else(|| {
+                Error::with_message(Errno::EINVAL, "vhost-vsock TX chain too large")
+            })?;
+            chain.payload.resize(payload_end, 0);
+            let mut writer = VmWriter::from(&mut chain.payload[payload_start..]).to_fallible();
+            vmar.read_alien(payload_addr, &mut writer)
+                .map_err(|(e, _)| e)?;
+        }
+    }
     Ok(())
 }
 
@@ -1942,16 +2014,6 @@ fn deliver_tx_packet(
     Ok(())
 }
 
-fn complete_tx_chain(
-    vmar: &Vmar,
-    addr: &VhostVringAddr,
-    num: usize,
-    head: usize,
-    last_avail: &mut u16,
-) -> Result<()> {
-    publish_used(vmar, addr, num, head, 0, last_avail)
-}
-
 fn publish_used(
     vmar: &Vmar,
     addr: &VhostVringAddr,
@@ -1959,16 +2021,9 @@ fn publish_used(
     head: usize,
     len: u32,
     last_avail: &mut u16,
+    last_used: &mut u16,
 ) -> Result<()> {
-    let mut used = VirtqUsedHeader::default();
-    let mut writer = VmWriter::from(used.as_mut_bytes()).to_fallible();
-    vmar.read_alien(
-        checked_user_addr(addr.used_user_addr, 0, "vhost-vsock used address overflow")?,
-        &mut writer,
-    )
-    .map_err(|(e, _)| e)?;
-
-    let used_slot = used.idx as usize % num;
+    let used_slot = *last_used as usize % num;
     let used_elem = VirtqUsedElem {
         id: head as u32,
         len,
@@ -1986,14 +2041,21 @@ fn publish_used(
     )
     .map_err(|(e, _)| e)?;
 
-    used.idx = used.idx.wrapping_add(1);
-    let mut reader = VmReader::from(used.as_bytes()).to_fallible();
+    // Publish the element before making the new index visible to the guest.
+    fence(Ordering::Release);
+    let next_used = last_used.wrapping_add(1);
+    let mut reader = VmReader::from(next_used.as_bytes()).to_fallible();
     vmar.write_alien(
-        checked_user_addr(addr.used_user_addr, 0, "vhost-vsock used address overflow")?,
+        checked_user_addr(
+            addr.used_user_addr,
+            VIRTQ_USED_IDX_OFFSET,
+            "vhost-vsock used index address overflow",
+        )?,
         &mut reader,
     )
     .map_err(|(e, _)| e)?;
 
+    *last_used = next_used;
     *last_avail = last_avail.wrapping_add(1);
     Ok(())
 }
