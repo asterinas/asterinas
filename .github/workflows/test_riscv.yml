@@ -51,7 +51,19 @@ jobs:
       matrix:
         include:
           - test_id: 'boot-debug-smp4'
+            release: false
             smp: 4
+
+          - test_id: 'boot-debug-sv48-svade-smp4'
+            release: false
+            smp: 4
+            riscv_qemu_cpu: 'rv64,svpbmt=true,zkr=true,svadu=false,svade=true'
+
+          - test_id: 'boot-debug-sv39-svade-smp4'
+            release: false
+            smp: 4
+            features: 'riscv_sv39_mode'
+            riscv_qemu_cpu: 'rv64,svpbmt=true,zkr=true,sv48=false,svadu=false,svade=true'
 
           - test_id: 'boot-release'
             release: true
@@ -70,8 +82,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run integration tests ${{ (startsWith(matrix.test_id, 'conformance') && 'with LTP') || '' }}
         uses: ./.github/actions/test
+        env:
+          FEATURES: ${{ matrix.features }}
+          RISCV_QEMU_CPU: ${{ matrix.riscv_qemu_cpu }}
         with:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') || 'conformance' }}
           release: ${{ !contains(matrix.release, 'false') }}
           arch: 'riscv64'
+          smp: ${{ matrix.smp }}
           conformance_test_suite: 'ltp'
