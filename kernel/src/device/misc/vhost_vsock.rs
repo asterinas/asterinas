@@ -6,7 +6,6 @@
 //! and bridges vhost virtqueues to Asterinas' AF_VSOCK transport.
 
 use core::{
-    hint::spin_loop,
     mem,
     sync::atomic::{AtomicBool, AtomicU16, Ordering},
 };
@@ -41,6 +40,9 @@ const HOST_CID: u64 = 2;
 const VIRTQ_DESC_F_NEXT: u16 = 1;
 const VIRTQ_DESC_F_WRITE: u16 = 2;
 const VIRTQ_DESC_F_INDIRECT: u16 = 4;
+// FIXME: Add `VIRTIO_RING_F_EVENT_IDX` after implementing the corresponding
+// `avail_event`/`used_event` notification suppression semantics. Keep it out of
+// the initial vhost-vsock scope until then; advertising the bit alone is incorrect.
 const VHOST_SUPPORTED_FEATURES: u64 = VIRTIO_RING_F_INDIRECT_DESC | VIRTIO_F_VERSION_1;
 const VHOST_SUPPORTED_BACKEND_FEATURES: u64 = 0;
 const VHOST_VSOCK_PAGE_SIZE: u64 = 4096;
@@ -269,7 +271,6 @@ struct VhostVsockBackend {
     /// Keeps kick eventfd observers registered for the backend lifetime.
     _kick_pollers: Vec<PollAdaptor<VhostKickObserver>>,
     rx_last_avail: AtomicU16,
-    rx_inject_busy: AtomicBool,
     tx_last_avail: AtomicU16,
 }
 
@@ -282,7 +283,6 @@ impl VhostVsockBackend {
             inputs,
             _kick_pollers: kick_pollers,
             rx_last_avail: AtomicU16::new(rx_base),
-            rx_inject_busy: AtomicBool::new(false),
             tx_last_avail: AtomicU16::new(tx_base),
         }
     }
@@ -292,37 +292,50 @@ impl VhostVsockBackend {
     }
 
     fn drain_rx_queue(&self) -> RxDrainResult {
-        while let Some(packet) = self.inputs.rx_queue.pop_front() {
+        let mut injected_any = false;
+        let result = loop {
+            let Some(mut packet) = self.inputs.rx_queue.pop_front() else {
+                break RxDrainResult::Drained;
+            };
+            let remaining_payload_len = packet.as_packet().payload.len();
             match self.inject_now(packet.as_packet()) {
-                Ok(()) => self.inputs.rx_queue.commit_popped(&packet),
+                Ok(consumed_payload) if consumed_payload < remaining_payload_len => {
+                    injected_any = true;
+                    packet.payload_offset += consumed_payload;
+                    self.inputs.rx_queue.push_front(packet);
+                }
+                Ok(_) => {
+                    injected_any = true;
+                }
                 Err(err) if err.error() == Errno::EAGAIN => {
                     self.inputs.rx_queue.push_front(packet);
-                    return RxDrainResult::Blocked;
+                    break RxDrainResult::Blocked;
                 }
                 Err(_) => {
-                    self.inputs.rx_queue.commit_popped(&packet);
-                    return RxDrainResult::Stopped;
+                    break RxDrainResult::Stopped;
                 }
             }
+        };
+
+        if injected_any {
+            self.signal_rx_call();
         }
 
-        RxDrainResult::Drained
+        result
     }
 
-    fn inject_now(&self, packet: VhostVsockPacket<'_>) -> Result<()> {
-        while self
-            .rx_inject_busy
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            spin_loop();
+    fn signal_rx_call(&self) {
+        if let Some(call) = self.inputs.vring_call[RX_VRING_INDEX].as_ref() {
+            signal_eventfd(call.as_ref());
         }
+    }
+
+    fn inject_now(&self, packet: VhostVsockPacket<'_>) -> Result<usize> {
         let mut rx_last_avail = self.rx_last_avail.load(Ordering::Relaxed);
         let result = inject_packet(&self.inputs, &mut rx_last_avail, packet);
         if result.is_ok() {
             self.rx_last_avail.store(rx_last_avail, Ordering::Relaxed);
         }
-        self.rx_inject_busy.store(false, Ordering::Release);
         result
     }
 
@@ -380,13 +393,13 @@ struct VhostVsockPacket<'a> {
     fwd_cnt: u32,
 }
 
-#[derive(Clone)]
 struct QueuedVhostVsockPacket {
     dst_port: u32,
     src_port: u32,
     op: u16,
     flags: u32,
     payload: Vec<u8>,
+    payload_offset: usize,
     buf_alloc: u32,
     fwd_cnt: u32,
 }
@@ -399,6 +412,7 @@ impl<'a> From<VhostVsockPacket<'a>> for QueuedVhostVsockPacket {
             op: packet.op,
             flags: packet.flags,
             payload: packet.payload.to_vec(),
+            payload_offset: 0,
             buf_alloc: packet.buf_alloc,
             fwd_cnt: packet.fwd_cnt,
         }
@@ -412,14 +426,29 @@ impl QueuedVhostVsockPacket {
             src_port: self.src_port,
             op: self.op,
             flags: self.flags,
-            payload: self.payload.as_slice(),
+            payload: &self.payload[self.payload_offset..],
             buf_alloc: self.buf_alloc,
             fwd_cnt: self.fwd_cnt,
         }
     }
 
-    fn total_len(&self) -> usize {
-        VIRTIO_VSOCK_HDR_SIZE.saturating_add(self.payload.len())
+    fn queued_len(&self) -> usize {
+        let payload_len = self.payload.len().saturating_sub(self.payload_offset);
+        if payload_len == 0 {
+            VIRTIO_VSOCK_HDR_SIZE
+        } else {
+            payload_len
+        }
+    }
+
+    fn can_coalesce(&self, next: &Self) -> bool {
+        self.payload_offset == 0
+            && next.payload_offset == 0
+            && self.op == VirtioVsockOp::Rw as u16
+            && next.op == VirtioVsockOp::Rw as u16
+            && self.src_port == next.src_port
+            && self.dst_port == next.dst_port
+            && self.flags == next.flags
     }
 }
 
@@ -448,12 +477,38 @@ impl VhostRxQueue {
         }
     }
 
-    fn push(&self, packet: QueuedVhostVsockPacket) -> Result<bool> {
-        let packet_len = packet.total_len();
+    fn push(&self, mut packet: QueuedVhostVsockPacket) -> Result<bool> {
+        let packet_len = packet.queued_len();
         let mut inner = self.inner.lock();
         if inner.closed {
             return Ok(false);
         }
+
+        if inner
+            .packets
+            .back()
+            .is_some_and(|tail| tail.can_coalesce(&packet))
+        {
+            let next_bytes = inner
+                .bytes
+                .checked_add(packet.payload.len())
+                .ok_or_else(|| {
+                    Error::with_message(Errno::EAGAIN, "vhost-vsock RX queue byte count overflow")
+                })?;
+            if next_bytes > VHOST_VSOCK_MAX_QUEUE_BYTES {
+                return_errno_with_message!(Errno::EAGAIN, "vhost-vsock RX queue is full");
+            }
+
+            let tail = inner.packets.back_mut().unwrap();
+            tail.payload.append(&mut packet.payload);
+            tail.buf_alloc = packet.buf_alloc;
+            tail.fwd_cnt = packet.fwd_cnt;
+            inner.bytes = next_bytes;
+            drop(inner);
+            self.notify_worker();
+            return Ok(true);
+        }
+
         let next_bytes = inner.bytes.checked_add(packet_len).ok_or_else(|| {
             Error::with_message(Errno::EAGAIN, "vhost-vsock RX queue byte count overflow")
         })?;
@@ -463,22 +518,21 @@ impl VhostRxQueue {
         inner.bytes = next_bytes;
         inner.packets.push_back(packet);
         drop(inner);
-
         self.notify_worker();
         Ok(true)
     }
 
     fn pop_front(&self) -> Option<QueuedVhostVsockPacket> {
-        self.inner.lock().packets.pop_front()
-    }
-
-    fn commit_popped(&self, packet: &QueuedVhostVsockPacket) {
         let mut inner = self.inner.lock();
-        inner.bytes = inner.bytes.saturating_sub(packet.total_len());
+        let packet = inner.packets.pop_front()?;
+        inner.bytes = inner.bytes.saturating_sub(packet.queued_len());
+        Some(packet)
     }
 
     fn push_front(&self, packet: QueuedVhostVsockPacket) {
-        self.inner.lock().packets.push_front(packet);
+        let mut inner = self.inner.lock();
+        inner.bytes = inner.bytes.saturating_add(packet.queued_len());
+        inner.packets.push_front(packet);
     }
 
     fn has_packets(&self) -> bool {
@@ -505,8 +559,9 @@ impl VhostRxQueue {
     }
 
     fn notify_worker(&self) {
-        self.wake_pending.store(true, Ordering::Release);
-        self.pollee.notify(IoEvents::IN);
+        if !self.wake_pending.swap(true, Ordering::Release) {
+            self.pollee.notify(IoEvents::IN);
+        }
     }
 
     fn close(&self) {
@@ -1181,15 +1236,13 @@ fn inject_packet(
     inputs: &WorkerInputs,
     last_avail: &mut u16,
     packet: VhostVsockPacket<'_>,
-) -> Result<()> {
+) -> Result<usize> {
     let addr = inputs.vring_addr[RX_VRING_INDEX];
     let num = inputs.vring_num[RX_VRING_INDEX] as usize;
     if num == 0 {
         return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX vring num is zero");
     }
     let guest_cid = inputs.guest_cid;
-    let call = inputs.vring_call[RX_VRING_INDEX].clone();
-
     let vmar = inputs.owner_vmar.as_ref();
 
     let mut avail = VirtqAvailHeader::default();
@@ -1237,15 +1290,23 @@ fn inject_packet(
         return_errno_with_message!(Errno::EINVAL, "vhost-vsock head index out of range");
     }
 
+    let rx_buffer_len = rx_chain_len(vmar, addr, &inputs.mem_regions, num, head)?;
+    if rx_buffer_len < VIRTIO_VSOCK_HDR_SIZE {
+        return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX buffer too small");
+    }
+    let payload_len = packet
+        .payload
+        .len()
+        .min(rx_buffer_len - VIRTIO_VSOCK_HDR_SIZE);
     let packet_len = VIRTIO_VSOCK_HDR_SIZE
-        .checked_add(packet.payload.len())
+        .checked_add(payload_len)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock packet too large"))?;
     let hdr = VirtioVsockHdr {
         src_cid: HOST_CID,
         dst_cid: guest_cid,
         src_port: packet.src_port,
         dst_port: packet.dst_port,
-        len: packet.payload.len() as u32,
+        len: payload_len as u32,
         type_: VIRTIO_VSOCK_TYPE_STREAM,
         op: packet.op,
         flags: packet.flags,
@@ -1260,57 +1321,12 @@ fn inject_packet(
         num,
         head,
         bytes.as_slice(),
-        packet.payload,
+        &packet.payload[..payload_len],
     )?;
 
-    let mut used = VirtqUsedHeader::default();
-    let mut writer = VmWriter::from(used.as_mut_bytes()).to_fallible();
-    vmar.read_alien(
-        checked_user_addr(
-            addr.used_user_addr,
-            0,
-            "vhost-vsock RX used address overflow",
-        )?,
-        &mut writer,
-    )
-    .map_err(|(e, _)| e)?;
-    let used_slot = used.idx as usize % num;
-    let used_elem = VirtqUsedElem {
-        id: head as u32,
-        len: packet_len as u32,
-    };
-    let mut reader = VmReader::from(used_elem.as_bytes()).to_fallible();
-    vmar.write_alien(
-        checked_user_elem_addr(
-            addr.used_user_addr,
-            VIRTQ_USED_RING_OFFSET,
-            used_slot,
-            size_of::<VirtqUsedElem>(),
-            "vhost-vsock RX used ring address overflow",
-        )?,
-        &mut reader,
-    )
-    .map_err(|(e, _)| e)?;
+    publish_used(vmar, &addr, num, head, packet_len as u32, last_avail)?;
 
-    used.idx = used.idx.wrapping_add(1);
-    let mut reader = VmReader::from(used.as_bytes()).to_fallible();
-    vmar.write_alien(
-        checked_user_addr(
-            addr.used_user_addr,
-            0,
-            "vhost-vsock RX used address overflow",
-        )?,
-        &mut reader,
-    )
-    .map_err(|(e, _)| e)?;
-
-    *last_avail = last_avail.wrapping_add(1);
-
-    if let Some(call) = call.as_ref() {
-        signal_eventfd(call.as_ref());
-    }
-
-    Ok(())
+    Ok(payload_len)
 }
 
 /// Drains new entries from the TX queue.
@@ -1377,21 +1393,12 @@ fn process_tx(backend: &VhostVsockBackend, last_avail: &mut u16) -> Result<()> {
                         .ok_or_else(|| {
                             Error::with_message(Errno::EINVAL, "vhost-vsock TX packet too large")
                         })?;
-                if chain.bytes.len() < packet_len {
-                    complete_tx_chain(vmar, &addr, num, head, last_avail)?;
-                    consumed_any = true;
-                    continue;
+                if chain.bytes.len() >= packet_len {
+                    let payload = chain.bytes[VIRTIO_VSOCK_HDR_SIZE..packet_len].to_vec();
+                    if validate_tx_header_for_backend(backend, &hdr) {
+                        deliver_tx_packet(backend, hdr, payload)?;
+                    }
                 }
-                let payload = chain.bytes[VIRTIO_VSOCK_HDR_SIZE..packet_len].to_vec();
-                if !validate_tx_header_for_backend(backend, &hdr) {
-                    complete_tx_chain(vmar, &addr, num, head, last_avail)?;
-                    consumed_any = true;
-                    continue;
-                }
-                deliver_tx_packet(backend, hdr, payload)?;
-                complete_tx_chain(vmar, &addr, num, head, last_avail)?;
-                consumed_any = true;
-                continue;
             }
 
             complete_tx_chain(vmar, &addr, num, head, last_avail)?;
@@ -1463,6 +1470,88 @@ pub(crate) fn send_packet(header: &TransportVsockHdr, payload: &[u8]) -> Result<
 
 struct TxChain {
     bytes: Vec<u8>,
+}
+
+fn rx_chain_len(
+    vmar: &Vmar,
+    addr: VhostVringAddr,
+    mem_regions: &[VhostMemoryRegion],
+    num: usize,
+    head: usize,
+) -> Result<usize> {
+    let first_desc = read_vring_desc(vmar, addr.desc_user_addr, num, head)?;
+    if first_desc.flags & VIRTQ_DESC_F_INDIRECT != 0 {
+        let table_len = first_desc.len as usize;
+        if table_len == 0 || !table_len.is_multiple_of(size_of::<VirtqDesc>()) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "vhost-vsock RX indirect descriptor table has invalid length"
+            );
+        }
+        let table_num = table_len / size_of::<VirtqDesc>();
+        if table_num > num {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "vhost-vsock RX indirect descriptor table is too large"
+            );
+        }
+        let table = read_gpa_bytes(vmar, mem_regions, first_desc.addr, table_len)?;
+        let first_indirect_desc = read_indirect_desc(table.as_slice(), table_num, 0)?;
+        return rx_desc_chain_len(mem_regions, first_indirect_desc, table_num, |index| {
+            read_indirect_desc(table.as_slice(), table_num, index)
+        });
+    }
+
+    rx_desc_chain_len(mem_regions, first_desc, num, |index| {
+        read_vring_desc(vmar, addr.desc_user_addr, num, index)
+    })
+}
+
+fn rx_desc_chain_len(
+    mem_regions: &[VhostMemoryRegion],
+    start_desc: VirtqDesc,
+    num: usize,
+    mut read_desc: impl FnMut(usize) -> Result<VirtqDesc>,
+) -> Result<usize> {
+    let mut total_len = 0usize;
+    let mut desc = start_desc;
+
+    for _ in 0..num {
+        if desc.flags & VIRTQ_DESC_F_INDIRECT != 0 {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "vhost-vsock RX nested indirect descriptor is unsupported"
+            );
+        }
+        if desc.flags & VIRTQ_DESC_F_WRITE == 0 {
+            return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX descriptor is not writable");
+        }
+
+        let desc_len = desc.len as usize;
+        if gpa_to_uva_segments(mem_regions, desc.addr, desc_len).is_none() {
+            return_errno_with_message!(
+                Errno::EFAULT,
+                "vhost-vsock RX desc.addr not covered by mem table"
+            );
+        }
+        total_len = total_len.checked_add(desc_len).ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "vhost-vsock RX chain length overflow")
+        })?;
+
+        if desc.flags & VIRTQ_DESC_F_NEXT == 0 {
+            return Ok(total_len);
+        }
+        let next = desc.next as usize;
+        if next >= num {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "vhost-vsock RX chain next index out of range"
+            );
+        }
+        desc = read_desc(next)?;
+    }
+
+    return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX descriptor chain loop");
 }
 
 fn read_tx_chain(
@@ -1860,27 +1949,29 @@ fn complete_tx_chain(
     head: usize,
     last_avail: &mut u16,
 ) -> Result<()> {
-    publish_tx_used(vmar, addr, num, head)?;
-    *last_avail = last_avail.wrapping_add(1);
-    Ok(())
+    publish_used(vmar, addr, num, head, 0, last_avail)
 }
 
-fn publish_tx_used(vmar: &Vmar, addr: &VhostVringAddr, num: usize, head: usize) -> Result<()> {
+fn publish_used(
+    vmar: &Vmar,
+    addr: &VhostVringAddr,
+    num: usize,
+    head: usize,
+    len: u32,
+    last_avail: &mut u16,
+) -> Result<()> {
     let mut used = VirtqUsedHeader::default();
     let mut writer = VmWriter::from(used.as_mut_bytes()).to_fallible();
     vmar.read_alien(
-        checked_user_addr(
-            addr.used_user_addr,
-            0,
-            "vhost-vsock TX used address overflow",
-        )?,
+        checked_user_addr(addr.used_user_addr, 0, "vhost-vsock used address overflow")?,
         &mut writer,
     )
     .map_err(|(e, _)| e)?;
+
     let used_slot = used.idx as usize % num;
     let used_elem = VirtqUsedElem {
         id: head as u32,
-        len: 0,
+        len,
     };
     let mut reader = VmReader::from(used_elem.as_bytes()).to_fallible();
     vmar.write_alien(
@@ -1889,22 +1980,21 @@ fn publish_tx_used(vmar: &Vmar, addr: &VhostVringAddr, num: usize, head: usize) 
             VIRTQ_USED_RING_OFFSET,
             used_slot,
             size_of::<VirtqUsedElem>(),
-            "vhost-vsock TX used ring address overflow",
+            "vhost-vsock used ring address overflow",
         )?,
         &mut reader,
     )
     .map_err(|(e, _)| e)?;
+
     used.idx = used.idx.wrapping_add(1);
     let mut reader = VmReader::from(used.as_bytes()).to_fallible();
     vmar.write_alien(
-        checked_user_addr(
-            addr.used_user_addr,
-            0,
-            "vhost-vsock TX used address overflow",
-        )?,
+        checked_user_addr(addr.used_user_addr, 0, "vhost-vsock used address overflow")?,
         &mut reader,
     )
     .map_err(|(e, _)| e)?;
+
+    *last_avail = last_avail.wrapping_add(1);
     Ok(())
 }
 
