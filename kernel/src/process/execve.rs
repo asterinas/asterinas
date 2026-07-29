@@ -378,11 +378,12 @@ fn reset_vfork_child(process: &Process) {
 fn unshare_and_close_files(ctx: &Context) {
     ctx.unshare_files();
 
-    ctx.thread_local
-        .borrow_file_table()
-        .unwrap()
-        .write()
-        .close_files_on_exec();
+    let closed_files = {
+        let file_table = ctx.thread_local.borrow_file_table();
+        let mut file_table_locked = file_table.unwrap().write();
+        file_table_locked.close_files_on_exec()
+    };
+    drop(closed_files);
 }
 
 fn unshare_and_reset_sigdispositions(process: &Process) {

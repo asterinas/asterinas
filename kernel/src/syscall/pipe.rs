@@ -45,9 +45,20 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
     };
     debug!("pipe_fds: {:?}", pipe_fds);
 
+    // Since `write_val` may sleep, we cannot hold the file table lock during its execution.
+    drop(file_table_locked);
+
     if let Err(err) = ctx.user_space().write_val(fds, &pipe_fds) {
-        file_table_locked.close_file(reader_fd).unwrap();
-        file_table_locked.close_file(writer_fd).unwrap();
+        // FIXME: Introduce reserved FDs to ensure that the files are never visible to user space
+        // before `write_val` succeeds and cleanup closes the exact reserved FDs below.
+        let closed_files = {
+            let mut file_table_locked = file_table.unwrap().write();
+            [
+                file_table_locked.close_file(reader_fd),
+                file_table_locked.close_file(writer_fd),
+            ]
+        };
+        drop(closed_files);
         return Err(err.into());
     }
 
