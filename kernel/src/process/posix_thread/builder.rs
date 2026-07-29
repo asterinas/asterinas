@@ -169,7 +169,7 @@ impl PosixThreadBuilder {
             default_timer_slack_ns,
         } = self;
 
-        let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new()));
+        let file_table = file_table.unwrap_or_else(FileTable::new);
 
         assert_eq!(user_ns.is_none(), ns_proxy.is_none());
         let user_ns = user_ns.unwrap_or_else(|| UserNamespace::get_init_singleton().clone());

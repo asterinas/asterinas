@@ -741,7 +741,7 @@ fn clone_files(parent_file_table: &RwArc<FileTable>, clone_flags: CloneFlags) ->
     if clone_flags.contains(CloneFlags::CLONE_FILES) {
         parent_file_table.clone()
     } else {
-        RwArc::new(parent_file_table.read().clone())
+        FileTable::fork_from(&parent_file_table.read())
     }
 }
 

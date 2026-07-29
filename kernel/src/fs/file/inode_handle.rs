@@ -18,7 +18,7 @@ use crate::{
             inode::{FallocMode, FileOps},
             inode_ext::InodeExt,
             path::Path,
-            range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
+            range_lock::{RangeLockItem, RangeLockOwner, RangeLockType},
         },
     },
     prelude::*,
@@ -183,12 +183,15 @@ impl InodeHandle {
         range_lock_list.set_lock(lock, is_nonblocking)
     }
 
-    pub fn release_range_locks(&self) {
-        let range_lock = RangeLockItem::new(
-            RangeLockType::Unlock,
-            FileRange::new(0, OFFSET_MAX).unwrap(),
-        );
-        self.unlock_range_lock(&range_lock);
+    pub fn release_range_locks(&self, owner: RangeLockOwner) {
+        if let Some(range_lock_list) = self
+            .path()
+            .inode()
+            .fs_lock_context()
+            .map(|context| context.range_lock_list())
+        {
+            range_lock_list.unlock_all(owner);
+        }
     }
 
     fn unlock_range_lock(&self, lock: &RangeLockItem) {
@@ -493,7 +496,6 @@ impl FileLike for InodeHandle {
 
 impl Drop for InodeHandle {
     fn drop(&mut self) {
-        self.release_range_locks();
         let _ = self.unlock_flock();
     }
 }

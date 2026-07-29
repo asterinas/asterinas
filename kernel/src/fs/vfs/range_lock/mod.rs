@@ -10,14 +10,26 @@ use crate::{prelude::*, process::Pid};
 
 mod range;
 
+/// Identifies the file table that owns a [`RangeLock`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RangeLockOwner(usize);
+
+impl RangeLockOwner {
+    pub(in crate::fs) fn from_address(address: usize) -> Self {
+        Self(address)
+    }
+}
+
 /// The metadata of a POSIX advisory file range lock.
 #[derive(Clone, Debug)]
 struct RangeLock {
-    /// Owner of the lock, representing the process holding the lock
-    owner: Pid,
-    /// Type of lock: can be F_RDLCK (read lock), F_WRLCK (write lock), or F_UNLCK (unlock)
+    /// File-table identity that owns the lock.
+    owner: RangeLockOwner,
+    /// PID associated with this lock.
+    pid: Pid,
+    /// Type of the lock: `F_RDLCK` (read lock), `F_WRLCK` (write lock), or `F_UNLCK` (unlock).
     type_: RangeLockType,
-    /// Range of the lock which specifies the portion of the file being locked
+    /// Range of the lock which specifies the portion of the file being locked.
     range: FileRange,
 }
 
@@ -25,18 +37,20 @@ struct RangeLock {
 /// Contains metadata about the lock and the processes waiting for it.
 /// The lock is associated with a specific range of the file.
 pub struct RangeLockItem {
-    /// The lock data including its properties
+    /// The lock data including its properties.
     lock: RangeLock,
-    /// Waiters that are being blocked by this lock
+    /// Waiters that are being blocked by this lock.
     waitqueue: Arc<WaitQueue>,
 }
 
 impl RangeLockItem {
-    /// Creates a new instance with the given lock type and the file range.
-    /// The new instance will be associated with the current process.
-    pub fn new(type_: RangeLockType, range: FileRange) -> Self {
+    /// Creates a new range lock instance.
+    ///
+    /// The new instance will be associated with the current process and the given lock owner.
+    pub fn new(owner: RangeLockOwner, pid: Pid, type_: RangeLockType, range: FileRange) -> Self {
         let lock = RangeLock {
-            owner: current!().pid(),
+            owner,
+            pid,
             type_,
             range,
         };
@@ -44,6 +58,26 @@ impl RangeLockItem {
             lock,
             waitqueue: Arc::new(WaitQueue::new()),
         }
+    }
+
+    /// Returns the file-table identity that owns the lock.
+    pub fn owner(&self) -> RangeLockOwner {
+        self.lock.owner
+    }
+
+    /// Sets the file-table identity that owns the lock.
+    pub fn set_owner(&mut self, owner: RangeLockOwner) {
+        self.lock.owner = owner;
+    }
+
+    /// Returns the process ID reported for the lock.
+    pub fn pid(&self) -> Pid {
+        self.lock.pid
+    }
+
+    /// Sets the process ID reported for the lock.
+    pub fn set_pid(&mut self, pid: Pid) {
+        self.lock.pid = pid;
     }
 
     /// Returns the type of the lock (READ/WRITE/UNLOCK)
@@ -54,16 +88,6 @@ impl RangeLockItem {
     /// Sets the type of the lock to the specified type
     pub fn set_type(&mut self, type_: RangeLockType) {
         self.lock.type_ = type_;
-    }
-
-    /// Returns the owner (process ID) of the lock
-    pub fn owner(&self) -> Pid {
-        self.lock.owner
-    }
-
-    /// Sets the owner of the lock to the specified process ID
-    pub fn set_owner(&mut self, owner: Pid) {
-        self.lock.owner = owner;
     }
 
     /// Returns the range of the lock
@@ -79,7 +103,7 @@ impl RangeLockItem {
     /// Checks if this lock conflicts with another lock
     /// Returns true if there is a conflict, otherwise false
     pub fn conflict_with(&self, other: &Self) -> bool {
-        // If locks are owned by the same process, they do not conflict
+        // If locks are owned by the same file table, they do not conflict
         if self.owner() == other.owner() {
             return false;
         }
@@ -156,6 +180,7 @@ impl Debug for RangeLockItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RangeLock")
             .field("owner", &self.owner())
+            .field("pid", &self.pid())
             .field("type_", &self.type_())
             .field("range", &self.range())
             .finish()
@@ -176,7 +201,7 @@ impl Clone for RangeLockItem {
 /// List of File POSIX advisory range locks.
 ///
 /// Rule of ordering:
-/// Locks are sorted by owner process, then by the starting offset.
+/// Locks are sorted by file-table owner, then by the starting offset.
 ///
 /// Rule of merging:
 /// Adjacent and overlapping locks with same owner and type will be merged.
@@ -206,6 +231,7 @@ impl RangeLockList {
         for existing_lock in list.iter() {
             if lock.conflict_with(existing_lock) {
                 req_lock.set_owner(existing_lock.owner());
+                req_lock.set_pid(existing_lock.pid());
                 req_lock.set_type(existing_lock.type_());
                 req_lock.set_range(existing_lock.range());
                 return req_lock;
@@ -399,6 +425,12 @@ impl RangeLockList {
                 }
             }
         }
+    }
+
+    /// Removes all locks belonging to `owner`.
+    pub fn unlock_all(&self, owner: RangeLockOwner) {
+        let mut list = self.inner.write();
+        list.retain(|lock| lock.owner() != owner);
     }
 }
 
