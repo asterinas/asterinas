@@ -4,6 +4,7 @@ in {
   environment.systemPackages = [ py3 ];
   # Make the exact matching source tree available without a download.
   system.activationScripts.testFixtures = ''
+    mkdir -p /tmp
     ln -sfT ${py3.src} /tmp/python3-src.tar.xz
   '';
 }

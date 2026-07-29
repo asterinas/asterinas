@@ -16,7 +16,17 @@ fn python3_regrtest(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.run_cmd("mkdir /tmp/python3-src")?;
     nixos_shell
         .run_cmd("tar xf /tmp/python3-src.tar.xz --strip-components=1 -C /tmp/python3-src")?;
-    nixos_shell.run_cmd("export PYTHONPATH=/tmp/python3-src/Lib")?;
+    // Regrtest removes legacy .pyc paths under every sys.path entry. Relocate
+    // the installed standard library out of the read-only /nix/store mount.
+    nixos_shell.run_cmd(
+        "python_root=$(dirname $(dirname $(readlink -f $(command -v python3)))); mkdir /tmp/python3-home; cp -a $python_root/lib /tmp/python3-home/lib; ln -s $python_root/include /tmp/python3-home/include",
+    )?;
+    const RUN_REGRTEST: &str = concat!(
+        "import os, runpy, sys; sys.path.insert(0, '/tmp/python3-src/Lib'); ",
+        "os.environ.pop('PYTHONPATH', None); ",
+        "sys.argv = ['test', '-u', 'all', *sys.argv[1:]]; ",
+        "runpy.run_module('test', run_name='__main__')",
+    );
 
     // Printed once by regrtest at the end of every run as `Result: {state}`:
     //   https://github.com/python/cpython/blob/v3.12.12/Lib/test/libregrtest/main.py#L455-L456
@@ -34,7 +44,15 @@ fn python3_regrtest(nixos_shell: &mut Session) -> Result<(), Error> {
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
     {
-        let cmd = format!("python3 -m test -u all {testcase}");
+        // test_cmd_line validates the behavior of child interpreters with
+        // PYTHONPATH unset, so add the source path to this process only.
+        let cmd = if testcase.split_whitespace().next() == Some("test_cmd_line") {
+            format!("PYTHONHOME=/tmp/python3-home python3 -c \"{RUN_REGRTEST}\" {testcase}")
+        } else {
+            format!(
+                "PYTHONHOME=/tmp/python3-home PYTHONPATH=/tmp/python3-src/Lib python3 -m test -u all {testcase}"
+            )
+        };
         if let Err(err) = nixos_shell.run_cmd_and_expect(&cmd, RESULT_SUCCESS) {
             failed_tests.push((testcase.to_string(), err));
         }
