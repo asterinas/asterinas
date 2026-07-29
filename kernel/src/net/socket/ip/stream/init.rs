@@ -25,11 +25,6 @@ use crate::{
 
 pub(super) struct InitStream {
     bound_port: Option<BoundTcpPort>,
-    /// The address family of this socket (IPv4 or IPv6).
-    //
-    // TODO: Encode the address family in the type system (e.g., `InitStream<IPv4Family>`)
-    // so that type mismatches are caught at compile time instead of runtime.
-    family: IpAddressFamily,
     /// Indicates if the last `connect()` is considered to be done.
     ///
     /// If `connect()` is called but we're still in the `InitStream`, this means that the
@@ -53,46 +48,43 @@ pub(super) struct InitStream {
 }
 
 impl InitStream {
-    pub(super) fn new(family: IpAddressFamily) -> Self {
+    pub(super) fn new() -> Self {
         Self {
             bound_port: None,
-            family,
             is_connect_done: true,
             is_conn_refused: AtomicBool::new(false),
         }
     }
 
-    pub(super) fn new_bound(bound_port: BoundTcpPort, family: IpAddressFamily) -> Self {
+    pub(super) fn new_bound(bound_port: BoundTcpPort) -> Self {
         Self {
             bound_port: Some(bound_port),
-            family,
             is_connect_done: true,
             is_conn_refused: AtomicBool::new(false),
         }
     }
 
-    pub(super) fn new_refused(bound_port: BoundTcpPort, family: IpAddressFamily) -> Self {
+    pub(super) fn new_refused(bound_port: BoundTcpPort) -> Self {
         Self {
             bound_port: Some(bound_port),
-            family,
             is_connect_done: false,
             is_conn_refused: AtomicBool::new(true),
         }
     }
 
-    /// Returns the address family of this socket.
-    pub(super) fn family(&self) -> IpAddressFamily {
-        self.family
-    }
-
-    pub(super) fn bind(&mut self, endpoint: &IpEndpoint, can_reuse: bool) -> Result<()> {
+    pub(super) fn bind(
+        &mut self,
+        endpoint: &IpEndpoint,
+        family: IpAddressFamily,
+        can_reuse: bool,
+    ) -> Result<()> {
         if self.bound_port.is_some() {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
         }
 
         // When we support `IPV6_V6ONLY` and if it is set, we should also reject IPv4-mapped
         // IPv6 addresses.
-        if IpAddressFamily::from(endpoint.addr) != self.family {
+        if IpAddressFamily::from(endpoint.addr) != family {
             return_errno_with_message!(
                 Errno::EAFNOSUPPORT,
                 "the protocol family does not match the address family"
@@ -111,6 +103,7 @@ impl InitStream {
     pub(super) fn connect(
         self,
         remote_endpoint: &IpEndpoint,
+        family: IpAddressFamily,
         option: &RawTcpOption,
         can_reuse: bool,
         observer: StreamObserver,
@@ -122,7 +115,7 @@ impl InitStream {
 
         // When we support `IPV6_V6ONLY` and if it is set, we should also reject IPv4-mapped
         // IPv6 addresses.
-        if IpAddressFamily::from(remote_endpoint.addr) != self.family {
+        if IpAddressFamily::from(remote_endpoint.addr) != family {
             return Err((
                 Error::with_message(
                     Errno::EAFNOSUPPORT,
@@ -156,9 +149,9 @@ impl InitStream {
         ConnectingStream::new(bound_port, *remote_endpoint, option, observer).map_err(
             |(err, bound_port)| {
                 if err.error() == Errno::ECONNREFUSED {
-                    (err, InitStream::new_refused(bound_port, self.family))
+                    (err, InitStream::new_refused(bound_port))
                 } else {
-                    (err, InitStream::new_bound(bound_port, self.family))
+                    (err, InitStream::new_bound(bound_port))
                 }
             },
         )
@@ -213,7 +206,7 @@ impl InitStream {
 
         match ListenStream::new(bound_port, backlog, option, observer) {
             Ok(listen_stream) => Ok(listen_stream),
-            Err((bound_port, error)) => Err((error, Self::new_bound(bound_port, self.family))),
+            Err((bound_port, error)) => Err((error, Self::new_bound(bound_port))),
         }
     }
 
