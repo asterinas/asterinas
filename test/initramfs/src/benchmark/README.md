@@ -10,7 +10,7 @@ The benchmarks are run automatically on a nightly basis through continuous integ
 
 ### Benchmark Suites
 
-The benchmark collection is organized into benchmark suites, each dedicated to a specific benchmarking tool or application. These suites focus on comparing the performance of different operating systems using a particular methodology. Currently, there are eight benchmark suites, each located in its own directory:
+The benchmark collection is organized into benchmark suites, each dedicated to a specific benchmarking tool or application. These suites focus on comparing the performance of different operating systems using a particular methodology. Currently, there are nine benchmark suites, each located in its own directory:
 
 - [lmbench](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/lmbench)
 - [sysbench](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/sysbench)
@@ -20,6 +20,7 @@ The benchmark collection is organized into benchmark suites, each dedicated to a
 - [redis](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/redis)
 - [nginx](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/nginx)
 - [memcached](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/memcached)
+- [vhost-vsock](https://github.com/asterinas/asterinas/tree/main/test/initramfs/src/benchmark/vhost_vsock)
 
 Each suite has a corresponding web page (e.g., [LMbench results](https://asterinas.github.io/benchmark/x86-64/lmbench/)) that publishes the latest performance data. At the top of each page, a summary table showcases the most recent results, configured using the `summary.json` file in the suite's directory.
 

@@ -13,13 +13,16 @@
   schbench = callPackage ./schbench.nix { };
   sqlite-speedtest1 = callPackage ./sqlite-speedtest1.nix { };
   sysbench = if hostPlatform.isx86_64 then pkgsHostTarget.sysbench else null;
+  vhost-device-vsock = callPackage ./vhost-device-vsock.nix { };
+  vhost-vsock-bench = callPackage ./vhost-vsock-bench.nix { };
 
   package = stdenvNoCC.mkDerivation {
     pname = "benchmark";
     version = "0.1.0";
     src = lib.fileset.toSource {
       root = ./../../src/benchmark;
-      fileset = ./../../src/benchmark;
+      fileset = lib.fileset.difference ./../../src/benchmark
+        ./../../src/benchmark/vhost_vsock/vhost_vsock_bench.c;
     };
 
     buildCommand = ''
@@ -32,6 +35,8 @@
       cp -r ${redis}/bin/redis-server $out/bin/
       cp -r ${schbench}/bin/schbench $out/bin/
       cp -r ${sqlite-speedtest1}/bin/sqlite-speedtest1 $out/bin/
+      cp -r ${vhost-device-vsock}/bin/vhost-device-vsock $out/bin/
+      cp -r ${vhost-vsock-bench}/bin/vhost_vsock_bench $out/bin/
 
       mkdir -p $out/bin/lmbench
       cp -r ${lmbench}/bin/* $out/bin/lmbench/
