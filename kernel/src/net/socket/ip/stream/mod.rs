@@ -20,6 +20,7 @@ use util::{Retrans, TcpOptionSet};
 
 use super::{
     addr::IpAddressFamily,
+    ioctl::ipv4_ioctl,
     options::{IpOptionSet, SetIpLevelOption},
 };
 use crate::{
@@ -47,7 +48,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    util::{MultiRead, MultiWrite, net::SockType},
+    util::{MultiRead, MultiWrite, ioctl::RawIoctl, net::SockType},
 };
 
 mod connected;
@@ -469,6 +470,19 @@ impl Pollable for StreamSocket {
 impl SocketPrivate for StreamSocket {
     fn is_nonblocking(&self) -> bool {
         self.common.is_nonblocking()
+    }
+
+    fn protocol_ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        // Handle common IPv4/IPv6 ioctl commands.
+        match self.family {
+            IpAddressFamily::IPv4 => ipv4_ioctl(raw_ioctl),
+            IpAddressFamily::IPv6 => {
+                // TODO: Add support for IPv6 ioctl commands.
+                return_errno_with_message!(Errno::ENOTTY, "the socket ioctl command is unknown")
+            }
+        }
+
+        // Handle ioctl commands that require TCP-specific handling.
     }
 }
 

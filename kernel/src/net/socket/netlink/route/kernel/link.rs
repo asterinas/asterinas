@@ -10,7 +10,7 @@ use aster_bigtcp::{iface::InterfaceType, wire::EthernetAddress};
 use super::util::finish_response;
 use crate::{
     net::{
-        iface::{Iface, iter_all_ifaces},
+        iface::{DEFAULT_TX_QUEUE_LEN, Iface, iter_all_ifaces},
         socket::netlink::{
             message::{CMsgSegHdr, CSegmentType, GetRequestFlags, SegHdrCommonFlags},
             route::message::{LinkAttr, LinkSegment, LinkSegmentBody, RtnlSegment},
@@ -22,15 +22,6 @@ use crate::{
 
 /// The unspecified link-layer address.
 const UNSPECIFIED_LINK_ADDR: EthernetAddress = EthernetAddress([0; 6]);
-
-/// The default transmit queue length.
-///
-/// On Linux, this value limits the number of SKBs
-/// that can be queued in a network device's egress qdisc.
-/// This value does not take effect on Asterinas now.
-///
-/// Reference: <https://elixir.bootlin.com/linux/v7.1/source/include/net/pkt_sched.h#L13>.
-const DEFAULT_TX_QUEUE_LEN: u32 = 1000;
 
 pub(super) fn do_get_link(request_segment: &LinkSegment) -> Result<Vec<RtnlSegment>> {
     let filter_by = FilterBy::from_request(request_segment)?;

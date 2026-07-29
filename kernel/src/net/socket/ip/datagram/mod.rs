@@ -4,7 +4,7 @@ use aster_bigtcp::wire::IpEndpoint;
 use bound::BoundDatagram;
 use unbound::{BindOptions, UnboundDatagram};
 
-use super::addr::UNSPECIFIED_LOCAL_ENDPOINT;
+use super::{addr::UNSPECIFIED_LOCAL_ENDPOINT, ioctl::ipv4_ioctl};
 use crate::{
     events::IoEvents,
     fs::{
@@ -29,7 +29,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    util::{MultiRead, MultiWrite, net::SockType},
+    util::{MultiRead, MultiWrite, ioctl::RawIoctl, net::SockType},
 };
 
 mod bound;
@@ -137,6 +137,14 @@ impl Pollable for DatagramSocket {
 impl SocketPrivate for DatagramSocket {
     fn is_nonblocking(&self) -> bool {
         self.common.is_nonblocking()
+    }
+
+    fn protocol_ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        // Handle common IPv4/IPv6 ioctl commands.
+        // TODO: Handle IPv6 ioctls once UDP sockets support IPv6.
+        ipv4_ioctl(raw_ioctl)
+
+        // Handle ioctl commands that require UDP-specific handling.
     }
 }
 

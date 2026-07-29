@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub(super) mod datagram_common;
+pub(super) mod ioctl;
 mod linger_option;
 mod message_flags;
 mod message_header;
