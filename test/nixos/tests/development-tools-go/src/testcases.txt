@@ -1,4 +1,4 @@
-# This test list is pinned to `pkgs.go_1_24`.
+# This test list is pinned to `pkgs.go_1_26`.
 # Keep it in sync with `test/nixos/tests/go/extra_config.nix`.
 #
 # It can be regenerated with the following command:
@@ -39,12 +39,15 @@ context
 # crypto/fips140
 # crypto/hkdf
 # crypto/hmac
+# crypto/hpke
 # crypto/internal/boring
 # crypto/internal/boring/bbig
 # crypto/internal/boring/bcache
 # crypto/internal/boring/sig
+# crypto/internal/constanttime
 # crypto/internal/cryptotest
 # crypto/internal/entropy
+# crypto/internal/entropy/v1.0.0
 # crypto/internal/fips140
 # crypto/internal/fips140/aes
 # crypto/internal/fips140/aes/gcm
@@ -61,6 +64,7 @@ context
 # crypto/internal/fips140/hkdf
 # crypto/internal/fips140/hmac
 # crypto/internal/fips140/mlkem
+# crypto/internal/fips140/mldsa
 # crypto/internal/fips140/nistec
 # crypto/internal/fips140/nistec/fiat
 # crypto/internal/fips140/pbkdf2
@@ -72,20 +76,23 @@ context
 # crypto/internal/fips140/subtle
 # crypto/internal/fips140/tls12
 # crypto/internal/fips140/tls13
+# crypto/internal/fips140cache
 # crypto/internal/fips140deps
 # crypto/internal/fips140deps/byteorder
 # crypto/internal/fips140deps/cpu
 # crypto/internal/fips140deps/godebug
+# crypto/internal/fips140deps/time
 # crypto/internal/fips140hash
 # crypto/internal/fips140only
 # crypto/internal/fips140test
-# crypto/internal/hpke
 # crypto/internal/impl
+# crypto/internal/rand
 # crypto/internal/randutil
 # crypto/internal/sysrand
 # crypto/internal/sysrand/internal/seccomp
 # crypto/md5
 # crypto/mlkem
+# crypto/mlkem/mlkemtest
 # crypto/pbkdf2
 # crypto/rand
 # crypto/rc4
@@ -127,7 +134,6 @@ expvar
 flag
 fmt
 # go/ast
-# go/ast/internal/tests
 go/build
 go/build/constraint
 # go/constant
@@ -137,6 +143,7 @@ go/build/constraint
 # go/importer
 # go/internal/gccgoimporter
 # go/internal/gcimporter
+# go/internal/scannerhooks
 # go/internal/srcimporter
 # go/parser
 # go/printer
@@ -168,6 +175,7 @@ go/build/constraint
 # internal/bytealg
 # internal/byteorder
 # internal/cfg
+# internal/cgrouptest
 # internal/chacha8rand
 # internal/copyright
 # internal/coverage
@@ -201,7 +209,6 @@ go/build/constraint
 # internal/goroot
 # internal/gover
 # internal/goversion
-# internal/itoa
 # internal/lazyregexp
 # internal/lazytemplate
 # internal/msan
@@ -216,13 +223,22 @@ go/build/constraint
 # internal/race
 # internal/reflectlite
 # internal/runtime/atomic
+# internal/runtime/cgobench
+# internal/runtime/cgroup
 # internal/runtime/exithook
+# internal/runtime/gc
+# internal/runtime/gc/internal/gen
+# internal/runtime/gc/scan
 # internal/runtime/maps
 # internal/runtime/math
+# internal/runtime/pprof/label
+# internal/runtime/startlinetest
 # internal/runtime/sys
-# internal/runtime/syscall
+# internal/runtime/syscall/linux
+# internal/runtime/wasitest
 # internal/saferio
 # internal/singleflight
+# internal/strconv
 # internal/stringslite
 # internal/sync
 # internal/synctest
@@ -231,15 +247,15 @@ go/build/constraint
 # internal/sysinfo
 # internal/syslist
 # internal/testenv
+# internal/testhash
 # internal/testlog
 # internal/testpty
 # internal/trace
-# internal/trace/event
-# internal/trace/event/go122
-# internal/trace/internal/oldtrace
-# internal/trace/internal/testgen/go122
+# internal/trace/internal/testgen
+# internal/trace/internal/tracev1
 # internal/trace/raw
 # internal/trace/testtrace
+# internal/trace/tracev2
 # internal/trace/traceviewer
 # internal/trace/traceviewer/format
 # internal/trace/version
@@ -258,11 +274,11 @@ iter
 # log/slog/internal
 # log/slog/internal/benchmarks
 # log/slog/internal/buffer
-# log/slog/internal/slogtest
 # log/syslog
 maps
 # math
 # math/big
+# math/big/internal/asmgen
 # math/bits
 # math/cmplx
 # math/rand
@@ -280,6 +296,7 @@ net/http/httptrace
 net/http/httputil
 # net/http/internal
 # net/http/internal/ascii
+# net/http/internal/httpcommon
 # net/http/internal/testcert
 net/http/pprof
 # net/internal/cgotest
@@ -291,10 +308,10 @@ net/rpc/jsonrpc
 net/smtp
 net/textproto
 net/url
-os -skip='TestLargeCopyViaNetwork|TestSpliceFile|TestGetPollFDAndNetwork|TestSendFile|TestRootConsistencyOpen/symlink_slash|TestRootConsistencyCreate/symlink_slash|TestRootConsistencyRemove/unreadable_directory|TestRootConsistencyStat/symlink_slash|TestRootRaceRenameDir|TestNonpollableDeadline|TestSymlinkWithTrailingSlash|TestRemoveAll'
+os -skip='TestLargeCopyViaNetwork|TestSpliceFile|TestGetPollFDAndNetwork|TestSendFile|TestRootConsistencyOpen/symlink_slash|TestRootConsistencyCreate/symlink_slash|TestRootConsistencyRemove/unreadable_directory|TestRootConsistencyStat/symlink_slash|TestRootMultiMkdir|TestRootRaceRenameDir|TestNonpollableDeadline|TestSymlinkWithTrailingSlash|TestRemoveAll'
 # os/exec -skip='TestExtraFiles|TestFindExecutableVsNoexec'
 # os/exec/internal/fdtest
-os/signal
+os/signal -skip='TestTerminalSignal'
 os/user
 path
 path/filepath -skip='TestWalkSymlinkRoot'
@@ -304,11 +321,10 @@ plugin
 # reflect/internal/example2
 # regexp
 # regexp/syntax
-runtime -skip='TestBreakpoint|TestAbort|TestDebugCall|TestNonblockingPipe|TestMincoreErrorSign'
+runtime -skip='TestBreakpoint|TestAbort|TestDebugCall|TestNonblockingPipe|TestMincoreErrorSign|TestCgoPprofThreadNoTraceback|TestCgoPprofThread|TestCgoPprofPIE|TestCgoPprof|TestCgoCallbackPprof'
+# runtime/cgo
 runtime/coverage
 # runtime/debug -skip='TestPanicOnFault'
-# runtime/internal/startlinetest
-# runtime/internal/wasitest
 runtime/metrics
 runtime/pprof -skip='TestCPUProfile|TestMathBigDivide|TestMorestack|TestLabelRace|TestLabelSystemstack|TestTimeVDSO'
 runtime/race
@@ -323,11 +339,13 @@ structs
 # sync/atomic
 syscall -skip='TestSCMCredentials|TestUseCgroupFD|TestFchmodat|TestSetuidEtc|TestPrlimitOtherProcess|TestPrlimitFileLimit|TestExecPtrace|TestFcntlFlock|TestPassFD'
 # testing
+# testing/cryptotest
 # testing/fstest
 # testing/internal/testdeps
 # testing/iotest
 # testing/quick
 # testing/slogtest
+# testing/synctest
 # text/scanner
 # text/tabwriter
 # text/template
