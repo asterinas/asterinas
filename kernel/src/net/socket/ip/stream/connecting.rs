@@ -9,10 +9,7 @@ use aster_bigtcp::{
 use super::{connected::ConnectedStream, init::InitStream, observer::StreamObserver};
 use crate::{
     events::IoEvents,
-    net::{
-        iface::{BoundTcpPort, Iface, TcpConnection},
-        socket::ip::IpAddressFamily,
-    },
+    net::iface::{BoundTcpPort, Iface, TcpConnection},
     prelude::*,
 };
 
@@ -87,8 +84,7 @@ impl ConnectingStream {
             )),
             ConnectState::Refused => {
                 let bound_port = self.tcp_conn.into_bound_port().unwrap();
-                let family = IpAddressFamily::from(*bound_port.addr());
-                ConnResult::Refused(InitStream::new_refused(bound_port, family))
+                ConnResult::Refused(InitStream::new_refused(bound_port))
             }
         }
     }
