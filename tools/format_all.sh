@@ -6,7 +6,18 @@ set -e
 
 WORKSPACE_ROOT="$(dirname "$(readlink -f "$0")")/.."
 
-EXCLUDED_CRATES=$(sed -n -e 's/#.*//; /^\s*$/d' -e '/^\[workspace\]/,/^\[.*\]/{/exclude = \[/,/\]/p}' "$WORKSPACE_ROOT/Cargo.toml" | grep -v "exclude = \[" | tr -d '", \]')
+# Extract the crates excluded from the workspace; they are formatted separately below.
+EXCLUDED_CRATES=$(python3 - "$WORKSPACE_ROOT/Cargo.toml" <<'PY'
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as manifest_file:
+    manifest = tomllib.load(manifest_file)
+
+for excluded_crate in manifest.get("workspace", {}).get("exclude", []):
+    print(excluded_crate)
+PY
+)
 
 CHECK_MODE=false
 
