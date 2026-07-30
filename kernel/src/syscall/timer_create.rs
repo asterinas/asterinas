@@ -77,13 +77,13 @@ pub fn sys_timer_create(
                 SigNotify::SIGEV_THREAD_ID => {
                     let tid = sig_event.sigev_un.read_tid() as u32;
                     let thread = pid_table::pid_table_mut().get_thread(tid).ok_or_else(|| {
-                        Error::with_message(Errno::EINVAL, "target thread does not exist")
+                        Error::with_message(Errno::EINVAL, "the target thread does not exist")
                     })?;
                     let posix_thread = thread.as_posix_thread().unwrap();
                     if posix_thread.process().pid() != current_process.pid() {
                         return_errno_with_message!(
                             Errno::EINVAL,
-                            "target thread should belong to current process"
+                            "the target thread does not belong to the current process"
                         );
                     }
                     let signal = KernelSignal::new(SigNum::try_from(signo as u8)?);
@@ -149,7 +149,7 @@ where
             DynamicClockIdInfo::Pid(pid, clock_type) => {
                 let process = pid_table::pid_table_mut()
                     .get_process(pid)
-                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
+                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
                 let process_timer_manager = process.timer_manager();
                 match clock_type {
                     DynamicClockType::Profiling => process_timer_manager.create_prof_timer(func),
@@ -161,7 +161,7 @@ where
             DynamicClockIdInfo::Tid(tid, clock_type) => {
                 let thread = pid_table::pid_table_mut()
                     .get_thread(tid)
-                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
+                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
                 let posix_thread = thread.as_posix_thread().unwrap();
                 match clock_type {
                     DynamicClockType::Profiling => posix_thread.create_prof_timer(func),

@@ -170,7 +170,7 @@ impl SignalFile {
 
     /// Checks current readable I/O events.
     fn check_io_events(&self, posix_thread: &PosixThread) -> IoEvents {
-        let mask = self.signals_mask.load(Ordering::Relaxed);
+        let mask = self.signal_mask();
         if posix_thread.pending_signals().intersects(mask) {
             IoEvents::IN
         } else {
@@ -181,7 +181,7 @@ impl SignalFile {
     /// Attempts non-blocking read operation.
     fn try_read(&self, writer: &mut VmWriter, thread: &PosixThread) -> Result<usize> {
         // We invert `signal_mask` to get the signals that are not blocked.
-        let mask = !self.signals_mask.load(Ordering::Relaxed);
+        let mask = !self.signal_mask();
         let max_signals = writer.avail() / size_of::<SignalfdSiginfo>();
         let mut count = 0;
 
