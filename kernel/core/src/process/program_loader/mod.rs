@@ -187,8 +187,8 @@ impl ProgramToLoad {
         })
     }
 
-    /// Returns the ELF file that will be loaded.
-    pub(super) fn elf_file(&self) -> &Path {
+    /// Returns the `Path` of the ELF file that will be loaded.
+    pub(super) fn elf_path(&self) -> &Path {
         self.elf_file.path()
     }
 

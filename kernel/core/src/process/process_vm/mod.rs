@@ -75,8 +75,8 @@ pub(crate) struct ProcessVm {
     code_range: SpinLock<Range<Vaddr>>,
     /// The data range from the executable file.
     data_range: SpinLock<Range<Vaddr>>,
-    /// The executable file.
-    executable_file: Path,
+    /// The path of the executable file.
+    executable_path: Path,
     /// The base address for vDSO segment
     #[cfg(target_arch = "riscv64")]
     vdso_base: AtomicUsize,
@@ -84,13 +84,13 @@ pub(crate) struct ProcessVm {
 
 impl ProcessVm {
     /// Creates a new `ProcessVm` without mapping anything.
-    pub(super) fn new(executable_file: Path) -> Self {
+    pub(super) fn new(executable_path: Path) -> Self {
         Self {
             init_stack: InitStack::new(),
             heap: Heap::new_uninitialized(),
             code_range: SpinLock::new(0..0),
             data_range: SpinLock::new(0..0),
-            executable_file,
+            executable_path,
             #[cfg(target_arch = "riscv64")]
             vdso_base: AtomicUsize::new(0),
         }
@@ -103,7 +103,7 @@ impl ProcessVm {
             heap: Heap::fork_from(heap_guard),
             code_range: SpinLock::new(process_vm.code_range.lock().clone()),
             data_range: SpinLock::new(process_vm.data_range.lock().clone()),
-            executable_file: process_vm.executable_file.clone(),
+            executable_path: process_vm.executable_path.clone(),
             #[cfg(target_arch = "riscv64")]
             vdso_base: AtomicUsize::new(process_vm.vdso_base.load(Ordering::Relaxed)),
         }
@@ -130,8 +130,8 @@ impl ProcessVm {
     }
 
     /// Returns a reference to the executable `Path`.
-    pub(crate) fn executable_file(&self) -> &Path {
-        &self.executable_file
+    pub(crate) fn executable_path(&self) -> &Path {
+        &self.executable_path
     }
 
     /// Maps and writes the initial portion of the main stack of a process.
