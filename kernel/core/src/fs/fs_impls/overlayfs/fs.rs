@@ -158,7 +158,9 @@ impl OverlayFs {
     /// Validates that work is empty.
     fn validate_work_empty(work: &Path) -> Result<()> {
         let mut counter = DirentCounter::new();
-        let _ = work.inode().readdir_at(0, &mut counter);
+        let _ = work
+            .inode()
+            .readdir_at(0, &mut counter, StatusFlags::empty());
         if counter.count() > 0 {
             return_errno_with_message!(Errno::EINVAL, "workdir must be empty");
         }
@@ -381,12 +383,13 @@ impl OverlayInode {
         &self,
         offset: usize,
         visitor: &mut dyn DirentVisitor,
+        status_flags: StatusFlags,
     ) -> Result<usize> {
         if self.type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
-        let overlay_dir_visitor = self.readdir_inner(offset)?;
+        let overlay_dir_visitor = self.readdir_inner(offset, status_flags)?;
 
         let mut last_visited_offset: Option<usize> = None;
         for (entry_offset, (name, ino, type_)) in overlay_dir_visitor.as_merged_view() {
@@ -464,7 +467,7 @@ impl OverlayInode {
         let upper_guard = self.upper.lock();
         let upper = upper_guard.as_ref().unwrap();
 
-        let visitor = target.readdir_inner(0)?;
+        let visitor = target.readdir_inner(0, StatusFlags::empty())?;
         if visitor.visited_files() > 0 {
             return_errno!(Errno::ENOTEMPTY);
         }
@@ -474,7 +477,7 @@ impl OverlayInode {
             let target_upper = target.upper().unwrap();
 
             let mut target_visitor = Vec::<String>::new();
-            target_upper.readdir_at(0, &mut target_visitor)?;
+            target_upper.readdir_at(0, &mut target_visitor, StatusFlags::empty())?;
 
             for whiteout in target_visitor.iter().skip(2) {
                 assert!(whiteout.starts_with(WHITEOUT_PREFIX));
@@ -786,7 +789,7 @@ impl OverlayInode {
         Ok(Some(child_ovl_inode))
     }
 
-    fn readdir_inner(&self, offset: usize) -> Result<OverlayDirVisitor> {
+    fn readdir_inner(&self, offset: usize, status_flags: StatusFlags) -> Result<OverlayDirVisitor> {
         let mut overlay_visitor = OverlayDirVisitor::new();
         let (mut layer_idx, fs_offset) = UniqueNoGenerator::parse_unique_offset(offset);
         overlay_visitor.set_cur_layer(layer_idx);
@@ -804,7 +807,7 @@ impl OverlayInode {
                 };
 
                 if let Some(cur_inode) = cur_inode {
-                    cur_inode.readdir_at(0, &mut overlay_visitor)?;
+                    cur_inode.readdir_at(0, &mut overlay_visitor, status_flags)?;
                 }
             }
 
@@ -815,7 +818,7 @@ impl OverlayInode {
         if layer_idx == 0 {
             if let Some(upper) = self.upper() {
                 debug_assert!(upper.type_() == InodeType::Dir);
-                upper.readdir_at(fs_offset, &mut overlay_visitor)?;
+                upper.readdir_at(fs_offset, &mut overlay_visitor, status_flags)?;
             }
 
             layer_idx += 1;
@@ -825,13 +828,13 @@ impl OverlayInode {
         if !self.is_opaque_dir() && layer_idx > 0 && layer_idx as usize <= self.lowers.len() {
             // TODO: Figure out how to check the opaque directories within lower layers.
             let first_lower = &self.lowers[layer_idx as usize - 1];
-            first_lower.readdir_at(fs_offset, &mut overlay_visitor)?;
+            first_lower.readdir_at(fs_offset, &mut overlay_visitor, status_flags)?;
 
             layer_idx += 1;
             overlay_visitor.set_cur_layer(layer_idx);
 
             for lower in self.lowers.iter().skip(layer_idx as usize - 1) {
-                lower.readdir_at(0, &mut overlay_visitor)?;
+                lower.readdir_at(0, &mut overlay_visitor, status_flags)?;
 
                 layer_idx += 1;
                 overlay_visitor.set_cur_layer(layer_idx);
@@ -1009,7 +1012,12 @@ impl FileOps for OverlayInode {
         reader: &mut VmReader,
         status_flags: StatusFlags,
     ) -> Result<usize>;
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize>;
+    fn readdir_at(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+        status_flags: StatusFlags,
+    ) -> Result<usize>;
 }
 
 #[inherit_methods(from = "self")]
@@ -1490,7 +1498,9 @@ mod tests {
         assert_eq!(d1.type_(), InodeType::Dir);
         let mut d1_fnames = Vec::<String>::new();
         // No assumption on the return value
-        let _ = d1.readdir_at(0, &mut d1_fnames).unwrap();
+        let _ = d1
+            .readdir_at(0, &mut d1_fnames, StatusFlags::empty())
+            .unwrap();
         assert_eq!(d1_fnames, [".", "..", "f11", "f12"]);
     }
 
@@ -1596,7 +1606,9 @@ mod tests {
         let mut offset = 0usize;
         loop {
             let mut batch = Vec::<String>::new();
-            let read_cnt = root_inode.readdir_at(offset, &mut batch).unwrap();
+            let read_cnt = root_inode
+                .readdir_at(offset, &mut batch, StatusFlags::empty())
+                .unwrap();
             all_names.extend(batch);
             if read_cnt == 0 {
                 break;

@@ -194,7 +194,12 @@ impl FileOps for RootInode {
         Err(Error::new(Errno::EISDIR))
     }
 
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    fn readdir_at(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
             // Read the 3 special entries.
             if *offset == 0 {

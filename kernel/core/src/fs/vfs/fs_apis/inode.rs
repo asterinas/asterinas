@@ -355,7 +355,16 @@ pub(crate) trait FileOps {
     ) -> Result<usize>;
 
     /// Reads directory entries from the given offset.
-    fn readdir_at(&self, _offset: usize, _visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    ///
+    /// `status_flags` are the live per-open status flags of the calling file
+    /// description, so filesystems that propagate flags to a server (e.g.
+    /// virtio-fs `FUSE_READDIR`) can observe post-`fcntl` changes.
+    fn readdir_at(
+        &self,
+        _offset: usize,
+        _visitor: &mut dyn DirentVisitor,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         return_errno_with_message!(Errno::ENOTDIR, "readdir is not supported");
     }
 }

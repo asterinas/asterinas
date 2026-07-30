@@ -139,7 +139,7 @@ impl InodeHandle {
             self.path().inode().as_ref()
         };
         let mut offset = self.offset.lock();
-        let read_cnt = file_ops.readdir_at(*offset, visitor)?;
+        let read_cnt = file_ops.readdir_at(*offset, visitor, self.status_flags())?;
         *offset += read_cnt;
         Ok(read_cnt)
     }

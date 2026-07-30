@@ -1366,7 +1366,12 @@ impl FileOps for ExfatInode {
         }
     }
 
-    fn readdir_at(&self, dir_cnt: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    fn readdir_at(
+        &self,
+        dir_cnt: usize,
+        visitor: &mut dyn DirentVisitor,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         let inner = self.inner.upread();
 
         if dir_cnt >= (inner.num_sub_inodes + 2) as usize {

@@ -28,10 +28,12 @@ impl PageCacheBackend for VirtioFsInode {
         let session = self.fs_ref().session().clone();
         let cache_page = locked_page.deref().clone();
         let data_buf = FuseReplyBuf::new_map(Segment::from(cache_page.clone()).into())?;
-        // FIXME: Page-cache I/O should use the current `InodeHandle` status
-        // flags instead of the flags captured in the cached FUSE handle. The
-        // page-cache backend currently receives only the inode, so it cannot
-        // observe per-open status flag changes.
+        // The page-cache backend is inode-scoped and asynchronous: at I/O time
+        // no specific `InodeHandle` is in context, and the handle used here may
+        // be a reused live handle or a transient one. Its own open flags are
+        // therefore the well-defined flag source. `O_APPEND`/`O_NONBLOCK` do
+        // not apply to explicit-offset page I/O, and `O_DIRECT` bypasses the
+        // page cache, so the captured `handle.file_flags()` are correct here.
         let read_req = ReadReq::new(
             handle.fh(),
             page_offset(idx)? as u64,
@@ -115,10 +117,12 @@ impl PageCacheBackend for VirtioFsInode {
         let nodeid = self.nodeid();
         let session = fs.session().clone();
         let complete_page = page.clone();
-        // FIXME: Page-cache I/O should use the current `InodeHandle` status
-        // flags instead of the flags captured in the cached FUSE handle. The
-        // page-cache backend currently receives only the inode, so it cannot
-        // observe per-open status flag changes.
+        // The page-cache backend is inode-scoped and asynchronous: at I/O time
+        // no specific `InodeHandle` is in context, and the handle used here may
+        // be a reused live handle or a transient one. Its own open flags are
+        // therefore the well-defined flag source. `O_APPEND`/`O_NONBLOCK` do
+        // not apply to explicit-offset page I/O, and `O_DIRECT` bypasses the
+        // page cache, so the captured `handle.file_flags()` are correct here.
         let write_req = WriteReq::new(
             handle.fh(),
             page_start as u64,

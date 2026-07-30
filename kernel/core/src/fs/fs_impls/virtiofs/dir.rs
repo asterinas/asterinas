@@ -56,16 +56,19 @@ impl FileOps for VirtioFsDir {
         return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
     }
 
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        // FIXME: `readdir_at` should pass current status flags to the
-        // server, while `FileOps` interface currently does not expose them,
-        // so `FUSE_READDIR` uses the flags captured at open time.
-        self.inode.readdir(
-            self.open_handle.fh(),
-            offset,
-            self.open_handle.file_flags(),
-            visitor,
-        )
+    fn readdir_at(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        // Compose the request flags from the *current* per-open status flags
+        // (which may have changed via `fcntl`) rather than the flags captured
+        // at `FUSE_OPENDIR` time. The access mode is immutable post-open, so
+        // it is still taken from the server-issued handle.
+        let file_flags = self.open_handle.access_mode() as u32 | status_flags.bits();
+        self.inode
+            .readdir(self.open_handle.fh(), offset, file_flags, visitor)
     }
 }
 

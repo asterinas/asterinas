@@ -347,7 +347,12 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
         Ok(len)
     }
 
-    default fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    default fn readdir_at(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         // Why interpreting the `offset` argument as an inode number?
         //
         // It may take multiple `getdents` system calls
