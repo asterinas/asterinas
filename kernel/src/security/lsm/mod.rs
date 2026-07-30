@@ -20,7 +20,7 @@ pub mod yama {
 use aster_systree::SysObj;
 
 use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook, LsmFileOpenHook};
-use crate::prelude::*;
+use crate::{prelude::*, process::posix_thread::PosixThread};
 
 bitflags! {
     /// LSM module flags.
@@ -55,10 +55,24 @@ trait LsmModule: Sync {
         None
     }
 
+    /// Returns the module's task-attribute interface, if it has one.
+    fn task_attrs(&self) -> Option<&dyn LsmTaskAttrs> {
+        None
+    }
+
     /// Returns the module's top-level securityfs node, if it has one.
     fn securityfs_node(&self) -> Option<Arc<dyn SysObj>> {
         None
     }
+}
+
+/// An LSM interface exposed through `/proc/<pid>/attr`.
+trait LsmTaskAttrs: Sync {
+    /// Returns the module's `current` task attribute.
+    fn current(&self, posix_thread: &PosixThread) -> Result<String>;
+
+    /// Updates the module's `current` task attribute.
+    fn set_current(&self, posix_thread: &PosixThread, value: &str) -> Result<()>;
 }
 
 /// Returns whether the Yama LSM is enabled.
@@ -67,6 +81,8 @@ pub fn is_yama_enabled() -> bool {
         .iter()
         .any(|module| module.name() == "yama")
 }
+
+pub(crate) use self::task::{set_task_attr_current, task_attr_current, task_attrs_enabled};
 
 pub(crate) fn securityfs_nodes() -> Vec<Arc<dyn SysObj>> {
     modules::active_modules()
@@ -80,3 +96,5 @@ pub(super) fn init() {
         info!("[kernel] LSM module enabled: {}", module.name());
     }
 }
+
+mod task;
