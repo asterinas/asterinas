@@ -19,13 +19,13 @@ pub fn sys_execve(
     ctx: &Context,
     user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
-    let (elf_file, thread_name) = {
+    let (executable_file, thread_name) = {
         let flags = OpenFlags::empty();
         lookup_and_open_executable_file(AT_FDCWD, filename_ptr, flags, ctx)?
     };
 
     do_execve(
-        elf_file,
+        executable_file,
         thread_name,
         argv_ptr_ptr,
         envp_ptr_ptr,
@@ -44,14 +44,14 @@ pub fn sys_execveat(
     ctx: &Context,
     user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
-    let (elf_file, thread_name) = {
+    let (executable_file, thread_name) = {
         let flags = OpenFlags::from_bits(flags)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
         lookup_and_open_executable_file(dfd, filename_ptr, flags, ctx)?
     };
 
     do_execve(
-        elf_file,
+        executable_file,
         thread_name,
         argv_ptr_ptr,
         envp_ptr_ptr,
