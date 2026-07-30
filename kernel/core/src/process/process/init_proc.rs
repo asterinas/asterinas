@@ -26,11 +26,11 @@ use crate::{
 /// Creates and schedules the init process to run.
 pub(crate) fn spawn_init_process(
     path_resolver: PathResolver,
-    init_path: Path,
+    executable_path: Path,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
-    let process = create_init_process(path_resolver, init_path, argv, envp)?;
+    let process = create_init_process(path_resolver, executable_path, argv, envp)?;
 
     // Linux starts the init process without placing it in a process group or session.
     // It joins one only after userspace first calls `setsid()`.
@@ -48,14 +48,14 @@ pub(crate) fn spawn_init_process(
 
 fn create_init_process(
     path_resolver: PathResolver,
-    init_path: Path,
+    executable_path: Path,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
     let fs = ThreadFsInfo::new(path_resolver);
 
     let pid = allocate_posix_tid();
-    let vmar = VmarHandle::new(ProcessVm::new(init_path.clone()));
+    let vmar = VmarHandle::new(ProcessVm::new(executable_path.clone()));
     let resource_limits = new_resource_limits_for_init();
     let nice = Nice::default();
     let oom_score_adj = 0;
@@ -72,7 +72,7 @@ fn create_init_process(
         user_ns,
     );
 
-    let init_task = create_init_task(pid, &init_proc, fs, vmar, init_path, argv, envp)?;
+    let init_task = create_init_task(pid, &init_proc, fs, vmar, executable_path, argv, envp)?;
     init_proc.tasks().lock().insert(init_task).unwrap();
 
     Ok(init_proc)
@@ -92,38 +92,37 @@ fn set_bootstrap_session_and_group(process: &Arc<Process>) {
     pid_table.insert_process(process.pid(), process);
 }
 
-/// Creates the init task from the given executable file.
+/// Creates the init task from the given executable path.
 fn create_init_task(
     tid: Tid,
     process: &Arc<Process>,
     fs: ThreadFsInfo,
     vmar: VmarHandle,
-    elf_path: Path,
+    executable_path: Path,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Task>> {
     let credentials = Credentials::new_root();
 
-    let (elf_load_info, elf_abs_path) = {
+    let (elf_load_info, executable_abs_path) = {
         let path_resolver = fs.resolver().read();
-        let elf_abs_path = path_resolver.make_abs_path(&elf_path).into_string();
+        let executable_abs_path = path_resolver.make_abs_path(&executable_path).into_string();
         let shebang_script_path =
-            ShebangScriptPath::Accessible(CString::new(elf_abs_path.clone()).unwrap());
+            ShebangScriptPath::Accessible(CString::new(executable_abs_path.clone()).unwrap());
 
-        let executable = UndetectedExecutable::open(elf_path.clone(), shebang_script_path)?;
+        let executable = UndetectedExecutable::open(executable_path.clone(), shebang_script_path)?;
         let program_to_load =
             ProgramToLoad::from_executable(executable, &path_resolver, argv, envp)?;
         let vmar = process.lock_vmar();
         let elf_load_info = program_to_load.load_to_vmar(vmar.unwrap(), &path_resolver)?;
-
-        (elf_load_info, elf_abs_path)
+        (elf_load_info, executable_abs_path)
     };
 
     let mut user_ctx = UserContext::default();
     user_ctx.set_instruction_pointer(elf_load_info.entry_point as _);
     user_ctx.set_stack_pointer(elf_load_info.user_stack_top as _);
 
-    let thread_name = derive_thread_name(&elf_abs_path);
+    let thread_name = derive_thread_name(&executable_abs_path);
 
     let thread_builder =
         PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials, vmar)

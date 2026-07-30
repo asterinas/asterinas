@@ -61,7 +61,7 @@ pub(crate) fn do_execve(
 
     let executable_path = executable.path().clone();
     let program_to_load = ProgramToLoad::from_executable(executable, &path_resolver, argv, envp)?;
-    let exec_cred = prepare_exec_cred(program_to_load.elf_file(), ctx)?;
+    let exec_cred = prepare_exec_cred(program_to_load.elf_path(), ctx)?;
 
     let new_vmar = VmarHandle::new(ProcessVm::new(executable_path.clone()));
     let elf_load_info = program_to_load.load_to_vmar(&new_vmar, &path_resolver)?;
@@ -147,9 +147,9 @@ fn read_cstring_vec(
 }
 
 /// Prepares credential changes.
-fn prepare_exec_cred(elf_file: &Path, ctx: &Context) -> Result<ExecCred> {
+fn prepare_exec_cred(elf_path: &Path, ctx: &Context) -> Result<ExecCred> {
     let credentials = ctx.posix_thread.credentials();
-    if elf_file
+    if elf_path
         .mount_node()
         .flags()
         .contains(PerMountFlags::NOSUID)
@@ -159,7 +159,7 @@ fn prepare_exec_cred(elf_file: &Path, ctx: &Context) -> Result<ExecCred> {
 
     let current_user_ns_owner_uid = ctx.thread_local.borrow_user_ns().owner_uid()?;
     let file_capabilities =
-        FileCapabilities::read_from_inode(elf_file.inode())?.filter(|file_capabilities| {
+        FileCapabilities::read_from_inode(elf_path.inode())?.filter(|file_capabilities| {
             file_capabilities
                 .root_uid()
                 .map_or(current_user_ns_owner_uid.is_root(), |root_uid| {
@@ -169,14 +169,14 @@ fn prepare_exec_cred(elf_file: &Path, ctx: &Context) -> Result<ExecCred> {
                     root_uid == current_user_ns_owner_uid
                 })
         });
-    let elf_mode = elf_file.mode()?;
+    let elf_mode = elf_path.mode()?;
     let setuid = if elf_mode.has_set_uid() {
-        Some(elf_file.owner()?)
+        Some(elf_path.owner()?)
     } else {
         None
     };
     let setgid = if elf_mode.has_set_gid() {
-        Some(elf_file.group()?)
+        Some(elf_path.group()?)
     } else {
         None
     };
