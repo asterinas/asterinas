@@ -97,4 +97,7 @@ pub(super) fn init() {
     }
 }
 
+mod credential;
 mod task;
+
+pub(crate) use credential::CredentialSecurity;
