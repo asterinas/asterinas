@@ -92,10 +92,10 @@ fn create_init_process(
         ThreadFsInfo::new(fs_resolver)
     };
     let fs_path = FsPath::try_from(executable_path)?;
-    let elf_path = fs.resolver().read().lookup(&fs_path)?;
+    let executable_path = fs.resolver().read().lookup(&fs_path)?;
 
     let pid = allocate_posix_tid();
-    let vmar = VmarHandle::new(ProcessVm::new(elf_path.clone()));
+    let vmar = VmarHandle::new(ProcessVm::new(executable_path.clone()));
     let resource_limits = new_resource_limits_for_init();
     let nice = Nice::default();
     let oom_score_adj = 0;
@@ -112,7 +112,7 @@ fn create_init_process(
         user_ns,
     );
 
-    let init_task = create_init_task(pid, &init_proc, fs, vmar, elf_path, argv, envp)?;
+    let init_task = create_init_task(pid, &init_proc, fs, vmar, executable_path, argv, envp)?;
     init_proc.tasks().lock().insert(init_task).unwrap();
 
     Ok(init_proc)
@@ -132,36 +132,36 @@ fn set_bootstrap_session_and_group(process: &Arc<Process>) {
     pid_table.insert_process(process.pid(), process);
 }
 
-/// Creates the init task from the given executable file.
+/// Creates the init task from the given executable path.
 fn create_init_task(
     tid: Tid,
     process: &Arc<Process>,
     fs: ThreadFsInfo,
     vmar: VmarHandle,
-    elf_path: Path,
+    executable_path: Path,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Task>> {
     let credentials = Credentials::new_root();
 
-    let (elf_load_info, elf_abs_path) = {
+    let (elf_load_info, executable_abs_path) = {
         let path_resolver = fs.resolver().read();
 
-        let executable_file = open_executable_file(elf_path.clone())?;
+        let executable_file = open_executable_file(executable_path.clone())?;
         let program_to_load =
             ProgramToLoad::build_from_file(executable_file, &path_resolver, argv, envp)?;
         let vmar = process.lock_vmar();
         let elf_load_info = program_to_load.load_to_vmar(vmar.unwrap(), &path_resolver)?;
-        let elf_abs_path = path_resolver.make_abs_path(&elf_path).into_string();
+        let executable_abs_path = path_resolver.make_abs_path(&executable_path).into_string();
 
-        (elf_load_info, elf_abs_path)
+        (elf_load_info, executable_abs_path)
     };
 
     let mut user_ctx = UserContext::default();
     user_ctx.set_instruction_pointer(elf_load_info.entry_point as _);
     user_ctx.set_stack_pointer(elf_load_info.user_stack_top as _);
 
-    let thread_name = ThreadName::new_from_executable_path(&elf_abs_path);
+    let thread_name = ThreadName::new_from_executable_path(&executable_abs_path);
 
     let thread_builder =
         PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials, vmar)
