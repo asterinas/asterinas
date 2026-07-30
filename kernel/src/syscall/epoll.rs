@@ -89,7 +89,7 @@ pub fn sys_epoll_ctl(
 
     let epoll_file = file
         .downcast_ref::<EpollFile>()
-        .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "not epoll file"))?;
     epoll_file.control(ctx.thread_local, &cmd)?;
 
     Ok(SyscallReturn::Return(0 as _))
@@ -124,7 +124,7 @@ fn do_epoll_pwait2(
     let file = get_file_fast!(&mut file_table, epfd.try_into()?);
     let epoll_file = file
         .downcast_ref::<EpollFile>()
-        .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "not epoll file"))?;
 
     let result = epoll_file.wait(max_events, timeout.as_ref());
 

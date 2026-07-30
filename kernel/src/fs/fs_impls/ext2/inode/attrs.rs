@@ -159,10 +159,9 @@ impl Inode {
         name: XattrName,
         value_writer: &mut VmWriter,
     ) -> Result<usize> {
-        let xattr = self.xattr.as_ref().ok_or(Error::with_message(
-            Errno::ENODATA,
-            "xattr not supported on this inode type",
-        ))?;
+        let xattr = self.xattr.as_ref().ok_or_else(|| {
+            Error::with_message(Errno::ENODATA, "xattr not supported on this inode type")
+        })?;
         xattr.get_xattr(name, value_writer)
     }
 
@@ -185,10 +184,9 @@ impl Inode {
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
     ) -> Result<()> {
-        let xattr = self.xattr.as_ref().ok_or(Error::with_message(
-            Errno::EPERM,
-            "xattr not supported on this inode type",
-        ))?;
+        let xattr = self.xattr.as_ref().ok_or_else(|| {
+            Error::with_message(Errno::EPERM, "xattr not supported on this inode type")
+        })?;
         xattr.set_xattr(name, value_reader, flags)?;
         let new_bid = xattr.bid();
 
@@ -200,10 +198,9 @@ impl Inode {
 
     /// Removes one extended attribute.
     pub(in crate::fs::fs_impls::ext2) fn remove_xattr(&self, name: XattrName) -> Result<()> {
-        let xattr = self.xattr.as_ref().ok_or(Error::with_message(
-            Errno::EPERM,
-            "xattr not supported on this inode type",
-        ))?;
+        let xattr = self.xattr.as_ref().ok_or_else(|| {
+            Error::with_message(Errno::EPERM, "xattr not supported on this inode type")
+        })?;
         xattr.remove_xattr(name)?;
         let new_bid = xattr.bid();
 

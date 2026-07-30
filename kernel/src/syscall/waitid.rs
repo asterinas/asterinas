@@ -28,7 +28,7 @@ pub fn sys_waitid(
     // FIXME: what does rusage use for?
     let process_filter = ProcessFilter::from_which_and_id(which, upid as _, ctx)?;
     let wait_options = WaitOptions::from_bits(options as u32)
-        .ok_or(Error::with_message(Errno::EINVAL, "invalid options"))?;
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid options"))?;
 
     // Check for waitid options
     if !wait_options

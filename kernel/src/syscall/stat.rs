@@ -51,8 +51,8 @@ pub fn sys_fstatat(
 ) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
     let filename = user_space.read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
-    let flags =
-        StatFlags::from_bits(flags).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let flags = StatFlags::from_bits(flags)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!(
         "dirfd = {}, filename = {:?}, stat_buf_ptr = 0x{:x}, flags = {:?}",
         dirfd, filename, stat_buf_ptr, flags

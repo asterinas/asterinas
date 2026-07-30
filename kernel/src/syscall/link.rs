@@ -22,8 +22,8 @@ pub fn sys_linkat(
 
     let old_path_name = user_space.read_cstring(old_path_addr, MAX_FILENAME_LEN)?;
     let new_path_name = user_space.read_cstring(new_path_addr, MAX_FILENAME_LEN)?;
-    let flags: LinkFlags =
-        LinkFlags::from_bits(flags).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let flags: LinkFlags = LinkFlags::from_bits(flags)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!(
         "old_dirfd = {}, old_path = {:?}, new_dirfd = {}, new_path = {:?}, flags = {:?}",
         old_dirfd, old_path_name, new_dirfd, new_path_name, flags

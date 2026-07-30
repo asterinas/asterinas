@@ -27,7 +27,7 @@ pub fn sys_inotify_init1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
 fn do_inotify_init(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("inotify_init flags = {}", flags);
     let flags = InotifyFileFlags::from_bits(flags)
-        .ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     let fd_flags = if flags.contains(InotifyFileFlags::CLOEXEC) {
         FdFlags::CLOEXEC
     } else {

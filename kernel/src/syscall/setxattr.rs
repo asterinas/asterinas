@@ -106,7 +106,7 @@ fn setxattr(
     ctx: &Context,
 ) -> Result<()> {
     let flags = XattrSetFlags::from_bits(flags as _)
-        .ok_or(Error::with_message(Errno::EINVAL, "invalid xattr flags"))?;
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid xattr flags"))?;
 
     let name_cstr = read_xattr_name_cstr_from_user(name_ptr, user_space)?;
     let name_str = name_cstr.to_string_lossy();
@@ -183,10 +183,8 @@ pub(super) fn parse_xattr_name(name_str: &str) -> Result<XattrName<'_>> {
         return_errno_with_message!(Errno::ERANGE, "xattr name empty or too long");
     }
 
-    let xattr_name = XattrName::try_from_full_name(name_str).ok_or(Error::with_message(
-        Errno::EOPNOTSUPP,
-        "invalid xattr namespace",
-    ))?;
+    let xattr_name = XattrName::try_from_full_name(name_str)
+        .ok_or_else(|| Error::with_message(Errno::EOPNOTSUPP, "invalid xattr namespace"))?;
     Ok(xattr_name)
 }
 
