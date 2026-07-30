@@ -41,7 +41,13 @@ pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042Controll
 
     let mut init_ctx = InitCtx(controller);
 
-    init_ctx.reset()?;
+    if ATKBD_RESET.load(Ordering::Relaxed) {
+        // Linux treats a failed keyboard reset as non-fatal — it just warns and continues.
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/drivers/input/keyboard/atkbd.c#L820>
+        if let Err(err) = init_ctx.reset() {
+            ostd::warn!("PS/2 keyboard reset failed: {:?}", err);
+        }
+    }
 
     // Determine the keyboard's type.
     let (device_id, _) = init_ctx.get_device_id()?;
@@ -376,3 +382,12 @@ impl ScancodeInfo {
         })
     }
 }
+
+/// Whether to send the keyboard reset command during initialization.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v7.0/source/drivers/input/keyboard/atkbd.c#L40>
+static ATKBD_RESET: AtomicBool = AtomicBool::new(cfg_select! {
+    any(target_arch = "x86_64", target_arch = "loongarch64") => false,
+    _ => true,
+});
+aster_cmdline::define_flag_param!("atkbd.reset", ATKBD_RESET);
