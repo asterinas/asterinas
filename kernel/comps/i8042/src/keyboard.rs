@@ -49,12 +49,21 @@ pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042Controll
         }
     }
 
-    // Determine the keyboard's type.
-    let (device_id, _) = init_ctx.get_device_id()?;
-    ostd::info!("PS/2 keyboard device ID: 0x{:02X}", device_id);
-    if device_id != DEVICE_ID_REGULAR_KEYBOARD {
-        // TODO: Support other kinds of keyboards.
-        return Err(I8042ControllerError::DeviceUnknown);
+    // If the get ID command fails, Linux falls back to SETLEDS as a probe — if that succeeds,
+    // the device is still treated as a valid keyboard (return 0). We take a simpler approach:
+    // just tolerate the failure and continue.
+    // Reference: <https://elixir.bootlin.com/linux/v7.0/source/drivers/input/keyboard/atkbd.c#L838>
+    match init_ctx.get_device_id() {
+        Ok((device_id, _)) => {
+            ostd::info!("PS/2 keyboard device ID: 0x{:02X}", device_id);
+            if device_id != DEVICE_ID_REGULAR_KEYBOARD {
+                // TODO: Support other kinds of keyboards.
+                return Err(I8042ControllerError::DeviceUnknown);
+            }
+        }
+        Err(err) => {
+            ostd::warn!("PS/2 keyboard device ID query failed ({:?})", err);
+        }
     }
 
     let mut irq_line = IrqLine::alloc()
