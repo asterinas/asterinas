@@ -474,10 +474,9 @@ impl Process {
         // Lock order: PID table -> group of process -> group inner -> session inner
         let mut pid_table = pid_table::pid_table_mut();
 
-        let process = pid_table.get_process(pid).ok_or(Error::with_message(
-            Errno::ESRCH,
-            "the process to set the PGID does not exist",
-        ))?;
+        let process = pid_table.get_process(pid).ok_or_else(|| {
+            Error::with_message(Errno::ESRCH, "the process to set the PGID does not exist")
+        })?;
 
         let current_session = if self.pid == process.pid() {
             // There is no need to check if the session is the same in this case.

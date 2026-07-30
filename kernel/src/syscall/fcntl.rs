@@ -61,7 +61,8 @@ fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
     let flags = if arg > u64::from(u8::MAX) {
         return_errno_with_message!(Errno::EINVAL, "invalid fd flags");
     } else {
-        FdFlags::from_bits(arg as u8).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?
+        FdFlags::from_bits(arg as u8)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?
     };
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     file_table.read_with(|inner| {
@@ -172,14 +173,9 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
     let owner_process = if pid == 0 {
         None
     } else {
-        Some(
-            pid_table::pid_table_mut()
-                .get_process(pid)
-                .ok_or(Error::with_message(
-                    Errno::ESRCH,
-                    "cannot set_owner with an invalid pid",
-                ))?,
-        )
+        Some(pid_table::pid_table_mut().get_process(pid).ok_or_else(|| {
+            Error::with_message(Errno::ESRCH, "cannot set_owner with an invalid pid")
+        })?)
     };
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
@@ -281,11 +277,11 @@ fn from_c_flock_and_file(lock: &c_flock, file: &dyn FileLike) -> Result<FileRang
             RangeLockWhence::SEEK_SET => lock.l_start,
             RangeLockWhence::SEEK_CUR => (file.as_inode_handle_or_err()?.offset() as off_t)
                 .checked_add(lock.l_start)
-                .ok_or(Error::with_message(Errno::EOVERFLOW, "start overflow"))?,
+                .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "start overflow"))?,
 
             RangeLockWhence::SEEK_END => (file.path().inode().metadata()?.size as off_t)
                 .checked_add(lock.l_start)
-                .ok_or(Error::with_message(Errno::EOVERFLOW, "start overflow"))?,
+                .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "start overflow"))?,
         }
     };
 
@@ -297,7 +293,7 @@ fn from_c_flock_and_file(lock: &c_flock, file: &dyn FileLike) -> Result<FileRang
         len if len > 0 => {
             let end = start
                 .checked_add(len)
-                .ok_or(Error::with_message(Errno::EOVERFLOW, "end overflow"))?;
+                .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "end overflow"))?;
             (start as usize, end as usize)
         }
         0 => (start as usize, OFFSET_MAX),

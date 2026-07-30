@@ -206,10 +206,12 @@ fn do_new_mount(
         let fs_type_str = fs_type_cstr
             .to_str()
             .map_err(|_| Error::with_message(Errno::ENODEV, "invalid file system type"))?;
-        crate::fs::vfs::registry::look_up(fs_type_str).ok_or(Error::with_message(
-            Errno::ENODEV,
-            "the filesystem is not configured in the kernel",
-        ))?
+        crate::fs::vfs::registry::look_up(fs_type_str).ok_or_else(|| {
+            Error::with_message(
+                Errno::ENODEV,
+                "the filesystem is not configured in the kernel",
+            )
+        })?
     };
 
     let source = if src_name_addr == 0 {

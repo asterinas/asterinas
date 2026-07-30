@@ -160,7 +160,7 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
         let frag_size = BLOCK_SIZE;
 
         let state = FsState::from_bits(sb.state)
-            .ok_or(Error::with_message(Errno::EINVAL, "invalid fs state"))?;
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid fs state"))?;
 
         let errors_behavior = ErrorsBehavior::try_from(sb.errors)
             .map_err(|_| Error::with_message(Errno::EINVAL, "invalid errors behavior"))?;

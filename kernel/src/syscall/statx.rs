@@ -27,7 +27,7 @@ pub fn sys_statx(
     let user_space = ctx.user_space();
     let filename = user_space.read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
     let flags = StatxFlags::from_bits(flags)
-        .ok_or(Error::with_message(Errno::EINVAL, "invalid statx flags"))?;
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid statx flags"))?;
     let mask = StatxMask::from_bits_truncate(mask);
     debug!(
         "dirfd = {}, filename = {:?}, flags = {:?}, mask = {:?}, statx_buf_ptr = 0x{:x}",
