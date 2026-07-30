@@ -10,6 +10,9 @@ mod port;
 mod sched;
 mod time;
 
+const IFNAMESIZE: usize = 16;
+pub type InterfaceName = aster_util::fixed_str::FixedCStr<IFNAMESIZE>;
+
 pub use common::{BoundPort, BoundTcpPort, BoundUdpPort, InterfaceFlags, InterfaceType};
 pub use iface::Iface;
 pub use phy::{EtherIface, IpIface};

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::btree_map::BTreeMap, ffi::CString, sync::Arc};
+use alloc::{collections::btree_map::BTreeMap, sync::Arc};
 
 use aster_softirq::BottomHalfDisabled;
 use ostd::sync::SpinLock;
@@ -17,7 +17,7 @@ use crate::{
     device::{NotifyDevice, WithDevice},
     ext::Ext,
     iface::{
-        Iface, InterfaceFlags, ScheduleNextPoll,
+        Iface, InterfaceFlags, InterfaceName, ScheduleNextPoll,
         common::{IfaceCommon, InterfaceType, IpPacket},
         iface::internal::IfaceInternal,
         time::get_network_timestamp,
@@ -37,7 +37,7 @@ impl<D: WithDevice, E: Ext> EtherIface<D, E> {
         ether_addr: EthernetAddress,
         ip_cidr: Ipv4Cidr,
         gateway: Ipv4Address,
-        name: CString,
+        name: InterfaceName,
         sched_poll: E::ScheduleNextPoll,
         flags: InterfaceFlags,
     ) -> Arc<Self> {

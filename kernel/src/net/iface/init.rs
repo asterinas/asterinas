@@ -4,7 +4,7 @@ use core::slice::Iter;
 
 use aster_bigtcp::{
     device::WithDevice,
-    iface::{InterfaceFlags, InterfaceType},
+    iface::{InterfaceFlags, InterfaceName, InterfaceType},
 };
 use aster_softirq::BottomHalfDisabled;
 use spin::Once;
@@ -98,7 +98,7 @@ fn new_loopback() -> Arc<Iface> {
             LOOPBACK_IPV6_ADDRESS,
             LOOPBACK_IPV6_PREFIX_LEN,
         )),
-        CString::new("lo").unwrap(),
+        InterfaceName::from_str_truncated("lo"),
         PollScheduler::new(),
         InterfaceType::LOOPBACK,
         flags,
@@ -147,7 +147,7 @@ fn new_virtio() -> Option<Arc<Iface>> {
         EthernetAddress(ether_addr),
         Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
         VIRTIO_GATEWAY,
-        CString::new("eth0").unwrap(),
+        InterfaceName::from_str_truncated("eth0"),
         PollScheduler::new(),
         flags,
     ))

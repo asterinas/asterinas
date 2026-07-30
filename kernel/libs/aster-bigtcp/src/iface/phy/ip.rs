@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{ffi::CString, sync::Arc};
+use alloc::sync::Arc;
 
 use smoltcp::{
     iface::Config,
@@ -12,7 +12,7 @@ use crate::{
     device::WithDevice,
     ext::Ext,
     iface::{
-        Iface, ScheduleNextPoll,
+        Iface, InterfaceName, ScheduleNextPoll,
         common::{IfaceCommon, InterfaceFlags, InterfaceType, IpPacket},
         iface::internal::IfaceInternal,
         time::get_network_timestamp,
@@ -30,7 +30,7 @@ impl<D: WithDevice, E: Ext> IpIface<D, E> {
         driver: D,
         ip_cidr: Ipv4Cidr,
         ipv6_cidr: Option<Ipv6Cidr>,
-        name: CString,
+        name: InterfaceName,
         sched_poll: E::ScheduleNextPoll,
         type_: InterfaceType,
         flags: InterfaceFlags,
