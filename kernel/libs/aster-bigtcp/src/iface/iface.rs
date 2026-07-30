@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::ffi::CStr;
 
 use smoltcp::wire::{EthernetAddress, Ipv4Address, Ipv4Cidr, Ipv6Cidr};
 
-use super::{BindPortConfig, BoundTcpPort, BoundUdpPort, InterfaceFlags, InterfaceType};
+use super::{
+    BindPortConfig, BoundTcpPort, BoundUdpPort, InterfaceFlags, InterfaceName, InterfaceType,
+};
 use crate::{errors::BindError, ext::Ext};
 
 /// A network interface.
@@ -62,7 +63,7 @@ impl<E: Ext> dyn Iface<E> {
     /// Gets the name of the iface.
     ///
     /// In Linux, the name is usually the driver name followed by a unit number.
-    pub fn name(&self) -> &CStr {
+    pub fn name(&self) -> &InterfaceName {
         self.common().name()
     }
 
