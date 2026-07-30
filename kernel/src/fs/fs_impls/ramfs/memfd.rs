@@ -248,7 +248,7 @@ impl MemfdInodeHandle for InodeHandle {
 
             let ram_inode = RamInode::new_file_detached_in_memfd(
                 weak_self,
-                MemfdTmpFs::singleton().sb().container_dev_id,
+                MemfdTmpFs::singleton().container_device_id(),
                 mode,
                 Uid::new_root(),
                 Gid::new_root(),
@@ -330,7 +330,8 @@ impl MemfdTmpFs {
     fn mount_node() -> &'static Arc<Mount> {
         static MEMFD_TMPFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        MEMFD_TMPFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        MEMFD_TMPFS_MOUNT
+            .call_once(|| Mount::new_pseudo(Self::singleton().clone().into_super_block()).unwrap())
     }
 }
 

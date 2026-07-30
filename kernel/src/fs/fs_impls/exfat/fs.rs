@@ -31,9 +31,10 @@ use crate::{
     fs::{
         exfat::{constants::*, inode::Ino},
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -435,13 +436,8 @@ impl FileSystem for ExfatFs {
         self.root_inode()
     }
 
-    fn sb(&self) -> SuperBlock {
-        SuperBlock::new(
-            BOOT_SIGNATURE as u64,
-            self.sector_size(),
-            MAX_NAME_LENGTH,
-            self.block_device.id(),
-        )
+    fn stats(&self) -> FsStats {
+        FsStats::default()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -487,11 +483,20 @@ impl FsType for ExfatType {
         FsProperties::NEED_DISK
     }
 
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(ExfatFs::open(
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
+        let fs = ExfatFs::open(
             fs_creation_ctx.resolve_block_device()?,
             ExfatMountOptions::default(),
-        )?)
+        )?;
+        let block_size = fs.sector_size();
+        let container_device_id = fs.block_device.id();
+        Ok(SuperBlock::new(
+            fs,
+            BOOT_SIGNATURE as u64,
+            block_size,
+            MAX_NAME_LENGTH,
+            container_device_id,
+        ))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

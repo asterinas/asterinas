@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use device_id::DeviceId;
 use template::{
     ListedEntry, ProcDir, ProcDirOps, ReaddirEntry, StaticDirEntry, keyed_readdir_entries,
     listed_entries_from_table, lookup_child_from_table, sequential_readdir_entries,
@@ -28,9 +29,10 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::NAME_MAX,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::{Inode, RevalidationPolicy},
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -71,8 +73,7 @@ const PROC_ROOT_INO: u64 = 1;
 const BLOCK_SIZE: usize = 1024;
 
 struct ProcFs {
-    _anon_device_id: AnonDeviceId,
-    sb: SuperBlock,
+    anon_device_id: AnonDeviceId,
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
     fs_event_subscriber_stats: FsEventSubscriberStats,
@@ -81,11 +82,10 @@ struct ProcFs {
 impl ProcFs {
     pub(self) fn new() -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for procfs");
-        let sb = SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+        let container_device_id = anon_device_id.id();
         Arc::new_cyclic(|weak_fs| Self {
-            _anon_device_id: anon_device_id,
-            sb: sb.clone(),
-            root: RootDirOps::new_inode(weak_fs.clone(), &sb),
+            anon_device_id,
+            root: RootDirOps::new_inode(weak_fs.clone(), container_device_id),
             inode_allocator: AtomicU64::new(PROC_ROOT_INO + 1),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
@@ -93,6 +93,15 @@ impl ProcFs {
 
     pub(self) fn alloc_id(&self) -> u64 {
         self.inode_allocator.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub(self) fn container_device_id(&self) -> DeviceId {
+        self.anon_device_id.id()
+    }
+
+    fn into_super_block(self: Arc<Self>) -> Arc<SuperBlock> {
+        let container_device_id = self.container_device_id();
+        SuperBlock::new(self, PROC_MAGIC, BLOCK_SIZE, NAME_MAX, container_device_id)
     }
 }
 
@@ -109,8 +118,8 @@ impl FileSystem for ProcFs {
         self.root.clone()
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        FsStats::default()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -129,8 +138,8 @@ impl FsType for ProcFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(ProcFs::new())
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
+        Ok(ProcFs::new().into_super_block())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
@@ -142,10 +151,10 @@ impl FsType for ProcFsType {
 struct RootDirOps;
 
 impl RootDirOps {
-    pub fn new_inode(fs: Weak<ProcFs>, sb: &SuperBlock) -> Arc<dyn Inode> {
+    pub fn new_inode(fs: Weak<ProcFs>, container_device_id: DeviceId) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/root.c#L368>
         let fs: Weak<dyn FileSystem> = fs;
-        ProcDir::new_root(Self, fs, PROC_ROOT_INO, sb, mkmod!(a+rx))
+        ProcDir::new_root(Self, fs, PROC_ROOT_INO, container_device_id, mkmod!(a+rx))
     }
 
     const STATIC_ENTRIES: &'static [StaticEntry] = &[

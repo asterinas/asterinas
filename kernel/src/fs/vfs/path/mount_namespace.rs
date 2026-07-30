@@ -95,7 +95,7 @@ impl MountNamespace {
 
         INIT.call_once(|| {
             let owner = UserNamespace::get_init_singleton().clone();
-            let rootfs = RamFs::new_rootfs();
+            let rootfs = RamFs::new_rootfs().into_super_block();
 
             Self::new_with_root(owner, |weak_ns| Mount::new_root(rootfs, weak_ns.clone()))
                 .expect("failed to allocate mount ID for the root mount")

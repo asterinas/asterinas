@@ -90,22 +90,29 @@ struct Statfs {
 
 impl Statfs {
     fn new(mount: &Mount) -> Self {
-        let sb = mount.fs().sb();
+        let super_block = mount.super_block();
+        let stats = super_block.stats();
         // TODO: Make `SuperBlock` correctly implement and maintain `FsFlags`,
         // so they can be retrieved directly here.
-        let statfs_flags =
-            StatfsFlags::new(mount.flags(), FsFlags::from_bits_truncate(sb.flags as u32));
+        let statfs_flags = StatfsFlags::new(
+            mount.flags(),
+            FsFlags::from_bits_truncate(stats.flags as u32),
+        );
         Self {
-            f_type: sb.magic,
-            f_bsize: sb.bsize,
-            f_blocks: sb.blocks,
-            f_bfree: sb.bfree,
-            f_bavail: sb.bavail,
-            f_files: sb.files,
-            f_ffree: sb.ffree,
-            f_fsid: sb.fsid,
-            f_namelen: sb.namelen,
-            f_frsize: sb.frsize,
+            f_type: super_block.magic(),
+            f_bsize: super_block.block_size(),
+            f_blocks: stats.blocks,
+            f_bfree: stats.bfree,
+            f_bavail: stats.bavail,
+            f_files: stats.files,
+            f_ffree: stats.ffree,
+            f_fsid: stats.fsid,
+            f_namelen: super_block.name_max(),
+            f_frsize: if stats.frsize == 0 {
+                super_block.block_size()
+            } else {
+                stats.frsize
+            },
             f_flags: statfs_flags.bits() as u64,
             f_spare: [0u64; 4],
         }

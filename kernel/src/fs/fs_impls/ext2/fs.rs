@@ -708,7 +708,7 @@ mod test {
     fn stat_bsddf_subtracts_overhead() {
         let f = Ext2FixtureBuilder::new(3, 512).build().unwrap();
 
-        let stat = FileSystemTrait::sb(f.ext2.as_ref());
+        let stat = FileSystemTrait::stats(f.ext2.as_ref());
         let expected_overhead = expected_overhead_blocks(&f.sb);
 
         assert_eq!(
@@ -723,7 +723,7 @@ mod test {
         let f = Ext2FixtureBuilder::new(3, 512).build().unwrap();
         let ext2 = Ext2::open(f.disk.clone() as Arc<dyn BlockDevice>, Some("minixdf")).unwrap();
 
-        let stat = FileSystemTrait::sb(ext2.as_ref());
+        let stat = FileSystemTrait::stats(ext2.as_ref());
         assert_eq!(stat.blocks, f.sb.total_blocks() as usize);
     }
 

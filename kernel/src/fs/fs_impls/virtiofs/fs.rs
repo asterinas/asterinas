@@ -14,11 +14,11 @@ use super::inode::{InodeCache, VirtioFsInode};
 use crate::{
     fs::{
         pseudofs::AnonDeviceId,
-        utils::NAME_MAX,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -26,9 +26,6 @@ use crate::{
 
 /// Filesystem magic reported for virtio-fs in `statfs`.
 const VIRTIOFS_MAGIC: u64 = 0x6573_5546;
-
-/// Block size reported to `statfs` for virtio-fs.
-const BLOCK_SIZE: usize = 4096;
 
 /// The `virtiofs` filesystem type.
 pub(super) struct VirtioFsType;
@@ -42,7 +39,7 @@ impl FsType for VirtioFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
         let tag = fs_creation_ctx
             .source()
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "virtiofs source(tag) is required"))?
@@ -51,7 +48,7 @@ impl FsType for VirtioFsType {
         let device = device::find_device_by_tag(&tag)
             .ok_or_else(|| Error::with_message(Errno::ENODEV, "virtiofs device is not found"))?;
 
-        Ok(VirtioFs::new(device, tag)? as Arc<dyn FileSystem>)
+        VirtioFs::new_super_block(device, tag)
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
@@ -61,7 +58,8 @@ impl FsType for VirtioFsType {
 
 /// A mounted virtio-fs filesystem.
 pub(super) struct VirtioFs {
-    sb: SuperBlock,
+    anon_device_id: AnonDeviceId,
+    stats: FsStats,
     root: Arc<VirtioFsInode>,
     tag: String,
     session: Arc<FuseSession>,
@@ -70,7 +68,7 @@ pub(super) struct VirtioFs {
 }
 
 impl VirtioFs {
-    fn new(device: Arc<FileSystemDevice>, tag: String) -> Result<Arc<Self>> {
+    fn new_super_block(device: Arc<FileSystemDevice>, tag: String) -> Result<Arc<SuperBlock>> {
         let session = FuseSession::new(device)
             .map_err(|_| Error::with_message(Errno::EIO, "virtiofs FUSE_INIT failed"))?;
 
@@ -79,14 +77,14 @@ impl VirtioFs {
         let container_dev_id = anon_device_id.id();
         let statfs = session.do_fuse_op(FUSE_ROOT_ID, StatfsOperation)?.st();
 
-        // TODO: Update the super block fields based on `statfs` reply.
-        // For now, we set only the fields required by VFS when mounting the filesystem.
-        // No update is made for these fields later.
-        let sb = SuperBlock::from((container_dev_id, statfs));
+        // TODO: Update the filesystem statistics based on `statfs` replies.
+        let block_size = statfs.bsize() as usize;
+        let name_max = statfs.namelen() as usize;
+        let stats = FsStats::from(statfs);
 
         let root_entry = session.do_fuse_op(FUSE_ROOT_ID, LookupOperation::new("."))?;
 
-        Ok(Arc::new_cyclic(|weak_fs| {
+        let fs = Arc::new_cyclic(|weak_fs| {
             let root = VirtioFsInode::new_root(
                 root_entry,
                 weak_fs.clone(),
@@ -96,14 +94,23 @@ impl VirtioFs {
             let inode_cache = InodeCache::new(&root);
 
             Self {
-                sb,
+                anon_device_id,
+                stats,
                 root,
                 tag,
                 session,
                 inode_cache,
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             }
-        }))
+        });
+
+        Ok(SuperBlock::new(
+            fs,
+            VIRTIOFS_MAGIC,
+            block_size,
+            name_max,
+            container_dev_id,
+        ))
     }
 
     pub(super) fn session(&self) -> &Arc<FuseSession> {
@@ -112,7 +119,7 @@ impl VirtioFs {
 
     /// Returns the device ID of this virtio-fs mount.
     pub(super) fn container_device_id(&self) -> DeviceId {
-        self.sb.container_dev_id
+        self.anon_device_id.id()
     }
 
     /// Reads an inode from a FUSE entry reply via the inode cache.
@@ -139,19 +146,17 @@ impl VirtioFs {
     }
 }
 
-impl From<(DeviceId, Kstatfs)> for SuperBlock {
-    fn from((container_dev_id, statfs): (DeviceId, Kstatfs)) -> Self {
-        let mut sb = SuperBlock::new(VIRTIOFS_MAGIC, BLOCK_SIZE, NAME_MAX, container_dev_id);
-
-        sb.blocks = statfs.blocks() as usize;
-        sb.bfree = statfs.bfree() as usize;
-        sb.bavail = statfs.bavail() as usize;
-        sb.files = statfs.files() as usize;
-        sb.ffree = statfs.ffree() as usize;
-        sb.bsize = statfs.bsize() as usize;
-        sb.namelen = statfs.namelen() as usize;
-        sb.frsize = statfs.frsize() as usize;
-        sb
+impl From<Kstatfs> for FsStats {
+    fn from(statfs: Kstatfs) -> Self {
+        Self {
+            blocks: statfs.blocks() as usize,
+            bfree: statfs.bfree() as usize,
+            bavail: statfs.bavail() as usize,
+            files: statfs.files() as usize,
+            ffree: statfs.ffree() as usize,
+            frsize: statfs.frsize() as usize,
+            ..Default::default()
+        }
     }
 }
 
@@ -173,8 +178,8 @@ impl FileSystem for VirtioFs {
         self.root.clone()
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        self.stats.clone()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {

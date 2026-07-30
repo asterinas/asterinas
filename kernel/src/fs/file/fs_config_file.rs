@@ -9,9 +9,10 @@ use crate::{
         file::file_table::FdFlags,
         pseudofs::AnonInodeFs,
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FsFlags,
             path::{Mount, MountNamespace, Path, PerMountFlags},
             registry::{FsCreationCtx, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -66,8 +67,8 @@ struct FsConfig {
 enum FsConfigState {
     Configuring,
     Failed,
-    AwaitingMount(Arc<dyn FileSystem>),
-    Reconfiguring(Arc<dyn FileSystem>),
+    AwaitingMount(Arc<SuperBlock>),
+    Reconfiguring(Arc<SuperBlock>),
 }
 
 impl FsConfigFile {
@@ -166,9 +167,9 @@ impl FsConfigFile {
             let args = (!config.extra_options.is_empty()).then_some(config.extra_options.as_str());
             let fs_creation_ctx =
                 FsCreationCtx::new(config.source.as_deref(), config.flags, args, ctx);
-            let fs = self.fs_type.create(&fs_creation_ctx)?;
-            if Arc::strong_count(&fs) > 1 {
-                let extant_readonly = fs.flags().contains(FsFlags::RDONLY);
+            let super_block = self.fs_type.create(&fs_creation_ctx)?;
+            if Arc::strong_count(&super_block) > 1 {
+                let extant_readonly = super_block.fs().flags().contains(FsFlags::RDONLY);
                 let context_readonly = config.flags.contains(FsFlags::RDONLY);
                 if extant_readonly != context_readonly {
                     return_errno_with_message!(
@@ -177,12 +178,12 @@ impl FsConfigFile {
                     );
                 }
             }
-            Ok(fs)
+            Ok(super_block)
         })();
 
         match result {
-            Ok(fs) => {
-                config.state = FsConfigState::AwaitingMount(fs);
+            Ok(super_block) => {
+                config.state = FsConfigState::AwaitingMount(super_block);
                 Ok(())
             }
             Err(err) => {
@@ -203,8 +204,8 @@ impl FsConfigFile {
         mnt_ns: Weak<MountNamespace>,
     ) -> Result<Arc<Mount>> {
         let mut config = self.config.lock();
-        let fs = match &config.state {
-            FsConfigState::AwaitingMount(fs) => fs.clone(),
+        let super_block = match &config.state {
+            FsConfigState::AwaitingMount(super_block) => super_block.clone(),
             FsConfigState::Configuring => {
                 return_errno_with_message!(Errno::EINVAL, "the file system is not created");
             }
@@ -219,11 +220,12 @@ impl FsConfigFile {
             }
         };
 
-        let detached_mount = Mount::new_detached(fs.clone(), flags, mnt_ns, config.source.clone())?;
+        let detached_mount =
+            Mount::new_detached(super_block.clone(), flags, mnt_ns, config.source.clone())?;
         config.source = None;
-        config.flags = fs.flags();
+        config.flags = super_block.fs().flags();
         config.extra_options.clear();
-        config.state = FsConfigState::Reconfiguring(fs);
+        config.state = FsConfigState::Reconfiguring(super_block);
 
         Ok(detached_mount)
     }
@@ -234,10 +236,10 @@ impl FsConfigFile {
     /// context in `Reconfiguring`, while failure transitions to `Failed`.
     pub fn reconfigure_fs(&self, ctx: &Context) -> Result<()> {
         let mut config = self.config.lock();
-        let FsConfigState::Reconfiguring(fs) = &config.state else {
+        let FsConfigState::Reconfiguring(super_block) = &config.state else {
             return_errno_with_message!(Errno::EBUSY, "the file system is not reconfiguring");
         };
-        let fs = fs.clone();
+        let fs = super_block.fs().clone();
 
         let data = (!config.extra_options.is_empty()).then_some(config.extra_options.as_str());
         let result = fs.set_fs_flags(config.flags, data, ctx);

@@ -3,7 +3,6 @@
 use core::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-use device_id::DeviceId;
 
 use super::inode::Inode;
 use crate::prelude::*;
@@ -29,8 +28,8 @@ pub trait FileSystem: Any + Sync + Send {
     /// context that performs the syscall.
     fn root_inode(&self) -> Arc<dyn Inode>;
 
-    /// Returns the super block of this file system.
-    fn sb(&self) -> SuperBlock;
+    /// Returns statistics about this file system.
+    fn stats(&self) -> FsStats;
 
     /// Returns the flags of this file system.
     fn flags(&self) -> FsFlags {
@@ -59,45 +58,22 @@ impl dyn FileSystem {
 impl Debug for dyn FileSystem {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("FileSystem")
-            .field("super_block", &self.sb())
+            .field("stats", &self.stats())
             .field("flags", &self.flags())
             .finish()
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct SuperBlock {
-    pub magic: u64,
-    pub bsize: usize,
+#[derive(Clone, Debug, Default)]
+pub struct FsStats {
     pub blocks: usize,
     pub bfree: usize,
     pub bavail: usize,
     pub files: usize,
     pub ffree: usize,
     pub fsid: u64,
-    pub namelen: usize,
     pub frsize: usize,
     pub flags: u64,
-    pub container_dev_id: DeviceId,
-}
-
-impl SuperBlock {
-    pub fn new(magic: u64, block_size: usize, name_max_len: usize, dev_id: DeviceId) -> Self {
-        Self {
-            magic,
-            bsize: block_size,
-            blocks: 0,
-            bfree: 0,
-            bavail: 0,
-            files: 0,
-            ffree: 0,
-            fsid: 0,
-            namelen: name_max_len,
-            frsize: block_size,
-            flags: 0,
-            container_dev_id: dev_id,
-        }
-    }
 }
 
 bitflags! {

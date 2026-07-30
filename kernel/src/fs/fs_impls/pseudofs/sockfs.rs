@@ -9,9 +9,9 @@ use crate::{
         file::mkmod,
         pseudofs::{NaivePseudoFs, PseudoInodeType},
         vfs::{
-            file_system::FileSystem,
             path::{Mount, Path},
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -32,7 +32,7 @@ impl SockFs {
     pub fn singleton() -> &'static Arc<NaivePseudoFs> {
         static SOCKFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
-        NaivePseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
+        NaivePseudoFs::singleton(&SOCKFS, "sockfs")
     }
 
     /// Creates a pseudo `Path` for a socket.
@@ -53,7 +53,9 @@ impl SockFs {
     pub fn mount_node() -> &'static Arc<Mount> {
         static SOCKFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        SOCKFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        SOCKFS_MOUNT.call_once(|| {
+            Mount::new_pseudo(Self::singleton().clone().into_super_block(SOCKFS_MAGIC)).unwrap()
+        })
     }
 }
 
@@ -68,7 +70,7 @@ impl FsType for SockFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
         return_errno_with_message!(Errno::EINVAL, "sockfs cannot be mounted");
     }
 

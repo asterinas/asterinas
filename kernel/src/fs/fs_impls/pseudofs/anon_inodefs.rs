@@ -29,7 +29,7 @@ impl AnonInodeFs {
     fn singleton() -> &'static Arc<NaivePseudoFs> {
         static ANON_INODEFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
-        NaivePseudoFs::singleton(&ANON_INODEFS, "anon_inodefs", ANON_INODEFS_MAGIC)
+        NaivePseudoFs::singleton(&ANON_INODEFS, "anon_inodefs")
     }
 
     /// Creates a pseudo `Path` for the shared inode.
@@ -45,7 +45,14 @@ impl AnonInodeFs {
     pub fn mount_node() -> &'static Arc<Mount> {
         static ANON_INODEFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        ANON_INODEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        ANON_INODEFS_MOUNT.call_once(|| {
+            Mount::new_pseudo(
+                Self::singleton()
+                    .clone()
+                    .into_super_block(ANON_INODEFS_MAGIC),
+            )
+            .unwrap()
+        })
     }
 
     /// Returns the shared inode of the anonymous inode file system singleton.

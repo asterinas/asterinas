@@ -13,9 +13,10 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     process::posix_thread::AsThreadLocal,
@@ -23,8 +24,7 @@ use crate::{
 
 /// A file system for managing cgroups.
 pub(super) struct CgroupFs {
-    _anon_device_id: AnonDeviceId,
-    sb: SuperBlock,
+    anon_device_id: AnonDeviceId,
     fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
@@ -44,13 +44,22 @@ impl CgroupFs {
     fn new() -> Arc<Self> {
         let anon_device_id =
             AnonDeviceId::acquire().expect("no device ID is available for cgroupfs");
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
 
         Arc::new(Self {
-            _anon_device_id: anon_device_id,
-            sb,
+            anon_device_id,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
+    }
+
+    fn into_super_block(self: Arc<Self>) -> Arc<SuperBlock> {
+        let container_device_id = self.anon_device_id.id();
+        SuperBlock::new(
+            self,
+            MAGIC_NUMBER,
+            BLOCK_SIZE,
+            NAME_MAX,
+            container_device_id,
+        )
     }
 }
 
@@ -70,11 +79,11 @@ impl FileSystem for CgroupFs {
         let ns_proxy = thread_local.borrow_ns_proxy();
         let cgroup_namespace = ns_proxy.unwrap().cgroup_ns();
 
-        CgroupInode::new_root(cgroup_namespace.root_node(), &self.sb)
+        CgroupInode::new_root(cgroup_namespace.root_node(), self.anon_device_id.id())
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        FsStats::default()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -93,8 +102,12 @@ impl FsType for CgroupFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(CgroupFs::singleton().clone())
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
+        static SUPER_BLOCK: Once<Arc<SuperBlock>> = Once::new();
+
+        Ok(SUPER_BLOCK
+            .call_once(|| CgroupFs::singleton().clone().into_super_block())
+            .clone())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

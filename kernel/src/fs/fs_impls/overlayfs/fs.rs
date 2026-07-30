@@ -23,13 +23,14 @@ use crate::{
         pseudofs::AnonDeviceId,
         utils::{DirentCounter, DirentVisitor, NAME_MAX},
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
                 SymbolicLink,
             },
             path::{FsPath, Path},
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
             xattr::{XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -201,14 +202,8 @@ impl FileSystem for OverlayFs {
         Ok(())
     }
 
-    fn sb(&self) -> SuperBlock {
-        // TODO: Fill the super block with valid field values.
-        SuperBlock::new(
-            OVERLAY_FS_MAGIC,
-            BLOCK_SIZE,
-            NAME_MAX,
-            self.anon_device_id.id(),
-        )
+    fn stats(&self) -> FsStats {
+        FsStats::default()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -1182,7 +1177,7 @@ impl FsType for OverlayFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
         let mut lower = Vec::new();
         let mut upper = "";
         let mut work = "";
@@ -1230,7 +1225,15 @@ impl FsType for OverlayFsType {
             .collect::<Result<Vec<_>>>()?;
         let work = path_resolver.lookup(&FsPath::try_from(work)?)?;
 
-        Ok(OverlayFs::new(upper, lower, work)?)
+        let fs = OverlayFs::new(upper, lower, work)?;
+        let container_device_id = fs.anon_device_id.id();
+        Ok(SuperBlock::new(
+            fs,
+            OVERLAY_FS_MAGIC,
+            BLOCK_SIZE,
+            NAME_MAX,
+            container_device_id,
+        ))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
@@ -1251,7 +1254,7 @@ mod tests {
 
     fn new_dummy_mount() -> Arc<Mount> {
         Mount::new_root(
-            RamFs::new(),
+            RamFs::new().into_super_block(),
             Arc::downgrade(MountNamespace::get_init_singleton()),
         )
         .unwrap()
@@ -1301,9 +1304,7 @@ mod tests {
         };
         let work = upper.clone();
 
-        let fs = OverlayFs::new(upper, lower, work).unwrap();
-        assert_eq!(fs.sb().magic, OVERLAY_FS_MAGIC);
-        fs
+        OverlayFs::new(upper, lower, work).unwrap()
     }
 
     #[ktest]

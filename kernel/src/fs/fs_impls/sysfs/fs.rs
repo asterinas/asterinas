@@ -8,9 +8,10 @@ use crate::{
         sysfs::{self, inode::SysFsInode},
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsStats},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
+            super_block::SuperBlock,
         },
     },
     prelude::*,
@@ -19,8 +20,7 @@ use crate::{
 /// A file system for exposing kernel information to the user space.
 #[derive(Debug)]
 pub(super) struct SysFs {
-    _anon_device_id: AnonDeviceId,
-    sb: SuperBlock,
+    anon_device_id: AnonDeviceId,
     root: Arc<dyn Inode>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
 }
@@ -44,16 +44,25 @@ impl SysFs {
 
     fn new() -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for sysfs");
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         let systree_ref = sysfs::systree_singleton();
-        let root_inode = SysFsInode::new_root(systree_ref.root().clone(), &sb);
+        let root_inode = SysFsInode::new_root(systree_ref.root().clone(), anon_device_id.id());
 
         Arc::new(Self {
-            _anon_device_id: anon_device_id,
-            sb,
+            anon_device_id,
             root: root_inode,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         })
+    }
+
+    fn into_super_block(self: Arc<Self>) -> Arc<SuperBlock> {
+        let container_device_id = self.anon_device_id.id();
+        SuperBlock::new(
+            self,
+            MAGIC_NUMBER,
+            BLOCK_SIZE,
+            NAME_MAX,
+            container_device_id,
+        )
     }
 }
 
@@ -71,8 +80,8 @@ impl FileSystem for SysFs {
         self.root.clone()
     }
 
-    fn sb(&self) -> SuperBlock {
-        self.sb.clone()
+    fn stats(&self) -> FsStats {
+        FsStats::default()
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
@@ -91,8 +100,12 @@ impl FsType for SysFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(SysFs::singleton().clone())
+    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<SuperBlock>> {
+        static SUPER_BLOCK: Once<Arc<SuperBlock>> = Once::new();
+
+        Ok(SUPER_BLOCK
+            .call_once(|| SysFs::singleton().clone().into_super_block())
+            .clone())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

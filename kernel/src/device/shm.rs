@@ -19,7 +19,7 @@ pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Res
     let shm_path =
         dev_path.new_fs_child("shm", InodeType::Dir, chmod!(InodeMode::S_ISVTX, a+rwx))?;
     shm_path.mount(
-        RamFs::new_tmpfs(),
+        RamFs::new_tmpfs().into_super_block(),
         PerMountFlags::default(),
         Some("tmpfs".to_string()),
         ctx,

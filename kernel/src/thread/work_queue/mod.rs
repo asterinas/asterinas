@@ -82,6 +82,11 @@ static WORKERPOOL_HIGH_PRI: Once<Arc<WorkerPool>> = Once::new();
 static WORKQUEUE_GLOBAL_NORMAL: Once<Arc<WorkQueue>> = Once::new();
 static WORKQUEUE_GLOBAL_HIGH_PRI: Once<Arc<WorkQueue>> = Once::new();
 
+/// Returns whether the global work queues are ready to accept work.
+pub fn is_initialized() -> bool {
+    WORKQUEUE_GLOBAL_NORMAL.get().is_some() && WORKQUEUE_GLOBAL_HIGH_PRI.get().is_some()
+}
+
 /// Submit a function to a global work queue.
 pub fn submit_work_func<F>(work_func: F, work_priority: WorkPriority)
 where
