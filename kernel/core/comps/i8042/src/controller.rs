@@ -106,7 +106,7 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
             config.insert(Configuration::SECOND_PORT_INTERRUPT_ENABLED);
         }
         // Temporarily disable the second PS/2 port to avoid interference.
-        controller.wait_and_send_command(Command::DisableFirstPort)?;
+        controller.wait_and_send_command(Command::DisableSecondPort)?;
         controller.flush_output_buffer();
     }
 
