@@ -225,12 +225,12 @@ enum FcntlCmd {
 }
 
 #[expect(non_camel_case_types)]
-pub type off_t = i64;
+type off_t = i64;
 
 #[expect(non_camel_case_types)]
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum RangeLockWhence {
+enum RangeLockWhence {
     SEEK_SET = 0,
     SEEK_CUR = 1,
     SEEK_END = 2,
@@ -240,7 +240,7 @@ pub enum RangeLockWhence {
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct c_flock {
+struct c_flock {
     /// Type of lock: F_RDLCK, F_WRLCK, or F_UNLCK
     pub l_type: u16,
     /// Where `l_start' is relative to

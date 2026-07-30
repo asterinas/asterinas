@@ -351,14 +351,14 @@ use dispatch_fn_inner;
 use impl_syscall_nums_and_dispatch_fn;
 use syscall_handler;
 
-pub struct SyscallArgument {
+struct SyscallArgument {
     syscall_number: u64,
     args: [u64; 6],
 }
 
 /// Syscall return
 #[derive(Clone, Copy, Debug)]
-pub enum SyscallReturn {
+enum SyscallReturn {
     /// return isize, this value will be used to set rax
     Return(isize),
     /// does not need to set rax
