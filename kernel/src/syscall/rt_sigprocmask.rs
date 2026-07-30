@@ -61,7 +61,7 @@ fn do_rt_sigprocmask(
 
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum MaskOp {
+enum MaskOp {
     Block = 0,
     Unblock = 1,
     SetMask = 2,

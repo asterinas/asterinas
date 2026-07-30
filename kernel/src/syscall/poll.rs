@@ -235,7 +235,7 @@ struct c_pollfd {
 }
 
 #[derive(Clone, Debug)]
-pub struct PollFd {
+pub(super) struct PollFd {
     fd: Option<FileDesc>,
     events: IoEvents,
     revents: Cell<IoEvents>,

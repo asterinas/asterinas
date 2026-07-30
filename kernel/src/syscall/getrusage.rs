@@ -58,7 +58,7 @@ pub fn sys_getrusage(target: i32, rusage_addr: Vaddr, ctx: &Context) -> Result<S
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct rusage_t {
+pub(super) struct rusage_t {
     /// user time used
     pub ru_utime: timeval_t,
     /// system time used
