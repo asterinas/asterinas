@@ -290,7 +290,7 @@ fn from_c_flock_and_file(lock: &c_flock, file: &dyn FileLike) -> Result<FileRang
     };
 
     if start < 0 {
-        return Err(Error::with_message(Errno::EINVAL, "invalid start"));
+        return_errno_with_message!(Errno::EINVAL, "invalid start");
     }
 
     let (start, end) = match lock.l_len {
@@ -306,7 +306,7 @@ fn from_c_flock_and_file(lock: &c_flock, file: &dyn FileLike) -> Result<FileRang
             // `start + len` won't overflow because `start >= 0` and `len < 0`.
             let new_start = start + len;
             if new_start < 0 {
-                return Err(Error::with_message(Errno::EINVAL, "invalid len"));
+                return_errno_with_message!(Errno::EINVAL, "invalid len");
             }
             (new_start as usize, end as usize)
         }
