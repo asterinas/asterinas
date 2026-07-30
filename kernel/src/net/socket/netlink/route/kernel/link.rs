@@ -39,7 +39,7 @@ pub(super) fn do_get_link(request_segment: &LinkSegment) -> Result<Vec<RtnlSegme
         // Filter to include only requested links.
         .filter(|iface| match &filter_by {
             FilterBy::Index(index) => *index == iface.index(),
-            FilterBy::Name(name) => *name == iface.name(),
+            FilterBy::Name(name) => *name == iface.name().as_cstr(),
             FilterBy::Dump => true,
         })
         .map(|iface| iface_to_new_link(request_segment.header(), iface))
@@ -155,7 +155,7 @@ fn iface_to_new_link(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> LinkSeg
     // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/core/rtnetlink.c#L2050>.
     let mut attrs = Vec::with_capacity(5);
     attrs.extend([
-        LinkAttr::Name(iface.name().to_owned()),
+        LinkAttr::Name(iface.name().as_cstr().to_owned()),
         LinkAttr::TxqLen(DEFAULT_TX_QUEUE_LEN),
         LinkAttr::Mtu(iface.mtu() as u32),
     ]);

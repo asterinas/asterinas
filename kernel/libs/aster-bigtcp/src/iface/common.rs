@@ -2,12 +2,10 @@
 
 use alloc::{
     collections::btree_map::{BTreeMap, Entry},
-    ffi::CString,
     sync::Arc,
     vec::Vec,
 };
 use core::{
-    ffi::CStr,
     ops::Deref,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
@@ -23,7 +21,7 @@ use smoltcp::{
 };
 
 use super::{
-    Iface,
+    Iface, InterfaceName,
     poll::{FnHelper, PollContext, SocketTableAction},
     poll_iface::PollableIface,
     port::BindPortConfig,
@@ -38,7 +36,7 @@ use crate::{
 
 pub struct IfaceCommon<E: Ext> {
     index: u32,
-    name: CString,
+    name: InterfaceName,
     type_: InterfaceType,
     flags: InterfaceFlags,
 
@@ -82,7 +80,7 @@ impl From<IpAddress> for NormalizedAddress {
 
 impl<E: Ext> IfaceCommon<E> {
     pub(super) fn new(
-        name: CString,
+        name: InterfaceName,
         type_: InterfaceType,
         flags: InterfaceFlags,
         interface: smoltcp::iface::Interface,
@@ -106,7 +104,7 @@ impl<E: Ext> IfaceCommon<E> {
         self.index
     }
 
-    pub(super) fn name(&self) -> &CStr {
+    pub(super) fn name(&self) -> &InterfaceName {
         &self.name
     }
 
