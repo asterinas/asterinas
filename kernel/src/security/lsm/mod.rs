@@ -17,6 +17,8 @@ pub mod yama {
     pub use super::modules::yama::{YamaScope, get_scope, set_scope};
 }
 
+use aster_systree::SysObj;
+
 use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook, LsmFileOpenHook};
 use crate::prelude::*;
 
@@ -52,6 +54,11 @@ trait LsmModule: Sync {
     fn file_open_hook(&self) -> Option<&dyn LsmFileOpenHook> {
         None
     }
+
+    /// Returns the module's top-level securityfs node, if it has one.
+    fn securityfs_node(&self) -> Option<Arc<dyn SysObj>> {
+        None
+    }
 }
 
 /// Returns whether the Yama LSM is enabled.
@@ -59,6 +66,13 @@ pub fn is_yama_enabled() -> bool {
     modules::active_modules()
         .iter()
         .any(|module| module.name() == "yama")
+}
+
+pub(crate) fn securityfs_nodes() -> Vec<Arc<dyn SysObj>> {
+    modules::active_modules()
+        .iter()
+        .filter_map(|module| module.securityfs_node())
+        .collect()
 }
 
 pub(super) fn init() {
