@@ -146,6 +146,21 @@ i8042.reset=1
 i8042.reset=0
 ```
 
+### `atkbd.reset`
+
+Override whether the AT keyboard reset is performed during initialization.
+
+Valid values:
+- `1`, `on`, `yes`, `true` or no value — send the keyboard reset command
+- `0`, `off`, `no`, `false` — skip the keyboard reset
+
+Examples:
+```text
+atkbd.reset
+atkbd.reset=1
+atkbd.reset=0
+```
+
 ### `earlycon`
 
 Enable the early console to output logs during the early stages of system boot.
