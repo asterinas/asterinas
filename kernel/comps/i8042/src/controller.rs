@@ -43,17 +43,18 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
     );
     controller.write_configuration(&config)?;
 
-    // Perform controller self-test.
-    controller.wait_and_send_command(Command::TestController)?;
-    let result = controller.wait_and_recv_data()?;
-    if result != SELF_TEST_OK {
-        // Any value other than `SELF_TEST_OK` indicates a self-test fail.
-        return Err(I8042ControllerError::ControllerTestFailed);
+    if I8042_RESET.load(Ordering::Relaxed) {
+        // Perform controller self-test.
+        controller.wait_and_send_command(Command::TestController)?;
+        let result = controller.wait_and_recv_data()?;
+        if result != SELF_TEST_OK {
+            return Err(I8042ControllerError::ControllerTestFailed);
+        }
+        // The self-test may reset the controller. Restore the original configuration.
+        controller.write_configuration(&config)?;
+        // The ports may have been enabled if the controller was reset. Flush the output buffer.
+        controller.flush_output_buffer();
     }
-    // The self-test may reset the controller. Restore the original configuration.
-    controller.write_configuration(&config)?;
-    // The ports may have been enabled if the controller was reset. Flush the output buffer.
-    controller.flush_output_buffer();
 
     // Determine if there are two channels.
     controller.wait_and_send_command(Command::EnableSecondPort)?;
@@ -397,3 +398,9 @@ bitflags! {
 
 static I8042_EXIST: AtomicBool = AtomicBool::new(false);
 aster_cmdline::define_flag_param!("i8042.exist", I8042_EXIST);
+
+/// Whether to force the controller self-test during initialization.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v7.0/source/drivers/input/serio/i8042.c#L84>
+static I8042_RESET: AtomicBool = AtomicBool::new(false);
+aster_cmdline::define_flag_param!("i8042.reset", I8042_RESET);
