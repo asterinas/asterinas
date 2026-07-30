@@ -29,6 +29,7 @@
 * [Advanced Build and Test Instructions](kernel/advanced-instructions.md)
     * [Intel TDX](kernel/intel-tdx.md)
 * [The Framekernel Architecture](kernel/the-framekernel-architecture.md)
+* [AppArmor File-Open Policy](kernel/security/apparmor-file-open.md)
 * [Linux Compatibility](kernel/linux-compatibility/README.md)
     * [Syscall Flag Coverage](kernel/linux-compatibility/syscall-flag-coverage/README.md)
         * [System Call Matching Language (SCML)](kernel/linux-compatibility/syscall-flag-coverage/system-call-matching-language.md)
