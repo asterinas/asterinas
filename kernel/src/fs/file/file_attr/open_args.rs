@@ -12,6 +12,7 @@ pub struct OpenArgs {
     pub status_flags: StatusFlags,
     pub access_mode: AccessMode,
     pub inode_mode: InodeMode,
+    check_access: bool,
 }
 
 impl OpenArgs {
@@ -53,6 +54,7 @@ impl OpenArgs {
             status_flags,
             access_mode,
             inode_mode,
+            check_access: true,
         })
     }
 
@@ -63,6 +65,7 @@ impl OpenArgs {
             status_flags: StatusFlags::empty(),
             access_mode,
             inode_mode,
+            check_access: true,
         }
     }
 
@@ -77,5 +80,27 @@ impl OpenArgs {
     pub fn is_tmpfile(&self) -> bool {
         self.creation_flags.contains(CreationFlags::O_TMPFILE)
             && !self.status_flags.contains(StatusFlags::O_PATH)
+    }
+
+    /// Converts the arguments for opening a file that this request has just created.
+    ///
+    /// Creation-only flags have already served their purpose by this point.
+    /// `O_TRUNC` is also cleared
+    /// because a newly created file must not be truncated again during open completion.
+    pub(crate) fn into_created_file_open(mut self) -> Self {
+        self.creation_flags.remove(
+            CreationFlags::O_CREAT
+                | CreationFlags::O_EXCL
+                | CreationFlags::O_TRUNC
+                | CreationFlags::O_DIRECTORY
+                | CreationFlags::O_TMPFILE,
+        );
+        self.check_access = false;
+        self
+    }
+
+    /// Returns whether ordinary inode access checks are required.
+    pub(in crate::fs) const fn should_check_access(&self) -> bool {
+        self.check_access
     }
 }

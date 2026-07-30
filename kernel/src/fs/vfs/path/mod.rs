@@ -28,7 +28,9 @@ use crate::{
     },
     prelude::*,
     process::{
-        Gid, Uid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
+        Gid, Uid, UserNamespace,
+        credentials::capabilities::CapSet,
+        posix_thread::{AsPosixThread, PosixThread},
     },
     security::lsm::hooks as lsm_hooks,
 };
@@ -118,9 +120,55 @@ impl Path {
     }
 
     /// Opens the `Path` with the given `OpenArgs`.
-    ///
-    /// Returns an `InodeHandle` on success.
     pub fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
+        self.open_internal(open_args, None)
+    }
+
+    /// Opens the `Path` for an open-family system call.
+    pub(crate) fn open_from_syscall(
+        &self,
+        open_args: OpenArgs,
+        path_resolver: &PathResolver,
+        posix_thread: &PosixThread,
+    ) -> Result<InodeHandle> {
+        let context = lsm_hooks::FileOpenContext::new(
+            self,
+            path_resolver,
+            posix_thread,
+            open_args.access_mode,
+            open_args.creation_flags,
+            open_args.status_flags,
+        );
+        self.open_internal(open_args, Some(&context))
+    }
+
+    fn open_internal(
+        &self,
+        open_args: OpenArgs,
+        file_open_context: Option<&lsm_hooks::FileOpenContext<'_>>,
+    ) -> Result<InodeHandle> {
+        self.check_open(&open_args)?;
+
+        if let Some(context) = file_open_context {
+            lsm_hooks::on_file_open(context)?;
+        }
+
+        let inode = self.inode().as_ref();
+        let inode_type = inode.type_();
+        let creation_flags = &open_args.creation_flags;
+        let status_flags = &open_args.status_flags;
+
+        if inode_type.is_regular_file()
+            && creation_flags.contains(CreationFlags::O_TRUNC)
+            && !status_flags.contains(StatusFlags::O_PATH)
+        {
+            self.resize(0)?;
+        }
+
+        InodeHandle::new_unchecked_access(self.clone(), open_args.access_mode, *status_flags)
+    }
+
+    fn check_open(&self, open_args: &OpenArgs) -> Result<()> {
         let inode = self.inode().as_ref();
         let inode_type = inode.type_();
         let creation_flags = &open_args.creation_flags;
@@ -151,14 +199,20 @@ impl Path {
             );
         }
 
-        if inode_type.is_regular_file()
-            && creation_flags.contains(CreationFlags::O_TRUNC)
-            && !status_flags.contains(StatusFlags::O_PATH)
+        if open_args.should_check_access() && !status_flags.contains(StatusFlags::O_PATH) {
+            // "Opening a file or directory with the O_PATH flag requires no permissions on the
+            // object itself".
+            // Reference: <https://man7.org/linux/man-pages/man2/openat.2.html>
+            inode.check_permission(open_args.access_mode.into())?;
+        }
+        if !status_flags.contains(StatusFlags::O_PATH)
+            && inode_type == InodeType::Dir
+            && open_args.access_mode.is_writable()
         {
-            self.resize(0)?;
+            return_errno_with_message!(Errno::EISDIR, "a directory cannot be opened writable");
         }
 
-        InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
+        Ok(())
     }
 
     /// Gets the parent `Path` within the same mount.

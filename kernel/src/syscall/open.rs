@@ -5,8 +5,7 @@ use crate::{
     fs,
     fs::{
         file::{
-            AccessMode, CreationFlags, FileLike, InodeHandle, InodeMode, InodeType, OpenArgs,
-            StatusFlags,
+            AccessMode, CreationFlags, FileLike, InodeMode, InodeType, OpenArgs, StatusFlags,
             file_table::{FdFlags, RawFileDesc},
         },
         vfs::{
@@ -15,6 +14,7 @@ use crate::{
         },
     },
     prelude::*,
+    process::posix_thread::PosixThread,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -42,6 +42,7 @@ pub fn sys_openat(
         do_open(
             &path_resolver,
             &fs_path,
+            ctx.posix_thread,
             flags,
             InodeMode::from_bits_truncate(mask_mode),
         )
@@ -80,13 +81,14 @@ pub fn sys_creat(path_addr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallRe
 fn do_open(
     path_resolver: &PathResolver,
     fs_path: &FsPath,
+    posix_thread: &PosixThread,
     flags: u32,
     mode: InodeMode,
 ) -> Result<Arc<dyn FileLike>> {
     let open_args = OpenArgs::from_flags_and_mode(flags, mode)?;
 
     if open_args.is_tmpfile() {
-        return do_open_tmpfile(path_resolver, fs_path, &open_args);
+        return do_open_tmpfile(path_resolver, fs_path, posix_thread, open_args);
     }
 
     let lookup_res = if open_args.follow_tail_link() {
@@ -96,7 +98,9 @@ fn do_open(
     };
 
     let file_handle: Arc<dyn FileLike> = match lookup_res {
-        LookupResult::Resolved(path) => Arc::new(path.open(open_args)?),
+        LookupResult::Resolved(path) => {
+            Arc::new(path.open_from_syscall(open_args, path_resolver, posix_thread)?)
+        }
         LookupResult::AtParent(result) => {
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT)
                 || open_args.status_flags.contains(StatusFlags::O_PATH)
@@ -115,11 +119,10 @@ fn do_open(
                 parent.new_fs_child(&tail_name, InodeType::File, open_args.inode_mode)?;
             fs::vfs::notify::on_create(&parent, || tail_name.clone());
 
-            // Don't check access mode for newly created file.
-            Arc::new(InodeHandle::new_unchecked_access(
-                new_path,
-                open_args.access_mode,
-                open_args.status_flags,
+            Arc::new(new_path.open_from_syscall(
+                open_args.into_created_file_open(),
+                path_resolver,
+                posix_thread,
             )?)
         }
     };
@@ -130,7 +133,8 @@ fn do_open(
 fn do_open_tmpfile(
     path_resolver: &PathResolver,
     fs_path: &FsPath,
-    open_args: &OpenArgs,
+    posix_thread: &PosixThread,
+    open_args: OpenArgs,
 ) -> Result<Arc<dyn FileLike>> {
     let dir_path = if open_args.follow_tail_link() {
         path_resolver.lookup(fs_path)?
@@ -148,9 +152,9 @@ fn do_open_tmpfile(
     };
     let tmpfile_path = dir_path.create_tmpfile(open_args.inode_mode, hard_linkability)?;
 
-    Ok(Arc::new(InodeHandle::new_unchecked_access(
-        tmpfile_path,
-        open_args.access_mode,
-        open_args.status_flags,
+    Ok(Arc::new(tmpfile_path.open_from_syscall(
+        open_args.into_created_file_open(),
+        path_resolver,
+        posix_thread,
     )?))
 }

@@ -17,7 +17,7 @@ pub mod yama {
     pub use super::modules::yama::{YamaScope, get_scope, set_scope};
 }
 
-use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook};
+use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook, LsmFileOpenHook};
 use crate::prelude::*;
 
 bitflags! {
@@ -45,6 +45,11 @@ trait LsmModule: Sync {
 
     /// Returns the module's capability hook, if it implements one.
     fn capability_hook(&self) -> Option<&dyn LsmCapabilityHook> {
+        None
+    }
+
+    /// Returns the module's file-open hook, if it implements one.
+    fn file_open_hook(&self) -> Option<&dyn LsmFileOpenHook> {
         None
     }
 }
