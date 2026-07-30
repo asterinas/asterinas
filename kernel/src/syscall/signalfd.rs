@@ -57,7 +57,7 @@ pub fn sys_signalfd4(
     );
 
     if sizemask != size_of::<SigMask>() {
-        return Err(Error::with_message(Errno::EINVAL, "invalid mask size"));
+        return_errno_with_message!(Errno::EINVAL, "invalid mask size");
     }
 
     let mut mask = ctx.user_space().read_val::<SigMask>(mask_ptr)?;
