@@ -67,12 +67,16 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
     // Flush the output buffer again since we may have enabled the second port.
     controller.flush_output_buffer();
 
-    // Perform interface tests to the first PS/2 port.
-    controller.wait_and_send_command(Command::TestFirstPort)?;
-    let result = controller.wait_and_recv_data()?;
-    if result != PORT_TEST_OK {
-        return Err(I8042ControllerError::FirstPortTestFailed);
-    }
+    // Per the OSDev wiki, we should perform interface tests to the first PS/2 port. But the
+    // command is unreliable. Many chipsets return error codes even when the interface is
+    // perfectly functional.
+    //
+    // We skip it following the common practice. Linux defines the command but never calls it,
+    // and EDK II skips it by default.
+    //
+    // Reference:
+    // <https://elixir.bootlin.com/linux/v7.0/source/include/linux/i8042.h#L19>
+    // <https://github.com/tianocore/edk2/blob/edk2-stable202605/MdeModulePkg/Bus/Isa/Ps2KeyboardDxe/Ps2KbdCtrller.c#L1690>
 
     // Perform interface tests to the second PS/2 port (if it exists).
     if has_second_port {
@@ -325,7 +329,6 @@ where
 pub(super) enum I8042ControllerError {
     NotPresent,
     ControllerTestFailed,
-    FirstPortTestFailed,
     SecondPortTestFailed,
     OutputBusy,
     NoInput,
@@ -346,7 +349,6 @@ enum Command {
     EnableSecondPort = 0xA8,
     TestSecondPort = 0xA9,
     TestController = 0xAA,
-    TestFirstPort = 0xAB,
     DisableFirstPort = 0xAD,
     EnableFirstPort = 0xAE,
     WriteToSecondPort = 0xD4,
