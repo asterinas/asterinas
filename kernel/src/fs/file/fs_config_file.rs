@@ -294,7 +294,7 @@ impl FileLike for FsConfigFile {
 
         Box::new(FdInfo {
             access_mode: self.access_mode(),
-            status_flags: self.status_flags(),
+            status_flags: self.common.status_flags(),
             fd_flags,
         })
     }
@@ -361,7 +361,7 @@ impl FileLike for DetachedMountFile {
 
         Box::new(FdInfo {
             access_mode: self.access_mode(),
-            status_flags: self.status_flags(),
+            status_flags: self.common.status_flags(),
             fd_flags,
         })
     }

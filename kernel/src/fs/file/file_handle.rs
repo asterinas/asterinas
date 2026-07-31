@@ -110,10 +110,6 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::EINVAL, "resize is not supported");
     }
 
-    fn status_flags(&self) -> StatusFlags {
-        self.common().status_flags()
-    }
-
     /// Returns the status flags that can be set for this file.
     fn settable_status_flags(&self) -> SettableStatusFlags {
         // `O_ASYNC` and `O_DIRECT` can only be set on file descriptions that explicitly
@@ -179,6 +175,11 @@ impl dyn FileLike {
     /// Returns the path associated with the file description.
     pub fn path(&self) -> &Path {
         self.common().path()
+    }
+
+    /// Returns the status flags of the file description.
+    pub fn status_flags(&self) -> StatusFlags {
+        self.common().status_flags()
     }
 
     /// Updates file status flags atomically.
