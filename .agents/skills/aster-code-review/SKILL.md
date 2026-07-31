@@ -66,6 +66,8 @@ Run these steps in order.
 Steps 1 and 5 are deterministic scripts;
 steps 6–8 use the model.
 
+Create one fresh temporary directory for the whole run with `mktemp -d`, and put the resolved input, meta file, pass prompts, and fragment directory under it.
+Do not use fixed paths such as `/tmp/aster-review-frags`;
 The helper scripts live in the skill's own `scripts/` directory,
 at `.agents/skills/aster-code-review/scripts/` inside the repository under review.
 **Invoke every script by its absolute path**
@@ -106,6 +108,7 @@ The steps below write `$SKILL/scripts/…` as shorthand for that absolute path.
    Each pass returns a JSON array of comments;
    file each under its persona's `<fragdir>/<persona>.json` (the comment's `persona` field says which),
    so step 5 is unchanged.
+   The `<fragdir>` must be freshly created for this review.
 4. **Collect** the per-persona JSON fragments.
 5. **Assemble.**
    `"$SKILL/scripts/assemble_review.sh" [--overwrite] <meta> <fragdir> <output>` performs the deterministic merge (group by persona in fixed order, sort by file→line, drop exact duplicates *within a persona*, write frontmatter, leave a `<!-- SUMMARY -->` placeholder).
@@ -155,8 +158,19 @@ which is what lets the prompt cache reuse it (see [`execution_model.md`](spec/ex
 each in a CLEAN context with only its own persona block (selective exposure):
 
 - **Claude Code** — spawn a Task sub-agent per persona.
-- **Codex** — run `codex exec "<build_pass_prompt.sh output>"` per persona
-  (pass the built PROMPT TEXT as the argument).
+- **Codex** — write each prompt to a file and run the pass with `--output-last-message`/`-o`, for example:
+  ```sh
+  timeout "${ACR_PASS_TIMEOUT_SECONDS:-600}" \
+    codex exec -C "$repo" --sandbox read-only \
+      -o "$fragdir/$persona.json" \
+      - < "$promptdir/$persona.txt" \
+      > "$logdir/$persona.log" 2>&1
+  ```
+
+  Do **not** redirect `codex exec` stdout to the fragment file;
+  The fragment file must contain only the model's final JSON array.
+  Validate every fragment with `python3 -m json.tool` before assembly.
+  If a pass times out or validation fails, fail closed instead of assembling a review from missing, logged, or stale fragments.
 
 **Never spawn a pass by re-running `aster_code_review.sh` / `run_agent.sh`,
 nor by re-issuing the skill's own arguments** (e.g. `codex exec … diff <base> <out>`).
@@ -186,9 +200,11 @@ and `no` is an explicit, opt-in concession.
 For each comment, isolate the key premise it rests on
 — especially an external-system fact (Linux/POSIX behaviour, the System V ABI, Rust semantics).
 Try to **refute** it:
-re-read the cited code and consult an authoritative source.
-Assign a verdict:
+- re-read the cited code and check the relevant authority.
+- for guideline findings, the authority is the persona template and the inlined/bundled guideline root used to build the pass prompt;
+- do not retract a finding merely because the reviewed worktree's `book/` copy is older or narrower.
 
+When the persona template explicitly instructs the check, assign a verdict:
 - **confirmed** — keep the comment unchanged.
 - **uncertain** — keep it, but prefix `problem` with `(unverified) `.
 - **refuted** — remove the comment,

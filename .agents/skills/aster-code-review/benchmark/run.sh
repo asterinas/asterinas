@@ -160,12 +160,25 @@ default_review() { # <worktree> <out> <skill-args>
     ( cd "$1" && ACR_GUIDELINE_ROOT="$GROOT" "$ACR_CLI" $3 "$2" --overwrite )
 }
 default_grade() { # <defects-file> <review>
-    "$RUN_AGENT" "You are grading a code review. The expected defects are in $1; the \
-produced review is $2. Each expected defect gives a 'defect:' description for context \
-and a 'MATCH IF:' criterion. For each expected defect, decide whether ANY comment in \
-the review satisfies its MATCH IF criterion at the stated code location (wording may \
-differ). Respond with ONLY two space-separated integers, caught then total, and \
-nothing else (for example: 1 2)."
+    local defects_file="$1" review_file="$2" prompt_file status
+    prompt_file="$(mktemp)"
+    {
+        cat <<'EOF'
+You are grading a code review for recall.
+Each expected defect gives a defect description for context and a MATCH IF criterion for grading.
+For each expected defect, decide whether ANY produced review comment semantically satisfies its MATCH IF criterion at the stated code location.
+Wording, grounding label, persona, and severity may differ; judge the underlying defect.
+Respond with ONLY two space-separated integers: caught total. The total must equal the number of expected defects below.
+
+===== EXPECTED DEFECTS =====
+EOF
+        cat "$defects_file"
+        printf '\n===== PRODUCED REVIEW =====\n'
+        cat "$review_file"
+    } > "$prompt_file"
+    "$RUN_AGENT" "$(cat "$prompt_file")"; status=$?
+    rm -f "$prompt_file"
+    return "$status"
 }
 default_neg_grade() { # <negatives-file> <review>
     "$RUN_AGENT" "The items in $1 are false-positive traps that a correct review must \
