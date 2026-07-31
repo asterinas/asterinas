@@ -84,8 +84,13 @@ bitflags::bitflags! {
     }
 }
 
+const SHARED_ASID: usize = 0;
+
 pub(crate) fn tlb_flush_addr(vaddr: Vaddr) {
-    riscv::asm::sfence_vma(0, vaddr);
+    // Don't specify an ASID here. `vaddr` may be associated with a global entry.
+    //
+    // SAFETY: This invalidates the TLB, which doesn't affect the memory safety.
+    unsafe { core::arch::riscv64::sfence_vma_vaddr(vaddr) };
 }
 
 pub(crate) fn tlb_flush_addr_range(range: &Range<Vaddr>) {
@@ -95,12 +100,15 @@ pub(crate) fn tlb_flush_addr_range(range: &Range<Vaddr>) {
 }
 
 pub(crate) fn tlb_flush_all_excluding_global() {
-    // TODO: excluding global?
-    riscv::asm::sfence_vma_all()
+    // We use `SHARED_ASID` all the time, so all non-global pages are associated with it.
+    //
+    // SAFETY: This invalidates the TLB, which doesn't affect the memory safety.
+    unsafe { core::arch::riscv64::sfence_vma_asid(SHARED_ASID) };
 }
 
 pub(crate) fn tlb_flush_all_including_global() {
-    riscv::asm::sfence_vma_all()
+    // SAFETY: This invalidates the TLB, which doesn't affect the memory safety.
+    unsafe { core::arch::riscv64::sfence_vma_all() };
 }
 
 pub(crate) fn can_sync_dma() -> bool {
@@ -169,9 +177,13 @@ pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: Cach
     #[cfg(feature = "riscv_sv39_mode")]
     let mode = riscv::register::satp::Mode::Sv39;
 
-    unsafe {
-        riscv::register::satp::set(mode, 0, ppn);
-    }
+    // SAFETY: The safety is upheld by the caller.
+    unsafe { riscv::register::satp::set(mode, SHARED_ASID, ppn) };
+
+    // We reuse `SHARED_ASID`, so we need to flush the TLB entries.
+    // "[..] if an ASID is reused, it may be necessary to execute an SFENCE.VMA instruction."
+    // Reference: <https://docs.riscv.org/reference/isa/v20260120/priv/supervisor.html#satp>.
+    tlb_flush_all_excluding_global();
 }
 
 pub(crate) fn current_page_table_paddr() -> Paddr {
