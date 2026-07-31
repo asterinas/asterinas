@@ -279,6 +279,12 @@ impl I8042Controller {
     fn flush_output_buffer(&mut self) {
         while self.receive_data().is_some() {}
     }
+
+    pub(super) fn reset_cpu(&mut self) {
+        if !self.read_status().contains(Status::INPUT_BUFFER_IS_FULL) {
+            self.write_command(Command::CpuReset as u8);
+        }
+    }
 }
 
 /// Timeout in milliseconds for sending commands or receiving data.
@@ -350,6 +356,7 @@ enum Command {
     DisableFirstPort = 0xAD,
     EnableFirstPort = 0xAE,
     WriteToSecondPort = 0xD4,
+    CpuReset = 0xFE,
 }
 
 bitflags! {
