@@ -2,10 +2,7 @@
 
 use alloc::sync::Arc;
 
-use aster_framebuffer::{
-    framebuffer::FRAMEBUFFER,
-    mode::{KeyboardMode, KeyboardModeFlags},
-};
+use aster_framebuffer::mode::{KeyboardMode, KeyboardModeFlags};
 use aster_input::{
     event_type_codes::{KeyCode, KeyStatus},
     input_dev::{InputDevice, InputEvent},
@@ -450,10 +447,6 @@ impl InputHandler for VtKeyboardHandler {
 static REGISTERED_INPUT_HANDLER_CLASS: Once<RegisteredInputHandlerClass> = Once::new();
 
 pub(super) fn init_in_first_process() {
-    if FRAMEBUFFER.get().is_none() {
-        return;
-    }
-
     REGISTERED_INPUT_HANDLER_CLASS.call_once(|| {
         let handler_class = Arc::new(VtKeyboardHandlerClass);
         aster_input::register_handler_class(handler_class)
