@@ -32,7 +32,7 @@ Trace every intermediate set and every final set.
 Do not stop after finding one bad branch.
 If a metadata-presence or enabling-flag condition gates one derived output, check sibling outputs for nearby broad root, owner, or capability shortcuts that bypass the same exception.
 For Linux `capabilities(7)` exec transformations, distinguish file capability metadata, the file effective flag, and legacy root special handling.
-When file capability metadata is present, do not assume that an effective-UID-root transition may make every permitted capability effective; 
+When file capability metadata is present, do not assume that an effective-UID-root transition may make every permitted capability effective;
 verify that the effective set is enabled only by the contract's effective-bit rule or by a root shortcut that the same contract explicitly permits in the metadata-present case.
 
 Adversarial mindset: assume inputs are hostile and memory rules are exploitable.
