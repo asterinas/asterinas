@@ -6,9 +6,13 @@ use core::time::Duration;
 
 pub(in crate::fs) use dentry::Dentry;
 use inherit_methods_macro::inherit_methods;
-pub use mount::{MNT_UNIQUE_ID_MIN, Mount, MountPropType, PerMountFlags};
-use mount::{MountNsFileCopying, MountTopology};
+use mount::MountTreeCloneMode;
+pub use mount::{MNT_UNIQUE_ID_MIN, Mount, PerMountFlags};
+pub(in crate::fs) use mount::{RecyclableMountId, UniqueMountId};
 pub use mount_namespace::MountNamespace;
+pub use mount_propagation::MountPropType;
+pub(in crate::fs) use mount_propagation::MountTopology;
+use mount_propagation::PendingPropagationChanges;
 pub use resolver::{
     AT_FDCWD, AbsPathResult, EmptyPathStr, FsPath, LookupResult, PathResolver, SplitPath,
     SplitPathError,
@@ -36,6 +40,7 @@ use crate::{
 mod dentry;
 mod mount;
 mod mount_namespace;
+mod mount_propagation;
 mod resolver;
 
 /// A `Path` is used to represent an exact location in the VFS tree.
@@ -449,6 +454,10 @@ impl Path {
     /// Creates a new mount tree that mirrors either the root mount (non-recursive)
     /// or the entire mount subtree (recursive), and attaches it to the destination path.
     ///
+    /// A recursive bind omits unbindable subtrees.
+    /// If the destination parent is shared,
+    /// the new tree is also attached below its propagation receivers.
+    ///
     /// # Errors
     ///
     /// Returns `ENOTDIR` if one of the source and destination is a directory
@@ -457,7 +466,8 @@ impl Path {
     /// Returns `EINVAL` if any of the following holds:
     /// - The destination path is not in the current mount namespace.
     /// - The source path is a mount namespace file that would create a namespace loop.
-    pub fn bind_mount_to(&self, dst_path: &Self, recursive: bool, ctx: &Context) -> Result<()> {
+    /// - The source mount is unbindable.
+    pub fn bind_mount_to(&self, dst_path: Self, recursive: bool, ctx: &Context) -> Result<()> {
         let can_bind = {
             let src_is_dir = self.type_() == InodeType::Dir;
             let dst_is_dir = dst_path.type_() == InodeType::Dir;
@@ -491,18 +501,27 @@ impl Path {
 
         let mut topology_guard = MountTopology::write_lock();
         let current_mnt_ns_weak = Arc::downgrade(current_mnt_ns);
-        let new_mount = self.mount.clone_mount_tree(
+        let mut pending_changes = PendingPropagationChanges::default();
+        let new_mount = self.mount.clone_mount_tree_deferred(
             &self.dentry,
             &current_mnt_ns_weak,
             recursive,
-            MountNsFileCopying::Copy,
+            MountTreeCloneMode::Bind,
+            &mut pending_changes,
             &topology_guard,
         )?;
-        new_mount.graft_mount_tree(dst_path, &mut topology_guard);
+        new_mount.attach_mount_tree_with_propagation(
+            dst_path,
+            pending_changes,
+            &mut topology_guard,
+        )?;
         Ok(())
     }
 
     /// Moves a mount tree from the current path to the destination path.
+    ///
+    /// If the destination parent is shared,
+    /// corresponding clones are also attached below its propagation receivers.
     ///
     /// # Errors
     ///
@@ -513,11 +532,14 @@ impl Path {
     /// - The destination is in a detached mount tree while the source is not.
     /// - The source and destination are in the same detached mount tree.
     /// - One of the source and destination is a directory and the other is not.
+    /// - The source mount's current parent is shared.
+    /// - The destination mount is shared and the source tree contains an
+    ///   unbindable mount.
     ///
     /// Returns `ELOOP` in the following cases:
     /// - The destination path is inside the subtree being moved.
     /// - The mount tree contains a mount namespace file that would create a namespace loop.
-    pub fn move_mount_to(&self, dst_path: &Self, ctx: &Context) -> Result<()> {
+    pub fn move_mount_to(&self, dst_path: Self, ctx: &Context) -> Result<()> {
         if !self.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
         };
@@ -541,8 +563,8 @@ impl Path {
         }
 
         let mut topology_guard = MountTopology::write_lock();
-        let source_tree_root = mount_tree_root(self.mount_node());
-        let target_tree_root = mount_tree_root(dst_path.mount_node());
+        let source_tree_root = mount_tree_root(self.mount_node(), &topology_guard);
+        let target_tree_root = mount_tree_root(dst_path.mount_node(), &topology_guard);
         let current_tree_root = current_mnt_ns.root();
         let source_is_detached = source_tree_root.id() != current_tree_root.id();
         let target_is_detached = target_tree_root.id() != current_tree_root.id();
@@ -593,14 +615,53 @@ impl Path {
                 "the destination path is inside the mount subtree being moved"
             );
         }
+        if self
+            .mount
+            .parent()
+            .and_then(|parent| parent.upgrade())
+            .is_some_and(|parent| parent.is_shared())
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "moving a mount under a shared parent is not supported"
+            );
+        }
+        if dst_path.mount_node().is_shared() {
+            self.mount.try_walk_tree(|mount| {
+                if mount.is_unbindable() {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "an unbindable mount tree cannot be moved under a shared mount"
+                    );
+                }
+                Ok(())
+            })?;
+        }
 
-        self.mount.graft_mount_tree(dst_path, &mut topology_guard);
+        self.mount.detach_from_parent(&mut topology_guard);
+        let pending_changes = PendingPropagationChanges::default();
+        self.mount.attach_mount_tree_with_propagation(
+            dst_path,
+            pending_changes,
+            &mut topology_guard,
+        )?;
 
         Ok(())
     }
 
-    /// Sets the propagation type of the mount of this `Path`.
-    pub fn set_mount_propagation(
+    /// Sets the propagation policy of this path's mount.
+    ///
+    /// If `recursive` is `true`,
+    /// the same requested transition is applied independently
+    /// to every mount in the subtree.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EINVAL` if this path is not a mount root
+    /// or its mount does not belong to the current mount namespace.
+    /// Returns `ENOMEM` if the transition requires a new peer group
+    /// and the peer-group ID pool is exhausted.
+    pub fn set_propagation(
         &self,
         prop: MountPropType,
         recursive: bool,
@@ -617,14 +678,19 @@ impl Path {
         }
 
         let mut topology_guard = MountTopology::write_lock();
-        self.mount
-            .set_propagation(prop, recursive, &mut topology_guard);
-
+        let mut pending_changes = PendingPropagationChanges::default();
+        self.mount.set_propagation_deferred(
+            prop,
+            recursive,
+            &mut pending_changes,
+            &topology_guard,
+        )?;
+        pending_changes.commit(&mut topology_guard);
         Ok(())
     }
 }
 
-fn mount_tree_root(mount: &Arc<Mount>) -> Arc<Mount> {
+fn mount_tree_root(mount: &Arc<Mount>, _topology: &MountTopology) -> Arc<Mount> {
     let mut root = mount.clone();
     while let Some(parent) = root.parent().and_then(|parent| parent.upgrade()) {
         root = parent;

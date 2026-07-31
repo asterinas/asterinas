@@ -10,7 +10,7 @@ use crate::{
         vfs::{
             file_system::FsFlags,
             inode::Inode,
-            path::{Mount, Path, PathResolver, PerMountFlags},
+            path::{Mount, Path, PathResolver, PerMountFlags, RecyclableMountId},
         },
     },
     prelude::*,
@@ -46,9 +46,9 @@ pub(super) fn make_mount_point_path(
 struct MountInfoEntry<'a> {
     /// The recyclable mount ID (matches [`Mount::id`]); reused after the
     /// mount is dropped.
-    mount_id: u32,
+    mount_id: RecyclableMountId,
     /// The recyclable ID of the parent mount (or self if it has no parent).
-    parent_id: u32,
+    parent_id: RecyclableMountId,
     /// The major device ID of the filesystem.
     major: u32,
     /// The minor device ID of the filesystem.
@@ -59,6 +59,8 @@ struct MountInfoEntry<'a> {
     mount_point: &'a str,
     /// Per-mount flags.
     mount_flags: PerMountFlags,
+    /// Optional mount propagation fields.
+    propagation_info: &'a str,
     /// The type of the filesystem in the form "type[.subtype]".
     fs_type: &'a str,
     /// Filesystem-specific information or "none".
@@ -71,7 +73,7 @@ impl core::fmt::Display for MountInfoEntry<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "{} {} {}:{} {} {} {} - {} {} {}",
+            "{} {} {}:{} {} {} {}{} - {} {} {}",
             self.mount_id,
             self.parent_id,
             self.major,
@@ -79,6 +81,7 @@ impl core::fmt::Display for MountInfoEntry<'_> {
             self.root,
             self.mount_point,
             self.mount_flags,
+            self.propagation_info,
             self.fs_type,
             self.source,
             self.fs_flags,
@@ -127,6 +130,7 @@ impl MountInfoFileOps {
                 path_resolver,
             );
             let mount_flags = mount.flags();
+            let propagation_info = mount.propagation_mountinfo_fields();
             let fs_type = mount.fs().name();
             let source = mount.source().unwrap_or("none");
             let fs_flags = mount.fs().flags();
@@ -139,6 +143,7 @@ impl MountInfoFileOps {
                 root: &root,
                 mount_point: &mount_point,
                 mount_flags,
+                propagation_info: &propagation_info,
                 fs_type,
                 source,
                 fs_flags,
