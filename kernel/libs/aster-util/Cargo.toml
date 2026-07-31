@@ -8,6 +8,7 @@ edition.workspace = true
 [dependencies]
 aster-rights.workspace = true
 aster-rights-proc.workspace = true
+bitvec.workspace = true
 inherit-methods-macro.workspace = true
 osdk-heap-allocator.workspace = true
 ostd.workspace = true

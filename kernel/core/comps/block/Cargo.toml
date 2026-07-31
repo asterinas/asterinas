@@ -8,7 +8,6 @@ edition.workspace = true
 [dependencies]
 align_ext.workspace = true
 aster-util.workspace = true
-bitvec.workspace = true
 component.workspace = true
 device-id.workspace = true
 id-alloc.workspace = true

@@ -9,6 +9,7 @@ extern crate alloc;
 extern crate ostd_pod;
 
 pub mod coeff;
+pub mod dma_arena;
 pub mod dup;
 pub mod fixed_point;
 pub mod fixed_str;
