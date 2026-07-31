@@ -12,7 +12,7 @@ use crate::{
         fs_impls::ext2::{Ext2, super_block::MAGIC_NUM},
         utils::NAME_MAX,
         vfs::{
-            file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
             inode::Inode,
         },
     },
@@ -59,6 +59,16 @@ impl FileSystem for Ext2 {
             flags: 0,
             container_dev_id: self.container_device_id(),
         }
+    }
+
+    fn flags(&self) -> FsFlags {
+        self.fs_flags()
+    }
+
+    fn set_fs_flags(&self, flags: FsFlags, _data: Option<&str>, _ctx: &Context) -> Result<()> {
+        self.set_fs_flags(flags);
+        warn!("ext2-specific handling for filesystem flags is not implemented");
+        Ok(())
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {

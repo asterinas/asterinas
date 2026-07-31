@@ -158,7 +158,6 @@ impl From<FsFlags> for u32 {
 
 define_atomic_version_of_integer_like_type!(FsFlags, {
     /// An atomic version of `FsFlags`.
-    #[expect(dead_code)]
     #[derive(Debug)]
     pub struct AtomicFsFlags(AtomicU32);
 });

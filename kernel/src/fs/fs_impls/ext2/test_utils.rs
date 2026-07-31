@@ -24,7 +24,7 @@ use super::{
     },
 };
 use crate::{
-    fs::{file::InodeType, fs_impls::ext2::super_block::SuperBlock},
+    fs::{file::InodeType, fs_impls::ext2::super_block::SuperBlock, vfs::file_system::FsFlags},
     prelude::{return_errno_with_message, *},
     time::clocks,
 };
@@ -728,7 +728,7 @@ impl Ext2FixtureBuilder {
         let device: Arc<dyn BlockDevice> = self
             .custom_device
             .unwrap_or_else(|| disk.clone() as Arc<dyn BlockDevice>);
-        let ext2 = Ext2::open(device, None)?;
+        let ext2 = Ext2::open(device, FsFlags::empty(), None)?;
 
         Ok(Ext2Fixture {
             disk,

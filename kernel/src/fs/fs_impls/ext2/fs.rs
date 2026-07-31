@@ -31,7 +31,10 @@ use super::{
     super_block::{RawSuperBlock, SUPER_BLOCK_OFFSET, SuperBlock},
 };
 use crate::{
-    fs::{ext2::utils, vfs::file_system::FsEventSubscriberStats},
+    fs::{
+        ext2::utils,
+        vfs::file_system::{AtomicFsFlags, FsEventSubscriberStats, FsFlags},
+    },
     process::{Gid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     security::lsm::hooks as lsm_hooks,
     thread::Thread,
@@ -59,6 +62,8 @@ pub struct Ext2 {
     group_descriptors_segment: USegment,
     /// Runtime mount options that affect block-count reporting.
     mount_options: Ext2MountOptions,
+    /// Recorded VFS filesystem flags.
+    flags: AtomicFsFlags,
     /// FS event stats for VFS.
     fs_event_subscriber_stats: FsEventSubscriberStats,
     /// Per-filesystem inode generation counter.
@@ -110,7 +115,11 @@ impl Ext2MountOptions {
 
 impl Ext2 {
     /// Opens and loads an Ext2 filesystem from a block device.
-    pub(super) fn open(device: Arc<dyn BlockDevice>, data: Option<&str>) -> Result<Arc<Self>> {
+    pub(super) fn open(
+        device: Arc<dyn BlockDevice>,
+        flags: FsFlags,
+        data: Option<&str>,
+    ) -> Result<Arc<Self>> {
         let super_block = {
             let raw_super_block = device.read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)?;
             SuperBlock::try_from(raw_super_block)?
@@ -173,6 +182,7 @@ impl Ext2 {
             nr_inodes_per_group,
             group_descriptors_segment,
             mount_options,
+            flags: AtomicFsFlags::new(flags),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             next_generation: AtomicU32::new(utils::duration_to_ext2_secs(utils::now())),
             self_ref: weak_self.clone(),
@@ -197,6 +207,16 @@ impl Ext2 {
             self.mount_options.stat_block_accounting,
             StatBlockAccounting::IncludeOverhead
         )
+    }
+
+    /// Returns the per file system flags.
+    pub(super) fn fs_flags(&self) -> FsFlags {
+        self.flags.load(Ordering::Relaxed)
+    }
+
+    /// Sets the per file system flags.
+    pub(super) fn set_fs_flags(&self, flags: FsFlags) {
+        self.flags.store(flags, Ordering::Relaxed);
     }
 
     /// Returns a reference to the block group at `group_idx`.
@@ -721,7 +741,12 @@ mod test {
     #[ktest]
     fn stat_minixdf_reports_total() {
         let f = Ext2FixtureBuilder::new(3, 512).build().unwrap();
-        let ext2 = Ext2::open(f.disk.clone() as Arc<dyn BlockDevice>, Some("minixdf")).unwrap();
+        let ext2 = Ext2::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            Some("minixdf"),
+        )
+        .unwrap();
 
         let stat = FileSystemTrait::sb(ext2.as_ref());
         assert_eq!(stat.blocks, f.sb.total_blocks() as usize);
