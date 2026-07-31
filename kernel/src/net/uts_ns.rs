@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_util::fixed_str::FixedCStr;
 use ostd::sync::RwMutexReadGuard;
 use spin::Once;
 
@@ -183,71 +184,11 @@ impl UtsName {
     }
 }
 
+/// The storage byte length of a UTS field, including the trailing nul.
+const UTS_FIELD_LEN: usize = 65;
+
 /// A nul-terminated UTS field.
-///
-/// Although this is a POD type, it has a type invariant: a nul byte must be
-/// present, and all bytes after the first nul byte must also be nul bytes.
-/// Users outside this module must not arbitrarily mutate the content.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Pod)]
-pub struct UtsField([u8; UtsField::MAX_BYTES_WITH_NUL]);
-
-impl UtsField {
-    /// The maximum byte length of a UTS field, excluding the trailing nul.
-    pub const MAX_BYTES: usize = 64;
-
-    /// The storage byte length of a UTS field, including the trailing nul.
-    pub const MAX_BYTES_WITH_NUL: usize = Self::MAX_BYTES + 1;
-
-    /// Creates a UTS field from bytes, stopping at the first nul byte.
-    ///
-    /// If there is no nul byte within the first [`Self::MAX_BYTES`] bytes,
-    /// the input is truncated to [`Self::MAX_BYTES`] bytes. The returned field
-    /// is always nul-terminated, and all bytes after the first nul byte are
-    /// zeroed.
-    pub fn from_bytes_until_nul(bytes: &[u8]) -> Self {
-        let mut field = [0u8; Self::MAX_BYTES_WITH_NUL];
-        let len = bytes
-            .iter()
-            .position(|byte| *byte == 0)
-            .unwrap_or(bytes.len())
-            .min(Self::MAX_BYTES);
-        field[..len].copy_from_slice(&bytes[..len]);
-        Self(field)
-    }
-
-    /// Reads a UTS field from user space.
-    pub fn read_from(addr: Vaddr, len: usize, ctx: &Context) -> Result<Self> {
-        // UTS fields represent C strings, which must be nul-terminated.
-        // Therefore, the user-provided buffer length cannot exceed `Self::MAX_BYTES`
-        // to ensure space for the terminating nul byte.
-        if len > Self::MAX_BYTES {
-            return_errno_with_message!(Errno::EINVAL, "the UTS name is too long");
-        }
-
-        let user_space = ctx.user_space();
-        let mut reader = user_space.reader(addr, len)?;
-        let mut field = [0u8; Self::MAX_BYTES_WITH_NUL];
-
-        // Partial reads are acceptable,
-        // but an error is returned if no bytes can be read successfully.
-        if let Err((err, 0)) = reader.read_fallible(&mut VmWriter::from(field.as_mut_slice())) {
-            return Err(err.into());
-        }
-
-        Ok(Self::from_bytes_until_nul(&field))
-    }
-
-    /// Returns the UTS field as a C string.
-    pub fn as_cstr(&self) -> &CStr {
-        CStr::from_bytes_until_nul(self.0.as_bytes()).unwrap()
-    }
-
-    /// Returns the underlying byte array.
-    pub fn as_array(&self) -> &[u8; Self::MAX_BYTES_WITH_NUL] {
-        &self.0
-    }
-}
+pub type UtsField = FixedCStr<UTS_FIELD_LEN>;
 
 impl NsCommonOps for UtsNamespace {
     const TYPE: NsType = NsType::Uts;
