@@ -264,7 +264,7 @@ impl FileLike for TimerfdFile {
             }
         }
 
-        let mut flags = self.status_flags().bits() | self.access_mode() as u32;
+        let mut flags = self.common.status_flags().bits() | self.access_mode() as u32;
         if fd_flags.contains(FdFlags::CLOEXEC) {
             flags |= CreationFlags::O_CLOEXEC.bits();
         }

@@ -77,6 +77,10 @@ impl InodeHandle {
         self.common.path()
     }
 
+    pub fn status_flags(&self) -> StatusFlags {
+        self.common.status_flags()
+    }
+
     pub fn offset(&self) -> usize {
         let offset = self.offset.lock();
         *offset
