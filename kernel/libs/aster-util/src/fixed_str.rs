@@ -18,6 +18,12 @@ use core::{
 pub struct FixedCStr<const N: usize>([u8; N]);
 
 impl<const N: usize> FixedCStr<N> {
+    /// The maximum byte length, excluding the trailing nul.
+    pub const MAX_BYTES: usize = N - 1;
+
+    /// The storage byte length, including the trailing nul.
+    pub const MAX_BYTES_WITH_NUL: usize = N;
+
     /// Creates a `FixedCStr` from bytes, stopping at the first nul byte.
     ///
     /// If there is no nul byte within the first `N` bytes,
@@ -67,6 +73,11 @@ impl<const N: usize> FixedCStr<N> {
 
     pub fn as_bytes_with_nul(&self) -> &[u8] {
         &self.0[..=self.len()]
+    }
+
+    /// Returns the full underlying byte array, including trailing nul bytes.
+    pub fn as_array(&self) -> &[u8; N] {
+        &self.0
     }
 }
 
