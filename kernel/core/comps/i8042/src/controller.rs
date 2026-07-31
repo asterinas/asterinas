@@ -34,8 +34,17 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
     // Flush the output buffer by reading from the data port and discarding the data.
     controller.flush_output_buffer();
 
-    // Set the controller configuration byte.
+    // Get the controller configuration byte.
     let mut config = controller.read_configuration()?;
+    let translation_mode = if config.contains(Configuration::FIRST_PORT_TRANSLATION_ENABLED) {
+        super::keyboard::TranslationMode::Hardware
+    } else {
+        // Some controllers do not support translation. Therefore, we will not attempt to enable
+        // translation if it is not initially enabled.
+        super::keyboard::TranslationMode::Software
+    };
+
+    // Set the controller configuration byte.
     config.remove(
         Configuration::FIRST_PORT_INTERRUPT_ENABLED
             | Configuration::FIRST_PORT_TRANSLATION_ENABLED
@@ -89,14 +98,14 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
 
     // Enable the first PS/2 port (keyboard).
     controller.wait_and_send_command(Command::EnableFirstPort)?;
-    if let Err(err) = super::keyboard::init(&mut controller) {
+    if let Err(err) = super::keyboard::init(&mut controller, translation_mode) {
         ostd::warn!("i8042 keyboard initialization failed: {:?}", err);
     } else {
         config.remove(Configuration::FIRST_PORT_CLOCK_DISABLED);
-        config.insert(
-            Configuration::FIRST_PORT_INTERRUPT_ENABLED
-                | Configuration::FIRST_PORT_TRANSLATION_ENABLED,
-        );
+        config.insert(Configuration::FIRST_PORT_INTERRUPT_ENABLED);
+        if translation_mode == super::keyboard::TranslationMode::Hardware {
+            config.insert(Configuration::FIRST_PORT_TRANSLATION_ENABLED);
+        }
     }
     // Temporarily disable the first PS/2 port to avoid interference.
     controller.wait_and_send_command(Command::DisableFirstPort)?;
