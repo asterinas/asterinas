@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! DMA arena allocation for large virtio-fs buffers.
-//!
-//! This module provides [`DmaArenaAllocator`], which serves page-granular
-//! allocations from a direction-specific DMA region. Each [`DmaArena`] returns
-//! its range automatically when dropped. The parent buffer pool falls back to
-//! an independent DMA stream when the allocator cannot satisfy a request.
+//! Page-granular allocations from a pre-mapped DMA region.
 
 use alloc::sync::Arc;
 use core::ops::Range;
 
-use bitvec::array::BitArray;
+use bitvec::vec::BitVec;
 use ostd::{
     Result,
     mm::{
@@ -21,49 +16,44 @@ use ostd::{
     sync::{LocalIrqDisabled, SpinLock},
 };
 
-/// Preserves the previous worst-case budget of eight cached 1-MiB streams.
-const POOL_SIZE_BYTES: usize = 8 * 1024 * 1024;
+use crate::mem_obj_slice::Slice;
 
-/// Allows one allocation to consume the entire arena; larger requests fall back
-/// to independently allocated DMA streams.
-const MAX_ALLOCATION_SIZE_BYTES: usize = POOL_SIZE_BYTES;
-
-/// The number of page-sized allocation units tracked by the bitmap.
-const NUM_PAGES: usize = POOL_SIZE_BYTES / PAGE_SIZE;
-
-/// A page-granular allocator backed by one preallocated DMA stream.
+/// A page-granular allocator backed by one pre-mapped DMA stream.
 #[derive(Debug)]
-pub(super) struct DmaArenaAllocator<D: DmaDirection> {
-    storage: DmaStream<D>,
+pub struct DmaArenaAllocator<D: DmaDirection> {
+    storage: Arc<DmaStream<D>>,
     manager: SpinLock<Manager, LocalIrqDisabled>,
 }
 
 #[derive(Debug)]
 struct Manager {
     /// A set bit denotes a page owned by a live [`DmaArena`].
-    occupied: BitArray<[u8; NUM_PAGES.div_ceil(8)]>,
-    /// The lowest free page, or [`NUM_PAGES`] if the arena is full.
+    occupied: BitVec,
+    /// The lowest free page, or the arena capacity if the arena is full.
     min_free: usize,
 }
 
 impl<D: DmaDirection> DmaArenaAllocator<D> {
-    pub(super) fn new() -> Result<Arc<Self>> {
+    /// Creates an arena containing `capacity_pages` non-coherent DMA pages.
+    pub fn new(capacity_pages: usize) -> Result<Arc<Self>> {
+        if capacity_pages == 0 {
+            return Err(ostd::Error::InvalidArgs);
+        }
+
         Ok(Arc::new(Self {
-            storage: DmaStream::alloc_uninit(NUM_PAGES, false)?,
+            storage: Arc::new(DmaStream::alloc_uninit(capacity_pages, false)?),
             manager: SpinLock::new(Manager {
-                occupied: BitArray::ZERO,
+                occupied: BitVec::repeat(false, capacity_pages),
                 min_free: 0,
             }),
         }))
     }
 
-    pub(super) fn alloc(self: &Arc<Self>, pages: usize) -> Option<DmaArena<D>> {
-        if pages == 0 || pages > MAX_ALLOCATION_SIZE_BYTES / PAGE_SIZE {
-            return None;
-        }
-
+    /// Allocates `size_pages` contiguous pages from the arena.
+    pub fn alloc(self: &Arc<Self>, size_pages: usize) -> Option<DmaArena<D>> {
         let mut manager = self.manager.lock();
-        if pages > NUM_PAGES - manager.min_free {
+        let capacity_pages = manager.occupied.len();
+        if size_pages == 0 || size_pages > capacity_pages - manager.min_free {
             return None;
         }
 
@@ -71,7 +61,7 @@ impl<D: DmaDirection> DmaArenaAllocator<D> {
         let (start, end) = {
             let mut start = previous_min_free;
             let mut end = start;
-            while end < NUM_PAGES && end - start < pages {
+            while end < capacity_pages && end - start < size_pages {
                 if manager.occupied[end] {
                     start = end + 1;
                     end = start;
@@ -79,7 +69,7 @@ impl<D: DmaDirection> DmaArenaAllocator<D> {
                     end += 1;
                 }
             }
-            if end - start < pages {
+            if end - start < size_pages {
                 return None;
             }
             (start, end)
@@ -88,9 +78,9 @@ impl<D: DmaDirection> DmaArenaAllocator<D> {
         manager.occupied[start..end].fill(true);
         manager.min_free = manager.occupied[previous_min_free..]
             .iter()
-            .position(|occupied| !occupied)
+            .position(|occupied| !*occupied)
             .map(|position| previous_min_free + position)
-            .unwrap_or(NUM_PAGES);
+            .unwrap_or(capacity_pages);
 
         Some(DmaArena {
             allocator: self.clone(),
@@ -107,10 +97,8 @@ impl<D: DmaDirection> DmaArenaAllocator<D> {
 }
 
 /// A variable-length allocation from a [`DmaArenaAllocator`].
-///
-/// `page_range` remains marked as occupied until this object is dropped.
 #[derive(Debug)]
-pub(in crate::device::filesystem) struct DmaArena<D: DmaDirection> {
+pub struct DmaArena<D: DmaDirection> {
     allocator: Arc<DmaArenaAllocator<D>>,
     page_range: Range<usize>,
 }
@@ -120,18 +108,43 @@ impl<D: DmaDirection> DmaArena<D> {
         self.page_range.start * PAGE_SIZE..self.page_range.end * PAGE_SIZE
     }
 
-    pub(super) fn sync_from_device(&self, byte_range: Range<usize>) -> Result<()> {
-        let offset = self.byte_range().start;
-        self.allocator
-            .storage
-            .sync_from_device(byte_range.start + offset..byte_range.end + offset)
+    fn absolute_byte_range(&self, byte_range: Range<usize>) -> Result<Range<usize>> {
+        if byte_range.start > byte_range.end || byte_range.end > self.size() {
+            return Err(ostd::Error::InvalidArgs);
+        }
+
+        let arena_start = self.byte_range().start;
+        Ok(arena_start + byte_range.start..arena_start + byte_range.end)
     }
 
-    pub(super) fn sync_to_device(&self, byte_range: Range<usize>) -> Result<()> {
-        let offset = self.byte_range().start;
+    /// Creates a byte slice that retains this allocation until it is dropped.
+    pub fn into_slice(self, byte_range: Range<usize>) -> DmaArenaSlice<D> {
+        assert!(
+            !byte_range.is_empty() && byte_range.end <= self.size(),
+            "the byte range must be non-empty and within the DMA arena"
+        );
+
+        let arena_start = self.byte_range().start;
+        let absolute_range = arena_start + byte_range.start..arena_start + byte_range.end;
+        let dma_slice = Slice::new(self.allocator.storage.clone(), absolute_range);
+        DmaArenaSlice {
+            dma_slice,
+            _arena: self,
+        }
+    }
+
+    /// Synchronizes `byte_range` from the device into memory.
+    pub fn sync_from_device(&self, byte_range: Range<usize>) -> Result<()> {
         self.allocator
             .storage
-            .sync_to_device(byte_range.start + offset..byte_range.end + offset)
+            .sync_from_device(self.absolute_byte_range(byte_range)?)
+    }
+
+    /// Synchronizes `byte_range` from memory to the device.
+    pub fn sync_to_device(&self, byte_range: Range<usize>) -> Result<()> {
+        self.allocator
+            .storage
+            .sync_to_device(self.absolute_byte_range(byte_range)?)
     }
 }
 
@@ -171,15 +184,31 @@ impl<D: DmaDirection> HasVmReaderWriter for DmaArena<D> {
     }
 }
 
+/// A DMA stream slice that owns its arena allocation.
+#[derive(Debug)]
+pub struct DmaArenaSlice<D: DmaDirection> {
+    dma_slice: Slice<Arc<DmaStream<D>>>,
+    _arena: DmaArena<D>,
+}
+
+impl<D: DmaDirection> DmaArenaSlice<D> {
+    /// Returns the DMA stream slice.
+    pub fn dma_slice(&self) -> &Slice<Arc<DmaStream<D>>> {
+        &self.dma_slice
+    }
+}
+
 #[cfg(ktest)]
 mod test {
     use ostd::{mm::dma::FromDevice, prelude::*};
 
     use super::*;
 
+    const CAPACITY_PAGES: usize = 12;
+
     #[ktest]
     fn dropped_pages_are_reused() {
-        let allocator = DmaArenaAllocator::<FromDevice>::new().unwrap();
+        let allocator = DmaArenaAllocator::<FromDevice>::new(CAPACITY_PAGES).unwrap();
         let segment = allocator.alloc(3).unwrap();
         let daddr = segment.daddr();
         assert_eq!(segment.size(), 3 * PAGE_SIZE);
@@ -191,18 +220,18 @@ mod test {
 
     #[ktest]
     fn entire_arena_can_be_allocated() {
-        let allocator = DmaArenaAllocator::<FromDevice>::new().unwrap();
-        let arena = allocator.alloc(NUM_PAGES).unwrap();
-        assert_eq!(arena.size(), POOL_SIZE_BYTES);
+        let allocator = DmaArenaAllocator::<FromDevice>::new(CAPACITY_PAGES).unwrap();
+        let arena = allocator.alloc(CAPACITY_PAGES).unwrap();
+        assert_eq!(arena.size(), CAPACITY_PAGES * PAGE_SIZE);
         assert!(allocator.alloc(1).is_none());
         drop(arena);
 
-        assert!(allocator.alloc(NUM_PAGES).is_some());
+        assert!(allocator.alloc(CAPACITY_PAGES).is_some());
     }
 
     #[ktest]
     fn skipped_free_range_remains_allocatable() {
-        let allocator = DmaArenaAllocator::<FromDevice>::new().unwrap();
+        let allocator = DmaArenaAllocator::<FromDevice>::new(CAPACITY_PAGES).unwrap();
         let first = allocator.alloc(2).unwrap();
         let first_daddr = first.daddr();
         let _barrier = allocator.alloc(1).unwrap();
@@ -212,5 +241,18 @@ mod test {
         let _larger_than_gap = allocator.alloc(3).unwrap();
         let reused_gap = allocator.alloc(2).unwrap();
         assert_eq!(reused_gap.daddr(), first_daddr);
+    }
+
+    #[ktest]
+    fn slice_keeps_pages_allocated() {
+        let allocator = DmaArenaAllocator::<FromDevice>::new(CAPACITY_PAGES).unwrap();
+        let arena_slice = allocator
+            .alloc(CAPACITY_PAGES)
+            .unwrap()
+            .into_slice(0..PAGE_SIZE);
+        assert!(allocator.alloc(1).is_none());
+        drop(arena_slice);
+
+        assert!(allocator.alloc(CAPACITY_PAGES).is_some());
     }
 }

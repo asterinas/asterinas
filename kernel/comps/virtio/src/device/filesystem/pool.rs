@@ -5,13 +5,14 @@
 //! This module provides `SizeClassedDmaPool`, backed by [`DmaPool`] segments for
 //! small buffers and a page-granular [`DmaStream`] arena for large ones.
 
-mod dma_arena;
-
 use alloc::sync::Arc;
 use core::ops::Range;
 
 use aster_network::dma_pool::{DmaPool, DmaSegment};
-use aster_util::mem_obj_slice::Slice;
+use aster_util::{
+    dma_arena::{DmaArena, DmaArenaAllocator},
+    mem_obj_slice::Slice,
+};
 use ostd::{
     Result,
     mm::{
@@ -21,8 +22,10 @@ use ostd::{
     },
 };
 
-use self::dma_arena::{DmaArena, DmaArenaAllocator};
 use crate::dma_buf::DmaBuf;
+
+/// Preserves the previous worst-case budget of eight cached 1-MiB streams.
+const DMA_ARENA_SIZE_PAGES: usize = 8 * 1024 * 1024 / PAGE_SIZE;
 
 /// Pool-backed buffers start at 64 bytes to avoid wasting a page for small
 /// fixed-size buffers.
@@ -59,7 +62,7 @@ impl<D: DmaDirection> SizeClassedDmaPool<D> {
             let segment_size = 1 << (MIN_SHIFT + i);
             DmaPool::<D>::new(segment_size, POOL_INIT_SIZE, POOL_HIGH_WATERMARK, false)
         });
-        let dma_arena_allocator = match DmaArenaAllocator::new() {
+        let dma_arena_allocator = match DmaArenaAllocator::new(DMA_ARENA_SIZE_PAGES) {
             Ok(allocator) => Some(allocator),
             Err(err) => {
                 ostd::warn!("failed to allocate virtio-fs DMA arena: {:?}", err);

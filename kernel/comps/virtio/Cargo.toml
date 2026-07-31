@@ -18,7 +18,6 @@ aster-rights.workspace = true
 aster-softirq.workspace = true
 aster-systree.workspace = true
 aster-util.workspace = true
-bitvec.workspace = true
 bitflags.workspace = true
 component.workspace = true
 device-id.workspace = true
