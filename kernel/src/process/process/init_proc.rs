@@ -13,7 +13,7 @@ use crate::{
     prelude::*,
     process::{
         Credentials, ProcessVm, UserNamespace, pid_table,
-        posix_thread::{PosixThreadBuilder, ThreadName, allocate_posix_tid},
+        posix_thread::{PosixThreadBuilder, allocate_posix_tid, derive_thread_name},
         program_loader::ProgramToLoad,
         rlimit::new_resource_limits_for_init,
         signal::sig_disposition::SigDispositions,
@@ -160,7 +160,7 @@ fn create_init_task(
     user_ctx.set_instruction_pointer(elf_load_info.entry_point as _);
     user_ctx.set_stack_pointer(elf_load_info.user_stack_top as _);
 
-    let thread_name = ThreadName::new_from_executable_path(&elf_abs_path);
+    let thread_name = derive_thread_name(&elf_abs_path);
 
     let thread_builder =
         PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials, vmar)
