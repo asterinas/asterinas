@@ -36,8 +36,9 @@ impl FsType for Ext2Type {
 
     fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         let disk = fs_creation_ctx.resolve_block_device()?.clone();
+        let flags = fs_creation_ctx.flags();
         let args = fs_creation_ctx.args();
-        Ext2::open(disk, args).map(|fs| fs as Arc<dyn FileSystem>)
+        Ext2::open(disk, flags, args).map(|fs| fs as Arc<dyn FileSystem>)
     }
 
     fn obtain_key_and_cache(
