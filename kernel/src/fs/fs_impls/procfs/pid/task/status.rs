@@ -94,7 +94,11 @@ impl ProcFileOps for StatusFileOps {
         writeln!(
             printer,
             "Name:\t{}",
-            posix_thread.thread_name().lock().name().to_string_lossy()
+            posix_thread
+                .thread_name()
+                .lock()
+                .as_cstr()
+                .to_string_lossy()
         )?;
 
         let state = if thread.is_exited() {

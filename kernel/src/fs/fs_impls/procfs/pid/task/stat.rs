@@ -138,7 +138,7 @@ impl ProcFileOps for StatFileOps {
         let comm = posix_thread
             .thread_name()
             .lock()
-            .name()
+            .as_cstr()
             .to_string_lossy()
             .into_owned();
         let state = if thread.is_exited() {

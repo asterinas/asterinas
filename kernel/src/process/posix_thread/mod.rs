@@ -3,6 +3,7 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
+use aster_util::fixed_str::FixedCStr;
 use ostd::{
     sync::{RoArc, RwMutexReadGuard, Waker},
     task::Task,
@@ -32,7 +33,6 @@ mod builder;
 mod cpu_sync;
 mod exit;
 pub mod futex;
-mod name;
 mod personality;
 mod posix_thread_ext;
 pub mod ptrace;
@@ -42,7 +42,6 @@ mod thread_local;
 pub use builder::PosixThreadBuilder;
 pub(super) use exit::sigkill_other_threads;
 pub use exit::{do_exit, do_exit_group};
-pub use name::{MAX_THREAD_NAME_LEN, ThreadName};
 pub use personality::Personality;
 pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
@@ -390,6 +389,20 @@ impl ContextPthreadAdminApi for Context<'_> {
     fn credentials_mut(&self) -> Credentials<ReadWriteOp> {
         self.posix_thread.credentials.dup().restrict()
     }
+}
+
+const MAX_THREAD_NAME_LEN: usize = 16;
+pub type ThreadName = FixedCStr<MAX_THREAD_NAME_LEN>;
+
+/// Derives a thread name from the last component of an executable path.
+///
+/// The name is truncated to fit within [`ThreadName`].
+pub fn derive_thread_name(exec_path: &str) -> ThreadName {
+    let Some(path) = exec_path.split('/').next_back() else {
+        return ThreadName::new_zeroed();
+    };
+
+    ThreadName::from_str_truncated(path)
 }
 
 /// The TID of the first POSIX thread (i.e., the main thread of the init process).

@@ -33,7 +33,7 @@ impl ProcFileOps for CommFileOps {
         };
 
         let posix_thread = thread.as_posix_thread().unwrap();
-        let mut comm = posix_thread.thread_name().lock().name().to_bytes().to_vec();
+        let mut comm = posix_thread.thread_name().lock().as_bytes().to_vec();
         comm.push(b'\n');
 
         let mut vm_reader = VmReader::from(&comm[offset.min(comm.len())..]);
