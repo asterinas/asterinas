@@ -18,7 +18,7 @@ use crate::{
     prelude::*,
     process::{
         Credentials, NsProxy, Process, UserNamespace,
-        posix_thread::{name::ThreadName, thread_local::SuppUserContext},
+        posix_thread::{ThreadName, thread_local::SuppUserContext},
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
     sched::{Nice, SchedPolicy},
