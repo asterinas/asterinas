@@ -65,6 +65,11 @@ ENABLE_REGRESSION_TEST ?= false
 # NETDEV possible values are user,tap
 NETDEV ?= user
 VHOST ?= off
+VIRTIOFS ?= off
+VIRTIOFS_TAG ?= aster-virtiofs
+VIRTIOFS_SOCKET ?= /tmp/vhostqemu/vfs.sock
+VIRTIOFS_SHARED_DIR ?= $(abspath test/initramfs/build/virtiofs)
+VIRTIOFSD ?= /usr/libexec/virtiofsd
 # The name server listed by /etc/resolv.conf inside the Asterinas VM
 DNS_SERVER ?= none
 # End of network settings
@@ -270,7 +275,11 @@ kernel: initramfs $(CARGO_OSDK)
 
 # Build the kernel with an initramfs and then run it
 .PHONY: run_kernel
-run_kernel: initramfs $(CARGO_OSDK)
+RUN_KERNEL_DEPS := initramfs $(CARGO_OSDK)
+ifeq ($(VIRTIOFS),on)
+RUN_KERNEL_DEPS += prepare_virtiofsd
+endif
+run_kernel: $(RUN_KERNEL_DEPS)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), conformance)
@@ -286,6 +295,14 @@ else ifeq ($(AUTO_TEST), vsock)
 	@tail --lines 100 qemu.log | grep -q "^Vsock test passed." \
 		|| (echo "Vsock test failed" && exit 1)
 endif
+
+.PHONY: prepare_virtiofsd
+prepare_virtiofsd:
+	@VIRTIOFSD="$(VIRTIOFSD)" \
+		VIRTIOFS_SOCKET="$(VIRTIOFS_SOCKET)" \
+		VIRTIOFS_SHARED_DIR="$(VIRTIOFS_SHARED_DIR)" \
+		VIRTIOFS_LOG="virtiofsd.log" \
+		./tools/start_virtiofsd.sh
 
 # Build the Asterinas NixOS ISO installer image
 iso: BOOT_PROTOCOL = linux-efi-handover64
