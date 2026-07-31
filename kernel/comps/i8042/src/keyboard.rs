@@ -6,7 +6,7 @@ use alloc::{
     string::{String, ToString},
     sync::Arc,
 };
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use aster_input::{
     event_type_codes::{KeyCode, KeyStatus, SynEvent},
@@ -35,9 +35,36 @@ static REGISTERED_DEVICE: Once<RegisteredInputDevice> = Once::new();
 /// ISA interrupt number for i8042 keyboard.
 const ISA_INTR_NUM: u8 = 1;
 
-pub(super) fn init(controller: &mut I8042Controller) -> Result<(), I8042ControllerError> {
+/// The current translation mode for keyboard scancodes.
+static TRANSLATION_MODE: AtomicU8 = AtomicU8::new(TranslationMode::Hardware as u8);
+
+/// How Scan Code Set 2 scancodes are translated to Set 1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(super) enum TranslationMode {
+    /// The i8042 controller translates Set 2 to Set 1 in hardware.
+    Hardware = 0,
+    /// No hardware translation; the driver translates Set 2 to Set 1 in software.
+    Software = 1,
+}
+
+impl TranslationMode {
+    fn from_u8(val: u8) -> Self {
+        match val {
+            0 => Self::Hardware,
+            _ => Self::Software,
+        }
+    }
+}
+
+pub(super) fn init(
+    controller: &mut I8042Controller,
+    translation_mode: TranslationMode,
+) -> Result<(), I8042ControllerError> {
     // Reference: <https://elixir.bootlin.com/linux/v6.17.9/source/drivers/input/serio/libps2.c#L184>
     const DEVICE_ID_REGULAR_KEYBOARD: u8 = 0xAB;
+
+    TRANSLATION_MODE.store(translation_mode as u8, Ordering::Relaxed);
 
     let mut init_ctx = InitCtx(controller);
 
@@ -202,33 +229,11 @@ fn handle_keyboard_input(_trap_frame: &TrapFrame) {
     }
 }
 
-/// A scan code in the Scan Code Set 1.
-///
-/// Reference: <https://wiki.osdev.org/PS/2_Keyboard#Scan_Code_Set_1>.
 #[derive(Clone, Copy, Debug)]
 struct ScanCode(u8);
 
 impl ScanCode {
-    const CODE_ERROR: u8 = 0xFF;
-    const CODE_EXT_PREFIX: u8 = 0xE0;
     const RELEASE_MASK: u8 = 0x80;
-
-    fn has_error(&self) -> bool {
-        // Key detection error or internal buffer overrun.
-        self.0 == Self::CODE_ERROR
-    }
-
-    fn key_status(&self) -> KeyStatus {
-        if self.0 & Self::RELEASE_MASK == 0 {
-            KeyStatus::Pressed
-        } else {
-            KeyStatus::Released
-        }
-    }
-
-    fn is_extension(&self) -> bool {
-        self.0 == Self::CODE_EXT_PREFIX
-    }
 
     fn key(&self) -> u8 {
         self.0 & !Self::RELEASE_MASK
@@ -244,16 +249,25 @@ struct ScancodeInfo {
 }
 
 impl ScancodeInfo {
-    /// Reads the keyboard [`ScanCode`] from the i8042 controller.
+    /// Reads the keyboard scancode from the i8042 controller.
     fn read() -> Option<Self> {
-        static EXTENDED_KEY: AtomicBool = AtomicBool::new(false);
-
         let Some(data) = I8042_CONTROLLER.get()?.lock().receive_data() else {
             ostd::warn!("PS/2 keyboard has no input data");
             return None;
         };
 
-        let code = ScanCode(data);
+        let mode = TranslationMode::from_u8(TRANSLATION_MODE.load(Ordering::Relaxed));
+        if mode == TranslationMode::Hardware {
+            return Self::read_set1(data);
+        }
+        Self::read_set2(data)
+    }
+
+    /// Interprets a byte as a Scan Code Set 1 scancode (hardware translation enabled).
+    fn read_set1(data: u8) -> Option<Self> {
+        static EXTENDED_KEY: AtomicBool = AtomicBool::new(false);
+
+        let code = ScanCodeSet1(data);
         if code.has_error() {
             ostd::warn!("PS/2 keyboard key detection error or internal buffer overrun");
             return None;
@@ -266,21 +280,63 @@ impl ScancodeInfo {
         }
 
         let key_status = code.key_status();
-        let extended = EXTENDED_KEY.load(Ordering::Relaxed);
-
-        // Clear extended flag if this is not an extended key.
-        if extended {
-            EXTENDED_KEY.store(false, Ordering::Relaxed);
-        }
+        let extended = EXTENDED_KEY.swap(false, Ordering::Relaxed);
 
         Some(Self {
-            scancode: code,
+            scancode: ScanCode(code.0),
             key_status,
             extended,
         })
     }
 
-    /// Maps the keyboard [`ScanCode`] to a [`KeyCode`] in the input subsystem.
+    /// Interprets a byte as a Scan Code Set 2 scancode (no hardware translation).
+    fn read_set2(data: u8) -> Option<Self> {
+        static EXTENDED_KEY: AtomicBool = AtomicBool::new(false);
+        static RELEASE_NEXT: AtomicBool = AtomicBool::new(false);
+
+        let code = ScanCodeSet2(data);
+
+        if code.has_error() {
+            ostd::warn!("PS/2 keyboard key detection error or internal buffer overrun");
+            return None;
+        }
+
+        if code.is_extension() {
+            EXTENDED_KEY.store(true, Ordering::Relaxed);
+            return None;
+        }
+
+        if code.is_release_prefix() {
+            RELEASE_NEXT.store(true, Ordering::Relaxed);
+            return None;
+        }
+
+        let releasing = RELEASE_NEXT.swap(false, Ordering::Relaxed);
+        let extended = EXTENDED_KEY.swap(false, Ordering::Relaxed);
+
+        let set1_code = SET2_TO_SET1[code.raw() as usize];
+        if set1_code == 0xFF {
+            return None;
+        }
+
+        let key_status = if releasing {
+            KeyStatus::Released
+        } else {
+            KeyStatus::Pressed
+        };
+
+        Some(Self {
+            scancode: ScanCode(if releasing {
+                set1_code | 0x80
+            } else {
+                set1_code
+            }),
+            key_status,
+            extended,
+        })
+    }
+
+    /// Maps the keyboard scancode to a [`KeyCode`] in the input subsystem.
     fn to_key_code(&self) -> Option<KeyCode> {
         // Remove the release bit.
         let code = self.scancode.key();
@@ -392,6 +448,62 @@ impl ScancodeInfo {
     }
 }
 
+/// A raw scan code byte in Scan Code Set 1.
+///
+/// Reference: <https://wiki.osdev.org/PS/2_Keyboard#Scan_Code_Set_1>.
+#[derive(Clone, Copy, Debug)]
+struct ScanCodeSet1(u8);
+
+impl ScanCodeSet1 {
+    const CODE_ERROR: u8 = 0xFF;
+    const CODE_EXT_PREFIX: u8 = 0xE0;
+    const RELEASE_MASK: u8 = 0x80;
+
+    fn has_error(&self) -> bool {
+        self.0 == Self::CODE_ERROR
+    }
+
+    fn key_status(&self) -> KeyStatus {
+        if self.0 & Self::RELEASE_MASK == 0 {
+            KeyStatus::Pressed
+        } else {
+            KeyStatus::Released
+        }
+    }
+
+    fn is_extension(&self) -> bool {
+        self.0 == Self::CODE_EXT_PREFIX
+    }
+}
+
+/// A raw scan code byte in Scan Code Set 2.
+///
+/// Reference: <https://wiki.osdev.org/PS/2_Keyboard#Scan_Code_Set_2>.
+#[derive(Clone, Copy, Debug)]
+struct ScanCodeSet2(u8);
+
+impl ScanCodeSet2 {
+    const CODE_ERROR: u8 = 0xFF;
+    const CODE_EXT_PREFIX: u8 = 0xE0;
+    const CODE_RELEASE_PREFIX: u8 = 0xF0;
+
+    fn has_error(&self) -> bool {
+        self.0 == Self::CODE_ERROR
+    }
+
+    fn is_extension(&self) -> bool {
+        self.0 == Self::CODE_EXT_PREFIX
+    }
+
+    fn is_release_prefix(&self) -> bool {
+        self.0 == Self::CODE_RELEASE_PREFIX
+    }
+
+    fn raw(&self) -> u8 {
+        self.0
+    }
+}
+
 /// Whether to send the keyboard reset command during initialization.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v7.0/source/drivers/input/keyboard/atkbd.c#L40>
@@ -400,3 +512,41 @@ static ATKBD_RESET: AtomicBool = AtomicBool::new(cfg_select! {
     _ => true,
 });
 aster_cmdline::define_flag_param!("atkbd.reset", ATKBD_RESET);
+
+/// Scan Code Set 2 to Set 1 translation table.
+///
+/// Reference: <https://www.win.tue.nl/~aeb/linux/kbd/scancodes-10.html#ss10.3>
+const SET2_TO_SET1: [u8; 256] = [
+    // 0x00-0x0F
+    0xff, 0x43, 0x41, 0x3f, 0x3d, 0x3b, 0x3c, 0x58, 0x64, 0x44, 0x42, 0x40, 0x3e, 0x0f, 0x29, 0x59,
+    // 0x10-0x1F
+    0x65, 0x38, 0x2a, 0x70, 0x1d, 0x10, 0x02, 0x5a, 0x66, 0x71, 0x2c, 0x1f, 0x1e, 0x11, 0x03, 0x5b,
+    // 0x20-0x2F
+    0x67, 0x2e, 0x2d, 0x20, 0x12, 0x05, 0x04, 0x5c, 0x68, 0x39, 0x2f, 0x21, 0x14, 0x13, 0x06, 0x5d,
+    // 0x30-0x3F
+    0x69, 0x31, 0x30, 0x23, 0x22, 0x15, 0x07, 0x5e, 0x6a, 0x72, 0x32, 0x24, 0x16, 0x08, 0x09, 0x5f,
+    // 0x40-0x4F
+    0x6b, 0x33, 0x25, 0x17, 0x18, 0x0b, 0x0a, 0x60, 0x6c, 0x34, 0x35, 0x26, 0x27, 0x19, 0x0c, 0x61,
+    // 0x50-0x5F
+    0x6d, 0x73, 0x28, 0x74, 0x1a, 0x0d, 0x62, 0x6e, 0x3a, 0x36, 0x1c, 0x1b, 0x75, 0x2b, 0x63, 0x76,
+    // 0x60-0x6F
+    0x55, 0x56, 0x77, 0x78, 0x79, 0x7a, 0x0e, 0x7b, 0x7c, 0x4f, 0x7d, 0x4b, 0x47, 0x7e, 0x7f, 0x6f,
+    // 0x70-0x7F
+    0x52, 0x53, 0x50, 0x4c, 0x4d, 0x48, 0x01, 0x45, 0x57, 0x4e, 0x51, 0x4a, 0x37, 0x49, 0x46, 0x54,
+    // 0x80-0x8F
+    0x80, 0x81, 0x82, 0x41, 0x54, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
+    // 0x90-0x9F
+    0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f,
+    // 0xA0-0xAF
+    0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf,
+    // 0xB0-0xBF
+    0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf,
+    // 0xC0-0xCF
+    0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce, 0xcf,
+    // 0xD0-0xDF
+    0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xdb, 0xdc, 0xdd, 0xde, 0xdf,
+    // 0xE0-0xEF
+    0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xed, 0xee, 0xef,
+    // 0xF0-0xFF
+    0xff, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
+];
