@@ -15,6 +15,7 @@ pub mod serial;
 pub(crate) mod task;
 mod timer;
 pub mod trap;
+pub(crate) mod vm;
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) mod tdx_guest;
@@ -175,6 +176,7 @@ pub(crate) fn enable_cpu_features() {
     };
 
     cpu::extension::init();
+    vm::init();
 
     let mut cr0 = x86_64::registers::control::Cr0::read();
     cr0 |= Cr0Flags::WRITE_PROTECT;

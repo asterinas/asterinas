@@ -1,0 +1,27 @@
+name: Test Intel VMX
+
+on:
+  workflow_dispatch:
+  # Schedule to run on every day at 21:00 UTC (06:00 Beijing Time)
+  schedule:
+    - cron: '0 21 * * *'
+
+jobs:
+  ktest-vmx:
+      runs-on: self-hosted
+      container:
+        image: asterinas/kernel-dev:0.18.1-20260805
+        options: -v /dev:/dev --privileged
+
+      steps:
+        - uses: actions/checkout@v4
+
+        - name: Check host VMX prerequisites
+          shell: bash
+          run: |
+            test -c /dev/kvm
+            grep -qw vmx /proc/cpuinfo
+            grep -Eq '^(Y|1)$' /sys/module/kvm_intel/parameters/nested
+
+        - name: Run kernel tests
+          run: make ktest ENABLE_KVM=1 NETDEV=tap
