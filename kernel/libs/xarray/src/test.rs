@@ -392,6 +392,12 @@ fn load_after_clear() {
 static TEST_LEAKAGE: AtomicBool = AtomicBool::new(false);
 static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
+fn finish_grace_period() {
+    let task = || {};
+    let _ = ostd::task::TaskOptions::new(task).data(()).spawn();
+    Task::yield_now();
+}
+
 impl<P: NonNullPtr + Send + Sync> Drop for node::XNode<P> {
     fn drop(&mut self) {
         if TEST_LEAKAGE.load(Ordering::Relaxed) {
@@ -402,14 +408,9 @@ impl<P: NonNullPtr + Send + Sync> Drop for node::XNode<P> {
 
 #[ktest]
 fn no_leakage() {
-    fn finish_grace_period() {
-        let task = || {};
-        let _ = ostd::task::TaskOptions::new(task).data(()).spawn();
-        Task::yield_now();
-    }
-
     // Drop the nodes created by the previous tests.
     finish_grace_period();
+    DROP_COUNT.store(0, Ordering::Relaxed);
     TEST_LEAKAGE.store(true, Ordering::Relaxed);
 
     let xarray_arc: XArray<Arc<u32>> = XArray::new();
@@ -426,4 +427,36 @@ fn no_leakage() {
     // layer 1: 64 + 1
     let expected = 68;
     assert_eq!(count, expected);
+}
+
+#[ktest]
+fn remove_shrinks_empty_nodes() {
+    // Drop the nodes created by the previous tests.
+    finish_grace_period();
+    DROP_COUNT.store(0, Ordering::Relaxed);
+    TEST_LEAKAGE.store(true, Ordering::Relaxed);
+
+    let xarray_arc: XArray<Arc<u32>> = XArray::new();
+    // This index requires a tree of height 3, with exactly one node per
+    // layer (a single chain from the root to the leaf).
+    let index = (SLOT_SIZE * SLOT_SIZE) as u64;
+    xarray_arc.lock().store(index, Arc::new(0));
+
+    assert!(xarray_arc.lock().remove(index).is_some());
+
+    // Drop the nodes detached by the `remove` above.
+    finish_grace_period();
+    TEST_LEAKAGE.store(false, Ordering::Relaxed);
+
+    // All 3 nodes on the chain (root, interior, leaf) should have been
+    // detached and dropped, since removing the only item leaves each of
+    // them empty in turn.
+    let count = DROP_COUNT.load(Ordering::Relaxed);
+    assert_eq!(count, 3);
+
+    // The `XArray` should now behave like a fresh, empty one.
+    assert!(xarray_arc.lock().load(index).is_none());
+    xarray_arc.lock().store(0, Arc::new(1));
+    let guard = disable_preempt();
+    assert_eq!(*xarray_arc.load(&guard, 0).unwrap().as_ref(), 1);
 }
