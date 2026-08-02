@@ -190,6 +190,10 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
         self.height == 1
     }
 
+    pub(super) fn is_empty(&self) -> bool {
+        self.is_mark_clear(PRESENT_MARK)
+    }
+
     pub(super) fn next_marked(&self, offset: u8, mark: usize) -> Option<u8> {
         self.marks[mark].next_marked(offset)
     }
