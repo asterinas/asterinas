@@ -466,18 +466,44 @@ impl<'a, P: NonNullPtr + Send + Sync, M> CursorMut<'a, P, M> {
     /// Removes the item at the target index.
     ///
     /// Returns the removed item if it previously exists.
-    //
-    // TODO: Remove the interior node once it becomes empty.
+    ///
+    /// If this operation leaves the current leaf node empty, the leaf and its
+    /// empty ancestors are removed from the `XArray`. The cursor is then reset
+    /// to the inactive state.
     pub fn remove(&mut self) -> Option<P::Ref<'a>> {
         self.traverse_to_target();
-        self.state.as_node().and_then(|(node, off)| {
-            let res = node
-                .deref_target()
-                .entry_with(self.guard, off)
-                .and_then(|entry| entry.right());
-            node.set_entry(self.lock_guard(), off, None);
-            res
-        })
+        let (node, off) = self.state.as_node()?;
+
+        let res = node
+            .deref_target()
+            .entry_with(self.guard, off)
+            .and_then(|entry| entry.right());
+        node.set_entry(self.lock_guard(), off, None);
+
+        if !node.is_empty() {
+            return res;
+        }
+
+        let (mut current, _) = core::mem::take(&mut self.state).into_node().unwrap();
+
+        // Remove the empty leaf node and propagate upwards, removing empty
+        // ancestors until a non-empty node or the root is reached. If the
+        // whole tree becomes empty, the `XArray`'s head is cleared too.
+        loop {
+            let Some(parent) = current.deref_target().parent(self.guard) else {
+                self.xa.head.update(None);
+                break;
+            };
+
+            parent.set_entry(self.lock_guard(), current.offset_in_parent(), None);
+
+            if !parent.is_empty() {
+                break;
+            }
+            current = parent;
+        }
+
+        res
     }
 }
 
