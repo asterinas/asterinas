@@ -238,9 +238,9 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SOCKETPAIR = 53        => sys_socketpair(args[..4]);
     SYS_SETSOCKOPT = 54        => sys_setsockopt(args[..5]);
     SYS_GETSOCKOPT = 55        => sys_getsockopt(args[..5]);
-    SYS_CLONE = 56             => sys_clone(args[..5], &user_ctx);
-    SYS_FORK = 57              => sys_fork(args[..0], &user_ctx);
-    SYS_VFORK = 58             => sys_vfork(args[..0], &user_ctx);
+    SYS_CLONE = 56             => sys_clone(args[..5], &mut user_ctx);
+    SYS_FORK = 57              => sys_fork(args[..0], &mut user_ctx);
+    SYS_VFORK = 58             => sys_vfork(args[..0], &mut user_ctx);
     SYS_EXECVE = 59            => sys_execve(args[..3], &mut user_ctx);
     SYS_EXIT = 60              => sys_exit(args[..1], &mut user_ctx);
     SYS_WAIT4 = 61             => sys_wait4(args[..4]);
@@ -424,7 +424,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FSCONFIG = 431         => sys_fsconfig(args[..5]);
     SYS_FSMOUNT = 432          => sys_fsmount(args[..3]);
     SYS_PIDFD_OPEN = 434       => sys_pidfd_open(args[..2]);
-    SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
+    SYS_CLONE3 = 435           => sys_clone3(args[..2], &mut user_ctx);
     SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);
     SYS_PIDFD_GETFD = 438      => sys_pidfd_getfd(args[..3]);
     SYS_FACCESSAT2 = 439       => sys_faccessat2(args[..4]);

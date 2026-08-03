@@ -110,7 +110,6 @@ Supported requests:
 Limitations:
 * Only the main thread of a process can act as the tracer.
 * `PTRACE_PEEKUSER` and `PTRACE_POKEUSER` only support offsets for general-purpose registers.
-* If a tracee has clone-family options (`PTRACE_O_TRACEFORK`, `PTRACE_O_TRACEVFORK`, `PTRACE_O_TRACEVFORKDONE`, or `PTRACE_O_TRACECLONE`) and then performs a clone-family operation that would trigger a ptrace event, the clone-family operation returns `EOPNOTSUPP`.
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/ptrace.2.html).

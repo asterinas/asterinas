@@ -20,7 +20,7 @@ pub fn sys_clone(
     child_tidptr: Vaddr,
     tls: u64,
     ctx: &Context,
-    parent_context: &UserContext,
+    parent_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     let args = CloneArgs::for_clone(clone_flags, parent_tidptr, child_tidptr, tls, new_sp)?;
     debug!("clone args = {:x?}", args);
@@ -33,7 +33,7 @@ pub fn sys_clone3(
     clong_args_addr: Vaddr,
     size: usize,
     ctx: &Context,
-    parent_context: &UserContext,
+    parent_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     debug!(
         "clone args addr = 0x{:x}, size = 0x{:x}",
