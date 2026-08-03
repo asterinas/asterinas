@@ -1462,12 +1462,12 @@ fn process_tx(
             if chain.header_len == VIRTIO_VSOCK_HDR_SIZE {
                 let hdr = VirtioVsockHdr::from_bytes(&chain.header)?;
                 let payload_len = hdr.len as usize;
-                if chain.payload.len() >= payload_len {
-                    if validate_tx_header_for_backend(backend, &hdr) {
-                        let mut payload = chain.payload;
-                        payload.truncate(payload_len);
-                        deliver_tx_packet(backend, hdr, payload)?;
-                    }
+                if chain.payload.len() >= payload_len
+                    && validate_tx_header_for_backend(backend, &hdr)
+                {
+                    let mut payload = chain.payload;
+                    payload.truncate(payload_len);
+                    deliver_tx_packet(backend, hdr, payload)?;
                 }
             }
 
