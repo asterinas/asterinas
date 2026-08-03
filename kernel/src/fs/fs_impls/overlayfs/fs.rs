@@ -1184,7 +1184,7 @@ impl FsType for OverlayFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         let mut lower = Vec::new();
         let mut upper = "";
         let mut work = "";

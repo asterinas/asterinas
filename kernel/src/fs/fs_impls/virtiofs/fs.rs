@@ -50,7 +50,7 @@ impl FsType for VirtioFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         let tag = fs_creation_ctx
             .source()
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "virtiofs source(tag) is required"))?
@@ -64,7 +64,7 @@ impl FsType for VirtioFsType {
 
     fn obtain_key_and_cache(
         &self,
-        fs_creation_ctx: &FsCreationCtx,
+        fs_creation_ctx: &mut FsCreationCtx,
     ) -> Option<(String, &FsCache<String>)> {
         let key = fs_creation_ctx.source().map(|tag| tag.to_string())?;
 

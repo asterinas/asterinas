@@ -34,14 +34,14 @@ pub trait FsType: Send + Sync + 'static {
     fn properties(&self) -> FsProperties;
 
     /// Creates an instance of this FS type.
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>>;
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>>;
 
     /// Returns the computed dedup key and the [`FsCache`] for this mount request.
     ///
     /// Return `None` to skip the cache mechanism (every mount is fresh).
     fn obtain_key_and_cache(
         &self,
-        _fs_creation_ctx: &FsCreationCtx,
+        _fs_creation_ctx: &mut FsCreationCtx,
     ) -> Option<(Self::Key, &FsCache<Self::Key>)> {
         None
     }
@@ -68,7 +68,7 @@ pub trait DynFsType: Send + Sync + 'static {
     fn properties(&self) -> FsProperties;
 
     /// Gets or creates a file system instance along with its root dentry.
-    fn get_or_create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<FsAndRoot>;
+    fn get_or_create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<FsAndRoot>;
 
     /// Returns a `SysTree` node that represents the FS type.
     fn sysnode(&self) -> Option<Arc<dyn SysNode>>;
@@ -87,7 +87,7 @@ impl<T: FsType> DynFsType for T {
         <T as FsType>::sysnode(self)
     }
 
-    fn get_or_create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<FsAndRoot> {
+    fn get_or_create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<FsAndRoot> {
         if let Some((key, cache)) = self.obtain_key_and_cache(fs_creation_ctx) {
             cache.get_or_create(key, fs_creation_ctx.flags(), || {
                 self.create(fs_creation_ctx)
@@ -107,7 +107,7 @@ pub struct FsCreationCtx<'a> {
     flags: FsFlags,
     args: Option<&'a str>,
     task_ctx: &'a Context<'a>,
-    block_device: Once<Arc<dyn BlockDevice>>,
+    block_device: Option<Arc<dyn BlockDevice>>,
 }
 
 impl<'a> FsCreationCtx<'a> {
@@ -123,7 +123,7 @@ impl<'a> FsCreationCtx<'a> {
             flags,
             args,
             task_ctx,
-            block_device: Once::new(),
+            block_device: None,
         }
     }
 
@@ -143,11 +143,15 @@ impl<'a> FsCreationCtx<'a> {
     }
 
     /// Resolves the mount source into a block device.
-    pub(in crate::fs) fn resolve_block_device(&self) -> Result<&Arc<dyn BlockDevice>> {
-        if let Some(block_device) = self.block_device.get() {
-            return Ok(block_device);
+    pub(in crate::fs) fn resolve_block_device(&mut self) -> Result<&Arc<dyn BlockDevice>> {
+        if self.block_device.is_none() {
+            self.do_resolve_block_device()?;
         }
 
+        Ok(self.block_device.as_ref().unwrap())
+    }
+
+    fn do_resolve_block_device(&mut self) -> Result<()> {
         let source = self
             .source()
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "the source is not specified"))?;
@@ -164,11 +168,13 @@ impl<'a> FsCreationCtx<'a> {
             return_errno_with_message!(Errno::ENODEV, "the path is not a device file");
         }
         let id = path.metadata()?.self_dev_id;
+
         let block_device = id
             .and_then(aster_block::lookup)
             .ok_or_else(|| Error::with_message(Errno::ENODEV, "the device is not found"))?;
+        self.block_device = Some(block_device);
 
-        Ok(self.block_device.call_once(|| block_device))
+        Ok(())
     }
 }
 

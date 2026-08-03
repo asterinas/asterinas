@@ -246,8 +246,8 @@ fn open_fs(
     };
     let data = data.as_deref().map(CStr::to_string_lossy);
 
-    let fs_creation_ctx = FsCreationCtx::new(source, flags.into(), data.as_deref(), ctx);
-    fs_type.get_or_create(&fs_creation_ctx)
+    let mut fs_creation_ctx = FsCreationCtx::new(source, flags.into(), data.as_deref(), ctx);
+    fs_type.get_or_create(&mut fs_creation_ctx)
 }
 
 bitflags! {
