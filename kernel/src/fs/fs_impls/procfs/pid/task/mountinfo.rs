@@ -30,9 +30,12 @@ pub(super) fn make_mount_point_path(
         "/".to_string()
     } else if let Some(parent) = parent {
         if let Some(mount_point_dentry) = mount.mountpoint() {
+            // TODO: Support paths longer than the path max length.
+            // Reference: <https://elixir.bootlin.com/linux/v6.15/source/fs/seq_file.c#L239>
             path_resolver
                 .make_abs_path(&Path::new(parent.clone(), mount_point_dentry))
-                .into_string()
+                .map(|r| r.into_path_buf().to_string())
+                .unwrap_or_default()
         } else {
             "".to_string()
         }

@@ -43,7 +43,10 @@ pub fn sys_readlinkat(
 
         match path.inode().read_link()? {
             SymbolicLink::Plain(s) => s,
-            SymbolicLink::Path(path) => path_resolver.make_abs_path(&path).into_string(),
+            SymbolicLink::Path(path) => path_resolver
+                .make_abs_path(&path)?
+                .into_path_buf()
+                .to_string(),
         }
     };
 

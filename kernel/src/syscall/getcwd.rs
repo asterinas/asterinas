@@ -9,7 +9,7 @@ pub fn sys_getcwd(buf: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn
     let abs_path = {
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();
-        path_resolver.make_abs_path(path_resolver.cwd())
+        path_resolver.make_abs_path(path_resolver.cwd())?
     };
 
     debug!("getcwd: {:?}", abs_path);
@@ -20,17 +20,21 @@ pub fn sys_getcwd(buf: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn
     // to conform to POSIX. Here follows Linux's behavior to keep compatibility.
     //
     // Reference: <https://man7.org/linux/man-pages/man3/getcwd.3.html>
-    let abs_path = match abs_path {
-        AbsPathResult::Reachable(s) => s,
-        AbsPathResult::Unreachable(s) => alloc::format!("(unreachable){}", s),
+    let path_buf = match abs_path {
+        AbsPathResult::Reachable(buf) => buf,
+        AbsPathResult::Unreachable(mut buf) => {
+            buf.prepend_bytes(b"(unreachable)");
+            buf
+        }
     };
 
-    let cwd = CString::new(abs_path)?;
-    let bytes = cwd.as_bytes_with_nul();
-    if bytes.len() > len {
+    let path_bytes = path_buf.as_bytes();
+    let total_len = path_bytes.len() + 1;
+    if total_len > len {
         return_errno_with_message!(Errno::ERANGE, "the CWD buffer is too small");
     }
-    ctx.user_space().write_bytes(buf, bytes)?;
+    ctx.user_space().write_bytes(buf, path_bytes)?;
+    ctx.user_space().write_bytes(buf + path_bytes.len(), &[0])?;
 
-    Ok(SyscallReturn::Return(bytes.len() as _))
+    Ok(SyscallReturn::Return(total_len as _))
 }

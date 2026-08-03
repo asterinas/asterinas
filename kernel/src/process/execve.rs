@@ -52,7 +52,7 @@ pub fn do_execve(
 
     debug!(
         "file path: {:?}, argv = {:?}, envp = {:?}",
-        path_resolver.make_abs_path(&elf_file).into_string(),
+        path_resolver.make_abs_path(&elf_file).ok(),
         argv,
         envp
     );
