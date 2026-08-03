@@ -77,7 +77,35 @@ run_vhost_user_benchmark() {
 
 echo "*** Running /dev/vhost-vsock and vhost-user-vsock throughput benchmarks ***"
 
-for direction in h2g g2h; do
+directions="${1:-all}"
+if [ "${directions}" = "all" ]; then
+    directions="h2g g2h"
+fi
+case "${directions}" in
+    h2g|g2h|"h2g g2h") ;;
+    *)
+        echo "Error: direction must be all, h2g, or g2h." >&2
+        exit 1
+        ;;
+esac
+
+backends="${2:-all}"
+run_vhost=1
+run_vhost_user=1
+if [ "${backends}" = "vhost" ]; then
+    run_vhost_user=0
+elif [ "${backends}" = "vhost-user" ]; then
+    run_vhost=0
+fi
+case "${backends}" in
+    all|vhost|vhost-user) ;;
+    *)
+        echo "Error: backend must be all, vhost, or vhost-user." >&2
+        exit 1
+        ;;
+esac
+
+for direction in ${directions}; do
     for buffer_size in 64 4K 64K; do
         case "${buffer_size}" in
             64)
@@ -93,13 +121,17 @@ for direction in h2g g2h; do
                 warmup_bytes=64M
                 ;;
         esac
-        /benchmark/bin/vhost_vsock_bench \
-            --backend vhost \
-            --direction "${direction}" \
-            --buf-size "${buffer_size}" \
-            --bytes "${total_bytes}" \
-            --warmup-bytes "${warmup_bytes}"
-        run_vhost_user_benchmark "${direction}" "${buffer_size}" \
-            "${total_bytes}" "${warmup_bytes}"
+        if [ "${run_vhost}" -eq 1 ]; then
+            /benchmark/bin/vhost_vsock_bench \
+                --backend vhost \
+                --direction "${direction}" \
+                --buf-size "${buffer_size}" \
+                --bytes "${total_bytes}" \
+                --warmup-bytes "${warmup_bytes}"
+        fi
+        if [ "${run_vhost_user}" -eq 1 ]; then
+            run_vhost_user_benchmark "${direction}" "${buffer_size}" \
+                "${total_bytes}" "${warmup_bytes}"
+        fi
     done
 done

@@ -50,13 +50,17 @@ const VHOST_VSOCK_MAX_TX_CHAIN_BYTES: usize = 1024 * 1024;
 const VHOST_VSOCK_MAX_QUEUE_BYTES: usize = 256 * 1024;
 const VHOST_VSOCK_MAX_VRING_NUM: u32 = 32768;
 const VHOST_VSOCK_MAX_MEMORY_REGIONS: usize = 64;
+// Match Linux's UIO_MAXIOV cap for guest-controlled descriptor translations.
+const VHOST_VSOCK_MAX_RX_SEGMENTS: usize = 1024;
 const VIRTQ_AVAIL_RING_OFFSET: usize = size_of::<VirtqAvailHeader>();
+const VIRTQ_AVAIL_IDX_OFFSET: usize = size_of::<u16>();
 const VIRTQ_USED_RING_OFFSET: usize = size_of::<VirtqUsedHeader>();
 const VIRTQ_USED_IDX_OFFSET: usize = size_of::<u16>();
 const RX_VRING_INDEX: usize = 0;
 const TX_VRING_INDEX: usize = 1;
 
 type VhostVsockBackendRegistry = Arc<SpinLock<BTreeMap<u64, Arc<VhostVsockBackend>>>>;
+type VhostMemorySegments = Vec<VhostMemorySegment>;
 
 /// Active QEMU-owned vhost-vsock backends keyed by guest CID.
 ///
@@ -299,30 +303,53 @@ impl VhostVsockBackend {
     }
 
     fn drain_rx_queue(&self) -> RxDrainResult {
+        let inputs = &self.inputs;
+        let addr = inputs.vring_addr[RX_VRING_INDEX];
+        let num = inputs.vring_num[RX_VRING_INDEX] as usize;
+        if num == 0 {
+            return RxDrainResult::Stopped;
+        }
+
+        let Ok(published_avail) = read_avail_idx(inputs.owner_vmar.as_ref(), &addr) else {
+            return RxDrainResult::Stopped;
+        };
+        let mut last_avail = self.rx_last_avail.load(Ordering::Relaxed);
+        let mut last_used = self.rx_last_used.load(Ordering::Relaxed);
+        let mut available = published_avail.wrapping_sub(last_avail) as usize;
+        if available > num {
+            return RxDrainResult::Stopped;
+        }
+
         let mut injected_any = false;
         let result = loop {
             let Some(mut packet) = self.inputs.rx_queue.pop_front() else {
                 break RxDrainResult::Drained;
             };
+            if available == 0 {
+                self.inputs.rx_queue.push_front(packet);
+                break RxDrainResult::Blocked;
+            }
+
             let remaining_payload_len = packet.as_packet().payload.len();
-            match self.inject_now(packet.as_packet()) {
+            match inject_packet(inputs, &mut last_avail, &mut last_used, packet.as_packet()) {
                 Ok(consumed_payload) if consumed_payload < remaining_payload_len => {
                     injected_any = true;
+                    available -= 1;
                     packet.payload_offset += consumed_payload;
                     self.inputs.rx_queue.push_front(packet);
                 }
                 Ok(_) => {
                     injected_any = true;
-                }
-                Err(err) if err.error() == Errno::EAGAIN => {
-                    self.inputs.rx_queue.push_front(packet);
-                    break RxDrainResult::Blocked;
+                    available -= 1;
                 }
                 Err(_) => {
                     break RxDrainResult::Stopped;
                 }
             }
         };
+
+        self.rx_last_avail.store(last_avail, Ordering::Relaxed);
+        self.rx_last_used.store(last_used, Ordering::Relaxed);
 
         if injected_any {
             self.signal_rx_call();
@@ -335,17 +362,6 @@ impl VhostVsockBackend {
         if let Some(call) = self.inputs.vring_call[RX_VRING_INDEX].as_ref() {
             signal_eventfd(call.as_ref());
         }
-    }
-
-    fn inject_now(&self, packet: VhostVsockPacket<'_>) -> Result<usize> {
-        let mut rx_last_avail = self.rx_last_avail.load(Ordering::Relaxed);
-        let mut rx_last_used = self.rx_last_used.load(Ordering::Relaxed);
-        let result = inject_packet(&self.inputs, &mut rx_last_avail, &mut rx_last_used, packet);
-        if result.is_ok() {
-            self.rx_last_avail.store(rx_last_avail, Ordering::Relaxed);
-            self.rx_last_used.store(rx_last_used, Ordering::Relaxed);
-        }
-        result
     }
 
     fn process_tx(&self) -> Result<()> {
@@ -1215,6 +1231,21 @@ fn read_used_idx(inputs: &WorkerInputs, vring_index: usize) -> Result<u16> {
     Ok(used_idx)
 }
 
+fn read_avail_idx(vmar: &Vmar, addr: &VhostVringAddr) -> Result<u16> {
+    let mut avail_idx = 0u16;
+    let mut writer = VmWriter::from(avail_idx.as_mut_bytes()).to_fallible();
+    vmar.read_alien(
+        checked_user_addr(
+            addr.avail_user_addr,
+            VIRTQ_AVAIL_IDX_OFFSET,
+            "vhost-vsock available index address overflow",
+        )?,
+        &mut writer,
+    )
+    .map_err(|(e, _)| e)?;
+    Ok(avail_idx)
+}
+
 fn read_gpa_segments(vmar: &Vmar, segments: &[VhostMemorySegment], bytes: &mut [u8]) -> Result<()> {
     let mut offset = 0usize;
     for segment in segments {
@@ -1233,10 +1264,27 @@ fn gpa_to_uva_segments(
     regions: &[VhostMemoryRegion],
     gpa: u64,
     len: usize,
-) -> Option<Vec<VhostMemorySegment>> {
-    let end = gpa.checked_add(u64::try_from(len).ok()?)?;
+) -> Option<VhostMemorySegments> {
+    let mut segments = VhostMemorySegments::new();
+    append_gpa_to_uva_segments(regions, gpa, len, &mut segments, usize::MAX).ok()?;
+    Some(segments)
+}
+
+enum GpaTranslationError {
+    Unmapped,
+    TooManySegments,
+}
+
+fn append_gpa_to_uva_segments(
+    regions: &[VhostMemoryRegion],
+    gpa: u64,
+    len: usize,
+    segments: &mut VhostMemorySegments,
+    max_segments: usize,
+) -> core::result::Result<(), GpaTranslationError> {
+    let len = u64::try_from(len).map_err(|_| GpaTranslationError::Unmapped)?;
+    let end = gpa.checked_add(len).ok_or(GpaTranslationError::Unmapped)?;
     let mut current = gpa;
-    let mut segments = Vec::new();
 
     while current < end {
         let region = regions.iter().find(|region| {
@@ -1244,20 +1292,34 @@ fn gpa_to_uva_segments(
                 return false;
             };
             current >= region.guest_phys_addr && current < region_end
-        })?;
-        let region_end = region.guest_phys_addr.checked_add(region.memory_size)?;
+        });
+        let Some(region) = region else {
+            return Err(GpaTranslationError::Unmapped);
+        };
+        let region_end = region
+            .guest_phys_addr
+            .checked_add(region.memory_size)
+            .ok_or(GpaTranslationError::Unmapped)?;
         let segment_end = region_end.min(end);
-        let segment_len = usize::try_from(segment_end - current).ok()?;
+        let segment_len =
+            usize::try_from(segment_end - current).map_err(|_| GpaTranslationError::Unmapped)?;
         let offset = current - region.guest_phys_addr;
-        let userspace_addr = region.userspace_addr.checked_add(offset)?;
+        let userspace_addr = region
+            .userspace_addr
+            .checked_add(offset)
+            .ok_or(GpaTranslationError::Unmapped)?;
+        if segments.len() >= max_segments {
+            return Err(GpaTranslationError::TooManySegments);
+        }
         segments.push(VhostMemorySegment {
-            userspace_addr: usize::try_from(userspace_addr).ok()?,
+            userspace_addr: usize::try_from(userspace_addr)
+                .map_err(|_| GpaTranslationError::Unmapped)?,
             len: segment_len,
         });
         current = segment_end;
     }
 
-    Some(segments)
+    Ok(())
 }
 
 /// Injects a host-to-guest virtio-vsock packet into the RX queue.
@@ -1274,32 +1336,6 @@ fn inject_packet(
     }
     let guest_cid = inputs.guest_cid;
     let vmar = inputs.owner_vmar.as_ref();
-
-    let mut avail = VirtqAvailHeader::default();
-    let mut writer = VmWriter::from(avail.as_mut_bytes()).to_fallible();
-    vmar.read_alien(
-        checked_user_addr(
-            addr.avail_user_addr,
-            0,
-            "vhost-vsock RX avail address overflow",
-        )?,
-        &mut writer,
-    )
-    .map_err(|(e, _)| e)?;
-
-    let avail_delta = avail.idx.wrapping_sub(*last_avail) as usize;
-    if avail_delta == 0 {
-        return_errno_with_message!(
-            Errno::EAGAIN,
-            "vhost-vsock RX has no buffer published by guest yet"
-        );
-    }
-    if avail_delta > num {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "vhost-vsock RX avail ring delta exceeds queue size"
-        );
-    }
 
     let avail_slot = *last_avail as usize % num;
     let mut head_le: u16 = 0;
@@ -1320,14 +1356,14 @@ fn inject_packet(
         return_errno_with_message!(Errno::EINVAL, "vhost-vsock head index out of range");
     }
 
-    let rx_buffer_len = rx_chain_len(vmar, addr, &inputs.mem_regions, num, head)?;
-    if rx_buffer_len < VIRTIO_VSOCK_HDR_SIZE {
+    let rx_chain = read_rx_chain(vmar, addr, &inputs.mem_regions, num, head)?;
+    if rx_chain.len < VIRTIO_VSOCK_HDR_SIZE {
         return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX buffer too small");
     }
     let payload_len = packet
         .payload
         .len()
-        .min(rx_buffer_len - VIRTIO_VSOCK_HDR_SIZE);
+        .min(rx_chain.len - VIRTIO_VSOCK_HDR_SIZE);
     let packet_len = VIRTIO_VSOCK_HDR_SIZE
         .checked_add(payload_len)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "vhost-vsock packet too large"))?;
@@ -1346,10 +1382,7 @@ fn inject_packet(
     let bytes = hdr.to_bytes();
     write_rx_chain(
         vmar,
-        addr,
-        &inputs.mem_regions,
-        num,
-        head,
+        &rx_chain,
         bytes.as_slice(),
         &packet.payload[..payload_len],
     )?;
@@ -1511,13 +1544,18 @@ struct TxChain {
     payload: Vec<u8>,
 }
 
-fn rx_chain_len(
+struct RxChain {
+    segments: VhostMemorySegments,
+    len: usize,
+}
+
+fn read_rx_chain(
     vmar: &Vmar,
     addr: VhostVringAddr,
     mem_regions: &[VhostMemoryRegion],
     num: usize,
     head: usize,
-) -> Result<usize> {
+) -> Result<RxChain> {
     let first_desc = read_vring_desc(vmar, addr.desc_user_addr, num, head)?;
     if first_desc.flags & VIRTQ_DESC_F_INDIRECT != 0 {
         let table_len = first_desc.len as usize;
@@ -1536,23 +1574,26 @@ fn rx_chain_len(
         }
         let table = read_gpa_bytes(vmar, mem_regions, first_desc.addr, table_len)?;
         let first_indirect_desc = read_indirect_desc(table.as_slice(), table_num, 0)?;
-        return rx_desc_chain_len(mem_regions, first_indirect_desc, table_num, |index| {
+        return read_rx_desc_chain(mem_regions, first_indirect_desc, table_num, |index| {
             read_indirect_desc(table.as_slice(), table_num, index)
         });
     }
 
-    rx_desc_chain_len(mem_regions, first_desc, num, |index| {
+    read_rx_desc_chain(mem_regions, first_desc, num, |index| {
         read_vring_desc(vmar, addr.desc_user_addr, num, index)
     })
 }
 
-fn rx_desc_chain_len(
+fn read_rx_desc_chain(
     mem_regions: &[VhostMemoryRegion],
     start_desc: VirtqDesc,
     num: usize,
     mut read_desc: impl FnMut(usize) -> Result<VirtqDesc>,
-) -> Result<usize> {
-    let mut total_len = 0usize;
+) -> Result<RxChain> {
+    let mut chain = RxChain {
+        segments: VhostMemorySegments::new(),
+        len: 0,
+    };
     let mut desc = start_desc;
 
     for _ in 0..num {
@@ -1567,18 +1608,33 @@ fn rx_desc_chain_len(
         }
 
         let desc_len = desc.len as usize;
-        if gpa_to_uva_segments(mem_regions, desc.addr, desc_len).is_none() {
-            return_errno_with_message!(
-                Errno::EFAULT,
-                "vhost-vsock RX desc.addr not covered by mem table"
-            );
+        match append_gpa_to_uva_segments(
+            mem_regions,
+            desc.addr,
+            desc_len,
+            &mut chain.segments,
+            VHOST_VSOCK_MAX_RX_SEGMENTS,
+        ) {
+            Ok(()) => (),
+            Err(GpaTranslationError::Unmapped) => {
+                return_errno_with_message!(
+                    Errno::EFAULT,
+                    "vhost-vsock RX desc.addr not covered by mem table"
+                );
+            }
+            Err(GpaTranslationError::TooManySegments) => {
+                return_errno_with_message!(
+                    Errno::E2BIG,
+                    "vhost-vsock RX descriptor chain has too many memory segments"
+                );
+            }
         }
-        total_len = total_len.checked_add(desc_len).ok_or_else(|| {
+        chain.len = chain.len.checked_add(desc_len).ok_or_else(|| {
             Error::with_message(Errno::EINVAL, "vhost-vsock RX chain length overflow")
         })?;
 
         if desc.flags & VIRTQ_DESC_F_NEXT == 0 {
-            return Ok(total_len);
+            return Ok(chain);
         }
         let next = desc.next as usize;
         if next >= num {
@@ -1611,139 +1667,19 @@ fn read_tx_chain(
     read_direct_tx_chain(vmar, addr, mem_regions, num, first_desc)
 }
 
-fn write_rx_chain(
-    vmar: &Vmar,
-    addr: VhostVringAddr,
-    mem_regions: &[VhostMemoryRegion],
-    num: usize,
-    head: usize,
-    header: &[u8],
-    payload: &[u8],
-) -> Result<()> {
-    let first_desc = read_vring_desc(vmar, addr.desc_user_addr, num, head)?;
-    if first_desc.flags & VIRTQ_DESC_F_INDIRECT != 0 {
-        return write_indirect_rx_chain(vmar, mem_regions, num, first_desc, header, payload);
-    }
-
-    write_direct_rx_chain(vmar, addr, mem_regions, num, first_desc, header, payload)
-}
-
-fn write_direct_rx_chain(
-    vmar: &Vmar,
-    addr: VhostVringAddr,
-    mem_regions: &[VhostMemoryRegion],
-    num: usize,
-    first_desc: VirtqDesc,
-    header: &[u8],
-    payload: &[u8],
-) -> Result<()> {
-    write_rx_desc_chain(
-        vmar,
-        mem_regions,
-        first_desc,
-        num,
-        header,
-        payload,
-        |index| read_vring_desc(vmar, addr.desc_user_addr, num, index),
-    )
-}
-
-fn write_indirect_rx_chain(
-    vmar: &Vmar,
-    mem_regions: &[VhostMemoryRegion],
-    queue_num: usize,
-    first_desc: VirtqDesc,
-    header: &[u8],
-    payload: &[u8],
-) -> Result<()> {
-    let table_len = first_desc.len as usize;
-    if table_len == 0 || !table_len.is_multiple_of(size_of::<VirtqDesc>()) {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "vhost-vsock RX indirect descriptor table has invalid length"
-        );
-    }
-    let table_num = table_len / size_of::<VirtqDesc>();
-    if table_num > queue_num {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "vhost-vsock RX indirect descriptor table is too large"
-        );
-    }
-    let table = read_gpa_bytes(vmar, mem_regions, first_desc.addr, table_len)?;
-
-    let first_indirect_desc = read_indirect_desc(table.as_slice(), table_num, 0)?;
-    write_rx_desc_chain(
-        vmar,
-        mem_regions,
-        first_indirect_desc,
-        table_num,
-        header,
-        payload,
-        |index| read_indirect_desc(table.as_slice(), table_num, index),
-    )
-}
-
-fn write_rx_desc_chain(
-    vmar: &Vmar,
-    mem_regions: &[VhostMemoryRegion],
-    start_desc: VirtqDesc,
-    num: usize,
-    header: &[u8],
-    payload: &[u8],
-    mut read_desc: impl FnMut(usize) -> Result<VirtqDesc>,
-) -> Result<()> {
+fn write_rx_chain(vmar: &Vmar, chain: &RxChain, header: &[u8], payload: &[u8]) -> Result<()> {
     let mut remaining_header = header;
     let mut remaining_payload = payload;
-    let mut desc = start_desc;
-
-    for _ in 0..num {
-        if desc.flags & VIRTQ_DESC_F_INDIRECT != 0 {
-            return_errno_with_message!(
-                Errno::EINVAL,
-                "vhost-vsock RX nested indirect descriptor is unsupported"
-            );
-        }
-        if desc.flags & VIRTQ_DESC_F_WRITE == 0 {
-            return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX descriptor is not writable");
-        }
-
-        let desc_len = desc.len as usize;
-        let desc_segments =
-            gpa_to_uva_segments(mem_regions, desc.addr, desc_len).ok_or_else(|| {
-                Error::with_message(
-                    Errno::EFAULT,
-                    "vhost-vsock RX desc.addr not covered by mem table",
-                )
-            })?;
-        let written = write_rx_desc_bytes(
-            vmar,
-            desc_segments.as_slice(),
-            &mut remaining_header,
-            &mut remaining_payload,
-        )?;
-        if remaining_header.is_empty() && remaining_payload.is_empty() {
-            return Ok(());
-        }
-        if written == 0 {
-            return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX descriptor is empty");
-        }
-
-        if desc.flags & VIRTQ_DESC_F_NEXT == 0 {
-            return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX buffer too small");
-        }
-
-        let next = desc.next as usize;
-        if next >= num {
-            return_errno_with_message!(
-                Errno::EINVAL,
-                "vhost-vsock RX chain next index out of range"
-            );
-        }
-        desc = read_desc(next)?;
+    write_rx_desc_bytes(
+        vmar,
+        chain.segments.as_slice(),
+        &mut remaining_header,
+        &mut remaining_payload,
+    )?;
+    if !remaining_header.is_empty() || !remaining_payload.is_empty() {
+        return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX buffer too small");
     }
-
-    return_errno_with_message!(Errno::EINVAL, "vhost-vsock RX descriptor chain loop");
+    Ok(())
 }
 
 fn write_rx_desc_bytes(
