@@ -101,6 +101,11 @@ The tool returns the exact authored H3 sections in catalog order;
 the pass must read a rule chunk before using its short-name as a finding's grounding.
 It does not query every rule preemptively,
 and real in-scope defects without a matching guideline continue to use plain-language grounding.
+The pass keeps a short internal ledger of concrete candidates that need validation.
+A candidate remains pending across later investigations until the pass records an internal
+`REPORT` or `REJECT` decision from the fetched rule and code evidence.
+Before emitting JSON, the pass reconciles the ledger and includes every independent supported
+`REPORT` finding without exposing rejected candidates or their reasons.
 The query command resolves the same current or benchmark-bundled corpus used to build the catalog,
 so a historical worktree cannot silently supply stale rule text.
 The ordered concerns are the second axis of the design (personas are parallel; concerns are sequential within a pass):

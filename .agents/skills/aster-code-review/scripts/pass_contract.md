@@ -45,6 +45,18 @@ the query tool selects the authoritative current or benchmark-snapshotted corpus
 If the prompt instead contains fully inlined guideline subpages (the explicit full rollback mode),
 use those exact rule texts and do not query them again.
 
+Maintain a short internal candidate ledger throughout the pass.
+Record each concrete suspected violation when you decide it needs validation,
+especially every candidate that causes a guideline query.
+After reading the fetched rule and any needed code evidence,
+mark it internally as REPORT or REJECT with a concrete reason;
+later investigations must not silently replace or drop the candidate.
+Before emitting the final JSON, reconcile the ledger:
+every candidate must have a REPORT or REJECT decision,
+only REPORT entries appear in the output,
+and rejected candidates stay out of the JSON.
+Include every independent supported REPORT finding; do not cap the count.
+
 Each persona searches only for defects whose failure belongs to that persona.
 Do not run a general bug sweep from every persona.
 When another persona is the clear natural owner,
