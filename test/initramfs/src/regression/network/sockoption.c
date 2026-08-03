@@ -87,6 +87,33 @@ FN_TEST(null_optval)
 }
 END_TEST()
 
+FN_TEST(short_optlen)
+{
+	int expected = 1;
+	unsigned char value[sizeof(expected)];
+	socklen_t len;
+
+	TEST_SUCC(setsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, &expected,
+			     sizeof(expected)));
+
+	memset(value, 0xa5, sizeof(value));
+	len = 2;
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, value,
+			    &len),
+		 _ret == 0 && len == 2);
+	TEST_RES(memcmp(value, &expected, len), _ret == 0);
+	TEST_RES(value[2], _ret == 0xa5);
+	TEST_RES(value[3], _ret == 0xa5);
+
+	memset(value, 0xa5, sizeof(value));
+	len = 0;
+	TEST_RES(getsockopt(sk_connected, SOL_SOCKET, SO_KEEPALIVE, value,
+			    &len),
+		 _ret == 0 && len == 0);
+	TEST_RES(value[0], _ret == 0xa5);
+}
+END_TEST()
+
 int refresh_connection()
 {
 	close(sk_connected);
