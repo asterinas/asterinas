@@ -815,8 +815,7 @@ FN_TEST(used_index_resumes_from_guest)
 	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 6);
 	TEST_RES(fixture.tx.used.ring[5].id,
 		 fixture.tx.used.ring[5].id == TX_HEAD);
-	TEST_RES(fixture.tx.used.ring[5].len,
-		 fixture.tx.used.ring[5].len == 0);
+	TEST_RES(fixture.tx.used.ring[5].len, fixture.tx.used.ring[5].len == 0);
 
 	TEST_SUCC(teardown_vhost_device(&fixture));
 }
@@ -918,8 +917,7 @@ FN_TEST(tx_header_can_span_descriptors)
 	TEST_SUCC(kick_eventfd(fixture.tx_kick));
 	TEST_SUCC(wait_eventfd(fixture.tx_call));
 	TEST_RES(fixture.tx.used.idx, fixture.tx.used.idx == 1);
-	TEST_RES(fixture.tx.used.ring[0].len,
-		 fixture.tx.used.ring[0].len == 0);
+	TEST_RES(fixture.tx.used.ring[0].len, fixture.tx.used.ring[0].len == 0);
 
 	TEST_SUCC(teardown_vhost_device(&fixture));
 }
