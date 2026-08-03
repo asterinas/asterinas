@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_bigtcp::wire::EthernetAddress;
+use aster_bigtcp::{iface::InterfaceName, wire::EthernetAddress};
 
-use super::IFNAME_SIZE;
 use crate::{
     net::socket::netlink::message::{Attribute, CAttrHeader, ContinueRead},
     prelude::*,
@@ -91,7 +90,7 @@ pub enum LinkAttr {
     // once Asterinas supports other network device types.
     Address(EthernetAddress),
     Broadcast(EthernetAddress),
-    Name(CString),
+    Name(InterfaceName),
     Mtu(u32),
     TxqLen(u32),
     LinkMode(u8),
@@ -144,18 +143,20 @@ impl Attribute for LinkAttr {
         };
 
         let res = match (class, payload_len) {
-            (LinkAttrClass::IFNAME, 1..=IFNAME_SIZE) => {
-                let (name, namelen) =
-                    reader.read_cstring_until_end(IFNAME_SIZE.min(payload_len))?;
-                if namelen != payload_len {
-                    reader.skip_some(payload_len - namelen);
-                }
-                if name.as_bytes().len() == IFNAME_SIZE {
+            (LinkAttrClass::IFNAME, 1..=InterfaceName::MAX_BYTES_WITH_NUL) => {
+                let mut name_bytes = [0u8; InterfaceName::MAX_BYTES_WITH_NUL];
+
+                let mut writer = VmWriter::from(&mut name_bytes[..payload_len]);
+                reader.read(&mut writer)?;
+
+                if !name_bytes.contains(&0) {
                     return Ok(ContinueRead::skipped_with_error(
                         Errno::ERANGE,
                         "the link attribute is invalid",
                     ));
                 }
+
+                let name = InterfaceName::from_bytes_until_nul(&name_bytes);
                 Self::Name(name)
             }
             (LinkAttrClass::MTU, 4) => Self::Mtu(reader.read_val_opt::<u32>()?.unwrap()),

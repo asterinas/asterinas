@@ -2,7 +2,6 @@
 
 //! Handle link-related requests.
 
-use alloc::borrow::ToOwned;
 use core::num::NonZero;
 
 use aster_bigtcp::{iface::InterfaceType, wire::EthernetAddress};
@@ -75,7 +74,7 @@ impl<'a> FilterBy<'a> {
 
         let required_name = request_segment.attrs().iter().find_map(|attr| {
             if let LinkAttr::Name(name) = attr {
-                Some(name.as_c_str())
+                Some(name.as_cstr())
             } else {
                 None
             }
@@ -146,7 +145,7 @@ fn iface_to_new_link(request_header: &CMsgSegHdr, iface: &Arc<Iface>) -> LinkSeg
     // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/core/rtnetlink.c#L2050>.
     let mut attrs = Vec::with_capacity(5);
     attrs.extend([
-        LinkAttr::Name(iface.name().as_cstr().to_owned()),
+        LinkAttr::Name(*iface.name()),
         LinkAttr::TxqLen(DEFAULT_TX_QUEUE_LEN),
         LinkAttr::Mtu(iface.mtu() as u32),
     ]);
