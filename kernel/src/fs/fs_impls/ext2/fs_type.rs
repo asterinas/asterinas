@@ -34,7 +34,7 @@ impl FsType for Ext2Type {
         FsProperties::NEED_DISK
     }
 
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         let disk = fs_creation_ctx.resolve_block_device()?.clone();
         let flags = fs_creation_ctx.flags();
         let args = fs_creation_ctx.args();
@@ -43,7 +43,7 @@ impl FsType for Ext2Type {
 
     fn obtain_key_and_cache(
         &self,
-        fs_creation_ctx: &FsCreationCtx,
+        fs_creation_ctx: &mut FsCreationCtx,
     ) -> Option<(DeviceId, &FsCache<DeviceId>)> {
         let key = fs_creation_ctx
             .resolve_block_device()

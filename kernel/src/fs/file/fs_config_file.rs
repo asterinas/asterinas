@@ -164,9 +164,9 @@ impl FsConfigFile {
 
         let result = (|| {
             let args = (!config.extra_options.is_empty()).then_some(config.extra_options.as_str());
-            let fs_creation_ctx =
+            let mut fs_creation_ctx =
                 FsCreationCtx::new(config.source.as_deref(), config.flags, args, ctx);
-            let fs_and_root = self.fs_type.get_or_create(&fs_creation_ctx)?;
+            let fs_and_root = self.fs_type.get_or_create(&mut fs_creation_ctx)?;
             Ok(fs_and_root)
         })();
 

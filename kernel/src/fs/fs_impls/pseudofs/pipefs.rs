@@ -62,7 +62,7 @@ impl FsType for PipeFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         return_errno_with_message!(Errno::EINVAL, "pipefs cannot be mounted");
     }
 

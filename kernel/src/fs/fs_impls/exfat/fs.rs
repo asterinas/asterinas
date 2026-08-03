@@ -495,14 +495,14 @@ impl FsType for ExfatType {
         FsProperties::NEED_DISK
     }
 
-    fn create(&self, fs_creation_ctx: &FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         let disk = fs_creation_ctx.resolve_block_device()?.clone();
         Ok(ExfatFs::open(disk, ExfatMountOptions::default())?)
     }
 
     fn obtain_key_and_cache(
         &self,
-        fs_creation_ctx: &FsCreationCtx,
+        fs_creation_ctx: &mut FsCreationCtx,
     ) -> Option<(DeviceId, &FsCache<DeviceId>)> {
         let key = fs_creation_ctx
             .resolve_block_device()
