@@ -4,8 +4,6 @@
 
 #include <fcntl.h>
 #include <linux/stat.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -16,6 +14,7 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "../../common/block_device.h"
 
 #define RAMFS_MOUNT_POINT "/tmp/statx_btime_ramfs"
 #define RAMFS_TEST_FILE RAMFS_MOUNT_POINT "/statx_btime_test_file"
@@ -25,32 +24,8 @@
 #define EXFAT_TEST_FILE_NOT_REQ \
 	EXFAT_MOUNT_POINT "/statx_btime_test_file_not_req"
 
+static int blk_fd = -1;
 static int fd = -1;
-
-#ifndef __asterinas__
-#include <linux/loop.h>
-#include <sys/ioctl.h>
-
-#define EXFAT_IMAGE "./test/initramfs/build/exfat.img"
-
-static int loop_fd = -1;
-static char loop_path[64];
-
-static void attach_loop_device(void)
-{
-	int control_fd = CHECK(open("/dev/loop-control", O_RDWR));
-	int loop_number = CHECK(ioctl(control_fd, LOOP_CTL_GET_FREE));
-	CHECK(close(control_fd));
-	CHECK_WITH(snprintf(loop_path, sizeof(loop_path), "/dev/loop%d",
-			    loop_number),
-		   _ret > 0 && (size_t)_ret < sizeof(loop_path));
-
-	int image_fd = CHECK(open(EXFAT_IMAGE, O_RDWR));
-	loop_fd = CHECK(open(loop_path, O_RDWR));
-	CHECK(ioctl(loop_fd, LOOP_SET_FD, image_fd));
-	CHECK(close(image_fd));
-}
-#endif
 
 FN_SETUP(prepare)
 {
@@ -63,12 +38,8 @@ FN_SETUP(prepare)
 
 	CHECK_WITH(mkdir(EXFAT_MOUNT_POINT, 0755),
 		   _ret == 0 || errno == EEXIST);
-#ifdef __asterinas__
-	CHECK(mount("/dev/vdb", EXFAT_MOUNT_POINT, "exfat", 0, ""));
-#else
-	attach_loop_device();
-	CHECK(mount(loop_path, EXFAT_MOUNT_POINT, "exfat", 0, ""));
-#endif
+	blk_fd = CHECK(open_block_device(BLOCK_VDB_EXFAT));
+	CHECK(mount_block_device(blk_fd, EXFAT_MOUNT_POINT, "exfat", 0));
 }
 END_SETUP()
 
@@ -133,13 +104,9 @@ FN_SETUP(cleanup)
 	CHECK(unlink(RAMFS_TEST_FILE));
 	CHECK(unlink(EXFAT_TEST_FILE));
 	CHECK(unlink(EXFAT_TEST_FILE_NOT_REQ));
-	CHECK(umount(EXFAT_MOUNT_POINT));
 	CHECK(umount(RAMFS_MOUNT_POINT));
-
-#ifndef __asterinas__
-	CHECK(ioctl(loop_fd, LOOP_CLR_FD));
-	CHECK(close(loop_fd));
-#endif
+	CHECK(umount_block_device(EXFAT_MOUNT_POINT));
+	CHECK(close_block_device(blk_fd));
 
 	CHECK(rmdir(EXFAT_MOUNT_POINT));
 	CHECK(rmdir(RAMFS_MOUNT_POINT));
