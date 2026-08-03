@@ -12,7 +12,10 @@ use ostd::{
 
 use super::process_vm::activate_vmar;
 use crate::{
-    fs::vfs::{inode::Inode, path::Path},
+    fs::{
+        file::FileLike,
+        vfs::{inode::Inode, path::Path},
+    },
     prelude::*,
     process::{
         ContextUnshareAdminApi, Credentials, Gid, Process, Uid, pid_table,
@@ -32,7 +35,7 @@ use crate::{
 };
 
 pub fn do_execve(
-    elf_file: Path,
+    executable_file: Arc<dyn FileLike>,
     thread_name: ThreadName,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
@@ -52,15 +55,19 @@ pub fn do_execve(
 
     debug!(
         "file path: {:?}, argv = {:?}, envp = {:?}",
-        path_resolver.make_abs_path(&elf_file).into_string(),
+        path_resolver
+            .make_abs_path(executable_file.path())
+            .into_string(),
         argv,
         envp
     );
 
-    let program_to_load =
-        ProgramToLoad::build_from_file(elf_file.clone(), &path_resolver, argv, envp)?;
+    let executable_path = executable_file.path().clone();
 
-    let new_vmar = VmarHandle::new(ProcessVm::new(elf_file.clone()));
+    let program_to_load =
+        ProgramToLoad::build_from_file(executable_file, &path_resolver, argv, envp)?;
+
+    let new_vmar = VmarHandle::new(ProcessVm::new(executable_path.clone()));
     let elf_load_info = program_to_load.load_to_vmar(&new_vmar, &path_resolver)?;
 
     // Ensure no other thread is concurrently performing exit_group or execve.
@@ -86,7 +93,7 @@ pub fn do_execve(
     let res = do_execve_no_return(
         ctx,
         user_context,
-        elf_file,
+        executable_path,
         thread_name,
         new_vmar,
         &elf_load_info,
@@ -146,7 +153,7 @@ fn read_cstring_vec(
 fn do_execve_no_return(
     ctx: &Context,
     user_context: &mut UserContext,
-    elf_file: Path,
+    executable_path: Path,
     thread_name: ThreadName,
     new_vmar: VmarHandle,
     elf_load_info: &ElfLoadInfo,
@@ -168,7 +175,7 @@ fn do_execve_no_return(
     // This prevents race conditions when checking access permissions while opening
     // `/proc/[pid]/mem` or `/proc/[pid]/maps`.
     let (vmar_guard, old_vmar) = activate_vmar(ctx, new_vmar);
-    apply_caps_from_exec(process, ctx.credentials_mut(), elf_file.inode())?;
+    apply_caps_from_exec(process, ctx.credentials_mut(), executable_path.inode())?;
     drop(vmar_guard);
     drop(old_vmar);
 
@@ -303,23 +310,23 @@ fn set_cpu_context(
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top);
 }
 
-/// Sets the UID and GID in the credentials according to the ELF inode.
+/// Sets the UID and GID in the credentials according to the executable inode.
 ///
 /// The capabilities will be updated accordingly.
 fn apply_caps_from_exec(
     process: &Process,
     credentials: Credentials<ReadWriteOp>,
-    elf_inode: &Arc<dyn Inode>,
+    executable_inode: &Arc<dyn Inode>,
 ) -> Result<()> {
-    let mode = elf_inode.mode()?;
+    let mode = executable_inode.mode()?;
     let no_new_privs = credentials.no_new_privs();
     let set_uid = if mode.has_set_uid() && !no_new_privs {
-        Some(elf_inode.owner()?)
+        Some(executable_inode.owner()?)
     } else {
         None
     };
     let set_gid = if mode.has_set_gid() && !no_new_privs {
-        Some(elf_inode.group()?)
+        Some(executable_inode.group()?)
     } else {
         None
     };

@@ -57,7 +57,8 @@ impl EpollFile {
         Arc::new(Self {
             interest: Mutex::new(BTreeSet::new()),
             ready: Arc::new(ReadySet::new()),
-            common: FileCommon::new(pseudo_path, StatusFlags::empty()),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventpoll.c#L2191>.
+            common: FileCommon::new(pseudo_path, AccessMode::O_RDWR, StatusFlags::empty()),
         })
     }
 
@@ -262,11 +263,6 @@ impl Pollable for EpollFile {
 impl FileLike for EpollFile {
     fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
         return_errno_with_message!(Errno::ENOTTY, "epoll files do not support ioctl");
-    }
-
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventpoll.c#L2191>.
-        AccessMode::O_RDWR
     }
 
     fn common(&self) -> &FileCommon {

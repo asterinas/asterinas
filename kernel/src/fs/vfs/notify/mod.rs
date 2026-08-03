@@ -7,7 +7,7 @@ use bitflags::bitflags;
 
 use crate::{
     fs::{
-        file::{AccessMode, FileLike, InodeType, StatusFlags},
+        file::{AccessMode, FileCommon, FileLike, InodeType, StatusFlags},
         vfs::path::Path,
     },
     prelude::*,
@@ -372,18 +372,18 @@ pub fn on_create(file_path: &Path, name: impl FnOnce() -> String) {
 
 /// Notifies that a file was opened.
 pub fn on_open(file: &Arc<dyn FileLike>) {
-    let Some(path) = notifiable_path(file) else {
+    let Some(path) = notifiable_path(file.common()) else {
         return;
     };
     notify_parent(path, FsEvents::OPEN);
 }
 
 /// Notifies that a file was closed.
-pub fn on_close(file: &Arc<dyn FileLike>) {
-    let Some(path) = notifiable_path(file) else {
+pub fn on_close(common: &FileCommon) {
+    let Some(path) = notifiable_path(common) else {
         return;
     };
-    let events = match file.access_mode() {
+    let events = match common.access_mode() {
         AccessMode::O_RDONLY => FsEvents::CLOSE_NOWRITE,
         _ => FsEvents::CLOSE_WRITE,
     };
@@ -395,11 +395,11 @@ pub fn on_close(file: &Arc<dyn FileLike>) {
 /// `O_PATH` file descriptors carry `FMODE_NONOTIFY` in Linux's `f_mode` and
 /// thus suppress all fsnotify events, so they yield `None`. `None` is also
 /// returned when the filesystem has no event subscribers.
-fn notifiable_path(file: &Arc<dyn FileLike>) -> Option<&Path> {
-    if file.status_flags().contains(StatusFlags::O_PATH) {
+fn notifiable_path(common: &FileCommon) -> Option<&Path> {
+    if common.status_flags().contains(StatusFlags::O_PATH) {
         return None;
     }
-    let path = file.path();
+    let path = common.path();
     if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
         return None;
     }

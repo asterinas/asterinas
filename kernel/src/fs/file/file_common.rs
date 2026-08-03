@@ -4,10 +4,10 @@
 
 use core::sync::atomic::Ordering;
 
-use super::{AtomicStatusFlags, FileLike, StatusFlags, file_handle::StatusFlagsUpdate};
+use super::{AccessMode, AtomicStatusFlags, FileLike, StatusFlags, file_handle::StatusFlagsUpdate};
 use crate::{
     events::{IoEvents, Observer},
-    fs::vfs::path::Path,
+    fs::vfs::{notify, path::Path},
     prelude::*,
     process::{
         Pid, Process,
@@ -21,15 +21,17 @@ use crate::{
 /// specific file descriptor.
 pub struct FileCommon {
     path: Path,
+    access_mode: AccessMode,
     status_flags: AtomicStatusFlags,
     owner: FileOwner,
 }
 
 impl FileCommon {
     /// Creates common state for a file description.
-    pub fn new(path: Path, status_flags: StatusFlags) -> Self {
+    pub fn new(path: Path, access_mode: AccessMode, status_flags: StatusFlags) -> Self {
         Self {
             path,
+            access_mode,
             status_flags: AtomicStatusFlags::new(status_flags),
             owner: FileOwner::new(),
         }
@@ -38,6 +40,11 @@ impl FileCommon {
     /// Returns the path associated with the file description.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Returns the access mode of the file description.
+    pub fn access_mode(&self) -> AccessMode {
+        self.access_mode
     }
 
     /// Returns the current file status flags.
@@ -78,6 +85,12 @@ impl FileCommon {
     /// Returns the asynchronous I/O signal owner.
     pub fn owner(&self) -> &FileOwner {
         &self.owner
+    }
+}
+
+impl Drop for FileCommon {
+    fn drop(&mut self) {
+        notify::on_close(self);
     }
 }
 

@@ -37,7 +37,7 @@ impl ProcSymOps for ExeSymOps {
         let Some(vmar) = vmar_guard.as_ref() else {
             return_errno_with_message!(Errno::ENOENT, "the process has exited");
         };
-        let path = vmar.process_vm().executable_file().clone();
+        let path = vmar.process_vm().executable_path().clone();
 
         Ok(SymbolicLink::Path(path))
     }

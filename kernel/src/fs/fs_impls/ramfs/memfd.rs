@@ -6,14 +6,13 @@ use alloc::format;
 use core::time::Duration;
 
 use align_ext::AlignExt;
-use aster_rights::Rights;
 use inherit_methods_macro::inherit_methods;
 use spin::Once;
 
 use super::fs::RamInode;
 use crate::{
     fs::{
-        file::{AccessMode, InodeHandle, InodeMode, InodeType, StatusFlags, mkmod},
+        file::{AccessMode, FileLike, InodeHandle, InodeMode, InodeType, StatusFlags, mkmod},
         tmpfs::TmpFs,
         vfs::{
             file_system::FileSystem,
@@ -275,11 +274,10 @@ impl MemfdInodeHandle for InodeHandle {
     }
 
     fn add_seals(&self, new_seals: FileSeals) -> Result<()> {
-        let rights = self.rights();
-        if rights.is_empty() {
+        if self.status_flags().contains(StatusFlags::O_PATH) {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
-        if !rights.contains(Rights::WRITE) {
+        if !self.access_mode().is_writable() {
             return_errno_with_message!(Errno::EPERM, "the file is not opened writable");
         }
 
@@ -287,8 +285,7 @@ impl MemfdInodeHandle for InodeHandle {
     }
 
     fn get_seals(&self) -> Result<FileSeals> {
-        let rights = self.rights();
-        if rights.is_empty() {
+        if self.status_flags().contains(StatusFlags::O_PATH) {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 

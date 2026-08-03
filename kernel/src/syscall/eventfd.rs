@@ -92,7 +92,8 @@ impl EventFile {
             counter,
             pollee,
             is_semaphore,
-            common: FileCommon::new(pseudo_path, status_flags),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L401>.
+            common: FileCommon::new(pseudo_path, AccessMode::O_RDWR, status_flags),
             write_wait_queue,
         }
     }
@@ -211,11 +212,6 @@ impl FileLike for EventFile {
         }
 
         Ok(write_len)
-    }
-
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L401>.
-        AccessMode::O_RDWR
     }
 
     fn common(&self) -> &FileCommon {

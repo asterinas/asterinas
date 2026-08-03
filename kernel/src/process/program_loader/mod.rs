@@ -9,9 +9,10 @@ use self::{
 };
 use crate::{
     fs::{
-        file::{InodeType, Permission},
+        file::{AccessMode, FileLike, InodeHandle, InodeType, Permission, StatusFlags},
         vfs::{
             inode::Inode,
+            notify,
             path::{FsPath, Path, PathResolver},
         },
     },
@@ -24,23 +25,21 @@ use crate::{
 /// This struct encapsulates the ELF file to be executed along with its header data,
 /// the `argv` and the `envp` which is required for the program execution.
 pub(super) struct ProgramToLoad {
-    elf_file: Path,
+    elf_file: Arc<dyn FileLike>,
     elf_headers: ElfHeaders,
     argv: Vec<CString>,
     envp: Vec<CString>,
 }
 
 impl ProgramToLoad {
-    /// Constructs a new `ProgramToLoad` from a file and handles shebang interpretation if
-    /// necessary.
+    /// Constructs a new `ProgramToLoad` from an opened executable and handles shebang
+    /// interpretation if necessary.
     pub(super) fn build_from_file(
-        mut elf_file: Path,
+        mut executable_file: Arc<dyn FileLike>,
         path_resolver: &PathResolver,
         mut argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Self> {
-        check_executable_inode(elf_file.inode().as_ref())?;
-
         // A limit to the recursion depth of shebang executables.
         //
         // If the interpreter is a shebang, then recursion will be triggered. If it loops, we
@@ -51,7 +50,7 @@ impl ProgramToLoad {
             // Read the first page of the file, which should contain a shebang or an ELF header.
             let (file_first_page, len) = {
                 let mut buffer = Box::new([0u8; PAGE_SIZE]);
-                let len = elf_file.inode().read_bytes_at(0, &mut *buffer)?;
+                let len = executable_file.read_bytes_at(0, &mut *buffer)?;
                 (buffer, len)
             };
 
@@ -60,7 +59,7 @@ impl ProgramToLoad {
             };
 
             if recursive_limit == 0 {
-                return_errno_with_message!(Errno::ELOOP, "the recursieve limit is reached");
+                return_errno_with_message!(Errno::ELOOP, "the recursive limit is reached");
             }
             recursive_limit -= 1;
 
@@ -69,18 +68,17 @@ impl ProgramToLoad {
                 let fs_path = FsPath::try_from(filename.as_str())?;
                 path_resolver.lookup(&fs_path)?
             };
-            check_executable_inode(interpreter.inode().as_ref())?;
 
-            // Update the argument list and the executable inode. Then, try again.
+            // Update the argument list and the executable file. Then, try again.
             new_argv.extend(argv);
             argv = new_argv;
-            elf_file = interpreter;
+            executable_file = open_executable_file(interpreter)?;
         };
 
         let elf_headers = ElfHeaders::parse(&file_first_page[..len])?;
 
         Ok(Self {
-            elf_file,
+            elf_file: executable_file,
             elf_headers,
             argv,
             envp,
@@ -95,17 +93,30 @@ impl ProgramToLoad {
         vmar: &Vmar,
         path_resolver: &PathResolver,
     ) -> Result<ElfLoadInfo> {
-        let elf_load_info = load_elf_to_vmar(
+        load_elf_to_vmar(
             vmar,
             self.elf_file,
             path_resolver,
             self.elf_headers,
             self.argv,
             self.envp,
-        )?;
-
-        Ok(elf_load_info)
+        )
     }
+}
+
+/// Opens a path as an executable file.
+pub fn open_executable_file(path: Path) -> Result<Arc<dyn FileLike>> {
+    check_executable_inode(path.inode().as_ref())?;
+
+    let file: Arc<dyn FileLike> = Arc::new(InodeHandle::new_unchecked_access(
+        path,
+        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/exec.c#L769>.
+        AccessMode::O_RDONLY,
+        StatusFlags::empty(),
+    )?);
+    notify::on_open(&file);
+
+    Ok(file)
 }
 
 fn check_executable_inode(inode: &dyn Inode) -> Result<()> {

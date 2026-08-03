@@ -137,7 +137,9 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     /// [`write_at`]: FileLike::write_at
     /// [`resize`]: FileLike::resize
     /// [`fallocate`]: FileLike::fallocate
-    fn access_mode(&self) -> AccessMode;
+    fn access_mode(&self) -> AccessMode {
+        self.common().access_mode()
+    }
 
     fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
         return_errno_with_message!(Errno::ESPIPE, "seek is not supported");

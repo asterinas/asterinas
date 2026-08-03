@@ -41,7 +41,8 @@ impl PidFile {
 
         Self {
             process: Arc::downgrade(&process),
-            common: FileCommon::new(pseudo_path, status_flags),
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/kernel/fork.c#L1898>.
+            common: FileCommon::new(pseudo_path, AccessMode::O_RDWR, status_flags),
         }
     }
 
@@ -83,11 +84,6 @@ impl FileLike for PidFile {
             Errno::EINVAL,
             "PID file cannot be written at a specific offset"
         );
-    }
-
-    fn access_mode(&self) -> AccessMode {
-        // Reference: <https://elixir.bootlin.com/linux/v7.0/source/kernel/fork.c#L1898>.
-        AccessMode::O_RDWR
     }
 
     fn common(&self) -> &FileCommon {
