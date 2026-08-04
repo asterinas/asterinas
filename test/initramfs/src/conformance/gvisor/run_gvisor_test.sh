@@ -15,6 +15,10 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# When a selector is set, run only the selected test binaries and ignore the blocklist.
+CONFORMANCE_TEST_SELECTOR=${CONFORMANCE_TEST_SELECTOR:-}
+CONFORMANCE_TEST_GVISOR_FILTER=${CONFORMANCE_TEST_GVISOR_FILTER:-}
+
 get_blocklist_subtests(){
     if [ -f $BLOCKLIST_DIR/$1 ]; then
         BLOCK=$(grep -v '^#' $BLOCKLIST_DIR/$1 | tr '\n' ':')
@@ -22,7 +26,7 @@ get_blocklist_subtests(){
         BLOCK=""
     fi
 
-    for extra_dir in $EXTRA_BLOCKLISTS ; do
+    for extra_dir in $CONFORMANCE_TEST_EXTRA_BLOCKLISTS ; do
         if [ -f $SCRIPT_DIR/$extra_dir/$1 ]; then
             BLOCK="${BLOCK}:$(grep -v '^#' $SCRIPT_DIR/$extra_dir/$1 | tr '\n' ':')"
         fi
@@ -37,8 +41,13 @@ run_one_test(){
     export TEST_TMPDIR=$TEST_TMP_DIR
     ret=0
     if [ -f $TEST_BIN_DIR/$1 ]; then
-        get_blocklist_subtests $1
-        cd $TEST_BIN_DIR && ./$1 --gtest_filter=-$BLOCK
+        if [ -n "$CONFORMANCE_TEST_SELECTOR" ]; then
+            gtest_filter=${CONFORMANCE_TEST_GVISOR_FILTER:-*}
+        else
+            get_blocklist_subtests $1
+            gtest_filter="-$BLOCK"
+        fi
+        cd $TEST_BIN_DIR && ./$1 --gtest_filter="$gtest_filter"
         ret=$?
         #After executing the test, it is necessary to clean the directory to ensure no residual data remains
         rm -rf $TEST_TMP_DIR/*
@@ -53,8 +62,14 @@ run_one_test(){
 rm -f $FAIL_CASES && touch $FAIL_CASES
 rm -rf $TEST_TMP_DIR/*
 
-for syscall_test in $(find $TEST_BIN_DIR/. -name \*_test) ; do
-    test_name=$(basename "$syscall_test")
+# Build the list of test binaries to run: the selected ones, or every `*_test`.
+if [ -n "$CONFORMANCE_TEST_SELECTOR" ]; then
+    TEST_LIST=$(echo "$CONFORMANCE_TEST_SELECTOR" | tr ',' ' ')
+else
+    TEST_LIST=$(find $TEST_BIN_DIR/. -name \*_test -exec basename {} \;)
+fi
+
+for test_name in $TEST_LIST ; do
     run_one_test $test_name
     if [ $? -eq 0 ] && PASSED_TESTS=$((PASSED_TESTS+1));then
         TESTS=$((TESTS+1))

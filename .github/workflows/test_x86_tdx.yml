@@ -85,7 +85,7 @@ jobs:
           - 'tap-smp4'
         include:
           - { variant: 'ramfs' }
-          - { variant: 'exfat', extra_blocklists: 'blocklists.exfat', conformance_test_workdir: '/exfat' }
+          - { variant: 'exfat', conformance_test_extra_blocklists: 'blocklists.exfat', conformance_test_workdir: '/exfat' }
           - { variant: 'tap-smp4', netdev: 'tap', smp: 4 }
     steps:
       - uses: actions/checkout@v4
@@ -98,6 +98,6 @@ jobs:
           boot_protocol: 'linux-efi-handover64'
           smp: ${{ matrix.smp }}
           netdev: ${{ matrix.netdev || 'tap' }}
-          extra_blocklists: ${{ matrix.extra_blocklists }}
+          conformance_test_extra_blocklists: ${{ matrix.conformance_test_extra_blocklists }}
           conformance_test_suite: ${{ matrix.suite }}
           conformance_test_workdir: ${{ matrix.conformance_test_workdir }}
