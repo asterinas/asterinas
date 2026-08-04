@@ -41,12 +41,12 @@ final: prev: {
     # JUnit Platform Console Standalone (includes JUnit Jupiter, JUnit Vintage, and dependencies)
     junit = prev.stdenv.mkDerivation rec {
       pname = "junit";
-      version = "1.8.2";
+      version = "1.11.0";
 
       junit = prev.fetchurl {
         url =
           "https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/${version}/junit-platform-console-standalone-${version}.jar";
-        sha256 = "sha256-3EmPI0Io+ByBi+z7a39x9z3ysOmV+T8lwF/O0Md+Y1Y";
+        sha256 = "sha256-n06UydMP5lts3JoGe/g6IsckzLDOaHi6I2giXg0wIJU=";
       };
 
       license = prev.fetchurl {
@@ -103,12 +103,12 @@ final: prev: {
     };
   in prev.stdenv.mkDerivation rec {
     pname = "jtreg";
-    version = "7.3.1";
+    version = "7.5.2";
     number = "1";
     src = prev.fetchzip {
       url =
         "https://github.com/openjdk/jtreg/archive/refs/tags/jtreg-${version}+${number}.zip";
-      sha256 = "sha256-m9/BkM2fVfAFYMCMnCEkqZhRbYQYeo2YCyZCt+b0ggg";
+      sha256 = "sha256-/2VOs+ybAG2Axs7IzJ7O0Mtf30Mp0waEojfO5gHSBXg=";
     };
 
     patches = [

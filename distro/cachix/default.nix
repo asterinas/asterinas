@@ -1,4 +1,4 @@
-{ pkgs ? import <nixpkgs> { }, extra-substituters ? ""
+{ pkgs ? import ../nixpkgs.nix { }, extra-substituters ? ""
 , extra-trusted-public-keys ? "", ... }:
 let
   installer = pkgs.callPackage ../aster_nixos_installer {

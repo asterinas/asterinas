@@ -9,7 +9,7 @@
 #include <stdatomic.h>
 
 pthread_mutex_t mutex;
-atomic_int sync_flag = ATOMIC_VAR_INIT(0); // Atomic flag for synchronization
+atomic_int sync_flag = 0; // Atomic flag for synchronization
 
 // Signal handler for SIGUSR1
 void signal_handler(int signum)

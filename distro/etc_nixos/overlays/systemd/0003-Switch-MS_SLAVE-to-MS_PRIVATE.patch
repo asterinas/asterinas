@@ -7,10 +7,9 @@ Replace the use of MS_SLAVE with MS_PRIVATE, as Asterinas currently does
 not support the MS_SLAVE flag.
 
 ---
- src/basic/process-util.c   | 2 +-
- src/core/exec-credential.c | 2 +-
- src/shared/mount-util.c    | 2 +-
- 3 files changed, 3 insertions(+), 3 deletions(-)
+ src/basic/process-util.c | 2 +-
+ src/shared/mount-util.c  | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/src/basic/process-util.c b/src/basic/process-util.c
 index 18fbadf175..0aa68a1162 100644
@@ -25,19 +24,6 @@ index 18fbadf175..0aa68a1162 100644
                          log_full_errno(prio, errno, "Failed to remount root directory as MS_SLAVE: %m");
                          _exit(EXIT_FAILURE);
                  }
-diff --git a/src/core/exec-credential.c b/src/core/exec-credential.c
-index 6ab3edbb54..dd40cdf081 100644
---- a/src/core/exec-credential.c
-+++ b/src/core/exec-credential.c
-@@ -1119,7 +1119,7 @@ int exec_setup_credentials(
-                  * no one else sees this should be OK to do. */
- 
-                 /* Turn off propagation from our namespace to host */
--                r = mount_nofollow_verbose(LOG_DEBUG, NULL, "/dev", NULL, MS_SLAVE|MS_REC, NULL);
-+                r = mount_nofollow_verbose(LOG_DEBUG, NULL, "/dev", NULL, MS_PRIVATE|MS_REC, NULL);
-                 if (r < 0)
-                         goto child_fail;
- 
 diff --git a/src/shared/mount-util.c b/src/shared/mount-util.c
 index 35b1049531..e2f611e07a 100644
 --- a/src/shared/mount-util.c
@@ -53,4 +39,3 @@ index 35b1049531..e2f611e07a 100644
  
 -- 
 2.34.1
-

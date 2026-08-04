@@ -265,7 +265,7 @@ fn cargo_create_build_project(nixos_shell: &mut Session) -> Result<(), Error> {
 #[nixos_test]
 fn cmake_build(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.run_cmd("mkdir -p /tmp/cmake_test")?;
-    nixos_shell.run_cmd(r#"echo -e 'cmake_minimum_required(VERSION 3.0)\nproject(Hello)\nadd_executable(hello main.c)' > /tmp/cmake_test/CMakeLists.txt"#)?;
+    nixos_shell.run_cmd(r#"echo -e 'cmake_minimum_required(VERSION 3.10)\nproject(Hello)\nadd_executable(hello main.c)' > /tmp/cmake_test/CMakeLists.txt"#)?;
     nixos_shell.run_cmd(r##"echo -e '#include <stdio.h>\nint main() { printf("Hello from CMake\\n"); return 0; }' > /tmp/cmake_test/main.c"##)?;
     nixos_shell.run_cmd("cd /tmp/cmake_test && mkdir build && cd build")?;
     nixos_shell.run_cmd("cmake -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ ..")?;
