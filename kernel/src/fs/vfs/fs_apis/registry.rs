@@ -158,7 +158,7 @@ impl<'a> FsCreationCtx<'a> {
             .borrow_fs()
             .resolver()
             .read()
-            .lookup_no_follow(&fs_path)?;
+            .lookup(&fs_path)?;
 
         if !path.type_().is_device() {
             return_errno_with_message!(Errno::ENODEV, "the path is not a device file");
