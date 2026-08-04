@@ -1,107 +1,35 @@
 # SPDX-License-Identifier: MPL-2.0
 
+# This is the default development image, which provides AI-agent and GitHub CLI
+# tooling for Asterinas agent skills.
+
 ARG BASE_VERSION
-FROM asterinas/nix:${BASE_VERSION} AS build-base
+FROM asterinas/kernel-dev:${BASE_VERSION} AS build-base
 
 SHELL ["/bin/bash", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-#= Download dependency =====================================================
-
-WORKDIR /opt/linux_binary_cache
-RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/8e6e8ad382aac7e605d7a058811d09bce478cd7d/6.16.0/vmlinuz \
-        -O vmlinuz
-
-#= Download VDSO files =====================================================
-
 WORKDIR /root
-RUN git clone https://github.com/asterinas/linux_vdso.git && \
-    cd linux_vdso && \
-    git checkout 7489835
 
-ENV VDSO_LIBRARY_DIR="/root/linux_vdso"
+# Install dependencies for the agent skills workflows and their self-tests.
+RUN apt update \
+    && apt install -y --no-install-recommends \
+    gh \
+    python3-yaml \
+    && apt clean \
+    && rm -rf /var/lib/apt/lists/*
 
-#= Build syscall test =========================================================
+# Install Claude Code.
+ENV CLAUDE_CODE_RELEASE=2.1.223
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- ${CLAUDE_CODE_RELEASE} \
+    && claude --version
 
-FROM build-base AS build-gvisor
-
-# Install required packages for bazel
-RUN apt update && apt install -y curl gnupg2 git \
-    python-is-python3 python3 python3-setuptools python3-pip \
-    build-essential crossbuild-essential-arm64 qemu-user-static \
-    openjdk-11-jdk-headless zip unzip \
-    apt-transport-https ca-certificates gnupg-agent \
-    software-properties-common \
-    pkg-config libffi-dev patch diffutils libssl-dev iptables kmod \
-    clang crossbuild-essential-amd64 erofs-utils busybox-static libbpf-dev \
-    iproute2 netcat-openbsd libnuma-dev libc6-dev-i386 golang-go
-
-ARG TARGETARCH
-
-# Install bazel
-RUN set -eux; \
-    case "${TARGETARCH}" in \
-        amd64|arm64) deb="bazelisk-${TARGETARCH}.deb" ;; \
-        *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
-    esac; \
-    wget -O "${deb}" "https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/${deb}"; \
-    dpkg -i "${deb}"; \
-    rm -f "${deb}"
-
-# Build the gvisor syscall test binaries
-WORKDIR /root
-RUN git clone -b release-20260622.0 --single-branch --depth 1 https://github.com/google/gvisor.git
-WORKDIR /root/gvisor
-RUN bazel build --test_tag_filters=native //test/syscalls/... && \
-    mkdir -p /root/syscall_test_bins && \
-    cp bazel-bin/test/syscalls/linux/*_test /root/syscall_test_bins
-
-#= The final stages to produce the Asterinas development image ====================
-
-FROM build-base
-
-# Install all Asterinas dependent packages
-RUN apt update && apt-get install -y --no-install-recommends \
-    bridge-utils \
-    clang-format       `# formatting general tests` \
-    cpio \
-    cpuid \
-    dosfstools \
-    exfatprogs \
-    file \
-    grub-efi-amd64-bin \
-    grub-efi-amd64-dbg \
-    iptables \
-    iproute2 \
-    jq \
-    net-tools \
-    openssh-server \
-    parted \
-    pkg-config \
-    socat \
-    strace \
-    sudo \
-    unzip \
-    virtiofsd \
-    vim \
-    zip
-# Clean apt cache
-RUN apt clean && rm -rf /var/lib/apt/lists/*
-
-# Install sctrace
-RUN ln -s /root/asterinas/tools/sctrace.sh /usr/local/bin/sctrace
-
-# Set the `ASTER_SCML` env var to make sctrace easier to use for Asterinas developers.
-# For more information, check out the README of sctrace.
-RUN echo 'export ASTER_SCML=$(find /root/asterinas/book/src/kernel/linux-compatibility/ -name "*.scml" 2>/dev/null)' >> /root/.bashrc
-
-# Copy the gvisor syscall test binaries
-COPY --from=build-gvisor /root/syscall_test_bins /root/syscall_test_bins
-ENV GVISOR_PREBUILT_DIR=/root/syscall_test_bins
-
-# Add the path of Asterinas tools
-ENV PATH="/root/asterinas/target/bin:${PATH}"
+# Install Codex.
+ENV CODEX_RELEASE=0.147.0
+ENV CODEX_NON_INTERACTIVE=yes
+RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh \
+    && codex --version
 
 VOLUME [ "/root/asterinas" ]
 
