@@ -29,15 +29,7 @@ pub fn sys_recvfrom(
     let user_space = ctx.user_space();
     let mut writers = user_space.writer(buf, len)?;
 
-    let (output, message_header) = {
-        socket
-            .recvmsg(&mut writers, flags)
-            .map_err(|err| match err.error() {
-                // FIXME: `recvfrom` should not be restarted if a timeout has been set on the socket using `setsockopt`.
-                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
-                _ => err,
-            })?
-    };
+    let (output, message_header) = socket.recvmsg(&mut writers, flags)?;
 
     if let Some(socket_addr) = message_header.addr()
         && src_addr != 0

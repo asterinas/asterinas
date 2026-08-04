@@ -111,6 +111,7 @@ pub(super) fn do_poll(
             // We should return zero if the timeout expires
             // before any file descriptors are ready.
             Err(err) if err.error() == Errno::ETIME => return Ok(0),
+            Err(err) if err.error() == Errno::ERESTARTSYS => return Err(Error::new(Errno::EINTR)),
             Err(err) => return Err(err),
         };
 

@@ -345,6 +345,10 @@ impl Backlog {
                 timeout.as_ref(),
             )
             .map_err(|err| match err.error() {
+                Errno::ERESTARTSYS if timeout.is_some() => Error::with_message(
+                    Errno::EINTR,
+                    "the socket operation is interrupted by a signal",
+                ),
                 Errno::ETIME => Error::with_message(Errno::EAGAIN, "the socket timeout expired"),
                 _ => err,
             })?

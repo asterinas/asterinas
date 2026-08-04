@@ -33,11 +33,7 @@ pub fn sys_wait4(
         );
     }
 
-    let wait_status =
-        do_wait(process_filter, wait_options, ctx).map_err(|err| match err.error() {
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
-            _ => err,
-        })?;
+    let wait_status = do_wait(process_filter, wait_options, ctx)?;
     let Some(wait_status) = wait_status else {
         return Ok(SyscallReturn::Return(0 as _));
     };

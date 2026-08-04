@@ -116,7 +116,13 @@ pub fn futex_wait_bitset(
     // Release the lock.
     drop(futex_bucket);
 
-    let result = waiter.pause_timeout(&timeout.into());
+    let has_timeout = timeout.is_some();
+    let result = waiter
+        .pause_timeout(&timeout.into())
+        .map_err(|err| match err.error() {
+            Errno::ERESTARTSYS if has_timeout => Error::new(Errno::EINTR),
+            _ => err,
+        });
 
     // If the futex wait operation was interrupted by a signal or timed out, the
     // `FutexItem` must be dequeued and dropped. Otherwise, malicious user programs

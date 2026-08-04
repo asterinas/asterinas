@@ -85,6 +85,8 @@ pub fn sys_rt_sigtimedwait(
                 .map_err(|e| {
                     if e.error() == Errno::ETIME {
                         Error::new(Errno::EAGAIN)
+                    } else if e.error() == Errno::ERESTARTSYS {
+                        Error::new(Errno::EINTR)
                     } else {
                         e
                     }

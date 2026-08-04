@@ -26,16 +26,16 @@ use crate::{
 /// On top of `WaitTimeout`, this `Pause` trait provides the `pause`-family methods,
 /// which are similar to the `wait`-family methods except that the methods also return
 /// when the waiting thread is interrupted by a POSIX signal.
-/// When this happens, the `pause`-family methods return `Err(EINTR)`.
+/// When this happens, the `pause`-family methods return `Err(ERESTARTSYS)`.
 pub trait Pause: WaitTimeout {
     /// Pauses until the condition is met or a signal interrupts.
     ///
     /// # Errors
     ///
-    /// This method will return an error with [`EINTR`] if a signal is received before the
+    /// This method will return an error with [`ERESTARTSYS`] if a signal is received before the
     /// condition is met.
     ///
-    /// [`EINTR`]: crate::error::Errno::EINTR
+    /// [`ERESTARTSYS`]: crate::error::Errno::ERESTARTSYS
     #[track_caller]
     fn pause_until<F, R>(&self, cond: F) -> Result<R>
     where
@@ -53,10 +53,10 @@ pub trait Pause: WaitTimeout {
     ///
     /// # Errors
     ///
-    /// This method will return an error with [`EINTR`] if a signal is received before the
+    /// This method will return an error with [`ERESTARTSYS`] if a signal is received before the
     /// condition is met.
     ///
-    /// [`EINTR`]: crate::error::Errno::EINTR
+    /// [`ERESTARTSYS`]: crate::error::Errno::ERESTARTSYS
     #[track_caller]
     fn pause_until_by<F, R>(&self, cond: F, reason: PauseReason) -> Result<R>
     where
@@ -70,11 +70,11 @@ pub trait Pause: WaitTimeout {
     /// # Errors
     ///
     /// Before the condition is met, this method will return an error with
-    ///  - [`EINTR`] if a signal is received;
+    ///  - [`ERESTARTSYS`] if a signal is received;
     ///  - [`ETIME`] if the timeout is reached.
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
-    /// [`EINTR`]: crate::error::Errno::EINTR
+    /// [`ERESTARTSYS`]: crate::error::Errno::ERESTARTSYS
     #[track_caller]
     fn pause_until_or_timeout<'a, F, T, R>(&self, mut cond: F, timeout: T) -> Result<R>
     where
@@ -95,11 +95,11 @@ pub trait Pause: WaitTimeout {
     /// # Errors
     ///
     /// Before the condition is met, this method will return an error with
-    ///  - [`EINTR`] if a signal is received;
+    ///  - [`ERESTARTSYS`] if a signal is received;
     ///  - [`ETIME`] if the timeout is reached.
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
-    /// [`EINTR`]: crate::error::Errno::EINTR
+    /// [`ERESTARTSYS`]: crate::error::Errno::ERESTARTSYS
     #[doc(hidden)]
     #[track_caller]
     fn pause_until_or_timeout_impl<F, R>(
@@ -116,11 +116,11 @@ pub trait Pause: WaitTimeout {
     /// # Errors
     ///
     /// This method will return an error with
-    ///  - [`EINTR`] if a signal is received;
+    ///  - [`ERESTARTSYS`] if a signal is received;
     ///  - [`ETIME`] if the timeout is reached.
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
-    /// [`EINTR`]: crate::error::Errno::EINTR
+    /// [`ERESTARTSYS`]: crate::error::Errno::ERESTARTSYS
     #[track_caller]
     fn pause_timeout(&self, timeout: &TimeoutExt<'_>) -> Result<()>;
 }
@@ -154,7 +154,7 @@ impl Pause for Waiter {
 
             if has_pending {
                 return Err(Error::with_message(
-                    Errno::EINTR,
+                    Errno::ERESTARTSYS,
                     "the current thread is interrupted by a signal",
                 ));
             }
@@ -187,7 +187,7 @@ impl Pause for Waiter {
             if posix_thread.has_pending() {
                 posix_thread.clear_signalled_waker();
                 return_errno_with_message!(
-                    Errno::EINTR,
+                    Errno::ERESTARTSYS,
                     "the current thread is interrupted by a signal"
                 );
             }
@@ -213,7 +213,7 @@ impl Pause for Waiter {
             .is_some_and(|posix_thread| posix_thread.has_pending())
         {
             return_errno_with_message!(
-                Errno::EINTR,
+                Errno::ERESTARTSYS,
                 "the current thread is interrupted by a signal"
             );
         }

@@ -44,11 +44,7 @@ pub fn sys_openat(
             &fs_path,
             flags,
             InodeMode::from_bits_truncate(mask_mode),
-        )
-        .map_err(|err| match err.error() {
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
-            _ => err,
-        })?
+        )?
     };
 
     let fd = {
