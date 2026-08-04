@@ -10,6 +10,7 @@ set -e
 ./mmap/mmap_beyond_the_file
 ./mmap/mmap_err
 ./mmap/mmap_holes
+./mmap/mmap_populate
 ./mmap/mmap_readahead
 ./mmap/mmap_shared_filebacked
 ./mmap/mmap_vmrss

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::{Arc, Weak};
 use core::ops::Deref;
 
-use crate::{process::ProcessVm, vm::vmar::Vmar};
+use crate::{prelude::*, process::ProcessVm, vm::vmar::Vmar};
 
 /// A VMAR handle that is owned by a POSIX thread.
 ///
@@ -28,8 +27,15 @@ impl Drop for VmarHandle {
 
 impl VmarHandle {
     /// Creates a new handle that points to a new VMAR.
-    pub fn new(process_vm: ProcessVm) -> Self {
-        Self(Vmar::new(process_vm))
+    pub fn new(process_vm: ProcessVm) -> Result<Self> {
+        Ok(Self(Vmar::new(process_vm)?))
+    }
+
+    /// Creates a handle from an existing `Arc<Vmar>`.
+    ///
+    /// The caller must ensure the `Arc<Vmar>` was created with `num_handles` already set to 1.
+    pub(super) fn from_arc(vmar: Arc<Vmar>) -> Self {
+        Self(vmar)
     }
 
     /// Clones a new handle.

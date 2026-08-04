@@ -150,6 +150,7 @@ unsafe impl PageTableConfig for KernelPtConfig {
 
     type E = PageTableEntry;
     type C = PagingConsts;
+    type Aux = ();
 
     type Item = MappedItem;
     type ItemRef<'a> = MappedItemRef<'a>;
@@ -240,7 +241,9 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
         let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
-        for (pa, level) in largest_pages::<KernelPtConfig>(from.start, 0, max_paddr) {
+        for (va, pa, level) in largest_pages::<KernelPtConfig>(from.start, 0, max_paddr) {
+            cursor.jump(va).unwrap();
+            cursor.adjust_level(level);
             // SAFETY: we are doing the linear mapping for the kernel.
             unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
         }
@@ -260,9 +263,11 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         // We won't unmap them anyway, so there's no leaking problem yet.
         // TODO: support tracked huge page mapping.
         let pa_range = meta_pages.into_raw();
-        for (pa, level) in
+        for (va, pa, level) in
             largest_pages::<KernelPtConfig>(from.start, pa_range.start, pa_range.len())
         {
+            cursor.jump(va).unwrap();
+            cursor.adjust_level(level);
             // SAFETY: We are doing the metadata mappings for the kernel.
             unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
         }
@@ -286,7 +291,11 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
         let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
-        for (pa, level) in largest_pages::<KernelPtConfig>(from.start, region.base(), from.len()) {
+        for (va, pa, level) in
+            largest_pages::<KernelPtConfig>(from.start, region.base(), from.len())
+        {
+            cursor.jump(va).unwrap();
+            cursor.adjust_level(level);
             // SAFETY: we are doing the kernel code mapping.
             unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
         }
