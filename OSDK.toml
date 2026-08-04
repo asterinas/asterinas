@@ -10,6 +10,7 @@ boot_protocol = "multiboot2"
 
 [qemu]
 args = "$(./tools/qemu_args.sh normal)"
+log_file = "qemu-serial.log"
 
 # Special options for running
 [run.boot]

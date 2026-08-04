@@ -25,6 +25,7 @@ boot_protocol = "multiboot2"
 display_grub_menu = true
 
 [qemu]
+log_file = "qemu-serial.log"
 args = """\
     -machine q35 \
     -smp $SMP \

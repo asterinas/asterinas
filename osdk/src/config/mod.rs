@@ -180,7 +180,7 @@ fn apply_args_after_finalize(action: &mut Action, args: &CommonArgs) {
     if args.display_grub_menu {
         action.grub.display_grub_menu = true;
     }
-    if args.coverage {
+    if args.coverage && action.qemu.log_file.is_some() {
         action.qemu.args += " --no-shutdown";
         action.qemu.with_monitor = true;
     }

@@ -96,6 +96,9 @@ impl Scheme {
                     qemu.path.clone_from(&from_qemu.path);
                     self.work_dir.clone_from(&from.work_dir);
                 }
+                if qemu.log_file.is_none() {
+                    qemu.log_file.clone_from(&from_qemu.log_file);
+                }
             }
         } else {
             self.qemu.clone_from(&from.qemu);

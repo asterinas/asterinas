@@ -34,6 +34,9 @@ pub struct QemuScheme {
     pub path: Option<PathBuf>,
     /// Whether to run QEMU as daemon and connect to it in monitor mode.
     pub with_monitor: Option<bool>,
+    /// The QEMU output log used for panic translation and coverage collection.
+    /// Relative paths are resolved from the OSDK working directory.
+    pub log_file: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Serialize)]
@@ -47,6 +50,8 @@ pub struct Qemu {
     pub path: PathBuf,
     /// Whether to run QEMU as daemon and connect to it in monitor mode.
     pub with_monitor: bool,
+    /// The QEMU output log used for panic translation and coverage collection.
+    pub log_file: Option<PathBuf>,
 }
 
 impl Default for Qemu {
@@ -56,6 +61,7 @@ impl Default for Qemu {
             bootdev_append_options: None,
             path: PathBuf::from(get_default_arch().system_qemu()),
             with_monitor: false,
+            log_file: None,
         }
     }
 }
@@ -72,6 +78,7 @@ impl PartialEq for Qemu {
             && self.bootdev_append_options == other.bootdev_append_options
             && self.path == other.path
             && self.with_monitor == other.with_monitor
+            && self.log_file == other.log_file
     }
 }
 
@@ -101,6 +108,9 @@ impl QemuScheme {
         if self.with_monitor.is_none() {
             self.with_monitor.clone_from(&from.with_monitor);
         }
+        if self.log_file.is_none() {
+            self.log_file.clone_from(&from.log_file);
+        }
     }
 
     pub fn finalize(self, arch: Arch) -> Qemu {
@@ -109,6 +119,7 @@ impl QemuScheme {
             bootdev_append_options: self.bootdev_append_options,
             path: self.path.unwrap_or(PathBuf::from(arch.system_qemu())),
             with_monitor: self.with_monitor.unwrap_or(false),
+            log_file: self.log_file,
         }
     }
 }
