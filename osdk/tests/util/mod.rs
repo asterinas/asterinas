@@ -159,14 +159,23 @@ pub(crate) fn depends_on_coverage(manifest_path: impl AsRef<Path>, osdk_path: im
 
     fs::write(manifest_path, manifest.to_string().as_bytes()).unwrap();
 
-    // Modify OSDK.toml to add logfile=qemu.log to chardev line
+    // Configure QEMU to write the log and OSDK to inspect it.
     if osdk_path.as_ref().exists() {
         let osdk_content = fs::read_to_string(&osdk_path).unwrap();
         let modified_content = osdk_content.replace(
             "-chardev stdio,id=mux,mux=on,signal=off \\",
             "-chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \\",
         );
-        fs::write(osdk_path, modified_content).unwrap();
+        let mut osdk_manifest: Table = toml::from_str(&modified_content).unwrap();
+        osdk_manifest
+            .get_mut("qemu")
+            .and_then(Value::as_table_mut)
+            .unwrap()
+            .insert(
+                "log_file".to_string(),
+                Value::String("qemu.log".to_string()),
+            );
+        fs::write(osdk_path, osdk_manifest.to_string()).unwrap();
     }
 }
 

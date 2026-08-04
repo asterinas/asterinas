@@ -24,7 +24,7 @@ use crate::{
     arch::Arch,
     config::{
         Config,
-        scheme::{ActionChoice, BootMethod, BootProtocol},
+        scheme::{Action, ActionChoice, BootMethod, BootProtocol},
     },
     error::Errno,
     error_msg,
@@ -321,7 +321,10 @@ impl Bundle {
             }
         }
 
-        let exit_status = if action.qemu.with_monitor {
+        let exit_status = if action.qemu.with_monitor
+            && let Some(qemu_log_file) = &action.qemu.log_file
+        {
+            let qemu_log_path = config.work_dir.join(qemu_log_file);
             let qemu_monitor_socket_path = NamedTempFile::new().unwrap().into_temp_path();
             qemu_cmd.arg("-monitor").arg(format!(
                 "unix:{},server,nowait",
@@ -332,23 +335,25 @@ impl Bundle {
             let mut qemu_child = qemu_cmd.spawn().unwrap();
             std::thread::sleep(Duration::from_secs(1)); // Wait for QEMU to start
             let mut qemu_monitor_stream = UnixStream::connect(&qemu_monitor_socket_path).unwrap();
-            wait_until_guest_kernel_shutdown(config, &mut qemu_monitor_stream);
+            wait_until_guest_kernel_shutdown(config, &qemu_log_path, &mut qemu_monitor_stream);
             info!("VM is paused (shutdown)");
 
-            self.post_run_action(config, Some(&mut qemu_monitor_stream));
+            self.post_run_action(config, action, Some(&mut qemu_monitor_stream));
 
             let _ = qemu_monitor_stream.write_all(b"quit\n");
             qemu_child.wait().unwrap()
         } else {
             info!("Running QEMU: {qemu_cmd:#?}");
             let exit_status = qemu_cmd.status().unwrap();
-            self.post_run_action(config, None);
+            self.post_run_action(config, action, None);
             exit_status
         };
 
-        fn wait_until_guest_kernel_shutdown(config: &Config, qemu_monitor_stream: &mut UnixStream) {
-            let log_file = std::fs::File::open(config.work_dir.join("qemu.log")).unwrap();
-
+        fn wait_until_guest_kernel_shutdown(
+            config: &Config,
+            qemu_log_path: &Path,
+            qemu_monitor_stream: &mut UnixStream,
+        ) {
             // Check VM status every 0.1 seconds and break the loop if the VM is stopped or hanging.
             while qemu_monitor_stream.write_all(b"info status\n").is_ok() {
                 let status = BufReader::new(&mut *qemu_monitor_stream)
@@ -358,7 +363,9 @@ impl Bundle {
                     break;
                 }
 
-                if config.target_arch == Arch::RiscV64 {
+                if config.target_arch == Arch::RiscV64
+                    && let Ok(log_file) = std::fs::File::open(qemu_log_path)
+                {
                     let log = rev_buf_reader::RevBufReader::new(&log_file);
                     if log.lines().next().is_some_and(|line| {
                         line.as_ref().is_ok_and(|s| {
@@ -399,18 +406,27 @@ impl Bundle {
         std::fs::write(manifest_file_path, manifest_file_content).unwrap();
     }
 
-    fn post_run_action(&self, config: &Config, qemu_monitor_stream: Option<&mut UnixStream>) {
-        // Find the QEMU output in "qemu.log", read it and check if it failed with a panic.
+    fn post_run_action(
+        &self,
+        config: &Config,
+        action: &Action,
+        qemu_monitor_stream: Option<&mut UnixStream>,
+    ) {
+        let Some(qemu_log_file) = &action.qemu.log_file else {
+            return;
+        };
+
+        // Read the configured QEMU output and check if it failed with a panic.
         // Setting a QEMU log is required for source line stack trace because piping the output
         // is less desirable when running QEMU with serial redirected to standard I/O.
-        let qemu_log_path = config.work_dir.join("qemu.log");
+        let qemu_log_path = config.work_dir.join(qemu_log_file);
         if let Ok(file) = std::fs::File::open(&qemu_log_path)
             && let Some(aster_bin) = &self.manifest.aster_bin
         {
             crate::util::trace_panic_from_log(file, self.path.join(aster_bin.path()));
         }
 
-        // Find the coverage data information in "qemu.log", and dump it if found.
+        // Find the coverage data information in the QEMU log, and dump it if found.
         if let Some(qemu_monitor_stream) = qemu_monitor_stream
             && let Ok(file) = std::fs::File::open(&qemu_log_path)
         {

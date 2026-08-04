@@ -49,16 +49,17 @@ display_grub_menu = false                   # <16>
 [qemu]                                      # <17>
 path = "path/to/it"                         # <18>
 args = "-machine q35 -m 2G"                 # <19>
+log_file = "qemu.log"                       # <20>
 
 # Special options for run subcommand
-[run]                                       # <20>
+[run]                                       # <21>
 [run.build]                                 # <3>
 [run.boot]                                  # <8>
 [run.grub]                                  # <13>
 [run.qemu]                                  # <17>
 
 # Special options for test subcommand
-[test]                                      # <21>
+[test]                                      # <22>
 [test.build]                                # <3>
 [test.boot]                                 # <8>
 [test.grub]                                 # <13>
@@ -66,10 +67,10 @@ args = "-machine q35 -m 2G"                 # <19>
 # ----------------------- end of the default scheme settings ----------------------------
 
 # A customized scheme settings
-[scheme."custom"]                           # <22>
+[scheme."custom"]                           # <23>
 [scheme."custom".build]                     # <3>
-[scheme."custom".run]                       # <20>
-[scheme."custom".test]                      # <21>
+[scheme."custom".run]                       # <21>
+[scheme."custom".test]                      # <22>
 ```
 
 Here are some additional notes for the fields:
@@ -191,17 +192,37 @@ can include any POSIX shell compliant separators.
     even use this mechanism to read from files by using command replacement
     `$(cat path/to/your/custom/args/file)`.
 
-20. Special settings for running. Only take effect when running `cargo osdk run`.
+20. The path to the file where QEMU writes the guest output.
+
+    Optional.
+    If this field is absent,
+    OSDK does not inspect QEMU output for kernel panics or coverage data.
+
+    This field only tells OSDK where to read the log;
+    it does not cause QEMU to create the file.
+    QEMU must be configured through `args` to write guest output to the same path.
+    For example:
+
+    ```toml
+    [qemu]
+    args = "-serial file:qemu-serial.log"
+    log_file = "qemu-serial.log"
+    ```
+
+    If the path is relative,
+    it is relative to the manifest's enclosing directory.
+
+21. Special settings for running. Only take effect when running `cargo osdk run`.
 
     By default, it inherits common options.
 
     Values set here are used to override common options.
 
-21. Special settings for testing.
+22. Special settings for testing.
 
-    Similar to `20`, but only take effect when running `cargo osdk test`.
+    Similar to `21`, but only take effect when running `cargo osdk test`.
 
-22. The definition of customized scheme.
+23. The definition of customized scheme.
 
     A customized scheme has the same fields as the default scheme.
     By default, a customized scheme will inherit all options from the default scheme,
