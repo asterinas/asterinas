@@ -25,7 +25,7 @@ use crate::{
     debug,
     irq::{DisabledLocalIrqGuard, call_irq_callback_functions},
     mm::Vaddr,
-    user::{ReturnReason, UserContextApi, UserContextApiInternal},
+    user::{ReturnReason, UserContextApi, UserContextApiInternal, UserModeHooks},
 };
 
 cfg_if! {
@@ -304,10 +304,7 @@ impl UserContext {
 }
 
 impl UserContextApiInternal for UserContext {
-    fn execute<F>(&mut self, mut has_kernel_event: F) -> ReturnReason
-    where
-        F: FnMut() -> bool,
-    {
+    fn execute<T: UserModeHooks>(&mut self, hooks: &T) -> ReturnReason {
         // set interrupt flag so that in user mode it can receive external interrupts
         // set ID flag which means cpu support CPUID instruction
         self.user_context.general.rflags |= (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() as usize;
@@ -317,7 +314,10 @@ impl UserContextApiInternal for UserContext {
         // Return when it is syscall or cpu exception type is Fault or Trap.
         loop {
             crate::task::scheduler::might_preempt();
-            self.user_context.run();
+
+            let guard = crate::irq::disable_local();
+            hooks.pre_user_run(&guard);
+            self.user_context.run(guard);
 
             let exception =
                 CpuException::new(self.user_context.trap_num, self.user_context.error_code);
@@ -356,7 +356,7 @@ impl UserContextApiInternal for UserContext {
                 }
             }
 
-            if has_kernel_event() {
+            if hooks.has_kernel_event() {
                 break ReturnReason::KernelEvent;
             }
         }

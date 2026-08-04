@@ -19,7 +19,7 @@ use ostd::mm::{
 use ostd::power::{poweroff, ExitCode};
 use ostd::prelude::*;
 use ostd::task::{disable_preempt, Task, TaskOptions};
-use ostd::user::{ReturnReason, UserMode};
+use ostd::user::{DummyUserHooks, ReturnReason, UserMode};
 
 /// The kernel's boot and initialization process is managed by OSTD.
 /// After the process is done, the kernel's execution environment
@@ -77,7 +77,7 @@ fn create_user_task(vm_space: Arc<VmSpace>) -> Arc<Task> {
             // The execute method returns when system
             // calls or CPU exceptions occur or some
             // events specified by the kernel occur.
-            let return_reason = user_mode.execute(|| false);
+            let return_reason = user_mode.execute(&DummyUserHooks);
 
             // The CPU registers of the user space
             // can be accessed and manipulated via
