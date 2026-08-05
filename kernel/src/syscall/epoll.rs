@@ -4,7 +4,10 @@ use core::time::Duration;
 
 use ostd::mm::VmIo;
 
-use super::SyscallReturn;
+use super::{
+    SyscallReturn,
+    rt_sigprocmask::{RequireFullSize, UserSigSetPtr},
+};
 use crate::{
     events::{EpollCtl, EpollEvent, EpollFile, EpollFlags, IoEvents},
     fs::file::{
@@ -12,7 +15,7 @@ use crate::{
         file_table::{FdFlags, RawFileDesc, get_file_fast},
     },
     prelude::*,
-    process::{posix_thread::ContextPthreadAdminApi, signal::sig_mask::SigMask},
+    process::posix_thread::ContextPthreadAdminApi,
     time::timespec_t,
 };
 
@@ -112,11 +115,11 @@ fn do_epoll_pwait2(
     };
 
     if sigmask_addr != 0 {
-        if sigmask_size != size_of::<SigMask>() {
-            return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
-        }
+        let size_policy = RequireFullSize::new(sigmask_size)?;
 
-        let sigmask = ctx.user_space().read_val::<SigMask>(sigmask_addr)?;
+        let user_space = ctx.user_space();
+        let sigmask_ptr = UserSigSetPtr::new(&user_space, sigmask_addr, size_policy);
+        let sigmask = sigmask_ptr.read_val()?;
         ctx.save_and_set_sig_mask(sigmask);
     }
 

@@ -2,7 +2,7 @@
 
 use ostd::mm::VmIo;
 
-use super::SyscallReturn;
+use super::{SyscallReturn, rt_sigprocmask::RequireFullSize};
 use crate::{
     prelude::*,
     process::{
@@ -22,7 +22,7 @@ pub fn sys_rt_sigaction(
     sig_num: u8,
     sig_action_addr: Vaddr,
     old_sig_action_addr: Vaddr,
-    sigset_size: u64,
+    sigset_size: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let sig_num = SigNum::try_from(sig_num)?;
@@ -34,9 +34,8 @@ pub fn sys_rt_sigaction(
         sigset_size
     );
 
-    if sigset_size != 8 {
-        return_errno_with_message!(Errno::EINVAL, "sigset size is not equal to 8");
-    }
+    // Validate the size of the signal set
+    RequireFullSize::new(sigset_size)?;
 
     let sig_dispositions = ctx.process.sig_dispositions().lock();
     let mut sig_dispositions = sig_dispositions.lock();

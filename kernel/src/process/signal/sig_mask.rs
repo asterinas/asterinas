@@ -28,7 +28,7 @@ pub type SigMask = SigSet;
 /// Because that all the signal numbers are in the range of 1 to 64, casting
 /// a signal set from `u64` to `SigSet` will always succeed.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Pod)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SigSet {
     bits: u64,
 }
@@ -126,6 +126,13 @@ impl ops::Not for SigSet {
     }
 }
 
+// This is to allow hexadecimally formatting a `SigSet` when debug printing it.
+impl LowerHex for SigSet {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        LowerHex::fmt(&self.bits, f)
+    }
+}
+
 impl SigSet {
     pub fn new_empty() -> Self {
         SigSet { bits: 0 }
@@ -155,13 +162,6 @@ impl SigSet {
     pub fn intersects(&self, other: impl Into<Self>) -> bool {
         let other = other.into();
         self.bits & other.bits != 0
-    }
-}
-
-// This is to allow hexadecimally formatting a `SigSet` when debug printing it.
-impl LowerHex for SigSet {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        LowerHex::fmt(&self.bits, f) // delegate to u64's implementation
     }
 }
 
