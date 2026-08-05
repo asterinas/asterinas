@@ -5,7 +5,7 @@ edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
+[target.x86_64-unknown-none.dependencies]
 aster-cmdline.workspace = true
 aster-input.workspace = true
 bitflags = "2.5"
