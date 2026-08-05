@@ -1381,6 +1381,7 @@ version = "0.18.0"
 dependencies = [
  "ostd",
  "owo-colors",
+ "spin",
 ]
 
 [[package]]

@@ -375,7 +375,7 @@ pub fn test_panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream 
 #[proc_macro_attribute]
 pub fn ktest(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Assuming that the item has type `fn() -> ()`, otherwise panics.
-    let input = parse_macro_input!(item as ItemFn);
+    let mut input = parse_macro_input!(item as ItemFn);
     assert!(
         input.sig.inputs.is_empty(),
         "test functions should have no arguments"
@@ -408,6 +408,9 @@ pub fn ktest(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! { ::ostd::ktest }
     };
 
+    // Deal with `#[serial]` and remove it before emitting the function.
+    let mode_tokens = generate_ktest_mode_tokens(&mut input.attrs, &ktest_path);
+
     // Deal with `#[should_panic]`.
     let panic_expectation_tokens = generate_panic_expectation_tokens(&input.attrs, &ktest_path);
 
@@ -422,6 +425,7 @@ pub fn ktest(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[unsafe(link_section = ".ktest_array")]
         static #fn_ktest_item_name: #ktest_path::KtestItem = #ktest_path::KtestItem::new(
             #fn_name,
+            #mode_tokens,
             #panic_expectation_tokens,
             #ktest_path::KtestItemInfo {
                 module_path: ::core::module_path!(),
@@ -441,6 +445,32 @@ pub fn ktest(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(output)
+}
+
+fn generate_ktest_mode_tokens(
+    attrs: &mut Vec<syn::Attribute>,
+    ktest_path: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let mut is_serial = false;
+    attrs.retain(|attr| {
+        if !attr.path().is_ident("serial") {
+            return true;
+        }
+
+        assert!(!is_serial, "multiple `serial` attributes");
+        assert!(
+            matches!(attr.meta, syn::Meta::Path(_)),
+            "the `serial` attribute does not accept arguments"
+        );
+        is_serial = true;
+        false
+    });
+
+    if is_serial {
+        quote! { #ktest_path::KtestMode::Serial }
+    } else {
+        quote! { #ktest_path::KtestMode::Parallel }
+    }
 }
 
 fn emit_redundant_test_prefix_warnings(attr: TokenStream, ident: &Ident) {

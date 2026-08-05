@@ -10,14 +10,20 @@
 extern crate alloc;
 
 mod path;
+mod scheduler;
 mod tree;
 
-use alloc::{boxed::Box, collections::BTreeSet, string::String, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeSet, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, format_args};
 
 use ostd::{
     early_print, early_println,
-    ktest::{KtestItem, KtestIter, PanicAttr, get_ktest_crate_whitelist, get_ktest_test_whitelist},
+    ktest::{
+        KtestItem, KtestIter, KtestMode, PanicAttr, get_ktest_crate_whitelist,
+        get_ktest_test_whitelist,
+    },
+    sync::{SpinLock, WaitQueue},
+    task::TaskOptions,
 };
 use owo_colors::OwoColorize;
 use path::{KtestPath, SuffixTrie};
@@ -46,7 +52,10 @@ impl core::fmt::Display for PanicInfo {
 /// The entry point of the test runner.
 #[ostd::ktest::main]
 fn main() {
-    use ostd::task::TaskOptions;
+    use ostd::{boot::smp, cpu::CpuId, task::TaskOptions};
+
+    scheduler::init();
+    smp::register_ap_entry(scheduler::wait_for_runnable);
 
     let test_task = move || {
         use alloc::string::ToString;
@@ -62,7 +71,10 @@ fn main() {
         };
     };
 
-    TaskOptions::new(test_task).data(()).spawn().unwrap();
+    TaskOptions::new(test_task)
+        .data(ostd::cpu::CpuSet::from(CpuId::bsp()))
+        .spawn()
+        .unwrap();
 }
 
 #[ostd::ktest::panic_handler]
@@ -135,15 +147,10 @@ where
 
 fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> KtestResult {
     let crate_name = crate_.name();
-    early_print!(
-        "\nrunning {} tests in crate \"{}\"\n\n",
-        crate_.nr_tot_tests(),
-        crate_name
-    );
-
-    let mut passed: usize = 0;
+    let mut parallel_tests = Vec::new();
+    let mut serial_tests = Vec::new();
     let mut filtered: usize = 0;
-    let mut failed_tests: Vec<(KtestItem, KtestError)> = Vec::new();
+
     for module in crate_.iter() {
         for test in module.iter() {
             if let Some(trie) = whitelist {
@@ -154,24 +161,36 @@ fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> Ktes
                     continue;
                 }
             }
-            early_print!(
-                "test {}::{} ...",
-                test.info().module_path,
-                test.info().fn_name
-            );
+
             debug_assert_eq!(test.info().package, crate_name);
-            match run_one_ktest(test) {
-                Ok(()) => {
-                    early_print!(" {}\n", "ok".green());
-                    passed += 1;
-                }
-                Err(e) => {
-                    early_print!(" {}\n", "FAILED".red());
-                    failed_tests.push((test.clone(), e.clone()));
-                }
+            match test.mode() {
+                KtestMode::Parallel => parallel_tests.push(test.clone()),
+                KtestMode::Serial => serial_tests.push(test.clone()),
             }
         }
     }
+
+    let parallel = parallel_tests.len();
+    let selected = parallel + serial_tests.len();
+    early_print!(
+        "\nrunning {} tests in crate \"{}\"\n\n",
+        selected,
+        crate_name
+    );
+
+    let results = Arc::new(KtestResults::new());
+    for test in parallel_tests {
+        spawn_ktest(test, results.clone());
+    }
+    results.wait_for(parallel);
+
+    for test in serial_tests {
+        let finished_before = results.finished();
+        spawn_ktest(test, results.clone());
+        results.wait_for(finished_before + 1);
+    }
+
+    let (passed, failed_tests) = results.take();
     let failed = failed_tests.len();
     if failed == 0 {
         early_print!("\ntest result: {}.", "ok".green());
@@ -184,7 +203,8 @@ fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> Ktes
         failed,
         filtered
     );
-    assert!(passed + failed + filtered == crate_.nr_tot_tests());
+    assert_eq!(passed + failed, selected);
+    assert_eq!(selected + filtered, crate_.nr_tot_tests());
     if failed > 0 {
         early_print!("\nfailures:\n\n");
         for (t, e) in failed_tests {
@@ -215,6 +235,82 @@ fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> Ktes
         return KtestResult::Failed;
     }
     KtestResult::Ok
+}
+
+struct KtestResults {
+    inner: SpinLock<KtestResultsInner>,
+    wait_queue: WaitQueue,
+}
+
+struct KtestResultsInner {
+    failed_tests: Vec<(KtestItem, KtestError)>,
+    finished: usize,
+    passed: usize,
+}
+
+impl KtestResults {
+    fn new() -> Self {
+        Self {
+            inner: SpinLock::new(KtestResultsInner {
+                failed_tests: Vec::new(),
+                finished: 0,
+                passed: 0,
+            }),
+            wait_queue: WaitQueue::new(),
+        }
+    }
+
+    fn record(&self, test: KtestItem, result: Result<(), KtestError>) {
+        let test_info = test.info();
+        match &result {
+            Ok(()) => early_print!(
+                "test {}::{} ... {}\n",
+                test_info.module_path,
+                test_info.fn_name,
+                "ok".green()
+            ),
+            Err(_) => early_print!(
+                "test {}::{} ... {}\n",
+                test_info.module_path,
+                test_info.fn_name,
+                "FAILED".red()
+            ),
+        }
+
+        {
+            let mut inner = self.inner.lock();
+            match result {
+                Ok(()) => inner.passed += 1,
+                Err(error) => inner.failed_tests.push((test, error)),
+            }
+            inner.finished += 1;
+        }
+        self.wait_queue.wake_all();
+    }
+
+    fn finished(&self) -> usize {
+        self.inner.lock().finished
+    }
+
+    fn wait_for(&self, expected: usize) {
+        self.wait_queue
+            .wait_until(|| (self.inner.lock().finished >= expected).then_some(()));
+    }
+
+    fn take(&self) -> (usize, Vec<(KtestItem, KtestError)>) {
+        let mut inner = self.inner.lock();
+        (inner.passed, core::mem::take(&mut inner.failed_tests))
+    }
+}
+
+fn spawn_ktest(test: KtestItem, results: Arc<KtestResults>) {
+    TaskOptions::new(move || {
+        let result = run_one_ktest(&test);
+        results.record(test, result);
+    })
+    .data(())
+    .spawn()
+    .unwrap();
 }
 
 /// The error that may occur during the test.

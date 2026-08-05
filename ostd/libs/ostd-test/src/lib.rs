@@ -40,6 +40,11 @@
 //!     fn expect_panic() {
 //!         panic!("expected panic message");
 //!     }
+//!     #[ktest]
+//!     #[serial]
+//!     fn serial_test() {
+//!         // This test runs after all parallel tests.
+//!     }
 //! }
 //! ```
 //!
@@ -92,8 +97,19 @@ pub struct KtestItemInfo {
 #[derive(Clone, Debug)]
 pub struct KtestItem {
     fn_: fn() -> (),
+    mode: KtestMode,
     panic_attr: PanicAttr,
     info: KtestItemInfo,
+}
+
+/// The execution mode of a kernel-mode unit test.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KtestMode {
+    /// The test may run concurrently with other parallel tests.
+    Parallel,
+    /// The test runs alone after all parallel tests finish.
+    Serial,
 }
 
 #[repr(C)]
@@ -110,9 +126,15 @@ impl KtestItem {
     /// Do not use this function directly. Instead, use the `#[ktest]`
     /// attribute to mark the test function.
     #[doc(hidden)]
-    pub const fn new(fn_: fn() -> (), panic_attr: PanicAttr, info: KtestItemInfo) -> Self {
+    pub const fn new(
+        fn_: fn() -> (),
+        mode: KtestMode,
+        panic_attr: PanicAttr,
+        info: KtestItemInfo,
+    ) -> Self {
         Self {
             fn_,
+            mode,
             panic_attr,
             info,
         }
@@ -121,6 +143,11 @@ impl KtestItem {
     /// Gets the information of the test.
     pub fn info(&self) -> &KtestItemInfo {
         &self.info
+    }
+
+    /// Gets the execution mode of the test.
+    pub fn mode(&self) -> KtestMode {
+        self.mode
     }
 
     /// Gets the panic expectation of the test.
