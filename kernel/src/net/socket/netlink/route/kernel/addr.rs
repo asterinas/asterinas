@@ -11,11 +11,11 @@ use super::util::finish_response;
 use crate::{
     net::{
         iface::{Iface, iter_all_ifaces},
+        route::RouteScope,
         socket::netlink::{
             message::{CMsgSegHdr, CSegmentType, GetRequestFlags, SegHdrCommonFlags},
             route::message::{
-                AddrAttr, AddrMessageFlags, AddrProtocol, AddrSegment, AddrSegmentBody, RtScope,
-                RtnlSegment,
+                AddrAttr, AddrMessageFlags, AddrProtocol, AddrSegment, AddrSegmentBody, RtnlSegment,
             },
         },
     },
@@ -83,9 +83,9 @@ fn iface_to_new_addr(
         IpCidr::Ipv4(ipv4_cidr) => {
             let ipv4_addr = ipv4_cidr.address();
             let scope = if ipv4_addr.is_loopback() {
-                RtScope::HOST
+                RouteScope::HOST
             } else {
-                RtScope::UNIVERSE
+                RouteScope::UNIVERSE
             };
             (
                 CSocketAddrFamily::AF_INET,
@@ -97,11 +97,11 @@ fn iface_to_new_addr(
         IpCidr::Ipv6(ipv6_cidr) => {
             let ipv6_addr = ipv6_cidr.address();
             let scope = if ipv6_addr.is_loopback() {
-                RtScope::HOST
+                RouteScope::HOST
             } else if ipv6_addr.is_unicast_link_local() {
-                RtScope::LINK
+                RouteScope::LINK
             } else {
-                RtScope::UNIVERSE
+                RouteScope::UNIVERSE
             };
             (
                 CSocketAddrFamily::AF_INET6,
