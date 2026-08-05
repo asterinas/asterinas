@@ -4,13 +4,16 @@ use core::time::Duration;
 
 use ostd::{mm::VmIo, sync::Waiter};
 
-use super::SyscallReturn;
+use super::{
+    SyscallReturn,
+    rt_sigprocmask::{RequireFullSize, UserSigSetPtr},
+};
 use crate::{
     prelude::*,
     process::signal::{
         HandlePendingSignal,
         constants::{SIGKILL, SIGSTOP},
-        sig_mask::{SigMask, SigSet},
+        sig_mask::SigMask,
         signals::Signal,
         with_sigmask_changed,
     },
@@ -29,14 +32,14 @@ pub fn sys_rt_sigtimedwait(
         set_ptr, info_ptr, timeout_ptr, sigset_size
     );
 
-    // Validate sigset size
-    if sigset_size != size_of::<SigMask>() {
-        return_errno_with_message!(Errno::EINVAL, "invalid sigset size");
-    }
+    // Validate the size of the signal set.
+    let size_policy = RequireFullSize::new(sigset_size)?;
 
+    let user_space = ctx.user_space();
+    let sigmask_ptr = UserSigSetPtr::new(&user_space, set_ptr, size_policy);
     // Read the signal set
     let mask = {
-        let mut set: SigSet = ctx.user_space().read_val(set_ptr)?;
+        let mut set = sigmask_ptr.read_val()?;
 
         // Remove SIGKILL and SIGSTOP as they cannot be waited for
         set -= SIGKILL;

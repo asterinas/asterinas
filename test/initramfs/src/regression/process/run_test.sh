@@ -59,6 +59,7 @@ fi
 ./signal/kill
 ./signal/parent_death_signal
 ./signal/pidfd_send_signal
+./signal/rt_sigpending
 ./signal/signal_fd
 ./signal/signal_test2
 
