@@ -118,8 +118,10 @@ impl TryFrom<i32> for VtIndex {
 }
 
 pub(super) fn init_in_first_process() -> Result<()> {
-    keyboard::init_in_first_process();
+    // The keyboard handler may run from IRQ context as soon as it is
+    // registered, so `VT_MANAGER` must be initialized first.
     manager::init_in_first_process()?;
+    keyboard::init_in_first_process();
     device::init_in_first_process();
     Ok(())
 }
