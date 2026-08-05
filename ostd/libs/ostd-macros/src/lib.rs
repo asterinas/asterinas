@@ -401,52 +401,37 @@ pub fn ktest(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Emit warnings similar to `clippy::redundant_test_prefix`.
     emit_redundant_test_prefix_warnings(attr, &input.sig.ident);
 
-    // Deal with `#[should_panic]`.
-    let panic_expectation_tokens = generate_panic_expectation_tokens(&input.attrs);
-
     let package_name = std::env::var("CARGO_PKG_NAME").unwrap();
+    let ktest_path = if package_name.as_str() == "ostd" {
+        quote! { ::ostd_test }
+    } else {
+        quote! { ::ostd::ktest }
+    };
+
+    // Deal with `#[should_panic]`.
+    let panic_expectation_tokens = generate_panic_expectation_tokens(&input.attrs, &ktest_path);
+
     let span = proc_macro2::Span::call_site();
     let line = span.start().line;
     let col = span.start().column;
 
-    let register_ktest_item = if package_name.as_str() == "ostd" {
-        quote! {
-            #[cfg(ktest)]
-            #[used]
-            // SAFETY: This is properly handled in the linker script.
-            #[unsafe(link_section = ".ktest_array")]
-            static #fn_ktest_item_name: ::ostd_test::KtestItem = ::ostd_test::KtestItem::new(
-                #fn_name,
-                #panic_expectation_tokens,
-                ::ostd_test::KtestItemInfo {
-                    module_path: ::core::module_path!(),
-                    fn_name: ::core::stringify!(#fn_name),
-                    package: #package_name,
-                    source: ::core::file!(),
-                    line: #line,
-                    col: #col,
-                },
-            );
-        }
-    } else {
-        quote! {
-            #[cfg(ktest)]
-            #[used]
-            // SAFETY: This is properly handled in the linker script.
-            #[unsafe(link_section = ".ktest_array")]
-            static #fn_ktest_item_name: ::ostd::ktest::KtestItem = ::ostd::ktest::KtestItem::new(
-                #fn_name,
-                #panic_expectation_tokens,
-                ::ostd::ktest::KtestItemInfo {
-                    module_path: ::core::module_path!(),
-                    fn_name: ::core::stringify!(#fn_name),
-                    package: #package_name,
-                    source: ::core::file!(),
-                    line: #line,
-                    col: #col,
-                },
-            );
-        }
+    let register_ktest_item = quote! {
+        #[cfg(ktest)]
+        #[used]
+        // SAFETY: This is properly handled in the linker script.
+        #[unsafe(link_section = ".ktest_array")]
+        static #fn_ktest_item_name: #ktest_path::KtestItem = #ktest_path::KtestItem::new(
+            #fn_name,
+            #panic_expectation_tokens,
+            #ktest_path::KtestItemInfo {
+                module_path: ::core::module_path!(),
+                fn_name: ::core::stringify!(#fn_name),
+                package: #package_name,
+                source: ::core::file!(),
+                line: #line,
+                col: #col,
+            },
+        );
     };
 
     let output = quote! {
@@ -543,7 +528,10 @@ fn emit_redundant_test_prefix_warnings(attr: TokenStream, ident: &Ident) {
     };
 }
 
-fn generate_panic_expectation_tokens(attrs: &[syn::Attribute]) -> proc_macro2::TokenStream {
+fn generate_panic_expectation_tokens(
+    attrs: &[syn::Attribute],
+    ktest_path: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
     fn is_should_panic_attr(attr: &syn::Attribute) -> bool {
         attr.path()
             .segments
@@ -553,7 +541,7 @@ fn generate_panic_expectation_tokens(attrs: &[syn::Attribute]) -> proc_macro2::T
 
     let mut attr_iter = attrs.iter();
     let Some(should_panic_attr) = attr_iter.find(|&attr| is_should_panic_attr(attr)) else {
-        let tokens = quote! { (false, None) };
+        let tokens = quote! { #ktest_path::PanicAttr::NoPanic };
         return tokens;
     };
     assert!(
@@ -567,12 +555,12 @@ fn generate_panic_expectation_tokens(attrs: &[syn::Attribute]) -> proc_macro2::T
                 && let Expr::Lit(lit) = *expected_assign.right
                 && let syn::Lit::Str(expectation) = lit.lit
             {
-                let tokens = quote! { (true, Some(#expectation)) };
+                let tokens = quote! { #ktest_path::PanicAttr::ExpectPanic(#expectation) };
                 return tokens;
             }
         }
         syn::Meta::Path(_) => {
-            let tokens = quote! { (true, None) };
+            let tokens = quote! { #ktest_path::PanicAttr::ShouldPanic };
             return tokens;
         }
         _ => (),

@@ -227,7 +227,7 @@ mod tests {
             let new = |m: &'static str, f: &'static str, p: &'static str| {
                 KtestItem::new(
                     dummy_fn,
-                    (false, None),
+                    ostd::ktest::PanicAttr::NoPanic,
                     ostd::ktest::KtestItemInfo {
                         module_path: m,
                         fn_name: f,
