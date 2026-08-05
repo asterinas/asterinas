@@ -7,6 +7,7 @@ edition.workspace = true
 
 [dependencies]
 aster-console.workspace = true
+aster-util.workspace = true
 component.workspace = true
 inherit-methods-macro.workspace = true
 ostd.workspace = true

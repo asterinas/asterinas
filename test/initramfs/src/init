@@ -23,8 +23,14 @@ mount -t sysfs none /sys
 mount -t proc none /proc
 mount -t cgroup2 none /sys/fs/cgroup
 mount -t configfs none /sys/kernel/config
-mount -t ext2 /dev/vda /ext2
-mount -t exfat /dev/vdb /exfat
+
+if [ -b /dev/vda ]; then
+    mount -t ext2 /dev/vda /ext2
+fi
+
+if [ -b /dev/vdb ]; then
+    mount -t exfat /dev/vdb /exfat
+fi
 
 # When the init process starts,
 # it does not have a process group, session, or controlling terminal.

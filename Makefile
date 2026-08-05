@@ -28,7 +28,11 @@ COVERAGE ?= 0
 # Asterinas will automatically fall back to tty0 if hvc0 is not available.
 # Note that currently the virtual terminal (tty0) can only work with
 # linux-efi-handover64 and linux-efi-pe64 boot protocol.
+ifeq ($(SCHEME), sifive_u)
+CONSOLE ?= ttyS0
+else
 CONSOLE ?= hvc0
+endif
 # End of global build options.
 
 # GDB debugging and profiling options.
