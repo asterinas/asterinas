@@ -5,7 +5,10 @@ use crate::{
         file::{InodeType, mkmod},
         procfs::{
             ProcDir, StaticEntry,
-            sys::vm::mmap_min_addr::MmapMinAddrFileOps,
+            sys::vm::{
+                max_map_count::MaxMapCountFileOps, mmap_min_addr::MmapMinAddrFileOps,
+                overcommit_memory::OvercommitMemoryFileOps,
+            },
             template::{
                 ProcDirOps, ReaddirEntry, listed_entries_from_table, lookup_child_from_table,
                 visit_listed_entries,
@@ -16,7 +19,9 @@ use crate::{
     prelude::*,
 };
 
+mod max_map_count;
 mod mmap_min_addr;
+mod overcommit_memory;
 
 /// Represents the inode at `/proc/sys/vm`.
 pub struct VmDirOps;
@@ -29,11 +34,23 @@ impl VmDirOps {
         ProcDir::new(Self, parent, mkmod!(a+rx))
     }
 
-    const STATIC_ENTRIES: &'static [StaticEntry] = &[(
-        "mmap_min_addr",
-        InodeType::File,
-        MmapMinAddrFileOps::new_inode,
-    )];
+    const STATIC_ENTRIES: &'static [StaticEntry] = &[
+        (
+            "max_map_count",
+            InodeType::File,
+            MaxMapCountFileOps::new_inode,
+        ),
+        (
+            "mmap_min_addr",
+            InodeType::File,
+            MmapMinAddrFileOps::new_inode,
+        ),
+        (
+            "overcommit_memory",
+            InodeType::File,
+            OvercommitMemoryFileOps::new_inode,
+        ),
+    ];
 }
 
 impl ProcDirOps for VmDirOps {
