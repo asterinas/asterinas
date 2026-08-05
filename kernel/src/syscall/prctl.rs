@@ -7,7 +7,7 @@ use crate::{
     prelude::*,
     process::{
         credentials::{SecureBits, capabilities::CapSet},
-        posix_thread::{ContextPthreadAdminApi, MAX_THREAD_NAME_LEN},
+        posix_thread::{ContextPthreadAdminApi, ThreadName},
         signal::sig_num::SigNum,
     },
 };
@@ -63,16 +63,14 @@ pub fn sys_prctl(
             credentials.set_keep_capabilities(keep_cap != 0)?;
         }
         PrctlCmd::PR_SET_NAME(read_addr) => {
-            let new_thread_name = ctx
-                .user_space()
-                .read_cstring(read_addr, MAX_THREAD_NAME_LEN)?;
-            let mut thread_name = ctx.posix_thread.thread_name().lock();
-            thread_name.set_name(&new_thread_name);
+            let mut name_bytes = [0u8; ThreadName::MAX_BYTES];
+            ctx.user_space().read_bytes(read_addr, &mut name_bytes)?;
+            *ctx.posix_thread.thread_name().lock() = ThreadName::from_bytes_until_nul(&name_bytes);
         }
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
             let thread_name = ctx.posix_thread.thread_name().lock();
             ctx.user_space()
-                .write_bytes(write_to_addr, thread_name.name().to_bytes_with_nul())?;
+                .write_bytes(write_to_addr, thread_name.as_bytes_with_nul())?;
         }
         PrctlCmd::PR_CAPBSET_READ(capability) => {
             let credentials = ctx.posix_thread.credentials();

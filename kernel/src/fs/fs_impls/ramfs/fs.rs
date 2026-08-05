@@ -435,7 +435,7 @@ impl DirEntry {
     }
 
     fn append_entry(&mut self, name: &str, inode: Arc<RamInode>) -> usize {
-        let name = CStr256::from(name);
+        let name = CStr256::from_str_truncated(name);
         let idx = self.children.put((name, inode));
         self.idx_map.insert(name, idx);
         idx
@@ -1162,7 +1162,10 @@ impl Inode for RamInode {
             } else if let Some((dst_idx, dst_inode)) = self_dir.get_entry(new_name) {
                 check_replace_inode(&src_inode, &dst_inode)?;
                 self_dir.remove_entry(dst_idx);
-                self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
+                self_dir.substitute_entry(
+                    src_idx,
+                    (CStr256::from_str_truncated(new_name), src_inode.clone()),
+                );
                 drop(self_dir);
 
                 let now = now();
@@ -1170,7 +1173,10 @@ impl Inode for RamInode {
                 src_inode.set_ctime(now);
                 dst_inode.set_ctime(now);
             } else {
-                self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
+                self_dir.substitute_entry(
+                    src_idx,
+                    (CStr256::from_str_truncated(new_name), src_inode.clone()),
+                );
                 drop(self_dir);
 
                 let now = now();

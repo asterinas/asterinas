@@ -20,6 +20,7 @@ use util::{Retrans, TcpOptionSet};
 
 use super::{
     addr::IpAddressFamily,
+    ioctl::ipv4_ioctl,
     options::{IpOptionSet, SetIpLevelOption},
 };
 use crate::{
@@ -47,7 +48,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    util::{MultiRead, MultiWrite, net::SockType},
+    util::{MultiRead, MultiWrite, ioctl::RawIoctl, net::SockType},
 };
 
 mod connected;
@@ -63,6 +64,7 @@ pub struct StreamSocket {
     // FIXME: We perform userspace reads/writes when holding the spin locks (e.g., this state lock
     // and other locks in `aster-bigtcp`), which will break the atomic mode.
     state: RwLock<Takeable<State>>,
+    family: IpAddressFamily,
     options: RwLock<OptionSet>,
     timeouts: SocketTimeouts,
 
@@ -108,7 +110,7 @@ impl OptionSet {
 
 impl StreamSocket {
     pub fn new(is_nonblocking: bool, family: IpAddressFamily) -> Arc<Self> {
-        let init_stream = InitStream::new(family);
+        let init_stream = InitStream::new();
         let status_flags = if is_nonblocking {
             StatusFlags::O_NONBLOCK
         } else {
@@ -116,6 +118,7 @@ impl StreamSocket {
         };
         Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Init(init_stream))),
+            family,
             options: RwLock::new(OptionSet::new()),
             timeouts: SocketTimeouts::new(),
             pollee: Pollee::new(),
@@ -125,6 +128,7 @@ impl StreamSocket {
 
     fn new_accepted(
         connected_stream: ConnectedStream,
+        family: IpAddressFamily,
         listener_options: &OptionSet,
         listener_timeouts: &SocketTimeouts,
         is_nonblocking: bool,
@@ -171,6 +175,7 @@ impl StreamSocket {
 
         Arc::new(Self {
             state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
+            family,
             options: RwLock::new(options),
             timeouts: listener_timeouts.clone(),
             pollee,
@@ -276,6 +281,7 @@ impl StreamSocket {
 
             let (target_state, iface_to_poll) = match init_stream.connect(
                 remote_endpoint,
+                self.family,
                 &raw_option,
                 options.socket.reuse_addr(),
                 StreamObserver::new(self.pollee.clone()),
@@ -343,6 +349,7 @@ impl StreamSocket {
             let listener_options = self.options.read();
             let accepted_socket = Self::new_accepted(
                 connected_stream,
+                self.family,
                 &listener_options,
                 &self.timeouts,
                 is_nonblocking,
@@ -464,6 +471,19 @@ impl SocketPrivate for StreamSocket {
     fn is_nonblocking(&self) -> bool {
         self.common.is_nonblocking()
     }
+
+    fn protocol_ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        // Handle common IPv4/IPv6 ioctl commands.
+        match self.family {
+            IpAddressFamily::IPv4 => ipv4_ioctl(raw_ioctl),
+            IpAddressFamily::IPv6 => {
+                // TODO: Add support for IPv6 ioctl commands.
+                return_errno_with_message!(Errno::ENOTTY, "the socket ioctl command is unknown")
+            }
+        }
+
+        // Handle ioctl commands that require TCP-specific handling.
+    }
 }
 
 impl Socket for StreamSocket {
@@ -476,7 +496,7 @@ impl Socket for StreamSocket {
         };
 
         let can_reuse = self.options.read().socket.reuse_addr();
-        init_stream.bind(&endpoint, can_reuse)
+        init_stream.bind(&endpoint, self.family, can_reuse)
     }
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
@@ -566,7 +586,7 @@ impl Socket for StreamSocket {
         let local_endpoint = match state.as_ref() {
             State::Init(init_stream) => init_stream
                 .local_endpoint()
-                .unwrap_or_else(|| init_stream.family().unspecified_endpoint()),
+                .unwrap_or_else(|| self.family.unspecified_endpoint()),
             State::Connecting(connecting_stream) => connecting_stream.local_endpoint(),
             State::Listen(listen_stream) => listen_stream.local_endpoint(),
             State::Connected(connected_stream) => connected_stream.local_endpoint(),

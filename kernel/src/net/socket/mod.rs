@@ -13,8 +13,9 @@ use crate::{
         },
         pseudofs::SockFs,
     },
+    net::socket::util::ioctl::socket_ioctl,
     prelude::*,
-    util::{MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, ioctl::RawIoctl},
 };
 
 pub mod ip;
@@ -27,7 +28,7 @@ pub mod vsock;
 mod private {
     use core::time::Duration;
 
-    use crate::{events::IoEvents, prelude::*, process::signal::Pollable};
+    use crate::{events::IoEvents, prelude::*, process::signal::Pollable, util::ioctl::RawIoctl};
 
     /// Common methods for sockets, but private to the network module.
     ///
@@ -65,6 +66,11 @@ mod private {
                         _ => err,
                     })
             }
+        }
+
+        /// Handles commands specific to its protocol or socket type.
+        fn protocol_ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
+            return_errno_with_message!(Errno::ENOTTY, "the socket ioctl command is unknown");
         }
     }
 }
@@ -159,6 +165,10 @@ impl<T: Socket + 'static> FileLike for T {
             MessageHeader::new(None, Vec::new()),
             SendFlags::empty(),
         )
+    }
+
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        socket_ioctl(self, raw_ioctl)
     }
 
     fn settable_status_flags(&self) -> SettableStatusFlags {

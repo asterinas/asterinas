@@ -434,7 +434,7 @@ fn clone_child_task(
     let sig_mask = posix_thread.sig_mask().into();
 
     // Inherit the thread name.
-    let thread_name = posix_thread.thread_name().lock().clone();
+    let thread_name = *posix_thread.thread_name().lock();
 
     let child_tid = allocate_posix_tid();
     let child_task = {
@@ -572,7 +572,7 @@ fn clone_child_process(
 
         let mut child_thread_builder = {
             // Inherit the parent's thread name
-            let child_thread_name = ctx.posix_thread.thread_name().lock().clone();
+            let child_thread_name = *ctx.posix_thread.thread_name().lock();
 
             let credentials = {
                 let credentials = ctx.posix_thread.credentials();

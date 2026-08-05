@@ -155,7 +155,7 @@ fn iface_to_new_addr(
                 // Since `Iface` does not support per-address labels,
                 // report the interface name.
                 // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/ipv4/devinet.c#L1765>.
-                AddrAttr::Label(iface.name().to_owned()),
+                AddrAttr::Label(iface.name().as_cstr().to_owned()),
                 AddrAttr::Flags(addr_message.flags),
             ]);
             attrs

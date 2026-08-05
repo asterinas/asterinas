@@ -2,6 +2,3 @@
 
 pub mod addr;
 pub mod link;
-
-/// The size limit for interface names.
-const IFNAME_SIZE: usize = 16;

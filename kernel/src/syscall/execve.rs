@@ -9,7 +9,10 @@ use crate::{
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
     },
     prelude::*,
-    process::{do_execve, posix_thread::ThreadName},
+    process::{
+        do_execve,
+        posix_thread::{ThreadName, derive_thread_name},
+    },
 };
 
 pub fn sys_execve(
@@ -88,9 +91,9 @@ fn lookup_executable_file(
     // user-supplied exec path before symlink resolution. `execveat` with
     // `AT_EMPTY_PATH` has no such path, so fall back to the resolved file name.
     let thread_name = if filename.is_empty() {
-        ThreadName::new_from_executable_path(&path.name())
+        derive_thread_name(&path.name())
     } else {
-        ThreadName::new_from_executable_path(&filename)
+        derive_thread_name(&filename)
     };
 
     Ok((path, thread_name))

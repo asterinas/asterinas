@@ -3,6 +3,7 @@
 mod addr;
 mod common;
 mod datagram;
+mod ioctl;
 pub mod options;
 mod stream;
 
