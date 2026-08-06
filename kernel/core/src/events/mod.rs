@@ -10,7 +10,7 @@ mod subject;
 
 pub(crate) use self::{
     epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
-    event_file::{EventFile, EventFileFlags},
+    event_file::{EventFile, EventFileFlags, KernelEventFile},
     events::{Events, EventsFilter},
     io_events::IoEvents,
     observer::Observer,
