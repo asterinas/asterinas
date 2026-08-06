@@ -7,6 +7,7 @@ use self::{
     elf::{ElfHeaders, ElfLoadInfo, load_elf_to_vmar},
     shebang::parse_shebang_line,
 };
+use super::execve::ShebangScriptPath;
 use crate::{
     fs::{
         file::{InodeType, Permission},
@@ -36,7 +37,7 @@ impl ProgramToLoad {
     pub(super) fn build_from_file(
         mut elf_file: Path,
         path_resolver: &PathResolver,
-        mut script_path: CString,
+        mut script_path: ShebangScriptPath,
         mut argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Self> {
@@ -60,6 +61,20 @@ impl ProgramToLoad {
                 break (file_first_page, len);
             };
 
+            // A shebang interpreter must reopen the original script path after exec. A path
+            // synthesized from a close-on-exec file descriptor will no longer be accessible then,
+            // so fail before changing the process state. Linux does the same through
+            // `BINPRM_FLAGS_PATH_INACCESSIBLE` in `fs/binfmt_script.c`.
+            let current_script_path = match script_path {
+                ShebangScriptPath::Accessible(path) => path,
+                ShebangScriptPath::Inaccessible => {
+                    return_errno_with_message!(
+                        Errno::ENOENT,
+                        "the script path is inaccessible after closing close-on-exec file descriptors"
+                    );
+                }
+            };
+
             if recursive_limit == 0 {
                 return_errno_with_message!(Errno::ELOOP, "the recursieve limit is reached");
             }
@@ -79,10 +94,10 @@ impl ProgramToLoad {
             // regardless of the caller-supplied `argv[0]`. For example,
             // `exec -a custom ./script arg` with `#!/bin/sh` must execute
             // `/bin/sh ./script arg`, not `/bin/sh custom arg`.
-            new_argv.push(script_path);
+            new_argv.push(current_script_path);
             new_argv.extend(argv.into_iter().skip(1));
             argv = new_argv;
-            script_path = interpreter_filename;
+            script_path = ShebangScriptPath::Accessible(interpreter_filename);
             elf_file = interpreter;
         };
 
