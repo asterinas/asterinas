@@ -8,7 +8,9 @@ use crate::{
     net::{
         iface::BoundUdpPort,
         socket::{
-            ip::common::{get_ephemeral_endpoint, resolve_bind_iface_and_config},
+            ip::common::{
+                get_ephemeral_endpoint, map_unspecified_to_localhost, resolve_bind_iface_and_config,
+            },
             util::datagram_common,
         },
     },
@@ -60,12 +62,10 @@ impl datagram_common::Unbound for UnboundDatagram {
         remote_endpoint: &Self::Endpoint,
         pollee: &Pollee,
     ) -> Result<Self::Bound> {
-        let endpoint = get_ephemeral_endpoint(remote_endpoint).ok_or_else(|| {
-            Error::with_message(
-                Errno::EADDRNOTAVAIL,
-                "no interface has an address for the specified family",
-            )
-        })?;
+        let endpoint = {
+            let remote_endpoint = map_unspecified_to_localhost(*remote_endpoint);
+            get_ephemeral_endpoint(&remote_endpoint)?
+        };
         self.bind(&endpoint, pollee, BindOptions { can_reuse: false })
     }
 

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub(crate) mod iface;
+mod iface;
+mod route;
 pub(crate) mod socket;
 pub(crate) mod uts_ns;
 
 pub(crate) fn init() {
     iface::init();
+    route::init();
     socket::netlink::init();
     socket::vsock::init();
 }

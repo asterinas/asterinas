@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-mod broadcast;
 mod ext;
 mod init;
 mod poll;
 mod sched;
 
-pub(crate) use broadcast::is_broadcast_endpoint;
-pub(crate) use init::{init, iter_all_ifaces, loopback_iface, virtio_iface};
+pub(crate) use init::{init, iter_all_ifaces};
 pub(super) use poll::init_in_first_kthread;
 
 pub(crate) type Iface = dyn aster_bigtcp::iface::Iface<ext::BigtcpExt>;
