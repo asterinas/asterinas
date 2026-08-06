@@ -2,10 +2,7 @@
 
 use alloc::sync::Arc;
 
-use aster_framebuffer::{
-    framebuffer::FRAMEBUFFER,
-    mode::{KeyboardMode, KeyboardModeFlags},
-};
+use aster_framebuffer::mode::{KeyboardMode, KeyboardModeFlags};
 use aster_input::{
     event_type_codes::{KeyCode, KeyStatus},
     input_dev::{InputDevice, InputEvent},
@@ -396,13 +393,15 @@ impl VtKeyboardHandler {
                     vt.push_input(b"\r")
                 };
             }
+            SpecialHandler::Reboot => {
+                ostd::power::restart(ostd::power::ExitCode::Success);
+            }
             SpecialHandler::DecreaseConsole | SpecialHandler::IncreaseConsole => unreachable!(),
             SpecialHandler::ScrollBackward
             | SpecialHandler::ScrollForward
             | SpecialHandler::ShowMem
             | SpecialHandler::ShowState
-            | SpecialHandler::Compose
-            | SpecialHandler::Reboot => {
+            | SpecialHandler::Compose => {
                 ostd::warn!("VT keyboard action {:?} is not implemented yet", handler);
             }
         }
@@ -448,10 +447,6 @@ impl InputHandler for VtKeyboardHandler {
 static REGISTERED_INPUT_HANDLER_CLASS: Once<RegisteredInputHandlerClass> = Once::new();
 
 pub(super) fn init_in_first_process() {
-    if FRAMEBUFFER.get().is_none() {
-        return;
-    }
-
     REGISTERED_INPUT_HANDLER_CLASS.call_once(|| {
         let handler_class = Arc::new(VtKeyboardHandlerClass);
         aster_input::register_handler_class(handler_class)

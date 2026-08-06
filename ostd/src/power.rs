@@ -12,6 +12,7 @@ use crate::{arch::irq::disable_local_and_halt, cpu::CpuSet};
 /// can be passed to the hypervisor (e.g., as QEMU's exit code). In a bare-metal environment, it
 /// can be passed to the firmware. In either case, the code may be silently ignored if reporting
 /// the code is not supported.
+#[derive(Clone, Copy)]
 pub enum ExitCode {
     /// The code that indicates a successful exit.
     Success,

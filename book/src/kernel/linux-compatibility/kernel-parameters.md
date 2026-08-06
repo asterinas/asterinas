@@ -57,6 +57,36 @@ virtio_mmio.device=0x200@0x5950f000:10
 virtio_mmio.device=1K@0x1001e000:74
 ```
 
+### `i8042.reset`
+
+Force the i8042 controller self-test during initialization.
+
+Valid values:
+- `1`, `on`, `yes`, `true` or no value — perform the controller self-test
+- `0`, `off`, `no`, `false` — skip the controller self-test (default)
+
+Examples:
+```text
+i8042.reset
+i8042.reset=1
+i8042.reset=0
+```
+
+### `atkbd.reset`
+
+Override whether the AT keyboard reset is performed during initialization.
+
+Valid values:
+- `1`, `on`, `yes`, `true` or no value — send the keyboard reset command
+- `0`, `off`, `no`, `false` — skip the keyboard reset
+
+Examples:
+```text
+atkbd.reset
+atkbd.reset=1
+atkbd.reset=0
+```
+
 ## Asterinas-specific
 ### `earlycon`
 
