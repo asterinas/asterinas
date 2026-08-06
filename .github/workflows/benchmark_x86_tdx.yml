@@ -103,6 +103,10 @@ jobs:
           - memcached/t8_conc32_window10k
           - memcached/t8_conc32_window20k
           - memcached/t16_conc64_window10k
+          # Boot time benchmark (at different initramfs sizes)
+          - boot/boot_lat
+          - boot/boot_lat_100mb
+          - boot/boot_lat_500mb
       fail-fast: false
       # FIXME: Remove the following line after fixing the parallel execution of network benchmarks.
       max-parallel: 1
