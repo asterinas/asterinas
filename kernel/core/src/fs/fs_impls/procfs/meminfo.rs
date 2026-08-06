@@ -52,6 +52,9 @@ impl ProcFileOps for MemInfoFileOps {
         writeln!(printer, "SwapTotal:\t0 kB")?;
         writeln!(printer, "SwapFree:\t0 kB")?;
 
+        let slab = crate::vm::mem_slab() / 1024;
+        writeln!(printer, "Slab:\t{} kB", slab)?;
+
         Ok(printer.bytes_written())
     }
 }
