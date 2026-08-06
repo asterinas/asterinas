@@ -15,7 +15,7 @@ use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
 use ostd::sync::{SpinLock, SpinLockGuard};
 use smoltcp::{
-    iface::{Context, packet::Packet},
+    iface::{Context, Route, packet::Packet},
     phy::Device,
     wire::{IpAddress, IpEndpoint, Ipv4Cidr, Ipv4Packet, Ipv6Address, Ipv6Cidr, Ipv6Packet},
 };
@@ -122,6 +122,10 @@ impl<E: Ext> IfaceCommon<E> {
 
     pub(super) fn ipv6_cidr(&self) -> Option<Ipv6Cidr> {
         self.interface.lock().ipv6_cidr()
+    }
+
+    pub(super) fn routes(&self) -> Vec<Route> {
+        self.interface.lock().routes()
     }
 
     pub(super) fn sched_poll(&self) -> &E::ScheduleNextPoll {
