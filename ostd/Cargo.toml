@@ -59,6 +59,7 @@ iced-x86 = { version = "1.21.0", default-features = false, features = [
 ], optional = true }
 tdx-guest = { workspace = true, optional = true }
 unwinding = { version = "=0.2.9", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
+uefi-raw = { workspace = true, optional = true }
 
 [target.riscv64imac-unknown-none-elf.dependencies]
 riscv = { version = "0.15.0", features = ["s-mode"] }
@@ -73,7 +74,7 @@ fdt = { version = "0.1.5", features = ["pretty-printing"] }
 [features]
 default = ["cvm_guest"]
 # The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX
-cvm_guest = ["dep:tdx-guest", "dep:iced-x86"]
+cvm_guest = ["dep:tdx-guest", "dep:iced-x86", "dep:uefi-raw"]
 coverage = ["minicov"]
 riscv_sv39_mode = []
 

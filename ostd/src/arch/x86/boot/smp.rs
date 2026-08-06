@@ -28,6 +28,7 @@
 //! different considerations in different systems.
 
 use acpi::madt::MadtEntry;
+use linux_boot_params::{AP_BOOT_REGION_SIZE, AP_BOOT_START_PA};
 
 use crate::{
     arch::{
@@ -131,18 +132,16 @@ pub(crate) unsafe fn bringup_all_aps(info_ptr: *const PerApRawInfo, pt_ptr: Padd
     });
 }
 
-/// This is where the linker load the symbols in the `.ap_boot` section.
-/// The BSP would copy the AP boot code to this address.
-const AP_BOOT_START_PA: usize = 0x8000;
-
-/// The size of the AP boot code (the `.ap_boot` section).
+/// This is where the linker loads the symbols in the `.ap_boot` section.
+/// The BSP copies the AP boot code to this address.
 fn ap_boot_code_size() -> usize {
     __ap_boot_end as *const () as usize - __ap_boot_start as *const () as usize
 }
 
 pub(super) fn reclaimable_memory_region() -> MemoryRegion {
+    assert!(ap_boot_code_size() <= AP_BOOT_REGION_SIZE as usize);
     MemoryRegion::new(
-        AP_BOOT_START_PA,
+        AP_BOOT_START_PA as usize,
         ap_boot_code_size(),
         MemoryRegionType::Reclaimable,
     )
@@ -164,7 +163,7 @@ unsafe fn copy_ap_boot_code() {
     unsafe {
         core::ptr::copy_nonoverlapping(
             ap_boot_start,
-            paddr_to_vaddr(AP_BOOT_START_PA) as *mut u8,
+            paddr_to_vaddr(AP_BOOT_START_PA as usize) as *mut u8,
             len,
         );
     }
@@ -234,7 +233,7 @@ unsafe fn wake_up_aps_via_mailbox(num_cpus: u32) {
             acpi_tables,
             AcpiMemoryHandler {},
             ap_num,
-            (AP_BOOT_START_PA + offset) as u64,
+            AP_BOOT_START_PA + offset as u64,
             1000,
         )
         .unwrap();
@@ -291,7 +290,7 @@ unsafe fn send_startup_to_all_aps(apic: &dyn Apic) {
         DeliveryStatus::Idle,
         DestinationMode::Physical,
         DeliveryMode::StartUp,
-        (AP_BOOT_START_PA / PAGE_SIZE) as u8,
+        (AP_BOOT_START_PA as usize / PAGE_SIZE) as u8,
     );
     // SAFETY: The safety is upheld by the caller.
     unsafe { apic.send_ipi(icr) }
