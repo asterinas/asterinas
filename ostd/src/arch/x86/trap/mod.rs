@@ -21,7 +21,6 @@ mod idt;
 mod syscall;
 
 use cfg_if::cfg_if;
-use spin::Once;
 
 use super::cpu::context::GeneralRegs;
 use crate::{
@@ -30,9 +29,8 @@ use crate::{
         irq::{HwIrqLine, disable_local, enable_local},
     },
     cpu::PrivilegeLevel,
-    ex_table::ExTable,
     irq::call_irq_callback_functions,
-    mm::MAX_USERSPACE_VADDR,
+    mm::fault::TrapFrameApi,
 };
 
 cfg_if! {
@@ -101,6 +99,16 @@ pub struct TrapFrame {
 // to a 16-byte boundary before pushing the stack frame"), so we only need to
 // ensure the size of a `TrapFrame` is also aligned.
 crate::const_assert!(size_of::<TrapFrame>().is_multiple_of(16));
+
+impl TrapFrameApi for TrapFrame {
+    fn set_instruction_pointer(&mut self, ip: usize) {
+        self.rip = ip;
+    }
+
+    fn instruction_pointer(&self) -> usize {
+        self.rip
+    }
+}
 
 /// Initializes interrupt handling on x86_64.
 ///
@@ -173,18 +181,9 @@ unsafe extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             *f = *trapframe_wrapper.0;
             disable_local_if(was_irq_enabled);
         }
-        Some(CpuException::PageFault(raw_page_fault_info)) => {
+        Some(page_fault @ CpuException::PageFault(raw_page_fault_info)) => {
             enable_local_if(was_irq_enabled);
-            // The actual user space implementation should be responsible
-            // for providing mechanism to treat the 0 virtual address.
-            if (0..MAX_USERSPACE_VADDR).contains(&raw_page_fault_info.addr) {
-                handle_user_page_fault(f, cpu_exception.as_ref().unwrap());
-            } else {
-                panic!(
-                    "Cannot handle kernel page fault: {:#x?}; trapframe: {:#x?}",
-                    raw_page_fault_info, f
-                );
-            }
+            crate::mm::fault::handle_user_page_fault(f, &page_fault, raw_page_fault_info.addr);
             disable_local_if(was_irq_enabled);
         }
         Some(exception) => {
@@ -201,36 +200,6 @@ unsafe extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
                 PrivilegeLevel::Kernel,
             );
         }
-    }
-}
-
-#[expect(clippy::type_complexity)]
-static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuException) -> Result<(), ()>> = Once::new();
-
-/// Injects a custom handler for page faults that occur in the kernel and
-/// are caused by user-space address.
-pub fn inject_user_page_fault_handler(handler: fn(info: &CpuException) -> Result<(), ()>) {
-    USER_PAGE_FAULT_HANDLER.call_once(|| handler);
-}
-
-/// Handles page fault from user space.
-fn handle_user_page_fault(f: &mut TrapFrame, exception: &CpuException) {
-    let handler = USER_PAGE_FAULT_HANDLER
-        .get()
-        .expect("a page fault handler is missing");
-
-    let res = handler(exception);
-    // Copying bytes by bytes can recover directly
-    // if handling the page fault successfully.
-    if res.is_ok() {
-        return;
-    }
-
-    // Use the exception table to recover to normal execution.
-    if let Some(addr) = ExTable::find_recovery_inst_addr(f.rip) {
-        f.rip = addr;
-    } else {
-        panic!("Cannot handle user page fault; trapframe: {:#x?}", f);
     }
 }
 

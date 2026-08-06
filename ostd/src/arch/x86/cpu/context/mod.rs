@@ -337,7 +337,7 @@ impl UserContextApiInternal for UserContext {
                 }
                 Some(exception) => {
                     panic!(
-                        "cannot handle user CPU exception: {:?}, trapframe: {:?}",
+                        "Cannot handle user CPU exception: {:?}; trapframe: {:?}",
                         exception,
                         self.as_trap_frame()
                     );
@@ -468,14 +468,6 @@ bitflags! {
 }
 
 impl UserContextApi for UserContext {
-    fn trap_number(&self) -> usize {
-        self.user_context.trap_num
-    }
-
-    fn trap_error_code(&self) -> usize {
-        self.user_context.error_code
-    }
-
     fn set_instruction_pointer(&mut self, ip: usize) {
         self.set_rip(ip);
     }

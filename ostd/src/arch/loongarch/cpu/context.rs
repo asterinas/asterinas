@@ -17,7 +17,7 @@ use crate::{
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
-/// General registers
+/// General registers.
 #[expect(missing_docs)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -166,7 +166,6 @@ impl UserContextApiInternal for UserContext {
                     | Exception::PageNonExecutableFault
                     | Exception::PagePrivilegeIllegal => {
                         // Handle page fault
-                        // Disable the badv in TLB.
                         tlb_flush_addr(badv);
                         self.cpu_exception_info = Some(CpuExceptionInfo {
                             code: exception,
@@ -197,7 +196,7 @@ impl UserContextApiInternal for UserContext {
                         crate::debug!(
                             "Floating point unit is not available, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
                         );
-                        // TODO: Add FPU support and enable it when this exception occurs.
+                        // TODO: Add FPU support and enable it at proper time
                         break ReturnReason::UserException;
                     }
                     Exception::TLBRFill => unreachable!(),
@@ -255,14 +254,6 @@ impl UserContextApiInternal for UserContext {
 }
 
 impl UserContextApi for UserContext {
-    fn trap_number(&self) -> usize {
-        todo!()
-    }
-
-    fn trap_error_code(&self) -> usize {
-        todo!()
-    }
-
     fn instruction_pointer(&self) -> usize {
         self.user_context.era
     }

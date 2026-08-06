@@ -19,15 +19,14 @@ impl PagingConstsTrait for PagingConsts {
     const NR_LEVELS: PagingLevel = 4;
     const ADDRESS_WIDTH: usize = 48;
     const VA_SIGN_EXT: bool = true;
-    // TODO: Support huge page
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 1;
     const PTE_SIZE: usize = size_of::<PageTableEntry>();
 }
 
 bitflags::bitflags! {
+    /// Possible flags for a page table entry.
     #[repr(C)]
     #[derive(Pod)]
-    /// Possible flags for a page table entry.
     pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame is valid.
         const VALID =           1 << 0;
@@ -75,6 +74,7 @@ bitflags::bitflags! {
 }
 
 pub(crate) fn tlb_flush_addr(vaddr: Vaddr) {
+    // SAFETY: This invalidates the TLB, which doesn't affect the memory safety.
     unsafe {
         asm!(
             "invtlb 0, $zero, {}",
@@ -90,15 +90,13 @@ pub(crate) fn tlb_flush_addr_range(range: &Range<Vaddr>) {
 }
 
 pub(crate) fn tlb_flush_all_excluding_global() {
-    unsafe {
-        asm!("invtlb 3, $zero, $zero");
-    }
+    // SAFETY: This invalidates the TLB, which doesn't affect the memory safety.
+    unsafe { asm!("invtlb 3, $zero, $zero") };
 }
 
 pub(crate) fn tlb_flush_all_including_global() {
-    unsafe {
-        asm!("invtlb 0, $zero, $zero");
-    }
+    // SAFETY: This invalidates the TLB, which doesn't affect the memory safety.
+    unsafe { asm!("invtlb 0, $zero, $zero") };
 }
 
 pub(crate) fn can_sync_dma() -> bool {
@@ -119,14 +117,11 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(_range: Range<Vaddr>) {
 
 /// Activates the given root-level page table.
 ///
-/// "pgdl" or "pgdh" register doesn't have a field that encodes the cache policy,
-/// so `_root_pt_cache` is ignored.
-///
 /// # Safety
 ///
 /// Changing the root-level page table is unsafe, because it's possible to violate memory safety by
 /// changing the page mapping.
-pub(crate) unsafe fn activate_page_table(root_paddr: Paddr, _root_pt_cache: CachePolicy) {
+pub(crate) unsafe fn activate_page_table(root_paddr: Paddr) {
     assert!(root_paddr.is_multiple_of(PagingConsts::BASE_PAGE_SIZE));
     loongArch64::register::pgdl::set_base(root_paddr);
     loongArch64::register::pgdh::set_base(root_paddr);
@@ -191,10 +186,10 @@ impl PageTableEntry {
     }
 
     fn prop(&self) -> PageProperty {
-        let flags = parse_flags!(!(self.0), PteFlags::NOT_READABLE, PageFlags::R)
+        let flags = parse_flags!(!self.0, PteFlags::NOT_READABLE, PageFlags::R)
             | parse_flags!(self.0, PteFlags::WRITABLE, PageFlags::W)
-            | parse_flags!(!(self.0), PteFlags::NOT_EXECUTABLE, PageFlags::X)
-            // TODO: How to get the accessed bit in loongarch?
+            | parse_flags!(!self.0, PteFlags::NOT_EXECUTABLE, PageFlags::X)
+            // TODO: How to get the ACCESSED bit in LoongArch?
             | parse_flags!(self.0, PteFlags::PRESENT, PageFlags::ACCESSED)
             | parse_flags!(self.0, PteFlags::DIRTY, PageFlags::DIRTY)
             | parse_flags!(self.0, PteFlags::RSV2, PageFlags::AVAIL2);
@@ -231,7 +226,7 @@ impl PageTableEntry {
 
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
         let mut flags = PteFlags::VALID.bits()
-            // FIXME: To avoid the PageModifyFault exception,
+            // FIXME: To avoid the Page Modify Exception,
             // we set the DIRTY bit to 1 all the time.
             | PteFlags::DIRTY.bits()
             | parse_flags!(
@@ -246,7 +241,7 @@ impl PageTableEntry {
                 PteFlags::NOT_EXECUTABLE
             )
             | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PteFlags::DIRTY)
-            // TODO: How to get the accessed bit in loongarch?
+            // TODO: How to get the ACCESSED bit in LoongArch?
             | parse_flags!(prop.flags.bits(), PageFlags::ACCESSED, PteFlags::PRESENT)
             | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PteFlags::RSV2);
         flags |= parse_flags!(prop.priv_flags.bits(), PrivFlags::AVAIL1, PteFlags::RSV1);
