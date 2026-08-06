@@ -38,3 +38,10 @@ pub fn mem_total() -> usize {
         .map(|region| region.len())
         .sum::<usize>()
 }
+
+/// Total memory (in bytes) committed to the kernel slab caches.
+///
+/// This corresponds to the `Slab` field in `/proc/meminfo`.
+pub fn mem_slab() -> usize {
+    osdk_heap_allocator::load_total_slab_size()
+}

@@ -62,7 +62,7 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
         }
 
         // If no empty slab is available, allocate new slabs.
-        let Ok(mut allocated_empty) = Slab::new() else {
+        let Some(mut allocated_empty) = Self::alloc_slab() else {
             log::error!("Failed to allocate a new slab");
             return Err(AllocError);
         };
@@ -71,7 +71,7 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
 
         // Allocate more empty slabs and push them into the cache.
         for _ in 0..EXPECTED_EMPTY_SLABS {
-            if let Ok(allocated_empty) = Slab::new() {
+            if let Some(allocated_empty) = Self::alloc_slab() {
                 self.empty.push_front(allocated_empty);
             } else {
                 break;
@@ -111,10 +111,18 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
         if self.empty.size() > MAX_EMPTY_SLABS {
             while self.empty.size() > EXPECTED_EMPTY_SLABS {
                 self.empty.pop_front();
+                crate::TOTAL_SLAB_ALLOCATED.sub(PAGE_SIZE);
             }
         }
 
         Ok(())
+    }
+
+    /// Allocates a new slab and accounts for the page it consumes.
+    fn alloc_slab() -> Option<Slab<SLOT_SIZE>> {
+        let slab = Slab::new().ok()?;
+        crate::TOTAL_SLAB_ALLOCATED.add(PAGE_SIZE);
+        Some(slab)
     }
 
     fn add_slab(&mut self, slab: Slab<SLOT_SIZE>) {
@@ -124,6 +132,18 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
             self.partial.push_back(slab);
         } else {
             self.empty.push_front(slab);
+        }
+    }
+}
+
+impl<const SLOT_SIZE: usize> Drop for SlabCache<SLOT_SIZE> {
+    /// Releases all remaining slabs back to the frame allocator and accounts
+    /// for the freed pages.
+    fn drop(&mut self) {
+        for list in [&mut self.empty, &mut self.partial, &mut self.full] {
+            while list.pop_front().is_some() {
+                crate::TOTAL_SLAB_ALLOCATED.sub(PAGE_SIZE);
+            }
         }
     }
 }

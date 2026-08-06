@@ -292,7 +292,8 @@ pub struct HeapAllocator;
 impl GlobalHeapAllocator for HeapAllocator {
     fn alloc(&self, layout: Layout) -> Result<HeapSlot, AllocError> {
         let Some(class) = CommonSizeClass::from_layout(layout) else {
-            return HeapSlot::alloc_large(layout.size().div_ceil(PAGE_SIZE) * PAGE_SIZE);
+            let size = layout.size().div_ceil(PAGE_SIZE) * PAGE_SIZE;
+            return HeapSlot::alloc_large(size);
         };
 
         let irq_guard = irq::disable_local();
