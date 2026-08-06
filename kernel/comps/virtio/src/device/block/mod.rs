@@ -31,7 +31,8 @@ bitflags! {
         const DISCARD       = 1 << 13;
         const WRITE_ZEROES  = 1 << 14;
 
-        const ALL_SUPPORTED = Self::BLK_SIZE.bits() | Self::FLUSH.bits();
+        const ALL_SUPPORTED =
+            Self::BLK_SIZE.bits() | Self::FLUSH.bits() | Self::DISCARD.bits();
     }
 }
 
@@ -123,6 +124,19 @@ struct VirtioBlockTopology {
     /// Optimal sustained I/O size in logical blocks.
     opt_io_size: u32,
 }
+
+/// A VirtIO block discard descriptor.
+///
+/// Refer to VirtIO 1.2 spec, Section 5.2.6.3 (discard command).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(super) struct VirtioBlockDiscardReq {
+    pub sector: u64,
+    pub num_sectors: u32,
+    pub flags: u32,
+}
+
+pub(super) const DISCARD_REQ_SIZE: usize = size_of::<VirtioBlockDiscardReq>();
 
 impl VirtioBlockConfig {
     pub(self) fn new_manager(transport: &dyn VirtioTransport) -> ConfigManager<Self> {

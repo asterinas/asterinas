@@ -77,6 +77,29 @@ impl Bio {
         }
     }
 
+    /// Constructs a new `Bio` for a discard (TRIM) request.
+    ///
+    /// The `start_sid` is the starting sector id on the device, and `nr_sectors`
+    /// is the number of contiguous sectors to discard.
+    pub fn discard(
+        start_sid: Sid,
+        nr_sectors: usize,
+        complete_fn: Option<BioCompleteFn>,
+    ) -> Self {
+        let end_sid = start_sid + nr_sectors as u64;
+        let metadata = Arc::new(BioMetadata {
+            type_: BioType::Discard,
+            sid_range: start_sid..end_sid,
+            status: AtomicU32::new(BioStatus::Init as u32),
+            wait_queue: WaitQueue::new(),
+        });
+        Self {
+            metadata,
+            complete_fn,
+            segments: Vec::new(),
+        }
+    }
+
     /// Returns the type.
     pub fn type_(&self) -> BioType {
         self.metadata.type_()
@@ -340,7 +363,9 @@ pub enum BioType {
     Write = 1,
     /// Flush the volatile write cache.
     Flush = 2,
-    // TODO: Add support for other BIO types, such as discarding sectors.
+    /// Discard (TRIM) sectors — a hint that the data is no longer needed.
+    Discard = 3,
+    // TODO: Add support for other BIO types (SecureErase, WriteZeroes, Zone*).
 }
 
 /// The status of `Bio`.

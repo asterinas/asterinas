@@ -131,6 +131,10 @@ impl NvmeBlockDevice {
             BioType::Read => self.device.read(request),
             BioType::Write => self.device.write(request),
             BioType::Flush => self.device.flush(request),
+            BioType::Discard => {
+                // TODO: Implement NVMe Dataset Management command for discard.
+                request.into_bios().for_each(|bio| bio.complete(BioStatus::Complete));
+            }
         }
     }
 }
