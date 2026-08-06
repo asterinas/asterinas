@@ -7,12 +7,12 @@ use ostd::arch::cpu::context::UserContext;
 use super::{SyscallReturn, constants::*};
 use crate::{
     fs::{
-        file::file_table::RawFileDesc,
+        file::file_table::{FdFlags, RawFileDesc},
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
     },
     prelude::*,
     process::{
-        do_execve,
+        ShebangScriptPath, do_execve,
         posix_thread::{ThreadName, derive_thread_name},
     },
 };
@@ -73,7 +73,7 @@ fn lookup_executable_file(
     filename_ptr: Vaddr,
     flags: OpenFlags,
     ctx: &Context,
-) -> Result<(Path, ThreadName, CString)> {
+) -> Result<(Path, ThreadName, ShebangScriptPath)> {
     let filename = ctx
         .user_space()
         .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
@@ -101,15 +101,31 @@ fn lookup_executable_file(
     };
 
     // Preserve the path that a shebang interpreter must use to reopen the script.
-    // For `execveat` relative to a file descriptor, use a `/dev/fd/...` path.
+    // For `execveat` relative to a file descriptor, use a `/dev/fd/...` path unless the
+    // descriptor is close-on-exec, in which case mark the path as unavailable. This matches Linux.
     let shebang_script_path = if dfd == AT_FDCWD || filename.starts_with('/') {
-        filename.into_owned()
-    } else if filename.is_empty() {
-        format!("/dev/fd/{dfd}")
+        ShebangScriptPath::Accessible(CString::new(filename.into_owned()).unwrap())
     } else {
-        format!("/dev/fd/{dfd}/{filename}")
+        let is_cloexec = {
+            let file_table = ctx.thread_local.borrow_file_table();
+            let file_table_locked = file_table.unwrap().read();
+            file_table_locked
+                .get_entry(dfd.try_into()?)?
+                .flags()
+                .contains(FdFlags::CLOEXEC)
+        };
+
+        if is_cloexec {
+            ShebangScriptPath::Inaccessible
+        } else {
+            let path = if filename.is_empty() {
+                format!("/dev/fd/{dfd}")
+            } else {
+                format!("/dev/fd/{dfd}/{filename}")
+            };
+            ShebangScriptPath::Accessible(CString::new(path).unwrap())
+        }
     };
-    let shebang_script_path = CString::new(shebang_script_path).unwrap();
 
     Ok((path, thread_name, shebang_script_path))
 }
