@@ -3,7 +3,12 @@ getrandom(
     buf, buflen,
     flags =
         // Optional flags:
-        //
-        // High-entropy pool
-        GRND_RANDOM
+        GRND_NONBLOCK | GRND_RANDOM
+);
+
+getrandom(
+    buf, buflen,
+    flags =
+        // Optional flags:
+        GRND_NONBLOCK | GRND_INSECURE
 );

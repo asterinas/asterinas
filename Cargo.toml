@@ -49,6 +49,7 @@ members = [
     "kernel/libs/aster-rights-proc",
     "kernel/libs/aster-util",
     "kernel/libs/atomic-integer-wrapper",
+    "kernel/libs/blake2s",
     "kernel/libs/cpio-decoder",
     "kernel/libs/device-id",
     "kernel/libs/io-util",
@@ -173,6 +174,7 @@ aster-rights = { path = "kernel/libs/aster-rights" }
 aster-rights-proc = { path = "kernel/libs/aster-rights-proc" }
 aster-util = { path = "kernel/libs/aster-util" }
 atomic-integer-wrapper = { path = "kernel/libs/atomic-integer-wrapper" }
+blake2s = { path = "kernel/libs/blake2s" }
 cpio-decoder = { path = "kernel/libs/cpio-decoder" }
 device-id = { path = "kernel/libs/device-id" }
 io-util = { path = "kernel/libs/io-util" }

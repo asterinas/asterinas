@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/wait.h>
@@ -32,6 +33,7 @@
 #define HWRNG_NONBLOCK_MAX_ATTEMPTS 128
 #define HWRNG_SMOKE_READ_SIZE 4096
 #define HWRNG_POLL_TIMEOUT_MS 1000
+#define PAGE_SIZE 4096
 
 static void exit_if_hwrng_is_unavailable(void);
 static void run_concurrent_reader(int pipe_fd);
@@ -293,6 +295,23 @@ FN_TEST(hwrng_nonblock_succeeds_after_cache_prime)
 }
 END_TEST()
 
+FN_TEST(hwrng_nonblock_returns_partial_after_cache_prime)
+{
+	uint8_t prime_buf[HWRNG_PRIME_READ_SIZE] = { 0 };
+	uint8_t buf[HWRNG_LARGE_READ_SIZE] = { 0 };
+	int fd;
+
+	fd = TEST_SUCC(open(HWRNG_DEVICE, O_RDONLY));
+	TEST_RES(read(fd, prime_buf, sizeof(prime_buf)),
+		 _ret == sizeof(prime_buf));
+	TEST_SUCC(close(fd));
+
+	fd = TEST_SUCC(open(HWRNG_DEVICE, O_RDONLY | O_NONBLOCK));
+	TEST_RES(read(fd, buf, sizeof(buf)), _ret > 0);
+	TEST_SUCC(close(fd));
+}
+END_TEST()
+
 FN_TEST(hwrng_small_read_boundaries)
 {
 	const size_t sizes[] = { 1, 3, 7 };
@@ -310,6 +329,23 @@ FN_TEST(hwrng_small_read_boundaries)
 	}
 	TEST_RES(total_read, _ret >= HWRNG_LARGE_READ_SIZE);
 
+	TEST_SUCC(close(fd));
+}
+END_TEST()
+
+FN_TEST(hwrng_read_fault_returns_short_count)
+{
+	char *buf;
+	int fd = TEST_SUCC(open(HWRNG_DEVICE, O_RDONLY));
+
+	buf = TEST_SUCC(mmap(NULL, PAGE_SIZE * 2, PROT_READ | PROT_WRITE,
+			     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
+	TEST_SUCC(munmap(buf + PAGE_SIZE, PAGE_SIZE));
+
+	TEST_RES(read(fd, buf + PAGE_SIZE - 1, HWRNG_SHORT_READ_SIZE),
+		 _ret == 1);
+
+	TEST_SUCC(munmap(buf, PAGE_SIZE));
 	TEST_SUCC(close(fd));
 }
 END_TEST()
