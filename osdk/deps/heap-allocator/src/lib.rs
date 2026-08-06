@@ -21,6 +21,8 @@ mod allocator;
 mod cpu_local_allocator;
 mod slab_cache;
 mod slab_counter;
+#[cfg(ktest)]
+mod test;
 
 pub use allocator::{HeapAllocator, type_from_layout};
 pub use cpu_local_allocator::{CpuLocalBox, alloc_cpu_local};
