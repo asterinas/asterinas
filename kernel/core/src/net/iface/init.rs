@@ -10,18 +10,11 @@ use aster_softirq::BottomHalfDisabled;
 use spin::Once;
 
 use super::{Iface, poll::poll_ifaces};
-use crate::{
-    net::iface::{broadcast, sched::PollScheduler},
-    prelude::*,
-};
+use crate::{net::iface::sched::PollScheduler, prelude::*};
 
 static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
 
-pub(crate) fn loopback_iface() -> &'static Arc<Iface> {
-    &IFACES.get().unwrap()[0]
-}
-
-pub(crate) fn virtio_iface() -> Option<&'static Arc<Iface>> {
+fn virtio_iface() -> Option<&'static Arc<Iface>> {
     IFACES.get().unwrap().get(1)
 }
 
@@ -52,8 +45,6 @@ pub(crate) fn init() {
         aster_network::register_recv_callback(VIRTIO_DEVICE_NAME, callback);
         aster_network::register_send_callback(VIRTIO_DEVICE_NAME, callback);
     }
-
-    broadcast::init();
 
     poll_ifaces();
 }

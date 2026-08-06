@@ -5,7 +5,10 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use aster_bigtcp::{socket::RawTcpOption, wire::IpEndpoint};
+use aster_bigtcp::{
+    socket::RawTcpOption,
+    wire::{IpAddress, IpEndpoint, Ipv6Address},
+};
 
 use super::{connecting::ConnectingStream, listen::ListenStream, observer::StreamObserver};
 use crate::{
@@ -15,7 +18,10 @@ use crate::{
         socket::{
             ip::{
                 addr::IpAddressFamily,
-                common::{get_ephemeral_endpoint, resolve_bind_iface_and_config},
+                common::{
+                    get_ephemeral_endpoint, map_unspecified_to_localhost,
+                    resolve_bind_iface_and_config,
+                },
             },
             util::SocketAddr,
         },
@@ -125,20 +131,33 @@ impl InitStream {
             ));
         }
 
+        // FIXME: This is a temporary compatibility workaround for some gVisor test cases.
+        // Remove it once IPv4-mapped IPv6 TCP is supported.
+        // gVisor expects that connecting to `::ffff:0.0.0.0` returns `ECONNREFUSED`
+        // when there's no listener on that address.
+        // Linux handles `::ffff:0.0.0.0` via the IPv4 TCP path and routes it to `127.0.0.1`.
+        // IPv4-mapped loopback addresses also use the IPv4 TCP path.
+        let is_ipv4_mapped_localhost = matches!(
+            remote_endpoint.addr,
+            IpAddress::Ipv6(address)
+                if address
+                    .to_ipv4_mapped()
+                    .is_some_and(|address| address.is_unspecified() || address.is_loopback())
+        );
+
+        let remote_endpoint = map_unspecified_to_localhost(*remote_endpoint);
+        let route_endpoint = if is_ipv4_mapped_localhost {
+            IpEndpoint::new(Ipv6Address::LOCALHOST.into(), remote_endpoint.port)
+        } else {
+            remote_endpoint
+        };
+
         let bound_port = if let Some(bound_port) = self.bound_port {
             bound_port
         } else {
-            let endpoint = match get_ephemeral_endpoint(remote_endpoint) {
-                Some(ep) => ep,
-                None => {
-                    return Err((
-                        Error::with_message(
-                            Errno::EADDRNOTAVAIL,
-                            "no interface has an address for the specified family",
-                        ),
-                        self,
-                    ));
-                }
+            let endpoint = match get_ephemeral_endpoint(&route_endpoint) {
+                Ok(endpoint) => endpoint,
+                Err(err) => return Err((err, self)),
             };
             match bind_port(&endpoint, can_reuse) {
                 Ok(bound_port) => bound_port,
@@ -146,7 +165,17 @@ impl InitStream {
             }
         };
 
-        ConnectingStream::new(bound_port, *remote_endpoint, option, observer).map_err(
+        if is_ipv4_mapped_localhost {
+            return Err((
+                Error::with_message(
+                    Errno::ECONNREFUSED,
+                    "IPv4-mapped IPv6 connections are not supported",
+                ),
+                InitStream::new_refused(bound_port),
+            ));
+        }
+
+        ConnectingStream::new(bound_port, remote_endpoint, option, observer).map_err(
             |(err, bound_port)| {
                 if err.error() == Errno::ECONNREFUSED {
                     (err, InitStream::new_refused(bound_port))

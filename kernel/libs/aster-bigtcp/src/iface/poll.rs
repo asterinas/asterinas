@@ -365,17 +365,18 @@ impl<E: Ext> PollContext<'_, E> {
         ))
     }
 
-    /// Returns whether the destination address is the unicast address of a local interface.
+    /// Returns whether the destination address is handled locally by this interface.
     ///
     /// Note: "local" means that the IP address belongs to the local interface, not to be confused
     /// with the localhost IP (127.0.0.1).
     fn is_unicast_local(&self, dst_addr: IpAddress) -> bool {
         match dst_addr {
-            IpAddress::Ipv4(dst_addr) => self
-                .iface
-                .context()
-                .ipv4_addr()
-                .is_some_and(|addr| addr == dst_addr),
+            IpAddress::Ipv4(dst_addr) => self.iface.context().ipv4_addr().is_some_and(|addr| {
+                // All IPv4 loopback addresses are handled by the same loopback interface.
+                // Treating them as local allows direct socket delivery without traversing the
+                // device queues.
+                addr == dst_addr || (addr.is_loopback() && dst_addr.is_loopback())
+            }),
             IpAddress::Ipv6(dst_addr) => self
                 .iface
                 .context()
