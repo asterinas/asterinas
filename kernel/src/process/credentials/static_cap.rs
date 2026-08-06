@@ -4,7 +4,10 @@ use aster_rights::{Dup, Read, TRights, Write};
 use aster_rights_proc::require;
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
-use super::{Credentials, Gid, SecureBits, Uid, capabilities::CapSet, credentials_::Credentials_};
+use super::{
+    Credentials, ExecCred, FileCapabilities, Gid, SecureBits, Uid, capabilities::CapSet,
+    credentials_::Credentials_,
+};
 use crate::prelude::*;
 
 impl<R: TRights> Credentials<R> {
@@ -125,27 +128,6 @@ impl<R: TRights> Credentials<R> {
         self.0.set_fsuid(fsuid)
     }
 
-    /// Sets the effective user ID as `euid`.
-    ///
-    /// This method should only be used when executing a file whose `setuid` bit is set.
-    ///
-    /// This method requires the `Write` right.
-    #[require(R > Write)]
-    pub fn set_euid(&self, euid: Uid) {
-        self.0.set_euid(euid);
-    }
-
-    /// Sets the saved-set user ID as the same of the effective user ID.
-    ///
-    /// This method should only be used when executing a new executable file.
-    ///
-    /// This method requires the `Write` right.
-    #[require(R > Write)]
-    pub fn reset_suid(&self) {
-        let euid = self.0.euid();
-        self.0.set_suid(euid);
-    }
-
     // *********** GID methods **********
 
     /// Gets the real group ID.
@@ -226,25 +208,25 @@ impl<R: TRights> Credentials<R> {
         self.0.set_fsgid(fsgid)
     }
 
-    /// Sets the effective group ID as `egid`.
+    /// Calculates and validates credentials for `execve()`.
     ///
-    /// This method should only be used when executing a file whose `setgid` bit is set.
-    ///
-    /// This method requires the `Write` right.
-    #[require(R > Write)]
-    pub fn set_egid(&self, egid: Gid) {
-        self.0.set_egid(egid);
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub(in crate::process) fn prepare_exec_cred(
+        &self,
+        file_capabilities: Option<FileCapabilities>,
+        setuid: Option<Uid>,
+        setgid: Option<Gid>,
+    ) -> Result<ExecCred> {
+        self.0.prepare_exec_cred(file_capabilities, setuid, setgid)
     }
 
-    /// Sets the saved-set group ID as the same of the effective group ID.
-    ///
-    /// This method should only be used when executing a new executable file.
+    /// Applies previously computed credentials for `execve()`.
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn reset_sgid(&self) {
-        let egid = self.0.egid();
-        self.0.set_sgid(egid);
+    pub(in crate::process) fn apply_exec_cred(&self, exec_cred: ExecCred) -> Result<()> {
+        self.0.apply_exec_cred(exec_cred)
     }
 
     // *********** Supplementary Groups methods **********

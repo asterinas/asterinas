@@ -11,14 +11,19 @@ use crate::{
             file_table::{RawFileDesc, get_file_fast},
         },
         vfs::{
+            inode::Inode,
             path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
             xattr::{
-                XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace, XattrSetFlags,
+                self, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN, XattrName, XattrNamespace,
+                XattrSetFlags,
             },
         },
     },
     prelude::*,
-    process::{UserNamespace, credentials::capabilities::CapSet},
+    process::{
+        UserNamespace,
+        credentials::{FileCapabilities, Gid, Uid, VfsCapRevision, capabilities::CapSet},
+    },
     security::lsm::hooks as lsm_hooks,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -117,9 +122,50 @@ fn setxattr(
         return_errno_with_message!(Errno::E2BIG, "xattr value too long");
     }
     let mut value_reader = user_space.reader(value_ptr, value_len)?;
-
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
-    path.set_xattr(xattr_name, &mut value_reader, flags)?;
+    if xattr_name.full_name() != xattr::SECURITY_CAPABILITY_XATTR_NAME {
+        path.set_xattr(xattr_name, &mut value_reader, flags)?;
+    } else {
+        if value_len == 0 {
+            return_errno_with_message!(Errno::EINVAL, "file capability xattr cannot be empty");
+        }
+
+        let mut value = [0u8; FileCapabilities::MAX_XATTR_SIZE];
+        let value_read_len = value_len.min(FileCapabilities::MAX_XATTR_SIZE);
+        value_reader.read_fallible(&mut VmWriter::from(&mut value[..value_read_len]))?;
+        let raw_value = &value[..value_read_len];
+
+        let header = FileCapabilities::read_u32_le(raw_value, 0)?;
+        let (revision, _) = FileCapabilities::parse_header(header, value_len)?;
+        if revision == VfsCapRevision::V1 {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "V1 file capability xattrs cannot be written"
+            );
+        }
+        if revision == VfsCapRevision::V3
+            && Uid::new(FileCapabilities::read_u32_le(raw_value, 5)?) == Uid::INVALID
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "file capability root UID does not map to a valid UID"
+            );
+        }
+
+        // With only the initial user namespace and no idmapped mounts, valid V2/V3 values use
+        // the same representation in the caller and filesystem namespaces.
+        //
+        // FIXME: Convert V2/V3 root IDs when user namespaces or idmapped mounts are supported.
+        // Reference: <https://elixir.bootlin.com/linux/v7.1/source/security/commoncap.c#L550>.
+        let inode = path.inode();
+        capable_modify_file_cap(inode.as_ref(), ctx)?;
+
+        let mut value_reader = VmReader::from(raw_value).to_fallible();
+        // Linux leaves authorization for `security.*` xattrs to the security modules rather than
+        // requiring ordinary DAC write permission. The checks above authorize this specific
+        // security xattr, so bypass the generic `Path::set_xattr` DAC check.
+        inode.set_xattr(xattr_name, &mut value_reader, flags)?;
+    }
     fs::vfs::notify::on_attr_change(&path);
     Ok(())
 }
@@ -210,4 +256,24 @@ pub(super) fn check_xattr_namespace(namespace: XattrNamespace, ctx: &Context) ->
         ctx.posix_thread,
         CapSet::SYS_ADMIN,
     ))
+}
+
+pub(super) fn capable_modify_file_cap(inode: &dyn Inode, ctx: &Context) -> Result<()> {
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        ctx.thread_local.borrow_user_ns().as_ref(),
+        ctx.posix_thread,
+        CapSet::SETFCAP,
+    ))?;
+
+    // With the currently supported identity user-namespace mapping, only invalid IDs are
+    // unmapped. Replace this with mount-idmap-aware namespace mapping checks when supported.
+    let metadata = inode.metadata()?;
+    if metadata.uid == Uid::INVALID || metadata.gid == Gid::INVALID {
+        return_errno_with_message!(
+            Errno::EPERM,
+            "the inode owner or group is not mapped in the current user namespace"
+        );
+    }
+
+    Ok(())
 }

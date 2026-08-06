@@ -12,7 +12,7 @@ use spin::Once;
 
 use super::{
     file_system::FileSystem,
-    xattr::{XattrName, XattrNamespace, XattrSetFlags},
+    xattr::{XattrName, XattrNamespace, XattrSetFlags, clear_file_priv},
 };
 use crate::{
     device::{Device, DeviceType},
@@ -31,6 +31,12 @@ use crate::{
     time::clocks::RealTimeCoarseClock,
     vm::page_cache::PageCache,
 };
+
+/// Resizes an inode after invalidating privileges attached to its contents.
+pub fn resize(inode: &dyn Inode, new_size: usize) -> Result<()> {
+    clear_file_priv(inode)?;
+    inode.resize(new_size)
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Metadata {

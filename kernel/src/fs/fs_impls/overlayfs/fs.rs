@@ -1023,7 +1023,6 @@ impl Inode for OverlayInode {
     ) -> Result<()>;
     fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize>;
-    fn remove_xattr(&self, name: XattrName) -> Result<()>;
 }
 
 /// The index of the layer of an `OverlayFs`.
