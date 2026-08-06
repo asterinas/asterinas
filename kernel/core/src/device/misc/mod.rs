@@ -12,6 +12,8 @@ use super::registry::char::{MajorIdOwner, acquire_major};
 mod hwrng;
 #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
 pub(crate) mod tdxguest;
+#[expect(dead_code)]
+mod vhost;
 
 static MISC_MAJOR: Once<MajorIdOwner> = Once::new();
 
