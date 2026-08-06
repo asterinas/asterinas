@@ -12,10 +12,13 @@ use crate::{
         pseudofs::SockFs,
     },
     net::{
-        iface::is_broadcast_endpoint,
+        route::is_broadcast_endpoint,
         socket::{
             Socket,
-            ip::options::{IpOptionSet, SetIpLevelOption},
+            ip::{
+                common::map_unspecified_to_localhost,
+                options::{IpOptionSet, SetIpLevelOption},
+            },
             options::{Error as SocketError, SocketOption, macros::sock_option_mut},
             private::SocketPrivate,
             util::{
@@ -159,7 +162,7 @@ impl Socket for DatagramSocket {
     }
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
-        let endpoint = socket_addr.try_into()?;
+        let endpoint = map_unspecified_to_localhost(socket_addr.try_into()?);
         let can_broadcast = self.options.read().socket.broadcast();
         if !can_broadcast && is_broadcast_endpoint(&endpoint) {
             return_errno_with_message!(
