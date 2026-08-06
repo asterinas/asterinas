@@ -8,6 +8,17 @@ CGROUP_ROOT="/sys/fs/cgroup"
 CGROUP_NAME="user"
 PROCESS_ID=1
 BUSY_PID=""
+CHILD_PID=""
+PIDS_BASE_PID=""
+BG1=""
+BG2=""
+PID1=""
+PID2=""
+PID3=""
+BUSY_READY=""
+BUSY_START=""
+PIDS_READY=""
+PIDS_START=""
 
 # --- Helpers ------------------------------------------------------------------
 
@@ -74,6 +85,29 @@ read_cpu_stat_field() {
     exit 1
 }
 
+wait_for_process_state() {
+    local pid=$1
+    local expected_state=$2
+    local description=$3
+    local attempts=0
+
+    while [ "$attempts" -lt 10 ]; do
+        if grep -q "^State:[[:space:]]*$expected_state" "/proc/$pid/status" 2>/dev/null; then
+            echo "$description reached expected state: $(grep '^State:' "/proc/$pid/status")"
+            return
+        fi
+
+        attempts=$((attempts + 1))
+        sleep 1
+    done
+
+    echo "Error: $description did not reach process state $expected_state"
+    if [ -f "/proc/$pid/status" ]; then
+        grep '^State:' "/proc/$pid/status" || true
+    fi
+    exit 1
+}
+
 cleanup() {
     log_step "Cleaning up"
 
@@ -83,6 +117,14 @@ cleanup() {
         wait "$BUSY_PID" 2>/dev/null || true
         BUSY_PID=""
     fi
+
+    for child_pid in "$CHILD_PID" "$PIDS_BASE_PID" "$BG1" "$BG2" "$PID1" "$PID2" "$PID3"; do
+        if [ -n "$child_pid" ]; then
+            kill "$child_pid" 2>/dev/null || true
+            wait "$child_pid" 2>/dev/null || true
+        fi
+    done
+    rm -f "$BUSY_READY" "$BUSY_START" "$PIDS_READY" "$PIDS_START"
 
     if [ -f "$CGROUP_ROOT/cgroup.procs" ]; then
         echo "Moving process $PROCESS_ID back to root cgroup"
@@ -159,6 +201,14 @@ verify "Initial cgroup.events populated=0" \
     "grep '^populated' cgroup.events" \
     "populated 0"
 
+log_step "1.8 Move current task through inactive CPU cgroup"
+verify "Inactive CPU cgroup does not trigger scheduler migration" \
+    "sh -c 'echo \$\$ > $CGROUP_ROOT/$CGROUP_NAME/cgroup.procs && grep -a \"0::/$CGROUP_NAME\" /proc/\$\$/cgroup && echo \$\$ > $CGROUP_ROOT/cgroup.procs'" \
+    "0::/$CGROUP_NAME"
+verify "Current task returned to root after inactive migration" \
+    "grep -a '0::/' /proc/$$/cgroup" \
+    "0::/"
+
 # --- Section 2: Controller activation / deactivation -------------------------
 
 log_section "Section 2: Controller activation / deactivation"
@@ -167,6 +217,21 @@ log_step "2.1 Enable cpu, memory, and pids in root"
 cd "$CGROUP_ROOT"
 echo "+cpu +memory +pids" > cgroup.subtree_control
 verify "root subtree_control has cpu, memory, and pids" \
+    "cat cgroup.subtree_control" \
+    "cpu memory pids"
+
+log_step "2.1.1 No-op enable succeeds in populated root"
+verify "No-op +cpu keeps root subtree_control unchanged" \
+    "echo +cpu > cgroup.subtree_control && cat cgroup.subtree_control" \
+    "cpu memory pids"
+
+log_step "2.1.2 Pure disable succeeds in populated root"
+echo "-pids" > cgroup.subtree_control
+verify "root subtree_control removed pids" \
+    "cat cgroup.subtree_control" \
+    "cpu memory"
+echo "+pids" > cgroup.subtree_control
+verify "root subtree_control restored pids" \
     "cat cgroup.subtree_control" \
     "cpu memory pids"
 
@@ -219,10 +284,17 @@ verify "cpu.max single value preserves period" \
 verify "cpu.max rejects an invalid period" \
     "echo '30000 999' > cpu.max 2>/dev/null || echo rejected" \
     "rejected"
+verify "cpu.max is unchanged after rejected period" \
+    "cat cpu.max" \
+    "30000 200000"
 echo "50000 invalid" > cpu.max
-verify "cpu.max accepts a non-numeric period" \
+verify "cpu.max non-numeric period preserves previous period" \
     "cat cpu.max" \
     "50000 200000"
+echo "50000 300000 extra" > cpu.max
+verify "cpu.max ignores extra fields" \
+    "cat cpu.max" \
+    "50000 300000"
 echo "max 100000" > cpu.max
 verify "cpu.max resets to default value" \
     "cat cpu.max" \
@@ -262,17 +334,29 @@ verify "cpu.max defaults after re-enable" \
 
 log_step "2.2.4 Verify cpu.stat grows for a busy cgroup task"
 CPU_STAT_PATH="$CGROUP_ROOT/$CGROUP_NAME/cpu.stat"
+BUSY_READY=$(mktemp -u)
+BUSY_START=$(mktemp -u)
+mkfifo "$BUSY_READY" "$BUSY_START"
 
 sh -c '
-CGROUP_PATH=$1
-echo $$ > "$CGROUP_PATH/cgroup.procs"
+READY_FIFO=$1
+START_FIFO=$2
+printf "ready\n" > "$READY_FIFO"
+read _ < "$START_FIFO"
 while :; do
     :
 done
-' sh "$CGROUP_ROOT/$CGROUP_NAME" &
+' sh "$BUSY_READY" "$BUSY_START" &
 BUSY_PID=$!
 
-# Give the helper time to join the cgroup and start consuming CPU.
+read _ < "$BUSY_READY"
+echo $BUSY_PID > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
+printf "start\n" > "$BUSY_START"
+rm -f "$BUSY_READY" "$BUSY_START"
+BUSY_READY=""
+BUSY_START=""
+
+# Give the helper time to start consuming CPU in the cgroup.
 sleep 1
 
 USAGE_BEFORE=$(read_cpu_stat_field "usage_usec" "$CPU_STAT_PATH")
@@ -328,6 +412,11 @@ verify "Process 1 added to user hierarchy" \
     "cat cgroup.procs | grep -w $PROCESS_ID" \
     "$PROCESS_ID"
 
+log_step "3.1.1 No-op disable succeeds with process attached"
+verify "No-op -pids keeps child subtree_control empty" \
+    "echo -pids > cgroup.subtree_control && cat cgroup.subtree_control" \
+    ""
+
 log_step "3.2 Try enabling pids in child with process attached (expect EBUSY)"
 verify "Cannot enable pids with process attached" \
     "echo +pids > cgroup.subtree_control" \
@@ -347,6 +436,16 @@ verify "pids enabled successfully in child" \
     "cat cgroup.subtree_control" \
     "pids"
 
+log_step "3.4.1 Parent cannot disable pids while child has it enabled"
+cd "$CGROUP_ROOT"
+verify "Cannot disable pids in parent while child has pids enabled" \
+    "echo -pids > cgroup.subtree_control" \
+    "sh: write error: Device or resource busy"
+verify "root subtree_control unchanged after failed pids disable" \
+    "cat cgroup.subtree_control" \
+    "cpu pids"
+cd "$CGROUP_NAME"
+
 log_step "3.5 Try binding process when child pids enabled (expect EBUSY)"
 verify "Cannot bind process when child pids enabled" \
     "echo $PROCESS_ID > cgroup.procs" \
@@ -358,6 +457,46 @@ echo $PROCESS_ID > cgroup.procs
 verify "Process 1 added to user hierarchy" \
     "cat cgroup.procs | grep -w $PROCESS_ID" \
     "$PROCESS_ID"
+
+log_step "3.7 Move process 1 back to root for migration tests"
+cd "$CGROUP_ROOT"
+echo $PROCESS_ID > cgroup.procs
+verify "Process 1 back in root cgroup" \
+    "grep -a '0::/' /proc/$PROCESS_ID/cgroup" \
+    "0::/"
+
+log_step "3.8 Move a sleeping child between cgroups"
+sleep 100 &
+CHILD_PID=$!
+wait_for_process_state "$CHILD_PID" "S" "Sleeping child"
+echo $CHILD_PID > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
+verify "Sleeping child moved to user hierarchy" \
+    "grep -a '0::/$CGROUP_NAME' /proc/$CHILD_PID/cgroup" \
+    "0::/$CGROUP_NAME"
+echo $CHILD_PID > "$CGROUP_ROOT/cgroup.procs"
+verify "Sleeping child moved back to root" \
+    "grep -a '0::/' /proc/$CHILD_PID/cgroup" \
+    "0::/"
+kill $CHILD_PID 2>/dev/null || true
+wait $CHILD_PID 2>/dev/null || true
+CHILD_PID=""
+
+log_step "3.9 Move the current task through an active CPU cgroup"
+verify "Current task migrates without EBUSY" \
+    "sh -c 'echo \$\$ > $CGROUP_ROOT/$CGROUP_NAME/cgroup.procs && grep -a \"0::/$CGROUP_NAME\" /proc/\$\$/cgroup && echo \$\$ > $CGROUP_ROOT/cgroup.procs'" \
+    "0::/$CGROUP_NAME"
+verify "Test shell remains in root cgroup" \
+    "grep -a '0::/' /proc/$$/cgroup" \
+    "0::/"
+
+log_step "3.10 Bind a sleeping anchor process for pids tests"
+sleep 100 &
+PIDS_BASE_PID=$!
+wait_for_process_state "$PIDS_BASE_PID" "S" "pids anchor process"
+echo $PIDS_BASE_PID > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
+verify "Pids anchor process added to user hierarchy" \
+    "cat $CGROUP_ROOT/$CGROUP_NAME/cgroup.procs | grep -w $PIDS_BASE_PID" \
+    "$PIDS_BASE_PID"
 
 # --- Section 4: pids sub-controller -------------------------------------------
 
@@ -386,22 +525,25 @@ verify "pids.max reset to max" \
 
 log_step "4.1.4 Verify pids.max enforces the fork limit"
 
-# Write a helper script that will run inside the cgroup.
-# It moves itself into the cgroup, then attempts a fork.
+# Write a helper script that the parent moves into the cgroup.
+# It waits there, then attempts a fork.
 # The result (success or failure) is written to a temp file.
-# This helper runs as a completely separate process, so when the
-# fork inside it fails and the shell aborts, our main script is
-# unaffected.
+# This helper runs as a separate process so the main script is unaffected.
 RESULT_FILE=$(mktemp)
 HELPER_SCRIPT=$(mktemp)
+PIDS_READY=$(mktemp -u)
+PIDS_START=$(mktemp -u)
+mkfifo "$PIDS_READY" "$PIDS_START"
 
 cat > "$HELPER_SCRIPT" << 'EOF'
 #!/bin/sh
 CGROUP_PATH="$1"
 RESULT_FILE="$2"
+READY_FIFO="$3"
+START_FIFO="$4"
 
-# Join the cgroup.
-echo $$ > "$CGROUP_PATH/cgroup.procs"
+printf "ready\n" > "$READY_FIFO"
+read _ < "$START_FIFO"
 
 # Read the current pid count (built-in read, no fork).
 read CURRENT_IN_CGROUP < "$CGROUP_PATH/pids.current"
@@ -419,9 +561,15 @@ EOF
 
 chmod +x "$HELPER_SCRIPT"
 
-# Run the helper as a separate process. If it crashes due to fork failure,
-# only the helper exits; our main script continues normally.
-sh "$HELPER_SCRIPT" "$CGROUP_ROOT/$CGROUP_NAME" "$RESULT_FILE" 2>/dev/null || true
+sh "$HELPER_SCRIPT" "$CGROUP_ROOT/$CGROUP_NAME" "$RESULT_FILE" "$PIDS_READY" "$PIDS_START" 2>/dev/null &
+PIDS_HELPER_PID=$!
+read _ < "$PIDS_READY"
+echo $PIDS_HELPER_PID > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
+printf "start\n" > "$PIDS_START"
+wait $PIDS_HELPER_PID 2>/dev/null || true
+rm -f "$PIDS_READY" "$PIDS_START"
+PIDS_READY=""
+PIDS_START=""
 
 # The helper has exited (either normally or due to fork failure).
 # Restore pids.max before reading results.
@@ -443,33 +591,25 @@ fi
 
 log_section "Section 4.2: pids.current"
 
-log_step "4.2.1 Check pids.current with process 1 in cgroup"
-verify_ge "pids.current >= 1 with one process" \
+log_step "4.2.1 Check pids.current with the anchor process in cgroup"
+verify_ge "pids.current >= 1 with anchor process" \
     "cat $CGROUP_ROOT/$CGROUP_NAME/pids.current" \
     1
 
 log_step "4.2.2 Spawn a child process and verify pids.current increases"
 
-# Read baseline before the shell joins the cgroup so the cat itself is safe.
 BEFORE=$(cat "$CGROUP_ROOT/$CGROUP_NAME/pids.current")
 echo "pids.current before fork: $BEFORE"
 
-# Move the current shell into the user cgroup.
-echo $$ > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
-
-# Fork the child process that we want to observe.
 sleep 100 &
 CHILD_PID=$!
+wait_for_process_state "$CHILD_PID" "S" "pids.current child"
+echo $CHILD_PID > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
 
-# Use the shell built-in read to avoid an extra fork for the cat.
 read AFTER < "$CGROUP_ROOT/$CGROUP_NAME/pids.current"
-echo "pids.current after fork: $AFTER"
+echo "pids.current after child migration: $AFTER"
 
-# Move the shell back to the root cgroup; subsequent commands are safe.
-echo $$ > "$CGROUP_ROOT/cgroup.procs"
-
-# Verify the count increased (sleep is still running in the background).
-verify_ge "pids.current increased after fork" \
+verify_ge "pids.current increased after child migration" \
     "cat $CGROUP_ROOT/$CGROUP_NAME/pids.current" \
     $((BEFORE + 1))
 
@@ -478,11 +618,12 @@ log_step "4.2.3 Kill child process and verify pids.current decreases"
 # Kill the child and wait for it to fully exit.
 kill $CHILD_PID 2>/dev/null || true
 wait $CHILD_PID 2>/dev/null || true
+CHILD_PID=""
 
 # Give the cgroup accounting a moment to update.
 sleep 0.2
 
-# pids.current should be back to the baseline (shell is no longer in cgroup).
+# pids.current should be back to the baseline anchor process count.
 verify "pids.current back to pre-fork value" \
     "cat $CGROUP_ROOT/$CGROUP_NAME/pids.current" \
     "$BEFORE"
@@ -510,6 +651,8 @@ sleep 100 &
 BG1=$!
 sleep 100 &
 BG2=$!
+wait_for_process_state "$BG1" "S" "first pids.current toggle child"
+wait_for_process_state "$BG2" "S" "second pids.current toggle child"
 echo $BG1 > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
 echo $BG2 > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
 
@@ -574,15 +717,18 @@ verify_ge "pids.peak >= 1 initially" \
     1
 
 log_step "4.3.2 Spawn multiple child processes to drive pids up"
-echo $$ > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
 
 sleep 100 & PID1=$!
 sleep 100 & PID2=$!
 sleep 100 & PID3=$!
+wait_for_process_state "$PID1" "S" "first pids.peak child"
+wait_for_process_state "$PID2" "S" "second pids.peak child"
+wait_for_process_state "$PID3" "S" "third pids.peak child"
+echo $PID1 > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
+echo $PID2 > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
+echo $PID3 > "$CGROUP_ROOT/$CGROUP_NAME/cgroup.procs"
 
 read PEAK_DURING < "$CGROUP_ROOT/$CGROUP_NAME/pids.peak"
-
-echo $$ > "$CGROUP_ROOT/cgroup.procs"
 
 echo "pids.peak during burst: $PEAK_DURING"
 verify_ge "pids.peak increased during burst" \
@@ -592,6 +738,9 @@ verify_ge "pids.peak increased during burst" \
 log_step "4.3.3 Kill child processes"
 kill $PID1 $PID2 $PID3 2>/dev/null || true
 wait $PID1 $PID2 $PID3 2>/dev/null || true
+PID1=""
+PID2=""
+PID3=""
 
 log_step "4.3.4 Verify pids.peak is retained after processes exit"
 
@@ -609,14 +758,20 @@ fi
 
 log_section "Section 5: Teardown"
 
-log_step "5.1 Move process 1 back to root"
+log_step "5.1 Stop pids anchor process"
+kill $PIDS_BASE_PID 2>/dev/null || true
+wait $PIDS_BASE_PID 2>/dev/null || true
+PIDS_BASE_PID=""
+sleep 0.2
+
+log_step "5.2 Move process 1 back to root"
 cd "$CGROUP_ROOT"
 echo $PROCESS_ID > cgroup.procs
 verify "Process 1 back in root cgroup" \
     "grep -a '0::' /proc/$PROCESS_ID/cgroup" \
     "0::/"
 
-log_step "5.2 Remove user hierarchy"
+log_step "5.3 Remove user hierarchy"
 rmdir "$CGROUP_NAME"
 verify "user hierarchy removed" \
     "ls -d $CGROUP_NAME" \

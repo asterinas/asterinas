@@ -44,7 +44,11 @@ impl super::SubControl for MemoryController {
 }
 
 impl super::SubControlStatic for MemoryController {
-    fn new(_is_root: bool, _is_active: bool) -> Self {
+    fn new(
+        _is_root: bool,
+        _is_active: bool,
+        _parent_controller: Option<&super::Controller>,
+    ) -> Self {
         Self { _private: () }
     }
 
