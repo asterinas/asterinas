@@ -461,3 +461,93 @@ FN_TEST(bind_tcp_and_udp_to_same_port)
 	TEST_SUCC(close(udp));
 }
 END_TEST()
+
+FN_TEST(connect_loopback_network)
+{
+	const char message[] = "hello";
+	char buffer[sizeof(message)] = { 0 };
+	int receiver = TEST_SUCC(socket(AF_INET, SOCK_DGRAM, 0));
+	int sender = TEST_SUCC(socket(AF_INET, SOCK_DGRAM, 0));
+	struct sockaddr_in remote = {
+		.sin_family = AF_INET,
+		.sin_port = 0,
+	};
+	struct sockaddr_in local = { 0 };
+	socklen_t remote_len = sizeof(remote);
+	socklen_t local_len = sizeof(local);
+
+	TEST_RES(inet_pton(AF_INET, "127.0.0.53", &remote.sin_addr), _ret == 1);
+	TEST_SUCC(bind(receiver, (struct sockaddr *)&remote, sizeof(remote)));
+	TEST_RES(getsockname(receiver, (struct sockaddr *)&remote, &remote_len),
+		 remote_len == sizeof(remote) &&
+			 remote.sin_addr.s_addr == inet_addr("127.0.0.53"));
+	TEST_SUCC(connect(sender, (struct sockaddr *)&remote, sizeof(remote)));
+	TEST_RES(getsockname(sender, (struct sockaddr *)&local, &local_len),
+		 local_len == sizeof(local) &&
+			 local.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+	TEST_RES(send(sender, message, sizeof(message), 0),
+		 _ret == sizeof(message));
+	TEST_RES(recv(receiver, buffer, sizeof(buffer), 0),
+		 _ret == sizeof(message) &&
+			 memcmp(buffer, message, sizeof(message)) == 0);
+
+	TEST_SUCC(close(receiver));
+	TEST_SUCC(close(sender));
+}
+END_TEST()
+
+FN_TEST(connect_ipv4_unspecified)
+{
+	int sk = TEST_SUCC(socket(AF_INET, SOCK_DGRAM, 0));
+	struct sockaddr_in remote = {
+		.sin_family = AF_INET,
+		.sin_port = htons(8080),
+		.sin_addr.s_addr = htonl(INADDR_ANY),
+	};
+	struct sockaddr_in local = { 0 };
+	struct sockaddr_in peer = { 0 };
+	socklen_t local_len = sizeof(local);
+	socklen_t peer_len = sizeof(peer);
+
+	TEST_SUCC(connect(sk, (struct sockaddr *)&remote, sizeof(remote)));
+	TEST_RES(getsockname(sk, (struct sockaddr *)&local, &local_len),
+		 local_len == sizeof(local) &&
+			 local.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+	TEST_RES(getpeername(sk, (struct sockaddr *)&peer, &peer_len),
+		 peer_len == sizeof(peer) &&
+			 peer.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+
+	TEST_SUCC(close(sk));
+}
+END_TEST()
+
+// FIXME: Asterinas does not support IPv6 for UDP sockets yet.
+#ifndef __asterinas__
+FN_TEST(connect_ipv6_unspecified)
+{
+	int sk = TEST_SUCC(socket(AF_INET6, SOCK_DGRAM, 0));
+	struct sockaddr_in6 remote6 = {
+		.sin6_family = AF_INET6,
+		.sin6_port = htons(8080),
+		.sin6_addr = IN6ADDR_ANY_INIT,
+	};
+	struct sockaddr_in6 local6 = { 0 };
+	struct sockaddr_in6 peer6 = { 0 };
+	struct in6_addr loopback = IN6ADDR_LOOPBACK_INIT;
+	socklen_t local6_len = sizeof(local6);
+	socklen_t peer6_len = sizeof(peer6);
+
+	TEST_SUCC(connect(sk, (struct sockaddr *)&remote6, sizeof(remote6)));
+	TEST_RES(getsockname(sk, (struct sockaddr *)&local6, &local6_len),
+		 local6_len == sizeof(local6) &&
+			 memcmp(&local6.sin6_addr, &loopback,
+				sizeof(loopback)) == 0);
+	TEST_RES(getpeername(sk, (struct sockaddr *)&peer6, &peer6_len),
+		 peer6_len == sizeof(peer6) &&
+			 memcmp(&peer6.sin6_addr, &loopback,
+				sizeof(loopback)) == 0);
+
+	TEST_SUCC(close(sk));
+}
+END_TEST()
+#endif
