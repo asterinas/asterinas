@@ -18,7 +18,13 @@ use ostd::{
     task::disable_preempt,
 };
 
-use super::{RssType, Vmar, interval_set::Interval, util::is_intersected, vmar_impls::RssDelta};
+use super::{
+    RssType, Vmar,
+    cursor::{CursorExt, CursorMutExt},
+    interval_set::Interval,
+    util::is_intersected,
+    vmar_impls::RssDelta,
+};
 use crate::{
     fs::vfs::{
         inode::Inode,
@@ -380,7 +386,7 @@ impl VmMapping {
                     &preempt_guard,
                     &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
                 )?;
-                if let (_, Some(_)) = cursor.query().unwrap() {
+                if cursor.to_leaf().query().is_some() {
                     return Ok(());
                 }
             }
@@ -433,21 +439,20 @@ impl VmMapping {
         required_perms: VmPerms,
         rss_delta: &mut RssDelta,
     ) -> Result<()> {
+        let is_write = required_perms.contains(VmPerms::WRITE);
+        let va_range = page_aligned_addr..page_aligned_addr + PAGE_SIZE;
+
         'retry: loop {
             let preempt_guard = disable_preempt();
-            let mut cursor = vm_space.cursor_mut(
-                &preempt_guard,
-                &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
-            )?;
+            let mut cursor = vm_space.cursor_mut(&preempt_guard, &va_range)?;
 
-            let (va, item) = cursor.query().unwrap();
-            let is_write = required_perms.contains(VmPerms::WRITE);
+            let item = cursor.to_leaf().query();
             match item {
-                Some(VmQueriedItem::MappedRam { frame, mut prop }) => {
+                VmQueriedItem::MappedRam { frame, mut prop } => {
                     if VmPerms::from(prop.flags).contains(required_perms) {
                         // The page fault is already handled maybe by other threads.
                         // Just flush the TLB and return.
-                        TlbFlushOp::for_range(va).perform_on_current();
+                        TlbFlushOp::for_range(va_range).perform_on_current();
                         return Ok(());
                     }
                     assert!(is_write);
@@ -466,16 +471,17 @@ impl VmMapping {
                     let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
 
                     if self.is_shared || only_reference {
-                        cursor.protect_next(PAGE_SIZE, |flags, _cache| {
+                        cursor.protect(|flags, _cache| {
                             *flags |= new_flags;
                         });
-                        cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
+                        cursor
+                            .flusher()
+                            .issue_tlb_flush(TlbFlushOp::for_range(va_range));
                         cursor.flusher().dispatch_tlb_flush();
                     } else {
                         let new_frame = duplicate_frame(&frame)?;
                         prop.flags |= new_flags;
-                        cursor.unmap(PAGE_SIZE);
-                        cursor.jump(va.start).unwrap();
+                        cursor.unmap();
                         cursor.map(new_frame.into(), prop);
                         // FIXME: Linux re-classifies the page from `File` to `Anon` in RSS,
                         // when a COW on a file-backed mapping happens.
@@ -484,7 +490,7 @@ impl VmMapping {
                     }
                     cursor.flusher().sync_tlb_flush();
                 }
-                Some(VmQueriedItem::MappedIoMem { .. }) => {
+                VmQueriedItem::MappedIoMem { .. } => {
                     // The page of I/O memory is populated when the memory
                     // mapping is created.
                     return_errno_with_message!(
@@ -492,7 +498,7 @@ impl VmMapping {
                         "device memory page faults cannot be resolved"
                     );
                 }
-                None => {
+                VmQueriedItem::None => {
                     // Map a new frame to the page fault address.
                     let (frame, is_readonly) = match self.prepare_page(page_aligned_addr, is_write)
                     {
@@ -524,6 +530,9 @@ impl VmMapping {
 
                     cursor.map(frame, map_prop);
                     rss_delta.add(self.rss_type(), 1);
+                }
+                VmQueriedItem::PageTable => {
+                    unreachable!("pushed but still queried a page table")
                 }
             }
             break 'retry;
@@ -612,25 +621,27 @@ impl VmMapping {
             let mut cursor = vm_space.cursor_mut(&preempt_guard, &(start_addr..end_addr))?;
 
             let rss_delta_ref = &mut rss_delta;
-            let operate =
-                move |commit_fn: &mut dyn FnMut() -> Result<(usize, CachePage), VmoCommitError>| {
-                    if let (_, None) = cursor.query().unwrap() {
-                        // We regard all the surrounding pages as accessed, no matter
-                        // if it is really so. Then the hardware won't bother to update
-                        // the accessed bit of the page table on following accesses.
-                        let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
-                        let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
-                        let (_, frame) = commit_fn()?;
-                        cursor.map(frame.into(), page_prop);
-                        rss_delta_ref.add(self.rss_type(), 1);
-                    } else {
-                        let next_addr = cursor.virt_addr() + PAGE_SIZE;
-                        if next_addr < end_addr {
-                            let _ = cursor.jump(next_addr);
-                        }
-                    }
-                    Ok(())
-                };
+
+            let mut cur_va = start_addr;
+            let operate = move |commit_fn: &mut dyn FnMut() -> core::result::Result<
+                (usize, CachePage),
+                VmoCommitError,
+            >| {
+                cursor.jump(cur_va).unwrap();
+                if cursor.to_leaf().query().is_none() {
+                    // We regard all the surrounding pages as accessed, no matter
+                    // if it is really so. Then the hardware won't bother to update
+                    // the accessed bit of the page table on following accesses.
+                    let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
+                    let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
+                    let (_, frame) = commit_fn()?;
+                    cursor.adjust_level(1);
+                    cursor.map(frame.into(), page_prop);
+                    rss_delta_ref.add(self.rss_type(), 1);
+                }
+                cur_va += PAGE_SIZE;
+                Ok(())
+            };
 
             let start_offset = start_addr - self.map_to_addr;
             let end_offset = end_addr - self.map_to_addr;
@@ -772,8 +783,13 @@ impl VmMapping {
         let preempt_guard = disable_preempt();
         let range = self.range();
         let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
+        let mut num_unmapped = 0;
 
-        let num_unmapped = cursor.unmap(range.len());
+        while cursor.find_next_unmappable_subtree(range.end).is_some() {
+            cursor.split_if_map_exceeds_range(&range);
+            num_unmapped += cursor.unmap();
+        }
+
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
 
@@ -792,13 +808,19 @@ impl VmMapping {
         let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
         let op = |flags: &mut PageFlags, _cache: &mut CachePolicy| *flags = new_flags;
-        while cursor.virt_addr() < range.end {
-            if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
-                cursor.flusher().issue_tlb_flush(TlbFlushOp::for_range(va));
-            } else {
+
+        while cursor.find_next(range.end).is_some() {
+            cursor.split_if_map_exceeds_range(&range);
+            cursor.protect(op);
+            let va = cursor.cur_va_range();
+            cursor
+                .flusher()
+                .issue_tlb_flush(TlbFlushOp::for_range(va.clone()));
+            if cursor.jump(va.end).is_err() {
                 break;
             }
         }
+
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
 
