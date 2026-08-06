@@ -66,7 +66,8 @@ bitflags! {
     }
 }
 
-struct EventFile {
+/// An eventfd file that can also be consumed by in-kernel users.
+pub struct EventFile {
     counter: Mutex<u64>,
     pollee: Pollee,
     is_semaphore: bool,
@@ -111,6 +112,10 @@ impl EventFile {
             events |= IoEvents::IN;
         }
 
+        if *counter == u64::MAX {
+            events |= IoEvents::ERR;
+        }
+
         // If it is possible to write a value of at least "1"
         // without blocking, the file is writable
         let is_writable = *counter < Self::MAX_COUNTER_VALUE;
@@ -121,15 +126,49 @@ impl EventFile {
         events
     }
 
+    /// Consumes and returns the current counter value, if it is nonzero.
+    pub fn consume(&self) -> Option<u64> {
+        let mut counter = self.counter.lock();
+        if *counter == 0 {
+            return None;
+        }
+
+        let value = if self.is_semaphore {
+            *counter -= 1;
+            1
+        } else {
+            let value = *counter;
+            *counter = 0;
+            value
+        };
+        drop(counter);
+
+        self.pollee.notify(IoEvents::OUT);
+        self.write_wait_queue.wake_all();
+        Some(value)
+    }
+
+    /// Adds one to the counter without blocking, saturating at `u64::MAX`.
+    #[expect(dead_code, reason = "Reserved for future in-kernel eventfd users")]
+    pub fn signal(&self) {
+        let mut counter = self.counter.lock();
+        *counter = counter.saturating_add(1);
+        let events = if *counter == u64::MAX {
+            IoEvents::IN | IoEvents::ERR
+        } else {
+            IoEvents::IN
+        };
+        drop(counter);
+
+        self.pollee.notify(events);
+    }
+
     fn try_read(&self, writer: &mut VmWriter) -> Result<()> {
         let mut counter = self.counter.lock();
-
-        // Wait until the counter becomes non-zero
         if *counter == 0 {
             return_errno_with_message!(Errno::EAGAIN, "the counter is zero");
         }
 
-        // Copy the value from the counter and set the new counter value
         if self.is_semaphore {
             writer.write_fallible(&mut 1u64.as_bytes().into())?;
             *counter -= 1;
