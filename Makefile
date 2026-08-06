@@ -156,11 +156,11 @@ CARGO_OSDK_COMMON_ARGS += --scheme tdx
 endif
 
 ifeq ($(BOOT_PROTOCOL), multiboot)
-BOOT_METHOD = qemu-direct
+BOOT_METHOD = direct-elf
 endif
 
 ifeq ($(SCHEME), microvm)
-BOOT_METHOD = qemu-direct
+BOOT_METHOD = direct-elf
 endif
 
 ifeq ($(SCHEME), "")
