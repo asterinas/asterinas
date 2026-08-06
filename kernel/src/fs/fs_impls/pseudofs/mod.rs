@@ -30,6 +30,7 @@ pub use anon_inodefs::AnonInodeFs;
 use device_id::DeviceId;
 pub(in crate::fs) use nsfs::NsInode;
 pub use nsfs::{NsCommonOps, NsFile, NsType, StashedDentry};
+pub(in crate::fs) use nullfs::NullFs;
 pub use pidfdfs::PidfdFs;
 pub(in crate::fs) use pipefs::PipeFs;
 use pipefs::PipeFsType;
@@ -54,6 +55,7 @@ use crate::{
 mod allocator;
 mod anon_inodefs;
 mod nsfs;
+mod nullfs;
 mod pidfdfs;
 mod pipefs;
 mod sockfs;

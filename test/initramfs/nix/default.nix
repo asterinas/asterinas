@@ -44,6 +44,7 @@ in rec {
     inherit initramfs;
     compressed = initramfsCompressed;
   };
+  rootfs-image = pkgs.callPackage ./rootfs-image.nix { inherit initramfs; };
 
   # Packages needed by host
   apacheHttpd = pkgs.apacheHttpd;

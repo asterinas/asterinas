@@ -106,8 +106,12 @@ pub struct FsCreationCtx<'a> {
     source: Option<&'a str>,
     flags: FsFlags,
     args: Option<&'a str>,
-    task_ctx: &'a Context<'a>,
-    block_device: Option<Arc<dyn BlockDevice>>,
+    block_device: BlockDeviceResolution<'a>,
+}
+
+enum BlockDeviceResolution<'a> {
+    Pending(&'a Context<'a>),
+    Resolved(Arc<dyn BlockDevice>),
 }
 
 impl<'a> FsCreationCtx<'a> {
@@ -122,8 +126,21 @@ impl<'a> FsCreationCtx<'a> {
             source,
             flags,
             args,
-            task_ctx,
-            block_device: None,
+            block_device: BlockDeviceResolution::Pending(task_ctx),
+        }
+    }
+
+    /// Creates a file system creation context from an already resolved block device.
+    pub(in crate::fs) fn from_block_device(
+        block_device: Arc<dyn BlockDevice>,
+        flags: FsFlags,
+        args: Option<&'a str>,
+    ) -> Self {
+        Self {
+            source: None,
+            flags,
+            args,
+            block_device: BlockDeviceResolution::Resolved(block_device),
         }
     }
 
@@ -144,20 +161,31 @@ impl<'a> FsCreationCtx<'a> {
 
     /// Resolves the mount source into a block device.
     pub(in crate::fs) fn resolve_block_device(&mut self) -> Result<&Arc<dyn BlockDevice>> {
-        if self.block_device.is_none() {
+        if self.block_device().is_none() {
             self.do_resolve_block_device()?;
         }
 
-        Ok(self.block_device.as_ref().unwrap())
+        Ok(self.block_device().unwrap())
+    }
+
+    fn block_device(&self) -> Option<&Arc<dyn BlockDevice>> {
+        match &self.block_device {
+            BlockDeviceResolution::Pending(_) => None,
+            BlockDeviceResolution::Resolved(block_device) => Some(block_device),
+        }
     }
 
     fn do_resolve_block_device(&mut self) -> Result<()> {
+        let task_ctx = match &self.block_device {
+            BlockDeviceResolution::Pending(task_ctx) => *task_ctx,
+            BlockDeviceResolution::Resolved(_) => return Ok(()),
+        };
+
         let source = self
             .source()
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "the source is not specified"))?;
         let fs_path = FsPath::from_fd_at(AT_FDCWD, source, EmptyPathStr::Reject)?;
-        let path = self
-            .task_ctx
+        let path = task_ctx
             .thread_local
             .borrow_fs()
             .resolver()
@@ -172,7 +200,7 @@ impl<'a> FsCreationCtx<'a> {
         let block_device = id
             .and_then(aster_block::lookup)
             .ok_or_else(|| Error::with_message(Errno::ENODEV, "the device is not found"))?;
-        self.block_device = Some(block_device);
+        self.block_device = BlockDeviceResolution::Resolved(block_device);
 
         Ok(())
     }

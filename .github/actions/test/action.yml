@@ -37,6 +37,9 @@ inputs:
   mem:
     description: 'Guest memory size'
     required: false
+  rootfs_boot:
+    description: 'Boot directly from rootfs'
+    required: false
 
   # Conformance Test
   conformance_test_suite:
@@ -103,6 +106,7 @@ runs:
         [[ -n "${{ inputs.conformance_test_workdir }}" ]] && CMD+=" CONFORMANCE_TEST_WORKDIR=${{ inputs.conformance_test_workdir }}"
         [[ -n "${{ inputs.boot_protocol }}" ]] && CMD+=" BOOT_PROTOCOL=${{ inputs.boot_protocol }}"
         [[ -n "${{ inputs.mem }}" ]] && CMD+=" MEM=${{ inputs.mem }}"
+        [[ "${{ inputs.rootfs_boot }}" == "true" ]] && CMD+=" INITRAMFS=off CMDLINE='root=/dev/vdd rootfstype=ext2 init=/init'"
         [[ -n "${{ inputs.xfstests_disk_size }}" ]] && CMD+=" XFSTESTS_DISK_SIZE=${{ inputs.xfstests_disk_size }}"
         [[ -n "${{ inputs.xfstests_runlist }}" ]] && CMD+=" XFSTESTS_RUNLIST=${{ inputs.xfstests_runlist }}"
 

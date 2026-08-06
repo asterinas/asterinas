@@ -8,7 +8,7 @@ use super::{Process, Session};
 use crate::{
     fs::{
         thread_info::ThreadFsInfo,
-        vfs::path::{FsPath, MountNamespace, Path},
+        vfs::path::{Path, PathResolver},
     },
     prelude::*,
     process::{
@@ -25,19 +25,12 @@ use crate::{
 
 /// Creates and schedules the init process to run.
 pub fn spawn_init_process(
-    executable_path: Option<&str>,
+    path_resolver: PathResolver,
+    init_path: Path,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
-    let process = if let Some(executable_path) = executable_path {
-        create_init_process(
-            executable_path,
-            with_init_argv0(executable_path, argv),
-            envp,
-        )?
-    } else {
-        create_default_init_process(argv, envp)?
-    };
+    let process = create_init_process(path_resolver, init_path, argv, envp)?;
 
     // Linux starts the init process without placing it in a process group or session.
     // It joins one only after userspace first calls `setsid()`.
@@ -53,49 +46,16 @@ pub fn spawn_init_process(
     Ok(process)
 }
 
-fn create_default_init_process(argv: Vec<CString>, envp: Vec<CString>) -> Result<Arc<Process>> {
-    // Linux probes the fallback init executables in this order:
-    // <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1634>.
-    const DEFAULT_INIT_EXEC_PATHS: &[&str] = &["/sbin/init", "/etc/init", "/bin/init", "/bin/sh"];
-
-    let mut last_error = None;
-
-    for default_init_exec_path in DEFAULT_INIT_EXEC_PATHS {
-        // FIXME: Avoid cloning `argv` and `envp` for each fallback candidate.
-        match create_init_process(
-            default_init_exec_path,
-            with_init_argv0(default_init_exec_path, argv.clone()),
-            envp.clone(),
-        ) {
-            Ok(process) => return Ok(process),
-            Err(error) => last_error = Some(error),
-        }
-    }
-
-    Err(last_error.unwrap())
-}
-
-fn with_init_argv0(executable_path: &str, mut argv: Vec<CString>) -> Vec<CString> {
-    // Linux prepends the init executable path as `argv[0]`.
-    // Reference: <https://elixir.bootlin.com/linux/v6.19/source/init/main.c#L1491>.
-    argv.insert(0, CString::new(executable_path).unwrap());
-    argv
-}
-
 fn create_init_process(
-    executable_path: &str,
+    path_resolver: PathResolver,
+    init_path: Path,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
-    let fs = {
-        let fs_resolver = MountNamespace::get_init_singleton().new_path_resolver();
-        ThreadFsInfo::new(fs_resolver)
-    };
-    let fs_path = FsPath::try_from(executable_path)?;
-    let elf_path = fs.resolver().read().lookup(&fs_path)?;
+    let fs = ThreadFsInfo::new(path_resolver);
 
     let pid = allocate_posix_tid();
-    let vmar = VmarHandle::new(ProcessVm::new(elf_path.clone()));
+    let vmar = VmarHandle::new(ProcessVm::new(init_path.clone()));
     let resource_limits = new_resource_limits_for_init();
     let nice = Nice::default();
     let oom_score_adj = 0;
@@ -112,7 +72,7 @@ fn create_init_process(
         user_ns,
     );
 
-    let init_task = create_init_task(pid, &init_proc, fs, vmar, elf_path, argv, envp)?;
+    let init_task = create_init_task(pid, &init_proc, fs, vmar, init_path, argv, envp)?;
     init_proc.tasks().lock().insert(init_task).unwrap();
 
     Ok(init_proc)
