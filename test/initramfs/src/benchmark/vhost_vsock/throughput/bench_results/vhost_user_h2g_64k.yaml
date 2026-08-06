@@ -1,0 +1,15 @@
+alert:
+  bigger_is_better: true
+  threshold: 130%
+chart:
+  description: vhost_vsock_bench --backend vhost-user --direction h2g --buf-size 64K --bytes 1G
+  legend: Average vhost-user-vsock host-to-guest throughput on {system}
+  title: '[vhost-vsock/vhost-user] Host-to-guest throughput (64-KiB buffer)'
+  unit: Mbits/sec
+result_extraction:
+  result_index: 7
+  search_pattern: '^VHOST_VSOCK_RESULT vhost-user h2g 65536 '
+runtime_config:
+  aster_scheme: 'null'
+  mem: 1G
+  smp: 1

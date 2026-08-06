@@ -5,9 +5,9 @@ use crate::{
     net::socket::{
         util::{SockShutdownCmd, check_port_privilege},
         vsock::{
-            addr::{VMADDR_CID_HOST, VMADDR_PORT_ANY, VsockSocketAddr},
+            addr::{VMADDR_PORT_ANY, VsockSocketAddr},
             stream::{ConnectingStream, ListenStream},
-            transport::BoundPort,
+            transport::{self, BoundPort},
         },
     },
     prelude::*,
@@ -18,9 +18,10 @@ pub(super) struct InitStream {
     bound_port: Option<BoundPort>,
     /// Indicates if the last `connect()` is considered to be done.
     ///
-    /// For vsock, a failed `connect()` attempt is never considered completed, so `is_connect_done`
-    /// remains `false` permanently. As a result, the socket becomes unusable and cannot be
-    /// connected again.
+    /// For vsock, a failed `connect()` attempt is never considered completed,
+    /// so `is_connect_done` remains `false` permanently.
+    /// As a result, the socket becomes unusable
+    /// and cannot be connected again.
     ///
     /// This field is still kept for symmetry with IP sockets, where a second `connect()` is
     /// allowed, and to leave room for future support for it.
@@ -73,9 +74,9 @@ impl InitStream {
         remote_addr: VsockSocketAddr,
         pollee: &Pollee,
     ) -> Result<ConnectingStream, (Error, Self)> {
-        if remote_addr.cid != VMADDR_CID_HOST {
+        if !transport::can_connect_remote_cid(remote_addr.cid) {
             return Err((
-                Error::with_message(Errno::ENETUNREACH, "only the host vsock CID is supported"),
+                Error::with_message(Errno::ENETUNREACH, "the remote vsock CID is not reachable"),
                 self,
             ));
         }
