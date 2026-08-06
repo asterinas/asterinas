@@ -9,6 +9,7 @@ TESTS ?= \
 	access_test \
 	brk_test \
 	capabilities_test \
+	chmod_test \
 	chown_test \
 	creat_test \
 	dev_test \
