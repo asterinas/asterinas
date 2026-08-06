@@ -8,11 +8,9 @@ mod io_events;
 mod observer;
 mod subject;
 
-#[cfg_attr(not(ktest), expect(unused_imports))]
-pub use self::event_file::KernelEventFile;
 pub use self::{
     epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
-    event_file::{EventFile, EventFileFlags},
+    event_file::{EventFile, EventFileFlags, KernelEventFile},
     events::{Events, EventsFilter},
     io_events::IoEvents,
     observer::Observer,

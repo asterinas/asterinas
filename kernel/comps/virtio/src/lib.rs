@@ -37,6 +37,7 @@ mod dma_buf;
 mod id_alloc;
 mod queue;
 mod transport;
+pub mod virtio_ring;
 
 static VIRTIO_BLOCK_MAJOR_ID: Once<MajorIdOwner> = Once::new();
 
