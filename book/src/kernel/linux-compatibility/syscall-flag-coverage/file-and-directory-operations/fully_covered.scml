@@ -50,6 +50,7 @@ renameat(olddirfd, oldpath, newdirfd, newpath);
 rmdir(path);
 
 // Create a file
+// If AppArmor is enabled and the task is confined, creat may be denied after leaving the new directory entry in place.
 creat(path, mode);
 
 // Make a new name for a file

@@ -8,8 +8,11 @@ use crate::{
 
 /// Runs capability hooks in module order.
 pub fn on_capable(context: CapableContext) -> Result<()> {
-    for module in modules::active_modules() {
-        module.on_capable(&context)?;
+    for hook in modules::active_modules()
+        .iter()
+        .filter_map(|module| module.capability_hook())
+    {
+        hook.on_capable(&context)?;
     }
 
     Ok(())

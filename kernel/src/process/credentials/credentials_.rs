@@ -10,6 +10,7 @@ use super::{
 use crate::{
     prelude::*,
     process::credentials::capabilities::{AtomicCapSet, CapSet},
+    security::lsm::CredentialSecurity,
 };
 
 #[derive(Debug)]
@@ -78,6 +79,9 @@ pub(super) struct Credentials_ {
 
     /// Whether `execve()` is forbidden from granting new privileges.
     no_new_privs: AtomicBool,
+
+    /// Security state managed by Linux Security Modules.
+    security: CredentialSecurity,
 }
 
 impl Credentials_ {
@@ -105,7 +109,12 @@ impl Credentials_ {
             ambient_capset: AtomicCapSet::new(CapSet::empty()),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
             no_new_privs: AtomicBool::new(false),
+            security: CredentialSecurity::new(),
         }
+    }
+
+    pub(super) fn security(&self) -> &CredentialSecurity {
+        &self.security
     }
 
     //  ******* UID methods *******
@@ -669,6 +678,7 @@ impl Clone for Credentials_ {
             ambient_capset: self.ambient_capset.clone(),
             securebits: self.securebits.clone(),
             no_new_privs: AtomicBool::new(self.no_new_privs()),
+            security: self.security.clone(),
         }
     }
 }

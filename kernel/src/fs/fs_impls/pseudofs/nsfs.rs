@@ -11,7 +11,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{
-            AccessMode, InodeHandle, InodeMode, InodeType, PerOpenFileOps, StatusFlags,
+            AccessMode, InodeMode, InodeType, OpenArgs, PerOpenFileOps, StatusFlags,
             file_table::{FdFlags, FileDesc},
             mkmod,
         },
@@ -275,10 +275,11 @@ impl<T: NsCommonOps> FileOps for NsFile<T> {
 /// Opens a namespace as a file and returns the file descriptor.
 fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<FileDesc> {
     let path = ns.get_path();
-    let inode_handle = InodeHandle::new(path.clone(), AccessMode::O_RDONLY, StatusFlags::empty())?;
-
     let current_task = Task::current().unwrap();
     let thread_local = current_task.as_thread_local().unwrap();
+    let open_args = OpenArgs::from_modes(AccessMode::O_RDONLY, mkmod!(u+r));
+    let inode_handle = path.open(open_args)?;
+
     let mut file_table_ref = thread_local.borrow_file_table_mut();
     let mut file_table = file_table_ref.unwrap().write();
     let fd = file_table.insert(Arc::new(inode_handle), FdFlags::CLOEXEC);
