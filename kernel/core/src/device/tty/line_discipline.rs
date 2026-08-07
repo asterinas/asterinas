@@ -7,7 +7,7 @@ use crate::{
     device::tty::termio::{CInputFlags, CLocalFlags},
     prelude::*,
     process::signal::{
-        constants::{SIGINT, SIGQUIT},
+        constants::{SIGINT, SIGQUIT, SIGTSTP},
         sig_num::SigNum,
     },
     util::ring_buffer::RingBuffer,
@@ -107,7 +107,22 @@ impl LineDiscipline {
 
         if let Some(signum) = char_to_signal(ch, &self.termios) {
             signal_callback(signum);
-            // CBREAK mode may require the character to be echoed, so just go ahead.
+
+            // Unless `NOFLSH` is set, pending input is discarded.
+            //
+            // TODO: Linux discards pending output here as well. The driver's output buffer is
+            // locked by the echo callback for the whole duration of the caller's character loop,
+            // so draining it needs an operation on the callback itself.
+            if !self.termios.local_flags().contains(CLocalFlags::NOFLSH) {
+                self.drain_input();
+            }
+
+            if self.termios.local_flags().contains(CLocalFlags::ECHO) {
+                self.output_char(ch, echo_callback);
+            }
+
+            // The signal character itself is consumed, not delivered to readers.
+            return Ok(());
         }
 
         // Typically, a TTY in raw mode does not echo. But the TTY can also be in a CBREAK mode,
@@ -304,13 +319,18 @@ fn is_ctrl_char(ch: u8) -> bool {
 }
 
 fn char_to_signal(ch: u8, termios: &CTermios) -> Option<SigNum> {
-    if !termios.is_canonical_mode() || !termios.local_flags().contains(CLocalFlags::ISIG) {
+    // A special character whose value is `_POSIX_VDISABLE` is disabled, so NUL input must not
+    // match one.
+    //
+    // Reference: <https://elixir.bootlin.com/linux/v7.1/source/drivers/tty/n_tty.c#L1831>
+    if ch == b'\0' || !termios.local_flags().contains(CLocalFlags::ISIG) {
         return None;
     }
 
     match ch {
         ch if ch == termios.special_char(CCtrlCharId::VINTR) => Some(SIGINT),
         ch if ch == termios.special_char(CCtrlCharId::VQUIT) => Some(SIGQUIT),
+        ch if ch == termios.special_char(CCtrlCharId::VSUSP) => Some(SIGTSTP),
         _ => None,
     }
 }
