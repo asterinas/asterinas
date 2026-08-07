@@ -38,12 +38,19 @@ impl FileOps for Ext2Inode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
-        _rwf_flags: RwfFlags,
+        rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_DIRECT) {
+            if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+                // TODO: Support `RWF_NOWAIT` in the direct I/O path.
+                return_errno_with_message!(
+                    Errno::EOPNOTSUPP,
+                    "RWF_NOWAIT direct I/O is not supported"
+                );
+            }
             self.read_direct_at(offset, writer)
         } else {
-            self.read_at(offset, writer)
+            self.read_at(offset, writer, rwf_flags)
         }
     }
 
@@ -52,8 +59,23 @@ impl FileOps for Ext2Inode {
         offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
-        _rwf_flags: RwfFlags,
+        rwf_flags: RwfFlags,
     ) -> Result<usize> {
+        if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            if status_flags.contains(StatusFlags::O_DIRECT) {
+                // TODO: Support `RWF_NOWAIT` in the direct I/O path.
+                return_errno_with_message!(
+                    Errno::EOPNOTSUPP,
+                    "RWF_NOWAIT direct I/O is not supported"
+                );
+            }
+            // With `RWF_NOWAIT`, Linux rejects buffered writes unless the file
+            // system supports asynchronous buffered writes (`FOP_BUFFER_WASYNC`).
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "RWF_NOWAIT is not supported for buffered writes"
+            );
+        }
         if status_flags.contains(StatusFlags::O_DIRECT) {
             self.write_direct_at(offset, reader)
         } else {
