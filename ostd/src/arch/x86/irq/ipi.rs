@@ -4,7 +4,7 @@
 
 use spin::Once;
 
-use crate::{cpu::PinCurrentCpu, irq::IrqLine, smp::do_inter_processor_call};
+use crate::{cpu::PinCurrentCpu, irq::IrqLine, prelude::Result, smp};
 
 /// Hardware-specific, architecture-dependent CPU ID.
 ///
@@ -27,12 +27,12 @@ static IPI_IRQ: Once<IrqLine> = Once::new();
 pub(in crate::arch) fn init() {
     let mut irq = IrqLine::alloc().unwrap();
     // SAFETY: This will be called upon an inter-processor interrupt.
-    irq.on_active(|f| unsafe { do_inter_processor_call(f) });
+    irq.on_active(|f| unsafe { smp::do_inter_processor_call(f) });
     IPI_IRQ.call_once(|| irq);
 }
 
 /// Sends a general inter-processor interrupt (IPI) to the specified CPU.
-pub(crate) fn send_ipi(hw_cpu_id: HwCpuId, guard: &dyn PinCurrentCpu) {
+pub(crate) fn send_ipi(hw_cpu_id: HwCpuId, guard: &dyn PinCurrentCpu) -> Result<()> {
     use crate::arch::kernel::apic::{self, Icr};
 
     let irq_num = IPI_IRQ.get().unwrap().num();
@@ -52,4 +52,6 @@ pub(crate) fn send_ipi(hw_cpu_id: HwCpuId, guard: &dyn PinCurrentCpu) {
     // SAFETY: The ICR is valid to generate the request IPI. Generating the
     // request IPI is safe.
     unsafe { apic.send_ipi(icr) };
+
+    Ok(())
 }
