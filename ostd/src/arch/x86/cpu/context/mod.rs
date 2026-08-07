@@ -6,7 +6,6 @@ use alloc::boxed::Box;
 use core::arch::x86_64::{_fxrstor64, _fxsave64, _xrstor64, _xsave64};
 
 use bitflags::bitflags;
-use cfg_if::cfg_if;
 use ostd_pod::{FromZeros, IntoBytes};
 use spin::Once;
 use x86::bits64::segmentation::{rdfsbase, rdgsbase, swapgs, wrfsbase, wrgsbase};
@@ -28,8 +27,8 @@ use crate::{
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
-cfg_if! {
-    if #[cfg(feature = "cvm_guest")] {
+cfg_select! {
+    feature = "cvm_guest" => {
         mod tdx;
 
         use tdx::VirtualizationExceptionHandler;
