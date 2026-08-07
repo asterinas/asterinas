@@ -208,6 +208,7 @@ impl From<ostd::Error> for VmoCommitError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommitMode {
     Read,
+    ReadNoWait,
     Overwrite,
 }
 
@@ -532,9 +533,37 @@ impl Vmo {
 
     /// Reads data from the VMO at `offset` into `writer`.
     pub(crate) fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+        self.read_internal(offset, writer, CommitMode::Read)
+            .map(|_| ())
+    }
+
+    /// Tries to read data from the VMO at `offset` into `writer` without blocking.
+    ///
+    /// Returns the number of bytes read. If the read would need backend I/O or page
+    /// initialization, `EAGAIN` is returned instead; bytes read before the blocking point are
+    /// reported as a short read.
+    ///
+    /// [`read`]: Vmo::read
+    pub fn try_read(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.read_internal(offset, writer, CommitMode::ReadNoWait)
+    }
+
+    /// Reads data from the VMO at `offset` into `writer`.
+    ///
+    /// In blocking mode, backend I/O and page initialization are performed
+    /// as needed and real errors are propagated. In no-wait mode, the read
+    /// never blocks: bytes read before a blocking point are reported as a
+    /// short read, and `EAGAIN` is returned otherwise, like Linux
+    /// `filemap_read`.
+    fn read_internal(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        commit_mode: CommitMode,
+    ) -> Result<usize> {
         let read_len = writer.avail().min(self.size().saturating_sub(offset));
         if read_len == 0 {
-            return Ok(());
+            return Ok(0);
         }
         let read_end = offset + read_len;
 
@@ -544,26 +573,49 @@ impl Vmo {
         let mut page_offset = offset % PAGE_SIZE;
         let mut page_batch =
             Vec::with_capacity(min(page_idx_range.len(), Self::PAGE_BATCH_CAPACITY));
+        let mut total_read = 0;
 
         while current_idx < page_idx_range.end {
-            self.collect_pages(
+            let collect_result = self.collect_pages(
                 current_idx,
                 page_idx_range.end,
-                CommitMode::Read,
+                commit_mode,
                 &mut page_batch,
-            )?;
+            );
 
             for (_, page) in page_batch.iter() {
-                page.reader().skip(page_offset).read_fallible(writer)?;
+                let copied = match page.reader().skip(page_offset).read_fallible(writer) {
+                    Ok(copied) => copied,
+                    Err((err, written)) => {
+                        // Like Linux `filemap_read`, report the bytes copied before
+                        // the fault as a short read.
+                        total_read += written;
+                        if commit_mode == CommitMode::ReadNoWait && total_read > 0 {
+                            return Ok(total_read);
+                        }
+                        return Err(Error::from(err));
+                    }
+                };
+                total_read += copied;
                 page_offset = 0;
             }
 
-            // `current_idx < page_idx_range.end` guarantees at least one page is successfully
-            // collected here.
-            current_idx = page_batch.last().unwrap().0 + 1;
+            if let Err(err) = collect_result {
+                // Pages committed before the blocking point were copied above;
+                // report them as a short read.
+                if commit_mode == CommitMode::ReadNoWait && total_read > 0 {
+                    return Ok(total_read);
+                }
+                return Err(err);
+            }
+
+            let Some((last_idx, _)) = page_batch.last() else {
+                break;
+            };
+            current_idx = last_idx + 1;
         }
 
-        Ok(())
+        Ok(total_read)
     }
 
     /// Writes data from `reader` into the VMO at `offset`.
@@ -762,8 +814,11 @@ impl Vmo {
     /// Collects a batch of committed pages from `start_idx` to `end_idx`.
     ///
     /// Returns up to a small batch of consecutive committed pages. The
-    /// caller receives only successfully committed pages and never needs to
-    /// deal with [`VmoCommitError`] directly.
+    /// caller receives only successfully committed pages. In blocking modes,
+    /// backend I/O and page initialization are performed as needed, so the
+    /// caller never needs to deal with [`VmoCommitError`] directly; in
+    /// no-wait mode, the first error is returned instead of blocking, with
+    /// pages committed before the error left in `pages`.
     ///
     /// This helper keeps the returned pages alive, but it does not pin them in
     /// the `XArray`. Callers must still serialize against `evict_range()` /
@@ -791,6 +846,17 @@ impl Vmo {
                 };
             match self.try_operate_on_range_internal(&current_range, &mut operate, commit_mode) {
                 Ok(()) => break 'retry,
+                Err(err) if commit_mode == CommitMode::ReadNoWait => {
+                    return Err(match err {
+                        VmoCommitError::Err(e) => e,
+                        VmoCommitError::NeedIo { .. } | VmoCommitError::WaitUntilInit { .. } => {
+                            Error::with_message(
+                                Errno::EAGAIN,
+                                "the operation would block on page I/O",
+                            )
+                        }
+                    });
+                }
                 Err(err) => {
                     let (idx, page) = self.handle_commit_error(err, commit_mode)?;
                     pages.push((idx, page));
