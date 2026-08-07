@@ -7,10 +7,10 @@ for the Rust OS developer community:
 the [OSDK](https://crates.io/crates/cargo-osdk) and [OSTD](https://crates.io/crates/ostd).
 To support development with these tools,
 we also publish companion Docker images on DockerHub,
-(i.e., [`asterinas/osdk`](https://hub.docker.com/r/asterinas/osdk)).
+(i.e., [`asterinas/osdk-dev`](https://hub.docker.com/r/asterinas/osdk-dev)).
 While the Asterinas kernel is not yet ready for public binary release,
 its development Docker images
-(i.e., [`asterinas/asterinas`](https://hub.docker.com/r/asterinas/asterinas))
+(i.e., [`asterinas/dev`](https://hub.docker.com/r/asterinas/dev))
 are released regularly.
 
 All released crates for OSDK and OSTD share the same version number,

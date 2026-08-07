@@ -16,7 +16,7 @@ jobs:
   test-cargo-component:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    container: asterinas/asterinas:0.18.0-20260702
+    container: asterinas/kernel-dev:0.18.0-20260702
     steps:
       - uses: actions/checkout@v4
       - name: Test cargo-component
