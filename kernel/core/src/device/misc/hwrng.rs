@@ -12,7 +12,7 @@ use crate::{
     device::{Device, DeviceType, DevtmpfsInodeMeta, registry::char},
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags},
+        file::{PerOpenFileOps, RwfFlags, StatusFlags},
         vfs::inode::FileOps,
     },
     prelude::*,
@@ -82,6 +82,7 @@ impl FileOps for HwRngFile {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         // Linux looks up the selected device at `read()`.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/core.c#L215>.
@@ -130,6 +131,7 @@ impl FileOps for HwRngFile {
         _offset: usize,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         // FIXME: Opening this device with `O_WRONLY` or `O_RDWR` fails on Linux. Therefore, the
         // write operation should never be reached. See the TODO in `HwRngDevice::open`.

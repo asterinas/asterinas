@@ -18,7 +18,10 @@ use ostd::sync::LocalIrqDisabled;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags, file_table::FdFlags},
+        file::{
+            AccessMode, CreationFlags, FileCommon, FileLike, RwfFlags, StatusFlags,
+            file_table::FdFlags,
+        },
         pseudofs::AnonInodeFs,
     },
     prelude::*,
@@ -215,7 +218,7 @@ impl Pollable for EventFile {
 }
 
 impl FileLike for EventFile {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _rwf_flags: RwfFlags) -> Result<usize> {
         let read_len = size_of::<u64>();
         if writer.avail() < read_len {
             return_errno_with_message!(Errno::EINVAL, "the event buffer is too small");
@@ -230,7 +233,7 @@ impl FileLike for EventFile {
         Ok(read_len)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, _rwf_flags: RwfFlags) -> Result<usize> {
         let write_len = size_of::<u64>();
         if reader.remain() < write_len {
             return_errno_with_message!(Errno::EINVAL, "the event buffer is too small");

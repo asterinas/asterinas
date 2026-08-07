@@ -9,7 +9,7 @@ use aster_systree::{
 
 use crate::{
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, RwfFlags, StatusFlags, mkmod},
         utils::DirentVisitor,
         vfs::{
             file_system::{FileSystem, SuperBlock},
@@ -318,6 +318,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
         offset: usize,
         buf: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
             return Err(Error::new(Errno::EINVAL));
@@ -333,6 +334,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
         offset: usize,
         buf: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
             return Err(Error::new(Errno::EINVAL));

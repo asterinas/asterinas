@@ -3,7 +3,7 @@
 use crate::{
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags},
+        file::{PerOpenFileOps, RwfFlags, StatusFlags},
         vfs::inode::FileOps,
     },
     prelude::*,
@@ -102,6 +102,7 @@ impl FileOps for MemFile {
         _offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         match self {
             MemFile::Full | MemFile::Zero => {
@@ -121,6 +122,7 @@ impl FileOps for MemFile {
         _offset: usize,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         match self {
             MemFile::Null | MemFile::Random | MemFile::Urandom | MemFile::Zero => {

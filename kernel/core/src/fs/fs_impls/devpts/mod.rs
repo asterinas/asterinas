@@ -12,7 +12,7 @@ use self::slave::PtySlaveInode;
 use crate::{
     device::PtyMaster,
     fs::{
-        file::{InodeMode, InodeType, StatusFlags, mkmod},
+        file::{InodeMode, InodeType, RwfFlags, StatusFlags, mkmod},
         pseudofs::AnonDeviceId,
         utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
         vfs::{
@@ -181,6 +181,7 @@ impl FileOps for RootInode {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
@@ -190,6 +191,7 @@ impl FileOps for RootInode {
         _offset: usize,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }

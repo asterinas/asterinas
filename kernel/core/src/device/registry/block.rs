@@ -11,7 +11,7 @@ use crate::{
     device::{Device, DeviceType, DevtmpfsInodeMeta, add_node},
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
+        file::{PerOpenFileOps, RwfFlags, SettableStatusFlags, StatusFlags},
         vfs::{
             inode::FileOps,
             path::{Path, PathResolver},
@@ -141,6 +141,7 @@ impl FileOps for OpenBlockFile {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let total = writer.avail();
         if total == 0 {
@@ -169,6 +170,7 @@ impl FileOps for OpenBlockFile {
         offset: usize,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let total = reader.remain();
         if total == 0 {

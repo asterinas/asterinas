@@ -12,7 +12,7 @@ use spin::Once;
 use super::fs::RamInode;
 use crate::{
     fs::{
-        file::{AccessMode, InodeHandle, InodeMode, InodeType, StatusFlags, mkmod},
+        file::{AccessMode, InodeHandle, InodeMode, InodeType, RwfFlags, StatusFlags, mkmod},
         tmpfs::TmpFs,
         vfs::{
             file_system::FileSystem,
@@ -101,6 +101,7 @@ impl FileOps for MemfdInode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize>;
 
     fn write_at(
@@ -108,6 +109,7 @@ impl FileOps for MemfdInode {
         offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if !reader.has_remain() {
             return Ok(0);
@@ -141,7 +143,7 @@ impl FileOps for MemfdInode {
             }
         }
 
-        self.inode.write_at(offset, reader, status_flags)
+        self.inode.write_at(offset, reader, status_flags, rwf_flags)
     }
 }
 

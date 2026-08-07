@@ -9,8 +9,8 @@ use core::fmt::Display;
 use ostd::io::IoMem;
 
 use super::{
-    AccessMode, FileCommon, InodeHandle, SettableStatusFlags, StatusFlags, file_table::FdFlags,
-    inode_handle::SeekFrom,
+    AccessMode, FileCommon, InodeHandle, RwfFlags, SettableStatusFlags, StatusFlags,
+    file_table::FdFlags, inode_handle::SeekFrom,
 };
 use crate::{
     fs::vfs::{inode::FallocMode, path::Path},
@@ -36,7 +36,7 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     /// Implementors should override this method if the file type supports reads.
     /// An overriding implementation must check whether `access_mode` is readable
     /// before performing the operation.
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _rwf_flags: RwfFlags) -> Result<usize> {
         if !self.common().access_mode().is_readable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened for reading");
         }
@@ -56,7 +56,7 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     /// Implementors should override this method if the file type supports writes.
     /// An overriding implementation must check whether `access_mode` is writable
     /// before performing the operation.
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, _rwf_flags: RwfFlags) -> Result<usize> {
         if !self.common().access_mode().is_writable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened for writing");
         }
@@ -69,7 +69,7 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     /// Unlike [`read`], `read_at` will not change the file offset.
     ///
     /// [`read`]: FileLike::read
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter, rwf_flags: RwfFlags) -> Result<usize> {
         return_errno_with_message!(Errno::ESPIPE, "read_at is not supported");
     }
 
@@ -80,7 +80,7 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     /// If the file is append-only, the `offset` will be ignored.
     ///
     /// [`write`]: FileLike::write
-    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(&self, offset: usize, reader: &mut VmReader, rwf_flags: RwfFlags) -> Result<usize> {
         return_errno_with_message!(Errno::ESPIPE, "write_at is not supported");
     }
 
@@ -243,23 +243,23 @@ impl dyn FileLike {
 
     pub(crate) fn read_bytes(&self, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
-        self.read(&mut writer)
+        self.read(&mut writer, RwfFlags::empty())
     }
 
     pub(crate) fn write_bytes(&self, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
-        self.write(&mut reader)
+        self.write(&mut reader, RwfFlags::empty())
     }
 
     pub(crate) fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
-        self.read_at(offset, &mut writer)
+        self.read_at(offset, &mut writer, RwfFlags::empty())
     }
 
     #[expect(dead_code)]
     pub(crate) fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
-        self.write_at(offset, &mut reader)
+        self.write_at(offset, &mut reader, RwfFlags::empty())
     }
 
     pub(crate) fn as_socket_or_err(&self) -> Result<&dyn Socket> {
