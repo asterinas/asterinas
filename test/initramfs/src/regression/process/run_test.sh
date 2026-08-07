@@ -22,6 +22,7 @@ fi
 ./execve/execve_err
 ./execve/execve_memfd
 ./execve/execve_mt_parent
+./execve/execveat
 
 ./exit/exit_code
 ./exit/exit_procfs

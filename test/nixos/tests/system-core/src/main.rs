@@ -21,6 +21,27 @@ fn bash_run_script(nixos_shell: &mut Session) -> Result<(), Error> {
 }
 
 #[nixos_test]
+fn bash_exec_a_shebang_script(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd(
+        r#"printf '%s\n' '#!/bin/sh' 'printf "script=%s argument=%s\n" "$0" "$1"' > /tmp/test-exec-a.sh"#,
+    )?;
+    nixos_shell.run_cmd("chmod +x /tmp/test-exec-a.sh")?;
+    nixos_shell.run_cmd_and_expect(
+        "/tmp/test-exec-a.sh test-argument",
+        "script=/tmp/test-exec-a.sh argument=test-argument",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "cd /tmp && ./test-exec-a.sh test-argument",
+        "script=./test-exec-a.sh argument=test-argument",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "bash -c 'exec -a custom-argv0 /tmp/test-exec-a.sh test-argument'",
+        "script=/tmp/test-exec-a.sh argument=test-argument",
+    )?;
+    Ok(())
+}
+
+#[nixos_test]
 fn fish_run_script(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.run_cmd("echo 'echo \"Hello from Fish\"' > /tmp/test_fish.fish")?;
     nixos_shell.run_cmd_and_expect("fish /tmp/test_fish.fish", "Hello from Fish")?;
