@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 ASTER_SRC_DIR=${SCRIPT_DIR}/../..
 CARGO_TOML_PATH=${SCRIPT_DIR}/../../Cargo.toml
-VERSION=$( cat ${ASTER_SRC_DIR}/VERSION )
-IMAGE_NAME="asterinas/asterinas:${VERSION}"
+VERSION=$( cat ${ASTER_SRC_DIR}/DOCKER_IMAGE_VERSION )
+IMAGE_NAME="asterinas/dev:${VERSION}"
 
 docker run -it --privileged --network=host -v /dev:/dev -v ${ASTER_SRC_DIR}:/root/asterinas ${IMAGE_NAME}

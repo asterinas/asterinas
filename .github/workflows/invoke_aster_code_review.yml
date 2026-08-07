@@ -233,25 +233,14 @@ jobs:
     runs-on: ubuntu-latest
     # Run inside the Asterinas dev image, which ships Codex (and Claude) preinstalled
     # on PATH (/root/.local/bin) plus python3 + yq — everything the skill and its
-    # benchmark need. This is why there is no Codex-install step. The one tool the
-    # image lacks is the GitHub CLI, installed below.
+    # benchmark need.
     container:
-      image: asterinas/asterinas:0.18.0-20260701
+      image: asterinas/dev:0.18.0-20260701
     timeout-minutes: 60          # headroom for a full `benchmark`; review/smoke finish far sooner
     permissions:
       contents: read
       pull-requests: write
     steps:
-      # TODO: Pre-install Github CLI inside the Asterinas development Docker image.
-      - name: Install GitHub CLI
-        # The dev image has no `gh`; fetch the latest release binary (curl + tar are present).
-        run: |
-          set -eux
-          tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/cli/cli/releases/latest | sed 's#.*/tag/v##')
-          curl -fsSL "https://github.com/cli/cli/releases/download/v${tag}/gh_${tag}_linux_amd64.tar.gz" | tar -xz -C /tmp
-          install -m 0755 "/tmp/gh_${tag}_linux_amd64/bin/gh" /usr/local/bin/gh
-          gh --version
-
       - uses: actions/checkout@v4
         with:
           repository: ${{ needs.triage.outputs.head_repo }}
@@ -259,10 +248,6 @@ jobs:
           fetch-depth: 0
 
       - name: Trust the checked-out workspace (container git)
-        # In a container job the checkout is owned by a different UID than the
-        # container user, so raw `git` in later run-steps aborts with "dubious
-        # ownership". Mark repos safe once; it persists (via $HOME) to every later
-        # step, including the scratch worktrees the benchmark creates under /tmp.
         run: git config --global --add safe.directory '*'
 
       # For fork PRs the base branch tip may not be in the fork's history; fetch
@@ -272,20 +257,6 @@ jobs:
         run: |
           git remote add base-repo "${{ github.server_url }}/${{ github.repository }}.git"
           git fetch base-repo "${{ needs.triage.outputs.base_ref }}"
-
-      # The benchmark's schema check and grader read problems.yaml with PyYAML, but
-      # the dev image's system python3 may lack it (yq ships its own isolated venv).
-      # Bootstrap it once, before any self-test runs.
-      - name: Ensure PyYAML (self-test only)
-        if: needs.triage.outputs.kind == 'test'
-        run: |
-          set -e
-          if python3 -c 'import yaml' 2>/dev/null; then echo "PyYAML already present"; exit 0; fi
-          echo "Installing PyYAML…"
-          if command -v pip3 >/dev/null 2>&1 && pip3 install --break-system-packages pyyaml; then :
-          elif apt-get update && apt-get install -y python3-yaml; then :
-          else echo "could not install PyYAML" >&2; exit 1; fi
-          python3 -c 'import yaml' && echo "PyYAML ready"
 
       # --- review modes: run the skill, post inline comments ------------------
       # FIXME(security): this step runs the PR's OWN aster_code_review.sh (and the
