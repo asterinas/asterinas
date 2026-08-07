@@ -2,7 +2,7 @@
 
 //! Inter-processor interrupts.
 
-use crate::cpu::PinCurrentCpu;
+use crate::{cpu::PinCurrentCpu, prelude::Result};
 
 /// Hardware-specific, architecture-dependent CPU ID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -16,7 +16,7 @@ impl HwCpuId {
 }
 
 /// Sends a general inter-processor interrupt (IPI) to the specified CPU.
-pub(crate) fn send_ipi(_hw_cpu_id: HwCpuId, _guard: &dyn PinCurrentCpu) {
+pub(crate) fn send_ipi(_hw_cpu_id: HwCpuId, _guard: &dyn PinCurrentCpu) -> Result<()> {
     // To suppress unused function lint errors. We should be using it here.
     let _ = crate::smp::do_inter_processor_call;
     unimplemented!()

@@ -4,7 +4,7 @@
 
 use spin::Once;
 
-use crate::{cpu::PinCurrentCpu, irq::IrqLine};
+use crate::{cpu::PinCurrentCpu, error::Error, irq::IrqLine, prelude::Result};
 
 /// Hardware-specific, architecture-dependent CPU ID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,12 +45,12 @@ pub(in crate::arch) unsafe fn init_on_bsp() {
 /// this application hart.
 pub(in crate::arch) unsafe fn init_on_ap() {
     // SAFETY: Enabling the software interrupts is safe here due to the same
-    // reasons mentioned in `init`.
+    // reasons mentioned in `init_on_bsp`.
     unsafe { riscv::register::sie::set_ssoft() };
 }
 
 /// Sends a general inter-processor interrupt (IPI) to the specified CPU.
-pub(crate) fn send_ipi(hw_cpu_id: HwCpuId, _guard: &dyn PinCurrentCpu) {
+pub(crate) fn send_ipi(hw_cpu_id: HwCpuId, _guard: &dyn PinCurrentCpu) -> Result<()> {
     const XLEN: usize = usize::BITS as usize;
     const XLEN_MASK: usize = XLEN - 1;
 
@@ -62,11 +62,13 @@ pub(crate) fn send_ipi(hw_cpu_id: HwCpuId, _guard: &dyn PinCurrentCpu) {
 
     if ret.error == 0 {
         crate::debug!("Successfully sent IPI to hart {}", hw_cpu_id.0);
+        Ok(())
     } else {
         crate::error!(
             "Failed to send IPI to hart {}: error code {}",
             hw_cpu_id.0,
             ret.error
         );
+        Err(Error::IoError)
     }
 }
