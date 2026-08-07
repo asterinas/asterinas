@@ -7,6 +7,7 @@
 #  - scheme: "normal", "test", "microvm" or "iommu";
 # Other arguments are configured via environmental variables:
 #  - OVMF: "on" or "off";
+#  - OVMF_DIR: directory containing OVMF.fd, OVMF_VARS.fd and microvm/MICROVM.fd;
 #  - BOOT_METHOD: "qemu-direct", "grub-rescue-iso" or "grub-qcow2";
 #  - BOOT_PROTOCOL: "multiboot", "multiboot2", "linux-legacy32", "linux-efi-pe64" or "linux-efi-handover64";
 #  - NETDEV: "user" or "tap";
@@ -22,6 +23,9 @@
 #  - ATTACH_XFSTESTS_IMAGES: "true" or "false", whether to attach xfstests images (xfstests_test.img and xfstests_scratch.img) to the VM. Defaults to auto-detection from ENABLE_CONFORMANCE_TEST + CONFORMANCE_TEST_SUITE.
 
 OVMF=${OVMF:-"on"}
+# Directory holding OVMF.fd, OVMF_VARS.fd and microvm/MICROVM.fd. Defaults to the
+# Docker image's path; the Nix dev shell exports this to the Nix store instead.
+OVMF_DIR=${OVMF_DIR:-/root/ovmf/release}
 VHOST=${VHOST:-"off"}
 VSOCK=${VSOCK:-"off"}
 VIRTIOFS=${VIRTIOFS:-"off"}
@@ -109,7 +113,7 @@ if [ "$1" = "tdx" ]; then
         -nographic \
         -monitor pty \
         -nodefaults \
-        -bios /root/ovmf/release/OVMF.fd \
+        -bios ${OVMF_DIR}/OVMF.fd \
         -cpu host,-kvm-steal-time,pmu=off \
         -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
         -object '$TDX_OBJECT' \
@@ -266,11 +270,11 @@ fi
 if [ "$OVMF" = "on" ]; then
     if [ "$1" = "microvm" ]; then
         QEMU_ARGS="${QEMU_ARGS} \
-            -bios /root/ovmf/release/microvm/MICROVM.fd \
+            -bios ${OVMF_DIR}/microvm/MICROVM.fd \
         "
     else
         QEMU_ARGS="${QEMU_ARGS} \
-            -bios /root/ovmf/release/OVMF.fd \
+            -bios ${OVMF_DIR}/OVMF.fd \
         "
     fi
 fi
