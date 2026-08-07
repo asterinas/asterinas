@@ -11,12 +11,12 @@ The images are built in the following order, with each image based on the
 preceding one:
 
 ```text
-asterinas/osdk -> asterinas/nix -> asterinas/asterinas -> asterinas/agents
+asterinas/osdk-dev -> asterinas/prebuilt-nix-packages ->asterinas/kernel-dev -> asterinas/dev
 ```
 
-`asterinas/osdk` contains tools for building OSDK itself and developing
+`asterinas/osdk-dev` contains tools for building OSDK itself and developing
 OSDK-based kernels. The later images add, respectively, Nix tooling and cached
-Nix packages, Asterinas-specific development tools, and agent tooling.
+Nix packages, Asterinas kernel-specific development tools, and agent tooling.
 
 ## Building Docker Images
 
@@ -32,7 +32,7 @@ docker buildx build \
     --platform linux/amd64,linux/arm64 \
     --build-arg ASTER_RUST_VERSION=$(grep "channel" rust-toolchain.toml | awk -F '"' '{print $2}') \
     --build-arg BASE_VERSION=$(cat DOCKER_IMAGE_VERSION) \
-    -t asterinas/asterinas:$(cat DOCKER_IMAGE_VERSION) \
+    -t asterinas/dev:$(cat DOCKER_IMAGE_VERSION) \
     .
 ```
 
