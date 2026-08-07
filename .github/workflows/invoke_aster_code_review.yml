@@ -236,7 +236,7 @@ jobs:
     # benchmark need. This is why there is no Codex-install step. The one tool the
     # image lacks is the GitHub CLI, installed below.
     container:
-      image: asterinas/dev:0.18.0-20260701
+      image: asterinas/dev:0.18.1-20260805
     timeout-minutes: 60          # headroom for a full `benchmark`; review/smoke finish far sooner
     permissions:
       contents: read
