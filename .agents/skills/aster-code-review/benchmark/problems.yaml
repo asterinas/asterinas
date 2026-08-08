@@ -663,3 +663,767 @@
       expectation: >
         A reviewer should flag that syscall-local decode enums should not be
         public when all uses are contained in the same source file.
+
+- problem_id: 0500-subreaper-reparenting-and-state
+  commit: d5569147cb121ba367c104bc6b7a5fbf291efc06
+  source: >
+    PR-review-derived from PR #1861
+    `https://github.com/asterinas/asterinas/pull/1861`. Diff mode reviews the
+    first reviewed two-commit head
+    `d5569147cb121ba367c104bc6b7a5fbf291efc06` from original series base
+    `56b85cb132e54cc51522e6444bc17f9e00eb2ee3`; both full SHAs are fetchable
+    from the default upstream. Comments
+    `https://github.com/asterinas/asterinas/pull/1861#discussion_r1971071488`
+    and `https://github.com/asterinas/asterinas/pull/1861#discussion_r1971121979`
+    identified the zombie-reaper loop and incorrect descendant traversal,
+    fixed by replacement head
+    `ab3459c712eb692c05ead76dc4e4bbb3bc2f088f`. Comment
+    `https://github.com/asterinas/asterinas/pull/1861#discussion_r1976953831`
+    identified the exposed subreaper atomics and misplaced state-transition
+    logic, fixed by final head
+    `8e768e652440e8113b33d1ac4698db63e89af550`. The reviewed range predates all
+    three remedies and contains no later comment or test that names them.
+  review_mode:
+    diff:
+      base: 56b85cb132e54cc51522e6444bc17f9e00eb2ee3
+  defects:
+    - target: { kind: file, path: kernel/src/process/exit.rs }
+      persona: development
+      grounding: "Infinite exit loop"
+      severity: major
+      desc: >
+        `find_reaper_process` returns the first ancestor marked as a child
+        subreaper without checking whether that process is already a zombie.
+        `move_children_to_reaper_process` then asks `copy_process_children` to
+        use that zombie; the helper rejects it with `Err(())`, but the outer
+        loop immediately repeats the same search with unchanged parent links
+        and selects the same zombie again. An exiting process can therefore
+        spin forever instead of continuing upward to a living subreaper or the
+        init process and completing reparenting.
+      fix: >
+        While walking ancestors, return a subreaper only when it is not a
+        zombie; otherwise continue toward its parent. Keep the guarded status
+        check in the move helper to handle a reaper that becomes a zombie
+        concurrently.
+      expectation: >
+        A reviewer should flag that selecting a zombie subreaper makes the
+        retry loop choose the same rejected process forever and require the
+        search to continue upward until it finds a living reaper.
+    - target: { kind: file, path: kernel/src/syscall/prctl.rs }
+      persona: development
+      grounding: "Wrong traversal root"
+      severity: major
+      desc: >
+        `propagate_has_child_subreaper` seeds a queue with the current
+        process's direct children, but after popping a descendant it again
+        iterates `current_process.children()` instead of `process.children()`.
+        The traversal repeatedly considers the root's direct children and
+        never discovers grandchildren or deeper descendants. Processes that
+        already existed below the first level when an ancestor enables
+        `PR_SET_CHILD_SUBREAPER` therefore retain a false
+        `has_child_subreaper` flag and may reparent orphans to init instead of
+        the applicable subreaper.
+      fix: >
+        In each breadth-first-search iteration, inspect the popped process's
+        children and enqueue its unmarked descendants. This visits the complete
+        existing subtree and propagates the flag to every level.
+      expectation: >
+        A reviewer should flag that the propagation loop always traverses
+        `current_process.children()` and require it to traverse each dequeued
+        `process` so grandchildren and deeper descendants are updated.
+    - target: { kind: file, path: kernel/src/process/process/mod.rs }
+      persona: security
+      grounding: encapsulate-security-state
+      severity: minor
+      desc: >
+        `Process::is_child_subreaper` and `has_child_subreaper` return shared
+        references to their internal `AtomicBool` fields, while
+        `propagate_has_child_subreaper` lives in the `prctl` syscall module.
+        Any caller can directly store either flag without performing the
+        companion transition or descendant propagation, so the process
+        supervision state can violate the invariant that every descendant of a
+        subreaper is marked as having one. Reparenting code then makes process
+        lifecycle decisions from state that callers were able to corrupt
+        outside the owning abstraction, weakening the integrity boundary around
+        orphan supervision even though no external writer needs this access.
+      fix: >
+        Keep the atomics and propagation helper inside `Process`. Expose
+        semantic `set_child_subreaper`, `unset_child_subreaper`, and boolean
+        query methods that perform all required state transitions without
+        returning mutable atomic storage to callers.
+      expectation: >
+        A reviewer should flag that the `&AtomicBool` getters let callers bypass
+        the security-sensitive subreaper state transition and its descendant
+        propagation, and require `Process` to expose only invariant-preserving
+        semantic operations.
+
+- problem_id: 0501-init-stream-state-naming-and-api
+  commit: fd51b078a28e8c2a2db8fe4c882ef012793c9c5a
+  source: >
+    PR-review-derived from PR #1854
+    `https://github.com/asterinas/asterinas/pull/1854`. Diff mode reviews the
+    first reviewed two-commit head
+    `fd51b078a28e8c2a2db8fe4c882ef012793c9c5a` from original series base
+    `18e0eae33104fbeecf8ebde63abbdcb7cdf7cfef`; both full SHAs are fetchable
+    from the default upstream. Comments
+    `https://github.com/asterinas/asterinas/pull/1854#discussion_r1969297064`
+    and `https://github.com/asterinas/asterinas/pull/1854#discussion_r1969360360`
+    identified the misleading connection-state names and documentation, while
+    comment
+    `https://github.com/asterinas/asterinas/pull/1854#discussion_r1969353273`
+    identified the unused send/receive parameters. Final head
+    `794327616ca24483c8cd4d2f38b69ca963da0094` applies both remedies. The
+    reviewed range predates the renames, revised documentation, and simplified
+    signatures, so none of those changes reveal the expected findings.
+  review_mode:
+    diff:
+      base: 18e0eae33104fbeecf8ebde63abbdcb7cdf7cfef
+  defects:
+    - target: { kind: file, path: kernel/src/net/socket/ip/stream/init.rs }
+      persona: maintainability
+      grounding: accurate-names
+      severity: minor
+      desc: >
+        `can_connect_new` sounds like a permission that controls only whether a
+        new remote connection may be started, but the same flag also blocks
+        `listen` and actually records whether the previous connect attempt has
+        finished reporting its result. Likewise, `check_connect` does more than
+        inspect state: it marks that attempt finished, clears a stored refusal,
+        and may return `ECONNREFUSED` or `ECONNABORTED`. The accompanying text
+        describes only the nonblocking case even though the state also
+        participates in synchronously refused connects. Readers therefore
+        cannot infer the state machine or side effects from the names and docs.
+      fix: >
+        Rename the flag to `is_connect_done` and the transition method to
+        `finish_last_connect`, update all call sites, and document separately
+        how synchronous and asynchronous refusal determine when the connect
+        attempt is considered finished.
+      expectation: >
+        A reviewer should flag that `can_connect_new` and `check_connect`
+        misdescribe a state used by both `connect` and `listen` and a method
+        that finishes and consumes the previous connection result, and require
+        names and documentation that express those semantics.
+    - target: { kind: file, path: kernel/src/net/socket/ip/stream/init.rs }
+      persona: maintainability
+      grounding: least-surprise
+      severity: minor
+      desc: >
+        `InitStream::try_recv` accepts a writer and receive flags, and
+        `InitStream::try_send` accepts a reader and send flags, but all four
+        parameters are underscore-prefixed and ignored. An initial stream
+        cannot transfer payload data; these helpers only report connection
+        errors or fixed empty results. Their signatures nevertheless imply
+        that the supplied buffers and flags can affect the operation and force
+        callers and the module to carry dependencies that have no effect.
+      fix: >
+        Remove the reader/writer and flags parameters from the `InitStream`
+        helpers and call them without arguments. Keep those parameters only on
+        the outer socket operations that actually dispatch to connected
+        streams capable of consuming them.
+      expectation: >
+        A reviewer should flag the unused buffer and flags parameters on
+        `InitStream::try_send` and `try_recv` and require signatures containing
+        only inputs that can affect these initial-state operations.
+
+- problem_id: 0502-file-common-state-invariants
+  commit: f1102f40d2c5a5c59b11c818c4405984ffc0028f
+  source: >
+    PR-review-derived from PR #3577
+    `https://github.com/asterinas/asterinas/pull/3577`. Diff mode reviews the
+    first reviewed four-commit head
+    `f1102f40d2c5a5c59b11c818c4405984ffc0028f` from original series base
+    `51684041309e31c8c75d5085773cc45585fc82e2`; both full SHAs are fetchable
+    from the default upstream. Comments
+    `https://github.com/asterinas/asterinas/pull/3577#discussion_r3570041825`
+    and `https://github.com/asterinas/asterinas/pull/3577#discussion_r3570054478`
+    identified the unrestricted common-state mutation API and the mixed,
+    duplicated eventfd flag state, fixed by replacement head
+    `c65d269b41879212960e9af62087d49d9b51dbdf`. Comment
+    `https://github.com/asterinas/asterinas/pull/3577#discussion_r3576550464`
+    identified the file-reference drop in an IRQ-disabled observer callback,
+    fixed by later head `bbe618f651a6a76b82f105fa06497412a65ed78c`.
+    All three defects are already present in the reviewed range, which predates
+    the typed update API, eventfd state cleanup, and observer-lifetime remedy.
+  review_mode:
+    diff:
+      base: 51684041309e31c8c75d5085773cc45585fc82e2
+  defects:
+    - target: { kind: file, path: kernel/src/fs/file/file_common.rs }
+      persona: maintainability
+      grounding: information-hiding
+      severity: minor
+      desc: >
+        `FileCommon::set_status_flags` and `FileCommon::update_status_flags` are
+        public raw mutation APIs, and every `FileLike` exposes its
+        `FileCommon` through `common()`. Any kernel caller can therefore bypass
+        `FileLike::check_status_flags` and directly store or compute arbitrary
+        flag combinations, including `O_DIRECT` on a file type that rejects it
+        through the intended trait API. The common-state abstraction cannot
+        enforce each file type's status-flag policy while these unchecked
+        implementation details remain part of its public surface.
+      fix: >
+        Remove the unrestricted setter, restrict the low-level atomic update to
+        the file module, and expose a validated operation on `dyn FileLike`. Use
+        a typed `StatusFlagsUpdate` so callers describe only supported set,
+        unset, or replacement operations before the common state is changed.
+      expectation: >
+        A reviewer should flag that callers can mutate `FileCommon` status flags
+        directly and bypass `FileLike` validation, and require unchecked storage
+        updates to remain private behind a policy-enforcing file API.
+    - target: { kind: file, path: kernel/src/syscall/eventfd.rs }
+      persona: maintainability
+      grounding: rust-type-invariants
+      severity: minor
+      desc: >
+        `EventFile` retains the complete creation-time `Flags` value in a
+        mutable `Mutex` while also storing `O_NONBLOCK` in `FileCommon`. This
+        gives one status flag two representations that diverge after `F_SETFL`,
+        and it leaves descriptor-only `EFD_CLOEXEC` inside the shared file
+        description even though close-on-exec belongs solely to the file-table
+        entry. Only the immutable `EFD_SEMAPHORE` mode is actually needed after
+        construction, so the mixed flag field admits stale and ownership-invalid
+        state without providing useful mutability.
+      fix: >
+        Extract `EFD_SEMAPHORE` once during construction into an immutable
+        `is_semaphore` boolean, keep `O_NONBLOCK` only in `FileCommon`, and keep
+        `EFD_CLOEXEC` only in the descriptor's `FdFlags`. Remove the retained
+        `Mutex<Flags>`.
+      expectation: >
+        A reviewer should flag that `EventFile` retains creation, descriptor,
+        and status flags together while duplicating `O_NONBLOCK`, and require it
+        to store only its immutable semaphore mode after construction.
+    - target: { kind: file, path: kernel/src/fs/file/file_common.rs }
+      persona: development
+      grounding: "Drop in atomic context"
+      severity: major
+      desc: >
+        `OwnerObserver::on_events` upgrades a `Weak<dyn FileLike>` to an `Arc`
+        and lets that temporary strong reference fall out of scope in the
+        callback. Observer notifications can run with local IRQs disabled. If a
+        concurrent close drops the other last strong reference while the
+        callback is executing, this temporary becomes the final reference and
+        dropping it destroys the file in atomic context. A file destructor may
+        release resources or otherwise perform work that is forbidden with IRQs
+        disabled, violating the kernel's atomic-mode requirements.
+      fix: >
+        Do not upgrade or drop a file reference in the observer callback. Track
+        `O_ASYNC` by registering or unregistering the observer when status flags
+        change under the owner lock, and let `on_events` only enqueue `SIGIO`
+        through the owner's weak process reference.
+      expectation: >
+        A reviewer should flag that `OwnerObserver::on_events` can drop the last
+        `Arc<dyn FileLike>` while IRQs are disabled and require the callback to
+        avoid acquiring any temporary file ownership.
+
+- problem_id: 0503-system-v-semaphore-review-defects
+  commit: ca03005ff253aeec6d0b48542c472cbb68504a2d
+  source: >
+    PR-review-derived from PR #1144
+    `https://github.com/asterinas/asterinas/pull/1144`. The reviewed snapshot is
+    the earliest head with human inline review,
+    `ca03005ff253aeec6d0b48542c472cbb68504a2d`, which contains the original
+    five-commit semaphore series from base
+    `ce2af1eb057077753a7a757edc1833e677a83918`. Diff mode uses that PR base so
+    the semaphore implementation is visible without including later review
+    replies or fixes. Comments
+    `https://github.com/asterinas/asterinas/pull/1144#discussion_r1711069399`,
+    `https://github.com/asterinas/asterinas/pull/1144#discussion_r1714612773`,
+    and
+    `https://github.com/asterinas/asterinas/pull/1144#discussion_r1715125608`
+    identified the unreclaimed semaphore IDs, wrong `sem_otime` clock, and
+    registry-lock lifetime respectively. Later
+    force-pushed heads, including
+    `49d8a01851c86b200225d9f1072356dfb5d6eff4` and
+    `3a7b0568d4dc148922683399dfb2c2522cb8173f`, apply those remedies; the
+    reviewed snapshot predates them and remains fetchable from the default
+    upstream without a custom remote. The realtime-seconds requirement is also
+    grounded in Linux `semctl(2)`:
+    `https://man7.org/linux/man-pages/man2/semctl.2.html`.
+  review_mode:
+    diff:
+      base: ce2af1eb057077753a7a757edc1833e677a83918
+  defects:
+    - target: { kind: file, path: kernel/aster-nix/src/ipc/sem.rs }
+      persona: development
+      grounding: "Blocking while holding registry lock"
+      severity: major
+      desc: >
+        `sem_op` obtains a reference to a semaphore from `SEMAPHORE_SETS` and
+        then calls the potentially blocking `Semaphore::sem_op` while the
+        `RwMutexReadGuard` remains alive. If the requested operation must wait,
+        this holds the namespace read lock for the whole sleep. A concurrent
+        `semctl(IPC_RMID)` needs the write lock to remove the set and wake its
+        waiters, so it cannot proceed and the waiter/removal pair can deadlock.
+      fix: >
+        Make the set own reference-counted semaphore objects, clone the selected
+        `Arc` while the registry read guard is held, release that guard before
+        entering `Semaphore::sem_op`, and let set removal notify the semaphore
+        through the independent reference.
+      expectation: >
+        A reviewer should flag that `sem_op` can sleep while holding the
+        semaphore-set registry read lock and require the guard to be released
+        before waiting so `IPC_RMID` can acquire the write lock.
+    - target: { kind: file, path: kernel/aster-nix/src/ipc/sem_set.rs }
+      persona: development
+      grounding: raii
+      severity: major
+      desc: >
+        `create_sem_set` reserves an ID in the global `IdAlloc`, but
+        `SemaphoreSet` has no `Drop` implementation that returns the ID. The
+        `IPC_RMID` path removes the set from `SEMAPHORE_SETS`, yet every removed
+        set permanently consumes an allocator slot. Repeated create/remove
+        cycles eventually exhaust the finite semaphore-ID pool and make later
+        `semget(IPC_CREAT)` calls fail with `ENOSPC` even though no sets remain.
+      fix: >
+        Implement `Drop` for `SemaphoreSet` to notify any waiters and free its
+        allocated key from `ID_ALLOCATOR` when the registry entry is removed.
+      expectation: >
+        A reviewer should flag that semaphore IDs are allocated without a
+        matching release when a set is removed and require lifecycle cleanup,
+        such as a `Drop` implementation that frees the ID.
+    - target: { kind: file, path: kernel/aster-nix/src/ipc/sem_set.rs }
+      persona: development
+      grounding: "Wrong clock source"
+      severity: major
+      desc: >
+        `SemaphoreSet::update_otime` derives `sem_otime` from
+        `SystemTime::now`. In this kernel that helper is initialized from the
+        boot realtime value and then advances with the monotonic clock, so it
+        does not track subsequent realtime adjustments. System V semaphore
+        metadata requires `sem_otime` to be the current realtime seconds since
+        the Unix epoch; exposing a monotonic-derived value gives callers stale
+        or incorrect timestamps after a clock change.
+      fix: >
+        Read the kernel's realtime clock directly when updating and initializing
+        `sem_otime` (for example, `RealTimeCoarseClock::get().read_time()`), and
+        store the epoch seconds required by the System V ABI.
+      expectation: >
+        A reviewer should flag the use of the monotonic-backed `SystemTime` for
+        `sem_otime` and require a realtime clock reading expressed as Unix-epoch
+        seconds.
+
+- problem_id: 0504-ambient-exec-toctou-and-parser-visibility
+  commit: 3bfd9534a848c4ae0c00758238764d03cd15ce51
+  source: >
+    PR-review-derived from PR #3510
+    `https://github.com/asterinas/asterinas/pull/3510`. Diff mode reviews the
+    earliest head with inline review,
+    `3bfd9534a848c4ae0c00758238764d03cd15ce51`, covering the original
+    two-commit series from base
+    `6eeea918b46452cda2dbe1cc9058654e383bf9b6`; both full SHAs are fetchable
+    from the default upstream. Comments
+    `https://github.com/asterinas/asterinas/pull/3510#discussion_r3526309632`
+    and
+    `https://github.com/asterinas/asterinas/pull/3510#discussion_r3526309593`
+    identified the privileged-exec metadata TOCTOU and unnecessarily public
+    parser enums. Replacement head
+    `5cd7a76397e0a919a6852de96b8bceb2cb611fda` derives the privilege decision
+    and credential changes from one captured mode and makes the parser enums
+    private. The reviewed range predates both remedies and contains no review
+    or fix text that reveals them.
+  review_mode:
+    diff:
+      base: 6eeea918b46452cda2dbe1cc9058654e383bf9b6
+  defects:
+    - target: { kind: file, path: kernel/src/process/execve.rs }
+      persona: security
+      grounding: "Privileged-exec TOCTOU"
+      severity: major
+      desc: >
+        `apply_caps_from_exec` decides whether to clear the ambient capability
+        set by reading `elf_inode.mode()`, then `set_uid_from_elf` and
+        `set_gid_from_elf` read the inode mode again before applying setuid or
+        setgid credentials. Another task can add a privilege bit between those
+        reads: the first check then skips `clear_ambient_capset`, while a helper
+        observes the new bit and changes the effective UID or GID. The process
+        consequently preserves `CapAmb` across an execution that is treated as
+        privileged, violating the capability boundary for privileged exec.
+      fix: >
+        Capture the inode privilege state once, together with the corresponding
+        owner or group metadata, or protect the metadata with one lock. Use the
+        same captured `has_set_uid` and `has_set_gid` values both to clear the
+        ambient set and to apply the credential changes, so those decisions
+        cannot diverge.
+      expectation: >
+        A reviewer should flag that repeated inode-mode reads split the ambient
+        clearing decision from the later setuid/setgid action and require both
+        to use one consistent metadata snapshot.
+    - target: { kind: file, path: kernel/src/syscall/prctl.rs }
+      persona: maintainability
+      grounding: narrow-visibility
+      severity: minor
+      desc: >
+        The newly added `CapAmbientCmd` is declared `pub` and is exposed through
+        the public `PrctlCmd::PR_CAP_AMBIENT` variant, even though repository-wide
+        usage at this snapshot is confined to `prctl.rs`. These enums represent
+        file-local syscall parsing and dispatch state, so publishing them creates
+        an unsupported API surface and allows unrelated modules to couple to
+        parser internals without an actual consumer requiring that visibility.
+      fix: >
+        Keep `CapAmbientCmd` and the surrounding parser enums private to
+        `prctl.rs`; widen an individual type only if a real external consumer is
+        introduced later.
+      expectation: >
+        A reviewer should flag the public visibility of `CapAmbientCmd` and the
+        file-local `prctl` parser types and require them to remain private in the
+        absence of an external consumer.
+
+- problem_id: 0505-wait-stop-process-semantics-and-state-cleanup
+  commit: d34dd0bfba07bc9d9d940068f43deee5bdfb169d
+  source: >
+    PR-review-derived from PR #2166
+    `https://github.com/asterinas/asterinas/pull/2166`. Diff mode reviews the
+    first head that received human review,
+    `d34dd0bfba07bc9d9d940068f43deee5bdfb169d`, against its parent
+    `5a514f6163ef368031b159cbdfbe4112619f1c2a`; both are fetchable from the
+    default upstream. Comments
+    `https://github.com/asterinas/asterinas/pull/2166#discussion_r2151247478`,
+    `https://github.com/asterinas/asterinas/pull/2166#discussion_r2151229230`,
+    and
+    `https://github.com/asterinas/asterinas/pull/2166#discussion_r2151243240`
+    identified the thread-scoped stop/continue model, the obsolete generic
+    thread-status enum, and the redundant stop-wait control flow. Replacement
+    head `7738b038783a6909d9d424a3541b2c313451be0e` contains the corresponding
+    process-scoped status and cleanup; the reviewed snapshot predates those
+    remedies.
+  review_mode:
+    diff:
+      base: 5a514f6163ef368031b159cbdfbe4112619f1c2a
+  defects:
+    - target: { kind: file, path: kernel/src/process/wait.rs }
+      persona: development
+      grounding: "Wrong process-state ownership"
+      severity: major
+      desc: >
+        Stop and continue state is stored on each `PosixThread`, and
+        `wait_thread` scans every task of a child process and returns the TID of
+        whichever thread reports a transition. Linux job-control stop and
+        continue events are process-level: a process-directed `SIGSTOP` must
+        stop the whole multithreaded process, `SIGCONT` must resume all of its
+        threads, and the parent's wait call reports one state change for the
+        child PID. In this implementation only the thread selected to handle
+        the signal changes state, so sibling threads can keep executing and
+        `wait4` can report a non-leader TID instead of the child PID.
+      fix: >
+        Store stop/continue state and its unconsumed wait event in
+        `ProcessStatus`. Handle the default stop and continue actions through
+        the process, wake every stopped thread when continuing, and have the
+        parent inspect each child process once and return that process's PID.
+      expectation: >
+        A reviewer should flag that `wait_thread` and the per-`PosixThread`
+        status model treat `SIGSTOP`, `SIGCONT`, `WSTOPPED`, and `WCONTINUED` as
+        thread-level events, and require process-owned state that stops or
+        resumes all threads and reports the child PID.
+    - target: { kind: file, path: kernel/src/thread/status.rs }
+      persona: maintainability
+      grounding: rust-type-invariants
+      severity: minor
+      desc: >
+        The change removes every operation and query that can put the generic
+        `Thread` into `ThreadStatus::Stopped`, but leaves `Stopped` in the enum.
+        The remaining abstraction also retains `Init` and `Running` even though
+        consumers only ask whether a thread has exited. It therefore exposes
+        lifecycle states that are no longer meaningful or observable and keeps
+        a second thread-status concept beside the newly added POSIX stop-status
+        type, making invalid and confusing states representable.
+      fix: >
+        Remove the obsolete `ThreadStatus` enum and its atomic wrapper. Replace
+        the generic thread field with the only remaining state it needs, an
+        `AtomicBool` that records whether the thread has exited, while keeping
+        job-control state on the process.
+      expectation: >
+        A reviewer should flag that `ThreadStatus::Stopped` is left unreachable
+        after its stop/resume users are removed and require the generic status
+        abstraction to be reduced to the actual exited-state invariant.
+    - target: { kind: file, path: kernel/src/thread/task.rs }
+      persona: maintainability
+      grounding: minimize-nesting
+      severity: minor
+      desc: >
+        The stopped-thread path introduces a private `WaitQueue`, a local
+        three-variant `Status` enum, nested loops, and checks for the running,
+        exited, and pending-signal states both before and inside
+        `pause_until`. The wait primitive already performs its own fast-path
+        condition check and returns on pending signals, and no producer uses
+        this one-consumer queue to wake a group. The duplicated machinery makes
+        the task-entry control flow harder to verify without adding a distinct
+        state transition or wake-up mechanism.
+      fix: >
+        Use a single `Waiter` for the task and one compact retry loop: handle a
+        pending signal, leave when the thread exits or the process is running,
+        otherwise pause until the process stop state changes and retry after an
+        interruption. Rely on the waiter for its existing fast-path and signal
+        behavior.
+      expectation: >
+        A reviewer should flag the redundant fast path, pending-signal checks,
+        local status enum, and nested `WaitQueue::pause_until` flow, and require
+        the stopped-thread wait to be expressed as one simple waiter loop.
+
+- problem_id: 0506-mremap-resize-transaction-and-boundaries
+  commit: aafb2f576e2ce77ad45c5be50f2018a383cf6b20
+  source: >
+    PR-review-derived from PR #2162
+    `https://github.com/asterinas/asterinas/pull/2162`. Diff mode reviews the
+    first head that received human review,
+    `aafb2f576e2ce77ad45c5be50f2018a383cf6b20`, against its parent
+    `a2aedcfb3afa31d8cf27b9b458df7103e3c68bfe`; the full SHA is fetchable from
+    the default upstream. Comments
+    `https://github.com/asterinas/asterinas/pull/2162#discussion_r2153532001`,
+    `https://github.com/asterinas/asterinas/pull/2162#discussion_r2153947946`,
+    and
+    `https://github.com/asterinas/asterinas/pull/2162#discussion_r2153564195`
+    identified the destructive failed resize, unchecked user-sized expansion,
+    and split syscall/VMAR responsibilities. Replacement heads
+    `3261da15b3e9c8435a123962baffcb4a0f9d716f` and
+    `503e9bcd27624bf8f535669e982de743142ae7c2` add the rollback/preflight,
+    checked range validation, and API refactoring; the reviewed snapshot
+    predates those remedies.
+  review_mode:
+    diff:
+      base: a2aedcfb3afa31d8cf27b9b458df7103e3c68bfe
+  defects:
+    - target: { kind: file, path: kernel/src/vm/vmar/mod.rs }
+      persona: development
+      grounding: "Rollback on failed resize"
+      severity: major
+      desc: >
+        When an in-place `mremap` expansion is requested, `resize_mapping`
+        removes the last `VmMapping` from `vm_mappings` and decrements
+        `total_vm` before calling the fallible `alloc_free_region_exact` for
+        the extension. If another mapping occupies that extension, the
+        allocation returns an error, but the removed mapping is never inserted
+        back and its page-table mapping is never unmapped. A failed syscall can
+        therefore leave the address-space metadata missing a still-mapped
+        region, allowing later mappings to overlap it and making accounting
+        inconsistent.
+      fix: >
+        Validate or reserve the complete extension before removing the existing
+        mapping, or restore the mapping and accounting on every allocation
+        failure. The old mapping and page-table state must remain unchanged
+        whenever `mremap` returns an error.
+      expectation: >
+        A reviewer should flag that `resize_mapping` mutates the mapping tree
+        before a fallible extension allocation and require a preflight or
+        rollback path that preserves the original mapping on failure.
+    - target: { kind: file, path: kernel/src/vm/vmar/mod.rs }
+      persona: development
+      grounding: checked-arithmetic
+      severity: major
+      desc: >
+        The no-`MREMAP_MAYMOVE` expansion path computes
+        `new_map_end = map_addr + new_size` with unchecked arithmetic even
+        though `new_size` comes from the user syscall. A sufficiently large
+        size can wrap the end address, and the subsequent
+        `new_map_end - extra_mapping_start` can underflow, producing an
+        invalid range or an overflow panic instead of a syscall error. The
+        path also accepts an end outside the user address space because it
+        performs no boundary validation before changing the VMAR.
+      fix: >
+        Build the new end with `checked_add`, reject overflow with `EINVAL`,
+        and verify that the resulting exclusive end is a legal user-space
+        address before subtracting sizes or mutating the mapping tree.
+      expectation: >
+        A reviewer should flag the unchecked user-controlled `map_addr +
+        new_size` calculation in `resize_mapping` and require checked range
+        arithmetic plus user-address validation before expansion.
+    - target: { kind: file, path: kernel/src/syscall/mremap.rs }
+      persona: maintainability
+      grounding: single-responsibility
+      severity: minor
+      desc: >
+        `sys_mremap` validates some ABI rules and fixed-address details, then
+        passes the public `MremapFlags` into `Vmar::remap`, where syscall flag
+        policy is interpreted again to choose fixed, movable, shrinking, or
+        in-place behavior. The VMAR layer therefore depends on a syscall
+        parser type and owns part of the Linux dispatch contract, while the
+        entry point is only a partial specification of the operation. Adding a
+        flag or changing one validation rule requires tracing two layers and
+        can leave their accepted cases inconsistent.
+      fix: >
+        Decode and validate `MremapFlags` at the syscall boundary and dispatch
+        to VMAR methods whose parameters express only mapping operations, such
+        as optional destination, old size, and new size. Keep the flag enum
+        private to the syscall module so VMAR code does not own ABI policy.
+      expectation: >
+        A reviewer should flag that `MremapFlags` and mremap policy are split
+        between `sys_mremap` and `Vmar::remap`, and require the syscall layer to
+        own flag dispatch while VMAR exposes flag-independent mapping APIs.
+
+- problem_id: 0507-pidfd-open-validation-and-file-semantics
+  commit: b68533bac1032928e1f90b9145dbe8619a9b264d
+  source: >
+    PR-review-derived from PR #2151
+    `https://github.com/asterinas/asterinas/pull/2151`. Diff mode reviews the
+    initial user-submitted feature head
+    `b68533bac1032928e1f90b9145dbe8619a9b264d` against its parent
+    `796635486c75282a52275dd15f4e6d33b4a1b75b`; both full SHAs are fetchable
+    from the default upstream, so no custom `remote` is needed. The review
+    comment
+    `https://github.com/asterinas/asterinas/pull/2151#discussion_r2151360609`
+    identified the missing `EINVAL` validation for unknown flags and invalid
+    PIDs; the contract is documented in
+    `https://man7.org/linux/man-pages/man2/pidfd_open.2.html`, and the later
+    head `b4dd67f90549653373a9033d49936bd128ee8753` uses exact flag parsing
+    and rejects negative PIDs. The later review revision
+    `088fbf2d2c95e209e118cd9859fd739f5f46ae82` removes the redundant `Pollee`
+    clone and adds explicit PID-file `read`/`write` errors, matching comments
+    `https://github.com/asterinas/asterinas/pull/2151#discussion_r2151386426`
+    and
+    `https://github.com/asterinas/asterinas/pull/2151#discussion_r2156211774`.
+    The reviewed diff predates all of these fixes and contains no later guards,
+    tests, or fix text that would reveal the expected findings.
+  review_mode:
+    diff:
+      base: 796635486c75282a52275dd15f4e6d33b4a1b75b
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/pidfd_open.rs }
+      persona: security
+      grounding: validate-at-boundaries
+      severity: major
+      desc: >
+        `sys_pidfd_open` converts `flags` with
+        `PidfdFlags::from_bits_truncate`, so unknown bits are silently dropped
+        and the call can succeed as though the caller passed zero. It also uses
+        the unsigned `Pid` directly for lookup, so a negative user PID such as
+        `-1` is treated as a large unsigned value and falls through to
+        `ESRCH`. Linux's `pidfd_open(2)` contract requires `EINVAL` for both an
+        invalid flags value and an invalid PID, making the syscall boundary
+        accept malformed user input and return incompatible errors.
+      fix: >
+        Parse flags with `PidfdFlags::from_bits` and reject `None` with
+        `EINVAL`. Validate the signed PID representation before process-table
+        lookup, returning `EINVAL` for negative PIDs while preserving `ESRCH`
+        for a well-formed positive PID that does not exist.
+      expectation: >
+        A reviewer should flag that `sys_pidfd_open` silently truncates unknown
+        flags and fails to reject negative PIDs with Linux-compatible `EINVAL`
+        at the syscall boundary.
+    - target: { kind: file, path: kernel/src/process/pid_file.rs }
+      persona: development
+      grounding: "Incorrect errno"
+      severity: major
+      desc: >
+        `PidFile` implements `FileLike` without overriding `read` or `write`.
+        The trait defaults therefore return `EBADF` for both operations, but a
+        PID file descriptor is a valid descriptor whose contents are simply not
+        readable or writable: Linux documents `read(2)` on a pidfd as failing
+        with `EINVAL`, and the later regression test checks `EINVAL` for both
+        directions (while positional operations remain `ESPIPE`). The new
+        pidfd API consequently exposes the wrong observable errno for ordinary
+        unsupported operations.
+      fix: >
+        Implement `FileLike::read` and `FileLike::write` on `PidFile` explicitly
+        and return `EINVAL`; leave the inherited `read_at` and `write_at`
+        `ESPIPE` behavior for the non-seekable descriptor.
+      expectation: >
+        A reviewer should flag that `PidFile` inherits `FileLike`'s `EBADF`
+        defaults and require explicit `read`/`write` implementations returning
+        the Linux-compatible `EINVAL`.
+    - target: { kind: file, path: kernel/src/process/pid_file.rs }
+      persona: development
+      grounding: minimize-copies
+      severity: minor
+      desc: >
+        `PidFile::new` clones `process.pidfile_pollee` into a second field even
+        though the owning `Process` already stores the sole readiness object
+        used by `exit_process` to notify PID-file pollers. The clone only
+        increments the `Arc` and makes `PidFile` carry a duplicate handle to
+        process-owned state, so the source of truth is less obvious and future
+        changes can accidentally poll or notify different objects.
+      fix: >
+        Remove the `pollee` field and use `self.process.pidfile_pollee`
+        directly in `Pollable::poll`, or expose a small process accessor if
+        visibility requires it.
+      expectation: >
+        A reviewer should flag the needless `Pollee` clone in `PidFile` and
+        require polling to use the `Process`-owned pollee directly.
+
+- problem_id: 0508-memfd-boundary-and-detached-dentry-design
+  commit: 26dff2ac4b9127bba89bbbc0346a93806c4767fd
+  source: >
+    PR-review-derived from PR #2149
+    `https://github.com/asterinas/asterinas/pull/2149`. Diff mode reviews the
+    first head that received human review,
+    `26dff2ac4b9127bba89bbbc0346a93806c4767fd`, against its parent
+    `0b471ef370d6333553b675fcf40ad5a8f4ba65fe`; both full SHAs are fetchable
+    from the default upstream. Comments
+    `https://github.com/asterinas/asterinas/pull/2149#discussion_r2137384742`,
+    `https://github.com/asterinas/asterinas/pull/2149#discussion_r2137441471`,
+    and
+    `https://github.com/asterinas/asterinas/pull/2149#discussion_r2137389873`
+    identified the wrong error boundary for overlong names, the detached-state
+    expansion of the core `Dentry` abstraction, and the unnecessarily public
+    syscall flags type. The final head
+    `8fee9cd16ab2cd61f3e626cb08118e1105d82c8f` replaces the detached `Dentry`
+    design with a dedicated `MemfdFile` over a detached inode and narrows the
+    flags type; it explicitly leaves the name-length errno mismatch as a
+    FIXME. The reviewed diff predates those revisions and contains the three
+    review targets in their original form.
+  review_mode:
+    diff:
+      base: 0b471ef370d6333553b675fcf40ad5a8f4ba65fe
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/memfd_create.rs }
+      persona: development
+      grounding: "Incorrect errno"
+      severity: major
+      desc: >
+        `sys_memfd_create` reads the name with the generic
+        `MAX_FILENAME_LEN` limit before `MemfdManager::create` applies the
+        memfd-specific 249-byte limit. A valid user string whose terminating
+        NUL lies beyond the generic read bound makes `read_cstring` return
+        `EFAULT`, even though Linux requires `EINVAL` when the supplied memfd
+        name is too long. The private `NAME_MAX` in the manager also prevents
+        the syscall boundary from using the authoritative limit, so the two
+        layers can disagree about which inputs are readable versus invalid.
+      fix: >
+        Define one shared memfd-name limit of 249 bytes and read enough user
+        data at the syscall boundary to distinguish an inaccessible address
+        from an accessible but overlong string. Preserve `EFAULT` for genuine
+        user-memory faults, but return `EINVAL` whenever the readable name
+        exceeds the memfd limit before creating the file.
+      expectation: >
+        A reviewer should flag that the generic bounded `read_cstring` can map
+        an overlong memfd name to `EFAULT` and require one shared 249-byte
+        limit with Linux-compatible `EINVAL` handling for readable long names.
+    - target: { kind: file, path: kernel/src/fs/path/dentry.rs }
+      persona: maintainability
+      grounding: rust-type-invariants
+      severity: major
+      desc: >
+        To represent an anonymous memfd, the patch changes every `Dentry` to
+        hold an optional mount node and changes its name/parent state to allow
+        a named entry without a parent. Most existing `Dentry` operations are
+        only valid for mounted entries, so `mount_node()` and `DentryKey::new`
+        recover the old invariant with `unwrap` or an explicit panic while
+        many unrelated VFS methods must thread the new optional state. A
+        memfd can therefore create a `Dentry` value that satisfies the type but
+        is invalid for the public API's ordinary operations, spreading a
+        special-case anonymous-file state through the core path abstraction.
+      fix: >
+        Preserve `Dentry` as an always-mounted path type with a nonoptional
+        mount node and its existing parent invariants. Represent memfd with a
+        dedicated `FileLike` implementation over a detached inode, or another
+        narrow anonymous-inode abstraction, so operations that require a mount
+        tree cannot be called on an anonymous file state.
+      expectation: >
+        A reviewer should flag that optional mount and parent state makes
+        detached dentries legal at the type level while core `Dentry` methods
+        panic on them, and require memfd anonymity to be represented outside
+        the mounted `Dentry` abstraction.
+    - target: { kind: file, path: kernel/src/syscall/memfd_create.rs }
+      persona: maintainability
+      grounding: narrow-visibility
+      severity: minor
+      desc: >
+        `MemfdFlags` is declared `pub` even though it is only parsed and
+        inspected inside `memfd_create.rs`. This exposes syscall-local
+        dispatch state as a kernel-wide API without a consumer, allowing other
+        modules to couple to an implementation detail and making future flag
+        parsing changes unnecessarily cross-module.
+      fix: >
+        Keep `MemfdFlags` private to the syscall module and widen its
+        visibility only if a concrete external consumer is introduced.
+      expectation: >
+        A reviewer should flag the public visibility of the syscall-local
+        `MemfdFlags` type and require it to remain private.
