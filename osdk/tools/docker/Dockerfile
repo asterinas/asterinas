@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: MPL-2.0
 
+# This image supports development of OSDK-based kernels outside Asterinas.
+# Include only tools needed to build OSDK, required by OSDK at runtime, or
+# generally useful for developing an OSDK-based kernel.
+
 FROM ubuntu:24.04 AS build-base
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -10,12 +14,8 @@ RUN apt update && apt-get install -y --no-install-recommends \
     ca-certificates \
     git \
     python3 \
-    pipx \
+    python3-venv \
     wget
-
-RUN PIP_NO_CACHE_DIR=1 pipx install yq==3.4.3 \
-    && rm -rf /root/.cache/pip /root/.cache/pipx
-ENV PATH="/root/.local/bin:${PATH}"
 
 #= Install Cross Compilation Tools ============================================
 
@@ -185,24 +185,19 @@ EOF
 # Install all OSDK dependent packages
 RUN apt update \
     && apt install -y --no-install-recommends \
-    clang \
     curl \
-    gdb \
+    gdb                 `# A part of OSDK debug support` \
     grub-efi-amd64 \
     grub2-common \
     libnuma1            `# running dependency for QEMU` \
     libpixman-1-dev     `# running dependency for QEMU` \
     libsqlite3-dev      `# used by klint` \
-    libssl-dev          `# used by cargo-deps` \
+    libssl-dev          `# used by cargo-udeps` \
     mtools              `# used by grub-mkrescue` \
+    pkg-config          `# used by cargo-udeps` \
     xorriso \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
-
-# Install claude
-RUN curl -fsSL https://claude.ai/install.sh | bash
-# Install codex
-RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh
 
 # Install Rust with both nightly and stable
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -225,8 +220,8 @@ RUN cargo install --locked \
     cargo-expand@1.0.122 \
     cargo-udeps@0.1.61 \
     lychee@0.24.2 \
-    mdbook@0.5.2 \
     mdbook-mermaid@0.17.0 \
+    mdbook@0.5.2 \
     typos-cli@1.39.0
 
 # Install klint. Pin the Klint commit compatible with the Asterinas toolchain.
