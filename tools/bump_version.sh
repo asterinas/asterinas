@@ -36,10 +36,12 @@ update_dep_version() {
 # Update Docker image versions in file $1
 update_image_versions() {
     echo "Updating file $1"
+    # Update the version of OSDK development container
+    sed -i "s/asterinas\/osdk-dev:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/osdk-dev:${new_version}/g" $1
+    # Update the version of kernel deveopment container
+    sed -i "s/asterinas\/kernel-dev:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/kernel-dev:${new_version}/g" $1
     # Update the version of the Asterinas development container
-    sed -i "s/asterinas\/asterinas:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/asterinas:${new_version}/g" $1
-    # Update the version of asterinas/osdk container
-    sed -i "s/asterinas\/osdk:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/osdk:${new_version}/g" $1
+    sed -i "s/asterinas\/dev:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/dev:${new_version}/g" $1
 }
 
 # Print the help message

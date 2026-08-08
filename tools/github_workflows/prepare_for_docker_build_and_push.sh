@@ -30,7 +30,7 @@ echo "rust_version=$RUST_VERSION" >> "${GITHUB_OUTPUT}"
 
 # Step 3: Check whether each target image already exists.
 echo "Checking if Docker images exist..."
-for image_name in osdk nix asterinas; do
+for image_name in osdk-dev prebuilt-nix-packages kernel-dev dev; do
     docker_image="asterinas/${image_name}:${IMAGE_VERSION}"
     if docker manifest inspect "${docker_image}" > /dev/null 2>&1; then
         echo "${image_name}_existed=true" >> "${GITHUB_OUTPUT}"

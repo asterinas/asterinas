@@ -24,7 +24,7 @@ jobs:
       - name: Verify image tag matches DOCKER_IMAGE_VERSION
         run: |
           EXPECTED=$(cat DOCKER_IMAGE_VERSION)
-          grep -q "asterinas/asterinas:${EXPECTED}" .devcontainer/devcontainer.json \
+          grep -q "asterinas/dev:${EXPECTED}" .devcontainer/devcontainer.json \
             || { echo "devcontainer.json image doesn't match DOCKER_IMAGE_VERSION"; exit 1; }
       - name: Build and verify dev container
         uses: devcontainers/ci@v0.3
