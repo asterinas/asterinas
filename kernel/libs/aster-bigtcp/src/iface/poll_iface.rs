@@ -314,3 +314,28 @@ impl<E: Ext> PendingConnSet<E> {
             .map(|first| first.0.poll_key().next_poll_at_ms.load(Ordering::Relaxed))
     }
 }
+
+/// An extension trait for an interface context.
+pub(super) trait IsUnicast {
+    /// Returns whether the destination address is handled locally by this interface.
+    ///
+    /// Note: "local" means that the IP address belongs to the local interface, not to be confused
+    /// with the localhost IP (127.0.0.1).
+    fn is_unicast_local(&self, dst_addr: smoltcp::wire::IpAddress) -> bool;
+}
+
+impl IsUnicast for smoltcp::iface::Context {
+    fn is_unicast_local(&self, dst_addr: smoltcp::wire::IpAddress) -> bool {
+        use smoltcp::wire::IpAddress;
+
+        match dst_addr {
+            IpAddress::Ipv4(dst_addr) => self.ipv4_addr().is_some_and(|addr| {
+                // All IPv4 loopback addresses are handled by the same loopback interface.
+                // Treating them as local allows direct socket delivery without traversing the
+                // device queues.
+                addr == dst_addr || (addr.is_loopback() && dst_addr.is_loopback())
+            }),
+            IpAddress::Ipv6(dst_addr) => self.ipv6_addr().is_some_and(|addr| addr == dst_addr),
+        }
+    }
+}
