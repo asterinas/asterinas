@@ -13,7 +13,7 @@ ostd.workspace = true
 spin.workspace = true
 
 [target.riscv64imac-unknown-none-elf.dependencies]
-fdt = { version = "0.1.5", features = ["pretty-printing"] }
+fdt.workspace = true
 
 [lints]
 workspace = true
