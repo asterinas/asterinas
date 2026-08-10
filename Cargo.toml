@@ -78,6 +78,7 @@ default-members = [
     "kernel/comps/block",
     "kernel/comps/cmdline",
     "kernel/comps/console",
+    "kernel/comps/drm",
     "kernel/comps/framebuffer",
     "kernel/comps/i8042",
     "kernel/comps/input",
@@ -155,6 +156,7 @@ padding-struct = { path = "ostd/libs/padding-struct", version = "0.2.0" }
 aster-block = { path = "kernel/comps/block" }
 aster-cmdline = { path = "kernel/comps/cmdline" }
 aster-console = { path = "kernel/comps/console" }
+aster-drm = { path = "kernel/comps/drm" }
 aster-framebuffer = { path = "kernel/comps/framebuffer" }
 aster-i8042 = { path = "kernel/comps/i8042" }
 aster-input = { path = "kernel/comps/input" }
