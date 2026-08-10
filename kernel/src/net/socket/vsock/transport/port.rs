@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(vsock)]
+
 use alloc::collections::btree_map::BTreeMap;
 
 use crate::{
@@ -20,7 +22,7 @@ use crate::{
 // TODO: Currently, the port table operates globally and checks whether a port is occupied without
 // taking the CID into account. This only works correctly if there is one vsock device.
 #[derive(Debug)]
-pub(in crate::net::socket::vsock) struct BoundPort {
+pub(in vsock) struct BoundPort {
     port: u32,
 }
 
@@ -54,7 +56,7 @@ impl PortTable {
 
 impl BoundPort {
     /// Binds exclusively to `addr` and returns the resulting port lease.
-    pub(in crate::net::socket::vsock) fn new_exclusive(addr: VsockSocketAddr) -> Result<Self> {
+    pub(in vsock) fn new_exclusive(addr: VsockSocketAddr) -> Result<Self> {
         let vsock_space = vsock_space()?;
 
         let guest_cid = vsock_space.guest_cid();
@@ -76,7 +78,7 @@ impl BoundPort {
     }
 
     /// Allocates and returns a fresh ephemeral port lease.
-    pub(in crate::net::socket::vsock) fn new_ephemeral() -> Result<Self> {
+    pub(in vsock) fn new_ephemeral() -> Result<Self> {
         let vsock_space = vsock_space()?;
         let mut ports = vsock_space.lock_ports();
 
@@ -116,7 +118,7 @@ impl BoundPort {
     ///
     /// On success, ownership of the lease moves into the returned `Connection`. On failure, the
     /// error is returned together with the original lease.
-    pub(in crate::net::socket::vsock) fn connect(
+    pub(in vsock) fn connect(
         self,
         remote_addr: VsockSocketAddr,
         pollee: &Pollee,
@@ -129,7 +131,7 @@ impl BoundPort {
     ///
     /// On success, ownership of the lease moves into the returned `Listener`. On failure, the
     /// error is returned together with the original lease.
-    pub(in crate::net::socket::vsock) fn listen(
+    pub(in vsock) fn listen(
         self,
         backlog: usize,
         pollee: &Pollee,
@@ -139,7 +141,7 @@ impl BoundPort {
     }
 
     /// Returns the local address described by this lease.
-    pub(in crate::net::socket::vsock) fn local_addr(&self) -> VsockSocketAddr {
+    pub(in vsock) fn local_addr(&self) -> VsockSocketAddr {
         VsockSocketAddr {
             cid: self.vsock_space().guest_cid() as u32,
             port: self.port,

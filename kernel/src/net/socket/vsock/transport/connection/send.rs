@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(vsock)]
+
 use core::sync::atomic::Ordering;
 
 use aster_virtio::device::socket::{
@@ -26,7 +28,7 @@ impl Connection {
     ///
     /// The method respects both peer receive credit and the connection's pending-byte budget. It
     /// may return `EAGAIN` when either resource is exhausted.
-    pub(in crate::net::socket::vsock) fn try_send(
+    pub(in vsock) fn try_send(
         &mut self,
         reader: &mut dyn MultiRead,
         _flags: SendFlags,
