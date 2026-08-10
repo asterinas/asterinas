@@ -14,6 +14,7 @@ set -e
 ./capability/trusted_xattr
 
 ./lsm/module_selection
+./lsm/apparmor_file_open
 ./lsm/yama
 
 ./namespace/cgroup_ns

@@ -7,12 +7,12 @@ use crate::{
         procfs::{
             StaticEntryWithOps,
             pid::task::{
-                auxv::AuxvFileOps, cgroup::CgroupFileOps, cmdline::CmdlineFileOps,
-                comm::CommFileOps, environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps,
-                gid_map::GidMapFileOps, maps::MapsFileOps, mem::MemFileOps,
-                mountinfo::MountInfoFileOps, mounts::MountsFileOps, mountstats::MountStatsFileOps,
-                ns::NsDirOps, oom_score_adj::OomScoreAdjFileOps, stat::StatFileOps,
-                status::StatusFileOps, uid_map::UidMapFileOps,
+                attr::AttrDirOps, auxv::AuxvFileOps, cgroup::CgroupFileOps,
+                cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
+                exe::ExeSymOps, fd::FdDirOps, gid_map::GidMapFileOps, maps::MapsFileOps,
+                mem::MemFileOps, mountinfo::MountInfoFileOps, mounts::MountsFileOps,
+                mountstats::MountStatsFileOps, ns::NsDirOps, oom_score_adj::OomScoreAdjFileOps,
+                stat::StatFileOps, status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
                 ListedEntry, ProcDir, ProcDirOps, ReaddirEntry, keyed_readdir_entries,
@@ -24,9 +24,11 @@ use crate::{
     },
     prelude::*,
     process::{Process, pid_table, pid_table::PidEntry, posix_thread::AsPosixThread},
+    security::lsm,
     thread::{Thread, Tid},
 };
 
+mod attr;
 mod auxv;
 mod cgroup;
 mod cmdline;
@@ -169,6 +171,10 @@ impl TidDirOps {
         this_ptr: Weak<dyn Inode>,
         name: &str,
     ) -> Result<Arc<dyn Inode>> {
+        if name == "attr" && lsm::task_attrs_enabled() {
+            return Ok(AttrDirOps::new_inode(self, this_ptr));
+        }
+
         if let Some(child) =
             lookup_child_from_table(name, Self::STATIC_ENTRIES, |f| (f)(self, this_ptr))
         {
@@ -179,7 +185,10 @@ impl TidDirOps {
     }
 
     pub(super) fn static_listed_entries(&self) -> impl Iterator<Item = ListedEntry<'_>> + '_ {
-        listed_entries_from_table(Self::STATIC_ENTRIES)
+        lsm::task_attrs_enabled()
+            .then_some(ListedEntry::new("attr", InodeType::Dir))
+            .into_iter()
+            .chain(listed_entries_from_table(Self::STATIC_ENTRIES))
     }
 }
 

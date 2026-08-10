@@ -37,19 +37,7 @@ pub struct InodeHandle {
 }
 
 impl InodeHandle {
-    pub fn new(path: Path, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
-        let inode = path.inode();
-        if !status_flags.contains(StatusFlags::O_PATH) {
-            // "Opening a file or directory with the O_PATH flag requires no permissions on the
-            // object itself".
-            // Reference: <https://man7.org/linux/man-pages/man2/openat.2.html>
-            inode.check_permission(access_mode.into())?;
-        }
-
-        Self::new_unchecked_access(path, access_mode, status_flags)
-    }
-
-    pub fn new_unchecked_access(
+    pub(in crate::fs) fn new_unchecked_access(
         path: Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,

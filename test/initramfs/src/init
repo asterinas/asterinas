@@ -23,6 +23,8 @@ mount -t sysfs none /sys
 mount -t proc none /proc
 mount -t cgroup2 none /sys/fs/cgroup
 mount -t configfs none /sys/kernel/config
+mkdir -p /sys/kernel/security
+mount -t securityfs none /sys/kernel/security
 mount -t ext2 /dev/vda /ext2
 mount -t exfat /dev/vdb /exfat
 

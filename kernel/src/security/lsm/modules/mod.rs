@@ -28,6 +28,7 @@
 //! describes the optional enabled stack. If neither parameter is specified, the
 //! mandatory modules plus the default optional stack are used.
 
+pub(super) mod apparmor;
 mod capability;
 pub mod yama;
 
@@ -46,7 +47,11 @@ aster_cmdline::define_kv_param!("security", LEGACY_SECURITY_PARAM);
 static MANDATORY_MODULES: [&'static dyn LsmModule; 1] = [&capability::CAPABILITY_LSM];
 
 /// All LSM modules compiled into the kernel.
-static ALL_MODULES: [&'static dyn LsmModule; 2] = [&capability::CAPABILITY_LSM, &yama::YAMA_LSM];
+static ALL_MODULES: [&'static dyn LsmModule; 3] = [
+    &capability::CAPABILITY_LSM,
+    &yama::YAMA_LSM,
+    &apparmor::APPARMOR_LSM,
+];
 
 /// The fallback optional LSM stack used when no boot-time selector is specified.
 pub(super) static DEFAULT_OPTIONAL_MODULES: [&'static dyn LsmModule; 1] = [&yama::YAMA_LSM];

@@ -1,3 +1,6 @@
+// If AppArmor is enabled and the task is confined, its file_open policy may additionally deny regular-file opens.
+// With O_CREAT, the check occurs after creation, so a denied open can leave the new directory entry in place.
+
 access_mode =
     O_RDONLY |
     O_WRONLY |

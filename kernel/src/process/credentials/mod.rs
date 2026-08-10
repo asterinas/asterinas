@@ -27,3 +27,10 @@ use crate::prelude::*;
 /// - Linux capabilities;
 /// - secure bits.
 pub struct Credentials<R = FullOp>(Arc<Credentials_>, R);
+
+impl<R> Credentials<R> {
+    /// Returns the security state associated with these credentials.
+    pub(crate) fn security(&self) -> &crate::security::lsm::CredentialSecurity {
+        self.0.security()
+    }
+}

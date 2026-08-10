@@ -18,6 +18,50 @@ Notes:
 - If omitted, Asterinas will try to execute from the following paths in order:
   `/sbin/init`, `/etc/init`, `/bin/init`, `/bin/sh`.
 
+### `lsm`
+
+Set the optional built-in Linux Security Modules and their order.
+
+Format:
+```text
+lsm=<module>[,<module>...]
+```
+
+Supported optional modules:
+- `yama`
+- `apparmor`
+
+The `capability` module is always enabled.
+Without `lsm=`, Asterinas enables `yama` by default.
+Unknown or duplicate names,
+as well as exclusive modules listed after another exclusive module,
+are ignored with a warning.
+
+Example:
+```text
+lsm=yama,apparmor
+```
+
+### `security`
+
+Select a major Linux Security Module when `lsm=` is not specified.
+This legacy selector currently accepts only `apparmor`.
+
+Format:
+```text
+security=<module>
+```
+
+`security=apparmor` enables AppArmor in addition to
+the default `capability` and `yama` modules.
+If both `lsm=` and `security=` are specified,
+`lsm=` takes precedence and `security=` is ignored with a warning.
+
+Example:
+```text
+security=apparmor
+```
+
 ### `console`
 
 Select console devices for kernel messages.
