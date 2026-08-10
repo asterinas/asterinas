@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod epoll;
+mod event_file;
 #[expect(clippy::module_inception)]
 mod events;
 mod io_events;
@@ -9,6 +10,7 @@ mod subject;
 
 pub use self::{
     epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
+    event_file::{EventFile, EventFileFlags, KernelEventFile},
     events::{Events, EventsFilter},
     io_events::IoEvents,
     observer::Observer,
