@@ -10,10 +10,15 @@ READY_MESSAGE="The VM is ready for the benchmark."
 
 BENCHMARK_NAME=$1
 SYSTEM="${2:-asterinas}"
+if [ "$#" -ge 2 ]; then
+    shift 2
+else
+    set --
+fi
 echo "Running benchmark: ${BENCHMARK_NAME} on ${SYSTEM}"
 
 print_help() {
-    echo "Usage: $0 <benchmark_name> <system_type>"
+    echo "Usage: $0 <benchmark_name> <system_type> [benchmark_args...]"
     echo "  benchmark_name: The name of the benchmark to run."
     echo "  system_type: The type of system to run the benchmark on. 'linux' or 'asterinas'."
 }
@@ -73,7 +78,7 @@ main() {
     # Run the benchmark
     BENCHMARK_SCRIPT=${BENCHMARK_ROOT}/${BENCHMARK_NAME}/run.sh
     chmod +x ${BENCHMARK_SCRIPT}
-    ${BENCHMARK_SCRIPT}
+    "${BENCHMARK_SCRIPT}" "$@"
 
     # Shutdown explicitly if running on Linux
     if [ "$SYSTEM" = "linux" ]; then

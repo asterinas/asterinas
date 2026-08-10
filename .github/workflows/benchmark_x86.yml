@@ -75,6 +75,8 @@ jobs:
           - lmbench/tcp_virtio_lat
           - lmbench/udp_virtio_lat
           - iperf3/tcp_virtio_bw
+          # Vhost-vsock-related network benchmarks
+          - vhost_vsock/throughput
           # Scheduler-related benchmarks
           - hackbench/group8_smp1
           # FIXME: hackbench panics on multi-core settings now.

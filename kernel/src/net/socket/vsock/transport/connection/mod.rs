@@ -27,6 +27,7 @@ use aster_virtio::device::socket::{
     header::{VirtioVsockHdr, VirtioVsockOp, VirtioVsockShutdownFlags},
     packet::RxPacket,
 };
+use ostd::mm::Infallible;
 use takeable::Takeable;
 
 use crate::{
@@ -118,9 +119,30 @@ enum Phase {
 }
 
 struct RxQueue {
-    packets: VecDeque<RxPacket>,
+    packets: VecDeque<RxPayload>,
     used_bytes: usize,
     read_offset: usize,
+}
+
+pub(super) enum RxPayload {
+    Virtio(RxPacket),
+    Vhost(Vec<u8>),
+}
+
+impl RxPayload {
+    fn payload_len(&self) -> usize {
+        match self {
+            Self::Virtio(packet) => packet.payload_len(),
+            Self::Vhost(payload) => payload.len(),
+        }
+    }
+
+    fn payload_reader(&self) -> VmReader<'_, Infallible> {
+        match self {
+            Self::Virtio(packet) => packet.payload(),
+            Self::Vhost(payload) => VmReader::from(payload.as_slice()),
+        }
+    }
 }
 
 struct CreditState {
@@ -315,11 +337,40 @@ impl ConnectionInner {
 
         if len != 0 {
             state.rx_queue.used_bytes += len;
-            state.rx_queue.packets.push_back(packet);
+            state.rx_queue.packets.push_back(RxPayload::Virtio(packet));
         }
 
         // TODO: If the peer sends too many small packets, we'll exhaust a large amount of kernel
         // memory. We need to support merging small packets to avoid this.
+
+        drop(state);
+        self.pollee.notify(IoEvents::IN);
+
+        Ok(())
+    }
+
+    pub(super) fn on_vhost_rw(&self, header: &VirtioVsockHdr, payload: Vec<u8>) -> Result<()> {
+        let mut state = self.state.lock();
+
+        if state.shutdown.peer_write_closed {
+            // We don't check `local_read_closed` because the peer cannot immediately know this
+            // information.
+            state.active_rst(self);
+            return_errno_with_message!(Errno::ENOTCONN, "the connection is not established");
+        }
+
+        let len = payload.len();
+        if state.rx_queue.used_bytes + len > DEFAULT_RX_BUF_SIZE {
+            state.active_rst(self);
+            return_errno_with_message!(Errno::ENOMEM, "the receive queue is full");
+        }
+
+        state.update_peer_credit(self, header);
+
+        if len != 0 {
+            state.rx_queue.used_bytes += len;
+            state.rx_queue.packets.push_back(RxPayload::Vhost(payload));
+        }
 
         drop(state);
         self.pollee.notify(IoEvents::IN);

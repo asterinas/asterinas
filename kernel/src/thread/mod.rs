@@ -145,7 +145,6 @@ impl Thread {
     /// Joins the execution of the thread.
     ///
     /// This method will return after the thread exits.
-    #[cfg_attr(not(ktest), expect(dead_code))]
     #[track_caller]
     pub fn join(&self) {
         while !self.is_exited() {

@@ -1,0 +1,13 @@
+benchmarks:
+  - throughput_h2g_64b
+  - throughput_h2g_4k
+  - throughput_h2g_64k
+  - throughput_g2h_64b
+  - throughput_g2h_4k
+  - throughput_g2h_64k
+  - throughput_vhost_user_h2g_64b
+  - throughput_vhost_user_h2g_4k
+  - throughput_vhost_user_h2g_64k
+  - throughput_vhost_user_g2h_64b
+  - throughput_vhost_user_g2h_4k
+  - throughput_vhost_user_g2h_64k
