@@ -15,10 +15,10 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/sys/kernel/hostname`.
-pub struct HostnameFileOps;
+pub(super) struct HostnameFileOps;
 
 impl HostnameFileOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/utsname_sysctl.c#L108>
         ProcFile::new(Self, parent, mkmod!(a+r, u+w))
     }
@@ -40,10 +40,10 @@ impl ProcFileOps for HostnameFileOps {
 }
 
 /// Represents the inode at `/proc/sys/kernel/domainname`.
-pub struct DomainnameFileOps;
+pub(super) struct DomainnameFileOps;
 
 impl DomainnameFileOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/utsname_sysctl.c#L116>
         ProcFile::new(Self, parent, mkmod!(a+r, u+w))
     }
@@ -65,10 +65,10 @@ impl ProcFileOps for DomainnameFileOps {
 }
 
 /// Represents the inode at `/proc/sys/kernel/osrelease`.
-pub struct OsReleaseFileOps;
+pub(super) struct OsReleaseFileOps;
 
 impl OsReleaseFileOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/utsname_sysctl.c#L94>
         ProcFile::new(Self, parent, mkmod!(a+r))
     }
@@ -81,10 +81,10 @@ impl ProcFileOps for OsReleaseFileOps {
 }
 
 /// Represents the inode at `/proc/sys/kernel/version`.
-pub struct VersionFileOps;
+pub(super) struct VersionFileOps;
 
 impl VersionFileOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/utsname_sysctl.c#L101>
         ProcFile::new(Self, parent, mkmod!(a+r))
     }

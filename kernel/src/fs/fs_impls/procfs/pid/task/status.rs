@@ -61,10 +61,10 @@ use crate::{
 /// - Mems_allowed_list: List of memory nodes allowed for this process.
 /// - voluntary_ctxt_switches: Number of voluntary context switches.
 /// - nonvoluntary_ctxt_switches: Number of nonvoluntary context switches.
-pub struct StatusFileOps(TidDirOps);
+pub(super) struct StatusFileOps(TidDirOps);
 
 impl StatusFileOps {
-    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3326>
         ProcFile::new(Self(dir.clone()), parent, mkmod!(a+r))
     }

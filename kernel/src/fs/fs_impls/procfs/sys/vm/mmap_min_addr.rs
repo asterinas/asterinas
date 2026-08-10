@@ -13,10 +13,10 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/sys/vm/mmap_min_addr`.
-pub struct MmapMinAddrFileOps;
+pub(super) struct MmapMinAddrFileOps;
 
 impl MmapMinAddrFileOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/security/min_addr.c#L52>
         ProcFile::new(Self, parent, mkmod!(a+r, u+w))
     }

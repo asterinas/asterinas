@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(procfs)]
+
 use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
@@ -19,13 +21,13 @@ use crate::{
     thread::Thread,
 };
 
-pub struct ProcFile<F: ProcFileOps> {
+pub(in procfs) struct ProcFile<F: ProcFileOps> {
     inner: F,
     common: Common,
 }
 
 impl<F: ProcFileOps> ProcFile<F> {
-    pub fn new(file: F, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
+    pub(in procfs) fn new(file: F, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
         let common = {
             let fs = parent.upgrade().unwrap().fs();
             let procfs = fs.downcast_ref::<ProcFs>().unwrap();
@@ -43,7 +45,7 @@ impl<F: ProcFileOps> ProcFile<F> {
         })
     }
 
-    pub fn inner(&self) -> &F {
+    pub(in procfs) fn inner(&self) -> &F {
         &self.inner
     }
 }
@@ -123,7 +125,7 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
     }
 }
 
-pub trait ProcFileOps: Sync + Send {
+pub(in procfs) trait ProcFileOps: Sync + Send {
     /// Returns the thread whose credentials own this procfs inode.
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         None
@@ -144,7 +146,7 @@ pub trait ProcFileOps: Sync + Send {
     }
 }
 
-pub trait ProcFileOpsByHandle: Sync + Send {
+pub(in procfs) trait ProcFileOpsByHandle: Sync + Send {
     /// Returns the thread whose credentials own this procfs inode.
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         None
@@ -180,7 +182,7 @@ impl<T: ProcFileOpsByHandle> ProcFileOps for T {
 }
 
 /// Reads a string from `reader` and parses it as an `i32`.
-pub fn read_i32_from(reader: &mut VmReader) -> Result<(i32, usize)> {
+pub(in procfs) fn read_i32_from(reader: &mut VmReader) -> Result<(i32, usize)> {
     /// Worst case buffer size needed for holding an integer.
     ///
     /// The longest possible string is `"-2147483648\n\0"`,
@@ -199,7 +201,7 @@ pub fn read_i32_from(reader: &mut VmReader) -> Result<(i32, usize)> {
 }
 
 /// Reads a string from `reader` and parses it as a `u64`.
-pub fn read_u64_from(reader: &mut VmReader) -> Result<(u64, usize)> {
+pub(in procfs) fn read_u64_from(reader: &mut VmReader) -> Result<(u64, usize)> {
     /// Worst case buffer size needed for holding a `u64`.
     ///
     /// The longest possible string is `"18446744073709551615\n\0"`,

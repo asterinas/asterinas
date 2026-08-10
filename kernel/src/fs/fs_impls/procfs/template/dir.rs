@@ -2,6 +2,8 @@
 
 //! Reusable procfs directory inode templates and `readdir` helpers.
 
+#![short_vis_path::add(procfs)]
+
 use alloc::borrow::Cow;
 use core::time::Duration;
 
@@ -31,7 +33,7 @@ use crate::{
 /// `ProcDir` owns the directory implementation object,
 /// tracks parent linkage for `.` and `..`,
 /// and forwards inode methods that are common to all procfs directories.
-pub struct ProcDir<D: ProcDirOps> {
+pub(in procfs) struct ProcDir<D: ProcDirOps> {
     inner: D,
     this: Weak<ProcDir<D>>,
     parent: Option<Weak<dyn Inode>>,
@@ -40,7 +42,7 @@ pub struct ProcDir<D: ProcDirOps> {
 
 impl<D: ProcDirOps> ProcDir<D> {
     /// Creates the root procfs directory inode.
-    pub fn new_root(
+    pub(in procfs) fn new_root(
         dir: D,
         fs: Weak<dyn FileSystem>,
         ino: u64,
@@ -59,7 +61,7 @@ impl<D: ProcDirOps> ProcDir<D> {
     }
 
     /// Creates a non-root procfs directory inode under `parent`.
-    pub fn new(dir: D, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
+    pub(in procfs) fn new(dir: D, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
         let common = {
             let fs = parent.upgrade().unwrap().fs();
             let procfs = fs.downcast_ref::<ProcFs>().unwrap();
@@ -79,7 +81,7 @@ impl<D: ProcDirOps> ProcDir<D> {
         self.this.upgrade().unwrap()
     }
 
-    pub fn this_weak(&self) -> &Weak<ProcDir<D>> {
+    pub(in procfs) fn this_weak(&self) -> &Weak<ProcDir<D>> {
         &self.this
     }
 
@@ -88,7 +90,7 @@ impl<D: ProcDirOps> ProcDir<D> {
     }
 
     /// Returns the directory-specific procfs operations.
-    pub fn inner(&self) -> &D {
+    pub(in procfs) fn inner(&self) -> &D {
         &self.inner
     }
 }
@@ -244,7 +246,7 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
     }
 }
 
-pub trait ProcDirOps: Sync + Send + Sized {
+pub(in procfs) trait ProcDirOps: Sync + Send + Sized {
     /// Returns the thread whose credentials own this procfs inode.
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         None
@@ -301,13 +303,13 @@ pub trait ProcDirOps: Sync + Send + Sized {
 /// The tuple stores the exported filename,
 /// the inode type reported to [`FileOps::readdir_at`],
 /// and the constructor used by lookup paths to instantiate the inode.
-pub type StaticDirEntry<Fp> = (&'static str, InodeType, Fp);
+pub(in procfs) type StaticDirEntry<Fp> = (&'static str, InodeType, Fp);
 
 /// Looks up a statically declared child from a `StaticDirEntry` table.
 ///
 /// The `constructor_adaptor` receives the stored constructor payload
 /// and can bind any per-directory context that is needed at the call site.
-pub fn lookup_child_from_table<Fp, F>(
+pub(in procfs) fn lookup_child_from_table<Fp, F>(
     name: &str,
     table: &[StaticDirEntry<Fp>],
     constructor_adaptor: F,
@@ -323,7 +325,7 @@ where
 }
 
 /// Converts a static procfs child table into listed entries.
-pub fn listed_entries_from_table<'a, Fp>(
+pub(in procfs) fn listed_entries_from_table<'a, Fp>(
     table: &'a [StaticDirEntry<Fp>],
 ) -> impl Iterator<Item = ListedEntry<'a>> + 'a
 where
@@ -365,14 +367,14 @@ mod readdir {
     /// Unlike [`ReaddirEntry`], this type does not carry a continuation offset.
     /// It is intended for higher-level directory descriptions,
     /// while [`ReaddirEntry`] derives offsets from the iteration strategy.
-    pub struct ListedEntry<'a> {
+    pub(in procfs) struct ListedEntry<'a> {
         pub(super) name: Cow<'a, str>,
         pub(super) type_: InodeType,
     }
 
     impl<'a> ListedEntry<'a> {
         /// Creates a listed entry with the given filename and inode type.
-        pub fn new(name: impl Into<Cow<'a, str>>, type_: InodeType) -> Self {
+        pub(in procfs) fn new(name: impl Into<Cow<'a, str>>, type_: InodeType) -> Self {
             Self {
                 name: name.into(),
                 type_,
@@ -380,7 +382,7 @@ mod readdir {
         }
 
         /// Returns the filename of the listed entry.
-        pub fn name(&self) -> &str {
+        pub(in procfs) fn name(&self) -> &str {
             self.name.as_ref()
         }
     }
@@ -389,7 +391,7 @@ mod readdir {
     ///
     /// The `next_offset` is the continuation offset that should be used as the
     /// starting point of the next [`FileOps::readdir_at`] call.
-    pub struct ReaddirEntry<'a> {
+    pub(in procfs) struct ReaddirEntry<'a> {
         pub(super) name: Cow<'a, str>,
         pub(super) ino: u64,
         pub(super) type_: InodeType,
@@ -429,7 +431,7 @@ mod readdir {
     /// have a deterministic iteration order.
     /// It reserves offsets `1` and `2` for `.` and `..`,
     /// so callers typically pass `2` as `first_entry_offset`.
-    pub fn sequential_readdir_entries<'a, I>(
+    pub(in procfs) fn sequential_readdir_entries<'a, I>(
         offset: usize,
         first_entry_offset: usize,
         entries: I,
@@ -459,7 +461,7 @@ mod readdir {
     /// so callers should provide non-negative keys in increasing order.
     /// Keys do not need to be dense,
     /// but each key must stay stable for the duration of one directory snapshot.
-    pub fn keyed_readdir_entries<'a, I, F>(
+    pub(in procfs) fn keyed_readdir_entries<'a, I, F>(
         offset: usize,
         first_entry_offset: usize,
         keys: I,
@@ -480,7 +482,7 @@ mod readdir {
     }
 
     /// Visits the given [`ReaddirEntry`] values in order, calling `visit_fn` for each one.
-    pub fn visit_readdir_entries<'a, I, F>(entries: I, mut visit_fn: F) -> Result<()>
+    pub(in procfs) fn visit_readdir_entries<'a, I, F>(entries: I, mut visit_fn: F) -> Result<()>
     where
         I: IntoIterator<Item = ReaddirEntry<'a>>,
         F: FnMut(ReaddirEntry<'a>) -> Result<()>,
@@ -493,7 +495,11 @@ mod readdir {
     }
 
     /// Visits listed entries using sequential continuation offsets.
-    pub fn visit_listed_entries<'a, I, F>(offset: usize, listed: I, visit_fn: F) -> Result<()>
+    pub(in procfs) fn visit_listed_entries<'a, I, F>(
+        offset: usize,
+        listed: I,
+        visit_fn: F,
+    ) -> Result<()>
     where
         I: IntoIterator<Item = ListedEntry<'a>>,
         F: FnMut(ReaddirEntry<'a>) -> Result<()>,
@@ -502,7 +508,7 @@ mod readdir {
     }
 }
 
-pub use readdir::{
+pub(in procfs) use readdir::{
     ListedEntry, ReaddirEntry, keyed_readdir_entries, sequential_readdir_entries,
     visit_listed_entries, visit_readdir_entries,
 };

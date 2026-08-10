@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(procfs)]
+
 use crate::{
     fs::{
         file::{InodeType, mkmod},
@@ -30,10 +32,10 @@ mod uts;
 mod yama;
 
 /// Represents the inode at `/proc/sys/kernel`.
-pub struct KernelDirOps;
+pub(in procfs) struct KernelDirOps;
 
 impl KernelDirOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(in procfs) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/sysctl.c#L1765>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L978>

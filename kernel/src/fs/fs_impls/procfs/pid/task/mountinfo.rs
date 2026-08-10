@@ -87,10 +87,10 @@ impl core::fmt::Display for MountInfoEntry<'_> {
 }
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/mountinfo` (and also `/proc/[pid]/mountinfo`).
-pub struct MountInfoFileOps(TidDirOps);
+pub(super) struct MountInfoFileOps(TidDirOps);
 
 impl MountInfoFileOps {
-    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3352>
         ProcFile::new(Self(dir.clone()), parent, mkmod!(a+r))
     }

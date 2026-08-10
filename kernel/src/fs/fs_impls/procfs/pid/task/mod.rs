@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(procfs)]
+
 use super::PidDirOps;
 use crate::{
     fs::{
@@ -47,10 +49,10 @@ mod status;
 mod uid_map;
 
 /// Represents the inode at `/proc/[pid]/task`.
-pub struct TaskDirOps(Arc<PidEntry>);
+pub(super) struct TaskDirOps(Arc<PidEntry>);
 
 impl TaskDirOps {
-    pub fn new_inode(dir: &PidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(dir: &PidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3316>
         ProcDir::new(Self(dir.pid_entry().clone()), parent, mkmod!(a+rx))
     }
@@ -62,16 +64,19 @@ impl TaskDirOps {
 
 /// Represents the inode at `/proc/[pid]/task/[tid]`.
 #[derive(Clone)]
-pub struct TidDirOps {
+pub(in procfs) struct TidDirOps {
     pid_entry: Arc<PidEntry>,
 }
 
 impl TidDirOps {
-    pub fn new(pid_entry: Arc<PidEntry>) -> Self {
+    pub(super) fn new(pid_entry: Arc<PidEntry>) -> Self {
         Self { pid_entry }
     }
 
-    pub fn new_inode(pid_entry: Arc<PidEntry>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(in procfs) fn new_inode(
+        pid_entry: Arc<PidEntry>,
+        parent: Weak<dyn Inode>,
+    ) -> Arc<dyn Inode> {
         ProcDir::new(
             Self { pid_entry },
             parent,
@@ -80,7 +85,7 @@ impl TidDirOps {
         )
     }
 
-    pub fn pid_entry(&self) -> &Arc<PidEntry> {
+    pub(in procfs) fn pid_entry(&self) -> &Arc<PidEntry> {
         &self.pid_entry
     }
 

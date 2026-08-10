@@ -38,10 +38,10 @@ impl core::fmt::Display for MountStatsEntry<'_> {
 }
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/mountstats` (and also `/proc/[pid]/mountstats`).
-pub struct MountStatsFileOps(TidDirOps);
+pub(super) struct MountStatsFileOps(TidDirOps);
 
 impl MountStatsFileOps {
-    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcFile::new(Self(dir.clone()), parent, mkmod!(a+r))
     }
 

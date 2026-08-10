@@ -13,10 +13,10 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/sys/fs/nr_open`.
-pub struct NrOpenFileOps;
+pub(super) struct NrOpenFileOps;
 
 impl NrOpenFileOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/file_table.c#L130>
         ProcFile::new(Self, parent, mkmod!(a+r, u+w))
     }

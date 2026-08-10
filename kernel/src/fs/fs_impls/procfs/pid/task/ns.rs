@@ -33,7 +33,7 @@ pub(super) struct NsDirOps {
 
 impl NsDirOps {
     /// Creates a new directory inode for the `ns` directory.
-    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcDir::new(
             Self { dir: dir.clone() },
             parent,

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(procfs)]
+
 use self::{fs::FsDirOps, kernel::KernelDirOps};
 use super::{
     StaticEntry,
@@ -22,10 +24,10 @@ mod kernel;
 mod vm;
 
 /// Represents the inode at `/proc/sys`.
-pub struct SysDirOps;
+pub(in procfs) struct SysDirOps;
 
 impl SysDirOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(in procfs) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L1566>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L488-L489>
