@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(vsock)]
+
 // Implementation notes:
 //
 // This file implements handling of incoming packets, so those interfaces are kept `pub(super)`.
 //
-// Interfaces exposed to the socket layer (`pub(in crate::net::socket::vsock)`) are split into
+// Interfaces exposed to the socket layer (`pub(in vsock)`) are split into
 // submodules by responsibility:
 // - `basic.rs` exposes address, error, and poll-state queries.
 // - `connect.rs` exposes the connect-handshake result interface.
@@ -40,7 +42,7 @@ use crate::{
 };
 
 /// A uniquely owned vsock connection handle; dropping it will close the connection.
-pub(in crate::net::socket::vsock) struct Connection {
+pub(in vsock) struct Connection {
     inner: Takeable<Arc<ConnectionInner>>,
 }
 

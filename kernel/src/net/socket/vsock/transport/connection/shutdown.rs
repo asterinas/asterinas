@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(vsock)]
+
 use aster_virtio::device::socket::header::{VirtioVsockOp, VirtioVsockShutdownFlags};
 
 use crate::{
@@ -18,7 +20,7 @@ impl Connection {
     /// Applies a local half-close described by `cmd`.
     ///
     /// This method should only be called after the connect attempt has successfully finished.
-    pub(in crate::net::socket::vsock) fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
+    pub(in vsock) fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
         let notify_events = {
             let mut state = self.inner.state.lock();
             debug_assert_ne!(state.phase, Phase::Connecting);
