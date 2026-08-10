@@ -20,10 +20,10 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/sys/kernel/yama`.
-pub struct YamaDirOps;
+pub(super) struct YamaDirOps;
 
 impl YamaDirOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/security/yama/yama_lsm.c#L463>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L978>
@@ -64,7 +64,7 @@ impl ProcDirOps for YamaDirOps {
 struct PtraceScopeFileOps;
 
 impl PtraceScopeFileOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/security/yama/yama_lsm.c#L455>
         ProcFile::new(Self, parent, mkmod!(a+r, u+w))
     }

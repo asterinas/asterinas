@@ -15,10 +15,10 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/uid_map` (and also `/proc/[pid]/uid_map`).
-pub struct UidMapFileOps(TidDirOps);
+pub(super) struct UidMapFileOps(TidDirOps);
 
 impl UidMapFileOps {
-    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3402>
         ProcFile::new(Self(dir.clone()), parent, mkmod!(a+r, u+w))
     }

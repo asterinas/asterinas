@@ -22,7 +22,7 @@ mod task;
 pub(super) use task::TidDirOps;
 
 /// Represents the inode at `/proc/[pid]`.
-pub struct PidDirOps(
+pub(super) struct PidDirOps(
     // The `/proc/<pid>` directory is a superset of the `/proc/<pid>/task/<tid>` directory.
     // So we embed `TidDirOps` here so that `PidDirOps` can "inherit" entries and methods
     // from `TidDirOps`.
@@ -30,7 +30,7 @@ pub struct PidDirOps(
 );
 
 impl PidDirOps {
-    pub fn new_inode(pid_entry: Arc<PidEntry>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(pid_entry: Arc<PidEntry>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         let this = Self(TidDirOps::new(pid_entry));
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3493>
         ProcDir::new(this, parent, mkmod!(a+rx))

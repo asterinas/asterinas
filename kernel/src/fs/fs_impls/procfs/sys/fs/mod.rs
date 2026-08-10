@@ -19,10 +19,10 @@ use crate::{
 mod nr_open;
 
 /// Represents the inode at `/proc/sys/fs`.
-pub struct FsDirOps;
+pub(super) struct FsDirOps;
 
 impl FsDirOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/file_table.c#L139>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L978>

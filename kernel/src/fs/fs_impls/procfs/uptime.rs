@@ -20,10 +20,10 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/uptime`.
-pub struct UptimeFileOps;
+pub(super) struct UptimeFileOps;
 
 impl UptimeFileOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/uptime.c#L45>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L549-L550>

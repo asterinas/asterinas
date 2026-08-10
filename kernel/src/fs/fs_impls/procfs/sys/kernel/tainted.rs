@@ -22,10 +22,10 @@ const TAINT_FLAGS_MASK: u64 = (1 << TAINT_FLAGS_COUNT) - 1;
 static TAINTED_MASK: AtomicU64 = AtomicU64::new(0);
 
 /// Represents the inode at `/proc/sys/kernel/tainted`.
-pub struct TaintedFileOps;
+pub(super) struct TaintedFileOps;
 
 impl TaintedFileOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/sysctl.c#L1588>
         ProcFile::new(Self, parent, mkmod!(a+r, u+w))
     }

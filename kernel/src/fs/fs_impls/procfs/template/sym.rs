@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(procfs)]
+
 use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
@@ -19,13 +21,13 @@ use crate::{
     thread::Thread,
 };
 
-pub struct ProcSym<S: ProcSymOps> {
+pub(in procfs) struct ProcSym<S: ProcSymOps> {
     inner: S,
     common: Common,
 }
 
 impl<S: ProcSymOps> ProcSym<S> {
-    pub fn new(sym: S, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
+    pub(in procfs) fn new(sym: S, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
         let common = {
             let fs = parent.upgrade().unwrap().fs();
             let procfs = fs.downcast_ref::<ProcFs>().unwrap();
@@ -40,7 +42,7 @@ impl<S: ProcSymOps> ProcSym<S> {
         Arc::new(Self { inner: sym, common })
     }
 
-    pub fn inner(&self) -> &S {
+    pub(in procfs) fn inner(&self) -> &S {
         &self.inner
     }
 }

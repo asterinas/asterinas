@@ -10,10 +10,10 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/self`.
-pub struct SelfSymOps;
+pub(super) struct SelfSymOps;
 
 impl SelfSymOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/self.c#L50>
         ProcSym::new(Self, parent, mkmod!(a+rwx))
     }

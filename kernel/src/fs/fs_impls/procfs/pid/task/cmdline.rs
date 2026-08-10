@@ -12,10 +12,10 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/cmdline` (and also `/proc/[pid]/cmdline`).
-pub struct CmdlineFileOps(TidDirOps);
+pub(super) struct CmdlineFileOps(TidDirOps);
 
 impl CmdlineFileOps {
-    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/base.c#L3340>
         ProcFile::new(Self(dir.clone()), parent, mkmod!(a+r))
     }

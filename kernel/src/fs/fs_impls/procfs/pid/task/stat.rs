@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(pid)]
+
 use core::{sync::atomic::Ordering, time::Duration};
 
 use aster_util::printer::VmPrinter;
@@ -84,7 +86,7 @@ use crate::{
 /// - env_start        : Start address of environment variables.
 /// - env_end          : End address of environment variables.
 /// - exit_code        : Process exit code as returned by waitpid(2).
-pub struct StatFileOps {
+pub(in pid) struct StatFileOps {
     dir: TidDirOps,
     mode: StatMode,
 }
@@ -96,11 +98,11 @@ enum StatMode {
 }
 
 impl StatFileOps {
-    pub fn new_thread_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_thread_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         Self::new_inode_with_mode(dir.clone(), StatMode::Thread, parent)
     }
 
-    pub fn new_process_inode(dir: &PidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(in pid) fn new_process_inode(dir: &PidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         Self::new_inode_with_mode(dir.tid_dir_ops().clone(), StatMode::Process, parent)
     }
 

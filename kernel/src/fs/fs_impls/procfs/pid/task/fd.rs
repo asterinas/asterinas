@@ -30,7 +30,7 @@ pub(super) struct FdDirOps<T> {
 }
 
 impl<T: FdOps> FdDirOps<T> {
-    pub fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub(super) fn new_inode(dir: &TidDirOps, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcDir::new(
             Self {
                 dir: dir.clone(),
