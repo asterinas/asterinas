@@ -1,5 +1,3 @@
-ChownTest.FchownDirWithOpath
-ChownTest.FchownFileWithOpath
 ChownTest.FchownPipeFileFails
 ChownTest.ChownRemovesSecurityCapability
 ChownTest.SetGroupIdBitDeniedWithoutCapFsetIdOrRelevantGroup
