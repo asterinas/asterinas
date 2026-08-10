@@ -1,7 +1,13 @@
-ChmodTest.ChmodFileSucceeds
 ChmodTest.ChmodDirSucceeds
-ChmodTest.FchmodFileSucceeds_NoRandomSave
-ChmodTest.FchmodatFileAbsolutePath
-ChmodTest.FchmodatFile
+ChmodTest.ChmodFileSucceeds
 ChmodTest.ChmodFileToNoPermissionsSucceeds
+ChmodTest.FchmodatDir
+ChmodTest.FchmodatDirAbsolutePath
+ChmodTest.FchmodatFile
+ChmodTest.FchmodatFileAbsolutePath
+ChmodTest.FchmodatWithOpath
+ChmodTest.FchmodDirSucceeds
+ChmodTest.FchmodFileSucceeds
+ChmodTest.FchmodFileSucceeds_NoRandomSave
+ChmodTest.FchmodFileToNoPermissionsSucceeds
 ChmodTest.FchmodFileToNoPermissionsSucceeds_NoRandomSave
