@@ -80,7 +80,12 @@ impl Inode {
     }
 
     /// Direct-I/O read path.
-    pub(in ext2) fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    pub(in ext2) fn read_direct_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        rwf_flags: RwfFlags,
+    ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -95,15 +100,27 @@ impl Inode {
         }
 
         let fs = self.fs()?;
-        let read_len = self.inner.read().read_direct_at(&fs, offset, writer)?;
-        if read_len > 0 {
-            self.inner.write().set_atime(utils::now());
-        }
+        let read_len = if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            self.inner
+                .try_read()
+                .ok_or_else(|| Error::with_message(Errno::EAGAIN, "the inode is locked"))?
+                .read_direct_at(&fs, offset, writer, rwf_flags)?
+        } else {
+            self.inner
+                .read()
+                .read_direct_at(&fs, offset, writer, rwf_flags)?
+        };
+        self.update_atime(read_len, rwf_flags);
         Ok(read_len)
     }
 
     /// Direct-I/O write path with pre-allocation and rollback.
-    pub(in ext2) fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+    pub(in ext2) fn write_direct_at(
+        &self,
+        offset: usize,
+        reader: &mut VmReader,
+        rwf_flags: RwfFlags,
+    ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -119,8 +136,14 @@ impl Inode {
         }
 
         let fs = self.fs()?;
-        let mut inner = self.inner.write();
-        inner.write_direct_at(&fs, offset, reader)
+        let mut inner = if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            self.inner
+                .try_write()
+                .ok_or_else(|| Error::with_message(Errno::EAGAIN, "the inode is locked"))?
+        } else {
+            self.inner.write()
+        };
+        inner.write_direct_at(&fs, offset, reader, rwf_flags)
     }
 
     /// Truncates or extends the file to `new_size` bytes.
@@ -304,7 +327,13 @@ impl InodeInner {
     }
 
     /// Reads file data directly after flushing overlapping cached pages.
-    fn read_direct_at(&self, fs: &Ext2, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    fn read_direct_at(
+        &self,
+        fs: &Ext2,
+        offset: usize,
+        writer: &mut VmWriter,
+        rwf_flags: RwfFlags,
+    ) -> Result<usize> {
         let file_size = self.file_size();
         if offset >= file_size || writer.avail() == 0 {
             return Ok(0);
@@ -314,8 +343,16 @@ impl InodeInner {
         writer.limit(read_len);
         let end = offset + read_len;
 
-        self.page_cache().flush_range(offset..end)?;
-        self.read_direct_blocks(fs, offset, end, writer)?;
+        if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            // With `IOCB_NOWAIT`, Linux's `kiocb_write_and_wait` reports `EAGAIN`
+            // instead of flushing when any page in the range needs writeback.
+            if self.page_cache().needs_writeback(offset..end) {
+                return_errno_with_message!(Errno::EAGAIN, "the range has pages needing writeback");
+            }
+        } else {
+            self.page_cache().flush_range(offset..end)?;
+        }
+        self.read_direct_blocks(fs, offset, end, writer, rwf_flags)?;
         Ok(read_len)
     }
 
@@ -325,6 +362,7 @@ impl InodeInner {
         fs: &Ext2,
         offset: usize,
         reader: &mut VmReader,
+        rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let write_len = reader.remain();
         if write_len == 0 {
@@ -336,6 +374,25 @@ impl InodeInner {
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
         let old_size = self.file_size();
 
+        if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            // Linux ext4 rejects NOWAIT writes that extend the file
+            // (`ext4_dio_write_checks`), as they need exclusive-lock semantics
+            // and a size update.
+            if end > old_size {
+                return_errno_with_message!(Errno::EAGAIN, "the range extends the file");
+            }
+            // With `IOCB_NOWAIT`, Linux's `filemap_invalidate_pages` reports `EAGAIN`
+            // instead of flushing and evicting when any page is cached in the range.
+            if self.page_cache().has_pages(offset..end) {
+                return_errno_with_message!(Errno::EAGAIN, "the range has cached pages");
+            }
+            // Allocating blocks for a hole would require metadata I/O, so a hole
+            // means `EAGAIN`.
+            if self.has_holes(offset, end)? {
+                return_errno_with_message!(Errno::EAGAIN, "the range contains holes");
+            }
+        }
+
         if let Err(err) = self.prepare_write(fs, offset, end) {
             self.rollback_write(old_size, end);
             return Err(err);
@@ -343,12 +400,12 @@ impl InodeInner {
 
         let discard_start_bytes = offset.min(old_size);
         let discard_end_bytes = end.min(old_size);
-        if discard_start_bytes < discard_end_bytes {
+        if !rwf_flags.contains(RwfFlags::RWF_NOWAIT) && discard_start_bytes < discard_end_bytes {
             self.page_cache()
                 .invalidate_range(discard_start_bytes..discard_end_bytes)?;
         }
 
-        if let Err(err) = self.write_direct_blocks(fs, offset, reader) {
+        if let Err(err) = self.write_direct_blocks(fs, offset, reader, rwf_flags) {
             self.rollback_write(old_size, end);
             return Err(err);
         }
@@ -360,6 +417,23 @@ impl InodeInner {
         Ok(write_len)
     }
 
+    /// Returns whether any block in the specified byte range is a hole.
+    fn has_holes(&self, offset: usize, end: usize) -> Result<bool> {
+        let iblock_start = Iblock::try_from(offset / BLOCK_SIZE)
+            .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
+        let iblock_end = Iblock::try_from(end.div_ceil(BLOCK_SIZE))
+            .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
+        let mut range_iter = self
+            .block_manager()?
+            .iter_io_ranges_try(iblock_start..iblock_end);
+        while let Some(range) = range_iter.next()? {
+            if matches!(range, IoRange::Hole(_)) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Reads file data directly from data blocks into `writer`.
     fn read_direct_blocks(
         &self,
@@ -367,13 +441,18 @@ impl InodeInner {
         offset: usize,
         end: usize,
         writer: &mut VmWriter,
+        rwf_flags: RwfFlags,
     ) -> Result<()> {
         let iblock_start = Iblock::try_from(offset / BLOCK_SIZE)
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
         let iblock_end = Iblock::try_from(end.div_ceil(BLOCK_SIZE))
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
         let iblock_range = iblock_start..iblock_end;
-        let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range);
+        let mut range_iter = if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            self.block_manager()?.iter_io_ranges_try(iblock_range)
+        } else {
+            self.block_manager()?.iter_io_ranges(iblock_range)
+        };
 
         while let Some(range) = range_iter.next()? {
             match range {
@@ -400,6 +479,7 @@ impl InodeInner {
         fs: &Ext2,
         offset: usize,
         reader: &mut VmReader,
+        rwf_flags: RwfFlags,
     ) -> Result<()> {
         let write_len = reader.remain();
         debug_assert_eq!(write_len % BLOCK_SIZE, 0);
@@ -410,7 +490,11 @@ impl InodeInner {
         let iblock_end = Iblock::try_from(end.div_ceil(BLOCK_SIZE))
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
         let iblock_range = iblock_start..iblock_end;
-        let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range);
+        let mut range_iter = if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            self.block_manager()?.iter_io_ranges_try(iblock_range)
+        } else {
+            self.block_manager()?.iter_io_ranges(iblock_range)
+        };
 
         let mut io_batch = IoBatch::new();
         while let Some(range) = range_iter.next()? {
@@ -519,14 +603,15 @@ mod test {
         let base_data = vec![0x44u8; BLOCK_SIZE];
 
         let mut reader = VmReader::from(base_data.as_slice()).to_fallible();
-        file.write_direct_at(0, &mut reader).unwrap();
+        file.write_direct_at(0, &mut reader, RwfFlags::empty())
+            .unwrap();
         let free_before_fail = f.ext2.super_block().free_blocks_count();
         assert_eq!(free_before_fail, 1);
 
         let fail_payload = vec![0x66u8; BLOCK_SIZE * 2];
         let mut fail_reader = VmReader::from(fail_payload.as_slice()).to_fallible();
         assert_errno!(
-            file.write_direct_at(BLOCK_SIZE, &mut fail_reader),
+            file.write_direct_at(BLOCK_SIZE, &mut fail_reader, RwfFlags::empty(),),
             Errno::ENOSPC
         );
 
@@ -535,7 +620,8 @@ mod test {
 
         let mut readback = vec![0u8; BLOCK_SIZE];
         let mut writer = VmWriter::from(readback.as_mut_slice()).to_fallible();
-        file.read_direct_at(0, &mut writer).unwrap();
+        file.read_direct_at(0, &mut writer, RwfFlags::empty())
+            .unwrap();
         assert_eq!(readback, base_data);
     }
 
