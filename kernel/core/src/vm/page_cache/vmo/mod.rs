@@ -137,7 +137,7 @@ pub(crate) struct Vmo {
     // not have the knowledge to determine if they belong to memfd. We may want to enhance
     // `VmoOptions` to make VMOs aware of whether its writable mappings should be tracked.
     pub(super) writable_mapping_status: WritableMappingStatus,
-    /// Reserve mappings.
+    /// Reverse mappings.
     pub(super) rmap: Mutex<Rmap>,
 }
 
