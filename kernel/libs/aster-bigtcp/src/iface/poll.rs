@@ -6,8 +6,8 @@ use ostd::mm::{Infallible, VmReader};
 use smoltcp::{
     storage::SliceLike,
     wire::{
-        IPV4_HEADER_LEN, IPV4_MIN_MTU, Icmpv4DstUnreachable, IpProtocol, IpRepr, Ipv4Address,
-        Ipv4Repr, TcpControl, TcpRepr, UDP_HEADER_LEN, UdpRepr,
+        IPV4_HEADER_LEN, IPV4_MIN_MTU, Icmpv4DstUnreachable, IpAddress, IpProtocol, IpRepr,
+        Ipv4Address, Ipv4Repr, TcpControl, TcpRepr, UDP_HEADER_LEN, UdpRepr,
     },
 };
 
@@ -105,12 +105,12 @@ impl<E: Ext> PollContext<'_, E> {
         let checksum_caps = self.iface.context().checksum_caps();
         let (packet, ip_repr) = ip::parse(packet, ip_version, checksum_caps.ipv4.rx())?;
 
-        if !ip_repr.inner.dst_addr().is_broadcast()
-            && !self
-                .iface
-                .context()
-                .is_unicast_local(ip_repr.inner.dst_addr())
-        {
+        let can_process = {
+            let cx = self.iface.context();
+            let dst_addr = ip_repr.inner.dst_addr();
+            cx.is_broadcast(&dst_addr) || cx.is_unicast_local(dst_addr)
+        };
+        if !can_process {
             return self.generate_icmp_unreachable(
                 phy,
                 &ip_repr.inner,
@@ -140,7 +140,9 @@ impl<E: Ext> PollContext<'_, E> {
         // TCP connections can only be established between unicast addresses. Ignore the packet if
         // this is not the case. See
         // <https://datatracker.ietf.org/doc/html/rfc9293#section-3.9.2.3>.
-        if !ip_repr.src_addr().is_unicast() || !ip_repr.dst_addr().is_unicast() {
+        if !self.iface.context().is_unicast(ip_repr.src_addr())
+            || !self.iface.context().is_unicast(ip_repr.dst_addr())
+        {
             return None;
         }
 
@@ -296,6 +298,7 @@ impl<E: Ext> PollContext<'_, E> {
         udp_payload: PacketSlice<'_>,
     ) -> bool {
         let mut processed = false;
+        let is_unicast = self.iface.context().is_unicast(ip_repr.dst_addr());
 
         for socket in self.sockets.udp_socket_iter() {
             if !socket.can_process(udp_repr.dst_port) {
@@ -308,7 +311,7 @@ impl<E: Ext> PollContext<'_, E> {
                 udp_repr,
                 udp_payload.clone(),
             );
-            if processed && ip_repr.dst_addr().is_unicast() {
+            if processed && is_unicast {
                 break;
             }
         }
@@ -323,7 +326,13 @@ impl<E: Ext> PollContext<'_, E> {
         mut ip_buffer: VmReader<'_, Infallible>,
         reason: Icmpv4DstUnreachable,
     ) -> Option<TxPacketWithDst> {
-        if !ip_repr.src_addr().is_unicast() || !ip_repr.dst_addr().is_unicast() {
+        // "An ICMP error message MUST NOT be sent as the result of receiving [..] a datagram
+        // destined to an IP broadcast or IP multicast address, or [..] a datagram whose source
+        // address does not define a single host."
+        // Reference: <https://datatracker.ietf.org/doc/html/rfc1122#page-39>.
+        if !self.iface.context().is_unicast(ip_repr.src_addr())
+            || !self.iface.context().is_unicast(ip_repr.dst_addr())
+        {
             return None;
         }
 
@@ -411,10 +420,13 @@ impl<E: Ext> PollContext<'_, E> {
         let packet = udp::emit(packet, ip_repr, udp_repr, checksum_caps.udp.tx());
         let packet = ip::emit(packet, ip_repr, checksum_caps.ipv4.tx());
 
-        Some(TxPacketWithDst {
-            packet,
-            dst_addr: ip_repr.dst_addr(),
-        })
+        let mut dst_addr = ip_repr.dst_addr();
+        if !self.iface.context().is_unicast(dst_addr) {
+            // Force the link layer to emit a broadcast link-layer address.
+            dst_addr = IpAddress::Ipv4(Ipv4Address::BROADCAST);
+        }
+
+        Some(TxPacketWithDst { packet, dst_addr })
     }
 
     fn copy_payload(phy: &dyn PollPhy, payload: &[u8]) -> Option<TxPacket<ApplicationLayer>> {
@@ -571,11 +583,10 @@ impl<E: Ext> PollContext<'_, E> {
                 let iface = PollableIfaceMut::new(cx, pending);
                 let mut this = PollContext::new(iface, self.sockets, &mut actions);
 
-                if ip_repr.dst_addr().is_broadcast()
-                    || !this.iface.context().is_unicast_local(ip_repr.dst_addr())
-                {
+                let is_broadcast = this.iface.context().is_broadcast(&ip_repr.dst_addr());
+                if is_broadcast || !this.iface.context().is_unicast_local(ip_repr.dst_addr()) {
                     tx_packet = this.emit_udp(phy, ip_repr, udp_repr, udp_payload);
-                    if !ip_repr.dst_addr().is_broadcast() {
+                    if !is_broadcast {
                         return;
                     }
                 }

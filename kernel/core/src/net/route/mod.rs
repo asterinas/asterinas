@@ -240,8 +240,8 @@ pub(super) fn lookup_local_iface(address: IpAddress) -> Result<Arc<Iface>> {
 
     // Linux doesn't check the route type when adding a new route to the local table,
     // so we need to verify that the route type is local when an entry is found.
-    // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/ipv4/devinet.c#L161>.
-    if type_ != RouteType::Local {
+    // Reference: <https://elixir.bootlin.com/linux/v7.1/source/include/net/inet_sock.h#L441-L451>.
+    if type_ != RouteType::Local && type_ != RouteType::Broadcast {
         return_errno_with_message!(
             Errno::EADDRNOTAVAIL,
             "the address is not available from the local machine"

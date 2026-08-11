@@ -294,20 +294,25 @@ impl<E: Ext> TcpConnection<E> {
     ///
     /// Polling the iface is _always_ required after this method succeeds.
     pub fn new_connect(
-        bound: BoundTcpPort<E>,
+        mut bound: BoundTcpPort<E>,
         remote_endpoint: IpEndpoint,
         option: &RawTcpOption,
         observer: E::TcpEventObserver,
     ) -> Result<Self, (BoundTcpPort<E>, ConnectError)> {
-        let local_endpoint = bound.endpoint();
-
         let iface = bound.iface().clone();
-        // We have to lock `interface` before locking `sockets`
-        // to avoid dead lock due to inconsistent lock orders.
-        let mut interface = iface.common().interface();
-        let mut sockets = iface.common().sockets();
 
-        let connection_key = ConnectionKey::from((local_endpoint, remote_endpoint));
+        let mut interface = iface.common().interface();
+
+        // A TCP socket can initially be bound to a broadcast address; however, when connecting
+        // later, its address will fall back to a unicast address.
+        let connection_key = {
+            bound.ensure_unicast(&interface);
+            let local_endpoint = bound.endpoint();
+            ConnectionKey::from((local_endpoint, remote_endpoint))
+        };
+
+        // Lock order: `interface` -> `sockets`
+        let mut sockets = iface.common().sockets();
 
         if sockets.lookup_connection(&connection_key).is_some() {
             return Err((bound, ConnectError::AddressInUse));

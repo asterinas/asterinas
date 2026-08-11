@@ -15,6 +15,7 @@ use crate::{
     events::IoEvents,
     net::{
         iface::BoundTcpPort,
+        route::is_broadcast_endpoint,
         socket::{
             ip::{
                 addr::IpAddressFamily,
@@ -146,6 +147,15 @@ impl InitStream {
         );
 
         let remote_endpoint = map_unspecified_to_localhost(*remote_endpoint);
+        if is_broadcast_endpoint(&remote_endpoint) {
+            return Err((
+                Error::with_message(
+                    Errno::ENETUNREACH,
+                    "TCP sockets cannot connect to broadcast addresses",
+                ),
+                self,
+            ));
+        }
         let route_endpoint = if is_ipv4_mapped_localhost {
             IpEndpoint::new(Ipv6Address::LOCALHOST.into(), remote_endpoint.port)
         } else {
