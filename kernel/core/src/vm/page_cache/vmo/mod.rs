@@ -32,7 +32,7 @@ use xarray::{Cursor, LockedXArray, XArray};
 use crate::{
     prelude::*,
     vm::{
-        page_cache::{CachePage, CachePageExt, PageCacheBackend, cache_page::PageState},
+        page_cache::{CachePage, CachePageExt, PageCacheBackend, PageRun, cache_page::PageState},
         vmar::Rmap,
     },
 };
@@ -906,9 +906,30 @@ impl<'a> BackedVmo<'a> {
         drop(locked_rmap);
 
         let mut io_batch = IoBatch::with_capacity(locked_dirty_pages.len());
-        for (idx, locked_page) in locked_dirty_pages {
-            self.backend
-                .write_page_async(idx, locked_page, &mut io_batch)?;
+        for locked_page_run in locked_dirty_pages
+            .chunk_by_mut(|(page_idx, _), (next_page_idx, _)| page_idx + 1 == *next_page_idx)
+        {
+            // Single page in one run.
+            if locked_page_run.len() == 1 {
+                let (idx, locked_page) = &mut locked_page_run[0];
+                self.backend
+                    .write_page_async(*idx, locked_page.detach(), &mut io_batch)?;
+                continue;
+            }
+
+            // Multiple pages in one run.
+            let start_idx = locked_page_run[0].0;
+            let mut locked_pages = locked_page_run
+                .iter_mut()
+                .map(|(_, locked_page)| locked_page.detach());
+            let pages = PageRun::new(start_idx, &mut locked_pages);
+            if let Err(err) = self.backend.write_pages_async(pages, &mut io_batch) {
+                for locked_page in locked_pages {
+                    locked_page.set_dirty();
+                }
+                let _ = io_batch.wait_all();
+                return Err(err);
+            }
         }
         io_batch.wait_all()?;
 
