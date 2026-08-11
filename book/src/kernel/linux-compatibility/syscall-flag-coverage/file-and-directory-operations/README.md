@@ -92,7 +92,10 @@ Silently-ignored flags:
 * `RWF_DSYNC`
 * `RWF_HIPRI`
 * `RWF_SYNC`
-* `RWF_NOWAIT`
+
+Partially-supported flags:
+* `RWF_NOWAIT` (ext2: `EAGAIN` or short reads for buffered reads;
+  `EINVAL` for buffered writes; `EAGAIN` for direct I/O that would block)
 
 Unsupported flags:
 * `RWF_APPEND`
