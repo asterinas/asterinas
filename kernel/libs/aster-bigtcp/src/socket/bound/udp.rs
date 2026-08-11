@@ -53,11 +53,11 @@ impl<E: Ext> UdpSocketBg<E> {
         udp_repr: &UdpRepr,
         udp_payload: PacketSlice<'_>,
     ) -> bool {
-        let mut socket = self.inner.socket.lock();
-
-        if !socket.accepts(cx, ip_repr, udp_repr) {
+        if !self.accepts(ip_repr, udp_repr) {
             return false;
         }
+
+        let mut socket = self.inner.socket.lock();
 
         socket.process(
             cx,
@@ -70,6 +70,15 @@ impl<E: Ext> UdpSocketBg<E> {
         self.notify_events(SocketEvents::CAN_RECV);
 
         true
+    }
+
+    fn accepts(&self, ip_repr: &IpRepr, udp_repr: &UdpRepr) -> bool {
+        // This must be stricter than `RawUdpSocket::accepts` so that `RawUdpSocket::process` is
+        // guaranteed to work correctly if this method returns true.
+        //
+        // `RawUdpSocket::accepts` accepts all incoming broadcast and multicast packets, which is not
+        // what we want.
+        ip_repr.dst_addr() == *self.bound.addr() && udp_repr.dst_port == self.bound.port()
     }
 
     /// Tries to generate an outgoing packet and dispatches the generated packet.
@@ -110,7 +119,16 @@ impl<E: Ext> UdpSocket<E> {
         bound: BoundUdpPort<E>,
         observer: E::UdpEventObserver,
     ) -> Result<Self, (BoundUdpPort<E>, smoltcp::socket::udp::BindError)> {
-        let local_endpoint = bound.endpoint();
+        let local_endpoint = {
+            let mut endpoint = bound.endpoint();
+
+            // This is the address used to send packets. Source addresses can never be the broadcast
+            // address, even if it is the address that the socket binds to.
+            let interface = bound.iface().common().interface();
+            endpoint.addr = interface.map_broadcast_to_local(endpoint.addr);
+
+            endpoint
+        };
 
         let socket = {
             let mut socket = new_udp_socket();

@@ -335,6 +335,29 @@ impl<E: Ext> BoundPort<E> {
     }
 }
 
+impl<E: Ext> BoundTcpPort<E> {
+    /// Ensures that the bound address is a unicast address.
+    ///
+    /// The bound address will be converted to a unicast address belonging to the local interface if
+    /// it is a broadcast address.
+    pub(crate) fn ensure_unicast(&mut self, interface: &PollableIface<E>) {
+        let new_addr = interface.map_broadcast_to_local(self.addr);
+        if new_addr == self.addr {
+            return;
+        }
+
+        // Lock order: `interface` -> `used_ports`
+        let iface_common = self.0.iface.common();
+        let mut used_ports = iface_common.used_ports.lock();
+
+        let can_reuse = self.can_reuse.load(Ordering::Relaxed);
+
+        used_ports.acquire(new_addr, self.port, can_reuse, self.protocol);
+        used_ports.release(self.addr, self.port, can_reuse, self.protocol);
+        self.0.addr = new_addr;
+    }
+}
+
 impl<E: Ext> Drop for BoundPort<E> {
     fn drop(&mut self) {
         self.iface.common().release_port(
@@ -503,6 +526,26 @@ impl PortTable {
         // to see if any can be reused instead of directly returning `None`.
 
         None
+    }
+
+    fn acquire(&mut self, addr: IpAddress, port: u16, can_reuse: bool, protocol: PortProtocol) {
+        let key = PortKey {
+            addr: NormalizedAddress::from(addr),
+            port,
+            protocol,
+        };
+        match self.used_ports.entry(key) {
+            Entry::Occupied(mut occupied) => {
+                let port_state = occupied.get_mut();
+                port_state.nsocket += 1;
+                if can_reuse {
+                    port_state.nreuse += 1;
+                }
+            }
+            Entry::Vacant(vacant) => {
+                vacant.insert(PortState::new(can_reuse));
+            }
+        }
     }
 
     fn release(&mut self, addr: IpAddress, port: u16, can_reuse: bool, protocol: PortProtocol) {
