@@ -31,54 +31,87 @@ else
     echo "Found $available_count available test cases"
 fi
 
-if [ ! -r "$DEFAULT_BLOCKLISTS" ]; then
-    echo "$0: missing $DEFAULT_BLOCKLISTS; kselftest blocklist is broken" >&2
-    exit 1
-fi
+# When a selector is set, run only the selected entries and ignore the blocklist.
+CONFORMANCE_TEST_SELECTOR=${CONFORMANCE_TEST_SELECTOR:-}
 
-cat "$DEFAULT_BLOCKLISTS" > "$COMBINED_BLOCKLISTS"
-for extra_file in $EXTRA_BLOCKLISTS ; do
-    extra_blocklists="$KSELFTEST_DIR/$extra_file"
-    if [ -r "$extra_blocklists" ]; then
-        printf '\n' >> "$COMBINED_BLOCKLISTS"
-        cat "$extra_blocklists" >> "$COMBINED_BLOCKLISTS"
-    else
-        echo "Warning: extra blocklist not found: $extra_blocklists" >&2
+if [ -n "$CONFORMANCE_TEST_SELECTOR" ]; then
+    printf '%s\n' "$CONFORMANCE_TEST_SELECTOR" | tr ',' '\n' > "$COMBINED_BLOCKLISTS"
+
+    selected_count=0
+    invalid_selector=0
+    while IFS= read -r test_name || [ -n "$test_name" ]; do
+        test_name=${test_name#"${test_name%%[![:space:]]*}"}
+        test_name=${test_name%"${test_name##*[![:space:]]}"}
+        [ -z "$test_name" ] && continue
+
+        selected_count=$((selected_count + 1))
+        if grep -qxF "$test_name" "$TESTS"; then
+            printf '%s\n' "$test_name" >> "$AVAILABLE_TESTS"
+        else
+            echo "Error: unknown kselftest test: $test_name" >&2
+            invalid_selector=1
+        fi
+    done < "$COMBINED_BLOCKLISTS"
+
+    if [ "$selected_count" -eq 0 ]; then
+        echo "$0: CONFORMANCE_TEST_SELECTOR contains no test names" >&2
+        exit 2
     fi
-done
+    if [ "$invalid_selector" -ne 0 ]; then
+        exit 2
+    fi
 
-echo "Processing blocklists..."
-while IFS= read -r line || [ -n "$line" ]; do
-    line=${line#"${line%%[![:space:]]*}"}
-    line=${line%"${line##*[![:space:]]}"}
-    case "$line" in
-        "" | "#"*)
-            continue ;;
-        *:*)
-            dir="${line%%:*}"
-            command="${line#*:}"
-            if [ "$command" = "*" ]; then
-                awk -F: -v d="$dir" '$1 == d { print }' "$TESTS" >> "$RESOLVED_BLOCKLISTS"
-            else
-                printf '%s\n' "$line" >> "$RESOLVED_BLOCKLISTS"
-            fi
-            ;;
-        *)
-            echo "Error: Invalid format in blocklist: $line" >&2
-            exit 1
-            ;;
-    esac
-done < "$COMBINED_BLOCKLISTS"
-
-sort -u -o "$RESOLVED_BLOCKLISTS" "$RESOLVED_BLOCKLISTS"
-if [ -s "$RESOLVED_BLOCKLISTS" ]; then
-    blocked_count=$(wc -l < "$RESOLVED_BLOCKLISTS")
-    grep -vxFf "$RESOLVED_BLOCKLISTS" "$TESTS" | grep -v '^$' > "$AVAILABLE_TESTS"
+    sort -u -o "$AVAILABLE_TESTS" "$AVAILABLE_TESTS"
 else
-    blocked_count=0
-    grep -v '^$' "$TESTS" > "$AVAILABLE_TESTS"
+    if [ ! -r "$DEFAULT_BLOCKLISTS" ]; then
+        echo "$0: missing $DEFAULT_BLOCKLISTS; kselftest blocklist is broken" >&2
+        exit 1
+    fi
+
+    cat "$DEFAULT_BLOCKLISTS" > "$COMBINED_BLOCKLISTS"
+    for extra_file in $CONFORMANCE_TEST_EXTRA_BLOCKLISTS ; do
+        extra_blocklists="$KSELFTEST_DIR/$extra_file"
+        if [ -r "$extra_blocklists" ]; then
+            printf '\n' >> "$COMBINED_BLOCKLISTS"
+            cat "$extra_blocklists" >> "$COMBINED_BLOCKLISTS"
+        else
+            echo "Warning: extra blocklist not found: $extra_blocklists" >&2
+        fi
+    done
+
+    echo "Processing blocklists..."
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line#"${line%%[![:space:]]*}"}
+        line=${line%"${line##*[![:space:]]}"}
+        case "$line" in
+            "" | "#"*)
+                continue ;;
+            *:*)
+                dir="${line%%:*}"
+                command="${line#*:}"
+                if [ "$command" = "*" ]; then
+                    awk -F: -v d="$dir" '$1 == d { print }' "$TESTS" >> "$RESOLVED_BLOCKLISTS"
+                else
+                    printf '%s\n' "$line" >> "$RESOLVED_BLOCKLISTS"
+                fi
+                ;;
+            *)
+                echo "Error: Invalid format in blocklist: $line" >&2
+                exit 1
+                ;;
+        esac
+    done < "$COMBINED_BLOCKLISTS"
+
+    sort -u -o "$RESOLVED_BLOCKLISTS" "$RESOLVED_BLOCKLISTS"
+    if [ -s "$RESOLVED_BLOCKLISTS" ]; then
+        blocked_count=$(wc -l < "$RESOLVED_BLOCKLISTS")
+        grep -vxFf "$RESOLVED_BLOCKLISTS" "$TESTS" | grep -v '^$' > "$AVAILABLE_TESTS"
+    else
+        blocked_count=0
+        grep -v '^$' "$TESTS" > "$AVAILABLE_TESTS"
+    fi
+    echo "Total blocklist entries processed: $blocked_count"
 fi
-echo "Total blocklist entries processed: $blocked_count"
 
 run_count=$(wc -l < "$AVAILABLE_TESTS")
 if [ "$run_count" -eq 0 ]; then
