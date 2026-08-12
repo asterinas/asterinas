@@ -1,5 +1,13 @@
 benchmarks:
-  - ext2_seq_write_bw
-  - ext2_seq_read_bw
-  - ext2_seq_write_bw_no_iommu
-  - ext2_seq_read_bw_no_iommu
+  - seq_write_bw_ext2_cached
+  - seq_read_bw_ext2_cached
+  - seq_write_bw_ext2_direct
+  - seq_read_bw_ext2_direct
+  - seq_write_bw_ext2_no_iommu_cached
+  - seq_read_bw_ext2_no_iommu_cached
+  - seq_write_bw_ext2_no_iommu_direct
+  - seq_read_bw_ext2_no_iommu_direct
+  - seq_write_bw_virtiofs_cached
+  - seq_read_bw_virtiofs_cached
+  - seq_write_bw_virtiofs_direct
+  - seq_read_bw_virtiofs_direct
