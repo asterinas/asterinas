@@ -161,7 +161,7 @@ each in a CLEAN context with only its own persona block (selective exposure):
 **Never spawn a pass by re-running `aster_code_review.sh` / `run_agent.sh`,
 nor by re-issuing the skill's own arguments** (e.g. `codex exec … diff <base> <out>`).
 A pass is a *reviewer* invocation whose input is the `build_pass_prompt.sh` text
-— not another run of this skill.
+— not another run of this skill. It is already inside the active workflow and must not load this `SKILL.md` again.
 Re-entering the launcher spawns another orchestrator that spawns another … , an infinite fork bomb;
 the launcher now refuses it (`ACR_AGENT_RUNNING`).
 
