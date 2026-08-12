@@ -23,7 +23,7 @@ use crate::{
             sigkill_other_threads,
         },
         process_vm::{MAX_LEN_STRING_ARG, MAX_NR_STRING_ARGS, ProcessVm},
-        program_loader::{ProgramToLoad, elf::ElfLoadInfo},
+        program_loader::{ProgramToLoad, UndetectedExecutable, elf::ElfLoadInfo},
         signal::{
             HandlePendingSignal, PauseReason, SigStack,
             constants::{SIGCHLD, SIGKILL},
@@ -33,18 +33,9 @@ use crate::{
     vm::vmar::VmarHandle,
 };
 
-/// Describes how a shebang interpreter can access the script after exec.
-pub(crate) enum ShebangScriptPath {
-    /// A path accessible to the interpreter after exec.
-    Accessible(CString),
-    /// A path inaccessible to the interpreter after exec.
-    Inaccessible,
-}
-
 pub(crate) fn do_execve(
-    elf_file: Path,
+    executable: UndetectedExecutable,
     thread_name: ThreadName,
-    shebang_script_path: ShebangScriptPath,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     ctx: &Context,
@@ -63,21 +54,16 @@ pub(crate) fn do_execve(
 
     debug!(
         "file path: {:?}, argv = {:?}, envp = {:?}",
-        path_resolver.make_abs_path(&elf_file).into_string(),
+        path_resolver.make_abs_path(executable.path()).into_string(),
         argv,
         envp
     );
 
-    let program_to_load = ProgramToLoad::build_from_file(
-        elf_file.clone(),
-        &path_resolver,
-        shebang_script_path,
-        argv,
-        envp,
-    )?;
+    let executable_path = executable.path().clone();
+    let program_to_load = ProgramToLoad::from_executable(executable, &path_resolver, argv, envp)?;
     let exec_cred = prepare_exec_cred(program_to_load.elf_file(), ctx)?;
 
-    let new_vmar = VmarHandle::new(ProcessVm::new(program_to_load.elf_file().clone()));
+    let new_vmar = VmarHandle::new(ProcessVm::new(executable_path.clone()));
     let elf_load_info = program_to_load.load_to_vmar(&new_vmar, &path_resolver)?;
 
     // Ensure no other thread is concurrently performing exit_group or execve.
