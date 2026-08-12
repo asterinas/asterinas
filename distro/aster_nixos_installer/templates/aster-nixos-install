@@ -111,9 +111,11 @@ if findmnt -M ${BUILD_DIR} >/dev/null; then
 fi
 
 mkdir -p ${BUILD_DIR}
-mount -o sync,dirsync "${ROOT_DEVICE}" ${BUILD_DIR}
+mount -t ext2 -o sync,dirsync "${ROOT_DEVICE}" ${BUILD_DIR}
 
 mkdir -p ${BUILD_DIR}/boot
+mkdir -p ${BUILD_DIR}/tmp
+chmod 1777 ${BUILD_DIR}/tmp
 mkdir -p ${BUILD_DIR}/etc/nixos
 mount -o umask=077,sync,dirsync "${BOOT_DEVICE}" ${BUILD_DIR}/boot
 
