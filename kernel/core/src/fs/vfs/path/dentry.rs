@@ -361,7 +361,7 @@ impl Dentry {
         path_name
     }
 
-    pub(super) fn as_dir_dentry_or_err(&self) -> Result<DirDentry<'_>> {
+    pub(in crate::fs) fn as_dir_dentry_or_err(&self) -> Result<DirDentry<'_>> {
         debug_assert_eq!(self.dir_state.is_some(), self.type_ == InodeType::Dir);
 
         let Some(dir_state) = &self.dir_state else {
@@ -380,7 +380,7 @@ impl Dentry {
 }
 
 /// A `Dentry` wrapper that has been validated to represent a directory.
-pub(super) struct DirDentry<'a> {
+pub(in crate::fs) struct DirDentry<'a> {
     inner: &'a Dentry,
     children: &'a RwMutex<DentryChildren>,
     revalidation_policy: RevalidationPolicy,
