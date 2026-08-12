@@ -96,6 +96,14 @@ impl ProcessVm {
         }
     }
 
+    /// Creates a minimal process VM for kernel tests.
+    #[cfg(ktest)]
+    pub(crate) fn new_for_test() -> Self {
+        crate::time::clocks::init_for_ktest();
+        crate::util::random::init();
+        Self::new(crate::fs::pseudofs::SockFs::new_path())
+    }
+
     /// Creates a new `ProcessVm` with identical contents of an existing one.
     pub fn fork_from(process_vm: &Self, heap_guard: &LockedHeap) -> Self {
         Self {
