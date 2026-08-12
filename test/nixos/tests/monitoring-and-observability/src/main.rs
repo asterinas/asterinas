@@ -18,7 +18,10 @@ fn prometheus_query_metrics(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.with_background_process(
         BackgroundProcess::new(
             "prometheus --config.file=/tmp/prometheus.yml --web.listen-address='10.0.2.15:9090' > /tmp/prometheus.log 2>&1 &",
-            CommandCheck::new("curl -s http://10.0.2.15:9090/-/healthy", "Prometheus"),
+            CommandCheck::new(
+                "curl -fsS http://10.0.2.15:9090/-/ready >/dev/null && echo ready",
+                "ready",
+            ),
             "pkill prometheus",
             CommandCheck::new("! pgrep -x prometheus >/dev/null && echo stopped", "stopped"),
         ),
