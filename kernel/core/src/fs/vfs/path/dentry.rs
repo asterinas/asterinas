@@ -305,7 +305,7 @@ impl Dentry {
 
     /// Checks if this dentry is a descendant of or the same as the given
     /// ancestor dentry.
-    pub(super) fn is_equal_or_descendant_of(&self, ancestor: &Arc<Self>) -> bool {
+    pub(in crate::fs) fn is_equal_or_descendant_of(&self, ancestor: &Arc<Self>) -> bool {
         let mut current = Some(self.this());
 
         while let Some(node) = current {
