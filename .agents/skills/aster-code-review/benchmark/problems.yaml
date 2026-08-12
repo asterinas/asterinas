@@ -667,8 +667,7 @@
 
 
 
-
-- problem_id: 0400-pr-2290-defect-targets
+- problem_id: 0400-ci-false-seqpacket-zero-pause-race
   commit: c6a6e66aaca9635e36d99e47ed87edd6d4b69f87
   source: >
     PR-derived from https://github.com/asterinas/asterinas/pull/2290. Files mode
@@ -986,7 +985,7 @@
         addresses to be handled without a kernel panic.
 
 
-- problem_id: 0403-pr-podman-small-issues
+- problem_id: 0403-madvise-nohugepage-capget-query-openat-empty
   commit: 3b0666449f8f4dc68e339cb7ee0646b45bf21fb1
   source: >
     PR-derived from https://github.com/asterinas/asterinas/pull/2390. The PR
