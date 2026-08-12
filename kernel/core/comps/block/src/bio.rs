@@ -236,8 +236,10 @@ impl SubmittedBio {
         self.metadata.status()
     }
 
-    /// Completes the `Bio` by consuming `self`, releasing the segments, and
-    /// invoking the callback function.
+    /// Completes the `Bio` by consuming `self`, releasing the segments, invoking
+    /// the callback function, and publishing the final status.
+    ///
+    /// The final status becomes visible only after the callback returns.
     ///
     /// When the driver finishes the request for this `Bio`, it will call this method.
     pub fn complete(self, status: BioStatus) {
@@ -250,7 +252,13 @@ impl SubmittedBio {
             ..
         } = self;
 
-        // Set the status.
+        drop(segments);
+
+        // A non-`Submit` status publishes the entire completion, including callback
+        // side effects. Otherwise, the wait queue's lock-free fast path could return
+        // while the callback is still running.
+        general_complete_fn(metadata.type_(), status, complete_fn);
+
         let result = metadata.status.compare_exchange(
             BioStatus::Submit as u32,
             status as u32,
@@ -258,10 +266,6 @@ impl SubmittedBio {
             Ordering::Relaxed,
         );
         assert!(result.is_ok());
-
-        drop(segments);
-
-        general_complete_fn(metadata.type_(), status, complete_fn);
 
         metadata.wait_queue.wake_all();
     }
@@ -299,7 +303,8 @@ impl BioMetadata {
     }
 
     pub fn status(&self) -> BioStatus {
-        BioStatus::try_from(self.status.load(Ordering::Relaxed)).unwrap()
+        // Pairs with the release transition in `SubmittedBio::complete`.
+        BioStatus::try_from(self.status.load(Ordering::Acquire)).unwrap()
     }
 }
 
