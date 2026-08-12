@@ -741,13 +741,13 @@
       grounding: "Close the signal-registration to wait race"
       severity: major
       desc: >
-         `Waiter::pause_timeout` installs the POSIX signal waker and then calls 
-         `self.wait()`, but it only checks `posix_thread.has_pending()` after
-          the wait returns. If a signal is already pending before the waker is
-          installed, no later signal wakeup is guaranteed, so `self.wait()`
-          may sleep until the timeout or an unrelated wakeup. For calls such as
-          `ppoll`, this can turn a pending `SIGINT` into a timeout instead of
-          returning `EINTR`.
+        `Waiter::pause_timeout` installs the POSIX signal waker and then calls
+        `self.wait()`, but it only checks `posix_thread.has_pending()` after
+        the wait returns. If a signal is already pending before the waker is
+        installed, no later signal wakeup is guaranteed, so `self.wait()` may
+        sleep until the timeout or an unrelated wakeup. For calls such as
+        `ppoll`, this can turn a pending `SIGINT` into a timeout instead of
+        returning `EINTR`.
       fix: >
         After `set_signalled_waker`, recheck `posix_thread.has_pending()` before
         entering `self.wait()`. If a signal is pending, clear the registered
@@ -792,7 +792,7 @@
         request Linux would reject with `EINVAL`.
       fix: >
         Parse with `GetRandomFlags::from_bits(flags)` and return `EINVAL` when
-        it returns `None`. Also reject invalid known combinations 
+        it returns `None`. Also reject invalid known combinations
         such as `GRND_INSECURE | GRND_RANDOM`.
       expectation: >
         A reviewer should flag `from_bits_truncate` at the syscall boundary and
