@@ -62,8 +62,7 @@ pub(super) fn sys_openat(
             };
         file_table_locked.insert(file_handle.clone(), fd_flags)
     };
-    let file_like: Arc<dyn FileLike> = file_handle;
-    fs::vfs::notify::on_open(&file_like);
+    fs::vfs::notify::on_open(file_handle.common());
     Ok(SyscallReturn::Return(fd.into()))
 }
 
