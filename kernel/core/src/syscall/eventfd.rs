@@ -28,15 +28,15 @@ pub fn sys_eventfd2(init_val: u32, flags: u32, ctx: &Context) -> Result<SyscallR
 }
 
 fn do_sys_eventfd2(init_val: u32, flags: EventFileFlags, ctx: &Context) -> Result<SyscallReturn> {
-    let event_file = EventFile::new(init_val as u64, flags);
-    let file_table = ctx.thread_local.borrow_file_table();
-    let mut file_table_locked = file_table.unwrap().write();
+    let event_file = Arc::new(EventFile::new(init_val as u64, flags));
     let fd_flags = if flags.contains(EventFileFlags::EFD_CLOEXEC) {
         FdFlags::CLOEXEC
     } else {
         FdFlags::empty()
     };
 
-    let fd = file_table_locked.insert(Arc::new(event_file), fd_flags);
+    let file_table = ctx.thread_local.borrow_file_table();
+    let mut file_table_locked = file_table.unwrap().write();
+    let fd = file_table_locked.insert(event_file, fd_flags);
     Ok(SyscallReturn::Return(fd.into()))
 }
