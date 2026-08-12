@@ -9,7 +9,7 @@ use crate::{
 /// Netlink socket address.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct CSocketAddrNetlink {
+pub(crate) struct CSocketAddrNetlink {
     /// Address family (AF_NETLINK).
     nl_family: u16,
     /// Pad bytes (always zero).

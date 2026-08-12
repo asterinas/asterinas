@@ -34,7 +34,7 @@ use crate::{
 mod bound;
 mod unbound;
 
-pub struct NetlinkSocket<P: SupportedNetlinkProtocol> {
+pub(crate) struct NetlinkSocket<P: SupportedNetlinkProtocol> {
     inner: RwMutex<Inner<UnboundNetlink<P>, BoundNetlink<P::Message>>>,
     options: RwLock<OptionSet>,
     socket_type: SockType,
@@ -61,7 +61,7 @@ impl<P: SupportedNetlinkProtocol> NetlinkSocket<P>
 where
     BoundNetlink<P::Message>: Bound<Endpoint = NetlinkSocketAddr>,
 {
-    pub fn new(is_nonblocking: bool, socket_type: SockType) -> Arc<Self> {
+    pub(crate) fn new(is_nonblocking: bool, socket_type: SockType) -> Arc<Self> {
         debug_assert!(socket_type == SockType::SOCK_RAW || socket_type == SockType::SOCK_DGRAM);
 
         let unbound = UnboundNetlink::new();

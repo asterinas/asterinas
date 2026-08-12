@@ -27,7 +27,7 @@ pub(super) fn init() {
 ///
 /// [`ConfigFs`]: fs::ConfigFs
 #[cfg_attr(not(any(ktest, target_arch = "x86_64")), expect(dead_code))]
-pub fn register_subsystem(subsystem: Arc<dyn SysBranchNode>) -> Result<()> {
+pub(crate) fn register_subsystem(subsystem: Arc<dyn SysBranchNode>) -> Result<()> {
     ConfigRootNode::singleton().add_child(subsystem)?;
 
     Ok(())
@@ -39,14 +39,14 @@ pub fn register_subsystem(subsystem: Arc<dyn SysBranchNode>) -> Result<()> {
 ///
 /// [`ConfigFs`]: fs::ConfigFs
 #[expect(dead_code)]
-pub fn unregister_subsystem(name: &str) -> Result<()> {
+pub(crate) fn unregister_subsystem(name: &str) -> Result<()> {
     ConfigRootNode::singleton().remove_child(name)?;
 
     Ok(())
 }
 
 #[cfg(ktest)]
-pub fn init_for_ktest() {
+pub(crate) fn init_for_ktest() {
     aster_systree::init_for_ktest();
     crate::fs::vfs::init();
     super::sysfs::init();

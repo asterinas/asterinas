@@ -27,7 +27,7 @@ use super::Events;
 /// let empty: Weak<dyn Observer<()>> = Weak::<()>::new();
 /// assert!(empty.upgrade().is_empty());
 /// ```
-pub trait Observer<E: Events>: Send + Sync {
+pub(crate) trait Observer<E: Events>: Send + Sync {
     /// Notifies the observer that some interesting events happen.
     fn on_events(&self, events: &E);
 }

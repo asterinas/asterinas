@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_set_tid_address(tidptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_set_tid_address(tidptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("tidptr = 0x{:x}", tidptr);
 
     let clear_child_tid = ctx.thread_local.clear_child_tid().get();

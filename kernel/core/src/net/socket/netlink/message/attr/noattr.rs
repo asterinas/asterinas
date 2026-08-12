@@ -5,7 +5,7 @@ use crate::{net::socket::netlink::message::ContinueRead, prelude::*, util::Multi
 
 /// A special type indicates that a segment cannot have attributes.
 #[derive(Debug)]
-pub enum NoAttr {}
+pub(crate) enum NoAttr {}
 
 impl Attribute for NoAttr {
     fn type_(&self) -> u16 {

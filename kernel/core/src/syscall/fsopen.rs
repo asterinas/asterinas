@@ -9,7 +9,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let flags = FsOpenFlags::try_from(flags)?;
     check_mount_api_capability(ctx)?;
 

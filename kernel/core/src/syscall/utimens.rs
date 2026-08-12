@@ -24,7 +24,7 @@ use crate::{
 /// The `flags` argument is a bit mask that can include the following values:
 /// - `AT_SYMLINK_NOFOLLOW`: If set, the file is not dereferenced if it is a symbolic link.
 /// - `AT_EMPTY_PATH`: If set, an empty pathname means operating on `dirfd` directly.
-pub fn sys_utimensat(
+pub(super) fn sys_utimensat(
     dirfd: RawFileDesc,
     pathname_ptr: Vaddr,
     timespecs_ptr: Vaddr,
@@ -53,7 +53,7 @@ pub fn sys_utimensat(
 /// The 'sys_futimesat' system call sets the access and modification times of a file.
 /// Unlike 'sys_utimensat', it receives time values in the form of timeval structures,
 /// and it does not support the 'flags' argument.
-pub fn sys_futimesat(
+pub(super) fn sys_futimesat(
     dirfd: RawFileDesc,
     pathname_ptr: Vaddr,
     timeval_ptr: Vaddr,
@@ -69,7 +69,11 @@ pub fn sys_futimesat(
 /// The 'sys_utimes' system call sets the access and modification times of a file.
 /// It receives time values in the form of timeval structures like 'sys_futimesat',
 /// but it uses the current working directory as the base directory.
-pub fn sys_utimes(pathname_ptr: Vaddr, timeval_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_utimes(
+    pathname_ptr: Vaddr,
+    timeval_ptr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "utimes: pathname_ptr: {:#x}, timeval_ptr: {:#x}",
         pathname_ptr, timeval_ptr
@@ -78,7 +82,11 @@ pub fn sys_utimes(pathname_ptr: Vaddr, timeval_ptr: Vaddr, ctx: &Context) -> Res
 }
 
 /// The 'sys_utime' system call is similar to 'sys_utimes' but uses the older 'utimbuf' structure to specify times.
-pub fn sys_utime(pathname_ptr: Vaddr, utimbuf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_utime(
+    pathname_ptr: Vaddr,
+    utimbuf_ptr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "utime: pathname_ptr: {:#x}, utimbuf_ptr: {:#x}",
         pathname_ptr, utimbuf_ptr

@@ -22,7 +22,7 @@ const FUTEX_BITSET_MATCH_ANY: FutexBitSet = 0xFFFF_FFFF;
 /// Specifies whether a futex is scoped to the current process or shared through
 /// its backing mapping.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FutexVisibility {
+pub(crate) enum FutexVisibility {
     /// Uses the calling process's private futex namespace.
     Private,
     /// Derives the futex identity from the backing mapping when possible, and
@@ -40,7 +40,7 @@ impl From<FutexFlags> for FutexVisibility {
     }
 }
 
-pub fn futex_wait(
+pub(crate) fn futex_wait(
     futex_addr: u64,
     futex_val: i32,
     timeout: Option<ManagedTimeout>,
@@ -57,7 +57,7 @@ pub fn futex_wait(
     )
 }
 
-pub fn futex_wait_bitset(
+pub(crate) fn futex_wait_bitset(
     futex_addr: Vaddr,
     futex_val: i32,
     timeout: Option<ManagedTimeout>,
@@ -139,7 +139,7 @@ pub fn futex_wait_bitset(
     }
 }
 
-pub fn futex_wake(
+pub(crate) fn futex_wake(
     futex_addr: Vaddr,
     max_count: usize,
     visibility: FutexVisibility,
@@ -147,7 +147,7 @@ pub fn futex_wake(
     futex_wake_bitset(futex_addr, max_count, FUTEX_BITSET_MATCH_ANY, visibility)
 }
 
-pub fn futex_wake_bitset(
+pub(crate) fn futex_wake_bitset(
     futex_addr: Vaddr,
     max_count: usize,
     bitset: FutexBitSet,
@@ -279,7 +279,7 @@ impl FutexWakeOpEncode {
     }
 }
 
-pub fn futex_wake_op(
+pub(crate) fn futex_wake_op(
     futex_addr_1: Vaddr,
     futex_addr_2: Vaddr,
     max_count_1: usize,
@@ -342,7 +342,7 @@ pub fn futex_wake_op(
     Ok(res)
 }
 
-pub fn futex_requeue(
+pub(crate) fn futex_requeue(
     futex_addr: Vaddr,
     max_nwakes: usize,
     max_nrequeues: usize,
@@ -427,7 +427,7 @@ fn lock_bucket_pairs(
 }
 
 /// Initializes the futex system.
-pub fn init() {
+pub(crate) fn init() {
     FUTEX_BUCKETS.call_once(|| FutexBucketVec::new(get_bucket_count()));
 }
 
@@ -691,7 +691,7 @@ impl FutexIdentity {
 #[expect(non_camel_case_types)]
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
-pub enum FutexOp {
+pub(crate) enum FutexOp {
     FUTEX_WAIT = 0,
     FUTEX_WAKE = 1,
     FUTEX_FD = 2,
@@ -707,13 +707,13 @@ pub enum FutexOp {
 
 bitflags! {
     // Reference: <https://elixir.bootlin.com/linux/v6.18.2/source/include/uapi/linux/futex.h#L26>
-    pub struct FutexFlags : u32 {
+    pub(crate) struct FutexFlags : u32 {
         const FUTEX_PRIVATE         = 128;
         const FUTEX_CLOCK_REALTIME  = 256;
     }
 }
 
-pub fn futex_op_and_flags_from_u32(bits: u32) -> Result<(FutexOp, FutexFlags)> {
+pub(crate) fn futex_op_and_flags_from_u32(bits: u32) -> Result<(FutexOp, FutexFlags)> {
     const FUTEX_OP_MASK: u32 = 0x0000_000F;
     const FUTEX_FLAGS_MASK: u32 = 0xFFFF_FFF0;
 

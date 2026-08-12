@@ -6,7 +6,7 @@ use crate::{
     syscall::SyscallReturn,
 };
 
-pub fn sys_unshare(unshare_flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_unshare(unshare_flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let mut flags = CloneFlags::from_bits(unshare_flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid `unshare` flags"))?;
     debug!("unshare flags = {:?}", flags);

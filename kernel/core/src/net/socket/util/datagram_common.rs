@@ -8,7 +8,7 @@ use crate::{
     util::{MultiRead, MultiWrite},
 };
 
-pub trait Unbound {
+pub(crate) trait Unbound {
     type Endpoint;
     type BindOptions;
 
@@ -29,7 +29,7 @@ pub trait Unbound {
     fn check_io_events(&self) -> IoEvents;
 }
 
-pub trait Bound {
+pub(crate) trait Bound {
     type Endpoint;
 
     fn local_endpoint(&self) -> Self::Endpoint;
@@ -54,7 +54,7 @@ pub trait Bound {
     fn check_io_events(&self) -> IoEvents;
 }
 
-pub enum Inner<UnboundSocket, BoundSocket> {
+pub(crate) enum Inner<UnboundSocket, BoundSocket> {
     Unbound(UnboundSocket),
     Bound(BoundSocket),
 }
@@ -64,7 +64,7 @@ where
     UnboundSocket: Unbound<Endpoint = BoundSocket::Endpoint, Bound = BoundSocket>,
     BoundSocket: Bound,
 {
-    pub fn bind(
+    pub(crate) fn bind(
         &mut self,
         endpoint: &UnboundSocket::Endpoint,
         pollee: &Pollee,
@@ -83,7 +83,7 @@ where
         Ok(())
     }
 
-    pub fn bind_ephemeral(
+    pub(crate) fn bind_ephemeral(
         &mut self,
         remote_endpoint: &UnboundSocket::Endpoint,
         pollee: &Pollee,
@@ -99,7 +99,7 @@ where
         Ok(())
     }
 
-    pub fn connect(
+    pub(crate) fn connect(
         &mut self,
         remote_endpoint: &UnboundSocket::Endpoint,
         pollee: &Pollee,
@@ -119,21 +119,21 @@ where
         Ok(())
     }
 
-    pub fn addr(&self) -> Option<UnboundSocket::Endpoint> {
+    pub(crate) fn addr(&self) -> Option<UnboundSocket::Endpoint> {
         match self {
             Inner::Unbound(_) => None,
             Inner::Bound(bound_datagram) => Some(bound_datagram.local_endpoint()),
         }
     }
 
-    pub fn peer_addr(&self) -> Option<&UnboundSocket::Endpoint> {
+    pub(crate) fn peer_addr(&self) -> Option<&UnboundSocket::Endpoint> {
         match self {
             Inner::Unbound(_) => None,
             Inner::Bound(bound_datagram) => bound_datagram.remote_endpoint(),
         }
     }
 
-    pub fn try_recv(
+    pub(crate) fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
         flags: RecvFlags,
@@ -149,7 +149,7 @@ where
     // If you're looking for `try_send`, there isn't one. Use `select_remote_and_bind` below and
     // call `Bound::try_send` directly.
 
-    pub fn check_io_events(&self) -> IoEvents {
+    pub(crate) fn check_io_events(&self) -> IoEvents {
         match self {
             Inner::Unbound(unbound_datagram) => unbound_datagram.check_io_events(),
             Inner::Bound(bound_datagram) => bound_datagram.check_io_events(),
@@ -170,7 +170,7 @@ where
 /// remote endpoint.
 ///
 /// [`EDESTADDRREQ`]: crate::error::Errno::EDESTADDRREQ
-pub fn select_remote_and_bind<UnboundSocket, BoundSocket, B, F, R>(
+pub(crate) fn select_remote_and_bind<UnboundSocket, BoundSocket, B, F, R>(
     inner_mutex: &RwMutex<Inner<UnboundSocket, BoundSocket>>,
     remote: Option<&UnboundSocket::Endpoint>,
     bind_ephemeral: B,

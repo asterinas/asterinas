@@ -40,7 +40,7 @@ enum AddrAttrClass {
 /// Reference: <https://elixir.bootlin.com/linux/v7.1/source/include/uapi/linux/if_addr.h#L73>.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Immutable, IntoBytes)]
-pub enum AddrProtocol {
+pub(crate) enum AddrProtocol {
     /// An unspecified address source.
     #[expect(dead_code)]
     Unspecified = 0,
@@ -55,7 +55,7 @@ pub enum AddrProtocol {
 }
 
 #[derive(Debug)]
-pub enum AddrAttr {
+pub(crate) enum AddrAttr {
     Address(IpAddr),
     Broadcast(Ipv4Addr),
     Flags(AddrMessageFlags),

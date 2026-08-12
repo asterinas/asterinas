@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-pub fn sys_mmap(
+pub(super) fn sys_mmap(
     addr: u64,
     len: u64,
     perms: u64,

@@ -14,7 +14,7 @@ use crate::prelude::*;
 ///
 /// **Controlling terminal**: A terminal can be used to manage all processes in the session. The
 /// controlling terminal is established when the session leader first opens a terminal.
-pub struct Session {
+pub(crate) struct Session {
     sid: Sid,
     inner: Mutex<Inner>,
 }
@@ -65,7 +65,7 @@ impl Session {
     }
 
     /// Returns the session identifier.
-    pub fn sid(&self) -> Sid {
+    pub(crate) fn sid(&self) -> Sid {
         self.sid
     }
 
@@ -75,7 +75,7 @@ impl Session {
     }
 
     /// Acquires a lock on the session.
-    pub fn lock(&self) -> SessionGuard<'_> {
+    pub(crate) fn lock(&self) -> SessionGuard<'_> {
         SessionGuard {
             inner: self.inner.lock(),
         }
@@ -87,7 +87,7 @@ impl Session {
 /// It provides some public methods to prevent the exposure of the inner type.
 #[clippy::has_significant_drop]
 #[must_use]
-pub struct SessionGuard<'a> {
+pub(crate) struct SessionGuard<'a> {
     inner: MutexGuard<'a, Inner>,
 }
 
@@ -101,7 +101,7 @@ impl SessionGuard<'_> {
     }
 
     /// Returns the controlling terminal of the session.
-    pub fn terminal(&self) -> Option<&Arc<dyn Terminal>> {
+    pub(crate) fn terminal(&self) -> Option<&Arc<dyn Terminal>> {
         self.inner.terminal.as_ref()
     }
 

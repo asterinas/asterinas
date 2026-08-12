@@ -39,7 +39,7 @@ use crate::{
 
 mod options;
 
-pub use options::VmoOptions;
+pub(crate) use options::VmoOptions;
 
 /// Page-indexed memory object used by the page cache and mapping code.
 ///
@@ -113,7 +113,7 @@ pub use options::VmoOptions;
 /// later by the BIO completion callback after the writeback state has been
 /// handed off. Anonymous VMOs stay `UpToDate` in steady state once a page is
 /// committed.
-pub struct Vmo {
+pub(crate) struct Vmo {
     /// The backend that provides disk I/O operations, if any.
     //
     // TODO: Using `Weak` here is to avoid circular references in exfat file systems.
@@ -154,7 +154,7 @@ impl Debug for Vmo {
 
 bitflags! {
     /// VMO flags.
-    pub struct VmoFlags: u32 {
+    pub(crate) struct VmoFlags: u32 {
         /// Set this flag if a VMO is resizable.
         const RESIZABLE  = 1 << 0;
         /// Set this flags if a VMO is backed by physically contiguous memory
@@ -171,7 +171,7 @@ bitflags! {
 
 /// The error type used for commit operations of [`Vmo`].
 #[derive(Debug)]
-pub enum VmoCommitError {
+pub(crate) enum VmoCommitError {
     /// A general error occurred during the commit operation.
     Err(Error),
     /// The commit operation requires backend I/O for the page at `index`.
@@ -185,7 +185,7 @@ pub enum VmoCommitError {
 
 impl VmoCommitError {
     /// Returns the page index whose commit is pending on I/O or initialization.
-    pub fn pending_index(&self) -> Result<usize> {
+    pub(crate) fn pending_index(&self) -> Result<usize> {
         match self {
             Self::NeedIo { index } | Self::WaitUntilInit { index, .. } => Ok(*index),
             Self::Err(e) => Err(*e),
@@ -219,7 +219,7 @@ impl CommitMode {
 
 /// A mode specified when committing a new [`Vmo`] page to the map in a page table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VmoMapMode {
+pub(crate) enum VmoMapMode {
     /// The page is private. It can be a snapshot.
     Private,
     /// The page is shared. It needs to be read.
@@ -292,7 +292,7 @@ impl Vmo {
     ///
     /// For anonymous VMOs the page is zero-filled on first access.
     /// For VMOs with a backend this may perform synchronous I/O.
-    pub fn commit_on(&self, page_idx: usize, map_mode: VmoMapMode) -> Result<()> {
+    pub(crate) fn commit_on(&self, page_idx: usize, map_mode: VmoMapMode) -> Result<()> {
         let page = self.commit_on_internal(page_idx, CommitMode::Read)?;
         map_mode.ensure(page);
         Ok(())
@@ -343,7 +343,7 @@ impl Vmo {
     /// permitted even if only read access is required in `map_mode`. In this
     /// case, the requested mode (`map_mode`) is [`VmoMapMode::SharedRead`] but
     /// the granted mode (the return value) is [`VmoMapMode::SharedWrite`].
-    pub fn try_commit_page(
+    pub(crate) fn try_commit_page(
         &self,
         offset: usize,
         map_mode: VmoMapMode,
@@ -396,7 +396,7 @@ impl Vmo {
     /// If the VMO corresponds to a page cache, callers must hold the page table
     /// lock and insert the committed page atomically to the page table inside
     /// the operation.
-    pub fn try_operate_on_range<F>(
+    pub(crate) fn try_operate_on_range<F>(
         &self,
         range: &Range<usize>,
         mut operate: F,
@@ -454,12 +454,12 @@ impl Vmo {
     /// Returns the current page-aligned size of the VMO in bytes.
     ///
     /// Higher layers may keep a smaller logical EOF alongside this capacity.
-    pub fn size(&self) -> usize {
+    pub(crate) fn size(&self) -> usize {
         self.size.load(Ordering::Acquire)
     }
 
     /// Returns the status of writable mappings of the VMO.
-    pub fn writable_mapping_status(&self) -> &WritableMappingStatus {
+    pub(crate) fn writable_mapping_status(&self) -> &WritableMappingStatus {
         // Currently, only VMOs used by `MemfdInode` (anonymous) track writable mapping status.
         // VMOs with a backend do not use this field.
         debug_assert!(!self.has_backend());
@@ -474,7 +474,7 @@ impl Vmo {
     ///
     /// To avoid deadlocks, acquire this lock after the VMAR lock in cases both
     /// locks need to be acquired.
-    pub fn rmap(&self) -> &Mutex<Rmap> {
+    pub(crate) fn rmap(&self) -> &Mutex<Rmap> {
         &self.rmap
     }
 
@@ -531,7 +531,7 @@ impl Vmo {
     const PAGE_BATCH_CAPACITY: usize = 32;
 
     /// Reads data from the VMO at `offset` into `writer`.
-    pub fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+    pub(crate) fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
         let read_len = writer.avail().min(self.size().saturating_sub(offset));
         if read_len == 0 {
             return Ok(());
@@ -567,7 +567,7 @@ impl Vmo {
     }
 
     /// Writes data from `reader` into the VMO at `offset`.
-    pub fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
+    pub(crate) fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
         let write_len = reader.remain().min(self.size().saturating_sub(offset));
         if write_len == 0 {
             return Ok(());
@@ -836,7 +836,7 @@ impl Vmo {
 /// This structure is created by calling [`Vmo::as_backed_vmo()`] and provides
 /// access to backend-specific functionality like reading from storage and
 /// managing dirty pages.
-pub struct BackedVmo<'a> {
+pub(crate) struct BackedVmo<'a> {
     vmo: &'a Vmo,
     backend: Arc<dyn PageCacheBackend>,
 }
@@ -1154,7 +1154,7 @@ impl Deref for BackedVmo<'_> {
 }
 
 /// Gets the page index range that contains the offset range of VMO.
-pub fn get_page_idx_range(vmo_offset_range: &Range<usize>) -> Range<usize> {
+pub(crate) fn get_page_idx_range(vmo_offset_range: &Range<usize>) -> Range<usize> {
     let start = vmo_offset_range.start.align_down(PAGE_SIZE);
     let end = vmo_offset_range.end.align_up(PAGE_SIZE);
     (start / PAGE_SIZE)..(end / PAGE_SIZE)
@@ -1169,13 +1169,13 @@ pub fn get_page_idx_range(vmo_offset_range: &Range<usize>) -> Range<usize> {
 /// - **Zero**: no writable mappings, and writable mappings are still allowed.
 /// - **Negative values**: writable mappings are denied.
 #[derive(Debug, Default)]
-pub struct WritableMappingStatus(AtomicIsize);
+pub(crate) struct WritableMappingStatus(AtomicIsize);
 
 impl WritableMappingStatus {
     /// Builds a new writable mapping.
     ///
     /// Fails with `EPERM` if writable mappings have been denied.
-    pub fn map(&self) -> Result<()> {
+    pub(crate) fn map(&self) -> Result<()> {
         // Increase unless negative
         self.0
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
@@ -1188,7 +1188,7 @@ impl WritableMappingStatus {
     /// Denies any future writable mapping.
     ///
     /// Fails with `EBUSY` if there are still active writable mappings.
-    pub fn deny(&self) -> Result<()> {
+    pub(crate) fn deny(&self) -> Result<()> {
         // Decrease unless positive
         self.0
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
@@ -1203,14 +1203,14 @@ impl WritableMappingStatus {
     /// Increments the writable mapping counter.
     ///
     /// Typically used when splitting an existing mapping, or forking a process.
-    pub fn increment(&self) {
+    pub(crate) fn increment(&self) {
         self.0.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Decrements the writable mapping counter.
     ///
     /// Typically used when unmapping a region, exiting a process, or merging mappings.
-    pub fn decrement(&self) {
+    pub(crate) fn decrement(&self) {
         self.0.fetch_sub(1, Ordering::Relaxed);
     }
 }

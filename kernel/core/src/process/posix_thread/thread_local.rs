@@ -20,7 +20,7 @@ use crate::{
 };
 
 /// Local data for a POSIX thread.
-pub struct ThreadLocal {
+pub(crate) struct ThreadLocal {
     // TID pointers.
     // https://man7.org/linux/man-pages/man2/set_tid_address.2.html
     set_child_tid: Cell<Vaddr>,
@@ -87,15 +87,15 @@ impl ThreadLocal {
         }
     }
 
-    pub fn set_child_tid(&self) -> &Cell<Vaddr> {
+    pub(crate) fn set_child_tid(&self) -> &Cell<Vaddr> {
         &self.set_child_tid
     }
 
-    pub fn clear_child_tid(&self) -> &Cell<Vaddr> {
+    pub(crate) fn clear_child_tid(&self) -> &Cell<Vaddr> {
         &self.clear_child_tid
     }
 
-    pub fn vmar(&self) -> &RefCell<Option<VmarHandle>> {
+    pub(crate) fn vmar(&self) -> &RefCell<Option<VmarHandle>> {
         &self.vmar
     }
 
@@ -113,7 +113,7 @@ impl ThreadLocal {
     /// Therefore, if it fails with a [`Errno::EFAULT`], this method will return [`None`] and it is
     /// the caller's responsibility to exit the atomic mode, handle the page fault, and retry. Do
     /// _not_ use this method without adding code that explicitly handles the page fault!
-    pub fn with_page_fault_disabled<F, T>(&self, func: F) -> Option<Result<T>>
+    pub(crate) fn with_page_fault_disabled<F, T>(&self, func: F) -> Option<Result<T>>
     where
         F: FnOnce() -> Result<T>,
     {
@@ -134,23 +134,23 @@ impl ThreadLocal {
         }
     }
 
-    pub fn is_page_fault_disabled(&self) -> bool {
+    pub(crate) fn is_page_fault_disabled(&self) -> bool {
         self.page_fault_disabled.get()
     }
 
-    pub fn robust_list(&self) -> &RefCell<Option<RobustListHead>> {
+    pub(crate) fn robust_list(&self) -> &RefCell<Option<RobustListHead>> {
         &self.robust_list
     }
 
-    pub fn borrow_file_table(&self) -> FileTableRef<'_> {
+    pub(crate) fn borrow_file_table(&self) -> FileTableRef<'_> {
         ThreadLocalOptionRef(self.file_table.borrow())
     }
 
-    pub fn borrow_file_table_mut(&self) -> FileTableRefMut<'_> {
+    pub(crate) fn borrow_file_table_mut(&self) -> FileTableRefMut<'_> {
         ThreadLocalOptionRefMut(self.file_table.borrow_mut())
     }
 
-    pub fn borrow_fs(&self) -> Ref<'_, Arc<ThreadFsInfo>> {
+    pub(crate) fn borrow_fs(&self) -> Ref<'_, Arc<ThreadFsInfo>> {
         self.fs.borrow()
     }
 
@@ -158,17 +158,17 @@ impl ThreadLocal {
         self.fs.borrow_mut()
     }
 
-    pub fn is_fs_shared(&self) -> bool {
+    pub(crate) fn is_fs_shared(&self) -> bool {
         // If the filesystem information is not shared, its reference count should be exactly 2:
         // one reference is held by `ThreadLocal` and the other by `PosixThread`.
         Arc::strong_count(&self.fs.borrow()) > 2
     }
 
-    pub fn supp_user_context(&self) -> &SuppUserContext {
+    pub(crate) fn supp_user_context(&self) -> &SuppUserContext {
         &self.supp_user_context
     }
 
-    pub fn sig_stack(&self) -> &RefCell<SigStack> {
+    pub(crate) fn sig_stack(&self) -> &RefCell<SigStack> {
         &self.sig_stack
     }
 
@@ -184,15 +184,15 @@ impl ThreadLocal {
 
     /// Sets the original syscall-return register value
     /// for the most recent kernel entry.
-    pub fn set_orig_syscall_ret(&self, value: Option<usize>) {
+    pub(crate) fn set_orig_syscall_ret(&self, value: Option<usize>) {
         self.orig_syscall_ret.set(value);
     }
 
-    pub fn borrow_user_ns(&self) -> Ref<'_, Arc<UserNamespace>> {
+    pub(crate) fn borrow_user_ns(&self) -> Ref<'_, Arc<UserNamespace>> {
         self.user_ns.borrow()
     }
 
-    pub fn borrow_ns_proxy(&self) -> NsProxyRef<'_> {
+    pub(crate) fn borrow_ns_proxy(&self) -> NsProxyRef<'_> {
         ThreadLocalOptionRef(self.ns_proxy.borrow())
     }
 
@@ -228,7 +228,7 @@ impl ThreadLocal {
 /// In conclusion,
 /// dividing userspace CPU states into `UserContext` and `SuppUserContext`
 /// allows for better performance.
-pub struct SuppUserContext {
+pub(crate) struct SuppUserContext {
     fpu: CpuSync<FpuContext>,
     #[cfg(target_arch = "x86_64")]
     fs_base: CpuSync<FsBase>,
@@ -237,7 +237,7 @@ pub struct SuppUserContext {
 }
 
 impl SuppUserContext {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             fpu: CpuSync::new(FpuContext::new()),
             #[cfg(target_arch = "x86_64")]
@@ -247,38 +247,38 @@ impl SuppUserContext {
         }
     }
 
-    pub fn with_fpu_context(mut self, ctx: FpuContext) -> Self {
+    pub(crate) fn with_fpu_context(mut self, ctx: FpuContext) -> Self {
         self.fpu = CpuSync::new(ctx);
         self
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub fn with_fs_base(mut self, fs_base: FsBase) -> Self {
+    pub(crate) fn with_fs_base(mut self, fs_base: FsBase) -> Self {
         self.fs_base = CpuSync::new(fs_base);
         self
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub fn with_gs_base(mut self, gs_base: GsBase) -> Self {
+    pub(crate) fn with_gs_base(mut self, gs_base: GsBase) -> Self {
         self.gs_base = CpuSync::new(gs_base);
         self
     }
 
-    pub fn fpu(&self) -> &CpuSync<FpuContext> {
+    pub(crate) fn fpu(&self) -> &CpuSync<FpuContext> {
         &self.fpu
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub fn fs_base(&self) -> &CpuSync<FsBase> {
+    pub(crate) fn fs_base(&self) -> &CpuSync<FsBase> {
         &self.fs_base
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub fn gs_base(&self) -> &CpuSync<GsBase> {
+    pub(crate) fn gs_base(&self) -> &CpuSync<GsBase> {
         &self.gs_base
     }
 
-    pub fn before_schedule(&self, guard: &DisabledLocalIrqGuard) {
+    pub(crate) fn before_schedule(&self, guard: &DisabledLocalIrqGuard) {
         self.fpu.before_schedule(guard);
         #[cfg(target_arch = "x86_64")]
         {
@@ -287,7 +287,7 @@ impl SuppUserContext {
         }
     }
 
-    pub fn before_user_exec(&self, guard: &DisabledLocalIrqGuard) {
+    pub(crate) fn before_user_exec(&self, guard: &DisabledLocalIrqGuard) {
         self.fpu.before_user_exec(guard);
         #[cfg(target_arch = "x86_64")]
         {
@@ -298,13 +298,13 @@ impl SuppUserContext {
 }
 
 /// An immutable, shared reference to the file table in [`ThreadLocal`].
-pub type FileTableRef<'a> = ThreadLocalOptionRef<'a, RwArc<FileTable>>;
+pub(crate) type FileTableRef<'a> = ThreadLocalOptionRef<'a, RwArc<FileTable>>;
 
 /// An immutable, shared reference to the `NsProxy` in [`ThreadLocal`].
-pub type NsProxyRef<'a> = ThreadLocalOptionRef<'a, Arc<NsProxy>>;
+pub(crate) type NsProxyRef<'a> = ThreadLocalOptionRef<'a, Arc<NsProxy>>;
 
 /// An immutable, shared reference to thread-local data contained within a `RefCell<Option<..>>`.
-pub struct ThreadLocalOptionRef<'a, T>(Ref<'a, Option<T>>);
+pub(crate) struct ThreadLocalOptionRef<'a, T>(Ref<'a, Option<T>>);
 
 impl<T> ThreadLocalOptionRef<'_, T> {
     /// Unwraps and returns a reference to the data.
@@ -312,19 +312,19 @@ impl<T> ThreadLocalOptionRef<'_, T> {
     /// # Panics
     ///
     /// This method will panic if the thread has exited and the data has been dropped.
-    pub fn unwrap(&self) -> &T {
+    pub(crate) fn unwrap(&self) -> &T {
         self.0.as_ref().unwrap()
     }
 }
 
 /// A mutable, exclusive reference to the file table in [`ThreadLocal`].
-pub type FileTableRefMut<'a> = ThreadLocalOptionRefMut<'a, RwArc<FileTable>>;
+pub(crate) type FileTableRefMut<'a> = ThreadLocalOptionRefMut<'a, RwArc<FileTable>>;
 
 /// A mutable, exclusive reference to the `NsProxy` in [`ThreadLocal`].
 pub(in crate::process) type NsProxyRefMut<'a> = ThreadLocalOptionRefMut<'a, Arc<NsProxy>>;
 
 /// A mutable, exclusive reference to thread-local data contained within a `RefCell<Option<..>>`.
-pub struct ThreadLocalOptionRefMut<'a, T>(RefMut<'a, Option<T>>);
+pub(crate) struct ThreadLocalOptionRefMut<'a, T>(RefMut<'a, Option<T>>);
 
 impl<T> ThreadLocalOptionRefMut<'_, T> {
     /// Unwraps and returns a reference to the data.
@@ -332,7 +332,7 @@ impl<T> ThreadLocalOptionRefMut<'_, T> {
     /// # Panics
     ///
     /// This method will panic if the thread has exited and the data has been dropped.
-    pub fn unwrap(&mut self) -> &mut T {
+    pub(crate) fn unwrap(&mut self) -> &mut T {
         self.0.as_mut().unwrap()
     }
 
@@ -348,7 +348,7 @@ impl<T> ThreadLocalOptionRefMut<'_, T> {
 }
 
 /// A trait to provide the `as_thread_local` method for tasks.
-pub trait AsThreadLocal {
+pub(crate) trait AsThreadLocal {
     /// Returns the associated [`ThreadLocal`].
     fn as_thread_local(&self) -> Option<&ThreadLocal>;
 }

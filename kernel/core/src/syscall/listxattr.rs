@@ -15,7 +15,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_listxattr(
+pub(super) fn sys_listxattr(
     path_ptr: Vaddr,
     list_ptr: Vaddr, // The given list is used to place xattr (null-terminated) names.
     list_len: usize,
@@ -35,7 +35,7 @@ pub fn sys_listxattr(
     Ok(SyscallReturn::Return(len as _))
 }
 
-pub fn sys_llistxattr(
+pub(super) fn sys_llistxattr(
     path_ptr: Vaddr,
     list_ptr: Vaddr, // The given list is used to place xattr (null-terminated) names.
     list_len: usize,
@@ -55,7 +55,7 @@ pub fn sys_llistxattr(
     Ok(SyscallReturn::Return(len as _))
 }
 
-pub fn sys_flistxattr(
+pub(super) fn sys_flistxattr(
     raw_fd: RawFileDesc,
     list_ptr: Vaddr, // The given list is used to place xattr (null-terminated) names.
     list_len: usize,

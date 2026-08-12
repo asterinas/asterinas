@@ -18,7 +18,7 @@ use crate::{
     },
 };
 
-pub fn sys_rt_sigaction(
+pub(super) fn sys_rt_sigaction(
     sig_num: u8,
     sig_action_addr: Vaddr,
     old_sig_action_addr: Vaddr,

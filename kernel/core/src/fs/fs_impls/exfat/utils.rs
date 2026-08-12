@@ -7,11 +7,11 @@ use time::{OffsetDateTime, PrimitiveDateTime, Time};
 use super::fat::ClusterID;
 use crate::prelude::*;
 
-pub fn make_hash_index(cluster: ClusterID, offset: u32) -> usize {
+pub(crate) fn make_hash_index(cluster: ClusterID, offset: u32) -> usize {
     ((cluster as usize) << 32usize) | (offset as usize & 0xffffffffusize)
 }
 
-pub fn calc_checksum_32(data: &[u8]) -> u32 {
+pub(crate) fn calc_checksum_32(data: &[u8]) -> u32 {
     let mut checksum: u32 = 0;
     for &value in data {
         checksum = checksum.rotate_right(1).wrapping_add(value as u32);
@@ -20,7 +20,7 @@ pub fn calc_checksum_32(data: &[u8]) -> u32 {
 }
 
 /// Calculating checksum, ignoring certarin bytes in the range
-pub fn calc_checksum_16(data: &[u8], ignore: Range<usize>, prev_checksum: u16) -> u16 {
+pub(crate) fn calc_checksum_16(data: &[u8], ignore: Range<usize>, prev_checksum: u16) -> u16 {
     let mut result = prev_checksum;
     for (pos, &value) in data.iter().enumerate() {
         // Ignore the checksum field
@@ -32,7 +32,7 @@ pub fn calc_checksum_16(data: &[u8], ignore: Range<usize>, prev_checksum: u16) -
     result
 }
 
-pub fn get_value_from_range(value: u16, range: Range<usize>) -> u16 {
+pub(crate) fn get_value_from_range(value: u16, range: Range<usize>) -> u16 {
     (value >> range.start) & ((1 << (range.end - range.start)) - 1)
 }
 
@@ -46,7 +46,7 @@ const YEAR_RANGE: Range<usize> = 9..16;
 const EXFAT_TIME_ZONE_VALID: u8 = 1 << 7;
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DosTimestamp {
+pub(crate) struct DosTimestamp {
     // Timestamp at the precision of double seconds.
     pub(super) time: u16,
     pub(super) date: u16,
@@ -56,7 +56,7 @@ pub struct DosTimestamp {
 }
 
 impl DosTimestamp {
-    pub fn now() -> Result<Self> {
+    pub(crate) fn now() -> Result<Self> {
         #[cfg(not(ktest))]
         {
             use crate::time::clocks::RealTimeClock;
@@ -73,7 +73,7 @@ impl DosTimestamp {
         }
     }
 
-    pub fn new(time: u16, date: u16, increment_10ms: u8, utc_offset: u8) -> Result<Self> {
+    pub(crate) fn new(time: u16, date: u16, increment_10ms: u8, utc_offset: u8) -> Result<Self> {
         let time = Self {
             time,
             date,
@@ -83,7 +83,7 @@ impl DosTimestamp {
         Ok(time)
     }
 
-    pub fn from_duration(duration: Duration) -> Result<Self> {
+    pub(crate) fn from_duration(duration: Duration) -> Result<Self> {
         // FIXME:UTC offset information is missing.
 
         let date_time_result =
@@ -113,7 +113,7 @@ impl DosTimestamp {
         })
     }
 
-    pub fn as_duration(&self) -> Result<Duration> {
+    pub(crate) fn as_duration(&self) -> Result<Duration> {
         let year = 1980 + get_value_from_range(self.date, YEAR_RANGE) as u32;
         let month_result =
             time::Month::try_from(get_value_from_range(self.date, MONTH_RANGE) as u8);

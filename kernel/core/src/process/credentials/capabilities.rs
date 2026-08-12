@@ -7,7 +7,7 @@ use bitflags::bitflags;
 
 bitflags! {
     /// Represents a set of Linux capabilities.
-    pub struct CapSet: u64 {
+    pub(crate) struct CapSet: u64 {
         const CHOWN = 1 << 0;
         const DAC_OVERRIDE = 1 << 1;
         const DAC_READ_SEARCH = 1 << 2;
@@ -57,23 +57,23 @@ impl CapSet {
     const MASK: u64 = (1 << (CapSet::most_significant_bit() + 1)) - 1;
 
     /// Converts two `u32`s to the capability set. The high bits are truncated.
-    pub fn from_lo_hi(lo: u32, hi: u32) -> Self {
+    pub(crate) fn from_lo_hi(lo: u32, hi: u32) -> Self {
         let bits = lo as u64 | ((hi as u64) << 32);
         Self::from_bits_truncate(bits)
     }
 
     /// Converts the capability set to two `u32`s.
-    pub fn to_lo_hi(self) -> (u32, u32) {
+    pub(crate) fn to_lo_hi(self) -> (u32, u32) {
         (self.bits() as u32, (self.bits() >> 32) as u32)
     }
 
     /// Creates a new `CapSet` with full capabilities, typically for a root user.
-    pub const fn new_root() -> Self {
+    pub(crate) const fn new_root() -> Self {
         CapSet::all()
     }
 
     /// Creates a capability set that contains exactly one Linux capability.
-    pub fn from_capability_number(capability: u64) -> Option<Self> {
+    pub(crate) fn from_capability_number(capability: u64) -> Option<Self> {
         if capability > Self::most_significant_bit() as u64 {
             return None;
         }
@@ -83,7 +83,7 @@ impl CapSet {
 
     /// Returns the most significant bit in a 64-bit `CapSet` that may be set to represent a Linux
     /// capability.
-    pub const fn most_significant_bit() -> u8 {
+    pub(crate) const fn most_significant_bit() -> u8 {
         // CHECKPOINT_RESTORE is the Linux capability with the largest numerical value.
         40
     }
@@ -91,7 +91,7 @@ impl CapSet {
 
 /// An error occurred when converting invalid bits to a [`CapSet`].
 #[derive(Debug)]
-pub struct InvalidCapSetError;
+pub(crate) struct InvalidCapSetError;
 
 impl TryFrom<u64> for CapSet {
     type Error = InvalidCapSetError;

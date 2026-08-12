@@ -6,7 +6,7 @@ use int_to_c_enum::TryFromInt;
 #[expect(clippy::upper_case_acronyms)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, TryFromInt)]
-pub enum Errno {
+pub(crate) enum Errno {
     EPERM = 1,    /* Operation not permitted */
     ENOENT = 2,   /* No such file or directory */
     ESRCH = 3,    /* No such process */
@@ -157,25 +157,25 @@ pub enum Errno {
 
 /// error used in this crate
 #[derive(Clone, Copy, Debug)]
-pub struct Error {
+pub(crate) struct Error {
     errno: Errno,
     #[expect(dead_code)]
     msg: Option<&'static str>,
 }
 
 impl Error {
-    pub const fn new(errno: Errno) -> Self {
+    pub(crate) const fn new(errno: Errno) -> Self {
         Error { errno, msg: None }
     }
 
-    pub const fn with_message(errno: Errno, msg: &'static str) -> Self {
+    pub(crate) const fn with_message(errno: Errno, msg: &'static str) -> Self {
         Error {
             errno,
             msg: Some(msg),
         }
     }
 
-    pub const fn error(&self) -> Errno {
+    pub(crate) const fn error(&self) -> Errno {
         self.errno
     }
 }

@@ -11,7 +11,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_symlinkat(
+pub(super) fn sys_symlinkat(
     target_addr: Vaddr,
     dirfd: RawFileDesc,
     linkpath_addr: Vaddr,
@@ -47,7 +47,7 @@ pub fn sys_symlinkat(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_symlink(
+pub(super) fn sys_symlink(
     target_addr: Vaddr,
     linkpath_addr: Vaddr,
     ctx: &Context,

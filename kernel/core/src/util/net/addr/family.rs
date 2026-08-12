@@ -18,7 +18,7 @@ use crate::{context::current_userspace, net::socket::util::SocketAddr, prelude::
 #[expect(non_camel_case_types)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum CSocketAddrFamily {
+pub(crate) enum CSocketAddrFamily {
     AF_UNSPEC = 0,
     /// Unix domain sockets
     AF_UNIX = 1,
@@ -140,7 +140,7 @@ struct Storage {
 /// to fix. The main reason for this is that in Linux it's up to each protocol to decide how to
 /// intercept the bytes that represent socket addresses, but here this method is designed to parse
 /// socket addresses before diving deep into protocol-specific code.
-pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<SocketAddr> {
+pub(crate) fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<SocketAddr> {
     if addr_len > ADDR_MAX_LEN {
         return_errno_with_message!(Errno::EINVAL, "the socket address length is too large");
     }
@@ -212,7 +212,7 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
 /// It is guaranteed that all socket addresses returned by [`read_socket_addr_from_user`] have
 /// valid representations for the corresponding C structures, so passing them to this method will
 /// not cause panic.
-pub fn write_socket_addr_to_user(
+pub(crate) fn write_socket_addr_to_user(
     socket_addr: &SocketAddr,
     dest: Vaddr,
     max_len_ptr: Vaddr,
@@ -242,7 +242,7 @@ pub fn write_socket_addr_to_user(
 /// It is guaranteed that all socket addresses returned by [`read_socket_addr_from_user`] have
 /// valid representations for the corresponding C structures, so passing them to this method will
 /// not cause panic.
-pub fn write_socket_addr_with_max_len(
+pub(crate) fn write_socket_addr_with_max_len(
     socket_addr: &SocketAddr,
     dest: Vaddr,
     max_len: i32,

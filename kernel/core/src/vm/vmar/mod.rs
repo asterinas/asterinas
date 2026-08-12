@@ -12,7 +12,7 @@ mod vmar_impls;
 
 use ostd::mm::Vaddr;
 
-pub use self::{
+pub(crate) use self::{
     handle::VmarHandle,
     rmap::{Rmap, RmapEntry},
     vmar_impls::{
@@ -20,11 +20,11 @@ pub use self::{
     },
 };
 
-pub const VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
-pub const VMAR_CAP_ADDR: Vaddr = ostd::mm::MAX_USERSPACE_VADDR;
+pub(crate) const VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
+pub(crate) const VMAR_CAP_ADDR: Vaddr = ostd::mm::MAX_USERSPACE_VADDR;
 
 /// Returns whether the input `vaddr` is a legal user space virtual address.
-pub fn is_userspace_vaddr(vaddr: Vaddr) -> bool {
+pub(crate) fn is_userspace_vaddr(vaddr: Vaddr) -> bool {
     (VMAR_LOWEST_ADDR..VMAR_CAP_ADDR).contains(&vaddr)
 }
 

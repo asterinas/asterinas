@@ -26,7 +26,7 @@ use crate::{
     util::ioctl::RawIoctl,
 };
 
-pub struct InodeHandle {
+pub(crate) struct InodeHandle {
     common: FileCommon,
     /// `open_file` is similar to the `file_private` field in Linux's `file` structure. If
     /// `open_file` is `Some(_)`, typical file operations including `read`, `write`, `poll`,
@@ -37,7 +37,11 @@ pub struct InodeHandle {
 }
 
 impl InodeHandle {
-    pub fn new(path: Path, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
+    pub(crate) fn new(
+        path: Path,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Result<Self> {
         let inode = path.inode();
         if !status_flags.contains(StatusFlags::O_PATH) {
             // "Opening a file or directory with the O_PATH flag requires no permissions on the
@@ -49,7 +53,7 @@ impl InodeHandle {
         Self::new_unchecked_access(path, access_mode, status_flags)
     }
 
-    pub fn new_unchecked_access(
+    pub(crate) fn new_unchecked_access(
         path: Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
@@ -73,15 +77,15 @@ impl InodeHandle {
         })
     }
 
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         self.common.path()
     }
 
-    pub fn status_flags(&self) -> StatusFlags {
+    pub(crate) fn status_flags(&self) -> StatusFlags {
         self.common.status_flags()
     }
 
-    pub fn offset(&self) -> usize {
+    pub(crate) fn offset(&self) -> usize {
         let offset = self.offset.lock();
         *offset
     }
@@ -119,7 +123,7 @@ impl InodeHandle {
         Ok(inode.as_ref())
     }
 
-    pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    pub(crate) fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         if !self.rights.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
@@ -135,7 +139,7 @@ impl InodeHandle {
         Ok(read_cnt)
     }
 
-    pub fn test_range_lock(&self, mut lock: RangeLockItem) -> Result<RangeLockItem> {
+    pub(crate) fn test_range_lock(&self, mut lock: RangeLockItem) -> Result<RangeLockItem> {
         if self.rights.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
@@ -155,7 +159,7 @@ impl InodeHandle {
         Ok(req_lock)
     }
 
-    pub fn set_range_lock(&self, lock: &RangeLockItem, is_nonblocking: bool) -> Result<()> {
+    pub(crate) fn set_range_lock(&self, lock: &RangeLockItem, is_nonblocking: bool) -> Result<()> {
         match lock.type_() {
             RangeLockType::ReadLock => {
                 if !self.rights.contains(Rights::READ) {
@@ -187,7 +191,7 @@ impl InodeHandle {
         range_lock_list.set_lock(lock, is_nonblocking)
     }
 
-    pub fn release_range_locks(&self, owner: RangeLockOwner) {
+    pub(crate) fn release_range_locks(&self, owner: RangeLockOwner) {
         if let Some(range_lock_list) = self
             .path()
             .inode()
@@ -209,7 +213,7 @@ impl InodeHandle {
         }
     }
 
-    pub fn set_flock(&self, lock: FlockItem, is_nonblocking: bool) -> Result<()> {
+    pub(crate) fn set_flock(&self, lock: FlockItem, is_nonblocking: bool) -> Result<()> {
         if self.rights.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
@@ -218,7 +222,7 @@ impl InodeHandle {
         flock_list.set_lock(lock, is_nonblocking)
     }
 
-    pub fn unlock_flock(&self) -> Result<()> {
+    pub(crate) fn unlock_flock(&self) -> Result<()> {
         if self.rights.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
@@ -235,7 +239,7 @@ impl InodeHandle {
         Ok(())
     }
 
-    pub fn downcast_open_file<T: 'static>(&self) -> Result<Option<&T>> {
+    pub(crate) fn downcast_open_file<T: 'static>(&self) -> Result<Option<&T>> {
         if self.rights.is_empty() {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
@@ -517,7 +521,7 @@ impl Debug for InodeHandle {
 
 /// Describes the position to seek from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SeekFrom {
+pub(crate) enum SeekFrom {
     Start(usize),
     End(isize),
     Current(isize),
@@ -528,7 +532,7 @@ pub enum SeekFrom {
 /// A per-open file object can hold file-description-specific state and override
 /// operations that are not purely inode-backed, such as state and operations for
 /// devices, pipes, namespace files, and procfs files.
-pub trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
+pub(crate) trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
     /// Checks whether the `seek()` operation should fail.
     fn check_seekable(&self) -> Result<()>;
 

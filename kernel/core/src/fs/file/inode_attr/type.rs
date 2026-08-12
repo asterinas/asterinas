@@ -6,7 +6,7 @@ use crate::{device::DeviceType, prelude::*};
 
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum InodeType {
+pub(crate) enum InodeType {
     Unknown = 0o000000,
     NamedPipe = 0o010000,
     CharDevice = 0o020000,
@@ -18,24 +18,24 @@ pub enum InodeType {
 }
 
 impl InodeType {
-    pub fn is_regular_file(&self) -> bool {
+    pub(crate) fn is_regular_file(&self) -> bool {
         *self == InodeType::File
     }
 
-    pub fn is_directory(&self) -> bool {
+    pub(crate) fn is_directory(&self) -> bool {
         *self == InodeType::Dir
     }
 
-    pub fn is_device(&self) -> bool {
+    pub(crate) fn is_device(&self) -> bool {
         *self == InodeType::BlockDevice || *self == InodeType::CharDevice
     }
 
-    pub fn is_seekable(&self) -> bool {
+    pub(crate) fn is_seekable(&self) -> bool {
         *self != InodeType::NamedPipe && *self != Self::Socket
     }
 
     /// Parse the inode type in the `mode` from syscall, and convert it into `InodeType`.
-    pub fn from_raw_mode(mut mode: u16) -> Result<Self> {
+    pub(crate) fn from_raw_mode(mut mode: u16) -> Result<Self> {
         const TYPE_MASK: u16 = 0o170000;
         mode &= TYPE_MASK;
 
@@ -47,7 +47,7 @@ impl InodeType {
             .map_err(|_| Error::with_message(Errno::EINVAL, "invalid file type"))
     }
 
-    pub fn device_type(&self) -> Option<DeviceType> {
+    pub(crate) fn device_type(&self) -> Option<DeviceType> {
         match self {
             InodeType::BlockDevice => Some(DeviceType::Block),
             InodeType::CharDevice => Some(DeviceType::Char),

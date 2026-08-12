@@ -18,7 +18,7 @@ use crate::process::{WaitOptions, signal::sig_num::SigNum};
 /// 3. The exit code of the process;
 /// 4. Whether the process is stopped by a signal.
 #[derive(Debug)]
-pub struct ProcessStatus {
+pub(crate) struct ProcessStatus {
     is_zombie: AtomicBool,
     is_vfork_child: AtomicBool,
     exit_code: AtomicU32,
@@ -38,7 +38,7 @@ impl Default for ProcessStatus {
 
 impl ProcessStatus {
     /// Returns whether the process is a zombie process.
-    pub fn is_zombie(&self) -> bool {
+    pub(crate) fn is_zombie(&self) -> bool {
         // Use the `Acquire` memory order to make the exit code visible.
         self.is_zombie.load(Ordering::Acquire)
     }
@@ -56,19 +56,19 @@ impl ProcessStatus {
 
 impl ProcessStatus {
     /// Returns whether the process is the vfork child.
-    pub fn is_vfork_child(&self) -> bool {
+    pub(crate) fn is_vfork_child(&self) -> bool {
         self.is_vfork_child.load(Ordering::Acquire)
     }
 
     /// Sets whether the process is the vfork child.
-    pub fn set_vfork_child(&self, is_vfork_child: bool) {
+    pub(crate) fn set_vfork_child(&self, is_vfork_child: bool) {
         self.is_vfork_child.store(is_vfork_child, Ordering::Release);
     }
 }
 
 impl ProcessStatus {
     /// Returns the exit code.
-    pub fn exit_code(&self) -> ExitCode {
+    pub(crate) fn exit_code(&self) -> ExitCode {
         self.exit_code.load(Ordering::Relaxed)
     }
 

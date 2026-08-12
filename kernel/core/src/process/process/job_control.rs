@@ -11,7 +11,7 @@ use crate::prelude::*;
 /// run commands in the foreground or in the background. To achieve this, this
 /// structure internally manages the session and the foreground process group
 /// for a terminal.
-pub struct JobControl {
+pub(crate) struct JobControl {
     inner: SpinLock<Inner, LocalIrqDisabled>,
     wait_queue: WaitQueue,
 }
@@ -24,7 +24,7 @@ struct Inner {
 
 impl JobControl {
     /// Creates a new `JobControl`.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: SpinLock::new(Inner::default()),
             wait_queue: WaitQueue::new(),
@@ -93,7 +93,7 @@ impl JobControl {
     // *************** Foreground process group ***************
 
     /// Returns the foreground process group.
-    pub fn foreground(&self) -> Option<Arc<ProcessGroup>> {
+    pub(crate) fn foreground(&self) -> Option<Arc<ProcessGroup>> {
         self.inner.lock().foreground.upgrade()
     }
 
@@ -125,7 +125,7 @@ impl JobControl {
     /// # Panics
     ///
     /// This method will panic if it is not called in the process context.
-    pub fn wait_until_in_foreground(&self) -> Result<()> {
+    pub(crate) fn wait_until_in_foreground(&self) -> Result<()> {
         let current = current!();
 
         self.wait_queue.pause_until(|| {

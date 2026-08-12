@@ -18,7 +18,7 @@ struct Flock {
 
 /// Represents a Flock item that can be held in a list of file locks.
 /// Each FlockItem contains a lock and a wait queue for threads that are blocked by the lock.
-pub struct FlockItem {
+pub(crate) struct FlockItem {
     lock: Flock,
     /// A wait queue for any threads that are blocked by this lock.
     waitqueue: Arc<WaitQueue>,
@@ -26,7 +26,7 @@ pub struct FlockItem {
 
 impl FlockItem {
     /// Creates a new FlockItem with the specified owner and lock type.
-    pub fn new(owner: &Arc<dyn FileLike>, type_: FlockType) -> Self {
+    pub(crate) fn new(owner: &Arc<dyn FileLike>, type_: FlockType) -> Self {
         Self {
             lock: Flock {
                 owner: Arc::downgrade(owner),
@@ -37,18 +37,18 @@ impl FlockItem {
     }
 
     /// Returns the owner of the lock if it exists.
-    pub fn owner(&self) -> Option<Arc<dyn FileLike>> {
+    pub(crate) fn owner(&self) -> Option<Arc<dyn FileLike>> {
         Weak::upgrade(&self.lock.owner)
     }
 
     /// Checks if this lock has the same owner as another lock.
-    pub fn same_owner_with(&self, other: &Self) -> bool {
+    pub(crate) fn same_owner_with(&self, other: &Self) -> bool {
         self.lock.owner.ptr_eq(&other.lock.owner)
     }
 
     /// Returns true if this lock conflicts with another lock.
     /// Two locks conflict if they have different owners and at least one of them is an exclusive lock.
-    pub fn conflict_with(&self, other: &Self) -> bool {
+    pub(crate) fn conflict_with(&self, other: &Self) -> bool {
         if self.same_owner_with(other) {
             return false;
         }
@@ -61,7 +61,7 @@ impl FlockItem {
     }
 
     /// Wakes all threads that are waiting for this lock.
-    pub fn wake_all(&self) {
+    pub(crate) fn wake_all(&self) {
         self.waitqueue.wake_all();
     }
 }
@@ -93,13 +93,13 @@ impl Debug for FlockItem {
 
 /// Represents a list of non-POSIX file advisory locks (FLOCK).
 /// The list is used to manage file locks and resolve conflicts between them.
-pub struct FlockList {
+pub(crate) struct FlockList {
     inner: Mutex<Vec<FlockItem>>,
 }
 
 impl FlockList {
     /// Creates a new FlockList.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: Mutex::new(Vec::new()),
         }
@@ -136,7 +136,7 @@ impl FlockList {
     /// If no conflicting locks exist, the lock is set and the function returns `Ok(())`.
     /// If is_nonblocking is true and a conflicting lock exists, the function returns `EAGAIN`.
     /// Otherwise, the function waits until the lock can be acquired or until it is interrupted by a signal.
-    pub fn set_lock(&self, req_lock: FlockItem, is_nonblocking: bool) -> Result<()> {
+    pub(crate) fn set_lock(&self, req_lock: FlockItem, is_nonblocking: bool) -> Result<()> {
         debug!(
             "set_lock with Flock: {:?}, is_nonblocking: {}",
             req_lock, is_nonblocking
@@ -161,7 +161,7 @@ impl FlockList {
     /// If the owner is valid, the lock is removed from the list and all threads waiting for the lock are woken.
     /// The function does nothing if the owner is not found in the list.
     /// The function is called when the file is closed or the lock is released.
-    pub fn unlock(&self, req_owner: &InodeHandle) {
+    pub(crate) fn unlock(&self, req_owner: &InodeHandle) {
         debug!("unlock with owner: {:?}", req_owner as *const InodeHandle);
         let mut list = self.inner.lock();
         list.retain(|lock| {
@@ -191,7 +191,7 @@ impl Default for FlockList {
 /// Represents the type of a Flock - either shared or exclusive.
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum FlockType {
+pub(crate) enum FlockType {
     /// Represents a shared lock.
     SharedLock = 0,
     /// Represents an exclusive lock.

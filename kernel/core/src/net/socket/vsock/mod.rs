@@ -19,8 +19,8 @@ mod addr;
 mod stream;
 mod transport;
 
-pub use addr::VsockSocketAddr;
-pub use stream::VsockStreamSocket;
+pub(crate) use addr::VsockSocketAddr;
+pub(crate) use stream::VsockStreamSocket;
 
 pub(in crate::net) fn init() {
     transport::init();

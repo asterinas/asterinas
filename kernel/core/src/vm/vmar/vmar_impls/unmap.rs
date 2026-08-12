@@ -41,7 +41,7 @@ impl Vmar {
     ///
     /// Mappings may fall partially within the range; only the overlapped
     /// portions of the mappings are unmapped.
-    pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
+    pub(crate) fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
         debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
         debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
 
@@ -66,7 +66,7 @@ impl Vmar {
     /// Note that all other pages are still discarded.
     ///
     /// [`ENOMEM`]: Errno::ENOMEM
-    pub fn discard_pages(&self, range: Range<usize>) -> Result<()> {
+    pub(crate) fn discard_pages(&self, range: Range<usize>) -> Result<()> {
         debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
         debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
 

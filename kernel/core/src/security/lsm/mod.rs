@@ -10,11 +10,11 @@
 //! built-in modules such as `capability` and `yama`. Module selection follows
 //! the `lsm=` and legacy `security=` kernel command-line parameters.
 
-pub mod hooks;
+pub(crate) mod hooks;
 mod modules;
 
-pub mod yama {
-    pub use super::modules::yama::{YamaScope, get_scope, set_scope};
+pub(crate) mod yama {
+    pub(crate) use super::modules::yama::{YamaScope, get_scope, set_scope};
 }
 
 use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook};
@@ -22,7 +22,7 @@ use crate::prelude::*;
 
 bitflags! {
     /// LSM module flags.
-    pub struct LsmFlags: u32 {
+    pub(crate) struct LsmFlags: u32 {
         /// Marks a module as selectable through the legacy `security=` parameter.
         const LEGACY_MAJOR = 1 << 0;
         /// Marks a module as mutually exclusive with other exclusive modules.
@@ -40,7 +40,7 @@ trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
 }
 
 /// Returns whether the Yama LSM is enabled.
-pub fn is_yama_enabled() -> bool {
+pub(crate) fn is_yama_enabled() -> bool {
     modules::active_modules()
         .iter()
         .any(|module| module.name() == "yama")

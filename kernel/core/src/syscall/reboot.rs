@@ -26,7 +26,7 @@ enum RebootCmd {
     // TODO: Add more reboot sub-commands.
 }
 
-pub fn sys_reboot(
+pub(super) fn sys_reboot(
     magic1: u32,
     magic2: u32,
     op: u32,

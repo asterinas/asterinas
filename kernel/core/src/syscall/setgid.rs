@@ -6,7 +6,7 @@ use crate::{
     process::{Gid, posix_thread::ContextPthreadAdminApi},
 };
 
-pub fn sys_setgid(gid: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_setgid(gid: i32, ctx: &Context) -> Result<SyscallReturn> {
     if gid < 0 {
         return_errno_with_message!(Errno::EINVAL, "GIDs cannot be negative");
     }

@@ -28,16 +28,16 @@ const INIT_RLIMIT_MEMLOCK: u64 = 8 * 1024 * 1024;
 // https://github.com/torvalds/linux/blob/fac04efc5c793dccbd07e2d59af9f90b7fc0dca4/include/uapi/linux/mqueue.h#L26
 const INIT_RLIMIT_MSGQUEUE: u64 = 819200;
 // https://github.com/torvalds/linux/blob/fac04efc5c793dccbd07e2d59af9f90b7fc0dca4/fs/file.c#L90
-pub const SYSCTL_NR_OPEN: u64 = 1024 * 1024;
+pub(crate) const SYSCTL_NR_OPEN: u64 = 1024 * 1024;
 
 #[derive(Clone)]
-pub struct ResourceLimits {
+pub(crate) struct ResourceLimits {
     rlimits: [RLimit64; RLIMIT_COUNT],
 }
 
 impl ResourceLimits {
     /// Returns a reference to a specific resource limit.
-    pub fn get_rlimit(&self, resource: ResourceType) -> &RLimit64 {
+    pub(crate) fn get_rlimit(&self, resource: ResourceType) -> &RLimit64 {
         &self.rlimits[resource as usize]
     }
 }
@@ -79,7 +79,7 @@ impl Default for ResourceLimits {
 #[expect(non_camel_case_types)]
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum ResourceType {
+pub(crate) enum ResourceType {
     RLIMIT_CPU = 0,
     RLIMIT_FSIZE = 1,
     RLIMIT_DATA = 2,
@@ -102,13 +102,13 @@ const RLIMIT_COUNT: usize = 16;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct RawRLimit64 {
+pub(crate) struct RawRLimit64 {
     pub cur: u64,
     pub max: u64,
 }
 
 #[derive(Debug)]
-pub struct RLimit64 {
+pub(crate) struct RLimit64 {
     cur: AtomicU64,
     max: AtomicU64,
     lock: SpinLock<()>,
@@ -126,7 +126,7 @@ impl RLimit64 {
     }
 
     /// Returns the current rlimit without synchronization.
-    pub fn get_cur(&self) -> u64 {
+    pub(crate) fn get_cur(&self) -> u64 {
         self.cur.load(Ordering::Relaxed)
     }
 
@@ -138,7 +138,7 @@ impl RLimit64 {
     /// Gets the rlimit with synchronization.
     ///
     /// Only called when handling the `getrlimit` or `prlimit` syscall.
-    pub fn get_raw_rlimit(&self) -> RawRLimit64 {
+    pub(crate) fn get_raw_rlimit(&self) -> RawRLimit64 {
         let _guard = self.lock.lock();
         RawRLimit64 {
             cur: self.cur.load(Ordering::Relaxed),
@@ -149,7 +149,7 @@ impl RLimit64 {
     /// Sets the rlimit with synchronization and returns the old value.
     ///
     /// Only called when handling the `setrlimit` or `prlimit` syscall.
-    pub fn set_raw_rlimit(&self, new: RawRLimit64, ctx: &Context) -> Result<RawRLimit64> {
+    pub(crate) fn set_raw_rlimit(&self, new: RawRLimit64, ctx: &Context) -> Result<RawRLimit64> {
         if new.cur > new.max {
             return_errno_with_message!(Errno::EINVAL, "the current rlimit exceeds the max rlimit");
         }

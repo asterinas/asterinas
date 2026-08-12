@@ -9,7 +9,7 @@ use crate::{prelude::*, vm::vmar::is_userspace_vaddr_range};
 
 /// Controls how the old mapping is handled during a `remap` operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RemapOldMappingAction {
+pub(crate) enum RemapOldMappingAction {
     /// Remove the old mapping after moving pages.
     Unmap,
     /// Keep the old address range mapped with its original properties.
@@ -38,7 +38,7 @@ impl Vmar {
     ///   method will return an `Err`.
     ///
     /// [`VmMapping`]: crate::vm::vmar::vm_mapping::VmMapping
-    pub fn resize_mapping(
+    pub(crate) fn resize_mapping(
         &self,
         map_addr: Vaddr,
         old_size: usize,
@@ -81,7 +81,7 @@ impl Vmar {
     /// This method panics if `new_addr` is `None` and `new_size <= old_size`
     /// (unless `action` is [`RemapOldMappingAction::Keep`]).
     /// Use `resize_mapping` instead in this case.
-    pub fn remap(
+    pub(crate) fn remap(
         &self,
         old_addr: Vaddr,
         old_size: usize,

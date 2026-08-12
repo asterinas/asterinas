@@ -5,7 +5,7 @@ use align_ext::AlignExt;
 use super::SyscallReturn;
 use crate::{prelude::*, vm::vmar::VMAR_CAP_ADDR};
 
-pub fn sys_munmap(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_munmap(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
     debug!("addr = 0x{:x}, len = {}", addr, len);
 
     if !addr.is_multiple_of(PAGE_SIZE) {

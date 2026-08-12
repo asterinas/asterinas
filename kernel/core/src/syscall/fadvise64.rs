@@ -17,7 +17,7 @@ enum FadviseBehavior {
     Noreuse = 5,
 }
 
-pub fn sys_fadvise64(
+pub(super) fn sys_fadvise64(
     raw_fd: RawFileDesc,
     offset: usize,
     len: usize,

@@ -11,7 +11,7 @@ use crate::{
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
-pub fn sys_ioctl(
+pub(super) fn sys_ioctl(
     raw_fd: RawFileDesc,
     cmd: u32,
     arg: Vaddr,

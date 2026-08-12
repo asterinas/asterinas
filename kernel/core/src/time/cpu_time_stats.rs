@@ -16,7 +16,7 @@ use crate::{sched::SchedPolicy, thread::Thread};
 ///
 /// TODO: Implement proper accounting for CPU time
 #[derive(Clone, Copy, Debug)]
-pub struct CpuTimeStats {
+pub(crate) struct CpuTimeStats {
     /// Time spent in user mode.
     pub user: Jiffies,
     /// Time spent in user mode with low priority (nice).
@@ -43,7 +43,7 @@ pub struct CpuTimeStats {
     pub guest_nice: Jiffies,
 }
 
-pub struct CpuTimeStatsManager {
+pub(crate) struct CpuTimeStatsManager {
     user: PerCpuCounter,
     nice: PerCpuCounter,
     system: PerCpuCounter,
@@ -60,13 +60,13 @@ static SINGLETON: Once<CpuTimeStatsManager> = Once::new();
 
 impl CpuTimeStatsManager {
     /// Returns a reference to the singleton instance of `CpuTimeStatsManager`.
-    pub fn singleton() -> &'static CpuTimeStatsManager {
+    pub(crate) fn singleton() -> &'static CpuTimeStatsManager {
         // It's fine to `unwrap` because `SINGLETON` must have been initialized in `init`.
         SINGLETON.get().unwrap()
     }
 
     /// Collects the time statistics on the specific CPU.
-    pub fn collect_stats_on_cpu(&self, cpu: CpuId) -> CpuTimeStats {
+    pub(crate) fn collect_stats_on_cpu(&self, cpu: CpuId) -> CpuTimeStats {
         CpuTimeStats {
             user: Jiffies::new(self.user.get_on_cpu(cpu) as u64),
             nice: Jiffies::new(self.nice.get_on_cpu(cpu) as u64),
@@ -82,7 +82,7 @@ impl CpuTimeStatsManager {
     }
 
     /// Collects the time statistics across all CPUs.
-    pub fn collect_stats_on_all_cpus(&self) -> CpuTimeStats {
+    pub(crate) fn collect_stats_on_all_cpus(&self) -> CpuTimeStats {
         CpuTimeStats {
             user: Jiffies::new(self.user.sum_all_cpus() as u64),
             nice: Jiffies::new(self.nice.sum_all_cpus() as u64),
@@ -160,10 +160,10 @@ fn is_idle() -> bool {
     }
 }
 
-pub fn init() {
+pub(crate) fn init() {
     SINGLETON.call_once(CpuTimeStatsManager::new);
 }
 
-pub fn init_on_each_cpu() {
+pub(crate) fn init_on_each_cpu() {
     ostd::timer::register_callback_on_cpu(update_cpu_statistics);
 }

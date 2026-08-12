@@ -8,7 +8,7 @@ use crate::{
     process::{posix_thread::ContextPthreadAdminApi, signal::sig_mask::SigMask},
 };
 
-pub fn sys_rt_sigprocmask(
+pub(super) fn sys_rt_sigprocmask(
     how: u32,
     set_ptr: Vaddr,
     oldset_ptr: Vaddr,

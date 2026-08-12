@@ -11,7 +11,7 @@ use crate::{
     time::timespec_t,
 };
 
-pub fn sys_ppoll(
+pub(super) fn sys_ppoll(
     fds: Vaddr,
     nfds: u32,
     timespec_addr: Vaddr,

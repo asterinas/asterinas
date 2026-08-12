@@ -4,59 +4,62 @@ use crate::prelude::*;
 
 /// A set of group IDs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct GroupIdSet(u32);
+pub(crate) struct GroupIdSet(u32);
 
 impl GroupIdSet {
     /// Creates a new empty `GroupIdSet`.
-    pub const fn new_empty() -> Self {
+    pub(crate) const fn new_empty() -> Self {
         Self(0)
     }
 
     /// Creates a new `GroupIdSet` with multiple groups.
     ///
     /// Each 1 bit in `groups` represent a group.
-    pub const fn new(groups: u32) -> Self {
+    pub(crate) const fn new(groups: u32) -> Self {
         Self(groups)
     }
 
     /// Creates an iterator over all group IDs.
-    pub const fn ids_iter(&self) -> GroupIdIter {
+    pub(crate) const fn ids_iter(&self) -> GroupIdIter {
         GroupIdIter::new(self)
     }
 
     /// Adds some new groups.
-    pub fn add_groups(&mut self, groups: GroupIdSet) {
+    pub(crate) fn add_groups(&mut self, groups: GroupIdSet) {
         self.0 |= groups.0;
     }
 
     /// Drops some groups.
-    pub fn drop_groups(&mut self, groups: GroupIdSet) {
+    pub(crate) fn drop_groups(&mut self, groups: GroupIdSet) {
         self.0 &= !groups.0;
     }
 
     /// Sets new groups.
-    pub fn set_groups(&mut self, new_groups: u32) {
+    #[expect(dead_code)]
+    pub(crate) fn set_groups(&mut self, new_groups: u32) {
         self.0 = new_groups;
     }
 
     /// Clears all groups.
-    pub fn clear(&mut self) {
+    #[expect(dead_code)]
+    pub(crate) fn clear(&mut self) {
         self.0 = 0;
     }
 
     /// Checks if the set of group IDs is empty.
-    pub fn is_empty(&self) -> bool {
+    #[expect(dead_code)]
+    pub(crate) fn is_empty(&self) -> bool {
         self.0 == 0
     }
 
     /// Returns the group IDs as a u32.
-    pub fn as_u32(&self) -> u32 {
+    pub(crate) fn as_u32(&self) -> u32 {
         self.0
     }
 }
 
 /// Iterator over a set of group IDs.
-pub struct GroupIdIter {
+pub(crate) struct GroupIdIter {
     groups: u32,
 }
 
@@ -80,5 +83,5 @@ impl Iterator for GroupIdIter {
     }
 }
 
-pub const MAX_GROUPS: u32 = 32;
-pub type GroupId = u32;
+pub(crate) const MAX_GROUPS: u32 = 32;
+pub(crate) type GroupId = u32;

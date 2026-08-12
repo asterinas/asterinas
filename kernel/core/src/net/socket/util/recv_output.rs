@@ -4,7 +4,7 @@ use super::RecvFlags;
 
 /// Output of a successful socket receive operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RecvOutput {
+pub(crate) struct RecvOutput {
     len: usize,
     flags: RecvFlags,
 }
@@ -40,12 +40,12 @@ impl RecvOutput {
     }
 
     /// Returns the message size.
-    pub const fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         self.len
     }
 
     /// Returns the output flags.
-    pub const fn flags(&self) -> RecvFlags {
+    pub(crate) const fn flags(&self) -> RecvFlags {
         self.flags
     }
 }

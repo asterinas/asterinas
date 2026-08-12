@@ -5,7 +5,7 @@ use align_ext::AlignExt;
 use super::SyscallReturn;
 use crate::{prelude::*, vm::vmar::RemapOldMappingAction};
 
-pub fn sys_mremap(
+pub(super) fn sys_mremap(
     old_addr: Vaddr,
     old_size: usize,
     new_size: usize,

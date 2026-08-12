@@ -15,7 +15,7 @@ use crate::{
 static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn Device>>> = Mutex::new(BTreeMap::new());
 
 /// Registers a new char device.
-pub fn register(device: Arc<dyn Device>) -> Result<()> {
+pub(crate) fn register(device: Arc<dyn Device>) -> Result<()> {
     let mut registry = DEVICE_REGISTRY.lock();
     let id = device.id().to_raw();
     if registry.contains_key(&id) {
@@ -27,7 +27,7 @@ pub fn register(device: Arc<dyn Device>) -> Result<()> {
 }
 
 /// Unregisters an existing char device, returning the device if found.
-pub fn unregister(id: DeviceId) -> Result<Arc<dyn Device>> {
+pub(crate) fn unregister(id: DeviceId) -> Result<Arc<dyn Device>> {
     DEVICE_REGISTRY
         .lock()
         .remove(&id.to_raw())
@@ -35,7 +35,7 @@ pub fn unregister(id: DeviceId) -> Result<Arc<dyn Device>> {
 }
 
 /// Collects all char devices.
-pub fn collect_all() -> Vec<Arc<dyn Device>> {
+pub(crate) fn collect_all() -> Vec<Arc<dyn Device>> {
     DEVICE_REGISTRY.lock().values().cloned().collect()
 }
 
@@ -47,7 +47,7 @@ pub(super) fn lookup(id: DeviceId) -> Option<Arc<dyn Device>> {
 /// The maximum value of the major device ID of a char device.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/fs/char_dev.c#L104>.
-pub const MAX_MAJOR: u16 = 511;
+pub(crate) const MAX_MAJOR: u16 = 511;
 
 /// The ranges of free char majors.
 ///
@@ -60,7 +60,7 @@ static MAJORS: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
 ///
 /// The returned `MajorIdOwner` object represents the ownership to the major ID.
 /// Until the object is dropped, this major ID cannot be acquired via `acquire_major` or `allocate_major` again.
-pub fn acquire_major(major: MajorId) -> Result<MajorIdOwner> {
+pub(crate) fn acquire_major(major: MajorId) -> Result<MajorIdOwner> {
     if major.get() > MAX_MAJOR {
         return_errno_with_message!(Errno::EINVAL, "the major ID is invalid");
     }
@@ -77,7 +77,7 @@ pub fn acquire_major(major: MajorId) -> Result<MajorIdOwner> {
 /// The returned `MajorIdOwner` object represents the ownership to the major ID.
 /// Until the object is dropped, this major ID cannot be acquired via `acquire_major` or `allocate_major` again.
 #[expect(dead_code)]
-pub fn allocate_major() -> Result<MajorIdOwner> {
+pub(crate) fn allocate_major() -> Result<MajorIdOwner> {
     let mut majors = MAJORS.lock();
 
     for id in DYNAMIC_MAJOR_ID_RANGES
@@ -95,11 +95,11 @@ pub fn allocate_major() -> Result<MajorIdOwner> {
 /// An owned major ID.
 ///
 /// Each instances of this type will unregister the major ID when dropped.
-pub struct MajorIdOwner(MajorId);
+pub(crate) struct MajorIdOwner(MajorId);
 
 impl MajorIdOwner {
     /// Returns the major ID.
-    pub fn get(&self) -> MajorId {
+    pub(crate) fn get(&self) -> MajorId {
         self.0
     }
 }

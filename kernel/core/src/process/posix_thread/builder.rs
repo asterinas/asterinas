@@ -28,7 +28,7 @@ use crate::{
 };
 
 /// The builder to build a POSIX thread
-pub struct PosixThreadBuilder {
+pub(crate) struct PosixThreadBuilder {
     // The essential part
     tid: Tid,
     thread_name: ThreadName,
@@ -52,7 +52,7 @@ pub struct PosixThreadBuilder {
 }
 
 impl PosixThreadBuilder {
-    pub fn new(
+    pub(crate) fn new(
         tid: Tid,
         thread_name: ThreadName,
         user_ctx: Box<UserContext>,
@@ -80,37 +80,37 @@ impl PosixThreadBuilder {
         }
     }
 
-    pub fn process(mut self, process: Weak<Process>) -> Self {
+    pub(crate) fn process(mut self, process: Weak<Process>) -> Self {
         self.process = process;
         self
     }
 
-    pub fn set_child_tid(mut self, set_child_tid: Vaddr) -> Self {
+    pub(crate) fn set_child_tid(mut self, set_child_tid: Vaddr) -> Self {
         self.set_child_tid = set_child_tid;
         self
     }
 
-    pub fn clear_child_tid(mut self, clear_child_tid: Vaddr) -> Self {
+    pub(crate) fn clear_child_tid(mut self, clear_child_tid: Vaddr) -> Self {
         self.clear_child_tid = clear_child_tid;
         self
     }
 
-    pub fn file_table(mut self, file_table: RwArc<FileTable>) -> Self {
+    pub(crate) fn file_table(mut self, file_table: RwArc<FileTable>) -> Self {
         self.file_table = Some(file_table);
         self
     }
 
-    pub fn fs(mut self, fs: Arc<ThreadFsInfo>) -> Self {
+    pub(crate) fn fs(mut self, fs: Arc<ThreadFsInfo>) -> Self {
         self.fs = Some(fs);
         self
     }
 
-    pub fn sig_mask(mut self, sig_mask: AtomicSigMask) -> Self {
+    pub(crate) fn sig_mask(mut self, sig_mask: AtomicSigMask) -> Self {
         self.sig_mask = sig_mask;
         self
     }
 
-    pub fn fpu_context(self, fpu_context: FpuContext) -> Self {
+    pub(crate) fn fpu_context(self, fpu_context: FpuContext) -> Self {
         Self {
             supp_user_context: self.supp_user_context.with_fpu_context(fpu_context),
             ..self
@@ -118,7 +118,7 @@ impl PosixThreadBuilder {
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub fn fs_base(self, fs_base: FsBase) -> Self {
+    pub(crate) fn fs_base(self, fs_base: FsBase) -> Self {
         Self {
             supp_user_context: self.supp_user_context.with_fs_base(fs_base),
             ..self
@@ -126,29 +126,29 @@ impl PosixThreadBuilder {
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub fn gs_base(self, gs_base: GsBase) -> Self {
+    pub(crate) fn gs_base(self, gs_base: GsBase) -> Self {
         Self {
             supp_user_context: self.supp_user_context.with_gs_base(gs_base),
             ..self
         }
     }
 
-    pub fn user_ns(mut self, user_ns: Arc<UserNamespace>) -> Self {
+    pub(crate) fn user_ns(mut self, user_ns: Arc<UserNamespace>) -> Self {
         self.user_ns = Some(user_ns);
         self
     }
 
-    pub fn ns_proxy(mut self, ns_proxy: Arc<NsProxy>) -> Self {
+    pub(crate) fn ns_proxy(mut self, ns_proxy: Arc<NsProxy>) -> Self {
         self.ns_proxy = Some(ns_proxy);
         self
     }
 
-    pub fn default_timer_slack_ns(mut self, slack_ns: u64) -> Self {
+    pub(crate) fn default_timer_slack_ns(mut self, slack_ns: u64) -> Self {
         self.default_timer_slack_ns = slack_ns;
         self
     }
 
-    pub fn build(self) -> Arc<Task> {
+    pub(crate) fn build(self) -> Arc<Task> {
         let Self {
             tid,
             user_ctx,

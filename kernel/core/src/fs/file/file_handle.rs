@@ -22,7 +22,7 @@ use crate::{
 };
 
 /// The basic operations defined on a file
-pub trait FileLike: Pollable + Send + Sync + Any {
+pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     /// Reads data from this file.
     ///
     /// By default, this method returns `EBADF`
@@ -173,12 +173,12 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
 impl dyn FileLike {
     /// Returns the path associated with the file description.
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         self.common().path()
     }
 
     /// Returns the status flags of the file description.
-    pub fn status_flags(&self) -> StatusFlags {
+    pub(crate) fn status_flags(&self) -> StatusFlags {
         self.common().status_flags()
     }
 
@@ -186,7 +186,7 @@ impl dyn FileLike {
     ///
     /// `O_ASYNC` is ignored if it is not supported. An attempt to enable
     /// unsupported `O_DIRECT` returns `EINVAL`.
-    pub fn update_status_flags(&self, mut update: StatusFlagsUpdate) -> Result<()> {
+    pub(crate) fn update_status_flags(&self, mut update: StatusFlagsUpdate) -> Result<()> {
         let settable_flags = self.settable_status_flags();
         if update.flags().contains(StatusFlags::O_DIRECT)
             && !settable_flags.contains(StatusFlags::O_DIRECT)
@@ -202,7 +202,7 @@ impl dyn FileLike {
     }
 
     /// Updates the `O_NONBLOCK` status flag.
-    pub fn update_status_nonblock(&self, is_nonblocking: bool) {
+    pub(crate) fn update_status_nonblock(&self, is_nonblocking: bool) {
         let update = if is_nonblocking {
             StatusFlagsUpdate::set(StatusFlags::O_NONBLOCK)
         } else {
@@ -216,7 +216,7 @@ impl dyn FileLike {
     ///
     /// An attempt to enable `O_ASYNC` on a file that does not support it returns
     /// `ENOTTY`.
-    pub fn update_status_async(&self, is_async: bool) -> Result<()> {
+    pub(crate) fn update_status_async(&self, is_async: bool) -> Result<()> {
         let settable_flags = self.settable_status_flags();
         if is_async && !settable_flags.contains(StatusFlags::O_ASYNC) {
             return_errno_with_message!(Errno::ENOTTY, "signal-driven I/O is not supported");
@@ -237,41 +237,41 @@ impl dyn FileLike {
     /// Passing `None` clears the current owner.
     ///
     /// The owner receives `SIGIO` for I/O events on the file description when `O_ASYNC` is set.
-    pub fn set_owner(&self, owner: Option<&Arc<Process>>) {
+    pub(crate) fn set_owner(&self, owner: Option<&Arc<Process>>) {
         self.common().owner().set(self, owner);
     }
 
-    pub fn downcast_ref<T: FileLike>(&self) -> Option<&T> {
+    pub(crate) fn downcast_ref<T: FileLike>(&self) -> Option<&T> {
         (self as &dyn Any).downcast_ref::<T>()
     }
 
-    pub fn read_bytes(&self, buf: &mut [u8]) -> Result<usize> {
+    pub(crate) fn read_bytes(&self, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
         self.read(&mut writer)
     }
 
-    pub fn write_bytes(&self, buf: &[u8]) -> Result<usize> {
+    pub(crate) fn write_bytes(&self, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
         self.write(&mut reader)
     }
 
-    pub fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    pub(crate) fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
         self.read_at(offset, &mut writer)
     }
 
     #[expect(dead_code)]
-    pub fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    pub(crate) fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
         self.write_at(offset, &mut reader)
     }
 
-    pub fn as_socket_or_err(&self) -> Result<&dyn Socket> {
+    pub(crate) fn as_socket_or_err(&self) -> Result<&dyn Socket> {
         self.as_socket()
             .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the file is not a socket"))
     }
 
-    pub fn as_inode_handle_or_err(&self) -> Result<&InodeHandle> {
+    pub(crate) fn as_inode_handle_or_err(&self) -> Result<&InodeHandle> {
         self.downcast_ref().ok_or_else(|| {
             Error::with_message(Errno::EINVAL, "the file is not related to an inode")
         })
@@ -280,7 +280,7 @@ impl dyn FileLike {
 
 /// An atomic update to a subset of file status flags.
 #[derive(Clone, Copy, Debug)]
-pub struct StatusFlagsUpdate {
+pub(crate) struct StatusFlagsUpdate {
     mask: StatusFlags,
     flags: StatusFlags,
 }
@@ -289,7 +289,7 @@ impl StatusFlagsUpdate {
     /// Creates an update that replaces all updatable flags with `flags`.
     ///
     /// Replacing flags outside [`StatusFlags::SETFL_MASK`] is a no-op.
-    pub fn replace(mut flags: StatusFlags) -> Self {
+    pub(crate) fn replace(mut flags: StatusFlags) -> Self {
         flags &= StatusFlags::SETFL_MASK;
         Self::new(StatusFlags::SETFL_MASK, flags)
     }
@@ -297,7 +297,7 @@ impl StatusFlagsUpdate {
     /// Creates an update that sets `flags`.
     ///
     /// Setting flags outside [`StatusFlags::SETFL_MASK`] is a no-op.
-    pub fn set(mut flags: StatusFlags) -> Self {
+    pub(crate) fn set(mut flags: StatusFlags) -> Self {
         flags &= StatusFlags::SETFL_MASK;
         Self::new(flags, flags)
     }
@@ -305,7 +305,7 @@ impl StatusFlagsUpdate {
     /// Creates an update that unsets `flags`.
     ///
     /// Unsetting flags outside [`StatusFlags::SETFL_MASK`] is a no-op.
-    pub fn unset(mut flags: StatusFlags) -> Self {
+    pub(crate) fn unset(mut flags: StatusFlags) -> Self {
         flags &= StatusFlags::SETFL_MASK;
         Self::new(flags, StatusFlags::empty())
     }
@@ -338,7 +338,7 @@ impl StatusFlagsUpdate {
 
 /// An object that may be memory mapped into the user address space.
 #[derive(Clone, Debug)]
-pub enum Mappable {
+pub(crate) enum Mappable {
     /// A VMO (i.e., page cache).
     Vmo(Arc<Vmo>),
     /// An MMIO region.

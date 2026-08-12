@@ -8,7 +8,7 @@ use crate::prelude::*;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Pod)]
-pub struct Uid(u32);
+pub(crate) struct Uid(u32);
 
 const ROOT_UID: u32 = 0;
 
@@ -16,7 +16,7 @@ impl Uid {
     /// The invalid UID, typically used to indicate that no valid UID is found when returning to user space.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/linux/uidgid.h#L50>.
-    pub const INVALID: Uid = Self::new(u32::MAX);
+    pub(crate) const INVALID: Uid = Self::new(u32::MAX);
 
     /// The overflow UID, typically used to indicate that user mappings between namespaces fail.
     ///
@@ -24,17 +24,17 @@ impl Uid {
     /// configured via `/proc/sys/kernel/overflowuid`.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/kernel/sys.c#L166>.
-    pub const OVERFLOW: Uid = Self::new(65534);
+    pub(crate) const OVERFLOW: Uid = Self::new(65534);
 
-    pub const fn new_root() -> Self {
+    pub(crate) const fn new_root() -> Self {
         Self(ROOT_UID)
     }
 
-    pub const fn new(uid: u32) -> Self {
+    pub(crate) const fn new(uid: u32) -> Self {
         Self(uid)
     }
 
-    pub const fn is_root(&self) -> bool {
+    pub(crate) const fn is_root(&self) -> bool {
         self.0 == ROOT_UID
     }
 }

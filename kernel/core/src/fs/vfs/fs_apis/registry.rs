@@ -20,7 +20,7 @@ use crate::{
 };
 
 /// A type of file system.
-pub trait FsType: Send + Sync + 'static {
+pub(crate) trait FsType: Send + Sync + 'static {
     /// Key used to deduplicate mounts of the same logical FS instance.
     ///
     /// Set to `()` (with the default `obtain_key_and_cache` returning `None`) to opt out
@@ -60,7 +60,7 @@ pub trait FsType: Send + Sync + 'static {
 ///
 /// Implemented automatically for every [`FsType`] via a blanket impl, so FS
 /// authors only implement [`FsType`].
-pub trait DynFsType: Send + Sync + 'static {
+pub(crate) trait DynFsType: Send + Sync + 'static {
     /// Gets the name of this FS type such as `"ext4"` or `"sysfs"`.
     fn name(&self) -> &'static str;
 
@@ -102,7 +102,7 @@ impl<T: FsType> DynFsType for T {
 /// A context that describes the inputs used to create a file system instance.
 ///
 /// This context is used to identify and create a file system instance.
-pub struct FsCreationCtx<'a> {
+pub(crate) struct FsCreationCtx<'a> {
     source: Option<&'a str>,
     flags: FsFlags,
     args: Option<&'a str>,
@@ -116,7 +116,7 @@ enum BlockDeviceResolution<'a> {
 
 impl<'a> FsCreationCtx<'a> {
     /// Creates a file system creation context from syscall inputs.
-    pub fn new(
+    pub(crate) fn new(
         source: Option<&'a str>,
         flags: FsFlags,
         args: Option<&'a str>,
@@ -208,7 +208,7 @@ impl<'a> FsCreationCtx<'a> {
 
 bitflags! {
     /// The properties common to all FS instances.
-    pub struct FsProperties: u32 {
+    pub(crate) struct FsProperties: u32 {
         /// Whether a FS needs to be backed by a disk.
         ///
         /// Most persistent FSes such as ext2 require disks.
@@ -221,12 +221,12 @@ bitflags! {
 /// Registers a new FS type.
 //
 // TODO: Figure out what should happen when unregistering the FS type.
-pub fn register(new_type: &'static dyn DynFsType) -> Result<()> {
+pub(crate) fn register(new_type: &'static dyn DynFsType) -> Result<()> {
     FS_REGISTRY.get().unwrap().register(new_type)
 }
 
 /// Looks up a FS type.
-pub fn look_up(name: &str) -> Option<&'static dyn DynFsType> {
+pub(crate) fn look_up(name: &str) -> Option<&'static dyn DynFsType> {
     FS_REGISTRY
         .get()
         .unwrap()
@@ -238,7 +238,7 @@ pub fn look_up(name: &str) -> Option<&'static dyn DynFsType> {
 
 /// Executes a user-provided operation with an iterator that can access each
 /// and every FS type.
-pub fn with_iter<F, R>(f: F) -> R
+pub(crate) fn with_iter<F, R>(f: F) -> R
 where
     F: FnOnce(&mut dyn Iterator<Item = (&str, &dyn DynFsType)>) -> R,
 {
@@ -249,7 +249,7 @@ where
 }
 
 /// Initializes the FS registry module.
-pub fn init() {
+pub(crate) fn init() {
     // This object will appear at the `/sys/fs` path
     FS_REGISTRY.call_once(|| {
         let singleton = FsRegistry::new();
@@ -267,13 +267,13 @@ static FS_REGISTRY: Once<Arc<FsRegistry>> = Once::new();
 ///
 /// `FsType` implementations use this cache to deduplicate mounts that refer to
 /// the same logical file system instance, such as the same block device.
-pub struct FsCache<K: Eq + Ord + Clone + Send + Sync + 'static> {
+pub(crate) struct FsCache<K: Eq + Ord + Clone + Send + Sync + 'static> {
     entries: Mutex<BTreeMap<K, WeakFsAndRoot>>,
 }
 
 /// A file system paired with its root [`Dentry`].
 #[derive(Clone)]
-pub struct FsAndRoot {
+pub(crate) struct FsAndRoot {
     fs: Arc<dyn FileSystem>,
     root_dentry: Arc<Dentry>,
 }
@@ -282,7 +282,7 @@ impl FsAndRoot {
     /// Creates an `FsAndRoot` by deriving the root dentry from the file system.
     ///
     /// This root is the file system root created from [`FileSystem::root_inode`].
-    pub fn new(fs: Arc<dyn FileSystem>) -> Self {
+    pub(crate) fn new(fs: Arc<dyn FileSystem>) -> Self {
         let root_dentry = Dentry::new_root(fs.root_inode());
         Self { fs, root_dentry }
     }

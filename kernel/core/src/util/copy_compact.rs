@@ -3,7 +3,7 @@
 use crate::prelude::*;
 
 /// A trait that can copies structures from/to the user space in a backward-compatible way.
-pub trait CopyCompat {
+pub(crate) trait CopyCompat {
     /// Reads a POD structure from the user space in a backward-compatible way.
     ///
     /// The method's behavior is described below to ensure backward compatibility:
@@ -72,11 +72,11 @@ impl CopyCompat for CurrentUserSpace<'_> {
 /// The kernel structure's trailing bytes after [`CopyCompat::write_val_compat`].
 #[expect(dead_code)]
 #[must_use]
-pub struct TrailingBytes<'a>(&'a [u8]);
+pub(crate) struct TrailingBytes<'a>(&'a [u8]);
 
 impl TrailingBytes<'_> {
     /// Ignores the trailing bytes.
-    pub fn ignore_trailing(self) {}
+    pub(crate) fn ignore_trailing(self) {}
 
     // TODO: Add a `check_trailing` method to check if the trailing bytes contain non-zero values.
 }

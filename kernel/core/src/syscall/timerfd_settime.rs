@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-pub fn sys_timerfd_settime(
+pub(super) fn sys_timerfd_settime(
     raw_fd: RawFileDesc,
     flags: i32,
     new_itimerspec_addr: Vaddr,

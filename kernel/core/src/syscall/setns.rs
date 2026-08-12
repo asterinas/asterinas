@@ -28,7 +28,7 @@ use crate::{
     syscall::SyscallReturn,
 };
 
-pub fn sys_setns(fd: RawFileDesc, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_setns(fd: RawFileDesc, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let ns_type_flags = CloneFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid `setns` flags"))?;
     debug!("setns flags = {:?}", ns_type_flags);

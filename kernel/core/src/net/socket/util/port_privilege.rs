@@ -11,7 +11,7 @@ use crate::{
 const PRIVILEGED_PORTS: Range<u16> = 0..1024;
 
 /// Checks if the port is privileged and, if so, whether the thread is allowed to bind to it.
-pub fn check_port_privilege(port: u16) -> Result<()> {
+pub(crate) fn check_port_privilege(port: u16) -> Result<()> {
     if !PRIVILEGED_PORTS.contains(&port) {
         return Ok(());
     }

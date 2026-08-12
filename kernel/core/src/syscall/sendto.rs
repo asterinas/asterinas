@@ -8,7 +8,7 @@ use crate::{
     util::net::read_socket_addr_from_user,
 };
 
-pub fn sys_sendto(
+pub(super) fn sys_sendto(
     sockfd: RawFileDesc,
     buf: Vaddr,
     len: usize,

@@ -103,29 +103,29 @@ use sealed::{DataSpec, IoctlCmd, IoctlDir, PtrDataSpec};
 
 use crate::{context::current_userspace, prelude::*};
 
-pub mod common_defs;
+pub(crate) mod common_defs;
 mod sealed;
 
 /// An ioctl command and its argument in raw form.
 #[derive(Clone, Copy, Debug)]
-pub struct RawIoctl {
+pub(crate) struct RawIoctl {
     cmd: u32,
     arg: usize,
 }
 
 impl RawIoctl {
     /// Creates an instance with the given ioctl command and argument.
-    pub const fn new(cmd: u32, arg: usize) -> Self {
+    pub(crate) const fn new(cmd: u32, arg: usize) -> Self {
         Self { cmd, arg }
     }
 
     /// Returns the ioctl command.
-    pub const fn cmd(self) -> u32 {
+    pub(crate) const fn cmd(self) -> u32 {
         self.cmd
     }
 
     /// Returns the ioctl argument.
-    pub const fn arg(self) -> usize {
+    pub(crate) const fn arg(self) -> usize {
         self.arg
     }
 }
@@ -142,7 +142,7 @@ impl RawIoctl {
 ///
 /// `D` is one of [`NoData`], [`InData`], [`OutData`], or [`InOutData`].
 /// It specifies key aspects about the input/output data in the ioctl argument.
-pub struct Ioctl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D> {
+pub(crate) struct Ioctl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D> {
     cmd: IoctlCmd,
     arg: usize,
     _phantom: PhantomData<D>,
@@ -204,7 +204,7 @@ pub(crate) use ioc;
 
 /// Extracts the "magic" and "number" fields from an ioctl command.
 #[doc(hidden)]
-pub const fn magic_and_nr_from_cmd(raw_cmd: u16) -> (u8, u8) {
+pub(crate) const fn magic_and_nr_from_cmd(raw_cmd: u16) -> (u8, u8) {
     let cmd = IoctlCmd::new(raw_cmd as u32);
     (cmd.magic(), cmd.nr())
 }
@@ -216,7 +216,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D: DataSpec>
     ///
     /// This method succeeds only if the ioctl command matches. Otherwise, this method returns
     /// `None`.
-    pub fn try_from_raw(raw_ioctl: RawIoctl) -> Option<Self> {
+    pub(crate) fn try_from_raw(raw_ioctl: RawIoctl) -> Option<Self> {
         let cmd = IoctlCmd::new(raw_ioctl.cmd);
 
         if cmd.magic() != MAGIC {
@@ -263,7 +263,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D: PtrDataSpec>
 }
 
 /// No input/output data.
-pub struct NoData;
+pub(crate) struct NoData;
 
 impl DataSpec for NoData {
     const SIZE: Option<u16> = Some(0);
@@ -274,7 +274,7 @@ impl DataSpec for NoData {
 ///
 /// `T` describes the data type.
 /// `P` describes how the data is passed (by value or by pointer).
-pub struct InData<T: ?Sized, P = PassByPtr>(PhantomData<T>, PhantomData<P>);
+pub(crate) struct InData<T: ?Sized, P = PassByPtr>(PhantomData<T>, PhantomData<P>);
 
 impl<T, P> DataSpec for InData<T, P> {
     const SIZE: Option<u16> = Some(u16_size_of::<T>());
@@ -289,7 +289,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
     Ioctl<MAGIC, NR, IS_MODERN, InData<T, PassByPtr>>
 {
     /// Reads the ioctl argument from userspace.
-    pub fn read(&self) -> Result<T> {
+    pub(crate) fn read(&self) -> Result<T> {
         Ok(self.with_data_ptr_unchecked_access(|ptr| ptr.read())?)
     }
 }
@@ -301,7 +301,7 @@ macro_rules! impl_get_by_val_for {
                 Ioctl<MAGIC, NR, IS_MODERN, InData<$ty, PassByVal>>
             {
                 /// Gets the ioctl argument.
-                pub fn get(&self) -> $ty {
+                pub(crate) fn get(&self) -> $ty {
                     self.arg as $ty
                 }
             }
@@ -324,7 +324,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
     ///
     /// The size of the ioctl argument is specified in [`VmReader::remain`].
     #[expect(dead_code)]
-    pub fn with_reader<F, R>(&self, f: F) -> Result<R>
+    pub(crate) fn with_reader<F, R>(&self, f: F) -> Result<R>
     where
         F: for<'a> FnOnce(VmReader<'a>) -> Result<R>,
     {
@@ -333,7 +333,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
 }
 
 /// Output-only data, always passed by pointer.
-pub struct OutData<T: ?Sized>(PhantomData<T>);
+pub(crate) struct OutData<T: ?Sized>(PhantomData<T>);
 
 impl<T> DataSpec for OutData<T> {
     const SIZE: Option<u16> = Some(u16_size_of::<T>());
@@ -348,7 +348,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
     Ioctl<MAGIC, NR, IS_MODERN, OutData<T>>
 {
     /// Writes the ioctl argument to userspace.
-    pub fn write(&self, val: &T) -> Result<()> {
+    pub(crate) fn write(&self, val: &T) -> Result<()> {
         self.with_data_ptr_unchecked_access(|ptr| ptr.write(val))?;
         Ok(())
     }
@@ -365,7 +365,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
     /// Obtains a [`VmWriter`] that can write the dynamically-sized ioctl argument to userspace.
     ///
     /// The size of the ioctl argument is specified in [`VmWriter::avail`].
-    pub fn with_writer<F, R>(&self, f: F) -> Result<R>
+    pub(crate) fn with_writer<F, R>(&self, f: F) -> Result<R>
     where
         F: for<'a> FnOnce(VmWriter<'a>) -> Result<R>,
     {
@@ -374,7 +374,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
 }
 
 /// Input and output data, passed by pointer to a single object.
-pub struct InOutData<T>(PhantomData<T>);
+pub(crate) struct InOutData<T>(PhantomData<T>);
 
 impl<T> DataSpec for InOutData<T> {
     const SIZE: Option<u16> = Some(u16_size_of::<T>());
@@ -389,17 +389,17 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
     Ioctl<MAGIC, NR, IS_MODERN, InOutData<T>>
 {
     /// Reads the ioctl argument from userspace.
-    pub fn read(&self) -> Result<T> {
+    pub(crate) fn read(&self) -> Result<T> {
         self.with_data_ptr(|ptr| Ok(ptr.read()?))
     }
 
     /// Writes the ioctl argument to userspace.
-    pub fn write(&self, val: &T) -> Result<()> {
+    pub(crate) fn write(&self, val: &T) -> Result<()> {
         self.with_data_ptr(|ptr| Ok(ptr.write(val)?))
     }
 
     /// Obtains a [`SafePtr`] that can access the ioctl argument in userspace.
-    pub fn with_data_ptr<F, R>(&self, f: F) -> Result<R>
+    pub(crate) fn with_data_ptr<F, R>(&self, f: F) -> Result<R>
     where
         F: for<'a> FnOnce(SafePtr<T, CurrentUserSpace<'a>>) -> Result<R>,
     {
@@ -408,9 +408,9 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
 }
 
 /// A marker that denotes the input is passed by value (i.e., encoded in the ioctl argument).
-pub enum PassByVal {}
+pub(crate) enum PassByVal {}
 /// A marker that denotes the input is passed by pointer (i.e., pointed to by the ioctl argument).
-pub enum PassByPtr {}
+pub(crate) enum PassByPtr {}
 
 const fn u16_size_of<T>() -> u16 {
     let size = size_of::<T>();
@@ -535,7 +535,7 @@ pub(crate) use dispatch_ioctl;
 ///
 /// The enum variant of the ioctl can be obtained by calling [`IoctlEnum::discriminant`],
 /// whose value is equal to `nr & ENUM_MASK`.
-pub struct IoctlEnum<const MAGIC: u8, const BASE_NR: u8, const ENUM_MASK: u8, D> {
+pub(crate) struct IoctlEnum<const MAGIC: u8, const BASE_NR: u8, const ENUM_MASK: u8, D> {
     base_ioctl: Ioctl<MAGIC, BASE_NR, /* IS_MODERN = */ true, D>,
     discriminant: u8,
 }
@@ -547,7 +547,7 @@ impl<const MAGIC: u8, const BASE_NR: u8, const ENUM_MASK: u8, D: DataSpec>
     ///
     /// This method succeeds only if the ioctl command belongs to the ioctl enum. Otherwise, this
     /// method returns `None`.
-    pub fn try_from_raw(raw_ioctl: RawIoctl) -> Option<Self> {
+    pub(crate) fn try_from_raw(raw_ioctl: RawIoctl) -> Option<Self> {
         const {
             assert!(
                 (BASE_NR & ENUM_MASK) == 0,
@@ -579,14 +579,14 @@ impl<const MAGIC: u8, const BASE_NR: u8, const ENUM_MASK: u8, D>
     /// Returns a reference to the base ioctl.
     ///
     /// See the type-level documentations for the definition of the base ioctl.
-    pub const fn base_ioctl(&self) -> &Ioctl<MAGIC, BASE_NR, /* IS_MODERN = */ true, D> {
+    pub(crate) const fn base_ioctl(&self) -> &Ioctl<MAGIC, BASE_NR, /* IS_MODERN = */ true, D> {
         &self.base_ioctl
     }
 
     /// Returns the discriminant of the ioctl enum variant.
     ///
     /// See the type-level documentations for the definition of the enum discriminant.
-    pub const fn discriminant(&self) -> u8 {
+    pub(crate) const fn discriminant(&self) -> u8 {
         self.discriminant
     }
 }

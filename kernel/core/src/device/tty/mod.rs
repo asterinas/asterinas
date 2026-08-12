@@ -61,7 +61,7 @@ const IO_CAPACITY: usize = 4096;
 ///             +-------+
 /// Tty::push_input   D::push_output
 /// ```
-pub struct Tty<D> {
+pub(crate) struct Tty<D> {
     index: u32,
     driver: D,
     ldisc: SpinLock<LineDiscipline, LocalIrqDisabled>,
@@ -84,7 +84,7 @@ impl<D> Tty<D> {
         })
     }
 
-    pub fn index(&self) -> u32 {
+    pub(crate) fn index(&self) -> u32 {
         self.index
     }
 
@@ -123,7 +123,7 @@ impl<D: TtyDriver> Tty<D> {
     ///
     /// This method returns the number of bytes pushed or fails with an error if no bytes can be
     /// pushed because the buffer is full.
-    pub fn push_input(&self, chs: &[u8]) -> Result<usize> {
+    pub(crate) fn push_input(&self, chs: &[u8]) -> Result<usize> {
         let mut ldisc = self.ldisc.lock();
         let mut echo = self.driver.echo_callback();
 
@@ -178,7 +178,7 @@ impl<D: TtyDriver> Pollable for Tty<D> {
 }
 
 impl<D: TtyDriver> Tty<D> {
-    pub fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize> {
+    pub(crate) fn read(&self, writer: &mut VmWriter, status_flags: StatusFlags) -> Result<usize> {
         if self.tty_flags.is_other_closed() {
             return Ok(0);
         }
@@ -201,7 +201,7 @@ impl<D: TtyDriver> Tty<D> {
         Ok(read_len)
     }
 
-    pub fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize> {
+    pub(crate) fn write(&self, reader: &mut VmReader, status_flags: StatusFlags) -> Result<usize> {
         if self.tty_flags.is_other_closed() {
             return_errno_with_message!(Errno::EIO, "the TTY is closed");
         }
@@ -222,7 +222,7 @@ impl<D: TtyDriver> Tty<D> {
         Ok(len)
     }
 
-    pub fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+    pub(crate) fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 
         use crate::util::ioctl::common_defs::GetNumBytesToRead;

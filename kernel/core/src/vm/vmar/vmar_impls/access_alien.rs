@@ -27,7 +27,11 @@ impl Vmar {
     /// On error, both the error and the number of bytes read so far are returned.
     ///
     /// The `VmSpace` of the process is not required to be activated on the current CPU.
-    pub fn read_alien(&self, vaddr: Vaddr, writer: &mut VmWriter) -> Result<usize, (Error, usize)> {
+    pub(crate) fn read_alien(
+        &self,
+        vaddr: Vaddr,
+        writer: &mut VmWriter,
+    ) -> Result<usize, (Error, usize)> {
         let len = writer.avail();
         let read = |frame: UFrame, skip_offset: usize| {
             let mut reader = frame.reader();
@@ -48,7 +52,7 @@ impl Vmar {
     /// On error, both the error and the number of bytes written so far are returned.
     ///
     /// The `VmSpace` of the process is not required to be activated on the current CPU.
-    pub fn write_alien(
+    pub(crate) fn write_alien(
         &self,
         vaddr: Vaddr,
         reader: &mut VmReader,
@@ -70,7 +74,11 @@ impl Vmar {
     /// error and the number of bytes written so far are returned.
     ///
     /// The `VmSpace` of the process is not required to be activated on the current CPU.
-    pub fn fill_zeros_alien(&self, vaddr: Vaddr, len: usize) -> Result<usize, (Error, usize)> {
+    pub(crate) fn fill_zeros_alien(
+        &self,
+        vaddr: Vaddr,
+        len: usize,
+    ) -> Result<usize, (Error, usize)> {
         let mut remain = len;
         let write = |frame: UFrame, skip_offset: usize| {
             let mut writer = frame.writer();

@@ -9,28 +9,28 @@ pub(in crate::net) mod macros;
 
 /// Socket options. This trait represents all options that can be set or got for a socket, including
 /// socket level options and options for specific socket type like tcp socket.
-pub trait SocketOption: Any + Send + Sync + Debug {
+pub(crate) trait SocketOption: Any + Send + Sync + Debug {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl_socket_options!(
-    pub struct ReuseAddr(bool);
-    pub struct SocketType(SockType);
-    pub struct Error(Option<crate::error::Error>);
-    pub struct Broadcast(bool);
-    pub struct SendBuf(u32);
-    pub struct RecvBuf(u32);
-    pub struct KeepAlive(bool);
-    pub struct Priority(i32);
-    pub struct Linger(LingerOption);
-    pub struct RecvTimeout(SocketTimeout);
-    pub struct SendTimeout(SocketTimeout);
-    pub struct ReusePort(bool);
-    pub struct PassCred(bool);
-    pub struct PeerCred(CUserCred);
-    pub struct AcceptConn(bool);
-    pub struct SendBufForce(u32);
-    pub struct RecvBufForce(u32);
-    pub struct PeerGroups(Arc<[Gid]>);
+    pub(crate) struct ReuseAddr(bool);
+    pub(crate) struct SocketType(SockType);
+    pub(crate) struct Error(Option<crate::error::Error>);
+    pub(crate) struct Broadcast(bool);
+    pub(crate) struct SendBuf(u32);
+    pub(crate) struct RecvBuf(u32);
+    pub(crate) struct KeepAlive(bool);
+    pub(crate) struct Priority(i32);
+    pub(crate) struct Linger(LingerOption);
+    pub(crate) struct RecvTimeout(SocketTimeout);
+    pub(crate) struct SendTimeout(SocketTimeout);
+    pub(crate) struct ReusePort(bool);
+    pub(crate) struct PassCred(bool);
+    pub(crate) struct PeerCred(CUserCred);
+    pub(crate) struct AcceptConn(bool);
+    pub(crate) struct SendBufForce(u32);
+    pub(crate) struct RecvBufForce(u32);
+    pub(crate) struct PeerGroups(Arc<[Gid]>);
 );

@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-pub fn sys_capget(
+pub(super) fn sys_capget(
     cap_user_header_addr: Vaddr,
     cap_user_data_addr: Vaddr,
     ctx: &Context,

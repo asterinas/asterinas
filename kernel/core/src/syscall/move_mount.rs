@@ -12,7 +12,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_move_mount(
+pub(super) fn sys_move_mount(
     from_dfd: RawFileDesc,
     from_path_addr: Vaddr,
     to_dfd: RawFileDesc,

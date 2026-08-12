@@ -13,7 +13,7 @@ use crate::{
 
 // The order of arguments for clone differs in different architecture.
 // This order we use here is the order for x86_64. See https://man7.org/linux/man-pages/man2/clone.2.html.
-pub fn sys_clone(
+pub(super) fn sys_clone(
     clone_flags: u64,
     new_sp: u64,
     parent_tidptr: Vaddr,
@@ -29,7 +29,7 @@ pub fn sys_clone(
     Ok(SyscallReturn::Return(child_pid as _))
 }
 
-pub fn sys_clone3(
+pub(super) fn sys_clone3(
     clong_args_addr: Vaddr,
     size: usize,
     ctx: &Context,

@@ -15,11 +15,11 @@ use super::{
 };
 use crate::{net::socket::netlink::message::NoAttr, prelude::*};
 
-pub type DoneSegment = SegmentCommon<DoneSegmentBody, NoAttr>;
+pub(crate) type DoneSegment = SegmentCommon<DoneSegmentBody, NoAttr>;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct DoneSegmentBody {
+pub(crate) struct DoneSegmentBody {
     error_code: i32,
 }
 
@@ -28,7 +28,7 @@ impl SegmentBody for DoneSegmentBody {
 }
 
 impl DoneSegment {
-    pub fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
+    pub(crate) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
         let header = CMsgSegHdr {
             len: 0,
             type_: CSegmentType::DONE as _,
@@ -46,11 +46,11 @@ impl DoneSegment {
     }
 }
 
-pub type ErrorSegment = SegmentCommon<ErrorSegmentBody, NoAttr>;
+pub(crate) type ErrorSegment = SegmentCommon<ErrorSegmentBody, NoAttr>;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct ErrorSegmentBody {
+pub(crate) struct ErrorSegmentBody {
     error_code: i32,
     request_header: CMsgSegHdr,
 }
@@ -60,7 +60,7 @@ impl SegmentBody for ErrorSegmentBody {
 }
 
 impl ErrorSegment {
-    pub fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
+    pub(crate) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
         let header = CMsgSegHdr {
             len: 0,
             type_: CSegmentType::ERROR as _,

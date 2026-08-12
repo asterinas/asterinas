@@ -9,7 +9,11 @@ use crate::{
     security::lsm::hooks as lsm_hooks,
 };
 
-pub fn sys_setgroups(size: usize, group_list_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_setgroups(
+    size: usize,
+    group_list_addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("size = {}, group_list_addr = 0x{:x}", size, group_list_addr);
 
     lsm_hooks::on_capable(lsm_hooks::CapableContext::new(

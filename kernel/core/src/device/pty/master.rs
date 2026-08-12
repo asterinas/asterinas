@@ -33,7 +33,7 @@ const IO_CAPACITY: usize = 4096;
 ///    driver (i.e., [`PtyDriver`]).
 ///
 /// [`Tty`]: crate::device::tty::Tty
-pub struct PtyMaster {
+pub(crate) struct PtyMaster {
     ptmx: Arc<Ptmx>,
     slave: Arc<PtySlave>,
 }

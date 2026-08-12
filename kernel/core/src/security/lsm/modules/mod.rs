@@ -29,7 +29,7 @@
 //! mandatory modules plus the default optional stack are used.
 
 mod capability;
-pub mod yama;
+pub(crate) mod yama;
 
 use spin::Once;
 

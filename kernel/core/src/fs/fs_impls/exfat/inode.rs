@@ -44,10 +44,10 @@ use crate::{
 };
 
 /// Inode number
-pub type Ino = u64;
+pub(crate) type Ino = u64;
 
 bitflags! {
-    pub struct FatAttr : u16{
+    pub(crate) struct FatAttr : u16{
         /// This inode is read only.
         const READONLY  = 0x0001;
         /// This inode is hidden. This attribute is not supported in our implementation.
@@ -80,7 +80,7 @@ impl FatAttr {
 }
 
 #[derive(Debug)]
-pub struct ExfatInode {
+pub(crate) struct ExfatInode {
     inner: RwMutex<ExfatInodeInner>,
     extension: Extension,
 }

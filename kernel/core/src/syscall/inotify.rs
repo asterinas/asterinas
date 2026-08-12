@@ -16,11 +16,11 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_inotify_init(ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_inotify_init(ctx: &Context) -> Result<SyscallReturn> {
     do_inotify_init(0, ctx)
 }
 
-pub fn sys_inotify_init1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_inotify_init1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     do_inotify_init(flags, ctx)
 }
 
@@ -40,7 +40,7 @@ fn do_inotify_init(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(fd.into()))
 }
 
-pub fn sys_inotify_add_watch(
+pub(super) fn sys_inotify_add_watch(
     raw_fd: RawFileDesc,
     path: Vaddr,
     flags: u32,
@@ -102,7 +102,11 @@ pub fn sys_inotify_add_watch(
     Ok(SyscallReturn::Return(wd as _))
 }
 
-pub fn sys_inotify_rm_watch(raw_fd: RawFileDesc, wd: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_inotify_rm_watch(
+    raw_fd: RawFileDesc,
+    wd: u32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("inotify_rm_watch raw_fd = {}, wd = {}", raw_fd, wd);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();

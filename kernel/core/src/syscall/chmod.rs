@@ -14,7 +14,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fchmod(raw_fd: RawFileDesc, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_fchmod(raw_fd: RawFileDesc, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
     debug!("raw_fd = {}, mode = 0o{:o}", raw_fd, mode);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
@@ -24,11 +24,11 @@ pub fn sys_fchmod(raw_fd: RawFileDesc, mode: u16, ctx: &Context) -> Result<Sysca
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_chmod(path_ptr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_chmod(path_ptr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
     do_fchmodat(AT_FDCWD, path_ptr, mode, ChmodFlags::empty(), ctx)
 }
 
-pub fn sys_fchmodat(
+pub(super) fn sys_fchmodat(
     dirfd: RawFileDesc,
     path_ptr: Vaddr,
     mode: u16,
@@ -37,7 +37,7 @@ pub fn sys_fchmodat(
     do_fchmodat(dirfd, path_ptr, mode, ChmodFlags::empty(), ctx)
 }
 
-pub fn sys_fchmodat2(
+pub(super) fn sys_fchmodat2(
     dirfd: RawFileDesc,
     path_ptr: Vaddr,
     mode: u16,

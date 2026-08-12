@@ -16,7 +16,7 @@ use crate::{
 #[expect(clippy::upper_case_acronyms)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum CTcpOptionName {
+pub(crate) enum CTcpOptionName {
     /// Turn off Nagle's algorithm
     NODELAY = 1,
     /// Limit MSS
@@ -43,7 +43,7 @@ pub enum CTcpOptionName {
     INQ = 36,
 }
 
-pub fn new_tcp_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
+pub(crate) fn new_tcp_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     let name = CTcpOptionName::try_from(name).map_err(|_| Errno::ENOPROTOOPT)?;
     match name {
         CTcpOptionName::NODELAY => Ok(Box::new(NoDelay::new())),

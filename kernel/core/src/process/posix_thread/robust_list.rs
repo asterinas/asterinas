@@ -19,7 +19,7 @@ struct RobustList {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct RobustListHead {
+pub(crate) struct RobustListHead {
     /// Linked list of lock entries
     ///
     /// If it points to the head of the list, then it is the end of the list.
@@ -39,7 +39,7 @@ impl RobustListHead {
     ///
     /// The futex referred to by `list_op_pending`, if any, will be returned as
     /// the last item.
-    pub fn futexes(&self) -> FutexIter<'_> {
+    pub(crate) fn futexes(&self) -> FutexIter<'_> {
         FutexIter::new(self)
     }
 
@@ -60,14 +60,14 @@ impl RobustListHead {
     }
 }
 
-pub struct FutexIter<'a> {
+pub(crate) struct FutexIter<'a> {
     robust_list: &'a RobustListHead,
     entry_ptr: Vaddr,
     count: isize,
 }
 
 impl<'a> FutexIter<'a> {
-    pub fn new(robust_list: &'a RobustListHead) -> Self {
+    pub(crate) fn new(robust_list: &'a RobustListHead) -> Self {
         Self {
             robust_list,
             entry_ptr: robust_list.list.next,
@@ -134,7 +134,7 @@ const FUTEX_TID_MASK: u32 = 0x3FFF_FFFF;
 /// If the futex at `futex_addr` is still owned by `tid`, it is marked with
 /// `FUTEX_OWNER_DIED` and one waiter (if any) is woken.
 /// If the futex is owned by another thread, the operation is canceled.
-pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
+pub(crate) fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
     if !futex_addr.is_multiple_of(align_of::<u32>()) {
         return_errno_with_message!(
             Errno::EINVAL,

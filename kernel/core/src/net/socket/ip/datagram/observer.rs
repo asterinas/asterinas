@@ -4,7 +4,7 @@ use aster_bigtcp::socket::{SocketEventObserver, SocketEvents};
 
 use crate::{events::IoEvents, process::signal::Pollee};
 
-pub struct DatagramObserver(Pollee);
+pub(crate) struct DatagramObserver(Pollee);
 
 impl DatagramObserver {
     pub(super) fn new(pollee: Pollee) -> Self {

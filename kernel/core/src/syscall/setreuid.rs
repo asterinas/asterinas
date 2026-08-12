@@ -6,7 +6,7 @@ use crate::{
     process::{Uid, posix_thread::ContextPthreadAdminApi},
 };
 
-pub fn sys_setreuid(ruid: i32, euid: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_setreuid(ruid: i32, euid: i32, ctx: &Context) -> Result<SyscallReturn> {
     let ruid = if ruid >= 0 {
         Some(Uid::new(ruid.cast_unsigned()))
     } else {

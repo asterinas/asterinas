@@ -5,7 +5,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_getresgid(
+pub(super) fn sys_getresgid(
     rgid_ptr: Vaddr,
     egid_ptr: Vaddr,
     sgid_ptr: Vaddr,

@@ -20,20 +20,20 @@ pub(super) fn init() {
     let _ = PidfdFs::mount_node();
 }
 
-pub struct PidfdFs {
+pub(crate) struct PidfdFs {
     _private: (),
 }
 
 impl PidfdFs {
     /// Returns the singleton instance of the pidfd file system.
-    pub fn singleton() -> &'static Arc<NaivePseudoFs> {
+    pub(crate) fn singleton() -> &'static Arc<NaivePseudoFs> {
         static PIDFDFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
         NaivePseudoFs::singleton(&PIDFDFS, "pidfdfs", PIDFDFS_MAGIC)
     }
 
     /// Creates a pseudo `Path` for a pidfd.
-    pub fn new_path(name_fn: fn(&dyn Inode) -> String) -> Path {
+    pub(crate) fn new_path(name_fn: fn(&dyn Inode) -> String) -> Path {
         Path::new_pseudo(
             Self::mount_node().clone(),
             Self::shared_inode().clone(),
@@ -42,14 +42,14 @@ impl PidfdFs {
     }
 
     /// Returns the pseudo mount node of the pidfd file system.
-    pub fn mount_node() -> &'static Arc<Mount> {
+    pub(crate) fn mount_node() -> &'static Arc<Mount> {
         static PIDFDFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
         PIDFDFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
     }
 
     /// Returns the shared inode of the pidfd file system.
-    pub fn shared_inode() -> &'static Arc<dyn Inode> {
+    pub(crate) fn shared_inode() -> &'static Arc<dyn Inode> {
         static SHARED_INODE: Once<Arc<dyn Inode>> = Once::new();
 
         SHARED_INODE.call_once(|| {

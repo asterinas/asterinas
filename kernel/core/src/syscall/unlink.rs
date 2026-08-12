@@ -10,7 +10,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_unlinkat(
+pub(super) fn sys_unlinkat(
     dirfd: RawFileDesc,
     path_addr: Vaddr,
     flags: u32,
@@ -58,7 +58,7 @@ pub fn sys_unlinkat(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_unlink(path_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_unlink(path_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     sys_unlinkat(AT_FDCWD, path_addr, 0, ctx)
 }
 

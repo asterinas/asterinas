@@ -16,7 +16,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_getxattr(
+pub(super) fn sys_getxattr(
     path_ptr: Vaddr,
     name_ptr: Vaddr,
     value_ptr: Vaddr,
@@ -38,7 +38,7 @@ pub fn sys_getxattr(
     Ok(SyscallReturn::Return(len as _))
 }
 
-pub fn sys_lgetxattr(
+pub(super) fn sys_lgetxattr(
     path_ptr: Vaddr,
     name_ptr: Vaddr,
     value_ptr: Vaddr,
@@ -60,7 +60,7 @@ pub fn sys_lgetxattr(
     Ok(SyscallReturn::Return(len as _))
 }
 
-pub fn sys_fgetxattr(
+pub(super) fn sys_fgetxattr(
     raw_fd: RawFileDesc,
     name_ptr: Vaddr,
     value_ptr: Vaddr,

@@ -8,7 +8,7 @@ use crate::{
     time::{SystemTime, timeval_t, timezone_t},
 };
 
-pub fn sys_gettimeofday(
+pub(super) fn sys_gettimeofday(
     timeval_addr: Vaddr,
     timezone_addr: Vaddr,
     ctx: &Context,

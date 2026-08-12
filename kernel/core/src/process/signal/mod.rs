@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod c_types;
-pub mod constants;
+pub(crate) mod c_types;
+pub(crate) mod constants;
 mod pause;
 mod pending;
 mod poll;
-pub mod sig_action;
-pub mod sig_disposition;
-pub mod sig_mask;
-pub mod sig_num;
-pub mod sig_queues;
+pub(crate) mod sig_action;
+pub(crate) mod sig_disposition;
+pub(crate) mod sig_mask;
+pub(crate) mod sig_num;
+pub(crate) mod sig_queues;
 mod sig_stack;
-pub mod signals;
+pub(crate) mod signals;
 
 use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
@@ -21,13 +21,13 @@ use ostd::{
     mm::VmIo,
     user::UserContextApi,
 };
-pub use pause::{Pause, PauseReason, with_sigmask_changed};
-pub use pending::{DequeuedSignal, HandlePendingSignal};
-pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
+pub(crate) use pause::{Pause, PauseReason, with_sigmask_changed};
+pub(crate) use pending::{DequeuedSignal, HandlePendingSignal};
+pub(crate) use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
 use sig_mask::SigMask;
 use sig_num::SigNum;
-pub use sig_stack::{SigStack, SigStackFlags, SigStackStatus};
+pub(crate) use sig_stack::{SigStack, SigStackFlags, SigStackStatus};
 
 use super::posix_thread::ThreadLocal;
 use crate::{
@@ -40,13 +40,13 @@ use crate::{
     },
 };
 
-pub trait SignalContext {
+pub(crate) trait SignalContext {
     /// Sets signal handler arguments.
     fn set_arguments(&mut self, sig_num: SigNum, siginfo_addr: usize, ucontext_addr: usize);
 }
 
 /// Handles a pending signal for the current process.
-pub fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
+pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
     // FIXME: This function may handle or suppress only one signal per trap, delaying
     // other pending unmasked signals until the next trap. Consider a looped scan.
     //
@@ -279,7 +279,7 @@ fn get_sig_action(ctx: &Context, sig_num: SigNum) -> SigAction {
 }
 
 #[expect(clippy::too_many_arguments)]
-pub fn handle_user_signal(
+pub(crate) fn handle_user_signal(
     ctx: &Context,
     sig_num: SigNum,
     handler_addr: Vaddr,

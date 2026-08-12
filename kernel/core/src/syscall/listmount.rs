@@ -37,7 +37,7 @@ struct MntIdReq {
 
 const _: () = assert!(size_of::<MntIdReq>() as u32 == MNT_ID_REQ_SIZE_VER0);
 
-pub fn sys_listmount(
+pub(super) fn sys_listmount(
     req_ptr: Vaddr,
     mnt_ids_ptr: Vaddr,
     nr_mnt_ids: usize,

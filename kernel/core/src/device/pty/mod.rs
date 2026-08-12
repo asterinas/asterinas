@@ -18,10 +18,10 @@ mod ioctl_defs;
 mod master;
 mod packet;
 
-pub use driver::PtySlave;
-pub use master::PtyMaster;
+pub(crate) use driver::PtySlave;
+pub(crate) use master::PtyMaster;
 
-pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Result<()> {
+pub(crate) fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Result<()> {
     let dev = path_resolver.lookup(&FsPath::try_from("/dev")?)?;
 
     // Create the "pts" directory and mount devpts on it.
@@ -40,7 +40,7 @@ pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Res
     Ok(())
 }
 
-pub fn new_pty_pair(index: u32, ptmx: Arc<Ptmx>) -> Result<(Box<PtyMaster>, Arc<PtySlave>)> {
+pub(crate) fn new_pty_pair(index: u32, ptmx: Arc<Ptmx>) -> Result<(Box<PtyMaster>, Arc<PtySlave>)> {
     debug!("pty index = {}", index);
     let master = PtyMaster::new(ptmx, index);
     let slave = master.slave().clone();

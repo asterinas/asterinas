@@ -28,18 +28,18 @@ use crate::{
 /// a [`RawFileDesc`] in an explicit, syscall-specific way,
 /// and then convert that value to a `FileDesc`.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct FileDesc(RangedU32<0, { i32::MAX as _ }>);
+pub(crate) struct FileDesc(RangedU32<0, { i32::MAX as _ }>);
 
 /// A raw file descriptor as received from or returned to user space.
 ///
 /// This is the `int` type from Linux syscall signatures.
 /// It may hold negative sentinel values like `AT_FDCWD` (-100).
 /// Convert to [`FileDesc`] via `TryFrom` before use.
-pub type RawFileDesc = i32;
+pub(crate) type RawFileDesc = i32;
 
 impl FileDesc {
     /// File descriptor 0.
-    pub const ZERO: Self = Self(RangedU32::new(0));
+    pub(crate) const ZERO: Self = Self(RangedU32::new(0));
 }
 
 impl Display for FileDesc {
@@ -102,27 +102,27 @@ impl TryFrom<RawFileDesc> for FileDesc {
 /// A file table is created within an [`RwArc`] and remains within it (see [`Self::new`] and
 /// [`Self::fork_from`]). The file table's address is used as a [`RangeLockOwner`], so users should
 /// not try to move the file table to a different address.
-pub struct FileTable {
+pub(crate) struct FileTable {
     table: SlotVec<FileTableEntry>,
 }
 
 impl FileTable {
     /// Creates a new file table.
-    pub fn new() -> RwArc<Self> {
+    pub(crate) fn new() -> RwArc<Self> {
         RwArc::new(Self {
             table: SlotVec::new(),
         })
     }
 
     /// Creates a new file table containing clones of all entries in `parent`.
-    pub fn fork_from(parent: &Self) -> RwArc<Self> {
+    pub(crate) fn fork_from(parent: &Self) -> RwArc<Self> {
         RwArc::new(Self {
             table: parent.table.clone(),
         })
     }
 
     /// Returns the range-lock owner of `file_table`.
-    pub fn range_lock_owner(file_table: &RwArc<Self>) -> RangeLockOwner {
+    pub(crate) fn range_lock_owner(file_table: &RwArc<Self>) -> RangeLockOwner {
         RangeLockOwner::from_address(file_table.as_ptr().addr())
     }
 
@@ -130,13 +130,13 @@ impl FileTable {
         RangeLockOwner::from_address(self as *const Self as usize)
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.table.slots_len()
     }
 
     /// Duplicates `fd` onto the lowest-numbered available descriptor equal to
     /// or greater than `ceil_fd`.
-    pub fn dup_ceil(
+    pub(crate) fn dup_ceil(
         &mut self,
         fd: FileDesc,
         ceil_fd: FileDesc,
@@ -166,7 +166,7 @@ impl FileTable {
     }
 
     /// Duplicates `fd` onto the exact descriptor number `new_fd`.
-    pub fn dup_exact(
+    pub(crate) fn dup_exact(
         &mut self,
         fd: FileDesc,
         new_fd: FileDesc,
@@ -187,13 +187,13 @@ impl FileTable {
         Ok(FileTableEntry::new(file, flags))
     }
 
-    pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {
+    pub(crate) fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {
         let entry = FileTableEntry::new(item, flags);
         // Resource limits guarantee the table never exceeds `i32::MAX` entries.
         (self.table.put(entry) as RawFileDesc).try_into().unwrap()
     }
 
-    pub fn close_file(&mut self, fd: FileDesc) -> Option<ClosedFile> {
+    pub(crate) fn close_file(&mut self, fd: FileDesc) -> Option<ClosedFile> {
         let removed_entry = self.table.remove(fd.into())?;
         // POSIX record locks are process-associated and Linux drops them when any fd for the inode is
         // closed by that process, even if duplicated descriptors still exist.
@@ -205,7 +205,7 @@ impl FileTable {
         ))
     }
 
-    pub fn close_files_on_exec(&mut self) -> Vec<ClosedFile> {
+    pub(crate) fn close_files_on_exec(&mut self) -> Vec<ClosedFile> {
         self.close_files(|entry| entry.flags().contains(FdFlags::CLOEXEC))
     }
 
@@ -234,26 +234,26 @@ impl FileTable {
         closed_files
     }
 
-    pub fn get_file(&self, fd: FileDesc) -> Result<&Arc<dyn FileLike>> {
+    pub(crate) fn get_file(&self, fd: FileDesc) -> Result<&Arc<dyn FileLike>> {
         self.table
             .get(fd.into())
             .map(|entry| entry.file())
             .ok_or_else(|| Error::with_message(Errno::EBADF, "the FD does not exist"))
     }
 
-    pub fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
+    pub(crate) fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
         self.table
             .get(fd.into())
             .ok_or_else(|| Error::with_message(Errno::EBADF, "the FD does not exist"))
     }
 
-    pub fn get_entry_mut(&mut self, fd: FileDesc) -> Result<&mut FileTableEntry> {
+    pub(crate) fn get_entry_mut(&mut self, fd: FileDesc) -> Result<&mut FileTableEntry> {
         self.table
             .get_mut(fd.into())
             .ok_or_else(|| Error::with_message(Errno::EBADF, "the FD does not exist"))
     }
 
-    pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {
+    pub(crate) fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {
         // Resource limits guarantee the table never exceeds `i32::MAX` entries.
         self.table
             .idxes_and_items()
@@ -275,7 +275,7 @@ impl Drop for FileTable {
 ///
 /// Dropping this value may block, so it must be dropped after releasing the file-table lock.
 #[must_use = "close cleanup runs when this value is dropped"]
-pub struct ClosedFile {
+pub(crate) struct ClosedFile {
     file: Arc<dyn FileLike>,
     range_lock_owner: RangeLockOwner,
 }
@@ -289,7 +289,7 @@ impl ClosedFile {
     }
 
     /// Returns the removed file.
-    pub fn file(&self) -> &Arc<dyn FileLike> {
+    pub(crate) fn file(&self) -> &Arc<dyn FileLike> {
         &self.file
     }
 }
@@ -303,7 +303,7 @@ impl Drop for ClosedFile {
 }
 
 /// A helper trait that provides methods to operate the file table.
-pub trait WithFileTable {
+pub(crate) trait WithFileTable {
     /// Calls `f` with the file table.
     ///
     /// This method is lockless if the file table is not shared. Otherwise, `f` is called while
@@ -369,28 +369,28 @@ macro_rules! get_file_fast {
 
 pub(crate) use get_file_fast;
 
-pub struct FileTableEntry {
+pub(crate) struct FileTableEntry {
     file: Arc<dyn FileLike>,
     flags: AtomicU8,
 }
 
 impl FileTableEntry {
-    pub fn new(file: Arc<dyn FileLike>, flags: FdFlags) -> Self {
+    pub(crate) fn new(file: Arc<dyn FileLike>, flags: FdFlags) -> Self {
         Self {
             file,
             flags: AtomicU8::new(flags.bits()),
         }
     }
 
-    pub fn file(&self) -> &Arc<dyn FileLike> {
+    pub(crate) fn file(&self) -> &Arc<dyn FileLike> {
         &self.file
     }
 
-    pub fn flags(&self) -> FdFlags {
+    pub(crate) fn flags(&self) -> FdFlags {
         FdFlags::from_bits(self.flags.load(Ordering::Relaxed)).unwrap()
     }
 
-    pub fn set_flags(&self, flags: FdFlags) {
+    pub(crate) fn set_flags(&self, flags: FdFlags) {
         self.flags.store(flags.bits(), Ordering::Relaxed);
     }
 }
@@ -405,7 +405,7 @@ impl Clone for FileTableEntry {
 }
 
 bitflags! {
-    pub struct FdFlags: u8 {
+    pub(crate) struct FdFlags: u8 {
         /// Close on exec
         const CLOEXEC = 1;
     }

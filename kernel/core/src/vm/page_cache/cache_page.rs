@@ -18,7 +18,7 @@ use crate::prelude::*;
 /// The state of a page in the page cache.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum PageState {
+pub(crate) enum PageState {
     /// `Uninit` indicates a new allocated page which content has not been initialized.
     /// The page is available to write, not available to read or map.
     Uninit = 0,
@@ -67,11 +67,11 @@ impl PageState {
 }
 
 /// A page in the page cache.
-pub type CachePage = Frame<CachePageMeta>;
+pub(crate) type CachePage = Frame<CachePageMeta>;
 
 /// Metadata for a page in the page cache.
 #[derive(Debug)]
-pub struct CachePageMeta {
+pub(crate) struct CachePageMeta {
     /// The current state of the page (uninit, up-to-date, or dirty).
     state: AtomicPageState,
     /// This bit acts as a mutex for the corresponding page.
@@ -107,7 +107,7 @@ impl_untyped_frame_meta_for!(CachePageMeta);
 ///
 /// Implemented for every [`CachePage`], this gives access to the page lock,
 /// the per-page wait queue, and lifecycle helpers used during page commit.
-pub trait CachePageExt: Sized {
+pub(crate) trait CachePageExt: Sized {
     /// Gets the metadata associated with the cache page.
     fn metadata(&self) -> &CachePageMeta;
 
@@ -246,13 +246,13 @@ impl CachePageExt for CachePage {
 ///
 /// Use [`LockedCachePageGuard`] when the lock should borrow an existing
 /// [`CachePage`] instead of taking ownership of it.
-pub struct LockedCachePage<PageRef: Borrow<CachePage> = CachePage> {
+pub(crate) struct LockedCachePage<PageRef: Borrow<CachePage> = CachePage> {
     page: Option<PageRef>,
     wait_queue: &'static WaitQueue,
 }
 
 /// A borrowed guard for a locked cache page.
-pub type LockedCachePageGuard<'a> = LockedCachePage<&'a CachePage>;
+pub(crate) type LockedCachePageGuard<'a> = LockedCachePage<&'a CachePage>;
 
 impl<PageRef: Borrow<CachePage>> Debug for LockedCachePage<PageRef> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
@@ -278,7 +278,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
     ///
     /// This indicates that the page's contents are synchronized with disk
     /// and can be safely read.
-    pub fn set_up_to_date(&self) {
+    pub(crate) fn set_up_to_date(&self) {
         self.page()
             .metadata()
             .state
@@ -289,7 +289,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
     ///
     /// This indicates that the page has been modified and needs to be
     /// written back to disk eventually.
-    pub fn set_dirty(&self) {
+    pub(crate) fn set_dirty(&self) {
         self.metadata()
             .state
             .store(PageState::Dirty, Ordering::Release);
@@ -307,7 +307,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
 
     /// Sets the writing back flag of the page, indicating that the page
     /// is in-flight to storage.
-    pub fn set_writing_back(&self) {
+    pub(crate) fn set_writing_back(&self) {
         self.metadata()
             .is_writing_back
             .store(true, Ordering::Release);
@@ -316,7 +316,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
     /// Waits until the page finishes writing back to storage.
     ///
     /// This function will wait on the same wait queue used for locking the page.
-    pub fn wait_until_finish_writing_back(&self) {
+    pub(crate) fn wait_until_finish_writing_back(&self) {
         self.wait_queue
             .wait_until(|| (!self.is_writing_back()).then_some(()));
     }
@@ -329,7 +329,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
 
 impl LockedCachePage<CachePage> {
     /// Unlocks the page and returns the underlying cache page.
-    pub fn unlock(mut self) -> CachePage {
+    pub(crate) fn unlock(mut self) -> CachePage {
         let page = self.page.take().expect("page already taken");
         unlock_page(&page, self.wait_queue);
         page

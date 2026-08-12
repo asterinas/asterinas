@@ -11,7 +11,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_mkdirat(
+pub(super) fn sys_mkdirat(
     dirfd: RawFileDesc,
     path_addr: Vaddr,
     mode: u16,
@@ -40,6 +40,6 @@ pub fn sys_mkdirat(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_mkdir(path_addr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_mkdir(path_addr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
     sys_mkdirat(AT_FDCWD, path_addr, mode, ctx)
 }

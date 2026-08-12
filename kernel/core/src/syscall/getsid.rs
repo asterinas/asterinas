@@ -6,7 +6,7 @@ use crate::{
     process::{Pid, pid_table},
 };
 
-pub fn sys_getsid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_getsid(pid: Pid, ctx: &Context) -> Result<SyscallReturn> {
     debug!("pid = {}", pid);
 
     // The documentation quoted below is from

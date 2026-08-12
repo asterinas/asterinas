@@ -7,7 +7,7 @@ use crate::{
     util::net::{CSocketOptionLevel, new_raw_socket_option},
 };
 
-pub fn sys_setsockopt(
+pub(super) fn sys_setsockopt(
     sockfd: RawFileDesc,
     level: i32,
     optname: i32,

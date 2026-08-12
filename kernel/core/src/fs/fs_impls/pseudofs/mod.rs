@@ -25,16 +25,16 @@ use core::{
     time::Duration,
 };
 
-pub use allocator::AnonDeviceId;
-pub use anon_inodefs::AnonInodeFs;
+pub(crate) use allocator::AnonDeviceId;
+pub(crate) use anon_inodefs::AnonInodeFs;
 use device_id::DeviceId;
 pub(in crate::fs) use nsfs::NsInode;
-pub use nsfs::{NsCommonOps, NsFile, NsType, StashedDentry};
+pub(crate) use nsfs::{NsCommonOps, NsFile, NsType, StashedDentry};
 pub(in crate::fs) use nullfs::NullFs;
-pub use pidfdfs::PidfdFs;
+pub(crate) use pidfdfs::PidfdFs;
 pub(in crate::fs) use pipefs::PipeFs;
 use pipefs::PipeFsType;
-pub use sockfs::SockFs;
+pub(crate) use sockfs::SockFs;
 use sockfs::SockFsType;
 use spin::Once;
 
@@ -61,7 +61,7 @@ mod pipefs;
 mod sockfs;
 
 /// A pseudo file system that manages pseudo inodes, such as pipe inodes and socket inodes.
-pub struct NaivePseudoFs {
+pub(crate) struct NaivePseudoFs {
     name: &'static str,
     _anon_device_id: AnonDeviceId,
     sb: SuperBlock,
@@ -124,7 +124,7 @@ impl NaivePseudoFs {
         })
     }
 
-    pub fn alloc_inode(
+    pub(crate) fn alloc_inode(
         self: &Arc<Self>,
         type_: PseudoInodeType,
         mode: InodeMode,
@@ -168,7 +168,7 @@ pub(super) fn init() {
 const ROOT_INO: u64 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PseudoInodeType {
+pub(crate) enum PseudoInodeType {
     Root,
     Pipe,
     Socket,
@@ -191,7 +191,7 @@ impl From<PseudoInodeType> for InodeType {
 }
 
 /// A pseudo inode that does not correspond to any real path in the file system.
-pub struct PseudoInode {
+pub(crate) struct PseudoInode {
     metadata: SpinLock<Metadata>,
     extension: Extension,
     fs: Weak<NaivePseudoFs>,

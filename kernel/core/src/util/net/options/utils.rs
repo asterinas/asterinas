@@ -24,7 +24,7 @@ use crate::{
 ///
 /// In addition, since the user space is not trusted by the kernel, values read
 /// from the user space must be validated by the kernel.
-pub trait ReadFromUser: Sized {
+pub(crate) trait ReadFromUser: Sized {
     /// Read a struct from user space by reading its C counterpart.
     fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self>;
 }
@@ -35,7 +35,7 @@ pub trait ReadFromUser: Sized {
 /// in the kernel space. But the format should be consistent with `ReadFromUser`, i.e,
 /// if we call `read_from_user` and `write_from_user` for the same type, the read value
 /// and write value in user space should be of same type.
-pub trait WriteToUser {
+pub(crate) trait WriteToUser {
     // Write a struct to user space by writing its C counterpart.
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize>;
 }

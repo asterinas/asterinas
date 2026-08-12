@@ -16,7 +16,7 @@ use crate::{
 #[expect(clippy::upper_case_acronyms)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum CIpOptionName {
+pub(crate) enum CIpOptionName {
     TOS = 1,
     TTL = 2,
     HDRINCL = 3,
@@ -64,7 +64,7 @@ pub enum CIpOptionName {
     UNICAST_IF = 50,
 }
 
-pub fn new_ip_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
+pub(crate) fn new_ip_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     let name = CIpOptionName::try_from(name).map_err(|_| Errno::ENOPROTOOPT)?;
     match name {
         CIpOptionName::TOS => Ok(Box::new(Tos::new())),

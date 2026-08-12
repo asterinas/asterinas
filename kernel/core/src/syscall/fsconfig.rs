@@ -11,7 +11,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fsconfig(
+pub(super) fn sys_fsconfig(
     fs_fd: RawFileDesc,
     cmd: u32,
     key_addr: Vaddr,

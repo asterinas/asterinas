@@ -13,7 +13,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_renameat2(
+pub(super) fn sys_renameat2(
     old_dirfd: RawFileDesc,
     old_path_addr: Vaddr,
     new_dirfd: RawFileDesc,
@@ -84,7 +84,7 @@ pub fn sys_renameat2(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_renameat(
+pub(super) fn sys_renameat(
     old_dirfd: RawFileDesc,
     old_path_addr: Vaddr,
     new_dirfd: RawFileDesc,
@@ -94,7 +94,7 @@ pub fn sys_renameat(
     sys_renameat2(old_dirfd, old_path_addr, new_dirfd, new_path_addr, 0, ctx)
 }
 
-pub fn sys_rename(
+pub(super) fn sys_rename(
     old_path_addr: Vaddr,
     new_path_addr: Vaddr,
     ctx: &Context,

@@ -6,19 +6,19 @@ mod init;
 mod poll;
 mod sched;
 
-pub use broadcast::is_broadcast_endpoint;
-pub use init::{init, iter_all_ifaces, loopback_iface, virtio_iface};
+pub(crate) use broadcast::is_broadcast_endpoint;
+pub(crate) use init::{init, iter_all_ifaces, loopback_iface, virtio_iface};
 pub(super) use poll::init_in_first_kthread;
 
-pub type Iface = dyn aster_bigtcp::iface::Iface<ext::BigtcpExt>;
-pub type BoundTcpPort = aster_bigtcp::iface::BoundTcpPort<ext::BigtcpExt>;
-pub type BoundUdpPort = aster_bigtcp::iface::BoundUdpPort<ext::BigtcpExt>;
+pub(crate) type Iface = dyn aster_bigtcp::iface::Iface<ext::BigtcpExt>;
+pub(crate) type BoundTcpPort = aster_bigtcp::iface::BoundTcpPort<ext::BigtcpExt>;
+pub(crate) type BoundUdpPort = aster_bigtcp::iface::BoundUdpPort<ext::BigtcpExt>;
 
-pub type RawTcpSocketExt = aster_bigtcp::socket::RawTcpSocketExt<ext::BigtcpExt>;
+pub(crate) type RawTcpSocketExt = aster_bigtcp::socket::RawTcpSocketExt<ext::BigtcpExt>;
 
-pub type TcpConnection = aster_bigtcp::socket::TcpConnection<ext::BigtcpExt>;
-pub type TcpListener = aster_bigtcp::socket::TcpListener<ext::BigtcpExt>;
-pub type UdpSocket = aster_bigtcp::socket::UdpSocket<ext::BigtcpExt>;
+pub(crate) type TcpConnection = aster_bigtcp::socket::TcpConnection<ext::BigtcpExt>;
+pub(crate) type TcpListener = aster_bigtcp::socket::TcpListener<ext::BigtcpExt>;
+pub(crate) type UdpSocket = aster_bigtcp::socket::UdpSocket<ext::BigtcpExt>;
 
 /// The default transmit queue length.
 ///

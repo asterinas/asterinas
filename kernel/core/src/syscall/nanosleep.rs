@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-pub fn sys_nanosleep(
+pub(super) fn sys_nanosleep(
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
     ctx: &Context,
@@ -32,7 +32,7 @@ pub fn sys_nanosleep(
     )
 }
 
-pub fn sys_clock_nanosleep(
+pub(super) fn sys_clock_nanosleep(
     clockid: clockid_t,
     flags: i32,
     request_timespec_addr: Vaddr,

@@ -35,7 +35,7 @@ pub(super) const fn sched_priority_range(policy: LinuxSchedPolicy) -> RangeInclu
     }
 }
 
-pub fn sys_sched_get_priority_max(policy: u32, _: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_sched_get_priority_max(policy: u32, _: &Context) -> Result<SyscallReturn> {
     let linux_policy = LinuxSchedPolicy::try_from(policy)?;
     let range = sched_priority_range(linux_policy);
     Ok(SyscallReturn::Return(*range.end() as isize))

@@ -7,7 +7,7 @@ use crate::prelude::*;
 #[expect(non_camel_case_types)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum SockShutdownCmd {
+pub(crate) enum SockShutdownCmd {
     /// Shutdown receptions
     SHUT_RD = 0,
     /// Shutdown transmissions
@@ -17,11 +17,11 @@ pub enum SockShutdownCmd {
 }
 
 impl SockShutdownCmd {
-    pub fn shut_read(&self) -> bool {
+    pub(crate) fn shut_read(&self) -> bool {
         *self == Self::SHUT_RD || *self == Self::SHUT_RDWR
     }
 
-    pub fn shut_write(&self) -> bool {
+    pub(crate) fn shut_write(&self) -> bool {
         *self == Self::SHUT_WR || *self == Self::SHUT_RDWR
     }
 }

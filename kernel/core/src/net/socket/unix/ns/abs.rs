@@ -7,14 +7,14 @@ use keyable_arc::KeyableArc;
 use crate::prelude::*;
 
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct AbstractHandle(KeyableArc<[u8]>);
+pub(crate) struct AbstractHandle(KeyableArc<[u8]>);
 
 impl AbstractHandle {
     fn new(name: Arc<[u8]>) -> Self {
         Self(KeyableArc::from(name))
     }
 
-    pub fn name(&self) -> Arc<[u8]> {
+    pub(crate) fn name(&self) -> Arc<[u8]> {
         self.0.clone().into()
     }
 }
@@ -103,19 +103,19 @@ impl HandleTable {
     }
 }
 
-pub fn create_abstract_name(name: Arc<[u8]>) -> Result<Arc<AbstractHandle>> {
+pub(crate) fn create_abstract_name(name: Arc<[u8]>) -> Result<Arc<AbstractHandle>> {
     HANDLE_TABLE.create(name).ok_or_else(|| {
         Error::with_message(Errno::EADDRINUSE, "the abstract name is already in use")
     })
 }
 
-pub fn alloc_ephemeral_abstract_name() -> Result<Arc<AbstractHandle>> {
+pub(crate) fn alloc_ephemeral_abstract_name() -> Result<Arc<AbstractHandle>> {
     HANDLE_TABLE.alloc_ephemeral().ok_or_else(|| {
         Error::with_message(Errno::ENOSPC, "no ephemeral abstract name is available")
     })
 }
 
-pub fn lookup_abstract_name(name: &[u8]) -> Result<Arc<AbstractHandle>> {
+pub(crate) fn lookup_abstract_name(name: &[u8]) -> Result<Arc<AbstractHandle>> {
     HANDLE_TABLE
         .lookup(name)
         .ok_or_else(|| Error::with_message(Errno::ECONNREFUSED, "the abstract name does not exist"))

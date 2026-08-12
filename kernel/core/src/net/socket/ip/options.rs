@@ -106,21 +106,21 @@ impl IpOptionSet {
 }
 
 impl_socket_options!(
-    pub struct Tos(i32);
-    pub struct Ttl(IpTtl);
-    pub struct Hdrincl(bool);
-    pub struct Recverr(bool);
+    pub(crate) struct Tos(i32);
+    pub(crate) struct Ttl(IpTtl);
+    pub(crate) struct Hdrincl(bool);
+    pub(crate) struct Recverr(bool);
 );
 
 #[derive(Clone, Copy, Debug)]
-pub struct IpTtl(Option<NonZeroU8>);
+pub(crate) struct IpTtl(Option<NonZeroU8>);
 
 impl IpTtl {
-    pub const fn new(val: Option<NonZeroU8>) -> Self {
+    pub(crate) const fn new(val: Option<NonZeroU8>) -> Self {
         Self(val)
     }
 
-    pub const fn get(&self) -> u8 {
+    pub(crate) const fn get(&self) -> u8 {
         if let Some(val) = self.0 {
             val.get()
         } else {

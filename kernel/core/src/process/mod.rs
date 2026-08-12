@@ -1,48 +1,48 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod clone;
-pub mod credentials;
+pub(crate) mod credentials;
 mod execve;
 mod exit;
 mod kill;
 mod namespace;
 mod pid_file;
-pub mod pid_table;
-pub mod posix_thread;
+pub(crate) mod pid_table;
+pub(crate) mod posix_thread;
 #[expect(clippy::module_inception)]
 mod process;
 mod process_filter;
 mod process_vm;
 mod program_loader;
-pub mod rlimit;
-pub mod signal;
+pub(crate) mod rlimit;
+pub(crate) mod signal;
 mod stats;
 mod status;
-pub mod sync;
-pub mod task_set;
+pub(crate) mod sync;
+pub(crate) mod task_set;
 mod term_status;
 mod wait;
 
-pub use clone::{CloneArgs, CloneFlags, clone_child};
-pub use credentials::{Credentials, Gid, Uid};
-pub use execve::{ShebangScriptPath, do_execve};
-pub use kill::{kill, kill_all, kill_group, tgkill};
-pub use namespace::{
+pub(crate) use clone::{CloneArgs, CloneFlags, clone_child};
+pub(crate) use credentials::{Credentials, Gid, Uid};
+pub(crate) use execve::{ShebangScriptPath, do_execve};
+pub(crate) use kill::{kill, kill_all, kill_group, tgkill};
+pub(crate) use namespace::{
     nsproxy::{ContextSetNsAdminApi, NsProxy, NsProxyBuilder, check_unsupported_ns_flags},
     unshare::ContextUnshareAdminApi,
     user_ns::UserNamespace,
 };
-pub use pid_file::PidFile;
-pub use process::{
+pub(crate) use pid_file::PidFile;
+pub(crate) use process::{
     ExitCode, INIT_PROCESS_PID, JobControl, Pgid, Pid, Process, ProcessGroup, ReapedChildrenStats,
     Session, Sid, Terminal, broadcast_signal_async, enqueue_signal_async, spawn_init_process,
 };
-pub use process_filter::ProcessFilter;
-pub use process_vm::{INIT_STACK_SIZE, LockedHeap, ProcessVm, VmarSnapshot};
-pub use rlimit::ResourceType;
-pub use stats::collect_process_creation_count;
-pub use term_status::TermStatus;
-pub use wait::{WaitOptions, WaitStatus, do_wait};
+pub(crate) use process_filter::ProcessFilter;
+pub(crate) use process_vm::{INIT_STACK_SIZE, LockedHeap, ProcessVm, VmarSnapshot};
+pub(crate) use rlimit::ResourceType;
+pub(crate) use stats::collect_process_creation_count;
+pub(crate) use term_status::TermStatus;
+pub(crate) use wait::{WaitOptions, WaitStatus, do_wait};
 
 pub(super) fn init() {
     posix_thread::futex::init();

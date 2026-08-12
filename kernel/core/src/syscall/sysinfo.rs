@@ -27,7 +27,7 @@ struct SysInfo {
     mem_unit: u32,   /* Memory unit size in bytes */
 }
 
-pub fn sys_sysinfo(sysinfo_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_sysinfo(sysinfo_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     type SysinfoLoadAvg = FixedU64<16>;
 
     let loadavg = loadavg::get_loadavg();

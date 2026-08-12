@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod copy_compact;
-pub mod ioctl;
+pub(crate) mod ioctl;
 mod iovec;
-pub mod net;
-pub mod random;
+pub(crate) mod net;
+pub(crate) mod random;
 mod read_cstring;
-pub mod ring_buffer;
+pub(crate) mod ring_buffer;
 
-pub use copy_compact::CopyCompat;
-pub use iovec::{MultiRead, MultiWrite, VmReaderArray, VmWriterArray};
-pub use read_cstring::ReadCString;
+pub(crate) use copy_compact::CopyCompat;
+pub(crate) use iovec::{MultiRead, MultiWrite, VmReaderArray, VmWriterArray};
+pub(crate) use read_cstring::ReadCString;

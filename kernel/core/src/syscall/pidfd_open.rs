@@ -7,7 +7,7 @@ use crate::{
     syscall::SyscallReturn,
 };
 
-pub fn sys_pidfd_open(pid: Pid, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_pidfd_open(pid: Pid, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let is_nonblocking = {
         let flags = PidfdFlags::from_bits(flags)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;

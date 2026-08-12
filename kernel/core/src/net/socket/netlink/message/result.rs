@@ -8,7 +8,7 @@ use crate::prelude::*;
 /// If a method returns `Skipped` or `SkippedErr(E)`, it is the callee's responsibility to consume
 /// or skip the unreadable bytes so that the caller who receives this enum can keep reading from
 /// the next valid boundary.
-pub enum ContinueRead<T, E = Error> {
+pub(crate) enum ContinueRead<T, E = Error> {
     Parsed(T),
     Skipped,
     SkippedErr(E),
@@ -18,7 +18,7 @@ impl<T> ContinueRead<T, Error> {
     /// Creates a [`SkippedErr`] variant with the given error information.
     ///
     /// [`SkippedErr`]: Self::SkippedErr
-    pub fn skipped_with_error(errno: Errno, msg: &'static str) -> Self {
+    pub(crate) fn skipped_with_error(errno: Errno, msg: &'static str) -> Self {
         Self::SkippedErr(Error::with_message(errno, msg))
     }
 }
@@ -27,7 +27,7 @@ impl<T, E> ContinueRead<T, E> {
     /// Maps the value in the [`Parsed`] variant with `f`.
     ///
     /// [`Parsed`]: Self::Parsed
-    pub fn map<F, U>(self, f: F) -> ContinueRead<U, E>
+    pub(crate) fn map<F, U>(self, f: F) -> ContinueRead<U, E>
     where
         F: FnOnce(T) -> U,
     {
@@ -41,7 +41,7 @@ impl<T, E> ContinueRead<T, E> {
     /// Maps the error in the [`SkippedErr`] variant with `f`.
     ///
     /// [`SkippedErr`]: Self::SkippedErr
-    pub fn map_err<F, U>(self, f: F) -> ContinueRead<T, U>
+    pub(crate) fn map_err<F, U>(self, f: F) -> ContinueRead<T, U>
     where
         F: FnOnce(E) -> U,
     {

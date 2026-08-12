@@ -14,7 +14,11 @@ enum RusageTarget {
     Thread = 1,
 }
 
-pub fn sys_getrusage(target: i32, rusage_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_getrusage(
+    target: i32,
+    rusage_addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let rusage_target = RusageTarget::try_from(target)?;
 
     debug!(

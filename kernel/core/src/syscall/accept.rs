@@ -10,7 +10,7 @@ use crate::{
     util::net::write_socket_addr_to_user,
 };
 
-pub fn sys_accept(
+pub(super) fn sys_accept(
     sockfd: RawFileDesc,
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
@@ -21,7 +21,7 @@ pub fn sys_accept(
     do_accept(sockfd, sockaddr_ptr, addrlen_ptr, Flags::empty(), ctx)
 }
 
-pub fn sys_accept4(
+pub(super) fn sys_accept4(
     sockfd: RawFileDesc,
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,

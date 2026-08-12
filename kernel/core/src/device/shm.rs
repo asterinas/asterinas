@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Initializes "/dev/shm" for POSIX shared memory usage.
-pub fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Result<()> {
+pub(crate) fn init_in_first_process(path_resolver: &PathResolver, ctx: &Context) -> Result<()> {
     use crate::fs::file::InodeMode;
 
     let dev_path = path_resolver.lookup(&FsPath::try_from("/dev")?)?;

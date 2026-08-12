@@ -120,8 +120,8 @@ mod cache_page;
 mod tests;
 mod vmo;
 
-pub use cache_page::{CachePage, CachePageExt, CachePageMeta, LockedCachePage};
-pub use vmo::{Vmo, VmoCommitError, VmoFlags, VmoMapMode, VmoOptions};
+pub(crate) use cache_page::{CachePage, CachePageExt, CachePageMeta, LockedCachePage};
+pub(crate) use vmo::{Vmo, VmoCommitError, VmoFlags, VmoMapMode, VmoOptions};
 
 /// The page cache for a file-like object.
 ///
@@ -155,23 +155,26 @@ pub use vmo::{Vmo, VmoCommitError, VmoFlags, VmoMapMode, VmoOptions};
 /// memory mapping or page-fault code must operate on the underlying [`Vmo`]
 /// directly.
 #[derive(Debug)]
-pub struct PageCache(Arc<Vmo>);
+pub(crate) struct PageCache(Arc<Vmo>);
 
 impl PageCache {
     /// Creates a page cache with a backend and the specified initial capacity
     /// in bytes.
-    pub fn new_with_backend(size: usize, backend: Weak<dyn PageCacheBackend>) -> Result<Self> {
+    pub(crate) fn new_with_backend(
+        size: usize,
+        backend: Weak<dyn PageCacheBackend>,
+    ) -> Result<Self> {
         Ok(Self(VmoOptions::new_page_cache(size, backend).alloc()?))
     }
 
     /// Creates an anonymous page cache with the specified initial capacity in
     /// bytes.
-    pub fn new_anon(size: usize) -> Result<Self> {
+    pub(crate) fn new_anon(size: usize) -> Result<Self> {
         Ok(Self(VmoOptions::new_anon(size).alloc()?))
     }
 
     /// Returns the wrapped [`Vmo`].
-    pub fn as_vmo(&self) -> &Arc<Vmo> {
+    pub(crate) fn as_vmo(&self) -> &Arc<Vmo> {
         &self.0
     }
 
@@ -179,7 +182,7 @@ impl PageCache {
     ///
     /// This size is page-aligned and may exceed the file size. The filesystem
     /// remains responsible for tracking EOF separately.
-    pub fn size(&self) -> usize {
+    pub(crate) fn size(&self) -> usize {
         self.0.size()
     }
 
@@ -240,7 +243,7 @@ impl PageCache {
     /// page_cache.resize(file_size, old_file_size).unwrap();
     /// assert_eq!(page_cache.size(), PAGE_SIZE);
     /// ```
-    pub fn resize(&mut self, new_file_size: usize, old_file_size: usize) -> Result<()> {
+    pub(crate) fn resize(&mut self, new_file_size: usize, old_file_size: usize) -> Result<()> {
         let vmo = &self.0;
         assert!(vmo.flags.contains(VmoFlags::RESIZABLE));
 
@@ -291,7 +294,7 @@ impl PageCache {
     ///
     /// If the given range exceeds the current size of the page cache, only the pages within
     /// the valid range will be flushed.
-    pub fn flush_range(&self, range: Range<usize>) -> Result<()> {
+    pub(crate) fn flush_range(&self, range: Range<usize>) -> Result<()> {
         let Some(vmo) = self.0.as_backed_vmo() else {
             return Ok(());
         };
@@ -306,7 +309,7 @@ impl PageCache {
     /// is no longer needed and can be re-read from the backend if necessary
     /// (e.g., before direct I/O operations).
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
+    pub(crate) fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let Some(vmo) = self.0.as_backed_vmo() else {
             return Ok(());
         };
@@ -319,7 +322,7 @@ impl PageCache {
     /// This is the standard preparation step before issuing direct I/O that must
     /// bypass the page cache. It uses the same locking requirements as
     /// [`PageCache::flush_range`] and [`PageCache::evict_range`].
-    pub fn invalidate_range(&self, range: Range<usize>) -> Result<()> {
+    pub(crate) fn invalidate_range(&self, range: Range<usize>) -> Result<()> {
         let Some(vmo) = self.0.as_backed_vmo() else {
             return Ok(());
         };
@@ -332,7 +335,7 @@ impl PageCache {
     ///
     /// Callers must hold the filesystem-level lock that serializes operations in
     /// the target range.
-    pub fn fill_zeros(&self, range: Range<usize>) -> Result<()> {
+    pub(crate) fn fill_zeros(&self, range: Range<usize>) -> Result<()> {
         self.0.fill_zeros(range)
     }
 }
@@ -362,7 +365,7 @@ impl VmIo for PageCache {
 /// Direct implementations are useful for storage that does not naturally expose
 /// block-device BIOs, such as network filesystems. Filesystems backed by block
 /// devices usually implement [`BlockAsPageCacheBackend`] instead.
-pub trait PageCacheBackend: Sync + Send {
+pub(crate) trait PageCacheBackend: Sync + Send {
     /// Reads a page from the backend asynchronously.
     ///
     /// The caller may try to pass an index that exceeds the size of the
@@ -395,7 +398,7 @@ pub trait PageCacheBackend: Sync + Send {
 
 impl dyn PageCacheBackend {
     /// Reads a page from the backend synchronously.
-    pub fn read_page(&self, idx: usize, page: LockedCachePage) -> Result<()> {
+    pub(crate) fn read_page(&self, idx: usize, page: LockedCachePage) -> Result<()> {
         let mut io_batch = IoBatch::with_capacity(1);
         self.read_page_async(idx, page, &mut io_batch)?;
         io_batch.wait_all()?;
@@ -418,7 +421,7 @@ impl dyn PageCacheBackend {
 //
 // TODO: This trait should provide interfaces for reading or writing multiple
 // pages in a single BIO to improve efficiency for sequential I/O.
-pub trait BlockAsPageCacheBackend: Sync + Send {
+pub(crate) trait BlockAsPageCacheBackend: Sync + Send {
     /// Submits read I/O for the page at `idx`.
     ///
     /// `bio_segment` identifies the page memory that must receive the data.

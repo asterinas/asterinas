@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-pub enum ProcessFilter {
+pub(crate) enum ProcessFilter {
     Any,
     WithPid(Pid),
     WithPgid(Pgid),
@@ -17,7 +17,7 @@ pub enum ProcessFilter {
 
 impl ProcessFilter {
     // For `waitpid`.
-    pub fn from_which_and_id(which: u64, id: u32, ctx: &Context) -> Result<Self> {
+    pub(crate) fn from_which_and_id(which: u64, id: u32, ctx: &Context) -> Result<Self> {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.14.4/source/include/uapi/linux/wait.h#L16-L20>
         const P_ALL: u64 = 0;
@@ -46,7 +46,7 @@ impl ProcessFilter {
     }
 
     // For `wait4` and `kill`.
-    pub fn from_id(wait_pid: i32) -> Result<Self> {
+    pub(crate) fn from_id(wait_pid: i32) -> Result<Self> {
         // Reference:
         // <https://man7.org/linux/man-pages/man2/waitpid.2.html>
         // <https://man7.org/linux/man-pages/man2/kill.2.html>

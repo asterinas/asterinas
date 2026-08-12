@@ -12,7 +12,7 @@ use crate::{
 ///
 /// We currently support two kinds of terminal, the TTY and pty. They're associated with a
 /// `JobControl` to track the session and the foreground process group.
-pub trait Terminal: Device {
+pub(crate) trait Terminal: Device {
     /// Returns the job control of the terminal.
     fn job_control(&self) -> &JobControl;
 }
@@ -43,7 +43,11 @@ impl dyn Terminal {
     ///   `Err(_)`.
     /// - If the terminal does not recognize the ioctl command, it should return
     ///   `Ok(false)` to indicate that the ioctl command is not supported.
-    pub fn job_ioctl(self: Arc<Self>, raw_ioctl: RawIoctl, via_master: bool) -> Result<bool> {
+    pub(crate) fn job_ioctl(
+        self: Arc<Self>,
+        raw_ioctl: RawIoctl,
+        via_master: bool,
+    ) -> Result<bool> {
         use ioctl_defs::*;
 
         dispatch_ioctl!(match raw_ioctl {

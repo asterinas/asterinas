@@ -20,7 +20,7 @@ pub(super) fn init() {
     let _ = AnonInodeFs::mount_node();
 }
 
-pub struct AnonInodeFs {
+pub(crate) struct AnonInodeFs {
     _private: (),
 }
 
@@ -33,7 +33,7 @@ impl AnonInodeFs {
     }
 
     /// Creates a pseudo `Path` for the shared inode.
-    pub fn new_path(name_fn: fn(&dyn Inode) -> String) -> Path {
+    pub(crate) fn new_path(name_fn: fn(&dyn Inode) -> String) -> Path {
         Path::new_pseudo(
             Self::mount_node().clone(),
             Self::shared_inode().clone(),
@@ -42,7 +42,7 @@ impl AnonInodeFs {
     }
 
     /// Returns the pseudo mount node of the anonymous inode file system.
-    pub fn mount_node() -> &'static Arc<Mount> {
+    pub(crate) fn mount_node() -> &'static Arc<Mount> {
         static ANON_INODEFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
         ANON_INODEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
@@ -62,7 +62,7 @@ impl AnonInodeFs {
     // independent inodes within anon_inodefs for them in the future.
     //
     // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/anon_inodes.c#L153-L164>
-    pub fn shared_inode() -> &'static Arc<dyn Inode> {
+    pub(crate) fn shared_inode() -> &'static Arc<dyn Inode> {
         static SHARED_INODE: Once<Arc<dyn Inode>> = Once::new();
 
         SHARED_INODE.call_once(|| {

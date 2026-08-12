@@ -8,14 +8,14 @@ use super::vfs::path::PathResolver;
 use crate::prelude::*;
 
 /// FS information for a POSIX thread.
-pub struct ThreadFsInfo {
+pub(crate) struct ThreadFsInfo {
     resolver: RwMutex<PathResolver>,
     umask: AtomicFileCreationMask,
 }
 
 impl ThreadFsInfo {
     /// Creates a new `ThreadFsInfo` with the given [`PathResolver`].
-    pub fn new(path_resolver: PathResolver) -> Self {
+    pub(crate) fn new(path_resolver: PathResolver) -> Self {
         Self {
             resolver: RwMutex::new(path_resolver),
             umask: AtomicFileCreationMask::new(FileCreationMask::default()),
@@ -23,17 +23,17 @@ impl ThreadFsInfo {
     }
 
     /// Returns the associated `PathResolver`.
-    pub fn resolver(&self) -> &RwMutex<PathResolver> {
+    pub(crate) fn resolver(&self) -> &RwMutex<PathResolver> {
         &self.resolver
     }
 
     /// Returns the associated `FileCreationMask`.
-    pub fn umask(&self) -> FileCreationMask {
+    pub(crate) fn umask(&self) -> FileCreationMask {
         self.umask.load(Ordering::Acquire)
     }
 
     /// Sets a new `FileCreationMask`, returning the old one.
-    pub fn swap_umask(&self, new_mask: FileCreationMask) -> FileCreationMask {
+    pub(crate) fn swap_umask(&self, new_mask: FileCreationMask) -> FileCreationMask {
         self.umask.swap(new_mask, Ordering::AcqRel)
     }
 }
@@ -50,14 +50,14 @@ impl Clone for ThreadFsInfo {
 /// A mask for the file mode of a newly-created file or directory.
 ///
 /// This mask is always a subset of `0o777`.
-pub struct FileCreationMask(u16);
+pub(crate) struct FileCreationMask(u16);
 
 impl FileCreationMask {
     /// The valid bits of a `FileCreationMask`.
     const MASK: u16 = 0o777;
 
     /// Get a new value.
-    pub fn get(&self) -> u16 {
+    pub(crate) fn get(&self) -> u16 {
         self.0
     }
 }
@@ -92,5 +92,5 @@ impl From<FileCreationMask> for u16 {
 define_atomic_version_of_integer_like_type!(FileCreationMask, try_from = true, {
     /// An atomic version of `FileCreationMask`.
     #[derive(Debug)]
-    pub struct AtomicFileCreationMask(AtomicU16);
+    pub(crate) struct AtomicFileCreationMask(AtomicU16);
 });

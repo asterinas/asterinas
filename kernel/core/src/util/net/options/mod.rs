@@ -64,7 +64,7 @@ mod utils;
 
 use self::{socket::new_socket_option, tcp::new_tcp_option};
 
-pub trait RawSocketOption: SocketOption {
+pub(crate) trait RawSocketOption: SocketOption {
     fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()>;
 
     fn write_to_user(&self, addr: Vaddr, max_len: &mut u32) -> Result<usize>;
@@ -162,7 +162,7 @@ use impl_raw_sock_option_get_only;
 use impl_raw_sock_option_set_only;
 use impl_raw_socket_option;
 
-pub fn new_raw_socket_option(
+pub(crate) fn new_raw_socket_option(
     level: CSocketOptionLevel,
     name: i32,
 ) -> Result<Box<dyn RawSocketOption>> {
@@ -183,7 +183,7 @@ pub fn new_raw_socket_option(
 #[expect(non_camel_case_types)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum CSocketOptionLevel {
+pub(crate) enum CSocketOptionLevel {
     SOL_IP = 0,
     SOL_SOCKET = 1,
     SOL_TCP = 6,

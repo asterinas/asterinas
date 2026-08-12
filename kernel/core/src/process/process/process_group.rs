@@ -9,7 +9,7 @@ use crate::{prelude::*, process::signal::signals::Signal};
 ///
 /// A process group represents a set of processes,
 /// which has a unique identifier PGID (i.e., [`Pgid`]).
-pub struct ProcessGroup {
+pub(crate) struct ProcessGroup {
     pgid: Pgid,
     session: Arc<Session>,
     inner: Mutex<Inner>,
@@ -57,17 +57,17 @@ impl ProcessGroup {
     }
 
     /// Returns the process group identifier.
-    pub fn pgid(&self) -> Pgid {
+    pub(crate) fn pgid(&self) -> Pgid {
         self.pgid
     }
 
     /// Returns the session to which the process group belongs.
-    pub fn session(&self) -> &Arc<Session> {
+    pub(crate) fn session(&self) -> &Arc<Session> {
         &self.session
     }
 
     /// Acquires a lock on the process group.
-    pub fn lock(&self) -> ProcessGroupGuard<'_> {
+    pub(crate) fn lock(&self) -> ProcessGroupGuard<'_> {
         ProcessGroupGuard {
             inner: self.inner.lock(),
         }
@@ -78,7 +78,7 @@ impl ProcessGroup {
     /// This method should only be used to broadcast fault signals and kernel signals.
     //
     // TODO: Do some checks to forbid user signals.
-    pub fn broadcast_signal(&self, signal: impl Signal + Clone + 'static) {
+    pub(crate) fn broadcast_signal(&self, signal: impl Signal + Clone + 'static) {
         for process in self
             .inner
             .lock()
@@ -96,13 +96,13 @@ impl ProcessGroup {
 /// It provides some public methods to prevent the exposure of the inner type.
 #[clippy::has_significant_drop]
 #[must_use]
-pub struct ProcessGroupGuard<'a> {
+pub(crate) struct ProcessGroupGuard<'a> {
     inner: MutexGuard<'a, Inner>,
 }
 
 impl ProcessGroupGuard<'_> {
     /// Returns an iterator over the processes in the process group.
-    pub fn iter(&self) -> ProcessGroupIter<'_> {
+    pub(crate) fn iter(&self) -> ProcessGroupIter<'_> {
         ProcessGroupIter {
             inner: self.inner.processes.values(),
         }
@@ -136,7 +136,7 @@ impl ProcessGroupGuard<'_> {
 }
 
 /// An iterator over the processes of the process group.
-pub struct ProcessGroupIter<'a> {
+pub(crate) struct ProcessGroupIter<'a> {
     inner: Values<'a, Pid, Weak<Process>>,
 }
 

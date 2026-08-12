@@ -43,7 +43,7 @@ use crate::{
 };
 
 /// A volatile file system whose data and metadata exists only in memory.
-pub struct RamFs {
+pub(crate) struct RamFs {
     name: &'static str,
     _anon_device_id: AnonDeviceId,
     /// The super block
@@ -57,7 +57,7 @@ pub struct RamFs {
 }
 
 impl RamFs {
-    pub fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         Self::new_internal("ramfs")
     }
 
@@ -67,7 +67,7 @@ impl RamFs {
 
     // TODO: Remove this tmpfs-specific constructor once `TmpFs` no longer
     // aliases `RamFs`.
-    pub fn new_tmpfs() -> Arc<Self> {
+    pub(crate) fn new_tmpfs() -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for tmpfs");
         let sb = {
             let mut super_block =
@@ -302,7 +302,7 @@ struct InodeMeta {
 }
 
 impl InodeMeta {
-    pub fn new(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
+    pub(crate) fn new(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
         let now = now();
         Self {
             size: 0,
@@ -317,7 +317,7 @@ impl InodeMeta {
         }
     }
 
-    pub fn new_dir(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
+    pub(crate) fn new_dir(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
         let now = now();
         Self {
             size: NUM_SPECIAL_ENTRIES,
@@ -332,51 +332,51 @@ impl InodeMeta {
         }
     }
 
-    pub fn new_tmpfile(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
+    pub(crate) fn new_tmpfile(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
         let mut meta = Self::new(mode, uid, gid);
         meta.nlinks = 0;
         meta
     }
 
-    pub fn resize(&mut self, new_size: usize) {
+    pub(crate) fn resize(&mut self, new_size: usize) {
         self.size = new_size;
         self.blocks = new_size.align_up(BLOCK_SIZE) / BLOCK_SIZE;
     }
 
-    pub fn inc_size(&mut self) {
+    pub(crate) fn inc_size(&mut self) {
         self.size += 1;
         self.blocks = self.size.align_up(BLOCK_SIZE) / BLOCK_SIZE;
     }
 
-    pub fn dec_size(&mut self) {
+    pub(crate) fn dec_size(&mut self) {
         debug_assert!(self.size > 0);
         self.size -= 1;
         self.blocks = self.size.align_up(BLOCK_SIZE) / BLOCK_SIZE;
     }
 
-    pub fn nr_sectors_allocated(&self) -> usize {
+    pub(crate) fn nr_sectors_allocated(&self) -> usize {
         self.blocks
             .checked_mul(BLOCK_SIZE / SECTOR_SIZE)
             .expect("ramfs allocated sector count overflow")
     }
 
-    pub fn set_atime(&mut self, time: Duration) {
+    pub(crate) fn set_atime(&mut self, time: Duration) {
         self.atime = time;
     }
 
-    pub fn set_mtime(&mut self, time: Duration) {
+    pub(crate) fn set_mtime(&mut self, time: Duration) {
         self.mtime = time;
     }
 
-    pub fn set_ctime(&mut self, time: Duration) {
+    pub(crate) fn set_ctime(&mut self, time: Duration) {
         self.ctime = time;
     }
 
-    pub fn inc_nlinks(&mut self) {
+    pub(crate) fn inc_nlinks(&mut self) {
         self.nlinks += 1;
     }
 
-    pub fn dec_nlinks(&mut self) {
+    pub(crate) fn dec_nlinks(&mut self) {
         debug_assert!(self.nlinks > 0);
         self.nlinks -= 1;
     }

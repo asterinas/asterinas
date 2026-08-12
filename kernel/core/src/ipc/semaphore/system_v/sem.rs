@@ -21,7 +21,7 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct SemBuf {
+pub(crate) struct SemBuf {
     sem_num: u16,
     sem_op: i16,
     sem_flags: i16,
@@ -142,7 +142,7 @@ impl Debug for PendingOp {
 }
 
 #[derive(Debug)]
-pub struct Semaphore {
+pub(crate) struct Semaphore {
     val: i32,
     /// The PID of the process that last modified the semaphore.
     ///
@@ -158,7 +158,7 @@ impl Semaphore {
         self.val = val;
     }
 
-    pub fn val(&self) -> i32 {
+    pub(crate) fn val(&self) -> i32 {
         self.val
     }
 
@@ -166,7 +166,7 @@ impl Semaphore {
         self.latest_modified_pid = pid;
     }
 
-    pub fn latest_modified_pid(&self) -> Pid {
+    pub(crate) fn latest_modified_pid(&self) -> Pid {
         self.latest_modified_pid
     }
 
@@ -178,7 +178,7 @@ impl Semaphore {
     }
 }
 
-pub fn sem_op(
+pub(crate) fn sem_op(
     sem_id: IpcId,
     sops: Vec<SemBuf>,
     timeout: Option<Duration>,

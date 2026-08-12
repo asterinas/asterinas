@@ -7,11 +7,11 @@ use super::{
 };
 use crate::prelude::*;
 
-pub type ClusterID = u32;
+pub(crate) type ClusterID = u32;
 pub(super) const FAT_ENTRY_SIZE: usize = size_of::<ClusterID>();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FatValue {
+pub(crate) enum FatValue {
     Free,
     Next(ClusterID),
     Bad,
@@ -46,7 +46,7 @@ impl From<FatValue> for ClusterID {
 
 bitflags! {
     #[derive(Default)]
-    pub struct FatChainFlags:u8 {
+    pub(crate) struct FatChainFlags:u8 {
         // An associated allocation of clusters is possible
         const ALLOC_POSSIBLE = 0x01;
         // The allocated clusters are contiguous and fat table is irrevalent.
@@ -55,7 +55,7 @@ bitflags! {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ExfatChain {
+pub(crate) struct ExfatChain {
     // current clusterID
     current: ClusterID,
     num_clusters: u32,
@@ -65,7 +65,7 @@ pub struct ExfatChain {
 }
 
 // A position by the chain and relative offset in the cluster.
-pub type ExfatChainPosition = (ExfatChain, usize);
+pub(crate) type ExfatChainPosition = (ExfatChain, usize);
 
 impl ExfatChain {
     pub(super) fn new(
@@ -280,7 +280,7 @@ impl ExfatChain {
     }
 }
 
-pub trait ClusterAllocator {
+pub(crate) trait ClusterAllocator {
     fn extend_clusters(&mut self, num_to_be_allocated: u32, sync: bool) -> Result<ClusterID>;
     fn remove_clusters_from_tail(&mut self, free_num: u32, sync: bool) -> Result<()>;
 }

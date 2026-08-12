@@ -6,12 +6,12 @@
 //! serving as the bridge between system calls and concrete file systems.
 
 mod fs_apis;
-pub mod notify;
-pub mod path;
-pub mod range_lock;
+pub(crate) mod notify;
+pub(crate) mod path;
+pub(crate) mod range_lock;
 
 // Re-export commonly used abstractions from `fs_apis`
-pub use fs_apis::{file_system, inode, inode_ext, registry, xattr};
+pub(crate) use fs_apis::{file_system, inode, inode_ext, registry, xattr};
 
 pub(super) fn init() {
     fs_apis::init();

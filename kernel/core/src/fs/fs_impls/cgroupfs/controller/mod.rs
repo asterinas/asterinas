@@ -223,7 +223,7 @@ impl<T: SubControlStatic> TryGetSubControl for SubController<T> {
 /// The root node serves as the origin for all these control capabilities, so the sub-controllers
 /// it possesses are always active. For any other node, only if its parent node first enables a
 /// sub-control, its corresponding sub-controller will be activated.
-pub struct Controller {
+pub(crate) struct Controller {
     /// A set of types of active sub-controllers.
     ///
     /// Updates to this set are serialized by `CgroupMembership::write_lock()`.
@@ -501,7 +501,7 @@ impl Controller {
     /// Note that concurrent operations of moving processes to cgroups and
     /// setting `pids.max` may cause the actual charge to exceed the peak at
     /// charge time.
-    pub fn pre_charge_pids<'a>(
+    pub(crate) fn pre_charge_pids<'a>(
         &'a self,
         _cgroup_membership: &'a CgroupMembership,
     ) -> Result<PidsPreCharge<'a>, TryChargeError> {
@@ -523,7 +523,7 @@ impl Controller {
 }
 
 /// Represents a pre-charged pids slot that rolls back on drop.
-pub struct PidsPreCharge<'a> {
+pub(crate) struct PidsPreCharge<'a> {
     controller: &'a Controller,
 }
 
@@ -542,4 +542,4 @@ impl Drop for PidsPreCharge<'_> {
 
 /// An error type indicating that a problem occurred during the charge operation.
 #[derive(Clone, Copy, Debug)]
-pub struct TryChargeError;
+pub(crate) struct TryChargeError;

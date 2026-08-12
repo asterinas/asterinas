@@ -8,7 +8,7 @@ use crate::prelude::*;
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L548>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct CRtGenMsg {
+pub(crate) struct CRtGenMsg {
     pub family: u8,
 }
 

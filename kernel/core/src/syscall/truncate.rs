@@ -12,7 +12,11 @@ use crate::{
     process::ResourceType,
 };
 
-pub fn sys_ftruncate(raw_fd: RawFileDesc, len: isize, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_ftruncate(
+    raw_fd: RawFileDesc,
+    len: isize,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("raw_fd = {}, length = {}", raw_fd, len);
 
     check_length(len, ctx)?;
@@ -24,7 +28,7 @@ pub fn sys_ftruncate(raw_fd: RawFileDesc, len: isize, ctx: &Context) -> Result<S
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<SyscallReturn> {
     let path_name = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, length = {}", path_name, len);
 

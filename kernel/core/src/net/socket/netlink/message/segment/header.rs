@@ -11,7 +11,7 @@ use crate::{net::socket::netlink::message::NLMSG_ALIGN, prelude::*, util::MultiR
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L52>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct CMsgSegHdr {
+pub(crate) struct CMsgSegHdr {
     /// Length of the message, including the header
     pub len: u32,
     /// Type of message content
@@ -26,7 +26,10 @@ pub struct CMsgSegHdr {
 
 impl CMsgSegHdr {
     /// Returns the payload length (including padding) in the reader that contains the payload.
-    pub fn calc_payload_len_with_padding(&self, reader: &mut dyn MultiRead) -> Result<usize> {
+    pub(crate) fn calc_payload_len_with_padding(
+        &self,
+        reader: &mut dyn MultiRead,
+    ) -> Result<usize> {
         // Validate `self.len`.
         let payload_len = (self.len as usize)
             .checked_sub(size_of::<Self>())
@@ -47,7 +50,7 @@ bitflags! {
     /// Common flags used in [`CMsgSegHdr`].
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L62>.
-    pub struct SegHdrCommonFlags: u16 {
+    pub(crate) struct SegHdrCommonFlags: u16 {
         /// Indicates a request message
         const REQUEST = 0x01;
         /// Multipart message, terminated by NLMSG_DONE
@@ -67,7 +70,7 @@ bitflags! {
     /// Modifiers for GET requests.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L70>.
-    pub struct GetRequestFlags: u16 {
+    pub(crate) struct GetRequestFlags: u16 {
         /// Specify the tree root
         const ROOT = 0x100;
         /// Return all matching results
@@ -83,7 +86,7 @@ bitflags! {
     /// Modifiers for NEW requests.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L76>.
-    pub struct NewRequestFlags: u16 {
+    pub(crate) struct NewRequestFlags: u16 {
         /// Override existing entries
         const REPLACE = 0x100;
         /// Do not modify if it exists
@@ -99,7 +102,7 @@ bitflags! {
     /// Modifiers for DELETE requests.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L82>.
-    pub struct DeleteRequestFlags: u16 {
+    pub(crate) struct DeleteRequestFlags: u16 {
         /// Do not delete recursively
         const NONREC = 0x100;
         /// Delete multiple objects
@@ -111,7 +114,7 @@ bitflags! {
     /// Flags for ACK messages.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L86>.
-    pub struct AckFlags: u16 {
+    pub(crate) struct AckFlags: u16 {
         const CAPPED = 0x100;
         const ACK_TLVS = 0x100;
     }

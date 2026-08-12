@@ -34,7 +34,7 @@ use crate::{
 };
 
 /// Creates a new signalfd or updates an existing one according to the given mask.
-pub fn sys_signalfd(
+pub(super) fn sys_signalfd(
     fd: RawFileDesc,
     mask_ptr: Vaddr,
     sizemask: usize,
@@ -44,7 +44,7 @@ pub fn sys_signalfd(
 }
 
 /// Creates a new signalfd or updates an existing one according to the given mask and flags.
-pub fn sys_signalfd4(
+pub(super) fn sys_signalfd4(
     raw_fd: RawFileDesc,
     mask_ptr: Vaddr,
     sizemask: usize,

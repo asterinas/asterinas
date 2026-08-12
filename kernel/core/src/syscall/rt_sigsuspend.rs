@@ -8,7 +8,7 @@ use crate::{
     process::{posix_thread::ContextPthreadAdminApi, signal::sig_mask::SigMask},
 };
 
-pub fn sys_rt_sigsuspend(
+pub(super) fn sys_rt_sigsuspend(
     sigmask_addr: Vaddr,
     sigmask_size: usize,
     ctx: &Context,

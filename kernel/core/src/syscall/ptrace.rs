@@ -18,7 +18,7 @@ use crate::{
     thread::{Thread, Tid},
 };
 
-pub fn sys_ptrace(
+pub(super) fn sys_ptrace(
     request: u32,
     tid: Tid,
     addr: usize,

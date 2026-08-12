@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// An inode abstraction used in the `ConfigFs`.
-pub struct ConfigInode {
+pub(crate) struct ConfigInode {
     /// The corresponding node in the SysTree.
     node_kind: SysTreeNodeKind,
     /// The metadata of this inode.

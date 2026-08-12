@@ -6,7 +6,7 @@ use crate::process::signal::{c_types::siginfo_t, sig_num::SigNum, signals::Signa
 
 /// A signal that carries raw [`siginfo_t`] information.
 #[derive(Clone, Copy)]
-pub struct RawSignal {
+pub(crate) struct RawSignal {
     info: siginfo_t,
 }
 
@@ -24,7 +24,7 @@ impl RawSignal {
     /// Creates a signal that carries raw [`siginfo_t`] information.
     ///
     /// The caller must ensure that the `info.si_signo` is a valid signal number.
-    pub fn new(info: siginfo_t) -> Self {
+    pub(crate) fn new(info: siginfo_t) -> Self {
         Self { info }
     }
 }

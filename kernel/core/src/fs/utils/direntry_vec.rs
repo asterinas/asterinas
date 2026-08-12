@@ -4,7 +4,7 @@ use aster_util::slot_vec::SlotVec;
 
 use crate::{fs::vfs::inode::Inode, prelude::*};
 
-pub trait DirEntryVecExt {
+pub(crate) trait DirEntryVecExt {
     /// Finds the entry by the `name`.
     fn find_entry_by_name(&self, name: &str) -> Option<&Arc<dyn Inode>>;
 

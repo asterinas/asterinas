@@ -8,7 +8,12 @@ use crate::{
     vm::{perms::VmPerms, vmar::VMAR_CAP_ADDR},
 };
 
-pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_mprotect(
+    addr: Vaddr,
+    len: usize,
+    perms: u64,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let vm_perms = VmPerms::from_user_bits(perms as u32)?;
     debug!(
         "addr = 0x{:x}, len = 0x{:x}, perms = {:?}",

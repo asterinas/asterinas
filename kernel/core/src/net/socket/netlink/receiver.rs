@@ -2,7 +2,7 @@
 
 use crate::{events::IoEvents, prelude::*, process::signal::Pollee};
 
-pub struct MessageReceiver<Message> {
+pub(crate) struct MessageReceiver<Message> {
     message_queue: Arc<Mutex<MessageQueue<Message>>>,
     pollee: Pollee,
 }
@@ -43,7 +43,7 @@ impl<Message> MessageQueue<Message> {
 }
 
 /// Messages that fit into the [`MessageQueue`].
-pub trait QueueableMessage {
+pub(crate) trait QueueableMessage {
     /// Counts and returns the length of the message.
     fn total_len(&self) -> usize;
 }

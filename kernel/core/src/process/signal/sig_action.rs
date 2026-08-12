@@ -11,7 +11,7 @@ use super::{
 use crate::prelude::*;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum SigAction {
+pub(crate) enum SigAction {
     #[default]
     Dfl, // Default action
     Ign, // Ignore this signal
@@ -44,7 +44,7 @@ impl From<sigaction_t> for SigAction {
 }
 
 impl SigAction {
-    pub fn as_c_type(&self) -> sigaction_t {
+    pub(crate) fn as_c_type(&self) -> sigaction_t {
         match self {
             SigAction::Dfl => sigaction_t {
                 handler_ptr: SIG_DFL,
@@ -80,7 +80,7 @@ impl SigAction {
     /// Signals will be ignored because either
     ///  * the signal action is explicitly set to ignore the signals, or
     ///  * the signal action is default and the default action is to ignore the signals.
-    pub fn will_ignore(&self, signum: SigNum) -> bool {
+    pub(crate) fn will_ignore(&self, signum: SigNum) -> bool {
         match self {
             SigAction::Dfl => {
                 let default_action = SigDefaultAction::from_signum(signum);
@@ -93,7 +93,7 @@ impl SigAction {
 }
 
 bitflags! {
-    pub struct SigActionFlags: u32 {
+    pub(crate) struct SigActionFlags: u32 {
         const SA_NOCLDSTOP  = 1;
         const SA_NOCLDWAIT  = 2;
         const SA_SIGINFO    = 4;
@@ -116,18 +116,18 @@ impl TryFrom<u32> for SigActionFlags {
 }
 
 impl SigActionFlags {
-    pub fn as_u32(&self) -> u32 {
+    pub(crate) fn as_u32(&self) -> u32 {
         self.bits()
     }
 
-    pub fn contains_unsupported_flag(&self) -> bool {
+    pub(crate) fn contains_unsupported_flag(&self) -> bool {
         self.intersects(SigActionFlags::SA_NOCLDSTOP | SigActionFlags::SA_NOCLDWAIT)
     }
 }
 
 /// The default action to signals
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SigDefaultAction {
+pub(crate) enum SigDefaultAction {
     Term, // Default action is to terminate the process.
     Ign,  // Default action is to ignore the signal.
     Core, // Default action is to terminate the process and dump core (see core(5)).
@@ -136,7 +136,7 @@ pub enum SigDefaultAction {
 }
 
 impl SigDefaultAction {
-    pub fn from_signum(num: SigNum) -> SigDefaultAction {
+    pub(crate) fn from_signum(num: SigNum) -> SigDefaultAction {
         match num {
             SIGABRT | // = SIGIOT
             SIGBUS  |

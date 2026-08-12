@@ -17,7 +17,7 @@ use crate::{
     time::{timespec_t, wait::ManagedTimeout},
 };
 
-pub fn sys_rt_sigtimedwait(
+pub(super) fn sys_rt_sigtimedwait(
     set_ptr: Vaddr,
     info_ptr: Vaddr,
     timeout_ptr: Vaddr,

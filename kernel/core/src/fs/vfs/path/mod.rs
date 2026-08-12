@@ -6,10 +6,10 @@ use core::time::Duration;
 
 pub(in crate::fs) use dentry::Dentry;
 use inherit_methods_macro::inherit_methods;
-pub use mount::{MNT_UNIQUE_ID_MIN, Mount, MountPropType, PerMountFlags};
+pub(crate) use mount::{MNT_UNIQUE_ID_MIN, Mount, MountPropType, PerMountFlags};
 use mount::{MountNsFileCopying, MountTopology};
-pub use mount_namespace::MountNamespace;
-pub use resolver::{
+pub(crate) use mount_namespace::MountNamespace;
+pub(crate) use resolver::{
     AT_FDCWD, AbsPathResult, EmptyPathStr, FsPath, LookupResult, PathResolver, SplitPath,
     SplitPathError,
 };
@@ -44,7 +44,7 @@ mod resolver;
 /// Each `Path` corresponds to a node in the VFS tree, and a single node
 /// may have multiple `Path` instances referencing it due to mount operations.
 #[derive(Clone, Debug)]
-pub struct Path {
+pub(crate) struct Path {
     mount: Arc<Mount>,
     dentry: Arc<Dentry>,
 }
@@ -59,13 +59,18 @@ impl Eq for Path {}
 
 impl Path {
     /// Creates a new `Path` to represent the root directory of a file system.
-    pub fn new_fs_root(mount: Arc<Mount>) -> Self {
+    pub(crate) fn new_fs_root(mount: Arc<Mount>) -> Self {
         let inner = mount.root_dentry().clone();
         Self::new(mount, inner)
     }
 
     /// Creates a new `Path` to represent the child directory of a file system.
-    pub fn new_fs_child(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
+    pub(crate) fn new_fs_child(
+        &self,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+    ) -> Result<Self> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
         let new_child_dentry = dir_dentry.create(name, type_, mode)?;
@@ -75,7 +80,7 @@ impl Path {
     /// Looks up a direct child within the current mount.
     ///
     /// This does not interpret special names, check search permissions, or traverse mount points.
-    pub fn lookup_child(&self, name: &str) -> Result<Self> {
+    pub(crate) fn lookup_child(&self, name: &str) -> Result<Self> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         let child_dentry = dir_dentry.lookup_child(name)?;
         Ok(Self::new(self.mount.clone(), child_dentry))
@@ -86,7 +91,7 @@ impl Path {
     /// The returned inode has no directory entry and is invisible to `readdir`.
     /// If created hard-linkable, it may later be given a name via a link
     /// operation; otherwise it can never be linked.
-    pub fn create_tmpfile(
+    pub(crate) fn create_tmpfile(
         &self,
         mode: InodeMode,
         hard_linkability: HardLinkability,
@@ -113,7 +118,7 @@ impl Path {
     }
 
     /// Gets the mount node of current `Path`.
-    pub fn mount_node(&self) -> &Arc<Mount> {
+    pub(crate) fn mount_node(&self) -> &Arc<Mount> {
         &self.mount
     }
 
@@ -123,14 +128,14 @@ impl Path {
     }
 
     /// Returns true if the current `Path` is the root of its mount.
-    pub fn is_mount_root(&self) -> bool {
+    pub(crate) fn is_mount_root(&self) -> bool {
         Arc::ptr_eq(&self.dentry, self.mount.root_dentry())
     }
 
     /// Opens the `Path` with the given `OpenArgs`.
     ///
     /// Returns an `InodeHandle` on success.
-    pub fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
+    pub(crate) fn open(&self, open_args: OpenArgs) -> Result<InodeHandle> {
         let inode = self.inode().as_ref();
         let inode_type = inode.type_();
         let creation_flags = &open_args.creation_flags;
@@ -190,7 +195,7 @@ impl Path {
     /// For example, first `mount /dev/sda1 /mnt` and then `mount /dev/sda2 /mnt`.
     /// After the second mount is completed, the content of the first mount will be overridden.
     /// We need to recursively obtain the top `Path`.
-    pub fn get_top_path(mut self) -> Self {
+    pub(crate) fn get_top_path(mut self) -> Self {
         while self.dentry.is_mountpoint() {
             if let Some(child_mount) = self.mount.get(&self.dentry) {
                 let inner = child_mount.root_dentry().clone();
@@ -353,7 +358,7 @@ impl Path {
     /// Returns `ENOTDIR` if the path is not a directory.
     /// Returns `EINVAL` if attempting to mount on root or if the path is not
     /// in the current mount namespace.
-    pub fn mount(
+    pub(crate) fn mount(
         &self,
         fs_and_root: FsAndRoot,
         flags: PerMountFlags,
@@ -397,7 +402,7 @@ impl Path {
     /// - The current path is not a mount root.
     /// - The mount of the current path is the root mount.
     /// - The current path is not in the current mount namespace.
-    pub fn unmount(&self, ctx: &Context) -> Result<Arc<Mount>> {
+    pub(crate) fn unmount(&self, ctx: &Context) -> Result<Arc<Mount>> {
         if !self.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
         }
@@ -434,7 +439,7 @@ impl Path {
     /// Returns `EINVAL` in the following cases:
     /// - The current path is not a mount root.
     /// - The current path is not in the current mount namespace.
-    pub fn remount(
+    pub(crate) fn remount(
         &self,
         mount_flags: PerMountFlags,
         fs_flags: Option<FsFlags>,
@@ -469,7 +474,12 @@ impl Path {
     /// Returns `EINVAL` if any of the following holds:
     /// - The destination path is not in the current mount namespace.
     /// - The source path is a mount namespace file that would create a namespace loop.
-    pub fn bind_mount_to(&self, dst_path: &Self, recursive: bool, ctx: &Context) -> Result<()> {
+    pub(crate) fn bind_mount_to(
+        &self,
+        dst_path: &Self,
+        recursive: bool,
+        ctx: &Context,
+    ) -> Result<()> {
         let can_bind = {
             let src_is_dir = self.type_() == InodeType::Dir;
             let dst_is_dir = dst_path.type_() == InodeType::Dir;
@@ -529,7 +539,7 @@ impl Path {
     /// Returns `ELOOP` in the following cases:
     /// - The destination path is inside the subtree being moved.
     /// - The mount tree contains a mount namespace file that would create a namespace loop.
-    pub fn move_mount_to(&self, dst_path: &Self, ctx: &Context) -> Result<()> {
+    pub(crate) fn move_mount_to(&self, dst_path: &Self, ctx: &Context) -> Result<()> {
         if !self.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
         };
@@ -612,7 +622,7 @@ impl Path {
     }
 
     /// Sets the propagation type of the mount of this `Path`.
-    pub fn set_mount_propagation(
+    pub(crate) fn set_mount_propagation(
         &self,
         prop: MountPropType,
         recursive: bool,
@@ -648,12 +658,12 @@ fn mount_tree_root(mount: &Arc<Mount>) -> Arc<Mount> {
 // Methods inherited from `Dentry`.
 #[inherit_methods(from = "self.dentry")]
 impl Path {
-    pub fn inode(&self) -> &Arc<dyn Inode>;
-    pub fn type_(&self) -> InodeType;
-    pub fn name(&self) -> String;
+    pub(crate) fn inode(&self) -> &Arc<dyn Inode>;
+    pub(crate) fn type_(&self) -> InodeType;
+    pub(crate) fn name(&self) -> String;
 
     /// Creates a `Path` by making an inode of the `type_` with the `mode`.
-    pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
+    pub(crate) fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
         let inner = dir_dentry.mknod(name, mode, type_)?;
@@ -661,7 +671,7 @@ impl Path {
     }
 
     /// Links a new name for the `Path`.
-    pub fn link(&self, old: &Self, name: &str) -> Result<()> {
+    pub(crate) fn link(&self, old: &Self, name: &str) -> Result<()> {
         if !Arc::ptr_eq(&old.mount, &self.mount) {
             return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
         }
@@ -673,21 +683,21 @@ impl Path {
     }
 
     /// Unlinks a name from the `Path`.
-    pub fn unlink(&self, name: &str) -> Result<()> {
+    pub(crate) fn unlink(&self, name: &str) -> Result<()> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
         dir_dentry.unlink(name)
     }
 
     /// Removes a directory by `rmdir()` the inner inode.
-    pub fn rmdir(&self, name: &str) -> Result<()> {
+    pub(crate) fn rmdir(&self, name: &str) -> Result<()> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
         dir_dentry.rmdir(name)
     }
 
     /// Renames a `Path` to the new `Path` by `rename()` the inner inode.
-    pub fn rename(
+    pub(crate) fn rename(
         &self,
         old_name: &str,
         new_dir: &Self,
@@ -713,39 +723,39 @@ impl Path {
 // Methods inherited from `Inode`.
 #[inherit_methods(from = "self.inode()")]
 impl Path {
-    pub fn fs(&self) -> Arc<dyn FileSystem>;
-    pub fn sync_all(&self) -> Result<()>;
-    pub fn sync_data(&self) -> Result<()>;
-    pub fn metadata(&self) -> Result<Metadata>;
-    pub fn mode(&self) -> Result<InodeMode>;
-    pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
-    pub fn size(&self) -> usize;
-    pub fn owner(&self) -> Result<Uid>;
-    pub fn set_owner(&self, uid: Uid) -> Result<()>;
-    pub fn group(&self) -> Result<Gid>;
-    pub fn set_group(&self, gid: Gid) -> Result<()>;
-    pub fn atime(&self) -> Duration;
-    pub fn set_atime(&self, time: Duration);
-    pub fn mtime(&self) -> Duration;
-    pub fn set_mtime(&self, time: Duration);
-    pub fn ctime(&self) -> Duration;
-    pub fn set_ctime(&self, time: Duration);
-    pub fn set_xattr(
+    pub(crate) fn fs(&self) -> Arc<dyn FileSystem>;
+    pub(crate) fn sync_all(&self) -> Result<()>;
+    pub(crate) fn sync_data(&self) -> Result<()>;
+    pub(crate) fn metadata(&self) -> Result<Metadata>;
+    pub(crate) fn mode(&self) -> Result<InodeMode>;
+    pub(crate) fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    pub(crate) fn size(&self) -> usize;
+    pub(crate) fn owner(&self) -> Result<Uid>;
+    pub(crate) fn set_owner(&self, uid: Uid) -> Result<()>;
+    pub(crate) fn group(&self) -> Result<Gid>;
+    pub(crate) fn set_group(&self, gid: Gid) -> Result<()>;
+    pub(crate) fn atime(&self) -> Duration;
+    pub(crate) fn set_atime(&self, time: Duration);
+    pub(crate) fn mtime(&self) -> Duration;
+    pub(crate) fn set_mtime(&self, time: Duration);
+    pub(crate) fn ctime(&self) -> Duration;
+    pub(crate) fn set_ctime(&self, time: Duration);
+    pub(crate) fn set_xattr(
         &self,
         name: XattrName,
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
     ) -> Result<()>;
-    pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
-    pub fn list_xattr(
+    pub(crate) fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
+    pub(crate) fn list_xattr(
         &self,
         namespace: XattrNamespace,
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
-    pub fn remove_xattr(&self, name: XattrName) -> Result<()>;
+    pub(crate) fn remove_xattr(&self, name: XattrName) -> Result<()>;
 
     /// Resizes the file.
-    pub fn resize(&self, size: usize) -> Result<()> {
+    pub(crate) fn resize(&self, size: usize) -> Result<()> {
         let inode = self.inode();
         inode.check_permission(Permission::MAY_WRITE)?;
         inode.resize(size)
@@ -753,19 +763,19 @@ impl Path {
 }
 
 /// Checks if the file name is ".", indicating it's the current directory.
-pub const fn is_dot(filename: &str) -> bool {
+pub(crate) const fn is_dot(filename: &str) -> bool {
     let name_bytes = filename.as_bytes();
     name_bytes.len() == 1 && name_bytes[0] == DOT_BYTE
 }
 
 /// Checks if the file name is "..", indicating it's the parent directory.
-pub const fn is_dotdot(filename: &str) -> bool {
+pub(crate) const fn is_dotdot(filename: &str) -> bool {
     let name_bytes = filename.as_bytes();
     name_bytes.len() == 2 && name_bytes[0] == DOT_BYTE && name_bytes[1] == DOT_BYTE
 }
 
 /// Checks if the file name is "." or "..", indicating it's the current or parent directory.
-pub const fn is_dot_or_dotdot(filename: &str) -> bool {
+pub(crate) const fn is_dot_or_dotdot(filename: &str) -> bool {
     let name_bytes = filename.as_bytes();
     let name_len = name_bytes.len();
     if name_len == 1 {

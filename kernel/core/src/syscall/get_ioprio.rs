@@ -50,7 +50,7 @@ impl IoPrioWho {
     }
 }
 
-pub fn sys_ioprio_get(which: u32, who: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_ioprio_get(which: u32, who: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("which = {}, who = {}", which, who);
 
     let ioprio_who = IoPrioWho::from_which_and_who(which, who, ctx)?;

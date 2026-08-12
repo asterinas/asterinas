@@ -5,7 +5,7 @@
 mod alien_access;
 mod capability;
 
-pub use self::{
+pub(crate) use self::{
     alien_access::{AlienAccessContext, on_alien_access},
     capability::{CapableContext, on_capable},
 };

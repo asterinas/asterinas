@@ -27,7 +27,7 @@ use crate::{
 
 bitflags! {
     /// Flags used internally when creating an eventfd file.
-    pub struct EventFileFlags: u32 {
+    pub(crate) struct EventFileFlags: u32 {
         const EFD_SEMAPHORE = 1;
         const EFD_CLOEXEC = CreationFlags::O_CLOEXEC.bits();
         const EFD_NONBLOCK = StatusFlags::O_NONBLOCK.bits();
@@ -35,7 +35,7 @@ bitflags! {
 }
 
 /// The eventfd state shared by the file-descriptor and kernel-facing APIs.
-pub struct KernelEventFile {
+pub(crate) struct KernelEventFile {
     // Kernel event producers may signal from IRQ context, so counter updates must not sleep.
     // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L71>.
     counter: SpinLock<u64, LocalIrqDisabled>,
@@ -59,7 +59,7 @@ impl KernelEventFile {
     /// Gets an independently owned kernel-facing state from an eventfd file.
     /// Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L366>.
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn from_file(file: &dyn FileLike) -> Result<Arc<Self>> {
+    pub(crate) fn from_file(file: &dyn FileLike) -> Result<Arc<Self>> {
         let event_file = file
             .downcast_ref::<EventFile>()
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not an event file"))?;
@@ -98,7 +98,7 @@ impl KernelEventFile {
     /// Consumes and returns the counter value.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L176>.
-    pub fn consume(&self) -> Option<u64> {
+    pub(crate) fn consume(&self) -> Option<u64> {
         let mut counter = self.counter.lock();
         let value = if *counter == 0 {
             return None;
@@ -123,7 +123,7 @@ impl KernelEventFile {
     /// `u64::MAX`, which is reported through `POLLERR`.
     /// Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L46>.
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn signal(&self) {
+    pub(crate) fn signal(&self) {
         let mut counter = self.counter.lock();
         *counter = counter.saturating_add(1);
 
@@ -148,7 +148,7 @@ impl Pollable for KernelEventFile {
     }
 }
 
-pub struct EventFile {
+pub(crate) struct EventFile {
     // `KernelEventFile` has an independent lifetime from the outer `EventFile`.
     // Kernel bindings can continue operating on this state after the outer file is dropped.
     kernel_event_file: Arc<KernelEventFile>,
@@ -156,7 +156,7 @@ pub struct EventFile {
 }
 
 impl EventFile {
-    pub fn new(init_val: u64, flags: EventFileFlags) -> Self {
+    pub(crate) fn new(init_val: u64, flags: EventFileFlags) -> Self {
         let is_semaphore = flags.contains(EventFileFlags::EFD_SEMAPHORE);
         let status_flags = if flags.contains(EventFileFlags::EFD_NONBLOCK) {
             StatusFlags::O_NONBLOCK

@@ -89,7 +89,7 @@ pub(super) fn init_on_each_cpu() {
 }
 
 /// Represents timer resources and utilities for a POSIX process.
-pub struct PosixTimerManager {
+pub(crate) struct PosixTimerManager {
     /// A real-time countdown timer, measuring in wall clock time.
     alarm_timer: Arc<Timer>,
     /// A timer based on user CPU clock.
@@ -147,22 +147,22 @@ impl PosixTimerManager {
     }
 
     /// Gets the alarm timer of the corresponding process.
-    pub fn alarm_timer(&self) -> &Arc<Timer> {
+    pub(crate) fn alarm_timer(&self) -> &Arc<Timer> {
         &self.alarm_timer
     }
 
     /// Gets the virtual timer of the corresponding process.
-    pub fn virtual_timer(&self) -> &Arc<Timer> {
+    pub(crate) fn virtual_timer(&self) -> &Arc<Timer> {
         &self.virtual_timer
     }
 
     /// Gets the profiling timer of the corresponding process.
-    pub fn prof_timer(&self) -> &Arc<Timer> {
+    pub(crate) fn prof_timer(&self) -> &Arc<Timer> {
         &self.prof_timer
     }
 
     /// Creates a timer based on the profiling CPU clock of the current process.
-    pub fn create_prof_timer<F>(&self, func: F) -> Arc<Timer>
+    pub(crate) fn create_prof_timer<F>(&self, func: F) -> Arc<Timer>
     where
         F: Fn(TimerGuard) + Send + Sync + 'static,
     {
@@ -170,7 +170,7 @@ impl PosixTimerManager {
     }
 
     /// Creates a timer based on the user CPU clock of the current process.
-    pub fn create_virtual_timer<F>(&self, func: F) -> Arc<Timer>
+    pub(crate) fn create_virtual_timer<F>(&self, func: F) -> Arc<Timer>
     where
         F: Fn(TimerGuard) + Send + Sync + 'static,
     {
@@ -179,7 +179,7 @@ impl PosixTimerManager {
 
     /// Adds a POSIX timer to the managed `posix_timers`, and allocate a timer ID for this timer.
     /// Return the timer ID, or `None` if allocation failed.
-    pub fn add_posix_timer(&self, posix_timer: Arc<Timer>) -> Option<usize> {
+    pub(crate) fn add_posix_timer(&self, posix_timer: Arc<Timer>) -> Option<usize> {
         let mut timers = self.posix_timers.lock();
         // Holding the lock of `posix_timers` is required to operate the `id_allocator`.
         let timer_id = self.id_allocator.lock().alloc()?;
@@ -193,7 +193,7 @@ impl PosixTimerManager {
     }
 
     /// Finds a POSIX timer by the input `timer_id`.
-    pub fn find_posix_timer(&self, timer_id: usize) -> Option<Arc<Timer>> {
+    pub(crate) fn find_posix_timer(&self, timer_id: usize) -> Option<Arc<Timer>> {
         let timers = self.posix_timers.lock();
         if timer_id >= timers.len() {
             return None;
@@ -203,7 +203,7 @@ impl PosixTimerManager {
     }
 
     /// Removes the POSIX timer with the ID `timer_id`.
-    pub fn remove_posix_timer(&self, timer_id: usize) -> Option<Arc<Timer>> {
+    pub(crate) fn remove_posix_timer(&self, timer_id: usize) -> Option<Arc<Timer>> {
         let mut timers = self.posix_timers.lock();
         if timer_id >= timers.len() {
             return None;

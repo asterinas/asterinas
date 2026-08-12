@@ -12,7 +12,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fsmount(
+pub(super) fn sys_fsmount(
     fs_fd: RawFileDesc,
     flags: u32,
     mount_attrs: u32,

@@ -49,7 +49,7 @@ pub(super) const ROOT_INO: u32 = 2;
 /// Filesystem-wide operations are routed through the block group selected by
 /// the target inode or block address.
 #[derive(Debug)]
-pub struct Ext2 {
+pub(crate) struct Ext2 {
     /// Backing block device.
     block_device: Arc<dyn BlockDevice>,
     /// Superblock with dirty tracking.

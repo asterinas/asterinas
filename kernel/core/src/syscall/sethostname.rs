@@ -5,7 +5,7 @@ use crate::{
     syscall::{SyscallReturn, setdomainname::read_uts_field},
 };
 
-pub fn sys_sethostname(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_sethostname(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
     let new_host_name = read_uts_field(addr, len, ctx)?;
 
     let ns_proxy_ref = ctx.thread_local.borrow_ns_proxy();

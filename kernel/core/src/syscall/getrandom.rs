@@ -3,7 +3,12 @@
 use super::SyscallReturn;
 use crate::{device, prelude::*};
 
-pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_getrandom(
+    buf: Vaddr,
+    count: usize,
+    flags: u32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let flags = GetRandomFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!(

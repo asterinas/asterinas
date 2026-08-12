@@ -19,14 +19,14 @@ use crate::{
 // See: https://elixir.bootlin.com/linux/v6.11.5/source/fs/eventpoll.c#L2437
 const EP_MAX_EVENTS: usize = i32::MAX as usize / size_of::<c_epoll_event>();
 
-pub fn sys_epoll_create(size: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_epoll_create(size: i32, ctx: &Context) -> Result<SyscallReturn> {
     if size <= 0 {
         return_errno_with_message!(Errno::EINVAL, "size is not positive");
     }
     sys_epoll_create1(0, ctx)
 }
 
-pub fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("flags = 0x{:x}", flags);
 
     let fd_flags = {
@@ -48,7 +48,7 @@ pub fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(fd.into()))
 }
 
-pub fn sys_epoll_ctl(
+pub(super) fn sys_epoll_ctl(
     epfd: RawFileDesc,
     op: i32,
     fd: RawFileDesc,
@@ -154,7 +154,7 @@ fn do_epoll_pwait2(
     Ok(epoll_events.len())
 }
 
-pub fn sys_epoll_wait(
+pub(super) fn sys_epoll_wait(
     epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,
@@ -177,7 +177,7 @@ pub fn sys_epoll_wait(
     Ok(SyscallReturn::Return(events_len as _))
 }
 
-pub fn sys_epoll_pwait(
+pub(super) fn sys_epoll_pwait(
     epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,
@@ -210,7 +210,7 @@ pub fn sys_epoll_pwait(
     Ok(SyscallReturn::Return(events_len as _))
 }
 
-pub fn sys_epoll_pwait2(
+pub(super) fn sys_epoll_pwait2(
     epfd: RawFileDesc,
     events_addr: Vaddr,
     max_events: i32,

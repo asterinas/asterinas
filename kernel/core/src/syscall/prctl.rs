@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-pub fn sys_prctl(
+pub(super) fn sys_prctl(
     option: i32,
     arg2: u64,
     arg3: u64,

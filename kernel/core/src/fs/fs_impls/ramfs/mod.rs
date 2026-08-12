@@ -2,11 +2,11 @@
 
 //! Ramfs based on PageCache
 
-pub use fs::RamFs;
+pub(crate) use fs::RamFs;
 use fs::RamFsType;
 
 mod fs;
-pub mod memfd;
+pub(crate) mod memfd;
 mod xattr;
 
 const RAMFS_MAGIC: u64 = 0x8584_58f6;

@@ -9,13 +9,13 @@ use crate::{
 };
 
 /// The user namespace.
-pub struct UserNamespace {
+pub(crate) struct UserNamespace {
     stashed_dentry: StashedDentry,
 }
 
 impl UserNamespace {
     /// Returns a reference to the singleton initial user namespace.
-    pub fn get_init_singleton() -> &'static Arc<UserNamespace> {
+    pub(crate) fn get_init_singleton() -> &'static Arc<UserNamespace> {
         static INIT: Once<Arc<UserNamespace>> = Once::new();
 
         INIT.call_once(|| {
@@ -26,14 +26,14 @@ impl UserNamespace {
     }
 
     /// Returns the owner UID of the user namespace.
-    pub fn owner_uid(&self) -> Result<Uid> {
+    pub(crate) fn owner_uid(&self) -> Result<Uid> {
         // FIXME: The owner of the user namespace is not yet tracked.
         // Return the correct user ID once ownership tracking is implemented.
         Ok(Uid::new_root())
     }
 
     /// Returns whether this namespace is the same as, or an ancestor of, the other namespace.
-    pub fn is_same_or_ancestor_of(self: &Arc<Self>, other: &Arc<Self>) -> bool {
+    pub(crate) fn is_same_or_ancestor_of(self: &Arc<Self>, other: &Arc<Self>) -> bool {
         // FIXME: Creating new user namespaces is not yet supported,
         // so we simply check pointer equality.
         // Once user namespace creation is implemented,

@@ -7,7 +7,7 @@ use crate::{
 
 /// Arguments for an open request.
 #[derive(Debug)]
-pub struct OpenArgs {
+pub(crate) struct OpenArgs {
     pub creation_flags: CreationFlags,
     pub status_flags: StatusFlags,
     pub access_mode: AccessMode,
@@ -16,7 +16,7 @@ pub struct OpenArgs {
 
 impl OpenArgs {
     /// Creates `OpenArgs` from the given flags and mode.
-    pub fn from_flags_and_mode(flags: u32, inode_mode: InodeMode) -> Result<Self> {
+    pub(crate) fn from_flags_and_mode(flags: u32, inode_mode: InodeMode) -> Result<Self> {
         let creation_flags = CreationFlags::from_bits_truncate(flags);
         let status_flags = StatusFlags::from_bits_truncate(flags);
         let access_mode = AccessMode::from_u32(flags)?;
@@ -57,7 +57,7 @@ impl OpenArgs {
     }
 
     /// Creates `OpenArgs` from the given access mode and inode mode.
-    pub fn from_modes(access_mode: AccessMode, inode_mode: InodeMode) -> Self {
+    pub(crate) fn from_modes(access_mode: AccessMode, inode_mode: InodeMode) -> Self {
         Self {
             creation_flags: CreationFlags::empty(),
             status_flags: StatusFlags::empty(),
@@ -67,14 +67,14 @@ impl OpenArgs {
     }
 
     /// Returns whether to follow the tail link when resolving the path.
-    pub fn follow_tail_link(&self) -> bool {
+    pub(crate) fn follow_tail_link(&self) -> bool {
         !(self.creation_flags.contains(CreationFlags::O_NOFOLLOW)
             || self.creation_flags.contains(CreationFlags::O_CREAT)
                 && self.creation_flags.contains(CreationFlags::O_EXCL))
     }
 
     /// Returns whether this is an `O_TMPFILE` open request.
-    pub fn is_tmpfile(&self) -> bool {
+    pub(crate) fn is_tmpfile(&self) -> bool {
         self.creation_flags.contains(CreationFlags::O_TMPFILE)
             && !self.status_flags.contains(StatusFlags::O_PATH)
     }

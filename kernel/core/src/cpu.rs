@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 /// A trait that describes the Linux system call convention (ABI) for the user context.
-pub trait LinuxAbi {
+pub(crate) trait LinuxAbi {
     /// Gets the system call number.
     fn syscall_num(&self) -> usize;
 

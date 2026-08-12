@@ -31,7 +31,7 @@ use crate::{fs::vfs::inode::MknodType, prelude::*};
 /// Unpacks the boot initramfs into the bootstrap root filesystem.
 ///
 /// Returns successfully without changing the filesystem when no initramfs was supplied.
-pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
+pub(crate) fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
     let Some(initramfs_buf) = boot_info().initramfs else {
         return Ok(());
     };
@@ -67,7 +67,7 @@ pub fn init_in_first_kthread(path_resolver: &PathResolver) -> Result<()> {
 /// Resolves the path specified by `rdinit`, or `/init` when `rdinit` is not provided, and returns
 /// the resolved path together with the original pathname. Returns an error if the pathname is
 /// invalid or cannot be resolved.
-pub fn find_init(path_resolver: &PathResolver) -> Result<(Path, &'static str)> {
+pub(crate) fn find_init(path_resolver: &PathResolver) -> Result<(Path, &'static str)> {
     const DEFAULT_INITRAMFS_INIT_PATH: &str = "/init";
 
     let init_path = RDINIT_PATH

@@ -18,10 +18,10 @@ use crate::{
     security::lsm::hooks as lsm_hooks,
 };
 
-pub static YAMA_LSM: YamaLsm = YamaLsm;
+pub(crate) static YAMA_LSM: YamaLsm = YamaLsm;
 
 /// The Yama minor LSM.
-pub struct YamaLsm;
+pub(crate) struct YamaLsm;
 
 impl LsmAlienAccessHook for YamaLsm {
     fn on_alien_access(&self, context: &AlienAccessContext) -> Result<()> {
@@ -73,12 +73,12 @@ impl LsmModule for YamaLsm {
 impl LsmCapabilityHook for YamaLsm {}
 
 /// Returns the current Yama scope for alien access.
-pub fn get_scope() -> YamaScope {
+pub(crate) fn get_scope() -> YamaScope {
     YAMA_SCOPE.load(Ordering::Relaxed)
 }
 
 /// Sets the Yama scope for alien access.
-pub fn set_scope(new_scope: YamaScope) -> Result<()> {
+pub(crate) fn set_scope(new_scope: YamaScope) -> Result<()> {
     lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
         UserNamespace::get_init_singleton().as_ref(),
         current_thread!().as_posix_thread().unwrap(),
@@ -104,7 +104,7 @@ pub fn set_scope(new_scope: YamaScope) -> Result<()> {
 /// The Yama scope levels.
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum YamaScope {
+pub(crate) enum YamaScope {
     /// No additional restrictions on alien attach.
     Disabled = 0,
     /// Only allow alien attach by ancestor processes, or processes with `CapSet::SYS_PTRACE`.

@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub struct SigDispositions {
+pub(crate) struct SigDispositions {
     // SigNum -> SigAction
     map: [SigAction; COUNT_ALL_SIGS],
 }
@@ -19,13 +19,13 @@ impl Default for SigDispositions {
 }
 
 impl SigDispositions {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             map: [SigAction::default(); COUNT_ALL_SIGS],
         }
     }
 
-    pub fn get(&self, num: SigNum) -> SigAction {
+    pub(crate) fn get(&self, num: SigNum) -> SigAction {
         let idx = Self::num_to_idx(num);
         self.map[idx]
     }
@@ -33,7 +33,7 @@ impl SigDispositions {
     /// Returns all signal dispositions in ascending signal-number order.
     ///
     /// The iterator covers standard and real-time signals.
-    pub fn iter(&self) -> impl Iterator<Item = (SigNum, SigAction)> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (SigNum, SigAction)> + '_ {
         self.map.iter().enumerate().map(|(idx, sig_action)| {
             let sig_num = MIN_STD_SIG_NUM + idx as u8;
 
@@ -41,13 +41,13 @@ impl SigDispositions {
         })
     }
 
-    pub fn set(&mut self, num: SigNum, sa: SigAction) -> Result<SigAction> {
+    pub(crate) fn set(&mut self, num: SigNum, sa: SigAction) -> Result<SigAction> {
         check_sigaction(&sa)?;
         let idx = Self::num_to_idx(num);
         Ok(core::mem::replace(&mut self.map[idx], sa))
     }
 
-    pub fn set_default(&mut self, num: SigNum) {
+    pub(crate) fn set_default(&mut self, num: SigNum) {
         let idx = Self::num_to_idx(num);
         self.map[idx] = SigAction::Dfl;
     }
@@ -56,7 +56,7 @@ impl SigDispositions {
     /// When execve, the handled signals are reset to the default; the dispositions of
     /// ignored signals are left unchanged.
     /// This function should be used when execve.
-    pub fn inherit(&mut self) {
+    pub(crate) fn inherit(&mut self) {
         for sigaction in &mut self.map {
             if let SigAction::User { .. } = sigaction {
                 *sigaction = SigAction::Dfl;
@@ -68,7 +68,7 @@ impl SigDispositions {
         (num.as_u8() - MIN_STD_SIG_NUM) as usize
     }
 
-    pub fn will_ignore(&self, signal: &dyn Signal) -> bool {
+    pub(crate) fn will_ignore(&self, signal: &dyn Signal) -> bool {
         let signum = signal.num();
         self.get(signum).will_ignore(signum)
     }

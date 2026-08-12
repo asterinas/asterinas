@@ -13,7 +13,7 @@ use crate::{
 
 /// An in-memory xattr object of a `RamInode`.
 /// An xattr is used to manage special 'name-value' pairs of an inode.
-pub struct RamXattr(Once<Box<RwMutex<RamXattrInner>>>);
+pub(crate) struct RamXattr(Once<Box<RwMutex<RamXattrInner>>>);
 
 /// An owned in-memory xattr name that possesses a valid namespace.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -35,11 +35,11 @@ struct RamXattrInner {
 }
 
 impl RamXattr {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self(Once::new())
     }
 
-    pub fn set(
+    pub(crate) fn set(
         &self,
         name: XattrName,
         value_reader: &mut VmReader,
@@ -89,7 +89,7 @@ impl RamXattr {
         Ok(())
     }
 
-    pub fn get(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
+    pub(crate) fn get(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
         let existence_error =
             Error::with_message(Errno::ENODATA, "the target xattr does not exist");
         let inner = self.0.get().ok_or(existence_error)?;
@@ -114,7 +114,11 @@ impl RamXattr {
         Ok(value_len)
     }
 
-    pub fn list(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
+    pub(crate) fn list(
+        &self,
+        namespace: XattrNamespace,
+        list_writer: &mut VmWriter,
+    ) -> Result<usize> {
         let Some(inner) = self.0.get() else {
             return Ok(0);
         };
@@ -145,7 +149,7 @@ impl RamXattr {
         Ok(list_actual_len)
     }
 
-    pub fn remove(&self, name: XattrName) -> Result<()> {
+    pub(crate) fn remove(&self, name: XattrName) -> Result<()> {
         let existence_error =
             Error::with_message(Errno::ENODATA, "the target xattr does not exist");
         let inner = self.0.get().ok_or(existence_error)?;
@@ -169,7 +173,7 @@ impl RamXattr {
     }
 
     /// Checks if the file type is valid for xattr support.
-    pub fn check_file_type_for_xattr(file_type: InodeType) -> Result<()> {
+    pub(crate) fn check_file_type_for_xattr(file_type: InodeType) -> Result<()> {
         match file_type {
             InodeType::File | InodeType::Dir => Ok(()),
             _ => Err(Error::with_message(
@@ -196,7 +200,7 @@ impl Equivalent<RamXattrName> for XattrName<'_> {
 }
 
 impl RamXattrInner {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             map: HashMap::new(),
             total_name_count: 0,

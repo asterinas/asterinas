@@ -10,7 +10,7 @@ use crate::{
     prelude::*,
 };
 
-pub struct BoundNetlink<Message: 'static> {
+pub(crate) struct BoundNetlink<Message: 'static> {
     pub(in netlink) handle: BoundHandle<Message>,
     pub(in netlink) remote_addr: NetlinkSocketAddr,
     pub(in netlink) receive_queue: Arc<Mutex<MessageQueue<Message>>>,

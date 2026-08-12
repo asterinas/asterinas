@@ -33,7 +33,7 @@ mod ioctl_defs {
     pub(super) type GetIfTxQueueLen = ioc!(SIOCGIFTXQLEN,   0x8942, InOutData<CIfReq>);
 }
 
-pub fn socket_ioctl<T: Socket>(socket: &T, raw_ioctl: RawIoctl) -> Result<i32> {
+pub(crate) fn socket_ioctl<T: Socket>(socket: &T, raw_ioctl: RawIoctl) -> Result<i32> {
     // Linux always handles `SIOCGIFCONF` first.
     match handle_get_ifconf(raw_ioctl) {
         Err(err) if err.error() == Errno::ENOTTY => (),

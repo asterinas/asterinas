@@ -5,7 +5,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{prelude::*, time::SystemTime};
 
-pub fn sys_time(tloc: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_time(tloc: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("tloc = 0x{tloc:x}");
 
     let now_as_secs = {

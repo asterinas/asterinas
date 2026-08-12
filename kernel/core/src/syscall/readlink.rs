@@ -15,7 +15,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_readlinkat(
+pub(super) fn sys_readlinkat(
     dirfd: RawFileDesc,
     path_addr: Vaddr,
     usr_buf_addr: Vaddr,
@@ -53,7 +53,7 @@ pub fn sys_readlinkat(
     Ok(SyscallReturn::Return(write_len as _))
 }
 
-pub fn sys_readlink(
+pub(super) fn sys_readlink(
     path_addr: Vaddr,
     usr_buf_addr: Vaddr,
     usr_buf_len: usize,

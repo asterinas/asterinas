@@ -19,7 +19,7 @@ use crate::prelude::*;
 /// and bit 1 means the ID is in use.
 /// As such, the bitmap can contain contain at most `BLOCK_SIZE` * 8 bits/IDs.
 #[derive(Clone)]
-pub struct IdBitmap {
+pub(crate) struct IdBitmap {
     buf: Box<[u8]>,
     first_available_id: u16,
     len: u16,
@@ -31,7 +31,7 @@ impl IdBitmap {
     /// # Panics
     ///
     /// This method panics if `len` is greater than [`IdBitmap::capacity()`].
-    pub fn from_buf(buf: Box<[u8]>, len: u16) -> Self {
+    pub(crate) fn from_buf(buf: Box<[u8]>, len: u16) -> Self {
         assert!(len <= Self::capacity());
         let mut bitmap = Self {
             buf,
@@ -45,19 +45,19 @@ impl IdBitmap {
 
     /// Returns the length of the ID bitmap, i.e., the maximum number of IDs.
     #[expect(unused)]
-    pub const fn len(&self) -> u16 {
+    pub(crate) const fn len(&self) -> u16 {
         self.len
     }
 
     /// Returns the capacity of the ID bitmap.
     ///
     /// The capacity is the size of the underlying buffer in bits.
-    pub const fn capacity() -> u16 {
+    pub(crate) const fn capacity() -> u16 {
         BLOCK_SIZE as u16 * 8
     }
 
     /// Returns a reference to the underlying buffer of `BLOCK_SIZE` bytes.
-    pub fn as_bytes(&self) -> &[u8] {
+    pub(crate) fn as_bytes(&self) -> &[u8] {
         &self.buf
     }
 
@@ -74,14 +74,14 @@ impl IdBitmap {
     /// # Panics
     ///
     /// If the `id` is out of bounds, this method will panic.
-    pub fn is_allocated(&self, id: u16) -> bool {
+    pub(crate) fn is_allocated(&self, id: u16) -> bool {
         self.bit_slice()[id as usize]
     }
 
     /// Allocates and returns a new `id`.
     ///
     /// If allocation is not possible, it returns `None`.
-    pub fn alloc(&mut self) -> Option<u16> {
+    pub(crate) fn alloc(&mut self) -> Option<u16> {
         if self.first_available_id < self.len {
             let id = self.first_available_id;
             self.bit_slice_mut().set(id as usize, true);
@@ -97,7 +97,7 @@ impl IdBitmap {
     /// The `count` is the number of consecutive `id`s to allocate. If it is 0, return `None`.
     ///
     /// If allocation is not possible, it returns `None`.
-    pub fn alloc_consecutive(&mut self, count: u16) -> Option<Range<u16>> {
+    pub(crate) fn alloc_consecutive(&mut self, count: u16) -> Option<Range<u16>> {
         if count == 0 {
             return None;
         }
@@ -148,7 +148,7 @@ impl IdBitmap {
     /// # Panics
     ///
     /// If the `id` is out of bounds, this method will panic.
-    pub fn free(&mut self, id: u16) {
+    pub(crate) fn free(&mut self, id: u16) {
         debug_assert!(self.bit_slice()[id as usize]);
 
         self.bit_slice_mut().set(id as usize, false);
@@ -162,7 +162,7 @@ impl IdBitmap {
     /// # Panics
     ///
     /// If the `range` is out of bounds, this method will panic.
-    pub fn free_consecutive(&mut self, range: Range<u16>) {
+    pub(crate) fn free_consecutive(&mut self, range: Range<u16>) {
         if range.is_empty() {
             return;
         }

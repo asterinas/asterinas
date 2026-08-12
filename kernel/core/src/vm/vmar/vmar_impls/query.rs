@@ -8,7 +8,7 @@ use super::{VmMapping, Vmar, VmarInner};
 
 impl Vmar {
     /// Finds all the mapped regions that intersect with the specified range.
-    pub fn query(&self, range: Range<usize>) -> VmarQueryGuard<'_> {
+    pub(crate) fn query(&self, range: Range<usize>) -> VmarQueryGuard<'_> {
         VmarQueryGuard {
             vmar: self.inner.read(),
             range,
@@ -17,7 +17,7 @@ impl Vmar {
 }
 
 /// A guard that allows querying a [`Vmar`] for its mappings.
-pub struct VmarQueryGuard<'a> {
+pub(crate) struct VmarQueryGuard<'a> {
     vmar: RwMutexReadGuard<'a, VmarInner>,
     range: Range<usize>,
 }
@@ -25,7 +25,7 @@ pub struct VmarQueryGuard<'a> {
 impl VmarQueryGuard<'_> {
     /// Returns an iterator over the [`VmMapping`]s that intersect with the
     /// provided range when calling [`Vmar::query`].
-    pub fn iter(&self) -> impl Iterator<Item = &VmMapping> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &VmMapping> {
         self.vmar.query(&self.range)
     }
 
@@ -33,7 +33,7 @@ impl VmarQueryGuard<'_> {
     ///
     /// In other words, this method will return `false` if and only if the
     /// range contains pages that are not mapped.
-    pub fn is_fully_mapped(&self) -> bool {
+    pub(crate) fn is_fully_mapped(&self) -> bool {
         let mut last_mapping_end = self.range.start;
 
         for mapping in self.iter() {

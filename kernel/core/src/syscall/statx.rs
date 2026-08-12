@@ -16,7 +16,7 @@ use crate::{
 
 const STATX_ATTR_MOUNT_ROOT: u64 = 0x0000_2000;
 
-pub fn sys_statx(
+pub(super) fn sys_statx(
     dirfd: RawFileDesc,
     filename_ptr: Vaddr,
     flags: u32,
@@ -242,7 +242,7 @@ bitflags! {
     /// Query request/result mask for statx() and struct statx::stx_mask.
     /// These bits should be set in the mask argument of statx() to request
     /// particular items when calling statx().
-    pub struct StatxMask: u32 {
+    pub(crate) struct StatxMask: u32 {
         /// Want stx_mode & S_IFMT
         const STATX_TYPE            = 0x00000001;
         /// Want stx_mode & ~S_IFMT

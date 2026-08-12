@@ -10,7 +10,7 @@ use crate::{
     time::{TIMER_ABSTIME, itimerspec_t, timer::Timeout, timespec_t},
 };
 
-pub fn sys_timer_settime(
+pub(super) fn sys_timer_settime(
     timer_id: usize,
     flags: i32,
     new_itimerspec_addr: Vaddr,
@@ -61,7 +61,7 @@ pub fn sys_timer_settime(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_timer_gettime(
+pub(super) fn sys_timer_gettime(
     timer_id: usize,
     itimerspec_addr: Vaddr,
     ctx: &Context,

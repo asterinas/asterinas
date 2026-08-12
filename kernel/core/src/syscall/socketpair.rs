@@ -13,7 +13,7 @@ use crate::{
     util::net::{CSocketAddrFamily, Protocol, SOCK_TYPE_MASK, SockFlags, SockType},
 };
 
-pub fn sys_socketpair(
+pub(super) fn sys_socketpair(
     domain: i32,
     type_: i32,
     protocol: i32,

@@ -26,7 +26,7 @@ use crate::{
 /// # Panics
 ///
 /// If the current thread is not a POSIX thread, this method will panic.
-pub fn do_exit(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContext) {
+pub(crate) fn do_exit(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContext) {
     exit_internal(term_status, false, ctx, user_ctx);
 }
 
@@ -35,7 +35,7 @@ pub fn do_exit(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContex
 /// # Panics
 ///
 /// If the current thread is not a POSIX thread, this method will panic.
-pub fn do_exit_group(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContext) {
+pub(crate) fn do_exit_group(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContext) {
     exit_internal(term_status, true, ctx, user_ctx);
 }
 

@@ -18,7 +18,7 @@ use crate::{
 /// device is pseduoterminal).
 ///
 /// [`Tty`]: super::Tty
-pub trait TtyDriver: Send + Sync + 'static {
+pub(crate) trait TtyDriver: Send + Sync + 'static {
     /// The device major ID.
     const DEVICE_MAJOR_ID: u32;
 

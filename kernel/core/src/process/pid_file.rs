@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-pub struct PidFile {
+pub(crate) struct PidFile {
     process: Weak<Process>,
     common: FileCommon,
 }
@@ -31,7 +31,7 @@ impl Debug for PidFile {
 }
 
 impl PidFile {
-    pub fn new(process: Arc<Process>, is_nonblocking: bool) -> Self {
+    pub(crate) fn new(process: Arc<Process>, is_nonblocking: bool) -> Self {
         let pseudo_path = PidfdFs::new_path(|_| "anon_inode:[pidfd]".to_string());
         let status_flags = if is_nonblocking {
             StatusFlags::O_NONBLOCK
@@ -65,7 +65,7 @@ impl PidFile {
         self.common.is_nonblocking()
     }
 
-    pub fn process_opt(&self) -> Option<Arc<Process>> {
+    pub(crate) fn process_opt(&self) -> Option<Arc<Process>> {
         self.process.upgrade()
     }
 }

@@ -3,23 +3,23 @@
 macro_rules! impl_socket_options {
     ($(
         $(#[$outer:meta])*
-        pub struct $name: ident ( $value_ty:ty );
+        pub(crate) struct $name: ident ( $value_ty:ty );
     )*) => {
         $(
             $(#[$outer])*
             #[derive(Debug)]
-            pub struct $name (Option<$value_ty>);
+            pub(crate) struct $name (Option<$value_ty>);
 
             impl $name {
-                pub fn new() -> Self {
+                pub(crate) fn new() -> Self {
                     Self (None)
                 }
 
-                pub fn get(&self) -> Option<&$value_ty> {
+                pub(crate) fn get(&self) -> Option<&$value_ty> {
                     self.0.as_ref()
                 }
 
-                pub fn set(&mut self, value: $value_ty) {
+                pub(crate) fn set(&mut self, value: $value_ty) {
                     self.0 = Some(value);
                 }
             }

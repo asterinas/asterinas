@@ -15,19 +15,27 @@ use crate::{
     security::lsm::hooks as lsm_hooks,
 };
 
-pub fn sys_getrlimit(resource: u32, rlim_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_getrlimit(
+    resource: u32,
+    rlim_addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let old_raw = do_prlimit64(&ctx.process, resource, None, ctx)?;
     ctx.user_space().write_val(rlim_addr, &old_raw)?;
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_setrlimit(resource: u32, new_rlim_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_setrlimit(
+    resource: u32,
+    new_rlim_addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let new_raw = ctx.user_space().read_val(new_rlim_addr)?;
     do_prlimit64(&ctx.process, resource, Some(new_raw), ctx)?;
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_prlimit64(
+pub(super) fn sys_prlimit64(
     pid: Pid,
     resource: u32,
     new_rlim_addr: Vaddr,

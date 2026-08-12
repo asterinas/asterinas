@@ -2,7 +2,7 @@
 
 mod multicast;
 
-pub use multicast::{GroupIdSet, MAX_GROUPS};
+pub(crate) use multicast::{GroupIdSet, MAX_GROUPS};
 
 use crate::{net::socket::util::SocketAddr, prelude::*};
 
@@ -11,14 +11,14 @@ use crate::{net::socket::util::SocketAddr, prelude::*};
 /// The address contains the port number for unicast
 /// and the group IDs for multicast.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NetlinkSocketAddr {
+pub(crate) struct NetlinkSocketAddr {
     port: PortNum,
     groups: GroupIdSet,
 }
 
 impl NetlinkSocketAddr {
     /// Creates a new netlink address.
-    pub const fn new(port: PortNum, groups: GroupIdSet) -> Self {
+    pub(crate) const fn new(port: PortNum, groups: GroupIdSet) -> Self {
         Self { port, groups }
     }
 
@@ -27,7 +27,7 @@ impl NetlinkSocketAddr {
     /// Both the port ID and group numbers are left unspecified.
     ///
     /// Note that an unspecified address can also represent the kernel socket address.
-    pub const fn new_unspecified() -> Self {
+    pub(crate) const fn new_unspecified() -> Self {
         Self {
             port: UNSPECIFIED_PORT,
             groups: GroupIdSet::new_empty(),
@@ -35,17 +35,17 @@ impl NetlinkSocketAddr {
     }
 
     /// Returns the port number.
-    pub const fn port(&self) -> PortNum {
+    pub(crate) const fn port(&self) -> PortNum {
         self.port
     }
 
     /// Returns the group ID set.
-    pub const fn groups(&self) -> GroupIdSet {
+    pub(crate) const fn groups(&self) -> GroupIdSet {
         self.groups
     }
 
     /// Adds some new groups to the address.
-    pub fn add_groups(&mut self, groups: GroupIdSet) {
+    pub(crate) fn add_groups(&mut self, groups: GroupIdSet) {
         self.groups.add_groups(groups);
     }
 }
@@ -70,7 +70,7 @@ impl From<NetlinkSocketAddr> for SocketAddr {
     }
 }
 
-pub type NetlinkProtocolId = u32;
-pub type PortNum = u32;
+pub(crate) type NetlinkProtocolId = u32;
+pub(crate) type PortNum = u32;
 
-pub const UNSPECIFIED_PORT: PortNum = 0;
+pub(crate) const UNSPECIFIED_PORT: PortNum = 0;

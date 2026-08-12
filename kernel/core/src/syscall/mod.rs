@@ -7,9 +7,9 @@
     expect(dead_code)
 )]
 
-pub use clock_gettime::ClockId;
+pub(crate) use clock_gettime::ClockId;
 use ostd::arch::cpu::context::UserContext;
-pub use timer_create::create_timer;
+pub(crate) use timer_create::create_timer;
 
 use crate::{cpu::LinuxAbi, prelude::*};
 
@@ -317,11 +317,11 @@ macro_rules! impl_syscall_nums_and_dispatch_fn {
     ( $( $name: ident = $num: literal => $handler: ident $args: tt );* $(;)? ) => {
         // First, define the syscall numbers
         $(
-            pub const $name: u64 = $num;
+            pub(crate) const $name: u64 = $num;
         )*
 
         // Then, define the dispatcher function
-        pub fn syscall_dispatch(
+        pub(crate) fn syscall_dispatch(
             syscall_number: u64,
             args: [u64; 6],
             ctx: &crate::context::Context,
@@ -376,7 +376,7 @@ impl SyscallArgument {
     }
 }
 
-pub fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
+pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
     let syscall_frame = SyscallArgument::new_from_context(user_ctx);
     let syscall_return = arch::syscall_dispatch(
         syscall_frame.syscall_number,

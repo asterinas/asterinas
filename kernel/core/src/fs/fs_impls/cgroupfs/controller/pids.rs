@@ -13,7 +13,7 @@ use crate::{process::posix_thread::PID_MAX, util::ReadCString};
 /// A sub-controller responsible for PID resource management in the cgroup subsystem.
 ///
 /// This controller will only provide interfaces in non-root cgroup nodes.
-pub struct PidsController {
+pub(crate) struct PidsController {
     /// The maximum number of processes allowed.
     max_pids: AtomicU32,
     /// The current number of processes in this cgroup's subtree.

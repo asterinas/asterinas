@@ -10,4 +10,4 @@ mod bound;
 mod kernel;
 mod message;
 
-pub type NetlinkRouteSocket = NetlinkSocket<NetlinkRouteProtocol>;
+pub(crate) type NetlinkRouteSocket = NetlinkSocket<NetlinkRouteProtocol>;

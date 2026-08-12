@@ -9,7 +9,7 @@ use crate::{
 };
 
 /// Finishes a response message.
-pub fn finish_response(
+pub(crate) fn finish_response(
     request_header: &CMsgSegHdr,
     dump_all: bool,
     response_segments: &mut Vec<RtnlSegment>,

@@ -1,4 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod addr;
-pub mod link;
+pub(crate) mod addr;
+pub(crate) mod link;

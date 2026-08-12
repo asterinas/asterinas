@@ -7,7 +7,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_pread64(
+pub(super) fn sys_pread64(
     raw_fd: RawFileDesc,
     user_buf_ptr: Vaddr,
     user_buf_len: usize,

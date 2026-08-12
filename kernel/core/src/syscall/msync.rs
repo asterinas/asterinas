@@ -5,7 +5,12 @@ use align_ext::AlignExt;
 use super::SyscallReturn;
 use crate::{prelude::*, thread::kernel_thread::ThreadOptions, vm::vmar::VMAR_CAP_ADDR};
 
-pub fn sys_msync(addr: Vaddr, len: usize, flag: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_msync(
+    addr: Vaddr,
+    len: usize,
+    flag: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let flags = MsyncFlags::from_bits(flag)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!("addr = 0x{:x}, len = {}, flags = {:?}", addr, len, flags);

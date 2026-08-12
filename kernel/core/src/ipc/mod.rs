@@ -7,16 +7,16 @@ use crate::{
 
 mod ipc_ids;
 mod ipc_ns;
-pub mod semaphore;
+pub(crate) mod semaphore;
 
-pub use ipc_ids::IpcId;
-pub use ipc_ns::IpcNamespace;
+pub(crate) use ipc_ids::IpcId;
+pub(crate) use ipc_ns::IpcNamespace;
 
 /// An IPC key.
 ///
 /// This key is specified by and can be looked up in userspace. Do not confuse it with the
 /// identifier [`IpcId`], which is specified by the kernel and returned to userspace upon lookup.
-pub type IpcKey = i32;
+pub(crate) type IpcKey = i32;
 
 /// A private IPC key.
 ///
@@ -24,7 +24,7 @@ pub type IpcKey = i32;
 const IPC_PRIVATE: IpcKey = 0;
 
 bitflags! {
-    pub struct IpcFlags: u32{
+    pub(crate) struct IpcFlags: u32{
         /// Create key if key does not exist
         const IPC_CREAT  = 1 << 9;
         /// Fail if key exists
@@ -40,7 +40,7 @@ bitflags! {
 #[expect(non_camel_case_types)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum IpcControlCmd {
+pub(crate) enum IpcControlCmd {
     IPC_RMID = 0,
     // IPC_SET = 1,
     IPC_STAT = 2,
@@ -55,7 +55,7 @@ pub enum IpcControlCmd {
 }
 
 #[derive(Debug)]
-pub struct IpcPermission {
+pub(crate) struct IpcPermission {
     key: IpcKey,
     /// Owner's UID
     uid: Uid,
@@ -70,32 +70,32 @@ pub struct IpcPermission {
 }
 
 impl IpcPermission {
-    pub fn key(&self) -> IpcKey {
+    pub(crate) fn key(&self) -> IpcKey {
         self.key
     }
 
     /// Returns owner's UID
-    pub fn uid(&self) -> Uid {
+    pub(crate) fn uid(&self) -> Uid {
         self.uid
     }
 
     /// Returns owner's GID
-    pub fn gid(&self) -> Gid {
+    pub(crate) fn gid(&self) -> Gid {
         self.gid
     }
 
     /// Returns creator's UID
-    pub fn cuid(&self) -> Uid {
+    pub(crate) fn cuid(&self) -> Uid {
         self.cuid
     }
 
     /// Returns creator's GID
-    pub fn cguid(&self) -> Gid {
+    pub(crate) fn cguid(&self) -> Gid {
         self.cguid
     }
 
     /// Returns permission mode
-    pub fn mode(&self) -> u16 {
+    pub(crate) fn mode(&self) -> u16 {
         self.mode
     }
 

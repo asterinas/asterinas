@@ -2,7 +2,7 @@
 
 use ostd::info;
 
-pub fn init() {
+pub(crate) fn init() {
     for device in aster_input::all_devices() {
         info!("Found an input device, name: {}", device.name());
     }

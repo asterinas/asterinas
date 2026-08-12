@@ -7,7 +7,7 @@
 /// The unit type `()` can serve as a unit event.
 /// It can be used if there is only one kind of event
 /// and the event carries no additional information.
-pub trait Events: Copy + Clone + Send + Sync + 'static {}
+pub(crate) trait Events: Copy + Clone + Send + Sync + 'static {}
 
 impl Events for () {}
 
@@ -27,7 +27,7 @@ impl Events for () {}
 /// the blanket implementations the `EventsFilter` trait.
 /// By using `Option<F: EventsFilter>`, we can decide, on a per-observer basis,
 /// if an observer needs an event filter.
-pub trait EventsFilter<E: Events>: Send + Sync + 'static {
+pub(crate) trait EventsFilter<E: Events>: Send + Sync + 'static {
     fn filter(&self, event: &E) -> bool;
 }
 

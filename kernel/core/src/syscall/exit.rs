@@ -8,7 +8,7 @@ use crate::{
     syscall::SyscallReturn,
 };
 
-pub fn sys_exit(
+pub(super) fn sys_exit(
     exit_code: i32,
     ctx: &Context,
     user_ctx: &mut UserContext,

@@ -7,7 +7,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_write(
+pub(super) fn sys_write(
     raw_fd: RawFileDesc,
     user_buf_ptr: Vaddr,
     user_buf_len: usize,

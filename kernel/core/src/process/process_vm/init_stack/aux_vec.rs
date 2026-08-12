@@ -16,7 +16,7 @@ use crate::prelude::*;
 #[expect(dead_code)]
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum AuxKey {
+pub(crate) enum AuxKey {
     AT_IGNORE = 1,    /* entry should be ignored */
     AT_EXECFD = 2,    /* file descriptor of program */
     AT_PHDR = 3,      /* program headers for program */
@@ -54,18 +54,18 @@ impl AuxKey {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct AuxVec {
+pub(crate) struct AuxVec {
     table: BTreeMap<AuxKey, u64>,
 }
 
 impl AuxVec {
-    pub const fn new() -> AuxVec {
+    pub(crate) const fn new() -> AuxVec {
         AuxVec {
             table: BTreeMap::new(),
         }
     }
 
-    pub fn set(&mut self, key: AuxKey, val: u64) {
+    pub(crate) fn set(&mut self, key: AuxKey, val: u64) {
         self.table
             .entry(key)
             .and_modify(|val_mut| *val_mut = val)

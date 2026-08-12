@@ -8,13 +8,13 @@ use crate::prelude::*;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Pod)]
-pub struct Gid(u32);
+pub(crate) struct Gid(u32);
 
 impl Gid {
     /// The invalid GID, typically used to indicate that no valid GID is found when returning to user space.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/linux/uidgid.h#L51>.
-    pub const INVALID: Gid = Gid(u32::MAX);
+    pub(crate) const INVALID: Gid = Gid(u32::MAX);
 
     /// The overflow GID, typically used to indicate that group mappings between namespaces fail.
     ///
@@ -22,17 +22,17 @@ impl Gid {
     /// configured via `/proc/sys/kernel/overflowgid`.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/kernel/sys.c#L167>.
-    pub const OVERFLOW: Gid = Self::new(65534);
+    pub(crate) const OVERFLOW: Gid = Self::new(65534);
 
-    pub const fn new(gid: u32) -> Self {
+    pub(crate) const fn new(gid: u32) -> Self {
         Self(gid)
     }
 
-    pub const fn new_root() -> Self {
+    pub(crate) const fn new_root() -> Self {
         Self(ROOT_GID)
     }
 
-    pub const fn is_root(&self) -> bool {
+    pub(crate) const fn is_root(&self) -> bool {
         self.0 == ROOT_GID
     }
 }

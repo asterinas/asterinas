@@ -3,18 +3,18 @@
 mod evdev;
 mod fb;
 mod mem;
-pub mod misc;
+pub(crate) mod misc;
 mod pty;
 mod registry;
 mod shm;
-pub mod tty;
+pub(crate) mod tty;
 
 use alloc::borrow::Cow;
 
 use device_id::DeviceId;
-pub use mem::{getrandom, geturandom};
-pub use pty::{PtyMaster, PtySlave, new_pty_pair};
-pub use registry::lookup;
+pub(crate) use mem::{getrandom, geturandom};
+pub(crate) use pty::{PtyMaster, PtySlave, new_pty_pair};
+pub(crate) use registry::lookup;
 
 use crate::{
     fs::{
@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// The abstraction of a device.
-pub trait Device: Send + Sync + 'static {
+pub(crate) trait Device: Send + Sync + 'static {
     /// Returns the device type.
     fn type_(&self) -> DeviceType;
 
@@ -57,7 +57,7 @@ impl Debug for dyn Device {
 
 /// Device type
 #[derive(Debug)]
-pub enum DeviceType {
+pub(crate) enum DeviceType {
     Char,
     Block,
 }
@@ -72,14 +72,14 @@ pub enum DeviceType {
 /// matching Linux devtmpfs's default device inode permissions.
 /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/base/devtmpfs.c#L11>.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DevtmpfsInodeMeta<'a> {
+pub(crate) struct DevtmpfsInodeMeta<'a> {
     path: Cow<'a, str>,
     mode: InodeMode,
 }
 
 impl<'a> DevtmpfsInodeMeta<'a> {
     /// Creates the metadata for a devtmpfs inode with the default mode (`u+rw`).
-    pub fn new(path: impl Into<Cow<'a, str>>) -> Self {
+    pub(crate) fn new(path: impl Into<Cow<'a, str>>) -> Self {
         Self {
             path: path.into(),
             mode: mkmod!(u+rw),
@@ -87,7 +87,7 @@ impl<'a> DevtmpfsInodeMeta<'a> {
     }
 
     /// Creates the metadata for a devtmpfs inode with the specified path and mode.
-    pub fn with_mode(path: impl Into<Cow<'a, str>>, mode: InodeMode) -> Self {
+    pub(crate) fn with_mode(path: impl Into<Cow<'a, str>>, mode: InodeMode) -> Self {
         Self {
             path: path.into(),
             mode,
@@ -95,12 +95,12 @@ impl<'a> DevtmpfsInodeMeta<'a> {
     }
 
     /// Returns the device inode path relative to `/dev`.
-    pub fn path(&self) -> &str {
+    pub(crate) fn path(&self) -> &str {
         &self.path
     }
 
     /// Returns the permission bits of the device inode.
-    pub fn mode(&self) -> InodeMode {
+    pub(crate) fn mode(&self) -> InodeMode {
         self.mode
     }
 }
@@ -111,7 +111,7 @@ impl<'a> DevtmpfsInodeMeta<'a> {
 /// This function should be called when registering a device.
 //
 // TODO: Figure out what should happen when unregistering the device.
-pub fn add_node(
+pub(crate) fn add_node(
     dev_type: DeviceType,
     dev_id: u64,
     meta: &DevtmpfsInodeMeta<'_>,
@@ -162,7 +162,7 @@ pub fn add_node(
     Ok(dev_path)
 }
 
-pub fn init_in_first_kthread() {
+pub(crate) fn init_in_first_kthread() {
     registry::init_in_first_kthread();
     mem::init_in_first_kthread();
     misc::init_in_first_kthread();
@@ -171,7 +171,7 @@ pub fn init_in_first_kthread() {
 }
 
 /// Initializes the device nodes in devtmpfs after mounting rootfs.
-pub fn init_in_first_process(ctx: &Context) -> Result<()> {
+pub(crate) fn init_in_first_process(ctx: &Context) -> Result<()> {
     let fs = ctx.thread_local.borrow_fs();
     let path_resolver = fs.resolver().read();
 

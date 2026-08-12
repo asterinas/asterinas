@@ -3,7 +3,7 @@
 use crate::prelude::*;
 
 /// The maximum offset in a file.
-pub const OFFSET_MAX: usize = i64::MAX as usize;
+pub(crate) const OFFSET_MAX: usize = i64::MAX as usize;
 
 /// A range in a file.
 ///
@@ -15,32 +15,32 @@ pub const OFFSET_MAX: usize = i64::MAX as usize;
 /// The range is [0, end] if only end is set.
 /// The range is [start, end] if both start and end are set.
 #[derive(Clone, Copy, Debug)]
-pub struct FileRange {
+pub(crate) struct FileRange {
     start: usize,
     end: usize,
 }
 
 impl FileRange {
-    pub fn new(start: usize, end: usize) -> Result<Self> {
+    pub(crate) fn new(start: usize, end: usize) -> Result<Self> {
         if start >= end {
             return_errno_with_message!(Errno::EINVAL, "invalid parameters");
         }
         Ok(Self { start, end })
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.end - self.start
     }
 
-    pub fn start(&self) -> usize {
+    pub(crate) fn start(&self) -> usize {
         self.start
     }
 
-    pub fn end(&self) -> usize {
+    pub(crate) fn end(&self) -> usize {
         self.end
     }
 
-    pub fn set_start(&mut self, new_start: usize) -> Result<FileRangeChange> {
+    pub(crate) fn set_start(&mut self, new_start: usize) -> Result<FileRangeChange> {
         if new_start >= self.end {
             return_errno_with_message!(Errno::EINVAL, "invalid new start");
         }
@@ -54,7 +54,7 @@ impl FileRange {
         Ok(change)
     }
 
-    pub fn set_end(&mut self, new_end: usize) -> Result<FileRangeChange> {
+    pub(crate) fn set_end(&mut self, new_end: usize) -> Result<FileRangeChange> {
         if new_end <= self.start {
             return_errno_with_message!(Errno::EINVAL, "invalid new end");
         }
@@ -68,7 +68,7 @@ impl FileRange {
         Ok(change)
     }
 
-    pub fn overlap_with(&self, other: &Self) -> Option<OverlapWith> {
+    pub(crate) fn overlap_with(&self, other: &Self) -> Option<OverlapWith> {
         if self.start >= other.end || self.end <= other.start {
             return None;
         }
@@ -85,7 +85,7 @@ impl FileRange {
         Some(overlap)
     }
 
-    pub fn merge(&mut self, other: &Self) -> Result<FileRangeChange> {
+    pub(crate) fn merge(&mut self, other: &Self) -> Result<FileRangeChange> {
         if self.end < other.start || other.end < self.start {
             return_errno_with_message!(Errno::EINVAL, "can not merge separated ranges");
         }
@@ -104,7 +104,7 @@ impl FileRange {
 }
 
 #[derive(Debug)]
-pub enum FileRangeChange {
+pub(crate) enum FileRangeChange {
     Same,
     Expanded,
     Shrunk,
@@ -112,7 +112,7 @@ pub enum FileRangeChange {
 
 /// The position of a range (say A) relative another overlapping range (say B).
 #[derive(Debug)]
-pub enum OverlapWith {
+pub(crate) enum OverlapWith {
     /// The position where range A is to the left of B (A.start <= B.start && A.end < B.end).
     ToLeft,
     /// The position where range A is to the right of B (A.start > B.start && A.end >= B.end).

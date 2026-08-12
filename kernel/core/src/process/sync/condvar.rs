@@ -12,17 +12,17 @@ use crate::time::wait::WaitTimeout;
 
 /// Represents potential errors during lock operations on synchronization primitives,
 /// specifically for operations associated with a `Condvar` (Condition Variable).
-pub enum LockErr<Guard> {
+pub(crate) enum LockErr<Guard> {
     Timeout(Guard),
     Unknown(Guard),
 }
 
 /// LockResult, different from Rust std.
 /// The result of a lock operation.
-pub type LockResult<Guard> = Result<Guard, LockErr<Guard>>;
+pub(crate) type LockResult<Guard> = Result<Guard, LockErr<Guard>>;
 
 impl<Guard> LockErr<Guard> {
-    pub fn into_guard(self) -> Guard {
+    pub(crate) fn into_guard(self) -> Guard {
         match self {
             LockErr::Timeout(guard) => guard,
             LockErr::Unknown(guard) => guard,
@@ -82,7 +82,7 @@ impl<Guard> LockErr<Guard> {
 /// using a `Mutex` and a `Condvar`.
 /// The main thread waits for the flag to be set to `true`,
 /// utilizing the `Condvar` to sleep efficiently until the condition is met.
-pub struct Condvar {
+pub(crate) struct Condvar {
     waitqueue: Arc<WaitQueue>,
     counter: SpinLock<Inner>,
 }
@@ -94,7 +94,7 @@ struct Inner {
 
 impl Condvar {
     /// Creates a new condition variable.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Condvar {
             waitqueue: Arc::new(WaitQueue::new()),
             counter: SpinLock::new(Inner {
@@ -111,7 +111,7 @@ impl Condvar {
     /// Returns a new `MutexGuard` if the operation is successful,
     /// or returns the provided guard
     /// within a `LockErr` if the waiting operation fails.
-    pub fn wait<'a, T>(&self, guard: MutexGuard<'a, T>) -> LockResult<MutexGuard<'a, T>> {
+    pub(crate) fn wait<'a, T>(&self, guard: MutexGuard<'a, T>) -> LockResult<MutexGuard<'a, T>> {
         let cond = || {
             // Check if the notify counter is greater than 0.
             let mut counter = self.counter.lock();
@@ -140,7 +140,7 @@ impl Condvar {
     /// The function returns a tuple containing a `MutexGuard`
     /// and a boolean that is true if the timeout elapsed
     /// before the condition variable was notified.
-    pub fn wait_timeout<'a, T>(
+    pub(crate) fn wait_timeout<'a, T>(
         &self,
         guard: MutexGuard<'a, T>,
         timeout: Duration,
@@ -182,7 +182,7 @@ impl Condvar {
     /// it returns a tuple containing the `MutexGuard`
     /// and a boolean value indicating
     /// whether the wait operation terminated due to a timeout.
-    pub fn wait_timeout_while<'a, T, F>(
+    pub(crate) fn wait_timeout_while<'a, T, F>(
         &self,
         mut guard: MutexGuard<'a, T>,
         timeout: Duration,
@@ -211,7 +211,7 @@ impl Condvar {
     /// This function blocks until either the condition becomes false
     /// or the condition variable is explicitly notified.
     /// Returns the `MutexGuard` if the operation completes successfully.
-    pub fn wait_while<'a, T, F>(
+    pub(crate) fn wait_while<'a, T, F>(
         &self,
         mut guard: MutexGuard<'a, T>,
         mut condition: F,
@@ -236,7 +236,7 @@ impl Condvar {
     /// If there is a waiting thread, it will be unblocked
     /// and allowed to reacquire the associated mutex.
     /// If no threads are waiting, this function is a no-op.
-    pub fn notify_one(&self) {
+    pub(crate) fn notify_one(&self) {
         let mut counter = self.counter.lock();
         if counter.waiter_count == 0 {
             return;
@@ -251,7 +251,7 @@ impl Condvar {
     /// This method will unblock all waiting threads
     /// and they will be allowed to reacquire the associated mutex.
     /// If no threads are waiting, this function is a no-op.
-    pub fn notify_all(&self) {
+    pub(crate) fn notify_all(&self) {
         let mut counter = self.counter.lock();
         if counter.waiter_count == 0 {
             return;

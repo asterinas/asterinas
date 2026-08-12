@@ -83,7 +83,7 @@ impl<R: TRights> SocketCred<R> {
 /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/linux/socket.h#L183>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Pod)]
-pub struct CUserCred {
+pub(crate) struct CUserCred {
     pid: Pid,
     uid: Uid,
     gid: Gid,

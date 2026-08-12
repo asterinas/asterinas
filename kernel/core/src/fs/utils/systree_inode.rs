@@ -785,15 +785,15 @@ mod ino {
 
     const ATTR_ID_BITS: u8 = 8;
 
-    pub fn from_sysnode_id(node_id: &SysNodeId) -> Ino {
+    pub(crate) fn from_sysnode_id(node_id: &SysNodeId) -> Ino {
         node_id.as_u64() << ATTR_ID_BITS
     }
 
-    pub fn from_dir_ino_and_attr_id(dir_ino: Ino, attr_id: u8) -> Ino {
+    pub(crate) fn from_dir_ino_and_attr_id(dir_ino: Ino, attr_id: u8) -> Ino {
         dir_ino + (attr_id as Ino)
     }
 
-    pub fn from_node_kind(inner: &SysTreeNodeKind) -> Ino {
+    pub(crate) fn from_node_kind(inner: &SysTreeNodeKind) -> Ino {
         match inner {
             SysTreeNodeKind::Branch(branch_node) => from_sysnode_id(branch_node.id()),
             SysTreeNodeKind::Leaf(leaf_node) => from_sysnode_id(leaf_node.id()),

@@ -5,7 +5,12 @@ use core::sync::atomic::Ordering;
 use super::{SyscallReturn, get_ioprio::IoPrioWho};
 use crate::{prelude::*, process::posix_thread::AsPosixThread};
 
-pub fn sys_ioprio_set(which: u32, who: u32, ioprio: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_ioprio_set(
+    which: u32,
+    who: u32,
+    ioprio: u32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("which = {}, who = {}, ioprio = {}", which, who, ioprio);
 
     let ioprio_who = IoPrioWho::from_which_and_who(which, who, ctx)?;

@@ -13,7 +13,7 @@ bitflags! {
     /// These flags control the behavior of capabilities when changing UIDs.
     ///
     /// Reference: <https://man7.org/linux/man-pages/man7/capabilities.7.html>
-    pub struct SecureBits: u16 {
+    pub(crate) struct SecureBits: u16 {
         /// If set, the kernel does not grant capabilities when a set-user-ID-root program
         /// is executed, or when a process with an effective or real UID of 0 calls `execve`.
         const NOROOT = 1 << 0;

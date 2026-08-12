@@ -108,7 +108,7 @@ impl<S: ProcSymOps + 'static> Inode for ProcSym<S> {
     }
 }
 
-pub trait ProcSymOps: Sync + Send {
+pub(crate) trait ProcSymOps: Sync + Send {
     /// Returns the thread whose credentials own this procfs inode.
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         None

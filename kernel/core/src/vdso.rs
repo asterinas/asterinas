@@ -232,7 +232,7 @@ const PREBUILT_VDSO_LIB: &[u8] =
 /// This constant is specific to the prebuilt vDSO library and can be obtained from
 /// `readelf -s vdso_riscv64.so | grep '__vdso_rt_sigreturn'`.
 #[cfg(target_arch = "riscv64")]
-pub const __VDSO_RT_SIGRETURN_OFFSET: usize = 0x5b0;
+pub(crate) const __VDSO_RT_SIGRETURN_OFFSET: usize = 0x5b0;
 
 impl Vdso {
     /// Constructs a new `Vdso`, including an initialized `VdsoData` and a VMO of the vDSO.
@@ -391,12 +391,12 @@ pub(super) fn init_in_first_kthread() {
 /// Returns the vDSO VMO.
 ///
 /// This function will return `None` if vDSO does not exist (e.g., if it has not been initialized).
-pub fn vdso_vmo() -> Option<Arc<Vmo>> {
+pub(crate) fn vdso_vmo() -> Option<Arc<Vmo>> {
     VDSO.get().map(|vdso| vdso.vmo.clone())
 }
 
 #[cfg(target_arch = "x86_64")]
-pub const VDSO_VMO_LAYOUT: VdsoVmoLayout = VdsoVmoLayout {
+pub(crate) const VDSO_VMO_LAYOUT: VdsoVmoLayout = VdsoVmoLayout {
     // https://elixir.bootlin.com/linux/v6.2.10/source/arch/x86/entry/vdso/vdso-layout.lds.S#L20
     data_segment_offset: 0,
     data_segment_size: PAGE_SIZE,
@@ -410,7 +410,7 @@ pub const VDSO_VMO_LAYOUT: VdsoVmoLayout = VdsoVmoLayout {
 };
 
 #[cfg(target_arch = "riscv64")]
-pub const VDSO_VMO_LAYOUT: VdsoVmoLayout = VdsoVmoLayout {
+pub(crate) const VDSO_VMO_LAYOUT: VdsoVmoLayout = VdsoVmoLayout {
     // https://elixir.bootlin.com/linux/v6.2.10/source/arch/riscv/kernel/vdso.c#L247
     data_segment_offset: 0,
     data_segment_size: PAGE_SIZE,
@@ -423,7 +423,7 @@ pub const VDSO_VMO_LAYOUT: VdsoVmoLayout = VdsoVmoLayout {
     size: 3 * PAGE_SIZE,
 };
 
-pub struct VdsoVmoLayout {
+pub(crate) struct VdsoVmoLayout {
     pub data_segment_offset: usize,
     pub data_segment_size: usize,
     pub text_segment_offset: usize,

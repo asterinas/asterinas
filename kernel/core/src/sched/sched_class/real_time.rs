@@ -20,10 +20,10 @@ use ostd::{
 use super::{CurrentRuntime, SchedAttr, SchedClassRq, time::base_slice_clocks};
 use crate::thread::AsThread;
 
-pub type RealTimePriority = RangedU8<1, 99>;
+pub(crate) type RealTimePriority = RangedU8<1, 99>;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum RealTimePolicy {
+pub(crate) enum RealTimePolicy {
     Fifo,
     RoundRobin {
         base_slice_factor: Option<NonZero<u32>>,
@@ -65,7 +65,7 @@ impl RealTimePolicy {
 ///
 /// [`sched_clock`]: super::sched_clock
 #[derive(Debug)]
-pub struct RealTimeAttr {
+pub(crate) struct RealTimeAttr {
     prio: AtomicU8,
     time_slice: AtomicU64, // 0 for SCHED_FIFO; other for SCHED_RR
 }
@@ -73,14 +73,14 @@ pub struct RealTimeAttr {
 const DEFAULT_BASE_SLICE_FACTOR: u64 = 20;
 
 impl RealTimeAttr {
-    pub fn new(prio: u8, policy: RealTimePolicy) -> Self {
+    pub(crate) fn new(prio: u8, policy: RealTimePolicy) -> Self {
         RealTimeAttr {
             prio: prio.into(),
             time_slice: AtomicU64::new(policy.to_time_slice()),
         }
     }
 
-    pub fn update(&self, prio: u8, policy: RealTimePolicy) {
+    pub(crate) fn update(&self, prio: u8, policy: RealTimePolicy) {
         self.prio.store(prio, Relaxed);
         self.time_slice.store(policy.to_time_slice(), Relaxed);
     }
@@ -159,7 +159,7 @@ pub(super) struct RealTimeClassRq {
 }
 
 impl RealTimeClassRq {
-    pub fn new(cpu: CpuId) -> RealTimeClassRq {
+    pub(crate) fn new(cpu: CpuId) -> RealTimeClassRq {
         RealTimeClassRq {
             cpu,
             index: false,

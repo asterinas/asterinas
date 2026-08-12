@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-pub fn sys_execve(
+pub(super) fn sys_execve(
     filename_ptr: Vaddr,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
@@ -41,7 +41,7 @@ pub fn sys_execve(
     Ok(SyscallReturn::NoReturn)
 }
 
-pub fn sys_execveat(
+pub(super) fn sys_execveat(
     dfd: RawFileDesc,
     filename_ptr: Vaddr,
     argv_ptr_ptr: Vaddr,

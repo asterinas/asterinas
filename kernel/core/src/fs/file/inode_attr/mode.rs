@@ -5,7 +5,7 @@ use aster_systree::SysPerms;
 use crate::prelude::*;
 
 bitflags! {
-    pub struct InodeMode: u16 {
+    pub(crate) struct InodeMode: u16 {
         /// set-user-ID
         const S_ISUID = 0o4000;
         /// set-group-ID
@@ -34,51 +34,51 @@ bitflags! {
 }
 
 impl InodeMode {
-    pub fn is_owner_readable(&self) -> bool {
+    pub(crate) fn is_owner_readable(&self) -> bool {
         self.contains(Self::S_IRUSR)
     }
 
-    pub fn is_owner_writable(&self) -> bool {
+    pub(crate) fn is_owner_writable(&self) -> bool {
         self.contains(Self::S_IWUSR)
     }
 
-    pub fn is_owner_executable(&self) -> bool {
+    pub(crate) fn is_owner_executable(&self) -> bool {
         self.contains(Self::S_IXUSR)
     }
 
-    pub fn is_group_readable(&self) -> bool {
+    pub(crate) fn is_group_readable(&self) -> bool {
         self.contains(Self::S_IRGRP)
     }
 
-    pub fn is_group_writable(&self) -> bool {
+    pub(crate) fn is_group_writable(&self) -> bool {
         self.contains(Self::S_IWGRP)
     }
 
-    pub fn is_group_executable(&self) -> bool {
+    pub(crate) fn is_group_executable(&self) -> bool {
         self.contains(Self::S_IXGRP)
     }
 
-    pub fn is_other_readable(&self) -> bool {
+    pub(crate) fn is_other_readable(&self) -> bool {
         self.contains(Self::S_IROTH)
     }
 
-    pub fn is_other_writable(&self) -> bool {
+    pub(crate) fn is_other_writable(&self) -> bool {
         self.contains(Self::S_IWOTH)
     }
 
-    pub fn is_other_executable(&self) -> bool {
+    pub(crate) fn is_other_executable(&self) -> bool {
         self.contains(Self::S_IXOTH)
     }
 
-    pub fn has_sticky_bit(&self) -> bool {
+    pub(crate) fn has_sticky_bit(&self) -> bool {
         self.contains(Self::S_ISVTX)
     }
 
-    pub fn has_set_uid(&self) -> bool {
+    pub(crate) fn has_set_uid(&self) -> bool {
         self.contains(Self::S_ISUID)
     }
 
-    pub fn has_set_gid(&self) -> bool {
+    pub(crate) fn has_set_gid(&self) -> bool {
         self.contains(Self::S_ISGID)
     }
 }

@@ -6,14 +6,14 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use int_to_c_enum::TryFromInt;
 use ostd::sync::SpinLock;
 
-pub use super::real_time::{RealTimePolicy, RealTimePriority};
+pub(crate) use super::real_time::{RealTimePolicy, RealTimePriority};
 use crate::sched::nice::Nice;
 
 /// The User-chosen scheduling policy.
 ///
 /// The scheduling policies are specified by the user, usually through its priority.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum SchedPolicy {
+pub(crate) enum SchedPolicy {
     #[expect(dead_code)]
     Stop,
     RealTime {
@@ -35,7 +35,7 @@ impl Default for SchedPolicy {
 /// Reference: <https://elixir.bootlin.com/linux/v6.17.7/source/include/uapi/linux/sched.h#L112>.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, TryFromInt)]
-pub enum LinuxSchedPolicy {
+pub(crate) enum LinuxSchedPolicy {
     Normal = 0,
     Fifo = 1,
     RoundRobin = 2,
@@ -89,7 +89,7 @@ impl SchedPolicy {
 
 define_atomic_version_of_integer_like_type!(SchedPolicyKind, try_from = true, {
     #[derive(Debug)]
-    pub struct AtomicSchedPolicyKind(AtomicU8);
+    pub(crate) struct AtomicSchedPolicyKind(AtomicU8);
 });
 
 impl From<SchedPolicyKind> for u8 {
@@ -105,22 +105,22 @@ pub(super) struct SchedPolicyState {
 }
 
 impl SchedPolicyState {
-    pub fn new(policy: SchedPolicy) -> Self {
+    pub(crate) fn new(policy: SchedPolicy) -> Self {
         Self {
             kind: AtomicSchedPolicyKind::new(policy.kind()),
             policy: SpinLock::new(policy),
         }
     }
 
-    pub fn kind(&self) -> SchedPolicyKind {
+    pub(crate) fn kind(&self) -> SchedPolicyKind {
         self.kind.load(Relaxed)
     }
 
-    pub fn get(&self) -> SchedPolicy {
+    pub(crate) fn get(&self) -> SchedPolicy {
         *self.policy.disable_irq().lock()
     }
 
-    pub fn set(&self, mut policy: SchedPolicy, update: impl FnOnce(SchedPolicy)) {
+    pub(crate) fn set(&self, mut policy: SchedPolicy, update: impl FnOnce(SchedPolicy)) {
         let mut this = self.policy.disable_irq().lock();
 
         // Keep the old base slice factor if the new policy doesn't specify one.
@@ -146,7 +146,7 @@ impl SchedPolicyState {
         *this = policy;
     }
 
-    pub fn update<T>(&self, update: impl FnOnce(&mut SchedPolicy) -> T) -> T {
+    pub(crate) fn update<T>(&self, update: impl FnOnce(&mut SchedPolicy) -> T) -> T {
         update(&mut self.policy.disable_irq().lock())
     }
 }

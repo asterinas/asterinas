@@ -29,7 +29,7 @@ use crate::{
 /// A netlink message can be transmitted to and from user space using a single send/receive syscall.
 /// It consists of one or more [`ProtocolSegment`]s.
 #[derive(Debug)]
-pub struct Message<T> {
+pub(crate) struct Message<T> {
     segments: Vec<T>,
 }
 
@@ -61,7 +61,7 @@ impl<T: ProtocolSegment> QueueableMessage for Message<T> {
     }
 }
 
-pub trait ProtocolSegment: Sized {
+pub(crate) trait ProtocolSegment: Sized {
     fn header(&self) -> &CMsgSegHdr;
     fn header_mut(&mut self) -> &mut CMsgSegHdr;
 

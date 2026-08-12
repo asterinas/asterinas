@@ -8,7 +8,7 @@ use crate::{
     process::{ProcessFilter, WaitOptions, WaitStatus, do_wait, posix_thread::AsPosixThread},
 };
 
-pub fn sys_wait4(
+pub(super) fn sys_wait4(
     wait_pid: u64,
     status_ptr: u64,
     wait_options: u32,

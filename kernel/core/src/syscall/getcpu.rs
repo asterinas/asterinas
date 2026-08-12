@@ -5,7 +5,12 @@ use ostd::{cpu::CpuId, mm::VmIo};
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_getcpu(cpu: Vaddr, node: Vaddr, _tcache: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_getcpu(
+    cpu: Vaddr,
+    node: Vaddr,
+    _tcache: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     // The third argument `tcache` is unused since Linux 2.6.24, so we ignore it.
 
     // The system call itself is inherently racy, so using `current_racy` here should be fine.

@@ -9,7 +9,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_chroot(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_chroot(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let path_name = ctx.user_space().read_cstring(path_ptr, MAX_FILENAME_LEN)?;
     debug!("path_name = {:?}", path_name);
 

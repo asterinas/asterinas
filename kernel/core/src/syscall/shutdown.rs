@@ -7,7 +7,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_shutdown(sockfd: RawFileDesc, how: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_shutdown(sockfd: RawFileDesc, how: i32, ctx: &Context) -> Result<SyscallReturn> {
     let shutdown_cmd = SockShutdownCmd::try_from(how)?;
     debug!("sockfd = {sockfd}, cmd = {shutdown_cmd:?}");
 

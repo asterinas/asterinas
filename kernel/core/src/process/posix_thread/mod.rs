@@ -28,26 +28,26 @@ use crate::{
     time::{Timer, TimerManager, clocks::ProfClock, timer::TimerGuard},
 };
 
-pub mod alien_access;
+pub(crate) mod alien_access;
 mod builder;
 mod cpu_sync;
 mod exit;
-pub mod futex;
+pub(crate) mod futex;
 mod personality;
 mod posix_thread_ext;
-pub mod ptrace;
+pub(crate) mod ptrace;
 mod robust_list;
 mod thread_local;
 
-pub use builder::PosixThreadBuilder;
+pub(crate) use builder::PosixThreadBuilder;
 pub(super) use exit::sigkill_other_threads;
-pub use exit::{do_exit, do_exit_group};
-pub use personality::Personality;
-pub use posix_thread_ext::AsPosixThread;
-pub use robust_list::RobustListHead;
-pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
+pub(crate) use exit::{do_exit, do_exit_group};
+pub(crate) use personality::Personality;
+pub(crate) use posix_thread_ext::AsPosixThread;
+pub(crate) use robust_list::RobustListHead;
+pub(crate) use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 
-pub struct PosixThread {
+pub(crate) struct PosixThread {
     // Immutable part
     process: Weak<Process>,
     task: Weak<Task>,
@@ -109,16 +109,16 @@ pub struct PosixThread {
 }
 
 impl PosixThread {
-    pub fn process(&self) -> Arc<Process> {
+    pub(crate) fn process(&self) -> Arc<Process> {
         self.process.upgrade().unwrap()
     }
 
-    pub fn weak_process(&self) -> &Weak<Process> {
+    pub(crate) fn weak_process(&self) -> &Weak<Process> {
         &self.process
     }
 
     /// Returns the thread id
-    pub fn tid(&self) -> Tid {
+    pub(crate) fn tid(&self) -> Tid {
         self.tid.load(Ordering::Relaxed)
     }
 
@@ -130,12 +130,12 @@ impl PosixThread {
         self.tid.store(pid, Ordering::Relaxed);
     }
 
-    pub fn thread_name(&self) -> &Mutex<ThreadName> {
+    pub(crate) fn thread_name(&self) -> &Mutex<ThreadName> {
         &self.name
     }
 
     /// Returns a read guard to the filesystem information of the thread.
-    pub fn read_fs(&self) -> RwMutexReadGuard<'_, Arc<ThreadFsInfo>> {
+    pub(crate) fn read_fs(&self) -> RwMutexReadGuard<'_, Arc<ThreadFsInfo>> {
         self.fs.read()
     }
 
@@ -145,12 +145,12 @@ impl PosixThread {
         *fs_lock = new_fs;
     }
 
-    pub fn file_table(&self) -> &Mutex<Option<RoArc<FileTable>>> {
+    pub(crate) fn file_table(&self) -> &Mutex<Option<RoArc<FileTable>>> {
         &self.file_table
     }
 
     /// Returns the signal mask of the thread.
-    pub fn sig_mask(&self) -> SigMask {
+    pub(crate) fn sig_mask(&self) -> SigMask {
         self.sig_mask.load(Ordering::Relaxed)
     }
 
@@ -159,7 +159,7 @@ impl PosixThread {
     }
 
     /// Returns whether the signal is blocked by the thread.
-    pub fn has_signal_blocked(&self, signum: SigNum) -> bool {
+    pub(crate) fn has_signal_blocked(&self, signum: SigNum) -> bool {
         // FIXME: Some signals cannot be blocked, even set in sig_mask.
         self.sig_mask.contains(signum, Ordering::Relaxed)
     }
@@ -174,19 +174,19 @@ impl PosixThread {
     ///
     /// If setting a new waker before clearing the current thread's signalled waker
     /// this method will panic.
-    pub fn set_signalled_waker(&self, waker: Arc<Waker>, reason: PauseReason) {
+    pub(crate) fn set_signalled_waker(&self, waker: Arc<Waker>, reason: PauseReason) {
         let mut signalled_waker = self.signalled_waker.lock();
         assert!(signalled_waker.is_none());
         *signalled_waker = Some((waker, reason));
     }
 
     /// Clears the signalled waker of this thread.
-    pub fn clear_signalled_waker(&self) {
+    pub(crate) fn clear_signalled_waker(&self) {
         *self.signalled_waker.lock() = None;
     }
 
     /// Returns the sleeping state of this thread.
-    pub fn sleeping_state(&self) -> SleepingState {
+    pub(crate) fn sleeping_state(&self) -> SleepingState {
         // This implementation prevents a thread (let's call it `threadA`) that is
         // sleeping in an interruptible wait from being mistakenly reported as
         // sleeping in an uninterruptible wait due to a race condition, where another
@@ -247,7 +247,7 @@ impl PosixThread {
     }
 
     /// Wakes up the signalled waker.
-    pub fn wake_signalled_waker(&self) {
+    pub(crate) fn wake_signalled_waker(&self) {
         if let Some((waker, _)) = &*self.signalled_waker.lock() {
             waker.wake_up();
         }
@@ -258,12 +258,12 @@ impl PosixThread {
     /// This method does not perform permission checks on user signals.
     /// Therefore, unless the caller can ensure that there are no permission issues,
     /// this method should be used to enqueue kernel signals or fault signals.
-    pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
+    pub(crate) fn enqueue_signal(&self, signal: Box<dyn Signal>) {
         self.sig_queues.enqueue(signal);
         self.wake_signalled_waker();
     }
 
-    pub fn register_signalfd_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
+    pub(crate) fn register_signalfd_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
         self.sig_queues.register_signalfd_poller(poller, mask);
         self.process()
             .sig_queues()
@@ -271,12 +271,12 @@ impl PosixThread {
     }
 
     /// Returns a reference to the profiling clock of the current thread.
-    pub fn prof_clock(&self) -> &Arc<ProfClock> {
+    pub(crate) fn prof_clock(&self) -> &Arc<ProfClock> {
         &self.prof_clock
     }
 
     /// Creates a timer based on the profiling CPU clock of the current thread.
-    pub fn create_prof_timer<F>(&self, func: F) -> Arc<Timer>
+    pub(crate) fn create_prof_timer<F>(&self, func: F) -> Arc<Timer>
     where
         F: Fn(TimerGuard) + Send + Sync + 'static,
     {
@@ -284,7 +284,7 @@ impl PosixThread {
     }
 
     /// Creates a timer based on the user CPU clock of the current thread.
-    pub fn create_virtual_timer<F>(&self, func: F) -> Arc<Timer>
+    pub(crate) fn create_virtual_timer<F>(&self, func: F) -> Arc<Timer>
     where
         F: Fn(TimerGuard) + Send + Sync + 'static,
     {
@@ -293,42 +293,42 @@ impl PosixThread {
 
     /// Checks the `TimerCallback`s that are managed by the `prof_timer_manager`.
     /// If any have timed out, call the corresponding callback functions.
-    pub fn process_expired_timers(&self) {
+    pub(crate) fn process_expired_timers(&self) {
         self.prof_timer_manager.process_expired_timers();
     }
 
     /// Gets the read-only credentials of the thread.
-    pub fn credentials(&self) -> Credentials<ReadOp> {
+    pub(crate) fn credentials(&self) -> Credentials<ReadOp> {
         self.credentials.dup().restrict()
     }
 
     /// Gets the duplicatable read-only credentials of the thread.
-    pub fn credentials_dup(&self) -> Credentials<ReadDupOp> {
+    pub(crate) fn credentials_dup(&self) -> Credentials<ReadDupOp> {
         self.credentials.dup().restrict()
     }
 
     /// Returns the I/O priority value of the thread.
-    pub fn io_priority(&self) -> &AtomicU32 {
+    pub(crate) fn io_priority(&self) -> &AtomicU32 {
         &self.io_priority
     }
 
     /// Returns the namespaces which the thread belongs to.
-    pub fn ns_proxy(&self) -> &Mutex<Option<Arc<NsProxy>>> {
+    pub(crate) fn ns_proxy(&self) -> &Mutex<Option<Arc<NsProxy>>> {
         &self.ns_proxy
     }
 
     /// Returns the current timer slack value in nanoseconds.
-    pub fn timer_slack_ns(&self) -> u64 {
+    pub(crate) fn timer_slack_ns(&self) -> u64 {
         self.timer_slack_ns.load(Ordering::Relaxed)
     }
 
     /// Sets the current timer slack value in nanoseconds.
-    pub fn set_timer_slack_ns(&self, slack_ns: u64) {
+    pub(crate) fn set_timer_slack_ns(&self, slack_ns: u64) {
         self.timer_slack_ns.store(slack_ns, Ordering::Relaxed);
     }
 
     /// Resets the current timer slack to the default value.
-    pub fn reset_timer_slack_to_default(&self) {
+    pub(crate) fn reset_timer_slack_to_default(&self) {
         let default = self.default_timer_slack_ns.load(Ordering::Relaxed);
         self.timer_slack_ns.store(default, Ordering::Relaxed);
     }
@@ -339,13 +339,13 @@ impl PosixThread {
     }
 
     /// Returns the exit code of this thread.
-    pub fn exit_code(&self) -> ExitCode {
+    pub(crate) fn exit_code(&self) -> ExitCode {
         self.exit_code.load(Ordering::Relaxed)
     }
 }
 
 /// Provides administrative APIs for the current POSIX thread.
-pub trait ContextPthreadAdminApi {
+pub(crate) trait ContextPthreadAdminApi {
     /// Sets the signal mask of the current thread.
     ///
     /// Note that it is not possible to block SIGKILL or SIGSTOP.
@@ -392,12 +392,12 @@ impl ContextPthreadAdminApi for Context<'_> {
 }
 
 const MAX_THREAD_NAME_LEN: usize = 16;
-pub type ThreadName = FixedCStr<MAX_THREAD_NAME_LEN>;
+pub(crate) type ThreadName = FixedCStr<MAX_THREAD_NAME_LEN>;
 
 /// Derives a thread name from the last component of an executable path.
 ///
 /// The name is truncated to fit within [`ThreadName`].
-pub fn derive_thread_name(exec_path: &str) -> ThreadName {
+pub(crate) fn derive_thread_name(exec_path: &str) -> ThreadName {
     let Some(path) = exec_path.split('/').next_back() else {
         return ThreadName::new_zeroed();
     };
@@ -406,12 +406,12 @@ pub fn derive_thread_name(exec_path: &str) -> ThreadName {
 }
 
 /// The TID of the first POSIX thread (i.e., the main thread of the init process).
-pub const FIRST_POSIX_TID: Tid = 1;
+pub(crate) const FIRST_POSIX_TID: Tid = 1;
 
 static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(FIRST_POSIX_TID);
 
 /// Allocates a new TID for the new POSIX thread.
-pub fn allocate_posix_tid() -> Tid {
+pub(crate) fn allocate_posix_tid() -> Tid {
     let tid = POSIX_TID_ALLOCATOR.fetch_add(1, Ordering::Relaxed);
     if tid >= PID_MAX {
         // When the kernel's next PID value reaches `PID_MAX`,
@@ -427,7 +427,7 @@ pub fn allocate_posix_tid() -> Tid {
 }
 
 /// Returns the last allocated TID.
-pub fn last_tid() -> Tid {
+pub(crate) fn last_tid() -> Tid {
     POSIX_TID_ALLOCATOR.load(Ordering::Relaxed) - 1
 }
 
@@ -435,11 +435,11 @@ pub fn last_tid() -> Tid {
 //
 // FIXME: The current value is chosen arbitrarily.
 // This value can be modified by the user by writing to `/proc/sys/kernel/pid_max`.
-pub const PID_MAX: u32 = u32::MAX / 2;
+pub(crate) const PID_MAX: u32 = u32::MAX / 2;
 
 /// The sleeping state of a thread.
 #[derive(Clone, Copy, Debug)]
-pub enum SleepingState {
+pub(crate) enum SleepingState {
     /// The thread is running.
     Running,
     /// The thread is sleeping in an interruptible wait.

@@ -11,7 +11,7 @@ impl<R: TRights> Credentials<R> {
     /// Creates a root `Credentials`.
     ///
     /// This method can only be used when creating the init process.
-    pub fn new_root() -> Self {
+    pub(crate) fn new_root() -> Self {
         let uid = Uid::new_root();
         let gid = Gid::new_root();
         let cap = CapSet::new_root();
@@ -23,7 +23,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R1 > Read)]
-    pub fn new_from<R1: TRights>(credentials: &Credentials<R1>) -> Self {
+    pub(crate) fn new_from<R1: TRights>(credentials: &Credentials<R1>) -> Self {
         let credentials_ = Arc::new(credentials.0.as_ref().clone());
 
         Self(credentials_, R::new())
@@ -33,13 +33,13 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Dup` right.
     #[require(R > Dup)]
-    pub fn dup(&self) -> Self {
+    pub(crate) fn dup(&self) -> Self {
         Self(self.0.clone(), self.1)
     }
 
     /// Restricts capabilities to a smaller set.
     #[require(R > R1)]
-    pub fn restrict<R1: TRights>(self) -> Credentials<R1> {
+    pub(crate) fn restrict<R1: TRights>(self) -> Credentials<R1> {
         let Credentials(credentials_, _) = self;
 
         Credentials(credentials_, R1::new())
@@ -51,7 +51,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn ruid(&self) -> Uid {
+    pub(crate) fn ruid(&self) -> Uid {
         self.0.ruid()
     }
 
@@ -59,7 +59,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn euid(&self) -> Uid {
+    pub(crate) fn euid(&self) -> Uid {
         self.0.euid()
     }
 
@@ -67,7 +67,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn suid(&self) -> Uid {
+    pub(crate) fn suid(&self) -> Uid {
         self.0.suid()
     }
 
@@ -75,7 +75,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn fsuid(&self) -> Uid {
+    pub(crate) fn fsuid(&self) -> Uid {
         self.0.fsuid()
     }
 
@@ -86,7 +86,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_uid(&self, uid: Uid) -> Result<()> {
+    pub(crate) fn set_uid(&self, uid: Uid) -> Result<()> {
         self.0.set_uid(uid)
     }
 
@@ -96,7 +96,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_reuid(&self, ruid: Option<Uid>, euid: Option<Uid>) -> Result<()> {
+    pub(crate) fn set_reuid(&self, ruid: Option<Uid>, euid: Option<Uid>) -> Result<()> {
         self.0.set_reuid(ruid, euid)
     }
 
@@ -106,7 +106,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_resuid(
+    pub(crate) fn set_resuid(
         &self,
         ruid: Option<Uid>,
         euid: Option<Uid>,
@@ -121,7 +121,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_fsuid(&self, fsuid: Option<Uid>) -> Result<Uid, Uid> {
+    pub(crate) fn set_fsuid(&self, fsuid: Option<Uid>) -> Result<Uid, Uid> {
         self.0.set_fsuid(fsuid)
     }
 
@@ -131,7 +131,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_euid(&self, euid: Uid) {
+    pub(crate) fn set_euid(&self, euid: Uid) {
         self.0.set_euid(euid);
     }
 
@@ -141,7 +141,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn reset_suid(&self) {
+    pub(crate) fn reset_suid(&self) {
         let euid = self.0.euid();
         self.0.set_suid(euid);
     }
@@ -152,7 +152,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn rgid(&self) -> Gid {
+    pub(crate) fn rgid(&self) -> Gid {
         self.0.rgid()
     }
 
@@ -160,7 +160,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn egid(&self) -> Gid {
+    pub(crate) fn egid(&self) -> Gid {
         self.0.egid()
     }
 
@@ -168,7 +168,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn sgid(&self) -> Gid {
+    pub(crate) fn sgid(&self) -> Gid {
         self.0.sgid()
     }
 
@@ -176,7 +176,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn fsgid(&self) -> Gid {
+    pub(crate) fn fsgid(&self) -> Gid {
         self.0.fsgid()
     }
 
@@ -187,7 +187,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_gid(&self, gid: Gid) -> Result<()> {
+    pub(crate) fn set_gid(&self, gid: Gid) -> Result<()> {
         self.0.set_gid(gid)
     }
 
@@ -197,7 +197,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_regid(&self, rgid: Option<Gid>, egid: Option<Gid>) -> Result<()> {
+    pub(crate) fn set_regid(&self, rgid: Option<Gid>, egid: Option<Gid>) -> Result<()> {
         self.0.set_regid(rgid, egid)
     }
 
@@ -207,7 +207,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_resgid(
+    pub(crate) fn set_resgid(
         &self,
         rgid: Option<Gid>,
         egid: Option<Gid>,
@@ -222,7 +222,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_fsgid(&self, fsgid: Option<Gid>) -> Result<Gid, Gid> {
+    pub(crate) fn set_fsgid(&self, fsgid: Option<Gid>) -> Result<Gid, Gid> {
         self.0.set_fsgid(fsgid)
     }
 
@@ -232,7 +232,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_egid(&self, egid: Gid) {
+    pub(crate) fn set_egid(&self, egid: Gid) {
         self.0.set_egid(egid);
     }
 
@@ -242,7 +242,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn reset_sgid(&self) {
+    pub(crate) fn reset_sgid(&self) {
         let egid = self.0.egid();
         self.0.set_sgid(egid);
     }
@@ -253,7 +253,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn groups(&self) -> RwLockReadGuard<'_, BTreeSet<Gid>, PreemptDisabled> {
+    pub(crate) fn groups(&self) -> RwLockReadGuard<'_, BTreeSet<Gid>, PreemptDisabled> {
         self.0.groups()
     }
 
@@ -261,7 +261,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn groups_mut(&self) -> RwLockWriteGuard<'_, BTreeSet<Gid>, PreemptDisabled> {
+    pub(crate) fn groups_mut(&self) -> RwLockWriteGuard<'_, BTreeSet<Gid>, PreemptDisabled> {
         self.0.groups_mut()
     }
 
@@ -271,7 +271,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn inheritable_capset(&self) -> CapSet {
+    pub(crate) fn inheritable_capset(&self) -> CapSet {
         self.0.inheritable_capset()
     }
 
@@ -279,7 +279,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn permitted_capset(&self) -> CapSet {
+    pub(crate) fn permitted_capset(&self) -> CapSet {
         self.0.permitted_capset()
     }
 
@@ -287,7 +287,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn effective_capset(&self) -> CapSet {
+    pub(crate) fn effective_capset(&self) -> CapSet {
         self.0.effective_capset()
     }
 
@@ -295,7 +295,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn bounding_capset(&self) -> CapSet {
+    pub(crate) fn bounding_capset(&self) -> CapSet {
         self.0.bounding_capset()
     }
 
@@ -303,7 +303,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_inheritable_capset(&self, inheritable_capset: CapSet) {
+    pub(crate) fn set_inheritable_capset(&self, inheritable_capset: CapSet) {
         self.0.set_inheritable_capset(inheritable_capset);
     }
 
@@ -311,7 +311,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_permitted_capset(&self, permitted_capset: CapSet) {
+    pub(crate) fn set_permitted_capset(&self, permitted_capset: CapSet) {
         self.0.set_permitted_capset(permitted_capset);
     }
 
@@ -319,7 +319,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_effective_capset(&self, effective_capset: CapSet) {
+    pub(crate) fn set_effective_capset(&self, effective_capset: CapSet) {
         self.0.set_effective_capset(effective_capset);
     }
 
@@ -327,7 +327,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn ambient_capset(&self) -> CapSet {
+    pub(crate) fn ambient_capset(&self) -> CapSet {
         self.0.ambient_capset()
     }
 
@@ -335,7 +335,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn raise_ambient_capability(&self, capability: CapSet) -> Result<()> {
+    pub(crate) fn raise_ambient_capability(&self, capability: CapSet) -> Result<()> {
         self.0.raise_ambient_capability(capability)
     }
 
@@ -343,7 +343,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn lower_ambient_capability(&self, capability: CapSet) {
+    pub(crate) fn lower_ambient_capability(&self, capability: CapSet) {
         self.0.lower_ambient_capability(capability);
     }
 
@@ -351,7 +351,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn clear_ambient_capset(&self) {
+    pub(crate) fn clear_ambient_capset(&self) {
         self.0.clear_ambient_capset();
     }
 
@@ -361,7 +361,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn drop_bounding_capability(&self, capability: CapSet) -> Result<()> {
+    pub(crate) fn drop_bounding_capability(&self, capability: CapSet) -> Result<()> {
         self.0.drop_bounding_capability(capability)
     }
 
@@ -369,7 +369,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn keep_capabilities(&self) -> bool {
+    pub(crate) fn keep_capabilities(&self) -> bool {
         self.0.keep_capabilities()
     }
 
@@ -379,7 +379,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
+    pub(crate) fn set_keep_capabilities(&self, keep_capabilities: bool) -> Result<()> {
         self.0.set_keep_capabilities(keep_capabilities)
     }
 
@@ -389,7 +389,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn securebits(&self) -> SecureBits {
+    pub(crate) fn securebits(&self) -> SecureBits {
         self.0.securebits()
     }
 
@@ -400,7 +400,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_securebits(&self, securebits: SecureBits) -> Result<()> {
+    pub(crate) fn set_securebits(&self, securebits: SecureBits) -> Result<()> {
         self.0.set_securebits(securebits)
     }
 
@@ -408,7 +408,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn no_new_privs(&self) -> bool {
+    pub(crate) fn no_new_privs(&self) -> bool {
         self.0.no_new_privs()
     }
 
@@ -416,7 +416,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn set_no_new_privs(&self) {
+    pub(crate) fn set_no_new_privs(&self) {
         self.0.set_no_new_privs();
     }
 }

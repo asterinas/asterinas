@@ -4,7 +4,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_uname(old_uname_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_uname(old_uname_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old uname addr = 0x{:x}", old_uname_addr);
     let ns_proxy = ctx.thread_local.borrow_ns_proxy();
     let uts_name = ns_proxy.unwrap().uts_ns().uts_name();

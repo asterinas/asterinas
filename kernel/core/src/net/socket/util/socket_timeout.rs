@@ -3,14 +3,14 @@
 use core::time::Duration;
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct SocketTimeout(Option<Duration>);
+pub(crate) struct SocketTimeout(Option<Duration>);
 
 impl SocketTimeout {
-    pub fn new(duration: Option<Duration>) -> Self {
+    pub(crate) fn new(duration: Option<Duration>) -> Self {
         Self(duration)
     }
 
-    pub fn duration(&self) -> Option<Duration> {
+    pub(crate) fn duration(&self) -> Option<Duration> {
         self.0
     }
 }

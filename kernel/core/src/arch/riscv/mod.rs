@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod cpu;
-pub mod signal;
+pub(crate) mod cpu;
+pub(crate) mod signal;
 
-pub fn init() {}
+pub(crate) fn init() {}

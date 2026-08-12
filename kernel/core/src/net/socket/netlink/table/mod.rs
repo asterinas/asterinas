@@ -36,7 +36,7 @@ impl NetlinkSocketTable {
     }
 }
 
-pub trait SupportedNetlinkProtocol {
+pub(crate) trait SupportedNetlinkProtocol {
     type Message: 'static + Send;
 
     fn socket_table() -> &'static RwMutex<ProtocolSocketTable<Self::Message>>;
@@ -67,7 +67,7 @@ pub trait SupportedNetlinkProtocol {
     }
 }
 
-pub enum NetlinkRouteProtocol {}
+pub(crate) enum NetlinkRouteProtocol {}
 
 impl SupportedNetlinkProtocol for NetlinkRouteProtocol {
     type Message = RtnlMessage;
@@ -77,7 +77,7 @@ impl SupportedNetlinkProtocol for NetlinkRouteProtocol {
     }
 }
 
-pub enum NetlinkUeventProtocol {}
+pub(crate) enum NetlinkUeventProtocol {}
 
 impl SupportedNetlinkProtocol for NetlinkUeventProtocol {
     type Message = UeventMessage;
@@ -91,7 +91,7 @@ impl SupportedNetlinkProtocol for NetlinkUeventProtocol {
 ///
 /// Each table can have bound sockets for unicast
 /// and at most 32 groups for multicast.
-pub struct ProtocolSocketTable<Message> {
+pub(crate) struct ProtocolSocketTable<Message> {
     unicast_sockets: BTreeMap<PortNum, MessageReceiver<Message>>,
     multicast_groups: Box<[MulticastGroup]>,
 }
@@ -186,7 +186,7 @@ impl<Message: 'static> ProtocolSocketTable<Message> {
 ///
 /// When dropping a `BoundHandle`,
 /// the port will be automatically released.
-pub struct BoundHandle<Message: 'static> {
+pub(crate) struct BoundHandle<Message: 'static> {
     socket_table: &'static RwMutex<ProtocolSocketTable<Message>>,
     port: PortNum,
     groups: GroupIdSet,
@@ -272,7 +272,7 @@ pub(super) fn init() {
 }
 
 /// Returns whether the `protocol` is valid.
-pub fn is_valid_protocol(protocol: NetlinkProtocolId) -> bool {
+pub(crate) fn is_valid_protocol(protocol: NetlinkProtocolId) -> bool {
     protocol < MAX_ALLOWED_PROTOCOL_ID
 }
 
@@ -283,7 +283,7 @@ pub fn is_valid_protocol(protocol: NetlinkProtocolId) -> bool {
 #[expect(clippy::upper_case_acronyms)]
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum StandardNetlinkProtocol {
+pub(crate) enum StandardNetlinkProtocol {
     /// Routing/device hook
     ROUTE = 0,
     /// Unused number

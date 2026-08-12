@@ -7,14 +7,14 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FaultSignal {
+pub(crate) struct FaultSignal {
     num: SigNum,
     code: i32,
     addr: Option<u64>,
 }
 
 impl FaultSignal {
-    pub fn new(num: SigNum, code: i32, addr: Option<u64>) -> FaultSignal {
+    pub(crate) fn new(num: SigNum, code: i32, addr: Option<u64>) -> FaultSignal {
         FaultSignal { num, code, addr }
     }
 }

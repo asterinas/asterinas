@@ -11,7 +11,7 @@ use crate::{
     process::ResourceType,
 };
 
-pub fn sys_fallocate(
+pub(super) fn sys_fallocate(
     raw_fd: RawFileDesc,
     mode: u64,
     offset: i64,

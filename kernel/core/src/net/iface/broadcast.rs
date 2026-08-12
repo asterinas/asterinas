@@ -34,7 +34,7 @@ pub(super) fn init() {
 ///
 /// IPv6 has no broadcast; multicast (`ff00::/8`) handles fan-out instead and
 /// is intentionally not covered by this function.
-pub fn is_broadcast_endpoint(endpoint: &IpEndpoint) -> bool {
+pub(crate) fn is_broadcast_endpoint(endpoint: &IpEndpoint) -> bool {
     let IpAddress::Ipv4(ipv4_addr) = &endpoint.addr else {
         return false;
     };

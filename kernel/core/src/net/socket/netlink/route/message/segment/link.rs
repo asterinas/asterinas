@@ -14,7 +14,7 @@ use crate::{
     util::net::CSocketAddrFamily,
 };
 
-pub type LinkSegment = SegmentCommon<LinkSegmentBody, LinkAttr>;
+pub(crate) type LinkSegment = SegmentCommon<LinkSegmentBody, LinkAttr>;
 
 impl SegmentBody for LinkSegmentBody {
     type CLegacyType = CRtGenMsg;
@@ -26,7 +26,7 @@ impl SegmentBody for LinkSegmentBody {
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L561>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct CIfinfoMsg {
+pub(crate) struct CIfinfoMsg {
     /// AF_UNSPEC
     pub family: u8,
     /// Padding byte
@@ -42,7 +42,7 @@ pub struct CIfinfoMsg {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct LinkSegmentBody {
+pub(crate) struct LinkSegmentBody {
     pub family: CSocketAddrFamily,
     pub type_: InterfaceType,
     pub index: Option<NonZeroU32>,

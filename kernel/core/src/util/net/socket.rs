@@ -15,7 +15,7 @@ use crate::{
 #[expect(non_camel_case_types)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum Protocol {
+pub(crate) enum Protocol {
     IPPROTO_IP = 0,         /* Dummy protocol for TCP		*/
     IPPROTO_ICMP = 1,       /* Internet Control Message Protocol	*/
     IPPROTO_IGMP = 2,       /* Internet Group Management Protocol	*/
@@ -49,7 +49,7 @@ pub enum Protocol {
 #[expect(non_camel_case_types)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum SockType {
+pub(crate) enum SockType {
     /// Stream socket
     SOCK_STREAM = 1,
     /// Datagram socket
@@ -66,12 +66,12 @@ pub enum SockType {
     SOCK_PACKET = 10,
 }
 
-pub const SOCK_TYPE_MASK: i32 = 0xf;
+pub(crate) const SOCK_TYPE_MASK: i32 = 0xf;
 
 bitflags! {
     #[repr(C)]
     #[derive(Pod)]
-    pub struct SockFlags: i32 {
+    pub(crate) struct SockFlags: i32 {
         const SOCK_NONBLOCK = 1 << 11;
         const SOCK_CLOEXEC = 1 << 19;
     }
@@ -80,7 +80,7 @@ bitflags! {
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct CUserMsgHdr {
+pub(crate) struct CUserMsgHdr {
     /// Pointer to socket address structure
     pub msg_name: Vaddr,
     /// Size of socket address
@@ -98,7 +98,7 @@ pub struct CUserMsgHdr {
 }
 
 impl CUserMsgHdr {
-    pub fn read_socket_addr_from_user(&self) -> Result<Option<SocketAddr>> {
+    pub(crate) fn read_socket_addr_from_user(&self) -> Result<Option<SocketAddr>> {
         if self.msg_name == 0 {
             return Ok(None);
         }
@@ -107,7 +107,7 @@ impl CUserMsgHdr {
         Ok(Some(socket_addr))
     }
 
-    pub fn write_socket_addr_to_user(&self, addr: Option<&SocketAddr>) -> Result<i32> {
+    pub(crate) fn write_socket_addr_to_user(&self, addr: Option<&SocketAddr>) -> Result<i32> {
         if self.msg_name == 0 {
             // The length field will not be touched if the name pointer is NULL.
             // See <https://elixir.bootlin.com/linux/v6.15.6/source/net/socket.c#L2792>.
@@ -122,7 +122,7 @@ impl CUserMsgHdr {
         Ok(actual_len)
     }
 
-    pub fn read_control_messages_from_user(
+    pub(crate) fn read_control_messages_from_user(
         &self,
         user_space: &CurrentUserSpace,
     ) -> Result<Vec<ControlMessage>> {
@@ -135,7 +135,7 @@ impl CUserMsgHdr {
         Ok(control_messages)
     }
 
-    pub fn write_control_messages_to_user(
+    pub(crate) fn write_control_messages_to_user(
         &self,
         control_messages: &[ControlMessage],
         user_space: &CurrentUserSpace,
@@ -156,7 +156,7 @@ impl CUserMsgHdr {
         Ok((write_len as u32, output_flags))
     }
 
-    pub fn copy_reader_array_from_user<'a>(
+    pub(crate) fn copy_reader_array_from_user<'a>(
         &self,
         user_space: &'a CurrentUserSpace<'a>,
     ) -> Result<VmReaderArray<'a>> {
@@ -167,7 +167,7 @@ impl CUserMsgHdr {
         VmReaderArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen)
     }
 
-    pub fn copy_writer_array_from_user<'a>(
+    pub(crate) fn copy_writer_array_from_user<'a>(
         &self,
         user_space: &'a CurrentUserSpace<'a>,
     ) -> Result<VmWriterArray<'a>> {

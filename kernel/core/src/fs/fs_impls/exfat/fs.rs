@@ -41,7 +41,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct ExfatFs {
+pub(crate) struct ExfatFs {
     block_device: Arc<dyn BlockDevice>,
     super_block: ExfatSuperBlock,
 
@@ -71,7 +71,7 @@ const FAT_LRU_CACHE_SIZE: usize = 1024;
 pub(super) const EXFAT_ROOT_INO: Ino = 1;
 
 impl ExfatFs {
-    pub fn open(
+    pub(crate) fn open(
         block_device: Arc<dyn BlockDevice>,
         mount_option: ExfatMountOptions,
     ) -> Result<Arc<Self>> {
@@ -369,7 +369,7 @@ impl ExfatFs {
         todo!();
     }
 
-    pub fn mount_option(&self) -> ExfatMountOptions {
+    pub(crate) fn mount_option(&self) -> ExfatMountOptions {
         self.mount_option.clone()
     }
 }
@@ -447,7 +447,7 @@ impl FileSystem for ExfatFs {
 
 #[derive(Clone, Debug, Default)]
 // Error handling
-pub enum ExfatErrorMode {
+pub(crate) enum ExfatErrorMode {
     #[default]
     Continue,
     Panic,
@@ -456,7 +456,7 @@ pub enum ExfatErrorMode {
 
 #[derive(Clone, Debug, Default)]
 //Mount options
-pub struct ExfatMountOptions {
+pub(crate) struct ExfatMountOptions {
     pub(super) fs_uid: usize,
     pub(super) fs_gid: usize,
     pub(super) fs_fmask: u16,
