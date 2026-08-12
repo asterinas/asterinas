@@ -7,12 +7,12 @@ use ostd::arch::cpu::context::UserContext;
 use super::{SyscallReturn, constants::*};
 use crate::{
     fs::{
-        file::file_table::{FdFlags, RawFileDesc},
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
+        file::file_table::{FdFlags, FileDesc, RawFileDesc},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
     },
     prelude::*,
     process::{
-        ShebangScriptPath, do_execve,
+        ShebangScriptPath, UndetectedExecutable, do_execve,
         posix_thread::{ThreadName, derive_thread_name},
     },
 };
@@ -24,15 +24,14 @@ pub(super) fn sys_execve(
     ctx: &Context,
     user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
-    let (elf_file, thread_name, shebang_script_path) = {
+    let (executable, thread_name) = {
         let flags = OpenFlags::empty();
-        lookup_executable_file(AT_FDCWD, filename_ptr, flags, ctx)?
+        lookup_and_open_executable_file(AT_FDCWD, filename_ptr, flags, ctx)?
     };
 
     do_execve(
-        elf_file,
+        executable,
         thread_name,
-        shebang_script_path,
         argv_ptr_ptr,
         envp_ptr_ptr,
         ctx,
@@ -50,16 +49,15 @@ pub(super) fn sys_execveat(
     ctx: &Context,
     user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
-    let (elf_file, thread_name, shebang_script_path) = {
+    let (executable, thread_name) = {
         let flags = OpenFlags::from_bits(flags)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
-        lookup_executable_file(dfd, filename_ptr, flags, ctx)?
+        lookup_and_open_executable_file(dfd, filename_ptr, flags, ctx)?
     };
 
     do_execve(
-        elf_file,
+        executable,
         thread_name,
-        shebang_script_path,
         argv_ptr_ptr,
         envp_ptr_ptr,
         ctx,
@@ -68,12 +66,12 @@ pub(super) fn sys_execveat(
     Ok(SyscallReturn::NoReturn)
 }
 
-fn lookup_executable_file(
+fn lookup_and_open_executable_file(
     dfd: RawFileDesc,
     filename_ptr: Vaddr,
     flags: OpenFlags,
     ctx: &Context,
-) -> Result<(Path, ThreadName, ShebangScriptPath)> {
+) -> Result<(UndetectedExecutable, ThreadName)> {
     let filename = ctx
         .user_space()
         .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
@@ -102,17 +100,20 @@ fn lookup_executable_file(
 
     // Preserve the path that a shebang interpreter must use to reopen the script.
     // For `execveat` relative to a file descriptor, use a `/dev/fd/...` path unless the
-    // descriptor is close-on-exec, in which case mark the path as unavailable. This matches Linux.
+    // descriptor is close-on-exec, in which case mark the path as unavailable.
     let shebang_script_path = if dfd == AT_FDCWD || filename.starts_with('/') {
         ShebangScriptPath::Accessible(CString::new(filename.into_owned()).unwrap())
     } else {
-        let is_cloexec = {
+        // Races with later access by the interpreter are always possible. The check is
+        // racy, but only for diagnostic purposes. This matches Linux.
+        let is_cloexec = if let Ok(fd) = FileDesc::try_from(dfd) {
             let file_table = ctx.thread_local.borrow_file_table();
             let file_table_locked = file_table.unwrap().read();
             file_table_locked
-                .get_entry(dfd.try_into()?)?
-                .flags()
-                .contains(FdFlags::CLOEXEC)
+                .get_entry(fd)
+                .is_ok_and(|entry| entry.flags().contains(FdFlags::CLOEXEC))
+        } else {
+            false
         };
 
         if is_cloexec {
@@ -127,7 +128,12 @@ fn lookup_executable_file(
         }
     };
 
-    Ok((path, thread_name, shebang_script_path))
+    // Even when `path` comes from an `AT_EMPTY_PATH` file descriptor, opens a
+    // separate read-only file for execution. Reusing the descriptor would break valid
+    // `O_PATH` or write-only descriptors.
+    let executable = UndetectedExecutable::open(path, shebang_script_path)?;
+
+    Ok((executable, thread_name))
 }
 
 bitflags::bitflags! {

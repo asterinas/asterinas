@@ -12,7 +12,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        Credentials, ProcessVm, ShebangScriptPath, UserNamespace, pid_table,
+        Credentials, ProcessVm, ShebangScriptPath, UndetectedExecutable, UserNamespace, pid_table,
         posix_thread::{PosixThreadBuilder, allocate_posix_tid, derive_thread_name},
         program_loader::ProgramToLoad,
         rlimit::new_resource_limits_for_init,
@@ -110,13 +110,9 @@ fn create_init_task(
         let shebang_script_path =
             ShebangScriptPath::Accessible(CString::new(elf_abs_path.clone()).unwrap());
 
-        let program_to_load = ProgramToLoad::build_from_file(
-            elf_path.clone(),
-            &path_resolver,
-            shebang_script_path,
-            argv,
-            envp,
-        )?;
+        let executable = UndetectedExecutable::open(elf_path.clone(), shebang_script_path)?;
+        let program_to_load =
+            ProgramToLoad::from_executable(executable, &path_resolver, argv, envp)?;
         let vmar = process.lock_vmar();
         let elf_load_info = program_to_load.load_to_vmar(vmar.unwrap(), &path_resolver)?;
 

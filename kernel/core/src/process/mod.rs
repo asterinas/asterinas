@@ -25,7 +25,7 @@ mod wait;
 
 pub(crate) use clone::{CloneArgs, CloneFlags, clone_child};
 pub(crate) use credentials::{Credentials, Gid, Uid};
-pub(crate) use execve::{ShebangScriptPath, do_execve};
+pub(crate) use execve::do_execve;
 pub(crate) use kill::{kill, kill_all, kill_group, tgkill};
 pub(crate) use namespace::{
     nsproxy::{ContextSetNsAdminApi, NsProxy, NsProxyBuilder, check_unsupported_ns_flags},
@@ -39,6 +39,7 @@ pub(crate) use process::{
 };
 pub(crate) use process_filter::ProcessFilter;
 pub(crate) use process_vm::{INIT_STACK_SIZE, LockedHeap, ProcessVm, VmarSnapshot};
+pub(crate) use program_loader::{ShebangScriptPath, UndetectedExecutable};
 pub(crate) use rlimit::ResourceType;
 pub(crate) use stats::collect_process_creation_count;
 pub(crate) use term_status::TermStatus;
