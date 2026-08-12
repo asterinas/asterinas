@@ -82,6 +82,7 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 		--argstr dnsServer ${DNS_SERVER} \
 		--arg initramfsCompressed $(INITRAMFS_COMPRESSED) \
 		--arg smp $(SMP) \
+		--argstr benchmarkName $(BENCHMARK) \
 		--out-link $@ \
 		nix -A initramfs-image
 
@@ -98,6 +99,7 @@ $(INITRAMFS):
 		--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
 		--argstr dnsServer ${DNS_SERVER} \
 		--arg smp $(SMP) \
+		--argstr benchmarkName $(BENCHMARK) \
 		--out-link $@ \
 		nix -A initramfs
 
