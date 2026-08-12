@@ -38,7 +38,7 @@ use crate::{
 /// - loongarch64:  ELF_ET_DYN_BASE = TASK_SIZE / 3 * 2
 const PIE_BASE_ADDR: Vaddr = VMAR_CAP_ADDR / 3 * 2;
 
-pub struct ElfLoadInfo {
+pub(crate) struct ElfLoadInfo {
     /// The relocated entry point.
     pub entry_point: Vaddr,
     /// The top address of the user stack.
@@ -49,7 +49,7 @@ pub struct ElfLoadInfo {
 ///
 /// This function will map ELF segments and
 /// initialize the init stack and heap.
-pub fn load_elf_to_vmar(
+pub(crate) fn load_elf_to_vmar(
     vmar: &Vmar,
     elf_file: Path,
     path_resolver: &PathResolver,

@@ -28,7 +28,7 @@ const WEIGHT_0: u64 = 1024;
 
 const HAS_PENDING: u64 = 1 << (u64::BITS - 1);
 
-pub const fn nice_to_weight(nice: Nice) -> u64 {
+pub(crate) const fn nice_to_weight(nice: Nice) -> u64 {
     // Calculated by the formula below:
     //
     //     weight = 1024 * 1.25^(-nice)
@@ -123,7 +123,7 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
 /// Most of the time, this mechanism allows the access to the weight lock-free and
 /// ensures that only one load is needed.
 #[derive(Debug)]
-pub struct FairAttr {
+pub(crate) struct FairAttr {
     // Updates to the `weight` field must be serialized with the `pending_weight` lock.
     weight: AtomicU64,
     pending_weight: SpinLock<u64>,
@@ -131,7 +131,7 @@ pub struct FairAttr {
 }
 
 impl FairAttr {
-    pub fn new(nice: Nice) -> Self {
+    pub(crate) fn new(nice: Nice) -> Self {
         let weight = nice_to_weight(nice);
         FairAttr {
             weight: weight.into(),
@@ -140,7 +140,7 @@ impl FairAttr {
         }
     }
 
-    pub fn update(&self, nice: Nice) {
+    pub(crate) fn update(&self, nice: Nice) {
         let mut pending_weight = self.pending_weight.lock();
         *pending_weight = nice_to_weight(nice);
         self.weight.store(
@@ -234,7 +234,7 @@ pub(super) struct FairClassRq {
 }
 
 impl FairClassRq {
-    pub fn new(cpu: CpuId) -> Self {
+    pub(crate) fn new(cpu: CpuId) -> Self {
         Self {
             cpu,
             entities: BinaryHeap::new(),

@@ -20,7 +20,7 @@ pub(super) enum ItimerType {
     ITIMER_PROF = 2,
 }
 
-pub fn sys_setitimer(
+pub(super) fn sys_setitimer(
     itimer_type: i32,
     new_itimerval_addr: Vaddr,
     old_itimerval_addr: Vaddr,
@@ -72,7 +72,7 @@ pub fn sys_setitimer(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_getitimer(
+pub(super) fn sys_getitimer(
     itimer_type: i32,
     itimerval_addr: Vaddr,
     ctx: &Context,

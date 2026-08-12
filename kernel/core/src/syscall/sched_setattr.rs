@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{prelude::*, sched::SchedPolicy, thread::Tid};
 
-pub fn sys_sched_setattr(
+pub(super) fn sys_sched_setattr(
     tid: Tid,
     addr: Vaddr,
     flags: u32,

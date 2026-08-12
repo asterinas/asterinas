@@ -9,7 +9,7 @@ use super::inode::Inode;
 use crate::prelude::*;
 
 /// Common interface implemented by each concrete file system instance.
-pub trait FileSystem: Any + Sync + Send {
+pub(crate) trait FileSystem: Any + Sync + Send {
     /// Gets the name of this FS type such as `"ext4"` or `"sysfs"`.
     fn name(&self) -> &'static str;
 
@@ -51,7 +51,7 @@ pub trait FileSystem: Any + Sync + Send {
 }
 
 impl dyn FileSystem {
-    pub fn downcast_ref<T: FileSystem>(&self) -> Option<&T> {
+    pub(crate) fn downcast_ref<T: FileSystem>(&self) -> Option<&T> {
         (self as &dyn Any).downcast_ref::<T>()
     }
 }
@@ -66,7 +66,7 @@ impl Debug for dyn FileSystem {
 }
 
 #[derive(Clone, Debug)]
-pub struct SuperBlock {
+pub(crate) struct SuperBlock {
     pub magic: u64,
     pub bsize: usize,
     pub blocks: usize,
@@ -82,7 +82,12 @@ pub struct SuperBlock {
 }
 
 impl SuperBlock {
-    pub fn new(magic: u64, block_size: usize, name_max_len: usize, dev_id: DeviceId) -> Self {
+    pub(crate) fn new(
+        magic: u64,
+        block_size: usize,
+        name_max_len: usize,
+        dev_id: DeviceId,
+    ) -> Self {
         Self {
             magic,
             bsize: block_size,
@@ -102,7 +107,7 @@ impl SuperBlock {
 
 bitflags! {
     /// Flags for per file system.
-    pub struct FsFlags: u32 {
+    pub(crate) struct FsFlags: u32 {
         /// The filesystem is mounted read-only.
         const RDONLY        =   1 << 0;
         /// Writes are synced at once.
@@ -159,27 +164,27 @@ impl From<FsFlags> for u32 {
 define_atomic_version_of_integer_like_type!(FsFlags, {
     /// An atomic version of `FsFlags`.
     #[derive(Debug)]
-    pub struct AtomicFsFlags(AtomicU32);
+    pub(crate) struct AtomicFsFlags(AtomicU32);
 });
 
 #[derive(Debug)]
-pub struct FsEventSubscriberStats {
+pub(crate) struct FsEventSubscriberStats {
     // The number of subscribers to this file system.
     num_subscribers: AtomicI64,
 }
 
 impl FsEventSubscriberStats {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             num_subscribers: AtomicI64::new(0),
         }
     }
 
-    pub fn add_subscriber(&self) {
+    pub(crate) fn add_subscriber(&self) {
         self.num_subscribers.fetch_add(1, Ordering::Release);
     }
 
-    pub fn remove_subscriber(&self) {
+    pub(crate) fn remove_subscriber(&self) {
         let subscribers = self.num_subscribers.fetch_sub(1, Ordering::Release);
         debug_assert!(
             subscribers >= 0,
@@ -188,7 +193,7 @@ impl FsEventSubscriberStats {
         );
     }
 
-    pub fn remove_subscribers(&self, num_subscribers: usize) {
+    pub(crate) fn remove_subscribers(&self, num_subscribers: usize) {
         let subscribers = self
             .num_subscribers
             .fetch_sub(num_subscribers as i64, Ordering::Release);
@@ -200,7 +205,7 @@ impl FsEventSubscriberStats {
         );
     }
 
-    pub fn has_any_subscribers(&self) -> bool {
+    pub(crate) fn has_any_subscribers(&self) -> bool {
         self.num_subscribers.load(Ordering::Acquire) > 0
     }
 }

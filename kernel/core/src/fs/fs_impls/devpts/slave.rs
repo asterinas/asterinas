@@ -23,7 +23,7 @@ use crate::{
 const SLAVE_MAJOR_NUM: u32 = 3;
 
 /// Pty slave inode for the slave device.
-pub struct PtySlaveInode {
+pub(crate) struct PtySlaveInode {
     device: Arc<PtySlave>,
     metadata: RwLock<Metadata>,
     extension: Extension,
@@ -31,7 +31,7 @@ pub struct PtySlaveInode {
 }
 
 impl PtySlaveInode {
-    pub fn new(device: Arc<PtySlave>, fs: Weak<DevPts>) -> Arc<Self> {
+    pub(crate) fn new(device: Arc<PtySlave>, fs: Weak<DevPts>) -> Arc<Self> {
         let devpts = fs.upgrade().unwrap();
         let metadata = Metadata::new_device(
             device.index() as u64 + FIRST_SLAVE_INO,

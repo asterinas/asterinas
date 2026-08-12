@@ -10,7 +10,11 @@ use crate::{
     },
 };
 
-pub fn sys_timerfd_create(clockid: clockid_t, flags: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_timerfd_create(
+    clockid: clockid_t,
+    flags: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let flags = TFDFlags::from_bits(flags as u32)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;
 

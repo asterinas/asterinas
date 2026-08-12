@@ -13,7 +13,7 @@ use crate::{
     prelude::*,
 };
 
-pub mod inotify;
+pub(crate) mod inotify;
 
 use crate::fs::vfs::{inode::Inode, inode_ext::InodeExt};
 
@@ -22,7 +22,7 @@ use crate::fs::vfs::{inode::Inode, inode_ext::InodeExt};
 /// Each inode has an associated `FsEventPublisher` that maintains a list of
 /// subscribers interested in filesystem events. When an event occurs, the publisher
 /// notifies all subscribers whose interesting events match the event.
-pub struct FsEventPublisher {
+pub(crate) struct FsEventPublisher {
     /// List of FS event subscribers.
     subscribers: RwLock<Vec<Arc<dyn FsEventSubscriber>>>,
     /// All interesting FS event types (aggregated from all subscribers).
@@ -46,7 +46,7 @@ impl Default for FsEventPublisher {
 }
 
 impl FsEventPublisher {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             subscribers: RwLock::new(Vec::new()),
             all_interesting_events: AtomicFsEvents::new(FsEvents::empty()),
@@ -55,7 +55,7 @@ impl FsEventPublisher {
     }
 
     /// Adds a subscriber to this publisher.
-    pub fn add_subscriber(&self, subscriber: Arc<dyn FsEventSubscriber>) -> bool {
+    pub(crate) fn add_subscriber(&self, subscriber: Arc<dyn FsEventSubscriber>) -> bool {
         let mut subscribers = self.subscribers.write();
 
         // This check must be done after locking `self.subscribers.write()` to avoid race
@@ -74,7 +74,7 @@ impl FsEventPublisher {
     }
 
     /// Removes a subscriber from this publisher.
-    pub fn remove_subscriber(&self, subscriber: &Arc<dyn FsEventSubscriber>) -> bool {
+    pub(crate) fn remove_subscriber(&self, subscriber: &Arc<dyn FsEventSubscriber>) -> bool {
         let mut subscribers = self.subscribers.write();
 
         let orig_len = subscribers.len();
@@ -89,7 +89,7 @@ impl FsEventPublisher {
     }
 
     /// Removes all subscribers from this publisher.
-    pub fn remove_all_subscribers(&self) -> usize {
+    pub(crate) fn remove_all_subscribers(&self) -> usize {
         let mut subscribers = self.subscribers.write();
 
         for subscriber in subscribers.iter() {
@@ -107,7 +107,7 @@ impl FsEventPublisher {
 
     /// Forbids new subscribers from attaching to this publisher and removes all existing
     /// subscribers.
-    pub fn disable_new_and_remove_subscribers(&self) -> usize {
+    pub(crate) fn disable_new_and_remove_subscribers(&self) -> usize {
         // Do this before calling `remove_all_subscribers` so that the `self.subscribers.write()`
         // lock will synchronize this variable.
         self.accepts_new_subscribers.store(false, Ordering::Relaxed);
@@ -116,7 +116,7 @@ impl FsEventPublisher {
     }
 
     /// Broadcasts an event to all the subscribers of this publisher.
-    pub fn publish_event(&self, events: FsEvents, name: Option<String>) {
+    pub(crate) fn publish_event(&self, events: FsEvents, name: Option<String>) {
         let interesting = self.all_interesting_events.load(Ordering::Relaxed);
         if !interesting.intersects(events) {
             return;
@@ -138,7 +138,7 @@ impl FsEventPublisher {
     }
 
     /// Updates the aggregated events when a subscriber's interesting events change.
-    pub fn update_subscriber_events(&self) {
+    pub(crate) fn update_subscriber_events(&self) {
         // Take a write lock to avoid race conditions that may change `all_interesting_events` to
         // an outdated value.
         let mut subscribers = self.subscribers.write();
@@ -172,7 +172,7 @@ impl FsEventPublisher {
     /// The matcher should return `Some(T)` if the subscriber matches and processing
     /// should stop, or `None` to continue searching.
     #[expect(dead_code)]
-    pub fn find_subscriber_and_process<F, T>(&self, mut matcher: F) -> Option<T>
+    pub(crate) fn find_subscriber_and_process<F, T>(&self, mut matcher: F) -> Option<T>
     where
         F: FnMut(&Arc<dyn FsEventSubscriber>) -> Option<T>,
     {
@@ -194,7 +194,7 @@ impl FsEventPublisher {
 /// read, write, modify, delete) the subscriber wants to be notified about. When an event
 /// occurs, the publisher (attached to an inode) broadcasts it to all subscribers whose
 /// interesting events match the event type.
-pub trait FsEventSubscriber: Any + Send + Sync {
+pub(crate) trait FsEventSubscriber: Any + Send + Sync {
     /// Delivers a filesystem event notification to the subscriber.
     ///
     /// Returns whether the subscriber is a one-shot subscriber and the event has been
@@ -224,7 +224,7 @@ bitflags! {
     /// These events are used to notify subscribers about specific filesystem actions.
     /// Subscribers specify which events they are interested in to filter and receive
     /// only the events they care about.
-    pub struct FsEvents: u32 {
+    pub(crate) struct FsEvents: u32 {
         const ACCESS          = 0x00000001; // File was accessed
         const MODIFY          = 0x00000002; // File was modified
         const ATTRIB          = 0x00000004; // Metadata changed
@@ -270,7 +270,7 @@ define_atomic_version_of_integer_like_type!(FsEvents, {
 });
 
 /// Notifies that a file was accessed.
-pub fn on_access(file: &Arc<dyn FileLike>) {
+pub(crate) fn on_access(file: &Arc<dyn FileLike>) {
     let path = file.path();
 
     if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
@@ -280,7 +280,7 @@ pub fn on_access(file: &Arc<dyn FileLike>) {
 }
 
 /// Notifies that a file was modified.
-pub fn on_modify(file: &Arc<dyn FileLike>) {
+pub(crate) fn on_modify(file: &Arc<dyn FileLike>) {
     let path = file.path();
 
     if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
@@ -290,7 +290,7 @@ pub fn on_modify(file: &Arc<dyn FileLike>) {
 }
 
 /// Notifies that a path's content was changed.
-pub fn on_change(path: &Path) {
+pub(crate) fn on_change(path: &Path) {
     if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }
@@ -298,7 +298,7 @@ pub fn on_change(path: &Path) {
 }
 
 /// Notifies that a file was deleted from a directory.
-pub fn on_delete(
+pub(crate) fn on_delete(
     dir_inode: &Arc<dyn Inode>,
     inode: &Arc<dyn Inode>,
     name: impl FnOnce() -> String,
@@ -318,7 +318,7 @@ pub fn on_delete(
 }
 
 /// Notifies that an inode's link count changed.
-pub fn on_link_count(inode: &Arc<dyn Inode>) {
+pub(crate) fn on_link_count(inode: &Arc<dyn Inode>) {
     if !inode.fs().fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }
@@ -326,7 +326,7 @@ pub fn on_link_count(inode: &Arc<dyn Inode>) {
 }
 
 /// Notifies that an inode was removed (link count reached 0).
-pub fn on_inode_removed(inode: &Arc<dyn Inode>) {
+pub(crate) fn on_inode_removed(inode: &Arc<dyn Inode>) {
     if !inode.fs().fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }
@@ -334,7 +334,11 @@ pub fn on_inode_removed(inode: &Arc<dyn Inode>) {
 }
 
 /// Notifies that a file was linked to a directory.
-pub fn on_link(dir_inode: &Arc<dyn Inode>, inode: &Arc<dyn Inode>, name: impl FnOnce() -> String) {
+pub(crate) fn on_link(
+    dir_inode: &Arc<dyn Inode>,
+    inode: &Arc<dyn Inode>,
+    name: impl FnOnce() -> String,
+) {
     if !dir_inode
         .fs()
         .fs_event_subscriber_stats()
@@ -347,7 +351,7 @@ pub fn on_link(dir_inode: &Arc<dyn Inode>, inode: &Arc<dyn Inode>, name: impl Fn
 }
 
 /// Notifies that a directory was created.
-pub fn on_mkdir(dir_path: &Path, name: impl FnOnce() -> String) {
+pub(crate) fn on_mkdir(dir_path: &Path, name: impl FnOnce() -> String) {
     if !dir_path
         .fs()
         .fs_event_subscriber_stats()
@@ -359,7 +363,7 @@ pub fn on_mkdir(dir_path: &Path, name: impl FnOnce() -> String) {
 }
 
 /// Notifies that a file was created.
-pub fn on_create(file_path: &Path, name: impl FnOnce() -> String) {
+pub(crate) fn on_create(file_path: &Path, name: impl FnOnce() -> String) {
     if !file_path
         .fs()
         .fs_event_subscriber_stats()
@@ -371,7 +375,7 @@ pub fn on_create(file_path: &Path, name: impl FnOnce() -> String) {
 }
 
 /// Notifies that a file was opened.
-pub fn on_open(file: &Arc<dyn FileLike>) {
+pub(crate) fn on_open(file: &Arc<dyn FileLike>) {
     let Some(path) = notifiable_path(file) else {
         return;
     };
@@ -379,7 +383,7 @@ pub fn on_open(file: &Arc<dyn FileLike>) {
 }
 
 /// Notifies that a file was closed.
-pub fn on_close(file: &Arc<dyn FileLike>) {
+pub(crate) fn on_close(file: &Arc<dyn FileLike>) {
     let Some(path) = notifiable_path(file) else {
         return;
     };
@@ -407,7 +411,7 @@ fn notifiable_path(file: &Arc<dyn FileLike>) -> Option<&Path> {
 }
 
 /// Notifies that a file's attributes changed.
-pub fn on_attr_change(path: &Path) {
+pub(crate) fn on_attr_change(path: &Path) {
     if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }

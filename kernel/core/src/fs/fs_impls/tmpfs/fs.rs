@@ -17,7 +17,7 @@ use crate::{
 // to create tmpfs-flavored ramfs instances. In the future we need to
 // implement a dedicated tmpfs with tmpfs-specific features such as memory
 // limits and swap support.
-pub type TmpFs = RamFs;
+pub(crate) type TmpFs = RamFs;
 
 // FIXME: These defaults are only a rough approximation for tmpfs-over-ramfs.
 // A dedicated tmpfs implementation should replace them with real tmpfs limit

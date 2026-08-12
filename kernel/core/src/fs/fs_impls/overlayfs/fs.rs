@@ -43,7 +43,7 @@ const OVERLAY_FS_MAGIC: u64 = 0x794C7630;
 /// An `OverlayFs` is a union pseudo file system employed to merge
 /// upper and lower directories that potentially comes from different
 /// file systems, into a single, unified view at a designated mount point.
-pub struct OverlayFs {
+pub(crate) struct OverlayFs {
     /// The writable upper layer.
     upper: OverlayUpper,
     /// The read-only lower layer.
@@ -125,7 +125,7 @@ impl OverlayFs {
     /// # Errors
     /// * `EINVAL` - If work and upper are on different filesystems
     /// * `EINVAL` - If work is not empty
-    pub fn new(upper: Path, lower: Vec<Path>, work: Path) -> Result<Arc<Self>> {
+    pub(crate) fn new(upper: Path, lower: Vec<Path>, work: Path) -> Result<Arc<Self>> {
         Self::validate_work_and_upper(&work, &upper)?;
         Self::validate_work_empty(&work)?;
 
@@ -231,7 +231,7 @@ impl OverlayFs {
 impl OverlayInode {
     /// Lookups the target child `OverlayInode`. If the child is not present in cache,
     /// it will be built from the layered lookups within the lower layers.
-    pub fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
+    pub(crate) fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
         match self.lookup_inner(name) {
             Ok(Some(inode)) => Ok(inode),
             Ok(None) => Err(Error::new(Errno::ENOENT)),
@@ -241,7 +241,12 @@ impl OverlayInode {
 
     /// Creates a new non-exist child `OverlayInode` in the upper layer.
     /// If the parent directories do not exist, they will be created recursively in the upper layer.
-    pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    pub(crate) fn create(
+        &self,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
         if self.type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -305,7 +310,7 @@ impl OverlayInode {
     /// Writes data to the target inode, if it resides in the lower layer,
     /// it will be copied up to the upper layer.
     /// The corresponding parent directories will be created also if they do not exist.
-    pub fn write_at(
+    pub(crate) fn write_at(
         &self,
         offset: usize,
         reader: &mut VmReader,
@@ -318,7 +323,7 @@ impl OverlayInode {
         upper.write_at(offset, reader, status_flags)
     }
 
-    pub fn read_at(
+    pub(crate) fn read_at(
         &self,
         offset: usize,
         writer: &mut VmWriter,
@@ -335,7 +340,11 @@ impl OverlayInode {
     ///
     /// Returns the offset increment needed to advance `offset` to the next unread
     /// entry. If no entries have been visited, returns an error.
-    pub fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    pub(crate) fn readdir_at(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+    ) -> Result<usize> {
         if self.type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -370,7 +379,7 @@ impl OverlayInode {
 
     /// Deletes the target file by creating a "whiteout" file from the upper layer.
     /// The corresponding parent directories will be created also if they do not exist.
-    pub fn unlink(&self, name: &str) -> Result<()> {
+    pub(crate) fn unlink(&self, name: &str) -> Result<()> {
         // TODO: Hold the upper lock from here to avoid race condition
         let inode = self.lookup(name)?;
         let target = inode.downcast_ref::<OverlayInode>().unwrap();
@@ -408,7 +417,7 @@ impl OverlayInode {
 
     /// Deletes the target directory by creating an "opaque" directory from the upper layer.
     /// The corresponding parent directories will be created also if they do not exist.
-    pub fn rmdir(&self, name: &str) -> Result<()> {
+    pub(crate) fn rmdir(&self, name: &str) -> Result<()> {
         // TODO: Hold the upper lock from here to avoid race condition
         let inode = self.lookup(name)?;
         let target = inode.downcast_ref::<OverlayInode>().unwrap();
@@ -451,11 +460,11 @@ impl OverlayInode {
         Ok(())
     }
 
-    pub fn fs(&self) -> Arc<dyn FileSystem> {
+    pub(crate) fn fs(&self) -> Arc<dyn FileSystem> {
         self.overlay_fs() as _
     }
 
-    pub fn resize(&self, new_size: usize) -> Result<()> {
+    pub(crate) fn resize(&self, new_size: usize) -> Result<()> {
         if self.type_ == InodeType::Dir {
             return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
         }
@@ -471,32 +480,37 @@ impl OverlayInode {
         upper.resize(new_size)
     }
 
-    pub fn metadata(&self) -> Result<Metadata> {
+    pub(crate) fn metadata(&self) -> Result<Metadata> {
         let mut metadata = self.get_top_valid_inode().metadata()?;
         metadata.ino = self.ino;
         Ok(metadata)
     }
 
-    pub fn ino(&self) -> u64 {
+    pub(crate) fn ino(&self) -> u64 {
         self.ino
     }
 
-    pub fn type_(&self) -> InodeType {
+    pub(crate) fn type_(&self) -> InodeType {
         self.type_
     }
 
-    pub fn extension(&self) -> &Extension {
+    pub(crate) fn extension(&self) -> &Extension {
         &self.extension
     }
 
-    pub fn page_cache(&self) -> Option<Arc<Vmo>> {
+    pub(crate) fn page_cache(&self) -> Option<Arc<Vmo>> {
         let _ = self.get_top_valid_inode().page_cache()?;
         // Do copy-up for the potential memory mapping operations
         let upper = self.build_upper_recursively_if_needed().unwrap();
         upper.page_cache()
     }
 
-    pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
+    pub(crate) fn mknod(
+        &self,
+        name: &str,
+        mode: InodeMode,
+        type_: MknodType,
+    ) -> Result<Arc<dyn Inode>> {
         if self.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "not mknod on a dir");
         }
@@ -504,7 +518,7 @@ impl OverlayInode {
         upper.mknod(name, mode, type_)
     }
 
-    pub fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
+    pub(crate) fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
         if self.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
@@ -512,14 +526,14 @@ impl OverlayInode {
         upper.link(old, name)
     }
 
-    pub fn read_link(&self) -> Result<SymbolicLink> {
+    pub(crate) fn read_link(&self) -> Result<SymbolicLink> {
         if self.type_ != InodeType::SymLink {
             return_errno_with_message!(Errno::EINVAL, "self is not symlink");
         }
         self.get_top_valid_inode().read_link()
     }
 
-    pub fn write_link(&self, target: &str) -> Result<()> {
+    pub(crate) fn write_link(&self, target: &str) -> Result<()> {
         if self.type_ != InodeType::SymLink {
             return_errno_with_message!(Errno::EINVAL, "self is not symlink");
         }
@@ -527,7 +541,7 @@ impl OverlayInode {
         upper.write_link(target)
     }
 
-    pub fn rename(
+    pub(crate) fn rename(
         &self,
         _old_name: &str,
         _target: &Arc<dyn Inode>,
@@ -542,31 +556,31 @@ impl OverlayInode {
         );
     }
 
-    pub fn sync_all(&self) -> Result<()> {
+    pub(crate) fn sync_all(&self) -> Result<()> {
         self.upper().map_or(Ok(()), |upper| upper.sync_all())
     }
 
-    pub fn sync_data(&self) -> Result<()> {
+    pub(crate) fn sync_data(&self) -> Result<()> {
         self.upper().map_or(Ok(()), |upper| upper.sync_data())
     }
 }
 
 #[inherit_methods(from = "self.get_top_valid_inode()")]
 impl OverlayInode {
-    pub fn size(&self) -> usize; // TODO: Calculate the right size for directory
-    pub fn mode(&self) -> Result<InodeMode>;
-    pub fn owner(&self) -> Result<Uid>;
-    pub fn group(&self) -> Result<Gid>;
-    pub fn atime(&self) -> Duration;
-    pub fn mtime(&self) -> Duration;
-    pub fn ctime(&self) -> Duration;
-    pub fn open(
+    pub(crate) fn size(&self) -> usize; // TODO: Calculate the right size for directory
+    pub(crate) fn mode(&self) -> Result<InodeMode>;
+    pub(crate) fn owner(&self) -> Result<Uid>;
+    pub(crate) fn group(&self) -> Result<Gid>;
+    pub(crate) fn atime(&self) -> Duration;
+    pub(crate) fn mtime(&self) -> Duration;
+    pub(crate) fn ctime(&self) -> Duration;
+    pub(crate) fn open(
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>>;
-    pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
-    pub fn list_xattr(
+    pub(crate) fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
+    pub(crate) fn list_xattr(
         &self,
         namespace: XattrNamespace,
         list_writer: &mut VmWriter,
@@ -576,17 +590,17 @@ impl OverlayInode {
 #[inherit_methods(from = "self.build_upper_recursively_if_needed()?")]
 impl OverlayInode {
     // TODO: Support the `metacopy` feature for efficiency
-    pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
-    pub fn set_owner(&self, uid: Uid) -> Result<()>;
-    pub fn set_group(&self, gid: Gid) -> Result<()>;
-    pub fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()>;
+    pub(crate) fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    pub(crate) fn set_owner(&self, uid: Uid) -> Result<()>;
+    pub(crate) fn set_group(&self, gid: Gid) -> Result<()>;
+    pub(crate) fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()>;
 }
 
 #[inherit_methods(from = "self.build_upper_recursively_if_needed().unwrap()")]
 impl OverlayInode {
-    pub fn set_atime(&self, time: Duration);
-    pub fn set_mtime(&self, time: Duration);
-    pub fn set_ctime(&self, time: Duration);
+    pub(crate) fn set_atime(&self, time: Duration);
+    pub(crate) fn set_mtime(&self, time: Duration);
+    pub(crate) fn set_ctime(&self, time: Duration);
 }
 
 impl OverlayInode {
@@ -1079,7 +1093,7 @@ impl DirentVisitor for OverlayDirVisitor {
 }
 
 impl OverlayDirVisitor {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             dir_map: BTreeMap::new(),
             dir_set: HashSet::new(),
@@ -1091,15 +1105,17 @@ impl OverlayDirVisitor {
     }
 
     /// Returns the merged view of the directory.
-    pub fn as_merged_view(&self) -> impl Iterator<Item = (&usize, &(String, u64, InodeType))> + '_ {
+    pub(crate) fn as_merged_view(
+        &self,
+    ) -> impl Iterator<Item = (&usize, &(String, u64, InodeType))> + '_ {
         self.dir_map.iter()
     }
 
-    pub fn visited_files(&self) -> usize {
+    pub(crate) fn visited_files(&self) -> usize {
         self.visited_files
     }
 
-    pub fn contains_whiteout(&self) -> bool {
+    pub(crate) fn contains_whiteout(&self) -> bool {
         !self.whiteout_set.is_empty()
     }
 
@@ -1129,7 +1145,7 @@ impl UniqueNoGenerator {
     const HIGHER_MASK: usize = 0xFF00_0000_0000_0000;
     const LOWER_MASK: usize = 0x00FF_FFFF_FFFF_FFFF;
 
-    pub fn gen_unique_offset(layer_idx: LayerIdx, fs_offset: usize) -> Result<usize> {
+    pub(crate) fn gen_unique_offset(layer_idx: LayerIdx, fs_offset: usize) -> Result<usize> {
         if fs_offset & Self::HIGHER_MASK != 0 {
             return_errno_with_message!(Errno::EOVERFLOW, "fs offset overflow");
         }
@@ -1137,14 +1153,14 @@ impl UniqueNoGenerator {
     }
 
     // XXX: Linux uses embedded fsid for unique ino. Should we follow the technique?
-    pub fn gen_unique_ino(layer_idx: LayerIdx, fs_ino: u64) -> Result<u64> {
+    pub(crate) fn gen_unique_ino(layer_idx: LayerIdx, fs_ino: u64) -> Result<u64> {
         if (fs_ino as usize) & Self::HIGHER_MASK != 0 {
             return_errno_with_message!(Errno::EOVERFLOW, "fs ino overflow");
         }
         Ok(((layer_idx as u64) << Self::NUM_LOWER_BITS) | fs_ino)
     }
 
-    pub fn parse_unique_offset(offset: usize) -> (LayerIdx, usize) {
+    pub(crate) fn parse_unique_offset(offset: usize) -> (LayerIdx, usize) {
         let layer = (offset >> Self::NUM_LOWER_BITS) as LayerIdx;
         let offset = offset & Self::LOWER_MASK;
         (layer, offset)
@@ -1155,7 +1171,7 @@ impl UniqueNoGenerator {
 // TODO: Try to support these features and make them configurable.
 // Check https://github.com/torvalds/linux/blob/master/Documentation/filesystems/overlayfs.rst for more.
 #[derive(Default)]
-pub struct OverlayConfig {
+pub(crate) struct OverlayConfig {
     default_permissions: bool,
     redirect_mode: u8,
     verity_mode: u8,

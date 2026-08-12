@@ -18,7 +18,7 @@ pub(super) struct StopClassRq {
 }
 
 impl StopClassRq {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { entity: None }
     }
 }

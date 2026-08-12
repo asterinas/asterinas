@@ -55,7 +55,7 @@ use crate::{
 ///
 /// [`Vmar`]: crate::vm::vmar::Vmar
 #[derive(Debug)]
-pub struct VmMapping {
+pub(crate) struct VmMapping {
     /// The size of mapping, in bytes. The map size can even be larger than the
     /// size of VMO. Those pages outside VMO range cannot be read or write.
     ///
@@ -144,27 +144,27 @@ impl VmMapping {
     }
 
     /// Returns the mapping's start address.
-    pub fn map_to_addr(&self) -> Vaddr {
+    pub(crate) fn map_to_addr(&self) -> Vaddr {
         self.map_to_addr
     }
 
     /// Returns the mapping's end address.
-    pub fn map_end(&self) -> Vaddr {
+    pub(crate) fn map_end(&self) -> Vaddr {
         self.map_to_addr + self.map_size.get()
     }
 
     /// Returns the mapping's size.
-    pub fn map_size(&self) -> usize {
+    pub(crate) fn map_size(&self) -> usize {
         self.map_size.get()
     }
 
     /// Returns the permissions of pages in the mapping.
-    pub fn perms(&self) -> VmPerms {
+    pub(crate) fn perms(&self) -> VmPerms {
         self.perms
     }
 
     /// Returns the inode of the file that backs the mapping.
-    pub fn inode(&self) -> Option<&Arc<dyn Inode>> {
+    pub(crate) fn inode(&self) -> Option<&Arc<dyn Inode>> {
         self.path.as_ref().map(|path| path.inode())
     }
 
@@ -199,7 +199,7 @@ impl VmMapping {
     }
 
     /// Returns the mapping's RSS type.
-    pub fn rss_type(&self) -> RssType {
+    pub(crate) fn rss_type(&self) -> RssType {
         match &self.mapped_mem {
             MappedMemory::Anonymous => RssType::Anon,
             MappedMemory::Vmo(_) | MappedMemory::Device => RssType::File,
@@ -207,7 +207,7 @@ impl VmMapping {
     }
 
     /// Returns the shared futex backing identity for the address if available.
-    pub fn futex_backing(&self, addr: Vaddr) -> Result<Option<(Weak<Vmo>, usize)>> {
+    pub(crate) fn futex_backing(&self, addr: Vaddr) -> Result<Option<(Weak<Vmo>, usize)>> {
         if !self.is_shared {
             return Ok(None);
         }
@@ -259,7 +259,7 @@ impl VmMapping {
     /// Prints the mapping information in the format of `/proc/[pid]/maps`.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/task_mmu.c#L304-L359>
-    pub fn print_to_maps(
+    pub(crate) fn print_to_maps(
         &self,
         printer: &mut VmPrinter,
         parent_vmar: &Vmar,
@@ -704,7 +704,7 @@ impl VmMapping {
 
 impl VmMapping {
     /// Enlarges the mapping by `extra_size` bytes to the high end.
-    pub fn enlarge(self, extra_size: usize) -> Self {
+    pub(crate) fn enlarge(self, extra_size: usize) -> Self {
         Self {
             map_size: NonZeroUsize::new(self.map_size.get() + extra_size).unwrap(),
             ..self
@@ -715,7 +715,7 @@ impl VmMapping {
     ///
     /// The address must be within the mapping and page-aligned. The address
     /// must not be either the start or the end of the mapping.
-    pub fn split(self, at: Vaddr) -> (Self, Self) {
+    pub(crate) fn split(self, at: Vaddr) -> (Self, Self) {
         debug_assert!(self.map_to_addr < at && at < self.map_end());
         debug_assert!(at.is_multiple_of(PAGE_SIZE));
 
@@ -756,7 +756,7 @@ impl VmMapping {
     ///
     /// Panics if the mapping does not contain the range, or if the start or
     /// end of the range is not page-aligned.
-    pub fn split_range(self, range: &Range<Vaddr>) -> (Option<Self>, Self, Option<Self>) {
+    pub(crate) fn split_range(self, range: &Range<Vaddr>) -> (Option<Self>, Self, Option<Self>) {
         let mapping_range = self.range();
         if range.start <= mapping_range.start && mapping_range.end <= range.end {
             // Condition 4.
@@ -798,7 +798,7 @@ impl VmMapping {
     /// - the merged mapping along with the address of the mapping
     ///   to be removed if successful.
     /// - the original `self` and a `None` otherwise.
-    pub fn try_merge_with(self, vm_mapping: &VmMapping) -> (Self, Option<Vaddr>) {
+    pub(crate) fn try_merge_with(self, vm_mapping: &VmMapping) -> (Self, Option<Vaddr>) {
         debug_assert!(!is_intersected(&self.range(), &vm_mapping.range()));
 
         let (left, right) = if self.map_to_addr < vm_mapping.map_to_addr {
@@ -966,7 +966,7 @@ impl MappedVmo {
     ///
     /// This method may involve I/O operations if the VMO needs to fetch
     /// a page from the underlying page cache.
-    pub fn commit_on(&self, page_idx: usize, map_mode: VmoMapMode) -> Result<()> {
+    pub(crate) fn commit_on(&self, page_idx: usize, map_mode: VmoMapMode) -> Result<()> {
         self.vmo.commit_on(page_idx, map_mode)
     }
 
@@ -993,17 +993,17 @@ impl MappedVmo {
     }
 
     /// Gets a reference to the underlying VMO.
-    pub fn vmo(&self) -> &Arc<Vmo> {
+    pub(crate) fn vmo(&self) -> &Arc<Vmo> {
         &self.vmo
     }
 
     /// Gets the offset for the mappings.
-    pub fn offset(&self) -> usize {
+    pub(crate) fn offset(&self) -> usize {
         self.offset
     }
 
     /// Duplicates the capability.
-    pub fn dup(&self) -> Self {
+    pub(crate) fn dup(&self) -> Self {
         self.dup_at_offset(self.offset)
     }
 

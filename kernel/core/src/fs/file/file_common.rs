@@ -19,7 +19,7 @@ use crate::{
 ///
 /// This type is intended to collect state that belongs to the file description rather than to a
 /// specific file descriptor.
-pub struct FileCommon {
+pub(crate) struct FileCommon {
     path: Path,
     status_flags: AtomicStatusFlags,
     owner: FileOwner,
@@ -27,7 +27,7 @@ pub struct FileCommon {
 
 impl FileCommon {
     /// Creates common state for a file description.
-    pub fn new(path: Path, status_flags: StatusFlags) -> Self {
+    pub(crate) fn new(path: Path, status_flags: StatusFlags) -> Self {
         Self {
             path,
             status_flags: AtomicStatusFlags::new(status_flags),
@@ -36,17 +36,17 @@ impl FileCommon {
     }
 
     /// Returns the path associated with the file description.
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 
     /// Returns the current file status flags.
-    pub fn status_flags(&self) -> StatusFlags {
+    pub(crate) fn status_flags(&self) -> StatusFlags {
         self.status_flags.load(Ordering::Relaxed)
     }
 
     /// Returns whether the file description is in non-blocking mode.
-    pub fn is_nonblocking(&self) -> bool {
+    pub(crate) fn is_nonblocking(&self) -> bool {
         self.status_flags().contains(StatusFlags::O_NONBLOCK)
     }
 
@@ -76,26 +76,26 @@ impl FileCommon {
     }
 
     /// Returns the asynchronous I/O signal owner.
-    pub fn owner(&self) -> &FileOwner {
+    pub(crate) fn owner(&self) -> &FileOwner {
         &self.owner
     }
 }
 
 /// The process that receives asynchronous I/O signals for a file description.
-pub struct FileOwner {
+pub(crate) struct FileOwner {
     inner: Mutex<Option<Owner>>,
 }
 
 impl FileOwner {
     /// Creates an owner state with no process assigned.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: Mutex::new(None),
         }
     }
 
     /// Returns the process ID of the current owner.
-    pub fn pid(&self) -> Option<Pid> {
+    pub(crate) fn pid(&self) -> Option<Pid> {
         self.inner.lock().as_ref().map(|owner| owner.pid)
     }
 

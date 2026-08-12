@@ -7,7 +7,7 @@ use crate::{
     process::ResourceType,
 };
 
-pub fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}", old_fd);
 
     let file_table = ctx.thread_local.borrow_file_table();
@@ -18,7 +18,11 @@ pub fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(new_fd.into()))
 }
 
-pub fn sys_dup2(old_fd: RawFileDesc, new_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_dup2(
+    old_fd: RawFileDesc,
+    new_fd: RawFileDesc,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 
     if old_fd == new_fd {
@@ -30,7 +34,7 @@ pub fn sys_dup2(old_fd: RawFileDesc, new_fd: RawFileDesc, ctx: &Context) -> Resu
     do_dup3(old_fd, new_fd, FdFlags::empty(), ctx)
 }
 
-pub fn sys_dup3(
+pub(super) fn sys_dup3(
     old_fd: RawFileDesc,
     new_fd: RawFileDesc,
     flags: u32,

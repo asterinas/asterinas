@@ -6,7 +6,7 @@ use super::VmReaderArray;
 use crate::prelude::*;
 
 /// A trait providing the ability to read a C string from the user space.
-pub trait ReadCString {
+pub(crate) trait ReadCString {
     /// Reads bytes until the first nul byte and creates a C string.
     ///
     /// This method reads up to `max_len` bytes. The kernel must limit `max_len`

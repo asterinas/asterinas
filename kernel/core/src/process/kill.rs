@@ -19,7 +19,7 @@ use crate::{
 ///
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
-pub fn kill(pid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<()> {
+pub(crate) fn kill(pid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<()> {
     // Fast path: If the signal is sent to self, we can skip most checks.
     if pid == ctx.process.pid() {
         let Some(signal) = signal else {
@@ -51,7 +51,11 @@ pub fn kill(pid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> Result<
 ///
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
-pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Context) -> Result<()> {
+pub(crate) fn kill_group<S: Signal + Clone>(
+    pgid: Pgid,
+    signal: Option<S>,
+    ctx: &Context,
+) -> Result<()> {
     let process_group = pid_table::pid_table_mut()
         .get_process_group(&pgid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target group does not exist"))?;
@@ -80,7 +84,7 @@ pub fn kill_group<S: Signal + Clone>(pgid: Pgid, signal: Option<S>, ctx: &Contex
 ///
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
-pub fn tgkill(
+pub(crate) fn tgkill(
     tid: Tid,
     tgid: Option<Pid>,
     signal: Option<Box<dyn Signal>>,
@@ -124,7 +128,7 @@ pub fn tgkill(
 ///
 /// The credentials of the current process will be checked to determine
 /// if it is authorized to send the signal to the target group.
-pub fn kill_all<S: Signal + Clone>(signal: Option<S>, ctx: &Context) -> Result<()> {
+pub(crate) fn kill_all<S: Signal + Clone>(signal: Option<S>, ctx: &Context) -> Result<()> {
     let mut result = Ok(());
 
     for process in pid_table::pid_table_mut().iter_processes() {

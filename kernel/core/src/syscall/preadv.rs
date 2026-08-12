@@ -8,7 +8,7 @@ use crate::{
     util::VmWriterArray,
 };
 
-pub fn sys_readv(
+pub(super) fn sys_readv(
     raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
@@ -18,7 +18,7 @@ pub fn sys_readv(
     Ok(SyscallReturn::Return(res as _))
 }
 
-pub fn sys_preadv(
+pub(super) fn sys_preadv(
     raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
@@ -41,7 +41,7 @@ pub fn sys_preadv(
     Ok(SyscallReturn::Return(res as _))
 }
 
-pub fn sys_preadv2(
+pub(super) fn sys_preadv2(
     raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,

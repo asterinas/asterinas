@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug)]
-pub struct UserSignal {
+pub(crate) struct UserSignal {
     num: SigNum,
     pid: Pid,
     uid: Uid,
@@ -24,14 +24,14 @@ pub struct UserSignal {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum UserSignalKind {
+pub(crate) enum UserSignalKind {
     Kill,
     Tkill,
     Sigqueue,
 }
 
 impl UserSignal {
-    pub fn new(num: SigNum, kind: UserSignalKind, pid: Pid, uid: Uid) -> Self {
+    pub(crate) fn new(num: SigNum, kind: UserSignalKind, pid: Pid, uid: Uid) -> Self {
         Self {
             num,
             pid,
@@ -40,7 +40,7 @@ impl UserSignal {
         }
     }
 
-    pub fn new_kill(num: SigNum, ctx: &Context) -> Self {
+    pub(crate) fn new_kill(num: SigNum, ctx: &Context) -> Self {
         Self {
             num,
             pid: ctx.process.pid(),
@@ -49,11 +49,11 @@ impl UserSignal {
         }
     }
 
-    pub fn pid(&self) -> Pid {
+    pub(crate) fn pid(&self) -> Pid {
         self.pid
     }
 
-    pub fn kind(&self) -> UserSignalKind {
+    pub(crate) fn kind(&self) -> UserSignalKind {
         self.kind
     }
 }

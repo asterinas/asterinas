@@ -10,7 +10,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_linkat(
+pub(super) fn sys_linkat(
     old_dirfd: RawFileDesc,
     old_path_addr: Vaddr,
     new_dirfd: RawFileDesc,
@@ -63,7 +63,7 @@ pub fn sys_linkat(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_link(
+pub(super) fn sys_link(
     old_path_addr: Vaddr,
     new_path_addr: Vaddr,
     ctx: &Context,
@@ -72,7 +72,7 @@ pub fn sys_link(
 }
 
 bitflags::bitflags! {
-    pub struct LinkFlags: u32 {
+    pub(crate) struct LinkFlags: u32 {
         const AT_EMPTY_PATH = 0x1000;
         const AT_SYMLINK_FOLLOW = 0x400;
     }

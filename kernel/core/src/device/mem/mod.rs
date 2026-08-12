@@ -22,7 +22,7 @@ mod file;
 
 use device_id::{DeviceId, MajorId, MinorId};
 use file::MemFile;
-pub use file::{getrandom, geturandom};
+pub(crate) use file::{getrandom, geturandom};
 use spin::Once;
 
 use super::{
@@ -36,7 +36,7 @@ use crate::{
 
 /// A memory device.
 #[derive(Debug)]
-pub struct MemDevice {
+pub(crate) struct MemDevice {
     id: DeviceId,
     file: MemFile,
 }

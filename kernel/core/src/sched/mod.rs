@@ -4,7 +4,7 @@ mod nice;
 mod sched_class;
 mod stats;
 
-pub use self::{
+pub(crate) use self::{
     nice::{AtomicNice, Nice},
     sched_class::{
         LinuxSchedPolicy, RealTimePolicy, RealTimePriority, SchedAttr, SchedPolicy, init,

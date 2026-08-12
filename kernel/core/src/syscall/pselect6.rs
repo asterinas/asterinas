@@ -12,7 +12,7 @@ use crate::{
     time::timespec_t,
 };
 
-pub fn sys_pselect6(
+pub(super) fn sys_pselect6(
     nfds: RawFileDesc,
     readfds_addr: Vaddr,
     writefds_addr: Vaddr,

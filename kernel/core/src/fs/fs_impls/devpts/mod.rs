@@ -7,7 +7,7 @@ use core::time::Duration;
 use aster_util::slot_vec::SlotVec;
 use id_alloc::IdAlloc;
 
-pub use self::ptmx::Ptmx;
+pub(crate) use self::ptmx::Ptmx;
 use self::slave::PtySlaveInode;
 use crate::{
     device::PtyMaster,
@@ -46,7 +46,7 @@ const MAX_PTY_NUM: usize = 4096;
 /// represent slaves to the multiplexing master located at "/dev/ptmx".
 ///
 /// Actually, the "/dev/ptmx" is a symlink to the real device at "/dev/pts/ptmx".
-pub struct DevPts {
+pub(crate) struct DevPts {
     _anon_device_id: AnonDeviceId,
     sb: SuperBlock,
     root: Arc<RootInode>,
@@ -56,7 +56,7 @@ pub struct DevPts {
 }
 
 impl DevPts {
-    pub fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for devpts");
         let sb = SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         Arc::new_cyclic(|weak_self| Self {
@@ -91,7 +91,7 @@ impl DevPts {
     /// Remove the slave from fs.
     ///
     /// This is called when the master is being dropped.
-    pub fn remove_slave(&self, index: u32) -> Option<Arc<dyn Inode>> {
+    pub(crate) fn remove_slave(&self, index: u32) -> Option<Arc<dyn Inode>> {
         let (_, removed_slave) = self
             .root
             .slaves
@@ -159,7 +159,7 @@ struct RootInode {
 }
 
 impl RootInode {
-    pub fn new(fs: Weak<DevPts>, sb: &SuperBlock) -> Arc<Self> {
+    pub(crate) fn new(fs: Weak<DevPts>, sb: &SuperBlock) -> Arc<Self> {
         Arc::new(Self {
             ptmx: Ptmx::new(fs.clone(), sb),
             slaves: RwLock::new(SlotVec::new()),

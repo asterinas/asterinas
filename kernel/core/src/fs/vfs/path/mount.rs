@@ -67,7 +67,7 @@ pub(super) enum MountNsFileCopying {
 /// This type defines how mount and unmount events are propagated
 /// from this mount to other mounts.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum MountPropType {
+pub(crate) enum MountPropType {
     /// A private type is the default mount type. Mount and unmount events
     /// do not propagate to or from the private mounts.
     #[default]
@@ -90,7 +90,7 @@ static MOUNT_ID_ALLOCATOR: SpinLock<SparseIdAlloc> =
 ///
 /// This value is chosen to align with Linux.
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/namespace.c#L73>
-pub const MNT_UNIQUE_ID_MIN: u64 = (1 << 31) + 1;
+pub(crate) const MNT_UNIQUE_ID_MIN: u64 = (1 << 31) + 1;
 
 /// Monotonically increasing 64-bit unique mount IDs.
 static NEXT_FREE_UNIQUE_ID: AtomicU64 = AtomicU64::new(MNT_UNIQUE_ID_MIN);
@@ -136,7 +136,7 @@ impl Drop for MountId {
 }
 
 bitflags! {
-    pub struct PerMountFlags: u32 {
+    pub(crate) struct PerMountFlags: u32 {
         /// Mount read-only.
         const RDONLY         = 1 << 0;
         /// Ignore suid and sgid bits.
@@ -233,14 +233,14 @@ impl From<PerMountFlags> for u32 {
 define_atomic_version_of_integer_like_type!(PerMountFlags, {
     /// An atomic version of `PerMountFlags`.
     #[derive(Debug)]
-    pub struct AtomicPerMountFlags(AtomicU32);
+    pub(crate) struct AtomicPerMountFlags(AtomicU32);
 });
 
 /// A `Mount` represents a mounted filesystem instance in the VFS.
 ///
 /// Each `Mount` can be viewed as a node in the mount tree, maintaining
 /// mount-related information and the structure of the mount tree.
-pub struct Mount {
+pub(crate) struct Mount {
     /// Pair of recyclable and unique mount identifiers; the recyclable
     /// half is returned to the pool when the `Mount` drops.
     id: MountId,
@@ -315,7 +315,7 @@ impl Mount {
     // currently records the caller's namespace here because `Mount::mnt_ns` is
     // immutable. This should be changed once mount namespaces can be updated
     // during attach.
-    pub fn new_detached(
+    pub(crate) fn new_detached(
         fs_and_root: FsAndRoot,
         flags: PerMountFlags,
         mnt_ns: Weak<MountNamespace>,
@@ -368,7 +368,7 @@ impl Mount {
     }
 
     /// Gets the recyclable 32-bit mount ID.
-    pub fn id(&self) -> u32 {
+    pub(crate) fn id(&self) -> u32 {
         self.id.recyclable_id()
     }
 
@@ -376,7 +376,7 @@ impl Mount {
     ///
     /// Unique IDs start at [`MNT_UNIQUE_ID_MIN`], increase monotonically,
     /// and are never reused.
-    pub fn unique_id(&self) -> u64 {
+    pub(crate) fn unique_id(&self) -> u64 {
         self.id.unique_id()
     }
 
@@ -706,12 +706,12 @@ impl Mount {
     }
 
     /// Gets the associated FS.
-    pub fn fs(&self) -> &Arc<dyn FileSystem> {
+    pub(crate) fn fs(&self) -> &Arc<dyn FileSystem> {
         &self.fs
     }
 
     /// Gets the associated mount flags.
-    pub fn flags(&self) -> PerMountFlags {
+    pub(crate) fn flags(&self) -> PerMountFlags {
         self.flags.load(Ordering::Relaxed)
     }
 

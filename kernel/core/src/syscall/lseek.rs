@@ -9,7 +9,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_lseek(
+pub(super) fn sys_lseek(
     raw_fd: RawFileDesc,
     offset: isize,
     whence: u32,

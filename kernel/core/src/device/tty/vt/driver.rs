@@ -31,7 +31,7 @@ use crate::{
 };
 
 /// The driver for VT (virtual terminal) devices.
-pub struct VtDriver {
+pub(crate) struct VtDriver {
     index: VtIndex,
     console: VtConsole,
     open_file_counter: VtOpenFileCounter,

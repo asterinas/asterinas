@@ -24,7 +24,7 @@ use crate::{
 };
 
 /// Creates and schedules the init process to run.
-pub fn spawn_init_process(
+pub(crate) fn spawn_init_process(
     path_resolver: PathResolver,
     init_path: Path,
     argv: Vec<CString>,

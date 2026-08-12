@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-pub fn sys_clock_gettime(
+pub(super) fn sys_clock_gettime(
     clockid: clockid_t,
     timespec_addr: Vaddr,
     ctx: &Context,
@@ -38,7 +38,7 @@ pub fn sys_clock_gettime(
 #[expect(non_camel_case_types)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
-pub enum ClockId {
+pub(crate) enum ClockId {
     CLOCK_REALTIME = 0,
     CLOCK_MONOTONIC = 1,
     CLOCK_PROCESS_CPUTIME_ID = 2,

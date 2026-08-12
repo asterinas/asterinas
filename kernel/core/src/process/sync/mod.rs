@@ -3,4 +3,4 @@
 mod condvar;
 
 #[expect(unused_imports)]
-pub use self::condvar::{Condvar, LockErr};
+pub(crate) use self::condvar::{Condvar, LockErr};

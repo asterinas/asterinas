@@ -26,7 +26,7 @@ pub(super) struct IoctlCmd(u32);
 /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctl.h#L49-L67>
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub enum IoctlDir {
+pub(crate) enum IoctlDir {
     None = 0,
     Write = 1,
     Read = 2,
@@ -68,11 +68,11 @@ impl IoctlCmd {
     }
 }
 
-pub trait DataSpec {
+pub(crate) trait DataSpec {
     const SIZE: Option<u16>;
     const DIR: IoctlDir;
 }
 
-pub trait PtrDataSpec: DataSpec {
+pub(crate) trait PtrDataSpec: DataSpec {
     type Pointee;
 }

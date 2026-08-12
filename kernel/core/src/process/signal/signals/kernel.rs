@@ -4,12 +4,12 @@ use super::Signal;
 use crate::process::signal::{c_types::siginfo_t, constants::SI_KERNEL, sig_num::SigNum};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct KernelSignal {
+pub(crate) struct KernelSignal {
     num: SigNum,
 }
 
 impl KernelSignal {
-    pub const fn new(num: SigNum) -> Self {
+    pub(crate) const fn new(num: SigNum) -> Self {
         Self { num }
     }
 }

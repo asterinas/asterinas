@@ -11,7 +11,7 @@ use crate::{
     prelude::*,
 };
 
-pub type AddrSegment = SegmentCommon<AddrSegmentBody, AddrAttr>;
+pub(crate) type AddrSegment = SegmentCommon<AddrSegmentBody, AddrAttr>;
 
 impl SegmentBody for AddrSegmentBody {
     type CLegacyType = CRtGenMsg;
@@ -23,7 +23,7 @@ impl SegmentBody for AddrSegmentBody {
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/if_addr.h#L8>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct CIfaddrMsg {
+pub(crate) struct CIfaddrMsg {
     pub family: u8,
     /// The prefix length
     pub prefix_len: u8,
@@ -36,7 +36,7 @@ pub struct CIfaddrMsg {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct AddrSegmentBody {
+pub(crate) struct AddrSegmentBody {
     pub family: i32,
     pub prefix_len: u8,
     pub flags: AddrMessageFlags,
@@ -86,7 +86,7 @@ bitflags! {
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/if_addr.h#L45>.
     #[repr(C)]
     #[derive(Pod)]
-    pub struct AddrMessageFlags: u32 {
+    pub(crate) struct AddrMessageFlags: u32 {
         const SECONDARY      = 0x01;
         const NODAD          = 0x02;
         const OPTIMISTIC     = 0x04;
@@ -108,7 +108,7 @@ bitflags! {
 #[expect(clippy::upper_case_acronyms)]
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum RtScope {
+pub(crate) enum RtScope {
     UNIVERSE = 0,
     // User defined values
     SITE = 200,

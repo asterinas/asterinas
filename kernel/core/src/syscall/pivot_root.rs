@@ -5,7 +5,7 @@ use crate::{
     fs::vfs::path::FsPath, prelude::*, process::pid_table, syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_pivot_root(
+pub(super) fn sys_pivot_root(
     new_root_ptr: Vaddr,
     put_old_ptr: Vaddr,
     ctx: &Context,

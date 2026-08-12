@@ -25,7 +25,7 @@ use crate::{
 /// This controller always exists so that `cpu.stat` remains readable even before `+cpu`
 /// is enabled. When inactive, only the base usage fields are exposed and the non-root
 /// CPU control files are hidden.
-pub struct CpuController {
+pub(crate) struct CpuController {
     /// Persistent CPU usage accounting for this cgroup.
     stats: CpuStats,
     /// Optional CPU resource control attributes exposed only when `+cpu` is active.
@@ -63,7 +63,7 @@ struct CpuMax {
 
 /// Specifies the cgroup CPU sub-controller receives one [`Jiffies`] of charge.
 #[derive(Clone, Copy)]
-pub enum CpuStatKind {
+pub(crate) enum CpuStatKind {
     /// Charges one [`Jiffies`] to `user_usec`.
     User,
     /// Charges one [`Jiffies`] to `system_usec`.
@@ -344,7 +344,7 @@ impl super::Controller {
 /// Charges one [`Jiffies`] of CPU time to `process`'s cgroup hierarchy.
 ///
 /// If `process` is not attached to a non-root cgroup, the charge is applied to the root cgroup.
-pub fn charge_cpu_time(process: &Process, stat_kind: CpuStatKind) {
+pub(crate) fn charge_cpu_time(process: &Process, stat_kind: CpuStatKind) {
     let cgroup_guard = process.cgroup();
 
     if let Some(cgroup) = cgroup_guard.get() {

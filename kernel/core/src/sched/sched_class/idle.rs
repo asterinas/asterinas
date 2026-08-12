@@ -17,7 +17,7 @@ pub(super) struct IdleClassRq {
 }
 
 impl IdleClassRq {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { entity: None }
     }
 }

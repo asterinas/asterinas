@@ -22,7 +22,7 @@ static PID_TABLE: Mutex<PidTable> = Mutex::new(PidTable::new());
 ///
 /// Combines the process, process-group, session, and thread tables into a
 /// single structure.
-pub struct PidTable {
+pub(crate) struct PidTable {
     entries: BTreeMap<u32, Arc<PidEntry>>,
     process_count: usize,
 }
@@ -114,14 +114,14 @@ impl PidTable {
     }
 
     /// Gets a thread by a TID.
-    pub fn get_thread(&self, tid: Tid) -> Option<Arc<Thread>> {
+    pub(crate) fn get_thread(&self, tid: Tid) -> Option<Arc<Thread>> {
         self.entries
             .get(&tid)
             .and_then(|entry| entry.lock().thread())
     }
 
     /// Returns an iterator over threads that have a live thread reference.
-    pub fn iter_threads(&self) -> impl Iterator<Item = Arc<Thread>> + '_ {
+    pub(crate) fn iter_threads(&self) -> impl Iterator<Item = Arc<Thread>> + '_ {
         self.entries
             .values()
             .filter_map(|entry| entry.lock().thread())
@@ -168,21 +168,21 @@ impl PidTable {
     }
 
     /// Gets a process by a PID.
-    pub fn get_process(&self, pid: Pid) -> Option<Arc<Process>> {
+    pub(crate) fn get_process(&self, pid: Pid) -> Option<Arc<Process>> {
         self.entries
             .get(&pid)
             .and_then(|entry| entry.lock().process())
     }
 
     /// Returns an iterator over processes that have a live process reference.
-    pub fn iter_processes(&self) -> impl Iterator<Item = Arc<Process>> + '_ {
+    pub(crate) fn iter_processes(&self) -> impl Iterator<Item = Arc<Process>> + '_ {
         self.entries
             .values()
             .filter_map(|entry| entry.lock().process())
     }
 
     /// Returns the number of live processes.
-    pub fn process_count(&self) -> usize {
+    pub(crate) fn process_count(&self) -> usize {
         self.process_count
     }
 
@@ -213,14 +213,14 @@ impl PidTable {
     }
 
     /// Gets a process group by a PGID.
-    pub fn get_process_group(&self, pgid: &Pgid) -> Option<Arc<ProcessGroup>> {
+    pub(crate) fn get_process_group(&self, pgid: &Pgid) -> Option<Arc<ProcessGroup>> {
         self.entries
             .get(pgid)
             .and_then(|entry| entry.lock().process_group())
     }
 
     /// Returns whether a process group with the given PGID exists.
-    pub fn contains_process_group(&self, pgid: &Pgid) -> bool {
+    pub(crate) fn contains_process_group(&self, pgid: &Pgid) -> bool {
         self.entries
             .get(pgid)
             .is_some_and(|entry| entry.lock().has_live_process_group())
@@ -253,7 +253,7 @@ impl PidTable {
     }
 
     /// Returns the entry for the given numeric identifier.
-    pub fn get_entry(&self, id: u32) -> Option<Arc<PidEntry>> {
+    pub(crate) fn get_entry(&self, id: u32) -> Option<Arc<PidEntry>> {
         self.entries.get(&id).cloned()
     }
 }
@@ -277,7 +277,7 @@ impl PidTable {
 /// are atomic with respect to the corresponding `PidEntry`. In other words,
 /// there will never be a `PidEntry` in the [`PidTable`] that is associated with
 /// a [`Process`], but at some intermediate moment has only an associated [`Thread`].
-pub struct PidEntry {
+pub(crate) struct PidEntry {
     inner: Mutex<PidEntryInner>,
 }
 
@@ -292,7 +292,7 @@ struct PidEntryInner {
 ///
 /// [`PidTable`]'s guarantees for process/thread update operations ensure that its
 /// entry is never seen in an intermediate [`PidEntryType`].
-pub enum PidEntryType {
+pub(crate) enum PidEntryType {
     /// The entry tracks a live process. The associated thread, if any, is
     /// the process's main thread.
     Process,
@@ -315,7 +315,7 @@ impl PidEntry {
     }
 
     /// Returns the thread associated with the entry, if any.
-    pub fn thread(&self) -> Option<Arc<Thread>> {
+    pub(crate) fn thread(&self) -> Option<Arc<Thread>> {
         self.lock().thread()
     }
 
@@ -327,7 +327,7 @@ impl PidEntry {
     ///
     /// This is useful for procfs lookups that need process-scoped state for
     /// either `/proc/[pid]` or `/proc/[pid]/task/[tid]`.
-    pub fn process_of_thread(&self) -> Option<Arc<Process>> {
+    pub(crate) fn process_of_thread(&self) -> Option<Arc<Process>> {
         let inner = self.lock();
 
         if let Some(process) = inner.process() {
@@ -345,7 +345,7 @@ impl PidEntry {
     ///
     /// If a process and a thread share this numeric ID, returns
     /// [`PidEntryType::Process`].
-    pub fn type_(&self) -> Option<PidEntryType> {
+    pub(crate) fn type_(&self) -> Option<PidEntryType> {
         let inner = self.lock();
 
         if inner.has_live_process() {
@@ -470,7 +470,7 @@ impl PidEntryInner {
 }
 
 /// Acquires a mutable reference to the global PID table.
-pub fn pid_table_mut() -> MutexGuard<'static, PidTable> {
+pub(crate) fn pid_table_mut() -> MutexGuard<'static, PidTable> {
     PID_TABLE.lock()
 }
 

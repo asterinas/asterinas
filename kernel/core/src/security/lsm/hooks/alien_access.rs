@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Runs alien access hooks in module order.
-pub fn on_alien_access(context: AlienAccessContext) -> Result<()> {
+pub(crate) fn on_alien_access(context: AlienAccessContext) -> Result<()> {
     for module in modules::active_modules() {
         module.on_alien_access(&context)?;
     }
@@ -22,7 +22,7 @@ pub fn on_alien_access(context: AlienAccessContext) -> Result<()> {
 }
 
 /// The inputs for an alien access check through the LSM stack.
-pub struct AlienAccessContext<'a> {
+pub(crate) struct AlienAccessContext<'a> {
     accessor: &'a PosixThread,
     target: &'a PosixThread,
     mode: AlienAccessMode,
@@ -30,7 +30,7 @@ pub struct AlienAccessContext<'a> {
 
 impl<'a> AlienAccessContext<'a> {
     /// Creates an alien access context.
-    pub const fn new(
+    pub(crate) const fn new(
         accessor: &'a PosixThread,
         target: &'a PosixThread,
         mode: AlienAccessMode,
@@ -43,17 +43,17 @@ impl<'a> AlienAccessContext<'a> {
     }
 
     /// Returns the thread requesting access.
-    pub const fn accessor(&self) -> &PosixThread {
+    pub(crate) const fn accessor(&self) -> &PosixThread {
         self.accessor
     }
 
     /// Returns the thread being accessed.
-    pub const fn target(&self) -> &PosixThread {
+    pub(crate) const fn target(&self) -> &PosixThread {
         self.target
     }
 
     /// Returns the requested access mode.
-    pub const fn mode(&self) -> AlienAccessMode {
+    pub(crate) const fn mode(&self) -> AlienAccessMode {
         self.mode
     }
 }

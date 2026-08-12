@@ -38,7 +38,7 @@ use crate::{
 ///
 /// Lock ordering:
 /// `sem_ids` -> `SemaphoreSet::inner`.
-pub struct IpcNamespace {
+pub(crate) struct IpcNamespace {
     /// Semaphore sets within this namespace.
     sem_ids: IpcIds<SemaphoreSet>,
     /// Owner user namespace.
@@ -49,7 +49,7 @@ pub struct IpcNamespace {
 
 impl IpcNamespace {
     /// Returns a reference to the singleton initial IPC namespace.
-    pub fn get_init_singleton() -> &'static Arc<IpcNamespace> {
+    pub(crate) fn get_init_singleton() -> &'static Arc<IpcNamespace> {
         static INIT: Once<Arc<IpcNamespace>> = Once::new();
 
         INIT.call_once(|| {
@@ -77,7 +77,7 @@ impl IpcNamespace {
     /// Clones a new IPC namespace from `self`.
     ///
     /// The new namespace starts with an empty set of IPC resources.
-    pub fn new_clone(
+    pub(crate) fn new_clone(
         &self,
         owner: Arc<UserNamespace>,
         posix_thread: &PosixThread,
@@ -91,7 +91,7 @@ impl IpcNamespace {
     }
 
     /// Calls `op` with the semaphore set identified by `semid`.
-    pub fn with_sem_set<T, F>(
+    pub(crate) fn with_sem_set<T, F>(
         &self,
         semid: IpcId,
         required_perm: PermissionMode,
@@ -107,7 +107,7 @@ impl IpcNamespace {
     }
 
     /// Removes the semaphore set identified by `semid`.
-    pub fn remove_sem_set<F>(&self, semid: IpcId, may_remove: F) -> Result<()>
+    pub(crate) fn remove_sem_set<F>(&self, semid: IpcId, may_remove: F) -> Result<()>
     where
         F: FnOnce(&SemaphoreSet) -> Result<()>,
     {
@@ -115,7 +115,7 @@ impl IpcNamespace {
     }
 
     /// Returns the existing semaphore set or creates a new one.
-    pub fn get_or_create_sem_set(
+    pub(crate) fn get_or_create_sem_set(
         &self,
         key: IpcKey,
         num_sems: usize,

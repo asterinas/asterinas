@@ -7,7 +7,7 @@ use crate::prelude::*;
 #[expect(non_camel_case_types)]
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AccessMode {
+pub(crate) enum AccessMode {
     /// Read only
     O_RDONLY = 0,
     /// Write only
@@ -17,17 +17,17 @@ pub enum AccessMode {
 }
 
 impl AccessMode {
-    pub fn is_readable(&self) -> bool {
+    pub(crate) fn is_readable(&self) -> bool {
         matches!(*self, AccessMode::O_RDONLY | AccessMode::O_RDWR)
     }
 
-    pub fn is_writable(&self) -> bool {
+    pub(crate) fn is_writable(&self) -> bool {
         matches!(*self, AccessMode::O_WRONLY | AccessMode::O_RDWR)
     }
 }
 
 impl AccessMode {
-    pub fn from_u32(flags: u32) -> Result<Self> {
+    pub(crate) fn from_u32(flags: u32) -> Result<Self> {
         let bits = (flags & 0b11) as u8;
         match bits {
             0 => Ok(Self::O_RDONLY),

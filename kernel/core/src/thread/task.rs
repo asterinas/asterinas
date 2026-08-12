@@ -24,7 +24,7 @@ use crate::{
 };
 
 /// create new task with userspace and parent process
-pub fn create_new_user_task(
+pub(crate) fn create_new_user_task(
     user_ctx: Box<UserContext>,
     thread_ref: Arc<Thread>,
     thread_local: ThreadLocal,

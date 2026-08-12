@@ -35,9 +35,9 @@ pub(super) fn init() {
 /// Maximum file name length for `memfd_create`, excluding the final `\0` byte.
 ///
 /// See <https://man7.org/linux/man-pages/man2/memfd_create.2.html>
-pub const MAX_MEMFD_NAME_LEN: usize = 249;
+pub(crate) const MAX_MEMFD_NAME_LEN: usize = 249;
 
-pub struct MemfdInode {
+pub(crate) struct MemfdInode {
     inode: RamInode,
     name: String,
     seals: Mutex<FileSeals>,
@@ -78,7 +78,7 @@ impl MemfdInode {
     /// Checks whether writing to this memfd inode is allowed.
     ///
     /// This method restricts the `may_perms` if needed.
-    pub fn check_writable(&self, perms: VmPerms, may_perms: &mut VmPerms) -> Result<()> {
+    pub(crate) fn check_writable(&self, perms: VmPerms, may_perms: &mut VmPerms) -> Result<()> {
         let seals = self.seals.lock();
         if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE) {
             if perms.contains(VmPerms::WRITE) {
@@ -221,7 +221,7 @@ impl Inode for MemfdInode {
     }
 }
 
-pub trait MemfdInodeHandle: Sized {
+pub(crate) trait MemfdInodeHandle: Sized {
     fn new_memfd(name: String, memfd_flags: MemfdFlags) -> Result<Self>;
     fn add_seals(&self, new_seals: FileSeals) -> Result<()>;
     fn get_seals(&self) -> Result<FileSeals>;
@@ -335,7 +335,7 @@ impl MemfdTmpFs {
 }
 
 bitflags! {
-    pub struct MemfdFlags: u32 {
+    pub(crate) struct MemfdFlags: u32 {
         /// Close on exec.
         const MFD_CLOEXEC = 1 << 0;
         /// Allow sealing operations on this file.
@@ -350,7 +350,7 @@ bitflags! {
 }
 
 bitflags! {
-    pub struct FileSeals: u32 {
+    pub(crate) struct FileSeals: u32 {
         /// Prevent further seals from being set.
         const F_SEAL_SEAL = 0x0001;
         /// Prevent file from shrinking.

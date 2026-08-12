@@ -9,11 +9,11 @@ use crate::{
     util::{MultiRead, MultiWrite},
 };
 
-pub mod ack;
-pub mod common;
-pub mod header;
+pub(crate) mod ack;
+pub(crate) mod common;
+pub(crate) mod header;
 
-pub trait SegmentBody: Sized + Clone + Copy {
+pub(crate) trait SegmentBody: Sized + Clone + Copy {
     // The actual message body should be `Self::CType`,
     // but older versions of Linux use a legacy type (usually `CRtGenMsg` here).
     // Additionally, some software, like iproute2, also uses this legacy type.
@@ -95,7 +95,7 @@ pub trait SegmentBody: Sized + Clone + Copy {
 #[expect(clippy::upper_case_acronyms)]
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, TryFromInt)]
-pub enum CSegmentType {
+pub(crate) enum CSegmentType {
     // Standard netlink message types
     NOOP = 1,
     ERROR = 2,

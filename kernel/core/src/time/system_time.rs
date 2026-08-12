@@ -10,9 +10,9 @@ use crate::prelude::*;
 
 /// This struct corresponds to `SystemTime` in Rust std.
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct SystemTime(PrimitiveDateTime);
+pub(crate) struct SystemTime(PrimitiveDateTime);
 
-pub static START_TIME: Once<SystemTime> = Once::new();
+pub(crate) static START_TIME: Once<SystemTime> = Once::new();
 pub(super) static START_TIME_AS_DURATION: Once<Duration> = Once::new();
 
 pub(super) fn init() {
@@ -24,7 +24,7 @@ pub(super) fn init() {
 
 impl SystemTime {
     /// The unix epoch, which represents 1970-01-01 00:00:00
-    pub const UNIX_EPOCH: SystemTime = SystemTime::unix_epoch();
+    pub(crate) const UNIX_EPOCH: SystemTime = SystemTime::unix_epoch();
 
     const fn unix_epoch() -> Self {
         // 1970-01-01 00:00:00
@@ -39,7 +39,7 @@ impl SystemTime {
     }
 
     /// Returns the current system time
-    pub fn now() -> Self {
+    pub(crate) fn now() -> Self {
         // The get real time result should always be valid
         START_TIME
             .get()
@@ -49,20 +49,20 @@ impl SystemTime {
     }
 
     /// Add a duration to self. If the result does not exceed inner bounds return Some(t), else return None.
-    pub fn checked_add(&self, duration: Duration) -> Option<Self> {
+    pub(crate) fn checked_add(&self, duration: Duration) -> Option<Self> {
         let duration = convert_to_time_duration(duration);
         self.0.checked_add(duration).map(SystemTime)
     }
 
     /// Subtract a duration from self. If the result does not exceed inner bounds return Some(t), else return None.
     #[expect(dead_code)]
-    pub fn checked_sub(&self, duration: Duration) -> Option<Self> {
+    pub(crate) fn checked_sub(&self, duration: Duration) -> Option<Self> {
         let duration = convert_to_time_duration(duration);
         self.0.checked_sub(duration).map(SystemTime)
     }
 
     /// Returns the duration since an earlier time. Return error if `earlier` is later than self.
-    pub fn duration_since(&self, earlier: &SystemTime) -> Result<Duration> {
+    pub(crate) fn duration_since(&self, earlier: &SystemTime) -> Result<Duration> {
         if self.0 < earlier.0 {
             return_errno_with_message!(
                 Errno::EINVAL,
@@ -77,7 +77,7 @@ impl SystemTime {
     /// Return Error if current time is earlier than creating time.
     /// The error can happen if self was created by checked_add.
     #[expect(dead_code)]
-    pub fn elapsed(&self) -> Result<Duration> {
+    pub(crate) fn elapsed(&self) -> Result<Duration> {
         let now = SystemTime::now();
         now.duration_since(self)
     }

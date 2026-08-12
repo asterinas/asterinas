@@ -84,7 +84,7 @@ enum LinkAttrClass {
 }
 
 #[derive(Debug)]
-pub enum LinkAttr {
+pub(crate) enum LinkAttr {
     // FIXME: Linux link-layer addresses have device-specific lengths.
     // Using `EthernetAddress` may be inappropriate
     // once Asterinas supports other network device types.
@@ -204,7 +204,7 @@ bitflags! {
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L819>.
     #[repr(C)]
     #[derive(Pod)]
-    pub struct RtExtFilter: u32 {
+    pub(crate) struct RtExtFilter: u32 {
         const VF = 1 << 0;
         const BRVLAN = 1 << 1;
         const BRVLAN_COMPRESSED = 1 << 2;

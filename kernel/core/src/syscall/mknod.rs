@@ -14,7 +14,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_mknodat(
+pub(super) fn sys_mknodat(
     dirfd: RawFileDesc,
     path_addr: Vaddr,
     mode: u16,
@@ -65,6 +65,11 @@ pub fn sys_mknodat(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_mknod(path_addr: Vaddr, mode: u16, dev: usize, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_mknod(
+    path_addr: Vaddr,
+    mode: u16,
+    dev: usize,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     sys_mknodat(AT_FDCWD, path_addr, mode, dev, ctx)
 }

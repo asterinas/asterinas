@@ -10,7 +10,12 @@ use crate::{
     syscall::get_priority::{PriorityTarget, get_processes},
 };
 
-pub fn sys_set_priority(which: i32, who: u32, prio: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_set_priority(
+    which: i32,
+    who: u32,
+    prio: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let prio_target = PriorityTarget::new(which, who, ctx)?;
     let new_nice: Nice = {
         let nice_raw = prio.clamp(

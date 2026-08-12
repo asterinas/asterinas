@@ -21,7 +21,7 @@ use crate::prelude::*;
 ///
 /// This is an alias to the [`SigSet`]. All the signal in the set are blocked
 /// from the delivery to a thread.
-pub type SigMask = SigSet;
+pub(crate) type SigMask = SigSet;
 
 /// A bit-set of signals.
 ///
@@ -29,7 +29,7 @@ pub type SigMask = SigSet;
 /// a signal set from `u64` to `SigSet` will always succeed.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Pod)]
-pub struct SigSet {
+pub(crate) struct SigSet {
     bits: u64,
 }
 
@@ -127,32 +127,35 @@ impl ops::Not for SigSet {
 }
 
 impl SigSet {
-    pub fn new_empty() -> Self {
+    pub(crate) fn new_empty() -> Self {
         SigSet { bits: 0 }
     }
 
-    pub fn new_full() -> Self {
+    pub(crate) fn new_full() -> Self {
         SigSet { bits: !0 }
     }
 
-    pub const fn is_empty(&self) -> bool {
+    #[expect(dead_code)]
+    pub(crate) const fn is_empty(&self) -> bool {
         self.bits == 0
     }
 
-    pub const fn is_full(&self) -> bool {
+    #[expect(dead_code)]
+    pub(crate) const fn is_full(&self) -> bool {
         self.bits == !0
     }
 
-    pub fn count(&self) -> usize {
+    #[expect(dead_code)]
+    pub(crate) fn count(&self) -> usize {
         self.bits.count_ones() as usize
     }
 
-    pub fn contains(&self, other: impl Into<Self>) -> bool {
+    pub(crate) fn contains(&self, other: impl Into<Self>) -> bool {
         let other = other.into();
         self.bits & other.bits == other.bits
     }
 
-    pub fn intersects(&self, other: impl Into<Self>) -> bool {
+    pub(crate) fn intersects(&self, other: impl Into<Self>) -> bool {
         let other = other.into();
         self.bits & other.bits != 0
     }
@@ -171,10 +174,10 @@ impl LowerHex for SigSet {
 /// blocked from the delivery to a thread.
 ///
 /// [`Relaxed`]: core::sync::atomic::Ordering::Relaxed
-pub type AtomicSigMask = AtomicSigSet;
+pub(crate) type AtomicSigMask = AtomicSigSet;
 
 define_atomic_version_of_integer_like_type!(SigSet, {
-    pub struct AtomicSigSet(AtomicU64);
+    pub(crate) struct AtomicSigSet(AtomicU64);
 });
 
 impl From<SigSet> for AtomicSigSet {
@@ -184,11 +187,11 @@ impl From<SigSet> for AtomicSigSet {
 }
 
 impl AtomicSigSet {
-    pub fn new_empty() -> Self {
+    pub(crate) fn new_empty() -> Self {
         AtomicSigSet::new(0)
     }
 
-    pub fn contains(&self, signals: impl Into<SigSet>, ordering: Ordering) -> bool {
+    pub(crate) fn contains(&self, signals: impl Into<SigSet>, ordering: Ordering) -> bool {
         self.load(ordering).contains(signals.into())
     }
 }

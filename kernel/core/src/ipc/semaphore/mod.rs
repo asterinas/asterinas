@@ -3,5 +3,5 @@
 //! Semaphore for the system, including System V semaphore and
 //! POSIX semaphore.
 
-pub mod posix;
-pub mod system_v;
+pub(crate) mod posix;
+pub(crate) mod system_v;

@@ -40,7 +40,7 @@ const MAP_32BIT_HIGH_LIMIT: Vaddr = 0x8000_0000;
 /// initialism).
 ///
 /// A VMAR is the address space of a process.
-pub struct Vmar {
+pub(crate) struct Vmar {
     /// VMAR inner
     inner: RwMutex<VmarInner>,
     /// The attached `VmSpace`
@@ -74,27 +74,27 @@ impl Vmar {
     }
 
     /// Returns the current RSS count for the given RSS type.
-    pub fn get_rss_counter(&self, rss_type: RssType) -> usize {
+    pub(crate) fn get_rss_counter(&self, rss_type: RssType) -> usize {
         self.rss_counters[rss_type as usize].sum_all_cpus()
     }
 
     /// Returns the total size of the mappings in bytes.
-    pub fn get_mappings_total_size(&self) -> usize {
+    pub(crate) fn get_mappings_total_size(&self) -> usize {
         self.inner.read().total_vm
     }
 
     /// Returns the attached `VmSpace`.
-    pub fn vm_space(&self) -> &Arc<VmSpace> {
+    pub(crate) fn vm_space(&self) -> &Arc<VmSpace> {
         &self.vm_space
     }
 
     /// Returns the attached `ProcessVm`.
-    pub fn process_vm(&self) -> &ProcessVm {
+    pub(crate) fn process_vm(&self) -> &ProcessVm {
         &self.process_vm
     }
 
     /// Returns whether this VMAR has multiple handles.
-    pub fn has_multiple_handles(&self) -> bool {
+    pub(crate) fn has_multiple_handles(&self) -> bool {
         self.num_handles.load(Ordering::Relaxed) > 1
     }
 
@@ -131,7 +131,7 @@ impl Vmar {
 /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/linux/mm_types_task.h#L26-L32>
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum RssType {
+pub(crate) enum RssType {
     File = 0,
     Anon = 1,
 }

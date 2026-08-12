@@ -10,7 +10,7 @@ use crate::{
     util::net::CUserMsgHdr,
 };
 
-pub fn sys_sendmmsg(
+pub(super) fn sys_sendmmsg(
     sockfd: RawFileDesc,
     mmsghdrs_addr: Vaddr,
     count: usize,

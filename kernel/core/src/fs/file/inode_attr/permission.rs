@@ -3,7 +3,7 @@
 use crate::{fs::file::AccessMode, prelude::*};
 
 bitflags! {
-    pub struct Permission: u16 {
+    pub(crate) struct Permission: u16 {
         // This implementation refers the implementation of linux
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/fs.h#L95
         const MAY_EXEC		= 0x0001;
@@ -18,15 +18,15 @@ bitflags! {
 }
 
 impl Permission {
-    pub fn may_read(&self) -> bool {
+    pub(crate) fn may_read(&self) -> bool {
         self.contains(Self::MAY_READ)
     }
 
-    pub fn may_write(&self) -> bool {
+    pub(crate) fn may_write(&self) -> bool {
         self.contains(Self::MAY_WRITE)
     }
 
-    pub fn may_exec(&self) -> bool {
+    pub(crate) fn may_exec(&self) -> bool {
         self.contains(Self::MAY_EXEC)
     }
 }

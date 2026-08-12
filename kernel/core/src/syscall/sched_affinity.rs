@@ -11,7 +11,7 @@ use ostd::{
 use super::SyscallReturn;
 use crate::{prelude::*, process::pid_table, thread::Tid};
 
-pub fn sys_sched_getaffinity(
+pub(super) fn sys_sched_getaffinity(
     tid: Tid,
     cpuset_size: usize,
     cpu_set_ptr: Vaddr,
@@ -34,7 +34,7 @@ pub fn sys_sched_getaffinity(
 // running on the CPU specified in the affinity mask, it would be migrated to
 // one of the CPUs specified in the mask. We currently do not support this
 // feature as the scheduler is not ready for migration yet.
-pub fn sys_sched_setaffinity(
+pub(super) fn sys_sched_setaffinity(
     tid: Tid,
     cpuset_size: usize,
     cpu_set_ptr: Vaddr,

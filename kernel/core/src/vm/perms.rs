@@ -9,7 +9,7 @@ use crate::prelude::*;
 bitflags! {
     /// The memory access permissions of memory mappings.
     // NOTE: `check` hardcodes `MAY_READ >> 3 == READ`, and so for r/w/x bits.
-    pub struct VmPerms: u32 {
+    pub(crate) struct VmPerms: u32 {
         /// Readable.
         const READ    = 1 << 0;
         /// Writable.
@@ -32,7 +32,7 @@ bitflags! {
 impl VmPerms {
     /// Checks whether all requested permissions (`READ`, `WRITE`, `EXEC`) are
     /// allowed by their corresponding `MAY_*` capabilities.
-    pub fn check(&self) -> Result<()> {
+    pub(crate) fn check(&self) -> Result<()> {
         let requested = *self & Self::ALL_PERMS;
         // NOTE: `MAY_READ >> 3 == READ`, and so for r/w/x bits.
         let allowed = VmPerms::from_bits_truncate((*self & Self::ALL_MAY_PERMS).bits >> 3);
@@ -45,7 +45,7 @@ impl VmPerms {
 
     /// Parses `bits` as requested permissions from user programs and returns errors
     /// if there are unknown permissions.
-    pub fn from_user_bits(bits: u32) -> Result<Self> {
+    pub(crate) fn from_user_bits(bits: u32) -> Result<Self> {
         if let Some(vm_perms) = VmPerms::from_bits(bits)
             && Self::ALL_PERMS.contains(vm_perms)
         {
@@ -57,7 +57,7 @@ impl VmPerms {
 
     /// Parses `bits` as requested permissions from user programs and ignores any
     /// unknown permissions.
-    pub fn from_user_bits_truncate(bits: u32) -> Self {
+    pub(crate) fn from_user_bits_truncate(bits: u32) -> Self {
         VmPerms::from_bits_truncate(bits) & Self::ALL_PERMS
     }
 }

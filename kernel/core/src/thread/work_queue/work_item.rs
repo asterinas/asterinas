@@ -10,7 +10,7 @@ use ostd::cpu::{CpuId, CpuSet};
 use crate::prelude::*;
 
 /// A task to be executed by a worker thread.
-pub struct WorkItem {
+pub(crate) struct WorkItem {
     work_func: Box<dyn Fn() + Send + Sync>,
     cpu_affinity: CpuSet,
     was_pending: AtomicBool,
@@ -20,7 +20,7 @@ pub struct WorkItem {
 intrusive_adapter!(pub(super) WorkItemAdapter = Arc<WorkItem>: WorkItem { link: LinkedListAtomicLink });
 
 impl WorkItem {
-    pub fn new(work_func: Box<dyn Fn() + Send + Sync>) -> Arc<WorkItem> {
+    pub(crate) fn new(work_func: Box<dyn Fn() + Send + Sync>) -> Arc<WorkItem> {
         let cpu_affinity = CpuSet::new_full();
         Arc::new(WorkItem {
             work_func,
@@ -30,11 +30,11 @@ impl WorkItem {
         })
     }
 
-    pub fn cpu_affinity(&self) -> &CpuSet {
+    pub(crate) fn cpu_affinity(&self) -> &CpuSet {
         &self.cpu_affinity
     }
 
-    pub fn cpu_affinity_mut(&mut self) -> &mut CpuSet {
+    pub(crate) fn cpu_affinity_mut(&mut self) -> &mut CpuSet {
         &mut self.cpu_affinity
     }
 

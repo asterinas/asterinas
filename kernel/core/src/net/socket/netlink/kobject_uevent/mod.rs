@@ -7,4 +7,4 @@ use crate::net::socket::netlink::{common::NetlinkSocket, table::NetlinkUeventPro
 mod bound;
 mod message;
 
-pub type NetlinkUeventSocket = NetlinkSocket<NetlinkUeventProtocol>;
+pub(crate) type NetlinkUeventSocket = NetlinkSocket<NetlinkUeventProtocol>;

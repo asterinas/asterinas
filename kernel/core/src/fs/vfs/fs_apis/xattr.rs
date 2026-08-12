@@ -2,15 +2,15 @@
 
 use crate::prelude::*;
 
-pub const XATTR_NAME_MAX_LEN: usize = 255;
-pub const XATTR_VALUE_MAX_LEN: usize = 65536;
-pub const XATTR_LIST_MAX_LEN: usize = 65536;
+pub(crate) const XATTR_NAME_MAX_LEN: usize = 255;
+pub(crate) const XATTR_VALUE_MAX_LEN: usize = 65536;
+pub(crate) const XATTR_LIST_MAX_LEN: usize = 65536;
 
 /// Represents different namespaces with different capabilities
 /// for extended attributes (xattrs).
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, TryFromInt)]
-pub enum XattrNamespace {
+pub(crate) enum XattrNamespace {
     User = 1,
     Trusted = 2,
     System = 3,
@@ -24,13 +24,13 @@ pub enum XattrNamespace {
 /// For example, "user.foo" is a valid xattr name, and its namespace
 /// is `XattrNamespace::User`.
 #[derive(Debug, Hash)]
-pub struct XattrName<'a> {
+pub(crate) struct XattrName<'a> {
     namespace: XattrNamespace,
     full_name: &'a str,
 }
 
 impl XattrNamespace {
-    pub fn try_from_full_name(full_name: &str) -> Option<XattrNamespace> {
+    pub(crate) fn try_from_full_name(full_name: &str) -> Option<XattrNamespace> {
         const USER_PREFIX: &str = "user.";
         const TRUSTED_PREFIX: &str = "trusted.";
         const SYSTEM_PREFIX: &str = "system.";
@@ -49,13 +49,13 @@ impl XattrNamespace {
         }
     }
 
-    pub fn is_user(&self) -> bool {
+    pub(crate) fn is_user(&self) -> bool {
         matches!(self, XattrNamespace::User)
     }
 }
 
 impl<'a> XattrName<'a> {
-    pub fn try_from_full_name(full_name: &'a str) -> Option<Self> {
+    pub(crate) fn try_from_full_name(full_name: &'a str) -> Option<Self> {
         let namespace = XattrNamespace::try_from_full_name(full_name)?;
         Some(Self {
             namespace,
@@ -63,22 +63,22 @@ impl<'a> XattrName<'a> {
         })
     }
 
-    pub fn namespace(&self) -> XattrNamespace {
+    pub(crate) fn namespace(&self) -> XattrNamespace {
         self.namespace
     }
 
-    pub const fn full_name(&self) -> &'a str {
+    pub(crate) const fn full_name(&self) -> &'a str {
         self.full_name
     }
 
-    pub const fn full_name_len(&self) -> usize {
+    pub(crate) const fn full_name_len(&self) -> usize {
         self.full_name.len()
     }
 }
 
 bitflags::bitflags! {
     /// Flags for setting an xattr value.
-    pub struct XattrSetFlags: u8 {
+    pub(crate) struct XattrSetFlags: u8 {
         /// Creates a new xattr if it doesn't exist, or replaces the value if it does.
         const CREATE_OR_REPLACE = 0;
         /// Creates a new xattr, fails if it already exists.

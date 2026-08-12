@@ -32,7 +32,7 @@ use crate::{
     util::{MultiRead, MultiWrite},
 };
 
-pub mod noattr;
+pub(crate) mod noattr;
 
 /// Netlink attribute header.
 ///
@@ -45,7 +45,7 @@ pub mod noattr;
 //   bit 15      bit 14       bits 13-0
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct CAttrHeader {
+pub(crate) struct CAttrHeader {
     len: u16,
     type_: u16,
 }
@@ -63,27 +63,27 @@ impl CAttrHeader {
     }
 
     /// Returns the type of the attribute.
-    pub fn type_(&self) -> u16 {
+    pub(crate) fn type_(&self) -> u16 {
         self.type_ & ATTRIBUTE_TYPE_MASK
     }
 
     /// Returns the payload length (excluding padding).
-    pub fn payload_len(&self) -> usize {
+    pub(crate) fn payload_len(&self) -> usize {
         self.len as usize - size_of::<Self>()
     }
 
     /// Returns the total length of the attribute (header + payload, excluding padding).
-    pub fn total_len(&self) -> usize {
+    pub(crate) fn total_len(&self) -> usize {
         self.len as usize
     }
 
     /// Returns the total length of the attribute (header + payload, including padding).
-    pub fn total_len_with_padding(&self) -> usize {
+    pub(crate) fn total_len_with_padding(&self) -> usize {
         (self.len as usize).align_up(NLMSG_ALIGN)
     }
 
     /// Returns the length of the padding bytes.
-    pub fn padding_len(&self) -> usize {
+    pub(crate) fn padding_len(&self) -> usize {
         self.total_len_with_padding() - self.total_len()
     }
 }
@@ -93,7 +93,7 @@ const IS_NET_BYTEORDER_MASK: u16 = 1u16 << 14;
 const ATTRIBUTE_TYPE_MASK: u16 = !(IS_NESTED_MASK | IS_NET_BYTEORDER_MASK);
 
 /// Netlink Attribute.
-pub trait Attribute: Debug + Send + Sync {
+pub(crate) trait Attribute: Debug + Send + Sync {
     /// Returns the type of the attribute.
     fn type_(&self) -> u16;
 

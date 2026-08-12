@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub use cgroup_ns::CgroupNamespace;
-pub use controller::cpu::{CpuStatKind, charge_cpu_time};
+pub(crate) use cgroup_ns::CgroupNamespace;
+pub(crate) use controller::cpu::{CpuStatKind, charge_cpu_time};
 use fs::CgroupFsType;
 pub(in crate::fs) use systree_node::CgroupSystem;
-pub use systree_node::{CgroupMembership, CgroupNode, CgroupSysNode};
+pub(crate) use systree_node::{CgroupMembership, CgroupNode, CgroupSysNode};
 
 // Set this module's log prefix for `ostd::log`.
 macro_rules! __log_prefix {

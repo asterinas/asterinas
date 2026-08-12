@@ -10,28 +10,29 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 /// It is an integer in the range of [-20, 19]. Process with a smaller nice
 /// value is more favorable in scheduling.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Nice(NiceValue);
+pub(crate) struct Nice(NiceValue);
 
-pub type NiceValue = RangedI8<-20, 19>;
+pub(crate) type NiceValue = RangedI8<-20, 19>;
 
 define_atomic_version_of_integer_like_type!(Nice, try_from = true, {
     #[derive(Debug)]
-    pub struct AtomicNice(AtomicI8);
+    pub(crate) struct AtomicNice(AtomicI8);
 });
 
 impl Nice {
-    pub const MIN: Self = Nice::new(NiceValue::MIN);
-    pub const MAX: Self = Nice::new(NiceValue::MAX);
+    pub(crate) const MIN: Self = Nice::new(NiceValue::MIN);
+    pub(crate) const MAX: Self = Nice::new(NiceValue::MAX);
 
-    pub const fn new(range: NiceValue) -> Self {
+    pub(crate) const fn new(range: NiceValue) -> Self {
         Self(range)
     }
 
-    pub const fn value(&self) -> &NiceValue {
+    pub(crate) const fn value(&self) -> &NiceValue {
         &self.0
     }
 
-    pub fn value_mut(&mut self) -> &mut NiceValue {
+    #[expect(dead_code)]
+    pub(crate) fn value_mut(&mut self) -> &mut NiceValue {
         &mut self.0
     }
 }

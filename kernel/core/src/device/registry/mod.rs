@@ -22,7 +22,7 @@ pub(super) fn init_in_first_process(path_resolver: &PathResolver) -> Result<()> 
     Ok(())
 }
 
-pub fn lookup(device_type: DeviceType, device_id: DeviceId) -> Option<Arc<dyn Device>> {
+pub(crate) fn lookup(device_type: DeviceType, device_id: DeviceId) -> Option<Arc<dyn Device>> {
     match device_type {
         DeviceType::Char => char::lookup(device_id),
         DeviceType::Block => block::lookup(device_id),

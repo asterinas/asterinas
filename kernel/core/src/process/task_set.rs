@@ -10,7 +10,7 @@ use ostd::{
 use crate::prelude::*;
 
 /// A task set that maintains all tasks in a POSIX process.
-pub struct TaskSet {
+pub(crate) struct TaskSet {
     tasks: Vec<Arc<Task>>,
     has_exited_main: bool,
     has_exited_group: bool,
@@ -134,12 +134,12 @@ impl TaskSet {
 
 impl TaskSet {
     /// Returns a slice of the tasks in the task set.
-    pub fn as_slice(&self) -> &[Arc<Task>] {
+    pub(crate) fn as_slice(&self) -> &[Arc<Task>] {
         self.tasks.as_slice()
     }
 
     /// Returns the main task/thread.
-    pub fn main(&self) -> &Arc<Task> {
+    pub(crate) fn main(&self) -> &Arc<Task> {
         &self.tasks[0]
     }
 }

@@ -7,7 +7,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_read(
+pub(super) fn sys_read(
     raw_fd: RawFileDesc,
     user_buf_addr: Vaddr,
     buf_len: usize,

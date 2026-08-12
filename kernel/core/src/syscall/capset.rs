@@ -15,7 +15,7 @@ use crate::{
     security::lsm::hooks as lsm_hooks,
 };
 
-pub fn sys_capset(
+pub(super) fn sys_capset(
     cap_user_header_addr: Vaddr,
     cap_user_data_addr: Vaddr,
     ctx: &Context,

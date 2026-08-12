@@ -9,7 +9,7 @@ use crate::{
 };
 
 /// Exit all thread in a process.
-pub fn sys_exit_group(
+pub(super) fn sys_exit_group(
     exit_code: u64,
     ctx: &Context,
     user_ctx: &mut UserContext,

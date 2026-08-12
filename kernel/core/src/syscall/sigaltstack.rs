@@ -8,7 +8,7 @@ use crate::{
     process::signal::{SigStack, SigStackFlags, SigStackStatus, c_types::stack_t},
 };
 
-pub fn sys_sigaltstack(
+pub(super) fn sys_sigaltstack(
     sig_stack_addr: Vaddr,
     old_sig_stack_addr: Vaddr,
     ctx: &Context,

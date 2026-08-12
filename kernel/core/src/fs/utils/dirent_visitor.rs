@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// A visitor for dir entries.
-pub trait DirentVisitor {
+pub(crate) trait DirentVisitor {
     /// Visit a dir entry.
     ///
     /// If the visitor succeeds in visiting the given inode, an `Ok(())` is returned;
@@ -39,14 +39,14 @@ impl DirentVisitor for Vec<String> {
 
 /// Utility to count directory entries, excluding "." and ".."
 #[derive(Default)]
-pub struct DirentCounter(usize);
+pub(crate) struct DirentCounter(usize);
 
 impl DirentCounter {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self(0)
     }
 
-    pub fn count(&self) -> usize {
+    pub(crate) fn count(&self) -> usize {
         self.0
     }
 }

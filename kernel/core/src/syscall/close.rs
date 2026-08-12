@@ -19,7 +19,7 @@ bitflags! {
     }
 }
 
-pub fn sys_close(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_close(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("raw_fd = {}", raw_fd);
 
     let closed_file = {
@@ -49,7 +49,7 @@ pub fn sys_close(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_close_range(
+pub(super) fn sys_close_range(
     first: u32,
     last: u32,
     raw_flags: u32,

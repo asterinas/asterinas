@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// A wrapper for the [`xmas_elf`] ELF parser.
-pub struct ElfHeaders {
+pub(crate) struct ElfHeaders {
     elf_header: ElfHeader,
     loadable_phdrs: Vec<LoadablePhdr>,
     max_load_align: usize,
@@ -30,7 +30,7 @@ impl ElfHeaders {
     /// [`ENOEXEC`]: Errno::ENOEXEC
     pub(super) const LEN: usize = size_of::<HeaderPt1>() + size_of::<HeaderPt2_64>();
 
-    pub fn parse(input: &[u8]) -> Result<Self> {
+    pub(crate) fn parse(input: &[u8]) -> Result<Self> {
         // Parse the ELF header.
         let header = header::parse_header(input)
             .map_err(|_| Error::with_message(Errno::ENOEXEC, "the ELF header is invalid"))?;

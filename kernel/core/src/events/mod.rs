@@ -8,7 +8,7 @@ mod io_events;
 mod observer;
 mod subject;
 
-pub use self::{
+pub(crate) use self::{
     epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
     event_file::{EventFile, EventFileFlags},
     events::{Events, EventsFilter},

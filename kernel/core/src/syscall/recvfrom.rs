@@ -8,7 +8,7 @@ use crate::{
     util::net::write_socket_addr_to_user,
 };
 
-pub fn sys_recvfrom(
+pub(super) fn sys_recvfrom(
     sockfd: RawFileDesc,
     buf: Vaddr,
     len: usize,

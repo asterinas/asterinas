@@ -16,14 +16,14 @@ use crate::{
 
 /// A signal dequeued from either the thread or the process queue,
 /// carrying its origin so it can be correctly re-enqueued later.
-pub enum DequeuedSignal {
+pub(crate) enum DequeuedSignal {
     FromProcess(Box<dyn Signal>),
     FromThread(Box<dyn Signal>),
 }
 
 impl DequeuedSignal {
     /// Consumes the dequeued signal and returns the inner signal.
-    pub fn unwrap(self) -> Box<dyn Signal> {
+    pub(crate) fn unwrap(self) -> Box<dyn Signal> {
         match self {
             Self::FromProcess(signal) | Self::FromThread(signal) => signal,
         }
@@ -50,7 +50,7 @@ impl DequeuedSignal {
 }
 
 /// Trait for handling pending signals.
-pub trait HandlePendingSignal {
+pub(crate) trait HandlePendingSignal {
     /// Returns the thread's pending signal set.
     ///
     /// This includes signals that are currently blocked or ignored.

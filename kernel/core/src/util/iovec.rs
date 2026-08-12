@@ -119,19 +119,19 @@ fn copy_iovs_and_convert<'a, T: 'a>(
 /// A collection of [`VmReader`]s.
 ///
 /// Such readers are built from user-provided buffer, so it's always fallible.
-pub struct VmReaderArray<'a>(Box<[VmReader<'a>]>);
+pub(crate) struct VmReaderArray<'a>(Box<[VmReader<'a>]>);
 
 /// A collection of [`VmWriter`]s.
 ///
 /// Such writers are built from user-provided buffer, so it's always fallible.
-pub struct VmWriterArray<'a>(Box<[VmWriter<'a>]>);
+pub(crate) struct VmWriterArray<'a>(Box<[VmWriter<'a>]>);
 
 impl<'a> VmReaderArray<'a> {
     /// Creates a new `VmReaderArray` from user-provided I/O vector buffers.
     ///
     /// This ensures that empty buffers are filtered out, meaning that all of the returned readers
     /// should be non-empty.
-    pub fn from_user_io_vecs(
+    pub(crate) fn from_user_io_vecs(
         user_space: &'a CurrentUserSpace<'a>,
         start_addr: Vaddr,
         count: usize,
@@ -141,13 +141,13 @@ impl<'a> VmReaderArray<'a> {
     }
 
     /// Returns mutable reference to [`VmReader`]s.
-    pub fn readers_mut(&mut self) -> &mut [VmReader<'a>] {
+    pub(crate) fn readers_mut(&mut self) -> &mut [VmReader<'a>] {
         &mut self.0
     }
 
     /// Creates a new `VmReaderArray`.
     #[cfg(ktest)]
-    pub const fn new(readers: Box<[VmReader<'a>]>) -> Self {
+    pub(crate) const fn new(readers: Box<[VmReader<'a>]>) -> Self {
         Self(readers)
     }
 }
@@ -157,7 +157,7 @@ impl<'a> VmWriterArray<'a> {
     ///
     /// This ensures that empty buffers are filtered out, meaning that all of the returned writers
     /// should be non-empty.
-    pub fn from_user_io_vecs(
+    pub(crate) fn from_user_io_vecs(
         user_space: &'a CurrentUserSpace<'a>,
         start_addr: Vaddr,
         count: usize,
@@ -167,13 +167,13 @@ impl<'a> VmWriterArray<'a> {
     }
 
     /// Returns mutable reference to [`VmWriter`]s.
-    pub fn writers_mut(&mut self) -> &mut [VmWriter<'a>] {
+    pub(crate) fn writers_mut(&mut self) -> &mut [VmWriter<'a>] {
         &mut self.0
     }
 }
 
 /// Trait defining the read behavior for a collection of [`VmReader`]s.
-pub trait MultiRead: ReadCString {
+pub(crate) trait MultiRead: ReadCString {
     /// Reads the exact number of bytes required to exhaust `self` or fill `writer`,
     /// accumulating total bytes read.
     ///
@@ -201,7 +201,7 @@ pub trait MultiRead: ReadCString {
 }
 
 /// Trait defining the write behavior for a collection of [`VmWriter`]s.
-pub trait MultiWrite {
+pub(crate) trait MultiWrite {
     /// Writes the exact number of bytes required to exhaust `writer` or fill `self`,
     /// accumulating total bytes read.
     ///
@@ -278,7 +278,7 @@ impl MultiRead for VmReader<'_> {
 
 impl dyn MultiRead + '_ {
     /// Reads a `T` value, returning a `None` if the readers have insufficient bytes.
-    pub fn read_val_opt<T: Pod>(&mut self) -> Result<Option<T>> {
+    pub(crate) fn read_val_opt<T: Pod>(&mut self) -> Result<Option<T>> {
         let mut val = T::new_zeroed();
         let nbytes = self.read(&mut VmWriter::from(val.as_mut_bytes()))?;
 
@@ -345,7 +345,7 @@ impl MultiWrite for VmWriter<'_> {
 
 impl dyn MultiWrite + '_ {
     /// Writes a `T` value, truncating the value if the writers have insufficient bytes.
-    pub fn write_val_trunc<T: Pod>(&mut self, val: &T) -> Result<()> {
+    pub(crate) fn write_val_trunc<T: Pod>(&mut self, val: &T) -> Result<()> {
         let _nbytes = self.write(&mut VmReader::from(val.as_bytes()))?;
         // `_nbytes` may be smaller than the value size. We ignore it to truncate the value.
 

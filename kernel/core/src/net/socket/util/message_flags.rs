@@ -7,7 +7,7 @@ bitflags! {
     /// Flags passed to socket send operations.
     #[repr(C)]
     #[derive(Pod)]
-    pub struct SendFlags: i32 {
+    pub(crate) struct SendFlags: i32 {
         const MSG_OOB       = 0x1;
         const MSG_DONTROUTE = 0x4;
         const MSG_PROBE     = 0x10;
@@ -28,7 +28,7 @@ bitflags! {
 }
 
 impl SendFlags {
-    pub const fn is_all_supported(self) -> bool {
+    pub(crate) const fn is_all_supported(self) -> bool {
         Self::SUPPORTED.contains(self)
     }
 }
@@ -37,7 +37,7 @@ bitflags! {
     /// Flags passed to or returned from socket receive operations.
     #[repr(C)]
     #[derive(Pod)]
-    pub struct RecvFlags: i32 {
+    pub(crate) struct RecvFlags: i32 {
         const MSG_OOB          = SendFlags::MSG_OOB.bits;
         const MSG_PEEK         = 0x2;
         const MSG_CTRUNC       = 0x8;
@@ -55,12 +55,12 @@ bitflags! {
 }
 
 impl RecvFlags {
-    pub const fn is_all_supported(self) -> bool {
+    pub(crate) const fn is_all_supported(self) -> bool {
         Self::SUPPORTED.contains(self)
     }
 
     /// Returns whether receive operations should consume or peek data.
-    pub fn receive_behavior(self) -> ReceiveBehavior {
+    pub(crate) fn receive_behavior(self) -> ReceiveBehavior {
         if self.contains(Self::MSG_PEEK) {
             ReceiveBehavior::Peek
         } else {

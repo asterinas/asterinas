@@ -20,7 +20,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct UnixControlMessage(Message);
+pub(crate) struct UnixControlMessage(Message);
 
 #[derive(Debug)]
 enum Message {
@@ -29,7 +29,10 @@ enum Message {
 }
 
 impl UnixControlMessage {
-    pub fn read_from(header: &CControlHeader, reader: &mut VmReader) -> Result<Option<Self>> {
+    pub(crate) fn read_from(
+        header: &CControlHeader,
+        reader: &mut VmReader,
+    ) -> Result<Option<Self>> {
         debug_assert_eq!(header.level(), Some(CSocketOptionLevel::SOL_SOCKET));
 
         let Ok(type_) = CControlType::try_from(header.type_()) else {
@@ -55,7 +58,7 @@ impl UnixControlMessage {
         }
     }
 
-    pub fn write_to(&self, writer: &mut VmWriter) -> Result<(CControlHeader, RecvFlags)> {
+    pub(crate) fn write_to(&self, writer: &mut VmWriter) -> Result<(CControlHeader, RecvFlags)> {
         match &self.0 {
             Message::Files(msg) => msg.write_to(writer),
             Message::Cred(msg) => msg.write_to(writer),

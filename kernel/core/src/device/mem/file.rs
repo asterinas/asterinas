@@ -11,7 +11,7 @@ use crate::{
     util::random,
 };
 
-pub fn geturandom(writer: &mut VmWriter) -> Result<usize> {
+pub(crate) fn geturandom(writer: &mut VmWriter) -> Result<usize> {
     const IO_CAPABILITY: usize = 4096;
 
     if !writer.has_avail() {
@@ -34,7 +34,7 @@ pub fn geturandom(writer: &mut VmWriter) -> Result<usize> {
 }
 
 // TODO: Support true randomness by collecting environment noise.
-pub use geturandom as getrandom;
+pub(crate) use geturandom as getrandom;
 
 #[expect(dead_code)]
 #[derive(Clone, Copy, Debug)]

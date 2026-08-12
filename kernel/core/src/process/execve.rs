@@ -32,14 +32,14 @@ use crate::{
 };
 
 /// Describes how a shebang interpreter can access the script after exec.
-pub enum ShebangScriptPath {
+pub(crate) enum ShebangScriptPath {
     /// A path accessible to the interpreter after exec.
     Accessible(CString),
     /// A path inaccessible to the interpreter after exec.
     Inaccessible,
 }
 
-pub fn do_execve(
+pub(crate) fn do_execve(
     elf_file: Path,
     thread_name: ThreadName,
     shebang_script_path: ShebangScriptPath,

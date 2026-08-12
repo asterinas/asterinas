@@ -49,7 +49,7 @@ impl LinuxAbi for UserContext {
 #[repr(C)]
 #[repr(align(16))]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct SigContext {
+pub(crate) struct SigContext {
     pub pc: usize,
     pub zero: usize,
     pub ra: usize,
@@ -127,13 +127,13 @@ macro_rules! copy_gp_regs {
 }
 
 impl SigContext {
-    pub fn copy_user_regs_to(&self, dst: &mut UserContext) {
+    pub(crate) fn copy_user_regs_to(&self, dst: &mut UserContext) {
         let gp_regs = dst.general_regs_mut();
         copy_gp_regs!(self, gp_regs);
         dst.set_instruction_pointer(self.pc);
     }
 
-    pub fn copy_user_regs_from(&mut self, src: &UserContext) {
+    pub(crate) fn copy_user_regs_from(&mut self, src: &UserContext) {
         let gp_regs = src.general_regs();
         copy_gp_regs!(gp_regs, self);
         self.pc = src.instruction_pointer();
@@ -165,13 +165,13 @@ impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
 /// should be called on every CPU.
 //
 // TODO: Implement CPU information retrieval on LoongArch platforms.
-pub struct CpuInformation {
+pub(crate) struct CpuInformation {
     processor: u32,
 }
 
 impl CpuInformation {
     /// Constructs the information for the current CPU.
-    pub fn new(guard: &DisabledPreemptGuard) -> Self {
+    pub(crate) fn new(guard: &DisabledPreemptGuard) -> Self {
         Self {
             processor: guard.current_cpu().into(),
         }

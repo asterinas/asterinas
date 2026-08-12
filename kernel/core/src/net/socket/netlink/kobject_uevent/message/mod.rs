@@ -22,7 +22,7 @@ mod uevent;
 /// Note that uevent messages are not the same as common netlink messages.
 /// It does not have a netlink header.
 #[derive(Clone, Debug)]
-pub struct UeventMessage {
+pub(crate) struct UeventMessage {
     uevent: String,
     src_addr: NetlinkSocketAddr,
 }

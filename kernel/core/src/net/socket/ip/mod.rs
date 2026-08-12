@@ -4,11 +4,11 @@ mod addr;
 mod common;
 mod datagram;
 mod ioctl;
-pub mod options;
+pub(crate) mod options;
 mod stream;
 
-pub use addr::IpAddressFamily;
-pub use datagram::DatagramSocket;
+pub(crate) use addr::IpAddressFamily;
+pub(crate) use datagram::DatagramSocket;
 pub(in crate::net) use datagram::observer::DatagramObserver;
 pub(in crate::net) use stream::observer::StreamObserver;
-pub use stream::{StreamSocket, options as stream_options};
+pub(crate) use stream::{StreamSocket, options as stream_options};

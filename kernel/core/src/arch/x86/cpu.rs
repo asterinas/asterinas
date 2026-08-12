@@ -55,7 +55,7 @@ impl LinuxAbi for UserContext {
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/x86/include/uapi/asm/sigcontext.h#L325>
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct SigContext {
+pub(crate) struct SigContext {
     r8: usize,
     r9: usize,
     r10: usize,
@@ -111,23 +111,23 @@ macro_rules! copy_gp_regs {
 }
 
 impl SigContext {
-    pub fn copy_user_regs_to(&self, dst: &mut UserContext) {
+    pub(crate) fn copy_user_regs_to(&self, dst: &mut UserContext) {
         let gp_regs = dst.general_regs_mut();
         copy_gp_regs!(self, gp_regs);
     }
 
-    pub fn copy_user_regs_from(&mut self, src: &UserContext) {
+    pub(crate) fn copy_user_regs_from(&mut self, src: &UserContext) {
         let gp_regs = src.general_regs();
         copy_gp_regs!(gp_regs, self);
 
         // TODO: Fill exception information in `SigContext`.
     }
 
-    pub fn fpu_context_addr(&self) -> Vaddr {
+    pub(crate) fn fpu_context_addr(&self) -> Vaddr {
         self.fpu_context_addr
     }
 
-    pub fn set_fpu_context_addr(&mut self, addr: Vaddr) {
+    pub(crate) fn set_fpu_context_addr(&mut self, addr: Vaddr) {
         self.fpu_context_addr = addr;
     }
 }
@@ -211,7 +211,7 @@ static CPU_CORES: SpinLock<BTreeSet<u32>> = SpinLock::new(BTreeSet::new());
 // Implementation notes: For each field in this structure that is conditionally shown in Linux, it
 // should be wrapped in an `Option`. Please conduct the Linux implementation when adding a new
 // field, see <https://elixir.bootlin.com/linux/v6.16/source/arch/x86/kernel/cpu/proc.c#L63>.
-pub struct CpuInformation {
+pub(crate) struct CpuInformation {
     processor: u32,
     vendor_id: String,
     cpu_family: u8,
@@ -232,7 +232,7 @@ pub struct CpuInformation {
 
 impl CpuInformation {
     /// Constructs the information for the current CPU.
-    pub fn new(guard: &DisabledPreemptGuard) -> Self {
+    pub(crate) fn new(guard: &DisabledPreemptGuard) -> Self {
         let mut result = Self {
             processor: guard.current_cpu().into(),
             vendor_id: "unknown".to_owned(),

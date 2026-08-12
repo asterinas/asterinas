@@ -8,7 +8,7 @@ use crate::{
     util::VmReaderArray,
 };
 
-pub fn sys_writev(
+pub(super) fn sys_writev(
     raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
@@ -18,7 +18,7 @@ pub fn sys_writev(
     Ok(SyscallReturn::Return(res as _))
 }
 
-pub fn sys_pwritev(
+pub(super) fn sys_pwritev(
     raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
@@ -41,7 +41,7 @@ pub fn sys_pwritev(
     Ok(SyscallReturn::Return(res as _))
 }
 
-pub fn sys_pwritev2(
+pub(super) fn sys_pwritev2(
     raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,

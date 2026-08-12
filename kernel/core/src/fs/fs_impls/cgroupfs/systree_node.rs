@@ -84,7 +84,7 @@ use crate::{
 ///
 /// // The lock is automatically released when `membership` is dropped.
 /// ```
-pub struct CgroupMembership {
+pub(crate) struct CgroupMembership {
     _private: (),
 }
 
@@ -99,7 +99,7 @@ impl CgroupMembership {
     ///
     /// Use this for operations that may reassign an existing process, update
     /// active sub-controllers, or need an exclusive snapshot of those states.
-    pub fn write_lock() -> RwMutexWriteGuard<'static, Self> {
+    pub(crate) fn write_lock() -> RwMutexWriteGuard<'static, Self> {
         global_cgroup_membership().write()
     }
 
@@ -107,7 +107,7 @@ impl CgroupMembership {
     ///
     /// Use this for snapshot-based operations that need stable cgroup
     /// memberships or active sub-controllers without mutating them.
-    pub fn read_lock() -> RwMutexReadGuard<'static, Self> {
+    pub(crate) fn read_lock() -> RwMutexReadGuard<'static, Self> {
         global_cgroup_membership().read()
     }
 
@@ -149,7 +149,7 @@ impl CgroupMembership {
     /// A process can only belong to one cgroup at a time.
     /// When moved to a new cgroup, it's automatically removed from the
     /// previous one.
-    pub fn move_process_to_node(
+    pub(crate) fn move_process_to_node(
         &mut self,
         process: Arc<Process>,
         new_cgroup: &CgroupNode,
@@ -195,7 +195,7 @@ impl CgroupMembership {
     /// This is the fork-path variant of [`CgroupMembership::move_process_to_node`].
     /// It assumes the caller already holds the read side of the membership lock,
     /// and that the `CgroupNode` has already reserved a pids slot during fork.
-    pub fn move_forked_process_to_node(
+    pub(crate) fn move_forked_process_to_node(
         &self,
         process: Arc<Process>,
         new_cgroup: &CgroupNode,
@@ -233,7 +233,7 @@ impl CgroupMembership {
     }
 
     /// Moves a process to the root cgroup.
-    pub fn move_process_to_root(&mut self, process: &Process) {
+    pub(crate) fn move_process_to_root(&mut self, process: &Process) {
         let old_cgroup = if let Some(old_cgroup) = process.cgroup().get() {
             old_cgroup.clone()
         } else {
@@ -283,7 +283,7 @@ impl Debug for CgroupSystem {
 /// Each node can bind a group of processes together for purpose of resource
 /// management. Except for the root node, all nodes in the cgroup tree are of
 /// this type.
-pub struct CgroupNode {
+pub(crate) struct CgroupNode {
     fields: BranchNodeFields<CgroupNode, Self>,
     /// The controller of this cgroup node.
     controller: Controller,
@@ -865,7 +865,7 @@ fn read_subtree_control_from_reader(
 
 /// A trait that abstracts over different types of cgroup nodes (`CgroupNode`, `CgroupSystem`)
 /// to provide a common API for controller logics.
-pub trait CgroupSysNode: SysBranchNode {
+pub(crate) trait CgroupSysNode: SysBranchNode {
     fn controller(&self) -> &Controller;
 
     fn cgroup_parent(&self) -> Option<Arc<dyn CgroupSysNode>> {

@@ -6,7 +6,12 @@ use crate::{
     process::{Gid, posix_thread::ContextPthreadAdminApi},
 };
 
-pub fn sys_setresgid(rgid: i32, egid: i32, sgid: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_setresgid(
+    rgid: i32,
+    egid: i32,
+    sgid: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let rgid = if rgid >= 0 {
         Some(Gid::new(rgid.cast_unsigned()))
     } else {

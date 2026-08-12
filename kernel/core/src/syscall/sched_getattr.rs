@@ -213,7 +213,7 @@ pub(super) fn access_sched_attr_with<T>(
     f(thread.sched_attr())
 }
 
-pub fn sys_sched_getattr(
+pub(super) fn sys_sched_getattr(
     tid: Tid,
     addr: Vaddr,
     user_size: u32,

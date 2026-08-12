@@ -28,22 +28,22 @@ use crate::{
     },
 };
 
-pub mod aux_vec;
+pub(crate) mod aux_vec;
 
 /// Set the initial stack size to 8 megabytes, following the default Linux stack size limit.
-pub const INIT_STACK_SIZE: usize = 8 * 1024 * 1024; // 8 MB
+pub(crate) const INIT_STACK_SIZE: usize = 8 * 1024 * 1024; // 8 MB
 
 /// The maximum number of argument or environment strings that can be supplied to
 /// the `execve` system call.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/binfmts.h#L15>.
-pub const MAX_NR_STRING_ARGS: usize = i32::MAX as usize;
+pub(crate) const MAX_NR_STRING_ARGS: usize = i32::MAX as usize;
 
 /// The maximum size, in bytes, of a single argument or environment string
 /// (`argv` / `envp`) accepted by `execve`.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/binfmts.h#L16>.
-pub const MAX_LEN_STRING_ARG: usize = PAGE_SIZE * 32;
+pub(crate) const MAX_LEN_STRING_ARG: usize = PAGE_SIZE * 32;
 
 /*
  * Illustration of the virtual memory space containing the processes' init stack:
@@ -93,7 +93,7 @@ pub const MAX_LEN_STRING_ARG: usize = PAGE_SIZE * 32;
  */
 
 /// The initial portion of the main stack of a process.
-pub struct InitStack {
+pub(crate) struct InitStack {
     /// The top address of the init stack.
     ///
     /// The stack grows down from this address.
@@ -124,7 +124,7 @@ impl Clone for InitStack {
 }
 
 impl InitStack {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let nr_pages_padding = {
             // We do not want the stack top too close to `VMAR_CAP_ADDR`.
             // So we add this fixed padding. Any small value greater than zero will do.
@@ -154,19 +154,19 @@ impl InitStack {
     /// Returns the top address of the user stack.
     ///
     /// This method should only be called after the stack is initialized.
-    pub fn user_stack_top(&self) -> Vaddr {
+    pub(crate) fn user_stack_top(&self) -> Vaddr {
         debug_assert!(self.is_initialized());
 
         self.pos()
     }
 
     /// Returns the range that held the initial arguments.
-    pub fn argv_range(&self) -> Range<Vaddr> {
+    pub(crate) fn argv_range(&self) -> Range<Vaddr> {
         self.argv_range.lock().clone()
     }
 
     /// Returns the range that held the initial environment variables.
-    pub fn envp_range(&self) -> Range<Vaddr> {
+    pub(crate) fn envp_range(&self) -> Range<Vaddr> {
         self.envp_range.lock().clone()
     }
 
@@ -422,7 +422,7 @@ fn generate_random_for_aux_vec() -> [u8; 16] {
 }
 
 /// A reader to parse the content of an `InitStack`.
-pub struct InitStackReader<'a> {
+pub(crate) struct InitStackReader<'a> {
     vmar: &'a Vmar,
     auxv_range: Range<Vaddr>,
     argv_range: Range<Vaddr>,
@@ -431,17 +431,17 @@ pub struct InitStackReader<'a> {
 
 impl InitStackReader<'_> {
     /// Reads auxv at the `offset` from the process init stack.
-    pub fn auxv(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    pub(crate) fn auxv(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         self.read_range(offset, writer, &self.auxv_range)
     }
 
     /// Reads argv at the `offset` from the process init stack.
-    pub fn argv(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    pub(crate) fn argv(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         self.read_range(offset, writer, &self.argv_range)
     }
 
     /// Reads envp at the `offset` from the process init stack.
-    pub fn envp(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    pub(crate) fn envp(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         self.read_range(offset, writer, &self.envp_range)
     }
 

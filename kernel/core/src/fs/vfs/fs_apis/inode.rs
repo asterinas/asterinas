@@ -33,7 +33,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug)]
-pub struct Metadata {
+pub(crate) struct Metadata {
     /// The inode number, which uniquely identifies the file within the filesystem.
     ///
     /// Corresponds to `st_ino`.
@@ -138,7 +138,7 @@ pub struct Metadata {
 /// whose target is a pathname string, so creating one does not link the target
 /// inode directly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum HardLinkability {
+pub(crate) enum HardLinkability {
     /// Allows creating hard links to the inode.
     Linkable,
     /// Prevents creating hard links to the inode.
@@ -146,7 +146,12 @@ pub enum HardLinkability {
 }
 
 impl Metadata {
-    pub fn new_dir(ino: u64, mode: InodeMode, blk_size: usize, container_dev_id: DeviceId) -> Self {
+    pub(crate) fn new_dir(
+        ino: u64,
+        mode: InodeMode,
+        blk_size: usize,
+        container_dev_id: DeviceId,
+    ) -> Self {
         let now = RealTimeCoarseClock::get().read_time();
         Self {
             ino,
@@ -167,7 +172,7 @@ impl Metadata {
         }
     }
 
-    pub fn new_file(
+    pub(crate) fn new_file(
         ino: u64,
         mode: InodeMode,
         blk_size: usize,
@@ -193,7 +198,7 @@ impl Metadata {
         }
     }
 
-    pub fn new_symlink(
+    pub(crate) fn new_symlink(
         ino: u64,
         mode: InodeMode,
         blk_size: usize,
@@ -219,7 +224,7 @@ impl Metadata {
         }
     }
 
-    pub fn new_device(
+    pub(crate) fn new_device(
         ino: u64,
         mode: InodeMode,
         blk_size: usize,
@@ -247,14 +252,14 @@ impl Metadata {
     }
 }
 
-pub enum MknodType {
+pub(crate) enum MknodType {
     NamedPipe,
     CharDevice(u64),
     BlockDevice(u64),
 }
 
 impl MknodType {
-    pub fn device_type(&self) -> Option<DeviceType> {
+    pub(crate) fn device_type(&self) -> Option<DeviceType> {
         match self {
             MknodType::NamedPipe => None,
             MknodType::CharDevice(_) => Some(DeviceType::Char),
@@ -299,7 +304,7 @@ bitflags! {
     ///
     /// The revalidation callbacks run on every matching cache hit, so
     /// filesystems should keep them cheap.
-    pub struct RevalidationPolicy: u8 {
+    pub(crate) struct RevalidationPolicy: u8 {
         /// Revalidate positive cache entries (cached child inodes).
         ///
         /// Set this when the directory may spontaneously
@@ -329,7 +334,7 @@ bitflags! {
 /// For inode-backed files without per-`open()` state, [`Inode`] implements this
 /// trait directly. For files whose behavior depends on state created by `open`,
 /// the per-`open()` object implements this trait through [`PerOpenFileOps`].
-pub trait FileOps {
+pub(crate) trait FileOps {
     /// Reads data from the file into the given `VmWriter`.
     fn read_at(
         &self,
@@ -352,7 +357,7 @@ pub trait FileOps {
     }
 }
 
-pub trait Inode: Any + FileOps + Send + Sync {
+pub(crate) trait Inode: Any + FileOps + Send + Sync {
     fn size(&self) -> usize;
 
     fn resize(&self, new_size: usize) -> Result<()>;
@@ -640,30 +645,30 @@ fn has_dac_override_capability(task: &CurrentTask, posix_thread: &PosixThread) -
 }
 
 impl dyn Inode {
-    pub fn downcast_ref<T: Inode>(&self) -> Option<&T> {
+    pub(crate) fn downcast_ref<T: Inode>(&self) -> Option<&T> {
         (self as &dyn Any).downcast_ref::<T>()
     }
 
-    pub fn writer(&self, from_offset: usize) -> InodeWriter<'_> {
+    pub(crate) fn writer(&self, from_offset: usize) -> InodeWriter<'_> {
         InodeWriter {
             inner: self,
             offset: from_offset,
         }
     }
 
-    pub fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    pub(crate) fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
         self.read_at(offset, &mut writer, StatusFlags::empty())
     }
 
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    pub(crate) fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
         self.write_at(offset, &mut reader, StatusFlags::empty())
     }
 }
 
-pub struct InodeWriter<'a> {
+pub(crate) struct InodeWriter<'a> {
     inner: &'a dyn Inode,
     offset: usize,
 }
@@ -701,14 +706,14 @@ impl Debug for dyn Inode {
 /// FS types (e.g., [`Inode`]) independent of the kernel types. This allows the file system
 /// implementation to exist outside the kernel.
 #[derive(Debug)]
-pub struct Extension {
+pub(crate) struct Extension {
     group1: Once<ThinBox<dyn Any + Send + Sync>>,
     group2: Once<ThinBox<dyn Any + Send + Sync>>,
 }
 
 impl Extension {
     /// Creates a new, empty extension.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             group1: Once::new(),
             group2: Once::new(),
@@ -716,19 +721,19 @@ impl Extension {
     }
 
     /// Gets the first extension group.
-    pub fn group1(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
+    pub(crate) fn group1(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
         &self.group1
     }
 
     /// Gets the second extension group.
-    pub fn group2(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
+    pub(crate) fn group2(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
         &self.group2
     }
 }
 
 /// A symbolic link.
 #[derive(Clone, Debug)]
-pub enum SymbolicLink {
+pub(crate) enum SymbolicLink {
     /// A plain text.
     ///
     /// This is the most common type of symbolic link.
@@ -746,7 +751,7 @@ pub enum SymbolicLink {
 /// Each mode determines whether the target disk space within a file
 /// will be allocated, deallocated, or zeroed, among other operations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FallocMode {
+pub(crate) enum FallocMode {
     /// Allocates disk space within the range specified.
     Allocate,
     /// Like `Allocate`, but does not change the file size.
@@ -767,7 +772,7 @@ pub enum FallocMode {
 
 /// The behavior of rename operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RenameMode {
+pub(crate) enum RenameMode {
     /// Replaces the destination if it already exists.
     Replace,
     /// Fails with `EEXIST` if the destination already exists.

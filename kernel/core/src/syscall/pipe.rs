@@ -14,7 +14,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("flags: {:?}", flags);
 
     const VALID_FLAGS: u32 = CreationFlags::O_CLOEXEC.bits()
@@ -65,7 +65,7 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_pipe(fds: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_pipe(fds: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     sys_pipe2(fds, 0, ctx)
 }
 

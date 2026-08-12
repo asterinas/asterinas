@@ -73,9 +73,9 @@ use worker_pool::WorkerPool;
 use crate::prelude::*;
 
 mod simple_scheduler;
-pub mod work_item;
-pub mod worker;
-pub mod worker_pool;
+pub(crate) mod work_item;
+pub(crate) mod worker;
+pub(crate) mod worker_pool;
 
 static WORKERPOOL_NORMAL: Once<Arc<WorkerPool>> = Once::new();
 static WORKERPOOL_HIGH_PRI: Once<Arc<WorkerPool>> = Once::new();
@@ -83,7 +83,7 @@ static WORKQUEUE_GLOBAL_NORMAL: Once<Arc<WorkQueue>> = Once::new();
 static WORKQUEUE_GLOBAL_HIGH_PRI: Once<Arc<WorkQueue>> = Once::new();
 
 /// Submit a function to a global work queue.
-pub fn submit_work_func<F>(work_func: F, work_priority: WorkPriority)
+pub(crate) fn submit_work_func<F>(work_func: F, work_priority: WorkPriority)
 where
     F: Fn() + Send + Sync + 'static,
 {
@@ -92,7 +92,7 @@ where
 }
 
 /// Submit a work item to a global work queue.
-pub fn submit_work_item(work_item: Arc<WorkItem>, work_priority: WorkPriority) -> bool {
+pub(crate) fn submit_work_item(work_item: Arc<WorkItem>, work_priority: WorkPriority) -> bool {
     match work_priority {
         WorkPriority::High => WORKQUEUE_GLOBAL_HIGH_PRI
             .get()
@@ -107,7 +107,7 @@ pub fn submit_work_item(work_item: Arc<WorkItem>, work_priority: WorkPriority) -
 
 /// A work queue maintains a series of work items to be handled
 /// asynchronously in a process context.
-pub struct WorkQueue {
+pub(crate) struct WorkQueue {
     worker_pool: Weak<WorkerPool>,
     inner: SpinLock<WorkQueueInner>,
 }
@@ -119,7 +119,7 @@ struct WorkQueueInner {
 impl WorkQueue {
     /// Create a `WorkQueue` and specify a `WorkerPool` to
     /// process the submitted `WorkItems`.
-    pub fn new(worker_pool: Weak<WorkerPool>) -> Arc<Self> {
+    pub(crate) fn new(worker_pool: Weak<WorkerPool>) -> Arc<Self> {
         let queue = Arc::new(WorkQueue {
             worker_pool: worker_pool.clone(),
             inner: SpinLock::new(WorkQueueInner {
@@ -134,7 +134,7 @@ impl WorkQueue {
     }
 
     /// Submit a work item. Return `false` if the work item is currently pending.
-    pub fn enqueue(&self, work_item: Arc<WorkItem>) -> bool {
+    pub(crate) fn enqueue(&self, work_item: Arc<WorkItem>) -> bool {
         if !work_item.try_pending() {
             return false;
         }
@@ -174,7 +174,7 @@ impl WorkQueue {
 }
 
 /// Initialize global worker pools and work queues.
-pub fn init_in_first_kthread() {
+pub(crate) fn init_in_first_kthread() {
     WORKERPOOL_NORMAL.call_once(|| {
         let cpu_set = CpuSet::new_full();
         WorkerPool::new(WorkPriority::Normal, cpu_set)
@@ -198,7 +198,7 @@ impl Drop for WorkQueue {
 }
 
 #[derive(PartialEq)]
-pub enum WorkPriority {
+pub(crate) enum WorkPriority {
     High,
     Normal,
 }

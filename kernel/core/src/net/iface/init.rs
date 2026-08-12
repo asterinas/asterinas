@@ -17,22 +17,22 @@ use crate::{
 
 static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
 
-pub fn loopback_iface() -> &'static Arc<Iface> {
+pub(crate) fn loopback_iface() -> &'static Arc<Iface> {
     &IFACES.get().unwrap()[0]
 }
 
-pub fn virtio_iface() -> Option<&'static Arc<Iface>> {
+pub(crate) fn virtio_iface() -> Option<&'static Arc<Iface>> {
     IFACES.get().unwrap().get(1)
 }
 
-pub fn iter_all_ifaces() -> Iter<'static, Arc<Iface>> {
+pub(crate) fn iter_all_ifaces() -> Iter<'static, Arc<Iface>> {
     IFACES.get().unwrap().iter()
 }
 
 // TODO: Support multiple network devices and avoid the hardcoded device name.
 const VIRTIO_DEVICE_NAME: &str = aster_virtio::device::network::DEVICE_NAME;
 
-pub fn init() {
+pub(crate) fn init() {
     IFACES.call_once(|| {
         let mut ifaces = Vec::with_capacity(2);
 

@@ -39,7 +39,7 @@ struct SubscriberEntry {
 ///
 /// `InotifyFile` accepts events from multiple inotify subscribers (watches) on different inodes.
 /// Users should read events from this file to receive notifications about filesystem changes.
-pub struct InotifyFile {
+pub(crate) struct InotifyFile {
     // The next watch descriptor to allocate.
     next_wd: AtomicU32,
     // A map from watch descriptors to subscriber entries.
@@ -90,7 +90,7 @@ const DEFAULT_MAX_QUEUED_EVENTS: usize = 16384;
 
 impl InotifyFile {
     /// Creates a new inotify file.
-    pub fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
+    pub(crate) fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:inotify".to_string());
         let status_flags = if is_nonblocking {
             StatusFlags::O_NONBLOCK
@@ -129,7 +129,7 @@ impl InotifyFile {
     ///
     /// If a watch on the path is not found, creates a new watch.
     /// If a watch on the path is found, updates it.
-    pub fn add_watch(
+    pub(crate) fn add_watch(
         &self,
         path: &Path,
         interesting: InotifyEvents,
@@ -195,7 +195,7 @@ impl InotifyFile {
     }
 
     /// Removes a watch by watch descriptor.
-    pub fn remove_watch(&self, wd: u32) -> Result<()> {
+    pub(crate) fn remove_watch(&self, wd: u32) -> Result<()> {
         let mut watch_map = self.watch_map.lock();
 
         let Some(entry) = watch_map.remove(&wd) else {
@@ -436,7 +436,7 @@ fn can_merge_events(existing: &InotifyEvent, new_event: &InotifyEvent) -> bool {
 /// using `InotifyControls`. Both the event mask and control options are stored in a single
 /// `AtomicU64` for atomic updates: the high 32 bits store options, and the low 32 bits
 /// store the event mask.
-pub struct InotifySubscriber {
+pub(crate) struct InotifySubscriber {
     // Interesting events and control options.
     //
     // This field is packed into a `u64`: the high 32 bits store options,
@@ -452,7 +452,7 @@ pub struct InotifySubscriber {
 
 impl InotifySubscriber {
     /// Creates a new `InotifySubscriber` with initial interesting events and options.
-    pub fn new(
+    pub(crate) fn new(
         inotify_file: Arc<InotifyFile>,
         interesting: InotifyEvents,
         options: InotifyControls,
@@ -469,7 +469,7 @@ impl InotifySubscriber {
         Ok(this)
     }
 
-    pub fn wd(&self) -> u32 {
+    pub(crate) fn wd(&self) -> u32 {
         self.wd
     }
 
@@ -482,7 +482,7 @@ impl InotifySubscriber {
         )
     }
 
-    pub fn inotify_file(&self) -> &Arc<InotifyFile> {
+    pub(crate) fn inotify_file(&self) -> &Arc<InotifyFile> {
         &self.inotify_file
     }
 
@@ -638,7 +638,7 @@ bitflags! {
     /// Represents the set of events that a subscriber wants to monitor.
     ///
     /// These events are used to filter notifications sent to the subscriber.
-    pub struct InotifyEvents: u32 {
+    pub(crate) struct InotifyEvents: u32 {
         const ACCESS        = 1 << 0;  // File was accessed
         const MODIFY        = 1 << 1;  // File was modified
         const ATTRIB        = 1 << 2;  // Metadata changed
@@ -664,7 +664,7 @@ bitflags! {
 }
 
 bitflags! {
-    pub struct InotifyControls: u32 {
+    pub(crate) struct InotifyControls: u32 {
         const ONLYDIR       = 1 << 24; // Only watch directories
         const DONT_FOLLOW   = 1 << 25; // Don't follow symlinks
         const EXCL_UNLINK   = 1 << 26; // Exclude events on unlinked objects

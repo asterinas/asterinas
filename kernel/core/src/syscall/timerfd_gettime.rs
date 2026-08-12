@@ -9,7 +9,7 @@ use crate::{
     time::{itimerspec_t, timerfd::TimerfdFile, timespec_t},
 };
 
-pub fn sys_timerfd_gettime(
+pub(super) fn sys_timerfd_gettime(
     raw_fd: RawFileDesc,
     itimerspec_addr: Vaddr,
     ctx: &Context,

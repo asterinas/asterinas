@@ -9,7 +9,7 @@ use ostd::mm::{VmReader, VmWriter};
 ///
 /// Note that even if the controller is inactive, it still provides some interfaces
 /// like "memory.pressure" for usage.
-pub struct MemoryController {
+pub(crate) struct MemoryController {
     _private: (),
 }
 

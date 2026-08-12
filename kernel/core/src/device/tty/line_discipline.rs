@@ -24,7 +24,7 @@ const BUFFER_CAPACITY: usize = 8192;
 // be accepted.
 const_assert!(LINE_CAPACITY < BUFFER_CAPACITY);
 
-pub struct LineDiscipline {
+pub(crate) struct LineDiscipline {
     /// Current line
     current_line: CurrentLine,
     /// Read buffer
@@ -83,7 +83,7 @@ impl CurrentLine {
 
 impl LineDiscipline {
     /// Creates a new line discipline.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             current_line: CurrentLine::default(),
             read_buffer: RingBuffer::new(BUFFER_CAPACITY),
@@ -93,7 +93,7 @@ impl LineDiscipline {
     }
 
     /// Pushes a character to the line discipline.
-    pub fn push_char<F1: FnMut(SigNum), F2: FnMut(&[u8])>(
+    pub(crate) fn push_char<F1: FnMut(SigNum), F2: FnMut(&[u8])>(
         &mut self,
         ch: u8,
         mut signal_callback: F1,
@@ -180,7 +180,7 @@ impl LineDiscipline {
     ///
     /// If no bytes are available or the available bytes are fewer than `min(dst.len(), vmin)`,
     /// this method returns [`Errno::EAGAIN`].
-    pub fn try_read(&mut self, dst: &mut [u8]) -> Result<usize> {
+    pub(crate) fn try_read(&mut self, dst: &mut [u8]) -> Result<usize> {
         let vmin = self.termios.special_char(CCtrlCharId::VMIN);
         let vtime = self.termios.special_char(CCtrlCharId::VTIME);
 
@@ -219,24 +219,24 @@ impl LineDiscipline {
         Ok(dst.len())
     }
 
-    pub fn drain_input(&mut self) {
+    pub(crate) fn drain_input(&mut self) {
         self.current_line.drain();
         self.read_buffer.clear();
     }
 
-    pub fn buffer_len(&self) -> usize {
+    pub(crate) fn buffer_len(&self) -> usize {
         self.read_buffer.len()
     }
 
-    pub fn is_full(&self) -> bool {
+    pub(crate) fn is_full(&self) -> bool {
         self.read_buffer.len() + self.current_line.len() >= self.read_buffer.capacity()
     }
 
-    pub fn termios(&self) -> &CTermios2 {
+    pub(crate) fn termios(&self) -> &CTermios2 {
         &self.termios
     }
 
-    pub fn set_termios(&mut self, termios: CTermios) {
+    pub(crate) fn set_termios(&mut self, termios: CTermios) {
         let termios2 = CTermios2::new(
             termios,
             CTermiosSpeeds::from_termios(&termios, *self.termios.speeds()),
@@ -244,7 +244,7 @@ impl LineDiscipline {
         self.set_termios2(termios2);
     }
 
-    pub fn set_termios2(&mut self, termios2: CTermios2) {
+    pub(crate) fn set_termios2(&mut self, termios2: CTermios2) {
         self.termios = termios2;
 
         // When switching to raw mode, any pending input bytes should become immediately available.
@@ -261,11 +261,11 @@ impl LineDiscipline {
         self.read_buffer.push_slice(bytes)
     }
 
-    pub fn window_size(&self) -> CWinSize {
+    pub(crate) fn window_size(&self) -> CWinSize {
         self.winsize
     }
 
-    pub fn set_window_size(&mut self, winsize: CWinSize) {
+    pub(crate) fn set_window_size(&mut self, winsize: CWinSize) {
         self.winsize = winsize;
     }
 }

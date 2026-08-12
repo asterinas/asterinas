@@ -24,7 +24,7 @@ use crate::fs::{
 /// configure, and manage kernel objects through a virtual file system interface.
 /// Unlike sysfs which is primarily read-only and represents existing kernel state,
 /// `ConfigFs` is designed for dynamic creation and configuration of kernel objects.
-pub struct ConfigFs {
+pub(crate) struct ConfigFs {
     _anon_device_id: AnonDeviceId,
     sb: SuperBlock,
     root: Arc<dyn Inode>,

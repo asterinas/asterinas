@@ -5,7 +5,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_getresuid(
+pub(super) fn sys_getresuid(
     ruid_ptr: Vaddr,
     euid_ptr: Vaddr,
     suid_ptr: Vaddr,

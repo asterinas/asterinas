@@ -7,7 +7,7 @@ use crate::{
     util::net::write_socket_addr_to_user,
 };
 
-pub fn sys_getsockname(
+pub(super) fn sys_getsockname(
     sockfd: RawFileDesc,
     addr: Vaddr,
     addrlen_ptr: Vaddr,

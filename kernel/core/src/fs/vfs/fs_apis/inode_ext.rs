@@ -8,7 +8,7 @@ use crate::fs::{
 };
 
 /// Context for FS locks.
-pub struct FsLockContext {
+pub(crate) struct FsLockContext {
     range_lock_list: RangeLockList,
     flock_list: FlockList,
 }
@@ -22,12 +22,12 @@ impl FsLockContext {
     }
 
     /// Returns a reference to the range lock list.
-    pub fn range_lock_list(&self) -> &RangeLockList {
+    pub(crate) fn range_lock_list(&self) -> &RangeLockList {
         &self.range_lock_list
     }
 
     /// Returns a reference to the flock list.
-    pub fn flock_list(&self) -> &FlockList {
+    pub(crate) fn flock_list(&self) -> &FlockList {
         &self.flock_list
     }
 }
@@ -35,7 +35,7 @@ impl FsLockContext {
 /// A trait that instantiates kernel types for the inode [`Extension`].
 ///
 /// [`Extension`]: super::inode::Extension
-pub trait InodeExt {
+pub(crate) trait InodeExt {
     /// Gets or initializes the FS event publisher.
     ///
     /// If the publisher does not exist for this inode, it will be created.

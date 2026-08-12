@@ -24,7 +24,7 @@ use crate::prelude::*;
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/user_64.h#L66-L97>
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct CUserRegsStruct {
+pub(crate) struct CUserRegsStruct {
     pub r15: usize,
     pub r14: usize,
     pub r13: usize,
@@ -59,7 +59,7 @@ impl CUserRegsStruct {
     ///
     /// `orig_rax` is left at zero. Callers needing the syscall-entry
     /// value should assign it from `ThreadLocal::orig_syscall_ret`.
-    pub fn from_regs(general_regs: &GeneralRegs, fs_base: FsBase, gs_base: GsBase) -> Self {
+    pub(crate) fn from_regs(general_regs: &GeneralRegs, fs_base: FsBase, gs_base: GsBase) -> Self {
         let mut out = Self::default();
         let bytes = out.as_mut_bytes();
         for rule in REG_RULES {
@@ -90,7 +90,7 @@ impl CUserRegsStruct {
     /// # Errors
     ///
     /// Returns `EIO` on any invalid value.
-    pub fn apply_to(
+    pub(crate) fn apply_to(
         &self,
         general_regs: &mut GeneralRegs,
         fs_base: &mut FsBase,
@@ -121,7 +121,7 @@ impl CUserRegsStruct {
 }
 
 /// Reads one word from the x86-64 USER area at `offset`.
-pub fn read_user_word(
+pub(crate) fn read_user_word(
     general_regs: &GeneralRegs,
     fs_base: FsBase,
     gs_base: GsBase,
@@ -162,7 +162,7 @@ pub fn read_user_word(
 }
 
 /// Writes one word to the x86-64 USER area at `offset`.
-pub fn write_user_word(
+pub(crate) fn write_user_word(
     general_regs: &mut GeneralRegs,
     fs_base: &mut FsBase,
     gs_base: &mut GsBase,
@@ -202,12 +202,12 @@ pub fn write_user_word(
 }
 
 /// Enables x86-64 single-step execution by setting the trap flag.
-pub fn enable_single_step(regs: &mut GeneralRegs) {
+pub(crate) fn enable_single_step(regs: &mut GeneralRegs) {
     regs.rflags |= RFlags::TRAP_FLAG.bits() as usize;
 }
 
 /// Disables x86-64 single-step execution by clearing the trap flag.
-pub fn disable_single_step(regs: &mut GeneralRegs) {
+pub(crate) fn disable_single_step(regs: &mut GeneralRegs) {
     regs.rflags &= !(RFlags::TRAP_FLAG.bits() as usize);
 }
 

@@ -12,7 +12,7 @@ use crate::{
     time::wait::WaitTimeout,
 };
 
-pub fn init_in_first_kthread() {
+pub(crate) fn init_in_first_kthread() {
     for iface in iter_all_ifaces() {
         spawn_background_poll_thread(iface.clone());
     }

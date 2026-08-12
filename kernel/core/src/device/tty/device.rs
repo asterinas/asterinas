@@ -21,7 +21,7 @@ use crate::{
 
 /// Corresponds to `/dev/tty0` in the file system. This device represents the active virtual
 /// terminal.
-pub struct Tty0Device;
+pub(crate) struct Tty0Device;
 
 impl Device for Tty0Device {
     fn type_(&self) -> DeviceType {
@@ -43,7 +43,7 @@ impl Device for Tty0Device {
 
 /// Corresponds to `/dev/tty` in the file system. This device represents the controlling terminal
 /// of the session of the current process.
-pub struct TtyDevice;
+pub(crate) struct TtyDevice;
 
 impl Device for TtyDevice {
     fn type_(&self) -> DeviceType {
@@ -73,13 +73,13 @@ impl Device for TtyDevice {
 
 /// Corresponds to `/dev/console` in the file system. This device represents a console to which
 /// system messages will be sent.
-pub struct SystemConsole {
+pub(crate) struct SystemConsole {
     inner: Arc<dyn Device>,
 }
 
 impl SystemConsole {
     /// Returns the singleton instance of the console device.
-    pub fn singleton() -> &'static Arc<SystemConsole> {
+    pub(crate) fn singleton() -> &'static Arc<SystemConsole> {
         static INSTANCE: Once<Arc<SystemConsole>> = Once::new();
 
         INSTANCE.call_once(|| {

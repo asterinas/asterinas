@@ -52,7 +52,7 @@ enum CSocketOptionName {
     SNDTIMEO_NEW = 67,
 }
 
-pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
+pub(crate) fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     let name = CSocketOptionName::try_from(name).map_err(|_| Errno::ENOPROTOOPT)?;
     match name {
         CSocketOptionName::REUSEADDR => Ok(Box::new(ReuseAddr::new())),

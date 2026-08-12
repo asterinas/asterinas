@@ -17,22 +17,22 @@ use crate::{
 // The following constant values are derived from the default values in Linux.
 
 /// Maximum number of semaphore sets.
-pub const SEMMNI: usize = 32000;
+pub(crate) const SEMMNI: usize = 32000;
 /// Maximum number of semaphores per semaphore ID.
-pub const SEMMSL: usize = 32000;
+pub(crate) const SEMMSL: usize = 32000;
 /// Maximum number of semaphores in all semaphore sets.
 #[expect(dead_code)]
-pub const SEMMNS: usize = SEMMNI * SEMMSL;
+pub(crate) const SEMMNS: usize = SEMMNI * SEMMSL;
 /// Maximum number of operations for semop.
-pub const SEMOPM: usize = 500;
+pub(crate) const SEMOPM: usize = 500;
 /// Maximum semaphore value.
-pub const SEMVMX: i32 = 32767;
+pub(crate) const SEMVMX: i32 = 32767;
 /// Maximum value that can be recorded for semaphore adjustment (SEM_UNDO).
 #[expect(dead_code)]
-pub const SEMAEM: i32 = SEMVMX;
+pub(crate) const SEMAEM: i32 = SEMVMX;
 
 #[derive(Debug)]
-pub struct SemaphoreSet {
+pub(crate) struct SemaphoreSet {
     /// Number of semaphores in the set
     num_sems: usize,
     /// Inner
@@ -70,7 +70,7 @@ struct IpcPerm {
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct SemidDs {
+pub(crate) struct SemidDs {
     sem_perm: IpcPerm,
     sem_otime: u64,
     _unused1: u64,
@@ -85,7 +85,7 @@ pub struct SemidDs {
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct SemidDs {
+pub(crate) struct SemidDs {
     sem_perm: IpcPerm,
     sem_otime: u64,
     sem_ctime: u64,
@@ -123,7 +123,7 @@ impl SemSetInner {
 impl SemaphoreSet {
     /// Counts the number of pending operations waiting for the semaphore at `sem_num` to become
     /// zero.
-    pub fn pending_zero_count(&self, sem_num: usize) -> Result<usize> {
+    pub(crate) fn pending_zero_count(&self, sem_num: usize) -> Result<usize> {
         if sem_num >= self.num_sems {
             return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
         }
@@ -144,7 +144,7 @@ impl SemaphoreSet {
 
     /// Counts the number of pending operations waiting for the semaphore at `sem_num` to be able to
     /// decrease by a certain amount.
-    pub fn pending_decrease_count(&self, sem_num: usize) -> Result<usize> {
+    pub(crate) fn pending_decrease_count(&self, sem_num: usize) -> Result<usize> {
         if sem_num >= self.num_sems {
             return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
         }
@@ -158,11 +158,11 @@ impl SemaphoreSet {
         Ok(count)
     }
 
-    pub fn num_sems(&self) -> usize {
+    pub(crate) fn num_sems(&self) -> usize {
         self.num_sems
     }
 
-    pub fn setval(&self, sem_num: usize, val: i32, pid: Pid) -> Result<()> {
+    pub(crate) fn setval(&self, sem_num: usize, val: i32, pid: Pid) -> Result<()> {
         if !(0..=SEMVMX).contains(&val) {
             return_errno_with_message!(Errno::ERANGE, "the semaphore value exceeds SEMVMX");
         }
@@ -198,7 +198,7 @@ impl SemaphoreSet {
         Ok(())
     }
 
-    pub fn get<T>(&self, sem_num: usize, func: fn(&Semaphore) -> T) -> Result<T> {
+    pub(crate) fn get<T>(&self, sem_num: usize, func: fn(&Semaphore) -> T) -> Result<T> {
         let inner = self.inner();
         let Some(sem) = inner.sems.get(sem_num) else {
             return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
@@ -208,7 +208,7 @@ impl SemaphoreSet {
         Ok(result)
     }
 
-    pub fn permission(&self) -> &IpcPermission {
+    pub(crate) fn permission(&self) -> &IpcPermission {
         &self.permission
     }
 
@@ -264,7 +264,7 @@ impl SemaphoreSet {
         })
     }
 
-    pub fn semid_ds(&self) -> SemidDs {
+    pub(crate) fn semid_ds(&self) -> SemidDs {
         let ipc_perm = IpcPerm {
             key: self.permission.key().cast_unsigned(),
             uid: self.permission.uid().into(),

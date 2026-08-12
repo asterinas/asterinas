@@ -18,12 +18,12 @@ use crate::{
     util::{MultiRead, MultiWrite, ioctl::RawIoctl},
 };
 
-pub mod ip;
-pub mod netlink;
-pub mod options;
-pub mod unix;
-pub mod util;
-pub mod vsock;
+pub(crate) mod ip;
+pub(crate) mod netlink;
+pub(crate) mod options;
+pub(crate) mod unix;
+pub(crate) mod util;
+pub(crate) mod vsock;
 
 mod private {
     use core::time::Duration;
@@ -34,7 +34,7 @@ mod private {
     ///
     /// These are implementation details of sockets, so shouldn't be accessed outside the network
     /// module. Therefore, the whole trait is sealed.
-    pub trait SocketPrivate: Pollable {
+    pub(crate) trait SocketPrivate: Pollable {
         /// Returns whether the socket is in non-blocking mode.
         fn is_nonblocking(&self) -> bool;
 
@@ -76,7 +76,7 @@ mod private {
 }
 
 /// Operations defined on a socket.
-pub trait Socket: private::SocketPrivate + Send + Sync {
+pub(crate) trait Socket: private::SocketPrivate + Send + Sync {
     /// Assigns the specified address to the socket.
     fn bind(&self, _socket_addr: SocketAddr) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "bind() is not supported");

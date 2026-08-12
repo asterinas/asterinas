@@ -17,11 +17,16 @@ use crate::{
     time::timespec_t,
 };
 
-pub fn sys_semop(semid: i32, sops: Vaddr, nsops: usize, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_semop(
+    semid: i32,
+    sops: Vaddr,
+    nsops: usize,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     do_sys_semtimedop(semid, sops, nsops, None, ctx)
 }
 
-pub fn sys_semtimedop(
+pub(super) fn sys_semtimedop(
     semid: i32,
     sops: Vaddr,
     nsops: usize,

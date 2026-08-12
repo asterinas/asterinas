@@ -12,13 +12,13 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_eventfd(init_val: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_eventfd(init_val: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("init_val = 0x{:x}", init_val);
 
     do_sys_eventfd2(init_val, EventFileFlags::empty(), ctx)
 }
 
-pub fn sys_eventfd2(init_val: u32, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_eventfd2(init_val: u32, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("raw flags = {}", flags);
     let flags = EventFileFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;

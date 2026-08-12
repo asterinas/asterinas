@@ -49,7 +49,7 @@ use super::{
 use crate::prelude::*;
 
 /// Filesystem types supported for the root filesystem.
-pub static SUPPORTED_ROOTFS_TYPES: &[&dyn DynFsType] = &[&ext2::EXT2_TYPE];
+pub(crate) static SUPPORTED_ROOTFS_TYPES: &[&dyn DynFsType] = &[&ext2::EXT2_TYPE];
 
 /// Mounts and switches to the root filesystem configured by the kernel command line.
 ///
@@ -57,7 +57,7 @@ pub static SUPPORTED_ROOTFS_TYPES: &[&dyn DynFsType] = &[&ext2::EXT2_TYPE];
 /// directory.
 ///
 /// Returns an error if `root` is not provided or the root filesystem cannot be opened or mounted.
-pub fn switch_to_rootfs(path_resolver: &mut PathResolver) -> Result<()> {
+pub(crate) fn switch_to_rootfs(path_resolver: &mut PathResolver) -> Result<()> {
     let root = ROOT_PATH.get().ok_or_else(|| {
         Error::with_message(Errno::EINVAL, "the `root` parameter was not provided")
     })?;
@@ -79,7 +79,7 @@ pub fn switch_to_rootfs(path_resolver: &mut PathResolver) -> Result<()> {
 /// Resolves the path specified by `init` and returns the resolved path together with the original
 /// pathname. Returns `Ok(None)` when `init` is not provided, and an error if the configured
 /// pathname is invalid or cannot be resolved.
-pub fn find_init(path_resolver: &PathResolver) -> Result<Option<(Path, &'static str)>> {
+pub(crate) fn find_init(path_resolver: &PathResolver) -> Result<Option<(Path, &'static str)>> {
     let Some(init_path) = INIT_PATH.get().map(String::as_str) else {
         return Ok(None);
     };

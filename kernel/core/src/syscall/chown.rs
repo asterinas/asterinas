@@ -11,7 +11,12 @@ use crate::{
     process::{Gid, Uid},
 };
 
-pub fn sys_fchown(raw_fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_fchown(
+    raw_fd: RawFileDesc,
+    uid: i32,
+    gid: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("raw_fd = {}, uid = {}, gid = {}", raw_fd, uid, gid);
 
     let uid = to_optional_id(uid, Uid::new)?;
@@ -32,11 +37,21 @@ pub fn sys_fchown(raw_fd: RawFileDesc, uid: i32, gid: i32, ctx: &Context) -> Res
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_chown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_chown(
+    path_ptr: Vaddr,
+    uid: i32,
+    gid: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     sys_fchownat(AT_FDCWD, path_ptr, uid, gid, 0, ctx)
 }
 
-pub fn sys_lchown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_lchown(
+    path_ptr: Vaddr,
+    uid: i32,
+    gid: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     sys_fchownat(
         AT_FDCWD,
         path_ptr,
@@ -47,7 +62,7 @@ pub fn sys_lchown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<
     )
 }
 
-pub fn sys_fchownat(
+pub(super) fn sys_fchownat(
     dirfd: RawFileDesc,
     path_ptr: Vaddr,
     uid: i32,

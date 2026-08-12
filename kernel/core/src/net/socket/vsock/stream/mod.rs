@@ -29,7 +29,7 @@ use crate::{
     util::{MultiRead, MultiWrite},
 };
 
-pub struct VsockStreamSocket {
+pub(crate) struct VsockStreamSocket {
     state: Mutex<Takeable<State>>,
     // Note that for vsock, all pollee notifications and invalidations live in the transport module
     // (e.g., `super::transport`) rather than in this module.
@@ -45,7 +45,7 @@ enum State {
 }
 
 impl VsockStreamSocket {
-    pub fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
+    pub(crate) fn new(is_nonblocking: bool) -> Result<Arc<Self>> {
         let status_flags = if is_nonblocking {
             StatusFlags::O_NONBLOCK
         } else {

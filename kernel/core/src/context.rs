@@ -22,7 +22,7 @@ use crate::{
 
 /// The context that can be accessed from the current POSIX thread.
 #[derive(Clone)]
-pub struct Context<'a> {
+pub(crate) struct Context<'a> {
     pub(crate) process: Arc<Process>,
     pub(crate) thread_local: &'a ThreadLocal,
     pub(crate) posix_thread: &'a PosixThread,
@@ -73,7 +73,7 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// Otherwise, you can use the `current_userspace` macro
     /// to obtain an instance of `CurrentUserSpace` if it will only be used once.
-    pub fn new(thread_local: &'a ThreadLocal) -> Self {
+    pub(crate) fn new(thread_local: &'a ThreadLocal) -> Self {
         let vmar_ref = thread_local.vmar().borrow();
         Self(vmar_ref)
     }
@@ -83,19 +83,19 @@ impl<'a> CurrentUserSpace<'a> {
     /// # Panics
     ///
     /// This method will panic if the current process has cleared its `Vmar`.
-    pub fn vmar(&self) -> &Vmar {
+    pub(crate) fn vmar(&self) -> &Vmar {
         self.0.as_ref().unwrap()
     }
 
     /// Takes a snapshot of the current VMAR identity.
-    pub fn vmar_snapshot(&self) -> VmarSnapshot {
+    pub(crate) fn vmar_snapshot(&self) -> VmarSnapshot {
         VmarSnapshot::from(self.0.as_ref().unwrap().clone_weak())
     }
 
     /// Creates a reader to read data from the user space of the current task.
     ///
     /// Returns `Err` if `vaddr` and `len` do not represent a user space memory range.
-    pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
+    pub(crate) fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
         // Do NOT attempt to call `check_vaddr_lowerbound` here.
         //
         // Linux has a **delayed buffer validation** behavior:
@@ -117,7 +117,7 @@ impl<'a> CurrentUserSpace<'a> {
     /// Creates a writer to write data into the user space of the current task.
     ///
     /// Returns `Err` if `vaddr` and `len` do not represent a user space memory range.
-    pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
+    pub(crate) fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
         // Do NOT attempt to call `check_vaddr_lowerbound` here.
         // See the comments in the `reader` method.
         Ok(self.vmar().vm_space().writer(vaddr, len)?)
@@ -130,7 +130,7 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// This method is semantically equivalent to calling [`Self::reader`] and [`Self::writer`]
     /// separately, but it avoids double checking the validity of the memory region.
-    pub fn reader_writer(
+    pub(crate) fn reader_writer(
         &self,
         vaddr: Vaddr,
         len: usize,
@@ -147,7 +147,7 @@ impl<'a> CurrentUserSpace<'a> {
     /// This method will panic if `vaddr` is not aligned on an `align_of::<T>()`-byte boundary.
     ///
     /// [`Ordering::Relaxed`]: core::sync::atomic::Ordering::Relaxed
-    pub fn atomic_load<T: PodAtomic>(&self, vaddr: Vaddr) -> Result<T> {
+    pub(crate) fn atomic_load<T: PodAtomic>(&self, vaddr: Vaddr) -> Result<T> {
         if size_of::<T>() > 0 {
             check_vaddr_lowerbound(vaddr)?;
         }
@@ -172,7 +172,7 @@ impl<'a> CurrentUserSpace<'a> {
     /// [`Ordering::Relaxed`]: core::sync::atomic::Ordering::Relaxed
     /// [`atomic_load`]: VmReader::atomic_load
     /// [`atomic_compare_exchange`]: VmWriter::atomic_compare_exchange
-    pub fn atomic_fetch_update<T>(&self, vaddr: Vaddr, op: impl Fn(T) -> T) -> Result<T>
+    pub(crate) fn atomic_fetch_update<T>(&self, vaddr: Vaddr, op: impl Fn(T) -> T) -> Result<T>
     where
         T: PodAtomic + Eq,
     {
@@ -199,7 +199,7 @@ impl<'a> CurrentUserSpace<'a> {
     /// This method is commonly used to read a file name or path. In that case, when the nul byte
     /// cannot be found within `max_len` bytes, the correct error code is [`Errno::ENAMETOOLONG`].
     /// However, in other cases, the caller may want to fix the error code manually.
-    pub fn read_cstring(&self, vaddr: Vaddr, max_len: usize) -> Result<CString> {
+    pub(crate) fn read_cstring(&self, vaddr: Vaddr, max_len: usize) -> Result<CString> {
         if max_len > 0 {
             check_vaddr_lowerbound(vaddr)?;
         }

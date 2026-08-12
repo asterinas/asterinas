@@ -38,7 +38,7 @@ use crate::{
     util::{MultiRead, MultiWrite, net::SockType},
 };
 
-pub struct UnixStreamSocket {
+pub(crate) struct UnixStreamSocket {
     // Lock order: `state` first, `options` second
     state: RwMutex<Takeable<State>>,
     options: RwLock<OptionSet>,
@@ -167,7 +167,7 @@ impl OptionSet {
 }
 
 impl UnixStreamSocket {
-    pub fn new(is_nonblocking: bool, socket_type: SockType) -> Arc<Self> {
+    pub(crate) fn new(is_nonblocking: bool, socket_type: SockType) -> Arc<Self> {
         debug_assert!(
             socket_type == SockType::SOCK_STREAM || socket_type == SockType::SOCK_SEQPACKET
         );
@@ -191,7 +191,7 @@ impl UnixStreamSocket {
         })
     }
 
-    pub fn new_pair(is_nonblocking: bool, socket_type: SockType) -> (Arc<Self>, Arc<Self>) {
+    pub(crate) fn new_pair(is_nonblocking: bool, socket_type: SockType) -> (Arc<Self>, Arc<Self>) {
         debug_assert!(
             socket_type == SockType::SOCK_STREAM || socket_type == SockType::SOCK_SEQPACKET
         );

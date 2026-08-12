@@ -13,14 +13,14 @@ use crate::{
     process::{Pid, Uid},
 };
 
-pub type sigset_t = u64;
+pub(crate) type sigset_t = u64;
 // FIXME: this type should be put at suitable place
-pub type clock_t = i64;
+pub(crate) type clock_t = i64;
 
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct sigaction_t {
+pub(crate) struct sigaction_t {
     pub handler_ptr: Vaddr,
     pub flags: u32,
     pub restorer_ptr: Vaddr,
@@ -30,7 +30,7 @@ pub struct sigaction_t {
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Default, Pod)]
-pub struct siginfo_t {
+pub(crate) struct siginfo_t {
     pub si_signo: i32,
     pub si_errno: i32,
     pub si_code: i32,
@@ -41,7 +41,7 @@ pub struct siginfo_t {
 }
 
 impl siginfo_t {
-    pub fn new(num: SigNum, code: i32) -> Self {
+    pub(crate) fn new(num: SigNum, code: i32) -> Self {
         siginfo_t {
             si_signo: num.as_u8() as i32,
             si_errno: 0,
@@ -51,11 +51,11 @@ impl siginfo_t {
         }
     }
 
-    pub fn set_si_addr(&mut self, si_addr: Vaddr) {
+    pub(crate) fn set_si_addr(&mut self, si_addr: Vaddr) {
         self.siginfo_fields.sigfault_mut().addr = si_addr;
     }
 
-    pub fn set_pid_uid(&mut self, pid: Pid, uid: Uid) {
+    pub(crate) fn set_pid_uid(&mut self, pid: Pid, uid: Uid) {
         let pid_uid = {
             let pid_uid = siginfo_piduid_t { pid, uid };
             siginfo_common_first_t::new_piduid(pid_uid)
@@ -64,11 +64,11 @@ impl siginfo_t {
         self.siginfo_fields.common_mut().first = pid_uid;
     }
 
-    pub fn set_pid_uid_by(&mut self, ctx: &Context) {
+    pub(crate) fn set_pid_uid_by(&mut self, ctx: &Context) {
         self.set_pid_uid(ctx.process.pid(), ctx.posix_thread.credentials().ruid());
     }
 
-    pub fn set_status(&mut self, status: i32) {
+    pub(crate) fn set_status(&mut self, status: i32) {
         *self
             .siginfo_fields
             .common_mut()
@@ -77,7 +77,7 @@ impl siginfo_t {
             .status_mut() = status;
     }
 
-    pub fn si_addr(&self) -> Vaddr {
+    pub(crate) fn si_addr(&self) -> Vaddr {
         self.siginfo_fields.sigfault().addr
     }
 }
@@ -143,17 +143,17 @@ union siginfo_common_second_t {
 #[pod_union]
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub union sigval_t {
+pub(crate) union sigval_t {
     sigval_int: i32,
     sigval_ptr: Vaddr, //*mut c_void
 }
 
 impl sigval_t {
-    pub fn read_int(&self) -> i32 {
+    pub(crate) fn read_int(&self) -> i32 {
         *self.sigval_int()
     }
 
-    pub fn read_ptr(&self) -> Vaddr {
+    pub(crate) fn read_ptr(&self) -> Vaddr {
         *self.sigval_ptr()
     }
 }
@@ -196,7 +196,7 @@ union siginfo_addr_bnd_t {
 #[cfg(target_arch = "x86_64")]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct ucontext_t {
+pub(crate) struct ucontext_t {
     pub uc_flags: u64,
     pub uc_link: Vaddr, // *mut ucontext_t
     pub uc_stack: stack_t,
@@ -210,7 +210,7 @@ pub struct ucontext_t {
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct ucontext_t {
+pub(crate) struct ucontext_t {
     pub uc_flags: u64,
     pub uc_link: Vaddr, // *mut ucontext_t
     pub uc_stack: stack_t,
@@ -244,12 +244,12 @@ impl Default for ucontext_t {
     }
 }
 
-pub type stack_t = sigaltstack_t;
+pub(crate) type stack_t = sigaltstack_t;
 
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct sigaltstack_t {
+pub(crate) struct sigaltstack_t {
     pub ss_sp: Vaddr, // *mut c_void
     pub ss_flags: i32,
     pub ss_size: usize,
@@ -257,23 +257,23 @@ pub struct sigaltstack_t {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct mcontext_t {
+pub(crate) struct mcontext_t {
     inner: SigContext,
 }
 
 #[inherit_methods(from = "self.inner")]
 impl mcontext_t {
-    pub fn copy_user_regs_to(&self, context: &mut UserContext);
-    pub fn copy_user_regs_from(&mut self, context: &UserContext);
+    pub(crate) fn copy_user_regs_to(&self, context: &mut UserContext);
+    pub(crate) fn copy_user_regs_from(&mut self, context: &UserContext);
     #[cfg(target_arch = "x86_64")]
-    pub fn fpu_context_addr(&self) -> Vaddr;
+    pub(crate) fn fpu_context_addr(&self) -> Vaddr;
     #[cfg(target_arch = "x86_64")]
-    pub fn set_fpu_context_addr(&mut self, addr: Vaddr);
+    pub(crate) fn set_fpu_context_addr(&mut self, addr: Vaddr);
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod)]
-pub struct _sigev_thread {
+pub(crate) struct _sigev_thread {
     pub function: Vaddr,
     pub attribute: Vaddr,
 }
@@ -286,29 +286,29 @@ const SIGEV_PAD_SIZE: usize = (SIGEV_MAX_SIZE - SIGEV_PREAMBLE_SIZE) / size_of::
 #[pod_union]
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub union _sigev_un {
+pub(crate) union _sigev_un {
     pub _pad: [i32; SIGEV_PAD_SIZE],
     pub _tid: i32,
     pub _sigev_thread: _sigev_thread,
 }
 
 impl _sigev_un {
-    pub fn read_tid(&self) -> i32 {
+    pub(crate) fn read_tid(&self) -> i32 {
         *self._tid()
     }
 
-    pub fn read_function(&self) -> Vaddr {
+    pub(crate) fn read_function(&self) -> Vaddr {
         self._sigev_thread().function
     }
 
-    pub fn read_attribute(&self) -> Vaddr {
+    pub(crate) fn read_attribute(&self) -> Vaddr {
         self._sigev_thread().attribute
     }
 }
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, TryFromInt)]
-pub enum SigNotify {
+pub(crate) enum SigNotify {
     SIGEV_SIGNAL = 0,
     SIGEV_NONE = 1,
     SIGEV_THREAD = 2,
@@ -317,7 +317,7 @@ pub enum SigNotify {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod)]
-pub struct sigevent_t {
+pub(crate) struct sigevent_t {
     pub sigev_value: sigval_t,
     pub sigev_signo: i32,
     pub sigev_notify: i32,

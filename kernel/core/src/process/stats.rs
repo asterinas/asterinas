@@ -6,7 +6,7 @@ use spin::Once;
 pub(super) static PROCESS_CREATION_COUNTER: Once<PerCpuCounter> = Once::new();
 
 /// Counts the number of processes ever created across all CPUs.
-pub fn collect_process_creation_count() -> usize {
+pub(crate) fn collect_process_creation_count() -> usize {
     PROCESS_CREATION_COUNTER.get().unwrap().sum_all_cpus()
 }
 

@@ -5,7 +5,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{prelude::*, process::posix_thread::RobustListHead};
 
-pub fn sys_set_robust_list(
+pub(super) fn sys_set_robust_list(
     robust_list_head_ptr: Vaddr,
     len: usize,
     ctx: &Context,

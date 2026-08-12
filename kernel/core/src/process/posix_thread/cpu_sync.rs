@@ -97,7 +97,7 @@ use ostd::irq::DisabledLocalIrqGuard;
 /// [`get`]: Self::get
 /// [`set`]: Self::set
 #[derive(Debug)]
-pub struct CpuSync<R> {
+pub(crate) struct CpuSync<R> {
     location: Cell<CanonicalValueLocation>,
     reg: RefCell<R>,
 }
@@ -120,7 +120,7 @@ impl<R: UserReg> CpuSync<R> {
     ///
     /// This method guarantees that
     /// the returned value reflects the very latest state.
-    pub fn get(&self) -> R
+    pub(crate) fn get(&self) -> R
     where
         R: Clone,
     {
@@ -146,7 +146,7 @@ impl<R: UserReg> CpuSync<R> {
     ///    along the way (since the location is already `InMemory`).
     ///
     /// [`before_user_exec`]: Self::before_user_exec
-    pub fn set(&self, new_reg: R) {
+    pub(crate) fn set(&self, new_reg: R) {
         *self.reg.borrow_mut() = new_reg;
         if self.location.get() != CanonicalValueLocation::InMemory {
             self.location.set(CanonicalValueLocation::InMemory);
@@ -192,7 +192,7 @@ impl<R: UserReg> CpuSync<R> {
 /// Implementors typically wrap one or a small bundle of registers/MSRs
 /// (e.g. the user FS base, the user GS base, or the FPU XSAVE area)
 /// into a struct that implements this trait.
-pub trait UserReg {
+pub(crate) trait UserReg {
     /// Saves the current value from the CPU register(s) into `self`.
     ///
     /// May be invoked in any IRQ state.

@@ -7,10 +7,10 @@ mod datagram;
 mod ns;
 mod stream;
 
-pub use addr::UnixSocketAddr;
-pub use cred::CUserCred;
+pub(crate) use addr::UnixSocketAddr;
+pub(crate) use cred::CUserCred;
 pub(super) use ctrl_msg::UnixControlMessage;
 pub(super) use datagram::UNIX_DATAGRAM_DEFAULT_BUF_SIZE;
-pub use datagram::UnixDatagramSocket;
+pub(crate) use datagram::UnixDatagramSocket;
 pub(super) use stream::UNIX_STREAM_DEFAULT_BUF_SIZE;
-pub use stream::UnixStreamSocket;
+pub(crate) use stream::UnixStreamSocket;

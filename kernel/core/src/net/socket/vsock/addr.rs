@@ -5,7 +5,7 @@ use crate::{net::socket::util::SocketAddr, prelude::*};
 /// A vsock socket address.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct VsockSocketAddr {
+pub(crate) struct VsockSocketAddr {
     pub cid: u32,
     pub port: u32,
 }

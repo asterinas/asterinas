@@ -5,7 +5,7 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{prelude::*, process::signal::HandlePendingSignal};
 
-pub fn sys_rt_sigpending(
+pub(super) fn sys_rt_sigpending(
     u_set_ptr: Vaddr,
     sigset_size: usize,
     ctx: &Context,

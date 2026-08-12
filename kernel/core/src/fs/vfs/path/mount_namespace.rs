@@ -28,7 +28,7 @@ use crate::{
 /// A `MountNamespace` only allows operations on [`Mount`]s that belong to that `MountNamespace`.
 /// If the operation target includes [`Mount`]s from other `MountNamespace`s, it will be directly
 /// rejected and return an `Err`.
-pub struct MountNamespace {
+pub(crate) struct MountNamespace {
     /// The root mount of this namespace.
     ///
     /// This field is wrapped within an `Option<_>`
@@ -93,7 +93,7 @@ impl MountNamespace {
 
     /// Returns a reference to the singleton initial mount namespace.
     #[doc(hidden)]
-    pub fn get_init_singleton() -> &'static Arc<MountNamespace> {
+    pub(crate) fn get_init_singleton() -> &'static Arc<MountNamespace> {
         static INIT: Once<Arc<MountNamespace>> = Once::new();
 
         INIT.call_once(|| {
@@ -123,7 +123,7 @@ impl MountNamespace {
     }
 
     /// Gets the root mount of this namespace.
-    pub fn root(&self) -> &Arc<Mount> {
+    pub(crate) fn root(&self) -> &Arc<Mount> {
         self.root.as_ref().unwrap()
     }
 
@@ -134,7 +134,7 @@ impl MountNamespace {
     ///
     /// The "effective root" refers to the currently visible root directory, which
     /// may differ from the original root filesystem if overlay mounts exist.
-    pub fn new_path_resolver(&self) -> PathResolver {
+    pub(crate) fn new_path_resolver(&self) -> PathResolver {
         let root = Path::new_fs_root(self.root().clone()).get_top_path();
         let cwd = Path::new_fs_root(self.root().clone()).get_top_path();
         PathResolver::new(root, cwd)
@@ -143,7 +143,7 @@ impl MountNamespace {
     /// Creates a deep copy of this mount namespace, including the entire mount tree.
     ///
     /// This is typically used when creating a new namespace for a process or thread.
-    pub fn new_clone(
+    pub(crate) fn new_clone(
         &self,
         owner: Arc<UserNamespace>,
         posix_thread: &PosixThread,
@@ -184,7 +184,7 @@ impl MountNamespace {
     ///
     /// No recyclable-`id` counterpart exists: the 32-bit ID space is reused
     /// on drop, so a keyed lookup would race the next allocation.
-    pub fn lookup_by_unique_id(&self, unique_id: u64) -> Option<Arc<Mount>> {
+    pub(crate) fn lookup_by_unique_id(&self, unique_id: u64) -> Option<Arc<Mount>> {
         let mount = {
             let mounts = self.mounts.lock();
             mounts.get(&unique_id).and_then(Weak::upgrade)?
@@ -202,7 +202,7 @@ impl MountNamespace {
     /// Live mounts are snapshotted under `mounts.lock`; ancestry is checked
     /// afterward so per-`Mount` locks are never acquired while the table lock
     /// is held.
-    pub fn descendant_mounts_of(
+    pub(crate) fn descendant_mounts_of(
         &self,
         parent: &Arc<Mount>,
     ) -> impl DoubleEndedIterator<Item = Arc<Mount>> {
@@ -245,7 +245,7 @@ impl MountNamespace {
 
     /// Flushes all pending filesystem metadata and cached file data to the device
     /// for all mounted filesystems in this mount namespace.
-    pub fn sync(&self) -> Result<()> {
+    pub(crate) fn sync(&self) -> Result<()> {
         let mut mount_queue = VecDeque::new();
         let mut visited_filesystems = hashbrown::HashSet::new();
         mount_queue.push_back(self.root().clone());
@@ -267,7 +267,7 @@ impl MountNamespace {
     }
 
     /// Checks whether a given mount belongs to this mount namespace.
-    pub fn owns(self: &Arc<Self>, mount: &Mount) -> bool {
+    pub(crate) fn owns(self: &Arc<Self>, mount: &Mount) -> bool {
         mount.mnt_ns().as_ptr() == Arc::as_ptr(self)
     }
 

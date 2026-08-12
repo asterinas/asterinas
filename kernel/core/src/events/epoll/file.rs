@@ -37,7 +37,7 @@ use crate::{
 /// on the files. To do so, the `EpollFile` registers itself as an `Observer` to
 /// the monotored files. Thus, we can add a file to the ready list when an interesting
 /// event happens on the file.
-pub struct EpollFile {
+pub(crate) struct EpollFile {
     // All interesting entries.
     interest: Mutex<BTreeSet<EntryHolder>>,
     // A set of ready entries.
@@ -51,7 +51,7 @@ pub struct EpollFile {
 
 impl EpollFile {
     /// Creates a new epoll file.
-    pub fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[eventpoll]".to_string());
 
         Arc::new(Self {
@@ -62,7 +62,7 @@ impl EpollFile {
     }
 
     /// Controls the interest list of the epoll file.
-    pub fn control(&self, thread_local: &ThreadLocal, cmd: &EpollCtl) -> Result<()> {
+    pub(crate) fn control(&self, thread_local: &ThreadLocal, cmd: &EpollCtl) -> Result<()> {
         let fd = match cmd {
             EpollCtl::Add(fd, ..) => *fd,
             EpollCtl::Del(fd) => *fd,
@@ -188,7 +188,11 @@ impl EpollFile {
     ///
     /// When `max_events` equals to zero, the method returns when the timeout
     /// expires or a signal arrives.
-    pub fn wait(&self, max_events: usize, timeout: Option<&Duration>) -> Result<Vec<EpollEvent>> {
+    pub(crate) fn wait(
+        &self,
+        max_events: usize,
+        timeout: Option<&Duration>,
+    ) -> Result<Vec<EpollEvent>> {
         let mut ep_events = Vec::new();
 
         self.wait_events(IoEvents::IN, timeout, || {

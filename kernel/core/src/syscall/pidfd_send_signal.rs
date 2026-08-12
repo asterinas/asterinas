@@ -20,7 +20,7 @@ use crate::{
     thread::Tid,
 };
 
-pub fn sys_pidfd_send_signal(
+pub(super) fn sys_pidfd_send_signal(
     pidfd: RawFileDesc,
     sig_num: u64,
     info_ptr: Vaddr,

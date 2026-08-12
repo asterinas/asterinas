@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod file;
+pub(crate) mod file;
 mod fs_impls;
-pub mod initramfs;
-pub mod pipe;
-pub mod rootfs;
-pub mod thread_info;
-pub mod utils;
-pub mod vfs;
+pub(crate) mod initramfs;
+pub(crate) mod pipe;
+pub(crate) mod rootfs;
+pub(crate) mod thread_info;
+pub(crate) mod utils;
+pub(crate) mod vfs;
 
-pub use fs_impls::{
+pub(crate) use fs_impls::{
     cgroupfs, configfs, devpts, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
 };
 
@@ -21,20 +21,20 @@ use crate::{
     prelude::*,
 };
 
-pub fn init() {
+pub(crate) fn init() {
     vfs::init();
     fs_impls::init();
 }
 
-pub fn init_on_each_cpu() {
+pub(crate) fn init_on_each_cpu() {
     fs_impls::init_on_each_cpu();
 }
 
-pub fn init_in_first_kthread(path_resolver: &PathResolver) {
+pub(crate) fn init_in_first_kthread(path_resolver: &PathResolver) {
     initramfs::init_in_first_kthread(path_resolver).unwrap();
 }
 
-pub fn init_in_first_process(ctx: &Context) {
+pub(crate) fn init_in_first_process(ctx: &Context) {
     let fs = ctx.thread_local.borrow_fs();
     let path_resolver = fs.resolver().read();
 

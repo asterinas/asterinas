@@ -3,7 +3,7 @@
 use crate::{fs::file::file_table::FileTable, prelude::*, process::CloneFlags};
 
 /// Provides administrative APIs for disassociating execution contexts.
-pub trait ContextUnshareAdminApi {
+pub(crate) trait ContextUnshareAdminApi {
     /// Unshares the file table.
     fn unshare_files(&self);
     /// Unshares filesystem attributes.

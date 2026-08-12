@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-pub fn sys_futex(
+pub(super) fn sys_futex(
     futex_addr: Vaddr,
     futex_op: i32,
     futex_val: u32,

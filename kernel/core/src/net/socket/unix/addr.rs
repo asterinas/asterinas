@@ -10,7 +10,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UnixSocketAddr {
+pub(crate) enum UnixSocketAddr {
     Unnamed,
     Path(Arc<str>),
     Abstract(Arc<[u8]>),

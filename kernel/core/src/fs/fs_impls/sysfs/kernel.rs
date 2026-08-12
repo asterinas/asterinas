@@ -56,7 +56,7 @@ static KERNEL_SYS_NODE_ROOT: Once<Arc<KernelSysNodeRoot>> = Once::new();
 /// kernel subsystem information. It corresponds to the `/kernel`
 /// directory in the sysfs filesystem.
 #[derive(Debug)]
-pub struct KernelSysNodeRoot {
+pub(crate) struct KernelSysNodeRoot {
     fields: BranchNodeFields<dyn SysNode, Self>,
 }
 

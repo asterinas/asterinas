@@ -6,13 +6,13 @@ use core::{
 };
 
 use ostd::mm::io::util::HasVmReaderWriter;
-pub use ring_buffer::{Consumer, Producer, RbConsumer, RbProducer, RingBuffer};
+pub(crate) use ring_buffer::{Consumer, Producer, RbConsumer, RbProducer, RingBuffer};
 
 use super::{MultiRead, MultiWrite};
 use crate::prelude::*;
 
 /// Extension methods for writing bytes to a [`Producer<u8, _>`].
-pub trait ProducerU8Ext {
+pub(crate) trait ProducerU8Ext {
     /// Writes data from `reader` to the ring buffer.
     ///
     /// Returns the number of bytes written.
@@ -68,7 +68,7 @@ impl<R: Deref<Target = RingBuffer<u8>>> ProducerU8Ext for Producer<u8, R> {
 }
 
 /// Extension methods for byte ring buffers.
-pub trait RingBufferU8Ext {
+pub(crate) trait RingBufferU8Ext {
     /// Picks data from an absolute ring-counter range into `writer` without consuming it.
     ///
     /// Returns the number of bytes copied.
@@ -110,7 +110,7 @@ impl RingBufferU8Ext for RingBuffer<u8> {
 }
 
 /// Extension methods for reading bytes from a [`Consumer<u8, _>`].
-pub trait ConsumerU8Ext {
+pub(crate) trait ConsumerU8Ext {
     /// Reads data from the ring buffer into `writer`.
     ///
     /// Returns the number of bytes read.

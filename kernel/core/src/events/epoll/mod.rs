@@ -5,11 +5,11 @@ use crate::{events::IoEvents, fs::file::file_table::FileDesc, prelude::*};
 mod entry;
 mod file;
 
-pub use file::EpollFile;
+pub(crate) use file::EpollFile;
 
 /// An epoll control command.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum EpollCtl {
+pub(crate) enum EpollCtl {
     Add(FileDesc, EpollEvent, EpollFlags),
     Del(FileDesc),
     Mod(FileDesc, EpollEvent, EpollFlags),
@@ -17,7 +17,7 @@ pub enum EpollCtl {
 
 bitflags! {
     /// Linux's epoll flags.
-    pub struct EpollFlags: u32 {
+    pub(crate) struct EpollFlags: u32 {
         const EXCLUSIVE      = (1 << 28);
         const WAKE_UP        = (1 << 29);
         const ONE_SHOT       = (1 << 30);
@@ -30,7 +30,7 @@ bitflags! {
 /// This could be used as either an input of epoll ctl or an output of epoll wait.
 /// The memory layout is compatible with that of C's struct epoll_event.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct EpollEvent {
+pub(crate) struct EpollEvent {
     /// I/O events.
     ///
     /// When `EpollEvent` is used as inputs, this is treated as a mask of events.
@@ -42,7 +42,7 @@ pub struct EpollEvent {
 
 impl EpollEvent {
     /// Create a new epoll event.
-    pub fn new(events: IoEvents, user_data: u64) -> Self {
+    pub(crate) fn new(events: IoEvents, user_data: u64) -> Self {
         Self { events, user_data }
     }
 }

@@ -6,7 +6,11 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_listen(sockfd: RawFileDesc, backlog: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_listen(
+    sockfd: RawFileDesc,
+    backlog: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("sockfd = {sockfd}, backlog = {backlog}");
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();

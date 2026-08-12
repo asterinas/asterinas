@@ -27,7 +27,7 @@ use crate::{
     },
 };
 
-pub fn sys_timer_create(
+pub(super) fn sys_timer_create(
     clockid: clockid_t,
     sigevent_addr: Vaddr,
     timer_id_addr: Vaddr,
@@ -115,7 +115,7 @@ pub fn sys_timer_create(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_timer_delete(timer_id: usize, _ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_timer_delete(timer_id: usize, _ctx: &Context) -> Result<SyscallReturn> {
     let current_process = current!();
     let Some(timer) = current_process.timer_manager().remove_posix_timer(timer_id) else {
         return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
@@ -128,7 +128,7 @@ pub fn sys_timer_delete(timer_id: usize, _ctx: &Context) -> Result<SyscallReturn
 /// Creates a timer associated with the specified clock ID.
 ///
 /// This timer will invoke the given callback function (`func`) when it expires.
-pub fn create_timer<F>(clockid: clockid_t, func: F, ctx: &Context) -> Result<Arc<Timer>>
+pub(crate) fn create_timer<F>(clockid: clockid_t, func: F, ctx: &Context) -> Result<Arc<Timer>>
 where
     F: Fn(TimerGuard) + Send + Sync + 'static,
 {

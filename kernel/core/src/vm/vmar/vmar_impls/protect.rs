@@ -14,7 +14,7 @@ impl Vmar {
     /// Note that pages before the unmapped hole are still protected.
     ///
     /// [`ENOMEM`]: Errno::ENOMEM
-    pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
+    pub(crate) fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
         debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
         debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
 

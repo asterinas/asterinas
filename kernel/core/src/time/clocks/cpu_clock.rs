@@ -11,7 +11,7 @@ use ostd::{
 use crate::time::Clock;
 
 /// A clock used to record the CPU time for processes and threads.
-pub struct CpuClock {
+pub(crate) struct CpuClock {
     time: SpinLock<Jiffies, LocalIrqDisabled>,
 }
 
@@ -19,26 +19,26 @@ pub struct CpuClock {
 ///
 /// These two clocks record the CPU time in user mode and kernel mode respectively.
 /// Reading this clock directly returns the sum of both times.
-pub struct ProfClock {
+pub(crate) struct ProfClock {
     user_clock: Arc<CpuClock>,
     kernel_clock: Arc<CpuClock>,
 }
 
 impl CpuClock {
     /// Creates a new `CpuClock`. The recorded time is initialized to 0.
-    pub fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             time: SpinLock::new(Jiffies::new(0)),
         })
     }
 
     /// Adds `jiffies` to the original recorded time to update the `CpuClock`.
-    pub fn add_jiffies(&self, jiffies: u64) {
+    pub(crate) fn add_jiffies(&self, jiffies: u64) {
         self.time.lock().add(jiffies);
     }
 
     /// Reads the current time of this clock in [`Jiffies`].
-    pub fn read_jiffies(&self) -> Jiffies {
+    pub(crate) fn read_jiffies(&self) -> Jiffies {
         *self.time.lock()
     }
 }
@@ -51,7 +51,7 @@ impl Clock for CpuClock {
 
 impl ProfClock {
     /// Creates a new `ProfClock`. The recorded time is initialized to 0.
-    pub fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             user_clock: CpuClock::new(),
             kernel_clock: CpuClock::new(),
@@ -59,12 +59,12 @@ impl ProfClock {
     }
 
     /// Returns a reference to the user CPU clock in this profiling clock.
-    pub fn user_clock(&self) -> &Arc<CpuClock> {
+    pub(crate) fn user_clock(&self) -> &Arc<CpuClock> {
         &self.user_clock
     }
 
     /// Returns a reference to the kernel CPU clock in this profiling clock.
-    pub fn kernel_clock(&self) -> &Arc<CpuClock> {
+    pub(crate) fn kernel_clock(&self) -> &Arc<CpuClock> {
         &self.kernel_clock
     }
 }

@@ -7,14 +7,17 @@ use crate::{net::socket::unix::UnixControlMessage, prelude::*, util::net::CSocke
 
 /// Message header used for sendmsg/recvmsg.
 #[derive(Debug)]
-pub struct MessageHeader {
+pub(crate) struct MessageHeader {
     pub(in crate::net) addr: Option<SocketAddr>,
     pub(in crate::net) control_messages: Vec<ControlMessage>,
 }
 
 impl MessageHeader {
     /// Creates a new `MessageHeader`.
-    pub const fn new(addr: Option<SocketAddr>, control_messages: Vec<ControlMessage>) -> Self {
+    pub(crate) const fn new(
+        addr: Option<SocketAddr>,
+        control_messages: Vec<ControlMessage>,
+    ) -> Self {
         Self {
             addr,
             control_messages,
@@ -22,24 +25,24 @@ impl MessageHeader {
     }
 
     /// Returns the socket address.
-    pub fn addr(&self) -> Option<&SocketAddr> {
+    pub(crate) fn addr(&self) -> Option<&SocketAddr> {
         self.addr.as_ref()
     }
 
     /// Returns the control messages.
-    pub fn control_messages(&self) -> &Vec<ControlMessage> {
+    pub(crate) fn control_messages(&self) -> &Vec<ControlMessage> {
         &self.control_messages
     }
 }
 
 /// Control messages in [`MessageHeader`].
 #[derive(Debug)]
-pub enum ControlMessage {
+pub(crate) enum ControlMessage {
     Unix(UnixControlMessage),
 }
 
 impl ControlMessage {
-    pub fn read_all_from(reader: &mut VmReader) -> Result<Vec<Self>> {
+    pub(crate) fn read_all_from(reader: &mut VmReader) -> Result<Vec<Self>> {
         // FIXME: This method may exhaust kernel memory and cause a panic if the program is
         // malicious and attempts to send too many control messages. To prevent this, we limit the
         // number of control messages, but this limit does not have a Linux equivalent.
@@ -98,7 +101,7 @@ impl ControlMessage {
         }
     }
 
-    pub fn write_all_to(msgs: &[Self], writer: &mut VmWriter) -> (usize, RecvFlags) {
+    pub(crate) fn write_all_to(msgs: &[Self], writer: &mut VmWriter) -> (usize, RecvFlags) {
         let mut len = 0;
         let mut output_flags = RecvFlags::empty();
 
@@ -138,7 +141,7 @@ impl ControlMessage {
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/linux/socket.h#L105>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct CControlHeader {
+pub(crate) struct CControlHeader {
     /// Data byte count, including hdr
     len: usize,
     /// Originating protocol
@@ -154,7 +157,7 @@ const CMSG_ALIGN: usize = size_of::<usize>();
 
 impl CControlHeader {
     /// Creates a control message header with the level, type, and payload length.
-    pub fn new(level: CSocketOptionLevel, type_: i32, payload_len: usize) -> Self {
+    pub(crate) fn new(level: CSocketOptionLevel, type_: i32, payload_len: usize) -> Self {
         Self {
             len: payload_len + size_of::<Self>(),
             level: level as i32,
@@ -163,29 +166,29 @@ impl CControlHeader {
     }
 
     /// Computes the payload length from the total length.
-    pub fn payload_len_from_total(total_len: usize) -> Result<usize> {
+    pub(crate) fn payload_len_from_total(total_len: usize) -> Result<usize> {
         total_len.checked_sub(size_of::<Self>()).ok_or_else(|| {
             Error::with_message(Errno::EINVAL, "the control message buffer is too small")
         })
     }
 
     /// Returns the level of the control message.
-    pub fn level(&self) -> Option<CSocketOptionLevel> {
+    pub(crate) fn level(&self) -> Option<CSocketOptionLevel> {
         CSocketOptionLevel::try_from(self.level).ok()
     }
 
     /// Returns the type of the control message.
-    pub fn type_(&self) -> i32 {
+    pub(crate) fn type_(&self) -> i32 {
         self.type_
     }
 
     /// Returns the payload length of the control message.
-    pub fn payload_len(&self) -> usize {
+    pub(crate) fn payload_len(&self) -> usize {
         self.len - size_of::<Self>()
     }
 
     /// Returns the length of the control message (payload + header, excluding paddings).
-    pub fn total_len(&self) -> usize {
+    pub(crate) fn total_len(&self) -> usize {
         self.len
     }
 

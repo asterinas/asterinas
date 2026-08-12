@@ -36,7 +36,7 @@ mod bound;
 pub(super) mod observer;
 mod unbound;
 
-pub struct DatagramSocket {
+pub(crate) struct DatagramSocket {
     // Lock order: `inner` first, `options` second
     inner: RwMutex<Inner<UnboundDatagram, BoundDatagram>>,
     options: RwLock<OptionSet>,
@@ -62,7 +62,7 @@ impl OptionSet {
 }
 
 impl DatagramSocket {
-    pub fn new(is_nonblocking: bool) -> Arc<Self> {
+    pub(crate) fn new(is_nonblocking: bool) -> Arc<Self> {
         let unbound_datagram = UnboundDatagram::new();
         let status_flags = if is_nonblocking {
             StatusFlags::O_NONBLOCK

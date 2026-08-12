@@ -9,7 +9,7 @@ use crate::{
     sched::Nice,
 };
 
-pub fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallReturn> {
     let prio_target = PriorityTarget::new(which, who, ctx)?;
     debug!("get_priority prio_target: {:?}", prio_target);
 

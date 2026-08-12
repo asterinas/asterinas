@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-pub fn sys_waitid(
+pub(super) fn sys_waitid(
     which: u64,
     upid: u64,
     infoq_addr: u64,

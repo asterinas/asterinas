@@ -12,7 +12,7 @@ use crate::{
     process::Pid,
 };
 
-pub fn sys_semctl(
+pub(super) fn sys_semctl(
     semid: i32,
     semnum: i32,
     op: i32,

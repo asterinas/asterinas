@@ -9,7 +9,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_flock(raw_fd: RawFileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_flock(raw_fd: RawFileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("flock: raw_fd: {}, ops: {:?}", raw_fd, ops);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();

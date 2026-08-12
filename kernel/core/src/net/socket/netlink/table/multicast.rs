@@ -9,32 +9,32 @@ use crate::{
 ///
 /// A group can contain multiple sockets,
 /// each identified by its bound port number.
-pub struct MulticastGroup {
+pub(crate) struct MulticastGroup {
     members: BTreeSet<PortNum>,
 }
 
 impl MulticastGroup {
     /// Creates a new multicast group.
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             members: BTreeSet::new(),
         }
     }
 
     /// Adds a new member to the multicast group.
-    pub fn add_member(&mut self, port_num: PortNum) {
+    pub(crate) fn add_member(&mut self, port_num: PortNum) {
         self.members.insert(port_num);
     }
 
     /// Removes a member from the multicast group.
-    pub fn remove_member(&mut self, port_num: PortNum) {
+    pub(crate) fn remove_member(&mut self, port_num: PortNum) {
         self.members.remove(&port_num);
     }
 
     /// Returns all members in this group.
-    pub fn members(&self) -> &BTreeSet<PortNum> {
+    pub(crate) fn members(&self) -> &BTreeSet<PortNum> {
         &self.members
     }
 }
 
-pub trait MulticastMessage: QueueableMessage + Clone {}
+pub(crate) trait MulticastMessage: QueueableMessage + Clone {}

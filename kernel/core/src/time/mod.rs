@@ -2,29 +2,29 @@
 
 #![expect(non_camel_case_types)]
 
-pub use core::{Clock, timer};
+pub(crate) use core::{Clock, timer};
 
 use ::core::time::Duration;
-pub use system_time::{START_TIME, SystemTime};
-pub use timer::{Timer, TimerManager};
+pub(crate) use system_time::{START_TIME, SystemTime};
+pub(crate) use timer::{Timer, TimerManager};
 
 use crate::prelude::*;
 
-pub mod clocks;
+pub(crate) mod clocks;
 mod core;
-pub mod cpu_time_stats;
+pub(crate) mod cpu_time_stats;
 mod softirq;
 mod system_time;
-pub mod timerfd;
-pub mod wait;
+pub(crate) mod timerfd;
+pub(crate) mod wait;
 
-pub type clockid_t = i32;
-pub type time_t = i64;
-pub type suseconds_t = i64;
+pub(crate) type clockid_t = i32;
+pub(crate) type time_t = i64;
+pub(crate) type suseconds_t = i64;
 
 const NSEC_PER_USEC: i64 = 1_000;
 const USEC_PER_SEC: i64 = 1_000_000;
-pub const NSEC_PER_SEC: i64 = 1_000_000_000;
+pub(crate) const NSEC_PER_SEC: i64 = 1_000_000_000;
 
 pub(super) fn init() {
     system_time::init();
@@ -39,7 +39,7 @@ pub(super) fn init_on_each_cpu() {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct timespec_t {
+pub(crate) struct timespec_t {
     pub sec: time_t,
     pub nsec: i64,
 }
@@ -82,7 +82,7 @@ impl TryFrom<timespec_t> for Duration {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct timeval_t {
+pub(crate) struct timeval_t {
     pub sec: time_t,
     pub usec: suseconds_t,
 }
@@ -94,7 +94,7 @@ impl timeval_t {
     /// implementation).
     ///
     /// [select]: https://elixir.bootlin.com/linux/v6.10.5/source/fs/select.c#L716
-    pub fn normalize(&self) -> Self {
+    pub(crate) fn normalize(&self) -> Self {
         Self {
             sec: self.sec.wrapping_add(self.usec / USEC_PER_SEC),
             usec: self.usec % USEC_PER_SEC,
@@ -132,13 +132,13 @@ impl TryFrom<timeval_t> for Duration {
 }
 
 /// The various flags for setting POSIX.1b interval timers:
-pub const TIMER_ABSTIME: i32 = 0x01;
+pub(crate) const TIMER_ABSTIME: i32 = 0x01;
 
 /// Unix time measures time by the number of seconds that have elapsed since
 /// the Unix epoch, without adjustments made due to leap seconds.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct UnixTime {
+pub(crate) struct UnixTime {
     sec: u32,
 }
 
@@ -159,7 +159,7 @@ impl From<UnixTime> for Duration {
 /// This struct is corresponding to the `itimerval` struct in Linux.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct itimerval_t {
+pub(crate) struct itimerval_t {
     pub it_interval: timeval_t,
     pub it_value: timeval_t,
 }
@@ -167,7 +167,7 @@ pub struct itimerval_t {
 /// This struct is corresponding to the `itimerspec` struct in Linux.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct itimerspec_t {
+pub(crate) struct itimerspec_t {
     pub it_interval: timespec_t,
     pub it_value: timespec_t,
 }
@@ -175,7 +175,7 @@ pub struct itimerspec_t {
 /// This struct is corresponding to the `timezone` struct in Linux.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct timezone_t {
+pub(crate) struct timezone_t {
     pub tz_minuteswest: i32,
     pub tz_dsttime: i32,
 }

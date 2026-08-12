@@ -7,7 +7,7 @@ use crate::{
     util::net::read_socket_addr_from_user,
 };
 
-pub fn sys_bind(
+pub(super) fn sys_bind(
     sockfd: RawFileDesc,
     sockaddr_ptr: Vaddr,
     addrlen: u32,

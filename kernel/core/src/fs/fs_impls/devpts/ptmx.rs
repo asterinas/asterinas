@@ -27,7 +27,7 @@ const PTMX_MINOR_NUM: u32 = 2;
 ///
 /// Every time the multiplexing master is opened, a new instance of pty master inode is returned
 /// and an corresponding pty slave inode is also created.
-pub struct Ptmx {
+pub(crate) struct Ptmx {
     inner: Inner,
     metadata: RwLock<Metadata>,
     extension: Extension,
@@ -37,7 +37,7 @@ pub struct Ptmx {
 struct Inner(Weak<DevPts>);
 
 impl Ptmx {
-    pub fn new(fs: Weak<DevPts>, sb: &SuperBlock) -> Arc<Self> {
+    pub(crate) fn new(fs: Weak<DevPts>, sb: &SuperBlock) -> Arc<Self> {
         let inner = Inner(fs.clone());
         let metadata = Metadata::new_device(
             PTMX_INO,
@@ -53,7 +53,7 @@ impl Ptmx {
         })
     }
 
-    pub fn devpts(&self) -> Option<Arc<DevPts>> {
+    pub(crate) fn devpts(&self) -> Option<Arc<DevPts>> {
         self.inner.0.upgrade()
     }
 }

@@ -8,7 +8,7 @@ use crate::{
     time::{NSEC_PER_SEC, timer::Timeout},
 };
 
-pub fn sys_alarm(seconds: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_alarm(seconds: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("seconds = {}", seconds);
 
     let alarm_timer = ctx.process.timer_manager().alarm_timer();

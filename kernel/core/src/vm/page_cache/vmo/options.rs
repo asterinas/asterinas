@@ -40,7 +40,7 @@ use crate::{
 /// let vmo = VmoOptions::new_anon(10 * PAGE_SIZE).alloc();
 /// assert!(vmo.is_ok());
 /// ```
-pub struct VmoOptions {
+pub(crate) struct VmoOptions {
     size: usize,
     flags: VmoFlags,
     backend: Option<Weak<dyn PageCacheBackend>>,
@@ -55,7 +55,7 @@ impl VmoOptions {
     /// This is the low-level builder entry point. Call [`VmoOptions::new_anon`]
     /// for resizable RAM-backed page-cache-style VMOs, or
     /// [`VmoOptions::new_page_cache`] for page-cache VMOs with a backend.
-    pub fn new(size: usize) -> Self {
+    pub(crate) fn new(size: usize) -> Self {
         Self {
             size,
             flags: VmoFlags::empty(),
@@ -64,12 +64,12 @@ impl VmoOptions {
     }
 
     /// Creates options for an anonymous resizable VMO.
-    pub fn new_anon(size: usize) -> Self {
+    pub(crate) fn new_anon(size: usize) -> Self {
         Self::new(size).flags(VmoFlags::RESIZABLE)
     }
 
     /// Creates options for a page-cache VMO with a backend.
-    pub fn new_page_cache(size: usize, backend: Weak<dyn PageCacheBackend>) -> Self {
+    pub(crate) fn new_page_cache(size: usize, backend: Weak<dyn PageCacheBackend>) -> Self {
         Self::new(size).flags(VmoFlags::RESIZABLE).backend(backend)
     }
 
@@ -78,7 +78,7 @@ impl VmoOptions {
     /// The default value is `VmoFlags::empty()`.
     ///
     /// For more information about the flags, see `VmoFlags`.
-    pub fn flags(mut self, flags: VmoFlags) -> Self {
+    pub(crate) fn flags(mut self, flags: VmoFlags) -> Self {
         self.flags = flags;
         self
     }
@@ -92,7 +92,7 @@ impl VmoOptions {
 
 impl VmoOptions {
     /// Allocates the VMO according to the specified options.
-    pub fn alloc(self) -> Result<Arc<Vmo>> {
+    pub(crate) fn alloc(self) -> Result<Arc<Vmo>> {
         let VmoOptions {
             size,
             flags,

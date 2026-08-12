@@ -29,10 +29,10 @@ fn tsc_factors() -> (u64, u64) {
 }
 
 /// The base time slice allocated for every thread, measured in nanoseconds.
-pub const BASE_SLICE_NS: u64 = 750_000;
+pub(crate) const BASE_SLICE_NS: u64 = 750_000;
 
 /// The minimum scheduling period, measured in nanoseconds.
-pub const MIN_PERIOD_NS: u64 = 6_000_000;
+pub(crate) const MIN_PERIOD_NS: u64 = 6_000_000;
 
 fn consts() -> (u64, u64) {
     static CONSTS: Once<(u64, u64)> = Once::new();
@@ -43,11 +43,11 @@ fn consts() -> (u64, u64) {
 }
 
 /// Returns the base time slice allocated for every thread, measured in TSC clock units.
-pub fn base_slice_clocks() -> u64 {
+pub(crate) fn base_slice_clocks() -> u64 {
     consts().0
 }
 
 /// Returns the minimum scheduling period, measured in TSC clock units.
-pub fn min_period_clocks() -> u64 {
+pub(crate) fn min_period_clocks() -> u64 {
     consts().1
 }

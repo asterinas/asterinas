@@ -5,7 +5,12 @@ use align_ext::AlignExt;
 use super::SyscallReturn;
 use crate::{prelude::*, vm::vmar::VMAR_CAP_ADDR};
 
-pub fn sys_madvise(addr: Vaddr, len: usize, behavior: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_madvise(
+    addr: Vaddr,
+    len: usize,
+    behavior: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let behavior = MadviseBehavior::try_from(behavior)?;
     debug!(
         "addr = 0x{:x}, len = 0x{:x}, behavior = {:?}",

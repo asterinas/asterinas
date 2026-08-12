@@ -10,7 +10,7 @@ use crate::{
     util::net::CUserMsgHdr,
 };
 
-pub fn sys_recvmsg(
+pub(super) fn sys_recvmsg(
     sockfd: RawFileDesc,
     user_msghdr_ptr: Vaddr,
     flags: i32,

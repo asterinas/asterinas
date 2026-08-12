@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// The requests that can continue a stopped tracee.
-pub enum PtraceContRequest {
+pub(crate) enum PtraceContRequest {
     Continue(Option<SigNum>),
     #[cfg_attr(not(target_arch = "x86_64"), expect(dead_code))]
     SingleStep(Option<SigNum>),
@@ -34,7 +34,7 @@ impl PtraceContRequest {
 }
 
 /// The result of a ptrace-stop.
-pub enum PtraceStopResult {
+pub(crate) enum PtraceStopResult {
     /// The ptrace-stop is continued by the tracer,
     /// or ends because the tracer exits or detaches.
     Continued(Option<DequeuedSignal>),
@@ -127,7 +127,7 @@ impl StopDeliverySignal {
 
 bitflags! {
     /// Options accepted by `PTRACE_SETOPTIONS`.
-    pub struct PtraceOptions: usize {
+    pub(crate) struct PtraceOptions: usize {
         /// Marks syscall stops with signal number set to `SIGTRAP | 0x80`.
         const PTRACE_O_TRACESYSGOOD = 1;
         /// Stops the tracee at `fork` and automatically traces the new thread.
@@ -149,7 +149,7 @@ bitflags! {
 
 /// The events of ptrace-event-stops.
 #[derive(Debug, Clone)]
-pub enum PtraceEvent {
+pub(crate) enum PtraceEvent {
     /// A `fork` event with the new child thread ID.
     Fork(Tid),
     /// A `vfork` event with the new child thread ID.
@@ -183,7 +183,7 @@ impl PtraceEvent {
     }
 
     /// Returns the message of this event.
-    pub const fn message(&self) -> usize {
+    pub(crate) const fn message(&self) -> usize {
         match self {
             Self::Fork(tid)
             | Self::Vfork(tid)
@@ -205,7 +205,7 @@ impl PtraceEvent {
 
 /// The `si_status` code of a ptrace-stop for `wait` syscalls.
 #[derive(Copy, Clone)]
-pub struct PtraceWaitStatus(i32);
+pub(crate) struct PtraceWaitStatus(i32);
 
 impl PtraceWaitStatus {
     pub(super) fn from_event(event: &PtraceEvent) -> Self {
@@ -224,11 +224,11 @@ impl PtraceWaitStatus {
         Self(sig)
     }
 
-    pub fn to_wait4_status(self) -> u32 {
+    pub(crate) fn to_wait4_status(self) -> u32 {
         ((self.0 as u32) << 8) | 0x7f
     }
 
-    pub fn to_waitid_si_status(self) -> i32 {
+    pub(crate) fn to_waitid_si_status(self) -> i32 {
         self.0
     }
 }

@@ -14,7 +14,7 @@ use crate::{
     process::signal::{PollHandle, Pollee, sig_disposition::SigDispositions},
 };
 
-pub struct SigQueues {
+pub(crate) struct SigQueues {
     // The number of pending signals.
     // Useful for quickly determining if any signals are pending without locking `queues`.
     count: AtomicUsize,
@@ -23,7 +23,7 @@ pub struct SigQueues {
 }
 
 impl SigQueues {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             count: AtomicUsize::new(0),
             queues: Mutex::new(Queues::new()),
@@ -31,11 +31,11 @@ impl SigQueues {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.count.load(Ordering::Relaxed) == 0
     }
 
-    pub fn enqueue(&self, signal: Box<dyn Signal>) {
+    pub(crate) fn enqueue(&self, signal: Box<dyn Signal>) {
         let mut queues = self.queues.lock();
         if queues.enqueue(signal) {
             self.count.fetch_add(1, Ordering::Relaxed);
@@ -45,7 +45,7 @@ impl SigQueues {
         }
     }
 
-    pub fn dequeue(&self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
+    pub(crate) fn dequeue(&self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
         // Fast path for the common case of no pending signals
         if self.is_empty() {
             return None;
@@ -60,7 +60,7 @@ impl SigQueues {
     }
 
     /// Returns the pending signals
-    pub fn sig_pending(&self) -> SigSet {
+    pub(crate) fn sig_pending(&self) -> SigSet {
         let queues = self.queues.lock();
         queues.sig_pending()
     }

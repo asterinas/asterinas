@@ -6,7 +6,7 @@ use crate::{
     process::{Uid, posix_thread::ContextPthreadAdminApi},
 };
 
-pub fn sys_setuid(uid: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_setuid(uid: i32, ctx: &Context) -> Result<SyscallReturn> {
     if uid < 0 {
         return_errno_with_message!(Errno::EINVAL, "UIDs cannot be negative");
     }

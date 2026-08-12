@@ -19,7 +19,7 @@ use crate::{
 
 // The definition of WaitOptions is from Occlum
 bitflags! {
-    pub struct WaitOptions: u32 {
+    pub(crate) struct WaitOptions: u32 {
         const WNOHANG = 0x1;
         const WSTOPPED = 0x2; // Same as WUNTRACED
         const WEXITED = 0x4;
@@ -32,7 +32,7 @@ bitflags! {
 }
 
 impl WaitOptions {
-    pub fn check(&self) -> Result<()> {
+    pub(crate) fn check(&self) -> Result<()> {
         let supported_args = WaitOptions::WNOHANG
             | WaitOptions::WSTOPPED
             | WaitOptions::WCONTINUED
@@ -48,7 +48,7 @@ impl WaitOptions {
     }
 }
 
-pub fn do_wait(
+pub(crate) fn do_wait(
     child_filter: ProcessFilter,
     wait_options: WaitOptions,
     ctx: &Context,
@@ -117,7 +117,7 @@ fn wait_filter(child_pid: Pid, child: &Arc<Process>, child_filter: &ProcessFilte
     }
 }
 
-pub enum WaitStatus {
+pub(crate) enum WaitStatus {
     Zombie(Arc<Process>),
     Stop(Arc<Process>, SigNum),
     Continue(Arc<Process>),
@@ -126,14 +126,14 @@ pub enum WaitStatus {
 }
 
 impl WaitStatus {
-    pub fn pid(&self) -> Pid {
+    pub(crate) fn pid(&self) -> Pid {
         match self.source() {
             WaitStatusSource::Process(process) => process.pid(),
             WaitStatusSource::Thread(thread) => thread.tid(),
         }
     }
 
-    pub fn uid(&self) -> Uid {
+    pub(crate) fn uid(&self) -> Uid {
         match self.source() {
             WaitStatusSource::Process(process) => process
                 .main_thread()
@@ -145,7 +145,7 @@ impl WaitStatus {
         }
     }
 
-    pub fn prof_clock(&self) -> &Arc<ProfClock> {
+    pub(crate) fn prof_clock(&self) -> &Arc<ProfClock> {
         match self.source() {
             WaitStatusSource::Process(process) => process.prof_clock(),
             WaitStatusSource::Thread(thread) => thread.prof_clock(),

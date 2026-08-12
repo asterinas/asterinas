@@ -8,7 +8,7 @@ use super::{Timer, TimerManager, clocks::JIFFIES_TIMER_MANAGER, timer::Timeout};
 use crate::{prelude::*, time::timer::TimerGuard};
 
 /// A trait that provide the timeout related function for [`Waiter`] and [`WaitQueue`]`.
-pub trait WaitTimeout {
+pub(crate) trait WaitTimeout {
     /// Waits until some condition returns `Some(_)` or a given timeout is reached.
     ///
     /// # Errors
@@ -55,7 +55,7 @@ pub trait WaitTimeout {
 }
 
 /// A timeout with extended semantics.
-pub enum TimeoutExt<'a> {
+pub(crate) enum TimeoutExt<'a> {
     /// The timeout will never fire.
     Never,
     /// The timeout will expire later according to [`ManagedTimeout`].
@@ -69,7 +69,7 @@ impl<'a> TimeoutExt<'a> {
     ///  - `Ok(Some(_))` if the timeout isn't expired but it may be expired later.
     ///  - `Ok(None)` if the timeout will never be expired.
     ///  - `Err(ETIME)` if the timeout is expired.
-    pub fn check_expired(&self) -> Result<Option<&ManagedTimeout<'a>>> {
+    pub(crate) fn check_expired(&self) -> Result<Option<&ManagedTimeout<'a>>> {
         match self {
             TimeoutExt::At(inner) if inner.is_expired() => {
                 return_errno_with_message!(Errno::ETIME, "the time limit is reached")
@@ -82,7 +82,7 @@ impl<'a> TimeoutExt<'a> {
     /// Freezes the expired time.
     ///
     /// This works in the same way as [`ManagedTimeout::freeze`].
-    pub fn freeze(&mut self) {
+    pub(crate) fn freeze(&mut self) {
         match self {
             Self::Never => (),
             Self::At(timeout) => timeout.freeze(),
@@ -121,26 +121,26 @@ impl<'a> From<Option<ManagedTimeout<'a>>> for TimeoutExt<'a> {
 }
 
 /// A [`Timeout`] with the associated [`TimerManager`].
-pub struct ManagedTimeout<'a> {
+pub(crate) struct ManagedTimeout<'a> {
     timeout: Timeout,
     manager: &'a Arc<TimerManager>,
 }
 
 impl<'a> ManagedTimeout<'a> {
     /// Creates a new `ManagedTimeout` with the JIFFIES timer manager.
-    pub fn new(timeout: Duration) -> Self {
+    pub(crate) fn new(timeout: Duration) -> Self {
         let timeout = Timeout::After(timeout);
         let manager = JIFFIES_TIMER_MANAGER.get().unwrap();
         Self::new_with_manager(timeout, manager)
     }
 
     /// Creates a new `ManagedTimeout` with the given timer manager.
-    pub const fn new_with_manager(timeout: Timeout, manager: &'a Arc<TimerManager>) -> Self {
+    pub(crate) const fn new_with_manager(timeout: Timeout, manager: &'a Arc<TimerManager>) -> Self {
         Self { timeout, manager }
     }
 
     /// Returns weather the timeout is expired.
-    pub fn is_expired(&self) -> bool {
+    pub(crate) fn is_expired(&self) -> bool {
         self.manager.is_expired_timeout(&self.timeout)
     }
 
@@ -149,7 +149,7 @@ impl<'a> ManagedTimeout<'a> {
     /// If the timeout is specified as an instant after a period of time from the current time
     /// (i.e., [`Timeout::After`]), this method will freeze the timeout by converting it to a fixed
     /// instant (i.e., [`Timeout::When`]).
-    pub fn freeze(&mut self) {
+    pub(crate) fn freeze(&mut self) {
         self.timeout = match self.timeout {
             Timeout::When(instant) => Timeout::When(instant),
             Timeout::After(duration) => Timeout::When(self.manager.clock().read_time() + duration),
@@ -157,7 +157,7 @@ impl<'a> ManagedTimeout<'a> {
     }
 
     /// Creates a timer for the timeout.
-    pub fn create_timer<F>(&self, callback: F) -> Arc<Timer>
+    pub(crate) fn create_timer<F>(&self, callback: F) -> Arc<Timer>
     where
         F: Fn(TimerGuard) + Send + Sync + 'static,
     {

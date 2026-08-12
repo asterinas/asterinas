@@ -3,6 +3,6 @@
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_getpgrp(ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_getpgrp(ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(ctx.process.pgid() as _))
 }

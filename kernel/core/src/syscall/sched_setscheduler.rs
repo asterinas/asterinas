@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{prelude::*, thread::Tid};
 
-pub fn sys_sched_setscheduler(
+pub(super) fn sys_sched_setscheduler(
     tid: Tid,
     policy: i32,
     addr: Vaddr,

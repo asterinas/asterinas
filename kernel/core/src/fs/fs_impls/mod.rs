@@ -4,18 +4,18 @@
 //!
 //! This module contains all the specific file system implementations supported by the kernel.
 
-pub mod cgroupfs;
-pub mod configfs;
-pub mod devpts;
-pub mod exfat;
-pub mod ext2;
-pub mod overlayfs;
-pub mod procfs;
-pub mod pseudofs;
-pub mod ramfs;
-pub mod sysfs;
-pub mod tmpfs;
-pub mod virtiofs;
+pub(crate) mod cgroupfs;
+pub(crate) mod configfs;
+pub(crate) mod devpts;
+pub(crate) mod exfat;
+pub(crate) mod ext2;
+pub(crate) mod overlayfs;
+pub(crate) mod procfs;
+pub(crate) mod pseudofs;
+pub(crate) mod ramfs;
+pub(crate) mod sysfs;
+pub(crate) mod tmpfs;
+pub(crate) mod virtiofs;
 
 pub(super) fn init() {
     sysfs::init();

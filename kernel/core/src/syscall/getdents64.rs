@@ -17,7 +17,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_getdents(
+pub(super) fn sys_getdents(
     raw_fd: RawFileDesc,
     buf_addr: Vaddr,
     buf_len: usize,
@@ -43,7 +43,7 @@ pub fn sys_getdents(
     Ok(SyscallReturn::Return(read_len as _))
 }
 
-pub fn sys_getdents64(
+pub(super) fn sys_getdents64(
     raw_fd: RawFileDesc,
     buf_addr: Vaddr,
     buf_len: usize,
@@ -88,7 +88,7 @@ struct DirentBufferReader<'a, T: DirentSerializer> {
 }
 
 impl<'a, T: DirentSerializer> DirentBufferReader<'a, T> {
-    pub fn new(writer: VmWriter<'a>) -> Self {
+    pub(crate) fn new(writer: VmWriter<'a>) -> Self {
         Self {
             writer,
             read_len: 0,
@@ -96,7 +96,7 @@ impl<'a, T: DirentSerializer> DirentBufferReader<'a, T> {
         }
     }
 
-    pub fn read_len(&self) -> usize {
+    pub(crate) fn read_len(&self) -> usize {
         self.read_len
     }
 }

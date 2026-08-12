@@ -19,7 +19,9 @@ use crate::{
 };
 
 /// Creates a pair of connected pipe file handles with the default capacity.
-pub fn new_file_pair(status_flags: StatusFlags) -> Result<(Arc<InodeHandle>, Arc<InodeHandle>)> {
+pub(crate) fn new_file_pair(
+    status_flags: StatusFlags,
+) -> Result<(Arc<InodeHandle>, Arc<InodeHandle>)> {
     let pipe_inode = Arc::new(AnonPipeInode::new());
     let path = PipeFs::new_path(pipe_inode);
 
@@ -37,7 +39,7 @@ pub fn new_file_pair(status_flags: StatusFlags) -> Result<(Arc<InodeHandle>, Arc
 }
 
 /// An anonymous pipe inode.
-pub struct AnonPipeInode {
+pub(crate) struct AnonPipeInode {
     /// The underlying pipe backend.
     pipe: Pipe,
     pseudo_inode: PseudoInode,

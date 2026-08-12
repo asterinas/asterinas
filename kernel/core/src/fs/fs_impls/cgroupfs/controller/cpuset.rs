@@ -10,7 +10,7 @@ use ostd::{
 };
 
 /// A sub-controller responsible for CPU resource management in the cgroup subsystem.
-pub struct CpuSetController {
+pub(crate) struct CpuSetController {
     _private: (),
 }
 

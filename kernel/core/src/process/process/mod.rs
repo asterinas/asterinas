@@ -44,46 +44,46 @@ mod terminal;
 mod timer_manager;
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-pub use init_proc::spawn_init_process;
-pub use job_control::JobControl;
+pub(crate) use init_proc::spawn_init_process;
+pub(crate) use job_control::JobControl;
 use ostd::{
     sync::{RcuOption, RcuOptionReadGuard, WaitQueue},
     task::Task,
 };
-pub use process_group::ProcessGroup;
-pub use session::Session;
-pub use terminal::Terminal;
+pub(crate) use process_group::ProcessGroup;
+pub(crate) use session::Session;
+pub(crate) use terminal::Terminal;
 
 /// Process ID.
-pub type Pid = u32;
+pub(crate) type Pid = u32;
 
 /// The PID of the init process.
-pub const INIT_PROCESS_PID: Pid = FIRST_POSIX_TID;
+pub(crate) const INIT_PROCESS_PID: Pid = FIRST_POSIX_TID;
 
 define_atomic_version_of_integer_like_type!(Pid, {
     /// Atomic [`Pid`].
     #[derive(Debug)]
-    pub struct AtomicPid(AtomicU32);
+    pub(crate) struct AtomicPid(AtomicU32);
 });
 
 /// Process group ID.
-pub type Pgid = u32;
+pub(crate) type Pgid = u32;
 /// Session ID.
-pub type Sid = u32;
+pub(crate) type Sid = u32;
 
 /// The process group ID for process group created by [`ProcessGroup::new_bootstrap`].
 const BOOTSTRAP_PGID: Pgid = 0;
 /// The session ID for the session created by [`Session::new_bootstrap_pair`].
 const BOOTSTRAP_SID: Sid = 0;
 
-pub type ExitCode = u32;
+pub(crate) type ExitCode = u32;
 
 pub(super) fn init_on_each_cpu() {
     timer_manager::init_on_each_cpu();
 }
 
 /// Process stands for a set of threads that shares the same userspace.
-pub struct Process {
+pub(crate) struct Process {
     // Immutable Part
     pid: Pid,
 
@@ -168,13 +168,13 @@ impl Drop for Process {
 ///
 /// The benefit of using `ParentProcess` over `(Mutex<Weak<Process>>, AtomicPid,)` is to
 /// enforce the invariant that the cached PID and the weak reference are always kept in sync.
-pub struct ParentProcess {
+pub(crate) struct ParentProcess {
     process: Mutex<Weak<Process>>,
     pid: AtomicPid,
 }
 
 impl ParentProcess {
-    pub fn new(process: Weak<Process>) -> Self {
+    pub(crate) fn new(process: Weak<Process>) -> Self {
         let pid = match process.upgrade() {
             Some(process) => process.pid(),
             None => 0,
@@ -186,11 +186,11 @@ impl ParentProcess {
         }
     }
 
-    pub fn pid(&self) -> Pid {
+    pub(crate) fn pid(&self) -> Pid {
         self.pid.load(Ordering::Relaxed)
     }
 
-    pub fn lock(&self) -> ParentProcessGuard<'_> {
+    pub(crate) fn lock(&self) -> ParentProcessGuard<'_> {
         ParentProcessGuard {
             guard: self.process.lock(),
             this: self,
@@ -198,18 +198,18 @@ impl ParentProcess {
     }
 }
 
-pub struct ParentProcessGuard<'a> {
+pub(crate) struct ParentProcessGuard<'a> {
     guard: MutexGuard<'a, Weak<Process>>,
     this: &'a ParentProcess,
 }
 
 impl ParentProcessGuard<'_> {
-    pub fn process(&self) -> &Weak<Process> {
+    pub(crate) fn process(&self) -> &Weak<Process> {
         &self.guard
     }
 
     /// Update both pid and weak ref.
-    pub fn set_process(&mut self, new_process: &Arc<Process>) {
+    pub(crate) fn set_process(&mut self, new_process: &Arc<Process>) {
         self.this.pid.store(new_process.pid(), Ordering::Relaxed);
         *self.guard = Arc::downgrade(new_process);
     }
@@ -221,7 +221,7 @@ impl Process {
     /// It returns `None` if:
     ///  - the function is called in the bootstrap context;
     ///  - or if the current task is not associated with a process.
-    pub fn current() -> Option<Arc<Process>> {
+    pub(crate) fn current() -> Option<Arc<Process>> {
         Some(Task::current()?.as_posix_thread()?.process())
     }
 
@@ -287,52 +287,52 @@ impl Process {
 
     // *********** Basic structures ***********
 
-    pub fn pid(&self) -> Pid {
+    pub(crate) fn pid(&self) -> Pid {
         self.pid
     }
 
     /// Gets the profiling clock of the process.
-    pub fn prof_clock(&self) -> &Arc<ProfClock> {
+    pub(crate) fn prof_clock(&self) -> &Arc<ProfClock> {
         &self.prof_clock
     }
 
     /// Gets the timer resources and utilities of the process.
-    pub fn timer_manager(&self) -> &PosixTimerManager {
+    pub(crate) fn timer_manager(&self) -> &PosixTimerManager {
         &self.timer_manager
     }
 
     /// Returns the process start time since boot.
-    pub fn start_time(&self) -> Jiffies {
+    pub(crate) fn start_time(&self) -> Jiffies {
         self.start_time
     }
 
-    pub fn tasks(&self) -> &Mutex<TaskSet> {
+    pub(crate) fn tasks(&self) -> &Mutex<TaskSet> {
         &self.tasks
     }
 
-    pub fn resource_limits(&self) -> &ResourceLimits {
+    pub(crate) fn resource_limits(&self) -> &ResourceLimits {
         &self.resource_limits
     }
 
-    pub fn nice(&self) -> &AtomicNice {
+    pub(crate) fn nice(&self) -> &AtomicNice {
         &self.nice
     }
 
-    pub fn main_thread(&self) -> Arc<Thread> {
+    pub(crate) fn main_thread(&self) -> Arc<Thread> {
         self.tasks.lock().main().as_thread().unwrap().clone()
     }
 
-    pub fn oom_score_adj(&self) -> &AtomicI16 {
+    pub(crate) fn oom_score_adj(&self) -> &AtomicI16 {
         &self.oom_score_adj
     }
 
     // *********** Parent and child ***********
 
-    pub fn parent(&self) -> &ParentProcess {
+    pub(crate) fn parent(&self) -> &ParentProcess {
         &self.parent
     }
 
-    pub fn is_init_process(&self) -> bool {
+    pub(crate) fn is_init_process(&self) -> bool {
         self.parent.pid() == 0
     }
 
@@ -340,11 +340,11 @@ impl Process {
         &self.children
     }
 
-    pub fn children_wait_queue(&self) -> &WaitQueue {
+    pub(crate) fn children_wait_queue(&self) -> &WaitQueue {
         &self.children_wait_queue
     }
 
-    pub fn reaped_children_stats(&self) -> &Mutex<ReapedChildrenStats> {
+    pub(crate) fn reaped_children_stats(&self) -> &Mutex<ReapedChildrenStats> {
         &self.reaped_children_stats
     }
 
@@ -354,7 +354,7 @@ impl Process {
     //
     // FIXME: If we call this method on a non-current process without holding the PID table
     // lock, it may return zero if the process is reaped at the same time.
-    pub fn pgid(&self) -> Pgid {
+    pub(crate) fn pgid(&self) -> Pgid {
         self.process_group
             .lock()
             .as_ref()
@@ -365,7 +365,7 @@ impl Process {
     //
     // FIXME: If we call this method on a non-current process without holding the PID table
     // lock, it may return zero if the process is reaped at the same time.
-    pub fn sid(&self) -> Sid {
+    pub(crate) fn sid(&self) -> Sid {
         self.process_group
             .lock()
             .as_ref()
@@ -373,7 +373,7 @@ impl Process {
     }
 
     /// Returns the controlling terminal of the process, if any.
-    pub fn terminal(&self) -> Option<Arc<dyn Terminal>> {
+    pub(crate) fn terminal(&self) -> Option<Arc<dyn Terminal>> {
         self.process_group
             .lock()
             .as_ref()
@@ -391,7 +391,7 @@ impl Process {
     /// This method will return `EPERM` if an existing process group has the same identifier as the
     /// process ID. This means that the process is or was a process group leader and that the
     /// process group is still alive.
-    pub fn to_new_session(self: &Arc<Self>) -> Result<Sid> {
+    pub(crate) fn to_new_session(self: &Arc<Self>) -> Result<Sid> {
         // Lock order: PID table -> group of process -> group inner -> session inner
         let mut pid_table = pid_table::pid_table_mut();
 
@@ -470,7 +470,7 @@ impl Process {
     ///  * The process is a session leader, but the given PGID is not the process's PID/PGID;
     ///  * The process group already exists, but the group does not belong to the same session;
     ///  * The process group does not exist, but `pgid` is not equal to the process ID.
-    pub fn move_process_to_group(&self, pid: Pid, pgid: Pgid) -> Result<()> {
+    pub(crate) fn move_process_to_group(&self, pid: Pid, pgid: Pgid) -> Result<()> {
         // Lock order: PID table -> group of process -> group inner -> session inner
         let mut pid_table = pid_table::pid_table_mut();
 
@@ -619,13 +619,13 @@ impl Process {
 
     // ************** Virtual Memory *************
 
-    pub fn lock_vmar(&self) -> ProcessVmarGuard<'_> {
+    pub(crate) fn lock_vmar(&self) -> ProcessVmarGuard<'_> {
         ProcessVmarGuard::new(self.vmar.lock())
     }
 
     // ****************** Signal ******************
 
-    pub fn sig_dispositions(&self) -> &Mutex<Arc<Mutex<SigDispositions>>> {
+    pub(crate) fn sig_dispositions(&self) -> &Mutex<Arc<Mutex<SigDispositions>>> {
         &self.sig_dispositions
     }
 
@@ -638,7 +638,7 @@ impl Process {
     /// This method does not perform permission checks on user signals.
     /// Therefore, unless the caller can ensure that there are no permission issues,
     /// this method should be used to enqueue kernel signals or fault signals.
-    pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
+    pub(crate) fn enqueue_signal(&self, signal: Box<dyn Signal>) {
         if self.status.is_zombie() {
             return;
         }
@@ -657,12 +657,12 @@ impl Process {
     }
 
     /// Clears the parent death signal.
-    pub fn clear_parent_death_signal(&self) {
+    pub(crate) fn clear_parent_death_signal(&self) {
         self.parent_death_signal.clear();
     }
 
     /// Sets the parent death signal as `signum`.
-    pub fn set_parent_death_signal(&self, sig_num: SigNum) {
+    pub(crate) fn set_parent_death_signal(&self, sig_num: SigNum) {
         self.parent_death_signal.set(sig_num);
     }
 
@@ -670,34 +670,34 @@ impl Process {
     ///
     /// The parent death signal is the signal will be sent to child processes
     /// when the process exits.
-    pub fn parent_death_signal(&self) -> Option<SigNum> {
+    pub(crate) fn parent_death_signal(&self) -> Option<SigNum> {
         self.parent_death_signal.as_sig_num()
     }
 
-    pub fn set_exit_signal(&self, sig_num: SigNum) {
+    pub(crate) fn set_exit_signal(&self, sig_num: SigNum) {
         self.exit_signal.set(sig_num);
     }
 
-    pub fn exit_signal(&self) -> Option<SigNum> {
+    pub(crate) fn exit_signal(&self) -> Option<SigNum> {
         self.exit_signal.as_sig_num()
     }
 
     // ******************* Status ********************
 
     /// Returns a reference to the process status.
-    pub fn status(&self) -> &ProcessStatus {
+    pub(crate) fn status(&self) -> &ProcessStatus {
         &self.status
     }
 
     /// Stops the process.
-    pub fn stop(&self, sig_num: SigNum) {
+    pub(crate) fn stop(&self, sig_num: SigNum) {
         if self.status.stop_status().stop(sig_num) {
             self.wake_up_parent();
         }
     }
 
     /// Resumes the stopped process.
-    pub fn resume(&self) {
+    pub(crate) fn resume(&self) {
         if self.status.stop_status().resume() {
             self.wake_up_parent();
 
@@ -712,7 +712,7 @@ impl Process {
     }
 
     /// Returns whether the process is stopped.
-    pub fn is_stopped(&self) -> bool {
+    pub(crate) fn is_stopped(&self) -> bool {
         self.status.stop_status().is_stopped()
     }
 
@@ -734,7 +734,7 @@ impl Process {
     /// # Panics
     ///
     /// This method may panic if the process is a zombie process.
-    pub fn set_child_subreaper(&self) {
+    pub(crate) fn set_child_subreaper(&self) {
         self.is_child_subreaper.store(true, Ordering::Relaxed);
         let has_child_subreaper = self.has_child_subreaper.fetch_or(true, Ordering::Release);
         if !has_child_subreaper {
@@ -743,12 +743,12 @@ impl Process {
     }
 
     /// Unsets the child subreaper attribute of the current process.
-    pub fn unset_child_subreaper(&self) {
+    pub(crate) fn unset_child_subreaper(&self) {
         self.is_child_subreaper.store(false, Ordering::Relaxed);
     }
 
     /// Returns whether this process is a child subreaper.
-    pub fn is_child_subreaper(&self) -> bool {
+    pub(crate) fn is_child_subreaper(&self) -> bool {
         self.is_child_subreaper.load(Ordering::Relaxed)
     }
 
@@ -782,7 +782,7 @@ impl Process {
         }
     }
 
-    pub fn user_ns(&self) -> &Mutex<Arc<UserNamespace>> {
+    pub(crate) fn user_ns(&self) -> &Mutex<Arc<UserNamespace>> {
         &self.user_ns
     }
 
@@ -795,7 +795,7 @@ impl Process {
     /// a lock to prevent the cgroup from being changed.
     ///
     /// [`CgroupMembership`]: crate::fs::cgroupfs::CgroupMembership
-    pub fn cgroup(&self) -> RcuOptionReadGuard<'_, Arc<CgroupNode>> {
+    pub(crate) fn cgroup(&self) -> RcuOptionReadGuard<'_, Arc<CgroupNode>> {
         self.cgroup.read()
     }
 
@@ -804,7 +804,7 @@ impl Process {
     /// Note: This function should only be called within the cgroup module.
     /// Arbitrary calls may likely cause race conditions.
     #[doc(hidden)]
-    pub fn set_cgroup(&self, cgroup: Option<Arc<CgroupNode>>) {
+    pub(crate) fn set_cgroup(&self, cgroup: Option<Arc<CgroupNode>>) {
         self.cgroup.update(cgroup);
     }
 }
@@ -813,7 +813,7 @@ impl Process {
 ///
 /// This is the asynchronous version of [`Process::enqueue_signal`]. By asynchronous, this method
 /// submits a work item and returns, so this method doesn't sleep and can be used in atomic mode.
-pub fn enqueue_signal_async(process: Weak<Process>, signum: SigNum) {
+pub(crate) fn enqueue_signal_async(process: Weak<Process>, signum: SigNum) {
     use super::signal::signals::kernel::KernelSignal;
     use crate::thread::work_queue;
 
@@ -832,7 +832,7 @@ pub fn enqueue_signal_async(process: Weak<Process>, signum: SigNum) {
 /// This is the asynchronous version of [`ProcessGroup::broadcast_signal`]. By asynchronous, this
 /// method submits a work item and returns, so this method doesn't sleep and can be used in atomic
 /// mode.
-pub fn broadcast_signal_async(process_group: Weak<ProcessGroup>, signum: SigNum) {
+pub(crate) fn broadcast_signal_async(process_group: Weak<ProcessGroup>, signum: SigNum) {
     use super::signal::signals::kernel::KernelSignal;
     use crate::thread::work_queue;
 
@@ -853,18 +853,18 @@ pub fn broadcast_signal_async(process_group: Weak<ProcessGroup>, signum: SigNum)
 /// distant descendants, if all intermediate child processes have waited on
 /// their own terminated children.
 #[derive(Default)]
-pub struct ReapedChildrenStats {
+pub(crate) struct ReapedChildrenStats {
     user_time: Duration,
     kernel_time: Duration,
 }
 
 impl ReapedChildrenStats {
-    pub fn add(&mut self, utime: Duration, stime: Duration) {
+    pub(crate) fn add(&mut self, utime: Duration, stime: Duration) {
         self.user_time += utime;
         self.kernel_time += stime;
     }
 
-    pub fn get(&self) -> (Duration, Duration) {
+    pub(crate) fn get(&self) -> (Duration, Duration) {
         (self.user_time, self.kernel_time)
     }
 }

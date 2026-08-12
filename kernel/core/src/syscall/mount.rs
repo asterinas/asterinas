@@ -14,7 +14,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_mount(
+pub(super) fn sys_mount(
     src_name_addr: Vaddr,
     dst_name_addr: Vaddr,
     fs_type_addr: Vaddr,

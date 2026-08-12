@@ -31,7 +31,7 @@ use crate::{
     util::{MultiRead, MultiWrite, net::SockType},
 };
 
-pub struct UnixDatagramSocket {
+pub(crate) struct UnixDatagramSocket {
     local_receiver: MessageReceiver,
     remote_queue: RwLock<Option<Arc<MessageQueue>>>,
     options: RwLock<OptionSet>,
@@ -59,11 +59,11 @@ impl OptionSet {
 }
 
 impl UnixDatagramSocket {
-    pub fn new(is_nonblocking: bool) -> Arc<Self> {
+    pub(crate) fn new(is_nonblocking: bool) -> Arc<Self> {
         Arc::new(Self::new_raw(is_nonblocking))
     }
 
-    pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
+    pub(crate) fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
         let mut socket_a = Self::new_raw(is_nonblocking);
         let mut socket_b = Self::new_raw(is_nonblocking);
 

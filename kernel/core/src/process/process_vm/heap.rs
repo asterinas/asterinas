@@ -15,12 +15,12 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct Heap {
+pub(crate) struct Heap {
     inner: Mutex<Option<HeapInner>>,
 }
 
 #[derive(Debug)]
-pub struct LockedHeap<'a> {
+pub(crate) struct LockedHeap<'a> {
     inner: MutexGuard<'a, Option<HeapInner>>,
 }
 
@@ -92,7 +92,7 @@ impl Heap {
     }
 
     /// Locks the heap and returns a guard to access the heap information.
-    pub fn lock(&self) -> LockedHeap<'_> {
+    pub(crate) fn lock(&self) -> LockedHeap<'_> {
         LockedHeap {
             inner: self.inner.lock(),
         }
@@ -104,7 +104,11 @@ impl Heap {
     /// This behavior is consistent with the Linux `brk` syscall.
     //
     // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/mm/mmap.c#L115>
-    pub fn modify_heap_end(&self, new_heap_end: Vaddr, ctx: &Context) -> Result<Vaddr, Vaddr> {
+    pub(crate) fn modify_heap_end(
+        &self,
+        new_heap_end: Vaddr,
+        ctx: &Context,
+    ) -> Result<Vaddr, Vaddr> {
         let user_space = ctx.user_space();
         let vmar = user_space.vmar();
 
@@ -150,12 +154,12 @@ impl Heap {
 
 impl LockedHeap<'_> {
     /// Returns the lowest address of the heap.
-    pub fn heap_low(&self) -> Vaddr {
+    pub(crate) fn heap_low(&self) -> Vaddr {
         self.heap_range().start
     }
 
     /// Returns the current heap range.
-    pub fn heap_range(&self) -> &Range<Vaddr> {
+    pub(crate) fn heap_range(&self) -> &Range<Vaddr> {
         let inner = self.inner.as_ref().expect("Heap is not initialized");
 
         &inner.heap_range

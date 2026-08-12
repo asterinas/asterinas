@@ -7,16 +7,16 @@ use spin::Once;
 
 /// An anonymous device ID that automatically recycles itself on drop.
 #[derive(Debug)]
-pub struct AnonDeviceId(DeviceId);
+pub(crate) struct AnonDeviceId(DeviceId);
 
 impl AnonDeviceId {
     /// Acquires an anonymous device ID for a pseudo filesystem.
-    pub fn acquire() -> Option<Self> {
+    pub(crate) fn acquire() -> Option<Self> {
         DeviceIdAllocator::singleton().allocate().map(Self::new)
     }
 
     /// Returns the underlying `DeviceId`.
-    pub fn id(&self) -> DeviceId {
+    pub(crate) fn id(&self) -> DeviceId {
         self.0
     }
 

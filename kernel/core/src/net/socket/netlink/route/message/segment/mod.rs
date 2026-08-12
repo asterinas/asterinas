@@ -31,10 +31,10 @@
 //!
 //! [`NLMSG_ALIGN`]: crate::net::socket::netlink::message::NLMSG_ALIGN
 
-pub mod addr;
+pub(crate) mod addr;
 mod legacy;
-pub mod link;
-pub mod route;
+pub(crate) mod link;
+pub(crate) mod route;
 
 use addr::AddrSegment;
 use link::LinkSegment;
@@ -49,7 +49,7 @@ use crate::{
 
 /// The netlink route segment, which is the basic unit of a netlink route message.
 #[derive(Debug)]
-pub enum RtnlSegment {
+pub(crate) enum RtnlSegment {
     NewLink(LinkSegment),
     GetLink(LinkSegment),
     NewAddr(AddrSegment),

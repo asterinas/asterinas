@@ -18,7 +18,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_openat(
+pub(super) fn sys_openat(
     dirfd: RawFileDesc,
     path_addr: Vaddr,
     flags: u32,
@@ -67,11 +67,16 @@ pub fn sys_openat(
     Ok(SyscallReturn::Return(fd.into()))
 }
 
-pub fn sys_open(path_addr: Vaddr, flags: u32, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_open(
+    path_addr: Vaddr,
+    flags: u32,
+    mode: u16,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     sys_openat(AT_FDCWD, path_addr, flags, mode, ctx)
 }
 
-pub fn sys_creat(path_addr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_creat(path_addr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
     let flags =
         AccessMode::O_WRONLY as u32 | CreationFlags::O_CREAT.bits() | CreationFlags::O_TRUNC.bits();
     sys_openat(AT_FDCWD, path_addr, flags, mode, ctx)

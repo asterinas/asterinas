@@ -56,10 +56,10 @@ mod connecting;
 mod init;
 mod listen;
 pub(super) mod observer;
-pub mod options;
+pub(crate) mod options;
 mod util;
 
-pub struct StreamSocket {
+pub(crate) struct StreamSocket {
     // Lock order: `state` first, `options` second
     // FIXME: We perform userspace reads/writes when holding the spin locks (e.g., this state lock
     // and other locks in `aster-bigtcp`), which will break the atomic mode.
@@ -109,7 +109,7 @@ impl OptionSet {
 }
 
 impl StreamSocket {
-    pub fn new(is_nonblocking: bool, family: IpAddressFamily) -> Arc<Self> {
+    pub(crate) fn new(is_nonblocking: bool, family: IpAddressFamily) -> Arc<Self> {
         let init_stream = InitStream::new();
         let status_flags = if is_nonblocking {
             StatusFlags::O_NONBLOCK

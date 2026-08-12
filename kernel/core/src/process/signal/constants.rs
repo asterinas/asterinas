@@ -13,15 +13,15 @@ pub(super) const COUNT_STD_SIGS: usize = 31;
 pub(super) const COUNT_RT_SIGS: usize = 33;
 pub(super) const COUNT_ALL_SIGS: usize = 64;
 
-pub const SIG_DFL: usize = 0;
-pub const SIG_IGN: usize = 1;
+pub(crate) const SIG_DFL: usize = 0;
+pub(crate) const SIG_IGN: usize = 1;
 
 use super::sig_num::SigNum;
 
 macro_rules! define_std_signums {
     ( $( $name: ident = $num: expr ),+, ) => {
         $(
-            pub const $name : SigNum = SigNum::from_u8($num);
+            pub(crate) const $name : SigNum = SigNum::from_u8($num);
         )*
     }
 }
@@ -60,55 +60,55 @@ define_std_signums! {
     SIGSYS    = 31, // Bad system call (SVr4); see also seccomp(2)
 }
 
-pub const SI_ASYNCNL: i32 = -60;
-pub const SI_TKILL: i32 = -6;
-pub const SI_SIGIO: i32 = -5;
-pub const SI_ASYNCIO: i32 = -4;
-pub const SI_MESGQ: i32 = -3;
-pub const SI_TIMER: i32 = -2;
-pub const SI_QUEUE: i32 = -1;
-pub const SI_USER: i32 = 0;
-pub const SI_KERNEL: i32 = 128;
+pub(crate) const SI_ASYNCNL: i32 = -60;
+pub(crate) const SI_TKILL: i32 = -6;
+pub(crate) const SI_SIGIO: i32 = -5;
+pub(crate) const SI_ASYNCIO: i32 = -4;
+pub(crate) const SI_MESGQ: i32 = -3;
+pub(crate) const SI_TIMER: i32 = -2;
+pub(crate) const SI_QUEUE: i32 = -1;
+pub(crate) const SI_USER: i32 = 0;
+pub(crate) const SI_KERNEL: i32 = 128;
 
-pub const FPE_INTDIV: i32 = 1;
-pub const FPE_INTOVF: i32 = 2;
-pub const FPE_FLTDIV: i32 = 3;
-pub const FPE_FLTOVF: i32 = 4;
-pub const FPE_FLTUND: i32 = 5;
-pub const FPE_FLTRES: i32 = 6;
-pub const FPE_FLTINV: i32 = 7;
-pub const FPE_FLTSUB: i32 = 8;
+pub(crate) const FPE_INTDIV: i32 = 1;
+pub(crate) const FPE_INTOVF: i32 = 2;
+pub(crate) const FPE_FLTDIV: i32 = 3;
+pub(crate) const FPE_FLTOVF: i32 = 4;
+pub(crate) const FPE_FLTUND: i32 = 5;
+pub(crate) const FPE_FLTRES: i32 = 6;
+pub(crate) const FPE_FLTINV: i32 = 7;
+pub(crate) const FPE_FLTSUB: i32 = 8;
 
-pub const ILL_ILLOPC: i32 = 1;
-pub const ILL_ILLOPN: i32 = 2;
-pub const ILL_ILLADR: i32 = 3;
-pub const ILL_ILLTRP: i32 = 4;
-pub const ILL_PRVOPC: i32 = 5;
-pub const ILL_PRVREG: i32 = 6;
-pub const ILL_COPROC: i32 = 7;
-pub const ILL_BADSTK: i32 = 8;
+pub(crate) const ILL_ILLOPC: i32 = 1;
+pub(crate) const ILL_ILLOPN: i32 = 2;
+pub(crate) const ILL_ILLADR: i32 = 3;
+pub(crate) const ILL_ILLTRP: i32 = 4;
+pub(crate) const ILL_PRVOPC: i32 = 5;
+pub(crate) const ILL_PRVREG: i32 = 6;
+pub(crate) const ILL_COPROC: i32 = 7;
+pub(crate) const ILL_BADSTK: i32 = 8;
 
-pub const SEGV_MAPERR: i32 = 1;
-pub const SEGV_ACCERR: i32 = 2;
-pub const SEGV_BNDERR: i32 = 3;
-pub const SEGV_PKUERR: i32 = 4;
+pub(crate) const SEGV_MAPERR: i32 = 1;
+pub(crate) const SEGV_ACCERR: i32 = 2;
+pub(crate) const SEGV_BNDERR: i32 = 3;
+pub(crate) const SEGV_PKUERR: i32 = 4;
 
-pub const BUS_ADRALN: i32 = 1;
-pub const BUS_ADRERR: i32 = 2;
-pub const BUS_OBJERR: i32 = 3;
-pub const BUS_MCEERR_AR: i32 = 4;
-pub const BUS_MCEERR_AO: i32 = 5;
+pub(crate) const BUS_ADRALN: i32 = 1;
+pub(crate) const BUS_ADRERR: i32 = 2;
+pub(crate) const BUS_OBJERR: i32 = 3;
+pub(crate) const BUS_MCEERR_AR: i32 = 4;
+pub(crate) const BUS_MCEERR_AO: i32 = 5;
 
-pub const CLD_EXITED: i32 = 1;
-pub const CLD_KILLED: i32 = 2;
-pub const CLD_DUMPED: i32 = 3;
-pub const CLD_TRAPPED: i32 = 4;
-pub const CLD_STOPPED: i32 = 5;
-pub const CLD_CONTINUED: i32 = 6;
+pub(crate) const CLD_EXITED: i32 = 1;
+pub(crate) const CLD_KILLED: i32 = 2;
+pub(crate) const CLD_DUMPED: i32 = 3;
+pub(crate) const CLD_TRAPPED: i32 = 4;
+pub(crate) const CLD_STOPPED: i32 = 5;
+pub(crate) const CLD_CONTINUED: i32 = 6;
 
-pub const TRAP_BRKPT: i32 = 1;
-pub const TRAP_TRACE: i32 = 2;
-pub const TRAP_BRANCH: i32 = 3;
-pub const TRAP_HWBKPT: i32 = 4;
-pub const TRAP_UNK: i32 = 5;
-pub const TRAP_PERF: i32 = 6;
+pub(crate) const TRAP_BRKPT: i32 = 1;
+pub(crate) const TRAP_TRACE: i32 = 2;
+pub(crate) const TRAP_BRANCH: i32 = 3;
+pub(crate) const TRAP_HWBKPT: i32 = 4;
+pub(crate) const TRAP_UNK: i32 = 5;
+pub(crate) const TRAP_PERF: i32 = 6;

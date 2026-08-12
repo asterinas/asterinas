@@ -31,7 +31,7 @@ use crate::{
 #[derive(Clone, CopyGetters, Debug, Setters)]
 #[get_copy = "pub"]
 #[set = "pub"]
-pub struct SocketOptionSet {
+pub(crate) struct SocketOptionSet {
     reuse_addr: bool,
     broadcast: bool,
     send_buf: u32,
@@ -109,7 +109,7 @@ impl SocketOptionSet {
     ///
     /// Note that the socket error has to be handled separately. This method does not handle it
     /// because it is automatically cleared after reading.
-    pub fn get_option(
+    pub(crate) fn get_option(
         &self,
         option: &mut dyn SocketOption,
         socket: &dyn GetSocketLevelOption,
@@ -192,7 +192,7 @@ impl SocketOptionSet {
     }
 
     /// Sets socket-level options.
-    pub fn set_option(
+    pub(crate) fn set_option(
         &mut self,
         option: &dyn SocketOption,
         socket: &dyn SetSocketLevelOption,
@@ -285,7 +285,7 @@ impl SocketOptionSet {
 }
 
 #[derive(Debug, Default)]
-pub struct SocketTimeouts {
+pub(crate) struct SocketTimeouts {
     recv_timeout: DurationCell,
     send_timeout: DurationCell,
 }
@@ -333,24 +333,24 @@ impl DurationCell {
 }
 
 impl SocketTimeouts {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    pub fn set_recv_timeout(&self, recv_timeout: Option<Duration>) {
+    pub(crate) fn set_recv_timeout(&self, recv_timeout: Option<Duration>) {
         self.recv_timeout.store(recv_timeout.unwrap_or_default());
     }
 
-    pub fn set_send_timeout(&self, send_timeout: Option<Duration>) {
+    pub(crate) fn set_send_timeout(&self, send_timeout: Option<Duration>) {
         self.send_timeout.store(send_timeout.unwrap_or_default());
     }
 
-    pub fn recv_timeout(&self) -> Option<Duration> {
+    pub(crate) fn recv_timeout(&self) -> Option<Duration> {
         let timeout = self.recv_timeout.load();
         (!timeout.is_zero()).then_some(timeout)
     }
 
-    pub fn send_timeout(&self) -> Option<Duration> {
+    pub(crate) fn send_timeout(&self) -> Option<Duration> {
         let timeout = self.send_timeout.load();
         (!timeout.is_zero()).then_some(timeout)
     }
@@ -376,8 +376,8 @@ fn check_priority(priority: i32) -> Result<()> {
     check_current_privileged()
 }
 
-pub const MIN_SENDBUF: u32 = 2304;
-pub const MIN_RECVBUF: u32 = 2304;
+pub(crate) const MIN_SENDBUF: u32 = 2304;
+pub(crate) const MIN_RECVBUF: u32 = 2304;
 
 /// A trait used for getting socket level options on actual sockets.
 pub(in crate::net) trait GetSocketLevelOption {

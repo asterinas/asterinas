@@ -25,7 +25,7 @@ use crate::{
 };
 
 /// A file-like object representing a timer that can be used with file descriptors.
-pub struct TimerfdFile {
+pub(crate) struct TimerfdFile {
     clockid: clockid_t,
     timer: Arc<Timer>,
     ticks: Arc<AtomicU64>,
@@ -36,7 +36,7 @@ pub struct TimerfdFile {
 
 bitflags! {
     /// The flags used for timerfd-related operations.
-    pub struct TFDFlags: u32 {
+    pub(crate) struct TFDFlags: u32 {
         const TFD_CLOEXEC = CreationFlags::O_CLOEXEC.bits();
         const TFD_NONBLOCK = StatusFlags::O_NONBLOCK.bits();
     }
@@ -60,7 +60,7 @@ impl From<TFDFlags> for u32 {
 
 bitflags! {
     /// The flags used for timerfd settime operations.
-    pub struct TFDSetTimeFlags: u32 {
+    pub(crate) struct TFDSetTimeFlags: u32 {
         const TFD_TIMER_ABSTIME = 0x1;
         const TFD_TIMER_CANCEL_ON_SET = 0x2;
     }
@@ -91,7 +91,7 @@ define_atomic_version_of_integer_like_type!(TFDSetTimeFlags, try_from = true, {
 
 impl TimerfdFile {
     /// Creates a new `TimerfdFile` instance.
-    pub fn new(clockid: clockid_t, flags: TFDFlags, ctx: &Context) -> Result<Self> {
+    pub(crate) fn new(clockid: clockid_t, flags: TFDFlags, ctx: &Context) -> Result<Self> {
         let ticks = Arc::new(AtomicU64::new(0));
         let pollee = Pollee::new();
 
@@ -127,7 +127,7 @@ impl TimerfdFile {
     //
     // The remaining time and old interval are saved before the settings are applied, and then
     // returned afterwards.
-    pub fn set_time(
+    pub(crate) fn set_time(
         &self,
         expire_time: Duration,
         interval: Duration,
@@ -165,7 +165,7 @@ impl TimerfdFile {
     }
 
     /// Gets the timer's remaining time and interval.
-    pub fn get_time(&self) -> (Duration, Duration) {
+    pub(crate) fn get_time(&self) -> (Duration, Duration) {
         let timer_guard = self.timer.lock();
         (timer_guard.interval(), timer_guard.remain())
     }

@@ -479,7 +479,7 @@ pub(super) fn init_in_first_process() -> Result<()> {
     Ok(())
 }
 
-pub fn active_vt() -> &'static Arc<Tty<VtDriver>> {
+pub(crate) fn active_vt() -> &'static Arc<Tty<VtDriver>> {
     let vtm = VT_MANAGER.get().expect("`VT_MANAGER` is not initialized");
     vtm.active_vt()
 }

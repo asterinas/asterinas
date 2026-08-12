@@ -15,7 +15,12 @@ use crate::{
     process::{ResourceType, signal::Poller},
 };
 
-pub fn sys_poll(fds: Vaddr, nfds: u32, timeout: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_poll(
+    fds: Vaddr,
+    nfds: u32,
+    timeout: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let timeout = if timeout >= 0 {
         Some(Duration::from_millis(timeout as _))
     } else {
@@ -242,7 +247,7 @@ pub(super) struct PollFd {
 }
 
 impl PollFd {
-    pub fn new(fd: Option<FileDesc>, events: IoEvents) -> Self {
+    pub(crate) fn new(fd: Option<FileDesc>, events: IoEvents) -> Self {
         let revents = Cell::new(IoEvents::empty());
         Self {
             fd,
@@ -251,15 +256,15 @@ impl PollFd {
         }
     }
 
-    pub fn fd(&self) -> Option<FileDesc> {
+    pub(crate) fn fd(&self) -> Option<FileDesc> {
         self.fd
     }
 
-    pub fn events(&self) -> IoEvents {
+    pub(crate) fn events(&self) -> IoEvents {
         self.events
     }
 
-    pub fn revents(&self) -> &Cell<IoEvents> {
+    pub(crate) fn revents(&self) -> &Cell<IoEvents> {
         &self.revents
     }
 

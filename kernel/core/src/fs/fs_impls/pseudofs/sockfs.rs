@@ -23,20 +23,20 @@ pub(super) fn init() {
     let _ = SockFs::mount_node();
 }
 
-pub struct SockFs {
+pub(crate) struct SockFs {
     _private: (),
 }
 
 impl SockFs {
     /// Returns the singleton instance of the socket file system.
-    pub fn singleton() -> &'static Arc<NaivePseudoFs> {
+    pub(crate) fn singleton() -> &'static Arc<NaivePseudoFs> {
         static SOCKFS: Once<Arc<NaivePseudoFs>> = Once::new();
 
         NaivePseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
     }
 
     /// Creates a pseudo `Path` for a socket.
-    pub fn new_path() -> Path {
+    pub(crate) fn new_path() -> Path {
         let socket_inode = Arc::new(Self::singleton().alloc_inode(
             PseudoInodeType::Socket,
             mkmod!(a+rwx),
@@ -50,7 +50,7 @@ impl SockFs {
     }
 
     /// Returns the pseudo mount node of the socket file system.
-    pub fn mount_node() -> &'static Arc<Mount> {
+    pub(crate) fn mount_node() -> &'static Arc<Mount> {
         static SOCKFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
         SOCKFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())

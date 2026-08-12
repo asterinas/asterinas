@@ -18,7 +18,7 @@ enum ArchPrctlCode {
     ARCH_GET_GS = 0x1004,
 }
 
-pub fn sys_arch_prctl(code: u64, addr: usize, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_arch_prctl(code: u64, addr: usize, ctx: &Context) -> Result<SyscallReturn> {
     let arch_prctl_code = ArchPrctlCode::try_from(code)?;
     debug!(
         "arch_prctl_code: {:?}, addr = 0x{:x}",

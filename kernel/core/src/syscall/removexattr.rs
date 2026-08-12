@@ -14,7 +14,11 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_removexattr(path_ptr: Vaddr, name_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_removexattr(
+    path_ptr: Vaddr,
+    name_ptr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
     let path = user_space.read_cstring(path_ptr, MAX_FILENAME_LEN)?;
 
@@ -23,7 +27,11 @@ pub fn sys_removexattr(path_ptr: Vaddr, name_ptr: Vaddr, ctx: &Context) -> Resul
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_lremovexattr(path_ptr: Vaddr, name_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_lremovexattr(
+    path_ptr: Vaddr,
+    name_ptr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
     let path = user_space.read_cstring(path_ptr, MAX_FILENAME_LEN)?;
 
@@ -32,7 +40,7 @@ pub fn sys_lremovexattr(path_ptr: Vaddr, name_ptr: Vaddr, ctx: &Context) -> Resu
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fremovexattr(
+pub(super) fn sys_fremovexattr(
     raw_fd: RawFileDesc,
     name_ptr: Vaddr,
     ctx: &Context,

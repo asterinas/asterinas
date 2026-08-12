@@ -43,7 +43,7 @@ fn handle_page_fault_from_vmar(vmar: &Vmar, page_fault_info: &PageFaultInfo) -> 
 /// A trait that converts CPU exceptions into fault signals.
 ///
 /// This trait should be implemented by architecture-specific code for [`CpuException`].
-pub trait ToFaultSignal {
+pub(crate) trait ToFaultSignal {
     /// Converts a CPU exception into a fault signal.
     ///
     /// Returns `None` if the exception must be handled earlier and cannot be delivered as a signal.

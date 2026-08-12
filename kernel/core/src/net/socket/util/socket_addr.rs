@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum SocketAddr {
+pub(crate) enum SocketAddr {
     Unix(UnixSocketAddr),
     IPv4(Ipv4Address, PortNum),
     IPv6(Ipv6Address, PortNum),

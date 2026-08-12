@@ -13,13 +13,13 @@ use crate::{
 #[expect(clippy::upper_case_acronyms)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
-pub enum CNetlinkOptionName {
+pub(crate) enum CNetlinkOptionName {
     ADD_MEMBERSHIP = 1,
     DROP_MEMBERSHIP = 2,
     PKTINFO = 3,
 }
 
-pub fn new_netlink_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
+pub(crate) fn new_netlink_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     let name = CNetlinkOptionName::try_from(name).map_err(|_| Errno::ENOPROTOOPT)?;
     match name {
         CNetlinkOptionName::ADD_MEMBERSHIP => Ok(Box::new(AddMembership::new())),

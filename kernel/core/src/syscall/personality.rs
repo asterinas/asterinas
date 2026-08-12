@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{prelude::*, process::posix_thread::Personality};
 
-pub fn sys_personality(personality: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_personality(personality: u32, ctx: &Context) -> Result<SyscallReturn> {
     // FIXME: Figure out how personality is inherited across `clone` or `execve` in Linux,
     // and implement it properly.
     let old_personality = ctx.posix_thread.personality() as isize;

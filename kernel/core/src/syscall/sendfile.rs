@@ -14,7 +14,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_sendfile(
+pub(super) fn sys_sendfile(
     out_fd: RawFileDesc,
     in_fd: RawFileDesc,
     offset_ptr: Vaddr,

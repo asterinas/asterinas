@@ -5,7 +5,11 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_getgroups(size: i32, group_list_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_getgroups(
+    size: i32,
+    group_list_addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("size = {}, group_list_addr = 0x{:x}", size, group_list_addr);
 
     if size < 0 {

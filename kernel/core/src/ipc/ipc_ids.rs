@@ -6,7 +6,7 @@ use id_alloc::IdAlloc;
 use crate::prelude::*;
 
 /// An IPC ID.
-pub type IpcId = RangedU32<1, { i32::MAX as u32 }>;
+pub(crate) type IpcId = RangedU32<1, { i32::MAX as u32 }>;
 
 /// Maps IPC IDs to objects and manages ID allocation.
 ///

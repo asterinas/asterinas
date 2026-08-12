@@ -15,7 +15,7 @@ use crate::{
     time::timeval_t,
 };
 
-pub fn sys_select(
+pub(super) fn sys_select(
     nfds: RawFileDesc,
     readfds_addr: Vaddr,
     writefds_addr: Vaddr,
@@ -221,7 +221,7 @@ struct FdSet {
 
 impl FdSet {
     /// Equivalent to FD_SET.
-    pub fn set(&mut self, fd: RawFileDesc) -> Result<()> {
+    pub(crate) fn set(&mut self, fd: RawFileDesc) -> Result<()> {
         let fd = fd as usize;
         if fd >= FD_SETSIZE {
             return_errno_with_message!(Errno::EINVAL, "fd exceeds FD_SETSIZE");
@@ -232,7 +232,7 @@ impl FdSet {
 
     /// Equivalent to FD_CLR.
     #[expect(unused)]
-    pub fn unset(&mut self, fd: RawFileDesc) -> Result<()> {
+    pub(crate) fn unset(&mut self, fd: RawFileDesc) -> Result<()> {
         let fd = fd as usize;
         if fd >= FD_SETSIZE {
             return_errno_with_message!(Errno::EINVAL, "fd exceeds FD_SETSIZE");
@@ -242,7 +242,7 @@ impl FdSet {
     }
 
     /// Equivalent to FD_ISSET.
-    pub fn is_set(&self, fd: RawFileDesc) -> bool {
+    pub(crate) fn is_set(&self, fd: RawFileDesc) -> bool {
         let fd = fd as usize;
         if fd >= FD_SETSIZE {
             return false;
@@ -251,7 +251,7 @@ impl FdSet {
     }
 
     /// Equivalent to FD_ZERO.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         for slot in self.fds_bits.iter_mut() {
             *slot = 0;
         }

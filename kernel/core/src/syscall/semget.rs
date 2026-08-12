@@ -3,7 +3,12 @@
 use super::SyscallReturn;
 use crate::{ipc::IpcFlags, prelude::*};
 
-pub fn sys_semget(key: i32, nsems: i32, semflg: i32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_semget(
+    key: i32,
+    nsems: i32,
+    semflg: i32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let num_sems = nsems as usize;
     let flags = IpcFlags::from_bits_truncate(semflg.cast_unsigned());
     let mode: u16 = (semflg.cast_unsigned() & 0x1FF) as u16;

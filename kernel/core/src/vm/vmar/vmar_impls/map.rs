@@ -49,13 +49,13 @@ impl Vmar {
     /// ```
     ///
     /// For more details on the available options, see [`VmarMapOptions`].
-    pub fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions<'_>> {
+    pub(crate) fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions<'_>> {
         Ok(VmarMapOptions::new(self, size, perms))
     }
 }
 
 /// Options for creating a new mapping.
-pub struct VmarMapOptions<'a> {
+pub(crate) struct VmarMapOptions<'a> {
     parent: &'a Vmar,
     mappable: Option<Mappable>,
     path: Option<Path>,
@@ -77,7 +77,7 @@ pub struct VmarMapOptions<'a> {
 /// Note that this differs from the VMO offset. The VMO offset and the VMO
 /// itself together specify the content of the mapping.
 #[derive(Clone, Copy, Debug)]
-pub enum VmarMapOffset {
+pub(crate) enum VmarMapOffset {
     /// The new mapping will be placed at the specified offset. Conflict
     /// mappings will be replaced.
     FixedReplace(usize),
@@ -129,7 +129,7 @@ impl<'a> VmarMapOptions<'a> {
     /// The provided `may_perms` must be a subset of all the may-permissions,
     /// and must include the may-permissions corresponding to already requested
     /// normal permissions (`READ | WRITE | EXEC`).
-    pub fn may_perms(mut self, may_perms: VmPerms) -> Self {
+    pub(crate) fn may_perms(mut self, may_perms: VmPerms) -> Self {
         self.may_perms = may_perms;
         self
     }
@@ -154,7 +154,7 @@ impl<'a> VmarMapOptions<'a> {
     /// # Panics
     ///
     /// This function panics if a [`Vmo`] or [`Mappable`] is already provided.
-    pub fn vmo(mut self, vmo: Arc<Vmo>) -> Self {
+    pub(crate) fn vmo(mut self, vmo: Arc<Vmo>) -> Self {
         if self.mappable.is_some() {
             panic!("Cannot set `vmo` when `mappable` is already set");
         }
@@ -174,7 +174,7 @@ impl<'a> VmarMapOptions<'a> {
     /// # Panics
     ///
     /// This function panics if a [`Path`] is already provided.
-    pub fn path(mut self, path: Path) -> Self {
+    pub(crate) fn path(mut self, path: Path) -> Self {
         if self.path.is_some() {
             panic!("Cannot set `path` when `path` is already set");
         }
@@ -189,7 +189,7 @@ impl<'a> VmarMapOptions<'a> {
     /// The offset must be page-aligned and within the VMO.
     ///
     /// The default value is zero.
-    pub fn vmo_offset(mut self, offset: usize) -> Self {
+    pub(crate) fn vmo_offset(mut self, offset: usize) -> Self {
         self.vmo_offset = offset;
         self
     }
@@ -200,7 +200,7 @@ impl<'a> VmarMapOptions<'a> {
     ///
     /// The provided alignment must be a power of two and a multiple of the
     /// page size.
-    pub fn align(mut self, align: usize) -> Self {
+    pub(crate) fn align(mut self, align: usize) -> Self {
         self.align = align;
         self
     }
@@ -212,7 +212,7 @@ impl<'a> VmarMapOptions<'a> {
     /// the VMAR.
     ///
     /// If not set, the system will choose an offset automatically.
-    pub fn offset(mut self, offset: VmarMapOffset) -> Self {
+    pub(crate) fn offset(mut self, offset: VmarMapOffset) -> Self {
         self.offset = offset;
         self
     }
@@ -224,13 +224,13 @@ impl<'a> VmarMapOptions<'a> {
     /// If this value is set to true, the mapping will be shared with child
     /// process when forking.
     #[expect(clippy::wrong_self_convention)]
-    pub fn is_shared(mut self, is_shared: bool) -> Self {
+    pub(crate) fn is_shared(mut self, is_shared: bool) -> Self {
         self.is_shared = is_shared;
         self
     }
 
     /// Sets the mapping to handle surrounding pages when handling page fault.
-    pub fn handle_page_faults_around(mut self) -> Self {
+    pub(crate) fn handle_page_faults_around(mut self) -> Self {
         self.handle_page_faults_around = true;
         self
     }
@@ -250,7 +250,7 @@ impl<'a> VmarMapOptions<'a> {
     ///
     /// This function returns an error if the file does not have a corresponding
     /// mappable object of [`Mappable`].
-    pub fn mappable(mut self, file: &dyn FileLike) -> Result<Self> {
+    pub(crate) fn mappable(mut self, file: &dyn FileLike) -> Result<Self> {
         if self.mappable.is_some() {
             panic!("Cannot set `mappable` when `mappable` is already set");
         }
@@ -270,7 +270,7 @@ impl<'a> VmarMapOptions<'a> {
     /// All options will be checked at this point.
     ///
     /// On success, the virtual address of the new mapping is returned.
-    pub fn build(self) -> Result<Vaddr> {
+    pub(crate) fn build(self) -> Result<Vaddr> {
         self.check_options()?;
         let Self {
             parent,

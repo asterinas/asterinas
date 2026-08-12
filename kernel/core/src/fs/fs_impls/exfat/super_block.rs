@@ -6,7 +6,7 @@ use crate::prelude::*;
 #[repr(C, packed)]
 #[derive(Clone, Copy, Debug, Default)]
 // The in-memory superblock info
-pub struct ExfatSuperBlock {
+pub(crate) struct ExfatSuperBlock {
     /// num of sectors in volume
     pub num_sectors: u64,
     /// num of clusters in volume
@@ -87,9 +87,9 @@ impl TryFrom<ExfatBootSector> for ExfatSuperBlock {
     }
 }
 
-pub const BOOTSEC_JUMP_BOOT_LEN: usize = 3;
-pub const BOOTSEC_FS_NAME_LEN: usize = 8;
-pub const BOOTSEC_OLDBPB_LEN: usize = 53;
+pub(crate) const BOOTSEC_JUMP_BOOT_LEN: usize = 3;
+pub(crate) const BOOTSEC_FS_NAME_LEN: usize = 8;
+pub(crate) const BOOTSEC_OLDBPB_LEN: usize = 53;
 // EXFAT: Main and Backup Boot Sector (512 bytes)
 #[repr(C, packed)]
 #[derive(Clone, Copy, Debug, Pod)]

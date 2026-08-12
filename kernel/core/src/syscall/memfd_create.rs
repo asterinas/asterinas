@@ -9,7 +9,11 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_memfd_create(name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_memfd_create(
+    name_addr: Vaddr,
+    flags: u32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let name = ctx
         .user_space()
         .read_cstring(name_addr, MAX_MEMFD_NAME_LEN + 1)

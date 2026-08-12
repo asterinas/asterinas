@@ -159,7 +159,7 @@ struct TsmProvider {
 }
 
 impl TsmProvider {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         TsmProvider {
             provider: SysStr::from("tdx_guest"),
             state: TsmProviderState::InblobNeeded,

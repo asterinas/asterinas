@@ -6,7 +6,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fsync(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_fsync(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("raw_fd = {}", raw_fd);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
@@ -16,7 +16,7 @@ pub fn sys_fsync(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fdatasync(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_fdatasync(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("raw_fd = {}", raw_fd);
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();

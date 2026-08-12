@@ -10,7 +10,7 @@ use crate::{
     syscall::SyscallReturn,
 };
 
-pub fn sys_pidfd_getfd(
+pub(super) fn sys_pidfd_getfd(
     pidfd: RawFileDesc,
     targetfd: RawFileDesc,
     flags: u32,

@@ -16,7 +16,11 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_statfs(
+    path_ptr: Vaddr,
+    statfs_buf_ptr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
     let path_name = user_space.read_cstring(path_ptr, PATH_MAX)?;
     debug!(
@@ -39,7 +43,7 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Resu
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fstatfs(
+pub(super) fn sys_fstatfs(
     raw_fd: RawFileDesc,
     statfs_buf_ptr: Vaddr,
     ctx: &Context,

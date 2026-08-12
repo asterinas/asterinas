@@ -13,7 +13,7 @@ use crate::{
     syscall::sigaltstack::set_new_stack,
 };
 
-pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<SyscallReturn> {
+pub(super) fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<SyscallReturn> {
     let sig_context_addr = user_ctx.stack_pointer() as Vaddr;
     debug!(
         "sys_rt_sigreturn: sig_context_addr = {:#x}",

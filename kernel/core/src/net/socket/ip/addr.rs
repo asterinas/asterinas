@@ -43,7 +43,7 @@ pub(super) const UNSPECIFIED_LOCAL_ENDPOINT_V6: IpEndpoint =
 
 /// Address family for IP sockets.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum IpAddressFamily {
+pub(crate) enum IpAddressFamily {
     IPv4,
     IPv6,
 }

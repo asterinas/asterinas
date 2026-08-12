@@ -17,7 +17,7 @@ use crate::{
 /// `NsProxy` contains all types of namespaces except
 /// 1. The user namespace, which is included in the `Process` struct.
 /// 2. The PID namespace, which is included in the `Process` struct (TODO).
-pub struct NsProxy {
+pub(crate) struct NsProxy {
     cgroup_ns: Arc<CgroupNamespace>,
     ipc_ns: Arc<IpcNamespace>,
     mnt_ns: Arc<MountNamespace>,
@@ -97,29 +97,29 @@ impl NsProxy {
     }
 
     /// Returns the associated cgroup namespace.
-    pub fn cgroup_ns(&self) -> &Arc<CgroupNamespace> {
+    pub(crate) fn cgroup_ns(&self) -> &Arc<CgroupNamespace> {
         &self.cgroup_ns
     }
 
     /// Returns the associated IPC namespace.
-    pub fn ipc_ns(&self) -> &Arc<IpcNamespace> {
+    pub(crate) fn ipc_ns(&self) -> &Arc<IpcNamespace> {
         &self.ipc_ns
     }
 
     /// Returns the associated mount namespace.
-    pub fn mnt_ns(&self) -> &Arc<MountNamespace> {
+    pub(crate) fn mnt_ns(&self) -> &Arc<MountNamespace> {
         &self.mnt_ns
     }
 
     /// Returns the associated UTS namespace.
-    pub fn uts_ns(&self) -> &Arc<UtsNamespace> {
+    pub(crate) fn uts_ns(&self) -> &Arc<UtsNamespace> {
         &self.uts_ns
     }
 }
 
 /// A builder for creating a new `NsProxy` by selectively cloning namespaces
 /// from an existing one.
-pub struct NsProxyBuilder<'a> {
+pub(crate) struct NsProxyBuilder<'a> {
     old_proxy: &'a NsProxy,
 
     // Fields for new namespaces.
@@ -131,7 +131,7 @@ pub struct NsProxyBuilder<'a> {
 
 impl<'a> NsProxyBuilder<'a> {
     /// Creates a builder based on an existing `NsProxy`.
-    pub fn new(old_proxy: &'a NsProxy) -> Self {
+    pub(crate) fn new(old_proxy: &'a NsProxy) -> Self {
         Self {
             old_proxy,
             cgroup_ns: None,
@@ -142,31 +142,31 @@ impl<'a> NsProxyBuilder<'a> {
     }
 
     /// Sets the new cgroup namespace for the context being built.
-    pub fn cgroup_ns(&mut self, cgroup_ns: Arc<CgroupNamespace>) -> &mut Self {
+    pub(crate) fn cgroup_ns(&mut self, cgroup_ns: Arc<CgroupNamespace>) -> &mut Self {
         self.cgroup_ns = Some(cgroup_ns);
         self
     }
 
     /// Sets the new IPC namespace for the context being built.
-    pub fn ipc_ns(&mut self, ipc_ns: Arc<IpcNamespace>) -> &mut Self {
+    pub(crate) fn ipc_ns(&mut self, ipc_ns: Arc<IpcNamespace>) -> &mut Self {
         self.ipc_ns = Some(ipc_ns);
         self
     }
 
     /// Sets the new mount namespace for the context being built.
-    pub fn mnt_ns(&mut self, mnt_ns: Arc<MountNamespace>) -> &mut Self {
+    pub(crate) fn mnt_ns(&mut self, mnt_ns: Arc<MountNamespace>) -> &mut Self {
         self.mnt_ns = Some(mnt_ns);
         self
     }
 
     /// Sets the new UTS namespace for the context being built.
-    pub fn uts_ns(&mut self, uts_ns: Arc<UtsNamespace>) -> &mut Self {
+    pub(crate) fn uts_ns(&mut self, uts_ns: Arc<UtsNamespace>) -> &mut Self {
         self.uts_ns = Some(uts_ns);
         self
     }
 
     /// Builds the new `NsProxy`.
-    pub fn build(self) -> NsProxy {
+    pub(crate) fn build(self) -> NsProxy {
         let Self {
             old_proxy,
             cgroup_ns: new_cgroup,
@@ -192,7 +192,7 @@ impl<'a> NsProxyBuilder<'a> {
 /// Checks if the given `flags` contain any unsupported namespace-related flags.
 ///
 /// This method does _not_ check `CLONE_NEWUSER` since it's handled separately.
-pub fn check_unsupported_ns_flags(flags: CloneFlags) -> Result<()> {
+pub(crate) fn check_unsupported_ns_flags(flags: CloneFlags) -> Result<()> {
     const SUPPORTED_FLAGS: CloneFlags = CloneFlags::CLONE_NEWCGROUP
         .union(CloneFlags::CLONE_NEWIPC)
         .union(CloneFlags::CLONE_NEWNS)
@@ -209,7 +209,7 @@ pub fn check_unsupported_ns_flags(flags: CloneFlags) -> Result<()> {
 }
 
 /// Provides administrative APIs for switching to existing namespaces.
-pub trait ContextSetNsAdminApi {
+pub(crate) trait ContextSetNsAdminApi {
     /// Sets the namespace proxy for this context.
     fn set_ns_proxy(&self, ns_proxy: Arc<NsProxy>);
 }

@@ -12,7 +12,7 @@ use spin::Once;
 
 /// The `SysTree` node that represents the root node of the `ConfigFs`.
 #[derive(Debug)]
-pub struct ConfigRootNode {
+pub(crate) struct ConfigRootNode {
     fields: BranchNodeFields<dyn SysObj, Self>,
 }
 
@@ -36,7 +36,7 @@ impl ConfigRootNode {
     }
 
     /// Adds a child node.
-    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
+    pub(crate) fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
 }
 
 inherit_sys_branch_node!(ConfigRootNode, fields, {

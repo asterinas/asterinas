@@ -13,23 +13,23 @@ use crate::time::{
 };
 
 /// The Clock that reads the jiffies, and turn the counter into `Duration`.
-pub struct JiffiesClock {
+pub(crate) struct JiffiesClock {
     _private: (),
 }
 
 /// `RealTimeClock` represents a clock that provides the current real time.
-pub struct RealTimeClock {
+pub(crate) struct RealTimeClock {
     _private: (),
 }
 
 impl RealTimeClock {
     /// Get the singleton of this clock.
-    pub fn get() -> &'static Arc<RealTimeClock> {
+    pub(crate) fn get() -> &'static Arc<RealTimeClock> {
         CLOCK_REALTIME_INSTANCE.get().unwrap()
     }
 
     /// Get the cpu-local system-wide `TimerManager` singleton of this clock.
-    pub fn timer_manager() -> &'static Arc<TimerManager> {
+    pub(crate) fn timer_manager() -> &'static Arc<TimerManager> {
         let preempt_guard = disable_preempt();
         CLOCK_REALTIME_MANAGER
             .get_on_cpu(preempt_guard.current_cpu())
@@ -40,18 +40,18 @@ impl RealTimeClock {
 
 /// `MonotonicClock` represents a clock that measures time in a way that is
 /// monotonically increasing since the system was booted.
-pub struct MonotonicClock {
+pub(crate) struct MonotonicClock {
     _private: (),
 }
 
 impl MonotonicClock {
     /// Get the singleton of this clock.
-    pub fn get() -> &'static Arc<MonotonicClock> {
+    pub(crate) fn get() -> &'static Arc<MonotonicClock> {
         CLOCK_MONOTONIC_INSTANCE.get().unwrap()
     }
 
     /// Get the cpu-local system-wide `TimerManager` singleton of this clock.
-    pub fn timer_manager() -> &'static Arc<TimerManager> {
+    pub(crate) fn timer_manager() -> &'static Arc<TimerManager> {
         let preempt_guard = disable_preempt();
         CLOCK_MONOTONIC_MANAGER
             .get_on_cpu(preempt_guard.current_cpu())
@@ -68,7 +68,7 @@ impl MonotonicClock {
 /// based on the clocksource. Hence it is faster but less accurate.
 ///
 /// Usually it will not be used to create a timer.
-pub struct RealTimeCoarseClock {
+pub(crate) struct RealTimeCoarseClock {
     _private: (),
 }
 
@@ -81,7 +81,7 @@ impl RealTimeCoarseClock {
     }
 
     /// Get the singleton of this clock.
-    pub fn get() -> &'static Arc<RealTimeCoarseClock> {
+    pub(crate) fn get() -> &'static Arc<RealTimeCoarseClock> {
         CLOCK_REALTIME_COARSE_INSTANCE.get().unwrap()
     }
 }
@@ -91,13 +91,13 @@ impl RealTimeCoarseClock {
 /// This clock is based on [`RealTimeCoarseClock`].
 ///
 /// Usually it will not be used to create a timer.
-pub struct MonotonicCoarseClock {
+pub(crate) struct MonotonicCoarseClock {
     _private: (),
 }
 
 impl MonotonicCoarseClock {
     /// Get the singleton of this clock.
-    pub fn get() -> &'static Arc<MonotonicCoarseClock> {
+    pub(crate) fn get() -> &'static Arc<MonotonicCoarseClock> {
         CLOCK_MONOTONIC_COARSE_INSTANCE.get().unwrap()
     }
 }
@@ -107,13 +107,13 @@ impl MonotonicCoarseClock {
 ///
 /// Note: Currently we have not implement NTP corrections so we treat this clock
 /// as the [`MonotonicClock`].
-pub struct MonotonicRawClock {
+pub(crate) struct MonotonicRawClock {
     _private: (),
 }
 
 impl MonotonicRawClock {
     /// Get the singleton of this clock.
-    pub fn get() -> &'static Arc<MonotonicRawClock> {
+    pub(crate) fn get() -> &'static Arc<MonotonicRawClock> {
         CLOCK_MONOTONIC_RAW_INSTANCE.get().unwrap()
     }
 }
@@ -123,18 +123,18 @@ impl MonotonicRawClock {
 ///
 /// Note: currently the system will not be suspended so we treat this clock
 /// as the [`MonotonicClock`].
-pub struct BootTimeClock {
+pub(crate) struct BootTimeClock {
     _private: (),
 }
 
 impl BootTimeClock {
     /// Get the singleton of this clock.
-    pub fn get() -> &'static Arc<BootTimeClock> {
+    pub(crate) fn get() -> &'static Arc<BootTimeClock> {
         CLOCK_BOOTTIME_INSTANCE.get().unwrap()
     }
 
     /// Get the cpu-local system-wide `TimerManager` singleton of this clock.
-    pub fn timer_manager() -> &'static Arc<TimerManager> {
+    pub(crate) fn timer_manager() -> &'static Arc<TimerManager> {
         let preempt_guard = disable_preempt();
         CLOCK_BOOTTIME_MANAGER
             .get_on_cpu(preempt_guard.current_cpu())
@@ -192,7 +192,7 @@ macro_rules! define_system_clocks {
     ($($clock_id:ident => $clock_type:ident,)*) => {
         $(
             paste! {
-                pub static [<$clock_id _INSTANCE>]: Once<Arc<$clock_type>> = Once::new();
+                pub(crate) static [<$clock_id _INSTANCE>]: Once<Arc<$clock_type>> = Once::new();
             }
         )*
 
@@ -217,7 +217,7 @@ macro_rules! define_timer_managers {
         $(
             paste! {
                 cpu_local! {
-                    pub static [<$clock_id _MANAGER>]: Once<Arc<TimerManager>> = Once::new();
+                    pub(crate) static [<$clock_id _MANAGER>]: Once<Arc<TimerManager>> = Once::new();
                 }
             }
         )*
@@ -266,7 +266,7 @@ fn init_system_wide_timer_managers() {
 }
 
 /// The system-wide [`TimerManager`] for the [`JiffiesClock`].
-pub static JIFFIES_TIMER_MANAGER: Once<Arc<TimerManager>> = Once::new();
+pub(crate) static JIFFIES_TIMER_MANAGER: Once<Arc<TimerManager>> = Once::new();
 
 fn init_jiffies_clock_manager() {
     let jiffies_clock = JiffiesClock { _private: () };
@@ -306,7 +306,7 @@ pub(super) fn init() {
 ///
 /// TODO: `ktest` may require a feature that allows the registration of initialization functions
 /// to avoid functions like this one.
-pub fn init_for_ktest() {
+pub(crate) fn init_for_ktest() {
     // If `spin::Once` has initialized, this closure will not be executed.
     for cpu in ostd::cpu::all_cpus() {
         CLOCK_REALTIME_MANAGER.get_on_cpu(cpu).call_once(|| {

@@ -60,8 +60,8 @@ macro_rules! __log_prefix {
     };
 }
 
-pub use fs::Ext2;
-pub use inode::{FilePerm, Inode};
+pub(crate) use fs::Ext2;
+pub(crate) use inode::{FilePerm, Inode};
 
 pub(in crate::fs) use self::fs_type::EXT2_TYPE;
 use crate::fs::vfs::registry;
