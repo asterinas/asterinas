@@ -20,8 +20,11 @@ use ostd::{
 };
 
 use super::{
-    PageFaultInfo, Rmap, RssType, Vmar, cursor::CursorMutExt, interval_set::Interval,
-    util::is_intersected, vmar_impls::RssDelta,
+    PageFaultInfo, Rmap, RssType, Vmar,
+    cursor::{CursorExt, CursorMutExt},
+    interval_set::Interval,
+    util::is_intersected,
+    vmar_impls::RssDelta,
 };
 use crate::{
     fs::{
@@ -420,7 +423,7 @@ impl VmMapping {
                     &preempt_guard,
                     &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
                 )?;
-                if cursor.query().is_some() {
+                if cursor.to_leaf().query().is_some() {
                     return Ok(());
                 }
             }
@@ -480,9 +483,9 @@ impl VmMapping {
             let preempt_guard = disable_preempt();
             let mut cursor = vm_space.cursor_mut(&preempt_guard, &va_range)?;
 
-            let item = cursor.query();
+            let item = cursor.to_leaf().query();
             match item {
-                Some(VmQueriedItem::MappedRam { frame, mut prop }) => {
+                VmQueriedItem::MappedRam { frame, mut prop } => {
                     if VmPerms::from(prop.flags).contains(required_perms) {
                         // The page fault is already handled maybe by other threads.
                         // Just flush the TLB and return.
@@ -534,7 +537,7 @@ impl VmMapping {
                     cursor.flusher().dispatch_tlb_flush();
                     cursor.flusher().sync_tlb_flush();
                 }
-                Some(VmQueriedItem::MappedIoMem { .. }) => {
+                VmQueriedItem::MappedIoMem { .. } => {
                     // The page of I/O memory is populated when the memory
                     // mapping is created.
                     return_errno_with_message!(
@@ -542,7 +545,7 @@ impl VmMapping {
                         "device memory page faults cannot be resolved"
                     );
                 }
-                None => {
+                VmQueriedItem::None => {
                     // Map a new frame to the page fault address.
                     let (frame, is_readonly) = match self.prepare_page(page_aligned_addr, is_write)
                     {
@@ -576,6 +579,9 @@ impl VmMapping {
 
                     cursor.map(frame, map_prop);
                     rss_delta.add(self.rss_type(), 1);
+                }
+                VmQueriedItem::PageTable => {
+                    unreachable!("pushed but still queried a page table")
                 }
             }
             break 'retry;
@@ -687,13 +693,14 @@ impl VmMapping {
                 VmoCommitError,
             >| {
                 cursor.jump(cur_va).unwrap();
-                if cursor.query().is_none() {
+                if cursor.to_leaf().query().is_none() {
                     // We regard all the surrounding pages as accessed, no matter
                     // if it is really so. Then the hardware won't bother to update
                     // the accessed bit of the page table on following accesses.
                     let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
                     let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
                     let (_, frame) = commit_fn()?;
+                    cursor.adjust_level(1);
                     cursor.map(frame.into(), page_prop);
                     rss_delta_ref.add(self.rss_type(), 1);
                 }

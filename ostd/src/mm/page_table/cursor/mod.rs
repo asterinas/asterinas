@@ -132,9 +132,8 @@ enum FindNextMode {
 impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     /// Creates a cursor claiming exclusive access over the given range.
     ///
-    /// The cursor created will only be able to query or jump within the given
-    /// range. Out-of-bound accesses will result in panics or errors as return
-    /// values, depending on the access method.
+    /// The cursor will only be able to query the page table or jump within the
+    /// given range.
     pub fn new(
         pt: &'rcu PageTable<C>,
         guard: &'rcu dyn InAtomicMode,
@@ -175,24 +174,15 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     /// # Panics
     ///
     /// Panics if the cursor is at the end of its locked range.
-    pub fn query(&mut self) -> Option<C::ItemRef<'rcu>> {
-        let rcu_guard = self.rcu_guard;
-
-        loop {
-            let cur_entry = self.cur_entry();
-            let item = match cur_entry.to_ref() {
-                PteStateRef::PageTable(pt) => {
-                    // SAFETY: The `pt` must be locked and no other guards exist.
-                    let guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
-                    self.push_level(guard);
-                    continue;
-                }
-                PteStateRef::Absent => None,
-                PteStateRef::Mapped(item) => Some(item),
-            };
-
-            return item;
-        }
+    pub(in crate::mm) fn query(&self) -> PteStateRef<'rcu, C> {
+        assert!(
+            self.barrier_va.contains(&self.va),
+            "cursor virtual address outside locked range"
+        );
+        self.path[self.level as usize - 1]
+            .as_ref()
+            .unwrap()
+            .entry_state(pte_index::<C>(self.va, self.level))
     }
 
     /// Moves the cursor forward to the next mapped virtual address.
@@ -352,14 +342,35 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     }
 
     /// Goes up a level.
-    fn pop_level(&mut self) {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cursor is already at the highest locked level (guard level).
+    pub fn pop_level(&mut self) {
+        assert!(self.level < self.guard_level);
+
         let taken = self.path[self.level as usize - 1]
             .take()
             .expect("popping a level without a lock");
         let _ = ManuallyDrop::new(taken);
 
-        debug_assert!(self.level < self.guard_level);
         self.level += 1;
+    }
+
+    /// Goes down a level if a child page table exists.
+    ///
+    /// Returns the lower level if the cursor successfully goes down a level.
+    pub fn push_level_if_exists(&mut self) -> Option<PagingLevel> {
+        let cur_entry = self.cur_entry();
+        match cur_entry.to_ref() {
+            PteStateRef::PageTable(pt) => {
+                // SAFETY: The `pt` must be locked and no other guards exist.
+                let pt_guard = unsafe { pt.make_guard_unchecked(self.rcu_guard) };
+                self.push_level(pt_guard);
+                Some(self.level)
+            }
+            _ => None,
+        }
     }
 
     /// Goes down a level to a child page table.
@@ -412,7 +423,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     ///
     /// Panics if the specified level is invalid.
     pub fn adjust_level(&mut self, to: PagingLevel) {
-        assert!(1 <= to && to <= C::NR_LEVELS);
+        assert!(1 <= to && to <= self.guard_level);
 
         let rcu_guard = self.rcu_guard;
 
@@ -448,9 +459,11 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// # Panics
     ///
     /// Panics if
+    ///  - the cursor level does not match the level of the item to be mapped;
     ///  - the current virtual address is not aligned to the page size of the
     ///    item to be mapped;
-    ///  - the end of the current virtual address range exceeds the locked range;
+    ///  - the current virtual address range is not fully contained in the
+    ///    cursor range;
     ///  - the current virtual address range contains mappings.
     ///
     /// # Safety
@@ -459,25 +472,15 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     ///  - the range being mapped does not affect kernel's memory safety;
     ///  - the physical address to be mapped is valid and safe to use.
     pub unsafe fn map(&mut self, item: C::Item) {
-        assert!(self.va < self.barrier_va.end);
-
         let (_, level, _) = C::item_raw_info(&item);
         assert!(
             level <= C::HIGHEST_TRANSLATION_LEVEL,
             "cursor level not suitable for mapping"
         );
-        let size = page_size::<C>(level);
         assert_eq!(
-            self.va % size,
-            0,
-            "cursor virtual address not aligned for mapping"
+            self.level, level,
+            "cursor level do not match the item mapping level"
         );
-        assert!(
-            size <= self.barrier_va.end - self.va,
-            "cursor virtual address out-of-bound for mapping"
-        );
-
-        self.adjust_level(level);
         self.assert_cur_va_range_valid();
 
         if !matches!(self.cur_entry().to_ref(), PteStateRef::Absent) {
