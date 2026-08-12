@@ -11,7 +11,7 @@ use ostd::{
     task::Task,
 };
 
-use self::stats::CONTEXT_SWITCH_COUNTER;
+use self::{kernel_thread::AsKernelThread, stats::CONTEXT_SWITCH_COUNTER};
 use crate::{
     prelude::*,
     sched::{SchedAttr, SchedPolicy},
@@ -48,13 +48,16 @@ fn post_schedule_handler() {
         .add_on_cpu(CpuId::current_racy(), 1);
 
     let task = Task::current().unwrap();
-    let Some(thread_local) = task.as_thread_local() else {
-        return;
-    };
-
-    let vmar = thread_local.vmar().borrow();
-    if let Some(vmar) = vmar.as_ref() {
-        vmar.vm_space().activate()
+    if let Some(thread_local) = task.as_thread_local() {
+        let vmar = thread_local.vmar().borrow();
+        if let Some(vmar) = vmar.as_ref() {
+            vmar.vm_space().activate()
+        }
+    } else if let Some(vmar) = task
+        .as_kernel_thread()
+        .and_then(|kernel_thread| kernel_thread.vmar())
+    {
+        vmar.vm_space().activate();
     }
 }
 
