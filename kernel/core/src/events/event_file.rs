@@ -13,7 +13,7 @@
 
 use core::fmt::Display;
 
-use ostd::sync::{LocalIrqDisabled, WaitQueue};
+use ostd::sync::LocalIrqDisabled;
 
 use crate::{
     events::IoEvents,
@@ -41,7 +41,6 @@ pub struct KernelEventFile {
     counter: SpinLock<u64, LocalIrqDisabled>,
     pollee: Pollee,
     is_semaphore: bool,
-    write_wait_queue: WaitQueue,
 }
 
 impl KernelEventFile {
@@ -50,12 +49,10 @@ impl KernelEventFile {
     fn new(init_val: u64, is_semaphore: bool) -> Self {
         let counter = SpinLock::new(init_val);
         let pollee = Pollee::new();
-        let write_wait_queue = WaitQueue::new();
         Self {
             counter,
             pollee,
             is_semaphore,
-            write_wait_queue,
         }
     }
 
@@ -117,7 +114,6 @@ impl KernelEventFile {
 
         // Notify outside the IRQ-disabled critical section.
         self.pollee.notify(IoEvents::OUT);
-        self.write_wait_queue.wake_all();
         Some(value)
     }
 
@@ -251,9 +247,7 @@ impl FileLike for EventFile {
         if self.is_nonblocking() {
             self.add_counter_val(supplied_value)?;
         } else {
-            self.kernel_event_file
-                .write_wait_queue
-                .pause_until(|| self.add_counter_val(supplied_value).ok())?;
+            self.wait_events(IoEvents::OUT, None, || self.add_counter_val(supplied_value))?;
         }
 
         Ok(write_len)
