@@ -19,7 +19,7 @@ pub(super) fn sys_unlinkat(
     let flags = UnlinkFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     if flags.contains(UnlinkFlags::AT_REMOVEDIR) {
-        return super::rmdir::sys_rmdirat(dirfd, path_addr, ctx);
+        return super::rmdir::do_rmdirat(dirfd, path_addr, ctx);
     }
 
     let path_name = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
