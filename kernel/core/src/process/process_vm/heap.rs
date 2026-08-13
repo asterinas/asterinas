@@ -121,8 +121,8 @@ impl Heap {
 
         // Check if the new heap end is valid.
         if new_heap_end < heap_start
+            || new_heap_end > VMAR_CAP_ADDR
             || check_data_rlimit(inner.data_segment_size, &new_heap_range, ctx).is_err()
-            || new_heap_end.checked_add(PAGE_SIZE).is_none()
         {
             return Err(current_heap_end);
         }
@@ -139,13 +139,28 @@ impl Heap {
             return Ok(new_heap_end);
         }
 
-        // Because the mapped heap region may contain multiple mappings, which can be
-        // done by `mmap` syscall or other ways, we need to be careful when modifying
-        // the heap mapping.
-        // For simplicity, we set `check_single_mapping` to `true` to ensure that the
-        // heap region contains only a single mapping.
-        vmar.resize_mapping(heap_start, old_size, new_size, true)
-            .map_err(|_| current_heap_end)?;
+        // The heap may be split into multiple mappings or contain holes after `mprotect`,
+        // `mmap`, or `munmap`. Like Linux, shrinking removes every mapping in the released
+        // tail regardless of those boundaries.
+        if new_size < old_size {
+            vmar.remove_mapping(new_heap_end_aligned..current_heap_end_aligned)
+                .map_err(|_| current_heap_end)?;
+        } else {
+            let expansion_size = new_size - old_size;
+            let expansion_start = heap_start + old_size;
+
+            // Map the newly exposed tail with the default heap permissions instead of
+            // inheriting permissions changed by `mprotect`. Compatible anonymous mappings
+            // may be merged by the VMAR when the new mapping is inserted.
+            // References: <https://elixir.bootlin.com/linux/v6.16.9/source/mm/vma.c#L2723-L2748>
+            let vmar_map_options = {
+                let perms = VmPerms::READ | VmPerms::WRITE;
+                vmar.new_map(expansion_size, perms)
+                    .map_err(|_| current_heap_end)?
+                    .offset(VmarMapOffset::FixedNoReplace(expansion_start))
+            };
+            vmar_map_options.build().map_err(|_| current_heap_end)?;
+        }
 
         inner.heap_range = new_heap_range;
         Ok(new_heap_end)
