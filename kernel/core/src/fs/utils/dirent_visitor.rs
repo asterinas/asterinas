@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
-use crate::{
-    fs::{file::InodeType, vfs::path::is_dot_or_dotdot},
-    prelude::*,
-};
+use crate::{fs::file::InodeType, prelude::*};
 
 /// A visitor for dir entries.
 pub trait DirentVisitor {
@@ -31,31 +26,8 @@ pub trait DirentVisitor {
 }
 
 impl DirentVisitor for Vec<String> {
-    fn visit(&mut self, name: &str, ino: u64, type_: InodeType, offset: usize) -> Result<()> {
+    fn visit(&mut self, name: &str, _ino: u64, _type_: InodeType, _offset: usize) -> Result<()> {
         self.push(name.into());
-        Ok(())
-    }
-}
-
-/// Utility to count directory entries, excluding "." and ".."
-#[derive(Default)]
-pub struct DirentCounter(usize);
-
-impl DirentCounter {
-    pub fn new() -> Self {
-        Self(0)
-    }
-
-    pub fn count(&self) -> usize {
-        self.0
-    }
-}
-
-impl DirentVisitor for DirentCounter {
-    fn visit(&mut self, name: &str, _ino: u64, _type: InodeType, _offset: usize) -> Result<()> {
-        if !is_dot_or_dotdot(name) {
-            self.0 += 1;
-        }
         Ok(())
     }
 }

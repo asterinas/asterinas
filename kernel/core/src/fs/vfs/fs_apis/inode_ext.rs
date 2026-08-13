@@ -1,16 +1,51 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::boxed::ThinBox;
+use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::fs::{
-    file::flock::FlockList,
-    vfs::{inode::Inode, notify::FsEventPublisher, range_lock::RangeLockList},
+use crate::{
+    fs::{
+        file::flock::FlockList,
+        vfs::{inode::Inode, notify::FsEventPublisher, range_lock::RangeLockList},
+    },
+    prelude::*,
 };
 
 /// Context for FS locks.
 pub struct FsLockContext {
     range_lock_list: RangeLockList,
     flock_list: FlockList,
+}
+
+/// The inode-owned runtime claim slot used by overlayfs mounts.
+pub struct OverlayInuseSlot {
+    owner_token: AtomicU64,
+}
+
+impl OverlayInuseSlot {
+    fn new() -> Self {
+        Self {
+            owner_token: AtomicU64::new(0),
+        }
+    }
+
+    /// Claims this slot for a non-zero owner token.
+    pub fn try_claim(&self, token: u64) -> Result<()> {
+        if token == 0 {
+            return_errno_with_message!(Errno::EINVAL, "the overlay inuse token must be non-zero");
+        }
+        self.owner_token
+            .compare_exchange(0, token, Ordering::Acquire, Ordering::Relaxed)
+            .map_err(|_| Error::with_message(Errno::EBUSY, "the inode is already in use"))?;
+        Ok(())
+    }
+
+    /// Releases this slot only when `token` still owns it.
+    pub fn release(&self, token: u64) {
+        let _ = self
+            .owner_token
+            .compare_exchange(token, 0, Ordering::Release, Ordering::Relaxed);
+    }
 }
 
 impl FsLockContext {
@@ -55,6 +90,9 @@ pub trait InodeExt {
     ///
     /// If the context does not exist for this inode, a [`None`] will be returned.
     fn fs_lock_context(&self) -> Option<&FsLockContext>;
+
+    /// Gets or initializes the overlayfs in-use slot.
+    fn overlay_inuse_slot(&self) -> &OverlayInuseSlot;
 }
 
 impl InodeExt for dyn Inode {
@@ -80,5 +118,19 @@ impl InodeExt for dyn Inode {
 
     fn fs_lock_context(&self) -> Option<&FsLockContext> {
         Some(self.extension().group2().get()?.downcast_ref().unwrap())
+    }
+
+    fn overlay_inuse_slot(&self) -> &OverlayInuseSlot {
+        match self
+            .extension()
+            .group3()
+            .call_once(|| ThinBox::new_unsize(OverlayInuseSlot::new()))
+            .downcast_ref()
+        {
+            Some(slot) => slot,
+            None => {
+                unreachable!("the dedicated overlay inuse extension group has the wrong payload")
+            }
+        }
     }
 }
