@@ -98,20 +98,22 @@ unsafe fn convert_gpa_range(
     // Retrying the same page a second time should succeed; use 3 just in case.
     const MAX_MAP_GPA_RETRIES_PER_PAGE: usize = 3;
 
-    let mut next_gpa = start_gpa;
+    let (mut start_gpa, end_gpa) = {
+        let mask = target_state.as_gpa_mask();
+        (start_gpa | mask, end_gpa | mask)
+    };
     let mut retry_count = 0;
 
     loop {
-        let gpa_with_mask = next_gpa | target_state.as_gpa_mask();
-        let remaining_size = end_gpa - next_gpa;
+        let remaining_size = end_gpa - start_gpa;
 
-        match map_gpa(gpa_with_mask, remaining_size) {
+        match map_gpa(start_gpa, remaining_size) {
             Ok(()) => return Ok(()),
             Err((retry_gpa, TdVmcallError::TdxRetry))
-                if (next_gpa..end_gpa).contains(&retry_gpa)
+                if (start_gpa..end_gpa).contains(&retry_gpa)
                     && retry_gpa.is_multiple_of(PAGE_SIZE as u64) =>
             {
-                if retry_gpa == next_gpa {
+                if retry_gpa == start_gpa {
                     retry_count += 1;
                     if retry_count >= MAX_MAP_GPA_RETRIES_PER_PAGE {
                         return Err(PageConvertError::TdVmcall {
@@ -121,7 +123,7 @@ unsafe fn convert_gpa_range(
                         });
                     }
                 } else {
-                    next_gpa = retry_gpa;
+                    start_gpa = retry_gpa;
                     retry_count = 0;
                 }
             }
