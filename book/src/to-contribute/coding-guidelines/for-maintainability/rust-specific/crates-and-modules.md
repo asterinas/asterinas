@@ -58,6 +58,39 @@ pub static I8042_CONTROLLER: ...
 
 The `asterinas` assembler crate does not expose any `pub` Rust items.
 
+### Visibility modifiers encode intent, not just effect (`encode-intent-in-vis`) {#encode-intent-in-vis}
+
+A plain `pub` says "export me as far as possible":
+along its defining module path,
+the item's _effective_ visibility is capped
+by every enclosing module up to the crate root
+(and a `pub use` elsewhere can re-export it around that cap entirely).
+In a large project like Asterinas,
+a `pub` item may sit deep in the module hierarchy,
+making its effective visibility hard to see locally
+and fragile against visibility changes in its ancestors.
+
+Therefore, a visibility modifier in Asterinas declares
+the maximum _intended_ exposure of an item,
+regardless of what its ancestors happen to allow:
+
+* `pub` means "exported from this crate".
+  Reserve it for items with an actual consumer in another crate.
+* `pub(crate)`, `pub(super)`, `pub(in super::super)`, and `pub(in crate::a)`
+  mean "this item must never escape the named scope",
+  even when an enclosing private module already restricts it further.
+  If the `path` part of a `pub(in path)` modifier is long,
+  apply [`short-vis-path`](#short-vis-path).
+
+One exception is struct fields and union fields:
+a `pub` field of a visibility-restricted struct or union is acceptable,
+because the field sits only a few lines from the type's own modifier,
+so its real visibility remains locally obvious.
+
+This guideline is partially enforced by the rustc lint
+[`unreachable_pub`](https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html#unreachable-pub),
+which flags any `pub` item not actually reachable from outside its crate.
+
 ### Keep the kernel crate graph layered and acyclic (`layered-kernel-crates`) {#layered-kernel-crates}
 
 For modularity,

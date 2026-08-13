@@ -50,6 +50,7 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
     - [`workspace-deps`](rust-specific/crates-and-modules.md#workspace-deps): Declare shared dependencies in `[workspace.dependencies]` and reference them with `.workspace = true`.
     - [`module-docs`](rust-specific/crates-and-modules.md#module-docs): Open a major module with a `//!` doc: purpose, key types, relation to neighbors.
     - [`narrow-visibility`](rust-specific/crates-and-modules.md#narrow-visibility): Start private; widen visibility only when an actual consumer requires it.
+    - [`encode-intent-in-vis`](rust-specific/crates-and-modules.md#encode-intent-in-vis): A visibility modifier declares an item's maximum intended exposure, regardless of what its ancestors allow.
     - [`layered-kernel-crates`](rust-specific/crates-and-modules.md#layered-kernel-crates): Organize kernel crates as an acyclic layered graph, and keep new subsystems, drivers, and utilities outside `aster-core` by default.
     - [`qualified-fn-imports`](rust-specific/crates-and-modules.md#qualified-fn-imports): Import the parent module and call free functions/statics through it, not by bare name.
 - [Types & Traits](rust-specific/types-and-traits.md)
