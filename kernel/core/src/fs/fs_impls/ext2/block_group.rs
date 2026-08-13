@@ -38,7 +38,7 @@ use super::{
     prelude::*,
     super_block::SuperBlock,
 };
-use crate::fs::utils::IdBitmap;
+use crate::{fs::utils::IdBitmap, vm::page_cache::PageRun};
 
 /// Represents one block group in an ext2 filesystem.
 ///
@@ -747,13 +747,25 @@ impl BlockAsPageCacheBackend for InodeTableBackend {
         complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
-        if self.raw_inodes_size < idx * BLOCK_SIZE {
+        if self.raw_inodes_size <= idx * BLOCK_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size");
         }
         let bid = Bid::new(self.inode_table_bid as u64) + idx as u64;
         self.block_device
-            .read_blocks_async(bid, bio_segment, Some(complete_fn), io_batch)?;
+            .read_blocks_async(bid, vec![bio_segment], Some(complete_fn), io_batch)?;
         Ok(())
+    }
+
+    fn submit_read_page_run(&self, mut pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
+        if self.raw_inodes_size < (pages.start_idx() + pages.len()) * BLOCK_SIZE {
+            return_errno_with_message!(Errno::EINVAL, "invalid read size");
+        }
+
+        let start_idx = pages.start_idx();
+        let bid = Bid::new(self.inode_table_bid as u64) + start_idx as u64;
+        let len = pages.len();
+
+        pages.submit_contiguous_read_pages(self.block_device.as_ref(), bid, len, io_batch)
     }
 
     fn submit_write_bio(
@@ -763,12 +775,28 @@ impl BlockAsPageCacheBackend for InodeTableBackend {
         complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
-        if self.raw_inodes_size < idx * BLOCK_SIZE {
+        if self.raw_inodes_size <= idx * BLOCK_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid write size");
         }
         let bid = Bid::new(self.inode_table_bid as u64) + idx as u64;
-        self.block_device
-            .write_blocks_async(bid, bio_segment, Some(complete_fn), io_batch)?;
+        self.block_device.write_blocks_async(
+            bid,
+            vec![bio_segment],
+            Some(complete_fn),
+            io_batch,
+        )?;
         Ok(())
+    }
+
+    fn submit_write_page_run(&self, mut pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
+        if self.raw_inodes_size < (pages.start_idx() + pages.len()) * BLOCK_SIZE {
+            return_errno_with_message!(Errno::EINVAL, "invalid write size");
+        }
+
+        let start_idx = pages.start_idx();
+        let bid = Bid::new(self.inode_table_bid as u64) + start_idx as u64;
+        let len = pages.len();
+
+        pages.submit_contiguous_write_pages(self.block_device.as_ref(), bid, len, io_batch)
     }
 }

@@ -57,7 +57,7 @@ impl BioRequestSingleQueue {
     ///
     /// This method will wake up the waiter if a new `BioRequest` is enqueued.
     pub fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
-        if bio.segments().len() >= self.max_nr_segments_per_bio {
+        if bio.segments().len() > self.max_nr_segments_per_bio {
             return Err(BioEnqueueError::TooBig);
         }
 
