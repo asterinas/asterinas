@@ -254,9 +254,8 @@ impl SubmittedBio {
 
         drop(segments);
 
-        // A non-`Submit` status publishes the entire completion, including callback
-        // side effects. Otherwise, the wait queue's lock-free fast path could return
-        // while the callback is still running.
+        // Complete the `complete_fn` before publishing the status change,
+        // so that the effects of the callback function are visible to users.
         general_complete_fn(metadata.type_(), status, complete_fn);
 
         let result = metadata.status.compare_exchange(
@@ -303,7 +302,6 @@ impl BioMetadata {
     }
 
     pub fn status(&self) -> BioStatus {
-        // Pairs with the release transition in `SubmittedBio::complete`.
         BioStatus::try_from(self.status.load(Ordering::Acquire)).unwrap()
     }
 }
