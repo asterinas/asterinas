@@ -49,8 +49,8 @@ bind04
 # bpf_prog06
 # bpf_prog07
 
-# brk01
-# brk02
+brk01
+brk02
 
 # capget01
 capget02
