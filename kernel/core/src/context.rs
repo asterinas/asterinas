@@ -23,10 +23,10 @@ use crate::{
 /// The context that can be accessed from the current POSIX thread.
 #[derive(Clone)]
 pub(crate) struct Context<'a> {
-    pub(crate) process: Arc<Process>,
-    pub(crate) thread_local: &'a ThreadLocal,
-    pub(crate) posix_thread: &'a PosixThread,
-    pub(crate) thread: &'a Thread,
+    pub process: Arc<Process>,
+    pub thread_local: &'a ThreadLocal,
+    pub posix_thread: &'a PosixThread,
+    pub thread: &'a Thread,
     pub task: &'a Task,
 }
 
@@ -40,13 +40,6 @@ impl Context<'_> {
 /// The user's memory space of the current task.
 ///
 /// It provides methods to read from or write to the user space efficiently.
-//
-// FIXME: With `impl VmIo for &CurrentUserSpace<'_>`, the Rust compiler seems to think that
-// `CurrentUserSpace` is a publicly exposed type, despite the fact that it is contained in a
-// private module and is never actually exposed. Consequently, it incorrectly suppresses many dead
-// code lints (for *lots of* types that are recursively reached via `CurrentUserSpace`'s APIs). As
-// a workaround, we mark the type as `pub(crate)`. We can restore it to `pub` once the compiler bug
-// is resolved.
 pub(crate) struct CurrentUserSpace<'a>(Ref<'a, Option<VmarHandle>>);
 
 /// Gets the [`CurrentUserSpace`] from the current task.
