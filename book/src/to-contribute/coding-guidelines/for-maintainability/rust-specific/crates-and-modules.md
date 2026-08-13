@@ -19,6 +19,30 @@ ostd.workspace = true
 bitflags.workspace = true
 ```
 
+### Keep the kernel crate graph layered and acyclic (`layered-kernel-crates`) {#layered-kernel-crates}
+
+For modularity,
+the Asterinas kernel under `kernel/` is decomposed into
+an acyclic graph of kernel crates arranged in layers.
+A kernel crate may depend on crates in the same layer or any lower layer.
+The layers are, from highest to lowest:
+
+1. The assembler crate (`kernel/src/`).
+2. High-level component crates (`kernel/comps/`).
+3. The `aster-core` crate (`kernel/core/`).
+4. Low-level component crates (`kernel/core/comps/`).
+5. Kernel libraries (`kernel/libs/`).
+
+A new kernel subsystem, driver, or utility type
+should be added as a separate crate outside `aster-core` by default.
+Add new code directly to `aster-core` only when necessary.
+
+All these kernel crates may depend on OSTD.
+
+When lower-layer code needs behavior implemented above it,
+define the interface and registration mechanism in the lower layer
+and let the higher component register its implementation.
+
 ### Add module-level documentation for major components (`module-docs`) {#module-docs}
 
 A module file that serves as
@@ -90,30 +114,6 @@ so its real visibility remains locally obvious.
 This guideline is partially enforced by the rustc lint
 [`unreachable_pub`](https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html#unreachable-pub),
 which flags any `pub` item not actually reachable from outside its crate.
-
-### Keep the kernel crate graph layered and acyclic (`layered-kernel-crates`) {#layered-kernel-crates}
-
-For modularity,
-the Asterinas kernel under `kernel/` is decomposed into
-an acyclic graph of kernel crates arranged in layers.
-A kernel crate may depend on crates in the same layer or any lower layer.
-The layers are, from highest to lowest:
-
-1. The assembler crate (`kernel/src/`).
-2. High-level component crates (`kernel/comps/`).
-3. The `aster-core` crate (`kernel/core/`).
-4. Low-level component crates (`kernel/core/comps/`).
-5. Kernel libraries (`kernel/libs/`).
-
-A new kernel subsystem, driver, or utility type
-should be added as a separate crate outside `aster-core` by default.
-Add new code directly to `aster-core` only when necessary.
-
-All these kernel crates may depend on OSTD.
-
-When lower-layer code needs behavior implemented above it,
-define the interface and registration mechanism in the lower layer
-and let the higher component register its implementation.
 
 ### Restrict subsystem visibility with a short name (`short-vis-path`) {#short-vis-path}
 
