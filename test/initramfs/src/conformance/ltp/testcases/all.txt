@@ -1433,7 +1433,7 @@ sethostname01
 sethostname02
 sethostname03
 
-# setitimer01
+setitimer01
 setitimer02
 
 # setns01
