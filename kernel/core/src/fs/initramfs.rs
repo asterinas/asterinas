@@ -14,7 +14,7 @@ macro_rules! __log_prefix {
 
 use alloc::{
     borrow::Cow,
-    io::{Cursor, Read},
+    io::{self, Cursor, Read},
 };
 
 use cpio_decoder::{CpioDecoder, CpioEntry, FileMetadata, FileType};
@@ -28,7 +28,13 @@ use super::{
     file::{InodeMode, InodeType},
     vfs::path::{FsPath, Path, PathResolver, is_dot},
 };
-use crate::{fs::vfs::inode::MknodType, prelude::*};
+use crate::{
+    fs::{
+        file::StatusFlags,
+        vfs::inode::{Inode, MknodType},
+    },
+    prelude::*,
+};
 
 /// Unpacks the boot initramfs into the bootstrap root filesystem.
 ///
@@ -108,7 +114,11 @@ fn try_append_entry_to_rootfs<R: Read>(
     match metadata.file_type() {
         FileType::File => {
             let path = parent.new_fs_child(name, InodeType::File, mode)?;
-            entry.read_all(path.inode().writer(0))?;
+            let writer = InodeWriter {
+                inner: path.inode().as_ref(),
+                offset: 0,
+            };
+            entry.read_all(writer)?;
         }
         FileType::Dir => {
             let _ = parent.new_fs_child(name, InodeType::Dir, mode)?;
@@ -139,6 +149,27 @@ fn try_append_entry_to_rootfs<R: Read>(
     }
 
     Ok(())
+}
+
+struct InodeWriter<'a> {
+    inner: &'a dyn Inode,
+    offset: usize,
+}
+
+impl io::Write for InodeWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut reader = VmReader::from(buf).to_fallible();
+        let write_len = self
+            .inner
+            .write_at(self.offset, &mut reader, StatusFlags::empty())
+            .map_err(|_| io::ErrorKind::WriteZero)?;
+        self.offset += write_len;
+        Ok(write_len)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 fn try_device_id_from_metadata(metadata: &FileMetadata) -> Result<u64> {
