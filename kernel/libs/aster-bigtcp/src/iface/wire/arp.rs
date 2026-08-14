@@ -7,7 +7,9 @@ use crate::{
     packet::{NetworkLayer, RxPacket, TransportLayer, TxPacket},
 };
 
-pub fn parse(mut pkt: RxPacket<NetworkLayer>) -> Option<(RxPacket<TransportLayer>, ArpRepr)> {
+pub(in crate::iface) fn parse(
+    mut pkt: RxPacket<NetworkLayer>,
+) -> Option<(RxPacket<TransportLayer>, ArpRepr)> {
     let header = pkt.reader().read_val::<Header>().ok()?;
 
     if ArpHardware::from(u16::from(header.hardware_type)) != ArpHardware::Ethernet
@@ -30,7 +32,10 @@ pub fn parse(mut pkt: RxPacket<NetworkLayer>) -> Option<(RxPacket<TransportLayer
     Some((pkt.peel(size_of::<Header>()), repr))
 }
 
-pub fn emit(pkt: TxPacket<TransportLayer>, arp_repr: &ArpRepr) -> TxPacket<NetworkLayer> {
+pub(in crate::iface) fn emit(
+    pkt: TxPacket<TransportLayer>,
+    arp_repr: &ArpRepr,
+) -> TxPacket<NetworkLayer> {
     debug_assert_eq!(pkt.len(), 0);
 
     let header = match *arp_repr {

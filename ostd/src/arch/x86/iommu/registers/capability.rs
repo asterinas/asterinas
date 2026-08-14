@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(iommu = crate::arch::iommu)]
+
 use core::fmt::Debug;
 
 use bitflags::bitflags;
 
 /// Capability in IOMMU.
-pub struct Capability(u64);
+pub(in iommu) struct Capability(u64);
 
 impl Capability {
     /// Create Capability from `value`
-    pub const fn new(value: u64) -> Self {
+    pub(in iommu) const fn new(value: u64) -> Self {
         Self(value)
     }
 
@@ -23,7 +25,7 @@ impl Capability {
     ///
     /// Number of fault recording registers is computed as N+1, where N is the value
     /// reported in this field.
-    pub const fn fault_recording_number(&self) -> u64 {
+    pub(in iommu) const fn fault_recording_number(&self) -> u64 {
         const NFR_MASK: u64 = 0xFF << 40;
         (self.0 & NFR_MASK) >> 40
     }
@@ -54,7 +56,7 @@ impl Capability {
     }
 
     /// Supported Adjusted Guest Address Widths.
-    pub const fn supported_adjusted_guest_address_widths(&self) -> CapabilitySagaw {
+    pub(in iommu) const fn supported_adjusted_guest_address_widths(&self) -> CapabilitySagaw {
         CapabilitySagaw::from_bits_truncate(self.0 >> 8)
     }
 
@@ -63,7 +65,7 @@ impl Capability {
     ///
     /// If the register base address is X, and the value reported in this field
     /// is Y, the address for the first fault recording register is calculated as X+(16*Y).
-    pub const fn fault_recording_register_offset(&self) -> u64 {
+    pub(in iommu) const fn fault_recording_register_offset(&self) -> u64 {
         const FRO_MASK: u64 = 0x3FF << 24;
         (self.0 & FRO_MASK) >> 24
     }

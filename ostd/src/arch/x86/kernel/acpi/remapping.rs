@@ -19,13 +19,13 @@ use ostd_pod::Pod;
 /// A DRHD structure uniquely represents a remapping hardware unit present in the platform.
 /// There must be at least one instance of this structure for each PCI segment in the platform.
 #[derive(Clone, Debug)]
-pub struct Drhd {
+pub(in crate::arch) struct Drhd {
     header: DrhdHeader,
     device_scopes: Vec<DeviceScope>,
 }
 
 impl Drhd {
-    pub fn register_base_addr(&self) -> u64 {
+    pub(in crate::arch) fn register_base_addr(&self) -> u64 {
         self.header.register_base_addr
     }
 }
@@ -47,7 +47,7 @@ pub struct DrhdHeader {
 /// It may report each such reserved memory region through the RMRR structures, along
 /// with the devices that requires access to the specified reserved memory region.
 #[derive(Clone, Debug)]
-pub struct Rmrr {
+pub(in crate::arch) struct Rmrr {
     header: RmrrHeader,
     device_scopes: Vec<DeviceScope>,
 }
@@ -68,7 +68,7 @@ pub struct RmrrHeader {
 /// This structure is applicable only for platforms supporting Device-TLBs as reported through the
 /// Extended Capability Register.
 #[derive(Clone, Debug)]
-pub struct Atsr {
+pub(in crate::arch) struct Atsr {
     header: AtsrHeader,
     device_scopes: Vec<DeviceScope>,
 }
@@ -92,7 +92,7 @@ pub struct AtsrHeader {
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct Rhsa {
+pub(in crate::arch) struct Rhsa {
     typ: u16,
     length: u16,
     flags: u32,
@@ -105,7 +105,7 @@ pub struct Rhsa {
 /// An ANDD structure uniquely represents an ACPI name-space
 /// enumerated device capable of issuing DMA requests in the platform.
 #[derive(Clone, Debug)]
-pub struct Andd {
+pub(in crate::arch) struct Andd {
     header: AnddHeader,
     acpi_object_name: String,
 }
@@ -124,7 +124,7 @@ pub struct AnddHeader {
 /// The SATC reporting structure identifies devices that have address translation cache (ATC),
 /// as defined by the PCI Express Base Specification.
 #[derive(Clone, Debug)]
-pub struct Satc {
+pub(in crate::arch) struct Satc {
     header: SatcHeader,
     device_scopes: Vec<DeviceScope>,
 }
@@ -145,7 +145,7 @@ pub struct SatcHeader {
 /// properties and that may put restrictions on how system software must configure remapping
 /// structures that govern such devices in a platform where remapping hardware is enabled.
 #[derive(Clone, Debug)]
-pub struct Sidp {
+pub(in crate::arch) struct Sidp {
     header: SidpHeader,
     device_scopes: Vec<DeviceScope>,
 }

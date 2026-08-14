@@ -27,10 +27,11 @@ log.workspace = true
 minicov = { workspace = true, optional = true }
 num-traits.workspace = true
 ostd-macros.workspace = true
-ostd-test.workspace = true
 ostd-pod.workspace = true
-spin.workspace = true
+ostd-test.workspace = true
+short-vis-path.workspace = true
 smallvec.workspace = true
+spin.workspace = true
 zerocopy.workspace = true
 
 # The targets are chosen to prevent the generated machine code from using any
