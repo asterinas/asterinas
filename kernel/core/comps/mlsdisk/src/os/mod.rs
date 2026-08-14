@@ -253,10 +253,10 @@ impl crate::util::Rng for Rng {
 
 /// A macro to define byte_array_types used by `Aead` or `Skcipher`.
 macro_rules! new_byte_array_type {
-    ($name:ident, $n:expr) => {
+    ($vis:vis $name:ident, $n:expr) => {
         #[repr(C)]
         #[derive(Clone, Copy, Debug, Default, Deserialize, Pod, Serialize)]
-        pub struct $name([u8; $n]);
+        $vis struct $name([u8; $n]);
 
         impl core::ops::Deref for $name {
             type Target = [u8];
@@ -289,9 +289,9 @@ const AES_GCM_KEY_SIZE: usize = 16;
 const AES_GCM_IV_SIZE: usize = 12;
 const AES_GCM_MAC_SIZE: usize = 16;
 
-new_byte_array_type!(AeadKey, AES_GCM_KEY_SIZE);
-new_byte_array_type!(AeadIv, AES_GCM_IV_SIZE);
-new_byte_array_type!(AeadMac, AES_GCM_MAC_SIZE);
+new_byte_array_type!(pub AeadKey, AES_GCM_KEY_SIZE);
+new_byte_array_type!(pub AeadIv, AES_GCM_IV_SIZE);
+new_byte_array_type!(pub AeadMac, AES_GCM_MAC_SIZE);
 
 /// An `AEAD` cipher.
 #[derive(Debug, Default)]
@@ -357,8 +357,8 @@ type Aes128Ctr = ctr::Ctr128LE<Aes128>;
 const AES_CTR_KEY_SIZE: usize = 16;
 const AES_CTR_IV_SIZE: usize = 16;
 
-new_byte_array_type!(SkcipherKey, AES_CTR_KEY_SIZE);
-new_byte_array_type!(SkcipherIv, AES_CTR_IV_SIZE);
+new_byte_array_type!(pub(crate) SkcipherKey, AES_CTR_KEY_SIZE);
+new_byte_array_type!(pub(crate) SkcipherIv, AES_CTR_IV_SIZE);
 
 /// A symmetric key cipher.
 #[derive(Debug, Default)]

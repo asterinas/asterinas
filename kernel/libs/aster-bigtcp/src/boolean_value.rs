@@ -10,15 +10,15 @@
 macro_rules! define_boolean_value {
     (
         $(#[$attr:meta])*
-        $name: ident
+        $vis:vis $name: ident
     ) => {
         $(#[$attr])*
         #[derive(Clone, Copy, Debug)]
-        pub struct $name(bool);
+        $vis struct $name(bool);
 
         impl $name {
-            pub const TRUE: Self = Self(true);
-            pub const FALSE: Self = Self(false);
+            $vis const TRUE: Self = Self(true);
+            $vis const FALSE: Self = Self(false);
         }
 
         impl core::ops::Deref for $name {
