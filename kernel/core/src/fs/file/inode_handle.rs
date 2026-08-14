@@ -6,7 +6,7 @@ use core::fmt::Display;
 
 use super::{
     AccessMode, CreationFlags, FileCommon, FileLike, InodeType, Mappable, SettableStatusFlags,
-    StatusFlags, file_table::FdFlags, flock::FlockItem,
+    StatusFlags, SyncMode, file_table::FdFlags, flock::FlockItem,
 };
 use crate::{
     events::IoEvents,
@@ -270,6 +270,21 @@ impl Pollable for InodeHandle {
 }
 
 impl FileLike for InodeHandle {
+    fn sync(&self, mode: SyncMode) -> Result<()> {
+        if self.status_flags().contains(StatusFlags::O_PATH) {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
+        if let Some(ref open_file) = self.open_file {
+            return open_file.sync(mode);
+        }
+
+        match mode {
+            SyncMode::Data => self.path().sync_data(),
+            SyncMode::Full => self.path().sync_all(),
+        }
+    }
+
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if self.status_flags().contains(StatusFlags::O_PATH) || !self.access_mode().is_readable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
@@ -541,6 +556,14 @@ pub(crate) enum SeekFrom {
 pub(crate) trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
     /// Checks whether the `seek()` operation should fail.
     fn check_seekable(&self) -> Result<()>;
+
+    /// Synchronizes the file according to `mode`.
+    ///
+    /// Per-open file operations do not support synchronization by default.
+    /// Implementations that support synchronization must override this method.
+    fn sync(&self, _mode: SyncMode) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "the file does not support synchronization")
+    }
 
     /// Returns whether the `read()`/`write()` operation should use and advance the offset.
     ///

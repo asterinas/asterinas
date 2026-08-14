@@ -197,6 +197,20 @@ impl VirtioFsInode {
     fn type_(&self) -> InodeType {
         self.type_
     }
+
+    /// Flushes dirty page-cache data through the current virtiofs writeback path.
+    fn flush_page_cache(&self) -> Result<()> {
+        let inner = self.inner.write();
+        let Some(page_cache) = &inner.page_cache else {
+            return Ok(());
+        };
+        let cached_size = page_cache.size();
+        if cached_size > 0 {
+            page_cache.flush_range(0..cached_size)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// An inode timestamp field updated through `SETATTR`.
@@ -497,16 +511,11 @@ impl Inode for VirtioFsInode {
     }
 
     fn sync_data(&self) -> Result<()> {
-        let inner = self.inner.write();
-        let Some(page_cache) = &inner.page_cache else {
-            return Ok(());
-        };
-        let cached_size = page_cache.size();
-        if cached_size > 0 {
-            page_cache.flush_range(0..cached_size)?;
-        }
+        self.flush_page_cache()
+    }
 
-        Ok(())
+    fn sync_all(&self) -> Result<()> {
+        self.flush_page_cache()
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {
