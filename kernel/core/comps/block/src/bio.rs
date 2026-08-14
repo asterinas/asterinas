@@ -689,7 +689,7 @@ fn target_pool(direction: BioDirection) -> Option<&'static Arc<BioSegmentPool>> 
 }
 
 /// Checks if the given offset is aligned to sector.
-pub fn is_sector_aligned(offset: usize) -> bool {
+pub(crate) fn is_sector_aligned(offset: usize) -> bool {
     offset.is_multiple_of(SECTOR_SIZE)
 }
 

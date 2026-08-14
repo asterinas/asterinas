@@ -88,7 +88,7 @@ use crate::{
 };
 
 /// The ID of a TX log.
-pub type TxLogId = RawLogId;
+pub(crate) type TxLogId = RawLogId;
 /// The name of a TX log bucket.
 type BucketName = String;
 
@@ -101,7 +101,7 @@ type BucketName = String;
 /// ------------------------------------------------------
 /// ```
 #[derive(Clone)]
-pub struct TxLogStore<D> {
+pub(crate) struct TxLogStore<D> {
     state: Arc<Mutex<State>>,
     raw_log_store: Arc<RawLogStore<D>>,
     journal: Arc<Mutex<Journal<D>>>,
@@ -124,7 +124,7 @@ const MAGIC_NUMBER: u64 = 0x1130_0821;
 impl<D: BlockSet + 'static> TxLogStore<D> {
     /// Formats the disk to create a new instance of `TxLogStore`,
     /// with the given root key.
-    pub fn format(disk: D, root_key: Key) -> Result<Self> {
+    pub(crate) fn format(disk: D, root_key: Key) -> Result<Self> {
         let total_nblocks = disk.nblocks();
         let (log_store_nblocks, journal_nblocks) =
             Self::calc_store_and_journal_nblocks(total_nblocks);
@@ -219,7 +219,7 @@ impl<D: BlockSet + 'static> TxLogStore<D> {
     }
 
     /// Recovers an existing `TxLogStore` from a disk using the given key.
-    pub fn recover(disk: D, root_key: Key) -> Result<Self> {
+    pub(crate) fn recover(disk: D, root_key: Key) -> Result<Self> {
         let superblock = Superblock::open(&disk.subset(0..1)?, &root_key)?;
         if disk.nblocks() < superblock.total_nblocks() {
             return_errno_with_msg!(OutOfDisk, "given disk lacks space for recovering");
@@ -440,7 +440,7 @@ impl<D: BlockSet + 'static> TxLogStore<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn create_log(&self, bucket: &str) -> Result<Arc<TxLog<D>>> {
+    pub(crate) fn create_log(&self, bucket: &str) -> Result<Arc<TxLog<D>>> {
         let raw_log = self.raw_log_store.create_log()?;
         let log_id = raw_log.id();
 
@@ -492,7 +492,7 @@ impl<D: BlockSet + 'static> TxLogStore<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn open_log(&self, log_id: TxLogId, can_append: bool) -> Result<Arc<TxLog<D>>> {
+    pub(crate) fn open_log(&self, log_id: TxLogId, can_append: bool) -> Result<Arc<TxLog<D>>> {
         let mut current_tx = self.tx_provider.current();
         let inner_log = self.open_inner_log(log_id, can_append, &mut current_tx)?;
         let tx_log = TxLog::new(inner_log, self.tx_provider.clone(), can_append);
@@ -576,7 +576,7 @@ impl<D: BlockSet + 'static> TxLogStore<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn list_logs_in(&self, bucket_name: &str) -> Result<Vec<TxLogId>> {
+    pub(crate) fn list_logs_in(&self, bucket_name: &str) -> Result<Vec<TxLogId>> {
         let state = self.state.lock();
         let mut log_id_set = state.persistent.list_logs_in(bucket_name)?;
         let current_tx = self.tx_provider.current();
@@ -606,7 +606,7 @@ impl<D: BlockSet + 'static> TxLogStore<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn open_log_in(&self, bucket: &str) -> Result<Arc<TxLog<D>>> {
+    pub(crate) fn open_log_in(&self, bucket: &str) -> Result<Arc<TxLog<D>>> {
         let log_ids = self.list_logs_in(bucket)?;
         let max_log_id = log_ids
             .iter()
@@ -620,7 +620,7 @@ impl<D: BlockSet + 'static> TxLogStore<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn contains_log(&self, log_id: TxLogId) -> bool {
+    pub(crate) fn contains_log(&self, log_id: TxLogId) -> bool {
         let state = self.state.lock();
         let current_tx = self.tx_provider.current();
         self.do_contain_log(log_id, &state, &current_tx)
@@ -639,7 +639,7 @@ impl<D: BlockSet + 'static> TxLogStore<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn delete_log(&self, log_id: TxLogId) -> Result<()> {
+    pub(crate) fn delete_log(&self, log_id: TxLogId) -> Result<()> {
         let mut current_tx = self.tx_provider.current();
 
         current_tx.data_mut_with(|open_log_table: &mut OpenLogTable<D>| {
@@ -667,7 +667,12 @@ impl<D: BlockSet + 'static> TxLogStore<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn move_log(&self, log_id: TxLogId, from_bucket: &str, to_bucket: &str) -> Result<()> {
+    pub(crate) fn move_log(
+        &self,
+        log_id: TxLogId,
+        from_bucket: &str,
+        to_bucket: &str,
+    ) -> Result<()> {
         let mut current_tx = self.tx_provider.current();
 
         current_tx.data_mut_with(|open_log_table: &mut OpenLogTable<D>| {
@@ -684,22 +689,22 @@ impl<D: BlockSet + 'static> TxLogStore<D> {
     }
 
     /// Returns the root key.
-    pub fn root_key(&self) -> &Key {
+    pub(crate) fn root_key(&self) -> &Key {
         &self.root_key
     }
 
     /// Creates a new transaction.
-    pub fn new_tx(&self) -> CurrentTx<'_> {
+    pub(crate) fn new_tx(&self) -> CurrentTx<'_> {
         self.tx_provider.new_tx()
     }
 
     /// Returns the current transaction.
-    pub fn current_tx(&self) -> CurrentTx<'_> {
+    pub(crate) fn current_tx(&self) -> CurrentTx<'_> {
         self.tx_provider.current()
     }
 
     /// Syncs all the data managed by `TxLogStore` for persistence.
-    pub fn sync(&self) -> Result<()> {
+    pub(crate) fn sync(&self) -> Result<()> {
         self.raw_log_store.sync().unwrap();
         self.journal.lock().flush().unwrap();
 
@@ -768,7 +773,7 @@ impl Superblock {
 
 /// A transactional log.
 #[derive(Clone)]
-pub struct TxLog<D> {
+pub(crate) struct TxLog<D> {
     inner_log: Arc<TxLogInner<D>>,
     tx_provider: Arc<TxProvider>,
     can_append: bool,
@@ -794,22 +799,22 @@ impl<D: BlockSet + 'static> TxLog<D> {
     }
 
     /// Returns the log ID.
-    pub fn id(&self) -> TxLogId {
+    pub(crate) fn id(&self) -> TxLogId {
         self.inner_log.log_id
     }
 
     /// Returns the TX ID.
-    pub fn tx_id(&self) -> TxId {
+    pub(crate) fn tx_id(&self) -> TxId {
         self.inner_log.tx_id
     }
 
     /// Returns the bucket that this log belongs to.
-    pub fn bucket(&self) -> &str {
+    pub(crate) fn bucket(&self) -> &str {
         &self.inner_log.bucket
     }
 
     /// Returns whether the log is opened in the appendable mode.
-    pub fn can_append(&self) -> bool {
+    pub(crate) fn can_append(&self) -> bool {
         self.can_append
     }
 
@@ -818,7 +823,7 @@ impl<D: BlockSet + 'static> TxLog<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn read(&self, pos: BlockId, buf: BufMut) -> Result<()> {
+    pub(crate) fn read(&self, pos: BlockId, buf: BufMut) -> Result<()> {
         debug_assert_eq!(self.tx_id(), self.tx_provider.current().id());
 
         self.inner_log.crypto_log.read(pos, buf)
@@ -829,7 +834,7 @@ impl<D: BlockSet + 'static> TxLog<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn append(&self, buf: BufRef) -> Result<()> {
+    pub(crate) fn append(&self, buf: BufRef) -> Result<()> {
         debug_assert_eq!(self.tx_id(), self.tx_provider.current().id());
 
         if !self.can_append {
@@ -845,7 +850,7 @@ impl<D: BlockSet + 'static> TxLog<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn nblocks(&self) -> usize {
+    pub(crate) fn nblocks(&self) -> usize {
         debug_assert_eq!(self.tx_id(), self.tx_provider.current().id());
 
         self.inner_log.crypto_log.nblocks()
@@ -959,7 +964,7 @@ struct Bucket {
 }
 
 impl State {
-    pub fn new(
+    pub(crate) fn new(
         persistent: TxLogStoreState,
         lazy_deletes: HashMap<TxLogId, Arc<LazyDelete<TxLogId>>>,
         log_caches: HashMap<TxLogId, Arc<CryptoLogCache>>,
@@ -971,7 +976,7 @@ impl State {
         }
     }
 
-    pub fn apply(&mut self, edit: &TxLogStoreEdit) {
+    pub(crate) fn apply(&mut self, edit: &TxLogStoreEdit) {
         edit.apply_to(&mut self.persistent);
     }
 }

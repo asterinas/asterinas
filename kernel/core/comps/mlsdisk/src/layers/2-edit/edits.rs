@@ -7,20 +7,20 @@ use serde::{Deserialize, Serialize, ser::SerializeSeq};
 use crate::prelude::*;
 
 /// An edit of `Edit<S>` is an incremental change to a state of `S`.
-pub trait Edit<S>: Serialize + for<'de> Deserialize<'de> {
+pub(crate) trait Edit<S>: Serialize + for<'de> Deserialize<'de> {
     /// Apply this edit to a state.
     fn apply_to(&self, state: &mut S);
 }
 
 /// A group of edits to a state.
-pub struct EditGroup<E: Edit<S>, S> {
+pub(crate) struct EditGroup<E: Edit<S>, S> {
     edits: Vec<E>,
     _s: PhantomData<S>,
 }
 
 impl<E: Edit<S>, S> EditGroup<E, S> {
     /// Creates an empty edit group.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             edits: Vec::new(),
             _s: PhantomData,
@@ -28,27 +28,27 @@ impl<E: Edit<S>, S> EditGroup<E, S> {
     }
 
     /// Adds an edit to the group.
-    pub fn push(&mut self, edit: E) {
+    pub(crate) fn push(&mut self, edit: E) {
         self.edits.push(edit);
     }
 
     /// Returns an iterator to the contained edits.
-    pub fn iter(&self) -> impl Iterator<Item = &E> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &E> {
         self.edits.iter()
     }
 
     /// Clears the edit group by removing all contained edits.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.edits.clear()
     }
 
     /// Returns whether the edit group contains no edits.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Returns the length of the edit group.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.edits.len()
     }
 }

@@ -78,7 +78,7 @@ use crate::{
 ///    So the disk space wasted by such `CryptoLog` is bounded.
 ///    And after such `CryptoLog`s are done writing, they will be read once and
 ///    then discarded.
-pub struct CryptoLog<L> {
+pub(crate) struct CryptoLog<L> {
     mht: RwLock<Mht<L>>,
 }
 
@@ -103,7 +103,7 @@ struct MhtStorage<L> {
 
 /// The metadata of the root MHT node of a `CryptoLog`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RootMhtMeta {
+pub(crate) struct RootMhtMeta {
     pub pos: Pbid,
     pub mac: Mac,
     pub iv: Iv,
@@ -176,7 +176,7 @@ struct PreviousBuild<'a, L> {
 
 /// The node cache used by `CryptoLog`. User-defined node cache
 /// can achieve TX-awareness.
-pub trait NodeCache: Send + Sync {
+pub(crate) trait NodeCache: Send + Sync {
     /// Gets an owned value from cache corresponding to the position.
     fn get(&self, pos: Pbid) -> Option<Arc<dyn Any + Send + Sync>>;
 
@@ -209,7 +209,7 @@ impl<L: BlockLog> CryptoLog<L> {
     ///
     /// A newly-created instance won't occupy any space on the `block_log`
     /// until the first flush, which triggers writing the root MHT node.
-    pub fn new(block_log: L, root_key: Key, node_cache: Arc<dyn NodeCache>) -> Self {
+    pub(crate) fn new(block_log: L, root_key: Key, node_cache: Arc<dyn NodeCache>) -> Self {
         Self {
             mht: RwLock::new(Mht::new(block_log, root_key, node_cache)),
         }
@@ -219,7 +219,7 @@ impl<L: BlockLog> CryptoLog<L> {
     ///
     /// The given key and the metadata of the root MHT are sufficient to
     /// load and verify the root node of the `CryptoLog`.
-    pub fn open(
+    pub(crate) fn open(
         block_log: L,
         root_key: Key,
         root_meta: RootMhtMeta,
@@ -231,14 +231,14 @@ impl<L: BlockLog> CryptoLog<L> {
     }
 
     /// Gets the root key.
-    pub fn root_key(&self) -> Key {
+    pub(crate) fn root_key(&self) -> Key {
         self.mht.read().root_key
     }
 
     /// Gets the metadata of the root MHT node.
     ///
     /// Returns `None` if there hasn't been any appends or flush.
-    pub fn root_meta(&self) -> Option<RootMhtMeta> {
+    pub(crate) fn root_meta(&self) -> Option<RootMhtMeta> {
         self.mht.read().root_meta()
     }
 
@@ -247,12 +247,12 @@ impl<L: BlockLog> CryptoLog<L> {
     }
 
     /// Gets the number of data nodes (blocks).
-    pub fn nblocks(&self) -> usize {
+    pub(crate) fn nblocks(&self) -> usize {
         self.mht.read().total_data_nodes()
     }
 
     /// Reads one or multiple data blocks at a specified position.
-    pub fn read(&self, pos: Lbid, buf: BufMut) -> Result<()> {
+    pub(crate) fn read(&self, pos: Lbid, buf: BufMut) -> Result<()> {
         let mut search_ctx = SearchCtx::new(pos, buf);
         self.mht.read().search(&mut search_ctx)?;
 
@@ -261,7 +261,7 @@ impl<L: BlockLog> CryptoLog<L> {
     }
 
     /// Appends one or multiple data blocks at the end.
-    pub fn append(&self, buf: BufRef) -> Result<()> {
+    pub(crate) fn append(&self, buf: BufRef) -> Result<()> {
         let data_nodes: Vec<Arc<DataNode>> = buf
             .iter()
             .map(|block_buf| {
@@ -279,11 +279,11 @@ impl<L: BlockLog> CryptoLog<L> {
     /// Each successful flush triggers writing a new version of the root MHT
     /// node to the underlying block log. The metadata of the latest root MHT
     /// can be obtained via the `root_meta` method.
-    pub fn flush(&self) -> Result<()> {
+    pub(crate) fn flush(&self) -> Result<()> {
         self.mht.write().flush()
     }
 
-    pub fn display_mht(&self) {
+    pub(crate) fn display_mht(&self) {
         self.mht.read().display();
     }
 }
@@ -292,7 +292,7 @@ impl<L: BlockLog> Mht<L> {
     // Buffer capacity for appended data nodes.
     const APPEND_BUF_CAPACITY: usize = 2048;
 
-    pub fn new(block_log: L, root_key: Key, node_cache: Arc<dyn NodeCache>) -> Self {
+    pub(crate) fn new(block_log: L, root_key: Key, node_cache: Arc<dyn NodeCache>) -> Self {
         let storage = Arc::new(MhtStorage::new(block_log, node_cache));
         let start_pos = 0 as Lbid;
         Self {
@@ -303,7 +303,7 @@ impl<L: BlockLog> Mht<L> {
         }
     }
 
-    pub fn open(
+    pub(crate) fn open(
         block_log: L,
         root_key: Key,
         root_meta: RootMhtMeta,
@@ -320,7 +320,7 @@ impl<L: BlockLog> Mht<L> {
         })
     }
 
-    pub fn root_meta(&self) -> Option<RootMhtMeta> {
+    pub(crate) fn root_meta(&self) -> Option<RootMhtMeta> {
         self.root.as_ref().map(|(root_meta, _)| root_meta.clone())
     }
 
@@ -328,7 +328,7 @@ impl<L: BlockLog> Mht<L> {
         self.root.as_ref().map(|(_, root_node)| root_node)
     }
 
-    pub fn total_data_nodes(&self) -> usize {
+    pub(crate) fn total_data_nodes(&self) -> usize {
         self.data_buf.num_append()
             + self
                 .root
@@ -336,7 +336,7 @@ impl<L: BlockLog> Mht<L> {
                 .map_or(0, |(_, root_node)| root_node.num_data_nodes())
     }
 
-    pub fn search(&self, search_ctx: &mut SearchCtx<'_>) -> Result<()> {
+    pub(crate) fn search(&self, search_ctx: &mut SearchCtx<'_>) -> Result<()> {
         let root_node = self
             .root_node()
             .ok_or(Error::with_msg(NotFound, "root MHT node not found"))?;
@@ -416,7 +416,7 @@ impl<L: BlockLog> Mht<L> {
         self.search_hierarchy(next_level_targets, curr_height, search_ctx)
     }
 
-    pub fn append_data_nodes(&mut self, data_nodes: Vec<Arc<DataNode>>) -> Result<()> {
+    pub(crate) fn append_data_nodes(&mut self, data_nodes: Vec<Arc<DataNode>>) -> Result<()> {
         self.data_buf.append_data_nodes(data_nodes)?;
         if self.data_buf.is_full() {
             let data_node_entries = self.data_buf.flush()?;
@@ -425,7 +425,7 @@ impl<L: BlockLog> Mht<L> {
         Ok(())
     }
 
-    pub fn flush(&mut self) -> Result<()> {
+    pub(crate) fn flush(&mut self) -> Result<()> {
         let data_node_entries = self.data_buf.flush()?;
         self.do_build(data_node_entries)?;
         // FIXME: Should we sync the storage here?
@@ -446,13 +446,13 @@ impl<L: BlockLog> Mht<L> {
         Ok(())
     }
 
-    pub fn display(&self) {
+    pub(crate) fn display(&self) {
         info!("{:?}", MhtDisplayer(self));
     }
 }
 
 impl<L: BlockLog> MhtStorage<L> {
-    pub fn new(block_log: L, node_cache: Arc<dyn NodeCache>) -> Self {
+    pub(crate) fn new(block_log: L, node_cache: Arc<dyn NodeCache>) -> Self {
         Self {
             block_log,
             node_cache,
@@ -460,15 +460,23 @@ impl<L: BlockLog> MhtStorage<L> {
         }
     }
 
-    pub fn flush(&self) -> Result<()> {
+    pub(crate) fn flush(&self) -> Result<()> {
         self.block_log.flush()
     }
 
-    pub fn root_mht_node(&self, root_key: &Key, root_meta: &RootMhtMeta) -> Result<Arc<MhtNode>> {
+    pub(crate) fn root_mht_node(
+        &self,
+        root_key: &Key,
+        root_meta: &RootMhtMeta,
+    ) -> Result<Arc<MhtNode>> {
         self.read_mht_node(root_meta.pos, root_key, &root_meta.mac, &root_meta.iv)
     }
 
-    pub fn append_root_mht_node(&self, root_key: &Key, node: &Arc<MhtNode>) -> Result<RootMhtMeta> {
+    pub(crate) fn append_root_mht_node(
+        &self,
+        root_key: &Key,
+        node: &Arc<MhtNode>,
+    ) -> Result<RootMhtMeta> {
         let mut crypt_buf = self.crypt_buf.lock();
         let iv = Iv::random();
         let mac = Aead::new().encrypt(
@@ -575,35 +583,35 @@ impl<L: BlockLog> MhtStorage<L> {
 }
 
 impl MhtNode {
-    pub fn height(&self) -> Height {
+    pub(crate) fn height(&self) -> Height {
         self.header.height
     }
 
-    pub fn num_data_nodes(&self) -> usize {
+    pub(crate) fn num_data_nodes(&self) -> usize {
         self.header.num_data_nodes as _
     }
 
-    pub fn num_valid_entries(&self) -> usize {
+    pub(crate) fn num_valid_entries(&self) -> usize {
         self.header.num_valid_entries as _
     }
 
     // Lowest level MHT node's children are data nodes
-    pub fn is_lowest_level(height: Height) -> bool {
+    pub(crate) fn is_lowest_level(height: Height) -> bool {
         height == 1
     }
 
-    pub fn max_num_data_nodes(height: Height) -> usize {
+    pub(crate) fn max_num_data_nodes(height: Height) -> usize {
         // Also correct when height equals 0
         MHT_NBRANCHES.pow(height as _)
     }
 
     // A complete node indicates that all children are valid and
     // all covered with maximum number of data nodes
-    pub fn is_incomplete(&self) -> bool {
+    pub(crate) fn is_incomplete(&self) -> bool {
         self.num_data_nodes() != Self::max_num_data_nodes(self.height())
     }
 
-    pub fn num_complete_children(&self) -> usize {
+    pub(crate) fn num_complete_children(&self) -> usize {
         if self.num_data_nodes().is_multiple_of(MHT_NBRANCHES)
             || Self::is_lowest_level(self.height())
         {
@@ -615,14 +623,17 @@ impl MhtNode {
 }
 
 impl<'a, L: BlockLog> TreeBuilder<'a, L> {
-    pub fn new(storage: &'a MhtStorage<L>) -> Self {
+    pub(crate) fn new(storage: &'a MhtStorage<L>) -> Self {
         Self {
             previous_build: None,
             storage,
         }
     }
 
-    pub fn previous_built_root(mut self, previous_built_root: Option<&Arc<MhtNode>>) -> Self {
+    pub(crate) fn previous_built_root(
+        mut self,
+        previous_built_root: Option<&Arc<MhtNode>>,
+    ) -> Self {
         if previous_built_root.is_none() {
             return self;
         }
@@ -633,7 +644,7 @@ impl<'a, L: BlockLog> TreeBuilder<'a, L> {
         self
     }
 
-    pub fn build(&self, data_node_entries: Vec<MhtNodeEntry>) -> Result<Arc<MhtNode>> {
+    pub(crate) fn build(&self, data_node_entries: Vec<MhtNodeEntry>) -> Result<Arc<MhtNode>> {
         let total_data_nodes = data_node_entries.len()
             + self
                 .previous_build
@@ -697,7 +708,11 @@ impl<'a, L: BlockLog> TreeBuilder<'a, L> {
 }
 
 impl LevelBuilder {
-    pub fn new(level_entries: Vec<MhtNodeEntry>, total_data_nodes: usize, height: Height) -> Self {
+    pub(crate) fn new(
+        level_entries: Vec<MhtNodeEntry>,
+        total_data_nodes: usize,
+        height: Height,
+    ) -> Self {
         Self {
             level_entries,
             total_data_nodes,
@@ -706,7 +721,7 @@ impl LevelBuilder {
         }
     }
 
-    pub fn previous_incomplete_node(
+    pub(crate) fn previous_incomplete_node(
         mut self,
         previous_incomplete_node: Option<Arc<MhtNode>>,
     ) -> Self {
@@ -714,7 +729,7 @@ impl LevelBuilder {
         self
     }
 
-    pub fn build(&self) -> Vec<Arc<MhtNode>> {
+    pub(crate) fn build(&self) -> Vec<Arc<MhtNode>> {
         let all_level_entries: Vec<&MhtNodeEntry> =
             if let Some(pre_node) = self.previous_incomplete_node.as_ref() {
                 // If there exists a previous built node (same height),
@@ -790,7 +805,7 @@ impl LevelBuilder {
 }
 
 impl<'a, L: BlockLog> PreviousBuild<'a, L> {
-    pub fn new(previous_built_root: &Arc<MhtNode>, storage: &'a MhtStorage<L>) -> Self {
+    pub(crate) fn new(previous_built_root: &Arc<MhtNode>, storage: &'a MhtStorage<L>) -> Self {
         let mut new_self = Self {
             root: previous_built_root.clone(),
             height: previous_built_root.height(),
@@ -801,14 +816,14 @@ impl<'a, L: BlockLog> PreviousBuild<'a, L> {
         new_self
     }
 
-    pub fn target_node(&self, target_height: Height) -> Option<Arc<MhtNode>> {
+    pub(crate) fn target_node(&self, target_height: Height) -> Option<Arc<MhtNode>> {
         if target_height == self.height {
             return Some(self.root.clone());
         }
         self.internal_incomplete_nodes.get(&target_height).cloned()
     }
 
-    pub fn num_data_nodes(&self) -> usize {
+    pub(crate) fn num_data_nodes(&self) -> usize {
         self.root.num_data_nodes()
     }
 
@@ -846,7 +861,7 @@ impl<'a, L: BlockLog> PreviousBuild<'a, L> {
 }
 
 impl<'a> SearchCtx<'a> {
-    pub fn new(pos: Lbid, data_buf: BufMut<'a>) -> Self {
+    pub(crate) fn new(pos: Lbid, data_buf: BufMut<'a>) -> Self {
         let num = data_buf.nblocks();
         Self {
             pos,
@@ -857,13 +872,13 @@ impl<'a> SearchCtx<'a> {
         }
     }
 
-    pub fn node_buf(&mut self, offset: usize) -> &mut [u8] {
+    pub(crate) fn node_buf(&mut self, offset: usize) -> &mut [u8] {
         &mut self.data_buf.as_mut_slice()[offset * BLOCK_SIZE..(offset + 1) * BLOCK_SIZE]
     }
 }
 
 impl CryptBuf {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             plain: Buf::alloc(1).unwrap(),
             cipher: Buf::alloc(1).unwrap(),
@@ -885,7 +900,7 @@ impl<L: BlockLog> AppendDataBuf<L> {
     // Maximum capacity of entries indicates a complete MHT (height equals 3)
     const MAX_ENTRY_QUEUE_CAP: usize = MHT_NBRANCHES.pow(3);
 
-    pub fn new(capacity: usize, start_pos: Lbid, storage: Arc<MhtStorage<L>>) -> Self {
+    pub(crate) fn new(capacity: usize, start_pos: Lbid, storage: Arc<MhtStorage<L>>) -> Self {
         let (node_queue_cap, entry_queue_cap) = Self::calc_queue_cap(capacity, start_pos);
         Self {
             node_queue: Vec::with_capacity(node_queue_cap),
@@ -897,16 +912,16 @@ impl<L: BlockLog> AppendDataBuf<L> {
         }
     }
 
-    pub fn num_append(&self) -> usize {
+    pub(crate) fn num_append(&self) -> usize {
         self.node_queue.len() + self.entry_queue.len()
     }
 
-    pub fn is_full(&self) -> bool {
+    pub(crate) fn is_full(&self) -> bool {
         // Returns whether the data node entry queue is at capacity
         self.entry_queue.len() >= self.entry_queue_cap
     }
 
-    pub fn append_data_nodes(&mut self, nodes: Vec<Arc<DataNode>>) -> Result<()> {
+    pub(crate) fn append_data_nodes(&mut self, nodes: Vec<Arc<DataNode>>) -> Result<()> {
         if self.is_full() {
             return_errno_with_msg!(OutOfMemory, "cache out of capacity");
         }
@@ -919,7 +934,7 @@ impl<L: BlockLog> AppendDataBuf<L> {
         Ok(())
     }
 
-    pub fn search_data_nodes(&self, search_ctx: &mut SearchCtx) -> Result<()> {
+    pub(crate) fn search_data_nodes(&self, search_ctx: &mut SearchCtx) -> Result<()> {
         let start_pos = self.start_pos;
         let (pos, num) = (search_ctx.pos, search_ctx.num);
         if pos + num <= start_pos {
@@ -969,7 +984,7 @@ impl<L: BlockLog> AppendDataBuf<L> {
         Ok(())
     }
 
-    pub fn flush(&mut self) -> Result<Vec<MhtNodeEntry>> {
+    pub(crate) fn flush(&mut self) -> Result<Vec<MhtNodeEntry>> {
         self.flush_node_queue()?;
         debug_assert!(self.node_queue.is_empty());
 

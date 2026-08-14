@@ -11,7 +11,7 @@ pub type PathElement = String;
 pub type KtestPathIter<'a> = vec_deque::Iter<'a, PathElement>;
 
 #[derive(Debug)]
-pub struct KtestPath {
+pub(crate) struct KtestPath {
     path: VecDeque<PathElement>,
 }
 
@@ -32,7 +32,7 @@ impl KtestPath {
         }
     }
 
-    pub fn from(s: &str) -> Self {
+    pub(crate) fn from(s: &str) -> Self {
         Self {
             path: s.split("::").map(PathElement::from).collect(),
         }
@@ -52,7 +52,7 @@ impl KtestPath {
         self.path.push_front(PathElement::from(s))
     }
 
-    pub fn pop_front(&mut self) -> Option<PathElement> {
+    pub(crate) fn pop_front(&mut self) -> Option<PathElement> {
         self.path.pop_front()
     }
 
@@ -61,7 +61,7 @@ impl KtestPath {
         self.path.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.path.is_empty()
     }
 

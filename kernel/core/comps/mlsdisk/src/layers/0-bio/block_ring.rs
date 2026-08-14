@@ -28,7 +28,7 @@ use crate::{os::Mutex, prelude::*};
 ///    blocks must be overridden to accommodate new blocks. The user must ensure
 ///    that the underlying storage is big enough to avoid overriding any useful
 ///    data.
-pub struct BlockRing<S> {
+pub(crate) struct BlockRing<S> {
     storage: S,
     // The cursor for appending new blocks
     cursor: Mutex<Option<BlockId>>,
@@ -36,7 +36,7 @@ pub struct BlockRing<S> {
 
 impl<S: BlockSet> BlockRing<S> {
     /// Creates a new instance.
-    pub fn new(storage: S) -> Self {
+    pub(crate) fn new(storage: S) -> Self {
         Self {
             storage,
             cursor: Mutex::new(None),
@@ -49,12 +49,12 @@ impl<S: BlockSet> BlockRing<S> {
     ///
     /// Calling the `append` method without setting the append cursor first
     /// via this method `set_cursor` causes panic.
-    pub fn set_cursor(&self, new_cursor: BlockId) {
+    pub(crate) fn set_cursor(&self, new_cursor: BlockId) {
         *self.cursor.lock() = Some(new_cursor);
     }
 
     // Return a reference to the underlying storage.
-    pub fn storage(&self) -> &S {
+    pub(crate) fn storage(&self) -> &S {
         &self.storage
     }
 }

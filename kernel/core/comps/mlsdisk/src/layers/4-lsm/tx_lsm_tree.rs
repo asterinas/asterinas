@@ -34,13 +34,13 @@ use crate::{
 };
 
 /// Monotonic incrementing sync ID.
-pub type SyncId = u64;
+pub(crate) type SyncId = u64;
 
 /// A transactional LSM-Tree, managing `MemTable`s, WALs and SSTs backed by `TxLogStore` (L3).
 ///
 /// Supports inserting and querying key-value records within transactions.
 /// Supports user-defined callbacks in `MemTable`, during compaction and recovery.
-pub struct TxLsmTree<K: RecordKey<K>, V, D>(Arc<TreeInner<K, V, D>>);
+pub(crate) struct TxLsmTree<K: RecordKey<K>, V, D>(Arc<TreeInner<K, V, D>>);
 
 /// Inner structures of `TxLsmTree`.
 pub(super) struct TreeInner<K: RecordKey<K>, V, D> {
@@ -55,7 +55,7 @@ pub(super) struct TreeInner<K: RecordKey<K>, V, D> {
 
 /// Levels in a `TxLsmTree`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LsmLevel {
+pub(crate) enum LsmLevel {
     L0 = 0,
     L1,
     L2,
@@ -71,7 +71,7 @@ struct SstManager<K, V> {
 }
 
 /// A factory of per-transaction event listeners.
-pub trait TxEventListenerFactory<K, V>: Send + Sync {
+pub(crate) trait TxEventListenerFactory<K, V>: Send + Sync {
     /// Creates a new event listener for a given transaction.
     fn new_event_listener(&self, tx_type: TxType) -> Arc<dyn TxEventListener<K, V>>;
 }
@@ -84,7 +84,7 @@ pub trait TxEventListenerFactory<K, V>: Send + Sync {
 /// 5) After a TX committed.
 ///
 /// `tx_type` indicates an internal transaction of `TxLsmTree`.
-pub trait TxEventListener<K, V> {
+pub(crate) trait TxEventListener<K, V> {
     /// Notify the listener that a new record is added to a LSM-Tree.
     fn on_add_record(&self, record: &dyn AsKV<K, V>) -> Result<()>;
 
@@ -103,7 +103,7 @@ pub trait TxEventListener<K, V> {
 
 /// Types of `TxLsmTree`'s internal transactions.
 #[derive(Clone, Copy, Debug)]
-pub enum TxType {
+pub(crate) enum TxType {
     /// A Compaction Transaction merges old `SSTable`s into new ones.
     Compaction { to_level: LsmLevel },
     /// A Migration Transaction migrates synced records from old `SSTable`s
@@ -127,15 +127,15 @@ pub(super) struct MasterSyncId {
 }
 
 /// A trait that represents the key for a record in a `TxLsmTree`.
-pub trait RecordKey<K>:
+pub(crate) trait RecordKey<K>:
     Ord + Pod + Hash + Add<usize, Output = K> + Sub<K, Output = usize> + Debug + Send + Sync + 'static
 {
 }
 /// A trait that represents the value for a record in a `TxLsmTree`.
-pub trait RecordValue: Pod + Debug + Send + Sync + 'static {}
+pub(crate) trait RecordValue: Pod + Debug + Send + Sync + 'static {}
 
 /// Represent any type that includes a key and a value.
-pub trait AsKV<K, V>: Send + Sync {
+pub(crate) trait AsKV<K, V>: Send + Sync {
     fn key(&self) -> &K;
 
     fn value(&self) -> &V;
@@ -157,7 +157,7 @@ pub(super) const SSTABLE_CAPACITY: usize = MEMTABLE_CAPACITY;
 
 impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TxLsmTree<K, V, D> {
     /// Format a `TxLsmTree` from a given `TxLogStore`.
-    pub fn format(
+    pub(crate) fn format(
         tx_log_store: Arc<TxLogStore<D>>,
         listener_factory: Arc<dyn TxEventListenerFactory<K, V>>,
         on_drop_record_in_memtable: Option<Arc<OnDropRecodeFn<K, V>>>,
@@ -173,7 +173,7 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TxLsmTree<K, V, D> 
     }
 
     /// Recover a `TxLsmTree` from a given `TxLogStore`.
-    pub fn recover(
+    pub(crate) fn recover(
         tx_log_store: Arc<TxLogStore<D>>,
         listener_factory: Arc<dyn TxEventListenerFactory<K, V>>,
         on_drop_record_in_memtable: Option<Arc<OnDropRecodeFn<K, V>>>,
@@ -189,17 +189,17 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TxLsmTree<K, V, D> 
     }
 
     /// Gets a target value given a key.
-    pub fn get(&self, key: &K) -> Result<V> {
+    pub(crate) fn get(&self, key: &K) -> Result<V> {
         self.0.get(key)
     }
 
     /// Gets a range of target values given a range of keys.
-    pub fn get_range(&self, range_query_ctx: &mut RangeQueryCtx<K, V>) -> Result<()> {
+    pub(crate) fn get_range(&self, range_query_ctx: &mut RangeQueryCtx<K, V>) -> Result<()> {
         self.0.get_range(range_query_ctx)
     }
 
     /// Puts a key-value record to the tree.
-    pub fn put(&self, key: K, value: V) -> Result<()> {
+    pub(crate) fn put(&self, key: K, value: V) -> Result<()> {
         let inner = &self.0;
         let record = (key, value);
 
@@ -227,7 +227,7 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TxLsmTree<K, V, D> 
     }
 
     /// Persist all in-memory data of `TxLsmTree` to the backed storage.
-    pub fn sync(&self) -> Result<()> {
+    pub(crate) fn sync(&self) -> Result<()> {
         self.0.sync()
     }
 
@@ -796,21 +796,21 @@ impl LsmLevel {
         (LsmLevel::L5, LsmLevel::L5.bucket()),
     ];
 
-    pub fn iter() -> impl Iterator<Item = (LsmLevel, &'static str)> {
+    pub(crate) fn iter() -> impl Iterator<Item = (LsmLevel, &'static str)> {
         Self::LEVEL_BUCKETS.iter().cloned()
     }
 
-    pub fn upper_level(&self) -> LsmLevel {
+    pub(crate) fn upper_level(&self) -> LsmLevel {
         debug_assert!(*self != LsmLevel::L0);
         LsmLevel::from(*self as u8 - 1)
     }
 
-    pub fn lower_level(&self) -> LsmLevel {
+    pub(crate) fn lower_level(&self) -> LsmLevel {
         debug_assert!(*self != LsmLevel::L5);
         LsmLevel::from(*self as u8 + 1)
     }
 
-    pub const fn bucket(&self) -> &str {
+    pub(crate) const fn bucket(&self) -> &str {
         match self {
             LsmLevel::L0 => "L0",
             LsmLevel::L1 => "L1",
@@ -837,7 +837,7 @@ impl From<u8> for LsmLevel {
 }
 
 impl<K: RecordKey<K>, V: RecordValue> SstManager<K, V> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let level_ssts = (0..LsmLevel::MAX_NUM_LEVELS)
             .map(|_| BTreeMap::new())
             .collect();
@@ -845,32 +845,36 @@ impl<K: RecordKey<K>, V: RecordValue> SstManager<K, V> {
     }
 
     /// List all SSTs of a given level from newer to older.
-    pub fn list_level(
+    pub(crate) fn list_level(
         &self,
         level: LsmLevel,
     ) -> impl Iterator<Item = (&TxLogId, &Arc<SSTable<K, V>>)> {
         self.level_ssts[level as usize].iter().rev()
     }
 
-    pub fn insert(&mut self, sst: SSTable<K, V>, level: LsmLevel) -> Option<Arc<SSTable<K, V>>> {
+    pub(crate) fn insert(
+        &mut self,
+        sst: SSTable<K, V>,
+        level: LsmLevel,
+    ) -> Option<Arc<SSTable<K, V>>> {
         let nth_level = level as usize;
         debug_assert!(nth_level < self.level_ssts.len());
         let level_ssts = &mut self.level_ssts[nth_level];
         level_ssts.insert(sst.id(), Arc::new(sst))
     }
 
-    pub fn remove(&mut self, id: TxLogId, level: LsmLevel) -> Option<Arc<SSTable<K, V>>> {
+    pub(crate) fn remove(&mut self, id: TxLogId, level: LsmLevel) -> Option<Arc<SSTable<K, V>>> {
         let level_ssts = &mut self.level_ssts[level as usize];
         level_ssts.remove(&id)
     }
 
-    pub fn move_sst(&mut self, id: TxLogId, from: LsmLevel, to: LsmLevel) {
+    pub(crate) fn move_sst(&mut self, id: TxLogId, from: LsmLevel, to: LsmLevel) {
         let moved = self.level_ssts[from as usize].remove(&id).unwrap();
         let _ = self.level_ssts[to as usize].insert(id, moved);
     }
 
     /// Find overlapping SSTs at a given level with a given range.
-    pub fn find_overlapped_ssts<'a>(
+    pub(crate) fn find_overlapped_ssts<'a>(
         &'a self,
         range: &'a RangeInclusive<K>,
         level: LsmLevel,
@@ -880,7 +884,7 @@ impl<K: RecordKey<K>, V: RecordValue> SstManager<K, V> {
     }
 
     /// Check whether a major compaction is required from `from_level` to its lower level.
-    pub fn require_major_compaction(&self, from_level: LsmLevel) -> bool {
+    pub(crate) fn require_major_compaction(&self, from_level: LsmLevel) -> bool {
         debug_assert!(from_level != LsmLevel::L5);
 
         if from_level == LsmLevel::L0 {

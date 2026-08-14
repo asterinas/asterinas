@@ -500,7 +500,7 @@ impl<D: BlockSet> RawLogRef<'_, D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn read(&self, mut pos: BlockId, mut buf: BufMut) -> Result<()> {
+    pub(crate) fn read(&self, mut pos: BlockId, mut buf: BufMut) -> Result<()> {
         let mut nblocks = buf.nblocks();
         let mut buf_slice = buf.as_mut_slice();
 
@@ -549,7 +549,7 @@ impl<D: BlockSet> RawLogRef<'_, D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn append(&mut self, buf: BufRef) -> Result<()> {
+    pub(crate) fn append(&mut self, buf: BufRef) -> Result<()> {
         let append_nblocks = buf.nblocks();
         let log_tail = self
             .log_tail
@@ -591,7 +591,7 @@ impl<D: BlockSet> RawLogRef<'_, D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn nblocks(&self) -> usize {
+    pub(crate) fn nblocks(&self) -> usize {
         self.head_len() + self.tail_len()
     }
 
@@ -605,11 +605,16 @@ impl<D: BlockSet> RawLogRef<'_, D> {
 }
 
 impl RawLogHeadRef<'_> {
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.entry.head.num_blocks as _
     }
 
-    pub fn read<D: BlockSet>(&self, offset: BlockId, mut buf: BufMut, disk: &D) -> Result<()> {
+    pub(crate) fn read<D: BlockSet>(
+        &self,
+        offset: BlockId,
+        mut buf: BufMut,
+        disk: &D,
+    ) -> Result<()> {
         let nblocks = buf.nblocks();
         debug_assert!(offset + nblocks <= self.entry.head.num_blocks as _);
 
@@ -632,7 +637,7 @@ impl RawLogHeadRef<'_> {
     }
 
     /// Collect and prepare a set of consecutive blocks in head for a read request.
-    pub fn prepare_blocks(&self, mut offset: BlockId, nblocks: usize) -> Vec<BlockId> {
+    pub(crate) fn prepare_blocks(&self, mut offset: BlockId, nblocks: usize) -> Vec<BlockId> {
         let mut res_blocks = Vec::with_capacity(nblocks);
         let chunks = &self.entry.head.chunks;
 
@@ -650,7 +655,7 @@ impl RawLogHeadRef<'_> {
 
 impl RawLogTailRef<'_> {
     /// Apply given function to the immutable tail.
-    pub fn tail_with<F, R>(&self, f: F) -> R
+    pub(crate) fn tail_with<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&RawLogTail) -> R,
     {
@@ -665,7 +670,7 @@ impl RawLogTailRef<'_> {
     }
 
     /// Apply given function to the mutable tail.
-    pub fn tail_mut_with<F, R>(&mut self, f: F) -> R
+    pub(crate) fn tail_mut_with<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut RawLogTail) -> R,
     {
@@ -680,11 +685,16 @@ impl RawLogTailRef<'_> {
             })
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.tail_with(|tail: &RawLogTail| tail.num_blocks as _)
     }
 
-    pub fn read<D: BlockSet>(&self, offset: BlockId, mut buf: BufMut, disk: &D) -> Result<()> {
+    pub(crate) fn read<D: BlockSet>(
+        &self,
+        offset: BlockId,
+        mut buf: BufMut,
+        disk: &D,
+    ) -> Result<()> {
         let nblocks = buf.nblocks();
         let tail_nblocks = self.len();
         debug_assert!(offset + nblocks <= tail_nblocks);
@@ -707,7 +717,7 @@ impl RawLogTailRef<'_> {
         Ok(())
     }
 
-    pub fn append<D: BlockSet>(&self, buf: BufRef, disk: &D) -> Result<()> {
+    pub(crate) fn append<D: BlockSet>(&self, buf: BufRef, disk: &D) -> Result<()> {
         let nblocks = buf.nblocks();
 
         let prepared_blocks = self.prepare_blocks(self.len() as _, nblocks);
@@ -728,7 +738,7 @@ impl RawLogTailRef<'_> {
     }
 
     // Calculate how many new chunks we need for an append request
-    pub fn calc_needed_chunks(&self, append_nblocks: usize) -> usize {
+    pub(crate) fn calc_needed_chunks(&self, append_nblocks: usize) -> usize {
         self.tail_with(|tail: &RawLogTail| {
             let avail_blocks = tail.head_last_chunk_free_blocks as usize
                 + tail.chunks.len() * CHUNK_NBLOCKS
@@ -811,7 +821,7 @@ pub(super) struct RawLogHead {
 }
 
 impl State {
-    pub fn new(
+    pub(crate) fn new(
         persistent: RawLogStoreState,
         lazy_deletes: HashMap<RawLogId, Arc<LazyDelete<RawLogEntry>>>,
     ) -> Self {
@@ -828,11 +838,11 @@ impl State {
         }
     }
 
-    pub fn apply(&mut self, edit: &RawLogStoreEdit) {
+    pub(crate) fn apply(&mut self, edit: &RawLogStoreEdit) {
         edit.apply_to(&mut self.persistent);
     }
 
-    pub fn alloc_log_id(&mut self) -> u64 {
+    pub(crate) fn alloc_log_id(&mut self) -> u64 {
         let new_log_id = self.next_free_log_id;
         self.next_free_log_id = self
             .next_free_log_id
@@ -841,7 +851,7 @@ impl State {
         new_log_id
     }
 
-    pub fn add_to_write_set(&mut self, log_id: RawLogId) -> Result<()> {
+    pub(crate) fn add_to_write_set(&mut self, log_id: RawLogId) -> Result<()> {
         let not_exists = self.write_set.insert(log_id);
         if !not_exists {
             // Obey single-writer rule
@@ -850,7 +860,7 @@ impl State {
         Ok(())
     }
 
-    pub fn remove_from_write_set(&mut self, log_id: RawLogId) {
+    pub(crate) fn remove_from_write_set(&mut self, log_id: RawLogId) {
         let _is_removed = self.write_set.remove(&log_id);
         // `_is_removed` may equal to `false` if the log has already been deleted
     }
