@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![expect(dead_code)]
+#![short_vis_path::add(iommu = crate::arch::iommu)]
 
 use alloc::collections::BTreeMap;
 
@@ -33,7 +34,7 @@ impl RootEntry {
     }
 }
 
-pub struct RootTable {
+pub(in iommu) struct RootTable {
     /// Total 256 bus, each entry is 128 bits.
     root_frame: Frame<()>,
     // TODO: Use radix tree instead.
@@ -48,7 +49,7 @@ pub(super) enum ContextTableError {
 }
 
 impl RootTable {
-    pub fn root_paddr(&self) -> Paddr {
+    pub(in iommu) fn root_paddr(&self) -> Paddr {
         self.root_frame.paddr()
     }
 

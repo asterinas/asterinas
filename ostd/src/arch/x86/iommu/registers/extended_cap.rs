@@ -4,7 +4,7 @@ use core::fmt::Debug;
 
 use bitflags::bitflags;
 
-pub struct ExtendedCapability(u64);
+pub(in crate::arch::iommu) struct ExtendedCapability(u64);
 
 impl ExtendedCapability {
     /// Creates ExtendedCapability from `value`
@@ -13,7 +13,7 @@ impl ExtendedCapability {
     }
 
     /// Extended capability flags
-    pub const fn flags(&self) -> ExtendedCapabilityFlags {
+    pub(in crate::arch::iommu) const fn flags(&self) -> ExtendedCapabilityFlags {
         ExtendedCapabilityFlags::from_bits_truncate(self.0)
     }
 

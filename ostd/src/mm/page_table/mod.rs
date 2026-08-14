@@ -316,7 +316,7 @@ pub(crate) struct PageTable<C: PageTableConfig> {
 }
 
 impl PageTable<UserPtConfig> {
-    pub fn activate(&self) {
+    pub(in crate::mm) fn activate(&self) {
         // SAFETY: The user mode page table is safe to activate since the kernel
         // mappings are shared.
         unsafe {
@@ -327,7 +327,7 @@ impl PageTable<UserPtConfig> {
 
 impl PageTable<KernelPtConfig> {
     /// Create a new kernel page table.
-    pub(crate) fn new_kernel_page_table() -> Self {
+    pub(in crate::mm) fn new_kernel_page_table() -> Self {
         let kpt = Self::empty();
 
         // Make shared the page tables mapped by the root table in the kernel space.
@@ -422,7 +422,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// cursors concurrently accessing the same virtual address range, just like what
     /// happens for the hardware MMU walk.
     #[cfg(ktest)]
-    pub fn page_walk(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
+    pub(in crate::mm) fn page_walk(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
         // SAFETY: The root node is a valid page table node so the address is valid.
         unsafe { page_walk::<C>(self.root_paddr(), vaddr) }
     }
@@ -444,7 +444,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped. The modification to the mapping by the cursor may also
     /// block or be overridden by the mapping of another cursor.
-    pub fn cursor<'rcu, G: AsAtomicModeGuard>(
+    pub(in crate::mm) fn cursor<'rcu, G: AsAtomicModeGuard>(
         &'rcu self,
         guard: &'rcu G,
         va: &Range<Vaddr>,
