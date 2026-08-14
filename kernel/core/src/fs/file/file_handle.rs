@@ -169,7 +169,7 @@ impl dyn FileLike {
     /// [`write_at`]: FileLike::write_at
     /// [`resize`]: FileLike::resize
     /// [`fallocate`]: FileLike::fallocate
-    pub fn access_mode(&self) -> AccessMode {
+    pub(crate) fn access_mode(&self) -> AccessMode {
         self.common().access_mode()
     }
 
