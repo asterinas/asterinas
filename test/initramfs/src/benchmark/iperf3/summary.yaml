@@ -1,2 +1,4 @@
 benchmarks:
   - tcp_virtio_bw
+  - udp_virtio_bw_rx
+  - udp_virtio_bw_tx
