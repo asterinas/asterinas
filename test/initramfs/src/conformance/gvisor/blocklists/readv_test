@@ -1,6 +1,3 @@
-ReadvTest.BadIovecBase_File
-ReadvTest.BadIovecBase_Pipe
-ReadvTest.IovecOutsideTaskAddressRangeInNonemptyArray
 ReadvTest.NotReadable_Pipe
 ReadvTestNoFixture.TruncatedAtMax
 ReadvTestNoFixture.TruncatedAtMax_NoRandomSave
