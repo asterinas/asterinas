@@ -346,7 +346,7 @@ impl<C: PageTableConfig> Drop for Cursor<'_, C> {
 /// The state of virtual pages represented by a page table.
 ///
 /// This is the return type of the [`Cursor::query`] method.
-pub type PagesState<'a, C> = (Range<Vaddr>, Option<<C as PageTableConfig>::ItemRef<'a>>);
+type PagesState<'a, C> = (Range<Vaddr>, Option<<C as PageTableConfig>::ItemRef<'a>>);
 
 /// The cursor of a page table that is capable of map, unmap or protect pages.
 ///

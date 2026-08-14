@@ -43,7 +43,7 @@ pub(in crate::arch) enum Remapping {
 #[expect(clippy::upper_case_acronyms)]
 #[repr(u16)]
 #[derive(Clone, Copy, Debug)]
-pub enum RemappingType {
+enum RemappingType {
     DRHD = 0,
     RMRR = 1,
     ATSR = 2,

@@ -29,15 +29,15 @@ pub(super) struct KtestModule {
 
 impl KtestModule {
     #[expect(dead_code)]
-    pub fn nr_this_tests(&self) -> usize {
+    fn nr_this_tests(&self) -> usize {
         self.tests.len()
     }
 
-    pub fn nr_tot_tests(&self) -> usize {
+    fn nr_tot_tests(&self) -> usize {
         self.nr_tot_tests
     }
 
-    pub fn name(&self) -> &PathElement {
+    fn name(&self) -> &PathElement {
         &self.name
     }
 
@@ -101,14 +101,14 @@ impl FromIterator<KtestItem> for KtestTree {
 }
 
 impl KtestTree {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             nr_tot_tests: 0,
             crates: BTreeMap::new(),
         }
     }
 
-    pub fn add_ktest(&mut self, test: KtestItem) {
+    fn add_ktest(&mut self, test: KtestItem) {
         self.nr_tot_tests += 1;
         let package = test.info().package.to_string();
         let module_path = test.info().module_path;

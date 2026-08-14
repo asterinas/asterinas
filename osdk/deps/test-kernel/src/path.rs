@@ -26,7 +26,7 @@ impl From<&str> for KtestPath {
 }
 
 impl KtestPath {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             path: VecDeque::new(),
         }
@@ -43,12 +43,12 @@ impl KtestPath {
     }
 
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn pop_back(&mut self) -> Option<PathElement> {
+    fn pop_back(&mut self) -> Option<PathElement> {
         self.path.pop_back()
     }
 
     #[expect(dead_code)]
-    pub fn push_front(&mut self, s: &str) {
+    fn push_front(&mut self, s: &str) {
         self.path.push_front(PathElement::from(s))
     }
 
@@ -57,7 +57,7 @@ impl KtestPath {
     }
 
     #[expect(dead_code)]
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.path.len()
     }
 
@@ -66,7 +66,7 @@ impl KtestPath {
     }
 
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn starts_with(&self, other: &Self) -> bool {
+    fn starts_with(&self, other: &Self) -> bool {
         if self.path.len() < other.path.len() {
             return false;
         }
@@ -79,7 +79,7 @@ impl KtestPath {
     }
 
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn ends_with(&self, other: &Self) -> bool {
+    fn ends_with(&self, other: &Self) -> bool {
         if self.path.len() < other.path.len() {
             return false;
         }
@@ -174,7 +174,7 @@ pub(super) struct SuffixTrie {
 }
 
 impl SuffixTrie {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             children: BTreeMap::new(),
             is_end: false,
@@ -189,7 +189,7 @@ impl SuffixTrie {
         t
     }
 
-    pub fn insert<I, P>(&mut self, path: I)
+    fn insert<I, P>(&mut self, path: I)
     where
         I: DoubleEndedIterator<Item = P>,
         P: Deref<Target = PathElement>,
@@ -203,7 +203,7 @@ impl SuffixTrie {
 
     /// Find if there is a perfect match in this suffix trie.
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn matches<I, P>(&self, path: I) -> bool
+    fn matches<I, P>(&self, path: I) -> bool
     where
         I: DoubleEndedIterator<Item = P>,
         P: Deref<Target = PathElement>,

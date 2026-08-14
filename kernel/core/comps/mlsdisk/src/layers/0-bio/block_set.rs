@@ -131,7 +131,7 @@ pub(in crate::layers) struct MemDisk {
 
 impl MemDisk {
     /// Create a `MemDisk` with the number of blocks.
-    pub fn create(num_blocks: usize) -> Result<Self> {
+    fn create(num_blocks: usize) -> Result<Self> {
         let blocks = Buf::alloc(num_blocks)?;
         Ok(Self {
             disk: Arc::new(Mutex::new(blocks)),

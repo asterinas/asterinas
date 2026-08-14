@@ -29,7 +29,7 @@ impl ExtendedCapability {
 
     /// Maximum Handle Mask Value, indicates the maximum supported value for the Interrupt
     /// Mask (IM) field in the Interrupt Entry Cache Invalidation Descriptor (iec_inv_dsc).
-    pub const fn maximum_handle_mask(&self) -> u64 {
+    const fn maximum_handle_mask(&self) -> u64 {
         const MHMV_MASK: u64 = 0xF << 20;
         (self.0 & MHMV_MASK) >> 20
     }
@@ -40,7 +40,7 @@ impl ExtendedCapability {
     ///
     /// This field is unused and reported as 0 if Scalable Mode Translation Support (SMTS)
     /// field is Clear.
-    pub const fn pasid_size(&self) -> u64 {
+    const fn pasid_size(&self) -> u64 {
         const PSS_MASK: u64 = 0x1F << 35;
         (self.0 & PSS_MASK) >> 35
     }

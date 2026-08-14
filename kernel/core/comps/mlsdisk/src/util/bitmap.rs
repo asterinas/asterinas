@@ -63,7 +63,7 @@ impl BitMap {
     /// # Panics
     ///
     /// The `index` must be within the total number of bits. Otherwise, this method panics.
-    pub fn test_bit(&self, index: usize) -> bool {
+    fn test_bit(&self, index: usize) -> bool {
         self.check_index(index);
         self.bits.test_bit(index as _)
     }
@@ -73,7 +73,7 @@ impl BitMap {
     /// # Panics
     ///
     /// The `index` must be within the total number of bits. Otherwise, this method panics.
-    pub fn set_bit(&mut self, index: usize) {
+    fn set_bit(&mut self, index: usize) {
         self.check_index(index);
         self.bits.set_bit(index as _);
     }
@@ -83,7 +83,7 @@ impl BitMap {
     /// # Panics
     ///
     /// The `index` must be within the total number of bits. Otherwise, this method panics.
-    pub fn clear_bit(&mut self, index: usize) {
+    fn clear_bit(&mut self, index: usize) {
         self.check_index(index);
         self.bits.clear_bit(index as _)
     }
@@ -113,7 +113,7 @@ impl BitMap {
     }
 
     /// Get the number of zero bits in the bitmap.
-    pub fn count_zeros(&self) -> usize {
+    fn count_zeros(&self) -> usize {
         let total_zeros = self.bits.count_zeros() as usize;
         total_zeros - self.bits_not_in_use()
     }
@@ -162,7 +162,7 @@ impl BitMap {
     /// Find the index of the last one bit.
     ///
     /// Return `None` if no one bit is found.
-    pub fn last_one(&self) -> Option<usize> {
+    fn last_one(&self) -> Option<usize> {
         self.bits
             .iter_ones()
             .rev()
@@ -194,7 +194,7 @@ impl BitMap {
     /// # Panics
     ///
     /// The `from + count` index must be within the total number of bits. Otherwise, this method panics.
-    pub fn first_zeros(&self, from: usize, count: usize) -> Option<Vec<usize>> {
+    fn first_zeros(&self, from: usize, count: usize) -> Option<Vec<usize>> {
         self.check_index(from + count - 1);
         let first_u64_index = from / 64;
 

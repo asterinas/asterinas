@@ -320,7 +320,7 @@ struct Header {
 }
 
 impl Header {
-    pub fn new<R>(reader: &mut R) -> Result<Self>
+    fn new<R>(reader: &mut R) -> Result<Self>
     where
         R: Read,
     {

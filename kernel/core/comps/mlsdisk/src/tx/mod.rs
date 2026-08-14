@@ -168,7 +168,7 @@ impl TxProvider {
 }
 
 /// A transaction.
-pub struct Tx {
+struct Tx {
     id: TxId,
     provider: Weak<TxProvider>,
     data_map: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
@@ -190,17 +190,17 @@ impl Tx {
     }
 
     /// Returns the TX ID.
-    pub fn id(&self) -> TxId {
+    fn id(&self) -> TxId {
         self.id
     }
 
     /// Returns the status of the TX.
-    pub fn status(&self) -> TxStatus {
+    fn status(&self) -> TxStatus {
         self.status
     }
 
     /// Sets the status of the Tx.
-    pub fn set_status(&mut self, status: TxStatus) {
+    fn set_status(&mut self, status: TxStatus) {
         self.status = status;
     }
 
@@ -247,7 +247,7 @@ impl Drop for Tx {
 
 /// The status of a transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TxStatus {
+enum TxStatus {
     Ongoing,
     Committed,
     Aborted,

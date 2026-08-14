@@ -15,7 +15,7 @@ use std::{
 const LEGACY_SETUP_SECS: usize = 7;
 pub(crate) const LEGACY_SETUP_SEC_SIZE: usize = 0x200 * (LEGACY_SETUP_SECS + 1);
 
-pub const SETUP32_LMA: usize = 0x100000;
+const SETUP32_LMA: usize = 0x100000;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SetupVA {

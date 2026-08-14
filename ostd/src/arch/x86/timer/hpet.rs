@@ -108,27 +108,27 @@ impl Hpet {
     }
 
     #[expect(dead_code)]
-    pub fn hardware_rev(&self) -> u8 {
+    fn hardware_rev(&self) -> u8 {
         (self.information_register.as_ptr().read() & 0xFF) as u8
     }
 
     #[expect(dead_code)]
-    pub fn num_comparators(&self) -> u8 {
+    fn num_comparators(&self) -> u8 {
         ((self.information_register.as_ptr().read() & 0x1F00) >> 8) as u8 + 1
     }
 
     #[expect(dead_code)]
-    pub fn main_counter_is_64bits(&self) -> bool {
+    fn main_counter_is_64bits(&self) -> bool {
         (self.information_register.as_ptr().read() & 0x2000) != 0
     }
 
     #[expect(dead_code)]
-    pub fn legacy_irq_capable(&self) -> bool {
+    fn legacy_irq_capable(&self) -> bool {
         (self.information_register.as_ptr().read() & 0x8000) != 0
     }
 
     #[expect(dead_code)]
-    pub fn pci_vendor_id(&self) -> u16 {
+    fn pci_vendor_id(&self) -> u16 {
         ((self.information_register.as_ptr().read() & 0xFFFF_0000) >> 16) as u16
     }
 }

@@ -66,7 +66,7 @@ struct Component {
 }
 
 impl Component {
-    pub fn init() -> Result<Self, ComponentInitError> {
+    fn init() -> Result<Self, ComponentInitError> {
         Ok(Self {
             console_device_table: SpinLock::new(BTreeMap::new()),
         })

@@ -75,7 +75,7 @@ impl<T> LazyDelete<T> {
     }
 
     /// Returns whether this instance has been marked deleted.
-    pub fn is_deleted(this: &Self) -> bool {
+    fn is_deleted(this: &Self) -> bool {
         this.is_deleted.load(Ordering::Acquire)
     }
 }

@@ -32,7 +32,7 @@ impl Drhd {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct DrhdHeader {
+struct DrhdHeader {
     typ: u16,
     length: u16,
     flags: u8,
@@ -54,7 +54,7 @@ pub(in crate::arch) struct Rmrr {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct RmrrHeader {
+struct RmrrHeader {
     typ: u16,
     length: u16,
     reserved: u16,
@@ -75,7 +75,7 @@ pub(in crate::arch) struct Atsr {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct AtsrHeader {
+struct AtsrHeader {
     typ: u16,
     length: u16,
     flags: u8,
@@ -112,7 +112,7 @@ pub(in crate::arch) struct Andd {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct AnddHeader {
+struct AnddHeader {
     typ: u16,
     length: u16,
     reserved: [u8; 3],
@@ -131,7 +131,7 @@ pub(in crate::arch) struct Satc {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct SatcHeader {
+struct SatcHeader {
     typ: u16,
     length: u16,
     flags: u8,
@@ -152,7 +152,7 @@ pub(in crate::arch) struct Sidp {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct SidpHeader {
+struct SidpHeader {
     typ: u16,
     length: u16,
     reserved: u16,
@@ -162,14 +162,14 @@ pub struct SidpHeader {
 /// The Device Scope Structure is made up of Device Scope Entries. Each Device Scope Entry may be
 /// used to indicate a PCI endpoint device
 #[derive(Clone, Debug)]
-pub struct DeviceScope {
+struct DeviceScope {
     header: DeviceScopeHeader,
     path: Vec<(u8, u8)>,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct DeviceScopeHeader {
+struct DeviceScopeHeader {
     typ: u8,
     length: u8,
     flags: u8,

@@ -21,15 +21,15 @@ use crate::{
 /// Bit 63:12 is the context-table pointer pointing to this bus's context-table.
 #[repr(C)]
 #[derive(Clone, Copy, Pod)]
-pub struct RootEntry(u128);
+struct RootEntry(u128);
 
 impl RootEntry {
-    pub const fn is_present(&self) -> bool {
+    const fn is_present(&self) -> bool {
         // Bit 0
         (self.0 & 0b1) != 0
     }
 
-    pub const fn addr(&self) -> u64 {
+    const fn addr(&self) -> u64 {
         (self.0 & 0xFFFF_FFFF_FFFF_F000) as u64
     }
 }
