@@ -48,10 +48,9 @@ pub(super) fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result
     Ok(SyscallReturn::Return(0))
 }
 
-#[inline]
 fn check_length(len: isize, ctx: &Context) -> Result<()> {
     if len < 0 {
-        return_errno_with_message!(Errno::EINVAL, "length is negative");
+        return_errno_with_message!(Errno::EINVAL, "the length to truncate is negative");
     }
 
     let max_file_size = {
@@ -61,7 +60,7 @@ fn check_length(len: isize, ctx: &Context) -> Result<()> {
             .get_cur() as usize
     };
     if len as usize > max_file_size {
-        return_errno_with_message!(Errno::EFBIG, "length is larger than the maximum file size");
+        return_errno_with_message!(Errno::EFBIG, "the length to truncate is too large");
     }
     Ok(())
 }

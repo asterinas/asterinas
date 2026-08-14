@@ -326,12 +326,12 @@ impl<'a> VmarMapOptions<'a> {
         // Parse the `Mappable` and prepare the `MappedMemory`.
         let (mapped_mem, io_mem) = match mappable {
             Some(Mappable::Vmo(vmo)) => {
-                if let Some(ref file) = file {
-                    let path = file.path();
+                let path = file.as_ref().map(|file| file.path());
+
+                if let Some(path) = path {
                     debug_assert!(Arc::ptr_eq(&vmo, &path.inode().page_cache().unwrap()));
                 }
 
-                let path = file.as_ref().map(|file| file.path());
                 let is_writable_tracked = if let Some(path) = path
                     && let Some(memfd_inode) = path.inode().downcast_ref::<MemfdInode>()
                     && is_shared
