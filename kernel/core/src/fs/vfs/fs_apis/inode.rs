@@ -2,10 +2,7 @@
 
 #![expect(unused_variables)]
 
-use alloc::{
-    boxed::ThinBox,
-    io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write},
-};
+use alloc::boxed::ThinBox;
 use core::time::Duration;
 
 use device_id::DeviceId;
@@ -651,13 +648,6 @@ impl dyn Inode {
         (self as &dyn Any).downcast_ref::<T>()
     }
 
-    pub(crate) fn writer(&self, from_offset: usize) -> InodeWriter<'_> {
-        InodeWriter {
-            inner: self,
-            offset: from_offset,
-        }
-    }
-
     #[cfg_attr(not(ktest), expect(dead_code))]
     pub(crate) fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
@@ -668,29 +658,6 @@ impl dyn Inode {
     pub(crate) fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
         self.write_at(offset, &mut reader, StatusFlags::empty())
-    }
-}
-
-pub(crate) struct InodeWriter<'a> {
-    inner: &'a dyn Inode,
-    offset: usize,
-}
-
-impl Write for InodeWriter<'_> {
-    #[inline]
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        let mut reader = VmReader::from(buf).to_fallible();
-        let write_len = self
-            .inner
-            .write_at(self.offset, &mut reader, StatusFlags::empty())
-            .map_err(|_| IoError::new(IoErrorKind::WriteZero, "failed to write buffer"))?;
-        self.offset += write_len;
-        Ok(write_len)
-    }
-
-    #[inline]
-    fn flush(&mut self) -> IoResult<()> {
-        Ok(())
     }
 }
 
