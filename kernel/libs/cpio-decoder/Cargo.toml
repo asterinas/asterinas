@@ -8,7 +8,6 @@ edition.workspace = true
 [dependencies]
 int-to-c-enum.workspace = true
 lending-iterator.workspace = true
-no_std_io2.workspace = true
 
 [lints]
 workspace = true

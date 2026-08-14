@@ -17,17 +17,20 @@
 
 #![cfg_attr(not(test), no_std)]
 #![deny(unsafe_code)]
+#![feature(alloc_io)]
 
 extern crate alloc;
 
 #[cfg(not(test))]
 use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::{
+    io::{Read, Write},
+    vec,
+};
 use core::cmp::min;
 
 use int_to_c_enum::TryFromInt;
 use lending_iterator::prelude::*;
-use no_std_io2::io::{Read, Write};
 
 use crate::error::{Error, Result};
 

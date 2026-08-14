@@ -2,11 +2,13 @@
 
 #![expect(unused_variables)]
 
-use alloc::boxed::ThinBox;
+use alloc::{
+    boxed::ThinBox,
+    io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write},
+};
 use core::time::Duration;
 
 use device_id::DeviceId;
-use no_std_io2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use ostd::task::{CurrentTask, Task};
 use spin::Once;
 

@@ -172,7 +172,6 @@ dependencies = [
  "logo-ascii-art",
  "loongArch64",
  "lru",
- "no_std_io2",
  "osdk-frame-allocator",
  "osdk-heap-allocator",
  "ostd",
@@ -600,7 +599,6 @@ version = "0.1.0"
 dependencies = [
  "int-to-c-enum",
  "lending-iterator",
- "no_std_io2",
 ]
 
 [[package]]

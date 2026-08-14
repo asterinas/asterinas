@@ -12,12 +12,14 @@ macro_rules! __log_prefix {
     };
 }
 
-use alloc::borrow::Cow;
+use alloc::{
+    borrow::Cow,
+    io::{Cursor, Read},
+};
 
 use cpio_decoder::{CpioDecoder, CpioEntry, FileMetadata, FileType};
 use device_id::{DeviceId, MajorId, MinorId};
 use lending_iterator::LendingIterator;
-use no_std_io2::io::{Cursor, Read};
 use ostd::boot::boot_info;
 use spin::once::Once;
 use zune_inflate::DeflateDecoder;
