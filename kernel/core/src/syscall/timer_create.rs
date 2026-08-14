@@ -24,6 +24,7 @@ use crate::{
         Timer, clockid_t,
         clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
         timer::TimerGuard,
+        timer_t,
     },
 };
 
@@ -111,7 +112,16 @@ pub(super) fn sys_timer_create(
     let Some(timer_id) = current_process.timer_manager().add_posix_timer(timer) else {
         return_errno_with_message!(Errno::EAGAIN, "timer IDs are exhausted");
     };
-    ctx.user_space().write_val(timer_id_addr, &timer_id)?;
+    // Linux exposes timer IDs as 32-bit `timer_t` values.
+    let kernel_timer_id = match timer_t::try_from(timer_id) {
+        Ok(timer_id) => timer_id,
+        Err(_) => {
+            let _ = current_process.timer_manager().remove_posix_timer(timer_id);
+            return_errno_with_message!(Errno::EAGAIN, "timer ID exceeds the supported range");
+        }
+    };
+    ctx.user_space()
+        .write_val(timer_id_addr, &kernel_timer_id)?;
     Ok(SyscallReturn::Return(0))
 }
 
