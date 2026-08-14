@@ -39,9 +39,9 @@ use crate::{
 };
 
 /// Logical Block Address.
-pub type Lba = BlockId;
+pub(super) type Lba = BlockId;
 /// Host Block Address.
-pub type Hba = BlockId;
+pub(super) type Hba = BlockId;
 
 /// MlsDisk.
 pub struct MlsDisk<D: BlockSet> {

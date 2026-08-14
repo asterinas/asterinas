@@ -28,7 +28,7 @@ use ostd::{
 use super::Driver;
 use crate::SystemTime;
 
-pub struct RtcCmos {
+pub(super) struct RtcCmos {
     access: SpinLock<CmosAccess>,
     status_b: StatusB,
 }

@@ -101,10 +101,10 @@ use crate::{
 };
 
 /// The ID of a raw log.
-pub type RawLogId = u64;
+pub(super) type RawLogId = u64;
 
 /// A store of raw logs.
-pub struct RawLogStore<D> {
+pub(super) struct RawLogStore<D> {
     state: Arc<Mutex<State>>,
     disk: D,
     chunk_alloc: ChunkAlloc, // Mapping: ChunkId * CHUNK_NBLOCKS = disk position (BlockId)
@@ -115,7 +115,7 @@ pub struct RawLogStore<D> {
 impl<D: BlockSet> RawLogStore<D> {
     /// Creates a new store of raw logs,
     /// given a chunk allocator and an untrusted disk.
-    pub fn new(disk: D, tx_provider: Arc<TxProvider>, chunk_alloc: ChunkAlloc) -> Arc<Self> {
+    pub(super) fn new(disk: D, tx_provider: Arc<TxProvider>, chunk_alloc: ChunkAlloc) -> Arc<Self> {
         Self::from_parts(RawLogStoreState::new(), disk, chunk_alloc, tx_provider)
     }
 
@@ -225,12 +225,12 @@ impl<D: BlockSet> RawLogStore<D> {
     }
 
     /// Creates a new transaction for `RawLogStore`.
-    pub fn new_tx(&self) -> CurrentTx<'_> {
+    pub(super) fn new_tx(&self) -> CurrentTx<'_> {
         self.tx_provider.new_tx()
     }
 
     /// Syncs all the data managed by `RawLogStore` for persistence.
-    pub fn sync(&self) -> Result<()> {
+    pub(super) fn sync(&self) -> Result<()> {
         // Do nothing, leave the disk sync to `TxLogStore`
         Ok(())
     }
@@ -240,7 +240,7 @@ impl<D: BlockSet> RawLogStore<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn create_log(&self) -> Result<RawLog<D>> {
+    pub(super) fn create_log(&self) -> Result<RawLog<D>> {
         let mut state = self.state.lock();
         let new_log_id = state.alloc_log_id();
         state
@@ -271,7 +271,7 @@ impl<D: BlockSet> RawLogStore<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn open_log(&self, log_id: u64, can_append: bool) -> Result<RawLog<D>> {
+    pub(super) fn open_log(&self, log_id: u64, can_append: bool) -> Result<RawLog<D>> {
         let mut state = self.state.lock();
         // Must check lazy deletes first in case there is concurrent deletion
         let lazy_delete = state
@@ -323,7 +323,7 @@ impl<D: BlockSet> RawLogStore<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn delete_log(&self, log_id: RawLogId) -> Result<()> {
+    pub(super) fn delete_log(&self, log_id: RawLogId) -> Result<()> {
         let mut current_tx = self.tx_provider.current();
 
         // Free tail chunks
@@ -352,7 +352,7 @@ impl<D> Debug for RawLogStore<D> {
 }
 
 /// A raw (untrusted) log.
-pub struct RawLog<D> {
+pub(super) struct RawLog<D> {
     log_id: RawLogId,
     log_entry: Option<Arc<Mutex<RawLogEntry>>>,
     log_store: Arc<RawLogStore<D>>,
@@ -427,7 +427,7 @@ impl<D: BlockSet> BlockLog for RawLog<D> {
 
 impl<D> RawLog<D> {
     /// Gets the unique ID of raw log.
-    pub fn id(&self) -> RawLogId {
+    pub(super) fn id(&self) -> RawLogId {
         self.log_id
     }
 
@@ -803,7 +803,7 @@ struct State {
 
 /// The persistent state of a `RawLogStore`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RawLogStoreState {
+pub(super) struct RawLogStoreState {
     log_table: HashMap<RawLogId, RawLogEntry>,
 }
 
@@ -867,13 +867,13 @@ impl State {
 }
 
 impl RawLogStoreState {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             log_table: HashMap::new(),
         }
     }
 
-    pub fn create_log(&mut self, new_log_id: u64) {
+    pub(super) fn create_log(&mut self, new_log_id: u64) {
         let new_log_entry = RawLogEntry {
             head: RawLogHead::new(),
         };
@@ -890,21 +890,21 @@ impl RawLogStoreState {
         log_entry.head.append(tail);
     }
 
-    pub fn delete_log(&mut self, log_id: u64) {
+    pub(super) fn delete_log(&mut self, log_id: u64) {
         let _ = self.log_table.remove(&log_id);
         // Leave chunk deallocation to lazy delete
     }
 }
 
 impl RawLogHead {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             chunks: Vec::new(),
             num_blocks: 0,
         }
     }
 
-    pub fn append(&mut self, tail: &RawLogTail) {
+    pub(super) fn append(&mut self, tail: &RawLogTail) {
         // Update head
         self.chunks.extend(tail.chunks.iter());
         self.num_blocks += tail.num_blocks;
@@ -918,7 +918,7 @@ impl RawLogHead {
 
 /// A persistent edit to the state of `RawLogStore`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RawLogStoreEdit {
+pub(super) struct RawLogStoreEdit {
     edit_table: HashMap<RawLogId, RawLogEdit>,
 }
 
@@ -959,14 +959,14 @@ pub(super) struct RawLogTail {
 
 impl RawLogStoreEdit {
     /// Creates a new empty edit table.
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             edit_table: HashMap::new(),
         }
     }
 
     /// Records a log creation in the edit.
-    pub fn create_log(&mut self, new_log_id: RawLogId) {
+    pub(super) fn create_log(&mut self, new_log_id: RawLogId) {
         let create_edit = RawLogEdit::Create(RawLogCreate::new());
         let edit_exists = self.edit_table.insert(new_log_id, create_edit);
         debug_assert!(edit_exists.is_none());
@@ -998,7 +998,7 @@ impl RawLogStoreEdit {
     }
 
     /// Records a log deletion in the edit, returns the tail chunks of the deleted log.
-    pub fn delete_log(&mut self, log_id: RawLogId) -> Option<Vec<ChunkId>> {
+    pub(super) fn delete_log(&mut self, log_id: RawLogId) -> Option<Vec<ChunkId>> {
         match self.edit_table.insert(log_id, RawLogEdit::Delete) {
             None => None,
             Some(RawLogEdit::Create(create)) => {
@@ -1013,28 +1013,28 @@ impl RawLogStoreEdit {
         }
     }
 
-    pub fn is_log_created(&self, log_id: RawLogId) -> bool {
+    pub(super) fn is_log_created(&self, log_id: RawLogId) -> bool {
         match self.edit_table.get(&log_id) {
             Some(RawLogEdit::Create(_)) | Some(RawLogEdit::Append(_)) => true,
             Some(RawLogEdit::Delete) | None => false,
         }
     }
 
-    pub fn iter_created_logs(&self) -> impl Iterator<Item = RawLogId> + '_ {
+    pub(super) fn iter_created_logs(&self) -> impl Iterator<Item = RawLogId> + '_ {
         self.edit_table
             .iter()
             .filter(|(_, edit)| matches!(edit, RawLogEdit::Create(_)))
             .map(|(id, _)| *id)
     }
 
-    pub fn iter_deleted_logs(&self) -> impl Iterator<Item = RawLogId> + '_ {
+    pub(super) fn iter_deleted_logs(&self) -> impl Iterator<Item = RawLogId> + '_ {
         self.edit_table
             .iter()
             .filter(|(_, edit)| matches!(edit, RawLogEdit::Delete))
             .map(|(id, _)| *id)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.edit_table.is_empty()
     }
 }
@@ -1061,7 +1061,7 @@ impl Edit<RawLogStoreState> for RawLogStoreEdit {
 }
 
 impl RawLogCreate {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             tail: RawLogTail::new(),
         }
@@ -1069,7 +1069,7 @@ impl RawLogCreate {
 }
 
 impl RawLogTail {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             head_last_chunk_id: 0,
             head_last_chunk_free_blocks: 0,
@@ -1078,7 +1078,7 @@ impl RawLogTail {
         }
     }
 
-    pub fn from_head(head: &RawLogHead) -> Self {
+    pub(super) fn from_head(head: &RawLogHead) -> Self {
         Self {
             head_last_chunk_id: *head.chunks.last().unwrap_or(&0),
             head_last_chunk_free_blocks: (head.chunks.len() * CHUNK_NBLOCKS

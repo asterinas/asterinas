@@ -135,7 +135,7 @@ impl Hpet {
 
 /// HPET init, need to init IOAPIC before init this function
 #[expect(dead_code)]
-pub fn init() -> Result<(), AcpiError> {
+pub(super) fn init() -> Result<(), AcpiError> {
     let tables = get_acpi_tables().unwrap();
 
     let hpet_info = HpetInfo::new(tables)?;

@@ -20,7 +20,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct KtestModule {
+pub(super) struct KtestModule {
     nr_tot_tests: usize,
     name: PathElement,
     children: BTreeMap<PathElement, KtestModule>,
@@ -69,23 +69,23 @@ impl KtestModule {
 }
 
 #[derive(Debug)]
-pub struct KtestCrate {
+pub(super) struct KtestCrate {
     // Crate behaves just like modules, which can own it's children and tests.
     // But the iterator it provides will only iterate over the modules not tests.
     root_module: KtestModule,
 }
 
 impl KtestCrate {
-    pub fn nr_tot_tests(&self) -> usize {
+    pub(super) fn nr_tot_tests(&self) -> usize {
         self.root_module.nr_tot_tests()
     }
 
-    pub fn name(&self) -> &str {
+    pub(super) fn name(&self) -> &str {
         self.root_module.name()
     }
 }
 
-pub struct KtestTree {
+pub(super) struct KtestTree {
     nr_tot_tests: usize,
     crates: BTreeMap<String, KtestCrate>,
 }
@@ -119,11 +119,11 @@ impl KtestTree {
             .insert(&mut KtestPath::from(module_path), test);
     }
 
-    pub fn nr_tot_tests(&self) -> usize {
+    pub(super) fn nr_tot_tests(&self) -> usize {
         self.nr_tot_tests
     }
 
-    pub fn nr_tot_crates(&self) -> usize {
+    pub(super) fn nr_tot_crates(&self) -> usize {
         self.crates.len()
     }
 }
@@ -135,12 +135,12 @@ impl Default for KtestTree {
 }
 
 /// The `KtestTreeIter` will iterate over all crates. Yielding `KtestCrate`s.
-pub struct KtestTreeIter<'a> {
+pub(super) struct KtestTreeIter<'a> {
     crate_iter: btree_map::Iter<'a, String, KtestCrate>,
 }
 
 impl KtestTree {
-    pub fn iter(&self) -> KtestTreeIter<'_> {
+    pub(super) fn iter(&self) -> KtestTreeIter<'_> {
         KtestTreeIter {
             crate_iter: self.crates.iter(),
         }
@@ -159,12 +159,12 @@ type CrateChildrenIter<'a> = btree_map::Iter<'a, String, KtestModule>;
 
 /// The `KtestCrateIter` will iterate over all modules in a crate. Yielding `KtestModule`s.
 /// The iterator will return modules in the depth-first-search order of the module tree.
-pub struct KtestCrateIter<'a> {
+pub(super) struct KtestCrateIter<'a> {
     path: Vec<(&'a KtestModule, CrateChildrenIter<'a>)>,
 }
 
 impl KtestCrate {
-    pub fn iter(&self) -> KtestCrateIter<'_> {
+    pub(super) fn iter(&self) -> KtestCrateIter<'_> {
         KtestCrateIter {
             path: vec![(&self.root_module, self.root_module.children.iter())],
         }
@@ -194,12 +194,12 @@ impl<'a> Iterator for KtestCrateIter<'a> {
 }
 
 /// The `KtestModuleIter` will iterate over all tests in a crate. Yielding `KtestItem`s.
-pub struct KtestModuleIter<'a> {
+pub(super) struct KtestModuleIter<'a> {
     test_iter: core::slice::Iter<'a, KtestItem>,
 }
 
 impl KtestModule {
-    pub fn iter(&self) -> KtestModuleIter<'_> {
+    pub(super) fn iter(&self) -> KtestModuleIter<'_> {
         KtestModuleIter {
             test_iter: self.tests.iter(),
         }

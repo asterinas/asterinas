@@ -8,7 +8,7 @@ use crate::transport::pci::capability::VirtioPciCpabilityType;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct VirtioPciCommonCfg {
+pub(super) struct VirtioPciCommonCfg {
     pub device_feature_select: u32,
     pub device_features: u32,
     pub driver_feature_select: u32,

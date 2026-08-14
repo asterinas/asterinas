@@ -8,7 +8,7 @@ pub struct ExtendedCapability(u64);
 
 impl ExtendedCapability {
     /// Creates ExtendedCapability from `value`
-    pub const fn new(value: u64) -> Self {
+    pub(super) const fn new(value: u64) -> Self {
         Self(value)
     }
 
@@ -22,7 +22,7 @@ impl ExtendedCapability {
     ///
     /// If the register base address is X, and the value reported in this field is Y, the
     /// address for the IOTLB registers is calculated as X+(16*Y).
-    pub const fn iotlb_register_offset(&self) -> u64 {
+    pub(super) const fn iotlb_register_offset(&self) -> u64 {
         const IRO_MASK: u64 = 0x3FF << 8;
         (self.0 & IRO_MASK) >> 8
     }

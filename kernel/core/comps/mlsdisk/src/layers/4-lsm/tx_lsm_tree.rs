@@ -142,7 +142,7 @@ pub(crate) trait AsKV<K, V>: Send + Sync {
 }
 
 /// A callback that will be called when drops a record.
-pub type OnDropRecodeFn<K, V> = dyn Fn(&dyn AsKV<K, V>) + Send + Sync;
+pub(super) type OnDropRecodeFn<K, V> = dyn Fn(&dyn AsKV<K, V>) + Send + Sync;
 
 /// Represent any type that includes a key and a sync-aware value.
 pub(super) trait AsKVex<K, V> {
@@ -258,7 +258,7 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TxLsmTree<K, V, D> 
 }
 
 impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TreeInner<K, V, D> {
-    pub fn format(
+    pub(super) fn format(
         tx_log_store: Arc<TxLogStore<D>>,
         listener_factory: Arc<dyn TxEventListenerFactory<K, V>>,
         on_drop_record_in_memtable: Option<Arc<OnDropRecodeFn<K, V>>>,
@@ -280,7 +280,7 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TreeInner<K, V, D> 
         })
     }
 
-    pub fn recover(
+    pub(super) fn recover(
         tx_log_store: Arc<TxLogStore<D>>,
         listener_factory: Arc<dyn TxEventListenerFactory<K, V>>,
         on_drop_record_in_memtable: Option<Arc<OnDropRecodeFn<K, V>>>,
@@ -387,7 +387,7 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TreeInner<K, V, D> 
         Ok((manager, max_sync_id))
     }
 
-    pub fn get(&self, key: &K) -> Result<V> {
+    pub(super) fn get(&self, key: &K) -> Result<V> {
         // 1. Search from MemTables
         if let Some(value) = self.memtable_manager.get(key) {
             return Ok(value);
@@ -399,7 +399,7 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TreeInner<K, V, D> 
         Ok(value)
     }
 
-    pub fn get_range(&self, range_query_ctx: &mut RangeQueryCtx<K, V>) -> Result<()> {
+    pub(super) fn get_range(&self, range_query_ctx: &mut RangeQueryCtx<K, V>) -> Result<()> {
         let is_completed = self.memtable_manager.get_range(range_query_ctx);
         if is_completed {
             return Ok(());
@@ -410,7 +410,7 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TreeInner<K, V, D> 
         Ok(())
     }
 
-    pub fn sync(&self) -> Result<()> {
+    pub(super) fn sync(&self) -> Result<()> {
         let master_sync_id = self.master_sync_id.id() + 1;
 
         // Wait asynchronous compaction to finish
@@ -729,7 +729,7 @@ impl MasterSyncId {
     /// Create a new instance of `MasterSyncId`.
     /// Load the master sync ID from the given store if present.
     /// If the store is not present, use the default sync ID instead.
-    pub fn new(store: Option<Arc<dyn SyncIdStore>>, default: SyncId) -> Result<Self> {
+    pub(super) fn new(store: Option<Arc<dyn SyncIdStore>>, default: SyncId) -> Result<Self> {
         let id: SyncId = if let Some(store) = &store {
             store.read()?
         } else {
@@ -742,7 +742,7 @@ impl MasterSyncId {
     }
 
     /// Get the current master sync ID.
-    pub fn id(&self) -> SyncId {
+    pub(super) fn id(&self) -> SyncId {
         self.id.load(Ordering::Acquire)
     }
 

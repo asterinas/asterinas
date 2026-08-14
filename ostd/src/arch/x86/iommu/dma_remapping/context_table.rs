@@ -41,7 +41,7 @@ pub struct RootTable {
 }
 
 #[derive(Debug)]
-pub enum ContextTableError {
+pub(super) enum ContextTableError {
     InvalidDeviceId,
     /// Error when modifying the page table
     ModificationError(PageTableError),
@@ -174,17 +174,17 @@ impl RootTable {
 ///
 #[repr(C)]
 #[derive(Clone, Copy, Pod)]
-pub struct ContextEntry(u128);
+pub(super) struct ContextEntry(u128);
 
 impl ContextEntry {
     /// Identifier for the domain to which this context-entry maps. Hardware may use the domain
     /// identifier to tag its internal caches
-    pub const fn domain_identifier(&self) -> u64 {
+    pub(super) const fn domain_identifier(&self) -> u64 {
         // Bit 87-72
         ((self.0 & 0xFF_FF00_0000_0000_0000_0000) >> 72) as u64
     }
 
-    pub const fn address_width(&self) -> AddressWidth {
+    pub(super) const fn address_width(&self) -> AddressWidth {
         // Bit 66-64
         let value = ((self.0 & 0x7_0000_0000_0000_0000) >> 64) as u64;
         match value {
@@ -198,32 +198,32 @@ impl ContextEntry {
     /// Gets the second stage page translation pointer.
     ///
     /// This function will not right shift the value after the `and` operation.
-    pub const fn second_stage_pointer(&self) -> u64 {
+    pub(super) const fn second_stage_pointer(&self) -> u64 {
         // Bit 63~12
         (self.0 & 0xFFFF_FFFF_FFFF_F000) as u64
     }
 
     /// This field is applicable only for requests-without-PASID, as hardware blocks all requests-with
     /// PASID in legacy mode before they can use context table
-    pub const fn translation_type(&self) -> u64 {
+    pub(super) const fn translation_type(&self) -> u64 {
         // Bit 3~2
         ((self.0 & 0b1100) >> 2) as u64
     }
 
     /// Whether need to record/report qualified non-recoverable faults.
-    pub const fn need_fault_process(&self) -> bool {
+    pub(super) const fn need_fault_process(&self) -> bool {
         // Bit 1
         (self.0 & 0b10) == 0
     }
 
-    pub const fn is_present(&self) -> bool {
+    pub(super) const fn is_present(&self) -> bool {
         // Bit 0
         (self.0 & 0b1) != 0
     }
 }
 
 #[derive(Debug)]
-pub enum AddressWidth {
+pub(super) enum AddressWidth {
     /// 000b, 100b~111b
     Reserved,
     /// 001b
@@ -234,7 +234,7 @@ pub enum AddressWidth {
     Level5PageTable,
 }
 
-pub struct ContextTable {
+pub(super) struct ContextTable {
     /// Total 32 devices, each device has 8 functions.
     entries_frame: Frame<()>,
     page_tables: BTreeMap<Paddr, PageTable<IommuPtConfig>>,

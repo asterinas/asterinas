@@ -18,7 +18,7 @@ pub(crate) trait Driver {
 
 macro_rules! declare_rtc_drivers {
     ( $( #[cfg $cfg:tt ] $module:ident :: $name:ident),* $(,)? ) => {
-        pub fn init_rtc_driver() -> Arc<dyn Driver + Send + Sync> {
+        pub(super) fn init_rtc_driver() -> Arc<dyn Driver + Send + Sync> {
             // Iterate all possible drivers and pick one that can be initialized.
             $(
                 #[cfg $cfg]
