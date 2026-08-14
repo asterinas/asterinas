@@ -4,7 +4,7 @@ use core::mem::MaybeUninit;
 
 use uefi::boot::AllocateType;
 
-pub fn alloc_at(addr: usize, size: usize) -> &'static mut [MaybeUninit<u8>] {
+pub(crate) fn alloc_at(addr: usize, size: usize) -> &'static mut [MaybeUninit<u8>] {
     assert_ne!(addr, 0, "the address to allocate is zero");
     assert!(
         addr.checked_add(size).is_some(),

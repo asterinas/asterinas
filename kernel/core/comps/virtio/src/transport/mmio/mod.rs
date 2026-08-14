@@ -13,7 +13,7 @@ pub mod driver;
 pub mod layout;
 pub mod multiplex;
 
-pub static VIRTIO_MMIO_DRIVER: Once<Arc<VirtioMmioDriver>> = Once::new();
+pub(crate) static VIRTIO_MMIO_DRIVER: Once<Arc<VirtioMmioDriver>> = Once::new();
 
 pub fn virtio_mmio_init() {
     bus::init();

@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use crate::SystemTime;
 
 /// Generic interface for RTC drivers.
-pub trait Driver {
+pub(crate) trait Driver {
     /// Creates a RTC driver.
     /// Returns [`Some<Self>`] on success, [`None`] otherwise (e.g. platform unsupported).
     fn try_new() -> Option<Self>

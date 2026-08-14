@@ -61,7 +61,7 @@ const QUEUE_MSIX_VECTOR_OFFSET: usize = 0x16;
 const DEVICE_CONFIG_OFFSET: usize = 0x14;
 const DEVICE_CONFIG_OFFSET_WITH_MSIX: usize = 0x18;
 
-pub struct VirtioPciLegacyTransport {
+pub(crate) struct VirtioPciLegacyTransport {
     device_type: VirtioDeviceType,
     common_device: PciCommonDevice,
     config_bar: BarAccess,
@@ -70,7 +70,7 @@ pub struct VirtioPciLegacyTransport {
 }
 
 impl VirtioPciLegacyTransport {
-    pub const QUEUE_ALIGN_SIZE: usize = 4096;
+    pub(crate) const QUEUE_ALIGN_SIZE: usize = 4096;
 
     #[expect(clippy::result_large_err)]
     pub(super) fn new(
