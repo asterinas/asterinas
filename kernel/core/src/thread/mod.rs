@@ -20,6 +20,7 @@ use crate::{
 pub(crate) mod exception;
 pub(crate) mod kernel_thread;
 pub(crate) mod oops;
+mod softirqd;
 mod stats;
 pub(crate) mod task;
 pub(crate) mod work_queue;
@@ -62,6 +63,11 @@ pub(super) fn init() {
     ostd::task::inject_pre_schedule_handler(pre_schedule_handler);
     ostd::task::inject_post_schedule_handler(post_schedule_handler);
     ostd::mm::fault::inject_user_page_fault_handler(exception::page_fault_handler);
+}
+
+pub(super) fn init_in_first_kthread() {
+    work_queue::init_in_first_kthread();
+    softirqd::init_in_first_kthread();
 }
 
 /// A thread is a wrapper on top of a task.
