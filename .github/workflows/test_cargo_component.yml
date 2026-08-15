@@ -1,0 +1,24 @@
+name: Test cargo-component
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: &cargo_component_paths
+      - rust-toolchain.toml
+      - kernel/libs/comp-sys/cargo-component/**
+      - kernel/libs/comp-sys/controlled/**
+      - .github/workflows/test_cargo_component.yml
+  push:
+    branches: [main]
+    paths: *cargo_component_paths
+
+jobs:
+  test-cargo-component:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: asterinas/asterinas:0.18.0-20260702
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test cargo-component
+        working-directory: kernel/libs/comp-sys/cargo-component
+        run: cargo test --locked
