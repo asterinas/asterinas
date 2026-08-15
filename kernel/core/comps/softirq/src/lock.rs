@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::marker::PhantomData;
+
 use ostd::{
     cpu_local_cell,
     irq::{InterruptLevel, disable_local},
@@ -21,9 +23,6 @@ cpu_local_cell! {
 pub(super) fn is_softirq_enabled() -> bool {
     DISABLE_SOFTIRQ_COUNT.load() == 0
 }
-
-/// A guardian that disables bottom half while holding a lock.
-pub enum BottomHalfDisabled {}
 
 /// A guard for disabled local softirqs.
 pub struct DisableLocalBottomHalfGuard {
@@ -74,6 +73,9 @@ impl GuardTransfer for DisableLocalBottomHalfGuard {
     }
 }
 
+/// A guardian that disables bottom half while holding a lock.
+pub enum BottomHalfDisabled {}
+
 impl SpinGuardian for BottomHalfDisabled {
     type Guard = DisableLocalBottomHalfGuard;
     type ReadGuard = DisableLocalBottomHalfGuard;
@@ -84,6 +86,30 @@ impl SpinGuardian for BottomHalfDisabled {
 
     fn guard() -> Self::Guard {
         disable_local_bottom_half()
+    }
+}
+
+/// A guard for disabled local softirqs when there is a pre-existing preempt guard.
+///
+/// Note the difference between this guard and [`DisableLocalBottomHalfGuard`]:
+/// the former keeps a reference to a [`DisabledPreemptGuard`] guard,
+/// while the latter _owns_ one.
+pub(super) struct DisableLocalBottomHalfGuardInPreempt<'a> {
+    phantom_data: PhantomData<&'a DisabledPreemptGuard>,
+}
+
+impl<'a> Drop for DisableLocalBottomHalfGuardInPreempt<'a> {
+    fn drop(&mut self) {
+        DISABLE_SOFTIRQ_COUNT.sub_assign(1);
+    }
+}
+
+pub(super) fn disable_local_bottom_half_with<'a>(
+    _preempt_guard: &'a DisabledPreemptGuard,
+) -> DisableLocalBottomHalfGuardInPreempt<'a> {
+    DISABLE_SOFTIRQ_COUNT.add_assign(1);
+    DisableLocalBottomHalfGuardInPreempt {
+        phantom_data: PhantomData,
     }
 }
 
