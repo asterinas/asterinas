@@ -4,8 +4,6 @@
 //! This test checks that if controlled resource not in whitelist is visited, cargo-component will
 //! report warning message.
 
-#![feature(once_cell)]
-
 mod test_utils;
 
 #[test]
