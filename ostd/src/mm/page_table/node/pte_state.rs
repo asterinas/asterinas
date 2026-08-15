@@ -85,7 +85,7 @@ impl<C: PageTableConfig> PteState<C> {
 
 /// A reference to the child of a page table node.
 #[derive(Debug)]
-pub(in crate::mm) enum PteStateRef<'a, C: PageTableConfig> {
+pub(crate) enum PteStateRef<'a, C: PageTableConfig> {
     /// A child page table node.
     PageTable(PageTableNodeRef<'a, C>),
     /// A reference to a mapped item, often a mapped physical frame. The actual
@@ -97,11 +97,12 @@ pub(in crate::mm) enum PteStateRef<'a, C: PageTableConfig> {
 impl<C: PageTableConfig> PteStateRef<'_, C> {
     /// # Safety
     ///
-    /// The PTE must be the output of a [`PteState::into_pte`], where the child
-    /// outlives the reference created by this function.
-    ///
-    /// The provided level must be the same with the level of the page table
-    /// node that contains this PTE.
+    /// The caller must ensure that:
+    ///  - the PTE must be the output of a [`PteState::into_pte`], but the
+    ///    accessed/dirty bits of the mapped page property can be different;
+    ///  - the child, if exists, must outlive the created reference;
+    ///  - the provided level must be the same with the level of the page table
+    ///    node that contains this PTE.
     pub(super) unsafe fn from_pte(pte: &C::E, level: PagingLevel) -> Self {
         let repr = pte.to_repr(level);
 

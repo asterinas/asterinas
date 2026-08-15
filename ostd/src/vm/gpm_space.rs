@@ -13,7 +13,7 @@ use crate::{
     mm::{
         AnyUFrameMeta, Frame, PageFlags, PageProperty, UFrame,
         frame::FrameRef,
-        page_table::{self, PageTable, PageTableFrag},
+        page_table::{self, PageTable, PageTableFrag, PteStateRef},
     },
     prelude::*,
     smp::PendingIpis,
@@ -120,7 +120,12 @@ impl Cursor<'_> {
     /// If the cursor is pointing to a valid guest physical address that is
     /// locked, it will return the borrowed backing frame and its page properties.
     pub fn query(&mut self) -> Option<QueriedItem<'_>> {
-        self.0.query()
+        while self.0.push_level_if_exists().is_some() {}
+        match self.0.query() {
+            PteStateRef::Mapped(item) => Some(item),
+            PteStateRef::Absent => None,
+            PteStateRef::PageTable(_) => unreachable!(),
+        }
     }
 
     /// Moves the cursor forward to the next mapped guest physical address.
@@ -177,7 +182,12 @@ impl<'a> CursorMut<'a> {
     /// If the cursor is pointing to a valid guest physical address that is
     /// locked, it will return the borrowed backing frame and its page properties.
     pub fn query(&mut self) -> Option<QueriedItem<'_>> {
-        self.pt_cursor.query()
+        while self.pt_cursor.push_level_if_exists().is_some() {}
+        match self.pt_cursor.query() {
+            PteStateRef::Mapped(item) => Some(item),
+            PteStateRef::Absent => None,
+            PteStateRef::PageTable(_) => unreachable!(),
+        }
     }
 
     /// Moves the cursor forward to the next mapped guest physical address.
@@ -215,6 +225,7 @@ impl<'a> CursorMut<'a> {
     ///  - the current guest physical address is already mapped;
     ///  - the current guest physical address is outside the cursor's range.
     pub fn map(&mut self, frame: UFrame, prop: PageProperty) {
+        self.pt_cursor.adjust_level(1);
         let item: EptItem = (frame, prop);
 
         // SAFETY: It is safe to map untyped memory into guest physical memory.
@@ -230,7 +241,7 @@ impl<'a> CursorMut<'a> {
     /// and asynchronously on remote CPUs. Use [`Self::sync_tlb_flush`] to
     /// wait for remote invalidations to complete.
     pub fn protect(&mut self, op: &mut impl FnMut(&mut PageFlags)) {
-        if self.pt_cursor.query().is_none() {
+        if self.query().is_none() {
             return;
         }
         // SAFETY: It is safe to set `PageFlags` of guest physical memory.

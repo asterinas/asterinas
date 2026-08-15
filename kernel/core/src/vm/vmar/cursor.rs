@@ -4,7 +4,29 @@
 
 use core::ops::Range;
 
-use ostd::mm::{Vaddr, vm_space::CursorMut};
+use ostd::mm::{
+    Vaddr,
+    vm_space::{Cursor, CursorMut},
+};
+
+pub(super) trait CursorExt {
+    /// Moves the cursor to the leaf page table entry at the current virtual address.
+    fn to_leaf(&mut self) -> &mut Self;
+}
+
+impl CursorExt for Cursor<'_> {
+    fn to_leaf(&mut self) -> &mut Self {
+        while self.push_level_if_exists().is_some() {}
+        self
+    }
+}
+
+impl CursorExt for CursorMut<'_> {
+    fn to_leaf(&mut self) -> &mut Self {
+        while self.push_level_if_exists().is_some() {}
+        self
+    }
+}
 
 pub(super) trait CursorMutExt {
     /// Splits the current mapping until its virtual address range is contained in `range`.
