@@ -3,6 +3,9 @@ name = "missing_toml_test"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+resolver = "3"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

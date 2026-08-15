@@ -3,9 +3,11 @@
 
 // This implementation is from rust clippy. We modified the code.
 
-use std::env;
-use std::path::PathBuf;
-use std::process::{self, Command};
+use std::{
+    env,
+    path::PathBuf,
+    process::{self, Command},
+};
 
 const CARGO_COMPONENT_HELP: &str = r#"Checks whether a package violates access control policy.
 Usage:

@@ -3,20 +3,21 @@
 
 #![expect(unused)]
 
-use std::path::PathBuf;
-use std::process::Command;
-use std::process::Output;
-use std::sync::LazyLock;
+use std::{
+    path::PathBuf,
+    process::{Command, Output},
+    sync::LazyLock,
+};
 
 #[macro_export]
 macro_rules! run_cargo_component_cmd {
-    () => ({
+    () => {{
         let file = file!();
         let path = std::path::PathBuf::from(file);
         let filename = path.file_name().unwrap().to_string_lossy();
         let test_name = format!("{}_test", filename.trim_end_matches(".rs"));
         test_utils::run_cargo_component(&test_name)
-    });
+    }};
 }
 
 static CARGO_COMPONENT_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
