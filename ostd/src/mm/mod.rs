@@ -99,8 +99,13 @@ pub(crate) trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     const VA_SIGN_EXT: bool;
 }
 
-/// The page size
+/// The base page size.
 pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
+
+/// The page size at a given level.
+pub const fn page_size_at(level: PagingLevel) -> usize {
+    page_size::<PagingConsts>(level)
+}
 
 /// The page size at a given level.
 pub(crate) const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {

@@ -2,10 +2,16 @@
 
 use core::ops::Range;
 
-use ostd::{mm::vm_space::VmQueriedItem, task::disable_preempt};
+use ostd::{
+    mm::{page_size_at, vm_space::VmQueriedItem},
+    task::disable_preempt,
+};
 
 use super::{RssDelta, Vmar, util::is_intersected};
-use crate::{prelude::*, vm::vmar::is_userspace_vaddr_range};
+use crate::{
+    prelude::*,
+    vm::vmar::{cursor::CursorMutExt, is_userspace_vaddr_range},
+};
 
 /// Controls how the old mapping is handled during a `remap` operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,34 +236,47 @@ impl Vmar {
             let Some(mapped_va) = cursor.find_next(old_range.end) else {
                 break;
             };
-            let Some(item) = cursor.query() else {
-                panic!("Found mapped page but query failed");
-            };
+            cursor.split_if_map_exceeds_range(&old_range);
 
             let offset = mapped_va - old_range.start;
             let new_map_va = new_range.start + offset;
 
-            match item {
+            // A mapping level that is valid at the old address may not be aligned at the new
+            // address. Split it until the target can preserve the resulting mapping level.
+            while !new_map_va.is_multiple_of(page_size_at(cursor.level())) {
+                cursor.adjust_level(cursor.level() - 1);
+            }
+
+            let mapped_size = match cursor.query() {
                 VmQueriedItem::MappedRam { frame, prop } => {
                     let frame = (*frame).clone();
+                    let level = frame.map_level();
+                    let mapped_size = page_size_at(level);
 
                     cursor.unmap();
                     cursor.jump(new_map_va).unwrap();
+                    cursor.adjust_level(level);
 
                     cursor.map(frame, prop);
+                    mapped_size
                 }
-                VmQueriedItem::MappedIoMem { paddr, prop } => {
+                VmQueriedItem::MappedIoMem { paddr, prop, level } => {
+                    let mapped_size = page_size_at(level);
                     cursor.unmap();
                     cursor.jump(new_map_va).unwrap();
 
                     // For MMIO pages, find the corresponding `IoMem` and map it
-                    // at the new location
+                    // at the new location.
                     let (iomem, offset) = cursor.find_iomem_by_paddr(paddr).unwrap();
-                    cursor.map_iomem(iomem, prop, PAGE_SIZE, offset);
+                    cursor.map_iomem(iomem, prop, mapped_size, offset);
+                    mapped_size
                 }
-            }
+                _ => {
+                    unreachable!("mapped item found but query failed")
+                }
+            };
 
-            current_offset = offset + PAGE_SIZE;
+            current_offset = offset + mapped_size;
         }
 
         cursor.flusher().dispatch_tlb_flush();
