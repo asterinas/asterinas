@@ -3,8 +3,6 @@
 
 //! This test checks that if Components.toml is missed, the compiler will panic.
 
-#![feature(once_cell)]
-
 mod test_utils;
 
 #[test]

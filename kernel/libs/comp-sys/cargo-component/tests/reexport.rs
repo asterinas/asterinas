@@ -3,8 +3,6 @@
 
 //! This test checks that if cargo-component can control reexported entry points.
 
-#![feature(once_cell)]
-
 mod test_utils;
 
 #[test]

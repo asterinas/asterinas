@@ -3,8 +3,6 @@
 
 //! This test checks that visiting controlled resources in whitelist is allowed.
 
-#![feature(once_cell)]
-
 mod test_utils;
 
 #[test]
