@@ -192,7 +192,6 @@ impl VmoCommitError {
         }
     }
 }
-
 impl From<Error> for VmoCommitError {
     fn from(e: Error) -> Self {
         VmoCommitError::Err(e)
@@ -396,6 +395,7 @@ impl Vmo {
     /// If the VMO corresponds to a page cache, callers must hold the page table
     /// lock and insert the committed page atomically to the page table inside
     /// the operation.
+    #[expect(dead_code)]
     pub(crate) fn try_operate_on_range<F>(
         &self,
         range: &Range<usize>,
@@ -468,20 +468,48 @@ impl Vmo {
 
     /// Returns reverse mappings of the VMO.
     ///
-    /// Holding either this lock or the VMAR lock ensures the stability of the
-    /// associated VM mappings. In other words, when adding, removing, or
-    /// moving a VM mapping, both this lock and the VMAR lock must be held.
-    ///
-    /// To avoid deadlocks, acquire this lock after the VMAR lock in cases both
-    /// locks need to be acquired.
+    /// Forward mapping changes acquire this lock while holding their page-table
+    /// cursor. Reverse walkers must not block on a page-table cursor while this
+    /// lock is held; they use a nonblocking cursor attempt and retry after
+    /// releasing this lock.
     pub(crate) fn rmap(&self) -> &Mutex<Rmap> {
         &self.rmap
+    }
+
+    /// Unmaps a VMO range, retrying reverse-map walks without lock inversion.
+    fn unmap_rmap<'a>(&'a self, mut locked_rmap: MutexGuard<'a, Rmap>, range: Range<usize>) {
+        let mut resume_at = None;
+        loop {
+            match locked_rmap.try_unmap(range.clone(), resume_at.as_ref()) {
+                Ok(()) => return,
+                Err(retry) => {
+                    drop(locked_rmap);
+                    resume_at = Some(retry.wait());
+                    locked_rmap = self.rmap.lock();
+                }
+            }
+        }
+    }
+
+    /// Freezes a VMO range, retrying reverse-map walks without lock inversion.
+    fn freeze_rmap<'a>(&'a self, mut locked_rmap: MutexGuard<'a, Rmap>, range: Range<usize>) {
+        let mut resume_at = None;
+        loop {
+            match locked_rmap.try_freeze(range.clone(), resume_at.as_ref()) {
+                Ok(()) => return,
+                Err(retry) => {
+                    drop(locked_rmap);
+                    resume_at = Some(retry.wait());
+                    locked_rmap = self.rmap.lock();
+                }
+            }
+        }
     }
 
     /// Decommits anonymous pages in the specified byte range.
     pub(super) fn decommit_anon_pages(
         &self,
-        mut locked_rmap: MutexGuard<Rmap>,
+        locked_rmap: MutexGuard<Rmap>,
         mut locked_pages: LockedXArray<CachePage>,
         range: Range<usize>,
     ) -> Result<()> {
@@ -503,7 +531,10 @@ impl Vmo {
 
         drop(locked_pages);
 
-        locked_rmap.unmap(page_idx_range.start * PAGE_SIZE..page_idx_range.end * PAGE_SIZE);
+        self.unmap_rmap(
+            locked_rmap,
+            page_idx_range.start * PAGE_SIZE..page_idx_range.end * PAGE_SIZE,
+        );
 
         Ok(())
     }
@@ -871,7 +902,7 @@ impl<'a> BackedVmo<'a> {
             return Ok(());
         }
 
-        let mut locked_rmap = self.rmap.lock();
+        let locked_rmap = self.rmap.lock();
 
         let page_idx_range = get_page_idx_range(range);
         let pages_to_flush = self.collect_pages_if(&page_idx_range, PageSelection::Flush);
@@ -899,11 +930,10 @@ impl<'a> BackedVmo<'a> {
             }
         }
 
-        locked_rmap.freeze(page_idx_range.start * PAGE_SIZE..page_idx_range.end * PAGE_SIZE);
-
-        // As long as the pages are locked and their state is `UpToDate`, no one can write to them.
-        // Therefore, we can release the reverse-mapping lock now.
-        drop(locked_rmap);
+        self.vmo.freeze_rmap(
+            locked_rmap,
+            page_idx_range.start * PAGE_SIZE..page_idx_range.end * PAGE_SIZE,
+        );
 
         let mut io_batch = IoBatch::with_capacity(locked_dirty_pages.len());
         for (idx, locked_page) in locked_dirty_pages {
@@ -929,7 +959,7 @@ impl<'a> BackedVmo<'a> {
             return Ok(());
         }
 
-        let mut locked_rmap = self.rmap.lock();
+        let locked_rmap = self.rmap.lock();
 
         let page_idx_range = get_page_idx_range(range);
         let up_to_date_pages = self.collect_pages_if(&page_idx_range, PageSelection::Evict);
@@ -957,11 +987,10 @@ impl<'a> BackedVmo<'a> {
             return Ok(());
         }
 
-        locked_rmap.unmap(page_idx_range.start * PAGE_SIZE..page_idx_range.end * PAGE_SIZE);
-
-        // As long as the pages are locked and their state is `Evicted`, no one can read from them.
-        // Therefore, we can release the reverse-mapping lock now.
-        drop(locked_rmap);
+        self.vmo.unmap_rmap(
+            locked_rmap,
+            page_idx_range.start * PAGE_SIZE..page_idx_range.end * PAGE_SIZE,
+        );
 
         for (idx, page) in locked_up_to_date_pages {
             page.wait_until_finish_writing_back();
@@ -988,7 +1017,7 @@ impl<'a> BackedVmo<'a> {
     /// finish before removing the page from the `XArray`.
     pub(super) fn decommit_pages(
         &self,
-        mut locked_rmap: MutexGuard<Rmap>,
+        locked_rmap: MutexGuard<Rmap>,
         locked_pages: LockedXArray<CachePage>,
         range: &Range<usize>,
     ) -> Result<()> {
@@ -1004,9 +1033,10 @@ impl<'a> BackedVmo<'a> {
             return Ok(());
         }
 
-        locked_rmap.unmap(page_idx_range.start * PAGE_SIZE..page_idx_range.end * PAGE_SIZE);
-
-        drop(locked_rmap);
+        self.vmo.unmap_rmap(
+            locked_rmap,
+            page_idx_range.start * PAGE_SIZE..page_idx_range.end * PAGE_SIZE,
+        );
 
         for (_, page) in removed_pages {
             let locked_page = page.lock();
