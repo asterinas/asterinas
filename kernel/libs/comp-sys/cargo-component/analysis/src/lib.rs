@@ -3,7 +3,6 @@
 
 #![feature(rustc_private)]
 
-extern crate rustc_ast;
 extern crate rustc_driver;
 extern crate rustc_hir;
 extern crate rustc_lint;
@@ -15,18 +14,19 @@ mod conf;
 
 use std::collections::HashSet;
 
-pub use conf::init as init_conf;
-pub use conf::lookup_conf_file;
-
-use rustc_ast::AttrKind;
-use rustc_middle::mir::{
-    Constant, InlineAsmOperand, LocalDecl, Operand, Rvalue, Statement, StatementKind, Terminator,
-    TerminatorKind,
+pub use conf::{init as init_conf, lookup_conf_file};
+use rustc_middle::{
+    mir::{
+        ConstOperand, InlineAsmOperand, LocalDecl, Operand, Rvalue, Statement, StatementKind,
+        Terminator, TerminatorKind,
+    },
+    ty::{InstanceKind, TyCtxt, TyKind},
 };
-use rustc_middle::query::Key;
-use rustc_middle::ty::{ImplSubject, InstanceDef, TyCtxt, TyKind, WithOptConstParam};
-use rustc_span::def_id::{DefId, LocalDefId, LOCAL_CRATE};
-use rustc_span::Span;
+use rustc_span::{
+    Span,
+    def_id::{DefId, LOCAL_CRATE, LocalDefId},
+    symbol::Symbol,
+};
 
 const TOOL_NAME: &'static str = "component_access_control";
 const CONTROLLED_ATTR: &'static str = "controlled";
@@ -38,10 +38,9 @@ pub fn enter_analysis<'tcx>(tcx: TyCtxt<'tcx>) {
 }
 
 fn check_body_mir(mir_key: LocalDefId, tcx: TyCtxt<'_>) {
-    let def_id = WithOptConstParam::unknown(mir_key.to_def_id());
     // For const function/block, instance_mir returns mir_for_ctfe.
     // For normal function, instance_mir returns optimized_mir.
-    let body = tcx.instance_mir(InstanceDef::Item(def_id));
+    let body = tcx.instance_mir(InstanceKind::Item(mir_key.to_def_id()));
 
     let mut checked_def_ids = HashSet::new();
     for basic_block_data in body.basic_blocks.iter() {
@@ -71,14 +70,13 @@ fn check_statement(statement: &Statement, tcx: TyCtxt<'_>, checked_def_ids: &mut
     if let StatementKind::Assign(assignment) = &statement.kind {
         let rvalue = &assignment.1;
         match rvalue {
-            Rvalue::Use(operand)
+            Rvalue::Use(operand, _)
             | Rvalue::Repeat(operand, _)
             | Rvalue::Cast(_, operand, _)
-            | Rvalue::UnaryOp(_, operand)
-            | Rvalue::ShallowInitBox(operand, _) => {
+            | Rvalue::UnaryOp(_, operand) => {
                 check_invalid_operand(operand, tcx, &mut def_paths, checked_def_ids);
             }
-            Rvalue::BinaryOp(_, two_operands) | Rvalue::CheckedBinaryOp(_, two_operands) => {
+            Rvalue::BinaryOp(_, two_operands) => {
                 check_invalid_operand(&two_operands.0, tcx, &mut def_paths, checked_def_ids);
                 check_invalid_operand(&two_operands.1, tcx, &mut def_paths, checked_def_ids);
             }
@@ -103,7 +101,6 @@ fn check_terminator(
     let mut def_paths = Vec::new();
     match &terminator.kind {
         TerminatorKind::SwitchInt { discr: operand, .. }
-        | TerminatorKind::DropAndReplace { value: operand, .. }
         | TerminatorKind::Assert { cond: operand, .. }
         | TerminatorKind::Yield { value: operand, .. } => {
             check_invalid_operand(operand, tcx, &mut def_paths, checked_def_ids);
@@ -111,7 +108,7 @@ fn check_terminator(
         TerminatorKind::Call { func, args, .. } => {
             check_invalid_operand(func, tcx, &mut def_paths, checked_def_ids);
             for arg in args {
-                check_invalid_operand(arg, tcx, &mut def_paths, checked_def_ids);
+                check_invalid_operand(&arg.node, tcx, &mut def_paths, checked_def_ids);
             }
         }
         TerminatorKind::InlineAsm { operands, .. } => {
@@ -185,7 +182,7 @@ fn check_invalid_operand(
 }
 
 fn check_constant(
-    constant: &Constant<'_>,
+    constant: &ConstOperand<'_>,
     tcx: TyCtxt<'_>,
     def_paths: &mut Vec<String>,
     checked_def_ids: &mut HashSet<DefId>,
@@ -195,7 +192,7 @@ fn check_constant(
         // static variable
         def_id
     } else {
-        let ty = constant.ty();
+        let ty = constant.const_.ty();
         if let TyKind::FnDef(def_id, ..) = ty.kind() {
             // func def
             *def_id
@@ -239,26 +236,16 @@ fn def_path_if_not_in_whitelist(def_id: DefId, tcx: TyCtxt<'_>) -> Option<String
 
 /// if the def_id has attribute component_access_control::controlled, return true, else return false
 fn contains_controlled_attr(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
-    for attr in tcx.get_attrs_unchecked(def_id) {
-        if let AttrKind::Normal(normal_attr) = &attr.kind {
-            let path_segments = &normal_attr.item.path.segments;
-            if path_segments.len() != 2 {
-                return false;
-            }
-            let segment_strs: Vec<_> = path_segments
-                .iter()
-                .map(|segment| segment.ident.as_str())
-                .collect();
-            if segment_strs[0] == TOOL_NAME && segment_strs[1] == CONTROLLED_ATTR {
-                return true;
-            }
-        }
-    }
-    false
+    tcx.get_attrs_by_path(
+        def_id,
+        &[Symbol::intern(TOOL_NAME), Symbol::intern(CONTROLLED_ATTR)],
+    )
+    .next()
+    .is_some()
 }
 
 fn def_path_for_def_id(tcx: TyCtxt<'_>, def_id: DefId) -> String {
-    match tcx.impl_of_method(def_id) {
+    match tcx.impl_of_assoc(def_id) {
         None => common_def_path_str(tcx, def_id),
         Some(impl_def_id) => def_path_str_for_impl(tcx, def_id, impl_def_id),
     }
@@ -275,24 +262,22 @@ fn common_def_path_str(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 /// def path for impl, if the impl is not for trait.
 fn def_path_str_for_impl(tcx: TyCtxt<'_>, def_id: DefId, impl_def_id: DefId) -> String {
     let item_name = tcx.item_name(def_id).to_string();
-    let impl_subject = tcx.impl_subject(impl_def_id);
-    if let ImplSubject::Inherent(impl_ty) = impl_subject {
-        let impl_ty_def_id = impl_ty.ty_adt_id().expect("Method should impl an adt type");
-        let impl_ty_name = common_def_path_str(tcx, impl_ty_def_id);
-        return format!("{impl_ty_name}::{item_name}");
-    }
-    // impl trait goes here, which is impossible
-    unreachable!()
+    let impl_ty = tcx.type_of(impl_def_id).skip_binder();
+    let impl_ty_def_id = impl_ty
+        .ty_adt_def()
+        .expect("Method should impl an adt type")
+        .did();
+    let impl_ty_name = common_def_path_str(tcx, impl_ty_def_id);
+    format!("{impl_ty_name}::{item_name}")
 }
 
 fn emit_note(tcx: TyCtxt<'_>, span: Span, crate_name: &str, def_paths: Vec<String>) {
     if def_paths.len() > 0 {
-        let sess = tcx.sess;
         const TITLE: &'static str = "access controlled entry point is disallowed";
         let def_path = def_paths.join(", ");
         let warning_message = format!("access {} in {}", def_path, crate_name);
-        sess.struct_span_warn(span, TITLE)
-            .note(warning_message)
-            .emit();
+        let mut diagnostic = tcx.dcx().struct_span_warn(span, TITLE);
+        diagnostic.note(warning_message);
+        diagnostic.emit();
     }
 }
