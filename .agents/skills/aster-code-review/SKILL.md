@@ -60,6 +60,36 @@ to `resolve_target.sh` (step 1)
 — the script self-tokenizes (whitespace-split except inside double quotes),
 which keeps the parse deterministic and identical across agents.
 
+## Orchestrator boundary
+
+Until **all activated persona passes have finished**,
+the top-level agent is an orchestrator and does not review the change.
+Detailed diff and source analysis belongs to the persona passes.
+
+Before every pass finishes,
+the top-level agent may only read target metadata and reviewed path names,
+apply the fixed activation rules,
+build and launch the exact pass prompts,
+and wait or poll for completion.
+It must not:
+
+- display or read the canonical review input or generated prompts;
+- inspect diff hunks or source bodies;
+- search the repository for defects or form defect hypotheses;
+- query guidelines for its own review;
+- read fragments or healthy pass logs as individual passes finish;
+- begin verification while another pass is still running.
+
+Always redirect the canonical review input to a temporary file.
+Treat that file as opaque:
+pass its path to `build_pass_prompt.sh`,
+but do not read it with `cat`, `sed`, `head`, `tail`, a search command,
+or any other command that copies its contents into the top-level context.
+
+After every activated pass finishes,
+collect the complete fragment set and continue with assembly,
+targeted verification of the returned comments, consolidation, and the summary.
+
 ## Pipeline
 
 Run these steps in order.
@@ -75,27 +105,42 @@ Shells do not persist between commands,
 so **set `SKILL` at the start of each command that uses it** (or inline the `$(git rev-parse …)`):
 
 ```sh
-SKILL="$(git rev-parse --show-toplevel)/.agents/skills/aster-code-review"; "$SKILL/scripts/resolve_target.sh" '<raw args>'
+SKILL="$(git rev-parse --show-toplevel)/.agents/skills/aster-code-review"
+INPUT="$(mktemp /tmp/aster-code-review-input.XXXXXX)"
+"$SKILL/scripts/resolve_target.sh" '<raw args>' > "$INPUT"
+printf 'input=%s\n' "$INPUT"
 ```
+
+This example prints only the temporary path,
+not the canonical review input.
 
 The steps below write `$SKILL/scripts/…` as shorthand for that absolute path.
 
 1. **Resolve the target.**
-   `"$SKILL/scripts/resolve_target.sh" '<raw args>'` prints the canonical review input
-   — the commit series (each commit's message + diff) in `diff` mode,
-   annotated file excerpts in `files` mode;
-   save it to a temp file.
-   Run it again with `--meta` first (`"$SKILL/scripts/resolve_target.sh" --meta '<raw args>'`) to get
+   Run `"$SKILL/scripts/resolve_target.sh" --meta '<raw args>'` first to get
    `mode=`, `base=`/`files=`, `head=`, `branch=`, `output=`, `overwrite=`, `per_persona_context=`;
    add `date=` (today) and an optional `title=` to make the meta file.
+   Then run `"$SKILL/scripts/resolve_target.sh" '<raw args>' > "$INPUT"`
+   to save the canonical review input directly to a temporary file.
+   Never run this form without redirection,
+   and do not inspect `$INPUT` before all persona passes finish.
    Pass the raw argument string as a single quoted argument
    so the script's tokenizer sees it intact.
 2. **Activate personas.**
-   Pick which of the five personas run,
-   from the reviewed paths — changed paths in `diff` mode,
-   named paths in `files` mode (see *Activation*).
+   Apply the fixed *Activation* rules to reviewed **path names only**.
+   In `diff` mode,
+   list paths with a metadata-only command such as
+   `git diff --name-only "$(git merge-base <base> HEAD)" HEAD`.
+   In `files` mode,
+   use the named target paths.
+   Do not inspect the diff or source merely to gain confidence in activation.
+   If the hardware `asm!` / `global_asm!` predicate cannot be decided from a path,
+   use a quiet Boolean search that does not print matching source text.
 3. **Fan out.**
-   Spawn the persona passes (see *Spawning*).
+   Immediately build and spawn the persona passes (see *Spawning*).
+   Do not insert manual review,
+   source exploration,
+   or helper-script investigation between activation and fan-out.
    With `per_persona_context` = `yes` or `auto` (the default),
    run **one isolated PASS per activated persona** — best recall.
    With `no`, run **one combined PASS** over all activated personas in a single context
@@ -106,7 +151,15 @@ The steps below write `$SKILL/scripts/…` as shorthand for that absolute path.
    Each pass returns a JSON array of comments;
    file each under its persona's `<fragdir>/<persona>.json` (the comment's `persona` field says which),
    so step 5 is unchanged.
-4. **Collect** the per-persona JSON fragments.
+4. **Wait, then collect.**
+   Launch all activated passes before waiting for them.
+   While they run,
+   only wait or poll status;
+   do not perform an independent review or read early fragments.
+   After every activated pass finishes,
+   collect the complete per-persona JSON fragment set.
+   A failed or malformed pass may be retried,
+   but its review responsibility does not move to the top-level agent.
 5. **Assemble.**
    `"$SKILL/scripts/assemble_review.sh" [--overwrite] <meta> <fragdir> <output>` performs the deterministic merge (group by persona in fixed order, sort by file→line, drop exact duplicates *within a persona*, write frontmatter, leave a `<!-- SUMMARY -->` placeholder).
    Pass `--overwrite` only if the user gave it;
@@ -142,12 +195,24 @@ retyping it breaks the byte-identical prefix the prompt cache relies on (see [`e
 A pass reads only the persona block(s) it is given (selective exposure),
 reviews the **REVIEW INPUT** at the foot of the prompt,
 and returns a JSON array of comments per that schema.
+Each persona block contains the persona's complete short-name/gist catalog,
+not every rule body.
+On a concrete suspected violation,
+the pass batches the relevant short-names through
+`python3 .agents/skills/aster-code-review/scripts/guideline_query.py show --expect-digest <catalog-digest> <persona> <short-name>...`
+and reads those exact authored rule chunks before citing them.
+The query tool selects the same current or benchmark-snapshotted guideline corpus
+that built the catalog.
+
+`ACR_GUIDELINE_DISCLOSURE=full` is an internal benchmark/rollback switch
+that restores eager subpage inlining;
+the default is `progressive` and the switch is not part of the user interface.
 
 ## Spawning a pass
 
 Build every pass prompt with `"$SKILL/scripts/build_pass_prompt.sh" <input-file> <persona>...`
 and spawn the sub-agent with its **exact** output
-— only a script keeps the prompt's stable head (contract + guideline) byte-identical across passes and reviews,
+— only a script keeps the prompt's stable head (contract + persona/catalog) byte-identical across passes and reviews,
 which is what lets the prompt cache reuse it (see [`execution_model.md`](spec/execution_model.md)).
 
 **Default (`per_persona_context` = `yes`/`auto`)**
@@ -157,17 +222,27 @@ each in a CLEAN context with only its own persona block (selective exposure):
 - **Claude Code** — spawn a Task sub-agent per persona.
 - **Codex** — run `codex exec "<build_pass_prompt.sh output>"` per persona
   (pass the built PROMPT TEXT as the argument).
+  Redirect each pass's standard output to its JSON fragment
+  and standard error to a separate diagnostic log,
+  so pass progress is not copied into the top-level context:
+
+  ```sh
+  codex exec "$("$SKILL/scripts/build_pass_prompt.sh" "$INPUT" "$persona")" \
+      > "$FRAGDIR/$persona.json" 2> "$LOGDIR/$persona.log"
+  ```
 
 **Never spawn a pass by re-running `aster_code_review.sh` / `run_agent.sh`,
 nor by re-issuing the skill's own arguments** (e.g. `codex exec … diff <base> <out>`).
 A pass is a *reviewer* invocation whose input is the `build_pass_prompt.sh` text
 — not another run of this skill.
+It is already inside the active workflow and must not load this `SKILL.md` again.
 Re-entering the launcher spawns another orchestrator that spawns another … , an infinite fork bomb;
 the launcher now refuses it (`ACR_AGENT_RUNNING`).
 
 Passes are independent;
 order does not matter.
-Collect each pass's JSON.
+Start every activated pass before waiting,
+and collect their JSON only after all of them finish.
 
 **Combined (`per_persona_context` = `no`)**
 — build ONE prompt with all activated personas (`"$SKILL/scripts/build_pass_prompt.sh" <input> <p1> <p2> ...`)
@@ -183,6 +258,8 @@ and `no` is an explicit, opt-in concession.
 
 ## Verification (step 6)
 
+Begin verification only after all activated passes have finished
+and the complete fragment set has been assembled.
 For each comment, isolate the key premise it rests on
 — especially an external-system fact (Linux/POSIX behaviour, the System V ABI, Rust semantics).
 Try to **refute** it:
@@ -197,6 +274,8 @@ Assign a verdict:
 Remove **only** on confident refutation;
 an unsure check is `uncertain`, not `refuted`.
 This is the only step that may remove a comment, and only false positives.
+Verification is driven by returned comments and their cited code;
+it is not a second broad review of the complete diff.
 
 ## Consolidation (step 7)
 
