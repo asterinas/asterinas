@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MPL-2.0
 
+# This image adds Nix tooling and cached Asterinas test packages to the OSDK image.
+
 ARG BASE_VERSION
-FROM asterinas/osdk:${BASE_VERSION} AS build-base
+FROM asterinas/osdk-dev:${BASE_VERSION} AS build-base
 
 SHELL ["/bin/bash", "-c"]
 
