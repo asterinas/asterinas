@@ -134,7 +134,7 @@ redundant_test_prefix = "warn"
 # FIXME: The current key order is not yet finalized.
 # Once `cargo-cargofmt` becomes stable, we will use it to enforce a consistent key order.
 [workspace.package]
-version = "0.18.0"
+version = "0.18.1"
 repository = "https://github.com/asterinas/asterinas"
 license = "MPL-2.0"
 edition = "2024"
