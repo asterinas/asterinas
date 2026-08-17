@@ -54,11 +54,14 @@ impl Drop for VirtioFsFile {
             return;
         }
 
+        let fs = self.inode.fs_ref();
         let inode = self.inode.clone();
         let open_handle = self.open_handle.clone();
 
         work_queue::submit_work_func(
             move || {
+                // Keep the filesystem alive until the deferred flush completes.
+                let _fs_guard = &fs;
                 if let Err(err) = inode.invalidate_whole_page_cache() {
                     warn!(
                         "virtiofs flush before release failed for inode {:?}: {:?}",
