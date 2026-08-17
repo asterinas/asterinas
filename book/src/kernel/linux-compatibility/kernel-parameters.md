@@ -220,7 +220,7 @@ Override ACPI's indication of whether a PS/2 (i8042) controller exists.
 
 Valid values:
 - `1`, `on`, `yes`, `true` or no value — treat the i8042 controller as present (force probing)
-- `0`, `off`, `no`, `false` - treat the i8042 controller as absent (skip probing)
+- `0`, `off`, `no`, `false` — treat the i8042 controller as absent (skip probing)
 
 Examples:
 ```text
