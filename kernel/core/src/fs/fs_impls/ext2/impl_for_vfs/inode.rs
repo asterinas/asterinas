@@ -213,20 +213,21 @@ impl Inode for Ext2Inode {
     fn rename(
         &self,
         old_name: &str,
-        _old_inode: &Arc<dyn Inode>,
-        target: &Arc<dyn Inode>,
+        old_inode: &Arc<dyn Inode>,
+        new_dir_inode: &Arc<dyn Inode>,
         new_name: &str,
-        _replaced_inode: Option<&Arc<dyn Inode>>,
+        replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()> {
         if mode == RenameMode::Exchange {
             return_errno_with_message!(Errno::EINVAL, "RENAME_EXCHANGE is not supported on ext2");
         }
 
-        let target = target
-            .downcast_ref::<Ext2Inode>()
-            .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
-        self.rename(old_name, target, new_name)
+        let new_dir_inode = new_dir_inode.downcast_ref::<Ext2Inode>().unwrap();
+        let old_inode = old_inode.downcast_ref::<Ext2Inode>().unwrap();
+        let replaced_inode = replaced_inode.map(|inode| inode.downcast_ref::<Ext2Inode>().unwrap());
+
+        self.rename(old_name, old_inode, new_dir_inode, new_name, replaced_inode)
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {
