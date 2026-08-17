@@ -58,8 +58,25 @@ EXTRA_BLOCKLISTS ?= ""
 XFSTESTS_FS_TYPE ?= ext2
 XFSTESTS_RUNLIST ?= short.list
 XFSTESTS_DISK_SIZE ?= 12G
+
+ifeq ($(XFSTESTS_FS_TYPE), virtiofs)
+VIRTIOFS ?= on
+VIRTIOFS_TAG ?= xfstest
+VIRTIOFS_SCRATCH ?= on
+VIRTIOFS_SCRATCH_TAG ?= xfsscratch
+XFSTESTS_TEST_DEV ?= $(VIRTIOFS_TAG)
+XFSTESTS_SCRATCH_DEV ?= $(VIRTIOFS_SCRATCH_TAG)
+else
 XFSTESTS_TEST_DEV ?= /dev/vdd
 XFSTESTS_SCRATCH_DEV ?= /dev/vde
+endif
+
+VIRTIOFS ?= off
+VIRTIOFS_SOCKET ?= /tmp/vhostqemu/vfs.sock
+VIRTIOFS_SCRATCH_SOCKET ?= /tmp/vhostqemu/vfs-scratch.sock
+VIRTIOFS_SHARED_DIR ?= $(abspath test/initramfs/build/virtiofs-test)
+VIRTIOFS_SCRATCH_SHARED_DIR ?= $(abspath test/initramfs/build/virtiofs-scratch)
+VIRTIOFSD ?= /usr/libexec/virtiofsd
 # Specify whether to build regression tests under `test/initramfs/src/regression`.
 ENABLE_REGRESSION_TEST ?= false
 # End of auto test features.
@@ -300,6 +317,9 @@ run_kernel: initramfs
 else
 run_kernel: rootfs
 endif
+ifeq ($(VIRTIOFS),on)
+run_kernel: prepare_virtiofsd
+endif
 run_kernel:
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
 # Check the running status of auto tests from the QEMU log
@@ -316,6 +336,17 @@ else ifeq ($(AUTO_TEST), vsock)
 	@tail --lines 100 qemu.log | grep -q "^Vsock test passed." \
 		|| (echo "Vsock test failed" && exit 1)
 endif
+
+.PHONY: prepare_virtiofsd
+prepare_virtiofsd:
+	@VIRTIOFSD="$(VIRTIOFSD)" \
+		VIRTIOFS_SOCKET="$(VIRTIOFS_SOCKET)" \
+		VIRTIOFS_SHARED_DIR="$(VIRTIOFS_SHARED_DIR)" \
+		VIRTIOFS_SCRATCH="$(VIRTIOFS_SCRATCH)" \
+		VIRTIOFS_SCRATCH_SOCKET="$(VIRTIOFS_SCRATCH_SOCKET)" \
+		VIRTIOFS_SCRATCH_SHARED_DIR="$(VIRTIOFS_SCRATCH_SHARED_DIR)" \
+		VIRTIOFS_LOG="virtiofsd.log" \
+		./tools/start_virtiofsd.sh
 
 # Build the Asterinas NixOS ISO installer image
 iso: BOOT_PROTOCOL = linux-efi-handover64
