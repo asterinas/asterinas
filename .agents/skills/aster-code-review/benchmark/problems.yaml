@@ -1155,16 +1155,15 @@
       grounding: FIFO open must block until the peer endpoint is present
       severity: major
       desc: >
-        NamedPipe stores one PipeReader and one PipeWriter from creation time
-        and exposes itself as O_RDWR. Opening the FIFO through Path::open only
-        builds a normal InodeHandle; there is no per-open reader/writer handle
-        and no wait in open. Therefore blocking open(O_RDONLY) can return even
-        when no writer has opened the FIFO, and blocking open(O_WRONLY) can
-        return even when no reader has opened it.
+        FIFO open currently returns in blocking mode even when the peer endpoint
+        is absent. A blocking open(O_RDONLY) should wait until a writer opens
+        the FIFO, and a blocking open(O_WRONLY) should wait until a reader opens
+        it.
       fix: >
-        Add a NamedPipe::open(access_mode, status_flags) path that creates a
-        per-open handle and waits for the opposite endpoint for blocking
-        O_RDONLY/O_WRONLY opens, while allowing O_RDWR to succeed immediately.
+        Implement FIFO open semantics by checking the requested access mode and
+        coordinating with peer endpoint presence during open. Blocking
+        single-ended opens should wait for the opposite endpoint; nonblocking
+        and O_RDWR behavior should follow Linux FIFO semantics.
       expectation: >
         A valid review must say that FIFO open semantics are wrong because open
         returns before both read and write ends are present in blocking mode; it
