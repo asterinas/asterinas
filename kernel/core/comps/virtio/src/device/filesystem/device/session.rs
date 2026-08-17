@@ -39,9 +39,9 @@ pub struct FuseSession {
     /// The maximum write size accepted by the server.
     max_write: u32,
     /// The feature flags selected by `FUSE_INIT`.
-    //
-    // TODO: Apply negotiated `FUSE_INIT` flags to conduct virtio-fs behavior.
     negotiated_flags: FuseInitFlags,
+    /// The extended feature flags selected by `FUSE_INIT`.
+    negotiated_flags2: FuseInitFlags2,
 }
 
 impl FuseSession {
@@ -66,6 +66,7 @@ impl FuseSession {
             attr_version: AtomicU64::new(1),
             max_write,
             negotiated_flags: init_reply.flags(),
+            negotiated_flags2: init_reply.flags2(),
         });
 
         info!(
@@ -141,6 +142,11 @@ impl FuseSession {
     /// Returns the FUSE feature flags selected after negotiation.
     pub fn negotiated_flags(&self) -> FuseInitFlags {
         self.negotiated_flags
+    }
+
+    /// Returns the extended FUSE feature flags selected after negotiation.
+    pub fn negotiated_flags2(&self) -> FuseInitFlags2 {
+        self.negotiated_flags2
     }
 
     /// Returns the maximum write size accepted by the server.
