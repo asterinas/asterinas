@@ -753,15 +753,70 @@ mod unmap {
             panic!("expected to take a stray page table");
         };
 
-        // Should take a level-2 page table with 512 entries.
-        assert_eq!(va, PAGE_SIZE * 512);
-        assert_eq!(len, PAGE_SIZE * 512);
+        // Should take the level-2 page table node covering the whole range.
+        assert_eq!(va, 0);
+        assert_eq!(len, PAGE_SIZE * 512 * 512);
         assert_eq!(num_frames, 1);
     }
 }
 
 mod mapping {
     use super::{test_utils::*, *};
+
+    // Regression for #3731: a full level-2 slot must remain at its parent subtree root so
+    // `CursorMut::map` can install the huge leaf.
+
+    #[ktest]
+    fn maps_single_huge_page_with_exact_cursor_range() {
+        const HUGE_PAGE_SIZE: usize = PAGE_SIZE * 512;
+
+        let page_table = PageTable::<TestPtConfig>::empty();
+        let virtual_range = HUGE_PAGE_SIZE..HUGE_PAGE_SIZE * 2;
+        let physical_range = HUGE_PAGE_SIZE * 2..HUGE_PAGE_SIZE * 3;
+        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+
+        map_untracked(
+            &page_table,
+            virtual_range.clone(),
+            physical_range.start,
+            page_property,
+        );
+
+        assert_eq!(
+            page_table.page_walk(virtual_range.start).unwrap().0,
+            physical_range.start
+        );
+        assert_eq!(
+            page_table.page_walk(virtual_range.end - 1).unwrap().0,
+            physical_range.end - 1
+        );
+    }
+
+    #[ktest]
+    fn maps_single_huge_page_filling_exact_level3_slot() {
+        const SLOT_1GIB: usize = PAGE_SIZE * 512 * 512;
+
+        let page_table = PageTable::<TestPtConfig>::empty();
+        let virtual_range = SLOT_1GIB..SLOT_1GIB * 2;
+        let physical_range = SLOT_1GIB * 2..SLOT_1GIB * 3;
+        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+
+        map_untracked(
+            &page_table,
+            virtual_range.clone(),
+            physical_range.start,
+            page_property,
+        );
+
+        assert_eq!(
+            page_table.page_walk(virtual_range.start).unwrap().0,
+            physical_range.start
+        );
+        assert_eq!(
+            page_table.page_walk(virtual_range.end - 1).unwrap().0,
+            physical_range.end - 1
+        );
+    }
 
     #[ktest]
     fn mixed_granularity_map_unmap() {
