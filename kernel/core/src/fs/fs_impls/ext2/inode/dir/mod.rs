@@ -231,31 +231,15 @@ impl Inode {
         Ok(())
     }
 
-    /// Renames or moves an entry from this directory to `target` directory.
-    pub(in ext2) fn rename(&self, old_name: &str, target: &Inode, new_name: &str) -> Result<()> {
-        let fs = self.fs()?;
-        let is_same_dir = self.ino == target.ino;
-        if is_same_dir && old_name == new_name {
-            return Ok(());
-        }
-
-        // Step 1: read inode numbers without write locks so we know which
-        // inodes to lock.
-        let old_info = {
-            let source_inner = self.inner.read();
-            source_inner.find_entry_info(old_name)?
-        };
-        let old_ino = old_info.ino;
-        let old_inode = fs.read_inode(old_ino)?;
-        let replaced_inode = {
-            let target_inner = target.inner.read();
-            target_inner
-                .find_entry_info(new_name)
-                .ok()
-                .map(|entry_info| fs.read_inode(entry_info.ino))
-                .transpose()?
-        };
-
+    /// Renames or moves an entry from this directory to directory referred by `new_dir_inode`.
+    pub(in ext2) fn rename(
+        &self,
+        old_name: &str,
+        old_inode: &Inode,
+        new_dir_inode: &Inode,
+        new_name: &str,
+        replaced_inode: Option<&Inode>,
+    ) -> Result<()> {
         // The `DirDentry.children` lock in the VFS layer keeps the parent
         // directory entry stable during this operation, so we only need to
         // lock all related inodes in order, without rechecking the lookup
@@ -263,22 +247,22 @@ impl Inode {
         // Step 2: lock all participating inodes in global ino order.
         let lock_targets = [
             self as &Inode,
-            target,
-            old_inode.as_ref(),
-            replaced_inode.as_deref().unwrap_or(old_inode.as_ref()),
+            new_dir_inode,
+            old_inode,
+            replaced_inode.unwrap_or(old_inode),
         ];
         let mut guards = MultiInodeInnerGuards::lock(&lock_targets);
 
         // Step 3: validate invariants under lock.
-        self.validate_rename_invariants(&guards, &old_inode, replaced_inode.as_deref())?;
+        self.validate_rename_invariants(&guards, old_inode, replaced_inode)?;
 
         // Step 4: apply directory mutations and metadata updates.
         self.apply_dir_mutations(
             &mut guards,
-            target,
+            new_dir_inode,
             old_name,
-            &old_inode,
-            replaced_inode.as_deref(),
+            old_inode,
+            replaced_inode,
             new_name,
         )?;
 
@@ -326,7 +310,7 @@ impl Inode {
     fn apply_dir_mutations(
         &self,
         guards: &mut MultiInodeInnerGuards,
-        target: &Inode,
+        new_dir_inode: &Inode,
         old_name: &str,
         old_inode: &Inode,
         replaced_inode: Option<&Inode>,
@@ -335,7 +319,7 @@ impl Inode {
         let old_is_dir = old_inode.type_ == InodeType::Dir;
         let has_replaced = replaced_inode.is_some();
         let old_ino = old_inode.ino();
-        let is_same_dir = self.ino == target.ino;
+        let is_same_dir = self.ino == new_dir_inode.ino;
         let moved_file_type = DirEntryFileType::from(old_inode.type_);
         let fs = self.fs()?;
 
@@ -356,16 +340,16 @@ impl Inode {
             }
             dir_inner.set_mtime_ctime(utils::now());
         } else {
-            let target_inner = guards.inner_mut(target.ino);
+            let new_dir_inner = guards.inner_mut(new_dir_inode.ino);
             if has_replaced {
-                target_inner.overwrite_entry(new_name, old_ino, moved_file_type)?;
+                new_dir_inner.overwrite_entry(new_name, old_ino, moved_file_type)?;
             } else {
-                target_inner.add_new_entry(&fs, new_name, old_ino, moved_file_type)?;
+                new_dir_inner.add_new_entry(&fs, new_name, old_ino, moved_file_type)?;
             }
             if old_is_dir && !has_replaced {
-                target_inner.inc_link_count(1);
+                new_dir_inner.inc_link_count(1);
             }
-            target_inner.set_mtime_ctime(utils::now());
+            new_dir_inner.set_mtime_ctime(utils::now());
             let source_inner = guards.inner_mut(self.ino);
             let old_info = &source_inner.find_entry_info(old_name)?;
             source_inner.delete_entry(old_info)?;
@@ -394,7 +378,11 @@ impl Inode {
         let old_inner = guards.inner_mut(old_inode.ino());
         if old_is_dir && !is_same_dir {
             let dotdot_entry_info = old_inner.find_entry_info("..")?;
-            old_inner.set_entry_target(&dotdot_entry_info, target.ino, DirEntryFileType::Dir)?;
+            old_inner.set_entry_target(
+                &dotdot_entry_info,
+                new_dir_inode.ino,
+                DirEntryFileType::Dir,
+            )?;
             old_inner.remove_flags(FileFlags::INDEX_DIR);
             old_inner.set_mtime_ctime(utils::now());
         } else {
