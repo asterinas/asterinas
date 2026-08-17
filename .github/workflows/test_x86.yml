@@ -202,6 +202,9 @@ jobs:
           - fs_type: 'tmpfs'
             runlist: 'short.list'
             disk_size: ''
+          - fs_type: 'virtiofs'
+            runlist: 'short.list'
+            disk_size: ''
     steps:
       - name: Free disk space
         run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
