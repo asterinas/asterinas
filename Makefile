@@ -77,8 +77,7 @@ CONFORMANCE_TEST_GVISOR_FILTER ?= ""
 XFSTESTS_FS_TYPE ?= ext2
 XFSTESTS_RUNLIST ?= short.list
 XFSTESTS_DISK_SIZE ?= 12G
-XFSTESTS_TEST_DEV ?= /dev/vdd
-XFSTESTS_SCRATCH_DEV ?= /dev/vde
+
 # Specify whether to build regression tests under `test/initramfs/src/regression`.
 ENABLE_REGRESSION_TEST ?= false
 # End of auto test features.
@@ -97,10 +96,6 @@ DNS_SERVER ?= none
 VIRTIOFS ?= off
 VIRTIOFS_SCRATCH ?= off
 VIRTIOFS_CACHE ?= auto
-ifeq ($(VIRTIOFS),on)
-# Each Make invocation gets an isolated virtio-fs work directory under /tmp.
-VIRTIOFS_WORK_DIR ?= $(shell mktemp -d -p /tmp asterinas-virtiofs-XXXXXX)
-endif
 # End of Virtio-fs settings.
 
 # NixOS settings
@@ -152,6 +147,7 @@ CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_EXTRA_BLOCKLISTS=$(CONFOR
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_SELECTOR=$(CONFORMANCE_TEST_SELECTOR)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_GVISOR_FILTER=$(CONFORMANCE_TEST_GVISOR_FILTER)"
 ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)
+include test/initramfs/src/conformance/xfstests/build_config.mk
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_RUNLIST=$(XFSTESTS_RUNLIST)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_TEST_DEV=$(XFSTESTS_TEST_DEV)"
@@ -169,8 +165,6 @@ ENABLE_REGRESSION_TEST := true
 export VSOCK=on
 CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_vsock_test.sh"
 endif
-
-include test/initramfs/src/conformance/xfstests/build_config.mk
 
 ifeq ($(RELEASE_LTO), 1)
 CARGO_OSDK_COMMON_ARGS += --profile release-lto
@@ -269,6 +263,8 @@ CARGO_OSDK_COMMON_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
 endif
 CARGO_OSDK_VIRTIOFSD := ./tools/run_virtiofsd.sh --cache-mode $(VIRTIOFS_CACHE) --work-dir
 ifeq ($(VIRTIOFS),on)
+# Each Make invocation gets an isolated virtio-fs work directory under /tmp.
+VIRTIOFS_WORK_DIR := $(shell mktemp -d -p /tmp asterinas-virtiofs-XXXXXX)
 CARGO_OSDK_COMMON_ARGS += --qemu-with-daemon="$(CARGO_OSDK_VIRTIOFSD) $(VIRTIOFS_WORK_DIR)"
 endif
 ifeq ($(VIRTIOFS_SCRATCH),on)

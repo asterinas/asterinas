@@ -84,8 +84,13 @@ if [ "$INITRAMFS" = "off" ]; then
     ROOTFS_DRIVE_ARGS="-drive if=none,format=raw,id=rootfs,file=./test/initramfs/build/rootfs.img"
 fi
 
-VIRTIOFS_TAG=${VIRTIOFS_TAG:-"aster-virtiofs"}
-VIRTIOFS_SCRATCH_TAG=${VIRTIOFS_SCRATCH_TAG:-"aster-virtiofs-scratch"}
+if [ "${XFSTESTS_FS_TYPE:-}" = "virtiofs" ]; then
+    VIRTIOFS_TAG=${XFSTESTS_TEST_DEV:-aster-virtiofs}
+    VIRTIOFS_SCRATCH_TAG=${XFSTESTS_SCRATCH_DEV:-aster-virtiofs-scratch}
+else
+    VIRTIOFS_TAG=${VIRTIOFS_TAG:-"aster-virtiofs"}
+    VIRTIOFS_SCRATCH_TAG=${VIRTIOFS_SCRATCH_TAG:-"aster-virtiofs-scratch"}
+fi
 
 if [ "$VIRTIOFS_SCRATCH" = "on" ] && [ "$VIRTIOFS" != "on" ]; then
     echo "VIRTIOFS_SCRATCH=on requires VIRTIOFS=on" 1>&2
