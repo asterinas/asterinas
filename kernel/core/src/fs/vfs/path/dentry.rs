@@ -799,9 +799,10 @@ impl DirDentry<'_> {
             let mut children = self.children.write();
 
             let old_dentry = self.resolve_child_for_rename(&mut children, old_name)?;
+            let old_inode = old_dentry.inode();
             let new_dentry = match self.resolve_child_for_rename(&mut children, new_name) {
                 Ok(new_dentry) => {
-                    if Arc::ptr_eq(old_dentry.inode(), new_dentry.inode()) {
+                    if Arc::ptr_eq(old_inode, new_dentry.inode()) {
                         return Ok(());
                     }
                     Some(new_dentry)
@@ -812,14 +813,23 @@ impl DirDentry<'_> {
 
             Self::check_rename_mode(mode, new_dentry.as_ref())?;
 
+            let replaced_inode = new_dentry.as_ref().map(|dentry| dentry.inode());
+
             if self.has_sticky_bit()? {
-                self.check_sticky_bit_permission(old_dentry.inode())?;
-                if let Some(new_dentry) = new_dentry.as_ref() {
-                    self.check_sticky_bit_permission(new_dentry.inode())?;
+                self.check_sticky_bit_permission(old_inode)?;
+                if let Some(replaced_inode) = replaced_inode {
+                    self.check_sticky_bit_permission(replaced_inode)?;
                 }
             }
 
-            old_dir_inode.rename(old_name, old_dir_inode, new_name, mode)?;
+            old_dir_inode.rename(
+                old_name,
+                old_inode,
+                old_dir_inode,
+                new_name,
+                replaced_inode,
+                mode,
+            )?;
 
             match mode {
                 RenameMode::Replace | RenameMode::NoReplace => {
@@ -850,9 +860,10 @@ impl DirDentry<'_> {
                 write_lock_children_on_two_dentries(self, new_dir);
 
             let old_dentry = self.resolve_child_for_rename(&mut old_children, old_name)?;
+            let old_inode = old_dentry.inode();
             let new_dentry = match new_dir.resolve_child_for_rename(&mut new_children, new_name) {
                 Ok(new_dentry) => {
-                    if Arc::ptr_eq(old_dentry.inode(), new_dentry.inode()) {
+                    if Arc::ptr_eq(old_inode, new_dentry.inode()) {
                         return Ok(());
                     }
                     Some(new_dentry)
@@ -864,16 +875,25 @@ impl DirDentry<'_> {
             Self::check_rename_mode(mode, new_dentry.as_ref())?;
             Self::check_rename_cycle(mode, self, &old_dentry, new_dir, new_dentry.as_ref())?;
 
+            let replaced_inode = new_dentry.as_ref().map(|dentry| dentry.inode());
+
             if self.has_sticky_bit()? {
-                self.check_sticky_bit_permission(old_dentry.inode())?;
+                self.check_sticky_bit_permission(old_inode)?;
             }
             if new_dir.has_sticky_bit()?
-                && let Some(new_dentry) = new_dentry.as_ref()
+                && let Some(replaced_inode) = replaced_inode
             {
-                new_dir.check_sticky_bit_permission(new_dentry.inode())?;
+                new_dir.check_sticky_bit_permission(replaced_inode)?;
             }
 
-            old_dir_inode.rename(old_name, new_dir_inode, new_name, mode)?;
+            old_dir_inode.rename(
+                old_name,
+                old_inode,
+                new_dir_inode,
+                new_name,
+                replaced_inode,
+                mode,
+            )?;
 
             match mode {
                 RenameMode::Replace | RenameMode::NoReplace => {

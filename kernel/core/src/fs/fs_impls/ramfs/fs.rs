@@ -1107,8 +1107,10 @@ impl Inode for RamInode {
     fn rename(
         &self,
         old_name: &str,
-        target: &Arc<dyn Inode>,
+        _old_inode: &Arc<dyn Inode>,
+        new_dir_inode: &Arc<dyn Inode>,
         new_name: &str,
+        _replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()> {
         // Perform necessary checks to ensure that `dst_inode` can be replaced by `src_inode`.
@@ -1141,10 +1143,10 @@ impl Inode for RamInode {
                 Ok(())
             };
 
-        let target = target.downcast_ref::<RamInode>().unwrap();
+        let new_dir_inode = new_dir_inode.downcast_ref::<RamInode>().unwrap();
 
         // Rename in the same directory
-        if self.ino == target.ino {
+        if self.ino == new_dir_inode.ino {
             let mut self_dir = self.inner.as_direntry().unwrap().write();
             // The source is guaranteed to exist (checked by VFS layer).
             let (src_idx, src_inode) = self_dir.get_entry(old_name).unwrap();
@@ -1188,7 +1190,10 @@ impl Inode for RamInode {
         else {
             let (mut self_dir, mut target_dir) = write_lock_two_direntries_by_ino(
                 (self.ino, self.inner.as_direntry().unwrap()),
-                (target.ino, target.inner.as_direntry().unwrap()),
+                (
+                    new_dir_inode.ino,
+                    new_dir_inode.inner.as_direntry().unwrap(),
+                ),
             );
             let self_inode_arc = self.this.upgrade().unwrap();
             // The source is guaranteed to exist (checked by VFS layer).
@@ -1207,7 +1212,7 @@ impl Inode for RamInode {
 
                 let now = now();
                 DirChange::exchange(&src_inode, &dst_inode).apply(self, now);
-                DirChange::exchange(&dst_inode, &src_inode).apply(target, now);
+                DirChange::exchange(&dst_inode, &src_inode).apply(new_dir_inode, now);
                 src_inode.set_ctime(now);
                 dst_inode.set_ctime(now);
 
@@ -1226,7 +1231,7 @@ impl Inode for RamInode {
 
                 let now = now();
                 DirChange::del(&src_inode).apply(self, now);
-                DirChange::exchange(&dst_inode, &src_inode).apply(target, now);
+                DirChange::exchange(&dst_inode, &src_inode).apply(new_dir_inode, now);
                 dst_inode.set_ctime(now);
                 src_inode.set_ctime(now);
             } else {
@@ -1237,11 +1242,11 @@ impl Inode for RamInode {
 
                 let now = now();
                 DirChange::del(&src_inode).apply(self, now);
-                DirChange::add(&src_inode).apply(target, now);
+                DirChange::add(&src_inode).apply(new_dir_inode, now);
                 src_inode.set_ctime(now);
             }
 
-            src_inode.set_parent_if_dir(target.this.clone());
+            src_inode.set_parent_if_dir(new_dir_inode.this.clone());
         }
         Ok(())
     }
