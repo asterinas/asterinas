@@ -14,13 +14,13 @@ use crate::{
     events::IoEvents,
     fs::{
         devtmpfs::DevtmpfsNodeMeta,
-        file::{Mappable, MappedObject, PerOpenFileOps, StatusFlags},
+        file::{Mappable, MappableObject, MappedObject, PerOpenFileOps, StatusFlags},
         vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::RawIoctl,
-    vm::vmar::MapHandle,
+    vm::{FileMmapRequest, vmar::MapHandle},
 };
 
 #[derive(Debug)]
@@ -504,8 +504,8 @@ impl PerOpenFileOps for FbHandle {
         true
     }
 
-    fn mappable(&self) -> Result<&dyn Mappable> {
-        Ok(self as &dyn Mappable)
+    fn mappable(&self, _request: FileMmapRequest) -> Result<MappableObject<'_>> {
+        Ok(MappableObject::Device(self as &dyn Mappable))
     }
 
     fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
