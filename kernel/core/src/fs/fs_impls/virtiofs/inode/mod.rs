@@ -465,8 +465,10 @@ impl Inode for VirtioFsInode {
     fn rename(
         &self,
         old_name: &str,
+        _old_inode: &Arc<dyn Inode>,
         target: &Arc<dyn Inode>,
         new_name: &str,
+        _replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()> {
         if mode == RenameMode::Exchange {

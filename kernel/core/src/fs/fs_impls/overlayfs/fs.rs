@@ -544,8 +544,10 @@ impl OverlayInode {
     pub(crate) fn rename(
         &self,
         _old_name: &str,
-        _target: &Arc<dyn Inode>,
+        _old_inode: &Arc<dyn Inode>,
+        _new_dir_inode: &Arc<dyn Inode>,
         _new_name: &str,
+        _replaced_inode: Option<&Arc<dyn Inode>>,
         _mode: RenameMode,
     ) -> Result<()> {
         // TODO: Support the rename operation based on the `redirect_mode` feature,
@@ -1019,8 +1021,10 @@ impl Inode for OverlayInode {
     fn rename(
         &self,
         old_name: &str,
-        target: &Arc<dyn Inode>,
+        old_inode: &Arc<dyn Inode>,
+        new_dir_inode: &Arc<dyn Inode>,
         new_name: &str,
+        replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()>;
     fn read_link(&self) -> Result<SymbolicLink>;

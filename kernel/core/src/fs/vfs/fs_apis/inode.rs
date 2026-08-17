@@ -455,8 +455,10 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
     fn rename(
         &self,
         old_name: &str,
-        target: &Arc<dyn Inode>,
+        old_inode: &Arc<dyn Inode>,
+        new_dir_inode: &Arc<dyn Inode>,
         new_name: &str,
+        replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))

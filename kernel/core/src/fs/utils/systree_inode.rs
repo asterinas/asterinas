@@ -547,8 +547,10 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     default fn rename(
         &self,
         _old_name: &str,
-        _target: &Arc<dyn Inode>,
+        _old_inode: &Arc<dyn Inode>,
+        _new_dir_inode: &Arc<dyn Inode>,
         _new_name: &str,
+        _replaced_inode: Option<&Arc<dyn Inode>>,
         _mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::EPERM))
