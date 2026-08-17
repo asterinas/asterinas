@@ -63,10 +63,10 @@ pub(crate) struct VmarMapOptions<'a, 'b> {
     size: usize,
     offset: VmarMapOffset,
     align: usize,
-    // Whether the mapping is mapped with `MAP_SHARED`.
-    is_shared: bool,
-    // Whether the mapping needs to handle surrounding pages when handling
-    // page fault.
+    /// The sharing mode of the mapping.
+    map_mode: MmapMode,
+    /// Whether the mapping needs to handle surrounding pages when handling
+    /// page fault.
     handle_page_faults_around: bool,
 }
 
@@ -115,7 +115,7 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
             size,
             offset: VmarMapOffset::Any,
             align: PAGE_SIZE,
-            is_shared: false,
+            map_mode: MmapMode::Private,
             handle_page_faults_around: false,
         }
     }
@@ -197,15 +197,13 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
         self
     }
 
-    /// Sets whether the mapping can be shared with other process.
+    /// Sets the sharing mode of the mapping.
     ///
-    /// The default value is false.
+    /// The default value is [`MmapMode::Private`].
     ///
-    /// If this value is set to true, the mapping will be shared with child
-    /// process when forking.
-    #[expect(clippy::wrong_self_convention)]
-    pub(crate) fn is_shared(mut self, is_shared: bool) -> Self {
-        self.is_shared = is_shared;
+    /// A shared mapping is shared with child processes when forking.
+    pub(crate) fn map_mode(mut self, map_mode: MmapMode) -> Self {
+        self.map_mode = map_mode;
         self
     }
 
@@ -240,7 +238,7 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
             panic!("Cannot set `mappable` when `file` is already set");
         }
 
-        let mappable = file.mappable()?;
+        let mappable = file.mappable(FileMmapRequest::new(self.map_mode.is_shared()))?;
         self.mappable = Some(mappable);
         self.file = Some(file.clone());
 
@@ -264,7 +262,7 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
             size: map_size,
             offset,
             align,
-            is_shared,
+            map_mode,
             handle_page_faults_around,
         } = self;
 
@@ -338,7 +336,7 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
 
                 let is_writable_tracked = if let Some(path) = path
                     && let Some(memfd_inode) = path.inode().downcast_ref::<MemfdInode>()
-                    && is_shared
+                    && map_mode.is_shared()
                     && may_perms.contains(VmPerms::MAY_WRITE)
                 {
                     memfd_inode.check_writable(perms, &mut may_perms)?;
@@ -352,7 +350,7 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
                 (mapped_mem, None)
             }
             Some(MappableObject::Device(mappable)) => {
-                if !is_shared {
+                if !map_mode.is_shared() {
                     return_errno_with_message!(
                         Errno::EINVAL,
                         "private device mappings are not yet supported"
@@ -372,7 +370,7 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
             map_to_addr,
             mapped_mem,
             file,
-            is_shared,
+            map_mode,
             handle_page_faults_around,
             perms | may_perms,
         );
@@ -446,5 +444,37 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
 
         let vm_perms = self.perms | self.may_perms;
         vm_perms.check()
+    }
+}
+
+/// Properties of a virtual memory mapping that may affect file-specific behavior.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FileMmapRequest {
+    is_shared: bool,
+}
+
+impl FileMmapRequest {
+    pub(crate) const fn new(is_shared: bool) -> Self {
+        Self { is_shared }
+    }
+
+    /// Returns whether the mapping uses shared semantics.
+    pub const fn is_shared(self) -> bool {
+        self.is_shared
+    }
+}
+
+/// The sharing mode of a virtual memory mapping.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MmapMode {
+    /// Private mappings use copy-on-write semantics.
+    Private,
+    /// Shared mappings propagate updates to the underlying mapped object.
+    Shared,
+}
+
+impl MmapMode {
+    pub(crate) const fn is_shared(self) -> bool {
+        matches!(self, Self::Shared)
     }
 }
