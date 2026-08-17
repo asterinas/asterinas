@@ -151,6 +151,10 @@ impl VirtioFsInode {
         self.fs.upgrade().unwrap()
     }
 
+    pub(super) fn try_fs_ref(&self) -> Option<Arc<VirtioFs>> {
+        self.fs.upgrade()
+    }
+
     pub(super) fn nodeid(&self) -> FuseNodeId {
         self.nodeid
     }

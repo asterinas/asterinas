@@ -54,11 +54,18 @@ impl Drop for VirtioFsFile {
             return;
         }
 
+        let Some(fs) = self.inode.try_fs_ref() else {
+            // The mount may already have been removed. There is no live FUSE
+            // session left to flush through in that case.
+            return;
+        };
         let inode = self.inode.clone();
         let open_handle = self.open_handle.clone();
 
         work_queue::submit_work_func(
             move || {
+                // Keep the filesystem alive until the deferred flush completes.
+                let _fs_guard = &fs;
                 if let Err(err) = inode.invalidate_whole_page_cache() {
                     warn!(
                         "virtiofs flush before release failed for inode {:?}: {:?}",
