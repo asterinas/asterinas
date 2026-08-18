@@ -205,7 +205,7 @@ osdk-heap-allocator = { path = "osdk/deps/heap-allocator" }
 acpi = "=5.2.0" # This upstream often bump minor versions with API changes
 bit_field = "0.10.1"
 gimli = { version = "0.28", default-features = false, features = ["read-core"] }
-minicov = "0.3"
+minicov = "=0.3.8" # This upstream may use an LLVM version which is incompatible with the one used by the Rust toolchain.
 multiboot2 = "0.24.0"
 num-traits = { version = "0.2", default-features = false }
 sbi-rt = "0.0.3"
