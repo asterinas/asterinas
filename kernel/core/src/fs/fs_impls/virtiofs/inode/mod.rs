@@ -465,10 +465,10 @@ impl Inode for VirtioFsInode {
     fn rename(
         &self,
         old_name: &str,
-        _old_inode: &Arc<dyn Inode>,
-        target: &Arc<dyn Inode>,
+        old_inode: &Arc<dyn Inode>,
+        new_dir_inode: &Arc<dyn Inode>,
         new_name: &str,
-        _replaced_inode: Option<&Arc<dyn Inode>>,
+        replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()> {
         if mode == RenameMode::Exchange {
@@ -478,7 +478,10 @@ impl Inode for VirtioFsInode {
             );
         }
 
-        let target = target.downcast_ref::<VirtioFsInode>().unwrap();
+        let new_dir_inode = new_dir_inode.downcast_ref::<VirtioFsInode>().unwrap();
+        let old_inode = old_inode.downcast_ref::<VirtioFsInode>().unwrap();
+        let replaced_inode =
+            replaced_inode.map(|inode| inode.downcast_ref::<VirtioFsInode>().unwrap());
 
         let fs = self.fs_ref();
 
@@ -487,12 +490,16 @@ impl Inode for VirtioFsInode {
         // pass the cached old dentry down.
         fs.session().do_fuse_op(
             self.nodeid(),
-            RenameOperation::new(RenameReq::new(target.nodeid()), old_name, new_name),
+            RenameOperation::new(RenameReq::new(new_dir_inode.nodeid()), old_name, new_name),
         )?;
 
         self.expire_attr_cache();
-        if self.nodeid() != target.nodeid() {
-            target.expire_attr_cache();
+        if self.nodeid() != new_dir_inode.nodeid() {
+            new_dir_inode.expire_attr_cache();
+        }
+        old_inode.expire_attr_cache();
+        if let Some(replaced_inode) = replaced_inode {
+            replaced_inode.expire_attr_cache();
         }
 
         Ok(())
