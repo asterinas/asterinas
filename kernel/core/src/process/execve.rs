@@ -30,6 +30,7 @@ use crate::{
             signals::kernel::KernelSignal,
         },
     },
+    security::lsm::hooks::{ThreadExecContext, on_task_exec},
     vm::vmar::VmarHandle,
 };
 
@@ -51,10 +52,14 @@ pub(crate) fn do_execve(
 
     let fs_ref = ctx.thread_local.borrow_fs();
     let path_resolver = fs_ref.resolver().read();
+    let executable_abs_path = path_resolver
+        .make_abs_path(executable.path())
+        .into_string()
+        .into_bytes();
 
     debug!(
         "file path: {:?}, argv = {:?}, envp = {:?}",
-        path_resolver.make_abs_path(executable.path()).into_string(),
+        core::str::from_utf8(&executable_abs_path).unwrap_or("<invalid utf8>"),
         argv,
         envp
     );
@@ -96,6 +101,10 @@ pub(crate) fn do_execve(
     );
 
     if res.is_ok() {
+        on_task_exec(ThreadExecContext::new(
+            ctx.posix_thread,
+            &executable_abs_path,
+        ));
         ctx.posix_thread
             .ptrace_may_stop_on(PtraceEvent::Exec(former_tid), ctx, user_context);
     } else {

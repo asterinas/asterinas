@@ -15,6 +15,7 @@ set -e
 
 ./lsm/module_selection
 ./lsm/yama
+./lsm/apparmor
 
 ./namespace/cgroup_ns
 ./namespace/ipc_ns_sem

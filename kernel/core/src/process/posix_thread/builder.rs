@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicU32, AtomicU64};
 
+use aster_apparmor::TaskLabel;
 #[cfg(target_arch = "x86_64")]
 use ostd::arch::cpu::context::{FsBase, GsBase};
 use ostd::{
@@ -202,6 +203,7 @@ impl PosixThreadBuilder {
                     ns_proxy: Mutex::new(Some(ns_proxy.clone())),
                     timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
                     default_timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
+                    apparmor_label: SpinLock::new(TaskLabel::kernel_default()),
                     tracee_status: Once::new(),
                     tracees: Once::new(),
                     exit_code: AtomicU32::new(0),

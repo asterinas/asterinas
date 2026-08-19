@@ -38,6 +38,7 @@ members = [
     "kernel/core/comps/mlsdisk",
     "kernel/core/comps/network",
     "kernel/core/comps/nvme",
+    "kernel/core/comps/apparmor",
     "kernel/core/comps/pci",
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
@@ -88,6 +89,7 @@ default-members = [
     "kernel/core/comps/mlsdisk",
     "kernel/core/comps/network",
     "kernel/core/comps/nvme",
+    "kernel/core/comps/apparmor",
     "kernel/core/comps/pci",
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
@@ -170,6 +172,7 @@ aster-nvme = { path = "kernel/core/comps/nvme" }
 aster-pci = { path = "kernel/core/comps/pci" }
 aster-softirq = { path = "kernel/core/comps/softirq" }
 aster-systree = { path = "kernel/core/comps/systree" }
+aster-apparmor = { path = "kernel/core/comps/apparmor" }
 aster-time = { path = "kernel/core/comps/time" }
 aster-uart = { path = "kernel/core/comps/uart" }
 aster-virtio = { path = "kernel/core/comps/virtio" }

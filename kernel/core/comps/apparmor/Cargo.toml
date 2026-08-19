@@ -1,0 +1,9 @@
+[package]
+name = "aster-apparmor"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

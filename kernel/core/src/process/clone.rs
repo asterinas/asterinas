@@ -32,6 +32,7 @@ use crate::{
         stats::PROCESS_CREATION_COUNTER,
     },
     sched::Nice,
+    security::lsm::hooks::{ThreadCloneContext, ThreadInitContext, on_task_clone, on_task_init},
     thread::{AsThread, Tid},
     vm::vmar::{Vmar, VmarHandle},
 };
@@ -470,6 +471,9 @@ fn clone_child_task(
 
         thread_builder.build()
     };
+    let child_posix_thread = child_task.as_posix_thread().unwrap();
+    on_task_init(ThreadInitContext::new(child_posix_thread))?;
+    on_task_clone(ThreadCloneContext::new(posix_thread, child_posix_thread))?;
 
     process
         .tasks()
@@ -617,7 +621,8 @@ fn clone_child_process(
             child_sig_dispositions,
             child_user_ns,
             child_thread_builder,
-        )
+            posix_thread,
+        )?
     };
 
     clone_pidfd(ctx, &child, clone_flags, clone_args.pidfd)?;
@@ -840,7 +845,8 @@ fn create_child_process(
     sig_dispositions: Arc<Mutex<SigDispositions>>,
     user_ns: Arc<UserNamespace>,
     thread_builder: PosixThreadBuilder,
-) -> Arc<Process> {
+    parent_task: &PosixThread,
+) -> Result<Arc<Process>> {
     let child_proc = Process::new(
         pid,
         vmar,
@@ -852,9 +858,12 @@ fn create_child_process(
     );
 
     let child_task = thread_builder.process(Arc::downgrade(&child_proc)).build();
+    let child_posix_thread = child_task.as_posix_thread().unwrap();
+    on_task_init(ThreadInitContext::new(child_posix_thread))?;
+    on_task_clone(ThreadCloneContext::new(parent_task, child_posix_thread))?;
     child_proc.tasks().lock().insert(child_task).unwrap();
 
-    child_proc
+    Ok(child_proc)
 }
 
 fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &Arc<Process>) {

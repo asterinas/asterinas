@@ -17,7 +17,7 @@ pub(crate) mod yama {
     pub(crate) use super::modules::yama::{YamaScope, get_scope, set_scope};
 }
 
-use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook};
+use self::hooks::{LsmAlienAccessHook, LsmCapabilityHook, LsmTaskHook};
 use crate::prelude::*;
 
 bitflags! {
@@ -31,7 +31,7 @@ bitflags! {
 }
 
 /// The common interface for built-in LSM modules.
-trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
+trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + LsmTaskHook + Sync {
     /// Returns the module name.
     fn name(&self) -> &'static str;
 

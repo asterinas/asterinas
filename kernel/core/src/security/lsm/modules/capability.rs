@@ -2,7 +2,9 @@
 
 use super::super::{
     LsmFlags, LsmModule,
-    hooks::{AlienAccessContext, CapableContext, LsmAlienAccessHook, LsmCapabilityHook},
+    hooks::{
+        AlienAccessContext, CapableContext, LsmAlienAccessHook, LsmCapabilityHook, LsmTaskHook,
+    },
 };
 use crate::{
     prelude::*,
@@ -81,3 +83,5 @@ impl LsmAlienAccessHook for CapabilityLsm {
         );
     }
 }
+
+impl LsmTaskHook for CapabilityLsm {}

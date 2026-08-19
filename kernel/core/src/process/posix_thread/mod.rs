@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
+use aster_apparmor::TaskLabel;
 use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
 use aster_util::fixed_str::FixedCStr;
 use ostd::{
@@ -94,6 +95,9 @@ pub(crate) struct PosixThread {
     timer_slack_ns: AtomicU64,
     /// The default timer slack value for this thread.
     default_timer_slack_ns: AtomicU64,
+
+    /// AppArmor task label.
+    apparmor_label: SpinLock<TaskLabel>,
 
     // Ptrace
     /// Status of being traced.
@@ -341,6 +345,16 @@ impl PosixThread {
     /// Returns the exit code of this thread.
     pub(crate) fn exit_code(&self) -> ExitCode {
         self.exit_code.load(Ordering::Relaxed)
+    }
+
+    /// Returns the current AppArmor task label.
+    pub(crate) fn apparmor_label(&self) -> TaskLabel {
+        *self.apparmor_label.lock()
+    }
+
+    /// Sets the current AppArmor task label.
+    pub(crate) fn set_apparmor_label(&self, label: TaskLabel) {
+        *self.apparmor_label.lock() = label;
     }
 }
 

@@ -43,9 +43,24 @@ in {
       mkdir -p $out
       cp ${scripts}/* $out
 
-      ${lib.concatMapStringsSep "\n" (name: ''
-        ln -sT "${allPkgs.${name}}/${name}" "$out/${name}"
-      '') (lib.attrNames allPkgs)}
+      ${lib.concatMapStringsSep "\n" (name:
+        if name == "security" then ''
+          cp -r "${allPkgs.${name}}/${name}" "$out/${name}"
+          chmod -R u+w "$out/security"
+          manual="${allPkgs.${name}}/${name}/lsm/apparmor_manual"
+          for entry in \
+            apparmor-unconfined \
+            apparmor-enforce-deny \
+            apparmor-enforce-allow \
+            apparmor-fork \
+            apparmor-complain \
+            apparmor-ptrace
+          do
+            cp "$manual" "$out/security/lsm/$entry"
+          done
+        '' else ''
+          ln -sT "${allPkgs.${name}}/${name}" "$out/${name}"
+        '') (lib.attrNames allPkgs)}
     '';
   };
 }

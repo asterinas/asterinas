@@ -77,6 +77,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "aster-apparmor"
+version = "0.1.0"
+
+[[package]]
 name = "aster-bigtcp"
 version = "0.1.0"
 dependencies = [
@@ -133,6 +137,7 @@ name = "aster-core"
 version = "0.1.0"
 dependencies = [
  "align_ext",
+ "aster-apparmor",
  "aster-bigtcp",
  "aster-block",
  "aster-cmdline",
