@@ -663,3 +663,751 @@
       expectation: >
         A reviewer should flag that syscall-local decode enums should not be
         public when all uses are contained in the same source file.
+
+- problem_id: 0508-netlink-uevent-deadlock-and-design
+  commit: 92d613a2cd445ed387b990304dea5bf79a9e39b1
+  source: >
+    PR-review-derived from PR #2109
+    `https://github.com/asterinas/asterinas/pull/2109`. Comments
+    `https://github.com/asterinas/asterinas/pull/2109#discussion_r2122494424`,
+    `https://github.com/asterinas/asterinas/pull/2109#discussion_r2122481943`,
+    `https://github.com/asterinas/asterinas/pull/2109#discussion_r2122522482`,
+    and
+    `https://github.com/asterinas/asterinas/pull/2109#discussion_r2122522689`
+    identified the socket-lifetime deadlock and eager parser allocations.
+    Replacement head `5b3a13b71fd3eee04937a1c6421df5cd5e1ad45d` stores
+    independently owned message receivers and parses synthetic uevents through
+    iterators; final head `acfa9a9e5659d65d0e2b02217008dea28bbe5211` retains
+    those remedies. The reviewed diff predates all review comments and fixes
+    and contains no later explanation that reveals the expected findings.
+  review_mode:
+    diff:
+      base: 4f74048aca6e939251d0fcf961292e87918f9acc
+  defects:
+    - target: { kind: file, path: kernel/src/net/socket/netlink/mod.rs }
+      persona: development
+      grounding: "Lock reentrancy deadlock"
+      severity: major
+      desc: >
+        The netlink table holds a protocol `RwLock` read guard while dispatching
+        a message through an `AnyNetlinkSocket` weak reference. If another
+        thread concurrently closes the socket after `Weak::upgrade` succeeds,
+        the temporary upgraded `Arc` can become the final strong reference.
+        Dropping that `Arc` at the end of `enqueue_unicast_message` or
+        `enqueue_mutlicast_message` drops its `BoundHandle`, whose `Drop`
+        implementation tries to acquire the same protocol table's write lock.
+        The outer read guard is still held, so the delivery path waits forever
+        for a lock that it prevents from becoming available.
+      fix: >
+        Do not keep or upgrade the complete socket while holding the table
+        lock. Store an independently owned message receiver containing the
+        queue and `Pollee`, as in the accepted revision, so dispatch cannot
+        destroy a `BoundHandle`; alternatively release the table guard before
+        any operation that may drop the last socket reference.
+      expectation: >
+        A reviewer should flag that upgrading and then dropping a weak socket
+        under the protocol table read lock can run `BoundHandle::drop` and
+        recursively request the same table's write lock, causing a deadlock
+        during concurrent socket close.
+    - target: { kind: file, path: kernel/src/net/socket/netlink/kobject_uevent/message/syn_uevent.rs }
+      persona: development
+      grounding: minimize-copies
+      severity: minor
+      desc: >
+        `SyntheticUevent::from_str` first collects every space-separated field
+        into a `Vec<&str>` even though it only consumes the fields once, then
+        allocates another `Vec<&str>` for every `KEY=VALUE` argument solely to
+        inspect its two elements. The input and number of arguments are
+        externally supplied, so parsing one uevent performs one unnecessary
+        outer allocation plus an unnecessary allocation per environment entry
+        in kernel context.
+      fix: >
+        Consume the whitespace split iterator directly with `next` for the
+        action and UUID and iterate the remaining fields. Parse each environment
+        field without collecting, using `split_once` or a bounded iterator
+        check while preserving the required key/value validation.
+      expectation: >
+        A reviewer should flag both `collect::<Vec<_>>()` calls as unnecessary
+        kernel heap allocations and require streaming iterator-based parsing.
+
+- problem_id: 0509-process-refactor-rlimit-and-api-shape
+  commit: d99287d4f26eb7a27f7e3b9cd269c49f37b350d7
+  source: >
+    PR-review-derived from PR #2062
+    `https://github.com/asterinas/asterinas/pull/2062`. Comments
+    `https://github.com/asterinas/asterinas/pull/2062#discussion_r2080751851`
+    and
+    `https://github.com/asterinas/asterinas/pull/2062#discussion_r2080753385`
+    identified incorrect child resource limits and excessive `Process::run`
+    visibility. In reply
+    `https://github.com/asterinas/asterinas/pull/2062#discussion_r2080835344`,
+    the author notes that the resource-limit behavior predated the PR; the
+    reviewed refactor nevertheless materializes the faulty
+    `ResourceLimits::default()` as a newly added line in its child-creation
+    helper, so it remains visible in the requested diff review. Linux's
+    inheritance contract is documented at
+    `https://man7.org/linux/man-pages/man2/getrlimit.2.html`. Force-pushed final
+    head `f40713d750e7a379cd86b11ae13001ad7993d761` clones the parent's limits
+    and narrows `run`. The reviewed snapshot predates those comments and fixes
+    and contains no later explanation that reveals the expected findings.
+  review_mode:
+    diff:
+      base: 2961b89caa380f049766020b01e2c1af7930ec3d
+  defects:
+    - target: { kind: file, path: kernel/src/process/clone.rs }
+      persona: development
+      grounding: "Incorrect resource-limit inheritance"
+      severity: major
+      desc: >
+        `create_child_process` constructs `ResourceLimits::default()` for every
+        new child instead of carrying over the calling process's current soft
+        and hard limits. After a parent lowers a limit such as `RLIMIT_NOFILE`,
+        `fork` or `clone` therefore gives the child the boot defaults rather
+        than the parent's values, allowing it to evade or unexpectedly tighten
+        resource ceilings. Linux requires a child created by `fork` to inherit
+        its parent's resource limits and preserves them across `execve`.
+      fix: >
+        Take a synchronized snapshot of every parent `RLimit64`, build an
+        independent `ResourceLimits` value for the child, and pass it into
+        `create_child_process`. The accepted revision implements `Clone` by
+        reading each current/max pair under its lock before constructing the
+        child's copy.
+      expectation: >
+        A reviewer should flag that resetting child resource limits to
+        `ResourceLimits::default()` violates fork inheritance and require an
+        independent copy of the parent's current limits.
+    - target: { kind: file, path: kernel/src/process/process/mod.rs }
+      persona: maintainability
+      grounding: narrow-visibility
+      severity: minor
+      desc: >
+        After init-process creation is moved into the child `init_proc` module,
+        `Process::run` remains `pub`, exposing a process-construction lifecycle
+        operation to the entire kernel crate. The method assumes that the
+        process has exactly one task and is not a zombie, but enforces those
+        preconditions only with debug assertions, so a wider API invites calls
+        from modules that do not own or preserve the initialization protocol.
+        The child module only requires parent-module visibility.
+      fix: >
+        Declare `Process::run` as `pub(super)` so it remains callable from
+        `process::init_proc` without becoming a crate-wide process API.
+      expectation: >
+        A reviewer should flag `Process::run` as unnecessarily public after the
+        module split and require `pub(super)` visibility.
+
+- problem_id: 0510-i8042-protocol-correctness
+  commit: 128ad4ac94999481deff960085b3ece872261cf9
+  source: >
+    PR-review-derived from PR #2054
+    `https://github.com/asterinas/asterinas/pull/2054`. Comments
+    `https://github.com/asterinas/asterinas/pull/2054#discussion_r2073849973`,
+    `https://github.com/asterinas/asterinas/pull/2054#discussion_r2073908244`,
+    and
+    `https://github.com/asterinas/asterinas/pull/2054#discussion_r2073797889`
+    identified omitted controller initialization, invalid output-buffer
+    handling, and spurious NUL input. Force-pushed final head
+    `d32591ee8e14c8f76c857ebefa69504843593f9e` implements status-aware
+    controller/device initialization and separates ignored keys from NUL. The
+    reviewed diff predates those revisions and contains no later comments or
+    fixes that reveal the expected findings.
+  review_mode:
+    diff:
+      base: c519db518f0e2dd21131b26f5cd26f954b01d54f
+  defects:
+    - target: { kind: file, path: kernel/comps/keyboard/src/i8042_keyboard.rs }
+      persona: hardware
+      grounding: "Missing controller initialization"
+      severity: major
+      desc: >
+        `init` only acquires ports 0x60 and 0x64, installs an IRQ handler, and
+        enables IRQ 1. It never disables the controller ports, flushes pending
+        output, programs the configuration byte, runs controller and port
+        tests, or resets and identifies the attached PS/2 device. The driver
+        therefore assumes that firmware left a present i8042 controller and a
+        compatible keyboard in exactly the required state. A disabled port,
+        unexpected translation mode, failed controller, or non-keyboard device
+        is silently accepted and then treated as a Scan Code Set 1 keyboard,
+        yielding missing or incorrectly decoded input.
+      fix: >
+        Implement the i8042 initialization sequence before enabling keyboard
+        interrupts: disable the ports, flush pending data, configure and test
+        the controller and interfaces, reset and identify the keyboard, and
+        leave unsupported or failed ports disabled. Publish the controller and
+        handler state before writing the configuration that enables keyboard
+        interrupts.
+      expectation: >
+        A reviewer should flag that the driver enables the i8042 keyboard IRQ
+        without initializing or validating the controller and attached device,
+        and require a protocol-compliant initialization sequence first.
+    - target: { kind: file, path: kernel/comps/keyboard/src/i8042_keyboard.rs }
+      persona: hardware
+      grounding: "Invalid device-register read"
+      severity: major
+      desc: >
+        `parse_inputkey` reads port 0x60 through `ScanCode::read` before reading
+        the status register. Its `output_buffer_is_full` predicate is also
+        inverted, returning true when status bit 0 is clear, and the subsequent
+        branch merely logs instead of rejecting the read. The i8042 contract
+        requires status bit 0 to be set before port 0x60 is read, so an IRQ or
+        call with an empty output buffer can consume and report stale or
+        undefined data as a key event.
+      fix: >
+        Read the status register first and access port 0x60 only when the output
+        buffer full bit is set. Encapsulate this ordering in a `receive_data`
+        operation that returns no value while the buffer is empty, and have the
+        input path stop without parsing or reporting a key in that case.
+      expectation: >
+        A reviewer should flag that port 0x60 is read before the output-buffer
+        status confirms data is available, with an inverted and non-gating
+        readiness check, and require status-gated data reads.
+    - target: { kind: file, path: kernel/comps/keyboard/src/i8042_keyboard.rs }
+      persona: development
+      grounding: "Spurious input event"
+      severity: major
+      desc: >
+        `parse_inputkey` uses `InputKey::Nul` both for the real NUL control
+        character and as a sentinel for modifier presses, key releases,
+        extension prefixes, invalid bytes, and unknown scan codes. The IRQ
+        handler forwards every returned value to all callbacks, while
+        `InputKey::Nul` converts to the byte `0x00`. Pressing or releasing Shift,
+        Ctrl, Caps Lock, or an unsupported key therefore injects a NUL byte into
+        the terminal input stream even though no character was entered.
+      fix: >
+        Represent ignored scan codes separately from the real NUL character,
+        for example with an `Ign` variant whose control sequence is empty or by
+        returning `Option<InputKey>`, and do not emit input bytes for ignored
+        events.
+      expectation: >
+        A reviewer should flag that ignored modifier, release, invalid, and
+        unknown scan-code paths are forwarded as a real NUL byte and require a
+        distinct no-input representation.
+
+- problem_id: 0511-cgroup-pids-precharge-rollback-race
+  commit: f404df954160a9dd8b180f8fe9e9630acd9445c6
+  source: >
+    PR-review-derived from PR #2987
+    `https://github.com/asterinas/asterinas/pull/2987`. The reviewed series is
+    the original implementation commit `fbf01a11f62c5b7f8e5a854a779c1d4943bf8426`
+    followed by its test commit `f404df954160a9dd8b180f8fe9e9630acd9445c6`,
+    with series base `417d58dbac51a71cbe02b5615a7198184371ebd6`. Comment
+    `https://github.com/asterinas/asterinas/pull/2987#discussion_r2917670068`
+    suggested an RAII token for the manual rollback, while
+    `https://github.com/asterinas/asterinas/pull/2987#discussion_r2918205958`
+    identified the underlying race: the token must not outlive the cgroup
+    membership read guard. The force-pushed final head
+    `d162569ac9e063af0ded2c511fedf38f4b1c3b15` adds that lifetime binding. The
+    reviewed range predates both comments and the remedy, and its reverse
+    patch log contains the faulty pre-charge and rollback code.
+  review_mode:
+    diff:
+      base: 417d58dbac51a71cbe02b5615a7198184371ebd6
+  defects:
+    - target: { kind: file, path: kernel/src/fs/fs_impls/cgroupfs/controller/mod.rs }
+      persona: development
+      grounding: atomic-critical-sections
+      severity: major
+      desc: >
+        `pre_charge_pids` selects and charges the hierarchy currently returned by
+        `self.pids.read()`, but `PidsPreCharge` stores only `&Controller`. Its
+        `Drop` later calls `uncharge_pids`, which reads `self.pids` again instead
+        of retaining the sub-controller that was actually charged. In
+        `clone_child`, correctness depends on the token being dropped or applied
+        before the separately managed `cgroup_read_guard` is released. If that
+        lock is released first, a concurrent cgroup migration or subtree-control
+        update can replace `self.pids`; rollback then decrements the replacement
+        hierarchy while leaking the original charge. The lock/token ordering is
+        only a convention and is not enforced by the type system, so a new
+        fallible path or caller can reintroduce this race.
+      fix: >
+        Bind `PidsPreCharge` to the `CgroupMembership` read guard with a shared
+        lifetime (for example,
+        `pre_charge_pids<'a>(&'a self, &'a CgroupMembership) -> Result<PidsPreCharge<'a>>`)
+        so Rust requires the token to be applied or dropped before the guard is
+        released. Alternatively, retain the exact charged sub-controller or
+        hierarchy in the token and roll back that snapshot directly. Keep raw
+        uncharge and the commit operation private to the controller
+        implementation.
+      expectation: >
+        A reviewer should flag that `PidsPreCharge` is not lifetime-bound to the
+        `CgroupMembership` guard and that its `Drop` re-reads the current pids
+        controller, allowing a concurrent cgroup update to roll back the wrong
+        hierarchy. Require a lifetime-bound RAII token or an equivalent snapshot
+        of the hierarchy that was charged.
+
+- problem_id: 0512-nsfs-cache-critical-section
+  commit: c21c8428e444322db9c174cb04b178ab6806cf12
+  source: >
+    PR-review-derived from PR #2966
+    `https://github.com/asterinas/asterinas/pull/2966`. The change contains the
+    four original refactor, test, nsfs, and setns commits. Comment
+    `https://github.com/asterinas/asterinas/pull/2966#discussion_r2802637943`
+    identified the split cache critical section.
+    Force-pushed final head
+    `86308e83daabb135b41fbc3c3a611855612985ac` holds the cache lock while
+    capturing namespace state and updating the cached inode. The reviewed range
+    predates this comment and remedy and contains no explanatory test.
+  review_mode:
+    diff:
+      base: 6882eb73f4d0d5a934c8c89cb7897dc8213e1e37
+  defects:
+    - target: { kind: file, path: kernel/src/fs/procfs/pid/task/ns.rs }
+      persona: development
+      grounding: atomic-critical-sections
+      severity: major
+      desc: >
+        `lookup_child` reads the target thread's namespace state and constructs
+        a new symlink inode before acquiring `cached_children`'s write lock.
+        If one lookup captures namespace A, the target switches to namespace B,
+        and another lookup installs B before the first lookup obtains the cache
+        lock, the delayed lookup overwrites the cache with its stale A inode.
+        The individually locked namespace and cache operations therefore do not
+        form one atomic validate-and-publish operation, leaving
+        `/proc/<pid>/ns/<type>` cached against an obsolete namespace.
+      fix: >
+        Acquire the child-cache write guard before capturing the current
+        namespace path and keep it through validation and replacement. Reuse a
+        cached inode when its stored path matches the current namespace, and
+        replace it under the same guard only when the path has changed.
+      expectation: >
+        A reviewer should flag that `lookup_child` resolves the namespace before
+        locking `cached_children`, allowing a delayed lookup to publish a stale
+        namespace inode, and require state capture plus cache update to remain
+        in one critical section.
+
+- problem_id: 0513-fs-creation-context-api-shape
+  commit: b4b0ec713133be00f139909688ced4bad0bacea8
+  source: >
+    PR-review-derived from PR #3168
+    `https://github.com/asterinas/asterinas/pull/3168`. Comments
+    `https://github.com/asterinas/asterinas/pull/3168#discussion_r3121357952`
+    and
+    `https://github.com/asterinas/asterinas/pull/3168#discussion_r3129504748`
+    identified that the new context stores mount flags without exposing them to
+    filesystem implementations and gives filesystem-only accessors crate-wide
+    visibility. Force-pushed final head
+    `60fde59cb920c1b0313172de72eadb084e1c8bb6`, which has the same parent, adds
+    an `FsFlags` accessor and restricts the source, flags, arguments, and block
+    device resolver APIs to `crate::fs`. The reviewed commit predates both
+    comments and remedies, so its diff contains no review or fix text.
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/src/fs/vfs/fs_apis/registry.rs }
+      persona: maintainability
+      grounding: narrow-visibility
+      severity: minor
+      desc: >
+        The newly added `source`, `args`, and `require_block_device` methods are
+        plain `pub`, exposing filesystem-creation internals to every module in
+        the kernel crate. Their actual consumers are filesystem implementations
+        under `crate::fs`; unrelated kernel subsystems do not need to inspect
+        mount input or resolve its source device. The wider surface permits
+        dependencies on a syscall-to-filesystem handoff abstraction that should
+        remain owned by the filesystem subsystem.
+      fix: >
+        Restrict the filesystem-facing accessors and block-device resolver to
+        `pub(in crate::fs)`, while leaving only the constructor visibility that
+        the mount syscall actually requires.
+      expectation: >
+        A reviewer should flag the crate-wide visibility of filesystem-only
+        `MountContext` accessors and helpers and require their visibility to be
+        limited to `crate::fs`.
+
+- problem_id: 0514-empty-path-utimens-flags-and-tests
+  commit: 70ae7d74e5cd056406f2b6c88d3278ff6978ff55
+  source: >
+    PR-review-derived from PR #3176
+    `https://github.com/asterinas/asterinas/pull/3176`. The change contains the
+    empty-path refactor and its initial LTP enablement. Comments
+    `https://github.com/asterinas/asterinas/pull/3176#discussion_r3137887431`
+    and
+    `https://github.com/asterinas/asterinas/pull/3176#discussion_r3137887849`
+    identified the unchecked flags on `utimensat`'s NULL-pathname branch and
+    the missing direct tests for the new empty-path policy API. The accepted
+    force-pushed implementation commit
+    `cdc1b241805b70392cd3dcd4daa4cbfa7df80f06`, retained by final PR head
+    `ff615debbe23e94e9dea730ac4d2c8899510cc2e`, rejects nonzero flags before
+    resolving a NULL pathname and adds policy-matrix and path-length kernel
+    tests. Linux v6.18 `fs/utimes.c` at
+    `https://raw.githubusercontent.com/torvalds/linux/v6.18/fs/utimes.c`
+    confirms that `do_utimes_fd` returns `EINVAL` whenever flags are nonzero.
+    The reviewed range predates the comments and accepted remedies and contains
+    neither their explanatory text nor the later focused resolver tests.
+  review_mode:
+    diff:
+      base: 0028f0d4a62b5921fde45645f4a5dcbdbf192c53
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/utimens.rs }
+      persona: development
+      grounding: "Incorrect flag validation"
+      severity: major
+      desc: >
+        The change makes `AT_EMPTY_PATH` a valid `UtimensFlags` bit, but the
+        special `pathname_ptr == NULL` branch bypasses `FsPath::from_fd_at` and
+        calls `FsPath::from_fd` without examining any flags. Consequently,
+        `utimensat(valid_fd, NULL, times, AT_EMPTY_PATH)` can update the file and
+        return success. Linux routes a NULL pathname through `do_utimes_fd`,
+        which rejects every nonzero flags value with `EINVAL`; the same bug also
+        accepts `AT_SYMLINK_NOFOLLOW` on this branch. The newly recognized flag
+        therefore turns an input that previously failed flag parsing into an
+        observable Linux-compatibility violation with unintended metadata
+        modification.
+      fix: >
+        In the NULL-pathname branch, reject any nonempty `UtimensFlags` value
+        with `EINVAL` before constructing an fd-only path. Keep the empty-string
+        pathname branch separate so it can continue honoring `AT_EMPTY_PATH`
+        through `FsPath::from_fd_at`.
+      expectation: >
+        A reviewer should flag that `utimensat`'s NULL-pathname branch ignores
+        nonzero flags and can succeed where Linux requires `EINVAL`, especially
+        for the newly accepted `AT_EMPTY_PATH` bit.
+    - target: { kind: file, path: kernel/src/fs/vfs/path/resolver.rs }
+      persona: development
+      grounding: add-regression-tests
+      severity: minor
+      desc: >
+        The patch introduces `FsPath::from_fd_at` and the three-way
+        `EmptyPathStr` policy, but adds no focused tests to the existing ktest
+        module in the same file. The enabled LTP cases mostly exercise unrelated
+        syscall validation and do not pin down the policy boundaries: `Reject`
+        must always reject an empty path, `Allow` must still reject `AT_FDCWD`,
+        and `AllowIfFlag` must inspect only `AT_EMPTY_PATH`. A flipped predicate
+        or incorrect bit mask in this shared resolver can therefore regress
+        many `*at` syscalls without being caught by the submitted tests.
+      fix: >
+        Add table-driven kernel tests beside the existing resolver tests that
+        cover empty paths for all three policy variants with `AT_FDCWD`, a real
+        fd value, flags with and without `AT_EMPTY_PATH`, and unrelated flag
+        bits. Also retain boundary coverage for overlong nonempty paths and
+        invalid fd values so the API's documented errors remain fixed.
+      expectation: >
+        A reviewer should flag that the new shared empty-path policy API has no
+        direct regression tests for its variant, dirfd, and flag-bit behavior,
+        despite an existing in-file ktest module suitable for that matrix.
+
+- problem_id: 0515-tkill-id-validation-and-compat-docs
+  commit: 3905c80389d6c2f66340407b31432406d8f9a6c2
+  source: >
+    PR-review-derived from PR #3150
+    `https://github.com/asterinas/asterinas/pull/3150`. Comment
+    `https://github.com/asterinas/asterinas/pull/3150#discussion_r3093793659`
+    identified that zero TIDs and TGIDs fall through to lookup rather than
+    returning `EINVAL`. Accepted replacement implementation
+    `47d025d9ecb4bf59fa9f7f45b91132bc7bb6d029`, which has the same parent,
+    changes both predicates from `< 0` to `<= 0` and enables the relevant LTP
+    `tkill` cases. Maintainer comment
+    `https://github.com/asterinas/asterinas/pull/3150#issuecomment-4266027302`
+    required the new syscall to be recorded in the Linux Compatibility page and
+    SCML; final PR head `12214beabbbe48ba85e47122c12220d3a8b0e1d3`
+    adds both artifacts. The Linux 6.18 `tkill(2)` manual at
+    `https://man7.org/linux/man-pages/man2/tgkill.2.html` distinguishes invalid
+    IDs (`EINVAL`) from nonexistent IDs (`ESRCH`). The reviewed commit predates
+    all review comments and accepted revisions and contains neither the fixed
+    predicate nor the later compatibility documentation.
+  review_mode:
+    diff:
+      base: 18b1fb6255456808b5b42867344f7216179a1cc5
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/tgkill.rs }
+      persona: development
+      grounding: "Incorrect errno for zero IDs"
+      severity: major
+      desc: >
+        The shared `tkill`/`tgkill` entry path rejects only IDs whose signed
+        representation is less than zero. A zero `tid`, or a zero `tgid` for
+        `tgkill`, therefore reaches the PID-table lookup and normally returns
+        `ESRCH`. Linux defines these non-positive identifiers as invalid and
+        requires `EINVAL`; `ESRCH` is reserved for a positive ID or ID pair that
+        does not identify an existing target. The newly added syscall thus
+        exposes observably incompatible error semantics at its user boundary.
+      fix: >
+        Reject `tid.cast_signed() <= 0` and, when present,
+        `tgid.cast_signed() <= 0` before signal construction or PID-table
+        lookup, returning `EINVAL` with a message describing non-positive IDs.
+        Retain `ESRCH` for valid positive IDs that cannot be resolved.
+      expectation: >
+        A reviewer should flag that zero TIDs/TGIDs bypass the `< 0` validation
+        and produce `ESRCH` instead of Linux's required `EINVAL`, and require a
+        non-positive-ID check before lookup.
+    - target: { kind: file, path: kernel/src/syscall/arch/x86.rs }
+      persona: documentation
+      grounding: linux-compat-docs
+      severity: minor
+      desc: >
+        The change registers and implements the user-visible `tkill` syscall but
+        leaves the Linux Compatibility table reporting syscall 200 as
+        unsupported and omits `tkill(tid, sig)` from the signal syscall SCML.
+        The generated compatibility status therefore contradicts the kernel's
+        new syscall surface, and downstream readers and tooling cannot discover
+        that the syscall is now fully covered.
+      fix: >
+        Mark `tkill` as implemented and fully covered in the Linux Compatibility
+        syscall table, and add its signature to the signals-and-timers
+        `fully_covered.scml` file in the same change as the syscall.
+      expectation: >
+        A reviewer should flag that adding `SYS_TKILL` requires corresponding
+        Linux Compatibility and SCML updates, both of which are absent from the
+        submitted change.
+
+- problem_id: 0516-fs-cache-single-creation
+  commit: c4d088c3f760abf30a4f91085c90c6f458edabaf
+  source: >
+    PR-review-derived from PR #3328
+    `https://github.com/asterinas/asterinas/pull/3328`. Comment
+    `https://github.com/asterinas/asterinas/pull/3328#discussion_r3569413620`
+    identified that releasing the cache lock around `create_fn` lets concurrent
+    same-key mounts initialize multiple file systems, including duplicate
+    virtio-fs `FUSE_INIT` requests. Accepted final PR head
+    `161f934f56e34026a1234527d25a0f1584b37652`, whose registry blob is retained
+    unchanged by merged commit `9388d7d4750ffdb6ff616a3d0c2fff609a071265`,
+    keeps lookup, creation, and insertion under one cache lock. The reviewed
+    range predates the comment and remedy; its regression test covers only
+    sequential cache reuse and contains no concurrent-creation scenario that
+    names or exposes this defect.
+  review_mode:
+    diff:
+      base: 7f3a096428b9607793c312e065c8c778b73c9748
+  defects:
+    - target: { kind: file, path: kernel/src/fs/vfs/fs_apis/registry.rs }
+      persona: development
+      grounding: atomic-critical-sections
+      severity: major
+      desc: >
+        `FsCache::get_or_create` checks for a live entry while holding
+        `entries`, releases the lock, and invokes `create_fn` before locking and
+        checking again. Two threads mounting the same uncached key can therefore
+        both observe a miss and initialize separate file systems. The second
+        check prevents both objects from entering the map, but it cannot undo
+        creation side effects; for virtio-fs, both instances can send
+        `FUSE_INIT` concurrently before one is discarded. The cache therefore
+        fails to guarantee single initialization for a logical file system and
+        can expose duplicate protocol or device activity.
+      fix: >
+        Make the miss check, `create_fn` execution, and insertion one atomic
+        operation for each key. The accepted implementation holds the cache
+        lock through creation; an equivalent per-key in-progress entry that
+        makes competing callers wait would also preserve single initialization.
+      expectation: >
+        A reviewer should flag that dropping the cache lock before `create_fn`
+        lets concurrent same-key misses initialize multiple file systems and
+        require creation to be serialized for that key.
+
+- problem_id: 0517-dup2-overwrite-record-lock-release
+  commit: 56cd87abfa945413b88170c4136c930ccdfe9992
+  source: >
+    PR-review-derived from PR #3027
+    `https://github.com/asterinas/asterinas/pull/3027`. Comment
+    `https://github.com/asterinas/asterinas/pull/3027#discussion_r2910593701`
+    identified that the new exact-fd duplication path overwrites its target
+    without executing `close_file`'s POSIX record-lock cleanup. Accepted final
+    PR head `c78719b90c3138612556037b6b94e10c4bc165e8`, whose relevant file-table
+    and syscall blobs are retained unchanged by merged commit
+    `69085c9f30834213eb5c3a8144d08101f512a5b2`, validates and duplicates the
+    source first, then closes the target through `close_file` before inserting
+    the new entry. Linux man-pages 6.18 at
+    `https://man7.org/linux/man-pages/man2/dup.2.html` and
+    `https://man7.org/linux/man-pages/man2/fcntl_locking.2.html` establish that
+    replacing `newfd` performs a close and that closing any descriptor for a
+    file releases all process-associated record locks on that file. The
+    reviewed range predates the comment and accepted remedy; its regression
+    test covers an explicit close of a duplicated fd, not replacement through
+    `dup2` or `dup3`, so it does not name or expose this missing close path.
+  review_mode:
+    diff:
+      base: 417d58dbac51a71cbe02b5615a7198184371ebd6
+  defects:
+    - target: { kind: file, path: kernel/src/fs/file/file_table.rs }
+      persona: development
+      grounding: "Incorrect POSIX record-lock release"
+      severity: major
+      desc: >
+        The new `FileTable::dup_to` replaces `new_fd` directly with
+        `SlotVec::put_at`, while this same change moves process-associated
+        record-lock cleanup into `FileTable::close_file`. If `new_fd` refers to
+        a locked inode whose open file description remains alive through
+        another duplicated descriptor, overwriting it drops only one `Arc` and
+        never calls `release_range_locks`. Linux treats the replacement as a
+        close and requires that closing any descriptor for the file release all
+        of the process's record locks, so another process can incorrectly remain
+        blocked after a successful `dup2` or `dup3`.
+      fix: >
+        After successfully validating and duplicating `old_fd`, remove
+        `new_fd` through `close_file` so its record-lock side effects run, then
+        insert the duplicated entry at that exact descriptor. Return the removed
+        `FileLike` to the syscall layer so its final destruction can occur after
+        the file-table lock is released.
+      expectation: >
+        A reviewer should flag that `dup_to` bypasses `close_file` when
+        overwriting `new_fd`, leaving process-associated record locks behind,
+        and require the atomic replacement path to execute the target fd's
+        close side effects.
+
+- problem_id: 0518-rt-sigtimedwait-ignored-signal-handling
+  commit: 9d24f8e8aaefb24864e127e2666a88043b67960f
+  source: >
+    PR-review-derived from PR #2705
+    `https://github.com/asterinas/asterinas/pull/2705`. Comment
+    `https://github.com/asterinas/asterinas/pull/2705#discussion_r2601629480`
+    identified that the fast path writes `siginfo` before deciding whether an
+    unblocked ignored signal must be discarded. Comment
+    `https://github.com/asterinas/asterinas/pull/2705#discussion_r2601641995`
+    identified that testing only for `SigAction::Ign` misses signals whose
+    default action is ignore. Accepted final PR head
+    `9e2148e8b53bb5a2f680257e5f18f37df5c27ae0`, whose corrected syscall blob is
+    retained unchanged by merged commit
+    `33b881cf90f074d224e9a27fa88cbce8e348ffbb`, filters ignored signals through
+    `will_ignore` before returning a signal or writing its `siginfo`. Linux
+    man-pages 6.18 at
+    `https://man7.org/linux/man-pages/man2/sigtimedwait.2.html` establishes that
+    `siginfo` describes the signal successfully returned and that a timed wait
+    with no eligible signal returns `EAGAIN`; the signal disposition rules are
+    documented at `https://man7.org/linux/man-pages/man2/sigaction.2.html`. The
+    reviewed range predates both comments and the accepted remedy, and its only
+    gVisor blocklist change concerns an unavailable `tkill` syscall; it contains
+    no ignored-signal regression test or comment that reveals either defect.
+  review_mode:
+    diff:
+      base: dbba54b02c618bed1c3f53591b431dc015116437
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/rt_sigtimedwait.rs }
+      persona: development
+      grounding: "Premature siginfo side effect"
+      severity: major
+      desc: >
+        In the pending-signal fast path, the syscall copies a dequeued signal's
+        `siginfo` to userspace before checking whether that signal is ignored
+        and was not blocked by the caller. Such a signal must be discarded, so
+        it is not necessarily the signal that the syscall returns. With only
+        that signal pending and a zero timeout, the call can modify the output
+        buffer and then return `EAGAIN`; an invalid output pointer can instead
+        produce `EFAULT` even though there is no reportable signal. This exposes
+        output and error behavior for a signal that should have been invisible
+        to the caller.
+      fix: >
+        Dequeue and discard all unblocked ignored signals before performing any
+        userspace write. Only after selecting the signal that will actually be
+        returned should the syscall convert it to `siginfo` and copy it to
+        `info_ptr`, applying the same ordering to both the fast and waiting
+        paths.
+      expectation: >
+        A reviewer should flag that the fast path writes `siginfo` before
+        filtering an ignored signal, causing userspace output or error side
+        effects even when that signal is discarded and no signal is returned.
+    - target: { kind: file, path: kernel/src/syscall/rt_sigtimedwait.rs }
+      persona: development
+      grounding: "Incomplete ignored-signal predicate"
+      severity: major
+      desc: >
+        Both dequeue loops recognize an ignored signal only when its installed
+        disposition is explicitly `SigAction::Ign`. A signal with
+        `SigAction::Dfl` can also have ignore as its default action, as do
+        signals such as `SIGCHLD`, `SIGURG`, and `SIGWINCH`. If one of those
+        signals is pending but was not blocked by the caller, this code returns
+        it from `rt_sigtimedwait` instead of discarding it according to its
+        effective disposition, producing incompatible signal-wait behavior.
+      fix: >
+        Query the signal disposition's effective behavior rather than comparing
+        its stored action only with `SigAction::Ign`. Use
+        `sig_disposition.will_ignore(signal.as_ref())` for both dequeue paths,
+        or centralize the dequeue-and-filter operation so explicit and default
+        ignore semantics cannot diverge between paths.
+      expectation: >
+        A reviewer should flag that equality with `SigAction::Ign` misses
+        default-ignored signals and require the effective `will_ignore`
+        predicate when deciding whether to discard an unblocked pending signal.
+
+- problem_id: 0519-prlimit-hard-limit-toctou
+  commit: a058ddf49579d945bd61dff608b17cb1000c8ab3
+  source: >
+    PR-review-derived from PR #2824
+    `https://github.com/asterinas/asterinas/pull/2824`. Comment
+    `https://github.com/asterinas/asterinas/pull/2824#discussion_r2654650620`
+    identified that reading and updating an rlimit must be atomic, and comment
+    `https://github.com/asterinas/asterinas/pull/2824#discussion_r2654781975`
+    clarified that a later revision still checked the old maximum outside the
+    rlimit lock. Accepted final PR head
+    `8bc9ba5928c550e74b2b6c3b1282b5b649808cdd`, whose relevant syscall and
+    rlimit blobs are retained unchanged by merged commit
+    `82ccfcd4c6f69d538e3fd62153d7245b7d2fcaa1`, performs the current-maximum
+    comparison, capability check, old-value snapshot, and update under one
+    `RLimit64` lock. Linux man-pages 6.18 at
+    `https://man7.org/linux/man-pages/man2/getrlimit.2.html` establishes that an
+    unprivileged process may only irreversibly lower its hard limit, that
+    raising it requires `CAP_SYS_RESOURCE`, that `prlimit` returns the previous
+    limits, and that all threads of a process share its limits. The reviewed
+    commit predates the comments and remedy; its enabled LTP cases cover the
+    single-threaded permission behavior and contain no concurrent limit update
+    or explanation that reveals this race.
+  review_mode:
+    diff:
+      base: c91d383c91a5dccb057fa7f315657ed73ff8e0e6
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/prlimit64.rs }
+      persona: development
+      grounding: atomic-critical-sections
+      severity: major
+      desc: >
+        `do_prlimit64` snapshots `cur` and `max` through
+        `get_cur_and_max`, releases the rlimit lock, compares the requested hard
+        limit with that snapshot and conditionally checks `CAP_SYS_RESOURCE`,
+        then reacquires the lock in `set_cur_and_max`. Since all threads share
+        the process's limits, two unprivileged calls can interleave with an
+        initial hard limit of 100: one call snapshots 100 and requests 100,
+        another lowers the limit to 50, and the first then skips the capability
+        check and writes 100. The result raises the current hard limit without
+        privilege, and no serial ordering of the two successful calls explains
+        it. A concurrent update can likewise make `prlimit` return a snapshot
+        other than the value immediately replaced by its update.
+      fix: >
+        Move the current-hard-limit comparison, conditional
+        `CAP_SYS_RESOURCE` check, previous-value capture, and both limit stores
+        into one method that holds the same `RLimit64` lock throughout. Return
+        the captured value from that atomic update for `prlimit`; use the
+        separately locked read method only when no new limit is supplied.
+      expectation: >
+        A reviewer should flag that `do_prlimit64` releases the rlimit lock
+        between the hard-limit permission check and update, allowing a
+        concurrent change to bypass `CAP_SYS_RESOURCE`, and require the check,
+        old-value capture, and write to share one critical section.
+
+- problem_id: 0520-ext2-bitmap-alignment
+  commit: fc346da146d215d5bafa4fe577b24fd730bf7e04
+  source: >
+    PR-review-derived from PR #2611
+    `https://github.com/asterinas/asterinas/pull/2611`. Comment
+    `https://github.com/asterinas/asterinas/pull/2611#discussion_r2558794127`
+    identified that `capacity` is measured in bits while `SECTOR_SIZE` is in
+    bytes. Accepted final PR head
+    `c3aa6b1e1efcbe4ea96630a1f08eabe725af6681`, whose relevant file blobs are
+    retained unchanged by merged commit
+    `265fdc7080b3c453066714021dfac61c01b82591`, replaces the growable bitset
+    with an `IdBitmap` that keeps a fixed block-sized byte buffer separate from
+    the logical valid-bit length. The reviewed initial diff predates the comment
+    and the remedy and contains no regression test or explanatory text that
+    reveals the defect.
+  review_mode:
+    diff:
+      base: a616682fe3974e0b1ca04a8e009e31570593e1eb
+  defects:
+    - target: { kind: file, path: kernel/src/fs/ext2/block_group.rs }
+      persona: development
+      grounding: "Bits-versus-bytes alignment"
+      severity: major
+      desc: >
+        `sync_metadata` passes the byte-valued `SECTOR_SIZE` to
+        `IdAlloc::extend_to_alignment`, but that method rounds the bitset's
+        length, which is measured in bits. For a bitmap whose valid length is
+        not already a multiple of 512 bits, the resulting `as_bytes()` slice
+        is rounded only to a multiple of 64 bytes and can still violate the
+        block device's sector-size requirement, causing the metadata write to
+        fail instead of writing a complete bitmap sector.
+      fix: >
+        Keep the on-disk bitmap buffer at a fixed `BLOCK_SIZE`/sector-sized
+        byte length and track the number of valid IDs separately. Write that
+        fixed buffer directly, rather than converting a logical bit count to
+        a byte alignment through a bitset-resize helper.
+      expectation: >
+        A reviewer should flag that `SECTOR_SIZE` (bytes) is passed to a
+        bit-count alignment API and require byte-based sizing so the bitmap
+        slice supplied to the block device is actually sector aligned.
