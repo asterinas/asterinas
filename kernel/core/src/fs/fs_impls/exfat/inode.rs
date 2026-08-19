@@ -1691,51 +1691,47 @@ impl Inode for ExfatInode {
     fn rename(
         &self,
         old_name: &str,
-        _old_inode: &Arc<dyn Inode>,
-        target: &Arc<dyn Inode>,
+        old_inode: &Arc<dyn Inode>,
+        new_dir_inode: &Arc<dyn Inode>,
         new_name: &str,
-        _replaced_inode: Option<&Arc<dyn Inode>>,
+        replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()> {
         if mode == RenameMode::Exchange {
             return_errno_with_message!(Errno::EINVAL, "RENAME_EXCHANGE is not supported on exfat");
         }
-        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
-            return_errno!(Errno::EISDIR);
-        }
-        if old_name.len() > MAX_NAME_LENGTH || new_name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
-        let Some(target_) = target.downcast_ref::<ExfatInode>() else {
-            return_errno_with_message!(Errno::EINVAL, "not an exfat inode")
-        };
-        if !self.inner.read().inode_type.is_directory()
-            || !target_.inner.read().inode_type.is_directory()
-        {
-            return_errno!(Errno::ENOTDIR)
-        }
+
+        let new_dir_inode = Arc::downcast::<ExfatInode>(new_dir_inode.clone()).unwrap();
+        let old_inode = Arc::downcast::<ExfatInode>(old_inode.clone()).unwrap();
 
         let fs = self.inner.read().fs();
         let fs_guard = fs.lock();
-        // Rename something to itself, return success directly.
+
+        // FIXME: Case-only renames are not handled correctly by exFAT. Keep the existing
+        // no-op behavior until the VFS dentry invalidation is applied.
         let up_old_name = fs.upcase_table().lock().str_to_upcase(old_name)?;
         let up_new_name = fs.upcase_table().lock().str_to_upcase(new_name)?;
-        if self.inner.read().ino == target_.inner.read().ino && up_old_name.eq(&up_new_name) {
+        if self.inner.read().ino == new_dir_inode.inner.read().ino && up_old_name.eq(&up_new_name) {
             return Ok(());
         }
 
-        // Read 'old_name' file or dir and its dentries.
-        let old_inode = self
-            .inner
-            .read()
-            .lookup_by_name(old_name, true, &fs_guard)?;
-        // FIXME: Users may be confused, since inode with the same upper case name will be removed.
-        let lookup_exist_result = target_
-            .inner
-            .read()
-            .lookup_by_name(new_name, false, &fs_guard);
+        let replaced_inode = match replaced_inode {
+            Some(inode) => Some(Arc::downcast::<ExfatInode>(inode.clone()).unwrap()),
+            None => {
+                // FIXME: The dentry lookup may miss an existing entry whose name differs only in case,
+                // so perform an additional case-insensitive lookup for the replacement.
+                // The inode found by this fallback is not reported back to the VFS, so the positive
+                // dentry for the old spelling may remain stale after the replacement.
+                new_dir_inode
+                    .inner
+                    .read()
+                    .lookup_by_name(new_name, false, &fs_guard)
+                    .ok()
+            }
+        };
+
         // Check for the corner cases.
-        if let Ok(ref exist_inode) = lookup_exist_result {
+        if let Some(exist_inode) = replaced_inode.as_ref() {
             check_corner_cases_for_rename(&old_inode, exist_inode)?;
         }
 
@@ -1743,7 +1739,7 @@ impl Inode for ExfatInode {
         self.delete_inode(old_inode.clone(), false, &fs_guard)?;
         // Create the new dentries.
         let new_inode =
-            target_.add_entry(new_name, old_inode.type_(), old_inode.mode()?, &fs_guard)?;
+            new_dir_inode.add_entry(new_name, old_inode.type_(), old_inode.mode()?, &fs_guard)?;
         // Update metadata.
         old_inode.copy_dentry_position_from(new_inode);
         // Update its children's parent_hash.
@@ -1751,17 +1747,17 @@ impl Inode for ExfatInode {
         // Insert back.
         let _ = fs.insert_inode(old_inode.clone());
         // Remove the exist 'new_name' file.
-        if let Ok(exist_inode) = lookup_exist_result {
-            target_.delete_inode(exist_inode, true, &fs_guard)?;
+        if let Some(exist_inode) = replaced_inode {
+            new_dir_inode.delete_inode(exist_inode, true, &fs_guard)?;
         }
         // Update the times.
         self.inner.write().update_atime_mtime_and_ctime()?;
-        target_.inner.write().update_atime_mtime_and_ctime()?;
+        new_dir_inode.inner.write().update_atime_mtime_and_ctime()?;
         // Sync
-        if self.inner.read().is_sync() || target_.inner.read().is_sync() {
+        if self.inner.read().is_sync() || new_dir_inode.inner.read().is_sync() {
             // TODO: what if fs crashed between syncing?
             old_inode.inner.read().sync_all(&fs_guard)?;
-            target_.inner.read().sync_all(&fs_guard)?;
+            new_dir_inode.inner.read().sync_all(&fs_guard)?;
             self.inner.read().sync_all(&fs_guard)?;
         }
         Ok(())
