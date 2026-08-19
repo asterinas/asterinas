@@ -46,6 +46,13 @@ jobs:
         image: ['asterinas/kernel-dev:0.18.1-20260805', 'asterinas/osdk-dev:0.18.1-20260805']
     steps:
       - uses: actions/checkout@v4
+
+      # TODO: Remove this step after the next release includes Clang in the dev images.
+      - name: Install Clang temporarily
+        run: |
+          apt-get update
+          apt-get install -y clang
+
       - name: Run OSDK tests
         uses: ./.github/actions/test
         with:
