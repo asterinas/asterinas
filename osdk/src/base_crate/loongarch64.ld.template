@@ -16,6 +16,8 @@ SECTIONS
 
     __kernel_start = . + KERNEL_VMA_OFFSET;
 
+    PROVIDE(__executable_start = __kernel_start);
+
     .boot                   : AT(ADDR(.boot)) {
         KEEP(*(.boot))
         # FIXME: We want to create a separate .boot.stack section so that the
