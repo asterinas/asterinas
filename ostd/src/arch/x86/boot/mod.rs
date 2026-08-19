@@ -8,6 +8,7 @@
 //!  - Multiboot
 //!  - Multiboot2
 //!  - Linux x86 Boot Protocol
+//!  - PVH
 //!
 //! without any additional configurations.
 //!
@@ -21,14 +22,20 @@
 mod linux_boot;
 mod multiboot;
 mod multiboot2;
+mod pvh;
 
 pub(crate) mod smp;
 
-use core::arch::global_asm;
+use core::{arch::global_asm, num::NonZeroUsize};
 
-use crate::boot::{
-    BootloaderAcpiArg, BootloaderFramebufferArg, EarlyBootInfo,
-    memory_region::{MemoryRegion, MemoryRegionArray},
+use acpi::rsdp::Rsdp;
+
+use crate::{
+    arch::kernel::acpi::AcpiMemoryHandler,
+    boot::{
+        BootloaderAcpiArg, BootloaderFramebufferArg, EarlyBootInfo,
+        memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
+    },
 };
 
 global_asm!(
@@ -109,4 +116,40 @@ pub(super) fn finish_memory_regions(
     }
 
     regions.into_non_overlapping()
+}
+
+/// Finds the physical address of the ACPI root table.
+pub(super) fn find_acpi_root_table_address() -> Option<NonZeroUsize> {
+    // Some boot paths do not provide the RSDP directly and are
+    // BIOS-compatible: Multiboot v1 has no standard EFI System Table field,
+    // and the PVH entry path under QEMU goes through SeaBIOS (the pvh.bin
+    // option ROM may leave `rsdp_paddr` zero). So we use the BIOS RSDP scan
+    // as the legacy fallback.
+    //
+    // SAFETY: These entry paths are treated as BIOS-compatible.
+    let Ok(rsdp) = (unsafe { Rsdp::search_for_on_bios(AcpiMemoryHandler {}) }) else {
+        return None;
+    };
+
+    if rsdp.revision() == 0 {
+        NonZeroUsize::new(rsdp.rsdt_address() as usize)
+    } else {
+        NonZeroUsize::new(rsdp.xsdt_address() as usize)
+    }
+}
+
+/// Promotes a reserved region containing the ACPI root table to `Reclaimable`.
+pub(super) fn effective_region_type(
+    typ: MemoryRegionType,
+    base: usize,
+    len: usize,
+    acpi_root_table_address: Option<NonZeroUsize>,
+) -> MemoryRegionType {
+    if typ == MemoryRegionType::Reserved
+        && acpi_root_table_address.is_some_and(|addr| (base..(base + len)).contains(&addr.get()))
+    {
+        MemoryRegionType::Reclaimable
+    } else {
+        typ
+    }
 }
