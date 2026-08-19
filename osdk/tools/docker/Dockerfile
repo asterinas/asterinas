@@ -185,6 +185,7 @@ EOF
 # Install all OSDK dependent packages
 RUN apt update \
     && apt install -y --no-install-recommends \
+    clang               `# Used by the build script of minicov` \
     curl \
     gdb                 `# A part of OSDK debug support` \
     grub-efi-amd64 \
