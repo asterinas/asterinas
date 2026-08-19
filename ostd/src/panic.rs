@@ -74,13 +74,11 @@ impl PanicGuard {
     }
 }
 
-#[cfg(not(target_arch = "loongarch64"))]
 pub use unwinding::panic::{begin_panic, catch_unwind};
 
 /// Prints the stack trace of the current thread to the console.
 ///
 /// The printing procedure is protected by a spin lock to prevent interleaving.
-#[cfg(not(target_arch = "loongarch64"))]
 pub fn print_stack_trace() {
     use core::ffi::c_void;
 
@@ -121,6 +119,7 @@ pub fn print_stack_trace() {
             let reg_name = cfg_select! {
                 target_arch = "x86_64" => gimli::X86_64::register_name(Register(i)),
                 target_arch = "riscv64" => gimli::RiscV::register_name(Register(i)),
+                target_arch = "loongarch64" => gimli::LoongArch::register_name(Register(i)),
                 target_arch = "aarch64" => gimli::AArch64::register_name(Register(i)),
                 _ => None,
             };
@@ -136,26 +135,4 @@ pub fn print_stack_trace() {
 
     let mut data = CallbackData { counter: 0 };
     _Unwind_Backtrace(callback, &mut data as *mut _ as _);
-}
-
-/// Catches unwinding panics.
-#[cfg(target_arch = "loongarch64")]
-pub fn catch_unwind<R, F: FnOnce() -> R>(
-    f: F,
-) -> Result<R, alloc::boxed::Box<dyn core::any::Any + Send>> {
-    // TODO: Support unwinding in LoongArch.
-    Ok(f())
-}
-
-/// Begins panic handling
-#[cfg(target_arch = "loongarch64")]
-pub fn begin_panic<R>(_: alloc::boxed::Box<R>) {
-    // TODO: Support panic context in LoongArch.
-}
-
-/// Prints the stack trace of the current thread to the console.
-#[cfg(target_arch = "loongarch64")]
-pub fn print_stack_trace() {
-    // TODO: Support stack trace print in LoongArch.
-    early_println!("Printing stack trace:");
 }
