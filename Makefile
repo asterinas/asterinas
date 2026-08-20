@@ -395,6 +395,9 @@ test:
 	@if [ -n "$(TEST_PACKAGE_NAMES)" ]; then \
 		cargo test $(addprefix -p ,$(TEST_PACKAGE_NAMES)); \
 	fi
+	@# The component system tests live in nested workspaces, out of reach of `cargo test -p`.
+	@cargo test --manifest-path kernel/libs/comp-sys/component/tests/init-order/Cargo.toml
+	@cargo run --manifest-path kernel/libs/comp-sys/component/tests/init-stage/Cargo.toml
 
 .PHONY: ktest
 ktest: CONSOLE = ttyS0
