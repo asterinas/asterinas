@@ -39,13 +39,16 @@ fi
 VIRTIOFS_TAG=${VIRTIOFS_TAG:-"aster-virtiofs"}
 VIRTIOFS_SOCKET=${VIRTIOFS_SOCKET:-"/tmp/vhostqemu/vfs.sock"}
 
-SSH_RAND_PORT=${SSH_PORT:-$(shuf -i 1024-65535 -n 1)}
-NGINX_RAND_PORT=${NGINX_PORT:-$(shuf -i 1024-65535 -n 1)}
-REDIS_RAND_PORT=${REDIS_PORT:-$(shuf -i 1024-65535 -n 1)}
-IPERF_RAND_PORT=${IPERF_PORT:-$(shuf -i 1024-65535 -n 1)}
-LMBENCH_TCP_LAT_RAND_PORT=${LMBENCH_TCP_LAT_PORT:-$(shuf -i 1024-65535 -n 1)}
-LMBENCH_TCP_BW_RAND_PORT=${LMBENCH_TCP_BW_PORT:-$(shuf -i 1024-65535 -n 1)}
-MEMCACHED_RAND_PORT=${MEMCACHED_PORT:-$(shuf -i 1024-65535 -n 1)}
+# Draw all host ports from a single `shuf` invocation,
+# so that none of them will conflict with others.
+mapfile -t RAND_PORTS < <(shuf -i 1024-65535 -n 7)
+SSH_RAND_PORT=${SSH_PORT:-${RAND_PORTS[0]}}
+NGINX_RAND_PORT=${NGINX_PORT:-${RAND_PORTS[1]}}
+REDIS_RAND_PORT=${REDIS_PORT:-${RAND_PORTS[2]}}
+IPERF_RAND_PORT=${IPERF_PORT:-${RAND_PORTS[3]}}
+LMBENCH_TCP_LAT_RAND_PORT=${LMBENCH_TCP_LAT_PORT:-${RAND_PORTS[4]}}
+LMBENCH_TCP_BW_RAND_PORT=${LMBENCH_TCP_BW_PORT:-${RAND_PORTS[5]}}
+MEMCACHED_RAND_PORT=${MEMCACHED_PORT:-${RAND_PORTS[6]}}
 
 # Optional QEMU arguments. Opt in them manually if needed.
 # QEMU_OPT_ARG_DUMP_PACKETS="-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap"
