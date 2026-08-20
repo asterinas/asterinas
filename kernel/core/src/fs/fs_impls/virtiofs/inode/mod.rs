@@ -417,9 +417,7 @@ impl Inode for VirtioFsInode {
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
-        let old = old
-            .downcast_ref::<VirtioFsInode>()
-            .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
+        let old = old.downcast_ref::<VirtioFsInode>().unwrap();
 
         let fs = self.fs_ref();
         let request_attr_version = fs.session().snapshot_attr_version();

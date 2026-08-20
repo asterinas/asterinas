@@ -984,16 +984,11 @@ impl Inode for RamInode {
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
-        if !Arc::ptr_eq(&self.fs(), &old.fs()) {
-            return_errno_with_message!(Errno::EXDEV, "not same fs");
-        }
         if self.typ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
 
-        let old = old
-            .downcast_ref::<RamInode>()
-            .ok_or(Error::new(Errno::EXDEV))?;
+        let old = old.downcast_ref::<RamInode>().unwrap();
         if old.typ == InodeType::Dir {
             return_errno_with_message!(Errno::EPERM, "old is a dir");
         }
