@@ -153,10 +153,12 @@ cpu_local_cell! {
 
 /// Processes pending softirqs.
 fn process_pending(irq_guard: DisabledLocalIrqGuard, irq_num: u8) -> DisabledLocalIrqGuard {
+    // Process the statistic for the (hardware) IRQ before checking the state of the softirqs.
+    process_statistic(irq_num);
+
     if !is_softirq_enabled() {
         return irq_guard;
     }
-    process_statistic(irq_num);
     process_all_pending(irq_guard)
 }
 
