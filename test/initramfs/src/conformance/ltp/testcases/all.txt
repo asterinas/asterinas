@@ -1712,7 +1712,7 @@ timerfd01
 timerfd02
 # timerfd04
 timerfd_create01
-# timerfd_gettime01
+timerfd_gettime01
 # timerfd_settime01
 # timerfd_settime02
 
@@ -1724,7 +1724,7 @@ timer_create03
 timer_delete02
 
 # timer_getoverrun01
-# timer_gettime01
+timer_gettime01
 
 # timer_settime01
 # timer_settime02
