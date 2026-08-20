@@ -49,6 +49,8 @@ SECTIONS
 
     __kernel_start = .;
 
+    PROVIDE(__executable_start = __kernel_start);
+
     .multiboot_header       : AT(ADDR(.multiboot_header) - KERNEL_VMA) {
         KEEP(*(.multiboot_header))
     } : header

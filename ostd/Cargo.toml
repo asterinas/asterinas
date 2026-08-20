@@ -62,6 +62,7 @@ unwinding = { workspace = true, features = ["fde-static"] }
 [target.loongarch64-unknown-none-softfloat.dependencies]
 fdt.workspace = true
 loongArch64.workspace = true
+unwinding = { workspace = true, features = ["fde-gnu-eh-frame-hdr"] }
 
 [features]
 default = ["cvm_guest"]
