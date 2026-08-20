@@ -11,7 +11,6 @@ use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::per_cpu_counter::PerCpuCounter;
 use component::{ComponentInitError, init_component};
-use lock::is_softirq_enabled;
 use ostd::{
     cpu::CpuId,
     cpu_local_cell,
@@ -21,19 +20,25 @@ use ostd::{
     },
 };
 use spin::Once;
-use stats::IRQ_COUNTERS;
-pub use stats::{
-    iter_irq_counts_across_all_cpus, iter_softirq_counts_across_all_cpus,
-    iter_softirq_counts_on_cpu,
+
+use self::{
+    lock::is_softirq_enabled,
+    stats::{IRQ_COUNTERS, NR_IRQ_LINES, process_statistic},
 };
+
 mod lock;
 pub mod softirq_id;
 mod stats;
 mod taskless;
-pub use lock::{BottomHalfDisabled, DisableLocalBottomHalfGuard};
-pub use taskless::Taskless;
 
-use crate::stats::{NR_IRQ_LINES, process_statistic};
+pub use self::{
+    lock::{BottomHalfDisabled, DisableLocalBottomHalfGuard},
+    stats::{
+        iter_irq_counts_across_all_cpus, iter_softirq_counts_across_all_cpus,
+        iter_softirq_counts_on_cpu,
+    },
+    taskless::Taskless,
+};
 
 /// A representation of a software interrupt (softirq) line.
 ///
@@ -52,15 +57,15 @@ use crate::stats::{NR_IRQ_LINES, process_statistic};
 /// # Example
 ///
 /// ```
-/// // Define an unused softirq id.
+/// // Define an unused softirq ID.
 /// const MY_SOFTIRQ_ID: u8 = 4;
-/// // Enable the softirq line of this id.
+/// // Enable the softirq line of this ID.
 /// SoftIrqLine::get(MY_SOFTIRQ_ID).enable(|| {
-///     // Define the action to take when the softirq with MY_SOFTIRQ_ID is raised
+///     // Define the action to take when the softirq with `MY_SOFTIRQ_ID` is raised
 ///     // ...
 /// });
 /// // Later on:
-/// SoftIrqLine::get(MY_SOFTIRQ_ID).raise(); // This will trigger the registered callback
+/// SoftIrqLine::get(MY_SOFTIRQ_ID).raise(); // This will trigger the registered callback.
 /// ```
 pub struct SoftIrqLine {
     id: u8,
