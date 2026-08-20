@@ -111,9 +111,11 @@ if findmnt -M ${BUILD_DIR} >/dev/null; then
 fi
 
 mkdir -p ${BUILD_DIR}
-mount -o sync,dirsync "${ROOT_DEVICE}" ${BUILD_DIR}
+mount -t ext2 -o sync,dirsync "${ROOT_DEVICE}" ${BUILD_DIR}
 
 mkdir -p ${BUILD_DIR}/boot
+mkdir -p ${BUILD_DIR}/tmp
+chmod 1777 ${BUILD_DIR}/tmp
 mkdir -p ${BUILD_DIR}/etc/nixos
 mount -o umask=077,sync,dirsync "${BOOT_DEVICE}" ${BUILD_DIR}/boot
 
@@ -137,6 +139,7 @@ COMMON_NIX_ARGS=(
 )
 
 NIX_SYSTEM="@aster-target-platform@"
+NIXPKGS_PATH="@aster-nixpkgs@"
 
 # Pre-build the NixOS system closure on the host
 # so that the result is cached in the host's Nix store.
@@ -144,7 +147,7 @@ NIX_SYSTEM="@aster-target-platform@"
 # causing redundant downloads after every `make clean`.
 #
 # See: https://www.mankier.com/8/nixos-install#--system
-SYSTEM_CLOSURE=$(nix-build '<nixpkgs/nixos>' -A system \
+SYSTEM_CLOSURE=$(nix-build "${NIXPKGS_PATH}/nixos" -A system \
     --option extra-platforms "${NIX_SYSTEM}" \
     --argstr system "${NIX_SYSTEM}" \
     -I "nixos-config=${BUILD_DIR}/etc/nixos/configuration.nix" \
@@ -162,5 +165,4 @@ nix-env --store "${BUILD_DIR}" \
     -p "${BUILD_DIR}/nix/var/nix/profiles/system" \
     --delete-generations old
 nix-store --store "${BUILD_DIR}" --gc
-
 echo "Congratulations! Asterinas NixOS has been installed successfully!"
