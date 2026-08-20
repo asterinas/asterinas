@@ -14,7 +14,11 @@ use crate::{
     fs::cgroupfs::{CpuStatKind, charge_cpu_time},
     process::{
         posix_thread::AsPosixThread,
-        signal::{constants::SIGALRM, signals::kernel::KernelSignal},
+        signal::{
+            constants::{SIGALRM, SIGPROF, SIGVTALRM},
+            sig_num::SigNum,
+            signals::kernel::KernelSignal,
+        },
     },
     thread::{
         Thread,
@@ -103,12 +107,19 @@ pub(crate) struct PosixTimerManager {
     posix_timers: Mutex<Vec<Option<Arc<Timer>>>>,
 }
 
+/// Creates the expiry callback of a process interval timer that raises `signum`.
+///
+/// As specified by [`setitimer(2)`], `ITIMER_REAL` raises `SIGALRM`, `ITIMER_VIRTUAL` raises
+/// `SIGVTALRM`, and `ITIMER_PROF` raises `SIGPROF`.
+///
+/// [`setitimer(2)`]: https://man7.org/linux/man-pages/man2/setitimer.2.html
 fn create_process_timer_callback(
     process_ref: &Weak<Process>,
-) -> impl Fn(TimerGuard) + Clone + 'static {
+    signum: SigNum,
+) -> impl Fn(TimerGuard) + 'static {
     let current_process = process_ref.clone();
     let sent_signal = move || {
-        let signal = KernelSignal::new(SIGALRM);
+        let signal = KernelSignal::new(signum);
         if let Some(process) = current_process.upgrade() {
             process.enqueue_signal(Box::new(signal));
         }
@@ -129,13 +140,12 @@ impl PosixTimerManager {
     pub(super) fn new(prof_clock: &Arc<ProfClock>, process_ref: &Weak<Process>) -> Self {
         const MAX_NUM_OF_POSIX_TIMERS: usize = 10000;
 
-        let callback = create_process_timer_callback(process_ref);
-
-        let alarm_timer = RealTimeClock::timer_manager().create_timer(callback.clone());
-
-        let virtual_timer =
-            TimerManager::new(prof_clock.user_clock().clone()).create_timer(callback.clone());
-        let prof_timer = TimerManager::new(prof_clock.clone()).create_timer(callback);
+        let alarm_timer = RealTimeClock::timer_manager()
+            .create_timer(create_process_timer_callback(process_ref, SIGALRM));
+        let virtual_timer = TimerManager::new(prof_clock.user_clock().clone())
+            .create_timer(create_process_timer_callback(process_ref, SIGVTALRM));
+        let prof_timer = TimerManager::new(prof_clock.clone())
+            .create_timer(create_process_timer_callback(process_ref, SIGPROF));
 
         Self {
             alarm_timer,
