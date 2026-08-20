@@ -196,9 +196,7 @@ impl Inode for Ext2Inode {
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
-        let old = old
-            .downcast_ref::<Ext2Inode>()
-            .ok_or_else(|| Error::with_message(Errno::EXDEV, "not same fs"))?;
+        let old = old.downcast_ref::<Ext2Inode>().unwrap();
         self.link(old, name)
     }
 
