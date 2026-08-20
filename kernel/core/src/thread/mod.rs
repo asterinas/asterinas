@@ -45,13 +45,16 @@ fn post_schedule_handler() {
         .add_on_cpu(CpuId::current_racy(), 1);
 
     let task = Task::current().unwrap();
-    let Some(thread_local) = task.as_thread_local() else {
+    if let Some(thread_local) = task.as_thread_local() {
+        let vmar = thread_local.vmar().borrow();
+        if let Some(vmar) = vmar.as_ref() {
+            vmar.vm_space().activate()
+        }
         return;
-    };
+    }
 
-    let vmar = thread_local.vmar().borrow();
-    if let Some(vmar) = vmar.as_ref() {
-        vmar.vm_space().activate()
+    if let Some(vmar) = task.as_thread().and_then(|thread| thread.user_vmar()) {
+        vmar.vm_space().activate();
     }
 }
 
