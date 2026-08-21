@@ -266,7 +266,7 @@ loongArch64 = "0.2.5"
 rand = { version = "0.9.2", default-features = false }
 riscv = { version = "0.15.0", features = ["s-mode"] }
 spin = "0.9.4"
-tdx-guest = "0.4.0"
+tdx-guest = { git = "https://github.com/Hsy-Intel/tdx-guest", rev = "a92798cef7b2f312b4d968f59cee3bf58cb2c1fe" }
 unwinding = { version = "0.2.10", default-features = false, features = ["hide-trace", "panic", "personality", "unwinder"] }
 x86_64 = "0.15.5"
 xmas-elf = "0.10.0"

@@ -135,12 +135,16 @@ pub(crate) unsafe fn bringup_all_aps(info_ptr: *const PerApRawInfo, pt_ptr: Padd
 /// The BSP would copy the AP boot code to this address.
 const AP_BOOT_START_PA: usize = 0x8000;
 
+/// Maximum size of the application processor boot code.
+const AP_BOOT_MAX_SIZE: usize = 0x1000;
+
 /// The size of the AP boot code (the `.ap_boot` section).
 fn ap_boot_code_size() -> usize {
     __ap_boot_end as *const () as usize - __ap_boot_start as *const () as usize
 }
 
 pub(super) fn reclaimable_memory_region() -> MemoryRegion {
+    assert!(ap_boot_code_size() <= AP_BOOT_MAX_SIZE);
     MemoryRegion::new(
         AP_BOOT_START_PA,
         ap_boot_code_size(),

@@ -20,7 +20,7 @@ pub mod trap;
 pub(crate) mod tdx_guest;
 
 #[cfg(feature = "cvm_guest")]
-pub(crate) fn init_cvm_guest() {
+pub(crate) fn init_cvm_guest(boot_params: &linux_boot_params::BootParams) {
     use ::tdx_guest::{
         SeptVeError, disable_sept_ve, init_tdx, metadata, reduce_unnecessary_ve,
         tdcall::{InitError, write_td_metadata},
@@ -54,6 +54,7 @@ pub(crate) fn init_cvm_guest() {
                 td_info.gpaw,
                 td_info.attributes
             );
+            crate::mm::frame::unaccepted::UnacceptedMemoryTable::init(boot_params);
         }
         Err(InitError::TdxGetVpInfoError(td_call_error)) => {
             crate::early_println!(
@@ -94,6 +95,14 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
+
+    if_tdx_enabled!({
+        if let Some(table) = crate::mm::frame::unaccepted::UnacceptedMemoryTable::singleton() {
+            table.accept_memory_slice_on_current_cpu();
+            table.wait_for_memory_acceptance();
+            table.publish_accepted_memory();
+        }
+    });
 
     if_tdx_enabled!({
     } else {

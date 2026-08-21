@@ -203,6 +203,16 @@ pub(crate) unsafe fn init() {
     let early_allocator = EARLY_ALLOCATOR.lock().take().unwrap();
     let (range_1, range_2) = early_allocator.allocated_regions();
 
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    let acceptance_range = crate::if_tdx_enabled!({
+        super::unaccepted::UnacceptedMemoryTable::singleton().and_then(|table| {
+            table.record_early_allocated_ranges((range_1.clone(), range_2.clone()));
+            table.acceptance_range()
+        })
+    } else {
+        None
+    });
+
     for region in regions.iter() {
         if region.typ() == MemoryRegionType::Usable {
             debug_assert!(region.base().is_multiple_of(PAGE_SIZE));
@@ -212,8 +222,52 @@ pub(crate) unsafe fn init() {
             // Truncate the early allocated frames if there is an overlap.
             for r1 in range_difference(&(region.base()..region.end()), &range_1) {
                 for r2 in range_difference(&r1, &range_2) {
+                    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+                    if let Some(acceptance_range) = &acceptance_range {
+                        for accepted_range in range_difference(&r2, acceptance_range) {
+                            crate::info!(
+                                "Adding free frames to the allocator: {:x?}",
+                                accepted_range
+                            );
+                            get_global_frame_allocator().add_free_memory(
+                                accepted_range.start,
+                                accepted_range.end - accepted_range.start,
+                            );
+                        }
+                        continue;
+                    }
+
                     crate::info!("Adding free frames to the allocator: {:x?}", r2);
-                    get_global_frame_allocator().add_free_memory(r2.start, r2.len());
+                    get_global_frame_allocator().add_free_memory(r2.start, r2.end - r2.start);
+                }
+            }
+        }
+    }
+}
+
+/// Publishes memory withheld until parallel early acceptance completed.
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub(super) fn publish_accepted_memory(table: &super::unaccepted::UnacceptedMemoryTable) {
+    let (acceptance_range, range_1, range_2) = table
+        .take_publication_state()
+        .expect("accepted-memory publication state is unavailable");
+    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
+
+    for region in regions.iter() {
+        if region.typ() != MemoryRegionType::Usable {
+            continue;
+        }
+
+        for r1 in range_difference(&(region.base()..region.end()), &range_1) {
+            for r2 in range_difference(&r1, &range_2) {
+                let start = r2.start.max(acceptance_range.start);
+                let end = r2.end.min(acceptance_range.end);
+                if start < end {
+                    crate::info!(
+                        "Adding accepted free frames to the allocator: {:x?}",
+                        start..end
+                    );
+                    get_global_frame_allocator().add_free_memory(start, end - start);
                 }
             }
         }
@@ -344,7 +398,15 @@ impl_frame_meta_for!(EarlyAllocatedFrameMeta);
 ///  - or if is called after [`init`].
 pub(crate) fn early_alloc(layout: Layout) -> Option<Paddr> {
     let mut early_allocator = EARLY_ALLOCATOR.lock();
-    early_allocator.as_mut().unwrap().alloc(layout)
+    let paddr = early_allocator.as_mut().unwrap().alloc(layout)?;
+
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    crate::if_tdx_enabled!({
+        if let Some(table) = super::unaccepted::UnacceptedMemoryTable::singleton() {
+            table.accept_early_allocated_range(paddr, layout.size());
+        }
+    });
+    Some(paddr)
 }
 
 /// Initializes the early frame allocator.

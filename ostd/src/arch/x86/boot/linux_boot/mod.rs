@@ -5,8 +5,6 @@
 
 use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
 
-#[cfg(feature = "cvm_guest")]
-use crate::arch::init_cvm_guest;
 use crate::{
     arch::if_tdx_enabled,
     boot::{
@@ -226,7 +224,7 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     use crate::boot::{EARLY_INFO, EarlyBootInfo, start_kernel};
 
     #[cfg(feature = "cvm_guest")]
-    init_cvm_guest();
+    crate::arch::init_cvm_guest(params);
 
     EARLY_INFO.call_once(|| EarlyBootInfo {
         bootloader_name: parse_bootloader_name(params),
