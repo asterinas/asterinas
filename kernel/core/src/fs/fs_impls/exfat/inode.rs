@@ -35,7 +35,6 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FileOps, Inode, Metadata, MknodType, RenameMode, SymbolicLink},
-            path::{is_dot, is_dot_or_dotdot, is_dotdot},
         },
     },
     prelude::*,
@@ -1286,7 +1285,7 @@ impl ExfatInode {
     /// Delete the file contents if delete_content is set.
     fn delete_inode(
         &self,
-        inode: Arc<ExfatInode>,
+        inode: &ExfatInode,
         delete_contents: bool,
         fs_guard: &MutexGuard<()>,
     ) -> Result<()> {
@@ -1598,21 +1597,11 @@ impl Inode for ExfatInode {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
     }
 
-    fn unlink(&self, name: &str) -> Result<()> {
-        if !self.inner.read().inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
-        }
-        if name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
-        if is_dot_or_dotdot(name) {
-            return_errno!(Errno::EISDIR)
-        }
-
+    fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
         let fs = self.inner.read().fs();
         let fs_guard = fs.lock();
 
-        let inode = self.inner.read().lookup_by_name(name, true, &fs_guard)?;
+        let inode = child.downcast_ref::<ExfatInode>().unwrap();
 
         // FIXME: we need to step by following line to avoid deadlock.
         if inode.type_() != InodeType::File {
@@ -1629,24 +1618,11 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn rmdir(&self, name: &str) -> Result<()> {
-        if !self.inner.read().inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
-        }
-        if is_dot(name) {
-            return_errno_with_message!(Errno::EINVAL, "rmdir on .")
-        }
-        if is_dotdot(name) {
-            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..")
-        }
-        if name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
-
+    fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
         let fs = self.inner.read().fs();
         let fs_guard = fs.lock();
 
-        let inode = self.inner.read().lookup_by_name(name, true, &fs_guard)?;
+        let inode = child.downcast_ref::<ExfatInode>().unwrap();
 
         if inode.inner.read().inode_type != InodeType::Dir {
             return_errno!(Errno::ENOTDIR)
@@ -1736,7 +1712,7 @@ impl Inode for ExfatInode {
         }
 
         // All checks are done here. This is a valid rename and it needs to modify the metadata.
-        self.delete_inode(old_inode.clone(), false, &fs_guard)?;
+        self.delete_inode(&old_inode, false, &fs_guard)?;
         // Create the new dentries.
         let new_inode =
             new_dir_inode.add_entry(new_name, old_inode.type_(), old_inode.mode()?, &fs_guard)?;
@@ -1748,7 +1724,7 @@ impl Inode for ExfatInode {
         let _ = fs.insert_inode(old_inode.clone());
         // Remove the exist 'new_name' file.
         if let Some(exist_inode) = replaced_inode {
-            new_dir_inode.delete_inode(exist_inode, true, &fs_guard)?;
+            new_dir_inode.delete_inode(&exist_inode, true, &fs_guard)?;
         }
         // Update the times.
         self.inner.write().update_atime_mtime_and_ctime()?;

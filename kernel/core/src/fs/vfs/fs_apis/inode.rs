@@ -440,11 +440,11 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn unlink(&self, name: &str) -> Result<()> {
+    fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn rmdir(&self, name: &str) -> Result<()> {
+    fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 

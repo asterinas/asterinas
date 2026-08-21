@@ -1019,12 +1019,8 @@ impl Inode for RamInode {
         Ok(())
     }
 
-    fn unlink(&self, name: &str) -> Result<()> {
-        if is_dot_or_dotdot(name) {
-            return_errno_with_message!(Errno::EISDIR, "unlink . or ..");
-        }
-
-        let target = self.find(name)?;
+    fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
+        let target = child.downcast_ref::<RamInode>().unwrap();
         if target.typ == InodeType::Dir {
             return_errno_with_message!(Errno::EISDIR, "unlink on dir");
         }
@@ -1032,7 +1028,7 @@ impl Inode for RamInode {
         // When we got the lock, the dir may have been modified by another thread
         let mut self_dir = self.inner.as_direntry().unwrap().write();
         let (idx, new_target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
-        if !Arc::ptr_eq(&new_target, &target) {
+        if new_target.ino != target.ino {
             return_errno!(Errno::ENOENT);
         }
         self_dir.remove_entry(idx);
@@ -1051,15 +1047,8 @@ impl Inode for RamInode {
         Ok(())
     }
 
-    fn rmdir(&self, name: &str) -> Result<()> {
-        if is_dot(name) {
-            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
-        }
-        if is_dotdot(name) {
-            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
-        }
-
-        let target = self.find(name)?;
+    fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
+        let target = child.downcast_ref::<RamInode>().unwrap();
         if target.typ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "rmdir on not dir");
         }
@@ -1073,7 +1062,7 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
         }
         let (idx, new_target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
-        if !Arc::ptr_eq(&new_target, &target) {
+        if new_target.ino != target.ino {
             return_errno!(Errno::ENOENT);
         }
         self_dir.remove_entry(idx);

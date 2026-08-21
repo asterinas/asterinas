@@ -661,7 +661,8 @@ impl DirDentry<'_> {
         }
 
         let dir_inode = self.inode();
-        let child_inode = self.remove_child(name, |dir_inode, name| dir_inode.unlink(name))?;
+        let child_inode =
+            self.remove_child(name, |dir_inode, name, child| dir_inode.unlink(name, child))?;
 
         let nlinks = child_inode.metadata()?.nr_hard_links;
         fs::vfs::notify::on_link_count(&child_inode);
@@ -694,7 +695,8 @@ impl DirDentry<'_> {
         }
 
         let dir_inode = self.inode();
-        let child_inode = self.remove_child(name, |dir_inode, name| dir_inode.rmdir(name))?;
+        let child_inode =
+            self.remove_child(name, |dir_inode, name, child| dir_inode.rmdir(name, child))?;
 
         let nlinks = child_inode.metadata()?.nr_hard_links;
         if nlinks == 0 {
@@ -719,7 +721,7 @@ impl DirDentry<'_> {
     fn remove_child(
         &self,
         name: &str,
-        remove_child_fn: impl FnOnce(&dyn Inode, &str) -> Result<()>,
+        remove_child_fn: impl FnOnce(&dyn Inode, &str, &Arc<dyn Inode>) -> Result<()>,
     ) -> Result<Arc<dyn Inode>> {
         let dir_inode = self.inode();
         let mut children = self.children.upread();
@@ -750,7 +752,7 @@ impl DirDentry<'_> {
             None => dir_inode.lookup(name)?,
         };
 
-        remove_child_fn(dir_inode.as_ref(), name)?;
+        remove_child_fn(dir_inode.as_ref(), name, &child_inode)?;
         if cached_child.is_some() {
             children.upgrade().delete(name);
         }
