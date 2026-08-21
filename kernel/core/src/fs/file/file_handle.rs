@@ -18,7 +18,7 @@ use crate::{
     prelude::*,
     process::{Process, signal::Pollable},
     util::ioctl::RawIoctl,
-    vm::page_cache::Vmo,
+    vm::{page_cache::Vmo, vmar::FileMmapRequest},
 };
 
 /// The basic operations defined on a file
@@ -95,7 +95,10 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     ///
     /// If this file has a corresponding mappable object of [`Mappable`],
     /// then it can be either an inode or an MMIO region.
-    fn mappable(&self) -> Result<Mappable> {
+    ///
+    /// Implementations may inspect the mapping request to reject unsupported
+    /// mapping semantics.
+    fn mappable(&self, request: FileMmapRequest) -> Result<Mappable> {
         // `ENODEV` means that "The underlying filesystem of the specified file does not support
         // memory mapping".
         // Reference: <https://man7.org/linux/man-pages/man2/mmap.2.html>.
@@ -117,7 +120,7 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::ESPIPE, "seek is not supported");
     }
 
-    fn fallocate(&self, _mode: FallocMode, _offset: usize, _len: usize) -> Result<()> {
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
         return_errno_with_message!(
             Errno::ENODEV,
             "fallocate is not supported for this file type"
