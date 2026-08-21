@@ -250,9 +250,7 @@ static INIT_PROCESS: Once<Arc<Process>> = Once::new();
 
 fn init_in_first_kthread(path_resolver: &PathResolver) {
     component::init_all(InitStage::Kthread, component::parse_metadata!()).unwrap();
-    // Work queue should be initialized before interrupt is enabled,
-    // in case any irq handler uses work queue as bottom half
-    crate::thread::work_queue::init_in_first_kthread();
+    crate::thread::init_in_first_kthread();
     crate::device::init_in_first_kthread();
     crate::net::init_in_first_kthread();
     crate::fs::init_in_first_kthread(path_resolver);

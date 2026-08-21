@@ -14,7 +14,7 @@ use ostd::{
 use crate::process_all_pending;
 
 cpu_local_cell! {
-    static DISABLE_SOFTIRQ_COUNT: u8 = 0;
+    pub(super) static DISABLE_SOFTIRQ_COUNT: u8 = 0;
 }
 
 /// Returns whether softirq is enabled on local CPU.

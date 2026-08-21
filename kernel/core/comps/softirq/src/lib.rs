@@ -6,34 +6,41 @@
 
 extern crate alloc;
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::per_cpu_counter::PerCpuCounter;
 use component::{ComponentInitError, init_component};
-use lock::is_softirq_enabled;
 use ostd::{
-    cpu::CpuId,
-    cpu_local_cell,
+    cpu::{CpuId, PinCurrentCpu},
+    cpu_local, cpu_local_cell,
     irq::{
         DisabledLocalIrqGuard, disable_local, register_bottom_half_handler_l1,
         register_bottom_half_handler_l2,
     },
+    sync::{Waiter, Waker},
+    task::{Task, disable_preempt},
 };
 use spin::Once;
-use stats::IRQ_COUNTERS;
-pub use stats::{
-    iter_irq_counts_across_all_cpus, iter_softirq_counts_across_all_cpus,
-    iter_softirq_counts_on_cpu,
+
+use self::{
+    lock::is_softirq_enabled,
+    stats::{IRQ_COUNTERS, NR_IRQ_LINES, process_statistic},
 };
+
 mod lock;
 pub mod softirq_id;
 mod stats;
 mod taskless;
-pub use lock::{BottomHalfDisabled, DisableLocalBottomHalfGuard};
-pub use taskless::Taskless;
 
-use crate::stats::{NR_IRQ_LINES, process_statistic};
+pub use self::{
+    lock::{BottomHalfDisabled, DisableLocalBottomHalfGuard},
+    stats::{
+        iter_irq_counts_across_all_cpus, iter_softirq_counts_across_all_cpus,
+        iter_softirq_counts_on_cpu,
+    },
+    taskless::Taskless,
+};
 
 /// A representation of a software interrupt (softirq) line.
 ///
@@ -52,15 +59,15 @@ use crate::stats::{NR_IRQ_LINES, process_statistic};
 /// # Example
 ///
 /// ```
-/// // Define an unused softirq id.
+/// // Define an unused softirq ID.
 /// const MY_SOFTIRQ_ID: u8 = 4;
-/// // Enable the softirq line of this id.
+/// // Enable the softirq line of this ID.
 /// SoftIrqLine::get(MY_SOFTIRQ_ID).enable(|| {
-///     // Define the action to take when the softirq with MY_SOFTIRQ_ID is raised
+///     // Define the action to take when the softirq with `MY_SOFTIRQ_ID` is raised
 ///     // ...
 /// });
 /// // Later on:
-/// SoftIrqLine::get(MY_SOFTIRQ_ID).raise(); // This will trigger the registered callback
+/// SoftIrqLine::get(MY_SOFTIRQ_ID).raise(); // This will trigger the registered callback.
 /// ```
 pub struct SoftIrqLine {
     id: u8,
@@ -140,32 +147,47 @@ fn init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
+#[cfg(ktest)]
+pub fn init_for_ktest() {
+    init().unwrap();
+}
+
 static ENABLED_MASK: AtomicU8 = AtomicU8::new(0);
 
 cpu_local_cell! {
     static PENDING_MASK: u8 = 0;
 }
 
+cpu_local! {
+    static DAEMON_WAKER: Once<Arc<Waker>> = Once::new();
+}
+
 /// Processes pending softirqs.
 fn process_pending(irq_guard: DisabledLocalIrqGuard, irq_num: u8) -> DisabledLocalIrqGuard {
+    process_statistic(irq_num);
+
     if !is_softirq_enabled() {
         return irq_guard;
     }
-    process_statistic(irq_num);
     process_all_pending(irq_guard)
 }
 
 /// Processes all pending softirqs regardless of whether softirqs are disabled.
 ///
-/// The processing instructions will iterate for `SOFTIRQ_RUN_TIMES` times. If any softirq
-/// is raised during the iteration, it will be processed.
+/// This is called from the context of arbitrary tasks, meaning that we're processing softirqs using
+/// the time budget of another task. If not done carefully, this can cause fairness issues between
+/// the softirq workload and normal tasks.
+///
+/// To address this, we defer the work to a background daemon as soon as the maximum number of
+/// iterations is reached, or when the scheduler wants to preempt us.
 fn process_all_pending(mut irq_guard: DisabledLocalIrqGuard) -> DisabledLocalIrqGuard {
     const SOFTIRQ_RUN_TIMES: u8 = 5;
 
-    for _ in 0..SOFTIRQ_RUN_TIMES {
-        let mut action_mask = {
+    let mut run_time = 0;
+
+    loop {
+        let action_mask = {
             let pending_mask = PENDING_MASK.load();
-            PENDING_MASK.store(0);
             pending_mask & ENABLED_MASK.load(Ordering::Acquire)
         };
 
@@ -173,27 +195,111 @@ fn process_all_pending(mut irq_guard: DisabledLocalIrqGuard) -> DisabledLocalIrq
             break;
         }
 
+        // We will defer the remaining work in two cases:
+        // 1. if we are overloaded, i.e., there are still pending softirqs after `SOFTIRQ_RUN_TIMES`
+        //    interactions, or
+        // 2. if another task preempts us, where we will want to give it time to run to ensure
+        //    fairness.
+        if run_time >= SOFTIRQ_RUN_TIMES || Task::need_yield() {
+            // If this is `None`, the work will be processed when the daemon thread starts up.
+            if let Some(waker) = DAEMON_WAKER.get_with(&irq_guard).get() {
+                let _ = waker.wake_up();
+            }
+            break;
+        }
+        run_time += 1;
+
+        PENDING_MASK.store(0);
+
         drop(irq_guard);
 
-        while action_mask > 0 {
-            let action_id = u8::trailing_zeros(action_mask) as u8;
-
-            let softirq_line = SoftIrqLine::get(action_id);
-            softirq_line
-                .counter
-                .get()
-                .unwrap()
-                // No races because we are in IRQs.
-                .add_on_cpu(CpuId::current_racy(), 1);
-            softirq_line.callback.get().unwrap()();
-
-            action_mask &= action_mask - 1;
-        }
+        run_callbacks(action_mask);
 
         irq_guard = disable_local();
     }
 
-    // TODO: Wake up ksoftirqd if some softirqs are still pending.
-
     irq_guard
+}
+
+/// Runs a loop on the current CPU in a daemon kernel thread that processes softirqs.
+///
+/// This must be called on a kernel thread bound to a specific CPU. It should be called once on each
+/// CPU.
+///
+/// Usually, softirqs are processed in the bottom half of an IRQ handler. However, if the bottom
+/// half is overloaded or causing fairness issues, the work is deferred to a background kernel
+/// thread that runs this loop.
+pub fn daemon_loop_on_cpu() {
+    let (waiter, waker) = Waiter::new_pair();
+
+    // Disable preemption. We should process softirqs in atomic mode anyway.
+    let mut preempt_guard = disable_preempt();
+
+    // Register the daemon thread.
+    DAEMON_WAKER
+        .get_on_cpu(preempt_guard.current_cpu())
+        .call_once(|| waker);
+
+    // Before the daemon thread starts, some work may not have been processed in the bottom half.
+    let mut should_wait = false;
+
+    loop {
+        if should_wait {
+            drop(preempt_guard);
+            waiter.wait();
+            preempt_guard = disable_preempt();
+
+            should_wait = false;
+        }
+
+        let action_mask = {
+            let _irq_guard = disable_local();
+
+            let mut pending_mask = PENDING_MASK.load();
+            pending_mask &= ENABLED_MASK.load(Ordering::Acquire);
+
+            if pending_mask == 0 {
+                // There is nothing to do. Wait for some sofirqs to come in and be deferred to the
+                // daemon thread.
+                should_wait = true;
+                continue;
+            }
+
+            PENDING_MASK.store(0);
+
+            // Prevent reentrancy in softirq callbacks.
+            lock::DISABLE_SOFTIRQ_COUNT.add_assign(1);
+
+            pending_mask
+        };
+
+        run_callbacks(action_mask);
+
+        lock::DISABLE_SOFTIRQ_COUNT.sub_assign(1);
+
+        // Allow the scheduler to preempt us to ensure fairness.
+        if Task::need_yield() {
+            drop(preempt_guard);
+            Task::yield_now();
+            preempt_guard = disable_preempt();
+        }
+    }
+}
+
+fn run_callbacks(mut action_mask: u8) {
+    while action_mask > 0 {
+        let action_id = u8::trailing_zeros(action_mask) as u8;
+
+        let softirq_line = SoftIrqLine::get(action_id);
+        softirq_line
+            .counter
+            .get()
+            .unwrap()
+            // No races because we are either in IRQs or in a daemon thread that should have been
+            // bound to a specific CPU.
+            .add_on_cpu(CpuId::current_racy(), 1);
+        softirq_line.callback.get().unwrap()();
+
+        action_mask &= action_mask - 1;
+    }
 }

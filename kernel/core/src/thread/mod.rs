@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Posix thread implementation
+//! Thread implementation.
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -11,18 +11,21 @@ use ostd::{
     task::Task,
 };
 
+use self::stats::CONTEXT_SWITCH_COUNTER;
 use crate::{
     prelude::*,
     sched::{SchedAttr, SchedPolicy},
 };
-mod stats;
-use stats::CONTEXT_SWITCH_COUNTER;
-pub(crate) use stats::collect_context_switch_count;
+
 pub(crate) mod exception;
 pub(crate) mod kernel_thread;
 pub(crate) mod oops;
+mod softirqd;
+mod stats;
 pub(crate) mod task;
 pub(crate) mod work_queue;
+
+pub(crate) use self::stats::collect_context_switch_count;
 
 pub(crate) type Tid = u32;
 
@@ -62,20 +65,28 @@ pub(super) fn init() {
     ostd::mm::fault::inject_user_page_fault_handler(exception::page_fault_handler);
 }
 
-/// A thread is a wrapper on top of task.
+pub(super) fn init_in_first_kthread() {
+    work_queue::init_in_first_kthread();
+    softirqd::init_in_first_kthread();
+}
+
+/// A thread is a wrapper on top of a task.
 #[derive(Debug)]
 pub(crate) struct Thread {
-    // immutable part
-    /// Low-level info
+    // Immutable part:
+    //
+    /// Low-level task.
     task: Weak<Task>,
-    /// Data: Posix thread info/Kernel thread Info
+    /// POSIX thread information or kernel thread information.
     data: Box<dyn Send + Sync + Any>,
 
-    // mutable part
-    /// Thread status
+    // Mutable part:
+    //
+    /// Thread status.
     is_exited: AtomicBool,
-    /// Thread CPU affinity
+    /// Thread CPU affinity.
     cpu_affinity: AtomicCpuSet,
+    /// Thread scheduling attribute.
     sched_attr: SchedAttr,
 }
 

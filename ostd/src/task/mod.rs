@@ -88,6 +88,16 @@ impl Task {
         &self.ctx
     }
 
+    /// Returns whether we should yield execution to another task.
+    ///
+    /// If the scheduler decides to preempt the current task in favor of
+    /// another (for example, if the current task has exhausted its runtime
+    /// budget or if the new task has a higher priority), this method will
+    /// return `true`.
+    pub fn need_yield() -> bool {
+        preempt::cpu_local::need_preempt()
+    }
+
     /// Yields execution so that another task may be scheduled.
     ///
     /// Note that this method cannot be simply named "yield" as the name is
