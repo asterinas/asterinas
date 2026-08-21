@@ -22,6 +22,7 @@
     * [Communication](distro/popular-applications/communication/README.md)
     * [File Management & Terminal](distro/popular-applications/file-management-and-terminal/README.md)
     * [AI & Machine Learning](distro/popular-applications/ai-and-machine-learning/README.md)
+* [Building Asterinas on Asterinas](distro/building-on-asterinas.md)
 
 # Asterinas Kernel
 
