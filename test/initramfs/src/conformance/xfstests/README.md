@@ -86,8 +86,8 @@ Common `Makefile` variables:
 - `XFSTESTS_FS_TYPE`: Filesystem configuration to use. Defaults to `ext2`.
 - `XFSTESTS_RUNLIST`: Run list filename under the selected filesystem's `run_list/` directory. Defaults to `short.list`.
 - `XFSTESTS_DISK_SIZE`: Size of each generated block image. Defaults to `12G`.
-- `XFSTESTS_TEST_DEV`: Guest test device. Defaults to `/dev/vdd`.
-- `XFSTESTS_SCRATCH_DEV`: Guest scratch device. Defaults to `/dev/vde`.
+- `XFSTESTS_TEST_DEV`: Guest test device. Defaults to `/dev/vdd` for block-based filesystems, or the `VIRTIOFS_TAG` mount tag (`xfstest`) for `virtiofs`.
+- `XFSTESTS_SCRATCH_DEV`: Guest scratch device. Defaults to `/dev/vde` for block-based filesystems, or the `VIRTIOFS_SCRATCH_TAG` mount tag (`xfsscratch`) for `virtiofs`.
 
 ## Adding Tests
 
