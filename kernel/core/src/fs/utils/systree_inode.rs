@@ -536,11 +536,11 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         Err(Error::new(Errno::EPERM))
     }
 
-    default fn unlink(&self, _name: &str) -> Result<()> {
+    default fn unlink(&self, _name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
-    default fn rmdir(&self, _name: &str) -> Result<()> {
+    default fn rmdir(&self, _name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 

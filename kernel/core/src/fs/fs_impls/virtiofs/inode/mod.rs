@@ -184,16 +184,6 @@ impl VirtioFsInode {
         Ok(())
     }
 
-    fn lookup_child_inode(&self, name: &str) -> Result<Arc<VirtioFsInode>> {
-        let fs = self.fs_ref();
-        let request_attr_version = fs.session().snapshot_attr_version();
-        let lookup_reply = fs
-            .session()
-            .do_fuse_op(self.nodeid(), LookupOperation::new(name))?;
-
-        fs.lookup_inode_from_cache(lookup_reply, request_attr_version)
-    }
-
     fn type_(&self) -> InodeType {
         self.type_
     }
@@ -434,9 +424,9 @@ impl Inode for VirtioFsInode {
         Ok(())
     }
 
-    fn unlink(&self, name: &str) -> Result<()> {
+    fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
         let fs = self.fs_ref();
-        let child = self.lookup_child_inode(name)?;
+        let child = child.downcast_ref::<VirtioFsInode>().unwrap();
 
         fs.session()
             .do_fuse_op(self.nodeid(), UnlinkOperation::new(name))?;
@@ -447,9 +437,9 @@ impl Inode for VirtioFsInode {
         Ok(())
     }
 
-    fn rmdir(&self, name: &str) -> Result<()> {
+    fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
         let fs = self.fs_ref();
-        let child = self.lookup_child_inode(name)?;
+        let child = child.downcast_ref::<VirtioFsInode>().unwrap();
 
         fs.session()
             .do_fuse_op(self.nodeid(), RmdirOperation::new(name))?;

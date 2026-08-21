@@ -145,7 +145,7 @@ mod tests {
 
         let inode = root.lookup(path).unwrap();
         assert!(!to_be_revalidated(inode.as_ref()));
-        root.unlink(path).unwrap();
+        root.unlink(path, &inode).unwrap();
     }
 
     #[ktest]
