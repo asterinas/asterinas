@@ -15,6 +15,9 @@
 #  - VIRTIOFS: "off" or "on";
 #  - VIRTIOFS_TAG: mount tag for virtio-fs device;
 #  - VIRTIOFS_SOCKET: vhost-user socket path for the virtio-fs server;
+#  - VIRTIOFS_SCRATCH: "off" or "on", whether to attach a scratch virtio-fs device;
+#  - VIRTIOFS_SCRATCH_TAG: mount tag for the scratch virtio-fs device;
+#  - VIRTIOFS_SCRATCH_SOCKET: socket path for the scratch virtio-fs server;
 #  - INITRAMFS: "on" or "off"; when "off", attach `rootfs.img` as an extra block device.
 #  - CONSOLE: "hvc0" to enable virtio console;
 #  - SMP: number of CPUs;
@@ -27,6 +30,7 @@ OVMF=${OVMF:-"on"}
 VHOST=${VHOST:-"off"}
 VSOCK=${VSOCK:-"off"}
 VIRTIOFS=${VIRTIOFS:-"off"}
+VIRTIOFS_SCRATCH=${VIRTIOFS_SCRATCH:-"off"}
 NETDEV=${NETDEV:-"user"}
 CONSOLE=${CONSOLE:-"hvc0"}
 XFSTESTS_NEEDS_BLOCK_DEVICES=${XFSTESTS_NEEDS_BLOCK_DEVICES:-false}
@@ -38,6 +42,8 @@ if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" != "true" ] && \
 fi
 VIRTIOFS_TAG=${VIRTIOFS_TAG:-"aster-virtiofs"}
 VIRTIOFS_SOCKET=${VIRTIOFS_SOCKET:-"/tmp/vhostqemu/vfs.sock"}
+VIRTIOFS_SCRATCH_TAG=${VIRTIOFS_SCRATCH_TAG:-"xfsscratch"}
+VIRTIOFS_SCRATCH_SOCKET=${VIRTIOFS_SCRATCH_SOCKET:-"/tmp/vhostqemu/vfs-scratch.sock"}
 
 # Draw all host ports from a single `shuf` invocation,
 # so that none of them will conflict with others.
@@ -259,6 +265,15 @@ if [ "$VIRTIOFS" = "on" ]; then
         -chardev socket,id=char0,path=$VIRTIOFS_SOCKET \
         -device vhost-user-fs-pci,chardev=char0,tag=$VIRTIOFS_TAG \
     "
+
+    if [ "$VIRTIOFS_SCRATCH" = "on" ]; then
+        echo "[$1] Enabled scratch virtio-fs: tag=$VIRTIOFS_SCRATCH_TAG, socket=$VIRTIOFS_SCRATCH_SOCKET" 1>&2
+        QEMU_ARGS="
+            $QEMU_ARGS \
+            -chardev socket,id=char1,path=$VIRTIOFS_SCRATCH_SOCKET \
+            -device vhost-user-fs-pci,chardev=char1,tag=$VIRTIOFS_SCRATCH_TAG \
+        "
+    fi
 fi
 
 if [ "$VSOCK" = "on" ]; then

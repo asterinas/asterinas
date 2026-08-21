@@ -18,6 +18,8 @@ xfstests/
 |       `-- full.list        # Broader manual or scheduled run list
 |-- tmpfs/
 |   `-- ...
+|-- virtiofs/                 # Host-shared virtio-fs test and scratch mounts
+|   `-- ...
 `-- template/                # Starting point for a new filesystem
 ```
 
@@ -34,6 +36,10 @@ make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests
 # Run the tmpfs short list
 make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests \
     XFSTESTS_FS_TYPE=tmpfs
+
+# Run the virtio-fs short list
+make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests \
+    XFSTESTS_FS_TYPE=virtiofs
 
 # Run the ext2 full list
 make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests \
