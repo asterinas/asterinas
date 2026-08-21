@@ -447,7 +447,7 @@ fstatfs02_64
 
 # fsync01
 fsync02
-# fsync03
+fsync03
 # fsync04
 
 ftruncate01

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE};
+use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE, bio::BioStatus};
 use aster_nvme::NvmeBlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 use device_id::DeviceId;
@@ -11,7 +11,7 @@ use crate::{
     device::{Device, DeviceType, DevtmpfsInodeMeta, add_node},
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
+        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags, SyncMode},
         vfs::{
             inode::FileOps,
             path::{Path, PathResolver},
@@ -206,6 +206,18 @@ impl Pollable for OpenBlockFile {
 impl PerOpenFileOps for OpenBlockFile {
     fn check_seekable(&self) -> Result<()> {
         Ok(())
+    }
+
+    fn sync(&self, _mode: SyncMode) -> Result<()> {
+        match self.0.sync()? {
+            // Linux treats an unsupported block-device flush as success.
+            // Reference: <https://github.com/torvalds/linux/blob/v6.16/block/fops.c#L609-L611>
+            BioStatus::Complete | BioStatus::NotSupported => Ok(()),
+            status @ (BioStatus::NoSpace | BioStatus::IoError) => Err(status.into()),
+            BioStatus::Init | BioStatus::Submit | BioStatus::Zeros => {
+                return_errno_with_message!(Errno::EIO, "invalid block device flush status")
+            }
+        }
     }
 
     fn is_offset_aware(&self) -> bool {

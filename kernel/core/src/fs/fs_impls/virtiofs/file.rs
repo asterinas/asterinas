@@ -12,8 +12,8 @@ use super::{
 use crate::{
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags},
-        vfs::inode::FileOps,
+        file::{PerOpenFileOps, StatusFlags, SyncMode},
+        vfs::inode::{FileOps, Inode},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -144,6 +144,15 @@ impl PerOpenFileOps for VirtioFsFile {
             return_errno_with_message!(Errno::ESPIPE, "the file is not seekable");
         }
         Ok(())
+    }
+
+    fn sync(&self, mode: SyncMode) -> Result<()> {
+        // FIXME: Send a `FUSE_FSYNC` request using this file's open handle after flushing the
+        // page cache.
+        match mode {
+            SyncMode::Data => self.inode.sync_data(),
+            SyncMode::Full => self.inode.sync_all(),
+        }
     }
 
     fn is_offset_aware(&self) -> bool {
