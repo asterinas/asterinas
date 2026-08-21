@@ -32,7 +32,10 @@
 
   # List packages installed in system profile.
   # You can use https://search.nixos.org/ to find more packages (and options).
-  environment.systemPackages = with pkgs; [ hello-asterinas ];
+  environment.systemPackages = with pkgs; [
+    hello-asterinas
+    gitMinimal
+  ];
 
   system.nixos.distroName = "Asterinas NixOS";
 

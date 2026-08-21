@@ -42,5 +42,8 @@
   systemd.settings.Manager = {
     LogLevel = "crit";
     ShowStatus = "no";
+    # Login sessions inherit these limits. Nix needs far more file descriptors
+    # than the default limit of 1024 when it downloads a large closure.
+    DefaultLimitNOFILE = "1048576:1048576";
   };
 }
