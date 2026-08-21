@@ -13,7 +13,8 @@ klint is left to `osdk-dev`, since no build or check target invokes it.
 With a flakes-enabled Nix, enter the dev shell from the repository root:
 
 - Linux: `nix develop`: toolchain, QEMU, GRUB, OVMF; covers `make kernel` /
-  `make run_kernel`. Projects scaffolded with `cargo osdk new` (and the OSDK
+  `make run_kernel` and the installer image flow (`make iso` / `make run_iso`
+  / `make run_nixos`). Projects scaffolded with `cargo osdk new` (and the OSDK
   test suite's TDX scheme) still expect the images' firmware paths, and the
   gvisor conformance tests need the `kernel-dev` image's prebuilt test
   binaries (point `GVISOR_PREBUILT_DIR` at a copy to run them elsewhere).

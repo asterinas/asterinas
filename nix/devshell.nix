@@ -68,6 +68,9 @@ in mkShell {
   '' + lib.optionalString stdenv.isLinux ''
     # Use the Nix-built firmware unless the caller supplied another OVMF tree.
     export OVMF_DIR="''${OVMF_DIR:-${asterinas-ovmf}}"
+    # The linux-efi-handover64 kernel build defaults to the Docker image's
+    # /usr/bin/grub-mkrescue; point it at the shell's unless the caller did.
+    export LINUX_EFI_GRUB_MKRESCUE="''${LINUX_EFI_GRUB_MKRESCUE:-${asterinas-grub}/bin/grub-mkrescue}"
   '' + lib.optionalString stdenv.isDarwin ''
     echo "asterinas dev shell (darwin): build/lint only; booting the kernel needs Linux." >&2
   '';

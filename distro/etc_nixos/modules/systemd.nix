@@ -37,5 +37,8 @@
   systemd.settings.Manager = {
     LogLevel = "crit";
     ShowStatus = "no";
+    # Login sessions inherit these limits; large Nix closure realizations
+    # need far more file descriptors than the 1024 default.
+    DefaultLimitNOFILE = "1048576:1048576";
   };
 }
