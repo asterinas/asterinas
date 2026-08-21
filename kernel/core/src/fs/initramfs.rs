@@ -30,7 +30,7 @@ use super::{
 };
 use crate::{
     fs::{
-        file::StatusFlags,
+        file::{RwfFlags, StatusFlags},
         vfs::inode::{Inode, MknodType},
     },
     prelude::*,
@@ -161,7 +161,12 @@ impl io::Write for InodeWriter<'_> {
         let mut reader = VmReader::from(buf).to_fallible();
         let write_len = self
             .inner
-            .write_at(self.offset, &mut reader, StatusFlags::empty())
+            .write_at(
+                self.offset,
+                &mut reader,
+                StatusFlags::empty(),
+                RwfFlags::empty(),
+            )
             .map_err(|_| io::ErrorKind::WriteZero)?;
         self.offset += write_len;
         Ok(write_len)

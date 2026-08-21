@@ -15,7 +15,7 @@ use device_id::DeviceId;
 use crate::{
     device,
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, RwfFlags, StatusFlags},
         fs_impls::ext2::{FilePerm, Inode as Ext2Inode},
         utils::DirentVisitor,
         vfs::{
@@ -38,11 +38,12 @@ impl FileOps for Ext2Inode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_DIRECT) {
-            self.read_direct_at(offset, writer)
+            self.read_direct_at(offset, writer, rwf_flags)
         } else {
-            self.read_at(offset, writer)
+            self.read_at(offset, writer, rwf_flags)
         }
     }
 
@@ -51,9 +52,19 @@ impl FileOps for Ext2Inode {
         offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        rwf_flags: RwfFlags,
     ) -> Result<usize> {
+        if !status_flags.contains(StatusFlags::O_DIRECT) && rwf_flags.contains(RwfFlags::RWF_NOWAIT)
+        {
+            // With `RWF_NOWAIT`, Linux rejects buffered writes unless the file
+            // system supports asynchronous buffered writes (`FOP_BUFFER_WASYNC`).
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "RWF_NOWAIT is not supported for buffered writes"
+            );
+        }
         if status_flags.contains(StatusFlags::O_DIRECT) {
-            self.write_direct_at(offset, reader)
+            self.write_direct_at(offset, reader, rwf_flags)
         } else {
             self.write_at(offset, reader)
         }

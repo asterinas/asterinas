@@ -57,7 +57,7 @@ use crate::{
     device::{Device, DeviceType, DevtmpfsInodeMeta, registry::char::register},
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags},
+        file::{PerOpenFileOps, RwfFlags, StatusFlags},
         vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
@@ -160,6 +160,7 @@ impl FileOps for TdxGuestFile {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "the file is not valid for reading")
     }
@@ -169,6 +170,7 @@ impl FileOps for TdxGuestFile {
         _offset: usize,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "the file not valid for writing")
     }

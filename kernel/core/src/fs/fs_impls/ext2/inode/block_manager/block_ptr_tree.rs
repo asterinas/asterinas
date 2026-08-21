@@ -80,6 +80,27 @@ impl BlockPtrTree {
         self.existing_contiguous_data_blocks(&walk, max_blocks)
     }
 
+    /// Resolves a logical block to a contiguous physical block range without
+    /// loading indirect blocks from disk.
+    ///
+    /// Returns `Ok(None)` when resolving the range would require reading an
+    /// uncached indirect block.
+    pub(in inode) fn try_lookup_block_range(
+        &self,
+        iblock: Iblock,
+        max_blocks: u32,
+    ) -> Result<Option<Range<Ext2Bid>>> {
+        if max_blocks == 0 {
+            return_errno_with_message!(Errno::EINVAL, "zero block range requested");
+        }
+        let Some(walk) = self.try_walk_path(BlockPointerPath::new(iblock)?)? else {
+            return Ok(None);
+        };
+        Ok(Some(
+            self.existing_contiguous_data_blocks(&walk, max_blocks)?,
+        ))
+    }
+
     /// Resolves a logical block to physical block (read-only).
     pub(in inode) fn lookup_block(&self, iblock: Iblock) -> Result<Option<Ext2Bid>> {
         let range = self.lookup_block_range(iblock, 1)?;
@@ -459,6 +480,48 @@ impl BlockPtrTree {
             is_complete: true,
             visited_entries,
         })
+    }
+
+    /// Computes a `BlockPointerWalk` without loading indirect blocks from disk.
+    ///
+    /// Returns `Ok(None)` when resolving the path would require reading an
+    /// uncached indirect block.
+    fn try_walk_path(&self, path: BlockPointerPath) -> Result<Option<BlockPointerWalk>> {
+        let top_bid = self.raw_block_ptrs.block_ptrs[path.slots[0] as usize];
+        let num_levels = path.num_levels;
+        let mut visited_entries = SmallVec::new();
+        if top_bid == 0 {
+            return Ok(Some(BlockPointerWalk {
+                path,
+                is_complete: false,
+                visited_entries,
+            }));
+        }
+        visited_entries.push(top_bid);
+
+        let mut indirect_blocks_manager = self.indirect_blocks_manager.lock();
+        let mut parent_bid = top_bid;
+        for level in 1..num_levels {
+            let Some(indirect_block) = indirect_blocks_manager.try_find(parent_bid) else {
+                return Ok(None);
+            };
+            let next_bid = indirect_block.read_bid(path.slots[level] as usize)?;
+            if next_bid == 0 {
+                return Ok(Some(BlockPointerWalk {
+                    path,
+                    is_complete: false,
+                    visited_entries,
+                }));
+            }
+            visited_entries.push(next_bid);
+            parent_bid = next_bid;
+        }
+
+        Ok(Some(BlockPointerWalk {
+            path,
+            is_complete: true,
+            visited_entries,
+        }))
     }
 
     fn existing_contiguous_data_blocks(

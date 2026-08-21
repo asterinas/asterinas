@@ -12,7 +12,7 @@ use crate::{
     context::current_userspace,
     events::IoEvents,
     fs::{
-        file::{Mappable, PerOpenFileOps, StatusFlags},
+        file::{Mappable, PerOpenFileOps, RwfFlags, StatusFlags},
         vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
@@ -410,6 +410,7 @@ impl FileOps for FbHandle {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if !writer.has_avail() {
             return Ok(0);
@@ -450,6 +451,7 @@ impl FileOps for FbHandle {
         offset: usize,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if !reader.has_remain() {
             return Ok(0);

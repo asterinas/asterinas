@@ -5,8 +5,8 @@
 use core::fmt::Display;
 
 use super::{
-    AccessMode, CreationFlags, FileCommon, FileLike, InodeType, Mappable, SettableStatusFlags,
-    StatusFlags, file_table::FdFlags, flock::FlockItem,
+    AccessMode, CreationFlags, FileCommon, FileLike, InodeType, Mappable, RwfFlags,
+    SettableStatusFlags, StatusFlags, file_table::FdFlags, flock::FlockItem,
 };
 use crate::{
     events::IoEvents,
@@ -270,7 +270,7 @@ impl Pollable for InodeHandle {
 }
 
 impl FileLike for InodeHandle {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, rwf_flags: RwfFlags) -> Result<usize> {
         if self.status_flags().contains(StatusFlags::O_PATH) || !self.access_mode().is_readable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
         }
@@ -279,18 +279,18 @@ impl FileLike for InodeHandle {
         let status_flags = self.status_flags();
 
         if !is_offset_aware {
-            return file_ops.read_at(0, writer, status_flags);
+            return file_ops.read_at(0, writer, status_flags, rwf_flags);
         }
 
         let mut offset = self.offset.lock();
 
-        let len = file_ops.read_at(*offset, writer, status_flags)?;
+        let len = file_ops.read_at(*offset, writer, status_flags, rwf_flags)?;
         *offset += len;
 
         Ok(len)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, rwf_flags: RwfFlags) -> Result<usize> {
         if self.status_flags().contains(StatusFlags::O_PATH) || !self.access_mode().is_writable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
@@ -302,7 +302,7 @@ impl FileLike for InodeHandle {
         let status_flags = self.status_flags();
 
         if !is_offset_aware {
-            return file_ops.write_at(0, reader, status_flags);
+            return file_ops.write_at(0, reader, status_flags, rwf_flags);
         }
 
         let mut offset = self.offset.lock();
@@ -314,13 +314,13 @@ impl FileLike for InodeHandle {
             *offset = self.path().size();
         }
 
-        let len = file_ops.write_at(*offset, reader, status_flags)?;
+        let len = file_ops.write_at(*offset, reader, status_flags, rwf_flags)?;
         *offset += len;
 
         Ok(len)
     }
 
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter, rwf_flags: RwfFlags) -> Result<usize> {
         let file_ops = self.file_ops_for_positional_io()?;
         if self.status_flags().contains(StatusFlags::O_PATH) || !self.access_mode().is_readable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");
@@ -328,10 +328,15 @@ impl FileLike for InodeHandle {
 
         let status_flags = self.status_flags();
 
-        file_ops.read_at(offset, writer, status_flags)
+        file_ops.read_at(offset, writer, status_flags, rwf_flags)
     }
 
-    fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(
+        &self,
+        mut offset: usize,
+        reader: &mut VmReader,
+        rwf_flags: RwfFlags,
+    ) -> Result<usize> {
         let file_ops = self.file_ops_for_positional_io()?;
         if self.status_flags().contains(StatusFlags::O_PATH) || !self.access_mode().is_writable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
@@ -350,7 +355,7 @@ impl FileLike for InodeHandle {
             offset = self.path().size();
         }
 
-        file_ops.write_at(offset, reader, status_flags)
+        file_ops.write_at(offset, reader, status_flags, rwf_flags)
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {

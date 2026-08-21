@@ -41,6 +41,12 @@ impl IndirectBlockManager {
             .expect("indirect block must be cached after ensure_cached"))
     }
 
+    /// Returns a shared reference to the cached indirect block at `bid`, or
+    /// `None` if it has not been loaded yet.
+    pub(super) fn try_find(&mut self, bid: Ext2Bid) -> Option<&IndirectBlock> {
+        self.cache.get(&bid)
+    }
+
     /// Returns a mutable reference to the indirect block at `bid`, loading it if needed.
     pub(super) fn find_mut(&mut self, bid: Ext2Bid) -> Result<&mut IndirectBlock> {
         self.ensure_cached(bid)?;

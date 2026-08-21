@@ -16,7 +16,9 @@ use super::{
 use crate::{
     device::{Device, DeviceType},
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags},
+        file::{
+            AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, RwfFlags, StatusFlags,
+        },
         utils::DirentVisitor,
         vfs::path::Path,
     },
@@ -340,6 +342,7 @@ pub(crate) trait FileOps {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        rwf_flags: RwfFlags,
     ) -> Result<usize>;
 
     /// Writes data from the given `VmReader` into the file.
@@ -348,6 +351,7 @@ pub(crate) trait FileOps {
         offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        rwf_flags: RwfFlags,
     ) -> Result<usize>;
 
     /// Reads directory entries from the given offset.
@@ -653,13 +657,13 @@ impl dyn Inode {
     #[cfg_attr(not(ktest), expect(dead_code))]
     pub(crate) fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
-        self.read_at(offset, &mut writer, StatusFlags::empty())
+        self.read_at(offset, &mut writer, StatusFlags::empty(), RwfFlags::empty())
     }
 
     #[cfg_attr(not(ktest), expect(dead_code))]
     pub(crate) fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
-        self.write_at(offset, &mut reader, StatusFlags::empty())
+        self.write_at(offset, &mut reader, StatusFlags::empty(), RwfFlags::empty())
     }
 }
 
