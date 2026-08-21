@@ -4,6 +4,7 @@ use alloc::{boxed::Box, sync::Arc};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use ostd::{
+    cpu::{CpuSet, all_cpus, num_cpus},
     prelude::ktest,
     task::{Task, disable_preempt},
 };
@@ -393,9 +394,24 @@ static TEST_LEAKAGE: AtomicBool = AtomicBool::new(false);
 static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 fn finish_grace_period() {
-    let task = || {};
-    let _ = ostd::task::TaskOptions::new(task).data(()).spawn();
-    Task::yield_now();
+    // Two rounds let the monitor finish both its current grace period and
+    // callbacks queued for the following grace period.
+    for _ in 0..2 {
+        let finished = Arc::new(AtomicUsize::new(0));
+        for cpu in all_cpus() {
+            let finished_clone = finished.clone();
+            let task = move || {
+                finished_clone.fetch_add(1, Ordering::Release);
+            };
+            ostd::task::TaskOptions::new(task)
+                .data(CpuSet::from(cpu))
+                .spawn()
+                .unwrap();
+        }
+        while finished.load(Ordering::Acquire) < num_cpus() {
+            Task::yield_now();
+        }
+    }
 }
 
 impl<P: NonNullPtr + Send + Sync> Drop for node::XNode<P> {
@@ -407,6 +423,7 @@ impl<P: NonNullPtr + Send + Sync> Drop for node::XNode<P> {
 }
 
 #[ktest]
+#[serial]
 fn no_leakage() {
     // Drop the nodes created by the previous tests.
     finish_grace_period();
@@ -430,6 +447,7 @@ fn no_leakage() {
 }
 
 #[ktest]
+#[serial]
 fn remove_shrinks_empty_nodes() {
     // Drop the nodes created by the previous tests.
     finish_grace_period();

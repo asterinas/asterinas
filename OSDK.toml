@@ -26,6 +26,7 @@ init_args = ["sh", "-l"]
 # Special options for testing
 [test.qemu]
 args = "$(./tools/qemu_args.sh test)"
+log_file = "qemu.log"
 
 # Other Schemes
 
@@ -57,6 +58,7 @@ build.features = ["riscv_sv39_mode"]
 boot.method = "qemu-direct"
 build.strip_elf = false
 qemu.with_monitor = true
+log_file = "qemu.log"
 
 qemu.args = """\
     -machine sifive_u \
@@ -73,6 +75,7 @@ qemu.args = """\
 [scheme."loongarch"]
 boot.method = "qemu-direct"
 build.strip_elf = false
+log_file = "qemu.log"
 
 qemu.args = """\
     -machine virt \
