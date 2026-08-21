@@ -7,7 +7,9 @@ use ostd::task::disable_preempt;
 use super::{RssDelta, Vmar};
 use crate::{
     prelude::*,
-    vm::vmar::{VMAR_CAP_ADDR, interval_set::Interval, util::get_intersected_range},
+    vm::vmar::{
+        VMAR_CAP_ADDR, cursor::CursorMutExt, interval_set::Interval, util::get_intersected_range,
+    },
 };
 
 impl Vmar {
@@ -30,7 +32,15 @@ impl Vmar {
             .vm_space
             .cursor_mut(&preempt_guard, &full_range)
             .unwrap();
-        cursor.unmap(full_range.len());
+
+        while cursor
+            .find_next_unmappable_subtree(full_range.end)
+            .is_some()
+        {
+            cursor.unmap();
+        }
+
+        cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
     }
 
@@ -94,10 +104,13 @@ impl Vmar {
                 .cursor_mut(&preempt_guard, &intersected_range)
                 .unwrap();
 
-            rss_delta.add(
-                vm_mapping.rss_type(),
-                -(cursor.unmap(intersected_range.len()) as isize),
-            );
+            while cursor
+                .find_next_unmappable_subtree(intersected_range.end)
+                .is_some()
+            {
+                cursor.split_if_map_exceeds_range(&intersected_range);
+                rss_delta.add(vm_mapping.rss_type(), -(cursor.unmap() as isize));
+            }
             cursor.flusher().dispatch_tlb_flush();
             cursor.flusher().sync_tlb_flush();
         }
