@@ -7,6 +7,8 @@ let
     "x86_64-unknown-linux-gnu"
   else if target == "riscv64" then
     "riscv64-unknown-linux-gnu"
+  else if target == "aarch64" then
+    "aarch64-unknown-linux-gnu"
   else
     throw "Target arch ${target} not yet supported.";
 

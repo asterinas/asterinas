@@ -256,6 +256,8 @@ fn check_elf_header(elf_header: &ElfHeader) -> Result<()> {
     // Reference: <https://loongson.github.io/LoongArch-Documentation/LoongArch-ELF-ABI-EN.html#_e_machine_identifies_the_machine>
     #[cfg(target_arch = "loongarch64")]
     const EXPECTED_ELF_MACHINE: header::Machine = header::Machine::Other(258);
+    #[cfg(target_arch = "aarch64")]
+    const EXPECTED_ELF_MACHINE: header::Machine = header::Machine::AArch64;
 
     if elf_header.pt1.class() != header::Class::SixtyFour {
         return_errno_with_message!(Errno::ENOEXEC, "the ELF file is not 64-bit");
