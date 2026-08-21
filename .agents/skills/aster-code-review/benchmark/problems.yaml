@@ -663,3 +663,413 @@
       expectation: >
         A reviewer should flag that syscall-local decode enums should not be
         public when all uses are contained in the same source file.
+
+- problem_id: 0400-redundant-empty-path-checks
+  commit: 37411049265056135a5e18c8c75a0c3d16b18579
+  source: >
+    Fix-anchored from PR #3583
+    `https://github.com/asterinas/asterinas/pull/3583`. Files mode uses
+    `37411049265056135a5e18c8c75a0c3d16b18579`, the parent of fixing merge
+    commit `b91ce0947fa3cc5af74d6a1cadd8745cca48dc1d`, and reviews the four
+    syscall files as whole files. The fixing commit removes call-site
+    empty-path branches because `FsPath::try_from` and `FsPath::from_fd_at`
+    already centralize the same empty-path policy. At the reviewed snapshot,
+    the redundant checks are present, while the later deletions are absent and
+    no diff or narrowed line range reveals them.
+  review_mode:
+    files:
+      - kernel/src/syscall/chdir.rs
+      - kernel/src/syscall/chown.rs
+      - kernel/src/syscall/chroot.rs
+      - kernel/src/syscall/stat.rs
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/chdir.rs }
+      persona: maintainability
+      grounding: dry
+      severity: minor
+      desc: >
+        `sys_chdir` rejects an empty `path_name` immediately before passing the
+        same string to `FsPath::try_from`. That conversion delegates to
+        `FsPath::from_fd_at` with `EmptyPathStr::Reject`, which already returns
+        `ENOENT` for an empty path. Keeping the same policy in both the syscall
+        handler and the shared path abstraction duplicates knowledge and lets
+        their behavior or error messages drift independently.
+      fix: >
+        Remove the local `path_name.is_empty()` branch and rely on
+        `FsPath::try_from` as the single implementation of empty-path
+        rejection.
+      expectation: >
+        A reviewer should flag the explicit empty-path check in `sys_chdir` as
+        redundant with `FsPath::try_from` and require the syscall to rely on
+        the shared path abstraction.
+    - target: { kind: file, path: kernel/src/syscall/chown.rs }
+      persona: maintainability
+      grounding: dry
+      severity: minor
+      desc: >
+        `sys_fchownat` special-cases `AT_EMPTY_PATH` plus an empty pathname by
+        calling `sys_fchown`, even though the normal path immediately below
+        calls `FsPath::from_fd_at` with `EmptyPathStr::AllowIfFlag`. The shared
+        path abstraction already accepts that combination and resolves the
+        supplied `dirfd`, so the early return is a second implementation of the
+        same policy and creates a separate control path that must remain in
+        sync with the common resolver.
+      fix: >
+        Remove the early `AT_EMPTY_PATH` branch and let
+        `FsPath::from_fd_at(..., EmptyPathStr::AllowIfFlag(flags.bits()))`
+        resolve both empty and non-empty paths before applying the ownership
+        change.
+      expectation: >
+        A reviewer should flag the `sys_fchown` early return in `sys_fchownat`
+        as redundant with `FsPath::from_fd_at`'s `AllowIfFlag` handling and ask
+        for one common resolution path.
+    - target: { kind: file, path: kernel/src/syscall/chroot.rs }
+      persona: maintainability
+      grounding: dry
+      severity: minor
+      desc: >
+        `sys_chroot` checks `path_name.is_empty()` and returns `ENOENT`, then
+        passes the same value to `FsPath::try_from`, whose
+        `EmptyPathStr::Reject` policy performs that exact validation. The
+        duplicated guard spreads one path-validation rule across the syscall
+        layer and the path abstraction without adding behavior.
+      fix: >
+        Delete the syscall-local empty-path check and let `FsPath::try_from`
+        reject empty paths.
+      expectation: >
+        A reviewer should flag the explicit empty-path check in `sys_chroot` as
+        redundant with `FsPath::try_from` and require the shared path parser to
+        own the validation.
+    - target: { kind: file, path: kernel/src/syscall/stat.rs }
+      persona: maintainability
+      grounding: dry
+      severity: minor
+      desc: >
+        `sys_fstatat` redirects `AT_EMPTY_PATH` with an empty filename to
+        `sys_fstat`, while its normal path already uses
+        `FsPath::from_fd_at(..., EmptyPathStr::AllowIfFlag(flags.bits()))` to
+        accept and resolve that case. The shortcut duplicates empty-path policy
+        and maintains a second metadata lookup path instead of using the common
+        resolver for every valid `fstatat` input.
+      fix: >
+        Remove the `sys_fstat` shortcut and always resolve the target through
+        `FsPath::from_fd_at` before reading its metadata.
+      expectation: >
+        A reviewer should flag the `sys_fstat` early return in `sys_fstatat` as
+        redundant with `FsPath::from_fd_at`'s `AllowIfFlag` behavior and ask to
+        use the common path-resolution flow.
+
+- problem_id: 0401-chroot-missing-capability-check
+  commit: 743d789adb36ca5bf024fb4889f398756a842b58
+  source: >
+    Fix-anchored. Files mode uses
+    `743d789adb36ca5bf024fb4889f398756a842b58`, the parent of mainline fixing
+    commit `003568118b12dd6e2825e3f3b2188a6b60dd2bab` ("Fix chroot
+    capability check"). The fixing commit adds a `CAP_SYS_CHROOT` gate to
+    `sys_chroot` and a regression test that drops the capability and expects
+    `EPERM`. At the reviewed snapshot, both the check and the test are absent;
+    the two affected files are reviewed whole, with no fix diff or narrowed
+    line range revealing the defect.
+  review_mode:
+    files:
+      - test/initramfs/src/regression/fs/isolation/chroot.c
+      - kernel/src/syscall/chroot.rs
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/chroot.rs }
+      persona: security
+      grounding: "Missing capability check"
+      severity: critical
+      desc: >
+        `sys_chroot` resolves the user-supplied path, verifies that it names a
+        directory, and then calls `path_resolver.set_root(path)` without any
+        authorization check. A caller that has dropped or never held
+        `CAP_SYS_CHROOT` can therefore change its root directory successfully,
+        even though Linux restricts `chroot` to callers with `CAP_SYS_CHROOT`
+        in their user namespace and requires insufficiently privileged callers
+        to receive `EPERM`. This bypasses the syscall's capability boundary.
+      fix: >
+        Before changing the root, call `lsm_hooks::on_capable` with a
+        `CapableContext` for the caller's user namespace and
+        `CapSet::SYS_CHROOT`, propagating failure as `EPERM`. Add a regression
+        test that drops `CAP_SYS_CHROOT`, calls `chroot` on an existing
+        directory, and verifies that the call fails with `EPERM`.
+      expectation: >
+        A reviewer should flag that `sys_chroot` changes the process root
+        without requiring `CAP_SYS_CHROOT` and require a capability check in
+        the caller's user namespace that rejects an unprivileged call with
+        `EPERM`.
+
+- problem_id: 0402-futex-wake-op-atomicity-and-count-type
+  commit: b6cc68ac3840ca2ec8a51d50b1d30bf63ac9247a
+  source: >
+    PR-review-derived from PR #2146
+    `https://github.com/asterinas/asterinas/pull/2146`. The reviewed range is
+    the original force-pushed-over two-commit head
+    `b6cc68ac3840ca2ec8a51d50b1d30bf63ac9247a` from series base
+    `c56aee92f4b22f7dfa16643bd96ac3aae04f84d5`. Comment
+    `https://github.com/asterinas/asterinas/pull/2146#issuecomment-2966068653`
+    identified the split bucket locking, fixed by replacement head
+    `e85ae6eb94b45a67832588e6e19afab985328acd`; comment
+    `https://github.com/asterinas/asterinas/pull/2146#discussion_r2145099169`
+    identified the signed wake-count type, fixed by final fork head
+    `e665fe2d4058b2454a40af65e3caba17ab9f4aad`. The old full SHA is fetchable
+    from the default upstream, so no custom `remote` is needed. The reviewed
+    range predates both fixes. Its existing FIXME concerns the separately
+    deferred atomic user-memory RMW, not the missing two-bucket critical
+    section, and does not satisfy the atomicity expectation below.
+  review_mode:
+    diff:
+      base: c56aee92f4b22f7dfa16643bd96ac3aae04f84d5
+  defects:
+    - target: { kind: file, path: kernel/src/process/posix_thread/futex.rs }
+      persona: development
+      grounding: atomic-critical-sections
+      severity: major
+      desc: >
+        `futex_wake_op` performs the operation on the second futex word, calls
+        `futex_wake` for the first word, and conditionally calls `futex_wake`
+        again for the second word. Each `futex_wake` independently acquires and
+        releases one hash-bucket lock, so another futex operation on either
+        supplied word can interleave between the read/modify/write and the two
+        wake phases. This violates the `FUTEX_WAKE_OP` contract that the whole
+        sequence be atomic and totally ordered with respect to futex operations
+        on both words, producing observably incorrect wake ordering under
+        concurrency.
+      fix: >
+        Resolve both futex keys and acquire both bucket locks before performing
+        the operation and either wake. Lock once when both keys share a bucket;
+        otherwise acquire the two buckets in a stable index order to avoid
+        deadlock, then remove and wake items directly while both guards remain
+        held.
+      expectation: >
+        A reviewer should flag that two separate `futex_wake` calls split
+        `FUTEX_WAKE_OP` across independent bucket critical sections and require
+        both buckets to remain locked across the complete operation; only
+        repeating the user-memory RMW FIXME does not count.
+    - target: { kind: file, path: kernel/src/process/posix_thread/futex.rs }
+      persona: maintainability
+      grounding: rust-type-invariants
+      severity: minor
+      desc: >
+        The preparatory commit changes `futex_wake`, `futex_wake_bitset`, and
+        `futex_requeue` from `Result<usize>` to `Result<isize>` and casts their
+        wake counts to the signed type. These internal helpers return the number
+        of waiters removed or woken, which cannot be negative; using `isize`
+        admits values outside the domain and leaks the syscall return
+        representation into otherwise nonnegative count APIs without a semantic
+        reason.
+      fix: >
+        Keep wake and requeue counts as `usize` throughout the internal futex
+        APIs, including `futex_wake_op`, and convert only at the syscall return
+        boundary where `SyscallReturn` requires its representation.
+      expectation: >
+        A reviewer should flag the unexplained `usize`-to-`isize` return-type
+        change because a number of woken threads cannot be negative, and require
+        the internal APIs to preserve an unsigned count type.
+
+- problem_id: 0403-fadvise64-panic-and-prefetch
+  commit: 36a313263bb156fe3e8ea47c64578afe8fae4033
+  source: >
+    PR-review-derived from PR #2125
+    `https://github.com/asterinas/asterinas/pull/2125`. Diff mode reviews the
+    first reviewed head `36a313263bb156fe3e8ea47c64578afe8fae4033`
+    against its parent. Comments
+    `https://github.com/asterinas/asterinas/pull/2125#discussion_r2136917684`,
+    `https://github.com/asterinas/asterinas/pull/2125#discussion_r2136928250`,
+    `https://github.com/asterinas/asterinas/pull/2125#discussion_r2136846907`,
+    and
+    `https://github.com/asterinas/asterinas/pull/2125#discussion_r2136858871`
+    identified the reachable `todo!()`, unbounded prefetch buffer, I/O under the
+    file-table lock, and incorrect zero-length range handling. Replacement head
+    `7cc30262c39472d9a030a141f1c36e427398a98d` removes the attempted reads and
+    handles every advice as a nonbinding no-op; final head
+    `4e3267cd37b7555a7942dfe8d5638b5ca40fc2a5` retains that remedy. The old full
+    SHA is fetchable from the default upstream, and the reviewed diff predates
+    all review comments and fixes.
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/fadvise64.rs }
+      persona: development
+      grounding: "Reachable panic"
+      severity: critical
+      desc: >
+        `FadviseBehavior::try_from` accepts all six valid Linux advice values,
+        but the match handles only `SEQUENTIAL` and `WILLNEED`; `NORMAL`,
+        `RANDOM`, `DONTNEED`, and `NOREUSE` reach `_ => todo!()`. An
+        unprivileged caller can therefore invoke `fadvise64` with a valid advice
+        such as `POSIX_FADV_NORMAL` and trigger a kernel panic instead of
+        receiving a normal syscall result.
+      fix: >
+        Handle every valid `FadviseBehavior` exhaustively. Until an optimization
+        is implemented correctly, log that the nonbinding advice is ignored and
+        return success; continue returning `EINVAL` only for invalid numeric
+        advice values.
+      expectation: >
+        A reviewer should flag that valid user-controlled advice values reach
+        `todo!()` and can panic the kernel.
+    - target: { kind: file, path: kernel/src/syscall/fadvise64.rs }
+      persona: development
+      grounding: "Unbounded allocation"
+      severity: critical
+      desc: >
+        For `SEQUENTIAL` or `WILLNEED`, the syscall derives `aligned_len` from
+        the user-controlled `offset` and `len`, then executes
+        `vec![0u8; aligned_len]`. A caller can request gigabytes without any
+        bound or chunking, forcing the kernel to allocate and zero an equally
+        large temporary buffer merely to provide a hint. Exhausting the kernel
+        heap reaches OSTD's aborting allocation-error handler, yielding a
+        user-triggerable kernel denial of service; `offset + len` is also left
+        unchecked for overflow.
+      fix: >
+        Do not allocate a buffer proportional to the advised range. A dummy
+        implementation may safely ignore the nonbinding hint; a real
+        implementation should use checked range arithmetic and operate directly
+        on the page cache or process the range in bounded chunks.
+      expectation: >
+        A reviewer should flag the user-sized `vec![0u8; aligned_len]` as an
+        unbounded kernel allocation that can exhaust memory or abort the kernel.
+    - target: { kind: file, path: kernel/src/syscall/fadvise64.rs }
+      persona: development
+      grounding: "I/O under file-table lock"
+      severity: major
+      desc: >
+        `sys_fadvise64` takes the file table's write lock, borrows the file from
+        the locked table, and keeps the guard alive while calling
+        `file.read_bytes_at`. File I/O can block for an unpredictable duration,
+        so one advisory syscall can prevent every other thread sharing that
+        table from looking up, opening, closing, or duplicating descriptors for
+        the duration of the read.
+      fix: >
+        Obtain an owned file reference with `get_file_fast!`, or clone it under
+        a read lock and release the guard before any I/O. The accepted dummy
+        implementation performs no I/O after validating the descriptor.
+      expectation: >
+        A reviewer should flag that `read_bytes_at` runs while the file-table
+        write lock is held and require the guard to be released before I/O.
+    - target: { kind: file, path: kernel/src/syscall/fadvise64.rs }
+      persona: development
+      grounding: "Incorrect zero-length range semantics"
+      severity: minor
+      desc: >
+        Linux defines `len == 0` as advice covering from `offset` through the
+        end of the file. This code instead computes the range solely by page
+        alignment: a page-aligned offset produces `aligned_len == 0` and does
+        nothing, while an unaligned offset reads only one surrounding page.
+        Neither case represents the required through-EOF range, so the claimed
+        `WILLNEED`/`SEQUENTIAL` implementation handles a documented input
+        incorrectly.
+      fix: >
+        If implementing the hint, treat zero length as the remaining file range
+        using the file size and checked arithmetic. Since advice is nonbinding,
+        the accepted interim implementation instead ignores all advice without
+        performing a falsely bounded read.
+      expectation: >
+        A reviewer should flag that `len == 0` must mean from `offset` through
+        EOF, not zero bytes or one aligned page.
+
+- problem_id: 0404-ipc-namespace-checks-and-encapsulation
+  commit: 4b9909f3b1a8e7b3ba34cacd0a8e5522a76d197c
+  source: >
+    PR-review-derived from PR #2988
+    `https://github.com/asterinas/asterinas/pull/2988`. The reviewed snapshot
+    is the first reviewable feature head
+    `4b9909f3b1a8e7b3ba34cacd0a8e5522a76d197c`, whose parent
+    `2de044c7f354c46b9e15e6c087bbe10e10d57571` is the feature commit's diff
+    base; both full SHAs are fetchable from the default upstream. Review comments
+    `https://github.com/asterinas/asterinas/pull/2988#discussion_r3015449871`,
+    `https://github.com/asterinas/asterinas/pull/2988#discussion_r3015449949`,
+    `https://github.com/asterinas/asterinas/pull/2988#discussion_r3015450017`,
+    and `https://github.com/asterinas/asterinas/pull/2988#discussion_r2889265832`
+    identify the two check-then-act races, the leaked lock-guard API, and the
+    Linux-incompatible invalid-ID errno.
+    Later force-pushed heads, culminating in
+    `7cad9f35a1dd29738ee8d26b7f99469dffeb047f`, replace those paths with
+    lock-held registry operations and map invalid IDs to `EINVAL`; the reviewed
+    diff predates those remedies and contains none of their explanatory text.
+  review_mode:
+    diff:
+      base: HEAD^
+  defects:
+    - target: { kind: file, path: kernel/src/syscall/semctl.rs }
+      persona: development
+      grounding: atomic-critical-sections
+      severity: major
+      desc: >
+        `check_and_ctl` first calls `IpcNamespace::check_sem`, which acquires
+        and releases the semaphore-set read lock, and then acquires a second
+        read lock to fetch the set before invoking `ctl_func`. Another thread
+        can remove the set, or remove it and create a different set with the
+        same ID, between those acquisitions. The operation can therefore act
+        on a different object than the one that passed validation, or fail
+        spuriously; once permission checks are enforced, it can also bypass the
+        authorization decision for the replacement set.
+      fix: >
+        Expose one namespace operation that looks up, validates, and invokes
+        the callback while holding the same registry lock, and use it for every
+        `semctl` operation. The accepted revision implements this as
+        `with_sem_set`.
+      expectation: >
+        A reviewer should flag that `check_and_ctl` splits validation from the
+        later lookup across two lock acquisitions and require the check and
+        semaphore operation to stay in one critical section.
+    - target: { kind: file, path: kernel/src/syscall/semget.rs }
+      persona: development
+      grounding: atomic-critical-sections
+      severity: major
+      desc: >
+        `sys_semget` checks for an existing key, releases the namespace lock,
+        and only then calls `create_sem_set_with_key` when `IPC_CREAT` is set.
+        A concurrent caller can create the same key after the check. The second
+        call then returns `EEXIST`, so `semget(key, n, IPC_CREAT)` fails even
+        though Linux should return the set created by the competing caller
+        when `IPC_EXCL` was not requested; the successful path also has no
+        atomic guarantee that the checked set remains the returned object.
+      fix: >
+        Move lookup and conditional creation into one namespace-level
+        get-or-create operation that holds the registry lock for each attempt
+        and retries if a competing insertion wins. The accepted revision uses
+        `IpcNamespace::get_or_create_sem_set` backed by `IpcIds`.
+      expectation: >
+        A reviewer should flag the split `check_sem` plus
+        `create_sem_set_with_key` sequence as a TOCTOU race and require
+        `IPC_CREAT` lookup/create to be atomic, returning an existing set unless
+        `IPC_EXCL` is present.
+    - target: { kind: file, path: kernel/src/syscall/semctl.rs }
+      persona: development
+      grounding: "Incorrect errno"
+      severity: major
+      desc: >
+        For a positive but nonexistent `semid`, `check_and_ctl` propagates the
+        `ENOENT` returned by `IpcNamespace::check_sem`. Linux `semctl(2)`
+        specifies `EINVAL` for an invalid semaphore identifier, so callers see
+        the wrong observable error for every `SEM_*` control command targeting
+        a stale or unknown ID.
+      fix: >
+        Translate the namespace registry's missing-object error to `EINVAL` at
+        the `semctl` boundary, while preserving unrelated errors. The accepted
+        revision centralizes this in `map_sem_id_error` used by `with_sem_set`.
+      expectation: >
+        A reviewer should flag that nonexistent `semid` values return `ENOENT`
+        from `semctl` and require the Linux-compatible `EINVAL` result.
+    - target: { kind: file, path: kernel/src/ipc/ipc_ns.rs }
+      persona: maintainability
+      grounding: information-hiding
+      severity: minor
+      desc: >
+        `IpcNamespace::sem_sets` and `sem_sets_mut` publicly return concrete
+        `RwLock` guards over its internal `BTreeMap`, exposing the lock type,
+        collection type, and locking policy to syscall callers. Those callers
+        perform lookups and removals themselves, duplicating namespace
+        invariants and making the two-lock TOCTOU pattern possible; changing
+        the registry representation would also break every consumer.
+      fix: >
+        Keep the registry fields private and provide higher-level operations
+        that perform lookup, validation, creation, and removal inside
+        `IpcNamespace`. The accepted revision introduces `IpcIds` and exposes
+        `with_sem_set`/`remove_sem_set` instead of raw guards.
+      expectation: >
+        A reviewer should flag the public raw `RwLock`/`BTreeMap` guard API as
+        leaked implementation detail and require namespace-owned operations
+        that encapsulate locking and semaphore invariants.
