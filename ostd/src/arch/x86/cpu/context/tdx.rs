@@ -22,12 +22,12 @@ impl VirtualizationExceptionHandler {
     /// Intel TDX module and saved into the newly-created instance.
     /// So after instantiating a `VirtualizationExceptionHandler`,
     /// we won't need to worry about triggering a new VE.
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
         Self { ve_info }
     }
 
-    pub fn handle(&self, ctx: &mut UserContext) {
+    pub(super) fn handle(&self, ctx: &mut UserContext) {
         let mut generalrags_wrapper = GeneralRegsWrapper(&mut *ctx.general_regs_mut());
         do_handle_virtual_exception(&mut generalrags_wrapper, &self.ve_info);
         *ctx.general_regs_mut() = *generalrags_wrapper.0;

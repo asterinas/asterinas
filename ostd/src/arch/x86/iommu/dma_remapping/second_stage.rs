@@ -11,7 +11,7 @@ use crate::mm::{
 /// The page table used by iommu maps the device address
 /// space to the physical address space.
 #[derive(Clone, Debug)]
-pub struct IommuPtConfig {}
+pub(crate) struct IommuPtConfig {}
 
 // SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
 // `item_ref_from_raw` are correctly implemented with respect to the `Item` and
@@ -94,7 +94,7 @@ bitflags::bitflags! {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct PageTableEntry(usize);
+pub(crate) struct PageTableEntry(usize);
 
 /// Parses a bit-flag bits `val` in the representation of `from` to `to` in bits.
 macro_rules! parse_flags {

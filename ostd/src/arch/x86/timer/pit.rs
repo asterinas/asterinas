@@ -27,7 +27,7 @@ use crate::{
 /// Note that if IOAPIC is used to manage interrupts and square wave mode is enabled, the frequency at which
 /// clock interrupts are generated is `Frequency/2`.
 #[repr(u8)]
-pub enum OperatingMode {
+pub(in crate::arch) enum OperatingMode {
     /// Triggers an interrupt (only on channel 0) when the counter is terminated (1 -> 0).
     /// The data port needs to be reset before the next interrupt.
     /// ```text,ignore
@@ -168,7 +168,7 @@ sensitive_io_port! {
 const TIMER_RATE: u32 = 1193182;
 const TIMER_INTERRUPT: u8 = 0; // ISA interrupt.
 
-pub(crate) fn init(operating_mode: OperatingMode) {
+pub(in crate::arch) fn init(operating_mode: OperatingMode) {
     // Set PIT mode
     // Bit 0 is BCD/binary mode, which is always set to binary mode(value: 0)
     MODE_COMMAND_PORT.write(
@@ -184,7 +184,7 @@ pub(crate) fn init(operating_mode: OperatingMode) {
 }
 
 /// Enables the interrupt line that is connected to the PIT.
-pub(crate) fn enable_interrupt(irq_line: IrqLine) -> MappedIrqLine {
+pub(in crate::arch) fn enable_interrupt(irq_line: IrqLine) -> MappedIrqLine {
     IRQ_CHIP
         .get()
         .unwrap()

@@ -6,12 +6,12 @@ use alloc::{
 };
 use core::{fmt::Display, iter::zip, ops::Deref};
 
-pub type PathElement = String;
+pub(crate) type PathElement = String;
 
-pub type KtestPathIter<'a> = vec_deque::Iter<'a, PathElement>;
+pub(super) type KtestPathIter<'a> = vec_deque::Iter<'a, PathElement>;
 
 #[derive(Debug)]
-pub struct KtestPath {
+pub(crate) struct KtestPath {
     path: VecDeque<PathElement>,
 }
 
@@ -26,47 +26,47 @@ impl From<&str> for KtestPath {
 }
 
 impl KtestPath {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             path: VecDeque::new(),
         }
     }
 
-    pub fn from(s: &str) -> Self {
+    pub(crate) fn from(s: &str) -> Self {
         Self {
             path: s.split("::").map(PathElement::from).collect(),
         }
     }
 
-    pub fn push_back(&mut self, s: &str) {
+    pub(super) fn push_back(&mut self, s: &str) {
         self.path.push_back(PathElement::from(s));
     }
 
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn pop_back(&mut self) -> Option<PathElement> {
+    fn pop_back(&mut self) -> Option<PathElement> {
         self.path.pop_back()
     }
 
     #[expect(dead_code)]
-    pub fn push_front(&mut self, s: &str) {
+    fn push_front(&mut self, s: &str) {
         self.path.push_front(PathElement::from(s))
     }
 
-    pub fn pop_front(&mut self) -> Option<PathElement> {
+    pub(crate) fn pop_front(&mut self) -> Option<PathElement> {
         self.path.pop_front()
     }
 
     #[expect(dead_code)]
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.path.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.path.is_empty()
     }
 
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn starts_with(&self, other: &Self) -> bool {
+    fn starts_with(&self, other: &Self) -> bool {
         if self.path.len() < other.path.len() {
             return false;
         }
@@ -79,7 +79,7 @@ impl KtestPath {
     }
 
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn ends_with(&self, other: &Self) -> bool {
+    fn ends_with(&self, other: &Self) -> bool {
         if self.path.len() < other.path.len() {
             return false;
         }
@@ -91,7 +91,7 @@ impl KtestPath {
         true
     }
 
-    pub fn iter(&self) -> KtestPathIter<'_> {
+    pub(super) fn iter(&self) -> KtestPathIter<'_> {
         self.path.iter()
     }
 }
@@ -168,20 +168,20 @@ mod path_test {
 }
 
 #[derive(Debug)]
-pub struct SuffixTrie {
+pub(super) struct SuffixTrie {
     children: BTreeMap<PathElement, SuffixTrie>,
     is_end: bool,
 }
 
 impl SuffixTrie {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             children: BTreeMap::new(),
             is_end: false,
         }
     }
 
-    pub fn from_paths<I: IntoIterator<Item = KtestPath>>(paths: I) -> Self {
+    pub(super) fn from_paths<I: IntoIterator<Item = KtestPath>>(paths: I) -> Self {
         let mut t = Self::new();
         for i in paths {
             t.insert(i.iter());
@@ -189,7 +189,7 @@ impl SuffixTrie {
         t
     }
 
-    pub fn insert<I, P>(&mut self, path: I)
+    fn insert<I, P>(&mut self, path: I)
     where
         I: DoubleEndedIterator<Item = P>,
         P: Deref<Target = PathElement>,
@@ -203,7 +203,7 @@ impl SuffixTrie {
 
     /// Find if there is a perfect match in this suffix trie.
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub fn matches<I, P>(&self, path: I) -> bool
+    fn matches<I, P>(&self, path: I) -> bool
     where
         I: DoubleEndedIterator<Item = P>,
         P: Deref<Target = PathElement>,
@@ -220,7 +220,7 @@ impl SuffixTrie {
     }
 
     /// Find if any suffix of the path exists in the suffix trie.
-    pub fn contains<I, P>(&self, path: I) -> bool
+    pub(super) fn contains<I, P>(&self, path: I) -> bool
     where
         I: DoubleEndedIterator<Item = P>,
         P: Deref<Target = PathElement>,

@@ -15,12 +15,12 @@ use crate::transport::{
 };
 
 #[derive(Debug)]
-pub struct VirtioPciDriver {
+pub(crate) struct VirtioPciDriver {
     devices: SpinLock<VecDeque<Box<dyn VirtioTransport>>>,
 }
 
 impl VirtioPciDriver {
-    pub fn pop_device_transport(&self) -> Option<Box<dyn VirtioTransport>> {
+    pub(crate) fn pop_device_transport(&self) -> Option<Box<dyn VirtioTransport>> {
         self.devices.lock().pop_front()
     }
 

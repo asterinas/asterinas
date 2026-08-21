@@ -32,7 +32,7 @@ impl TryFrom<&[u8]> for MagicNumber {
 }
 
 /// Detects the format used to encode the payload and decodes the payload accordingly.
-pub fn decode_payload(payload: &[u8]) -> Vec<u8> {
+pub(super) fn decode_payload(payload: &[u8]) -> Vec<u8> {
     let magic = MagicNumber::try_from(payload).unwrap();
     match magic {
         MagicNumber::Elf => payload.to_vec(),

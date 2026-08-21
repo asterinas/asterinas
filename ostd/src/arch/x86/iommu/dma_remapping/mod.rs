@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub use context_table::RootTable;
-pub use second_stage::IommuPtConfig;
+pub(super) use context_table::RootTable;
+pub(crate) use second_stage::IommuPtConfig;
 use spin::Once;
 
 use super::IommuError;
@@ -17,13 +17,13 @@ use crate::{
 mod context_table;
 mod second_stage;
 
-pub fn has_dma_remapping() -> bool {
+pub(crate) fn has_dma_remapping() -> bool {
     PAGE_TABLE.get().is_some()
 }
 
 /// PCI device Location
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct PciDeviceLocation {
+pub(super) struct PciDeviceLocation {
     /// Bus number
     pub bus: u8,
     /// Device number with max 31
@@ -81,7 +81,7 @@ impl PciDeviceLocation {
 /// While the physical address is mapped as the device address (i.e. from calling this method to
 /// calling [`unmap`]), it must point to an untyped memory page. Otherwise, the device may corrupt
 /// kernel data, which could lead to memory safety issues.
-pub unsafe fn map(daddr: Daddr, paddr: Paddr) -> Result<(), IommuError> {
+pub(crate) unsafe fn map(daddr: Daddr, paddr: Paddr) -> Result<(), IommuError> {
     let Some(table) = PAGE_TABLE.get() else {
         return Err(IommuError::NoIommu);
     };
@@ -103,7 +103,7 @@ pub unsafe fn map(daddr: Daddr, paddr: Paddr) -> Result<(), IommuError> {
 /// Unmaps a device address.
 ///
 /// This method will fail if the device address is not mapped (by [`map`]) before.
-pub fn unmap(daddr: Daddr) -> Result<(), IommuError> {
+pub(crate) fn unmap(daddr: Daddr) -> Result<(), IommuError> {
     let Some(table) = PAGE_TABLE.get() else {
         return Err(IommuError::NoIommu);
     };
@@ -121,7 +121,7 @@ pub fn unmap(daddr: Daddr) -> Result<(), IommuError> {
     }
 }
 
-pub fn init() {
+pub(super) fn init() {
     if !IOMMU_REGS
         .get()
         .unwrap()

@@ -40,7 +40,7 @@ use crate::prelude::*;
 /// drop(lazy_delete_u32);
 /// ```
 #[expect(clippy::type_complexity)]
-pub struct LazyDelete<T> {
+pub(crate) struct LazyDelete<T> {
     obj: T,
     is_deleted: AtomicBool,
     delete_fn: Option<Box<dyn FnOnce(&mut T) + Send + Sync>>,
@@ -61,7 +61,7 @@ impl<T> LazyDelete<T> {
     /// The `delete_fn` will be called only if this instance of `LazyDelete` is
     /// marked deleted by the `delete` method and only when this instance
     /// of `LazyDelete` is dropped.
-    pub fn new<F: FnOnce(&mut T) + Send + Sync + 'static>(obj: T, delete_fn: F) -> Self {
+    pub(crate) fn new<F: FnOnce(&mut T) + Send + Sync + 'static>(obj: T, delete_fn: F) -> Self {
         Self {
             obj,
             is_deleted: AtomicBool::new(false),
@@ -70,12 +70,12 @@ impl<T> LazyDelete<T> {
     }
 
     /// Mark this instance deleted.
-    pub fn delete(this: &Self) {
+    pub(crate) fn delete(this: &Self) {
         this.is_deleted.store(true, Ordering::Release);
     }
 
     /// Returns whether this instance has been marked deleted.
-    pub fn is_deleted(this: &Self) -> bool {
+    fn is_deleted(this: &Self) -> bool {
         this.is_deleted.load(Ordering::Acquire)
     }
 }

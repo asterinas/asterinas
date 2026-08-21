@@ -544,7 +544,7 @@ struct SubmittedRequest {
 }
 
 impl SubmittedRequest {
-    pub fn new(id: u16, bio_request: BioRequest) -> Self {
+    fn new(id: u16, bio_request: BioRequest) -> Self {
         Self { id, bio_request }
     }
 }
@@ -553,9 +553,9 @@ impl SubmittedRequest {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
 struct BlockReq {
-    pub type_: u32,
-    pub reserved: u32,
-    pub sector: u64,
+    type_: u32,
+    reserved: u32,
+    sector: u64,
 }
 
 const REQ_SIZE: usize = size_of::<BlockReq>();

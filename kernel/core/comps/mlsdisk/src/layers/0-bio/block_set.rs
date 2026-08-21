@@ -124,14 +124,14 @@ impl_blockset_for!(Arc<T>, "(**self)", |this: &Arc<T>, range| {
 ///
 /// The `region` is the accessible subset.
 #[derive(Clone)]
-pub struct MemDisk {
+pub(in crate::layers) struct MemDisk {
     disk: Arc<Mutex<Buf>>,
     region: Range<BlockId>,
 }
 
 impl MemDisk {
     /// Create a `MemDisk` with the number of blocks.
-    pub fn create(num_blocks: usize) -> Result<Self> {
+    fn create(num_blocks: usize) -> Result<Self> {
         let blocks = Buf::alloc(num_blocks)?;
         Ok(Self {
             disk: Arc::new(Mutex::new(blocks)),

@@ -4,7 +4,7 @@ use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
 
 use crate::{SystemTime, rtc::Driver};
 
-pub struct RtcLoongson {
+pub(super) struct RtcLoongson {
     io_mem: IoMem,
 }
 

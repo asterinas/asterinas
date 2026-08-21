@@ -12,17 +12,17 @@ use crate::{
     info, warn,
 };
 
-pub struct IrtEntryHandle {
+pub(in crate::arch) struct IrtEntryHandle {
     index: u16,
     table: &'static IntRemappingTable,
 }
 
 impl IrtEntryHandle {
-    pub fn index(&self) -> u16 {
+    pub(in crate::arch) fn index(&self) -> u16 {
         self.index
     }
 
-    pub fn enable(&self, vector: u32) {
+    pub(in crate::arch) fn enable(&self, vector: u32) {
         self.table
             .set_entry(self.index, table::IrtEntry::new_enabled(vector));
 
@@ -42,11 +42,11 @@ impl Debug for IrtEntryHandle {
     }
 }
 
-pub fn has_interrupt_remapping() -> bool {
+pub(in crate::arch) fn has_interrupt_remapping() -> bool {
     REMAPPING_TABLE.get().is_some()
 }
 
-pub fn alloc_irt_entry() -> Option<IrtEntryHandle> {
+pub(in crate::arch) fn alloc_irt_entry() -> Option<IrtEntryHandle> {
     let page_table = REMAPPING_TABLE.get()?;
     page_table.alloc()
 }

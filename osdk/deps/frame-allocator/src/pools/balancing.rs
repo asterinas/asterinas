@@ -46,7 +46,10 @@ fn cache_maximal_size(global_size: usize) -> usize {
 }
 
 /// Balances a local cache and the global free pool.
-pub fn balance(local: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>, global: &mut OnDemandGlobalLock) {
+pub(super) fn balance(
+    local: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
+    global: &mut OnDemandGlobalLock,
+) {
     let global_size = global.get_global_size();
 
     let minimal_local_size = cache_minimal_size(global_size);

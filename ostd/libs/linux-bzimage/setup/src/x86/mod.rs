@@ -6,14 +6,14 @@ cfg_select! {
     target_arch = "x86_64" => {
         mod amd64_efi;
 
-        pub use amd64_efi::alloc::alloc_at;
+        pub(crate) use amd64_efi::alloc::alloc_at;
 
         const CFG_TARGET_ARCH_X86_64: usize = 1;
     }
     target_arch = "x86" => {
         mod legacy_i386;
 
-        pub use legacy_i386::alloc::alloc_at;
+        pub(crate) use legacy_i386::alloc::alloc_at;
 
         const CFG_TARGET_ARCH_X86_64: usize = 0;
     }
@@ -28,7 +28,7 @@ global_asm!(
 );
 
 /// Returns the difference between the real load address and the one in the linker script.
-pub fn image_load_offset() -> isize {
+pub(crate) fn image_load_offset() -> isize {
     /// The load address of the `entry_legacy32` symbol specified in the linker script.
     const CODE32_START: isize = 0x100000;
 

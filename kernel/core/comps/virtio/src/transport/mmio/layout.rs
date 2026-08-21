@@ -4,7 +4,7 @@ use core::fmt::Debug;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod)]
-pub struct VirtioMmioLayout {
+pub(super) struct VirtioMmioLayout {
     /// Magic value: 0x74726976. **Read-only**
     pub magic_value: u32,
     /// Device version. 1 => Legacy, 2 => Normal. **Read-only**
