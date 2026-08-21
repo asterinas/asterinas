@@ -416,6 +416,10 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    fn symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        Err(Error::new(Errno::EOPNOTSUPP))
+    }
+
     fn create_tmpfile(
         &self,
         mode: InodeMode,
@@ -465,10 +469,6 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn write_link(&self, target: &str) -> Result<()> {
         Err(Error::new(Errno::EISDIR))
     }
 

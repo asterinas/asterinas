@@ -395,15 +395,33 @@ impl Deref for DirDentry<'_> {
 }
 
 impl DirDentry<'_> {
-    /// Creates a `Dentry` by creating a new inode of the `type_` with the `mode`.
+    /// Creates a `Dentry` by creating a new non-symbolic-link inode.
+    ///
+    /// This path deliberately cannot create symbolic links.
+    /// Use [`Self::symlink`] when the new child is a symbolic link.
     pub(super) fn create(
         &self,
         name: &str,
         type_: InodeType,
         mode: InodeMode,
     ) -> Result<Arc<Dentry>> {
+        self.create_child(name, || self.inode.create(name, type_, mode))
+    }
+
+    /// Creates a `Dentry` by creating a symbolic-link inode with its target.
+    ///
+    /// This is the only child-creation path that creates symbolic links.
+    pub(super) fn symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<Dentry>> {
+        self.create_child(name, || self.inode.symlink(name, target, mode))
+    }
+
+    fn create_child(
+        &self,
+        name: &str,
+        create_inode_fn: impl FnOnce() -> Result<Arc<dyn Inode>>,
+    ) -> Result<Arc<Dentry>> {
         let children = self.validate_child_absent(name)?;
-        let new_inode = self.inode.create(name, type_, mode)?;
+        let new_inode = create_inode_fn()?;
         let mut children = children.upgrade();
         let new_child = Dentry::new(
             new_inode,

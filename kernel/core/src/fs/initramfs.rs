@@ -90,6 +90,14 @@ fn try_append_entry_to_rootfs<R: Read>(
     entry: &mut CpioEntry<R>,
     path_resolver: &PathResolver,
 ) -> Result<()> {
+    let link_data = if matches!(entry.metadata().file_type(), FileType::Link) {
+        let mut link_data: Vec<u8> = Vec::new();
+        entry.read_all(&mut link_data)?;
+        Some(link_data)
+    } else {
+        None
+    };
+
     // Make sure the name is a relative path, and is not end with "/".
     let entry_name = entry.name().trim_start_matches('/').trim_end_matches('/');
     if entry_name.is_empty() {
@@ -124,13 +132,8 @@ fn try_append_entry_to_rootfs<R: Read>(
             let _ = parent.new_fs_child(name, InodeType::Dir, mode)?;
         }
         FileType::Link => {
-            let path = parent.new_fs_child(name, InodeType::SymLink, mode)?;
-            let link_content = {
-                let mut link_data: Vec<u8> = Vec::new();
-                entry.read_all(&mut link_data)?;
-                core::str::from_utf8(&link_data)?.to_string()
-            };
-            path.inode().write_link(&link_content)?;
+            let link_content = core::str::from_utf8(link_data.as_deref().unwrap())?;
+            parent.new_fs_symlink_child(name, link_content, mode)?;
         }
         FileType::Char => {
             let device_id = try_device_id_from_metadata(metadata)?;
