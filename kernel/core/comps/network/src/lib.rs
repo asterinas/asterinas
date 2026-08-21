@@ -4,66 +4,20 @@
 #![deny(unsafe_code)]
 #![feature(trait_alias)]
 
-mod buffer;
 pub mod dma_pool;
-mod driver;
 
 extern crate alloc;
-#[macro_use]
-extern crate ostd_pod;
 
 use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
-use core::{any::Any, fmt::Debug};
 
-use aster_bigtcp::device::DeviceCapabilities;
+use aster_bigtcp::device::AnyNetworkDevice;
 use aster_softirq::{
     BottomHalfDisabled, SoftIrqLine,
     softirq_id::{NETWORK_RX_SOFTIRQ_ID, NETWORK_TX_SOFTIRQ_ID},
 };
-pub use buffer::{RxBuffer, TxBuffer, TxBufferBuilder};
 use component::{ComponentInitError, init_component};
 use ostd::sync::SpinLock;
 use spin::Once;
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
-pub struct EthernetAddr(pub [u8; 6]);
-
-#[derive(Clone, Copy, Debug)]
-pub enum NetError {
-    NotReady,
-    Busy,
-    NoMemory,
-}
-
-pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
-    // ================Device Information=================
-
-    fn mac_addr(&self) -> EthernetAddr;
-    fn capabilities(&self) -> DeviceCapabilities;
-
-    // ================Device Operation===================
-
-    fn can_receive(&self) -> bool;
-    fn can_send(&self) -> bool;
-
-    /// Receives a packet from network. If packet is ready, returns a `RxBuffer` containing the packet.
-    /// Otherwise, return [`NetError::NotReady`].
-    fn receive(&mut self) -> Result<RxBuffer, NetError>;
-
-    /// Sends a packet to network.
-    fn send(&mut self, packet: &[u8]) -> Result<(), NetError>;
-
-    /// Frees processes tx buffers.
-    fn free_processed_tx_buffers(&mut self);
-
-    /// Notifies the device driver that a polling operation has ended.
-    ///
-    /// The driver can assume that the device remains protected by acquiring a poll lock
-    /// for the entire duration of the polling process.
-    /// Thus two polling process cannot happen simultaneously.
-    fn notify_poll_end(&mut self);
-}
 
 pub trait NetDeviceCallback = Fn() + Send + Sync + 'static;
 

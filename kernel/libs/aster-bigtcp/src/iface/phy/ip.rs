@@ -3,20 +3,22 @@
 use alloc::sync::Arc;
 
 use smoltcp::{
-    iface::Config,
-    phy::{Device, TxToken},
-    wire::{self, EthernetAddress, Ipv4Cidr, Ipv4Packet, Ipv6Cidr, Ipv6Packet},
+    iface::{Config, Context},
+    wire::{self, EthernetAddress, Ipv4Cidr, Ipv6Cidr},
 };
 
 use crate::{
-    device::WithDevice,
+    device::{AnyNetworkDevice, WithDevice, new_interface},
     ext::Ext,
     iface::{
         Iface, InterfaceName, ScheduleNextPoll,
-        common::{IfaceCommon, InterfaceFlags, InterfaceType, IpPacket},
+        common::{
+            IfaceCommon, InterfaceFlags, InterfaceType, PhyProcessResult, PollPhy, TxPacketWithDst,
+        },
         iface::internal::IfaceInternal,
         time::get_network_timestamp,
     },
+    packet::{AllocatedTxPacket, LinkLayer, RxPacket, TxPacket},
 };
 
 pub struct IpIface<D, E: Ext> {
@@ -39,7 +41,7 @@ impl<D: WithDevice, E: Ext> IpIface<D, E> {
             let config = Config::new(wire::HardwareAddress::Ip);
             let now = get_network_timestamp();
 
-            let mut interface = smoltcp::iface::Interface::new(config, device, now);
+            let mut interface = new_interface(config, device.capabilities(), now);
             interface.update_ip_addrs(|ip_addrs| {
                 debug_assert!(ip_addrs.is_empty());
                 ip_addrs.push(wire::IpCidr::Ipv4(ip_cidr)).unwrap();
@@ -69,36 +71,8 @@ impl<D: WithDevice + 'static, E: Ext> Iface<E> for IpIface<D, E> {
 
     fn poll(&self) {
         self.driver.with(|device| {
-            let next_poll = self.common.poll(
-                device,
-                |data, _iface_cx, tx_token| {
-                    if data.is_empty() {
-                        return None;
-                    }
-                    let version = data[0] >> 4;
-
-                    if version == 4 {
-                        let pkt = Ipv4Packet::new_checked(data).ok()?;
-                        Some((IpPacket::Ipv4(pkt), tx_token))
-                    } else if version == 6 {
-                        let pkt = Ipv6Packet::new_checked(data).ok()?;
-                        Some((IpPacket::Ipv6(pkt), tx_token))
-                    } else {
-                        None
-                    }
-                },
-                |pkt, iface_cx, tx_token| {
-                    let ip_repr = pkt.ip_repr();
-                    tx_token.consume(ip_repr.buffer_len(), |buffer| {
-                        ip_repr.emit(&mut buffer[..], &iface_cx.checksum_caps());
-                        pkt.emit_payload(
-                            &ip_repr,
-                            &mut buffer[ip_repr.header_len()..],
-                            &iface_cx.caps,
-                        );
-                    });
-                },
-            );
+            let next_poll = self.common.poll(device, self);
+            device.notify_poll_end();
             self.common.sched_poll().schedule_next_poll(next_poll);
         });
     }
@@ -106,5 +80,27 @@ impl<D: WithDevice + 'static, E: Ext> Iface<E> for IpIface<D, E> {
     fn mtu(&self) -> usize {
         self.driver
             .with(|device| device.capabilities().max_transmission_unit)
+    }
+}
+
+impl<D: WithDevice + 'static, E: Ext> PollPhy for IpIface<D, E> {
+    fn process(
+        &self,
+        packet: RxPacket<LinkLayer>,
+        _iface_cx: &mut Context,
+    ) -> Option<PhyProcessResult> {
+        Some(PhyProcessResult::Ip(packet.peel(0)))
+    }
+
+    fn dispatch(
+        &self,
+        packet: TxPacketWithDst,
+        _iface_cx: &mut Context,
+    ) -> Option<TxPacket<LinkLayer>> {
+        Some(packet.packet.pack(0))
+    }
+
+    fn alloc_tx_buffer(&self, payload_len: usize) -> Result<AllocatedTxPacket, ostd::Error> {
+        D::Device::alloc_tx_buffer(payload_len)
     }
 }

@@ -86,9 +86,11 @@ dependencies = [
  "int-to-c-enum",
  "jhash",
  "ostd",
+ "ostd-pod",
  "smoltcp",
  "spin",
  "takeable",
+ "zerocopy",
 ]
 
 [[package]]
@@ -284,9 +286,7 @@ dependencies = [
  "bitvec",
  "component",
  "ostd",
- "ostd-pod",
  "spin",
- "zerocopy",
 ]
 
 [[package]]
@@ -1778,7 +1778,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 [[package]]
 name = "smoltcp"
 version = "0.11.0"
-source = "git+https://github.com/asterinas/smoltcp?tag=r_2024-11-08_f07e5b5#b10671de8aac3694e16b8f57418aa90f2891af3b"
+source = "git+https://github.com/asterinas/smoltcp?tag=r_2026-08-11_1b7629c#56ab83798451a91dad5faa3314e5dc592c675d94"
 dependencies = [
  "bitflags 1.3.2",
  "byteorder",

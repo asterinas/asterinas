@@ -1,23 +1,30 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Arc, vec, vec::Vec};
+use alloc::{sync::Arc, vec::Vec};
 
+use ostd::mm::{Infallible, VmReader};
 use smoltcp::{
-    iface::{
-        Context,
-        packet::{IpPayload, Packet, icmp_reply_payload_len},
-    },
-    phy::{ChecksumCapabilities, Device, RxToken, TxToken},
+    storage::SliceLike,
     wire::{
-        IPV4_HEADER_LEN, IPV4_MIN_MTU, Icmpv4DstUnreachable, Icmpv4Repr, IpAddress, IpProtocol,
-        IpRepr, Ipv4Address, Ipv4Packet, Ipv4Repr, Ipv6Packet, Ipv6Repr, TcpControl, TcpPacket,
-        TcpRepr, UdpPacket, UdpRepr,
+        IPV4_HEADER_LEN, IPV4_MIN_MTU, Icmpv4DstUnreachable, IpAddress, IpProtocol, IpRepr,
+        Ipv4Address, Ipv4Repr, TcpControl, TcpRepr, UDP_HEADER_LEN, UdpRepr,
     },
 };
 
-use super::{common::IpPacket, poll_iface::PollableIfaceMut};
+use super::{
+    common::{PhyProcessResult, PollPhy, TxPacketWithDst},
+    packet_slice::PacketSlice,
+    poll_iface::PollableIfaceMut,
+    wire::{
+        icmp,
+        ip::{self, IpReprWithLen},
+        tcp, udp,
+    },
+};
 use crate::{
+    device::{AnyNetworkDevice, NetError},
     ext::Ext,
+    packet::{ApplicationLayer, NetworkLayer, RxPacket, TransportLayer, TxPacket},
     socket::{TcpConnectionBg, TcpProcessResult},
     socket_table::{ConnectionKey, ListenerKey, SocketTable},
 };
@@ -51,102 +58,81 @@ impl<'a, E: Ext> PollContext<'a, E> {
     }
 }
 
-// This works around <https://github.com/rust-lang/rust/issues/49601>.
-// See the issue above for details.
-pub(super) trait FnHelper<A, B, C, O>: FnMut(A, B, C) -> O {}
-impl<A, B, C, O, F> FnHelper<A, B, C, O> for F where F: FnMut(A, B, C) -> O {}
-
 impl<E: Ext> PollContext<'_, E> {
-    pub(super) fn poll_ingress<D, P, Q>(
-        &mut self,
-        device: &mut D,
-        process_phy: &mut P,
-        dispatch_phy: &mut Q,
-    ) where
-        D: Device + ?Sized,
-        P: for<'pkt, 'cx, 'tx> FnHelper<
-                &'pkt [u8],
-                &'cx mut Context,
-                D::TxToken<'tx>,
-                Option<(IpPacket<'pkt>, D::TxToken<'tx>)>,
-            >,
-        Q: FnMut(&Packet, &mut Context, D::TxToken<'_>),
-    {
-        while let Some((rx_token, tx_token)) = device.receive(self.iface.context().now()) {
-            rx_token.consume(|data| {
-                let Some((ip_packet, tx_token)) =
-                    process_phy(data, self.iface.context_mut(), tx_token)
-                else {
-                    return;
-                };
+    pub(super) fn poll_ingress(&mut self, device: &mut dyn AnyNetworkDevice, phy: &dyn PollPhy) {
+        loop {
+            let rx_packet = match device.receive() {
+                Ok(packet) => packet,
+                Err(NetError::NotReady) => break,
+                Err(err) => {
+                    ostd::error!("failed to receive a network packet: {:?}", err);
+                    break;
+                }
+            };
 
-                let reply = match ip_packet {
-                    IpPacket::Ipv4(p) => self.parse_and_process_ipv4(p),
-                    IpPacket::Ipv6(p) => self.parse_and_process_ipv6(p),
-                };
-                let Some(reply) = reply else { return };
-                dispatch_phy(&reply, self.iface.context_mut(), tx_token);
-            });
+            let Some(processed) = phy.process(rx_packet, self.iface.context_mut()) else {
+                continue;
+            };
+            let (packet, ip_version) = match processed {
+                PhyProcessResult::Ip(packet) => (packet, None),
+                PhyProcessResult::Ipv4(packet) => (packet, Some(ip::Version::V4)),
+                PhyProcessResult::Ipv6(packet) => (packet, Some(ip::Version::V6)),
+                PhyProcessResult::Tx(packet) => {
+                    if let Err(err) = device.send(packet) {
+                        ostd::error!("failed to send a network packet: {:?}", err);
+                    }
+                    continue;
+                }
+            };
+
+            if let Some(reply) = self.parse_and_process_ip(phy, packet, ip_version)
+                && let Some(tx_packet) = phy.dispatch(reply, self.iface.context_mut())
+                && let Err(err) = device.send(tx_packet)
+            {
+                ostd::error!("failed to send a network packet: {:?}", err);
+            }
         }
     }
 
-    fn parse_and_process_ipv4<'pkt>(
+    fn parse_and_process_ip(
         &mut self,
-        pkt: Ipv4Packet<&'pkt [u8]>,
-    ) -> Option<Packet<'pkt>> {
+        phy: &dyn PollPhy,
+        packet: RxPacket<NetworkLayer>,
+        ip_version: Option<ip::Version>,
+    ) -> Option<TxPacketWithDst> {
         // Parse the IP header. Ignore the packet if the header is ill-formed.
-        let repr = Ipv4Repr::parse(&pkt, &self.iface.context().checksum_caps()).ok()?;
+        let checksum_caps = self.iface.context().checksum_caps();
+        let (packet, ip_repr) = ip::parse(packet, ip_version, checksum_caps.ipv4.rx())?;
 
-        if !repr.dst_addr.is_broadcast() && !self.is_unicast_local(IpAddress::Ipv4(repr.dst_addr)) {
+        if !ip_repr.inner.dst_addr().is_broadcast()
+            && !self.is_unicast_local(ip_repr.inner.dst_addr())
+        {
             return self.generate_icmp_unreachable(
-                &IpRepr::Ipv4(repr),
-                pkt.payload(),
+                phy,
+                &ip_repr.inner,
+                packet.reader_with_header(ip_repr.header_len),
                 Icmpv4DstUnreachable::HostUnreachable,
             );
         }
 
-        let checksum_caps = self.iface.context().checksum_caps();
-        match repr.next_header {
+        match ip_repr.inner.next_header() {
             IpProtocol::Tcp => {
-                self.parse_and_process_tcp(&IpRepr::Ipv4(repr), pkt.payload(), &checksum_caps)
+                self.parse_and_process_tcp(phy, &ip_repr.inner, packet, checksum_caps.tcp.rx())
             }
             IpProtocol::Udp => {
-                self.parse_and_process_udp(&IpRepr::Ipv4(repr), pkt.payload(), &checksum_caps)
+                self.parse_and_process_udp(phy, &ip_repr, packet, checksum_caps.udp.rx())
             }
             _ => None,
         }
     }
 
-    fn parse_and_process_ipv6<'pkt>(
+    fn parse_and_process_tcp(
         &mut self,
-        pkt: Ipv6Packet<&'pkt [u8]>,
-    ) -> Option<Packet<'pkt>> {
-        // Parse the IPv6 header. Ignore the packet if the header is ill-formed.
-        let repr = Ipv6Repr::parse(&pkt).ok()?;
-
-        if !self.is_unicast_local(IpAddress::Ipv6(repr.dst_addr)) {
-            // TODO: Generate an IPv6 ICMP unreachable message.
-            return None;
-        }
-
-        let checksum_caps = self.iface.context().checksum_caps();
-        match repr.next_header {
-            IpProtocol::Tcp => {
-                self.parse_and_process_tcp(&IpRepr::Ipv6(repr), pkt.payload(), &checksum_caps)
-            }
-            IpProtocol::Udp => {
-                self.parse_and_process_udp(&IpRepr::Ipv6(repr), pkt.payload(), &checksum_caps)
-            }
-            _ => None,
-        }
-    }
-
-    fn parse_and_process_tcp<'pkt>(
-        &mut self,
+        phy: &dyn PollPhy,
         ip_repr: &IpRepr,
-        ip_payload: &'pkt [u8],
-        checksum_caps: &ChecksumCapabilities,
-    ) -> Option<Packet<'pkt>> {
+        packet: RxPacket<TransportLayer>,
+        verify_checksum: bool,
+    ) -> Option<TxPacketWithDst> {
         // TCP connections can only be established between unicast addresses. Ignore the packet if
         // this is not the case. See
         // <https://datatracker.ietf.org/doc/html/rfc9293#section-3.9.2.3>.
@@ -155,32 +141,28 @@ impl<E: Ext> PollContext<'_, E> {
         }
 
         // Parse the TCP header. Ignore the packet if the header is ill-formed.
-        let tcp_pkt = TcpPacket::new_checked(ip_payload).ok()?;
-        let tcp_repr = TcpRepr::parse(
-            &tcp_pkt,
-            &ip_repr.src_addr(),
-            &ip_repr.dst_addr(),
-            checksum_caps,
-        )
-        .ok()?;
+        let (packet, tcp_repr) = tcp::parse(packet, ip_repr, verify_checksum)?;
 
-        self.process_tcp_until_outgoing(ip_repr, &tcp_repr)
-            .map(|(ip_repr, tcp_repr)| Packet::new(ip_repr, IpPayload::Tcp(tcp_repr)))
+        let (ip_repr, tcp_repr) =
+            self.process_tcp_until_outgoing(ip_repr, &tcp_repr, packet.reader().into())?;
+        self.emit_tcp(phy, &ip_repr, &tcp_repr)
     }
 
     fn process_tcp_until_outgoing(
         &mut self,
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
+        payload: PacketSlice<'_>,
     ) -> Option<(IpRepr, TcpRepr<'static>)> {
-        let (mut ip_repr, mut tcp_repr) = self.process_tcp(ip_repr, tcp_repr)?;
+        let (mut ip_repr, mut tcp_repr) = self.process_tcp(ip_repr, tcp_repr, payload)?;
 
         loop {
             if !self.is_unicast_local(ip_repr.dst_addr()) {
                 return Some((ip_repr, tcp_repr));
             }
 
-            let (new_ip_repr, new_tcp_repr) = self.process_tcp(&ip_repr, &tcp_repr)?;
+            let payload = PacketSlice::from(tcp_repr.payload);
+            let (new_ip_repr, new_tcp_repr) = self.process_tcp(&ip_repr, &tcp_repr, payload)?;
             ip_repr = new_ip_repr;
             tcp_repr = new_tcp_repr;
         }
@@ -190,6 +172,7 @@ impl<E: Ext> PollContext<'_, E> {
         &mut self,
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
+        payload: PacketSlice<'_>,
     ) -> Option<(IpRepr, TcpRepr<'static>)> {
         // Process packets belonging to existing connections first.
         // Note that we must do this first because SYN packets may match existing TIME-WAIT
@@ -225,7 +208,7 @@ impl<E: Ext> PollContext<'_, E> {
 
             if let Some(connection) = connection {
                 let (process_result, became_dead) =
-                    connection.process(&mut self.iface, ip_repr, tcp_repr);
+                    connection.process(&mut self.iface, ip_repr, tcp_repr, payload.clone());
                 if *became_dead {
                     self.actions
                         .push(SocketTableAction::DelTcpConn(*connection.connection_key()));
@@ -249,7 +232,7 @@ impl<E: Ext> PollContext<'_, E> {
             let listener_key = ListenerKey::new(ip_repr.dst_addr(), tcp_repr.dst_port);
             if let Some(listener) = self.sockets.lookup_listener(&listener_key) {
                 let (processed, new_tcp_conn) =
-                    listener.process(&mut self.iface, ip_repr, tcp_repr);
+                    listener.process(&mut self.iface, ip_repr, tcp_repr, payload.clone());
 
                 if let Some(tcp_conn) = new_tcp_conn {
                     self.actions.push(SocketTableAction::AddTcpConn(tcp_conn));
@@ -271,29 +254,30 @@ impl<E: Ext> PollContext<'_, E> {
             return None;
         }
 
-        Some(smoltcp::socket::tcp::Socket::rst_reply(ip_repr, tcp_repr))
+        let (ip_repr, mut reply_repr) = smoltcp::socket::tcp::Socket::rst_reply(ip_repr, tcp_repr);
+        if reply_repr.ack_number.is_some() {
+            // Fix the ACK number, as the payload is kept outside of `TcpRepr`.
+            reply_repr.ack_number =
+                Some(tcp_repr.seq_number + tcp_repr.control.len() + payload.len());
+        }
+        Some((ip_repr, reply_repr))
     }
 
-    fn parse_and_process_udp<'pkt>(
+    fn parse_and_process_udp(
         &mut self,
-        ip_repr: &IpRepr,
-        ip_payload: &'pkt [u8],
-        checksum_caps: &ChecksumCapabilities,
-    ) -> Option<Packet<'pkt>> {
+        phy: &dyn PollPhy,
+        ip_repr: &IpReprWithLen,
+        packet: RxPacket<TransportLayer>,
+        verify_checksum: bool,
+    ) -> Option<TxPacketWithDst> {
         // Parse the UDP header. Ignore the packet if the header is ill-formed.
-        let udp_pkt = UdpPacket::new_checked(ip_payload).ok()?;
-        let udp_repr = UdpRepr::parse(
-            &udp_pkt,
-            &ip_repr.src_addr(),
-            &ip_repr.dst_addr(),
-            checksum_caps,
-        )
-        .ok()?;
+        let (packet, udp_repr) = udp::parse(packet, &ip_repr.inner, verify_checksum)?;
 
-        if !self.process_udp(ip_repr, &udp_repr, udp_pkt.payload()) {
+        if !self.process_udp(&ip_repr.inner, &udp_repr, packet.reader().into()) {
             return self.generate_icmp_unreachable(
-                ip_repr,
-                ip_payload,
+                phy,
+                &ip_repr.inner,
+                packet.reader_with_header(ip_repr.header_len + UDP_HEADER_LEN),
                 Icmpv4DstUnreachable::PortUnreachable,
             );
         }
@@ -301,7 +285,12 @@ impl<E: Ext> PollContext<'_, E> {
         None
     }
 
-    fn process_udp(&mut self, ip_repr: &IpRepr, udp_repr: &UdpRepr, udp_payload: &[u8]) -> bool {
+    fn process_udp(
+        &mut self,
+        ip_repr: &IpRepr,
+        udp_repr: &UdpRepr,
+        udp_payload: PacketSlice<'_>,
+    ) -> bool {
         let mut processed = false;
 
         for socket in self.sockets.udp_socket_iter() {
@@ -309,7 +298,12 @@ impl<E: Ext> PollContext<'_, E> {
                 continue;
             }
 
-            processed |= socket.process(self.iface.context_mut(), ip_repr, udp_repr, udp_payload);
+            processed |= socket.process(
+                self.iface.context_mut(),
+                ip_repr,
+                udp_repr,
+                udp_payload.clone(),
+            );
             if processed && ip_repr.dst_addr().is_unicast() {
                 break;
             }
@@ -318,12 +312,13 @@ impl<E: Ext> PollContext<'_, E> {
         processed
     }
 
-    fn generate_icmp_unreachable<'pkt>(
-        &self,
+    fn generate_icmp_unreachable(
+        &mut self,
+        phy: &dyn PollPhy,
         ip_repr: &IpRepr,
-        ip_payload: &'pkt [u8],
+        mut ip_buffer: VmReader<'_, Infallible>,
         reason: Icmpv4DstUnreachable,
-    ) -> Option<Packet<'pkt>> {
+    ) -> Option<TxPacketWithDst> {
         if !ip_repr.src_addr().is_unicast() || !ip_repr.dst_addr().is_unicast() {
             return None;
         }
@@ -339,30 +334,99 @@ impl<E: Ext> PollContext<'_, E> {
         }
 
         let IpRepr::Ipv4(ipv4_repr) = ip_repr else {
+            // TODO: Generate an IPv6 ICMP unreachable message.
             return None;
         };
 
-        let reply_len = icmp_reply_payload_len(ip_payload.len(), IPV4_MIN_MTU, IPV4_HEADER_LEN);
-        let icmp_repr = Icmpv4Repr::DstUnreachable {
-            reason,
-            header: *ipv4_repr,
-            data: &ip_payload[..reply_len],
+        // "[..] the ICMP datagram SHOULD contain as much of the original datagram as possible
+        // without the length of the ICMP datagram exceeding 576 bytes". See
+        // <https://datatracker.ietf.org/doc/html/rfc1812#section-4.3.2.3>.
+        let quote_len = ip_buffer
+            .remain()
+            .min(IPV4_MIN_MTU - IPV4_HEADER_LEN - icmp::HEADER_LEN);
+        let mut builder = match phy.alloc_tx_buffer(quote_len) {
+            Ok(buffer) => buffer.to_builder(),
+            Err(err) => {
+                ostd::error!("failed to allocate a network packet: {:?}", err);
+                return None;
+            }
+        };
+        let written_len = builder.append().write(&mut ip_buffer);
+        debug_assert_eq!(written_len, quote_len);
+        builder.commit(written_len);
+
+        let reply_ip_repr = IpRepr::Ipv4(Ipv4Repr {
+            src_addr: self
+                .iface
+                .context()
+                .ipv4_addr()
+                .unwrap_or(Ipv4Address::UNSPECIFIED),
+            dst_addr: ipv4_repr.src_addr,
+            next_header: IpProtocol::Icmp,
+            payload_len: icmp::HEADER_LEN + quote_len,
+            hop_limit: 64,
+        });
+        let checksum_caps = self.iface.context().checksum_caps();
+        let packet = icmp::emit_dst_unreachable(builder.build(), reason, checksum_caps.icmpv4.tx());
+        let packet = ip::emit(packet, &reply_ip_repr, checksum_caps.ipv4.tx());
+
+        Some(TxPacketWithDst {
+            packet,
+            dst_addr: reply_ip_repr.dst_addr(),
+        })
+    }
+
+    fn emit_tcp(
+        &self,
+        phy: &dyn PollPhy,
+        ip_repr: &IpRepr,
+        tcp_repr: &TcpRepr<'_>,
+    ) -> Option<TxPacketWithDst> {
+        let checksum_caps = self.iface.context().checksum_caps();
+
+        let packet = Self::copy_payload(phy, tcp_repr.payload)?;
+        let packet = tcp::emit(packet, ip_repr, tcp_repr, checksum_caps.tcp.tx());
+        let packet = ip::emit(packet, ip_repr, checksum_caps.ipv4.tx());
+
+        Some(TxPacketWithDst {
+            packet,
+            dst_addr: ip_repr.dst_addr(),
+        })
+    }
+
+    fn emit_udp(
+        &self,
+        phy: &dyn PollPhy,
+        ip_repr: &IpRepr,
+        udp_repr: &UdpRepr,
+        payload: &[u8],
+    ) -> Option<TxPacketWithDst> {
+        let checksum_caps = self.iface.context().checksum_caps();
+
+        let packet = Self::copy_payload(phy, payload)?;
+        let packet = udp::emit(packet, ip_repr, udp_repr, checksum_caps.udp.tx());
+        let packet = ip::emit(packet, ip_repr, checksum_caps.ipv4.tx());
+
+        Some(TxPacketWithDst {
+            packet,
+            dst_addr: ip_repr.dst_addr(),
+        })
+    }
+
+    fn copy_payload(phy: &dyn PollPhy, payload: &[u8]) -> Option<TxPacket<ApplicationLayer>> {
+        let mut builder = match phy.alloc_tx_buffer(payload.len()) {
+            Ok(buffer) => buffer.to_builder(),
+            Err(err) => {
+                ostd::error!("failed to allocate a network packet: {:?}", err);
+                return None;
+            }
         };
 
-        Some(Packet::new_ipv4(
-            Ipv4Repr {
-                src_addr: self
-                    .iface
-                    .context()
-                    .ipv4_addr()
-                    .unwrap_or(Ipv4Address::UNSPECIFIED),
-                dst_addr: ipv4_repr.src_addr,
-                next_header: IpProtocol::Icmp,
-                payload_len: icmp_repr.buffer_len(),
-                hop_limit: 64,
-            },
-            IpPayload::Icmpv4(icmp_repr),
-        ))
+        let written_len = builder.append().write(&mut VmReader::from(payload));
+        debug_assert_eq!(written_len, payload.len());
+        builder.commit(written_len);
+
+        Some(builder.build())
     }
 
     /// Returns whether the destination address is the unicast address of a local interface.
@@ -386,40 +450,38 @@ impl<E: Ext> PollContext<'_, E> {
 }
 
 impl<E: Ext> PollContext<'_, E> {
-    pub(super) fn poll_egress<D, Q>(&mut self, device: &mut D, dispatch_phy: &mut Q)
-    where
-        D: Device + ?Sized,
-        Q: FnMut(&Packet, &mut Context, D::TxToken<'_>),
-    {
-        while let Some(tx_token) = device.transmit(self.iface.context().now()) {
-            if !self.dispatch_ip(tx_token, dispatch_phy) {
+    pub(super) fn poll_egress(&mut self, device: &mut dyn AnyNetworkDevice, phy: &dyn PollPhy) {
+        while device.can_send() {
+            let (did_something, packet) = self.dispatch_ip(phy);
+
+            if let Some(packet) = packet
+                && let Some(tx_packet) = phy.dispatch(packet, self.iface.context_mut())
+                && let Err(err) = device.send(tx_packet)
+            {
+                ostd::error!("failed to send a network packet: {:?}", err);
+                break;
+            }
+
+            if !did_something {
                 break;
             }
         }
     }
 
-    fn dispatch_ip<T, Q>(&mut self, tx_token: T, dispatch_phy: &mut Q) -> bool
-    where
-        T: TxToken,
-        Q: FnMut(&Packet, &mut Context, T),
-    {
-        let (did_something_tcp, tx_token) = self.dispatch_tcp(tx_token, dispatch_phy);
+    fn dispatch_ip(&mut self, phy: &dyn PollPhy) -> (bool, Option<TxPacketWithDst>) {
+        let (did_something_tcp, tx_packet) = self.dispatch_tcp(phy);
 
-        let Some(tx_token) = tx_token else {
-            return did_something_tcp;
-        };
+        if tx_packet.is_some() {
+            return (did_something_tcp, tx_packet);
+        }
 
-        let (did_something_udp, _tx_token) = self.dispatch_udp(tx_token, dispatch_phy);
+        let (did_something_udp, tx_packet) = self.dispatch_udp(phy);
 
-        did_something_tcp || did_something_udp
+        (did_something_tcp || did_something_udp, tx_packet)
     }
 
-    fn dispatch_tcp<T, Q>(&mut self, tx_token: T, dispatch_phy: &mut Q) -> (bool, Option<T>)
-    where
-        T: TxToken,
-        Q: FnMut(&Packet, &mut Context, T),
-    {
-        let mut tx_token = Some(tx_token);
+    fn dispatch_tcp(&mut self, phy: &dyn PollPhy) -> (bool, Option<TxPacketWithDst>) {
+        let mut tx_packet = None;
         let mut did_something = false;
 
         loop {
@@ -438,30 +500,25 @@ impl<E: Ext> PollContext<'_, E> {
                     let mut this = PollContext::new(iface, self.sockets, self.actions);
 
                     if !this.is_unicast_local(ip_repr.dst_addr()) {
-                        dispatch_phy(
-                            &Packet::new(ip_repr.clone(), IpPayload::Tcp(*tcp_repr)),
-                            this.iface.context_mut(),
-                            tx_token.take().unwrap(),
-                        );
+                        tx_packet = this.emit_tcp(phy, ip_repr, tcp_repr);
                         return None;
                     }
 
                     if !socket.can_process(tcp_repr.dst_port) {
-                        return this.process_tcp(ip_repr, tcp_repr);
+                        return this.process_tcp(
+                            ip_repr,
+                            tcp_repr,
+                            PacketSlice::from(tcp_repr.payload),
+                        );
                     }
 
                     // We cannot call `process_tcp` now because it may cause deadlocks. We will copy
-                    // the packet and call `process_tcp` after releasing the socket lock.
-                    deferred = Some((ip_repr.clone(), {
-                        let mut data = vec![0; tcp_repr.buffer_len()];
-                        tcp_repr.emit(
-                            &mut TcpPacket::new_unchecked(data.as_mut_slice()),
-                            &ip_repr.src_addr(),
-                            &ip_repr.dst_addr(),
-                            &ChecksumCapabilities::ignored(),
-                        );
-                        data
-                    }));
+                    // the payload and call `process_tcp` after releasing the socket lock.
+                    let repr: TcpRepr<'static> = TcpRepr {
+                        payload: &[],
+                        ..*tcp_repr
+                    };
+                    deferred = Some((ip_repr.clone(), repr, tcp_repr.payload.to_vec()));
 
                     None
                 });
@@ -473,50 +530,40 @@ impl<E: Ext> PollContext<'_, E> {
 
             match (deferred, reply) {
                 (None, None) => (),
-                (Some((ip_repr, ip_payload)), None) => {
-                    if let Some(reply) = self.parse_and_process_tcp(
+                (Some((ip_repr, tcp_repr, payload)), None) => {
+                    if let Some((ip_repr, tcp_repr)) = self.process_tcp_until_outgoing(
                         &ip_repr,
-                        &ip_payload,
-                        &ChecksumCapabilities::ignored(),
+                        &tcp_repr,
+                        PacketSlice::from(payload.as_slice()),
                     ) {
-                        dispatch_phy(&reply, self.iface.context_mut(), tx_token.take().unwrap());
+                        tx_packet = self.emit_tcp(phy, &ip_repr, &tcp_repr);
                     }
                 }
                 (None, Some((ip_repr, tcp_repr))) if !self.is_unicast_local(ip_repr.dst_addr()) => {
-                    dispatch_phy(
-                        &Packet::new(ip_repr, IpPayload::Tcp(tcp_repr)),
-                        self.iface.context_mut(),
-                        tx_token.take().unwrap(),
-                    );
+                    tx_packet = self.emit_tcp(phy, &ip_repr, &tcp_repr);
                 }
                 (None, Some((ip_repr, tcp_repr))) => {
-                    if let Some((new_ip_repr, new_tcp_repr)) =
-                        self.process_tcp_until_outgoing(&ip_repr, &tcp_repr)
-                    {
-                        dispatch_phy(
-                            &Packet::new(new_ip_repr, IpPayload::Tcp(new_tcp_repr)),
-                            self.iface.context_mut(),
-                            tx_token.take().unwrap(),
-                        );
+                    if let Some((new_ip_repr, new_tcp_repr)) = self.process_tcp_until_outgoing(
+                        &ip_repr,
+                        &tcp_repr,
+                        PacketSlice::from(tcp_repr.payload),
+                    ) {
+                        tx_packet = self.emit_tcp(phy, &new_ip_repr, &new_tcp_repr);
                     }
                 }
                 (Some(_), Some(_)) => unreachable!(),
             }
 
-            if tx_token.is_none() {
+            if tx_packet.is_some() {
                 break;
             }
         }
 
-        (did_something, tx_token)
+        (did_something, tx_packet)
     }
 
-    fn dispatch_udp<T, Q>(&mut self, tx_token: T, dispatch_phy: &mut Q) -> (bool, Option<T>)
-    where
-        T: TxToken,
-        Q: FnMut(&Packet, &mut Context, T),
-    {
-        let mut tx_token = Some(tx_token);
+    fn dispatch_udp(&mut self, phy: &dyn PollPhy) -> (bool, Option<TxPacketWithDst>) {
+        let mut tx_packet = None;
         let mut did_something = false;
 
         let mut actions = Vec::new();
@@ -538,11 +585,7 @@ impl<E: Ext> PollContext<'_, E> {
                 let mut this = PollContext::new(iface, self.sockets, &mut actions);
 
                 if ip_repr.dst_addr().is_broadcast() || !this.is_unicast_local(ip_repr.dst_addr()) {
-                    dispatch_phy(
-                        &Packet::new(ip_repr.clone(), IpPayload::Udp(*udp_repr, udp_payload)),
-                        this.iface.context_mut(),
-                        tx_token.take().unwrap(),
-                    );
+                    tx_packet = this.emit_udp(phy, ip_repr, udp_repr, udp_payload);
                     if !ip_repr.dst_addr().is_broadcast() {
                         return;
                     }
@@ -551,37 +594,21 @@ impl<E: Ext> PollContext<'_, E> {
                 if !socket.can_process(udp_repr.dst_port) {
                     // TODO: Generate the ICMP message here once we're able to handle incoming ICMP
                     // messages.
-                    let _ = this.process_udp(ip_repr, udp_repr, udp_payload);
+                    let _ = this.process_udp(ip_repr, udp_repr, PacketSlice::from(udp_payload));
                     return;
                 }
 
                 // We cannot call `process_udp` now because it may cause deadlocks. We will copy
-                // the packet and call `process_udp` after releasing the socket lock.
-                deferred = Some((ip_repr.clone(), {
-                    let mut data = vec![0; udp_repr.header_len() + udp_payload.len()];
-                    udp_repr.emit(
-                        &mut UdpPacket::new_unchecked(&mut data),
-                        &ip_repr.src_addr(),
-                        &ip_repr.dst_addr(),
-                        udp_payload.len(),
-                        |payload| payload.copy_from_slice(udp_payload),
-                        &ChecksumCapabilities::ignored(),
-                    );
-                    data
-                }));
+                // the payload and call `process_udp` after releasing the socket lock.
+                deferred = Some((ip_repr.clone(), *udp_repr, udp_payload.to_vec()));
             });
 
-            if let Some((ip_repr, ip_payload)) = deferred
-                && let Some(reply) = self.parse_and_process_udp(
-                    &ip_repr,
-                    &ip_payload,
-                    &ChecksumCapabilities::ignored(),
-                )
-            {
-                dispatch_phy(&reply, self.iface.context_mut(), tx_token.take().unwrap());
+            if let Some((ip_repr, udp_repr, payload)) = deferred {
+                let _ =
+                    self.process_udp(&ip_repr, &udp_repr, PacketSlice::from(payload.as_slice()));
             }
 
-            if tx_token.is_none() {
+            if tx_packet.is_some() {
                 break;
             }
         }
@@ -591,6 +618,6 @@ impl<E: Ext> PollContext<'_, E> {
         // and the `actions` contains only TCP actions.
         debug_assert!(actions.is_empty());
 
-        (did_something, tx_token)
+        (did_something, tx_packet)
     }
 }

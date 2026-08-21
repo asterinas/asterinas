@@ -6,7 +6,7 @@ use aster_network::dma_pool::DmaPool;
 use ostd::mm::dma::{FromDevice, ToDevice};
 use spin::Once;
 
-const RX_BUFFER_LEN: usize = 4096;
+pub(super) const RX_BUFFER_LEN: usize = 4096;
 pub(super) const TX_BUFFER_LEN: usize = 4096;
 
 pub(super) static RX_BUFFER_POOL: Once<Arc<DmaPool<FromDevice>>> = Once::new();
