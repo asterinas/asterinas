@@ -1227,13 +1227,67 @@ impl Inode for RamInode {
         Ok(())
     }
 
-    fn unlink(&self, name: &str) -> Result<()> {
-        self.unlink_if(name, |_| true)?;
+    fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
+        let target = child.downcast_ref::<RamInode>().unwrap();
+        if target.typ == InodeType::Dir {
+            return_errno_with_message!(Errno::EISDIR, "unlink on dir");
+        }
+
+        // When we got the lock, the dir may have been modified by another thread
+        let mut self_dir = self.inner.as_direntry().unwrap().write();
+        let (idx, new_target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
+        if new_target.ino != target.ino {
+            return_errno!(Errno::ENOENT);
+        }
+        self_dir.remove_entry(idx);
+        drop(self_dir);
+
+        let now = now();
+        let mut self_meta = self.metadata.lock();
+        self_meta.dec_size();
+        self_meta.set_mtime(now);
+        self_meta.set_ctime(now);
+        drop(self_meta);
+        let mut target_meta = target.metadata.lock();
+        target_meta.dec_nlinks();
+        target_meta.set_ctime(now);
+
         Ok(())
     }
 
-    fn rmdir(&self, name: &str) -> Result<()> {
-        self.rmdir_if(name, |_| true)?;
+    fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
+        let target = child.downcast_ref::<RamInode>().unwrap();
+        if target.typ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "rmdir on not dir");
+        }
+
+        // When we got the lock, the dir may have been modified by another thread
+        let (mut self_dir, target_dir) = write_lock_two_direntries_by_ino(
+            (self.ino, self.inner.as_direntry().unwrap()),
+            (target.ino, target.inner.as_direntry().unwrap()),
+        );
+        if !target_dir.is_empty_children() {
+            return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
+        }
+        let (idx, new_target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
+        if new_target.ino != target.ino {
+            return_errno!(Errno::ENOENT);
+        }
+        self_dir.remove_entry(idx);
+        drop(self_dir);
+        drop(target_dir);
+
+        let now = now();
+        let mut self_meta = self.metadata.lock();
+        self_meta.dec_size();
+        self_meta.dec_nlinks();
+        self_meta.set_mtime(now);
+        self_meta.set_ctime(now);
+        drop(self_meta);
+        let mut target_meta = target.metadata.lock();
+        target_meta.dec_nlinks();
+        target_meta.dec_nlinks();
+
         Ok(())
     }
 

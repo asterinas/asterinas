@@ -276,7 +276,9 @@ impl OverlayInode {
         if is_whiteout {
             // Delete the whiteout file first then create the new file
             // or the new opaque directory.
-            upper.unlink(&whiteout_name(name))?;
+            let whiteout_name = whiteout_name(name);
+            let whiteout = upper.lookup(&whiteout_name)?;
+            upper.unlink(&whiteout_name, &whiteout)?;
 
             if type_ == InodeType::Dir {
                 upper_is_opaque = true;
@@ -379,10 +381,9 @@ impl OverlayInode {
 
     /// Deletes the target file by creating a "whiteout" file from the upper layer.
     /// The corresponding parent directories will be created also if they do not exist.
-    pub(crate) fn unlink(&self, name: &str) -> Result<()> {
+    pub(crate) fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
         // TODO: Hold the upper lock from here to avoid race condition
-        let inode = self.lookup(name)?;
-        let target = inode.downcast_ref::<OverlayInode>().unwrap();
+        let target = child.downcast_ref::<OverlayInode>().unwrap();
         if target.type_() == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -396,8 +397,8 @@ impl OverlayInode {
 
         let upper = upper_guard.as_ref().unwrap();
         let target_has_valid_lower = target.has_valid_lower();
-        if target.has_valid_upper() {
-            upper.unlink(name)?;
+        if let Some(upper_child) = target.upper() {
+            upper.unlink(name, &upper_child)?;
         } else {
             assert!(target_has_valid_lower);
         }
@@ -417,10 +418,9 @@ impl OverlayInode {
 
     /// Deletes the target directory by creating an "opaque" directory from the upper layer.
     /// The corresponding parent directories will be created also if they do not exist.
-    pub(crate) fn rmdir(&self, name: &str) -> Result<()> {
+    pub(crate) fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
         // TODO: Hold the upper lock from here to avoid race condition
-        let inode = self.lookup(name)?;
-        let target = inode.downcast_ref::<OverlayInode>().unwrap();
+        let target = child.downcast_ref::<OverlayInode>().unwrap();
         if target.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -443,11 +443,14 @@ impl OverlayInode {
 
             for whiteout in target_visitor.iter().skip(2) {
                 assert!(whiteout.starts_with(WHITEOUT_PREFIX));
-                target_upper.unlink(whiteout)?;
+                let whiteout_inode = target_upper.lookup(whiteout)?;
+                target_upper.unlink(whiteout, &whiteout_inode)?;
             }
         }
 
-        upper.rmdir(name)?;
+        if let Some(upper_child) = target.upper() {
+            upper.rmdir(name, &upper_child)?;
+        }
 
         let whiteout = upper.create(&whiteout_name(name), InodeType::File, mkmod!(a+r, u+w))?;
         // FIXME: Align the whiteout xattr behavior with Linux
@@ -1015,8 +1018,8 @@ impl Inode for OverlayInode {
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>>;
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()>;
-    fn unlink(&self, name: &str) -> Result<()>;
-    fn rmdir(&self, name: &str) -> Result<()>;
+    fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()>;
+    fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()>;
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>>;
     fn rename(
         &self,
@@ -1479,7 +1482,8 @@ mod tests {
             panic!();
         };
         assert_eq!(e.error(), Errno::EEXIST);
-        root.unlink("f1").unwrap();
+        let f1 = root.lookup("f1").unwrap();
+        root.unlink("f1", &f1).unwrap();
 
         root.create("f1", InodeType::File, mode).unwrap();
     }
@@ -1496,10 +1500,12 @@ mod tests {
         assert_eq!(e.error(), Errno::EEXIST);
 
         let d1 = root.lookup("d1").unwrap();
-        d1.unlink("f11").unwrap();
-        d1.unlink("f12").unwrap();
+        let f11 = d1.lookup("f11").unwrap();
+        d1.unlink("f11", &f11).unwrap();
+        let f12 = d1.lookup("f12").unwrap();
+        d1.unlink("f12", &f12).unwrap();
 
-        root.rmdir("d1").unwrap();
+        root.rmdir("d1", &d1).unwrap();
         let d1 = root.create("d1", InodeType::Dir, mode).unwrap();
         d1.create("f11", InodeType::File, mode).unwrap();
     }

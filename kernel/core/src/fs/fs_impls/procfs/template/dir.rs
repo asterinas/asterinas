@@ -199,11 +199,11 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn unlink(&self, _name: &str) -> Result<()> {
+    fn unlink(&self, _name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn rmdir(&self, _name: &str) -> Result<()> {
+    fn rmdir(&self, _name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
