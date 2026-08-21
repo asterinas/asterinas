@@ -320,7 +320,7 @@ impl Inode for RootInode {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn unlink(&self, name: &str) -> Result<()> {
+    fn unlink(&self, name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
         match name {
             "." | ".." => {
                 return_errno_with_message!(Errno::EISDIR, "the devpts directory cannot be unlinked")
@@ -335,7 +335,7 @@ impl Inode for RootInode {
         }
     }
 
-    fn rmdir(&self, name: &str) -> Result<()> {
+    fn rmdir(&self, _name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 

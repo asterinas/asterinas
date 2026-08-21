@@ -200,12 +200,14 @@ impl Inode for Ext2Inode {
         self.link(old, name)
     }
 
-    fn unlink(&self, name: &str) -> Result<()> {
-        self.unlink(name)
+    fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
+        let child = child.downcast_ref::<Ext2Inode>().unwrap();
+        self.unlink(name, child)
     }
 
-    fn rmdir(&self, name: &str) -> Result<()> {
-        self.rmdir(name)
+    fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
+        let child = child.downcast_ref::<Ext2Inode>().unwrap();
+        self.rmdir(name, child)
     }
 
     fn rename(
