@@ -968,7 +968,7 @@
         path: kernel/src/thread/task.rs
         lines: "54-62"
       persona: development
-      grounding: memory-order issues for accessing is_child_subreaper and has_child_subreaper
+      grounding: do not unwrap user-memory writes after a range-only pointer check
       severity: major
       desc: >
         Child startup checks only that `set_child_tid` is numerically within the
@@ -1082,9 +1082,12 @@
     points out that using Vec::with_capacity(max_len) can allocate too much
     memory before reading short strings; follow-up comment confirms the threshold
     approach, and final PR head ea60866 caps the initial capacity with INIT_ALLOC_SIZE.
-    Comment questions accepting argv without a nul terminator; The reply states that
-    reporting an error is better than returning a wrong value, and final PR head
-    changes argv/envp to read_cstring_until_nul(...).ok_or_else(...).
+    Comment identifies a netlink route attribute parser that stops at an
+    embedded nul before consuming the full attribute payload; the same comment
+    notes that Linux does not require a nul terminator there and that parse
+    errors must be reported to userspace. The final PR adds
+    read_cstring_until_end(...) and FullRead to preserve reader position and
+    propagate recoverable netlink parse errors.
   review_mode:
     diff:
       base: 46aa437c8738e72a47510e764cb2b6eed8032706
@@ -1110,23 +1113,27 @@
         capacity to avoid unnecessary allocation.
     - target:
         kind: file
-        path: kernel/src/process/process_vm/init_stack/mod.rs
+        path: kernel/src/net/socket/netlink/route/message/attr/addr.rs
       persona: development
-      grounding: reject malformed init-stack strings instead of silently appending nul
+      grounding: consume the complete netlink attribute payload
       severity: major
       desc: >
-        InitStackReader::argv and envp use read_cstring_until_end and then take
-        .0, which accepts a reader that reaches the page or max length without a
-        nul byte by constructing a CString with an appended nul. For argv/envp
-        on the initial stack, missing nul termination means the stack content is
-        corrupted; silently accepting it can return a wrong string.
+        The route address attribute parser uses a NUL-terminated C-string read
+        for a fixed-length netlink attribute payload. If the reader encounters
+        a NUL byte in the middle of the payload, it stops there and returns the
+        string while leaving the reader cursor before the end of the attribute.
+        The next attribute is then parsed from the wrong position.
       fix: >
-        Use read_cstring_until_nul(MAX_LEN_STRING_ARG)? and convert None to
-        Errno::EINVAL with the existing argv/envp corruption error.
+        Read through the complete attribute payload with
+        read_cstring_until_end, which accepts a missing NUL terminator and
+        consumes the remaining bytes. Return a FullRead result so malformed
+        attributes are skipped or reported while the caller remains positioned
+        at the next attribute boundary.
       expectation: >
-        A valid review must say that argv/envp should require a nul terminator;
-        reaching the reader end or max length without nul must be an error, not
-        accepted by appending a nul byte.
+        A valid review must identify the cursor-position bug caused by stopping
+        at an embedded NUL. It must require consuming or skipping the entire
+        attribute payload, must not require a NUL terminator where Linux does
+        not, and must preserve parse errors in the netlink response path.
 
 - problem_id: 0405-named-pipe-open-nonblock-status-flags
   commit: 7e7ba43cdfc572cd2ddeecc86a5951bbd200d692
@@ -1259,7 +1266,7 @@
         to a reaper or init process, but it does not wake the new parent's
         children_wait_queue. If some moved children are already dead, init can
         sleep in wait because no child-death notification is delivered after the
-        reparenting, so tests such as kill08 can hang waiting for reaping.
+        reparenting. This can cause test hangs when waiting for reaping.
       fix: >
         After move_process_children succeeds, call
         reaper_process.children_wait_queue().wake_all(); do the same for the
