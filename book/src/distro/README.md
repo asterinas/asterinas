@@ -142,6 +142,9 @@ generate a disk image with Asterinas NixOS installed using this command:
     (see the [previous section](#end-users))
     by running a VM.
     Using either method results in a disk image with an Asterinas NixOS installation.
+    In the [Nix development shell](../kernel/nix-development.md),
+    only the second method works,
+    because `make nixos` needs root privileges to set up a loop device.
 
 3. Start a VM to run the installed Asterinas NixOS:
 

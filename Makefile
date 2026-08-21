@@ -83,7 +83,7 @@ ENABLE_REGRESSION_TEST ?= false
 # End of auto test features.
 
 # Network settings
-# NETDEV possible values are user,tap
+# NETDEV possible values are user, tap, and none. SCHEME=microvm does not support none.
 NETDEV ?= user
 VHOST ?= off
 # The name server listed by /etc/resolv.conf inside the Asterinas VM
