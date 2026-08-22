@@ -6,7 +6,7 @@ use device_id::{DeviceId, MajorId, MinorId};
 
 use super::{BLOCK_SIZE, DevPts, PTMX_INO};
 use crate::{
-    device::{Device, DeviceType, DevtmpfsInodeMeta},
+    device::{Device, DeviceType},
     fs::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         vfs::{
@@ -177,10 +177,6 @@ impl Device for Inner {
 
     fn id(&self) -> DeviceId {
         DeviceId::new(MajorId::new(PTMX_MAJOR_NUM), MinorId::new(PTMX_MINOR_NUM))
-    }
-
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsInodeMeta<'_>> {
-        None
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
