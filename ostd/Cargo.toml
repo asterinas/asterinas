@@ -69,6 +69,8 @@ default = ["cvm_guest"]
 cvm_guest = ["dep:tdx-guest"]
 coverage = ["minicov"]
 riscv_sv39_mode = []
+# KTests that execute VMX instructions; requires VMX passthrough and an SMP guest.
+vmx_ktest = []
 
 [lints]
 workspace = true
