@@ -271,7 +271,7 @@ impl FuseOperation for InitOperation {
     }
 
     fn reply_expectation(&self) -> ReplyExpectation {
-        ReplyExpectation::payload(size_of::<InitReply>())
+        ReplyExpectation::variable_payload(size_of::<InitReply>())
     }
 
     fn parse_reply(
