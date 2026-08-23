@@ -39,3 +39,8 @@ cachix.list
 
 # temporary configuration file for NixOS tests
 distro/etc_nixos/_config_for_test.nix
+
+# devenv local state and per-user overrides
+.devenv*
+devenv.local.nix
+devenv.local.yaml

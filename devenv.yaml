@@ -1,0 +1,15 @@
+require_version: true
+
+inputs:
+  rust-overlay:
+    url: github:oxalica/rust-overlay
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
+  nixpkgs-multiverse:
+    url: github:fzakaria/nixpkgs-multiverse
+  linux-vdso:
+    # `devenv.lock` records the full revision. Keep it at the Docker image's
+    # `7489835` revision when updating this input.
+    url: github:asterinas/linux_vdso
+    flake: false
