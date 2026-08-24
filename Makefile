@@ -181,8 +181,12 @@ BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_COMMON_ARGS += --scheme tdx
 endif
 
-ifeq ($(BOOT_PROTOCOL), multiboot)
+ifneq (,$(filter multiboot pvh,$(BOOT_PROTOCOL)))
 BOOT_METHOD = vmm-direct
+endif
+
+ifeq ($(BOOT_PROTOCOL), pvh)
+override FEATURES += pvh_boot
 endif
 
 ifeq ($(SCHEME), microvm)
