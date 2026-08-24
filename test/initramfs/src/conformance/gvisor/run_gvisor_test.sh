@@ -29,9 +29,14 @@ get_blocklist_subtests(){
         BLOCK=""
     fi
 
-    for extra_dir in $EXTRA_BLOCKLISTS ; do
-        if [ -f $SCRIPT_DIR/$extra_dir/$1 ]; then
-            BLOCK="${BLOCK}:$(grep -v '^#' $SCRIPT_DIR/$extra_dir/$1 | tr '\n' ':')"
+    remaining_blocklists="${CONFORMANCE_TEST_EXTRA_BLOCKLISTS:-},"
+    while [ -n "$remaining_blocklists" ]; do
+        extra_dir=${remaining_blocklists%%,*}
+        remaining_blocklists=${remaining_blocklists#*,}
+        [ -z "$extra_dir" ] && continue
+
+        if [ -f "$SCRIPT_DIR/$extra_dir/$1" ]; then
+            BLOCK="${BLOCK}:$(grep -v '^#' "$SCRIPT_DIR/$extra_dir/$1" | tr '\n' ':')"
         fi
     done
 
