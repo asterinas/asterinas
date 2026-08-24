@@ -66,9 +66,6 @@ pub(super) fn sys_timer_gettime(
     itimerspec_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    if itimerspec_addr == 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid pointer to return value");
-    }
     let Some(timer) = ctx.process.timer_manager().find_posix_timer(timer_id) else {
         return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
     };
