@@ -8,7 +8,7 @@
 # Other arguments are configured via environmental variables:
 #  - OVMF: "on" or "off";
 #  - BOOT_METHOD: "direct-elf", "grub-rescue-iso" or "grub-qcow2";
-#  - BOOT_PROTOCOL: "multiboot", "multiboot2", "linux-legacy32", "linux-efi-pe64" or "linux-efi-handover64";
+#  - BOOT_PROTOCOL: "multiboot", "multiboot2", "pvh", "linux-legacy32", "linux-efi-pe64" or "linux-efi-handover64";
 #  - NETDEV: "user" or "tap";
 #  - VHOST: "off" or "on";
 #  - VSOCK: "off" or "on";

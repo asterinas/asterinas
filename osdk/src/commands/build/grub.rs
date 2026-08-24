@@ -16,6 +16,7 @@ use crate::{
         Config,
         scheme::{ActionChoice, BootProtocol},
     },
+    error::Errno,
     util::{get_current_crates, hard_link_or_copy, new_command_checked_exists},
 };
 
@@ -162,6 +163,11 @@ fn generate_grub_cfg(
                     "".to_owned()
                 },
             ),
+        BootProtocol::Pvh => {
+            // GRUB does not load kernels via the PVH boot protocol.
+            crate::error_msg!("The PVH boot protocol requires the `direct-elf` boot method");
+            std::process::exit(Errno::Cli as _);
+        }
     }
 }
 

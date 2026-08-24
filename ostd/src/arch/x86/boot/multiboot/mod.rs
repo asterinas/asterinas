@@ -9,6 +9,11 @@ use crate::{
     mm::{Paddr, kspace::paddr_to_vaddr},
 };
 
+// The Multiboot v1 header is embedded unless the image is built for the PVH
+// boot protocol: loaders such as QEMU's direct kernel loader probe for the
+// Multiboot v1 magic before the PVH ELF note, so a PVH image must not
+// contain the header.
+#[cfg(not(feature = "pvh_boot"))]
 core::arch::global_asm!(include_str!("header.S"));
 
 const MULTIBOOT_ENTRY_MAGIC: u32 = 0x2BADB002;
