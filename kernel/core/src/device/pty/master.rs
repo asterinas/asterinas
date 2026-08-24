@@ -245,10 +245,9 @@ impl PerOpenFileOps for PtyMaster {
 
 impl Drop for PtyMaster {
     fn drop(&mut self) {
-        if let Some(devpts) = self.ptmx.devpts() {
-            let index = self.slave.index();
-            devpts.remove_slave(index);
-        }
+        let devpts = self.ptmx.devpts().unwrap();
+        let index = self.slave.index();
+        devpts.remove_slave(index);
 
         self.slave_flags().set_other_closed();
         self.slave.notify_hup();
