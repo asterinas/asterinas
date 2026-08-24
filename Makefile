@@ -181,8 +181,12 @@ BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_COMMON_ARGS += --scheme tdx
 endif
 
-ifeq ($(BOOT_PROTOCOL), multiboot)
+ifneq (,$(filter multiboot pvh,$(BOOT_PROTOCOL)))
 BOOT_METHOD = vmm-direct
+endif
+
+ifeq ($(BOOT_PROTOCOL), pvh)
+override FEATURES += pvh_boot
 endif
 
 ifeq ($(SCHEME), microvm)
@@ -224,6 +228,8 @@ else ifeq ($(BOOT_PROTOCOL), linux-efi-pe64)
 CARGO_OSDK_COMMON_ARGS += --grub-boot-protocol="linux"
 else ifeq ($(BOOT_PROTOCOL), linux-legacy32)
 CARGO_OSDK_COMMON_ARGS += --linux-x86-legacy-boot --grub-boot-protocol="linux" --strip-elf
+else ifeq ($(BOOT_PROTOCOL), pvh)
+# PVH uses the vmm-direct boot method, so there is no GRUB boot protocol to pass.
 else
 CARGO_OSDK_COMMON_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
 endif

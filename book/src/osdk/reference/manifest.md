@@ -159,7 +159,7 @@ usually, the init shell.
 
     Optional. The default value is `multiboot2`.
 
-    Possible values are `linux`, `multiboot`, `multiboot2`.
+    Possible values are `linux`, `multiboot`, and `multiboot2`.
 
 16. Whether to display the GRUB menu when booting with GRUB.
 

@@ -26,6 +26,7 @@ use crate::{
     mm::{Paddr, kspace::paddr_to_vaddr},
 };
 
+#[cfg(feature = "pvh_boot")]
 core::arch::global_asm!(include_str!("note.S"));
 
 /// The magic value of [`HvmStartInfoV0::magic`], which is "xEn3" in ASCII.
