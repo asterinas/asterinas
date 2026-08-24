@@ -48,12 +48,12 @@ AUTO_TEST ?= none
 ENABLE_CONFORMANCE_TEST ?= false
 CONFORMANCE_TEST_SUITE ?= ltp
 CONFORMANCE_TEST_WORKDIR ?= /tmp
-# Whitespace-separated extra blocklist paths for conformance runners.
+# Comma-separated extra blocklists for conformance runners.
 # - `gvisor` treats each entry as a directory relative to its runner directory,
 #   and loads a per-test blocklist file from that directory.
 # - `kselftest` treats each entry as a blocklist file relative to its runner
 #   directory, and appends that file directly.
-EXTRA_BLOCKLISTS ?= ""
+CONFORMANCE_TEST_EXTRA_BLOCKLISTS ?= ""
 # Comma-separated tests to run within the selected conformance suite.
 #
 # This variable allows one to select one or multiple tests to run.
@@ -132,7 +132,7 @@ ifeq ($(AUTO_TEST), conformance)
 ENABLE_CONFORMANCE_TEST := true
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_SUITE=$(CONFORMANCE_TEST_SUITE)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_WORKDIR=$(CONFORMANCE_TEST_WORKDIR)"
-CARGO_OSDK_BUILD_ARGS += --kcmd-args="EXTRA_BLOCKLISTS=$(EXTRA_BLOCKLISTS)"
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_EXTRA_BLOCKLISTS=$(CONFORMANCE_TEST_EXTRA_BLOCKLISTS)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_SELECTOR=$(CONFORMANCE_TEST_SELECTOR)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="CONFORMANCE_TEST_GVISOR_FILTER=$(CONFORMANCE_TEST_GVISOR_FILTER)"
 ifeq ($(CONFORMANCE_TEST_SUITE), xfstests)

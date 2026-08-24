@@ -69,7 +69,12 @@ else
     fi
 
     cat "$DEFAULT_BLOCKLISTS" > "$COMBINED_BLOCKLISTS"
-    for extra_file in $EXTRA_BLOCKLISTS ; do
+    remaining_blocklists="${CONFORMANCE_TEST_EXTRA_BLOCKLISTS:-},"
+    while [ -n "$remaining_blocklists" ]; do
+        extra_file=${remaining_blocklists%%,*}
+        remaining_blocklists=${remaining_blocklists#*,}
+        [ -z "$extra_file" ] && continue
+
         extra_blocklists="$KSELFTEST_DIR/$extra_file"
         if [ -r "$extra_blocklists" ]; then
             printf '\n' >> "$COMBINED_BLOCKLISTS"
