@@ -33,13 +33,6 @@ pub(super) fn sys_timer_create(
     timer_id_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    if timer_id_addr == 0 {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "the address of timer_id_addr should be valid"
-        );
-    }
-
     let current_process = current!();
     let sent_signal: Box<dyn Fn() + Send + Sync + 'static> = {
         // If `sigevent_addr` is NULL, use the default method (like `sys_alarm`) to send signal.
