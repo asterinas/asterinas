@@ -26,12 +26,19 @@ use crate::{
 };
 
 pub(crate) struct InodeHandle {
-    common: FileCommon,
     /// `open_file` is similar to the `file_private` field in Linux's `file` structure. If
     /// `open_file` is `Some(_)`, typical file operations including `read`, `write`, `poll`,
     /// and `ioctl` will be provided by the per-open file object instead of `path`.
     open_file: Option<Box<dyn PerOpenFileOps>>,
     offset: Mutex<usize>,
+    /// Path and common states of the handle.
+    //
+    // This field is placed last so that its `Path` keeps the corresponding filesystem alive
+    // while `open_file` is dropped, because releasing `open_file` may access that filesystem.
+    //
+    // Struct fields are dropped in declaration order.
+    // Reference: <https://doc.rust-lang.org/reference/destructors.html>.
+    common: FileCommon,
 }
 
 impl InodeHandle {
@@ -69,9 +76,9 @@ impl InodeHandle {
         };
 
         Ok(Self {
-            common: FileCommon::new(path, access_mode, status_flags),
             open_file,
             offset: Mutex::new(0),
+            common: FileCommon::new(path, access_mode, status_flags),
         })
     }
 
