@@ -11,7 +11,7 @@ use crate::{
     device::{AnyNetworkDevice, WithDevice, new_interface},
     ext::Ext,
     iface::{
-        Iface, InterfaceName, ScheduleNextPoll,
+        Iface, InterfaceName,
         common::{
             IfaceCommon, InterfaceFlags, InterfaceType, PhyProcessResult, PollPhy, TxPacketWithDst,
         },
@@ -70,11 +70,7 @@ impl<D: WithDevice + 'static, E: Ext> Iface<E> for IpIface<D, E> {
     }
 
     fn poll(&self) {
-        self.driver.with(|device| {
-            let next_poll = self.common.poll(device, self);
-            device.notify_poll_end();
-            self.common.sched_poll().schedule_next_poll(next_poll);
-        });
+        self.common.poll(&self.driver, self);
     }
 
     fn mtu(&self) -> usize {
