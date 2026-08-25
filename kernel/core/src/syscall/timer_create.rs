@@ -34,11 +34,10 @@ pub(super) fn sys_timer_create(
     timer_id_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let current_process = current!();
     let sent_signal: Box<dyn Fn() + Send + Sync + 'static> = {
         // If `sigevent_addr` is NULL, use the default method (like `sys_alarm`) to send signal.
         if sigevent_addr == 0 {
-            let process = current_process.clone();
+            let process = ctx.process.clone();
             let signal = KernelSignal::new(SIGALRM);
             Box::new(move || {
                 process.enqueue_signal(Box::new(signal));
@@ -53,7 +52,7 @@ pub(super) fn sys_timer_create(
                 SigNotify::SIGEV_NONE => Box::new(|| {}),
                 // Send a signal to the current process when the timer is expired.
                 SigNotify::SIGEV_SIGNAL => {
-                    let process = current_process.clone();
+                    let process = ctx.process.clone();
                     let signal = KernelSignal::new(SigNum::try_from(signo as u8)?);
                     Box::new(move || {
                         process.enqueue_signal(Box::new(signal));
@@ -74,7 +73,7 @@ pub(super) fn sys_timer_create(
                         Error::with_message(Errno::EINVAL, "the target thread does not exist")
                     })?;
                     let posix_thread = thread.as_posix_thread().unwrap();
-                    if posix_thread.process().pid() != current_process.pid() {
+                    if posix_thread.process().pid() != ctx.process.pid() {
                         return_errno_with_message!(
                             Errno::EINVAL,
                             "the target thread does not belong to the current process"
@@ -102,19 +101,18 @@ pub(super) fn sys_timer_create(
 
     let timer = create_timer(clockid, func, ctx)?;
 
-    let Some(timer_id) = current_process.timer_manager().add_posix_timer(timer) else {
+    let Some(timer_id) = ctx.process.timer_manager().add_posix_timer(timer) else {
         return_errno_with_message!(Errno::EAGAIN, "timer IDs are exhausted");
     };
     if let Err(error) = ctx.user_space().write_val(timer_id_addr, &timer_id) {
-        let _ = current_process.timer_manager().remove_posix_timer(timer_id);
+        let _ = ctx.process.timer_manager().remove_posix_timer(timer_id);
         return Err(error.into());
     }
     Ok(SyscallReturn::Return(0))
 }
 
-pub(super) fn sys_timer_delete(timer_id: timer_t, _ctx: &Context) -> Result<SyscallReturn> {
-    let current_process = current!();
-    let Some(timer) = current_process.timer_manager().remove_posix_timer(timer_id) else {
+pub(super) fn sys_timer_delete(timer_id: timer_t, ctx: &Context) -> Result<SyscallReturn> {
+    let Some(timer) = ctx.process.timer_manager().remove_posix_timer(timer_id) else {
         return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
     };
 
