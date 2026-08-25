@@ -4,20 +4,19 @@
 //!
 //! Implements the [`aster_block::BlockDevice`] trait on top of the NVMe transport.
 //! BIOs are staged in [`BioRequestSingleQueue`] and drained by repeated calls to
-//! [`NvmeBlockDevice::handle_requests`] from the kernel registry's per-device
-//! kthread (see `kernel/core/src/device/registry/block.rs`). Reads, writes, and flushes
-//! issue synchronously to I/O queue [`IO_QID`] and wait on a per-queue `WaitQueue` driven
-//! by the MSI-X completion interrupt.
+//! [`NvmeBlockDevice::handle_requests`] from the kernel registry's per-device kthread.
 //!
-//! Concurrency invariant: at most one in-flight NVMe command per queue at a time.
-//! Supporting more would require redesigning how commands are submitted and completions waited on.
+//! Each in-flight hardware command is stored in the I/O submission queue's per-slot
+//! context under its CID. One [`BioRequest`] may require several NVMe commands (MDTS /
+//! NLB limits), so those CIDs share one [`InFlightRequest`] that completes the whole
+//! `BioRequest` when the last command finishes.
 
-use alloc::{borrow::ToOwned, format, string::String, sync::Arc, vec::Vec};
+use alloc::{borrow::ToOwned, format, string::String, sync::Arc, vec, vec::Vec};
 use core::{
     ffi::CStr,
     hint::spin_loop,
     num::NonZeroUsize,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
     time::Duration,
 };
 
@@ -49,7 +48,7 @@ use crate::{
         NvmeSubmissionQueueAccess, QUEUE_DEPTH, QUEUE_NUM,
     },
     nvme_regs::{NvmeRegs32, NvmeRegs64},
-    nvme_spec::{NvmeCommand, NvmeCompletion},
+    nvme_spec::NvmeCommand,
     prp::PrpPointers,
     transport::pci::transport::{NvmePciTransport, NvmePciTransportLock},
 };
@@ -112,6 +111,18 @@ impl NvmeBlockDevice {
             BioType::Flush => self.device.flush(request),
         }
     }
+
+    /// Returns the highest number of concurrently in-flight I/O commands observed so far.
+    #[cfg(ktest)]
+    fn max_in_flight_commands(&self) -> u64 {
+        self.device.stats.max_in_flight()
+    }
+
+    /// Resets I/O command counters used to measure queue depth.
+    #[cfg(ktest)]
+    fn reset_io_stats(&self) {
+        self.device.stats.reset_stats();
+    }
 }
 
 impl aster_block::BlockDevice for NvmeBlockDevice {
@@ -143,7 +154,8 @@ fn formatted_device_name(index: u32, nsid: u32) -> String {
 }
 
 struct NvmeDeviceInner {
-    submission_queues: [SpinLock<NvmeSubmissionQueue, LocalIrqDisabled>; QUEUE_NUM],
+    submission_queues:
+        [SpinLock<NvmeSubmissionQueue<SubmittedRequest>, LocalIrqDisabled>; QUEUE_NUM],
     completion_queues: [SpinLock<NvmeCompletionQueue, LocalIrqDisabled>; QUEUE_NUM],
     completion_wait_queues: [WaitQueue; QUEUE_NUM],
     transport: NvmePciTransportLock,
@@ -157,6 +169,45 @@ struct NvmeDeviceInner {
 enum IoOp {
     Read,
     Write,
+}
+
+/// Shared state for one outstanding [`BioRequest`] that may span multiple NVMe commands.
+///
+/// Large requests are split across several NVMe commands, so multiple
+/// [`SubmittedRequest`] entries share this tracker until `remaining` reaches zero.
+struct InFlightRequest {
+    bio_request: SpinLock<Option<BioRequest>, LocalIrqDisabled>,
+    remaining: AtomicUsize,
+    failed: AtomicBool,
+}
+
+impl InFlightRequest {
+    fn finish(self: Arc<Self>) {
+        let status = if self.failed.load(Ordering::Relaxed) {
+            BioStatus::IoError
+        } else {
+            BioStatus::Complete
+        };
+        if let Some(bio_request) = self.bio_request.lock().take() {
+            bio_request.into_bios().for_each(|bio| {
+                bio.complete(status);
+            });
+        }
+    }
+}
+
+/// Per-command completion context stored until the matching CQE arrives.
+///
+/// The table key is the command's CID, and `_prp` keeps PRP list pages alive for
+/// the command lifetime.
+struct SubmittedRequest {
+    request: Arc<InFlightRequest>,
+    _prp: Option<PrpPointers>,
+}
+
+struct BuiltIoCommand {
+    entry: NvmeCommand,
+    prp: PrpPointers,
 }
 
 impl core::fmt::Debug for NvmeDeviceInner {
@@ -264,44 +315,37 @@ impl NvmeDeviceInner {
             let device_weak = Arc::downgrade(block_device);
             io_irq.on_active(move |_| {
                 if let Some(block_device) = device_weak.upgrade() {
-                    block_device.device.completion_wait_queues[io_qid].wake_all();
+                    block_device.device.handle_io_completions();
                 }
             });
         }
     }
 
     fn read(&self, request: BioRequest) {
-        self.io_rw_request(request, IoOp::Read);
+        self.submit_request(request, IoOp::Read);
     }
 
     fn write(&self, request: BioRequest) {
-        self.io_rw_request(request, IoOp::Write);
+        self.submit_request(request, IoOp::Write);
     }
 
     fn flush(&self, request: BioRequest) {
-        let nsid = self.namespace.id;
-
-        let entry = nvme_cmd::io_flush(nsid);
-        // TODO: This path submits and waits synchronously, which may block.
-        let status = self
-            .submit_and_wait(IO_QID, entry)
-            .map_or(BioStatus::IoError, |_| BioStatus::Complete);
-        for bio in request.into_bios() {
-            bio.complete(status);
-        }
+        let entry = nvme_cmd::io_flush(self.namespace.id);
+        let inflight = Arc::new(InFlightRequest {
+            bio_request: SpinLock::new(Some(request)),
+            remaining: AtomicUsize::new(1),
+            failed: AtomicBool::new(false),
+        });
+        self.submit_io_commands(&inflight, vec![(entry, None)]);
     }
 
-    /// Performs read or write I/O for a `BioRequest` on I/O queue [`IO_QID`].
-    ///
-    /// Each segment is transferred with PRP lists when needed.
-    fn io_rw_request(&self, request: BioRequest, io_op: IoOp) {
-        const { assert!(LBA_SIZE == SECTOR_SIZE) };
+    /// Builds and submits all NVMe commands for `bio_request` without waiting for completion.
+    fn submit_request(&self, bio_request: BioRequest, io_op: IoOp) {
+        let mut prepared = Vec::new();
+        let mut build_failed = false;
+        let mut lba = bio_request.sid_range().start.to_raw();
 
-        let nsid = self.namespace.id;
-        let mut lba = request.sid_range().start.to_raw();
-
-        for bio in request.into_bios() {
-            let mut status = BioStatus::Complete;
+        for bio in bio_request.bios() {
             for segment in bio.segments() {
                 let dma_slice = segment.inner_dma_slice();
                 // `BioSegment` should guarantee that the segment's address and the size is
@@ -316,12 +360,11 @@ impl NvmeDeviceInner {
                     let chunk_bytes = remaining.min(self.max_io_bytes);
                     debug_assert!(chunk_bytes.get().is_multiple_of(SECTOR_SIZE));
 
-                    // TODO: This path submits and waits synchronously, which may block.
-                    if self
-                        .submit_io_chunk(nsid, lba, dma_addr, chunk_bytes, io_op)
-                        .is_err()
-                    {
-                        status = BioStatus::IoError;
+                    match self.build_io_command(lba, dma_addr, chunk_bytes, io_op) {
+                        Ok(cmd) => prepared.push(cmd),
+                        Err(_) => {
+                            build_failed = true;
+                        }
                     }
 
                     let chunk_sectors = (chunk_bytes.get() / SECTOR_SIZE) as u64;
@@ -330,98 +373,166 @@ impl NvmeDeviceInner {
                     remaining_bytes -= chunk_bytes.get();
                 }
             }
-            bio.complete(status);
         }
+
+        if prepared.is_empty() {
+            let status = if build_failed {
+                BioStatus::IoError
+            } else {
+                BioStatus::Complete
+            };
+            bio_request.into_bios().for_each(|bio| {
+                bio.complete(status);
+            });
+            return;
+        }
+
+        let request = Arc::new(InFlightRequest {
+            bio_request: SpinLock::new(Some(bio_request)),
+            remaining: AtomicUsize::new(prepared.len()),
+            failed: AtomicBool::new(build_failed),
+        });
+
+        let commands = prepared
+            .into_iter()
+            .map(|cmd| (cmd.entry, Some(cmd.prp)))
+            .collect();
+        self.submit_io_commands(&request, commands);
     }
 
-    /// Submits one read or write covering `length` bytes at contiguous `dma_addr`.
-    fn submit_io_chunk(
+    fn build_io_command(
         &self,
-        nsid: u32,
         lba: u64,
         dma_addr: u64,
         length: NonZeroUsize,
         io_op: IoOp,
-    ) -> Result<(), NvmeDeviceError> {
+    ) -> Result<BuiltIoCommand, NvmeDeviceError> {
+        let nsid = self.namespace.id;
         let prp = PrpPointers::build_prp(dma_addr, length)?;
         let nlb = (length.get() / SECTOR_SIZE - 1) as u16;
         let entry = match io_op {
             IoOp::Read => nvme_cmd::io_read(nsid, lba, nlb, prp.prp1(), prp.prp2()),
             IoOp::Write => nvme_cmd::io_write(nsid, lba, nlb, prp.prp1(), prp.prp2()),
         };
-
-        self.submit_and_wait(IO_QID, entry)
+        Ok(BuiltIoCommand { entry, prp })
     }
 
-    /// Submits a command to the submission queue and waits for its completion.
+    /// Enqueues commands for a shared [`InFlightRequest`], then rings the SQ doorbell.
     ///
-    /// This helper assumes that only a single thread calls `submit_and_wait`
-    /// for a given `qid` at a time. Calling it concurrently on the same queue
-    /// is not supported now.
-    ///
-    /// Returns `Ok(())` if the command completed successfully,
-    /// `Err(NvmeDeviceError::SubmissionQueueFull)` if the SQ has no free slots, or
-    /// `Err(NvmeDeviceError::CommandFailed)` if the device reported a non-zero status.
-    fn submit_and_wait(&self, qid: usize, entry: NvmeCommand) -> Result<(), NvmeDeviceError> {
-        let wait_queue = &self.completion_wait_queues[qid];
-
-        let cid = self
-            .lock_sq(qid)
-            .submit(entry)
-            .ok_or(NvmeDeviceError::SubmissionQueueFull)?;
-        if qid == IO_QID {
-            self.stats.increment_submitted();
-        }
-
-        wait_queue.wait_until(|| {
-            let completion = self.lock_cq(qid).complete()?;
-
-            self.submission_queues[qid]
-                .lock()
-                .update_sq_head(&completion);
-
-            self.process_completion(qid, completion, cid)
-        })
-    }
-
-    /// Interprets a completion queue entry for the command identified by `expected_cid`.
-    ///
-    /// Returns `None` if the completion does not match `expected_cid` (not our command),
-    /// `Some(Ok(()))` if it matches and the device reports success, or
-    /// `Some(Err(NvmeDeviceError::CommandFailed))` if it matches but the device reports an error.
-    fn process_completion(
+    /// Each command is an SQE plus optional PRP pages (`None` for commands like flush).
+    fn submit_io_commands(
         &self,
-        qid: usize,
-        completion: NvmeCompletion,
-        expected_cid: u16,
-    ) -> Option<Result<(), NvmeDeviceError>> {
-        if qid == IO_QID {
-            self.stats.increment_completed();
+        request: &Arc<InFlightRequest>,
+        mut commands: Vec<(NvmeCommand, Option<PrpPointers>)>,
+    ) {
+        while !commands.is_empty() {
+            let mut sq = self.lock_sq(IO_QID);
+            let n = sq.free_slots().min(commands.len());
+            if n == 0 {
+                drop(sq);
+                self.wait_for_sq_slot();
+                continue;
+            }
+
+            let rest = commands.split_off(n);
+            let batch = core::mem::replace(&mut commands, rest);
+
+            if batch.len() > 1 {
+                info!(
+                    "Submitting a batch of {} I/O commands (queue depth in use)",
+                    batch.len()
+                );
+            }
+
+            let n_submitted = batch.len();
+            sq.submit_with_items(batch.into_iter().map(|(entry, prp)| {
+                (
+                    entry,
+                    SubmittedRequest {
+                        request: request.clone(),
+                        _prp: prp,
+                    },
+                )
+            }))
+            .expect("SQ `free_slots` indicated space for this `submit_with_items`");
+            for _ in 0..n_submitted {
+                self.stats.increment_submitted();
+            }
+        }
+    }
+
+    /// Waits until the I/O SQ has at least one free slot, polling completions while blocked.
+    fn wait_for_sq_slot(&self) {
+        let wait_queue = &self.completion_wait_queues[IO_QID];
+        wait_queue.wait_until(|| self.handle_io_completions().then_some(()));
+    }
+
+    /// Drains ready I/O completions and finishes any requests whose commands have all completed.
+    ///
+    /// Each CQE is matched by CID to an entry in the I/O submission queue. Callers may invoke
+    /// this from the MSI-X handler or from a waiting submitter when the SQ is full.
+    ///
+    /// Returns whether the I/O SQ has at least one free slot after processing.
+    fn handle_io_completions(&self) -> bool {
+        let completions = self.lock_cq(IO_QID).complete();
+
+        let mut finished = Vec::new();
+        let has_free_slot = {
+            let mut sq = self.submission_queues[IO_QID].lock();
+            if let Some(last) = completions.last() {
+                sq.set_sq_head(last.sq_head());
+            }
+
+            for completion in &completions {
+                let cid = completion.cid();
+                let Some(submitted_request) = sq.take_item(cid) else {
+                    warn!(
+                        "ignoring unexpected NVMe completion: CID {} on QID {} has no submitted request",
+                        cid, IO_QID
+                    );
+                    continue;
+                };
+
+                self.stats.increment_completed();
+
+                if completion.has_error() {
+                    submitted_request
+                        .request
+                        .failed
+                        .store(true, Ordering::Relaxed);
+                }
+
+                if submitted_request
+                    .request
+                    .remaining
+                    .fetch_sub(1, Ordering::Release)
+                    == 1
+                {
+                    finished.push(submitted_request.request);
+                }
+            }
+
+            sq.free_slots() > 0
+        };
+
+        for request in finished {
+            request.finish();
         }
 
-        let is_target = completion.cid() == expected_cid;
-        if !is_target {
-            debug!(
-                "Ignore unexpected completion: expected CID {}, got {} on QID {}",
-                expected_cid,
-                completion.cid(),
-                qid
-            );
-            return None;
+        if !completions.is_empty() {
+            self.completion_wait_queues[IO_QID].wake_all();
         }
 
-        if completion.has_error() {
-            Some(Err(NvmeDeviceError::CommandFailed))
-        } else {
-            Some(Ok(()))
-        }
+        has_free_slot
     }
 
     fn lock_sq(
         &self,
         qid: usize,
-    ) -> NvmeSubmissionQueueAccess<'_, SpinLockGuard<'_, NvmeSubmissionQueue, LocalIrqDisabled>>
-    {
+    ) -> NvmeSubmissionQueueAccess<
+        '_,
+        SpinLockGuard<'_, NvmeSubmissionQueue<SubmittedRequest>, LocalIrqDisabled>,
+    > {
         NvmeSubmissionQueueAccess::new(
             qid as u16,
             self.dstrd,
@@ -445,7 +556,7 @@ impl NvmeDeviceInner {
 }
 
 struct InitContext {
-    submission_queues: [NvmeSubmissionQueue; QUEUE_NUM],
+    submission_queues: [NvmeSubmissionQueue<SubmittedRequest>; QUEUE_NUM],
     completion_queues: [NvmeCompletionQueue; QUEUE_NUM],
     transport: NvmePciTransport,
     dstrd: u16,
@@ -494,8 +605,10 @@ impl InitContext {
         cc_mps_value: u32,
         controller_ready_timeout: Duration,
     ) -> Result<Self, NvmeDeviceError> {
-        let sq0 = NvmeSubmissionQueue::new().ok_or(NvmeDeviceError::QueueAllocationFailed)?;
-        let sq1 = NvmeSubmissionQueue::new().ok_or(NvmeDeviceError::QueueAllocationFailed)?;
+        let sq0 = NvmeSubmissionQueue::<SubmittedRequest>::new()
+            .ok_or(NvmeDeviceError::QueueAllocationFailed)?;
+        let sq1 = NvmeSubmissionQueue::<SubmittedRequest>::new()
+            .ok_or(NvmeDeviceError::QueueAllocationFailed)?;
         let cq0 = NvmeCompletionQueue::new().ok_or(NvmeDeviceError::QueueAllocationFailed)?;
         let cq1 = NvmeCompletionQueue::new().ok_or(NvmeDeviceError::QueueAllocationFailed)?;
         Ok(Self {
@@ -695,23 +808,33 @@ impl InitContext {
             .ok_or(NvmeDeviceError::SubmissionQueueFull)?;
 
         loop {
-            let Some(cqe) = self.cq_mut(qid).complete() else {
+            let completions = self.cq_mut(qid).complete();
+            if completions.is_empty() {
                 spin_loop();
-                continue;
-            };
-
-            self.submission_queues[qid].update_sq_head(&cqe);
-
-            if cqe.cid() != expected_cid {
-                debug!(
-                    "Ignore unexpected completion in polling path: expected CID {}, got {} on QID {}",
-                    expected_cid,
-                    cqe.cid(),
-                    qid
-                );
                 continue;
             }
 
+            if let Some(last) = completions.last() {
+                self.submission_queues[qid].update_sq_head(last);
+            }
+
+            let mut matched = None;
+            for cqe in &completions {
+                if cqe.cid() != expected_cid {
+                    debug!(
+                        "Ignore unexpected completion in polling path: expected CID {}, got {} on QID {}",
+                        expected_cid,
+                        cqe.cid(),
+                        qid
+                    );
+                    continue;
+                }
+                matched = Some(cqe);
+            }
+
+            let Some(cqe) = matched else {
+                continue;
+            };
             if cqe.has_error() {
                 return Err(NvmeDeviceError::CommandFailed);
             }
@@ -750,7 +873,10 @@ impl InitContext {
         }
     }
 
-    fn sq_mut(&mut self, qid: usize) -> NvmeSubmissionQueueAccess<'_, &mut NvmeSubmissionQueue> {
+    fn sq_mut(
+        &mut self,
+        qid: usize,
+    ) -> NvmeSubmissionQueueAccess<'_, &mut NvmeSubmissionQueue<SubmittedRequest>> {
         NvmeSubmissionQueueAccess::new(
             qid as u16,
             self.dstrd,
@@ -861,7 +987,7 @@ fn max_io_bytes_from_mdts(mdts: u8) -> NonZeroUsize {
 
 #[cfg(ktest)]
 mod test {
-    use alloc::{sync::Arc, vec};
+    use alloc::{sync::Arc, vec, vec::Vec};
 
     use aster_block::{
         BLOCK_SIZE,
@@ -985,5 +1111,86 @@ mod test {
         bio.submit(device, io_batch).unwrap();
 
         bio_segment
+    }
+
+    /// Submits one bio built from many single-page segments so the driver must issue
+    /// multiple NVMe commands for that bio.
+    #[ktest]
+    fn multi_segment_bio_uses_queue_depth() {
+        ensure_initialized();
+
+        let device = match aster_block::collect_all()
+            .into_iter()
+            .find(|d| d.name() == "nvme0n1")
+        {
+            Some(device) => device,
+            None => {
+                info!("Skip nvme ktest: NVMe device not found");
+                return;
+            }
+        };
+        let nvme_block_device = device
+            .downcast_ref::<NvmeBlockDevice>()
+            .expect("Failed to downcast device");
+
+        const NR_SEGMENTS: usize = 16;
+        nvme_block_device.reset_io_stats();
+
+        let mut write_batch = IoBatch::with_capacity(1);
+        create_and_submit_multi_segment_bio(
+            nvme_block_device,
+            &mut write_batch,
+            IoOp::Write,
+            NR_SEGMENTS,
+            TEST_CHAR,
+        );
+        nvme_block_device.handle_requests();
+        write_batch.wait_all().unwrap();
+
+        let peak = nvme_block_device.max_in_flight_commands();
+
+        assert!(
+            peak >= NR_SEGMENTS as u64,
+            "expected at least {} in-flight commands at once, got peak {}",
+            NR_SEGMENTS,
+            peak
+        );
+    }
+
+    fn create_and_submit_multi_segment_bio(
+        device: &NvmeBlockDevice,
+        io_batch: &mut IoBatch,
+        req_type: IoOp,
+        nr_segments: usize,
+        val: u8,
+    ) {
+        let mut segments = Vec::with_capacity(nr_segments);
+        for _ in 0..nr_segments {
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_segment(1)
+                .unwrap();
+
+            if matches!(req_type, IoOp::Write) {
+                let mut writer = segment.writer();
+                let fill_buf = [val; BLOCK_SIZE];
+                let mut reader = VmReader::from(fill_buf.as_slice());
+                writer.write(&mut reader);
+            }
+
+            segments.push(segment);
+        }
+
+        let (bio_type, direction) = match req_type {
+            IoOp::Write => (BioType::Write, BioDirection::ToDevice),
+            IoOp::Read => (BioType::Read, BioDirection::FromDevice),
+        };
+        let bio_segments: Vec<_> = segments
+            .into_iter()
+            .map(|segment| BioSegment::new_from_segment(segment.into(), direction))
+            .collect();
+
+        let bio = Bio::new(bio_type, Sid::from(Bid::from_offset(0)), bio_segments, None);
+        bio.submit(device, io_batch).unwrap();
     }
 }
