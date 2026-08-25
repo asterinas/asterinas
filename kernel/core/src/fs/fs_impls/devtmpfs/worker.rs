@@ -26,7 +26,7 @@ pub(crate) fn delete_node(node: DevtmpfsNode) -> Result<()> {
     submit(Request::DeleteNode(node))
 }
 
-pub(super) fn init() {
+pub(super) fn init_in_first_kthread() {
     ThreadOptions::new(devtmpfsd).spawn();
 }
 

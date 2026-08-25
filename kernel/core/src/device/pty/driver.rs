@@ -10,7 +10,7 @@ use crate::{
         },
     },
     events::IoEvents,
-    fs::file::PerOpenFileOps,
+    fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
     prelude::*,
     process::signal::Pollee,
     util::{
@@ -113,6 +113,10 @@ impl PtyDriver {
 impl TtyDriver for PtyDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L147>.
     const DEVICE_MAJOR_ID: u32 = 136;
+
+    fn devtmpfs_meta(&self, _index: u32) -> Option<DevtmpfsNodeMeta> {
+        None
+    }
 
     fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn PerOpenFileOps>> {
         Ok(Box::new(PtySlaveFile::new(tty)?))

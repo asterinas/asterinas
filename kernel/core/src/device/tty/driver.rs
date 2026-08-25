@@ -20,9 +20,7 @@ pub(crate) trait TtyDriver: Send + Sync + 'static {
     const DEVICE_MAJOR_ID: u32;
 
     /// Returns the metadata that specifies a TTY device inode to be created in devtmpfs, if any.
-    fn devtmpfs_meta(&self, _index: u32) -> Option<DevtmpfsNodeMeta> {
-        None
-    }
+    fn devtmpfs_meta(&self, _index: u32) -> Option<DevtmpfsNodeMeta>;
 
     /// Opens the TTY.
     ///

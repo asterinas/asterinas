@@ -2,6 +2,8 @@
 
 //! Kernel initialization.
 
+use core::sync::atomic::{AtomicU8, Ordering};
+
 use aster_cmdline::INIT_PROC_ARGS;
 use component::InitStage;
 use ostd::{cpu::CpuId, util::id_set::Id};
@@ -162,13 +164,14 @@ struct BootInit {
     init_path: Option<(Path, &'static str)>,
 }
 
+#[repr(u8)]
 enum BootSource {
-    Initramfs,
-    Rootfs,
+    Initramfs = 0,
+    Rootfs = 1,
 }
 
 pub(crate) fn booted_from_rootfs() -> bool {
-    matches!(BOOT_SOURCE.get(), Some(BootSource::Rootfs))
+    BOOT_SOURCE.load(Ordering::Relaxed) == BootSource::Rootfs as u8
 }
 
 impl BootInit {
@@ -195,7 +198,7 @@ impl BootInit {
 
 fn prepare_boot_init(mut path_resolver: PathResolver) -> BootInit {
     if let Ok(init_path) = initramfs::find_init(&path_resolver) {
-        BOOT_SOURCE.call_once(|| BootSource::Initramfs);
+        BOOT_SOURCE.store(BootSource::Initramfs as u8, Ordering::Relaxed);
         return BootInit {
             path_resolver,
             init_path: Some(init_path),
@@ -205,7 +208,7 @@ fn prepare_boot_init(mut path_resolver: PathResolver) -> BootInit {
     rootfs::switch_to_rootfs(&mut path_resolver)
         .expect("neither an initramfs init nor a usable root filesystem was available");
     let init_path = rootfs::find_init(&path_resolver).expect("failed to resolve rootfs init path");
-    BOOT_SOURCE.call_once(|| BootSource::Rootfs);
+    BOOT_SOURCE.store(BootSource::Rootfs as u8, Ordering::Relaxed);
     BootInit {
         path_resolver,
         init_path,
@@ -276,4 +279,4 @@ fn print_banner() {
     println!("{}", logo_ascii_art::get_gradient_color_version());
 }
 
-static BOOT_SOURCE: Once<BootSource> = Once::new();
+static BOOT_SOURCE: AtomicU8 = AtomicU8::new(BootSource::Initramfs as u8);
