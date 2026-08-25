@@ -9,7 +9,7 @@ use core::{
 
 use ostd::{
     cpu::{CpuId, CpuSet},
-    sync::WaitQueue,
+    sync::{WaitQueue, Waiter},
     task::Task,
 };
 
@@ -257,7 +257,7 @@ impl Monitor {
     }
 
     fn run_monitor_loop(self: &Arc<Self>) {
-        let sleep_queue = WaitQueue::new();
+        let (sleep_waiter, _) = Waiter::new_pair();
         let sleep_duration = Duration::from_millis(100);
         loop {
             let worker_pool = self.worker_pool.upgrade();
@@ -268,7 +268,7 @@ impl Monitor {
             for local_pool in worker_pool.local_pools.iter() {
                 local_pool.set_heartbeat(false);
             }
-            let _ = sleep_queue.wait_until_or_timeout(|| -> Option<()> { None }, &sleep_duration);
+            let _ = sleep_waiter.wait_until_or_timeout(|| -> Option<()> { None }, &sleep_duration);
         }
     }
 }
