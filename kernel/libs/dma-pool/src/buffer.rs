@@ -11,7 +11,7 @@ use ostd::{
     },
 };
 
-use crate::DmaSegment;
+use crate::{DmaArena, DmaSegment};
 
 /// A DMA buffer, which is either directly allocated/mapped or comes from a pool.
 #[derive(Debug)]
@@ -20,6 +20,8 @@ pub enum DmaBuffer<D: DmaDirection> {
     Direct(DmaStream<D>),
     /// A DMA buffer that comes from a pool.
     Pooled(DmaSegment<D>),
+    /// A large DMA buffer allocated from a shared arena.
+    Arena(DmaArena<D>),
 }
 
 impl<D: DmaDirection> DmaBuffer<D> {
@@ -28,6 +30,7 @@ impl<D: DmaDirection> DmaBuffer<D> {
         match self {
             Self::Direct(stream) => stream.sync_from_device(byte_range),
             Self::Pooled(segment) => segment.sync_from_device(byte_range),
+            Self::Arena(arena) => arena.sync_from_device(byte_range),
         }
     }
 
@@ -36,6 +39,7 @@ impl<D: DmaDirection> DmaBuffer<D> {
         match self {
             Self::Direct(stream) => stream.sync_to_device(byte_range),
             Self::Pooled(segment) => segment.sync_to_device(byte_range),
+            Self::Arena(arena) => arena.sync_to_device(byte_range),
         }
     }
 }
@@ -45,6 +49,7 @@ impl<D: DmaDirection> HasDaddr for DmaBuffer<D> {
         match self {
             Self::Direct(stream) => stream.daddr(),
             Self::Pooled(segment) => segment.daddr(),
+            Self::Arena(arena) => arena.daddr(),
         }
     }
 }
@@ -54,6 +59,7 @@ impl<D: DmaDirection> HasSize for DmaBuffer<D> {
         match self {
             Self::Direct(stream) => stream.size(),
             Self::Pooled(segment) => segment.size(),
+            Self::Arena(arena) => arena.size(),
         }
     }
 }
@@ -65,6 +71,7 @@ impl<D: DmaDirection> HasVmReaderWriter for DmaBuffer<D> {
         match self {
             Self::Direct(stream) => stream.reader(),
             Self::Pooled(segment) => segment.reader(),
+            Self::Arena(arena) => arena.reader(),
         }
     }
 
@@ -72,6 +79,7 @@ impl<D: DmaDirection> HasVmReaderWriter for DmaBuffer<D> {
         match self {
             Self::Direct(stream) => stream.writer(),
             Self::Pooled(segment) => segment.writer(),
+            Self::Arena(arena) => arena.writer(),
         }
     }
 }

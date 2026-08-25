@@ -24,9 +24,13 @@ use ostd::{
     sync::SpinLock,
 };
 
+pub mod arena;
 mod buffer;
 
-pub use self::buffer::DmaBuffer;
+pub use self::{
+    arena::{DmaArena, DmaArenaPool},
+    buffer::DmaBuffer,
+};
 
 /// `DmaPool` is responsible for allocating small streaming DMA segments
 /// (equal to or smaller than `PAGE_SIZE`),
