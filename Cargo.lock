@@ -100,9 +100,9 @@ version = "0.1.0"
 dependencies = [
  "align_ext",
  "aster-util",
- "bitvec",
  "component",
  "device-id",
+ "dma-pool",
  "id-alloc",
  "int-to-c-enum",
  "io-util",
