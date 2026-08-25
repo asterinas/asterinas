@@ -34,7 +34,10 @@ use waiter::{FuseWaiter, ReplyBufs};
 
 pub use self::session::{AttrVersion, FuseSession};
 use crate::{
-    device::filesystem::pool::{FuseDataBuf, FuseReplyBuf, FuseRequestBuf, SizeClassedDmaPool},
+    device::filesystem::{
+        pool,
+        pool::{FuseDataBuf, FuseReplyBuf, FuseRequestBuf, VirtiofsDmaPool},
+    },
     transport::DeviceTransport,
 };
 
@@ -52,8 +55,8 @@ pub struct FileSystemDevice {
     transport: SpinLock<DeviceTransport, LocalIrqDisabled>,
     hiprio_queue: Arc<FsRequestQueue>,
     request_queues: Vec<Arc<FsRequestQueue>>,
-    to_device_pool: SizeClassedDmaPool<ToDevice>,
-    from_device_pool: SizeClassedDmaPool<FromDevice>,
+    to_device_pool: VirtiofsDmaPool<ToDevice>,
+    from_device_pool: VirtiofsDmaPool<FromDevice>,
     next_unique: AtomicU64,
     tag: String,
     notify_supported: bool,
@@ -67,12 +70,14 @@ impl FileSystemDevice {
         tag: String,
         notify_supported: bool,
     ) -> Self {
+        let (to_device_arena_pool, from_device_arena_pool) = pool::dma_arena_pools_singleton();
+
         Self {
             transport: SpinLock::new(transport),
             hiprio_queue,
             request_queues,
-            to_device_pool: SizeClassedDmaPool::new(),
-            from_device_pool: SizeClassedDmaPool::new(),
+            to_device_pool: VirtiofsDmaPool::new(to_device_arena_pool),
+            from_device_pool: VirtiofsDmaPool::new(from_device_arena_pool),
             // Start request IDs at 1 and keep 0 unused. In FUSE,
             // `unique == 0` is reserved for unsolicited notification messages
             // rather than ordinary request/reply matching.
