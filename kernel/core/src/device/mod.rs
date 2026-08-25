@@ -27,9 +27,7 @@ pub(crate) trait Device: Send + Sync + 'static {
     fn id(&self) -> DeviceId;
 
     /// Returns the metadata that specifies a device inode to be created in devtmpfs, if any.
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
-        None
-    }
+    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta>;
 
     /// Opens the device, returning a file-like object that the userspace can interact with by
     /// doing I/O.

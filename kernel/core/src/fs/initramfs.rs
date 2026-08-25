@@ -86,7 +86,7 @@ fn ensure_dev_console(path_resolver: &PathResolver) -> Result<()> {
             dev_path.mknod(
                 "console",
                 mkmod!(u+rw),
-                MknodType::CharDevice(tty::console_device_id().as_encoded_u64()),
+                MknodType::CharDevice(tty::CONSOLE_DEVICE_ID.as_encoded_u64()),
             )?;
             Ok(())
         }

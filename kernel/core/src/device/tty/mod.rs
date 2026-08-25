@@ -30,6 +30,7 @@ mod serial;
 pub(super) mod termio;
 mod vt;
 
+pub(crate) use device::CONSOLE_DEVICE_ID;
 pub(super) use driver::TtyDriver;
 pub(super) use flags::TtyFlags;
 
@@ -40,10 +41,6 @@ pub(super) fn init_in_first_process() -> Result<()> {
     vt::init_in_first_process()?;
 
     Ok(())
-}
-
-pub(crate) fn console_device_id() -> DeviceId {
-    DeviceId::new(MajorId::new(5), MinorId::new(1))
 }
 
 const IO_CAPACITY: usize = 4096;

@@ -80,6 +80,9 @@ pub(crate) struct SystemConsole {
     inner: Arc<dyn Device>,
 }
 
+/// The device ID of `/dev/console`.
+pub(crate) const CONSOLE_DEVICE_ID: DeviceId = DeviceId::new(MajorId::new(5), MinorId::new(1));
+
 impl SystemConsole {
     /// Returns the singleton instance of the console device.
     pub(crate) fn singleton() -> &'static Arc<SystemConsole> {
@@ -117,7 +120,7 @@ impl Device for SystemConsole {
     }
 
     fn id(&self) -> DeviceId {
-        super::console_device_id()
+        CONSOLE_DEVICE_ID
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {

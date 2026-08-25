@@ -151,10 +151,12 @@ pub(in crate::fs::fs_impls) struct RamInode {
     /// Reference to fs
     fs: Weak<RamFs>,
     /// Device ID.
+    ///
     /// Detached inodes such as `memfd` store it directly
     /// because they do not have a valid fs reference.
     container_dev_id: DeviceId,
     /// Hard linkability.
+    ///
     /// All inodes except temporary files are set to linkable
     /// Linkability of temporary files is specified via [`RamInode::create_tmpfile`]
     hard_linkability: HardLinkability,
@@ -783,13 +785,12 @@ impl RamInode {
 
         let mut self_dir = self.inner.as_direntry().unwrap().write();
         let (idx, target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
-        if !predicate(&target) {
-            return Ok(false);
-        }
         if target.typ == InodeType::Dir {
             return_errno_with_message!(Errno::EISDIR, "unlink on dir");
         }
-
+        if !predicate(&target) {
+            return Ok(false);
+        }
         self_dir.remove_entry(idx);
         drop(self_dir);
 
@@ -893,9 +894,7 @@ impl RamInode {
             InodeType::SymLink => RamInode::new_symlink(&fs, mode, uid, gid, to_be_revalidated),
             InodeType::Socket => RamInode::new_socket(&fs, mode, uid, gid, to_be_revalidated),
             InodeType::Dir => RamInode::new_dir(&fs, mode, uid, gid, &self.this, to_be_revalidated),
-            _ => {
-                panic!("unsupported inode type");
-            }
+            _ => panic!("unsupported inode type"),
         };
 
         let mut self_dir = self_dir.upgrade();

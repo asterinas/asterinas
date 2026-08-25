@@ -17,7 +17,7 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Inode, MknodType},
-            path,
+            path::{self, SplitPath},
         },
     },
     prelude::*,
@@ -38,19 +38,26 @@ pub(crate) struct DevtmpfsNodeMeta {
     mode: InodeMode,
 }
 
+/// An error returned by [`DevtmpfsNodeMeta::new`] and [`DevtmpfsNodeMeta::with_mode`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct InvalidDevtmpfsPath;
+
 impl DevtmpfsNodeMeta {
     /// Creates the metadata for a devtmpfs node with the default mode (`u+rw`).
     ///
     /// `path` must be a non-empty, relative, well-formed path. For example,
     /// `a/b/c` is valid, whereas `/`, `/abc`, `a//b`, and `a/b/` are invalid.
-    pub(crate) fn new(path: impl Into<Cow<'static, str>>) -> Result<Self> {
+    pub(crate) fn new(path: impl Into<Cow<'static, str>>) -> Result<Self, InvalidDevtmpfsPath> {
         Self::with_mode(path, mkmod!(u+rw))
     }
 
     /// Creates the metadata for a devtmpfs node with the specified mode.
     ///
     /// The path follows the same requirements as [`Self::new`].
-    pub(crate) fn with_mode(path: impl Into<Cow<'static, str>>, mode: InodeMode) -> Result<Self> {
+    pub(crate) fn with_mode(
+        path: impl Into<Cow<'static, str>>,
+        mode: InodeMode,
+    ) -> Result<Self, InvalidDevtmpfsPath> {
         let path = path.into();
         if path.is_empty()
             || path.starts_with('/')
@@ -58,7 +65,7 @@ impl DevtmpfsNodeMeta {
                 .split('/')
                 .any(|component| component.is_empty() || path::is_dot_or_dotdot(component))
         {
-            return_errno_with_message!(Errno::EINVAL, "the device path is invalid");
+            return Err(InvalidDevtmpfsPath);
         }
         Ok(Self { path, mode })
     }
@@ -94,13 +101,13 @@ impl DevtmpfsNode {
 }
 
 pub(super) fn create_node(node: &DevtmpfsNode) -> Result<()> {
-    let (parent_path, node_name) = split_parent_and_basename(node.meta.path()).unwrap();
+    let (parent_path, node_name) = node.meta.path().split_dirname_and_basename().unwrap();
     let parent_inode = lookup_or_create_path(parent_path)?;
     create_device_node(parent_inode.as_ref(), node_name, node)
 }
 
 pub(super) fn delete_node(node: &DevtmpfsNode) -> Result<()> {
-    let (parent_path, node_name) = split_parent_and_basename(node.meta.path()).unwrap();
+    let (parent_path, node_name) = node.meta.path().split_dirname_and_basename().unwrap();
     let parent_inode = lookup_path(parent_path)?;
     let parent_ram_inode = parent_inode.downcast_ref::<RamInode>().unwrap();
 
@@ -164,7 +171,7 @@ fn create_device_node(parent_inode: &dyn Inode, name: &str, node: &DevtmpfsNode)
 fn remove_empty_parent_dirs(path: &str) {
     let mut path = path;
 
-    while let Some((parent_path, name)) = split_parent_and_basename(path) {
+    while let Ok((parent_path, name)) = path.split_dirname_and_basename() {
         let parent_inode = match lookup_path(parent_path) {
             Ok(inode) => inode,
             Err(_) => break,
@@ -189,15 +196,4 @@ fn matches_device(inode: &RamInode, node: &DevtmpfsNode) -> bool {
     };
 
     inode.type_() == expected_type && inode.metadata().unwrap().self_dev_id == Some(node.device_id)
-}
-
-fn split_parent_and_basename(path: &str) -> Option<(&str, &str)> {
-    if path.is_empty() {
-        return None;
-    }
-
-    path.rsplit_once('/').map_or_else(
-        || Some(("", path)),
-        |(parent, basename)| (!basename.is_empty()).then_some((parent, basename)),
-    )
 }

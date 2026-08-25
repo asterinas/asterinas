@@ -62,7 +62,6 @@ impl TmpFs {
 fn default_max_blocks() -> usize {
     crate::vm::mem_total() / PAGE_SIZE / 2
 }
-
 fn default_max_inodes() -> usize {
     crate::vm::mem_total() / PAGE_SIZE / 2
 }

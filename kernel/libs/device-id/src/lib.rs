@@ -20,7 +20,7 @@ pub struct DeviceId(u32);
 
 impl DeviceId {
     /// Creates a device ID from the major device number and the minor device number.
-    pub fn new(major: MajorId, minor: MinorId) -> Self {
+    pub const fn new(major: MajorId, minor: MinorId) -> Self {
         Self(((major.get() as u32) << 20) | minor.get())
     }
 

@@ -31,7 +31,7 @@ pub(super) fn init() {
 }
 
 pub(super) fn init_in_first_kthread() {
-    worker::init();
+    worker::init_in_first_kthread();
 }
 
 #[cfg(ktest)]
@@ -67,6 +67,7 @@ mod tests {
         )
     }
 
+    #[track_caller]
     fn assert_missing(path: &str) {
         match tree::lookup_path(path) {
             Err(error) => assert_eq!(error.error(), Errno::ENOENT),

@@ -195,12 +195,7 @@ impl PerOpenFileOps for TdxGuestFile {
                         inblob_ptr.read()?
                     };
 
-                    let report = TDX_REPORT
-                        .get()
-                        .ok_or_else(|| {
-                            Error::with_message(Errno::ENODEV, "TDX report not initialized")
-                        })?
-                        .write();
+                    let report = tdx_report_or_err()?.write();
                     refresh_tdx_report_locked(&report, Some(inblob.as_bytes()))?;
                     let outblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, tdx_report);
                     outblob_ptr.copy_from(&SafePtr::new(&*report, 0))?;
@@ -214,6 +209,12 @@ impl PerOpenFileOps for TdxGuestFile {
 }
 
 static TDX_REPORT: Once<RwMutex<USegment>> = Once::new();
+
+fn tdx_report_or_err() -> Result<&'static RwMutex<USegment>> {
+    TDX_REPORT
+        .get()
+        .ok_or_else(|| Error::with_message(Errno::ENODEV, "the TDX report is not initialized"))
+}
 
 /// Runtime Measurement Register (RTMR) index.
 ///
@@ -251,10 +252,7 @@ pub(crate) fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
     field_ptr!(&header_ptr, TdxQuoteHdr, in_len).write(&(size_of::<TdReport>() as u32))?;
     field_ptr!(&header_ptr, TdxQuoteHdr, out_len).write(&0u32)?;
 
-    let report = TDX_REPORT
-        .get()
-        .ok_or_else(|| Error::with_message(Errno::ENODEV, "TDX report not initialized"))?
-        .write();
+    let report = tdx_report_or_err()?.write();
     refresh_tdx_report_locked(&report, Some(inblob))?;
     payload_ptr.copy_from(&SafePtr::new(&*report, 0))?;
     drop(report);
@@ -296,10 +294,7 @@ pub(crate) fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
 /// should use [`get_tdx_mr_refresh`] instead, which combines the refresh and
 /// the register read atomically.
 pub(crate) fn refresh_tdx_report(inblob: Option<&[u8]>) -> Result<()> {
-    let report = TDX_REPORT
-        .get()
-        .ok_or_else(|| Error::with_message(Errno::ENODEV, "TDX report not initialized"))?
-        .write();
+    let report = tdx_report_or_err()?.write();
     refresh_tdx_report_locked(&report, inblob)
 }
 
@@ -313,10 +308,7 @@ pub(crate) const SHA384_DIGEST_SIZE: usize = 48;
 /// recent [`extend_tdx_mr`], use [`get_tdx_mr_refresh`] instead to obtain the
 /// current hardware value.
 pub(crate) fn get_tdx_mr(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]> {
-    let report = TDX_REPORT
-        .get()
-        .ok_or_else(|| Error::with_message(Errno::ENODEV, "TDX report not initialized"))?
-        .read();
+    let report = tdx_report_or_err()?.read();
 
     let mut blob = [0u8; SHA384_DIGEST_SIZE];
     report
@@ -336,10 +328,7 @@ pub(crate) fn get_tdx_mr(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]
 /// value. If no extend has occurred and the cached report is still current,
 /// the cheaper [`get_tdx_mr`] can be used instead.
 pub(crate) fn get_tdx_mr_refresh(reg: MeasurementReg) -> Result<[u8; SHA384_DIGEST_SIZE]> {
-    let report = TDX_REPORT
-        .get()
-        .ok_or_else(|| Error::with_message(Errno::ENODEV, "TDX report not initialized"))?
-        .write();
+    let report = tdx_report_or_err()?.write();
 
     refresh_tdx_report_locked(&report, None)?;
 
