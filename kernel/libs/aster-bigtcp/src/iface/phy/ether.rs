@@ -16,7 +16,7 @@ use crate::{
     device::{AnyNetworkDevice, WithDevice, new_interface},
     ext::Ext,
     iface::{
-        Iface, InterfaceFlags, InterfaceName, ScheduleNextPoll,
+        Iface, InterfaceFlags, InterfaceName,
         common::{IfaceCommon, InterfaceType, PhyProcessResult, PollPhy, TxPacketWithDst},
         iface::internal::IfaceInternal,
         time::get_network_timestamp,
@@ -81,11 +81,7 @@ impl<D: WithDevice + 'static, E: Ext> Iface<E> for EtherIface<D, E> {
     }
 
     fn poll(&self) {
-        self.driver.with(|device| {
-            let next_poll = self.common.poll(device, self);
-            device.notify_poll_end();
-            self.common.sched_poll().schedule_next_poll(next_poll);
-        });
+        self.common.poll(&self.driver, self);
     }
 
     fn mtu(&self) -> usize {

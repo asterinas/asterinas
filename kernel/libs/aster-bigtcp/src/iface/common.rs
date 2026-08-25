@@ -27,9 +27,10 @@ use super::{
     time::get_network_timestamp,
 };
 use crate::{
-    device::AnyNetworkDevice,
+    device::{AnyNetworkDevice, WithDevice},
     errors::BindError,
     ext::Ext,
+    iface::ScheduleNextPoll,
     packet::{FreshTxPacket, LinkLayer, NetworkLayer, RxPacket, TxPacket},
     socket::{TcpListenerBg, UdpSocketBg},
     socket_table::SocketTable,
@@ -241,7 +242,17 @@ impl<E: Ext> IfaceCommon<E> {
 }
 
 impl<E: Ext> IfaceCommon<E> {
-    pub(super) fn poll(&self, device: &mut dyn AnyNetworkDevice, phy: &dyn PollPhy) -> Option<u64> {
+    pub(super) fn poll<D: WithDevice>(&self, driver: &D, phy: &dyn PollPhy) {
+        driver.with(|device| self.do_poll_and_notify(device, phy));
+    }
+
+    fn do_poll_and_notify(&self, device: &mut dyn AnyNetworkDevice, phy: &dyn PollPhy) {
+        let next_poll = self.do_poll(device, phy);
+        device.notify_poll_end();
+        self.sched_poll.schedule_next_poll(next_poll);
+    }
+
+    fn do_poll(&self, device: &mut dyn AnyNetworkDevice, phy: &dyn PollPhy) -> Option<u64> {
         let mut interface = self.interface();
         interface.context_mut().now = get_network_timestamp();
 
