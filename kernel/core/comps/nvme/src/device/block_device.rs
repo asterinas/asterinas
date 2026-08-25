@@ -303,7 +303,7 @@ impl NvmeDeviceInner {
         for bio in request.into_bios() {
             let mut status = BioStatus::Complete;
             for segment in bio.segments() {
-                let dma_slice = segment.inner_dma_slice();
+                let dma_slice = segment.dma_slice();
                 // `BioSegment` should guarantee that the segment's address and the size is
                 // aligned to sectors.
                 debug_assert!(dma_slice.daddr().is_multiple_of(SECTOR_SIZE));
@@ -942,7 +942,7 @@ mod test {
 
         let mut read_buf = [0u8; TEST_BUF_LENGTH];
         read_bio_segment
-            .inner_dma_slice()
+            .dma_slice()
             .read_bytes(0, &mut read_buf)
             .unwrap();
         assert!(read_buf.iter().all(|&x| x == TEST_CHAR));
