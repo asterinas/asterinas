@@ -20,6 +20,7 @@ pub(crate) mod wait;
 
 pub(crate) type clockid_t = i32;
 pub(crate) type time_t = i64;
+pub(crate) type timer_t = i32;
 pub(crate) type suseconds_t = i64;
 
 const NSEC_PER_USEC: i64 = 1_000;

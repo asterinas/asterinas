@@ -7,11 +7,11 @@ use ostd::mm::VmIo;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    time::{TIMER_ABSTIME, itimerspec_t, timer::Timeout, timespec_t},
+    time::{TIMER_ABSTIME, itimerspec_t, timer::Timeout, timer_t, timespec_t},
 };
 
 pub(super) fn sys_timer_settime(
-    timer_id: usize,
+    timer_id: timer_t,
     flags: i32,
     new_itimerspec_addr: Vaddr,
     old_itimerspec_addr: Vaddr,
@@ -62,7 +62,7 @@ pub(super) fn sys_timer_settime(
 }
 
 pub(super) fn sys_timer_gettime(
-    timer_id: usize,
+    timer_id: timer_t,
     itimerspec_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {

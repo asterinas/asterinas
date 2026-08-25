@@ -24,6 +24,7 @@ use crate::{
         Timer, TimerManager,
         clocks::{ProfClock, RealTimeClock},
         timer::TimerGuard,
+        timer_t,
     },
 };
 
@@ -128,6 +129,7 @@ fn create_process_timer_callback(
 impl PosixTimerManager {
     pub(super) fn new(prof_clock: &Arc<ProfClock>, process_ref: &Weak<Process>) -> Self {
         const MAX_NUM_OF_POSIX_TIMERS: usize = 10000;
+        const { assert!(MAX_NUM_OF_POSIX_TIMERS <= timer_t::MAX as usize) };
 
         let callback = create_process_timer_callback(process_ref);
 
@@ -178,8 +180,8 @@ impl PosixTimerManager {
     }
 
     /// Adds a POSIX timer to the managed `posix_timers`, and allocate a timer ID for this timer.
-    /// Return the timer ID, or `None` if allocation failed.
-    pub(crate) fn add_posix_timer(&self, posix_timer: Arc<Timer>) -> Option<usize> {
+    /// Returns the timer ID, or `None` if allocation failed.
+    pub(crate) fn add_posix_timer(&self, posix_timer: Arc<Timer>) -> Option<timer_t> {
         let mut timers = self.posix_timers.lock();
         // Holding the lock of `posix_timers` is required to operate the `id_allocator`.
         let timer_id = self.id_allocator.lock().alloc()?;
@@ -189,11 +191,12 @@ impl PosixTimerManager {
         // The ID allocated is not used by any other timers so this index in `timers`
         // must be `None`.
         timers[timer_id] = Some(posix_timer);
-        Some(timer_id)
+        Some(timer_id as timer_t)
     }
 
     /// Finds a POSIX timer by the input `timer_id`.
-    pub(crate) fn find_posix_timer(&self, timer_id: usize) -> Option<Arc<Timer>> {
+    pub(crate) fn find_posix_timer(&self, timer_id: timer_t) -> Option<Arc<Timer>> {
+        let timer_id = timer_id as usize;
         let timers = self.posix_timers.lock();
         if timer_id >= timers.len() {
             return None;
@@ -203,7 +206,8 @@ impl PosixTimerManager {
     }
 
     /// Removes the POSIX timer with the ID `timer_id`.
-    pub(crate) fn remove_posix_timer(&self, timer_id: usize) -> Option<Arc<Timer>> {
+    pub(crate) fn remove_posix_timer(&self, timer_id: timer_t) -> Option<Arc<Timer>> {
+        let timer_id = timer_id as usize;
         let mut timers = self.posix_timers.lock();
         if timer_id >= timers.len() {
             return None;
