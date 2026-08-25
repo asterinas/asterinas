@@ -45,7 +45,7 @@ use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
     mm::{FrameAllocOptions, HasPaddr, HasSize, USegment, VmIo, dma::DmaCoherent},
-    sync::{RwMutexWriteGuard, WaitQueue},
+    sync::{RwMutexWriteGuard, Waiter},
 };
 use spin::Once;
 use tdx_guest::{
@@ -266,14 +266,14 @@ pub(crate) fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
 
     // Poll for the quote to be ready.
     let status_ptr = field_ptr!(&header_ptr, TdxQuoteHdr, status);
-    let sleep_queue = WaitQueue::new();
+    let (sleep_waiter, _) = Waiter::new_pair();
     let sleep_duration = Duration::from_millis(100);
     loop {
         let status = status_ptr.read()?;
         if status != GET_QUOTE_IN_FLIGHT {
             break;
         }
-        let _ = sleep_queue.wait_until_or_timeout(|| -> Option<()> { None }, &sleep_duration);
+        let _ = sleep_waiter.wait_until_or_timeout(|| -> Option<()> { None }, &sleep_duration);
     }
 
     // Note: We cannot convert `DmaCoherent` to `USegment` here. When shared memory is converted back
