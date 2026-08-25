@@ -24,6 +24,7 @@ use crate::{
         Timer, clockid_t,
         clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
         timer::TimerGuard,
+        timer_t,
     },
 };
 
@@ -104,11 +105,14 @@ pub(super) fn sys_timer_create(
     let Some(timer_id) = current_process.timer_manager().add_posix_timer(timer) else {
         return_errno_with_message!(Errno::EAGAIN, "timer IDs are exhausted");
     };
-    ctx.user_space().write_val(timer_id_addr, &timer_id)?;
+    if let Err(error) = ctx.user_space().write_val(timer_id_addr, &timer_id) {
+        let _ = current_process.timer_manager().remove_posix_timer(timer_id);
+        return Err(error.into());
+    }
     Ok(SyscallReturn::Return(0))
 }
 
-pub(super) fn sys_timer_delete(timer_id: usize, _ctx: &Context) -> Result<SyscallReturn> {
+pub(super) fn sys_timer_delete(timer_id: timer_t, _ctx: &Context) -> Result<SyscallReturn> {
     let current_process = current!();
     let Some(timer) = current_process.timer_manager().remove_posix_timer(timer_id) else {
         return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
