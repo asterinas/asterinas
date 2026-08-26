@@ -20,7 +20,7 @@ inputs:
 
   # VM Setup
   boot_protocol:
-    description: 'Boot protocol (linux-efi-handover64/linux-efi-pe64/linux-legacy32/multiboot/multiboot2)'
+    description: 'Boot protocol (linux-efi-handover64/linux-efi-pe64/linux-legacy32/multiboot/multiboot2/pvh)'
     required: false
   enable_kvm:
     description: 'Enable KVM acceleration'
