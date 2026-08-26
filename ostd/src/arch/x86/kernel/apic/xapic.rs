@@ -67,7 +67,9 @@ impl XApic {
 
 impl super::Apic for XApic {
     fn id(&self) -> u32 {
-        unsafe { self.io_mem.read_once(xapic::XAPIC_ID as usize) }
+        let raw: u32 = unsafe { self.io_mem.read_once(xapic::XAPIC_ID as usize) };
+        // Bits 31-24: APIC ID.
+        (raw >> 24) & 0xff
     }
 
     fn version(&self) -> u32 {
