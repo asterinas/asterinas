@@ -143,6 +143,15 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     ///    collected later in its `Display::display()` method, after dropping the file table's spin
     ///    lock.
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display>;
+
+    /// Synchronizes the file according to `mode`.
+    ///
+    /// File-like objects do not support synchronization by default. Linux returns `EINVAL`
+    /// when a file's operations do not provide an `fsync` method.
+    /// Reference: <https://github.com/torvalds/linux/blob/v6.16/fs/sync.c#L179-L188>
+    fn sync(&self, _mode: SyncMode) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "the file does not support synchronization")
+    }
 }
 
 impl dyn FileLike {
@@ -339,4 +348,13 @@ pub(crate) enum Mappable {
     Vmo(Arc<Vmo>),
     /// An MMIO region.
     IoMem(IoMem),
+}
+
+/// Specifies the extent of a file synchronization operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SyncMode {
+    /// Synchronizes file data and the metadata required to retrieve it.
+    Data,
+    /// Synchronizes file data and all associated metadata.
+    Full,
 }

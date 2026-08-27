@@ -6,7 +6,7 @@ use core::fmt::Display;
 
 use super::{
     AccessMode, CreationFlags, FileCommon, FileLike, InodeType, Mappable, SettableStatusFlags,
-    StatusFlags, file_table::FdFlags, flock::FlockItem,
+    StatusFlags, SyncMode, file_table::FdFlags, flock::FlockItem,
 };
 use crate::{
     events::IoEvents,
@@ -514,6 +514,21 @@ impl FileLike for InodeHandle {
             fd_flags,
         })
     }
+
+    fn sync(&self, mode: SyncMode) -> Result<()> {
+        if self.status_flags().contains(StatusFlags::O_PATH) {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
+        if let Some(ref open_file) = self.open_file {
+            return open_file.sync(mode);
+        }
+
+        match mode {
+            SyncMode::Data => self.path().sync_data(),
+            SyncMode::Full => self.path().sync_all(),
+        }
+    }
 }
 
 impl Drop for InodeHandle {
@@ -591,6 +606,14 @@ pub(crate) trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'stati
         // `O_ASYNC` and `O_DIRECT` can only be set on file descriptions that explicitly
         // support them.
         SettableStatusFlags::minimal()
+    }
+
+    /// Synchronizes the file according to `mode`.
+    ///
+    /// Per-open file operations do not support synchronization by default.
+    /// Implementations that support synchronization must override this method.
+    fn sync(&self, _mode: SyncMode) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "the file does not support synchronization")
     }
 }
 

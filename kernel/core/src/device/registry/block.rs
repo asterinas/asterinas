@@ -2,7 +2,7 @@
 
 use alloc::borrow::ToOwned;
 
-use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE};
+use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE, bio::BioStatus};
 use aster_nvme::NvmeBlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 use device_id::DeviceId;
@@ -14,7 +14,7 @@ use crate::{
     events::IoEvents,
     fs::{
         devtmpfs::{self, DevtmpfsNode, DevtmpfsNodeMeta},
-        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
+        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags, SyncMode},
         vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
@@ -242,6 +242,18 @@ impl PerOpenFileOps for OpenBlockFile {
 
     fn settable_status_flags(&self) -> SettableStatusFlags {
         SettableStatusFlags::minimal().with_o_direct()
+    }
+
+    fn sync(&self, _mode: SyncMode) -> Result<()> {
+        match self.0.sync()? {
+            // Linux treats an unsupported block-device flush as success.
+            // Reference: <https://github.com/torvalds/linux/blob/v6.16/block/fops.c#L609-L611>
+            BioStatus::Complete | BioStatus::NotSupported => Ok(()),
+            status @ (BioStatus::NoSpace | BioStatus::IoError) => Err(status.into()),
+            BioStatus::Init | BioStatus::Submit | BioStatus::Zeros => {
+                return_errno_with_message!(Errno::EIO, "invalid block device flush status")
+            }
+        }
     }
 }
 
