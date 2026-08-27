@@ -45,6 +45,7 @@ keyable-arc.workspace = true
 lending-iterator.workspace = true
 logo-ascii-art.workspace = true
 lru.workspace = true
+miniz_oxide.workspace = true
 osdk-frame-allocator.workspace = true
 osdk-heap-allocator.workspace = true
 ostd.workspace = true
@@ -63,7 +64,6 @@ typeflags.workspace = true
 xarray.workspace = true
 xmas-elf.workspace = true
 zerocopy.workspace = true
-zune-inflate.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
 tdx-guest = { workspace = true, optional = true }
