@@ -39,6 +39,7 @@ pub use self::{
     ops::{
         create::{CreateOperation, CreateReq},
         forget::{ForgetOperation, ForgetReq},
+        fsync::{FsyncFlags, FsyncOperation, FsyncReq, FsyncdirOperation},
         getattr::{FuseAttrReply, GetattrFlags, GetattrOperation, GetattrReq},
         init::{FuseInitFlags, FuseInitFlags2, InitOperation, InitReply, InitReq},
         link::{LinkOperation, LinkReq},

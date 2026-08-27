@@ -16,6 +16,7 @@ mod util;
 
 pub mod create;
 pub mod forget;
+pub mod fsync;
 pub mod getattr;
 pub mod init;
 pub mod link;
