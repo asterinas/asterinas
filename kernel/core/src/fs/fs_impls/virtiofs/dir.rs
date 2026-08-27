@@ -85,10 +85,7 @@ impl PerOpenFileOps for VirtioFsDir {
     fn sync(&self, mode: SyncMode) -> Result<()> {
         // FIXME: Send a `FUSE_FSYNCDIR` request using this directory's open handle,
         // set `FUSE_FSYNC_FDATASYNC` for `SyncMode::Data`, and return any server error.
-        match mode {
-            SyncMode::Data => self.inode.sync_data(),
-            SyncMode::Full => self.inode.sync_all(),
-        }
+        self.inode.sync(mode)
     }
 
     fn is_offset_aware(&self) -> bool {

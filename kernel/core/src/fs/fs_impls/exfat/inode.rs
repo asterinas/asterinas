@@ -30,7 +30,7 @@ use crate::{
             bitmap::ExfatBitmap, dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs,
             upcase_table::ExfatUpcaseTable,
         },
-        file::{InodeMode, InodeType, StatusFlags, mkmod},
+        file::{InodeMode, InodeType, StatusFlags, SyncMode, mkmod},
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
@@ -1771,22 +1771,14 @@ impl Inode for ExfatInode {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
     }
 
-    fn sync_all(&self) -> Result<()> {
+    fn sync(&self, mode: SyncMode) -> Result<()> {
         let inner = self.inner.read();
         let fs = inner.fs();
         let fs_guard = fs.lock();
-        inner.sync_all(&fs_guard)?;
-
-        fs.block_device().sync()?;
-
-        Ok(())
-    }
-
-    fn sync_data(&self) -> Result<()> {
-        let inner = self.inner.read();
-        let fs = inner.fs();
-        let fs_guard = fs.lock();
-        inner.sync_data(&fs_guard)?;
+        match mode {
+            SyncMode::Data => inner.sync_data(&fs_guard)?,
+            SyncMode::Full => inner.sync_all(&fs_guard)?,
+        }
 
         fs.block_device().sync()?;
 

@@ -30,6 +30,7 @@ use super::{
 use crate::{
     fs::{
         exfat::{constants::*, inode::Ino},
+        file::SyncMode,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::Inode,
@@ -142,7 +143,7 @@ impl ExfatFs {
             if inode.is_deleted() {
                 inode.reclaim_space()?;
             } else {
-                inode.sync_all()?;
+                inode.sync(SyncMode::Full)?;
             }
         }
         self.inodes.write().remove(&hash);
@@ -421,7 +422,7 @@ impl FileSystem for ExfatFs {
 
     fn sync(&self) -> Result<()> {
         for inode in self.inodes.read().values() {
-            inode.sync_all()?;
+            inode.sync(SyncMode::Full)?;
         }
         self.meta_cache.flush_range(0..self.fs_size())?;
         Ok(())

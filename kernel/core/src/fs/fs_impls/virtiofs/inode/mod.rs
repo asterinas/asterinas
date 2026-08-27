@@ -39,7 +39,7 @@ use super::{
 };
 use crate::{
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, SyncMode},
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
@@ -503,7 +503,7 @@ impl Inode for VirtioFsInode {
         Ok(())
     }
 
-    fn sync_data(&self) -> Result<()> {
+    fn sync(&self, _mode: SyncMode) -> Result<()> {
         let inner = self.inner.write();
         let Some(page_cache) = &inner.page_cache else {
             return Ok(());

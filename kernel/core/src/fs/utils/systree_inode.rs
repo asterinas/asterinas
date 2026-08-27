@@ -9,7 +9,7 @@ use aster_systree::{
 
 use crate::{
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, SyncMode, mkmod},
         utils::DirentVisitor,
         vfs::{
             file_system::{FileSystem, SuperBlock},
@@ -604,11 +604,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         None
     }
 
-    default fn sync_all(&self) -> Result<()> {
-        Ok(())
-    }
-
-    default fn sync_data(&self) -> Result<()> {
+    default fn sync(&self, _mode: SyncMode) -> Result<()> {
         Ok(())
     }
 

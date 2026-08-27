@@ -15,7 +15,7 @@ use device_id::DeviceId;
 use crate::{
     device,
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, SyncMode},
         fs_impls::ext2::{FilePerm, Inode as Ext2Inode},
         utils::DirentVisitor,
         vfs::{
@@ -236,19 +236,11 @@ impl Inode for Ext2Inode {
         self.write_link(target)
     }
 
-    fn sync_all(&self) -> Result<()> {
-        self.sync_all()?;
-        let fs = self.fs()?;
-        let block_group = fs.block_group(self.block_group_idx());
-        block_group.sync_inode_table()?;
-        if fs.block_device().sync()? != BioStatus::Complete {
-            return_errno_with_message!(Errno::EIO, "failed to flush block device");
+    fn sync(&self, mode: SyncMode) -> Result<()> {
+        match mode {
+            SyncMode::Data => self.sync_data()?,
+            SyncMode::Full => self.sync_all()?,
         }
-        Ok(())
-    }
-
-    fn sync_data(&self) -> Result<()> {
-        self.sync_data()?;
         let fs = self.fs()?;
         let block_group = fs.block_group(self.block_group_idx());
         block_group.sync_inode_table()?;

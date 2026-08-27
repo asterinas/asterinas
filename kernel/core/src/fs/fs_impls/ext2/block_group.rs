@@ -38,7 +38,7 @@ use super::{
     prelude::*,
     super_block::SuperBlock,
 };
-use crate::fs::utils::IdBitmap;
+use crate::fs::{file::SyncMode, utils::IdBitmap, vfs::inode::Inode as VfsInode};
 
 /// Represents one block group in an ext2 filesystem.
 ///
@@ -218,13 +218,13 @@ impl BlockGroup {
     /// Syncs cached inodes.
     fn sync_inodes(&self) -> Result<()> {
         // Clone the `Arc` handles under the read lock, then drop the lock before
-        // calling `sync_all()`.  Otherwise `sync_all()` acquires `inner.write()` while
+        // calling `sync`. Otherwise `sync` acquires `inner.write()` while
         // we still hold `inode_cache.read()`, creating a lock-order inversion with
         // `create`/`unlink`/`rmdir`/`rename` which take `inner.write()` first, then
         // `inode_cache.write()`.
         let inodes: Vec<Arc<Inode>> = self.inode_cache.read().values().cloned().collect();
         for inode in inodes {
-            inode.sync_all()?;
+            inode.sync(SyncMode::Full)?;
         }
         self.sync_inode_table()
     }

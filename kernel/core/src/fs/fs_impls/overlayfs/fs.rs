@@ -19,7 +19,7 @@ use ostd::{
 
 use crate::{
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, SyncMode, mkmod},
         pseudofs::AnonDeviceId,
         utils::{DirentCounter, DirentVisitor, NAME_MAX},
         vfs::{
@@ -558,12 +558,8 @@ impl OverlayInode {
         );
     }
 
-    pub(crate) fn sync_all(&self) -> Result<()> {
-        self.upper().map_or(Ok(()), |upper| upper.sync_all())
-    }
-
-    pub(crate) fn sync_data(&self) -> Result<()> {
-        self.upper().map_or(Ok(()), |upper| upper.sync_data())
+    pub(crate) fn sync(&self, mode: SyncMode) -> Result<()> {
+        self.upper().map_or(Ok(()), |upper| upper.sync(mode))
     }
 }
 
@@ -1029,8 +1025,7 @@ impl Inode for OverlayInode {
     ) -> Result<()>;
     fn read_link(&self) -> Result<SymbolicLink>;
     fn write_link(&self, target: &str) -> Result<()>;
-    fn sync_all(&self) -> Result<()>;
-    fn sync_data(&self) -> Result<()>;
+    fn sync(&self, mode: SyncMode) -> Result<()>;
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()>;
     fn fs(&self) -> Arc<dyn FileSystem>;
     fn set_xattr(
@@ -1610,7 +1605,7 @@ mod tests {
             .write(0, &mut VmReader::from([3].as_slice()).to_fallible())
             .unwrap();
         f1.set_atime(Duration::default());
-        f1.sync_data().unwrap();
+        f1.sync(SyncMode::Data).unwrap();
         let mut data = [0u8; 1];
         f1.read_at(
             0,
