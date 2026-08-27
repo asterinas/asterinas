@@ -57,6 +57,7 @@ BOOT_IMAGE_NIX_ARGS := \
 	--arg enableBenchmarkTest $(ENABLE_BENCHMARK_TEST) \
 	--arg enableConformanceTest $(ENABLE_CONFORMANCE_TEST) \
 	--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
+	--argstr benchmarkName $(BENCHMARK) \
 	--argstr conformanceTestSuite $(CONFORMANCE_TEST_SUITE) \
 	--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
 	--argstr conformanceTestSelector "$(CONFORMANCE_TEST_SELECTOR)" \
