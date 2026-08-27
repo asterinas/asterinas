@@ -40,6 +40,7 @@ members = [
     "kernel/core/comps/network",
     "kernel/core/comps/nvme",
     "kernel/core/comps/pci",
+    "kernel/core/comps/simpledrm",
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
     "kernel/core/comps/time",
@@ -91,6 +92,7 @@ default-members = [
     "kernel/core/comps/network",
     "kernel/core/comps/nvme",
     "kernel/core/comps/pci",
+    "kernel/core/comps/simpledrm",
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
     "kernel/core/comps/time",
@@ -171,6 +173,7 @@ aster-mlsdisk = { path = "kernel/core/comps/mlsdisk" }
 aster-network = { path = "kernel/core/comps/network" }
 aster-nvme = { path = "kernel/core/comps/nvme" }
 aster-pci = { path = "kernel/core/comps/pci" }
+aster-simpledrm = { path = "kernel/core/comps/simpledrm" }
 aster-softirq = { path = "kernel/core/comps/softirq" }
 aster-systree = { path = "kernel/core/comps/systree" }
 aster-time = { path = "kernel/core/comps/time" }

@@ -147,6 +147,7 @@ dependencies = [
  "aster-nvme",
  "aster-rights",
  "aster-rights-proc",
+ "aster-simpledrm",
  "aster-softirq",
  "aster-systree",
  "aster-time",
@@ -205,6 +206,7 @@ dependencies = [
  "component",
  "ostd",
  "ostd-pod",
+ "spin",
 ]
 
 [[package]]
@@ -345,6 +347,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
+]
+
+[[package]]
+name = "aster-simpledrm"
+version = "0.1.0"
+dependencies = [
+ "aster-drm",
+ "aster-framebuffer",
+ "component",
+ "ostd",
+ "spin",
 ]
 
 [[package]]

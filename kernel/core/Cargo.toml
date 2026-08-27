@@ -21,6 +21,7 @@ aster-network.workspace = true
 aster-nvme.workspace = true
 aster-rights.workspace = true
 aster-rights-proc.workspace = true
+aster-simpledrm.workspace = true
 aster-softirq.workspace = true
 aster-systree.workspace = true
 aster-time.workspace = true

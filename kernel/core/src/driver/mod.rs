@@ -3,6 +3,9 @@
 use ostd::info;
 
 pub(crate) fn init() {
+    // Keep the concrete driver crate linked so its component initializer can run.
+    use aster_simpledrm as _;
+
     for device in aster_input::all_devices() {
         info!("Found an input device, name: {}", device.name());
     }
