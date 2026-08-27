@@ -13,6 +13,7 @@ use aster_fuse::{
     FuseError, FuseFileHandle, FuseNodeId, FuseOperation, MIN_MAX_WRITE,
     ops::{
         forget::{ForgetOperation, ForgetReq},
+        fsync::{FsyncFlags, FsyncOperation, FsyncdirOperation},
         init::{FuseInitFlags, FuseInitFlags2, InitOperation, InitReq},
         read::{ReadOperation, ReadReq},
         readdir::ReaddirOperation,
@@ -307,6 +308,26 @@ impl FuseSession {
         release_options: ReleaseOptions,
     ) -> Result<(), FuseError> {
         self.do_fuse_op(nodeid, ReleaseOperation::new(fh, flags, release_options))
+    }
+
+    /// Requests that the FUSE server synchronize an open file.
+    pub fn fsync(
+        &self,
+        nodeid: FuseNodeId,
+        fh: FuseFileHandle,
+        fsync_flags: FsyncFlags,
+    ) -> Result<(), FuseError> {
+        self.do_fuse_op(nodeid, FsyncOperation::new(fh, fsync_flags))
+    }
+
+    /// Requests that the FUSE server synchronize an open directory.
+    pub fn fsyncdir(
+        &self,
+        nodeid: FuseNodeId,
+        fh: FuseFileHandle,
+        fsync_flags: FsyncFlags,
+    ) -> Result<(), FuseError> {
+        self.do_fuse_op(nodeid, FsyncdirOperation::new(fh, fsync_flags))
     }
 }
 

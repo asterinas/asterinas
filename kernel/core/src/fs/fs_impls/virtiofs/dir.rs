@@ -2,7 +2,7 @@
 
 //! Open directory handles for `virtiofs`.
 
-use aster_fuse::FuseOpenFlags;
+use aster_fuse::{FsyncFlags, FuseOpenFlags};
 
 use super::{inode::VirtioFsInode, open_handle::VirtioFsOpenHandle};
 use crate::{
@@ -83,9 +83,20 @@ impl PerOpenFileOps for VirtioFsDir {
     }
 
     fn sync(&self, mode: SyncMode) -> Result<()> {
-        // FIXME: Send a `FUSE_FSYNCDIR` request using this directory's open handle,
-        // set `FUSE_FSYNC_FDATASYNC` for `SyncMode::Data`, and return any server error.
-        self.inode.sync(mode)
+        self.inode.sync(mode)?;
+
+        let fsync_flags = match mode {
+            SyncMode::Data => FsyncFlags::FDATASYNC,
+            SyncMode::Full => FsyncFlags::empty(),
+        };
+
+        self.inode.fs_ref().session().fsyncdir(
+            self.inode.nodeid(),
+            self.open_handle.fh(),
+            fsync_flags,
+        )?;
+
+        Ok(())
     }
 
     fn is_offset_aware(&self) -> bool {

@@ -2,7 +2,7 @@
 
 //! Open regular-file handles for `virtiofs`.
 
-use aster_fuse::FuseOpenFlags;
+use aster_fuse::{FsyncFlags, FuseOpenFlags};
 use ostd::warn;
 
 use super::{
@@ -147,10 +147,20 @@ impl PerOpenFileOps for VirtioFsFile {
     }
 
     fn sync(&self, mode: SyncMode) -> Result<()> {
-        // FIXME: After flushing the local page cache, send a `FUSE_FSYNC` request using
-        // this file's open handle, set `FUSE_FSYNC_FDATASYNC` for `SyncMode::Data`, and
-        // return any server error.
-        self.inode.sync(mode)
+        self.inode.sync(mode)?;
+
+        let fsync_flags = match mode {
+            SyncMode::Data => FsyncFlags::FDATASYNC,
+            SyncMode::Full => FsyncFlags::empty(),
+        };
+
+        self.inode.fs_ref().session().fsync(
+            self.inode.nodeid(),
+            self.open_handle.fh(),
+            fsync_flags,
+        )?;
+
+        Ok(())
     }
 
     fn is_offset_aware(&self) -> bool {

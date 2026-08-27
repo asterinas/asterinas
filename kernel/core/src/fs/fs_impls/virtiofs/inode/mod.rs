@@ -147,7 +147,7 @@ impl VirtioFsInode {
         })
     }
 
-    fn fs_ref(&self) -> Arc<VirtioFs> {
+    pub(super) fn fs_ref(&self) -> Arc<VirtioFs> {
         self.fs.upgrade().unwrap()
     }
 
