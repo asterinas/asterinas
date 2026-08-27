@@ -150,9 +150,9 @@ This is the payoff the skill cashes in (see [`execution_model.md`](execution_mod
   — a small, self-consistent context, never the whole rulebook.
   This is *why* the skill fans out into independent passes rather than running one prompt over all the rules.
 - **Gradual exposure → gist-then-drill.**
-  A pass reads each candidate rule's one-line gist first and opens the full rule page only on a suspected violation.
-  The anchor it drills into is exactly the citation it puts in a guideline-backed comment (e.g. `for-development/concurrency.md#lock-ordering`),
-  so a subjective call is automatically traceable to the standard.
+  A pass reads each candidate rule's one-line gist first and queries the exact anchored rule section only on a suspected violation.
+  The print output reports the exact source path and anchor for traceability,
+  while a guideline-backed comment cites the rule's short-name (e.g. `lock-ordering`) in `grounding`.
 - **Comprehensive coverage, including the non-defect concerns.**
   Because every rule has exactly one owning persona,
   no rule is unowned and therefore unchecked.

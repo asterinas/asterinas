@@ -7,7 +7,7 @@
 # ordered for prompt-cache reuse.
 # The STABLE blocks come first and are byte-identical across passes and across reviews:
 # the shared reviewer contract,
-# then one block per persona (its template + its inlined guideline page).
+# then one block per persona (its template + complete guideline gist catalog).
 # The VOLATILE review input comes LAST,
 # so everything above it is a reusable cache prefix.
 #
@@ -21,29 +21,42 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SKILLDIR="$(cd "$HERE/.." && pwd)"
-REPO="$(cd "$SKILLDIR/../../.." && pwd)"   # .agents/skills/aster-code-review -> repo root
-
-# Where to read the guideline pages from.
-# Priority:
-#   1. explicit ACR_GUIDELINE_ROOT, for tests or external harnesses;
-#   2. a guideline snapshot bundled beside the overlaid skill;
-#   3. the current repo, for normal in-tree use.
-#
-# The benchmark cannot rely on the review agent preserving ACR_GUIDELINE_ROOT
-# across its own shell commands, so overlay_skill.sh bundles a current snapshot
-# into the skill package. This keeps historical worktrees on current guidelines
-# without modifying their tracked book/ tree.
-if [[ -n "${ACR_GUIDELINE_ROOT:-}" ]]; then
-    GROOT="$ACR_GUIDELINE_ROOT"
-elif [[ -f "$SKILLDIR/guideline-root" ]]; then
-    GROOT="$SKILLDIR/guideline-root"
-else
-    GROOT="$REPO"
-fi
+PRINT_GUIDELINES="$SKILLDIR/scripts/print_guidelines.py"
+DISCLOSURE="${ACR_GUIDELINE_DISCLOSURE:-progressive}"
+case "$DISCLOSURE" in
+    progressive|full) ;;
+    *) echo "build_pass_prompt.sh: ACR_GUIDELINE_DISCLOSURE must be progressive or full" >&2; exit 2 ;;
+esac
 
 input="${1:-}"; shift || true
 [[ -n "$input" && -f "$input" ]] || { echo "build_pass_prompt.sh: a readable <input-file> is required" >&2; exit 2; }
 [[ $# -ge 1 ]] || { echo "build_pass_prompt.sh: at least one <persona> is required" >&2; exit 2; }
+
+resolve_guideline_root() {
+    local root
+    if [[ -n "${ACR_GUIDELINE_ROOT:-}" ]]; then
+        root="$ACR_GUIDELINE_ROOT"
+    elif [[ -e "$SKILLDIR/guideline-root" ]]; then
+        [[ -d "$SKILLDIR/guideline-root" ]] || {
+            echo "build_pass_prompt.sh: bundled guideline root is not a directory: $SKILLDIR/guideline-root" >&2
+            return 2
+        }
+        root="$SKILLDIR/guideline-root"
+    elif [[ -e "$SKILLDIR/guideline-root.required" ]]; then
+        echo "build_pass_prompt.sh: bundled guideline snapshot is required but guideline-root is missing" >&2
+        return 2
+    else
+        root="$(cd "$SKILLDIR/../../.." && pwd)"
+    fi
+    root="$(cd "$root" && pwd -P)"
+    [[ -d "$root/book/src/to-contribute/coding-guidelines" ]] || {
+        echo "build_pass_prompt.sh: guideline root does not contain book/src/to-contribute/coding-guidelines: $root" >&2
+        return 2
+    }
+    printf '%s\n' "$root"
+}
+
+GROOT="$(resolve_guideline_root)"
 
 linked_guideline_pages() { # <guideline-page-path-relative-to-GROOT>
     python3 - "$1" "$GROOT/$1" <<'PY'
@@ -75,9 +88,12 @@ for link in re.findall(r"\[[^\]]+\]\(([^)]+)\)", page_text):
 PY
 }
 
-inline_guidelines() { # <guideline-page-path-relative-to-GROOT>
+inline_full_guidelines() { # <guideline-page-path-relative-to-GROOT>
     local gp="$1" gfile="$GROOT/$gp" sub
-    [[ -f "$gfile" ]] || return 0
+    [[ -f "$gfile" ]] || {
+        echo "build_pass_prompt.sh: missing persona guideline index: $gfile" >&2
+        return 2
+    }
 
     printf 'Rely on the inlined guideline material below as the authoritative guideline context for this pass. Do not re-read `book/src/to-contribute/coding-guidelines/` from the worktree under review for guideline content.\n\n'
     printf -- '--- guideline page (%s) ---\n\n' "$gp"
@@ -94,14 +110,22 @@ inline_guidelines() { # <guideline-page-path-relative-to-GROOT>
 cat "$SKILLDIR/scripts/pass_contract.md"
 printf '\n'
 
-# --- STABLE: one block per persona (template + inlined guideline page) --------
+# --- STABLE: one block per persona (template + catalog, or full rollback) ------
 for persona in "$@"; do
     pf="$SKILLDIR/personas/$persona.md"
     [[ -f "$pf" ]] || { echo "build_pass_prompt.sh: no such persona: $persona" >&2; exit 2; }
     printf '===== PERSONA: %s =====\n\n' "$persona"
     cat "$pf"; printf '\n'
-    gp="$(grep -oE 'book/[A-Za-z0-9/_-]+README\.md' "$pf" | head -1 || true)"
-    [[ -n "$gp" ]] && inline_guidelines "$gp"
+    if [[ "$DISCLOSURE" == progressive ]]; then
+        printf 'Do not open guideline files directly. Use this root-pinned command for drill-down; replace `<short-name>...` with the requested short-name arguments and keep the root assignment intact:\n\n'
+        printf '```sh\nACR_GUIDELINE_ROOT=%q python3 %q %s <short-name>...\n```\n\n' \
+            "$GROOT" "$PRINT_GUIDELINES" "$persona"
+        ACR_GUIDELINE_ROOT="$GROOT" python3 "$PRINT_GUIDELINES" "$persona" --catalog
+        printf '\n'
+    else
+        gp="$(grep -oE 'book/[A-Za-z0-9/_-]+README\.md' "$pf" | head -1 || true)"
+        [[ -n "$gp" ]] && inline_full_guidelines "$gp"
+    fi
 done
 
 # --- VOLATILE: the review input (LAST; everything above is the cache prefix) ---

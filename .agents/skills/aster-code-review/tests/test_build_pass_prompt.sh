@@ -8,6 +8,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib.sh"
 BP="$HERE/../scripts/build_pass_prompt.sh"
+REPO="$(cd "$HERE/../../../.." && pwd)"
 
 setup() {
     IN="$TMP/in1.txt";  printf 'REVIEW_SENTINEL_ONE\nsome diff\n' > "$IN"
@@ -16,7 +17,8 @@ setup() {
 bp()      { "$BP" "$@"; }
 bp_code() { "$BP" "$@" >/dev/null 2>&1; echo $?; }
 # Everything up to and including the REVIEW INPUT marker — the cache-stable prefix.
-prefix()  { sed '/^===== REVIEW INPUT =====$/q'; }
+# Consume the complete stream so the prompt builder never sees a broken pipe.
+prefix()  { awk '!done { print } /^===== REVIEW INPUT =====$/ { done = 1 }'; }
 
 # --- arity / validation ------------------------------------------------------
 
@@ -34,8 +36,49 @@ test_orders_contract_persona_input() {
     assert_before "input marker before body"  "$o" "===== REVIEW INPUT =====" "REVIEW_SENTINEL_ONE"
 }
 
-test_inlines_guideline_page() {
-    assert_contains "dev guideline inlined" "$(bp "$IN" development)" "for-development/README.md"
+test_progressive_inlines_catalog_but_not_rule_body() {
+    local o
+    o="$(bp "$IN" development)"
+    assert_contains "catalog header" "$o" "GUIDELINE_CATALOG persona=development rules=18"
+    assert_contains "catalog gist" "$o" "Use checked or saturating arithmetic where overflow is possible"
+    assert_absent "detail body deferred" "$o" "Prefer explicit overflow handling"
+}
+
+test_progressive_includes_simple_print_command() {
+    local o
+    o="$(bp "$IN" development)"
+    assert_contains "print command" "$o" ".agents/skills/aster-code-review/scripts/print_guidelines.py"
+    assert_contains "root-pinned command" "$o" "ACR_GUIDELINE_ROOT="
+    assert_contains "persona precedes short-names" "$o" 'development <short-name>...'
+    assert_absent "no required digest argument" "$o" "--expect-digest"
+}
+
+test_full_mode_inlines_rule_body() {
+    assert_contains "full mode includes detail" \
+        "$(ACR_GUIDELINE_DISCLOSURE=full bp "$IN" development)" \
+        "Prefer explicit overflow handling"
+}
+
+test_full_mode_rejects_missing_persona_corpus() {
+    local g="$TMP/groot"
+    mkdir -p "$g/book/src/to-contribute/coding-guidelines"
+    assert_eq "full mode fails closed without persona corpus" \
+        "$(ACR_GUIDELINE_ROOT="$g" ACR_GUIDELINE_DISCLOSURE=full bp_code "$IN" development)" 2
+}
+
+test_full_mode_does_not_depend_on_progressive_parser() {
+    local g="$TMP/groot" rules out
+    mkdir -p "$g"
+    cp -r "$REPO/book" "$g/book"
+    rules="$g/book/src/to-contribute/coding-guidelines/for-development/correctness.md"
+    printf '\n### Rollback-only prose heading\n\nFULL_MODE_SENTINEL\n' >> "$rules"
+    out="$(ACR_GUIDELINE_ROOT="$g" ACR_GUIDELINE_DISCLOSURE=full bp "$IN" development)"
+    assert_contains "full mode emits pages rejected by progressive parser" "$out" "FULL_MODE_SENTINEL"
+}
+
+test_rejects_unknown_disclosure_mode() {
+    assert_eq "unknown disclosure mode rejected" \
+        "$(ACR_GUIDELINE_DISCLOSURE=bogus bp_code "$IN" development)" 2
 }
 
 # --- the cache property: stable prefix is byte-identical regardless of input --
@@ -60,13 +103,70 @@ test_combined_lists_all_personas_in_order() {
 }
 
 test_honours_acr_guideline_root() {
-    # The benchmark overrides the guideline root;
-    # the inlined page must come from it.
     local g="$TMP/groot"
-    mkdir -p "$g/book/src/to-contribute/coding-guidelines/for-development"
-    echo "SENTINEL_GUIDELINE_OVERRIDE" > "$g/book/src/to-contribute/coding-guidelines/for-development/README.md"
+    mkdir -p "$g"
+    cp -r "$REPO/book" "$g/book"
+    sed -i 's/Use checked or saturating arithmetic where overflow is possible/SENTINEL_GUIDELINE_OVERRIDE/' \
+        "$g/book/src/to-contribute/coding-guidelines/for-development/README.md"
     assert_contains "guideline read from ACR_GUIDELINE_ROOT" \
         "$(ACR_GUIDELINE_ROOT="$g" bp "$IN" development)" "SENTINEL_GUIDELINE_OVERRIDE"
+}
+
+test_progressive_drill_down_preserves_explicit_guideline_root() {
+    local g="$TMP/groot" prompt command out
+    mkdir -p "$g"
+    cp -r "$REPO/book" "$g/book"
+    sed -i 's/Use checked or saturating arithmetic where overflow is possible/EXPLICIT_CATALOG_SENTINEL/' \
+        "$g/book/src/to-contribute/coding-guidelines/for-development/README.md"
+    sed -i 's/Prefer explicit overflow handling/EXPLICIT_RULE_SENTINEL/' \
+        "$g/book/src/to-contribute/coding-guidelines/for-development/correctness.md"
+
+    prompt="$(ACR_GUIDELINE_ROOT="$g" bp "$IN" development)"
+    command="$(printf '%s\n' "$prompt" | rg '^ACR_GUIDELINE_ROOT=.*print_guidelines\.py development <short-name>\.\.\.$')"
+    assert_contains "drill-down command pins explicit root" "$command" "ACR_GUIDELINE_ROOT=$g"
+    command="$(printf '%s\n' "$command" | sed 's/<short-name>\.\.\./checked-arithmetic/')"
+    out="$(env -u ACR_GUIDELINE_ROOT bash -c "$command")"
+    assert_contains "drill-down reads explicit rule body" "$out" "EXPLICIT_RULE_SENTINEL"
+    assert_absent "drill-down does not fall back to repository rule body" "$out" "Prefer explicit overflow handling"
+}
+
+test_progressive_catalog_uses_resolved_guideline_root() {
+    local g="$TMP/groot" out
+    mkdir -p "$g"
+    cp -r "$REPO/book" "$g/book"
+    sed -i 's/Use checked or saturating arithmetic where overflow is possible/EXPLICIT_CATALOG_SENTINEL/' \
+        "$g/book/src/to-contribute/coding-guidelines/for-development/README.md"
+    out="$(ACR_GUIDELINE_ROOT="$g" bp "$IN" development)"
+    assert_contains "catalog reads resolved explicit root" "$out" "EXPLICIT_CATALOG_SENTINEL"
+}
+
+test_builder_reads_only_the_selected_persona_catalog() {
+    local g="$TMP/groot"
+    mkdir -p "$g"
+    cp -r "$REPO/book" "$g/book"
+    rm -rf "$g/book/src/to-contribute/coding-guidelines/for-documentation"
+    assert_contains "unrelated missing persona does not block prompt" \
+        "$(ACR_GUIDELINE_ROOT="$g" bp "$IN" development)" "PERSONA: development"
+}
+
+test_combined_progressive_omits_detail_pages() {
+    local o
+    o="$(bp "$IN" maintainability development security hardware documentation)"
+    assert_contains "maintainability catalog present" "$o" "GUIDELINE_CATALOG persona=maintainability rules=44"
+    assert_contains "documentation catalog present" "$o" "GUIDELINE_CATALOG persona=documentation rules=3"
+    assert_absent "combined detail deferred" "$o" "Prefer explicit overflow handling"
+}
+
+test_progressive_prefix_stays_within_byte_budgets() {
+    local maintainability_bytes combined_bytes
+    maintainability_bytes="$(bp "$IN" maintainability | prefix | wc -c)"
+    combined_bytes="$(bp "$IN" maintainability development security hardware documentation | prefix | wc -c)"
+    [[ $maintainability_bytes -le $((18 * 1024)) ]] || {
+        _fail=$((_fail + 1)); _note "maintainability prefix is $maintainability_bytes bytes, budget is 18432"
+    }
+    [[ $combined_bytes -le $((32 * 1024)) ]] || {
+        _fail=$((_fail + 1)); _note "combined prefix is $combined_bytes bytes, budget is 32768"
+    }
 }
 
 run_suite
