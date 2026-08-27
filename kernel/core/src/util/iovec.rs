@@ -2,7 +2,7 @@
 
 use ostd::{
     Error as OstdError,
-    mm::{Infallible, VmSpace},
+    mm::{self, Infallible, VmSpace},
 };
 
 use crate::prelude::*;
@@ -44,7 +44,7 @@ impl TryFrom<UserIoVec> for IoVec {
 impl IoVec {
     /// Returns whether the `IoVec` points to an empty user buffer.
     const fn is_empty(&self) -> bool {
-        self.len == 0 || self.base == 0
+        self.len == 0
     }
 
     fn reader<'a>(&self, vm_space: &'a VmSpace) -> Result<VmReader<'a>> {
@@ -88,15 +88,26 @@ fn copy_iovs_and_convert<'a, T: 'a>(
 
     let vm_space = user_space.vmar().vm_space();
 
+    // Copy the whole I/O vector first, so that the length of every buffer is validated
+    // before the address of any buffer.
+    // Reference: <https://elixir.bootlin.com/linux/v6.16/source/lib/iov_iter.c#L1447>.
+    let mut iovs = Vec::with_capacity(count);
+    for idx in 0..count {
+        let addr = start_addr + idx * size_of::<UserIoVec>();
+        let uiov: UserIoVec = vm_space.reader(addr, size_of::<UserIoVec>())?.read_val()?;
+        iovs.push(IoVec::try_from(uiov)?);
+    }
+
     let mut v = Vec::with_capacity(count);
     let mut max_len = MAX_TOTAL_IOV_BYTES;
-
-    for idx in 0..count {
-        let mut iov = {
-            let addr = start_addr + idx * size_of::<UserIoVec>();
-            let uiov: UserIoVec = vm_space.reader(addr, size_of::<UserIoVec>())?.read_val()?;
-            IoVec::try_from(uiov)?
-        };
+    for mut iov in iovs {
+        // Linux checks the original range of every buffer, including zero-length ones,
+        // before truncating the total I/O length. Otherwise, an empty or truncated
+        // buffer could bypass validation.
+        // Reference: <https://elixir.bootlin.com/linux/v6.16/source/lib/iov_iter.c#L1475>.
+        if !mm::is_in_user_space(iov.base, iov.len) {
+            return_errno_with_message!(Errno::EFAULT, "the I/O buffer range is outside user space");
+        }
 
         // Truncate the buffer if the number of bytes exceeds `MAX_TOTAL_IOV_BYTES`.
         // See comments above the `MAX_TOTAL_IOV_BYTES` constant for more details.

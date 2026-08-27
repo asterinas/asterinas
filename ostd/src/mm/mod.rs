@@ -57,6 +57,11 @@ pub type Paddr = usize;
 /// Device addresses.
 pub type Daddr = usize;
 
+/// Returns whether `vaddr` and `len` specify a user-space virtual address range.
+pub fn is_in_user_space(vaddr: Vaddr, len: usize) -> bool {
+    vaddr.saturating_add(len) <= MAX_USERSPACE_VADDR
+}
+
 /// The level of a page table node or a frame.
 pub type PagingLevel = u8;
 

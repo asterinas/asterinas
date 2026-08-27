@@ -51,10 +51,7 @@ use self::copy::{memcpy, memset};
 use crate::{
     Error,
     arch::mm::{__atomic_cmpxchg_fallible, __atomic_load_fallible},
-    mm::{
-        MAX_USERSPACE_VADDR,
-        kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR},
-    },
+    mm::kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR},
     prelude::*,
 };
 
@@ -499,7 +496,7 @@ impl VmReader<'_, Fallible> {
     ///
     /// The virtual address range `ptr..ptr + len` must be in user space.
     pub unsafe fn from_user_space(ptr: *const u8, len: usize) -> Self {
-        debug_assert!(ptr.addr().checked_add(len).unwrap() <= MAX_USERSPACE_VADDR);
+        debug_assert!(super::is_in_user_space(ptr.addr(), len));
 
         Self {
             cursor: ptr,
@@ -777,7 +774,7 @@ impl VmWriter<'_, Fallible> {
     ///
     /// `ptr` must be in user space for `len` bytes.
     pub unsafe fn from_user_space(ptr: *mut u8, len: usize) -> Self {
-        debug_assert!(ptr.addr().checked_add(len).unwrap() <= MAX_USERSPACE_VADDR);
+        debug_assert!(super::is_in_user_space(ptr.addr(), len));
 
         Self {
             cursor: ptr,
