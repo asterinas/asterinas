@@ -8,9 +8,9 @@ use super::{inode::VirtioFsInode, open_handle::VirtioFsOpenHandle};
 use crate::{
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags},
+        file::{PerOpenFileOps, StatusFlags, SyncMode},
         utils::DirentVisitor,
-        vfs::inode::FileOps,
+        vfs::inode::{FileOps, Inode},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -80,6 +80,15 @@ impl PerOpenFileOps for VirtioFsDir {
         }
 
         Ok(())
+    }
+
+    fn sync(&self, mode: SyncMode) -> Result<()> {
+        // FIXME: Send a `FUSE_FSYNCDIR` request using this directory's open handle,
+        // set `FUSE_FSYNC_FDATASYNC` for `SyncMode::Data`, and return any server error.
+        match mode {
+            SyncMode::Data => self.inode.sync_data(),
+            SyncMode::Full => self.inode.sync_all(),
+        }
     }
 
     fn is_offset_aware(&self) -> bool {

@@ -2,7 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{RawFileDesc, get_file_fast},
+    fs::file::{
+        SyncMode,
+        file_table::{RawFileDesc, get_file_fast},
+    },
     prelude::*,
 };
 
@@ -11,8 +14,7 @@ pub(super) fn sys_fsync(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallRet
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
-    let path = file.as_inode_handle_or_err()?.path();
-    path.sync_all()?;
+    file.sync(SyncMode::Full)?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -21,7 +23,6 @@ pub(super) fn sys_fdatasync(raw_fd: RawFileDesc, ctx: &Context) -> Result<Syscal
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
-    let path = file.as_inode_handle_or_err()?.path();
-    path.sync_data()?;
+    file.sync(SyncMode::Data)?;
     Ok(SyscallReturn::Return(0))
 }

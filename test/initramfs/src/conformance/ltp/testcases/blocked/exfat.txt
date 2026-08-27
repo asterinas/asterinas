@@ -19,6 +19,7 @@ fchownat01
 fchownat02
 fstat02
 fstat02_64
+fsync03
 ftruncate01
 ftruncate01_64
 getcwd03
