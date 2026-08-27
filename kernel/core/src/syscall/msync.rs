@@ -3,7 +3,9 @@
 use align_ext::AlignExt;
 
 use super::SyscallReturn;
-use crate::{prelude::*, thread::kernel_thread::ThreadOptions, vm::vmar::VMAR_CAP_ADDR};
+use crate::{
+    fs::file::SyncMode, prelude::*, thread::kernel_thread::ThreadOptions, vm::vmar::VMAR_CAP_ADDR,
+};
 
 pub(super) fn sys_msync(
     addr: Vaddr,
@@ -55,7 +57,7 @@ pub(super) fn sys_msync(
     let task_fn = move || {
         for inode in inodes {
             // TODO: Sync a necessary range instead of syncing the whole inode.
-            let _ = inode.sync_all();
+            let _ = inode.sync(SyncMode::Full);
         }
     };
 

@@ -150,10 +150,7 @@ impl PerOpenFileOps for VirtioFsFile {
         // FIXME: After flushing the local page cache, send a `FUSE_FSYNC` request using
         // this file's open handle, set `FUSE_FSYNC_FDATASYNC` for `SyncMode::Data`, and
         // return any server error.
-        match mode {
-            SyncMode::Data => self.inode.sync_data(),
-            SyncMode::Full => self.inode.sync_all(),
-        }
+        self.inode.sync(mode)
     }
 
     fn is_offset_aware(&self) -> bool {

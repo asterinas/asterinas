@@ -524,10 +524,7 @@ impl FileLike for InodeHandle {
             return open_file.sync(mode);
         }
 
-        match mode {
-            SyncMode::Data => self.path().sync_data(),
-            SyncMode::Full => self.path().sync_all(),
-        }
+        self.path().sync(mode)
     }
 }
 
