@@ -12,6 +12,12 @@ use std::{
 
 use crate::util::get_cargo_metadata;
 
+const LINKER_SCRIPTS: &[(&str, &str)] = &[
+    ("x86_64.ld", include_str!("x86_64.ld.template")),
+    ("riscv64.ld", include_str!("riscv64.ld.template")),
+    ("loongarch64.ld", include_str!("loongarch64.ld.template")),
+];
+
 /// Compares two files byte-by-byte to check if they are identical.
 /// Returns `Ok(true)` if files are identical, `Ok(false)` if they are different, or `Err` if any I/O operation fails.
 fn are_files_identical(file1: &PathBuf, file2: &PathBuf) -> Result<bool> {
@@ -42,6 +48,22 @@ fn are_files_identical(file1: &PathBuf, file2: &PathBuf) -> Result<bool> {
             return Ok(true); // End of both files, identical
         }
     }
+}
+
+fn are_base_crate_reuse_inputs_identical(
+    existing_base_crate_path: &Path,
+    candidate_base_crate_path: &Path,
+) -> bool {
+    ["Cargo.toml", "src/main.rs"]
+        .into_iter()
+        .chain(LINKER_SCRIPTS.iter().map(|(file_name, _)| *file_name))
+        .all(|file_name| {
+            are_files_identical(
+                &existing_base_crate_path.join(file_name),
+                &candidate_base_crate_path.join(file_name),
+            )
+            .is_ok_and(|is_identical| is_identical)
+        })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -88,16 +110,10 @@ pub fn new_base_crate(
             &dep_crate_path,
             link_unit_test_kernel,
         );
-        let cargo_result = are_files_identical(
-            &base_crate_path.join("Cargo.toml"),
-            &base_crate_tmp_path.join("Cargo.toml"),
-        );
-        let main_rs_result = are_files_identical(
-            &base_crate_path.join("src").join("main.rs"),
-            &base_crate_tmp_path.join("src").join("main.rs"),
-        );
+        let is_reusable =
+            are_base_crate_reuse_inputs_identical(&base_crate_path, &base_crate_tmp_path);
         std::fs::remove_dir_all(&base_crate_tmp_path).unwrap();
-        if cargo_result.is_ok_and(|res| res) && main_rs_result.is_ok_and(|res| res) {
+        if is_reusable {
             info!("Reusing existing base crate");
             return base_crate_path;
         }
@@ -164,18 +180,11 @@ fn do_new_base_crate(
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&base_crate_path).unwrap();
 
-    // Add linker script files
-    macro_rules! include_linker_script {
-        ([$($linker_script:literal),+]) => {$(
-            fs::write(
-                base_crate_path.as_ref().join($linker_script),
-                include_str!(concat!($linker_script, ".template"))
-            ).unwrap();
-        )+};
-    }
     // TODO: currently just x86_64 works; add support for other architectures
     // here when OSTD is ready
-    include_linker_script!(["x86_64.ld", "riscv64.ld", "loongarch64.ld"]);
+    for (file_name, contents) in LINKER_SCRIPTS {
+        fs::write(base_crate_path.as_ref().join(file_name), contents).unwrap();
+    }
 
     // Overwrite the main.rs file
     let main_rs = include_str!("main.rs.template");
@@ -341,4 +350,39 @@ fn add_feature_entries(
 
     let content = toml::to_string(&manifest).unwrap();
     fs::write(manifest_path, content).unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn changed_linker_script_prevents_base_crate_reuse() {
+        // Regression test for https://github.com/asterinas/asterinas/issues/3649.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let base_crate_path_stem = temp_dir.path().join("generated");
+        let dep_crate_path = env!("CARGO_MANIFEST_DIR");
+        let base_crate_path = new_base_crate(
+            BaseCrateType::Run,
+            &base_crate_path_stem,
+            env!("CARGO_PKG_NAME"),
+            dep_crate_path,
+            false,
+        );
+
+        for (file_name, contents) in LINKER_SCRIPTS {
+            let linker_script_path = base_crate_path.join(file_name);
+            fs::write(&linker_script_path, "stale contents").unwrap();
+
+            new_base_crate(
+                BaseCrateType::Run,
+                &base_crate_path_stem,
+                env!("CARGO_PKG_NAME"),
+                dep_crate_path,
+                false,
+            );
+
+            assert_eq!(fs::read(linker_script_path).unwrap(), contents.as_bytes());
+        }
+    }
 }
