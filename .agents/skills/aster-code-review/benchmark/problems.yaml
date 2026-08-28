@@ -664,6 +664,612 @@
         A reviewer should flag that syscall-local decode enums should not be
         public when all uses are contained in the same source file.
 
+- problem_id: 0400-ci-false-seqpacket-zero-pause-race
+  commit: c6a6e66aaca9635e36d99e47ed87edd6d4b69f87
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2290. Files mode
+    uses the PR base commit `c6a6e66aaca9635e36d99e47ed87edd6d4b69f87`, where
+    all three defects are present before PR commits `84d5265a1`, `9004fb490`,
+    and `f946894d2` fix them. This snapshot contains the buggy CI expressions,
+    the `SOCK_SEQPACKET` debug assertion, and the `pause_timeout` signal-wait
+    race, but does not include the PR description or fix commits that name the
+    defects, so the reviewed files are leak-free.
+  review_mode:
+    files:
+      - .github/workflows/test_x86.yml
+      - kernel/src/net/socket/unix/stream/connected.rs
+      - kernel/src/process/signal/pause.rs
+  defects:
+    - target:
+        kind: file
+        path: .github/workflows/test_x86.yml
+        lines: "84-100"
+      persona: development
+      grounding: "Preserve explicit false configuration values"
+      severity: major
+      desc: >
+        The workflow passes `release` and `enable_kvm` to the test action with
+        `${{ matrix.release || true }}` and `${{ matrix.enable_kvm || true }}`.
+        In GitHub Actions expressions, an explicit boolean `false` is falsy, so
+        `false || true` evaluates to `true`. Matrix entries that deliberately set
+        `release: false` for debug builds or `enable_kvm: false` for non-KVM
+        runs are therefore silently converted back to enabled/release runs, and
+        CI does not execute the configuration declared by the matrix.
+      fix: >
+        Preserve the distinction between an omitted value and an explicit
+        `false` at both test-action call sites. The PR fix uses
+        `${{ !contains(matrix.release, 'false') }}` and
+        `${{ !contains(matrix.enable_kvm, 'false') }}` so omitted values default
+        to true while explicit false values reach the action.
+      expectation: >
+        A reviewer should flag that the `|| true` fallback overwrites explicit
+        `false` values for `release` and `enable_kvm`, preventing debug and
+        KVM-disabled CI jobs from actually running as requested.
+
+    - target:
+        kind: file
+        path: kernel/src/net/socket/unix/stream/connected.rs
+        lines: "202"
+      persona: development
+      grounding: "Allow legal zero-length SOCK_SEQPACKET messages"
+      severity: major
+      desc: >
+        `Connected::try_read` permits zero-length reads for `SOCK_SEQPACKET`, but
+        the final invariant is `debug_assert!(is_empty || read_tot_len != 0)`.
+        `is_empty` describes the caller's receive buffer, not whether the socket
+        type allows zero-length packets. A valid empty `SOCK_SEQPACKET` message
+        can therefore reach this assertion with `is_empty == false` and
+        `read_tot_len == 0`, causing a deterministic debug-build panic instead
+        of accepting the legal packet.
+      fix: >
+        Encode the protocol exception in the assertion by changing it to
+        `debug_assert!(is_seqpacket || read_tot_len != 0)`, or otherwise allow
+        zero-length `SOCK_SEQPACKET` messages without panicking.
+      expectation: >
+        A reviewer should flag that the assertion rejects legal zero-length
+        `SOCK_SEQPACKET` receives and ask for the invariant to be based on
+        `is_seqpacket` or an equivalent protocol-aware condition.
+
+    - target:
+        kind: file
+        path: kernel/src/process/signal/pause.rs
+        lines: "152-175"
+      persona: development
+      grounding: "Close the signal-registration to wait race"
+      severity: major
+      desc: >
+        `Waiter::pause_timeout` installs the POSIX signal waker and then calls
+        `self.wait()`, but it only checks `posix_thread.has_pending()` after
+        the wait returns. If a signal is already pending before the waker is
+        installed, no later signal wakeup is guaranteed, so `self.wait()` may
+        sleep until the timeout or an unrelated wakeup. For calls such as
+        `ppoll`, this can turn a pending `SIGINT` into a timeout instead of
+        returning `EINTR`.
+      fix: >
+        After `set_signalled_waker`, recheck `posix_thread.has_pending()` before
+        entering `self.wait()`. If a signal is pending, clear the registered
+        waker and return `EINTR`; otherwise wait and clear the waker after the
+        wait returns.
+      expectation: >
+        A reviewer should flag the lost-wakeup race between registering the
+        signal waker and blocking, and require a pending-signal recheck plus
+        waker cleanup on the early-return path.
+
+- problem_id: 0401-getrandom-boundary-semantics
+  commit: b606e3456c43924f4b465900b51e2349a554c0df
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2482. The PR
+    description explicitly identifies three `getrandom` defects in the base
+    implementation: invalid flags are not rejected, a user-controlled `count`
+    drives an unbounded kernel allocation, and short writes are not allowed.
+    The fixing commit is `933f7494deca558c198e712d284d18d9e12835f7`
+    (`Fix some `getrandom` behavior`). Files mode checks PR base commit
+    `b606e3456c43924f4b465900b51e2349a554c0df`, whose `getrandom.rs` matches
+    the PR body's linked snapshot `294c55d0dfa5e5784729548f9764b26e608c18ff`
+    for this file. The reviewed file contains no PR description or fix code, so
+    the defects are leak-free.
+  review_mode:
+    files:
+      - kernel/src/syscall/getrandom.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/syscall/getrandom.rs
+        lines: "6-8"
+      persona: security
+      grounding: "invalid flags"
+      severity: major
+      desc: >
+        `sys_getrandom` parses user-supplied flags with
+        `GetRandomFlags::from_bits_truncate(flags)`. Unknown bits are silently
+        discarded instead of being rejected. A syscall boundary must validate
+        user-controlled flags before trusting them internally; otherwise
+        callers can pass invalid flag combinations and receive success for a
+        request Linux would reject with `EINVAL`.
+      fix: >
+        Parse with `GetRandomFlags::from_bits(flags)` and return `EINVAL` when
+        it returns `None`. Also reject invalid known combinations
+        such as `GRND_INSECURE | GRND_RANDOM`.
+      expectation: >
+        A reviewer should flag `from_bits_truncate` at the syscall boundary and
+        require invalid `getrandom` flags, including unsupported bits, to be
+        rejected instead of masked away.
+
+    - target:
+        kind: file
+        path: kernel/src/syscall/getrandom.rs
+        lines: "12-18"
+      persona: security
+      grounding: "unbounded allocation"
+      severity: major
+      desc: >
+        The syscall allocates `vec![0u8; count]` directly from the
+        user-controlled `count` argument. There is no upper bound or streaming
+        through the user buffer, so a large `count` can force an unbounded kernel
+        allocation and panic or exhaust memory. User-supplied sizes must be
+        validated at syscall boundaries before being used to allocate kernel
+        memory.
+      fix: >
+        Avoid allocating a kernel buffer sized by `count`. Create a bounded
+        userspace writer with `ctx.user_space().writer(buf, count)?` and pass it
+        to the random device so bytes are generated directly into userspace.
+      expectation: >
+        A reviewer should flag the `vec![0u8; count]` allocation as unbounded
+        allocation from a user-controlled syscall argument and require bounded
+        validation or direct streaming to the user writer.
+
+    - target:
+        kind: file
+        path: kernel/src/syscall/getrandom.rs
+        lines: "14-22"
+      persona: maintainability
+      grounding: "short writes are not allowed"
+      severity: minor
+      desc: >
+        The implementation first fills a kernel buffer, records `read_len`, and
+        then writes the entire `buffer.as_slice()` of length `count` to
+        userspace with `write_bytes`. If only part of the requested user buffer
+        can be written, this full-buffer write turns the operation into an error
+        instead of returning the number of bytes already produced. The PR
+        identifies that `getrandom` should permit short writes; therefore the
+        user buffer must be represented by a writer whose partial progress is
+        visible to the random device.
+      fix: >
+        Replace the intermediate full-size kernel buffer and final full
+        `write_bytes` call with `ctx.user_space().writer(buf, count)?`, then let
+        `device::Random::getrandom` or `device::Urandom::getrandom` write
+        directly into that writer and return the actual byte count.
+      expectation: >
+        A reviewer should flag that writing the whole `count`-sized buffer after
+        generating `read_len` bytes prevents valid short-write behavior and ask
+        for direct userspace-writer based copying that reports actual progress.
+
+- problem_id: 0402-clone-reaper-defects
+  commit: 702aa7d9eeffec033aff33769c2fd5cc75984262
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2477. The PR
+    description explicitly identifies five defects: a clone-flag check in the
+    wrong layer, incomplete `CloneArgs::check` validation, incomplete
+    `clone3()` stack validation, a `find_reaper_process` race, and incorrect
+    memory orderings for subreaper state. The final PR commit additionally
+    fixes the `set_child_tid` invalid-address panic, as stated by its commit
+    message `Don't panic if `set_child_tid` is invalid`. The reviewed snapshot
+    is the PR base commit `702aa7d9eeffec033aff33769c2fd5cc75984262`, before
+    all three PR commits. The snapshot contains no PR description, review
+    response, or fix commit, so the defect targets are leak-free.
+  review_mode:
+    files:
+      - kernel/src/process/clone.rs
+      - kernel/src/syscall/clone.rs
+      - kernel/src/process/exit.rs
+      - kernel/src/process/process/mod.rs
+      - kernel/src/thread/task.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/process/clone.rs
+        lines: "132-137"
+      persona: security
+      grounding: "wrong location for `CLONE_FS` and `CLONE_NEWNS` checks"
+      severity: major
+      desc: >
+        The `CLONE_FS` and `CLONE_NEWNS` incompatibility check is placed in
+        `CloneArgs::for_clone`, which is only used by the legacy `clone`
+        syscall. Both `clone` and `clone3` call `clone_child`, and
+        `clone_child` invokes the common `CloneArgs::check`, but `clone3`
+        constructs `CloneArgs` through `TryFrom<Clone3Args>` and bypasses
+        `for_clone`. Consequently, invalid `clone3` flag combinations can reach
+        the common clone implementation without this required validation.
+      fix: >
+        Remove the check from `CloneArgs::for_clone` and perform it in
+        `CloneArgs::check`, which is called by `clone_child` for both
+        `clone` and `clone3`.
+      expectation: >
+        A reviewer should identify that validation in `for_clone` is not shared
+        by `clone3` and require the `CLONE_FS`/namespace compatibility check to
+        live in the common `CloneArgs::check` path.
+
+    - target:
+        kind: file
+        path: kernel/src/process/clone.rs
+        lines: "185-225"
+      persona: security
+      grounding: "incomplete `CloneArgs::check`"
+      severity: major
+      desc: >
+        `CloneArgs::check` validates `CLONE_VM` and `CLONE_SIGHAND` only inside
+        the `CLONE_THREAD` branch. It therefore accepts `CLONE_SIGHAND` without
+        `CLONE_VM`, although the Linux clone contract requires
+        `CLONE_VM` whenever `CLONE_SIGHAND` is specified. This invalid flag
+        combination is not rejected for either clone entry point once the
+        common check is reached.
+      fix: >
+        Add an independent check that returns `EINVAL` when
+        `CLONE_SIGHAND` is set without `CLONE_VM`.
+      expectation: >
+        A reviewer should flag the missing unconditional dependency check and
+        require `CLONE_SIGHAND` without `CLONE_VM` to be rejected with
+        `EINVAL`.
+
+    - target:
+        kind: file
+        path: kernel/src/syscall/clone.rs
+        lines: "84-124"
+      persona: security
+      grounding: "clone3() performs some additional checks"
+      severity: major
+      desc: >
+        `TryFrom<Clone3Args>` converts `value.stack` directly and only converts
+        `value.stack_size` to `Option<NonZeroU64>`. It accepts exactly one of
+        the stack address and stack size, and it does not verify that the stack
+        range lies in userspace. `clone3` can therefore pass an incomplete or
+        invalid stack description into later child-context setup instead of
+        returning `EINVAL`.
+      fix: >
+        Treat stack and stack size as a pair: reject cases where exactly one is
+        nonzero, and when both are present validate the start and inclusive end
+        addresses with `is_userspace_vaddr`.
+      expectation: >
+        A reviewer should flag the missing `clone3` stack validation and require
+        `EINVAL` for a stack address without size, a size without address, or a
+        stack range outside userspace.
+
+    - target:
+        kind: file
+        path: kernel/src/process/exit.rs
+        lines: "49-73"
+      persona: development
+      grounding: "race condition in find_reaper_process implementation"
+      severity: major
+      desc: >
+        `find_reaper_process` keeps the current ancestor as a weak reference and
+        walks upward by upgrading each parent. If the parent and grandparent
+        exit and are reaped concurrently, the grandparent upgrade can fail.
+        The loop then terminates and returns `None`, even though a current
+        parent chain may still identify the correct reaper. The caller then
+        falls back to adopting children into init, which is incorrect for this
+        race.
+      fix: >
+        Retain an upgraded parent `Arc`, upgrade the next ancestor separately,
+        and retry from `current_process.parent()` when the parent and
+        grandparent disappear concurrently.
+      expectation: >
+        A reviewer should flag that a transient failed weak upgrade is treated
+        as proof that no reaper exists and require retry logic for concurrent
+        parent/grandparent exit and reaping.
+
+    - target:
+        kind: file
+        path: kernel/src/thread/task.rs
+        lines: "54-62"
+      persona: development
+      grounding: "do not unwrap user-memory writes after a range-only pointer check"
+      severity: major
+      desc: >
+        Child startup checks only that `set_child_tid` is numerically within the
+        userspace virtual-address range, then calls `write_val(...).unwrap()`.
+        An address can be in that range but unmapped or unwritable, causing the
+        user-memory write to return an error and the child task to panic. This
+        is a user-controlled invalid pointer reaching a kernel `unwrap`.
+      fix: >
+        Attempt the `set_child_tid` write but ignore or otherwise handle its
+        error without panicking, such as `let _ = current_userspace!().write_val(...)`.
+      expectation: >
+        A reviewer should flag the reachable `unwrap()` after only a virtual
+        address-range check and require invalid or unwritable `set_child_tid`
+        addresses to be handled without a kernel panic.
+
+- problem_id: 0403-madvise-nohugepage-capget-query-openat-empty
+  commit: 3b0666449f8f4dc68e339cb7ee0646b45bf21fb1
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2390. The PR
+    description explicitly identifies three Podman-related issues, and each is
+    fixed by one of the three commits in the PR. Files mode checks the PR base
+    commit `3b0666449f8f4dc68e339cb7ee0646b45bf21fb1`, before those fixes. The
+    reviewed files contain the defects but no PR description, review response,
+    or fix commit, so the targets are leak-free.
+  review_mode:
+    files:
+      - kernel/src/syscall/madvise.rs
+      - kernel/src/syscall/capget.rs
+      - kernel/src/syscall/open.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/syscall/madvise.rs
+        lines: "35-50"
+      persona: development
+      grounding: "unsupported MADV behavior must not panic"
+      severity: major
+      desc: >
+        `MadviseBehavior` defines `MADV_NOHUGEPAGE`, but the match in
+        `sys_madvise` has no arm for it. The value therefore reaches the
+        catch-all `_ => todo!()` branch. A Podman call using
+        `madvise(..., MADV_NOHUGEPAGE)` causes a kernel panic even though this
+        Asterinas build does not support huge pages and can safely treat the
+        advice as a no-op.
+      fix: >
+        Add an explicit `MADV_NOHUGEPAGE` arm that emits a warning and returns
+        success without changing mappings. Do not route this
+        recognized but unsupported advice through `todo!()`.
+      expectation: >
+        A reviewer should flag the reachable `todo!()` panic for the declared
+        `MADV_NOHUGEPAGE` value and require a non-panicking unsupported-operation
+        behavior, such as warning and returning success.
+
+    - target:
+        kind: file
+        path: kernel/src/syscall/capget.rs
+        lines: "20-49"
+      persona: development
+      grounding: "match capget version negotiation and null-data semantics"
+      severity: major
+      desc: >
+        `sys_capget` immediately returns `EINVAL` when the requested capability
+        version is unsupported, without writing
+        `LINUX_CAPABILITY_VERSION_3` back through the header pointer. It also
+        unconditionally writes the capability result to `cap_user_data_addr`,
+        so a null data pointer cannot return success. The Linux capget contract
+        uses an unsupported-version call to report the supported version, and
+        permits a null data pointer for the version-query case. The base
+        implementation therefore breaks Podman's capability probing protocol.
+      fix: >
+        When the header version is unsupported, write
+        `LINUX_CAPABILITY_VERSION_3` to the header and return success if
+        `cap_user_data_addr == 0`; otherwise return `EINVAL`. Also return
+        success early when the supported version is used with a null data
+        pointer, before attempting to write capability data.
+      expectation: >
+        A reviewer should flag both missing parts of the version-query contract:
+        the supported version must be written back on an unsupported request,
+        and a null data pointer must not be dereferenced or rejected when the
+        call is only querying the ABI version.
+
+    - target:
+        kind: file
+        path: kernel/src/syscall/open.rs
+        lines: "21-40"
+      persona: development
+      grounding: "reject empty pathname for openat"
+      severity: major
+      desc: >
+        `sys_openat` reads the pathname and passes it directly to
+        `FsPath::new` and the resolver. With an empty pathname, it does not
+        return the required `ENOENT` error at the syscall boundary and instead
+        relies on lower-level path handling, which does not provide the Linux
+        `openat` behavior expected by Podman. `openat` has no
+        `AT_EMPTY_PATH` option that would make an empty pathname valid.
+      fix: >
+        Check `path.is_empty()` immediately after reading and logging the
+        pathname, then return `ENOENT` before constructing `FsPath`.
+      expectation: >
+        A reviewer should flag that an empty pathname reaches generic path
+        resolution and require `sys_openat` to return `ENOENT` explicitly before
+        resolution.
+
+- problem_id: 0404-read-cstring-init-stack-defects
+  commit: 329c12aaa8cecae8e3de54fc93af07060fade406
+  source: >
+    PR 2430 introduced the new ReadCString APIs and changed init-stack string
+    parsing in commit 329c12aaa8cecae8e3de54fc93af07060fade406. Two GitHub
+    review comments identify independent defects in that same change. Comment
+    points out that using Vec::with_capacity(max_len) can allocate too much
+    memory before reading short strings; follow-up comment confirms the threshold
+    approach, and final PR head ea60866 caps the initial capacity with INIT_ALLOC_SIZE.
+    Comment identifies a netlink route attribute parser that stops at an
+    embedded nul before consuming the full attribute payload; the same comment
+    notes that Linux does not require a nul terminator there and that parse
+    errors must be reported to userspace. The final PR adds
+    read_cstring_until_end(...) and FullRead to preserve reader position and
+    propagate recoverable netlink parse errors.
+  review_mode:
+    diff:
+      base: 46aa437c8738e72a47510e764cb2b6eed8032706
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/util/read_cstring.rs
+      persona: development
+      grounding: "avoid unnecessary large heap allocation from caller-provided limits"
+      severity: minor
+      desc: >
+        The new ReadCString implementation uses Vec::with_capacity(max_len)
+        before reading any byte. max_len is a caller-provided upper bound, not
+        the expected string length, so common short strings with a large bound
+        can trigger avoidable large heap allocations or allocation failures.
+      fix: >
+        Use a small initial capacity capped by max_len, and let Vec grow only if
+        the actual string requires it. The final PR uses INIT_ALLOC_SIZE.min(max_len).
+      expectation: >
+        A valid review must point out that preallocating max_len is too large
+        for a C-string reader because max_len is only a limit; it should suggest
+        using min(self.remain(), max_len), a threshold, or another capped initial
+        capacity to avoid unnecessary allocation.
+    - target:
+        kind: file
+        path: kernel/src/net/socket/netlink/route/message/attr/addr.rs
+      persona: development
+      grounding: "consume the complete netlink attribute payload"
+      severity: major
+      desc: >
+        The route address attribute parser uses a NUL-terminated C-string read
+        for a fixed-length netlink attribute payload. If the reader encounters
+        a NUL byte in the middle of the payload, it stops there and returns the
+        string while leaving the reader cursor before the end of the attribute.
+        The next attribute is then parsed from the wrong position.
+      fix: >
+        Read through the complete attribute payload with
+        read_cstring_until_end, which accepts a missing NUL terminator and
+        consumes the remaining bytes. Return a FullRead result so malformed
+        attributes are skipped or reported while the caller remains positioned
+        at the next attribute boundary.
+      expectation: >
+        A valid review must identify the cursor-position bug caused by stopping
+        at an embedded NUL. It must require consuming or skipping the entire
+        attribute payload, must not require a NUL terminator where Linux does
+        not, and must preserve parse errors in the netlink response path.
+
+- problem_id: 0405-named-pipe-open-nonblock-status-flags
+  commit: 7e7ba43cdfc572cd2ddeecc86a5951bbd200d692
+  source: >
+    PR 2434 fixes three named-pipe defects present before the PR: FIFO open
+    does not wait for the peer endpoint, read/write cannot honor each fd's
+    O_NONBLOCK flag, and named-pipe status flags are not per-fd. The PR body
+    states these three issues directly, and final head
+    66194a964af102206886424bd1840af5c2c197a6 refactors NamedPipe into
+    per-open handles to fix them.
+  review_mode:
+    files:
+      - kernel/src/fs/named_pipe.rs
+      - kernel/src/fs/ramfs/fs.rs
+      - kernel/src/fs/path/mod.rs
+      - kernel/src/fs/pipe.rs
+      - kernel/src/fs/pipe.rs
+      - kernel/src/fs/inode_handle/mod.rs
+      - kernel/src/fs/inode_handle/mod.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/fs/named_pipe.rs
+        lines: "14-45"
+      persona: development
+      grounding: "FIFO open must block until the peer endpoint is present"
+      severity: major
+      desc: >
+        FIFO open currently returns in blocking mode even when the peer endpoint
+        is absent. A blocking open(O_RDONLY) should wait until a writer opens
+        the FIFO, and a blocking open(O_WRONLY) should wait until a reader opens
+        it.
+      fix: >
+        Implement FIFO open semantics by checking the requested access mode and
+        coordinating with peer endpoint presence during open. Blocking
+        single-ended opens should wait for the opposite endpoint; nonblocking
+        and O_RDWR behavior should follow Linux FIFO semantics.
+      expectation: >
+        A valid review must say that FIFO open semantics are wrong because open
+        returns before both read and write ends are present in blocking mode; it
+        should request blocking in open based on access mode and peer presence.
+    - target:
+        kind: file
+        path: kernel/src/fs/ramfs/fs.rs
+        lines: "552-600"
+      persona: development
+      grounding: "named-pipe read/write ignore the fd's O_NONBLOCK flag"
+      severity: major
+      desc: >
+        RamFS dispatches NamedPipe read/write directly to the shared
+        NamedPipe object. NamedPipe::read and NamedPipe::write take no
+        StatusFlags, and InodeHandle::read/write do not pass their per-fd
+        status_flags into FileLike/FileIo. As a result, read/write behavior is
+        determined by the shared pipe endpoints, not by the file descriptor that
+        issued the operation, so O_NONBLOCK on a FIFO fd is not reliably honored.
+      fix: >
+        Route named-pipe I/O through a FileIo handle whose read/write methods
+        receive the current InodeHandle status_flags, and choose try_read/try_write
+        for O_NONBLOCK or wait_events for blocking descriptors.
+      expectation: >
+        A valid review must identify that named-pipe read/write need access to
+        the caller fd's status_flags; otherwise O_NONBLOCK cannot control whether
+        the operation returns EAGAIN or blocks.
+    - target:
+        kind: file
+        path: kernel/src/fs/pipe.rs
+        lines: "50-123,158-234"
+      persona: development
+      grounding: "status_flags must be per file descriptor, not shared by the pipe object"
+      severity: major
+      desc: >
+        PipeReader and PipeWriter each store status_flags inside the shared pipe
+        endpoint object. A FIFO inode has one shared NamedPipe with shared reader
+        and writer endpoints, while each open fd has its own InodeHandle
+        status_flags. If two descriptors open the same FIFO with different flags,
+        such as one blocking reader and one nonblocking reader, storing the flag
+        on the shared endpoint cannot represent both descriptors correctly.
+      fix: >
+        Keep status_flags on InodeHandle/per-open handles and pass them into
+        named-pipe read/write. Do not store FIFO nonblocking behavior as mutable
+        state in the shared PipeReader/PipeWriter object.
+      expectation: >
+        A valid review must state that status_flags for a named pipe must be
+        per-fd; a shared NamedPipe/PipeReader/PipeWriter flag makes descriptors
+        interfere with each other and cannot support simultaneous blocking and
+        nonblocking opens.
+
+- problem_id: 0406-runqueue-irq-reparent-wakeup
+  commit: 56d78ab64965194ad03cb6cde07fd5d98b17129d
+  source: >
+    PR 2488 fixes two LTP hang causes listed in the PR body: run queues can be
+    locked without disabling local IRQs, and reparented dead children do not
+    wake the reaper/init process.
+  review_mode:
+    files:
+      - kernel/src/sched/sched_class/mod.rs:396-402
+      - ostd/src/task/scheduler/mod.rs:100-108
+      - kernel/src/process/exit.rs:99-126
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/sched/sched_class/mod.rs
+        lines: "396-402"
+      persona: development
+      grounding: "run queues must be locked with local IRQ disabled"
+      severity: critical
+      desc: >
+        ClassScheduler::nr_queued_and_running locks each run queue with
+        rq.lock() while local IRQs remain enabled. The same run queues can be
+        touched from the timer IRQ callback registered by enable_preemption_on_cpu.
+        If an IRQ fires while the current context holds a run-queue lock, the
+        callback can try to lock the same run queue again and deadlock.
+      fix: >
+        Make the run-queue spinlock require LocalIrqDisabled, or otherwise
+        disable local IRQs before every run-queue lock acquisition so task and
+        interrupt contexts cannot re-enter the lock on the same CPU.
+      expectation: >
+        A valid review must identify that run-queue locks are used from IRQ
+        callbacks and therefore must always be acquired with local IRQ disabled;
+        merely locking the SpinLock is insufficient.
+    - target:
+        kind: file
+        path: kernel/src/process/exit.rs
+        lines: "99-126"
+      persona: development
+      grounding: "wake reaper after moving dead children"
+      severity: major
+      desc: >
+        move_children_to_reaper_process moves children from an exiting process
+        to a reaper or init process, but it does not wake the new parent's
+        children_wait_queue. If some moved children are already dead, init can
+        sleep in wait because no child-death notification is delivered after the
+        reparenting. This can cause test hangs when waiting for reaping.
+      fix: >
+        After move_process_children succeeds, call
+        reaper_process.children_wait_queue().wake_all(); do the same for the
+        fallback init_process path.
+      expectation: >
+        A valid review must say that moving children to init/reaper must wake
+        that process's child wait queue, otherwise already-dead reparented
+        children may never be reaped.
+
 - problem_id: 0500-subreaper-reparenting-and-state
   commit: d5569147cb121ba367c104bc6b7a5fbf291efc06
   source: >
