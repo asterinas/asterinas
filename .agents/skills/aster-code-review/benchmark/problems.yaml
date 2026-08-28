@@ -664,6 +664,533 @@
         A reviewer should flag that syscall-local decode enums should not be
         public when all uses are contained in the same source file.
 
+- problem_id: 0407-kill-fixes-defects
+  commit: 50eaffc7314d5ef2f4a16cb0e2437cc0010c01ee
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2488. The PR
+    fixes two LTP hang/deadlock defects: scheduler run queues can be locked
+    without IRQs disabled even though `enable_preemption_on_cpu` makes them
+    reachable from interrupt callbacks, and moved children do not wake the new
+    reaper/init process, so waiters such as LTP `kill08` can sleep forever. The
+    reviewed snapshot is the PR starting point
+    `50eaffc7314d5ef2f4a16cb0e2437cc0010c01ee`, before the fixing commits
+    `2cee744ed9dfdd70d1097d5747e2c72cc2df63b6` and
+    `62513ec49c832909ff39f01d590edbe2483a0d48`, so the targets are leak-free.
+  review_mode:
+    files:
+      - kernel/src/sched/sched_class/mod.rs
+      - kernel/src/process/exit.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/sched/sched_class/mod.rs
+        lines: "65-67"
+      persona: development
+      grounding: "lock run queues with local IRQs disabled"
+      severity: major
+      desc: >
+        `ClassScheduler::rqs` is a plain `SpinLock<PerCpuClassRqSet>`, so callers
+        can lock a run queue without the type system requiring local IRQs to be
+        disabled. The scheduler installs preemption callbacks with
+        `enable_preemption_on_cpu`, and those callbacks can access the same run
+        queues from interrupt context. If task context holds the run queue lock
+        with IRQs enabled and the local interrupt callback tries to take it
+        again, the CPU can deadlock.
+      fix: >
+        Make the run queue lock require the `LocalIrqDisabled` marker, and existing callers
+        must hold an IRQ-disable guard before locking, and call sites that
+        already disabled IRQs can use `lock()` directly.
+      expectation: >
+        A reviewer should identify that per-CPU run queues are shared between
+        task and interrupt/preemption callback contexts, and require the lock to
+        enforce local IRQ disabling for every acquisition, not just selected
+        call sites.
+
+    - target:
+        kind: file
+        path: kernel/src/process/exit.rs
+        lines: "116-126"
+      persona: development
+      grounding: "wake waiters after reparenting children"
+      severity: major
+      desc: >
+        `move_children_to_reaper_process` moves all children from an exiting
+        process to a subreaper, but it returns without waking the
+        new parent's `children_wait_queue`. A process already blocked in
+        `wait*()` sleeps on that queue until a child status change wakes it; if
+        dead children were just reparented to it, the waiter may never re-check
+        its child list and reap them. This can leave LTP `kill08`-style waits
+        stuck forever.
+      fix: >
+        After a successful `move_process_children`, wake the chosen reaper's
+        `children_wait_queue`; also wake init after the fallback reparenting.
+      expectation: >
+        A reviewer should flag that reparenting creates newly waitable children
+        for the reaper/init process and must wake that process's child wait
+        queue on both successful paths.
+
+- problem_id: 0408-procfs-bug-fix-defects
+  commit: ff021e0b89811c92069950a5a96ef41f9860de0b
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2553. The PR
+    body explicitly lists five procfs defects in snapshot
+    `ff021e0b89811c92069950a5a96ef41f9860de0b`: inconsistent lock order between
+    the process table and procfs cached entries, an atomic-mode break from file
+    table notifications into procfs cache updates, incorrect `/proc/[pid]`
+    results after exec in a non-main thread, stale `/proc/.../fd` results after
+    file-table unshare, and stale `/proc/[pid]/task/[tid]` directories after a
+    thread exits. The reviewed snapshot is the linked pre-fix snapshot, before
+    fixing commits `a1a6660a9c863ded0ab0a5e98eaaaf8020b047fb`,
+    `3b039611a77fdeb92d2e5bb4fb9bc63949e07487`, and
+    `ecf61b7223528e99ecfadfe5689412ba67623ca6`, so the defect targets are
+    leak-free.
+  review_mode:
+    files:
+      - kernel/src/fs/procfs/mod.rs
+      - kernel/src/fs/procfs/pid/mod.rs
+      - kernel/src/fs/procfs/pid/task/fd.rs
+      - kernel/src/fs/procfs/pid/task/mod.rs
+      - kernel/src/fs/procfs/pid/task/mountinfo.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/fs/procfs/mod.rs
+        lines: "139-209"
+      persona: development
+      grounding: "keep procfs lock order consistent"
+      severity: major
+      desc: >
+        Procfs takes locks in opposite orders for the same shared state.
+        `PidEvent::Exit` runs while the process table is locked and then writes
+        `cached_children`, so that path is process table -> cached entries. But
+        `populate_children` first locks `cached_children` and then iterates
+        `process_table::process_table_mut()`, making the order cached entries ->
+        process table. Concurrent process exit and `/proc` directory population
+        can deadlock.
+      fix: >
+        Use a single lock order for root procfs process entries. Taking the process
+        table before `cached_children` when dynamic PID entries are populated or
+        looked up, and by keeping static entries separate from the process-table
+        critical section.
+      expectation: >
+        A reviewer should identify both lock acquisition paths and require the
+        process table and procfs cached-entry locks to be acquired in one
+        consistent order.
+
+    - target:
+        kind: file
+        path: kernel/src/fs/procfs/pid/task/fd.rs
+        lines: "34-55"
+      persona: development
+      grounding: "do not call procfs cache observers from file-table spinlocks"
+      severity: major
+      desc: >
+        `/proc/[pid]/fd` registers its procfs inode as a file-table observer.
+        File descriptor close paths notify these observers while mutating the
+        file table, which is protected by a spin lock; the observer then writes
+        `cached_children`, a mutex-backed procfs cache. Taking a mutex from this
+        file-table atomic context can break atomic-mode constraints and sleep
+        while a spin lock is held.
+      fix: >
+        Remove the file-table observer mechanism for procfs fd entries. Rebuild
+        or validate `/proc/.../fd` cached children by reading the current file
+        table from procfs lookup/readdir paths.
+      expectation: >
+        A reviewer should flag that fd close notifications can enter procfs cache
+        mutation while the file table spin lock is held, and require procfs not
+        to rely on observer callbacks from that atomic context.
+
+    - target:
+        kind: file
+        path: kernel/src/fs/procfs/pid/mod.rs
+        lines: "29-42"
+      persona: development
+      grounding: "process-level procfs entries must not pin the old main thread"
+      severity: major
+      desc: >
+        `PidDirOps::new_inode` captures `process_ref.main_thread()` once and
+        embeds that thread in the process-level `/proc/[pid]` directory. After a
+        non-main thread successfully executes a new program, it becomes the
+        process's main thread. Existing `/proc/[pid]` entries such as
+        `mountinfo`, `stat`, `status`, and `fd` can still read through the old
+        cached thread and report stale or wrong per-thread state.
+      fix: >
+        Represent process-level procfs entries without a pinned thread, and
+        resolve `process_ref.main_thread()` when the file is read or the fd
+        directory is populated.
+      expectation: >
+        A reviewer should identify that process-level procfs state caches the
+        main thread too early and require it to resolve the current main thread
+        after exec, especially for non-main-thread exec.
+
+    - target:
+        kind: file
+        path: kernel/src/fs/procfs/pid/task/fd.rs
+        lines: "102-131"
+      persona: development
+      grounding: "procfs fd symlinks must track current file descriptors"
+      severity: major
+      desc: >
+        Each `/proc/[pid]/fd/N` inode stores an `Arc<dyn FileLike>` captured when
+        the procfs entry is created. If the process later unshares its file table
+        or closes and reopens the same descriptor, the cached procfs symlink can
+        continue to point at the old file object and return the wrong target.
+      fix: >
+        Store the task identity and numeric file descriptor in the procfs fd
+        symlink, not the old `FileLike`. On `read_link`, look up the current file
+        descriptor in the current file table and refresh cached fd entries when
+        the descriptor disappears or its access mode changes.
+      expectation: >
+        A reviewer should flag that caching `Arc<dyn FileLike>` makes
+        `/proc/.../fd/N` stale across unshare or descriptor reuse, and require
+        lookup against the current file table.
+
+    - target:
+        kind: file
+        path: kernel/src/fs/procfs/pid/task/mod.rs
+        lines: "194-206"
+      persona: development
+      grounding: "remove task procfs dentries on thread exit"
+      severity: major
+      desc: >
+        `/proc/[pid]/task` populates and caches one child directory per live
+        thread, but it never registers for thread-exit events and never removes
+        cached TID entries. Once a thread exits, a previously populated
+        `/proc/[pid]/task/[tid]` directory can remain visible from the cache even
+        though the thread no longer exists.
+      fix: >
+        Register the task directory as an observer of the process task set and
+        remove the cached child named by the exiting TID when a `TidEvent::Exit`
+        arrives.
+      expectation: >
+        A reviewer should identify that cached task directories need an invalidation
+        path on thread exit and require `/proc/[pid]/task/[tid]` entries to be
+        removed when their thread exits.
+
+- problem_id: 0409-sched-syscall-error-defects
+  commit: cef527f372afeb78b5648048f7aaa631207e59bc
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2575. The PR
+    fixes scheduler syscall compatibility bugs in the pre-fix snapshot
+    `cef527f372afeb78b5648048f7aaa631207e59bc`: user-memory faults from
+    `sched_*` paths were collapsed to `EINVAL`, `sched_setattr` could allocate
+    an unbounded buffer from a user-controlled `sched_attr.size`, and
+    `sched_getattr` did not implement Linux-compatible size handling for short
+    or oversized user buffers. The reviewed snapshot is before fixing commits
+    `46a5b037dce367838f31dd9fb52e5337762eb680` and
+    `9d9a48be687338b886e4c9b824f95a5d46b1984e`, so the targets are leak-free.
+  review_mode:
+    files:
+      - kernel/src/syscall/sched_getattr.rs
+      - kernel/src/syscall/sched_setattr.rs
+      - kernel/src/syscall/sched_setparam.rs
+      - kernel/src/syscall/sched_setscheduler.rs
+      - kernel/src/syscall/sched_getparam.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/syscall/sched_setattr.rs
+        lines: "15-20"
+      persona: development
+      grounding: "preserve user-copy fault errors"
+      severity: major
+      desc: >
+        `sys_sched_setattr` maps every failure from
+        `read_linux_sched_attr_from_user` to `EINVAL`. That erases real user
+        memory faults, so a non-null invalid pointer that should report
+        `EFAULT` is returned as `EINVAL`; it also hides compatibility errors
+        such as `E2BIG` from oversized `sched_attr` input with non-zero trailing
+        bytes.
+      fix: >
+        Reject a null address with `EINVAL`, then propagate errors from
+        `read_linux_sched_attr_from_user` unchanged. The same rule should apply
+        to other `sched_*` user-copy paths instead of converting all copy
+        failures to `EINVAL`.
+      expectation: >
+        A reviewer should flag the blanket `map_err(|_| EINVAL)` around a
+        user-copy helper and require syscall-visible errors to be preserved.
+
+    - target:
+        kind: file
+        path: kernel/src/syscall/sched_getattr.rs
+        lines: "153-158"
+      persona: security
+      grounding: "bound user-controlled sched_attr sizes"
+      severity: major
+      desc: >
+        `read_linux_sched_attr_from_user` trusts `attr.size` when computing
+        `additional_size` and allocates `vec![0; additional_size]`. A user can
+        pass a very large `sched_attr.size`, forcing an unbounded kernel
+        allocation before the syscall returns `E2BIG`, which can panic or
+        exhaust memory.
+      fix: >
+        Validate the user size before allocation, accepting only Linux-supported
+        sizes from `SCHED_ATTR_SIZE_VER0` through `PAGE_SIZE`. For oversized
+        input, write back the kernel struct size and return `E2BIG` without
+        allocating a user-controlled buffer.
+      expectation: >
+        A reviewer should identify the user-controlled allocation and require a
+        fixed upper bound before any allocation or trailing-byte scan.
+
+    - target:
+        kind: file
+        path: kernel/src/syscall/sched_getattr.rs
+        lines: "176-187"
+      persona: development
+      grounding: "implement sched_getattr compatible writeback"
+      severity: major
+      desc: >
+        `write_linux_sched_attr_to_user` accepts any `user_size` and writes only
+        `min(sizeof(LinuxSchedAttr), user_size)` bytes. Thus undersized buffers
+        such as `SCHED_ATTR_SIZE_VER0 - 1` can succeed instead of returning
+        `EINVAL`, and oversized buffers keep stale non-zero bytes after the
+        kernel struct instead of being zero-filled as Linux-compatible
+        `sched_getattr` expects.
+      fix: >
+        Reject `user_size < SCHED_ATTR_SIZE_VER0` or `user_size > PAGE_SIZE`
+        with `EINVAL`, set `attr.size` to the kernel struct size capped by the
+        user size, and use compatible writeback that zero-fills any user buffer
+        tail beyond the kernel struct.
+      expectation: >
+        A reviewer should check both bounds and tail handling for variable-size
+        user ABI structures, not only whether the initial struct bytes are
+        copied successfully.
+
+- problem_id: 0410-evdev-fixes-defects
+  commit: 70eda539dfade526c28d44e6cb60c056c56cc06c
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2616. The PR
+    body identifies multiple evdev defects in snapshot
+    `70eda539dfade526c28d44e6cb60c056c56cc06c`: evdev files reported
+    themselves as seekable, read-side counters could become stale after a
+    user-copy failure, short read buffers skipped required checks, full buffers
+    usually failed to queue `SYN_DROPPED`, opened-file cleanup could deadlock
+    against event delivery, and char-device registration could be reached from
+    an atomic input-core path. The reviewed snapshot is before the fixing PR
+    commits through `ed3416a2530ce9fc1a2bfad9f87786f644584853`, so the
+    targets are leak-free.
+  review_mode:
+    files:
+      - kernel/comps/input/src/lib.rs
+      - kernel/src/device/evdev/file.rs
+      - kernel/src/device/evdev/mod.rs
+      - kernel/src/util/ring_buffer.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/device/evdev/file.rs
+        lines: "249-252"
+      persona: development
+      grounding: "evdev files are not seekable"
+      severity: major
+      desc: >
+        `EvdevFile::check_seekable` returns `Ok(())`, so `lseek()` on an evdev
+        character device can succeed or be treated as supported. Linux evdev
+        files are stream-like input files and should reject seeking with
+        `ESPIPE`.
+      fix: >
+        Return `ESPIPE` from `check_seekable` for evdev files
+        while keeping `is_offset_aware()` false.
+      expectation: >
+        A reviewer should flag that evdev must not advertise seek support and
+        require the syscall-visible error to be `ESPIPE`.
+
+    - target:
+        kind: file
+        path: kernel/src/device/evdev/file.rs
+        lines: "167-178"
+      persona: development
+      grounding: "keep evdev counters consistent after consuming an event"
+      severity: major
+      desc: >
+        `process_events` pops an event from the ring buffer, then writes it to
+        user memory before decrementing `event_count` and `packet_count`. If
+        `writer.write_val` fails after the pop, the event is already consumed
+        but the counters still say it is available, leaving poll/read state
+        stale and possibly reporting input that can never be read.
+      fix: >
+        Update packet/count state immediately after a successful pop, before
+        the fallible user write. Remove the redundant event counter and
+        decrement the packet count before `write_val`.
+      expectation: >
+        A reviewer should notice that ring-buffer consumption and availability
+        counters must be updated atomically with respect to the pop, not after
+        a fallible user-memory write.
+
+    - target:
+        kind: file
+        path: kernel/src/device/evdev/file.rs
+        lines: "212-217"
+      persona: development
+      grounding: "reject too-short evdev read buffers"
+      severity: major
+      desc: >
+        `read_at` returns `Ok(0)` whenever the user buffer cannot hold a full
+        `EvdevEvent`. For a nonzero buffer shorter than one event, Linux evdev
+        returns `EINVAL`; this early return also bypasses nonblocking packet
+        checks that should run before a zero-length read result is accepted.
+      fix: >
+        Return `EINVAL` when `requested_bytes != 0` but `max_events == 0`, then
+        perform the nonblocking packet-availability check before allowing a true
+        zero-length read to return `0`.
+      expectation: >
+        A reviewer should distinguish a real zero-length read from a too-small
+        event buffer and require the evdev ABI checks to run in the Linux order.
+
+    - target:
+        kind: file
+        path: kernel/src/device/evdev/mod.rs
+        lines: "145-175"
+      persona: development
+      grounding: "report dropped input when the evdev buffer is full"
+      severity: major
+      desc: >
+        When `producer.push(timed_event)` fails because the ring buffer is full,
+        the code immediately tries to push a `SYN_DROPPED` event into the same
+        full buffer. That usually fails too, so readers receive neither the
+        dropped notification nor a reliable indication that earlier events were
+        lost.
+      fix: >
+        Detect the almost-full condition before the normal event push, clear or
+        make room for stale events while holding the producer side, and queue
+        `SYN_DROPPED` before continuing with new input.
+      expectation: >
+        A reviewer should flag that a recovery path entered only after the
+        buffer is already full cannot reliably enqueue `SYN_DROPPED`.
+
+    - target:
+        kind: file
+        path: kernel/src/device/evdev/mod.rs
+        lines: "124-130"
+      persona: development
+      grounding: "do not drop EvdevFile while holding opened_files"
+      severity: major
+      desc: >
+        `pass_events` holds `opened_files` while upgrading a `Weak<EvdevFile>`
+        to a temporary `Arc`. If that temporary is the file's last strong
+        reference, dropping it at the end of the loop runs `EvdevFile::drop`,
+        which calls `detach_closed_files` and tries to lock `opened_files`
+        again. That can deadlock event delivery.
+      fix: >
+        Do not store weak file handles that need upgrading while the device lock
+        is held. Store shared file-inner objects in `opened_files` and remove a
+        closed file directly in `Drop` without scanning/upgrading other entries.
+      expectation: >
+        A reviewer should connect the `Weak::upgrade` lifetime under
+        `opened_files` with `EvdevFile::drop`'s cleanup path and require a lock
+        design that cannot recursively acquire the same lock.
+
+    - target:
+        kind: file
+        path: kernel/src/device/evdev/mod.rs
+        lines: "262-269"
+      persona: development
+      grounding: "do not take sleeping locks from input-core atomic context"
+      severity: major
+      desc: >
+        `EvdevHandlerClass::connect` calls `register`, which locks the char
+        device registry mutex, and then locks `EVDEV_DEVICES`. But input handler
+        `connect` callbacks are invoked while the input core is protected by a
+        spin lock. Taking mutex-backed registry locks from that atomic path can
+        break atomic-mode constraints.
+      fix: >
+        Make the input core lock sleepable, as the PR does by changing it from
+        `SpinLock<InputCore>` to `Mutex<InputCore>`, or otherwise move evdev
+        char-device registration outside the spin-locked input-core path.
+      expectation: >
+        A reviewer should trace `InputCore::{register_device,register_handler_class}`
+        calling `connect` under the input-core lock and reject mutex acquisition
+        from a spin-lock/atomic context.
+
+- problem_id: 0411-ext2-super-block-defects
+  commit: 34ebccb2e9cb984ae928a7289cb5829e6f335253
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2675. The PR
+    fixes three ext2 superblock defects in snapshot
+    `34ebccb2e9cb984ae928a7289cb5829e6f335253`: the in-memory `SuperBlock`
+    did not retain all fields from `RawSuperBlock`, `FsState` was modeled as a
+    single enum even though ext2 uses bit flags, and `log_block_size` /
+    `log_frag_size` were recalculated incorrectly when writing the superblock
+    back. The reviewed snapshot is before fixing commits
+    `d6f0b8708eecf0a1b36e62b09cd3de444e021547`,
+    `92508c504c4f9ebbbc192b099441f774c647cd9d`, and
+    `6cdc784c5b3d1b581c72e9d2d769f7f605c3e3b2`, so the targets are leak-free.
+  review_mode:
+    files:
+      - kernel/src/fs/ext2/super_block.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/fs/ext2/super_block.rs
+        lines: "531-536"
+      persona: development
+      grounding: "preserve every on-disk superblock field on writeback"
+      severity: major
+      desc: >
+        `RawSuperBlock::from(&SuperBlock)` writes the known layout fields and
+        then fills the remaining raw superblock fields from `Default`. Because
+        `SuperBlock` never stored fields such as `min_rev_level`,
+        `algorithm_usage_bitmap`, journal metadata, hash seed, mount options,
+        `first_meta_bg`, and the reserved tail, any superblock read and later
+        written back silently zeroes that on-disk information.
+      fix: >
+        Make `SuperBlock` retain the full `RawSuperBlock` information and copy
+        those fields back explicitly instead of using `..Default::default()`.
+      expectation: >
+        A reviewer should flag that converting through `SuperBlock` must be a
+        lossless read-modify-write path for all on-disk superblock fields,
+        including currently unused and reserved ext2/ext3 metadata.
+
+    - target:
+        kind: file
+        path: kernel/src/fs/ext2/super_block.rs
+        lines: "378-386"
+      persona: development
+      grounding: "model ext2 fs state as bit flags"
+      severity: major
+      desc: >
+        `FsState` is declared as a `TryFromInt` enum with mutually exclusive
+        values, so a valid ext2 state containing both clean and error bits
+        (`0x0003`) is rejected as invalid. The special `Corrupted = 117` enum
+        value also treats the field as a single status code rather than the
+        bitmask used by the on-disk format.
+      fix: >
+        Replace the enum with `bitflags!` over `u16`, defining the valid
+        `VALID` and `ERROR` bits, parse with `FsState::from_bits`, and write
+        back with `state.bits()`.
+      expectation: >
+        A reviewer should identify that ext2 `s_state` is a bit-field and
+        require combined valid bits to round-trip instead of being rejected by
+        enum conversion.
+
+    - target:
+        kind: file
+        path: kernel/src/fs/ext2/super_block.rs
+        lines: "507-508"
+      persona: development
+      grounding: "compute ext2 log sizes from 1024-byte units"
+      severity: major
+      desc: >
+        The writeback calculation stores `log_block_size` and `log_frag_size`
+        as `sb.block_size >> 11` and `sb.frag_size >> 11`. Ext2 defines these
+        fields as the exponent `N` in `size = 1024 << N`; shifting by 11 only
+        happens to return `2` for a 4096-byte size and gives wrong values for
+        other valid sizes such as 1024 or 2048 bytes.
+      fix: >
+        Compute the exponent as
+        `(size / SUPER_BLOCK_SIZE).trailing_zeros()` for both block and
+        fragment sizes, matching the read-side formula
+        `SUPER_BLOCK_SIZE << log_*_size`.
+      expectation: >
+        A reviewer should verify the inverse relationship between ext2's
+        on-disk `log_*_size` fields and the in-memory byte sizes, and reject a
+        right-shift formula that is not the inverse of the read path.
+
 - problem_id: 0500-subreaper-reparenting-and-state
   commit: d5569147cb121ba367c104bc6b7a5fbf291efc06
   source: >
