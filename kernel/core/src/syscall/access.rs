@@ -54,12 +54,38 @@ bitflags! {
 }
 
 bitflags! {
+    /// The accessibility checks requested by the `access(2)` family.
+    ///
+    /// Do not confuse this type with [`crate::fs::file::AccessMode`],
+    /// which describes the read/write mode of an opened file.
     struct AccessMode: u32 {
         const R_OK = 0x4;
         const W_OK = 0x2;
         const X_OK = 0x1;
-        // We should ignore F_OK in bitflags.
+        // We should ignore `F_OK` in bitflags.
         // const F_OK = 0x0;
+    }
+}
+
+impl AccessMode {
+    /// Returns the permissions that the access mode requires.
+    ///
+    /// `F_OK` is represented by `AccessMode::empty()`,
+    /// which requires no permissions.
+    fn required_permission(&self) -> Permission {
+        let mut permission = Permission::empty();
+
+        if self.contains(Self::R_OK) {
+            permission |= Permission::MAY_READ;
+        }
+        if self.contains(Self::W_OK) {
+            permission |= Permission::MAY_WRITE;
+        }
+        if self.contains(Self::X_OK) {
+            permission |= Permission::MAY_EXEC;
+        }
+
+        permission
     }
 }
 
@@ -97,15 +123,13 @@ fn do_faccessat(
 
     let inode = path.inode();
 
-    // F_OK is represented by `AccessMode::empty()`, which does not perform permission checks.
-    if mode.contains(AccessMode::R_OK) {
-        inode.check_permission(Permission::MAY_READ)?;
-    }
-    if mode.contains(AccessMode::W_OK) {
-        inode.check_permission(Permission::MAY_WRITE)?;
-    }
-    if mode.contains(AccessMode::X_OK) {
-        inode.check_permission(Permission::MAY_EXEC)?;
+    // `F_OK` is represented by `AccessMode::empty()`.
+    // It only asks whether the file exists,
+    // which the successful path lookup above has already established.
+    // So we can skip the permission check, which is not free.
+    let permission = mode.required_permission();
+    if !permission.is_empty() {
+        inode.check_permission(permission)?;
     }
 
     Ok(SyscallReturn::Return(0))
