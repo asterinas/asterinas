@@ -177,7 +177,7 @@ pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
         pic::init_and_disable();
     }
 
-    let mut io_apics = Vec::with_capacity(2);
+    let mut io_apics: Vec<IoApic> = Vec::with_capacity(2);
     let mut isa_overrides = Vec::new();
 
     const BUS_ISA: u8 = 0; // "0 Constant, meaning ISA".
@@ -185,15 +185,55 @@ pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
     for madt_entry in madt_table.get().entries() {
         match madt_entry {
             MadtEntry::IoApic(madt_io_apic) => {
-                // SAFETY: We trust the ACPI tables (as well as the MADTs in them), from which the
-                // base address is obtained, so it is a valid I/O APIC base address.
-                let io_apic = unsafe {
+                let address = madt_io_apic.io_apic_address as usize;
+                let interrupt_base = madt_io_apic.global_system_interrupt_base;
+
+                // ACPI tables may contain buggy MADT entries. We perform checks similar to those in
+                // the Linux implementation to identify and skip these entries.
+                // Reference: <https://elixir.bootlin.com/linux/v7.2.2/source/arch/x86/kernel/apic/io_apic.c#L2672>
+
+                if address == 0 {
+                    crate::warn!("IOAPIC address is invalid (zero), skipping");
+                    continue;
+                }
+                if io_apics
+                    .iter()
+                    .any(|existing| existing.address() == address)
+                {
+                    crate::warn!(
+                        "IOAPIC address {:#x} duplicates an existing one, skipping",
+                        address
+                    );
+                    continue;
+                }
+
+                // SAFETY: The base address is non-zero and is obtained from the MADTs. Therefore,
+                // it is a valid I/O APIC base address for `IoApic::new`, which performs further
+                // checks and rejects entries whose registers return all ones.
+                let Some(io_apic) = (unsafe {
                     IoApic::new(
                         madt_io_apic.io_apic_address as usize,
                         madt_io_apic.global_system_interrupt_base,
                         io_mem_builder,
                     )
+                }) else {
+                    continue;
                 };
+
+                let interrupt_end = io_apic.interrupt_end();
+                if io_apics.iter().any(|existing| {
+                    interrupt_base <= existing.interrupt_end()
+                        && interrupt_end >= existing.interrupt_base()
+                }) {
+                    crate::warn!(
+                        "IOAPIC {:#x} GSI range [{}-{}] conflicts with an existing IOAPIC, skipping",
+                        address,
+                        interrupt_base,
+                        interrupt_end
+                    );
+                    continue;
+                }
+
                 io_apics.push(io_apic);
             }
             MadtEntry::InterruptSourceOverride(madt_isa_override)

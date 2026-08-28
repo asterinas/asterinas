@@ -6,6 +6,7 @@ use crate::{
     Error, Result, info,
     io::{IoMem, IoMemAllocatorBuilder, Sensitive},
     irq::IrqLine,
+    mm::HasPaddr,
 };
 
 /// I/O Advanced Programmable Interrupt Controller (APIC).
@@ -30,9 +31,37 @@ impl IoApic {
         base_address: usize,
         base_interrupt: u32,
         io_mem_builder: &IoMemAllocatorBuilder,
-    ) -> Self {
+    ) -> Option<Self> {
+        // SAFETY: The safety is upheld by the caller.
         let mut access = unsafe { IoApicAccess::new(base_address, io_mem_builder) };
+
+        // SAFETY: IOAPICID is safe to read.
+        let reg_id = unsafe { access.read(IoApicAccess::IOAPICID) };
+        // SAFETY: IOAPICVER is safe to read.
+        let reg_ver = unsafe { access.read(IoApicAccess::IOAPICVER) };
+        // SAFETY: IOAPICARB is safe to read.
+        let reg_arb = unsafe { access.read(IoApicAccess::IOAPICARB) };
+        if reg_id == u32::MAX && reg_ver == u32::MAX && reg_arb == u32::MAX {
+            crate::warn!(
+                "IOAPIC {:#x} registers return all ones, skipping",
+                base_address
+            );
+            return None;
+        }
+
         let max_redirection_entry = access.max_redirection_entry();
+        if base_interrupt
+            .checked_add(max_redirection_entry as u32)
+            .is_none()
+        {
+            crate::warn!(
+                "IOAPIC {:#x} GSI range overflows ({}+{}), skipping",
+                base_address,
+                base_interrupt,
+                max_redirection_entry
+            );
+            return None;
+        }
 
         info!(
             "IOAPIC found at {:#x}, ID {}, version {}, interrupt base {}, interrupt count {}",
@@ -54,7 +83,7 @@ impl IoApic {
             ioapic.disable(index).unwrap();
         }
 
-        ioapic
+        Some(ioapic)
     }
 
     /// Enables an entry.
@@ -140,6 +169,16 @@ impl IoApic {
     pub(super) fn interrupt_base(&self) -> u32 {
         self.interrupt_base
     }
+
+    /// Returns the last number of the global system interrupts controlled by the I/O APIC.
+    pub(super) fn interrupt_end(&self) -> u32 {
+        self.interrupt_base + self.max_redirection_entry as u32
+    }
+
+    /// Returns the base address of the I/O APIC.
+    pub(super) fn address(&self) -> usize {
+        self.access.io_mem.paddr()
+    }
 }
 
 struct IoApicAccess {
@@ -159,9 +198,11 @@ impl IoApicAccess {
     const MMIO_SIZE: usize = crate::mm::PAGE_SIZE;
 
     /// IOAPIC ID.
-    const IOAPICID: u8 = 0x00;
+    pub(self) const IOAPICID: u8 = 0x00;
     /// IOAPIC Version.
-    const IOAPICVER: u8 = 0x01;
+    pub(self) const IOAPICVER: u8 = 0x01;
+    /// IOAPIC Arbitration.
+    pub(self) const IOAPICARB: u8 = 0x02;
     /// Redirection Table.
     pub(self) const IOREDTBL: u8 = 0x10;
 
