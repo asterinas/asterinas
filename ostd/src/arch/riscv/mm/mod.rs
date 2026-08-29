@@ -121,12 +121,12 @@ pub(crate) fn can_sync_dma() -> bool {
 ///  - the virtual address range and DMA direction correspond correctly to a
 ///    DMA region;
 ///  - `can_sync_dma()` is `true`.
-pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(range: Range<Vaddr>) {
+pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(mut range: Range<Vaddr>) {
     debug_assert!(can_sync_dma());
 
     static CMO_MANAGEMENT_BLOCK_SIZE: Once<usize> = Once::new();
     let cmo_management_block_size = *CMO_MANAGEMENT_BLOCK_SIZE.call_once(|| {
-        DEVICE_TREE
+        let block_size = DEVICE_TREE
             .get()
             .unwrap()
             .cpus()
@@ -135,8 +135,14 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(range: Range<Vaddr>) {
             .property("riscv,cbom-block-size")
             .expect("Failed to find `riscv,cbom-block-size` property of the CPU node")
             .as_usize()
-            .expect("Failed to parse `riscv,cbom-block-size` property of the CPU node")
+            .expect("Failed to parse `riscv,cbom-block-size` property of the CPU node");
+        assert!(block_size.is_power_of_two());
+        assert!(block_size <= PAGE_SIZE);
+        block_size
     });
+
+    // Start at an aligned address, so the following loop can cover every byte in the range.
+    range.start &= !(cmo_management_block_size - 1);
 
     for addr in range.step_by(cmo_management_block_size) {
         // Performing cache maintenance operations is required for correctness
