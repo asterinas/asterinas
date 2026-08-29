@@ -19,7 +19,10 @@ use ostd::{
 
 use crate::{
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, SyncMode, mkmod},
+        file::{
+            AccessMode, InodeMode, InodeType, PerOpenFileOps, RwfFlags, StatusFlags, SyncMode,
+            mkmod,
+        },
         pseudofs::AnonDeviceId,
         utils::{DirentCounter, DirentVisitor, NAME_MAX},
         vfs::{
@@ -317,12 +320,13 @@ impl OverlayInode {
         offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
         let upper = self.build_upper_recursively_if_needed()?;
-        upper.write_at(offset, reader, status_flags)
+        upper.write_at(offset, reader, status_flags, rwf_flags)
     }
 
     pub(crate) fn read_at(
@@ -330,12 +334,13 @@ impl OverlayInode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
         self.get_top_valid_inode()
-            .read_at(offset, writer, status_flags)
+            .read_at(offset, writer, status_flags, rwf_flags)
     }
 
     /// Visits the children objects in a unified view.
@@ -890,10 +895,15 @@ impl OverlayInode {
             .alloc_segment(lower_size.align_up(BLOCK_SIZE) / BLOCK_SIZE)?;
 
         let mut writer = data_buf.writer().to_fallible();
-        let read_len = lower.read_at(0, &mut writer, StatusFlags::empty())?;
+        let read_len = lower.read_at(0, &mut writer, StatusFlags::empty(), RwfFlags::empty())?;
 
         let mut reader = data_buf.reader().to_fallible();
-        let _ = upper.write_at(0, reader.limit(read_len), StatusFlags::empty())?;
+        let _ = upper.write_at(
+            0,
+            reader.limit(read_len),
+            StatusFlags::empty(),
+            RwfFlags::empty(),
+        )?;
         Ok(())
     }
 
@@ -975,12 +985,14 @@ impl FileOps for OverlayInode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize>;
     fn write_at(
         &self,
         offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize>;
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize>;
 }
@@ -1306,6 +1318,7 @@ mod tests {
                     0,
                     &mut VmReader::from([8u8; 4].as_slice()).to_fallible(),
                     StatusFlags::empty(),
+                    RwfFlags::empty(),
                 )
                 .unwrap();
             f2_inode.set_group(Gid::new(77)).unwrap();
@@ -1455,6 +1468,7 @@ mod tests {
             0,
             &mut VmWriter::from(data.as_mut_slice()).to_fallible(),
             StatusFlags::empty(),
+            RwfFlags::empty(),
         )
         .unwrap();
         assert_eq!(data, [8u8; 4]);
@@ -1617,6 +1631,7 @@ mod tests {
             0,
             &mut VmWriter::from(data.as_mut_slice()).to_fallible(),
             StatusFlags::empty(),
+            RwfFlags::empty(),
         )
         .unwrap();
         assert_eq!(data, [3u8; 1]);

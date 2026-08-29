@@ -3,7 +3,10 @@
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file::file_table::{RawFileDesc, get_file_fast},
+    fs::file::{
+        RwfFlags,
+        file_table::{RawFileDesc, get_file_fast},
+    },
     prelude::*,
     util::VmWriterArray,
 };
@@ -14,7 +17,7 @@ pub(super) fn sys_readv(
     io_vec_count: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let res = do_sys_readv(raw_fd, io_vec_ptr, io_vec_count, ctx)?;
+    let res = do_sys_readv(raw_fd, io_vec_ptr, io_vec_count, RwfFlags::empty(), ctx)?;
     Ok(SyscallReturn::Return(res as _))
 }
 
@@ -35,7 +38,7 @@ pub(super) fn sys_preadv(
         io_vec_ptr,
         io_vec_count,
         offset,
-        RWFFlag::empty(),
+        RwfFlags::empty(),
         ctx,
     )?;
     Ok(SyscallReturn::Return(res as _))
@@ -54,12 +57,12 @@ pub(super) fn sys_preadv2(
     // 64-bit offset.
     // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/read_write.c#L1114-L1118>.
     let offset = offset_low.cast_signed();
-    let flags = match RWFFlag::from_bits(flags) {
+    let flags = match RwfFlags::from_bits(flags) {
         Some(flags) => flags,
         None => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported flags"),
     };
     let res = if offset == -1 {
-        do_sys_readv(raw_fd, io_vec_ptr, io_vec_count, ctx)?
+        do_sys_readv(raw_fd, io_vec_ptr, io_vec_count, flags, ctx)?
     } else {
         do_sys_preadv(raw_fd, io_vec_ptr, io_vec_count, offset, flags, ctx)?
     };
@@ -71,7 +74,7 @@ fn do_sys_preadv(
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset: i64,
-    _flags: RWFFlag,
+    flags: RwfFlags,
     ctx: &Context,
 ) -> Result<usize> {
     debug!(
@@ -94,7 +97,7 @@ fn do_sys_preadv(
     if writer_array.writers_mut().is_empty() {
         let mut empty = [0u8; 0];
         let mut writer = VmWriter::from(empty.as_mut_slice()).to_fallible();
-        file.read_at(offset as usize, &mut writer)?;
+        file.read_at(offset as usize, &mut writer, flags)?;
         return Ok(0);
     }
 
@@ -110,7 +113,7 @@ fn do_sys_preadv(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `readv` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        match file.read_at(cur_offset, writer) {
+        match file.read_at(cur_offset, writer, flags) {
             Ok(read_len) => {
                 total_len += read_len;
                 cur_offset += read_len;
@@ -135,6 +138,7 @@ fn do_sys_readv(
     raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
+    flags: RwfFlags,
     ctx: &Context,
 ) -> Result<usize> {
     debug!(
@@ -162,7 +166,7 @@ fn do_sys_readv(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `readv` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        match file.read(writer) {
+        match file.read(writer, flags) {
             Ok(read_len) => total_len += read_len,
             Err(_) if total_len > 0 => break,
             Err(err) => return Err(err),
@@ -178,13 +182,4 @@ fn do_sys_readv(
     }
 
     Ok(total_len)
-}
-
-bitflags! {
-    struct RWFFlag: u32 {
-        const RWF_DSYNC = 0x00000001;
-        const RWF_HIPRI = 0x00000002;
-        const RWF_SYNC = 0x00000004;
-        const RWF_NOWAIT = 0x00000008;
-    }
 }

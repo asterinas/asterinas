@@ -10,7 +10,7 @@ use ostd::sync::WaitQueue;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, PerOpenFileOps, SettableStatusFlags, StatusFlags},
+        file::{AccessMode, PerOpenFileOps, RwfFlags, SettableStatusFlags, StatusFlags},
         utils::{Endpoint, EndpointState},
         vfs::{inode::FileOps, path::Path},
     },
@@ -102,6 +102,7 @@ impl FileOps for PipeHandle {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if !writer.has_avail() {
             // Even the peer endpoint has been closed, reading an empty buffer is
@@ -121,6 +122,7 @@ impl FileOps for PipeHandle {
         _offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if !reader.has_remain() {
             // Even the peer endpoint has been closed, writing an empty buffer is
@@ -662,6 +664,7 @@ mod test {
             0,
             &mut VmWriter::from(buf).to_fallible(),
             StatusFlags::empty(),
+            RwfFlags::empty(),
         )
     }
 
@@ -670,6 +673,7 @@ mod test {
             0,
             &mut VmReader::from(buf).to_fallible(),
             StatusFlags::empty(),
+            RwfFlags::empty(),
         )
     }
 }

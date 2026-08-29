@@ -13,7 +13,7 @@ use ostd::prelude::ktest;
 
 use crate::{
     fs::{
-        file::{InodeType, StatusFlags, mkmod},
+        file::{InodeType, RwfFlags, StatusFlags, mkmod},
         sysfs::{self, fs::SysFs},
         utils::DirentVisitor,
         vfs::file_system::FileSystem,
@@ -357,7 +357,7 @@ fn read_attr() {
     let mut buf = [0u8; 64];
     let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
     let bytes_read = r_attr_inode
-        .read_at(0, &mut writer, StatusFlags::empty())
+        .read_at(0, &mut writer, StatusFlags::empty(), RwfFlags::empty())
         .expect("read_at failed");
 
     assert!(bytes_read > 0);
@@ -366,7 +366,7 @@ fn read_attr() {
 
     // Reading a directory should fail (expect EINVAL as per inode.rs)
     let mut writer = VmWriter::from(&mut buf[..]).to_fallible(); // Reset writer
-    let result = leaf1_dir_inode.read_at(0, &mut writer, StatusFlags::empty());
+    let result = leaf1_dir_inode.read_at(0, &mut writer, StatusFlags::empty(), RwfFlags::empty());
     assert!(result.is_err());
 }
 
@@ -391,7 +391,7 @@ fn write_attr() {
     let new_val = "new_value";
     let mut reader = VmReader::from(new_val.as_bytes()).to_fallible();
     let bytes_written = rw_attr_inode
-        .write_at(0, &mut reader, StatusFlags::empty())
+        .write_at(0, &mut reader, StatusFlags::empty(), RwfFlags::empty())
         .expect("write_at failed");
     assert_eq!(bytes_written, new_val.len());
 
@@ -399,19 +399,19 @@ fn write_attr() {
     let mut buf = [0u8; 64];
     let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
     let bytes_read = rw_attr_inode
-        .read_at(0, &mut writer, StatusFlags::empty())
+        .read_at(0, &mut writer, StatusFlags::empty(), RwfFlags::empty())
         .expect("read_at failed");
     let content = core::str::from_utf8(&buf[..bytes_read]).unwrap();
     assert_eq!(content, new_val);
 
     // Write to r_attr1 (should fail - EIO expected from underlying PermissionDenied)
     let mut reader = VmReader::from("attempt_write".as_bytes()).to_fallible();
-    let result = r_attr_inode.write_at(0, &mut reader, StatusFlags::empty());
+    let result = r_attr_inode.write_at(0, &mut reader, StatusFlags::empty(), RwfFlags::empty());
     assert!(result.is_err());
 
     // Writing to a directory should fail (expect EINVAL as per inode.rs)
     let mut reader = VmReader::from("attempt_write".as_bytes()).to_fallible();
-    let result = leaf1_dir_inode.write_at(0, &mut reader, StatusFlags::empty());
+    let result = leaf1_dir_inode.write_at(0, &mut reader, StatusFlags::empty(), RwfFlags::empty());
     assert!(result.is_err());
 }
 

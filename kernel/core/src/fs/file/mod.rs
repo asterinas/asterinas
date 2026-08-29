@@ -10,6 +10,7 @@ pub(crate) mod flock;
 mod fs_config_file;
 mod inode_attr;
 mod inode_handle;
+mod io_flags;
 
 pub(crate) use file_attr::{
     access_mode::AccessMode,
@@ -26,3 +27,4 @@ pub(crate) use inode_attr::{
     r#type::InodeType,
 };
 pub(crate) use inode_handle::{InodeHandle, PerOpenFileOps, SeekFrom};
+pub(crate) use io_flags::RwfFlags;
