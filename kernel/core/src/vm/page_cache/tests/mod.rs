@@ -550,3 +550,63 @@ fn delayed_io_completion() {
     assert!(second_flush_result.lock().take().unwrap().is_ok());
     assert_eq!(backend.persisted_page_bytes(0), latest_dirty_pattern);
 }
+
+/// `try_read` never blocks: a cold page reports `EAGAIN` without issuing
+/// I/O, and a partially cached range returns a short read.
+#[ktest]
+fn try_read_non_blocking() {
+    let backend = MockPageCacheBackend::new(2);
+    backend.set_persisted_page_bytes(0, &[0x4c; PAGE_SIZE]);
+    backend.set_persisted_page_bytes(1, &[0x5d; PAGE_SIZE]);
+
+    let page_cache = new_backend_page_cache(&backend, 2);
+    let mut buf = vec![0; 2 * PAGE_SIZE];
+
+    let mut writer = VmWriter::from(buf.as_mut_slice()).to_fallible();
+    let err = page_cache.try_read(0, &mut writer).unwrap_err();
+    assert_eq!(err.error(), Errno::EAGAIN);
+    assert_eq!(backend.read_count(0), 0);
+
+    page_cache.read_bytes(0, &mut buf[..PAGE_SIZE]).unwrap();
+    assert_eq!(&buf[..PAGE_SIZE], &[0x4c; PAGE_SIZE]);
+    assert_eq!(backend.read_count(0), 1);
+
+    let mut writer = VmWriter::from(buf.as_mut_slice()).to_fallible();
+    assert_eq!(page_cache.try_read(0, &mut writer).unwrap(), PAGE_SIZE);
+    assert_eq!(&buf[..PAGE_SIZE], &[0x4c; PAGE_SIZE]);
+    assert_eq!(&buf[PAGE_SIZE..], &[0; PAGE_SIZE]);
+    assert_eq!(backend.read_count(0), 1);
+    assert_eq!(backend.read_count(1), 0);
+
+    page_cache
+        .read_bytes(PAGE_SIZE, &mut buf[PAGE_SIZE..])
+        .unwrap();
+    assert_eq!(backend.read_count(1), 1);
+
+    let mut writer = VmWriter::from(buf.as_mut_slice()).to_fallible();
+    assert_eq!(page_cache.try_read(0, &mut writer).unwrap(), 2 * PAGE_SIZE);
+    assert_eq!(&buf[PAGE_SIZE..], &[0x5d; PAGE_SIZE]);
+    assert_eq!(backend.read_count(0), 1);
+}
+
+/// `has_pages` and `needs_writeback` track the cached page states.
+#[ktest]
+fn has_pages_and_needs_writeback() {
+    let backend = MockPageCacheBackend::new(1);
+    backend.set_persisted_page_bytes(0, &[0x12; PAGE_SIZE]);
+
+    let page_cache = new_backend_page_cache(&backend, 1);
+    assert!(!page_cache.has_pages(0..PAGE_SIZE));
+    assert!(!page_cache.needs_writeback(0..PAGE_SIZE));
+
+    let mut buf = vec![0; PAGE_SIZE];
+    page_cache.read_bytes(0, &mut buf).unwrap();
+    assert!(page_cache.has_pages(0..PAGE_SIZE));
+    assert!(!page_cache.needs_writeback(0..PAGE_SIZE));
+
+    page_cache.write_bytes(0, &[0x34; PAGE_SIZE]).unwrap();
+    assert!(page_cache.needs_writeback(0..PAGE_SIZE));
+
+    page_cache.flush_range(0..PAGE_SIZE).unwrap();
+    assert!(!page_cache.needs_writeback(0..PAGE_SIZE));
+}
