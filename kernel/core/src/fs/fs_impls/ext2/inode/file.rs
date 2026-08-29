@@ -14,12 +14,18 @@ use ostd::mm::io::util::HasVmReaderWriter;
 use super::{super::Ext2, FileFlags, Inode, InodeInner, io_range::IoRange};
 use crate::fs::{
     ext2::{prelude::*, utils},
+    file::RwfFlags,
     vfs::inode::FallocMode,
 };
 
 impl Inode {
     /// Reads file data at `offset` through the page cache.
-    pub(in ext2) fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    pub(in ext2) fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        rwf_flags: RwfFlags,
+    ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -28,10 +34,15 @@ impl Inode {
             return Ok(0);
         }
 
-        let read_len = self.inner.read().read_at(offset, writer)?;
-        if read_len > 0 {
-            self.inner.write().set_atime(utils::now());
-        }
+        let read_len = if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            self.inner
+                .try_read()
+                .ok_or_else(|| Error::with_message(Errno::EAGAIN, "the inode is locked"))?
+                .read_at(offset, writer, rwf_flags)?
+        } else {
+            self.inner.read().read_at(offset, writer, rwf_flags)?
+        };
+        self.update_atime(read_len, rwf_flags);
         Ok(read_len)
     }
 
@@ -49,6 +60,23 @@ impl Inode {
         let fs = self.fs()?;
         let mut inner = self.inner.write();
         inner.write_at(&fs, offset, reader)
+    }
+
+    /// Updates the atime after a successful read.
+    ///
+    /// Under `RWF_NOWAIT` the update must not block, so it is skipped when the
+    /// inode write lock is contended.
+    fn update_atime(&self, read_len: usize, rwf_flags: RwfFlags) {
+        if read_len == 0 {
+            return;
+        }
+        if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            if let Some(mut inner) = self.inner.try_write() {
+                inner.set_atime(utils::now());
+            }
+        } else {
+            self.inner.write().set_atime(utils::now());
+        }
     }
 
     /// Direct-I/O read path.
@@ -226,7 +254,7 @@ impl InodeInner {
     }
 
     /// Reads file data at `offset` through the inode page cache.
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter, rwf_flags: RwfFlags) -> Result<usize> {
         if writer.avail() == 0 {
             return Ok(0);
         }
@@ -238,8 +266,12 @@ impl InodeInner {
 
         let read_len = writer.avail().min(file_size - offset);
         writer.limit(read_len);
-        self.page_cache().read(offset, writer)?;
-        Ok(read_len)
+        if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            self.page_cache().try_read(offset, writer)
+        } else {
+            self.page_cache().read(offset, writer)?;
+            Ok(read_len)
+        }
     }
 
     /// Writes file data at `offset` through the inode page cache.

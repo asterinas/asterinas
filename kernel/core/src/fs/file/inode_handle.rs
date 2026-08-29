@@ -289,7 +289,13 @@ impl FileLike for InodeHandle {
             return file_ops.read_at(0, writer, status_flags, rwf_flags);
         }
 
-        let mut offset = self.offset.lock();
+        let mut offset = if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            self.offset
+                .try_lock()
+                .ok_or_else(|| Error::with_message(Errno::EAGAIN, "the file offset is locked"))?
+        } else {
+            self.offset.lock()
+        };
 
         let len = file_ops.read_at(*offset, writer, status_flags, rwf_flags)?;
         *offset += len;
@@ -312,7 +318,13 @@ impl FileLike for InodeHandle {
             return file_ops.write_at(0, reader, status_flags, rwf_flags);
         }
 
-        let mut offset = self.offset.lock();
+        let mut offset = if rwf_flags.contains(RwfFlags::RWF_NOWAIT) {
+            self.offset
+                .try_lock()
+                .ok_or_else(|| Error::with_message(Errno::EAGAIN, "the file offset is locked"))?
+        } else {
+            self.offset.lock()
+        };
 
         // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
         if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
