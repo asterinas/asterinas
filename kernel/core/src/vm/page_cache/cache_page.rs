@@ -151,6 +151,16 @@ pub(crate) trait CachePageExt: Sized {
         self.wait_queue().wake_all();
     }
 
+    /// Checks if the page is currently being written back to storage.
+    fn is_writing_back(&self) -> bool {
+        self.metadata().is_writing_back.load(Ordering::Acquire)
+    }
+
+    /// Checks if the page is currently locked.
+    fn is_locked(&self) -> bool {
+        self.metadata().lock.load(Ordering::Acquire)
+    }
+
     /// Allocates a new cache page which content and state are uninitialized.
     fn alloc_uninit() -> Result<CachePage> {
         let meta = CachePageMeta::default();

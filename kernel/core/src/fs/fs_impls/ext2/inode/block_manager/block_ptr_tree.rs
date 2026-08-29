@@ -37,6 +37,16 @@ pub(in inode) struct BlockPtrTree {
     indirect_blocks_manager: Mutex<IndirectBlockManager>,
 }
 
+/// Whether a block-pointer walk may load indirect blocks from disk.
+#[derive(Clone, Copy)]
+enum WalkMode {
+    /// Load uncached indirect blocks from disk as needed.
+    Blocking,
+    /// Report `None` instead of loading uncached indirect blocks, or
+    /// `EAGAIN` if the indirect-block cache lock is contended.
+    NonBlocking,
+}
+
 impl BlockPtrTree {
     /// Creates a new block-pointer tree from the on-disk raw pointers.
     pub(in inode) fn new(raw_block_ptrs: RawBlockPtrs, fs: Weak<Ext2>) -> Self {
@@ -78,6 +88,28 @@ impl BlockPtrTree {
 
         let walk = self.walk_at(iblock)?;
         self.existing_contiguous_data_blocks(&walk, max_blocks)
+    }
+
+    /// Resolves a logical block to a contiguous physical block range without
+    /// loading indirect blocks from disk.
+    ///
+    /// Returns `Ok(None)` when resolving the range would require reading an
+    /// uncached indirect block, or `EAGAIN` if the indirect-block cache lock
+    /// is contended.
+    pub(in inode) fn try_lookup_block_range(
+        &self,
+        iblock: Iblock,
+        max_blocks: u32,
+    ) -> Result<Option<Range<Ext2Bid>>> {
+        if max_blocks == 0 {
+            return_errno_with_message!(Errno::EINVAL, "zero block range requested");
+        }
+        let Some(walk) = self.try_walk_path(BlockPointerPath::new(iblock)?)? else {
+            return Ok(None);
+        };
+        Ok(Some(
+            self.existing_contiguous_data_blocks(&walk, max_blocks)?,
+        ))
     }
 
     /// Resolves a logical block to physical block (read-only).
@@ -423,42 +455,83 @@ impl BlockPtrTree {
     }
 
     /// Computes a `BlockPointerWalk` by walking the on-disk pointer chain.
-    fn walk_path(&self, path: BlockPointerPath) -> Result<BlockPointerWalk> {
+    ///
+    /// In `WalkMode::NonBlocking`, resolving a path that requires reading an
+    /// uncached indirect block from disk returns `Ok(None)` instead, and
+    /// `EAGAIN` if the indirect-block cache lock is contended.
+    fn walk_path_with(
+        &self,
+        path: BlockPointerPath,
+        mode: WalkMode,
+    ) -> Result<Option<BlockPointerWalk>> {
         let top_bid = self.raw_block_ptrs.block_ptrs[path.slots[0] as usize];
         let num_levels = path.num_levels;
         let mut visited_entries = SmallVec::new();
         if top_bid == 0 {
             // Zero pointer means the path is broken at level 0.
-            return Ok(BlockPointerWalk {
+            return Ok(Some(BlockPointerWalk {
                 path,
                 is_complete: false,
                 visited_entries,
-            });
+            }));
         }
         visited_entries.push(top_bid);
 
-        let mut indirect_blocks_manager = self.indirect_blocks_manager.lock();
+        let mut indirect_blocks_manager = match mode {
+            WalkMode::Blocking => self.indirect_blocks_manager.lock(),
+            WalkMode::NonBlocking => self.indirect_blocks_manager.try_lock().ok_or_else(|| {
+                Error::with_message(Errno::EAGAIN, "the indirect block cache is locked")
+            })?,
+        };
         let mut parent_bid = top_bid;
         for level in 1..num_levels {
-            let next_bid = indirect_blocks_manager
-                .find(parent_bid)?
-                .read_bid(path.slots[level] as usize)?;
+            let next_bid = match mode {
+                WalkMode::Blocking => indirect_blocks_manager
+                    .find(parent_bid)?
+                    .read_bid(path.slots[level] as usize)?,
+                WalkMode::NonBlocking => {
+                    let Some(indirect_block) = indirect_blocks_manager.try_find(parent_bid) else {
+                        return Ok(None);
+                    };
+                    indirect_block.read_bid(path.slots[level] as usize)?
+                }
+            };
             if next_bid == 0 {
-                return Ok(BlockPointerWalk {
+                return Ok(Some(BlockPointerWalk {
                     path,
                     is_complete: false,
                     visited_entries,
-                });
+                }));
             }
             visited_entries.push(next_bid);
             parent_bid = next_bid;
         }
 
-        Ok(BlockPointerWalk {
+        Ok(Some(BlockPointerWalk {
             path,
             is_complete: true,
             visited_entries,
-        })
+        }))
+    }
+
+    /// Computes a `BlockPointerWalk` by walking the on-disk pointer chain,
+    /// loading indirect blocks from disk as needed.
+    fn walk_path(&self, path: BlockPointerPath) -> Result<BlockPointerWalk> {
+        // `WalkMode::Blocking` always resolves the path; the `None` case is
+        // only reachable when uncached indirect blocks are reported instead
+        // of loaded, so this cannot happen here.
+        Ok(self
+            .walk_path_with(path, WalkMode::Blocking)?
+            .expect("blocking walk always resolves the path"))
+    }
+
+    /// Computes a `BlockPointerWalk` without loading indirect blocks from disk.
+    ///
+    /// Returns `Ok(None)` when resolving the path would require reading an
+    /// uncached indirect block, or `EAGAIN` if the indirect-block cache lock
+    /// is contended.
+    fn try_walk_path(&self, path: BlockPointerPath) -> Result<Option<BlockPointerWalk>> {
+        self.walk_path_with(path, WalkMode::NonBlocking)
     }
 
     fn existing_contiguous_data_blocks(

@@ -938,6 +938,57 @@ impl PageSelection {
 }
 
 impl<'a> BackedVmo<'a> {
+    /// Returns whether any page in the specified byte range is present in the page cache.
+    pub(super) fn has_pages(&self, range: &Range<usize>) -> bool {
+        let page_idx_range = get_page_idx_range(range);
+        if range.is_empty() || page_idx_range.is_empty() {
+            return false;
+        }
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = self
+            .pages
+            .cursor(&preempt_guard, page_idx_range.start as u64);
+        loop {
+            if cursor.load().is_some() {
+                return true;
+            }
+            let Some(next_index) = cursor.next_present() else {
+                return false;
+            };
+            if next_index as usize >= page_idx_range.end {
+                return false;
+            }
+        }
+    }
+
+    /// Returns whether any page in the specified byte range is dirty, locked,
+    /// or being written back.
+    pub(super) fn needs_writeback(&self, range: &Range<usize>) -> bool {
+        let page_idx_range = get_page_idx_range(range);
+        if range.is_empty() || page_idx_range.is_empty() {
+            return false;
+        }
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = self
+            .pages
+            .cursor(&preempt_guard, page_idx_range.start as u64);
+        loop {
+            if let Some(page) = cursor.load()
+                && (page.state().is_dirty() || page.is_locked() || page.is_writing_back())
+            {
+                return true;
+            }
+            let Some(next_index) = cursor.next_present() else {
+                return false;
+            };
+            if next_index as usize >= page_idx_range.end {
+                return false;
+            }
+        }
+    }
+
     /// Writes back dirty pages in the specified byte range to the backend storage.
     pub(super) fn flush_dirty_pages(&self, range: &Range<usize>) -> Result<()> {
         if range.start >= self.size() {

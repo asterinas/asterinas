@@ -336,6 +336,23 @@ impl PageCache {
         vmo.evict_up_to_date_pages(&range)
     }
 
+    /// Returns whether any page in the specified byte range is present in the page cache.
+    pub(crate) fn has_pages(&self, range: Range<usize>) -> bool {
+        let Some(vmo) = self.0.as_backed_vmo() else {
+            return false;
+        };
+        vmo.has_pages(&range)
+    }
+
+    /// Returns whether any page in the specified byte range is dirty, locked,
+    /// or being written back.
+    pub(crate) fn needs_writeback(&self, range: Range<usize>) -> bool {
+        let Some(vmo) = self.0.as_backed_vmo() else {
+            return false;
+        };
+        vmo.needs_writeback(&range)
+    }
+
     /// Fills the specified range of the page cache with zeros.
     ///
     /// Callers must hold the filesystem-level lock that serializes operations in
