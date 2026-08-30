@@ -4,6 +4,7 @@ use core::arch::global_asm;
 
 use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
 
+use super::ToEarlyBootInfo;
 use crate::{
     boot::{
         BootloaderAcpiArg, BootloaderFramebufferArg,
@@ -14,20 +15,6 @@ use crate::{
 
 global_asm!(include_str!("header.S"));
 
-fn parse_bootloader_name(mb2_info: &BootInformation) -> Option<&'static str> {
-    let name = mb2_info.boot_loader_name_tag()?.name().ok()?;
-
-    // SAFETY: The address of `name` is physical and the bootloader name will live for `'static`.
-    Some(unsafe { make_str_vaddr_static(name) })
-}
-
-fn parse_kernel_commandline(mb2_info: &BootInformation) -> Option<&'static str> {
-    let cmdline = mb2_info.command_line_tag()?.cmdline().ok()?;
-
-    // SAFETY: The address of `cmdline` is physical and the command line will live for `'static`.
-    Some(unsafe { make_str_vaddr_static(cmdline) })
-}
-
 unsafe fn make_str_vaddr_static(str: &str) -> &'static str {
     let vaddr = paddr_to_vaddr(str.as_ptr() as Paddr);
 
@@ -37,35 +24,6 @@ unsafe fn make_str_vaddr_static(str: &str) -> &'static str {
     core::str::from_utf8(bytes).unwrap()
 }
 
-fn parse_initramfs(mb2_info: &BootInformation) -> Option<&'static [u8]> {
-    let module_tag = mb2_info.module_tags().next()?;
-
-    let initramfs_ptr = paddr_to_vaddr(module_tag.start_address() as usize);
-    let initramfs_len = module_tag.module_size() as usize;
-    // SAFETY:
-    // 1. The initramfs is safe to read because of the contract with the loader.
-    // 2. We reserve the initramfs region in `parse_memory_regions`, so it will live as an immutable
-    //    reference for `'static`.
-    let initramfs =
-        unsafe { core::slice::from_raw_parts(initramfs_ptr as *const u8, initramfs_len) };
-
-    Some(initramfs)
-}
-
-fn parse_acpi_arg(mb2_info: &BootInformation) -> BootloaderAcpiArg {
-    if let Some(v2_tag) = mb2_info.rsdp_v2_tag() {
-        // Check for RSDP v2
-        BootloaderAcpiArg::Xsdt(v2_tag.xsdt_address())
-    } else if let Some(v1_tag) = mb2_info.rsdp_v1_tag() {
-        // Fall back to RSDP v1
-        BootloaderAcpiArg::Rsdt(v1_tag.rsdt_address())
-    } else if is_efi_boot(mb2_info) {
-        BootloaderAcpiArg::NotProvided
-    } else {
-        BootloaderAcpiArg::ScanBios
-    }
-}
-
 fn is_efi_boot(mb2_info: &BootInformation) -> bool {
     mb2_info.efi_sdt32_tag().is_some()
         || mb2_info.efi_sdt64_tag().is_some()
@@ -73,17 +31,6 @@ fn is_efi_boot(mb2_info: &BootInformation) -> bool {
         || mb2_info.efi_bs_not_exited_tag().is_some()
         || mb2_info.efi_ih32_tag().is_some()
         || mb2_info.efi_ih64_tag().is_some()
-}
-
-fn parse_framebuffer_info(mb2_info: &BootInformation) -> Option<BootloaderFramebufferArg> {
-    let fb_tag = mb2_info.framebuffer_tag()?.ok()?;
-
-    Some(BootloaderFramebufferArg {
-        address: fb_tag.address() as usize,
-        width: fb_tag.width() as usize,
-        height: fb_tag.height() as usize,
-        bpp: fb_tag.bpp() as usize,
-    })
 }
 
 impl From<MemoryAreaType> for MemoryRegionType {
@@ -99,56 +46,106 @@ impl From<MemoryAreaType> for MemoryRegionType {
     }
 }
 
-fn parse_memory_regions(mb2_info: &BootInformation) -> MemoryRegionArray {
-    let mut regions = MemoryRegionArray::new();
+impl ToEarlyBootInfo for BootInformation<'_> {
+    fn bootloader_name(&self) -> &'static str {
+        let Some(name) = self.boot_loader_name_tag().and_then(|tag| tag.name().ok()) else {
+            return "Unknown Multiboot2 Loader";
+        };
 
-    // Add the regions returned by Grub.
-    let memory_regions_tag = mb2_info
-        .memory_map_tag()
-        .expect("No memory regions are found in the Multiboot2 header!");
-    for region in memory_regions_tag.memory_areas() {
-        let start = region.start_address();
-        let end = region.end_address();
-        let area_typ: MemoryRegionType = MemoryAreaType::from(region.typ()).into();
-        let region = MemoryRegion::new(
-            start.try_into().unwrap(),
-            (end - start).try_into().unwrap(),
-            area_typ,
-        );
-        regions.push(region).unwrap();
+        // SAFETY:
+        // 1. The bootloader name is safe to read because of the contract with the loader.
+        // 2. We reserve the bootloader-name region in `memory_regions`, so it will live as an
+        //    immutable reference for `'static`.
+        unsafe { make_str_vaddr_static(name) }
     }
 
-    // Add the framebuffer region since Grub does not specify it.
-    if let Some(fb) = parse_framebuffer_info(mb2_info) {
-        regions.push(MemoryRegion::framebuffer(&fb)).unwrap();
+    fn kernel_commandline(&self) -> Option<&'static str> {
+        let cmdline = self.command_line_tag()?.cmdline().ok()?;
+
+        // SAFETY:
+        // 1. The command line is safe to read because of the contract with the loader.
+        // 2. We reserve the command-line region in `finish_memory_regions`, so it will live as an
+        //    immutable reference for `'static`.
+        Some(unsafe { make_str_vaddr_static(cmdline) })
     }
 
-    // Add the kernel region since Grub does not specify it.
-    regions.push(MemoryRegion::kernel()).unwrap();
+    fn initramfs(&self) -> Option<&'static [u8]> {
+        let module_tag = self.module_tags().next()?;
 
-    // Add the initramfs region.
-    if let Some(initramfs) = parse_initramfs(mb2_info) {
-        regions.push(MemoryRegion::module(initramfs)).unwrap();
+        let initramfs_ptr = paddr_to_vaddr(module_tag.start_address() as usize);
+        let initramfs_len = module_tag.module_size() as usize;
+        // SAFETY:
+        // 1. The initramfs is safe to read because of the contract with the loader.
+        // 2. We reserve the initramfs region in `memory_regions`, so it will live as an immutable
+        //    reference for `'static`.
+        let initramfs =
+            unsafe { core::slice::from_raw_parts(initramfs_ptr as *const u8, initramfs_len) };
+
+        Some(initramfs)
     }
 
-    // Add the AP boot code region that will be copied into by the BSP.
-    regions
-        .push(super::smp::reclaimable_memory_region())
-        .unwrap();
-
-    // Add the kernel cmdline and boot loader name region since Grub does not specify it.
-    if let Some(kcmdline) = parse_kernel_commandline(mb2_info) {
-        regions
-            .push(MemoryRegion::module(kcmdline.as_bytes()))
-            .unwrap();
-    }
-    if let Some(bootloader_name) = parse_bootloader_name(mb2_info) {
-        regions
-            .push(MemoryRegion::module(bootloader_name.as_bytes()))
-            .unwrap();
+    fn acpi_arg(&self) -> BootloaderAcpiArg {
+        if let Some(v2_tag) = self.rsdp_v2_tag() {
+            // Check for RSDP v2
+            BootloaderAcpiArg::Xsdt(v2_tag.xsdt_address())
+        } else if let Some(v1_tag) = self.rsdp_v1_tag() {
+            // Fall back to RSDP v1
+            BootloaderAcpiArg::Rsdt(v1_tag.rsdt_address())
+        } else if is_efi_boot(self) {
+            BootloaderAcpiArg::NotProvided
+        } else {
+            BootloaderAcpiArg::ScanBios
+        }
     }
 
-    regions.into_non_overlapping()
+    fn framebuffer_arg(&self) -> Option<BootloaderFramebufferArg> {
+        let fb_tag = self.framebuffer_tag()?.ok()?;
+
+        Some(BootloaderFramebufferArg {
+            address: fb_tag.address() as usize,
+            width: fb_tag.width() as usize,
+            height: fb_tag.height() as usize,
+            bpp: fb_tag.bpp() as usize,
+        })
+    }
+
+    fn memory_regions(
+        &self,
+        initramfs: Option<&'static [u8]>,
+        kernel_cmdline: Option<&'static str>,
+        framebuffer_arg: Option<BootloaderFramebufferArg>,
+    ) -> MemoryRegionArray {
+        let mut regions = MemoryRegionArray::new();
+
+        // Add the regions returned by Grub.
+        let memory_regions_tag = self
+            .memory_map_tag()
+            .expect("No memory regions are found in the Multiboot2 header!");
+        for region in memory_regions_tag.memory_areas() {
+            let start = region.start_address();
+            let end = region.end_address();
+            let area_typ: MemoryRegionType = MemoryAreaType::from(region.typ()).into();
+            regions
+                .push(MemoryRegion::new(
+                    start.try_into().unwrap(),
+                    (end - start).try_into().unwrap(),
+                    area_typ,
+                ))
+                .unwrap();
+        }
+
+        // Add the boot loader name region since Grub does not specify it.
+        if let Some(name) = self.boot_loader_name_tag().and_then(|tag| tag.name().ok()) {
+            // SAFETY: The address of `name` is physical and the bootloader name will live for
+            // `'static`.
+            let bootloader_name = unsafe { make_str_vaddr_static(name) };
+            regions
+                .push(MemoryRegion::module(bootloader_name.as_bytes()))
+                .unwrap();
+        }
+
+        super::finish_memory_regions(regions, framebuffer_arg, initramfs, kernel_cmdline)
+    }
 }
 
 /// The entry point of the Rust code portion of Asterinas (with multiboot2 parameters).
@@ -165,16 +162,9 @@ unsafe extern "sysv64" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) 
     let mb2_info =
         unsafe { BootInformation::load(boot_params as *const BootInformationHeader).unwrap() };
 
-    use crate::boot::{EARLY_INFO, EarlyBootInfo, start_kernel};
+    use crate::boot::{EARLY_INFO, start_kernel};
 
-    EARLY_INFO.call_once(|| EarlyBootInfo {
-        bootloader_name: parse_bootloader_name(&mb2_info).unwrap_or("Unknown Multiboot2 Loader"),
-        kernel_cmdline: parse_kernel_commandline(&mb2_info).unwrap_or(""),
-        initramfs: parse_initramfs(&mb2_info),
-        acpi_arg: parse_acpi_arg(&mb2_info),
-        framebuffer_arg: parse_framebuffer_info(&mb2_info),
-        memory_regions: parse_memory_regions(&mb2_info),
-    });
+    EARLY_INFO.call_once(|| mb2_info.to_early_boot_info());
 
     // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
     // once after setting up necessary resources.

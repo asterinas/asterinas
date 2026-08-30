@@ -26,6 +26,11 @@ pub(crate) mod smp;
 
 use core::arch::global_asm;
 
+use crate::boot::{
+    BootloaderAcpiArg, BootloaderFramebufferArg, EarlyBootInfo,
+    memory_region::{MemoryRegion, MemoryRegionArray},
+};
+
 global_asm!(
     include_str!("bsp_boot.S"),
     KCODE64 = const super::trap::gdt::KCODE64,
@@ -33,3 +38,75 @@ global_asm!(
     KCODE32 = const super::trap::gdt::KCODE32,
 );
 global_asm!(include_str!("ap_boot.S"));
+
+/// A bootloader-provided structure that can be converted into [`EarlyBootInfo`].
+pub(super) trait ToEarlyBootInfo {
+    /// The name of the bootloader.
+    fn bootloader_name(&self) -> &'static str;
+
+    /// The kernel command line, if provided.
+    fn kernel_commandline(&self) -> Option<&'static str>;
+
+    /// The initramfs bytes, if provided.
+    fn initramfs(&self) -> Option<&'static [u8]>;
+
+    /// The ACPI information provided by the bootloader.
+    fn acpi_arg(&self) -> BootloaderAcpiArg;
+
+    /// The framebuffer information, if provided.
+    fn framebuffer_arg(&self) -> Option<BootloaderFramebufferArg>;
+
+    /// Builds the bootloader-specific memory regions, appends the common
+    /// regions, and resolves the overlaps.
+    fn memory_regions(
+        &self,
+        initramfs: Option<&'static [u8]>,
+        kernel_cmdline: Option<&'static str>,
+        framebuffer_arg: Option<BootloaderFramebufferArg>,
+    ) -> MemoryRegionArray;
+
+    /// Converts the bootloader-provided information into [`EarlyBootInfo`].
+    fn to_early_boot_info(&self) -> EarlyBootInfo {
+        let kernel_cmdline = self.kernel_commandline();
+        let initramfs = self.initramfs();
+        let framebuffer_arg = self.framebuffer_arg();
+
+        EarlyBootInfo {
+            bootloader_name: self.bootloader_name(),
+            kernel_cmdline: kernel_cmdline.unwrap_or(""),
+            initramfs,
+            acpi_arg: self.acpi_arg(),
+            framebuffer_arg,
+            memory_regions: self.memory_regions(initramfs, kernel_cmdline, framebuffer_arg),
+        }
+    }
+}
+
+/// Appends the memory regions common to all boot protocols and resolves the
+/// overlapping regions.
+pub(super) fn finish_memory_regions(
+    mut regions: MemoryRegionArray,
+    framebuffer_arg: Option<BootloaderFramebufferArg>,
+    initramfs: Option<&'static [u8]>,
+    kernel_cmdline: Option<&'static str>,
+) -> MemoryRegionArray {
+    if let Some(fb) = framebuffer_arg {
+        regions.push(MemoryRegion::framebuffer(&fb)).unwrap();
+    }
+
+    regions.push(MemoryRegion::kernel()).unwrap();
+
+    if let Some(initramfs) = initramfs {
+        regions.push(MemoryRegion::module(initramfs)).unwrap();
+    }
+
+    regions.push(smp::reclaimable_memory_region()).unwrap();
+
+    if let Some(kcmdline) = kernel_cmdline {
+        regions
+            .push(MemoryRegion::module(kcmdline.as_bytes()))
+            .unwrap();
+    }
+
+    regions.into_non_overlapping()
+}
