@@ -82,6 +82,10 @@ impl PerOpenFileOps for VirtioFsDir {
         Ok(())
     }
 
+    fn is_offset_aware(&self) -> bool {
+        true
+    }
+
     fn sync(&self, mode: SyncMode) -> Result<()> {
         self.inode.sync(mode)?;
 
@@ -97,9 +101,5 @@ impl PerOpenFileOps for VirtioFsDir {
         )?;
 
         Ok(())
-    }
-
-    fn is_offset_aware(&self) -> bool {
-        true
     }
 }
