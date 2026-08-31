@@ -311,12 +311,12 @@ const fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> usize
 /// A handle to a page table.
 /// A page table can track the lifetime of the mapped physical pages.
 #[derive(Debug)]
-pub struct PageTable<C: PageTableConfig> {
+pub(crate) struct PageTable<C: PageTableConfig> {
     root: PageTableNode<C>,
 }
 
 impl PageTable<UserPtConfig> {
-    pub fn activate(&self) {
+    pub(in crate::mm) fn activate(&self) {
         // SAFETY: The user mode page table is safe to activate since the kernel
         // mappings are shared.
         unsafe {
@@ -327,7 +327,7 @@ impl PageTable<UserPtConfig> {
 
 impl PageTable<KernelPtConfig> {
     /// Create a new kernel page table.
-    pub(crate) fn new_kernel_page_table() -> Self {
+    pub(in crate::mm) fn new_kernel_page_table() -> Self {
         let kpt = Self::empty();
 
         // Make shared the page tables mapped by the root table in the kernel space.
@@ -396,7 +396,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Create a new empty page table.
     ///
     /// Useful for the IOMMU page tables only.
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         PageTable {
             root: PageTableNode::<C>::alloc(C::NR_LEVELS),
         }
@@ -412,7 +412,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Obtaining the physical address of the root page table is safe, however, using it or
     /// providing it to the hardware will be unsafe since the page table node may be dropped,
     /// resulting in UAF.
-    pub fn root_paddr(&self) -> Paddr {
+    pub(crate) fn root_paddr(&self) -> Paddr {
         self.root.paddr()
     }
 
@@ -422,7 +422,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// cursors concurrently accessing the same virtual address range, just like what
     /// happens for the hardware MMU walk.
     #[cfg(ktest)]
-    pub fn page_walk(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
+    pub(in crate::mm) fn page_walk(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
         // SAFETY: The root node is a valid page table node so the address is valid.
         unsafe { page_walk::<C>(self.root_paddr(), vaddr) }
     }
@@ -431,7 +431,7 @@ impl<C: PageTableConfig> PageTable<C> {
     ///
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped.
-    pub fn cursor_mut<'rcu, G: AsAtomicModeGuard>(
+    pub(crate) fn cursor_mut<'rcu, G: AsAtomicModeGuard>(
         &'rcu self,
         guard: &'rcu G,
         va: &Range<Vaddr>,
@@ -444,7 +444,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped. The modification to the mapping by the cursor may also
     /// block or be overridden by the mapping of another cursor.
-    pub fn cursor<'rcu, G: AsAtomicModeGuard>(
+    pub(in crate::mm) fn cursor<'rcu, G: AsAtomicModeGuard>(
         &'rcu self,
         guard: &'rcu G,
         va: &Range<Vaddr>,
@@ -455,7 +455,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Create a new reference to the same page table.
     /// The caller must ensure that the kernel page table is not copied.
     /// This is only useful for IOMMU page tables. Think twice before using it in other cases.
-    pub unsafe fn shallow_copy(&self) -> Self {
+    pub(crate) unsafe fn shallow_copy(&self) -> Self {
         PageTable {
             root: self.root.clone(),
         }
@@ -586,7 +586,7 @@ pub(crate) unsafe trait PteTrait:
 /// # Safety
 ///
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
-pub unsafe fn load_pte<E: PteTrait>(ptr: *mut E, ordering: Ordering) -> E {
+unsafe fn load_pte<E: PteTrait>(ptr: *mut E, ordering: Ordering) -> E {
     // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
     let pte_raw = atomic.load(ordering);
@@ -598,7 +598,7 @@ pub unsafe fn load_pte<E: PteTrait>(ptr: *mut E, ordering: Ordering) -> E {
 /// # Safety
 ///
 /// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
-pub unsafe fn store_pte<E: PteTrait>(ptr: *mut E, new_val: E, ordering: Ordering) {
+unsafe fn store_pte<E: PteTrait>(ptr: *mut E, new_val: E, ordering: Ordering) {
     let new_raw = new_val.as_usize();
     // SAFETY: The safety is upheld by the caller.
     let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };

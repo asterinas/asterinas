@@ -18,7 +18,7 @@ sensitive_io_port! {
 const IRQ_OFFSET: u8 = 0x20;
 
 /// Initializes and disables the 8259 Programmable Interrupt Controller (PIC).
-pub fn init_and_disable() {
+pub(super) fn init_and_disable() {
     info!("Initializing PIC as disabled");
 
     set_mask(0xff, 0xff);

@@ -78,22 +78,26 @@ impl Bio {
     }
 
     /// Returns the type.
-    pub fn type_(&self) -> BioType {
+    #[expect(unused)]
+    fn type_(&self) -> BioType {
         self.metadata.type_()
     }
 
     /// Returns the range of target sectors on the device.
-    pub fn sid_range(&self) -> &Range<Sid> {
+    #[expect(unused)]
+    fn sid_range(&self) -> &Range<Sid> {
         self.metadata.sid_range()
     }
 
     /// Returns the slice to the memory segments currently owned by this handle.
-    pub fn segments(&self) -> &[BioSegment] {
+    #[expect(unused)]
+    fn segments(&self) -> &[BioSegment] {
         &self.segments
     }
 
     /// Returns the status.
-    pub fn status(&self) -> BioStatus {
+    #[expect(unused)]
+    fn status(&self) -> BioStatus {
         self.metadata.status()
     }
 
@@ -293,15 +297,15 @@ struct BioMetadata {
 }
 
 impl BioMetadata {
-    pub fn type_(&self) -> BioType {
+    fn type_(&self) -> BioType {
         self.type_
     }
 
-    pub fn sid_range(&self) -> &Range<Sid> {
+    fn sid_range(&self) -> &Range<Sid> {
         &self.sid_range
     }
 
-    pub fn status(&self) -> BioStatus {
+    fn status(&self) -> BioStatus {
         BioStatus::try_from(self.status.load(Ordering::Acquire)).unwrap()
     }
 }
@@ -554,7 +558,7 @@ impl BioSegmentPool {
     /// managed blocks is currently set to `POOL_DEFAULT_NBLOCKS`.
     ///
     /// The new pool will be allocated and mapped for later allocation.
-    pub fn new(direction: BioDirection) -> Self {
+    fn new(direction: BioDirection) -> Self {
         let total_blocks = POOL_DEFAULT_NBLOCKS;
         let pool = DmaStream::alloc_uninit(total_blocks, false).unwrap();
         let manager = SpinLock::new(PoolSlotManager {
@@ -585,7 +589,7 @@ impl BioSegmentPool {
     ///
     /// If the `offset_within_first_block` exceeds the block size, or the `len`
     /// exceeds the total length, this method will panic.
-    pub fn alloc(
+    fn alloc(
         &self,
         nblocks: usize,
         offset_within_first_block: usize,
@@ -689,7 +693,7 @@ fn target_pool(direction: BioDirection) -> Option<&'static Arc<BioSegmentPool>> 
 }
 
 /// Checks if the given offset is aligned to sector.
-pub fn is_sector_aligned(offset: usize) -> bool {
+pub(crate) fn is_sector_aligned(offset: usize) -> bool {
     offset.is_multiple_of(SECTOR_SIZE)
 }
 
@@ -722,11 +726,12 @@ pub fn is_sector_aligned(offset: usize) -> bool {
 /// We choose `u16` because it is reasonably large to represent any alignment value
 /// used in practice.
 #[derive(Clone, Debug)]
-pub struct AlignedUsize<const N: u16>(usize);
+struct AlignedUsize<const N: u16>(usize);
 
 impl<const N: u16> AlignedUsize<N> {
     /// Constructs a new instance of aligned integer if the given value is aligned.
-    pub fn new(val: usize) -> Option<Self> {
+    #[expect(unused)]
+    fn new(val: usize) -> Option<Self> {
         if val.is_multiple_of(N as usize) {
             Some(Self(val))
         } else {
@@ -735,7 +740,8 @@ impl<const N: u16> AlignedUsize<N> {
     }
 
     /// Returns the value.
-    pub fn value(&self) -> usize {
+    #[expect(unused)]
+    fn value(&self) -> usize {
         self.0
     }
 
@@ -745,12 +751,14 @@ impl<const N: u16> AlignedUsize<N> {
     /// This value is named ID because one common use case is using `Aligned` to express
     /// the byte offset of a sector, block, or page. In this case, the `id` method returns
     /// the ID of the corresponding sector, block, or page.
-    pub fn id(&self) -> usize {
+    #[expect(unused)]
+    fn id(&self) -> usize {
         self.value() / self.align()
     }
 
     /// Returns the alignment.
-    pub fn align(&self) -> usize {
+    #[expect(unused)]
+    fn align(&self) -> usize {
         N as usize
     }
 }

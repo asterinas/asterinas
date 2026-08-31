@@ -13,7 +13,7 @@ use ostd::mm::{
 ///
 /// Any type implements this trait should also implements `HasDaddr` trait,
 /// and provides the exact length of DMA area.
-pub trait DmaBuf: HasDaddr {
+pub(crate) trait DmaBuf: HasDaddr {
     /// The length of Dma area, in bytes
     fn len(&self) -> usize;
 }

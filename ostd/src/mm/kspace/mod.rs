@@ -70,11 +70,11 @@ const ADDR_WIDTH_SHIFT: usize = PagingConsts::ADDRESS_WIDTH - 39;
 
 /// Start of the kernel address space.
 #[cfg(not(target_arch = "loongarch64"))]
-pub const KERNEL_BASE_VADDR: Vaddr = 0xffff_ffc0_0000_0000 << ADDR_WIDTH_SHIFT;
+pub(super) const KERNEL_BASE_VADDR: Vaddr = 0xffff_ffc0_0000_0000 << ADDR_WIDTH_SHIFT;
 #[cfg(target_arch = "loongarch64")]
-pub const KERNEL_BASE_VADDR: Vaddr = 0x9000_0000_0000_0000;
+pub(super) const KERNEL_BASE_VADDR: Vaddr = 0x9000_0000_0000_0000;
 /// End of the kernel address space (non inclusive).
-pub const KERNEL_END_VADDR: Vaddr = 0xffff_ffff_ffff_0000;
+pub(super) const KERNEL_END_VADDR: Vaddr = 0xffff_ffff_ffff_0000;
 
 /// The maximum virtual address of user space (non inclusive).
 ///
@@ -98,7 +98,7 @@ pub const KERNEL_VADDR_RANGE: Range<Vaddr> = KERNEL_BASE_VADDR..KERNEL_END_VADDR
 /// FIXME: This offset should be randomly chosen by the loader or the
 /// boot compatibility layer. But we disabled it because OSTD
 /// doesn't support relocatable kernel yet.
-pub fn kernel_loaded_offset() -> usize {
+pub(crate) fn kernel_loaded_offset() -> usize {
     KERNEL_CODE_BASE_VADDR
 }
 
@@ -111,22 +111,23 @@ const KERNEL_CODE_BASE_VADDR: usize = 0x9000_0000_0000_0000;
 
 const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_fff0_8000_0000 << ADDR_WIDTH_SHIFT;
 const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_fff0_0000_0000 << ADDR_WIDTH_SHIFT;
-pub(in crate::mm) const FRAME_METADATA_RANGE: Range<Vaddr> =
+pub(super) const FRAME_METADATA_RANGE: Range<Vaddr> =
     FRAME_METADATA_BASE_VADDR..FRAME_METADATA_CAP_VADDR;
 
 const VMALLOC_BASE_VADDR: Vaddr = 0xffff_ffe0_0000_0000 << ADDR_WIDTH_SHIFT;
-pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
+pub(super) const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
 
 /// The base address of the linear mapping of all physical
 /// memory in the kernel address space.
 #[cfg(not(target_arch = "loongarch64"))]
-pub const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0xffff_ffc0_0000_0000 << ADDR_WIDTH_SHIFT;
+pub(crate) const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0xffff_ffc0_0000_0000 << ADDR_WIDTH_SHIFT;
 #[cfg(target_arch = "loongarch64")]
-pub const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0x9000_0000_0000_0000;
-pub const LINEAR_MAPPING_VADDR_RANGE: Range<Vaddr> = LINEAR_MAPPING_BASE_VADDR..VMALLOC_BASE_VADDR;
+pub(crate) const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0x9000_0000_0000_0000;
+pub(crate) const LINEAR_MAPPING_VADDR_RANGE: Range<Vaddr> =
+    LINEAR_MAPPING_BASE_VADDR..VMALLOC_BASE_VADDR;
 
 /// Convert physical address to virtual address using offset, only available inside `ostd`
-pub fn paddr_to_vaddr(pa: Paddr) -> usize {
+pub(crate) fn paddr_to_vaddr(pa: Paddr) -> usize {
     debug_assert!(pa < VMALLOC_BASE_VADDR - LINEAR_MAPPING_BASE_VADDR);
     pa + LINEAR_MAPPING_BASE_VADDR
 }
@@ -221,7 +222,7 @@ pub(crate) enum MappedItemRef<'a> {
 ///
 /// This function should be called before:
 ///  - any initializer that modifies the kernel page table.
-pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
+pub(crate) fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     info!("Initializing the kernel page table");
 
     // Start to initialize the kernel page table.
@@ -303,7 +304,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
 /// # Safety
 ///
 /// This function must only be called once per CPU.
-pub unsafe fn activate_kernel_page_table() {
+pub(crate) unsafe fn activate_kernel_page_table() {
     let kpt = KERNEL_PAGE_TABLE
         .get()
         .expect("The kernel page table is not initialized yet");

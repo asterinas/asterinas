@@ -8,7 +8,7 @@ use ostd::{io::IoMem, warn};
 #[expect(clippy::enum_variant_names)]
 #[repr(u8)]
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum VirtioPciCpabilityType {
+pub(super) enum VirtioPciCpabilityType {
     CommonCfg = 1,
     NotifyCfg = 2,
     IsrCfg = 3,
@@ -17,7 +17,7 @@ pub enum VirtioPciCpabilityType {
 }
 
 #[derive(Clone, Debug)]
-pub struct VirtioPciCapabilityData {
+pub(super) struct VirtioPciCapabilityData {
     cfg_type: VirtioPciCpabilityType,
     offset: u32,
     length: u32,
@@ -26,23 +26,23 @@ pub struct VirtioPciCapabilityData {
 }
 
 impl VirtioPciCapabilityData {
-    pub fn memory_bar(&self) -> Option<&IoMem> {
+    pub(super) fn memory_bar(&self) -> Option<&IoMem> {
         self.memory_bar.as_ref()
     }
 
-    pub fn offset(&self) -> u32 {
+    pub(super) fn offset(&self) -> u32 {
         self.offset
     }
 
-    pub fn length(&self) -> u32 {
+    pub(super) fn length(&self) -> u32 {
         self.length
     }
 
-    pub fn typ(&self) -> VirtioPciCpabilityType {
+    pub(super) fn typ(&self) -> VirtioPciCpabilityType {
         self.cfg_type.clone()
     }
 
-    pub fn option_value(&self) -> Option<u32> {
+    pub(super) fn option_value(&self) -> Option<u32> {
         self.option
     }
 

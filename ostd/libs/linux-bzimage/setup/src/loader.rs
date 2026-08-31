@@ -3,7 +3,7 @@
 use xmas_elf::program::{ProgramHeader, SegmentData};
 
 /// Load the kernel ELF payload to memory.
-pub fn load_elf(file: &[u8]) {
+pub(crate) fn load_elf(file: &[u8]) {
     let elf = xmas_elf::ElfFile::new(file).unwrap();
 
     for ph in elf.program_iter() {

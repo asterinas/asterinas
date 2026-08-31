@@ -39,9 +39,9 @@ use crate::{
 };
 
 /// Logical Block Address.
-pub type Lba = BlockId;
+pub(super) type Lba = BlockId;
 /// Host Block Address.
-pub type Hba = BlockId;
+pub(super) type Hba = BlockId;
 
 /// MlsDisk.
 pub struct MlsDisk<D: BlockSet> {
@@ -350,7 +350,7 @@ const DATA_BUF_CAP: usize = 1024;
 impl<D: BlockSet + 'static> DiskInner<D> {
     /// Read a specified number of blocks at a logical block address on the device.
     /// The block contents will be read into a single contiguous buffer.
-    pub fn read(&self, lba: Lba, buf: BufMut) -> Result<()> {
+    pub(crate) fn read(&self, lba: Lba, buf: BufMut) -> Result<()> {
         let nblocks = buf.nblocks();
 
         let res = if nblocks == 1 {
@@ -371,7 +371,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
 
     /// Read multiple blocks at a logical block address on the device.
     /// The block contents will be read into several scattered buffers.
-    pub fn readv<'a>(&self, lba: Lba, bufs: &'a mut [BufMut<'a>]) -> Result<()> {
+    pub(crate) fn readv<'a>(&self, lba: Lba, bufs: &'a mut [BufMut<'a>]) -> Result<()> {
         let res = self.read_multi_blocks(lba, bufs);
 
         // Allow empty read
@@ -467,7 +467,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
 
     /// Write a specified number of blocks at a logical block address on the device.
     /// The block contents reside in a single contiguous buffer.
-    pub fn write(&self, mut lba: Lba, buf: BufRef) -> Result<()> {
+    pub(crate) fn write(&self, mut lba: Lba, buf: BufRef) -> Result<()> {
         // Write block contents to `DataBuf` directly
         for block_buf in buf.iter() {
             let buf_at_capacity = self.data_buf.put(RecordKey { lba }, block_buf);
@@ -484,7 +484,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
 
     /// Write multiple blocks at a logical block address on the device.
     /// The block contents reside in several scattered buffers.
-    pub fn writev(&self, mut lba: Lba, bufs: &[BufRef]) -> Result<()> {
+    pub(crate) fn writev(&self, mut lba: Lba, bufs: &[BufRef]) -> Result<()> {
         for buf in bufs {
             self.write(lba, *buf)?;
             lba += buf.nblocks();
@@ -551,7 +551,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
     }
 
     /// Sync all cached data in the device to the storage medium for durability.
-    pub fn sync(&self) -> Result<()> {
+    pub(crate) fn sync(&self) -> Result<()> {
         self.flush_data_buf()?;
         debug_assert!(self.data_buf.is_empty());
 
@@ -568,7 +568,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
 
     /// Handle one block I/O request. Mark the request completed when finished,
     /// return any error that occurs.
-    pub fn handle_bio_req(&self, req: &BioReq) -> BioResp {
+    pub(crate) fn handle_bio_req(&self, req: &BioReq) -> BioResp {
         let res = match req.type_() {
             BioType::Read => self.do_read(req),
             BioType::Write => self.do_write(req),
@@ -647,7 +647,7 @@ struct BufMutVec<'a> {
 }
 
 impl<'a> BufMutVec<'a> {
-    pub fn from_bufs(bufs: &'a mut [BufMut<'a>]) -> Self {
+    pub(crate) fn from_bufs(bufs: &'a mut [BufMut<'a>]) -> Self {
         debug_assert!(!bufs.is_empty());
         let nblocks = bufs
             .iter()
@@ -656,11 +656,11 @@ impl<'a> BufMutVec<'a> {
         Self { bufs, nblocks }
     }
 
-    pub fn nblocks(&self) -> usize {
+    pub(crate) fn nblocks(&self) -> usize {
         self.nblocks
     }
 
-    pub fn nth_buf_mut_slice(&mut self, mut nth: usize) -> &mut [u8] {
+    pub(crate) fn nth_buf_mut_slice(&mut self, mut nth: usize) -> &mut [u8] {
         debug_assert!(nth < self.nblocks);
         for buf in self.bufs.iter_mut() {
             let nblocks = buf.nblocks();

@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use crate::SystemTime;
 
 /// Generic interface for RTC drivers.
-pub trait Driver {
+pub(crate) trait Driver {
     /// Creates a RTC driver.
     /// Returns [`Some<Self>`] on success, [`None`] otherwise (e.g. platform unsupported).
     fn try_new() -> Option<Self>
@@ -18,7 +18,7 @@ pub trait Driver {
 
 macro_rules! declare_rtc_drivers {
     ( $( #[cfg $cfg:tt ] $module:ident :: $name:ident),* $(,)? ) => {
-        pub fn init_rtc_driver() -> Arc<dyn Driver + Send + Sync> {
+        pub(super) fn init_rtc_driver() -> Arc<dyn Driver + Send + Sync> {
             // Iterate all possible drivers and pick one that can be initialized.
             $(
                 #[cfg $cfg]

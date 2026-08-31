@@ -70,7 +70,7 @@ mod sstable;
 mod tx_lsm_tree;
 mod wal;
 
-pub use self::{
+pub(crate) use self::{
     range_query_ctx::RangeQueryCtx,
     tx_lsm_tree::{
         AsKV, LsmLevel, RecordKey, RecordValue, SyncId, SyncIdStore, TxEventListener,
