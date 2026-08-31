@@ -8,15 +8,18 @@
 )]
 
 pub use clock_gettime::ClockId;
-use ostd::{arch::cpu::context::UserContext, task::seccomp::SeccompMode};
+use ostd::arch::cpu::context::UserContext;
 pub use timer_create::create_timer;
 
 use crate::{
-    context::Context,
+    cbpf::SeccompMode,
     cpu::LinuxAbi,
     prelude::*,
     process::signal::constants::SIGKILL,
-    syscall::arch::{SYS_EXIT, SYS_READ, SYS_RT_SIGRETURN, SYS_WRITE},
+    syscall::{
+        arch::{SYS_EXIT, SYS_READ, SYS_RT_SIGRETURN, SYS_WRITE},
+        seccomp::SeccompFilterAction,
+    },
 };
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
@@ -379,23 +382,40 @@ impl SyscallArgument {
 }
 
 pub fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
-    let syscall_frame = SyscallArgument::new_from_context(user_ctx);
-    let seccomp_strict_whitelist: [u64; 4] = [SYS_READ, SYS_WRITE, SYS_RT_SIGRETURN, SYS_EXIT];
-    let seccomp = ctx.task.seccomp.lock();
+    let syscall_frame = &SyscallArgument::new_from_context(user_ctx);
 
-    match seccomp.mode {
-        SeccompMode::SECCOMP_MODE_DISABLED => (),
-        SeccompMode::SECCOMP_MODE_STRICT => {
-            if !seccomp_strict_whitelist.contains(&syscall_frame.syscall_number) {
+    match ctx.posix_thread.seccomp_mode() {
+        SeccompMode::Disabled => (),
+        SeccompMode::Strict => {
+            if ![SYS_READ, SYS_WRITE, SYS_RT_SIGRETURN, SYS_EXIT]
+                .contains(&syscall_frame.syscall_number)
+            {
                 ctx.process.stop(SIGKILL);
                 return;
             }
         }
-        SeccompMode::SECCOMP_MODE_FILTER => {
-            error!(
-                "SeccompMode::SECCOMP_MODE_FILTER is not implemented yet! Syscall {:?} will execute normally",
-                syscall_frame.syscall_number
-            )
+        SeccompMode::Filter => {
+            match seccomp::execute_seccomp_filter(ctx, user_ctx, syscall_frame) {
+                Ok(SeccompFilterAction::Allow) => (),
+                Ok(SeccompFilterAction::Errno(errno)) => {
+                    user_ctx.set_syscall_ret((-(errno as i32)) as usize);
+                    return;
+                }
+                Ok(SeccompFilterAction::Kill) => {
+                    ctx.process.stop(SIGKILL);
+                    return;
+                }
+                Ok(SeccompFilterAction::Trace(_)) => {
+                    error!("Seccomp TRACE action is not supported yet");
+                    ctx.process.stop(SIGKILL);
+                    return;
+                }
+                Err(err) => {
+                    error!("Invalid errno received from seccomp: {:?}", err);
+                    ctx.process.stop(SIGKILL);
+                    return;
+                }
+            }
         }
     }
 

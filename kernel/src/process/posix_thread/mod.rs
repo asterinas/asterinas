@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
 use ostd::{
-    sync::{RoArc, RwMutexReadGuard, Waker},
+    sync::{Rcu, RoArc, RwMutexReadGuard, Waker},
     task::Task,
 };
 use spin::Once;
@@ -14,6 +14,7 @@ use super::{
     signal::{sig_mask::AtomicSigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal},
 };
 use crate::{
+    cbpf::{SeccompFilterLeaf, SeccompMode, SeccompState},
     events::IoEvents,
     fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
@@ -107,6 +108,9 @@ pub struct PosixThread {
 
     /// The personality value for this thread.
     personality: AtomicU32,
+
+    /// The seccomp policy state of this thread. Always present; starts as [`SeccompMode::Disabled`].
+    seccomp: Rcu<Arc<SeccompState>>,
 }
 
 impl PosixThread {
@@ -342,6 +346,83 @@ impl PosixThread {
     /// Returns the exit code of this thread.
     pub fn exit_code(&self) -> ExitCode {
         self.exit_code.load(Ordering::Relaxed)
+    }
+
+    /// Returns the current seccomp mode of this thread.
+    ///
+    /// Reads through the RCU cell and returns the mode by copy without
+    /// cloning any [`Arc`]. Preemption is disabled only for the brief
+    /// pointer load. Use this on the syscall hot path where only the mode
+    /// is needed.
+    pub fn seccomp_mode(&self) -> SeccompMode {
+        self.seccomp.read().get().mode
+    }
+
+    /// Returns the current leaf BPF filter of this thread, if installed.
+    ///
+    /// Clones the [`Arc`] out of the RCU cell and releases the read guard
+    /// immediately, so preemption is re-enabled before this function returns.
+    /// The caller can then walk the full filter chain via
+    /// [`SeccompFilterLeaf::prev`] without holding any lock or disabling preemption.
+    pub fn seccomp_filter(&self) -> Option<Arc<SeccompFilterLeaf>> {
+        self.seccomp.read().get().leaf_filter.clone()
+    }
+
+    /// Returns a cloned reference to the entire seccomp state.
+    ///
+    /// Used when inheriting the seccomp state across thread creation or fork.
+    pub fn seccomp_state(&self) -> Arc<SeccompState> {
+        self.seccomp.read().get().clone()
+    }
+
+    /// Sets the seccomp mode for this thread.
+    ///
+    /// Seccomp mode can be changed only if it is [`Disabled`].
+    ///
+    /// Uses the RCU clone-and-replace pattern: the current [`SeccompState`] is
+    /// cloned, its `mode` field is updated, and the new value is swapped in
+    /// atomically via compare-and-exchange. The loop retries if another writer
+    /// races between the read and the exchange.
+    pub fn set_seccomp_mode(&self, mode: SeccompMode) -> Result<i64> {
+        loop {
+            let guard = self.seccomp.read();
+            let current_state = guard.get();
+            debug_assert!(
+                current_state.mode != SeccompMode::Strict,
+                "Should be unreachable from Strict, as it disables seccomp syscall"
+            );
+
+            match (current_state.mode, mode) {
+                (cur, target) if cur == target => return Ok(0),
+                (SeccompMode::Disabled, _) => (),
+                _ => return Err(Error::new(Errno::EINVAL)),
+            };
+
+            let mut new_state = (**current_state).clone();
+            new_state.mode = mode;
+            match guard.compare_exchange(Arc::new(new_state)) {
+                Ok(()) => return Ok(0),
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Sets the leaf BPF filter program for this thread.
+    ///
+    /// Uses the RCU clone-and-replace pattern: the current [`SeccompState`] is
+    /// cloned, its `leaf_filter` field is updated, and the new value is swapped
+    /// in atomically via compare-and-exchange. The loop retries if another
+    /// writer races between the read and the exchange.
+    pub fn set_seccomp_filter(&self, filter: Arc<SeccompFilterLeaf>) {
+        loop {
+            let guard = self.seccomp.read();
+            let mut new_state = (**guard.get()).clone();
+            new_state.leaf_filter = Some(filter.clone());
+            match guard.compare_exchange(Arc::new(new_state)) {
+                Ok(()) => return,
+                Err(_) => continue,
+            }
+        }
     }
 }
 

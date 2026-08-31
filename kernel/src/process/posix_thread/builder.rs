@@ -7,13 +7,14 @@ use ostd::arch::cpu::context::{FsBase, GsBase};
 use ostd::{
     arch::cpu::context::{FpuContext, UserContext},
     cpu::CpuSet,
-    sync::RwArc,
+    sync::{Rcu, RwArc},
     task::Task,
 };
 use spin::Once;
 
 use super::{PosixThread, ThreadLocal};
 use crate::{
+    cbpf::SeccompState,
     fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
@@ -49,6 +50,7 @@ pub struct PosixThreadBuilder {
     user_ns: Option<Arc<UserNamespace>>,
     ns_proxy: Option<Arc<NsProxy>>,
     default_timer_slack_ns: u64,
+    seccomp: Option<Arc<SeccompState>>,
 }
 
 impl PosixThreadBuilder {
@@ -77,6 +79,7 @@ impl PosixThreadBuilder {
             user_ns: None,
             ns_proxy: None,
             default_timer_slack_ns: 50_000, // 50 usec default slack
+            seccomp: None,
         }
     }
 
@@ -148,6 +151,11 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn seccomp(mut self, seccomp: Arc<SeccompState>) -> Self {
+        self.seccomp = Some(seccomp);
+        self
+    }
+
     pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
@@ -167,6 +175,7 @@ impl PosixThreadBuilder {
             user_ns,
             ns_proxy,
             default_timer_slack_ns,
+            seccomp,
         } = self;
 
         let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new()));
@@ -177,6 +186,8 @@ impl PosixThreadBuilder {
 
         let fs = fs
             .unwrap_or_else(|| Arc::new(ThreadFsInfo::new(ns_proxy.mnt_ns().new_path_resolver())));
+
+        let seccomp = seccomp.unwrap_or_else(|| Arc::new(SeccompState::new()));
 
         Arc::new_cyclic(|weak_task| {
             let posix_thread = {
@@ -206,6 +217,7 @@ impl PosixThreadBuilder {
                     tracees: Once::new(),
                     exit_code: AtomicU32::new(0),
                     personality: AtomicU32::new(0),
+                    seccomp: Rcu::new(seccomp),
                 }
             };
 

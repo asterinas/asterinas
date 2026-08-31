@@ -1,22 +1,21 @@
-use alloc::vec::Vec;
+use ostd::arch::cpu::context::UserContext;
 
-use cbpf_opcodes::ClassicBpfOpcode::{self, *};
-use ostd::task::{
-    Task,
-    seccomp::{
-        FilterBlock, RawFilterBlock, SeccompFilterBlock, SeccompFilterProg, SeccompMode, SeccompOp,
-        UserspaceFilterMeta,
-        cbpf_opcodes::{self, AncOps, BPF_MAXINS, BPF_MEMWORDS, SKF_AD_OFF, SeccompOpcode},
+use super::{SyscallArgument, SyscallReturn};
+use crate::{
+    cbpf::{
+        ClassicBPFilter, NetFilterProg, RawFilterBlock, SeccompFilterLeaf, SeccompFilterProg,
+        SeccompMode::{self},
+        SeccompOp::{self},
+        SeccompRet, UnverifiedFilterProg,
     },
+    prelude::*,
+    process::posix_thread::PosixThread,
 };
-
-use super::SyscallReturn;
-use crate::prelude::*;
 
 pub fn sys_seccomp(op: u64, flags: u32, uargs: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let op = match op {
-        0 => SeccompOp::SECCOMP_SET_MODE_STRICT,
-        1 => SeccompOp::SECCOMP_SET_MODE_FILTER,
+        0 => SeccompOp::SetModeStrict,
+        1 => SeccompOp::SetModeFilter,
         _ => Err(Error::new(Errno::EINVAL))?,
     };
 
@@ -24,52 +23,49 @@ pub fn sys_seccomp(op: u64, flags: u32, uargs: Vaddr, ctx: &Context) -> Result<S
 }
 
 fn do_seccomp(op: SeccompOp, flags: u32, uargs: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    // what if the process already has seccomp enabled? we'll need to manage a tree structure holding multiple filters for threads and their forks
-    // I believe we don't need to check if user changes from strict mode to filter or vice versa, because:
-    // 1. strict mode prevent seccomp syscall from being executed
-    // 2. filter to strict should be allowed, but we will need to drop the Arc reference to so there's no memory leak
-
     let res: i64 = match op {
-        SeccompOp::SECCOMP_SET_MODE_STRICT => {
+        SeccompOp::SetModeStrict => {
             if flags != 0 || uargs != 0 {
                 return Err(Error::new(Errno::EINVAL));
             }
             seccomp_set_mode_strict(ctx)
         }
-        SeccompOp::SECCOMP_SET_MODE_FILTER => seccomp_set_mode_filter(flags, uargs, ctx),
-    }
-    .map_err(|err: Error| match err.error() {
-        _ => err,
-    })?;
+        SeccompOp::SetModeFilter => seccomp_set_mode_filter(flags, uargs, ctx),
+    }?;
 
     Ok(SyscallReturn::Return(res as _))
 }
 
 fn seccomp_set_mode_strict(ctx: &Context) -> Result<i64> {
     // Linux does mitigations here
-    seccomp_assign_mode(ctx.task, SeccompMode::SECCOMP_MODE_STRICT, 0)
+    // filter to strict should be allowed, but we will need to drop the Arc reference so there's no memory leak
+
+    seccomp_assign_mode(ctx.posix_thread, SeccompMode::Strict, 0)
 }
 
-fn seccomp_assign_mode(current: &Task, mode: SeccompMode, _flags: u64) -> Result<i64> {
-    // Linux does mitigations here
-    current.seccomp.lock().mode = mode;
-    Ok(0)
+fn seccomp_assign_mode(current: &PosixThread, mode: SeccompMode, _flags: u64) -> Result<i64> {
+    // Linux does additional mitigations here (signal handling, no_new_privs, etc.).
+    current.set_seccomp_mode(mode)
 }
 
-// currently can add only the first filter to a thread
-// has not been tested as of yet!
-fn seccomp_set_mode_filter(flags: u32, uargs: Vaddr, ctx: &Context) -> Result<i64> {
+// Pointer to the filter program in user space.
+#[derive(Clone, Copy, Pod)]
+struct UserspaceFilterMeta {
+    pub user_buf_ptr: Vaddr,
+    pub user_buf_len: usize,
+}
+
+/// TODO check flags
+fn seccomp_set_mode_filter(_flags: u32, uargs: Vaddr, ctx: &Context) -> Result<i64> {
     let filter_meta: UserspaceFilterMeta = ctx
         .user_space()
         .vmar()
         .vm_space()
-        .reader(uargs, size_of::<UserspaceFilterMeta>())
-        .unwrap()  // TODO remove unwrap()
-        .read_val()
-        .unwrap(); // TODO remove unwrap()
+        .reader(uargs, size_of::<UserspaceFilterMeta>())?
+        .read_val()?;
 
     let filter_len = filter_meta.user_buf_len;
-    let mut insns: Vec<FilterBlock> = Vec::with_capacity(filter_len);
+    let mut insns = UnverifiedFilterProg::new(filter_len);
 
     for i in 0..filter_len {
         let raw_instruction = ctx
@@ -79,166 +75,71 @@ fn seccomp_set_mode_filter(flags: u32, uargs: Vaddr, ctx: &Context) -> Result<i6
             .reader(
                 filter_meta.user_buf_ptr + size_of::<RawFilterBlock>() * i,
                 size_of::<RawFilterBlock>(),
-            )
-            .unwrap()  // TODO remove unwrap()
-            .read_val::<RawFilterBlock>()
-            .unwrap(); // TODO remove unwrap()
+            )?
+            .read_val::<RawFilterBlock>()?;
 
-        if let Ok(instruction) = raw_instruction.try_into() {
-            insns[i] = instruction;
-        } else {
-            return Err(Error::new(Errno::EINVAL));
-        }
+        insns.push(raw_instruction);
     }
 
-    verify_cbpf(&insns)?;
+    let netfilter = NetFilterProg::from_unverified(insns)?;
+    let seccompfilter = SeccompFilterProg::from_netfilter(netfilter)?;
 
-    let insns = insns
-        .into_iter()
-        .map(verify_and_map_seccomp)
-        .collect::<Option<Vec<_>>>()
-        .ok_or(Error::new(Errno::EINVAL))?;
+    let seccomp_state = ctx.posix_thread.seccomp_state();
 
-    ctx.task.seccomp.lock().leaf_filter = Some(Arc::new(SeccompFilterProg {
-        ins: insns.into_boxed_slice(),
-        prev: None,
-    }));
-    seccomp_assign_mode(ctx.task, SeccompMode::SECCOMP_MODE_FILTER, 0);
-    Err(Error::new(Errno::EINVAL))
+    ctx.posix_thread
+        .set_seccomp_filter(Arc::new(SeccompFilterLeaf {
+            ins: seccompfilter,
+            prev: seccomp_state.leaf_filter.clone(),
+        }));
+
+    if seccomp_state.mode != SeccompMode::Filter {
+        return seccomp_assign_mode(ctx.posix_thread, SeccompMode::Filter, 0);
+    }
+
+    Ok(0)
 }
 
-// https://elixir.bootlin.com/linux/v6.18/source/net/core/filter.c#L1081
-fn verify_cbpf(insns: &Vec<FilterBlock>) -> Result<()> {
-    let len = insns.len();
-
-    // https://elixir.bootlin.com/linux/v6.18/source/net/core/filter.c#L1056
-    if len == 0 || len > BPF_MAXINS {
-        return Err(Error::new(Errno::EINVAL));
-    }
-
-    for (i, FilterBlock { code, jt, jf, k }) in insns.iter().enumerate() {
-        let valid: bool = match code {
-            ALU_DIV_K | ALU_MOD_K => {
-                if *k == 0 {
-                    false
-                } else {
-                    true
-                }
-            }
-            ALU_LSH_K | ALU_RSH_K => {
-                if *k >= 32u32 {
-                    false
-                } else {
-                    true
-                }
-            }
-            LD_MEM | LDX_MEM | ST | STX => {
-                if *k >= BPF_MEMWORDS {
-                    false
-                } else {
-                    true
-                }
-            }
-            JMP_JA => {
-                if *k >= (len - i - 1) as u32 {
-                    false
-                } else {
-                    true
-                }
-            }
-            JMP_JEQ_K | JMP_JEQ_X | JMP_JGE_K | JMP_JGE_X | JMP_JGT_K | JMP_JGT_X | JMP_JSET_K
-            | JMP_JSET_X => {
-                if i + (*jt as usize) + 1 >= len || i + (*jf as usize) + 1 >= len {
-                    false
-                } else {
-                    true
-                }
-            }
-            LD_W_ABS | LD_H_ABS | LD_B_ABS => {
-                *k < SKF_AD_OFF || AncOps::try_from(k - SKF_AD_OFF).is_ok()
-            }
-            _ => true,
-        };
-
-        if !valid {
-            return Err(Error::new(Errno::EINVAL));
-        }
-    }
-
-    match ClassicBpfOpcode::from(insns[len - 1].code) {
-        ClassicBpfOpcode::RET_K | ClassicBpfOpcode::RET_A => return check_load_and_stores(insns),
-        _ => (),
-    }
-
-    Err(Error::new(Errno::EINVAL))
+pub(super) enum SeccompFilterAction {
+    Allow,
+    Errno(Errno),
+    Kill,
+    #[expect(dead_code)] // TODO
+    Trace(u32),
 }
 
-// does it (and Linux) check for infinite loops? if not, does Linux allow infinite loops in cbpf?
-// if that's the case, should our verifier be more strict?
-// https://elixir.bootlin.com/linux/v6.18/source/kernel/seccomp.c#L278
-fn check_load_and_stores(filter: &Vec<FilterBlock>) -> Result<()> {
-    let mut memvalid: u16 = 0;
-    let mut masks = vec![0xffffu16; filter.len()];
+pub(super) fn execute_seccomp_filter(
+    ctx: &Context,
+    user_ctx: &UserContext,
+    syscall_frame: &SyscallArgument,
+) -> Result<SeccompFilterAction> {
+    let mut current = ctx.posix_thread.seccomp_filter();
 
-    for (i, ins) in filter.iter().enumerate() {
-        match ins.code {
-            ST | STX => memvalid |= 1 << ins.k,
-            LD_MEM | LDX_MEM => {
-                if (memvalid & (1 << ins.k)) == 0 {
-                    return Err(Error::new(Errno::EINVAL));
-                }
-            }
-            JMP_JA => {
-                masks[i + 1 + (ins.k as usize)] &= memvalid;
-                memvalid = 0xff;
-            }
-            JMP_JEQ_K | JMP_JEQ_X | JMP_JGE_K | JMP_JGE_X | JMP_JGT_K | JMP_JGT_X | JMP_JSET_K
-            | JMP_JSET_X => {
-                masks[i + 1 + (ins.jt as usize)] &= memvalid;
-                masks[i + 1 + (ins.jf as usize)] &= memvalid;
-                memvalid = 0xff;
-            }
-            _ => (),
-        }
+    // Walk leaf → root, keeping the signed minimum across all filters.
+    // A lower (more negative when cast to i32) return value wins.
+    let mut result = SeccompRet::Allow as u32;
+    while let Some(leaf) = current {
+        let n = leaf
+            .ins
+            .execute(user_ctx, syscall_frame.syscall_number, &syscall_frame.args)?;
+        result = (result as i32).min(n as i32) as u32;
+        current = leaf.prev.clone();
     }
-    Ok(())
+
+    parse_seccomp_return(result)
 }
 
-// https://elixir.bootlin.com/linux/v6.18/source/kernel/seccomp.c#L278
-fn verify_and_map_seccomp(ins: FilterBlock) -> Option<SeccompFilterBlock> {
-    use ClassicBpfOpcode::*;
-    let code: SeccompOpcode;
-    let mut k = ins.k;
+fn parse_seccomp_return(return_value: u32) -> Result<SeccompFilterAction> {
+    use crate::cbpf::SECCOMP_RET_MASK;
 
-    match ins.code {
-        LD_W_ABS => {
-            if k >= 64 /*size_of::<seccomp_input_data>() TODO*/ || k & 3 != 0 {
-                return None;
-            }
-            code = SeccompOpcode::LDX_W_ABS; // TODO allowed only in seccomp, reflect in data model
+    match (return_value & SECCOMP_RET_MASK).try_into()? {
+        SeccompRet::Allow => Ok(SeccompFilterAction::Allow),
+        SeccompRet::Errno => {
+            let errno = (return_value & 0xffff) as i32;
+            let errno = Errno::try_from(errno).map_err(|_| Error::new(Errno::EINVAL))?;
+            Ok(SeccompFilterAction::Errno(errno))
         }
-        LD_W_LEN => {
-            code = SeccompOpcode::cBPF(LD_IMM);
-            k = 64 /*size_of::<seccomp_input_data>()*/;
-        }
-        LDX_W_LEN => {
-            code = SeccompOpcode::cBPF(LDX_IMM);
-            k = 64 /*size_of::<seccomp_input_data>()*/;
-        }
-        RET_K | RET_A | ALU_ADD_K | ALU_ADD_X | ALU_SUB_K | ALU_SUB_X | ALU_MUL_K | ALU_MUL_X
-        | ALU_DIV_K | ALU_DIV_X | ALU_AND_K | ALU_AND_X | ALU_OR_K | ALU_OR_X | ALU_XOR_K
-        | ALU_XOR_X | ALU_LSH_K | ALU_LSH_X | ALU_RSH_K | ALU_RSH_X | ALU_NEG | LD_IMM
-        | LDX_IMM | MISC_TAX | MISC_TXA | LD_MEM | LDX_MEM | ST | STX | JMP_JA | JMP_JEQ_K
-        | JMP_JEQ_X | JMP_JGE_K | JMP_JGE_X | JMP_JGT_K | JMP_JGT_X | JMP_JSET_K | JMP_JSET_X => {
-            code = SeccompOpcode::cBPF(ins.code)
-        }
-        _ => return None,
+        SeccompRet::Kill => Ok(SeccompFilterAction::Kill),
+        SeccompRet::Trace => Ok(SeccompFilterAction::Trace(return_value & 0xffff)),
+        SeccompRet::Trap => Ok(SeccompFilterAction::Kill),
     }
-
-    Some(SeccompFilterBlock {
-        code,
-        jt: ins.jt,
-        jf: ins.jf,
-        k,
-    })
 }

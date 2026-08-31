@@ -7,7 +7,6 @@ mod kernel_stack;
 mod preempt;
 mod processor;
 pub mod scheduler;
-pub mod seccomp;
 mod utils;
 
 use core::{
@@ -21,7 +20,6 @@ use core::{
 
 use kernel_stack::KernelStack;
 use processor::current_task;
-use seccomp::{SeccompMode, SeccompTask};
 use spin::Once;
 use utils::ForceSync;
 
@@ -29,11 +27,9 @@ pub use self::{
     preempt::{DisabledPreemptGuard, disable_preempt, halt_cpu},
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
-
 use crate::{
     arch::task::TaskContext,
     irq::{DisabledLocalIrqGuard, InterruptLevel},
-    sync::SpinLock
     prelude::*,
 };
 
@@ -92,7 +88,6 @@ pub struct Task {
     switched_to_cpu: AtomicBool,
 
     schedule_info: TaskScheduleInfo,
-    pub seccomp: SpinLock<SeccompTask>,
 }
 
 impl Task {
@@ -249,10 +244,6 @@ impl TaskOptions {
             schedule_info: TaskScheduleInfo {
                 cpu: AtomicCpuId::default(),
             },
-            seccomp: SpinLock::new(SeccompTask {
-                mode: SeccompMode::SECCOMP_MODE_DISABLED,
-                leaf_filter: None,
-            }),
         };
 
         Ok(new_task)
