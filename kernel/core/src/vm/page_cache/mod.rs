@@ -338,6 +338,15 @@ impl PageCache {
     pub(crate) fn fill_zeros(&self, range: Range<usize>) -> Result<()> {
         self.0.fill_zeros(range)
     }
+
+    /// Tries to read from the page cache at `offset` into `writer` without blocking.
+    ///
+    /// Returns the number of bytes read. If the read would need backend I/O or
+    /// page initialization, the bytes read so far are returned as a short read,
+    /// or `EAGAIN` if nothing was read.
+    pub(crate) fn try_read(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.0.try_read(offset, writer)
+    }
 }
 
 impl VmIo for PageCache {
