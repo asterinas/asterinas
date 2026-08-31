@@ -5,7 +5,6 @@
 use alloc::boxed::ThinBox;
 use core::time::Duration;
 
-use aster_rights::ReadOp;
 use device_id::DeviceId;
 use ostd::task::{CurrentTask, Task};
 use spin::Once;
@@ -23,7 +22,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        Credentials, Gid, Uid,
+        Gid, Uid,
         credentials::capabilities::CapSet,
         posix_thread::{AsPosixThread, PosixThread},
     },
