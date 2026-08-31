@@ -49,7 +49,7 @@ fn impl_try_from(
     }
 
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
-    let fn_body = fn_body_tokens(VALUE_NAME, &data_enum, ident.clone());
+    let fn_body = fn_body_tokens(VALUE_NAME, &data_enum, ident.clone(), &valid_repr);
     let param = format_ident!("{}", VALUE_NAME);
     quote!(
         #[automatically_derived]
@@ -62,21 +62,29 @@ fn impl_try_from(
     )
 }
 
-fn fn_body_tokens(value_name: &str, data_enum: &DataEnum, ident: Ident) -> TokenStream {
+fn fn_body_tokens(
+    value_name: &str,
+    data_enum: &DataEnum,
+    ident: Ident,
+    valid_repr: &Ident,
+) -> TokenStream {
     let mut match_bodys = quote!();
+    let param = format_ident!("{}", value_name);
     for variant in &data_enum.variants {
-        let (_, value) = variant
-            .discriminant
-            .as_ref()
-            .expect("Each field must be assigned a discriminant value explicitly");
         let variant_ident = &variant.ident;
-        let statement = quote!(#value => ::core::result::Result::Ok(#ident::#variant_ident),);
+        // Use a guard pattern so the discriminant expression is evaluated as a
+        // value rather than pasted literally as a match pattern.  Pasting it
+        // directly would make `|` inside the expression be parsed as pattern
+        // alternation instead of bitwise OR.
+        let statement = quote!(
+            #param if #param == #ident::#variant_ident as #valid_repr =>
+                ::core::result::Result::Ok(#ident::#variant_ident),
+        );
         match_bodys.append_all(statement);
     }
     match_bodys.append_all(
         quote!(_ => core::result::Result::Err(::int_to_c_enum::TryFromIntError::InvalidValue),),
     );
-    let param = format_ident!("{}", value_name);
     quote!(match #param {
         #match_bodys
     })

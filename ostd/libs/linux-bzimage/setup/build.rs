@@ -5,7 +5,7 @@ use std::{path::PathBuf, process::Command};
 fn main() {
     let source_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let payload_file = PathBuf::from(std::env::var("PAYLOAD_FILE").unwrap());
+    let payload_file = PathBuf::from("/dev/null");
 
     let target_arch = std::env::var("TARGET").unwrap();
     if target_arch.starts_with("x86_64") {

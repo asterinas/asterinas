@@ -21,3 +21,5 @@ set -e
 ./namespace/proc_nsfs
 ./namespace/setns
 ./namespace/unshare
+
+./seccomp/seccomp_test

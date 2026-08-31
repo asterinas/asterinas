@@ -68,7 +68,9 @@ pref_address:           .quad CODE32_START
 init_size:              .long __executable_size
 
 .if {CFG_TARGET_ARCH_X86_64}
-handover_offset:        .long (entry_efi_handover32 - entry_legacy32)
+# The EFI handover entry is placed 0x200 bytes after the legacy 32-bit entry
+# in the setup code, as required by the x86 Linux boot protocol.
+handover_offset:        .long 0x200
 .else
 handover_offset:        .long 0
 .endif

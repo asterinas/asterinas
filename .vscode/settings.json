@@ -1,4 +1,5 @@
 {
+    "rust-analyzer.server.path": "rust-analyzer",
     "rust-analyzer.cargo.target": "x86_64-unknown-none",
     "rust-analyzer.check.extraEnv": {
         "RUSTFLAGS": "--check-cfg cfg(ktest) --cfg ktest"
@@ -10,15 +11,14 @@
         "--message-format=json",
         "--manifest-path",
         "kernel/Cargo.toml",
+        "-j",
+        "8",
         "--target",
         "x86_64-unknown-none",
-        "--target",
-        "riscv64imac-unknown-none-elf",
-        "--target",
-        "loongarch64-unknown-none-softfloat",
         "-Zbuild-std=core,alloc,compiler_builtins",
         "-Zbuild-std-features=compiler-builtins-mem"
     ],
+    "rust-analyzer.cargo.buildScripts.invocationStrategy": "once",
     "rust-analyzer.showUnlinkedFileNotification": false,
     "search.exclude": {
         "**/*.code-search": false,
@@ -33,5 +33,7 @@
         "**/.svn": false,
         "**/CVS": false,
         "**/Thumbs.db": false
-    }
+    },
+    "workbench.secondarySideBar.defaultVisibility": "hidden",
+    "workbench.sideBar.location": "right",
 }
