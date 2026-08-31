@@ -2,8 +2,9 @@
 
 use alloc::sync::Arc;
 
-use aster_network::{RxBuffer, TxBuffer, dma_pool::DmaSegment};
+use aster_network::{RxBuffer, TxBuffer};
 use aster_util::mem_obj_slice::Slice;
+use dma_pool::DmaSegment;
 use ostd::mm::{
     HasDaddr, HasSize,
     dma::{DmaCoherent, DmaDirection, DmaStream},

@@ -281,8 +281,8 @@ version = "0.1.0"
 dependencies = [
  "aster-bigtcp",
  "aster-softirq",
- "bitvec",
  "component",
+ "dma-pool",
  "ostd",
  "ostd-pod",
  "spin",
@@ -415,6 +415,7 @@ dependencies = [
  "bitflags 1.3.2",
  "component",
  "device-id",
+ "dma-pool",
  "id-alloc",
  "int-to-c-enum",
  "io-util",
@@ -721,6 +722,15 @@ version = "0.1.0"
 dependencies = [
  "aster-util",
  "spin",
+]
+
+[[package]]
+name = "dma-pool"
+version = "0.1.0"
+dependencies = [
+ "aster-softirq",
+ "bitvec",
+ "ostd",
 ]
 
 [[package]]

@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! DMA pools.
+#![no_std]
+#![deny(unsafe_code)]
+
+extern crate alloc;
+
 use alloc::{
     collections::VecDeque,
     sync::{Arc, Weak},

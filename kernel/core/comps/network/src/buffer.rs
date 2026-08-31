@@ -3,6 +3,7 @@
 use alloc::sync::Arc;
 use core::marker::PhantomData;
 
+use dma_pool::{DmaPool, DmaSegment};
 use ostd::{
     Result,
     mm::{
@@ -11,8 +12,6 @@ use ostd::{
     },
 };
 use ostd_pod::Pod;
-
-use crate::dma_pool::{DmaPool, DmaSegment};
 
 pub struct TxBuffer {
     segment: DmaSegment<ToDevice>,
