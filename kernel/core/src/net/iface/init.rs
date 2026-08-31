@@ -18,14 +18,14 @@ fn virtio_iface() -> Option<&'static Arc<Iface>> {
     IFACES.get().unwrap().get(1)
 }
 
-pub(crate) fn iter_all_ifaces() -> Iter<'static, Arc<Iface>> {
+pub(in crate::net) fn iter_all_ifaces() -> Iter<'static, Arc<Iface>> {
     IFACES.get().unwrap().iter()
 }
 
 // TODO: Support multiple network devices and avoid the hardcoded device name.
 const VIRTIO_DEVICE_NAME: &str = aster_virtio::device::network::DEVICE_NAME;
 
-pub(crate) fn init() {
+pub(in crate::net) fn init() {
     IFACES.call_once(|| {
         let mut ifaces = Vec::with_capacity(2);
 
