@@ -3,7 +3,7 @@
 use super::sched::PollScheduler;
 use crate::net::socket::ip::{DatagramObserver, StreamObserver};
 
-pub(crate) struct BigtcpExt;
+pub(in crate::net) struct BigtcpExt;
 
 impl aster_bigtcp::ext::Ext for BigtcpExt {
     type ScheduleNextPoll = PollScheduler;
