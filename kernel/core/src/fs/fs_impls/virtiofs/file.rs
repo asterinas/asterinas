@@ -146,6 +146,18 @@ impl PerOpenFileOps for VirtioFsFile {
         Ok(())
     }
 
+    fn is_offset_aware(&self) -> bool {
+        true
+    }
+
+    fn seek_end(&self) -> Result<Option<usize>> {
+        // The cached inode size may be stale. Refreshing attributes here keeps
+        // `SEEK_END` consistent with the latest file size on the server.
+        self.inode.revalidate_attr(Some(self.open_handle.fh()))?;
+
+        Ok(Some(self.inode.size()))
+    }
+
     fn sync(&self, mode: SyncMode) -> Result<()> {
         self.inode.sync(mode)?;
 
@@ -161,18 +173,6 @@ impl PerOpenFileOps for VirtioFsFile {
         )?;
 
         Ok(())
-    }
-
-    fn is_offset_aware(&self) -> bool {
-        true
-    }
-
-    fn seek_end(&self) -> Result<Option<usize>> {
-        // The cached inode size may be stale. Refreshing attributes here keeps
-        // `SEEK_END` consistent with the latest file size on the server.
-        self.inode.revalidate_attr(Some(self.open_handle.fh()))?;
-
-        Ok(Some(self.inode.size()))
     }
 }
 
