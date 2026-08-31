@@ -5,7 +5,6 @@
 #![feature(trait_alias)]
 
 mod buffer;
-pub mod dma_pool;
 mod driver;
 
 extern crate alloc;

@@ -8,8 +8,8 @@
 use alloc::sync::Arc;
 use core::ops::Range;
 
-use aster_network::dma_pool::{DmaPool, DmaSegment};
 use aster_util::mem_obj_slice::Slice;
+use dma_pool::{DmaPool, DmaSegment};
 use ostd::{
     Result,
     mm::{

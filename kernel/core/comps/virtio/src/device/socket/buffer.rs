@@ -2,7 +2,7 @@
 
 use alloc::sync::Arc;
 
-use aster_network::dma_pool::DmaPool;
+use dma_pool::DmaPool;
 use ostd::mm::dma::{FromDevice, ToDevice};
 use spin::Once;
 

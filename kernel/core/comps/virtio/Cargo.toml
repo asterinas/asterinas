@@ -19,6 +19,7 @@ aster-util.workspace = true
 bitflags.workspace = true
 component.workspace = true
 device-id.workspace = true
+dma-pool.workspace = true
 id-alloc.workspace = true
 int-to-c-enum.workspace = true
 io-util.workspace = true
