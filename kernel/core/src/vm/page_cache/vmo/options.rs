@@ -120,6 +120,7 @@ fn alloc_vmo(
         size: AtomicUsize::new(size),
         writable_mapping_status,
         rmap: Mutex::new(rmap),
+        dio_lock: RwMutex::new(()),
     })
 }
 

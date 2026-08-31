@@ -139,6 +139,11 @@ pub(crate) struct Vmo {
     pub(super) writable_mapping_status: WritableMappingStatus,
     /// Reserve mappings.
     pub(super) rmap: Mutex<Rmap>,
+    /// Serializes page-cache population with direct I/O.
+    ///
+    /// Page faults hold the read lock while populating pages, and direct I/O
+    /// holds the write lock across its cache checks and block I/O.
+    dio_lock: RwMutex<()>,
 }
 
 impl Debug for Vmo {
@@ -477,6 +482,11 @@ impl Vmo {
     /// locks need to be acquired.
     pub(crate) fn rmap(&self) -> &Mutex<Rmap> {
         &self.rmap
+    }
+
+    /// Returns the dio lock that serializes page-cache population with direct I/O.
+    pub(crate) fn dio_lock(&self) -> &RwMutex<()> {
+        &self.dio_lock
     }
 
     /// Decommits anonymous pages in the specified byte range.

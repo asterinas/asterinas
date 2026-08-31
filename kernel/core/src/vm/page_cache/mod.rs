@@ -102,6 +102,11 @@
 //!    use `rmap` to denote the reverse-mapping lock, `PT` to denote the page
 //!    table lock, `page` to denote the page lock, and `xarray` to denote the
 //!    lock of VMO pages. For details, see the comments in the implementation.
+//!
+//!  - `dio_lock` denotes the lock that serializes page-cache population
+//!    from mmap page faults with direct I/O: page faults hold it shared
+//!    while populating pages, and direct I/O takes it exclusively across
+//!    its cache checks and block I/O.
 
 use core::{
     ops::{Deref, Range},
