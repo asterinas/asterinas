@@ -28,7 +28,7 @@ use crate::{
     process::{
         NsProxy, UserNamespace,
         pid_file::PidFile,
-        posix_thread::{PosixThread, ThreadLocal, allocate_posix_tid},
+        posix_thread::{PosixThread, ThreadLocal},
         stats::PROCESS_CREATION_COUNTER,
     },
     sched::Nice,
@@ -436,7 +436,9 @@ fn clone_child_task(
     // Inherit the thread name.
     let thread_name = *posix_thread.thread_name().lock();
 
-    let child_tid = allocate_posix_tid();
+    let reservation = pid_table::reserve_tid()?;
+    let child_tid = reservation.tid();
+    let child_pid_entry = reservation.pid_entry();
     let child_task = {
         let credentials = {
             let credentials = ctx.posix_thread.credentials();
@@ -444,7 +446,7 @@ fn clone_child_task(
         };
 
         let mut thread_builder = PosixThreadBuilder::new(
-            child_tid,
+            child_pid_entry,
             thread_name,
             child_user_ctx,
             credentials,
@@ -471,19 +473,18 @@ fn clone_child_task(
         thread_builder.build()
     };
 
-    process
-        .tasks()
-        .lock()
-        .insert(child_task.clone())
-        .map_err(|_| {
-            Error::with_message(
-                Errno::EINTR,
-                "the process has exited or has already executed a new program",
-            )
-        })?;
+    // Lock order: PID table -> tasks of process
+    let mut pid_table = pid_table::pid_table_mut();
+    let mut tasks = process.tasks().lock();
+    tasks.insert(child_task.clone()).map_err(|_| {
+        Error::with_message(
+            Errno::EINTR,
+            "the process has exited or has already executed a new program",
+        )
+    })?;
 
     let child_thread = child_task.as_thread().unwrap();
-    pid_table::pid_table_mut().insert_thread(child_tid, child_thread);
+    reservation.commit_thread(&mut pid_table, child_thread);
 
     Ok(child_task)
 }
@@ -565,7 +566,9 @@ fn clone_child_process(
     // Inherit the parent's OOM score adjustment
     let child_oom_score_adj = process.oom_score_adj().load(Ordering::Relaxed);
 
-    let child_tid = allocate_posix_tid();
+    let reservation = pid_table::reserve_tid()?;
+    let child_tid = reservation.tid();
+    let child_pid_entry = reservation.pid_entry();
 
     let child = {
         let child_vmar_arc = child_vmar.clone_arc();
@@ -580,7 +583,7 @@ fn clone_child_process(
             };
 
             PosixThreadBuilder::new(
-                child_tid,
+                child_pid_entry,
                 child_thread_name,
                 child_user_ctx,
                 credentials,
@@ -627,7 +630,7 @@ fn clone_child_process(
     };
 
     // Sets parent process and group for child process.
-    set_parent_and_group(clone_flags, process, &child);
+    set_parent_and_group(clone_flags, process, &child, reservation);
 
     Ok(child)
 }
@@ -857,7 +860,12 @@ fn create_child_process(
     child_proc
 }
 
-fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &Arc<Process>) {
+fn set_parent_and_group(
+    clone_flags: CloneFlags,
+    parent: &Arc<Process>,
+    child: &Arc<Process>,
+    reservation: pid_table::PidReservation,
+) {
     loop {
         let real_parent = clone_parent(clone_flags, parent);
 
@@ -900,8 +908,8 @@ fn set_parent_and_group(clone_flags: CloneFlags, parent: &Arc<Process>, child: &
         // Put the child process in the parent's `children` field
         children_mut.insert(child.pid(), child.clone());
 
-        // Put the child process in the global table
-        pid_table.insert_process(child.pid(), child);
+        // Put the child process in the global table and commit its reserved PID.
+        reservation.commit_process(&mut pid_table, child);
 
         return;
     }

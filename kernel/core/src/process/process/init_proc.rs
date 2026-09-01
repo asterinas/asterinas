@@ -12,14 +12,14 @@ use crate::{
     },
     prelude::*,
     process::{
-        Credentials, ProcessVm, ShebangScriptPath, UndetectedExecutable, UserNamespace, pid_table,
-        posix_thread::{PosixThreadBuilder, allocate_posix_tid, derive_thread_name},
+        Credentials, ProcessVm, ShebangScriptPath, UndetectedExecutable, UserNamespace,
+        pid_table::{self, PidReservation},
+        posix_thread::{PosixThreadBuilder, derive_thread_name},
         program_loader::ProgramToLoad,
         rlimit::new_resource_limits_for_init,
         signal::sig_disposition::SigDispositions,
     },
     sched::Nice,
-    thread::Tid,
     vm::vmar::VmarHandle,
 };
 
@@ -30,7 +30,7 @@ pub(crate) fn spawn_init_process(
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
-    let process = create_init_process(path_resolver, executable_path, argv, envp)?;
+    let (process, reservation) = create_init_process(path_resolver, executable_path, argv, envp)?;
 
     // Linux starts the init process without placing it in a process group or session.
     // It joins one only after userspace first calls `setsid()`.
@@ -39,7 +39,7 @@ pub(crate) fn spawn_init_process(
     // a session. The init process is therefore placed in a bootstrap process group
     // and session with PGID and SID set to zero. This preserves the same user-visible
     // behavior.
-    set_bootstrap_session_and_group(&process);
+    set_bootstrap_session_and_group(&process, reservation);
 
     process.run();
 
@@ -51,10 +51,12 @@ fn create_init_process(
     executable_path: Path,
     argv: Vec<CString>,
     envp: Vec<CString>,
-) -> Result<Arc<Process>> {
+) -> Result<(Arc<Process>, PidReservation)> {
     let fs = ThreadFsInfo::new(path_resolver);
 
-    let pid = allocate_posix_tid();
+    let reservation = pid_table::reserve_tid()?;
+    let pid = reservation.tid();
+    let pid_entry = reservation.pid_entry();
     let vmar = VmarHandle::new(ProcessVm::new(executable_path.clone()));
     let resource_limits = new_resource_limits_for_init();
     let nice = Nice::default();
@@ -72,13 +74,13 @@ fn create_init_process(
         user_ns,
     );
 
-    let init_task = create_init_task(pid, &init_proc, fs, vmar, executable_path, argv, envp)?;
+    let init_task = create_init_task(pid_entry, &init_proc, fs, vmar, executable_path, argv, envp)?;
     init_proc.tasks().lock().insert(init_task).unwrap();
 
-    Ok(init_proc)
+    Ok((init_proc, reservation))
 }
 
-fn set_bootstrap_session_and_group(process: &Arc<Process>) {
+fn set_bootstrap_session_and_group(process: &Arc<Process>, reservation: PidReservation) {
     // Locking order: PID table -> process group
     let mut pid_table = pid_table::pid_table_mut();
 
@@ -88,13 +90,13 @@ fn set_bootstrap_session_and_group(process: &Arc<Process>) {
     pid_table.insert_process_group(process_group.pgid(), &process_group);
     *process.process_group.lock() = Some(process_group);
 
-    // Add the new process to the global table
-    pid_table.insert_process(process.pid(), process);
+    // Add the new process to the global table and commit its reserved PID.
+    reservation.commit_process(&mut pid_table, process);
 }
 
 /// Creates the init task from the given executable path.
 fn create_init_task(
-    tid: Tid,
+    pid_entry: Arc<pid_table::PidEntry>,
     process: &Arc<Process>,
     fs: ThreadFsInfo,
     vmar: VmarHandle,
@@ -125,9 +127,14 @@ fn create_init_task(
 
     let thread_name = derive_thread_name(&executable_abs_path);
 
-    let thread_builder =
-        PosixThreadBuilder::new(tid, thread_name, Box::new(user_ctx), credentials, vmar)
-            .process(Arc::downgrade(process))
-            .fs(Arc::new(fs));
+    let thread_builder = PosixThreadBuilder::new(
+        pid_entry,
+        thread_name,
+        Box::new(user_ctx),
+        credentials,
+        vmar,
+    )
+    .process(Arc::downgrade(process))
+    .fs(Arc::new(fs));
     Ok(thread_builder.build())
 }
