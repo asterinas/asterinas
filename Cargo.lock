@@ -149,7 +149,6 @@ dependencies = [
  "aster-softirq",
  "aster-systree",
  "aster-time",
- "aster-uart",
  "aster-util",
  "aster-virtio",
  "atomic-integer-wrapper",
@@ -432,6 +431,7 @@ name = "asterinas"
 version = "0.1.0"
 dependencies = [
  "aster-core",
+ "aster-uart",
  "ostd",
 ]
 

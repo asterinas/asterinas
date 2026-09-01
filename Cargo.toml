@@ -27,6 +27,7 @@ members = [
     "ostd/libs/ostd-test",
     "ostd/libs/padding-struct",
     "kernel",
+    "kernel/comps/uart",
     "kernel/core",
     "kernel/core/comps/block",
     "kernel/core/comps/cmdline",
@@ -42,7 +43,6 @@ members = [
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
     "kernel/core/comps/time",
-    "kernel/core/comps/uart",
     "kernel/core/comps/virtio",
     "kernel/libs/aster-bigtcp",
     "kernel/libs/aster-fuse",
@@ -77,6 +77,7 @@ default-members = [
     "osdk/deps/test-kernel",
     "ostd",
     "kernel",
+    "kernel/comps/uart",
     "kernel/core",
     "kernel/core/comps/block",
     "kernel/core/comps/cmdline",
@@ -92,7 +93,6 @@ default-members = [
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
     "kernel/core/comps/time",
-    "kernel/core/comps/uart",
     "kernel/core/comps/virtio",
     "kernel/libs/aster-bigtcp",
     "kernel/libs/aster-fuse",
@@ -156,6 +156,9 @@ padding-struct = { path = "ostd/libs/padding-struct", version = "0.2.0" }
 
 aster-core = { path = "kernel/core", default-features = false }
 
+# Crates under kernel/comps
+aster-uart = { path = "kernel/comps/uart" }
+
 # Crates under kernel/core/comps
 aster-block = { path = "kernel/core/comps/block" }
 aster-cmdline = { path = "kernel/core/comps/cmdline" }
@@ -171,7 +174,6 @@ aster-pci = { path = "kernel/core/comps/pci" }
 aster-softirq = { path = "kernel/core/comps/softirq" }
 aster-systree = { path = "kernel/core/comps/systree" }
 aster-time = { path = "kernel/core/comps/time" }
-aster-uart = { path = "kernel/core/comps/uart" }
 aster-virtio = { path = "kernel/core/comps/virtio" }
 
 # Crates under kernel/libs
