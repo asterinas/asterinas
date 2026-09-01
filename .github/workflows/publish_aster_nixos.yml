@@ -96,7 +96,10 @@ jobs:
         with:
           image: asterinas/kernel-dev:0.18.1-20260805
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
+          # docker-run-action-fork joins these lines with ';' and runs them via
+          # `sh -c` without fail-fast settings, unlike a normal `run:` step.
           run: |
+            set -e
             export ASTER_BUILD_TIMESTAMP=`date '+%a %b %e %H:%M:%S %Z %Y'`
             make iso RELEASE=1 AUTO_INSTALL=false ARCH=${{ matrix.arch }}
             iso_path=$(realpath ./target/nixos/iso_image/iso/*.iso)
