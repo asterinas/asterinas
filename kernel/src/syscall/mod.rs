@@ -12,10 +12,9 @@ use ostd::arch::cpu::context::UserContext;
 pub use timer_create::create_timer;
 
 use crate::{
-    cbpf::SeccompMode,
     cpu::LinuxAbi,
     prelude::*,
-    process::signal::constants::SIGKILL,
+    process::{posix_thread::cbpf::SeccompMode, signal::constants::SIGKILL},
     syscall::{
         arch::{SYS_EXIT, SYS_READ, SYS_RT_SIGRETURN, SYS_WRITE},
         seccomp::SeccompFilterAction,
@@ -395,7 +394,7 @@ pub fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
             }
         }
         SeccompMode::Filter => {
-            match seccomp::execute_seccomp_filter(ctx, user_ctx, syscall_frame) {
+            match seccomp::execute_seccomp_filter(ctx.posix_thread, user_ctx, syscall_frame) {
                 Ok(SeccompFilterAction::Allow) => (),
                 Ok(SeccompFilterAction::Errno(errno)) => {
                     user_ctx.set_syscall_ret((-(errno as i32)) as usize);

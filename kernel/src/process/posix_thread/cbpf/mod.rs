@@ -39,43 +39,6 @@ pub enum SeccompRet {
     Allow = 0x7fff0000,
 }
 
-/// Seccomp policy state attached to a POSIX thread.
-///
-/// Created with [`SeccompMode::Disabled`] and no filter.
-/// `leaf_filter` holds the most recently installed BPF filter program.
-#[derive(Debug, Clone)]
-pub struct SeccompState {
-    pub mode: SeccompMode,
-    pub leaf_filter: Option<Arc<SeccompFilterLeaf>>,
-}
-
-/// An iterator over the filter leaves of a [`SeccompState`].
-#[derive(Clone, Debug)]
-pub struct SeccompFilterIter<'a> {
-    current: Option<&'a SeccompFilterLeaf>,
-}
-
-impl<'a> Iterator for SeccompFilterIter<'a> {
-    type Item = &'a SeccompFilterLeaf;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let current = self.current?;
-        self.current = current.prev.as_deref();
-        Some(current)
-    }
-}
-
-impl<'a> IntoIterator for &'a SeccompState {
-    type Item = &'a SeccompFilterLeaf;
-    type IntoIter = SeccompFilterIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        SeccompFilterIter {
-            current: self.leaf_filter.as_deref(),
-        }
-    }
-}
-
 /// cBPF instruction as passed from user space.
 /// It has not yet been verified.
 #[derive(Debug, Clone, Copy, Pod)]
@@ -334,6 +297,43 @@ pub struct SeccompFilterLeaf {
     // missing cache, log, notif related stuff, possibly others
 }
 
+/// An iterator over the filter leaves of a thread.
+#[derive(Clone, Debug)]
+pub struct SeccompFilterIter<'a> {
+    current: Option<&'a SeccompFilterLeaf>,
+}
+
+impl<'a> Iterator for SeccompFilterIter<'a> {
+    type Item = &'a SeccompFilterLeaf;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.current?;
+        self.current = current.prev.as_deref();
+        Some(current)
+    }
+}
+
+/// Seccomp policy state attached to a POSIX thread.
+///
+/// Created with [`SeccompMode::Disabled`] and no filter.
+/// `leaf_filter` holds the most recently installed BPF filter program.
+#[derive(Debug, Clone)]
+pub struct SeccompState {
+    pub(super) mode: SeccompMode,
+    pub(super) leaf_filter: Option<Arc<SeccompFilterLeaf>>,
+}
+
+impl<'a> IntoIterator for &'a SeccompState {
+    type Item = &'a SeccompFilterLeaf;
+    type IntoIter = SeccompFilterIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        SeccompFilterIter {
+            current: self.leaf_filter.as_deref(),
+        }
+    }
+}
+
 impl SeccompState {
     /// Creates a new `SeccompState` with seccomp disabled and no filter loaded.
     pub fn new() -> Self {
@@ -343,7 +343,7 @@ impl SeccompState {
         }
     }
 
-    /// Returns an iterator over the filter leaves, from the most recently
+    /// Returns an iterator over the filter leaves from the most recently
     /// installed leaf to the oldest.
     pub fn iter(&self) -> SeccompFilterIter<'_> {
         self.into_iter()
@@ -391,7 +391,7 @@ impl ClassicBpfBlock for SeccompFilterBlock {
 }
 
 /// Trait for a cBPF program.
-/// May need a rework (depending on what netfilter programs take as their arguments).
+/// TODO rework/remove execute() arguments.
 pub trait ClassicBPFilter: Deref<Target = [Self::Block]> {
     type Block: ClassicBpfBlock;
 
@@ -662,7 +662,16 @@ fn seccomp_arch() -> u32 {
         0xf0000100
     }
 
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "riscv64")))]
+    #[cfg(target_arch = "loongarch64")]
+    {
+        0xc0000109
+    }
+
+    #[cfg(not(any(
+        target_arch = "x86_64",
+        target_arch = "riscv64",
+        target_arch = "loongarch64"
+    )))]
     {
         0
     }

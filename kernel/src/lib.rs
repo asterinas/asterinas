@@ -40,8 +40,6 @@ macro_rules! __log_prefix {
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv/mod.rs")]
 #[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch/mod.rs")]
 mod arch;
-
-mod cbpf;
 mod context;
 mod cpu;
 mod device;

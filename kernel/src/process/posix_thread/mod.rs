@@ -3,6 +3,7 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
+use cbpf::{SeccompFilterLeaf, SeccompMode, SeccompState};
 use ostd::{
     sync::{Rcu, RoArc, RwMutexReadGuard, Waker},
     task::Task,
@@ -14,7 +15,6 @@ use super::{
     signal::{sig_mask::AtomicSigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal},
 };
 use crate::{
-    cbpf::{SeccompFilterLeaf, SeccompMode, SeccompState},
     events::IoEvents,
     fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
@@ -30,6 +30,7 @@ use crate::{
 
 pub mod alien_access;
 mod builder;
+pub mod cbpf;
 mod cpu_sync;
 mod exit;
 pub mod futex;
@@ -358,7 +359,7 @@ impl PosixThread {
         self.seccomp.read().get().mode
     }
 
-    /// Returns the current leaf BPF filter of this thread, if installed.
+    /// Returns the top cBPF seccomp filter leaf of this thread, if installed.
     ///
     /// Clones the [`Arc`] out of the RCU cell and releases the read guard
     /// immediately, so preemption is re-enabled before this function returns.
