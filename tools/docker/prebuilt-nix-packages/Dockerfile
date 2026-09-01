@@ -11,12 +11,12 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # Install Nix package manager and other Nix tools
 #
-# The nixpkgs and nixos channels are pinned to a particular commit (NixOS 25.05, 2025-07-01) for reproducibility.
+# The nixpkgs and nixos channels are pinned to a particular commit (NixOS 26.05, 2026-07-19) for reproducibility.
 # FIXME: Installing Nix as root is not supported in single-user mode.
 RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
     && . /etc/profile.d/nix.sh \
-    && nix-channel --add https://github.com/NixOS/nixpkgs/archive/c0bebd16e69e631ac6e52d6eb439daba28ac50cd.tar.gz nixpkgs \
-    && nix-channel --add https://github.com/NixOS/nixpkgs/archive/c0bebd16e69e631ac6e52d6eb439daba28ac50cd.tar.gz nixos \
+    && nix-channel --add https://github.com/NixOS/nixpkgs/archive/fd1462031fdee08f65fd0b4c6b64e22239a77870.tar.gz nixpkgs \
+    && nix-channel --add https://github.com/NixOS/nixpkgs/archive/fd1462031fdee08f65fd0b4c6b64e22239a77870.tar.gz nixos \
     && nix-channel --update \
     && nix-env -iA nixpkgs.nixfmt \
     && nix-env -iA nixpkgs.nixos-install-tools \
@@ -26,8 +26,9 @@ RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
 
 #= Build Nix packages ======================================================
 
-COPY test/initramfs /root/test
-WORKDIR /root/test
+COPY test/initramfs /tmp/asterinas/test/initramfs
+COPY distro/nixpkgs.nix /tmp/asterinas/distro/nixpkgs.nix
+WORKDIR /tmp/asterinas/test/initramfs
 ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
 
 # Build riscv64 packages
@@ -49,7 +50,7 @@ RUN make install_host_pkgs \
 RUN make initramfs_pkgs VERBOSE=0
 
 # Clean source files
-RUN rm -rf /root/test
+RUN rm -rf /tmp/asterinas
 
 # Let Github runners reuse Nixpkgs tarball installed in the Dockerfile.
 RUN mkdir -p /github/home/.cache \
