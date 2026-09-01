@@ -33,6 +33,10 @@ CMDLINE ?=
 CONSOLE ?= hvc0
 # End of global build options.
 
+# Virtio-fs settings.
+VIRTIOFS ?= off
+VIRTIOFS_SCRATCH ?= off
+
 # GDB debugging and profiling options.
 GDB_TCP_PORT ?= 1234
 GDB_PROFILE_FORMAT ?= flame-graph

@@ -12,6 +12,15 @@ boot_protocol = "multiboot2"
 args = "$(./tools/qemu_args.sh normal)"
 log_file = "qemu-serial.log"
 
+[virtiofsd]
+path = "/usr/libexec/virtiofsd"
+shared_dir = "/tmp/asterinas-virtiofs"
+scratch_shared_dir = "/tmp/asterinas-virtiofs-scratch"
+log_file = "virtiofsd.log"
+scratch_log_file = "virtiofsd-scratch.log"
+cache = "auto"
+xattr = false
+
 # Special options for running
 [run.boot]
 kcmd_args = [
