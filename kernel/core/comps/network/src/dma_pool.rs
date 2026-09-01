@@ -10,7 +10,7 @@ use aster_softirq::BottomHalfDisabled;
 use bitvec::array::BitArray;
 use ostd::{
     mm::{
-        Daddr, FrameAllocOptions, HasDaddr, Infallible, PAGE_SIZE, VmReader, VmWriter,
+        Daddr, HasDaddr, Infallible, PAGE_SIZE, VmReader, VmWriter,
         dma::{DmaDirection, DmaStream},
         io::util::HasVmReaderWriter,
     },
@@ -142,11 +142,7 @@ impl<D: DmaDirection> DmaPage<D> {
         is_cache_coherent: bool,
         pool: Weak<DmaPool<D>>,
     ) -> Result<Self, ostd::Error> {
-        let dma_stream = {
-            let segment = FrameAllocOptions::new().alloc_segment(1)?;
-
-            DmaStream::<D>::map(segment.into(), is_cache_coherent)?
-        };
+        let dma_stream = DmaStream::<D>::alloc_uninit(1, is_cache_coherent)?;
 
         Ok(Self {
             storage: Arc::new(dma_stream),
