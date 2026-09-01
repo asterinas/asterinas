@@ -22,12 +22,12 @@ use core::{
 };
 
 use aster_block::{
-    BlockDeviceMeta, SECTOR_SIZE,
+    BlockDeviceMeta, PartitionNode, SECTOR_SIZE,
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio, bio_segment_pool_init},
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
 use aster_util::safe_ptr::SafePtr;
-use device_id::DeviceId;
+use device_id::{DeviceId, MinorId};
 use ostd::{
     debug, error, info,
     mm::{HasDaddr, HasSize, PAGE_SIZE, dma::DmaStream},
@@ -67,6 +67,7 @@ pub struct NvmeBlockDevice {
     queue: BioRequestSingleQueue,
     name: String,
     id: DeviceId,
+    partitions: SpinLock<Option<Vec<Arc<PartitionNode>>>>,
 }
 
 static NR_NVME_DEVICE: AtomicU32 = AtomicU32::new(0);
@@ -80,7 +81,7 @@ impl NvmeBlockDevice {
         let id = {
             // Use the allocated major ID for the NVMe device
             let major_id = NVME_BLOCK_MAJOR_ID.get().unwrap().get();
-            DeviceId::new(major_id, device_id::MinorId::new(index))
+            DeviceId::new(major_id, MinorId::new(index * aster_block::DEVICE_MINORS))
         };
 
         let block_device = Arc::new(Self {
@@ -88,6 +89,7 @@ impl NvmeBlockDevice {
             queue: BioRequestSingleQueue::new(),
             name,
             id,
+            partitions: SpinLock::new(None),
         });
 
         block_device
@@ -135,6 +137,20 @@ impl aster_block::BlockDevice for NvmeBlockDevice {
 
     fn id(&self) -> DeviceId {
         self.id
+    }
+
+    fn partitions(&self) -> Option<Vec<Arc<dyn aster_block::BlockDevice>>> {
+        let partitions = self.partitions.lock();
+        let devices = partitions
+            .as_ref()?
+            .iter()
+            .map(|p| p.clone() as Arc<dyn aster_block::BlockDevice>)
+            .collect();
+        Some(devices)
+    }
+
+    fn set_partitions(&self, partitions: Vec<Arc<PartitionNode>>) {
+        *self.partitions.lock() = Some(partitions);
     }
 }
 
