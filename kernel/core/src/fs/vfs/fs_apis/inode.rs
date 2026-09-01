@@ -586,9 +586,49 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
 
         let creds = posix_thread.credentials();
         let metadata = self.metadata()?;
-        let has_dac_override = has_dac_override_capability(&task, posix_thread);
+        let mut perm = perm;
+        let mode = metadata.mode;
 
-        check_mode_dac(&metadata, &creds, perm, has_dac_override)
+        if has_dac_override_capability(&task, posix_thread) {
+            perm -= Permission::MAY_READ | Permission::MAY_WRITE;
+
+            if perm.may_exec() {
+                if mode.is_owner_executable()
+                    || mode.is_group_executable()
+                    || mode.is_other_executable()
+                {
+                    perm -= Permission::MAY_EXEC;
+                } else {
+                    return_errno_with_message!(
+                        Errno::EACCES,
+                        "root execute permission denied: no execute bits set"
+                    );
+                }
+            }
+        }
+
+        if metadata.uid == creds.fsuid() {
+            if (perm.may_read() && !mode.is_owner_readable())
+                || (perm.may_write() && !mode.is_owner_writable())
+                || (perm.may_exec() && !mode.is_owner_executable())
+            {
+                return_errno_with_message!(Errno::EACCES, "owner permission check failed");
+            }
+        } else if metadata.gid == creds.fsgid() {
+            if (perm.may_read() && !mode.is_group_readable())
+                || (perm.may_write() && !mode.is_group_writable())
+                || (perm.may_exec() && !mode.is_group_executable())
+            {
+                return_errno_with_message!(Errno::EACCES, "group permission check failed");
+            }
+        } else if (perm.may_read() && !mode.is_other_readable())
+            || (perm.may_write() && !mode.is_other_writable())
+            || (perm.may_exec() && !mode.is_other_executable())
+        {
+            return_errno_with_message!(Errno::EACCES, "other permission check failed");
+        }
+
+        Ok(())
     }
 }
 
@@ -601,60 +641,6 @@ fn has_dac_override_capability(task: &CurrentTask, posix_thread: &PosixThread) -
         CapSet::DAC_OVERRIDE,
     ))
     .is_ok()
-}
-/// Evaluates classic Unix mode-based DAC permissions (owner/group/other bits),
-/// including the `DAC_OVERRIDE` reduction, for the given metadata and credentials.
-pub(in crate::fs) fn check_mode_dac(
-    metadata: &Metadata,
-    creds: &Credentials<ReadOp>,
-    mut perm: Permission,
-    has_dac_override: bool,
-) -> Result<()> {
-    let mode = metadata.mode;
-
-    // With DAC_OVERRIDE capability, the user can bypass some permission checks.
-    if has_dac_override {
-        // Read/write DACs are always overridable.
-        perm -= Permission::MAY_READ | Permission::MAY_WRITE;
-
-        // Executable DACs are overridable when there is at least one exec bit set.
-        if perm.may_exec() {
-            if mode.is_owner_executable()
-                || mode.is_group_executable()
-                || mode.is_other_executable()
-            {
-                perm -= Permission::MAY_EXEC;
-            } else {
-                return_errno_with_message!(
-                    Errno::EACCES,
-                    "root execute permission denied: no execute bits set"
-                );
-            }
-        }
-    }
-
-    if metadata.uid == creds.fsuid() {
-        if (perm.may_read() && !mode.is_owner_readable())
-            || (perm.may_write() && !mode.is_owner_writable())
-            || (perm.may_exec() && !mode.is_owner_executable())
-        {
-            return_errno_with_message!(Errno::EACCES, "owner permission check failed");
-        }
-    } else if metadata.gid == creds.fsgid() {
-        if (perm.may_read() && !mode.is_group_readable())
-            || (perm.may_write() && !mode.is_group_writable())
-            || (perm.may_exec() && !mode.is_group_executable())
-        {
-            return_errno_with_message!(Errno::EACCES, "group permission check failed");
-        }
-    } else if (perm.may_read() && !mode.is_other_readable())
-        || (perm.may_write() && !mode.is_other_writable())
-        || (perm.may_exec() && !mode.is_other_executable())
-    {
-        return_errno_with_message!(Errno::EACCES, "other permission check failed");
-    }
-
-    Ok(())
 }
 
 impl dyn Inode {
