@@ -23,8 +23,6 @@ mod arch;
 
 mod console;
 
-pub const CONSOLE_NAME: &str = "Uart-Console";
-
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
     arch::init();

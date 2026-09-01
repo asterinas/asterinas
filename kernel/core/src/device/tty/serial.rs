@@ -72,7 +72,7 @@ pub(super) fn init_in_first_process() -> Result<()> {
 
     let serial_console = devices
         .iter()
-        .find(|(name, _)| name.as_str() == aster_uart::CONSOLE_NAME)
+        .find(|(name, _)| name.as_str() == aster_console::UART_CONSOLE_NAME)
         .map(|(_, device)| device.clone());
 
     if let Some(serial_console) = serial_console {
