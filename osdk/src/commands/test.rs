@@ -116,6 +116,10 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     );
     drop(dir_guard);
 
-    let exit_status = bundle.run_qemu_and_wait(config, ActionChoice::Test);
+    let exit_status = match bundle.run_qemu_and_wait(config, ActionChoice::Test) {
+        Ok(exit_status) => exit_status,
+        Err(errno) => std::process::exit(errno as _),
+    };
+
     classify_qemu_exit_status(exit_status)
 }
