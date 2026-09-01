@@ -1816,7 +1816,7 @@ wait01
 wait02
 
 # wait401
-# wait402
+wait402
 # wait403
 
 # waitpid01

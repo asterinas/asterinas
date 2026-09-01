@@ -9,7 +9,7 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    process::posix_thread::PID_MAX,
+    process::pid_table::PID_MAX,
 };
 
 /// Represents the inode at `/proc/sys/kernel/pid_max`.

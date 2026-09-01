@@ -25,7 +25,7 @@ use crate::{
         vfs::inode::{Inode, RevalidationPolicy},
     },
     prelude::*,
-    process::{Process, pid_table, pid_table::PidEntry, posix_thread::AsPosixThread},
+    process::{Process, pid_table::PidEntry, posix_thread::AsPosixThread},
     thread::{Thread, Tid},
 };
 
@@ -198,35 +198,15 @@ impl ProcDirOps for TaskDirOps {
             return_errno_with_message!(Errno::ENOENT, "the name is not a valid TID");
         };
 
-        // Note: After a PID-number recycling mechanism is introduced, there may be a race here:
-        // - If a PID number is recycled as soon as its `PidEntry` is removed from the `PidTable`,
-        //   then before the `PidTable` lock is acquired below, the current inode’s `PidEntry` may
-        //   already have been removed and replaced with a new entry using the same PID number.
-        //   In that case, it is possible that the main thread of the `Process` obtained here has not
-        //   yet been deleted, causing `contains_tid` to return true even though we have actually
-        //   retrieved the wrong `PidEntry`.
-        // - If the PID number is not recycled until the `PidEntry` is dropped, then this race does not arise.
-        //
-        // TODO: Revisit and handle this potential race as appropriate once PID-number recycling is implemented.
         let Some(process) = self.process() else {
             return_errno_with_message!(Errno::ESRCH, "the process does not exist");
         };
 
-        // Lock order: PID table -> tasks of process
-
-        let pid_table = pid_table::pid_table_mut();
-
-        let contains_tid = process
-            .tasks()
-            .lock()
-            .as_slice()
-            .iter()
-            .any(|task| task.as_posix_thread().unwrap().tid() == tid);
-        if !contains_tid {
-            return_errno_with_message!(Errno::ENOENT, "the thread does not exist");
-        }
-
-        let Some(pid_entry) = pid_table.get_entry(tid) else {
+        let pid_entry = process.tasks().lock().as_slice().iter().find_map(|task| {
+            let posix_thread = task.as_posix_thread().unwrap();
+            (posix_thread.tid() == tid).then(|| posix_thread.pid_entry())
+        });
+        let Some(pid_entry) = pid_entry else {
             return_errno_with_message!(Errno::ENOENT, "the thread does not exist");
         };
 
