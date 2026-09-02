@@ -14,7 +14,8 @@ use crate::{
     util::net::CSocketAddrFamily,
 };
 
-pub(crate) type LinkSegment = SegmentCommon<LinkSegmentBody, LinkAttr>;
+pub(in crate::net::socket::netlink::route) type LinkSegment =
+    SegmentCommon<LinkSegmentBody, LinkAttr>;
 
 impl SegmentBody for LinkSegmentBody {
     type CLegacyType = CRtGenMsg;

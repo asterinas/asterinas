@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(netlink)]
+
 use crate::prelude::*;
 
 /// A type that indicates we either parsed a valid value, or hit a recoverable condition and can
@@ -18,7 +20,7 @@ impl<T> ContinueRead<T, Error> {
     /// Creates a [`SkippedErr`] variant with the given error information.
     ///
     /// [`SkippedErr`]: Self::SkippedErr
-    pub(crate) fn skipped_with_error(errno: Errno, msg: &'static str) -> Self {
+    pub(in netlink) fn skipped_with_error(errno: Errno, msg: &'static str) -> Self {
         Self::SkippedErr(Error::with_message(errno, msg))
     }
 }
@@ -27,7 +29,7 @@ impl<T, E> ContinueRead<T, E> {
     /// Maps the value in the [`Parsed`] variant with `f`.
     ///
     /// [`Parsed`]: Self::Parsed
-    pub(crate) fn map<F, U>(self, f: F) -> ContinueRead<U, E>
+    pub(in netlink) fn map<F, U>(self, f: F) -> ContinueRead<U, E>
     where
         F: FnOnce(T) -> U,
     {
@@ -41,7 +43,7 @@ impl<T, E> ContinueRead<T, E> {
     /// Maps the error in the [`SkippedErr`] variant with `f`.
     ///
     /// [`SkippedErr`]: Self::SkippedErr
-    pub(crate) fn map_err<F, U>(self, f: F) -> ContinueRead<T, U>
+    pub(in netlink) fn map_err<F, U>(self, f: F) -> ContinueRead<T, U>
     where
         F: FnOnce(E) -> U,
     {
