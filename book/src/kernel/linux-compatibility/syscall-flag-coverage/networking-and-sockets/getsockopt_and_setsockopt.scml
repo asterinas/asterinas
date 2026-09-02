@@ -11,6 +11,9 @@ tcp_options = TCP_NODELAY | TCP_MAXSEG | TCP_KEEPIDLE | TCP_SYNCNT |
               TCP_DEFER_ACCEPT | TCP_WINDOW_CLAMP | TCP_CONGESTION |
               TCP_USER_TIMEOUT | TCP_INQ;
 
+netlink_options = NETLINK_ADD_MEMBERSHIP | NETLINK_DROP_MEMBERSHIP |
+                  NETLINK_GET_STRICT_CHK;
+
 // Get options at socket level
 getsockopt(
     sockfd, level = SOL_SOCKET,
@@ -29,6 +32,13 @@ getsockopt(
 getsockopt(
     sockfd, level = SOL_TCP,
     optname = <tcp_options>,
+    optval, optlen
+);
+
+// Get options at netlink level
+getsockopt(
+    sockfd, level = SOL_NETLINK,
+    optname = NETLINK_GET_STRICT_CHK,
     optval, optlen
 );
 
@@ -56,6 +66,6 @@ setsockopt(
 // Set options at netlink level
 setsockopt(
     sockfd, level = SOL_NETLINK,
-    optname = NETLINK_ADD_MEMBERSHIP | NETLINK_DROP_MEMBERSHIP,
+    optname = <netlink_options>,
     optval, optlen
 );
