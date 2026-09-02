@@ -40,6 +40,12 @@ prepare_libs() {
 
 # Prepare fs for Linux
 prepare_fs() {
+    local benchmark="$1"
+    if [[ -z "${benchmark}" ]]; then
+        echo "Error: benchmark name is required to prepare the Linux filesystem." >&2
+        return 1
+    fi
+
     # Disable unsupported ext2 features of Asterinas on Linux to ensure fairness
     mke2fs -F -O ^ext_attr -O ^resize_inode -O ^dir_index ${BENCHMARK_ROOT}/../../build/ext2.img
     make initramfs BENCHMARK=${benchmark}

@@ -170,7 +170,7 @@ run_benchmark() {
             echo "Running benchmark ${benchmark} on Asterinas..."
             # Execute directly from array, redirect stderr to stdout, then tee
             "${asterinas_cmd_arr[@]}" 2>&1 | tee "${ASTER_OUTPUT}"
-            prepare_fs
+            prepare_fs "$benchmark"
             echo "Running benchmark ${benchmark} on Linux..."
             # Execute directly from array, redirect stderr to stdout, then tee
             "${linux_cmd_arr[@]}" 2>&1 | tee "${LINUX_OUTPUT}"
@@ -190,7 +190,8 @@ run_benchmark() {
                 "${asterinas_cmd_str}" \
                 "${linux_cmd_str}" \
                 "${ASTER_OUTPUT}" \
-                "${LINUX_OUTPUT}"
+                "${LINUX_OUTPUT}" \
+                "${benchmark}"
             ;;
         *)
             echo "Error: Unknown benchmark type '${run_mode}'" >&2
