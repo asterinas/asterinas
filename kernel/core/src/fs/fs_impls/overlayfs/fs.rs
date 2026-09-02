@@ -1539,11 +1539,9 @@ mod tests {
         let upper = {
             let dir = root.new_child("upper", InodeType::Dir, mode).unwrap();
             // whiteout for "deleted"
-            dir.new_child(".wh.deleted", InodeType::File, mode)
-                .unwrap();
+            dir.new_child(".wh.deleted", InodeType::File, mode).unwrap();
             // a normal file that should appear exactly once
-            dir.new_child("normal_file", InodeType::File, mode)
-                .unwrap();
+            dir.new_child("normal_file", InodeType::File, mode).unwrap();
             dir
         };
 

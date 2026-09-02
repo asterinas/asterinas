@@ -12,7 +12,10 @@ macro_rules! __log_prefix {
     };
 }
 
-use alloc::io::{self, Cursor, Read};
+use alloc::{
+    borrow::ToOwned,
+    io::{self, Cursor, Read},
+};
 
 use cpio_decoder::{CpioDecoder, CpioEntry, FileMetadata, FileType};
 use device_id::{DeviceId, MajorId, MinorId};
@@ -155,13 +158,15 @@ fn try_append_entry_to_rootfs<R: Read>(
             let _ = parent.new_child(name, InodeType::Dir, mode)?;
         }
         FileType::Link => {
-            let path = parent.new_child(name, InodeType::SymLink, mode)?;
-            let link_content = {
-                let mut link_data: Vec<u8> = Vec::new();
-                entry.read_all(&mut link_data)?;
-                core::str::from_utf8(&link_data)?.to_string()
-            };
-            path.inode().write_link(&link_content)?;
+            // Obtain the owned name here. Otherwise, the later mutable borrow of `entry`
+            // will conflict with the immutable borrow of `name` here.
+            let child_name = name.to_owned();
+
+            let mut link_data: Vec<u8> = Vec::new();
+            entry.read_all(&mut link_data)?;
+            let link_content = core::str::from_utf8(&link_data)?;
+
+            parent.new_symlink_child(&child_name, link_content, mode)?;
         }
         FileType::Char => {
             let device_id = try_device_id_from_metadata(metadata)?;
