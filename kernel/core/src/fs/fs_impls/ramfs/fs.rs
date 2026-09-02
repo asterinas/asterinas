@@ -1039,7 +1039,9 @@ impl FileOps for RamInode {
                     let end = file_size.min(offset + writer.avail());
                     (start, end - start)
                 };
-                page_cache.lock().read(offset, writer)?;
+                if read_len > 0 {
+                    page_cache.lock().read_with_len(offset, writer, read_len)?;
+                }
                 read_len
             }
             _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
