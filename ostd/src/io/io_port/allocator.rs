@@ -46,7 +46,7 @@ impl IoPortAllocator {
         }
 
         // SAFETY: The created `IoPort` is guaranteed not to access system device I/O.
-        unsafe { Some(IoPort::new_overlapping(port, is_overlapping)) }
+        unsafe { Some(IoPort::new_overlapping(port, is_overlapping, true)) }
     }
 
     /// Recycles an PIO range.
