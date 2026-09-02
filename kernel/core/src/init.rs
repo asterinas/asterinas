@@ -46,6 +46,7 @@ pub(super) fn on_first_process_startup(ctx: &Context) {
 }
 
 fn init() {
+    crate::power::init();
     crate::arch::init();
     crate::thread::init();
     crate::util::random::init();

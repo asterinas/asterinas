@@ -3,7 +3,7 @@
 use ostd::{
     arch::{device::io_port::WriteOnlyAccess, kernel::ACPI_INFO},
     io::IoPort,
-    power::{ExitCode, inject_restart_handler},
+    power::ExitCode,
 };
 use spin::Once;
 
@@ -15,17 +15,9 @@ fn try_acpi_reset(_code: ExitCode) {
         port.write(*val);
     }
 }
-
-/// Attempts to reset the CPU.
-///
-/// This method first attempts to reset via ACPI. If that fails, it falls back to resetting via the
-/// keyboard (i8042) controller. This follows the same order as the Linux kernel.
-///
-/// Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/reboot.c#L657>
-fn try_reset(code: ExitCode) {
-    try_acpi_reset(code);
-    aster_i8042::try_cpu_reset(code);
-}
+// ACPI is attempted before legacy restart fallbacks, following Linux's x86 reset order.
+// Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/reboot.c#L657>
+crate::register_restart_handler!(try_acpi_reset, crate::power::Priority::Normal);
 
 pub(super) fn init() {
     let acpi_info = ACPI_INFO.get().unwrap();
@@ -37,6 +29,4 @@ pub(super) fn init() {
             ostd::warn!("The reset port from ACPI is not available");
         }
     }
-
-    inject_restart_handler(try_reset);
 }
