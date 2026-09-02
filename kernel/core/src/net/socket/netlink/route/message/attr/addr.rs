@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(route)]
+
 use core::net::{IpAddr, Ipv4Addr};
 
 use zerocopy::Immutable;
@@ -20,7 +22,7 @@ use crate::{
 #[expect(clippy::upper_case_acronyms)]
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-enum AddrAttrClass {
+pub(crate) enum AddrAttrClass {
     UNSPEC = 0,
     ADDRESS = 1,
     LOCAL = 2,
@@ -65,7 +67,7 @@ pub(crate) enum AddrAttr {
 }
 
 impl AddrAttr {
-    fn class(&self) -> AddrAttrClass {
+    pub(in route) fn class(&self) -> AddrAttrClass {
         match self {
             AddrAttr::Address(_) => AddrAttrClass::ADDRESS,
             AddrAttr::Broadcast(_) => AddrAttrClass::BROADCAST,
@@ -98,26 +100,52 @@ impl Attribute for AddrAttr {
         Self: Sized,
     {
         let payload_len = header.payload_len();
-        reader.skip_some(payload_len);
-
-        // GETADDR only supports dump requests. These requests do not have any attributes.
-        // According to the Linux behavior, we should just ignore all the attributes.
-
-        Ok(ContinueRead::Skipped)
-    }
-
-    fn read_all_from(
-        reader: &mut dyn MultiRead,
-        total_len: usize,
-    ) -> Result<ContinueRead<Vec<Self>>>
-    where
-        Self: Sized,
-    {
-        reader.skip_some(total_len);
-
-        // GETADDR only supports dump requests. These requests do not have any attributes.
-        // According to the Linux behavior, we should just ignore all the attributes.
-
-        Ok(ContinueRead::Skipped)
+        let Ok(class) = AddrAttrClass::try_from(header.type_()) else {
+            reader.skip_some(payload_len);
+            return Ok(ContinueRead::Skipped);
+        };
+        let attr = match (class, payload_len) {
+            (AddrAttrClass::ADDRESS | AddrAttrClass::LOCAL, 4) => {
+                let bytes = reader.read_val_opt::<u32>()?.unwrap().to_ne_bytes();
+                let address = IpAddr::V4(Ipv4Addr::from(bytes));
+                if class == AddrAttrClass::ADDRESS {
+                    Self::Address(address)
+                } else {
+                    Self::Local(address)
+                }
+            }
+            (AddrAttrClass::ADDRESS | AddrAttrClass::LOCAL, 16) => {
+                let bytes = reader.read_val_opt::<[u8; 16]>()?.unwrap();
+                let address = IpAddr::V6(bytes.into());
+                if class == AddrAttrClass::ADDRESS {
+                    Self::Address(address)
+                } else {
+                    Self::Local(address)
+                }
+            }
+            (AddrAttrClass::ADDRESS | AddrAttrClass::LOCAL, _) => {
+                reader.skip_some(payload_len);
+                return Ok(ContinueRead::skipped_with_error(
+                    Errno::ERANGE,
+                    "the address attribute has an invalid payload length",
+                ));
+            }
+            (AddrAttrClass::TARGET_NETNSID, 4) => {
+                reader.skip_some(payload_len);
+                return Ok(ContinueRead::Skipped);
+            }
+            (AddrAttrClass::TARGET_NETNSID, _) => {
+                reader.skip_some(payload_len);
+                return Ok(ContinueRead::skipped_with_error(
+                    Errno::ERANGE,
+                    "the namespace attribute has an invalid payload length",
+                ));
+            }
+            _ => {
+                reader.skip_some(payload_len);
+                return Ok(ContinueRead::Skipped);
+            }
+        };
+        Ok(ContinueRead::Parsed(attr))
     }
 }

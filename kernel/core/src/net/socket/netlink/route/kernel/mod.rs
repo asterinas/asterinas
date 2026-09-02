@@ -30,14 +30,23 @@ impl NetlinkRouteKernelSocket {
         }
     }
 
-    pub(super) fn handle_request(&self, request: &RtnlSegment, dst_port: PortNum) {
+    pub(super) fn handle_request(
+        &self,
+        request: &RtnlSegment,
+        dst_port: PortNum,
+        strict_check: bool,
+    ) {
         debug!("netlink route request: {:?}", request);
 
         let request_header = request.header();
 
         let response_segments = match request {
-            RtnlSegment::GetLink(request_segment) => link::do_get_link(request_segment),
-            RtnlSegment::GetAddr(request_segment) => addr::do_get_addr(request_segment),
+            RtnlSegment::GetLink(request_segment) => {
+                link::do_get_link(request_segment, strict_check)
+            }
+            RtnlSegment::GetAddr(request_segment) => {
+                addr::do_get_addr(request_segment, strict_check)
+            }
             _ => Err(Error::with_message(
                 Errno::EOPNOTSUPP,
                 "the netlink route request is not supported",

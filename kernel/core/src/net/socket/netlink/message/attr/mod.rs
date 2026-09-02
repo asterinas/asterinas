@@ -94,6 +94,29 @@ const IS_NESTED_MASK: u16 = 1u16 << 15;
 const IS_NET_BYTEORDER_MASK: u16 = 1u16 << 14;
 const ATTRIBUTE_TYPE_MASK: u16 = !(IS_NESTED_MASK | IS_NET_BYTEORDER_MASK);
 
+/// The validation policy for parsing netlink attributes.
+///
+/// Strict checking always selects `Strict`, for both single queries and dumps.
+/// The legacy variants apply only when strict checking is disabled,
+/// with `LegacyDump` selected for requests with the `DUMP` flag and `LegacyQuery` otherwise.
+/// This policy controls attribute validation only,
+/// not response formatting or filtering.
+///
+/// Both legacy modes skip unrecognized attributes and continue parsing.
+/// On an invalid attribute length,
+/// they stop parsing, consume the remaining bytes, and return the attributes parsed so far.
+/// Reader errors are propagated in every mode.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AttrValidation {
+    /// Rejects malformed and unrecognized attributes.
+    Strict,
+    /// Propagates validation errors from parsing recognized attributes.
+    LegacyQuery,
+    /// On a validation error from parsing a recognized attribute,
+    /// stops parsing, consumes the remaining bytes, and returns the attributes parsed so far.
+    LegacyDump,
+}
+
 /// Netlink Attribute.
 pub(crate) trait Attribute: Debug + Send + Sync {
     /// Returns the type of the attribute.
@@ -126,22 +149,25 @@ pub(crate) trait Attribute: Debug + Send + Sync {
     fn read_all_from(
         reader: &mut dyn MultiRead,
         mut total_len: usize,
+        validation: AttrValidation,
     ) -> Result<ContinueRead<Vec<Self>>>
     where
         Self: Sized,
     {
         let mut res = Vec::new();
 
-        // Below, we're performing strict validation. Although Linux tends to perform strict
-        // validation for new netlink message consumers, it may allow fewer or no validations for
-        // legacy consumers. See
-        // <https://github.com/torvalds/linux/commit/8cb081746c031fb164089322e2336a0bf5b3070c> for
-        // more details.
+        // Although Linux tends to perform strict validation for new netlink message consumers,
+        // it may allow fewer or no validations for legacy consumers.
+        // See <https://github.com/torvalds/linux/commit/8cb081746c031fb164089322e2336a0bf5b3070c>
+        // for more details.
 
         while total_len > 0 {
             // Validate the remaining length for the attribute header length.
             if total_len < size_of::<CAttrHeader>() {
                 reader.skip_some(total_len);
+                if validation != AttrValidation::Strict {
+                    return Ok(ContinueRead::Parsed(res));
+                }
                 return Ok(ContinueRead::skipped_with_error(
                     Errno::EINVAL,
                     "the reader length is too small",
@@ -153,6 +179,9 @@ pub(crate) trait Attribute: Debug + Send + Sync {
             total_len -= size_of::<CAttrHeader>();
             if header.total_len() < size_of::<CAttrHeader>() {
                 reader.skip_some(total_len);
+                if validation != AttrValidation::Strict {
+                    return Ok(ContinueRead::Parsed(res));
+                }
                 return Ok(ContinueRead::skipped_with_error(
                     Errno::EINVAL,
                     "the attribute length is too small",
@@ -162,6 +191,9 @@ pub(crate) trait Attribute: Debug + Send + Sync {
             // Validate the remaining length for the attribute payload length.
             if header.payload_len() > total_len {
                 reader.skip_some(total_len);
+                if validation != AttrValidation::Strict {
+                    return Ok(ContinueRead::Parsed(res));
+                }
                 return Ok(ContinueRead::skipped_with_error(
                     Errno::EINVAL,
                     "the reader size is too small",
@@ -172,9 +204,20 @@ pub(crate) trait Attribute: Debug + Send + Sync {
             // Read the attribute.
             match Self::read_from(&header, reader)? {
                 ContinueRead::Parsed(attr) => res.push(attr),
-                ContinueRead::Skipped => (),
+                ContinueRead::Skipped => {
+                    if validation == AttrValidation::Strict {
+                        reader.skip_some(total_len);
+                        return Ok(ContinueRead::skipped_with_error(
+                            Errno::EINVAL,
+                            "the attribute is not supported",
+                        ));
+                    }
+                }
                 ContinueRead::SkippedErr(err) => {
                     reader.skip_some(total_len);
+                    if validation == AttrValidation::LegacyDump {
+                        return Ok(ContinueRead::Parsed(res));
+                    }
                     return Ok(ContinueRead::SkippedErr(err));
                 }
             }

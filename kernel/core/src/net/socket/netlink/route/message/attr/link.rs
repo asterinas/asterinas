@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(route)]
+
 use aster_bigtcp::{iface::InterfaceName, wire::EthernetAddress};
 
 use crate::{
@@ -15,7 +17,7 @@ use crate::{
 #[expect(clippy::upper_case_acronyms)]
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-enum LinkAttrClass {
+pub(crate) enum LinkAttrClass {
     UNSPEC = 0,
     ADDRESS = 1,
     BROADCAST = 2,
@@ -98,7 +100,7 @@ pub(crate) enum LinkAttr {
 }
 
 impl LinkAttr {
-    fn class(&self) -> LinkAttrClass {
+    pub(in route) fn class(&self) -> LinkAttrClass {
         match self {
             LinkAttr::Address(_) => LinkAttrClass::ADDRESS,
             LinkAttr::Broadcast(_) => LinkAttrClass::BROADCAST,

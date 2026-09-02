@@ -27,6 +27,10 @@ pub(crate) struct DoneSegmentBody {
 
 impl SegmentBody for DoneSegmentBody {
     type CType = DoneSegmentBody;
+
+    fn validate_strict_request_body(_body: &Self::CType) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl DoneSegment {
@@ -59,6 +63,10 @@ pub(crate) struct ErrorSegmentBody {
 
 impl SegmentBody for ErrorSegmentBody {
     type CType = ErrorSegmentBody;
+
+    fn validate_strict_request_body(_body: &Self::CType) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl ErrorSegment {

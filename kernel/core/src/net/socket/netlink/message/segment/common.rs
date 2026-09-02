@@ -2,9 +2,15 @@
 
 #![short_vis_path::add(netlink)]
 
-use super::{SegmentBody, header::CMsgSegHdr};
+use super::{
+    SegmentBody,
+    header::{CMsgSegHdr, GetRequestFlags},
+};
 use crate::{
-    net::socket::netlink::message::{ContinueRead, attr::Attribute},
+    net::socket::netlink::message::{
+        ContinueRead,
+        attr::{AttrValidation, Attribute},
+    },
     prelude::*,
     util::{MultiRead, MultiWrite},
 };
@@ -52,17 +58,23 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
     pub(in netlink) fn read_from(
         header: &CMsgSegHdr,
         reader: &mut dyn MultiRead,
-    ) -> Result<ContinueRead<Self>>
-    where
-        Error: From<<Body::CType as TryInto<Body>>::Error>,
-    {
-        let (body, remain_len) = match Body::read_from(header, reader)? {
+        strict_check: bool,
+    ) -> Result<ContinueRead<Self>> {
+        let (body, remain_len) = match Body::read_from(header, reader, strict_check)? {
             ContinueRead::Parsed(parsed) => parsed,
             ContinueRead::Skipped => return Ok(ContinueRead::Skipped),
             ContinueRead::SkippedErr(err) => return Ok(ContinueRead::SkippedErr(err)),
         };
 
-        let attrs = match Attr::read_all_from(reader, remain_len)? {
+        let attr_validation = if strict_check {
+            AttrValidation::Strict
+        } else if GetRequestFlags::from_bits_truncate(header.flags).contains(GetRequestFlags::DUMP)
+        {
+            AttrValidation::LegacyDump
+        } else {
+            AttrValidation::LegacyQuery
+        };
+        let attrs = match Attr::read_all_from(reader, remain_len, attr_validation)? {
             ContinueRead::Parsed(attrs) => attrs,
             ContinueRead::Skipped => Vec::new(),
             ContinueRead::SkippedErr(err) => return Ok(ContinueRead::SkippedErr(err)),
