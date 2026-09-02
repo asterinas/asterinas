@@ -29,11 +29,14 @@ fn init() -> Result<(), ComponentInitError> {
     if let Err(err) = controller::init() {
         ostd::warn!("i8042 controller initialization failed: {:?}", err);
     }
+    if power::inject_fallback_restart_handler(try_cpu_reset).is_err() {
+        ostd::warn!("Failed to register the i8042 restart fallback");
+    }
     Ok(())
 }
 
 /// Attempts to reset the CPU via the i8042 PS/2 controller.
-pub fn try_cpu_reset(_code: power::ExitCode) {
+fn try_cpu_reset(_code: power::ExitCode) {
     // If possible, keep this method panic-free because it may be called by the panic handler.
     if let Some(controller) = I8042_CONTROLLER.get() {
         controller.lock().reset_cpu();

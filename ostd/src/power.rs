@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Power management.
+//!
+//! Each handler should be registered at most once in each category and remain panic-free.
+//! Handler registration fails if a category's internal capacity is exhausted.
 
-use spin::Once;
+use core::{
+    mem, ptr,
+    sync::atomic::{AtomicPtr, Ordering},
+};
 
 use crate::{arch::irq::disable_local_and_halt, cpu::CpuSet};
 
@@ -20,29 +26,97 @@ pub enum ExitCode {
     Failure,
 }
 
-static RESTART_HANDLER: Once<fn(ExitCode)> = Once::new();
+/// An error returned when registering a restart or poweroff handler.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HandlerRegistrationError {
+    /// No registration slot is available.
+    CapacityExhausted,
+}
+
+const MAX_NUM_HANDLERS: usize = 4;
+
+struct HandlerRegistry {
+    handlers: [AtomicPtr<()>; MAX_NUM_HANDLERS],
+}
+
+impl HandlerRegistry {
+    const fn new() -> Self {
+        Self {
+            handlers: [const { AtomicPtr::new(ptr::null_mut()) }; MAX_NUM_HANDLERS],
+        }
+    }
+
+    fn register(&self, handler: fn(ExitCode)) -> Result<(), HandlerRegistrationError> {
+        let handler = handler as *mut ();
+
+        for slot in &self.handlers {
+            if slot
+                .compare_exchange(
+                    ptr::null_mut(),
+                    handler,
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+
+        Err(HandlerRegistrationError::CapacityExhausted)
+    }
+
+    fn invoke(&self, code: ExitCode) -> bool {
+        let mut has_handler = false;
+
+        for slot in &self.handlers {
+            let handler = slot.load(Ordering::Acquire);
+            if handler.is_null() {
+                continue;
+            }
+
+            has_handler = true;
+            // SAFETY: Every non-null value stored in a slot is a `fn(ExitCode)` cast to a pointer,
+            // and registered values are never changed or removed.
+            let handler = unsafe { mem::transmute::<*mut (), fn(ExitCode)>(handler) };
+            handler(code);
+        }
+
+        has_handler
+    }
+}
+
+static RESTART_HANDLERS: HandlerRegistry = HandlerRegistry::new();
+static FALLBACK_RESTART_HANDLERS: HandlerRegistry = HandlerRegistry::new();
 
 /// Injects a handler that can restart the system.
 ///
-/// The function may be called only once; subsequent calls take no effect.
+/// Restart handlers are invoked in registration order.
+pub fn inject_restart_handler(handler: fn(ExitCode)) -> Result<(), HandlerRegistrationError> {
+    RESTART_HANDLERS.register(handler)
+}
+
+/// Injects a fallback handler that can restart the system.
 ///
-/// Note that, depending on the specific architecture, OSTD may already have a built-in handler. If
-/// so, calling this function outside of OSTD will never take effect. Currently, it happens in
-///  - x86_64: Never;
-///  - riscv64: Always;
-///  - loongarch64: Never.
-pub fn inject_restart_handler(handler: fn(ExitCode)) {
-    RESTART_HANDLER.call_once(|| handler);
+/// Fallback restart handlers are invoked in registration order after all regular restart handlers
+/// return.
+pub fn inject_fallback_restart_handler(
+    handler: fn(ExitCode),
+) -> Result<(), HandlerRegistrationError> {
+    FALLBACK_RESTART_HANDLERS.register(handler)
 }
 
 /// Restarts the system.
 ///
-/// This function will not return. If a restart handler is missing or not working, it will halt all
-/// CPUs on the machine.
+/// This function will not return. If no registered restart handler works, it will halt all CPUs
+/// on the machine.
 pub fn restart(code: ExitCode) -> ! {
-    if let Some(handler) = RESTART_HANDLER.get() {
-        (handler)(code);
-        crate::error!("Failed to restart the system because the restart handler fails");
+    let has_restart_handler = RESTART_HANDLERS.invoke(code);
+    let has_fallback_handler = FALLBACK_RESTART_HANDLERS.invoke(code);
+    let has_handler = has_restart_handler || has_fallback_handler;
+
+    if has_handler {
+        crate::error!("Failed to restart the system because all restart handlers fail");
     } else {
         crate::error!("Failed to restart the system because a restart handler is missing");
     }
@@ -50,19 +124,13 @@ pub fn restart(code: ExitCode) -> ! {
     machine_halt();
 }
 
-static POWEROFF_HANDLER: Once<fn(ExitCode)> = Once::new();
+static POWEROFF_HANDLERS: HandlerRegistry = HandlerRegistry::new();
 
 /// Injects a handler that can power off the system.
 ///
-/// The function may be called only once; subsequent calls take no effect.
-///
-/// Note that, depending on the specific architecture, OSTD may already have a built-in handler. If
-/// so, calling this function outside of OSTD will never take effect. Currently, it happens in
-///  - x86_64: If a QEMU hypervisor is detected;
-///  - riscv64: Always;
-///  - loongarch64: Never.
-pub fn inject_poweroff_handler(handler: fn(ExitCode)) {
-    POWEROFF_HANDLER.call_once(|| handler);
+/// Poweroff handlers are invoked in registration order and may be called by the panic handler.
+pub fn inject_poweroff_handler(handler: fn(ExitCode)) -> Result<(), HandlerRegistrationError> {
+    POWEROFF_HANDLERS.register(handler)
 }
 
 /// Powers off the system.
@@ -73,9 +141,8 @@ pub fn poweroff(code: ExitCode) -> ! {
     #[cfg(feature = "coverage")]
     crate::coverage::on_system_exit();
 
-    if let Some(handler) = POWEROFF_HANDLER.get() {
-        (handler)(code);
-        crate::error!("Failed to power off the system because the poweroff handler fails");
+    if POWEROFF_HANDLERS.invoke(code) {
+        crate::error!("Failed to power off the system because all poweroff handlers fail");
     } else {
         crate::error!("Failed to power off the system because a poweroff handler is missing");
     }

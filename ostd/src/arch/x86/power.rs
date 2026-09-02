@@ -42,7 +42,8 @@ mod qemu_isa_debug {
         let debug_exit_port = IoPort::acquire(DEBUG_EXIT_PORT_NUM).unwrap();
 
         DEBUG_EXIT_PORT.call_once(|| debug_exit_port);
-        inject_poweroff_handler(try_exit_qemu);
+        inject_poweroff_handler(try_exit_qemu)
+            .expect("failed to register the QEMU poweroff handler");
     }
 }
 
