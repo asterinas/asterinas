@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(netlink)]
+
 use core::num::NonZeroU32;
 
 use aster_bigtcp::iface::{InterfaceFlags, InterfaceType};
@@ -14,7 +16,7 @@ use crate::{
     util::net::CSocketAddrFamily,
 };
 
-pub(crate) type LinkSegment = SegmentCommon<LinkSegmentBody, LinkAttr>;
+pub(in netlink) type LinkSegment = SegmentCommon<LinkSegmentBody, LinkAttr>;
 
 impl SegmentBody for LinkSegmentBody {
     type CLegacyType = CRtGenMsg;

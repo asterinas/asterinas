@@ -24,6 +24,8 @@
 //!
 //! [`segment`]: super::segment
 
+#![short_vis_path::add(netlink)]
+
 use align_ext::AlignExt;
 
 use super::{ContinueRead, NLMSG_ALIGN};
@@ -32,7 +34,7 @@ use crate::{
     util::{MultiRead, MultiWrite},
 };
 
-pub(crate) mod noattr;
+pub(super) mod noattr;
 
 /// Netlink attribute header.
 ///
@@ -63,27 +65,27 @@ impl CAttrHeader {
     }
 
     /// Returns the type of the attribute.
-    pub(crate) fn type_(&self) -> u16 {
+    pub(in netlink) fn type_(&self) -> u16 {
         self.type_ & ATTRIBUTE_TYPE_MASK
     }
 
     /// Returns the payload length (excluding padding).
-    pub(crate) fn payload_len(&self) -> usize {
+    pub(in netlink) fn payload_len(&self) -> usize {
         self.len as usize - size_of::<Self>()
     }
 
     /// Returns the total length of the attribute (header + payload, excluding padding).
-    pub(crate) fn total_len(&self) -> usize {
+    pub(in netlink) fn total_len(&self) -> usize {
         self.len as usize
     }
 
     /// Returns the total length of the attribute (header + payload, including padding).
-    pub(crate) fn total_len_with_padding(&self) -> usize {
+    pub(in netlink) fn total_len_with_padding(&self) -> usize {
         (self.len as usize).align_up(NLMSG_ALIGN)
     }
 
     /// Returns the length of the padding bytes.
-    pub(crate) fn padding_len(&self) -> usize {
+    pub(in netlink) fn padding_len(&self) -> usize {
         self.total_len_with_padding() - self.total_len()
     }
 }

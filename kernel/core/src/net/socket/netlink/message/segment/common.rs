@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(netlink)]
+
 use super::{SegmentBody, header::CMsgSegHdr};
 use crate::{
     net::socket::netlink::message::{ContinueRead, attr::Attribute},
@@ -15,29 +17,29 @@ pub(crate) struct SegmentCommon<Body, Attr> {
 }
 
 impl<Body, Attr> SegmentCommon<Body, Attr> {
-    pub(crate) const HEADER_LEN: usize = size_of::<CMsgSegHdr>();
+    pub(in netlink) const HEADER_LEN: usize = size_of::<CMsgSegHdr>();
 
-    pub(crate) fn header(&self) -> &CMsgSegHdr {
+    pub(in netlink) fn header(&self) -> &CMsgSegHdr {
         &self.header
     }
 
-    pub(crate) fn header_mut(&mut self) -> &mut CMsgSegHdr {
+    pub(in netlink) fn header_mut(&mut self) -> &mut CMsgSegHdr {
         &mut self.header
     }
 
-    pub(crate) fn body(&self) -> &Body {
+    pub(in netlink) fn body(&self) -> &Body {
         &self.body
     }
 
-    pub(crate) fn attrs(&self) -> &Vec<Attr> {
+    pub(in netlink) fn attrs(&self) -> &Vec<Attr> {
         &self.attrs
     }
 }
 
 impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
-    pub(crate) const BODY_LEN: usize = size_of::<Body::CType>();
+    pub(in netlink) const BODY_LEN: usize = size_of::<Body::CType>();
 
-    pub(crate) fn new(header: CMsgSegHdr, body: Body, attrs: Vec<Attr>) -> Self {
+    pub(in netlink) fn new(header: CMsgSegHdr, body: Body, attrs: Vec<Attr>) -> Self {
         let mut res = Self {
             header,
             body,
@@ -47,7 +49,7 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
         res
     }
 
-    pub(crate) fn read_from(
+    pub(in netlink) fn read_from(
         header: &CMsgSegHdr,
         reader: &mut dyn MultiRead,
     ) -> Result<ContinueRead<Self>>
@@ -73,7 +75,7 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
         }))
     }
 
-    pub(crate) fn write_to(&self, writer: &mut dyn MultiWrite) -> Result<()> {
+    pub(in netlink) fn write_to(&self, writer: &mut dyn MultiWrite) -> Result<()> {
         writer.write_val_trunc(&self.header)?;
 
         self.body.write_to(writer)?;
@@ -84,13 +86,13 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
         Ok(())
     }
 
-    pub(crate) fn total_len(&self) -> usize {
+    pub(in netlink) fn total_len(&self) -> usize {
         Self::HEADER_LEN + Self::BODY_LEN + self.attrs_len()
     }
 }
 
 impl<Body, Attr: Attribute> SegmentCommon<Body, Attr> {
-    pub(crate) fn attrs_len(&self) -> usize {
+    pub(in netlink) fn attrs_len(&self) -> usize {
         self.attrs
             .iter()
             .map(|attr| attr.total_len_with_padding())

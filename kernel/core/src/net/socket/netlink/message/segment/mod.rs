@@ -9,9 +9,9 @@ use crate::{
     util::{MultiRead, MultiWrite},
 };
 
-pub(crate) mod ack;
-pub(crate) mod common;
-pub(crate) mod header;
+pub(super) mod ack;
+pub(super) mod common;
+pub(super) mod header;
 
 pub(crate) trait SegmentBody: Sized + Clone + Copy {
     // The actual message body should be `Self::CType`,
