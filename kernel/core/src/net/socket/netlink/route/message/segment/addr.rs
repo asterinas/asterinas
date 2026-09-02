@@ -11,7 +11,8 @@ use crate::{
     prelude::*,
 };
 
-pub(crate) type AddrSegment = SegmentCommon<AddrSegmentBody, AddrAttr>;
+pub(in crate::net::socket::netlink::route) type AddrSegment =
+    SegmentCommon<AddrSegmentBody, AddrAttr>;
 
 impl SegmentBody for AddrSegmentBody {
     type CLegacyType = CRtGenMsg;

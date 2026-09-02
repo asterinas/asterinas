@@ -31,10 +31,10 @@
 //!
 //! [`NLMSG_ALIGN`]: crate::net::socket::netlink::message::NLMSG_ALIGN
 
-pub(crate) mod addr;
+pub(super) mod addr;
 mod legacy;
-pub(crate) mod link;
-pub(crate) mod route;
+pub(super) mod link;
+mod route;
 
 use addr::AddrSegment;
 use link::LinkSegment;
