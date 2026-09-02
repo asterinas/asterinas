@@ -180,7 +180,7 @@ impl<D: DmaDirection> DmaStream<D> {
 
             (Inner::Segment(segment), paddr)
         } else {
-            let (kva, paddr) = alloc_kva(size / PAGE_SIZE, is_cache_coherent)?;
+            let (kva, paddr) = alloc_kva(size / PAGE_SIZE, can_sync_dma() || is_cache_coherent)?;
 
             (Inner::Both(kva, paddr, segment), paddr)
         };
@@ -231,8 +231,27 @@ impl<D: DmaDirection> DmaStream<D> {
         if byte_range.start > byte_range.end || byte_range.start > size {
             return Err(Error::InvalidArgs);
         }
+
+        if !is_from_device && let Inner::Both(kva, _, seg) = &self.inner {
+            self.sync_via_copying(byte_range.clone(), false, seg, kva);
+        }
+
+        // SAFETY: We've checked that the range is inbound.
+        unsafe { self.sync_cache(byte_range.clone()) };
+
+        if is_from_device && let Inner::Both(kva, _, seg) = &self.inner {
+            self.sync_via_copying(byte_range, true, seg, kva);
+        }
+
+        Ok(())
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `byte_range` is inbound.
+    unsafe fn sync_cache(&self, byte_range: Range<usize>) {
         if self.is_cache_coherent {
-            return Ok(());
+            return;
         }
 
         let va_range = match &self.inner {
@@ -240,29 +259,22 @@ impl<D: DmaDirection> DmaStream<D> {
                 let pa_range = segment.paddr_range();
                 paddr_to_vaddr(pa_range.start)..paddr_to_vaddr(pa_range.end)
             }
-            Inner::Kva(kva, _) => {
+            Inner::Kva(kva, _) | Inner::Both(kva, _, _) => {
                 if !can_sync_dma() {
                     // The KVA is mapped as uncachable.
-                    return Ok(());
+                    return;
                 }
                 kva.range()
-            }
-            Inner::Both(kva, _, seg) => {
-                self.sync_via_copying(byte_range, is_from_device, seg, kva);
-                return Ok(());
             }
         };
         let range = va_range.start + byte_range.start..va_range.start + byte_range.end;
 
         // SAFETY:
-        // 1. We've checked that the range is inbound, so the virtual address
-        //    range and the DMA direction correspond to a DMA region (they're
-        //    part of `self`).
-        // 2. `can_sync_dma()` is either checked above (for `Inner::Kva`) or
-        //    checked when constructing `self` (for `Inner::Segment`).
+        // 1. The range is inbound, so the virtual address range and the DMA
+        //    direction correspond to a DMA region (they're part of `self`).
+        // 2. `can_sync_dma()` is either checked above (for `Inner::Kva` and
+        //    `Inner::Both`) or when constructing `self` (for `Inner::Segment`).
         unsafe { crate::arch::mm::sync_dma_range::<D>(range) };
-
-        Ok(())
     }
 
     fn sync_via_copying(
