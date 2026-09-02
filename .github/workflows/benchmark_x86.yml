@@ -75,6 +75,8 @@ jobs:
           - lmbench/tcp_virtio_lat
           - lmbench/udp_virtio_lat
           - iperf3/tcp_virtio_bw
+          - iperf3/udp_virtio_bw_rx
+          - iperf3/udp_virtio_bw_tx
           # Scheduler-related benchmarks
           - hackbench/group8_smp1
           # FIXME: hackbench panics on multi-core settings now.
