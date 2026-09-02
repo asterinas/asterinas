@@ -4,9 +4,15 @@
 
 use align_ext::AlignExt;
 
-use super::{SegmentBody, header::CMsgSegHdr};
+use super::{
+    SegmentBody,
+    header::{CMsgSegHdr, GetRequestFlags},
+};
 use crate::{
-    net::socket::netlink::message::{ContinueRead, NLMSG_ALIGN, attr::Attribute},
+    net::socket::netlink::message::{
+        ContinueRead, NLMSG_ALIGN,
+        attr::{AttrValidation, Attribute},
+    },
     prelude::*,
     util::{MultiRead, MultiWrite},
 };
@@ -54,11 +60,12 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
     pub(in netlink) fn read_from(
         header: &CMsgSegHdr,
         reader: &mut dyn MultiRead,
+        strict_check: bool,
     ) -> Result<ContinueRead<Self>>
     where
         Error: From<<Body::CType as TryInto<Body>>::Error>,
     {
-        let segment = Self::read_payload(header, reader)?;
+        let segment = Self::read_payload(header, reader, strict_check)?;
 
         // Message padding is outside the payload;
         // even invalid messages must leave the reader at the next header.
@@ -68,17 +75,29 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
         Ok(segment)
     }
 
-    fn read_payload(header: &CMsgSegHdr, reader: &mut dyn MultiRead) -> Result<ContinueRead<Self>>
+    fn read_payload(
+        header: &CMsgSegHdr,
+        reader: &mut dyn MultiRead,
+        strict_check: bool,
+    ) -> Result<ContinueRead<Self>>
     where
         Error: From<<Body::CType as TryInto<Body>>::Error>,
     {
-        let (body, remain_len) = match Body::read_from(header, reader)? {
+        let (body, remain_len) = match Body::read_from(header, reader, strict_check)? {
             ContinueRead::Parsed(parsed) => parsed,
             ContinueRead::Skipped => return Ok(ContinueRead::Skipped),
             ContinueRead::SkippedErr(err) => return Ok(ContinueRead::SkippedErr(err)),
         };
 
-        let attrs = match Attr::read_all_from(reader, remain_len)? {
+        let attr_validation = if strict_check {
+            AttrValidation::Strict
+        } else if GetRequestFlags::from_bits_truncate(header.flags).contains(GetRequestFlags::DUMP)
+        {
+            AttrValidation::LegacyDump
+        } else {
+            AttrValidation::LegacyQuery
+        };
+        let attrs = match Attr::read_all_from(reader, remain_len, attr_validation)? {
             ContinueRead::Parsed(attrs) => attrs,
             ContinueRead::Skipped => Vec::new(),
             ContinueRead::SkippedErr(err) => return Ok(ContinueRead::SkippedErr(err)),

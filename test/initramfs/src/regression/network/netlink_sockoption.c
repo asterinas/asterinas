@@ -138,3 +138,108 @@ FN_TEST(invalid_membership)
 	}
 }
 END_TEST()
+
+FN_TEST(strict_check_socket_option)
+{
+	for (size_t p = 0; p < sizeof(protocols) / sizeof(protocols[0]); ++p) {
+		int sock_fd =
+			TEST_SUCC(socket(AF_NETLINK, SOCK_RAW, protocols[p]));
+
+		int strict = -1;
+		socklen_t option_len = sizeof(strict);
+
+		TEST_RES(getsockopt(sock_fd, SOL_NETLINK,
+				    NETLINK_GET_STRICT_CHK, &strict,
+				    &option_len),
+			 strict == 0 && option_len == sizeof(strict));
+
+		strict = 1;
+		TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK,
+				     NETLINK_GET_STRICT_CHK, &strict,
+				     sizeof(strict)));
+		strict = 0;
+		option_len = sizeof(strict);
+		TEST_RES(getsockopt(sock_fd, SOL_NETLINK,
+				    NETLINK_GET_STRICT_CHK, &strict,
+				    &option_len),
+			 strict == 1 && option_len == sizeof(strict));
+
+		strict = 0;
+		TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK,
+				     NETLINK_GET_STRICT_CHK, &strict,
+				     sizeof(strict)));
+		option_len = sizeof(strict);
+		TEST_RES(getsockopt(sock_fd, SOL_NETLINK,
+				    NETLINK_GET_STRICT_CHK, &strict,
+				    &option_len),
+			 strict == 0 && option_len == sizeof(strict));
+
+		TEST_ERRNO(getsockopt(sock_fd, SOL_NETLINK, 9999, &strict,
+				      &option_len),
+			   ENOPROTOOPT);
+
+		for (socklen_t len = 0; len < sizeof(int); ++len) {
+			int enabled = 1;
+			TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK,
+					     NETLINK_GET_STRICT_CHK, &enabled,
+					     sizeof(enabled)));
+			uint32_t input = UINT32_MAX;
+			TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK,
+					     NETLINK_GET_STRICT_CHK, &input,
+					     len));
+			int value = -1;
+			socklen_t value_len = sizeof(value);
+			TEST_RES(getsockopt(sock_fd, SOL_NETLINK,
+					    NETLINK_GET_STRICT_CHK, &value,
+					    &value_len),
+				 value == 0 && value_len == sizeof(value));
+
+			// Short inputs must not access even a NULL buffer.
+			TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK,
+					     NETLINK_GET_STRICT_CHK, &enabled,
+					     sizeof(enabled)));
+			TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK,
+					     NETLINK_GET_STRICT_CHK, NULL,
+					     len));
+			value = -1;
+			value_len = sizeof(value);
+			TEST_RES(getsockopt(sock_fd, SOL_NETLINK,
+					    NETLINK_GET_STRICT_CHK, &value,
+					    &value_len),
+				 value == 0 && value_len == sizeof(value));
+
+			uint32_t sentinel = 0xa5a5a5a5;
+			uint32_t output = sentinel;
+			value_len = len;
+			TEST_ERRNO(getsockopt(sock_fd, SOL_NETLINK,
+					      NETLINK_GET_STRICT_CHK, &output,
+					      &value_len),
+				   EINVAL);
+			TEST_RES(memcmp(&output, &sentinel, sizeof(output)),
+				 _ret == 0 && value_len == len);
+			TEST_ERRNO(getsockopt(sock_fd, SOL_NETLINK,
+					      NETLINK_GET_STRICT_CHK, NULL,
+					      &value_len),
+				   EINVAL);
+		}
+
+		// Ignore extra input bytes and only overwrite one integer on output.
+		int input[2] = { -1, 0 };
+		TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK,
+				     NETLINK_GET_STRICT_CHK, input,
+				     sizeof(input)));
+		TEST_ERRNO(setsockopt(sock_fd, SOL_NETLINK,
+				      NETLINK_GET_STRICT_CHK, NULL,
+				      sizeof(int)),
+			   EFAULT);
+		int output[2] = { -1, -1 };
+		socklen_t output_len = sizeof(output);
+		TEST_RES(getsockopt(sock_fd, SOL_NETLINK,
+				    NETLINK_GET_STRICT_CHK, output,
+				    &output_len),
+			 output[0] == 1 && output[1] == -1 &&
+				 output_len == sizeof(int));
+		TEST_SUCC(close(sock_fd));
+	}
+}
+END_TEST()
