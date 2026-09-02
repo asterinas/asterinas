@@ -8,7 +8,7 @@ use crate::prelude::*;
 #[expect(unused)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub(super) struct CRtMsg {
+struct CRtMsg {
     family: u8,
     dst_len: u8,
     src_len: u8,
