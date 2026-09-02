@@ -7,10 +7,13 @@
   lmbench = callPackage ./lmbench.nix { };
   memcached = pkgsHostTarget.memcached;
   nginx = pkgsHostTarget.nginx;
-  redis =
-    (pkgsHostTarget.redis.overrideAttrs (_: { doCheck = false; })).override {
-      withSystemd = false;
-    };
+  redis = (pkgsHostTarget.redis.overrideAttrs (old: {
+    doCheck = false;
+    makeFlags = (old.makeFlags or [ ]) ++ [
+      "CC=${pkgsHostTarget.stdenv.cc.targetPrefix}cc"
+      "LD=${pkgsHostTarget.stdenv.cc.targetPrefix}cc"
+    ];
+  })).override { withSystemd = false; };
   schbench = callPackage ./schbench.nix { };
   sqlite-speedtest1 = callPackage ./sqlite-speedtest1.nix { };
   sysbench = if hostPlatform.isx86_64 then pkgsHostTarget.sysbench else null;

@@ -51,7 +51,11 @@ in rec {
     CPPFLAGS = "-fcommon -fpermissive";
   });
   lmbench = pkgs.callPackage ./benchmark/lmbench.nix { };
-  redis = (pkgs.redis.overrideAttrs (_: { doCheck = false; })).override {
-    withSystemd = false;
-  };
+  redis = (pkgs.redis.overrideAttrs (old: {
+    doCheck = false;
+    makeFlags = (old.makeFlags or [ ]) ++ [
+      "CC=${pkgs.stdenv.cc.targetPrefix}cc"
+      "LD=${pkgs.stdenv.cc.targetPrefix}cc"
+    ];
+  })).override { withSystemd = false; };
 }
