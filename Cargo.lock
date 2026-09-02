@@ -206,6 +206,7 @@ dependencies = [
  "component",
  "ostd",
  "ostd-pod",
+ "sparse-id-alloc",
  "spin",
 ]
 
