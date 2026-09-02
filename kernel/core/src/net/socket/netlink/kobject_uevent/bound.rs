@@ -4,7 +4,7 @@ use super::message::UeventMessage;
 use crate::{
     events::IoEvents,
     net::socket::{
-        netlink::{NetlinkSocketAddr, common::BoundNetlink},
+        netlink::{NetlinkSocketAddr, common::BoundNetlink, options::NetlinkOptionSet},
         util::{RecvFlags, RecvOutput, SendFlags, datagram_common},
     },
     prelude::*,
@@ -15,6 +15,7 @@ pub(super) type BoundNetlinkUevent = BoundNetlink<UeventMessage>;
 
 impl datagram_common::Bound for BoundNetlinkUevent {
     type Endpoint = NetlinkSocketAddr;
+    type SendOptions = NetlinkOptionSet;
 
     fn local_endpoint(&self) -> Self::Endpoint {
         self.handle.addr()
@@ -37,6 +38,7 @@ impl datagram_common::Bound for BoundNetlinkUevent {
         reader: &mut dyn MultiRead,
         remote: &Self::Endpoint,
         flags: SendFlags,
+        _options: Self::SendOptions,
     ) -> Result<usize> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {

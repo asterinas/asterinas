@@ -3,16 +3,20 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <net/if.h>
+#include <stdint.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "../common/test.h"
+#include "netlink_sockoption.h"
 
 struct link_request {
 	struct nlmsghdr hdr;
 	struct ifinfomsg ifi;
 	struct nlattr attr;
-	char name[NLMSG_ALIGN(sizeof("lo"))];
+	union {
+		char name[NLMSG_ALIGN(sizeof("lo"))];
+		uint32_t mask;
+	};
 };
 
 static int sock_fd;
@@ -99,23 +103,48 @@ static int send_request(int fd, struct nlmsghdr *request, size_t request_len,
 
 FN_TEST(truncated_attribute_payload)
 {
-	/*
-	 * Without strict checking, the truncated name is ignored and the request
-	 * fails because it has neither a valid name nor an interface index.
-	 */
-	struct link_request request = name_request;
+	struct link_request request;
 
-	// Padding must not supply the missing attribute payload bytes.
-	for (size_t payload_len = 1; payload_len < sizeof("lo");
-	     ++payload_len) {
-		request.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(request.ifi)) +
-					NLA_HDRLEN + payload_len;
-		TEST_SUCC(send_request(sock_fd, &request.hdr, sizeof(request),
-				       &following.hdr));
-		TEST_RECV_ERRNO(sock_fd, request, EINVAL);
-		TEST_RECV_LINK(sock_fd, following);
-		TEST_RECV_EMPTY(sock_fd);
+	for (int strict = 0; strict < 2; ++strict) {
+		TEST_SETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, strict);
+
+		size_t attr_payload_len;
+		if (!strict) {
+			/*
+			 * Without strict checking, the truncated name is ignored
+			 * and the request fails because it has neither a valid
+			 * name nor an interface index.
+			 */
+			request = name_request;
+			attr_payload_len = sizeof("lo");
+		} else {
+			/*
+			 * Strict checking must reject the truncated attribute even
+			 * with a valid interface index. Ignoring it would succeed.
+			 */
+			request.ifi.ifi_index = loopback_index;
+			request.attr.nla_type = IFLA_EXT_MASK;
+			request.mask = 0;
+			attr_payload_len = sizeof(request.mask);
+		}
+		request.attr.nla_len = NLA_HDRLEN + attr_payload_len;
+
+		// Padding must not supply the missing attribute payload bytes.
+		for (size_t payload_len = 1; payload_len < attr_payload_len;
+		     ++payload_len) {
+			request.hdr.nlmsg_len =
+				NLMSG_LENGTH(sizeof(request.ifi)) + NLA_HDRLEN +
+				payload_len;
+			TEST_SUCC(send_request(sock_fd, &request.hdr,
+					       sizeof(request),
+					       &following.hdr));
+			TEST_RECV_ERRNO(sock_fd, request, EINVAL);
+			TEST_RECV_LINK(sock_fd, following);
+			TEST_RECV_EMPTY(sock_fd);
+		}
 	}
+
+	TEST_SETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, 0);
 }
 END_TEST()
 
@@ -137,6 +166,22 @@ FN_TEST(valid_unaligned_attribute)
 	TEST_RECV_LINK(sock_fd, request);
 	TEST_RECV_LINK(sock_fd, following);
 	TEST_RECV_EMPTY(sock_fd);
+
+	TEST_SETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, 1);
+
+	// Invalid ifi_type.
+	request.ifi.ifi_type = UINT16_MAX;
+
+	// Padding must not misalign the following message header,
+	// even if body validation fails.
+	TEST_SUCC(send_request(sock_fd, &request.hdr,
+			       NLMSG_ALIGN(request.hdr.nlmsg_len),
+			       &following.hdr));
+	TEST_RECV_ERRNO(sock_fd, request, EINVAL);
+	TEST_RECV_LINK(sock_fd, following);
+	TEST_RECV_EMPTY(sock_fd);
+
+	TEST_SETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, 0);
 }
 END_TEST()
 

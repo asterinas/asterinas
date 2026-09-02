@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{Attribute, CAttrHeader};
+use super::{AttrValidation, Attribute, CAttrHeader};
 use crate::{net::socket::netlink::message::ContinueRead, prelude::*, util::MultiRead};
 
 /// A special type indicates that a segment cannot have attributes.
@@ -29,6 +29,7 @@ impl Attribute for NoAttr {
     fn read_all_from(
         reader: &mut dyn MultiRead,
         total_len: usize,
+        _validation: AttrValidation,
     ) -> Result<ContinueRead<Vec<Self>>>
     where
         Self: Sized,

@@ -120,3 +120,61 @@ FN_TEST_FOREACH_PROTO(invalid_membership, sock_fd)
 	}
 }
 END_TEST_FOREACH_PROTO(sock_fd)
+
+FN_TEST_FOREACH_PROTO(strict_check_socket_option, sock_fd)
+{
+	TEST_GETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, _opt == 0);
+
+	TEST_SETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, 1);
+	TEST_GETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, _opt == 1);
+	TEST_SETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, 0);
+	TEST_GETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, _opt == 0);
+
+	int strict = -1;
+	socklen_t option_len = sizeof(strict);
+	TEST_ERRNO(getsockopt(sock_fd, SOL_NETLINK, 9999, &strict, &option_len),
+		   ENOPROTOOPT);
+
+	for (socklen_t len = 0; len < sizeof(int); ++len) {
+		uint32_t input = UINT32_MAX;
+
+		TEST_SETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, 1);
+		TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK,
+				     NETLINK_GET_STRICT_CHK, &input, len));
+		TEST_GETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, _opt == 0);
+
+		// Short inputs must not access even a NULL buffer.
+		TEST_SETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, 1);
+		TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK,
+				     NETLINK_GET_STRICT_CHK, NULL, len));
+		TEST_GETSOCKOPT_INT(sock_fd, NETLINK_GET_STRICT_CHK, _opt == 0);
+
+		uint32_t sentinel = 0xa5a5a5a5;
+		uint32_t output = sentinel;
+		socklen_t value_len = len;
+		TEST_ERRNO(getsockopt(sock_fd, SOL_NETLINK,
+				      NETLINK_GET_STRICT_CHK, &output,
+				      &value_len),
+			   EINVAL);
+		TEST_RES(memcmp(&output, &sentinel, sizeof(output)),
+			 _ret == 0 && value_len == len);
+		TEST_ERRNO(getsockopt(sock_fd, SOL_NETLINK,
+				      NETLINK_GET_STRICT_CHK, NULL, &value_len),
+			   EINVAL);
+	}
+
+	// Ignore extra input bytes and only overwrite one integer on output.
+	int input[2] = { -1, 0 };
+	TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			     input, sizeof(input)));
+	TEST_ERRNO(setsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			      NULL, sizeof(int)),
+		   EFAULT);
+	int output[2] = { -1, -1 };
+	socklen_t output_len = sizeof(output);
+	TEST_RES(getsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			    output, &output_len),
+		 output[0] == 1 && output[1] == -1 &&
+			 output_len == sizeof(int));
+}
+END_TEST_FOREACH_PROTO(sock_fd)
