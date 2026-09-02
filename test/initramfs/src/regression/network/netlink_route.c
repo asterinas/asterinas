@@ -3,8 +3,11 @@
 #include <net/if.h>
 #include <netlink/route/addr.h>
 #include <linux/if_addr.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "../common/test.h"
@@ -44,6 +47,317 @@ FN_TEST(if_nameindex)
 	TEST_RES(find_lo_and_eth0_by_libc(if_ni), _ret == 2);
 
 	if_freenameindex(if_ni);
+}
+END_TEST()
+
+static int recv_nlmsg_error(int sock_fd, int expected_errno)
+{
+	ssize_t recv_len = recv(sock_fd, buffer, BUFFER_SIZE, 0);
+	if (recv_len < (ssize_t)NLMSG_LENGTH(sizeof(int))) {
+		errno = EPROTO;
+		return -1;
+	}
+
+	struct nlmsghdr *nlh = (struct nlmsghdr *)buffer;
+	if (!NLMSG_OK(nlh, recv_len) ||
+	    nlh->nlmsg_len < NLMSG_LENGTH(sizeof(int)) ||
+	    (nlh->nlmsg_type != NLMSG_ERROR && nlh->nlmsg_type != NLMSG_DONE) ||
+	    ((struct nlmsgerr *)NLMSG_DATA(nlh))->error != -expected_errno) {
+		errno = EPROTO;
+		return -1;
+	}
+
+	return 0;
+}
+
+static int recv_nlmsg_done(int sock_fd)
+{
+	for (;;) {
+		ssize_t recv_len = recv(sock_fd, buffer, BUFFER_SIZE, 0);
+		if (recv_len <= 0)
+			return -1;
+
+		size_t remaining = (size_t)recv_len;
+		for (struct nlmsghdr *nlh = (struct nlmsghdr *)buffer;
+		     NLMSG_OK(nlh, remaining);
+		     nlh = NLMSG_NEXT(nlh, remaining)) {
+			if (nlh->nlmsg_type == NLMSG_DONE) {
+				if (nlh->nlmsg_len <
+					    NLMSG_LENGTH(sizeof(int)) ||
+				    *(int *)NLMSG_DATA(nlh) != 0) {
+					errno = EPROTO;
+					return -1;
+				}
+				return 0;
+			}
+			if (nlh->nlmsg_type == NLMSG_ERROR) {
+				errno = EPROTO;
+				return -1;
+			}
+		}
+	}
+}
+
+struct strict_link_request {
+	struct nlmsghdr hdr;
+	struct ifinfomsg ifi;
+	struct nlattr attr;
+};
+
+struct strict_addr_request {
+	struct nlmsghdr hdr;
+	struct ifaddrmsg ifa;
+	struct nlattr attr;
+	uint32_t attr_value;
+};
+
+static void init_strict_link_request(struct strict_link_request *request,
+				     uint16_t flags)
+{
+	memset(request, 0, sizeof(*request));
+	request->hdr.nlmsg_len = NLMSG_LENGTH(sizeof(request->ifi));
+	request->hdr.nlmsg_type = RTM_GETLINK;
+	request->hdr.nlmsg_flags = NLM_F_REQUEST | flags;
+	request->hdr.nlmsg_seq = 100;
+	request->ifi.ifi_family = AF_UNSPEC;
+	request->ifi.ifi_index = if_nametoindex(LOOPBACK_NAME);
+}
+
+static void init_strict_addr_request(struct strict_addr_request *request,
+				     uint16_t flags)
+{
+	memset(request, 0, sizeof(*request));
+	request->hdr.nlmsg_len = NLMSG_LENGTH(sizeof(request->ifa));
+	request->hdr.nlmsg_type = RTM_GETADDR;
+	request->hdr.nlmsg_flags = NLM_F_REQUEST | flags;
+	request->hdr.nlmsg_seq = 101;
+	request->ifa.ifa_family = AF_INET6;
+}
+
+FN_TEST(strict_check_socket_option)
+{
+	int sock_fd = TEST_SUCC(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+	int strict = -1;
+	socklen_t option_len = sizeof(strict);
+
+	TEST_RES(getsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			    &strict, &option_len),
+		 strict == 0 && option_len == sizeof(strict));
+
+	strict = 1;
+	TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			     &strict, sizeof(strict)));
+	strict = 0;
+	option_len = sizeof(strict);
+	TEST_RES(getsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			    &strict, &option_len),
+		 strict == 1 && option_len == sizeof(strict));
+
+	strict = 0;
+	TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			     &strict, sizeof(strict)));
+	option_len = sizeof(strict);
+	TEST_RES(getsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			    &strict, &option_len),
+		 strict == 0 && option_len == sizeof(strict));
+
+	TEST_ERRNO(getsockopt(sock_fd, SOL_NETLINK, 9999, &strict, &option_len),
+		   ENOPROTOOPT);
+
+	TEST_SUCC(close(sock_fd));
+}
+END_TEST()
+
+FN_TEST(strict_getlink_requests)
+{
+	int sock_fd = TEST_SUCC(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+	struct sockaddr_nl sa = { .nl_family = AF_NETLINK };
+	TEST_SUCC(bind(sock_fd, (struct sockaddr *)&sa, sizeof(sa)));
+
+	struct strict_link_request request;
+	struct iovec iov = { &request, sizeof(request) };
+	struct msghdr msg = { &sa, sizeof(sa), &iov, 1, NULL, 0, 0 };
+
+	init_strict_link_request(&request, 0);
+	iov.iov_len = request.hdr.nlmsg_len;
+	request.ifi.ifi_change = 1;
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv(sock_fd, buffer, BUFFER_SIZE, 0),
+		 _ret >= (ssize_t)sizeof(struct nlmsghdr) &&
+			 ((struct nlmsghdr *)buffer)->nlmsg_type ==
+				 RTM_NEWLINK);
+
+	request.ifi.ifi_change = 0;
+	request.attr.nla_len = sizeof(request.attr);
+	request.attr.nla_type = 0xdeef;
+	request.hdr.nlmsg_len =
+		NLMSG_LENGTH(sizeof(request.ifi)) + sizeof(request.attr);
+	iov.iov_len = request.hdr.nlmsg_len;
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv(sock_fd, buffer, BUFFER_SIZE, 0),
+		 _ret >= (ssize_t)sizeof(struct nlmsghdr) &&
+			 ((struct nlmsghdr *)buffer)->nlmsg_type ==
+				 RTM_NEWLINK);
+
+	int strict = 1;
+	TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			     &strict, sizeof(strict)));
+	request.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(request.ifi));
+	iov.iov_len = request.hdr.nlmsg_len;
+	request.ifi.ifi_change = 1;
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv_nlmsg_error(sock_fd, EINVAL), _ret == 0);
+
+	request.ifi.ifi_change = 0;
+	request.attr.nla_len = sizeof(request.attr);
+	request.attr.nla_type = IFLA_MASTER;
+	request.hdr.nlmsg_len =
+		NLMSG_LENGTH(sizeof(request.ifi)) + sizeof(request.attr);
+	iov.iov_len = request.hdr.nlmsg_len;
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	/*
+	 * FIXME: IFLA_MASTER requires a payload,
+	 * but this request includes only the attribute header (nla_len == 4).
+	 * Linux rejects it with ERANGE.
+	 * Asterinas rejects the unsupported attribute with EINVAL in strict mode.
+	 */
+#ifdef __asterinas__
+	TEST_RES(recv_nlmsg_error(sock_fd, EINVAL), _ret == 0);
+#else
+	TEST_RES(recv_nlmsg_error(sock_fd, ERANGE), _ret == 0);
+#endif
+
+	strict = 0;
+	TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			     &strict, sizeof(strict)));
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	/*
+	 * FIXME: Linux validates the IFLA_MASTER payload even when strict checking is disabled,
+	 * so the missing payload still causes ERANGE.
+	 * Asterinas ignores the unsupported attribute and returns the requested link.
+	 */
+#ifdef __asterinas__
+	TEST_RES(recv(sock_fd, buffer, BUFFER_SIZE, 0),
+		 _ret >= (ssize_t)sizeof(struct nlmsghdr) &&
+			 ((struct nlmsghdr *)buffer)->nlmsg_type ==
+				 RTM_NEWLINK);
+#else
+	TEST_RES(recv_nlmsg_error(sock_fd, ERANGE), _ret == 0);
+#endif
+
+	request.ifi.ifi_change = 0;
+	request.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv_nlmsg_done(sock_fd), _ret == 0);
+
+	strict = 1;
+	TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			     &strict, sizeof(strict)));
+	request.ifi.ifi_index = if_nametoindex(LOOPBACK_NAME);
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv_nlmsg_error(sock_fd, EINVAL), _ret == 0);
+
+	TEST_SUCC(close(sock_fd));
+}
+END_TEST()
+
+FN_TEST(strict_getaddr_requests)
+{
+	int sock_fd = TEST_SUCC(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+	struct sockaddr_nl sa = { .nl_family = AF_NETLINK };
+	TEST_SUCC(bind(sock_fd, (struct sockaddr *)&sa, sizeof(sa)));
+
+	struct strict_addr_request request;
+	struct iovec iov = { &request, sizeof(request) };
+	struct msghdr msg = { &sa, sizeof(sa), &iov, 1, NULL, 0, 0 };
+	int strict = 1;
+	TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			     &strict, sizeof(strict)));
+
+	init_strict_addr_request(&request, NLM_F_DUMP);
+	iov.iov_len = request.hdr.nlmsg_len;
+	request.ifa.ifa_prefixlen = 1;
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv_nlmsg_error(sock_fd, EINVAL), _ret == 0);
+
+	request.ifa.ifa_prefixlen = 0;
+	request.attr.nla_len =
+		sizeof(request.attr) + sizeof(request.attr_value);
+	request.attr.nla_type = 0xdeef;
+	request.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(request.ifa)) +
+				sizeof(request.attr) +
+				sizeof(request.attr_value);
+	iov.iov_len = request.hdr.nlmsg_len;
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv_nlmsg_error(sock_fd, EINVAL), _ret == 0);
+
+	request.attr.nla_type = IFA_TARGET_NETNSID;
+	/* Negative IDs cannot have a network namespace mapping on Linux. */
+	request.attr_value = (uint32_t)-1;
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv_nlmsg_error(sock_fd, EINVAL), _ret == 0);
+
+	/* An error in NLMSG_DONE must not be accepted as a successful dump. */
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_ERRNO(recv_nlmsg_done(sock_fd), EPROTO);
+
+	strict = 0;
+	TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			     &strict, sizeof(strict)));
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv_nlmsg_done(sock_fd), _ret == 0);
+
+	TEST_SUCC(close(sock_fd));
+}
+END_TEST()
+
+FN_TEST(strict_truncated_bodies)
+{
+	int sock_fd = TEST_SUCC(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+	struct sockaddr_nl sa = { .nl_family = AF_NETLINK };
+	TEST_SUCC(bind(sock_fd, (struct sockaddr *)&sa, sizeof(sa)));
+	int strict = 1;
+	TEST_SUCC(setsockopt(sock_fd, SOL_NETLINK, NETLINK_GET_STRICT_CHK,
+			     &strict, sizeof(strict)));
+
+	struct strict_link_request link_request;
+	struct strict_addr_request addr_request;
+	struct iovec iov = { &link_request, 0 };
+	struct msghdr msg = { &sa, sizeof(sa), &iov, 1, NULL, 0, 0 };
+
+	/* Alignment bytes must not complete a truncated declared body. */
+	for (int missing = 1; missing <= 3; missing++) {
+		init_strict_link_request(&link_request, 0);
+		link_request.hdr.nlmsg_len -= missing;
+		iov.iov_base = &link_request;
+		iov.iov_len = NLMSG_ALIGN(link_request.hdr.nlmsg_len);
+		TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+		TEST_RES(recv_nlmsg_error(sock_fd, EINVAL), _ret == 0);
+
+		init_strict_addr_request(&addr_request, NLM_F_DUMP);
+		addr_request.hdr.nlmsg_len -= missing;
+		iov.iov_base = &addr_request;
+		iov.iov_len = NLMSG_ALIGN(addr_request.hdr.nlmsg_len);
+		TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+		TEST_RES(recv_nlmsg_error(sock_fd, EINVAL), _ret == 0);
+	}
+
+	init_strict_link_request(&link_request, 0);
+	iov.iov_base = &link_request;
+	iov.iov_len = link_request.hdr.nlmsg_len;
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv(sock_fd, buffer, BUFFER_SIZE, 0),
+		 _ret >= (ssize_t)NLMSG_LENGTH(sizeof(struct ifinfomsg)) &&
+			 ((struct nlmsghdr *)buffer)->nlmsg_type ==
+				 RTM_NEWLINK);
+
+	init_strict_addr_request(&addr_request, NLM_F_DUMP);
+	iov.iov_base = &addr_request;
+	iov.iov_len = addr_request.hdr.nlmsg_len;
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_RES(recv_nlmsg_done(sock_fd), _ret == 0);
+
+	TEST_SUCC(close(sock_fd));
 }
 END_TEST()
 
@@ -412,12 +726,7 @@ FN_TEST(get_link_error)
 
 	// Invalid name attribute (too short) with index
 	req.ifi.ifi_index = 1234;
-	// FIXME: Asterinas will report `EINVAL` because it performs strict validation.
-#ifdef __asterinas__
-	TEST_ERROR_SEGMENT(EINVAL);
-#else
 	TEST_ERROR_SEGMENT(ENODEV);
-#endif
 
 	// Invalid name attribute (too long) with index
 	req.hdr.nlmsg_len = sizeof(struct nl_req) + 1;
