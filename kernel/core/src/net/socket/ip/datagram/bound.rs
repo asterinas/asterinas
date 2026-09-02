@@ -39,6 +39,7 @@ impl BoundDatagram {
 
 impl datagram_common::Bound for BoundDatagram {
     type Endpoint = IpEndpoint;
+    type SendOptions = ();
 
     fn local_endpoint(&self) -> Self::Endpoint {
         self.bound_socket.local_endpoint()
@@ -88,6 +89,7 @@ impl datagram_common::Bound for BoundDatagram {
         reader: &mut dyn MultiRead,
         remote: &Self::Endpoint,
         _flags: SendFlags,
+        _options: Self::SendOptions,
     ) -> Result<usize> {
         let result = self
             .bound_socket

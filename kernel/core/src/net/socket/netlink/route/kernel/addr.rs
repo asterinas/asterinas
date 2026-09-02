@@ -7,15 +7,15 @@ use core::{net::IpAddr, num::NonZeroU32};
 
 use aster_bigtcp::{iface::InterfaceFlags, wire::IpCidr};
 
-use super::util::finish_response;
+use super::util::{self, ResponseMode};
 use crate::{
     net::{
         iface::{Iface, iter_all_ifaces},
         socket::netlink::{
             message::{CMsgSegHdr, CSegmentType, GetRequestFlags, SegHdrCommonFlags},
             route::message::{
-                AddrAttr, AddrMessageFlags, AddrProtocol, AddrSegment, AddrSegmentBody, RtScope,
-                RtnlSegment,
+                AddrAttr, AddrAttrClass, AddrMessageFlags, AddrProtocol, AddrSegment, CIfaddrMsg,
+                RtScope, RtnlSegment,
             },
         },
     },
@@ -23,7 +23,10 @@ use crate::{
     util::net::CSocketAddrFamily,
 };
 
-pub(super) fn do_get_addr(request_segment: &AddrSegment) -> Result<Vec<RtnlSegment>> {
+pub(super) fn do_get_addr(
+    request_segment: &AddrSegment,
+    strict_check: bool,
+) -> Result<Vec<RtnlSegment>> {
     let dump_all = {
         let flags = GetRequestFlags::from_bits_truncate(request_segment.header().flags);
         flags.contains(GetRequestFlags::DUMP)
@@ -32,8 +35,47 @@ pub(super) fn do_get_addr(request_segment: &AddrSegment) -> Result<Vec<RtnlSegme
         return_errno_with_message!(Errno::EOPNOTSUPP, "GETADDR only supports dump requests");
     }
 
+    if strict_check {
+        let body = request_segment.body();
+        // These fields are reserved in GETADDR dumps.
+        // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/ipv4/devinet.c#L1800>.
+        if body.prefix_len != 0 || body.flags != 0 || body.scope != 0 {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the address request header contains nonzero prefix length, flags, or scope"
+            );
+        }
+
+        // Linux permits only `IFA_TARGET_NETNSID` in strict address dumps.
+        // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/ipv4/devinet.c#L1811>.
+        const ALLOWED: AddrAttrClass = AddrAttrClass::TARGET_NETNSID;
+        if request_segment
+            .attrs()
+            .iter()
+            .any(|attr| attr.class() != ALLOWED)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the attribute is not allowed in an address dump request"
+            );
+        }
+        if let Some(index) = NonZeroU32::new(body.index)
+            && !iter_all_ifaces().any(|iface| iface.index() == index.get())
+        {
+            return_errno_with_message!(Errno::ENODEV, "the interface does not exist");
+        }
+    }
+
     let requested_family = request_segment.body().family;
+    // Linux filters address dumps by a nonzero interface index only in strict mode.
+    // References:
+    // - <https://elixir.bootlin.com/linux/v7.1/source/net/ipv4/devinet.c#L1950>
+    // - <https://elixir.bootlin.com/linux/v7.1/source/net/ipv6/addrconf.c#L5430>
+    let requested_index = strict_check
+        .then(|| NonZeroU32::new(request_segment.body().index))
+        .flatten();
     let mut addr_segments: Vec<AddrSegment> = iter_all_ifaces()
+        .filter(|iface| requested_index.is_none_or(|index| index.get() == iface.index()))
         .flat_map(|iface| iface_to_new_addrs(request_segment.header(), requested_family, iface))
         .collect();
 
@@ -46,22 +88,31 @@ pub(super) fn do_get_addr(request_segment: &AddrSegment) -> Result<Vec<RtnlSegme
         .map(RtnlSegment::NewAddr)
         .collect();
 
-    finish_response(request_segment.header(), dump_all, &mut response_segments);
+    let response_mode = if requested_index.is_some() {
+        ResponseMode::FilteredDump
+    } else {
+        ResponseMode::Dump
+    };
+    util::finish_response(
+        request_segment.header(),
+        response_mode,
+        &mut response_segments,
+    );
 
     Ok(response_segments)
 }
 
 fn iface_to_new_addrs(
     request_header: &CMsgSegHdr,
-    requested_family: i32,
+    requested_family: u8,
     iface: &Arc<Iface>,
 ) -> impl IntoIterator<Item = AddrSegment> {
     let mut addr_segments = [None, None];
 
     // Linux dumps addresses for all families
     // when the requested family is neither AF_INET nor AF_INET6.
-    let dump_ipv4 = requested_family != CSocketAddrFamily::AF_INET6 as i32;
-    let dump_ipv6 = requested_family != CSocketAddrFamily::AF_INET as i32;
+    let dump_ipv4 = requested_family != CSocketAddrFamily::AF_INET6 as u8;
+    let dump_ipv6 = requested_family != CSocketAddrFamily::AF_INET as u8;
 
     if dump_ipv4 && let Some(cidr) = iface.ipv4_cidr() {
         addr_segments[0] = Some(iface_to_new_addr(request_header, iface, IpCidr::Ipv4(cidr)));
@@ -120,12 +171,13 @@ fn iface_to_new_addr(
         pid: request_header.pid,
     };
 
-    let addr_message = AddrSegmentBody {
+    let flags = AddrMessageFlags::PERMANENT;
+    let addr_message = CIfaddrMsg {
         family: family as _,
         prefix_len,
-        flags: AddrMessageFlags::PERMANENT,
-        scope,
-        index: NonZeroU32::new(iface.index()),
+        flags: flags.bits() as u8,
+        scope: scope as u8,
+        index: iface.index(),
     };
 
     let attrs = match address {
@@ -156,7 +208,7 @@ fn iface_to_new_addr(
                 // report the interface name.
                 // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/ipv4/devinet.c#L1765>.
                 AddrAttr::Label(iface.name().as_cstr().to_owned()),
-                AddrAttr::Flags(addr_message.flags),
+                AddrAttr::Flags(flags),
             ]);
             attrs
         }
@@ -177,7 +229,7 @@ fn iface_to_new_addr(
                 // report only `IFA_ADDRESS` with the local address.
                 // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/ipv6/addrconf.c#L5189>.
                 AddrAttr::Address(address),
-                AddrAttr::Flags(addr_message.flags),
+                AddrAttr::Flags(flags),
             ];
             if address.is_loopback() {
                 // Linux marks an IPv6 loopback address with `IFAPROT_KERNEL_LO`.

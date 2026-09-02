@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(route)]
+
 use core::net::{IpAddr, Ipv4Addr};
 
 use zerocopy::Immutable;
@@ -20,7 +22,7 @@ use crate::{
 #[expect(clippy::upper_case_acronyms)]
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-enum AddrAttrClass {
+pub(in route) enum AddrAttrClass {
     UNSPEC = 0,
     ADDRESS = 1,
     LOCAL = 2,
@@ -65,7 +67,7 @@ pub(crate) enum AddrAttr {
 }
 
 impl AddrAttr {
-    fn class(&self) -> AddrAttrClass {
+    pub(in route) fn class(&self) -> AddrAttrClass {
         match self {
             AddrAttr::Address(_) => AddrAttrClass::ADDRESS,
             AddrAttr::Broadcast(_) => AddrAttrClass::BROADCAST,
@@ -100,24 +102,25 @@ impl Attribute for AddrAttr {
         let payload_len = header.payload_len();
         reader.skip_some(payload_len);
 
-        // GETADDR only supports dump requests. These requests do not have any attributes.
-        // According to the Linux behavior, we should just ignore all the attributes.
+        // We currently support only GETADDR dump requests.
+        // Attributes are ignored unless strict checking is enabled,
+        // but we still need to inspect them to reject malformed or unsupported attributes
+        // when strict checking is enabled.
+        // TODO: Parse and validate the remaining attributes.
 
-        Ok(ContinueRead::Skipped)
-    }
-
-    fn read_all_from(
-        reader: &mut dyn MultiRead,
-        total_len: usize,
-    ) -> Result<ContinueRead<Vec<Self>>>
-    where
-        Self: Sized,
-    {
-        reader.skip_some(total_len);
-
-        // GETADDR only supports dump requests. These requests do not have any attributes.
-        // According to the Linux behavior, we should just ignore all the attributes.
-
-        Ok(ContinueRead::Skipped)
+        let Ok(class) = AddrAttrClass::try_from(header.type_()) else {
+            return Ok(ContinueRead::Skipped);
+        };
+        match (class, payload_len) {
+            (AddrAttrClass::TARGET_NETNSID, 4) => {
+                // TODO: Parse net namespace ID once we support net namespace.
+                Ok(ContinueRead::Skipped)
+            }
+            (AddrAttrClass::TARGET_NETNSID, _) => Ok(ContinueRead::skipped_with_error(
+                Errno::ERANGE,
+                "the namespace attribute has an invalid payload length",
+            )),
+            _ => Ok(ContinueRead::Skipped),
+        }
     }
 }

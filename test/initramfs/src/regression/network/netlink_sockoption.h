@@ -8,6 +8,15 @@
 
 #include "../common/test.h"
 
+// Use these macros inside FN_TEST; the getter exposes the returned value as _opt.
+#define TEST_GETSOCKOPT_INT(fd, option, cond)                                  \
+	do {                                                                   \
+		int _opt = -1;                                                 \
+		socklen_t _optlen = sizeof(_opt);                              \
+		TEST_RES(getsockopt(fd, SOL_NETLINK, option, &_opt, &_optlen), \
+			 _optlen == sizeof(_opt) && (cond));                   \
+	} while (0)
+
 #define TEST_SETSOCKOPT_INT(fd, option, value)                       \
 	do {                                                         \
 		int _opt = (value);                                  \

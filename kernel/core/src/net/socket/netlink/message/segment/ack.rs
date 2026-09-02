@@ -25,9 +25,7 @@ pub(crate) struct DoneSegmentBody {
     error_code: i32,
 }
 
-impl SegmentBody for DoneSegmentBody {
-    type CType = DoneSegmentBody;
-}
+impl SegmentBody for DoneSegmentBody {}
 
 impl DoneSegment {
     pub(in netlink) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
@@ -57,9 +55,7 @@ pub(crate) struct ErrorSegmentBody {
     request_header: CMsgSegHdr,
 }
 
-impl SegmentBody for ErrorSegmentBody {
-    type CType = ErrorSegmentBody;
-}
+impl SegmentBody for ErrorSegmentBody {}
 
 impl ErrorSegment {
     pub(in netlink) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
