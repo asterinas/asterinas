@@ -41,7 +41,7 @@ pub(super) fn sys_symlinkat(
             .into_parent_and_filename()?
     };
 
-    let new_path = dir_path.new_fs_child(&link_name, InodeType::SymLink, mkmod!(a+rwx))?;
+    let new_path = dir_path.new_child(&link_name, InodeType::SymLink, mkmod!(a+rwx))?;
     new_path.inode().write_link(&target)?;
     fs::vfs::notify::on_create(&dir_path, || link_name);
     Ok(SyscallReturn::Return(0))

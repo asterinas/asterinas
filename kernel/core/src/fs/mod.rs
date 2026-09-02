@@ -95,7 +95,7 @@ fn lookup_or_create_dev(path_resolver: &PathResolver) -> Result<Path> {
         Err(error) if error.error() == Errno::ENOENT => {
             path_resolver
                 .root()
-                .new_fs_child("dev", InodeType::Dir, mkmod!(a+rx, u+w))
+                .new_child("dev", InodeType::Dir, mkmod!(a+rx, u+w))
         }
         result => result,
     }

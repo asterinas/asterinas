@@ -60,13 +60,13 @@ impl Eq for Path {}
 
 impl Path {
     /// Creates a new `Path` to represent the root directory of a file system.
-    pub(crate) fn new_fs_root(mount: Arc<Mount>) -> Self {
+    pub(crate) fn new_root(mount: Arc<Mount>) -> Self {
         let inner = mount.root_dentry().clone();
         Self::new(mount, inner)
     }
 
     /// Creates a new `Path` to represent the child directory of a file system.
-    pub(crate) fn new_fs_child(
+    pub(crate) fn new_child(
         &self,
         name: &str,
         type_: InodeType,
