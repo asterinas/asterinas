@@ -144,7 +144,7 @@ fn try_append_entry_to_rootfs<R: Read>(
     let mode = InodeMode::from_bits_truncate(metadata.permission_mode());
     match metadata.file_type() {
         FileType::File => {
-            let path = parent.new_fs_child(name, InodeType::File, mode)?;
+            let path = parent.new_child(name, InodeType::File, mode)?;
             let writer = InodeWriter {
                 inner: path.inode().as_ref(),
                 offset: 0,
@@ -152,10 +152,10 @@ fn try_append_entry_to_rootfs<R: Read>(
             entry.read_all(writer)?;
         }
         FileType::Dir => {
-            let _ = parent.new_fs_child(name, InodeType::Dir, mode)?;
+            let _ = parent.new_child(name, InodeType::Dir, mode)?;
         }
         FileType::Link => {
-            let path = parent.new_fs_child(name, InodeType::SymLink, mode)?;
+            let path = parent.new_child(name, InodeType::SymLink, mode)?;
             let link_content = {
                 let mut link_data: Vec<u8> = Vec::new();
                 entry.read_all(&mut link_data)?;

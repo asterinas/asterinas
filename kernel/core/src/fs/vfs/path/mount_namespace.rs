@@ -135,8 +135,8 @@ impl MountNamespace {
     /// The "effective root" refers to the currently visible root directory, which
     /// may differ from the original root filesystem if overlay mounts exist.
     pub(crate) fn new_path_resolver(&self) -> PathResolver {
-        let root = Path::new_fs_root(self.root().clone()).get_top_path();
-        let cwd = Path::new_fs_root(self.root().clone()).get_top_path();
+        let root = Path::new_root(self.root().clone()).get_top_path();
+        let cwd = Path::new_root(self.root().clone()).get_top_path();
         PathResolver::new(root, cwd)
     }
 

@@ -381,7 +381,7 @@ impl PathResolver {
         new_root_mount.graft_mount_tree(&parent_path, &mut topology_guard);
         drop(topology_guard);
 
-        let new_root = Path::new_fs_root(new_root_mount);
+        let new_root = Path::new_root(new_root_mount);
         self.root = new_root.clone();
         self.cwd = new_root;
     }

@@ -297,7 +297,7 @@ pub(crate) struct DetachedMountFile {
 impl DetachedMountFile {
     /// Creates a detached mount file.
     pub(crate) fn new(mount: Arc<Mount>) -> Self {
-        let root_path = Path::new_fs_root(mount.clone());
+        let root_path = Path::new_root(mount.clone());
         Self {
             mount,
             // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/namespace.c#L4497>.

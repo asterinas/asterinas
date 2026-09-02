@@ -1287,19 +1287,19 @@ mod tests {
         let mode = InodeMode::all();
         let upper = {
             let root_mount = new_dummy_mount();
-            Path::new_fs_root(root_mount)
+            Path::new_root(root_mount)
         };
         let lower = {
             let r1 = new_dummy_mount();
             let r2 = new_dummy_mount();
 
-            let l1 = Path::new_fs_root(r1);
-            l1.new_fs_child("f1", InodeType::File, mode).unwrap();
-            let d1 = l1.new_fs_child("d1", InodeType::Dir, mode).unwrap();
-            d1.new_fs_child("f11", InodeType::File, mode).unwrap();
+            let l1 = Path::new_root(r1);
+            l1.new_child("f1", InodeType::File, mode).unwrap();
+            let d1 = l1.new_child("d1", InodeType::Dir, mode).unwrap();
+            d1.new_child("f11", InodeType::File, mode).unwrap();
 
-            let l2 = Path::new_fs_root(r2);
-            let f2 = l2.new_fs_child("f2", InodeType::File, mode).unwrap();
+            let l2 = Path::new_root(r2);
+            let f2 = l2.new_child("f2", InodeType::File, mode).unwrap();
             let f2_inode = f2.inode();
             f2_inode
                 .write_at(
@@ -1316,9 +1316,9 @@ mod tests {
                     XattrSetFlags::CREATE_ONLY,
                 )
                 .unwrap();
-            let d1 = l2.new_fs_child("d1", InodeType::Dir, mode).unwrap();
-            d1.new_fs_child("f11", InodeType::File, mode).unwrap();
-            d1.new_fs_child("f12", InodeType::File, mode).unwrap();
+            let d1 = l2.new_child("d1", InodeType::Dir, mode).unwrap();
+            d1.new_child("f11", InodeType::File, mode).unwrap();
+            d1.new_child("f12", InodeType::File, mode).unwrap();
 
             vec![l1, l2]
         };
@@ -1334,9 +1334,9 @@ mod tests {
         crate::time::clocks::init_for_ktest();
         crate::fs::vfs::init();
 
-        let upper = Path::new_fs_root(new_dummy_mount());
-        let lower = vec![Path::new_fs_root(new_dummy_mount())];
-        let work = Path::new_fs_root(new_dummy_mount());
+        let upper = Path::new_root(new_dummy_mount());
+        let lower = vec![Path::new_root(new_dummy_mount())];
+        let work = Path::new_root(new_dummy_mount());
 
         let Err(e) = OverlayFs::new(upper, lower, work) else {
             panic!("OverlayFs::new should fail when work and upper are not in the same mount");
@@ -1351,11 +1351,11 @@ mod tests {
 
         let mode = InodeMode::all();
         let upper = {
-            let root = Path::new_fs_root(new_dummy_mount());
-            root.new_fs_child("file", InodeType::File, mode).unwrap();
+            let root = Path::new_root(new_dummy_mount());
+            root.new_child("file", InodeType::File, mode).unwrap();
             root
         };
-        let lower = vec![Path::new_fs_root(new_dummy_mount())];
+        let lower = vec![Path::new_root(new_dummy_mount())];
         let work = upper.clone();
 
         let Err(e) = OverlayFs::new(upper, lower, work) else {
@@ -1370,22 +1370,22 @@ mod tests {
         crate::fs::vfs::init();
 
         let mode = InodeMode::all();
-        let root = Path::new_fs_root(new_dummy_mount());
+        let root = Path::new_root(new_dummy_mount());
         let upper = {
-            let dir = root.new_fs_child("upper", InodeType::Dir, mode).unwrap();
-            dir.new_fs_child("f1", InodeType::File, mode).unwrap();
-            dir.new_fs_child(".wh.f2", InodeType::File, mode).unwrap();
-            dir.new_fs_child("d1", InodeType::Dir, mode).unwrap();
-            dir.new_fs_child("d2", InodeType::Dir, mode).unwrap();
-            dir.new_fs_child(".wh.d3", InodeType::Dir, mode).unwrap();
+            let dir = root.new_child("upper", InodeType::Dir, mode).unwrap();
+            dir.new_child("f1", InodeType::File, mode).unwrap();
+            dir.new_child(".wh.f2", InodeType::File, mode).unwrap();
+            dir.new_child("d1", InodeType::Dir, mode).unwrap();
+            dir.new_child("d2", InodeType::Dir, mode).unwrap();
+            dir.new_child(".wh.d3", InodeType::Dir, mode).unwrap();
             dir
         };
         let lower = {
             let l1 = {
-                let r1 = Path::new_fs_root(new_dummy_mount());
-                r1.new_fs_child("f1", InodeType::Dir, mode).unwrap();
-                r1.new_fs_child("f2", InodeType::File, mode).unwrap();
-                let d1 = r1.new_fs_child("d1", InodeType::Dir, mode).unwrap();
+                let r1 = Path::new_root(new_dummy_mount());
+                r1.new_child("f1", InodeType::Dir, mode).unwrap();
+                r1.new_child("f2", InodeType::File, mode).unwrap();
+                let d1 = r1.new_child("d1", InodeType::Dir, mode).unwrap();
                 // Set internal OverlayFS metadata while constructing the synthetic lower layer.
                 d1.inode()
                     .set_xattr(
@@ -1395,21 +1395,21 @@ mod tests {
                         XattrSetFlags::CREATE_ONLY,
                     )
                     .unwrap();
-                r1.new_fs_child("d2", InodeType::File, mode).unwrap();
-                r1.new_fs_child("d3", InodeType::Dir, mode).unwrap();
+                r1.new_child("d2", InodeType::File, mode).unwrap();
+                r1.new_child("d3", InodeType::Dir, mode).unwrap();
                 r1
             };
             let l2 = {
-                let r2 = Path::new_fs_root(new_dummy_mount());
-                r2.new_fs_child("f1", InodeType::File, mode).unwrap();
-                r2.new_fs_child("d1", InodeType::Dir, mode).unwrap();
-                r2.new_fs_child("d2", InodeType::Dir, mode).unwrap();
-                r2.new_fs_child("d4", InodeType::Dir, mode).unwrap();
+                let r2 = Path::new_root(new_dummy_mount());
+                r2.new_child("f1", InodeType::File, mode).unwrap();
+                r2.new_child("d1", InodeType::Dir, mode).unwrap();
+                r2.new_child("d2", InodeType::Dir, mode).unwrap();
+                r2.new_child("d4", InodeType::Dir, mode).unwrap();
                 r2
             };
             vec![l1, l2]
         };
-        let work = root.new_fs_child("work", InodeType::Dir, mode).unwrap();
+        let work = root.new_child("work", InodeType::Dir, mode).unwrap();
 
         let fs = OverlayFs::new(upper, lower, work).unwrap();
         let root = fs.root_inode();
@@ -1534,33 +1534,33 @@ mod tests {
         crate::fs::vfs::init();
 
         let mode = InodeMode::all();
-        let root = Path::new_fs_root(new_dummy_mount());
+        let root = Path::new_root(new_dummy_mount());
 
         let upper = {
-            let dir = root.new_fs_child("upper", InodeType::Dir, mode).unwrap();
+            let dir = root.new_child("upper", InodeType::Dir, mode).unwrap();
             // whiteout for "deleted"
-            dir.new_fs_child(".wh.deleted", InodeType::File, mode)
+            dir.new_child(".wh.deleted", InodeType::File, mode)
                 .unwrap();
             // a normal file that should appear exactly once
-            dir.new_fs_child("normal_file", InodeType::File, mode)
+            dir.new_child("normal_file", InodeType::File, mode)
                 .unwrap();
             dir
         };
 
         let lower = {
-            let lower_root = Path::new_fs_root(new_dummy_mount());
+            let lower_root = Path::new_root(new_dummy_mount());
             // this file is whited-out by upper, should NOT appear
             lower_root
-                .new_fs_child("deleted", InodeType::File, mode)
+                .new_child("deleted", InodeType::File, mode)
                 .unwrap();
             // this file only lives in lower, should appear once
             lower_root
-                .new_fs_child("another_file", InodeType::File, mode)
+                .new_child("another_file", InodeType::File, mode)
                 .unwrap();
             lower_root
         };
 
-        let work = root.new_fs_child("work", InodeType::Dir, mode).unwrap();
+        let work = root.new_child("work", InodeType::Dir, mode).unwrap();
         let fs = OverlayFs::new(upper, vec![lower], work).unwrap();
         let root_inode = fs.root_inode();
 
