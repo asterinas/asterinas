@@ -84,7 +84,7 @@ pub(crate) struct ProcessVm {
 
 impl ProcessVm {
     /// Creates a new `ProcessVm` without mapping anything.
-    pub fn new(executable_path: Path) -> Self {
+    pub(crate) fn new(executable_path: Path) -> Self {
         Self {
             init_stack: InitStack::new(),
             heap: Heap::new_uninitialized(),
