@@ -49,12 +49,12 @@ pub(super) struct SizeClassedDmaPool<D: DmaDirection> {
 
 impl<D: DmaDirection> SizeClassedDmaPool<D> {
     /// Creates a DMA buffer pool with predefined size classes.
-    pub(super) fn new() -> Arc<Self> {
+    pub(super) fn new() -> Self {
         let classes = core::array::from_fn(|i| {
             let segment_size = 1 << (MIN_SHIFT + i);
             DmaPool::<D>::new(segment_size, POOL_INIT_SIZE, POOL_HIGH_WATERMARK, false)
         });
-        Arc::new(Self { classes })
+        Self { classes }
     }
 
     /// Allocates a DMA buffer whose visible length is `len`.
