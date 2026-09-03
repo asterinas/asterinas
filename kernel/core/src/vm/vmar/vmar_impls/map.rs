@@ -33,7 +33,6 @@ impl Vmar {
     ///     .vmar()
     ///     // Create a read-only mapping spanning four pages
     ///     .new_map(PAGE_SIZE * 4, VmPerms::READ)
-    ///     .unwrap()
     ///     // Provide an optional offset for the mapping inside the VMAR
     ///     .offset(VmarMapOffset::FixedNoReplace(target_vaddr))
     ///     // Specify an optional binding VMO
@@ -48,8 +47,8 @@ impl Vmar {
     /// ```
     ///
     /// For more details on the available options, see [`VmarMapOptions`].
-    pub(crate) fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions<'_>> {
-        Ok(VmarMapOptions::new(self, size, perms))
+    pub(crate) fn new_map(&self, size: usize, perms: VmPerms) -> VmarMapOptions<'_> {
+        VmarMapOptions::new(self, size, perms)
     }
 }
 

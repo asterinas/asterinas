@@ -292,7 +292,7 @@ fn map_segment_vmos(
             if VMAR_CAP_ADDR - offset < map_size {
                 return_errno_with_message!(Errno::ENOMEM, "the mapping address is too large");
             }
-            vmar.new_map(map_size, VmPerms::empty())?
+            vmar.new_map(map_size, VmPerms::empty())
                 .align(align)
                 .offset(VmarMapOffset::FixedNoReplace(offset))
         } else {
@@ -307,7 +307,7 @@ fn map_segment_vmos(
             // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/binfmt_elf.c#L1293>
             heap_base = Some(PIE_BASE_ADDR);
 
-            vmar.new_map(map_size, VmPerms::empty())?.align(align)
+            vmar.new_map(map_size, VmPerms::empty()).align(align)
         };
         let aligned_range = vmar_map_options.build().map(|addr| addr..addr + map_size)?;
 
@@ -334,7 +334,7 @@ fn map_segment_vmos(
             elf_va_range.start.align_down(PAGE_SIZE)..elf_va_range.end.align_up(PAGE_SIZE);
         let map_size = elf_va_range_aligned.len();
 
-        vmar.new_map(map_size, VmPerms::empty())?
+        vmar.new_map(map_size, VmPerms::empty())
             .offset(VmarMapOffset::FixedNoReplace(elf_va_range_aligned.start))
             .build()?;
 
@@ -421,7 +421,7 @@ fn map_segment_vmo(
 
     if segment_size != 0 {
         let vm_map_options = vmar
-            .new_map(segment_size, perms)?
+            .new_map(segment_size, perms)
             .mappable(elf_file)?
             .vmo_offset(segment_offset)
             .offset(VmarMapOffset::FixedReplace(offset))
@@ -448,7 +448,7 @@ fn map_segment_vmo(
     let anonymous_map_size = total_map_size - segment_size;
     if anonymous_map_size > 0 {
         let anonymous_map_options = vmar
-            .new_map(anonymous_map_size, perms)?
+            .new_map(anonymous_map_size, perms)
             .offset(VmarMapOffset::FixedReplace(offset + segment_size));
         anonymous_map_options.build()?;
     }
@@ -499,7 +499,6 @@ fn map_vdso_to_vmar(vmar: &Vmar) -> Option<Vaddr> {
 
     let options = vmar
         .new_map(VDSO_VMO_LAYOUT.size, VmPerms::empty())
-        .unwrap()
         .vmo(vdso_vmo);
 
     let vdso_vmo_base = options.build().unwrap();

@@ -188,7 +188,7 @@ impl InitStack {
             let perms = VmPerms::READ | VmPerms::WRITE;
             let map_addr = self.initial_top - self.max_size;
             debug_assert!(map_addr.is_multiple_of(PAGE_SIZE));
-            vmar.new_map(self.max_size, perms)?
+            vmar.new_map(self.max_size, perms)
                 .offset(VmarMapOffset::FixedNoReplace(map_addr))
                 .vmo(vmo.clone())
         };
