@@ -107,29 +107,33 @@ impl Default for UserContext {
 }
 
 impl UserContext {
+    // Methods shared across all architectures (i.e., general registers and exceptions).
+
     /// Returns a reference to the general registers.
     pub fn general_regs(&self) -> &GeneralRegs {
         &self.user_context.general
     }
 
-    /// Returns a mutable reference to the general registers
+    /// Returns a mutable reference to the general registers.
     pub fn general_regs_mut(&mut self) -> &mut GeneralRegs {
         &mut self.user_context.general
     }
 
-    /// Returns the trap information.
+    /// Takes the CPU exception out.
     pub fn take_exception(&mut self) -> Option<CpuExceptionInfo> {
         self.cpu_exception_info.take()
     }
 
-    /// Sets the thread-local storage pointer.
-    pub fn set_tls_pointer(&mut self, tls: usize) {
-        self.set_tp(tls)
-    }
+    // Architecture-specific methods.
 
-    /// Gets the thread-local storage pointer.
+    /// Gets the value of the thread-local storage pointer.
     pub fn tls_pointer(&self) -> usize {
         self.tp()
+    }
+
+    /// Sets the value of the thread-local storage pointer.
+    pub fn set_tls_pointer(&mut self, tls: usize) {
+        self.set_tp(tls)
     }
 
     /// Enables floating-point unit.

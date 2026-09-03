@@ -141,6 +141,7 @@ pub(crate) unsafe fn init_on_cpu() {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct RawUserContext {
     pub(super) general: GeneralRegs,
+    pub(super) rflags: usize,
     pub(super) trap_num: usize,
     pub(super) error_code: usize,
 }
