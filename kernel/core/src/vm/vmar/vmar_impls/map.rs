@@ -395,7 +395,7 @@ impl<'a> VmarMapOptions<'a> {
         }
         debug_assert!(self.vmo_offset.is_multiple_of(self.align));
         if !self.vmo_offset.is_multiple_of(self.align) {
-            return_errno_with_message!(Errno::EINVAL, "invalid vmo offset");
+            return_errno_with_message!(Errno::EINVAL, "invalid VMO offset");
         }
         match self.offset {
             VmarMapOffset::FixedReplace(offset)
@@ -407,11 +407,9 @@ impl<'a> VmarMapOptions<'a> {
                 }
             }
             #[cfg(target_arch = "x86_64")]
-            VmarMapOffset::Map32Bit(offset_opt) => {
-                let Some(offset) = offset_opt else {
-                    return Ok(());
-                };
-
+            VmarMapOffset::Map32Bit(None) => (),
+            #[cfg(target_arch = "x86_64")]
+            VmarMapOffset::Map32Bit(Some(offset)) => {
                 debug_assert!(offset.is_multiple_of(self.align));
                 if !offset.is_multiple_of(self.align) {
                     return_errno_with_message!(Errno::EINVAL, "invalid offset");
