@@ -42,6 +42,8 @@ pub struct QemuScheme {
 #[derive(Clone, Debug, Deserialize, Eq, Serialize)]
 pub struct Qemu {
     pub args: String,
+    /// The virtio-fs connection information used by the QEMU runner.
+    pub(crate) virtiofs: Option<VirtioFsScheme>,
     /// This finalized config has a unorthodox `Option` because
     /// we cannot provide a default value for it. The default
     /// value is determined by the final running routine
@@ -54,10 +56,98 @@ pub struct Qemu {
     pub log_file: Option<PathBuf>,
 }
 
+/// The virtio-fs devices described by QEMU's finalized arguments.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct VirtioFsScheme {
+    pub(crate) socket: PathBuf,
+    pub(crate) tag: String,
+    pub(crate) scratch_socket: Option<PathBuf>,
+    pub(crate) scratch_tag: Option<String>,
+}
+
+impl VirtioFsScheme {
+    fn from_qemu_args(args: &str) -> Option<Self> {
+        let args = shlex::split(args)?;
+        let mut chardev_sockets = Vec::new();
+        let mut devices = Vec::new();
+        let mut args = args.iter();
+
+        while let Some(arg) = args.next() {
+            if arg == "-chardev" {
+                let Some(value) = args.next() else {
+                    break;
+                };
+                let Some((id, path)) = parse_qemu_device(value, "socket", "id", "path") else {
+                    continue;
+                };
+                chardev_sockets.push((id, PathBuf::from(path)));
+            } else if arg == "-device" {
+                let Some(value) = args.next() else {
+                    break;
+                };
+                if let Some((chardev, tag)) =
+                    parse_qemu_device(value, "vhost-user-fs-pci", "chardev", "tag")
+                {
+                    devices.push((chardev, tag));
+                }
+            }
+        }
+
+        let mut devices = devices.into_iter().filter_map(|(chardev, tag)| {
+            Some((
+                chardev_sockets
+                    .iter()
+                    .find(|(id, _)| *id == chardev)?
+                    .1
+                    .clone(),
+                tag.to_owned(),
+            ))
+        });
+
+        let (socket, tag) = devices.next()?;
+        let scratch = devices.next();
+
+        Some(Self {
+            socket,
+            tag,
+            scratch_socket: scratch.as_ref().map(|(socket, _)| socket.clone()),
+            scratch_tag: scratch.map(|(_, tag)| tag),
+        })
+    }
+}
+
+fn parse_qemu_device<'a>(
+    value: &'a str,
+    device_type: &str,
+    first_key: &str,
+    second_key: &str,
+) -> Option<(&'a str, &'a str)> {
+    let mut fields = value.split(',');
+
+    if fields.next()? != device_type {
+        return None;
+    }
+
+    let mut first_value = None;
+    let mut second_value = None;
+
+    for field in fields {
+        let (key, value) = field.split_once('=')?;
+        if key == first_key {
+            first_value = Some(value);
+        } else if key == second_key {
+            second_value = Some(value);
+        }
+    }
+
+    Some((first_value?, second_value?))
+}
+
 impl Default for Qemu {
     fn default() -> Self {
         Qemu {
             args: String::new(),
+            virtiofs: None,
             bootdev_append_options: None,
             path: PathBuf::from(get_default_arch().system_qemu()),
             with_monitor: false,
@@ -75,6 +165,7 @@ impl PartialEq for Qemu {
         }
 
         strip_numbers(&self.args) == strip_numbers(&other.args)
+            && self.virtiofs == other.virtiofs
             && self.bootdev_append_options == other.bootdev_append_options
             && self.path == other.path
             && self.with_monitor == other.with_monitor
@@ -94,6 +185,7 @@ impl Qemu {
         apply_kv_array(&mut joined, args, " ", MULTI_VALUE_KEYS);
 
         self.args = joined.join(" ");
+        self.virtiofs = VirtioFsScheme::from_qemu_args(&self.args);
     }
 }
 
@@ -114,8 +206,10 @@ impl QemuScheme {
     }
 
     pub fn finalize(self, arch: Arch) -> Qemu {
+        let args = self.args.unwrap_or_default();
         Qemu {
-            args: self.args.unwrap_or_default(),
+            virtiofs: VirtioFsScheme::from_qemu_args(&args),
+            args,
             bootdev_append_options: self.bootdev_append_options,
             path: self.path.unwrap_or(PathBuf::from(arch.system_qemu())),
             with_monitor: self.with_monitor.unwrap_or(false),
@@ -159,5 +253,33 @@ fn check_qemu_arg(arg: &str) {
     {
         error_msg!("`{}` should have value", arg);
         process::exit(Errno::ParseMetadata as _);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_virtiofs_from_qemu_args() {
+        let args = "-chardev socket,id=char0,path=/tmp/vfs.sock \
+            -device vhost-user-fs-pci,chardev=char0,tag=primary \
+            -chardev socket,id=char1,path=/tmp/vfs-scratch.sock \
+            -device vhost-user-fs-pci,chardev=char1,tag=scratch";
+
+        let virtiofs = VirtioFsScheme::from_qemu_args(args).unwrap();
+
+        assert_eq!(virtiofs.socket, PathBuf::from("/tmp/vfs.sock"));
+        assert_eq!(virtiofs.tag, "primary");
+        assert_eq!(
+            virtiofs.scratch_socket,
+            Some(PathBuf::from("/tmp/vfs-scratch.sock"))
+        );
+        assert_eq!(virtiofs.scratch_tag.as_deref(), Some("scratch"));
+    }
+
+    #[test]
+    fn parse_virtiofs_ignores_unrelated_qemu_args() {
+        assert!(VirtioFsScheme::from_qemu_args("-nographic -m 8G").is_none());
     }
 }

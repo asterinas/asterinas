@@ -14,7 +14,9 @@ mod cli;
 mod commands;
 mod config;
 mod error;
+mod signal;
 mod util;
+mod virtiofs;
 
 fn main() {
     // init logger

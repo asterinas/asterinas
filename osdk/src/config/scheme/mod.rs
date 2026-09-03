@@ -12,6 +12,8 @@ mod grub;
 pub use grub::*;
 mod qemu;
 pub use qemu::*;
+mod virtiofsd;
+pub use virtiofsd::*;
 
 /// All the configurable fields within a scheme.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -36,6 +38,10 @@ pub struct Scheme {
     ///
     /// Building, running, and testing would consult on these configs.
     pub qemu: Option<QemuScheme>,
+    /// The `virtiofsd` configs.
+    ///
+    /// Building, running, and testing would consult on these configs.
+    pub virtiofsd: Option<VirtioFsdScheme>,
     /// Other build configs.
     ///
     /// Building, running, and testing would consult on these configs.
@@ -71,6 +77,7 @@ impl Scheme {
             boot: None,
             grub: None,
             qemu: None,
+            virtiofsd: None,
             build: None,
             run: None,
             test: None,
@@ -82,6 +89,7 @@ impl Scheme {
         inherit_optional!(from, self, .boot);
         inherit_optional!(from, self, .grub);
         inherit_optional!(from, self, .build);
+        inherit_optional!(from, self, .virtiofsd);
         inherit_optional!(from, self, .run);
         inherit_optional!(from, self, .test);
         // The inheritance of `work_dir` depends on `qemu`, so
@@ -115,12 +123,14 @@ impl Scheme {
             inherit_optional!(old_scheme, run, .boot);
             inherit_optional!(old_scheme, run, .grub);
             inherit_optional!(old_scheme, run, .qemu);
+            inherit_optional!(old_scheme, run, .virtiofsd);
             inherit_optional!(old_scheme, run, .build);
         } else {
             self.run = Some(ActionScheme {
                 boot: self.boot.clone(),
                 grub: self.grub.clone(),
                 qemu: self.qemu.clone(),
+                virtiofsd: self.virtiofsd.clone(),
                 build: self.build.clone(),
             });
         }
@@ -129,12 +139,14 @@ impl Scheme {
             inherit_optional!(old_scheme, test, .boot);
             inherit_optional!(old_scheme, test, .grub);
             inherit_optional!(old_scheme, test, .qemu);
+            inherit_optional!(old_scheme, test, .virtiofsd);
             inherit_optional!(old_scheme, test, .build);
         } else {
             self.test = Some(ActionScheme {
                 boot: self.boot.clone(),
                 grub: self.grub.clone(),
                 qemu: self.qemu.clone(),
+                virtiofsd: self.virtiofsd.clone(),
                 build: self.build.clone(),
             });
         }

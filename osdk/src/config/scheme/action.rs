@@ -2,7 +2,10 @@
 
 use linux_bzimage_builder::PayloadEncoding;
 
-use super::{Boot, BootScheme, Grub, GrubScheme, Qemu, QemuScheme, inherit_optional};
+use super::{
+    Boot, BootScheme, Grub, GrubScheme, Qemu, QemuScheme, VirtioFsd, VirtioFsdScheme,
+    inherit_optional,
+};
 
 use crate::{cli::CommonArgs, config::Arch};
 
@@ -139,6 +142,7 @@ pub struct ActionScheme {
     pub boot: Option<BootScheme>,
     pub grub: Option<GrubScheme>,
     pub qemu: Option<QemuScheme>,
+    pub virtiofsd: Option<VirtioFsdScheme>,
     pub build: Option<BuildScheme>,
 }
 
@@ -147,6 +151,7 @@ pub struct Action {
     pub boot: Boot,
     pub grub: Grub,
     pub qemu: Qemu,
+    pub virtiofsd: VirtioFsd,
     pub build: Build,
 }
 
@@ -155,6 +160,7 @@ impl ActionScheme {
         inherit_optional!(from, self, .boot);
         inherit_optional!(from, self, .grub);
         inherit_optional!(from, self, .qemu);
+        inherit_optional!(from, self, .virtiofsd);
         inherit_optional!(from, self, .build);
     }
 
@@ -163,6 +169,7 @@ impl ActionScheme {
             boot: self.boot.unwrap_or_default().finalize(),
             grub: self.grub.unwrap_or_default().finalize(),
             qemu: self.qemu.unwrap_or_default().finalize(arch),
+            virtiofsd: self.virtiofsd.unwrap_or_default().finalize(),
             build: self.build.unwrap_or_default().finalize(),
         }
     }
