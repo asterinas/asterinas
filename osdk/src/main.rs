@@ -14,6 +14,7 @@ mod cli;
 mod commands;
 mod config;
 mod error;
+mod signal;
 mod util;
 
 fn main() {
