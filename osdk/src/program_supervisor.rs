@@ -158,7 +158,7 @@ impl<'a> ProgramSupervisor<'a> {
     }
 
     /// Stops all managed programs and releases their runtime state.
-    fn stop_all(&mut self) {
+    pub(crate) fn stop_all(&mut self) {
         for running in &mut self.running_programs {
             running.stop();
         }
