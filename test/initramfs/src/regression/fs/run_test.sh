@@ -149,6 +149,7 @@ echo "All mount bind file test passed."
 ./pseudofs/pseudo_mount
 
 ./read_eof/read_eof
+./read_truncate_race/read_truncate_race
 
 ./rename/same_inode
 
