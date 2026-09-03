@@ -4,7 +4,7 @@ use aster_rights::ReadWriteOp;
 #[cfg(target_arch = "x86_64")]
 use ostd::arch::cpu::context::{FsBase, GsBase};
 use ostd::{
-    arch::cpu::context::{FpuContext, GeneralRegs, UserContext},
+    arch::cpu::context::{FpuContext, UserContext},
     mm::VmIo,
     sync::Waiter,
     user::UserContextApi,
@@ -325,16 +325,15 @@ fn set_cpu_context(
     // Reset FPU context.
     supp.fpu().set(FpuContext::new());
 
-    // Reset general-purpose registers.
-    *user_context.general_regs_mut() = GeneralRegs::default();
     // Clear the TLS pointer.
     #[cfg(target_arch = "x86_64")]
     {
         supp.fs_base().set(FsBase::default());
         supp.gs_base().set(GsBase::default());
     }
-    #[cfg(not(target_arch = "x86_64"))]
-    user_context.set_tls_pointer(0);
+
+    // Reset the user register context.
+    *user_context = UserContext::default();
 
     // Set the new instruction pointer to the ELF entry point.
     user_context.set_instruction_pointer(elf_load_info.entry_point as _);
