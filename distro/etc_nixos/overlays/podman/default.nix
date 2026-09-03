@@ -7,8 +7,11 @@ final: prev: {
       ./runc-Switch-MS_SLAVE-to-MS_PRIVATE.patch
     ];
   });
-  podman = (prev.podman.overrideAttrs (oldAttrs: {
-    patches = (oldAttrs.patches or [ ])
-      ++ [ ./Podman-Disable-etc-hosts-and-etc-resolv-conf-injection.patch ];
-  })).override { runc = final.runc; };
+  podman =
+    (prev.podman.overrideAttrs (oldAttrs: {
+      patches = (oldAttrs.patches or [ ]) ++ [
+        ./Podman-Disable-etc-hosts-and-etc-resolv-conf-injection.patch
+      ];
+    })).override
+      { runc = final.runc; };
 }

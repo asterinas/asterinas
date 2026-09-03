@@ -1,10 +1,9 @@
-{ stdenv, fetchurl, }:
+{ stdenv, fetchurl }:
 stdenv.mkDerivation rec {
   pname = "hackbench";
   version = "0.92";
   src = fetchurl {
-    url =
-      "https://www.kernel.org/pub/linux/utils/rt-tests/older/rt-tests-${version}.tar.gz";
+    url = "https://www.kernel.org/pub/linux/utils/rt-tests/older/rt-tests-${version}.tar.gz";
     hash = "sha256-t310FkJg3yJtxXATFE075oA1hlHb6QAb++uZvW2YMkQ";
   };
 

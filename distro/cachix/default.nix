@@ -1,11 +1,16 @@
-{ pkgs ? import ../nixpkgs.nix { }, extra-substituters ? ""
-, extra-trusted-public-keys ? "", ... }:
+{
+  pkgs ? import ../nixpkgs.nix { },
+  extra-substituters ? "",
+  extra-trusted-public-keys ? "",
+  ...
+}:
 let
   installer = pkgs.callPackage ../aster_nixos_installer {
     inherit extra-substituters extra-trusted-public-keys;
   };
   nixos = pkgs.nixos (import "${installer}/etc_nixos/configuration.nix");
-  cachixPkgs = with nixos.pkgs;
+  cachixPkgs =
+    with nixos.pkgs;
     [
       hello-asterinas
       xfce.xfdesktop
@@ -17,7 +22,8 @@ let
       podman.man
       aster_systemd
       jtreg
-    ] ++ (with nixos.config; [
+    ]
+    ++ (with nixos.config; [
       system.build.toplevel
       systemd.package
       systemd.package.debug
@@ -26,4 +32,5 @@ let
       virtualisation.podman.package
       virtualisation.podman.package.man
     ]);
-in pkgs.writeClosure cachixPkgs
+in
+pkgs.writeClosure cachixPkgs
