@@ -77,7 +77,6 @@ impl Heap {
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
             vmar.new_map(PAGE_SIZE, perms)
-                .unwrap()
                 .offset(VmarMapOffset::FixedNoReplace(heap_start))
         };
         vmar_map_options.build()?;
@@ -156,7 +155,6 @@ impl Heap {
             let vmar_map_options = {
                 let perms = VmPerms::READ | VmPerms::WRITE;
                 vmar.new_map(expansion_size, perms)
-                    .map_err(|_| current_heap_end)?
                     .offset(VmarMapOffset::FixedNoReplace(expansion_start))
             };
             vmar_map_options.build().map_err(|_| current_heap_end)?;

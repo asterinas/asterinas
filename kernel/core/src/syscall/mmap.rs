@@ -76,7 +76,7 @@ fn do_sys_mmap(
     let user_space = ctx.user_space();
     let vmar = user_space.vmar();
     let vm_map_options = {
-        let mut options = vmar.new_map(len, vm_perms)?;
+        let mut options = vmar.new_map(len, vm_perms);
 
         if option.flags().is_fixed() {
             if option.flags().contains(MMapFlags::MAP_FIXED_NOREPLACE) {

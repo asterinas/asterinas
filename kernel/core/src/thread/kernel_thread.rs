@@ -162,7 +162,6 @@ mod tests {
         let vmo = VmoOptions::new(map_size).alloc().unwrap();
         assert_eq!(
             vmar.new_map(map_size, VmPerms::READ | VmPerms::WRITE)
-                .unwrap()
                 .offset(VmarMapOffset::FixedNoReplace(map_addr))
                 .vmo(vmo)
                 .build()
