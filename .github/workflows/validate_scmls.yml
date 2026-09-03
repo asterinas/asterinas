@@ -19,7 +19,7 @@ jobs:
   validate_scmls:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: asterinas/kernel-dev:0.18.1-20260805
+    container: asterinas/kernel-dev:0.18.1-20260901
     steps:
       - uses: actions/checkout@v4
       - name: Validate SCML files with sctrace

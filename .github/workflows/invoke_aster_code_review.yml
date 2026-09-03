@@ -235,7 +235,7 @@ jobs:
     # on PATH (/root/.local/bin) plus python3 + yq — everything the skill and its
     # benchmark need.
     container:
-      image: asterinas/dev:0.18.1-20260805
+      image: asterinas/dev:0.18.1-20260901
     timeout-minutes: 60          # headroom for a full `benchmark`; review/smoke finish far sooner
     permissions:
       contents: read
