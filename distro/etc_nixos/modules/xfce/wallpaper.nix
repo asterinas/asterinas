@@ -1,20 +1,25 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
-/* Module: XFCE desktop defaults (wallpaper and icons)
-   Purpose:
-     - Provide system-wide default XFCE desktop settings via /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml.
-     - Set a default wallpaper and desktop icon visibility (home, filesystem, removable, trash).
+/*
+  Module: XFCE desktop defaults (wallpaper and icons)
+  Purpose:
+    - Provide system-wide default XFCE desktop settings via /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml.
+    - Set a default wallpaper and desktop icon visibility (home, filesystem, removable, trash).
 
-   How it integrates with XFCE:
-     - XFCE reads settings from the xfconf daemon (channel: "xfce4-desktop").
-     - If a per-user file exists at ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml,
-       that overrides the system default in /etc/xdg. This module does NOT override per-user settings.
+  How it integrates with XFCE:
+    - XFCE reads settings from the xfconf daemon (channel: "xfce4-desktop").
+    - If a per-user file exists at ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml,
+      that overrides the system default in /etc/xdg. This module does NOT override per-user settings.
 */
 
 let
   wallpaper = pkgs.fetchurl {
-    url =
-      "https://raw.githubusercontent.com/asterinas/asterinas-artwork/f92b04a998f16c0b11f22987181a67c9106c3684/aster_nixos/v0.18.0/wallpaper_berry-madjidi_unsplash_1625x1080.png";
+    url = "https://raw.githubusercontent.com/asterinas/asterinas-artwork/f92b04a998f16c0b11f22987181a67c9106c3684/aster_nixos/v0.18.0/wallpaper_berry-madjidi_unsplash_1625x1080.png";
     sha256 = "0y6r8nq9gp05nlpk1s9fscs0jcj70pxhxaim698q9lfwfqkidlhz";
   };
 
@@ -58,10 +63,10 @@ let
   '';
 
   xfceXMLPath = "xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml";
-in lib.mkIf (config.services.xserver.enable
-  && config.services.xserver.desktopManager.xfce.enable) {
-    environment.etc.${xfceXMLPath} = {
-      source = xfceDesktopXml;
-      mode = "0644";
-    };
-  }
+in
+lib.mkIf (config.services.xserver.enable && config.services.xserver.desktopManager.xfce.enable) {
+  environment.etc.${xfceXMLPath} = {
+    source = xfceDesktopXml;
+    mode = "0644";
+  };
+}

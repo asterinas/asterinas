@@ -1,4 +1,4 @@
-{ stdenv, fetchgit, }:
+{ stdenv, fetchgit }:
 stdenv.mkDerivation rec {
   pname = "schbench";
   version = "v1.0";

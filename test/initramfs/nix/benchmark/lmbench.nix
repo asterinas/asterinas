@@ -1,4 +1,8 @@
-{ stdenv, fetchFromGitHub, libtirpc, }:
+{
+  stdenv,
+  fetchFromGitHub,
+  libtirpc,
+}:
 stdenv.mkDerivation {
   pname = "lmbench";
   version = "0.1.0";
@@ -10,8 +14,7 @@ stdenv.mkDerivation {
   };
 
   dontPatchShebangs = true;
-  makeFlags =
-    [ "CC=${stdenv.cc.targetPrefix}cc OS=${stdenv.targetPlatform.config}" ];
+  makeFlags = [ "CC=${stdenv.cc.targetPrefix}cc OS=${stdenv.targetPlatform.config}" ];
   patchPhase = ''
     runHook prePatch
 

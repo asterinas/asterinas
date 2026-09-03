@@ -1,4 +1,8 @@
-{ stdenv, fetchFromGitHub, pkgsBuildBuild, }:
+{
+  stdenv,
+  fetchFromGitHub,
+  pkgsBuildBuild,
+}:
 stdenv.mkDerivation rec {
   pname = "sqlite-speedtest1";
   version = "3.48.0";

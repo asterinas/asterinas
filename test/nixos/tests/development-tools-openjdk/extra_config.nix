@@ -2,9 +2,12 @@
 let
   jdk = pkgs.openjdk21;
   jtreg = pkgs.jtreg;
-in {
+in
+{
   environment.systemPackages = [ jtreg ];
-  environment.variables = { JTREG_HOME = "${jtreg}"; };
+  environment.variables = {
+    JTREG_HOME = "${jtreg}";
+  };
 
   programs.java.package = jdk;
   programs.java.enable = true;

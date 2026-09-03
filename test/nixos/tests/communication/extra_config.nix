@@ -41,8 +41,13 @@ let
       puts "PASS"
     '';
   };
-in {
-  environment.systemPackages = with pkgs; [ expect irssi weechat ];
+in
+{
+  environment.systemPackages = with pkgs; [
+    expect
+    irssi
+    weechat
+  ];
 
   system.activationScripts.testFixtures = ''
     ln -sfT ${irssi_exp} /tmp/irssi.exp

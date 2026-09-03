@@ -1,19 +1,31 @@
-{ lib, stdenvNoCC, callPackage, hostPlatform, pkgsHostTarget, pkgsBuildBuild
-, benchmarkName ? "none", }: rec {
+{
+  lib,
+  stdenvNoCC,
+  callPackage,
+  hostPlatform,
+  pkgsHostTarget,
+  pkgsBuildBuild,
+  benchmarkName ? "none",
+}:
+rec {
   # Use `--esx` flag to enable `CONFIG_NO_SHM` and disable `CONFIG_HAVE_TIMERFD_CREATE`.
-  fio = pkgsHostTarget.fio.overrideAttrs (_: { configureFlags = [ "--esx" ]; });
+  fio = pkgsHostTarget.fio.overrideAttrs (_: {
+    configureFlags = [ "--esx" ];
+  });
   hackbench = callPackage ./hackbench.nix { };
   iperf3 = pkgsHostTarget.iperf3;
   lmbench = callPackage ./lmbench.nix { };
   memcached = pkgsHostTarget.memcached;
   nginx = pkgsHostTarget.nginx;
-  redis = (pkgsHostTarget.redis.overrideAttrs (old: {
-    doCheck = false;
-    makeFlags = (old.makeFlags or [ ]) ++ [
-      "CC=${pkgsHostTarget.stdenv.cc.targetPrefix}cc"
-      "LD=${pkgsHostTarget.stdenv.cc.targetPrefix}cc"
-    ];
-  })).override { withSystemd = false; };
+  redis =
+    (pkgsHostTarget.redis.overrideAttrs (old: {
+      doCheck = false;
+      makeFlags = (old.makeFlags or [ ]) ++ [
+        "CC=${pkgsHostTarget.stdenv.cc.targetPrefix}cc"
+        "LD=${pkgsHostTarget.stdenv.cc.targetPrefix}cc"
+      ];
+    })).override
+      { withSystemd = false; };
   schbench = callPackage ./schbench.nix { };
   sqlite-speedtest1 = callPackage ./sqlite-speedtest1.nix { };
   sysbench = if hostPlatform.isx86_64 then pkgsHostTarget.sysbench else null;
@@ -29,15 +41,19 @@
     # The pad is a fixed-key AES-CTR keystream: deterministic (so the build stays
     # reproducible and cacheable) yet incompressible, so both the gzip image and
     # the unpacked rootfs grow by ~N MiB rather than being squeezed away by gzip.
-    boot = packWith null (_:
-      let m = builtins.match "boot/boot_lat_([0-9]+)MB" benchmarkName;
-      in lib.optionalString (m != null) ''
+    boot = packWith null (
+      _:
+      let
+        m = builtins.match "boot/boot_lat_([0-9]+)MB" benchmarkName;
+      in
+      lib.optionalString (m != null) ''
         dd if=/dev/zero bs=1M count=${builtins.head m} status=none \
           | ${pkgsBuildBuild.openssl}/bin/openssl enc -aes-256-ctr -nosalt \
               -K 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
               -iv 000102030405060708090a0b0c0d0e0f \
           > $out/pad.bin
-      '');
+      ''
+    );
     fio = packWith fio (p: "cp -r ${p}/bin/fio $out/bin/");
     hackbench = packWith hackbench (p: "cp -r ${p}/bin/hackbench $out/bin/");
     iperf3 = packWith iperf3 (p: "cp -r ${p}/bin/iperf3 $out/bin/");
@@ -53,24 +69,26 @@
     '');
     redis = packWith redis (p: "cp -r ${p}/bin/redis-server $out/bin/");
     schbench = packWith schbench (p: "cp -r ${p}/bin/schbench $out/bin/");
-    sqlite = packWith sqlite-speedtest1
-      (p: "cp -r ${p}/bin/sqlite-speedtest1 $out/bin/");
-  } // lib.optionalAttrs (sysbench != null) {
+    sqlite = packWith sqlite-speedtest1 (p: "cp -r ${p}/bin/sqlite-speedtest1 $out/bin/");
+  }
+  // lib.optionalAttrs (sysbench != null) {
     sysbench = packWith sysbench (p: "cp -r ${p}/bin/sysbench $out/bin/");
   };
 
   # `benchmarkName` is the "<group>/<case>" selector (e.g. "sysbench/cpu_lat");
   # packaging is per group, so take the group here.
-  benchmarkGroup = if benchmarkName == "none" then
-    "none"
-  else
-    builtins.head (lib.splitString "/" benchmarkName);
+  benchmarkGroup =
+    if benchmarkName == "none" then "none" else builtins.head (lib.splitString "/" benchmarkName);
 
-  installSelected = group:
+  installSelected =
+    group:
     if group == "none" then
       ""
     else if benchmarkGroups ? ${group} then
-      let g = benchmarkGroups.${group}; in g.install g.pkg
+      let
+        g = benchmarkGroups.${group};
+      in
+      g.install g.pkg
     else
       throw ("Unknown benchmark group '${group}' (from '${benchmarkName}').");
 
@@ -93,8 +111,7 @@
       ${installSelected benchmarkGroup}
 
       # Pack the selected group's scripts.
-      ${lib.optionalString (benchmarkGroup != "none")
-      "cp -r $src/${benchmarkGroup} $out/"}
+      ${lib.optionalString (benchmarkGroup != "none") "cp -r $src/${benchmarkGroup} $out/"}
     '';
   };
 }

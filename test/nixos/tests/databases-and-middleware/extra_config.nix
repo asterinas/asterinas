@@ -1,5 +1,11 @@
 { pkgs, ... }:
 
 {
-  environment.systemPackages = with pkgs; [ sqlite etcd redis valkey influxdb ];
+  environment.systemPackages = with pkgs; [
+    sqlite
+    etcd
+    redis
+    valkey
+    influxdb
+  ];
 }

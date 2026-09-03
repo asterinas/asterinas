@@ -2,17 +2,22 @@
 let
   test_pytorch = pkgs.writeTextFile {
     name = "test_pytorch.py";
-    text = builtins.readFile
-      ../../../../book/src/distro/popular-applications/ai-and-machine-learning/test_pytorch.py;
+    text = builtins.readFile ../../../../book/src/distro/popular-applications/ai-and-machine-learning/test_pytorch.py;
   };
   test_tensorflow = pkgs.writeTextFile {
     name = "test_tensorflow.py";
-    text = builtins.readFile
-      ../../../../book/src/distro/popular-applications/ai-and-machine-learning/test_tensorflow.py;
+    text = builtins.readFile ../../../../book/src/distro/popular-applications/ai-and-machine-learning/test_tensorflow.py;
   };
-in {
+in
+{
   environment.systemPackages = with pkgs; [
-    (python3.withPackages (p: with p; [ torch tensorflow pytest ]))
+    (python3.withPackages (
+      p: with p; [
+        torch
+        tensorflow
+        pytest
+      ]
+    ))
     codex
     ollama
   ];

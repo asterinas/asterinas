@@ -1,4 +1,10 @@
-{ stdenv, fetchFromGitHub, hostPlatform, libcap, pkgsBuildBuild, python3Minimal,
+{
+  stdenv,
+  fetchFromGitHub,
+  hostPlatform,
+  libcap,
+  pkgsBuildBuild,
+  python3Minimal,
 }:
 stdenv.mkDerivation rec {
   pname = "ltp";

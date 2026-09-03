@@ -1,5 +1,9 @@
 { pkgs, ... }:
 
 {
-  environment.systemPackages = with pkgs; [ ffmpeg sox imagemagick ];
+  environment.systemPackages = with pkgs; [
+    ffmpeg
+    sox
+    imagemagick
+  ];
 }
