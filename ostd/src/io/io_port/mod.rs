@@ -25,6 +25,7 @@ use crate::{Error, prelude::*};
 pub struct IoPort<T, A> {
     port: u16,
     is_overlapping: bool,
+    is_allocated: bool,
     value_marker: PhantomData<T>,
     access_marker: PhantomData<A>,
 }
@@ -70,12 +71,14 @@ impl<T, A> IoPort<T, A> {
     /// cause soundness problems (e.g., they must not corrupt the kernel memory).
     pub(crate) const unsafe fn new(port: u16) -> Self {
         // SAFETY: The safety is upheld by the caller.
-        unsafe { Self::new_overlapping(port, false) }
+        unsafe { Self::new_overlapping(port, false, false) }
     }
 
     /// Creates an I/O port.
     ///
     /// See [`IoPortAllocator::acquire`] for an explanation of the `is_overlapping` argument.
+    /// `is_allocated` is set by [`IoPortAllocator::acquire`] for ports obtained from
+    /// `IO_PORT_ALLOCATOR`; ports created with `new` are backed by statically reserved ranges.
     ///
     /// [`IoPortAllocator::acquire`]: allocator::IoPortAllocator::acquire
     ///
@@ -83,10 +86,11 @@ impl<T, A> IoPort<T, A> {
     ///
     /// Reading from or writing to the I/O port may have side effects. Those side effects must not
     /// cause soundness problems (e.g., they must not corrupt the kernel memory).
-    const unsafe fn new_overlapping(port: u16, is_overlapping: bool) -> Self {
+    const unsafe fn new_overlapping(port: u16, is_overlapping: bool, is_allocated: bool) -> Self {
         Self {
             port,
             is_overlapping,
+            is_allocated,
             value_marker: PhantomData,
             access_marker: PhantomData,
         }
@@ -109,6 +113,12 @@ impl<T: PortWrite, A: IoPortWriteAccess> IoPort<T, A> {
 
 impl<T, A> Drop for IoPort<T, A> {
     fn drop(&mut self) {
+        // Ports created with `new` are backed by statically reserved ranges
+        // and should not be recycled by `IO_PORT_ALLOCATOR`.
+        if !self.is_allocated {
+            return;
+        }
+
         let range = if !self.is_overlapping {
             self.port..(self.port + size_of::<T>() as u16)
         } else {

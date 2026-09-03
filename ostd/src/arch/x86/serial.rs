@@ -74,17 +74,43 @@ impl Ns16550aAccess for SerialAccess {
     }
 }
 
+/// Detects whether a UART is present at the legacy COM1 serial port.
+/// Reference: <https://elixir.bootlin.com/linux/v7.2.2/source/drivers/tty/serial/8250/8250_port.c#L1094>
+pub(crate) fn probe_serial_port() -> bool {
+    // SAFETY:
+    // 1. 0x3F8 is the legacy COM1 serial port we use in SERIAL_PORT.
+    // 2. `reserve_io_port_range` guarantees exclusive ownership of the I/O registers.
+    let mut access = unsafe { SerialAccess::new(0x3F8) };
+
+    // A real UART echoes values written to its interrupt enable register, while
+    // an unbacked port reads 0xFF or 0x00 on every access. We perform the
+    // existence check similar to the Linux implementation: write 0x00 and then
+    // 0x0f and check that both are read back. Some UARTs (e.g. the TL 16C754B)
+    // only allow IER[7:4] to be modified when an EFR bit is set, so only the
+    // low four bits are compared.
+    const IER_ALL_INTR: u8 = 0x0f;
+    let saved_ier = access.read(Ns16550aRegister::IntEnOrDivisorHi);
+    access.write(Ns16550aRegister::IntEnOrDivisorHi, 0x00);
+    let val1 = access.read(Ns16550aRegister::IntEnOrDivisorHi) & IER_ALL_INTR;
+    access.write(Ns16550aRegister::IntEnOrDivisorHi, IER_ALL_INTR);
+    let val2 = access.read(Ns16550aRegister::IntEnOrDivisorHi) & IER_ALL_INTR;
+    access.write(Ns16550aRegister::IntEnOrDivisorHi, saved_ier);
+    val1 == 0x00 && val2 == IER_ALL_INTR
+}
+
 /// Initializes the serial port.
 pub(crate) fn init(early_cmdline: &EarlyCmdline) {
     if !early_cmdline.has_early_console {
         return;
     }
 
-    // TODO: Add existence check for COM1.
+    if !probe_serial_port() {
+        return;
+    }
+
     SERIAL_PORT.call_once(|| {
         // SAFETY:
-        // 1. The legacy COM1 serial port at 0x3F8 can be disabled via the command line. If it is
-        //    enabled, it is assumed to exist and be accessible via the I/O registers.
+        // 1. The legacy COM1 serial port at 0x3F8 can be disabled via the command line.
         //    (FIXME: This needs to be confirmed by checking the ACPI table or using more specific
         //    kernel parameters to obtain early information for building the early console.)
         // 2. `reserve_io_port_range` guarantees exclusive ownership of the I/O registers.
