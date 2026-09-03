@@ -15,7 +15,7 @@ use crate::{prelude::*, process::ProcessVm, vm::vmar::VmarHandle};
 impl Vmar {
     /// Creates a new VMAR whose content is inherited from another
     /// using copy-on-write (COW) technique.
-    pub(crate) fn fork_from(vmar: &Self) -> Result<VmarHandle> {
+    pub(crate) fn fork_from(vmar: &Self) -> VmarHandle {
         // Obtain the heap lock and hold it for the entire method to avoid race conditions.
         let heap_guard = vmar.process_vm.heap().lock();
 
@@ -67,7 +67,7 @@ impl Vmar {
             }
         }
 
-        Ok(new_vmar)
+        new_vmar
     }
 }
 
