@@ -21,7 +21,7 @@ pub(super) fn sys_munmap(addr: Vaddr, len: usize, ctx: &Context) -> Result<Sysca
 
     let user_space = ctx.user_space();
     let vmar = user_space.vmar();
-    vmar.remove_mapping(addr_range)?;
+    vmar.remove_mapping(addr_range);
 
     Ok(SyscallReturn::Return(0))
 }

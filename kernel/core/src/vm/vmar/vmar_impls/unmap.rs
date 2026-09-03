@@ -41,14 +41,13 @@ impl Vmar {
     ///
     /// Mappings may fall partially within the range; only the overlapped
     /// portions of the mappings are unmapped.
-    pub(crate) fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
+    pub(crate) fn remove_mapping(&self, range: Range<usize>) {
         debug_assert!(range.start.is_multiple_of(PAGE_SIZE));
         debug_assert!(range.end.is_multiple_of(PAGE_SIZE));
 
         let mut inner = self.inner.write();
         let mut rss_delta = RssDelta::new(self);
-        inner.alloc_free_region_exact_truncate(self, range.start, range.len(), &mut rss_delta)?;
-        Ok(())
+        inner.alloc_free_region_exact_truncate(self, range.start, range.len(), &mut rss_delta);
     }
 
     /// Discards all pages in the mappings that fall within the specified

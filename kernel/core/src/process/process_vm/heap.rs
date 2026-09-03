@@ -142,8 +142,7 @@ impl Heap {
         // `mmap`, or `munmap`. Like Linux, shrinking removes every mapping in the released
         // tail regardless of those boundaries.
         if new_size < old_size {
-            vmar.remove_mapping(new_heap_end_aligned..current_heap_end_aligned)
-                .map_err(|_| current_heap_end)?;
+            vmar.remove_mapping(new_heap_end_aligned..current_heap_end_aligned);
         } else {
             let expansion_size = new_size - old_size;
             let expansion_start = heap_start + old_size;
