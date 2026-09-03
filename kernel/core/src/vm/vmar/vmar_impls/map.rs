@@ -291,7 +291,7 @@ impl<'a> VmarMapOptions<'a> {
                     map_to_addr,
                     map_size,
                     &mut rss_delta,
-                )?;
+                );
                 map_to_addr
             }
             VmarMapOffset::FixedNoReplace(map_to_addr) => {

@@ -313,7 +313,7 @@ fn map_segment_vmos(
 
         // After acquiring a suitable range, we can remove the mapping and then
         // map each segment at the desired address.
-        vmar.remove_mapping(aligned_range.clone())?;
+        vmar.remove_mapping(aligned_range.clone());
 
         let start_offset = elf_va_range.start - elf_va_range_aligned.start;
         let end_offset = elf_va_range_aligned.end - elf_va_range.end;
@@ -340,7 +340,7 @@ fn map_segment_vmos(
 
         // After acquiring a suitable range, we can remove the mapping and then
         // map each segment at the desired address.
-        vmar.remove_mapping(elf_va_range_aligned.clone())?;
+        vmar.remove_mapping(elf_va_range_aligned.clone());
 
         elf_va_range.clone()
     };

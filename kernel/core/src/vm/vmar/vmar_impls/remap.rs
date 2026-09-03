@@ -122,7 +122,7 @@ impl Vmar {
                 old_addr + new_size,
                 old_size - new_size,
                 &mut rss_delta,
-            )?;
+            );
             (new_size, old_addr..old_addr + new_size)
         } else {
             (old_size, old_addr..old_addr + old_size)
@@ -143,7 +143,8 @@ impl Vmar {
                     "remap: the new range overlaps with the old one"
                 );
             }
-            inner.alloc_free_region_exact_truncate(self, new_addr, new_size, &mut rss_delta)?
+
+            inner.alloc_free_region_exact_truncate(self, new_addr, new_size, &mut rss_delta)
         } else {
             // Fast path: expand the old mapping in place to the new size.
             // Skip when `action` is `RemapOldMappingAction::Keep` since we must
