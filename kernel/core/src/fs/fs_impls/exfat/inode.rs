@@ -159,7 +159,7 @@ impl BlockAsPageCacheBackend for ExfatInode {
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / fs.sector_size())?;
         fs.block_device().read_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
-            bio_segment,
+            vec![bio_segment],
             Some(complete_fn),
             io_batch,
         )?;
@@ -181,7 +181,7 @@ impl BlockAsPageCacheBackend for ExfatInode {
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / fs.sector_size())?;
         fs.block_device().write_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
-            bio_segment,
+            vec![bio_segment],
             Some(complete_fn),
             io_batch,
         )?;
@@ -693,7 +693,7 @@ impl ExfatInode {
             inner
                 .fs()
                 .block_device()
-                .read_blocks(physical_bid, bio_segment.clone())?;
+                .read_blocks(physical_bid, vec![bio_segment.clone()])?;
             bio_segment.reader().unwrap().read_fallible(writer)?;
 
             cur_offset += BLOCK_SIZE;
@@ -807,7 +807,7 @@ impl ExfatInode {
                 Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
             let fs = inner.fs();
             fs.block_device()
-                .write_blocks(physical_bid, bio_segment.clone())?;
+                .write_blocks(physical_bid, vec![bio_segment.clone()])?;
 
             cur_offset += BLOCK_SIZE;
             if cur_offset >= cluster_size {
