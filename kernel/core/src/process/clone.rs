@@ -503,7 +503,7 @@ fn clone_child_process(
     let clone_flags = clone_args.flags;
 
     // Clone the virtual memory space
-    let child_vmar = clone_vmar(thread_local.vmar().borrow().as_ref().unwrap(), clone_flags)?;
+    let child_vmar = clone_vmar(thread_local.vmar().borrow().as_ref().unwrap(), clone_flags);
 
     // Clone the user context
     #[cfg_attr(target_arch = "x86_64", expect(unused_mut))]
@@ -669,13 +669,13 @@ fn clone_parent_settid(
     Ok(())
 }
 
-fn clone_vmar(parent_vmar: &VmarHandle, clone_flags: CloneFlags) -> Result<VmarHandle> {
+fn clone_vmar(parent_vmar: &VmarHandle, clone_flags: CloneFlags) -> VmarHandle {
     // If CLONE_VM is set, the child and parent share the same VMAR.
     // Otherwise, the child has a copy of the parent's VMAR.
     if clone_flags.contains(CloneFlags::CLONE_VM) {
-        Ok(parent_vmar.clone_handle())
+        parent_vmar.clone_handle()
     } else {
-        Ok(Vmar::fork_from(parent_vmar)?)
+        Vmar::fork_from(parent_vmar)
     }
 }
 
