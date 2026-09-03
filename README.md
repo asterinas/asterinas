@@ -154,7 +154,7 @@ Follow the steps below to get Asterinas up and running.
 2. Run a Docker container as the development environment:
 
     ```bash
-    docker run -it --privileged --network=host -v /dev:/dev -v $(pwd)/asterinas:/root/asterinas asterinas/dev:0.18.1-20260805
+    docker run -it --privileged --network=host -v /dev:/dev -v $(pwd)/asterinas:/root/asterinas asterinas/dev:0.18.1-20260901
     ```
 
     Alternatively, if you use VS Code with the
