@@ -35,9 +35,9 @@ pub(super) fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Res
     // Restore the FPU context.
     let fpu_context_addr = cfg_select! {
         target_arch = "x86_64" => ucontext.uc_mcontext.fpu_context_addr(),
-        any(target_arch = "riscv64", target_arch = "loongarch64") => {
-            // In RISC-V/LoongArch64, the FPU context is placed directly after `ucontext_t` on the
-            // signal stack.
+        any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "aarch64") => {
+            // In RISC-V/LoongArch64/ARM, the FPU context is placed directly after `ucontext_t` on
+            // the signal stack.
             sig_context_addr + size_of::<ucontext_t>()
         }
         _ => compile_error!("unsupported target"),

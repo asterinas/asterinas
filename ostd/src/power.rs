@@ -30,7 +30,8 @@ static RESTART_HANDLER: Once<fn(ExitCode)> = Once::new();
 /// so, calling this function outside of OSTD will never take effect. Currently, it happens in
 ///  - x86_64: Never;
 ///  - riscv64: Always;
-///  - loongarch64: Never.
+///  - loongarch64: Never;
+///  - aarch64: If a supported PSCI device tree node exists.
 pub fn inject_restart_handler(handler: fn(ExitCode)) {
     RESTART_HANDLER.call_once(|| handler);
 }
@@ -60,7 +61,8 @@ static POWEROFF_HANDLER: Once<fn(ExitCode)> = Once::new();
 /// so, calling this function outside of OSTD will never take effect. Currently, it happens in
 ///  - x86_64: If a QEMU hypervisor is detected;
 ///  - riscv64: Always;
-///  - loongarch64: Never.
+///  - loongarch64: Never;
+///  - aarch64: If a supported PSCI device tree node exists.
 pub fn inject_poweroff_handler(handler: fn(ExitCode)) {
     POWEROFF_HANDLER.call_once(|| handler);
 }

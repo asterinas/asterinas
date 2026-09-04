@@ -155,6 +155,56 @@ pub fn make_elf_for_qemu(elf: AsterBin) -> AsterBin {
     elf
 }
 
+pub fn make_aarch64_image(install_path: impl AsRef<Path>, aster_elf: &AsterBin) -> AsterBin {
+    let result_elf_path = {
+        let full_elf_name = aster_elf.path().file_name().unwrap().to_str().unwrap();
+        let elf_name = full_elf_name
+            .strip_suffix(".qemu_elf")
+            .unwrap_or(full_elf_name);
+        install_path
+            .as_ref()
+            .join(elf_name.to_string() + ".qemu_bin")
+    };
+
+    // QEMU treats ELF kernels as non-Linux [1], where the initrd will not be loaded [2] and the
+    // device tree address will not be passed [3]. Therefore, we remove the ELF information and use
+    // the Linux AArch64 boot protocol [4] to boot the raw image instead.
+    //
+    // [1]: https://github.com/qemu/qemu/blob/499039798cdad7d86b787fec0eaf1da4151c0f05/hw/arm/boot.c#L920
+    // [2]: https://github.com/qemu/qemu/blob/499039798cdad7d86b787fec0eaf1da4151c0f05/hw/arm/boot.c#L1010
+    // [3]: https://github.com/qemu/qemu/blob/499039798cdad7d86b787fec0eaf1da4151c0f05/hw/arm/boot.c#L1091
+    // [4]: https://docs.kernel.org/arch/arm64/booting.html
+    let status = new_command_checked_exists("rust-objcopy")
+        .arg("-O")
+        .arg("binary")
+        .arg(aster_elf.path())
+        .arg(result_elf_path.as_os_str())
+        .status();
+
+    match status {
+        Ok(status) => {
+            if !status.success() {
+                panic!("Failed to generate AArch64 Image");
+            }
+        }
+        Err(err) => match err.kind() {
+            std::io::ErrorKind::NotFound => panic!(
+                "`rust-objcopy` command not found. Please
+                    try `cargo install cargo-binutils` and then rerun."
+            ),
+            _ => panic!("Generate AArch64 Image failed, error: {:#?}", err),
+        },
+    }
+
+    AsterBin::new(
+        &result_elf_path,
+        aster_elf.arch(),
+        aster_elf.typ().clone(),
+        aster_elf.version().clone(),
+        aster_elf.stripped(),
+    )
+}
+
 fn install_setup_with_arch(
     install_dir: impl AsRef<Path>,
     target_dir: impl AsRef<Path>,

@@ -117,6 +117,31 @@ if [ "$1" = "riscv" ]; then
     exit 0
 fi
 
+if [ "$1" = "aarch64" ]; then
+    QEMU_ARGS="\
+        -cpu cortex-a72 \
+        -machine virt,gic-version=3 \
+        -m ${MEM:-8G} \
+        -smp ${SMP:-1} \
+        --no-reboot \
+        -nographic \
+        -display none \
+        -monitor chardev:mux \
+        -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
+        -drive if=none,format=raw,id=x0,file=./test/initramfs/build/ext2.img \
+        -drive if=none,format=raw,id=x1,file=./test/initramfs/build/exfat.img \
+        -drive if=none,format=raw,id=x2,file=./test/initramfs/build/ltp_dev.img \
+        -device virtio-blk-device,drive=x2 \
+        -device virtio-blk-device,drive=x1 \
+        -device virtio-blk-device,drive=x0 \
+        -device virtio-keyboard-device \
+        -device virtio-serial-device \
+        $CONSOLE_ARGS \
+    "
+    echo $QEMU_ARGS
+    exit 0
+fi
+
 if [ "$1" = "tdx" ]; then
     TDX_OBJECT='{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "1", "port": "4050" } }'
     if [ "$INITRAMFS" = "off" ]; then

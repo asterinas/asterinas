@@ -9,7 +9,7 @@ inputs:
     description: 'Test type (general, osdk, boot, conformance, regression)'
     required: true
   arch:
-    description: 'Architecture (x86_64/riscv64/loongarch64)'
+    description: 'Architecture (x86_64/riscv64/loongarch64/aarch64)'
     required: false
   release:
     description: 'Whether to run in release mode'
