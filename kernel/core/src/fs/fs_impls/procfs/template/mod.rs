@@ -17,6 +17,7 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, Metadata},
+            path::Dentry,
         },
     },
     prelude::*,
@@ -81,7 +82,7 @@ impl Common {
         self.metadata.read().last_access_at
     }
 
-    fn set_atime(&self, time: Duration) {
+    fn set_atime(&self, _self_dentry: &Dentry, time: Duration) {
         self.metadata.write().last_access_at = time;
     }
 
@@ -89,7 +90,7 @@ impl Common {
         self.metadata.read().last_modify_at
     }
 
-    fn set_mtime(&self, time: Duration) {
+    fn set_mtime(&self, _self_dentry: &Dentry, time: Duration) {
         self.metadata.write().last_modify_at = time;
     }
 
@@ -97,7 +98,7 @@ impl Common {
         self.metadata.read().last_meta_change_at
     }
 
-    fn set_ctime(&self, time: Duration) {
+    fn set_ctime(&self, _self_dentry: &Dentry, time: Duration) {
         self.metadata.write().last_meta_change_at = time;
     }
 
@@ -105,7 +106,7 @@ impl Common {
         Ok(self.metadata.read().mode)
     }
 
-    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+    fn set_mode(&self, _self_dentry: &Dentry, mode: InodeMode) -> Result<()> {
         self.metadata.write().mode = mode;
         Ok(())
     }
@@ -114,7 +115,7 @@ impl Common {
         Ok(self.metadata.read().uid)
     }
 
-    fn set_owner(&self, uid: Uid) -> Result<()> {
+    fn set_owner(&self, _self_dentry: &Dentry, uid: Uid) -> Result<()> {
         self.metadata.write().uid = uid;
         Ok(())
     }
@@ -123,7 +124,7 @@ impl Common {
         Ok(self.metadata.read().gid)
     }
 
-    fn set_group(&self, gid: Gid) -> Result<()> {
+    fn set_group(&self, _self_dentry: &Dentry, gid: Gid) -> Result<()> {
         self.metadata.write().gid = gid;
         Ok(())
     }

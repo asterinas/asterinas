@@ -520,7 +520,8 @@ mod test {
         let file: Arc<dyn Inode> = create_file(&root, "mmap_dirty_tail") as _;
         let vmo = file.page_cache().unwrap();
 
-        file.resize(BLOCK_SIZE * 3).unwrap();
+        let file_dentry = crate::fs::vfs::path::Dentry::new_root(file.clone());
+        file.resize(&file_dentry, BLOCK_SIZE * 3).unwrap();
 
         let block_start = BLOCK_SIZE;
         let mmap_offset = block_start + 200;
