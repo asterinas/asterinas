@@ -73,6 +73,14 @@ if [[ -z "$DISK" ]]; then
     exit 1
 fi
 
+# Hold an exclusive BSD lock on the whole disk from before parted until both
+# partitions are mounted (https://systemd.io/BLOCK_DEVICE_LOCKING/). Without
+# it, udevd re-reads the partition table as soon as parted cli closes the disk,
+# the kernel drops and re-creates the partition devices, and mkfs races that
+# window with ENOENT/ENXIO.
+exec 9<"${DISK}"
+flock -x 9
+
 # Confirm dangerous operation if --force-format-disk is used
 if [[ "$FORCE_FORMAT_DISK" == true ]]; then
     echo "WARNING: You are about to FORMAT the disk: $DISK"
@@ -118,6 +126,10 @@ mkdir -p ${BUILD_DIR}/tmp
 chmod 1777 ${BUILD_DIR}/tmp
 mkdir -p ${BUILD_DIR}/etc/nixos
 mount -o umask=077,sync,dirsync "${BOOT_DEVICE}" ${BUILD_DIR}/boot
+
+# Both partitions are mounted, so a re-read would fail with EBUSY anyway
+# release the lock so udevd can process the deferred events.
+exec 9<&-
 
 echo "${BUILD_DIR} is mounted successfully!"
 
