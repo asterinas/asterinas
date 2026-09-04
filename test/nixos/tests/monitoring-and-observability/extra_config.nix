@@ -11,7 +11,8 @@ let
             - targets: [ "10.0.2.15:9090" ]
     '';
   };
-in {
+in
+{
   environment.systemPackages = with pkgs; [ prometheus ];
 
   system.activationScripts.testFixtures = ''

@@ -6,7 +6,10 @@ use core::{arch::x86_64::CpuidResult, ffi::CStr, fmt, str};
 use ostd::{
     arch::{
         cpu::{
-            context::{CpuException, PageFaultErrorCode, RawPageFaultInfo, UserContext},
+            context::{
+                CpuException, PageFaultErrorCode, RawPageFaultInfo, USER_MODIFIABLE_RFLAGS,
+                UserContext,
+            },
             cpuid::cpuid,
         },
         tsc_freq,
@@ -16,11 +19,18 @@ use ostd::{
     sync::SpinLock,
     task::DisabledPreemptGuard,
 };
+use x86_64::registers::rflags::RFlags;
 
 use crate::{
     cpu::LinuxAbi,
     vm::{perms::VmPerms, vmar::PageFaultInfo},
 };
+
+// RFLAGS bits that Linux restores from a user signal frame.
+//
+// Reference: <https://elixir.bootlin.com/linux/v7.1/source/arch/x86/include/asm/sighandling.h#L11-L14>.
+const SIGRETURN_RFLAGS_MASK: usize =
+    USER_MODIFIABLE_RFLAGS & !(RFlags::NESTED_TASK.bits() as usize);
 
 impl LinuxAbi for UserContext {
     fn syscall_num(&self) -> usize {
@@ -106,7 +116,6 @@ macro_rules! copy_gp_regs {
         $dst.r14 = $src.r14;
         $dst.r15 = $src.r15;
         $dst.rip = $src.rip;
-        $dst.rflags = $src.rflags;
     };
 }
 
@@ -114,11 +123,15 @@ impl SigContext {
     pub(crate) fn copy_user_regs_to(&self, dst: &mut UserContext) {
         let gp_regs = dst.general_regs_mut();
         copy_gp_regs!(self, gp_regs);
+        dst.set_rflags(
+            (dst.rflags() & !SIGRETURN_RFLAGS_MASK) | (self.rflags & SIGRETURN_RFLAGS_MASK),
+        );
     }
 
     pub(crate) fn copy_user_regs_from(&mut self, src: &UserContext) {
         let gp_regs = src.general_regs();
         copy_gp_regs!(gp_regs, self);
+        self.rflags = src.rflags();
 
         // TODO: Fill exception information in `SigContext`.
     }

@@ -471,7 +471,7 @@ pub(crate) fn handle_user_signal(
         target_arch = "x86_64" => {
             // Clear the DF flag. This is to conform to x86-64 calling conventions.
             const X86_RFLAGS_DF: usize = 1 << 10; // Bit 10 is the DF flag.
-            user_ctx.general_regs_mut().rflags &= !X86_RFLAGS_DF;
+            user_ctx.set_rflags(user_ctx.rflags() & !X86_RFLAGS_DF);
         }
         _ => {},
     }

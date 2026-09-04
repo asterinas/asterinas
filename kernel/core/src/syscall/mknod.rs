@@ -45,7 +45,7 @@ pub(super) fn sys_mknodat(
 
     match inode_type {
         InodeType::File => {
-            let _ = dir_path.new_fs_child(&name, InodeType::File, inode_mode)?;
+            let _ = dir_path.new_child(&name, InodeType::File, inode_mode)?;
         }
         InodeType::CharDevice => {
             let _ = dir_path.mknod(&name, inode_mode, MknodType::CharDevice(dev as u64))?;
@@ -57,7 +57,7 @@ pub(super) fn sys_mknodat(
             let _ = dir_path.mknod(&name, inode_mode, MknodType::NamedPipe)?;
         }
         InodeType::Socket => {
-            let _ = dir_path.new_fs_child(&name, InodeType::Socket, inode_mode)?;
+            let _ = dir_path.new_child(&name, InodeType::Socket, inode_mode)?;
         }
         _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),
     }

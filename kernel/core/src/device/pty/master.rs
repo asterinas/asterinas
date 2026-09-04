@@ -190,7 +190,7 @@ impl PerOpenFileOps for PtyMaster {
                 };
 
                 let slave = {
-                    let devpts_root = Path::new_fs_root(path.mount_node().clone());
+                    let devpts_root = Path::new_root(path.mount_node().clone());
                     let slave_path = devpts_root.lookup_child(&self.slave.index().to_string())?;
                     Arc::new(slave_path.open(open_args)?)
                 };

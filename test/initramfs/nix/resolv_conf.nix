@@ -4,7 +4,8 @@ let
     name = "host-resolv-conf";
     path = "/etc/resolv.conf";
   };
-in stdenv.mkDerivation {
+in
+stdenv.mkDerivation {
   name = "resolv-conf";
   buildCommand = ''
     RESOLV_CONF_FILE="$out/resolv.conf"

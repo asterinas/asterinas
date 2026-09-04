@@ -6,7 +6,7 @@ use core::ops::Range;
 
 use ostd::{
     arch::{
-        cpu::context::{FsBase, GeneralRegs, GsBase},
+        cpu::context::{FsBase, GeneralRegs, GsBase, UserContext},
         trap::{USER_CS_VALUE, USER_SS_VALUE},
     },
     mm::MAX_USERSPACE_VADDR,
@@ -59,16 +59,21 @@ impl CUserRegsStruct {
     ///
     /// `orig_rax` is left at zero. Callers needing the syscall-entry
     /// value should assign it from `ThreadLocal::orig_syscall_ret`.
-    pub(crate) fn from_regs(general_regs: &GeneralRegs, fs_base: FsBase, gs_base: GsBase) -> Self {
+    pub(crate) fn from_regs(user_context: &UserContext, fs_base: FsBase, gs_base: GsBase) -> Self {
         let mut out = Self::default();
         let bytes = out.as_mut_bytes();
         for rule in REG_RULES {
             let value = match rule.policy {
                 Policy::Fixed(val) => val,
-                _ => (rule.get.unwrap())(general_regs),
+                _ => (rule.get.unwrap())(user_context.general_regs()),
             };
             write_word(bytes, rule.offset, value);
         }
+        write_word(
+            bytes,
+            core::mem::offset_of!(CUserRegsStruct, rflags),
+            user_context.rflags(),
+        );
         write_word(
             bytes,
             core::mem::offset_of!(CUserRegsStruct, fsbase),
@@ -92,16 +97,19 @@ impl CUserRegsStruct {
     /// Returns `EIO` on any invalid value.
     pub(crate) fn apply_to(
         &self,
-        general_regs: &mut GeneralRegs,
+        user_context: &mut UserContext,
         fs_base: &mut FsBase,
         gs_base: &mut GsBase,
     ) -> Result<()> {
         let bytes = self.as_bytes();
-        let mut new_general_regs = *general_regs;
+
+        let mut new_general_regs = *user_context.general_regs();
         for rule in REG_RULES {
             let value = read_word(bytes, rule.offset);
             rule.apply(&mut new_general_regs, value)?;
         }
+
+        let rflags = read_word(bytes, core::mem::offset_of!(CUserRegsStruct, rflags));
 
         let fsbase = read_word(bytes, core::mem::offset_of!(CUserRegsStruct, fsbase));
         if !is_user_addr(fsbase) {
@@ -113,7 +121,8 @@ impl CUserRegsStruct {
             return_errno_with_message!(Errno::EIO, "invalid register value");
         }
 
-        *general_regs = new_general_regs;
+        *user_context.general_regs_mut() = new_general_regs;
+        user_context.set_rflags(rflags);
         *fs_base = FsBase::new(fsbase);
         *gs_base = GsBase::new(gsbase);
         Ok(())
@@ -122,13 +131,16 @@ impl CUserRegsStruct {
 
 /// Reads one word from the x86-64 USER area at `offset`.
 pub(crate) fn read_user_word(
-    general_regs: &GeneralRegs,
+    user_context: &UserContext,
     fs_base: FsBase,
     gs_base: GsBase,
     orig_rax: usize,
     offset: usize,
 ) -> Result<usize> {
     check_user_offset(offset)?;
+    if offset == core::mem::offset_of!(CUserRegsStruct, rflags) {
+        return Ok(user_context.rflags());
+    }
     if offset == core::mem::offset_of!(CUserRegsStruct, fsbase) {
         return Ok(fs_base.addr());
     }
@@ -157,13 +169,13 @@ pub(crate) fn read_user_word(
         RegRule::for_offset(offset).expect("offset has been validated by `check_user_offset`");
     Ok(match rule.policy {
         Policy::Fixed(value) => value,
-        _ => (rule.get.unwrap())(general_regs),
+        _ => (rule.get.unwrap())(user_context.general_regs()),
     })
 }
 
 /// Writes one word to the x86-64 USER area at `offset`.
 pub(crate) fn write_user_word(
-    general_regs: &mut GeneralRegs,
+    user_context: &mut UserContext,
     fs_base: &mut FsBase,
     gs_base: &mut GsBase,
     orig_rax: &mut usize,
@@ -171,6 +183,10 @@ pub(crate) fn write_user_word(
     value: usize,
 ) -> Result<()> {
     check_user_offset(offset)?;
+    if offset == core::mem::offset_of!(CUserRegsStruct, rflags) {
+        user_context.set_rflags(value);
+        return Ok(());
+    }
     if offset == core::mem::offset_of!(CUserRegsStruct, fsbase) {
         if !is_user_addr(value) {
             return_errno_with_message!(Errno::EIO, "invalid register value");
@@ -198,17 +214,17 @@ pub(crate) fn write_user_word(
 
     let rule =
         RegRule::for_offset(offset).expect("offset has been validated by `check_user_offset`");
-    rule.apply(general_regs, value)
+    rule.apply(user_context.general_regs_mut(), value)
 }
 
 /// Enables x86-64 single-step execution by setting the trap flag.
-pub(crate) fn enable_single_step(regs: &mut GeneralRegs) {
-    regs.rflags |= RFlags::TRAP_FLAG.bits() as usize;
+pub(crate) fn enable_single_step(user_context: &mut UserContext) {
+    user_context.set_rflags(user_context.rflags() | RFlags::TRAP_FLAG.bits() as usize);
 }
 
 /// Disables x86-64 single-step execution by clearing the trap flag.
-pub(crate) fn disable_single_step(regs: &mut GeneralRegs) {
-    regs.rflags &= !(RFlags::TRAP_FLAG.bits() as usize);
+pub(crate) fn disable_single_step(user_context: &mut UserContext) {
+    user_context.set_rflags(user_context.rflags() & !(RFlags::TRAP_FLAG.bits() as usize));
 }
 
 // =====================================================================
@@ -256,13 +272,6 @@ const REG_RULES: &[RegRule] = &[
         |r, v| r.rip = v,
         Policy::SetIf(is_user_addr),
     ),
-    // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/kernel/ptrace.c#L369>
-    RegRule::rw(
-        off!(rflags),
-        |r| r.rflags,
-        |r, v| r.rflags = v,
-        Policy::SetBitsTruncate(USER_MODIFIABLE_RFLAGS_MASK),
-    ),
     // Asterinas does not run 32-bit user code,
     // so the segment selectors are always at fixed values.
     RegRule::fixed(off!(cs), USER_CS_VALUE),
@@ -274,7 +283,7 @@ const REG_RULES: &[RegRule] = &[
 ];
 
 const _: () = {
-    assert!((REG_RULES.len() + 3) * size_of::<usize>() == size_of::<CUserRegsStruct>());
+    assert!((REG_RULES.len() + 4) * size_of::<usize>() == size_of::<CUserRegsStruct>());
 };
 
 /// One rule for a single register inside `CUserRegsStruct`.
@@ -332,10 +341,6 @@ impl RegRule {
                 }
                 (self.set.unwrap())(regs, value);
             }
-            Policy::SetBitsTruncate(mask) => {
-                let current = (self.get.unwrap())(regs);
-                (self.set.unwrap())(regs, (current & !mask) | (value & mask));
-            }
             Policy::Fixed(expected) => {
                 if value != expected {
                     return_errno_with_message!(Errno::EIO, "invalid fixed register value");
@@ -353,8 +358,6 @@ enum Policy {
     Set,
     /// Set only if the predicate accepts the value.
     SetIf(fn(usize) -> bool),
-    /// Replace only the bits in the mask, preserve the rest.
-    SetBitsTruncate(usize),
     /// The field is fixed at the expected value.
     Fixed(usize),
 }
@@ -362,21 +365,6 @@ enum Policy {
 const fn is_user_addr(v: usize) -> bool {
     v < MAX_USERSPACE_VADDR
 }
-
-/// RFLAGS bits the user may modify via ptrace.
-//
-// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/kernel/ptrace.c#L241>.
-const USER_MODIFIABLE_RFLAGS_MASK: usize = (RFlags::CARRY_FLAG.bits()
-    | RFlags::PARITY_FLAG.bits()
-    | RFlags::AUXILIARY_CARRY_FLAG.bits()
-    | RFlags::ZERO_FLAG.bits()
-    | RFlags::SIGN_FLAG.bits()
-    | RFlags::TRAP_FLAG.bits()
-    | RFlags::DIRECTION_FLAG.bits()
-    | RFlags::OVERFLOW_FLAG.bits()
-    | RFlags::RESUME_FLAG.bits()
-    | RFlags::ALIGNMENT_CHECK.bits()
-    | RFlags::NESTED_TASK.bits()) as usize;
 
 /// Checks whether the given offset is valid in `struct user`.
 //

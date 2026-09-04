@@ -48,7 +48,7 @@ pub(crate) fn create_socket_file(path_name: &str) -> Result<Path> {
             .lookup_unresolved_no_follow(&fs_path)?
             .into_parent_and_filename()?;
 
-        parent.new_fs_child(&file_name, InodeType::Socket, mkmod!(u+rw))
+        parent.new_child(&file_name, InodeType::Socket, mkmod!(u+rw))
     })();
 
     result.map_err(|err| {

@@ -50,7 +50,7 @@ pub(super) fn sys_move_mount(
     let target_path = path_resolver.lookup(&to_fs_path)?;
     match source {
         MoveMountSource::Detached(detached_mount) => {
-            let detached_root = Path::new_fs_root(detached_mount);
+            let detached_root = Path::new_root(detached_mount);
             detached_root.move_mount_to(&target_path, ctx)?;
         }
         MoveMountSource::Path(from_path) => {

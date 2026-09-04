@@ -395,15 +395,13 @@ impl Deref for DirDentry<'_> {
 }
 
 impl DirDentry<'_> {
-    /// Creates a `Dentry` by creating a new inode of the `type_` with the `mode`.
-    pub(super) fn create(
+    pub(super) fn create_child(
         &self,
         name: &str,
-        type_: InodeType,
-        mode: InodeMode,
+        create_inode_fn: impl FnOnce() -> Result<Arc<dyn Inode>>,
     ) -> Result<Arc<Dentry>> {
         let children = self.validate_child_absent(name)?;
-        let new_inode = self.inode.create(name, type_, mode)?;
+        let new_inode = create_inode_fn()?;
         let mut children = children.upgrade();
         let new_child = Dentry::new(
             new_inode,

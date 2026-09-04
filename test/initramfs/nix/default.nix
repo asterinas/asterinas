@@ -1,22 +1,33 @@
-{ target ? "x86_64", enableBenchmarkTest ? false, enableConformanceTest ? false
-, enableRegressionTest ? false, conformanceTestSuite ? "ltp"
-, conformanceTestWorkDir ? "/tmp", conformanceTestSelector ? ""
-, regressionTestPlatform ? "asterinas", dnsServer ? "none", smp ? 1
-, initramfsCompressed ? true, benchmarkName ? "none", }:
+{
+  target ? "x86_64",
+  enableBenchmarkTest ? false,
+  enableConformanceTest ? false,
+  enableRegressionTest ? false,
+  conformanceTestSuite ? "ltp",
+  conformanceTestWorkDir ? "/tmp",
+  conformanceTestSelector ? "",
+  regressionTestPlatform ? "asterinas",
+  dnsServer ? "none",
+  smp ? 1,
+  initramfsCompressed ? true,
+  benchmarkName ? "none",
+}:
 let
-  crossSystem.config = if target == "x86_64" then
-    "x86_64-unknown-linux-gnu"
-  else if target == "riscv64" then
-    "riscv64-unknown-linux-gnu"
-  else
-    throw "Target arch ${target} not yet supported.";
+  crossSystem.config =
+    if target == "x86_64" then
+      "x86_64-unknown-linux-gnu"
+    else if target == "riscv64" then
+      "riscv64-unknown-linux-gnu"
+    else
+      throw "Target arch ${target} not yet supported.";
 
   pkgs = import ../../../distro/nixpkgs.nix {
     config = { };
     overlays = [ ];
     inherit crossSystem;
   };
-in rec {
+in
+rec {
   # Packages needed by initramfs
   busybox = pkgs.busybox;
   benchmark = pkgs.callPackage ./benchmark { inherit benchmarkName; };
@@ -26,8 +37,7 @@ in rec {
     workDir = conformanceTestWorkDir;
     testSelector = conformanceTestSelector;
   };
-  regression =
-    pkgs.callPackage ./regression { testPlatform = regressionTestPlatform; };
+  regression = pkgs.callPackage ./regression { testPlatform = regressionTestPlatform; };
 
   initramfs = pkgs.callPackage ./initramfs.nix {
     inherit busybox;
@@ -51,11 +61,13 @@ in rec {
     CPPFLAGS = "-fcommon -fpermissive";
   });
   lmbench = pkgs.callPackage ./benchmark/lmbench.nix { };
-  redis = (pkgs.redis.overrideAttrs (old: {
-    doCheck = false;
-    makeFlags = (old.makeFlags or [ ]) ++ [
-      "CC=${pkgs.stdenv.cc.targetPrefix}cc"
-      "LD=${pkgs.stdenv.cc.targetPrefix}cc"
-    ];
-  })).override { withSystemd = false; };
+  redis =
+    (pkgs.redis.overrideAttrs (old: {
+      doCheck = false;
+      makeFlags = (old.makeFlags or [ ]) ++ [
+        "CC=${pkgs.stdenv.cc.targetPrefix}cc"
+        "LD=${pkgs.stdenv.cc.targetPrefix}cc"
+      ];
+    })).override
+      { withSystemd = false; };
 }

@@ -1,5 +1,8 @@
 { pkgs, ... }:
 
 {
-  environment.systemPackages = with pkgs; [ mupdf pandoc ];
+  environment.systemPackages = with pkgs; [
+    mupdf
+    pandoc
+  ];
 }

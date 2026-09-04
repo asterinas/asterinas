@@ -1,8 +1,16 @@
-{ lib, stdenv, fetchgit, pkgs, pkgsBuildBuild, pkgsBuildHost, }:
+{
+  lib,
+  stdenv,
+  fetchgit,
+  pkgs,
+  pkgsBuildBuild,
+  pkgsBuildHost,
+}:
 let
   crossCompilePrefix = pkgsBuildHost.gcc.targetPrefix;
   hostCc = "${pkgsBuildBuild.gcc}/bin/gcc";
-in stdenv.mkDerivation rec {
+in
+stdenv.mkDerivation rec {
   pname = "kselftest";
   version = "6.18";
 
@@ -31,17 +39,28 @@ in stdenv.mkDerivation rec {
   # a regression in an unlisted subsystem upstream cannot silently change our conformance surface.
   # To enable a new subsystem,
   # add it here and triage any resulting build/run failures before landing.
-  baseKselftestTargets =
-    [ "exec" "lsm" "proc" "signal" "splice" "timers" "vDSO" ];
+  baseKselftestTargets = [
+    "exec"
+    "lsm"
+    "proc"
+    "signal"
+    "splice"
+    "timers"
+    "vDSO"
+  ];
 
-  kselftestTargets = lib.concatStringsSep " " (baseKselftestTargets
-    ++ lib.optionals stdenv.hostPlatform.isx86_64 [ "x86" ]);
+  kselftestTargets = lib.concatStringsSep " " (
+    baseKselftestTargets ++ lib.optionals stdenv.hostPlatform.isx86_64 [ "x86" ]
+  );
 
   enableParallelBuilding = true;
 
   nativeBuildInputs = with pkgsBuildBuild; [ rsync ];
 
-  buildInputs = with pkgs; [ glibc_multi.static libcap.dev ];
+  buildInputs = with pkgs; [
+    glibc_multi.static
+    libcap.dev
+  ];
 
   buildPhase = ''
     runHook preBuild
@@ -63,8 +82,7 @@ in stdenv.mkDerivation rec {
   '';
 
   meta = with lib; {
-    description =
-      "Linux in-kernel selftests (kselftest) for Asterinas conformance testing";
+    description = "Linux in-kernel selftests (kselftest) for Asterinas conformance testing";
     homepage = "https://docs.kernel.org/dev-tools/kselftest.html";
     license = licenses.gpl2Only;
     platforms = platforms.linux;

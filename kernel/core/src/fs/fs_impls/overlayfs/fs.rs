@@ -247,6 +247,31 @@ impl OverlayInode {
         type_: InodeType,
         mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
+        let (new_upper, upper_is_opaque) =
+            self.create_upper_child(name, type_, |upper| upper.create(name, type_, mode))?;
+        Ok(self.new_child_from_upper(name, type_, new_upper, upper_is_opaque))
+    }
+
+    /// Creates a new symbolic-link child `OverlayInode` in the upper layer.
+    pub(crate) fn create_symlink(
+        &self,
+        name: &str,
+        target: &str,
+        mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
+        let (new_upper, upper_is_opaque) =
+            self.create_upper_child(name, InodeType::SymLink, |upper| {
+                upper.create_symlink(name, target, mode)
+            })?;
+        Ok(self.new_child_from_upper(name, InodeType::SymLink, new_upper, upper_is_opaque))
+    }
+
+    fn create_upper_child(
+        &self,
+        name: &str,
+        type_: InodeType,
+        create_fn: impl FnOnce(&Arc<dyn Inode>) -> Result<Arc<dyn Inode>>,
+    ) -> Result<(Arc<dyn Inode>, bool)> {
         if self.type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -285,7 +310,7 @@ impl OverlayInode {
             }
         }
 
-        let new_upper = upper.create(name, type_, mode)?;
+        let new_upper = create_fn(upper)?;
         if upper_is_opaque {
             new_upper.set_xattr(
                 XattrName::try_from_full_name(OPAQUE_DIR_XATTR_NAME).unwrap(),
@@ -294,7 +319,17 @@ impl OverlayInode {
             )?;
         }
 
-        let new_child = Arc::new_cyclic(|weak| OverlayInode {
+        Ok((new_upper, upper_is_opaque))
+    }
+
+    fn new_child_from_upper(
+        &self,
+        name: &str,
+        type_: InodeType,
+        new_upper: Arc<dyn Inode>,
+        upper_is_opaque: bool,
+    ) -> Arc<dyn Inode> {
+        let new_child: Arc<OverlayInode> = Arc::new_cyclic(|weak| OverlayInode {
             ino: new_upper.ino(),
             type_,
             name_upon_creation: SpinLock::new(String::from(name)),
@@ -306,7 +341,7 @@ impl OverlayInode {
             fs: self.fs.clone(),
             self_: weak.clone(),
         });
-        Ok(new_child)
+        new_child
     }
 
     /// Writes data to the target inode, if it resides in the lower layer,
@@ -534,14 +569,6 @@ impl OverlayInode {
             return_errno_with_message!(Errno::EINVAL, "self is not symlink");
         }
         self.get_top_valid_inode().read_link()
-    }
-
-    pub(crate) fn write_link(&self, target: &str) -> Result<()> {
-        if self.type_ != InodeType::SymLink {
-            return_errno_with_message!(Errno::EINVAL, "self is not symlink");
-        }
-        let upper = self.build_upper_recursively_if_needed()?;
-        upper.write_link(target)
     }
 
     pub(crate) fn rename(
@@ -1007,6 +1034,7 @@ impl Inode for OverlayInode {
     fn set_ctime(&self, time: Duration);
     fn page_cache(&self) -> Option<Arc<Vmo>>;
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
+    fn create_symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<dyn Inode>>;
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>>;
     fn open(
         &self,
@@ -1027,7 +1055,6 @@ impl Inode for OverlayInode {
         mode: RenameMode,
     ) -> Result<()>;
     fn read_link(&self) -> Result<SymbolicLink>;
-    fn write_link(&self, target: &str) -> Result<()>;
     fn sync(&self, mode: SyncMode) -> Result<()>;
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()>;
     fn fs(&self) -> Arc<dyn FileSystem>;
@@ -1287,19 +1314,19 @@ mod tests {
         let mode = InodeMode::all();
         let upper = {
             let root_mount = new_dummy_mount();
-            Path::new_fs_root(root_mount)
+            Path::new_root(root_mount)
         };
         let lower = {
             let r1 = new_dummy_mount();
             let r2 = new_dummy_mount();
 
-            let l1 = Path::new_fs_root(r1);
-            l1.new_fs_child("f1", InodeType::File, mode).unwrap();
-            let d1 = l1.new_fs_child("d1", InodeType::Dir, mode).unwrap();
-            d1.new_fs_child("f11", InodeType::File, mode).unwrap();
+            let l1 = Path::new_root(r1);
+            l1.new_child("f1", InodeType::File, mode).unwrap();
+            let d1 = l1.new_child("d1", InodeType::Dir, mode).unwrap();
+            d1.new_child("f11", InodeType::File, mode).unwrap();
 
-            let l2 = Path::new_fs_root(r2);
-            let f2 = l2.new_fs_child("f2", InodeType::File, mode).unwrap();
+            let l2 = Path::new_root(r2);
+            let f2 = l2.new_child("f2", InodeType::File, mode).unwrap();
             let f2_inode = f2.inode();
             f2_inode
                 .write_at(
@@ -1316,9 +1343,9 @@ mod tests {
                     XattrSetFlags::CREATE_ONLY,
                 )
                 .unwrap();
-            let d1 = l2.new_fs_child("d1", InodeType::Dir, mode).unwrap();
-            d1.new_fs_child("f11", InodeType::File, mode).unwrap();
-            d1.new_fs_child("f12", InodeType::File, mode).unwrap();
+            let d1 = l2.new_child("d1", InodeType::Dir, mode).unwrap();
+            d1.new_child("f11", InodeType::File, mode).unwrap();
+            d1.new_child("f12", InodeType::File, mode).unwrap();
 
             vec![l1, l2]
         };
@@ -1334,9 +1361,9 @@ mod tests {
         crate::time::clocks::init_for_ktest();
         crate::fs::vfs::init();
 
-        let upper = Path::new_fs_root(new_dummy_mount());
-        let lower = vec![Path::new_fs_root(new_dummy_mount())];
-        let work = Path::new_fs_root(new_dummy_mount());
+        let upper = Path::new_root(new_dummy_mount());
+        let lower = vec![Path::new_root(new_dummy_mount())];
+        let work = Path::new_root(new_dummy_mount());
 
         let Err(e) = OverlayFs::new(upper, lower, work) else {
             panic!("OverlayFs::new should fail when work and upper are not in the same mount");
@@ -1351,11 +1378,11 @@ mod tests {
 
         let mode = InodeMode::all();
         let upper = {
-            let root = Path::new_fs_root(new_dummy_mount());
-            root.new_fs_child("file", InodeType::File, mode).unwrap();
+            let root = Path::new_root(new_dummy_mount());
+            root.new_child("file", InodeType::File, mode).unwrap();
             root
         };
-        let lower = vec![Path::new_fs_root(new_dummy_mount())];
+        let lower = vec![Path::new_root(new_dummy_mount())];
         let work = upper.clone();
 
         let Err(e) = OverlayFs::new(upper, lower, work) else {
@@ -1370,22 +1397,22 @@ mod tests {
         crate::fs::vfs::init();
 
         let mode = InodeMode::all();
-        let root = Path::new_fs_root(new_dummy_mount());
+        let root = Path::new_root(new_dummy_mount());
         let upper = {
-            let dir = root.new_fs_child("upper", InodeType::Dir, mode).unwrap();
-            dir.new_fs_child("f1", InodeType::File, mode).unwrap();
-            dir.new_fs_child(".wh.f2", InodeType::File, mode).unwrap();
-            dir.new_fs_child("d1", InodeType::Dir, mode).unwrap();
-            dir.new_fs_child("d2", InodeType::Dir, mode).unwrap();
-            dir.new_fs_child(".wh.d3", InodeType::Dir, mode).unwrap();
+            let dir = root.new_child("upper", InodeType::Dir, mode).unwrap();
+            dir.new_child("f1", InodeType::File, mode).unwrap();
+            dir.new_child(".wh.f2", InodeType::File, mode).unwrap();
+            dir.new_child("d1", InodeType::Dir, mode).unwrap();
+            dir.new_child("d2", InodeType::Dir, mode).unwrap();
+            dir.new_child(".wh.d3", InodeType::Dir, mode).unwrap();
             dir
         };
         let lower = {
             let l1 = {
-                let r1 = Path::new_fs_root(new_dummy_mount());
-                r1.new_fs_child("f1", InodeType::Dir, mode).unwrap();
-                r1.new_fs_child("f2", InodeType::File, mode).unwrap();
-                let d1 = r1.new_fs_child("d1", InodeType::Dir, mode).unwrap();
+                let r1 = Path::new_root(new_dummy_mount());
+                r1.new_child("f1", InodeType::Dir, mode).unwrap();
+                r1.new_child("f2", InodeType::File, mode).unwrap();
+                let d1 = r1.new_child("d1", InodeType::Dir, mode).unwrap();
                 // Set internal OverlayFS metadata while constructing the synthetic lower layer.
                 d1.inode()
                     .set_xattr(
@@ -1395,21 +1422,21 @@ mod tests {
                         XattrSetFlags::CREATE_ONLY,
                     )
                     .unwrap();
-                r1.new_fs_child("d2", InodeType::File, mode).unwrap();
-                r1.new_fs_child("d3", InodeType::Dir, mode).unwrap();
+                r1.new_child("d2", InodeType::File, mode).unwrap();
+                r1.new_child("d3", InodeType::Dir, mode).unwrap();
                 r1
             };
             let l2 = {
-                let r2 = Path::new_fs_root(new_dummy_mount());
-                r2.new_fs_child("f1", InodeType::File, mode).unwrap();
-                r2.new_fs_child("d1", InodeType::Dir, mode).unwrap();
-                r2.new_fs_child("d2", InodeType::Dir, mode).unwrap();
-                r2.new_fs_child("d4", InodeType::Dir, mode).unwrap();
+                let r2 = Path::new_root(new_dummy_mount());
+                r2.new_child("f1", InodeType::File, mode).unwrap();
+                r2.new_child("d1", InodeType::Dir, mode).unwrap();
+                r2.new_child("d2", InodeType::Dir, mode).unwrap();
+                r2.new_child("d4", InodeType::Dir, mode).unwrap();
                 r2
             };
             vec![l1, l2]
         };
-        let work = root.new_fs_child("work", InodeType::Dir, mode).unwrap();
+        let work = root.new_child("work", InodeType::Dir, mode).unwrap();
 
         let fs = OverlayFs::new(upper, lower, work).unwrap();
         let root = fs.root_inode();
@@ -1534,33 +1561,31 @@ mod tests {
         crate::fs::vfs::init();
 
         let mode = InodeMode::all();
-        let root = Path::new_fs_root(new_dummy_mount());
+        let root = Path::new_root(new_dummy_mount());
 
         let upper = {
-            let dir = root.new_fs_child("upper", InodeType::Dir, mode).unwrap();
+            let dir = root.new_child("upper", InodeType::Dir, mode).unwrap();
             // whiteout for "deleted"
-            dir.new_fs_child(".wh.deleted", InodeType::File, mode)
-                .unwrap();
+            dir.new_child(".wh.deleted", InodeType::File, mode).unwrap();
             // a normal file that should appear exactly once
-            dir.new_fs_child("normal_file", InodeType::File, mode)
-                .unwrap();
+            dir.new_child("normal_file", InodeType::File, mode).unwrap();
             dir
         };
 
         let lower = {
-            let lower_root = Path::new_fs_root(new_dummy_mount());
+            let lower_root = Path::new_root(new_dummy_mount());
             // this file is whited-out by upper, should NOT appear
             lower_root
-                .new_fs_child("deleted", InodeType::File, mode)
+                .new_child("deleted", InodeType::File, mode)
                 .unwrap();
             // this file only lives in lower, should appear once
             lower_root
-                .new_fs_child("another_file", InodeType::File, mode)
+                .new_child("another_file", InodeType::File, mode)
                 .unwrap();
             lower_root
         };
 
-        let work = root.new_fs_child("work", InodeType::Dir, mode).unwrap();
+        let work = root.new_child("work", InodeType::Dir, mode).unwrap();
         let fs = OverlayFs::new(upper, vec![lower], work).unwrap();
         let root_inode = fs.root_inode();
 
@@ -1626,9 +1651,8 @@ mod tests {
         assert_ne!(f1.ino(), d1.ino());
         d1.mknod("dev", mode, MknodType::NamedPipe).unwrap();
 
-        let link = d1.create("link", InodeType::SymLink, mode).unwrap();
         let link_str = "link_to_somewhere";
-        link.write_link(link_str).unwrap();
+        let link = d1.create_symlink("link", link_str, mode).unwrap();
         assert!(matches!(
             link.read_link().unwrap(),
             SymbolicLink::Plain(s) if s == link_str

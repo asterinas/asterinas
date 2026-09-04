@@ -1589,6 +1589,15 @@ impl Inode for ExfatInode {
         Ok(result)
     }
 
+    fn create_symlink(
+        &self,
+        _name: &str,
+        _target: &str,
+        _mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
+        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
+    }
+
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
     }
@@ -1740,10 +1749,6 @@ impl Inode for ExfatInode {
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {
-        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
-    }
-
-    fn write_link(&self, target: &str) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
     }
 

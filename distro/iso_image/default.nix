@@ -1,10 +1,21 @@
-{ pkgs ? import ../nixpkgs.nix { }, autoInstall ? false, extra-substituters ? ""
-, config-file-name ? "configuration.nix", extra-trusted-public-keys ? ""
-, target_platform ? "x86_64-linux", version ? "", ... }:
+{
+  pkgs ? import ../nixpkgs.nix { },
+  autoInstall ? false,
+  extra-substituters ? "",
+  config-file-name ? "configuration.nix",
+  extra-trusted-public-keys ? "",
+  target_platform ? "x86_64-linux",
+  version ? "",
+  ...
+}:
 let
   installer = pkgs.callPackage ../aster_nixos_installer {
-    inherit extra-substituters extra-trusted-public-keys config-file-name
-      target_platform;
+    inherit
+      extra-substituters
+      extra-trusted-public-keys
+      config-file-name
+      target_platform
+      ;
   };
   configuration = {
     imports = [
@@ -34,4 +45,5 @@ let
       ''}
     '';
   };
-in (pkgs.nixos configuration).config.system.build.isoImage
+in
+(pkgs.nixos configuration).config.system.build.isoImage
