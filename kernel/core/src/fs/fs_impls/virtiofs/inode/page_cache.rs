@@ -16,6 +16,13 @@ use crate::{
     vm::page_cache::{CachePageExt, LockedCachePage, PageCacheBackend},
 };
 
+// The page-cache backend is inode-scoped and asynchronous: at I/O time no
+// specific `InodeHandle` is in context, and the handle used here may be a
+// reused live handle or a transient one. Its own open flags are therefore
+// the well-defined flag source. `O_APPEND`/`O_NONBLOCK` do not apply to
+// explicit-offset page I/O, and `O_DIRECT` bypasses the page cache, so the
+// captured `handle.file_flags()` are correct for both readback and writeback
+// below.
 impl PageCacheBackend for VirtioFsInode {
     fn read_page_async(
         &self,
@@ -28,12 +35,6 @@ impl PageCacheBackend for VirtioFsInode {
         let session = self.fs_ref().session().clone();
         let cache_page = locked_page.deref().clone();
         let data_buf = FuseReplyBuf::new_map(Segment::from(cache_page.clone()).into())?;
-        // The page-cache backend is inode-scoped and asynchronous: at I/O time
-        // no specific `InodeHandle` is in context, and the handle used here may
-        // be a reused live handle or a transient one. Its own open flags are
-        // therefore the well-defined flag source. `O_APPEND`/`O_NONBLOCK` do
-        // not apply to explicit-offset page I/O, and `O_DIRECT` bypasses the
-        // page cache, so the captured `handle.file_flags()` are correct here.
         let read_req = ReadReq::new(
             handle.fh(),
             page_offset(idx)? as u64,
@@ -117,12 +118,9 @@ impl PageCacheBackend for VirtioFsInode {
         let nodeid = self.nodeid();
         let session = fs.session().clone();
         let complete_page = page.clone();
-        // The page-cache backend is inode-scoped and asynchronous: at I/O time
-        // no specific `InodeHandle` is in context, and the handle used here may
-        // be a reused live handle or a transient one. Its own open flags are
-        // therefore the well-defined flag source. `O_APPEND`/`O_NONBLOCK` do
-        // not apply to explicit-offset page I/O, and `O_DIRECT` bypasses the
-        // page cache, so the captured `handle.file_flags()` are correct here.
+        // The captured `handle.file_flags()` are used for the same reason as
+        // in `read_page_async`; see the rationale above the `PageCacheBackend`
+        // impl.
         let write_req = WriteReq::new(
             handle.fh(),
             page_start as u64,

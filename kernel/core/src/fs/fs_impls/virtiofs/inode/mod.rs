@@ -619,10 +619,10 @@ impl FileOps for VirtioFsInode {
         // FUSE readdir offsets are opaque continuation cookies.
         // The transient handle has no owning file description, so the request
         // carries the caller's live `status_flags` (e.g. from an internal
-        // lookup) composed with the transient `O_RDONLY` access mode. The VFS
-        // readdir path uses `VirtioFsDir` instead, which holds a real per-open
-        // handle.
-        let file_flags = AccessMode::O_RDONLY as u32 | status_flags.bits();
+        // lookup) composed with the transient handle's `O_RDONLY` access
+        // mode. The VFS readdir path uses `VirtioFsDir` instead, which holds
+        // a real per-open handle.
+        let file_flags = dir_handle.file_flags_with(status_flags);
         self.readdir(dir_handle.fh(), offset, file_flags, visitor)
     }
 }

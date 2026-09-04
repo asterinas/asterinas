@@ -66,7 +66,7 @@ impl FileOps for VirtioFsDir {
         // (which may have changed via `fcntl`) rather than the flags captured
         // at `FUSE_OPENDIR` time. The access mode is immutable post-open, so
         // it is still taken from the server-issued handle.
-        let file_flags = self.open_handle.access_mode() as u32 | status_flags.bits();
+        let file_flags = self.open_handle.file_flags_with(status_flags);
         self.inode
             .readdir(self.open_handle.fh(), offset, file_flags, visitor)
     }

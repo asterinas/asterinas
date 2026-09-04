@@ -50,9 +50,22 @@ impl VirtioFsOpenHandle {
         self.fh
     }
 
-    /// Returns the composite file flags (access mode | status flags).
+    /// Returns the composite file flags (access mode | captured status flags)
+    /// recorded when this handle was opened.
     pub(super) fn file_flags(&self) -> u32 {
-        self.access_mode as u32 | self.status_flags.bits()
+        self.file_flags_with(self.status_flags)
+    }
+
+    /// Returns the composite file flags (access mode | status flags) for a
+    /// request issued through this handle with the given `status_flags`.
+    ///
+    /// The access mode is immutable after open, so it is always taken from
+    /// this server-issued handle. `status_flags` are per-file-description and
+    /// can change via `fcntl` after open, so callers pass the *current* value
+    /// (e.g. from `InodeHandle::readdir`) rather than the flags captured at
+    /// open time.
+    pub(super) fn file_flags_with(&self, status_flags: StatusFlags) -> u32 {
+        self.access_mode as u32 | status_flags.bits()
     }
 
     /// Returns the access mode.
@@ -152,5 +165,51 @@ impl OpenHandles {
         });
 
         found
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use aster_fuse::ops::release::{ReleaseFlags, ReleaseKind};
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    /// Builds a handle whose open-time flag capture is empty, so a test can
+    /// tell captured flags apart from live flags passed at request time.
+    fn handle_with_empty_capture() -> Arc<VirtioFsOpenHandle> {
+        VirtioFsOpenHandle::new(
+            FuseFileHandle::new(1),
+            FuseNodeId::new(1),
+            AccessMode::O_RDONLY,
+            StatusFlags::empty(),
+            FuseOpenFlags::empty(),
+            Weak::new(),
+            ReleaseOptions::new(ReleaseKind::Directory, ReleaseFlags::empty()),
+        )
+    }
+
+    #[ktest]
+    fn file_flags_with_composes_live_flags_not_open_time_capture() {
+        let handle = handle_with_empty_capture();
+
+        // The capture recorded at open time is empty...
+        assert_eq!(handle.file_flags(), AccessMode::O_RDONLY as u32);
+
+        // ...so any extra bits in the composed value must come from the live
+        // flags passed in, i.e. from the issuing file description. Regression
+        // guard for issue #3536: requests such as `FUSE_READDIR` must carry
+        // the current per-open flags, not the open-time capture.
+        let live_flags = StatusFlags::O_APPEND | StatusFlags::O_NONBLOCK;
+        assert_eq!(
+            handle.file_flags_with(live_flags),
+            AccessMode::O_RDONLY as u32 | live_flags.bits()
+        );
+
+        // Dropping the handle would submit a `FUSE_RELEASE` work item to the
+        // global work queue, which is not initialized in the ktest
+        // environment. Leak the handle instead; the release is a no-op here
+        // anyway since the handle is not connected to a live virtio-fs session.
+        core::mem::forget(handle);
     }
 }
