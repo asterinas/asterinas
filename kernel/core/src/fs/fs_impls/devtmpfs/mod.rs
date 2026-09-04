@@ -132,7 +132,9 @@ mod tests {
 
         let path = "__devtmpfs_ktest_unmarked";
         let root = singleton().root_inode();
+        let root_dentry = crate::fs::vfs::path::Dentry::new_root(root.clone());
         root.mknod(
+            &root_dentry,
             path,
             mkmod!(a+rw),
             MknodType::CharDevice(device_id(240, 5).as_encoded_u64()),
@@ -145,7 +147,12 @@ mod tests {
 
         let inode = root.lookup(path).unwrap();
         assert!(!to_be_revalidated(inode.as_ref()));
-        root.unlink(path, &inode).unwrap();
+        let inode_dentry = root_dentry
+            .as_dir_dentry_or_err()
+            .unwrap()
+            .lookup_child(path)
+            .unwrap();
+        root.unlink(&inode_dentry).unwrap();
     }
 
     #[ktest]

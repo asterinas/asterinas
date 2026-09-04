@@ -17,6 +17,7 @@ use crate::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
                 RevalidationPolicy, SymbolicLink,
             },
+            path::Dentry as VfsDentry,
         },
     },
     prelude::*,
@@ -431,7 +432,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         self.mode()
     }
 
-    default fn set_mode(&self, mode: InodeMode) -> Result<()> {
+    default fn set_mode(&self, _self_dentry: &VfsDentry, mode: InodeMode) -> Result<()> {
         self.set_mode(mode)
     }
 
@@ -439,7 +440,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         self.metadata().size
     }
 
-    default fn resize(&self, _new_size: usize) -> Result<()> {
+    default fn resize(&self, _self_dentry: &VfsDentry, _new_size: usize) -> Result<()> {
         // The `resize` operation should be ignored by kernelfs inodes,
         // and should not incur an error.
         Ok(())
@@ -449,25 +450,25 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         self.metadata().last_access_at
     }
 
-    default fn set_atime(&self, _time: Duration) {}
+    default fn set_atime(&self, _self_dentry: &VfsDentry, _time: Duration) {}
 
     default fn mtime(&self) -> Duration {
         self.metadata().last_modify_at
     }
 
-    default fn set_mtime(&self, _time: Duration) {}
+    default fn set_mtime(&self, _self_dentry: &VfsDentry, _time: Duration) {}
 
     default fn ctime(&self) -> Duration {
         self.metadata().last_meta_change_at
     }
 
-    default fn set_ctime(&self, _time: Duration) {}
+    default fn set_ctime(&self, _self_dentry: &VfsDentry, _time: Duration) {}
 
     default fn owner(&self) -> Result<Uid> {
         Ok(self.metadata().uid)
     }
 
-    default fn set_owner(&self, _uid: Uid) -> Result<()> {
+    default fn set_owner(&self, _self_dentry: &VfsDentry, _uid: Uid) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
@@ -475,7 +476,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         Ok(self.metadata().gid)
     }
 
-    default fn set_group(&self, _gid: Gid) -> Result<()> {
+    default fn set_group(&self, _self_dentry: &VfsDentry, _gid: Gid) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
@@ -489,6 +490,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn create(
         &self,
+        _self_dentry: &VfsDentry,
         name: &str,
         _type_: InodeType,
         mode: InodeMode,
@@ -525,6 +527,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn mknod(
         &self,
+        _self_dentry: &VfsDentry,
         _name: &str,
         _mode: InodeMode,
         _dev: MknodType,
@@ -532,25 +535,29 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         Err(Error::new(Errno::EPERM))
     }
 
-    default fn link(&self, _old: &Arc<dyn Inode>, _name: &str) -> Result<()> {
+    default fn link(
+        &self,
+        _self_dentry: &VfsDentry,
+        _old_dentry: &VfsDentry,
+        _name: &str,
+    ) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
-    default fn unlink(&self, _name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
+    default fn unlink(&self, _child_dentry: &VfsDentry) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
-    default fn rmdir(&self, _name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
+    default fn rmdir(&self, _child_dentry: &VfsDentry) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
     default fn rename(
         &self,
-        _old_name: &str,
-        _old_inode: &Arc<dyn Inode>,
+        _old_child_dentry: &VfsDentry,
         _new_dir_inode: &Arc<dyn Inode>,
         _new_name: &str,
-        _replaced_inode: Option<&Arc<dyn Inode>>,
+        _replaced_dentry: Option<&VfsDentry>,
         _mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::EPERM))
@@ -594,6 +601,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn open(
         &self,
+        _self_dentry: &VfsDentry,
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {

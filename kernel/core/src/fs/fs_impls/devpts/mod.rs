@@ -20,6 +20,7 @@ use crate::{
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
+            path::Dentry,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
@@ -237,7 +238,7 @@ impl Inode for RootInode {
         self.metadata.read().size
     }
 
-    fn resize(&self, new_size: usize) -> Result<()> {
+    fn resize(&self, _self_dentry: &Dentry, new_size: usize) -> Result<()> {
         Err(Error::new(Errno::EISDIR))
     }
 
@@ -261,7 +262,7 @@ impl Inode for RootInode {
         Ok(self.metadata.read().mode)
     }
 
-    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+    fn set_mode(&self, _self_dentry: &Dentry, mode: InodeMode) -> Result<()> {
         self.metadata.write().mode = mode;
         Ok(())
     }
@@ -270,7 +271,7 @@ impl Inode for RootInode {
         Ok(self.metadata.read().uid)
     }
 
-    fn set_owner(&self, uid: Uid) -> Result<()> {
+    fn set_owner(&self, _self_dentry: &Dentry, uid: Uid) -> Result<()> {
         self.metadata.write().uid = uid;
         Ok(())
     }
@@ -279,7 +280,7 @@ impl Inode for RootInode {
         Ok(self.metadata.read().gid)
     }
 
-    fn set_group(&self, gid: Gid) -> Result<()> {
+    fn set_group(&self, _self_dentry: &Dentry, gid: Gid) -> Result<()> {
         self.metadata.write().gid = gid;
         Ok(())
     }
@@ -288,7 +289,7 @@ impl Inode for RootInode {
         self.metadata.read().last_access_at
     }
 
-    fn set_atime(&self, time: Duration) {
+    fn set_atime(&self, _self_dentry: &Dentry, time: Duration) {
         self.metadata.write().last_access_at = time;
     }
 
@@ -296,7 +297,7 @@ impl Inode for RootInode {
         self.metadata.read().last_modify_at
     }
 
-    fn set_mtime(&self, time: Duration) {
+    fn set_mtime(&self, _self_dentry: &Dentry, time: Duration) {
         self.metadata.write().last_modify_at = time;
     }
 
@@ -304,24 +305,37 @@ impl Inode for RootInode {
         self.metadata.read().last_meta_change_at
     }
 
-    fn set_ctime(&self, time: Duration) {
+    fn set_ctime(&self, _self_dentry: &Dentry, time: Duration) {
         self.metadata.write().last_meta_change_at = time;
     }
 
-    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    fn create(
+        &self,
+        _self_dentry: &Dentry,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
+    fn mknod(
+        &self,
+        _self_dentry: &Dentry,
+        name: &str,
+        mode: InodeMode,
+        type_: MknodType,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
+    fn link(&self, _self_dentry: &Dentry, _old_dentry: &Dentry, _name: &str) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn unlink(&self, name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
-        match name {
+    fn unlink(&self, child_dentry: &Dentry) -> Result<()> {
+        let name = child_dentry.name();
+        match name.as_str() {
             "." | ".." => {
                 return_errno_with_message!(Errno::EISDIR, "the devpts directory cannot be unlinked")
             }
@@ -335,7 +349,7 @@ impl Inode for RootInode {
         }
     }
 
-    fn rmdir(&self, _name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
+    fn rmdir(&self, _child_dentry: &Dentry) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
@@ -356,11 +370,10 @@ impl Inode for RootInode {
 
     fn rename(
         &self,
-        _old_name: &str,
-        _old_inode: &Arc<dyn Inode>,
+        _old_child_dentry: &Dentry,
         _new_dir_inode: &Arc<dyn Inode>,
         _new_name: &str,
-        _replaced_inode: Option<&Arc<dyn Inode>>,
+        _replaced_dentry: Option<&Dentry>,
         _mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::EPERM))

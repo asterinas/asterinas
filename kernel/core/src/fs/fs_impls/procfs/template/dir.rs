@@ -20,7 +20,7 @@ use crate::{
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
-            path::{is_dot, is_dotdot},
+            path::{Dentry, is_dot, is_dotdot},
         },
     },
     prelude::*,
@@ -161,17 +161,17 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
     fn mode(&self) -> Result<InodeMode>;
-    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    fn set_mode(&self, self_dentry: &Dentry, mode: InodeMode) -> Result<()>;
     fn owner(&self) -> Result<Uid>;
-    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn set_owner(&self, self_dentry: &Dentry, uid: Uid) -> Result<()>;
     fn group(&self) -> Result<Gid>;
-    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn set_group(&self, self_dentry: &Dentry, gid: Gid) -> Result<()>;
     fn atime(&self) -> Duration;
-    fn set_atime(&self, time: Duration);
+    fn set_atime(&self, self_dentry: &Dentry, time: Duration);
     fn mtime(&self) -> Duration;
-    fn set_mtime(&self, time: Duration);
+    fn set_mtime(&self, self_dentry: &Dentry, time: Duration);
     fn ctime(&self) -> Duration;
-    fn set_ctime(&self, time: Duration);
+    fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn metadata(&self) -> Result<Metadata> {
@@ -179,7 +179,7 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
         Ok(self.common.metadata_with_owner(owner_thread))
     }
 
-    fn resize(&self, _new_size: usize) -> Result<()> {
+    fn resize(&self, _self_dentry: &Dentry, _new_size: usize) -> Result<()> {
         Err(Error::new(Errno::EISDIR))
     }
 
@@ -187,23 +187,35 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
         InodeType::Dir
     }
 
-    fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    fn create(
+        &self,
+        _self_dentry: &Dentry,
+        _name: &str,
+        _type_: InodeType,
+        _mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn mknod(&self, _name: &str, _mode: InodeMode, _type_: MknodType) -> Result<Arc<dyn Inode>> {
+    fn mknod(
+        &self,
+        _self_dentry: &Dentry,
+        _name: &str,
+        _mode: InodeMode,
+        _type_: MknodType,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn link(&self, _old: &Arc<dyn Inode>, _name: &str) -> Result<()> {
+    fn link(&self, _self_dentry: &Dentry, _old_dentry: &Dentry, _name: &str) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn unlink(&self, _name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
+    fn unlink(&self, _child_dentry: &Dentry) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn rmdir(&self, _name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
+    fn rmdir(&self, _child_dentry: &Dentry) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
@@ -220,11 +232,10 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
 
     fn rename(
         &self,
-        _old_name: &str,
-        _old_inode: &Arc<dyn Inode>,
+        _old_child_dentry: &Dentry,
         _new_dir_inode: &Arc<dyn Inode>,
         _new_name: &str,
-        _replaced_inode: Option<&Arc<dyn Inode>>,
+        _replaced_dentry: Option<&Dentry>,
         _mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::EPERM))

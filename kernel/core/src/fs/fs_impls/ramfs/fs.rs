@@ -29,7 +29,7 @@ use crate::{
                 Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
                 RenameMode, RevalidationPolicy, SymbolicLink,
             },
-            path::{is_dot, is_dot_or_dotdot, is_dotdot},
+            path::{Dentry, is_dot, is_dot_or_dotdot, is_dotdot},
             registry::{FsCreationCtx, FsProperties, FsType},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -991,6 +991,37 @@ impl RamInode {
         self.metadata.lock().inc_size();
         Ok(new_inode)
     }
+
+    fn resize_impl(&self, new_size: usize) -> Result<()> {
+        if self.typ == InodeType::Dir {
+            return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
+        }
+        if self.typ != InodeType::File {
+            return_errno_with_message!(Errno::EINVAL, "the inode is not a regular file");
+        }
+
+        let mut page_cache = self.inner.as_file().unwrap().lock();
+        let mut inode_meta = self.metadata.lock();
+        let file_size = inode_meta.size;
+        if file_size == new_size {
+            return Ok(());
+        }
+        let now = now();
+        inode_meta.set_mtime(now);
+        inode_meta.set_ctime(now);
+
+        if new_size > file_size {
+            inode_meta.resize(new_size);
+            drop(inode_meta);
+            page_cache.resize(new_size, file_size)?;
+        } else {
+            drop(inode_meta);
+            page_cache.resize(new_size, file_size)?;
+            self.metadata.lock().resize(new_size);
+        }
+
+        Ok(())
+    }
 }
 
 impl FileOps for RamInode {
@@ -1015,7 +1046,7 @@ impl FileOps for RamInode {
         };
 
         if self.typ == InodeType::File {
-            self.set_atime(now());
+            self.metadata.lock().set_atime(now());
         }
         Ok(read_len)
     }
@@ -1070,7 +1101,7 @@ impl FileOps for RamInode {
             .read()
             .visit_entry(offset, visitor)?;
 
-        self.set_atime(now());
+        self.metadata.lock().set_atime(now());
 
         Ok(cnt)
     }
@@ -1087,42 +1118,15 @@ impl Inode for RamInode {
         self.metadata.lock().size
     }
 
-    fn resize(&self, new_size: usize) -> Result<()> {
-        if self.typ == InodeType::Dir {
-            return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
-        }
-        if self.typ != InodeType::File {
-            return_errno_with_message!(Errno::EINVAL, "the inode is not a regular file");
-        }
-
-        let mut page_cache = self.inner.as_file().unwrap().lock();
-        let mut inode_meta = self.metadata.lock();
-        let file_size = inode_meta.size;
-        if file_size == new_size {
-            return Ok(());
-        }
-        let now = now();
-        inode_meta.set_mtime(now);
-        inode_meta.set_ctime(now);
-
-        if new_size > file_size {
-            inode_meta.resize(new_size);
-            drop(inode_meta);
-            page_cache.resize(new_size, file_size)?;
-        } else {
-            drop(inode_meta);
-            page_cache.resize(new_size, file_size)?;
-            self.metadata.lock().resize(new_size);
-        }
-
-        Ok(())
+    fn resize(&self, _self_dentry: &Dentry, new_size: usize) -> Result<()> {
+        self.resize_impl(new_size)
     }
 
     fn atime(&self) -> Duration {
         self.metadata.lock().atime
     }
 
-    fn set_atime(&self, time: Duration) {
+    fn set_atime(&self, _self_dentry: &Dentry, time: Duration) {
         self.metadata.lock().set_atime(time);
     }
 
@@ -1130,7 +1134,7 @@ impl Inode for RamInode {
         self.metadata.lock().mtime
     }
 
-    fn set_mtime(&self, time: Duration) {
+    fn set_mtime(&self, _self_dentry: &Dentry, time: Duration) {
         self.metadata.lock().set_mtime(time);
     }
 
@@ -1138,7 +1142,7 @@ impl Inode for RamInode {
         self.metadata.lock().ctime
     }
 
-    fn set_ctime(&self, time: Duration) {
+    fn set_ctime(&self, _self_dentry: &Dentry, time: Duration) {
         self.metadata.lock().set_ctime(time);
     }
 
@@ -1154,7 +1158,7 @@ impl Inode for RamInode {
         Ok(self.metadata.lock().mode)
     }
 
-    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+    fn set_mode(&self, _self_dentry: &Dentry, mode: InodeMode) -> Result<()> {
         let mut inode_meta = self.metadata.lock();
         inode_meta.mode = mode;
         inode_meta.set_ctime(now());
@@ -1165,7 +1169,7 @@ impl Inode for RamInode {
         Ok(self.metadata.lock().uid)
     }
 
-    fn set_owner(&self, uid: Uid) -> Result<()> {
+    fn set_owner(&self, _self_dentry: &Dentry, uid: Uid) -> Result<()> {
         let mut inode_meta = self.metadata.lock();
         inode_meta.uid = uid;
         inode_meta.set_ctime(now());
@@ -1176,30 +1180,49 @@ impl Inode for RamInode {
         Ok(self.metadata.lock().gid)
     }
 
-    fn set_group(&self, gid: Gid) -> Result<()> {
+    fn set_group(&self, _self_dentry: &Dentry, gid: Gid) -> Result<()> {
         let mut inode_meta = self.metadata.lock();
         inode_meta.gid = gid;
         inode_meta.set_ctime(now());
         Ok(())
     }
 
-    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
+    fn mknod(
+        &self,
+        _self_dentry: &Dentry,
+        name: &str,
+        mode: InodeMode,
+        type_: MknodType,
+    ) -> Result<Arc<dyn Inode>> {
         self.mknod_impl(name, mode, type_, ToBeRevalidated::No)
     }
 
     fn open(
         &self,
+        _self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         self.inner.open(access_mode, status_flags)
     }
 
-    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    fn create(
+        &self,
+        _self_dentry: &Dentry,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
         self.create_impl(name, type_, mode, None, ToBeRevalidated::No)
     }
 
-    fn create_symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    fn create_symlink(
+        &self,
+        _self_dentry: &Dentry,
+        name: &str,
+        target: &str,
+        mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
         self.create_impl(
             name,
             InodeType::SymLink,
@@ -1211,6 +1234,7 @@ impl Inode for RamInode {
 
     fn create_tmpfile(
         &self,
+        _self_dentry: &Dentry,
         mode: InodeMode,
         hard_linkability: HardLinkability,
     ) -> Result<Arc<dyn Inode>> {
@@ -1230,12 +1254,12 @@ impl Inode for RamInode {
         ))
     }
 
-    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
+    fn link(&self, _self_dentry: &Dentry, old_dentry: &Dentry, name: &str) -> Result<()> {
         if self.typ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
 
-        let old = old.downcast_ref::<RamInode>().unwrap();
+        let old = old_dentry.inode().downcast_ref::<RamInode>().unwrap();
         if old.typ == InodeType::Dir {
             return_errno_with_message!(Errno::EPERM, "old is a dir");
         }
@@ -1266,17 +1290,19 @@ impl Inode for RamInode {
         Ok(())
     }
 
-    fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
-        let target = child.downcast_ref::<RamInode>().unwrap();
-        if !self.unlink_impl(name, |entry| entry.ino == target.ino)? {
+    fn unlink(&self, child_dentry: &Dentry) -> Result<()> {
+        let target = child_dentry.inode().downcast_ref::<RamInode>().unwrap();
+        let name = child_dentry.name();
+        if !self.unlink_impl(&name, |entry| entry.ino == target.ino)? {
             return_errno!(Errno::ENOENT);
         }
         Ok(())
     }
 
-    fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
-        let target = child.downcast_ref::<RamInode>().unwrap();
-        self.rmdir_impl(name, target, |_| true)?;
+    fn rmdir(&self, child_dentry: &Dentry) -> Result<()> {
+        let target = child_dentry.inode().downcast_ref::<RamInode>().unwrap();
+        let name = child_dentry.name();
+        self.rmdir_impl(&name, target, |_| true)?;
         Ok(())
     }
 
@@ -1287,13 +1313,13 @@ impl Inode for RamInode {
 
     fn rename(
         &self,
-        old_name: &str,
-        _old_inode: &Arc<dyn Inode>,
+        old_child_dentry: &Dentry,
         new_dir_inode: &Arc<dyn Inode>,
         new_name: &str,
-        _replaced_inode: Option<&Arc<dyn Inode>>,
+        _replaced_dentry: Option<&Dentry>,
         mode: RenameMode,
     ) -> Result<()> {
+        let old_name = old_child_dentry.name();
         // Perform necessary checks to ensure that `dst_inode` can be replaced by `src_inode`.
         let check_replace_inode =
             |src_inode: &Arc<RamInode>, dst_inode: &Arc<RamInode>| -> Result<()> {
@@ -1330,7 +1356,7 @@ impl Inode for RamInode {
         if self.ino == new_dir_inode.ino {
             let mut self_dir = self.inner.as_direntry().unwrap().write();
             // The source is guaranteed to exist (checked by VFS layer).
-            let (src_idx, src_inode) = self_dir.get_entry(old_name).unwrap();
+            let (src_idx, src_inode) = self_dir.get_entry(&old_name).unwrap();
 
             if mode == RenameMode::Exchange {
                 // The destination is guaranteed to exist for `RenameMode::Exchange` (checked by VFS layer).
@@ -1340,8 +1366,8 @@ impl Inode for RamInode {
 
                 let now = now();
                 DirChange::touch().apply(self, now);
-                src_inode.set_ctime(now);
-                dst_inode.set_ctime(now);
+                src_inode.metadata.lock().set_ctime(now);
+                dst_inode.metadata.lock().set_ctime(now);
             } else if let Some((dst_idx, dst_inode)) = self_dir.get_entry(new_name) {
                 check_replace_inode(&src_inode, &dst_inode)?;
                 self_dir.remove_entry(dst_idx);
@@ -1353,8 +1379,8 @@ impl Inode for RamInode {
 
                 let now = now();
                 DirChange::del(&src_inode).apply(self, now);
-                src_inode.set_ctime(now);
-                dst_inode.set_ctime(now);
+                src_inode.metadata.lock().set_ctime(now);
+                dst_inode.metadata.lock().set_ctime(now);
             } else {
                 self_dir.substitute_entry(
                     src_idx,
@@ -1364,7 +1390,7 @@ impl Inode for RamInode {
 
                 let now = now();
                 DirChange::touch().apply(self, now);
-                src_inode.set_ctime(now);
+                src_inode.metadata.lock().set_ctime(now);
             }
         }
         // Or rename across different directories
@@ -1378,7 +1404,7 @@ impl Inode for RamInode {
             );
             let self_inode_arc = self.this.upgrade().unwrap();
             // The source is guaranteed to exist (checked by VFS layer).
-            let (src_idx, src_inode) = self_dir.get_entry(old_name).unwrap();
+            let (src_idx, src_inode) = self_dir.get_entry(&old_name).unwrap();
 
             if mode == RenameMode::Exchange {
                 // The destination is guaranteed to exist for `RenameMode::Exchange` (checked by VFS layer).
@@ -1386,7 +1412,7 @@ impl Inode for RamInode {
 
                 self_dir.remove_entry(src_idx);
                 target_dir.remove_entry(dst_idx);
-                self_dir.append_entry(old_name, dst_inode.clone());
+                self_dir.append_entry(&old_name, dst_inode.clone());
                 target_dir.append_entry(new_name, src_inode.clone());
                 drop(self_dir);
                 drop(target_dir);
@@ -1394,8 +1420,8 @@ impl Inode for RamInode {
                 let now = now();
                 DirChange::exchange(&src_inode, &dst_inode).apply(self, now);
                 DirChange::exchange(&dst_inode, &src_inode).apply(new_dir_inode, now);
-                src_inode.set_ctime(now);
-                dst_inode.set_ctime(now);
+                src_inode.metadata.lock().set_ctime(now);
+                dst_inode.metadata.lock().set_ctime(now);
 
                 dst_inode.set_parent_if_dir(self.this.clone());
             } else if let Some((dst_idx, dst_inode)) = target_dir.get_entry(new_name) {
@@ -1413,8 +1439,8 @@ impl Inode for RamInode {
                 let now = now();
                 DirChange::del(&src_inode).apply(self, now);
                 DirChange::exchange(&dst_inode, &src_inode).apply(new_dir_inode, now);
-                dst_inode.set_ctime(now);
-                src_inode.set_ctime(now);
+                dst_inode.metadata.lock().set_ctime(now);
+                src_inode.metadata.lock().set_ctime(now);
             } else {
                 self_dir.remove_entry(src_idx);
                 target_dir.append_entry(new_name, src_inode.clone());
@@ -1424,7 +1450,7 @@ impl Inode for RamInode {
                 let now = now();
                 DirChange::del(&src_inode).apply(self, now);
                 DirChange::add(&src_inode).apply(new_dir_inode, now);
-                src_inode.set_ctime(now);
+                src_inode.metadata.lock().set_ctime(now);
             }
 
             src_inode.set_parent_if_dir(new_dir_inode.this.clone());
@@ -1490,7 +1516,7 @@ impl Inode for RamInode {
             FallocMode::Allocate => {
                 let new_size = offset + len;
                 if new_size > self.size() {
-                    self.resize(new_size)?;
+                    self.resize_impl(new_size)?;
                 }
                 Ok(())
             }
@@ -1522,6 +1548,7 @@ impl Inode for RamInode {
 
     fn set_xattr(
         &self,
+        _self_dentry: &Dentry,
         name: XattrName,
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
@@ -1543,7 +1570,7 @@ impl Inode for RamInode {
         self.xattr.list(namespace, list_writer)
     }
 
-    fn remove_xattr(&self, name: XattrName) -> Result<()> {
+    fn remove_xattr(&self, _self_dentry: &Dentry, name: XattrName) -> Result<()> {
         RamXattr::check_file_type_for_xattr(self.typ)?;
         self.xattr.remove(name)
     }
