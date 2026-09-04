@@ -350,6 +350,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-simpledrm"
+version = "0.1.0"
+dependencies = [
+ "aster-core",
+ "aster-drm",
+ "aster-framebuffer",
+ "component",
+ "ostd",
+]
+
+[[package]]
 name = "aster-softirq"
 version = "0.1.0"
 dependencies = [
@@ -446,6 +457,7 @@ version = "0.1.0"
 dependencies = [
  "aster-core",
  "aster-drm",
+ "aster-simpledrm",
  "ostd",
 ]
 

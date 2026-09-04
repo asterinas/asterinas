@@ -7,6 +7,7 @@
 #![deny(unsafe_code)]
 
 extern crate aster_drm as _;
+extern crate aster_simpledrm as _;
 
 #[ostd::main]
 fn main() {
