@@ -27,6 +27,7 @@ members = [
     "ostd/libs/ostd-test",
     "ostd/libs/padding-struct",
     "kernel",
+    "kernel/comps/drm",
     "kernel/core",
     "kernel/core/comps/block",
     "kernel/core/comps/cmdline",
@@ -77,6 +78,7 @@ default-members = [
     "osdk/deps/test-kernel",
     "ostd",
     "kernel",
+    "kernel/comps/drm",
     "kernel/core",
     "kernel/core/comps/block",
     "kernel/core/comps/cmdline",
@@ -154,6 +156,10 @@ ostd-pod-macros = { path = "ostd/libs/ostd-pod/macros", version = "0.4.0" }
 ostd-test = { path = "ostd/libs/ostd-test", version = "0.18.0" }
 padding-struct = { path = "ostd/libs/padding-struct", version = "0.2.0" }
 
+# Crates under kernel/comps
+aster-drm = { path = "kernel/comps/drm" }
+
+# Crates under kernel/core
 aster-core = { path = "kernel/core", default-features = false }
 
 # Crates under kernel/core/comps

@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 aster-core.workspace = true
+aster-drm.workspace = true
 ostd.workspace = true
 
 [features]
