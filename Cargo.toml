@@ -28,6 +28,7 @@ members = [
     "ostd/libs/padding-struct",
     "kernel",
     "kernel/comps/drm",
+    "kernel/comps/simpledrm",
     "kernel/comps/uart",
     "kernel/core",
     "kernel/core/comps/block",
@@ -81,6 +82,7 @@ default-members = [
     "ostd",
     "kernel",
     "kernel/comps/drm",
+    "kernel/comps/simpledrm",
     "kernel/comps/uart",
     "kernel/core",
     "kernel/core/comps/block",
@@ -164,6 +166,7 @@ aster-core = { path = "kernel/core", default-features = false }
 
 # Crates under kernel/comps
 aster-drm = { path = "kernel/comps/drm" }
+aster-simpledrm = { path = "kernel/comps/simpledrm" }
 aster-uart = { path = "kernel/comps/uart" }
 
 # Crates under kernel/core/comps
