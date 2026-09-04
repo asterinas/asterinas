@@ -17,7 +17,7 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FallocMode, FileOps, Inode, Metadata},
-            path::{Mount, Path},
+            path::{Dentry, Mount, Path},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
         },
     },
@@ -150,31 +150,32 @@ impl Inode for MemfdInode {
     fn metadata(&self) -> Result<Metadata>;
     fn size(&self) -> usize;
     fn atime(&self) -> Duration;
-    fn set_atime(&self, time: Duration);
+    fn set_atime(&self, self_dentry: &Dentry, time: Duration);
     fn mtime(&self) -> Duration;
-    fn set_mtime(&self, time: Duration);
+    fn set_mtime(&self, self_dentry: &Dentry, time: Duration);
     fn ctime(&self) -> Duration;
-    fn set_ctime(&self, time: Duration);
+    fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
     fn ino(&self) -> u64;
     fn type_(&self) -> InodeType;
     fn mode(&self) -> Result<InodeMode>;
     fn owner(&self) -> Result<Uid>;
-    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn set_owner(&self, self_dentry: &Dentry, uid: Uid) -> Result<()>;
     fn group(&self) -> Result<Gid>;
-    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn set_group(&self, self_dentry: &Dentry, gid: Gid) -> Result<()>;
     fn page_cache(&self) -> Option<Arc<Vmo>>;
     fn extension(&self) -> &Extension;
     fn set_xattr(
         &self,
+        self_dentry: &Dentry,
         name: XattrName,
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
     ) -> Result<()>;
     fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize>;
-    fn remove_xattr(&self, name: XattrName) -> Result<()>;
+    fn remove_xattr(&self, self_dentry: &Dentry, name: XattrName) -> Result<()>;
 
-    fn resize(&self, new_size: usize) -> Result<()> {
+    fn resize(&self, self_dentry: &Dentry, new_size: usize) -> Result<()> {
         let seals = self.seals.lock();
         let old_size = self.inode.size();
         if seals.contains(FileSeals::F_SEAL_SHRINK) && new_size < old_size {
@@ -184,10 +185,10 @@ impl Inode for MemfdInode {
             return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
         }
 
-        self.inode.resize(new_size)
+        self.inode.resize(self_dentry, new_size)
     }
 
-    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+    fn set_mode(&self, self_dentry: &Dentry, mode: InodeMode) -> Result<()> {
         let seals = self.seals.lock();
         if seals.contains(FileSeals::F_SEAL_EXEC)
             && (self.mode().unwrap() ^ mode).intersects(mkmod!(a+x))
@@ -198,7 +199,7 @@ impl Inode for MemfdInode {
             );
         }
 
-        self.inode.set_mode(mode)
+        self.inode.set_mode(self_dentry, mode)
     }
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {

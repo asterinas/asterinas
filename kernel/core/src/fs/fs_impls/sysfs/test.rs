@@ -526,7 +526,10 @@ fn mode_permissions() {
 
     // Test set_mode
     let new_mode = mkmod!(u+rw); // rw-------
-    rw_attr_inode.set_mode(new_mode).expect("set_mode failed");
+    let rw_attr_dentry = crate::fs::vfs::path::Dentry::new_root(rw_attr_inode.clone());
+    rw_attr_inode
+        .set_mode(&rw_attr_dentry, new_mode)
+        .expect("set_mode failed");
     assert_eq!(rw_attr_inode.mode().unwrap(), new_mode);
 
     // Directories should have default mode (e.g., 0o555)
