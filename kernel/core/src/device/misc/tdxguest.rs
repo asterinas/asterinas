@@ -55,6 +55,7 @@ use tdx_guest::{
 
 use crate::{
     device::{Device, DeviceType, registry::char::register},
+    dispatch_ioctl,
     events::IoEvents,
     fs::{
         devtmpfs::DevtmpfsNodeMeta,
@@ -63,7 +64,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    util::ioctl::{RawIoctl, dispatch_ioctl},
+    util::ioctl::RawIoctl,
 };
 
 const TDX_GUEST_MINOR: u32 = 0x7b;
@@ -488,7 +489,7 @@ impl TdReport {
 
 mod ioctl_defs {
     use super::TdxReportRequest;
-    use crate::util::ioctl::{InOutData, ioc};
+    use crate::{ioc, util::ioctl::InOutData};
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/tdx-guest.h#L40>
 

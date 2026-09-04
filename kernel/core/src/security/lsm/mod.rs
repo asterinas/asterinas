@@ -10,7 +10,7 @@
 //! built-in modules such as `capability` and `yama`. Module selection follows
 //! the `lsm=` and legacy `security=` kernel command-line parameters.
 
-pub(crate) mod hooks;
+pub mod hooks;
 mod modules;
 
 pub(crate) mod yama {

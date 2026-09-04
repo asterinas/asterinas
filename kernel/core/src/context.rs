@@ -22,17 +22,17 @@ use crate::{
 
 /// The context that can be accessed from the current POSIX thread.
 #[derive(Clone)]
-pub(crate) struct Context<'a> {
+pub struct Context<'a> {
     pub process: Arc<Process>,
-    pub thread_local: &'a ThreadLocal,
+    pub(crate) thread_local: &'a ThreadLocal,
     pub posix_thread: &'a PosixThread,
-    pub thread: &'a Thread,
+    pub(crate) thread: &'a Thread,
     pub task: &'a Task,
 }
 
 impl Context<'_> {
     /// Gets the userspace of the current task.
-    pub(crate) fn user_space(&self) -> CurrentUserSpace<'_> {
+    pub fn user_space(&self) -> CurrentUserSpace<'_> {
         CurrentUserSpace(self.thread_local.vmar().borrow())
     }
 }
@@ -40,7 +40,7 @@ impl Context<'_> {
 /// The user's memory space of the current task.
 ///
 /// It provides methods to read from or write to the user space efficiently.
-pub(crate) struct CurrentUserSpace<'a>(Ref<'a, Option<VmarHandle>>);
+pub struct CurrentUserSpace<'a>(Ref<'a, Option<VmarHandle>>);
 
 /// Gets the [`CurrentUserSpace`] from the current task.
 ///
@@ -276,13 +276,12 @@ fn check_vaddr_lowerbound(va: Vaddr) -> ostd::Result<()> {
 ///
 /// This macro will panic if the current task is not associated with a process. For example, it will
 /// happen if the current task is a kernel thread.
+#[macro_export]
 macro_rules! current {
     () => {
         $crate::process::Process::current().unwrap()
     };
 }
-
-pub(crate) use current;
 
 /// Returns the current thread.
 ///

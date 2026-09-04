@@ -40,28 +40,28 @@ macro_rules! __log_prefix {
 #[cfg_attr(target_arch = "loongarch64", path = "arch/loongarch/mod.rs")]
 mod arch;
 
-mod context;
+pub mod context;
 mod cpu;
-mod device;
+pub mod device;
 mod driver;
-mod error;
-mod events;
-mod fs;
+pub mod error;
+pub mod events;
+pub mod fs;
 mod init;
 mod ipc;
 mod net;
-mod prelude;
-mod process;
+pub mod prelude;
+pub mod process;
 mod sched;
-mod security;
+pub mod security;
 mod syscall;
 mod thread;
 mod time;
-mod util;
+pub mod util;
 // TODO: Add vDSO support for other architectures.
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 mod vdso;
-mod vm;
+pub mod vm;
 
 /// Boots the Asterinas core kernel.
 pub fn boot() {

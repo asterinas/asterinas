@@ -7,7 +7,7 @@ use bitflags::bitflags;
 
 bitflags! {
     /// Represents a set of Linux capabilities.
-    pub(crate) struct CapSet: u64 {
+    pub struct CapSet: u64 {
         const CHOWN = 1 << 0;
         const DAC_OVERRIDE = 1 << 1;
         const DAC_READ_SEARCH = 1 << 2;
@@ -91,7 +91,7 @@ impl CapSet {
 
 /// An error occurred when converting invalid bits to a [`CapSet`].
 #[derive(Debug)]
-pub(crate) struct InvalidCapSetError;
+pub struct InvalidCapSetError;
 
 impl TryFrom<u64> for CapSet {
     type Error = InvalidCapSetError;

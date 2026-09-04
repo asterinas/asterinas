@@ -44,10 +44,7 @@ use core::num::NonZeroU8;
 pub(super) use driver::VtDriver;
 pub(super) use manager::active_vt;
 
-use crate::{
-    error::return_errno_with_message,
-    prelude::{Errno, Result},
-};
+use crate::prelude::*;
 
 const MAX_CONSOLES: usize = 63;
 
@@ -104,7 +101,7 @@ impl VtIndex {
 }
 
 impl TryFrom<i32> for VtIndex {
-    type Error = crate::prelude::Error;
+    type Error = Error;
 
     fn try_from(value: i32) -> Result<Self> {
         if let Ok(value) = u8::try_from(value)

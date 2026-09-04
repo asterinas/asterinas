@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// Runs capability hooks in module order.
-pub(crate) fn on_capable(context: CapableContext) -> Result<()> {
+pub fn on_capable(context: CapableContext) -> Result<()> {
     for module in modules::active_modules() {
         module.on_capable(&context)?;
     }
@@ -16,7 +16,7 @@ pub(crate) fn on_capable(context: CapableContext) -> Result<()> {
 }
 
 /// The inputs for checking whether a thread has a capability.
-pub(crate) struct CapableContext<'a> {
+pub struct CapableContext<'a> {
     target_user_ns: &'a UserNamespace,
     posix_thread: &'a PosixThread,
     required_cap: CapSet,
@@ -24,7 +24,7 @@ pub(crate) struct CapableContext<'a> {
 
 impl<'a> CapableContext<'a> {
     /// Creates a capability check context.
-    pub(crate) const fn new(
+    pub const fn new(
         target_user_ns: &'a UserNamespace,
         posix_thread: &'a PosixThread,
         required_cap: CapSet,

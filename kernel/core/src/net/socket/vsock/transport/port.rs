@@ -5,7 +5,6 @@
 use alloc::collections::btree_map::BTreeMap;
 
 use crate::{
-    error::{Errno, Error, return_errno_with_message},
     net::socket::vsock::{
         addr::{VMADDR_CID_ANY, VMADDR_PORT_ANY, VsockSocketAddr},
         transport::{
@@ -13,7 +12,7 @@ use crate::{
             space::{VsockSpace, vsock_space},
         },
     },
-    prelude::Result,
+    prelude::*,
     process::signal::Pollee,
 };
 

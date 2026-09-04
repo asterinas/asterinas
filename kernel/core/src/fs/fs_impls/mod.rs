@@ -7,7 +7,7 @@
 pub(crate) mod cgroupfs;
 pub(crate) mod configfs;
 pub(crate) mod devpts;
-pub(crate) mod devtmpfs;
+pub mod devtmpfs;
 pub(crate) mod exfat;
 pub(crate) mod ext2;
 pub(crate) mod overlayfs;

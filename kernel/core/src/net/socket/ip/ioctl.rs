@@ -2,15 +2,11 @@
 
 use aster_bigtcp::{iface::InterfaceFlags, wire::Ipv4Address};
 
-use crate::{
-    net::socket::util::ioctl::CIfReq,
-    prelude::*,
-    util::ioctl::{RawIoctl, dispatch_ioctl},
-};
+use crate::{dispatch_ioctl, net::socket::util::ioctl::CIfReq, prelude::*, util::ioctl::RawIoctl};
 
 mod ioctl_defs {
     use super::CIfReq;
-    use crate::util::ioctl::{InOutData, ioc};
+    use crate::{ioc, util::ioctl::InOutData};
 
     // Reference: <https://elixir.bootlin.com/linux/v7.1/source/include/uapi/linux/sockios.h#L62>.
     pub(super) type GetIfAddr    = ioc!(SIOCGIFADDR,    0x8915, InOutData<CIfReq>);

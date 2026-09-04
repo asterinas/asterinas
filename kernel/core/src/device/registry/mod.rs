@@ -8,7 +8,7 @@ use crate::{
 };
 
 mod block;
-pub(super) mod char;
+pub mod char;
 
 pub(super) fn init_in_first_kthread() {
     block::init_in_first_kthread();

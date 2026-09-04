@@ -2,10 +2,7 @@
 
 use super::{JobControl, Pgid, Process, Session, session::SessionGuard};
 use crate::{
-    device::Device,
-    prelude::*,
-    process::pid_table,
-    util::ioctl::{RawIoctl, dispatch_ioctl},
+    device::Device, dispatch_ioctl, prelude::*, process::pid_table, util::ioctl::RawIoctl,
 };
 
 /// A terminal.
@@ -19,8 +16,9 @@ pub(crate) trait Terminal: Device {
 
 mod ioctl_defs {
     use crate::{
+        ioc,
         process::{Pgid, Sid},
-        util::ioctl::{InData, NoData, OutData, PassByVal, ioc},
+        util::ioctl::{InData, NoData, OutData, PassByVal},
     };
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h>
