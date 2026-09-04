@@ -72,7 +72,9 @@ impl InodeHandle {
         } else if inode.type_() == InodeType::Dir && access_mode.is_writable() {
             return_errno_with_message!(Errno::EISDIR, "a directory cannot be opened writable");
         } else {
-            inode.open(access_mode, status_flags).transpose()?
+            inode
+                .open(path.dentry(), access_mode, status_flags)
+                .transpose()?
         };
 
         Ok(Self {
@@ -302,7 +304,7 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
         if reader.remain() > 0 {
-            clear_file_priv(self.path().inode().as_ref())?;
+            clear_file_priv(self.path().dentry())?;
         }
 
         let (file_ops, is_offset_aware) = self.file_ops_and_is_offset_aware();
@@ -344,7 +346,7 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
         if reader.remain() > 0 {
-            clear_file_priv(self.path().inode().as_ref())?;
+            clear_file_priv(self.path().dentry())?;
         }
 
         let status_flags = self.status_flags();
@@ -447,7 +449,8 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
 
-        let inode = self.path().inode().as_ref();
+        let dentry = self.path().dentry();
+        let inode = dentry.inode().as_ref();
         let inode_type = inode.type_();
 
         // TODO: `fallocate` on pipe files also fails with `ESPIPE`.
@@ -481,7 +484,7 @@ impl FileLike for InodeHandle {
             );
         }
 
-        clear_file_priv(inode)?;
+        clear_file_priv(dentry)?;
         inode.fallocate(mode, offset, len)
     }
 
