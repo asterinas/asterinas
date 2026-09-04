@@ -4,7 +4,7 @@
 
 use core::time::Duration;
 
-pub(in crate::fs) use dentry::Dentry;
+pub(crate) use dentry::Dentry;
 use inherit_methods_macro::inherit_methods;
 pub(crate) use mount::{MNT_UNIQUE_ID_MIN, Mount, MountPropType, PerMountFlags};
 use mount::{MountNsFileCopying, MountTopology};
@@ -75,8 +75,9 @@ impl Path {
 
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
-        let new_child_dentry =
-            dir_dentry.create_child(name, || dir_dentry.inode().create(name, type_, mode))?;
+        let new_child_dentry = dir_dentry.create_child(name, || {
+            dir_dentry.inode().create(&dir_dentry, name, type_, mode)
+        })?;
         Ok(Self::new(self.mount.clone(), new_child_dentry))
     }
 
@@ -93,7 +94,9 @@ impl Path {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
         let new_child_dentry = dir_dentry.create_child(name, || {
-            dir_dentry.inode().create_symlink(name, target, mode)
+            dir_dentry
+                .inode()
+                .create_symlink(&dir_dentry, name, target, mode)
         })?;
         Ok(Self::new(self.mount.clone(), new_child_dentry))
     }
@@ -119,7 +122,9 @@ impl Path {
     ) -> Result<Self> {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         self.check_dir_entry_mutation()?;
-        let tmp_inode = self.inode().create_tmpfile(mode, hard_linkability)?;
+        let tmp_inode = self
+            .inode()
+            .create_tmpfile(&self.dentry, mode, hard_linkability)?;
         let tmp_dentry = Dentry::new_anonymous(tmp_inode, &dir_dentry);
         Ok(Self::new(self.mount.clone(), tmp_dentry))
     }
@@ -700,7 +705,7 @@ impl Path {
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
         old.check_hardlink_source()?;
         self.check_dir_entry_mutation()?;
-        dir_dentry.link(old.inode(), name)
+        dir_dentry.link(&old.dentry, name)
     }
 
     /// Unlinks a name from the `Path`.
@@ -748,23 +753,41 @@ impl Path {
     pub(crate) fn sync(&self, mode: SyncMode) -> Result<()>;
     pub(crate) fn metadata(&self) -> Result<Metadata>;
     pub(crate) fn mode(&self) -> Result<InodeMode>;
-    pub(crate) fn set_mode(&self, mode: InodeMode) -> Result<()>;
     pub(crate) fn size(&self) -> usize;
     pub(crate) fn owner(&self) -> Result<Uid>;
-    pub(crate) fn set_owner(&self, uid: Uid) -> Result<()>;
     pub(crate) fn group(&self) -> Result<Gid>;
-    pub(crate) fn set_group(&self, gid: Gid) -> Result<()>;
     pub(crate) fn atime(&self) -> Duration;
-    pub(crate) fn set_atime(&self, time: Duration);
     pub(crate) fn mtime(&self) -> Duration;
-    pub(crate) fn set_mtime(&self, time: Duration);
     pub(crate) fn ctime(&self) -> Duration;
-    pub(crate) fn set_ctime(&self, time: Duration);
     pub(crate) fn list_xattr(
         &self,
         namespace: XattrNamespace,
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
+
+    pub(crate) fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        self.inode().set_mode(&self.dentry, mode)
+    }
+
+    pub(crate) fn set_owner(&self, uid: Uid) -> Result<()> {
+        self.inode().set_owner(&self.dentry, uid)
+    }
+
+    pub(crate) fn set_group(&self, gid: Gid) -> Result<()> {
+        self.inode().set_group(&self.dentry, gid)
+    }
+
+    pub(crate) fn set_atime(&self, time: Duration) {
+        self.inode().set_atime(&self.dentry, time)
+    }
+
+    pub(crate) fn set_mtime(&self, time: Duration) {
+        self.inode().set_mtime(&self.dentry, time)
+    }
+
+    pub(crate) fn set_ctime(&self, time: Duration) {
+        self.inode().set_ctime(&self.dentry, time)
+    }
 
     /// Resizes the file.
     pub(crate) fn resize(&self, size: usize) -> Result<()> {
@@ -775,8 +798,8 @@ impl Path {
     /// Resizes the file without permission checks.
     pub(in crate::fs) fn resize_unchecked_access(&self, size: usize) -> Result<()> {
         let inode = self.inode();
-        xattr::clear_file_priv(inode.as_ref())?;
-        inode.resize(size)
+        xattr::clear_file_priv(&self.dentry)?;
+        inode.resize(&self.dentry, size)
     }
 
     /// Sets an xattr of the file.
@@ -793,7 +816,7 @@ impl Path {
         } else {
             inode.check_permission(Permission::MAY_WRITE)?;
         }
-        inode.set_xattr(name, value_reader, flags)
+        inode.set_xattr(&self.dentry, name, value_reader, flags)
     }
 
     /// Gets an xattr of the file.
@@ -811,7 +834,7 @@ impl Path {
         } else {
             inode.check_permission(Permission::MAY_WRITE)?;
         }
-        inode.remove_xattr(name)
+        inode.remove_xattr(&self.dentry, name)
     }
 }
 
