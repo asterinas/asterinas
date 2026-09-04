@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// A visitor for dir entries.
-pub(crate) trait DirentVisitor {
+pub trait DirentVisitor {
     /// Visit a dir entry.
     ///
     /// If the visitor succeeds in visiting the given inode, an `Ok(())` is returned;

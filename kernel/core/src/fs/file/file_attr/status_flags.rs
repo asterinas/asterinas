@@ -6,7 +6,7 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use bitflags::bitflags;
 
 bitflags! {
-    pub(crate) struct StatusFlags: u32 {
+    pub struct StatusFlags: u32 {
         /// append on each write
         const O_APPEND = 1 << 10;
         /// non block
@@ -41,11 +41,11 @@ impl StatusFlags {
 /// Every value contains `O_APPEND`, `O_NOATIME`, and `O_NONBLOCK`. Files may additionally support
 /// changing `O_ASYNC` and `O_DIRECT`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct SettableStatusFlags(StatusFlags);
+pub struct SettableStatusFlags(StatusFlags);
 
 impl SettableStatusFlags {
     /// Creates the minimal set of status flags supported by all files.
-    pub(crate) const fn minimal() -> Self {
+    pub const fn minimal() -> Self {
         Self(
             StatusFlags::O_APPEND
                 .union(StatusFlags::O_NOATIME)
@@ -54,12 +54,12 @@ impl SettableStatusFlags {
     }
 
     /// Adds support for changing `O_ASYNC`.
-    pub(crate) const fn with_o_async(self) -> Self {
+    pub const fn with_o_async(self) -> Self {
         Self(self.0.union(StatusFlags::O_ASYNC))
     }
 
     /// Adds support for changing `O_DIRECT`.
-    pub(crate) const fn with_o_direct(self) -> Self {
+    pub const fn with_o_direct(self) -> Self {
         Self(self.0.union(StatusFlags::O_DIRECT))
     }
 

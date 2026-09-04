@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::termio::{CTermios, CTermios2, CWinSize};
-use crate::util::ioctl::{InData, OutData, ioc};
+use crate::{
+    ioc,
+    util::ioctl::{InData, OutData},
+};
 
 // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h>
 
