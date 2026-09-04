@@ -11,6 +11,7 @@ ostd.workspace = true
 default = ["cvm_guest"]
 coverage = ["aster-core/coverage"]
 cvm_guest = ["aster-core/cvm_guest"]
+pvh_boot = ["aster-core/pvh_boot"]
 riscv_sv39_mode = ["aster-core/riscv_sv39_mode"]
 
 [lints]

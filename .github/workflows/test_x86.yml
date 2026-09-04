@@ -71,6 +71,7 @@ jobs:
           - { variant: 'legacy32', boot_protocol: 'linux-legacy32', smp: 4 }
           - { variant: 'multiboot2-smp4', boot_protocol: 'multiboot', smp: 4 }
           - { variant: 'multiboot2-smp4-rootfs', boot_protocol: 'multiboot', smp: 4, rootfs_boot: true }
+          - { variant: 'pvh-smp4', boot_protocol: 'pvh', smp: 4 }
     steps:
       - uses: actions/checkout@v4
       - name: Run boot test (${{ matrix.variant }})

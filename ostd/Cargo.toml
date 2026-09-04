@@ -69,6 +69,7 @@ default = ["cvm_guest"]
 # The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX
 cvm_guest = ["dep:tdx-guest"]
 coverage = ["minicov"]
+pvh_boot = []
 riscv_sv39_mode = []
 
 [lints]

@@ -181,12 +181,16 @@ BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_COMMON_ARGS += --scheme tdx
 endif
 
-ifeq ($(BOOT_PROTOCOL), multiboot)
-BOOT_METHOD = qemu-direct
+ifneq (,$(filter multiboot pvh,$(BOOT_PROTOCOL)))
+BOOT_METHOD = direct-elf
+endif
+
+ifeq ($(BOOT_PROTOCOL), pvh)
+FEATURES += pvh_boot
 endif
 
 ifeq ($(SCHEME), microvm)
-BOOT_METHOD = qemu-direct
+BOOT_METHOD = direct-elf
 endif
 
 ifeq ($(SCHEME), "")
