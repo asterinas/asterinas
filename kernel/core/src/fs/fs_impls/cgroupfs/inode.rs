@@ -9,6 +9,7 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, Inode, Metadata, RevalidationPolicy},
+            path::Dentry,
         },
     },
     prelude::*,
@@ -87,12 +88,13 @@ impl Inode for CgroupInode {
         CgroupFs::singleton().clone()
     }
 
-    fn rmdir(&self, name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
+    fn rmdir(&self, child_dentry: &Dentry) -> Result<()> {
+        let name = child_dentry.name();
         let SysTreeNodeKind::Branch(branch_node) = self.node_kind() else {
             return_errno_with_message!(Errno::ENOTDIR, "the current node is not a branch node");
         };
 
-        let Some(child) = branch_node.child(name) else {
+        let Some(child) = branch_node.child(&name) else {
             return_errno_with_message!(Errno::ENOENT, "the child node does not exist");
         };
 
@@ -104,7 +106,7 @@ impl Inode for CgroupInode {
         // This is guaranteed to remove `child` because the dentry lock prevents
         // concurrent modification to the children, and there are no races because
         // `mark_as_dead` can succeed at most once.
-        branch_node.remove_child(name).unwrap();
+        branch_node.remove_child(&name).unwrap();
 
         Ok(())
     }

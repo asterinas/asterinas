@@ -14,6 +14,7 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FileOps, Inode, Metadata, SymbolicLink},
+            path::Dentry,
         },
     },
     prelude::*,
@@ -76,17 +77,17 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
     fn mode(&self) -> Result<InodeMode>;
-    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    fn set_mode(&self, self_dentry: &Dentry, mode: InodeMode) -> Result<()>;
     fn owner(&self) -> Result<Uid>;
-    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn set_owner(&self, self_dentry: &Dentry, uid: Uid) -> Result<()>;
     fn group(&self) -> Result<Gid>;
-    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn set_group(&self, self_dentry: &Dentry, gid: Gid) -> Result<()>;
     fn atime(&self) -> Duration;
-    fn set_atime(&self, time: Duration);
+    fn set_atime(&self, self_dentry: &Dentry, time: Duration);
     fn mtime(&self) -> Duration;
-    fn set_mtime(&self, time: Duration);
+    fn set_mtime(&self, self_dentry: &Dentry, time: Duration);
     fn ctime(&self) -> Duration;
-    fn set_ctime(&self, time: Duration);
+    fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn metadata(&self) -> Result<Metadata> {
@@ -94,7 +95,7 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
         Ok(self.common.metadata_with_owner(owner_thread))
     }
 
-    fn resize(&self, _new_size: usize) -> Result<()> {
+    fn resize(&self, _self_dentry: &Dentry, _new_size: usize) -> Result<()> {
         // Resizing files under `/proc` will succeed, but will do nothing.
         Ok(())
     }
@@ -105,6 +106,7 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
 
     fn create_symlink(
         &self,
+        _self_dentry: &Dentry,
         _name: &str,
         _target: &str,
         _mode: InodeMode,
@@ -123,6 +125,7 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
 
     fn open(
         &self,
+        _self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
