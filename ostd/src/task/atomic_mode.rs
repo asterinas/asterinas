@@ -63,6 +63,22 @@ pub fn might_sleep() {
 pub unsafe trait InAtomicMode: core::fmt::Debug {}
 
 /// Abstracts any type from which one can obtain a reference to an atomic-mode guard.
+///
+/// There are two implementations:
+///
+/// - The blanket implementation below covers every concrete (sized) guard type
+///   that implements [`InAtomicMode`], such as `SpinLockGuard`,
+///   `RcuReadGuard`, and `DisabledPreemptGuard`. In addition, some guard types
+///   forward to a nested guard (e.g. `RcuReadGuard` forwards to its inner
+///   spinlock guard). This blanket implementation is why the nested guards
+///   automatically expose `as_atomic_mode_guard` too.
+/// - The implementation on `dyn InAtomicMode` covers the trait-object type
+///   itself. It is needed because the blanket one requires `G: Sized` and
+///   `G: InAtomicMode`, neither of which holds for the unsized `dyn
+///   InAtomicMode`. In practice, once a guard has been converted to
+///   `&dyn InAtomicMode` (e.g. by chaining
+///   [`as_atomic_mode_guard`](Self::as_atomic_mode_guard) calls from a nested
+///   guard), it can still be passed around and converted again.
 pub trait AsAtomicModeGuard {
     /// Returns a guard for the atomic mode.
     fn as_atomic_mode_guard(&self) -> &dyn InAtomicMode;
