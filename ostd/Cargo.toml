@@ -48,6 +48,7 @@ int-to-c-enum.workspace = true
 linux-boot-params.workspace = true
 multiboot2.workspace = true
 tdx-guest = { workspace = true, optional = true }
+uefi-raw = { workspace = true, optional = true }
 unwinding = { workspace = true, features = ["fde-gnu-eh-frame-hdr"] }
 volatile.workspace = true
 x86.workspace = true
@@ -67,7 +68,7 @@ unwinding = { workspace = true, features = ["fde-gnu-eh-frame-hdr"] }
 [features]
 default = ["cvm_guest"]
 # The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX
-cvm_guest = ["dep:tdx-guest"]
+cvm_guest = ["dep:tdx-guest", "dep:uefi-raw"]
 coverage = ["minicov"]
 riscv_sv39_mode = []
 

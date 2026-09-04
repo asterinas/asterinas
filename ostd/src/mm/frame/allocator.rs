@@ -197,24 +197,64 @@ pub(super) fn get_global_frame_allocator() -> &'static dyn GlobalFrameAllocator 
 ///
 /// This function should be called only once.
 pub(crate) unsafe fn init() {
-    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
-
     // Retire the early allocator.
     let early_allocator = EARLY_ALLOCATOR.lock().take().unwrap();
-    let (range_1, range_2) = early_allocator.allocated_regions();
+    let (under_4g_allocated_range, above_4g_allocated_range) = early_allocator.allocated_regions();
+
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    let unaccepted_range = crate::if_tdx_enabled!({
+        super::unaccepted::init_unaccepted_range(
+            &under_4g_allocated_range,
+            &above_4g_allocated_range,
+        )
+    } else {
+        None
+    });
+
+    for_each_free_boot_range(
+        &under_4g_allocated_range,
+        &above_4g_allocated_range,
+        |free_range| {
+            #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+            if let Some(unaccepted_range) = &unaccepted_range {
+                for remaining_free_range in range_difference(&free_range, unaccepted_range) {
+                    crate::info!(
+                        "Adding free frames to the allocator: {:x?}",
+                        remaining_free_range
+                    );
+                    get_global_frame_allocator()
+                        .add_free_memory(remaining_free_range.start, remaining_free_range.len());
+                }
+                return;
+            }
+
+            crate::info!("Adding free frames to the allocator: {:x?}", free_range);
+            get_global_frame_allocator().add_free_memory(free_range.start, free_range.len());
+        },
+    );
+}
+
+/// Iterates over usable memory regions with early allocated ranges excluded.
+pub(super) fn for_each_free_boot_range(
+    under_4g_allocated_range: &Range<Paddr>,
+    above_4g_allocated_range: &Range<Paddr>,
+    mut f: impl FnMut(Range<Paddr>),
+) {
+    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
 
     for region in regions.iter() {
-        if region.typ() == MemoryRegionType::Usable {
-            debug_assert!(region.base().is_multiple_of(PAGE_SIZE));
-            debug_assert!(region.len().is_multiple_of(PAGE_SIZE));
+        if region.typ() != MemoryRegionType::Usable {
+            continue;
+        }
 
-            // Add global free pages to the frame allocator.
-            // Truncate the early allocated frames if there is an overlap.
-            for r1 in range_difference(&(region.base()..region.end()), &range_1) {
-                for r2 in range_difference(&r1, &range_2) {
-                    crate::info!("Adding free frames to the allocator: {:x?}", r2);
-                    get_global_frame_allocator().add_free_memory(r2.start, r2.len());
-                }
+        debug_assert!(region.base().is_multiple_of(PAGE_SIZE));
+        debug_assert!(region.len().is_multiple_of(PAGE_SIZE));
+
+        for candidate_range in
+            range_difference(&(region.base()..region.end()), under_4g_allocated_range)
+        {
+            for free_range in range_difference(&candidate_range, above_4g_allocated_range) {
+                f(free_range);
             }
         }
     }
@@ -344,7 +384,13 @@ impl_frame_meta_for!(EarlyAllocatedFrameMeta);
 ///  - or if is called after [`init`].
 pub(crate) fn early_alloc(layout: Layout) -> Option<Paddr> {
     let mut early_allocator = EARLY_ALLOCATOR.lock();
-    early_allocator.as_mut().unwrap().alloc(layout)
+    let paddr = early_allocator.as_mut().unwrap().alloc(layout)?;
+
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    crate::if_tdx_enabled!({
+        super::unaccepted::accept_early_allocated_range(paddr, layout.size());
+    });
+    Some(paddr)
 }
 
 /// Initializes the early frame allocator.
