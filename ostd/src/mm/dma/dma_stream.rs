@@ -180,7 +180,7 @@ impl<D: DmaDirection> DmaStream<D> {
 
             (Inner::Segment(segment), paddr)
         } else {
-            let (kva, paddr) = alloc_kva(size / PAGE_SIZE, is_cache_coherent)?;
+            let (kva, paddr) = alloc_kva(size / PAGE_SIZE, can_sync_dma() || is_cache_coherent)?;
 
             (Inner::Both(kva, paddr, segment), paddr)
         };
