@@ -42,18 +42,18 @@ mod arch;
 
 mod context;
 mod cpu;
-mod device;
+pub mod device;
 mod driver;
-mod error;
-mod events;
-mod fs;
+pub mod error;
+pub mod events;
+pub mod fs;
 mod init;
 mod ipc;
 mod net;
-mod prelude;
-mod process;
+pub mod prelude;
+pub mod process;
 mod sched;
-mod security;
+pub mod security;
 mod syscall;
 mod thread;
 mod time;
@@ -62,6 +62,18 @@ mod util;
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 mod vdso;
 mod vm;
+
+/// Utilities for decoding and handling ioctl commands.
+pub mod ioctl {
+    #[doc(hidden)]
+    pub use crate::util::ioctl::magic_and_nr_from_cmd;
+    pub use crate::{
+        __dispatch_ioctl as dispatch_ioctl, __ioc as ioc,
+        util::ioctl::{
+            InData, InOutData, Ioctl, IoctlDataPtr, NoData, OutData, PassByPtr, PassByVal, RawIoctl,
+        },
+    };
+}
 
 /// Boots the Asterinas core kernel.
 pub fn boot() {

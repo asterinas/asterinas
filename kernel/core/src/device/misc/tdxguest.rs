@@ -189,7 +189,7 @@ impl PerOpenFileOps for TdxGuestFile {
 
         dispatch_ioctl!(match raw_ioctl {
             cmd @ GetTdxReport => {
-                cmd.with_data_ptr(|data_ptr| {
+                cmd.with_raw_data_ptr(|data_ptr| {
                     let inblob = {
                         let inblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, report_data);
                         inblob_ptr.read()?

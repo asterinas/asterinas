@@ -13,11 +13,17 @@ pub(crate) use fs_impls::{
     cgroupfs, configfs, devpts, devtmpfs, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
 };
 
+pub use self::{
+    file::{Mappable, PerOpenFileOps, SettableStatusFlags, StatusFlags, SyncMode},
+    utils::DirentVisitor,
+    vfs::{FileOps, Path},
+};
+pub use crate::vm::page_cache::Vmo;
 use crate::{
     fs::{
         file::{AccessMode, InodeType, OpenArgs, file_table::FdFlags, mkmod},
         vfs::{
-            path::{FsPath, Path, PathResolver, PerMountFlags},
+            path::{FsPath, PathResolver, PerMountFlags},
             registry::FsAndRoot,
         },
     },

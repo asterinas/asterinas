@@ -5,10 +5,9 @@
 mod alien_access;
 mod capability;
 
-pub(crate) use self::{
-    alien_access::{AlienAccessContext, on_alien_access},
-    capability::{CapableContext, on_capable},
-};
+pub(crate) use alien_access::{AlienAccessContext, on_alien_access};
+pub use capability::{CapableContext, on_capable};
+
 use crate::prelude::*;
 
 pub(super) trait LsmAlienAccessHook: Sync {

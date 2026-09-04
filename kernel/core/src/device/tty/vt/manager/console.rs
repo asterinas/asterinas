@@ -13,7 +13,7 @@ use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 
 use crate::{
     device::tty::vt::{c_types::CVtMode, keyboard::VtKeyboard},
-    error::{Errno, Error, return_errno_with_message},
+    prelude::*,
     process::{Process, signal::sig_num::SigNum},
 };
 
@@ -113,7 +113,7 @@ impl From<VtMode> for CVtMode {
 impl TryInto<VtMode> for CVtMode {
     type Error = Error;
 
-    fn try_into(self) -> crate::prelude::Result<VtMode> {
+    fn try_into(self) -> Result<VtMode> {
         let mode_type = VtModeType::try_from(self.mode)?;
         let wait_on_inactive = self.waitv != 0;
 
@@ -142,7 +142,7 @@ impl TryInto<VtMode> for CVtMode {
     }
 }
 
-impl core::fmt::Debug for VtConsole {
+impl Debug for VtConsole {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("VtConsole").finish_non_exhaustive()
     }
@@ -185,7 +185,7 @@ impl VtConsole {
     }
 
     /// Sets the console font.
-    pub(in vt) fn set_font(&self, font: BitmapFont) -> crate::prelude::Result<()> {
+    pub(in vt) fn set_font(&self, font: BitmapFont) -> Result<()> {
         let mut backend = self.backend.lock();
         match &mut *backend {
             VtConsoleBackend::Framebuffer(c) => c.set_font(font).map_err(|_| {

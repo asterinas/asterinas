@@ -3,10 +3,9 @@
 use int_to_c_enum::TryFromInt;
 
 /// Error number.
-#[expect(clippy::upper_case_acronyms)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, TryFromInt)]
-pub(crate) enum Errno {
+pub enum Errno {
     EPERM = 1,    /* Operation not permitted */
     ENOENT = 2,   /* No such file or directory */
     ESRCH = 3,    /* No such process */
@@ -157,25 +156,25 @@ pub(crate) enum Errno {
 
 /// error used in this crate
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Error {
+pub struct Error {
     errno: Errno,
     #[expect(dead_code)]
     msg: Option<&'static str>,
 }
 
 impl Error {
-    pub(crate) const fn new(errno: Errno) -> Self {
+    pub const fn new(errno: Errno) -> Self {
         Error { errno, msg: None }
     }
 
-    pub(crate) const fn with_message(errno: Errno, msg: &'static str) -> Self {
+    pub const fn with_message(errno: Errno, msg: &'static str) -> Self {
         Error {
             errno,
             msg: Some(msg),
         }
     }
 
-    pub(crate) const fn error(&self) -> Errno {
+    pub const fn error(&self) -> Errno {
         self.errno
     }
 }
@@ -379,18 +378,16 @@ impl From<aster_util::printer::VmPrinterError> for Error {
     }
 }
 
+#[macro_export]
 macro_rules! return_errno {
     ($errno: expr) => {
         return Err($crate::error::Error::new($errno))
     };
 }
 
-pub(crate) use return_errno;
-
+#[macro_export]
 macro_rules! return_errno_with_message {
     ($errno: expr, $message: expr) => {
         return Err($crate::error::Error::with_message($errno, $message))
     };
 }
-
-pub(crate) use return_errno_with_message;

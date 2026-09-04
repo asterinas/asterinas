@@ -11,7 +11,9 @@ pub(crate) mod path;
 pub(crate) mod range_lock;
 
 // Re-export commonly used abstractions from `fs_apis`
+pub use fs_apis::inode::FileOps;
 pub(crate) use fs_apis::{file_system, inode, inode_ext, registry, xattr};
+pub use path::Path;
 
 pub(super) fn init() {
     fs_apis::init();

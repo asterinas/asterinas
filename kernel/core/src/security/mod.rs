@@ -2,6 +2,8 @@
 
 pub(crate) mod lsm;
 
+pub use lsm::hooks::{CapableContext, on_capable};
+
 cfg_select! {
     all(target_arch = "x86_64", feature = "cvm_guest") => {
         mod tsm;
