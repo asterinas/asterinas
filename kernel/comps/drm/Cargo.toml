@@ -1,0 +1,16 @@
+[package]
+name = "aster-drm"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+aster-core.workspace = true
+bitflags.workspace = true
+int-to-c-enum.workspace = true
+ostd.workspace = true
+ostd-pod.workspace = true
+sparse-id-alloc.workspace = true
+zerocopy.workspace = true
+
+[lints]
+workspace = true
