@@ -30,7 +30,7 @@ use crate::{
             bitmap::ExfatBitmap, dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFs,
             upcase_table::ExfatUpcaseTable,
         },
-        file::{InodeMode, InodeType, StatusFlags, SyncMode, mkmod},
+        file::{InodeMode, InodeType, RwfFlags, StatusFlags, SyncMode, mkmod},
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
@@ -1345,6 +1345,7 @@ impl FileOps for ExfatInode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_DIRECT) {
             self.read_direct_at(offset, writer)
@@ -1358,6 +1359,7 @@ impl FileOps for ExfatInode {
         offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_DIRECT) {
             self.write_direct_at(offset, reader)

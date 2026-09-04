@@ -3,7 +3,10 @@
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file::file_table::{RawFileDesc, get_file_fast},
+    fs::file::{
+        RwfFlags,
+        file_table::{RawFileDesc, get_file_fast},
+    },
     prelude::*,
 };
 
@@ -32,7 +35,7 @@ pub(super) fn sys_pwrite64(
 
     let user_space = ctx.user_space();
     let mut reader = user_space.reader(user_buf_ptr, user_buf_len)?;
-    let write_len = file.write_at(offset as _, &mut reader)?;
+    let write_len = file.write_at(offset as _, &mut reader, RwfFlags::empty())?;
 
     if write_len > 0 {
         fs::vfs::notify::on_modify(&file);

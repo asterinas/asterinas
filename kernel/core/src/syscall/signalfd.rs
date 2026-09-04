@@ -16,7 +16,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{
-            AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags,
+            AccessMode, CreationFlags, FileCommon, FileLike, RwfFlags, StatusFlags,
             file_table::{FdFlags, RawFileDesc, get_file_fast},
         },
         pseudofs::AnonInodeFs,
@@ -217,7 +217,7 @@ impl Pollable for SignalFile {
 }
 
 impl FileLike for SignalFile {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _rwf_flags: RwfFlags) -> Result<usize> {
         if writer.avail() < size_of::<SignalfdSiginfo>() {
             return_errno_with_message!(Errno::EINVAL, "the signal buffer is too small");
         }

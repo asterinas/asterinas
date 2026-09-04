@@ -9,8 +9,8 @@ use crate::{
     fs::{
         devpts::Ptmx,
         file::{
-            CreationFlags, InodeMode, OpenArgs, PerOpenFileOps, SettableStatusFlags, StatusFlags,
-            file_table::FdFlags,
+            CreationFlags, InodeMode, OpenArgs, PerOpenFileOps, RwfFlags, SettableStatusFlags,
+            StatusFlags, file_table::FdFlags,
         },
         vfs::{inode::FileOps, path::Path},
     },
@@ -97,6 +97,7 @@ impl FileOps for PtyMaster {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         // TODO: Add support for timeout.
         let mut buf = vec![0u8; writer.avail().min(IO_CAPACITY)];
@@ -121,6 +122,7 @@ impl FileOps for PtyMaster {
         _offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;

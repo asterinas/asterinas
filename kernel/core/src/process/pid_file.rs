@@ -5,7 +5,10 @@ use core::fmt::Display;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags, file_table::FdFlags},
+        file::{
+            AccessMode, CreationFlags, FileCommon, FileLike, RwfFlags, StatusFlags,
+            file_table::FdFlags,
+        },
         pseudofs::PidfdFs,
     },
     prelude::*,
@@ -72,14 +75,24 @@ impl PidFile {
 }
 
 impl FileLike for PidFile {
-    fn read_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _rwf_flags: RwfFlags,
+    ) -> Result<usize> {
         return_errno_with_message!(
             Errno::EINVAL,
             "PID file cannot be read at a specific offset"
         );
     }
 
-    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _rwf_flags: RwfFlags,
+    ) -> Result<usize> {
         return_errno_with_message!(
             Errno::EINVAL,
             "PID file cannot be written at a specific offset"

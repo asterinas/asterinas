@@ -19,9 +19,19 @@ pub(super) enum IoRange {
 /// Each item preserves the range classification needed by direct I/O:
 /// contiguous device-block mappings remain grouped,
 /// and sparse logical ranges remain explicit holes.
+///
+/// The iterator either reads uncached indirect blocks from disk (blocking) or
+/// reports `EAGAIN` instead (non-blocking).
+#[derive(Clone, Copy)]
+pub(super) enum IoRangeIterMode {
+    Blocking,
+    NonBlocking,
+}
+
 pub(super) struct IoRangeIter<'a> {
     range: Range<Iblock>,
     block_ptr_tree: RwMutexReadGuard<'a, BlockPtrTree>,
+    mode: IoRangeIterMode,
 }
 
 impl<'a> IoRangeIter<'a> {
@@ -33,6 +43,20 @@ impl<'a> IoRangeIter<'a> {
         Self {
             range,
             block_ptr_tree,
+            mode: IoRangeIterMode::Blocking,
+        }
+    }
+
+    /// Creates a non-blocking iterator that reports `EAGAIN` instead of
+    /// reading uncached indirect blocks from disk.
+    pub(super) fn new_non_blocking(
+        range: Range<Iblock>,
+        block_ptr_tree: RwMutexReadGuard<'a, BlockPtrTree>,
+    ) -> Self {
+        Self {
+            range,
+            block_ptr_tree,
+            mode: IoRangeIterMode::NonBlocking,
         }
     }
 
@@ -48,9 +72,20 @@ impl<'a> IoRangeIter<'a> {
 
         let start_iblock = self.range.start;
         let max_blocks = self.range.len() as u32;
-        let device_block_range = self
-            .block_ptr_tree
-            .lookup_block_range(start_iblock, max_blocks)?;
+        let device_block_range = match self.mode {
+            IoRangeIterMode::Blocking => self
+                .block_ptr_tree
+                .lookup_block_range(start_iblock, max_blocks)?,
+            IoRangeIterMode::NonBlocking => {
+                let Some(range) = self
+                    .block_ptr_tree
+                    .try_lookup_block_range(start_iblock, max_blocks)?
+                else {
+                    return_errno_with_message!(Errno::EAGAIN, "the range needs uncached metadata");
+                };
+                range
+            }
+        };
 
         if device_block_range.is_empty() {
             // Linux's ext2 documents the slow case where it iterates unmapped
