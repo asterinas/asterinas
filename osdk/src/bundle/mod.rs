@@ -9,16 +9,16 @@ use file::{BundleFile, Initramfs};
 use std::{
     io::{BufRead, BufReader, Write},
     os::unix::net::UnixStream,
+    path::{Path, PathBuf},
     process::{self, ExitStatus},
-    time::Duration,
+    sync::atomic::AtomicI32,
+    time::{Duration, SystemTime},
 };
 use tempfile::NamedTempFile;
 use vm_image::{AsterVmImage, AsterVmImageType};
 
-use std::{
-    path::{Path, PathBuf},
-    time::SystemTime,
-};
+const QEMU_MONITOR_STARTUP_ATTEMPTS: usize = 20;
+const QEMU_MONITOR_STARTUP_INTERVAL: Duration = Duration::from_millis(50);
 
 use crate::{
     arch::Arch,
@@ -28,7 +28,9 @@ use crate::{
     },
     error::Errno,
     error_msg,
+    signal::{SignalGuard, signal_value, wait_for_child},
     util::{DirGuard, new_command_checked_exists},
+    virtiofs::{VirtioFsGuard, VirtioFsStartError},
 };
 
 /// The osdk bundle artifact that stores as `bundle` directory.
@@ -240,7 +242,11 @@ impl Bundle {
     }
 
     pub fn run(&self, config: &Config, action: ActionChoice) {
-        let exit_status = self.run_qemu_and_wait(config, action);
+        let exit_status = match self.run_qemu_and_wait(config, action) {
+            Ok(exit_status) => exit_status,
+            Err(errno) => process::exit(errno as _),
+        };
+
         // FIXME: When panicking it sometimes returns success, why?
         match classify_qemu_exit_status(exit_status) {
             QemuExit::Success => {}
@@ -249,19 +255,214 @@ impl Bundle {
         }
     }
 
-    pub(crate) fn run_qemu_and_wait(&self, config: &Config, action: ActionChoice) -> ExitStatus {
+    /// Returns the QEMU status, or an OSDK error code for the caller to handle.
+    pub(crate) fn run_qemu_and_wait(
+        &self,
+        config: &Config,
+        action: ActionChoice,
+    ) -> Result<ExitStatus, Errno> {
         match self.can_run_with_config(config, action) {
             Ok(()) => {}
             Err(msg) => {
                 error_msg!("{}", msg);
-                std::process::exit(Errno::RunBundle as _);
+                return Err(Errno::RunBundle);
             }
         }
+
         let action = match action {
             ActionChoice::Run => &config.run,
             ActionChoice::Test => &config.test,
         };
+        let qemu_cmd = self.build_qemu_command(config, action)?;
 
+        let (signal_guard, _virtiofs_guard) = setup_qemu_runtime(config, action)?;
+        let signal = signal_guard.signal();
+
+        if action.qemu.with_monitor && action.qemu.log_file.is_some() {
+            self.run_qemu_with_monitor(config, action, qemu_cmd, signal)
+        } else {
+            self.run_qemu_direct(config, action, qemu_cmd, signal)
+        }
+    }
+
+    fn run_qemu_with_monitor(
+        &self,
+        config: &Config,
+        action: &Action,
+        mut qemu_cmd: process::Command,
+        signal: &AtomicI32,
+    ) -> Result<ExitStatus, Errno> {
+        fn wait_until_guest_kernel_shutdown(
+            config: &Config,
+            qemu_log_path: &Path,
+            qemu_monitor_stream: &mut UnixStream,
+            signal: &AtomicI32,
+        ) -> Result<(), Errno> {
+            let mut monitor_reader = BufReader::new(&mut *qemu_monitor_stream);
+            let mut monitor_line = Vec::new();
+
+            // Check VM status every 0.1 seconds and break the loop if the VM is stopped or hanging.
+            while monitor_reader.get_mut().write_all(b"info status\n").is_ok() {
+                if signal_value(signal).is_some() {
+                    return Err(Errno::Interrupted);
+                }
+
+                match monitor_reader.read_until(b'\n', &mut monitor_line) {
+                    Ok(_) => {
+                        if String::from_utf8_lossy(&monitor_line).trim_end_matches(['\r', '\n'])
+                            == "VM status: paused (shutdown)"
+                        {
+                            break;
+                        }
+                        monitor_line.clear();
+                    }
+                    Err(err) => {
+                        if !matches!(
+                            err.kind(),
+                            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                        ) {
+                            monitor_line.clear();
+                        }
+                    }
+                }
+
+                if config.target_arch == Arch::RiscV64
+                    && let Ok(log_file) = std::fs::File::open(qemu_log_path)
+                {
+                    let log = rev_buf_reader::RevBufReader::new(&log_file);
+                    if log.lines().next().is_some_and(|line| {
+                        line.as_ref().is_ok_and(|s| {
+                            s.contains("SBI system_reset cannot shut down the underlying machine")
+                        })
+                    }) {
+                        break;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Ok(())
+        }
+
+        let qemu_log_path = config.work_dir.join(action.qemu.log_file.as_ref().unwrap());
+        let qemu_monitor_socket_path = NamedTempFile::new().unwrap().into_temp_path();
+        qemu_cmd.arg("-monitor").arg(format!(
+            "unix:{},server,nowait",
+            qemu_monitor_socket_path.to_string_lossy()
+        ));
+
+        info!("Running QEMU: {qemu_cmd:#?}");
+
+        let mut qemu_child = match qemu_cmd.spawn() {
+            Ok(child) => child,
+            Err(err) => {
+                error_msg!("failed to start QEMU: {}", err);
+                return Err(Errno::ExecuteCommand);
+            }
+        };
+
+        for _ in 0..QEMU_MONITOR_STARTUP_ATTEMPTS {
+            if signal_value(signal).is_some() {
+                let _ = qemu_child.kill();
+                let _ = qemu_child.wait();
+                return Err(Errno::Interrupted);
+            }
+            std::thread::sleep(QEMU_MONITOR_STARTUP_INTERVAL);
+        }
+
+        let mut qemu_monitor_stream = match UnixStream::connect(&qemu_monitor_socket_path) {
+            Ok(stream) => stream,
+            Err(err) => {
+                let _ = qemu_child.kill();
+                let _ = qemu_child.wait();
+
+                error_msg!(
+                    "failed to connect to QEMU monitor `{}`: {}",
+                    qemu_monitor_socket_path.display(),
+                    err
+                );
+
+                return Err(Errno::ExecuteCommand);
+            }
+        };
+
+        qemu_monitor_stream
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
+
+        let signal_result = wait_until_guest_kernel_shutdown(
+            config,
+            &qemu_log_path,
+            &mut qemu_monitor_stream,
+            signal,
+        );
+
+        qemu_monitor_stream.set_read_timeout(None).unwrap();
+        if let Err(errno) = signal_result {
+            let _ = qemu_child.kill();
+            let _ = qemu_child.wait();
+            return Err(errno);
+        }
+
+        info!("VM is paused (shutdown)");
+
+        self.post_run_action(config, action, Some(&mut qemu_monitor_stream));
+
+        let _ = qemu_monitor_stream.write_all(b"quit\n");
+        wait_for_child(&mut qemu_child, signal)
+    }
+
+    fn run_qemu_direct(
+        &self,
+        config: &Config,
+        action: &Action,
+        mut qemu_cmd: process::Command,
+        signal: &AtomicI32,
+    ) -> Result<ExitStatus, Errno> {
+        info!("Running QEMU: {qemu_cmd:#?}");
+
+        let mut qemu_child = match qemu_cmd.spawn() {
+            Ok(child) => child,
+            Err(err) => {
+                error_msg!("failed to start QEMU: {}", err);
+                return Err(Errno::ExecuteCommand);
+            }
+        };
+
+        let exit_status = wait_for_child(&mut qemu_child, signal)?;
+        self.post_run_action(config, action, None);
+        Ok(exit_status)
+    }
+
+    /// Move the vm_image into the bundle.
+    pub fn consume_vm_image(&mut self, vm_image: AsterVmImage) {
+        if self.manifest.vm_image.is_some() {
+            panic!("vm_image already exists");
+        }
+        self.manifest.vm_image = Some(vm_image.copy_to(&self.path));
+        self.write_manifest_to_fs();
+    }
+
+    /// Move the aster_bin into the bundle.
+    pub fn consume_aster_bin(&mut self, aster_bin: AsterBin) {
+        if self.manifest.aster_bin.is_some() {
+            panic!("aster_bin already exists");
+        }
+        self.manifest.aster_bin = Some(aster_bin.copy_to(&self.path));
+        self.write_manifest_to_fs();
+    }
+
+    fn write_manifest_to_fs(&mut self) {
+        self.manifest.last_modified = SystemTime::now();
+        let manifest_file_content = toml::to_string(&self.manifest).unwrap();
+        let manifest_file_path = self.path.join("bundle.toml");
+        std::fs::write(manifest_file_path, manifest_file_content).unwrap();
+    }
+
+    fn build_qemu_command(
+        &self,
+        config: &Config,
+        action: &Action,
+    ) -> Result<process::Command, Errno> {
         let mut qemu_cmd = new_command_checked_exists(&action.qemu.path);
         qemu_cmd.current_dir(&config.work_dir);
 
@@ -317,93 +518,11 @@ impl Bundle {
             }
             None => {
                 error_msg!("Failed to parse qemu args: {:#?}", &action.qemu.args);
-                process::exit(Errno::ParseMetadata as _);
+                return Err(Errno::ParseMetadata);
             }
-        }
-
-        let exit_status = if action.qemu.with_monitor
-            && let Some(qemu_log_file) = &action.qemu.log_file
-        {
-            let qemu_log_path = config.work_dir.join(qemu_log_file);
-            let qemu_monitor_socket_path = NamedTempFile::new().unwrap().into_temp_path();
-            qemu_cmd.arg("-monitor").arg(format!(
-                "unix:{},server,nowait",
-                qemu_monitor_socket_path.to_string_lossy()
-            ));
-
-            info!("Running QEMU: {qemu_cmd:#?}");
-            let mut qemu_child = qemu_cmd.spawn().unwrap();
-            std::thread::sleep(Duration::from_secs(1)); // Wait for QEMU to start
-            let mut qemu_monitor_stream = UnixStream::connect(&qemu_monitor_socket_path).unwrap();
-            wait_until_guest_kernel_shutdown(config, &qemu_log_path, &mut qemu_monitor_stream);
-            info!("VM is paused (shutdown)");
-
-            self.post_run_action(config, action, Some(&mut qemu_monitor_stream));
-
-            let _ = qemu_monitor_stream.write_all(b"quit\n");
-            qemu_child.wait().unwrap()
-        } else {
-            info!("Running QEMU: {qemu_cmd:#?}");
-            let exit_status = qemu_cmd.status().unwrap();
-            self.post_run_action(config, action, None);
-            exit_status
         };
 
-        fn wait_until_guest_kernel_shutdown(
-            config: &Config,
-            qemu_log_path: &Path,
-            qemu_monitor_stream: &mut UnixStream,
-        ) {
-            // Check VM status every 0.1 seconds and break the loop if the VM is stopped or hanging.
-            while qemu_monitor_stream.write_all(b"info status\n").is_ok() {
-                let status = BufReader::new(&mut *qemu_monitor_stream)
-                    .lines()
-                    .find(|line| line.as_ref().is_ok_and(|s| s.starts_with("VM status:")));
-                if status.is_some_and(|msg| msg.unwrap() == "VM status: paused (shutdown)") {
-                    break;
-                }
-
-                if config.target_arch == Arch::RiscV64
-                    && let Ok(log_file) = std::fs::File::open(qemu_log_path)
-                {
-                    let log = rev_buf_reader::RevBufReader::new(&log_file);
-                    if log.lines().next().is_some_and(|line| {
-                        line.as_ref().is_ok_and(|s| {
-                            s.contains("SBI system_reset cannot shut down the underlying machine")
-                        })
-                    }) {
-                        break;
-                    }
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-        }
-        exit_status
-    }
-
-    /// Move the vm_image into the bundle.
-    pub fn consume_vm_image(&mut self, vm_image: AsterVmImage) {
-        if self.manifest.vm_image.is_some() {
-            panic!("vm_image already exists");
-        }
-        self.manifest.vm_image = Some(vm_image.copy_to(&self.path));
-        self.write_manifest_to_fs();
-    }
-
-    /// Move the aster_bin into the bundle.
-    pub fn consume_aster_bin(&mut self, aster_bin: AsterBin) {
-        if self.manifest.aster_bin.is_some() {
-            panic!("aster_bin already exists");
-        }
-        self.manifest.aster_bin = Some(aster_bin.copy_to(&self.path));
-        self.write_manifest_to_fs();
-    }
-
-    fn write_manifest_to_fs(&mut self) {
-        self.manifest.last_modified = SystemTime::now();
-        let manifest_file_content = toml::to_string(&self.manifest).unwrap();
-        let manifest_file_path = self.path.join("bundle.toml");
-        std::fs::write(manifest_file_path, manifest_file_content).unwrap();
+        Ok(qemu_cmd)
     }
 
     fn post_run_action(
@@ -433,4 +552,36 @@ impl Bundle {
             crate::util::dump_coverage_from_qemu(file, qemu_monitor_stream);
         }
     }
+}
+
+fn setup_qemu_runtime(
+    config: &Config,
+    action: &Action,
+) -> Result<(SignalGuard, Option<VirtioFsGuard>), Errno> {
+    let signal_guard = match SignalGuard::install() {
+        Ok(guard) => guard,
+        Err(err) => {
+            error_msg!("failed to install signal handlers: {err}");
+            return Err(Errno::ExecuteCommand);
+        }
+    };
+    let signal = signal_guard.signal();
+
+    let virtiofs_guard = match VirtioFsGuard::start(
+        &config.work_dir,
+        action.qemu.virtiofs.as_ref(),
+        &action.virtiofsd,
+        signal,
+    ) {
+        Ok(guard) => guard,
+        Err(VirtioFsStartError::Interrupted) => {
+            return Err(Errno::Interrupted);
+        }
+        Err(VirtioFsStartError::Failed) => {
+            error_msg!("failed to start virtiofsd");
+            return Err(Errno::ExecuteCommand);
+        }
+    };
+
+    Ok((signal_guard, virtiofs_guard))
 }

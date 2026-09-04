@@ -13,6 +13,30 @@ fn deserialize_toml_manifest() {
 }
 
 #[test]
+fn deserialize_virtiofsd_manifest() {
+    let manifest = r#"
+        [virtiofsd]
+        path = "/usr/libexec/virtiofsd"
+        cache = "auto"
+        xattr = true
+        sandbox = "chroot"
+        args = ["--thread-pool-size", "4"]
+    "#;
+
+    let manifest: manifest::TomlManifest = toml::from_str(manifest).unwrap();
+    let virtiofsd = manifest.default_scheme.virtiofsd.unwrap();
+
+    assert_eq!(
+        virtiofsd.path,
+        Some(PathBuf::from("/usr/libexec/virtiofsd"))
+    );
+    assert_eq!(virtiofsd.cache.as_deref(), Some("auto"));
+    assert_eq!(virtiofsd.xattr, Some(true));
+    assert_eq!(virtiofsd.sandbox.as_deref(), Some("chroot"));
+    assert_eq!(virtiofsd.args, ["--thread-pool-size", "4"]);
+}
+
+#[test]
 fn conditional_manifest() {
     let tmp_file = "/tmp/osdk_test_file";
     File::create(tmp_file).unwrap();

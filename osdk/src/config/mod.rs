@@ -201,6 +201,7 @@ impl Config {
             boot: scheme.boot.clone(),
             grub: scheme.grub.clone(),
             qemu: scheme.qemu.clone(),
+            virtiofsd: scheme.virtiofsd.clone(),
             build: scheme.build.clone(),
         };
         let build = {
