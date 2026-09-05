@@ -555,9 +555,9 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     default fn rename(
         &self,
         _old_child_dentry: &VfsDentry,
-        _new_dir_inode: &Arc<dyn Inode>,
+        _new_dir_dentry: &VfsDentry,
         _new_name: &str,
-        _replaced_dentry: Option<&VfsDentry>,
+        _target_dentry: Option<&VfsDentry>,
         _mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::EPERM))

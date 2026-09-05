@@ -480,12 +480,25 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Renames `old_child_dentry`, a child of this directory, to `new_name`
+    /// in the directory denoted by `new_dir_dentry`.
+    ///
+    /// `target_dentry` is the dentry currently occupying the destination
+    /// `new_dir_dentry`/`new_name`, or `None` if the destination name is
+    /// vacant. Which combinations are reachable is frozen by the VFS gate:
+    ///
+    /// - [`RenameMode::NoReplace`]: the filesystem never receives `Some(_)`
+    ///   here; the VFS gate rejects an existing target with `EEXIST`
+    ///   beforehand.
+    /// - [`RenameMode::Exchange`]: always `Some(_)`.
+    /// - [`RenameMode::Replace`]: both are reachable (`None` creates a new
+    ///   entry; `Some(_)` replaces the existing one).
     fn rename(
         &self,
         old_child_dentry: &Dentry,
-        new_dir_inode: &Arc<dyn Inode>,
+        new_dir_dentry: &Dentry,
         new_name: &str,
-        replaced_dentry: Option<&Dentry>,
+        target_dentry: Option<&Dentry>,
         mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
@@ -721,6 +734,7 @@ impl Extension {
     pub(crate) fn group2(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
         &self.group2
     }
+
 }
 
 /// A symbolic link.

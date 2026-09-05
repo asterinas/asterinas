@@ -1175,17 +1175,17 @@ impl Inode for OverlayInode {
     fn rename(
         &self,
         old_child_dentry: &Dentry,
-        new_dir_inode: &Arc<dyn Inode>,
+        new_dir_dentry: &Dentry,
         new_name: &str,
-        replaced_dentry: Option<&Dentry>,
+        target_dentry: Option<&Dentry>,
         mode: RenameMode,
     ) -> Result<()> {
         self.rename(
             &old_child_dentry.name(),
             old_child_dentry.inode(),
-            new_dir_inode,
+            new_dir_dentry.inode(),
             new_name,
-            replaced_dentry.map(Dentry::inode),
+            target_dentry.map(Dentry::inode),
             mode,
         )
     }

@@ -233,9 +233,9 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
     fn rename(
         &self,
         _old_child_dentry: &Dentry,
-        _new_dir_inode: &Arc<dyn Inode>,
+        _new_dir_dentry: &Dentry,
         _new_name: &str,
-        _replaced_dentry: Option<&Dentry>,
+        _target_dentry: Option<&Dentry>,
         _mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::EPERM))

@@ -1690,16 +1690,16 @@ impl Inode for ExfatInode {
     fn rename(
         &self,
         old_child_dentry: &Dentry,
-        new_dir_inode: &Arc<dyn Inode>,
+        new_dir_dentry: &Dentry,
         new_name: &str,
-        replaced_dentry: Option<&Dentry>,
+        target_dentry: Option<&Dentry>,
         mode: RenameMode,
     ) -> Result<()> {
         if mode == RenameMode::Exchange {
             return_errno_with_message!(Errno::EINVAL, "RENAME_EXCHANGE is not supported on exfat");
         }
 
-        let new_dir_inode = Arc::downcast::<ExfatInode>(new_dir_inode.clone()).unwrap();
+        let new_dir_inode = Arc::downcast::<ExfatInode>(new_dir_dentry.inode().clone()).unwrap();
         let old_inode = Arc::downcast::<ExfatInode>(old_child_dentry.inode().clone()).unwrap();
         let old_name = old_child_dentry.name();
 
@@ -1714,7 +1714,7 @@ impl Inode for ExfatInode {
             return Ok(());
         }
 
-        let replaced_inode = match replaced_dentry {
+        let replaced_inode = match target_dentry {
             Some(dentry) => Some(Arc::downcast::<ExfatInode>(dentry.inode().clone()).unwrap()),
             None => {
                 // FIXME: The dentry lookup may miss an existing entry whose name differs only in case,

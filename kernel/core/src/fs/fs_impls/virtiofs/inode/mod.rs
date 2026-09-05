@@ -469,9 +469,9 @@ impl Inode for VirtioFsInode {
     fn rename(
         &self,
         old_child_dentry: &Dentry,
-        new_dir_inode: &Arc<dyn Inode>,
+        new_dir_dentry: &Dentry,
         new_name: &str,
-        replaced_dentry: Option<&Dentry>,
+        target_dentry: Option<&Dentry>,
         mode: RenameMode,
     ) -> Result<()> {
         if mode == RenameMode::Exchange {
@@ -481,13 +481,16 @@ impl Inode for VirtioFsInode {
             );
         }
 
-        let new_dir_inode = new_dir_inode.downcast_ref::<VirtioFsInode>().unwrap();
+        let new_dir_inode = new_dir_dentry
+            .inode()
+            .downcast_ref::<VirtioFsInode>()
+            .unwrap();
         let old_inode = old_child_dentry
             .inode()
             .downcast_ref::<VirtioFsInode>()
             .unwrap();
         let replaced_inode =
-            replaced_dentry.map(|dentry| dentry.inode().downcast_ref::<VirtioFsInode>().unwrap());
+            target_dentry.map(|dentry| dentry.inode().downcast_ref::<VirtioFsInode>().unwrap());
         let old_name = old_child_dentry.name();
 
         let fs = self.fs_ref();

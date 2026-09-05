@@ -1314,9 +1314,9 @@ impl Inode for RamInode {
     fn rename(
         &self,
         old_child_dentry: &Dentry,
-        new_dir_inode: &Arc<dyn Inode>,
+        new_dir_dentry: &Dentry,
         new_name: &str,
-        _replaced_dentry: Option<&Dentry>,
+        _target_dentry: Option<&Dentry>,
         mode: RenameMode,
     ) -> Result<()> {
         let old_name = old_child_dentry.name();
@@ -1350,7 +1350,7 @@ impl Inode for RamInode {
                 Ok(())
             };
 
-        let new_dir_inode = new_dir_inode.downcast_ref::<RamInode>().unwrap();
+        let new_dir_inode = new_dir_dentry.inode().downcast_ref::<RamInode>().unwrap();
 
         // Rename in the same directory
         if self.ino == new_dir_inode.ino {

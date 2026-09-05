@@ -280,7 +280,7 @@ impl Dentry {
     /// Gets the parent `Dentry`.
     ///
     /// Returns `None` if it is a root or pseudo `Dentry`.
-    pub(super) fn parent(&self) -> Option<Arc<Self>> {
+    pub(in crate::fs) fn parent(&self) -> Option<Arc<Self>> {
         self.name_and_parent.parent()
     }
 
@@ -305,7 +305,7 @@ impl Dentry {
 
     /// Checks if this dentry is a descendant of or the same as the given
     /// ancestor dentry.
-    pub(super) fn is_equal_or_descendant_of(&self, ancestor: &Arc<Self>) -> bool {
+    pub(in crate::fs) fn is_equal_or_descendant_of(&self, ancestor: &Arc<Self>) -> bool {
         let mut current = Some(self.this());
 
         while let Some(node) = current {
@@ -781,7 +781,6 @@ impl DirDentry<'_> {
         }
 
         let old_dir_inode = self.inode();
-        let new_dir_inode = new_dir.inode();
 
         let max_namelen = old_dir_inode.fs().sb().namelen;
         if old_name.len() > max_namelen || new_name.len() > max_namelen {
@@ -825,13 +824,7 @@ impl DirDentry<'_> {
                 }
             }
 
-            old_dir_inode.rename(
-                &old_dentry,
-                old_dir_inode,
-                new_name,
-                new_dentry.as_deref(),
-                mode,
-            )?;
+            old_dir_inode.rename(&old_dentry, self, new_name, new_dentry.as_deref(), mode)?;
 
             match mode {
                 RenameMode::Replace | RenameMode::NoReplace => {
@@ -888,13 +881,7 @@ impl DirDentry<'_> {
                 new_dir.check_sticky_bit_permission(replaced_inode)?;
             }
 
-            old_dir_inode.rename(
-                &old_dentry,
-                new_dir_inode,
-                new_name,
-                new_dentry.as_deref(),
-                mode,
-            )?;
+            old_dir_inode.rename(&old_dentry, new_dir, new_name, new_dentry.as_deref(), mode)?;
 
             match mode {
                 RenameMode::Replace | RenameMode::NoReplace => {
