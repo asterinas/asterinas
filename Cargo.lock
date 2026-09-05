@@ -139,7 +139,6 @@ dependencies = [
  "aster-console",
  "aster-framebuffer",
  "aster-fuse",
- "aster-i8042",
  "aster-input",
  "aster-logger",
  "aster-network",
@@ -432,6 +431,7 @@ name = "asterinas"
 version = "0.1.0"
 dependencies = [
  "aster-core",
+ "aster-i8042",
  "ostd",
 ]
 

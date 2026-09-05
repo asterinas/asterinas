@@ -27,7 +27,9 @@ pub(super) fn init() {
     };
 
     POWEROFF_REG_AND_VAL.call_once(move || (poweroff_reg, poweroff_value));
-    inject_poweroff_handler(try_poweroff);
+    if inject_poweroff_handler(try_poweroff).is_err() {
+        ostd::warn!("Failed to register the syscon poweroff handler");
+    }
 }
 
 fn lookup_poweroff_paddr_value() -> Option<(usize, u8)> {

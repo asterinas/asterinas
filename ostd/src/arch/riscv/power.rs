@@ -19,6 +19,6 @@ fn try_restart(code: ExitCode) {
 }
 
 pub(super) fn init() {
-    inject_poweroff_handler(try_poweroff);
-    inject_restart_handler(try_restart);
+    inject_poweroff_handler(try_poweroff).expect("failed to register the SBI poweroff handler");
+    inject_restart_handler(try_restart).expect("failed to register the SBI restart handler");
 }

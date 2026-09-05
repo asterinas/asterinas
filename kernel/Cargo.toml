@@ -7,6 +7,12 @@ edition.workspace = true
 aster-core.workspace = true
 ostd.workspace = true
 
+# High-level component crates.
+#
+# Keep this list in sync with the `extern crate` declarations in `src/lib.rs`.
+[target.x86_64-unknown-none.dependencies]
+aster-i8042.workspace = true
+
 [features]
 default = ["cvm_guest"]
 coverage = ["aster-core/coverage"]

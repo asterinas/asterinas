@@ -16,17 +16,6 @@ fn try_acpi_reset(_code: ExitCode) {
     }
 }
 
-/// Attempts to reset the CPU.
-///
-/// This method first attempts to reset via ACPI. If that fails, it falls back to resetting via the
-/// keyboard (i8042) controller. This follows the same order as the Linux kernel.
-///
-/// Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/reboot.c#L657>
-fn try_reset(code: ExitCode) {
-    try_acpi_reset(code);
-    aster_i8042::try_cpu_reset(code);
-}
-
 pub(super) fn init() {
     let acpi_info = ACPI_INFO.get().unwrap();
 
@@ -38,5 +27,9 @@ pub(super) fn init() {
         }
     }
 
-    inject_restart_handler(try_reset);
+    // Regular restart handlers run before legacy fallbacks, following Linux's x86 reset order.
+    // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/reboot.c#L657>
+    if inject_restart_handler(try_acpi_reset).is_err() {
+        ostd::warn!("Failed to register the ACPI restart handler");
+    }
 }

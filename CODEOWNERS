@@ -46,7 +46,7 @@
 # Component code owners
 /kernel/core/comps/block/       @lucassong-mh
 /kernel/core/comps/framebuffer/ @cqs21 @lrh2000
-/kernel/core/comps/i8042/       @cqs21 @lrh2000
+/kernel/comps/i8042/            @cqs21 @lrh2000
 /kernel/core/comps/logger/      @cchanging
 /kernel/core/comps/mlsdisk/     @cqs21 @lucassong-mh
 /kernel/core/comps/network/     @StevenJiang1110 @lrh2000
