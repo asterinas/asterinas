@@ -2,12 +2,12 @@
 
 use alloc::sync::Arc;
 
-use aster_network::dma_pool::DmaPool;
+use dma_pool::DmaPool;
 use ostd::mm::dma::{FromDevice, ToDevice};
 use spin::Once;
 
 const RX_BUFFER_LEN: usize = 4096;
-const TX_BUFFER_LEN: usize = 4096;
+pub(super) const TX_BUFFER_LEN: usize = 4096;
 
 pub(super) static RX_BUFFER_POOL: Once<Arc<DmaPool<FromDevice>>> = Once::new();
 pub(super) static TX_BUFFER_POOL: Once<Arc<DmaPool<ToDevice>>> = Once::new();

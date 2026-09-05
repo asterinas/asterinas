@@ -228,7 +228,7 @@ impl<D: DmaDirection> DmaStream<D> {
 
     fn sync_impl(&self, byte_range: Range<usize>, is_from_device: bool) -> Result<(), Error> {
         let size = self.size();
-        if byte_range.end > size || byte_range.start > size {
+        if byte_range.start > byte_range.end || byte_range.start > size {
             return Err(Error::InvalidArgs);
         }
         if self.is_cache_coherent {

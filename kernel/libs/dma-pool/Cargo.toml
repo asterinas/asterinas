@@ -1,16 +1,15 @@
 [package]
-name = "aster-network"
+name = "dma-pool"
 version = "0.1.0"
-edition.workspace = true
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aster-bigtcp.workspace = true
 aster-softirq.workspace = true
-component.workspace = true
+aster-util.workspace = true
+bitvec.workspace = true
 ostd.workspace = true
-spin.workspace = true
 
 [lints]
 workspace = true

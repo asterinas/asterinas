@@ -52,6 +52,7 @@ members = [
     "kernel/libs/atomic-integer-wrapper",
     "kernel/libs/cpio-decoder",
     "kernel/libs/device-id",
+    "kernel/libs/dma-pool",
     "kernel/libs/io-util",
     "kernel/libs/jhash",
     "kernel/libs/keyable-arc",
@@ -98,6 +99,7 @@ default-members = [
     "kernel/libs/aster-fuse",
     "kernel/libs/aster-util",
     "kernel/libs/device-id",
+    "kernel/libs/dma-pool",
     "kernel/libs/io-util",
     "kernel/libs/ring-buffer",
     "kernel/libs/sparse-id-alloc",
@@ -183,6 +185,7 @@ aster-util = { path = "kernel/libs/aster-util" }
 atomic-integer-wrapper = { path = "kernel/libs/atomic-integer-wrapper" }
 cpio-decoder = { path = "kernel/libs/cpio-decoder" }
 device-id = { path = "kernel/libs/device-id" }
+dma-pool = { path = "kernel/libs/dma-pool" }
 io-util = { path = "kernel/libs/io-util" }
 jhash = { path = "kernel/libs/jhash" }
 keyable-arc = { path = "kernel/libs/keyable-arc" }
@@ -240,7 +243,7 @@ lru = "0.16.3"
 owo-colors = "4.2.2"
 paste = "1.0.15"
 postcard = "1.0.6"
-smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2024-11-08_f07e5b5", default-features = false, features = [
+smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2026-08-11_1b7629c", default-features = false, features = [
     "alloc",
     "log",
     "medium-ethernet",
