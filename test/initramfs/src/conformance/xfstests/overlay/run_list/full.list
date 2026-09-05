@@ -1,0 +1,22 @@
+# Previously passed 21-case overlay xfstests matrix (wave7/wave8 records).
+overlay/029
+overlay/002
+overlay/003
+overlay/006
+overlay/007
+overlay/009
+overlay/010
+overlay/011
+overlay/012
+overlay/014
+overlay/016
+overlay/019
+overlay/022
+overlay/024
+overlay/026
+overlay/031
+overlay/038
+overlay/039
+overlay/063
+overlay/077
+overlay/028
