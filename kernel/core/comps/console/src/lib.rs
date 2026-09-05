@@ -29,6 +29,8 @@ pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     fn register_callback(&self, callback: &'static ConsoleCallback);
 }
 
+pub const UART_CONSOLE_NAME: &str = "Uart-Console";
+
 pub fn register_device(name: String, device: Arc<dyn AnyConsoleDevice>) {
     COMPONENT
         .get()

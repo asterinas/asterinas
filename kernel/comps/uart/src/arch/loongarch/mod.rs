@@ -3,7 +3,6 @@
 use ostd::arch::serial::SERIAL_PORT;
 
 use crate::{
-    CONSOLE_NAME,
     alloc::string::ToString,
     console::{Uart, UartConsole},
 };
@@ -15,7 +14,10 @@ pub(super) fn init() {
 
     let uart_console = UartConsole::new(uart);
 
-    aster_console::register_device(CONSOLE_NAME.to_string(), uart_console.clone());
+    aster_console::register_device(
+        aster_console::UART_CONSOLE_NAME.to_string(),
+        uart_console.clone(),
+    );
 
     // TODO: Set up the IRQ line and handle the received data.
     // Suppress the dead code warnings of the related methods.
