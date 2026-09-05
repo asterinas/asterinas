@@ -265,8 +265,7 @@ impl Dentry {
         matches!(self.name_and_parent, NameAndParent::Pseudo(_))
     }
 
-    /// Gets the type of the `Dentry`.
-    pub(super) fn type_(&self) -> InodeType {
+    pub(in crate::fs) fn type_(&self) -> InodeType {
         self.type_
     }
 
@@ -395,7 +394,7 @@ impl Deref for DirDentry<'_> {
 }
 
 impl DirDentry<'_> {
-    pub(super) fn create_child(
+    pub(in crate::fs) fn create_child(
         &self,
         name: &str,
         create_inode_fn: impl FnOnce() -> Result<Arc<dyn Inode>>,
@@ -600,8 +599,7 @@ impl DirDentry<'_> {
         Ok(self.insert_positive_child(&mut children, name, target))
     }
 
-    /// Creates a `Dentry` by making an inode of the `type_` with the `mode`.
-    pub(super) fn mknod(
+    pub(in crate::fs) fn mknod(
         &self,
         name: &str,
         mode: InodeMode,
@@ -636,8 +634,7 @@ impl DirDentry<'_> {
         ))
     }
 
-    /// Links a new `Dentry` by `link()` the old inode.
-    pub(super) fn link(&self, old_dentry: &Dentry, name: &str) -> Result<()> {
+    pub(in crate::fs) fn link(&self, old_dentry: &Dentry, name: &str) -> Result<()> {
         let children = self.validate_child_absent(name)?;
         self.inode.link(self, old_dentry, name)?;
         let dentry = Dentry::new(
@@ -652,8 +649,7 @@ impl DirDentry<'_> {
         Ok(())
     }
 
-    /// Deletes a `Dentry` by `unlink()` the inner inode.
-    pub(super) fn unlink(&self, name: &str) -> Result<()> {
+    pub(in crate::fs) fn unlink(&self, name: &str) -> Result<()> {
         if is_dot_or_dotdot(name) {
             return_errno_with_message!(Errno::EISDIR, "unlink on . or ..");
         }
@@ -683,8 +679,7 @@ impl DirDentry<'_> {
         Ok(())
     }
 
-    /// Deletes a directory `Dentry` by `rmdir()` the inner inode.
-    pub(super) fn rmdir(&self, name: &str) -> Result<()> {
+    pub(in crate::fs) fn rmdir(&self, name: &str) -> Result<()> {
         if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .");
         }
@@ -760,9 +755,8 @@ impl DirDentry<'_> {
         Ok(child_dentry)
     }
 
-    /// Renames the `old_name` entry in this directory to the `new_name` entry
-    /// in `new_dir`.
-    pub(super) fn rename(
+    /// Renames the `old_name` entry here to `new_name` in `new_dir`.
+    pub(in crate::fs) fn rename(
         &self,
         old_name: &str,
         new_dir: &DirDentry,

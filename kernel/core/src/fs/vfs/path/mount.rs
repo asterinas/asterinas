@@ -445,7 +445,12 @@ impl Mount {
         Ok(child_mount)
     }
 
-    /// Clones a mount node with the an root `Dentry`.
+    /// Clones a detached view of this mount rooted at `root_dentry`, sharing fs and flags.
+    pub(in crate::fs) fn clone_detached(&self, root_dentry: &Arc<Dentry>) -> Result<Arc<Self>> {
+        self.clone_mount(root_dentry, &Weak::new())
+    }
+
+    /// Clones a mount node with a root `Dentry`.
     ///
     /// The new mount node will have the same fs as the original one and
     /// have no parent and children. We should set the parent and children manually.
