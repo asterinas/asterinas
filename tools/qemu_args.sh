@@ -7,9 +7,11 @@
 #  - scheme: "normal", "test", "microvm" or "iommu";
 # Other arguments are configured via environmental variables:
 #  - OVMF: "on" or "off";
+#  - OVMF_DIR: directory containing OVMF.fd, OVMF_VARS.fd and microvm/MICROVM.fd;
 #  - BOOT_METHOD: "qemu-direct", "grub-rescue-iso" or "grub-qcow2";
 #  - BOOT_PROTOCOL: "multiboot", "multiboot2", "linux-legacy32", "linux-efi-pe64" or "linux-efi-handover64";
-#  - NETDEV: "user" or "tap";
+#  - NETDEV: "user", "tap" or "none"; "none" applies to Q35;
+#  - QEMU_DISPLAY: QEMU display backend, e.g. "none" or "vnc=127.0.0.1:42";
 #  - VHOST: "off" or "on";
 #  - VSOCK: "off" or "on";
 #  - VIRTIOFS: "off" or "on";
@@ -19,15 +21,20 @@
 #  - CONSOLE: "hvc0" to enable virtio console;
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
-#  - VNC_PORT: VNC port, default is "42";
+#  - VNC_PORT: VNC display number, default is "42" (TCP port 5942);
+#    ignored when QEMU_DISPLAY is set;
 #  - XFSTESTS_NEEDS_BLOCK_DEVICES: "true" or "false", whether to attach
 #    xfstests images (xfstests_test.img and xfstests_scratch.img) to the VM.
 
 OVMF=${OVMF:-"on"}
+# Directory holding OVMF.fd, OVMF_VARS.fd and microvm/MICROVM.fd. Defaults to the
+# Docker image's path; the Nix dev shell exports this to the Nix store instead.
+OVMF_DIR=${OVMF_DIR:-/root/ovmf/release}
 VHOST=${VHOST:-"off"}
 VSOCK=${VSOCK:-"off"}
 VIRTIOFS=${VIRTIOFS:-"off"}
 NETDEV=${NETDEV:-"user"}
+QEMU_DISPLAY=${QEMU_DISPLAY:-"vnc=0.0.0.0:${VNC_PORT:-42}"}
 CONSOLE=${CONSOLE:-"hvc0"}
 XFSTESTS_NEEDS_BLOCK_DEVICES=${XFSTESTS_NEEDS_BLOCK_DEVICES:-false}
 
@@ -61,6 +68,8 @@ elif [ "$NETDEV" = "tap" ]; then
     QEMU_IFUP_SCRIPT_PATH=$THIS_SCRIPT_DIR/net/qemu-ifup.sh
     QEMU_IFDOWN_SCRIPT_PATH=$THIS_SCRIPT_DIR/net/qemu-ifdown.sh
     NETDEV_ARGS="-netdev tap,id=net01,script=$QEMU_IFUP_SCRIPT_PATH,downscript=$QEMU_IFDOWN_SCRIPT_PATH,vhost=$VHOST"
+elif [ "$NETDEV" = "none" ]; then
+    NETDEV_ARGS="-nic none"
 else
     echo "Invalid netdev" 1>&2
     NETDEV_ARGS="-nic none"
@@ -130,7 +139,7 @@ if [ "$1" = "tdx" ]; then
         -nographic \
         -monitor pty \
         -nodefaults \
-        -bios /root/ovmf/release/OVMF.fd \
+        -bios ${OVMF_DIR}/OVMF.fd \
         -cpu host,-kvm-steal-time,pmu=off \
         -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
         -object '$TDX_OBJECT' \
@@ -163,7 +172,7 @@ COMMON_QEMU_ARGS="\
     -m ${MEM:-8G} \
     --no-reboot \
     -nographic \
-    -display vnc=0.0.0.0:${VNC_PORT:-42} \
+    -display $QEMU_DISPLAY \
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
     $NETDEV_ARGS \
@@ -201,6 +210,11 @@ if [ "$INITRAMFS" = "off" ]; then
     ROOTFS_Q35_DEVICE_ARGS="-device virtio-blk-pci,bus=pcie.0,addr=0xc,drive=rootfs,serial=vrootfs,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA"
 fi
 
+Q35_NETWORK_DEVICE_ARGS=""
+if [ "$NETDEV" = "user" ] || [ "$NETDEV" = "tap" ]; then
+    Q35_NETWORK_DEVICE_ARGS="-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA"
+fi
+
 if [ "$1" = "microvm" ]; then
     QEMU_ARGS="\
         $COMMON_QEMU_ARGS \
@@ -226,7 +240,7 @@ else
         $ROOTFS_Q35_DEVICE_ARGS \
         -object rng-random,id=rng0,filename=/dev/urandom \
         -device virtio-rng-pci,bus=pcie.0,addr=0x9,disable-legacy=on,disable-modern=off,rng=rng0,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
-        -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
+        $Q35_NETWORK_DEVICE_ARGS \
         -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
         -drive if=none,format=raw,id=nvme0n1,file=./test/initramfs/build/nvme0n1.img \
         -device nvme,drive=nvme0n1,serial=nvme0n1 \
@@ -297,11 +311,11 @@ fi
 if [ "$OVMF" = "on" ]; then
     if [ "$1" = "microvm" ]; then
         QEMU_ARGS="${QEMU_ARGS} \
-            -bios /root/ovmf/release/microvm/MICROVM.fd \
+            -bios ${OVMF_DIR}/microvm/MICROVM.fd \
         "
     else
         QEMU_ARGS="${QEMU_ARGS} \
-            -bios /root/ovmf/release/OVMF.fd \
+            -bios ${OVMF_DIR}/OVMF.fd \
         "
     fi
 fi

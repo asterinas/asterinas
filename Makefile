@@ -80,7 +80,7 @@ ENABLE_REGRESSION_TEST ?= false
 # End of auto test features.
 
 # Network settings
-# NETDEV possible values are user,tap
+# NETDEV possible values are user, tap; Q35 also accepts none
 NETDEV ?= user
 VHOST ?= off
 # The name server listed by /etc/resolv.conf inside the Asterinas VM
@@ -216,8 +216,11 @@ endif
 
 # To test the linux-efi-handover64 boot protocol, we need to use Debian's
 # GRUB release, which is installed in /usr/bin in our Docker image.
+# Outside Docker (e.g. the Nix dev shell), point this at an EFI-capable
+# grub-mkrescue on PATH instead.
+LINUX_EFI_GRUB_MKRESCUE ?= /usr/bin/grub-mkrescue
 ifeq ($(BOOT_PROTOCOL), linux-efi-handover64)
-CARGO_OSDK_COMMON_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue --grub-boot-protocol="linux"
+CARGO_OSDK_COMMON_ARGS += --grub-mkrescue=$(LINUX_EFI_GRUB_MKRESCUE) --grub-boot-protocol="linux"
 else ifeq ($(BOOT_PROTOCOL), linux-efi-pe64)
 CARGO_OSDK_COMMON_ARGS += --grub-boot-protocol="linux"
 else ifeq ($(BOOT_PROTOCOL), linux-legacy32)
@@ -456,7 +459,7 @@ format:
 	@
 	@# Format the code using various tools
 	@./tools/format_all.sh
-	@nixfmt ./distro
+	@nixfmt flake.nix ./distro ./nix
 	@$(MAKE) --no-print-directory -C test/initramfs format
 	@$(MAKE) --no-print-directory -C test/nixos format
 
@@ -485,8 +488,8 @@ check: $(CARGO_OSDK)
 	@# Check compilation of the Rust code
 	@./tools/clippy_check.sh workspace
 	@
-	@# Check formatting issues of Nix files under distro directory
-	@nixfmt --check ./distro
+	@# Check Nix formatting
+	@nixfmt --check flake.nix ./distro ./nix
 	@
 	@# Check formatting issues of the C code and Nix files (regression tests)
 	@$(MAKE) --no-print-directory -C test/initramfs check

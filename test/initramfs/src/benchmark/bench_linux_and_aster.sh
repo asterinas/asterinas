@@ -157,7 +157,7 @@ run_benchmark() {
         linux_cmd_arr+=(
             -machine confidential-guest-support=tdx0
             -cpu host,-kvm-steal-time,pmu=off
-            -bios /root/ovmf/release/OVMF.fd
+            -bios "${OVMF_DIR:-/root/ovmf/release}/OVMF.fd"
             -nodefaults
             -serial stdio
             -object '{ "qom-type": "tdx-guest", "id": "tdx0", "sept-ve-disable": true, "quote-generation-socket": { "type": "vsock", "cid": "1", "port": "4050" } }'
