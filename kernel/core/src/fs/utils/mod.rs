@@ -2,7 +2,7 @@
 
 //! Miscellaneous filesystem utilities shared across `fs` modules.
 
-pub(crate) use dirent_visitor::{DirentCounter, DirentVisitor};
+pub(crate) use dirent_visitor::DirentVisitor;
 pub(crate) use direntry_vec::DirEntryVecExt;
 pub(crate) use endpoint::{Endpoint, EndpointState};
 pub(crate) use id_bitmap::IdBitmap;
