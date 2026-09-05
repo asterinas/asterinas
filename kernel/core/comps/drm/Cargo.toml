@@ -1,0 +1,17 @@
+[package]
+name = "aster-drm"
+version = "0.1.0"
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bitflags.workspace = true
+component.workspace = true
+ostd.workspace = true
+ostd-pod.workspace = true
+spin.workspace = true
+sparse-id-alloc.workspace = true
+
+[lints]
+workspace = true

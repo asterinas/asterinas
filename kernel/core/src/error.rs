@@ -379,6 +379,23 @@ impl From<aster_util::printer::VmPrinterError> for Error {
     }
 }
 
+impl From<aster_drm::DrmError> for Error {
+    fn from(value: aster_drm::DrmError) -> Self {
+        match value {
+            aster_drm::DrmError::Invalid => Error::new(Errno::EINVAL),
+            aster_drm::DrmError::Busy => Error::new(Errno::EBUSY),
+            aster_drm::DrmError::NoMemory => Error::new(Errno::ENOMEM),
+            aster_drm::DrmError::NotSupported => Error::new(Errno::EOPNOTSUPP),
+            aster_drm::DrmError::FunctionNotImplemented => Error::new(Errno::ENOSYS),
+            aster_drm::DrmError::NotFound => Error::new(Errno::ENOENT),
+            aster_drm::DrmError::PermissionDenied => Error::new(Errno::EACCES),
+            aster_drm::DrmError::BadAddress => Error::new(Errno::EFAULT),
+            aster_drm::DrmError::AlreadyExist => Error::new(Errno::EEXIST),
+            aster_drm::DrmError::IoctlNotFound => Error::new(Errno::ENOTTY),
+        }
+    }
+}
+
 macro_rules! return_errno {
     ($errno: expr) => {
         return Err($crate::error::Error::new($errno))

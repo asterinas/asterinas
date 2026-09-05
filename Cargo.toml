@@ -31,6 +31,7 @@ members = [
     "kernel/core/comps/block",
     "kernel/core/comps/cmdline",
     "kernel/core/comps/console",
+    "kernel/core/comps/drm",
     "kernel/core/comps/framebuffer",
     "kernel/core/comps/i8042",
     "kernel/core/comps/input",
@@ -39,6 +40,7 @@ members = [
     "kernel/core/comps/network",
     "kernel/core/comps/nvme",
     "kernel/core/comps/pci",
+    "kernel/core/comps/simpledrm",
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
     "kernel/core/comps/time",
@@ -81,6 +83,7 @@ default-members = [
     "kernel/core/comps/block",
     "kernel/core/comps/cmdline",
     "kernel/core/comps/console",
+    "kernel/core/comps/drm",
     "kernel/core/comps/framebuffer",
     "kernel/core/comps/i8042",
     "kernel/core/comps/input",
@@ -89,6 +92,7 @@ default-members = [
     "kernel/core/comps/network",
     "kernel/core/comps/nvme",
     "kernel/core/comps/pci",
+    "kernel/core/comps/simpledrm",
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
     "kernel/core/comps/time",
@@ -160,6 +164,7 @@ aster-core = { path = "kernel/core", default-features = false }
 aster-block = { path = "kernel/core/comps/block" }
 aster-cmdline = { path = "kernel/core/comps/cmdline" }
 aster-console = { path = "kernel/core/comps/console" }
+aster-drm = { path = "kernel/core/comps/drm" }
 aster-framebuffer = { path = "kernel/core/comps/framebuffer" }
 aster-i8042 = { path = "kernel/core/comps/i8042" }
 aster-input = { path = "kernel/core/comps/input" }
@@ -168,6 +173,7 @@ aster-mlsdisk = { path = "kernel/core/comps/mlsdisk" }
 aster-network = { path = "kernel/core/comps/network" }
 aster-nvme = { path = "kernel/core/comps/nvme" }
 aster-pci = { path = "kernel/core/comps/pci" }
+aster-simpledrm = { path = "kernel/core/comps/simpledrm" }
 aster-softirq = { path = "kernel/core/comps/softirq" }
 aster-systree = { path = "kernel/core/comps/systree" }
 aster-time = { path = "kernel/core/comps/time" }
