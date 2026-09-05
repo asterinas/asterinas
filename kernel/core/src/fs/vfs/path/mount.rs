@@ -451,7 +451,7 @@ impl Mount {
     /// have no parent and children. We should set the parent and children manually.
     ///
     /// The new mount will belong to the given mount namespace.
-    fn clone_mount(
+    pub(in crate::fs) fn clone_mount(
         &self,
         root_dentry: &Arc<Dentry>,
         new_ns: &Weak<MountNamespace>,

@@ -714,6 +714,7 @@ impl Debug for dyn Inode {
 pub(crate) struct Extension {
     group1: Once<ThinBox<dyn Any + Send + Sync>>,
     group2: Once<ThinBox<dyn Any + Send + Sync>>,
+    group3: Once<ThinBox<dyn Any + Send + Sync>>,
 }
 
 impl Extension {
@@ -722,6 +723,7 @@ impl Extension {
         Self {
             group1: Once::new(),
             group2: Once::new(),
+            group3: Once::new(),
         }
     }
 
@@ -735,6 +737,10 @@ impl Extension {
         &self.group2
     }
 
+    /// Gets the third extension group.
+    pub fn group3(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
+        &self.group3
+    }
 }
 
 /// A symbolic link.

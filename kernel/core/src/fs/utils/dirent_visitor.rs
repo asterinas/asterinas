@@ -2,10 +2,7 @@
 
 #![expect(unused_variables)]
 
-use crate::{
-    fs::{file::InodeType, vfs::path::is_dot_or_dotdot},
-    prelude::*,
-};
+use crate::{fs::file::InodeType, prelude::*};
 
 /// A visitor for dir entries.
 pub(crate) trait DirentVisitor {
@@ -33,29 +30,6 @@ pub(crate) trait DirentVisitor {
 impl DirentVisitor for Vec<String> {
     fn visit(&mut self, name: &str, ino: u64, type_: InodeType, offset: usize) -> Result<()> {
         self.push(name.into());
-        Ok(())
-    }
-}
-
-/// Utility to count directory entries, excluding "." and ".."
-#[derive(Default)]
-pub(crate) struct DirentCounter(usize);
-
-impl DirentCounter {
-    pub(crate) fn new() -> Self {
-        Self(0)
-    }
-
-    pub(crate) fn count(&self) -> usize {
-        self.0
-    }
-}
-
-impl DirentVisitor for DirentCounter {
-    fn visit(&mut self, name: &str, _ino: u64, _type: InodeType, _offset: usize) -> Result<()> {
-        if !is_dot_or_dotdot(name) {
-            self.0 += 1;
-        }
         Ok(())
     }
 }
