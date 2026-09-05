@@ -20,7 +20,7 @@ use crate::{
             AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags, SyncMode,
         },
         utils::DirentVisitor,
-        vfs::path::Path,
+        vfs::path::{Dentry, Path},
     },
     prelude::*,
     process::{
@@ -360,10 +360,17 @@ pub(crate) trait FileOps {
     }
 }
 
+/// Represents the filesystem metadata and operations associated with an inode.
+///
+/// When a method accepts `self_dentry`, it should be the [`Dentry`] corresponding to this inode;
+/// it provides additional VFS context, such as the parent of the dentry from which the operation
+/// originated, which can be useful to some filesystem implementations such as overlayfs.
 pub(crate) trait Inode: Any + FileOps + Send + Sync {
+    /// Returns the current size of the inode.
     fn size(&self) -> usize;
 
-    fn resize(&self, new_size: usize) -> Result<()>;
+    /// Changes the size of the inode.
+    fn resize(&self, self_dentry: &Dentry, new_size: usize) -> Result<()>;
 
     /// Returns all inode metadata.
     ///
@@ -384,87 +391,134 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
     /// [`group`]: Inode::group
     fn metadata(&self) -> Result<Metadata>;
 
+    /// Returns the inode number.
     fn ino(&self) -> u64;
 
+    /// Returns the inode type.
     fn type_(&self) -> InodeType;
 
+    /// Returns the inode's permission mode.
     fn mode(&self) -> Result<InodeMode>;
 
-    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    /// Sets the inode's permission mode.
+    fn set_mode(&self, self_dentry: &Dentry, mode: InodeMode) -> Result<()>;
 
+    /// Returns the inode owner's user ID.
     fn owner(&self) -> Result<Uid>;
 
-    fn set_owner(&self, uid: Uid) -> Result<()>;
+    /// Sets the inode owner's user ID.
+    fn set_owner(&self, self_dentry: &Dentry, uid: Uid) -> Result<()>;
 
+    /// Returns the inode owner's group ID.
     fn group(&self) -> Result<Gid>;
 
-    fn set_group(&self, gid: Gid) -> Result<()>;
+    /// Sets the inode owner's group ID.
+    fn set_group(&self, self_dentry: &Dentry, gid: Gid) -> Result<()>;
 
+    /// Returns the inode's access time.
     fn atime(&self) -> Duration;
 
-    fn set_atime(&self, time: Duration);
+    /// Sets the inode's access time.
+    fn set_atime(&self, self_dentry: &Dentry, time: Duration);
 
+    /// Returns the inode's modification time.
     fn mtime(&self) -> Duration;
 
-    fn set_mtime(&self, time: Duration);
+    /// Sets the inode's modification time.
+    fn set_mtime(&self, self_dentry: &Dentry, time: Duration);
 
+    /// Returns the inode's metadata-change time.
     fn ctime(&self) -> Duration;
 
-    fn set_ctime(&self, time: Duration);
+    /// Sets the inode's metadata-change time.
+    fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
 
+    /// Returns the inode's page cache, if it has one.
     fn page_cache(&self) -> Option<Arc<Vmo>> {
         None
     }
 
-    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    /// Creates a child inode.
+    ///
+    /// Use [`Inode::create_symlink`] to create symbolic links and
+    /// [`Inode::mknod`] to create device nodes or named pipes.
+    fn create(
+        &self,
+        self_dentry: &Dentry,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn create_symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    /// Creates a symbolic-link child inode.
+    fn create_symlink(
+        &self,
+        _self_dentry: &Dentry,
+        name: &str,
+        target: &str,
+        mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
+    /// Creates an unnamed temporary inode.
     fn create_tmpfile(
         &self,
+        self_dentry: &Dentry,
         mode: InodeMode,
         hard_linkability: HardLinkability,
     ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
-    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
+    /// Creates a device or named-pipe inode.
+    fn mknod(
+        &self,
+        self_dentry: &Dentry,
+        name: &str,
+        mode: InodeMode,
+        type_: MknodType,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Opens a file for this inode if supported.
     fn open(
         &self,
+        self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         None
     }
 
-    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
+    /// Creates a hard link to an existing inode.
+    fn link(&self, self_dentry: &Dentry, old_dentry: &Dentry, name: &str) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
+    /// Removes the specified child directory entry from this directory.
+    fn unlink(&self, child_dentry: &Dentry) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
+    /// Removes the specified child directory from this directory.
+    fn rmdir(&self, child_dentry: &Dentry) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Looks up a child inode by name.
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Renames or moves a child entry, optionally replacing an existing inode.
     fn rename(
         &self,
-        old_name: &str,
-        old_inode: &Arc<dyn Inode>,
-        new_dir_inode: &Arc<dyn Inode>,
+        old_child_dentry: &Dentry,
+        new_dir_dentry: &Dentry,
         new_name: &str,
         replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
@@ -472,10 +526,12 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Reads the target of a symbolic link.
     fn read_link(&self) -> Result<SymbolicLink> {
         Err(Error::new(Errno::EISDIR))
     }
 
+    /// Flushes inode data and metadata according to the requested synchronization mode.
     fn sync(&self, _mode: SyncMode) -> Result<()> {
         Ok(())
     }
@@ -486,6 +542,7 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         return_errno!(Errno::EOPNOTSUPP);
     }
 
+    /// Returns the filesystem containing this inode.
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     /// Returns the revalidation policy for cached children of this directory.
@@ -551,8 +608,10 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
     /// Gets the extension of this inode.
     fn extension(&self) -> &Extension;
 
+    /// Sets an extended attribute on this inode.
     fn set_xattr(
         &self,
+        self_dentry: &Dentry,
         name: XattrName,
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
@@ -560,15 +619,18 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
+    /// Reads an extended attribute value into the supplied writer.
     fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
+    /// Lists the extended attributes in the specified namespace.
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
-    fn remove_xattr(&self, name: XattrName) -> Result<()> {
+    /// Removes an extended attribute from this inode.
+    fn remove_xattr(&self, self_dentry: &Dentry, _name: XattrName) -> Result<()> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 

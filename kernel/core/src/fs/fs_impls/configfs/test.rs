@@ -38,7 +38,7 @@ use spin::Once;
 use crate::{
     fs::{
         file::{InodeType, mkmod},
-        vfs::file_system::FileSystem,
+        vfs::{file_system::FileSystem, path::Dentry},
     },
     time::clocks::init_for_ktest as time_init_for_ktest,
 };
@@ -173,16 +173,27 @@ fn config_fs() {
     let demo_set_inode = root_inode
         .lookup("demo_set")
         .expect("lookup demo_set failed");
+    let demo_set_dentry = Dentry::new_root(demo_set_inode.clone());
 
     // --- Create demo objects ---
     // path: /sys/kernel/config/demo_set/demo_foo
     let demo_foo = demo_set_inode
-        .create("demo_foo", InodeType::Dir, mkmod!(a+rx, u+w))
+        .create(
+            &demo_set_dentry,
+            "demo_foo",
+            InodeType::Dir,
+            mkmod!(a+rx, u+w),
+        )
         .expect("creating demo 'demo_foo' fails");
 
     // path: /sys/kernel/config/demo_set/demo_bar
     let demo_bar = demo_set_inode
-        .create("demo_bar", InodeType::Dir, mkmod!(a+rx, u+w))
+        .create(
+            &demo_set_dentry,
+            "demo_bar",
+            InodeType::Dir,
+            mkmod!(a+rx, u+w),
+        )
         .expect("creating demo 'demo_bar' fails");
 
     // --- Test attribute access for demo_foo ---

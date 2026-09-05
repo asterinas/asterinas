@@ -8,6 +8,7 @@ use crate::{
         vfs::{
             file_system::FileSystem,
             inode::{Extension, Inode, Metadata},
+            path::Dentry,
         },
     },
     prelude::*,
@@ -92,7 +93,13 @@ impl Inode for SysFsInode {
         SysFs::singleton().clone()
     }
 
-    fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    fn create(
+        &self,
+        _self_dentry: &Dentry,
+        _name: &str,
+        _type_: InodeType,
+        _mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::with_message(
             Errno::EPERM,
             "file creation under sysfs is not allowed",
