@@ -336,7 +336,7 @@ macro_rules! impl_syscall_nums_and_dispatch_fn {
                 )*
                 _ => {
                     ostd::warn!("Unimplemented syscall number: {}", syscall_number);
-                    $crate::error::return_errno_with_message!(
+                    $crate::return_errno_with_message!(
                         $crate::error::Errno::ENOSYS,
                         "Syscall was unimplemented"
                     );

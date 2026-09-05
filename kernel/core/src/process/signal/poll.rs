@@ -196,7 +196,7 @@ impl Pollee {
 ///
 /// When this handle is dropped or reset (via [`PollHandle::reset`]), the entity will no longer be
 /// notified of the events from the pollee.
-pub(crate) struct PollHandle {
+pub struct PollHandle {
     // The event observer.
     observer: Weak<dyn Observer<IoEvents>>,
     // The associated pollees.
@@ -331,7 +331,7 @@ impl Observer<IoEvents> for Waker {
 /// This trait is added instead of creating a new method in [`Pollee`] because sometimes we do not
 /// have access to the internal [`Pollee`], but there is a method that provides the same semantics
 /// as [`Pollable::poll`] and we need to perform event-based operations using that method.
-pub(crate) trait Pollable {
+pub trait Pollable {
     /// Returns the interesting events now and monitors their occurrence in the future if the
     /// poller is provided.
     ///

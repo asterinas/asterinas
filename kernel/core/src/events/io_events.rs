@@ -4,7 +4,7 @@ use super::{Events, EventsFilter};
 use crate::prelude::*;
 
 bitflags! {
-    pub(crate) struct IoEvents: u32 {
+    pub struct IoEvents: u32 {
         const IN     = 0x0001;
         const PRI    = 0x0002;
         const OUT    = 0x0004;

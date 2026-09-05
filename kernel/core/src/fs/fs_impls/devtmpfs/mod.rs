@@ -23,7 +23,8 @@ mod tree;
 mod worker;
 
 pub(in crate::fs) use fs::singleton;
-pub(crate) use tree::{DevtmpfsNode, DevtmpfsNodeMeta};
+pub(crate) use tree::DevtmpfsNode;
+pub use tree::{DevtmpfsNodeMeta, InvalidDevtmpfsPath};
 pub(crate) use worker::{create_node, delete_node};
 
 pub(super) fn init() {

@@ -8,18 +8,17 @@ mod pty;
 mod registry;
 pub(crate) mod tty;
 
-use device_id::DeviceId;
+pub use device_id::{DeviceId, MajorId, MinorId};
 pub(crate) use mem::{getrandom, geturandom};
 pub(crate) use pty::{PtyMaster, PtySlave, new_pty_pair};
+pub use registry::char;
 pub(crate) use registry::lookup;
 
-use crate::{
-    fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
-    prelude::*,
-};
+pub use crate::fs::devtmpfs::{DevtmpfsNodeMeta, InvalidDevtmpfsPath};
+use crate::{fs::file::PerOpenFileOps, prelude::*};
 
 /// The abstraction of a device.
-pub(crate) trait Device: Send + Sync + 'static {
+pub trait Device: Send + Sync + 'static {
     /// Returns the device type.
     fn type_(&self) -> DeviceType;
 
@@ -46,7 +45,7 @@ impl Debug for dyn Device {
 
 /// Device type
 #[derive(Debug)]
-pub(crate) enum DeviceType {
+pub enum DeviceType {
     Char,
     Block,
 }
@@ -56,6 +55,8 @@ pub(crate) fn init_in_first_kthread() {
     mem::init_in_first_kthread();
     misc::init_in_first_kthread();
     evdev::init_in_first_kthread();
+    // TODO: Transfer ownership of the boot framebuffer to DRM and skip registering the
+    // legacy framebuffer device once DRM has initialized successfully.
     fb::init_in_first_kthread();
 }
 
