@@ -32,6 +32,7 @@ let
     kmod
     xfsprogs
     e2fsprogs
+    attr
   ];
 
   sbinDeps = with pkgs; [

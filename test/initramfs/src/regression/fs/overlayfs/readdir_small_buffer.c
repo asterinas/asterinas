@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#define _GNU_SOURCE
+#include <dirent.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdint.h>
@@ -8,6 +10,7 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #include <unistd.h>
 
 #include "../../common/test.h"
@@ -61,7 +64,8 @@ static void setup_overlay_tree(void)
 	create_dir(MERGED_DIR);
 
 	write_file(UPPER_DIR "/normal_file");
-	write_file(UPPER_DIR "/.wh.deleted");
+	/* A char-device 0:0 whiteout named like a deleted file hides itself and the lower entry. */
+	CHECK(mknod(UPPER_DIR "/deleted", S_IFCHR | 0644, makedev(0, 0)));
 	write_file(UPPER_DIR "/normal_extra_0");
 	write_file(UPPER_DIR "/normal_extra_1");
 	write_file(UPPER_DIR "/normal_extra_2");
@@ -75,10 +79,46 @@ static void setup_overlay_tree(void)
 	write_file(LOWER_DIR "/another_extra_4");
 }
 
+static void remove_tree(const char *path)
+{
+	struct stat st;
+
+	if (lstat(path, &st) != 0)
+		return;
+	if (!S_ISDIR(st.st_mode)) {
+		unlink(path);
+		return;
+	}
+
+	DIR *dir = opendir(path);
+	if (dir == NULL) {
+		rmdir(path);
+		return;
+	}
+
+	struct dirent *entry;
+	while ((entry = readdir(dir)) != NULL) {
+		char child[PATH_MAX];
+		int ret;
+
+		if (strcmp(entry->d_name, ".") == 0 ||
+		    strcmp(entry->d_name, "..") == 0)
+			continue;
+		ret = snprintf(child, sizeof(child), "%s/%s", path,
+			       entry->d_name);
+		if (ret < 0 || (size_t)ret >= sizeof(child))
+			continue;
+		remove_tree(child);
+	}
+
+	closedir(dir);
+	rmdir(path);
+}
+
 static void cleanup_overlay_tree(void)
 {
 	CHECK(unlink(UPPER_DIR "/normal_file"));
-	CHECK(unlink(UPPER_DIR "/.wh.deleted"));
+	CHECK(unlink(UPPER_DIR "/deleted"));
 	CHECK(unlink(UPPER_DIR "/normal_extra_0"));
 	CHECK(unlink(UPPER_DIR "/normal_extra_1"));
 	CHECK(unlink(UPPER_DIR "/normal_extra_2"));
@@ -92,6 +132,7 @@ static void cleanup_overlay_tree(void)
 	CHECK(unlink(LOWER_DIR "/another_extra_4"));
 
 	CHECK(rmdir(MERGED_DIR));
+	remove_tree(WORK_DIR "/work");
 	CHECK(rmdir(WORK_DIR));
 	CHECK(rmdir(UPPER_DIR));
 	CHECK(rmdir(LOWER_DIR));
@@ -119,13 +160,7 @@ FN_TEST(readdir_small_buffer)
 {
 	int fd = TEST_SUCC(open(MERGED_DIR, O_RDONLY | O_DIRECTORY));
 
-	/*
-	 * Use a buffer that can hold only one maximal-name dirent, so each
-	 * getdents64() call may stop after a single merged entry. The merged
-	 * directory view should still remain complete: lower entries hidden by
-	 * whiteouts must stay hidden, and the whiteout files themselves must not
-	 * appear.
-	 */
+	/* A one-dirent buffer must still yield the full view: whiteout and hidden lower excluded. */
 	char buf[ONE_LONG_DIRENT_BUF_SIZE];
 	struct readdir_result result = { 0 };
 
