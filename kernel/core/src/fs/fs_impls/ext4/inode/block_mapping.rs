@@ -15,6 +15,9 @@ use super::{
 };
 use crate::fs::ext4::{fs::Ext4, prelude::*};
 
+#[cfg(ktest)]
+mod extent;
+
 /// A data-backed inode's block-mapping engine.
 #[derive(Debug)]
 pub(super) enum BlockMapping {
