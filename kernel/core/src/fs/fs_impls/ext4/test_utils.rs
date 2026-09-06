@@ -272,13 +272,7 @@ impl RawInodeBuilder {
             generation: 0,
             file_acl: 0,
             size_high: 0,
-            faddr: 0,
-            frag: 0,
-            fsize: 0,
-            pad1: 0,
-            uid_high: 0,
-            gid_high: 0,
-            reserved2: 0,
+            ..Default::default()
         }
     }
 }

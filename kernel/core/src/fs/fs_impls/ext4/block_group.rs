@@ -444,7 +444,11 @@ impl BlockGroup {
     /// `inode_idx` is the 0-based inode index within this group.
     pub(super) fn read_inode_desc(&self, inode_idx: u16) -> Result<InodeDesc> {
         let offset_bytes = (inode_idx as usize) * self.inode_size;
-        let raw_inode: RawInode = self.inode_table_cache.read_val(offset_bytes)?;
+        let mut slot = [0u8; size_of::<RawInode>()];
+        let read_len = self.inode_size.min(slot.len());
+        self.inode_table_cache
+            .read_bytes(offset_bytes, &mut slot[..read_len])?;
+        let raw_inode = RawInode::from_slot_bytes(&slot[..read_len])?;
         InodeDesc::try_from(&raw_inode)
     }
 
@@ -452,7 +456,9 @@ impl BlockGroup {
     pub(super) fn write_back_inode_desc(&self, ino: Ext4Ino, raw: &RawInode) -> Result<()> {
         let inode_idx = self.inode_idx_in_group(ino);
         let offset_bytes = (inode_idx as usize) * self.inode_size;
-        self.inode_table_cache.write_val(offset_bytes, raw)?;
+        let write_len = self.inode_size.min(size_of::<RawInode>());
+        self.inode_table_cache
+            .write_bytes(offset_bytes, &raw.as_bytes()[..write_len])?;
         Ok(())
     }
 
@@ -770,5 +776,61 @@ impl BlockAsPageCacheBackend for InodeTableBackend {
         self.block_device
             .write_blocks_async(bid, bio_segment, Some(complete_fn), io_batch)?;
         Ok(())
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use ostd::prelude::ktest;
+
+    use super::*;
+    use crate::{
+        fs::fs_impls::ext4::test_utils::{Ext4FixtureBuilder, RawInodeBuilder},
+        time::clocks,
+    };
+
+    #[ktest]
+    fn writeback_stays_within_a_128_byte_inode_slot() {
+        const INODE_SIZE: usize = 128;
+        const INO: Ext4Ino = 12;
+
+        clocks::init_for_ktest();
+        let fixture = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        assert_eq!(fixture.sb.inode_size(), INODE_SIZE);
+
+        let group = fixture.ext2.block_group(0);
+        let inode_idx = (INO - 1) as usize;
+        let inode_offset = inode_idx * INODE_SIZE;
+
+        let mut first_raw = RawInodeBuilder::new(0o100644).size_lo(17).build();
+        first_raw.osd1 = 0x1122_3344;
+        first_raw.osd2_reserved = 0x5566;
+        let first_slot = first_raw.as_bytes()[..INODE_SIZE].to_vec();
+        let second_slot = [0xA5; INODE_SIZE];
+
+        group
+            .inode_table_cache
+            .write_bytes(inode_offset, &first_slot)
+            .unwrap();
+        group
+            .inode_table_cache
+            .write_bytes(inode_offset + INODE_SIZE, &second_slot)
+            .unwrap();
+
+        let desc = group.read_inode_desc(inode_idx as u16).unwrap();
+        let mut updated = RawInode::from(&desc);
+        updated.size_lo = 4096;
+        group.write_back_inode_desc(INO, &updated).unwrap();
+
+        let mut actual = [0u8; INODE_SIZE * 2];
+        group
+            .inode_table_cache
+            .read_bytes(inode_offset, &mut actual)
+            .unwrap();
+
+        let mut expected_first = first_slot;
+        expected_first[4..8].copy_from_slice(&4096u32.to_ne_bytes());
+        assert_eq!(&actual[..INODE_SIZE], expected_first.as_slice());
+        assert_eq!(&actual[INODE_SIZE..], &second_slot);
     }
 }
