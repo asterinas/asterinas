@@ -912,10 +912,7 @@ impl MappedMemory {
         match self {
             MappedMemory::Anonymous => MappedMemory::Anonymous,
             MappedMemory::Vmo(vmo) => {
-                let new_offset = vmo
-                    .offset()
-                    .checked_add(offset)
-                    .expect("mapped VMO offset should not overflow");
+                let new_offset = offset + vmo.offset();
                 MappedMemory::Vmo(vmo.dup_at_offset(new_offset))
             }
             MappedMemory::Device(mapped_obj) => {
