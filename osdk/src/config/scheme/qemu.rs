@@ -37,6 +37,9 @@ pub struct QemuScheme {
     /// The QEMU output log used for panic translation and coverage collection.
     /// Relative paths are resolved from the OSDK working directory.
     pub log_file: Option<PathBuf>,
+    /// Executables to keep alive for the duration of QEMU.
+    #[serde(default)]
+    pub programs: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Serialize)]
@@ -52,6 +55,8 @@ pub struct Qemu {
     pub with_monitor: bool,
     /// The QEMU output log used for panic translation and coverage collection.
     pub log_file: Option<PathBuf>,
+    /// Executables to keep alive for the duration of QEMU.
+    pub programs: Vec<String>,
 }
 
 impl Default for Qemu {
@@ -62,12 +67,13 @@ impl Default for Qemu {
             path: PathBuf::from(get_default_arch().system_qemu()),
             with_monitor: false,
             log_file: None,
+            programs: Vec::new(),
         }
     }
 }
 
 // Implements `PartialEq` for `Qemu`, comparing `args` while ignoring numeric characters
-// (random ports), and comparing other fields (`bootdev_append_options` and `path`) normally.
+// (random ports), and comparing the remaining settings normally.
 impl PartialEq for Qemu {
     fn eq(&self, other: &Self) -> bool {
         fn strip_numbers(input: &str) -> String {
@@ -79,6 +85,7 @@ impl PartialEq for Qemu {
             && self.path == other.path
             && self.with_monitor == other.with_monitor
             && self.log_file == other.log_file
+            && self.programs == other.programs
     }
 }
 
@@ -111,6 +118,9 @@ impl QemuScheme {
         if self.log_file.is_none() {
             self.log_file.clone_from(&from.log_file);
         }
+        if self.programs.is_none() {
+            self.programs.clone_from(&from.programs);
+        }
     }
 
     pub fn finalize(self, arch: Arch) -> Qemu {
@@ -120,6 +130,7 @@ impl QemuScheme {
             path: self.path.unwrap_or(PathBuf::from(arch.system_qemu())),
             with_monitor: self.with_monitor.unwrap_or(false),
             log_file: self.log_file,
+            programs: self.programs.unwrap_or_default(),
         }
     }
 }
