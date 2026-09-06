@@ -14,6 +14,8 @@ mod cli;
 mod commands;
 mod config;
 mod error;
+mod program;
+mod program_supervisor;
 mod signal;
 mod util;
 
