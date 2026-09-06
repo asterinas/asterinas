@@ -11,8 +11,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/xattr_test"
+#define BASE_DIR EXT_TEST_ROOT "/xattr_test"
 
 static void ensure_base_dir(void)
 {

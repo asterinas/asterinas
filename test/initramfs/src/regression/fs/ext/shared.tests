@@ -1,0 +1,13 @@
+# Operations supported by both ext2 and the initial extent-based ext4 driver.
+file_io
+namei
+open_dir
+open_unlink
+permissions
+readdir
+rename
+rmdir
+short_rw
+sparse
+symlink
+unix_socket

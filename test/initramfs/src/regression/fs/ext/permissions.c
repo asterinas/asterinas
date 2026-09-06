@@ -6,8 +6,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/perm_test"
+#define BASE_DIR EXT_TEST_ROOT "/perm_test"
 #define TEST_FILE BASE_DIR "/testfile"
 
 FN_SETUP(create_base_dir)
