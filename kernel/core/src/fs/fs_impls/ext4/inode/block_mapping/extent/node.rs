@@ -34,7 +34,6 @@ pub(super) struct RawExtentIdx {
 }
 
 impl RawExtentIdx {
-    #[cfg(ktest)]
     pub(super) const fn new(block: Iblock, leaf: Ext4Bid) -> Self {
         Self {
             block,
@@ -55,7 +54,6 @@ pub(super) struct RawExtent {
 }
 
 impl RawExtent {
-    #[cfg(ktest)]
     pub(super) const fn new(block: Iblock, len: u16, start: Ext4Bid) -> Self {
         Self {
             block,
@@ -174,6 +172,10 @@ impl TryFrom<&RawExtent> for Extent {
 }
 
 impl Extent {
+    pub(super) const fn new(block: Iblock, len: u16, start: Ext4Bid) -> Self {
+        Self { block, len, start }
+    }
+
     pub(super) const fn block(self) -> Iblock {
         self.block
     }
@@ -188,5 +190,17 @@ impl Extent {
 
     pub(super) const fn physical_block(self, iblock: Iblock) -> Ext4Bid {
         self.start + (iblock - self.block)
+    }
+
+    pub(super) const fn start(self) -> Ext4Bid {
+        self.start
+    }
+
+    pub(super) const fn len(self) -> u16 {
+        self.len
+    }
+
+    pub(super) fn to_raw(self) -> RawExtent {
+        RawExtent::new(self.block, self.len, self.start)
     }
 }

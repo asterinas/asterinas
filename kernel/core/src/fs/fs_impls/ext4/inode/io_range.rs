@@ -2,7 +2,7 @@
 
 //! Classification of logical block ranges as mapped runs or sparse holes.
 
-use super::block_manager::BlockPtrTree;
+use super::{block_manager::BlockPtrTree, block_mapping::extent::ExtentManager};
 use crate::fs::ext4::prelude::*;
 
 /// Direct-I/O block-range classification for the current logical interval.
@@ -19,9 +19,15 @@ pub(super) enum IoRange {
 /// Each item preserves the range classification needed by direct I/O:
 /// contiguous device-block mappings remain grouped,
 /// and sparse logical ranges remain explicit holes.
-pub(super) struct IoRangeIter<'a> {
-    range: Range<Iblock>,
-    block_ptr_tree: RwMutexReadGuard<'a, BlockPtrTree>,
+pub(super) enum IoRangeIter<'a> {
+    Indirect {
+        range: Range<Iblock>,
+        block_ptr_tree: RwMutexReadGuard<'a, BlockPtrTree>,
+    },
+    Extent {
+        range: Range<Iblock>,
+        manager: &'a ExtentManager,
+    },
 }
 
 impl<'a> IoRangeIter<'a> {
@@ -30,10 +36,14 @@ impl<'a> IoRangeIter<'a> {
         range: Range<Iblock>,
         block_ptr_tree: RwMutexReadGuard<'a, BlockPtrTree>,
     ) -> Self {
-        Self {
+        Self::Indirect {
             range,
             block_ptr_tree,
         }
+    }
+
+    pub(super) fn new_extent(range: Range<Iblock>, manager: &'a ExtentManager) -> Self {
+        Self::Extent { range, manager }
     }
 
     /// Returns the next logical run for direct I/O planning.
@@ -42,15 +52,26 @@ impl<'a> IoRangeIter<'a> {
     /// contiguous physical device blocks. `IoRange::Hole` returns a known hole
     /// run that may stop early at direct/indirect region boundaries.
     pub(super) fn next(&mut self) -> Result<Option<IoRange>> {
-        if self.range.is_empty() {
+        match self {
+            Self::Indirect {
+                range,
+                block_ptr_tree,
+            } => Self::next_indirect(range, block_ptr_tree),
+            Self::Extent { range, manager } => Self::next_extent(range, manager),
+        }
+    }
+
+    fn next_indirect(
+        range: &mut Range<Iblock>,
+        block_ptr_tree: &BlockPtrTree,
+    ) -> Result<Option<IoRange>> {
+        if range.start >= range.end {
             return Ok(None);
         }
 
-        let start_iblock = self.range.start;
-        let max_blocks = self.range.len() as u32;
-        let device_block_range = self
-            .block_ptr_tree
-            .lookup_block_range(start_iblock, max_blocks)?;
+        let start_iblock = range.start;
+        let max_blocks = range.len() as u32;
+        let device_block_range = block_ptr_tree.lookup_block_range(start_iblock, max_blocks)?;
 
         if device_block_range.is_empty() {
             // Linux's ext2 documents the slow case where it iterates unmapped
@@ -60,16 +81,32 @@ impl<'a> IoRangeIter<'a> {
             // re-walking from the root for every logical block.
             //
             // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/ext2/inode.c#L905>
-            let hole_len = self
-                .block_ptr_tree
-                .approx_hole_blocks(start_iblock, max_blocks)?;
+            let hole_len = block_ptr_tree.approx_hole_blocks(start_iblock, max_blocks)?;
             debug_assert!(hole_len > 0);
-            self.range.start += hole_len;
+            range.start += hole_len;
             return Ok(Some(IoRange::Hole(start_iblock..start_iblock + hole_len)));
         }
 
-        self.range.start += device_block_range.len() as u32;
+        range.start += device_block_range.len() as u32;
         Ok(Some(IoRange::Mapped(device_block_range)))
+    }
+
+    fn next_extent(range: &mut Range<Iblock>, manager: &ExtentManager) -> Result<Option<IoRange>> {
+        if range.start >= range.end {
+            return Ok(None);
+        }
+        let start = range.start;
+        let max_blocks = range.len() as u32;
+        match manager.mapped_run(start, max_blocks)? {
+            Some(mapped) => {
+                range.start += mapped.len() as u32;
+                Ok(Some(IoRange::Mapped(mapped)))
+            }
+            None => {
+                range.start += 1;
+                Ok(Some(IoRange::Hole(start..start + 1)))
+            }
+        }
     }
 }
 

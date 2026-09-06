@@ -95,7 +95,7 @@ impl InodeInner {
         if target.len() < MAX_FAST_SYMLINK_LEN {
             // Fast path: store target inline in the block pointer area.
             if let InodePayload::DataBacked { block_manager, .. } = &self.payload {
-                block_manager.truncate_to_byte_len(0);
+                block_manager.truncate_to_byte_len(0)?;
             }
             let mut fast_target = FastSymlinkTarget::new_zeros();
             fast_target.write(target.as_bytes())?;
