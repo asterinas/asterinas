@@ -722,7 +722,7 @@ impl Ext4FixtureBuilder {
         let device: Arc<dyn BlockDevice> = self
             .custom_device
             .unwrap_or_else(|| disk.clone() as Arc<dyn BlockDevice>);
-        let ext2 = Ext4::open(device, FsFlags::empty(), None)?;
+        let ext2 = Ext4::open(device, FsFlags::empty(), super::fs::MountFlavor::Ext2, None)?;
 
         Ok(Ext4Fixture {
             disk,

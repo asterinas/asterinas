@@ -141,6 +141,12 @@ impl Inode {
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "fallocate range overflow"))?;
         let fs = self.fs()?;
         let mut inner = self.inner.write();
+        if inner.uses_extents() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "fallocate is not supported for extent-based inodes"
+            );
+        }
         let old_size = inner.file_size();
         if end > old_size {
             inner.ensure_size_within_limit(&fs, end)?;

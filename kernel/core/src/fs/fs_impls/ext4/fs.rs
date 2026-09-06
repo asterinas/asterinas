@@ -43,6 +43,16 @@ use crate::{
 /// The root inode number defined by the ext2 on-disk format.
 pub(super) const ROOT_INO: u32 = 2;
 
+fn ranges_overlap<T: Ord>(left: &Range<T>, right: &Range<T>) -> bool {
+    left.start < right.end && right.start < left.end
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum MountFlavor {
+    Ext2,
+    Ext4,
+}
+
 /// Top-level handle for a mounted ext2 filesystem.
 ///
 /// Owns the superblock, block group array, and group descriptor table.
@@ -70,6 +80,8 @@ pub(crate) struct Ext4 {
     next_generation: AtomicU32,
     /// Weak self reference for inode back-pointers.
     self_ref: Weak<Ext4>,
+    /// VFS mount name used to open this instance.
+    mount_flavor: MountFlavor,
 }
 
 /// Policy for how `statfs` reports the total block count.
@@ -118,12 +130,25 @@ impl Ext4 {
     pub(super) fn open(
         device: Arc<dyn BlockDevice>,
         flags: FsFlags,
+        mount_flavor: MountFlavor,
         data: Option<&str>,
     ) -> Result<Arc<Self>> {
         let super_block = {
             let raw_super_block = device.read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)?;
             SuperBlock::try_from(raw_super_block)?
         };
+        if super_block.has_journal() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "journaled ext filesystems are unsupported"
+            );
+        }
+        if mount_flavor == MountFlavor::Ext2 && super_block.has_extents() {
+            return_errno_with_message!(Errno::EINVAL, "an extent filesystem cannot mount as ext2");
+        }
+        if mount_flavor == MountFlavor::Ext4 && !super_block.has_extents() {
+            return_errno_with_message!(Errno::EINVAL, "ext4 mount requires the extents feature");
+        }
         let block_size = super_block.block_size();
         if block_size != BLOCK_SIZE {
             return_errno_with_message!(Errno::EINVAL, "currently only 4096-byte block size");
@@ -186,6 +211,7 @@ impl Ext4 {
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             next_generation: AtomicU32::new(utils::duration_to_ext2_secs(utils::now())),
             self_ref: weak_self.clone(),
+            mount_flavor,
         });
 
         Ok(ext2)
@@ -194,6 +220,13 @@ impl Ext4 {
     /// Returns the block device.
     pub(super) fn block_device(&self) -> &dyn BlockDevice {
         self.block_device.as_ref()
+    }
+
+    pub(super) const fn fs_name(&self) -> &'static str {
+        match self.mount_flavor {
+            MountFlavor::Ext2 => "ext2",
+            MountFlavor::Ext4 => "ext4",
+        }
     }
 
     /// Returns the maximum regular file size supported by this ext2 instance.
@@ -378,6 +411,49 @@ impl Ext4 {
         Ok(())
     }
 
+    /// Validates a physical range referenced by an inode extent tree.
+    pub(super) fn validate_extent_block_range(&self, start: Ext4Bid, count: u32) -> Result<()> {
+        let sb = self.super_block.read();
+        if !sb.is_data_block_valid(start, count) {
+            return_errno_with_message!(Errno::EUCLEAN, "extent block range is outside filesystem");
+        }
+
+        let end = start
+            .checked_add(count)
+            .ok_or_else(|| Error::with_message(Errno::EUCLEAN, "extent block range overflow"))?;
+        let blocks_per_group = sb.nr_blocks_per_group();
+        let first_data_block = sb.first_data_block();
+        let mut current = start;
+        while current < end {
+            let group_idx = ((current - first_data_block) / blocks_per_group) as usize;
+            let group = self.block_groups.get(group_idx).ok_or_else(|| {
+                Error::with_message(Errno::EUCLEAN, "extent block group is outside filesystem")
+            })?;
+            let group_end = end.min(group.last_block() + 1);
+            let range = current..group_end;
+            if sb.is_backup_group(group_idx) {
+                let super_block = sb.bid(group_idx)..sb.bid(group_idx) + 1;
+                let descriptors_start = sb.group_descriptors_bid(group_idx);
+                let descriptors =
+                    descriptors_start..descriptors_start + sb.group_descriptor_blocks_count();
+                if ranges_overlap(&range, &super_block) || ranges_overlap(&range, &descriptors) {
+                    return_errno_with_message!(
+                        Errno::EUCLEAN,
+                        "extent block range overlaps superblock metadata"
+                    );
+                }
+            }
+            if !group.is_allocated_data_range(range) {
+                return_errno_with_message!(
+                    Errno::EUCLEAN,
+                    "extent block range is free or overlaps filesystem metadata"
+                );
+            }
+            current = group_end;
+        }
+        Ok(())
+    }
+
     /// Allocates and initializes a new inode.
     pub(super) fn create_inode(
         &self,
@@ -406,7 +482,16 @@ impl Ext4 {
             .unwrap_or((0, 0));
         let now = utils::now();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
-        let inode_desc = InodeDesc::new(inode_type, perm, uid, gid, link_count, generation, now);
+        let inode_desc = InodeDesc::new(
+            inode_type,
+            perm,
+            uid,
+            gid,
+            link_count,
+            generation,
+            now,
+            self.super_block.read().has_extents(),
+        );
         let raw_inode = RawInode::from(&inode_desc);
 
         let block_group = self
@@ -523,6 +608,14 @@ impl Ext4 {
         // bytes, so the segment is always consistent.
         for group in &self.block_groups {
             group.sync_all(&self.group_descriptors_segment)?;
+        }
+        self.sync_metadata()
+    }
+
+    /// Persists dirty allocation bitmaps, group descriptors, and block counts.
+    pub(super) fn sync_allocation_metadata(&self) -> Result<()> {
+        for group in &self.block_groups {
+            group.sync_metadata(&self.group_descriptors_segment)?;
         }
         self.sync_metadata()
     }
@@ -692,12 +785,13 @@ mod test {
     use super::*;
     use crate::{
         fs::{
+            file::SyncMode,
             fs_impls::ext4::test_utils::{
                 BlockBitmapInit, Ext4FixtureBuilder, Ext4MemoryDisk, InodeBitmapInit,
                 RawInodeBuilder, assert_errno, create_file, default_fixture, make_valid_group_desc,
                 make_valid_super_block,
             },
-            vfs::file_system::FileSystem as FileSystemTrait,
+            vfs::{file_system::FileSystem as FileSystemTrait, inode::Inode as VfsInodeTrait},
         },
         time::clocks,
     };
@@ -744,12 +838,180 @@ mod test {
         let ext2 = Ext4::open(
             f.disk.clone() as Arc<dyn BlockDevice>,
             FsFlags::empty(),
+            MountFlavor::Ext2,
             Some("minixdf"),
         )
         .unwrap();
 
         let stat = FileSystemTrait::sb(ext2.as_ref());
         assert_eq!(stat.blocks, f.sb.total_blocks() as usize);
+    }
+
+    #[ktest]
+    fn ext4_mount_creates_and_writes_an_extent_inode() {
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 256)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw);
+
+        let ext4 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        assert_eq!(FileSystemTrait::name(ext4.as_ref()), "ext4");
+        let file = ext4
+            .create_inode(
+                ROOT_INO,
+                InodeType::File,
+                FilePerm::from_bits_truncate(0o644),
+            )
+            .unwrap();
+        let data = [0x5au8; BLOCK_SIZE];
+        let mut reader = VmReader::from(&data[..]).to_fallible();
+        assert_eq!(file.write_at(0, &mut reader).unwrap(), BLOCK_SIZE);
+        file.sync_data().unwrap();
+
+        let mut readback = [0u8; BLOCK_SIZE];
+        let mut writer = VmWriter::from(&mut readback[..]).to_fallible();
+        assert_eq!(file.read_at(0, &mut writer).unwrap(), BLOCK_SIZE);
+        assert_eq!(readback, data);
+    }
+
+    #[ktest]
+    fn mount_flavor_rejects_extent_as_ext2_and_rejects_journal() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw);
+        let result = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext2,
+            None,
+        );
+        assert_errno!(result, Errno::EINVAL);
+
+        raw.feature_incompat &= !(1 << 6);
+        f.disk.write_super_block(&raw);
+        let result = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        );
+        assert_errno!(result, Errno::EINVAL);
+
+        raw.feature_compat |= 1 << 2;
+        f.disk.write_super_block(&raw);
+        let result = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        );
+        assert_errno!(result, Errno::EOPNOTSUPP);
+    }
+
+    #[ktest]
+    fn inode_sync_persists_allocation_counts() {
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 256)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw);
+        let ext4 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        let file = ext4
+            .create_inode(
+                ROOT_INO,
+                InodeType::File,
+                FilePerm::from_bits_truncate(0o644),
+            )
+            .unwrap();
+        let ino = file.ino();
+        let block_bitmap_offset = Bid::new(f.descs[0].block_bitmap_bid.into()).to_offset();
+        let mut block_bitmap_before = [0u8; BLOCK_SIZE];
+        f.disk
+            .segment()
+            .read_bytes(block_bitmap_offset, &mut block_bitmap_before)
+            .unwrap();
+        let data = [0x5au8; BLOCK_SIZE];
+        let mut reader = VmReader::from(&data[..]).to_fallible();
+        file.write_at(0, &mut reader).unwrap();
+
+        VfsInodeTrait::sync(file.as_ref(), SyncMode::Full).unwrap();
+
+        let persisted_sb = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        assert_eq!(
+            persisted_sb.free_blocks_count,
+            ext4.super_block().free_blocks_count()
+        );
+        let desc_offset = Bid::new(f.sb.group_descriptors_bid(0).into()).to_offset();
+        let persisted_desc = f
+            .disk
+            .segment()
+            .read_val::<RawBlockGroup>(desc_offset)
+            .unwrap();
+        assert_eq!(
+            persisted_desc.free_blocks_count,
+            ext4.block_group(0).free_blocks_count()
+        );
+        let mut block_bitmap_after = [0u8; BLOCK_SIZE];
+        f.disk
+            .segment()
+            .read_bytes(block_bitmap_offset, &mut block_bitmap_after)
+            .unwrap();
+        assert_ne!(block_bitmap_after, block_bitmap_before);
+
+        drop(file);
+        drop(ext4);
+        let remounted = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        let persisted_file = remounted.read_inode(ino).unwrap();
+        let mut readback = [0u8; BLOCK_SIZE];
+        let mut writer = VmWriter::from(&mut readback[..]).to_fallible();
+        assert_eq!(persisted_file.read_at(0, &mut writer).unwrap(), BLOCK_SIZE);
+        assert_eq!(readback, data);
     }
 
     #[ktest]

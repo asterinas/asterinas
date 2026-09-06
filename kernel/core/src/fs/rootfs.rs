@@ -49,7 +49,7 @@ use super::{
 use crate::prelude::*;
 
 /// Filesystem types supported for the root filesystem.
-pub(crate) static SUPPORTED_ROOTFS_TYPES: &[&dyn DynFsType] = &[&ext4::EXT2_TYPE];
+pub(crate) static SUPPORTED_ROOTFS_TYPES: &[&dyn DynFsType] = &[&ext4::EXT4_TYPE, &ext4::EXT2_TYPE];
 
 /// Mounts and switches to the root filesystem configured by the kernel command line.
 ///

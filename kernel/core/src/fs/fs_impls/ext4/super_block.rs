@@ -242,7 +242,8 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
 
         let feature_compat = FeatureCompatSet::from_bits_truncate(sb.feature_compat);
 
-        let allowed_incompat = FeatureInCompatSet::FILETYPE.bits();
+        let allowed_incompat =
+            FeatureInCompatSet::FILETYPE.bits() | FeatureInCompatSet::EXTENTS.bits();
         if (sb.feature_incompat & !allowed_incompat) != 0 {
             return_errno_with_message!(Errno::EINVAL, "unsupported incompat feature");
         }
@@ -614,14 +615,12 @@ impl SuperBlock {
         self.rev_level
     }
 
-    #[expect(dead_code)]
-    const fn feature_compat(&self) -> FeatureCompatSet {
-        self.feature_compat
+    pub(super) const fn has_journal(&self) -> bool {
+        self.feature_compat.contains(FeatureCompatSet::HAS_JOURNAL)
     }
 
-    #[expect(dead_code)]
-    const fn feature_incompat(&self) -> FeatureInCompatSet {
-        self.feature_incompat
+    pub(super) const fn has_extents(&self) -> bool {
+        self.feature_incompat.contains(FeatureInCompatSet::EXTENTS)
     }
 
     #[expect(dead_code)]
@@ -661,6 +660,10 @@ bitflags! {
         const JOURNAL_DEV = 1 << 3;
         /// Metablock block group.
         const META_BG = 1 << 4;
+        /// Inodes may use extent trees instead of indirect block pointers.
+        const EXTENTS = 1 << 6;
+        /// Filesystem block numbers and group descriptors use 64-bit fields.
+        const BIT64 = 1 << 7;
     }
 }
 
@@ -898,5 +901,16 @@ mod test {
         assert!(!sb.is_backup_group(2));
         assert!(!sb.is_backup_group(4));
         assert!(!sb.is_backup_group(6));
+    }
+
+    #[ktest]
+    fn rejects_64bit_and_metadata_checksum_features() {
+        let mut raw = make_valid_raw_super_block(1);
+        raw.feature_incompat |= FeatureInCompatSet::BIT64.bits();
+        assert!(SuperBlock::try_from(raw).is_err());
+
+        let mut raw = make_valid_raw_super_block(1);
+        raw.feature_ro_compat |= 1 << 10;
+        assert!(SuperBlock::try_from(raw).is_err());
     }
 }

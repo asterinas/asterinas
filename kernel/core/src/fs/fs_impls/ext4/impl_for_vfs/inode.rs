@@ -246,6 +246,7 @@ impl Inode for Ext4Inode {
         let fs = self.fs()?;
         let block_group = fs.block_group(self.block_group_idx());
         block_group.sync_inode_table()?;
+        fs.sync_allocation_metadata()?;
         if fs.block_device().sync()? != BioStatus::Complete {
             return_errno_with_message!(Errno::EIO, "failed to flush block device");
         }

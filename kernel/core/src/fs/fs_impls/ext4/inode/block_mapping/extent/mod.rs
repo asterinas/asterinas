@@ -5,6 +5,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use aster_block::bio::BioCompleteFn;
+use ostd::mm::io::util::HasVmReaderWriter;
 
 use super::super::block_manager::RawBlockPtrs;
 use crate::fs::fs_impls::ext4::{fs::Ext4, inode::RAW_BLOCK_PTRS_LEN, prelude::*};
@@ -13,6 +14,25 @@ mod node;
 mod tree;
 
 const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
+
+pub(in crate::fs::fs_impls::ext4::inode) fn empty_extent_root() -> [u32; RAW_BLOCK_PTRS_LEN] {
+    let header = node::RawExtentHeader {
+        magic: node::EXTENT_MAGIC,
+        entries: 0,
+        max: 4,
+        depth: 0,
+        generation: 0,
+    };
+    let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
+    root.as_mut_bytes()[..tree::ENTRY_SIZE].copy_from_slice(header.as_bytes());
+    root
+}
+
+pub(in crate::fs::fs_impls::ext4::inode) fn validate_extent_root(
+    root: [u32; RAW_BLOCK_PTRS_LEN],
+) -> Result<()> {
+    tree::ExtentTree::try_from_root(root).map(|_| ())
+}
 
 #[derive(Debug)]
 struct ExtentState {
@@ -58,7 +78,7 @@ impl ExtentManager {
             .state
             .read()
             .tree
-            .find(fs.block_device(), iblock)?
+            .find(&fs, iblock)?
             .map(|extent| extent.physical_block(iblock)))
     }
 
@@ -69,7 +89,7 @@ impl ExtentManager {
     ) -> Result<Option<Range<Ext4Bid>>> {
         let fs = self.fs()?;
         let state = self.state.read();
-        let Some(extent) = state.tree.find(fs.block_device(), iblock)? else {
+        let Some(extent) = state.tree.find(&fs, iblock)? else {
             return Ok(None);
         };
         let offset = iblock - extent.block();
@@ -106,7 +126,7 @@ impl ExtentManager {
 
         let fs = self.fs()?;
         let mut state = self.state.write();
-        let existing = state.tree.extents(fs.block_device())?;
+        let existing = state.tree.extents(&fs)?;
         let mut allocated = Vec::new();
         let mut additions = Vec::new();
         for hole in holes(&existing, start, end) {
@@ -121,6 +141,11 @@ impl ExtentManager {
                     }
                 };
                 let len = range.len() as u32;
+                if let Err(error) = zero_new_blocks(&fs, &range) {
+                    let _ = fs.free_blocks(range.start, len);
+                    free_ranges(&fs, &allocated);
+                    return Err(error);
+                }
                 let extent_len = match u16::try_from(len) {
                     Ok(len) if len <= 32768 => len,
                     _ => {
@@ -144,7 +169,8 @@ impl ExtentManager {
         let mut replacement = existing;
         replacement.extend_from_slice(&additions);
         replacement.sort_by_key(|extent| extent.block());
-        let delta = match state.tree.rebuild(&fs, &replacement) {
+        replacement = merge_adjacent_extents(replacement);
+        let anticipated = match state.tree.anticipated_rebuild_delta(&replacement) {
             Ok(delta) => delta,
             Err(error) => {
                 free_ranges(&fs, &allocated);
@@ -152,7 +178,29 @@ impl ExtentManager {
             }
         };
         let data_blocks = allocated.iter().map(|range| range.len() as u32).sum();
-        add_sectors(&mut state.sector_count, data_blocks, delta)?;
+        let mut sector_count = state.sector_count;
+        if let Err(error) = add_sectors(
+            &mut sector_count,
+            data_blocks,
+            tree::TreeDelta {
+                allocated: anticipated.allocated,
+                freed: 0,
+            },
+        ) {
+            free_ranges(&fs, &allocated);
+            return Err(error);
+        }
+        let delta = match state.tree.rebuild(&fs, &replacement) {
+            Ok(delta) => delta,
+            Err(error) => {
+                free_ranges(&fs, &allocated);
+                return Err(error);
+            }
+        };
+        sector_count = state.sector_count;
+        add_sectors(&mut sector_count, data_blocks, delta)
+            .expect("worst-case extent allocation accounting was prevalidated");
+        state.sector_count = sector_count;
         state.dirty = true;
         Ok(())
     }
@@ -162,7 +210,7 @@ impl ExtentManager {
         let keep_blocks = Iblock::try_from(new_size.div_ceil(BLOCK_SIZE))
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
         let mut state = self.state.write();
-        let extents = state.tree.extents(fs.block_device())?;
+        let extents = state.tree.extents(&fs)?;
         let mut kept = Vec::new();
         let mut freed = Vec::new();
         for extent in extents {
@@ -181,12 +229,26 @@ impl ExtentManager {
             return Ok(());
         }
 
+        let anticipated = state.tree.anticipated_rebuild_delta(&kept)?;
+        let planned_data_blocks = freed.iter().map(|range| range.len() as u32).sum();
+        let mut sector_count = state.sector_count;
+        subtract_sectors(&mut sector_count, planned_data_blocks, anticipated)?;
+
         let delta = state.tree.rebuild(&fs, &kept)?;
-        let data_blocks = freed.iter().map(|range| range.len() as u32).sum();
+        let mut data_blocks = 0;
         for range in &freed {
-            fs.free_blocks(range.start, range.len() as u32)?;
+            match fs.free_blocks(range.start, range.len() as u32) {
+                Ok(()) => data_blocks += range.len() as u32,
+                Err(error) => error!(
+                    "failed to release truncated extent range {:?}: {:?}",
+                    range, error
+                ),
+            }
         }
-        subtract_sectors(&mut state.sector_count, data_blocks, delta)?;
+        sector_count = state.sector_count;
+        subtract_sectors(&mut sector_count, data_blocks, delta)
+            .expect("maximum extent truncation accounting was prevalidated");
+        state.sector_count = sector_count;
         state.dirty = true;
         Ok(())
     }
@@ -216,10 +278,42 @@ fn holes(extents: &[node::Extent], start: Iblock, end: Iblock) -> Vec<Range<Iblo
     result
 }
 
+fn merge_adjacent_extents(extents: Vec<node::Extent>) -> Vec<node::Extent> {
+    let mut merged: Vec<node::Extent> = Vec::with_capacity(extents.len());
+    for extent in extents {
+        let Some(previous) = merged.last_mut() else {
+            merged.push(extent);
+            continue;
+        };
+        let combined_len = u32::from(previous.len()) + u32::from(extent.len());
+        if previous.logical_end() == u64::from(extent.block())
+            && previous.start() + u32::from(previous.len()) == extent.start()
+            && combined_len <= 32768
+        {
+            *previous = node::Extent::new(previous.block(), combined_len as u16, previous.start());
+        } else {
+            merged.push(extent);
+        }
+    }
+    merged
+}
+
 fn free_ranges(fs: &Ext4, ranges: &[Range<Ext4Bid>]) {
     for range in ranges {
         let _ = fs.free_blocks(range.start, range.len() as u32);
     }
+}
+
+fn zero_new_blocks(fs: &Ext4, block_range: &Range<Ext4Bid>) -> Result<()> {
+    let mut io_batch = IoBatch::with_capacity(1);
+    let bio_segment = BioSegment::alloc(block_range.len(), BioDirection::ToDevice);
+    bio_segment
+        .writer()
+        .unwrap()
+        .fill_zeros(block_range.len() * BLOCK_SIZE);
+    fs.write_blocks_async(block_range.start, bio_segment, None, &mut io_batch)?;
+    io_batch.wait_all()?;
+    Ok(())
 }
 
 fn add_sectors(count: &mut u32, data_blocks: u32, delta: tree::TreeDelta) -> Result<()> {
@@ -292,11 +386,13 @@ mod tests {
 
     use super::{
         ExtentManager,
-        node::{EXTENT_MAGIC, RawExtent, RawExtentHeader, RawExtentIdx},
+        node::{EXTENT_MAGIC, Extent, RawExtent, RawExtentHeader, RawExtentIdx},
         tree::{ENTRY_SIZE, ExtentTree},
     };
     use crate::fs::fs_impls::ext4::{
-        inode::RAW_BLOCK_PTRS_LEN, prelude::*, test_utils::Ext4FixtureBuilder,
+        inode::RAW_BLOCK_PTRS_LEN,
+        prelude::*,
+        test_utils::{BlockBitmapInit, Ext4FixtureBuilder, group0_layout},
     };
 
     fn inline_root(header: RawExtentHeader, entries: &[RawExtent]) -> [u32; RAW_BLOCK_PTRS_LEN] {
@@ -322,23 +418,28 @@ mod tests {
 
     #[ktest]
     fn inline_lookup_distinguishes_mappings_and_holes() {
-        let fixture = Ext4FixtureBuilder::new(1, 2048).build().unwrap();
+        let fixture = Ext4FixtureBuilder::new(1, 2048)
+            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 41, 42, 45, 46]))
+            .build()
+            .unwrap();
         let root = inline_root(
             leaf_header(2),
-            &[RawExtent::new(2, 3, 100), RawExtent::new(8, 2, 200)],
+            &[RawExtent::new(2, 3, 40), RawExtent::new(8, 2, 45)],
         );
         let tree = ExtentTree::try_from_root(root).unwrap();
-        let device = fixture.ext2.block_device();
 
-        let extent = tree.find(device, 3).unwrap().unwrap();
-        assert_eq!(extent.physical_block(3), 101);
-        assert!(tree.find(device, 6).unwrap().is_none());
+        let extent = tree.find(&fixture.ext2, 3).unwrap().unwrap();
+        assert_eq!(extent.physical_block(3), 41);
+        assert!(tree.find(&fixture.ext2, 6).unwrap().is_none());
     }
 
     #[ktest]
     fn lookup_descends_into_an_external_leaf() {
-        let fixture = Ext4FixtureBuilder::new(1, 2048).build().unwrap();
-        let leaf_bid = 200;
+        let fixture = Ext4FixtureBuilder::new(1, 2048)
+            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 45, 46, 47, 48]))
+            .build()
+            .unwrap();
+        let leaf_bid = 40;
         let mut leaf = [0u8; BLOCK_SIZE];
         let header = RawExtentHeader {
             magic: EXTENT_MAGIC,
@@ -348,7 +449,7 @@ mod tests {
             generation: 0,
         };
         leaf[..ENTRY_SIZE].copy_from_slice(header.as_bytes());
-        leaf[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtent::new(4, 4, 300).as_bytes());
+        leaf[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtent::new(4, 4, 45).as_bytes());
         fixture
             .disk
             .segment()
@@ -369,8 +470,8 @@ mod tests {
             .copy_from_slice(RawExtentIdx::new(0, leaf_bid).as_bytes());
 
         let tree = ExtentTree::try_from_root(root).unwrap();
-        let extent = tree.find(fixture.ext2.block_device(), 6).unwrap().unwrap();
-        assert_eq!(extent.physical_block(6), 302);
+        let extent = tree.find(&fixture.ext2, 6).unwrap().unwrap();
+        assert_eq!(extent.physical_block(6), 47);
     }
 
     #[ktest]
@@ -416,8 +517,11 @@ mod tests {
 
     #[ktest]
     fn rejects_external_child_with_wrong_depth() {
-        let fixture = Ext4FixtureBuilder::new(1, 2048).build().unwrap();
-        let leaf_bid = 200;
+        let fixture = Ext4FixtureBuilder::new(1, 2048)
+            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40]))
+            .build()
+            .unwrap();
+        let leaf_bid = 40;
         let mut child = [0u8; BLOCK_SIZE];
         let child_header = RawExtentHeader {
             magic: EXTENT_MAGIC,
@@ -447,28 +551,26 @@ mod tests {
             .copy_from_slice(RawExtentIdx::new(0, leaf_bid).as_bytes());
 
         let tree = ExtentTree::try_from_root(root).unwrap();
-        assert!(tree.find(fixture.ext2.block_device(), 0).is_err());
+        assert!(tree.find(&fixture.ext2, 0).is_err());
     }
 
     #[ktest]
     fn inline_overflow_grows_a_depth_one_tree() {
         let fixture = Ext4FixtureBuilder::new(1, 2048)
             .with_free_blocks(64, 64)
+            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 42, 44, 46, 48]))
             .build()
             .unwrap();
         let mut tree = ExtentTree::try_from_root(inline_root(leaf_header(0), &[])).unwrap();
 
-        for index in 0..5 {
-            tree.insert(&fixture.ext2, index * 2, 100 + index * 10, 1)
-                .unwrap();
-        }
+        let extents: Vec<_> = (0..5)
+            .map(|index| Extent::new(index * 2, 1, 40 + index * 2))
+            .collect();
+        tree.rebuild(&fixture.ext2, &extents).unwrap();
 
         for index in 0..5 {
-            let extent = tree
-                .find(fixture.ext2.block_device(), index * 2)
-                .unwrap()
-                .unwrap();
-            assert_eq!(extent.physical_block(index * 2), 100 + index * 10);
+            let extent = tree.find(&fixture.ext2, index * 2).unwrap().unwrap();
+            assert_eq!(extent.physical_block(index * 2), 40 + index * 2);
         }
     }
 
@@ -494,18 +596,116 @@ mod tests {
     }
 
     #[ktest]
+    fn repeated_contiguous_allocations_merge_into_one_extent() {
+        let fixture = Ext4FixtureBuilder::new(1, 2048)
+            .with_free_blocks(64, 64)
+            .build()
+            .unwrap();
+        let manager = ExtentManager::new(
+            inline_root(leaf_header(0), &[]),
+            0,
+            Arc::downgrade(&fixture.ext2),
+            8,
+        )
+        .unwrap();
+
+        for block in 0..8 {
+            manager.allocate_range_blocks(block, block + 1).unwrap();
+        }
+
+        let state = manager.state.read();
+        let extents = state.tree.extents(&fixture.ext2).unwrap();
+        assert_eq!(extents.len(), 1);
+        assert_eq!(extents[0].len(), 8);
+    }
+
+    #[ktest]
+    fn allocation_zeroes_data_blocks_before_mapping_them() {
+        let fixture = Ext4FixtureBuilder::new(1, 2048)
+            .with_free_blocks(64, 64)
+            .build()
+            .unwrap();
+        let manager = ExtentManager::new(
+            inline_root(leaf_header(0), &[]),
+            0,
+            Arc::downgrade(&fixture.ext2),
+            1,
+        )
+        .unwrap();
+        let expected_bid = group0_layout(&fixture.sb).first_data_bid;
+        let stale = [0xa5; BLOCK_SIZE];
+        fixture
+            .disk
+            .segment()
+            .write_bytes(Bid::new(expected_bid.into()).to_offset(), &stale)
+            .unwrap();
+
+        manager.allocate_range_blocks(0, 1).unwrap();
+        let mapped = manager.map_block(0).unwrap().unwrap();
+        assert_eq!(mapped, expected_bid);
+        let mut contents = [0xff; BLOCK_SIZE];
+        fixture
+            .disk
+            .segment()
+            .read_bytes(Bid::new(mapped.into()).to_offset(), &mut contents)
+            .unwrap();
+        assert_eq!(contents, [0; BLOCK_SIZE]);
+    }
+
+    #[ktest]
+    fn rejects_extent_blocks_outside_the_filesystem() {
+        let fixture = Ext4FixtureBuilder::new(1, 2048).build().unwrap();
+        let outside = fixture.sb.total_blocks();
+        let root = inline_root(leaf_header(1), &[RawExtent::new(0, 1, outside)]);
+        let manager = ExtentManager::new(root, 8, Arc::downgrade(&fixture.ext2), 1).unwrap();
+
+        assert!(manager.map_block(0).is_err());
+    }
+
+    #[ktest]
+    fn rejects_extent_blocks_in_filesystem_metadata() {
+        let fixture = Ext4FixtureBuilder::new(1, 2048).build().unwrap();
+        let metadata_bid = group0_layout(&fixture.sb).block_bitmap_bid;
+        let root = inline_root(leaf_header(1), &[RawExtent::new(0, 1, metadata_bid)]);
+        let manager = ExtentManager::new(root, 8, Arc::downgrade(&fixture.ext2), 1).unwrap();
+
+        assert!(manager.map_block(0).is_err());
+    }
+
+    #[ktest]
+    fn rejects_extent_index_blocks_outside_the_filesystem() {
+        let fixture = Ext4FixtureBuilder::new(1, 2048).build().unwrap();
+        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
+        let bytes = root.as_mut_bytes();
+        let header = RawExtentHeader {
+            magic: EXTENT_MAGIC,
+            entries: 1,
+            max: 4,
+            depth: 1,
+            generation: 0,
+        };
+        bytes[..ENTRY_SIZE].copy_from_slice(header.as_bytes());
+        bytes[ENTRY_SIZE..2 * ENTRY_SIZE]
+            .copy_from_slice(RawExtentIdx::new(0, fixture.sb.total_blocks()).as_bytes());
+        let manager = ExtentManager::new(root, 8, Arc::downgrade(&fixture.ext2), 1).unwrap();
+
+        assert!(manager.map_block(0).is_err());
+    }
+
+    #[ktest]
     fn failed_tree_growth_reclaims_the_new_data_block() {
         let fixture = Ext4FixtureBuilder::new(1, 2048)
             .with_free_blocks(1, 1)
+            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 42, 44, 46]))
             .build()
             .unwrap();
         let root = inline_root(
             leaf_header(4),
             &[
-                RawExtent::new(0, 1, 100),
-                RawExtent::new(2, 1, 200),
-                RawExtent::new(4, 1, 300),
-                RawExtent::new(6, 1, 400),
+                RawExtent::new(0, 1, 40),
+                RawExtent::new(2, 1, 42),
+                RawExtent::new(4, 1, 44),
+                RawExtent::new(6, 1, 46),
             ],
         );
         let manager = ExtentManager::new(root, 32, Arc::downgrade(&fixture.ext2), 9).unwrap();

@@ -26,20 +26,26 @@ impl ExtentTree {
         })
     }
 
-    pub(super) fn find(&self, device: &dyn BlockDevice, iblock: Iblock) -> Result<Option<Extent>> {
+    pub(super) fn find(&self, fs: &Ext4, iblock: Iblock) -> Result<Option<Extent>> {
         let mut step = Self::search_node(self.root.as_bytes(), self.depth, iblock)?;
         let mut expected_depth = self.depth;
 
         while let Step::Descend(block) = step {
+            fs.validate_extent_block_range(block, 1)?;
             expected_depth = expected_depth.checked_sub(1).ok_or_else(|| {
                 Error::with_message(Errno::EUCLEAN, "extent leaf contains an index")
             })?;
-            let bytes = device.read_val::<[u8; BLOCK_SIZE]>(Bid::new(block.into()).to_offset())?;
+            let bytes = fs
+                .block_device()
+                .read_val::<[u8; BLOCK_SIZE]>(Bid::new(block.into()).to_offset())?;
             step = Self::search_node(&bytes, expected_depth, iblock)?;
         }
 
         match step {
-            Step::Found(extent) => Ok(Some(extent)),
+            Step::Found(extent) => {
+                fs.validate_extent_block_range(extent.start(), u32::from(extent.len()))?;
+                Ok(Some(extent))
+            }
             Step::Hole => Ok(None),
             Step::Descend(_) => unreachable!(),
         }
@@ -49,43 +55,49 @@ impl ExtentTree {
         self.root
     }
 
-    pub(super) fn insert(
-        &mut self,
-        fs: &Ext4,
-        iblock: Iblock,
-        pblock: Ext4Bid,
-        len: u16,
-    ) -> Result<TreeDelta> {
-        let (mut extents, external) = self.flatten(fs.block_device())?;
-        let new_extent = Extent::new(iblock, len, pblock);
-        if extents.iter().any(|extent| {
-            extent.logical_end() > u64::from(iblock)
-                && u64::from(extent.block()) < new_extent.logical_end()
-        }) {
-            return_errno_with_message!(Errno::EEXIST, "extent overlaps an existing mapping");
-        }
-        extents.push(new_extent);
-        Self::merge_extents(&mut extents);
-        self.replace(fs, &extents, &external)
-    }
-
-    pub(super) fn extents(&self, device: &dyn BlockDevice) -> Result<Vec<Extent>> {
-        let (mut extents, _) = self.flatten(device)?;
+    pub(super) fn extents(&self, fs: &Ext4) -> Result<Vec<Extent>> {
+        let (mut extents, _) = self.flatten(fs)?;
         extents.sort_by_key(|extent| extent.block());
         Ok(extents)
     }
 
     pub(super) fn rebuild(&mut self, fs: &Ext4, extents: &[Extent]) -> Result<TreeDelta> {
-        let (_, external) = self.flatten(fs.block_device())?;
+        let (_, external) = self.flatten(fs)?;
         self.replace(fs, extents, &external)
     }
 
-    fn flatten(&self, device: &dyn BlockDevice) -> Result<(Vec<Extent>, Vec<Ext4Bid>)> {
+    pub(super) fn anticipated_rebuild_delta(&self, extents: &[Extent]) -> Result<TreeDelta> {
+        if self.depth > 1 {
+            return_errno_with_message!(Errno::EOPNOTSUPP, "writable extent depth exceeds one");
+        }
+        let allocated = Self::required_external_blocks(extents.len())?;
+        let freed = if self.depth == 0 {
+            0
+        } else {
+            ExtentHeader::parse(self.root.as_bytes(), Some(1))?.entries() as u32
+        };
+        Ok(TreeDelta { allocated, freed })
+    }
+
+    fn required_external_blocks(extent_count: usize) -> Result<u32> {
+        if extent_count <= INLINE_CAPACITY {
+            return Ok(0);
+        }
+        let leaf_count = extent_count.div_ceil(BLOCK_CAPACITY);
+        if leaf_count > INLINE_CAPACITY {
+            return_errno_with_message!(Errno::EFBIG, "extent tree exceeds writable depth");
+        }
+        Ok(leaf_count as u32)
+    }
+
+    fn flatten(&self, fs: &Ext4) -> Result<(Vec<Extent>, Vec<Ext4Bid>)> {
         let root_header = ExtentHeader::parse(self.root.as_bytes(), Some(self.depth))?;
         if root_header.is_leaf() {
             let mut extents = Vec::with_capacity(root_header.entries());
             for index in 0..root_header.entries() {
-                extents.push(Self::extent_at(self.root.as_bytes(), index)?);
+                let extent = Self::extent_at(self.root.as_bytes(), index)?;
+                fs.validate_extent_block_range(extent.start(), u32::from(extent.len()))?;
+                extents.push(extent);
             }
             return Ok((extents, Vec::new()));
         }
@@ -98,11 +110,16 @@ impl ExtentTree {
         for index in 0..root_header.entries() {
             let entry = Self::index_at(self.root.as_bytes(), index)?;
             let block = entry.leaf();
-            let bytes = device.read_val::<[u8; BLOCK_SIZE]>(Bid::new(block.into()).to_offset())?;
+            fs.validate_extent_block_range(block, 1)?;
+            let bytes = fs
+                .block_device()
+                .read_val::<[u8; BLOCK_SIZE]>(Bid::new(block.into()).to_offset())?;
             let header = ExtentHeader::parse(&bytes, Some(0))?;
             Self::validate_entries(&bytes, header)?;
             for child_index in 0..header.entries() {
-                extents.push(Self::extent_at(&bytes, child_index)?);
+                let extent = Self::extent_at(&bytes, child_index)?;
+                fs.validate_extent_block_range(extent.start(), u32::from(extent.len()))?;
+                extents.push(extent);
             }
             external.push(block);
         }
@@ -114,28 +131,6 @@ impl ExtentTree {
         Ok((extents, external))
     }
 
-    fn merge_extents(extents: &mut Vec<Extent>) {
-        extents.sort_by_key(|extent| extent.block());
-        let mut merged: Vec<Extent> = Vec::with_capacity(extents.len());
-        for extent in extents.drain(..) {
-            if let Some(previous) = merged.last_mut()
-                && previous.logical_end() == u64::from(extent.block())
-                && u64::from(previous.start()) + u64::from(previous.len())
-                    == u64::from(extent.start())
-                && u32::from(previous.len()) + u32::from(extent.len()) <= 32768
-            {
-                *previous = Extent::new(
-                    previous.block(),
-                    previous.len() + extent.len(),
-                    previous.start(),
-                );
-                continue;
-            }
-            merged.push(extent);
-        }
-        *extents = merged;
-    }
-
     fn replace(
         &mut self,
         fs: &Ext4,
@@ -145,19 +140,14 @@ impl ExtentTree {
         if extents.len() <= INLINE_CAPACITY {
             self.root = Self::leaf_root(extents);
             self.depth = 0;
-            for &block in old_external {
-                fs.free_blocks(block, 1)?;
-            }
+            let freed = free_old_external_blocks(fs, old_external);
             return Ok(TreeDelta {
                 allocated: 0,
-                freed: old_external.len() as u32,
+                freed,
             });
         }
 
-        let leaf_count = extents.len().div_ceil(BLOCK_CAPACITY);
-        if leaf_count > INLINE_CAPACITY {
-            return_errno_with_message!(Errno::ENOSPC, "extent tree exceeds writable depth");
-        }
+        let leaf_count = Self::required_external_blocks(extents.len())? as usize;
 
         let mut new_blocks = Vec::with_capacity(leaf_count);
         let goal = extents.first().map(|extent| extent.start()).unwrap_or(0);
@@ -204,12 +194,10 @@ impl ExtentTree {
         }
         self.root = root;
         self.depth = 1;
-        for &block in old_external {
-            fs.free_blocks(block, 1)?;
-        }
+        let freed = free_old_external_blocks(fs, old_external);
         Ok(TreeDelta {
             allocated: new_blocks.len() as u32,
-            freed: old_external.len() as u32,
+            freed,
         })
     }
 
@@ -319,7 +307,22 @@ enum Step {
     Descend(Ext4Bid),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct TreeDelta {
     pub(super) allocated: u32,
     pub(super) freed: u32,
+}
+
+fn free_old_external_blocks(fs: &Ext4, blocks: &[Ext4Bid]) -> u32 {
+    let mut freed = 0;
+    for &block in blocks {
+        match fs.free_blocks(block, 1) {
+            Ok(()) => freed += 1,
+            Err(error) => error!(
+                "failed to release obsolete extent leaf block {}: {:?}",
+                block, error
+            ),
+        }
+    }
+    freed
 }

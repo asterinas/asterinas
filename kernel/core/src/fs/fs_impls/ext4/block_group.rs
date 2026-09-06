@@ -191,8 +191,23 @@ impl BlockGroup {
         }
 
         let inode_desc = self.read_inode_desc(inode_idx)?;
+        let filesystem = fs
+            .upgrade()
+            .ok_or_else(|| Error::with_message(Errno::EIO, "filesystem already dropped"))?;
+        if inode_desc.uses_extents() && !filesystem.super_block().has_extents() {
+            return_errno_with_message!(
+                Errno::EUCLEAN,
+                "extent inode found on a filesystem without the extents feature"
+            );
+        }
         let inode_desc = Dirty::new(inode_desc);
-        let inode = Inode::new(ino, inode_desc.type_(), inode_desc, self.group_idx, fs);
+        let inode = Inode::new(
+            ino,
+            inode_desc.type_(),
+            inode_desc,
+            self.group_idx,
+            Arc::downgrade(&filesystem),
+        );
         inode_cache.insert(inode_idx, inode.clone());
         Ok(inode)
     }
@@ -368,6 +383,25 @@ impl BlockGroup {
         Ok(actually_freed)
     }
 
+    /// Returns whether every block in an absolute range is allocated and is
+    /// outside this group's bitmap and inode-table metadata.
+    pub(super) fn is_allocated_data_range(&self, range: Range<Ext4Bid>) -> bool {
+        if range.is_empty() || range.start < self.first_block || range.end > self.last_block + 1 {
+            return false;
+        }
+
+        let metadata = self.metadata.read();
+        if self.overlaps_system_zone_with(&metadata.desc, range.clone()) {
+            return false;
+        }
+
+        (range.start..range.end).all(|block| {
+            metadata
+                .block_bitmap
+                .is_allocated((block - self.first_block) as u16)
+        })
+    }
+
     /// Attempts to allocate one inode within this group.
     ///
     /// Returns `Some(inode_idx)` with the 0-based group-relative inode index,
@@ -467,7 +501,7 @@ impl BlockGroup {
     /// Dirty bitmaps are written to disk here. If the group descriptor is dirty,
     /// this method updates the caller-provided descriptor table segment; the
     /// caller is responsible for writing that segment to disk.
-    fn sync_metadata(&self, group_descs: &USegment) -> Result<()> {
+    pub(super) fn sync_metadata(&self, group_descs: &USegment) -> Result<()> {
         let mut metadata = self.metadata.write();
 
         // Sync block bitmap.

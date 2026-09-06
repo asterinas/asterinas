@@ -113,6 +113,7 @@ impl InodeInner {
                     self.file_size(),
                     raw_block_ptrs,
                     Arc::downgrade(fs),
+                    false,
                 );
             }
             self.prepare_write(fs.as_ref(), 0, target_len)?;
