@@ -619,6 +619,10 @@ impl SuperBlock {
         self.feature_compat.contains(FeatureCompatSet::HAS_JOURNAL)
     }
 
+    pub(super) const fn has_dir_index(&self) -> bool {
+        self.feature_compat.contains(FeatureCompatSet::DIR_INDEX)
+    }
+
     pub(super) const fn has_extents(&self) -> bool {
         self.feature_incompat.contains(FeatureInCompatSet::EXTENTS)
     }

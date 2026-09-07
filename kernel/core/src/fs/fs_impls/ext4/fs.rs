@@ -149,6 +149,12 @@ impl Ext4 {
         if mount_flavor == MountFlavor::Ext4 && !super_block.has_extents() {
             return_errno_with_message!(Errno::EINVAL, "ext4 mount requires the extents feature");
         }
+        if mount_flavor == MountFlavor::Ext4 && super_block.has_dir_index() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "hash-indexed directories are unsupported"
+            );
+        }
         let block_size = super_block.block_size();
         if block_size != BLOCK_SIZE {
             return_errno_with_message!(Errno::EINVAL, "currently only 4096-byte block size");
@@ -227,6 +233,10 @@ impl Ext4 {
             MountFlavor::Ext2 => "ext2",
             MountFlavor::Ext4 => "ext4",
         }
+    }
+
+    pub(super) const fn mount_flavor(&self) -> MountFlavor {
+        self.mount_flavor
     }
 
     /// Returns the maximum regular file size supported by this ext2 instance.
@@ -792,7 +802,7 @@ mod test {
             fs_impls::ext4::test_utils::{
                 BlockBitmapInit, Ext4FixtureBuilder, Ext4MemoryDisk, InodeBitmapInit,
                 RawInodeBuilder, assert_errno, create_file, default_fixture, make_valid_group_desc,
-                make_valid_super_block,
+                make_valid_super_block, write_raw_inode_to_disk,
             },
             vfs::{file_system::FileSystem as FileSystemTrait, inode::Inode as VfsInodeTrait},
         },
@@ -930,6 +940,97 @@ mod test {
             None,
         );
         assert_errno!(result, Errno::EOPNOTSUPP);
+    }
+
+    #[ktest]
+    fn ext4_rejects_dir_index_but_ext2_accepts_it() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_incompat |= 1 << 6;
+        raw.feature_compat |= 1 << 5;
+        f.disk.write_super_block(&raw);
+
+        let result = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        );
+        assert_errno!(result, Errno::EOPNOTSUPP);
+
+        raw.feature_incompat &= !(1 << 6);
+        f.disk.write_super_block(&raw);
+        Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext2,
+            None,
+        )
+        .unwrap();
+    }
+
+    #[ktest]
+    fn ext4_rejects_indexed_directory_without_dir_index_feature() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw_super_block = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw_super_block.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw_super_block);
+
+        let mut raw_root = RawInodeBuilder::new(InodeType::Dir as u16 | 0o755)
+            .link_count(2)
+            .build();
+        raw_root.flags = 1 << 12;
+        write_raw_inode_to_disk(&f.sb, &f.descs, ROOT_INO, &raw_root, &f.disk);
+
+        let ext4 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        assert_errno!(ext4.root_inode(), Errno::EOPNOTSUPP);
+    }
+
+    #[ktest]
+    fn ext2_loads_indexed_directory_inode() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw_root = RawInodeBuilder::new(InodeType::Dir as u16 | 0o755)
+            .link_count(2)
+            .build();
+        raw_root.flags = 1 << 12;
+        write_raw_inode_to_disk(&f.sb, &f.descs, ROOT_INO, &raw_root, &f.disk);
+
+        f.ext2.root_inode().unwrap();
+    }
+
+    #[ktest]
+    fn ext4_loads_linear_directory_inode() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw_super_block = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw_super_block.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw_super_block);
+
+        let ext4 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        ext4.root_inode().unwrap();
     }
 
     #[ktest]

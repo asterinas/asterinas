@@ -303,6 +303,10 @@ impl InodeDesc {
     pub(super) fn uses_extents(&self) -> bool {
         self.flags.contains(FileFlags::EXTENTS)
     }
+
+    pub(super) fn is_indexed_directory(&self) -> bool {
+        self.type_ == InodeType::Dir && self.flags.contains(FileFlags::INDEX_DIR)
+    }
 }
 
 impl TryFrom<&RawInode> for InodeDesc {
@@ -826,6 +830,26 @@ mod test {
 
         assert_eq!(updated.size_lo, 4096);
         assert!(updated.tail.0.iter().all(|byte| *byte == 0xA5));
+    }
+
+    #[ktest]
+    fn inode_desc_parses_indexed_and_linear_directories_without_filesystem_context() {
+        let mut indexed = RawInodeBuilder::new(InodeType::Dir as u16 | 0o755)
+            .link_count(2)
+            .build();
+        indexed.flags = FileFlags::INDEX_DIR.bits();
+        assert_eq!(
+            InodeDesc::try_from(&indexed).unwrap().type_(),
+            InodeType::Dir
+        );
+
+        let linear = RawInodeBuilder::new(InodeType::Dir as u16 | 0o755)
+            .link_count(2)
+            .build();
+        assert_eq!(
+            InodeDesc::try_from(&linear).unwrap().type_(),
+            InodeType::Dir
+        );
     }
 
     /// Reads a `RawInode` directly from the test fixture's disk image.

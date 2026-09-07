@@ -33,7 +33,7 @@ use aster_block::bio::BioCompleteFn;
 use ostd::const_assert;
 
 use super::{
-    fs::Ext4,
+    fs::{Ext4, MountFlavor},
     inode::{Inode, InodeDesc, RawInode},
     prelude::*,
     super_block::SuperBlock,
@@ -198,6 +198,12 @@ impl BlockGroup {
             return_errno_with_message!(
                 Errno::EUCLEAN,
                 "extent inode found on a filesystem without the extents feature"
+            );
+        }
+        if filesystem.mount_flavor() == MountFlavor::Ext4 && inode_desc.is_indexed_directory() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "hash-indexed directories are unsupported"
             );
         }
         let inode_desc = Dirty::new(inode_desc);
