@@ -38,7 +38,7 @@ use super::{
     prelude::*,
     super_block::SuperBlock,
 };
-use crate::fs::{file::SyncMode, utils::IdBitmap, vfs::inode::Inode as VfsInode};
+use crate::fs::utils::IdBitmap;
 
 /// Represents one block group in an ext2 filesystem.
 ///
@@ -224,14 +224,8 @@ impl BlockGroup {
         self.inode_cache.write().remove(&inode_idx)
     }
 
-    /// Syncs per-group inode state and bitmap metadata.
-    pub(super) fn sync_all(&self, group_descs: &USegment) -> Result<()> {
-        self.sync_inodes()?;
-        self.sync_metadata(group_descs)
-    }
-
-    /// Syncs cached inodes.
-    fn sync_inodes(&self) -> Result<()> {
+    /// Stages cached inode state and flushes the local inode table.
+    pub(super) fn sync_inodes(&self) -> Result<()> {
         // Clone the `Arc` handles under the read lock, then drop the lock before
         // calling `sync`. Otherwise `sync` acquires `inner.write()` while
         // we still hold `inode_cache.read()`, creating a lock-order inversion with
@@ -239,7 +233,7 @@ impl BlockGroup {
         // `inode_cache.write()`.
         let inodes: Vec<Arc<Inode>> = self.inode_cache.read().values().cloned().collect();
         for inode in inodes {
-            inode.sync(SyncMode::Full)?;
+            inode.sync_all()?;
         }
         self.sync_inode_table()
     }

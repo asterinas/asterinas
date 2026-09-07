@@ -599,7 +599,10 @@ impl Ext4 {
         }
     }
 
-    /// Syncs cached inodes and block-group-local metadata in all groups.
+    /// Stages cached inodes and block-group-local metadata in all groups.
+    ///
+    /// This intentionally performs no device flush: callers issue one final
+    /// flush after all inode, allocation, and superblock state is staged.
     pub(super) fn sync_all(&self) -> Result<()> {
         // `group_descriptors_segment` is updated without a filesystem-wide lock,
         // but each group writes only its own descriptor slice under its
@@ -607,9 +610,9 @@ impl Ext4 {
         // their descriptor offsets are disjoint, no two writers touch the same
         // bytes, so the segment is always consistent.
         for group in &self.block_groups {
-            group.sync_all(&self.group_descriptors_segment)?;
+            group.sync_inodes()?;
         }
-        self.sync_metadata()
+        self.sync_allocation_metadata()
     }
 
     /// Persists dirty allocation bitmaps, group descriptors, and block counts.
@@ -971,6 +974,7 @@ mod test {
         file.write_at(0, &mut reader).unwrap();
 
         VfsInodeTrait::sync(file.as_ref(), SyncMode::Full).unwrap();
+        assert_eq!(f.disk.flush_count(), 1);
 
         let persisted_sb = f
             .disk
@@ -1012,6 +1016,96 @@ mod test {
         let mut writer = VmWriter::from(&mut readback[..]).to_fallible();
         assert_eq!(persisted_file.read_at(0, &mut writer).unwrap(), BLOCK_SIZE);
         assert_eq!(readback, data);
+    }
+
+    #[ktest]
+    fn inode_sync_reports_flush_failure() {
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 256)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let file = f
+            .ext2
+            .create_inode(
+                ROOT_INO,
+                InodeType::File,
+                FilePerm::from_bits_truncate(0o644),
+            )
+            .unwrap();
+        f.disk.set_fail_flush(true);
+
+        assert_errno!(
+            VfsInodeTrait::sync(file.as_ref(), SyncMode::Full),
+            Errno::EIO
+        );
+        assert_eq!(f.disk.flush_count(), 1);
+    }
+
+    #[ktest]
+    fn filesystem_sync_stages_cached_inodes_before_one_final_flush() {
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 256)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let root = f.root();
+        let first = create_file(&root, "first");
+        let second = create_file(&root, "second");
+        let first_ino = first.ino();
+        let second_ino = second.ino();
+        let data = [0x5au8; BLOCK_SIZE];
+        let mut first_reader = VmReader::from(&data[..]).to_fallible();
+        let mut second_reader = VmReader::from(&data[..]).to_fallible();
+        first.write_at(0, &mut first_reader).unwrap();
+        second.write_at(0, &mut second_reader).unwrap();
+        f.disk.reset_flush_count();
+
+        FileSystemTrait::sync(f.ext2.as_ref()).unwrap();
+
+        assert_eq!(f.disk.flush_count(), 1);
+        let persisted_sb = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        assert_eq!(
+            persisted_sb.free_blocks_count,
+            f.ext2.super_block().free_blocks_count()
+        );
+        assert_eq!(
+            persisted_sb.free_inodes_count,
+            f.ext2.super_block().free_inodes_count()
+        );
+        let desc_offset = Bid::new(f.sb.group_descriptors_bid(0).into()).to_offset();
+        let persisted_desc = f
+            .disk
+            .segment()
+            .read_val::<RawBlockGroup>(desc_offset)
+            .unwrap();
+        assert_eq!(
+            persisted_desc.free_blocks_count,
+            f.ext2.block_group(0).free_blocks_count()
+        );
+
+        let remounted = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext2,
+            None,
+        )
+        .unwrap();
+        for ino in [first_ino, second_ino] {
+            let persisted_file = remounted.read_inode(ino).unwrap();
+            let mut readback = [0u8; BLOCK_SIZE];
+            let mut writer = VmWriter::from(&mut readback[..]).to_fallible();
+            assert_eq!(persisted_file.read_at(0, &mut writer).unwrap(), BLOCK_SIZE);
+            assert_eq!(readback, data);
+        }
     }
 
     #[ktest]

@@ -14,6 +14,7 @@ mod node;
 mod tree;
 
 const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
+const ZERO_BATCH_BLOCKS: usize = 256;
 
 pub(in crate::fs::fs_impls::ext4::inode) fn empty_extent_root() -> [u32; RAW_BLOCK_PTRS_LEN] {
     let header = node::RawExtentHeader {
@@ -305,14 +306,18 @@ fn free_ranges(fs: &Ext4, ranges: &[Range<Ext4Bid>]) {
 }
 
 fn zero_new_blocks(fs: &Ext4, block_range: &Range<Ext4Bid>) -> Result<()> {
-    let mut io_batch = IoBatch::with_capacity(1);
-    let bio_segment = BioSegment::alloc(block_range.len(), BioDirection::ToDevice);
-    bio_segment
-        .writer()
-        .unwrap()
-        .fill_zeros(block_range.len() * BLOCK_SIZE);
-    fs.write_blocks_async(block_range.start, bio_segment, None, &mut io_batch)?;
-    io_batch.wait_all()?;
+    let mut start = block_range.start;
+    while start < block_range.end {
+        let blocks = usize::try_from(block_range.end - start)
+            .unwrap()
+            .min(ZERO_BATCH_BLOCKS);
+        let mut io_batch = IoBatch::with_capacity(1);
+        let segment = BioSegment::alloc(blocks, BioDirection::ToDevice);
+        segment.writer().unwrap().fill_zeros(blocks * BLOCK_SIZE);
+        fs.write_blocks_async(start, segment, None, &mut io_batch)?;
+        io_batch.wait_all()?;
+        start += blocks as u32;
+    }
     Ok(())
 }
 
@@ -650,6 +655,26 @@ mod tests {
             .read_bytes(Bid::new(mapped.into()).to_offset(), &mut contents)
             .unwrap();
         assert_eq!(contents, [0; BLOCK_SIZE]);
+    }
+
+    #[ktest]
+    fn allocation_zeroes_large_ranges_in_bounded_write_batches() {
+        let fixture = Ext4FixtureBuilder::new(1, 512)
+            .with_blocks_per_group(512)
+            .with_free_blocks(300, 300)
+            .build()
+            .unwrap();
+        let manager = ExtentManager::new(
+            inline_root(leaf_header(0), &[]),
+            0,
+            Arc::downgrade(&fixture.ext2),
+            257,
+        )
+        .unwrap();
+
+        manager.allocate_range_blocks(0, 257).unwrap();
+
+        assert!(fixture.disk.max_write_blocks() <= ZERO_BATCH_BLOCKS);
     }
 
     #[ktest]

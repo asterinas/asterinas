@@ -239,6 +239,9 @@ impl Inode for Ext4Inode {
     }
 
     fn sync(&self, mode: SyncMode) -> Result<()> {
+        // Without a journal this makes only this inode's selected state and the
+        // shared allocation metadata it depends on durable. The final flush is
+        // the completion boundary; it is not a filesystem-wide checkpoint.
         match mode {
             SyncMode::Data => self.sync_data()?,
             SyncMode::Full => self.sync_all()?,
