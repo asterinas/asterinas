@@ -12,6 +12,7 @@ mod dirent_visitor;
 mod direntry_vec;
 mod endpoint;
 mod id_bitmap;
+pub(crate) mod systree_fs;
 pub(crate) mod systree_inode;
 
 /// Maximum bytes in a path
