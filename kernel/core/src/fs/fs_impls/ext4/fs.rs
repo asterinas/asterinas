@@ -431,7 +431,7 @@ impl Ext4 {
             })?;
             let group_end = end.min(group.last_block() + 1);
             let range = current..group_end;
-            if sb.is_backup_group(group_idx) {
+            if sb.has_super_block(group_idx) {
                 let super_block = sb.bid(group_idx)..sb.bid(group_idx) + 1;
                 let descriptors_start = sb.group_descriptors_bid(group_idx);
                 let descriptors =

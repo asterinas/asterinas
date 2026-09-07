@@ -392,7 +392,7 @@ mod tests {
     use crate::fs::fs_impls::ext4::{
         inode::RAW_BLOCK_PTRS_LEN,
         prelude::*,
-        test_utils::{BlockBitmapInit, Ext4FixtureBuilder, group0_layout},
+        test_utils::{BlockBitmapInit, Ext4FixtureBuilder, assert_errno, group0_layout},
     };
 
     fn inline_root(header: RawExtentHeader, entries: &[RawExtent]) -> [u32; RAW_BLOCK_PTRS_LEN] {
@@ -670,6 +670,63 @@ mod tests {
         let manager = ExtentManager::new(root, 8, Arc::downgrade(&fixture.ext2), 1).unwrap();
 
         assert!(manager.map_block(0).is_err());
+    }
+
+    #[ktest]
+    fn rejects_inline_extent_in_primary_group_descriptor_table() {
+        let fixture = Ext4FixtureBuilder::new(1, 2048)
+            .block_bitmap(BlockBitmapInit::MetadataOnly)
+            .build()
+            .unwrap();
+        let descriptor_bid = fixture.sb.group_descriptors_bid(0);
+        let root = inline_root(leaf_header(1), &[RawExtent::new(0, 1, descriptor_bid)]);
+        let tree = ExtentTree::try_from_root(root).unwrap();
+
+        assert_errno!(tree.find(&fixture.ext2, 0), Errno::EUCLEAN);
+    }
+
+    #[ktest]
+    fn rejects_extent_index_in_primary_group_descriptor_table() {
+        let fixture = Ext4FixtureBuilder::new(1, 2048)
+            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40]))
+            .build()
+            .unwrap();
+        let descriptor_bid = fixture.sb.group_descriptors_bid(0);
+        let mut leaf = [0u8; BLOCK_SIZE];
+        leaf[..ENTRY_SIZE].copy_from_slice(
+            RawExtentHeader {
+                magic: EXTENT_MAGIC,
+                entries: 1,
+                max: ((BLOCK_SIZE - ENTRY_SIZE) / ENTRY_SIZE) as u16,
+                depth: 0,
+                generation: 0,
+            }
+            .as_bytes(),
+        );
+        leaf[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtent::new(0, 1, 40).as_bytes());
+        fixture
+            .disk
+            .segment()
+            .write_bytes(Bid::new(descriptor_bid.into()).to_offset(), &leaf)
+            .unwrap();
+
+        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
+        let bytes = root.as_mut_bytes();
+        bytes[..ENTRY_SIZE].copy_from_slice(
+            RawExtentHeader {
+                magic: EXTENT_MAGIC,
+                entries: 1,
+                max: 4,
+                depth: 1,
+                generation: 0,
+            }
+            .as_bytes(),
+        );
+        bytes[ENTRY_SIZE..2 * ENTRY_SIZE]
+            .copy_from_slice(RawExtentIdx::new(0, descriptor_bid).as_bytes());
+        let tree = ExtentTree::try_from_root(root).unwrap();
+
+        assert_errno!(tree.find(&fixture.ext2, 0), Errno::EUCLEAN);
     }
 
     #[ktest]
