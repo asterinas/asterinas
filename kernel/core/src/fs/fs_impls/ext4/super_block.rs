@@ -22,8 +22,7 @@
 //! - Error behavior must be `Continue`.
 //! - Incompatible and read-only compatible feature sets are checked against
 //!   the supported masks. Unknown incompatible or read-only compatible
-//!   features cause mount failure; compatible features are retained only when
-//!   represented by the known bitflags.
+//!   features cause mount failure; compatible features are retained unchanged.
 //!
 //! # Superblock copies
 //!
@@ -240,7 +239,7 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             return_errno_with_message!(Errno::EINVAL, "free inodes count exceeds inodes count");
         }
 
-        let feature_compat = FeatureCompatSet::from_bits_truncate(sb.feature_compat);
+        let feature_compat = FeatureCompatSet::from_bits_retain(sb.feature_compat);
 
         let allowed_incompat =
             FeatureInCompatSet::FILETYPE.bits() | FeatureInCompatSet::EXTENTS.bits();
@@ -651,6 +650,12 @@ bitflags! {
     }
 }
 
+impl FeatureCompatSet {
+    const fn from_bits_retain(bits: u32) -> Self {
+        Self { bits }
+    }
+}
+
 bitflags! {
     /// Incompatible feature set.
     struct FeatureInCompatSet: u32 {
@@ -916,5 +921,17 @@ mod test {
         let mut raw = make_valid_raw_super_block(1);
         raw.feature_ro_compat |= 1 << 10;
         assert!(SuperBlock::try_from(raw).is_err());
+    }
+
+    #[ktest]
+    fn compatible_features_round_trip_unknown_bits() {
+        const UNKNOWN_COMPAT: u32 = 1 << 31;
+
+        let mut raw = make_valid_raw_super_block(1);
+        raw.feature_compat |= UNKNOWN_COMPAT;
+        let parsed = SuperBlock::try_from(raw.clone()).unwrap();
+        let encoded = RawSuperBlock::from(&parsed);
+
+        assert_eq!(encoded.feature_compat, raw.feature_compat);
     }
 }

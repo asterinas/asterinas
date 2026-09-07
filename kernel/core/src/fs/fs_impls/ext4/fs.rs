@@ -1120,6 +1120,41 @@ mod test {
     }
 
     #[ktest]
+    fn allocation_metadata_sync_preserves_unknown_compatible_feature() {
+        const UNKNOWN_COMPAT: u32 = 1 << 31;
+
+        let f = Ext4FixtureBuilder::new(1, 256)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .build()
+            .unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_compat |= UNKNOWN_COMPAT;
+        f.disk.write_super_block(&raw);
+
+        let ext2 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext2,
+            None,
+        )
+        .unwrap();
+        ext2.alloc_ino(ROOT_INO, InodeType::File).unwrap();
+        ext2.sync_allocation_metadata().unwrap();
+
+        let persisted = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        assert_ne!(persisted.feature_compat & UNKNOWN_COMPAT, 0);
+    }
+
+    #[ktest]
     fn inode_sync_reports_flush_failure() {
         clocks::init_for_ktest();
         let f = Ext4FixtureBuilder::new(1, 256)
