@@ -16,7 +16,7 @@ use ostd::prelude::ktest;
 use crate::{
     fs::{
         file::{InodeType, StatusFlags, mkmod},
-        sysfs::{fs::SysFs, inode::SysFsInode},
+        sysfs::fs::SysFs,
         utils::{DirentVisitor, systree_inode::SysTreeInodeTy},
         vfs::{file_system::FileSystem, path::Dentry},
     },
@@ -288,12 +288,18 @@ impl SysNode for MockMutableAttrNode {
 
 // --- Test Setup ---
 
-/// Creates a sysfs view of the given node tree and returns its root dentry.
-fn init_sysfs(root_node: Arc<dyn SysBranchNode>) -> Arc<Dentry> {
+struct TestSysFs {
+    fs: Arc<SysFs>,
+    root_dentry: Arc<Dentry>,
+}
+
+/// Creates a sysfs view of the given node tree and returns its test fixture.
+fn init_sysfs(root_node: Arc<dyn SysBranchNode>) -> TestSysFs {
     time_init_for_ktest();
     init_for_ktest();
-    let sysfs = SysFs::new_for_ktest();
-    Dentry::new_root(SysFsInode::new_root(root_node, &sysfs.sb()))
+    let fs = SysFs::new_for_ktest(root_node);
+    let root_dentry = Dentry::new_root(fs.root_inode());
+    TestSysFs { fs, root_dentry }
 }
 
 /// Creates a mock node tree with branches, leaves, and a symlink, returning its root node.
@@ -313,22 +319,33 @@ fn create_mock_systree() -> Arc<MockBranchNode> {
 
 #[ktest]
 fn root_lookup() {
-    let root_dentry = init_sysfs(create_mock_systree());
+    let test_fs = init_sysfs(create_mock_systree());
+    let root_dentry = test_fs.root_dentry.clone();
+    let expected_fs: Arc<dyn FileSystem> = test_fs.fs.clone();
     let root_inode = root_dentry.inode();
 
     assert_eq!(root_inode.type_(), InodeType::Dir);
+    assert!(Arc::ptr_eq(&root_inode.fs(), &expected_fs));
 
     // Lookup existing branch
     let branch1_inode = root_inode.lookup("branch1").expect("Lookup branch1 failed");
     assert_eq!(branch1_inode.type_(), InodeType::Dir);
+    assert!(Arc::ptr_eq(&branch1_inode.fs(), &expected_fs));
 
     // Lookup existing leaf (represented as Dir in sysfs)
     let leaf2_inode = root_inode.lookup("leaf2").expect("Lookup leaf2 failed");
     assert_eq!(leaf2_inode.type_(), InodeType::Dir);
+    assert!(Arc::ptr_eq(&leaf2_inode.fs(), &expected_fs));
 
     // Lookup existing symlink
     let link1_inode = root_inode.lookup("link1").expect("Lookup link1 failed");
     assert_eq!(link1_inode.type_(), InodeType::SymLink);
+    assert!(Arc::ptr_eq(&link1_inode.fs(), &expected_fs));
+
+    let error = root_inode
+        .create(&root_dentry, "new_node", InodeType::Dir, mkmod!(a+rx, u+w))
+        .expect_err("creating an inode in sysfs should fail");
+    assert_eq!(error.error(), Errno::EPERM);
 
     // Lookup non-existent
     let result = root_inode.lookup("nonexistent");
@@ -345,7 +362,8 @@ fn root_lookup() {
 
 #[ktest]
 fn branch_lookup() {
-    let root_dentry = init_sysfs(create_mock_systree());
+    let test_fs = init_sysfs(create_mock_systree());
+    let root_dentry = test_fs.root_dentry.clone();
     let root_inode = root_dentry.inode();
     // Action: Lookup a branch node within sysfs
     let branch1_inode = root_inode.lookup("branch1").unwrap();
@@ -378,7 +396,8 @@ fn branch_lookup() {
 
 #[ktest]
 fn leaf_lookup() {
-    let root_dentry = init_sysfs(create_mock_systree());
+    let test_fs = init_sysfs(create_mock_systree());
+    let root_dentry = test_fs.root_dentry.clone();
     let root_inode = root_dentry.inode();
     // Action: Lookup a leaf node (represented as a directory in sysfs)
     let leaf1_inode = root_inode
@@ -415,7 +434,8 @@ fn leaf_lookup() {
 
 #[ktest]
 fn read_attr() {
-    let root_dentry = init_sysfs(create_mock_systree());
+    let test_fs = init_sysfs(create_mock_systree());
+    let root_dentry = test_fs.root_dentry.clone();
     let root_inode = root_dentry.inode();
     let leaf1_dir_inode = root_inode
         .lookup("branch1")
@@ -446,7 +466,8 @@ fn read_attr() {
 
 #[ktest]
 fn write_attr() {
-    let root_dentry = init_sysfs(create_mock_systree());
+    let test_fs = init_sysfs(create_mock_systree());
+    let root_dentry = test_fs.root_dentry.clone();
     let root_inode = root_dentry.inode();
     let leaf1_dir_inode = root_inode
         .lookup("branch1")
@@ -493,7 +514,8 @@ fn write_attr() {
 fn read_link() {
     use crate::fs::vfs::inode::SymbolicLink;
 
-    let root_dentry = init_sysfs(create_mock_systree());
+    let test_fs = init_sysfs(create_mock_systree());
+    let root_dentry = test_fs.root_dentry.clone();
     let root_inode = root_dentry.inode();
     // Action: Lookup the sysfs symlink corresponding to a systree symlink node
     let link1_inode = root_inode.lookup("link1").unwrap();
@@ -527,7 +549,8 @@ impl DirentVisitor for TestDirentVisitor {
 
 #[ktest]
 fn readdir_leaf() {
-    let root_dentry = init_sysfs(create_mock_systree());
+    let test_fs = init_sysfs(create_mock_systree());
+    let root_dentry = test_fs.root_dentry.clone();
     let root_inode = root_dentry.inode();
     let leaf1_inode = root_inode
         .lookup("branch1")
@@ -575,7 +598,8 @@ fn readdir_leaf() {
 
 #[ktest]
 fn mode_permissions() {
-    let root_dentry = init_sysfs(create_mock_systree());
+    let test_fs = init_sysfs(create_mock_systree());
+    let root_dentry = test_fs.root_dentry.clone();
     let root_inode = root_dentry.inode();
     let leaf1_dir_inode = root_inode
         .lookup("branch1")
@@ -615,7 +639,8 @@ fn mode_permissions() {
 fn cached_child_lookup_observes_tree_changes() {
     // 1. Create a directory with no child nodes and a VFS dentry for it.
     let branch = MockBranchNode::new("root");
-    let root_dentry = init_sysfs(branch.clone());
+    let test_fs = init_sysfs(branch.clone());
+    let root_dentry = test_fs.root_dentry.clone();
     let dir = root_dentry.as_dir_dentry_or_err().unwrap();
 
     // 2. Look up the missing child, caching its absence (a negative dentry).
@@ -667,7 +692,8 @@ fn cached_attr_lookup_observes_snapshot_changes() {
     let branch = MockBranchNode::new("root");
     let node = MockMutableAttrNode::new();
     branch.add_child(node.clone());
-    let root_dentry = init_sysfs(branch);
+    let test_fs = init_sysfs(branch);
+    let root_dentry = test_fs.root_dentry.clone();
     let leaf = root_dentry
         .as_dir_dentry_or_err()
         .unwrap()
@@ -719,7 +745,8 @@ fn cached_attr_lookup_observes_permission_changes() {
     };
     *node.attrs.write() = attrs;
     branch.add_child(node.clone());
-    let root_dentry = init_sysfs(branch);
+    let test_fs = init_sysfs(branch);
+    let root_dentry = test_fs.root_dentry.clone();
     let leaf = root_dentry
         .as_dir_dentry_or_err()
         .unwrap()

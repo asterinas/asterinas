@@ -184,10 +184,11 @@ impl DirentVisitor for ParentDirentVisitor {
 #[ktest]
 fn config_fs() {
     init_demo_subsystem();
-    let config_fs = super::fs::ConfigFs::singleton();
+    let config_fs: Arc<dyn FileSystem> = super::CONFIG_FS_TYPE.singleton().clone();
 
     // Access the root of configfs: /sys/kernel/config
     let root_inode = config_fs.root_inode();
+    assert!(Arc::ptr_eq(&root_inode.fs(), &config_fs));
 
     // --- Navigate to demo_set directory ---
     // path: /sys/kernel/config/demo_set
@@ -195,6 +196,7 @@ fn config_fs() {
         .lookup("demo_set")
         .expect("lookup demo_set failed");
     let demo_set_dentry = Dentry::new_root(demo_set_inode.clone());
+    assert!(Arc::ptr_eq(&demo_set_inode.fs(), &config_fs));
 
     // --- Create demo objects ---
     // path: /sys/kernel/config/demo_set/demo_foo
@@ -206,6 +208,7 @@ fn config_fs() {
             mkmod!(a+rx, u+w),
         )
         .expect("creating demo 'demo_foo' fails");
+    assert!(Arc::ptr_eq(&demo_foo.fs(), &config_fs));
 
     // --- Verify the parent directory entry of demo_foo ---
     // path: /sys/kernel/config/demo_set/demo_foo/.. -> /sys/kernel/config/demo_set
@@ -232,6 +235,7 @@ fn config_fs() {
     // --- Test attribute access for demo_foo ---
     let attr_a_foo = demo_foo.lookup("attr_a").expect("lookup attr_a failed");
     let attr_b_foo = demo_foo.lookup("attr_b").expect("lookup attr_b failed");
+    assert!(Arc::ptr_eq(&attr_a_foo.fs(), &config_fs));
 
     let mut read_buffer: u32 = 0;
 

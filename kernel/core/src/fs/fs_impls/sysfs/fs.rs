@@ -38,21 +38,29 @@ impl SysFs {
     }
 
     #[cfg(ktest)]
-    pub(super) fn new_for_ktest() -> Arc<Self> {
-        Self::new()
+    pub(super) fn new_for_ktest(root_node: Arc<dyn aster_systree::SysBranchNode>) -> Arc<Self> {
+        Self::new_with_root(root_node)
     }
 
     fn new() -> Arc<Self> {
-        let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for sysfs");
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-        let systree_ref = sysfs::systree_singleton();
-        let root_inode = SysFsInode::new_root(systree_ref.root().clone(), &sb);
+        let root_node = sysfs::systree_singleton().root().clone();
+        Self::new_with_root(root_node)
+    }
 
-        Arc::new(Self {
-            _anon_device_id: anon_device_id,
-            sb,
-            root: root_inode,
-            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+    fn new_with_root(root_node: Arc<dyn aster_systree::SysBranchNode>) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let anon_device_id =
+                AnonDeviceId::acquire().expect("no device ID is available for sysfs");
+            let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+            let weak_fs: Weak<dyn FileSystem> = weak_self.clone();
+            let root_inode = SysFsInode::new_root(root_node.clone(), &sb, weak_fs);
+
+            Self {
+                _anon_device_id: anon_device_id,
+                sb,
+                root: root_inode,
+                fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            }
         })
     }
 }
