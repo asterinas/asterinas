@@ -43,16 +43,20 @@ impl SysFs {
     }
 
     fn new() -> Arc<Self> {
-        let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for sysfs");
-        let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-        let systree_ref = sysfs::systree_singleton();
-        let root_inode = SysFsInode::new_root(systree_ref.root().clone(), &sb);
+        Arc::new_cyclic(|weak_self| {
+            let anon_device_id =
+                AnonDeviceId::acquire().expect("no device ID is available for sysfs");
+            let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
+            let systree_ref = sysfs::systree_singleton();
+            let weak_fs: Weak<dyn FileSystem> = weak_self.clone();
+            let root_inode = SysFsInode::new_root(systree_ref.root().clone(), &sb, weak_fs);
 
-        Arc::new(Self {
-            _anon_device_id: anon_device_id,
-            sb,
-            root: root_inode,
-            fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            Self {
+                _anon_device_id: anon_device_id,
+                sb,
+                root: root_inode,
+                fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            }
         })
     }
 }

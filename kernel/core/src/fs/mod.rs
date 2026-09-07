@@ -9,8 +9,10 @@ pub(crate) mod thread_info;
 pub(crate) mod utils;
 pub(crate) mod vfs;
 
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub(crate) use fs_impls::configfs;
 pub(crate) use fs_impls::{
-    cgroupfs, configfs, devpts, devtmpfs, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
+    cgroupfs, devpts, devtmpfs, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
 };
 
 use crate::{

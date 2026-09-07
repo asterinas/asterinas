@@ -30,9 +30,11 @@ type Ino = u64;
 /// A trait that abstracts an inode type backed by a `SysTree` node,
 /// e.g., a `SysFs` inode and a `CgroupFs` inode.
 ///
-/// The struct implementing this trait will have a default implementation for
-/// the [`Inode`] trait. Users only need to additionally implement the
-/// [`Inode::fs`] method.
+/// Implementors receive a default implementation of the [`Inode`] trait and
+/// must retain a weak reference to the file system that owns the inode. The
+/// file system owner must keep a strong reference alive while its inodes are
+/// usable; the default [`Inode::fs`] implementation panics if the weak
+/// reference can no longer be upgraded.
 #[expect(dead_code)]
 pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     fn new_arc(
@@ -40,6 +42,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         metadata: Metadata,
         mode: InodeMode,
         parent: Weak<Self>,
+        fs: Weak<dyn FileSystem>,
     ) -> Arc<Self>
     where
         Self: Sized + 'static;
@@ -60,13 +63,19 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     where
         Self: Sized + 'static;
 
-    fn new_root(root_node: Arc<dyn SysBranchNode>, sb: &SuperBlock) -> Arc<Self>
+    fn fs_weak(&self) -> &Weak<dyn FileSystem>;
+
+    fn new_root(
+        root_node: Arc<dyn SysBranchNode>,
+        sb: &SuperBlock,
+        fs: Weak<dyn FileSystem>,
+    ) -> Arc<Self>
     where
         Self: Sized + 'static,
     {
         let node_kind = SysTreeNodeKind::Branch(root_node);
         let parent = Weak::new();
-        Self::new_branch_dir(node_kind, None, parent, sb)
+        Self::new_branch_dir(node_kind, None, parent, fs, sb)
     }
 
     fn new_metadata(ino: u64, type_: InodeType, sb: &SuperBlock) -> Metadata {
@@ -95,6 +104,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         attr: SysAttr,
         node: Arc<dyn SysNode>,
         parent: Weak<Self>,
+        fs: Weak<dyn FileSystem>,
         sb: &SuperBlock,
     ) -> Arc<Self>
     where
@@ -104,10 +114,15 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         let ino = ino::from_node_kind(&node_kind);
         let metadata = Self::new_metadata(ino, InodeType::File, sb);
         let mode = attr.perms().into();
-        Self::new_arc(node_kind, metadata, mode, parent)
+        Self::new_arc(node_kind, metadata, mode, parent, fs)
     }
 
-    fn new_symlink(symlink: Arc<dyn SysSymlink>, parent: Weak<Self>, sb: &SuperBlock) -> Arc<Self>
+    fn new_symlink(
+        symlink: Arc<dyn SysSymlink>,
+        parent: Weak<Self>,
+        fs: Weak<dyn FileSystem>,
+        sb: &SuperBlock,
+    ) -> Arc<Self>
     where
         Self: Sized + 'static,
     {
@@ -115,13 +130,14 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         let ino = ino::from_node_kind(&node_kind);
         let metadata = Self::new_metadata(ino, InodeType::SymLink, sb);
         let mode = mkmod!(a+rwx);
-        Self::new_arc(node_kind, metadata, mode, parent)
+        Self::new_arc(node_kind, metadata, mode, parent, fs)
     }
 
     fn new_branch_dir(
         node_kind: SysTreeNodeKind, // Must be SysTreeNodeKind::Branch
         mode: Option<InodeMode>,
         parent: Weak<Self>,
+        fs: Weak<dyn FileSystem>,
         sb: &SuperBlock,
     ) -> Arc<Self>
     where
@@ -134,13 +150,14 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         };
 
         let mode = mode.unwrap_or_else(|| branch_node.perms().into());
-        Self::new_arc(node_kind, metadata, mode, parent)
+        Self::new_arc(node_kind, metadata, mode, parent, fs)
     }
 
     fn new_leaf_dir(
         node_kind: SysTreeNodeKind, // Must be SysTreeNodeKind::Leaf
         mode: Option<InodeMode>,
         parent: Weak<Self>,
+        fs: Weak<dyn FileSystem>,
         sb: &SuperBlock,
     ) -> Arc<Self>
     where
@@ -154,14 +171,16 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         };
 
         let mode = mode.unwrap_or_else(|| leaf_node.perms().into());
-        Self::new_arc(node_kind, metadata, mode, parent)
+        Self::new_arc(node_kind, metadata, mode, parent, fs)
     }
 
     fn lookup_node_or_attr(&self, name: &str, sysnode: &dyn SysBranchNode) -> Result<Arc<dyn Inode>>
     where
         Self: Sized + 'static,
     {
-        let sb = self.fs().sb();
+        let fs = self.fs();
+        let sb = fs.sb();
+        let weak_fs = Arc::downgrade(&fs);
 
         // Try finding a child node (Branch, Leaf, Symlink) first
         if let Some(child_sysnode) = sysnode.child(name) {
@@ -175,6 +194,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                         SysTreeNodeKind::Branch(child_branch),
                         None,
                         Arc::downgrade(&self.this()),
+                        weak_fs.clone(),
                         &sb,
                     );
                     Ok(inode)
@@ -186,6 +206,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                         SysTreeNodeKind::Leaf(child_leaf_node),
                         None,
                         Arc::downgrade(&self.this()),
+                        weak_fs.clone(),
                         &sb,
                     );
                     Ok(inode)
@@ -194,7 +215,12 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                     let child_symlink = child_sysnode
                         .cast_to_symlink()
                         .ok_or(Error::new(Errno::EIO))?;
-                    let inode = Self::new_symlink(child_symlink, Arc::downgrade(&self.this()), &sb);
+                    let inode = Self::new_symlink(
+                        child_symlink,
+                        Arc::downgrade(&self.this()),
+                        weak_fs.clone(),
+                        &sb,
+                    );
                     Ok(inode)
                 }
             }
@@ -222,6 +248,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                 attr.clone(),
                 parent_node_arc,
                 Arc::downgrade(&self.this()),
+                weak_fs,
                 &sb,
             );
             Ok(inode)
@@ -248,11 +275,13 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             }
         };
 
-        let sb = self.fs().sb();
+        let fs = self.fs();
+        let sb = fs.sb();
         let inode = Self::new_attr(
             attr.clone(),
             leaf_node_arc,
             Arc::downgrade(&self.this()),
+            Arc::downgrade(&fs),
             &sb,
         );
         Ok(inode)
@@ -480,7 +509,9 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     }
 
     default fn fs(&self) -> Arc<dyn FileSystem> {
-        unimplemented!("fs() method should be implemented by the concrete inode type");
+        self.fs_weak()
+            .upgrade()
+            .expect("the SysTree inode file system has been dropped")
     }
 
     default fn page_cache(&self) -> Option<Arc<Vmo>> {
@@ -493,7 +524,9 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         _type_: InodeType,
         mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        if name.len() > super::NAME_MAX {
+        let fs = self.fs();
+        let sb = fs.sb();
+        if name.len() > sb.namelen {
             return_errno!(Errno::ENAMETOOLONG);
         }
 
@@ -503,12 +536,13 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
         let new_child = branch_node.create_child(name)?;
 
-        let sb = self.fs().sb();
+        let weak_fs = Arc::downgrade(&fs);
         let new_inode = if let Some(branch_child) = new_child.cast_to_branch() {
             Self::new_branch_dir(
                 SysTreeNodeKind::Branch(branch_child),
                 Some(mode),
                 self.parent().clone(),
+                weak_fs.clone(),
                 &sb,
             )
         } else {
@@ -516,6 +550,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
                 SysTreeNodeKind::Leaf(new_child.cast_to_node().unwrap()),
                 Some(mode),
                 self.parent().clone(),
+                weak_fs.clone(),
                 &sb,
             )
         };

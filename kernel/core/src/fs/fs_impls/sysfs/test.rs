@@ -238,23 +238,33 @@ fn init_sysfs_with_mock_tree() -> Arc<SysFs> {
 fn root_lookup() {
     // Setup: Create a sysfs instance backed by the mock systree
     let sysfs = init_sysfs_with_mock_tree();
+    let expected_fs: Arc<dyn FileSystem> = sysfs.clone();
     let root_inode = sysfs.root_inode(); // Get the sysfs root inode
 
     // Verification: Check that the sysfs root inode corresponds to the mock systree root
 
     assert_eq!(root_inode.type_(), InodeType::Dir);
+    assert!(Arc::ptr_eq(&root_inode.fs(), &expected_fs));
 
     // Lookup existing branch
     let branch1_inode = root_inode.lookup("branch1").expect("Lookup branch1 failed");
     assert_eq!(branch1_inode.type_(), InodeType::Dir);
+    assert!(Arc::ptr_eq(&branch1_inode.fs(), &expected_fs));
 
     // Lookup existing leaf (represented as Dir in sysfs)
     let leaf2_inode = root_inode.lookup("leaf2").expect("Lookup leaf2 failed");
     assert_eq!(leaf2_inode.type_(), InodeType::Dir);
+    assert!(Arc::ptr_eq(&leaf2_inode.fs(), &expected_fs));
 
     // Lookup existing symlink
     let link1_inode = root_inode.lookup("link1").expect("Lookup link1 failed");
     assert_eq!(link1_inode.type_(), InodeType::SymLink);
+    assert!(Arc::ptr_eq(&link1_inode.fs(), &expected_fs));
+
+    let error = root_inode
+        .create("new_node", InodeType::Dir, mkmod!(a+rx, u+w))
+        .expect_err("creating an inode in sysfs should fail");
+    assert_eq!(error.error(), Errno::EPERM);
 
     // Lookup non-existent
     let result = root_inode.lookup("nonexistent");
