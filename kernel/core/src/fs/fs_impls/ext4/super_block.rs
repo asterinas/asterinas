@@ -651,6 +651,8 @@ bitflags! {
 }
 
 impl FeatureCompatSet {
+    // Unknown compatible bits are valid to ignore and preserve; known unsupported
+    // behaviors remain mount-gated through their incompatible feature classes.
     const fn from_bits_retain(bits: u32) -> Self {
         Self { bits }
     }

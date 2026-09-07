@@ -1143,6 +1143,8 @@ mod test {
             None,
         )
         .unwrap();
+        let free_before = ext2.super_block().free_blocks_count();
+        ext2.alloc_blocks(1, 0).unwrap();
         ext2.alloc_ino(ROOT_INO, InodeType::File).unwrap();
         ext2.sync_allocation_metadata().unwrap();
 
@@ -1152,6 +1154,7 @@ mod test {
             .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
             .unwrap();
         assert_ne!(persisted.feature_compat & UNKNOWN_COMPAT, 0);
+        assert_eq!(persisted.free_blocks_count, free_before - 1);
     }
 
     #[ktest]

@@ -850,7 +850,7 @@ impl PageSelection {
     fn should_collect(&self, page: &CachePage) -> bool {
         let state = page.state();
         match self {
-            PageSelection::Flush if state.is_dirty() => true,
+            PageSelection::Flush if state.is_dirty() || page.has_writeback_error() => true,
             PageSelection::Flush if state.is_uninit() => false,
             PageSelection::Flush if let Some(locked_page) = page.try_lock_guard() => {
                 locked_page.is_writing_back()
@@ -878,6 +878,10 @@ impl<'a> BackedVmo<'a> {
         if pages_to_flush.is_empty() {
             return Ok(());
         }
+        let pages_to_check = pages_to_flush
+            .iter()
+            .map(|(_, page)| page.clone())
+            .collect::<Vec<_>>();
 
         // We must lock and mark all pages as up-to-date before freezing them in the page table. A
         // concurrent page fault caused by a write operation will synchronize via the page table
@@ -915,6 +919,10 @@ impl<'a> BackedVmo<'a> {
         for page in maybe_writing_back_pages {
             let locked_page = page.lock();
             locked_page.wait_until_finish_writing_back();
+        }
+
+        if pages_to_check.iter().any(CachePageExt::has_writeback_error) {
+            return_errno_with_message!(Errno::EIO, "previous page writeback failed");
         }
 
         Ok(())

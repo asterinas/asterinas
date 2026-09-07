@@ -199,8 +199,7 @@ impl ExtentManager {
             }
         };
         sector_count = state.sector_count;
-        add_sectors(&mut sector_count, data_blocks, delta)
-            .expect("worst-case extent allocation accounting was prevalidated");
+        add_sectors(&mut sector_count, data_blocks, delta)?;
         state.sector_count = sector_count;
         state.dirty = true;
         Ok(())
@@ -237,20 +236,20 @@ impl ExtentManager {
 
         let delta = state.tree.rebuild(&fs, &kept)?;
         let mut data_blocks = 0;
+        let mut release_error = None;
         for range in &freed {
             match fs.free_blocks(range.start, range.len() as u32) {
                 Ok(()) => data_blocks += range.len() as u32,
-                Err(error) => error!(
-                    "failed to release truncated extent range {:?}: {:?}",
-                    range, error
-                ),
+                Err(error) => release_error.get_or_insert(error),
             }
         }
         sector_count = state.sector_count;
-        subtract_sectors(&mut sector_count, data_blocks, delta)
-            .expect("maximum extent truncation accounting was prevalidated");
+        subtract_sectors(&mut sector_count, data_blocks, delta)?;
         state.sector_count = sector_count;
         state.dirty = true;
+        if let Some(error) = release_error {
+            return Err(error);
+        }
         Ok(())
     }
 }
@@ -796,5 +795,113 @@ mod tests {
         assert!(manager.allocate_range_blocks(8, 9).is_err());
         assert_eq!(fixture.ext2.super_block().free_blocks_count(), free_before);
         assert!(manager.map_block(8).unwrap().is_none());
+    }
+
+    #[ktest]
+    fn rejects_extent_data_overlap_before_allocation() {
+        let fixture = Ext4FixtureBuilder::new(1, 2048)
+            .with_free_blocks(64, 64)
+            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 41]))
+            .build()
+            .unwrap();
+        let manager = ExtentManager::new(
+            inline_root(
+                leaf_header(2),
+                &[RawExtent::new(0, 2, 40), RawExtent::new(4, 1, 41)],
+            ),
+            24,
+            Arc::downgrade(&fixture.ext2),
+            8,
+        )
+        .unwrap();
+        let free_before = fixture.ext2.super_block().free_blocks_count();
+        let root_before = manager.raw_block_ptrs().block_ptrs;
+
+        assert_errno!(manager.allocate_range_blocks(6, 7), Errno::EUCLEAN);
+        assert_eq!(fixture.ext2.super_block().free_blocks_count(), free_before);
+        assert_eq!(manager.raw_block_ptrs().block_ptrs, root_before);
+    }
+
+    #[ktest]
+    fn rejects_duplicate_external_extent_nodes_before_lookup() {
+        let fixture = Ext4FixtureBuilder::new(1, 2048)
+            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 41]))
+            .build()
+            .unwrap();
+        let mut leaf = [0u8; BLOCK_SIZE];
+        leaf[..ENTRY_SIZE].copy_from_slice(
+            RawExtentHeader {
+                magic: EXTENT_MAGIC,
+                entries: 1,
+                max: ((BLOCK_SIZE - ENTRY_SIZE) / ENTRY_SIZE) as u16,
+                depth: 0,
+                generation: 0,
+            }
+            .as_bytes(),
+        );
+        leaf[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtent::new(0, 1, 41).as_bytes());
+        fixture
+            .disk
+            .segment()
+            .write_bytes(Bid::new(40).to_offset(), &leaf)
+            .unwrap();
+        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
+        let bytes = root.as_mut_bytes();
+        bytes[..ENTRY_SIZE].copy_from_slice(
+            RawExtentHeader {
+                magic: EXTENT_MAGIC,
+                entries: 2,
+                max: 4,
+                depth: 1,
+                generation: 0,
+            }
+            .as_bytes(),
+        );
+        bytes[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtentIdx::new(0, 40).as_bytes());
+        bytes[2 * ENTRY_SIZE..3 * ENTRY_SIZE].copy_from_slice(RawExtentIdx::new(1, 40).as_bytes());
+        let manager = ExtentManager::new(root, 16, Arc::downgrade(&fixture.ext2), 2).unwrap();
+
+        assert_errno!(manager.map_block(0), Errno::EUCLEAN);
+    }
+
+    #[ktest]
+    fn rejects_extent_node_that_is_also_data_before_lookup() {
+        let fixture = Ext4FixtureBuilder::new(1, 2048)
+            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40]))
+            .build()
+            .unwrap();
+        let mut leaf = [0u8; BLOCK_SIZE];
+        leaf[..ENTRY_SIZE].copy_from_slice(
+            RawExtentHeader {
+                magic: EXTENT_MAGIC,
+                entries: 1,
+                max: ((BLOCK_SIZE - ENTRY_SIZE) / ENTRY_SIZE) as u16,
+                depth: 0,
+                generation: 0,
+            }
+            .as_bytes(),
+        );
+        leaf[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtent::new(0, 1, 40).as_bytes());
+        fixture
+            .disk
+            .segment()
+            .write_bytes(Bid::new(40).to_offset(), &leaf)
+            .unwrap();
+        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
+        let bytes = root.as_mut_bytes();
+        bytes[..ENTRY_SIZE].copy_from_slice(
+            RawExtentHeader {
+                magic: EXTENT_MAGIC,
+                entries: 1,
+                max: 4,
+                depth: 1,
+                generation: 0,
+            }
+            .as_bytes(),
+        );
+        bytes[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtentIdx::new(0, 40).as_bytes());
+        let manager = ExtentManager::new(root, 8, Arc::downgrade(&fixture.ext2), 1).unwrap();
+
+        assert_errno!(manager.map_block(0), Errno::EUCLEAN);
     }
 }

@@ -27,6 +27,9 @@ impl ExtentTree {
     }
 
     pub(super) fn find(&self, fs: &Ext4, iblock: Iblock) -> Result<Option<Extent>> {
+        // Validate every supported leaf before trusting the lookup path. A point
+        // lookup alone cannot detect ownership corruption in a sibling leaf.
+        self.flatten(fs)?;
         let mut step = Self::search_node(self.root.as_bytes(), self.depth, iblock)?;
         let mut expected_depth = self.depth;
 
@@ -99,7 +102,7 @@ impl ExtentTree {
                 fs.validate_extent_block_range(extent.start(), u32::from(extent.len()))?;
                 extents.push(extent);
             }
-            return Ok((extents, Vec::new()));
+            return Self::validate_ownership(extents, Vec::new());
         }
         if root_header.depth() != 1 {
             return_errno_with_message!(Errno::EOPNOTSUPP, "writable extent depth exceeds one");
@@ -123,9 +126,35 @@ impl ExtentTree {
             }
             external.push(block);
         }
-        for pair in extents.windows(2) {
+        Self::validate_ownership(extents, external)
+    }
+
+    fn validate_ownership(
+        extents: Vec<Extent>,
+        external: Vec<Ext4Bid>,
+    ) -> Result<(Vec<Extent>, Vec<Ext4Bid>)> {
+        let mut logical_extents = extents.clone();
+        logical_extents.sort_by_key(|extent| extent.block());
+        for pair in logical_extents.windows(2) {
             if pair[0].logical_end() > u64::from(pair[1].block()) {
                 return_errno_with_message!(Errno::EUCLEAN, "extent leaves overlap");
+            }
+        }
+        let mut physical_extents = extents.clone();
+        physical_extents.sort_by_key(|extent| extent.start());
+        for pair in physical_extents.windows(2) {
+            if pair[0].start() + u32::from(pair[0].len()) > pair[1].start() {
+                return_errno_with_message!(Errno::EUCLEAN, "extent data blocks overlap");
+            }
+        }
+        for (index, &block) in external.iter().enumerate() {
+            if external[..index].contains(&block) {
+                return_errno_with_message!(Errno::EUCLEAN, "extent leaf block is referenced twice");
+            }
+            if physical_extents.iter().any(|extent| {
+                extent.start() <= block && block < extent.start() + u32::from(extent.len())
+            }) {
+                return_errno_with_message!(Errno::EUCLEAN, "extent leaf block is also data");
             }
         }
         Ok((extents, external))
@@ -140,7 +169,7 @@ impl ExtentTree {
         if extents.len() <= INLINE_CAPACITY {
             self.root = Self::leaf_root(extents);
             self.depth = 0;
-            let freed = free_old_external_blocks(fs, old_external);
+            let freed = free_old_external_blocks(fs, old_external)?;
             return Ok(TreeDelta {
                 allocated: 0,
                 freed,
@@ -194,7 +223,7 @@ impl ExtentTree {
         }
         self.root = root;
         self.depth = 1;
-        let freed = free_old_external_blocks(fs, old_external);
+        let freed = free_old_external_blocks(fs, old_external)?;
         Ok(TreeDelta {
             allocated: new_blocks.len() as u32,
             freed,
@@ -313,16 +342,11 @@ pub(super) struct TreeDelta {
     pub(super) freed: u32,
 }
 
-fn free_old_external_blocks(fs: &Ext4, blocks: &[Ext4Bid]) -> u32 {
+fn free_old_external_blocks(fs: &Ext4, blocks: &[Ext4Bid]) -> Result<u32> {
     let mut freed = 0;
     for &block in blocks {
-        match fs.free_blocks(block, 1) {
-            Ok(()) => freed += 1,
-            Err(error) => error!(
-                "failed to release obsolete extent leaf block {}: {:?}",
-                block, error
-            ),
-        }
+        fs.free_blocks(block, 1)?;
+        freed += 1;
     }
-    freed
+    Ok(freed)
 }

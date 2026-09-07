@@ -139,8 +139,9 @@ impl BlockDevice for Ext4MemoryDisk {
 
         if bio.type_() == BioType::Write {
             let sid_range = bio.sid_range();
-            let blocks = (sid_range.end.to_raw() - sid_range.start.to_raw()) as usize * SECTOR_SIZE
-                / BLOCK_SIZE;
+            let blocks = ((sid_range.end.to_raw() - sid_range.start.to_raw()) as usize
+                * SECTOR_SIZE)
+                .div_ceil(BLOCK_SIZE);
             self.max_write_blocks.fetch_max(blocks, Ordering::Relaxed);
         }
 
