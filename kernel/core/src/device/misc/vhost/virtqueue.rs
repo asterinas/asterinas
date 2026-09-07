@@ -59,6 +59,7 @@ impl VhostVirtQueue {
         self.kick.as_ref().and_then(|event| event.consume())
     }
 
+    #[cfg(ktest)]
     pub(in misc) fn current_avail(&self) -> u16 {
         self.last_avail.load(Ordering::Acquire)
     }
@@ -377,6 +378,7 @@ pub(in misc) struct VhostDescriptorChain {
 }
 
 impl VhostDescriptorChain {
+    #[cfg(ktest)]
     pub(in misc) fn head_index(&self) -> u16 {
         self.head as u16
     }

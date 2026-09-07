@@ -29,6 +29,7 @@ use aster_virtio::device::socket::{
     header::{VirtioVsockHdr, VirtioVsockOp, VirtioVsockShutdownFlags},
     packet::RxPacket,
 };
+use ostd::mm::Infallible;
 use takeable::Takeable;
 
 use crate::{
@@ -120,9 +121,30 @@ enum Phase {
 }
 
 struct RxQueue {
-    packets: VecDeque<RxPacket>,
+    packets: VecDeque<RxPayload>,
     used_bytes: usize,
     read_offset: usize,
+}
+
+pub(super) enum RxPayload {
+    Virtio(RxPacket),
+    Vhost(Vec<u8>),
+}
+
+impl RxPayload {
+    pub(super) fn payload_len(&self) -> usize {
+        match self {
+            Self::Virtio(packet) => packet.payload_len(),
+            Self::Vhost(payload) => payload.len(),
+        }
+    }
+
+    fn payload(&self) -> VmReader<'_, Infallible> {
+        match self {
+            Self::Virtio(packet) => packet.payload(),
+            Self::Vhost(payload) => VmReader::from(payload.as_slice()),
+        }
+    }
 }
 
 struct CreditState {
@@ -256,6 +278,11 @@ impl ConnectionInner {
         // The caller will notify the pollee _after_ removing the connection from the table.
     }
 
+    pub(super) fn on_transport_reset(&self) {
+        // Report a local transport failure without trying to send through the stopped backend.
+        self.state.lock().do_rst(true);
+    }
+
     pub(super) fn on_shutdown(&self, header: &VirtioVsockHdr) -> bool {
         let mut state = self.state.lock();
         let mut notify_events = IoEvents::empty();
@@ -297,7 +324,7 @@ impl ConnectionInner {
         should_remove
     }
 
-    pub(super) fn on_rw(&self, header: &VirtioVsockHdr, packet: RxPacket) -> Result<()> {
+    pub(super) fn on_rw(&self, header: &VirtioVsockHdr, packet: RxPayload) -> Result<()> {
         let mut state = self.state.lock();
 
         if state.shutdown.peer_write_closed {

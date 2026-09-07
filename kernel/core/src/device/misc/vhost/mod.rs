@@ -308,12 +308,9 @@ impl<const NUM_QUEUES: usize> VhostDeviceState<NUM_QUEUES> {
         }
     }
 
+    #[cfg(ktest)]
     pub(in misc) fn is_owned(&self) -> bool {
         self.owner_vmar.is_some()
-    }
-
-    pub(in misc) fn negotiated_features(&self) -> u64 {
-        self.features
     }
 
     pub(in misc) fn is_fully_configured(&self) -> bool {
@@ -323,10 +320,6 @@ impl<const NUM_QUEUES: usize> VhostDeviceState<NUM_QUEUES> {
                 .queues
                 .iter()
                 .all(|queue| queue.num != 0 && queue.addr.is_some())
-    }
-
-    pub(in misc) fn queue_base(&self, index: u32) -> Result<u32> {
-        Ok(u32::from(self.queue(index)?.base.load(Ordering::Acquire)))
     }
 
     pub(in misc) fn handle_ioctl(&mut self, raw_ioctl: RawIoctl) -> Result<i32> {
@@ -526,11 +519,6 @@ impl<const NUM_QUEUES: usize> VhostDeviceState<NUM_QUEUES> {
             return_errno_with_message!(Errno::EINVAL, "vhost queue index is out of range");
         }
         Ok(index)
-    }
-
-    fn queue(&self, index: u32) -> Result<&VhostQueueState> {
-        let index = self.check_queue_index(index)?;
-        Ok(&self.queues[index])
     }
 
     fn invalidate_runtime(&self) {

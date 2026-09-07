@@ -5,6 +5,7 @@
 use core::sync::atomic::Ordering;
 
 use crate::{
+    device::misc::vhost_vsock,
     events::IoEvents,
     net::socket::vsock::{
         VsockSocketAddr,
@@ -65,9 +66,12 @@ impl Connection {
         // Most sockets tend to report EPOLLOUT once the write side has been shut down. However,
         // the logic for vsock appears to be different.
         if !state.shutdown.local_write_closed {
-            if state.peer_credit() != 0
-                && self.inner.pending_tx_bytes.load(Ordering::Relaxed) < DEFAULT_TX_BUF_SIZE
-            {
+            let has_tx_room = if self.inner.bound_port.vsock_space().is_vhost_backend() {
+                vhost_vsock::can_send_data(self.inner.conn_id.peer_cid as u32)
+            } else {
+                self.inner.pending_tx_bytes.load(Ordering::Relaxed) < DEFAULT_TX_BUF_SIZE
+            };
+            if state.peer_credit() != 0 && has_tx_room {
                 events |= IoEvents::OUT;
             }
 

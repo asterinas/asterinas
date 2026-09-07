@@ -11,6 +11,7 @@ use aster_virtio::device::socket::{
 };
 
 use crate::{
+    device::misc::vhost_vsock,
     events::IoEvents,
     net::socket::{
         util::SendFlags,
@@ -33,6 +34,10 @@ impl Connection {
         reader: &mut dyn MultiRead,
         _flags: SendFlags,
     ) -> Result<usize> {
+        if self.inner.bound_port.vsock_space().is_vhost_backend() {
+            return self.try_send_vhost(reader);
+        }
+
         // See the comments in `try_recv` to know why we use a packet-pool approach here.
         let mut packet_pool = [const { None }; 8];
 
@@ -53,6 +58,56 @@ impl Connection {
 
         self.inner.pollee.invalidate();
 
+        Ok(num_bytes)
+    }
+
+    fn try_send_vhost(&mut self, reader: &mut dyn MultiRead) -> Result<usize> {
+        let (num_bytes, reservation) = {
+            let mut state = self.inner.state.lock();
+            state.test_and_clear_error(&self.inner)?;
+
+            if state.shutdown.local_write_closed || state.shutdown.peer_read_closed {
+                return_errno_with_message!(Errno::EPIPE, "the connection is closed for writing");
+            }
+            if reader.is_empty() {
+                return Ok(0);
+            }
+
+            let num_bytes = reader
+                .sum_lens()
+                .min(state.check_peer_credit(&self.inner)?)
+                .min(vhost_vsock::MAX_PAYLOAD_SIZE);
+            let Some(reservation) =
+                vhost_vsock::reserve_data_packet(self.inner.conn_id.peer_cid as u32, num_bytes)?
+            else {
+                // Other connections share this queue and may have consumed its last slot
+                // since this socket cached writable readiness.
+                self.inner.pollee.invalidate();
+                return_errno_with_message!(Errno::EAGAIN, "the vhost-vsock packet queue is full");
+            };
+            (num_bytes, reservation)
+        };
+
+        // Reserve queue space before advancing the user reader. A full queue must return
+        // EAGAIN without consuming input, since a blocking send retries with the same reader.
+        // The reservation does not retain a spinlock while the userspace copy may fault.
+        let mut payload = vec![0u8; num_bytes];
+        reader.read(&mut VmWriter::from(payload.as_mut_slice()))?;
+
+        let mut state = self.inner.state.lock();
+        if state.shutdown.local_write_closed || state.shutdown.peer_read_closed {
+            return_errno_with_message!(Errno::EPIPE, "the connection is closed for writing");
+        }
+
+        let header = state.make_data_header(&self.inner, num_bytes);
+        if !reservation.send(&header, &payload)? {
+            return_errno_with_message!(Errno::ENETUNREACH, "the vsock CID is no longer reachable");
+        }
+        state.consume_peer_credit(num_bytes);
+        state.credit.last_reported_fwd_cnt = state.credit.local_fwd_cnt;
+        drop(state);
+
+        self.inner.pollee.invalidate();
         Ok(num_bytes)
     }
 
@@ -131,7 +186,7 @@ impl Connection {
         }
 
         let vsock_space = self.inner.bound_port.vsock_space();
-        let mut tx = vsock_space.device().lock_tx();
+        let mut tx = vsock_space.virtio_device().unwrap().lock_tx();
 
         let mut num_bytes = 0;
         let mut num_bytes_in_pending = 0;
