@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-/// A type containing either a [`Left`] value `L` or a [`Right`] value `R`.
+/// An enum that holds either an `L` or an `R`, but never both.
 ///
-/// [`Left`]: Self::Left
-/// [`Right`]: Self::Right
+/// The `Left` and `Right` names originate from Haskell's `Either` type
+/// (see <https://hackage.haskell.org/package/base/docs/Data-Either.html>);
+/// they carry no inherent meaning, and it is up to the user to decide
+/// what each variant means.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Either<L, R> {
     /// Contains the left value
