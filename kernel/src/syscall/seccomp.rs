@@ -3,14 +3,17 @@ use ostd::arch::cpu::context::UserContext;
 use super::{SyscallArgument, SyscallReturn};
 use crate::{
     prelude::*,
-    process::posix_thread::{
-        PosixThread,
-        cbpf::{
-            self, ClassicBPFilter, NetFilterProg, RawFilterBlock, SeccompFilterLeaf,
-            SeccompFilterProg,
-            SeccompMode::{self},
-            SeccompOp::{self},
-            SeccompRet, UnverifiedFilterProg,
+    process::{
+        credentials::capabilities::CapSet,
+        posix_thread::{
+            PosixThread,
+            cbpf::{
+                self, ClassicBPFilter, NetFilterProg, RawFilterBlock, SeccompFilterLeaf,
+                SeccompFilterProg,
+                SeccompMode::{self},
+                SeccompOp::{self},
+                SeccompRet, UnverifiedFilterProg,
+            },
         },
     },
 };
@@ -59,7 +62,22 @@ struct UserspaceFilterMeta {
 }
 
 /// TODO check flags
-fn seccomp_set_mode_filter(_flags: u32, uargs: Vaddr, ctx: &Context) -> Result<i64> {
+fn seccomp_set_mode_filter(flags: u32, uargs: Vaddr, ctx: &Context) -> Result<i64> {
+    if flags != 0 {
+        // TODO: flags here are related to features not yet implemented
+        return Err(Error::new(Errno::EINVAL));
+    }
+
+    let thread = ctx.posix_thread;
+
+    if !thread
+        .credentials()
+        .effective_capset()
+        .contains(CapSet::SYS_ADMIN)
+    {
+        return Err(Error::new(Errno::EPERM));
+    }
+
     let filter_meta: UserspaceFilterMeta = ctx
         .user_space()
         .vmar()
@@ -86,8 +104,6 @@ fn seccomp_set_mode_filter(_flags: u32, uargs: Vaddr, ctx: &Context) -> Result<i
 
     let netfilter = NetFilterProg::from_unverified(insns)?;
     let seccompfilter = SeccompFilterProg::from_netfilter(netfilter)?;
-
-    let thread = ctx.posix_thread;
 
     thread.set_seccomp_filter(Arc::new(SeccompFilterLeaf {
         ins: seccompfilter,
