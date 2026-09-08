@@ -2,14 +2,10 @@
 
 //! Virtio over MMIO
 
-use core::ops::Range;
-
 use bus::MmioBus;
-use ostd::{debug, io::IoMem, irq::IrqLine, sync::SpinLock};
+use ostd::{debug, io::IoMem, mm::HasPaddr, sync::SpinLock};
 
-use crate::transport::mmio::bus::common_device::{
-    MmioCommonDevice, mmio_check_magic, mmio_read_device_id,
-};
+use crate::transport::mmio::bus::common_device::{mmio_check_magic, mmio_read_device_id};
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv.rs")]
@@ -38,77 +34,35 @@ pub(super) fn init() {
     arch::probe_for_device();
 }
 
-/// Tries to validate a potential VirtIO-MMIO device, map it to an IRQ line, and
-/// register it as a VirtIO-MMIO device.
-///
-/// Returns `Ok(())` if the device was registered, or a specific
-/// `MmioRegisterError` otherwise.
-#[cfg_attr(
-    any(target_arch = "loongarch64", target_arch = "aarch64"),
-    expect(unused)
-)]
-fn try_register_mmio_device<F>(
-    mmio_range: Range<usize>,
-    map_irq_line: F,
-) -> Result<(), MmioRegisterError>
-where
-    F: FnOnce(IrqLine) -> ostd::Result<arch::MappedIrqLine>,
-{
-    let start_addr = mmio_range.start;
-    let Ok(io_mem) = IoMem::acquire(mmio_range) else {
-        debug!(
-            "Abort MMIO detection at {:#x} because the MMIO address is not available",
-            start_addr
-        );
-        return Err(MmioRegisterError::MmioUnavailable);
-    };
-
+/// Validates a potential VirtIO-MMIO device.
+fn validate_mmio_device(io_mem: &IoMem) -> Result<(), MmioValidateError> {
     // We now check the requirements specified in Virtual I/O Device (VIRTIO) Version 1.3,
     // Section 4.2.2.2 Driver Requirements: MMIO Device Register Layout.
 
     // "The driver MUST ignore a device with MagicValue which is not 0x74726976, although it
     // MAY report an error."
-    if !mmio_check_magic(&io_mem) {
+    if !mmio_check_magic(io_mem) {
         debug!(
             "Abort MMIO detection at {:#x} because the magic number does not match",
-            start_addr
+            io_mem.paddr()
         );
-        return Err(MmioRegisterError::MagicMismatch);
+        return Err(MmioValidateError::MagicMismatch);
     }
 
     // TODO: "The driver MUST ignore a device with Version which is not 0x2, although it MAY
     // report an error."
 
     // "The driver MUST ignore a device with DeviceID 0x0, but MUST NOT report any error."
-    match mmio_read_device_id(&io_mem) {
-        Err(_) | Ok(0) => {
-            return Err(MmioRegisterError::NoDevice);
-        }
-        Ok(_) => {}
+    match mmio_read_device_id(io_mem) {
+        Err(_) | Ok(0) => Err(MmioValidateError::NoDevice),
+        Ok(_) => Ok(()),
     }
-
-    let Ok(mapped_irq_line) = IrqLine::alloc().and_then(map_irq_line) else {
-        debug!(
-            "Ignore MMIO device at {:#x} because its IRQ line is not available",
-            start_addr
-        );
-        return Err(MmioRegisterError::IrqUnavailable);
-    };
-
-    let device = MmioCommonDevice::new(io_mem, mapped_irq_line);
-    MMIO_BUS.lock().register_mmio_device(device);
-
-    Ok(())
 }
 
 #[derive(Clone, Copy, Debug)]
-enum MmioRegisterError {
-    /// MMIO region not available.
-    MmioUnavailable,
+enum MmioValidateError {
     /// Not a VirtIO-MMIO slot.
     MagicMismatch,
     /// No device present.
     NoDevice,
-    /// IRQ line not available.
-    IrqUnavailable,
 }
