@@ -378,6 +378,7 @@ dependencies = [
  "aster-console",
  "component",
  "fdt",
+ "fdt-util",
  "inherit-methods-macro",
  "ostd",
  "spin",
