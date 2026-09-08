@@ -184,7 +184,7 @@ pub fn do_cached_build(
             }
             bundle.consume_aster_bin(aster_elf);
         }
-        BootMethod::QemuDirect => {
+        BootMethod::DirectElf => {
             let aster_bin = if config.target_arch == Arch::Aarch64 {
                 make_aarch64_image(&osdk_output_directory, &boot_elf)
             } else if grub.boot_protocol == BootProtocol::Linux {
