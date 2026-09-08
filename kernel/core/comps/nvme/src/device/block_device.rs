@@ -22,7 +22,7 @@ use core::{
 };
 
 use aster_block::{
-    BlockDeviceMeta, PartitionNode, SECTOR_SIZE,
+    BlockDeviceMeta, PartitionManager, SECTOR_SIZE,
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio, bio_segment_pool_init},
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
@@ -67,7 +67,7 @@ pub struct NvmeBlockDevice {
     queue: BioRequestSingleQueue,
     name: String,
     id: DeviceId,
-    partitions: SpinLock<Option<Vec<Arc<PartitionNode>>>>,
+    partition_manager: PartitionManager,
 }
 
 static NR_NVME_DEVICE: AtomicU32 = AtomicU32::new(0);
@@ -89,7 +89,7 @@ impl NvmeBlockDevice {
             queue: BioRequestSingleQueue::new(),
             name,
             id,
-            partitions: SpinLock::new(None),
+            partition_manager: PartitionManager::new(),
         });
 
         block_device
@@ -139,18 +139,8 @@ impl aster_block::BlockDevice for NvmeBlockDevice {
         self.id
     }
 
-    fn partitions(&self) -> Option<Vec<Arc<dyn aster_block::BlockDevice>>> {
-        let partitions = self.partitions.lock();
-        let devices = partitions
-            .as_ref()?
-            .iter()
-            .map(|p| p.clone() as Arc<dyn aster_block::BlockDevice>)
-            .collect();
-        Some(devices)
-    }
-
-    fn set_partitions(&self, partitions: Vec<Arc<PartitionNode>>) {
-        *self.partitions.lock() = Some(partitions);
+    fn partition_manager(&self) -> Option<&PartitionManager> {
+        Some(&self.partition_manager)
     }
 }
 

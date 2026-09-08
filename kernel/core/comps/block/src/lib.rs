@@ -47,13 +47,11 @@ mod partition;
 mod prelude;
 pub mod request_queue;
 
-use alloc::format;
-
-use ::device_id::{DeviceId, MinorId};
+use ::device_id::DeviceId;
 use component::{ComponentInitError, init_component};
 pub use device_id::{EXTENDED_DEVICE_ID_ALLOCATOR, MajorIdOwner, acquire_major, allocate_major};
 use ostd::sync::Mutex;
-pub use partition::{PartitionInfo, PartitionNode};
+pub use partition::{PartitionInfo, PartitionManager, PartitionNode};
 
 use self::{
     bio::{BioEnqueueError, SubmittedBio},
@@ -86,65 +84,13 @@ pub trait BlockDevice: Send + Sync + Any + Debug {
         false
     }
 
-    /// Sets the partitions of the block device.
-    fn set_partitions(&self, _partitions: Vec<Arc<PartitionNode>>) {}
-
-    /// Returns the partitions of the block device.
-    fn partitions(&self) -> Option<Vec<Arc<dyn BlockDevice>>> {
+    /// Returns the partition manager of the block device.
+    ///
+    /// Whole-disk devices return their manager, which owns the device's
+    /// partitions. Partition devices and devices without partition support
+    /// return `None`.
+    fn partition_manager(&self) -> Option<&PartitionManager> {
         None
-    }
-
-    /// Updates the partitions of the block device with the parsed partition
-    /// information
-    fn update_partitions(&self, infos: Vec<Option<PartitionInfo>>) {
-        let Some(device) = lookup(self.id()) else {
-            return;
-        };
-
-        if let Some(old_partitions) = self.partitions() {
-            for partition in old_partitions {
-                let _ = unregister(partition.id());
-            }
-        }
-
-        let mut new_partitions = Vec::new();
-        for (index, info_opt) in infos.iter().enumerate() {
-            let Some(info) = info_opt else {
-                continue;
-            };
-
-            let index = index as u32 + 1;
-            let id = if index < DEVICE_MINORS {
-                DeviceId::new(
-                    self.id().major(),
-                    MinorId::new(self.id().minor().get() + index),
-                )
-            } else {
-                EXTENDED_DEVICE_ID_ALLOCATOR.get().unwrap().allocate()
-            };
-            let name = partition_name(self.name(), index);
-            let partition = Arc::new(PartitionNode::new(id, name, device.clone(), *info));
-            new_partitions.push(partition);
-        }
-
-        for partition in new_partitions.iter() {
-            let _ = register(partition.clone());
-        }
-
-        self.set_partitions(new_partitions);
-    }
-}
-
-/// Formats the name of a partition. We perform the naming similar to the
-/// Linux implementation: insert "p" between the disk name and the partition
-/// number when the disk name ends with a digit (`nvme0n1p1`), and append the
-/// number otherwise (`vda1`).
-/// Reference: <https://elixir.bootlin.com/linux/v7.2.2/source/block/partitions/core.c#L337>
-fn partition_name(disk_name: &str, partno: u32) -> String {
-    if disk_name.ends_with(|c: char| c.is_ascii_digit()) {
-        format!("{}p{}", disk_name, partno)
-    } else {
-        format!("{}{}", disk_name, partno)
     }
 }
 
@@ -226,11 +172,15 @@ pub fn scan_partitions() {
             continue;
         }
 
-        let Some(partition_info) = partition::parse(&device) else {
+        let Some(partition_manager) = device.partition_manager() else {
             continue;
         };
 
-        device.update_partitions(partition_info);
+        let Some(partition_infos) = partition::parse(&device) else {
+            continue;
+        };
+
+        partition_manager.update(&device, partition_infos);
     }
 }
 
