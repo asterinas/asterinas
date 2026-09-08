@@ -41,7 +41,7 @@ impl datagram_common::Bound for BoundDatagram {
     type Endpoint = IpEndpoint;
 
     fn local_endpoint(&self) -> Self::Endpoint {
-        self.bound_socket.local_endpoint().unwrap()
+        self.bound_socket.local_endpoint()
     }
 
     fn remote_endpoint(&self) -> Option<&Self::Endpoint> {
