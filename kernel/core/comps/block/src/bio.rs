@@ -293,15 +293,15 @@ struct BioMetadata {
 }
 
 impl BioMetadata {
-    pub fn type_(&self) -> BioType {
+    fn type_(&self) -> BioType {
         self.type_
     }
 
-    pub fn sid_range(&self) -> &Range<Sid> {
+    fn sid_range(&self) -> &Range<Sid> {
         &self.sid_range
     }
 
-    pub fn status(&self) -> BioStatus {
+    fn status(&self) -> BioStatus {
         BioStatus::try_from(self.status.load(Ordering::Acquire)).unwrap()
     }
 }
@@ -554,7 +554,7 @@ impl BioSegmentPool {
     /// managed blocks is currently set to `POOL_DEFAULT_NBLOCKS`.
     ///
     /// The new pool will be allocated and mapped for later allocation.
-    pub fn new(direction: BioDirection) -> Self {
+    fn new(direction: BioDirection) -> Self {
         let total_blocks = POOL_DEFAULT_NBLOCKS;
         let pool = DmaStream::alloc_uninit(total_blocks, false).unwrap();
         let manager = SpinLock::new(PoolSlotManager {
@@ -585,7 +585,7 @@ impl BioSegmentPool {
     ///
     /// If the `offset_within_first_block` exceeds the block size, or the `len`
     /// exceeds the total length, this method will panic.
-    pub fn alloc(
+    fn alloc(
         &self,
         nblocks: usize,
         offset_within_first_block: usize,
