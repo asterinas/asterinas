@@ -7,7 +7,7 @@ use core::{
 };
 
 use aster_block::{
-    BlockDeviceMeta, PartitionNode,
+    BlockDeviceMeta, PartitionManager,
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio, bio_segment_pool_init},
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
@@ -42,7 +42,7 @@ pub struct BlockDevice {
     queue: BioRequestSingleQueue,
     id: DeviceId,
     name: String,
-    partitions: SpinLock<Option<Vec<Arc<PartitionNode>>>>,
+    partition_manager: PartitionManager,
 }
 
 impl BlockDevice {
@@ -88,7 +88,7 @@ impl BlockDevice {
             ),
             id,
             name,
-            partitions: SpinLock::new(None),
+            partition_manager: PartitionManager::new(),
         });
 
         aster_block::register(block_device).unwrap();
@@ -135,18 +135,8 @@ impl aster_block::BlockDevice for BlockDevice {
         self.id
     }
 
-    fn partitions(&self) -> Option<Vec<Arc<dyn aster_block::BlockDevice>>> {
-        let partitions = self.partitions.lock();
-        let devices = partitions
-            .as_ref()?
-            .iter()
-            .map(|p| p.clone() as Arc<dyn aster_block::BlockDevice>)
-            .collect();
-        Some(devices)
-    }
-
-    fn set_partitions(&self, partitions: Vec<Arc<PartitionNode>>) {
-        *self.partitions.lock() = Some(partitions);
+    fn partition_manager(&self) -> Option<&PartitionManager> {
+        Some(&self.partition_manager)
     }
 }
 
