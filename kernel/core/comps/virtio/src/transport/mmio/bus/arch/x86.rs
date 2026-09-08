@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::vec::Vec;
+use core::ops::Range;
 
 use aster_cmdline::types::MmioDevice;
 pub(super) use ostd::arch::irq::MappedIrqLine;
-use ostd::{arch::irq::IRQ_CHIP, debug, info, warn};
+use ostd::{arch::irq::IRQ_CHIP, debug, info, io::IoMem, irq::IrqLine, warn};
 use spin::Once;
 
-use crate::transport::mmio::bus::MmioRegisterError;
+use crate::transport::mmio::{
+    MMIO_BUS,
+    bus::{MmioValidateError, common_device::MmioCommonDevice},
+};
 
 pub(super) fn probe_for_device() {
     probe_from_kernel_cmdline();
@@ -25,8 +29,6 @@ fn probe_from_kernel_cmdline() {
         return;
     };
 
-    let irq_chip = IRQ_CHIP.get().unwrap();
-
     for device in devices {
         info!(
             "Probe MMIO command-line device: base={:#x}, size={:#x}, irq={}",
@@ -43,9 +45,7 @@ fn probe_from_kernel_cmdline() {
             continue;
         };
 
-        if let Err(err) = super::try_register_mmio_device(device.base()..mmio_end, |irq_line| {
-            irq_chip.map_gsi_pin_to(irq_line, device.irq().get())
-        }) {
+        if let Err(err) = try_register_mmio_device(device.base()..mmio_end, device.irq().get()) {
             warn!(
                 "Ignore MMIO command-line device at {:#x} due to an error ({:?})",
                 device.base(),
@@ -85,11 +85,63 @@ fn probe_from_microvm_constants() {
 
     for index in 0..num_trans {
         let mmio_base = QEMU_MMIO_BASE + (index as usize) * QEMU_MMIO_SIZE;
-        match super::try_register_mmio_device(mmio_base..(mmio_base + QEMU_MMIO_SIZE), |irq_line| {
-            irq_chip.map_gsi_pin_to(irq_line, gsi_base + index)
-        }) {
+        match try_register_mmio_device(mmio_base..(mmio_base + QEMU_MMIO_SIZE), gsi_base + index) {
             Err(e) if e.is_fatal() => break,
             _ => continue,
+        }
+    }
+}
+
+fn try_register_mmio_device(
+    mmio_range: Range<usize>,
+    gsi_index: u32,
+) -> Result<(), MmioRegisterError> {
+    let start_addr = mmio_range.start;
+    let Ok(io_mem) = IoMem::acquire(mmio_range) else {
+        debug!(
+            "Abort MMIO detection at {:#x} because the MMIO address is not available",
+            start_addr
+        );
+        return Err(MmioRegisterError::MmioUnavailable);
+    };
+
+    super::validate_mmio_device(&io_mem)?;
+
+    let mapped_irq_line = if let Ok(irq_line) = IrqLine::alloc()
+        && let Ok(mapped_irq_line) = IRQ_CHIP.get().unwrap().map_gsi_pin_to(irq_line, gsi_index)
+    {
+        mapped_irq_line
+    } else {
+        debug!(
+            "Ignore MMIO device at {:#x} because its IRQ line is not available",
+            start_addr
+        );
+        return Err(MmioRegisterError::IrqUnavailable);
+    };
+
+    let device = MmioCommonDevice::new(io_mem, mapped_irq_line);
+    MMIO_BUS.lock().register_mmio_device(device);
+
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug)]
+enum MmioRegisterError {
+    /// MMIO region not available.
+    MmioUnavailable,
+    /// Not a VirtIO-MMIO slot.
+    MagicMismatch,
+    /// No device present.
+    NoDevice,
+    /// IRQ line not available.
+    IrqUnavailable,
+}
+
+impl From<MmioValidateError> for MmioRegisterError {
+    fn from(value: MmioValidateError) -> Self {
+        match value {
+            MmioValidateError::MagicMismatch => Self::MagicMismatch,
+            MmioValidateError::NoDevice => Self::NoDevice,
         }
     }
 }

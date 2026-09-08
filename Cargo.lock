@@ -417,6 +417,7 @@ dependencies = [
  "component",
  "device-id",
  "dma-pool",
+ "fdt-util",
  "id-alloc",
  "int-to-c-enum",
  "io-util",
