@@ -4,6 +4,7 @@
 
 use core::ops::RangeInclusive;
 
+use fdt_util::AcquireIoMems;
 use ostd::{Error, arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, warn};
 use spin::Once;
 
@@ -34,13 +35,17 @@ pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32, E
 /// The maximum offset in the 12-bit configuration space when using [`encode_as_address_offset`].
 const PCI_ECAM_MAX_OFFSET: u32 = 0xffc;
 
+const PCI_ECAM_BUS_SHIFT: u32 = 20;
+const PCI_ECAM_DEVICE_SHIFT: u32 = 15;
+const PCI_ECAM_FUNCTION_SHIFT: u32 = 12;
+
 /// Encodes the bus, device, and function into an address offset in the PCI MMIO region.
 fn encode_as_address_offset(location: &PciDeviceLocation) -> u32 {
     // We only support ECAM here for RISC-V platforms. Offsets are from
     // <https://www.kernel.org/doc/Documentation/devicetree/bindings/pci/host-generic-pci.txt>.
-    ((location.bus as u32) << 20)
-        | ((location.device as u32) << 15)
-        | ((location.function as u32) << 12)
+    ((location.bus as u32) << PCI_ECAM_BUS_SHIFT)
+        | ((location.device as u32) << PCI_ECAM_DEVICE_SHIFT)
+        | ((location.function as u32) << PCI_ECAM_FUNCTION_SHIFT)
 }
 
 /// Initializes the platform-specific module for accessing the PCI configuration space.
@@ -62,22 +67,6 @@ pub(crate) fn init() -> Option<RangeInclusive<u8>> {
         return None;
     };
 
-    let Some(mut reg) = pci.reg() else {
-        warn!("node should have exactly one `reg` property, but found zero `reg`s");
-        return None;
-    };
-    let Some(region) = reg.next() else {
-        warn!("node should have exactly one `reg` property, but found zero `reg`s");
-        return None;
-    };
-    if reg.next().is_some() {
-        warn!(
-            "node should have exactly one `reg` property, but found {} `reg`s",
-            reg.count() + 2
-        );
-        return None;
-    }
-
     let bus_range = if let Some(prop) = pci.property("bus-range") {
         if prop.value.len() != 8 || prop.value[0..3] != [0, 0, 0] || prop.value[4..7] != [0, 0, 0] {
             warn!(
@@ -95,17 +84,18 @@ pub(crate) fn init() -> Option<RangeInclusive<u8>> {
             );
             return None;
         }
-        Some(prop.value[3]..=prop.value[7])
+        prop.value[3]..=prop.value[7]
     } else {
         // "bus-range: Optional property [..] If absent, defaults to <0 255> (i.e. all buses)."
-        Some(0..=255)
+        0..=255
     };
 
-    let addr_start = region.starting_address as usize;
-    let addr_end = addr_start.checked_add(region.size.unwrap()).unwrap();
-    PCI_ECAM_CFG_SPACE.call_once(|| IoMem::acquire(addr_start..addr_end).unwrap());
+    let io_size = (*bus_range.end() as usize + 1) << PCI_ECAM_BUS_SHIFT;
+    let [io_mem] = pci.acquire_io_mems([io_size])?;
 
-    bus_range
+    PCI_ECAM_CFG_SPACE.call_once(|| io_mem);
+
+    Some(bus_range)
 }
 
 pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2400_0000;
