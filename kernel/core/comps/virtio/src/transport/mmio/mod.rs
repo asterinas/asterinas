@@ -15,7 +15,7 @@ pub mod multiplex;
 
 pub(crate) static VIRTIO_MMIO_DRIVER: Once<Arc<VirtioMmioDriver>> = Once::new();
 
-pub fn virtio_mmio_init() {
+pub(super) fn virtio_mmio_init() {
     bus::init();
 
     VIRTIO_MMIO_DRIVER.call_once(|| Arc::new(VirtioMmioDriver::new()));

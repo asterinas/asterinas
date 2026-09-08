@@ -12,21 +12,21 @@ use volatile::{
 use super::ExtendedCapability;
 
 #[derive(Debug)]
-pub struct InvalidationRegisters {
-    pub(super) _queue_head: VolatileRef<'static, u64, ReadOnly>,
-    pub(super) queue_tail: VolatileRef<'static, u64, ReadWrite>,
-    pub(super) queue_addr: VolatileRef<'static, u64, ReadWrite>,
+pub(super) struct InvalidationRegisters {
+    pub _queue_head: VolatileRef<'static, u64, ReadOnly>,
+    pub queue_tail: VolatileRef<'static, u64, ReadWrite>,
+    pub queue_addr: VolatileRef<'static, u64, ReadWrite>,
 
-    pub(super) completion_status: VolatileRef<'static, u32, ReadWrite>,
-    pub(super) _completion_event_control: VolatileRef<'static, u32, ReadWrite>,
-    pub(super) _completion_event_data: VolatileRef<'static, u32, ReadWrite>,
-    pub(super) _completion_event_addr: VolatileRef<'static, u32, ReadWrite>,
-    pub(super) _completion_event_upper_addr: VolatileRef<'static, u32, ReadWrite>,
+    pub completion_status: VolatileRef<'static, u32, ReadWrite>,
+    pub _completion_event_control: VolatileRef<'static, u32, ReadWrite>,
+    pub _completion_event_data: VolatileRef<'static, u32, ReadWrite>,
+    pub _completion_event_addr: VolatileRef<'static, u32, ReadWrite>,
+    pub _completion_event_upper_addr: VolatileRef<'static, u32, ReadWrite>,
 
-    pub(super) _queue_error_record: VolatileRef<'static, u64, ReadOnly>,
+    pub _queue_error_record: VolatileRef<'static, u64, ReadOnly>,
 
-    pub(super) _invalidate_address: VolatileRef<'static, u64, WriteOnly>,
-    pub(super) iotlb_invalidate: VolatileRef<'static, u64, ReadWrite>,
+    pub _invalidate_address: VolatileRef<'static, u64, WriteOnly>,
+    pub iotlb_invalidate: VolatileRef<'static, u64, ReadWrite>,
 }
 
 impl InvalidationRegisters {

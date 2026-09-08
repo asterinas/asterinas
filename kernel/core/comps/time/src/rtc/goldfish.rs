@@ -6,7 +6,7 @@ use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
 
 use crate::{SystemTime, rtc::Driver};
 
-pub struct RtcGoldfish {
+pub(super) struct RtcGoldfish {
     io_mem: IoMem,
 }
 

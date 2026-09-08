@@ -28,7 +28,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct VirtioMmioDevice {
+pub(super) struct VirtioMmioDevice {
     device_id: u32,
 }
 

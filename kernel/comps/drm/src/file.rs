@@ -36,7 +36,7 @@ static NEXT_CLIENT_ID: AtomicU64 = AtomicU64::new(1);
 /// It tracks per-open capabilities and authentication state and is passed to
 /// driver ioctl handlers to provide the calling client's context.
 #[derive(Debug)]
-pub struct DrmFile {
+pub(super) struct DrmFile {
     client_id: u64,
     client_caps: AtomicDrmClientCaps,
     /// Authentication state present only for primary-node files.
@@ -45,19 +45,19 @@ pub struct DrmFile {
 }
 
 impl DrmFile {
-    pub fn device(&self) -> &Arc<dyn DrmDevice> {
+    pub(super) fn device(&self) -> &Arc<dyn DrmDevice> {
         self.minor.device()
     }
 
-    pub fn minor_type(&self) -> DrmMinorType {
+    pub(super) fn minor_type(&self) -> DrmMinorType {
         self.minor.type_()
     }
 
-    pub fn has_features(&self, feature: DrmFeatures) -> bool {
+    pub(super) fn has_features(&self, feature: DrmFeatures) -> bool {
         self.device().has_features(feature)
     }
 
-    pub fn has_client_caps(&self, cap: DrmClientCaps) -> bool {
+    pub(super) fn has_client_caps(&self, cap: DrmClientCaps) -> bool {
         self.client_caps.load(Ordering::Relaxed).contains(cap)
     }
 
