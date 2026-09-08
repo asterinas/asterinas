@@ -16,6 +16,15 @@ xfstests/
 |       |-- block.list       # Tests excluded from every run
 |       |-- short.list       # Default quick run list
 |       `-- full.list        # Broader manual or scheduled run list
+|-- overlay/                 # Configuration for XFSTESTS_FS_TYPE=overlay
+|   |-- config/
+|   |   |-- build_config.mk  # Build-time image and mkfs settings
+|   |   `-- xfstests.config  # Runtime options loaded by xfstests
+|   |-- prepare.sh           # Guest-side setup before ./check
+|   `-- run_list/
+|       |-- block.list       # Tests excluded from every run
+|       |-- short.list       # Default quick run list
+|       `-- full.list        # Broader manual or scheduled run list
 |-- tmpfs/
 |   `-- ...
 `-- template/                # Starting point for a new filesystem
@@ -35,11 +44,18 @@ make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests
 make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests \
     XFSTESTS_FS_TYPE=tmpfs
 
+# Run the overlay short list
+make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests \
+    XFSTESTS_FS_TYPE=overlay XFSTESTS_DISK_SIZE=6G \
+    XFSTESTS_RUNLIST=short.list
+
 # Run the ext2 full list
 make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests \
     XFSTESTS_FS_TYPE=ext2 \
     XFSTESTS_RUNLIST=full.list
 ```
+
+Overlay uses ext2 as the base filesystem. Setting `FSTYP=overlay` activates upstream xfstests' native overlay mode.
 
 To run one or a few cases locally, create a run list under `<fs>/run_list/` and pass its filename with `XFSTESTS_RUNLIST`:
 

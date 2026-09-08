@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#define _GNU_SOURCE
 #include <fcntl.h>
 #include <limits.h>
 #include <stdint.h>
@@ -8,6 +9,7 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #include <unistd.h>
 
 #include "../../common/test.h"
@@ -61,7 +63,12 @@ static void setup_overlay_tree(void)
 	create_dir(MERGED_DIR);
 
 	write_file(UPPER_DIR "/normal_file");
-	write_file(UPPER_DIR "/.wh.deleted");
+	/*
+	 * A Linux-format whiteout: a char device 0:0 named exactly like the
+	 * deleted file. The merged view must hide both the whiteout itself and
+	 * the same-named lower entry.
+	 */
+	CHECK(mknod(UPPER_DIR "/deleted", S_IFCHR | 0644, makedev(0, 0)));
 	write_file(UPPER_DIR "/normal_extra_0");
 	write_file(UPPER_DIR "/normal_extra_1");
 	write_file(UPPER_DIR "/normal_extra_2");
@@ -78,7 +85,7 @@ static void setup_overlay_tree(void)
 static void cleanup_overlay_tree(void)
 {
 	CHECK(unlink(UPPER_DIR "/normal_file"));
-	CHECK(unlink(UPPER_DIR "/.wh.deleted"));
+	CHECK(unlink(UPPER_DIR "/deleted"));
 	CHECK(unlink(UPPER_DIR "/normal_extra_0"));
 	CHECK(unlink(UPPER_DIR "/normal_extra_1"));
 	CHECK(unlink(UPPER_DIR "/normal_extra_2"));
@@ -92,6 +99,12 @@ static void cleanup_overlay_tree(void)
 	CHECK(unlink(LOWER_DIR "/another_extra_4"));
 
 	CHECK(rmdir(MERGED_DIR));
+	/*
+	 * The overlay mount creates a `work` staging directory inside the
+	 * workdir (Linux `ovl_workdir_create`), which survives unmount; remove
+	 * it before rmdir-ing the workdir itself.
+	 */
+	CHECK(rmdir(WORK_DIR "/work"));
 	CHECK(rmdir(WORK_DIR));
 	CHECK(rmdir(UPPER_DIR));
 	CHECK(rmdir(LOWER_DIR));
@@ -122,9 +135,10 @@ FN_TEST(readdir_small_buffer)
 	/*
 	 * Use a buffer that can hold only one maximal-name dirent, so each
 	 * getdents64() call may stop after a single merged entry. The merged
-	 * directory view should still remain complete: lower entries hidden by
-	 * whiteouts must stay hidden, and the whiteout files themselves must not
-	 * appear.
+	 * directory view should still remain complete: the upper whiteout for
+	 * `deleted` (a char device 0:0) must stay hidden, the lower `deleted`
+	 * it hides must not appear, and every other entry must appear exactly
+	 * once.
 	 */
 	char buf[ONE_LONG_DIRENT_BUF_SIZE];
 	struct readdir_result result = { 0 };

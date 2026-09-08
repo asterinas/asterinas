@@ -20,7 +20,7 @@ use crate::{
             AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags, SyncMode,
         },
         utils::DirentVisitor,
-        vfs::path::Path,
+        vfs::path::{Dentry, Path},
     },
     prelude::*,
     process::{
@@ -363,7 +363,7 @@ pub(crate) trait FileOps {
 pub(crate) trait Inode: Any + FileOps + Send + Sync {
     fn size(&self) -> usize;
 
-    fn resize(&self, new_size: usize) -> Result<()>;
+    fn resize(&self, self_dentry: &Dentry, new_size: usize) -> Result<()>;
 
     /// Returns all inode metadata.
     ///
@@ -390,69 +390,89 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
 
     fn mode(&self) -> Result<InodeMode>;
 
-    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    fn set_mode(&self, self_dentry: &Dentry, mode: InodeMode) -> Result<()>;
 
     fn owner(&self) -> Result<Uid>;
 
-    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn set_owner(&self, self_dentry: &Dentry, uid: Uid) -> Result<()>;
 
     fn group(&self) -> Result<Gid>;
 
-    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn set_group(&self, self_dentry: &Dentry, gid: Gid) -> Result<()>;
 
     fn atime(&self) -> Duration;
 
-    fn set_atime(&self, time: Duration);
+    fn set_atime(&self, self_dentry: &Dentry, time: Duration);
 
     fn mtime(&self) -> Duration;
 
-    fn set_mtime(&self, time: Duration);
+    fn set_mtime(&self, self_dentry: &Dentry, time: Duration);
 
     fn ctime(&self) -> Duration;
 
-    fn set_ctime(&self, time: Duration);
+    fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
 
     fn page_cache(&self) -> Option<Arc<Vmo>> {
         None
     }
 
-    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    fn create(
+        &self,
+        self_dentry: &Dentry,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn create_symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    fn create_symlink(
+        &self,
+        _self_dentry: &Dentry,
+        name: &str,
+        target: &str,
+        mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
     fn create_tmpfile(
         &self,
+        self_dentry: &Dentry,
         mode: InodeMode,
         hard_linkability: HardLinkability,
     ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
-    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
+    fn mknod(
+        &self,
+        self_dentry: &Dentry,
+        name: &str,
+        mode: InodeMode,
+        type_: MknodType,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
     fn open(
         &self,
+        self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         None
     }
 
-    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
+    fn link(&self, self_dentry: &Dentry, old_dentry: &Dentry, name: &str) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn unlink(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
+    fn unlink(&self, child_dentry: &Dentry) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn rmdir(&self, name: &str, child: &Arc<dyn Inode>) -> Result<()> {
+    fn rmdir(&self, child_dentry: &Dentry) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }
 
@@ -460,13 +480,25 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    /// Renames `old_child_dentry`, a child of this directory, to `new_name`
+    /// in the directory denoted by `new_dir_dentry`.
+    ///
+    /// `target_dentry` is the dentry currently occupying the destination
+    /// `new_dir_dentry`/`new_name`, or `None` if the destination name is
+    /// vacant. Which combinations are reachable is frozen by the VFS gate:
+    ///
+    /// - [`RenameMode::NoReplace`]: the filesystem never receives `Some(_)`
+    ///   here; the VFS gate rejects an existing target with `EEXIST`
+    ///   beforehand.
+    /// - [`RenameMode::Exchange`]: always `Some(_)`.
+    /// - [`RenameMode::Replace`]: both are reachable (`None` creates a new
+    ///   entry; `Some(_)` replaces the existing one).
     fn rename(
         &self,
-        old_name: &str,
-        old_inode: &Arc<dyn Inode>,
-        new_dir_inode: &Arc<dyn Inode>,
+        old_child_dentry: &Dentry,
+        new_dir_dentry: &Dentry,
         new_name: &str,
-        replaced_inode: Option<&Arc<dyn Inode>>,
+        target_dentry: Option<&Dentry>,
         mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
@@ -553,6 +585,7 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
 
     fn set_xattr(
         &self,
+        self_dentry: &Dentry,
         name: XattrName,
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
@@ -568,7 +601,7 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
-    fn remove_xattr(&self, name: XattrName) -> Result<()> {
+    fn remove_xattr(&self, self_dentry: &Dentry, _name: XattrName) -> Result<()> {
         Err(Error::new(Errno::EOPNOTSUPP))
     }
 
@@ -681,6 +714,7 @@ impl Debug for dyn Inode {
 pub(crate) struct Extension {
     group1: Once<ThinBox<dyn Any + Send + Sync>>,
     group2: Once<ThinBox<dyn Any + Send + Sync>>,
+    group3: Once<ThinBox<dyn Any + Send + Sync>>,
 }
 
 impl Extension {
@@ -689,6 +723,7 @@ impl Extension {
         Self {
             group1: Once::new(),
             group2: Once::new(),
+            group3: Once::new(),
         }
     }
 
@@ -700,6 +735,11 @@ impl Extension {
     /// Gets the second extension group.
     pub(crate) fn group2(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
         &self.group2
+    }
+
+    /// Gets the third extension group.
+    pub fn group3(&self) -> &Once<ThinBox<dyn Any + Send + Sync>> {
+        &self.group3
     }
 }
 

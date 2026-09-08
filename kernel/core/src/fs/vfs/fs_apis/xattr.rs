@@ -3,7 +3,7 @@
 use crate::{
     fs::{
         file::{InodeMode, InodeType},
-        vfs::inode::Inode,
+        vfs::path::Dentry,
     },
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
@@ -16,22 +16,24 @@ pub(crate) const XATTR_LIST_MAX_LEN: usize = 65536;
 pub(crate) const SECURITY_CAPABILITY_XATTR_NAME: &str = "security.capability";
 
 /// Clears file privileges after an operation modifies file contents.
-pub(in crate::fs) fn clear_file_priv(inode: &dyn Inode) -> Result<()> {
+pub(in crate::fs) fn clear_file_priv(dentry: &Dentry) -> Result<()> {
+    let inode = dentry.inode().as_ref();
     if inode.type_() != InodeType::File {
         return Ok(());
     }
 
     let xattr_name = XattrName::try_from_full_name(SECURITY_CAPABILITY_XATTR_NAME).unwrap();
-    match inode.remove_xattr(xattr_name) {
+    match inode.remove_xattr(dentry, xattr_name) {
         Ok(()) => Ok(()),
         Err(error) if matches!(error.error(), Errno::ENODATA | Errno::EOPNOTSUPP) => Ok(()),
         Err(error) => Err(error),
     }?;
 
-    clear_set_id_bits(inode)
+    clear_set_id_bits(dentry)
 }
 
-fn clear_set_id_bits(inode: &dyn Inode) -> Result<()> {
+fn clear_set_id_bits(dentry: &Dentry) -> Result<()> {
+    let inode = dentry.inode().as_ref();
     let mut mode = inode.mode()?;
     if !mode.intersects(InodeMode::S_ISUID | InodeMode::S_ISGID) {
         return Ok(());
@@ -68,7 +70,7 @@ fn clear_set_id_bits(inode: &dyn Inode) -> Result<()> {
     if mode == original_mode {
         return Ok(());
     }
-    inode.set_mode(mode)
+    inode.set_mode(dentry, mode)
 }
 
 /// Represents different namespaces with different capabilities

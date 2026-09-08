@@ -104,26 +104,27 @@ impl<T: NsCommonOps> NsInode<T> {
 #[inherit_methods(from = "self.common")]
 impl<T: NsCommonOps> Inode for NsInode<T> {
     fn size(&self) -> usize;
-    fn resize(&self, _new_size: usize) -> Result<()>;
+    fn resize(&self, self_dentry: &Dentry, _new_size: usize) -> Result<()>;
     fn metadata(&self) -> Result<Metadata>;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
     fn type_(&self) -> InodeType;
     fn mode(&self) -> Result<InodeMode>;
     fn owner(&self) -> Result<Uid>;
-    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn set_owner(&self, self_dentry: &Dentry, uid: Uid) -> Result<()>;
     fn group(&self) -> Result<Gid>;
-    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn set_group(&self, self_dentry: &Dentry, gid: Gid) -> Result<()>;
     fn atime(&self) -> Duration;
-    fn set_atime(&self, time: Duration);
+    fn set_atime(&self, self_dentry: &Dentry, time: Duration);
     fn mtime(&self) -> Duration;
-    fn set_mtime(&self, time: Duration);
+    fn set_mtime(&self, self_dentry: &Dentry, time: Duration);
     fn ctime(&self) -> Duration;
-    fn set_ctime(&self, time: Duration);
+    fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn open(
         &self,
+        _self_dentry: &Dentry,
         access_mode: AccessMode,
         _status_flags: StatusFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
@@ -144,7 +145,7 @@ impl<T: NsCommonOps> Inode for NsInode<T> {
         Some(Ok(Box::new(ns_file) as Box<dyn PerOpenFileOps>))
     }
 
-    fn set_mode(&self, _mode: InodeMode) -> Result<()> {
+    fn set_mode(&self, _self_dentry: &Dentry, _mode: InodeMode) -> Result<()> {
         return_errno_with_message!(Errno::EPERM, "the mode of ns inodes cannot be changed");
     }
 }
