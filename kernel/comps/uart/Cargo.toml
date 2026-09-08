@@ -14,6 +14,7 @@ spin.workspace = true
 
 [target.riscv64imac-unknown-none-elf.dependencies]
 fdt.workspace = true
+fdt-util.workspace = true
 
 [lints]
 workspace = true
