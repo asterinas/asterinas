@@ -295,18 +295,18 @@ mod is_used {
 
             static IS_USED: AtomicBool = AtomicBool::new(false);
 
-            pub fn debug_set_true() {
+            pub(super) fn debug_set_true() {
                 IS_USED.store(true, Ordering::Relaxed);
             }
 
-            pub fn debug_assert_false() {
+            pub(super) fn debug_assert_false() {
                 debug_assert!(!IS_USED.load(Ordering::Relaxed));
             }
         }
         _ => {
-            pub fn debug_set_true() {}
+            pub(super) fn debug_set_true() {}
 
-            pub fn debug_assert_false() {}
+            pub(super) fn debug_assert_false() {}
         }
     }
 }

@@ -190,7 +190,7 @@ macro_rules! impl_from_bytes {
                 stringify!($struct),
                 "`].",
             )]
-            pub fn from_bytes(bytes: &[u8]) -> Self {
+            pub(super) fn from_bytes(bytes: &[u8]) -> Self {
                 let header = $header_struct::from_first_bytes(bytes);
                 debug_assert_eq!(header.length as usize, bytes.len());
 
@@ -249,7 +249,7 @@ impl Rhsa {
     /// # Panics
     ///
     /// This method may panic if the bytes do not represent a valid [`Rhsa`].
-    pub fn from_bytes(bytes: &[u8]) -> Self {
+    pub(super) fn from_bytes(bytes: &[u8]) -> Self {
         let val = <Self as Pod>::from_first_bytes(bytes);
         debug_assert_eq!(val.length as usize, bytes.len());
 
@@ -263,7 +263,7 @@ impl Andd {
     /// # Panics
     ///
     /// This method may panic if the bytes do not represent a valid [`Andd`].
-    pub fn from_bytes(bytes: &[u8]) -> Self {
+    pub(super) fn from_bytes(bytes: &[u8]) -> Self {
         let header = AnddHeader::from_first_bytes(bytes);
         debug_assert_eq!(header.length as usize, bytes.len());
 

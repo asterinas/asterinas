@@ -22,7 +22,7 @@ mod test_utils {
 
     /// Creates a new user page table that has mapped a virtual range to a physical frame.
     #[track_caller]
-    pub fn create_user_pt_mapped_at(virt_range: Range<Vaddr>) -> PageTable<UserPtConfig> {
+    pub(super) fn create_user_pt_mapped_at(virt_range: Range<Vaddr>) -> PageTable<UserPtConfig> {
         let page_table = PageTable::<UserPtConfig>::empty();
 
         let frame = FrameAllocOptions::new().alloc_frame().unwrap();
@@ -42,7 +42,7 @@ mod test_utils {
 
     /// Maps a range of virtual addresses to physical addresses with specified properties.
     #[track_caller]
-    pub fn map_untracked(
+    pub(super) fn map_untracked(
         pt: &PageTable<TestPtConfig>,
         va: Range<Vaddr>,
         pa: Paddr,
@@ -56,7 +56,7 @@ mod test_utils {
     }
 
     /// Applies a protection operation to a range of virtual addresses within a PageTable.
-    pub fn protect_range<C: PageTableConfig>(
+    pub(super) fn protect_range<C: PageTableConfig>(
         page_table: &PageTable<C>,
         range: &Range<Vaddr>,
         mut protect_op: impl FnMut(&mut PageProperty),
@@ -72,7 +72,7 @@ mod test_utils {
     }
 
     #[derive(Clone, Debug, Default)]
-    pub struct VeryHugePagingConsts;
+    pub(super) struct VeryHugePagingConsts;
 
     impl PagingConstsTrait for VeryHugePagingConsts {
         const NR_LEVELS: PagingLevel = 4;
@@ -84,7 +84,7 @@ mod test_utils {
     }
 
     #[derive(Clone, Debug)]
-    pub struct TestPtConfig;
+    pub(super) struct TestPtConfig;
 
     // SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
     // `item_ref_from_raw` are correctly implemented with respect to the `Item`
@@ -120,8 +120,8 @@ mod test_utils {
         }
     }
 
-    pub type TestPtItem = (Paddr, PagingLevel, PageProperty);
-    pub struct TestPtItemRef<'a>(pub TestPtItem, pub PhantomData<&'a ()>);
+    pub(super) type TestPtItem = (Paddr, PagingLevel, PageProperty);
+    pub(super) struct TestPtItemRef<'a>(pub TestPtItem, pub PhantomData<&'a ()>);
 
     /// A subset iterator for bitflags.
     ///
@@ -129,7 +129,7 @@ mod test_utils {
     ///
     /// When given a bitflag `full`, it iterates over all subsets of `full` in
     /// descending order of their integer values.
-    pub struct SubsetIter {
+    pub(super) struct SubsetIter {
         full: u8,
         cur: u8,
         finished: bool,
@@ -137,7 +137,7 @@ mod test_utils {
 
     impl SubsetIter {
         /// Create a new subset iterator for the given full bitflag.
-        pub fn new(full: u8) -> Self {
+        pub(super) fn new(full: u8) -> Self {
             SubsetIter {
                 full,
                 cur: full,
@@ -176,7 +176,7 @@ mod test_utils {
     }
 
     /// Generates all possible page properties.
-    pub fn all_page_properties() -> impl Iterator<Item = PageProperty> {
+    pub(super) fn all_page_properties() -> impl Iterator<Item = PageProperty> {
         let flag_subsets =
             SubsetIter::new(PageFlags::all().bits()).map(|f| PageFlags::from_bits(f).unwrap());
         flag_subsets.flat_map(|flags| {

@@ -14,8 +14,8 @@ use spin::Once;
 
 use self::driver::VirtioPciDriver;
 
-pub static VIRTIO_PCI_DRIVER: Once<Arc<VirtioPciDriver>> = Once::new();
-pub fn virtio_pci_init() {
+pub(crate) static VIRTIO_PCI_DRIVER: Once<Arc<VirtioPciDriver>> = Once::new();
+pub(super) fn virtio_pci_init() {
     VIRTIO_PCI_DRIVER.call_once(|| Arc::new(VirtioPciDriver::new()));
     PCI_BUS
         .lock()

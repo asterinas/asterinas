@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub use context_table::RootTable;
-pub use second_stage::IommuPtConfig;
+pub(super) use context_table::RootTable;
+pub(crate) use second_stage::IommuPtConfig;
 use spin::Once;
 
 use super::IommuError;
@@ -23,7 +23,7 @@ pub(crate) fn has_dma_remapping() -> bool {
 
 /// PCI device Location
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct PciDeviceLocation {
+pub(super) struct PciDeviceLocation {
     /// Bus number
     pub bus: u8,
     /// Device number with max 31
@@ -121,7 +121,7 @@ pub(crate) fn unmap(daddr: Daddr) -> Result<(), IommuError> {
     }
 }
 
-pub fn init() {
+pub(super) fn init() {
     if !IOMMU_REGS
         .get()
         .unwrap()

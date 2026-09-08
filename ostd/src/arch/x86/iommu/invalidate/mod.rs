@@ -6,8 +6,8 @@ use spin::Once;
 use super::registers::{ExtendedCapabilityFlags, IOMMU_REGS};
 use crate::{info, sync::SpinLock, warn};
 
-pub mod descriptor;
-pub mod queue;
+pub(super) mod descriptor;
+pub(super) mod queue;
 
 pub(super) fn init() {
     let mut iommu_regs = IOMMU_REGS.get().unwrap().lock();

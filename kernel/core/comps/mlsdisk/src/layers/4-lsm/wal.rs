@@ -47,7 +47,7 @@ impl<D: BlockSet + 'static> WalAppendTx<D> {
     const BUF_CAP: usize = 1024 * BLOCK_SIZE;
 
     /// Prepare a new WAL TX.
-    pub fn new(store: &Arc<TxLogStore<D>>, sync_id: SyncId) -> Self {
+    pub(super) fn new(store: &Arc<TxLogStore<D>>, sync_id: SyncId) -> Self {
         Self {
             inner: Arc::new(Mutex::new(WalTxInner {
                 appended_log: None,
@@ -60,7 +60,7 @@ impl<D: BlockSet + 'static> WalAppendTx<D> {
     }
 
     /// Append phase for an Append TX, mainly to append newly records to the WAL.
-    pub fn append<K: Pod, V: Pod>(&self, record: &dyn AsKV<K, V>) -> Result<()> {
+    pub(super) fn append<K: Pod, V: Pod>(&self, record: &dyn AsKV<K, V>) -> Result<()> {
         let mut inner = self.inner.lock();
         if inner.appended_log.is_none() {
             inner.prepare()?;
@@ -93,7 +93,7 @@ impl<D: BlockSet + 'static> WalAppendTx<D> {
     /// # Panics
     ///
     /// This method panics if current WAL's TX does not exist.
-    pub fn commit(&self) -> Result<TxLogId> {
+    pub(super) fn commit(&self) -> Result<TxLogId> {
         let mut inner = self.inner.lock();
         let wal_log = inner
             .appended_log
@@ -116,7 +116,7 @@ impl<D: BlockSet + 'static> WalAppendTx<D> {
 
     /// Appends current sync ID to WAL then commit the TX to ensure WAL's persistency.
     /// Save the log ID for later appending.
-    pub fn sync(&self, sync_id: SyncId) -> Result<()> {
+    pub(super) fn sync(&self, sync_id: SyncId) -> Result<()> {
         let mut inner = self.inner.lock();
         if inner.appended_log.is_none() {
             inner.prepare()?;
@@ -157,7 +157,7 @@ impl<D: BlockSet + 'static> WalAppendTx<D> {
     }
 
     /// Collects the synced records only and the maximum sync ID in the WAL.
-    pub fn collect_synced_records_and_sync_id<K: Pod, V: Pod>(
+    pub(super) fn collect_synced_records_and_sync_id<K: Pod, V: Pod>(
         wal: &TxLog<D>,
     ) -> Result<(Vec<(K, V)>, SyncId)> {
         let nblocks = wal.nblocks();

@@ -294,7 +294,7 @@ impl EarlyFrameAllocator {
     }
 
     /// Allocates a contiguous range of frames.
-    pub fn alloc(&mut self, layout: Layout) -> Option<Paddr> {
+    pub(super) fn alloc(&mut self, layout: Layout) -> Option<Paddr> {
         let size = layout.size().align_up(PAGE_SIZE);
         let align = layout.align().max(PAGE_SIZE);
 

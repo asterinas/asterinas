@@ -59,7 +59,7 @@ const DIFF_RECORD_SIZE: usize = size_of::<AllocDiff>() + size_of::<Hba>();
 
 impl AllocTable {
     /// Create a new `AllocTable` given the total number of blocks.
-    pub fn new(nblocks: NonZeroUsize) -> Self {
+    pub(super) fn new(nblocks: NonZeroUsize) -> Self {
         Self {
             bitmap: Mutex::new(BitMap::repeat(true, nblocks.get())),
             next_avail: AtomicUsize::new(0),
@@ -72,7 +72,7 @@ impl AllocTable {
 
     /// Allocate a free slot for a new block, returns `None`
     /// if there are no free slots.
-    pub fn alloc(&self) -> Option<Hba> {
+    pub(super) fn alloc(&self) -> Option<Hba> {
         let mut bitmap = self.bitmap.lock();
         let next_avail = self.next_avail.load(Ordering::Acquire);
 
@@ -89,7 +89,7 @@ impl AllocTable {
 
     /// Allocate multiple free slots for a bunch of new blocks, returns `None`
     /// if there are no free slots for all.
-    pub fn alloc_batch(&self, count: NonZeroUsize) -> Result<Vec<Hba>> {
+    pub(super) fn alloc_batch(&self, count: NonZeroUsize) -> Result<Vec<Hba>> {
         let cnt = count.get();
         let mut num_free = self.num_free.lock().unwrap();
         while *num_free < cnt {
@@ -133,7 +133,7 @@ impl AllocTable {
 
     /// Recover the `AllocTable` from the latest `BVT` log and a bunch of `BAL` logs
     /// in the given store.
-    pub fn recover<D: BlockSet + 'static>(
+    pub(super) fn recover<D: BlockSet + 'static>(
         nblocks: NonZeroUsize,
         store: &Arc<TxLogStore<D>>,
     ) -> Result<Self> {
@@ -227,7 +227,10 @@ impl AllocTable {
     }
 
     /// Persist the block validity table to `BVT` log. GC all existed `BAL` logs.
-    pub fn do_compaction<D: BlockSet + 'static>(&self, store: &Arc<TxLogStore<D>>) -> Result<()> {
+    pub(super) fn do_compaction<D: BlockSet + 'static>(
+        &self,
+        store: &Arc<TxLogStore<D>>,
+    ) -> Result<()> {
         if !self.is_dirty.load(Ordering::Relaxed) {
             return Ok(());
         }
@@ -273,7 +276,7 @@ impl AllocTable {
     }
 
     /// Mark a specific slot deallocated.
-    pub fn set_deallocated(&self, nth: usize) {
+    pub(super) fn set_deallocated(&self, nth: usize) {
         let mut num_free = self.num_free.lock().unwrap();
         self.bitmap.lock().set(nth, true);
 
@@ -287,7 +290,7 @@ impl AllocTable {
 
 impl<D: BlockSet + 'static> BlockAlloc<D> {
     /// Create a new `BlockAlloc` with the given global allocator and store.
-    pub fn new(alloc_table: Arc<AllocTable>, store: Arc<TxLogStore<D>>) -> Self {
+    pub(super) fn new(alloc_table: Arc<AllocTable>, store: Arc<TxLogStore<D>>) -> Self {
         Self {
             alloc_table,
             diff_table: Mutex::new(BTreeMap::new()),
@@ -297,7 +300,7 @@ impl<D: BlockSet + 'static> BlockAlloc<D> {
     }
 
     /// Record a diff of `Alloc`.
-    pub fn alloc_block(&self, block_id: Hba) -> Result<()> {
+    pub(super) fn alloc_block(&self, block_id: Hba) -> Result<()> {
         let mut diff_table = self.diff_table.lock();
         let replaced = diff_table.insert(block_id, AllocDiff::Alloc);
         debug_assert!(
@@ -308,7 +311,7 @@ impl<D: BlockSet + 'static> BlockAlloc<D> {
     }
 
     /// Record a diff of `Dealloc`.
-    pub fn dealloc_block(&self, block_id: Hba) -> Result<()> {
+    pub(super) fn dealloc_block(&self, block_id: Hba) -> Result<()> {
         let mut diff_table = self.diff_table.lock();
         let replaced = diff_table.insert(block_id, AllocDiff::Dealloc);
         debug_assert!(
@@ -323,7 +326,7 @@ impl<D: BlockSet + 'static> BlockAlloc<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn prepare_diff_log(&self) -> Result<()> {
+    pub(super) fn prepare_diff_log(&self) -> Result<()> {
         // Do nothing for now
         Ok(())
     }
@@ -333,7 +336,7 @@ impl<D: BlockSet + 'static> BlockAlloc<D> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn update_diff_log(&self) -> Result<()> {
+    pub(super) fn update_diff_log(&self) -> Result<()> {
         let diff_table = self.diff_table.lock();
         if diff_table.is_empty() {
             return Ok(());
@@ -362,7 +365,7 @@ impl<D: BlockSet + 'static> BlockAlloc<D> {
     }
 
     /// Update the metadata in diff table to the in-memory block validity table.
-    pub fn update_alloc_table(&self) {
+    pub(super) fn update_alloc_table(&self) {
         let diff_table = self.diff_table.lock();
         let alloc_table = &self.alloc_table;
         let mut num_free = alloc_table.num_free.lock().unwrap();

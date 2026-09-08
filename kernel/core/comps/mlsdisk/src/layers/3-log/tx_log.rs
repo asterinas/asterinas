@@ -114,7 +114,7 @@ pub(crate) struct TxLogStore<D> {
 /// Superblock of `TxLogStore`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct Superblock {
+pub(super) struct Superblock {
     journal_area_meta: EditJournalMeta,
     chunk_area_nblocks: usize,
     magic: u64,
@@ -728,12 +728,12 @@ impl Superblock {
     const SUPERBLOCK_SIZE: usize = size_of::<Superblock>();
 
     /// Returns the total number of blocks occupied by the `TxLogStore`.
-    pub fn total_nblocks(&self) -> usize {
+    pub(super) fn total_nblocks(&self) -> usize {
         self.journal_area_meta.total_nblocks() + self.chunk_area_nblocks
     }
 
     /// Reads the `Superblock` on the disk with the given root key.
-    pub fn open<D: BlockSet>(disk: &D, root_key: &Key) -> Result<Self> {
+    pub(super) fn open<D: BlockSet>(disk: &D, root_key: &Key) -> Result<Self> {
         let mut cipher = Buf::alloc(1)?;
         disk.read(0, cipher.as_mut())?;
         let mut plain = Buf::alloc(1)?;
@@ -753,7 +753,7 @@ impl Superblock {
     }
 
     /// Persists the `Superblock` on the disk with the given root key.
-    pub fn persist<D: BlockSet>(&self, disk: &D, root_key: &Key) -> Result<()> {
+    pub(super) fn persist<D: BlockSet>(&self, disk: &D, root_key: &Key) -> Result<()> {
         let mut plain = Buf::alloc(1)?;
         plain.as_mut_slice()[..Self::SUPERBLOCK_SIZE].copy_from_slice(self.as_bytes());
         let mut cipher = Buf::alloc(1)?;
@@ -869,7 +869,7 @@ impl<D: BlockSet + 'static> Debug for TxLog<D> {
 }
 
 /// Node cache for `CryptoLog` in a transactional log.
-pub struct CryptoLogCache {
+pub(super) struct CryptoLogCache {
     inner: Mutex<CacheInner>,
     log_id: TxLogId,
     tx_provider: Arc<TxProvider>,
@@ -923,7 +923,7 @@ impl NodeCache for CryptoLogCache {
 }
 
 impl CacheInner {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         // TODO: Give the cache a bound then test cache hit rate
         Self {
             lru_cache: LruCache::unbounded(),
@@ -944,14 +944,14 @@ struct State {
 
 /// The persistent state of a `TxLogStore`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TxLogStoreState {
+pub(super) struct TxLogStoreState {
     log_table: HashMap<TxLogId, TxLogEntry>,
     bucket_table: HashMap<BucketName, Bucket>,
 }
 
 /// A log entry implies the persistent state of the tx log.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TxLogEntry {
+pub(super) struct TxLogEntry {
     pub bucket: BucketName,
     pub key: Key,
     pub root_mht: RootMhtMeta,
@@ -982,14 +982,14 @@ impl State {
 }
 
 impl TxLogStoreState {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             log_table: HashMap::new(),
             bucket_table: HashMap::new(),
         }
     }
 
-    pub fn create_log(
+    pub(super) fn create_log(
         &mut self,
         new_log_id: TxLogId,
         bucket: BucketName,
@@ -1021,13 +1021,13 @@ impl TxLogStoreState {
         }
     }
 
-    pub fn find_log(&self, log_id: TxLogId) -> Result<&TxLogEntry> {
+    pub(super) fn find_log(&self, log_id: TxLogId) -> Result<&TxLogEntry> {
         self.log_table
             .get(&log_id)
             .ok_or(Error::with_msg(NotFound, "log entry not found"))
     }
 
-    pub fn list_logs_in(&self, bucket: &str) -> Result<HashSet<TxLogId>> {
+    pub(super) fn list_logs_in(&self, bucket: &str) -> Result<HashSet<TxLogId>> {
         let bucket = self
             .bucket_table
             .get(bucket)
@@ -1035,20 +1035,20 @@ impl TxLogStoreState {
         Ok(bucket.log_ids.clone())
     }
 
-    pub fn list_all_logs(&self) -> impl Iterator<Item = TxLogId> + '_ {
+    pub(super) fn list_all_logs(&self) -> impl Iterator<Item = TxLogId> + '_ {
         self.log_table.iter().map(|(id, _)| *id)
     }
 
-    pub fn contains_log(&self, log_id: TxLogId) -> bool {
+    pub(super) fn contains_log(&self, log_id: TxLogId) -> bool {
         self.log_table.contains_key(&log_id)
     }
 
-    pub fn append_log(&mut self, log_id: TxLogId, root_mht: RootMhtMeta) {
+    pub(super) fn append_log(&mut self, log_id: TxLogId, root_mht: RootMhtMeta) {
         let entry = self.log_table.get_mut(&log_id).unwrap();
         entry.root_mht = root_mht;
     }
 
-    pub fn delete_log(&mut self, log_id: TxLogId) {
+    pub(super) fn delete_log(&mut self, log_id: TxLogId) {
         // Do not check the result because concurrent TXs
         // may decide to delete the same logs
         if let Some(entry) = self.log_table.remove(&log_id) {
@@ -1058,7 +1058,7 @@ impl TxLogStoreState {
         }
     }
 
-    pub fn move_log(&mut self, log_id: TxLogId, from_bucket: &str, to_bucket: &str) {
+    pub(super) fn move_log(&mut self, log_id: TxLogId, from_bucket: &str, to_bucket: &str) {
         let entry = self.log_table.get_mut(&log_id).unwrap();
         debug_assert_eq!(entry.bucket, from_bucket);
         let to_bucket = to_bucket.to_string();
@@ -1088,7 +1088,7 @@ impl TxLogStoreState {
 
 /// A persistent edit to the state of `TxLogStore`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TxLogStoreEdit {
+pub(super) struct TxLogStoreEdit {
     edit_table: HashMap<TxLogId, TxLogEdit>,
 }
 
@@ -1133,13 +1133,13 @@ pub(super) struct TxLogMove {
 }
 
 impl TxLogStoreEdit {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             edit_table: HashMap::new(),
         }
     }
 
-    pub fn create_log(&mut self, log_id: TxLogId, bucket: BucketName, key: Key) {
+    pub(super) fn create_log(&mut self, log_id: TxLogId, bucket: BucketName, key: Key) {
         let already_created = self.edit_table.insert(
             log_id,
             TxLogEdit::Create(TxLogCreate {
@@ -1151,14 +1151,14 @@ impl TxLogStoreEdit {
         debug_assert!(already_created.is_none());
     }
 
-    pub fn append_log(&mut self, log_id: TxLogId, root_mht: RootMhtMeta) {
+    pub(super) fn append_log(&mut self, log_id: TxLogId, root_mht: RootMhtMeta) {
         let already_existed = self
             .edit_table
             .insert(log_id, TxLogEdit::Append(TxLogAppend { root_mht }));
         debug_assert!(already_existed.is_none());
     }
 
-    pub fn delete_log(&mut self, log_id: TxLogId) {
+    pub(super) fn delete_log(&mut self, log_id: TxLogId) {
         match self.edit_table.get_mut(&log_id) {
             None => {
                 let _ = self.edit_table.insert(log_id, TxLogEdit::Delete);
@@ -1177,7 +1177,7 @@ impl TxLogStoreEdit {
         }
     }
 
-    pub fn move_log(&mut self, log_id: TxLogId, from_bucket: &str, to_bucket: &str) {
+    pub(super) fn move_log(&mut self, log_id: TxLogId, from_bucket: &str, to_bucket: &str) {
         let move_edit = TxLogEdit::Move(TxLogMove {
             from: from_bucket.to_string(),
             to: to_bucket.to_string(),
@@ -1186,7 +1186,7 @@ impl TxLogStoreEdit {
         debug_assert!(edit_existed.is_none());
     }
 
-    pub fn is_log_created(&self, log_id: TxLogId) -> bool {
+    pub(super) fn is_log_created(&self, log_id: TxLogId) -> bool {
         match self.edit_table.get(&log_id) {
             Some(TxLogEdit::Create(_)) | Some(TxLogEdit::Append(_)) | Some(TxLogEdit::Move(_)) => {
                 true
@@ -1195,25 +1195,25 @@ impl TxLogStoreEdit {
         }
     }
 
-    pub fn is_log_deleted(&self, log_id: TxLogId) -> bool {
+    pub(super) fn is_log_deleted(&self, log_id: TxLogId) -> bool {
         matches!(self.edit_table.get(&log_id), Some(TxLogEdit::Delete))
     }
 
-    pub fn iter_created_logs(&self) -> impl Iterator<Item = &TxLogId> {
+    pub(super) fn iter_created_logs(&self) -> impl Iterator<Item = &TxLogId> {
         self.edit_table
             .iter()
             .filter(|(_, edit)| matches!(edit, TxLogEdit::Create(_)))
             .map(|(id, _)| id)
     }
 
-    pub fn iter_deleted_logs(&self) -> impl Iterator<Item = &TxLogId> {
+    pub(super) fn iter_deleted_logs(&self) -> impl Iterator<Item = &TxLogId> {
         self.edit_table
             .iter()
             .filter(|(_, edit)| matches!(edit, TxLogEdit::Delete))
             .map(|(id, _)| id)
     }
 
-    pub fn update_log_meta(&mut self, meta: (TxLogId, RootMhtMeta)) {
+    pub(super) fn update_log_meta(&mut self, meta: (TxLogId, RootMhtMeta)) {
         // For newly-created logs and existing logs
         // that are appended, update `RootMhtMeta`
         match self.edit_table.get_mut(&meta.0) {
@@ -1229,7 +1229,7 @@ impl TxLogStoreEdit {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.edit_table.is_empty()
     }
 }
@@ -1270,7 +1270,7 @@ impl Edit<TxLogStoreState> for TxLogStoreEdit {
 impl TxData for TxLogStoreEdit {}
 
 impl<D> OpenLogTable<D> {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             open_table: HashMap::new(),
         }
@@ -1278,7 +1278,7 @@ impl<D> OpenLogTable<D> {
 }
 
 impl OpenLogCache {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             open_table: HashMap::new(),
         }
@@ -1296,18 +1296,18 @@ mod journaling {
     use super::*;
     use crate::layers::edit::DefaultCompactPolicy;
 
-    pub type Journal<D> = EditJournal<AllEdit, AllState, D, JournalCompactPolicy>;
-    pub type JournalCompactPolicy = DefaultCompactPolicy;
+    pub(super) type Journal<D> = EditJournal<AllEdit, AllState, D, JournalCompactPolicy>;
+    pub(super) type JournalCompactPolicy = DefaultCompactPolicy;
 
     #[derive(Clone, Debug, Deserialize, Serialize)]
-    pub struct AllState {
+    pub(super) struct AllState {
         pub chunk_alloc: ChunkAllocState,
         pub raw_log_store: RawLogStoreState,
         pub tx_log_store: TxLogStoreState,
     }
 
     #[derive(Debug, Deserialize, Serialize)]
-    pub struct AllEdit {
+    pub(super) struct AllEdit {
         pub chunk_edit: ChunkAllocEdit,
         pub raw_log_edit: RawLogStoreEdit,
         pub tx_log_edit: TxLogStoreEdit,
@@ -1328,7 +1328,7 @@ mod journaling {
     }
 
     impl AllEdit {
-        pub fn from_chunk_edit(chunk_edit: &ChunkAllocEdit) -> Self {
+        pub(super) fn from_chunk_edit(chunk_edit: &ChunkAllocEdit) -> Self {
             Self {
                 chunk_edit: chunk_edit.clone(),
                 raw_log_edit: RawLogStoreEdit::new(),
@@ -1336,7 +1336,7 @@ mod journaling {
             }
         }
 
-        pub fn from_raw_log_edit(raw_log_edit: &RawLogStoreEdit) -> Self {
+        pub(super) fn from_raw_log_edit(raw_log_edit: &RawLogStoreEdit) -> Self {
             Self {
                 chunk_edit: ChunkAllocEdit::new(),
                 raw_log_edit: raw_log_edit.clone(),
@@ -1344,7 +1344,7 @@ mod journaling {
             }
         }
 
-        pub fn from_tx_log_edit(tx_log_edit: &TxLogStoreEdit) -> Self {
+        pub(super) fn from_tx_log_edit(tx_log_edit: &TxLogStoreEdit) -> Self {
             Self {
                 chunk_edit: ChunkAllocEdit::new(),
                 raw_log_edit: RawLogStoreEdit::new(),
