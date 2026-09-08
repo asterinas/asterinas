@@ -266,7 +266,7 @@ impl DeviceTransport {
     ///
     /// The wrapper will set the device status to [`DeviceStatus::FAILED`] on drop
     /// unless [`Self::finish_init`] is called first.
-    pub fn new(transport: Box<dyn VirtioTransport>) -> Self {
+    pub(super) fn new(transport: Box<dyn VirtioTransport>) -> Self {
         Self {
             inner: transport,
             is_completed: false,
@@ -308,7 +308,7 @@ impl Drop for DeviceTransport {
     }
 }
 
-pub fn init() {
+pub(super) fn init() {
     virtio_pci_init();
     virtio_mmio_init();
 }

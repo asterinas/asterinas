@@ -214,7 +214,7 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     /// This function is unsafe because it can cause undefined behavior if the caller
     /// maps a page in the kernel address space.
     #[cfg_attr(not(ktest), expect(dead_code))]
-    pub unsafe fn protect_base_page(
+    pub(super) unsafe fn protect_base_page(
         &mut self,
         virt_addr: Vaddr,
         mut op: impl FnMut(&mut PageProperty),

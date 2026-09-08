@@ -27,7 +27,7 @@ pub fn init_tsc_freq() {
 ///
 /// When the TSC frequency is not enumerated in the results of the CPUID instruction, it can
 /// leverage the PIT to calculate the TSC frequency.
-pub fn determine_tsc_freq_via_pit() -> u64 {
+pub(super) fn determine_tsc_freq_via_pit() -> u64 {
     // Allocate IRQ
     let mut irq = IrqLine::alloc().unwrap();
     irq.on_active(pit_callback);

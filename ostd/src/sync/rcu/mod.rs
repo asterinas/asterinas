@@ -541,6 +541,6 @@ pub(crate) unsafe fn finish_grace_period() {
 
 static RCU_MONITOR: Once<RcuMonitor> = Once::new();
 
-pub fn init() {
+pub(super) fn init() {
     RCU_MONITOR.call_once(RcuMonitor::new);
 }

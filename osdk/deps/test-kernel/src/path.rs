@@ -6,9 +6,9 @@ use alloc::{
 };
 use core::{fmt::Display, iter::zip, ops::Deref};
 
-pub type PathElement = String;
+pub(crate) type PathElement = String;
 
-pub type KtestPathIter<'a> = vec_deque::Iter<'a, PathElement>;
+pub(super) type KtestPathIter<'a> = vec_deque::Iter<'a, PathElement>;
 
 #[derive(Debug)]
 pub(crate) struct KtestPath {
@@ -168,7 +168,7 @@ mod path_test {
 }
 
 #[derive(Debug)]
-pub struct SuffixTrie {
+pub(super) struct SuffixTrie {
     children: BTreeMap<PathElement, SuffixTrie>,
     is_end: bool,
 }
@@ -181,7 +181,7 @@ impl SuffixTrie {
         }
     }
 
-    pub fn from_paths<I: IntoIterator<Item = KtestPath>>(paths: I) -> Self {
+    pub(super) fn from_paths<I: IntoIterator<Item = KtestPath>>(paths: I) -> Self {
         let mut t = Self::new();
         for i in paths {
             t.insert(i.iter());
@@ -220,7 +220,7 @@ impl SuffixTrie {
     }
 
     /// Find if any suffix of the path exists in the suffix trie.
-    pub fn contains<I, P>(&self, path: I) -> bool
+    pub(super) fn contains<I, P>(&self, path: I) -> bool
     where
         I: DoubleEndedIterator<Item = P>,
         P: Deref<Target = PathElement>,

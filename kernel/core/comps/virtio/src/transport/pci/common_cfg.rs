@@ -8,7 +8,7 @@ use crate::transport::pci::capability::VirtioPciCpabilityType;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct VirtioPciCommonCfg {
+pub(super) struct VirtioPciCommonCfg {
     pub device_feature_select: u32,
     pub device_features: u32,
     pub driver_feature_select: u32,
@@ -42,13 +42,13 @@ impl VirtioPciCommonCfg {
 /// See <https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html#x1-1370001>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct VirtioPciCfgU64 {
+pub(super) struct VirtioPciCfgU64 {
     low: u32,
     high: u32,
 }
 
 /// Accesses a 64-bit Virtio PCI configuration field in two 32-bit halves.
-pub trait VirtioPciCfgU64Ext {
+pub(super) trait VirtioPciCfgU64Ext {
     /// Writes the low half followed by the high half.
     fn write_u64(&self, val: u64) -> Result<()>;
 

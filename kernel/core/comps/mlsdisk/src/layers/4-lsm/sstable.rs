@@ -123,18 +123,18 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
 
     /// Return the ID of this `SSTable`, which is the same ID
     /// to the underlying `TxLog`.
-    pub fn id(&self) -> TxLogId {
+    pub(super) fn id(&self) -> TxLogId {
         self.id
     }
 
     /// Return the sync ID of this `SSTable`, it may be smaller than the
     /// current master sync ID.
-    pub fn sync_id(&self) -> SyncId {
+    pub(super) fn sync_id(&self) -> SyncId {
         self.footer.meta.sync_id
     }
 
     /// The range of keys covered by this `SSTable`.
-    pub fn range(&self) -> RangeInclusive<K> {
+    pub(super) fn range(&self) -> RangeInclusive<K> {
         RangeInclusive::new(
             self.footer.index[0].first,
             self.footer.index[self.footer.meta.num_index as usize - 1].last,
@@ -143,12 +143,12 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
 
     /// Whether the target key is within the range, "within the range" doesn't mean
     /// the `SSTable` do have this key.
-    pub fn is_within_range(&self, key: &K) -> bool {
+    pub(super) fn is_within_range(&self, key: &K) -> bool {
         self.range().contains(key)
     }
 
     /// Whether the target range is overlapped with the range of this `SSTable`.
-    pub fn overlap_with(&self, rhs_range: &RangeInclusive<K>) -> bool {
+    pub(super) fn overlap_with(&self, rhs_range: &RangeInclusive<K>) -> bool {
         let lhs_range = self.range();
         !(lhs_range.end() < rhs_range.start() || lhs_range.start() > rhs_range.end())
     }
@@ -160,7 +160,7 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn access_point<D: BlockSet + 'static>(
+    pub(super) fn access_point<D: BlockSet + 'static>(
         &self,
         key: &K,
         tx_log_store: &Arc<TxLogStore<D>>,
@@ -198,7 +198,7 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn access_range<D: BlockSet + 'static>(
+    pub(super) fn access_range<D: BlockSet + 'static>(
         &self,
         range_query_ctx: &mut RangeQueryCtx<K, V>,
         tx_log_store: &Arc<TxLogStore<D>>,
@@ -268,7 +268,7 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn iter<'a, D: BlockSet + 'static>(
+    pub(super) fn iter<'a, D: BlockSet + 'static>(
         &'a self,
         sync_id: SyncId,
         discard_unsynced: bool,
@@ -303,7 +303,7 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn access_scan<D: BlockSet + 'static>(
+    pub(super) fn access_scan<D: BlockSet + 'static>(
         &self,
         sync_id: SyncId,
         discard_unsynced: bool,
@@ -324,7 +324,7 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn build<'a, D: BlockSet + 'static, I, KVex>(
+    pub(super) fn build<'a, D: BlockSet + 'static, I, KVex>(
         records_iter: I,
         sync_id: SyncId,
         tx_log: &'a Arc<TxLog<D>>,
@@ -503,7 +503,7 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
     /// # Panics
     ///
     /// This method must be called within a TX. Otherwise, this method panics.
-    pub fn from_log<D: BlockSet + 'static>(tx_log: &Arc<TxLog<D>>) -> Result<Self> {
+    pub(super) fn from_log<D: BlockSet + 'static>(tx_log: &Arc<TxLog<D>>) -> Result<Self> {
         let nblocks = tx_log.nblocks();
 
         let mut rbuf = Buf::alloc(1)?;
