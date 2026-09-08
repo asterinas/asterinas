@@ -48,7 +48,7 @@ impl ListenStream {
     }
 
     pub(super) fn local_endpoint(&self) -> IpEndpoint {
-        self.tcp_listener.local_endpoint().unwrap()
+        self.tcp_listener.local_endpoint()
     }
 
     pub(super) fn iface(&self) -> &Arc<Iface> {

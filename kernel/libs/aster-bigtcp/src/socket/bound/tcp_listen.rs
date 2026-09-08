@@ -163,7 +163,7 @@ impl<E: Ext> TcpListener<E> {
         };
 
         // The lock on `connecting`/`connected` cannot be locked after locking `self`, otherwise we
-        // might get a deadlock. due to inconsistent lock order problems.
+        // might get a deadlock due to inconsistent lock order problems.
         connecting.values().for_each(|socket| socket.reset());
         connected.iter().for_each(|socket| socket.reset());
     }

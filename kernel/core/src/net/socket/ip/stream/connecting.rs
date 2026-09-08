@@ -90,7 +90,7 @@ impl ConnectingStream {
     }
 
     pub(super) fn local_endpoint(&self) -> IpEndpoint {
-        self.tcp_conn.local_endpoint().unwrap()
+        self.tcp_conn.local_endpoint()
     }
 
     pub(super) fn remote_endpoint(&self) -> IpEndpoint {
