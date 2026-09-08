@@ -13,7 +13,7 @@ use core::{
 use spin::Once;
 
 use crate::{
-    Result,
+    Error, Result,
     arch::{
         boot::DEVICE_TREE,
         irq::{HwIrqLine, InterruptSource, chip::plic::Plic},
@@ -88,7 +88,7 @@ impl IrqChip {
             .iter_mut()
             .enumerate()
             .find(|(_, plic)| plic.phandle() == interrupt_source_in_fdt.interrupt_parent)
-            .unwrap();
+            .ok_or(Error::InvalidArgs)?;
 
         plic.map_interrupt_source_to(interrupt_source_in_fdt.arguments[0], &irq_line)?;
         plic.set_priority(interrupt_source_in_fdt.arguments[0], 1);
