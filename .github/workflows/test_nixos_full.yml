@@ -25,6 +25,7 @@ on:
       - distro/**
       - tools/nixos/**
       - tools/github_workflows/filter_json_array_with_changed_files.sh
+      - tools/github_workflows/stress_installer_provisioning.sh
       - test/nixos/common/**
       - .github/workflows/test_nixos_full.yml
       # Paths of test suites, which trigger runs of the corresponding test suites.
@@ -196,3 +197,28 @@ jobs:
           run: |
             make nixos NIXOS_TEST_SUITE=${{ matrix.test.name }} NIXOS_DISK_SIZE_IN_MB=${{ matrix.test.disk_size }}
             make run_nixos NIXOS_TEST_SUITE=${{ matrix.test.name }} NIXOS_TEST_TIMEOUT=${{ matrix.test.test_timeout_minutes || 10 }}min
+
+  # Guard against the loop-partition readiness race (issue #3700).
+  stress-installer-provisioning:
+    name: Stress installer provisioning
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: endersonmenezes/free-disk-space@v3
+        with:
+          rm_cmd: "rmz"
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+      - uses: actions/checkout@v4
+      - name: Run the installer provisioning path 500 times
+        uses: maus007/docker-run-action-fork@v1
+        with:
+          image: asterinas/kernel-dev:0.18.1-20260901
+          options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
+          # docker-run-action-fork joins these lines with ';' and runs them via
+          # `sh -c` without fail-fast settings, unlike a normal `run:` step.
+          run: |
+            set -e
+            bash tools/github_workflows/stress_installer_provisioning.sh
