@@ -56,6 +56,7 @@ pub use self::{
         rmdir::RmdirOperation,
         setattr::{SetattrOperation, SetattrReq, SetattrValid},
         statfs::{Kstatfs, StatfsOperation, StatfsReply},
+        symlink::SymlinkOperation,
         unlink::UnlinkOperation,
         write::{WriteFlags, WriteOperation, WriteReply, WriteReq},
     },
