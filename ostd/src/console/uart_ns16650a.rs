@@ -31,6 +31,11 @@ pub enum Ns16550aRegister {
     ModemStat,
 }
 
+impl Ns16550aRegister {
+    /// A variant with the largest value.
+    pub const MAX: Self = Self::ModemStat;
+}
+
 /// A trait that provides methods to access NS16550A registers.
 pub trait Ns16550aAccess {
     /// Reads from an NS16550A register.

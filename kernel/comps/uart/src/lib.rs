@@ -4,7 +4,6 @@
 
 #![no_std]
 #![deny(unsafe_code)]
-#![cfg_attr(target_arch = "riscv64", feature(iter_next_chunk))]
 
 extern crate alloc;
 
