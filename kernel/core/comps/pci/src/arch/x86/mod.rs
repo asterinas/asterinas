@@ -75,23 +75,31 @@ pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32, E
 /// The maximum offset in the 12-bit configuration space when using [`encode_as_address_offset`].
 const PCI_ECAM_MAX_OFFSET: u32 = 0xffc;
 
+const PCI_ECAM_BUS_SHIFT: u32 = 20;
+const PCI_ECAM_DEVICE_SHIFT: u32 = 15;
+const PCI_ECAM_FUNCTION_SHIFT: u32 = 12;
+
 /// Encodes the bus, device, and function into an address offset in the PCI MMIO region.
 fn encode_as_address_offset(location: &PciDeviceLocation) -> u32 {
-    ((location.bus as u32) << 20)
-        | ((location.device as u32) << 15)
-        | ((location.function as u32) << 12)
+    ((location.bus as u32) << PCI_ECAM_BUS_SHIFT)
+        | ((location.device as u32) << PCI_ECAM_DEVICE_SHIFT)
+        | ((location.function as u32) << PCI_ECAM_FUNCTION_SHIFT)
 }
 
 /// The maximum offset in the 8-bit configuration space when using [`encode_as_port`].
 const PCI_PIO_MAX_OFFSET: u32 = 0xfc;
 
+const PCI_PIO_BUS_SHIFT: u32 = 16;
+const PCI_PIO_DEVICE_SHIFT: u32 = 11;
+const PCI_PIO_FUNCTION_SHIFT: u32 = 8;
+
 /// Encodes the bus, device, and function into a port address for use with the PCI I/O port.
 fn encode_as_port(location: &PciDeviceLocation) -> u32 {
     // 1 << 31: Configuration enable
     (1 << 31)
-        | ((location.bus as u32) << 16)
-        | (((location.device as u32) & 0b11111) << 11)
-        | (((location.function as u32) & 0b111) << 8)
+        | ((location.bus as u32) << PCI_PIO_BUS_SHIFT)
+        | ((location.device as u32) << PCI_PIO_DEVICE_SHIFT)
+        | ((location.function as u32) << PCI_PIO_FUNCTION_SHIFT)
 }
 
 /// Initializes the platform-specific module for accessing the PCI configuration space.
@@ -105,7 +113,7 @@ pub(crate) fn init() -> Option<RangeInclusive<u8>> {
         let addr_start = ecam.base_address as usize;
         // Note that the base address always corresponds to the bus number 0, regardless of the
         // actual value of `bus_start`.
-        let addr_end = addr_start + (bus_end as usize + 1) * (1 << 20);
+        let addr_end = addr_start + ((bus_end as usize + 1) << PCI_ECAM_BUS_SHIFT);
         PCI_ECAM_CFG_SPACE.call_once(|| IoMem::acquire(addr_start..addr_end).unwrap());
 
         return Some(bus_start..=bus_end);

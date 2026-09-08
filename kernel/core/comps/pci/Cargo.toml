@@ -13,8 +13,12 @@ int-to-c-enum.workspace = true
 ostd.workspace = true
 spin.workspace = true
 
+[target.riscv64imac-unknown-none-elf.dependencies]
+fdt-util.workspace = true
+
 [target.loongarch64-unknown-none-softfloat.dependencies]
 fdt.workspace = true
+fdt-util.workspace = true
 
 [lints]
 workspace = true
