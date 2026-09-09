@@ -82,3 +82,38 @@ pub(super) unsafe fn vmptrst(_irq_guard: &DisabledLocalIrqGuard) -> u64 {
 
     current_vmcs
 }
+
+/// Invalidates translations derived from all EPT contexts on the current CPU.
+///
+/// # Safety
+///
+/// 1. The current CPU must be in VMX root operation.
+/// 2. The current CPU must support all-context INVEPT.
+pub(super) unsafe fn invept_all_contexts(_irq_guard: &DisabledLocalIrqGuard) -> Result<()> {
+    #[repr(C, align(16))]
+    struct Descriptor {
+        eptp: u64,
+        reserved: u64,
+    }
+
+    let descriptor = Descriptor {
+        eptp: 0,
+        reserved: 0,
+    };
+    let failed: u8;
+    // SAFETY: The caller ensures safety.
+    unsafe {
+        core::arch::asm!(
+            "invept {typ}, [{descriptor}]",
+            "setna {failed}",
+            typ = in(reg) 2_u64,
+            descriptor = in(reg) &descriptor,
+            failed = out(reg_byte) failed,
+            options(nostack)
+        );
+    }
+    if failed != 0 {
+        return Err(Error::InvalidArgs);
+    }
+    Ok(())
+}
