@@ -215,12 +215,12 @@ $(XFSTESTS_SCRATCH_IMAGE):
 .PHONY: format
 format:
 	@$(MAKE) --no-print-directory -C src/regression format
-	@nixfmt nix
+	@find nix -type f -name '*.nix' -print0 | xargs -0 -r -n 1 nixfmt
 
 .PHONY: check
 check:
 	@$(MAKE) --no-print-directory -C src/regression check
-	@nixfmt --check nix
+	@find nix -type f -name '*.nix' -print0 | xargs -0 -r -n 1 nixfmt --check
 
 .PHONY: clean
 clean:

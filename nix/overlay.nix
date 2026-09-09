@@ -3,16 +3,20 @@
 # Asterinas build and toolchain packages layered on nixpkgs.
 final: prev:
 
-let inherit (prev) lib stdenv;
-in {
+let
+  inherit (prev) lib stdenv;
+in
+{
   # Rust nightly from rust-toolchain.toml, including components and targets.
   # The shell also carries rust-analyzer from the same nightly; the toml
   # stays the single source of truth and the rustup contract is unchanged.
-  asterinas-rust-toolchain = let
-    toolchain =
-      (builtins.fromTOML (builtins.readFile ../rust-toolchain.toml)).toolchain;
-  in final.rust-bin.fromRustupToolchain
-  (toolchain // { components = toolchain.components ++ [ "rust-analyzer" ]; });
+  asterinas-rust-toolchain =
+    let
+      toolchain = (builtins.fromTOML (builtins.readFile ../rust-toolchain.toml)).toolchain;
+    in
+    final.rust-bin.fromRustupToolchain (
+      toolchain // { components = toolchain.components ++ [ "rust-analyzer" ]; }
+    );
 
   # Prebuilt Linux vDSO binaries embedded by the kernel build, pinned to the
   # commit tools/docker/kernel-dev/Dockerfile clones.

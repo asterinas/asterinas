@@ -14,26 +14,36 @@
 # Replacing `edk2` in the overlay also makes pkgsCross.gnu64.{edk2,OVMF}
 # build from this pinned source.
 #
-{ stdenv, fetchFromGitHub, fetchpatch, applyPatches, libuuid, bc, lib
-, buildPackages, nixosTests, }:
+{
+  stdenv,
+  fetchFromGitHub,
+  fetchpatch,
+  applyPatches,
+  libuuid,
+  bc,
+  lib,
+  buildPackages,
+  nixosTests,
+}:
 
 let
   pythonEnv = buildPackages.python3.withPackages (ps: [ ps.tkinter ]);
 
-  targetArch = if stdenv.hostPlatform.isi686 then
-    "IA32"
-  else if stdenv.hostPlatform.isx86_64 then
-    "X64"
-  else if stdenv.hostPlatform.isAarch32 then
-    "ARM"
-  else if stdenv.hostPlatform.isAarch64 then
-    "AARCH64"
-  else if stdenv.hostPlatform.isRiscV64 then
-    "RISCV64"
-  else if stdenv.hostPlatform.isLoongArch64 then
-    "LOONGARCH64"
-  else
-    throw "Unsupported architecture";
+  targetArch =
+    if stdenv.hostPlatform.isi686 then
+      "IA32"
+    else if stdenv.hostPlatform.isx86_64 then
+      "X64"
+    else if stdenv.hostPlatform.isAarch32 then
+      "ARM"
+    else if stdenv.hostPlatform.isAarch64 then
+      "AARCH64"
+    else if stdenv.hostPlatform.isRiscV64 then
+      "RISCV64"
+    else if stdenv.hostPlatform.isLoongArch64 then
+      "LOONGARCH64"
+    else
+      throw "Unsupported architecture";
 
   buildType = if stdenv.hostPlatform.isDarwin then "CLANGPDB" else "GCC5";
 
@@ -56,8 +66,7 @@ let
       patches = [
         # Let tools_def.template pick up the cross compiler prefix.
         (fetchpatch {
-          url =
-            "https://src.fedoraproject.org/rpms/edk2/raw/08f2354cd280b4ce5a7888aa85cf520e042955c3/f/0021-Tweak-the-tools_def-to-support-cross-compiling.patch";
+          url = "https://src.fedoraproject.org/rpms/edk2/raw/08f2354cd280b4ce5a7888aa85cf520e042955c3/f/0021-Tweak-the-tools_def-to-support-cross-compiling.patch";
           hash = "sha256-E1/fiFNVx0aB1kOej2DJ2DlBIs9tAAcxoedym2Zhjxw=";
         })
         # nixpkgs' antlr/dlg cross-build patch no longer applies to the
@@ -83,7 +92,10 @@ let
     };
 
     nativeBuildInputs = [ pythonEnv ];
-    depsBuildBuild = [ buildPackages.stdenv.cc buildPackages.bash ];
+    depsBuildBuild = [
+      buildPackages.stdenv.cc
+      buildPackages.bash
+    ];
     depsHostHost = [ libuuid ];
     strictDeps = true;
 
@@ -97,12 +109,15 @@ let
 
     makeFlags = [ "-C BaseTools" ];
 
-    env.NIX_CFLAGS_COMPILE = "-Wno-return-type"
+    env.NIX_CFLAGS_COMPILE =
+      "-Wno-return-type"
       + lib.optionalString (stdenv.cc.isGNU) " -Wno-error=stringop-truncation"
-      + lib.optionalString (stdenv.hostPlatform.isDarwin)
-      " -Wno-error=macro-redefined";
+      + lib.optionalString (stdenv.hostPlatform.isDarwin) " -Wno-error=macro-redefined";
 
-    hardeningDisable = [ "format" "fortify" ];
+    hardeningDisable = [
+      "format"
+      "fortify"
+    ];
 
     installPhase = ''
       mkdir -vp $out
@@ -119,13 +134,10 @@ let
 
     meta = {
       description = "Intel EFI development kit";
-      homepage =
-        "https://github.com/tianocore/tianocore.github.io/wiki/EDK-II/";
-      changelog =
-        "https://github.com/tianocore/edk2/releases/tag/edk2-stable${edk2.version}";
+      homepage = "https://github.com/tianocore/tianocore.github.io/wiki/EDK-II/";
+      changelog = "https://github.com/tianocore/edk2/releases/tag/edk2-stable${edk2.version}";
       license = lib.licenses.bsd2;
-      platforms = with lib.platforms;
-        aarch64 ++ arm ++ i686 ++ x86_64 ++ loongarch64 ++ riscv64;
+      platforms = with lib.platforms; aarch64 ++ arm ++ i686 ++ x86_64 ++ loongarch64 ++ riscv64;
       maintainers = [ lib.maintainers.mjoerg ];
     };
 
@@ -133,16 +145,22 @@ let
       # Keep nixpkgs' channel-blocking smoke test hook.
       tests.uefiUsb = nixosTests.boot.uefiCdrom;
 
-      mkDerivation = projectDscPath: attrsOrFun:
-        stdenv.mkDerivation (finalAttrs:
-          let attrs = lib.toFunction attrsOrFun finalAttrs;
-          in {
+      mkDerivation =
+        projectDscPath: attrsOrFun:
+        stdenv.mkDerivation (
+          finalAttrs:
+          let
+            attrs = lib.toFunction attrsOrFun finalAttrs;
+          in
+          {
             inherit (edk2) src;
 
-            depsBuildBuild = [ buildPackages.stdenv.cc ]
-              ++ attrs.depsBuildBuild or [ ];
-            nativeBuildInputs = [ bc pythonEnv ]
-              ++ attrs.nativeBuildInputs or [ ];
+            depsBuildBuild = [ buildPackages.stdenv.cc ] ++ attrs.depsBuildBuild or [ ];
+            nativeBuildInputs = [
+              bc
+              pythonEnv
+            ]
+            ++ attrs.nativeBuildInputs or [ ];
             strictDeps = true;
 
             ${"GCC5_${targetArch}_PREFIX"} = stdenv.cc.targetPrefix;
@@ -161,9 +179,7 @@ let
 
             buildPhase = ''
               runHook preBuild
-              build -a ${targetArch} -b ${
-                attrs.buildConfig or "RELEASE"
-              } -t ${buildType} -p ${projectDscPath} -n $NIX_BUILD_CORES $buildFlags
+              build -a ${targetArch} -b ${attrs.buildConfig or "RELEASE"} -t ${buildType} -p ${projectDscPath} -n $NIX_BUILD_CORES $buildFlags
               runHook postBuild
             '';
 
@@ -172,8 +188,14 @@ let
               mv -v Build/*/* $out
               runHook postInstall
             '';
-          } // removeAttrs attrs [ "nativeBuildInputs" "depsBuildBuild" ]);
+          }
+          // removeAttrs attrs [
+            "nativeBuildInputs"
+            "depsBuildBuild"
+          ]
+        );
     };
   };
 
-in edk2
+in
+edk2
