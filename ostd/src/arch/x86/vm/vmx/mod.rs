@@ -3,6 +3,7 @@
 //! Intel VMX platform lifecycle management.
 
 mod instructions;
+pub(crate) mod invept;
 
 use x86::msr::{
     IA32_FEATURE_CONTROL, IA32_VMX_BASIC, IA32_VMX_CR0_FIXED0, IA32_VMX_CR0_FIXED1,
@@ -81,7 +82,6 @@ impl VmxGuardState {
 static VMX_GUARD_STATE: Mutex<VmxGuardState> = Mutex::new(VmxGuardState::new());
 
 /// A guard that keeps VMX operation enabled.
-#[cfg_attr(not(ktest), expect(dead_code))]
 #[must_use]
 pub(crate) struct VmxGuard {
     _private: (),
@@ -95,7 +95,6 @@ impl VmxGuard {
     /// The guard can only be acquired or released when IRQs are enabled.
     /// Calling this method or [`Drop::drop`] with IRQs disabled will result
     /// in a panic.
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(crate) fn acquire_vmx() -> Result<VmxGuard> {
         assert!(crate::arch::irq::is_local_enabled());
 
@@ -143,7 +142,6 @@ impl VmxGuardState {
         Ok(())
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     fn drop_vmx(&mut self) {
         self.active_guards -= 1;
         if self.active_guards != 0 {
@@ -235,6 +233,11 @@ impl VmxCpuState {
             cpu_state.last_error = None;
             return;
         }
+
+        // A local shutdown can run before queued IPI callbacks on this CPU.
+        // Drain EPT invalidations while VMX is still enabled; later callbacks
+        // will find no pending work.
+        invept::flush_pending();
 
         // SAFETY:
         // 1. `cpu_state.is_enabled` means this CPU is in VMX operation.
