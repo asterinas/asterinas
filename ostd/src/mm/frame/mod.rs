@@ -203,7 +203,7 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     ///
     /// Also, the caller ensures that the usage of the frame is correct. There's
     /// no checking of the usage in this function.
-    pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self {
+    pub(crate) unsafe fn from_raw(paddr: Paddr) -> Self {
         debug_assert!(paddr < max_paddr());
 
         let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
