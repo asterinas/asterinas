@@ -52,6 +52,9 @@ pub mod timer;
 pub mod user;
 pub mod util;
 
+#[cfg(target_arch = "x86_64")]
+pub mod vm;
+
 #[cfg(feature = "coverage")]
 mod coverage;
 

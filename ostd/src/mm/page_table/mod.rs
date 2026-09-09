@@ -31,8 +31,7 @@ use crate::{
 mod cursor;
 mod node;
 
-pub(in crate::mm) use cursor::PageTableFrag;
-pub(crate) use cursor::{Cursor, CursorMut};
+pub(crate) use cursor::{Cursor, CursorMut, PageTableFrag};
 use node::*; // FIXME: Remove glob imports.
 
 #[cfg(ktest)]
@@ -476,7 +475,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped. The modification to the mapping by the cursor may also
     /// block or be overridden by the mapping of another cursor.
-    pub(in crate::mm) fn cursor<'rcu, G: AsAtomicModeGuard>(
+    pub(crate) fn cursor<'rcu, G: AsAtomicModeGuard>(
         &'rcu self,
         guard: &'rcu G,
         va: &Range<Vaddr>,

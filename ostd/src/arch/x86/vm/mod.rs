@@ -3,6 +3,7 @@
 //! Hardware virtualization support for x86.
 
 mod context;
+pub(crate) mod ept;
 mod types;
 pub(crate) mod vmx;
 
