@@ -12,6 +12,7 @@ edition.workspace = true
 [dependencies]
 ostd.workspace = true
 owo-colors.workspace = true
+spin.workspace = true
 
 [lints]
 workspace = true
