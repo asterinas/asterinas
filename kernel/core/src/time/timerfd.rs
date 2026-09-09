@@ -8,7 +8,6 @@ use core::{
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
-use super::clockid_t;
 use crate::{
     events::IoEvents,
     fs::{
@@ -17,9 +16,9 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    syscall::create_timer,
+    syscall::{ClockId, create_timer_for_clock},
     time::{
-        Timer,
+        Timer, clockid_t,
         timer::{Timeout, TimerGuard},
     },
 };
@@ -91,7 +90,15 @@ define_atomic_version_of_integer_like_type!(TFDSetTimeFlags, try_from = true, {
 
 impl TimerfdFile {
     /// Creates a new `TimerfdFile` instance.
-    pub(crate) fn new(clockid: clockid_t, flags: TFDFlags, ctx: &Context) -> Result<Self> {
+    pub(crate) fn new(clock_id: ClockId, flags: TFDFlags, ctx: &Context) -> Result<Self> {
+        let is_valid = matches!(
+            clock_id,
+            ClockId::CLOCK_REALTIME | ClockId::CLOCK_MONOTONIC | ClockId::CLOCK_BOOTTIME
+        );
+        if !is_valid {
+            return_errno_with_message!(Errno::EINVAL, "invalid clock ID");
+        }
+
         let ticks = Arc::new(AtomicU64::new(0));
         let pollee = Pollee::new();
 
@@ -103,7 +110,7 @@ impl TimerfdFile {
                 ticks.fetch_add(1, Ordering::Relaxed);
                 pollee.notify(IoEvents::IN);
             };
-            create_timer(clockid, expired_fn, ctx)
+            create_timer_for_clock(clock_id, expired_fn, ctx)
         }?;
 
         let pseudo_path = AnonInodeFs::new_path(|_| "anon_inode:[timerfd]".to_string());
@@ -114,7 +121,7 @@ impl TimerfdFile {
         };
 
         Ok(TimerfdFile {
-            clockid,
+            clockid: clock_id as clockid_t,
             timer,
             ticks,
             pollee,

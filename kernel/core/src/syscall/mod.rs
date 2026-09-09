@@ -13,7 +13,7 @@
 
 pub(crate) use clock_gettime::ClockId;
 use ostd::arch::cpu::context::UserContext;
-pub(crate) use timer_create::create_timer;
+pub(crate) use timer_create::create_timer_for_clock;
 
 use crate::{cpu::LinuxAbi, prelude::*};
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SyscallReturn;
+use super::{ClockId, SyscallReturn};
 use crate::{
     fs::file::file_table::FdFlags,
     prelude::*,
@@ -18,7 +18,10 @@ pub(super) fn sys_timerfd_create(
     let flags = TFDFlags::from_bits(flags as u32)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;
 
-    let timerfd_file = TimerfdFile::new(clockid, flags, ctx)?;
+    let clock_id = ClockId::try_from(clockid)
+        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
+
+    let timerfd_file = TimerfdFile::new(clock_id, flags, ctx)?;
 
     let fd = {
         let file_table = ctx.thread_local.borrow_file_table();
