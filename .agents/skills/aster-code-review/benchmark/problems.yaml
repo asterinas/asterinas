@@ -668,10 +668,8 @@
   commit: 37411049265056135a5e18c8c75a0c3d16b18579
   source: >
     Fix-anchored from PR #3583
-    `https://github.com/asterinas/asterinas/pull/3583`. Files mode uses
-    `37411049265056135a5e18c8c75a0c3d16b18579`, the parent of fixing merge
-    commit `b91ce0947fa3cc5af74d6a1cadd8745cca48dc1d`, and reviews the four
-    syscall files as whole files. The fixing commit removes call-site
+    `https://github.com/asterinas/asterinas/pull/3583`. `commit` is the parent 
+    of fixing merge commit . The fixing commit removes call-site
     empty-path branches because `FsPath::try_from` and `FsPath::from_fd_at`
     already centralize the same empty-path policy. At the reviewed snapshot,
     the redundant checks are present, while the later deletions are absent and
@@ -762,10 +760,9 @@
 - problem_id: 0401-chroot-missing-capability-check
   commit: 743d789adb36ca5bf024fb4889f398756a842b58
   source: >
-    Fix-anchored. Files mode uses
-    `743d789adb36ca5bf024fb4889f398756a842b58`, the parent of mainline fixing
-    commit `003568118b12dd6e2825e3f3b2188a6b60dd2bab` ("Fix chroot
-    capability check"). The fixing commit adds a `CAP_SYS_CHROOT` gate to
+    Fix-anchored. `commit` is the parent of mainline fixing commit 
+    `003568118b12dd6e2825e3f3b2188a6b60dd2bab`("Fix chroot capability 
+    check"). The fixing commit adds a `CAP_SYS_CHROOT` gate to
     `sys_chroot` and a regression test that drops the capability and expects
     `EPERM`. At the reviewed snapshot, both the check and the test are absent;
     the two affected files are reviewed whole, with no fix diff or narrowed
@@ -812,8 +809,7 @@
     `e85ae6eb94b45a67832588e6e19afab985328acd`; comment
     `https://github.com/asterinas/asterinas/pull/2146#discussion_r2145099169`
     identified the signed wake-count type, fixed by final fork head
-    `e665fe2d4058b2454a40af65e3caba17ab9f4aad`. The old full SHA is fetchable
-    from the default upstream, so no custom `remote` is needed. The reviewed
+    `e665fe2d4058b2454a40af65e3caba17ab9f4aad`. The reviewed
     range predates both fixes. Its existing FIXME concerns the separately
     deferred atomic user-memory RMW, not the missing two-bucket critical
     section, and does not satisfy the atomicity expectation below.
@@ -871,9 +867,7 @@
   commit: 36a313263bb156fe3e8ea47c64578afe8fae4033
   source: >
     PR-review-derived from PR #2125
-    `https://github.com/asterinas/asterinas/pull/2125`. Diff mode reviews the
-    first reviewed head `36a313263bb156fe3e8ea47c64578afe8fae4033`
-    against its parent. Comments
+    `https://github.com/asterinas/asterinas/pull/2125`. Comments
     `https://github.com/asterinas/asterinas/pull/2125#discussion_r2136917684`,
     `https://github.com/asterinas/asterinas/pull/2125#discussion_r2136928250`,
     `https://github.com/asterinas/asterinas/pull/2125#discussion_r2136846907`,
@@ -883,9 +877,7 @@
     file-table lock, and incorrect zero-length range handling. Replacement head
     `7cc30262c39472d9a030a141f1c36e427398a98d` removes the attempted reads and
     handles every advice as a nonbinding no-op; final head
-    `4e3267cd37b7555a7942dfe8d5638b5ca40fc2a5` retains that remedy. The old full
-    SHA is fetchable from the default upstream, and the reviewed diff predates
-    all review comments and fixes.
+    `4e3267cd37b7555a7942dfe8d5638b5ca40fc2a5` retains that remedy.
   review_mode:
     diff:
       base: HEAD^
@@ -973,18 +965,13 @@
   commit: 4b9909f3b1a8e7b3ba34cacd0a8e5522a76d197c
   source: >
     PR-review-derived from PR #2988
-    `https://github.com/asterinas/asterinas/pull/2988`. The reviewed snapshot
-    is the first reviewable feature head
-    `4b9909f3b1a8e7b3ba34cacd0a8e5522a76d197c`, whose parent
-    `2de044c7f354c46b9e15e6c087bbe10e10d57571` is the feature commit's diff
-    base; both full SHAs are fetchable from the default upstream. Review comments
+    `https://github.com/asterinas/asterinas/pull/2988`. Review comments
     `https://github.com/asterinas/asterinas/pull/2988#discussion_r3015449871`,
     `https://github.com/asterinas/asterinas/pull/2988#discussion_r3015449949`,
     `https://github.com/asterinas/asterinas/pull/2988#discussion_r3015450017`,
     and `https://github.com/asterinas/asterinas/pull/2988#discussion_r2889265832`
     identify the two check-then-act races, the leaked lock-guard API, and the
     Linux-incompatible invalid-ID errno.
-    Later force-pushed heads, culminating in
     `7cad9f35a1dd29738ee8d26b7f99469dffeb047f`, replace those paths with
     lock-held registry operations and map invalid IDs to `EINVAL`; the reviewed
     diff predates those remedies and contains none of their explanatory text.
