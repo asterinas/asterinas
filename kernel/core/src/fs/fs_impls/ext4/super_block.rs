@@ -931,7 +931,7 @@ mod test {
 
         let mut raw = make_valid_raw_super_block(1);
         raw.feature_compat |= UNKNOWN_COMPAT;
-        let parsed = SuperBlock::try_from(raw.clone()).unwrap();
+        let parsed = SuperBlock::try_from(raw).unwrap();
         let encoded = RawSuperBlock::from(&parsed);
 
         assert_eq!(encoded.feature_compat, raw.feature_compat);

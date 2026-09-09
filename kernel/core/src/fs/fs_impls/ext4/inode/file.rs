@@ -219,19 +219,19 @@ impl InodeInner {
             );
         }
 
-        if let Ok(block_manager) = self.block_manager() {
-            if let Err(err) = block_manager.truncate_to_byte_len(old_size) {
-                error!("write_at: cleanup block truncate failed: {:?}", err);
-            }
+        if let Ok(block_manager) = self.block_manager()
+            && let Err(err) = block_manager.truncate_to_byte_len(old_size)
+        {
+            error!("write_at: cleanup block truncate failed: {:?}", err);
         }
     }
 
     /// Truncates only block mappings after a failed fallocate.
     fn rollback_fallocate(&mut self, old_size: usize) {
-        if let Ok(block_manager) = self.block_manager() {
-            if let Err(err) = block_manager.truncate_to_byte_len(old_size) {
-                error!("fallocate: cleanup block truncate failed: {:?}", err);
-            }
+        if let Ok(block_manager) = self.block_manager()
+            && let Err(err) = block_manager.truncate_to_byte_len(old_size)
+        {
+            error!("fallocate: cleanup block truncate failed: {:?}", err);
         }
     }
 

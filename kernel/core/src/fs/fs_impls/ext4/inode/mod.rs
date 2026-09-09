@@ -256,6 +256,10 @@ pub(super) struct InodeDesc {
 }
 
 impl InodeDesc {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the arguments describe the initial on-disk inode attributes"
+    )]
     pub(super) fn new(
         type_: InodeType,
         perm: FilePerm,

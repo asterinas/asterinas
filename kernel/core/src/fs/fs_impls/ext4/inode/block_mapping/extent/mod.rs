@@ -240,7 +240,9 @@ impl ExtentManager {
         for range in &freed {
             match fs.free_blocks(range.start, range.len() as u32) {
                 Ok(()) => data_blocks += range.len() as u32,
-                Err(error) => release_error.get_or_insert(error),
+                Err(error) => {
+                    release_error.get_or_insert(error);
+                }
             }
         }
         sector_count = state.sector_count;
@@ -389,7 +391,7 @@ mod tests {
     use ostd::prelude::*;
 
     use super::{
-        ExtentManager,
+        ExtentManager, ZERO_BATCH_BLOCKS,
         node::{EXTENT_MAGIC, Extent, RawExtent, RawExtentHeader, RawExtentIdx},
         tree::{ENTRY_SIZE, ExtentTree},
     };
