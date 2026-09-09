@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::format;
-use core::time::Duration;
 
 use inherit_methods_macro::inherit_methods;
 use ostd::task::Task;
@@ -27,6 +26,7 @@ use crate::{
         CloneFlags, Gid, Uid, UserNamespace,
         signal::{PollHandle, Pollable},
     },
+    time::UnixTimestamp,
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
@@ -114,12 +114,12 @@ impl<T: NsCommonOps> Inode for NsInode<T> {
     fn set_owner(&self, uid: Uid) -> Result<()>;
     fn group(&self) -> Result<Gid>;
     fn set_group(&self, gid: Gid) -> Result<()>;
-    fn atime(&self) -> Duration;
-    fn set_atime(&self, time: Duration);
-    fn mtime(&self) -> Duration;
-    fn set_mtime(&self, time: Duration);
-    fn ctime(&self) -> Duration;
-    fn set_ctime(&self, time: Duration);
+    fn atime(&self) -> UnixTimestamp;
+    fn set_atime(&self, time: UnixTimestamp);
+    fn mtime(&self) -> UnixTimestamp;
+    fn set_mtime(&self, time: UnixTimestamp);
+    fn ctime(&self) -> UnixTimestamp;
+    fn set_ctime(&self, time: UnixTimestamp);
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn open(

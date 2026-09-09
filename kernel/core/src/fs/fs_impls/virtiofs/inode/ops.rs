@@ -4,8 +4,6 @@
 
 #![short_vis_path::add(virtiofs)]
 
-use core::time::Duration;
-
 use aster_fuse::{
     EntryReply, FuseAttrReply, FuseDirEntry, FuseFileHandle, FuseOpenFlags, GetattrFlags, ReadReq,
     ReleaseFlags, ReleaseKind, SetattrReq, SetattrValid, WriteFlags, WriteReq,
@@ -37,7 +35,7 @@ use crate::{
     },
     prelude::*,
     thread::work_queue::{self, WorkPriority},
-    time::clocks::MonotonicCoarseClock,
+    time::{UnixTimestamp, clocks::MonotonicCoarseClock},
 };
 
 /// Use one page for each `FUSE_READDIR` request.
@@ -486,14 +484,14 @@ impl VirtioFsInode {
     /// Calls this from VFS timestamp setters whose trait signature cannot
     /// return an error. Failures are logged and the cached metadata is left to be
     /// repaired by a later revalidation.
-    pub(super) fn set_time(&self, field: TimeField, time: Duration) {
+    pub(super) fn set_time(&self, field: TimeField, time: UnixTimestamp) {
         let setattr_req = match field {
             TimeField::Access => SetattrReq::new(SetattrValid::empty())
-                .set_atime(time.as_secs(), time.subsec_nanos()),
+                .set_atime(time.seconds() as u64, time.nanoseconds()),
             TimeField::Modify => SetattrReq::new(SetattrValid::empty())
-                .set_mtime(time.as_secs(), time.subsec_nanos()),
+                .set_mtime(time.seconds() as u64, time.nanoseconds()),
             TimeField::Change => SetattrReq::new(SetattrValid::empty())
-                .set_ctime(time.as_secs(), time.subsec_nanos()),
+                .set_ctime(time.seconds() as u64, time.nanoseconds()),
         };
         if let Err(err) = self.setattr(setattr_req) {
             warn!(

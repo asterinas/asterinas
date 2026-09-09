@@ -51,6 +51,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    time::UnixTimestamp,
     vm::page_cache::{PageCache, Vmo},
 };
 
@@ -308,27 +309,27 @@ impl Inode for VirtioFsInode {
         self.setattr(setattr_req)
     }
 
-    fn atime(&self) -> Duration {
+    fn atime(&self) -> UnixTimestamp {
         self.inner.read().metadata.last_access_at
     }
 
-    fn set_atime(&self, time: Duration) {
+    fn set_atime(&self, time: UnixTimestamp) {
         self.set_time(TimeField::Access, time);
     }
 
-    fn mtime(&self) -> Duration {
+    fn mtime(&self) -> UnixTimestamp {
         self.inner.read().metadata.last_modify_at
     }
 
-    fn set_mtime(&self, time: Duration) {
+    fn set_mtime(&self, time: UnixTimestamp) {
         self.set_time(TimeField::Modify, time);
     }
 
-    fn ctime(&self) -> Duration {
+    fn ctime(&self) -> UnixTimestamp {
         self.inner.read().metadata.last_meta_change_at
     }
 
-    fn set_ctime(&self, time: Duration) {
+    fn set_ctime(&self, time: UnixTimestamp) {
         self.set_time(TimeField::Change, time);
     }
 

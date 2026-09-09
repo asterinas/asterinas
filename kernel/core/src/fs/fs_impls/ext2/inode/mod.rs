@@ -78,6 +78,8 @@ mod io_range;
 mod symlink;
 mod sync;
 
+use core::time::Duration;
+
 use ostd::const_assert;
 
 use self::{
@@ -87,6 +89,7 @@ use self::{
 use super::{fs::Ext2, prelude::*, xattr::Xattr};
 use crate::{
     fs::{ext2::utils, file::InodeMode, pipe::Pipe, vfs::inode::Extension},
+    time::UnixTimestamp,
     vm::page_cache::Vmo,
 };
 
@@ -233,7 +236,7 @@ impl Drop for Inode {
 /// Parsed in-memory mirror of an on-disk inode's metadata fields.
 ///
 /// Unlike `RawInode`, fields are decoded into Rust types
-/// (e.g., `Duration` for timestamps, `InodeType` for file type).
+/// (e.g., `UnixTimestamp` for timestamps, `InodeType` for file type).
 #[derive(Clone, Copy, Debug)]
 pub(super) struct InodeDesc {
     type_: InodeType,
@@ -241,9 +244,9 @@ pub(super) struct InodeDesc {
     uid: u32,
     gid: u32,
     size: u64,
-    atime: Duration,
-    ctime: Duration,
-    mtime: Duration,
+    atime: UnixTimestamp,
+    ctime: UnixTimestamp,
+    mtime: UnixTimestamp,
     dtime: Duration,
     link_count: u16,
     sector_count: u32,
@@ -261,7 +264,7 @@ impl InodeDesc {
         gid: u32,
         link_count: u16,
         generation: u32,
-        now: Duration,
+        now: UnixTimestamp,
     ) -> Self {
         Self {
             type_,
@@ -300,9 +303,9 @@ impl TryFrom<&RawInode> for InodeDesc {
         let perm = FilePerm::from_bits_truncate(mode & 0o7777);
         let uid = (raw.uid as u32) | ((raw.uid_high as u32) << 16);
         let gid = (raw.gid as u32) | ((raw.gid_high as u32) << 16);
-        let atime = Duration::from_secs(raw.atime as u64);
-        let ctime = Duration::from_secs(raw.ctime as u64);
-        let mtime = Duration::from_secs(raw.mtime as u64);
+        let atime = utils::ext2_secs_to_unix_timestamp(raw.atime);
+        let ctime = utils::ext2_secs_to_unix_timestamp(raw.ctime);
+        let mtime = utils::ext2_secs_to_unix_timestamp(raw.mtime);
 
         let mut size = raw.size_lo as u64;
         if type_ == InodeType::File {
@@ -359,9 +362,9 @@ impl From<&InodeDesc> for RawInode {
             mode,
             uid,
             size_lo,
-            atime: utils::duration_to_ext2_secs(desc.atime),
-            ctime: utils::duration_to_ext2_secs(desc.ctime),
-            mtime: utils::duration_to_ext2_secs(desc.mtime),
+            atime: utils::unix_timestamp_to_ext2_secs(desc.atime),
+            ctime: utils::unix_timestamp_to_ext2_secs(desc.ctime),
+            mtime: utils::unix_timestamp_to_ext2_secs(desc.mtime),
             dtime: utils::duration_to_ext2_secs(desc.dtime),
             gid,
             link_count: desc.link_count,
@@ -531,31 +534,31 @@ impl InodeInner {
         self.desc.size = new_size as u64;
     }
 
-    fn atime(&self) -> Duration {
+    fn atime(&self) -> UnixTimestamp {
         self.desc.atime
     }
 
-    fn set_atime(&mut self, time: Duration) {
-        self.desc.atime = time;
+    fn set_atime(&mut self, time: UnixTimestamp) {
+        self.desc.atime = utils::normalize_ext2_timestamp(time);
     }
 
-    fn mtime(&self) -> Duration {
+    fn mtime(&self) -> UnixTimestamp {
         self.desc.mtime
     }
 
-    fn set_mtime(&mut self, time: Duration) {
-        self.desc.mtime = time;
+    fn set_mtime(&mut self, time: UnixTimestamp) {
+        self.desc.mtime = utils::normalize_ext2_timestamp(time);
     }
 
-    fn ctime(&self) -> Duration {
+    fn ctime(&self) -> UnixTimestamp {
         self.desc.ctime
     }
 
-    fn set_ctime(&mut self, time: Duration) {
-        self.desc.ctime = time;
+    fn set_ctime(&mut self, time: UnixTimestamp) {
+        self.desc.ctime = utils::normalize_ext2_timestamp(time);
     }
 
-    fn set_mtime_ctime(&mut self, time: Duration) {
+    fn set_mtime_ctime(&mut self, time: UnixTimestamp) {
         self.set_mtime(time);
         self.set_ctime(time);
     }
@@ -764,5 +767,60 @@ mod test {
             0,
             Arc::downgrade(ext2),
         )
+    }
+}
+
+#[cfg(ktest)]
+mod timestamp_encode_tests {
+    use ostd::prelude::*;
+
+    use super::*;
+    use crate::{fs::file::InodeType, time::UnixTimestamp};
+
+    fn sample_desc(now: UnixTimestamp) -> InodeDesc {
+        InodeDesc::new(
+            InodeType::File,
+            FilePerm::from_bits_truncate(0o644),
+            0,
+            0,
+            1,
+            0,
+            now,
+        )
+    }
+
+    // On-disk ext2 seconds are the two's-complement bit pattern of signed Unix time.
+    // See https://github.com/asterinas/asterinas/issues/3746
+    #[ktest]
+    fn raw_inode_preserves_pre_epoch_and_distinct_fields() {
+        let mut desc = sample_desc(UnixTimestamp::from_seconds(0));
+        desc.atime = UnixTimestamp::from_seconds(-1);
+        desc.ctime = UnixTimestamp::from_seconds(i32::MIN as i64);
+        desc.mtime = UnixTimestamp::from_seconds(-2051222400);
+        desc.dtime = Duration::from_secs(u32::MAX as u64);
+
+        let raw = RawInode::from(&desc);
+        // Zero-extending `u32 as i64` would turn these into post-2038 values.
+        assert_eq!(raw.atime as i32 as i64, -1);
+        assert_eq!(raw.ctime as i32 as i64, i32::MIN as i64);
+        assert_eq!(raw.mtime as i32 as i64, -2051222400);
+        assert_eq!(raw.dtime, u32::MAX);
+
+        let decoded = InodeDesc::try_from(&raw).unwrap();
+        assert_eq!(decoded.atime.seconds(), -1);
+        assert_eq!(decoded.ctime.seconds(), i32::MIN as i64);
+        assert_eq!(decoded.mtime.seconds(), -2051222400);
+        assert_eq!(decoded.dtime, Duration::from_secs(u32::MAX as u64));
+    }
+
+    #[ktest]
+    fn raw_inode_clamps_outside_signed_32() {
+        let mut desc = sample_desc(UnixTimestamp::from_seconds(0));
+        desc.atime = UnixTimestamp::from_seconds(i32::MAX as i64 + 1);
+        desc.mtime = UnixTimestamp::from_seconds(i32::MIN as i64 - 1);
+
+        let raw = RawInode::from(&desc);
+        assert_eq!(raw.atime as i32, i32::MAX);
+        assert_eq!(raw.mtime as i32, i32::MIN);
     }
 }

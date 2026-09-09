@@ -16,5 +16,6 @@ SUBDIRS := \
 	sync \
 	tmpfile \
 	utimensat \
+	timestamps \
 
 include ../common/Makefile

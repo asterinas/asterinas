@@ -7,6 +7,7 @@ pub(crate) use core::{Clock, timer};
 use ::core::time::Duration;
 pub(crate) use system_time::{START_TIME, SystemTime};
 pub(crate) use timer::{Timer, TimerManager};
+pub(crate) use unix_timestamp::UnixTimestamp;
 
 use crate::prelude::*;
 
@@ -16,6 +17,8 @@ pub(crate) mod cpu_time_stats;
 mod softirq;
 mod system_time;
 pub(crate) mod timerfd;
+mod unix_timestamp;
+
 pub(crate) mod wait;
 
 pub(crate) type clockid_t = i32;
@@ -58,7 +61,6 @@ impl From<timeval_t> for timespec_t {
     fn from(timeval: timeval_t) -> timespec_t {
         let sec = timeval.sec;
         let nsec = timeval.usec * NSEC_PER_USEC;
-        debug_assert!(sec >= 0); // nsec >= 0 always holds
         timespec_t { sec, nsec }
     }
 }
@@ -78,6 +80,28 @@ impl TryFrom<timespec_t> for Duration {
         }
 
         Ok(Duration::new(value.sec as u64, value.nsec as u32))
+    }
+}
+
+impl From<UnixTimestamp> for timespec_t {
+    fn from(ts: UnixTimestamp) -> Self {
+        timespec_t {
+            sec: ts.seconds(),
+            nsec: ts.nanoseconds() as i64,
+        }
+    }
+}
+
+impl TryFrom<timespec_t> for UnixTimestamp {
+    type Error = Error;
+
+    fn try_from(value: timespec_t) -> Result<Self> {
+        if value.nsec < 0 || value.nsec >= NSEC_PER_SEC {
+            return_errno_with_message!(Errno::EINVAL, "nsec is not normalized");
+        }
+
+        UnixTimestamp::try_new(value.sec, value.nsec as u32)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "nsec is not normalized"))
     }
 }
 

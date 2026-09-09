@@ -4,8 +4,8 @@ use core::{ops::Range, time::Duration};
 
 use time::{OffsetDateTime, PrimitiveDateTime, Time};
 
-use super::fat::ClusterID;
-use crate::prelude::*;
+use super::{constants, fat::ClusterID};
+use crate::{prelude::*, time::UnixTimestamp};
 
 pub(crate) fn make_hash_index(cluster: ClusterID, offset: u32) -> usize {
     ((cluster as usize) << 32usize) | (offset as usize & 0xffffffffusize)
@@ -160,6 +160,29 @@ impl DosTimestamp {
         Ok(Duration::new(sec, nano_sec))
     }
 
+    pub(super) fn as_unix_timestamp(&self) -> UnixTimestamp {
+        self.as_duration()
+            .map(UnixTimestamp::from_duration_since_epoch)
+            .unwrap_or_default()
+    }
+
+    /// Converts a Unix timestamp, clamping it to the exFAT range and truncating
+    /// it to exFAT precision.
+    pub(super) fn from_unix_timestamp(ts: UnixTimestamp) -> Self {
+        let min_seconds = constants::EXFAT_MIN_TIMESTAMP_SECS as i64;
+        let max_seconds = constants::EXFAT_MAX_TIMESTAMP_SECS as i64;
+        let (seconds, nanoseconds) = if ts.seconds() < min_seconds {
+            (constants::EXFAT_MIN_TIMESTAMP_SECS, 0)
+        } else if ts.seconds() > max_seconds {
+            (constants::EXFAT_MAX_TIMESTAMP_SECS, 999_999_999)
+        } else {
+            (ts.seconds() as u64, ts.nanoseconds())
+        };
+
+        Self::from_duration(Duration::new(seconds, nanoseconds))
+            .expect("clamped exFAT timestamp must be representable")
+    }
+
     fn adjust_time_zone(sec: u64, time_zone: u8) -> u64 {
         if time_zone <= 0x3F {
             sec + Self::time_zone_sec(time_zone)
@@ -171,5 +194,53 @@ impl DosTimestamp {
     fn time_zone_sec(x: u8) -> u64 {
         // Each time zone represents 15 minutes.
         x as u64 * 15 * 60
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use ostd::prelude::*;
+
+    use super::*;
+
+    #[ktest]
+    fn pre_epoch_clamps_to_minimum() {
+        let dos = DosTimestamp::from_unix_timestamp(UnixTimestamp::from_seconds(-1));
+        let timestamp = dos.as_unix_timestamp();
+        assert_eq!(
+            timestamp.seconds(),
+            constants::EXFAT_MIN_TIMESTAMP_SECS as i64
+        );
+        assert_eq!(timestamp.nanoseconds(), 0);
+    }
+
+    #[ktest]
+    fn pre_1980_clamps_to_minimum() {
+        let dos = DosTimestamp::from_unix_timestamp(UnixTimestamp::from_seconds(0));
+        assert_eq!(
+            dos.as_unix_timestamp().seconds(),
+            constants::EXFAT_MIN_TIMESTAMP_SECS as i64
+        );
+    }
+
+    #[ktest]
+    fn post_2107_clamps_to_maximum() {
+        let dos = DosTimestamp::from_unix_timestamp(UnixTimestamp::from_seconds(
+            constants::EXFAT_MAX_TIMESTAMP_SECS as i64 + 1,
+        ));
+        let timestamp = dos.as_unix_timestamp();
+        assert_eq!(
+            timestamp.seconds(),
+            constants::EXFAT_MAX_TIMESTAMP_SECS as i64
+        );
+        assert_eq!(timestamp.nanoseconds(), 990_000_000);
+    }
+
+    #[ktest]
+    fn year_2020_roundtrips_at_even_second() {
+        // 2020-01-01 00:00:00 UTC. DOS stores seconds in two-second units.
+        let ts = UnixTimestamp::from_seconds(1_577_836_800);
+        let back = DosTimestamp::from_unix_timestamp(ts).as_unix_timestamp();
+        assert_eq!(back.seconds(), 1_577_836_800);
     }
 }

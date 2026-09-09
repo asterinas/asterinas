@@ -3,7 +3,7 @@
 #![expect(dead_code)]
 #![expect(unused_variables)]
 
-use core::{cmp::Ordering, time::Duration};
+use core::cmp::Ordering;
 
 pub(super) use align_ext::AlignExt;
 use aster_block::{
@@ -39,6 +39,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    time::UnixTimestamp,
     vm::page_cache::{BlockAsPageCacheBackend, PageCache, Vmo},
 };
 
@@ -1477,9 +1478,9 @@ impl Inode for ExfatInode {
             size: inner.size,
             optimal_block_size: blk_size,
             nr_sectors_allocated: inner.nr_sectors_allocated(),
-            last_access_at: inner.atime.as_duration().unwrap_or_default(),
-            last_modify_at: inner.mtime.as_duration().unwrap_or_default(),
-            last_meta_change_at: inner.ctime.as_duration().unwrap_or_default(),
+            last_access_at: inner.atime.as_unix_timestamp(),
+            last_modify_at: inner.mtime.as_unix_timestamp(),
+            last_meta_change_at: inner.ctime.as_unix_timestamp(),
             type_: inner.inode_type,
             mode: inner.make_mode(),
             nr_hard_links: nlinks,
@@ -1487,7 +1488,7 @@ impl Inode for ExfatInode {
             gid: Gid::new(inner.fs().mount_option().fs_gid as u32),
             container_dev_id: inner.fs().container_device_id(),
             self_dev_id: None,
-            birth_at: Some(inner.crtime.as_duration().unwrap_or_default()),
+            birth_at: Some(inner.crtime.as_unix_timestamp()),
         })
     }
 
@@ -1504,28 +1505,28 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn atime(&self) -> Duration {
-        self.inner.read().atime.as_duration().unwrap_or_default()
+    fn atime(&self) -> UnixTimestamp {
+        self.inner.read().atime.as_unix_timestamp()
     }
 
-    fn set_atime(&self, time: Duration) {
-        self.inner.write().atime = DosTimestamp::from_duration(time).unwrap_or_default();
+    fn set_atime(&self, time: UnixTimestamp) {
+        self.inner.write().atime = DosTimestamp::from_unix_timestamp(time);
     }
 
-    fn mtime(&self) -> Duration {
-        self.inner.read().mtime.as_duration().unwrap_or_default()
+    fn mtime(&self) -> UnixTimestamp {
+        self.inner.read().mtime.as_unix_timestamp()
     }
 
-    fn set_mtime(&self, time: Duration) {
-        self.inner.write().mtime = DosTimestamp::from_duration(time).unwrap_or_default();
+    fn set_mtime(&self, time: UnixTimestamp) {
+        self.inner.write().mtime = DosTimestamp::from_unix_timestamp(time);
     }
 
-    fn ctime(&self) -> Duration {
-        self.inner.read().ctime.as_duration().unwrap_or_default()
+    fn ctime(&self) -> UnixTimestamp {
+        self.inner.read().ctime.as_unix_timestamp()
     }
 
-    fn set_ctime(&self, time: Duration) {
-        self.inner.write().ctime = DosTimestamp::from_duration(time).unwrap_or_default();
+    fn set_ctime(&self, time: UnixTimestamp) {
+        self.inner.write().ctime = DosTimestamp::from_unix_timestamp(time);
     }
 
     fn owner(&self) -> Result<Uid> {

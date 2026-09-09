@@ -2,8 +2,6 @@
 
 //! Form file paths within and across FSes with dentries and mount points.
 
-use core::time::Duration;
-
 pub(in crate::fs) use dentry::Dentry;
 use inherit_methods_macro::inherit_methods;
 pub(crate) use mount::{MNT_UNIQUE_ID_MIN, Mount, MountPropType, PerMountFlags};
@@ -33,6 +31,7 @@ use crate::{
         Gid, Uid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
     },
     security::lsm::hooks as lsm_hooks,
+    time::UnixTimestamp,
 };
 
 mod dentry;
@@ -754,12 +753,12 @@ impl Path {
     pub(crate) fn set_owner(&self, uid: Uid) -> Result<()>;
     pub(crate) fn group(&self) -> Result<Gid>;
     pub(crate) fn set_group(&self, gid: Gid) -> Result<()>;
-    pub(crate) fn atime(&self) -> Duration;
-    pub(crate) fn set_atime(&self, time: Duration);
-    pub(crate) fn mtime(&self) -> Duration;
-    pub(crate) fn set_mtime(&self, time: Duration);
-    pub(crate) fn ctime(&self) -> Duration;
-    pub(crate) fn set_ctime(&self, time: Duration);
+    pub(crate) fn atime(&self) -> UnixTimestamp;
+    pub(crate) fn set_atime(&self, time: UnixTimestamp);
+    pub(crate) fn mtime(&self) -> UnixTimestamp;
+    pub(crate) fn set_mtime(&self, time: UnixTimestamp);
+    pub(crate) fn ctime(&self) -> UnixTimestamp;
+    pub(crate) fn set_ctime(&self, time: UnixTimestamp);
     pub(crate) fn list_xattr(
         &self,
         namespace: XattrNamespace,

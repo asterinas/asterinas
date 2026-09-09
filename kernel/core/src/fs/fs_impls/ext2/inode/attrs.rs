@@ -126,32 +126,32 @@ impl Inode {
     }
 
     /// Returns the last access time.
-    pub(in ext2) fn atime(&self) -> Duration {
+    pub(in ext2) fn atime(&self) -> UnixTimestamp {
         self.inner.read().atime()
     }
 
     /// Sets the last access time.
-    pub(in ext2) fn set_atime(&self, time: Duration) {
+    pub(in ext2) fn set_atime(&self, time: UnixTimestamp) {
         self.inner.write().set_atime(time);
     }
 
     /// Returns the last data modification time.
-    pub(in ext2) fn mtime(&self) -> Duration {
+    pub(in ext2) fn mtime(&self) -> UnixTimestamp {
         self.inner.read().mtime()
     }
 
     /// Sets the last data modification time.
-    pub(in ext2) fn set_mtime(&self, time: Duration) {
+    pub(in ext2) fn set_mtime(&self, time: UnixTimestamp) {
         self.inner.write().set_mtime(time);
     }
 
     /// Returns the last metadata change time.
-    pub(in ext2) fn ctime(&self) -> Duration {
+    pub(in ext2) fn ctime(&self) -> UnixTimestamp {
         self.inner.read().ctime()
     }
 
     /// Sets the last metadata change time.
-    pub(in ext2) fn set_ctime(&self, time: Duration) {
+    pub(in ext2) fn set_ctime(&self, time: UnixTimestamp) {
         self.inner.write().set_ctime(time);
     }
 

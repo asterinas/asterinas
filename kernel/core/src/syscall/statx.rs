@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::time::Duration;
-
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
@@ -12,6 +10,7 @@ use crate::{
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
+    time::UnixTimestamp,
 };
 
 const STATX_ATTR_MOUNT_ROOT: u64 = 0x0000_2000;
@@ -207,11 +206,11 @@ struct StatxTimestamp {
     __reserved: i32,
 }
 
-impl From<Duration> for StatxTimestamp {
-    fn from(duration: Duration) -> Self {
+impl From<UnixTimestamp> for StatxTimestamp {
+    fn from(ts: UnixTimestamp) -> Self {
         Self {
-            tv_sec: duration.as_secs() as i64,
-            tv_nsec: duration.subsec_nanos(),
+            tv_sec: ts.seconds(),
+            tv_nsec: ts.nanoseconds(),
             __reserved: 0,
         }
     }

@@ -3,7 +3,6 @@
 #![expect(unused_variables)]
 
 use alloc::boxed::ThinBox;
-use core::time::Duration;
 
 use device_id::DeviceId;
 use ostd::task::{CurrentTask, Task};
@@ -29,7 +28,7 @@ use crate::{
         posix_thread::{AsPosixThread, PosixThread},
     },
     security::lsm::hooks as lsm_hooks,
-    time::clocks::RealTimeCoarseClock,
+    time::{UnixTimestamp, clocks::RealTimeCoarseClock},
     vm::page_cache::Vmo,
 };
 
@@ -69,12 +68,12 @@ pub(crate) struct Metadata {
     /// The timestamp of the last access to the inode's data.
     ///
     /// Corresponds to `st_atime`.
-    pub last_access_at: Duration,
+    pub last_access_at: UnixTimestamp,
 
     /// The timestamp of the last modification to the inode's content.
     ///
     /// Corresponds to `st_mtime`.
-    pub last_modify_at: Duration,
+    pub last_modify_at: UnixTimestamp,
 
     /// The timestamp of the last change to the inode's metadata.
     ///
@@ -82,7 +81,7 @@ pub(crate) struct Metadata {
     /// not just when the inode content is modified.
     ///
     /// Corresponds to `st_ctime`.
-    pub last_meta_change_at: Duration,
+    pub last_meta_change_at: UnixTimestamp,
 
     /// The type of the inode (e.g., regular file, directory, symlink).
     ///
@@ -130,7 +129,7 @@ pub(crate) struct Metadata {
     /// `None`.
     ///
     /// Corresponds to `stx_btime`.
-    pub birth_at: Option<Duration>,
+    pub birth_at: Option<UnixTimestamp>,
 }
 
 /// Describes whether an inode may get new hard links.
@@ -153,7 +152,7 @@ impl Metadata {
         blk_size: usize,
         container_dev_id: DeviceId,
     ) -> Self {
-        let now = RealTimeCoarseClock::get().read_time();
+        let now = UnixTimestamp::from_duration_since_epoch(RealTimeCoarseClock::get().read_time());
         Self {
             ino,
             size: 2,
@@ -179,7 +178,7 @@ impl Metadata {
         blk_size: usize,
         container_dev_id: DeviceId,
     ) -> Self {
-        let now = RealTimeCoarseClock::get().read_time();
+        let now = UnixTimestamp::from_duration_since_epoch(RealTimeCoarseClock::get().read_time());
         Self {
             ino,
             size: 0,
@@ -205,7 +204,7 @@ impl Metadata {
         blk_size: usize,
         container_dev_id: DeviceId,
     ) -> Self {
-        let now = RealTimeCoarseClock::get().read_time();
+        let now = UnixTimestamp::from_duration_since_epoch(RealTimeCoarseClock::get().read_time());
         Self {
             ino,
             size: 0,
@@ -232,7 +231,7 @@ impl Metadata {
         device: &dyn Device,
         container_dev_id: DeviceId,
     ) -> Self {
-        let now = RealTimeCoarseClock::get().read_time();
+        let now = UnixTimestamp::from_duration_since_epoch(RealTimeCoarseClock::get().read_time());
         Self {
             ino,
             size: 0,
@@ -400,17 +399,17 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
 
     fn set_group(&self, gid: Gid) -> Result<()>;
 
-    fn atime(&self) -> Duration;
+    fn atime(&self) -> UnixTimestamp;
 
-    fn set_atime(&self, time: Duration);
+    fn set_atime(&self, time: UnixTimestamp);
 
-    fn mtime(&self) -> Duration;
+    fn mtime(&self) -> UnixTimestamp;
 
-    fn set_mtime(&self, time: Duration);
+    fn set_mtime(&self, time: UnixTimestamp);
 
-    fn ctime(&self) -> Duration;
+    fn ctime(&self) -> UnixTimestamp;
 
-    fn set_ctime(&self, time: Duration);
+    fn set_ctime(&self, time: UnixTimestamp);
 
     fn page_cache(&self) -> Option<Arc<Vmo>> {
         None

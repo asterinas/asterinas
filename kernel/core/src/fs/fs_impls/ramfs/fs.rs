@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Duration,
-};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use align_ext::AlignExt;
 use aster_block::SECTOR_SIZE;
@@ -37,7 +34,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid, posix_thread::AsPosixThread},
     thread::Thread,
-    time::clocks::RealTimeCoarseClock,
+    time::{UnixTimestamp, clocks::RealTimeCoarseClock},
     vm::page_cache::{PageCache, Vmo},
 };
 
@@ -298,9 +295,9 @@ impl Inner {
 struct InodeMeta {
     size: usize,
     blocks: usize,
-    atime: Duration,
-    mtime: Duration,
-    ctime: Duration,
+    atime: UnixTimestamp,
+    mtime: UnixTimestamp,
+    ctime: UnixTimestamp,
     mode: InodeMode,
     nlinks: usize,
     uid: Uid,
@@ -366,15 +363,15 @@ impl InodeMeta {
             .expect("ramfs allocated sector count overflow")
     }
 
-    pub(crate) fn set_atime(&mut self, time: Duration) {
+    pub(crate) fn set_atime(&mut self, time: UnixTimestamp) {
         self.atime = time;
     }
 
-    pub(crate) fn set_mtime(&mut self, time: Duration) {
+    pub(crate) fn set_mtime(&mut self, time: UnixTimestamp) {
         self.mtime = time;
     }
 
-    pub(crate) fn set_ctime(&mut self, time: Duration) {
+    pub(crate) fn set_ctime(&mut self, time: UnixTimestamp) {
         self.ctime = time;
     }
 
@@ -1118,27 +1115,27 @@ impl Inode for RamInode {
         Ok(())
     }
 
-    fn atime(&self) -> Duration {
+    fn atime(&self) -> UnixTimestamp {
         self.metadata.lock().atime
     }
 
-    fn set_atime(&self, time: Duration) {
+    fn set_atime(&self, time: UnixTimestamp) {
         self.metadata.lock().set_atime(time);
     }
 
-    fn mtime(&self) -> Duration {
+    fn mtime(&self) -> UnixTimestamp {
         self.metadata.lock().mtime
     }
 
-    fn set_mtime(&self, time: Duration) {
+    fn set_mtime(&self, time: UnixTimestamp) {
         self.metadata.lock().set_mtime(time);
     }
 
-    fn ctime(&self) -> Duration {
+    fn ctime(&self) -> UnixTimestamp {
         self.metadata.lock().ctime
     }
 
-    fn set_ctime(&self, time: Duration) {
+    fn set_ctime(&self, time: UnixTimestamp) {
         self.metadata.lock().set_ctime(time);
     }
 
@@ -1595,7 +1592,7 @@ impl DirChange {
 
     /// Applies this change to `dir`'s own metadata, also bumping its mtime/ctime
     /// to `now`.
-    fn apply(self, dir: &RamInode, now: Duration) {
+    fn apply(self, dir: &RamInode, now: UnixTimestamp) {
         let mut meta = dir.metadata.lock();
         match (self.old_type, self.new_type) {
             (Some(_), None) => meta.dec_size(),
@@ -1631,8 +1628,8 @@ fn write_lock_two_direntries_by_ino<'a>(
     }
 }
 
-fn now() -> Duration {
-    RealTimeCoarseClock::get().read_time()
+fn now() -> UnixTimestamp {
+    UnixTimestamp::from_duration_since_epoch(RealTimeCoarseClock::get().read_time())
 }
 
 fn current_fs_ids() -> (Uid, Gid) {
