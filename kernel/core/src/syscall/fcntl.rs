@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::cmp::Ordering;
+
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
     fs::{
         file::{
-            FileLike, StatusFlags, StatusFlagsUpdate,
+            FileLike, FileOwnerTarget, StatusFlags, StatusFlagsUpdate,
             file_table::{FdFlags, FileDesc, FileTable, RawFileDesc, WithFileTable, get_file_fast},
         },
         ramfs::memfd::{FileSeals, MemfdInodeHandle},
         vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
     },
     prelude::*,
-    process::{Pid, pid_table},
+    process::{Pgid, Pid, pid_table},
 };
 
 pub(super) fn sys_fcntl(
@@ -174,32 +176,51 @@ fn handle_getown(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
-    let pid = file.common().owner().pid().unwrap_or(0);
-    Ok(SyscallReturn::Return(pid as _))
+    // A process ID is returned as a positive value; a process group ID is returned as a negative
+    // value. Like Linux, we do not special-case the process group IDs that a libc wrapper may
+    // mistake for error codes; `F_GETOWN_EX` is the way to avoid that ambiguity.
+    let id = file.common().owner().id().unwrap_or(0);
+    Ok(SyscallReturn::Return(id as _))
 }
 
 fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    // A process ID is specified as a positive value; a process group ID is specified as a negative value.
-    // TODO: Support process groups instead of falling back to processes.
-    let pid = (arg as i32).unsigned_abs();
-    if pid.cast_signed() < 0 {
-        return_errno_with_message!(Errno::EINVAL, "negative PIDs are not valid");
+    // A process ID is specified as a positive value; a process group ID is specified as a negative
+    // value. Zero clears the owner.
+    let who = arg as i32;
+    // `i32::MIN` has no positive counterpart, so reject it before negating it below.
+    if who == i32::MIN {
+        return_errno_with_message!(Errno::EINVAL, "the file owner ID is out of range");
     }
 
-    let owner_process = if pid == 0 {
-        None
-    } else {
-        Some(pid_table::pid_table_mut().get_process(pid).ok_or_else(|| {
-            Error::with_message(
-                Errno::ESRCH,
-                "the process to be a file owner does not exist",
-            )
-        })?)
+    let owner = match who.cmp(&0) {
+        Ordering::Equal => None,
+        Ordering::Greater => {
+            let pid = who as Pid;
+            let process = pid_table::pid_table_mut().get_process(pid).ok_or_else(|| {
+                Error::with_message(
+                    Errno::ESRCH,
+                    "the process to be a file owner does not exist",
+                )
+            })?;
+            Some(FileOwnerTarget::Process(process))
+        }
+        Ordering::Less => {
+            let pgid: Pgid = who.unsigned_abs();
+            let group = pid_table::pid_table_mut()
+                .get_process_group(&pgid)
+                .ok_or_else(|| {
+                    Error::with_message(
+                        Errno::ESRCH,
+                        "the process group to be a file owner does not exist",
+                    )
+                })?;
+            Some(FileOwnerTarget::ProcessGroup(group))
+        }
     };
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
-    file.set_owner(owner_process.as_ref());
+    file.set_owner(owner.as_ref());
 
     Ok(SyscallReturn::Return(0))
 }
