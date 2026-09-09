@@ -184,7 +184,7 @@ impl Ext2 {
             mount_options,
             flags: AtomicFsFlags::new(flags),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
-            next_generation: AtomicU32::new(utils::duration_to_ext2_secs(utils::now())),
+            next_generation: AtomicU32::new(utils::duration_to_ext2_secs(utils::now_duration())),
             self_ref: weak_self.clone(),
         });
 
@@ -635,7 +635,7 @@ impl Ext2 {
         }
         sb_guard.set_free_blocks_count(total_free_blocks);
         sb_guard.set_free_inodes_count(total_free_inodes);
-        sb_guard.set_wtime(utils::now());
+        sb_guard.set_wtime(utils::now_duration());
 
         let mut raw_sb = RawSuperBlock::from(&**sb_guard);
         self.write_sb_and_group_descs(

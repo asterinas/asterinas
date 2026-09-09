@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::borrow::Cow;
-use core::time::Duration;
 
 use aster_systree::{
     SysAttr, SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink,
@@ -21,7 +20,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    time::clocks::RealTimeCoarseClock,
+    time::{UnixTimestamp, clocks::RealTimeCoarseClock},
     vm::page_cache::Vmo,
 };
 
@@ -70,7 +69,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     }
 
     fn new_metadata(ino: u64, type_: InodeType, sb: &SuperBlock) -> Metadata {
-        let now = RealTimeCoarseClock::get().read_time();
+        let now = UnixTimestamp::from_duration_since_epoch(RealTimeCoarseClock::get().read_time());
         Metadata {
             ino,
             size: 0,
@@ -445,23 +444,23 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         Ok(())
     }
 
-    default fn atime(&self) -> Duration {
+    default fn atime(&self) -> UnixTimestamp {
         self.metadata().last_access_at
     }
 
-    default fn set_atime(&self, _time: Duration) {}
+    default fn set_atime(&self, _time: UnixTimestamp) {}
 
-    default fn mtime(&self) -> Duration {
+    default fn mtime(&self) -> UnixTimestamp {
         self.metadata().last_modify_at
     }
 
-    default fn set_mtime(&self, _time: Duration) {}
+    default fn set_mtime(&self, _time: UnixTimestamp) {}
 
-    default fn ctime(&self) -> Duration {
+    default fn ctime(&self) -> UnixTimestamp {
         self.metadata().last_meta_change_at
     }
 
-    default fn set_ctime(&self, _time: Duration) {}
+    default fn set_ctime(&self, _time: UnixTimestamp) {}
 
     default fn owner(&self) -> Result<Uid> {
         Ok(self.metadata().uid)

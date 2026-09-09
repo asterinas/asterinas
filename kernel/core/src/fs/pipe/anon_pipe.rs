@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::time::Duration;
-
 use inherit_methods_macro::inherit_methods;
 
 use crate::{
@@ -16,6 +14,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    time::UnixTimestamp,
 };
 
 /// Creates a pair of connected pipe file handles with the default capacity.
@@ -90,12 +89,12 @@ impl Inode for AnonPipeInode {
     fn set_owner(&self, uid: Uid) -> Result<()>;
     fn group(&self) -> Result<Gid>;
     fn set_group(&self, gid: Gid) -> Result<()>;
-    fn atime(&self) -> Duration;
-    fn set_atime(&self, time: Duration);
-    fn mtime(&self) -> Duration;
-    fn set_mtime(&self, time: Duration);
-    fn ctime(&self) -> Duration;
-    fn set_ctime(&self, time: Duration);
+    fn atime(&self) -> UnixTimestamp;
+    fn set_atime(&self, time: UnixTimestamp);
+    fn mtime(&self) -> UnixTimestamp;
+    fn set_mtime(&self, time: UnixTimestamp);
+    fn ctime(&self) -> UnixTimestamp;
+    fn set_ctime(&self, time: UnixTimestamp);
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn open(

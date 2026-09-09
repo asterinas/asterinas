@@ -2,8 +2,6 @@
 
 #![expect(unused_variables)]
 
-use core::time::Duration;
-
 use aster_util::slot_vec::SlotVec;
 use id_alloc::IdAlloc;
 
@@ -25,6 +23,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    time::UnixTimestamp,
 };
 
 mod ptmx;
@@ -284,27 +283,27 @@ impl Inode for RootInode {
         Ok(())
     }
 
-    fn atime(&self) -> Duration {
+    fn atime(&self) -> UnixTimestamp {
         self.metadata.read().last_access_at
     }
 
-    fn set_atime(&self, time: Duration) {
+    fn set_atime(&self, time: UnixTimestamp) {
         self.metadata.write().last_access_at = time;
     }
 
-    fn mtime(&self) -> Duration {
+    fn mtime(&self) -> UnixTimestamp {
         self.metadata.read().last_modify_at
     }
 
-    fn set_mtime(&self, time: Duration) {
+    fn set_mtime(&self, time: UnixTimestamp) {
         self.metadata.write().last_modify_at = time;
     }
 
-    fn ctime(&self) -> Duration {
+    fn ctime(&self) -> UnixTimestamp {
         self.metadata.read().last_meta_change_at
     }
 
-    fn set_ctime(&self, time: Duration) {
+    fn set_ctime(&self, time: UnixTimestamp) {
         self.metadata.write().last_meta_change_at = time;
     }
 

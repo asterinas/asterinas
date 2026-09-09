@@ -20,10 +20,7 @@
 //! As such, this module provides [`AnonDeviceId`] to acquire and recycle
 //! anonymous device IDs.
 
-use core::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Duration,
-};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) use allocator::AnonDeviceId;
 pub(crate) use anon_inodefs::AnonInodeFs;
@@ -49,7 +46,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    time::clocks::RealTimeCoarseClock,
+    time::{UnixTimestamp, clocks::RealTimeCoarseClock},
 };
 
 mod allocator;
@@ -329,27 +326,27 @@ impl Inode for PseudoInode {
         Ok(())
     }
 
-    fn atime(&self) -> Duration {
+    fn atime(&self) -> UnixTimestamp {
         self.metadata.lock().last_access_at
     }
 
-    fn set_atime(&self, time: Duration) {
+    fn set_atime(&self, time: UnixTimestamp) {
         self.metadata.lock().last_access_at = time;
     }
 
-    fn mtime(&self) -> Duration {
+    fn mtime(&self) -> UnixTimestamp {
         self.metadata.lock().last_modify_at
     }
 
-    fn set_mtime(&self, time: Duration) {
+    fn set_mtime(&self, time: UnixTimestamp) {
         self.metadata.lock().last_modify_at = time;
     }
 
-    fn ctime(&self) -> Duration {
+    fn ctime(&self) -> UnixTimestamp {
         self.metadata.lock().last_meta_change_at
     }
 
-    fn set_ctime(&self, time: Duration) {
+    fn set_ctime(&self, time: UnixTimestamp) {
         self.metadata.lock().last_meta_change_at = time;
     }
 
@@ -369,6 +366,6 @@ impl Inode for PseudoInode {
     }
 }
 
-fn now() -> Duration {
-    RealTimeCoarseClock::get().read_time()
+fn now() -> UnixTimestamp {
+    UnixTimestamp::from_duration_since_epoch(RealTimeCoarseClock::get().read_time())
 }

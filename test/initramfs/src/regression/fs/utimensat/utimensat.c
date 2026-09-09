@@ -3,10 +3,12 @@
 #define _GNU_SOURCE
 
 #include <fcntl.h>
+#include <linux/stat.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "../../common/test.h"
@@ -32,6 +34,21 @@ FN_TEST(at_empty_path_updates_times)
 	struct stat st;
 	TEST_RES(fstat(fd, &st), st.st_atim.tv_sec == 1234567890 &&
 					 st.st_mtim.tv_sec == 1234567891);
+}
+END_TEST()
+
+/* Regression for https://github.com/asterinas/asterinas/issues/3746 */
+FN_TEST(negative_tv_sec_roundtrip)
+{
+	struct timespec times[2] = {
+		{ .tv_sec = -1, .tv_nsec = 0 },
+		{ .tv_sec = -2051222400, .tv_nsec = 0 }, /* 1905-01-01 */
+	};
+	TEST_SUCC(utimensat(fd, "", times, AT_EMPTY_PATH));
+
+	struct stat st;
+	TEST_RES(fstat(fd, &st),
+		 st.st_atim.tv_sec == -1 && st.st_mtim.tv_sec == -2051222400);
 }
 END_TEST()
 
@@ -105,6 +122,119 @@ FN_TEST(at_empty_path_on_o_path_symlink_updates_symlink)
 
 	TEST_SUCC(close(sym_fd));
 	TEST_SUCC(unlink(symlink_path));
+}
+END_TEST()
+
+FN_TEST(epoch_and_nanoseconds)
+{
+	struct timespec times[2] = {
+		{ .tv_sec = 0, .tv_nsec = 1 },
+		{ .tv_sec = 0, .tv_nsec = 999999999 },
+	};
+	TEST_SUCC(utimensat(fd, "", times, AT_EMPTY_PATH));
+
+	struct stat st;
+	TEST_RES(fstat(fd, &st), st.st_atim.tv_sec == 0 &&
+					 st.st_atim.tv_nsec == 1 &&
+					 st.st_mtim.tv_sec == 0 &&
+					 st.st_mtim.tv_nsec == 999999999);
+}
+END_TEST()
+
+FN_TEST(utime_omit_preserves_atime)
+{
+	struct timespec seed[2] = {
+		{ .tv_sec = 100, .tv_nsec = 0 },
+		{ .tv_sec = 200, .tv_nsec = 0 },
+	};
+	TEST_SUCC(utimensat(fd, "", seed, AT_EMPTY_PATH));
+
+	struct timespec times[2] = {
+		{ .tv_sec = 0, .tv_nsec = UTIME_OMIT },
+		{ .tv_sec = 300, .tv_nsec = 0 },
+	};
+	TEST_SUCC(utimensat(fd, "", times, AT_EMPTY_PATH));
+
+	struct stat st;
+	TEST_RES(fstat(fd, &st),
+		 st.st_atim.tv_sec == 100 && st.st_mtim.tv_sec == 300);
+}
+END_TEST()
+
+FN_TEST(both_omit_is_noop)
+{
+	struct timespec seed[2] = {
+		{ .tv_sec = 111, .tv_nsec = 0 },
+		{ .tv_sec = 222, .tv_nsec = 0 },
+	};
+	TEST_SUCC(utimensat(fd, "", seed, AT_EMPTY_PATH));
+
+	struct timespec times[2] = {
+		{ .tv_sec = 0, .tv_nsec = UTIME_OMIT },
+		{ .tv_sec = 0, .tv_nsec = UTIME_OMIT },
+	};
+	TEST_SUCC(utimensat(fd, "", times, AT_EMPTY_PATH));
+
+	struct stat st;
+	TEST_RES(fstat(fd, &st),
+		 st.st_atim.tv_sec == 111 && st.st_mtim.tv_sec == 222);
+}
+END_TEST()
+
+FN_TEST(utime_now_sets_current_time)
+{
+	struct timespec times[2] = {
+		{ .tv_sec = 0, .tv_nsec = UTIME_NOW },
+		{ .tv_sec = 0, .tv_nsec = UTIME_NOW },
+	};
+	time_t before = TEST_SUCC(time(NULL));
+	TEST_SUCC(utimensat(fd, "", times, AT_EMPTY_PATH));
+	time_t after = TEST_SUCC(time(NULL));
+
+	struct stat st;
+	TEST_SUCC(fstat(fd, &st));
+	TEST_RES(st.st_mtim.tv_sec >= before - 1, _ret);
+	TEST_RES(st.st_mtim.tv_sec <= after + 1, _ret);
+}
+END_TEST()
+
+FN_TEST(invalid_nsec_returns_einval)
+{
+	struct timespec times[2] = {
+		{ .tv_sec = 1, .tv_nsec = 1000000000 },
+		{ .tv_sec = 1, .tv_nsec = 0 },
+	};
+	TEST_ERRNO(utimensat(fd, "", times, AT_EMPTY_PATH), EINVAL);
+}
+END_TEST()
+
+FN_TEST(futimesat_accepts_negative_timeval)
+{
+	struct timeval times[2] = {
+		{ .tv_sec = -1, .tv_usec = 0 },
+		{ .tv_sec = 1, .tv_usec = 0 },
+	};
+	TEST_SUCC(syscall(SYS_futimesat, AT_FDCWD, TEST_FILE, times));
+
+	struct stat st;
+	TEST_RES(fstat(fd, &st),
+		 st.st_atim.tv_sec == -1 && st.st_mtim.tv_sec == 1);
+}
+END_TEST()
+
+FN_TEST(statx_reports_negative_atime)
+{
+	struct timespec times[2] = {
+		{ .tv_sec = -1, .tv_nsec = 0 },
+		{ .tv_sec = -2, .tv_nsec = 0 },
+	};
+	TEST_SUCC(utimensat(fd, "", times, AT_EMPTY_PATH));
+
+	struct statx stx;
+	TEST_SUCC(
+		statx(fd, "", AT_EMPTY_PATH, STATX_ATIME | STATX_MTIME, &stx));
+	TEST_RES(stx.stx_atime.tv_sec == -1 && stx.stx_mtime.tv_sec == -2,
+		 _ret);
 }
 END_TEST()
 

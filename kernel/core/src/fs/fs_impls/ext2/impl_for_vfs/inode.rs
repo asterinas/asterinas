@@ -7,8 +7,6 @@
 //! ext2-internal operations, including symlink results and the inode's VFS
 //! extension slot.
 
-use core::time::Duration;
-
 use aster_block::bio::BioStatus;
 use device_id::DeviceId;
 
@@ -29,6 +27,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    time::UnixTimestamp,
     vm::page_cache::Vmo,
 };
 
@@ -109,27 +108,27 @@ impl Inode for Ext2Inode {
         self.set_gid(gid.into())
     }
 
-    fn atime(&self) -> Duration {
+    fn atime(&self) -> UnixTimestamp {
         self.atime()
     }
 
-    fn set_atime(&self, time: Duration) {
+    fn set_atime(&self, time: UnixTimestamp) {
         self.set_atime(time)
     }
 
-    fn mtime(&self) -> Duration {
+    fn mtime(&self) -> UnixTimestamp {
         self.mtime()
     }
 
-    fn set_mtime(&self, time: Duration) {
+    fn set_mtime(&self, time: UnixTimestamp) {
         self.set_mtime(time)
     }
 
-    fn ctime(&self) -> Duration {
+    fn ctime(&self) -> UnixTimestamp {
         self.ctime()
     }
 
-    fn set_ctime(&self, time: Duration) {
+    fn set_ctime(&self, time: UnixTimestamp) {
         self.set_ctime(time)
     }
 

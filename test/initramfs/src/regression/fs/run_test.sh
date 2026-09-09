@@ -159,3 +159,5 @@ echo "All mount bind file test passed."
 ./tmpfile/tmpfile
 
 ./utimensat/utimensat
+
+./timestamps/timestamps

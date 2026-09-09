@@ -3,10 +3,7 @@
 #![expect(dead_code)]
 
 use alloc::format;
-use core::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Duration,
-};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use align_ext::AlignExt;
 use aster_block::BLOCK_SIZE;
@@ -35,6 +32,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    time::UnixTimestamp,
     vm::page_cache::Vmo,
 };
 
@@ -599,9 +597,9 @@ impl OverlayInode {
     pub(crate) fn mode(&self) -> Result<InodeMode>;
     pub(crate) fn owner(&self) -> Result<Uid>;
     pub(crate) fn group(&self) -> Result<Gid>;
-    pub(crate) fn atime(&self) -> Duration;
-    pub(crate) fn mtime(&self) -> Duration;
-    pub(crate) fn ctime(&self) -> Duration;
+    pub(crate) fn atime(&self) -> UnixTimestamp;
+    pub(crate) fn mtime(&self) -> UnixTimestamp;
+    pub(crate) fn ctime(&self) -> UnixTimestamp;
     pub(crate) fn open(
         &self,
         access_mode: AccessMode,
@@ -626,9 +624,9 @@ impl OverlayInode {
 
 #[inherit_methods(from = "self.build_upper_recursively_if_needed().unwrap()")]
 impl OverlayInode {
-    pub(crate) fn set_atime(&self, time: Duration);
-    pub(crate) fn set_mtime(&self, time: Duration);
-    pub(crate) fn set_ctime(&self, time: Duration);
+    pub(crate) fn set_atime(&self, time: UnixTimestamp);
+    pub(crate) fn set_mtime(&self, time: UnixTimestamp);
+    pub(crate) fn set_ctime(&self, time: UnixTimestamp);
 }
 
 impl OverlayInode {
@@ -1026,12 +1024,12 @@ impl Inode for OverlayInode {
     fn set_owner(&self, uid: Uid) -> Result<()>;
     fn group(&self) -> Result<Gid>;
     fn set_group(&self, gid: Gid) -> Result<()>;
-    fn atime(&self) -> Duration;
-    fn set_atime(&self, time: Duration);
-    fn mtime(&self) -> Duration;
-    fn set_mtime(&self, time: Duration);
-    fn ctime(&self) -> Duration;
-    fn set_ctime(&self, time: Duration);
+    fn atime(&self) -> UnixTimestamp;
+    fn set_atime(&self, time: UnixTimestamp);
+    fn mtime(&self) -> UnixTimestamp;
+    fn set_mtime(&self, time: UnixTimestamp);
+    fn ctime(&self) -> UnixTimestamp;
+    fn set_ctime(&self, time: UnixTimestamp);
     fn page_cache(&self) -> Option<Arc<Vmo>>;
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
     fn create_symlink(&self, name: &str, target: &str, mode: InodeMode) -> Result<Arc<dyn Inode>>;
@@ -1635,7 +1633,8 @@ mod tests {
             .unwrap()
             .write(0, &mut VmReader::from([3].as_slice()).to_fallible())
             .unwrap();
-        f1.set_atime(Duration::default());
+        f1.set_atime(UnixTimestamp::from_seconds(-1));
+        assert_eq!(f1.atime().seconds(), -1);
         f1.sync(SyncMode::Data).unwrap();
         let mut data = [0u8; 1];
         f1.read_at(

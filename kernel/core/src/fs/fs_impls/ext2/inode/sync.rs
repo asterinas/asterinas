@@ -76,7 +76,7 @@ impl Inode {
         if block_manager.is_some() {
             inner.resize_page_cache(0, old_size)?;
         }
-        inner.set_dtime(utils::now());
+        inner.set_dtime(utils::now_duration());
         inner.set_file_size(0);
         inner.set_file_acl(0);
         if inner.desc.sector_count > 0

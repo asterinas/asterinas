@@ -16,7 +16,10 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    time::clocks::{MonotonicCoarseClock, RealTimeCoarseClock},
+    time::{
+        self, UnixTimestamp,
+        clocks::{MonotonicCoarseClock, RealTimeCoarseClock},
+    },
 };
 
 impl VirtioFsInode {
@@ -96,7 +99,7 @@ impl VirtioFsInode {
 impl InodeInner {
     /// Commits metadata changes after a local write.
     pub(super) fn commit_local_write(&mut self, committed_size: usize, attr_version: AttrVersion) {
-        let now = RealTimeCoarseClock::get().read_time();
+        let now = UnixTimestamp::from_duration_since_epoch(RealTimeCoarseClock::get().read_time());
         self.metadata.size = committed_size;
         self.metadata.nr_sectors_allocated = committed_size.div_ceil(512);
         self.metadata.last_modify_at = now;
@@ -201,9 +204,9 @@ pub(in crate::fs::fs_impls::virtiofs) fn metadata_from_attr(
         size: attr.size() as usize,
         optimal_block_size: attr.blksize() as usize,
         nr_sectors_allocated: attr.blocks() as usize,
-        last_access_at: Duration::new(attr.atime(), attr.atimensec()),
-        last_modify_at: Duration::new(attr.mtime(), attr.mtimensec()),
-        last_meta_change_at: Duration::new(attr.ctime(), attr.ctimensec()),
+        last_access_at: unix_timestamp_from_fuse(attr.atime(), attr.atimensec()),
+        last_modify_at: unix_timestamp_from_fuse(attr.mtime(), attr.mtimensec()),
+        last_meta_change_at: unix_timestamp_from_fuse(attr.ctime(), attr.ctimensec()),
         type_: InodeType::from_raw_mode(attr.mode() as u16).unwrap_or(InodeType::Unknown),
         mode: InodeMode::from_bits_truncate(attr.mode() as u16),
         nr_hard_links: attr.nlink() as usize,
@@ -216,5 +219,35 @@ pub(in crate::fs::fs_impls::virtiofs) fn metadata_from_attr(
             DeviceId::from_encoded_u64(attr.rdev() as u64)
         },
         birth_at: None,
+    }
+}
+
+/// Interprets FUSE's `u64` seconds as signed two's-complement Unix time.
+///
+/// FUSE replies should contain normalized nanoseconds.
+/// Clamp malformed values like Linux does before constructing the timestamp.
+/// See <https://github.com/torvalds/linux/blob/master/fs/fuse/inode.c>.
+fn unix_timestamp_from_fuse(secs: u64, nsec: u32) -> UnixTimestamp {
+    let nsec = nsec.min(time::NSEC_PER_SEC as u32 - 1);
+    UnixTimestamp::try_new(secs as i64, nsec).unwrap()
+}
+
+#[cfg(ktest)]
+mod tests {
+    use ostd::prelude::*;
+
+    use super::*;
+
+    #[ktest]
+    fn fuse_u64_all_ones_is_minus_one() {
+        // https://github.com/asterinas/asterinas/issues/3746
+        assert_eq!(unix_timestamp_from_fuse(u64::MAX, 0).seconds(), -1);
+    }
+
+    #[ktest]
+    fn fuse_unnormalized_nsec_is_clamped() {
+        let ts = unix_timestamp_from_fuse(42, 1_000_000_000);
+        assert_eq!(ts.seconds(), 42);
+        assert_eq!(ts.nanoseconds(), 999_999_999);
     }
 }
