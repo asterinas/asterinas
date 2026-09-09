@@ -279,7 +279,9 @@ impl Cursor<'_> {
     ///
     /// # Panics
     ///
-    /// Panics if the length is longer than the remaining range of the cursor.
+    /// Panics if:
+    ///  - the length is longer than the remaining range of the cursor;
+    ///  - the length is not page-aligned.
     pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
         self.0.find_next(len)
     }
@@ -362,7 +364,9 @@ impl<'a> CursorMut<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the current virtual address is already mapped.
+    /// Panics if:
+    ///  - the current virtual address is already mapped;
+    ///  - the current virtual address is outside the cursor's range.
     pub fn map(&mut self, frame: UFrame, prop: PageProperty) {
         let item = VmItem::new_tracked(frame, prop);
 
@@ -449,8 +453,8 @@ impl<'a> CursorMut<'a> {
     /// Clears the mapping starting from the current slot,
     /// and returns the number of unmapped pages.
     ///
-    /// This method will bring the cursor forward by `len` bytes in the virtual
-    /// address space after the modification.
+    /// This method will bring the cursor forward by at least `len` bytes
+    /// in the virtual address space, but not past the end of the cursor's range.
     ///
     /// Already-absent mappings encountered by the cursor will be skipped. It
     /// is valid to unmap a range that is not mapped.
@@ -552,7 +556,9 @@ impl<'a> CursorMut<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the length is longer than the remaining range of the cursor.
+    /// Panics if:
+    ///  - the length is longer than the remaining range of the cursor;
+    ///  - the length is not page-aligned.
     pub fn protect_next(
         &mut self,
         len: usize,

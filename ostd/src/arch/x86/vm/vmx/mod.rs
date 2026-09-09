@@ -3,6 +3,7 @@
 //! Intel VMX platform lifecycle management.
 
 mod instructions;
+pub(crate) mod invept;
 pub(crate) mod vmcs;
 
 use x86::msr::{
@@ -20,6 +21,7 @@ use crate::{
     mm::{Frame, FrameAllocOptions, paddr_to_vaddr},
     prelude::*,
     sync::{LocalIrqDisabled, Mutex, SpinLock},
+    task::atomic_mode,
 };
 
 const FEATURE_CONTROL_LOCKED: u64 = 1;
@@ -92,12 +94,10 @@ impl VmxGuard {
     ///
     /// # Panics
     ///
-    /// The guard can only be acquired or released when IRQs are enabled.
-    /// Calling this method or [`Drop::drop`] with IRQs disabled will result
-    /// in a panic.
-    #[cfg_attr(not(ktest), expect(dead_code))]
+    /// Panics if this method or [`Drop::drop`] is called in
+    /// [atomic mode](crate::task::atomic_mode).
     pub(crate) fn acquire_vmx() -> Result<VmxGuard> {
-        assert!(crate::arch::irq::is_local_enabled());
+        atomic_mode::might_sleep();
 
         let mut state = VMX_GUARD_STATE.lock();
         state.acquire_vmx()?;
@@ -108,7 +108,7 @@ impl VmxGuard {
 
 impl Drop for VmxGuard {
     fn drop(&mut self) {
-        assert!(crate::arch::irq::is_local_enabled());
+        atomic_mode::might_sleep();
 
         let mut state = VMX_GUARD_STATE.lock();
         state.drop_vmx();
@@ -202,6 +202,12 @@ impl VmxCpuState {
                 return;
             }
         };
+        // SAFETY: `read_and_validate_capability` checked VMX support.
+        if let Err(err) = unsafe { invept::check_ept_support(&irq_guard) } {
+            cpu_state.last_error = Some(err);
+            return;
+        }
+
         // SAFETY: `vmx_cr4` preserves the current `CR4` value, adds only
         // `CR4.VMXE`, and was validated by `read_and_validate_capability` above.
         unsafe { Cr4::write_raw(vmx_cr4) };
@@ -247,6 +253,11 @@ impl VmxCpuState {
             cpu_state.last_error = None;
             return;
         }
+
+        // A local shutdown can run before queued IPI callbacks on this CPU.
+        // Drain EPT invalidations while VMX is still enabled; later callbacks
+        // will find no pending work.
+        invept::flush_pending();
 
         // SAFETY:
         // 1. `cpu_state.is_enabled` means this CPU is in VMX operation.
