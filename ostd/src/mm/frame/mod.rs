@@ -324,6 +324,29 @@ impl<M: AnyUFrameMeta> From<Frame<M>> for UFrame {
     }
 }
 
+/// Restores ownership of a forgotten [`UFrame`].
+///
+/// # Safety
+///
+/// `paddr` must identify a forgotten `UFrame` whose ownership is transferred
+/// to the returned handle exactly once.
+#[cfg(target_arch = "x86_64")]
+pub(crate) unsafe fn uframe_from_raw(paddr: Paddr) -> UFrame {
+    // SAFETY: The caller ensures safety.
+    unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) }
+}
+
+/// Borrows a forgotten [`UFrame`].
+///
+/// # Safety
+///
+/// `paddr` must identify a forgotten `UFrame` that remains alive for `'a`.
+#[cfg(target_arch = "x86_64")]
+pub(crate) unsafe fn uframe_ref_from_raw<'a>(paddr: Paddr) -> FrameRef<'a, dyn AnyUFrameMeta> {
+    // SAFETY: The caller ensures safety.
+    unsafe { FrameRef::<dyn AnyUFrameMeta>::borrow_paddr(paddr) }
+}
+
 impl From<UFrame> for Frame<dyn AnyFrameMeta> {
     fn from(frame: UFrame) -> Self {
         // SAFETY: The metadata is coerceable and the struct is transmutable.
