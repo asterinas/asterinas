@@ -32,7 +32,9 @@
 
   # List packages installed in system profile.
   # You can use https://search.nixos.org/ to find more packages (and options).
-  environment.systemPackages = with pkgs; [ hello-asterinas ];
+  # gitMinimal lets a guest clone its source over https and gives Nix a Git
+  # tree to treat as a flake; the full git closure (perl, ssh) is not needed.
+  environment.systemPackages = with pkgs; [ hello-asterinas gitMinimal ];
 
   system.nixos.distroName = "Asterinas NixOS";
 

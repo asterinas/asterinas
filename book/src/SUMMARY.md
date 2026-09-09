@@ -5,6 +5,7 @@
 # Asterinas NixOS
 
 * [Getting Started](distro/README.md)
+* [Building Asterinas on Asterinas](distro/building-on-asterinas.md)
 * [Popular Applications](distro/popular-applications/README.md)
     * [System Core](distro/popular-applications/system-core/README.md)
     * [Nix and NixOS Tools](distro/popular-applications/nix-and-nixos-tools/README.md)
