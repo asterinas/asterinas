@@ -2,6 +2,17 @@
 {
   description = "Asterinas development environment";
 
+  nixConfig = {
+    extra-substituters = [
+      "https://aster-nixos-release.cachix.org"
+      "https://aster-nixos-dev.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "aster-nixos-release.cachix.org-1:xB6U/f5ck5vGDJZ04kPp3zGpZ4Nro9X4+TSSMAETVFE="
+      "aster-nixos-dev.cachix.org-1:xrCbE2flfliFTQCY/2HeJoT2tCO+5kMTZeLIUH9lnIA="
+    ];
+  };
+
   inputs = {
     # Keep Nix-based builds on the nixpkgs revision the rest of the repository
     # pins: tools/dev_env/docker/prebuilt-nix-packages/Dockerfile and

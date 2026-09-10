@@ -75,11 +75,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Nix
         uses: cachix/install-nix-action@v31
+      - name: Configure the development cache
+        uses: cachix/cachix-action@v17
+        with:
+          name: aster-nixos-dev
+          authToken: ${{ github.event_name == 'push' && secrets.CACHIX_AUTH_TOKEN_FOR_DEV_CACHE || '' }}
+          skipPush: ${{ github.event_name != 'push' }}
       - name: Check in Nix dev shell
         run: |
-          nix develop --ignore-environment --keep HOME \
+          nix develop --accept-flake-config --ignore-environment --keep HOME \
             --command make check
       - name: Build and boot Asterinas
         run: |
-          nix develop --ignore-environment --keep HOME \
+          # Keep `NIX_USER_CONF_FILES` so nested Nix builds retain Cachix's post-build hook.
+          nix develop --accept-flake-config --ignore-environment --keep HOME \
+            --keep NIX_USER_CONF_FILES \
             --command make run_kernel AUTO_TEST=boot ENABLE_KVM=${{ matrix.enable_kvm }}

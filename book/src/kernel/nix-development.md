@@ -35,10 +35,11 @@ then enter the development shell from the root of the checkout:
 nix develop
 ```
 
-The first run downloads the dependencies
-and builds the packages that no public binary cache provides,
-such as QEMU and the firmware.
-This can take a long time.
+The flake declares the project's binary caches on Cachix,
+which serve the packages that no public cache provides,
+such as the patched QEMU, the firmware, and the Rust toolchain.
+The first run asks whether to accept those caches and whether to remember the answer.
+Pass `--accept-flake-config` to accept them for one run without the questions.
 
 Inside the shell, the Make targets work as they do in the Docker container.
 Build and run Asterinas with the same commands as in [Getting Started](../kernel/#getting-started),
@@ -60,6 +61,8 @@ code .
 If you use [direnv](https://direnv.net/),
 the `.envrc` at the repository root activates the shell whenever you enter the checkout.
 Run `direnv allow` once to approve it.
+Run `nix develop` once first and answer `y` to both questions,
+because direnv does not show the prompt in every shell.
 
 ## Differences from the Docker environment
 
