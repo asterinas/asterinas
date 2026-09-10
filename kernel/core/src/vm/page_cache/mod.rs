@@ -102,6 +102,11 @@
 //!    use `rmap` to denote the reverse-mapping lock, `PT` to denote the page
 //!    table lock, `page` to denote the page lock, and `xarray` to denote the
 //!    lock of VMO pages. For details, see the comments in the implementation.
+//!
+//!  - `dio_lock` denotes the lock that serializes page-cache population
+//!    from mmap page faults with direct I/O: page faults hold it shared
+//!    while populating pages, and direct I/O takes it exclusively across
+//!    its cache checks and block I/O.
 
 use core::{
     ops::{Deref, Range},
@@ -331,12 +336,38 @@ impl PageCache {
         vmo.evict_up_to_date_pages(&range)
     }
 
+    /// Returns whether any page in the specified byte range is present in the page cache.
+    pub(crate) fn has_pages(&self, range: Range<usize>) -> bool {
+        let Some(vmo) = self.0.as_backed_vmo() else {
+            return false;
+        };
+        vmo.has_pages(&range)
+    }
+
+    /// Returns whether any page in the specified byte range is dirty, locked,
+    /// or being written back.
+    pub(crate) fn needs_writeback(&self, range: Range<usize>) -> bool {
+        let Some(vmo) = self.0.as_backed_vmo() else {
+            return false;
+        };
+        vmo.needs_writeback(&range)
+    }
+
     /// Fills the specified range of the page cache with zeros.
     ///
     /// Callers must hold the filesystem-level lock that serializes operations in
     /// the target range.
     pub(crate) fn fill_zeros(&self, range: Range<usize>) -> Result<()> {
         self.0.fill_zeros(range)
+    }
+
+    /// Tries to read from the page cache at `offset` into `writer` without blocking.
+    ///
+    /// Returns the number of bytes read. If the read would need backend I/O or
+    /// page initialization, the bytes read so far are returned as a short read,
+    /// or `EAGAIN` if nothing was read.
+    pub(crate) fn try_read(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.0.try_read(offset, writer)
     }
 }
 

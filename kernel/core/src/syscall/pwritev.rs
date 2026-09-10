@@ -3,7 +3,10 @@
 use super::SyscallReturn;
 use crate::{
     fs,
-    fs::file::file_table::{RawFileDesc, get_file_fast},
+    fs::file::{
+        RwfFlags,
+        file_table::{RawFileDesc, get_file_fast},
+    },
     prelude::*,
     util::VmReaderArray,
 };
@@ -14,7 +17,7 @@ pub(super) fn sys_writev(
     io_vec_count: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let res = do_sys_writev(raw_fd, io_vec_ptr, io_vec_count, ctx)?;
+    let res = do_sys_writev(raw_fd, io_vec_ptr, io_vec_count, RwfFlags::empty(), ctx)?;
     Ok(SyscallReturn::Return(res as _))
 }
 
@@ -35,7 +38,7 @@ pub(super) fn sys_pwritev(
         io_vec_ptr,
         io_vec_count,
         offset,
-        RWFFlag::empty(),
+        RwfFlags::empty(),
         ctx,
     )?;
     Ok(SyscallReturn::Return(res as _))
@@ -54,12 +57,12 @@ pub(super) fn sys_pwritev2(
     // 64-bit offset.
     // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/read_write.c#L1114-L1118>.
     let offset = offset_low.cast_signed();
-    let flags = match RWFFlag::from_bits(flags) {
+    let flags = match RwfFlags::from_bits(flags) {
         Some(flags) => flags,
         None => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported flags"),
     };
     let res = if offset == -1 {
-        do_sys_writev(raw_fd, io_vec_ptr, io_vec_count, ctx)?
+        do_sys_writev(raw_fd, io_vec_ptr, io_vec_count, flags, ctx)?
     } else {
         do_sys_pwritev(raw_fd, io_vec_ptr, io_vec_count, offset, flags, ctx)?
     };
@@ -71,10 +74,9 @@ fn do_sys_pwritev(
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset: i64,
-    _flags: RWFFlag,
+    flags: RwfFlags,
     ctx: &Context,
 ) -> Result<usize> {
-    // TODO: Implement flags support
     debug!(
         "raw_fd = {}, io_vec_ptr = 0x{:x}, io_vec_counter = 0x{:x}, offset = 0x{:x}",
         raw_fd, io_vec_ptr, io_vec_count, offset
@@ -95,7 +97,7 @@ fn do_sys_pwritev(
     if reader_array.readers_mut().is_empty() {
         let empty = [0u8; 0];
         let mut reader = VmReader::from(empty.as_slice()).to_fallible();
-        file.write_at(offset as usize, &mut reader)?;
+        file.write_at(offset as usize, &mut reader, flags)?;
         return Ok(0);
     }
 
@@ -111,7 +113,7 @@ fn do_sys_pwritev(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `writev` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        match file.write_at(cur_offset, reader) {
+        match file.write_at(cur_offset, reader, flags) {
             Ok(write_len) => {
                 total_len += write_len;
                 cur_offset += write_len;
@@ -135,6 +137,7 @@ fn do_sys_writev(
     raw_fd: RawFileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
+    flags: RwfFlags,
     ctx: &Context,
 ) -> Result<usize> {
     debug!(
@@ -158,7 +161,7 @@ fn do_sys_writev(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `writev` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        match file.write(reader) {
+        match file.write(reader, flags) {
             Ok(write_len) => total_len += write_len,
             Err(_) if total_len > 0 => break,
             Err(err) => return Err(err),
@@ -173,13 +176,4 @@ fn do_sys_writev(
     }
 
     Ok(total_len)
-}
-
-bitflags! {
-    struct RWFFlag: u32 {
-        const RWF_DSYNC = 0x00000001;
-        const RWF_HIPRI = 0x00000002;
-        const RWF_SYNC = 0x00000004;
-        const RWF_NOWAIT = 0x00000008;
-    }
 }

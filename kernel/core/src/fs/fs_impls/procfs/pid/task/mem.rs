@@ -4,7 +4,7 @@ use super::TidDirOps;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, PerOpenFileOps, StatusFlags, mkmod},
+        file::{AccessMode, PerOpenFileOps, RwfFlags, StatusFlags, mkmod},
         procfs::template::{ProcFile, ProcFileOpsByHandle},
         vfs::inode::{FileOps, Inode},
     },
@@ -75,6 +75,7 @@ impl FileOps for MemFileHandle {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let Some(process) = self.0.process() else {
             // The process does not exist.
@@ -102,6 +103,7 @@ impl FileOps for MemFileHandle {
         offset: usize,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let Some(process) = self.0.process() else {
             // The process does not exist.

@@ -1,5 +1,5 @@
 // Read data from multiple buffers
-preadv2(fd, iov, iovcnt, offset, flags = 0);
+preadv2(fd, iov, iovcnt, offset, flags = RWF_NOWAIT);
 
 // Write data to multiple buffers
-pwritev2(fd, iov, iovcnt, offset, flags = 0);
+pwritev2(fd, iov, iovcnt, offset, flags = RWF_NOWAIT);

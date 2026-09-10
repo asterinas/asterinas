@@ -139,6 +139,11 @@ pub(crate) struct Vmo {
     pub(super) writable_mapping_status: WritableMappingStatus,
     /// Reserve mappings.
     pub(super) rmap: Mutex<Rmap>,
+    /// Serializes page-cache population with direct I/O.
+    ///
+    /// Page faults hold the read lock while populating pages, and direct I/O
+    /// holds the write lock across its cache checks and block I/O.
+    dio_lock: RwMutex<()>,
 }
 
 impl Debug for Vmo {
@@ -208,6 +213,7 @@ impl From<ostd::Error> for VmoCommitError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommitMode {
     Read,
+    ReadNoWait,
     Overwrite,
 }
 
@@ -478,6 +484,11 @@ impl Vmo {
         &self.rmap
     }
 
+    /// Returns the dio lock that serializes page-cache population with direct I/O.
+    pub(crate) fn dio_lock(&self) -> &RwMutex<()> {
+        &self.dio_lock
+    }
+
     /// Decommits anonymous pages in the specified byte range.
     pub(super) fn decommit_anon_pages(
         &self,
@@ -532,9 +543,34 @@ impl Vmo {
 
     /// Reads data from the VMO at `offset` into `writer`.
     pub(crate) fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+        self.read_internal(offset, writer, CommitMode::Read)
+            .map(|_| ())
+    }
+
+    /// Tries to read data from the VMO at `offset` into `writer` without blocking.
+    ///
+    /// Returns the number of bytes read. If the read would need backend I/O or
+    /// page initialization, the bytes read so far are returned as a short
+    /// read, or `EAGAIN` if nothing was read.
+    pub(super) fn try_read(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.read_internal(offset, writer, CommitMode::ReadNoWait)
+    }
+
+    /// The shared implementation of [`Vmo::read`] and [`Vmo::try_read`].
+    ///
+    /// In blocking mode, backend I/O and page initialization are performed
+    /// as needed. In no-wait mode, the read never blocks: the bytes read so
+    /// far are returned as a short read, or `EAGAIN` if nothing was read;
+    /// other errors are returned only if nothing has been read.
+    fn read_internal(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        commit_mode: CommitMode,
+    ) -> Result<usize> {
         let read_len = writer.avail().min(self.size().saturating_sub(offset));
         if read_len == 0 {
-            return Ok(());
+            return Ok(0);
         }
         let read_end = offset + read_len;
 
@@ -544,18 +580,40 @@ impl Vmo {
         let mut page_offset = offset % PAGE_SIZE;
         let mut page_batch =
             Vec::with_capacity(min(page_idx_range.len(), Self::PAGE_BATCH_CAPACITY));
+        let mut total_read = 0;
 
         while current_idx < page_idx_range.end {
-            self.collect_pages(
+            let collect_result = self.collect_pages(
                 current_idx,
                 page_idx_range.end,
-                CommitMode::Read,
+                commit_mode,
                 &mut page_batch,
-            )?;
+            );
 
             for (_, page) in page_batch.iter() {
-                page.reader().skip(page_offset).read_fallible(writer)?;
+                let copied = match page.reader().skip(page_offset).read_fallible(writer) {
+                    Ok(copied) => copied,
+                    Err((err, written)) => {
+                        // In no-wait mode, return the bytes copied before the fault as a
+                        // short read.
+                        total_read += written;
+                        if commit_mode == CommitMode::ReadNoWait && total_read > 0 {
+                            return Ok(total_read);
+                        }
+                        return Err(Error::from(err));
+                    }
+                };
+                total_read += copied;
                 page_offset = 0;
+            }
+
+            if let Err(err) = collect_result {
+                // Pages committed before the blocking point were copied above;
+                // return them as a short read.
+                if commit_mode == CommitMode::ReadNoWait && total_read > 0 {
+                    return Ok(total_read);
+                }
+                return Err(err);
             }
 
             // `current_idx < page_idx_range.end` guarantees at least one page is successfully
@@ -563,7 +621,7 @@ impl Vmo {
             current_idx = page_batch.last().unwrap().0 + 1;
         }
 
-        Ok(())
+        Ok(total_read)
     }
 
     /// Writes data from `reader` into the VMO at `offset`.
@@ -765,6 +823,10 @@ impl Vmo {
     /// caller receives only successfully committed pages and never needs to
     /// deal with [`VmoCommitError`] directly.
     ///
+    /// In no-wait mode, once a commit operation needs to perform I/O or
+    /// wait for initialization, it will return `EAGAIN` instead of blocking.
+    /// Pages committed before the error remain in `pages`.
+    ///
     /// This helper keeps the returned pages alive, but it does not pin them in
     /// the `XArray`. Callers must still serialize against `evict_range()` /
     /// `invalidate_range()` with a higher-level invalidation lock before they
@@ -791,6 +853,17 @@ impl Vmo {
                 };
             match self.try_operate_on_range_internal(&current_range, &mut operate, commit_mode) {
                 Ok(()) => break 'retry,
+                Err(err) if commit_mode == CommitMode::ReadNoWait => {
+                    return Err(match err {
+                        VmoCommitError::Err(e) => e,
+                        VmoCommitError::NeedIo { .. } | VmoCommitError::WaitUntilInit { .. } => {
+                            Error::with_message(
+                                Errno::EAGAIN,
+                                "the operation would block on page I/O",
+                            )
+                        }
+                    });
+                }
                 Err(err) => {
                     let (idx, page) = self.handle_commit_error(err, commit_mode)?;
                     pages.push((idx, page));
@@ -865,6 +938,57 @@ impl PageSelection {
 }
 
 impl<'a> BackedVmo<'a> {
+    /// Returns whether any page in the specified byte range is present in the page cache.
+    pub(super) fn has_pages(&self, range: &Range<usize>) -> bool {
+        let page_idx_range = get_page_idx_range(range);
+        if range.is_empty() || page_idx_range.is_empty() {
+            return false;
+        }
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = self
+            .pages
+            .cursor(&preempt_guard, page_idx_range.start as u64);
+        loop {
+            if cursor.load().is_some() {
+                return true;
+            }
+            let Some(next_index) = cursor.next_present() else {
+                return false;
+            };
+            if next_index as usize >= page_idx_range.end {
+                return false;
+            }
+        }
+    }
+
+    /// Returns whether any page in the specified byte range is dirty, locked,
+    /// or being written back.
+    pub(super) fn needs_writeback(&self, range: &Range<usize>) -> bool {
+        let page_idx_range = get_page_idx_range(range);
+        if range.is_empty() || page_idx_range.is_empty() {
+            return false;
+        }
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = self
+            .pages
+            .cursor(&preempt_guard, page_idx_range.start as u64);
+        loop {
+            if let Some(page) = cursor.load()
+                && (page.state().is_dirty() || page.is_locked() || page.is_writing_back())
+            {
+                return true;
+            }
+            let Some(next_index) = cursor.next_present() else {
+                return false;
+            };
+            if next_index as usize >= page_idx_range.end {
+                return false;
+            }
+        }
+    }
+
     /// Writes back dirty pages in the specified byte range to the backend storage.
     pub(super) fn flush_dirty_pages(&self, range: &Range<usize>) -> Result<()> {
         if range.start >= self.size() {

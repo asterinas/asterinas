@@ -9,7 +9,7 @@ use super::{BLOCK_SIZE, DevPts, FIRST_SLAVE_INO};
 use crate::{
     device::{Device, PtySlave},
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, RwfFlags, StatusFlags, mkmod},
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FileOps, Inode, Metadata},
@@ -55,6 +55,7 @@ impl FileOps for PtySlaveInode {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         self.device.read(writer, status_flags)
     }
@@ -64,6 +65,7 @@ impl FileOps for PtySlaveInode {
         _offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         self.device.write(reader, status_flags)
     }

@@ -8,8 +8,8 @@ use util::{MessageHeader, RecvFlags, RecvOutput, SendFlags, SockShutdownCmd, Soc
 use crate::{
     fs::{
         file::{
-            AccessMode, CreationFlags, FileCommon, FileLike, SettableStatusFlags, StatusFlags,
-            file_table::FdFlags,
+            AccessMode, CreationFlags, FileCommon, FileLike, RwfFlags, SettableStatusFlags,
+            StatusFlags, file_table::FdFlags,
         },
         pseudofs::SockFs,
     },
@@ -147,7 +147,7 @@ pub(crate) trait Socket: private::SocketPrivate + Send + Sync {
 }
 
 impl<T: Socket + 'static> FileLike for T {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _rwf_flags: RwfFlags) -> Result<usize> {
         if !writer.has_avail() {
             // Linux always returns `Ok(0)` in this case, so we follow it.
             return Ok(0);
@@ -158,7 +158,7 @@ impl<T: Socket + 'static> FileLike for T {
             .map(|(output, _)| output.len())
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader, _rwf_flags: RwfFlags) -> Result<usize> {
         // TODO: Set correct flags
         self.sendmsg(
             reader,

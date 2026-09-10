@@ -16,7 +16,7 @@ use super::EvdevDevice;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
+        file::{PerOpenFileOps, RwfFlags, SettableStatusFlags, StatusFlags},
         vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
@@ -362,6 +362,7 @@ impl FileOps for EvdevFile {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let requested_bytes = writer.avail();
         let max_events = requested_bytes / size_of::<EvdevEvent>();
@@ -399,6 +400,7 @@ impl FileOps for EvdevFile {
         _offset: usize,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         // TODO: In Linux, writing to evdev files is permitted and will inject input events.
         return_errno_with_message!(Errno::ENOSYS, "writing to evdev files is not supported yet");
