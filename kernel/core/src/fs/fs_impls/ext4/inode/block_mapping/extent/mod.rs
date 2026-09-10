@@ -395,10 +395,16 @@ mod tests {
         node::{EXTENT_MAGIC, Extent, RawExtent, RawExtentHeader, RawExtentIdx},
         tree::{ENTRY_SIZE, ExtentTree},
     };
-    use crate::fs::fs_impls::ext4::{
-        inode::RAW_BLOCK_PTRS_LEN,
-        prelude::*,
-        test_utils::{BlockBitmapInit, Ext4FixtureBuilder, assert_errno, group0_layout},
+    use crate::{
+        fs::fs_impls::ext4::{
+            inode::RAW_BLOCK_PTRS_LEN,
+            prelude::*,
+            test_utils::{
+                BlockBitmapInit, Ext4FixtureBuilder, assert_errno, group0_layout,
+                make_valid_super_block,
+            },
+        },
+        time::clocks,
     };
 
     fn inline_root(header: RawExtentHeader, entries: &[RawExtent]) -> [u32; RAW_BLOCK_PTRS_LEN] {
@@ -603,8 +609,14 @@ mod tests {
 
     #[ktest]
     fn repeated_contiguous_allocations_merge_into_one_extent() {
+        clocks::init_for_ktest();
+        let layout = group0_layout(&make_valid_super_block(1));
         let fixture = Ext4FixtureBuilder::new(1, 2048)
             .with_free_blocks(64, 64)
+            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![
+                layout.first_data_bid,
+                layout.first_data_bid + 1,
+            ]))
             .build()
             .unwrap();
         let manager = ExtentManager::new(
