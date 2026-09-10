@@ -16,7 +16,7 @@ use crate::{
     fs::vfs::{inode::FallocMode, path::Path},
     net::socket::Socket,
     prelude::*,
-    process::signal::Pollable,
+    process::{FileOwnerCreds, signal::Pollable},
     util::ioctl::RawIoctl,
     vm::page_cache::Vmo,
 };
@@ -243,8 +243,10 @@ impl dyn FileLike {
     ///
     /// The owner receives `SIGIO` for I/O events on the file description when `O_ASYNC` is set. If
     /// the owner is a process group, every member of the group receives the signal.
-    pub(crate) fn set_owner(&self, owner: Option<&FileOwnerTarget>) {
-        self.common().owner().set(self, owner);
+    /// `creds` are the credentials of the caller, recorded so that a later `SIGIO` can be
+    /// permission-checked against them rather than against whoever is running at the time.
+    pub(crate) fn set_owner(&self, owner: Option<&FileOwnerTarget>, creds: FileOwnerCreds) {
+        self.common().owner().set(self, owner, creds);
     }
 
     pub(crate) fn downcast_ref<T: FileLike>(&self) -> Option<&T> {

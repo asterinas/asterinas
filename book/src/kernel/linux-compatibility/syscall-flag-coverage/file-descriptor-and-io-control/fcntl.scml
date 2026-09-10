@@ -18,7 +18,8 @@ fcntl(fd, cmd = F_SETFL, arg = <ignore_flags> | <can_change_flags>);
 fcntl(fd, cmd = F_GETLK | F_SETLK | F_SETLKW, arg);
 
 // Assign the SIGIO/SIGURG owner: a process if arg is positive,
-// a process group if arg is negative
+// a process group if arg is negative. The caller's credentials are recorded
+// and checked when the signal is later delivered
 fcntl(fd, cmd = F_SETOWN, arg);
 
 // Add seals to the inode referred to

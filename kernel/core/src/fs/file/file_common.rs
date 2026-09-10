@@ -10,8 +10,8 @@ use crate::{
     fs::vfs::{notify, path::Path},
     prelude::*,
     process::{
-        Process, ProcessGroup, broadcast_signal_async, enqueue_signal_async,
-        signal::{PollAdaptor, constants::SIGIO},
+        FileOwnerCreds, Process, ProcessGroup, broadcast_sigio_async, enqueue_sigio_async,
+        signal::PollAdaptor,
     },
 };
 
@@ -156,7 +156,12 @@ impl FileOwner {
         self.inner.lock().as_ref().map(|owner| owner.id)
     }
 
-    pub(super) fn set(&self, file: &dyn FileLike, owner: Option<&FileOwnerTarget>) {
+    pub(super) fn set(
+        &self,
+        file: &dyn FileLike,
+        owner: Option<&FileOwnerTarget>,
+        creds: FileOwnerCreds,
+    ) {
         let mut owner_guard = self.inner.lock();
         *owner_guard = None;
 
@@ -164,7 +169,7 @@ impl FileOwner {
             return;
         };
 
-        let mut owner = Owner::new(target);
+        let mut owner = Owner::new(target, creds);
         if file.status_flags().contains(StatusFlags::O_ASYNC) {
             owner.register_observer(file);
         }
@@ -181,14 +186,17 @@ impl Default for FileOwner {
 struct Owner {
     id: i32,
     target: WeakFileOwnerTarget,
+    /// The credentials of whoever called `fcntl(F_SETOWN)`, recorded at that moment.
+    creds: FileOwnerCreds,
     poller: Option<PollAdaptor<OwnerObserver>>,
 }
 
 impl Owner {
-    fn new(target: &FileOwnerTarget) -> Self {
+    fn new(target: &FileOwnerTarget, creds: FileOwnerCreds) -> Self {
         Self {
             id: target.id(),
             target: target.downgrade(),
+            creds,
             poller: None,
         }
     }
@@ -198,7 +206,8 @@ impl Owner {
             return;
         }
 
-        let mut poller = PollAdaptor::with_observer(OwnerObserver::new(self.target.clone()));
+        let mut poller =
+            PollAdaptor::with_observer(OwnerObserver::new(self.target.clone(), self.creds));
         file.poll(IoEvents::IN | IoEvents::OUT, Some(poller.as_handle_mut()));
         self.poller = Some(poller);
     }
@@ -210,22 +219,27 @@ impl Owner {
 
 struct OwnerObserver {
     owner: WeakFileOwnerTarget,
+    creds: FileOwnerCreds,
 }
 
 impl OwnerObserver {
-    fn new(owner: WeakFileOwnerTarget) -> Self {
-        Self { owner }
+    fn new(owner: WeakFileOwnerTarget, creds: FileOwnerCreds) -> Self {
+        Self { owner, creds }
     }
 }
 
 impl Observer<IoEvents> for OwnerObserver {
     fn on_events(&self, _events: &IoEvents) {
+        // Delivery is subject to the same permission check as `kill`, evaluated against the
+        // credentials saved at `fcntl(F_SETOWN)` time rather than against whoever happens to
+        // be running now. The check itself happens in the work item, since reading another
+        // process's credentials is not possible here in atomic mode.
         match &self.owner {
             WeakFileOwnerTarget::Process(process) => {
-                enqueue_signal_async(process.clone(), SIGIO);
+                enqueue_sigio_async(process.clone(), self.creds);
             }
             WeakFileOwnerTarget::ProcessGroup(group) => {
-                broadcast_signal_async(group.clone(), SIGIO);
+                broadcast_sigio_async(group.clone(), self.creds);
             }
         }
     }

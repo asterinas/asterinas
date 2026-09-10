@@ -9,11 +9,13 @@ use ostd::timer::Jiffies;
 
 use self::timer_manager::PosixTimerManager;
 use super::{
+    kill::{FileOwnerCreds, check_sigio_perm},
     pid_table::{self, PidTable},
     posix_thread::{AsPosixThread, FIRST_POSIX_TID},
     process_vm::ProcessVmarGuard,
     rlimit::ResourceLimits,
     signal::{
+        constants::SIGIO,
         sig_disposition::SigDispositions,
         sig_num::{AtomicSigNum, SigNum},
         signals::Signal,
@@ -840,6 +842,54 @@ pub(crate) fn broadcast_signal_async(process_group: Weak<ProcessGroup>, signum: 
         move || {
             if let Some(process_group) = process_group.upgrade() {
                 process_group.broadcast_signal(KernelSignal::new(signum));
+            }
+        },
+        work_queue::WorkPriority::High,
+    );
+}
+
+/// Enqueues `SIGIO` to a file owner asynchronously, if the owner is allowed to receive it.
+///
+/// The permission check uses the credentials saved when `fcntl(F_SETOWN)` was called, and
+/// runs inside the work item rather than at the call site: the caller is an I/O event
+/// observer in atomic mode, which cannot read another process's credentials.
+pub(crate) fn enqueue_sigio_async(process: Weak<Process>, owner: FileOwnerCreds) {
+    use super::signal::signals::kernel::KernelSignal;
+    use crate::thread::work_queue;
+
+    work_queue::submit_work_func(
+        move || {
+            let Some(process) = process.upgrade() else {
+                return;
+            };
+            if !check_sigio_perm(&process, &owner) {
+                return;
+            }
+            process.enqueue_signal(Box::new(KernelSignal::new(SIGIO)));
+        },
+        work_queue::WorkPriority::High,
+    );
+}
+
+/// Broadcasts `SIGIO` to the members of a file owner's process group asynchronously.
+///
+/// Each member is checked separately, so a delivery may reach some members and skip others.
+/// That is what Linux does -- `send_sigio` applies `sigio_perm` per task rather than
+/// treating the group as all-or-nothing.
+pub(crate) fn broadcast_sigio_async(process_group: Weak<ProcessGroup>, owner: FileOwnerCreds) {
+    use super::signal::signals::kernel::KernelSignal;
+    use crate::thread::work_queue;
+
+    work_queue::submit_work_func(
+        move || {
+            let Some(process_group) = process_group.upgrade() else {
+                return;
+            };
+            for process in process_group.lock().iter() {
+                if !check_sigio_perm(&process, &owner) {
+                    continue;
+                }
+                process.enqueue_signal(Box::new(KernelSignal::new(SIGIO)));
             }
         },
         work_queue::WorkPriority::High,

@@ -15,7 +15,7 @@ use crate::{
         vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
     },
     prelude::*,
-    process::{Pgid, Pid, pid_table},
+    process::{FileOwnerCreds, Pgid, Pid, pid_table},
 };
 
 pub(super) fn sys_fcntl(
@@ -218,9 +218,13 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
         }
     };
 
+    // Record the caller's credentials now. Linux checks these saved values when the signal
+    // is later delivered, not the credentials of whoever is running at that point.
+    let creds = FileOwnerCreds::new_from(&ctx.posix_thread.credentials());
+
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
-    file.set_owner(owner.as_ref());
+    file.set_owner(owner.as_ref(), creds);
 
     Ok(SyscallReturn::Return(0))
 }
