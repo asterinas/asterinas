@@ -16,33 +16,27 @@ use crate::{
 
 /// Implements several commonly used APIs for the block device to conveniently
 /// read and write block(s).
-// TODO: Add API to submit bio with multiple segments in scatter/gather manner.
 impl dyn BlockDevice {
     /// Synchronously reads contiguous blocks starting from the `bid`.
     pub fn read_blocks(
         &self,
         bid: Bid,
-        bio_segment: BioSegment,
+        bio_segments: Vec<BioSegment>,
     ) -> Result<BioStatus, BioEnqueueError> {
-        let bio = Bio::new(BioType::Read, Sid::from(bid), vec![bio_segment], None);
+        let bio = Bio::new(BioType::Read, Sid::from(bid), bio_segments, None);
         let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
 
-    /// Asynchronously reads contiguous blocks starting from the `bid`.
+    /// Asynchronously reads contiguous blocks into multiple memory segments.
     pub fn read_blocks_async(
         &self,
         bid: Bid,
-        bio_segment: BioSegment,
+        bio_segments: Vec<BioSegment>,
         complete_fn: Option<BioCompleteFn>,
         io_batch: &mut IoBatch,
     ) -> Result<(), BioEnqueueError> {
-        let bio = Bio::new(
-            BioType::Read,
-            Sid::from(bid),
-            vec![bio_segment],
-            complete_fn,
-        );
+        let bio = Bio::new(BioType::Read, Sid::from(bid), bio_segments, complete_fn);
         bio.submit(self, io_batch)
     }
 
@@ -50,9 +44,9 @@ impl dyn BlockDevice {
     pub fn write_blocks(
         &self,
         bid: Bid,
-        bio_segment: BioSegment,
+        bio_segments: Vec<BioSegment>,
     ) -> Result<BioStatus, BioEnqueueError> {
-        let bio = Bio::new(BioType::Write, Sid::from(bid), vec![bio_segment], None);
+        let bio = Bio::new(BioType::Write, Sid::from(bid), bio_segments, None);
         let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
@@ -61,16 +55,11 @@ impl dyn BlockDevice {
     pub fn write_blocks_async(
         &self,
         bid: Bid,
-        bio_segment: BioSegment,
+        bio_segments: Vec<BioSegment>,
         complete_fn: Option<BioCompleteFn>,
         io_batch: &mut IoBatch,
     ) -> Result<(), BioEnqueueError> {
-        let bio = Bio::new(
-            BioType::Write,
-            Sid::from(bid),
-            vec![bio_segment],
-            complete_fn,
-        );
+        let bio = Bio::new(BioType::Write, Sid::from(bid), bio_segments, complete_fn);
         bio.submit(self, io_batch)
     }
 

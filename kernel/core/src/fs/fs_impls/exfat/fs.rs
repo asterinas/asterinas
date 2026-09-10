@@ -388,7 +388,7 @@ impl BlockAsPageCacheBackend for ExfatFs {
         }
         self.block_device.read_blocks_async(
             BlockId::new(idx as u64),
-            bio_segment,
+            vec![bio_segment],
             Some(complete_fn),
             io_batch,
         )?;
@@ -407,7 +407,7 @@ impl BlockAsPageCacheBackend for ExfatFs {
         }
         self.block_device.write_blocks_async(
             BlockId::new(idx as u64),
-            bio_segment,
+            vec![bio_segment],
             Some(complete_fn),
             io_batch,
         )?;

@@ -334,6 +334,14 @@ impl LockedCachePage<CachePage> {
         unlock_page(&page, self.wait_queue);
         page
     }
+
+    /// Transfers ownership of the locked page to a new guard.
+    ///
+    /// This method leaves this guard inert so it will not unlock the page when dropped.
+    pub(super) fn detach(&mut self) -> LockedCachePage {
+        let page = self.page.take().expect("page already detached");
+        LockedCachePage::new(page, self.wait_queue)
+    }
 }
 
 impl LockedCachePage<&CachePage> {

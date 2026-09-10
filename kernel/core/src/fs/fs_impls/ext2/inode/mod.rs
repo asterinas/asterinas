@@ -37,7 +37,7 @@
 //! |----------------------------|-----------------------------------------------------------|
 //! | `attrs`                    | Metadata: mode, uid, gid, times, xattr                    |
 //! | `block_manager`            | Page-cache backend and block-pointer tree management      |
-//! | `io_range`                 | Direct-I/O block range planning                           |
+//! | `io_range`                 | Block-backed I/O range planning                            |
 //! | `file`                     | Regular-file I/O and allocation                           |
 //! | `dir`                      | Directory entry semantics                                 |
 //! | `symlink`                  | Symlink target storage                                    |

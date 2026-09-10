@@ -190,7 +190,7 @@ impl VmMapping {
         }
     }
 
-    /// Returns a reference to the VMO for reserve mappings.
+    /// Returns a reference to the VMO for reverse mappings.
     ///
     /// This method will return `Some(_)` if this mapping is shared and
     /// VMO-backed.
@@ -207,7 +207,7 @@ impl VmMapping {
         }
     }
 
-    /// Locks reserve mappings of [`Self::vmo_for_rmap`].
+    /// Locks reverse mappings of [`Self::vmo_for_rmap`].
     pub(super) fn lock_rmap(&self) -> Option<MutexGuard<'_, Rmap>> {
         self.vmo_for_rmap().map(|vmo| vmo.rmap().lock())
     }
