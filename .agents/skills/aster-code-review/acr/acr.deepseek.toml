@@ -1,0 +1,80 @@
+# DeepSeek official Responses API configuration.
+#
+# Keep credentials out of this file. Export DEEPSEEK_API_KEY before starting
+# ACR. This file is selected explicitly with `--config acr.deepseek.toml` and
+# is not merged with acr.toml or any other provider configuration.
+
+[benchmark]
+# Fetch diff benchmark commits from this Git remote when a problem does not
+# declare its own `remote` and the commit is unavailable in the local repo.
+remote = "https://github.com/asterinas/asterinas"
+
+[agent]
+backend = "openai-agents"
+model = "deepseek-v4-flash"
+review_model = "deepseek-v4-flash"
+reasoning_effort = "medium"
+postprocess_reasoning_effort = "medium"
+wire_api = "responses"
+per_persona_context = "auto"
+max_concurrency = 6
+# Omit timeout_seconds and max_turns so the SDK run has no ACR wall-clock or
+# turn cap. Individual model retries remain bounded below.
+retries = 1
+model_retries = 6
+model_retry_initial_delay = 1.0
+model_retry_max_delay = 10.0
+model_retry_multiplier = 2.0
+model_retry_jitter = true
+tools_enabled = true
+# Controls the Responses hosted web-search tool when a role's allowlist below
+# contains `web.search`.
+web_search_context_size = "medium"
+
+# Per-agent tool allowlists. Edit these lists to change tool assembly without
+# modifying Python. Combined review mode receives the union of its personas.
+# `web.search` requires wire_api = "responses" and provider support.
+[tools]
+maintainability = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show", "web.search"
+]
+development = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show", "web.search"
+]
+security = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show"
+]
+hardware = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show"
+]
+documentation = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show"
+]
+verification = [
+    "source.read", "source.search", "source.list", "git.show", "git.log",
+    "git.blame", "web.search"
+]
+consolidation = []
+summary = []
+grader = []
+
+[tracing]
+enabled = true
+include_sensitive_data = true
+max_content_bytes = 65536
+
+[provider]
+name = "DeepSeek"
+# `openai` selects the Agents SDK's native Responses transport. Requests are
+# sent to the DeepSeek endpoint below, not to OpenAI's service.
+adapter = "openai"
+base_url = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+base_url_env = "DEEPSEEK_API_BASE"
+response_input_exclude_fields = []
+retryable_http_error_types = []

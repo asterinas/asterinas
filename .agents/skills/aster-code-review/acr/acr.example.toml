@@ -1,0 +1,125 @@
+# Example ACR runtime configuration.
+#
+# Copy this file, adjust it for your provider, and select it with
+# `--config /path/to/your-acr.toml`. An explicitly selected configuration is
+# authoritative: ACR does not merge it with the bundled acr.toml.
+#
+# Never put API keys in this file. `api_key_env` below names the environment
+# variable from which ACR reads the credential.
+
+[benchmark]
+# Used to fetch benchmark commits when a problem omits `remote` and the commit
+# is unavailable in the local repository.
+remote = "https://github.com/asterinas/asterinas"
+
+[agent]
+# `openai-agents` runs real model requests; `fake` is for model-free tests.
+backend = "openai-agents"
+
+# Main persona model and benchmark grader model. Provider-specific prefixes
+# may be required by the `any-llm` adapter, for example `openai/gpt-5.5`.
+model = "gpt-5.5"
+review_model = "gpt-5.5"
+
+# Accepted values are `low`, `medium`, and `high`. Persona review and
+# post-processing stages can use different reasoning budgets.
+reasoning_effort = "medium"
+postprocess_reasoning_effort = "medium"
+
+# `responses` is required by `web.search`. Use `chat_completions` only when the
+# provider lacks Responses support, and remove `web.search` from every list.
+wire_api = "responses"
+
+# `auto` and `yes` run isolated persona agents. `no` runs one combined agent
+# whose tools are the union of the selected persona allowlists.
+per_persona_context = "auto"
+max_concurrency = 6
+
+# Uncomment positive values to impose whole-agent limits. When omitted, ACR
+# does not impose these limits; provider and per-tool limits still apply.
+# timeout_seconds = 600
+# max_turns = 50
+
+# `retries` restarts a complete agent attempt. `model_retries` retries one
+# provider request while preserving the current agent/tool transcript.
+retries = 1
+model_retries = 6
+model_retry_initial_delay = 1.0
+model_retry_max_delay = 10.0
+model_retry_multiplier = 2.0
+model_retry_jitter = true
+
+# Global switch for all local and hosted tools. Individual role permissions
+# are configured in `[tools]` below.
+tools_enabled = true
+
+# Applies only to roles whose allowlist contains `web.search`.
+web_search_context_size = "medium"
+
+# Optional output and logging settings. CLI arguments override these values.
+# log_root = "/tmp/aster-code-review"
+# output = "/tmp/acr-review.md"
+overwrite = false
+
+# Per-agent tool allowlists. Remove a tool to deny it to that role. Add only
+# tools registered by the selected runtime. Combined review mode receives the
+# union of its persona lists.
+[tools]
+maintainability = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show", "web.search"
+]
+development = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show", "web.search"
+]
+security = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show"
+]
+hardware = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show"
+]
+documentation = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show",
+]
+verification = [
+    "source.read", "source.search", "source.list", "git.show", "git.log",
+    "git.blame", "web.search"
+]
+# These agents operate on structured results and receive no tools by default.
+consolidation = []
+summary = []
+grader = []
+
+[tracing]
+# Write local OpenAI Agents SDK traces into the run directory.
+enabled = true
+
+# When false, trace payloads omit model inputs, outputs, and tool arguments;
+# hashes and timing information remain available.
+include_sensitive_data = true
+
+# Maximum size retained for an individual trace string.
+max_content_bytes = 65536
+
+[provider]
+# `openai` uses the SDK's native OpenAI-compatible transport. `any-llm` uses
+# the optional Any-LLM adapter and is useful for third-party relays.
+adapter = "openai"
+
+# Optional fixed endpoint. Leave it commented for the official OpenAI API.
+# base_url = "https://api.example.com/v1"
+
+# ACR reads the API key and optional endpoint override from these environment
+# variables. Environment `base_url_env` takes precedence over `base_url`.
+api_key_env = "OPENAI_API_KEY"
+base_url_env = "OPENAI_BASE_URL"
+
+# Relay compatibility controls. The first list removes unsupported fields from
+# replayed Responses items. The second retries only matching HTTP 400 error
+# types; ordinary client errors still fail immediately.
+response_input_exclude_fields = []
+retryable_http_error_types = []

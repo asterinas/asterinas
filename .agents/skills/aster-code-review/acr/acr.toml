@@ -1,0 +1,81 @@
+# ACR portable runtime configuration.
+#
+# Keep credentials out of this file.  Set the environment variable named by
+# `api_key_env` before using the openai-agents backend.
+
+[benchmark]
+# Fetch diff benchmark commits from this Git remote when a problem does not
+# declare its own `remote` and the commit is unavailable in the local repo.
+remote = "https://github.com/asterinas/asterinas"
+
+[agent]
+backend = "openai-agents"
+model = "openai/gpt-5.5"
+review_model = "openai/gpt-5.5"
+reasoning_effort = "medium"
+postprocess_reasoning_effort = "medium"
+wire_api = "responses"
+per_persona_context = "auto"
+max_concurrency = 6
+# Omit timeout_seconds to allow a complete Agent run. Set a positive number
+# only when a hard wall-clock limit per attempt is required.
+# Whole-agent retries restart a persona from the beginning. Model retries
+# preserve the current tool transcript and handle individual provider calls.
+retries = 1
+model_retries = 6
+model_retry_initial_delay = 1.0
+model_retry_max_delay = 10.0
+model_retry_multiplier = 2.0
+model_retry_jitter = true
+tools_enabled = true
+# Controls the Responses hosted web-search tool when a role's allowlist below
+# contains `web.search`.
+web_search_context_size = "medium"
+
+# Per-agent tool allowlists. Edit these lists to change tool assembly without
+# modifying Python. Combined review mode receives the union of its personas.
+# `web.search` requires wire_api = "responses" and provider support.
+[tools]
+maintainability = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show", "web.search"
+]
+development = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show", "web.search"
+]
+security = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show"
+]
+hardware = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show"
+]
+documentation = [
+    "source.read", "source.search", "git.show", "git.log", "git.blame",
+    "guideline.show",
+]
+verification = [
+    "source.read", "source.search", "source.list", "git.show", "git.log",
+    "git.blame", "web.search"
+]
+consolidation = []
+summary = []
+grader = []
+
+[tracing]
+# Replace the SDK's remote exporter with local JSONL files under each run.
+enabled = true
+# When false, SDK generation/function payloads are omitted (hashes and timing remain).
+include_sensitive_data = true
+max_content_bytes = 65536
+
+[provider]
+name = "Tokens Kingdom"
+adapter = "any-llm"
+base_url = "https://example.com/v1"
+api_key_env = "OPENAI_API_KEY"
+base_url_env = "OPENAI_BASE_URL"
+response_input_exclude_fields = ["quality"]
+retryable_http_error_types = ["upstream_error"]
