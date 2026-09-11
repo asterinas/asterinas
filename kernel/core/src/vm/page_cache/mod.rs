@@ -507,11 +507,10 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
 
         let complete_fn: BioCompleteFn = Box::new(move |status| {
             submit_page.clear_writing_back();
-            if status != BioStatus::Complete {
-                // TODO: Record the writeback error (e.g., EIO) in the VMO
-                // (or the corresponding inode) so that a subsequent sync syscall
-                // can detect and report it to userspace.
-                //
+            if status == BioStatus::Complete {
+                submit_page.clear_writeback_error();
+            } else {
+                submit_page.set_writeback_error();
                 // Following Linux's design, we intentionally do **not** re-dirty the
                 // page here. Re-dirtying would cause the writeback mechanism to retry
                 // the I/O indefinitely, which could stall the entire system if the

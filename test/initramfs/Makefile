@@ -30,6 +30,15 @@ INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 INITRAMFS_COMPRESSED := true
 endif
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
+EXT4_IMAGE := $(BUILD_DIR)/ext4.img
+EXT4_SEED_FILE := $(CUR_DIR)/ext4-root/seed.txt
+EXT4_REGRESSION_DIR := $(BUILD_DIR)/ext4-regression
+EXT4_REGRESSION_IMAGES := \
+	$(EXT4_REGRESSION_DIR)/journal.img \
+	$(EXT4_REGRESSION_DIR)/recover.img \
+	$(EXT4_REGRESSION_DIR)/64bit.img \
+	$(EXT4_REGRESSION_DIR)/metadata_csum.img \
+	$(EXT4_REGRESSION_DIR)/unknown_incompat.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
 LTP_DEV_IMAGE := $(BUILD_DIR)/ltp_dev.img
 SSD_IMAGE := $(BUILD_DIR)/nvme0n1.img
@@ -38,6 +47,11 @@ XFSTESTS_SCRATCH_IMAGE := $(BUILD_DIR)/xfstests_scratch.img
 XFSTESTS_FS_TYPE ?= ext2
 XFSTESTS_DISK_SIZE ?= 12G
 include $(CUR_DIR)/src/conformance/xfstests/build_config.mk
+
+REGRESSION_IMAGES =
+ifeq ($(ENABLE_REGRESSION_TEST), true)
+REGRESSION_IMAGES += $(EXT4_IMAGE) $(EXT4_REGRESSION_IMAGES)
+endif
 
 # Include benchmark, if BENCHMARK is set.
 ifeq ($(BENCHMARK), none)
@@ -76,11 +90,11 @@ endif
 
 .PHONY: data-disk-images
 ifeq ($(TARGET_ARCH), loongarch64)
-data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE)
+data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE) $(REGRESSION_IMAGES)
 else ifeq ($(XFSTESTS_NEEDS_BLOCK_DEVICES), true)
-data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE) $(XFSTESTS_TEST_IMAGE) $(XFSTESTS_SCRATCH_IMAGE)
+data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE) $(XFSTESTS_TEST_IMAGE) $(XFSTESTS_SCRATCH_IMAGE) $(REGRESSION_IMAGES)
 else
-data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE)
+data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE) $(REGRESSION_IMAGES)
 endif
 
 .PHONY: $(INITRAMFS_IMAGE)
@@ -186,6 +200,43 @@ $(EXT2_IMAGE):
 	@mkdir -p $(BUILD_DIR)
 	@dd if=/dev/zero of=$(EXT2_IMAGE) bs=2G count=1
 	@mke2fs $(EXT2_IMAGE)
+
+EXT4_SUPPORTED_FEATURES := extent,filetype,^has_journal,^metadata_csum,^64bit,^flex_bg,^inline_data,^resize_inode,^dir_index,^huge_file,^dir_nlink,^extra_isize
+
+.PHONY: $(EXT4_IMAGE) $(EXT4_REGRESSION_IMAGES)
+$(EXT4_IMAGE): $(EXT4_SEED_FILE)
+	@mkdir -p $(BUILD_DIR)
+	@truncate -s 128M $@
+	@mke2fs -q -F -t ext4 -b 4096 -I 256 \
+		-O $(EXT4_SUPPORTED_FEATURES) -d $(CUR_DIR)/ext4-root $@
+
+$(EXT4_REGRESSION_DIR)/journal.img:
+	@mkdir -p $(EXT4_REGRESSION_DIR)
+	@truncate -s 64M $@
+	@mke2fs -q -F -t ext4 -b 4096 -I 256 \
+		-O extent,filetype,has_journal,^metadata_csum,^64bit,^flex_bg,^inline_data,^resize_inode,^dir_index,^huge_file,^dir_nlink,^extra_isize $@
+
+$(EXT4_REGRESSION_DIR)/recover.img: $(EXT4_IMAGE)
+	@mkdir -p $(EXT4_REGRESSION_DIR)
+	@cp $(EXT4_IMAGE) $@
+	@debugfs -w -R 'set_super_value feature_incompat 0x46' $@ >/dev/null
+
+$(EXT4_REGRESSION_DIR)/64bit.img:
+	@mkdir -p $(EXT4_REGRESSION_DIR)
+	@truncate -s 64M $@
+	@mke2fs -q -F -t ext4 -b 4096 -I 256 \
+		-O extent,filetype,64bit,^has_journal,^metadata_csum,^flex_bg,^inline_data,^resize_inode,^dir_index,^huge_file,^dir_nlink,^extra_isize $@
+
+$(EXT4_REGRESSION_DIR)/metadata_csum.img:
+	@mkdir -p $(EXT4_REGRESSION_DIR)
+	@truncate -s 64M $@
+	@mke2fs -q -F -t ext4 -b 4096 -I 256 \
+		-O extent,filetype,metadata_csum,^64bit,^has_journal,^flex_bg,^inline_data,^resize_inode,^dir_index,^huge_file,^dir_nlink,^extra_isize $@
+
+$(EXT4_REGRESSION_DIR)/unknown_incompat.img: $(EXT4_IMAGE)
+	@mkdir -p $(EXT4_REGRESSION_DIR)
+	@cp $(EXT4_IMAGE) $@
+	@debugfs -w -R 'set_super_value feature_incompat 0x40000042' $@ >/dev/null
 
 $(EXFAT_IMAGE):
 	@mkdir -p $(BUILD_DIR)
