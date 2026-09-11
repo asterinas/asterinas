@@ -201,9 +201,9 @@ pub(in crate::fs::fs_impls::virtiofs) fn metadata_from_attr(
         size: attr.size() as usize,
         optimal_block_size: attr.blksize() as usize,
         nr_sectors_allocated: attr.blocks() as usize,
-        last_access_at: Duration::new(attr.atime(), attr.atimensec()),
-        last_modify_at: Duration::new(attr.mtime(), attr.mtimensec()),
-        last_meta_change_at: Duration::new(attr.ctime(), attr.ctimensec()),
+        last_access_at: fuse_timestamp_to_duration(attr.atime(), attr.atimensec()),
+        last_modify_at: fuse_timestamp_to_duration(attr.mtime(), attr.mtimensec()),
+        last_meta_change_at: fuse_timestamp_to_duration(attr.ctime(), attr.ctimensec()),
         type_: InodeType::from_raw_mode(attr.mode() as u16).unwrap_or(InodeType::Unknown),
         mode: InodeMode::from_bits_truncate(attr.mode() as u16),
         nr_hard_links: attr.nlink() as usize,
@@ -216,5 +216,43 @@ pub(in crate::fs::fs_impls::virtiofs) fn metadata_from_attr(
             DeviceId::from_encoded_u64(attr.rdev() as u64)
         },
         birth_at: None,
+    }
+}
+
+/// Converts a FUSE timestamp to the VFS timestamp representation.
+///
+/// FUSE stores Unix seconds in a `u64` wire field even though the semantic
+/// value is signed. Until the VFS can represent pre-epoch timestamps, values
+/// that do not fit in a non-negative `Duration` are truncated to the epoch.
+fn fuse_timestamp_to_duration(seconds: u64, nanoseconds: u32) -> Duration {
+    if seconds > i64::MAX as u64 {
+        return Duration::ZERO;
+    }
+
+    Duration::new(seconds, nanoseconds)
+}
+
+#[cfg(ktest)]
+mod tests {
+    use core::time::Duration;
+
+    use ostd::prelude::ktest;
+
+    use super::fuse_timestamp_to_duration;
+
+    #[ktest]
+    fn fuse_timestamp_converts_seconds_and_nanoseconds() {
+        assert_eq!(
+            fuse_timestamp_to_duration(42, 123_456_789),
+            Duration::new(42, 123_456_789)
+        );
+    }
+
+    #[ktest]
+    fn fuse_timestamp_after_signed_range_is_truncated() {
+        assert_eq!(
+            fuse_timestamp_to_duration(i64::MAX as u64 + 1, 123_456_789),
+            Duration::ZERO
+        );
     }
 }

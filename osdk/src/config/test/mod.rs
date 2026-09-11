@@ -39,6 +39,10 @@ fn conditional_manifest() {
         Some(Path::new("qemu-serial.log"))
     );
 
+    // managed program scheme
+    let process = &scheme.qemu.as_ref().unwrap().programs.as_ref().unwrap()[0];
+    assert_eq!(process, "test-service");
+
     // Iommu
     let mut scheme = toml_manifest.get_scheme(Some("iommu".to_owned())).clone();
     scheme.inherit(&toml_manifest.default_scheme);

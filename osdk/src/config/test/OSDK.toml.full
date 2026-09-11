@@ -32,6 +32,8 @@ args = """\
     -m $MEM \
 """
 
+programs = ["test-service"]
+
 [scheme."iommu"]
 supported_archs = ["x86_64"]
 qemu.args = """\

@@ -33,6 +33,22 @@ CMDLINE ?=
 CONSOLE ?= hvc0
 # End of global build options.
 
+# Virtio-fs settings.
+VIRTIOFS ?= off
+VIRTIOFS_SCRATCH ?= off
+VIRTIOFSD ?= /usr/libexec/virtiofsd
+VIRTIOFS_RUNTIME_DIR ?= $(CURDIR)/.osdk-virtiofs
+VIRTIOFS_SOCKET ?= $(VIRTIOFS_RUNTIME_DIR)/vfs.sock
+VIRTIOFS_SHARED_DIR ?= $(VIRTIOFS_RUNTIME_DIR)/shared
+VIRTIOFS_LOG_FILE ?= $(VIRTIOFS_RUNTIME_DIR)/virtiofsd.log
+VIRTIOFS_CACHE ?= auto
+VIRTIOFS_SCRATCH_SOCKET ?= $(VIRTIOFS_RUNTIME_DIR)/vfs-scratch.sock
+VIRTIOFS_SCRATCH_SHARED_DIR ?= $(VIRTIOFS_RUNTIME_DIR)/shared-scratch
+VIRTIOFS_SCRATCH_LOG_FILE ?= $(VIRTIOFS_RUNTIME_DIR)/virtiofsd-scratch.log
+export VIRTIOFS VIRTIOFS_SCRATCH VIRTIOFSD VIRTIOFS_RUNTIME_DIR VIRTIOFS_SOCKET \
+    VIRTIOFS_SHARED_DIR VIRTIOFS_LOG_FILE VIRTIOFS_CACHE VIRTIOFS_SCRATCH_SOCKET \
+    VIRTIOFS_SCRATCH_SHARED_DIR VIRTIOFS_SCRATCH_LOG_FILE
+
 # GDB debugging and profiling options.
 GDB_TCP_PORT ?= 1234
 GDB_PROFILE_FORMAT ?= flame-graph
@@ -73,8 +89,26 @@ CONFORMANCE_TEST_GVISOR_FILTER ?= ""
 XFSTESTS_FS_TYPE ?= ext2
 XFSTESTS_RUNLIST ?= short.list
 XFSTESTS_DISK_SIZE ?= 12G
+
+ifeq ($(XFSTESTS_FS_TYPE), virtiofs)
+VIRTIOFS = on
+VIRTIOFS_TAG ?= xfstest
+# xfstests requires both a test mount and a scratch mount. Other virtio-fs
+# users keep the scratch device disabled unless they opt into it explicitly.
+VIRTIOFS_SCRATCH = on
+VIRTIOFS_SCRATCH_TAG ?= xfsscratch
+XFSTESTS_TEST_DEV ?= $(VIRTIOFS_TAG)
+XFSTESTS_SCRATCH_DEV ?= $(VIRTIOFS_SCRATCH_TAG)
+else
 XFSTESTS_TEST_DEV ?= /dev/vdd
 XFSTESTS_SCRATCH_DEV ?= /dev/vde
+endif
+
+# Virtio-fs settings.
+VIRTIOFS ?= off
+VIRTIOFS_SCRATCH ?= off
+VIRTIOFS_SOCKET ?= /tmp/vhostqemu/vfs.sock
+VIRTIOFS_SCRATCH_SOCKET ?= /tmp/vhostqemu/vfs-scratch.sock
 # Specify whether to build regression tests under `test/initramfs/src/regression`.
 ENABLE_REGRESSION_TEST ?= false
 # End of auto test features.
