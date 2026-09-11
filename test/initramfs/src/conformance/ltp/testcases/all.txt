@@ -1636,12 +1636,12 @@ stat02_64
 # statmount08
 # statmount09
 
-# statfs01
-# statfs01_64
-# statfs02
-# statfs02_64
-# statfs03
-# statfs03_64
+statfs01
+statfs01_64
+statfs02
+statfs02_64
+statfs03
+statfs03_64
 
 # statvfs01
 # statvfs02

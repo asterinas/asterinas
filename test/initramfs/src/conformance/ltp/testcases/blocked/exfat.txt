@@ -58,6 +58,11 @@ setfsuid04
 setresuid04
 setreuid07
 setuid04
+statfs02
+statfs02_64
+statfs03
+statfs03_64
+statx02
 symlink02
 symlink03
 symlink04
@@ -68,4 +73,3 @@ umask01
 unlink05
 unlink08
 utime07
-statx02
