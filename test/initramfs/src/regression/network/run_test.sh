@@ -27,6 +27,7 @@ sleep 0.2
 ./socket_ioctl
 ./sockoption
 ./sockoption_unix
+./tcp_accept_reset
 ./tcp_err
 ./tcp_poll
 ./tcp_reuseaddr

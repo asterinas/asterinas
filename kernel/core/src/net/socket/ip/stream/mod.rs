@@ -587,7 +587,19 @@ impl Socket for StreamSocket {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
             }
             State::Connecting(connecting_stream) => connecting_stream.remote_endpoint(),
-            State::Connected(connected_stream) => connected_stream.remote_endpoint(),
+            State::Connected(connected_stream) => {
+                // `getpeername()` fails on a closed connection.
+                // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/ipv4/af_inet.c#L820>.
+                //
+                // Linux checks for TCP_CLOSE. We also reject smoltcp's TIME_WAIT state because
+                // Linux moves TIME_WAIT handling to a separate socket and sets the original
+                // socket to TCP_CLOSE. smoltcp keeps TIME_WAIT on the original socket.
+                // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/ipv4/tcp_minisocks.c#L393>.
+                if !connected_stream.raw_with(|socket| socket.is_open()) {
+                    return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+                }
+                connected_stream.remote_endpoint()
+            }
         };
         Ok(remote_endpoint.into())
     }

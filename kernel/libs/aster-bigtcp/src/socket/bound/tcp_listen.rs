@@ -131,10 +131,13 @@ impl<E: Ext> TcpListener<E> {
             let mut socket = accepted.0.inner.lock();
 
             socket.listener = None;
-            socket.remote_endpoint()
+
+            // A queued connection may have been reset, which clears smoltcp's internal endpoint tuple.
+            // Use the saved connection key so that it can still be accepted.
+            accepted.0.connection_key().remote_endpoint()
         };
 
-        Some((accepted, remote_endpoint.unwrap()))
+        Some((accepted, remote_endpoint))
     }
 
     /// Returns whether there is a TCP connection to accept.
