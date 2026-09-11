@@ -30,6 +30,9 @@ PHDRS
     # segment to prevent this from happening.
     header PT_LOAD FLAGS(4);      # R__
 
+    # PVH VMMs find the 32-bit entry point in a PT_NOTE segment.
+    note PT_NOTE FLAGS(4);        # R__
+
     # Boot segments. Addresses are physical.
     bsp_boot PT_LOAD FLAGS(7);    # RWE
     ap_boot PT_LOAD FLAGS(7);     # RWE
@@ -57,6 +60,11 @@ SECTIONS
     .multiboot2_header      : AT(ADDR(.multiboot2_header) - KERNEL_VMA) {
         KEEP(*(.multiboot2_header))
     } : header
+    # PVH entry-point note. `header` keeps it in a PT_LOAD segment so
+    # llvm-strip does not relocate it.
+    .note.Xen               : AT(ADDR(.note.Xen) - KERNEL_VMA) {
+        KEEP(*(.note.Xen))
+    } : header : note
 
 # --------------------------------------------------------------------------- #
 # These are 2 boot sections that need specific physical addresses.            #
