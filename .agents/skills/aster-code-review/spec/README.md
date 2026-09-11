@@ -1,94 +1,44 @@
-# `aster-code-review` — Design Specification
+# ACR Design Specification
 
-This is the authoritative design of `aster-code-review`,
-a code-review skill for Asterinas.
-It is written to be **self-contained** (a reader needs nothing but this `spec/` to understand the design)
-and **justified** (every significant decision is argued in place, including the alternatives that were rejected and why).
+This specification describes the design of Aster Code Review (ACR).
+ACR reviews commit series and selected files against Asterinas's coding guidelines
+and produces a Markdown report with findings and suggested fixes.
 
-## What the skill is, in one breath
+Start with [Motivation and goals](motivation.md) for the problem ACR addresses.
+For commands, configuration, and examples, see the [user guide](../README.md).
 
-`aster-code-review` reviews code against Asterinas's **persona-keyed Coding Guidelines** and writes one Markdown **review file**.
-It works in two modes — a Git change (`diff`) or a set of target files (`files`)
-— both reviewed relative to the current checkout (**HEAD**):
-`diff` reviews the commits up to HEAD,
-`files` the working-tree files at HEAD.
-Five reviewer **personas** — Maintainability,
-Development, Security, Hardware,
-Documentation — each own one slice of the guidelines and review the code independently;
-a thin orchestrator fans them out,
-then verifies, consolidates,
-and summarizes their findings into the review file.
+## Topics
 
-Four properties shape everything else:
-
-- **Local-first** — no web server,
-  no PR; it reads the repo and writes a file,
-  so the same skill serves a human at a terminal and an agent in a loop.
-- **Agent-agnostic** — one package runs under both Claude Code and Codex;
-  only the primitive that spawns a sub-task differs.
-- **Persona-based** — the change is reviewed by independent reviewer personas,
-  each carrying one bounded, self-contained slice of the guidelines.
-- **Benchmark-driven** — quality is measured,
-  not asserted: a benchmark of known defects scores the skill's recall (catching as many real defects as possible) today,
-  and will grow to also score precision (raising few false alarms).
-
-## How to read this spec
-
-| Document | Covers |
+| Document | Subject |
 |---|---|
-| [`motivation.md`](motivation.md) | Why this skill exists, the two audiences it serves, and its goals and non-goals. |
-| [`coding_guidelines.md`](coding_guidelines.md) | The persona-keyed Coding Guidelines the skill consumes — why they are organized by persona, the five personas, and how that structure makes review tractable. |
-| [`interface.md`](interface.md) | How the skill is invoked, its two review modes (`diff` and `files`) and the *HEAD is the head* rule, and the format and comment model of the review file it produces. |
-| [`execution_model.md`](execution_model.md) | The orchestration pipeline: persona fan-out, deterministic assembly, the verification and consolidation passes, persona activation, and agent-agnostic packaging. |
-| [`benchmark.md`](benchmark.md) | How we measure the skill: review problems, the recall metric and its reference configuration, the initial problem set, scoring, and the harness. |
-| [`related_work.md`](related_work.md) | How the skill relates to prior art (Sashiko today; a growing survey). |
+| [Motivation and goals](motivation.md) | Why this tool exists, and its goals and scope. |
+| [Coding guidelines](coding_guidelines.md) | The persona-keyed Coding Guidelines the skill consumes. 5 review personas, the rules they apply, and when reviewers consult them. |
+| [Interface and output](interface.md) | Review targets, configuration semantics, and the report format. |
+| [Execution model](execution_model.md) | Review stages, validation, tool permissions, and failure handling. |
+| [Pi backend](pi_backend.md) | Agent isolation, structured results, and tool restrictions when using Pi. |
+| [Benchmark and evaluation](benchmark.md) | How we measure the act: test cases, separation of expected answers from review inputs, and recall scoring.|
+| [Related work](related_work.md) | How the skill relates to prior art (Sashiko; a growing survey). |
 
-Suggested reading order is top to bottom.
-[`motivation.md`](motivation.md) and [`coding_guidelines.md`](coding_guidelines.md) give the *why*;
-[`interface.md`](interface.md) and [`execution_model.md`](execution_model.md) give the *what* and *how*;
-[`benchmark.md`](benchmark.md) gives the *how we know it works*;
-[`related_work.md`](related_work.md) situates it against prior systems.
+## Design principles
 
-## Design principles that recur
-
-Three commitments cut across the documents and are worth stating once:
+Four commitments recur throughout this specification:
 
 1. **Recall first, precision next — measured, not asserted.**
-   Every design fork favours catching real defects:
-   when a choice trades recall for polish,
-   convenience, or determinism, recall wins today.
-   Precision (raising few false alarms) is the next axis we measure and tune
-   — and the benchmark, not intuition, holds the design to both.
-2. **Determinism where it protects recall;
-   the model only where judgement is unavoidable.**
-   Change resolution and review assembly are plain scripts,
-   so they are reproducible and never silently drop a finding.
-   The model is used for the parts that genuinely need judgement
-   — the persona passes, verification,
-   consolidation, and the summary.
-3. **The guidelines are the standard.**
-   Subjective calls are not opinions:
-   each one cites a coding-guideline rule,
-   which is what lets the skill make them at all (and what distinguishes it from bug-only reviewers — see [`motivation.md`](motivation.md)).
-
-## TODO
-
-Two threads of work are deliberately deferred
-— recorded here, with their reasoning,
-so neither the intent nor the open questions are lost:
-
-1. **Optimize for recall, then precision.**
-   Drive the reference configuration (Claude Code, Opus, high effort) to **100% recall** on the benchmark by improving the coding guidelines and the harness,
-   and grow the problem set as real misses surface.
-   Once recall is solid, bring **precision** in as a scored axis
-   — add false-positive (negative) problems and tune the skill to keep raising few false alarms (see [`benchmark.md`](benchmark.md)).
-2. **First-class support for the self-review agentic loop.**
-   A write → test → review loop ([`motivation.md`](motivation.md)) is the north star.
-   The skill already provides the review primitives:
-   the loop **commits each round** and runs `diff <base>` to review its commit series (per-commit intent and commit hygiene included),
-   or `files` to review a specific uncommitted edit.
-   What remains is the orchestration **outside** this review skill
-   — driving the write and test steps,
-   and keeping the loop's temporary/generated files out of review
-   — since a full loop is more than a reviewer.
-   Deferred until we have real experience running such a loop.
+   The benchmark measures whether ACR catches known real defects.
+   Verification retains uncertain findings,
+   while precision remains a future benchmark axis.
+   Expected answers stay outside review inputs.
+2. **Deterministic code controls the workflow.**
+   Target resolution, persona activation, result validation, assembly,
+   state persistence, scoring, and report writing follow explicit rules.
+   These mechanics remain reproducible across model providers
+   and cannot silently discard findings.
+3. **The coding guidelines are shared standard.**
+   Guideline-backed findings cite the fetched rule by its short name.
+   Concrete defects without a matching rule remain reportable
+   when grounded in an explicit explanation.
+4. **Narrow agent capabilities.**
+   Persona review, verification, consolidation, and summary each receive
+   a bounded task, permitted **read-only tools**, and a validated output contract.
+   Agents do not edit reviewed code or write the report.
+   Keeping orchestration in code confines model work to judgment and reduces time and token use.

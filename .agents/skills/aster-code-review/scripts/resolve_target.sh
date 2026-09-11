@@ -6,7 +6,7 @@
 # resolve_target.sh — parse the skill's raw argument string (self-tokenizing)
 # and emit either the canonical review input or the frontmatter meta.
 # Deterministic; shared by both agents and the benchmark.
-# See spec/interface.md.
+# See ../spec/interface.md.
 #
 # The skill is triggered from a prompt, not a shell,
 # so the raw argument string arrives with its quotes intact;

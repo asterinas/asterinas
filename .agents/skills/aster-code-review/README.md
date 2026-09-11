@@ -1,68 +1,88 @@
-# aster-code-review
+# Aster Code Review (ACR)
 
-A code-review **skill** for the Asterinas OS kernel.
-It reviews code
-— either a Git change (`diff` mode) or a set of target files (`files` mode), against the working tree
-— and writes a single Markdown review file.
-It makes both *objective* calls (undeniable bugs) and *subjective* calls (guideline violations),
-the latter grounded in Asterinas's comprehensive, persona-keyed [Coding Guidelines](../../../book/src/to-contribute/coding-guidelines/).
+ACR is a local **code-review tool** for the Asterinas OS kernel.
+It reviews a Git commit series (`diff` mode) or selected working-tree files (`files` mode)
+against Asterinas's persona-keyed [Coding Guidelines](../../../book/src/to-contribute/coding-guidelines/)
+and writes one Markdown report with findings and suggested fixes.
+It covers maintainability, correctness, security, hardware behavior, and documentation.
 
-It is **agent-agnostic**: the same package runs under both Claude Code and Codex.
-It is **local-first**: no server and no PR are required;
-it reads the repository and writes a file.
-It is **benchmark-driven**:
-a suite of review problems built from real kernel defects measures how many it catches (recall),
-so the guidelines and harness improve against evidence rather than intuition.
+It is **provider-neutral**: the same review workflow runs through OpenAI Agents SDK or Pi Agent SDK.
+It is **local-first**: it reads a checkout and writes a local report; no server or PR is required.
+It is **benchmark-driven**: known defects measure recall, so review quality is tested against evidence.
 
 ## Quick start
 
-`aster-code-review` is a skill, not a binary
-— you trigger it from inside an agent session, not from a shell.
-It reviews the **working tree**,
-so to review a specific commit you check it out first.
+Run these commands from the root of the Asterinas checkout you want to review.
+The checked-in `run.sh` loads ACR's source from this checkout.
 
-It works in one of two **review modes**.
-The `diff` mode reviews the working tree against a `base` commit:
+Set env:
 
-```
-diff <base> <output> [--overwrite]
+```sh
+export OPENAI_API_KEY='...'
+export OPENAI_BASE_URL='...'
 ```
 
-The `files` mode reviews a set of specified files in the working tree:
+Review the commits on your branch since its merge base with `origin/main`:
 
+```sh
+.agents/skills/aster-code-review/run.sh \
+  diff origin/main /tmp/acr-review.md
 ```
-files <path[:lines] ...> <output> [--overwrite]
+
+To review working-tree files, including uncommitted edits:
+
+```sh
+.agents/skills/aster-code-review/run.sh \
+  files README.md kernel/src/lib.rs:1-80 /tmp/acr-files.md
 ```
 
-Both modes write the reviews in a review file at path `<output>`.
+`diff <base>` reviews the commits in `merge-base(<base>, HEAD)..HEAD`;
+it does not include uncommitted edits.
+`files <path[:lines] ...>` reviews current file contents;
+line numbers are 1-based and ranges are inclusive.
+The last argument is the report path.
+Add `--overwrite` to replace an existing report.
+See the [interface spec](spec/interface.md) for the full target syntax and options.
 
-This skill supports both Claude Code and Codex.
+## Configuration
 
-- **Claude Code:** `/aster-code-review diff main review.md`,
-  or just ask: *"Use aster-code-review to review what this branch added over main, into `review.md`."*
-- **Codex:** *"Use the aster-code-review skill to review `ostd/src/mm/tlb.rs` into `review.md`."*
+Select one TOML profile with `--config`. If not, it default to using `acr.toml`.
 
-See [the interface spec](spec/interface.md) for the full argument semantics.
+The profile sets the model, agent limits, tool permissions, and provider options.
+
+`--backend` can select `openai-agents`, `pi-agent`. It default to using `openai-agents`.
+See the profile comments and [configuration spec](spec/interface.md#configuration) for details.
 
 ## What's in this directory
 
-| Path | What it is |
+| Path | Purpose |
 |---|---|
-| [`SKILL.md`](SKILL.md) | The agent-facing entry point: orchestration pipeline, the shared persona-pass contract, and the spawn shim. |
-| [`personas/`](personas/) | One pass template per reviewer persona; each points at its guideline page and lists its ordered concerns. |
-| [`scripts/`](scripts/) | The deterministic primitives — `resolve_target.sh` (parse args → canonical review input), `build_pass_prompt.sh` (cache-ordered persona pass prompt; uses `pass_contract.md`), `assemble_review.sh` (fragments → review file) — plus `run_agent.sh` (shared agent launcher) and `post_reviews_to_github.sh` (post a review file to a PR). |
-| [`aster_code_review.sh`](aster_code_review.sh) | Headless CLI: run the skill from a shell via an agent profile (`ACR_AGENT_PROFILE`). The one blessed way to run the skill headless — used by the benchmark, the PR-review CI, and one-shot local runs. |
-| [`agent_profiles/`](agent_profiles/) | Per-agent launch configs (`ACR_AGENT_PROFILE=<name>`): `claude`, `codex`, `codex_workflow` (the CI profile). |
-| [`benchmark/`](benchmark/) | The recall benchmark — *review quality* — `problems.yaml` (fixtures cited by commit SHA) and the `run.sh` harness. Agent-agnostic: Claude and Codex both verified. |
-| [`tests/`](tests/) | Integration tests for the deterministic scripts — *machinery*, no model needed. One suite per script. |
-| [`spec/`](spec/) | **The design specification** — the authoritative, self-contained design doc. Start at [`spec/README.md`](spec/README.md). |
-| [`Makefile`](Makefile) | Task dispatcher: `make test`, `make check`, `make benchmark`/`make smoke` (both need `ACR_AGENT_PROFILE=<name>`). |
+| [`run.sh`](run.sh) | Shell entry point for the review. |
+| [`core/`](core/) and [`stages/`](stages/) | Review workflow, validation, and report assembly. |
+| [`agents/`](agents/) | OpenAI, Pi, and model-free backend adapters. |
+| [`tools/`](tools/) and [`prompts/`](prompts/) | Scoped review tools and agent instructions. |
+| [`benchmark/`](benchmark/) | Known-defect evaluation and its runner. |
+| [`tests/`](tests/) | Checks of review workflow. |
+| [`spec/`](spec/) | The design specification. Start at [`spec/README.md`](spec/README.md). |
 
 ## Design specification
 
-The full design
-— motivation, the persona-keyed guidelines it consumes,
-the interface and output format, the execution model, and the benchmark
-— lives under [`spec/`](spec/),
-with every significant decision justified inline.
-New contributors should read [`spec/README.md`](spec/README.md) first.
+The [specification](spec/README.md) explains the motivation,
+coding guidelines, interface, execution model, and benchmark.
+
+## Reports and benchmark
+
+The report has a summary and findings grouped by reviewer persona.
+[Report format](spec/interface.md#markdown-report) describes the fields.
+
+The [benchmark](benchmark/README.md) checks ACR against known defects in detached worktrees.
+With `--grade`, it counts fully caught defects toward strict recall
+and reports partial matches separately:
+
+```sh
+.agents/skills/aster-code-review/benchmark/run.sh \
+  --problem 0001 --backend openai-agents \
+  --grade
+```
+
+See the [benchmark spec](spec/benchmark.md) for scoring and isolation details.
