@@ -83,6 +83,10 @@ impl ConnectionKey {
     pub(crate) const fn hash(&self) -> SocketHash {
         self.hash
     }
+
+    pub(crate) const fn remote_endpoint(&self) -> IpEndpoint {
+        IpEndpoint::new(self.remote_addr, self.remote_port)
+    }
 }
 
 impl From<(IpEndpoint, IpEndpoint)> for ConnectionKey {
