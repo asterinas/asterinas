@@ -1,0 +1,61 @@
+name: Test Nix flake
+
+on:
+  pull_request:
+    paths:
+      - flake.nix
+      - flake.lock
+      - distro/nixpkgs.nix
+      - nix/**
+      - rust-toolchain.toml
+      - tools/docker/prebuilt-nix-packages/Dockerfile
+      - .github/workflows/test_nix_flake.yml
+  push:
+    branches:
+      - main
+    paths:
+      - flake.nix
+      - flake.lock
+      - distro/nixpkgs.nix
+      - nix/**
+      - rust-toolchain.toml
+      - tools/docker/prebuilt-nix-packages/Dockerfile
+      - .github/workflows/test_nix_flake.yml
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+      - name: Check nixpkgs revisions
+        # These files cannot read flake.lock, so they repeat the locked rev.
+        run: |
+          revision="$(jq -r '.nodes.nixpkgs.locked.rev' flake.lock)"
+
+          for file in \
+            tools/docker/prebuilt-nix-packages/Dockerfile \
+            distro/nixpkgs.nix
+          do
+            pinned="$(sed -nE 's#.*NixOS/nixpkgs/archive/([0-9a-f]{40})\.tar\.gz.*#\1#p' "$file" | sort -u | paste -sd ' ')"
+            if [ "$pinned" != "$revision" ]; then
+              echo "$file: expected only nixpkgs $revision, found: ${pinned:-none}" >&2
+              exit 1
+            fi
+          done
+          echo "nixpkgs revision: $revision"
+      - name: Check flake
+        run: nix flake check --no-build --all-systems --no-update-lock-file
+
+  dev-shell-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+      - name: Build and boot Asterinas
+        run: |
+          nix develop --ignore-environment --keep HOME \
+            --command make run_kernel AUTO_TEST=boot
