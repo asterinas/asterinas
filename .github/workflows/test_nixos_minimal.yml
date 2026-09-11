@@ -38,6 +38,9 @@ jobs:
         with:
           image: asterinas/kernel-dev:0.18.1-20260901
           options: --privileged -v /dev:/dev -v ${{ github.workspace }}:/root/asterinas
+          # docker-run-action-fork joins these lines with ';' and runs them via
+          # `sh -c` without fail-fast settings, unlike a normal `run:` step.
           run: |
+            set -e
             make nixos NIXOS_TEST_SUITE=hello NIXOS_DISK_SIZE_IN_MB=6144
             make run_nixos NIXOS_TEST_SUITE=hello
