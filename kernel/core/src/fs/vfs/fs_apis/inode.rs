@@ -590,21 +590,27 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
 
         // With DAC_OVERRIDE capability, the user can bypass some permission checks.
         if has_dac_override_capability(&task, posix_thread) {
-            // Read/write DACs are always overridable.
-            perm -= Permission::MAY_READ | Permission::MAY_WRITE;
+            if metadata.type_ == InodeType::Dir {
+                // DACs are overridable for directories, including the search permission
+                // even when the directory has no execute bits set.
+                perm -= Permission::MAY_READ | Permission::MAY_WRITE | Permission::MAY_EXEC;
+            } else {
+                // Read/write DACs are always overridable.
+                perm -= Permission::MAY_READ | Permission::MAY_WRITE;
 
-            // Executable DACs are overridable when there is at least one exec bit set.
-            if perm.may_exec() {
-                if mode.is_owner_executable()
-                    || mode.is_group_executable()
-                    || mode.is_other_executable()
-                {
-                    perm -= Permission::MAY_EXEC;
-                } else {
-                    return_errno_with_message!(
-                        Errno::EACCES,
-                        "root execute permission denied: no execute bits set"
-                    );
+                // Executable DACs are overridable when there is at least one exec bit set.
+                if perm.may_exec() {
+                    if mode.is_owner_executable()
+                        || mode.is_group_executable()
+                        || mode.is_other_executable()
+                    {
+                        perm -= Permission::MAY_EXEC;
+                    } else {
+                        return_errno_with_message!(
+                            Errno::EACCES,
+                            "root execute permission denied: no execute bits set"
+                        );
+                    }
                 }
             }
         }
