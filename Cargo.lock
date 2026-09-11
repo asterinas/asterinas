@@ -312,6 +312,7 @@ dependencies = [
  "bitflags 1.3.2",
  "component",
  "fdt",
+ "fdt-util",
  "int-to-c-enum",
  "ostd",
  "spin",
@@ -366,6 +367,7 @@ dependencies = [
  "bitflags 1.3.2",
  "chrono",
  "component",
+ "fdt-util",
  "ostd",
  "spin",
 ]
@@ -377,6 +379,7 @@ dependencies = [
  "aster-console",
  "component",
  "fdt",
+ "fdt-util",
  "inherit-methods-macro",
  "ostd",
  "spin",
@@ -415,6 +418,7 @@ dependencies = [
  "component",
  "device-id",
  "dma-pool",
+ "fdt-util",
  "id-alloc",
  "int-to-c-enum",
  "io-util",
@@ -786,6 +790,14 @@ name = "fdt"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "784a4df722dc6267a04af36895398f59d21d07dce47232adf31ec0ff2fa45e67"
+
+[[package]]
+name = "fdt-util"
+version = "0.1.0"
+dependencies = [
+ "fdt",
+ "ostd",
+]
 
 [[package]]
 name = "find-msvc-tools"

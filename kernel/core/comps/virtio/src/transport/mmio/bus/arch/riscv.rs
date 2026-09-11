@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use fdt_util::{AcquireIoMems, AcquireIrqLines};
+use ostd::arch::boot::DEVICE_TREE;
 pub(super) use ostd::arch::irq::MappedIrqLine;
-use ostd::arch::{
-    boot::DEVICE_TREE,
-    irq::{IRQ_CHIP, InterruptSourceInFdt},
+
+use crate::transport::mmio::{
+    MMIO_BUS, bus::common_device::MmioCommonDevice, layout::VirtioMmioLayout,
 };
 
 pub(super) fn probe_for_device() {
@@ -19,23 +21,18 @@ pub(super) fn probe_for_device() {
         })
     });
     mmio_nodes.for_each(|node| {
-        let mmio_region = node.reg().unwrap().next().unwrap();
-        let mmio_start = mmio_region.starting_address as usize;
-        let mmio_end = mmio_start + mmio_region.size.unwrap();
+        let Some([io_mem]) = node.acquire_io_mems([size_of::<VirtioMmioLayout>()]) else {
+            return;
+        };
+        if super::validate_mmio_device(&io_mem).is_err() {
+            return;
+        }
 
-        let interrupt_source_in_fdt = InterruptSourceInFdt {
-            interrupt: node.interrupts().unwrap().next().unwrap() as u32,
-            interrupt_parent: node
-                .property("interrupt-parent")
-                .and_then(|prop| prop.as_usize())
-                .unwrap() as u32,
+        let Some([irq_line]) = node.acquire_irq_lines() else {
+            return;
         };
 
-        let _ = super::try_register_mmio_device(mmio_start..mmio_end, |irq_line| {
-            IRQ_CHIP
-                .get()
-                .unwrap()
-                .map_fdt_pin_to(interrupt_source_in_fdt, irq_line)
-        });
+        let device = MmioCommonDevice::new(io_mem, irq_line);
+        MMIO_BUS.lock().register_mmio_device(device);
     });
 }
