@@ -47,6 +47,9 @@ mod partition;
 mod prelude;
 pub mod request_queue;
 
+#[cfg(ktest)]
+mod tests;
+
 use ::device_id::DeviceId;
 use component::{ComponentInitError, init_component};
 pub use device_id::{MajorIdOwner, acquire_major, allocate_major};
@@ -96,6 +99,21 @@ pub trait BlockDevice: Send + Sync + Any + Debug {
     }
 }
 
+/// A block device whose queued requests are processed by a dedicated worker.
+///
+/// Registration alone does not start a worker; see [`register_with_request_handler`].
+/// Devices that process or forward requests without such a worker only need to
+/// implement [`BlockDevice`].
+pub trait BlockRequestHandler: BlockDevice {
+    /// Waits for and processes the next queued request.
+    ///
+    /// This method may sleep. The caller must use a sleepable thread context and
+    /// must not call this method concurrently on the same handler. Returning does
+    /// not imply I/O completion. I/O errors are reported through the submitted
+    /// BIO's completion status.
+    fn handle_next_request(&self);
+}
+
 /// Metadata for a block device.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BlockDeviceMeta {
@@ -129,32 +147,76 @@ pub enum Error {
 
 /// Registers a new block device.
 pub fn register(device: Arc<dyn BlockDevice>) -> Result<(), Error> {
+    register_entry(RegisteredDevice {
+        device,
+        request_handler: None,
+    })
+}
+
+/// Registers a block device that requires a dedicated request worker.
+///
+/// Registration does not start the worker. The kernel starts workers for registered
+/// handlers once during boot, before scanning partitions. The device must therefore
+/// be registered before that startup pass. Later registration does not start a worker.
+pub fn register_with_request_handler<T: BlockRequestHandler>(device: Arc<T>) -> Result<(), Error> {
+    register_entry(RegisteredDevice {
+        device: device.clone(),
+        request_handler: Some(device),
+    })
+}
+
+fn register_entry(entry: RegisteredDevice) -> Result<(), Error> {
     let mut registry = DEVICE_REGISTRY.lock();
-    let id = device.id().to_raw();
+    let id = entry.device.id().to_raw();
     if registry.contains_key(&id) {
         return Err(Error::Registered);
     }
-    registry.insert(id, device);
+    registry.insert(id, entry);
 
     Ok(())
 }
 
 /// Unregisters an existing block device, returning the device if found.
+///
+/// This does not stop a request worker that has already been started for the device.
 pub fn unregister(id: DeviceId) -> Result<Arc<dyn BlockDevice>, Error> {
     DEVICE_REGISTRY
         .lock()
         .remove(&id.to_raw())
+        .map(|entry| entry.device)
         .ok_or(Error::NotFound)
 }
 
 /// Collects all block devices.
 pub fn collect_all() -> Vec<Arc<dyn BlockDevice>> {
-    DEVICE_REGISTRY.lock().values().cloned().collect()
+    DEVICE_REGISTRY
+        .lock()
+        .values()
+        .map(|entry| entry.device.clone())
+        .collect()
+}
+
+/// Collects the request handlers of registered whole-disk devices in device ID order.
+///
+/// The returned snapshot does not hold the registry lock. Collecting handlers does
+/// not consume them; the kernel must start their workers only once and before any
+/// synchronous I/O that needs those workers, including partition scanning.
+pub fn collect_request_handlers() -> Vec<Arc<dyn BlockRequestHandler>> {
+    let mut handlers: Vec<_> = DEVICE_REGISTRY
+        .lock()
+        .values()
+        .filter_map(|entry| entry.request_handler.clone())
+        .collect();
+    handlers.retain(|handler| !handler.is_partition());
+    handlers
 }
 
 /// Looks up a block device of a given device ID.
 pub fn lookup(id: DeviceId) -> Option<Arc<dyn BlockDevice>> {
-    DEVICE_REGISTRY.lock().get(&id.to_raw()).cloned()
+    DEVICE_REGISTRY
+        .lock()
+        .get(&id.to_raw())
+        .map(|entry| entry.device.clone())
 }
 
 /// Looks up a block device by its kernel device name.
@@ -162,8 +224,8 @@ pub fn lookup_by_name(name: &str) -> Option<Arc<dyn BlockDevice>> {
     DEVICE_REGISTRY
         .lock()
         .values()
-        .find(|device| device.name() == name)
-        .cloned()
+        .find(|entry| entry.device.name() == name)
+        .map(|entry| entry.device.clone())
 }
 
 /// Scans registered whole-disk devices and updates their partitions.
@@ -186,7 +248,12 @@ pub fn scan_partitions() {
     }
 }
 
-static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn BlockDevice>>> = Mutex::new(BTreeMap::new());
+struct RegisteredDevice {
+    device: Arc<dyn BlockDevice>,
+    request_handler: Option<Arc<dyn BlockRequestHandler>>,
+}
+
+static DEVICE_REGISTRY: Mutex<BTreeMap<u32, RegisteredDevice>> = Mutex::new(BTreeMap::new());
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {

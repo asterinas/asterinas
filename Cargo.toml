@@ -28,6 +28,7 @@ members = [
     "ostd/libs/padding-struct",
     "kernel",
     "kernel/comps/drm",
+    "kernel/comps/nvme",
     "kernel/comps/simpledrm",
     "kernel/comps/uart",
     "kernel/core",
@@ -40,7 +41,6 @@ members = [
     "kernel/core/comps/logger",
     "kernel/core/comps/mlsdisk",
     "kernel/core/comps/network",
-    "kernel/core/comps/nvme",
     "kernel/core/comps/pci",
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
@@ -82,6 +82,7 @@ default-members = [
     "ostd",
     "kernel",
     "kernel/comps/drm",
+    "kernel/comps/nvme",
     "kernel/comps/simpledrm",
     "kernel/comps/uart",
     "kernel/core",
@@ -94,7 +95,6 @@ default-members = [
     "kernel/core/comps/logger",
     "kernel/core/comps/mlsdisk",
     "kernel/core/comps/network",
-    "kernel/core/comps/nvme",
     "kernel/core/comps/pci",
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
@@ -166,6 +166,7 @@ aster-core = { path = "kernel/core", default-features = false }
 
 # Crates under kernel/comps
 aster-drm = { path = "kernel/comps/drm" }
+aster-nvme = { path = "kernel/comps/nvme" }
 aster-simpledrm = { path = "kernel/comps/simpledrm" }
 aster-uart = { path = "kernel/comps/uart" }
 
@@ -179,7 +180,6 @@ aster-input = { path = "kernel/core/comps/input" }
 aster-logger = { path = "kernel/core/comps/logger" }
 aster-mlsdisk = { path = "kernel/core/comps/mlsdisk" }
 aster-network = { path = "kernel/core/comps/network" }
-aster-nvme = { path = "kernel/core/comps/nvme" }
 aster-pci = { path = "kernel/core/comps/pci" }
 aster-softirq = { path = "kernel/core/comps/softirq" }
 aster-systree = { path = "kernel/core/comps/systree" }
