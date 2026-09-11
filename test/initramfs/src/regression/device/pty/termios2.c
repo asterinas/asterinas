@@ -83,6 +83,28 @@ FN_TEST(flush_pending_input)
 }
 END_TEST()
 
+FN_TEST(flush_notifies_packet_reader)
+{
+	struct termios2 termios;
+	struct pollfd pfd = {
+		.fd = master,
+		.events = POLLIN | POLLPRI,
+	};
+	int packet_mode = 1;
+	unsigned char packet[16];
+
+	TEST_SUCC(ioctl(slave, TCGETS2, &termios));
+	termios.c_lflag &= ~ECHO;
+	TEST_SUCC(ioctl(slave, TCSETS2, &termios));
+	TEST_SUCC(ioctl(master, TIOCPKT, &packet_mode));
+	TEST_RES(write(master, "discard\n", 8), _ret == 8);
+	TEST_SUCC(ioctl(slave, TCSETSF2, &termios));
+	TEST_RES(poll(&pfd, 1, 1000), pfd.revents == (POLLIN | POLLPRI));
+	TEST_RES(read(master, packet, sizeof(packet)),
+		 _ret == 1 && packet[0] == TIOCPKT_FLUSHREAD);
+}
+END_TEST()
+
 FN_SETUP(cleanup)
 {
 	CHECK(close(master));
