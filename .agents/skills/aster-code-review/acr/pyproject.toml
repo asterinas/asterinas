@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aster-code-review-acr"
+version = "0.1.0"
+description = "OpenAI Agents SDK runtime for Aster Code Review"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.0,<3",
+  "openai-agents[any-llm]>=0.22,<0.23",
+]
+
+[project.optional-dependencies]
+benchmark = ["pyyaml>=6.0"]
+
+[tool.setuptools]
+packages = ["acr", "acr.core", "acr.agents", "acr.agents.openai_agents", "acr.agents.pi", "acr.stages", "acr.tools", "acr.sinks", "acr.benchmark"]
+
+[tool.setuptools.package-dir]
+acr = "."
+
+[tool.setuptools.package-data]
+acr = [
+  "acr.toml",
+  "acr.deepseek.toml",
+  "acr.example.toml",
+  "acr.pi.example.toml",
+  "*.sh",
+  "prompts/*.md",
+  "prompts/personas/*.md",
+  "scripts/*.md",
+  "scripts/*.py",
+  "scripts/*.sh",
+  "benchmark/*.md",
+  "benchmark/*.sh",
+  "benchmark/*.yaml",
+  "spec/*.md",
+]
+
+"acr.agents.pi" = [
+  "runtime/*.mjs",
+  "runtime/*.ts",
+]
