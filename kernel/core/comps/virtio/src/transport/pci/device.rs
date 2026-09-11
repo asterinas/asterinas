@@ -95,15 +95,29 @@ impl VirtioTransport for VirtioPciModernTransport {
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_size)
             .write_once(&queue_size)
             .unwrap();
-        field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_desc)
-            .write_once(&(descriptor_ptr.daddr() as u64))
-            .unwrap();
-        field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_driver)
-            .write_once(&(avail_ring_ptr.daddr() as u64))
-            .unwrap();
-        field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_device)
-            .write_once(&(used_ring_ptr.daddr() as u64))
-            .unwrap();
+
+        // Virtio 1.3 section 4.1.3.1 requires aligned 32-bit accesses
+        // to 64-bit PCI configuration fields.
+        fn write_queue_addr(ptr: SafePtr<u64, &IoMem>, address: u64) {
+            let mut ptr = ptr.cast::<u32>();
+            ptr.write_once(&(address as u32)).unwrap();
+            ptr.add(1);
+            ptr.write_once(&((address >> 32) as u32)).unwrap();
+        }
+
+        write_queue_addr(
+            field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_desc),
+            descriptor_ptr.daddr() as u64,
+        );
+        write_queue_addr(
+            field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_driver),
+            avail_ring_ptr.daddr() as u64,
+        );
+        write_queue_addr(
+            field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_device),
+            used_ring_ptr.daddr() as u64,
+        );
+
         // Enable queue
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_enable)
             .write_once(&1u16)
