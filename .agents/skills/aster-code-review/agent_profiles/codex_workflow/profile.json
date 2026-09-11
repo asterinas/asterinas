@@ -1,4 +1,0 @@
-{
-  "command": ["codex", "exec", "{prompt}"],
-  "env": { "CODEX_HOME": "{workdir}" }
-}
