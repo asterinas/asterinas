@@ -2,9 +2,7 @@
 
 use alloc::borrow::ToOwned;
 
-use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE, bio::BioStatus};
-use aster_nvme::NvmeBlockDevice;
-use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
+use aster_block::{BLOCK_SIZE, BlockDevice, BlockRequestHandler, SECTOR_SIZE, bio::BioStatus};
 use device_id::DeviceId;
 use ostd::mm::VmIo;
 
@@ -25,40 +23,21 @@ use crate::{
 };
 
 pub(super) fn init_in_first_kthread() {
-    for device in aster_block::collect_all() {
-        if device.is_partition() {
-            continue;
-        }
+    aster_block::register_request_worker_spawner(spawn_request_worker).unwrap();
 
-        // Spawn threads for virtio block devices
-        if device.downcast_ref::<VirtIoBlockDevice>().is_some() {
-            let device_clone = device.clone();
-            let task_fn = move || {
-                info!("spawn the virtio-block thread");
-                let virtio_block_device = device_clone.downcast_ref::<VirtIoBlockDevice>().unwrap();
-                loop {
-                    virtio_block_device.handle_requests();
-                }
-            };
-            ThreadOptions::new(task_fn).spawn();
-        }
-        // Spawn threads for NVMe block devices
-        else if device.downcast_ref::<NvmeBlockDevice>().is_some() {
-            let device_clone = device.clone();
-            let task_fn = move || {
-                info!("spawn the nvme-block thread");
-                let nvme_block_device = device_clone.downcast_ref::<NvmeBlockDevice>().unwrap();
-                loop {
-                    nvme_block_device.handle_requests();
-                }
-            };
-            ThreadOptions::new(task_fn).spawn();
-        }
-    }
-
-    // Partition scanning performs synchronous block I/O, so the request
-    // handling threads above must be available first.
+    // Partition scanning performs synchronous block I/O, so request workers
+    // for all devices registered so far must be available first.
     aster_block::scan_partitions();
+}
+
+fn spawn_request_worker(handler: Arc<dyn BlockRequestHandler>) {
+    let task_fn = move || {
+        info!("spawn the block request thread for {}", handler.name());
+        loop {
+            handler.handle_next_request();
+        }
+    };
+    ThreadOptions::new(task_fn).spawn();
 }
 
 pub(super) fn init_in_first_process() -> Result<()> {
