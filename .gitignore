@@ -42,3 +42,6 @@ distro/etc_nixos/_config_for_test.nix
 
 # RustRover
 .idea
+
+# acter-code-review pycache
+__pycache__/
