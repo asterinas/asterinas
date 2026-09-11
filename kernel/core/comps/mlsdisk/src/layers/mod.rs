@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #[path = "0-bio/mod.rs"]
-pub mod bio;
+pub(crate) mod bio;
 #[path = "1-crypto/mod.rs"]
-pub mod crypto;
+pub(crate) mod crypto;
 #[path = "5-disk/mod.rs"]
-pub mod disk;
+pub(crate) mod disk;
 #[path = "2-edit/mod.rs"]
-pub mod edit;
+pub(crate) mod edit;
 #[path = "3-log/mod.rs"]
-pub mod log;
+pub(crate) mod log;
 #[path = "4-lsm/mod.rs"]
-pub mod lsm;
+pub(crate) mod lsm;

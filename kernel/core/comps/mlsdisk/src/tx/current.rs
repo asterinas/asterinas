@@ -8,7 +8,7 @@ use crate::{os::CurrentThread, prelude::*};
 
 /// The current transaction on a thread.
 #[derive(Clone)]
-pub struct CurrentTx<'a> {
+pub(crate) struct CurrentTx<'a> {
     provider: &'a TxProvider,
 }
 
@@ -25,7 +25,7 @@ impl<'a> CurrentTx<'a> {
     ///
     /// While within the context of a TX, the implementation side of a TX
     /// can get the current TX via `TxProvider::current`.
-    pub fn context<F, R>(&self, f: F) -> R
+    pub(crate) fn context<F, R>(&self, f: F) -> R
     where
         F: FnOnce() -> R,
     {
@@ -45,7 +45,7 @@ impl<'a> CurrentTx<'a> {
     ///
     /// If the returned value is `Ok`, then the TX is committed successfully.
     /// Otherwise, the TX is aborted.
-    pub fn commit(&self) -> Result<()> {
+    pub(crate) fn commit(&self) -> Result<()> {
         let mut tx_status = self
             .provider
             .tx_table
@@ -75,7 +75,7 @@ impl<'a> CurrentTx<'a> {
     }
 
     /// Aborts the current TX.
-    pub fn abort(&self) {
+    pub(crate) fn abort(&self) {
         let tx_status = self
             .provider
             .tx_table
@@ -96,7 +96,7 @@ impl<'a> CurrentTx<'a> {
     }
 
     /// The ID of the transaction.
-    pub fn id(&self) -> TxId {
+    pub(crate) fn id(&self) -> TxId {
         self.get_current_mut_with(|tx| tx.id())
     }
 
@@ -105,7 +105,7 @@ impl<'a> CurrentTx<'a> {
     /// # Panics
     ///
     /// The `data_with` method must _not_ be called recursively.
-    pub fn data_with<T: TxData, F, R>(&self, f: F) -> R
+    pub(crate) fn data_with<T: TxData, F, R>(&self, f: F) -> R
     where
         F: FnOnce(&T) -> R,
     {
@@ -116,7 +116,7 @@ impl<'a> CurrentTx<'a> {
     }
 
     /// Get mutable access to some type of the per-transaction data within a closure.
-    pub fn data_mut_with<T: TxData, F, R>(&mut self, f: F) -> R
+    pub(crate) fn data_mut_with<T: TxData, F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut T) -> R,
     {

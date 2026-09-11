@@ -48,7 +48,7 @@ use crate::{
 ///    and validating its integrity. Optimally, the user can check the version ID
 ///    of the decrypted user data and see if the version ID is up-to-date.
 ///
-pub struct CryptoBlob<B> {
+pub(crate) struct CryptoBlob<B> {
     block_set: B,
     key: Key,
     header: Mutex<Option<Header>>,
@@ -64,13 +64,13 @@ struct Header {
 
 impl<B: BlockSet> CryptoBlob<B> {
     /// The size of the header of a crypto blob in bytes.
-    pub const HEADER_NBYTES: usize = size_of::<Header>();
+    pub(crate) const HEADER_NBYTES: usize = size_of::<Header>();
 
     /// Opens an existing `CryptoBlob`.
     ///
     /// The capacity of this `CryptoBlob` object is determined by the size
     /// of `block_set: B`.
-    pub fn open(key: Key, block_set: B) -> Self {
+    pub(crate) fn open(key: Key, block_set: B) -> Self {
         Self {
             block_set,
             key,
@@ -82,7 +82,7 @@ impl<B: BlockSet> CryptoBlob<B> {
     ///
     /// The encryption key of a `CryptoBlob` is generated randomly so that
     /// no two `CryptoBlob` instances shall ever use the same key.
-    pub fn create(block_set: B, init_data: &[u8]) -> Result<Self> {
+    pub(crate) fn create(block_set: B, init_data: &[u8]) -> Result<Self> {
         let capacity = block_set.nblocks() * BLOCK_SIZE - Self::HEADER_NBYTES;
         if init_data.len() > capacity {
             return_errno_with_msg!(OutOfDisk, "init_data is too large");
@@ -132,7 +132,7 @@ impl<B: BlockSet> CryptoBlob<B> {
     ///
     /// This content is guaranteed to be confidential as long as the key is not
     /// known to an attacker.
-    pub fn write(&mut self, buf: &[u8]) -> Result<VersionId> {
+    pub(crate) fn write(&mut self, buf: &[u8]) -> Result<VersionId> {
         if buf.len() > self.capacity() {
             return_errno_with_msg!(OutOfDisk, "write data is too large");
         }
@@ -173,7 +173,7 @@ impl<B: BlockSet> CryptoBlob<B> {
     /// # Security
     ///
     /// This content, including its length, is guaranteed to be authentic.
-    pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    pub(crate) fn read(&self, buf: &mut [u8]) -> Result<usize> {
         let header = match *self.header.lock() {
             Some(header) => header,
             None => {
@@ -206,7 +206,7 @@ impl<B: BlockSet> CryptoBlob<B> {
     }
 
     /// Returns the key associated with this `CryptoBlob`.
-    pub fn key(&self) -> &Key {
+    pub(crate) fn key(&self) -> &Key {
         &self.key
     }
 
@@ -217,7 +217,7 @@ impl<B: BlockSet> CryptoBlob<B> {
     /// It is valid after a successful call to `create`, `read` or `write`.
     /// User could also get a version ID from another valid `CryptoBlob`,
     /// (usually a backup), through method `recover_from`.
-    pub fn version_id(&self) -> Option<VersionId> {
+    pub(crate) fn version_id(&self) -> Option<VersionId> {
         self.header.lock().map(|header| header.version)
     }
 
@@ -226,7 +226,7 @@ impl<B: BlockSet> CryptoBlob<B> {
     /// If `CryptoBlob` doesn't have a valid version ID, e.g., payload decryption
     /// failed when `read`, user could call this method to recover version ID and
     /// payload from another `CryptoBlob` (usually a backup).
-    pub fn recover_from(&mut self, other: &CryptoBlob<B>) -> Result<()> {
+    pub(crate) fn recover_from(&mut self, other: &CryptoBlob<B>) -> Result<()> {
         if self.capacity() != other.capacity() {
             return_errno_with_msg!(InvalidArgs, "capacity not aligned, recover failed");
         }
@@ -268,17 +268,17 @@ impl<B: BlockSet> CryptoBlob<B> {
     /// # Security
     ///
     /// It is valid after a successful call to `create`, `read` or `write`.
-    pub fn current_mac(&self) -> Option<Mac> {
+    pub(crate) fn current_mac(&self) -> Option<Mac> {
         self.header.lock().map(|header| header.mac)
     }
 
     /// Returns the capacity of this `CryptoBlob` in bytes.
-    pub fn capacity(&self) -> usize {
+    pub(crate) fn capacity(&self) -> usize {
         self.block_set.nblocks() * BLOCK_SIZE - Self::HEADER_NBYTES
     }
 
     /// Returns the number of blocks occupied by the underlying `BlockSet`.
-    pub fn nblocks(&self) -> usize {
+    pub(crate) fn nblocks(&self) -> usize {
         self.block_set.nblocks()
     }
 }

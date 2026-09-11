@@ -2,6 +2,8 @@
 
 //! MMIO device common definitions or functions.
 
+#![short_vis_path::add(mmio)]
+
 use int_to_c_enum::TryFromInt;
 use ostd::{
     Error, Result, info,
@@ -14,7 +16,7 @@ use super::arch::MappedIrqLine;
 
 /// A MMIO common device.
 #[derive(Debug)]
-pub struct MmioCommonDevice {
+pub(in mmio) struct MmioCommonDevice {
     io_mem: IoMem,
     irq: MappedIrqLine,
 }
@@ -35,23 +37,23 @@ impl MmioCommonDevice {
     }
 
     /// Returns a reference to the I/O memory.
-    pub fn io_mem(&self) -> &IoMem {
+    pub(in mmio) fn io_mem(&self) -> &IoMem {
         &self.io_mem
     }
 
     /// Reads the device ID from the I/O memory.
-    pub fn read_device_id(&self) -> Result<u32> {
+    pub(in mmio) fn read_device_id(&self) -> Result<u32> {
         mmio_read_device_id(&self.io_mem)
     }
 
     /// Reads the version number from the I/O memory.
-    pub fn read_version(&self) -> Result<VirtioMmioVersion> {
+    pub(in mmio) fn read_version(&self) -> Result<VirtioMmioVersion> {
         VirtioMmioVersion::try_from(mmio_read_version(&self.io_mem)?)
             .map_err(|_| Error::InvalidArgs)
     }
 
     /// Returns an immutable reference to the IRQ line.
-    pub fn irq(&self) -> &IrqLine {
+    pub(in mmio) fn irq(&self) -> &IrqLine {
         &self.irq
     }
 }
@@ -59,7 +61,7 @@ impl MmioCommonDevice {
 /// Virtio MMIO version.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, TryFromInt)]
-pub enum VirtioMmioVersion {
+pub(in mmio) enum VirtioMmioVersion {
     /// Legacy
     Legacy = 1,
     /// Modern

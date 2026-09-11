@@ -49,10 +49,12 @@ pub mod request_queue;
 
 use ::device_id::DeviceId;
 use component::{ComponentInitError, init_component};
-pub use device_id::{EXTENDED_DEVICE_ID_ALLOCATOR, MajorIdOwner, acquire_major, allocate_major};
 use ostd::sync::Mutex;
 pub use partition::{PartitionInfo, PartitionNode};
 
+pub use self::device_id::{
+    EXTENDED_DEVICE_ID_ALLOCATOR, MAX_MAJOR, MajorIdOwner, acquire_major, allocate_major,
+};
 use self::{
     bio::{BioEnqueueError, SubmittedBio},
     prelude::*,

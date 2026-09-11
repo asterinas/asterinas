@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(iommu = crate::arch::iommu)]
+
 use crate::{
     mm::{FrameAllocOptions, PAGE_SIZE, Segment, VmIo},
     prelude::*,
 };
 
-pub struct Queue {
+pub(in iommu) struct Queue {
     segment: Segment<()>,
     queue_size: usize,
     tail: usize,
 }
 
 impl Queue {
-    pub fn append_descriptor(&mut self, descriptor: u128) {
+    pub(in iommu) fn append_descriptor(&mut self, descriptor: u128) {
         if self.tail == self.queue_size {
             self.tail = 0;
         }
@@ -22,15 +24,15 @@ impl Queue {
         self.tail += 1;
     }
 
-    pub fn tail(&self) -> usize {
+    pub(in iommu) fn tail(&self) -> usize {
         self.tail
     }
 
-    pub fn size(&self) -> usize {
+    pub(in iommu) fn size(&self) -> usize {
         self.queue_size
     }
 
-    pub(crate) fn base_paddr(&self) -> Paddr {
+    pub(in iommu) fn base_paddr(&self) -> Paddr {
         self.segment.paddr()
     }
 

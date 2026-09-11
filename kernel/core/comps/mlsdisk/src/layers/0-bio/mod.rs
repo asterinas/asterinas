@@ -11,14 +11,16 @@ use ostd::const_assert;
 
 pub use self::{
     block_buf::{Buf, BufMut, BufRef},
+    block_set::BlockSet,
+};
+pub(crate) use self::{
     block_log::{BlockLog, MemLog},
     block_ring::BlockRing,
-    block_set::{BlockSet, MemDisk},
 };
 
 pub type BlockId = usize;
 pub const BLOCK_SIZE: usize = 0x1000;
-pub const BID_SIZE: usize = size_of::<BlockId>();
+pub(crate) const BID_SIZE: usize = size_of::<BlockId>();
 
 // This definition of `BlockId` assumes the target architecture is 64-bit.
 const_assert!(BID_SIZE == 8);

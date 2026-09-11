@@ -8,7 +8,7 @@ use crate::{
     type_flag::TypeFlagDef,
 };
 
-pub fn expand_type_flag(type_flags_def: &TypeFlagDef) -> TokenStream {
+pub(super) fn expand_type_flag(type_flags_def: &TypeFlagDef) -> TokenStream {
     let mut all_tokens = TokenStream::new();
     let import_util_tokens = import_util();
     all_tokens.append_all(import_util_tokens);
@@ -35,7 +35,7 @@ pub fn expand_type_flag(type_flags_def: &TypeFlagDef) -> TokenStream {
 }
 
 /// import crate typeflags_util
-pub fn import_util() -> TokenStream {
+pub(super) fn import_util() -> TokenStream {
     quote!(
         #[macro_use]
         use ::typeflags_util::*;
@@ -43,7 +43,7 @@ pub fn import_util() -> TokenStream {
 }
 
 /// define the main trait and all items
-pub fn trait_and_items_def(type_flags_def: &TypeFlagDef) -> TokenStream {
+pub(super) fn trait_and_items_def(type_flags_def: &TypeFlagDef) -> TokenStream {
     let mut tokens = TokenStream::new();
     tokens.append_all(type_flags_def.trait_def_tokens());
     for item_def in type_flags_def.items_def_tokens() {
@@ -53,7 +53,7 @@ pub fn trait_and_items_def(type_flags_def: &TypeFlagDef) -> TokenStream {
 }
 
 /// impl SameAs trait for each struct
-pub fn impl_same_as(type_flags_def: &TypeFlagDef) -> TokenStream {
+pub(super) fn impl_same_as(type_flags_def: &TypeFlagDef) -> TokenStream {
     let mut all_tokens = TokenStream::new();
     let items_num = type_flags_def.item_num();
 
@@ -78,7 +78,7 @@ pub fn impl_same_as(type_flags_def: &TypeFlagDef) -> TokenStream {
     all_tokens
 }
 
-pub fn impl_set_extend(type_flags_def: &TypeFlagDef, flag_sets: &[FlagSet]) -> TokenStream {
+pub(super) fn impl_set_extend(type_flags_def: &TypeFlagDef, flag_sets: &[FlagSet]) -> TokenStream {
     let mut all_tokens = TokenStream::new();
     let type_idents: Vec<_> = type_flags_def
         .items_iter()
@@ -129,7 +129,10 @@ fn extent_one_type<'a>(
 }
 
 /// export the declarive macro
-pub fn export_declarive_macro(type_flags_def: &TypeFlagDef, flag_sets: &[FlagSet]) -> TokenStream {
+pub(super) fn export_declarive_macro(
+    type_flags_def: &TypeFlagDef,
+    flag_sets: &[FlagSet],
+) -> TokenStream {
     let macro_ident = type_flags_def.trait_ident();
     let macro_item_tokens = flag_sets
         .iter()

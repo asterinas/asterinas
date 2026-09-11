@@ -23,7 +23,10 @@ use crate::{mm::PAGE_SIZE, prelude::Paddr};
 ///    within the maximum Guest Physical Address (GPA) limit.
 ///  - All of the physical pages are untyped memory. Therefore, converting and
 ///    erasing the data will not cause memory safety issues.
-pub unsafe fn unprotect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), PageConvertError> {
+pub(crate) unsafe fn unprotect_gpa_tdvm_call(
+    gpa: Paddr,
+    size: usize,
+) -> Result<(), PageConvertError> {
     debug_assert!(gpa.is_multiple_of(PAGE_SIZE));
     debug_assert!(size.is_multiple_of(PAGE_SIZE));
 
@@ -45,7 +48,10 @@ pub unsafe fn unprotect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), Pag
 ///    within the maximum Guest Physical Address (GPA) limit.
 ///  - All of the physical pages are untyped memory. Therefore, converting and
 ///    erasing the data will not cause memory safety issues.
-pub unsafe fn protect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), PageConvertError> {
+pub(crate) unsafe fn protect_gpa_tdvm_call(
+    gpa: Paddr,
+    size: usize,
+) -> Result<(), PageConvertError> {
     debug_assert!(gpa.is_multiple_of(PAGE_SIZE));
     debug_assert!(size.is_multiple_of(PAGE_SIZE));
 
@@ -60,7 +66,7 @@ pub unsafe fn protect_gpa_tdvm_call(gpa: Paddr, size: usize) -> Result<(), PageC
 }
 
 #[derive(Debug)]
-pub enum PageConvertError {
+pub(crate) enum PageConvertError {
     #[expect(dead_code)]
     TdCall(TdCallError),
     #[expect(dead_code)]
@@ -136,7 +142,7 @@ unsafe fn convert_gpa_range(
     }
 }
 
-pub struct TrapFrameWrapper<'a>(pub &'a mut TrapFrame);
+pub(crate) struct TrapFrameWrapper<'a>(pub &'a mut TrapFrame);
 
 impl TdxTrapFrame for TrapFrameWrapper<'_> {
     fn rax(&self) -> usize {

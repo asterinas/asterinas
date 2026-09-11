@@ -4,16 +4,16 @@ use core::fmt::Debug;
 
 use bitflags::bitflags;
 
-pub struct ExtendedCapability(u64);
+pub(in crate::arch::iommu) struct ExtendedCapability(u64);
 
 impl ExtendedCapability {
     /// Creates ExtendedCapability from `value`
-    pub const fn new(value: u64) -> Self {
+    pub(super) const fn new(value: u64) -> Self {
         Self(value)
     }
 
     /// Extended capability flags
-    pub const fn flags(&self) -> ExtendedCapabilityFlags {
+    pub(in crate::arch::iommu) const fn flags(&self) -> ExtendedCapabilityFlags {
         ExtendedCapabilityFlags::from_bits_truncate(self.0)
     }
 
@@ -22,14 +22,14 @@ impl ExtendedCapability {
     ///
     /// If the register base address is X, and the value reported in this field is Y, the
     /// address for the IOTLB registers is calculated as X+(16*Y).
-    pub const fn iotlb_register_offset(&self) -> u64 {
+    pub(super) const fn iotlb_register_offset(&self) -> u64 {
         const IRO_MASK: u64 = 0x3FF << 8;
         (self.0 & IRO_MASK) >> 8
     }
 
     /// Maximum Handle Mask Value, indicates the maximum supported value for the Interrupt
     /// Mask (IM) field in the Interrupt Entry Cache Invalidation Descriptor (iec_inv_dsc).
-    pub const fn maximum_handle_mask(&self) -> u64 {
+    const fn maximum_handle_mask(&self) -> u64 {
         const MHMV_MASK: u64 = 0xF << 20;
         (self.0 & MHMV_MASK) >> 20
     }
@@ -40,7 +40,7 @@ impl ExtendedCapability {
     ///
     /// This field is unused and reported as 0 if Scalable Mode Translation Support (SMTS)
     /// field is Clear.
-    pub const fn pasid_size(&self) -> u64 {
+    const fn pasid_size(&self) -> u64 {
         const PSS_MASK: u64 = 0x1F << 35;
         (self.0 & PSS_MASK) >> 35
     }

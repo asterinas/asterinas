@@ -156,7 +156,7 @@ impl PciHeaderType {
     /// According to the PCI specification, the encoding of a header type is as follows:
     /// - Bit 0-6 encodes the raw value of `PciDeviceType`;
     /// - Bit 7 indicates whether the PCI device has multiple functions.
-    pub fn try_from_raw(raw: u8) -> Option<Self> {
+    fn try_from_raw(raw: u8) -> Option<Self> {
         let device_type = PciDeviceType::try_from_raw(raw & 0x7F)?;
         let has_multi_funcs = (raw & 0x80) != 0;
 
@@ -167,12 +167,12 @@ impl PciHeaderType {
     }
 
     /// Returns the device type.
-    pub fn device_type(self) -> PciDeviceType {
+    fn device_type(self) -> PciDeviceType {
         self.device_type
     }
 
     /// Returns whether the device has multiple functions.
-    pub fn has_multi_funcs(self) -> bool {
+    fn has_multi_funcs(self) -> bool {
         self.has_multi_funcs
     }
 }

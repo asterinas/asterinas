@@ -2,7 +2,7 @@
 
 use syn::{ItemFn, ItemImpl, Token, parse::Parse};
 
-pub enum RequireItem {
+pub(crate) enum RequireItem {
     Impl(ItemImpl),
     Fn(ItemFn),
 }

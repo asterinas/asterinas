@@ -5,29 +5,32 @@ use core::ops::Range;
 
 use crate::sync::{PreemptDisabled, SpinLock, SpinLockGuard};
 
-pub struct RangeAllocator {
+pub(crate) struct RangeAllocator {
     fullrange: Range<usize>,
     freelist: SpinLock<Option<BTreeMap<usize, FreeRange>>>,
 }
 
 /// An error returned when allocating from a [`RangeAllocator`].
 #[derive(Debug)]
-pub struct RangeAllocError;
+pub(crate) struct RangeAllocError;
 
 impl RangeAllocator {
-    pub const fn new(fullrange: Range<usize>) -> Self {
+    pub(crate) const fn new(fullrange: Range<usize>) -> Self {
         Self {
             fullrange,
             freelist: SpinLock::new(None),
         }
     }
 
-    pub const fn fullrange(&self) -> &Range<usize> {
+    pub(crate) const fn fullrange(&self) -> &Range<usize> {
         &self.fullrange
     }
 
     /// Allocates a specific kernel virtual area.
-    pub fn alloc_specific(&self, allocate_range: &Range<usize>) -> Result<(), RangeAllocError> {
+    pub(crate) fn alloc_specific(
+        &self,
+        allocate_range: &Range<usize>,
+    ) -> Result<(), RangeAllocError> {
         if allocate_range.is_empty() {
             return Err(RangeAllocError);
         }
@@ -72,7 +75,7 @@ impl RangeAllocator {
     /// Allocates a range specific by the `size`.
     ///
     /// This is currently implemented with a simple FIRST-FIT algorithm.
-    pub fn alloc(&self, size: usize) -> Result<Range<usize>, RangeAllocError> {
+    pub(crate) fn alloc(&self, size: usize) -> Result<Range<usize>, RangeAllocError> {
         let mut lock_guard = self.get_freelist_guard();
         let freelist = lock_guard.as_mut().unwrap();
         let mut allocate_range = None;
@@ -104,7 +107,7 @@ impl RangeAllocator {
     }
 
     /// Frees a `range`.
-    pub fn free(&self, range: Range<usize>) {
+    pub(crate) fn free(&self, range: Range<usize>) {
         let mut lock_guard = self.freelist.lock();
         let freelist = lock_guard.as_mut().unwrap_or_else(|| {
             panic!("Free a 'KVirtArea' when 'VirtAddrAllocator' has not been initialized.")
