@@ -4,6 +4,7 @@
 
 mod instructions;
 pub(crate) mod invept;
+pub(crate) mod vmcs;
 
 use x86::msr::{
     IA32_FEATURE_CONTROL, IA32_VMX_BASIC, IA32_VMX_CR0_FIXED0, IA32_VMX_CR0_FIXED1,
@@ -239,9 +240,15 @@ impl VmxCpuState {
         // will find no pending work.
         invept::flush_pending();
 
+        // SAFETY: `cpu_state.is_enabled` means this CPU is in VMX operation.
+        if let Err(err) = unsafe { vmcs::LocalVmcsState::deactivate_all(&irq_guard) } {
+            cpu_state.last_error = Some(err);
+            return;
+        }
+
         // SAFETY:
         // 1. `cpu_state.is_enabled` means this CPU is in VMX operation.
-        // 2. This module never loads a VMCS, so there are no active VMCSs to clear.
+        // 2. `deactivate_all` cleared every active VMCS above.
         if let Err(err) = unsafe { instructions::vmxoff(&irq_guard) } {
             cpu_state.last_error = Some(err);
             return;
