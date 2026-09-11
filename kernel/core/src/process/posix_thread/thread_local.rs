@@ -178,7 +178,7 @@ impl ThreadLocal {
 
     /// Returns the original syscall-return register value
     /// for the most recent kernel entry.
-    pub(in crate::process) fn orig_syscall_ret(&self) -> Option<usize> {
+    pub(crate) fn orig_syscall_ret(&self) -> Option<usize> {
         self.orig_syscall_ret.get()
     }
 
