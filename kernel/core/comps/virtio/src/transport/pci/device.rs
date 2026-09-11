@@ -16,7 +16,10 @@ use ostd::{
     warn,
 };
 
-use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};
+use super::{
+    common_cfg::{VirtioPciCfgU64Ext, VirtioPciCommonCfg},
+    msix::VirtioMsixManager,
+};
 use crate::{
     VirtioDeviceType,
     queue::{AvailRing, Descriptor, UsedRing},
@@ -95,15 +98,17 @@ impl VirtioTransport for VirtioPciModernTransport {
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_size)
             .write_once(&queue_size)
             .unwrap();
+
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_desc)
-            .write_once(&(descriptor_ptr.daddr() as u64))
+            .write_u64(descriptor_ptr.daddr() as u64)
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_driver)
-            .write_once(&(avail_ring_ptr.daddr() as u64))
+            .write_u64(avail_ring_ptr.daddr() as u64)
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_device)
-            .write_once(&(used_ring_ptr.daddr() as u64))
+            .write_u64(used_ring_ptr.daddr() as u64)
             .unwrap();
+
         // Enable queue
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_enable)
             .write_once(&1u16)
