@@ -1,0 +1,26 @@
+[benchmark]
+remote = "https://github.com/asterinas/asterinas"
+
+[agent]
+backend = "claude-agent"
+# Inherit model configured in the local Claude CLI.
+# You can also specify which models ACR uses.
+review_model = "default"
+postprocess_model = "default"
+reasoning_effort = "high"
+postprocess_reasoning_effort = "medium"
+per_persona_context = "auto"
+max_concurrency = 6
+# timeout_seconds = 1200
+retries = 1
+
+[tools]
+maintainability = ["source.read", "source.search", "git.show", "git.log", "git.blame", "guideline.show"]
+development = ["source.read", "source.search", "git.show", "git.log", "git.blame", "guideline.show"]
+security = ["source.read", "source.search", "git.show", "git.log", "git.blame", "guideline.show"]
+hardware = ["source.read", "source.search", "git.show", "git.log", "git.blame", "guideline.show"]
+documentation = ["source.read", "source.search", "git.show", "git.log", "git.blame", "guideline.show"]
+verification = ["source.read", "source.search", "source.list", "git.show", "git.log", "git.blame"]
+consolidation = []
+summary = []
+grader = []
