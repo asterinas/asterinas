@@ -120,24 +120,15 @@ pub(super) fn sys_timer_delete(timer_id: timer_t, ctx: &Context) -> Result<Sysca
     Ok(SyscallReturn::Return(0))
 }
 
-/// Creates a timer associated with the specified clock ID.
+/// Creates a timer associated with the specified fixed or dynamic clock ID.
 ///
 /// This timer will invoke the given callback function (`func`) when it expires.
-pub(crate) fn create_timer<F>(clockid: clockid_t, func: F, ctx: &Context) -> Result<Arc<Timer>>
+fn create_timer<F>(clockid: clockid_t, func: F, ctx: &Context) -> Result<Arc<Timer>>
 where
     F: Fn(TimerGuard) + Send + Sync + 'static,
 {
-    let process_timer_manager = ctx.process.timer_manager();
     let timer = if clockid >= 0 {
-        let clock_id = ClockId::try_from(clockid)?;
-        match clock_id {
-            ClockId::CLOCK_PROCESS_CPUTIME_ID => process_timer_manager.create_prof_timer(func),
-            ClockId::CLOCK_THREAD_CPUTIME_ID => ctx.posix_thread.create_prof_timer(func),
-            ClockId::CLOCK_REALTIME => RealTimeClock::timer_manager().create_timer(func),
-            ClockId::CLOCK_MONOTONIC => MonotonicClock::timer_manager().create_timer(func),
-            ClockId::CLOCK_BOOTTIME => BootTimeClock::timer_manager().create_timer(func),
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid clock ID"),
-        }
+        return create_timer_for_clock(ClockId::try_from(clockid)?, func, ctx);
     } else {
         let dynamic_clockid_info = DynamicClockIdInfo::try_from(clockid)?;
         match dynamic_clockid_info {
@@ -149,8 +140,6 @@ where
                 match clock_type {
                     DynamicClockType::Profiling => process_timer_manager.create_prof_timer(func),
                     DynamicClockType::Virtual => process_timer_manager.create_virtual_timer(func),
-                    // TODO: support scheduling clock and fd clock.
-                    _ => unimplemented!(),
                 }
             }
             DynamicClockIdInfo::Tid(tid, clock_type) => {
@@ -161,11 +150,32 @@ where
                 match clock_type {
                     DynamicClockType::Profiling => posix_thread.create_prof_timer(func),
                     DynamicClockType::Virtual => posix_thread.create_virtual_timer(func),
-                    _ => unimplemented!(),
                 }
             }
-            DynamicClockIdInfo::Fd(_) => unimplemented!(),
         }
+    };
+    Ok(timer)
+}
+
+/// Creates a timer associated with the specified clock ID.
+///
+/// This timer will invoke the given callback function (`func`) when it expires.
+pub(crate) fn create_timer_for_clock<F>(
+    clock_id: ClockId,
+    func: F,
+    ctx: &Context,
+) -> Result<Arc<Timer>>
+where
+    F: Fn(TimerGuard) + Send + Sync + 'static,
+{
+    let process_timer_manager = ctx.process.timer_manager();
+    let timer = match clock_id {
+        ClockId::CLOCK_PROCESS_CPUTIME_ID => process_timer_manager.create_prof_timer(func),
+        ClockId::CLOCK_THREAD_CPUTIME_ID => ctx.posix_thread.create_prof_timer(func),
+        ClockId::CLOCK_REALTIME => RealTimeClock::timer_manager().create_timer(func),
+        ClockId::CLOCK_MONOTONIC => MonotonicClock::timer_manager().create_timer(func),
+        ClockId::CLOCK_BOOTTIME => BootTimeClock::timer_manager().create_timer(func),
+        _ => return_errno_with_message!(Errno::EINVAL, "invalid clock ID"),
     };
     Ok(timer)
 }
