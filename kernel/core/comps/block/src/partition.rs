@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use device_id::DeviceId;
-use ostd::mm::VmIo;
+use alloc::format;
+
+use device_id::{DeviceId, MinorId};
+use ostd::{mm::VmIo, sync::Mutex};
 use ostd_pod::Pod;
 
 use crate::{
-    BlockDevice, BlockDeviceMeta, SECTOR_SIZE,
+    BlockDevice, BlockDeviceMeta, DEVICE_MINORS, EXTENDED_DEVICE_ID_ALLOCATOR, SECTOR_SIZE,
     bio::{BioEnqueueError, SubmittedBio},
     prelude::*,
+    register, unregister,
 };
 
 /// Represents a partition entry.
@@ -287,5 +290,93 @@ impl PartitionNode {
             device,
             info,
         }
+    }
+}
+
+/// Manages the partitions of a whole-disk block device.
+///
+/// The manager owns the device's current partition list and the lock that
+/// serializes partition replacement.
+#[derive(Debug)]
+pub struct PartitionManager {
+    inner: Mutex<Option<Vec<Arc<PartitionNode>>>>,
+}
+
+impl Default for PartitionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PartitionManager {
+    /// Creates an empty partition manager.
+    pub const fn new() -> Self {
+        Self {
+            inner: Mutex::new(None),
+        }
+    }
+
+    /// Returns the managed partitions.
+    pub fn partitions(&self) -> Option<Vec<Arc<dyn BlockDevice>>> {
+        self.inner.lock().as_ref().map(|partitions| {
+            partitions
+                .iter()
+                .map(|partition| partition.clone() as Arc<dyn BlockDevice>)
+                .collect()
+        })
+    }
+
+    /// Replaces the managed partitions with the parsed partition information.
+    pub(super) fn update(&self, device: &Arc<dyn BlockDevice>, infos: Vec<Option<PartitionInfo>>) {
+        // Lock order: partition lock -> `DEVICE_REGISTRY`
+
+        let mut partitions = self.inner.lock();
+
+        if let Some(old_partitions) = partitions.take() {
+            for partition in old_partitions {
+                let _ = unregister(partition.id());
+            }
+        }
+
+        let mut new_partitions = Vec::new();
+        for (index, info_opt) in infos.iter().enumerate() {
+            let Some(info) = info_opt else {
+                continue;
+            };
+
+            let index = index as u32 + 1;
+            let id = if index < DEVICE_MINORS {
+                DeviceId::new(
+                    device.id().major(),
+                    MinorId::new(device.id().minor().get() + index),
+                )
+            } else {
+                EXTENDED_DEVICE_ID_ALLOCATOR.get().unwrap().allocate()
+            };
+            let name = partition_name(device.name(), index);
+            let partition = Arc::new(PartitionNode::new(id, name, device.clone(), *info));
+            new_partitions.push(partition);
+        }
+
+        for partition in new_partitions.iter() {
+            let _ = register(partition.clone());
+        }
+
+        *partitions = Some(new_partitions);
+    }
+}
+
+/// Formats the name of a partition.
+///
+/// We perform the naming similar to the Linux implementation: insert "p" between
+/// the disk name and the partition number when the disk name ends with a digit
+/// (`nvme0n1p1`), and append the number otherwise (`vda1`).
+///
+/// Reference: <https://elixir.bootlin.com/linux/v7.2.2/source/block/partitions/core.c#L337>
+fn partition_name(disk_name: &str, partno: u32) -> String {
+    if disk_name.ends_with(|c: char| c.is_ascii_digit()) {
+        format!("{}p{}", disk_name, partno)
+    } else {
+        format!("{}{}", disk_name, partno)
     }
 }
