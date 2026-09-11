@@ -2,6 +2,7 @@
 
 //! Hardware virtualization support for x86.
 
+pub(crate) mod ept;
 pub(crate) mod vmx;
 
 /// Initializes hardware-virtualization state on the current CPU.
