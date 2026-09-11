@@ -1,0 +1,25 @@
+# ACR profile for the openai-agents backend.
+#
+# Precedence: command-line flags > ACR_* environment variables > this file >
+# built-in defaults. See spec/interface.md#configuration.
+# Credentials never go here: export the API key as ACR_API_KEY and, for a
+# relay, its endpoint as ACR_BASE_URL.
+
+[agent]
+backend = "openai-agents"
+per_persona_context = "auto"
+
+# Persona reviews, separate or combined.
+[agent.persona_review]
+model = "gpt-6.1-sol"
+effort = "high"
+
+# Verification, consolidation, summary, and benchmark grading.
+[agent.postprocess]
+model = "gpt-6.1-sol"
+effort = "medium"
+
+[openai]
+# "openai" for the official OpenAI API, "any-llm" for third-party relays.
+adapter = "any-llm"
+wire_api = "responses"

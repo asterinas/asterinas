@@ -1,0 +1,18 @@
+# ACR profile for the pi-agent backend.
+#
+# Precedence: command-line flags > ACR_* environment variables > this file >
+# built-in defaults. See spec/interface.md#configuration.
+# Authentication and providers come from Pi's own login (~/.pi/agent).
+
+[agent]
+backend = "pi-agent"
+per_persona_context = "auto"
+
+# Models are Pi `provider/model-id` references.
+[agent.persona_review]
+model = "Provider_example/gpt-6.1-sol"
+effort = "high"
+
+[agent.postprocess]
+model = "Provider_example/gpt-6.1-sol"
+effort = "medium"

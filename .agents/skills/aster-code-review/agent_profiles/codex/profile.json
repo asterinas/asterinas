@@ -1,5 +1,0 @@
-{
-  "env":     { "CODEX_HOME": "{workdir}" },
-  "inherit": { "{home}/.codex/auth.json": "auth.json" },
-  "command": ["codex", "exec", "-c", "sandbox_workspace_write.network_access=true", "{prompt}"]
-}
