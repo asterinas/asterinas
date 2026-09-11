@@ -68,7 +68,7 @@ pref_address:           .quad CODE32_START
 init_size:              .long __executable_size
 
 .if {CFG_TARGET_ARCH_X86_64}
-handover_offset:        .long (entry_efi_handover32 - entry_legacy32)
+handover_offset:        .long entry_efi_handover_offset32
 .else
 handover_offset:        .long 0
 .endif

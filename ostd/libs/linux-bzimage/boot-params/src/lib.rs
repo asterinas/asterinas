@@ -26,7 +26,7 @@ pub struct BootParams {
     pub tboot_addr: u64,                /* 0x058 */
     pub ist_info: IstInfo,              /* 0x060 */
     pub acpi_rsdp_addr: u64,            /* 0x070 */
-    pub _pad3: [u8; 8],                 /* 0x078 */
+    pub unaccepted_memory: u64,         /* 0x078 */
     pub hd0_info: [u8; 16],             /* obsolete! 0x080 */
     pub hd1_info: [u8; 16],             /* obsolete! 0x090 */
     pub sys_desc_table: SysDescTable,   /* obsolete! 0x0a0 */
