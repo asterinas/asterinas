@@ -3,7 +3,10 @@
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::sync::LocalIrqDisabled;
 
-use self::{line_discipline::LineDiscipline, termio::CFontOp};
+use self::{
+    line_discipline::LineDiscipline,
+    termio::{CFontOp, CTermio},
+};
 use crate::{
     device::{Device, DeviceType},
     events::IoEvents,
@@ -232,6 +235,12 @@ impl<D: TtyDriver> Tty<D> {
         use crate::util::ioctl::common_defs::GetNumBytesToRead;
 
         dispatch_ioctl!(match raw_ioctl {
+            cmd @ GetTermio => {
+                let ldisc = self.ldisc.lock();
+                let termio = CTermio::from(&**ldisc.termios());
+
+                cmd.write(&termio)?;
+            }
             cmd @ GetTermios => {
                 let ldisc = self.ldisc.lock();
                 let termios = ldisc.termios();
@@ -244,19 +253,44 @@ impl<D: TtyDriver> Tty<D> {
 
                 cmd.write(termios)?;
             }
+            cmd @ SetTermio => {
+                let termio = cmd.read()?;
+
+                let mut ldisc = self.ldisc.lock();
+                let old_termios = **ldisc.termios();
+                ldisc.set_termio(&termio);
+                self.driver()
+                    .on_termios_change(&old_termios, ldisc.termios());
+                self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
+            }
             cmd @ SetTermios => {
                 let termios = cmd.read()?;
 
                 let mut ldisc = self.ldisc.lock();
-                self.driver().on_termios_change(ldisc.termios(), &termios);
+                let old_termios = **ldisc.termios();
                 ldisc.set_termios(termios);
+                self.driver().on_termios_change(&old_termios, &termios);
+                self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
             }
             cmd @ SetTermios2 => {
                 let termios2 = cmd.read()?;
 
                 let mut ldisc = self.ldisc.lock();
-                self.driver().on_termios_change(ldisc.termios(), &termios2);
+                let old_termios = **ldisc.termios();
                 ldisc.set_termios2(termios2);
+                self.driver().on_termios_change(&old_termios, &termios2);
+                self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
+            }
+            cmd @ SetTermioWait => {
+                let termio = cmd.read()?;
+
+                // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
+                let mut ldisc = self.ldisc.lock();
+                let old_termios = **ldisc.termios();
+                ldisc.set_termio(&termio);
+                self.driver()
+                    .on_termios_change(&old_termios, ldisc.termios());
+                self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
             }
             cmd @ SetTermiosWait => {
                 let termios = cmd.read()?;
@@ -268,16 +302,36 @@ impl<D: TtyDriver> Tty<D> {
                 //    <https://elixir.bootlin.com/linux/v5.10.247/source/drivers/tty/pty.c#L137-L148>.
                 //  - We don't currently have an output buffer for other TTYs.
                 let mut ldisc = self.ldisc.lock();
-                self.driver().on_termios_change(ldisc.termios(), &termios);
+                let old_termios = **ldisc.termios();
                 ldisc.set_termios(termios);
+                self.driver().on_termios_change(&old_termios, &termios);
+                self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
             }
             cmd @ SetTermios2Wait => {
                 let termios2 = cmd.read()?;
 
                 // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
                 let mut ldisc = self.ldisc.lock();
-                self.driver().on_termios_change(ldisc.termios(), &termios2);
+                let old_termios = **ldisc.termios();
                 ldisc.set_termios2(termios2);
+                self.driver().on_termios_change(&old_termios, &termios2);
+                self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
+            }
+            cmd @ SetTermioFlush => {
+                let termio = cmd.read()?;
+
+                // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
+                let mut ldisc = self.ldisc.lock();
+                ldisc.drain_input();
+                self.driver().notify_input_flushed();
+                let old_termios = **ldisc.termios();
+                ldisc.set_termio(&termio);
+                self.driver()
+                    .on_termios_change(&old_termios, ldisc.termios());
+                drop(ldisc);
+
+                self.pollee.invalidate();
+                self.driver().notify_input();
             }
             cmd @ SetTermiosFlush => {
                 let termios = cmd.read()?;
@@ -285,10 +339,14 @@ impl<D: TtyDriver> Tty<D> {
                 // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
                 let mut ldisc = self.ldisc.lock();
                 ldisc.drain_input();
-                self.driver().on_termios_change(ldisc.termios(), &termios);
+                self.driver().notify_input_flushed();
+                let old_termios = **ldisc.termios();
                 ldisc.set_termios(termios);
+                self.driver().on_termios_change(&old_termios, &termios);
+                drop(ldisc);
 
                 self.pollee.invalidate();
+                self.driver().notify_input();
             }
             cmd @ SetTermios2Flush => {
                 let termios2 = cmd.read()?;
@@ -296,10 +354,14 @@ impl<D: TtyDriver> Tty<D> {
                 // TODO: If applicable, wait for the output buffer to drain. (See comments above.)
                 let mut ldisc = self.ldisc.lock();
                 ldisc.drain_input();
-                self.driver().on_termios_change(ldisc.termios(), &termios2);
+                self.driver().notify_input_flushed();
+                let old_termios = **ldisc.termios();
                 ldisc.set_termios2(termios2);
+                self.driver().on_termios_change(&old_termios, &termios2);
+                drop(ldisc);
 
                 self.pollee.invalidate();
+                self.driver().notify_input();
             }
             cmd @ GetWinSize => {
                 let winsize = self.ldisc.lock().window_size();

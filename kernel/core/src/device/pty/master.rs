@@ -153,9 +153,9 @@ impl PerOpenFileOps for PtyMaster {
         use crate::{device::tty::ioctl_defs::*, util::ioctl::common_defs::GetNumBytesToRead};
 
         dispatch_ioctl!(match raw_ioctl {
-            GetTermios | GetTermios2 | SetTermios | SetTermios2 | SetTermiosWait
-            | SetTermios2Wait | SetTermiosFlush | SetTermios2Flush | GetWinSize | SetWinSize
-            | GetPtyNumber => {
+            GetTermio | GetTermios | GetTermios2 | SetTermio | SetTermios | SetTermios2
+            | SetTermioWait | SetTermiosWait | SetTermios2Wait | SetTermioFlush
+            | SetTermiosFlush | SetTermios2Flush | GetWinSize | SetWinSize | GetPtyNumber => {
                 return self.slave.ioctl(raw_ioctl);
             }
 

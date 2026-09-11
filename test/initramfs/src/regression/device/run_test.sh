@@ -11,6 +11,7 @@ set -e
 ./pty/pty_blocking
 ./pty/pty_packet_mode
 ./pty/signal_char
+./pty/termio
 ./pty/termios2
 
 ./vt/vt_ioctl

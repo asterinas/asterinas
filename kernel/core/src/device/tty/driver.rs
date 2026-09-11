@@ -54,6 +54,11 @@ pub(crate) trait TtyDriver: Send + Sync + 'static {
     /// [`Tty::can_push`]: super::Tty::can_push
     fn notify_input(&self);
 
+    /// Notifies that the input buffer has been flushed.
+    ///
+    /// This method will be called with a spin lock held, so it cannot break atomic mode.
+    fn notify_input_flushed(&self) {}
+
     /// Notifies that the TTY termios is changed.
     ///
     /// This method will be called with a spin lock held, so it cannot break atomic mode.
