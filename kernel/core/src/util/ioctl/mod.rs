@@ -9,15 +9,18 @@
 //! strongly typed [`Ioctl`] instance, which decodes the ioctl command and includes type
 //! information about the ioctl argument.
 //!
-//! To achieve this, define type aliases for [`Ioctl`] using the [`ioc`] macro, preferably in a
-//! separate module for clarity. At the function that dispatches the ioctl commands, we can
-//! glob-import the defined [`Ioctl`] type aliases and use the [`dispatch_ioctl`] macro for the
-//! ioctl dispatching.
+//! To achieve this, define type aliases for [`Ioctl`] using the [`ioc!`](crate::ioc) macro,
+//! preferably in a separate module for clarity. At the function that dispatches the ioctl
+//! commands, we can glob-import the defined [`Ioctl`] type aliases and use the
+//! [`dispatch_ioctl!`](crate::dispatch_ioctl) macro for the ioctl dispatching.
 //!
 //! Here is an complete example that demonstrates the basic usage:
 //! ```
 //! mod ioctl_defs {
-//!     use crate::util::ioctl::{ioc, InData, OutData, PassByVal};
+//!     use aster_core::{
+//!         ioc,
+//!         util::ioctl::{InData, OutData, PassByVal},
+//!     };
 //!
 //!     // Here we give the code in Linux to provide an intuitive guide on how to use the `ioc`
 //!     // macro and how it corresponds to the Linux definitions. This is for demonstration
@@ -108,24 +111,24 @@ mod sealed;
 
 /// An ioctl command and its argument in raw form.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct RawIoctl {
+pub struct RawIoctl {
     cmd: u32,
     arg: usize,
 }
 
 impl RawIoctl {
     /// Creates an instance with the given ioctl command and argument.
-    pub(crate) const fn new(cmd: u32, arg: usize) -> Self {
+    pub const fn new(cmd: u32, arg: usize) -> Self {
         Self { cmd, arg }
     }
 
     /// Returns the ioctl command.
-    pub(crate) const fn cmd(self) -> u32 {
+    pub const fn cmd(self) -> u32 {
         self.cmd
     }
 
     /// Returns the ioctl argument.
-    pub(crate) const fn arg(self) -> usize {
+    pub const fn arg(self) -> usize {
         self.arg
     }
 }
@@ -142,7 +145,7 @@ impl RawIoctl {
 ///
 /// `D` is one of [`NoData`], [`InData`], [`OutData`], or [`InOutData`].
 /// It specifies key aspects about the input/output data in the ioctl argument.
-pub(crate) struct Ioctl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D> {
+pub struct Ioctl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D> {
     cmd: IoctlCmd,
     arg: usize,
     _phantom: PhantomData<D>,
@@ -176,6 +179,7 @@ pub(crate) struct Ioctl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D>
 /// ```
 /// type SetPtyLock = Ioctl<b'T', 0x31, /* IS_MODERN = */ true, InData<i32>>;
 /// ```
+#[macro_export]
 macro_rules! ioc {
     // Legacy encoding.
     ($linux_name:ident, $raw:literal, $data:ty) => {
@@ -200,11 +204,10 @@ macro_rules! ioc {
         $crate::util::ioctl::Ioctl::<{ $magic }, { $nr }, { true }, $data>
     };
 }
-pub(crate) use ioc;
 
 /// Extracts the "magic" and "number" fields from an ioctl command.
 #[doc(hidden)]
-pub(crate) const fn magic_and_nr_from_cmd(raw_cmd: u16) -> (u8, u8) {
+pub const fn magic_and_nr_from_cmd(raw_cmd: u16) -> (u8, u8) {
     let cmd = IoctlCmd::new(raw_cmd as u32);
     (cmd.magic(), cmd.nr())
 }
@@ -216,7 +219,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D: DataSpec>
     ///
     /// This method succeeds only if the ioctl command matches. Otherwise, this method returns
     /// `None`.
-    pub(crate) fn try_from_raw(raw_ioctl: RawIoctl) -> Option<Self> {
+    pub fn try_from_raw(raw_ioctl: RawIoctl) -> Option<Self> {
         let cmd = IoctlCmd::new(raw_ioctl.cmd);
 
         if cmd.magic() != MAGIC {
@@ -263,7 +266,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, D: PtrDataSpec>
 }
 
 /// No input/output data.
-pub(crate) struct NoData;
+pub struct NoData;
 
 impl DataSpec for NoData {
     const SIZE: Option<u16> = Some(0);
@@ -274,7 +277,7 @@ impl DataSpec for NoData {
 ///
 /// `T` describes the data type.
 /// `P` describes how the data is passed (by value or by pointer).
-pub(crate) struct InData<T: ?Sized, P = PassByPtr>(PhantomData<T>, PhantomData<P>);
+pub struct InData<T: ?Sized, P = PassByPtr>(PhantomData<T>, PhantomData<P>);
 
 impl<T, P> DataSpec for InData<T, P> {
     const SIZE: Option<u16> = Some(u16_size_of::<T>());
@@ -289,7 +292,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
     Ioctl<MAGIC, NR, IS_MODERN, InData<T, PassByPtr>>
 {
     /// Reads the ioctl argument from userspace.
-    pub(crate) fn read(&self) -> Result<T> {
+    pub fn read(&self) -> Result<T> {
         Ok(self.with_data_ptr_unchecked_access(|ptr| ptr.read())?)
     }
 }
@@ -301,7 +304,7 @@ macro_rules! impl_get_by_val_for {
                 Ioctl<MAGIC, NR, IS_MODERN, InData<$ty, PassByVal>>
             {
                 /// Gets the ioctl argument.
-                pub(crate) fn get(&self) -> $ty {
+                pub fn get(&self) -> $ty {
                     self.arg as $ty
                 }
             }
@@ -323,8 +326,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
     /// Obtains a [`VmReader`] that can read the dynamically-sized ioctl argument from userspace.
     ///
     /// The size of the ioctl argument is specified in [`VmReader::remain`].
-    #[expect(dead_code)]
-    pub(crate) fn with_reader<F, R>(&self, f: F) -> Result<R>
+    pub fn with_reader<F, R>(&self, f: F) -> Result<R>
     where
         F: for<'a> FnOnce(VmReader<'a>) -> Result<R>,
     {
@@ -333,7 +335,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
 }
 
 /// Output-only data, always passed by pointer.
-pub(crate) struct OutData<T: ?Sized>(PhantomData<T>);
+pub struct OutData<T: ?Sized>(PhantomData<T>);
 
 impl<T> DataSpec for OutData<T> {
     const SIZE: Option<u16> = Some(u16_size_of::<T>());
@@ -348,7 +350,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
     Ioctl<MAGIC, NR, IS_MODERN, OutData<T>>
 {
     /// Writes the ioctl argument to userspace.
-    pub(crate) fn write(&self, val: &T) -> Result<()> {
+    pub fn write(&self, val: &T) -> Result<()> {
         self.with_data_ptr_unchecked_access(|ptr| ptr.write(val))?;
         Ok(())
     }
@@ -365,7 +367,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
     /// Obtains a [`VmWriter`] that can write the dynamically-sized ioctl argument to userspace.
     ///
     /// The size of the ioctl argument is specified in [`VmWriter::avail`].
-    pub(crate) fn with_writer<F, R>(&self, f: F) -> Result<R>
+    pub fn with_writer<F, R>(&self, f: F) -> Result<R>
     where
         F: for<'a> FnOnce(VmWriter<'a>) -> Result<R>,
     {
@@ -374,7 +376,7 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool>
 }
 
 /// Input and output data, passed by pointer to a single object.
-pub(crate) struct InOutData<T>(PhantomData<T>);
+pub struct InOutData<T>(PhantomData<T>);
 
 impl<T> DataSpec for InOutData<T> {
     const SIZE: Option<u16> = Some(u16_size_of::<T>());
@@ -389,17 +391,17 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
     Ioctl<MAGIC, NR, IS_MODERN, InOutData<T>>
 {
     /// Reads the ioctl argument from userspace.
-    pub(crate) fn read(&self) -> Result<T> {
+    pub fn read(&self) -> Result<T> {
         self.with_data_ptr(|ptr| Ok(ptr.read()?))
     }
 
     /// Writes the ioctl argument to userspace.
-    pub(crate) fn write(&self, val: &T) -> Result<()> {
+    pub fn write(&self, val: &T) -> Result<()> {
         self.with_data_ptr(|ptr| Ok(ptr.write(val)?))
     }
 
-    /// Obtains a [`SafePtr`] that can access the ioctl argument in userspace.
-    pub(crate) fn with_data_ptr<F, R>(&self, f: F) -> Result<R>
+    /// Provides access to the ioctl argument and its userspace memory.
+    pub fn with_data_ptr<F, R>(&self, f: F) -> Result<R>
     where
         F: for<'a> FnOnce(SafePtr<T, CurrentUserSpace<'a>>) -> Result<R>,
     {
@@ -408,9 +410,9 @@ impl<const MAGIC: u8, const NR: u8, const IS_MODERN: bool, T: Pod>
 }
 
 /// A marker that denotes the input is passed by value (i.e., encoded in the ioctl argument).
-pub(crate) enum PassByVal {}
+pub enum PassByVal {}
 /// A marker that denotes the input is passed by pointer (i.e., pointed to by the ioctl argument).
-pub(crate) enum PassByPtr {}
+pub enum PassByPtr {}
 
 const fn u16_size_of<T>() -> u16 {
     let size = size_of::<T>();
@@ -423,8 +425,9 @@ const fn u16_size_of<T>() -> u16 {
 
 /// Dispatches ioctl commands.
 ///
-/// See [the module-level documentation](self) for how to use this macro and the suggested style to
-/// use this macro.
+/// See the [`ioctl` module documentation](crate::util::ioctl) for how to use this macro and the
+/// suggested style.
+#[macro_export]
 macro_rules! dispatch_ioctl {
     // An empty match.
     (
@@ -454,7 +457,7 @@ macro_rules! dispatch_ioctl {
         {
             $arm
         } else {
-            crate::util::ioctl::dispatch_ioctl!(match $raw { $($rest)* })
+            $crate::dispatch_ioctl!(match $raw { $($rest)* })
         }
     };
 
@@ -468,11 +471,10 @@ macro_rules! dispatch_ioctl {
         if let Some($bind) = <$ty>::try_from_raw($raw) {
             $arm
         } else {
-            crate::util::ioctl::dispatch_ioctl!(match $raw { $($rest)* })
+            $crate::dispatch_ioctl!(match $raw { $($rest)* })
         }
     };
 }
-pub(crate) use dispatch_ioctl;
 
 /// An ioctl enum that represents one of a possible set of almost identical [`Ioctl`]s.
 ///

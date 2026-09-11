@@ -6,7 +6,7 @@ use crate::{device::DeviceType, prelude::*};
 
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-pub(crate) enum InodeType {
+pub enum InodeType {
     Unknown = 0o000000,
     NamedPipe = 0o010000,
     CharDevice = 0o020000,

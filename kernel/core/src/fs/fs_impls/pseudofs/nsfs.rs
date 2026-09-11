@@ -8,6 +8,7 @@ use ostd::task::Task;
 use spin::Once;
 
 use crate::{
+    dispatch_ioctl,
     events::IoEvents,
     fs::{
         file::{
@@ -27,7 +28,7 @@ use crate::{
         CloneFlags, Gid, Uid, UserNamespace,
         signal::{PollHandle, Pollable},
     },
-    util::ioctl::{RawIoctl, dispatch_ioctl},
+    util::ioctl::RawIoctl,
 };
 
 pub(super) fn init() {
@@ -432,7 +433,10 @@ impl From<NsType> for CloneFlags {
 const NSFS_MAGIC: u64 = 0x6e736673;
 
 mod ioctl_defs {
-    use crate::util::ioctl::{InData, NoData, OutData, ioc};
+    use crate::{
+        ioc,
+        util::ioctl::{InData, NoData, OutData},
+    };
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/nsfs.h#L10>
 

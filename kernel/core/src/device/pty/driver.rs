@@ -9,14 +9,12 @@ use crate::{
             termio::{CCtrlCharId, CInputFlags, CLocalFlags, CTermios},
         },
     },
+    dispatch_ioctl,
     events::IoEvents,
     fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
     prelude::*,
     process::signal::Pollee,
-    util::{
-        ioctl::{RawIoctl, dispatch_ioctl},
-        ring_buffer::RingBuffer,
-    },
+    util::{ioctl::RawIoctl, ring_buffer::RingBuffer},
 };
 
 const BUFFER_CAPACITY: usize = 8192;

@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub(crate) mod file;
+pub mod file;
 mod fs_impls;
 pub(crate) mod initramfs;
 pub(crate) mod pipe;
 pub(crate) mod rootfs;
 pub(crate) mod thread_info;
-pub(crate) mod utils;
-pub(crate) mod vfs;
+pub mod utils;
+pub mod vfs;
 
+pub use fs_impls::devtmpfs;
 pub(crate) use fs_impls::{
-    cgroupfs, configfs, devpts, devtmpfs, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
+    cgroupfs, configfs, devpts, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
 };
 
 use crate::{

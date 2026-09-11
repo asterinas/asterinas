@@ -557,7 +557,7 @@ pub(crate) enum SeekFrom {
 /// A per-open file object can hold file-description-specific state and override
 /// operations that are not purely inode-backed, such as state and operations for
 /// devices, pipes, namespace files, and procfs files.
-pub(crate) trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
+pub trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
     /// Checks whether the `seek()` operation should fail.
     fn check_seekable(&self) -> Result<()>;
 

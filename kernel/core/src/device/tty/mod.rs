@@ -6,6 +6,7 @@ use ostd::sync::LocalIrqDisabled;
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
     device::{Device, DeviceType},
+    dispatch_ioctl,
     events::IoEvents,
     fs::{
         devtmpfs::DevtmpfsNodeMeta,
@@ -16,7 +17,7 @@ use crate::{
         JobControl, Terminal, broadcast_signal_async,
         signal::{PollHandle, Pollable, Pollee},
     },
-    util::ioctl::{RawIoctl, dispatch_ioctl},
+    util::ioctl::RawIoctl,
 };
 
 mod device;

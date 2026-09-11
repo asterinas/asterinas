@@ -337,7 +337,7 @@ bitflags! {
 /// For inode-backed files without per-`open()` state, [`Inode`] implements this
 /// trait directly. For files whose behavior depends on state created by `open`,
 /// the per-`open()` object implements this trait through [`PerOpenFileOps`].
-pub(crate) trait FileOps {
+pub trait FileOps {
     /// Reads data from the file into the given `VmWriter`.
     fn read_at(
         &self,

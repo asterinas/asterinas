@@ -26,11 +26,15 @@ pub(crate) use ostd::{
 pub(crate) use ostd_pod::{FromBytes, FromZeros, IntoBytes, Pod};
 
 pub(crate) use crate::{
-    context::{Context, CurrentUserSpace, current, current_thread},
-    error::{Errno, Error, return_errno, return_errno_with_message},
+    context::{Context, CurrentUserSpace, current_thread},
+    current,
     process::{posix_thread::AsThreadLocal, signal::Pause},
     time::{Clock, wait::WaitTimeout},
     util::ReadCString,
 };
+pub use crate::{
+    error::{Errno, Error},
+    return_errno, return_errno_with_message,
+};
 
-pub(crate) type Result<T, E = Error> = core::result::Result<T, E>;
+pub type Result<T, E = Error> = core::result::Result<T, E>;

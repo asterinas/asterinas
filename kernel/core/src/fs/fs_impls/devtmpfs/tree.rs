@@ -33,21 +33,21 @@ use crate::{
 /// matching Linux devtmpfs's default device inode permissions.
 /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/base/devtmpfs.c#L11>.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct DevtmpfsNodeMeta {
+pub struct DevtmpfsNodeMeta {
     path: Cow<'static, str>,
     mode: InodeMode,
 }
 
 /// An error returned by [`DevtmpfsNodeMeta::new`] and [`DevtmpfsNodeMeta::with_mode`].
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct InvalidDevtmpfsPath;
+pub struct InvalidDevtmpfsPath;
 
 impl DevtmpfsNodeMeta {
     /// Creates the metadata for a devtmpfs node with the default mode (`u+rw`).
     ///
     /// `path` must be a non-empty, relative, well-formed path. For example,
     /// `a/b/c` is valid, whereas `/`, `/abc`, `a//b`, and `a/b/` are invalid.
-    pub(crate) fn new(path: impl Into<Cow<'static, str>>) -> Result<Self, InvalidDevtmpfsPath> {
+    pub fn new(path: impl Into<Cow<'static, str>>) -> Result<Self, InvalidDevtmpfsPath> {
         Self::with_mode(path, mkmod!(u+rw))
     }
 

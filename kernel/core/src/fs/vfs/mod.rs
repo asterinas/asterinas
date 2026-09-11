@@ -7,11 +7,12 @@
 
 mod fs_apis;
 pub(crate) mod notify;
-pub(crate) mod path;
+pub mod path;
 pub(crate) mod range_lock;
 
 // Re-export commonly used abstractions from `fs_apis`
-pub(crate) use fs_apis::{file_system, inode, inode_ext, registry, xattr};
+pub use fs_apis::inode;
+pub(crate) use fs_apis::{file_system, inode_ext, registry, xattr};
 
 pub(super) fn init() {
     fs_apis::init();
