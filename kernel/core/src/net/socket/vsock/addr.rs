@@ -29,7 +29,7 @@ impl From<VsockSocketAddr> for SocketAddr {
 }
 
 pub(super) const VMADDR_CID_ANY: u32 = u32::MAX;
-pub(super) const VMADDR_CID_HOST: u32 = 2;
+pub(crate) const VMADDR_CID_HOST: u32 = 2;
 
 pub(super) const VMADDR_PORT_ANY: u32 = u32::MAX;
 

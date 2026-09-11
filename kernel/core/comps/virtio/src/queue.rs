@@ -10,17 +10,18 @@ use core::{
 
 use aster_rights::{Dup, TRightSet, TRights, Write};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use bitflags::bitflags;
 use ostd::{
     debug,
-    mm::{HasPaddr, PodOnce, Split, dma::DmaCoherent},
+    mm::{HasPaddr, Split, dma::DmaCoherent},
 };
 
+pub use crate::virtio_ring::{AvailRing, Descriptor, UsedElem, UsedRing};
 use crate::{
     dma_buf::DmaBuf,
     transport::{
         ConfigManager, VirtioTransport, VirtioTransportError, pci::legacy::VirtioPciLegacyTransport,
     },
+    virtio_ring::{AvailFlags, DescFlags},
 };
 
 /// The mechanism for bulk data transport on virtio devices.
@@ -340,7 +341,7 @@ impl VirtQueue {
 
         {
             let avail_slot = self.avail_idx & (self.device_queue_size - 1);
-            let ring_ptr: SafePtr<[u16; 64], &Arc<DmaCoherent>> =
+            let ring_ptr: SafePtr<[u16; 0], &Arc<DmaCoherent>> =
                 field_ptr!(&self.avail, AvailRing, ring);
             let mut ring_slot_ptr = ring_ptr.cast::<u16>();
             ring_slot_ptr.add(avail_slot as usize);
@@ -539,15 +540,6 @@ impl VirtQueue {
     }
 }
 
-#[repr(C, align(16))]
-#[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct Descriptor {
-    addr: u64,
-    len: u32,
-    flags: DescFlags,
-    next: u16,
-}
-
 type DescriptorPtr<'a> = SafePtr<Descriptor, &'a Arc<DmaCoherent>, TRightSet<TRights![Dup, Write]>>;
 
 fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) -> u32 {
@@ -567,61 +559,3 @@ fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) -> u32 {
 
     len as u32
 }
-
-bitflags! {
-    /// Descriptor flags.
-    #[repr(C)]
-    #[derive(Default, Pod)]
-    struct DescFlags: u16 {
-        const NEXT = 1;
-        const WRITE = 2;
-        const INDIRECT = 4;
-    }
-}
-
-impl PodOnce for DescFlags {}
-
-/// The driver uses the available ring to offer buffers to the device:
-/// each ring entry refers to the head of a descriptor chain.
-/// It is only written by the driver and read by the device.
-#[repr(C, align(2))]
-#[derive(Clone, Copy, Debug, Pod)]
-pub struct AvailRing {
-    flags: AvailFlags,
-    /// A driver MUST NOT decrement the idx.
-    idx: u16,
-    ring: [u16; 64], // actual size: queue_size
-    used_event: u16, // unused
-}
-
-/// The used ring is where the device returns buffers once it is done with them.
-/// It is only written to by the device and read by the driver.
-#[padding_struct]
-#[repr(C, align(4))]
-#[derive(Clone, Copy, Debug, Pod)]
-pub struct UsedRing {
-    flags: u16,
-    /// The next index of the used element in the ring array.
-    idx: u16,
-    ring: [UsedElem; 64], // actual size: queue_size
-    avail_event: u16,     // unused
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct UsedElem {
-    id: u32,
-    len: u32,
-}
-
-bitflags! {
-    /// The flags used in [`AvailRing`].
-    #[repr(C)]
-    #[derive(Pod)]
-    struct AvailFlags: u16 {
-        /// The flag used to disable virtqueue interrupts.
-        const VIRTQ_AVAIL_F_NO_INTERRUPT = 1;
-    }
-}
-
-impl PodOnce for AvailFlags {}

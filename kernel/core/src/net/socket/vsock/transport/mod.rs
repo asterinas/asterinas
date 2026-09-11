@@ -27,9 +27,12 @@ mod timer;
 
 use core::time::Duration;
 
+use aster_virtio::device::socket::header::VirtioVsockHdr;
 pub(super) use connection::{Connection, connect::ConnectResult};
 pub(super) use listener::Listener;
 pub(super) use port::BoundPort;
+
+use crate::prelude::*;
 
 // Reference: <https://elixir.bootlin.com/linux/v6.16.8/source/net/vmw_vsock/af_vsock.c#L136>
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -56,17 +59,53 @@ fn process_event_callback() {
     }
 }
 
-/// Initializes the virtio-vsock transport when the default device is present.
+/// Initializes either the default virtio frontend or the host vhost transport.
 pub(super) fn init() {
     use aster_virtio::device::socket::DEVICE_NAME;
 
-    let Some(device) = aster_virtio::device::socket::get_device(DEVICE_NAME) else {
-        return;
-    };
-
-    device.init_rx_callback(process_rx_callback);
-    device.init_event_callback(process_event_callback);
-    space::init(device);
+    if let Some(device) = aster_virtio::device::socket::get_device(DEVICE_NAME) {
+        device.init_rx_callback(process_rx_callback);
+        device.init_event_callback(process_event_callback);
+        space::init(device);
+    } else {
+        space::init_host_vhost();
+    }
 
     timer::init();
+}
+
+pub(super) fn ensure_vhost_backend() -> Result<()> {
+    if !space::vsock_space()?.is_vhost_backend() {
+        return_errno_with_message!(
+            Errno::EOPNOTSUPP,
+            "a virtio-vsock frontend is already active"
+        );
+    }
+    Ok(())
+}
+
+pub(super) fn handle_vhost_packet(header: VirtioVsockHdr, payload: &[u8]) -> Result<()> {
+    ensure_vhost_backend()?;
+    space::vsock_space()?.process_vhost_packet(header, payload);
+    Ok(())
+}
+
+pub(super) fn reset_vhost_connections(cid: u32) {
+    if let Ok(space) = space::vsock_space()
+        && space.is_vhost_backend()
+    {
+        space.reset_vhost_connections(cid);
+    }
+}
+
+pub(super) fn notify_vhost_writable(cid: u32) {
+    if let Ok(space) = space::vsock_space()
+        && space.is_vhost_backend()
+    {
+        space.notify_vhost_writable(cid);
+    }
+}
+
+pub(super) fn can_connect_remote_cid(cid: u32) -> bool {
+    space::vsock_space().is_ok_and(|space| space.can_connect_remote_cid(cid))
 }

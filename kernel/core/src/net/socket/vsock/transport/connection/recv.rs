@@ -3,14 +3,14 @@
 #![short_vis_path::add(vsock)]
 
 use aster_bigtcp::socket::ReceiveBehavior;
-use aster_virtio::device::socket::{header::VirtioVsockOp, packet::RxPacket};
+use aster_virtio::device::socket::header::VirtioVsockOp;
 
 use crate::{
     net::socket::{
         util::RecvFlags,
         vsock::transport::{
             CREDIT_UPDATE_THRESHOLD, Connection,
-            connection::{ConnectionInner, ConnectionState},
+            connection::{ConnectionInner, ConnectionState, RxPayload},
         },
     },
     prelude::*,
@@ -72,7 +72,7 @@ impl Connection {
 }
 
 struct PoppedRxPackets<'a> {
-    packets: &'a mut [Option<RxPacket>],
+    packets: &'a mut [Option<RxPayload>],
     read_offset: usize,
 }
 
@@ -126,7 +126,7 @@ impl ConnectionState {
     fn grab_packets_to_recv<'a>(
         &mut self,
         conn: &ConnectionInner,
-        packet_pool: &'a mut [Option<RxPacket>],
+        packet_pool: &'a mut [Option<RxPayload>],
         max_bytes: usize,
     ) -> Result<Option<PoppedRxPackets<'a>>> {
         if max_bytes != 0
@@ -146,7 +146,7 @@ impl ConnectionState {
 
     fn pop_rx_packets<'a>(
         &mut self,
-        packet_pool: &'a mut [Option<RxPacket>],
+        packet_pool: &'a mut [Option<RxPayload>],
         mut max_bytes: usize,
     ) -> Option<PoppedRxPackets<'a>> {
         let mut read_offset = None;

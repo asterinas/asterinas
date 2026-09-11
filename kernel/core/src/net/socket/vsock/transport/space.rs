@@ -4,7 +4,7 @@ use aster_softirq::BottomHalfDisabled;
 use aster_virtio::device::socket::{
     device::SocketDevice,
     header::{VirtioVsockHdr, VirtioVsockOp, VirtioVsockShutdownFlags, VirtioVsockType},
-    packet::{RxPacket, TxPacket},
+    packet::TxPacket,
 };
 use ostd::sync::PreemptDisabled;
 use spin::Once;
@@ -12,22 +12,31 @@ use spin::Once;
 use crate::{
     events::IoEvents,
     net::socket::vsock::{
-        addr::VsockSocketAddr,
+        addr::{VMADDR_CID_HOST, VsockSocketAddr},
         transport::{
-            BoundPort, Connection, Listener, conn_id::ConnId, connection::ConnectionInner,
-            listener::ListenerInner, port::PortTable, timer::TimerEvent,
+            BoundPort, Connection, Listener,
+            conn_id::ConnId,
+            connection::{ConnectionInner, RxPayload},
+            listener::ListenerInner,
+            port::PortTable,
+            timer::TimerEvent,
         },
     },
     prelude::*,
     process::signal::Pollee,
 };
 
-// We currently support only one vsock device.
-// TODO: Add support for multiple vsock devices and the loopback vsock device.
+// A machine uses either the guest frontend or the host backend. Supporting both requires
+// selecting a transport per connection and separating their local port namespaces.
 pub(super) struct VsockSpace {
-    device: Arc<SocketDevice>,
+    backend: VsockBackend,
     ports: SpinLock<PortTable>,
     sockets: SpinLock<SocketTable, BottomHalfDisabled>,
+}
+
+enum VsockBackend {
+    Virtio(Arc<SocketDevice>),
+    Vhost,
 }
 
 struct SocketTable {
@@ -36,9 +45,9 @@ struct SocketTable {
 }
 
 impl VsockSpace {
-    fn new(device: Arc<SocketDevice>) -> Self {
+    fn new(backend: VsockBackend) -> Self {
         Self {
-            device,
+            backend,
             ports: SpinLock::new(PortTable::new()),
             sockets: SpinLock::new(SocketTable {
                 connections: BTreeMap::new(),
@@ -47,12 +56,29 @@ impl VsockSpace {
         }
     }
 
-    pub(super) fn device(&self) -> &SocketDevice {
-        &self.device
+    pub(super) fn virtio_device(&self) -> Option<&SocketDevice> {
+        match &self.backend {
+            VsockBackend::Virtio(device) => Some(device),
+            VsockBackend::Vhost => None,
+        }
+    }
+
+    pub(super) fn is_vhost_backend(&self) -> bool {
+        matches!(self.backend, VsockBackend::Vhost)
     }
 
     pub(super) fn guest_cid(&self) -> u64 {
-        self.device.guest_cid()
+        match &self.backend {
+            VsockBackend::Virtio(device) => device.guest_cid(),
+            VsockBackend::Vhost => VMADDR_CID_HOST as u64,
+        }
+    }
+
+    pub(super) fn can_connect_remote_cid(&self, cid: u32) -> bool {
+        match &self.backend {
+            VsockBackend::Virtio(_) => cid == VMADDR_CID_HOST,
+            VsockBackend::Vhost => crate::device::misc::vhost_vsock::can_connect_remote_cid(cid),
+        }
     }
 
     pub(super) fn lock_ports(&self) -> SpinLockGuard<'_, PortTable, PreemptDisabled> {
@@ -71,6 +97,15 @@ impl VsockSpace {
         use alloc::collections::btree_map::Entry;
 
         let mut sockets = self.sockets.lock();
+
+        // Recheck under the same lock used by backend teardown, so a concurrent stop cannot
+        // leave a newly inserted connection behind after clearing this CID's connections.
+        if !self.can_connect_remote_cid(remote_addr.cid) {
+            return Err((
+                Error::with_message(Errno::ENETUNREACH, "the vsock CID is not reachable"),
+                bound_port,
+            ));
+        }
 
         // Note that we should query the guest CID (part of `from_port_and_remote`) after locking
         // `sockets` to avoid race conditions with `process_transport_event`.
@@ -178,27 +213,38 @@ impl VsockSpace {
     pub(super) fn process_rx(&self) {
         // Lock order: device RX -> sockets -> socket state -> device TX
 
-        let mut rx = self.device.lock_rx();
+        let device = self.virtio_device().unwrap();
+        let mut rx = device.lock_rx();
         let mut sockets = self.sockets.lock();
 
         while let Some(packet) = rx.recv() {
-            self.process_rx_packet(&mut sockets, packet);
+            let header = packet.header();
+            self.process_rx_packet(&mut sockets, &header, RxPayload::Virtio(packet));
         }
     }
 
-    fn process_rx_packet(&self, sockets: &mut SocketTable, packet: RxPacket) {
+    pub(super) fn process_vhost_packet(&self, header: VirtioVsockHdr, payload: &[u8]) {
+        let packet = RxPayload::Vhost(payload.to_vec());
+        let mut sockets = self.sockets.lock();
+        self.process_rx_packet(&mut sockets, &header, packet);
+    }
+
+    fn process_rx_packet(
+        &self,
+        sockets: &mut SocketTable,
+        header: &VirtioVsockHdr,
+        packet: RxPayload,
+    ) {
         use alloc::collections::btree_map::Entry;
 
-        let header = packet.header();
-
-        let conn_id = ConnId::from_incoming_header(&header);
+        let conn_id = ConnId::from_incoming_header(header);
         let entry = sockets.connections.entry(conn_id);
 
         match entry {
             Entry::Vacant(vacant) => {
-                self.process_rx_with_listener(&sockets.listeners, vacant, &header, packet)
+                self.process_rx_with_listener(&sockets.listeners, vacant, header, packet)
             }
-            Entry::Occupied(occupied) => self.process_rx_with_connection(occupied, &header, packet),
+            Entry::Occupied(occupied) => self.process_rx_with_connection(occupied, header, packet),
         }
     }
 
@@ -207,7 +253,7 @@ impl VsockSpace {
         listeners: &BTreeMap<u32, Arc<ListenerInner>>,
         vacant_conn: alloc::collections::btree_map::VacantEntry<'_, ConnId, Arc<ConnectionInner>>,
         header: &VirtioVsockHdr,
-        packet: RxPacket,
+        packet: RxPayload,
     ) {
         if header.op() != Some(VirtioVsockOp::Request)
             || !self.validate_rx_header(VirtioVsockOp::Request, header, &packet)
@@ -243,7 +289,7 @@ impl VsockSpace {
             Arc<ConnectionInner>,
         >,
         header: &VirtioVsockHdr,
-        packet: RxPacket,
+        packet: RxPayload,
     ) {
         let op = if let Some(op) = header.op()
             && self.validate_rx_header(op, header, &packet)
@@ -317,7 +363,40 @@ impl VsockSpace {
         }
 
         // The reload of the guest CID is protectd by the `sockets` lock.
-        self.device.reload_guest_id();
+        self.virtio_device().unwrap().reload_guest_id();
+    }
+
+    pub(super) fn reset_vhost_connections(&self, cid: u32) {
+        // The device has stopped routing this CID before entering here. Lock order remains
+        // sockets -> socket state; callers must not hold a device or backend registry lock.
+        let mut sockets = self.sockets.lock();
+        let mut pollees = Vec::new();
+        sockets.connections.retain(|conn_id, connection| {
+            if conn_id.peer_cid != cid as u64 {
+                return true;
+            }
+
+            connection.on_transport_reset();
+            pollees.push(connection.pollee().clone());
+            false
+        });
+
+        // Connecting sockets can finish only after the table drops its Arc. In particular,
+        // notifying from inside retain would let a waiter observe a result that is not ready.
+        for pollee in pollees {
+            pollee.notify(
+                IoEvents::IN | IoEvents::OUT | IoEvents::RDHUP | IoEvents::HUP | IoEvents::ERR,
+            );
+        }
+    }
+
+    pub(super) fn notify_vhost_writable(&self, cid: u32) {
+        let sockets = self.sockets.lock();
+        for (conn_id, connection) in &sockets.connections {
+            if conn_id.peer_cid == cid as u64 {
+                connection.pollee().notify(IoEvents::OUT);
+            }
+        }
     }
 
     pub(super) fn process_timer_events(&self, events: Vec<TimerEvent>) {
@@ -370,6 +449,16 @@ impl VsockSpace {
     // most cases. If possible, we should find better ways to handle the error.
     #[must_use]
     pub(super) fn send_packet(&self, header: &VirtioVsockHdr) -> bool {
+        let Some(device) = self.virtio_device() else {
+            return match crate::device::misc::vhost_vsock::send_packet(header, &[]) {
+                Ok(sent) => sent,
+                Err(err) => {
+                    warn!("failed to send vhost-vsock control packet: {:?}", err);
+                    false
+                }
+            };
+        };
+
         let Ok(builder) = TxPacket::new_builder() else {
             warn!("failed to allocate vsock packet: {:?}", header);
             return false;
@@ -378,7 +467,7 @@ impl VsockSpace {
 
         // Lock order: socket state -> device TX
 
-        let mut tx = self.device.lock_tx();
+        let mut tx = device.lock_tx();
         match tx.try_send(packet) {
             Ok(()) => (),
             Err(pending) => {
@@ -396,7 +485,7 @@ impl VsockSpace {
         &self,
         op: VirtioVsockOp,
         header: &VirtioVsockHdr,
-        packet: &RxPacket,
+        packet: &RxPayload,
     ) -> bool {
         if header.type_ != VirtioVsockType::Stream as u16 {
             return false;
@@ -430,9 +519,13 @@ static VSOCK_SPACE: Once<VsockSpace> = Once::new();
 pub(super) fn vsock_space() -> Result<&'static VsockSpace> {
     VSOCK_SPACE
         .get()
-        .ok_or_else(|| Error::with_message(Errno::ENODEV, "no virtio-vsock device is available"))
+        .ok_or_else(|| Error::with_message(Errno::ENODEV, "no vsock transport is available"))
 }
 
 pub(super) fn init(device: Arc<SocketDevice>) {
-    VSOCK_SPACE.call_once(move || VsockSpace::new(device));
+    VSOCK_SPACE.call_once(move || VsockSpace::new(VsockBackend::Virtio(device)));
+}
+
+pub(super) fn init_host_vhost() {
+    VSOCK_SPACE.call_once(|| VsockSpace::new(VsockBackend::Vhost));
 }

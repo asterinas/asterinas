@@ -58,7 +58,6 @@ impl KernelEventFile {
 
     /// Gets an independently owned kernel-facing state from an eventfd file.
     /// Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L366>.
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(crate) fn from_file(file: &dyn FileLike) -> Result<Arc<Self>> {
         let event_file = file
             .downcast_ref::<EventFile>()
@@ -122,7 +121,6 @@ impl KernelEventFile {
     /// Unlike userspace writes, this operation may bring the counter to
     /// `u64::MAX`, which is reported through `POLLERR`.
     /// Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L46>.
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(crate) fn signal(&self) {
         let mut counter = self.counter.lock();
         *counter = counter.saturating_add(1);
