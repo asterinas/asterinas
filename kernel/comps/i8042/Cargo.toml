@@ -7,6 +7,7 @@ edition.workspace = true
 
 [target.x86_64-unknown-none.dependencies]
 aster-cmdline.workspace = true
+aster-core.workspace = true
 aster-input.workspace = true
 bitflags = "2.5"
 component.workspace = true

@@ -24,29 +24,25 @@ static RESTART_HANDLER: Once<fn(ExitCode)> = Once::new();
 
 /// Injects a handler that can restart the system.
 ///
-/// The function may be called only once; subsequent calls take no effect.
+/// By default, [`restart`] uses [`crate::arch::power::try_restart`]. An injected handler replaces
+/// this default and may call it as part of its own policy.
 ///
-/// Note that, depending on the specific architecture, OSTD may already have a built-in handler. If
-/// so, calling this function outside of OSTD will never take effect. Currently, it happens in
-///  - x86_64: Never;
-///  - riscv64: Always;
-///  - loongarch64: Never;
-///  - aarch64: If a supported PSCI device tree node exists.
+/// The function may be called only once; subsequent calls take no effect.
 pub fn inject_restart_handler(handler: fn(ExitCode)) {
     RESTART_HANDLER.call_once(|| handler);
 }
 
 /// Restarts the system.
 ///
-/// This function will not return. If a restart handler is missing or not working, it will halt all
-/// CPUs on the machine.
+/// This function will not return. If the selected restart mechanism returns, it will halt all CPUs
+/// on the machine.
 pub fn restart(code: ExitCode) -> ! {
     if let Some(handler) = RESTART_HANDLER.get() {
         (handler)(code);
-        crate::error!("Failed to restart the system because the restart handler fails");
     } else {
-        crate::error!("Failed to restart the system because a restart handler is missing");
+        crate::arch::power::try_restart(code);
     }
+    crate::error!("Failed to restart the system because the restart mechanism fails");
 
     machine_halt();
 }
@@ -55,32 +51,28 @@ static POWEROFF_HANDLER: Once<fn(ExitCode)> = Once::new();
 
 /// Injects a handler that can power off the system.
 ///
-/// The function may be called only once; subsequent calls take no effect.
+/// By default, [`poweroff`] uses [`crate::arch::power::try_poweroff`]. An injected handler replaces
+/// this default and may call it as part of its own policy.
 ///
-/// Note that, depending on the specific architecture, OSTD may already have a built-in handler. If
-/// so, calling this function outside of OSTD will never take effect. Currently, it happens in
-///  - x86_64: If a QEMU hypervisor is detected;
-///  - riscv64: Always;
-///  - loongarch64: Never;
-///  - aarch64: If a supported PSCI device tree node exists.
+/// The function may be called only once; subsequent calls take no effect.
 pub fn inject_poweroff_handler(handler: fn(ExitCode)) {
     POWEROFF_HANDLER.call_once(|| handler);
 }
 
 /// Powers off the system.
 ///
-/// This function will not return. If a poweroff handler is missing or not working, it will halt
-/// all CPUs on the machine.
+/// This function will not return. If the selected poweroff mechanism returns, it will halt all CPUs
+/// on the machine.
 pub fn poweroff(code: ExitCode) -> ! {
     #[cfg(feature = "coverage")]
     crate::coverage::on_system_exit();
 
     if let Some(handler) = POWEROFF_HANDLER.get() {
         (handler)(code);
-        crate::error!("Failed to power off the system because the poweroff handler fails");
     } else {
-        crate::error!("Failed to power off the system because a poweroff handler is missing");
+        crate::arch::power::try_poweroff(code);
     }
+    crate::error!("Failed to power off the system because the poweroff mechanism fails");
 
     machine_halt();
 }

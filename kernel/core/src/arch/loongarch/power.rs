@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{
-    arch::boot::DEVICE_TREE,
-    io::IoMem,
-    mm::VmIoOnce,
-    power::{ExitCode, inject_poweroff_handler},
-};
+use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, power::ExitCode};
 use spin::Once;
 
 static POWEROFF_REG_AND_VAL: Once<(IoMem, u8)> = Once::new();
@@ -16,6 +11,7 @@ fn try_poweroff(_code: ExitCode) {
         let _ = reg.write_once(0, val);
     }
 }
+crate::register_poweroff_handler!(try_poweroff, crate::power::Priority::Normal);
 
 pub(super) fn init() {
     let Some((poweroff_addr, poweroff_value)) = lookup_poweroff_paddr_value() else {
@@ -27,7 +23,6 @@ pub(super) fn init() {
     };
 
     POWEROFF_REG_AND_VAL.call_once(move || (poweroff_reg, poweroff_value));
-    inject_poweroff_handler(try_poweroff);
 }
 
 fn lookup_poweroff_paddr_value() -> Option<(usize, u8)> {
