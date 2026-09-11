@@ -1270,6 +1270,627 @@
         that process's child wait queue, otherwise already-dead reparented
         children may never be reaped.
 
+- problem_id: 0412-corrupted-elf-load-targets
+  commit: bcf8f5e93c5898f38cd8c8dee2c35eab6abff49b
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2777. The PR
+    body explicitly calls out three corrupted-ELF problems in the base commit:
+    debug assertions on malformed ELF headers, unchecked ELF-range arithmetic
+    that can overflow, and a wrong errno for oversized PT_INTERP paths. Files
+    mode uses the PR base commit `bcf8f5e93c5898f38cd8c8dee2c35eab6abff49b`,
+    before the PR's later fixes in `1c5c67369`, `abc3faf07`, and
+    `693bd4bca8b79179833f38b9da96831baa0619b4`, so the targets are leak-free.
+  review_mode:
+    files:
+      - kernel/src/process/program_loader/elf/elf_file.rs
+      - kernel/src/process/program_loader/elf/load_elf.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/process/program_loader/elf/elf_file.rs
+        lines: "19-35,214-223"
+      persona: development
+      grounding: malformed ELF input must not trip debug assertions
+      severity: major
+      desc: >
+        The parser still uses `debug_assert!` and `debug_assert_eq!` on values
+        derived from the ELF header. A malformed ELF can therefore panic in a
+        debug build instead of being reported as an ordinary `ENOEXEC` parse
+        failure. This affects both the initial header-length check and the
+        class/data checks in `check_elf_header`.
+      fix: >
+        Replace the header-derived debug assertions with normal runtime
+        validation only, and keep malformed ELF input on the `ENOEXEC` error
+        path.
+      expectation: >
+        A reviewer should flag that malformed ELF headers must not be able to
+        panic the kernel through debug assertions.
+    - target:
+        kind: file
+        path: kernel/src/process/program_loader/elf/load_elf.rs
+        lines: "188-227,270-294,328-377"
+      persona: development
+      grounding: checked-arithmetic on untrusted ELF ranges
+      severity: major
+      desc: >
+        ELF-derived file and memory ranges are treated as trustworthy here and
+        combined with unchecked `+`/`-` arithmetic plus `expect()` calls. A
+        crafted ELF can make `program_header.virtual_addr`,
+        `program_header.mem_size`, `program_header.offset`, or
+        `program_header.file_size` wrap, which can turn bad input into a panic
+        or a bogus relocated range.
+      fix: >
+        Use checked arithmetic when deriving the total mapped range and the
+        per-segment offsets, and return an error instead of relying on
+        `expect()` or wraparound.
+      expectation: >
+        A reviewer should flag that ELF-supplied ranges are untrusted and must
+        be handled with checked arithmetic.
+    - target:
+        kind: file
+        path: kernel/src/process/program_loader/elf/elf_file.rs
+        lines: "105-109"
+      persona: development
+      grounding: return the execve errno expected for malformed PT_INTERP data
+      severity: major
+      desc: >
+        An oversized interpreter path currently returns `ENAMETOOLONG`, but
+        this is malformed ELF metadata rather than a user pathname that is too
+        long. The execve error path for this case should report an ELF-format
+        failure instead.
+      fix: >
+        Return `ENOEXEC` for the oversized PT_INTERP path check.
+      expectation: >
+        A reviewer should flag that the errno is wrong for corrupted ELF
+        interpreter data and ask for `ENOEXEC` instead of `ENAMETOOLONG`.
+
+- problem_id: 0413-ktests-and-non-osdk-clippy
+  commit: 4f62f2db8e355b67da71e6ac164e41fc727fc1ec
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2843. The PR
+    body identifies two fixes in the base commit: the OSDK clippy flag should
+    be `--ktests` instead of `--ktest`, and non-OSDK crates should be checked
+    with clippy both with and without `cfg(test)` so warnings in test-only code
+    are not missed. Files mode uses the PR base commit
+    `4f62f2db8e355b67da71e6ac164e41fc727fc1ec`, before commits `dcdfb897c`
+    and `d33535f43`, so the targets are leak-free.
+  review_mode:
+    files:
+      - osdk/src/cli.rs
+      - Makefile
+  defects:
+    - target:
+        kind: file
+        path: osdk/src/cli.rs
+        lines: "63-67,109-112"
+      persona: development
+      grounding: preserve the OSDK clippy flag name
+      severity: major
+      desc: >
+        The OSDK check/clippy forwarding still reads `args.ktest`, and the
+        parser field is still named `ktest`. That keeps the option singular,
+        while the intended OSDK flag is `--ktests`. The command-line interface
+        and the forwarded flag name therefore stay out of sync.
+      fix: >
+        Rename the field to `ktests` and forward `args.ktests` from both
+        `check` and `clippy`, so the OSDK option matches the intended
+        `--ktests` name.
+      expectation: >
+        A reviewer should flag that the OSDK clippy/check option is still using
+        the wrong singular name and should be renamed consistently to
+        `ktests`.
+    - target:
+        kind: file
+        path: Makefile
+        lines: "453-457"
+      persona: development
+      grounding: run clippy for cfg(test) code too
+      severity: major
+      desc: >
+        The `check` target only runs `cargo clippy --no-deps` once for each
+        non-OSDK crate. That misses warnings that only appear when test code is
+        compiled, so `cfg(test)`-only issues can slip through CI.
+      fix: >
+        Add a second `cargo clippy --tests --no-deps -- -D warnings` pass for
+        each non-OSDK crate.
+      expectation: >
+        A reviewer should flag that non-OSDK crates are not checked under
+        `cfg(test)` and should require a second clippy pass.
+
+- problem_id: 0414-vmar-heap-mapping-issues
+  commit: 6d2ff13a639b9fff72842869cfd78f78ff21bbf2
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2942. The PR
+    body identifies three fixes in the base commit: heap lock ordering issues
+    around `/proc/[pid]/maps` and `fork_from`, removing duplicated inode state
+    from `VmMapping`, and making `populate_device` infallible. Files mode uses
+    the PR base commit `6d2ff13a639b9fff72842869cfd78f78ff21bbf2`, before the
+    PR's fixing commits `e29b5547c34ddbdfdccd1c1d6fce831926e61412`,
+    `ae7ed6f2169ba8064ffb63e32a2c252b241514df`, and
+    `da93d7791c24e0b7014059beae40e27244f42447`, so the targets are leak-free.
+  review_mode:
+    files:
+      - kernel/src/fs/procfs/pid/task/maps.rs
+      - kernel/src/vm/vmar/vm_mapping.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/fs/procfs/pid/task/maps.rs
+        lines: "34-45"
+      persona: development
+      grounding: consistent heap locking for maps and fork
+      severity: major
+      desc: >
+        The base code lets `/proc/[pid]/maps` observe heap state after taking
+        the VMAR lock, while heap mutation and `Vmar::fork_from()` do not hold
+        a stable heap guard across the whole operation. That makes the heap/VMAR
+        lock protocol inconsistent and can race heap snapshots against concurrent
+        `brk()`/fork work.
+      fix: >
+        Introduce a locked heap guard, take the heap lock before walking VMAR
+        state, and pass that guarded heap state through the fork and maps paths
+        so the lock order stays consistent.
+      expectation: >
+        A reviewer should flag the inconsistent heap/VMAR lock ordering and the
+        missing stable heap guard, it may produce deadlock and races.
+    - target:
+        kind: file
+        path: kernel/src/vm/vmar/vm_mapping.rs
+        lines: "70-77"
+      persona: development
+      grounding: remove duplicate inode state from VmMapping
+      severity: major
+      desc: >
+        `VmMapping` stores inode identity separately from the `Path` that
+        already owns it, and the mapping construction/cloning code propagates
+        both copies. That duplicates source-of-truth data across map/fork/clone
+        paths and makes the metadata easy to drift out of sync.
+      fix: >
+        Remove the standalone `inode` field from `VmMapping`, derive inode
+        information from `Path`, and update the mapping construction helpers to
+        carry only the path/VMO state.
+      expectation: >
+        A reviewer should flag that the inode is duplicated alongside the
+        path-backed mapping metadata and should be stored in only one place.
+
+- problem_id: 0415-credentials-cap-and-id-syscalls
+  commit: 5d0779bd832cc6ac029e6d4131586635c4cd4779
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/2952. The PR
+    body explicitly identifies four Credentials bugs in the base commit: root
+    checks should use `CAP_SETUID`/`CAP_SETGID`, UID 0 is a valid UID, `setfsuid()`
+    and `setfsgid()` must always return the old filesystem IDs instead of
+    failing, and `setuid()`/`setgid()` may fail. Files mode uses the PR base
+    commit `5d0779bd832cc6ac029e6d4131586635c4cd4779`, before the later fixing
+    commits, so the targets are leak-free.
+  review_mode:
+    files:
+      - kernel/src/process/credentials/credentials_.rs
+      - kernel/src/syscall/setresuid.rs
+      - kernel/src/syscall/setfsuid.rs
+      - kernel/src/syscall/setuid.rs
+      - kernel/src/syscall/setgid.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/process/credentials/credentials_.rs
+        lines: "79-81,191-199,422-430"
+      persona: development
+      grounding: check CAP_SETUID and CAP_SETGID instead of root
+      severity: major
+      desc: >
+        The base `Credentials_` implementation still treats "effective user is
+        root" as the privilege test. That makes UID/GID changes depend on
+        `euid.is_root()` instead of the relevant capability bits, so the
+        privilege model is wrong for callers that have `CAP_SETUID` or
+        `CAP_SETGID` without being root.
+      fix: >
+        Replace the root-based privilege checks with capability checks for
+        `CAP_SETUID` and `CAP_SETGID` in the UID/GID mutation helpers and
+        permission checks.
+      expectation: >
+        A reviewer should flag that the code still keys privilege off root and
+        should instead consult the matching capability bits.
+    - target:
+        kind: file
+        path: kernel/src/syscall/setresuid.rs
+        lines: "9-26"
+      persona: development
+      grounding: zero UID is valid
+      severity: major
+      desc: >
+        The syscall still treats `0` as "not provided" by mapping only strictly
+        positive inputs to `Some(Uid)`. That makes UID 0 impossible to pass
+        through `setresuid()`, even though zero is a valid UID and denotes the
+        root user.
+      fix: >
+        Accept non-negative values (`>= 0`) when converting syscall arguments
+        to `Uid`, so UID 0 is preserved.
+      expectation: >
+        A reviewer should flag that zero is a valid UID and should not be dropped
+        by the syscall argument conversion.
+    - target:
+        kind: file
+        path: kernel/src/syscall/setfsuid.rs
+        lines: "15-18"
+      persona: development
+      grounding: setfsuid and setfsgid never fail
+      severity: major
+      desc: >
+        `setfsuid()` and `setfsgid()` are wired as fallible syscalls, but the
+        intended ABI is to always return the previous filesystem ID. Invalid
+        input should not turn these syscalls into errors; they should simply
+        report the old ID back to the caller.
+      fix: >
+        Make the syscall wrappers ignore the internal failure case and always
+        return the old filesystem ID from `setfsuid()`/`setfsgid()`.
+      expectation: >
+        A reviewer should flag that the filesystem-ID syscalls are expected to
+        be infallible and should return the old ID instead of propagating an
+        error.
+    - target:
+        kind: file
+        path: kernel/src/syscall/setuid.rs
+        lines: "15-18"
+      persona: development
+      grounding: setuid and setgid may fail
+      severity: major
+      desc: >
+        `setuid()` and `setgid()` are still modeled as unconditional success in
+        the syscall layer. Once the credential checks are capability-based,
+        these calls can legitimately fail and their errors must be surfaced to
+        userspace.
+      fix: >
+        Propagate the result of the credential update from the `setuid()` and
+        `setgid()` syscall wrappers instead of always returning success.
+      expectation: >
+        A reviewer should flag that `setuid()`/`setgid()` should be able to fail
+        and that the syscall wrappers need to return those failures.
+
+- problem_id: 0416-fair-weight-update-race
+  commit: f76b4508d4da5b6d0075fc1d89dc2a5e6a87294b
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/3190. The PR
+    reports a race in the lock-free FairAttr weight-update protocol: a second
+    update can be lost after fetch_weight reads the first pending weight but
+    before it clears HAS_PENDING. The reviewed snapshot is the PR base
+    f76b4508d4da5b6d0075fc1d89dc2a5e6a87294b, before the fixing commit
+    9c10f6d690fc6f8a237babc04a9c2c85cdd20812, so the target is leak-free.
+  review_mode:
+    files:
+      - kernel/src/sched/sched_class/fair.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/sched/sched_class/fair.rs
+        lines: "144-185"
+      persona: development
+      grounding: careful-atomics
+      severity: major
+      desc: >
+        FairAttr::update publishes the new pending_weight and HAS_PENDING
+        through two independent atomic operations, while fetch_weight reads
+        pending_weight and later clears HAS_PENDING with compare_exchange.
+        If fetch_weight reads the first pending weight, a second update can
+        store a newer weight before the compare_exchange succeeds. The CAS can
+        still replace HAS_PENDING with the stale first weight, clearing the
+        marker and losing the second update. The scheduler may therefore use
+        an outdated weight and fail to re-evaluate the run-queue accounting.
+      fix: >
+        Serialize pending_weight updates and consumption with a SpinLock, and
+        update the packed weight marker while holding that lock. Keep the
+        lock-free fast path for fetch_weight when HAS_PENDING is clear.
+      expectation: >
+        A reviewer should identify that the two-atomic lock-free protocol is
+        not linearizable across repeated updates, and require a lock or another
+        single-state atomic protocol that preserves the latest weight.
+
+- problem_id: 0417-sendfile-compatibility-defects
+  commit: 43265692827968251230b20b8118c8a52cf49fdb
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/3226. The PR
+    body identifies three sendfile issues in the base implementation: non-seekable
+    in_files were not rejected even though short writes require restoring the
+    input file position, several gVisor/LTP sendfile boundary cases were missing,
+    and a FIXME incorrectly stated that in_file could never be a socket. Files
+    mode uses the PR base commit 43265692827968251230b20b8118c8a52cf49fdb,
+    before the fixing commit 089bec814012449435ec192e6aa70ee8e82702c0, so the
+    targets are leak-free.
+  review_mode:
+    files:
+      - kernel/src/syscall/sendfile.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/syscall/sendfile.rs
+        lines: "63-86,140-175"
+      persona: development
+      grounding: reject non-seekable in_file when file-position recovery is required
+      severity: major
+      desc: >
+        When offset_ptr is null, sendfile reads from and advances in_file's
+        current position. The base code only requires in_file to be seekable
+        when out_file is a pipe; otherwise it stores None if seek(Current(0))
+        fails. If a write error or short write happens after reading from a
+        non-seekable in_file, the implementation cannot restore the input file
+        position to reflect only the bytes actually transferred and merely logs
+        that the position may be incorrect.
+      fix: >
+        When no explicit offset is supplied, reject non-seekable in_file values
+        up front with EINVAL, and always keep a saved origin position so the
+        error and short-write paths can seek back to origin + transferred bytes.
+      expectation: >
+        A reviewer should flag that silently accepting a non-seekable in_file
+        makes short-write/error recovery unable to maintain the file-position
+        contract, and should require an upfront EINVAL until the pipe/splice
+        exception is implemented.
+    - target:
+        kind: file
+        path: kernel/src/syscall/sendfile.rs
+        lines: "26-61,88-127"
+      persona: development
+      grounding: validate sendfile boundary conditions before transfer
+      severity: major
+      desc: >
+        `sendfile` misses several boundary checks needed for Linux-compatible
+        sendfile behavior. It does not reject offset + count overflow, validates
+        readable and writable access only indirectly through later I/O, allows
+        directories to reach the read path instead of returning EINVAL, and does
+        not reject writes to an O_APPEND output file. These gaps are observable
+        even for zero-length or otherwise edge-case transfers and leave multiple
+        gVisor/LTP sendfile cases failing.
+      fix: >
+        Add explicit validation before the transfer loop: check offset + count
+        with checked_add, clamp count after rejecting negative values, reject a
+        non-readable in_file or non-writable out_file with EBADF, reject directory
+        in_file values with EINVAL, and reject non-pipe O_APPEND outputs with
+        EINVAL.
+      expectation: >
+        A reviewer should identify that sendfile should validate these syscall
+        boundary conditions before starting I/O, rather than relying on later
+        read/write calls or unchecked arithmetic.
+    - target:
+        kind: file
+        path: kernel/src/syscall/sendfile.rs
+        lines: "50-53"
+      persona: maintainability
+      grounding: do not preserve misleading Linux ABI comments
+      severity: minor
+      desc: >
+        The FIXME says in_file must support mmap-like operations and therefore
+        cannot be a socket. That is an incomplete reading of the Linux manual:
+        since Linux 5.12, when out_fd is a pipe, sendfile is treated like splice
+        and in_fd may be a socket. Keeping this FIXME makes the intended ABI and
+        future implementation direction misleading.
+      fix: >
+        Remove the incorrect FIXME. If the limitation is documented, state the
+        pipe/splice exception explicitly and use a TODO for the currently
+        unsupported non-seekable-in_file-to-pipe case.
+      expectation: >
+        A reviewer should flag that the comment encodes a false sendfile
+        restriction and should ask for it to be removed or rewritten to match
+        the Linux manual.
+
+- problem_id: 0418-filelike-access-mode-defects
+  commit: acb00a241dfaacce88b1a3e8f755c59e043382eb
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/3231. The PR
+    contains two behavior fixes in the base implementation: `FileLike` uses one
+    `O_RDWR` default for every file type instead of requiring each type to report
+    its Linux-defined access mode, and the default `read`/`write` methods always
+    return `EBADF` instead of distinguishing access-mode errors from unsupported
+    operations. The reviewed snapshot is the PR base
+    `acb00a241dfaacce88b1a3e8f755c59e043382eb`, before fixing commits
+    `bf9dd9b82e35cdf1f0f644b00c7e49217e66b31b` and
+    `a7cd0b4ffa0ac0172e78652af4a08beb5595a7fd`, so the targets are leak-free.
+  review_mode:
+    files:
+      - kernel/src/fs/file/file_handle.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/fs/file/file_handle.rs
+        lines: "82-84"
+      persona: development
+      grounding: per-file-type access mode
+      severity: major
+      desc: >
+        `FileLike::access_mode` has a universal `O_RDWR` default. That default
+        misreports the access mode of special file types whose Linux contract is
+        read-only or otherwise different, such as inotify files. Access-mode
+        metadata is used by permission checks and fdinfo reporting, so one
+        blanket default can expose incorrect read/write capabilities and Linux
+        incompatibilities.
+      fix: >
+        Make `access_mode` a required trait method and implement it for every
+        `FileLike` type according to the corresponding Linux behavior, while
+        keeping inode-backed files derived from their open rights.
+      expectation: >
+        A reviewer should flag the universal `O_RDWR` fallback and require
+        each file type to declare its own Linux-compatible access mode.
+    - target:
+        kind: file
+        path: kernel/src/fs/file/file_handle.rs
+        lines: "23-29"
+      persona: development
+      grounding: distinguish access errors from unsupported operations
+      severity: major
+      desc: >
+        The default `FileLike::read` and `FileLike::write` implementations
+        always return `EBADF`. This conflates a descriptor opened without the
+        requested access mode with a file type that is opened with that mode
+        but does not implement the operation. Linux distinguishes these cases:
+        the former returns `EBADF`, while the latter returns `EINVAL`.
+      fix: >
+        Check `access_mode()` in each default method. Return `EBADF` when the
+        descriptor is not readable or writable; otherwise return `EINVAL` for
+        the unsupported default operation. Keep concrete implementations that
+        actually support reads or writes responsible for their normal behavior.
+      expectation: >
+        A reviewer should identify the errno conflation, require the
+        default methods to check access mode, and return `EINVAL` for a
+        mode-permitted but unsupported operation.
+
+- problem_id: 0419-osdk-hard-link-self-copy-truncation
+  commit: 7f3a096428b9607793c312e065c8c778b73c9748
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/3304. The PR
+    fixes an OSDK artifact corruption case in the base implementation:
+    `hard_link_or_copy` falls back to `fs::copy` whenever `fs::hard_link`
+    fails, even when `from` and `to` already refer to the same inode through
+    different hard-link paths. `fs::copy` truncates the destination in that
+    case, corrupting the artifact. The reviewed snapshot is the PR base
+    `7f3a096428b9607793c312e065c8c778b73c9748`, before the fixing commit
+    `5e824c142a4ab0547e937febf33df7c19981494c`, so the target is leak-free.
+  review_mode:
+    files:
+      - osdk/src/util.rs
+  defects:
+    - target:
+        kind: file
+        path: osdk/src/util.rs
+        lines: "397-403"
+      persona: development
+      grounding: prevent self-copy truncation after hard-link failure
+      severity: critical
+      desc: >
+        `hard_link_or_copy` treats every hard-link failure as evidence that a
+        regular copy is required. If `to` already exists as a hard link to
+        `from`, `fs::hard_link(&from, &to)` fails because the destination path
+        exists, but `fs::copy(from, to)` then copies a file onto itself and
+        truncates the shared inode. A repeated OSDK build can therefore destroy
+        an otherwise valid kernel artifact and produce an empty or corrupted
+        payload.
+      fix: >
+        Obtain metadata for the source and, when the destination exists,
+        compare device and inode identifiers before attempting the fallback.
+        Return `Ok(0)` immediately when both paths refer to the same file; only
+        use `fs::copy` for a distinct destination after the hard-link attempt
+        fails.
+      expectation: >
+        A reviewer should identify the same-inode self-copy path, and require
+        an identity check that skips both linking and copying for an existing
+        hard link to the source.
+
+- problem_id: 0420-create-duplicate-check-and-ext2-slot-lookup
+  commit: 7f3a096428b9607793c312e065c8c778b73c9748
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/3311. The PR
+    addresses two issues in the base implementation: create-related VFS
+    operations rely on the dentry cache for duplicate-name detection even
+    though the entry may be absent or stale after a race or eviction, and Ext2
+    scans every directory entry with the name-reading iterator even though slot
+    selection only needs entry headers. The reviewed snapshot is the PR base
+    `7f3a096428b9607793c312e065c8c778b73c9748`, before fixing commits
+    `aac90b22fe30a1f2d6b225d9071028b94619e85e` and
+    `c0703ebe1bd9856ce38e42c7b83c063c8ba75261`, so both targets are
+    leak-free.
+  review_mode:
+    files:
+      - kernel/src/fs/vfs/path/dentry.rs
+      - kernel/src/fs/fs_impls/ext2/inode/dir/mod.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/fs/vfs/path/dentry.rs
+        lines: "393-425,523-562"
+      persona: development
+      grounding: validate duplicate names against the filesystem layer
+      severity: major
+      desc: >
+        The `create`, `mknod`, and `link` paths only reject a duplicate when a
+        positive dentry is present in the cache and revalidation confirms it.
+        A cache miss, stale-entry eviction, or race can leave an existing
+        filesystem entry absent from the dentry cache, after which the VFS
+        directly invokes the filesystem operation. If the filesystem layer
+        does not independently perform a reliable duplicate check, the
+        operation can create a second on-disk directory entry with the same
+        name, instead of returning `EEXIST`.
+      fix: >
+        Centralize the check in a VFS helper used by all create-related
+        operations. After handling the cached entry, call the parent inode's
+        lookup for the name, populate the cache when an existing inode is
+        found, return `EEXIST`, and preserve the checked state while creating
+        or linking the new entry. Propagate errors other than `ENOENT`.
+      expectation: >
+        A reviewer should identify that dentry-cache state is not the complete
+        source of truth for name existence and require a filesystem lookup in
+        the VFS path before `create`, `mknod`, or `link` proceeds.
+    - target:
+        kind: file
+        path: kernel/src/fs/fs_impls/ext2/inode/dir/mod.rs
+        lines: "582-625"
+      persona: development
+      grounding: avoid unnecessary page cache read operations
+      severity: minor
+      desc: >
+        `scan_dir_for_slot` calls `next_entry()` for every directory entry.
+        That iterator reads each live entry's name from the page cache, but
+        slot selection only uses `ino`, `rec_len`, and `name_len`; it never
+        needs the name bytes. Large Ext2 directories therefore perform many
+        unnecessary page-cache reads on every file creation or link operation.
+      fix: >
+        Add or use an iterator operation that reads and advances by directory
+        entry headers only, and use it in slot lookup. Keep the full
+        name-reading iterator for operations such as duplicate checks and
+        readdir that actually need entry names.
+      expectation: >
+        A reviewer should notice that slot allocation needs only metadata from
+        each directory entry and should require a header-only scan so unrelated
+        name data is not loaded from the page cache.
+
+- problem_id: 0421-vsock-recv-partial-first-packet
+  commit: b27cca2263b5512a83be3d7781da369ee19b53fe
+  remote: https://github.com/asterinas/asterinas
+  source: >
+    PR-derived from https://github.com/asterinas/asterinas/pull/3332. The
+    receive path removes the first queued packet and resets
+    `rx_queue.read_offset`, but its packet-selection budget still counts the
+    first packet's entire payload. When the first packet was partially
+    consumed by an earlier `recv`, this overestimates the bytes available from
+    that packet and can stop collection too early, producing an unexpected
+    short read. The reviewed snapshot is the fixing commit's parent
+    `b27cca2263b5512a83be3d7781da369ee19b53fe`, before
+    `67d0348199f3a71f46060c20f9f44924cdc0e334`; it is also the merge base with
+    the PR base branch, so the target is leak-free.
+  review_mode:
+    files:
+      - kernel/src/net/socket/vsock/transport/connection/recv.rs
+  defects:
+    - target:
+        kind: file
+        path: kernel/src/net/socket/vsock/transport/connection/recv.rs
+        lines: "140-159"
+      persona: development
+      grounding: account for the unread portion of the first packet
+      severity: major
+      desc: >
+        `pop_rx_packets` uses the full `packet_ref.payload_len()` when
+        decrementing `max_bytes`, even if `rx_queue.read_offset` says that the
+        first packet has already been partially received. For example, after
+        one byte of a two-byte packet has been consumed, a receive request for
+        two bytes sees the full length of two and stops instead of collecting
+        the next packet. The subsequent copy therefore returns only the one
+        unread byte and violates the expected recv length.
+      fix: >
+        Compute the first packet's available length as its payload length minus
+        the saved `rx_queue.read_offset` before comparing it with or subtracting
+        it from `max_bytes`. Preserve the offset for the later userspace copy,
+        then use full payload lengths for subsequent packets.
+      expectation: >
+        A reviewer should identify that packet selection should count only
+        unread bytes from the first packet, and require subtracting the existing
+        read offset from the first packet's contribution to the receive budget.
+
 - problem_id: 0500-subreaper-reparenting-and-state
   commit: d5569147cb121ba367c104bc6b7a5fbf291efc06
   source: >
