@@ -146,7 +146,6 @@ dependencies = [
  "aster-input",
  "aster-logger",
  "aster-network",
- "aster-nvme",
  "aster-rights",
  "aster-rights-proc",
  "aster-softirq",
@@ -432,6 +431,7 @@ name = "asterinas"
 version = "0.1.0"
 dependencies = [
  "aster-core",
+ "aster-nvme",
  "aster-uart",
  "ostd",
 ]

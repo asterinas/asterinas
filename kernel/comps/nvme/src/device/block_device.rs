@@ -4,7 +4,7 @@
 //!
 //! Implements the [`aster_block::BlockDevice`] trait on top of the NVMe transport.
 //! BIOs are staged in [`BioRequestSingleQueue`] and drained by repeated calls to
-//! [`NvmeBlockDevice::handle_requests`] from the kernel registry's per-device
+//! [`aster_block::BlockRequestHandler::handle_next_request`] from the kernel registry's per-device
 //! kthread (see `kernel/core/src/device/registry/block.rs`). Reads, writes, and flushes
 //! issue synchronously to I/O queue [`IO_QID`] and wait on a per-queue `WaitQueue` driven
 //! by the MSI-X completion interrupt.
@@ -62,7 +62,7 @@ const IO_QID: usize = 1;
 ostd::const_assert!(IO_QID + 1 == QUEUE_NUM);
 
 #[derive(Debug)]
-pub struct NvmeBlockDevice {
+pub(crate) struct NvmeBlockDevice {
     device: NvmeDeviceInner,
     queue: BioRequestSingleQueue,
     name: String,
@@ -94,16 +94,16 @@ impl NvmeBlockDevice {
             .device
             .setup_msix_handlers(&block_device, io_msix_vectors);
 
-        aster_block::register(block_device)
+        aster_block::register_with_request_handler(block_device)
             .map_err(|_| NvmeDeviceError::BlockDeviceRegisterFailed)?;
 
         bio_segment_pool_init();
         Ok(())
     }
+}
 
-    /// Dequeues a `BioRequest` from the software staging queue and
-    /// processes the request.
-    pub fn handle_requests(&self) {
+impl aster_block::BlockRequestHandler for NvmeBlockDevice {
+    fn handle_next_request(&self) {
         let request = self.queue.dequeue();
         debug!("Handle Request: {:?}", request);
         match request.type_() {
@@ -926,7 +926,7 @@ mod test {
             TEST_BUF_LENGTH,
             TEST_CHAR,
         );
-        nvme_block_device.handle_requests();
+        aster_block::BlockRequestHandler::handle_next_request(nvme_block_device);
         write_batch.wait_all().unwrap();
 
         let mut read_batch = IoBatch::with_capacity(1);
@@ -937,7 +937,7 @@ mod test {
             TEST_BUF_LENGTH,
             TEST_CHAR,
         );
-        nvme_block_device.handle_requests();
+        aster_block::BlockRequestHandler::handle_next_request(nvme_block_device);
         read_batch.wait_all().unwrap();
 
         let mut read_buf = [0u8; TEST_BUF_LENGTH];
