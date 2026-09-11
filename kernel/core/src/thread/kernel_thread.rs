@@ -133,6 +133,8 @@ impl ThreadOptions {
 
 #[cfg(ktest)]
 mod tests {
+    use core::num::NonZeroUsize;
+
     use ostd::{Error, cpu::CpuId, prelude::ktest};
 
     use super::*;
@@ -142,7 +144,7 @@ mod tests {
         vm::{
             page_cache::VmoOptions,
             perms::VmPerms,
-            vmar::{VmarHandle, VmarMapOffset},
+            vmar::{OffsetType, VmarHandle},
         },
     };
 
@@ -156,16 +158,19 @@ mod tests {
     fn associated_vmar_is_reactivated_after_context_switch() {
         super::super::init();
 
-        let vmar = VmarHandle::new(new_process_vm());
+        let vmar = VmarHandle::new(new_process_vm()).unwrap();
         let map_addr = PAGE_SIZE * 16;
         let map_size = PAGE_SIZE * 4;
         let vmo = VmoOptions::new(map_size).alloc().unwrap();
         assert_eq!(
-            vmar.new_map(map_size, VmPerms::READ | VmPerms::WRITE)
-                .offset(VmarMapOffset::FixedNoReplace(map_addr))
-                .vmo(vmo)
-                .build()
-                .unwrap(),
+            vmar.new_map(
+                NonZeroUsize::new(map_size).unwrap(),
+                VmPerms::READ | VmPerms::WRITE
+            )
+            .offset(map_addr, OffsetType::FixedNoReplace)
+            .vmo(vmo)
+            .build()
+            .unwrap(),
             map_addr
         );
 
@@ -183,7 +188,7 @@ mod tests {
         let associated_vmar = worker_vmar.clone();
         let test_cpu = CpuId::current_racy();
 
-        let switcher_vmar_handle = VmarHandle::new(new_process_vm());
+        let switcher_vmar_handle = VmarHandle::new(new_process_vm()).unwrap();
         let switcher_vmar = switcher_vmar_handle.clone_arc();
         let associated_switcher_vmar = switcher_vmar.clone();
 
@@ -247,7 +252,7 @@ mod tests {
         super::super::init();
 
         const UNMAPPED_ADDR: usize = PAGE_SIZE * 16;
-        let vmar_handle = VmarHandle::new(new_process_vm());
+        let vmar_handle = VmarHandle::new(new_process_vm()).unwrap();
         let vmar = vmar_handle.clone_arc();
         let associated_vmar = vmar.clone();
 
