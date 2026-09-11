@@ -139,7 +139,7 @@ impl InodeHandle {
             self.path().inode().as_ref()
         };
         let mut offset = self.offset.lock();
-        let read_cnt = file_ops.readdir_at(*offset, visitor)?;
+        let read_cnt = file_ops.readdir_at(*offset, visitor, self.status_flags())?;
         *offset += read_cnt;
         Ok(read_cnt)
     }
@@ -640,4 +640,258 @@ fn do_seek_util(offset: &Mutex<usize>, pos: SeekFrom, end: Option<usize>) -> Res
 
     *offset = new_offset;
     Ok(new_offset)
+}
+
+#[cfg(ktest)]
+mod tests {
+    use core::time::Duration;
+
+    use device_id::DeviceId;
+    use ostd::prelude::ktest;
+
+    use super::*;
+    use crate::{
+        fs::{
+            file::{InodeMode, StatusFlagsUpdate},
+            vfs::{
+                file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+                inode::{Extension, Inode, Metadata},
+                path::{Mount, PerMountFlags},
+                registry::FsAndRoot,
+            },
+        },
+        process::{Gid, Uid},
+    };
+
+    /// A mock inode that records the `status_flags` its `readdir_at` receives.
+    struct MockInode {
+        received_flags: Mutex<Option<StatusFlags>>,
+        bound_fs: Mutex<Option<Weak<MockFs>>>,
+        extension: Extension,
+    }
+
+    impl MockInode {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                received_flags: Mutex::new(None),
+                bound_fs: Mutex::new(None),
+                extension: Extension::new(),
+            })
+        }
+
+        /// Binds the inode to its enclosing mock file system.
+        ///
+        /// The binding is weak so that the inode does not keep the file system
+        /// alive: the file system owns the root inode, and a strong back
+        /// reference would form a reference cycle.
+        fn bind_fs(&self, fs: Weak<MockFs>) {
+            *self.bound_fs.lock() = Some(fs);
+        }
+    }
+
+    impl FileOps for MockInode {
+        fn read_at(
+            &self,
+            _offset: usize,
+            _writer: &mut VmWriter,
+            _status_flags: StatusFlags,
+        ) -> Result<usize> {
+            return_errno_with_message!(Errno::EISDIR, "the mock inode is a directory");
+        }
+
+        fn write_at(
+            &self,
+            _offset: usize,
+            _reader: &mut VmReader,
+            _status_flags: StatusFlags,
+        ) -> Result<usize> {
+            return_errno_with_message!(Errno::EISDIR, "the mock inode is a directory");
+        }
+
+        fn readdir_at(
+            &self,
+            _offset: usize,
+            _visitor: &mut dyn DirentVisitor,
+            status_flags: StatusFlags,
+        ) -> Result<usize> {
+            *self.received_flags.lock() = Some(status_flags);
+            Ok(0)
+        }
+    }
+
+    impl Inode for MockInode {
+        fn size(&self) -> usize {
+            0
+        }
+
+        fn resize(&self, _new_size: usize) -> Result<()> {
+            Ok(())
+        }
+
+        fn metadata(&self) -> Result<Metadata> {
+            Ok(Metadata {
+                ino: 1,
+                size: 0,
+                optimal_block_size: PAGE_SIZE,
+                nr_sectors_allocated: 0,
+                last_access_at: Duration::ZERO,
+                last_modify_at: Duration::ZERO,
+                last_meta_change_at: Duration::ZERO,
+                type_: InodeType::Dir,
+                mode: InodeMode::from_bits_truncate(0o755),
+                nr_hard_links: 1,
+                uid: Uid::new_root(),
+                gid: Gid::new_root(),
+                container_dev_id: DeviceId::null(),
+                self_dev_id: None,
+                birth_at: None,
+            })
+        }
+
+        fn ino(&self) -> u64 {
+            1
+        }
+
+        fn type_(&self) -> InodeType {
+            InodeType::Dir
+        }
+
+        fn mode(&self) -> Result<InodeMode> {
+            Ok(InodeMode::from_bits_truncate(0o755))
+        }
+
+        fn set_mode(&self, _mode: InodeMode) -> Result<()> {
+            Ok(())
+        }
+
+        fn owner(&self) -> Result<Uid> {
+            Ok(Uid::new_root())
+        }
+
+        fn set_owner(&self, _uid: Uid) -> Result<()> {
+            Ok(())
+        }
+
+        fn group(&self) -> Result<Gid> {
+            Ok(Gid::new_root())
+        }
+
+        fn set_group(&self, _gid: Gid) -> Result<()> {
+            Ok(())
+        }
+
+        fn atime(&self) -> Duration {
+            Duration::ZERO
+        }
+
+        fn set_atime(&self, _time: Duration) {}
+
+        fn mtime(&self) -> Duration {
+            Duration::ZERO
+        }
+
+        fn set_mtime(&self, _time: Duration) {}
+
+        fn ctime(&self) -> Duration {
+            Duration::ZERO
+        }
+
+        fn set_ctime(&self, _time: Duration) {}
+
+        fn fs(&self) -> Arc<dyn FileSystem> {
+            // The VFS may consult `fs()` after the test body completes (e.g.,
+            // the fsnotify hooks in `FileCommon`'s drop), so the mock must be
+            // properly bound instead of panicking.
+            self.bound_fs
+                .lock()
+                .as_ref()
+                .and_then(Weak::upgrade)
+                .expect("the mock file system is still alive")
+        }
+
+        fn extension(&self) -> &Extension {
+            &self.extension
+        }
+    }
+
+    /// A mock file system whose root inode is a [`MockInode`].
+    struct MockFs {
+        root: Arc<MockInode>,
+        sb: SuperBlock,
+        fs_event_subscriber_stats: FsEventSubscriberStats,
+    }
+
+    impl MockFs {
+        /// Arbitrary magic identifying the mock file system; spells "MOCK".
+        const MOCK_FS_MAGIC: u64 = 0x4d_4f_43_4b;
+
+        fn new(root: Arc<MockInode>) -> Arc<Self> {
+            Arc::new_cyclic(|weak| {
+                root.bind_fs(weak.clone());
+                Self {
+                    root,
+                    sb: SuperBlock::new(Self::MOCK_FS_MAGIC, PAGE_SIZE, 255, DeviceId::null()),
+                    fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+                }
+            })
+        }
+    }
+
+    impl FileSystem for MockFs {
+        fn name(&self) -> &'static str {
+            "mockfs"
+        }
+
+        fn sync(&self) -> Result<()> {
+            Ok(())
+        }
+
+        fn root_inode(&self) -> Arc<dyn Inode> {
+            self.root.clone()
+        }
+
+        fn sb(&self) -> SuperBlock {
+            self.sb.clone()
+        }
+
+        fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
+            &self.fs_event_subscriber_stats
+        }
+    }
+
+    /// Asserts that `InodeHandle::readdir` forwards the *current* per-open
+    /// status flags (i.e. post-`fcntl(F_SETFL)`) to `FileOps::readdir_at`.
+    ///
+    /// Regression test for issue #3536: previously `readdir_at` had no access
+    /// to the live flags, so filesystems like virtio-fs composed `FUSE_READDIR`
+    /// from flags captured at open time and could not observe post-`fcntl`
+    /// changes.
+    #[ktest]
+    fn readdir_receives_current_status_flags() {
+        let inode = MockInode::new();
+        let fs: Arc<dyn FileSystem> = MockFs::new(inode.clone());
+        let mount = Mount::new_detached(
+            FsAndRoot::new(fs),
+            PerMountFlags::empty(),
+            Weak::new(),
+            None,
+        )
+        .unwrap();
+        let handle = InodeHandle::new_unchecked_access(
+            Path::new_root(mount),
+            AccessMode::O_RDONLY,
+            StatusFlags::empty(),
+        )
+        .unwrap();
+
+        // Change the status flags through the same path `fcntl(F_SETFL)` uses.
+        handle
+            .common
+            .update_status_flags(&handle, StatusFlagsUpdate::set(StatusFlags::O_APPEND));
+
+        let mut visitor: Vec<String> = Vec::new();
+        handle.readdir(&mut visitor).unwrap();
+
+        assert_eq!(*inode.received_flags.lock(), Some(StatusFlags::O_APPEND));
+    }
 }

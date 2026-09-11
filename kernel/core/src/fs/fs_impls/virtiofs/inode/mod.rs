@@ -601,7 +601,12 @@ impl FileOps for VirtioFsInode {
         )
     }
 
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    fn readdir_at(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
         let fs = self.fs_ref();
         let open_out = fs
             .session()
@@ -626,10 +631,13 @@ impl FileOps for VirtioFsInode {
 
         // FIXME: `readdir_at` exposes the delta-based interface, while
         // FUSE readdir offsets are opaque continuation cookies.
-        // FIXME: `readdir_at` should pass current status flags to the
-        // filesystem backend. The `FileOps` interface currently does not
-        // expose them, so `FUSE_READDIR` uses the transient handle flags.
-        self.readdir(dir_handle.fh(), offset, dir_handle.file_flags(), visitor)
+        // The transient handle has no owning file description, so the request
+        // carries the caller's live `status_flags` (e.g. from an internal
+        // lookup) composed with the transient handle's `O_RDONLY` access
+        // mode. The VFS readdir path uses `VirtioFsDir` instead, which holds
+        // a real per-open handle.
+        let file_flags = dir_handle.file_flags_with(status_flags);
+        self.readdir(dir_handle.fh(), offset, file_flags, visitor)
     }
 }
 

@@ -25,7 +25,7 @@ pub(crate) trait DirentVisitor {
     /// ```no_run
     /// let mut all_dirents = Vec::new();
     /// let dir_inode = todo!("create an inode");
-    /// dir_inode.readdir_at(0, &mut all_dirents).unwrap();
+    /// dir_inode.readdir_at(0, &mut all_dirents, StatusFlags::empty()).unwrap();
     /// ```
     fn visit(&mut self, name: &str, ino: u64, type_: InodeType, offset: usize) -> Result<()>;
 }
