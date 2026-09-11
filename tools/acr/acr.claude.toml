@@ -1,0 +1,18 @@
+# ACR profile for the claude-agent backend.
+#
+# Precedence: command-line flags > ACR_* environment variables > this file >
+# built-in defaults. See spec/interface.md#configuration.
+# Authentication and endpoint come from the local Claude CLI.
+
+[agent]
+backend = "claude-agent"
+per_persona_context = "auto"
+
+# "default" inherits the local Claude CLI's model; any explicit name overrides it.
+[agent.persona_review]
+model = "default"
+effort = "high"
+
+[agent.postprocess]
+model = "default"
+effort = "medium"

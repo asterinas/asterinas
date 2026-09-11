@@ -1,0 +1,5 @@
+# Model-free profile: runs the whole pipeline with empty agent results.
+# Use it to check the pipeline, never to judge review quality.
+
+[agent]
+backend = "fake"
