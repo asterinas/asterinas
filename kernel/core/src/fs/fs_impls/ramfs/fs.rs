@@ -1033,14 +1033,14 @@ impl FileOps for RamInode {
     ) -> Result<usize> {
         let read_len = match &self.inner {
             Inner::File(page_cache) => {
-                let (offset, read_len) = {
-                    let file_size = self.size();
-                    let start = file_size.min(offset);
-                    let end = file_size.min(offset + writer.avail());
-                    (start, end - start)
-                };
+                // Lock before reading the size or the `resize` may shrink the cache.
+                let page_cache = page_cache.lock();
+                let file_size = self.size();
+                let offset = file_size.min(offset);
+                let end = file_size.min(offset + writer.avail());
+                let read_len = end - offset;
                 if read_len > 0 {
-                    page_cache.lock().read_with_len(offset, writer, read_len)?;
+                    page_cache.read_with_len(offset, writer, read_len)?;
                 }
                 read_len
             }
