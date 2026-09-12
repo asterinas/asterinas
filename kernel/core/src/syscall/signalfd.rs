@@ -309,7 +309,7 @@ impl ToSignalfdSiginfo for Box<dyn Signal> {
             ssi_signo: siginfo.si_signo as _,
             ssi_errno: siginfo.si_errno,
             ssi_code: siginfo.si_code,
-            ssi_pid: 0,
+            ssi_pid: siginfo.sender_pid().unwrap_or(0),
             ssi_uid: 0,
             ssi_fd: 0,
             ssi_tid: 0,
