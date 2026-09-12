@@ -4,6 +4,7 @@ mod evdev;
 mod fb;
 mod mem;
 pub(crate) mod misc;
+mod model;
 mod pty;
 mod registry;
 pub(crate) mod tty;
@@ -45,13 +46,16 @@ impl Debug for dyn Device {
 }
 
 /// Device type
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum DeviceType {
     Char,
     Block,
 }
 
 pub(crate) fn init_in_first_kthread() {
+    // `devtmpfsd` has been spawned by `fs::init_in_first_kthread`, so the
+    // device model may now create device nodes.
+    model::install_hooks();
     registry::init_in_first_kthread();
     mem::init_in_first_kthread();
     misc::init_in_first_kthread();

@@ -17,9 +17,16 @@
 //! - 12 = /dev/oldmem  OBSOLETE - replaced by /proc/vmcore
 //!
 //! See <https://www.kernel.org/doc/Documentation/admin-guide/devices.txt>.
+//!
+//! Each memory device is a device of the `mem` class in the device model,
+//! which places it under `/sys/devices/virtual/mem/`, indexes it from
+//! `/sys/class/mem/` and `/sys/dev/char/`, and creates its devtmpfs node.
+//! The same object is registered in the char registry so that opening the
+//! node reaches [`MemFile`].
 
 mod file;
 
+use aster_device::{AnyDevice, Class, ClassDevice, ClassHandle, DevNode, DevNum};
 use device_id::{DeviceId, MajorId, MinorId};
 use file::MemFile;
 pub(crate) use file::{getrandom, geturandom};
@@ -37,24 +44,34 @@ use crate::{
     prelude::*,
 };
 
-/// A memory device.
-#[derive(Debug)]
-pub(crate) struct MemDevice {
-    id: DeviceId,
-    file: MemFile,
-}
+/// The `mem` class: memory devices such as `/dev/null`.
+pub(crate) struct MemClass;
 
-impl MemDevice {
-    fn new(file: MemFile) -> Self {
-        let major = MEM_MAJOR.get().unwrap().get();
-        let minor = MinorId::new(file.minor());
+impl Class for MemClass {
+    const NAME: &'static str = "mem";
+    type Device = MemFile;
 
-        Self {
-            id: DeviceId::new(major, minor),
-            file,
-        }
+    fn devnode(&self, dev: &ClassDevice<Self>) -> Option<DevNode> {
+        // Linux's memory-device table uses nonzero modes only for devices
+        // that override devtmpfs's default permissions.
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/mem.c#L690>.
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/mem.c#L734>.
+        let mode = match **dev {
+            MemFile::Full | MemFile::Null | MemFile::Random | MemFile::Urandom | MemFile::Zero => {
+                mkmod!(a+rw)
+            }
+            MemFile::Kmsg => mkmod!(a+r, u+w),
+            _ => return None,
+        };
+        Some(DevNode {
+            path: None,
+            mode: Some(mode.bits()),
+        })
     }
 }
+
+/// A memory device, as seen by the char registry.
+pub(crate) type MemDevice = ClassDevice<MemClass>;
 
 impl Device for MemDevice {
     fn type_(&self) -> DeviceType {
@@ -62,41 +79,48 @@ impl Device for MemDevice {
     }
 
     fn id(&self) -> DeviceId {
-        self.id
+        self.base()
+            .devnum()
+            .expect("memory devices always have a device number")
+            .id()
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
-        // Linux's memory-device table uses nonzero modes only for devices
-        // that override devtmpfs's default `u+rw` permissions.
-        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/mem.c#L690>.
-        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/mem.c#L734>.
-        Some(
-            match self.file {
-                MemFile::Full
-                | MemFile::Null
-                | MemFile::Random
-                | MemFile::Urandom
-                | MemFile::Zero => DevtmpfsNodeMeta::with_mode(self.file.name(), mkmod!(a+rw)),
-                MemFile::Kmsg => DevtmpfsNodeMeta::with_mode(self.file.name(), mkmod!(a+r, u+w)),
-                _ => DevtmpfsNodeMeta::new(self.file.name()),
-            }
-            .unwrap(),
-        )
+        // The device model creates the node when the device is added.
+        None
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
-        Ok(Box::new(self.file))
+        Ok(Box::new(**self))
     }
 }
 
 static MEM_MAJOR: Once<MajorIdOwner> = Once::new();
+static MEM_CLASS: Once<Arc<ClassHandle<MemClass>>> = Once::new();
+
+fn add_device(file: MemFile) -> Result<()> {
+    let class = MEM_CLASS.get().unwrap();
+    let id = DeviceId::new(MEM_MAJOR.get().unwrap().get(), MinorId::new(file.minor()));
+    let device = MemDevice::builder(class, file.name(), file)
+        .devnum(DevNum::char(id))
+        .build();
+    aster_device::add(&device)?;
+    // The number-to-open map is the second registry; if it refuses the
+    // device, the first registration is undone rather than left dangling.
+    if let Err(error) = register(device.clone()) {
+        let _ = aster_device::remove(&device);
+        return Err(error);
+    }
+    Ok(())
+}
 
 pub(super) fn init_in_first_kthread() {
     MEM_MAJOR.call_once(|| acquire_major(MajorId::new(1)).unwrap());
+    MEM_CLASS.call_once(|| aster_device::register_class(MemClass).unwrap());
 
-    register(Arc::new(MemDevice::new(MemFile::Full))).unwrap();
-    register(Arc::new(MemDevice::new(MemFile::Null))).unwrap();
-    register(Arc::new(MemDevice::new(MemFile::Random))).unwrap();
-    register(Arc::new(MemDevice::new(MemFile::Urandom))).unwrap();
-    register(Arc::new(MemDevice::new(MemFile::Zero))).unwrap();
+    add_device(MemFile::Full).unwrap();
+    add_device(MemFile::Null).unwrap();
+    add_device(MemFile::Random).unwrap();
+    add_device(MemFile::Urandom).unwrap();
+    add_device(MemFile::Zero).unwrap();
 }

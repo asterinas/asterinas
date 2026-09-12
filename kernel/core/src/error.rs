@@ -351,6 +351,25 @@ impl From<int_to_c_enum::TryFromIntError> for Error {
     }
 }
 
+impl From<aster_device::Error> for Error {
+    fn from(err: aster_device::Error) -> Self {
+        use aster_device::Error::*;
+        match err {
+            AlreadyAdded | AlreadyBound => Error::new(Errno::EBUSY),
+            NotAdded | NotBound | ParentNotAdded | DriverUnregistered | NoDevNum => {
+                Error::new(Errno::ENODEV)
+            }
+            HasChildren => Error::new(Errno::ENOTEMPTY),
+            NameConflict => Error::new(Errno::EEXIST),
+            NotFound | NoDriver => Error::new(Errno::ENOENT),
+            InvalidName | InvalidValue => Error::new(Errno::EINVAL),
+            ProbeFailed | Attribute | Format | Hook => Error::new(Errno::EIO),
+            ResourceUnavailable => Error::new(Errno::ENOSPC),
+            SysTree(inner) => inner.into(),
+        }
+    }
+}
+
 impl From<aster_systree::Error> for Error {
     fn from(err: aster_systree::Error) -> Self {
         use aster_systree::Error::*;
