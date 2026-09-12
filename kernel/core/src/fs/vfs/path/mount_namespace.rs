@@ -323,16 +323,7 @@ impl Drop for MountNamespace {
         };
 
         let mut topology_guard = MountTopology::write_lock();
-
-        let mut worklist = VecDeque::new();
-        worklist.push_back(root.clone());
-        while let Some(current_mount) = worklist.pop_front() {
-            let mut children = current_mount.children.write();
-            for (_, child) in children.drain() {
-                child.clear_topology_link(&mut topology_guard);
-                worklist.push_back(child);
-            }
-        }
+        root.detach_mount_tree(&mut topology_guard);
     }
 }
 

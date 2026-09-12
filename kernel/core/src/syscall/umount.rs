@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
+    fs::vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, UnmountMode},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -12,7 +12,7 @@ pub(super) fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<
     let umount_flags = UmountFlags::from_bits_truncate(flags as u32);
     debug!("path = {:?}, flags = {:?}", path_name, umount_flags);
 
-    umount_flags.check_unsupported_flags()?;
+    umount_flags.check_compatible_flags()?;
 
     let path_name = path_name.to_string_lossy();
     let fs_path = FsPath::from_fd_at(AT_FDCWD, &path_name, EmptyPathStr::Reject)?;
@@ -35,7 +35,15 @@ pub(super) fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<
     // to the topmost mount. If there is a mount stacked above the current thread's `cwd`, normal
     // path lookup through "." cannot access the upper mount, but umount through "." can operate
     // on the upper mount.
-    target_path.get_top_path().unmount(ctx)?;
+    //
+    // `MNT_FORCE` and `MNT_EXPIRE` are accepted as flags but do not yet implement
+    // full Linux semantics. Only `MNT_DETACH` selects a distinct topology mode.
+    let mode = if umount_flags.contains(UmountFlags::MNT_DETACH) {
+        UnmountMode::Detach
+    } else {
+        UnmountMode::Regular
+    };
+    target_path.get_top_path().unmount(mode, ctx)?;
 
     Ok(SyscallReturn::Return(0))
 }
@@ -50,14 +58,14 @@ bitflags! {
 }
 
 impl UmountFlags {
-    fn check_unsupported_flags(&self) -> Result<()> {
-        let supported_flags = UmountFlags::MNT_FORCE
-            | UmountFlags::MNT_DETACH
-            | UmountFlags::MNT_EXPIRE
-            | UmountFlags::UMOUNT_NOFOLLOW;
-        let unsupported_flags = *self - supported_flags;
-        if !unsupported_flags.is_empty() {
-            return_errno_with_message!(Errno::EINVAL, "unsupported flags");
+    fn check_compatible_flags(&self) -> Result<()> {
+        if self.contains(UmountFlags::MNT_EXPIRE)
+            && self.intersects(UmountFlags::MNT_DETACH | UmountFlags::MNT_FORCE)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "MNT_EXPIRE cannot be combined with MNT_DETACH or MNT_FORCE"
+            );
         }
         Ok(())
     }

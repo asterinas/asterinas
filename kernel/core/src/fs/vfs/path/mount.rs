@@ -62,6 +62,19 @@ pub(super) enum MountNsFileCopying {
     Skip,
 }
 
+/// How a mount is removed from the visible mount tree.
+///
+/// This is the VFS-internal counterpart of the `umount2(2)` flags that affect
+/// topology. It is intentionally narrower than the syscall flag set.
+/// `MNT_FORCE` and `MNT_EXPIRE` are not modeled yet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum UnmountMode {
+    /// Ordinary unmount. Fails with `EBUSY` if the mount still has child mounts.
+    Regular,
+    /// Lazy detach (`MNT_DETACH`). Immediately disconnects the whole subtree.
+    Detach,
+}
+
 /// Mount propagation types.
 ///
 /// This type defines how mount and unmount events are propagated
@@ -429,18 +442,37 @@ impl Mount {
     /// Unmounts a child mount node from the mountpoint and returns it.
     ///
     /// The mountpoint should belong to this mount node, or an error is returned.
+    ///
+    /// [`UnmountMode::Regular`] fails with `EBUSY` if the child still has its
+    /// own child mounts. [`UnmountMode::Detach`] disconnects the whole subtree
+    /// immediately.
     pub(super) fn do_unmount(
         &self,
         mountpoint: &Dentry,
+        mode: UnmountMode,
         topology: &mut MountTopology,
     ) -> Result<Arc<Self>> {
-        let child_mount = self
-            .children
-            .write()
-            .remove(&mountpoint.key())
-            .ok_or_else(|| Error::with_message(Errno::ENOENT, "can not find child mount"))?;
+        let child_mount = {
+            let mut children = self.children.write();
+            let key = mountpoint.key();
+            let child_mount = children
+                .get(&key)
+                .cloned()
+                .ok_or_else(|| Error::with_message(Errno::ENOENT, "can not find child mount"))?;
 
-        child_mount.clear_topology_link(topology);
+            if mode == UnmountMode::Regular && !child_mount.children.read().is_empty() {
+                return_errno_with_message!(Errno::EBUSY, "mount has child mounts");
+            }
+
+            children
+                .remove(&key)
+                .expect("the child mount was found above")
+        };
+
+        match mode {
+            UnmountMode::Regular => child_mount.clear_topology_link(topology),
+            UnmountMode::Detach => child_mount.detach_mount_tree(topology),
+        }
 
         Ok(child_mount)
     }
@@ -580,6 +612,24 @@ impl Mount {
     pub(super) fn clear_topology_link(&self, _topology: &mut MountTopology) {
         self.set_parent(None);
         self.clear_mountpoint();
+    }
+
+    /// Detaches this mount and every descendant from the mount tree.
+    pub(super) fn detach_mount_tree(&self, topology: &mut MountTopology) {
+        self.clear_topology_link(topology);
+
+        let mut worklist = VecDeque::new();
+        worklist.extend(self.children.write().drain().map(|(_, child)| child));
+        while let Some(child) = worklist.pop_front() {
+            child.clear_topology_link(topology);
+            worklist.extend(
+                child
+                    .children
+                    .write()
+                    .drain()
+                    .map(|(_, grandchild)| grandchild),
+            );
+        }
     }
 
     /// Attaches the mount node to the mountpoint.
@@ -778,5 +828,137 @@ impl Drop for Mount {
             ns.deregister_mount(self.id.unique_id());
         }
         // The recyclable ID is returned to the pool by `MountId`'s `Drop`.
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use ostd::prelude::ktest;
+
+    use super::*;
+    use crate::fs::{file::InodeMode, ramfs::RamFs};
+
+    fn dir_mode() -> InodeMode {
+        InodeMode::from_bits_truncate(0o755)
+    }
+
+    fn new_ramfs_mount() -> Arc<Mount> {
+        crate::time::clocks::init_for_ktest();
+        Mount::new_root(RamFs::new(), PerMountFlags::default(), Weak::new()).unwrap()
+    }
+
+    fn mount_ramfs_on(parent: &Arc<Mount>, mountpoint: &Arc<Dentry>) -> Arc<Mount> {
+        let mut topology = MountTopology::write_lock();
+        parent
+            .do_mount(
+                FsAndRoot::new(RamFs::new()),
+                PerMountFlags::default(),
+                mountpoint,
+                None,
+                &mut topology,
+            )
+            .unwrap()
+    }
+
+    fn unmount_child(
+        parent: &Arc<Mount>,
+        child: &Arc<Mount>,
+        mode: UnmountMode,
+    ) -> Result<Arc<Mount>> {
+        let mountpoint = child.mountpoint().unwrap();
+        let mut topology = MountTopology::write_lock();
+        parent.do_unmount(&mountpoint, mode, &mut topology)
+    }
+
+    fn assert_topology_edge(parent: &Arc<Mount>, child: &Arc<Mount>, mountpoint: &Arc<Dentry>) {
+        assert!(Arc::ptr_eq(
+            &parent.get(mountpoint).expect("child should remain mounted"),
+            child
+        ));
+        let upgraded_parent = child
+            .parent()
+            .and_then(|parent| parent.upgrade())
+            .expect("child should keep a live parent");
+        assert!(Arc::ptr_eq(&upgraded_parent, parent));
+        assert!(Arc::ptr_eq(
+            child
+                .mountpoint()
+                .as_ref()
+                .expect("child should keep a mountpoint"),
+            mountpoint
+        ));
+    }
+
+    struct NestedMounts {
+        root: Arc<Mount>,
+        x: Arc<Mount>,
+        y: Arc<Mount>,
+        z: Arc<Mount>,
+        x_dir: Path,
+        y_dir: Path,
+    }
+
+    fn nested_mounts() -> NestedMounts {
+        let root = new_ramfs_mount();
+        let root_path = Path::new_root(root.clone());
+        let x_dir = root_path
+            .new_child("x", InodeType::Dir, dir_mode())
+            .unwrap();
+        let x = mount_ramfs_on(&root, x_dir.dentry());
+
+        let x_path = Path::new_root(x.clone());
+        let y_dir = x_path.new_child("y", InodeType::Dir, dir_mode()).unwrap();
+        let y = mount_ramfs_on(&x, y_dir.dentry());
+
+        let y_path = Path::new_root(y.clone());
+        let z_dir = y_path.new_child("z", InodeType::Dir, dir_mode()).unwrap();
+        let z = mount_ramfs_on(&y, z_dir.dentry());
+
+        NestedMounts {
+            root,
+            x,
+            y,
+            z,
+            x_dir,
+            y_dir,
+        }
+    }
+
+    #[ktest]
+    fn regular_unmount_of_mount_with_child_returns_ebusy() {
+        let tree = nested_mounts();
+
+        let err = unmount_child(&tree.root, &tree.x, UnmountMode::Regular).unwrap_err();
+        assert_eq!(err.error(), Errno::EBUSY);
+
+        assert_topology_edge(&tree.root, &tree.x, tree.x_dir.dentry());
+        assert_topology_edge(&tree.x, &tree.y, tree.y_dir.dentry());
+        assert!(tree.y.get(tree.z.mountpoint().unwrap().as_ref()).is_some());
+    }
+
+    #[ktest]
+    fn detach_clears_parent_and_mountpoint_on_whole_subtree() {
+        let tree = nested_mounts();
+
+        unmount_child(&tree.root, &tree.x, UnmountMode::Detach).unwrap();
+
+        for mount in [&tree.x, &tree.y, &tree.z] {
+            assert!(mount.parent().is_none());
+            assert!(mount.mountpoint().is_none());
+            assert!(mount.children.read().is_empty());
+        }
+        assert!(tree.root.get(tree.x_dir.dentry()).is_none());
+    }
+
+    #[ktest]
+    fn detach_does_not_leave_stale_parent_when_descendant_is_held() {
+        let tree = nested_mounts();
+        let held_y = tree.y.clone();
+
+        unmount_child(&tree.root, &tree.x, UnmountMode::Detach).unwrap();
+        drop(tree.x);
+
+        assert!(held_y.parent().is_none());
+        assert!(held_y.mountpoint().is_none());
     }
 }

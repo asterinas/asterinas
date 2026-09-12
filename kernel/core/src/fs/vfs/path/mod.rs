@@ -6,7 +6,7 @@ use core::time::Duration;
 
 pub(in crate::fs) use dentry::Dentry;
 use inherit_methods_macro::inherit_methods;
-pub(crate) use mount::{MNT_UNIQUE_ID_MIN, Mount, MountPropType, PerMountFlags};
+pub(crate) use mount::{MNT_UNIQUE_ID_MIN, Mount, MountPropType, PerMountFlags, UnmountMode};
 use mount::{MountNsFileCopying, MountTopology};
 pub(crate) use mount_namespace::MountNamespace;
 pub(crate) use resolver::{
@@ -415,15 +415,22 @@ impl Path {
 
     /// Unmounts the filesystem mounted at the current path.
     ///
+    /// [`UnmountMode::Regular`] refuses to remove a mount that still has child
+    /// mounts. [`UnmountMode::Detach`] disconnects the whole subtree from the
+    /// visible mount tree immediately.
+    ///
     /// Returns the unmounted child mount on success.
     ///
     /// # Errors
+    ///
+    /// Returns `EBUSY` if `mode` is [`UnmountMode::Regular`] and the mount
+    /// still has child mounts.
     ///
     /// Returns `EINVAL` in the following cases:
     /// - The current path is not a mount root.
     /// - The mount of the current path is the root mount.
     /// - The current path is not in the current mount namespace.
-    pub(crate) fn unmount(&self, ctx: &Context) -> Result<Arc<Mount>> {
+    pub(crate) fn unmount(&self, mode: UnmountMode, ctx: &Context) -> Result<Arc<Mount>> {
         if !self.is_mount_root() {
             return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
         }
@@ -444,8 +451,10 @@ impl Path {
         let Some(mountpoint) = self.mount.mountpoint() else {
             return_errno_with_message!(Errno::EINVAL, "the mount has been detached");
         };
-        let parent_mount = self.mount.parent().unwrap().upgrade().unwrap();
-        let child_mount = parent_mount.do_unmount(&mountpoint, &mut topology_guard)?;
+        let Some(parent_mount) = self.mount.parent().and_then(|parent| parent.upgrade()) else {
+            return_errno_with_message!(Errno::EINVAL, "the mount has been detached");
+        };
+        let child_mount = parent_mount.do_unmount(&mountpoint, mode, &mut topology_guard)?;
 
         Ok(child_mount)
     }
