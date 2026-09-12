@@ -140,6 +140,7 @@ dependencies = [
  "aster-block",
  "aster-cmdline",
  "aster-console",
+ "aster-device",
  "aster-framebuffer",
  "aster-fuse",
  "aster-i8042",
