@@ -56,5 +56,3 @@ ProcSysKernel.RandomizeVaSpace
 
 SelfAndNumericPid/ProcPidStatTest.HasBasicFields/0
 SelfAndNumericPid/ProcPidStatTest.HasBasicFields/1
-SelfAndNumericPid/ProcPidStatmTest.HasBasicFields/0
-SelfAndNumericPid/ProcPidStatmTest.HasBasicFields/1
