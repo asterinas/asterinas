@@ -210,8 +210,16 @@ impl PathResolver {
         // the pseudo-path special-case above); the anonymous side is wired up
         // together with the `O_TMPFILE` open path in PR #3185.
 
+        // Hold the topology read lock for the whole walk so a concurrent
+        // mount/unmount/move cannot change parent, mountpoint, or children
+        // mid-resolution. The path may already be detached before the lock is
+        // taken; `resolve_name`/`resolve_parent` treat that as unreachable.
+        let _topology_guard = MountTopology::read_lock();
+
         let mut components = VecDeque::new();
-        components.push_front(self.resolve_name(path));
+        if let Some(name) = self.resolve_name(path) {
+            components.push_front(name);
+        }
 
         let mut parent_path = self.resolve_parent(path);
         let mut reach_resolver_root = false;
@@ -223,7 +231,9 @@ impl PathResolver {
                 break;
             }
 
-            let parent_name = self.resolve_name(&parent_dir);
+            let Some(parent_name) = self.resolve_name(&parent_dir) else {
+                break;
+            };
             // Stop if we reach an absolute root.
             if parent_name == "/" {
                 break;
@@ -246,40 +256,44 @@ impl PathResolver {
 
     /// Resolves the name of a `Path`.
     ///
+    /// Returns `None` if this path is a mount root whose parent mount can no
+    /// longer be upgraded. The caller treats that as an unreachable path
+    /// rather than panicking.
+    ///
     /// The method resolves the name by the following rules:
     /// 1. If the path is the root of the `PathResolver`, then the name is `"/"`.
     /// 2. If the path is not the root of a mount, then the name is the same as that of the
     ///    underlying dentry.
     /// 3. If the path is the root of a mount and
-    ///    - If the mount has a parent mount, then the name is that of the corresponding
+    ///    - If the mount has a live parent mount, then the name is that of the corresponding
     ///      mountpoint in the parent mount.
-    ///    - If the mount has no parent, then the name is `"/"`.
-    fn resolve_name(&self, path: &Path) -> String {
+    ///    - If the mount has no parent, or the parent can no longer be upgraded, then this
+    ///      method returns `None`.
+    fn resolve_name(&self, path: &Path) -> Option<String> {
         let mut owned;
         let mut current = path;
 
         loop {
             if current == &self.root {
-                return "/".to_string();
+                return Some("/".to_string());
             }
 
             if !current.is_mount_root() {
-                return current.name();
+                return Some(current.name());
             }
 
-            let Some(parent) = current.mount_node().parent() else {
-                return current.name();
-            };
-            let Some(mountpoint) = current.mount_node().mountpoint() else {
-                return current.name();
-            };
-
-            owned = Path::new(parent.upgrade().unwrap(), mountpoint);
+            let parent = current.mount_node().parent()?;
+            let mountpoint = current.mount_node().mountpoint()?;
+            let parent = parent.upgrade()?;
+            owned = Path::new(parent, mountpoint);
             current = &owned;
         }
     }
 
     /// Resolves the parent of a `Path`.
+    ///
+    /// Returns `None` if the path has no parent in the mount tree, including
+    /// when the parent mount can no longer be upgraded.
     ///
     /// The method resolves the parent by the following rules:
     /// 1. If the path is the root of the FS resolver, then the parent is none.
@@ -313,8 +327,8 @@ impl PathResolver {
 
             let parent = current.mount.parent()?;
             let mountpoint = current.mount.mountpoint()?;
-
-            owned = Path::new(parent.upgrade().unwrap(), mountpoint);
+            let parent = parent.upgrade()?;
+            owned = Path::new(parent, mountpoint);
             current = &owned;
         }
     }
@@ -1038,6 +1052,14 @@ mod test {
     use ostd::prelude::ktest;
 
     use super::*;
+    use crate::fs::{
+        file::InodeMode,
+        ramfs::RamFs,
+        vfs::{
+            path::{Dentry, PerMountFlags, UnmountMode},
+            registry::FsAndRoot,
+        },
+    };
 
     type SplitResult = Result<(&'static str, &'static str), SplitPathError>;
 
@@ -1127,5 +1149,165 @@ mod test {
             FsPath::from_fd_at(AT_FDCWD, &long, EmptyPathStr::Reject)
                 .is_err_and(|e| e.error() == Errno::ENAMETOOLONG)
         );
+    }
+
+    fn dir_mode() -> InodeMode {
+        InodeMode::from_bits_truncate(0o755)
+    }
+
+    fn new_ramfs_mount() -> Arc<Mount> {
+        crate::time::clocks::init_for_ktest();
+        Mount::new_root(RamFs::new(), PerMountFlags::default(), Weak::new()).unwrap()
+    }
+
+    fn mount_ramfs_on(parent: &Arc<Mount>, mountpoint: &Arc<Dentry>) -> Arc<Mount> {
+        let mut topology = MountTopology::write_lock();
+        parent
+            .do_mount(
+                FsAndRoot::new(RamFs::new()),
+                PerMountFlags::default(),
+                mountpoint,
+                None,
+                &mut topology,
+            )
+            .unwrap()
+    }
+
+    struct AbsPathTree {
+        root: Arc<Mount>,
+        x: Arc<Mount>,
+        y: Arc<Mount>,
+        y_root_path: Path,
+        deep: Path,
+    }
+
+    fn abs_path_tree() -> AbsPathTree {
+        let root = new_ramfs_mount();
+        let root_path = Path::new_root(root.clone());
+        let x_dir = root_path
+            .new_child("x", InodeType::Dir, dir_mode())
+            .unwrap();
+        let x = mount_ramfs_on(&root, x_dir.dentry());
+
+        let x_path = Path::new_root(x.clone());
+        let y_dir = x_path.new_child("y", InodeType::Dir, dir_mode()).unwrap();
+        let y = mount_ramfs_on(&x, y_dir.dentry());
+
+        let y_root_path = Path::new_root(y.clone());
+        let deep = y_root_path
+            .new_child("deep", InodeType::Dir, dir_mode())
+            .unwrap();
+
+        AbsPathTree {
+            root,
+            x,
+            y,
+            y_root_path,
+            deep,
+        }
+    }
+
+    fn resolver_at(root: &Arc<Mount>) -> PathResolver {
+        let root_path = Path::new_root(root.clone());
+        PathResolver::new(root_path.clone(), root_path)
+    }
+
+    fn leave_y_with_stale_parent(tree: &AbsPathTree) {
+        let mut topology = MountTopology::write_lock();
+
+        // Remove `Y` from `X` without clearing `Y`'s link. Once the remaining
+        // references to `X` are dropped, `Y.parent.upgrade()` will fail.
+        let y_mountpoint = tree.y.mountpoint().unwrap();
+        let removed_y = tree
+            .x
+            .children
+            .write()
+            .remove(&y_mountpoint.key())
+            .expect("Y must be mounted below X");
+        assert!(Arc::ptr_eq(&removed_y, &tree.y));
+
+        // `root.children` also owns `X`, so detach that edge before the test
+        // drops its explicit `Arc<X>`.
+        let x_mountpoint = tree.x.mountpoint().unwrap();
+        let removed_x = tree
+            .root
+            .children
+            .write()
+            .remove(&x_mountpoint.key())
+            .expect("X must be mounted below root");
+        assert!(Arc::ptr_eq(&removed_x, &tree.x));
+        tree.x.clear_topology_link(&mut topology);
+    }
+
+    #[ktest]
+    fn make_abs_path_reaches_nested_mount() {
+        let tree = abs_path_tree();
+        let resolver = resolver_at(&tree.root);
+
+        match resolver.make_abs_path(&tree.deep) {
+            AbsPathResult::Reachable(path) => assert_eq!(path, "/x/y/deep"),
+            AbsPathResult::Unreachable(path) => {
+                panic!("nested path should be reachable, got {path}")
+            }
+        }
+    }
+
+    #[ktest]
+    fn make_abs_path_is_unreachable_after_detach() {
+        let tree = abs_path_tree();
+        let resolver = resolver_at(&tree.root);
+
+        {
+            let mountpoint = tree.x.mountpoint().unwrap();
+            let mut topology = MountTopology::write_lock();
+            tree.root
+                .do_unmount(&mountpoint, UnmountMode::Detach, &mut topology)
+                .unwrap();
+        }
+
+        match resolver.make_abs_path(&tree.deep) {
+            AbsPathResult::Unreachable(path) => assert_eq!(path, "/deep"),
+            AbsPathResult::Reachable(path) => {
+                panic!("detached path should be unreachable, got {path}")
+            }
+        }
+    }
+
+    #[ktest]
+    fn make_abs_path_handles_stale_parent_on_nested_dentry() {
+        let tree = abs_path_tree();
+        let resolver = resolver_at(&tree.root);
+
+        // Leave `Y.parent` pointing at `X`, then drop `X` so `upgrade()` fails.
+        // This covers `resolve_name` on the mount root of `Y`.
+        leave_y_with_stale_parent(&tree);
+        drop(tree.x);
+        assert!(tree.y.parent().unwrap().upgrade().is_none());
+
+        match resolver.make_abs_path(&tree.deep) {
+            AbsPathResult::Unreachable(_) => {}
+            AbsPathResult::Reachable(path) => {
+                panic!("stale parent should be unreachable, got {path}")
+            }
+        }
+    }
+
+    #[ktest]
+    fn make_abs_path_handles_stale_parent_on_mount_root() {
+        let tree = abs_path_tree();
+        let resolver = resolver_at(&tree.root);
+
+        // Starting at the mount root covers both `resolve_name` and
+        // `resolve_parent` observing `Weak::upgrade() == None`.
+        leave_y_with_stale_parent(&tree);
+        drop(tree.x);
+        assert!(tree.y.parent().unwrap().upgrade().is_none());
+
+        match resolver.make_abs_path(&tree.y_root_path) {
+            AbsPathResult::Unreachable(_) => {}
+            AbsPathResult::Reachable(path) => {
+                panic!("stale mount-root parent should be unreachable, got {path}")
+            }
+        }
     }
 }
