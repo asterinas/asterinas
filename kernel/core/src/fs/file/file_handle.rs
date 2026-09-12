@@ -9,7 +9,8 @@ use core::fmt::Display;
 use ostd::io::IoMem;
 
 use super::{
-    AccessMode, FileCommon, FileOwnerTarget, InodeHandle, SettableStatusFlags, StatusFlags,
+    AccessMode, FileCommon, FileOwnerKind, FileOwnerTarget, InodeHandle, SettableStatusFlags,
+    StatusFlags,
     file_table::FdFlags, inode_handle::SeekFrom,
 };
 use crate::{
@@ -245,8 +246,13 @@ impl dyn FileLike {
     /// the owner is a process group, every member of the group receives the signal.
     /// `creds` are the credentials of the caller, recorded so that a later `SIGIO` can be
     /// permission-checked against them rather than against whoever is running at the time.
-    pub(crate) fn set_owner(&self, owner: Option<&FileOwnerTarget>, creds: FileOwnerCreds) {
-        self.common().owner().set(self, owner, creds);
+    pub(crate) fn set_owner(
+        &self,
+        owner: Option<&FileOwnerTarget>,
+        kind: FileOwnerKind,
+        creds: FileOwnerCreds,
+    ) {
+        self.common().owner().set(self, owner, kind, creds);
     }
 
     pub(crate) fn downcast_ref<T: FileLike>(&self) -> Option<&T> {

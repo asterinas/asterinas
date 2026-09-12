@@ -195,14 +195,10 @@ impl FileOwnerCreds {
 /// allows.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/fcntl.c#L839>.
-pub(crate) fn check_sigio_perm(target: &Process, owner: &FileOwnerCreds) -> bool {
-    // The owner's saved credentials are compared against the *target's* credentials, so the
-    // target's main thread is the one to ask.
-    let target_main_thread = target.main_thread();
-    let Some(target_thread) = target_main_thread.as_posix_thread() else {
-        return false;
-    };
-    let target_cred = target_thread.credentials();
+pub(crate) fn check_sigio_perm(target: &PosixThread, owner: &FileOwnerCreds) -> bool {
+    // Linux checks the credentials of the *task* being signalled, so a thread owner is
+    // checked against that thread rather than against its process's main thread.
+    let target_cred = target.credentials();
 
     owner.euid.is_root()
         || owner.euid == target_cred.suid()

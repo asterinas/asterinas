@@ -862,10 +862,39 @@ pub(crate) fn enqueue_sigio_async(process: Weak<Process>, owner: FileOwnerCreds)
             let Some(process) = process.upgrade() else {
                 return;
             };
-            if !check_sigio_perm(&process, &owner) {
+            let main_thread = process.main_thread();
+            let Some(target) = main_thread.as_posix_thread() else {
+                return;
+            };
+            if !check_sigio_perm(target, &owner) {
                 return;
             }
             process.enqueue_signal(Box::new(KernelSignal::new(SIGIO)));
+        },
+        work_queue::WorkPriority::High,
+    );
+}
+
+/// Enqueues `SIGIO` to a single thread that owns a file description, asynchronously.
+///
+/// This is the `F_OWNER_TID` case: the signal is thread-directed rather than
+/// process-directed, so only that thread can handle it.
+pub(crate) fn enqueue_sigio_to_thread_async(thread: Weak<Thread>, owner: FileOwnerCreds) {
+    use super::signal::signals::kernel::KernelSignal;
+    use crate::thread::work_queue;
+
+    work_queue::submit_work_func(
+        move || {
+            let Some(thread) = thread.upgrade() else {
+                return;
+            };
+            let Some(posix_thread) = thread.as_posix_thread() else {
+                return;
+            };
+            if !check_sigio_perm(posix_thread, &owner) {
+                return;
+            }
+            posix_thread.enqueue_signal(Box::new(KernelSignal::new(SIGIO)));
         },
         work_queue::WorkPriority::High,
     );
@@ -886,7 +915,11 @@ pub(crate) fn broadcast_sigio_async(process_group: Weak<ProcessGroup>, owner: Fi
                 return;
             };
             for process in process_group.lock().iter() {
-                if !check_sigio_perm(&process, &owner) {
+                let main_thread = process.main_thread();
+                let Some(target) = main_thread.as_posix_thread() else {
+                    continue;
+                };
+                if !check_sigio_perm(target, &owner) {
                     continue;
                 }
                 process.enqueue_signal(Box::new(KernelSignal::new(SIGIO)));
