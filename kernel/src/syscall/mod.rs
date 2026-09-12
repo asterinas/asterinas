@@ -14,7 +14,14 @@ pub use timer_create::create_timer;
 use crate::{
     cpu::LinuxAbi,
     prelude::*,
-    process::{posix_thread::cbpf::SeccompMode, signal::constants::SIGKILL},
+    process::{
+        posix_thread::cbpf::SeccompMode,
+        signal::{
+            c_types::siginfo_t,
+            constants::{SIGKILL, SIGSYS},
+            signals::raw::RawSignal,
+        },
+    },
     syscall::{
         arch::{SYS_EXIT, SYS_READ, SYS_RT_SIGRETURN, SYS_WRITE},
         seccomp::SeccompFilterAction,
@@ -401,7 +408,16 @@ pub fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
                     return;
                 }
                 Ok(SeccompFilterAction::Kill) => {
+                    // TODO add seperate thread kill
                     ctx.process.stop(SIGKILL);
+                    return;
+                }
+                Ok(SeccompFilterAction::Trap(data)) => {
+                    const SYS_SECCOMP: i32 = 1;
+                    let mut info = siginfo_t::new(SIGSYS, SYS_SECCOMP);
+                    info.si_errno = data as i32;
+                    ctx.posix_thread
+                        .enqueue_signal(Box::new(RawSignal::new(info)));
                     return;
                 }
                 Ok(SeccompFilterAction::Trace(_)) => {

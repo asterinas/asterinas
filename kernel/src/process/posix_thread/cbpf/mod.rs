@@ -1,5 +1,5 @@
 use alloc::vec::IntoIter;
-use core::ops::{Deref, DerefMut};
+use core::ops::Deref;
 
 use cbpf_opcodes::{
     AncOps, BPF_MAXINS, BPF_MEMWORDS, ClassicBpfOpcode, CommonCbpfOpcode, NetfilterBpfOpcode,
@@ -60,12 +60,6 @@ impl Deref for UnverifiedFilterProg {
     }
 }
 
-impl DerefMut for UnverifiedFilterProg {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl IntoIterator for UnverifiedFilterProg {
     type Item = RawFilterBlock;
     type IntoIter = IntoIter<RawFilterBlock>;
@@ -78,6 +72,10 @@ impl IntoIterator for UnverifiedFilterProg {
 impl UnverifiedFilterProg {
     pub fn new(len: usize) -> Self {
         Self(Vec::with_capacity(len))
+    }
+
+    pub fn push(&mut self, raw: RawFilterBlock) {
+        self.0.push(raw)
     }
 }
 
@@ -390,43 +388,55 @@ impl ClassicBpfBlock for SeccompFilterBlock {
     }
 }
 
-/// Trait for a cBPF program.
-/// TODO rework/remove execute() arguments.
 pub trait ClassicBPFilter: Deref<Target = [Self::Block]> {
     type Block: ClassicBpfBlock;
+    type Context<'a>;
 
-    fn execute(
-        &self,
-        user_ctx: &UserContext,
-        syscall_id: u64,
-        syscall_args: &[u64; 6],
-    ) -> Result<u32>;
+    fn execute(&self, ctx: Self::Context<'_>) -> Result<u32>;
+}
+
+pub struct NetfilterContext<'a> {
+    _packet: &'a [u8],
+    _len: usize,
 }
 
 impl ClassicBPFilter for NetFilterProg {
     type Block = NetFilterBlock;
+    type Context<'a> = NetfilterContext<'a>;
 
-    /// TODO polymorphise args
-    fn execute(
-        &self,
-        user_ctx: &UserContext,
-        _syscall_id: u64,
-        _syscall_args: &[u64; 6],
-    ) -> Result<u32> {
-        unimplemented!("Tried to execute netfilter under UserContext:'\n{user_ctx:#?}")
+    fn execute(&self, _ctx: Self::Context<'_>) -> Result<u32> {
+        unimplemented!("Tried to execute netfilter")
+    }
+}
+
+pub struct SeccompContext<'a> {
+    pub(self) user_ctx: &'a UserContext,
+    pub(self) syscall_id: u64,
+    pub(self) syscall_args: &'a [u64; 6],
+}
+
+impl<'a> SeccompContext<'a> {
+    pub fn new(user_ctx: &'a UserContext, syscall_id: u64, syscall_args: &'a [u64; 6]) -> Self {
+        Self {
+            user_ctx,
+            syscall_id,
+            syscall_args,
+        }
     }
 }
 
 impl ClassicBPFilter for SeccompFilterProg {
     type Block = SeccompFilterBlock;
+    type Context<'a> = SeccompContext<'a>;
 
-    fn execute(
-        &self,
-        user_ctx: &UserContext,
-        syscall_id: u64,
-        syscall_args: &[u64; 6],
-    ) -> Result<u32> {
+    fn execute(&self, ctx: Self::Context<'_>) -> Result<u32> {
         use cbpf_opcodes::CommonCbpfOpcode::*;
+
+        let SeccompContext {
+            user_ctx,
+            syscall_id,
+            syscall_args,
+        } = ctx;
 
         let mut a: u32 = 0;
         let mut x: u32 = 0;

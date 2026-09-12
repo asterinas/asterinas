@@ -8,8 +8,8 @@ use crate::{
         posix_thread::{
             PosixThread,
             cbpf::{
-                self, ClassicBPFilter, NetFilterProg, RawFilterBlock, SeccompFilterLeaf,
-                SeccompFilterProg,
+                self, ClassicBPFilter, NetFilterProg, RawFilterBlock, SeccompContext,
+                SeccompFilterLeaf, SeccompFilterProg,
                 SeccompMode::{self},
                 SeccompOp::{self},
                 SeccompRet, UnverifiedFilterProg,
@@ -122,6 +122,7 @@ pub(super) enum SeccompFilterAction {
     Allow,
     Errno(Errno),
     Kill,
+    Trap(u16),
     #[expect(dead_code)] // TODO
     Trace(u32),
 }
@@ -133,11 +134,14 @@ pub(super) fn execute_seccomp_filter(
 ) -> Result<SeccompFilterAction> {
     // Walk leaf → root, keeping the signed minimum across all filters.
     // A lower (more negative when cast to i32) return value wins.
+    // TODO early exit on kill?
     let mut result = SeccompRet::Allow as u32;
     for leaf in posix_thread.seccomp_state().into_iter() {
-        let n = leaf
-            .ins
-            .execute(user_ctx, syscall_frame.syscall_number, &syscall_frame.args)?;
+        let n = leaf.ins.execute(SeccompContext::new(
+            user_ctx,
+            syscall_frame.syscall_number,
+            &syscall_frame.args,
+        ))?;
         result = (result as i32).min(n as i32) as u32;
     }
 
@@ -156,7 +160,7 @@ fn parse_seccomp_return(return_value: u32) -> Result<SeccompFilterAction> {
         }
         Ok(SeccompRet::Kill) => Ok(SeccompFilterAction::Kill),
         Ok(SeccompRet::Trace) => Ok(SeccompFilterAction::Trace(return_value & 0xffff)),
-        Ok(SeccompRet::Trap) => Ok(SeccompFilterAction::Kill),
+        Ok(SeccompRet::Trap) => Ok(SeccompFilterAction::Trap((return_value & 0xffff) as u16)),
         Err(_) => unreachable!("invalid seccomp filter return value"),
     }
 }
