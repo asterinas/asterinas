@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::cmp::Ordering;
+
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
     fs::{
         file::{
-            FileLike, StatusFlags, StatusFlagsUpdate,
+            FileLike, FileOwnerKind, FileOwnerTarget, StatusFlags, StatusFlagsUpdate,
             file_table::{FdFlags, FileDesc, FileTable, RawFileDesc, WithFileTable, get_file_fast},
         },
         ramfs::memfd::{FileSeals, MemfdInodeHandle},
         vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
     },
     prelude::*,
-    process::{Pid, pid_table},
+    process::{FileOwnerCreds, Pgid, Pid, pid_table},
 };
 
 pub(super) fn sys_fcntl(
@@ -40,6 +42,8 @@ pub(super) fn sys_fcntl(
         }),
         FcntlCmd::F_GETOWN => handle_getown(fd, ctx),
         FcntlCmd::F_SETOWN => handle_setown(fd, arg, ctx),
+        FcntlCmd::F_GETOWN_EX => handle_getown_ex(fd, arg, ctx),
+        FcntlCmd::F_SETOWN_EX => handle_setown_ex(fd, arg, ctx),
         FcntlCmd::F_ADD_SEALS => handle_addseal(fd, arg, ctx),
         FcntlCmd::F_GET_SEALS => handle_getseal(fd, ctx),
     }
@@ -174,34 +178,160 @@ fn handle_getown(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
-    let pid = file.common().owner().pid().unwrap_or(0);
-    Ok(SyscallReturn::Return(pid as _))
+    // A process ID is returned as a positive value; a process group ID is returned as a negative
+    // value. Like Linux, we do not special-case the process group IDs that a libc wrapper may
+    // mistake for error codes; `F_GETOWN_EX` is the way to avoid that ambiguity.
+    let id = file.common().owner().id().unwrap_or(0);
+    Ok(SyscallReturn::Return(id as _))
 }
 
 fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    // A process ID is specified as a positive value; a process group ID is specified as a negative value.
-    // TODO: Support process groups instead of falling back to processes.
-    let pid = (arg as i32).unsigned_abs();
-    if pid.cast_signed() < 0 {
-        return_errno_with_message!(Errno::EINVAL, "negative PIDs are not valid");
+    // A process ID is specified as a positive value; a process group ID is specified as a negative
+    // value. Zero clears the owner.
+    let who = arg as i32;
+    // `i32::MIN` has no positive counterpart, so reject it before negating it below.
+    if who == i32::MIN {
+        return_errno_with_message!(Errno::EINVAL, "the file owner ID is out of range");
     }
 
-    let owner_process = if pid == 0 {
-        None
+    // `f_setown` records `PIDTYPE_TGID` for a cleared owner as well as a positive one, so
+    // only a negative argument selects the process-group kind.
+    let kind = if who < 0 {
+        FileOwnerKind::ProcessGroup
     } else {
-        Some(pid_table::pid_table_mut().get_process(pid).ok_or_else(|| {
-            Error::with_message(
-                Errno::ESRCH,
-                "the process to be a file owner does not exist",
-            )
-        })?)
+        FileOwnerKind::Process
     };
+
+    let owner = match who.cmp(&0) {
+        Ordering::Equal => None,
+        Ordering::Greater => {
+            let pid = who as Pid;
+            let process = pid_table::pid_table_mut().get_process(pid).ok_or_else(|| {
+                Error::with_message(
+                    Errno::ESRCH,
+                    "the process to be a file owner does not exist",
+                )
+            })?;
+            Some(FileOwnerTarget::Process(process))
+        }
+        Ordering::Less => {
+            let pgid: Pgid = who.unsigned_abs();
+            let group = pid_table::pid_table_mut()
+                .get_process_group(&pgid)
+                .ok_or_else(|| {
+                    Error::with_message(
+                        Errno::ESRCH,
+                        "the process group to be a file owner does not exist",
+                    )
+                })?;
+            Some(FileOwnerTarget::ProcessGroup(group))
+        }
+    };
+
+    // Record the caller's credentials now. Linux checks these saved values when the signal
+    // is later delivered, not the credentials of whoever is running at that point.
+    let creds = FileOwnerCreds::new_from(&ctx.posix_thread.credentials());
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
-    file.set_owner(owner_process.as_ref());
+    file.set_owner(owner.as_ref(), kind, creds);
 
     Ok(SyscallReturn::Return(0))
+}
+
+/// C struct `f_owner_ex`, the argument to `F_SETOWN_EX` and `F_GETOWN_EX`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+struct c_f_owner_ex {
+    /// One of the `F_OWNER_*` constants, i.e. a [`FileOwnerKind`].
+    type_: i32,
+    /// The thread, process or process group ID, always as a positive value.
+    pid: i32,
+}
+
+fn handle_getown_ex(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+    let (kind, id) = {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        let file = get_file_fast!(&mut file_table, fd);
+        let owner = file.common().owner();
+        (owner.kind(), owner.id())
+    };
+
+    // With no owner at all Linux still reports a type, and the type it reports is
+    // `F_OWNER_TID`. The identifier is also zeroed once the owner has exited, while the
+    // recorded type keeps being reported.
+    let owner_ex = c_f_owner_ex {
+        type_: kind.unwrap_or(FileOwnerKind::Thread) as i32,
+        // `F_GETOWN` reports a process group negated, but `f_owner_ex` does not: the type
+        // field already says which kind of ID this is.
+        pid: id.unwrap_or(0).abs(),
+    };
+
+    ctx.user_space().write_val(arg as Vaddr, &owner_ex)?;
+
+    Ok(SyscallReturn::Return(0))
+}
+
+fn handle_setown_ex(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
+    let owner_ex: c_f_owner_ex = ctx.user_space().read_val(arg as Vaddr)?;
+
+    let kind = FileOwnerKind::try_from(owner_ex.type_)
+        .map_err(|_| Error::with_message(Errno::EINVAL, "the file owner type is not valid"))?;
+
+    // Unlike `F_SETOWN`, the ID is not negated to select a process group here: the type
+    // field carries what `F_SETOWN` encoded in the sign. Zero clears the owner, and a
+    // negative value simply names nothing, which Linux reports as `ESRCH` rather than
+    // rejecting it as malformed.
+    let owner = match owner_ex.pid {
+        0 => None,
+        pid if pid < 0 => {
+            return_errno_with_message!(
+                Errno::ESRCH,
+                "the thread, process or process group to be a file owner does not exist"
+            )
+        }
+        pid => Some(lookup_owner_target(kind, pid as u32)?),
+    };
+
+    let creds = FileOwnerCreds::new_from(&ctx.posix_thread.credentials());
+
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let file = get_file_fast!(&mut file_table, fd);
+    file.set_owner(owner.as_ref(), kind, creds);
+
+    Ok(SyscallReturn::Return(0))
+}
+
+/// Resolves a `F_SETOWN_EX` identifier of the given kind into an owner target.
+fn lookup_owner_target(kind: FileOwnerKind, id: u32) -> Result<FileOwnerTarget> {
+    match kind {
+        FileOwnerKind::Thread => {
+            let thread = pid_table::pid_table_mut().get_thread(id).ok_or_else(|| {
+                Error::with_message(Errno::ESRCH, "the thread to be a file owner does not exist")
+            })?;
+            Ok(FileOwnerTarget::Thread(thread))
+        }
+        FileOwnerKind::Process => {
+            let process = pid_table::pid_table_mut().get_process(id).ok_or_else(|| {
+                Error::with_message(
+                    Errno::ESRCH,
+                    "the process to be a file owner does not exist",
+                )
+            })?;
+            Ok(FileOwnerTarget::Process(process))
+        }
+        FileOwnerKind::ProcessGroup => {
+            let group = pid_table::pid_table_mut()
+                .get_process_group(&id)
+                .ok_or_else(|| {
+                    Error::with_message(
+                        Errno::ESRCH,
+                        "the process group to be a file owner does not exist",
+                    )
+                })?;
+            Ok(FileOwnerTarget::ProcessGroup(group))
+        }
+    }
 }
 
 fn handle_addseal(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -238,6 +368,8 @@ enum FcntlCmd {
     F_SETLKW = 7,
     F_SETOWN = 8,
     F_GETOWN = 9,
+    F_SETOWN_EX = 15,
+    F_GETOWN_EX = 16,
     F_DUPFD_CLOEXEC = 1030,
     F_ADD_SEALS = 1033,
     F_GET_SEALS = 1034,

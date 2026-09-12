@@ -26,7 +26,7 @@ mod wait;
 pub(crate) use clone::{CloneArgs, CloneFlags, clone_child};
 pub(crate) use credentials::{Credentials, Gid, Uid};
 pub(crate) use execve::do_execve;
-pub(crate) use kill::{kill, kill_all, kill_group, tgkill};
+pub(crate) use kill::{FileOwnerCreds, kill, kill_all, kill_group, tgkill};
 pub(crate) use namespace::{
     nsproxy::{ContextSetNsAdminApi, NsProxy, NsProxyBuilder, check_unsupported_ns_flags},
     unshare::ContextUnshareAdminApi,
@@ -35,7 +35,8 @@ pub(crate) use namespace::{
 pub(crate) use pid_file::PidFile;
 pub(crate) use process::{
     ExitCode, INIT_PROCESS_PID, JobControl, Pgid, Pid, Process, ProcessGroup, ReapedChildrenStats,
-    Session, Sid, Terminal, broadcast_signal_async, enqueue_signal_async, spawn_init_process,
+    Session, Sid, Terminal, broadcast_sigio_async, broadcast_signal_async, enqueue_signal_async,
+    enqueue_sigio_async, enqueue_sigio_to_thread_async, spawn_init_process,
 };
 pub(crate) use process_filter::ProcessFilter;
 pub(crate) use process_vm::{INIT_STACK_SIZE, LockedHeap, ProcessVm, VmarSnapshot};

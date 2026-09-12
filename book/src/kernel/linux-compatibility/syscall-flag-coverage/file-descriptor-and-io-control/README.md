@@ -18,7 +18,6 @@ Supported functionality in SCML:
 Unsupported commands:
 * `F_NOTIFY`
 * `F_OFD_SETLK`, `F_OFD_SETLKW` and `F_OFD_GETLK`
-* `F_GETOWN_EX` and `F_SETOWN_EX`
 * `F_GETSIG` and `F_SETSIG`
 * `F_SETLEASE` and `F_GETLEASE`
 * `F_SETPIPE_SZ` and `F_GETPIPE_SZ`
