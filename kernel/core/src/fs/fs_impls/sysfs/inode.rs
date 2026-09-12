@@ -7,7 +7,7 @@ use crate::{
         utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, Metadata},
+            inode::{Extension, Inode, Metadata, RevalidationPolicy},
         },
     },
     prelude::*,
@@ -97,5 +97,50 @@ impl Inode for SysFsInode {
             Errno::EPERM,
             "file creation under sysfs is not allowed",
         ))
+    }
+
+    fn revalidation_policy(&self) -> RevalidationPolicy {
+        // Devices come and go, so the names under a directory must be checked
+        // against the live `SysTree` rather than trusted from the dentry cache.
+        match self.node_kind() {
+            SysTreeNodeKind::Branch(_) | SysTreeNodeKind::Leaf(_) => {
+                RevalidationPolicy::REVALIDATE_EXISTS | RevalidationPolicy::REVALIDATE_ABSENT
+            }
+            SysTreeNodeKind::Attr(..) | SysTreeNodeKind::Symlink(_) => RevalidationPolicy::empty(),
+        }
+    }
+
+    fn revalidate_exists(&self, name: &str, child: &dyn Inode) -> bool {
+        let Some(child) = child.downcast_ref::<Self>() else {
+            return false;
+        };
+
+        let child_node_id = match child.node_kind() {
+            // An attribute is still valid if its node still lists it with the
+            // same id; an attribute removed and re-added is a new file.
+            SysTreeNodeKind::Attr(attr, node) => {
+                return node
+                    .node_attrs()
+                    .get(attr.name())
+                    .is_some_and(|current| current.id() == attr.id())
+                    && !node.is_attr_absent(name);
+            }
+            SysTreeNodeKind::Branch(node) => *node.id(),
+            SysTreeNodeKind::Leaf(node) => *node.id(),
+            SysTreeNodeKind::Symlink(node) => *node.id(),
+        };
+
+        // A child directory or symlink is still valid if the same node is
+        // still attached under the same name.
+        match self.node_kind() {
+            SysTreeNodeKind::Branch(branch) => branch
+                .child(name)
+                .is_some_and(|current| *current.id() == child_node_id),
+            _ => false,
+        }
+    }
+
+    fn revalidate_absent(&self, _name: &str) -> bool {
+        false
     }
 }
