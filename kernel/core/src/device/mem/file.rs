@@ -38,7 +38,7 @@ pub(crate) use geturandom as getrandom;
 
 #[expect(dead_code)]
 #[derive(Clone, Copy, Debug)]
-pub(super) enum MemFile {
+pub(in crate::device) enum MemFile {
     Mem,
     Kmem,
     Null,
