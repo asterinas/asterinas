@@ -19,6 +19,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::{RawIoctl, dispatch_ioctl},
+    vm::vmar::FileMmapRequest,
 };
 
 #[derive(Debug)]
@@ -499,7 +500,7 @@ impl PerOpenFileOps for FbHandle {
         true
     }
 
-    fn mappable(&self) -> Result<Mappable> {
+    fn mappable(&self, _request: FileMmapRequest) -> Result<Mappable> {
         let iomem = self.framebuffer.io_mem();
         Ok(Mappable::IoMem(iomem.clone()))
     }

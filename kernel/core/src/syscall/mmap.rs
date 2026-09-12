@@ -9,7 +9,7 @@ use crate::{
     vm::{
         page_cache::VmoOptions,
         perms::VmPerms,
-        vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, VmarMapOffset},
+        vmar::{MmapMode, VMAR_CAP_ADDR, VMAR_LOWEST_ADDR, VmarMapOffset},
     },
 };
 
@@ -99,7 +99,7 @@ fn do_sys_mmap(
         }
 
         if option.typ().is_shared() {
-            options = options.is_shared(true);
+            options = options.map_mode(MmapMode::Shared);
         }
 
         if option.flags().contains(MMapFlags::MAP_ANONYMOUS) {
