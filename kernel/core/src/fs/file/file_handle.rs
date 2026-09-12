@@ -9,14 +9,14 @@ use core::fmt::Display;
 use ostd::io::IoMem;
 
 use super::{
-    AccessMode, FileCommon, InodeHandle, SettableStatusFlags, StatusFlags, file_table::FdFlags,
-    inode_handle::SeekFrom,
+    AccessMode, FileCommon, FileOwnerTarget, InodeHandle, SettableStatusFlags, StatusFlags,
+    file_table::FdFlags, inode_handle::SeekFrom,
 };
 use crate::{
     fs::vfs::{inode::FallocMode, path::Path},
     net::socket::Socket,
     prelude::*,
-    process::{Process, signal::Pollable},
+    process::{FileOwnerCreds, signal::Pollable},
     util::ioctl::RawIoctl,
     vm::page_cache::Vmo,
 };
@@ -237,13 +237,16 @@ impl dyn FileLike {
         Ok(())
     }
 
-    /// Sets a process as the owner of the file description.
+    /// Sets a process or a process group as the owner of the file description.
     ///
     /// Passing `None` clears the current owner.
     ///
-    /// The owner receives `SIGIO` for I/O events on the file description when `O_ASYNC` is set.
-    pub(crate) fn set_owner(&self, owner: Option<&Arc<Process>>) {
-        self.common().owner().set(self, owner);
+    /// The owner receives `SIGIO` for I/O events on the file description when `O_ASYNC` is set. If
+    /// the owner is a process group, every member of the group receives the signal.
+    /// `creds` are the credentials of the caller, recorded so that a later `SIGIO` can be
+    /// permission-checked against them rather than against whoever is running at the time.
+    pub(crate) fn set_owner(&self, owner: Option<&FileOwnerTarget>, creds: FileOwnerCreds) {
+        self.common().owner().set(self, owner, creds);
     }
 
     pub(crate) fn downcast_ref<T: FileLike>(&self) -> Option<&T> {

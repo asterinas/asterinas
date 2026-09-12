@@ -10,8 +10,8 @@ use crate::{
     fs::vfs::{notify, path::Path},
     prelude::*,
     process::{
-        Pid, Process,
-        signal::{PollAdaptor, constants::SIGIO},
+        FileOwnerCreds, Process, ProcessGroup, broadcast_sigio_async, enqueue_sigio_async,
+        signal::PollAdaptor,
     },
 };
 
@@ -94,33 +94,82 @@ impl Drop for FileCommon {
     }
 }
 
-/// The process that receives asynchronous I/O signals for a file description.
+/// The process or process group that receives asynchronous I/O signals for a file description.
 pub(crate) struct FileOwner {
     inner: Mutex<Option<Owner>>,
 }
 
+/// The recipient of the asynchronous I/O signals for a file description.
+///
+/// A file description is owned either by a single process or by an entire process group. In the
+/// latter case every member of the group receives the signal.
+pub(crate) enum FileOwnerTarget {
+    /// A single process, selected by a positive `fcntl(F_SETOWN)` argument.
+    Process(Arc<Process>),
+    /// A process group, selected by a negative `fcntl(F_SETOWN)` argument.
+    ProcessGroup(Arc<ProcessGroup>),
+}
+
+impl FileOwnerTarget {
+    /// Returns the identifier that `fcntl(F_GETOWN)` reports for this owner.
+    ///
+    /// A process ID is reported as a positive value and a process group ID as a negative value.
+    fn id(&self) -> i32 {
+        match self {
+            // A PID never exceeds `i32::MAX`, so the cast preserves the value.
+            Self::Process(process) => process.pid() as i32,
+            // Likewise for a PGID, which is the PID of the group leader.
+            Self::ProcessGroup(group) => -(group.pgid() as i32),
+        }
+    }
+
+    fn downgrade(&self) -> WeakFileOwnerTarget {
+        match self {
+            Self::Process(process) => WeakFileOwnerTarget::Process(Arc::downgrade(process)),
+            Self::ProcessGroup(group) => WeakFileOwnerTarget::ProcessGroup(Arc::downgrade(group)),
+        }
+    }
+}
+
+/// A weak reference to a [`FileOwnerTarget`].
+///
+/// The owner must not be kept alive by the file description that it owns.
+#[derive(Clone)]
+enum WeakFileOwnerTarget {
+    Process(Weak<Process>),
+    ProcessGroup(Weak<ProcessGroup>),
+}
+
 impl FileOwner {
-    /// Creates an owner state with no process assigned.
+    /// Creates an owner state with no process or process group assigned.
     pub(crate) fn new() -> Self {
         Self {
             inner: Mutex::new(None),
         }
     }
 
-    /// Returns the process ID of the current owner.
-    pub(crate) fn pid(&self) -> Option<Pid> {
-        self.inner.lock().as_ref().map(|owner| owner.pid)
+    /// Returns the identifier of the current owner.
+    ///
+    /// A process ID is returned as a positive value and a process group ID as a negative value.
+    /// `None` means that the file description has no owner.
+    pub(crate) fn id(&self) -> Option<i32> {
+        self.inner.lock().as_ref().map(|owner| owner.id)
     }
 
-    pub(super) fn set(&self, file: &dyn FileLike, owner: Option<&Arc<Process>>) {
+    pub(super) fn set(
+        &self,
+        file: &dyn FileLike,
+        owner: Option<&FileOwnerTarget>,
+        creds: FileOwnerCreds,
+    ) {
         let mut owner_guard = self.inner.lock();
         *owner_guard = None;
 
-        let Some(process) = owner else {
+        let Some(target) = owner else {
             return;
         };
 
-        let mut owner = Owner::new(process);
+        let mut owner = Owner::new(target, creds);
         if file.status_flags().contains(StatusFlags::O_ASYNC) {
             owner.register_observer(file);
         }
@@ -135,16 +184,19 @@ impl Default for FileOwner {
 }
 
 struct Owner {
-    pid: Pid,
-    process: Weak<Process>,
+    id: i32,
+    target: WeakFileOwnerTarget,
+    /// The credentials of whoever called `fcntl(F_SETOWN)`, recorded at that moment.
+    creds: FileOwnerCreds,
     poller: Option<PollAdaptor<OwnerObserver>>,
 }
 
 impl Owner {
-    fn new(process: &Arc<Process>) -> Self {
+    fn new(target: &FileOwnerTarget, creds: FileOwnerCreds) -> Self {
         Self {
-            pid: process.pid(),
-            process: Arc::downgrade(process),
+            id: target.id(),
+            target: target.downgrade(),
+            creds,
             poller: None,
         }
     }
@@ -154,7 +206,8 @@ impl Owner {
             return;
         }
 
-        let mut poller = PollAdaptor::with_observer(OwnerObserver::new(self.process.clone()));
+        let mut poller =
+            PollAdaptor::with_observer(OwnerObserver::new(self.target.clone(), self.creds));
         file.poll(IoEvents::IN | IoEvents::OUT, Some(poller.as_handle_mut()));
         self.poller = Some(poller);
     }
@@ -165,17 +218,29 @@ impl Owner {
 }
 
 struct OwnerObserver {
-    owner: Weak<Process>,
+    owner: WeakFileOwnerTarget,
+    creds: FileOwnerCreds,
 }
 
 impl OwnerObserver {
-    fn new(owner: Weak<Process>) -> Self {
-        Self { owner }
+    fn new(owner: WeakFileOwnerTarget, creds: FileOwnerCreds) -> Self {
+        Self { owner, creds }
     }
 }
 
 impl Observer<IoEvents> for OwnerObserver {
     fn on_events(&self, _events: &IoEvents) {
-        crate::process::enqueue_signal_async(self.owner.clone(), SIGIO);
+        // Delivery is subject to the same permission check as `kill`, evaluated against the
+        // credentials saved at `fcntl(F_SETOWN)` time rather than against whoever happens to
+        // be running now. The check itself happens in the work item, since reading another
+        // process's credentials is not possible here in atomic mode.
+        match &self.owner {
+            WeakFileOwnerTarget::Process(process) => {
+                enqueue_sigio_async(process.clone(), self.creds);
+            }
+            WeakFileOwnerTarget::ProcessGroup(group) => {
+                broadcast_sigio_async(group.clone(), self.creds);
+            }
+        }
     }
 }
