@@ -72,7 +72,7 @@ impl<T: SysObj> ObjFields<T> {
 #[derive(Debug)]
 pub struct NormalNodeFields<T: SysNode> {
     base: ObjFields<T>,
-    attr_set: SysAttrSet,
+    attr_set: Arc<SysAttrSet>,
 }
 
 #[inherit_methods(from = "self.base")]
@@ -80,7 +80,7 @@ impl<T: SysNode> NormalNodeFields<T> {
     pub fn new(name: SysStr, attr_set: SysAttrSet, weak_self: Weak<T>) -> Self {
         Self {
             base: ObjFields::new(name, weak_self),
-            attr_set,
+            attr_set: Arc::new(attr_set),
         }
     }
 
@@ -96,7 +96,7 @@ impl<T: SysNode> NormalNodeFields<T> {
 
     pub fn weak_self(&self) -> &Weak<T>;
 
-    pub fn attr_set(&self) -> &SysAttrSet {
+    pub fn attr_set(&self) -> &Arc<SysAttrSet> {
         &self.attr_set
     }
 }
@@ -182,9 +182,8 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> AttrLessBranchNodeFields<C, T> {
         &self.children
     }
 
-    pub fn attr_set(&self) -> &SysAttrSet {
-        static EMPTY: SysAttrSet = SysAttrSet::new_empty();
-        &EMPTY
+    pub fn attr_set(&self) -> &Arc<SysAttrSet> {
+        SysAttrSet::empty()
     }
 }
 
@@ -192,7 +191,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> AttrLessBranchNodeFields<C, T> {
 #[derive(Debug)]
 pub struct BranchNodeFields<C: SysObj + ?Sized, T: SysBranchNode> {
     base: AttrLessBranchNodeFields<C, T>,
-    attr_set: SysAttrSet,
+    attr_set: Arc<SysAttrSet>,
 }
 
 #[inherit_methods(from = "self.base")]
@@ -200,7 +199,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> BranchNodeFields<C, T> {
     pub fn new(name: SysStr, attr_set: SysAttrSet, weak_self: Weak<T>) -> Self {
         Self {
             base: AttrLessBranchNodeFields::new(name, weak_self),
-            attr_set,
+            attr_set: Arc::new(attr_set),
         }
     }
 
@@ -230,7 +229,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> BranchNodeFields<C, T> {
 
     pub fn children_ref(&self) -> &RwMutex<BTreeMap<SysStr, Arc<C>>>;
 
-    pub fn attr_set(&self) -> &SysAttrSet {
+    pub fn attr_set(&self) -> &Arc<SysAttrSet> {
         &self.attr_set
     }
 }
@@ -273,8 +272,8 @@ impl<T: SysSymlink> SymlinkNodeFields<T> {
 macro_rules! _inner_impl_sys_node {
     ($struct_name:ident, $field:ident, $helper_trait:ty) => {
         impl $crate::SysNode for $struct_name {
-            fn node_attrs(&self) -> &$crate::SysAttrSet {
-                self.$field.attr_set()
+            fn node_attrs(&self) -> alloc::sync::Arc<$crate::SysAttrSet> {
+                self.$field.attr_set().clone()
             }
 
             fn is_attr_absent(&self, name: &str) -> bool {
@@ -745,6 +744,41 @@ macro_rules! inherit_sys_symlink_node {
     ($struct_name:ident, $field:ident) => {
         $crate::inherit_sys_symlink_node!($struct_name, $field, {/* no overrides */});
     };
+}
+
+/// Computes the relative path from the directory `from_dir` to the target `to`.
+///
+/// Both arguments are absolute paths within one `SysTree` as returned by
+/// [`SysObj::path`] (the root is `/`). The result is suitable as the target of a
+/// symlink placed inside `from_dir`, e.g. the relative path from `/class/mem` to
+/// `/devices/virtual/mem/null` is `../../devices/virtual/mem/null`.
+///
+/// The result always ends with the last component of `to`, as the symlinks in
+/// Linux's sysfs do: the relative path from `/devices/a/b/c` to `/devices/a`
+/// is `../../../a`, not `../..`.
+pub fn relative_path(from_dir: &str, to: &str) -> String {
+    let from: alloc::vec::Vec<&str> = from_dir.split('/').filter(|s| !s.is_empty()).collect();
+    let to: alloc::vec::Vec<&str> = to.split('/').filter(|s| !s.is_empty()).collect();
+    let Some((last, to_parent)) = to.split_last() else {
+        // The target is the root, which no symlink should point to.
+        return String::from("/");
+    };
+    let common = from
+        .iter()
+        .zip(to_parent.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    let mut result = String::new();
+    for _ in common..from.len() {
+        result.push_str("../");
+    }
+    for component in &to_parent[common..] {
+        result.push_str(component);
+        result.push('/');
+    }
+    result.push_str(last);
+    result
 }
 
 /// An empty node in the `SysTree`.

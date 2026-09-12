@@ -46,7 +46,7 @@ pub use self::{
     utils::{
         _InheritSysBranchNode, _InheritSysLeafNode, _InheritSysSymlinkNode,
         AttrLessBranchNodeFields, BranchNodeFields, EmptyNode, NormalNodeFields, ObjFields,
-        SymlinkNodeFields,
+        SymlinkNodeFields, relative_path,
     },
 };
 use crate::tree::RootNode;
