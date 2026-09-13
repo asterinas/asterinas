@@ -795,28 +795,27 @@ mod test {
         let mut payload_reader = VmReader::from(payload.as_slice()).to_fallible();
         old.write_direct_at(0, &mut payload_reader).unwrap();
 
-        let free_blocks_before = f.ext2.super_block().free_blocks_count();
+        let free_blocks_before = f.fs.super_block().free_blocks_count();
         root.unlink("old", old.as_ref()).unwrap();
-        assert_errno!(f.ext2.read_inode(old_ino), Errno::ESTALE);
+        assert_errno!(f.fs.read_inode(old_ino), Errno::ESTALE);
         assert!(
-            f.ext2
-                .block_group(0)
+            f.fs.block_group(0)
                 .metadata()
                 .inode_bitmap
                 .is_allocated((old_ino - 1) as u16)
         );
 
-        f.ext2.sync_all().unwrap();
+        f.fs.sync_all().unwrap();
         let raw_before_drop = read_raw_inode_from_disk(&f, old_ino);
         assert_eq!(raw_before_drop.link_count, 0);
         assert_eq!(raw_before_drop.dtime, 0);
         assert_ne!(raw_before_drop.sector_count, 0);
 
         drop(old);
-        f.ext2.sync_all().unwrap();
-        assert_errno!(f.ext2.read_inode(old_ino), Errno::ENOENT);
+        f.fs.sync_all().unwrap();
+        assert_errno!(f.fs.read_inode(old_ino), Errno::ENOENT);
         assert!(
-            !f.ext2
+            !f.fs
                 .block_group(0)
                 .metadata()
                 .inode_bitmap
@@ -827,7 +826,7 @@ mod test {
         assert_eq!(raw_after_drop.sector_count, 0);
         assert_eq!(raw_after_drop.block[0], 0);
         assert_eq!(
-            f.ext2.super_block().free_blocks_count(),
+            f.fs.super_block().free_blocks_count(),
             free_blocks_before + 1
         );
     }
