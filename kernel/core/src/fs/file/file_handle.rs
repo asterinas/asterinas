@@ -10,8 +10,7 @@ use ostd::io::IoMem;
 
 use super::{
     AccessMode, FileCommon, FileOwnerKind, FileOwnerTarget, InodeHandle, SettableStatusFlags,
-    StatusFlags,
-    file_table::FdFlags, inode_handle::SeekFrom,
+    StatusFlags, file_table::FdFlags, inode_handle::SeekFrom,
 };
 use crate::{
     fs::vfs::{inode::FallocMode, path::Path},
