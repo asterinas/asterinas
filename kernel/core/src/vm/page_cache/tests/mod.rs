@@ -550,3 +550,38 @@ fn delayed_io_completion() {
     assert!(second_flush_result.lock().take().unwrap().is_ok());
     assert_eq!(backend.persisted_page_bytes(0), latest_dirty_pattern);
 }
+
+#[ktest]
+fn completed_writeback_failure_is_reported_by_later_flush() {
+    let backend = MockPageCacheBackend::new(1);
+    backend.set_completion(IoKind::Write, IoCompletion::Deferred);
+    let page_cache = new_locked_backend_page_cache(&backend, 1);
+    let vmo = page_cache.read().as_vmo().clone();
+    write_vmo_bytes(&vmo, &[0x7d; PAGE_SIZE]);
+
+    let first_result = Arc::new(Mutex::new(None::<Result<()>>));
+    let first_flush = {
+        let page_cache = page_cache.clone();
+        let first_result = first_result.clone();
+        ThreadOptions::new(move || {
+            *first_result.lock() = Some(page_cache.read().flush_range(0..PAGE_SIZE));
+        })
+        .spawn()
+    };
+    backend.wait_for_deferred_bios(IoKind::Write, 1);
+    assert!(backend.complete_next_deferred_bio(IoKind::Write, false));
+    first_flush.join();
+    assert_eq!(
+        first_result.lock().take().unwrap().unwrap_err().error(),
+        Errno::EIO
+    );
+
+    assert_eq!(
+        page_cache
+            .read()
+            .flush_range(0..PAGE_SIZE)
+            .unwrap_err()
+            .error(),
+        Errno::EIO
+    );
+}
