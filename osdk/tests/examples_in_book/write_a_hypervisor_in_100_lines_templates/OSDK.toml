@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MPL-2.0
+
+project_type = "kernel"
+
+[boot]
+method = "grub-rescue-iso"
+
+[grub]
+boot_protocol = "multiboot2"
+
+[qemu]
+args = """\
+    -enable-kvm \
+    -machine q35,kernel-irqchip=split \
+    -cpu host,+vmx \
+    -m 256M \
+    -smp 1 \
+    --no-reboot \
+    -nographic \
+    -serial chardev:mux \
+    -monitor chardev:mux \
+    -chardev stdio,id=mux,mux=on,signal=off \
+    -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+"""
