@@ -52,12 +52,12 @@ impl BlockPtrTree {
     }
 
     /// Returns whether the `RawBlockPtrs` is dirty.
-    pub(super) fn is_dirty(&self) -> bool {
+    pub(in inode) fn is_dirty(&self) -> bool {
         self.raw_block_ptrs.is_dirty()
     }
 
     /// Clears the dirty flag for the raw on-disk block pointer state.
-    pub(super) fn clear_dirty(&mut self) {
+    pub(in inode) fn clear_dirty(&mut self) {
         self.raw_block_ptrs.clear_dirty();
     }
 

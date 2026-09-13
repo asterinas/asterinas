@@ -2,7 +2,7 @@
 
 //! Classification of logical block ranges as mapped runs or sparse holes.
 
-use super::block_manager::BlockPtrTree;
+use super::block_mapping::InodeBlockManager;
 use crate::fs::ext4::prelude::*;
 
 /// Direct-I/O block-range classification for the current logical interval.
@@ -21,19 +21,16 @@ pub(super) enum IoRange {
 /// and sparse logical ranges remain explicit holes.
 pub(super) struct IoRangeIter<'a> {
     range: Range<Iblock>,
-    block_ptr_tree: RwMutexReadGuard<'a, BlockPtrTree>,
+    manager: RwMutexReadGuard<'a, InodeBlockManager>,
 }
 
 impl<'a> IoRangeIter<'a> {
-    /// Creates an iterator over the logical block `range` using `block_ptr_tree` for lookups.
-    pub(super) fn new(
+    /// Creates an iterator over an indirect block mapping.
+    pub(super) fn new_indirect(
         range: Range<Iblock>,
-        block_ptr_tree: RwMutexReadGuard<'a, BlockPtrTree>,
+        manager: RwMutexReadGuard<'a, InodeBlockManager>,
     ) -> Self {
-        Self {
-            range,
-            block_ptr_tree,
-        }
+        Self { range, manager }
     }
 
     /// Returns the next logical run for direct I/O planning.
@@ -48,9 +45,8 @@ impl<'a> IoRangeIter<'a> {
 
         let start_iblock = self.range.start;
         let max_blocks = self.range.len() as u32;
-        let device_block_range = self
-            .block_ptr_tree
-            .lookup_block_range(start_iblock, max_blocks)?;
+        let InodeBlockManager::BlockPtrTree(tree) = &*self.manager;
+        let device_block_range = tree.lookup_block_range(start_iblock, max_blocks)?;
 
         if device_block_range.is_empty() {
             // Linux's ext2 documents the slow case where it iterates unmapped
@@ -60,9 +56,7 @@ impl<'a> IoRangeIter<'a> {
             // re-walking from the root for every logical block.
             //
             // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/ext2/inode.c#L905>
-            let hole_len = self
-                .block_ptr_tree
-                .approx_hole_blocks(start_iblock, max_blocks)?;
+            let hole_len = tree.approx_hole_blocks(start_iblock, max_blocks)?;
             debug_assert!(hole_len > 0);
             self.range.start += hole_len;
             return Ok(Some(IoRange::Hole(start_iblock..start_iblock + hole_len)));
@@ -80,20 +74,21 @@ mod test {
     use super::*;
     use crate::{
         fs::fs_impls::ext4::{
-            inode::{RAW_BLOCK_PTRS_LEN, block_manager::RawBlockPtrs},
+            inode::{RAW_BLOCK_PTRS_LEN, block_mapping::RawBlockPtrs},
             test_utils::Ext4FixtureBuilder,
         },
         time::clocks,
     };
 
-    fn make_block_ptr_tree(
+    fn make_block_mapping(
         block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
         sector_count: u32,
         fs: &Arc<crate::fs::fs_impls::ext4::fs::Ext4>,
-    ) -> BlockPtrTree {
-        BlockPtrTree::new(
+    ) -> super::super::block_mapping::BlockMapping {
+        super::super::block_mapping::BlockMapping::new_indirect(
             RawBlockPtrs::new(sector_count, block_ptrs),
             Arc::downgrade(fs),
+            0,
         )
     }
 
@@ -111,11 +106,8 @@ mod test {
         block_ptrs[7] = 60;
         block_ptrs[8] = 61;
 
-        let tree = make_block_ptr_tree(block_ptrs, 0, &f.ext2);
-        let lock = RwMutex::new(tree);
-        let guard = lock.read();
-
-        let mut iter = IoRangeIter::new(0..9, guard);
+        let mapping = make_block_mapping(block_ptrs, 0, &f.ext2);
+        let mut iter = mapping.iter_io_ranges(0..9);
 
         // First: mapped blocks 0-2 -> device bids 50..53
         let item = iter.next().unwrap().unwrap();

@@ -37,7 +37,7 @@
 //! | Submodule                  | Responsibility                                            |
 //! |----------------------------|-----------------------------------------------------------|
 //! | `attrs`                    | Metadata: mode, uid, gid, times, xattr                    |
-//! | `block_manager`            | Page-cache backend and block-pointer tree management      |
+//! | `block_mapping`            | Block-mapping dispatch and format-specific implementations|
 //! | `io_range`                 | Direct-I/O block range planning                           |
 //! | `file`                     | Regular-file I/O and allocation                           |
 //! | `dir`                      | Directory entry semantics                                 |
@@ -72,7 +72,7 @@
 #![short_vis_path::add(ext4)]
 
 mod attrs;
-mod block_manager;
+mod block_mapping;
 mod dir;
 mod file;
 mod io_range;
@@ -82,7 +82,7 @@ mod sync;
 use ostd::const_assert;
 
 use self::{
-    block_manager::{BlockPtrTree, InodeBlockManager, RawBlockPtrs},
+    block_mapping::{BlockMapping, RawBlockPtrs},
     symlink::FastSymlinkTarget,
 };
 use super::{fs::Ext4, prelude::*, xattr::Xattr};
@@ -452,7 +452,7 @@ enum InodePayload {
     /// Regular files, directories, and slow symlinks backed by data blocks.
     DataBacked {
         page_cache: PageCache,
-        block_manager: Arc<InodeBlockManager>,
+        block_manager: Arc<BlockMapping>,
     },
     /// Fast symlink target stored inline in `i_block`.
     FastSymlink { target: FastSymlinkTarget },
@@ -478,7 +478,7 @@ impl InodeInner {
             .expect("data-backed inode must have a page cache")
     }
 
-    fn block_manager(&self) -> Result<&Arc<InodeBlockManager>> {
+    fn block_manager(&self) -> Result<&Arc<BlockMapping>> {
         self.payload.block_manager()
     }
 
@@ -637,12 +637,7 @@ impl InodePayload {
     fn new_data_backed(size: usize, raw_block_ptrs: RawBlockPtrs, fs: Weak<Ext4>) -> Self {
         let page_cache_size = size.align_up(PAGE_SIZE);
         let page_count = page_cache_size / PAGE_SIZE;
-        let block_ptr_tree = BlockPtrTree::new(raw_block_ptrs, fs.clone());
-        let block_manager = Arc::new(InodeBlockManager::new(
-            block_ptr_tree,
-            fs.clone(),
-            page_count,
-        ));
+        let block_manager = Arc::new(BlockMapping::new_indirect(raw_block_ptrs, fs, page_count));
         let page_cache_backend: Weak<dyn PageCacheBackend> = Arc::downgrade(&block_manager) as _;
         // Keep page-cache capacity aligned with inode size so `npages`/VMO window
         // and on-disk data extent stay consistent from mount time.
@@ -675,7 +670,7 @@ impl InodePayload {
         }
     }
 
-    fn block_manager(&self) -> Result<&Arc<InodeBlockManager>> {
+    fn block_manager(&self) -> Result<&Arc<BlockMapping>> {
         match self {
             Self::DataBacked { block_manager, .. } => Ok(block_manager),
             _ => Err(Error::with_message(
