@@ -7,8 +7,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/rename_test"
+#define BASE_DIR EXT_TEST_ROOT "/rename_test"
 #define DIR BASE_DIR "/dir"
 #define DIR_RENAMED BASE_DIR "/dir_renamed"
 #define DIR_CHILD DIR "/child"
@@ -23,88 +24,65 @@
 #define CROSS_MOUNT_DIR BASE_DIR "/mnt"
 #define CROSS_MOUNT_DIR_CHILD CROSS_MOUNT_DIR "/child"
 
-static void ensure_dir(const char *path)
+FN_SETUP(prepare_base_dir)
 {
-	CHECK_WITH(mkdir(path, 0755), _ret >= 0 || errno == EEXIST);
-}
-
-static void remove_if_exists(const char *path)
-{
-	CHECK_WITH(rmdir(path), _ret == 0 || errno == ENOENT);
-}
-
-static void ensure_test_tree(void)
-{
-	ensure_dir(BASE_DIR);
-	ensure_dir(DIR);
-	ensure_dir(DIR_CHILD);
-	ensure_dir(DIR_GRANDCHILD);
-	ensure_dir(CROSS_MOUNT_DIR);
-}
-
-static void cleanup_test_tree(void)
-{
-	CHECK_WITH(unlink(FILE_A), _ret == 0 || errno == ENOENT);
-	CHECK_WITH(unlink(FILE_B), _ret == 0 || errno == ENOENT);
-	remove_if_exists(DIR_TARGET);
-	remove_if_exists(DIR_RENAMED_GRANDCHILD);
-	remove_if_exists(DIR_RENAMED_CHILD);
-	remove_if_exists(DIR_GRANDCHILD);
-	remove_if_exists(CROSS_MOUNT_DIR_CHILD);
-	remove_if_exists(DIR_RENAMED);
-	remove_if_exists(CROSS_MOUNT_DIR);
-	remove_if_exists(DIR_CHILD);
-	remove_if_exists(DIR);
-	remove_if_exists(BASE_DIR);
-}
-
-FN_SETUP(cleanup_before_test)
-{
-	cleanup_test_tree();
+	CHECK(mkdir(BASE_DIR, 0755));
 }
 END_SETUP()
 
+#define PREPARE_TREE()                                  \
+	do {                                            \
+		TEST_SUCC(mkdir(DIR, 0755));            \
+		TEST_SUCC(mkdir(DIR_CHILD, 0755));      \
+		TEST_SUCC(mkdir(DIR_GRANDCHILD, 0755)); \
+	} while (0)
+
+#define REMOVE_TREE(root, child, grandchild)  \
+	do {                                  \
+		TEST_SUCC(rmdir(grandchild)); \
+		TEST_SUCC(rmdir(child));      \
+		TEST_SUCC(rmdir(root));       \
+	} while (0)
+
 FN_TEST(rename_into_descendant)
 {
-	ensure_test_tree();
+	PREPARE_TREE();
 
 	TEST_ERRNO(rename(DIR, DIR_TARGET), EINVAL);
 	TEST_SUCC(access(DIR, F_OK));
 	TEST_SUCC(access(DIR_GRANDCHILD, F_OK));
 
-	cleanup_test_tree();
+	REMOVE_TREE(DIR, DIR_CHILD, DIR_GRANDCHILD);
 }
 END_TEST()
 
 FN_TEST(rename_to_self)
 {
-	ensure_test_tree();
+	PREPARE_TREE();
 
 	TEST_SUCC(rename(DIR, DIR));
 	TEST_SUCC(access(DIR, F_OK));
 	TEST_SUCC(access(DIR_GRANDCHILD, F_OK));
 
-	cleanup_test_tree();
+	REMOVE_TREE(DIR, DIR_CHILD, DIR_GRANDCHILD);
 }
 END_TEST()
 
 FN_TEST(rename_to_new_name)
 {
-	ensure_test_tree();
+	PREPARE_TREE();
 
 	TEST_SUCC(rename(DIR, DIR_RENAMED));
 	TEST_SUCC(access(DIR_RENAMED, F_OK));
 	TEST_SUCC(access(DIR_RENAMED_CHILD, F_OK));
 	TEST_ERRNO(access(DIR, F_OK), ENOENT);
 
-	cleanup_test_tree();
+	REMOVE_TREE(DIR_RENAMED, DIR_RENAMED_CHILD, DIR_RENAMED_GRANDCHILD);
 }
 END_TEST()
 
 FN_TEST(rename_overwrites_negative_cache_on_ext2)
 {
-	ensure_dir(BASE_DIR);
-
 	int fd_a = TEST_SUCC(open(FILE_A, O_CREAT | O_WRONLY, 0644));
 	TEST_SUCC(close(fd_a));
 	int fd_b = TEST_SUCC(open(FILE_B, O_CREAT | O_WRONLY, 0644));
@@ -118,7 +96,6 @@ FN_TEST(rename_overwrites_negative_cache_on_ext2)
 	TEST_SUCC(access(FILE_B, F_OK));
 
 	TEST_SUCC(unlink(FILE_B));
-	cleanup_test_tree();
 }
 END_TEST()
 
@@ -126,16 +103,19 @@ END_TEST()
 // checking whether the new path is inside the old directory.
 FN_TEST(rename_errno_order)
 {
-	ensure_test_tree();
+	PREPARE_TREE();
+	TEST_SUCC(mkdir(CROSS_MOUNT_DIR, 0755));
 	TEST_SUCC(mount("tmpfs", CROSS_MOUNT_DIR, "tmpfs", 0, NULL));
-	ensure_dir(CROSS_MOUNT_DIR_CHILD);
+	TEST_SUCC(mkdir(CROSS_MOUNT_DIR_CHILD, 0755));
 
 	TEST_ERRNO(rename(DIR, CROSS_MOUNT_DIR_CHILD), EXDEV);
 	TEST_SUCC(access(DIR, F_OK));
 	TEST_SUCC(access(CROSS_MOUNT_DIR_CHILD, F_OK));
 
+	TEST_SUCC(rmdir(CROSS_MOUNT_DIR_CHILD));
 	TEST_SUCC(umount(CROSS_MOUNT_DIR));
-	cleanup_test_tree();
+	TEST_SUCC(rmdir(CROSS_MOUNT_DIR));
+	REMOVE_TREE(DIR, DIR_CHILD, DIR_GRANDCHILD);
 }
 END_TEST()
 
@@ -146,11 +126,10 @@ FN_TEST(rename_dir_replace_nlink)
 	const char *dst_parent = BASE_DIR "/dst_parent";
 	const char *dst_child = BASE_DIR "/dst_parent/child";
 
-	ensure_dir(BASE_DIR);
-	ensure_dir(src_parent);
-	ensure_dir(src_child);
-	ensure_dir(dst_parent);
-	ensure_dir(dst_child);
+	TEST_SUCC(mkdir(src_parent, 0755));
+	TEST_SUCC(mkdir(src_child, 0755));
+	TEST_SUCC(mkdir(dst_parent, 0755));
+	TEST_SUCC(mkdir(dst_child, 0755));
 
 	struct stat st_before;
 	TEST_SUCC(stat(dst_parent, &st_before));
@@ -158,13 +137,17 @@ FN_TEST(rename_dir_replace_nlink)
 	TEST_SUCC(rename(src_child, dst_child));
 
 	struct stat st_after;
-	TEST_SUCC(stat(dst_parent, &st_after));
 	TEST_RES(stat(dst_parent, &st_after),
 		 st_after.st_nlink == st_before.st_nlink);
 
-	remove_if_exists(dst_child);
-	remove_if_exists(dst_parent);
-	remove_if_exists(src_parent);
-	remove_if_exists(BASE_DIR);
+	TEST_SUCC(rmdir(dst_child));
+	TEST_SUCC(rmdir(dst_parent));
+	TEST_SUCC(rmdir(src_parent));
 }
 END_TEST()
+
+FN_SETUP(cleanup_base_dir)
+{
+	CHECK(rmdir(BASE_DIR));
+}
+END_SETUP()

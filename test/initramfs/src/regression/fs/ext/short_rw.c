@@ -7,10 +7,11 @@
 #include <sys/fcntl.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
 #define PAGE_SIZE 4096
 
-#define TEST_FILE "/ext2/short_rw"
+#define TEST_FILE EXT_TEST_ROOT "/short_rw"
 #define TEST_DATA "abcdefg"
 
 FN_TEST(short_write_should_not_leak_uninit_cache_page)
@@ -37,13 +38,24 @@ FN_TEST(short_write_should_not_leak_uninit_cache_page)
 	// As an optimization, the page does not need to be loaded from the disk.
 	// However, if it is a short write and fails, the page will be left uninitialized.
 	buf[PAGE_SIZE - 1] = 'X';
+	/* FIXME: Linux writes the accessible byte before encountering the
+	 * unmapped page. Asterinas rejects the buffer without writing any byte.
+	 * Remove the conditional when partial user-buffer writes match Linux.
+	 */
+#ifdef __asterinas__
 	TEST_ERRNO(write(fd, buf + PAGE_SIZE - 1, PAGE_SIZE), EFAULT);
-
-	// No uninitialized data should leak to user space.
-	// The user should see the original data.
 	TEST_RES(lseek(fd, 0, SEEK_CUR), _ret == 0);
 	TEST_RES(read(fd, buf, PAGE_SIZE),
 		 _ret == PAGE_SIZE && strcmp(buf, TEST_DATA) == 0);
+#else
+	TEST_RES(write(fd, buf + PAGE_SIZE - 1, PAGE_SIZE), _ret == 1);
+	TEST_RES(lseek(fd, 0, SEEK_CUR), _ret == 1);
+	TEST_RES(lseek(fd, 0, SEEK_SET), _ret == 0);
+	TEST_RES(read(fd, buf, PAGE_SIZE),
+		 _ret == PAGE_SIZE && buf[0] == 'X' &&
+			 memcmp(buf + 1, TEST_DATA + 1,
+				sizeof(TEST_DATA) - 1) == 0);
+#endif
 
 	TEST_SUCC(close(fd));
 	TEST_SUCC(unlink(TEST_FILE));

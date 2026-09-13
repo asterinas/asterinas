@@ -9,15 +9,16 @@
 #include <sys/wait.h>
 #include "../../common/test.h"
 #include "../../common/capability.h"
+#include "fs_test.h"
 
-#define NULL_DEVICE_PATH "/ext2/my_null_device"
-#define ZERO_DEVICE_PATH "/ext2/my_zero_device"
-#define FIFO_PATH "/ext2/myfifo.fifo"
-#define NO_CAP_CHAR_DEVICE_PATH "/ext2/no_cap_char_device"
-#define NO_CAP_BLOCK_DEVICE_PATH "/ext2/no_cap_block_device"
-#define NO_CAP_EXISTING_PATH "/ext2/no_cap_existing"
-#define NO_CAP_FIFO_PATH "/ext2/no_cap_fifo"
-#define SOCKET_PATH "/ext2/mknod.socket"
+#define NULL_DEVICE_PATH EXT_TEST_ROOT "/my_null_device"
+#define ZERO_DEVICE_PATH EXT_TEST_ROOT "/my_zero_device"
+#define FIFO_PATH EXT_TEST_ROOT "/myfifo.fifo"
+#define NO_CAP_CHAR_DEVICE_PATH EXT_TEST_ROOT "/no_cap_char_device"
+#define NO_CAP_BLOCK_DEVICE_PATH EXT_TEST_ROOT "/no_cap_block_device"
+#define NO_CAP_EXISTING_PATH EXT_TEST_ROOT "/no_cap_existing"
+#define NO_CAP_FIFO_PATH EXT_TEST_ROOT "/no_cap_fifo"
+#define SOCKET_PATH EXT_TEST_ROOT "/mknod.socket"
 
 FN_TEST(make_device_node)
 {
@@ -46,8 +47,6 @@ FN_TEST(make_device_node_requires_cap_mknod)
 {
 	pid_t pid = TEST_SUCC(fork());
 	if (pid == 0) {
-		CHECK_WITH(unlink(NO_CAP_EXISTING_PATH),
-			   _ret == 0 || errno == ENOENT);
 		int existing_fd = CHECK(open(NO_CAP_EXISTING_PATH,
 					     O_CREAT | O_EXCL | O_RDWR, 0666));
 		CHECK(close(existing_fd));
@@ -63,8 +62,6 @@ FN_TEST(make_device_node_requires_cap_mknod)
 		CHECK_WITH(mknod(NO_CAP_BLOCK_DEVICE_PATH, S_IFBLK | 0666,
 				 makedev(8, 0)),
 			   _ret == -1 && errno == EPERM);
-		CHECK_WITH(unlink(NO_CAP_FIFO_PATH),
-			   _ret == 0 || errno == ENOENT);
 		CHECK(mkfifo(NO_CAP_FIFO_PATH, 0666));
 		CHECK(unlink(NO_CAP_FIFO_PATH));
 		CHECK(unlink(NO_CAP_EXISTING_PATH));

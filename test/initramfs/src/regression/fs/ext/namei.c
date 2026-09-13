@@ -11,38 +11,16 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/namei_test"
+#define BASE_DIR EXT_TEST_ROOT "/namei_test"
 
 #define DIR_A BASE_DIR "/a"
 #define DIR_B BASE_DIR "/b"
 
-static void ensure_dir(const char *path)
-{
-	CHECK_WITH(mkdir(path, 0755), _ret >= 0 || errno == EEXIST);
-}
-
-static void remove_file_if_exists(const char *path)
-{
-	if (unlink(path) == -1 && errno != ENOENT) {
-		fprintf(stderr, "cleanup failed: unlink(%s): %s\n", path,
-			strerror(errno));
-		exit(EXIT_FAILURE);
-	}
-}
-
-static void remove_dir_if_exists(const char *path)
-{
-	if (rmdir(path) == -1 && errno != ENOENT) {
-		fprintf(stderr, "cleanup failed: rmdir(%s): %s\n", path,
-			strerror(errno));
-		exit(EXIT_FAILURE);
-	}
-}
-
 FN_SETUP(prepare_base_dir)
 {
-	ensure_dir(BASE_DIR);
+	CHECK(mkdir(BASE_DIR, 0755));
 }
 END_SETUP()
 
@@ -59,13 +37,8 @@ FN_TEST(rename_cross_dir)
 	const char *old_path = DIR_A "/move_me";
 	const char *new_path = DIR_B "/move_me";
 
-	remove_file_if_exists(new_path);
-	remove_file_if_exists(old_path);
-	remove_dir_if_exists(DIR_B);
-	remove_dir_if_exists(DIR_A);
-
-	ensure_dir(DIR_A);
-	ensure_dir(DIR_B);
+	TEST_SUCC(mkdir(DIR_A, 0755));
+	TEST_SUCC(mkdir(DIR_B, 0755));
 
 	int fd = TEST_SUCC(creat(old_path, 0644));
 	TEST_SUCC(close(fd));
@@ -87,13 +60,8 @@ FN_TEST(rename_cross_dir_replace)
 	const char *src = DIR_A "/replace_file";
 	const char *dst = DIR_B "/replace_file";
 
-	remove_file_if_exists(dst);
-	remove_file_if_exists(src);
-	remove_dir_if_exists(DIR_B);
-	remove_dir_if_exists(DIR_A);
-
-	ensure_dir(DIR_A);
-	ensure_dir(DIR_B);
+	TEST_SUCC(mkdir(DIR_A, 0755));
+	TEST_SUCC(mkdir(DIR_B, 0755));
 
 	const char src_data[] = "source_data";
 	int fd = TEST_SUCC(open(src, O_CREAT | O_WRONLY, 0644));
@@ -110,10 +78,10 @@ FN_TEST(rename_cross_dir_replace)
 
 	char buf[64] = { 0 };
 	fd = TEST_SUCC(open(dst, O_RDONLY));
-	TEST_RES(read(fd, buf, sizeof(buf)), _ret == (ssize_t)sizeof(src_data));
+	TEST_RES(read(fd, buf, sizeof(buf)),
+		 _ret == sizeof(src_data) &&
+			 memcmp(buf, src_data, sizeof(src_data)) == 0);
 	TEST_SUCC(close(fd));
-
-	TEST_RES(strcmp(buf, src_data), _ret == 0);
 
 	TEST_SUCC(unlink(dst));
 	TEST_SUCC(rmdir(DIR_B));
@@ -129,14 +97,9 @@ FN_TEST(rename_dir_dotdot)
 	const char *new_parent = BASE_DIR "/new_parent";
 	const char *new_child = BASE_DIR "/new_parent/child";
 
-	remove_dir_if_exists(new_child);
-	remove_dir_if_exists(new_parent);
-	remove_dir_if_exists(child);
-	remove_dir_if_exists(parent);
-
-	ensure_dir(parent);
-	ensure_dir(child);
-	ensure_dir(new_parent);
+	TEST_SUCC(mkdir(parent, 0755));
+	TEST_SUCC(mkdir(child, 0755));
+	TEST_SUCC(mkdir(new_parent, 0755));
 
 	struct stat st_new_parent;
 	TEST_SUCC(stat(new_parent, &st_new_parent));
@@ -145,8 +108,6 @@ FN_TEST(rename_dir_dotdot)
 
 	struct stat st_dotdot;
 	const char *dotdot_path = BASE_DIR "/new_parent/child/..";
-	TEST_SUCC(stat(dotdot_path, &st_dotdot));
-
 	TEST_RES(stat(dotdot_path, &st_dotdot),
 		 st_dotdot.st_ino == st_new_parent.st_ino);
 
@@ -163,8 +124,8 @@ END_TEST()
 
 FN_SETUP(prepare_open_dir)
 {
-	ensure_dir(OPEN_DIR_TEST_DIR);
-	ensure_dir(OPEN_DIR_TARGET);
+	CHECK(mkdir(OPEN_DIR_TEST_DIR, 0755));
+	CHECK(mkdir(OPEN_DIR_TARGET, 0755));
 }
 END_SETUP()
 
@@ -247,5 +208,11 @@ FN_SETUP(cleanup_open_dir)
 {
 	CHECK(rmdir(OPEN_DIR_TARGET));
 	CHECK(rmdir(OPEN_DIR_TEST_DIR));
+}
+END_SETUP()
+
+FN_SETUP(cleanup_base_dir)
+{
+	CHECK(rmdir(BASE_DIR));
 }
 END_SETUP()

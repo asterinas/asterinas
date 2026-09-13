@@ -9,27 +9,16 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define NON_EMPTY_DIR "/ext2/test_non_empty_dir"
-#define NON_EMPTY_CHILD "/ext2/test_non_empty_dir/test.txt"
-
-static void remove_file_if_exists(const char *path)
-{
-	CHECK_WITH(unlink(path), _ret >= 0 || errno == ENOENT);
-}
-
-static void remove_dir_if_exists(const char *path)
-{
-	CHECK_WITH(rmdir(path), _ret >= 0 || errno == ENOENT);
-}
+#define NON_EMPTY_DIR EXT_TEST_ROOT "/test_non_empty_dir"
+#define NON_EMPTY_CHILD EXT_TEST_ROOT "/test_non_empty_dir/test.txt"
 
 FN_TEST(rmdir_failed_non_empty_dir)
 {
-	remove_file_if_exists(NON_EMPTY_CHILD);
-	remove_dir_if_exists(NON_EMPTY_DIR);
-
 	TEST_SUCC(mkdir(NON_EMPTY_DIR, 0777));
-	TEST_SUCC(open(NON_EMPTY_CHILD, O_CREAT | O_WRONLY, 0666));
+	int fd = TEST_SUCC(open(NON_EMPTY_CHILD, O_CREAT | O_WRONLY, 0666));
+	TEST_SUCC(close(fd));
 
 	TEST_ERRNO(rmdir(NON_EMPTY_DIR), ENOTEMPTY);
 
@@ -40,8 +29,6 @@ END_TEST()
 
 FN_TEST(unlink_failed_on_directory)
 {
-	remove_dir_if_exists(NON_EMPTY_DIR);
-
 	TEST_SUCC(mkdir(NON_EMPTY_DIR, 0777));
 	TEST_ERRNO(unlink(NON_EMPTY_DIR), EISDIR);
 

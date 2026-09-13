@@ -9,27 +9,13 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/ext2_symlink_test"
-
-static void ensure_dir(const char *path)
-{
-	CHECK_WITH(mkdir(path, 0755), _ret >= 0 || errno == EEXIST);
-}
-
-static void unlink_if_exists(const char *path)
-{
-	CHECK_WITH(unlink(path), _ret == 0 || errno == ENOENT);
-}
-
-static void rmdir_if_exists(const char *path)
-{
-	CHECK_WITH(rmdir(path), _ret == 0 || errno == ENOENT);
-}
+#define BASE_DIR EXT_TEST_ROOT "/shared_symlink_test"
 
 FN_SETUP(prepare_base_dir)
 {
-	ensure_dir(BASE_DIR);
+	CHECK(mkdir(BASE_DIR, 0755));
 }
 END_SETUP()
 
@@ -40,27 +26,24 @@ FN_TEST(symlink_short_roundtrip)
 	const char *data = "hello symlink";
 
 	int fd = TEST_SUCC(open(file, O_CREAT | O_WRONLY, 0644));
-	TEST_SUCC(write(fd, data, strlen(data)));
+	TEST_RES(write(fd, data, strlen(data)), _ret == strlen(data));
 	TEST_SUCC(close(fd));
 
 	TEST_SUCC(symlink(file, link));
 
 	char buf[PATH_MAX];
 	TEST_RES(readlink(link, buf, sizeof(buf)),
-		 _ret == (ssize_t)strlen(file));
-	buf[strlen(file)] = '\0';
-	TEST_RES(strcmp(buf, file), _ret == 0);
+		 _ret == strlen(file) && memcmp(buf, file, strlen(file)) == 0);
 
 	// Open via symlink and verify content
 	char rbuf[64];
 	fd = TEST_SUCC(open(link, O_RDONLY));
-	TEST_RES(read(fd, rbuf, sizeof(rbuf)), _ret == (ssize_t)strlen(data));
-	rbuf[strlen(data)] = '\0';
-	TEST_RES(strcmp(rbuf, data), _ret == 0);
+	TEST_RES(read(fd, rbuf, sizeof(rbuf)),
+		 _ret == strlen(data) && memcmp(rbuf, data, strlen(data)) == 0);
 	TEST_SUCC(close(fd));
 
-	unlink_if_exists(link);
-	unlink_if_exists(file);
+	TEST_SUCC(unlink(link));
+	TEST_SUCC(unlink(file));
 }
 END_TEST()
 
@@ -81,26 +64,25 @@ FN_TEST(symlink_long_roundtrip)
 	const char *link = BASE_DIR "/long_link";
 
 	for (int i = 0; i < (int)(sizeof(dirs) / sizeof(dirs[0])); i++)
-		ensure_dir(dirs[i]);
+		TEST_SUCC(mkdir(dirs[i], 0755));
 
 	int fd = TEST_SUCC(open(target, O_CREAT | O_WRONLY, 0644));
 	TEST_SUCC(close(fd));
 
 	// Verify the target path is indeed > 60 chars
-	CHECK_WITH(strlen(target), _ret > 60);
+	TEST_RES(strlen(target), _ret > 60);
 
 	TEST_SUCC(symlink(target, link));
 
 	char buf[PATH_MAX];
 	TEST_RES(readlink(link, buf, sizeof(buf)),
-		 _ret == (ssize_t)strlen(target));
-	buf[strlen(target)] = '\0';
-	TEST_RES(strcmp(buf, target), _ret == 0);
+		 _ret == strlen(target) &&
+			 memcmp(buf, target, strlen(target)) == 0);
 
-	unlink_if_exists(link);
-	unlink_if_exists(target);
+	TEST_SUCC(unlink(link));
+	TEST_SUCC(unlink(target));
 	for (int i = (int)(sizeof(dirs) / sizeof(dirs[0])) - 1; i >= 0; i--)
-		rmdir_if_exists(dirs[i]);
+		TEST_SUCC(rmdir(dirs[i]));
 }
 END_TEST()
 
@@ -114,8 +96,6 @@ FN_TEST(symlink_too_long_enametoolong)
 	long_target[sizeof(long_target) - 1] = '\0';
 
 	TEST_ERRNO(symlink(long_target, link), ENAMETOOLONG);
-
-	unlink_if_exists(link);
 }
 END_TEST()
 
@@ -129,7 +109,7 @@ FN_TEST(readlink_regular_file_einval)
 	char buf[PATH_MAX];
 	TEST_ERRNO(readlink(file, buf, sizeof(buf)), EINVAL);
 
-	unlink_if_exists(file);
+	TEST_SUCC(unlink(file));
 }
 END_TEST()
 
@@ -147,6 +127,12 @@ FN_TEST(dangling_symlink_enoent)
 	struct stat st;
 	TEST_SUCC(lstat(link, &st));
 
-	unlink_if_exists(link);
+	TEST_SUCC(unlink(link));
 }
 END_TEST()
+
+FN_SETUP(cleanup_base_dir)
+{
+	CHECK(rmdir(BASE_DIR));
+}
+END_SETUP()

@@ -11,13 +11,14 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/perm_test"
+#define BASE_DIR EXT_TEST_ROOT "/perm_test"
 #define TEST_FILE BASE_DIR "/testfile"
 
 FN_SETUP(create_base_dir)
 {
-	CHECK_WITH(mkdir(BASE_DIR, 0755), _ret == 0 || errno == EEXIST);
+	CHECK(mkdir(BASE_DIR, 0755));
 }
 END_SETUP()
 
@@ -29,7 +30,6 @@ FN_TEST(chown_changes_owner)
 	TEST_SUCC(chown(TEST_FILE, 1000, 1000));
 
 	struct stat st;
-	TEST_SUCC(stat(TEST_FILE, &st));
 	TEST_RES(stat(TEST_FILE, &st), st.st_uid == 1000 && st.st_gid == 1000);
 
 	// Restore ownership to root before cleanup
@@ -149,3 +149,9 @@ FN_TEST(supplementary_group_selects_group_class)
 	TEST_SUCC(unlink(OTHER_W_FILE));
 }
 END_TEST()
+
+FN_SETUP(cleanup_base_dir)
+{
+	CHECK(rmdir(BASE_DIR));
+}
+END_SETUP()

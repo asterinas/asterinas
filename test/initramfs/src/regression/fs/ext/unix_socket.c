@@ -11,8 +11,9 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define SERVER_ADDRESS "/ext2/my_unix_server"
+#define SERVER_ADDRESS EXT_TEST_ROOT "/my_unix_server"
 
 FN_TEST(ext2_unix_socket)
 {
@@ -55,7 +56,7 @@ FN_TEST(ext2_unix_socket)
 			   _ret == 1 && buf[0] == 'a');
 		buf[0] = 'b';
 		CHECK_WITH(write(sk_client, buf, sizeof(buf)), _ret == 1);
-		close(sk_client);
+		CHECK(close(sk_client));
 
 		exit(EXIT_SUCCESS);
 	}

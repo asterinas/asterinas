@@ -9,8 +9,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define STICKY_DIR "/ext2/sticky_test"
+#define STICKY_DIR EXT_TEST_ROOT "/sticky_test"
 #define STICKY_FILE STICKY_DIR "/rootfile"
 #define STICKY_EMPTY_DIR STICKY_DIR "/emptydir"
 #define STICKY_NONEMPTY_DIR STICKY_DIR "/nonemptydir"
@@ -18,19 +19,17 @@
 
 #define NON_OWNER_UID 1000
 
-static void remove_paths_if_exist(void)
-{
-	CHECK_WITH(unlink(STICKY_NONEMPTY_CHILD), _ret >= 0 || errno == ENOENT);
-	CHECK_WITH(rmdir(STICKY_NONEMPTY_DIR), _ret >= 0 || errno == ENOENT);
-	CHECK_WITH(rmdir(STICKY_EMPTY_DIR), _ret >= 0 || errno == ENOENT);
-	CHECK_WITH(unlink(STICKY_FILE), _ret >= 0 || errno == ENOENT);
-	CHECK_WITH(rmdir(STICKY_DIR), _ret >= 0 || errno == ENOENT);
-}
+#define REMOVE_STICKY_TREE()                              \
+	do {                                              \
+		TEST_SUCC(unlink(STICKY_NONEMPTY_CHILD)); \
+		TEST_SUCC(rmdir(STICKY_NONEMPTY_DIR));    \
+		TEST_SUCC(rmdir(STICKY_EMPTY_DIR));       \
+		TEST_SUCC(unlink(STICKY_FILE));           \
+		TEST_SUCC(rmdir(STICKY_DIR));             \
+	} while (0)
 
 static void prepare_sticky_dir(void)
 {
-	remove_paths_if_exist();
-
 	CHECK(mkdir(STICKY_DIR, 0777));
 	CHECK(chmod(STICKY_DIR, 01777));
 
@@ -66,7 +65,7 @@ FN_TEST(unlink_in_sticky_dir_requires_ownership)
 	struct stat st;
 	TEST_SUCC(stat(STICKY_FILE, &st));
 
-	remove_paths_if_exist();
+	REMOVE_STICKY_TREE();
 }
 END_TEST()
 
@@ -91,7 +90,7 @@ FN_TEST(rmdir_in_sticky_dir_requires_ownership)
 	struct stat st;
 	TEST_SUCC(stat(STICKY_EMPTY_DIR, &st));
 
-	remove_paths_if_exist();
+	REMOVE_STICKY_TREE();
 }
 END_TEST()
 
@@ -113,14 +112,12 @@ FN_TEST(sticky_dir_allows_removing_own_entries)
 	TEST_RES(waitpid(pid, &status, 0),
 		 _ret == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-	remove_paths_if_exist();
+	REMOVE_STICKY_TREE();
 }
 END_TEST()
 
 FN_TEST(sticky_dir_does_not_affect_plain_directory)
 {
-	remove_paths_if_exist();
-
 	TEST_SUCC(mkdir(STICKY_DIR, 0777));
 	TEST_SUCC(chmod(STICKY_DIR, 0777));
 	int fd = TEST_SUCC(creat(STICKY_FILE, 0644));
@@ -137,6 +134,6 @@ FN_TEST(sticky_dir_does_not_affect_plain_directory)
 	TEST_RES(waitpid(pid, &status, 0),
 		 _ret == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-	remove_paths_if_exist();
+	TEST_SUCC(rmdir(STICKY_DIR));
 }
 END_TEST()

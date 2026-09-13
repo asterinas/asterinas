@@ -9,27 +9,13 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/readdir_test"
-
-static void ensure_dir(const char *path)
-{
-	CHECK_WITH(mkdir(path, 0755), _ret >= 0 || errno == EEXIST);
-}
-
-static void remove_if_exists(const char *path)
-{
-	CHECK_WITH(rmdir(path), _ret == 0 || errno == ENOENT);
-}
-
-static void unlink_if_exists(const char *path)
-{
-	CHECK_WITH(unlink(path), _ret == 0 || errno == ENOENT);
-}
+#define BASE_DIR EXT_TEST_ROOT "/readdir_test"
 
 FN_SETUP(setup_base_dir)
 {
-	ensure_dir(BASE_DIR);
+	CHECK(mkdir(BASE_DIR, 0755));
 }
 END_SETUP()
 
@@ -39,7 +25,7 @@ FN_TEST(readdir_seekdir_resume)
 	char path[256];
 	const int num_files = 6;
 
-	ensure_dir(dir);
+	TEST_SUCC(mkdir(dir, 0755));
 	for (int i = 0; i < num_files; i++) {
 		snprintf(path, sizeof(path), "%s/file_%03d", dir, i);
 		int fd = TEST_SUCC(open(path, O_CREAT | O_WRONLY, 0644));
@@ -51,30 +37,27 @@ FN_TEST(readdir_seekdir_resume)
 	struct dirent *ent;
 	int skip = 3;
 	for (int i = 0; i < skip; i++)
-		ent = readdir(dp);
+		ent = TEST_RES(readdir(dp), _ret != NULL);
 
-	long saved_pos = telldir(dp);
+	long saved_pos = TEST_RES(telldir(dp), _ret >= 0);
 
 	char first_remaining[256] = { 0 };
-	ent = readdir(dp);
-	if (ent)
-		snprintf(first_remaining, sizeof(first_remaining), "%s",
-			 ent->d_name);
-	closedir(dp);
+	ent = TEST_RES(readdir(dp), _ret != NULL);
+	snprintf(first_remaining, sizeof(first_remaining), "%s", ent->d_name);
+	TEST_SUCC(closedir(dp));
 
 	dp = TEST_SUCC(opendir(dir));
 
 	seekdir(dp, saved_pos);
-	ent = readdir(dp);
-	if (ent)
-		TEST_RES(strcmp(ent->d_name, first_remaining), _ret == 0);
-	closedir(dp);
+	TEST_RES(readdir(dp),
+		 _ret != NULL && strcmp(_ret->d_name, first_remaining) == 0);
+	TEST_SUCC(closedir(dp));
 
 	for (int i = num_files - 1; i >= 0; i--) {
 		snprintf(path, sizeof(path), "%s/file_%03d", dir, i);
-		unlink_if_exists(path);
+		TEST_SUCC(unlink(path));
 	}
-	remove_if_exists(dir);
+	TEST_SUCC(rmdir(dir));
 }
 END_TEST()
 
@@ -82,7 +65,7 @@ FN_TEST(mkdir_contains_dot_dotdot)
 {
 	const char *dir = BASE_DIR "/dot_dotdot";
 
-	ensure_dir(dir);
+	TEST_SUCC(mkdir(dir, 0755));
 
 	DIR *dp = TEST_SUCC(opendir(dir));
 
@@ -96,13 +79,13 @@ FN_TEST(mkdir_contains_dot_dotdot)
 			found_dotdot = 1;
 		count++;
 	}
-	closedir(dp);
+	TEST_SUCC(closedir(dp));
 
 	TEST_RES(count, _ret == 2);
 	TEST_RES(found_dot, _ret == 1);
 	TEST_RES(found_dotdot, _ret == 1);
 
-	remove_if_exists(dir);
+	TEST_SUCC(rmdir(dir));
 }
 END_TEST()
 
@@ -112,7 +95,7 @@ FN_TEST(dir_growth_many_files)
 	const int num_files = 200;
 	char path[256];
 
-	ensure_dir(dir);
+	TEST_SUCC(mkdir(dir, 0755));
 
 	for (int i = 0; i < num_files; i++) {
 		snprintf(path, sizeof(path), "%s/file_%03d", dir, i);
@@ -125,15 +108,15 @@ FN_TEST(dir_growth_many_files)
 	int count = 0;
 	while (readdir(dp) != NULL)
 		count++;
-	closedir(dp);
+	TEST_SUCC(closedir(dp));
 
 	TEST_RES(count, _ret == num_files + 2);
 
 	for (int i = num_files - 1; i >= 0; i--) {
 		snprintf(path, sizeof(path), "%s/file_%03d", dir, i);
-		unlink_if_exists(path);
+		TEST_SUCC(unlink(path));
 	}
-	remove_if_exists(dir);
+	TEST_SUCC(rmdir(dir));
 }
 END_TEST()
 
@@ -144,8 +127,8 @@ FN_TEST(dot_dotdot_semantics)
 	struct stat st_parent, st_child, st_dot, st_dotdot;
 	char dot_path[256], dotdot_path[256];
 
-	ensure_dir(parent);
-	ensure_dir(child);
+	TEST_SUCC(mkdir(parent, 0755));
+	TEST_SUCC(mkdir(child, 0755));
 
 	TEST_SUCC(stat(parent, &st_parent));
 	TEST_SUCC(stat(child, &st_child));
@@ -158,7 +141,13 @@ FN_TEST(dot_dotdot_semantics)
 	TEST_RES(stat(dotdot_path, &st_dotdot),
 		 (ino_t)st_dotdot.st_ino == (ino_t)st_parent.st_ino);
 
-	remove_if_exists(child);
-	remove_if_exists(parent);
+	TEST_SUCC(rmdir(child));
+	TEST_SUCC(rmdir(parent));
 }
 END_TEST()
+
+FN_SETUP(cleanup_base_dir)
+{
+	CHECK(rmdir(BASE_DIR));
+}
+END_SETUP()

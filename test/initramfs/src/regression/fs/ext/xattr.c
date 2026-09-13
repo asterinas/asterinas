@@ -11,12 +11,13 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/xattr_test"
+#define BASE_DIR EXT_TEST_ROOT "/xattr_test"
 
 static void ensure_base_dir(void)
 {
-	CHECK_WITH(mkdir(BASE_DIR, 0755), _ret >= 0 || errno == EEXIST);
+	CHECK(mkdir(BASE_DIR, 0755));
 }
 
 FN_SETUP(prepare_base_dir)
@@ -34,8 +35,8 @@ FN_TEST(xattr_set_get_roundtrip)
 	TEST_SUCC(setxattr(path, "user.test", "value123", 8, 0));
 
 	char buf[64] = { 0 };
-	TEST_RES(getxattr(path, "user.test", buf, sizeof(buf)), _ret == 8);
-	TEST_RES(strcmp(buf, "value123"), _ret == 0);
+	TEST_RES(getxattr(path, "user.test", buf, sizeof(buf)),
+		 _ret == 8 && strcmp(buf, "value123") == 0);
 
 	TEST_SUCC(unlink(path));
 }
@@ -101,3 +102,9 @@ FN_TEST(xattr_with_o_path_fd)
 	TEST_SUCC(unlink(path));
 }
 END_TEST()
+
+FN_SETUP(cleanup_base_dir)
+{
+	CHECK(rmdir(BASE_DIR));
+}
+END_SETUP()

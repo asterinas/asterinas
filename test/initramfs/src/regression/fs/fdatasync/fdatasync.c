@@ -1,49 +1,43 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#include <stdio.h>
-#include <unistd.h>
 #include <fcntl.h>
-#include <string.h>
-#include <stdlib.h>
+#include <unistd.h>
 
-void test_fdatasync_on_fs(const char *directory)
+#include "../../common/test.h"
+
+#define FDATASYNC_FILE "test_fdatasync.txt"
+#define FSYNC_FILE "test_fsync.txt"
+
+FN_SETUP(select_filesystem)
 {
-	char filepath[256];
-	snprintf(filepath, sizeof(filepath), "%s/test_fdatasync.txt",
-		 directory);
-
-	int fd =
-		open(filepath, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-	if (fd == -1) {
-		perror("Error opening file");
-		exit(EXIT_FAILURE);
-	}
-
-	char *data = "Hello, fdatasync test!\n";
-	if (write(fd, data, strlen(data)) != strlen(data)) {
-		perror("Error writing data");
-		close(fd);
-		exit(EXIT_FAILURE);
-	}
-
-	if (fdatasync(fd) == -1) {
-		perror("Error syncing data");
-		close(fd);
-		exit(EXIT_FAILURE);
-	}
-
-	printf("Data written and synced on %s\n", directory);
-	close(fd);
+	CHECK_WITH(getenv("SYNC_TEST_ROOT"), _ret != NULL);
+	CHECK(chdir(getenv("SYNC_TEST_ROOT")));
 }
+END_SETUP()
 
-int main(int argc, char **argv)
+#define TEST_SYNC_FILE(path, sync_fn)                                          \
+	do {                                                                   \
+		const char data[] = "Hello, sync test!\n";                     \
+		int fd = TEST_SUCC(                                            \
+			open(path, O_RDWR | O_CREAT | O_EXCL, 0600));          \
+		TEST_RES(write(fd, data, sizeof(data)), _ret == sizeof(data)); \
+		TEST_SUCC(sync_fn(fd));                                        \
+		char buffer[sizeof(data)];                                     \
+		TEST_RES(pread(fd, buffer, sizeof(buffer), 0),                 \
+			 _ret == sizeof(buffer) &&                             \
+				 memcmp(buffer, data, sizeof(data)) == 0);     \
+		TEST_SUCC(close(fd));                                          \
+		TEST_SUCC(unlink(path));                                       \
+	} while (0)
+
+FN_TEST(fdatasync_file)
 {
-	if (argc != 2) {
-		printf("Usage: %s <directory>\n", argv[0]);
-		return EXIT_FAILURE;
-	}
-
-	test_fdatasync_on_fs(argv[1]);
-
-	return EXIT_SUCCESS;
+	TEST_SYNC_FILE(FDATASYNC_FILE, fdatasync);
 }
+END_TEST()
+
+FN_TEST(fsync_file)
+{
+	TEST_SYNC_FILE(FSYNC_FILE, fsync);
+}
+END_TEST()

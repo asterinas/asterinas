@@ -8,27 +8,13 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/file_io_test"
-
-static void ensure_dir(const char *path)
-{
-	CHECK_WITH(mkdir(path, 0755), _ret >= 0 || errno == EEXIST);
-}
-
-static void remove_dir_if_exists(const char *path)
-{
-	CHECK_WITH(rmdir(path), _ret == 0 || errno == ENOENT);
-}
-
-static void unlink_if_exists(const char *path)
-{
-	CHECK_WITH(unlink(path), _ret == 0 || errno == ENOENT);
-}
+#define BASE_DIR EXT_TEST_ROOT "/file_io_test"
 
 FN_SETUP(create_base_dir)
 {
-	ensure_dir(BASE_DIR);
+	CHECK(mkdir(BASE_DIR, 0755));
 }
 END_SETUP()
 
@@ -43,11 +29,12 @@ FN_TEST(write_close_reopen_read)
 	TEST_SUCC(close(fd));
 
 	fd = TEST_SUCC(open(path, O_RDONLY));
-	TEST_RES(read(fd, buf, sizeof(buf)), _ret == (ssize_t)strlen(msg));
-	TEST_RES(memcmp(buf, msg, strlen(msg)), _ret == 0);
+	TEST_RES(read(fd, buf, sizeof(buf)),
+		 _ret == (ssize_t)strlen(msg) &&
+			 memcmp(buf, msg, strlen(msg)) == 0);
 	TEST_SUCC(close(fd));
 
-	unlink_if_exists(path);
+	TEST_SUCC(unlink(path));
 }
 END_TEST()
 
@@ -64,11 +51,11 @@ FN_TEST(write_partial_block)
 	TEST_SUCC(close(fd));
 
 	fd = TEST_SUCC(open(path, O_RDONLY));
-	TEST_RES(read(fd, rbuf, sizeof(rbuf)), _ret == sizeof(rbuf));
-	TEST_RES(memcmp(rbuf, wbuf, sizeof(wbuf)), _ret == 0);
+	TEST_RES(read(fd, rbuf, sizeof(rbuf)),
+		 _ret == sizeof(rbuf) && memcmp(rbuf, wbuf, sizeof(wbuf)) == 0);
 	TEST_SUCC(close(fd));
 
-	unlink_if_exists(path);
+	TEST_SUCC(unlink(path));
 }
 END_TEST()
 
@@ -86,11 +73,11 @@ FN_TEST(write_cross_block)
 	TEST_SUCC(close(fd));
 
 	fd = TEST_SUCC(open(path, O_RDONLY));
-	TEST_RES(read(fd, rbuf, sizeof(rbuf)), _ret == sizeof(rbuf));
-	TEST_RES(memcmp(rbuf, wbuf, sizeof(wbuf)), _ret == 0);
+	TEST_RES(read(fd, rbuf, sizeof(rbuf)),
+		 _ret == sizeof(rbuf) && memcmp(rbuf, wbuf, sizeof(wbuf)) == 0);
 	TEST_SUCC(close(fd));
 
-	unlink_if_exists(path);
+	TEST_SUCC(unlink(path));
 }
 END_TEST()
 
@@ -98,12 +85,18 @@ FN_TEST(write_dir_fd_ebadf)
 {
 	const char *dir_path = BASE_DIR "/test_dir_write";
 
-	ensure_dir(dir_path);
+	TEST_SUCC(mkdir(dir_path, 0755));
 
 	int fd = TEST_SUCC(open(dir_path, O_RDONLY | O_DIRECTORY));
 	TEST_ERRNO(write(fd, "x", 1), EBADF);
 	TEST_SUCC(close(fd));
 
-	remove_dir_if_exists(dir_path);
+	TEST_SUCC(rmdir(dir_path));
 }
 END_TEST()
+
+FN_SETUP(cleanup_base_dir)
+{
+	CHECK(rmdir(BASE_DIR));
+}
+END_SETUP()
