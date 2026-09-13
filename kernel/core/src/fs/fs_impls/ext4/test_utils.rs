@@ -272,13 +272,7 @@ impl RawInodeBuilder {
             generation: 0,
             file_acl: 0,
             size_high: 0,
-            faddr: 0,
-            frag: 0,
-            fsize: 0,
-            pad1: 0,
-            uid_high: 0,
-            gid_high: 0,
-            reserved2: 0,
+            ..Default::default()
         }
     }
 }
@@ -311,7 +305,10 @@ pub(super) fn write_raw_inode_to_disk(
     let table_block = descs[group_idx].inode_table_bid + block_index as u32;
     let table_bid = Bid::new(table_block as u64);
     disk.segment()
-        .write_val(table_bid.to_offset() + offset_in_block, raw)
+        .write_bytes(
+            table_bid.to_offset() + offset_in_block,
+            &raw.as_bytes()[..inode_size],
+        )
         .unwrap();
 }
 
@@ -496,6 +493,8 @@ pub(super) struct Ext4FixtureBuilder {
     group0_free_blocks: Option<u16>,
     group0_free_inodes: Option<u16>,
     group0_used_dirs: Option<u16>,
+    inode_size: Option<usize>,
+    inodes_per_group: Option<u32>,
     init_root: bool,
     block_bitmap: Option<BlockBitmapInit>,
     inode_bitmap: Option<InodeBitmapInit>,
@@ -512,6 +511,8 @@ impl Ext4FixtureBuilder {
             group0_free_blocks: None,
             group0_free_inodes: None,
             group0_used_dirs: None,
+            inode_size: None,
+            inodes_per_group: None,
             init_root: true,
             block_bitmap: None,
             inode_bitmap: None,
@@ -536,6 +537,16 @@ impl Ext4FixtureBuilder {
         self
     }
 
+    pub(super) fn with_inode_size(mut self, inode_size: usize) -> Self {
+        self.inode_size = Some(inode_size);
+        self
+    }
+
+    pub(super) fn with_inodes_per_group(mut self, inodes_per_group: u32) -> Self {
+        self.inodes_per_group = Some(inodes_per_group);
+        self
+    }
+
     pub(super) fn block_bitmap(mut self, init: BlockBitmapInit) -> Self {
         self.block_bitmap = Some(init);
         self
@@ -548,6 +559,15 @@ impl Ext4FixtureBuilder {
 
     fn prepare(&self) -> Result<PreparedFixture> {
         let mut raw_sb = make_valid_raw_super_block(self.groups);
+        if let Some(inode_size) = self.inode_size {
+            raw_sb.rev_level = RevLevel::Dynamic as u32;
+            raw_sb.first_ino = 11;
+            raw_sb.inode_size = inode_size as u16;
+        }
+        if let Some(inodes_per_group) = self.inodes_per_group {
+            raw_sb.inodes_per_group = inodes_per_group;
+            raw_sb.inodes_count = self.groups * inodes_per_group;
+        }
         if let Some(sb_free_blocks) = self.sb_free_blocks {
             raw_sb.free_blocks_count = sb_free_blocks;
         }

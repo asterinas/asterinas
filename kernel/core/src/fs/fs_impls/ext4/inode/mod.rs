@@ -26,7 +26,8 @@
 //! - `InodeInner` — the `RwMutex`-guarded interior: the dirty descriptor
 //!   and the type-specific inode payload.
 //! - `InodeDesc` — a decoded, Rust-typed mirror of all on-disk inode fields.
-//! - `RawInode` — the 128-byte on-disk layout (`#[repr(C)]`); converted
+//! - `RawInode` — the 256-byte ext4 disk layout (`#[repr(C)]`); transferred
+//!   according to the volume's 128- or 256-byte inode slot size and converted
 //!   to/from `InodeDesc` at I/O boundaries.
 //!
 //! # Submodules
@@ -251,6 +252,8 @@ pub(super) struct InodeDesc {
     file_acl: u32,
     generation: u32,
     block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
+    /// Original disk image used to preserve fields that this driver does not model.
+    raw: RawInode,
 }
 
 impl InodeDesc {
@@ -279,6 +282,7 @@ impl InodeDesc {
             file_acl: 0,
             generation,
             block_ptrs: [0; RAW_BLOCK_PTRS_LEN],
+            raw: RawInode::default(),
         }
     }
 
@@ -337,6 +341,7 @@ impl TryFrom<&RawInode> for InodeDesc {
             file_acl: raw.file_acl,
             generation: raw.generation,
             block_ptrs: raw_block_ptrs.block_ptrs,
+            raw: *raw,
         })
     }
 }
@@ -355,37 +360,34 @@ impl From<&InodeDesc> for RawInode {
             (desc.size as u32, 0)
         };
 
-        Self {
-            mode,
-            uid,
-            size_lo,
-            atime: utils::duration_to_ext2_secs(desc.atime),
-            ctime: utils::duration_to_ext2_secs(desc.ctime),
-            mtime: utils::duration_to_ext2_secs(desc.mtime),
-            dtime: utils::duration_to_ext2_secs(desc.dtime),
-            gid,
-            link_count: desc.link_count,
-            sector_count: desc.sector_count,
-            flags: desc.flags.bits(),
-            osd1: 0,
-            block: desc.block_ptrs,
-            generation: desc.generation,
-            file_acl: desc.file_acl,
-            size_high,
-            faddr: 0,
-            frag: 0,
-            fsize: 0,
-            pad1: 0,
-            uid_high,
-            gid_high,
-            reserved2: 0,
-        }
+        let mut raw = desc.raw;
+        raw.mode = mode;
+        raw.uid = uid;
+        raw.size_lo = size_lo;
+        raw.atime = utils::duration_to_ext2_secs(desc.atime);
+        raw.ctime = utils::duration_to_ext2_secs(desc.ctime);
+        raw.mtime = utils::duration_to_ext2_secs(desc.mtime);
+        raw.dtime = utils::duration_to_ext2_secs(desc.dtime);
+        raw.gid = gid;
+        raw.link_count = desc.link_count;
+        raw.sector_count = desc.sector_count;
+        raw.flags = desc.flags.bits();
+        raw.block = desc.block_ptrs;
+        raw.generation = desc.generation;
+        raw.file_acl = desc.file_acl;
+        raw.size_high = size_high;
+        raw.uid_high = uid_high;
+        raw.gid_high = gid_high;
+        raw
     }
 }
 
-/// On-disk inode structure (128 bytes for GOOD_OLD_REV).
+/// On-disk inode structure used by ext4's default 256-byte inode format.
+///
+/// The first 128 bytes are layout-compatible with ext2. Callers must honor the
+/// filesystem's actual inode slot size when transferring this structure.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct RawInode {
     pub mode: u16,                        // i_mode
     pub uid: u16,                         // i_uid (low 16 bits)
@@ -401,18 +403,39 @@ pub(super) struct RawInode {
     pub osd1: u32,                        // osd1.linux1.l_i_reserved1
     pub block: [u32; RAW_BLOCK_PTRS_LEN], // i_block
     pub generation: u32,                  // i_generation
-    pub file_acl: u32,                    // i_file_acl
+    pub file_acl: u32,                    // i_file_acl_lo
     pub size_high: u32,                   // i_dir_acl (size high)
-    pub faddr: u32,                       // i_faddr
-    pub frag: u8,                         // osd2.linux2.l_i_frag
-    pub fsize: u8,                        // osd2.linux2.l_i_fsize
-    pub pad1: u16,                        // osd2.linux2.i_pad1
+    pub obso_faddr: u32,                  // i_obso_faddr
+    pub blocks_high: u16,                 // osd2.linux2.l_i_blocks_high
+    pub file_acl_high: u16,               // osd2.linux2.l_i_file_acl_high
     pub uid_high: u16,                    // osd2.linux2.l_i_uid_high
     pub gid_high: u16,                    // osd2.linux2.l_i_gid_high
-    pub reserved2: u32,                   // osd2.linux2.l_i_reserved2
+    pub checksum_lo: u16,                 // osd2.linux2.l_i_checksum_lo
+    pub osd2_reserved: u16,               // osd2.linux2.l_i_reserved
+    pub extra_isize: u16,                 // i_extra_isize
+    pub checksum_hi: u16,                 // i_checksum_hi
+    pub ctime_extra: u32,                 // i_ctime_extra
+    pub mtime_extra: u32,                 // i_mtime_extra
+    pub atime_extra: u32,                 // i_atime_extra
+    pub crtime: u32,                      // i_crtime
+    pub crtime_extra: u32,                // i_crtime_extra
+    pub version_hi: u32,                  // i_version_hi
+    pub projid: u32,                      // i_projid
+    pub tail: InodeTail,
 }
 
-const_assert!(size_of::<RawInode>() == 128);
+/// Unmodeled bytes in a 256-byte ext4 inode.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(super) struct InodeTail([u8; 96]);
+
+impl Default for InodeTail {
+    fn default() -> Self {
+        Self([0; 96])
+    }
+}
+
+const_assert!(size_of::<RawInode>() == 256);
 
 /// Interior of `Inode` guarded by a single `RwMutex`.
 #[derive(Debug)]
@@ -716,6 +739,8 @@ bitflags! {
         const DIR_SYNC = 1 << 16;
         /// Top of directory hierarchies.
         const TOP_DIR = 1 << 17;
+        /// `i_block` contains an extent tree.
+        const EXTENTS = 1 << 19;
         /// Reserved for the ext2 library.
         const RESERVED = 1 << 31;
     }
@@ -736,10 +761,15 @@ mod test {
         let block_index = offset_bytes / BLOCK_SIZE;
         let offset_in_block = offset_bytes % BLOCK_SIZE;
         let table_block = f.descs[group_idx].inode_table_bid + block_index as u32;
+        let mut raw = RawInode::default();
         f.disk
             .segment()
-            .read_val(Bid::new(table_block as u64).to_offset() + offset_in_block)
-            .unwrap()
+            .read_bytes(
+                Bid::new(table_block as u64).to_offset() + offset_in_block,
+                &mut raw.as_mut_bytes()[..inode_size],
+            )
+            .unwrap();
+        raw
     }
 
     /// Builds a live in-memory file inode (not on disk) for low-level tests.
