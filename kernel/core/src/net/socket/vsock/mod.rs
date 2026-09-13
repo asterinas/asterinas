@@ -19,9 +19,37 @@ mod addr;
 mod stream;
 mod transport;
 
-pub(crate) use addr::VsockSocketAddr;
+pub(crate) use addr::{VMADDR_CID_HOST, VsockSocketAddr};
+use aster_virtio::device::socket::header::VirtioVsockHdr;
 pub(crate) use stream::VsockStreamSocket;
+
+use crate::prelude::Result;
 
 pub(in crate::net) fn init() {
     transport::init();
+}
+
+/// Rejects using the host backend alongside an active virtio-vsock frontend.
+pub(crate) fn ensure_vhost_backend() -> Result<()> {
+    transport::ensure_vhost_backend()
+}
+
+/// Dispatches a packet read by an active vhost-vsock backend.
+pub(crate) fn handle_vhost_packet(header: VirtioVsockHdr, payload: &[u8]) -> Result<()> {
+    transport::handle_vhost_packet(header, payload)
+}
+
+/// Resets the connections of a guest after its backend stops routing packets.
+///
+/// The caller must not hold a backend lock and must prevent the CID from being reused until
+/// this operation completes.
+pub(crate) fn reset_vhost_connections(cid: u32) {
+    transport::reset_vhost_connections(cid);
+}
+
+/// Wakes senders after the backend releases space in its outgoing packet queue.
+///
+/// The caller must not hold a backend lock.
+pub(crate) fn notify_vhost_writable(cid: u32) {
+    transport::notify_vhost_writable(cid);
 }
