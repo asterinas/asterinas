@@ -9,9 +9,10 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define NON_EMPTY_DIR "/ext2/test_non_empty_dir"
-#define NON_EMPTY_CHILD "/ext2/test_non_empty_dir/test.txt"
+#define NON_EMPTY_DIR EXT_TEST_ROOT "/test_non_empty_dir"
+#define NON_EMPTY_CHILD EXT_TEST_ROOT "/test_non_empty_dir/test.txt"
 
 static void remove_file_if_exists(const char *path)
 {

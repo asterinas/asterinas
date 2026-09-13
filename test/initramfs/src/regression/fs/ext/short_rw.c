@@ -7,10 +7,11 @@
 #include <sys/fcntl.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
 #define PAGE_SIZE 4096
 
-#define TEST_FILE "/ext2/short_rw"
+#define TEST_FILE EXT_TEST_ROOT "/short_rw"
 #define TEST_DATA "abcdefg"
 
 FN_TEST(short_write_should_not_leak_uninit_cache_page)

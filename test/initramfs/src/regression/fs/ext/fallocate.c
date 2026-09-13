@@ -10,8 +10,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/fallocate"
+#define BASE_DIR EXT_TEST_ROOT "/fallocate"
 #define BLOCK_SIZE 4096
 
 static char zero_buf[BLOCK_SIZE];

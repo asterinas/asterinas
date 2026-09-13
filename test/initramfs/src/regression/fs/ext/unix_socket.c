@@ -11,8 +11,9 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define SERVER_ADDRESS "/ext2/my_unix_server"
+#define SERVER_ADDRESS EXT_TEST_ROOT "/my_unix_server"
 
 FN_TEST(ext2_unix_socket)
 {

@@ -1,0 +1,4 @@
+# Existing ext2 coverage outside the initial ext4 feature set.
+fallocate
+mknod
+xattr

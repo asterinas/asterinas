@@ -9,8 +9,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define STICKY_DIR "/ext2/sticky_test"
+#define STICKY_DIR EXT_TEST_ROOT "/sticky_test"
 #define STICKY_FILE STICKY_DIR "/rootfile"
 #define STICKY_EMPTY_DIR STICKY_DIR "/emptydir"
 #define STICKY_NONEMPTY_DIR STICKY_DIR "/nonemptydir"

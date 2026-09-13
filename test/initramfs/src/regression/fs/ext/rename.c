@@ -7,8 +7,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/rename_test"
+#define BASE_DIR EXT_TEST_ROOT "/rename_test"
 #define DIR BASE_DIR "/dir"
 #define DIR_RENAMED BASE_DIR "/dir_renamed"
 #define DIR_CHILD DIR "/child"

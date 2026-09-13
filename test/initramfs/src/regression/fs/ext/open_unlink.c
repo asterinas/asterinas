@@ -10,8 +10,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/open_unlink_test"
+#define BASE_DIR EXT_TEST_ROOT "/open_unlink_test"
 #define FILE_FORK BASE_DIR "/fork_file"
 #define FILE_APPEND BASE_DIR "/append_file"
 
