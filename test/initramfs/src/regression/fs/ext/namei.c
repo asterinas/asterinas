@@ -11,8 +11,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/namei_test"
+#define BASE_DIR EXT_TEST_ROOT "/namei_test"
 
 #define DIR_A BASE_DIR "/a"
 #define DIR_B BASE_DIR "/b"
