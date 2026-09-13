@@ -57,7 +57,7 @@ use crate::{
 /// Due to this chain structure, the integrity of a `CryptoChain` can be ensured
 /// by verifying the MAC of the last block. Once the integrity of the last block
 /// is verified, the integrity of all previous blocks can also be verified.
-pub struct CryptoChain<L> {
+pub(crate) struct CryptoChain<L> {
     block_log: L,
     key: Key,
     block_range: Range<BlockId>,
@@ -76,10 +76,10 @@ struct Footer {
 impl<L: BlockLog> CryptoChain<L> {
     /// The available size in each chained block is smaller than that of
     /// the block size.
-    pub const AVAIL_BLOCK_SIZE: usize = BLOCK_SIZE - size_of::<Footer>();
+    pub(crate) const AVAIL_BLOCK_SIZE: usize = BLOCK_SIZE - size_of::<Footer>();
 
     /// Construct a new `CryptoChain` using `block_log: L` as the storage.
-    pub fn new(block_log: L) -> Self {
+    pub(crate) fn new(block_log: L) -> Self {
         Self {
             block_log,
             key: Key::random(),
@@ -90,7 +90,7 @@ impl<L: BlockLog> CryptoChain<L> {
 
     /// Recover an existing `CryptoChain` backed by `block_log: L`,
     /// starting from its `from` block.
-    pub fn recover(key: Key, block_log: L, from: BlockId) -> Recovery<L> {
+    pub(crate) fn recover(key: Key, block_log: L, from: BlockId) -> Recovery<L> {
         Recovery::new(block_log, key, from)
     }
 
@@ -102,7 +102,7 @@ impl<L: BlockLog> CryptoChain<L> {
     /// # Security
     ///
     /// The authenticity of the block is guaranteed.
-    pub fn read(&self, pos: BlockId, buf: &mut [u8]) -> Result<usize> {
+    pub(crate) fn read(&self, pos: BlockId, buf: &mut [u8]) -> Result<usize> {
         if !self.block_range().contains(&pos) {
             return_errno_with_msg!(NotFound, "read position is out of range");
         }
@@ -143,7 +143,7 @@ impl<L: BlockLog> CryptoChain<L> {
     /// # Security
     ///
     /// The confidentiality of the block is guaranteed.
-    pub fn append(&mut self, buf: &[u8]) -> Result<()> {
+    pub(crate) fn append(&mut self, buf: &[u8]) -> Result<()> {
         if buf.len() > Self::AVAIL_BLOCK_SIZE {
             return_errno_with_msg!(OutOfDisk, "append data is too large");
         }
@@ -173,7 +173,7 @@ impl<L: BlockLog> CryptoChain<L> {
     }
 
     /// Ensures the persistence of data.
-    pub fn flush(&self) -> Result<()> {
+    pub(crate) fn flush(&self) -> Result<()> {
         self.block_log.flush()
     }
 
@@ -182,7 +182,7 @@ impl<L: BlockLog> CryptoChain<L> {
     /// The purpose of this method is to free some memory used for keeping the
     /// MACs of accessible blocks. After trimming, the range of accessible
     /// blocks is shrunk accordingly.
-    pub fn trim(&mut self, before_block: BlockId) {
+    pub(crate) fn trim(&mut self, before_block: BlockId) {
         // We must ensure the invariance that there is at least one valid block
         // after trimming.
         debug_assert!(before_block < self.block_range.end);
@@ -197,17 +197,17 @@ impl<L: BlockLog> CryptoChain<L> {
     }
 
     /// Returns the range of blocks that are accessible through the `CryptoChain`.
-    pub fn block_range(&self) -> &Range<BlockId> {
+    pub(crate) fn block_range(&self) -> &Range<BlockId> {
         &self.block_range
     }
 
     /// Returns the underlying block log.
-    pub fn inner_log(&self) -> &L {
+    pub(crate) fn inner_log(&self) -> &L {
         &self.block_log
     }
 
     /// Returns the encryption key of the `CryptoChain`.
-    pub fn key(&self) -> &Key {
+    pub(crate) fn key(&self) -> &Key {
         &self.key
     }
 }
@@ -221,7 +221,7 @@ impl<L: BlockLog> CryptoChain<L> {
 /// For the last block, which does not have a successor block, the user
 /// can obtain its MAC from `Recovery<L>` and verify the MAC by comparing it
 /// with an expected value from another trusted source.
-pub struct Recovery<L> {
+pub(crate) struct Recovery<L> {
     block_log: L,
     key: Key,
     block_range: Range<BlockId>,
@@ -233,7 +233,7 @@ pub struct Recovery<L> {
 impl<L: BlockLog> Recovery<L> {
     /// Construct a new `Recovery` from the `first_block` of
     /// `block_log: L`, using a cryptographic `key`.
-    pub fn new(block_log: L, key: Key, first_block: BlockId) -> Self {
+    pub(crate) fn new(block_log: L, key: Key, first_block: BlockId) -> Self {
         Self {
             block_log,
             key,
@@ -247,28 +247,28 @@ impl<L: BlockLog> Recovery<L> {
     /// Returns the number of valid blocks.
     ///
     /// Each success call to `next` increments the number of valid blocks.
-    pub fn num_blocks(&self) -> usize {
+    pub(crate) fn num_blocks(&self) -> usize {
         self.block_range.len()
     }
 
     /// Returns the range of valid blocks.
     ///
     /// Each success call to `next` increments the upper bound by one.
-    pub fn block_range(&self) -> &Range<BlockId> {
+    pub(crate) fn block_range(&self) -> &Range<BlockId> {
         &self.block_range
     }
 
     /// Returns the MACs of valid blocks.
     ///
     /// Each success call to `next` pushes the MAC of the new valid block.
-    pub fn block_macs(&self) -> &[Mac] {
+    pub(crate) fn block_macs(&self) -> &[Mac] {
         &self.block_macs
     }
 
     /// Open a `CryptoChain<L>` from the recovery object.
     ///
     /// User should call `next` to  retrieve valid blocks as much as possible.
-    pub fn open(self) -> CryptoChain<L> {
+    pub(crate) fn open(self) -> CryptoChain<L> {
         CryptoChain {
             block_log: self.block_log,
             key: self.key,

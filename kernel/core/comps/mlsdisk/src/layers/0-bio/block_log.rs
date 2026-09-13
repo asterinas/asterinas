@@ -16,7 +16,7 @@ use crate::{os::Mutex, prelude::*};
 /// It is ok to perform I/O on a `BlockLog` concurrently in multiple threads.
 /// `BlockLog` promises the serialization of the append operations, i.e.,
 /// concurrent appends are carried out as if they are done one by one.
-pub trait BlockLog: Sync + Send {
+pub(crate) trait BlockLog: Sync + Send {
     /// Read one or multiple blocks at a specified position.
     fn read(&self, pos: BlockId, buf: BufMut) -> Result<()>;
 
@@ -49,7 +49,7 @@ impl_blocklog_for!(Box<T>, "(**self)");
 impl_blocklog_for!(Arc<T>, "(**self)");
 
 /// An in-memory log that impls `BlockLog`.
-pub struct MemLog {
+pub(crate) struct MemLog {
     log: Mutex<Buf>,
     append_pos: AtomicUsize,
 }
@@ -90,7 +90,7 @@ impl BlockLog for MemLog {
 }
 
 impl MemLog {
-    pub fn create(num_blocks: usize) -> Result<Self> {
+    pub(crate) fn create(num_blocks: usize) -> Result<Self> {
         Ok(Self {
             log: Mutex::new(Buf::alloc(num_blocks)?),
             append_pos: AtomicUsize::new(0),
