@@ -15,7 +15,7 @@
 
 use super::{
     super::Ext4, Inode, InodeInner, InodePayload, MAX_FAST_SYMLINK_LEN, RAW_BLOCK_PTRS_LEN,
-    block_manager::RawBlockPtrs,
+    block_mapping::RawBlockPtrs,
 };
 use crate::fs::ext4::{FilePerm, prelude::*, utils};
 

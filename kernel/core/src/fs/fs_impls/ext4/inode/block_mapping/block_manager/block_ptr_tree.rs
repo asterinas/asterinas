@@ -4,12 +4,14 @@
 
 #![short_vis_path::add(inode)]
 
-use device_id::{decode_device_numbers, encode_device_numbers};
 use ostd::mm::io::util::HasVmReaderWriter;
 use smallvec::SmallVec;
 
-use super::indirect_block_manager::{IndirectBlock, IndirectBlockManager};
-use crate::fs::ext4::{fs::Ext4, inode::RAW_BLOCK_PTRS_LEN, prelude::*};
+use super::{
+    super::RawBlockPtrs,
+    indirect_block_manager::{IndirectBlock, IndirectBlockManager},
+};
+use crate::fs::ext4::{fs::Ext4, prelude::*};
 
 const PTRS_PER_BLOCK: usize = BLOCK_SIZE / size_of::<u32>();
 const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
@@ -52,12 +54,12 @@ impl BlockPtrTree {
     }
 
     /// Returns whether the `RawBlockPtrs` is dirty.
-    pub(super) fn is_dirty(&self) -> bool {
+    pub(in inode) fn is_dirty(&self) -> bool {
         self.raw_block_ptrs.is_dirty()
     }
 
     /// Clears the dirty flag for the raw on-disk block pointer state.
-    pub(super) fn clear_dirty(&mut self) {
+    pub(in inode) fn clear_dirty(&mut self) {
         self.raw_block_ptrs.clear_dirty();
     }
 
@@ -859,69 +861,6 @@ impl BlockPtrTree {
     }
 }
 
-/// On-disk block pointer state mirrored from `RawInode`.
-///
-/// The mirrored fields are `i_blocks` (sector count) and the 15-entry
-/// `i_block[]` array.
-///
-/// This copy exists to break a locking cycle between `Inode` and
-/// `PageCacheBackend`. Both need to look up or allocate blocks, but `Inode`
-/// also drives `PageCacheBackend` operations. Giving both sides access to this
-/// struct instead of routing everything through the `InodeInner` lock avoids a
-/// deadlock. The struct is the authoritative in-memory state and is written
-/// back to the inode on sync.
-#[derive(Clone, Copy, Debug)]
-pub(in inode) struct RawBlockPtrs {
-    pub sector_count: u32,
-    pub block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
-}
-
-impl RawBlockPtrs {
-    /// Creates a `RawBlockPtrs` from the given sector count and pointer array.
-    pub(in inode) fn new(sector_count: u32, block_ptrs: [u32; RAW_BLOCK_PTRS_LEN]) -> Self {
-        Self {
-            sector_count,
-            block_ptrs,
-        }
-    }
-
-    /// Reads the ext2 special-file device encoding stored in `i_block`.
-    pub(in inode) fn read_device_id(&self) -> u64 {
-        let (major, minor) = if self.block_ptrs[0] != 0 {
-            let old_encoded_device = self.block_ptrs[0];
-            // Old_decode_dev: (major << 8) | minor with 8-bit major/minor.
-            (
-                ((old_encoded_device >> 8) & 0xFF),
-                (old_encoded_device & 0xFF),
-            )
-        } else {
-            let encoded_device = self.block_ptrs[1];
-            // Decode the extended major/minor bit layout.
-            (
-                ((encoded_device & 0xFFF00) >> 8),
-                ((encoded_device & 0xFF) | ((encoded_device >> 12) & 0xFFF00)),
-            )
-        };
-
-        encode_device_numbers(major, minor)
-    }
-
-    /// Writes a device ID into the ext2 special-file `i_block` layout.
-    pub(in inode) fn write_device_id(&mut self, device_id: u64) {
-        let (major, minor) = decode_device_numbers(device_id);
-
-        // Old_valid_dev: MAJOR/MINOR must both fit in 8 bits.
-        if major < 256 && minor < 256 {
-            self.block_ptrs[0] = (major << 8) | minor;
-            self.block_ptrs[1] = 0;
-        } else {
-            self.block_ptrs[0] = 0;
-            self.block_ptrs[1] = (minor & 0xFF) | (major << 8) | ((minor & !0xFF) << 12);
-            self.block_ptrs[2] = 0;
-        }
-    }
-}
-
 /// Result of resolving a physical block range from a logical block position.
 #[derive(Debug)]
 pub(in inode) enum ResolvedBlockRange {
@@ -1187,7 +1126,10 @@ mod test {
 
     use super::*;
     use crate::{
-        fs::fs_impls::ext4::test_utils::{Ext4FixtureBuilder, write_indirect_ptr},
+        fs::fs_impls::ext4::{
+            inode::RAW_BLOCK_PTRS_LEN,
+            test_utils::{Ext4FixtureBuilder, write_indirect_ptr},
+        },
         time::clocks,
     };
 
