@@ -40,7 +40,6 @@ impl Packet {
 
 pub(super) struct PendingPackets {
     pub is_active: bool,
-    pub is_running: bool,
     pub generation: u64,
     pub failed: bool,
     packets: VecDeque<(Arc<Packet>, usize)>,
@@ -52,7 +51,6 @@ impl PendingPackets {
     pub fn new() -> Self {
         Self {
             is_active: true,
-            is_running: false,
             generation: 0,
             failed: false,
             packets: VecDeque::new(),

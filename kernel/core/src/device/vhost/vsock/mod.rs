@@ -2,13 +2,29 @@
 
 //! A vhost-vsock device backed by the common vhost split queues.
 //!
-//! Each open file owns its configuration, guest CID and worker. The socket
-//! transport enqueues host packets without accessing the owner's memory.
+//! Each open file owns a persistent device and endpoint. SET_OWNER creates a
+//! worker bound to the owner's VMAR; SET_RUNNING pauses or resumes its queues.
+//! A sleeping mutex serializes guest accesses with configuration changes, and
+//! borrowed descriptor chains cannot outlive that lock. Close wakes and joins
+//! the worker without holding the queue, socket or pending locks.
+//!
+//! Queue 0 receives host packets; queue 1 transmits guest packets. CID routing
+//! remains available while paused, so sockets can enqueue bounded pending data.
+//! Owner-memory faults and malformed queues signal the affected error eventfd;
+//! a later kick or configuration wake can retry after the owner repairs them.
+//! Control-buffer exhaustion remains a fatal resource policy: it invalidates
+//! reservations and resets sockets because control messages cannot be dropped.
+//!
+//! Supported features are VERSION_1 and indirect descriptors for stream packets.
+//! Event-index, packed rings, logging, IOTLB and seqpacket are not implemented.
+//! This backend requires the host transport, without an active virtio frontend.
+
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use aster_virtio::device::socket::header::VirtioVsockHdr;
 use device_id::{DeviceId, MinorId};
 
-use super::common::device::{self as vhost, VhostDeviceConfig, VhostDeviceState};
+use super::common::device::{self as vhost, VhostDevice, VhostDeviceConfig};
 use crate::{
     device::{Device, DeviceType, registry::char},
     events::{EventFile, EventFileFlags, IoEvents, KernelEventFile},
@@ -120,20 +136,30 @@ impl PerOpenFileOps for VhostVsockFile {
 }
 
 struct VhostVsockControl {
-    common: VhostDeviceState<NUM_QUEUES>,
-    backend: Option<Arc<Backend>>,
+    shared: Arc<VhostVsockShared>,
     worker: Option<Arc<Thread>>,
+}
+
+// Lock order: file control -> common -> socket/pending locks. Socket callbacks
+// never acquire common or file control. No guest copy holds a pending spinlock.
+struct VhostVsockShared {
+    common: Mutex<VhostDevice<NUM_QUEUES>>,
+    backend: Arc<Backend>,
+    exiting: AtomicBool,
 }
 
 impl VhostVsockControl {
     fn new() -> Self {
         Self {
-            common: VhostDeviceState::new(VhostDeviceConfig {
-                device_features: vhost::VIRTIO_F_VERSION_1 | vhost::VIRTIO_RING_F_INDIRECT_DESC,
-                backend_features: 0,
-                max_queue_size: 256,
+            shared: Arc::new(VhostVsockShared {
+                common: Mutex::new(VhostDevice::new(VhostDeviceConfig {
+                    device_features: vhost::VIRTIO_F_VERSION_1 | vhost::VIRTIO_RING_F_INDIRECT_DESC,
+                    backend_features: 0,
+                    max_queue_size: 32768,
+                })),
+                backend: Backend::new(),
+                exiting: AtomicBool::new(false),
             }),
-            backend: None,
             worker: None,
         }
     }
@@ -144,144 +170,121 @@ impl VhostVsockControl {
 
         dispatch_ioctl!(match raw {
             cmd @ SetGuestCid => {
-                // CID reservations belong to the open file, independently of its owner VMAR.
+                // CID reservations belong to the file, independently of owner.
                 self.set_guest_cid(cmd.read()?)?;
                 Ok(0)
             }
             cmd @ SetRunning => {
-                self.common.check_owner()?;
-                match cmd.read()? {
-                    0 => self.stop(),
-                    1 => self.start()?,
-                    _ => return_errno_with_message!(
-                        Errno::EINVAL,
-                        "invalid vhost-vsock running value"
-                    ),
-                }
-                Ok(0)
-            }
-            ResetOwner => {
-                self.common.check_owner()?;
-                self.release_backend();
-                self.common.reset_owner_after_quiesce();
-                Ok(0)
-            }
-            SetFeatures | SetBackendFeatures | SetMemTable | SetVringNum | SetVringAddr
-            | SetVringBase | SetVringKick | SetVringCall | SetVringErr => {
-                self.common.check_owner()?;
-                let was_running = self
-                    .backend
-                    .as_ref()
-                    .is_some_and(|backend| backend.is_running());
-                self.stop();
-                let result = self.common.handle_ioctl(raw)?;
-                if was_running {
+                let running = cmd.read()?;
+                self.shared.common.lock().check_owner()?;
+                if running != 0 {
                     self.start()?;
+                } else {
+                    self.stop();
                 }
-                Ok(result)
+                Ok(0)
             }
-            GetVringBase => {
-                self.common.check_owner()?;
-                self.stop();
-                self.common.handle_ioctl(raw)
+            SetOwner => {
+                let vmar = {
+                    let mut common = self.shared.common.lock();
+                    common.handle_ioctl(raw)?;
+                    common.owner_vmar().unwrap().clone()
+                };
+                let shared = self.shared.clone();
+                self.worker = Some(
+                    ThreadOptions::new(move || worker::run(shared))
+                        .vmar(vmar)
+                        .spawn(),
+                );
+                Ok(0)
             }
-            _ => self.common.handle_ioctl(raw),
+            _ => {
+                let result = self.shared.common.lock().handle_ioctl(raw);
+                // A sleeping worker must replace old kick registrations and
+                // inspect the committed configuration, including after errors.
+                self.shared.backend.wake.signal();
+                result
+            }
         })
     }
 
     fn set_guest_cid(&mut self, cid: u64) -> Result<()> {
         let cid = validate_guest_cid(cid)?;
-        if self
-            .backend
-            .as_ref()
-            .is_some_and(|backend| backend.cid == cid)
+        let _common = self.shared.common.lock();
+        let backend = &self.shared.backend;
+        let mut backends = BACKENDS.lock();
+        if let Some(other) = backends.get(&cid).and_then(Weak::upgrade)
+            && !Arc::ptr_eq(&other, backend)
         {
+            return_errno_with_message!(Errno::EADDRINUSE, "the guest CID is already in use");
+        }
+        let old_cid = backend.cid();
+        if old_cid == cid {
             return Ok(());
         }
-
-        let backend = Backend::new(cid)?;
-        {
-            let mut backends = BACKENDS.lock();
-            if backends.get(&cid).and_then(Weak::upgrade).is_some() {
-                return_errno_with_message!(Errno::EADDRINUSE, "the guest CID is already in use");
-            }
-            backends.insert(cid, Arc::downgrade(&backend));
+        if old_cid != 0 {
+            backends.remove(&old_cid);
         }
-        self.release_backend();
-        self.backend = Some(backend);
+        backend.cid.store(cid, Ordering::Release);
+        backends.insert(cid, Arc::downgrade(backend));
+        drop(backends);
+        backend.wake.signal();
         Ok(())
     }
 
     fn start(&mut self) -> Result<()> {
         vsock::ensure_vhost_backend()?;
-        if self
-            .backend
-            .as_ref()
-            .is_some_and(|backend| backend.is_running())
-        {
-            return Ok(());
+        let worker_failed = self.shared.backend.pending.lock().failed;
+        if worker_failed {
+            self.shared.backend.wake.signal();
+            if let Some(worker) = self.worker.take() {
+                worker.join();
+            }
+            {
+                let mut pending = self.shared.backend.pending.lock();
+                pending.failed = false;
+                pending.is_active = true;
+            }
+            let vmar = self.shared.common.lock().owner_vmar().unwrap().clone();
+            let shared = self.shared.clone();
+            self.worker = Some(
+                ThreadOptions::new(move || worker::run(shared))
+                    .vmar(vmar)
+                    .spawn(),
+            );
         }
-        // Join a worker which may have stopped itself after a queue error.
-        self.stop();
-        let backend = self
-            .backend
-            .as_ref()
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the guest CID is not configured"))?;
-        let mut runtime = self.common.build_runtime()?;
-        let kicks = [
-            runtime.queue_mut(RX_QUEUE)?.kick_event(),
-            runtime.queue_mut(TX_QUEUE)?.kick_event(),
-        ];
-        if kicks.iter().any(Option::is_none) {
-            return_errno_with_message!(Errno::EINVAL, "vhost-vsock queues need kick eventfds");
-        }
-        backend.wake.consume();
-        let mut pending = backend.pending.lock();
-        if pending.failed {
-            pending.discard();
-            pending.generation = pending.generation.wrapping_add(1);
-            drop(pending);
-            vsock::reset_vhost_connections(backend.cid);
-            pending = backend.pending.lock();
-            pending.failed = false;
-        }
-        pending.is_active = true;
-        pending.is_running = true;
-        drop(pending);
-        let vmar = runtime.vmar().clone();
-        let backend = backend.clone();
-        let cid = backend.cid;
-        self.worker = Some(
-            ThreadOptions::new(move || worker::run(runtime, backend, kicks.map(Option::unwrap)))
-                .vmar(vmar)
-                .spawn(),
-        );
-        vsock::notify_vhost_writable(cid);
-        Ok(())
+        let result = self.shared.common.lock().activate();
+        self.shared.backend.wake.signal();
+        result
     }
 
     fn stop(&mut self) {
-        if let Some(backend) = &self.backend {
-            backend.pending.lock().is_running = false;
-            backend.wake.signal();
-        }
-        if let Some(worker) = self.worker.take() {
-            worker.join();
-        }
+        self.shared.common.lock().deactivate();
+        self.shared.backend.wake.signal();
     }
 
     fn release_backend(&mut self) {
-        if let Some(backend) = &self.backend {
+        self.stop();
+        self.shared.exiting.store(true, Ordering::Release);
+        let backend = &self.shared.backend;
+        {
             let mut pending = backend.pending.lock();
             pending.is_active = false;
             pending.generation = pending.generation.wrapping_add(1);
         }
-        self.stop();
-        if let Some(backend) = self.backend.take() {
-            backend.pending.lock().discard();
-            vsock::reset_vhost_connections(backend.cid);
-            BACKENDS.lock().remove(&backend.cid);
+        backend.wake.signal();
+        if let Some(worker) = self.worker.take() {
+            worker.join();
         }
+        let cid = backend.cid();
+        if cid != 0 {
+            // Keep the CID reserved until old sockets are reset, so a new
+            // session cannot inherit a reset intended for this session.
+            vsock::reset_vhost_orphaned_connections();
+            BACKENDS.lock().remove(&cid);
+            backend.cid.store(0, Ordering::Release);
+        }
+        backend.pending.lock().discard();
     }
 }
 
@@ -292,26 +295,27 @@ impl Drop for VhostVsockControl {
 }
 
 struct Backend {
-    cid: u32,
+    // Zero means that SET_GUEST_CID has not assigned a route yet.
+    cid: AtomicU32,
     pending: SpinLock<PendingPackets>,
     wake: Arc<KernelEventFile>,
 }
 
 impl Backend {
-    fn new(cid: u32) -> Result<Arc<Self>> {
-        Ok(Arc::new(Self {
-            cid,
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            cid: AtomicU32::new(0),
             pending: SpinLock::new(PendingPackets::new()),
-            wake: KernelEventFile::from_file(&EventFile::new(0, EventFileFlags::empty()))?,
-        }))
+            wake: KernelEventFile::from_file(&EventFile::new(0, EventFileFlags::empty())).unwrap(),
+        })
+    }
+
+    fn cid(&self) -> u32 {
+        self.cid.load(Ordering::Acquire)
     }
 
     fn is_active(&self) -> bool {
         self.pending.lock().is_active
-    }
-
-    fn is_running(&self) -> bool {
-        self.pending.lock().is_running
     }
 }
 
@@ -345,7 +349,6 @@ pub(crate) fn send_packet(header: &VirtioVsockHdr, payload: &[u8]) -> Result<boo
             // connection response or credit update.
             pending.failed = true;
             pending.is_active = false;
-            pending.is_running = false;
             drop(pending);
             backend.wake.signal();
             return_errno_with_message!(Errno::ENOBUFS, "the vsock control queue is full");

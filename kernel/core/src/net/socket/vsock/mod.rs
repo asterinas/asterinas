@@ -39,12 +39,12 @@ pub(crate) fn handle_vhost_packet(header: VirtioVsockHdr, payload: &[u8]) -> Res
     transport::handle_vhost_packet(header, payload)
 }
 
-/// Resets the connections of a guest after its backend stops routing packets.
+/// Resets connections whose guest CID no longer has a live backend.
 ///
 /// The caller must not hold a backend lock and must prevent the CID from being reused until
 /// this operation completes.
-pub(crate) fn reset_vhost_connections(cid: u32) {
-    transport::reset_vhost_connections(cid);
+pub(crate) fn reset_vhost_orphaned_connections() {
+    transport::reset_vhost_orphaned_connections();
 }
 
 /// Wakes senders after the backend releases space in its outgoing packet queue.

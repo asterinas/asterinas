@@ -366,13 +366,13 @@ impl VsockSpace {
         self.virtio_device().unwrap().reload_guest_id();
     }
 
-    pub(super) fn reset_vhost_connections(&self, cid: u32) {
-        // The device has stopped routing this CID before entering here. Lock order remains
-        // sockets -> socket state; callers must not hold a device or backend registry lock.
+    pub(super) fn reset_vhost_orphaned_connections(&self) {
+        // Closing a backend also cleans up connections orphaned by earlier CID
+        // changes. A CID assigned to another live backend is still routable.
         let mut sockets = self.sockets.lock();
         let mut pollees = Vec::new();
         sockets.connections.retain(|conn_id, connection| {
-            if conn_id.peer_cid != cid as u64 {
+            if crate::device::vhost::vsock::can_connect_remote_cid(conn_id.peer_cid as u32) {
                 return true;
             }
 

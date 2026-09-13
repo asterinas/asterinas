@@ -65,7 +65,8 @@ static uint64_t guest_address(struct backend *backend, const void *ptr)
 	       ((const uint8_t *)ptr - (const uint8_t *)backend->memory);
 }
 
-static void setup_backend(struct backend *backend)
+static void configure_backend(struct backend *backend, int assign_cid,
+			      int attach_kick)
 {
 	long page_size = CHECK(sysconf(_SC_PAGESIZE));
 	backend->memory_size = (sizeof(struct guest_memory) + page_size - 1) /
@@ -113,7 +114,8 @@ static void setup_backend(struct backend *backend)
 			CHECK(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
 		struct vhost_vring_file file = { .index = i,
 						 .fd = backend->kick[i] };
-		CHECK(ioctl(backend->fd, VHOST_SET_VRING_KICK, &file));
+		if (attach_kick)
+			CHECK(ioctl(backend->fd, VHOST_SET_VRING_KICK, &file));
 		file.fd = backend->call[i];
 		CHECK(ioctl(backend->fd, VHOST_SET_VRING_CALL, &file));
 		backend->error[i] =
@@ -122,14 +124,19 @@ static void setup_backend(struct backend *backend)
 		CHECK(ioctl(backend->fd, VHOST_SET_VRING_ERR, &file));
 	}
 	uint64_t cid = GUEST_CID;
-	CHECK(ioctl(backend->fd, VHOST_VSOCK_SET_GUEST_CID, &cid));
+	if (assign_cid)
+		CHECK(ioctl(backend->fd, VHOST_VSOCK_SET_GUEST_CID, &cid));
 	int running = 1;
 	CHECK(ioctl(backend->fd, VHOST_VSOCK_SET_RUNNING, &running));
 }
 
+static void setup_backend(struct backend *backend)
+{
+	configure_backend(backend, 1, 1);
+}
+
 static void destroy_backend(struct backend *backend)
 {
-	CHECK(ioctl(backend->fd, VHOST_RESET_OWNER));
 	CHECK(close(backend->fd));
 	for (unsigned i = 0; i < 2; ++i) {
 		CHECK(close(backend->kick[i]));
@@ -262,7 +269,7 @@ static int connect_guest(void)
 	return fd;
 }
 
-FN_TEST(cid_owner_and_reset)
+FN_TEST(cid_owner_and_close)
 {
 	uint64_t cid = GUEST_CID;
 	int first = CHECK(open("/dev/vhost-vsock", O_RDWR | O_CLOEXEC));
@@ -274,9 +281,11 @@ FN_TEST(cid_owner_and_reset)
 	TEST_ERRNO(ioctl(first, VHOST_VSOCK_SET_GUEST_CID, &reserved), EINVAL);
 	TEST_SUCC(ioctl(first, VHOST_VSOCK_SET_GUEST_CID, &cid));
 	TEST_ERRNO(ioctl(second, VHOST_VSOCK_SET_GUEST_CID, &cid), EADDRINUSE);
-	TEST_SUCC(ioctl(first, VHOST_RESET_OWNER));
+	TEST_ERRNO(ioctl(first, VHOST_RESET_OWNER, NULL), EFAULT);
+	CHECK(close(first));
 	TEST_SUCC(ioctl(second, VHOST_VSOCK_SET_GUEST_CID, &cid));
 	CHECK(close(second));
+	first = CHECK(open("/dev/vhost-vsock", O_RDWR | O_CLOEXEC));
 	CHECK(ioctl(first, VHOST_SET_OWNER));
 	TEST_SUCC(ioctl(first, VHOST_VSOCK_SET_GUEST_CID, &cid));
 	CHECK(close(first));
@@ -386,17 +395,127 @@ FN_TEST(owner_memory_fault_signals_error)
 	TEST_RES(poll(errors, 2, 5000),
 		 _ret > 0 &&
 			 ((errors[0].revents | errors[1].revents) & POLLIN));
-	struct pollfd socket = { .fd = fd, .events = POLLOUT };
-	TEST_RES(poll(&socket, 1, 5000), _ret == 1);
-	int error = 0;
-	socklen_t error_len = sizeof(error);
-	TEST_RES(getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &error_len),
-		 _ret == 0 && error == ECONNRESET);
 	CHECK(mprotect(backend.memory, backend.memory_size,
 		       PROT_READ | PROT_WRITE));
 	assert(backend.memory->rx.used.idx == 0);
 	assert(backend.memory->tx.used.idx == 0);
+	offer_rx(&backend, 0);
+	receive_packet(&backend, VIRTIO_VSOCK_OP_REQUEST, 0);
 	CHECK(close(fd));
 	destroy_backend(&backend);
+}
+END_TEST()
+
+FN_TEST(running_reconfiguration)
+{
+	struct backend backend;
+	setup_backend(&backend);
+	int running = 2;
+	TEST_SUCC(ioctl(backend.fd, VHOST_VSOCK_SET_RUNNING, &running));
+	running = -1;
+	TEST_SUCC(ioctl(backend.fd, VHOST_VSOCK_SET_RUNNING, &running));
+	struct vhost_vring_state state = { .index = 1, .num = RING_SIZE };
+	TEST_ERRNO(ioctl(backend.fd, VHOST_SET_VRING_NUM, &state), EBUSY);
+	state.num = 0;
+	TEST_ERRNO(ioctl(backend.fd, VHOST_SET_VRING_BASE, &state), EBUSY);
+	state.index = 2;
+	TEST_ERRNO(ioctl(backend.fd, VHOST_GET_VRING_BASE, &state), ENOBUFS);
+	state.index = 1;
+	TEST_RES(ioctl(backend.fd, VHOST_GET_VRING_BASE, &state),
+		 _ret == 0 && state.num == 0);
+	// A reset packet to an unknown socket needs no RX buffer or connection.
+	send_packet(&backend, 6000, VIRTIO_VSOCK_OP_RST, NULL, 0);
+	TEST_RES(ioctl(backend.fd, VHOST_GET_VRING_BASE, &state),
+		 _ret == 0 && state.num == 1);
+	struct vhost_vring_addr addr = {
+		.index = 1,
+		.desc_user_addr = (uintptr_t)backend.memory->tx.desc,
+		.avail_user_addr = (uintptr_t)&backend.memory->tx.avail,
+		.used_user_addr = (uintptr_t)&backend.memory->tx.used,
+		.log_guest_addr = GUEST_MEMORY_BASE,
+	};
+	TEST_SUCC(ioctl(backend.fd, VHOST_SET_VRING_ADDR, &addr));
+	addr.used_user_addr = UINT64_MAX - 3;
+	TEST_ERRNO(ioctl(backend.fd, VHOST_SET_VRING_ADDR, &addr), EINVAL);
+	struct {
+		struct vhost_memory table;
+		struct vhost_memory_region region;
+	} memory = {
+		.table.nregions = 1,
+		.region = {
+			.guest_phys_addr = GUEST_MEMORY_BASE,
+			.memory_size = backend.memory_size,
+			.userspace_addr = (uintptr_t)backend.memory,
+		},
+	};
+	TEST_SUCC(ioctl(backend.fd, VHOST_SET_MEM_TABLE, &memory));
+	memory.region.userspace_addr = UINT64_MAX;
+	TEST_ERRNO(ioctl(backend.fd, VHOST_SET_MEM_TABLE, &memory), EFAULT);
+	// Both failed updates and GET_BASE leave the original queue running.
+	send_packet(&backend, 6000, VIRTIO_VSOCK_OP_RST, NULL, 0);
+	TEST_RES(ioctl(backend.fd, VHOST_GET_VRING_BASE, &state),
+		 _ret == 0 && state.num == 2);
+	for (unsigned i = 0; i < 2; ++i) {
+		int kick = CHECK(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
+		struct vhost_vring_file file = { .index = i, .fd = kick };
+		TEST_SUCC(ioctl(backend.fd, VHOST_SET_VRING_KICK, &file));
+		CHECK(close(backend.kick[i]));
+		backend.kick[i] = kick;
+	}
+	send_packet(&backend, 6000, VIRTIO_VSOCK_OP_RST, NULL, 0);
+	running = 0;
+	TEST_SUCC(ioctl(backend.fd, VHOST_VSOCK_SET_RUNNING, &running));
+	TEST_SUCC(ioctl(backend.fd, VHOST_VSOCK_SET_RUNNING, &running));
+	running = 1;
+	TEST_SUCC(ioctl(backend.fd, VHOST_VSOCK_SET_RUNNING, &running));
+	send_packet(&backend, 6000, VIRTIO_VSOCK_OP_RST, NULL, 0);
+	TEST_RES(ioctl(backend.fd, VHOST_GET_VRING_BASE, &state),
+		 _ret == 0 && state.num == 4);
+	destroy_backend(&backend);
+}
+END_TEST()
+
+FN_TEST(start_without_cid_or_kick)
+{
+	struct backend backend;
+	configure_backend(&backend, 0, 0);
+	int running = 0;
+	TEST_SUCC(ioctl(backend.fd, VHOST_VSOCK_SET_RUNNING, &running));
+	struct vhost_memory memory = { .nregions = 0 };
+	TEST_SUCC(ioctl(backend.fd, VHOST_SET_MEM_TABLE, &memory));
+	running = 1;
+	TEST_SUCC(ioctl(backend.fd, VHOST_VSOCK_SET_RUNNING, &running));
+	TEST_SUCC(ioctl(backend.fd, VHOST_VSOCK_SET_RUNNING, &running));
+	destroy_backend(&backend);
+}
+END_TEST()
+
+FN_TEST(cid_change_and_close_reset_orphans)
+{
+	struct backend backend;
+	setup_backend(&backend);
+	offer_rx(&backend, 0);
+	int fd = connect_guest();
+	struct virtio_vsock_hdr header =
+		receive_packet(&backend, VIRTIO_VSOCK_OP_REQUEST, 0);
+	send_packet(&backend, le32toh(header.src_port),
+		    VIRTIO_VSOCK_OP_RESPONSE, NULL, 0);
+	struct pollfd pfd = { .fd = fd, .events = POLLOUT };
+	CHECK_WITH(poll(&pfd, 1, 5000), _ret == 1);
+	uint64_t cid = GUEST_CID + 1;
+	TEST_SUCC(ioctl(backend.fd, VHOST_VSOCK_SET_GUEST_CID, &cid));
+	struct vhost_vring_state state = { .index = 1 };
+	TEST_RES(ioctl(backend.fd, VHOST_GET_VRING_BASE, &state),
+		 _ret == 0 && state.num == 1);
+	int error = -1;
+	socklen_t error_len = sizeof(error);
+	TEST_RES(getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &error_len),
+		 _ret == 0 && error == 0);
+	destroy_backend(&backend);
+	pfd.events = POLLIN;
+	TEST_RES(poll(&pfd, 1, 5000), _ret == 1);
+	TEST_RES(getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &error_len),
+		 _ret == 0 && error == ECONNRESET);
+	CHECK(close(fd));
 }
 END_TEST()

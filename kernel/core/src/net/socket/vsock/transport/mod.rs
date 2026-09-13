@@ -90,11 +90,11 @@ pub(super) fn handle_vhost_packet(header: VirtioVsockHdr, payload: &[u8]) -> Res
     Ok(())
 }
 
-pub(super) fn reset_vhost_connections(cid: u32) {
+pub(super) fn reset_vhost_orphaned_connections() {
     if let Ok(space) = space::vsock_space()
         && space.is_vhost_backend()
     {
-        space.reset_vhost_connections(cid);
+        space.reset_vhost_orphaned_connections();
     }
 }
 

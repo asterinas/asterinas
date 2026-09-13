@@ -5,7 +5,7 @@ use ostd::prelude::ktest;
 
 use super::*;
 
-fn header(len: usize) -> VirtioVsockHdr {
+fn create_header(len: usize) -> VirtioVsockHdr {
     VirtioVsockHdr::new(
         2,
         3,
@@ -43,7 +43,7 @@ fn vhost_vsock_guest_cid_is_unique_until_release() {
 #[ktest]
 fn vhost_vsock_receive_fragments_preserve_payload_and_credit() {
     let payload = [1, 2, 3, 4, 5];
-    let packet = Packet::new(header(payload.len()), &payload).unwrap();
+    let packet = Packet::new(create_header(payload.len()), &payload).unwrap();
     let first = packet
         .header_for_fragment(0, packet::HEADER_LEN + 2)
         .unwrap();
@@ -68,13 +68,13 @@ fn vhost_vsock_receive_fragments_preserve_payload_and_credit() {
 fn vhost_vsock_pending_data_leaves_control_capacity() {
     let mut pending = PendingPackets::new();
     pending.is_active = true;
-    let packet = Packet::new(header(MAX_PAYLOAD_SIZE), &vec![0; MAX_PAYLOAD_SIZE]).unwrap();
+    let packet = Packet::new(create_header(MAX_PAYLOAD_SIZE), &vec![0; MAX_PAYLOAD_SIZE]).unwrap();
 
     while pending.has_data_room() {
         assert!(pending.push(packet.clone()));
     }
     assert!(!pending.reserve(MAX_PAYLOAD_SIZE));
-    let control = Packet::new(header(0), &[]).unwrap();
+    let control = Packet::new(create_header(0), &[]).unwrap();
     assert!(pending.push(control));
 
     let (first, offset) = pending.front().unwrap();
@@ -90,7 +90,7 @@ fn vhost_vsock_cancelled_reservation_restores_capacity() {
     let mut control = VhostVsockControl::new();
     let cid = 0x7000_0002;
     control.set_guest_cid(cid).unwrap();
-    control.backend.as_ref().unwrap().pending.lock().is_active = true;
+    control.shared.backend.pending.lock().is_active = true;
     let mut reservations = Vec::new();
 
     while let Some(reservation) = reserve_data_packet(cid as u32, MAX_PAYLOAD_SIZE).unwrap() {
@@ -104,7 +104,7 @@ fn vhost_vsock_cancelled_reservation_restores_capacity() {
     let reservation = reservations.pop().unwrap();
     assert!(
         !reservation
-            .send(&header(MAX_PAYLOAD_SIZE), &vec![0; MAX_PAYLOAD_SIZE])
+            .send(&create_header(MAX_PAYLOAD_SIZE), &vec![0; MAX_PAYLOAD_SIZE])
             .unwrap()
     );
     drop(reservations);
@@ -117,20 +117,13 @@ fn vhost_vsock_pause_preserves_accepted_packets_and_reservations() {
     let cid = 0x7000_0003;
     control.set_guest_cid(cid).unwrap();
     let reservation = reserve_data_packet(cid as u32, 3).unwrap().unwrap();
-    let mut packet_header = header(3);
+    let mut packet_header = create_header(3);
     packet_header.dst_cid = cid;
 
     control.stop();
     assert!(can_connect_remote_cid(cid as u32));
     assert!(reservation.send(&packet_header, &[1, 2, 3]).unwrap());
-    let (packet, offset) = control
-        .backend
-        .as_ref()
-        .unwrap()
-        .pending
-        .lock()
-        .front()
-        .unwrap();
+    let (packet, offset) = control.shared.backend.pending.lock().front().unwrap();
     assert_eq!(offset, 0);
     assert_eq!(&packet.payload[..], &[1, 2, 3]);
     control.release_backend();
@@ -141,9 +134,9 @@ fn vhost_vsock_control_exhaustion_fails_endpoint() {
     let mut control = VhostVsockControl::new();
     let cid = 0x7000_0004;
     control.set_guest_cid(cid).unwrap();
-    let mut packet_header = header(0);
+    let mut packet_header = create_header(0);
     packet_header.dst_cid = cid;
-    let backend = control.backend.as_ref().unwrap().clone();
+    let backend = control.shared.backend.clone();
     backend.wake.consume();
 
     let error = loop {
