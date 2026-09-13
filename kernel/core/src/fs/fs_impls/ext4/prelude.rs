@@ -20,7 +20,7 @@ pub(super) use ostd::{
 };
 
 pub(super) use super::{
-    inode::{Ext2Bid, Ext2Ino, Iblock},
+    inode::{Ext4Bid, Ext4Ino, Iblock},
     utils::{Dirty, IsPowerOf},
 };
 pub(super) use crate::{

@@ -9,7 +9,7 @@ use ostd::mm::io::util::HasVmReaderWriter;
 use smallvec::SmallVec;
 
 use super::indirect_block_manager::{IndirectBlock, IndirectBlockManager};
-use crate::fs::ext2::{fs::Ext2, inode::RAW_BLOCK_PTRS_LEN, prelude::*};
+use crate::fs::ext4::{fs::Ext4, inode::RAW_BLOCK_PTRS_LEN, prelude::*};
 
 const PTRS_PER_BLOCK: usize = BLOCK_SIZE / size_of::<u32>();
 const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
@@ -39,7 +39,7 @@ pub(in inode) struct BlockPtrTree {
 
 impl BlockPtrTree {
     /// Creates a new block-pointer tree from the on-disk raw pointers.
-    pub(in inode) fn new(raw_block_ptrs: RawBlockPtrs, fs: Weak<Ext2>) -> Self {
+    pub(in inode) fn new(raw_block_ptrs: RawBlockPtrs, fs: Weak<Ext4>) -> Self {
         Self {
             raw_block_ptrs: Dirty::new(raw_block_ptrs),
             indirect_blocks_manager: Mutex::new(IndirectBlockManager::new(fs)),
@@ -71,7 +71,7 @@ impl BlockPtrTree {
         &self,
         iblock: Iblock,
         max_blocks: u32,
-    ) -> Result<Range<Ext2Bid>> {
+    ) -> Result<Range<Ext4Bid>> {
         if max_blocks == 0 {
             return_errno_with_message!(Errno::EINVAL, "zero block range requested");
         }
@@ -81,7 +81,7 @@ impl BlockPtrTree {
     }
 
     /// Resolves a logical block to physical block (read-only).
-    pub(in inode) fn lookup_block(&self, iblock: Iblock) -> Result<Option<Ext2Bid>> {
+    pub(in inode) fn lookup_block(&self, iblock: Iblock) -> Result<Option<Ext4Bid>> {
         let range = self.lookup_block_range(iblock, 1)?;
         Ok(if range.is_empty() {
             None
@@ -109,7 +109,7 @@ impl BlockPtrTree {
     // and allocate. A cursor over the leaf block could eliminate the second walk.
     pub(in inode) fn resolve_block_range(
         &mut self,
-        fs: &Ext2,
+        fs: &Ext4,
         iblock: Iblock,
         max_blocks: u32,
     ) -> Result<ResolvedBlockRange> {
@@ -141,7 +141,7 @@ impl BlockPtrTree {
     /// Leaked blocks from partial failures are recoverable by e2fsck. Linux
     /// also follows this practice (see
     /// <https://elixir.bootlin.com/linux/v7.0/source/fs/ext2/inode.c#L1172>).
-    pub(in inode) fn truncate_to_byte_len(&mut self, fs: &Ext2, new_size: usize) {
+    pub(in inode) fn truncate_to_byte_len(&mut self, fs: &Ext4, new_size: usize) {
         // First logical block to free = ceil(new_size / block_size).
         let iblock = match Iblock::try_from(new_size.div_ceil(BLOCK_SIZE)) {
             Ok(ib) => ib,
@@ -237,7 +237,7 @@ impl BlockPtrTree {
         Ok(hole_len.min(max_blocks))
     }
 
-    fn truncate_direct_slots(&mut self, fs: &Ext2, start_idx: usize) -> Result<()> {
+    fn truncate_direct_slots(&mut self, fs: &Ext4, start_idx: usize) -> Result<()> {
         let start = start_idx.min(12);
         for idx in start..12 {
             let bid = self.raw_block_ptrs.block_ptrs[idx];
@@ -254,7 +254,7 @@ impl BlockPtrTree {
         Ok(())
     }
 
-    fn truncate_indirect_path(&mut self, fs: &Ext2, walk: &BlockPointerWalk) -> Result<()> {
+    fn truncate_indirect_path(&mut self, fs: &Ext4, walk: &BlockPointerWalk) -> Result<()> {
         // If the truncation point is exactly at the start of an indirect
         // block (innermost slot = 0), trim trailing zero slots and re-walk the
         // shorter path. This raises the shared level so the whole block can be
@@ -320,7 +320,7 @@ impl BlockPtrTree {
         walk: &BlockPointerWalk,
         trimmed: &BlockPointerWalk,
         detach_level: usize,
-    ) -> Result<Option<Ext2Bid>> {
+    ) -> Result<Option<Ext4Bid>> {
         let detached_bid = if detach_level == 0 {
             // Subtree root is referenced directly from `inode.block_ptrs[]`.
             let slot = walk.root_slot() as usize;
@@ -347,7 +347,7 @@ impl BlockPtrTree {
 
     fn free_indirect_right_side(
         &mut self,
-        fs: &Ext2,
+        fs: &Ext4,
         walk: &BlockPointerWalk,
         trimmed: &BlockPointerWalk,
         detach_level: usize,
@@ -383,7 +383,7 @@ impl BlockPtrTree {
         Ok(())
     }
 
-    fn free_indirect_roots_after(&mut self, fs: &Ext2, root_slot: usize) {
+    fn free_indirect_roots_after(&mut self, fs: &Ext4, root_slot: usize) {
         // The conditions are cumulative: truncating before the single-indirect
         // root frees slots 12, 13, and 14; truncating at or before the
         // single-indirect root frees slots 13 and 14; truncating at or before
@@ -465,7 +465,7 @@ impl BlockPtrTree {
         &self,
         walk: &BlockPointerWalk,
         max_blocks: u32,
-    ) -> Result<Range<Ext2Bid>> {
+    ) -> Result<Range<Ext4Bid>> {
         if max_blocks == 0 {
             return_errno_with_message!(Errno::EINVAL, "zero block range requested");
         }
@@ -573,7 +573,7 @@ impl BlockPtrTree {
     }
 
     /// Frees all blocks in a pointer subtree.
-    fn free_block_subtree(&mut self, fs: &Ext2, block_bid: Ext2Bid, indirect_levels: u32) {
+    fn free_block_subtree(&mut self, fs: &Ext4, block_bid: Ext4Bid, indirect_levels: u32) {
         if block_bid == 0 {
             return;
         }
@@ -638,7 +638,7 @@ impl BlockPtrTree {
     /// the blocks have been spliced into the tree.
     fn allocate_blocks<'a>(
         &self,
-        fs: &'a Ext2,
+        fs: &'a Ext4,
         indirect_blks: u32,
         data_blks: u32,
         walk: &BlockPointerWalk,
@@ -682,7 +682,7 @@ impl BlockPtrTree {
     }
 
     /// Zeroes newly allocated data blocks before exposing them via mapped reads.
-    fn zero_new_blocks(fs: &Ext2, block_range: &Range<Ext2Bid>) -> Result<()> {
+    fn zero_new_blocks(fs: &Ext4, block_range: &Range<Ext4Bid>) -> Result<()> {
         let mut io_batch = IoBatch::with_capacity(1);
 
         let bio_segment = BioSegment::alloc(block_range.len(), BioDirection::ToDevice);
@@ -731,7 +731,7 @@ impl BlockPtrTree {
     fn fill_existing_leaf_slots(
         &mut self,
         walk: &BlockPointerWalk,
-        data_blocks: &Range<Ext2Bid>,
+        data_blocks: &Range<Ext4Bid>,
     ) -> Result<()> {
         let hole_level = walk.hole_level();
 
@@ -752,8 +752,8 @@ impl BlockPtrTree {
     fn link_new_indirect_chain(
         &mut self,
         walk: &BlockPointerWalk,
-        indirect_blocks: &[Ext2Bid],
-        data_blocks: &Range<Ext2Bid>,
+        indirect_blocks: &[Ext4Bid],
+        data_blocks: &Range<Ext4Bid>,
     ) -> Result<()> {
         let hole_level = walk.hole_level();
         let chain_root_bid = indirect_blocks[0];
@@ -827,7 +827,7 @@ impl BlockPtrTree {
     fn write_data_range_to_direct_slots(
         &mut self,
         start_slot: usize,
-        data_range: &Range<Ext2Bid>,
+        data_range: &Range<Ext4Bid>,
     ) -> Result<()> {
         let end_slot = start_slot + data_range.len();
         let slots = &mut self.raw_block_ptrs.block_ptrs[start_slot..end_slot];
@@ -847,7 +847,7 @@ impl BlockPtrTree {
     fn write_data_range_to_indirect_block(
         block: &mut IndirectBlock,
         start_slot: usize,
-        data_range: &Range<Ext2Bid>,
+        data_range: &Range<Ext4Bid>,
     ) -> Result<()> {
         let end_slot = start_slot + data_range.len();
 
@@ -926,9 +926,9 @@ impl RawBlockPtrs {
 #[derive(Debug)]
 pub(in inode) enum ResolvedBlockRange {
     /// The physical range already exists on device.
-    Existing(Range<Ext2Bid>),
+    Existing(Range<Ext4Bid>),
     /// The physical range was freshly allocated on device.
-    NewlyAllocated(Range<Ext2Bid>),
+    NewlyAllocated(Range<Ext4Bid>),
 }
 
 /// Full block-pointer path from `i_block[]` to a logical data block.
@@ -1025,7 +1025,7 @@ struct BlockPointerWalk {
     ///
     /// If the walk is incomplete, the first hole is at
     /// `visited_entries.len()`.
-    visited_entries: SmallVec<[Ext2Bid; MAX_BLOCK_POINTER_LEVELS]>,
+    visited_entries: SmallVec<[Ext4Bid; MAX_BLOCK_POINTER_LEVELS]>,
 }
 
 impl BlockPointerWalk {
@@ -1105,12 +1105,12 @@ impl BlockPointerWalk {
         self.is_complete
     }
 
-    fn bid_at(&self, level: usize) -> Ext2Bid {
+    fn bid_at(&self, level: usize) -> Ext4Bid {
         debug_assert!(level < self.visited_entries.len());
         self.visited_entries[level]
     }
 
-    fn parent_bid_at(&self, level: usize) -> Ext2Bid {
+    fn parent_bid_at(&self, level: usize) -> Ext4Bid {
         debug_assert!(level > 0);
         self.bid_at(level - 1)
     }
@@ -1124,14 +1124,14 @@ impl BlockPointerWalk {
 /// Rollback guard for metadata and data blocks allocated through the block-pointer tree.
 #[derive(Debug)]
 struct BlockAllocGuard<'a> {
-    fs: &'a Ext2,
-    indirect_blocks: Vec<Ext2Bid>,
-    data_blocks: Range<Ext2Bid>,
+    fs: &'a Ext4,
+    indirect_blocks: Vec<Ext4Bid>,
+    data_blocks: Range<Ext4Bid>,
     committed: bool,
 }
 
 impl<'a> BlockAllocGuard<'a> {
-    fn new(fs: &'a Ext2, indirect_blocks: u32) -> Self {
+    fn new(fs: &'a Ext4, indirect_blocks: u32) -> Self {
         Self {
             fs,
             indirect_blocks: Vec::with_capacity(indirect_blocks as usize),
@@ -1140,11 +1140,11 @@ impl<'a> BlockAllocGuard<'a> {
         }
     }
 
-    fn extend_indirect_blocks(&mut self, indirect_blocks: Range<Ext2Bid>) {
+    fn extend_indirect_blocks(&mut self, indirect_blocks: Range<Ext4Bid>) {
         self.indirect_blocks.extend(indirect_blocks);
     }
 
-    fn track_data_blocks(&mut self, data_blocks: Range<Ext2Bid>) {
+    fn track_data_blocks(&mut self, data_blocks: Range<Ext4Bid>) {
         debug_assert!(self.data_blocks.is_empty());
         self.data_blocks = data_blocks;
     }
@@ -1187,11 +1187,11 @@ mod test {
 
     use super::*;
     use crate::{
-        fs::fs_impls::ext2::test_utils::{Ext2FixtureBuilder, write_indirect_ptr},
+        fs::fs_impls::ext4::test_utils::{Ext4FixtureBuilder, write_indirect_ptr},
         time::clocks,
     };
 
-    fn alloc_single_block(tree: &mut BlockPtrTree, fs: &Ext2, iblock: Iblock) -> Result<Ext2Bid> {
+    fn alloc_single_block(tree: &mut BlockPtrTree, fs: &Ext4, iblock: Iblock) -> Result<Ext4Bid> {
         let step = tree.resolve_block_range(fs, iblock, 1)?;
         let range = match step {
             ResolvedBlockRange::Existing(r) | ResolvedBlockRange::NewlyAllocated(r) => r,
@@ -1200,7 +1200,7 @@ mod test {
         Ok(range.start)
     }
 
-    fn expect_allocated(step: ResolvedBlockRange) -> Range<Ext2Bid> {
+    fn expect_allocated(step: ResolvedBlockRange) -> Range<Ext4Bid> {
         match step {
             ResolvedBlockRange::NewlyAllocated(range) => range,
             ResolvedBlockRange::Existing(range) => {
@@ -1209,7 +1209,7 @@ mod test {
         }
     }
 
-    fn expect_existing(step: ResolvedBlockRange) -> Range<Ext2Bid> {
+    fn expect_existing(step: ResolvedBlockRange) -> Range<Ext4Bid> {
         match step {
             ResolvedBlockRange::Existing(range) => range,
             ResolvedBlockRange::NewlyAllocated(range) => {
@@ -1224,7 +1224,7 @@ mod test {
     fn make_block_ptr_tree(
         block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
         sector_count: u32,
-        fs: &Arc<Ext2>,
+        fs: &Arc<Ext4>,
     ) -> BlockPtrTree {
         BlockPtrTree::new(
             RawBlockPtrs::new(sector_count, block_ptrs),
@@ -1234,7 +1234,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_direct_and_indirect_ok() {
-        let f = Ext2FixtureBuilder::new(2, 256).build().unwrap();
+        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
         let ptrs = PTRS_PER_BLOCK as u32;
@@ -1345,7 +1345,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_get_block_range_returns_contiguous_runs() {
-        let f = Ext2FixtureBuilder::new(2, 256).build().unwrap();
+        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
         let indirect_bid = 40u32;
@@ -1370,7 +1370,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_out_of_range_iblock_returns_err() {
-        let f = Ext2FixtureBuilder::new(2, 256).build().unwrap();
+        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
         let ptrs = PTRS_PER_BLOCK as u64;
@@ -1435,7 +1435,7 @@ mod test {
     #[ktest]
     fn approx_hole_blocks_scans() {
         clocks::init_for_ktest();
-        let f = Ext2FixtureBuilder::new(2, 256).build().unwrap();
+        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
         let ptrs = PTRS_PER_BLOCK;
         let ptrs_bits = (ptrs as u32).trailing_zeros();
@@ -1545,7 +1545,7 @@ mod test {
 
     #[ktest]
     fn block_alloc_direct_range_ok() {
-        let f = Ext2FixtureBuilder::new(1, 256)
+        let f = Ext4FixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1587,7 +1587,7 @@ mod test {
 
     #[ktest]
     fn block_alloc_indirect_range_ok() {
-        let f = Ext2FixtureBuilder::new(1, 256)
+        let f = Ext4FixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1618,7 +1618,7 @@ mod test {
 
     #[ktest]
     fn truncate_indirect_frees_shared_path() {
-        let f = Ext2FixtureBuilder::new(1, 256)
+        let f = Ext4FixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1654,7 +1654,7 @@ mod test {
 
     #[ktest]
     fn truncate_releases_all_indirect_blocks() {
-        let f = Ext2FixtureBuilder::new(1, 256)
+        let f = Ext4FixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1689,7 +1689,7 @@ mod test {
 
     #[ktest]
     fn free_block_subtree_recursively_releases_blocks() {
-        let f = Ext2FixtureBuilder::new(1, 256)
+        let f = Ext4FixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
