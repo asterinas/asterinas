@@ -33,7 +33,7 @@
 
 use ostd::const_assert;
 
-use super::{block_group::RawBlockGroup, prelude::*};
+use super::{block_group::RawBlockGroup, inode::RawInode, prelude::*};
 use crate::fs::ext4::utils;
 
 /// The ext2 magic number.
@@ -183,7 +183,7 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
                 if inode_size < 128 {
                     return_errno_with_message!(Errno::EINVAL, "inode size is too small");
                 }
-                if inode_size > BLOCK_SIZE {
+                if inode_size > size_of::<RawInode>() {
                     return_errno_with_message!(Errno::EINVAL, "inode size is too large");
                 }
                 if !inode_size.is_power_of_two() {
@@ -898,5 +898,14 @@ mod test {
         assert!(!sb.is_backup_group(2));
         assert!(!sb.is_backup_group(4));
         assert!(!sb.is_backup_group(6));
+    }
+    #[ktest]
+    fn rejects_inode_larger_than_raw_inode() {
+        let mut raw = make_valid_raw_super_block(1);
+        raw.rev_level = RevLevel::Dynamic as u32;
+        raw.first_ino = 11;
+        raw.inode_size = 512;
+
+        assert!(SuperBlock::try_from(raw).is_err());
     }
 }
