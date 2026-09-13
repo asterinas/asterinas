@@ -2,7 +2,7 @@
 
 //! Symlink read and write for ext2 inodes.
 //!
-//! Ext2 distinguishes two storage strategies for symbolic link targets:
+//! Ext4 distinguishes two storage strategies for symbolic link targets:
 //!
 //! - **Fast symlink** — targets up to 59 bytes are stored inline in the
 //!   60-byte raw block-pointer area of the inode (`i_block[0..15]`) without
@@ -11,13 +11,13 @@
 //! - **Slow symlink** — longer targets are written to an allocated data block
 //!   through the normal page-cache path.
 
-#![short_vis_path::add(ext2)]
+#![short_vis_path::add(ext4)]
 
 use super::{
-    super::Ext2, Inode, InodeInner, InodePayload, MAX_FAST_SYMLINK_LEN, RAW_BLOCK_PTRS_LEN,
+    super::Ext4, Inode, InodeInner, InodePayload, MAX_FAST_SYMLINK_LEN, RAW_BLOCK_PTRS_LEN,
     block_manager::RawBlockPtrs,
 };
-use crate::fs::ext2::{FilePerm, prelude::*, utils};
+use crate::fs::ext4::{FilePerm, prelude::*, utils};
 
 /// Inline fast-symlink target stored in the raw `i_block` byte area.
 #[derive(Debug)]
@@ -53,7 +53,7 @@ impl FastSymlinkTarget {
 
 impl Inode {
     /// Reads symbolic link target bytes and decodes them as UTF-8.
-    pub(in ext2) fn read_link(&self) -> Result<String> {
+    pub(in ext4) fn read_link(&self) -> Result<String> {
         if self.type_ != InodeType::SymLink {
             return_errno!(Errno::EINVAL);
         }
@@ -63,7 +63,7 @@ impl Inode {
     }
 
     /// Creates a symbolic-link inode with its target under this directory.
-    pub(in ext2) fn create_symlink(
+    pub(in ext4) fn create_symlink(
         &self,
         name: &str,
         target: &str,
@@ -88,7 +88,7 @@ impl InodeInner {
         matches!(self.payload, InodePayload::FastSymlink { .. })
     }
 
-    fn write_symlink_target(&mut self, fs: &Arc<Ext2>, target: &str) -> Result<()> {
+    fn write_symlink_target(&mut self, fs: &Arc<Ext4>, target: &str) -> Result<()> {
         let target_len = target.len();
 
         // Linux reserves one byte in `i_block` for a trailing NUL.

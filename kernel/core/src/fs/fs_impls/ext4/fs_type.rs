@@ -2,29 +2,29 @@
 
 //! VFS filesystem-type registration for ext2.
 //!
-//! `Ext2Type` implements the `FsType` trait so the VFS layer can
+//! `Ext4Type` implements the `FsType` trait so the VFS layer can
 //! discover and mount ext2 volumes by name (`"ext2"`).
 
 use aster_systree::SysNode;
 use device_id::DeviceId;
 
-use super::{fs::Ext2, prelude::*};
+use super::{fs::Ext4, prelude::*};
 use crate::fs::vfs::{
     file_system::FileSystem,
     registry::{FsCache, FsCreationCtx, FsProperties, FsType},
 };
 
-/// VFS-visible Ext2 filesystem type.
-pub(in crate::fs) struct Ext2Type {
+/// VFS-visible Ext4 filesystem type.
+pub(in crate::fs) struct Ext4Type {
     cache: FsCache<DeviceId>,
 }
 
-/// The VFS filesystem type descriptor for Ext2.
-pub(in crate::fs) static EXT2_TYPE: Ext2Type = Ext2Type {
+/// The VFS filesystem type descriptor for Ext4.
+pub(in crate::fs) static EXT2_TYPE: Ext4Type = Ext4Type {
     cache: FsCache::new(),
 };
 
-impl FsType for Ext2Type {
+impl FsType for Ext4Type {
     type Key = DeviceId;
 
     fn name(&self) -> &'static str {
@@ -39,7 +39,7 @@ impl FsType for Ext2Type {
         let disk = fs_creation_ctx.resolve_block_device()?.clone();
         let flags = fs_creation_ctx.flags();
         let args = fs_creation_ctx.args();
-        Ext2::open(disk, flags, args).map(|fs| fs as Arc<dyn FileSystem>)
+        Ext4::open(disk, flags, args).map(|fs| fs as Arc<dyn FileSystem>)
     }
 
     fn obtain_key_and_cache(

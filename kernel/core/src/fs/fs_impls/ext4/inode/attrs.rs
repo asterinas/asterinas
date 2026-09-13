@@ -2,18 +2,18 @@
 
 //! Inode metadata operations: mode, ownership, timestamps, and xattr.
 //!
-//! Ext2 inode metadata includes the file mode, user and group ownership,
+//! Ext4 inode metadata includes the file mode, user and group ownership,
 //! timestamps, and extended attributes. Attribute mutations must update the
 //! relevant change timestamps and mark the inode descriptor dirty so the
 //! on-disk inode can be refreshed during writeback.
 
-#![short_vis_path::add(ext2)]
+#![short_vis_path::add(ext4)]
 
 use device_id::DeviceId;
 
 use crate::{
     fs::{
-        ext2::{inode::Inode, prelude::*, utils},
+        ext4::{inode::Inode, prelude::*, utils},
         file::InodeMode,
         vfs::{
             inode::Metadata,
@@ -25,7 +25,7 @@ use crate::{
 
 impl Inode {
     /// Returns the encoded device ID for special files.
-    pub(in ext2) fn device_id(&self) -> u64 {
+    pub(in ext4) fn device_id(&self) -> u64 {
         debug_assert!(self.type_ == InodeType::CharDevice || self.type_ == InodeType::BlockDevice);
 
         let inner = self.inner.read();
@@ -36,7 +36,7 @@ impl Inode {
     }
 
     /// Sets the encoded device ID for special files and persists it.
-    pub(in ext2) fn set_device_id(&self, device_id: u64) -> Result<()> {
+    pub(in ext4) fn set_device_id(&self, device_id: u64) -> Result<()> {
         if self.type_ != InodeType::CharDevice && self.type_ != InodeType::BlockDevice {
             return_errno!(Errno::EINVAL);
         }
@@ -47,7 +47,7 @@ impl Inode {
     }
 
     /// Returns the inode metadata snapshot for stat-like queries.
-    pub(in ext2) fn metadata(&self) -> Metadata {
+    pub(in ext4) fn metadata(&self) -> Metadata {
         let inner = self.inner.read();
         let block_meta = inner.raw_block_ptrs();
 
@@ -81,18 +81,18 @@ impl Inode {
     }
 
     /// Returns the inode type.
-    pub(in ext2) fn inode_type(&self) -> InodeType {
+    pub(in ext4) fn inode_type(&self) -> InodeType {
         self.type_
     }
 
     /// Returns the file permission mode.
-    pub(in ext2) fn mode(&self) -> InodeMode {
+    pub(in ext4) fn mode(&self) -> InodeMode {
         let inner = self.inner.read();
         inner.mode()
     }
 
     /// Sets the file permission mode.
-    pub(in ext2) fn set_mode(&self, mode: InodeMode) -> Result<()> {
+    pub(in ext4) fn set_mode(&self, mode: InodeMode) -> Result<()> {
         let mut inner = self.inner.write();
         inner.set_mode(mode);
         inner.set_ctime(utils::now());
@@ -100,12 +100,12 @@ impl Inode {
     }
 
     /// Returns the owner user ID.
-    pub(in ext2) fn uid(&self) -> u32 {
+    pub(in ext4) fn uid(&self) -> u32 {
         self.inner.read().uid()
     }
 
     /// Sets the owner user ID.
-    pub(in ext2) fn set_uid(&self, uid: u32) -> Result<()> {
+    pub(in ext4) fn set_uid(&self, uid: u32) -> Result<()> {
         let mut inner = self.inner.write();
         inner.set_uid(uid);
         inner.set_ctime(utils::now());
@@ -113,12 +113,12 @@ impl Inode {
     }
 
     /// Returns the owner group ID.
-    pub(in ext2) fn gid(&self) -> u32 {
+    pub(in ext4) fn gid(&self) -> u32 {
         self.inner.read().gid()
     }
 
     /// Sets the owner group ID.
-    pub(in ext2) fn set_gid(&self, gid: u32) -> Result<()> {
+    pub(in ext4) fn set_gid(&self, gid: u32) -> Result<()> {
         let mut inner = self.inner.write();
         inner.set_gid(gid);
         inner.set_ctime(utils::now());
@@ -126,37 +126,37 @@ impl Inode {
     }
 
     /// Returns the last access time.
-    pub(in ext2) fn atime(&self) -> Duration {
+    pub(in ext4) fn atime(&self) -> Duration {
         self.inner.read().atime()
     }
 
     /// Sets the last access time.
-    pub(in ext2) fn set_atime(&self, time: Duration) {
+    pub(in ext4) fn set_atime(&self, time: Duration) {
         self.inner.write().set_atime(time);
     }
 
     /// Returns the last data modification time.
-    pub(in ext2) fn mtime(&self) -> Duration {
+    pub(in ext4) fn mtime(&self) -> Duration {
         self.inner.read().mtime()
     }
 
     /// Sets the last data modification time.
-    pub(in ext2) fn set_mtime(&self, time: Duration) {
+    pub(in ext4) fn set_mtime(&self, time: Duration) {
         self.inner.write().set_mtime(time);
     }
 
     /// Returns the last metadata change time.
-    pub(in ext2) fn ctime(&self) -> Duration {
+    pub(in ext4) fn ctime(&self) -> Duration {
         self.inner.read().ctime()
     }
 
     /// Sets the last metadata change time.
-    pub(in ext2) fn set_ctime(&self, time: Duration) {
+    pub(in ext4) fn set_ctime(&self, time: Duration) {
         self.inner.write().set_ctime(time);
     }
 
     /// Reads one extended-attribute value and writes it to `value_writer`.
-    pub(in ext2) fn get_xattr(
+    pub(in ext4) fn get_xattr(
         &self,
         name: XattrName,
         value_writer: &mut VmWriter,
@@ -168,7 +168,7 @@ impl Inode {
     }
 
     /// Lists extended attribute names in one namespace and writes them to `list_writer`.
-    pub(in ext2) fn list_xattr(
+    pub(in ext4) fn list_xattr(
         &self,
         namespace: XattrNamespace,
         list_writer: &mut VmWriter,
@@ -180,7 +180,7 @@ impl Inode {
     }
 
     /// Creates or replaces one extended attribute.
-    pub(in ext2) fn set_xattr(
+    pub(in ext4) fn set_xattr(
         &self,
         name: XattrName,
         value_reader: &mut VmReader,
@@ -199,7 +199,7 @@ impl Inode {
     }
 
     /// Removes one extended attribute.
-    pub(in ext2) fn remove_xattr(&self, name: XattrName) -> Result<()> {
+    pub(in ext4) fn remove_xattr(&self, name: XattrName) -> Result<()> {
         let xattr = self.xattr.as_ref().ok_or_else(|| {
             Error::with_message(Errno::EPERM, "xattr not supported on this inode type")
         })?;
