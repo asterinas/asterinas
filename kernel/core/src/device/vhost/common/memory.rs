@@ -46,22 +46,22 @@ pub(super) struct TranslatedMemoryRegion {
 /// Workers must be bound to this VMAR with `ThreadOptions::vmar`.
 /// The `Arc` keeps the VMAR alive, but does not pin its mappings;
 /// all accesses remain fallible, including after the owner exits.
-#[derive(Clone)]
+#[cfg_attr(ktest, derive(Clone))]
 pub(super) struct VhostMemorySpace {
     vmar: Arc<Vmar>,
-    regions: Arc<[VhostMemoryRegion]>,
+    regions: Vec<VhostMemoryRegion>,
 }
 
 impl VhostMemorySpace {
-    /// Uses regions already sorted and validated by `SET_MEM_TABLE`.
-    pub(super) fn new(vmar: Arc<Vmar>, regions: Vec<VhostMemoryRegion>) -> Result<Self> {
-        if regions.is_empty() {
-            return_errno_with_message!(Errno::EINVAL, "vhost memory table is empty");
-        }
-        Ok(Self {
-            vmar,
-            regions: regions.into(),
-        })
+    /// Creates an address space with regions already validated by the caller.
+    pub(super) fn new(vmar: Arc<Vmar>, regions: Vec<VhostMemoryRegion>) -> Self {
+        Self { vmar, regions }
+    }
+
+    pub(super) fn set_regions(&mut self, mut regions: Vec<VhostMemoryRegion>) -> Result<()> {
+        sort_and_validate_memory_regions(&mut regions)?;
+        self.regions = regions;
+        Ok(())
     }
 
     pub(super) fn vmar(&self) -> &Arc<Vmar> {
@@ -209,7 +209,9 @@ pub(super) fn sort_and_validate_memory_regions(regions: &mut [VhostMemoryRegion]
             .ok_or_else(|| {
                 Error::with_message(Errno::EINVAL, "vhost guest memory range overflow")
             })?;
-        validate_owner_range(region.host_virt_addr as usize, region.memory_size as usize)?;
+        validate_owner_range(region.host_virt_addr as usize, region.memory_size as usize).map_err(
+            |_| Error::with_message(Errno::EFAULT, "vhost memory range is inaccessible"),
+        )?;
     }
     regions.sort_unstable_by_key(|region| region.guest_phys_addr);
     for pair in regions.windows(2) {
